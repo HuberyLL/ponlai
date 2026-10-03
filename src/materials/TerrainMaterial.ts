@@ -1,0 +1,270 @@
+import * as THREE from 'three/webgpu';
+import {
+	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, cameraViewMatrix,
+	normalize, abs, pow, max, min, dot, sign, mix, smoothstep, clamp, fract, sin, exp, select, dFdx, dFdy,
+} from 'three/tsl';
+import type { Shared } from '../shared.ts';
+import type { DetailTextures } from './ProceduralTextures.ts';
+import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
+
+// PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
+// with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
+// algae, sediment) and the light below the water attenuated on its way down (sun path through
+// the water column, caustics, ambient) by a lighting model of its own, so the water shader only
+// has to add the view path.
+//
+// kind 'cliff'  : island block, sea stacks and rocks (triplanar)
+// kind 'seabed' : sand, ripples, seagrass and rubble (planar)
+
+type V3 = THREE.Node<'vec3'>;
+type V2 = THREE.Node<'vec2'>;
+type F = THREE.Node<'float'>;
+
+const Surface = struct( { albedo: 'vec3', normal: 'vec3', rough: 'float', ao: 'float' } );
+interface SurfaceNode { get( name: 'albedo' | 'normal' ): V3; get( name: 'rough' | 'ao' ): F }
+
+// whiteout-blended triplanar normal (Ben Golus)
+function triNormal( tx: V2, ty: V2, tz: V2, n: V3, w: V3, k: number ): V3 {
+
+	const nx = vec3( tx.mul( k ).add( n.zy ), abs( n.x ) );
+	const ny = vec3( ty.mul( k ).add( n.xz ), abs( n.y ) );
+	const nz = vec3( tz.mul( k ).add( n.xy ), abs( n.z ) );
+	return normalize( nx.zyx.mul( w.x ).add( ny.xzy.mul( w.y ) ).add( nz.mul( w.z ) ) );
+
+}
+
+const unpack2 = ( v: THREE.Node<'vec4'> | V2 ) => ( v as V2 ).mul( 2 ).sub( 1 );
+
+interface Ctx { tex: DetailTextures; shared: Shared; topY: F; shore: THREE.Texture }
+
+function cliffSurface( { tex, shared, topY }: Ctx ) {
+
+	return Fn( () => {
+
+		const p = positionWorld;
+		const n0 = normalize( normalWorldGeometry ).toVar();
+		const vAO = attribute<'float'>( 'ao', 'float' ), vTint = attribute<'float'>( 'tint', 'float' ), vCurv = attribute<'float'>( 'curv', 'float' );
+
+		// triplanar weights; projections with a negligible share are skipped (most pixels need one
+		// or two of the three), gradients taken outside the branches so mip selection stays right
+		const w0 = pow( abs( n0 ), vec3( 4 ) );
+		const w1 = max( w0.div( dot( w0, vec3( 1 ) ) ).sub( 0.02 ), 0 );
+		const w = w1.div( dot( w1, vec3( 1 ) ) ).toVar();
+		const S = 0.55; // ~1.8 m per tile
+		const sg = sign( n0 );
+		const uvX = vec2( p.z.mul( sg.x ), p.y ).mul( S ).toVar(), uvY = vec2( p.x.mul( sg.y ), p.z ).mul( S ).toVar(), uvZ = vec2( p.x.negate().mul( sg.z ), p.y ).mul( S ).toVar();
+		const gxX = dFdx( uvX ).toVar(), gyX = dFdy( uvX ).toVar(), gxY = dFdx( uvY ).toVar(), gyY = dFdy( uvY ).toVar(), gxZ = dFdx( uvZ ).toVar(), gyZ = dFdy( uvZ ).toVar();
+		const half = vec4( 0.5 );
+		const hX = half.toVar(), hY = half.toVar(), hZ = half.toVar();
+		const aX = half.toVar(), aY = half.toVar(), aZ = half.toVar();
+		const fX = half.toVar(), fY = half.toVar(), fZ = half.toVar(); // chiselled facets
+		If( w.x.greaterThan( 0 ), () => {
+
+			hX.assign( texture( tex.heights, uvX ).grad( gxX, gyX ) ); aX.assign( texture( tex.normalsA, uvX ).grad( gxX, gyX ) ); fX.assign( texture( tex.facets, uvX ).grad( gxX, gyX ) );
+
+		} );
+		If( w.y.greaterThan( 0 ), () => {
+
+			hY.assign( texture( tex.heights, uvY ).grad( gxY, gyY ) ); aY.assign( texture( tex.normalsA, uvY ).grad( gxY, gyY ) ); fY.assign( texture( tex.facets, uvY ).grad( gxY, gyY ) );
+
+		} );
+		If( w.z.greaterThan( 0 ), () => {
+
+			hZ.assign( texture( tex.heights, uvZ ).grad( gxZ, gyZ ) ); aZ.assign( texture( tex.normalsA, uvZ ).grad( gxZ, gyZ ) ); fZ.assign( texture( tex.facets, uvZ ).grad( gxZ, gyZ ) );
+
+		} );
+		const H = hX.mul( w.x ).add( hY.mul( w.y ) ).add( hZ.mul( w.z ) ).toVar();
+		const Fc = fX.mul( w.x ).add( fY.mul( w.y ) ).add( fZ.mul( w.z ) ).toVar();
+		const big = texture( tex.normalsB, p.xz.mul( 0.019 ).add( p.y.mul( 0.011 ) ) ).a.toVar(); // large-scale variation
+		const big2 = texture( tex.normalsB, p.zx.mul( 0.047 ).add( vec2( 0.31, p.y.mul( 0.03 ) ) ) ).a.toVar();
+
+		// (chips on upward faces tilt less: under a low sun they would read as a patchwork)
+		const nRock0 = triNormal( unpack2( fX.xy ), unpack2( fY.xy ).mul( 0.45 ), unpack2( fZ.xy ), n0, w, 1 );
+		const nRock = normalize( mix( nRock0, triNormal( unpack2( aX.xy ), unpack2( aY.xy ), unpack2( aZ.xy ), nRock0, w, 1 ), 0.12 ) );
+		const nMoss = triNormal( unpack2( aX.zw ), unpack2( aY.zw ), unpack2( aZ.zw ), n0, w, 0.8 );
+
+		// --- stone: warm grey, every block a shade of its own (some cooler, some warmer), every
+		// chip a little lighter or darker, worn pale on the arrises, dark down in joints and cracks
+		const convex = smoothstep( 0.6, 3.5, vCurv );
+		const concave = smoothstep( - 0.5, - 3.0, vCurv ).toVar();
+		const rock = mix( vec3( 0.125, 0.118, 0.108 ), vec3( 0.22, 0.205, 0.185 ), vTint ).toVar();
+		rock.mulAssign( mix( vec3( 0.94, 0.99, 1.06 ), vec3( 1.06, 1.0, 0.92 ), fract( vTint.mul( 7.31 ) ) ) );
+		rock.mulAssign( Fc.a.add( 0.5 ) );
+		rock.mulAssign( big.sub( 0.5 ).mul( 0.2 ).add( 0.92 ) );
+		rock.assign( mix( rock, rock.mul( vec3( 1.12, 1.02, 0.86 ) ), smoothstep( 0.55, 0.85, big2 ).mul( 0.5 ) ) ); // faint ochre
+		rock.mulAssign( float( 1 ).sub( Fc.b.mul( 0.7 ) ) ); // cracks, pits
+		// runoff: faint darker streaks down the faces
+		const along = mix( p.z, p.x, w.z.div( max( w.x.add( w.z ), 1e-3 ) ) );
+		const streaks = texture( tex.normalsB, vec2( along.mul( 0.55 ), p.y.mul( 0.018 ).add( along.mul( 0.002 ) ) ) ).a;
+		const streaks2 = texture( tex.normalsB, vec2( along.mul( 2.3 ).add( 0.37 ), p.y.mul( 0.04 ) ) ).a;
+		const vert = float( 1 ).sub( smoothstep( 0.35, 0.75, abs( n0.y ) ) );
+		rock.mulAssign( mix( float( 1 ), mix( float( 0.7 ), float( 1.08 ), smoothstep( 0.3, 0.7, streaks.mul( 0.65 ).add( streaks2.mul( 0.45 ) ) ) ), vert ) );
+		rock.assign( mix( rock, min( rock.mul( 1.3 ).add( 0.025 ), vec3( 0.5 ) ), convex.mul( 0.6 ) ) );
+		rock.mulAssign( mix( float( 1 ), float( 0.38 ), concave ) );
+		// lichen: pale crusts and dark spots on the dry stone
+		const lichen = H.a.mul( smoothstep( 0.4, 1.4, p.y ) ).mul( smoothstep( 0.3, 0.6, big2 ) );
+		rock.assign( mix( rock, vec3( 0.42, 0.41, 0.33 ), lichen.mul( 0.45 ) ) );
+		const spots = smoothstep( 0.62, 0.8, H.g ).mul( smoothstep( 0.45, 0.7, big ) ).mul( smoothstep( 0.5, 1.5, p.y ) );
+		rock.mulAssign( float( 1 ).sub( spots.mul( 0.35 ) ) );
+
+		// --- moss / turf: on everything facing up above the spray zone, draping over the lip,
+		// hanging in streaks down the faces below it
+		const up = n0.y;
+		const mossN = H.g.sub( 0.5 ).mul( 0.5 ).add( big.sub( 0.5 ).mul( 0.6 ) );
+		const dry = smoothstep( 0.7, 1.6, p.y );
+		const lip = smoothstep( topY.sub( 0.55 ), topY.sub( 0.1 ), p.y.add( mossN.mul( 0.6 ) ) );
+		const streak = texture( tex.normalsB, vec2( p.x.add( p.z ).mul( 0.9 ), p.y.mul( 0.05 ) ) ).a;
+		const hang = smoothstep( topY.sub( 0.5 ).sub( streak.mul( 1.6 ) ), topY.sub( 0.2 ).sub( streak.mul( 0.9 ) ), p.y ).mul( smoothstep( 0.55, 0.72, streak.add( H.g.mul( 0.25 ) ) ) );
+		const moss = clamp( max( smoothstep( 0.42, 0.72, up.add( mossN ) ).mul( dry ), max( lip.mul( smoothstep( - 0.35, 0.3, up ) ), hang.mul( 0.6 ) ).mul( dry ) ), 0, 1 ).toVar();
+		const mossC = mix( vec3( 0.025, 0.06, 0.015 ), vec3( 0.11, 0.2, 0.035 ), smoothstep( 0.2, 0.9, H.g ) ).toVar();
+		mossC.mulAssign( smoothstep( 0.3, 0.8, texture( tex.heights, p.xz.mul( 0.9 ).add( p.y.mul( 0.5 ) ) ).g ).mul( 0.6 ).add( 0.7 ) );
+		mossC.assign( mix( mossC, vec3( 0.2, 0.21, 0.06 ), smoothstep( 0.6, 0.9, big2 ).mul( 0.35 ) ) ); // sun-dried
+		// the island's top: meadow turf (mostly under the grass), mottled at several scales
+		const turf = smoothstep( 0.85, 0.97, up ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ).toVar();
+		const Hg = H.g.toVar();
+		If( turf.greaterThan( 0 ), () => {
+
+			const q1 = p.xz.mul( 0.23 ), q2 = mat2( 0.8, - 0.6, 0.6, 0.8 ).mul( p.xz ).mul( 0.61 ).add( 0.37 );
+			const c1 = texture( tex.heights, q1 ).level( float( 0 ) ).g, c2 = texture( tex.heights, q2 ).level( float( 0 ) ).g;
+			const m1 = texture( tex.normalsB, p.xz.mul( 0.031 ).add( 0.17 ) ).level( float( 0 ) ).a;
+			const m2 = texture( tex.normalsB, mat2( 0.6, 0.8, - 0.8, 0.6 ).mul( p.xz ).mul( 0.09 ) ).level( float( 0 ) ).a;
+			const m3 = texture( tex.normalsB, p.zx.mul( 0.27 ).add( 0.5 ) ).level( float( 0 ) ).a;
+			const lush = smoothstep( 0.3, 0.75, m1.mul( 0.7 ).add( m2.mul( 0.5 ) ).sub( 0.1 ) );
+			const grassC = mix( vec3( 0.05, 0.10, 0.018 ), vec3( 0.16, 0.27, 0.04 ), smoothstep( 0.2, 0.8, c1.mul( 0.55 ).add( c2.mul( 0.45 ) ) ) ).toVar();
+			grassC.assign( mix( grassC, vec3( 0.28, 0.29, 0.08 ), float( 1 ).sub( lush ).mul( smoothstep( 0.45, 0.8, m3 ) ).mul( 0.7 ) ) ); // dry drifts
+			grassC.mulAssign( mix( float( 0.62 ), float( 1.12 ), smoothstep( 0.25, 0.7, m2.mul( 0.6 ).add( c2.mul( 0.5 ) ) ) ) ); // clumps
+			const bare = smoothstep( 0.8, 0.9, m3.mul( 0.6 ).add( float( 1 ).sub( m1 ).mul( 0.5 ) ) );
+			grassC.assign( mix( grassC, vec3( 0.16, 0.12, 0.08 ), bare.mul( 0.6 ) ) );
+			mossC.assign( mix( mossC, grassC, turf ) );
+			Hg.assign( mix( Hg, c1.mul( 0.5 ).add( c2.mul( 0.5 ) ), turf ) );
+
+		} );
+
+		// --- the tidal band: wet, dark, glossy; green-black algae just below the waterline;
+		// silt and sediment on the submerged ledges
+		const wl = shared.waterLevel.add( sin( shared.time.mul( 0.9 ).add( p.x.mul( 0.4 ) ).add( p.z.mul( 0.3 ) ) ).mul( 0.08 ) );
+		const wet = float( 1 ).sub( smoothstep( 0, 0.32, p.y.sub( wl ).sub( 0.06 ).sub( H.r.sub( 0.5 ).mul( 0.25 ) ) ) );
+		const algae = float( 1 ).sub( smoothstep( - 0.05, 0.35, p.y.sub( wl ).add( Hg.sub( 0.5 ).mul( 0.5 ) ) ) );
+		const deep = smoothstep( - 0.6, - 2.5, p.y );
+		const algaeC = mix( vec3( 0.035, 0.05, 0.02 ), vec3( 0.09, 0.085, 0.045 ), deep );
+		const silt = smoothstep( 0.35, 0.8, up ).mul( smoothstep( - 0.4, - 1.2, p.y ) );
+
+		const albedo = mix( rock, mossC, moss ).toVar();
+		const nW = normalize( mix( nRock, nMoss, moss ) );
+		const rough = mix( float( 0.82 ), float( 0.93 ), moss ).toVar();
+		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algae.mul( 0.85 ) ) );
+		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ), silt.mul( 0.7 ) ) );
+		albedo.mulAssign( mix( float( 1 ), float( 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
+		rough.assign( mix( rough, float( 0.28 ), wet.mul( float( 1 ).sub( deep ) ) ) );
+
+		const ao = vAO.mul( mix( float( 1 ), float( 0.55 ), concave ) ).mul( float( 1 ).sub( Fc.b.mul( 0.45 ) ) );
+		return Surface( albedo, nW, rough, ao );
+
+	} )();
+
+}
+
+function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
+
+	return Fn( () => {
+
+		const p = positionWorld;
+		const n0 = normalize( normalWorldGeometry ).toVar();
+		const S = 0.27; // ripple tile ~3.7 m
+		const q = p.xz.mul( S );
+		const H = texture( tex.heights, q ).toVar();
+		const A = texture( tex.normalsA, q.mul( 0.7 ).add( 0.13 ) );
+		const B = texture( tex.normalsB, q );
+		const big = texture( tex.normalsB, p.xz.mul( 0.013 ).add( 0.2 ) ).a;
+		const big2 = texture( tex.normalsB, p.zx.mul( 0.031 ).add( 0.6 ) ).a;
+		const sd = texture( shore, p.xz.sub( shoreXform.xy ).mul( shoreXform.zw ) ).r;
+
+		// sand: pale, slightly grey-olive sand with darker troughs, finer speckle (lighter in the
+		// shallows by the cliffs, where the lagoon reads green-teal)
+		const nearIsland = float( 1 ).sub( smoothstep( 2, 14, sd ) );
+		const sand = mix( vec3( 0.19, 0.2, 0.18 ), vec3( 0.38, 0.38, 0.33 ), smoothstep( 0.1, 0.9, H.b.mul( 0.6 ).add( big.mul( 0.6 ) ) ) )
+			.mul( H.g.mul( 0.1 ).add( 0.95 ) ).mul( mix( float( 0.7 ), float( 1.1 ), nearIsland ) );
+		// seagrass and algae beds: dark olive patches with soft edges
+		const grass = smoothstep( 0.5, 0.62, big2.add( H.r.sub( 0.5 ).mul( 0.2 ) ) ).mul( smoothstep( 2, 6, sd ) );
+		const grassC = mix( vec3( 0.035, 0.06, 0.03 ), vec3( 0.09, 0.13, 0.06 ), H.g );
+		// rubble and boulders shed from the cliffs
+		const rubble = float( 1 ).sub( smoothstep( 0.5, big.mul( 3 ).add( 5 ), sd ) ).mul( smoothstep( 0.3, 0.55, H.r ) );
+		const rubbleC = mix( vec3( 0.10, 0.11, 0.10 ), vec3( 0.24, 0.24, 0.21 ), H.r );
+
+		const nSand = normalize( vec3( B.r.mul( 2 ).sub( 1 ), 0, B.g.mul( 2 ).sub( 1 ) ).mul( 0.45 ).add( vec3( 0, 1, 0 ) ) );
+		const nRock = normalize( vec3( A.r.mul( 2 ).sub( 1 ), 0, A.g.mul( 2 ).sub( 1 ) ).mul( 1.3 ).add( vec3( 0, 1, 0 ) ) );
+		// keep the macro slope of the mesh
+		const t = normalize( n0.cross( vec3( 0, 0, 1 ) ) );
+		const b = t.cross( n0 );
+		const dn = mix( nSand, nRock, max( rubble, grass.mul( 0.6 ) ) );
+		const nW = normalize( t.mul( dn.x ).add( n0.mul( dn.y ) ).add( b.mul( dn.z ) ) );
+
+		const albedo = mix( mix( sand, grassC, grass ), rubbleC, rubble );
+		const ao = mix( float( 1 ), float( 0.75 ), rubble ).mul( mix( float( 0.8 ), float( 1 ), H.b ) );
+		return Surface( albedo, nW, float( 0.92 ), ao );
+
+	} )();
+
+}
+
+// Light below the surface: the sun path through the water column (with caustics) and the
+// dimmer, bluer ambient; above the water, a faint caustic shimmer reflected onto the rock.
+class TerrainLightingModel extends THREE.PhysicalLightingModel {
+
+	sunAtt: V3; ambMul: V3; specMul: V3;
+
+	constructor( sunAtt: V3, ambMul: V3, specMul: V3 ) {
+
+		super();
+		this.sunAtt = sunAtt; this.ambMul = ambMul; this.specMul = specMul;
+
+	}
+
+	direct( input: THREE.LightingModelDirectInput, builder: THREE.NodeBuilder ): void {
+
+		super.direct( { ...input, lightColor: ( input.lightColor as V3 ).mul( this.sunAtt ) }, builder );
+
+	}
+
+	indirect( builder: THREE.NodeBuilder ): void {
+
+		super.indirect( builder );
+		const reflected = ( builder.context as unknown as { reflectedLight: { indirectDiffuse: V3; indirectSpecular: V3 } } ).reflectedLight;
+		reflected.indirectDiffuse.mulAssign( this.ambMul );
+		reflected.indirectSpecular.mulAssign( this.specMul );
+
+	}
+
+}
+
+export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, caustics: Caustics, shore: THREE.Texture, { topY = 3.1 } = {} ): THREE.MeshStandardNodeMaterial {
+
+	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.85, metalness: 0 } );
+	const topYU = uniform( topY );
+	const ctx: Ctx = { tex, shared, topY: topYU, shore };
+	const call = kind === 'seabed' ? seabedSurface( ctx, shared.shoreXform ) : cliffSurface( ctx );
+	const surf = ( call as unknown as { toVar( name: string ): SurfaceNode } ).toVar( 'surf' );
+	mat.colorNode = surf.get( 'albedo' );
+	mat.roughnessNode = surf.get( 'rough' );
+	mat.normalNode = normalize( cameraViewMatrix.mul( vec4( surf.get( 'normal' ), 0 ) ).xyz );
+	mat.aoNode = surf.get( 'ao' );
+
+	// the water column above this point
+	const p = positionWorld;
+	const dW = shared.waterLevel.sub( p.y );
+	const sigT = shared.sigA.add( shared.sigS );
+	const under = dW.greaterThan( 0 );
+	const caus = causticsAt( caustics, p, dW.max( 0 ) );
+	const sunAtt = select( under, exp( sigT.negate().mul( dW ).div( shared.muSun ) ).mul( shared.sunIntoWater ).mul( caus ), vec3( 1 ) );
+	const ambAtt = exp( sigT.negate().mul( dW.max( 0 ) ).mul( 1.25 ) );
+	const above = p.y.sub( shared.waterLevel );
+	const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 0.6 ).mul( 0.9 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
+	const ambMul = select( under, ambAtt, vec3( float( 1 ).add( shimmer ) ) );
+	const specMul = select( under, ambAtt.mul( 0.5 ), vec3( 1 ) );
+	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new TerrainLightingModel( sunAtt, ambMul, specMul );
+	mat.userData.topY = topYU;
+	return mat;
+
+}
+
+export type { F };

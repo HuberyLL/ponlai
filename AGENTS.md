@@ -1,0 +1,69 @@
+# Soomi
+
+A small stylised island in an open sea, rendered in the browser: a visual sample for a game.
+The look is stylised fantasy-realistic: warm golden light, airy lifted shadows, deep muted
+teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with bushes,
+wildflowers and ivy.
+
+## Stack and commands
+
+- TypeScript (strict), Vite, three.js `WebGPURenderer` (`three/webgpu`, `three/tsl`). WebGPU is
+  required: the ocean FFT runs on compute shaders. Without WebGPU the page shows a message.
+- Shaders are written in TSL only (no raw WGSL or GLSL strings). Helpers called from several
+  places are `Fn( ... ).setLayout( ... )` so they compile to one shader function each.
+- The water shading is adapted from tidewater (physically based) and art-directed toward the look
+  above; keep new water work stylised rather than strictly realistic.
+- `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
+  `npm run preview` (port 5191).
+- `node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval "js"] [--verbose]`
+  takes a screenshot of the running dev server into `artifacts/captures/` (git-ignored) and prints
+  frame diagnostics. URL options: `paused`, `t`, `dpr`, `dist`, `polar`, `az`, `gui`. It needs
+  Playwright's Chromium once (`npx playwright install chromium`), or `CHROME_PATH` set to a
+  WebGPU-capable Chrome.
+
+## Layout
+
+- `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
+  handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
+- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor,
+  shoreline field, vegetation anchors; instanced grass, bushes, flowers, ivy.
+- `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
+  sea floor, light under the water).
+- `src/ocean/`: FFT ocean (compute), caustics, water shading.
+- `src/sky/`: atmosphere bake, environment lighting.
+- `src/post/`: frame graph (opaque pass, depth resolve, water pass, bloom, tilt-shift, grade).
+
+## Decisions (keep to these)
+
+- No clouds, mist or aerial haze. No waterfall or pond.
+- The island layout (tile footprint, sea stacks, rock placement) stays as built; work changes quality,
+  not layout.
+- No glowing rings at the bases of the sea stacks.
+- Do not commit reference images, and do not ship third-party art without a licence.
+- Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
+  copyright line, licence) and the licence text sits next to them (see `src/ocean/tidewater.LICENSE.txt`).
+  Techniques borrowed without code are credited in a comment where they are used. Third-party assets,
+  when added, get a `CREDITS.md` listing source and licence for each.
+
+## Conventions
+
+- Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, comments in
+  English that explain why.
+- Check visual changes with captures, compared against the previous capture (and crops, not only the
+  whole frame); report measured differences.
+- Measure frame time at 2400x1500 (DPR 1.5) with background tabs closed, before and after a change.
+
+## WebGPU / TSL pitfalls met here
+
+- Once `material.positionNode` is set, `positionLocal` reads the displaced position; use
+  `positionGeometry` for the undisplaced one.
+- In a full-screen pass (`QuadMesh`, `RenderPipeline`) the camera nodes refer to the pass's own
+  camera: pass the scene camera's matrices as uniforms.
+- Screen uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
+- Multisampled depth can only be read with `textureLoad`; `Pipeline` resolves it to linear view z.
+- WebGPU needs uniform control flow for implicitly filtered texture samples and derivatives: take
+  them (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
+- Nested loops: pass both ranges to one `Loop()` call so the counters get distinct names (`i`, `j`).
+- Shadow passes keep `alphaTest` and `alphaMap` but not `map`: alpha-tested foliage sets both `map`
+  and `alphaMap`.
+- Vegetation draws before the terrain (`renderOrder = -1`) so the turf under it fails the depth test.
