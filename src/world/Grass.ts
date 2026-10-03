@@ -16,7 +16,7 @@ import type { Shared } from '../shared.ts';
 
 const STRIDE = 8;
 
-function tuftGeometry( seed = 3, blades = 9, segs = 3 ) {
+function tuftGeometry( seed = 3, blades = 8, segs = 3 ) {
 
 	const rng = mulberry32( seed );
 	const P: number[] = [], N: number[] = [], T: number[] = [], I: number[] = [];
@@ -25,9 +25,9 @@ function tuftGeometry( seed = 3, blades = 9, segs = 3 ) {
 		const a = ( b / blades ) * Math.PI * 2 + ( rng() - 0.5 ) * 0.9;
 		const r0 = 0.03 + rng() * 0.1; // base offset from the tuft's axis
 		const ox = Math.cos( a ) * r0, oz = Math.sin( a ) * r0;
-		const h = 0.6 + rng() * 0.4; // tuft space: 1 = the tallest blade
-		const lean = 0.25 + rng() * 0.55; // how far the tip reaches out, relative to the height
-		const w = 0.15 + rng() * 0.07; // width at the root
+		const h = 0.45 + rng() * 0.55; // varied blades keep the meadow from reading as a brush carpet
+		const lean = 0.3 + rng() * 0.7;
+		const w = 0.13 + rng() * 0.065;
 		const dx = Math.cos( a ), dz = Math.sin( a );
 		const tw = a + Math.PI / 2 + ( rng() - 0.5 ) * 1.0; // width axis, a little twisted
 		const wx = Math.cos( tw ), wz = Math.sin( tw );
@@ -43,8 +43,8 @@ function tuftGeometry( seed = 3, blades = 9, segs = 3 ) {
 
 				const px = cx + wx * hw * sg, pz = cz + wz * hw * sg;
 				P.push( px, cy, pz );
-				const nx = px * 1.8, nz = pz * 1.8, l = Math.hypot( nx, 1, nz );
-				N.push( nx / l, 1 / l, nz / l );
+				const nx = px * 2.6, nz = pz * 2.6, l = Math.hypot( nx, 0.8, nz );
+				N.push( nx / l, 0.8 / l, nz / l );
 				T.push( t );
 
 			}
@@ -71,7 +71,7 @@ function tuftGeometry( seed = 3, blades = 9, segs = 3 ) {
 
 function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
-	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.78, metalness: 0, side: THREE.DoubleSide } );
+	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.86, metalness: 0, side: THREE.DoubleSide } );
 	const wind = uniform( new THREE.Vector2( 0.8, - 0.6 ) );
 	const t = attribute<'float'>( 'bladeT', 'float' );
 	const t2 = t.mul( t );
@@ -82,13 +82,13 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const gust = sin( ph ).mul( 0.45 ).add( 0.55 ).add( sin( ph.mul( 2.7 ).add( p.x.mul( 0.9 ) ) ).mul( 0.2 ) );
 	mat.positionNode = p.add( vec3( normalize( wind ).x, 0, normalize( wind ).y ).mul( gust.mul( 0.05 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.016 ).mul( t2 ), 0 ) );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
-	mat.colorNode = mix( vec3( 0.15 ), vec3( 1 ), smoothstepN( 0.05, 0.95, t ) );
+	mat.colorNode = mix( vec3( 0.18, 0.25, 0.16 ), vec3( 1.08, 1, 0.78 ), smoothstepN( 0.02, 0.9, t ) );
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
-	mat.aoNode = mix( float( 0.25 ), float( 1 ), t2 );
+	mat.aoNode = mix( float( 0.36 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) );
 	// light through the blades: strongest when the grass stands against the sun
 	useLighting( mat, () => new VegetationLighting( mix( float( 0.55 ), float( 1 ), t ), ( L, V ) =>
-		pow( clamp( dot( V.negate(), L ), 0, 1 ), 3 ).mul( 0.9 ).add( 0.08 ).mul( t2 ) ) );
+		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.7 ).add( 0.05 ).mul( t2 ) ) );
 	mat.userData.wind = wind;
 	return mat;
 
@@ -102,8 +102,8 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
 	const col = new THREE.Color(), tmp = new THREE.Color();
-	const deep = new THREE.Color( 0.03, 0.06, 0.015 ), mid = new THREE.Color( 0.08, 0.13, 0.025 );
-	const sunny = new THREE.Color( 0.19, 0.21, 0.04 ), straw = new THREE.Color( 0.26, 0.21, 0.08 );
+	const deep = new THREE.Color( 0.022, 0.07, 0.025 ), mid = new THREE.Color( 0.065, 0.12, 0.029 );
+	const sunny = new THREE.Color( 0.17, 0.185, 0.044 ), straw = new THREE.Color( 0.25, 0.205, 0.075 );
 
 	for ( let i = 0; i < n; i ++ ) {
 
@@ -121,18 +121,21 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 		const fine = noise3( x * 0.85, 2.5, z * 0.85 ) * 0.5 + 0.5;
 		const onStack = veg[ k + 7 ] > 0;
 		const edge = onStack ? 0 : smoothstep( - 1.4, - 0.1, rim );
-		let h = ( 0.2 + 0.24 * lush + 0.12 * fine ) * ( 0.75 + rng() * 0.5 ) * ( 1 + 0.45 * edge ) * ( onStack ? 0.55 : 1 );
+		const meadow = smoothstep( 0.3, 0.7, lush );
+		const h = ( 0.19 + 0.39 * meadow + 0.1 * fine ) * ( 0.65 + rng() * 0.65 ) * ( 1 + 0.4 * edge ) * ( onStack ? 0.55 : 1 );
 		pos.set( x, y - 0.03, z );
-		scl.set( h * ( 0.9 + rng() * 0.3 ), h, h * ( 0.9 + rng() * 0.3 ) );
+		const spread = 0.29 + h * 0.55;
+		scl.set( spread * ( 0.85 + rng() * 0.3 ), h, spread * ( 0.85 + rng() * 0.3 ) );
 		m.compose( pos, q, scl );
 		mesh.setMatrixAt( i, m );
 
 		// colour: deep green where it is lush, sunny yellow-green where short, the odd straw tuft
 		const patch = noise3( x * 0.5 + 3.3, 1.5, z * 0.5 ) * 0.5 + 0.5;
-		col.copy( mid ).lerp( deep, smoothstep( 0.4, 0.8, lush ) * 0.9 );
-		col.lerp( tmp.copy( sunny ), Math.max( 0, smoothstep( 0.5, 0.15, lush ) * 0.8 + smoothstep( 0.6, 0.85, patch ) * 0.5 + ( rng() - 0.5 ) * 0.3 ) );
-		if ( rng() < 0.05 + 0.08 * smoothstep( 0.4, 0.1, lush ) ) col.lerp( straw, 0.6 );
-		col.multiplyScalar( 0.7 + rng() * 0.4 );
+		const shadePatch = smoothstep( 0.27, 0.66, noise3( x * 0.16 + 2.7, 5.1, z * 0.16 ) * 0.5 + 0.5 );
+		col.copy( mid ).lerp( deep, Math.min( 1, meadow * 0.5 + shadePatch * 0.68 ) );
+		col.lerp( tmp.copy( sunny ), Math.max( 0, smoothstep( 0.48, 0.18, lush ) * 0.7 + smoothstep( 0.62, 0.84, patch ) * 0.45 + ( rng() - 0.5 ) * 0.13 ) );
+		if ( rng() < 0.025 + 0.05 * smoothstep( 0.4, 0.1, lush ) ) col.lerp( straw, 0.65 );
+		col.multiplyScalar( 0.85 + rng() * 0.3 );
 		mesh.setColorAt( i, col );
 
 	}

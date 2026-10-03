@@ -25,7 +25,9 @@ export class VegetationLighting extends THREE.PhysicalLightingModel {
 		const lightColor = ( input.lightColor as V3 ).mul( this.scale );
 		super.direct( { ...input, lightColor }, builder );
 		const k = this.extra( input.lightDirection as V3, positionViewDirection, normalView );
-		( input.reflectedLight.directDiffuse as V3 ).addAssign( lightColor.mul( diffuseColor.rgb ).mul( k ) );
+		// Match the Lambert term's radiance scale. Without 1 / pi, transmitted sunlight
+		// overwhelms the shaded leaf body and turns whole bushes into yellow cutouts.
+		( input.reflectedLight.directDiffuse as V3 ).addAssign( lightColor.mul( diffuseColor.rgb ).mul( k ).mul( 1 / Math.PI ) );
 
 	}
 

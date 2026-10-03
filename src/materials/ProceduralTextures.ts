@@ -148,7 +148,7 @@ const heightBake = ( q: V2 ) => Fn( () => {
 	const fr2 = float( 1 ).sub( abs( pnoise( vec2( q.x.mul( 9 ), q.y.mul( 2 ) ).add( vec2( warp.mul( 1.3 ), 0 ) ), vec2( 9, 2 ) ) ) );
 	const fractures = max( pow( fr, 40 ), pow( fr2, 50 ).mul( 0.8 ) );
 	const pits = float( 1 ).sub( smoothstep( 0, 0.35, pcell( q, float( 26 ) ).x ) );
-	const rock = fbm( q, 4, 7 ).mul( 0.36 ).add( 0.52 ).add( beds.mul( 0.10 ) ).sub( fractures.mul( 0.16 ) ).sub( pits.mul( 0.06 ) ).add( fbm( q, 48, 3 ).mul( 0.04 ) );
+	const rock = fbm( q, 4, 7 ).mul( 0.24 ).add( 0.52 ).add( beds.mul( 0.06 ) ).sub( fractures.mul( 0.14 ) ).sub( pits.mul( 0.04 ) ).add( fbm( q, 48, 3 ).mul( 0.025 ) );
 	// moss cushions: overlapping rounded lumps with fine fibres
 	const m1 = pcell( q, float( 22 ) ), m2 = pcell( q.add( 0.37 ), float( 41 ) );
 	const moss = float( 1 ).sub( smoothstep( 0, 0.85, m1.x ) ).mul( 0.4 )
@@ -176,27 +176,28 @@ const crackBake = ( q: V2 ) => Fn( () => {
 
 } )();
 
-// chiselled stone at two scales: every chip a tilted plane (constant normal), the borders between
-// the big ones only here and there sunk into a shallow V-groove, a sparse network of long warped
-// cracks, weathered pits, a shade per chip
+// Rock detail between the large mesh facets and the fine grain: elongated 20-45 cm mineral
+// plates with 15 cm chips at the material scale. Most contrast comes from surface orientation;
+// mineral colour stays close to the parent stone and only some borders form a crevice.
 const facetBake = ( q: V2 ) => Fn( () => {
 
-	const L = facets( q, 4, 0 );
-	const Sm = facets( q.add( 0.37 ), 11, 17 );
+	const L = facets( q.mul( vec2( 2, 1 ) ), 8, 0 );
+	const Sm = facets( q.add( 0.37 ), 24, 17 );
 	const Le = L.get( 'e' ).toVar();
-	const slope = L.get( 'g' ).mul( 0.3 ).add( Sm.get( 'g' ).mul( 0.15 ) ).toVar();
+	const slope = L.get( 'g' ).mul( 0.30 ).add( Sm.get( 'g' ).mul( 0.16 ) ).toVar();
 	const showL = smoothstep( 0.05, 0.4, pnoise( q.mul( 6 ).add( 0.7 ), vec2( 6 ) ) );
 	const vL = float( 1 ).sub( smoothstep( 0, 0.009, Le.x ) ).mul( showL ).toVar();
-	slope.addAssign( Le.yz.mul( vL ).mul( 0.7 ) );
+	slope.addAssign( Le.yz.mul( vL ).mul( 0.65 ) );
+	slope.assign( clamp( slope, vec2( - 0.62 ), vec2( 0.62 ) ) );
 	const wp = q.add( vec2( fbm( q.add( 0.2 ), 4, 3 ), fbm( q.add( 0.9 ), 4, 3 ) ).mul( 0.06 ) ).toVar();
 	const c1 = float( 1 ).sub( abs( pnoise( wp.mul( 3 ), vec2( 3 ) ) ) );
 	const c2 = float( 1 ).sub( abs( pnoise( vec2( wp.x.mul( 7 ), wp.y.mul( 2 ) ).add( 0.5 ), vec2( 7, 2 ) ) ) );
-	const crack = max( pow( c1, 80 ), pow( c2, 90 ).mul( 0.7 ) ).mul( smoothstep( 0, 0.4, pnoise( q.mul( 5 ).add( 3.1 ), vec2( 5 ) ) ) ).mul( 0.8 );
+	const crack = max( pow( c1, 80 ), pow( c2, 90 ).mul( 0.7 ) ).mul( smoothstep( 0, 0.4, pnoise( q.mul( 5 ).add( 3.1 ), vec2( 5 ) ) ) ).mul( 0.4 );
 	const pc = pcell( q.add( 0.11 ), float( 34 ) );
 	const pit = float( 1 ).sub( smoothstep( 0.05, 0.3, pc.x ) ).mul( smoothstep( 0, 0.5, pnoise( q.mul( 7 ).add( 1.3 ), vec2( 7 ) ).add( 0.2 ) ) );
 	const n = normalize( vec3( slope.negate(), 1 ) );
-	const cavity = clamp( max( max( crack, vL.mul( 0.6 ) ), pit.mul( 0.55 ) ), 0, 1 );
-	const shade = Le.w.sub( 0.5 ).mul( 0.24 ).add( 0.5 ).add( Sm.get( 'e' ).w.sub( 0.5 ).mul( 0.12 ) ).add( fbm( q, 6, 5 ).mul( 0.24 ) ).add( fbm( q, 96, 2 ).mul( 0.1 ) );
+	const cavity = clamp( max( max( crack, vL.mul( 0.36 ) ), pit.mul( 0.25 ) ), 0, 1 );
+	const shade = Le.w.sub( 0.5 ).mul( 0.09 ).add( 0.5 ).add( Sm.get( 'e' ).w.sub( 0.5 ).mul( 0.035 ) ).add( fbm( q, 6, 5 ).mul( 0.1 ) ).add( fbm( q, 96, 2 ).mul( 0.035 ) );
 	return vec4( n.xy.mul( 0.5 ).add( 0.5 ), cavity, clamp( shade, 0, 1 ) );
 
 } )();
@@ -240,7 +241,7 @@ export function bakeProceduralTextures( renderer: THREE.WebGPURenderer, size = 1
 	render( heights, heightBake( uv() ) );
 
 	// normals from the height channels: relief (m) / texel size (m) per channel
-	const strength = uniform( new THREE.Vector3( 16.0, 8.0, 9.0 ) );
+	const strength = uniform( new THREE.Vector3( 18.0, 8.0, 9.0 ) );
 	const tH = heights.texture;
 	const e = 1 / size;
 	const l = texture( tH, uv().sub( vec2( e, 0 ) ) ), r = texture( tH, uv().add( vec2( e, 0 ) ) );

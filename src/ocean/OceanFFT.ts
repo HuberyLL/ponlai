@@ -275,9 +275,10 @@ export class OceanFFT {
 
 	}
 
-	update( dt: number ): void {
+	update( dt: number, time?: number ): void {
 
-		this.time.value += dt;
+		// A shared clock makes frozen captures and resume agree with the foam and vegetation.
+		this.time.value = time ?? this.time.value + dt;
 		const r = this.renderer;
 		r.compute( this.kernels );
 		const prev = r.getRenderTarget();

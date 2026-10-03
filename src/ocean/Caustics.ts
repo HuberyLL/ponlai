@@ -75,7 +75,7 @@ export class Caustics {
 		CAUSTIC_DEPTHS.forEach( ( D, channel ) => {
 
 			const q0 = attribute<'vec3'>( 'position', 'vec3' ).xy;
-			const d = texture( d1, q0 ).level( float( 0 ) ).add( texture( d2, q0.mul( 4 ) ).level( float( 0 ) ) );
+			const d = texture( d1, q0 ).level( float( 0 ) ).add( texture( d2, q0.mul( 4 ) ).level( float( 0 ) ).mul( 0.65 ) );
 			const s = vec2( d.x.div( max( d.z.add( 1 ), 0.3 ) ), d.y.div( max( d.w.add( 1 ), 0.3 ) ) );
 			const n = normalize( vec3( s.x.negate(), 1, s.y.negate() ) );
 			const T = refract( this.sunDir.negate(), n, 1 / 1.333 );
@@ -94,7 +94,7 @@ export class Caustics {
 			const ao = abs( ox.x.mul( oy.y ).sub( ox.y.mul( oy.x ) ) );
 			const an = abs( nx.x.mul( ny.y ).sub( nx.y.mul( ny.x ) ) );
 			// soft limit: a nearly folded cell must not become a flat white hot spot
-			const I = ao.div( max( an.add( ao.mul( 0.125 ) ), 1e-12 ) );
+			const I = ao.div( max( an.add( ao.mul( 0.2 ) ), 1e-12 ) );
 			mat.fragmentNode = channel === 0 ? vec4( I, 0, 0, 0 ) : vec4( 0, I, 0, 0 );
 			mat.blending = THREE.CustomBlending;
 			mat.blendEquation = THREE.AddEquation;
@@ -141,11 +141,13 @@ export function causticsAt( caustics: Caustics, wp: THREE.Node<'vec3'>, depth: T
 
 	// entry point of the light that lands here
 	const e = wp.xz.add( caustics.shift.mul( depth ) );
-	const blur = clamp( log2( depth.mul( 0.5 ).add( 1 ) ), 0, 3.5 );
+	const blur = clamp( log2( depth.mul( 0.7 ).add( 1 ) ).add( 0.35 ), 0, 4 );
 	const c = texture( caustics.texture, e.div( caustics.tile ) ).level( blur ).rg;
 	const shallow = mix( float( 1 ), c.r, smoothstep( 0, 0.9, depth ) );
 	const v = mix( shallow, c.g, smoothstep( CAUSTIC_DEPTHS[ 0 ], CAUSTIC_DEPTHS[ 1 ], depth ) );
-	// very deep: the networks wash out
-	return select( depth.greaterThan( 0 ), mix( v, float( 1 ), smoothstep( 7, 16, depth ) ), float( 1 ) );
+	// A clear shelf carries delicate moving light, not saturated pools of light and dark.
+	// Compress caustic contrast before the water's absorption tints it, then lose it at depth.
+	const restrained = mix( float( 1 ), clamp( v, 0.35, 2.8 ), 0.48 );
+	return select( depth.greaterThan( 0 ), mix( restrained, float( 1 ), smoothstep( 3.5, 11, depth ) ), float( 1 ) );
 
 }

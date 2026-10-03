@@ -32,12 +32,12 @@ export class Pipeline {
 	width = 1;
 	height = 1;
 	settings: PipelineSettings = {
-		exposure: 1.8, saturation: 0.95, vibrance: 0.2, contrast: 0.12, split: 1.0,
-		lift: new THREE.Color( 0.028, 0.033, 0.036 ),
-		vignette: 0.28, grain: 0.01,
-		bloomStrength: 0.35, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0,
-		glowStrength: 0.2, glowRadius: 1.0, glowThreshold: 0.45, glowMaxLum: 1.0,
-		dof: 1.0, dofRange: 6.0, dofMaxRadius: 6.0, focusDistance: 0,
+		exposure: 1.5, saturation: 0.93, vibrance: 0.15, contrast: 0.12, split: 0.55,
+		lift: new THREE.Color( 0.018, 0.025, 0.03 ),
+		vignette: 0.18, grain: 0.004,
+		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0,
+		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,
+		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
 	};
 
 	sceneRT: THREE.RenderTarget;

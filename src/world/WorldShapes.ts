@@ -3,7 +3,7 @@
 // rocks, the seabed height and the shoreline distance at sea level.
 
 import { Field2D, roundCorners } from './Field2D.ts';
-import { noise3, fbm2, voronoiEdge2, cellValue3, hash2i, hash3i, mulberry32, smoothstep, smax, smin, type Rng } from './noise.ts';
+import { noise3, fbm2, voronoiEdge2, hash2i, hash3i, mulberry32, smoothstep, smax, smin, type Rng } from './noise.ts';
 import type { SDF, Stack, Rock } from './types.ts';
 
 export interface Footprint {
@@ -96,18 +96,16 @@ function softMax( vals: Float64Array, n: number, k: number ): number {
 }
 
 
-// Stylised cliffs: the wall is cut into columns (Voronoi cells over xz, ~2.2 m) and every column into
-// blocks (beds ~3.6 m tall, staggered per column). Each block's face is two or three planes of its
-// own (yawed, leaning, proud or set back) meeting in ridges, so the light breaks into big flat
-// facets the way hand-sculpted rock does; every joint is a deep groove of varying width with a
-// rounded arris either side. Under water the blocks step out into a ragged foot.
+// Long cleavage planes carry the cliff silhouette. Narrow, irregular vertical joints divide
+// the limestone into slabs; bedding is much less pronounced so it never reads as brickwork.
+// The low submerged foot still follows the original island footprint.
 
-const COL = 2.2; // column spacing (m)
-const BED = 3.6; // mean block height (m)
-const BEVEL = 0.17; // mean width of the rounded arris either side of a joint (m)
-const JOINT = 0.42; // mean depth of a joint behind the nominal wall (m)
+const COL = 1.75; // column spacing (m)
+const BED = 2.6; // irregular geological beds, not rows shared between columns
+const BEVEL = 0.105; // fracture lip, resolved by the existing 12 cm mesh
+const JOINT = 0.38; // depth of the narrow cleavage behind the nominal wall (m)
 
-interface Block { planes: number[]; np: number; yMid: number; tint: number }
+interface Block { planes: number[]; chips: number[]; np: number; yMid: number; tint: number }
 interface Column {
 	ci: number; cj: number; sx: number; sz: number; d2s: number; gx: number; gz: number;
 	bedH: number; phase: number; drop: number; blocks: Map<number, Block>;
@@ -147,8 +145,8 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 		if ( b ) return b;
 		const h = ( n: number ) => hash3i( c.ci, c.cj, k * 17 + n );
 		const yMid = ISLAND_BOTTOM + ( k + 0.5 - c.phase ) * c.bedH;
-		const yaw0 = ( h( 1 ) - 0.5 ) * 0.5, lean0 = ( h( 2 ) - 0.5 ) * 0.2;
-		const off0 = ( h( 3 ) - 0.6 ) * 0.45 - smoothstep( - 0.6, - 3.2, yMid ) * 0.55;
+		const yaw0 = ( hash2i( c.ci + 39, c.cj ) - 0.5 ) * 0.4, lean0 = ( h( 2 ) - 0.5 ) * 0.25;
+		const off0 = ( h( 3 ) - 0.6 ) * 0.48 - smoothstep( - 0.6, - 3.2, yMid ) * 0.4;
 		const np = h( 4 ) < 0.45 ? 3 : 2;
 		const planes = [];
 		for ( let i = 0; i < np; i ++ ) {
@@ -157,13 +155,25 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 			const cs = Math.cos( yaw ), sn = Math.sin( yaw );
 			planes.push(
 				c.gx * cs - c.gz * sn, c.gx * sn + c.gz * cs,
-				lean0 + ( h( 6 + i * 3 ) - 0.5 ) * 0.45,
+				lean0 + ( h( 6 + i * 3 ) - 0.5 ) * 0.38,
 				off0 - h( 7 + i * 3 ) * 0.16,
 			);
 
 		}
 
-		b = { planes, np, yMid, tint: h( 16 ) };
+		// Shallow polygonal spalls are actual cuts into each block, so their inclined facets
+		// can catch the sun and cast contact shadow even on an otherwise broad rock face.
+		const chips: number[] = [];
+		for ( let i = 0; i < 4; i ++ ) {
+
+			const n = 30 + i * 7;
+			chips.push( ( h( n ) - 0.5 ) * COL, ( h( n + 1 ) - 0.5 ) * c.bedH,
+				0.24 + h( n + 2 ) * 0.46, 0.22 + h( n + 3 ) * 0.48, 0.13 + h( n + 4 ) * 0.24,
+				( h( n + 5 ) - 0.5 ) * 1.2 );
+
+		}
+
+		b = { planes, chips, np, yMid, tint: h( 16 ) };
 		c.blocks.set( k, b );
 		return b;
 
@@ -213,21 +223,32 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 
 		}
 
-		let face = c.d2s + softMax( vals, b.np, 0.04 ) + noise3( x * 0.55, y * 0.45, z * 0.55 ) * 0.07;
+		let face = c.d2s + softMax( vals, b.np, 0.024 ) + noise3( x * 0.8, y * 0.55, z * 0.8 ) * 0.09;
+		const u = - lx * c.gz + lz * c.gx;
+		for ( let i = 0; i < b.chips.length; i += 6 ) {
+
+			const du = u - b.chips[ i ], dv = ly - b.chips[ i + 1 ] + du * b.chips[ i + 5 ];
+			const cut = Math.max( 0, 1 - Math.abs( du ) / b.chips[ i + 2 ] - Math.abs( dv ) / b.chips[ i + 3 ] );
+			face += cut * b.chips[ i + 4 ];
+
+		}
 		// a facet may wander from the footprint, but never past the joints nor deep into the wall
 		const jn = noise3( x * 1.1 + 7.0, y * 0.8, z * 1.1 );
 		const joint = JOINT * ( 1 + 0.35 * jn );
-		face = smax( smin( face, cD2 + joint - 0.12, 0.12 ), cD2 - 0.8, 0.12 );
-		// arrises: the bevel's width jumps from chip to chip, so the edges look broken, not rounded
-		const e = Math.min( cEdge, eH );
-		let bw = BEVEL * ( 1 + 0.45 * jn );
-		if ( e < bw * 2.2 ) bw *= 0.3 + 1.4 * cellValue3( x * 2.4, y * 2.4, z * 2.4 );
-		bw = Math.max( bw, 0.15 ); // never a slot narrower than the mesher can resolve
+		face = smax( smin( face, cD2 + joint - 0.015, 0.04 ), cD2 - 0.7, 0.06 );
+		// Arrises are narrow enough to leave uninterrupted, planar faces.
+		const e = cEdge;
+		// Weathering follows the length of each slab. Avoid discontinuous cell noise here: it
+		// creates tiny cubes on the silhouette and broad, polished-looking bevels.
+		const bw = Math.max( 0.09, BEVEL * ( 1 + 0.3 * jn ) );
 		const g = smoothstep( 0, bw, e );
-		let d = cD2 + joint + ( face - cD2 - joint ) * g;
-		// the rim: rounded, broken lower on some columns
+		const bedBlend = smoothstep( 0, 0.085, eH );
+		// Adjacent strata meet inside a narrow fracture, not at discontinuous SDF values.
+		const faceAtBed = cD2 + joint * 0.8 + ( face - cD2 - joint * 0.8 ) * bedBlend;
+		let d = cD2 + joint + ( faceAtBed - cD2 - joint ) * g;
+		// the rim: lightly chipped, broken lower on some columns
 		const rim = cTop - c.drop * g * smoothstep( - 1.4, 0.2, cD2 );
-		d = smax( d, y - rim, 0.2 );
+		d = smax( d, y - rim, 0.11 );
 		return Math.max( d, dBot );
 
 	};
@@ -261,126 +282,107 @@ export function makeStacks(): Stack[] {
 
 const STACK_FOOT = - 6.8;
 
-// hewn, weathered pillars: drums of 6-8 sided prisms stacked on each other, each drum turned and
-// shifted a little, tapering upward, split by the odd vertical crack, a flat tilted top
-interface Drum {
-	yMid: number; N: number; planes: number[]; cracks: number[];
-	cx: number; cz: number; lx: number; lz: number; taper: number; inR: number; tint: number;
-}
-
+// Hewn monoliths retain the same cleavage directions. Each face folds and sheds chips at
+// independently staggered heights; no complete horizontal ring divides a pillar into drums.
 export function makeStackSDF( s: Stack, seed: number ): SDF {
 
 	const rng = mulberry32( 1000 + seed * 77 );
-	const joints: number[] = [], jtilt: number[] = [];
-	let yj = - 0.9 - rng() * 0.9;
-	for ( ;; ) {
+	const N = 7 + Math.floor( rng() * 2 );
+	const rot = rng() * Math.PI * 2;
+	const planes: number[] = [];
+	const spalls: number[][] = [];
+	for ( let i = 0; i < N; i ++ ) {
 
-		joints.push( yj );
-		jtilt.push( ( rng() - 0.5 ) * 0.3, ( rng() - 0.5 ) * 0.3 );
-		yj += 1.45 + rng() * 1.05;
-		if ( yj > s.h - 1.0 ) break;
+		const a = rot + ( i + ( rng() - 0.5 ) * 0.3 ) * Math.PI * 2 / N;
+		planes.push( Math.cos( a ), Math.sin( a ), s.r * ( 0.87 + rng() * 0.19 ), ( rng() - 0.5 ) * 0.065,
+			1.1 + rng() * 1.3, rng() * 3 );
+		const faceChips: number[] = [];
+		for ( let j = 0; j < 3; j ++ ) {
+
+			faceChips.push( ( rng() - 0.5 ) * s.r * 1.2, ( j + rng() ) / 3 * s.h,
+				0.25 + rng() * 0.46, 0.28 + rng() * 0.58, 0.13 + rng() * 0.21, ( rng() - 0.5 ) * 0.8 );
+
+		}
+		spalls.push( faceChips );
 
 	}
 
-	const blocks: Drum[] = [];
-	for ( let k = 0; k <= joints.length; k ++ ) {
+	const cracks: number[] = [];
+	for ( let i = 0; i < 2; i ++ ) {
 
-		const y0 = k === 0 ? STACK_FOOT : joints[ k - 1 ];
-		const y1 = k === joints.length ? s.h : joints[ k ];
-		const yMid = ( y0 + y1 ) / 2;
-		const N = 5 + Math.floor( rng() * 3 );
-		const rot = rng() * Math.PI * 2;
-		const R = s.r * ( 1 - 0.1 * Math.max( yMid, 0 ) / s.h ) * ( 0.94 + rng() * 0.12 ) * ( k === 0 ? 1.12 : 1 );
-		const planes: number[] = [];
-		for ( let i = 0; i < N; i ++ ) {
-
-			// faces of uneven width and depth, each leaning in or out a little
-			const a = rot + ( i + ( rng() - 0.5 ) * 0.6 ) * Math.PI * 2 / N;
-			const lean = ( rng() - 0.5 ) * 0.28;
-			planes.push( Math.cos( a ), Math.sin( a ), R * ( 0.8 + rng() * 0.32 ), lean );
-
-		}
-
-		const cracks: number[] = [];
-		const nc = rng() < 0.7 ? 1 + Math.floor( rng() * 2 ) : 0;
-		for ( let i = 0; i < nc; i ++ ) {
-
-			const a = rng() * Math.PI;
-			cracks.push( Math.cos( a ), Math.sin( a ), ( rng() - 0.5 ) * R * 0.6 );
-
-		}
-
-		blocks.push( {
-			yMid, N, planes, cracks,
-			cx: ( rng() - 0.5 ) * 0.22 * s.r, cz: ( rng() - 0.5 ) * 0.22 * s.r,
-			lx: ( rng() - 0.5 ) * 0.1, lz: ( rng() - 0.5 ) * 0.1,
-			taper: 0.03 + rng() * 0.03,
-			inR: Math.min( ...planes.filter( ( _, i ) => i % 4 === 2 ) ),
-			tint: rng(),
-		} );
+		const a = rot + ( 0.2 + i * 0.65 ) * Math.PI;
+		cracks.push( Math.cos( a ), Math.sin( a ), ( rng() - 0.5 ) * s.r * 0.8, ( rng() - 0.5 ) * 0.045 );
 
 	}
 
-	// the recessed neck at each joint: inside both drums that meet there
-	const necks = joints.map( ( _, k ) => {
+	const beds: number[] = [];
+	let yBed = - 0.6 + rng() * 0.5;
+	while ( yBed < s.h - 0.45 ) {
 
-		const a = blocks[ k ], b = blocks[ k + 1 ];
-		return Math.min( a.inR - Math.hypot( a.cx, a.cz ), b.inR - Math.hypot( b.cx, b.cz ) ) * 0.96 - 0.1;
+		beds.push( yBed, ( rng() - 0.5 ) * 0.2, ( rng() - 0.5 ) * 0.2, rng() * Math.PI * 2 );
+		yBed += 1.3 + rng() * 1.4;
 
-	} );
-	const tilt = [ ( rng() - 0.5 ) * 0.22, ( rng() - 0.5 ) * 0.22 ];
-	const vals = new Float64Array( 10 );
-	const W = 0.1;
+	}
 
-	// the joints are not level: each is a plane of its own
-	const jointY = ( k: number, lx: number, lz: number ) => joints[ k ] + jtilt[ k * 2 ] * lx + jtilt[ k * 2 + 1 ] * lz;
-	const blockIndex = ( y: number, lx: number, lz: number ) => {
-
-		let k = 0;
-		while ( k < joints.length && y > jointY( k, lx, lz ) ) k ++;
-		return k;
-
-	};
-
+	const tilt = [ ( rng() - 0.5 ) * 0.18, ( rng() - 0.5 ) * 0.18 ];
+	const tint = rng();
+	const vals = new Float64Array( N );
 	const stackSDF: SDF = ( x, y, z ) => {
 
 		const lx = x - s.x, lz = z - s.z;
 		const rr = Math.hypot( lx, lz );
 		if ( rr > s.r * 1.5 + 0.8 ) return rr - s.r * 1.45;
 
-		const k = blockIndex( y, lx, lz );
-		const b = blocks[ k ];
-		const qx = lx - b.cx - b.lx * ( y - b.yMid ), qz = lz - b.cz - b.lz * ( y - b.yMid );
-		const taper = 1 - b.taper * ( y - b.yMid );
-		const P = b.planes, dy = y - b.yMid;
-		for ( let i = 0; i < b.N; i ++ ) vals[ i ] = qx * P[ i * 4 ] + qz * P[ i * 4 + 1 ] + dy * P[ i * 4 + 3 ] - P[ i * 4 + 2 ] * taper;
-		let d = softMax( vals, b.N, 0.035 );
-		// chipped edges and a few deeper bites out of the faces
-		const chip = cellValue3( x * 2.6 + seed, y * 2.6, z * 2.6 );
-		d += Math.max( 0, chip - 0.72 ) * 0.35;
-		for ( let i = 0; i < b.cracks.length; i += 3 ) {
+		const t = Math.max( 0, Math.min( 1, y / s.h ) );
+		const foot = smoothstep( - 0.3, - 3.2, y ) * s.r * 0.14;
+		for ( let i = 0; i < N; i ++ ) {
 
-			const u = Math.abs( qx * b.cracks[ i ] + qz * b.cracks[ i + 1 ] - b.cracks[ i + 2 ] );
-			d += 0.09 * ( 1 - smoothstep( 0.0, 0.07, u ) );
+			const k = i * 6;
+			// Linear segments make broad tilted faces. Independent breaks on neighbouring
+			// planes create irregular corners rather than a single extruded polygon.
+			const by = y / planes[ k + 4 ] + planes[ k + 5 ], bi = Math.floor( by ), bf = by - bi;
+			const ra = hash3i( seed, i + 71, bi ), rb = hash3i( seed, i + 71, bi + 1 );
+			const relief = ( ra + ( rb - ra ) * bf - 0.5 ) * s.r * 0.39;
+			const u = - lx * planes[ k + 1 ] + lz * planes[ k ];
+			let cut = 0;
+			const chips = spalls[ i ];
+			for ( let j = 0; j < chips.length; j += 6 ) {
 
-		}
+				const du = u - chips[ j ], dv = y - chips[ j + 1 ] + du * chips[ j + 5 ];
+				cut += Math.max( 0, 1 - Math.abs( du ) / chips[ j + 2 ] - Math.abs( dv ) / chips[ j + 3 ] ) * chips[ j + 4 ];
 
-		// joints: both drums ease into the same recessed neck
-		const below = k > 0 ? y - jointY( k - 1, lx, lz ) : 1e9, above = k < joints.length ? jointY( k, lx, lz ) - y : 1e9;
-		if ( Math.min( below, above ) < W ) {
-
-			const neck = below < above ? necks[ k - 1 ] : necks[ k ];
-			d = rr - neck + ( d - rr + neck ) * smoothstep( 0, W, Math.min( below, above ) );
+			}
+			vals[ i ] = lx * planes[ k ] + lz * planes[ k + 1 ] + y * planes[ k + 3 ]
+				- planes[ k + 2 ] * ( 1 - t * 0.09 ) - foot + relief + cut;
 
 		}
 
-		const topY = s.h + lx * tilt[ 0 ] + lz * tilt[ 1 ] + noise3( lx * 0.9 + seed, 3.3, lz * 0.9 ) * 0.06;
-		d = smax( d, y - topY, 0.16 );
+		let d = softMax( vals, N, 0.022 );
+		d += noise3( lx * 1.6 + seed, y * 0.75, lz * 1.6 ) * 0.075;
+		for ( let i = 0; i < cracks.length; i += 4 ) {
+
+			const u = Math.abs( lx * cracks[ i ] + lz * cracks[ i + 1 ] - cracks[ i + 2 ] + y * cracks[ i + 3 ]
+				+ noise3( lx * 1.8, y * 0.65 + seed, lz * 1.8 ) * 0.035 );
+			d += 0.135 * ( 1 - smoothstep( 0.02, 0.13, u ) );
+
+		}
+
+		for ( let i = 0; i < beds.length; i += 4 ) {
+
+			const e = Math.abs( y - beds[ i ] - lx * beds[ i + 1 ] - lz * beds[ i + 2 ] );
+			// A bed erodes from one exposed side, never into a dark ring around the pillar.
+			const side = smoothstep( - 0.1, 0.65, ( lx * Math.cos( beds[ i + 3 ] ) + lz * Math.sin( beds[ i + 3 ] ) ) / s.r );
+			d += ( 1 - smoothstep( 0.015, 0.14, e ) ) * side * 0.15;
+
+		}
+
+		const topY = s.h + lx * tilt[ 0 ] + lz * tilt[ 1 ] + noise3( lx * 1.4 + seed, 3.3, lz * 1.4 ) * 0.12;
+		d = smax( d, y - topY, 0.08 );
 		return Math.max( d, STACK_FOOT - y );
 
 	};
 
-	stackSDF.tint = ( x: number, y: number, z: number ) => blocks[ blockIndex( y, x - s.x, z - s.z ) ].tint;
+	stackSDF.tint = ( x, y, z ) => Math.min( 1, Math.max( 0, tint + noise3( x * 0.7, y * 0.12, z * 0.7 ) * 0.12 ) );
 	return stackSDF;
 
 }

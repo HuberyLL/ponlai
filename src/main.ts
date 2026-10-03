@@ -58,9 +58,9 @@ controls.update();
 
 // ------------------------------------------------------------------ sky, light, water optics
 
-const sky = new Sky( renderer, { elevation: 26, azimuth: - 3, haze: 0.55 } );
+const sky = new Sky( renderer, { elevation: 32, azimuth: - 8, haze: 0.35 } );
 scene.add( sky.dome );
-scene.environmentIntensity = 2.3; // sky fill: bright, cool shadow sides (a high-key look)
+scene.environmentIntensity = 2.7; // Cool sky fill preserves the relief on the shaded cliff faces.
 
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
 sun.castShadow = true;
@@ -71,6 +71,13 @@ sun.shadow.bias = - 0.0005;
 sun.shadow.normalBias = 0.06;
 sun.shadow.radius = 4;
 scene.add( sun, sun.target );
+
+// Broad reflected skylight brings out the front cliff planes while the warm key stays behind
+// the island, where it can pick out leaves and scatter across the sea. Only the sun casts shadows.
+const bounce = new THREE.DirectionalLight( 0xffffff, 1.5 );
+bounce.color.setRGB( 0.68, 0.8, 0.95 );
+bounce.position.set( - 35, 22, 28 );
+scene.add( bounce );
 
 function fresnel( cosI: number, eta: number ): number {
 
@@ -102,7 +109,7 @@ setStatus( 'Lighting the sky…' );
 await applySun();
 
 const textures = bakeProceduralTextures( renderer );
-const fft = new OceanFFT( renderer, { windSpeed: 3.4, windDirection: 40, fetch: 2500, amplitude: 1.0, choppiness: 0.6 } );
+const fft = new OceanFFT( renderer, { windSpeed: 4.4, windDirection: 40, fetch: 5000, amplitude: 0.82, choppiness: 0.7, spread: 0.52 } );
 const caustics = new Caustics( renderer, fft );
 const pipeline = new Pipeline( renderer );
 
@@ -112,6 +119,7 @@ setStatus( 'Generating the island…' );
 const t0 = performance.now();
 const data = await generateWorld();
 const shore = shoreTextureFrom( data.shore );
+const islandShore = shoreTextureFrom( data.islandShore );
 shared.shoreXform.value.copy( shore.xform );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
@@ -122,7 +130,7 @@ const ivy = buildIvy( data.ivy, shared );
 scene.add( grass, foliage, flowers, ivy );
 
 const water = new Water( {
-	fft, sky, shared, shore: shore.tex, foam: textures.heights,
+	fft, sky, shared, shore: shore.tex, islandShore: islandShore.tex, foam: textures.heights,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 water.uniforms.wind.value = fft.params.windSpeed;
@@ -133,7 +141,7 @@ console.info( 'world generated', data.timings, 'triangles', world.triangles, 'in
 // ------------------------------------------------------------------ GUI
 
 const gui = new GUI( { title: 'Soomi · lighting & water' } );
-if ( ! params.has( 'gui' ) ) gui.close();
+if ( ! params.has( 'gui' ) ) gui.hide();
 const S = pipeline.settings;
 const W = water.uniforms;
 const sunF = gui.addFolder( 'Sun' );
@@ -227,7 +235,7 @@ function tick(): void {
 
 	renderer.info.reset();
 	shared.time.value = simTime;
-	fft.update( paused ? 0 : dt );
+	fft.update( paused ? 0 : dt, simTime );
 	caustics.update( sky.sunDir );
 	S.focusDistance = camera.position.distanceTo( controls.target );
 

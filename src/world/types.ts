@@ -36,6 +36,8 @@ export interface WorldData {
 	// ivy points, 6 floats each: x, y, z, outward x, z, t along the strand
 	ivy: Float32Array;
 	shore: ShoreField;
+	// Main-island-only distance field; the wash can be stronger here without outlining stacks.
+	islandShore: ShoreField;
 	timings: Record<string, number>;
 }
 

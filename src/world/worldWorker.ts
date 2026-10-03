@@ -145,6 +145,13 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		.fill( ( x: number, z: number ) => allSolid( x, 0.0, z ) )
 		.signedDistance();
 	transfer.push( shore.data.buffer );
+	// Match the full shoreline's world bounds exactly at half resolution. A separate island
+	// distance prevents local breaking surf from becoming a bright collar on scattered rocks.
+	const islandRes = Math.ceil( shore.nx / 2 );
+	const islandShore = new Field2D( shore.x0, shore.z0, islandRes, islandRes, shore.nx * shore.cell / islandRes )
+		.fill( ( x: number, z: number ) => islandSDF( x, 0, z ) )
+		.signedDistance();
+	transfer.push( islandShore.data.buffer );
 	mark( 'shore', t );
 
 	timings.total = Math.round( performance.now() - t0 );
@@ -157,6 +164,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		vegetation,
 		ivy,
 		shore: { data: shore.data, nx: shore.nx, nz: shore.nz, x0: shore.x0, z0: shore.z0, cell: shore.cell },
+		islandShore: { data: islandShore.data, nx: islandShore.nx, nz: islandShore.nz, x0: islandShore.x0, z0: islandShore.z0, cell: islandShore.cell },
 		timings,
 	};
 	self.postMessage( result, { transfer } );

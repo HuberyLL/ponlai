@@ -145,7 +145,7 @@ export class Sky {
 	haze: number;
 	hazeTint = new THREE.Color( 1.0, 0.93, 0.80 );
 	// artistic warmth on top of the atmosphere's own reddening of the sun
-	sunTint = new THREE.Color( 1.0, 0.87, 0.68 );
+	sunTint = new THREE.Color( 1.0, 0.91, 0.79 );
 	sunDir = new THREE.Vector3();
 	sunColor = new THREE.Color(); // irradiance at sea level
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
