@@ -9,45 +9,49 @@ packages, into `dist/licenses/`.
 
 ### tidewater
 
-- Upstream: https://github.com/dgreenheck/tidewater
-- Ocean version: the three.js (TSL) edition, commit
-  [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86)
-  (2026). Later commits port tidewater to its own WebGPU engine, so they no longer match this code.
-- Copyright: (c) 2026 DRG Software Solutions LLC
-- Sky version: native WebGPU edition, commit
-  [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef)
-  (2026-09-25), `src/sky/Atmosphere.js` and `src/sky/Sky.js`.
+- Upstream: [tidewater](https://github.com/dgreenheck/tidewater), by Daniel Greenheck.
+- Copyright: (c) 2026 DRG Software Solutions LLC.
 - License: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt) and
   [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt).
-- Ocean files: `src/ocean/OceanFFT.ts`, `src/ocean/Water.ts`, `src/ocean/Caustics.ts`.
-- Ocean changes: ported to TSL and modified for this project's stylised rendering.
-- Shore-wave version: native WebGPU edition, commit
-  [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef),
-  `src/world/ShoreField.js`, `src/ocean/ShoreWaves.js` and `src/ocean/SurfFoam.js`.
-- Shore-wave files: `src/ocean/ShoreWaveField.ts`, `src/ocean/ShoreWaves.ts`,
-  `src/ocean/FoamTexture.ts`; `src/ocean/Water.ts` adapts the surf-foam density and shading.
-- Shore-wave changes: finite-depth travel speed and an obstacle-aware arrival-time field over the
-  existing seabed, seeded only from the incoming domain edges, with grouped, asymmetric
-  shoaling cross-sections ported to TSL. Soomi adds a separate upwave land-visibility field: a
-  narrow angular fan and water-only smoothing soften the wave shadow, which attenuates input
-  amplitude, contact, reflection and foam transport together. Residual wind ripples remain in
-  sheltered water. Soomi also continues the same swell over the whole sea using a periodically
-  baked phase/along-crest template; the local cache holds only the nearshore residual. Unwrapped
-  travel time and depth blend to the global reference before differentiation, with an exact zero
-  residual rim. The 14-wave / 128 m template is seamless and changes only with wave parameters;
-  fine FFT ripples retain their continuity through the shelter transition. This global continuation
-  and closed-island shelter treatment are our extensions, rather than an upstream diffraction
-  solver. The horizontal profile is inverted into world space; surface normals include its complete
-  changing shape. Calm offshore cross-sections stay round, with height/depth-dependent steepening;
-  restrained crest polishing and scattering avoid periodic mirror-like bands. Lower FFT amplitude
-  and horizontal compression soften the background wind sea. A local rock-contact
-  clock supplies weak reflection and wave-triggered whitewater rather than offshore crest lace.
-  Finite-depth orbital velocity advects foam, and expansion thins its density. Dense fresh churn
-  opens into bubble holes, lace and short strands using the CPU-baked SurfFoam pattern, with
-  small relief and cavity shading. The pattern has been scaled and its low-density strands broken
-  into shorter arcs. Beach run-up, plunging sheets and spray are omitted for the steep island cliffs. See
-  `docs/water.md` in the source repository for the source mapping and approximation limits.
-  FFT crest compression and persistent whitecaps follow this version's `src/ocean/OceanFFT.js`.
+- Base ocean version: the three.js / TSL edition, commit
+  [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86).
+  `src/ocean/OceanFFT.ts`, `src/ocean/Water.ts` and `src/ocean/Caustics.ts` adapt the FFT structure,
+  water optics and rasterised caustics for this project's stylised rendering.
+- Spectrum and foam version: native WebGPU edition, commit
+  [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef).
+  [`src/ocean/OceanFFT.js`](https://github.com/dgreenheck/tidewater/blob/4811ba48d795197de5621985f404e765c0b7c0ef/src/ocean/OceanFFT.js)
+  supplies the JONSWAP / TMA spectrum helpers, frequency-dependent directional spreading,
+  frequency-to-wavenumber conversion, dual local-wind/swell spectrum reference and persistent
+  compression-driven whitecaps. `src/ocean/OceanSpectrum.ts` ports the spectrum helpers to CPU
+  TypeScript; `src/ocean/OceanFFT.ts` combines both spectra before one FFT evolution pipeline.
+  Soomi normalises the authored swell significant height over the represented modes and computes
+  finite-depth Airy surface velocities from the same forward/backward Fourier phases, independently
+  of artistic horizontal compression. Additional velocity fields increase the FFT data processed;
+  the two wave systems do not run as separate FFT simulations.
+- Foam files: `src/ocean/FoamTexture.ts` adapts the CPU lace generation from
+  [`src/ocean/SurfFoam.js`](https://github.com/dgreenheck/tidewater/blob/4811ba48d795197de5621985f404e765c0b7c0ef/src/ocean/SurfFoam.js);
+  `src/ocean/Water.ts` adapts its density-to-hole mapping, bubbly relief and cavity shading.
+  The repeatable pattern is mipmapped, scaled down and has its low-density strands broken into
+  shorter arcs. Dense fresh whitewater opens into holes, lace and separate bubbles as it thins.
+- Rocky-boundary changes: `src/ocean/ShoreWaves.ts` and `src/ocean/ShoreWaveField.ts` retain the
+  notice from the earlier shore-wave adaptation. Their current geometric boundary, weak mirrored
+  response and closed-island shelter are Soomi extensions. They read actual FFT heights and Airy
+  velocities instead of adding a separate single-period beach wave or an arrival-time wave field.
+  A narrow dominant-direction ray fan and water-only smoothing approximate land shelter; the local
+  correction has an exact zero rim. Contact energy is driven by a raised incident surface and
+  inward particle motion, with separate water-side exposure suppression. The mirror shares the
+  incident phase and supplies weak local height/velocity correction; it is not a diffraction or
+  fluid-impact solver. Geometry normals include spatial damping-gradient terms. Local seabed
+  refraction, beach run-up, plunging sheets and spray are not implemented.
+- Foam transport reference: the carried-foam / fresh-whitewater separation and expansion-driven
+  thinning are informed by
+  [`src/ocean/ShoreSim.js`](https://github.com/dgreenheck/tidewater/blob/4811ba48d795197de5621985f404e765c0b7c0ef/src/ocean/ShoreSim.js).
+  `src/ocean/OceanFoam.ts` is an original TSL history/advection implementation using the FFT-driven
+  rock-boundary flow, with land checks; the backtracing technique is credited to Jos Stam below.
+  It does not port Tidewater's analytic beach clock, sand wetness, stranded sand foam or spray
+  deposition. See [`docs/water.md`](docs/water.md) for the current source map, defaults and limits.
+- Sky version: native WebGPU edition, the same pinned `4811ba4` commit (2026-09-25),
+  `src/sky/Atmosphere.js` and `src/sky/Sky.js`.
 - Sky files: `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`.
 - Sky changes: the WGSL atmosphere and solar disk are ported to TSL; compute LUT generation is
   replaced by render-target bakes, the transmittance coordinates are made symmetric, and the

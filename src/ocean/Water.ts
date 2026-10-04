@@ -199,7 +199,7 @@ export class Water {
 		// wind ripples stay alive in the lee, rather than turning the sheltered sea to glass.
 		const vertexShelter = shoreWaves.shelter.sample( xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) );
 		const coastDamp = mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) );
-		const windDamp = mix( float( 0.35 ), float( 1 ), vertexShelter.r );
+		const windDamp = mix( float( 0.12 ), float( 1 ), vertexShelter.r );
 		const far = length( xz.sub( cameraPosition.xz ) );
 		// Land screens the long waves. Preserve small wind ripples so the wave shadow
 		// does not read as a fixed patch with a different surface texture when zoomed out.
@@ -212,9 +212,13 @@ export class Water {
 		const material = new THREE.NodeMaterial();
 		material.positionNode = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y ).add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) );
 		const vLag = varying( xz ), vDamp = varying( coastDamp );
+		const coastT = sd.div( 7 ).clamp( 0, 1 );
+		const coastDerivative = coastT.mul( float( 1 ).sub( coastT ) ).mul( 6 * 0.55 / 7 );
+		const coastGradient = shoreWaves.boundary.sample( xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) ).ba.mul( coastDerivative );
+		const vCoastSlope = varying( coastGradient.mul( largeDisp.y.mul( windDamp ).add( mediumDisp.y.mul( mediumDamp ) ) ) );
 		const vShelter = varying( windDamp );
 		const vMediumDamp = varying( mediumDamp );
-		const vShelterSlope = varying( vertexShelter.ba.mul( coastDamp ).mul( largeDisp.y.mul( 0.65 ).add( mediumDisp.y.mul( 0.2 ) ) ) );
+		const vShelterSlope = varying( vertexShelter.ba.mul( coastDamp ).mul( largeDisp.y.mul( 0.88 ).add( mediumDisp.y.mul( 0.2 ) ) ) );
 
 		// ---- fragment
 		const tDepth = texture( linearDepth );
@@ -372,10 +376,9 @@ export class Water {
 			// than a uniform etched pattern over the entire sea.
 			const foamUV = wp.xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
 			const shoreWave = shoreWaves.surfaceAt( wp.xz, time ).toVar();
-			const clearShoulder = smoothstep( 0.015, 0.18, shoreWave.x ).mul( float( 1 ).sub( shoreWave.w ) );
-			// Strong crest-dependent polishing creates regular mirror/rough bands. Keep the
-			// existing wind texture visible across a quiet swell instead of advertising its clock.
-			const fineDetail = u.detail.mul( float( 1 ).sub( clearShoulder.mul( 0.10 ) ) );
+			// The frequency spectrum now owns the crest structure. Reflection at rock adds only
+			// a small local correction; it must not polish a second, periodic wave template.
+			const fineDetail = u.detail;
 			const dd0 = texture( der[ 0 ], vLag.div( sizes.x ) ).mul( vShelter )
 				.add( texture( der[ 1 ], vLag.div( sizes.y ) ).mul( vMediumDamp ).add( texture( der[ 2 ], vLag.div( sizes.z ) ).mul( 0.56 ) ).mul( fineDetail ) ).toVar();
 			const event = foamState.sample( foamUV ).toVar();
@@ -400,7 +403,7 @@ export class Water {
 
 			// ---- surface normal from the cascades' slopes (sampled at the undisplaced position)
 			const dd = dd0.mul( vDamp ).toVar();
-			const slope = vec2( dd.x.div( max( dd.z.add( 1 ), 0.2 ) ), dd.y.div( max( dd.w.add( 1 ), 0.2 ) ) ).add( vShelterSlope );
+			const slope = vec2( dd.x.div( max( dd.z.add( 1 ), 0.2 ) ), dd.y.div( max( dd.w.add( 1 ), 0.2 ) ) ).add( vShelterSlope ).add( vCoastSlope );
 			const totalSlope = slope.add( shoreWave.yz );
 			const N = normalize( vec3( totalSlope.x.negate(), 1, totalSlope.y.negate() ) ).toVar();
 

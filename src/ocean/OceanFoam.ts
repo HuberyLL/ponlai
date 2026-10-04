@@ -51,7 +51,7 @@ export class OceanFoam {
 			const wave = waves.motion.sample( q ).level( float( 0 ) ).toVar();
 			const flow = wave.xy;
 			const valid = float( 1 ).sub( this.seed );
-			// The same incoming/reflected cross-section supplies the water parcel velocity.
+			// The same incoming FFT spectrum and rocky response supply orbital parcel velocity.
 			// Keep the density loss caused by its expansion: transported foam tears into holes.
 			const e = shared.shoreXform.zw.mul( 0.25 );
 			const vx0 = waves.motion.sample( q.sub( vec2( e.x, 0 ) ) ).level( float( 0 ) ).x;
@@ -64,13 +64,16 @@ export class OceanFoam {
 			const edge = select( upstream.x.greaterThanEqual( 0 ).and( upstream.x.lessThanEqual( 1 ) )
 				.and( upstream.y.greaterThanEqual( 0 ) ).and( upstream.y.lessThanEqual( 1 ) ), float( 1 ), float( 0 ) );
 			const carried = this.previous.sample( clamp( upstream, vec2( 0 ), vec2( 1 ) ) ).level( float( 0 ) ).mul( edge ).mul( valid );
-			const remaining = carried.r.mul( exp( expansion.add( 0.65 ).mul( this.dt ).negate() ) );
+			// Stop traces that cross land, including thin rock shoulders between water parcels.
+			const segmentWater = select( sampleShore( upstream ).greaterThan( 0 )
+				.and( sampleShore( mix( q, upstream, float( 0.5 ) ) ).greaterThan( 0 ) ), float( 1 ), float( 0 ) );
+			const remaining = carried.r.mul( segmentWater ).mul( exp( expansion.add( 0.65 ).mul( this.dt ).negate() ) );
 			// No white line on an unbroken offshore crest. The wave's actual rock contact
 			// supplies aerated mass; its dense core survives briefly after the impact ends.
 			const birth = float( 1 ).sub( exp( wave.z.mul( this.dt ).mul( - 4.8 ) ) );
 			const newMass = float( 1 ).sub( remaining ).mul( birth );
 			const coverage = remaining.add( newMass );
-			const freshOld = carried.a.mul( exp( this.dt.mul( - 3.4 ) ) );
+			const freshOld = carried.a.mul( segmentWater ).mul( exp( this.dt.mul( - 3.4 ) ) );
 			const fresh = freshOld.add( float( 1 ).sub( freshOld ).mul( birth ) );
 			const openWater = select( sd.greaterThan( 0 ), float( 1 ), float( 0 ) );
 			const offset = select( carried.r.greaterThan( 0.001 ), carried.gb.sub( flow.mul( this.dt ) ), vec2( 0 ) );

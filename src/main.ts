@@ -135,7 +135,7 @@ setStatus( 'Lighting the sky…' );
 await applySun();
 
 const textures = await bakeProceduralTextures( renderer );
-const fft = new OceanFFT( renderer, { windSpeed: 4.4, windDirection: 40, fetch: 5000, amplitude: 0.68, choppiness: 0.5, spread: 0.52 } );
+const fft = new OceanFFT( renderer, { windSpeed: 3.0, windDirection: 40, fetch: 1500, amplitude: 0.68, choppiness: 0.5, spread: 0.52 } );
 const caustics = new Caustics( renderer, fft );
 const pipeline = new Pipeline( renderer );
 
