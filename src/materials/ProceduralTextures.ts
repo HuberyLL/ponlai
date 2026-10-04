@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { createMeadowTexture } from './Meadow.ts';
+import { createSoilTexture } from './Soil.ts';
 import {
 	Fn, If, Loop, uv, texture, uniform, float, int, vec2, vec3, vec4, normalize, fract, floor, dot, mod, mix,
 	length, smoothstep, sin, abs, pow, max, clamp,
@@ -120,6 +121,7 @@ const crackBake = ( q: V2 ) => Fn( () => {
 
 export interface DetailTextures {
 	meadow: THREE.Texture;
+	soil: THREE.Texture;
 	heights: THREE.Texture;
 	normalsA: THREE.Texture;
 	normalsB: THREE.Texture;
@@ -189,6 +191,6 @@ export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, si
 		map.needsUpdate = true;
 
 	}
-	return { meadow: createMeadowTexture(), heights: heights.texture, normalsA: normalsA.texture, normalsB: normalsB.texture, rockAlbedo, rockDetail };
+	return { meadow: createMeadowTexture(), soil: createSoilTexture(), heights: heights.texture, normalsA: normalsA.texture, normalsB: normalsB.texture, rockAlbedo, rockDetail };
 
 }

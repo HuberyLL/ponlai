@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { mulberry32, smoothstep } from './noise.ts';
 import { sampleMeadow, meadowColor } from '../materials/Meadow.ts';
+import { sampleMeadowSoil, soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import type { Shared } from '../shared.ts';
 
@@ -78,12 +79,18 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// sway: gusts travel across the meadow, the tips move most (positionLocal is already placed
 	// by the instance here, i.e. in world space)
 	const p = positionLocal;
+	const soil = attribute<'float'>( 'soilCover', 'float' ).mul( soilUniforms.blend ).mul( soilUniforms.strength );
+	const origin = attribute<'vec3'>( 'tuftOrigin', 'vec3' );
+	// Keep every planting anchor. Narrower, slightly shorter shoots reveal the same soil
+	// pockets as the ground material, and a zero blend restores their original footprint.
+	const rooted = p.sub( p.sub( origin ).mul( vec3( 0.22, 0.06, 0.22 ) ).mul( soil ) );
 	const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.time.mul( 1.6 ) );
 	const gust = sin( ph ).mul( 0.45 ).add( 0.55 ).add( sin( ph.mul( 2.7 ).add( p.x.mul( 0.9 ) ) ).mul( 0.2 ) );
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
-	mat.positionNode = p.add( vec3( normalize( wind ).x, 0, normalize( wind ).y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) );
+	mat.positionNode = rooted.add( vec3( normalize( wind ).x, 0, normalize( wind ).y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
-	mat.colorNode = mix( vec3( 0.35, 0.43, 0.29 ), vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) );
+	const root = mix( vec3( 0.35, 0.43, 0.29 ), vec3( 0.55, 0.38, 0.23 ), soil.mul( 0.7 ) );
+	mat.colorNode = mix( root, vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) );
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.55 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) );
@@ -99,6 +106,7 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 
 	const n = veg.length / STRIDE;
 	const mesh = new THREE.InstancedMesh( tuftGeometry(), grassMaterial( shared ), n );
+	const soilCover = new Float32Array( n ), tuftOrigin = new Float32Array( n * 3 );
 	const rng = mulberry32( 99 );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
@@ -124,6 +132,10 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 		const h = ( 0.17 + 0.14 * growth + edge * growth * 0.07 + ( tall ? 0.16 + 0.1 * variation : 0 ) )
 			* ( 0.78 + rng() * 0.44 ) * ( 1 + edge * ( variation - 0.5 ) * 0.35 ) * ( onStack ? 0.55 : 1 );
 		pos.set( x, y - 0.018, z );
+		soilCover[ i ] = onStack ? 0 : sampleMeadowSoil( x, z );
+		tuftOrigin[ i * 3 ] = pos.x;
+		tuftOrigin[ i * 3 + 1 ] = pos.y;
+		tuftOrigin[ i * 3 + 2 ] = pos.z;
 		const spread = ( tall ? 0.34 : 0.44 ) + growth * 0.08;
 		scl.set( spread * ( 0.85 + rng() * 0.3 ), h, spread * ( 0.85 + rng() * 0.3 ) );
 		m.compose( pos, q, scl );
@@ -135,6 +147,8 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 
 	}
 
+	mesh.geometry.setAttribute( 'soilCover', new THREE.InstancedBufferAttribute( soilCover, 1 ) );
+	mesh.geometry.setAttribute( 'tuftOrigin', new THREE.InstancedBufferAttribute( tuftOrigin, 3 ) );
 	mesh.instanceMatrix.needsUpdate = true;
 	mesh.instanceColor!.needsUpdate = true;
 	mesh.frustumCulled = false;

@@ -149,9 +149,16 @@ function makeCliffFaces( fp: Footprint ): CliffFace[] {
 
 }
 
+// The soil support map follows the same undisturbed surface as the mesh. Rim chips remain
+// geometry-owned, so their exposed stone can interrupt the turf instead of carrying more soil.
+export function islandSurfaceHeight( x: number, z: number ): number {
+
+	return ISLAND_TOP + noise3( x * 0.18, 4.1, z * 0.18 ) * 0.12 + noise3( x * 0.7, 1.3, z * 0.7 ) * 0.04;
+
+}
+
 export function makeIslandSDF( fp: Footprint ): SDF {
 
-	const top = ( x: number, z: number ) => ISLAND_TOP + noise3( x * 0.18, 4.1, z * 0.18 ) * 0.12 + noise3( x * 0.7, 1.3, z * 0.7 ) * 0.04;
 	const faces = makeCliffFaces( fp );
 	// Cache horizontal cut bounds because the worker samples the full height at each (x, z).
 	let cx = NaN, cz = NaN, cD2 = 0, cTop = 0, cLean = 0, cChip = 0;
@@ -161,7 +168,7 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 		if ( x === cx && z === cz ) return;
 		cx = x; cz = z;
 		cD2 = fp.dist( x, z );
-		cTop = top( x, z );
+		cTop = islandSurfaceHeight( x, z );
 		cLean = noise3( x * 0.16 + 6.1, 9.7, z * 0.16 ) * 0.035;
 		cChip = 0;
 		active.length = 0;
