@@ -9,9 +9,10 @@ import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
-	sin, abs, floor, fract, fwidth, reflect, refract, select, dFdx, dFdy,
+	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
 } from 'three/tsl';
 import { dirToEquirect } from '../sky/Sky.ts';
+import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
@@ -514,17 +515,18 @@ export class Water {
 			sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( glintPath ).mul( facet ).mul( sparkles( wp.xz.mul( 2.1 ).add( N.xz.mul( 2.5 ) ), time ) ).mul( u.glitter ).mul( float( 1 ).sub( foamAmt ) ) );
 
 			// ---- refraction: trace the refracted ray to the floor through the depth
-			// Fine facets can sparkle on the surface without stretching the deeper floor.
-			// A calmer optical normal keeps submerged silhouettes legible through the column.
-			const opticalNormal = normalize( mix( vec3( 0, 1, 0 ), N, 0.4 ) );
-			// Art-direct the bend as well as the fine distortion: the deeper shelf should
-			// retain its form rather than read as a strongly magnifying glass plate.
-			const Tr = normalize( mix( V.negate(), refract( V.negate(), opticalNormal, 1 / IOR ), 0.35 ) );
-			const Tv = normalize( vec3( Tr.x, min( Tr.y, - 0.08 ), Tr.z ) ).toVar();
-			const tDown = max( Tv.y.negate(), 0.04 ).toVar();
+			// The same resolved wave normal governs reflection and the Snell interface.
+			// Air-to-water rays have no total internal reflection; never blend away their bend.
+			const opticalNormal = N;
+			const Tr = airToWaterDirectionNode( V, opticalNormal, float( IOR ) );
+			const Tv = normalize( Tr ).toVar();
+			// The screen-space floor tracer only represents a front-facing, downward water leg.
+			// Unsupported rays retain its ordinary fallback instead of forcing a new direction.
+			const validRefraction = dot( opticalNormal, V ).greaterThan( 1e-5 ).and( Tv.y.lessThan( - 1e-5 ) );
+			const tDown = max( Tv.y.negate(), 1e-5 ).toVar();
 			const fallbackLength = select( skyBehind, float( 200 ), clamp( max( wp.y.sub( sw0.y ), 0 ).div( tDown ), 0, 200 ) );
 			const hit = vec4( screenUV, fallbackLength, 0 ).toVar();
-			If( skyBehind.not().and( thick.greaterThan( 0.02 ) ), () => {
+			If( skyBehind.not().and( thick.greaterThan( 0.02 ) ).and( validRefraction ), () => {
 
 				const directionV = normalize( cameraViewMatrix.mul( vec4( Tv, 0 ) ).xyz );
 				const range = min( max( fallbackLength.mul( 1.5 ), fallbackLength.add( 4 ) ), 40 );
@@ -547,7 +549,7 @@ export class Water {
 			const sigT = sigA.add( sigS ).toVar();
 			const Ls = refractedSunDirectionNode( L ).toVar();
 			const muS = Ls.y;
-			const muV = max( Tv.y.negate(), 0.15 );
+			const muV = max( Tv.y.negate(), 1e-5 );
 			// Each source retains its own optical depth while confidence blends the hits.
 			// One mixed path would tint a bright shallow source as if it belonged to the basin.
 			const bottom = mix(
@@ -578,7 +580,10 @@ export class Water {
 			const foamCol = sunLight.mul( NdL.mul( 0.57 ).add( 0.2 ) ).div( PI ).mul( mix( float( 1 ), float( 0.65 ), coolWash ) )
 				.add( shared.skyIrradiance.mul( mix( float( 1.5 ), float( 1.9 ), coolWash ) ) ).mul( 0.95 );
 
-			const water = mix( transmitted, refl, Fr ).add( sunSpec );
+			// The opaque underwater pass and column terms are radiance inside water. Convert
+			// that radiance once at the exit interface; mix already supplies Fresnel 1 - Fr.
+			const exiting = radianceAcrossInterfaceNode( transmitted, float( IOR ), float( 1 ) );
+			const water = mix( exiting, refl, Fr ).add( sunSpec );
 			// Backfacing facets are self-occluded: neither the air reflection nor underwater
 			// transmission emerges through their back side. Neighbor-wave transport is unresolved.
 			const col = mix( water, foamCol.add( sunSpec.mul( 0.05 ) ), foamAmt ).mul( airFacing ).toVar();
