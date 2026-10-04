@@ -235,7 +235,6 @@ waterF.add( optics, 'clarity', 0.3, 3, 0.01 ).onChange( setOptics );
 waterF.add( optics, 'turbidity', 0.1, 4, 0.01 ).onChange( setOptics );
 waterF.add( W.backscatter, 'value', 0, 0.2, 0.001 ).name( 'backscatter' );
 waterF.add( W.roughness, 'value', 0.005, 0.2, 0.001 ).name( 'roughness' );
-waterF.add( W.foamAmount, 'value', 0, 2, 0.01 ).name( 'foam' );
 waterF.add( W.glitter, 'value', 0, 20, 0.1 ).name( 'glitter' );
 waterF.add( W.skyCap, 'value', 0, 10, 0.1 ).name( 'sky glare cap (0 = off)' );
 waterF.add( W.sheen, 'value', 0, 1, 0.005 ).name( 'sun sheen' );
@@ -310,7 +309,8 @@ function tick(): void {
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
 	shoreWaves.update( fft, simTime );
-	foam.update( simTime );
+	// Whitewater is disabled in this scene; leave its history idle.
+	if ( W.foamAmount.value > 0 ) foam.update( simTime );
 	caustics.update( sky.sunDir );
 	refractedSun.update();
 	S.focusDistance = camera.position.distanceTo( controls.target );

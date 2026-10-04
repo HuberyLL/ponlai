@@ -143,7 +143,7 @@ export class Water {
 		backscatter: uniform( 0.038 ),
 		roughness: uniform( 0.058 ), // Beckmann alpha: per-axis base slope variance = alpha squared / 2
 		wind: uniform( 3.4 ),
-		foamAmount: uniform( 1.0 ),
+		foamAmount: uniform( 0 ), // This quiet sea keeps reflection without visible whitewater.
 		ssr: uniform( 1 ),
 		reflection: uniform( 1 ),
 		glitter: uniform( 0 ),
