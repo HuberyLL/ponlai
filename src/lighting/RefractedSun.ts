@@ -4,7 +4,7 @@ import {
 	max, sqrt, normalize, select, clamp,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
-import { solarShadowVisibility } from './SolarShadow.ts';
+import { solarShadowVisibility, solarVolumeVisibility } from './SolarShadow.ts';
 import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
 
 type F = THREE.Node<'float'>;
@@ -31,7 +31,7 @@ export const refractedSunBeamScaleNode = Fn( ( [ airDirection ]: [ V3 ] ) => {
 
 } ).setLayout( { name: 'refractedSolarBeamScale', type: 'float', inputs: [ { name: 'airDirection', type: 'vec3' } ] } );
 
-const refractedSurfaceEntryNode = Fn( ( [ point, airDirection, waterLevel ]: [ V3, V3, F ] ) => {
+export const refractedSurfaceEntryNode = Fn( ( [ point, airDirection, waterLevel ]: [ V3, V3, F ] ) => {
 
 	const direction = refractedSunDirectionNode( airDirection ).toVar();
 	return point.add( direction.mul( max( waterLevel.sub( point.y ), 0 ).div( direction.y ) ) );
@@ -50,7 +50,7 @@ const shadowCoordinate = Fn( ( [ point, matrix, bias ]: [ V3, M4, F ] ) => {
 	{ name: 'point', type: 'vec3' }, { name: 'matrix', type: 'mat4' }, { name: 'bias', type: 'float' },
 ] } );
 
-function refractedSunDirection( airDirection: THREE.Vector3, target = new THREE.Vector3() ): THREE.Vector3 {
+export function refractedSunDirection( airDirection: THREE.Vector3, target = new THREE.Vector3() ): THREE.Vector3 {
 
 	target.copy( airDirection ).normalize();
 	const mu = Math.sqrt( Math.max( 1 - ( 1 - target.y * target.y ) / ( WATER_IOR * WATER_IOR ), 0 ) );
@@ -198,6 +198,28 @@ export class RefractedSun {
 		return solarShadowVisibility( this.target.depthTexture!, coordinate, {
 			mapSize: this.mapSize, worldSpan: this.worldSpan, depthRange: this.depthRange, angularRadius,
 		} );
+
+	}
+
+	submergedVolumeCoordinateNode( point: V3 ): V3 {
+
+		return shadowCoordinate( point, this.matrix, this.contactBias.div( this.depthRange ) );
+
+	}
+
+	submergedVolumeVisibilityAtCoordinateNode( coordinate: V3 ): F {
+
+		return solarVolumeVisibility( this.target.depthTexture!, coordinate, this.mapSize );
+
+	}
+
+	submergedVolumeVisibilityNode( point: V3 ): F {
+
+		// A point in water has no surface normal to offset. Retain only the small ray
+		// clearance used by terrain; points above the interface have no submerged ray leg.
+		const coordinate = this.submergedVolumeCoordinateNode( point );
+		const visibility = this.submergedVolumeVisibilityAtCoordinateNode( coordinate );
+		return select( point.y.lessThan( this.shared.waterLevel ), visibility, float( 1 ) );
 
 	}
 

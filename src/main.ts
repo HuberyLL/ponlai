@@ -210,7 +210,7 @@ const characters = new Villagers( fisherman, [ [ - 5.5, 1.5 ], [ - 1.5, 3.3 ], [
 scene.add( characters.group );
 
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, shoreWaves,
+	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 water.uniforms.wind.value = fft.params.windSpeed;

@@ -1,13 +1,12 @@
 import * as THREE from 'three/webgpu';
-import { Fn, float, vec3, vec4, screenCoordinate, exp, max, clamp, select } from 'three/tsl';
+import { Fn, Loop, float, vec3, vec4, screenCoordinate, exp, log, min, max, clamp, select } from 'three/tsl';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
-// The solar beam contains no direct source when its entry point is shadowed.
-// Reusing one surface visibility for the whole column is a local approximation;
-// it does not model sunlit neighboring water scattering into a shadow.
+// The solar beam contains no direct source when its entry point is shadowed. For a
+// volume, visibility belongs to each scattering point's light path, not the view entry.
 export const waterIncidentSun = Fn( ( [ sunE, visibility, transmittance, beamScale ]: [ V3, F, F, F ] ) => {
 
 	return sunE.mul( clamp( visibility, 0, 1 ) ).mul( clamp( transmittance, 0, 1 ) ).mul( max( beamScale, 0 ) );
@@ -29,6 +28,51 @@ export const waterColumnRadiance = Fn( ( [ sourcePerLength, attenuation, pathLen
 	{ name: 'sourcePerLength', type: 'vec3' },
 	{ name: 'attenuation', type: 'vec3' }, { name: 'pathLength', type: 'float' },
 ] } );
+
+// Inverse CDF of a truncated exponential. Preserve the exact far endpoint even when
+// exp(-rate * length) rounds to zero, and avoid cancellation for a nearly empty column.
+const waterColumnDistance = Fn( ( [ fraction, rate, coverage, pathLength ]: [ F, F, F, F ] ) => {
+
+	const distance = log( max( float( 1 ).sub( fraction.mul( coverage ) ), 1e-7 ) ).negate().div( rate );
+	return select( fraction.greaterThanEqual( 1 ), pathLength,
+		select( rate.mul( pathLength ).lessThan( 1e-3 ), fraction.mul( pathLength ), distance ) );
+
+} ).setLayout( { name: 'waterColumnDistance', type: 'float', inputs: [
+	{ name: 'fraction', type: 'float' }, { name: 'rate', type: 'float' },
+	{ name: 'coverage', type: 'float' }, { name: 'pathLength', type: 'float' },
+] } );
+
+// Integrate the direct solar source along the refracted view ray. Exponential strata
+// spend the fixed shadow budget where light survives; even a deep horizon ray samples
+// its near water. Exact RGB interval weights retain the fully lit analytic solution.
+// Volume transport: PBRT, Light Transport II / Volumetric Light Transport (equations only).
+// The visibility factory may capture textures, so keep this node material-local.
+export function waterShadowedColumnRadiance( sourcePerLength: V3, attenuation: V3, pathLength: F,
+	visibilityAt: ( distance: F ) => F, samples = 8 ): V3 {
+
+	return Fn( () => {
+
+		const path = max( pathLength, 0 ).toVar();
+		const rate = max( min( attenuation.x, min( attenuation.y, attenuation.z ) ), 1e-5 ).toVar();
+		const coverage = float( 1 ).sub( exp( rate.negate().mul( path ) ) ).toVar();
+		const previous = vec3( 1 ).toVar();
+		const integral = vec3( 0 ).toVar();
+		Loop( samples, ( { i } ) => {
+
+			const index = float( i );
+			const middle = waterColumnDistance( index.add( 0.5 ).div( samples ), rate, coverage, path );
+			const end = waterColumnDistance( index.add( 1 ).div( samples ), rate, coverage, path );
+			const transmittance = exp( attenuation.negate().mul( end ) ).toVar();
+			const visibility = clamp( visibilityAt( middle ), 0, 1 );
+			integral.addAssign( previous.sub( transmittance ).mul( visibility ) );
+			previous.assign( transmittance );
+
+		} );
+		return sourcePerLength.mul( integral ).div( attenuation );
+
+	} )();
+
+}
 
 type RGB = [ number, number, number ];
 type ProbeInputs = { sigA: RGB; sigS: RGB; backscatter: number };

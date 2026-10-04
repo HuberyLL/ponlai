@@ -89,6 +89,11 @@ comment where it is used.
 - Microfacet masking: Eric Heitz,
   [*Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs*](https://jcgt.org/published/0003/02/03/)
   (JCGT 2014); the error-function approximation is Abramowitz and Stegun, equation 7.1.26.
+- Depth-dependent water shadows: the volume-lighting integral described in
+  [*Physically Based Rendering*, third edition](https://pbr-book.org/3ed-2018/Light_Transport_II_Volume_Rendering/Volumetric_Light_Transport),
+  independently implemented in TSL with exponential depth strata, exact per-channel attenuation
+  weights and separate air/submerged visibility along each scattering point's refracted solar path.
+  No source code is copied; the retained multiple-scattering boost is empirical.
 
 ## References
 
