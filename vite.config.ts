@@ -18,7 +18,15 @@ function licences(): Plugin {
 
 			for ( const [ fileName, source ] of Object.entries( LICENCE_FILES ) ) {
 
-				this.emitFile( { type: 'asset', fileName, source: await this.fs.readFile( source ) } );
+				let contents: string | Uint8Array = await this.fs.readFile( source );
+				if ( fileName === 'licenses/CREDITS.md' ) {
+
+					// Release credits live beside the shipped notices, not in the source tree.
+					contents = new TextDecoder().decode( contents ).replaceAll( '](src/ocean/tidewater.LICENSE.txt)', '](tidewater.LICENSE.txt)' )
+						.replaceAll( '](src/sky/tidewater.LICENSE.txt)', '](tidewater-sky.LICENSE.txt)' );
+
+				}
+				this.emitFile( { type: 'asset', fileName, source: contents } );
 
 			}
 

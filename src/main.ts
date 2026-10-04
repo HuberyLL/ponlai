@@ -18,6 +18,10 @@ import { Pipeline } from './post/Pipeline.ts';
 import { shared } from './shared.ts';
 import { installSolarShadowFilter } from './lighting/SolarShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
+import { islandSurfaceHeight } from './world/WorldShapes.ts';
+import { Villagers, loadVillager } from './characters/Villagers.ts';
+import { CharacterShadow } from './characters/CharacterShadow.ts';
+import { characterLook, KIND } from './characters/CharacterMaterial.ts';
 
 const params = new URLSearchParams( location.search );
 const ground = { soil: params.get( 'soil' ) !== '0' };
@@ -91,6 +95,10 @@ sc.left = - 36; sc.right = 36; sc.top = 36; sc.bottom = - 36; sc.near = 1; sc.fa
 sun.shadow.bias = - 0.01 / ( sc.far - sc.near );
 sun.shadow.normalBias = 0.012;
 installSolarShadowFilter( sun );
+// Moving figures cast through a small map of their own that every receiver multiplies in. It
+// must be installed before any receiving material is built.
+const characterShadow = new CharacterShadow();
+characterShadow.install( sun );
 // Vegetation casts its rest pose; wind only changes the visible mesh. The first render
 // builds the complete map, then sunlight or caster edits explicitly invalidate it.
 sun.shadow.autoUpdate = false;
@@ -159,7 +167,12 @@ setStatus( 'Lighting the sky…' );
 await applySun();
 
 const textures = await bakeProceduralTextures( renderer );
-const fft = new OceanFFT( renderer, { windSpeed: 3.0, windDirection: 40, fetch: 1500, amplitude: 0.68, choppiness: 0.5, spread: 0.52 } );
+// Recover mid-scale wave volume through wind/fetch, while the spectrum still filters fine crests.
+// Keep the swell broad and modest so it supports the body without becoming a dominant wave train.
+const fft = new OceanFFT( renderer, {
+	windSpeed: 3.8, windDirection: 40, fetch: 3500, amplitude: 0.76, choppiness: 0.55, spread: 0.52,
+	swell: { height: 0.18 },
+} );
 const caustics = new Caustics( renderer, fft );
 const pipeline = new Pipeline( renderer );
 
@@ -183,6 +196,20 @@ const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 scene.add( grass, foliage, flowers, rimFoliage );
+setStatus( 'Waking the villagers…' );
+// Local, unversioned assets (artifacts/ is git-ignored) served by the dev server while the
+// character art is still changing.
+const umc = ( name: string ) => `/artifacts/assets/quaternius/ultimate-modular-characters/${ name }.gltf`;
+// A fisherman: the farmer's straw hat and bib trousers, the adventurer's boots, all repainted
+// in the island's palette (sRGB, as they should read in sunlight).
+const fisherman = await loadVillager( umc( 'Farmer' ), [
+	{ from: umc( 'Farmer' ), part: 'Farmer_Head', paint: { Skin: [ '#e2a882', KIND.skin ], Eyebrows: [ '#4a2f22', KIND.hair ], Beige: [ '#e3c88a', KIND.cloth ], Red: [ '#d2654a', KIND.cloth ], Eye: [ '#2a1d18', KIND.cloth ] } },
+	{ from: umc( 'Farmer' ), part: 'Farmer_Body', paint: { Skin: [ '#e2a882', KIND.skin ], LightBlue: [ '#285878', KIND.cloth ], Brown: [ '#ece0c4', KIND.cloth ], Beige: [ '#d8c8a4', KIND.cloth ] }, hands: [ '#e2a882', KIND.skin ] },
+	{ from: umc( 'Farmer' ), part: 'Farmer_Pants', paint: { LightBlue: [ '#285878', KIND.cloth ] } },
+	{ from: umc( 'Adventurer' ), part: 'Adventurer_Feet', paint: { Grey: [ '#3c4a3e', KIND.leather ], Black: [ '#2a2622', KIND.leather ] } },
+], shared );
+const characters = new Villagers( fisherman, [ [ - 5.5, 1.5 ], [ - 1.5, 3.3 ], [ 3, 2.6 ], [ 5.6, 0 ], [ 3.8, - 2.8 ], [ - 0.5, - 2.7 ], [ - 4.5, - 1.8 ] ], islandSurfaceHeight, characterShadow );
+scene.add( characters.group );
 
 water = new Water( {
 	fft, sky, shared, shore: shore.tex, foamState: foam.texture, shoreWaves, refractedSun,
@@ -230,7 +257,6 @@ waterF.add( optics, 'clarity', 0.3, 3, 0.01 ).onChange( setOptics );
 waterF.add( optics, 'turbidity', 0.1, 4, 0.01 ).onChange( setOptics );
 waterF.add( W.backscatter, 'value', 0, 0.2, 0.001 ).name( 'backscatter' );
 waterF.add( W.roughness, 'value', 0.005, 0.2, 0.001 ).name( 'roughness' );
-waterF.add( W.foamAmount, 'value', 0, 2, 0.01 ).name( 'foam' );
 waterF.add( W.glitter, 'value', 0, 20, 0.1 ).name( 'glitter' );
 waterF.add( W.skyCap, 'value', 0, 10, 0.1 ).name( 'sky glare cap (0 = off)' );
 waterF.add( W.sheen, 'value', 0, 1, 0.005 ).name( 'sun sheen' );
@@ -241,6 +267,17 @@ waveF.add( fft.params, 'windSpeed', 1, 14, 0.1 ).onFinishChange( () => { W.wind.
 waveF.add( fft.params, 'windDirection', - 180, 180, 1 ).onFinishChange( rebuild );
 waveF.add( fft.params, 'amplitude', 0, 3, 0.01 ).onFinishChange( rebuild );
 waveF.add( fft.params, 'choppiness', 0, 1.5, 0.01 ).onFinishChange( rebuild );
+const islanderF = gui.addFolder( 'Islander' );
+islanderF.add( characterLook.albedo, 'value', 0.05, 1, 0.01 ).name( 'palette exposure' );
+islanderF.add( characterLook.sunGain, 'value', 0, 2, 0.01 ).name( 'sun' );
+islanderF.add( characterLook.fillGain, 'value', 0, 10, 0.05 ).name( 'shade fill' );
+islanderF.add( characterLook.bounceGain, 'value', 0, 3, 0.01 ).name( 'turf bounce' );
+islanderF.add( characterLook.formFloor, 'value', 0, 1, 0.01 ).name( 'lit form floor' );
+islanderF.add( characterLook.softCloth, 'value', 0.005, 0.4, 0.005 ).name( 'cloth edge' );
+islanderF.add( characterLook.softSkin, 'value', 0.005, 0.4, 0.005 ).name( 'skin edge' );
+islanderF.add( characterLook.rimGain, 'value', 0, 4, 0.01 ).name( 'sun rim' );
+islanderF.add( characterLook.skyRimGain, 'value', 0, 4, 0.01 ).name( 'sky rim' );
+islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'shade saturation' );
 const postF = gui.addFolder( 'Post' );
 postF.add( S, 'exposure', 0.1, 3, 0.01 );
 postF.add( S, 'saturation', 0, 2, 0.01 );
@@ -305,9 +342,11 @@ function tick(): void {
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
 	shoreWaves.update( fft, simTime );
-	foam.update( simTime );
+	// Whitewater is disabled in this scene; leave its history idle.
+	if ( W.foamAmount.value > 0 ) foam.update( simTime );
 	caustics.update( sky.sunDir );
 	refractedSun.update();
+	characters.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
 
 	pipeline.render( { scene, waterScene, camera, water: water!, sun, time: simTime } );
@@ -341,4 +380,6 @@ function diagnostics(): void {
 
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, foam, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, soilUniforms, applySun, invalidateSunShadow };
+// setTime moves the (paused) clock, so captures can step through an animation in one page load
+const setTime = ( t: number ) => { simTime = t; };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, foam, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, applySun, invalidateSunShadow, setTime };

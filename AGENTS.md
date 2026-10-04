@@ -33,6 +33,11 @@ wildflowers, with irregular hanging leaf clusters distributed around the rim. Ke
 - `src/ocean/`: FFT ocean (compute), caustics, water shading.
 - `src/sky/`: atmosphere bake, environment lighting.
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, bloom, tilt-shift, grade).
+- `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
+  clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
+  one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
+  map multiplied into the island's static one. While the character art is settled, models load from the
+  git-ignored `artifacts/assets/` (dev server only).
 
 ## Decisions (keep to these)
 
@@ -43,6 +48,9 @@ wildflowers, with irregular hanging leaf clusters distributed around the rim. Ke
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - No glowing rings at the bases of the sea stacks.
+- Characters are simple low-poly figures with flat colours and simple faces, recoloured into the
+  island's palette and lit by the island's own light in soft cel steps; no outlines. Plants and
+  props keep their realistic shading.
 - Do not commit reference images, and do not ship third-party art without a licence.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
   copyright line, licence) and the licence text sits next to them (see `src/ocean/tidewater.LICENSE.txt`).
