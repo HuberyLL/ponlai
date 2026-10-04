@@ -310,3 +310,48 @@ export function createShoreWaveField( data: WorldData, direction: THREE.Vector2,
 	return texture;
 
 }
+
+// A boundary condition for the rocky island, rather than a synthetic shallow beach.
+// R: incident arrival time at the contact; G: reliable incidence; BA: outward rock normal.
+export function createShoreContactField( data: WorldData, waveField: THREE.DataTexture ): THREE.DataTexture {
+
+	const { width: nx, height: nz, data: values } = waveField.image;
+	const pixels = values as Float32Array;
+	const info = waveField.userData.shoreWaveField;
+	const output = new Float32Array( nx * nz * 4 );
+	const sample = ( x: number, z: number, channel: number ): number => {
+
+		const fx = Math.max( 0, Math.min( nx - 1.001, ( x - info.x0 ) / info.cellX - 0.5 ) );
+		const fz = Math.max( 0, Math.min( nz - 1.001, ( z - info.z0 ) / info.cellZ - 0.5 ) );
+		const i = Math.floor( fx ), j = Math.floor( fz ), u = fx - i, v = fz - j;
+		const at = ( a: number, b: number ) => pixels[ ( b * nx + a ) * 4 + channel ];
+		return ( at( i, j ) * ( 1 - u ) + at( i + 1, j ) * u ) * ( 1 - v )
+			+ ( at( i, j + 1 ) * ( 1 - u ) + at( i + 1, j + 1 ) * u ) * v;
+
+	};
+	for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
+
+		const x = info.x0 + ( i + 0.5 ) * info.cellX, z = info.z0 + ( j + 0.5 ) * info.cellZ;
+		const sd = sampleShore( data.shore, x, z );
+		const gx = ( sampleShore( data.shore, x + 0.4, z ) - sampleShore( data.shore, x - 0.4, z ) ) / 0.8;
+		const gz = ( sampleShore( data.shore, x, z + 0.4 ) - sampleShore( data.shore, x, z - 0.4 ) ) / 0.8;
+		const gl = Math.hypot( gx, gz ), normalX = gx / Math.max( gl, 1e-5 ), normalZ = gz / Math.max( gl, 1e-5 );
+		const tx = sample( x, z, 1 ), tz = sample( x, z, 2 ), tl = Math.max( Math.hypot( tx, tz ), 1e-5 );
+		const incidence = Math.max( 0, - ( tx * normalX + tz * normalZ ) / tl );
+		// Distance-field corners are not planar reflecting walls. Suppress their uncertain
+		// reflected front instead of exposing a seam when the closest contact changes branch.
+		const confidence = Math.min( 1, Math.max( 0, ( gl - 0.45 ) / 0.45 ) );
+		const contactDistance = Math.max( 0, Math.min( sd, 12 ) );
+		const k = ( j * nx + i ) * 4;
+		output[ k ] = sample( x - normalX * contactDistance, z - normalZ * contactDistance, 0 );
+		output[ k + 1 ] = incidence * confidence;
+		output[ k + 2 ] = normalX; output[ k + 3 ] = normalZ;
+
+	}
+	const texture = new THREE.DataTexture( output, nx, nz, THREE.RGBAFormat, THREE.FloatType );
+	texture.name = 'shoreWaveContact';
+	texture.minFilter = texture.magFilter = THREE.LinearFilter;
+	texture.generateMipmaps = false; texture.flipY = false; texture.needsUpdate = true;
+	return texture;
+
+}

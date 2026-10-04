@@ -1,11 +1,11 @@
 import * as THREE from 'three/webgpu';
-import { Fn, texture, uniform, uv, float, vec2, vec4, smoothstep, clamp, mix, min, max, length, dot, exp, select } from 'three/tsl';
+import { Fn, texture, uniform, uv, float, vec2, vec4, clamp, mix, max, exp, select } from 'three/tsl';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { Shared } from '../shared.ts';
 
 // Broad whitewater history: R coverage, GB transported material-coordinate offsets (m),
-// A the crest source. Water samples crisp lace through the same flow as its coverage.
+// A fresh aerated whitewater. Coverage opens holes as it thins; the lace rides its parcels.
 export class OceanFoam {
 
 	readonly texture: THREE.TextureNode;
@@ -48,42 +48,35 @@ export class OceanFoam {
 			const sampleShore = Fn( ( [ at ]: [ THREE.Node<'vec2'> ] ) => texture( shore, at ).level( float( 0 ) ).r )
 				.setLayout( { name: 'foamShoreDistance', type: 'float', inputs: [ { name: 'at', type: 'vec2' } ] } );
 			const sd = sampleShore( q ).toVar();
-			const texel = shared.shoreXform.zw.mul( 0.3 );
-			const gradient = vec2(
-				sampleShore( q.add( vec2( texel.x, 0 ) ) ).sub( sampleShore( q.sub( vec2( texel.x, 0 ) ) ) ),
-				sampleShore( q.add( vec2( 0, texel.y ) ) ).sub( sampleShore( q.sub( vec2( 0, texel.y ) ) ) ),
-			);
-			const normal = gradient.div( max( length( gradient ), 1e-5 ) );
-			const wave = waves.texture.sample( q ).level( float( 0 ) ).toVar();
-			const field = waves.field.sample( q ).level( float( 0 ) ).toVar();
-			const invSpeed = max( length( field.gb ), 1e-4 );
-			const direction = field.gb.div( invSpeed );
-			const old = this.previous.sample( q ).level( float( 0 ) ).toVar();
+			const wave = waves.motion.sample( q ).level( float( 0 ) ).toVar();
+			const flow = wave.xy;
 			const valid = float( 1 ).sub( this.seed );
-			// Tidewater's shallow-water particle velocity c*eta/h reverses with the trough.
-			// A modest outward return carries the foam left after a crest hits the cliff.
-			const orbital = clamp( wave.x.div( invSpeed.mul( max( field.a, 0.7 ) ) ), - 0.4, 0.5 );
-			const flow = direction.mul( orbital.add( 0.04 ) ).toVar();
-			const coast = float( 1 ).sub( smoothstep( 0.2, 1.8, sd ) );
-			flow.subAssign( normal.mul( min( dot( flow, normal ), 0 ) ).mul( coast ) );
-			flow.addAssign( normal.mul( old.r ).mul( coast ).mul( float( 1 ).sub( wave.w ) ).mul( 0.22 ) );
+			// The same incoming/reflected cross-section supplies the water parcel velocity.
+			// Keep the density loss caused by its expansion: transported foam tears into holes.
+			const e = shared.shoreXform.zw.mul( 0.25 );
+			const vx0 = waves.motion.sample( q.sub( vec2( e.x, 0 ) ) ).level( float( 0 ) ).x;
+			const vx1 = waves.motion.sample( q.add( vec2( e.x, 0 ) ) ).level( float( 0 ) ).x;
+			const vz0 = waves.motion.sample( q.sub( vec2( 0, e.y ) ) ).level( float( 0 ) ).y;
+			const vz1 = waves.motion.sample( q.add( vec2( 0, e.y ) ) ).level( float( 0 ) ).y;
+			const expansion = max( vx1.sub( vx0 ).add( vz1.sub( vz0 ) ).div( 0.5 ), 0 );
 			// Semi-Lagrangian backtracing after Jos Stam (GDC 2003); see CREDITS.md.
 			const upstream = q.sub( flow.mul( this.dt ).mul( shared.shoreXform.zw ) );
 			const edge = select( upstream.x.greaterThanEqual( 0 ).and( upstream.x.lessThanEqual( 1 ) )
 				.and( upstream.y.greaterThanEqual( 0 ) ).and( upstream.y.lessThanEqual( 1 ) ), float( 1 ), float( 0 ) );
 			const carried = this.previous.sample( clamp( upstream, vec2( 0 ), vec2( 1 ) ) ).level( float( 0 ) ).mul( edge ).mul( valid );
-			const decay = exp( this.dt.mul( - 0.9 ) );
-			const remaining = carried.r.mul( decay );
-			// Deposition is continuous along the approaching crest, not a per-pixel latch.
-			// The crest is the very one displacing the mesh and tipping its shading normal.
-			const source = wave.w.mul( float( 1 ).sub( smoothstep( 0.3, 1.6, sd ) ) );
-			const birth = float( 1 ).sub( exp( source.mul( this.dt ).mul( - 3.8 ) ) );
-			const coverage = remaining.add( float( 1 ).sub( remaining ).mul( birth ) );
+			const remaining = carried.r.mul( exp( expansion.add( 0.65 ).mul( this.dt ).negate() ) );
+			// No white line on an unbroken offshore crest. The wave's actual rock contact
+			// supplies aerated mass; its dense core survives briefly after the impact ends.
+			const birth = float( 1 ).sub( exp( wave.z.mul( this.dt ).mul( - 4.8 ) ) );
+			const newMass = float( 1 ).sub( remaining ).mul( birth );
+			const coverage = remaining.add( newMass );
+			const freshOld = carried.a.mul( exp( this.dt.mul( - 3.4 ) ) );
+			const fresh = freshOld.add( float( 1 ).sub( freshOld ).mul( birth ) );
 			const openWater = select( sd.greaterThan( 0 ), float( 1 ), float( 0 ) );
 			const offset = select( carried.r.greaterThan( 0.001 ), carried.gb.sub( flow.mul( this.dt ) ), vec2( 0 ) );
 			// New foam joins a fresh parcel gradually instead of snapping a visible old pattern.
-			const tracer = mix( offset, vec2( 0 ), birth ).mul( openWater );
-			return vec4( coverage.mul( openWater ), tracer.x, tracer.y, source );
+			const tracer = mix( offset, vec2( 0 ), newMass.div( max( coverage, 1e-5 ) ) ).mul( openWater );
+			return vec4( coverage.mul( openWater ), tracer.x, tracer.y, fresh.min( coverage ).mul( openWater ) );
 
 		} )();
 		this.quad = new THREE.QuadMesh( material );

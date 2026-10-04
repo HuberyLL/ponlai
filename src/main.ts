@@ -145,7 +145,6 @@ setStatus( 'Generating the island…' );
 const t0 = performance.now();
 const data = await generateWorld();
 const shore = shoreTextureFrom( data.shore );
-const islandShore = shoreTextureFrom( data.islandShore );
 shared.shoreXform.value.copy( shore.xform );
 const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
 const foam = new OceanFoam( renderer, fft, shared, shore.tex, shoreWaves );
@@ -158,7 +157,7 @@ const ivy = buildIvy( data.ivy, shared );
 scene.add( grass, foliage, flowers, ivy );
 
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, islandShore: islandShore.tex, foam: textures.heights, foamState: foam.texture, shoreWaves,
+	fft, sky, shared, shore: shore.tex, foam: textures.heights, foamState: foam.texture, shoreWaves,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 water.uniforms.wind.value = fft.params.windSpeed;

@@ -23,11 +23,18 @@ packages, into `dist/licenses/`.
 - Ocean changes: ported to TSL and modified for this project's stylised rendering.
 - Shore-wave version: native WebGPU edition, commit
   [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef),
-  `src/world/ShoreField.js` and `src/ocean/ShoreWaves.js`.
-- Shore-wave files: `src/ocean/ShoreWaveField.ts`, `src/ocean/ShoreWaves.ts`.
+  `src/world/ShoreField.js`, `src/ocean/ShoreWaves.js` and `src/ocean/SurfFoam.js`.
+- Shore-wave files: `src/ocean/ShoreWaveField.ts`, `src/ocean/ShoreWaves.ts`,
+  `src/ocean/FoamTexture.ts`; `src/ocean/Water.ts` adapts the surf-foam density and shading.
 - Shore-wave changes: finite-depth travel speed and an obstacle-aware arrival-time field over the
-  existing seabed, with a gentle shoaling wave train ported to TSL. Geometry, normals and foam
-  share its phase. Beach run-up, plunging sheets and spray are omitted for the steep island cliffs.
+  existing seabed, with grouped, asymmetric shoaling cross-sections ported to TSL. The horizontal
+  profile is inverted into world space; surface normals include its complete changing shape. A
+  restrained shape floor makes quiet waves readable in the stylised scene. A local rock-contact
+  clock supplies weak reflection and wave-triggered whitewater rather than offshore crest lace.
+  Finite-depth orbital velocity advects foam, and expansion thins its density. Dense fresh churn
+  opens into bubble holes, lace and short strands using the CPU-baked SurfFoam pattern, with
+  small relief and cavity shading. The pattern has been scaled and its low-density strands broken
+  into shorter arcs. Beach run-up, plunging sheets and spray are omitted for the steep island cliffs.
   FFT crest compression and persistent whitecaps follow this version's `src/ocean/OceanFFT.js`.
 - Sky files: `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`.
 - Sky changes: the WGSL atmosphere and solar disk are ported to TSL; compute LUT generation is
