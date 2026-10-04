@@ -46,6 +46,9 @@ comment where it is used.
 - FFT ocean: J. Tessendorf,
   [*Simulating Ocean Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
   (SIGGRAPH course notes, 2002 revision).
+- Foam density advection: Jos Stam,
+  [*Real-Time Fluid Dynamics for Games*](https://www.dgp.toronto.edu/public_user/stam/reality/Research/pdf/GDC03.pdf)
+  (GDC 2003). Backtraced, bilinearly sampled density; original TSL implementation.
 - Rasterised caustics: Evan Wallace, [*WebGL Water*](https://madebyevan.com/webgl-water/) and
   [*Rendering Realtime Caustics in WebGL*](https://medium.com/@evanwallace/rendering-realtime-caustics-in-webgl-2a99a29a0b2c).
 - Whiteout triplanar normal blend: Ben Golus,

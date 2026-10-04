@@ -49,6 +49,7 @@ export class OceanFFT {
 	renderer: THREE.WebGPURenderer;
 	sizes: number[];
 	params: OceanParams;
+	spectrumRevision = 0;
 	displacementTextures: THREE.Texture[];
 	derivativeTextures: THREE.Texture[];
 
@@ -272,6 +273,7 @@ export class OceanFFT {
 		this.h0Attr.needsUpdate = true;
 		this.chop.value = this.params.choppiness;
 		this.depthU.value = this.params.depth;
+		this.spectrumRevision ++;
 
 	}
 

@@ -3,6 +3,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { Sky } from './sky/Sky.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
+import { OceanFoam } from './ocean/OceanFoam.ts';
 import { Caustics } from './ocean/Caustics.ts';
 import { Water } from './ocean/Water.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
@@ -145,6 +146,7 @@ const data = await generateWorld();
 const shore = shoreTextureFrom( data.shore );
 const islandShore = shoreTextureFrom( data.islandShore );
 shared.shoreXform.value.copy( shore.xform );
+const foam = new OceanFoam( renderer, fft, shared, shore.tex, islandShore.tex, textures.heights );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
 const grass = buildGrass( data.vegetation, shared );
@@ -154,7 +156,7 @@ const ivy = buildIvy( data.ivy, shared );
 scene.add( grass, foliage, flowers, ivy );
 
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, islandShore: islandShore.tex, foam: textures.heights,
+	fft, sky, shared, shore: shore.tex, foam: textures.heights, foamState: foam.texture,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 water.uniforms.wind.value = fft.params.windSpeed;
@@ -263,6 +265,7 @@ function tick(): void {
 	renderer.info.reset();
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
+	foam.update( simTime );
 	caustics.update( sky.sunDir );
 	S.focusDistance = camera.position.distanceTo( controls.target );
 
@@ -296,4 +299,4 @@ function diagnostics(): void {
 
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, grass, foliage, flowers, ivy, applySun };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, foam, caustics, water, pipeline, shared, grass, foliage, flowers, ivy, applySun };
