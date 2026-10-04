@@ -77,7 +77,8 @@ export class OceanFoam {
 			const decay = exp( this.dt.mul( - 0.72 ) );
 			const activity = carried.r.mul( decay );
 			const moment = carried.g.add( carried.r.mul( this.dt ) ).mul( decay );
-			const incoming = mix( float( 0.28 ), float( 1 ), smoothstep( 0.05, 0.6, dot( this.direction, normal ).negate() ) );
+			// Sheltered-side activity must survive until its detached arc develops.
+			const incoming = mix( float( 0.55 ), float( 1 ), smoothstep( 0.05, 0.6, dot( this.direction, normal ).negate() ) );
 			const band = float( 1 ).sub( smoothstep( 1.1, 1.8, sd ) );
 			const island = float( 1 ).sub( smoothstep( 0.4, 0.9, texture( islandShore, q ).level( float( 0 ) ).r ) );
 			const patch = texture( pattern, foot.mul( 0.055 ) ).level( float( 0 ) ).r;
