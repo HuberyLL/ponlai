@@ -108,61 +108,70 @@ export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode,
 		// type. Register a real comparison before raw loads. It remains the exact centre
 		// result for a depth-constant receiver; sloped receivers use texel-plane comparisons.
 		const centre = ( depthKind === 'depth' ? texture( depth, clamp( sc.xy, vec2( 0 ), vec2( 1 ) ) )
-			.compare( sc.z ) as unknown as F : compareSample( sc.xy, sc.z ) ).toVar();
-		// This conservative search covers any caster between the receiver and the near plane.
-		// Progressive radii retain samples close to a thin leaf or a sharp contact, as well as
-		// finding more distant blockers. The first sample is the centre itself.
-		const searchRadius = solarPenumbraRadius( max( sc.z, 0 ), float( 0 ), depthRange, angularRadius, span ).toVar();
-		const blockerDepth = float( 0 ).toVar(), blockerCount = float( 0 ).toVar();
-		Loop( BLOCKER_SAMPLES, ( { i } ) => {
-
-			const index = float( i );
-			const offset = select( index.equal( 0 ), vec2( 0 ),
-				solarShadowDiskOffset( max( index.sub( 1 ), 0 ), float( BLOCKER_SAMPLES - 1 ), rotation, float( 2 ) ) ).mul( searchRadius ).toVar();
-			const q = sc.xy.add( offset ).toVar();
-			const inside = q.x.greaterThanEqual( 0 ).and( q.y.greaterThanEqual( 0 ) )
-				.and( q.x.lessThanEqual( 1 ) ).and( q.y.lessThanEqual( 1 ) );
-			const pixel = clamp( floor( q.mul( size ) ), vec2( 0 ), size.sub( 1 ) ).toVar();
-			const stored = loadDepth( ivec2( pixel ) ).toVar();
-			// A raw load uses the containing texel centre, not the requested disk position.
-			// Correcting only the requested offset mistakes a sloped clear plane for a blocker.
-			const centreOffset = pixel.add( 0.5 ).div( size ).sub( sc.xy );
-			const corrected = stored.sub( dot( gradient, centreOffset ) ).toVar();
-			const blocker = select( inside.and( corrected.lessThan( sc.z ) ), float( 1 ), float( 0 ) ).toVar();
-			blockerDepth.addAssign( corrected.mul( blocker ) );
-			blockerCount.addAssign( blocker );
-
-		} );
-		const average = select( blockerCount.greaterThan( 0 ), blockerDepth.div( max( blockerCount, 1 ) ), sc.z );
-		const radius = solarPenumbraRadius( sc.z, average, depthRange, angularRadius, span ).toVar();
-		const visibility = centre.toVar();
-		if ( depthKind === 'depth' ) If( max( abs( gradient.x ), abs( gradient.y ) ).greaterThan( 1e-7 ), () => {
-
-			visibility.assign( compareSample( sc.xy, sc.z ) );
-
-		} );
-		// With no blocker the radius is exactly zero: every disk tap equals the centre.
-		// Raw loads have no implicit derivatives, so only shadowed pixels need the other taps.
-		If( blockerCount.greaterThan( 0 ), () => {
-
-			Loop( FILTER_SAMPLES - 1, ( { i } ) => {
-
-				const offset = solarShadowDiskOffset( float( i ).add( 1 ), float( FILTER_SAMPLES ), rotation, float( 0.5 ) ).mul( radius ).toVar();
-				const q = sc.xy.add( offset ).toVar();
-				const inside = q.x.greaterThanEqual( 0 ).and( q.y.greaterThanEqual( 0 ) )
-					.and( q.x.lessThanEqual( 1 ) ).and( q.y.lessThanEqual( 1 ) );
-				const compareDepth = sc.z.add( dot( gradient, offset ) );
-				const sample = compareSample( q, compareDepth );
-				visibility.addAssign( select( inside, sample, float( 1 ) ) );
-
-			} );
-			visibility.divAssign( FILTER_SAMPLES );
-
-		} );
+			.compare( sc.z ) as unknown as F : float( 1 ) ).toVar();
 		const inside = sc.x.greaterThanEqual( 0 ).and( sc.y.greaterThanEqual( 0 ) )
 			.and( sc.x.lessThanEqual( 1 ) ).and( sc.y.lessThanEqual( 1 ) )
 			.and( sc.z.greaterThanEqual( 0 ) ).and( sc.z.lessThanEqual( 1 ) );
-		return select( inside, visibility, float( 1 ) );
+		const visibility = float( 1 ).toVar();
+		// Ocean pixels beyond the island's light frustum need no raw shadow-map accesses.
+		// Derivatives and the binding's comparison sample above still run uniformly.
+		If( inside, () => {
+
+			visibility.assign( depthKind === 'depth' ? centre : compareSample( sc.xy, sc.z ) );
+			if ( depthKind === 'depth' ) If( max( abs( gradient.x ), abs( gradient.y ) ).greaterThan( 1e-7 ), () => {
+
+				visibility.assign( compareSample( sc.xy, sc.z ) );
+
+			} );
+			// This conservative search covers any caster between the receiver and the near plane.
+			// Progressive radii retain samples close to a thin leaf or a sharp contact, as well as
+			// finding more distant blockers. The first sample is the centre itself.
+			const searchRadius = solarPenumbraRadius( max( sc.z, 0 ), float( 0 ), depthRange, angularRadius, span ).toVar();
+			const blockerDepth = float( 0 ).toVar(), blockerCount = float( 0 ).toVar();
+			Loop( BLOCKER_SAMPLES, ( { i } ) => {
+
+				const index = float( i );
+				const offset = select( index.equal( 0 ), vec2( 0 ),
+					solarShadowDiskOffset( max( index.sub( 1 ), 0 ), float( BLOCKER_SAMPLES - 1 ), rotation, float( 2 ) ) ).mul( searchRadius ).toVar();
+				const q = sc.xy.add( offset ).toVar();
+				const inside = q.x.greaterThanEqual( 0 ).and( q.y.greaterThanEqual( 0 ) )
+					.and( q.x.lessThanEqual( 1 ) ).and( q.y.lessThanEqual( 1 ) );
+				const pixel = clamp( floor( q.mul( size ) ), vec2( 0 ), size.sub( 1 ) ).toVar();
+				const stored = loadDepth( ivec2( pixel ) ).toVar();
+				// A raw load uses the containing texel centre, not the requested disk position.
+				// Correcting only the requested offset mistakes a sloped clear plane for a blocker.
+				const centreOffset = pixel.add( 0.5 ).div( size ).sub( sc.xy );
+				const corrected = stored.sub( dot( gradient, centreOffset ) ).toVar();
+				const blocker = select( inside.and( corrected.lessThan( sc.z ) ), float( 1 ), float( 0 ) ).toVar();
+				blockerDepth.addAssign( corrected.mul( blocker ) );
+				blockerCount.addAssign( blocker );
+
+			} );
+			const average = select( blockerCount.greaterThan( 0 ), blockerDepth.div( max( blockerCount, 1 ) ), sc.z );
+			const radius = solarPenumbraRadius( sc.z, average, depthRange, angularRadius, span ).toVar();
+			const radiusTexels = max( radius.x.mul( size.x ), radius.y.mul( size.y ) ).toVar();
+			// Bilinear comparison already covers a texel footprint. A solar penumbra below a
+			// quarter texel needs no extra disk taps; fade them in to avoid a threshold jump.
+			If( blockerCount.greaterThan( 0 ).and( radiusTexels.greaterThan( 0.25 ) ), () => {
+
+				const filtered = visibility.toVar();
+
+				Loop( FILTER_SAMPLES - 1, ( { i } ) => {
+
+					const offset = solarShadowDiskOffset( float( i ).add( 1 ), float( FILTER_SAMPLES ), rotation, float( 0.5 ) ).mul( radius ).toVar();
+					const q = sc.xy.add( offset ).toVar();
+					const inside = q.x.greaterThanEqual( 0 ).and( q.y.greaterThanEqual( 0 ) )
+						.and( q.x.lessThanEqual( 1 ) ).and( q.y.lessThanEqual( 1 ) );
+					const compareDepth = sc.z.add( dot( gradient, offset ) );
+					const sample = compareSample( q, compareDepth );
+					filtered.addAssign( select( inside, sample, float( 1 ) ) );
+
+				} );
+				visibility.assign( mix( visibility, filtered.div( FILTER_SAMPLES ), smoothstep( 0.25, 0.75, radiusTexels ) ) );
+
+			} );
+		} );
+		return visibility;
 
 	} )();
 
