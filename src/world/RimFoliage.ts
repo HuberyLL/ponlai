@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionLocal, normalViewGeometry, vec3, float, mix, sin, cos, dot, pow, clamp } from 'three/tsl';
+import { attribute, positionLocal, normalViewGeometry, materialColor, vec3, vec4, float, mix, sin, cos, dot, pow, clamp } from 'three/tsl';
 import { leafTexture, leafAlphaTexture } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
@@ -55,12 +55,21 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh ): THREE.Mes
 	} );
 	// Reusing both silhouettes also keeps the shadow pass consistent with the existing bush.
 	if ( ! mat.alphaMap ) mat.alphaMap = leafAlphaTexture( mat.map as THREE.CanvasTexture );
+	const wetness = clamp( shared.wetness, 0, 1 );
+	const wetTint = mix( 1, 0.92, wetness );
+	// Replace the cloned colour graph so wetness applies once, including the fallback material.
+	mat.colorNode = materialColor.mul( vec4( wetTint, wetTint, wetTint, 1 ) );
+	mat.roughnessNode = mix( 0.82, 0.68, wetness );
 	const weight = attribute( 'rimSway', 'float' );
-	const phase = attribute( 'rimPhase', 'float' ).sub( shared.time.mul( 1.3 ) );
+	const phase = attribute( 'rimPhase', 'float' ).sub( shared.wind.phase.mul( 1.3 / 1.6 ) );
+	const wind = shared.wind.direction;
+	const along = vec3( wind.x, 0, wind.y ).mul( sin( phase ) );
+	const across = vec3( wind.y.negate(), 0, wind.x ).mul( cos( phase.mul( 0.91 ) ).mul( 0.35 ) );
+	const lift = vec3( 0, sin( phase.mul( 0.83 ) ).mul( 0.10 ), 0 );
 	// The cloned bush material has shadow hooks for its own wind graph. Replace both
-	// hooks with this mesh's rest pose, keeping its visible 4.8 mm sway unchanged.
-	useRestPoseShadows( mat, positionLocal, positionLocal.add( vec3( sin( phase ), sin( phase.mul( 0.83 ) ).mul( 0.10 ), cos( phase.mul( 0.91 ) ) )
-		.mul( weight.mul( 0.0048 ) ) ) );
+	// hooks with this mesh's rest pose, retaining its authored 4.8 mm sway scale.
+	useRestPoseShadows( mat, positionLocal, positionLocal.add( along.add( across ).add( lift )
+		.mul( weight.mul( 0.0048 ).mul( shared.wind.strength ) ) ) );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.72 ), float( 0.96 ), weight );
 	useLighting( mat, () => new VegetationLighting( float( 0.94 ), ( L, V, N ) => {

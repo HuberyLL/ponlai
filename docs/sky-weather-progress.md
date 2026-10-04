@@ -118,14 +118,105 @@ single-page headless Chromium with WebGPU; no other page is opened in the captur
   foreground-sea crops; the distant sea changes by **32.77/255**. It is distance-based air,
   not a white overlay across the island. See `report.json` fog measurements and paired PNGs.
 
+### Stage 5 — wind, precipitation and wet surfaces
+
+- One integrated world-space wind drives cloud travel, rooted vegetation gusts, falling rain
+  and FFT cascade amplitudes. Speed changes preserve wind phase and accumulated travel.
+  Calm long swell remains restrained; weather changes never rebuild the random wave spectrum.
+- Ocean displacement, gradients, signed slope covariance and horizontal Jacobian use the same
+  cascade gains. The shoreline observation cache also refreshes when a paused wind gain changes.
+  `verify-ocean-weather.mjs` passes actual GPU checks of linear/squared scaling, reconstructed
+  Jacobian, shoreline refresh and unchanged spectrum revisions.
+- Rain adds one depth-tested instanced draw (192/384/640 streaks). A conservative island height
+  mask and opaque/water depth reject hidden drops. Rain has no emissive floor, and its radiance
+  uses the displayed sky integral and key light before the scene grade.
+- Two staggered analytic impact fields add a filtered 0.3 mm ripple gradient to the same water
+  normal used for reflection and refraction. There is no foam, opaque surface layer or extra
+  fluid simulation. Pixel-footprint filtering removes unresolved rings in distant water.
+- Rain gradually wets exposed rock, turf and foliage; surfaces retain moisture after rain stops.
+  Rock darkening is capped at 16%, vegetation at 8% (petals 5%), with bounded roughness changes.
+  The existing animated tidal/submerged band is excluded from rain wetness.
+- Type checking, CPU day/weather/wind continuity checks, six integrated weather GPU checks and
+  the existing wave-optics regression pass. Repeated five-preset and night-rain captures remain
+  deterministic; near-water rock and sand detail remains visible.
+- Final review found and corrected a fast-clock edge case: a large same-source light movement
+  must not trigger the dark sun/moon handoff. Explicit source roles and wall-time lighting cadence
+  now preserve continuous daylight at low frame rates. The GPU regression passes three actual
+  handoffs plus 30-degree sun and moon moves, with zero dark samples in either same-source case.
+- Final night-sky regression and production build pass. The screenshot harness waits for the
+  loading overlay's CSS fade before testing frozen pixels, avoiding false frame differences.
+- Fixed dry/wet review at 16:00, established rain, t=12: cliff luma **49.11 → 48.19/255**,
+  meadow **50.78 → 50.16**, shallow water **exactly unchanged**. Separate streak geometry affects
+  only **0.157%** of overview pixels by more than one channel level. Native paired crops are in
+  `artifacts/sky-weather/stage5-wetness/`.
+- The final effects probe passes all five checks with no GPU, browser, asset or shader warnings.
+  Fourteen frozen capture pairs are byte-identical. The 105,298 sampled exposed material pixels
+  show a mean wetness radiance change of **5.86e-5**; tidal/submerged differences stay below **4.4e-9**, with
+  **zero depth changes**. The near-water ripple crop changes 1,413 pixels by more than one
+  channel level without raising average luminance or clipping; distant rings fade below a
+  pixel. Evidence: `artifacts/verification/weather-effects/` and `stage5-ripples/comparison.png`.
+- Low/medium/high integration checks confirm 192/384/640 rain instances, respectively. All
+  three stabilize at 86 textures after rain has initialized; dry startup uses 85.
+- Final required-resolution measurements use the same isolated WebGPU/Metal capture browser,
+  CSS 2400 × 1500 / DPR 1.5, five samples each. There are no console or asset errors:
+
+  | State, medium quality | Mean frame time | Sampled P95 range |
+  | --- | ---: | ---: |
+  | Fair, 16:00, moving clouds/waves, day clock paused | 27.362 ms | 32.5–32.9 ms |
+  | Rain, 16:00, moving clouds/waves/rain | 27.910 ms | 31.0–31.3 ms |
+  | Rain, midnight, moving clouds/waves/rain | 27.754 ms | 31.1–32.6 ms |
+  | Fair, running day clock from noon, all lighting updates | 26.976 ms | 28.8–38.0 ms |
+
+  Fair and rain are respectively **+3.16% / +5.23%** versus the initial 26.524 ms static
+  baseline; rain adds **0.864 ms** versus stage 4. The running-clock view has different solar
+  lighting and is reported separately. Periodic sky/shadow updates are visible in the P95.
+  This remains above a 60 FPS budget. Evidence: `artifacts/captures/stage5-*-performance.json`.
+
+## Implementation limits
+
+- This is an authored fantasy day cycle, not a date/location astronomy model. One dominant
+  sun/moon key keeps direct illumination, island shadows and refracted water lighting coherent.
+- Clouds use a bounded low-resolution volume cache with interpolated lighting and reflections;
+  the close sky view is deliberately soft. Quality changes step count, update cadence, shadow
+  cadence and rain count, rather than adding an unbounded full-screen volume pass.
+- Rain uses local streaks, a conservative height mask and analytic normal ripples; it does not
+  simulate droplets, puddles or water impacts. Air perspective uses the underlying scene depth
+  for translucent streaks, a small approximation at distant views.
+- Night rain retains silhouettes and shallow-water boundaries but intentionally loses fine
+  contrast; it is darker than clear full-moon illumination. No mobile performance claim is made.
+
 ## Review controls
 
 Press **H** for controls and **Space** to pause scene animation and the day clock. `Time & moon`
 offers hours, seconds per day, independent clock pause, presets, phase and optional lunar advance.
 `Sky & clouds` includes island, horizon and sky review cameras.
 `Weather` selects clear/fair/cloudy/overcast/rain and transition duration (0 for immediate review).
+It also provides separate rain/ripple and wet-surface toggles for fixed-state comparisons.
 Weather and cloud motion pause with the scene; the independent day-clock pause leaves them moving.
 Reproducible URLs accept `paused&t=12&hour=16&moon=0.5&quality=medium&dpr=1`;
 add `weather=rain` to load established rain, or `clouds=0` for a cloud-cover review override.
 `clock=paused` freezes only the day clock. Presets include dawn, sunrise, noon, golden-hour,
 sunset, dusk and midnight. The debug API is available only in development or with `?debug`.
+
+## Re-run verification
+
+Use the isolated worktree dev server, not another checkout's existing server. Run GPU commands
+sequentially with other test pages closed:
+
+```sh
+npm run build
+node tools/verify-day-cycle.mjs
+node tools/verify-weather-state.mjs
+node tools/verify-wind.mjs
+node tools/verify-dynamic-sky.mjs http://127.0.0.1:5196
+node tools/verify-night-sky.mjs http://127.0.0.1:5196
+node tools/verify-celestial-handoff.mjs http://127.0.0.1:5196
+node tools/verify-weather.mjs http://127.0.0.1:5196 --coupling
+node tools/verify-ocean-weather.mjs http://127.0.0.1:5196
+node tools/verify-weather-effects.mjs http://127.0.0.1:5196
+node tools/verify-wave-optics.mjs http://127.0.0.1:5196
+```
+
+Full frame sheet: `artifacts/sky-weather/final-overview.png`. Originals and unscaled local
+comparisons remain beside the individual stage reports. No reference imagery or generated
+evidence enters the production build.

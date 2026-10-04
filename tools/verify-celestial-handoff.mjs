@@ -27,6 +27,7 @@ try {
 		const s = window.__SOOMI__;
 		s.dayCycle.paused = true;
 		s.dayCycle.moonPhase = 0.5;
+		await s.setWeather( 'clear', 0 );
 		const read = () => ( {
 			amount: s.sky.blend.value, dir: s.sky.keyDir.toArray(), color: s.sky.keyColor.toArray(),
 			grade: { ...s.sky.grade }, exposure: s.pipeline.settings.exposure, transitioning: s.sky.transitioning,
@@ -34,13 +35,21 @@ try {
 		const runs = [];
 		// A 30-second day advances 0.4 hours per 0.5-second bake. Also exercise a larger
 		// skipped interval and the reverse sunrise handoff with nonzero endpoint radiance.
-		for ( const [ from, to ] of [ [ 17.8, 18.2 ], [ 17.8, 18.5 ], [ 5.5, 6.2 ] ] ) {
+		// Long same-source steps model a low frame rate with the fastest allowed day.
+		// They must preserve direct energy even though their angular motion exceeds 15°.
+		const cases = [
+			{ from: 17.8, to: 18.2, kind: 'handoff' }, { from: 17.8, to: 18.5, kind: 'handoff' },
+			{ from: 5.5, to: 6.2, kind: 'handoff' }, { from: 10, to: 12, kind: 'same-sun' },
+			{ from: 22, to: 0, kind: 'same-moon' },
+		];
+		for ( const { from, to, kind } of cases ) {
 
 			await s.setHour( from );
 			await new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
 			const before = read();
 			s.dayCycle.setHour( to );
 			const destination = s.dayCycle.snapshot();
+			const cosine = destination.keyDir.x * before.dir[ 0 ] + destination.keyDir.y * before.dir[ 1 ] + destination.keyDir.z * before.dir[ 2 ];
 			// Keep the scheduler's clock unchanged while explicitly exercising its two baked
 			// endpoints, so it cannot start a second identical transition during our samples.
 			s.dayCycle.setHour( from );
@@ -57,7 +66,8 @@ try {
 				samples.push( read() );
 
 			} while ( s.sky.transitioning && performance.now() < end );
-			runs.push( { from, to, before, duringBake, initial,
+			runs.push( { from, to, kind, before, duringBake, initial,
+				angle: Math.acos( Math.min( 1, Math.max( - 1, cosine ) ) ) * 180 / Math.PI,
 				expectedGrade: { exposure: destination.exposure, blackLift: destination.blackLift, daylight: destination.daylight }, samples } );
 			await s.refreshEnvironment();
 
@@ -70,13 +80,35 @@ try {
 
 		assert.deepEqual( run.duringBake.grade, run.before.grade, 'Pending bake must retain the displayed grade' );
 		assert.deepEqual( run.initial.grade, run.before.grade, 'Transition must start with the old displayed grade' );
-		const zero = run.samples.filter( ( sample ) => sample.amount >= 0.2 && sample.amount <= 0.8 );
-		assert.ok( zero.length >= 2, 'Handoff must have multiple zero-energy samples' );
+		const middle = run.samples.filter( ( sample ) => sample.amount >= 0.2 && sample.amount <= 0.8 );
+		assert.ok( middle.length >= 2, 'Transition must have multiple middle samples' );
+		const finalColor = run.samples.at( - 1 ).color;
+		if ( run.kind !== 'handoff' ) {
+
+			assert.ok( run.angle > 15, `${ run.kind } must exercise a large direction change` );
+			assert.ok( run.before.color.every( ( value ) => value > 0 ) && finalColor.every( ( value ) => value > 0 ),
+				`${ run.kind } needs two illuminated endpoints` );
+
+		}
 		for ( const sample of run.samples ) {
 
 			assert.ok( sample.dir.every( Number.isFinite ) );
 			assert.ok( Math.abs( Math.hypot( ...sample.dir ) - 1 ) < 1e-8 );
-			if ( sample.amount >= 0.2 && sample.amount <= 0.8 ) assert.deepEqual( sample.color, [ 0, 0, 0 ], 'Rotating primary light must carry zero energy' );
+			if ( run.kind === 'handoff' && sample.amount >= 0.2 && sample.amount <= 0.8 ) {
+
+				assert.deepEqual( sample.color, [ 0, 0, 0 ], 'Changing the primary source must carry zero energy' );
+
+			} else if ( run.kind !== 'handoff' ) {
+
+				for ( let channel = 0; channel < 3; channel ++ ) {
+
+					const expected = run.before.color[ channel ] + ( finalColor[ channel ] - run.before.color[ channel ] ) * sample.amount;
+					assert.ok( Math.abs( sample.color[ channel ] - expected ) < 1e-8,
+						`${ run.kind } must retain interpolated direct energy at blend ${ sample.amount }` );
+
+				}
+
+			}
 			for ( const key of [ 'exposure', 'blackLift', 'daylight' ] ) {
 
 				const expected = run.before.grade[ key ] + ( run.expectedGrade[ key ] - run.before.grade[ key ] ) * sample.amount;
@@ -90,8 +122,8 @@ try {
 
 	}
 	assert.deepEqual( errors, [] );
-	console.log( JSON.stringify( { runs: report.runs.map( ( run ) => ( { from: run.from, to: run.to,
-		samples: run.samples.length, zeroEnergySamples: run.samples.filter( ( sample ) => sample.amount >= 0.2 && sample.amount <= 0.8 ).length } ) ), errors } ) );
+	console.log( JSON.stringify( { runs: report.runs.map( ( run ) => ( { from: run.from, to: run.to, kind: run.kind,
+		angle: run.angle, samples: run.samples.length, zeroEnergySamples: run.samples.filter( ( sample ) => sample.color.every( ( value ) => value === 0 ) ).length } ) ), errors } ) );
 
 } finally {
 

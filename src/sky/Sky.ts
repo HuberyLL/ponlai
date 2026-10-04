@@ -22,6 +22,7 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'windSpeed' | 'windDirection'>;
+type KeySource = 'sun' | 'handoff' | 'moon';
 
 interface SkyEndpoint {
 	equirect: THREE.RenderTarget;
@@ -34,6 +35,7 @@ interface SkyEndpoint {
 	solarIlluminance: THREE.Color;
 	keyDir: THREE.Vector3;
 	keyColor: THREE.Color;
+	keySource: KeySource;
 	moonDir: THREE.Vector3;
 	moonColor: THREE.Color;
 	starVisibility: number;
@@ -62,6 +64,7 @@ function makeEndpoint(): SkyEndpoint {
 		sunDir: new THREE.Vector3( 0, 1, 0 ), sunColor: new THREE.Color( 0, 0, 0 ),
 		solarIlluminance: new THREE.Color( 0, 0, 0 ),
 		keyDir: new THREE.Vector3( 0, 1, 0 ), keyColor: new THREE.Color( 0, 0, 0 ),
+		keySource: 'sun',
 		moonDir: new THREE.Vector3( 0, - 1, 0 ), moonColor: new THREE.Color( 0, 0, 0 ),
 		starVisibility: 0,
 		exposure: 2.35, blackLift: 0.027, daylight: 1,
@@ -417,6 +420,9 @@ export class Sky {
 		state.sunColor.copy( this.atmosphere.transmittanceToSun() ).multiply( state.solarIlluminance );
 		state.keyDir.copy( celestial?.keyDir ?? state.sunDir );
 		state.keyColor.copy( state.sunColor );
+		// Match DayCycle's zero-energy rotation band. Identity must travel with each
+		// endpoint: a slow device can legitimately move the same sun by more than 15°.
+		state.keySource = ! celestial || elevation >= - 0.25 ? 'sun' : elevation <= - 2 ? 'moon' : 'handoff';
 		if ( celestial ) {
 
 			// A modest art-directed moon remains orders darker than daylight on the island.
@@ -610,7 +616,8 @@ export class Sky {
 
 	private blendKey( a: SkyEndpoint, b: SkyEndpoint, amount: number ): void {
 
-		if ( this.transitionDuration > 0 && a.keyDir.dot( b.keyDir ) < Math.cos( Math.PI / 12 ) ) {
+		const changingSource = a.keySource !== b.keySource || a.keySource === 'handoff' || b.keySource === 'handoff';
+		if ( this.transitionDuration > 0 && changingSource && a.keyDir.dot( b.keyDir ) < Math.cos( Math.PI / 12 ) ) {
 
 			// A fast clock can skip the celestial controller's entire dark handoff band
 			// between two bakes. Never rotate a still-visible sun toward the moon: fade out,

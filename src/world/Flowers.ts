@@ -1,8 +1,9 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionGeometry, positionLocal, normalViewGeometry, vec2, vec3, dot, sin, mix, smoothstep as smoothstepN } from 'three/tsl';
+import { attribute, positionGeometry, positionLocal, normalViewGeometry, vec3, clamp, mix, smoothstep as smoothstepN } from 'three/tsl';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
+import { windGust } from '../weather/Wind.ts';
 import type { Shared } from '../shared.ts';
 import { supportsMeadow } from '../materials/Meadow.ts';
 
@@ -74,11 +75,13 @@ function flowerMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const part = attribute<'float'>( 'flowerPart', 'float' );
 	const petal = attribute<'vec3'>( 'flowerColor', 'vec3' );
 	const bloom = mix( petal, vec3( 0.32, 0.18, 0.027 ), smoothstepN( 1.1, 1.9, part ) );
-	mat.colorNode = mix( vec3( 0.035, 0.095, 0.018 ), bloom, smoothstepN( 0.2, 0.8, part ) );
+	const wetness = clamp( shared.wetness, 0, 1 );
+	mat.colorNode = mix( vec3( 0.035, 0.095, 0.018 ), bloom, smoothstepN( 0.2, 0.8, part ) ).mul( mix( 1, 0.95, wetness ) );
+	mat.roughnessNode = mix( 0.79, 0.72, wetness );
 	const g = positionGeometry, p = positionLocal;
-	const ph = dot( p.xz, vec2( 0.8, - 0.6 ) ).mul( 0.45 ).sub( shared.time.mul( 1.6 ) );
-	const gust = sin( ph ).mul( 0.45 ).add( 0.55 );
-	useRestPoseShadows( mat, p, p.add( vec3( 0.8, 0, - 0.6 ).mul( gust.mul( 0.035 ).mul( g.y.mul( g.y ) ) ) ) );
+	const wind = shared.wind.direction;
+	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
+	useRestPoseShadows( mat, p, p.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.035 ).mul( g.y.mul( g.y ) ) ) ) );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = attribute<'float'>( 'skyVisibility', 'float' );
 	return mat;

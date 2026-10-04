@@ -30,7 +30,9 @@ packages, into `dist/licenses/`.
     `Sky.js`, ported from WGSL to TSL. The new cloud density, bounded ray march and cloud shadows
     in `src/sky/Clouds.ts` are original Soomi code, not copied from tidewater. The celestial
     clock, geometric lunar phase and filtered procedural stars are also original code;
-    they introduce no third-party imagery or additional asset licence.
+    they introduce no third-party imagery or additional asset licence. Weather blending,
+    integrated wind, analytic rain streaks/ripple gradients and wet-material response are
+    original Soomi code as well.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
 ### Hash without Sine

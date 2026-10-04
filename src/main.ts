@@ -5,6 +5,8 @@ import GUI from 'lil-gui';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WEATHER_QUALITY, type WeatherName, type WeatherQuality } from './sky/Weather.ts';
+import { Wind } from './weather/Wind.ts';
+import { Rain } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
 import { Caustics } from './ocean/Caustics.ts';
@@ -66,6 +68,7 @@ document.getElementById( 'app' )!.appendChild( renderer.domElement );
 
 const scene = new THREE.Scene();
 const waterScene = new THREE.Scene();
+const rainScene = new THREE.Scene();
 
 const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 2600 );
 const target = new THREE.Vector3( 1.5, 0.5, 1.0 );
@@ -93,23 +96,27 @@ const dayCycle = new DayCycle( { hour: numberParam( 'hour', 16 ), dayLength: Mat
 	paused: params.has( 'paused' ) || params.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.5 ) } );
 const requestedWeather = params.get( 'weather' ) ?? 'fair';
 const weather = new Weather( Object.hasOwn( WEATHER_PRESETS, requestedWeather ) ? requestedWeather as WeatherName : 'fair' );
+const weatherEffects = { rain: true, wetness: true };
 const requestedPreset = params.get( 'preset' );
 if ( requestedPreset && Object.hasOwn( DAY_PRESETS, requestedPreset ) ) dayCycle.setPreset( requestedPreset as DayPreset );
 let manualSun = false;
 let paused = params.has( 'paused' );
-let simTime = numberParam( 't', 0 );
+let simTime = Math.max( 0, numberParam( 't', 0 ) );
+const wind = new Wind( shared.wind, { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
+let rain: Rain | undefined;
 let skyElapsed = 0;
 let lastSkyTime = simTime;
 let lastSkyHour = dayCycle.hour;
 let lastWeatherSignature = '';
 // Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
 let cloudOverride: number | null = params.has( 'clouds' ) ? THREE.MathUtils.clamp( numberParam( 'clouds', 0.32 ), 0, 1 ) : null;
-sky.clouds.windOffset.value.set( - numberParam( 't', 0 ) * 0.61, - numberParam( 't', 0 ) * 0.51 );
+sky.clouds.windOffset.value.copy( shared.wind.cloudOffset.value );
 const requestedQuality = params.get( 'quality' ) ?? 'medium';
 const skyQuality = { value: ( Object.hasOwn( WEATHER_QUALITY, requestedQuality ) ? requestedQuality : 'medium' ) as WeatherQuality };
 function applySkyQuality(): void {
 
 	sky.setQuality( skyQuality.value === 'low' ? 'low' : skyQuality.value === 'high' ? 'high' : 'medium' );
+	rain?.setQuality( WEATHER_QUALITY[ skyQuality.value ].rainDrops );
 
 }
 applySkyQuality();
@@ -160,6 +167,7 @@ function prepareSkyState(): void {
 	const state = weather.snapshot();
 	if ( cloudOverride !== null ) state.coverage = cloudOverride;
 	sky.setWeather( state );
+	sky.clouds.windOffset.value.copy( shared.wind.cloudOffset.value );
 	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.haze }`;
 
 }
@@ -247,6 +255,12 @@ const fft = new OceanFFT( renderer, {
 } );
 const caustics = new Caustics( renderer, fft );
 const pipeline = new Pipeline( renderer, sky );
+rain = new Rain( { count: WEATHER_QUALITY[ skyQuality.value ].rainDrops } );
+rain.bindOpaqueDepth( pipeline.depthRT.texture );
+// Drops scatter the same linear environment and key light as the island, without an emissive
+// floor. Using the GPU integral keeps their light in step with the displayed sky transition.
+rain.setLightNode( shared.skyIrradianceSource.mul( 0.65 ).add( shared.sunColor.mul( 0.045 ) ) );
+rainScene.add( rain.mesh );
 
 // ------------------------------------------------------------------ world
 
@@ -337,6 +351,8 @@ const weatherF = gui.addFolder( 'Weather' );
 const weatherView = { preset: weather.target, seconds: 20 };
 weatherF.add( weatherView, 'preset', Object.keys( WEATHER_PRESETS ) ).name( 'weather' ).onChange( ( name: WeatherName ) => { void setWeather( name, weatherView.seconds ); } );
 weatherF.add( weatherView, 'seconds', 0, 120, 1 ).name( 'transition seconds' );
+weatherF.add( weatherEffects, 'rain' ).name( 'rain & ripples' );
+weatherF.add( weatherEffects, 'wetness' ).name( 'wet surfaces' );
 const timeF = gui.addFolder( 'Time & moon' );
 const timeView = { preset: requestedPreset ?? 'golden-hour' };
 timeF.add( dayCycle, 'hour', 0, 24, 0.01 ).name( 'hour' ).listen().onFinishChange( refreshEnvironment );
@@ -441,15 +457,26 @@ function tick(): void {
 	frameTimes.push( rawDt * 1000 );
 	if ( frameTimes.length > 120 ) frameTimes.shift();
 	const dt = Math.min( rawDt, 1 / 20 );
+	// Lighting cadence follows wall time even below 20 FPS. Bound a resumed/stalled frame;
+	// the scheduler still submits at most one coalesced bake instead of catching up a queue.
+	const environmentDt = Math.min( rawDt, 1 );
 	if ( ! paused ) simTime += dt;
 	dayCycle.advance( rawDt );
 	weather.update( paused ? 0 : rawDt );
 	controls.update();
 
 	renderer.info.reset();
-	sky.advance( dt );
+	sky.advance( environmentDt );
 	publishLighting();
 	pipeline.air.haze.value = sky.weather.haze;
+	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
+	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
+	shared.wetness.value = weatherEffects.wetness ? weather.state.wetness : 0;
+	fft.weatherGain.value.copy( shared.wind.oceanGain.value );
+	rain!.uniforms.rain.value = shared.rain.value;
+	rain!.uniforms.wind.value.copy( shared.wind.velocity.value );
+	rain!.uniforms.waterLevel.value = shared.waterLevel.value;
+	rain!.update( camera, simTime );
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		const state = sky.grade;
@@ -458,7 +485,7 @@ function tick(): void {
 		S.split = 0.16 + state.daylight * 0.29;
 
 	}
-	skyElapsed += dt;
+	skyElapsed += environmentDt;
 	const skyInterval = WEATHER_QUALITY[ skyQuality.value ].skyUpdateInterval;
 	const ws = weather.state;
 	const weatherSignature = `${ cloudOverride ?? ws.coverage },${ ws.density },${ ws.directVisibility },${ ws.ambientGain },${ ws.haze }`;
@@ -468,12 +495,11 @@ function tick(): void {
 		skyElapsed = 0;
 		lastSkyTime = simTime;
 		lastSkyHour = dayCycle.hour;
-		sky.clouds.windOffset.value.set( - simTime * 0.61, - simTime * 0.51 );
 		prepareSkyState();
 		void sky.update( skyInterval * 0.8 ).catch( ( error: unknown ) => console.error( error ) );
 
 	}
-	shadowElapsed += dt;
+	shadowElapsed += environmentDt;
 	const shadowInterval = WEATHER_QUALITY[ skyQuality.value ].shadowUpdateInterval;
 	if ( shadowElapsed >= shadowInterval && shadowDirection.distanceToSquared( sky.keyDir ) > 1e-10 ) {
 
@@ -491,7 +517,7 @@ function tick(): void {
 	characters.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
 
-	pipeline.render( { scene, waterScene, camera, water: water!, sun, time: simTime } );
+	pipeline.render( { scene, waterScene, rainScene: rain!.mesh.visible ? rainScene : undefined, camera, water: water!, sun, time: simTime } );
 	frame ++;
 	diagnostics();
 
@@ -525,6 +551,8 @@ function diagnostics(): void {
 		weather: weather.target,
 		weatherProgress: + weather.progress.toFixed( 3 ),
 		rain: + sky.weather.rain.toFixed( 3 ),
+		wetness: + shared.wetness.value.toFixed( 3 ),
+		windSpeed: + wind.speed.toFixed( 3 ),
 	};
 
 }
@@ -532,5 +560,12 @@ function diagnostics(): void {
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
 // setTime moves the (paused) clock, so captures can step through an animation in one page load
-const setTime = ( t: number ) => { simTime = t; };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };
+const setTime = ( t: number ) => {
+
+	if ( ! Number.isFinite( t ) || t < 0 ) throw new RangeError( 'Scene time must be finite and non-negative' );
+	simTime = t;
+	wind.reset( { speed: sky.weather.windSpeed, heading: sky.weather.windDirection, time: t } );
+	return refreshEnvironment();
+
+};
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };

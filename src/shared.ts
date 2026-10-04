@@ -1,10 +1,14 @@
 import * as THREE from 'three/webgpu';
 import { uniform, vec3 } from 'three/tsl';
+import { createWindUniforms } from './weather/Wind.ts';
 
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
 export const shared = {
 	time: uniform( 0 ),
+	wind: createWindUniforms(),
+	rain: uniform( 0 ),
+	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),
 	// Clear, deeper water: retain coloured absorption while keeping suspended-particle
 	// scattering low, so the shelf reads through a volume rather than a milky surface.

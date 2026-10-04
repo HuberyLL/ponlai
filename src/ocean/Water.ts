@@ -28,6 +28,7 @@ import {
 } from './WaveOptics.ts';
 import { RefractedSun, refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance } from './WaterTransport.ts';
+import { rainRippleGradient } from '../weather/Rain.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
@@ -406,6 +407,11 @@ export class Water {
 			// by J transpose before combining it with the parameter-space FFT height gradient.
 			heightGradient.addAssign( vec2( shoreWave.y.mul( horizontal.x ).add( shoreWave.z.mul( horizontal.z ) ),
 				shoreWave.y.mul( horizontal.y ).add( shoreWave.z.mul( horizontal.w ) ) ) );
+			// Rain rings live in world XZ, so use the same chain rule as the shore waves.
+			// One resolved normal then drives reflection, refraction and the slope frame.
+			const rainGradient = rainRippleGradient( wp.xz, time, shared.rain, footprint ).toVar();
+			heightGradient.addAssign( vec2( rainGradient.x.mul( horizontal.x ).add( rainGradient.y.mul( horizontal.z ) ),
+				rainGradient.x.mul( horizontal.y ).add( rainGradient.y.mul( horizontal.w ) ) ) );
 			const N = waveSurfaceNormal( heightGradient, horizontal ).toVar();
 			// Energy shelter scales variance by amplitude squared. Fine LOD only attenuates
 			// the resolved mean; its missing variance remains in the physical glint distribution.

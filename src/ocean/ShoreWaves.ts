@@ -38,6 +38,7 @@ export class ShoreWaves {
 	private quads: THREE.QuadMesh[];
 	private lastTime: number | undefined;
 	private lastReflection = - 1;
+	private readonly lastWeatherGain = new THREE.Vector3( - 1, - 1, - 1 );
 
 	constructor( renderer: THREE.WebGPURenderer, data: WorldData, shared: Shared, shore: THREE.Texture, fft: OceanFFT ) {
 
@@ -199,7 +200,10 @@ export class ShoreWaves {
 			this.lastTime = undefined;
 
 		}
-		if ( time === undefined || ( time === this.lastTime && this.lastReflection === this.reflection.value ) ) return;
+		// A paused preset can change the FFT's amplitude without changing its clock or base
+		// spectrum. Refresh those reflected fields too, without rebuilding shoreline geometry.
+		if ( time === undefined || ( time === this.lastTime && this.lastReflection === this.reflection.value &&
+			this.lastWeatherGain.equals( fft.weatherGain.value ) ) ) return;
 		const previousTarget = this.renderer.getRenderTarget();
 		for ( let i = 0; i < this.targets.length; i ++ ) {
 
@@ -210,6 +214,7 @@ export class ShoreWaves {
 		this.renderer.setRenderTarget( previousTarget );
 		this.lastTime = time;
 		this.lastReflection = this.reflection.value;
+		this.lastWeatherGain.copy( fft.weatherGain.value );
 
 	}
 

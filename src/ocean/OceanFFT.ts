@@ -60,6 +60,9 @@ export class OceanFFT {
 	derivativeTextures: THREE.Texture[];
 	slopeMomentTextures: THREE.Texture[];
 	velocityTextures: THREE.Texture[];
+	// A slow weather envelope changes the existing wave field without regenerating its
+	// random phases or directional spectrum. Each cascade keeps one coherent amplitude.
+	readonly weatherGain = uniform( new THREE.Vector3( 1, 1, 1 ) );
 
 	private time = uniform( 0 );
 	private chop = uniform( 0.85 );
@@ -198,12 +201,14 @@ export class OceanFFT {
 				const mat = new THREE.NodeMaterial();
 				const px = ivec2( screenCoordinate.xy );
 				const idx = uint( px.y.mul( N ).add( px.x ).add( c * NN ) );
-				const a = fin.A.element( idx ), b = fin.B.element( idx ); // ( Dx, Dz, Dy, dDx/dz ), ( dDy/dx, dDy/dz, dDx/dx, dDz/dz )
+				const gain = c === 0 ? this.weatherGain.x : c === 1 ? this.weatherGain.y : this.weatherGain.z;
+				const a = fin.A.element( idx ).mul( gain ), b = fin.B.element( idx ).mul( gain ); // ( Dx, Dz, Dy, dDx/dz ), ( dDy/dx, dDy/dz, dDx/dx, dDz/dz )
 				const J = float( 1 ).add( b.z ).mul( float( 1 ).add( b.w ) ).sub( a.w.mul( a.w ) );
-				const velocity = fin.C.element( idx );
+				const velocity = fin.C.element( idx ).mul( gain );
 				// LEAN filtering (Olano and Baker, 2010): squared slopes retain unresolved
 				// variance in the mip chain. The existing derivatives store their means.
-				// This pass observes the final IFFT; it never changes wave evolution or shape.
+				// Observe the same weather-scaled slopes as displacement and caustics. Squared
+				// moments gain amplitude squared; the signed cross derivative stays linear.
 				mat.fragmentNode = which === 0 ? vec4( a.x, a.z, a.y, J ) : which === 1 ? b : which === 2 ?
 					vec4( b.x.mul( b.x ), b.y.mul( b.y ), b.x.mul( b.y ), a.w ) : vec4( velocity.xyz, 0 );
 				this.outputs.push( { rt, quad: new THREE.QuadMesh( mat ) } );

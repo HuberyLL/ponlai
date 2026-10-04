@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	attribute, positionGeometry, positionLocal, normalViewGeometry, vec3, float, mix, dot, sin, cos, pow, clamp,
+	attribute, positionGeometry, positionLocal, normalViewGeometry, materialColor, vec3, vec4, float, mix, dot, sin, cos, pow, clamp,
 	smoothstep as smoothstepN,
 } from 'three/tsl';
 import { mulberry32 } from './noise.ts';
@@ -180,11 +180,20 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.Mesh
 		map, alphaTest: 0.3, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
 	} );
 	mat.alphaMap = leafAlphaTexture( map );
+	const wetness = clamp( shared.wetness, 0, 1 );
+	const wetTint = mix( 1, 0.92, wetness );
+	// materialColor retains the leaf map and its alpha; Three applies vertex and instance
+	// colours afterward. Wetness must not darken the cutout silhouette itself.
+	mat.colorNode = materialColor.mul( vec4( wetTint, wetTint, wetTint, 1 ) );
+	mat.roughnessNode = mix( 0.82, 0.68, wetness );
 	const g = positionGeometry; // the unit bush, before the instance places it
 	const vH = clamp( g.y.div( 0.72 ), 0, 1 );
 	const p = positionLocal; // placed: world space
-	const ph = p.x.mul( 0.4 ).add( p.z.mul( 0.3 ) ).sub( shared.time.mul( 1.3 ) );
-	useRestPoseShadows( mat, p, p.add( vec3( sin( ph.add( g.y.mul( 3 ) ) ), 0, cos( ph.mul( 1.3 ).add( g.x.mul( 3 ) ) ) ).mul( vH.mul( 0.02 ) ) ) );
+	const wind = shared.wind.direction;
+	const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.wind.phase.mul( 1.3 / 1.6 ) );
+	const along = vec3( wind.x, 0, wind.y ).mul( sin( ph.add( g.y.mul( 3 ) ) ) );
+	const across = vec3( wind.y.negate(), 0, wind.x ).mul( cos( ph.mul( 1.3 ).add( g.x.mul( 3 ) ) ).mul( 0.35 ) );
+	useRestPoseShadows( mat, p, p.add( along.add( across ).mul( vH.mul( 0.02 ).mul( shared.wind.strength ) ) ) );
 	// Each folded leaf keeps its own highlights and shading across the canopy.
 	mat.normalNode = normalViewGeometry;
 	// deep inside and underneath a bush the light is gone

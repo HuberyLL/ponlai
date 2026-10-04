@@ -52,6 +52,7 @@ export class Pipeline {
 
 	private depthQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
+	private previousClearColor = new THREE.Color();
 	private blooms: { node: BloomNode; maxLum: THREE.UniformNode<'float', number> }[] = [];
 	private u = {
 		exposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ),
@@ -99,7 +100,10 @@ export class Pipeline {
 		// ---- composite: the water over the opaque image
 		const sceneTex = texture( this.sceneRT.texture );
 		const waterTex = texture( this.waterRT.texture );
-		const hdr = this.air.apply( mix( sceneTex.rgb, waterTex.rgb, waterTex.a ), this.depthRT.texture, waterDepth, sky );
+		// Water writes alpha 1. Rain is normal-blended over transparent black, so this
+		// combined target already contains premultiplied radiance; do not apply alpha twice.
+		const overlay = sceneTex.rgb.mul( float( 1 ).sub( waterTex.a ) ).add( waterTex.rgb );
+		const hdr = this.air.apply( overlay, this.depthRT.texture, waterDepth, sky );
 
 		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a
 		// soft knee instead of a hard threshold
@@ -225,7 +229,7 @@ export class Pipeline {
 
 	}
 
-	render( { scene, waterScene, camera, water, sun, time }: { scene: THREE.Scene; waterScene: THREE.Scene; camera: THREE.Camera; water: { prepare( sun: THREE.DirectionalLight ): void } | null; sun: THREE.DirectionalLight; time: number } ): void {
+	render( { scene, waterScene, rainScene, camera, water, sun, time }: { scene: THREE.Scene; waterScene: THREE.Scene; rainScene?: THREE.Scene; camera: THREE.Camera; water: { prepare( sun: THREE.DirectionalLight ): void } | null; sun: THREE.DirectionalLight; time: number } ): void {
 
 		const r = this.renderer;
 		const S = this.settings;
@@ -243,20 +247,33 @@ export class Pipeline {
 		r.setRenderTarget( this.depthRT );
 		this.depthQuad.render( r );
 
-		// 3. water (its own pass, cleared to transparent)
+		// 3. Water, then world-space rain in the same target. The attached water depth
+		// occludes drops; their material also compares the resolved opaque depth. Rain does
+		// not write depth, so surface focus and overlapping translucent streaks are preserved.
 		const prevAlpha = r.getClearAlpha();
+		r.getClearColor( this.previousClearColor );
+		const autoClear = r.autoClear;
 		r.setRenderTarget( this.waterRT );
-		r.setClearAlpha( 0 );
-		r.clear();
-		if ( water ) {
+		try {
 
-			water.prepare( sun );
-			r.render( waterScene, camera );
+			r.setClearColor( 0, 0 );
+			r.clear();
+			r.autoClear = false;
+			if ( water ) {
+
+				water.prepare( sun );
+				r.render( waterScene, camera );
+
+			}
+			if ( rainScene ) r.render( rainScene, camera );
+
+		} finally {
+
+			r.autoClear = autoClear;
+			r.setClearColor( this.previousClearColor, prevAlpha );
+			r.setRenderTarget( null );
 
 		}
-
-		r.setClearAlpha( prevAlpha );
-		r.setRenderTarget( null );
 
 		// 4. composite, bloom, depth of field, grade
 		const [ b, g ] = this.blooms;

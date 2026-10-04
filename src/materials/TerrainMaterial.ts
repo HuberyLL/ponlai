@@ -296,6 +296,14 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 
 		}
 
+		// Rain deepens dry mineral colour without whitening the island or polishing the turf.
+		// The mask starts above the highest tidal modulation, preserving that band and all
+		// submerged detail exactly. Downward-facing overhangs receive less direct rain.
+		const rainWet = clamp( shared.wetness, 0, 1 ).mul( smoothstep( 0.65, 1.0, p.y.sub( shared.waterLevel ) ) )
+			.mul( smoothstep( - 0.6, 0.1, up ) );
+		albedo.mulAssign( mix( float( 1 ), mix( float( 0.84 ), float( 0.9 ), turf ), rainWet ) );
+		rough.assign( mix( rough, max( float( 0.58 ), rough.mul( 0.8 ) ), rainWet ) );
+
 		// --- the tidal band: wet, dark, glossy; green-black algae just below the waterline;
 		// silt and sediment on the submerged ledges
 		const wl = shared.waterLevel.add( sin( shared.time.mul( 0.9 ).add( p.x.mul( 0.4 ) ).add( p.z.mul( 0.3 ) ) ).mul( 0.08 ) );

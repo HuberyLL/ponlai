@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	attribute, uniform, positionLocal, normalViewGeometry, vec3, float, mix, max, dot, sin, pow, clamp, normalize,
+	attribute, positionLocal, normalViewGeometry, vec3, float, mix, max, dot, pow, clamp,
 	smoothstep as smoothstepN,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
@@ -10,6 +10,7 @@ import { sampleMeadow, meadowColor, supportsMeadow } from '../materials/Meadow.t
 import { sampleMeadowSoil, soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
+import { windGust } from '../weather/Wind.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import type { Shared } from '../shared.ts';
 
@@ -75,7 +76,7 @@ function tuftGeometry( seed = 3, blades = 8, segs = 3 ) {
 function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.86, metalness: 0, side: THREE.DoubleSide } );
-	const wind = uniform( new THREE.Vector2( 0.8, - 0.6 ) );
+	const wind = shared.wind.direction;
 	const t = attribute<'float'>( 'bladeT', 'float' );
 	const t2 = t.mul( t );
 	// sway: gusts travel across the meadow, the tips move most (positionLocal is already placed
@@ -86,16 +87,17 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// Keep every planting anchor. Narrower, slightly shorter shoots reveal the same soil
 	// pockets as the ground material, and a zero blend restores their original footprint.
 	const rooted = p.sub( p.sub( origin ).mul( vec3( 0.22, 0.06, 0.22 ) ).mul( soil ) );
-	const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.time.mul( 1.6 ) );
-	const gust = sin( ph ).mul( 0.45 ).add( 0.55 ).add( sin( ph.mul( 2.7 ).add( p.x.mul( 0.9 ) ) ).mul( 0.2 ) );
+	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
-	useRestPoseShadows( mat, rooted, rooted.add( vec3( normalize( wind ).x, 0, normalize( wind ).y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) ) );
+	useRestPoseShadows( mat, rooted, rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) ) );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const cover = attribute<'float'>( 'rimCover', 'float' );
 	// Meadow gaps and the rim share one root tint instead of colouring the same blade twice.
 	const rootSoil = max( soil.mul( 0.7 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
 	const root = mix( vec3( 0.35, 0.43, 0.29 ), vec3( 0.55, 0.38, 0.23 ), rootSoil );
-	mat.colorNode = mix( root, vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) );
+	const wetness = clamp( shared.wetness, 0, 1 );
+	mat.colorNode = mix( root, vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) ).mul( mix( 1, 0.92, wetness ) );
+	mat.roughnessNode = mix( 0.86, 0.76, wetness );
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
 	// The static visibility affects indirect illumination only; sunlight keeps its own shadows.

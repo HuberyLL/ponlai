@@ -33,6 +33,8 @@ try {
 	await page.goto( url.href );
 	await page.waitForFunction( () => window.__SOOMI__?.sky?.night && window.__SOOMI__?.setHour &&
 		window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 && document.getElementById( 'loading' )?.classList.contains( 'done' ) );
+	// Fast paused frames can finish before the loading overlay's one-second CSS fade.
+	await page.waitForFunction( () => getComputedStyle( document.getElementById( 'loading' ) ).opacity === '0' );
 	await page.evaluate( () => {
 		const s = window.__SOOMI__;
 		s.dayCycle.paused = true;
