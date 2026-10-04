@@ -53,3 +53,6 @@ comment where it is used.
 - Atmosphere LUTs and multiple-scattering approximation: Sébastien Hillaire,
   [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), implemented through the adapted Tidewater source above.
+- Solar radiance normalisation: the projected-solid-angle irradiance integral described in
+  [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Radiometry,_Spectra,_and_Color/Working_with_Radiometric_Integrals),
+  independently implemented with a shared scene radiance unit and an integrated limb-darkening profile.
