@@ -25,6 +25,17 @@ packages, into `dist/licenses/`.
 - Files: `src/sky/Sky.ts`
 - Changes: the ray march is ported to TSL and baked into an equirectangular texture.
 
+## Assets
+
+### Rock Face 03
+
+- Author: Dario Barresi (photography), Rico Cilliers (processing)
+- Source: [Poly Haven](https://polyhaven.com/a/rock_face_03)
+- License: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
+- Files: `public/textures/rock/rock_albedo.jpg` is the 1K diffuse map, unchanged.
+  `public/textures/rock/rock_detail.png` packs the 1K OpenGL normal map (RGB) and roughness map
+  (alpha), reduced to 8 bits.
+
 ## Acknowledgements
 
 Published techniques this project implements without using their code. Each is also credited in a

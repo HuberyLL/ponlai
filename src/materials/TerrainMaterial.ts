@@ -43,6 +43,12 @@ const triNormal = Fn( ( [ tx, ty, tz, n, w, k ]: [ V2, V2, V2, V3, V3, F ] ) => 
 } );
 
 const unpack2 = ( v: THREE.Node<'vec4'> | V2 ) => ( v as V2 ).mul( 2 ).sub( 1 );
+// Convert tangent normals to slopes before whiteout blending, retaining the scan's +Y axis.
+const stoneSlope = Fn( ( [ v ]: [ THREE.Node<'vec4'> ] ) => {
+
+	return unpack2( v.xy ).div( max( v.z.mul( 2 ).sub( 1 ), 0.3 ) );
+
+} ).setLayout( { name: 'stoneNormalSlope', type: 'vec2', inputs: [ { name: 'sample', type: 'vec4' } ] } );
 
 interface Ctx { tex: DetailTextures; shared: Shared; topY: F; shore: THREE.Texture }
 
@@ -66,45 +72,54 @@ function cliffSurface( { tex, shared, topY }: Ctx ) {
 		const half = vec4( 0.5 );
 		const hX = half.toVar(), hY = half.toVar(), hZ = half.toVar();
 		const aX = half.toVar(), aY = half.toVar(), aZ = half.toVar();
-		const fX = half.toVar(), fY = half.toVar(), fZ = half.toVar(); // chiselled facets
+		const fX = vec4( 0.5, 0.5, 1, 0.9 ).toVar(), fY = fX.toVar(), fZ = fX.toVar();
+		const cX = half.toVar(), cY = half.toVar(), cZ = half.toVar();
+		const stoneScale = ( 1 / 1.8 ) / S; // Art-direct the 2.7 m scan to smaller flakes beneath the mesh fractures.
 		If( w.x.greaterThan( 0 ), () => {
 
-			hX.assign( texture( tex.heights, uvX ).grad( gxX, gyX ) ); aX.assign( texture( tex.normalsA, uvX ).grad( gxX, gyX ) ); fX.assign( texture( tex.facets, uvX.mul( 0.5 ) ).grad( gxX.mul( 0.5 ), gyX.mul( 0.5 ) ) );
+			hX.assign( texture( tex.heights, uvX ).grad( gxX, gyX ) ); aX.assign( texture( tex.normalsA, uvX ).grad( gxX, gyX ) );
+			fX.assign( texture( tex.rockDetail, uvX.mul( stoneScale ) ).grad( gxX.mul( stoneScale ), gyX.mul( stoneScale ) ) );
+			cX.assign( texture( tex.rockAlbedo, uvX.mul( stoneScale ) ).grad( gxX.mul( stoneScale ), gyX.mul( stoneScale ) ) );
 
 		} );
 		If( w.y.greaterThan( 0 ), () => {
 
-			hY.assign( texture( tex.heights, uvY ).grad( gxY, gyY ) ); aY.assign( texture( tex.normalsA, uvY ).grad( gxY, gyY ) ); fY.assign( texture( tex.facets, uvY.mul( 0.5 ) ).grad( gxY.mul( 0.5 ), gyY.mul( 0.5 ) ) );
+			hY.assign( texture( tex.heights, uvY ).grad( gxY, gyY ) ); aY.assign( texture( tex.normalsA, uvY ).grad( gxY, gyY ) );
+			fY.assign( texture( tex.rockDetail, uvY.mul( stoneScale ) ).grad( gxY.mul( stoneScale ), gyY.mul( stoneScale ) ) );
+			cY.assign( texture( tex.rockAlbedo, uvY.mul( stoneScale ) ).grad( gxY.mul( stoneScale ), gyY.mul( stoneScale ) ) );
 
 		} );
 		If( w.z.greaterThan( 0 ), () => {
 
-			hZ.assign( texture( tex.heights, uvZ ).grad( gxZ, gyZ ) ); aZ.assign( texture( tex.normalsA, uvZ ).grad( gxZ, gyZ ) ); fZ.assign( texture( tex.facets, uvZ.mul( 0.5 ) ).grad( gxZ.mul( 0.5 ), gyZ.mul( 0.5 ) ) );
+			hZ.assign( texture( tex.heights, uvZ ).grad( gxZ, gyZ ) ); aZ.assign( texture( tex.normalsA, uvZ ).grad( gxZ, gyZ ) );
+			fZ.assign( texture( tex.rockDetail, uvZ.mul( stoneScale ) ).grad( gxZ.mul( stoneScale ), gyZ.mul( stoneScale ) ) );
+			cZ.assign( texture( tex.rockAlbedo, uvZ.mul( stoneScale ) ).grad( gxZ.mul( stoneScale ), gyZ.mul( stoneScale ) ) );
 
 		} );
 		const H = hX.mul( w.x ).add( hY.mul( w.y ) ).add( hZ.mul( w.z ) ).toVar();
 		const Fc = fX.mul( w.x ).add( fY.mul( w.y ) ).add( fZ.mul( w.z ) ).toVar();
+		const stoneColor = cX.rgb.mul( w.x ).add( cY.rgb.mul( w.y ) ).add( cZ.rgb.mul( w.z ) ).toVar();
 		const big = texture( tex.normalsB, p.xz.mul( 0.019 ).add( p.y.mul( 0.011 ) ) ).a.toVar(); // large-scale variation
 		const big2 = texture( tex.normalsB, p.zx.mul( 0.047 ).add( vec2( 0.31, p.y.mul( 0.03 ) ) ) ).a.toVar();
 
-		// (chips on upward faces tilt less: under a low sun they would read as a patchwork)
-		const nRock0 = triNormal( unpack2( fX.xy ), unpack2( fY.xy ).mul( 0.25 ), unpack2( fZ.xy ), n0, w, float( 1 ) );
-		const nRock = normalize( mix( nRock0, triNormal( unpack2( aX.xy ), unpack2( aY.xy ), unpack2( aZ.xy ), nRock0, w, float( 1 ) ), 0.7 ) );
+		// Geometry owns the large fractures. Low-amplitude mineral relief avoids inflated,
+		// unrelated Voronoi facets that fight those planes and read as moulded plastic.
+		const nRock = triNormal( stoneSlope( fX ), stoneSlope( fY ), stoneSlope( fZ ), n0, w, float( 0.6 ) );
 		const nMoss = triNormal( unpack2( aX.zw ), unpack2( aY.zw ), unpack2( aZ.zw ), n0, w, float( 0.8 ) );
 
 		// --- limestone: broad cool-grey faces with restrained mineral variation. Geometry and
 		// sunlight define the edges; curvature only adds a little weathering, never a white outline.
 		const convex = smoothstep( 1.6, 5.0, vCurv );
 		const concave = smoothstep( - 0.5, - 3.0, vCurv ).toVar();
-		const rock = mix( vec3( 0.155, 0.162, 0.158 ), vec3( 0.235, 0.238, 0.22 ), vTint ).mul( 0.9 ).toVar();
+		const stoneLuma = dot( stoneColor, vec3( 0.2126, 0.7152, 0.0722 ) ).toVar();
+		const rock = mix( vec3( 0.155, 0.162, 0.158 ), vec3( 0.235, 0.238, 0.22 ), vTint ).toVar();
 		rock.mulAssign( mix( vec3( 0.97, 0.99, 1.03 ), vec3( 1.025, 1.0, 0.965 ), fract( vTint.mul( 7.31 ) ) ) );
-		rock.mulAssign( Fc.a.sub( 0.5 ).mul( 0.5 ).add( 1 ) );
-		// Fine neutral mineral variation supports the normal relief without painting fake joints.
-		const mineral = clamp( H.r.sub( 0.52 ).mul( 0.48 ).add( Fc.a.sub( 0.5 ).mul( 0.45 ) ), - 0.06, 0.06 );
-		rock.mulAssign( mineral.add( 1 ) );
+		// Desaturate the source to fit this limestone palette, but keep its correlated grain,
+		// mineral stains and roughness. Fine colour follows the same relief as the normal map.
+		const mineral = clamp( mix( vec3( stoneLuma ), stoneColor, 0.25 ).div( 0.22 ), vec3( 0.42 ), vec3( 1.7 ) );
+		rock.mulAssign( mix( vec3( 1 ), mineral, 0.72 ) );
 		rock.mulAssign( big.sub( 0.5 ).mul( 0.18 ).add( 0.98 ) );
 		rock.assign( mix( rock, rock.mul( vec3( 1.12, 1.02, 0.86 ) ), smoothstep( 0.55, 0.85, big2 ).mul( 0.5 ) ) ); // faint ochre
-		rock.mulAssign( float( 1 ).sub( Fc.b.mul( 0.28 ) ) ); // cracks, pits
 		// runoff: faint darker streaks down the faces
 		const along = mix( p.z, p.x, w.z.div( max( w.x.add( w.z ), 1e-3 ) ) );
 		const streaks = texture( tex.normalsB, vec2( along.mul( 0.55 ), p.y.mul( 0.018 ).add( along.mul( 0.002 ) ) ) ).a;
@@ -130,7 +145,7 @@ function cliffSurface( { tex, shared, topY }: Ctx ) {
 		// Only ledges connected to the soil can carry an unbroken carpet. Isolated upward
 		// fracture facets receive sparse weathering, rather than a solid green triangle.
 		const nearSoil = smoothstep( topY.sub( 0.75 ), topY.sub( 0.22 ), p.y );
-		const ledgePatch = smoothstep( 0.38, 0.67, H.g.mul( 0.7 ).add( big2.mul( 0.3 ) ).add( Fc.b.mul( 0.2 ) ) );
+		const ledgePatch = smoothstep( 0.38, 0.67, H.g.mul( 0.7 ).add( big2.mul( 0.3 ) ) );
 		const ledgeMoss = smoothstep( 0.55, 0.88, up.add( mossN ) ).mul( mix( ledgePatch.mul( 0.3 ), float( 1 ), nearSoil ) );
 		const moss = clamp( max( ledgeMoss, max( lip.mul( smoothstep( - 0.35, 0.3, up ) ), hang.mul( 0.6 ) ) ).mul( dry ), 0, 1 ).toVar();
 		const mossC = mix( vec3( 0.025, 0.06, 0.015 ), vec3( 0.11, 0.2, 0.035 ), smoothstep( 0.2, 0.9, H.g ) ).toVar();
@@ -168,14 +183,14 @@ function cliffSurface( { tex, shared, topY }: Ctx ) {
 
 		const albedo = mix( rock, mossC, moss ).toVar();
 		const nW = normalize( mix( nRock, nMoss, moss ) );
-		const stoneRough = clamp( float( 0.855 ).add( H.r.sub( 0.52 ).mul( 0.55 ) ).add( Fc.a.sub( 0.5 ).mul( 0.4 ) ).add( Fc.b.mul( 0.035 ) ), 0.78, 0.94 );
+		const stoneRough = clamp( Fc.a.mul( 0.34 ).add( 0.62 ), 0.8, 0.98 );
 		const rough = mix( stoneRough, float( 0.94 ), moss ).toVar();
 		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algae.mul( 0.85 ) ) );
 		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ), silt.mul( 0.7 ) ) );
 		albedo.mulAssign( mix( float( 1 ), float( 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
 		rough.assign( mix( rough, float( 0.28 ), wet.mul( float( 1 ).sub( deep ) ) ) );
 
-		const ao = max( vAO, 0.38 ).mul( mix( float( 1 ), float( 0.75 ), concave ) ).mul( float( 1 ).sub( Fc.b.mul( 0.2 ) ) );
+		const ao = max( vAO, 0.3 ).mul( mix( float( 1 ), float( 0.72 ), concave ) );
 		return Surface( albedo, nW, rough, ao );
 
 	} )();
