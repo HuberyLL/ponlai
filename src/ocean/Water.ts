@@ -31,8 +31,8 @@ import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lightin
 //     depth (bounded steps and bisection), the scene behind is sampled where it lands
 //   - water volume: Beer-Lambert absorption along the refracted path plus analytic single
 //     scattering of the sun (Henyey-Greenstein) and the sky, multiple-scatter backscatter boost
-//   - reflection: baked sky (glare softly capped) + screen-space reflection of cliffs and stacks
-//   - stylised sun: a broad sheen toward the sun, glints riding the wave facets
+//   - reflection: calibrated baked sky + screen-space reflection of cliffs and stacks
+//   - sun glint: simulated slope moments, with optional additional artistic lobes
 //   - foam: a broken surf line at the rock, lace, whitecaps from the Jacobian
 // Drawn in a pass of its own after the opaque pass, reading that pass's resolved colour and its
 // linear depth; the frame composites it over the opaque image.
@@ -142,9 +142,9 @@ export class Water {
 		foamAmount: uniform( 1.0 ),
 		ssr: uniform( 1 ),
 		reflection: uniform( 1 ),
-		glitter: uniform( 3.1 ),
-		skyCap: uniform( 2.2 ),
-		sheen: uniform( 0.025 ),
+		glitter: uniform( 0 ),
+		skyCap: uniform( 0 ),
+		sheen: uniform( 0 ),
 		shadowMatrix: uniform( new THREE.Matrix4() ),
 		shadowOn: uniform( 0 ),
 	};
@@ -475,15 +475,14 @@ export class Water {
 				0, Math.log2( sky.equirect.height ) );
 			const refl = texture( sky.equirect.texture, dirToEquirect( Rr ) ).level( skyMip ).rgb.toVar();
 			refl.mulAssign( u.reflection );
-			// soft knee on the reflected sky: the haze glare around the sun would wash the water out
+			// Optional art control. Zero preserves the calibrated incident sky radiance.
 			const lr = lum( refl ).toVar();
 			const cap = lum( shared.skyIrradiance ).mul( u.skyCap ).toVar();
-			If( lr.greaterThan( cap ), () => {
+			If( u.skyCap.greaterThan( 0 ).and( lr.greaterThan( cap ) ), () => {
 
 				refl.mulAssign( cap.add( lr.sub( cap ).mul( 0.12 ) ).div( lr ) );
 
 			} );
-			refl.assign( mix( shared.skyIrradiance.mul( 0.25 ), refl, smoothstep( - 0.12, 0.08, Rr.y ) ) );
 			If( u.ssr.greaterThan( 0.5 ).and( Fr.greaterThan( 0.01 ) ), () => {
 
 				const Rv = normalize( cameraViewMatrix.mul( vec4( Rr, 0 ) ).xyz );
@@ -502,9 +501,8 @@ export class Water {
 			const spec = waveBeckmannD( localH, sunCovariance ).mul( waveSmithVisibility( localL, localV, seaCovariance ) )
 				.mul( fresnelDielectric( VdH, float( IOR ) ) ).mul( NdL );
 			const sunSpec = sunLight.mul( spec ).toVar();
-			// stylised glare toward the sun: a broad, soft sheen over the water, and inside it glints on
-			// the wave facets that tip toward the sun, thinning out away from the sun's reflection
-			// The artistic accents share the dielectric reflection budget with the physical highlight.
+			// Optional artistic lobes add energy beyond the physical microfacet reflection.
+			// Both default to zero; the simulated slopes already generate the sun glitter.
 			const reflectionBudget = fresnelDielectric( VdH, float( IOR ) ).mul( NdL ).toVar();
 			const Hf = normalize( L.add( V ) ).toVar(); // half vector of a flat sea
 			const sheen = D_GGX( Hf.y, float( 0.06 ) ).mul( 0.06 * PI );
