@@ -27,7 +27,8 @@ packages, into `dist/licenses/`.
   - `src/ocean/ShoreWaves.ts`, `src/ocean/ShoreWaveField.ts`: began as an adaptation of
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
-    `Sky.js`, ported from WGSL to TSL. Clouds, aerial perspective, stars and the moon are omitted.
+    `Sky.js`, ported from WGSL to TSL. The new cloud density, bounded ray march and cloud shadows
+    in `src/sky/Clouds.ts` are original Soomi code, not copied from tidewater.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
 ### Hash without Sine

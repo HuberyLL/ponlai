@@ -1,4 +1,5 @@
 import * as THREE from 'three/webgpu';
+import { Fn, positionWorld } from 'three/tsl';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { Sky } from './sky/Sky.ts';
@@ -80,6 +81,14 @@ controls.update();
 // ------------------------------------------------------------------ sky, light, water optics
 
 const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
+sky.clouds.coverage.value = THREE.MathUtils.clamp( Number( params.get( 'clouds' ) ?? 0.28 ), 0, 1 );
+const skyQuality = { value: params.get( 'quality' ) ?? 'medium' };
+function applySkyQuality(): void {
+
+	sky.clouds.quality.value = skyQuality.value === 'low' ? 6 : skyQuality.value === 'high' ? 14 : 10;
+
+}
+applySkyQuality();
 scene.add( sky.dome );
 scene.environmentIntensity = 1;
 const lighting = { skyFill: 1 };
@@ -94,6 +103,13 @@ sc.left = - 36; sc.right = 36; sc.top = 36; sc.bottom = - 36; sc.near = 1; sc.fa
 sun.shadow.bias = - 0.01 / ( sc.far - sc.near );
 sun.shadow.normalBias = 0.012;
 installSolarShadowFilter( sun );
+// Cloud shadowing shares the density field in the visible/reflected sky. Bake its long solar
+// path once at low resolution, then sample the same transmission on every receiver.
+type ShadowFilter = ( input: { depthTexture: THREE.DepthTexture; shadowCoord: THREE.Node<'vec3'> } ) => THREE.Node<'float'>;
+const solarShadow = sun.shadow as unknown as { filterNode: ShadowFilter };
+const islandShadow = solarShadow.filterNode;
+solarShadow.filterNode = Fn( ( { depthTexture, shadowCoord }: Parameters<ShadowFilter>[0] ) =>
+	islandShadow( { depthTexture, shadowCoord } ).mul( sky.cloudVisibility( positionWorld ) ) ) as unknown as ShadowFilter;
 // Moving figures cast through a small map of their own that every receiver multiplies in. It
 // must be installed before any receiving material is built.
 const characterShadow = new CharacterShadow();
@@ -236,6 +252,9 @@ groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean 
 groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' ).onChange( invalidateSunShadow );
 groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' ).onChange( invalidateSunShadow );
 const sunF = gui.addFolder( 'Sun' );
+const cloudF = gui.addFolder( 'Sky & clouds' );
+cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover' ).onFinishChange( applySun );
+cloudF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'sky quality' ).onFinishChange( () => { applySkyQuality(); void applySun(); } );
 sunF.add( sky, 'elevation', - 6, 70, 0.5 ).onFinishChange( applySun );
 sunF.add( sky, 'azimuth', - 180, 180, 1 ).onFinishChange( applySun );
 sunF.add( sky, 'sunIlluminance', 2, 20, 0.1 ).name( 'illuminance' ).onFinishChange( applySun );

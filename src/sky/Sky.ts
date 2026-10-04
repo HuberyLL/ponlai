@@ -11,6 +11,7 @@ import {
 } from 'three/tsl';
 import { Atmosphere, SUN_ANGULAR_RADIUS, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_PROJECTED_SOLID_ANGLE } from '../lighting/Radiometry.ts';
+import { Clouds } from './Clouds.ts';
 
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
@@ -35,6 +36,7 @@ export class Sky {
 
 	renderer: THREE.WebGPURenderer;
 	atmosphere: Atmosphere;
+	clouds = new Clouds();
 	sunIlluminance: number;
 	elevation: number;
 	azimuth: number;
@@ -49,10 +51,13 @@ export class Sky {
 	envMap: THREE.RenderTarget | null = null;
 	dome: THREE.Mesh;
 	lastBakeMs = 0;
+	cloudShadow = new THREE.RenderTarget( 128, 128, { type: THREE.HalfFloatType, depthBuffer: false } );
 
 	private pmrem: THREE.PMREMGenerator;
 	private quad: THREE.QuadMesh;
 	private sea = uniform( new THREE.Color() );
+	private irradiancePass = uniform( 0 );
+	private shadowQuad: THREE.QuadMesh;
 
 	constructor( renderer: THREE.WebGPURenderer, { sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 } = {} ) {
 
@@ -85,17 +90,27 @@ export class Sky {
 		} ).setLayout( { name: 'skySeaPanorama', type: 'vec3', inputs: [
 			{ name: 'd', type: 'vec3' }, { name: 'clearSky', type: 'vec3' }, { name: 'sea', type: 'vec3' },
 		] } );
-		const panorama = ( d: V3 ) => seaPanorama( d,
-			this.atmosphere.skyRadiance( vec3( d.x, abs( d.y ), d.z ) ), this.sea.rgb );
+		const panorama = ( d: V3 ) => {
+
+			const up = vec3( d.x, abs( d.y ), d.z );
+			const cloud = this.clouds.radiance( up, this.atmosphere.skyRadiance( up ) ).toVar();
+			return vec4( seaPanorama( d, cloud.rgb, this.sea.rgb ), cloud.a );
+
+		};
 
 		const bake = new THREE.NodeMaterial();
 		bake.fragmentNode = Fn( () => {
 
 			const d = equirectToDir( uv() ).toVar();
-			return vec4( panorama( d ), d.y );
+			const radiance = panorama( d ).toVar();
+			return vec4( radiance.rgb, mix( radiance.a, d.y, this.irradiancePass ) );
 
 		} )();
 		this.quad = new THREE.QuadMesh( bake );
+		const shadowMat = new THREE.NodeMaterial();
+		shadowMat.fragmentNode = vec4( this.clouds.transmittance(
+			vec3( uv().x.sub( 0.5 ).mul( 512 ), 0, uv().y.sub( 0.5 ).mul( 512 ) ), this.clouds.lightDir ) );
+		this.shadowQuad = new THREE.QuadMesh( shadowMat );
 
 		const domeMat = new THREE.MeshBasicNodeMaterial( { side: THREE.BackSide, depthWrite: false } );
 		domeMat.colorNode = Fn( () => {
@@ -108,8 +123,8 @@ export class Sky {
 			// scale keeps the normalised disk finite in fp16 without dimming it independently.
 			const disk = this.atmosphere.transmittanceToSpace( d ).mul( this.atmosphere.sunIlluminance )
 				.mul( mask ).mul( limb ).div( SUN_PROJECTED_SOLID_ANGLE ).mul( smoothstep( 0, 0.001, d.y ) );
-			const background = texture( this.equirect.texture, dirToEquirect( d ) ).level( float( 0 ) ).rgb;
-			return vec4( background.add( disk ), 1 );
+			const background = texture( this.equirect.texture, dirToEquirect( d ) ).level( float( 0 ) );
+			return vec4( background.rgb.add( disk.mul( background.a ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
@@ -137,16 +152,23 @@ export class Sky {
 		this.sea.value.copy( this.seaColor ).multiplyScalar( illuminance );
 		await this.atmosphere.update();
 		this.sunColor.copy( this.atmosphere.transmittanceToSun() ).multiply( this.sunTint ).multiplyScalar( illuminance );
+		this.clouds.lightDir.value.copy( this.sunDir );
+		this.clouds.lightColor.value.copy( this.sunColor );
+		// Cloud skylight follows the same scene radiance units as the atmosphere.
+		this.clouds.ambientColor.value.setRGB( 0.04, 0.055, 0.08 ).multiplyScalar( illuminance );
 
 		const r = this.renderer, prev = r.getRenderTarget();
 		try {
 
 			for ( const rt of [ this.equirect, this.small ] ) {
 
+				this.irradiancePass.value = rt === this.small ? 1 : 0;
 				r.setRenderTarget( rt );
 				this.quad.render( r );
 
 			}
+			r.setRenderTarget( this.cloudShadow );
+			this.shadowQuad.render( r );
 
 		} finally {
 
@@ -167,10 +189,14 @@ export class Sky {
 
 		}
 		this.skyIrradiance.setRGB( E[ 0 ] / Math.PI, E[ 1 ] / Math.PI, E[ 2 ] / Math.PI );
-		const oldEnv = this.envMap;
-		this.envMap = this.pmrem.fromEquirectangular( this.equirect.texture );
-		oldEnv?.dispose();
+		this.envMap = this.pmrem.fromEquirectangular( this.equirect.texture, this.envMap ?? undefined );
 		this.lastBakeMs = performance.now() - started;
+
+	}
+
+	cloudVisibility( worldPosition: V3 ): THREE.Node<'float'> {
+
+		return texture( this.cloudShadow.texture, worldPosition.xz.div( 512 ).add( 0.5 ) ).level( float( 0 ) ).r;
 
 	}
 
@@ -181,6 +207,8 @@ export class Sky {
 		( this.quad.material as THREE.Material ).dispose();
 		this.equirect.dispose();
 		this.small.dispose();
+		this.cloudShadow.dispose();
+		( this.shadowQuad.material as THREE.Material ).dispose();
 		this.envMap?.dispose();
 		this.pmrem.dispose();
 		this.atmosphere.dispose();

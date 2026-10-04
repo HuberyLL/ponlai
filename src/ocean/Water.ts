@@ -429,7 +429,8 @@ export class Water {
 				mapSize: shadowSize, worldSpan: this.shadowSpan, depthRange: this.shadowDepthRange,
 			} );
 			const shadow = mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) ).toVar();
-			const sunLight = shared.sunColor.mul( shadow ).toVar();
+			const cloudTransmission = sky.cloudVisibility( wp ).toVar();
+			const sunLight = shared.sunColor.mul( shadow ).mul( cloudTransmission ).toVar();
 
 			// ---- what lies straight behind this pixel (linear depth: view-space z, < -1e4 = sky)
 			const z0 = sceneViewZ( screenUV ).toVar();
@@ -558,7 +559,7 @@ export class Water {
 			// while beam-normal irradiance changes with the Snell area projection.
 			// Surface glint retains its own shadow. A scattering point deeper along
 			// the view ray can enter or leave the island's shadow independently of that surface.
-			const sunIn = waterIncidentSun( shared.sunColor, float( 1 ), shared.sunIntoWater, refractedSunBeamScaleNode( L ) );
+			const sunIn = waterIncidentSun( shared.sunColor, cloudTransmission, shared.sunIntoWater, refractedSunBeamScaleNode( L ) );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
 			const kAmb = sigT.mul( muV.div( 0.75 ).add( 1 ) ).toVar();
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
