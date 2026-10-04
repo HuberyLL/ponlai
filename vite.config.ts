@@ -7,6 +7,7 @@ const LICENCE_FILES: Record<string, string> = {
 	'licenses/CREDITS.md': 'CREDITS.md',
 	'licenses/tidewater.LICENSE.txt': 'src/ocean/tidewater.LICENSE.txt',
 	'licenses/tidewater-sky.LICENSE.txt': 'src/sky/tidewater.LICENSE.txt',
+	'licenses/hoskins-hash.LICENSE.txt': 'src/materials/hoskins-hash.LICENSE.txt',
 };
 
 function licences(): Plugin {
@@ -22,8 +23,14 @@ function licences(): Plugin {
 				if ( fileName === 'licenses/CREDITS.md' ) {
 
 					// Release credits live beside the shipped notices, not in the source tree.
-					contents = new TextDecoder().decode( contents ).replaceAll( '](src/ocean/tidewater.LICENSE.txt)', '](tidewater.LICENSE.txt)' )
-						.replaceAll( '](src/sky/tidewater.LICENSE.txt)', '](tidewater-sky.LICENSE.txt)' );
+					let text = new TextDecoder().decode( contents );
+					for ( const [ shipped, from ] of Object.entries( LICENCE_FILES ) ) {
+
+						text = text.replaceAll( `](${ from })`, `](${ shipped.replace( 'licenses/', '' ) })` );
+
+					}
+
+					contents = text;
 
 				}
 				this.emitFile( { type: 'asset', fileName, source: contents } );

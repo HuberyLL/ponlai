@@ -2,8 +2,9 @@
 
 A small stylised island in an open sea, rendered in the browser: a visual sample for a game.
 The look is stylised fantasy-realistic: warm golden light, airy lifted shadows, deep muted
-teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with bushes,
-wildflowers, with irregular hanging leaf clusters distributed around the rim. Keep the lower cliff stone exposed.
+teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with bushes
+and wildflowers, and irregular hanging leaf clusters around the rim. Keep the lower cliff stone
+exposed.
 
 ## Stack and commands
 
@@ -20,6 +21,10 @@ wildflowers, with irregular hanging leaf clusters distributed around the rim. Ke
   frame diagnostics. URL options: `paused`, `t`, `dpr`, `dist`, `polar`, `az`, `gui`. It needs
   Playwright's Chromium once (`npx playwright install chromium`), or `CHROME_PATH` set to a
   WebGPU-capable Chrome.
+- Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
+  and wave optics (each file names the server it expects); `tools/verify-scene.mjs` checks a
+  production preview; `tools/benchmark-lighting.mjs` A/B-times two builds;
+  `tools/compare-captures.py` measures two overview captures (needs Pillow and NumPy).
 
 ## Layout
 
@@ -28,9 +33,12 @@ wildflowers, with irregular hanging leaf clusters distributed around the rim. Ke
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor,
   shoreline field, vegetation anchors; instanced grass, bushes and flowers on the island top,
   with top-rooted overhanging branches of mixed lengths.
+- `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
+- `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
+  the air/water optical interface, and baked local sky occlusion.
 - `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
   sea floor, light under the water).
-- `src/ocean/`: FFT ocean (compute), caustics, water shading.
+- `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading.
 - `src/sky/`: atmosphere bake, environment lighting.
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, bloom, tilt-shift, grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
@@ -47,7 +55,7 @@ wildflowers, with irregular hanging leaf clusters distributed around the rim. Ke
   patchy seabed detail; no exposed sea stacks or reefs.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
-- No glowing rings at the bases of the sea stacks.
+- The sea is calm: no shore foam or whitecaps.
 - Characters are simple low-poly figures with flat colours and simple faces, recoloured into the
   island's palette and lit by the island's own light in soft cel steps; no outlines. Plants and
   props keep their realistic shading.
