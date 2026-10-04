@@ -15,9 +15,16 @@ const EDGES = [
 ];
 // corner c = ( dx, dy, dz ) with bit 0 = x, bit 1 = y, bit 2 = z
 
-export interface NetsOptions { min: number[]; max: number[]; voxel: number; ao?: boolean; aoSdf?: SDF }
+export interface NetsOptions {
+	min: number[];
+	max: number[];
+	voxel: number;
+	ao?: boolean;
+	aoSdf?: SDF;
+	contactVisibility?: ( x: number, y: number, z: number, nx: number, ny: number, nz: number ) => number;
+}
 
-export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf }: NetsOptions ): MeshData {
+export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf, contactVisibility }: NetsOptions ): MeshData {
 
 	const nx = Math.ceil( ( max[ 0 ] - min[ 0 ] ) / voxel );
 	const ny = Math.ceil( ( max[ 1 ] - min[ 1 ] ) / voxel );
@@ -127,9 +134,12 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 
 		if ( ao ) {
 
+			const visible = contactVisibility?.( x, y, z, gx, gy, gz ) ?? 1;
 			// occlusion from how far the field falls short of the free distance along the normal
 			let occ = 0, w = 1;
-			for ( const h of [ 0.12, 0.3, 0.6, 1.1, 1.8 ] ) {
+			// A face enclosed by a neighbouring solid cannot receive local indirect light. Its
+			// zero visibility already wins the minimum, so skip redundant crevice probes there.
+			if ( visible > 0 ) for ( const h of [ 0.12, 0.3, 0.6, 1.1, 1.8 ] ) {
 
 				occ += w * Math.max( h - aoSdf( x + gx * h, y + gy * h, z + gz * h ), 0 ) / h;
 				w *= 0.62;
@@ -137,6 +147,9 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 			}
 
 			occl[ v ] = Math.min( Math.max( 1 - occ * 0.42, 0 ), 1 );
+			// Keep the stronger result rather than multiplying overlapping estimates of the
+			// same contact. Both feed material AO, so direct sunlight remains unaffected.
+			occl[ v ] = Math.min( occl[ v ], visible );
 
 		} else occl[ v ] = 1;
 

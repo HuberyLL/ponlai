@@ -224,7 +224,8 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 		albedo.mulAssign( mix( float( 1 ), float( 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
 		rough.assign( mix( rough, float( 0.28 ), wet.mul( float( 1 ).sub( deep ) ) ) );
 
-		const ao = max( vAO, 0.3 ).mul( mix( float( 1 ), float( 0.72 ), concave ) );
+		// A completely blocked local sky must not keep an arbitrary ambient-light floor.
+		const ao = clamp( vAO, 0, 1 ).mul( mix( float( 1 ), float( 0.72 ), concave ) );
 		return Surface( albedo, nW, rough, ao );
 
 	} )();
@@ -267,7 +268,9 @@ function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 		const nW = normalize( t.mul( dn.x ).add( n0.mul( dn.y ) ).add( b.mul( dn.z ) ) );
 
 		const albedo = mix( mix( sand, grassC, grass ), rubbleC, rubble );
-		const ao = mix( float( 1 ), float( 0.75 ), rubble ).mul( mix( float( 0.8 ), float( 1 ), H.b ) );
+		const detailAO = mix( float( 1 ), float( 0.75 ), rubble ).mul( mix( float( 0.8 ), float( 1 ), H.b ) );
+		// Baked solid contacts and procedural rubble can overlap: retain the stronger estimate.
+		const ao = min( attribute<'float'>( 'ao', 'float' ), detailAO );
 		return Surface( albedo, nW, float( 0.92 ), ao );
 
 	} )();

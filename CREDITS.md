@@ -62,3 +62,7 @@ comment where it is used.
 - Air/water optical interface: Snell's law and dielectric transport as described in
   [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF),
   independently implemented for solar direction, beam-area conservation and two-segment shadows.
+- Static local sky/contact visibility: John C. Hart,
+  [*Sphere Tracing*](https://doi.org/10.1007/s003710050084) (1996), and the
+  [cosine-weighted hemisphere sampler in PBRT](https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions),
+  independently implemented on bounded procedural fields; this is finite-radius contact visibility.

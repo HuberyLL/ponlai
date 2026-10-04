@@ -25,13 +25,15 @@ export interface Rock { x: number; z: number; s: number; sy: number; y: number; 
 
 export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: number; z0: number; cell: number }
 
+export const VEGETATION_STRIDE = 9;
+
 export interface WorldData {
 	meshes: NamedMesh[];
 	stacks: Stack[];
 	rocks: Rock[];
-	seabed: { positions: Float32Array; res: number; size: number };
-	// turf anchors, 8 floats each: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
-	// (0 island, 1 + i stack i)
+	seabed: { positions: Float32Array; ao: Float32Array; res: number; size: number };
+	// Turf anchors: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
+	// (0 island, 1 + i stack i), local sky visibility. Placement still uses the first eight.
 	vegetation: Float32Array;
 	// ivy points, 6 floats each: x, y, z, outward x, z, t along the strand
 	ivy: Float32Array;
@@ -47,4 +49,6 @@ export interface WorldOptions {
 	seabedSize?: number;
 	shoreSize?: number;
 	shoreCell?: number;
+	// Disable only the cross-object contact bake for CPU comparison; geometry stays identical.
+	contactOcclusion?: boolean;
 }
