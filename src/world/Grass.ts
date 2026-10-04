@@ -1,10 +1,12 @@
 import * as THREE from 'three/webgpu';
 import {
-	attribute, uniform, positionLocal, normalViewGeometry, vec3, float, mix, dot, sin, pow, clamp, normalize,
+	attribute, uniform, positionLocal, normalViewGeometry, vec3, float, mix, max, dot, sin, pow, clamp, normalize,
 	smoothstep as smoothstepN,
 } from 'three/tsl';
+import { sampleRimGround, rimGrassCover } from './RimGround.ts';
+import type { RimGroundField } from './types.ts';
 import { mulberry32, smoothstep } from './noise.ts';
-import { sampleMeadow, meadowColor } from '../materials/Meadow.ts';
+import { sampleMeadow, meadowColor, supportsMeadow } from '../materials/Meadow.ts';
 import { sampleMeadowSoil, soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
@@ -88,7 +90,10 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
 	mat.positionNode = rooted.add( vec3( normalize( wind ).x, 0, normalize( wind ).y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
-	const root = mix( vec3( 0.35, 0.43, 0.29 ), vec3( 0.55, 0.38, 0.23 ), soil.mul( 0.7 ) );
+	const cover = attribute<'float'>( 'rimCover', 'float' );
+	// Meadow gaps and the rim share one root tint instead of colouring the same blade twice.
+	const rootSoil = max( soil.mul( 0.7 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
+	const root = mix( vec3( 0.35, 0.43, 0.29 ), vec3( 0.55, 0.38, 0.23 ), rootSoil );
 	mat.colorNode = mix( root, vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) );
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
@@ -102,22 +107,29 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 }
 
-export function buildGrass( veg: Float32Array, shared: Shared ): THREE.InstancedMesh {
+export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGroundField ): THREE.InstancedMesh {
 
 	const n = veg.length / STRIDE;
 	const mesh = new THREE.InstancedMesh( tuftGeometry(), grassMaterial( shared ), n );
-	const visibility = new Float32Array( n );
-	mesh.geometry.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( visibility, 1 ) );
-	const soilCover = new Float32Array( n ), tuftOrigin = new Float32Array( n * 3 );
+	// Share one input buffer for the three scalar fields. Separate buffers plus the existing
+	// tuft inputs and instance transform would exceed WebGPU's default eight-buffer limit.
+	const ground = new THREE.InstancedInterleavedBuffer( new Float32Array( n * 3 ), 3 );
+	const visibility = new THREE.InterleavedBufferAttribute( ground, 1, 0 );
+	const soilCover = new THREE.InterleavedBufferAttribute( ground, 1, 1 );
+	const covers = new THREE.InterleavedBufferAttribute( ground, 1, 2 );
+	mesh.geometry.setAttribute( 'skyVisibility', visibility );
+	mesh.geometry.setAttribute( 'soilCover', soilCover );
+	mesh.geometry.setAttribute( 'rimCover', covers );
+	const tuftOrigin = new Float32Array( n * 3 );
 	const rng = mulberry32( 99 );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
 	const col = new THREE.Color();
 
+	let count = 0;
 	for ( let i = 0; i < n; i ++ ) {
 
 		const k = i * STRIDE;
-		visibility[ i ] = veg[ k + 8 ];
 		const x = veg[ k ], y = veg[ k + 1 ], z = veg[ k + 2 ];
 		const rim = veg[ k + 6 ];
 		// stand with the ground, leaning out a little more over the rim
@@ -135,23 +147,38 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 		const h = ( 0.17 + 0.14 * growth + edge * growth * 0.07 + ( tall ? 0.16 + 0.1 * variation : 0 ) )
 			* ( 0.78 + rng() * 0.44 ) * ( 1 + edge * ( variation - 0.5 ) * 0.35 ) * ( onStack ? 0.55 : 1 );
 		pos.set( x, y - 0.018, z );
-		soilCover[ i ] = onStack ? 0 : sampleMeadowSoil( x, z );
-		tuftOrigin[ i * 3 ] = pos.x;
-		tuftOrigin[ i * 3 + 1 ] = pos.y;
-		tuftOrigin[ i * 3 + 2 ] = pos.z;
 		const spread = ( tall ? 0.34 : 0.44 ) + growth * 0.08;
 		scl.set( spread * ( 0.85 + rng() * 0.3 ), h, spread * ( 0.85 + rng() * 0.3 ) );
 		m.compose( pos, q, scl );
-		mesh.setMatrixAt( i, m );
 
 		// The terrain samples the same colour field, so gaps read as short turf between shoots.
 		meadowColor( x, z, col ).multiplyScalar( 0.93 + rng() * 0.14 );
-		mesh.setColorAt( i, col );
+		// Consume the original random draws before filtering so inland tufts stay identical.
+		if ( ! supportsMeadow( y, veg[ k + 4 ] ) ) continue;
+		// All attributes follow the compacted instance order, including the original sky bake.
+		visibility.setX( count, veg[ k + 8 ] );
+		soilCover.setX( count, onStack ? 0 : sampleMeadowSoil( x, z ) );
+		tuftOrigin[ count * 3 ] = pos.x;
+		tuftOrigin[ count * 3 + 1 ] = pos.y;
+		tuftOrigin[ count * 3 + 2 ] = pos.z;
+		const cover = rimGround ? rimGrassCover( sampleRimGround( rimGround, x, z ) ) : 1;
+		covers.setX( count, cover );
+		if ( cover < 1 ) {
+
+			// Keep the planted origins and all RNG draws. A thin edge tuft reveals the same
+			// soil pocket as the ground without changing the inland meadow arrangement.
+			scl.multiply( new THREE.Vector3( 0.35 + cover * 0.65, 0.45 + cover * 0.55, 0.35 + cover * 0.65 ) );
+			m.compose( pos, q, scl );
+
+		}
+		mesh.setMatrixAt( count, m );
+		mesh.setColorAt( count ++, col );
 
 	}
 
-	mesh.geometry.setAttribute( 'soilCover', new THREE.InstancedBufferAttribute( soilCover, 1 ) );
+	ground.needsUpdate = true;
 	mesh.geometry.setAttribute( 'tuftOrigin', new THREE.InstancedBufferAttribute( tuftOrigin, 3 ) );
+	mesh.count = count;
 	mesh.instanceMatrix.needsUpdate = true;
 	mesh.instanceColor!.needsUpdate = true;
 	mesh.frustumCulled = false;

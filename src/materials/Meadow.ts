@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { noise3, smoothstep } from '../world/noise.ts';
+export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowSurface.ts';
 
 // The blades and the ground share one growth field, so tall tufts belong to the same
 // cool-green drifts as their roots instead of floating over unrelated painted patches.

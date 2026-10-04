@@ -4,7 +4,7 @@ import type { DetailTextures } from '../materials/ProceduralTextures.ts';
 import type { Caustics } from '../ocean/Caustics.ts';
 import type { Shared } from '../shared.ts';
 import { ISLAND_TOP } from './WorldShapes.ts';
-import type { WorldData, WorldOptions, ShoreField } from './types.ts';
+import type { WorldData, WorldOptions, ShoreField, RimGroundField } from './types.ts';
 
 // Generates the world in a worker and turns the result into meshes and the shared shoreline
 // texture.
@@ -34,11 +34,24 @@ export function shoreTextureFrom( shore: ShoreField ): { tex: THREE.DataTexture;
 
 }
 
+function rimGroundTextureFrom( ground: RimGroundField ): { tex: THREE.DataTexture; xform: THREE.Vector4 } {
+
+	const tex = new THREE.DataTexture( ground.data, ground.nx, ground.nz, THREE.RGBAFormat, THREE.FloatType );
+	tex.minFilter = tex.magFilter = THREE.LinearFilter;
+	tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+	tex.generateMipmaps = false;
+	tex.needsUpdate = true;
+	tex.name = 'rim-root-bed';
+	return { tex, xform: new THREE.Vector4( ground.x0, ground.z0, 1 / ( ground.nx * ground.cell ), 1 / ( ground.nz * ground.cell ) ) };
+
+}
+
 export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: Shared, caustics: Caustics, shore: THREE.Texture ): { group: THREE.Group; triangles: number } {
 
 	const group = new THREE.Group();
 	group.name = 'world';
-	const cliffMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, shore, { topY: ISLAND_TOP } );
+	const rimGround = rimGroundTextureFrom( data.rimGround );
+	const cliffMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, shore, { topY: ISLAND_TOP, rimGround: rimGround.tex, rimGroundXform: rimGround.xform } );
 	const rockMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, shore, { vegetation: false } );
 	let triangles = 0;
 

@@ -25,6 +25,12 @@ export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: nu
 
 export const VEGETATION_STRIDE = 9;
 
+// RGBA: actual upper-coast distance, local roof height, turf retreat and exposed root depth.
+export interface RimGroundField extends ShoreField {}
+
+// A top-rooted branch centreline: x, y, z and the outward surface normal per node.
+export interface RimStrand { points: Float32Array; seed: number; lip: number }
+
 export interface WorldData {
 	meshes: NamedMesh[];
 	rocks: Rock[];
@@ -32,8 +38,9 @@ export interface WorldData {
 	// Turf anchors: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
 	// (0 island), local sky visibility. Placement still uses the first eight.
 	vegetation: Float32Array;
-	// ivy points, 6 floats each: x, y, z, outward x, z, t along the strand
-	ivy: Float32Array;
+	// Sparse trails that start in top shrubs and overhang the upper cliff.
+	rimStrands: RimStrand[];
+	rimGround: RimGroundField;
 	shore: ShoreField;
 	// Half-resolution island distance field for the local breaking-surf pass.
 	islandShore: ShoreField;

@@ -3,6 +3,7 @@ import { attribute, positionGeometry, positionLocal, normalViewGeometry, vec2, v
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import type { Shared } from '../shared.ts';
+import { supportsMeadow } from '../materials/Meadow.ts';
 
 // Small cupped wildflowers, grouped in quiet drifts. Folded geometry catches the sun on the
 // petal edges while the throat stays shaded; the meadow should never read as a carpet of icons.
@@ -116,10 +117,10 @@ export function buildFlowers( veg: Float32Array, shared: Shared ): THREE.Instanc
 	const mesh = new THREE.InstancedMesh( geo, flowerMaterial( shared ), count );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), tilt = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
 	const up = new THREE.Vector3( 0, 1, 0 ), lean = new THREE.Vector3(), col = new THREE.Color();
+	let visible = 0;
 	for ( let i = 0; i < count; i ++ ) {
 
 		const k = picks[ i ];
-		visibility[ i ] = veg[ k + 8 ];
 		const x = veg[ k ] + ( rng() - 0.5 ) * 0.22, z = veg[ k + 2 ] + ( rng() - 0.5 ) * 0.22;
 		const hue = noise3( x * 0.11 + 2.0, 8.8, z * 0.11 ) * 0.5 + 0.5;
 		const ci = Math.floor( ( ( hue * 3.7 ) % 1 ) * 4 );
@@ -131,12 +132,16 @@ export function buildFlowers( veg: Float32Array, shared: Shared ): THREE.Instanc
 		pos.set( x, veg[ k + 1 ] - 0.02, z );
 		scl.set( w, h, w );
 		m.compose( pos, q, scl );
-		mesh.setMatrixAt( i, m );
 		col.copy( palette[ ci ] ).multiplyScalar( 0.82 + rng() * 0.28 );
-		col.toArray( colors, i * 3 );
+		// Filtering after the original draws preserves every retained flower's pose and colour.
+		if ( ! supportsMeadow( veg[ k + 1 ], veg[ k + 4 ] ) ) continue;
+		visibility[ visible ] = veg[ k + 8 ];
+		mesh.setMatrixAt( visible, m );
+		col.toArray( colors, visible ++ * 3 );
 
 	}
 
+	mesh.count = visible;
 	mesh.instanceMatrix.needsUpdate = true;
 	mesh.frustumCulled = false;
 	mesh.castShadow = true;
