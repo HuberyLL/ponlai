@@ -7,6 +7,7 @@ import { mulberry32, smoothstep } from './noise.ts';
 import { sampleMeadow, meadowColor } from '../materials/Meadow.ts';
 import { sampleMeadowSoil, soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
+import { useRestPoseShadows } from './VegetationShadow.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import type { Shared } from '../shared.ts';
 
@@ -86,7 +87,7 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.time.mul( 1.6 ) );
 	const gust = sin( ph ).mul( 0.45 ).add( 0.55 ).add( sin( ph.mul( 2.7 ).add( p.x.mul( 0.9 ) ) ).mul( 0.2 ) );
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
-	mat.positionNode = rooted.add( vec3( normalize( wind ).x, 0, normalize( wind ).y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) );
+	useRestPoseShadows( mat, rooted, rooted.add( vec3( normalize( wind ).x, 0, normalize( wind ).y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) ) );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const root = mix( vec3( 0.35, 0.43, 0.29 ), vec3( 0.55, 0.38, 0.23 ), soil.mul( 0.7 ) );
 	mat.colorNode = mix( root, vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) );

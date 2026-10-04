@@ -3,6 +3,7 @@ import { positionGeometry, positionLocal, normalViewGeometry, vec3, float, dot, 
 import { mulberry32 } from './noise.ts';
 import { leafAlphaTexture } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
+import { useRestPoseShadows } from './VegetationShadow.ts';
 import type { Shared } from '../shared.ts';
 
 // Ivy hanging from the island's rim: leaf cards strung down the strands the world worker traced
@@ -75,7 +76,7 @@ function ivyMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.MeshStan
 	mat.alphaMap = leafAlphaTexture( map );
 	const g = positionGeometry, p = positionLocal;
 	const ph = p.x.mul( 1.7 ).add( p.y.mul( 2.3 ) ).sub( shared.time.mul( 1.4 ) );
-	mat.positionNode = p.add( vec3( sin( ph ), 0, cos( ph.mul( 1.3 ) ) ).mul( g.y.add( 0.5 ).mul( 0.025 ) ) );
+	useRestPoseShadows( mat, p, p.add( vec3( sin( ph ), 0, cos( ph.mul( 1.3 ) ) ).mul( g.y.add( 0.5 ).mul( 0.025 ) ) ) );
 	mat.normalNode = normalViewGeometry;
 	useLighting( mat, () => new VegetationLighting( float( 1 ), ( L, V, N ) => {
 

@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { mulberry32, noise3, smoothstep, type Rng } from './noise.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
+import { useRestPoseShadows } from './VegetationShadow.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import type { Shared } from '../shared.ts';
 
@@ -184,7 +185,7 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.Mesh
 	const vH = clamp( g.y.div( 0.72 ), 0, 1 );
 	const p = positionLocal; // placed: world space
 	const ph = p.x.mul( 0.4 ).add( p.z.mul( 0.3 ) ).sub( shared.time.mul( 1.3 ) );
-	mat.positionNode = p.add( vec3( sin( ph.add( g.y.mul( 3 ) ) ), 0, cos( ph.mul( 1.3 ).add( g.x.mul( 3 ) ) ) ).mul( vH.mul( 0.02 ) ) );
+	useRestPoseShadows( mat, p, p.add( vec3( sin( ph.add( g.y.mul( 3 ) ) ), 0, cos( ph.mul( 1.3 ).add( g.x.mul( 3 ) ) ) ).mul( vH.mul( 0.02 ) ) ) );
 	// Each folded leaf keeps its own highlights and shading across the canopy.
 	mat.normalNode = normalViewGeometry;
 	// deep inside and underneath a bush the light is gone

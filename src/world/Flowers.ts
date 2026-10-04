@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, positionGeometry, positionLocal, normalViewGeometry, vec2, vec3, dot, sin, mix, smoothstep as smoothstepN } from 'three/tsl';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
+import { useRestPoseShadows } from './VegetationShadow.ts';
 import type { Shared } from '../shared.ts';
 
 // Small cupped wildflowers, grouped in quiet drifts. Folded geometry catches the sun on the
@@ -76,7 +77,7 @@ function flowerMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const g = positionGeometry, p = positionLocal;
 	const ph = dot( p.xz, vec2( 0.8, - 0.6 ) ).mul( 0.45 ).sub( shared.time.mul( 1.6 ) );
 	const gust = sin( ph ).mul( 0.45 ).add( 0.55 );
-	mat.positionNode = p.add( vec3( 0.8, 0, - 0.6 ).mul( gust.mul( 0.035 ).mul( g.y.mul( g.y ) ) ) );
+	useRestPoseShadows( mat, p, p.add( vec3( 0.8, 0, - 0.6 ).mul( gust.mul( 0.035 ).mul( g.y.mul( g.y ) ) ) ) );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = attribute<'float'>( 'skyVisibility', 'float' );
 	return mat;
