@@ -141,7 +141,7 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 	mesh.instanceMatrix.needsUpdate = true;
 	mesh.instanceColor!.needsUpdate = true;
 	mesh.frustumCulled = false;
-	mesh.castShadow = false;
+	mesh.castShadow = true;
 	mesh.receiveShadow = true;
 	mesh.name = 'grass';
 	mesh.renderOrder = - 1; // before the terrain: the turf it covers then fails the depth test

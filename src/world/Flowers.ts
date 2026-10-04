@@ -139,6 +139,7 @@ export function buildFlowers( veg: Float32Array, shared: Shared ): THREE.Instanc
 
 	mesh.instanceMatrix.needsUpdate = true;
 	mesh.frustumCulled = false;
+	mesh.castShadow = true;
 	mesh.receiveShadow = true;
 	mesh.name = 'flowers';
 	mesh.renderOrder = - 1;
