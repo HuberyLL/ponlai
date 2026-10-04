@@ -56,6 +56,13 @@ wildflowers and ivy.
 - Check visual changes with captures, compared against the previous capture (and crops, not only the
   whole frame); report measured differences.
 - Measure frame time at 2400x1500 (DPR 1.5) with background tabs closed, before and after a change.
+- Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
+  `type(scope): summary`, the summary in lower case, imperative, without a full stop, and the body
+  explaining why. Types: `feat`, `fix`, `perf`, `refactor`, `style`, `test`, `docs`, `build`, `ci`,
+  `chore`, `revert`. Scopes follow the area changed: `ocean`, `world`, `sky`, `materials`, `post`,
+  `app` (`src/main.ts`, `src/shared.ts`), `tools`, and new top-level areas by their directory name
+  (for example `ai` for the Python side). Leave the scope out only for repository-wide changes. Mark
+  breaking changes with `!` after the scope and a `BREAKING CHANGE:` footer.
 
 ## WebGPU / TSL pitfalls met here
 
