@@ -1,7 +1,6 @@
 // Deterministic JS noise for the world generator (runs in the mesh worker).
 //   noise3( x, y, z )      improved Perlin, ~[-1, 1]
 //   fbm2( x, y, oct )      fractal sum, ~[-1, 1]
-//   cellValue3( x, y, z )  random value of the nearest 3D cell (piecewise constant)
 //   hash2i / hash3i        integer hashes to [0, 1)
 //   mulberry32( seed )     small seeded RNG
 
@@ -89,7 +88,7 @@ export function fbm2( x: number, y: number, oct = 4 ): number {
 
 }
 
-export function hash2i( i: number, j: number ): number {
+function hash2i( i: number, j: number ): number {
 
 	let h = Math.imul( i | 0, 374761393 ) + Math.imul( j | 0, 668265263 );
 	h = Math.imul( h ^ ( h >>> 13 ), 1274126177 );
@@ -103,27 +102,6 @@ export function hash3i( i: number, j: number, k: number ): number {
 
 }
 
-// 3D cellular value: a random number of the nearest jittered site (piecewise constant over the
-// cells), for chips broken out of the arrises
-export function cellValue3( x: number, y: number, z: number ): number {
-
-	const xi = Math.floor( x ), yi = Math.floor( y ), zi = Math.floor( z );
-	let md = 1e9, best = 0;
-	for ( let k = - 1; k <= 1; k ++ ) for ( let j = - 1; j <= 1; j ++ ) for ( let i = - 1; i <= 1; i ++ ) {
-
-		const cx = xi + i, cy = yi + j, cz = zi + k;
-		const dx = cx + 0.2 + 0.6 * hash3i( cx, cy, cz ) - x;
-		const dy = cy + 0.2 + 0.6 * hash3i( cy + 17, cz - 5, cx + 3 ) - y;
-		const dz = cz + 0.2 + 0.6 * hash3i( cz + 7, cx + 11, cy - 13 ) - z;
-		const d = dx * dx + dy * dy + dz * dz;
-		if ( d < md ) { md = d; best = hash3i( cx * 3 + 1, cy * 5 + 2, cz * 7 + 3 ); }
-
-	}
-
-	return best;
-
-}
-
 export const smoothstep = ( a: number, b: number, x: number ): number => {
 
 	const t = Math.min( Math.max( ( x - a ) / ( b - a ), 0 ), 1 );
@@ -131,17 +109,10 @@ export const smoothstep = ( a: number, b: number, x: number ): number => {
 
 };
 
-// polynomial smooth max / min
+// polynomial smooth max
 export function smax( a: number, b: number, k: number ): number {
 
 	const h = Math.max( k - Math.abs( a - b ), 0 ) / k;
 	return Math.max( a, b ) + h * h * k * 0.25;
-
-}
-
-export function smin( a: number, b: number, k: number ): number {
-
-	const h = Math.max( k - Math.abs( a - b ), 0 ) / k;
-	return Math.min( a, b ) - h * h * k * 0.25;
 
 }

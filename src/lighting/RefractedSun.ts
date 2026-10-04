@@ -11,7 +11,7 @@ type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type M4 = THREE.Node<'mat4'>;
 
-export const WATER_IOR = 1.333;
+const WATER_IOR = 1.333;
 
 // Snell's law for the mean horizontal surface. Both vectors point toward the source.
 // The source beam's irradiance changes by cos(thetaAir) / cos(thetaWater): a horizontal
@@ -31,7 +31,7 @@ export const refractedSunBeamScaleNode = Fn( ( [ airDirection ]: [ V3 ] ) => {
 
 } ).setLayout( { name: 'refractedSolarBeamScale', type: 'float', inputs: [ { name: 'airDirection', type: 'vec3' } ] } );
 
-export const refractedSurfaceEntryNode = Fn( ( [ point, airDirection, waterLevel ]: [ V3, V3, F ] ) => {
+const refractedSurfaceEntryNode = Fn( ( [ point, airDirection, waterLevel ]: [ V3, V3, F ] ) => {
 
 	const direction = refractedSunDirectionNode( airDirection ).toVar();
 	return point.add( direction.mul( max( waterLevel.sub( point.y ), 0 ).div( direction.y ) ) );
@@ -50,7 +50,7 @@ const shadowCoordinate = Fn( ( [ point, matrix, bias ]: [ V3, M4, F ] ) => {
 	{ name: 'point', type: 'vec3' }, { name: 'matrix', type: 'mat4' }, { name: 'bias', type: 'float' },
 ] } );
 
-export function refractedSunDirection( airDirection: THREE.Vector3, target = new THREE.Vector3() ): THREE.Vector3 {
+function refractedSunDirection( airDirection: THREE.Vector3, target = new THREE.Vector3() ): THREE.Vector3 {
 
 	target.copy( airDirection ).normalize();
 	const mu = Math.sqrt( Math.max( 1 - ( 1 - target.y * target.y ) / ( WATER_IOR * WATER_IOR ), 0 ) );
@@ -58,7 +58,7 @@ export function refractedSunDirection( airDirection: THREE.Vector3, target = new
 
 }
 
-export function refractedSurfaceEntry( point: THREE.Vector3, airDirection: THREE.Vector3, waterLevel: number, target = new THREE.Vector3() ): THREE.Vector3 {
+function refractedSurfaceEntry( point: THREE.Vector3, airDirection: THREE.Vector3, waterLevel: number, target = new THREE.Vector3() ): THREE.Vector3 {
 
 	const direction = refractedSunDirection( airDirection );
 	return target.copy( point ).addScaledVector( direction, Math.max( waterLevel - point.y, 0 ) / direction.y );
@@ -345,7 +345,7 @@ export class RefractedSun {
 
 }
 
-export interface RefractedSunProbeResult {
+interface RefractedSunProbeResult {
 	passed: boolean;
 	pixels: number;
 	air: { expectedSpan: number[]; measuredSpan: number[]; maximumEdgeError: number; mismatchedInteriorPixels: number };

@@ -87,7 +87,7 @@ export const waveSurfaceNormal = Fn( ( [ heightGradient, horizontal ]: [ V2, V4 
 	{ name: 'heightGradient', type: 'vec2' }, { name: 'horizontal', type: 'vec4' },
 ] } );
 
-export const waveTangent = Fn( ( [ normal ]: [ V3 ] ) => {
+const waveTangent = Fn( ( [ normal ]: [ V3 ] ) => {
 
 	const t = vec3( normal.y, normal.x.negate(), 0 );
 	return normalize( select( dot( t, t ).greaterThan( 1e-10 ), t, vec3( 1, 0, 0 ) ) );
@@ -161,7 +161,7 @@ export const waveBeckmannD = Fn( ( [ halfVector, covariance ]: [ V3, V3 ] ) => {
 // Smith's Gaussian masking function, generalized by stretch invariance (Heitz, JCGT 2014).
 // https://jcgt.org/published/0003/02/03/ (equations only; no source code reused).
 // erfc uses the Abramowitz-Stegun 7.1.26 polynomial, evaluated in its stable exp(-a*a) form.
-export const waveBeckmannLambda = Fn( ( [ direction, covariance ]: [ V3, V3 ] ) => {
+const waveBeckmannLambda = Fn( ( [ direction, covariance ]: [ V3, V3 ] ) => {
 
 	const c = positiveCovariance( covariance );
 	const variance = max( c.x.mul( direction.x.mul( direction.x ) ).add( c.y.mul( direction.z.mul( direction.z ) ) )

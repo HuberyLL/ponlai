@@ -14,7 +14,7 @@ const BLOCKER_SAMPLES = 6, FILTER_SAMPLES = 8;
 // PCSS: Fernando, "Percentage-Closer Soft Shadows", SIGGRAPH 2005 sketches.
 // For a directional disk the penumbra radius is blocker-receiver distance * tan(solar radius),
 // rather than the perspective-light size ratio. No upstream source code is used here.
-export const solarShadowDiskOffset = Fn( ( [ index, count, rotation, exponent ]: [ F, F, F, F ] ) => {
+const solarShadowDiskOffset = Fn( ( [ index, count, rotation, exponent ]: [ F, F, F, F ] ) => {
 
 	const radius = pow( index.add( 0.5 ).div( count ), exponent );
 	const angle = index.mul( 2.399963229728653 ).add( rotation );
@@ -25,7 +25,7 @@ export const solarShadowDiskOffset = Fn( ( [ index, count, rotation, exponent ]:
 	{ name: 'rotation', type: 'float' }, { name: 'exponent', type: 'float' },
 ] } );
 
-export const solarPenumbraRadius = Fn( ( [ receiverDepth, blockerDepth, depthRange, angularRadius, worldSpan ]: [ F, F, F, F, V2 ] ) => {
+const solarPenumbraRadius = Fn( ( [ receiverDepth, blockerDepth, depthRange, angularRadius, worldSpan ]: [ F, F, F, F, V2 ] ) => {
 
 	return max( receiverDepth.sub( blockerDepth ), 0 ).mul( depthRange )
 		.mul( tan( max( angularRadius, 0 ) ) ).div( max( worldSpan, vec2( 1e-3 ) ) );

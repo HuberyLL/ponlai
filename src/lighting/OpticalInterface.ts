@@ -28,7 +28,7 @@ export const radianceAcrossInterfaceNode = Fn( ( [ radiance, fromIOR, toIOR ]: [
 	{ name: 'radiance', type: 'vec3' }, { name: 'fromIOR', type: 'float' }, { name: 'toIOR', type: 'float' },
 ] } );
 
-export interface OpticalInterfaceProbeResult {
+interface OpticalInterfaceProbeResult {
 	passed: boolean;
 	maximumDirectionError: number;
 	maximumSnellResidual: number;

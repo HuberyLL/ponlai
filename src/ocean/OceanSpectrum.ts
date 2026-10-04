@@ -26,13 +26,13 @@ export interface SwellParams {
 	peakEnhancement: number;
 }
 
-export function dispersion( k: number, depth: number ): number {
+function dispersion( k: number, depth: number ): number {
 
 	return Math.sqrt( GRAVITY * k * Math.tanh( Math.min( k * depth, 20 ) ) );
 
 }
 
-export function dispersionDerivative( k: number, depth: number ): number {
+function dispersionDerivative( k: number, depth: number ): number {
 
 	if ( k < 1e-8 ) return Math.sqrt( GRAVITY * depth );
 	const kd = Math.min( k * depth, 20 ), th = Math.tanh( kd );
@@ -40,7 +40,7 @@ export function dispersionDerivative( k: number, depth: number ): number {
 
 }
 
-export function tmaCorrection( omega: number, depth: number ): number {
+function tmaCorrection( omega: number, depth: number ): number {
 
 	const omegaH = omega * Math.sqrt( depth / GRAVITY );
 	if ( omegaH <= 1 ) return omegaH * omegaH * 0.5;
