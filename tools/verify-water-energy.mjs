@@ -1,14 +1,13 @@
-// Actual WebGPU helper regression: foam hemispheric energy and separated solar/sky column sources.
-// Apply water-volume-transport.patch and water-foam-lambert.patch so the material uses these helpers.
+// Actual WebGPU helper regression: separated solar/sky column sources in the water volume.
 // Usage: node tools/verify-water-energy.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 
 const waterSource = await readFile( new URL( '../src/ocean/Water.ts', import.meta.url ), 'utf8' );
-for ( const call of [ "from './WaterTransport.ts'", 'foamLambertRadiance(', 'waterIncidentSun(', 'waterColumnRadiance(' ] ) {
+for ( const call of [ "from './WaterTransport.ts'", 'waterIncidentSun(', 'waterColumnRadiance(' ] ) {
 
-	assert.ok( waterSource.includes( call ), `Apply the WaterTransport integration patch first: missing ${ call }` );
+	assert.ok( waterSource.includes( call ), `Water.ts no longer uses the WaterTransport helpers: missing ${ call }` );
 
 }
 const errors = [];

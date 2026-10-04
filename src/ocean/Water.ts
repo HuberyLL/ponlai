@@ -2,6 +2,10 @@
  * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
  * Copyright (c) 2026 DRG Software Solutions LLC
  * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ *
+ * hash22 is "Hash without Sine" by David Hoskins (https://www.shadertoy.com/view/4djSRW).
+ * Copyright (c) 2014 David Hoskins
+ * Licensed under the MIT License; see ../materials/hoskins-hash.LICENSE.txt.
  */
 
 import * as THREE from 'three/webgpu';
@@ -9,14 +13,14 @@ import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
-	sin, abs, sign, cross, floor, fract, fwidth, reflect, select, dFdx, dFdy,
+	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
 } from 'three/tsl';
 import { dirToEquirect } from '../sky/Sky.ts';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
-import { createFoamTexture, FOAM_TILE } from './FoamTexture.ts';
+import { createGlitterMask, GLITTER_TILE } from './GlitterMask.ts';
 import type { Shared } from '../shared.ts';
 import { solarShadowVisibility, solarVolumeVisibility, volumeShadowRayMayIntersect } from '../lighting/SolarShadow.ts';
 import {
@@ -24,7 +28,7 @@ import {
 	waveLocalDirection, waveBeckmannD, waveSmithVisibility, waveSolarSlopeCovariance, waveReflectionAngularVariance, waveAirFacing,
 } from './WaveOptics.ts';
 import { RefractedSun, refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
-import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance, foamLambertRadiance } from './WaterTransport.ts';
+import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance } from './WaterTransport.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
@@ -36,8 +40,6 @@ import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance, foa
 //     scattering of the sun (Henyey-Greenstein) and the sky, multiple-scatter backscatter boost
 //   - reflection: calibrated baked sky + screen-space reflection of cliffs and stacks
 //   - sun glint: simulated slope moments, with optional additional artistic lobes
-//   - foam: FFT-triggered rock contact, transported whitewater thinning into lace,
-//     persistent whitecaps from the horizontal displacement Jacobian
 // Drawn in a pass of its own after the opaque pass, reading that pass's resolved colour and its
 // linear depth; the frame composites it over the opaque image.
 //
@@ -126,8 +128,6 @@ export interface WaterInputs {
 	sky: Sky;
 	shared: Shared;
 	shore: THREE.Texture;
-	// Transported coverage, material-coordinate offset and fresh rock-contact whitewater.
-	foamState: THREE.TextureNode;
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
 	sceneColor: THREE.Texture;
@@ -144,7 +144,6 @@ export class Water {
 		backscatter: uniform( 0.038 ),
 		roughness: uniform( 0.058 ), // Beckmann alpha: per-axis base slope variance = alpha squared / 2
 		wind: uniform( 3.4 ),
-		foamAmount: uniform( 0 ), // This quiet sea keeps reflection without visible whitewater.
 		ssr: uniform( 1 ),
 		reflection: uniform( 1 ),
 		glitter: uniform( 0 ),
@@ -162,7 +161,7 @@ export class Water {
 	private shadowNormalBias = uniform( 0 );
 	private shadowIntensity = uniform( 1 );
 
-	constructor( { fft, sky, shared, shore, foamState, shoreWaves, refractedSun, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
+	constructor( { fft, sky, shared, shore, shoreWaves, refractedSun, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
 
 		// grid in world xz, warped dense under the island and sparse toward the horizon
 		const n = res;
@@ -193,8 +192,7 @@ export class Water {
 		const u = this.uniforms;
 		const sizes = uniform( new THREE.Vector3( ...fft.sizes ) );
 		const disp = fft.displacementTextures, der = fft.derivativeTextures, moments = fft.slopeMomentTextures;
-		const whitecapTexture = fft.whitecapTexture;
-		const laceTexture = createFoamTexture();
+		const glitterMask = createGlitterMask();
 
 		// ---- vertex: displace the grid by the three cascades (the finest fades out far away). The
 		// undisplaced grid point comes from the geometry: once positionNode is set, positionLocal
@@ -217,7 +215,7 @@ export class Water {
 		material.positionNode = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y )
 			.add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) );
 		const vLag = varying( xz ), vDamp = varying( coastDamp ), vFineWeight = varying( fineWeight );
-		const vWeights = varying( weights ), vShelter = varying( windDamp );
+		const vWeights = varying( weights );
 		const vLargeDisp = varying( largeDisp ), vMediumDisp = varying( mediumDisp ), vFineDisp = varying( fineDisp );
 
 		// ---- fragment
@@ -389,32 +387,9 @@ export class Water {
 			const weight0Gradient = waveParameterGradient( lagDx, lagDy, dFdx( vWeights.x ), dFdy( vWeights.x ) ).toVar();
 			const weight1Gradient = waveParameterGradient( lagDx, lagDy, dFdx( vWeights.y ), dFdy( vWeights.y ) ).toVar();
 			const weight2Gradient = waveParameterGradient( lagDx, lagDy, dFdx( vWeights.z ), dFdy( vWeights.z ) ).toVar();
-			const foamUV = wp.xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
 			const shoreWave = shoreWaves.surfaceAt( wp.xz, time ).toVar();
-			const event = foamState.sample( foamUV ).toVar();
-			// Fine strands are material detail; the advancing wave decides where they become white.
-			const foamP = wp.xz.add( event.gb );
-			// Packed cascades retain their original UVs and filtering, leaving texture bindings
-			// for both air and submerged shadows within WebGPU's baseline limit.
-			const whitecaps = texture( whitecapTexture, vLag.div( sizes.x ) ).r
-				.add( texture( whitecapTexture, vLag.div( sizes.y ) ).g )
-				.add( texture( whitecapTexture, vLag.div( sizes.z ) ).b.mul( 0.56 ) ).mul( vShelter ).toVar();
-			// A dedicated distance-to-strand texture lets coverage change the shape: dense
-			// churn opens into perforated mats, lace and separate bubbles, not fading moss noise.
-			const laceSample = texture( laceTexture, foamP.mul( 2.4 / FOAM_TILE ) ).toVar();
-			const lumps = texture( laceTexture, foamP.div( FOAM_TILE * 2.2 ).add( vec2( 0.17, 0.39 ) ) ).toVar();
-			// SurfFoam's pattern-only surface gradients avoid a bright bevel around every
-			// density edge. Centimetre-scale relief belongs to the carried bubble pattern.
-			const lumpRelief = float( 1 ).sub( sqrt( max( lumps.r, 0.012 ) ) ).toVar();
-			const laceRelief = float( 1 ).sub( sqrt( max( laceSample.r, 0.012 ) ) ).toVar();
-			const foamRelief = lumpRelief.mul( 0.65 ).add( laceRelief.mul( 0.35 ) ).toVar();
-			const lumpDx = dFdx( lumpRelief ).toVar(), lumpDy = dFdy( lumpRelief ).toVar();
-			const laceDx = dFdx( laceRelief ).toVar(), laceDy = dFdy( laceRelief ).toVar();
-			const bubbleDx = dFdx( laceSample.g ).toVar(), bubbleDy = dFdy( laceSample.g ).toVar();
-			const surfaceDx = dFdx( wp ).toVar(), surfaceDy = dFdy( wp ).toVar();
-			// Share lace density with the optional glitter control to stay within WebGPU's
-			// baseline 16 sampled textures, including slope moments and the packed whitecaps.
-			const fLow = lumps.b;
+			// Patches for the optional glitter lobe, sampled here while control flow is uniform.
+			const fLow = texture( glitterMask, wp.xz.div( GLITTER_TILE ).add( vec2( 0.17, 0.39 ) ) ).r.toVar();
 			const footprint = max( length( fwidth( vLag ) ), 1e-4 ).toVar();
 
 			// ---- surface normal from the cascades' slopes (sampled at the undisplaced position)
@@ -464,39 +439,9 @@ export class Water {
 			const sw0 = cameraWorldMatrix.mul( vec4( sv0, 1 ) ).xyz.toVar();
 			const thick = select( skyBehind, float( 1e4 ), posV.z.sub( sv0.z ) ).toVar(); // view distance from the surface to whatever is behind it
 
-			// ---- shoreline and foam
-			// In this mild sea, whiteness comes mainly from the wave touching the rock now.
-			// History leaves only faint, short-lived flecks, never a new opaque foam body.
-			const coverage = sat( event.r );
-			const fresh = sat( event.a );
-			const width = pow( coverage, 1.2 ).mul( 0.85 ).mul( laceSample.b.mul( 0.5 ).add( 0.75 ) );
-			const soft = footprint.mul( 2 ).add( 0.025 );
-			const mat = float( 1 ).sub( smoothstep( width.sub( soft ), width.add( soft ), laceSample.r ) )
-				.mul( smoothstep( 0.005, 0.06, coverage ) );
-			const inner = sat( width.sub( laceSample.r ).div( 0.25 ) );
-			const strandOpacity = inner.mul( 0.35 ).add( laceSample.b.mul( 0.3 ) ).add( 0.4 );
-			const bubbles = laceSample.g.mul( smoothstep( width.add( 0.25 ), width, laceSample.r ) ).mul( smoothstep( 0.03, 0.2, coverage ) ).mul( 0.4 );
-			const pop = smoothstep( 0.015, 0.1, coverage.sub( laceSample.a.mul( 0.12 ) ) );
-			const foamLace = max( mat.mul( strandOpacity ), bubbles ).mul( pop );
-			// The contact cache already clips to the real water-side SDF. A second narrow
-			// mask interpolated from grid vertices would erase the lip around concave walls.
-			const lap = sat( shoreWave.w.mul( 7 ) );
-			const brokenLip = float( 1 ).sub( smoothstep( 0.05, 0.38, laceSample.r ) ).mul( 0.75 ).add( 0.25 );
-			const contactLip = lap.mul( brokenLip ).mul( laceSample.b.mul( 0.35 ).add( 0.65 ) ).mul( 0.32 );
-			const residue = foamLace.mul( sat( coverage.mul( 3 ) ) ).mul( 0.15 );
-			const nearFoam = contactLip.add( residue );
-			const farFoam = lap.mul( 0.22 ).add( coverage.mul( 0.035 ) );
-			const foamAmt = mix( nearFoam, farFoam, smoothstep( 0.07, 0.2, footprint ) )
-				.mul( smoothstep( 0.005, 0.045, thick ) ).toVar();
-			const foamBounds = smoothstep( 0, 0.015, foamUV.x ).mul( smoothstep( 1, 0.985, foamUV.x ) )
-				.mul( smoothstep( 0, 0.015, foamUV.y ) ).mul( smoothstep( 1, 0.985, foamUV.y ) );
-			foamAmt.mulAssign( foamBounds );
-			foamAmt.assign( max( foamAmt, whitecaps.mul( float( 1 ).sub( laceSample.r ) ).mul( 0.65 ) ) );
-			foamAmt.assign( sat( foamAmt.mul( u.foamAmount ) ) );
-
 			// ---- roughness: measured unresolved spectrum plus a constant microscopic slope width
 			// Beckmann alpha squared is twice each Gaussian slope variance; no GGX moment mapping.
-			const baseVariance = u.roughness.mul( u.roughness ).mul( 0.5 ).add( foamAmt.mul( 0.1 ) );
+			const baseVariance = u.roughness.mul( u.roughness ).mul( 0.5 );
 			const seaCovariance = unresolvedCovariance.add( vec3( baseVariance, baseVariance, 0 ) ).toVar();
 			const localL = waveLocalDirection( L, N ).toVar(), localV = waveLocalDirection( V, N ).toVar();
 
@@ -541,7 +486,7 @@ export class Water {
 			// Optional artistic lobes add energy beyond the physical microfacet reflection.
 			// Both default to zero; the simulated slopes already generate the sun glitter.
 			// Uniform branches avoid hashing and extra lobes when their art controls are off.
-			// Derivative-dependent foam samples above remain outside all branches.
+			// The derivative-dependent glitter mask above stays outside all branches.
 			If( u.sheen.greaterThan( 0 ).or( u.glitter.greaterThan( 0 ) ), () => {
 
 				const reflectionBudget = fresnelDielectric( VdH, float( IOR ) ).mul( NdL ).toVar();
@@ -549,7 +494,7 @@ export class Water {
 				If( u.sheen.greaterThan( 0 ), () => {
 
 					const sheen = D_GGX( Hf.y, float( 0.06 ) ).mul( 0.06 * PI );
-					sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( sheen ).mul( u.sheen ).mul( float( 1 ).sub( foamAmt ) ) );
+					sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( sheen ).mul( u.sheen ) );
 
 				} );
 				If( u.glitter.greaterThan( 0 ), () => {
@@ -558,7 +503,7 @@ export class Water {
 					const NdH = max( dot( N, H ), 0 );
 					const facet = D_GGX( NdH, float( 0.012 ) ).mul( 0.012 * PI );
 					const glintPath = smoothstep( 0.13, 0.8, wide ).mul( smoothstep( 0.42, 0.63, fLow ) );
-					sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( glintPath ).mul( facet ).mul( sparkles( wp.xz.mul( 2.1 ).add( N.xz.mul( 2.5 ) ), time ) ).mul( u.glitter ).mul( float( 1 ).sub( foamAmt ) ) );
+					sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( glintPath ).mul( facet ).mul( sparkles( wp.xz.mul( 2.1 ).add( N.xz.mul( 2.5 ) ), time ) ).mul( u.glitter ) );
 
 				} );
 
@@ -611,7 +556,7 @@ export class Water {
 			} );
 			// Match the terrain's refracted beam: transmission retains horizontal power,
 			// while beam-normal irradiance changes with the Snell area projection.
-			// Surface glint and foam retain their own shadow. A scattering point deeper along
+			// Surface glint retains its own shadow. A scattering point deeper along
 			// the view ray can enter or leave the island's shadow independently of that surface.
 			const sunIn = waterIncidentSun( shared.sunColor, float( 1 ), shared.sunIntoWater, refractedSunBeamScaleNode( L ) );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
@@ -667,31 +612,13 @@ export class Water {
 			const sss = sunLight.mul( vec3( 0.12, 0.55, 0.45 ) ).mul( back.mul( crest ).mul( 0.035 ) );
 			const transmitted = bottom.add( inSun ).add( inAmb ).add( sss );
 
-			// ---- foam: Lambert diffuse scatterer with a 95% hemispheric reflectance
-			// The shared sky value stores E_sky / PI; convert explicitly to irradiance.
-			const skyE = shared.skyIrradiance.mul( PI );
-			// Transform pattern derivatives on the actual tilted water surface, following
-			// SurfFoam's surface-gradient construction. Density controls height only.
-			const lumpHeight = fresh.mul( 0.01 ).add( coverage.mul( 0.002 ) );
-			const laceHeight = fresh.add( coverage.mul( 0.3 ) ).mul( 0.004 );
-			const bubbleHeight = fresh.mul( 0.0015 );
-			const reliefDx = lumpDx.mul( lumpHeight ).add( laceDx.mul( laceHeight ) ).add( bubbleDx.mul( bubbleHeight ) );
-			const reliefDy = lumpDy.mul( lumpHeight ).add( laceDy.mul( laceHeight ) ).add( bubbleDy.mul( bubbleHeight ) );
-			const r1 = cross( surfaceDy, N ), r2 = cross( N, surfaceDx );
-			const det = dot( surfaceDx, r1 );
-			const gradient = r1.mul( reliefDx ).add( r2.mul( reliefDy ) ).mul( sign( det ) );
-			const foamNormal = normalize( N.mul( abs( det ).add( 1e-6 ) ).sub( gradient ) );
-			const foamNdL = max( dot( foamNormal, L ), 0 );
-			const cavity = mix( float( 1 ), pow( foamRelief, 0.8 ).mul( 0.65 ).add( 0.35 ), smoothstep( 0.05, 0.3, fresh ) );
-			const foamCol = foamLambertRadiance( sunLight, skyE, foamNdL, float( 0.95 ) ).mul( cavity );
-
 			// The opaque underwater pass and column terms are radiance inside water. Convert
 			// that radiance once at the exit interface; mix already supplies Fresnel 1 - Fr.
 			const exiting = radianceAcrossInterfaceNode( transmitted, float( IOR ), float( 1 ) );
 			const water = mix( exiting, refl, Fr ).add( sunSpec );
 			// Backfacing facets are self-occluded: neither the air reflection nor underwater
 			// transmission emerges through their back side. Neighbor-wave transport is unresolved.
-			const col = mix( water, foamCol, foamAmt ).mul( airFacing ).toVar();
+			const col = water.mul( airFacing ).toVar();
 
 			// soften the line where the surface cuts the rock (no hard seam); behind rock: the rock
 			const edge = select( skyBehind, float( 1 ), smoothstep( 0, 0.06, thick ) );

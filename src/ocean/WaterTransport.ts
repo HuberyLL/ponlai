@@ -5,18 +5,6 @@ type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
-// Lambert's rho / PI BRDF integrates to rho over the outgoing hemisphere.
-// Both inputs are irradiance E; shared.skyIrradiance must be multiplied by PI first.
-// Equations only: https://pbr-book.org/4ed/Reflection_Models/Diffuse_Reflection
-export const foamLambertRadiance = Fn( ( [ sunE, skyE, ndL, reflectance ]: [ V3, V3, F, F ] ) => {
-
-	return sunE.mul( max( ndL, 0 ) ).add( skyE ).mul( clamp( reflectance, 0, 1 ).div( Math.PI ) );
-
-} ).setLayout( { name: 'foamLambertRadiance', type: 'vec3', inputs: [
-	{ name: 'sunE', type: 'vec3' }, { name: 'skyE', type: 'vec3' },
-	{ name: 'ndL', type: 'float' }, { name: 'reflectance', type: 'float' },
-] } );
-
 // The solar beam contains no direct source when its entry point is shadowed. For a
 // volume, visibility belongs to each scattering point's light path, not the view entry.
 export const waterIncidentSun = Fn( ( [ sunE, visibility, transmittance, beamScale ]: [ V3, F, F, F ] ) => {
@@ -95,7 +83,7 @@ export async function verifyWaterEnergy( renderer: THREE.WebGPURenderer, inputs:
 
 	if ( ! [ ...inputs.sigA, ...inputs.sigS, inputs.backscatter ].every( x => Number.isFinite( x ) && x >= 0 ) ||
 		inputs.sigA.some( ( x, c ) => x + inputs.sigS[ c ] <= 0 ) ) throw new Error( 'Water energy probe requires physical, positive extinction coefficients' );
-	const size = 64, rho = 0.95;
+	const size = 64;
 	const target = new THREE.RenderTarget( size, size, { type: THREE.FloatType, depthBuffer: false } );
 	const animation = renderer.getAnimationLoop();
 	await renderer.setAnimationLoop( null );
@@ -141,52 +129,6 @@ export async function verifyWaterEnergy( renderer: THREE.WebGPURenderer, inputs:
 	try {
 
 		renderer.setScissorTest( false );
-		const foamCases = [
-			{ name: 'unit direct', sun: [ 1, 1, 1 ] as RGB, sky: [ 0, 0, 0 ] as RGB, ndL: 1 },
-			{ name: 'unit sky', sun: [ 0, 0, 0 ] as RGB, sky: [ 1, 1, 1 ] as RGB, ndL: 0 },
-			{ name: 'oblique colored direct and sky', sun: [ 1, 0.7, 0.4 ] as RGB, sky: [ 0.3, 0.5, 0.8 ] as RGB, ndL: 0.25 },
-		];
-		const foam: { name: string; reflectedFraction: RGB }[] = [];
-		let maximumFoamEnergyError = 0, maximumFoamReflectedFraction = 0;
-		for ( const fixture of foamCases ) {
-
-			const pixels = await render( Fn( () => {
-
-				// Uniform solid-angle quadrature: dOmega = dPhi dMu, mu in [0,1].
-				const muOutgoing = screenCoordinate.x.div( size );
-				const radiance = foamLambertRadiance( vec3( ...fixture.sun ), vec3( ...fixture.sky ), float( fixture.ndL ), float( rho ) );
-				return vec4( radiance.mul( muOutgoing ), 1 );
-
-			} )() );
-			const energy: RGB = [ 0, 0, 0 ];
-			for ( let i = 0; i < size * size; i ++ ) {
-
-				for ( let c = 0; c < 3; c ++ ) energy[ c ] += pixels[ i * 4 + c ] * 2 * Math.PI / ( size * size );
-
-			}
-			const fraction = energy.map( ( e, c ) => e / ( fixture.sun[ c ] * fixture.ndL + fixture.sky[ c ] ) ) as RGB;
-			for ( const f of fraction ) {
-
-				maximumFoamEnergyError = Math.max( maximumFoamEnergyError, Math.abs( f - rho ) );
-				maximumFoamReflectedFraction = Math.max( maximumFoamReflectedFraction, f );
-
-			}
-			foam.push( { name: fixture.name, reflectedFraction: fraction } );
-
-		}
-		const zeroDirectPixels = await render( Fn( () => {
-
-			const ndL = select( screenCoordinate.y.lessThan( size / 2 ), float( 0 ), float( - 0.5 ) );
-			return vec4( foamLambertRadiance( vec3( 1 ), vec3( 0 ), ndL, float( rho ) ), 1 );
-
-		} )() );
-		let maximumFoamBacklitDirect = 0;
-		for ( let i = 0; i < size * size; i ++ ) {
-
-			for ( let c = 0; c < 3; c ++ ) maximumFoamBacklitDirect = Math.max( maximumFoamBacklitDirect, Math.abs( zeroDirectPixels[ i * 4 + c ] ) );
-
-		}
-
 		// Use the scene's actual coefficients and MS setting, with positive normalized
 		// fixtures so a nighttime scene cannot turn this blackout check into a zero-light test.
 		const sunE: RGB = [ 1, 0.8, 0.6 ], skyEOverPI: RGB = [ 0.3, 0.4, 0.5 ];
@@ -242,12 +184,9 @@ export async function verifyWaterEnergy( renderer: THREE.WebGPURenderer, inputs:
 			}
 
 		}
-		const report = { foam, maximumFoamReflectedFraction, maximumFoamEnergyError, maximumFoamBacklitDirect,
-			maximumSolarBlackout, maximumSkyShadowDifference, minimumShadowedSky, maximumColumnError,
+		const report = { maximumSolarBlackout, maximumSkyShadowDifference, minimumShadowedSky, maximumColumnError,
 			coefficients: inputs, empiricalMultipleScatteringRetained: true };
-		if ( ! [ maximumFoamReflectedFraction, maximumFoamEnergyError, maximumFoamBacklitDirect, maximumSolarBlackout,
-			maximumSkyShadowDifference, minimumShadowedSky, maximumColumnError ].every( Number.isFinite ) ||
-			maximumFoamReflectedFraction > rho + 2e-6 || maximumFoamEnergyError > 2e-6 || maximumFoamBacklitDirect > 1e-7 ||
+		if ( ! [ maximumSolarBlackout, maximumSkyShadowDifference, minimumShadowedSky, maximumColumnError ].every( Number.isFinite ) ||
 			maximumSolarBlackout > 1e-7 || maximumSkyShadowDifference > 1e-7 || minimumShadowedSky <= 0 || maximumColumnError > 2e-6 ) {
 
 			throw new Error( `Water energy GPU probe failed: ${ JSON.stringify( report ) }` );

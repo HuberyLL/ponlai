@@ -4,7 +4,6 @@ import GUI from 'lil-gui';
 import { Sky } from './sky/Sky.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
-import { OceanFoam } from './ocean/OceanFoam.ts';
 import { Caustics } from './ocean/Caustics.ts';
 import { Water } from './ocean/Water.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
@@ -184,7 +183,6 @@ const data = await generateWorld();
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
 const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
-const foam = new OceanFoam( renderer, fft, shared, shore.tex, shoreWaves );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
 const refractedSun = new RefractedSun( renderer, shared );
@@ -212,7 +210,7 @@ const characters = new Villagers( fisherman, [ [ - 5.5, 1.5 ], [ - 1.5, 3.3 ], [
 scene.add( characters.group );
 
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, foamState: foam.texture, shoreWaves, refractedSun,
+	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 water.uniforms.wind.value = fft.params.windSpeed;
@@ -343,7 +341,6 @@ function tick(): void {
 	fft.update( paused ? 0 : dt, simTime );
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
-	if ( W.foamAmount.value > 0 ) foam.update( simTime );
 	caustics.update( sky.sunDir );
 	refractedSun.update();
 	characters.update( renderer, scene, sun, simTime, paused ? 0 : dt );
@@ -382,4 +379,4 @@ renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
 // setTime moves the (paused) clock, so captures can step through an animation in one page load
 const setTime = ( t: number ) => { simTime = t; };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, foam, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, applySun, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, applySun, invalidateSunShadow, setTime };

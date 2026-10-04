@@ -439,5 +439,3 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 	return mat;
 
 }
-
-export type { F };

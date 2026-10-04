@@ -52,7 +52,7 @@ function sampleWithGrowth( x: number, z: number, growth: number ): SoilSample {
 
 }
 
-export function sampleSoil( x: number, z: number ): SoilSample {
+function sampleSoil( x: number, z: number ): SoilSample {
 
 	return sampleWithGrowth( x, z, sampleMeadow( x, z ).growth );
 

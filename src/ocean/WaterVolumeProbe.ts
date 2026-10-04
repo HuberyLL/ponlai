@@ -1,9 +1,8 @@
 import * as THREE from 'three/webgpu';
-import { Fn, float, floor as floorNode, uint, vec2, vec3, vec4, screenCoordinate, select, texture, uniform, uniformArray, uv } from 'three/tsl';
+import { Fn, float, floor as floorNode, uint, vec2, vec3, vec4, screenCoordinate, select, uniform, uniformArray, uv } from 'three/tsl';
 import { waterColumnRadiance, waterShadowedColumnRadiance } from './WaterTransport.ts';
 import { solarVolumeVisibility, volumeShadowRayMayIntersect } from '../lighting/SolarShadow.ts';
 import { RefractedSun, refractedSunDirection, refractedSurfaceEntryNode } from '../lighting/RefractedSun.ts';
-import type { OceanFFT } from './OceanFFT.ts';
 
 type F = THREE.Node<'float'>;
 type V4 = THREE.Node<'vec4'>;
@@ -292,119 +291,6 @@ export async function verifyWaterVolume( renderer: THREE.WebGPURenderer ) {
 		floor.geometry.dispose();
 		wetBox.geometry.dispose();
 		await renderer.setAnimationLoop( animation );
-
-	}
-
-}
-
-// Packing must preserve the live, persistent foam field, including interpolation and
-// periodic seams. A stressed spectrum ensures zero default foam cannot make this pass.
-export async function verifyWhitecapPacking( renderer: THREE.WebGPURenderer, fft: OceanFFT ) {
-
-	if ( fft.velocityTextures.length !== 3 ) throw new Error( 'Whitecap packing probe expects three ocean cascades' );
-	const size = 128, frames = 12, step = 0.1;
-	const target = new THREE.RenderTarget( size, size, { type: THREE.FloatType, depthBuffer: false } );
-	const materials: THREE.NodeMaterial[] = [];
-	const originalAmplitude = fft.params.amplitude, originalChoppiness = fft.params.choppiness;
-	// The phase is internal because ordinary clients advance it through update(). Restore
-	// it after this isolated fixture so the next scene frame cannot inherit its test clock.
-	const originalPhase = ( fft as unknown as { time: { value: number } } ).time.value;
-	const fixture = { amplitude: Math.max( originalAmplitude * 12, 12 ), choppiness: Math.max( originalChoppiness * 12, 8 ) };
-	const animation = renderer.getAnimationLoop();
-	await renderer.setAnimationLoop( null );
-	const state = THREE.RendererUtils.resetRendererState( renderer, {} as THREE.RendererUtils.RendererState );
-	const render = async ( difference: boolean ) => {
-
-		const material = new THREE.NodeMaterial();
-		materials.push( material );
-		material.depthTest = material.depthWrite = false;
-		material.toneMapped = false;
-		material.blending = THREE.NoBlending;
-		material.fragmentNode = Fn( () => {
-
-			// Different cascade UVs match Water.ts. The field covers negative coordinates,
-			// repeat boundaries and fractional texels; both inputs use the same linear LOD 0.
-			const world = uv().sub( 0.5 ).mul( 160 ).add( vec2( 0.137, - 0.291 ) );
-			const coordinates = fft.sizes.map( scale => world.div( scale ) );
-			const packed = vec3( texture( fft.whitecapTexture, coordinates[ 0 ] ).level( float( 0 ) ).r,
-				texture( fft.whitecapTexture, coordinates[ 1 ] ).level( float( 0 ) ).g,
-				texture( fft.whitecapTexture, coordinates[ 2 ] ).level( float( 0 ) ).b );
-			const channels = fft.velocityTextures.map( ( input, c ) => texture( input, coordinates[ c ] ).level( float( 0 ) ).a );
-			const original = vec3( channels[ 0 ], channels[ 1 ], channels[ 2 ] );
-			return vec4( difference ? packed.sub( original ) : original, 1 );
-
-		} )();
-		const quad = new THREE.QuadMesh( material );
-		const before = quad.onBeforeRender, originalVertex = material.vertexNode;
-		let fullscreenVertex = originalVertex;
-		quad.onBeforeRender = ( ...args ) => {
-
-			fullscreenVertex = material.vertexNode;
-			before.apply( quad, args );
-
-		};
-		try {
-
-			renderer.setRenderTarget( target );
-			quad.render( renderer );
-			material.vertexNode = fullscreenVertex;
-			await renderer.compileAsync( quad, quad.camera );
-			material.vertexNode = originalVertex;
-			quad.render( renderer );
-			return await renderer.readRenderTargetPixelsAsync( target, 0, 0, size, size ) as Float32Array;
-
-		} finally { quad.onBeforeRender = before; material.vertexNode = originalVertex; }
-
-	};
-	try {
-
-		renderer.setScissorTest( false );
-		fft.params.amplitude = fixture.amplitude;
-		fft.params.choppiness = fixture.choppiness;
-		fft.rebuildSpectrum();
-		// The first frame resets history; following frames have dt <= 0.25 and accumulate it.
-		for ( let i = 0; i < frames; i ++ ) fft.update( step, 20 + i * step );
-		const differences = await render( true ), sources = await render( false );
-		const cascades = fft.velocityTextures.map( ( _, c ) => {
-
-			let maximumAbsoluteDifference = 0, minimumSource = Infinity, maximumSource = - Infinity, nonzeroSamples = 0;
-			for ( let i = 0; i < size * size; i ++ ) {
-
-				const at = i * 4 + c, source = sources[ at ];
-				maximumAbsoluteDifference = Math.max( maximumAbsoluteDifference, Math.abs( differences[ at ] ) );
-				minimumSource = Math.min( minimumSource, source );
-				maximumSource = Math.max( maximumSource, source );
-				if ( source > 1e-4 ) nonzeroSamples ++;
-
-			}
-			return { cascade: c, maximumAbsoluteDifference, minimumSource, maximumSource, nonzeroSamples };
-
-		} );
-		const tolerance = 1e-7;
-		const passed = differences.every( Number.isFinite ) && sources.every( Number.isFinite ) && cascades.every( sample =>
-			sample.maximumAbsoluteDifference <= tolerance && sample.maximumSource > 0.01 && sample.nonzeroSamples > 100
-			&& sample.maximumSource - sample.minimumSource > 0.01 && sample.minimumSource >= - tolerance && sample.maximumSource <= 1 + tolerance );
-		return { passed, samplesPerCascade: size * size, frames, step, fixture, tolerance, cascades,
-			filter: 'matching linear LOD 0 at per-cascade UVs, including negative coordinates and repeat seams',
-			restore: 'original spectrum parameters and phase; temporary whitecap history is reset' };
-
-	} finally {
-
-		try {
-
-			fft.params.amplitude = originalAmplitude;
-			fft.params.choppiness = originalChoppiness;
-			fft.rebuildSpectrum();
-			fft.update( 0, originalPhase );
-
-		} finally {
-
-			THREE.RendererUtils.restoreRendererState( renderer, state );
-			target.dispose();
-			for ( const material of materials ) material.dispose();
-			await renderer.setAnimationLoop( animation );
-
-		}
 
 	}
 

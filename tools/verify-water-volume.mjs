@@ -21,9 +21,9 @@ try {
 
 		try {
 
-			const { verifyWaterVolume, verifyWhitecapPacking } = await import( '/src/ocean/WaterVolumeProbe.ts' );
-			const { renderer, fft } = window.__SOOMI__;
-			return { probe: await verifyWaterVolume( renderer ), whitecapPacking: await verifyWhitecapPacking( renderer, fft ) };
+			const { verifyWaterVolume } = await import( '/src/ocean/WaterVolumeProbe.ts' );
+			const { renderer } = window.__SOOMI__;
+			return { probe: await verifyWaterVolume( renderer ) };
 
 		} catch ( error ) { return { failure: error.message }; }
 
@@ -33,7 +33,6 @@ try {
 	console.log( JSON.stringify( { ...result, errors } ) );
 	assert.equal( result.failure, undefined );
 	assert.equal( result.probe?.passed, true, 'Depth-varying water volume GPU probe failed' );
-	assert.equal( result.whitecapPacking?.passed, true, 'Packed whitecaps differ from the nonzero velocity-alpha source fields' );
 	assert.deepEqual( errors, [] );
 
 } finally { await browser.close(); }

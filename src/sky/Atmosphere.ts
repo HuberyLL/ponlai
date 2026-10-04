@@ -1,7 +1,9 @@
 /*!
- * Adapted from tidewater (https://github.com/dgreenheck/tidewater).
- * Copyright (c) 2026 DRG Software Solutions LLC. MIT License; see tidewater.LICENSE.txt.
+ * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
+ * Copyright (c) 2026 DRG Software Solutions LLC
+ * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
  */
+
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uv, uniform, texture, vec2, vec3, vec4, float, int,

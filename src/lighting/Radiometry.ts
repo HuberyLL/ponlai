@@ -4,7 +4,7 @@
 export const SCENE_RADIANCE_SCALE = 1 / 16;
 export const SUN_ANGULAR_RADIUS = 0.004675;
 
-export function solarDiskProfile( radius: number ): number {
+function solarDiskProfile( radius: number ): number {
 
 	if ( radius >= 1 ) return 0;
 	const x = Math.max( 0, Math.min( ( radius - 0.9 ) / 0.1, 1 ) );
