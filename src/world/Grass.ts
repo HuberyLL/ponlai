@@ -4,11 +4,11 @@ import {
 	smoothstep as smoothstepN,
 } from 'three/tsl';
 import { mulberry32, smoothstep } from './noise.ts';
-import { sampleMeadow, meadowColor } from '../materials/Meadow.ts';
+import { sampleMeadow, meadowColor, supportsMeadow } from '../materials/Meadow.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import type { Shared } from '../shared.ts';
 
-// Stylised meadow on the island top and the stack tops: instanced tufts, each a fan of tapered,
+// Stylised meadow on the island top: instanced tufts, each a fan of tapered,
 // bending blades. Most blades make a low, continuous bed; taller shoots grow in loose patches.
 // Soft upward normals join the blades to that bed rather than lighting every tuft as a cushion.
 // A gentle wind sways the tips. Anchors come from the world worker (x, y, z, normal, rim distance,
@@ -104,6 +104,7 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
 	const col = new THREE.Color();
 
+	let count = 0;
 	for ( let i = 0; i < n; i ++ ) {
 
 		const k = i * STRIDE;
@@ -127,14 +128,17 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 		const spread = ( tall ? 0.34 : 0.44 ) + growth * 0.08;
 		scl.set( spread * ( 0.85 + rng() * 0.3 ), h, spread * ( 0.85 + rng() * 0.3 ) );
 		m.compose( pos, q, scl );
-		mesh.setMatrixAt( i, m );
 
 		// The terrain samples the same colour field, so gaps read as short turf between shoots.
 		meadowColor( x, z, col ).multiplyScalar( 0.93 + rng() * 0.14 );
-		mesh.setColorAt( i, col );
+		// Consume the original random draws before filtering so inland tufts stay identical.
+		if ( ! supportsMeadow( y, veg[ k + 4 ] ) ) continue;
+		mesh.setMatrixAt( count, m );
+		mesh.setColorAt( count ++, col );
 
 	}
 
+	mesh.count = count;
 	mesh.instanceMatrix.needsUpdate = true;
 	mesh.instanceColor!.needsUpdate = true;
 	mesh.frustumCulled = false;

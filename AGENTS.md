@@ -3,7 +3,7 @@
 A small stylised island in an open sea, rendered in the browser: a visual sample for a game.
 The look is stylised fantasy-realistic: warm golden light, airy lifted shadows, deep muted
 teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with bushes,
-wildflowers and ivy.
+wildflowers. Exposed cliff faces remain bare.
 
 ## Stack and commands
 
@@ -26,7 +26,7 @@ wildflowers and ivy.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor,
-  shoreline field, vegetation anchors; instanced grass, bushes, flowers, ivy.
+  shoreline field, vegetation anchors; instanced grass, bushes and flowers on the island top.
 - `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
   sea floor, light under the water).
 - `src/ocean/`: FFT ocean (compute), caustics, water shading.
@@ -39,6 +39,7 @@ wildflowers and ivy.
 - Keep the island tile layout and flat central plateau. Natural contour, slope and weathering
   variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
   patchy seabed detail; no exposed sea stacks or reefs.
+- Keep plants and meadow cover on the island top; no hanging ivy or plants rooted on cliff faces.
 - No glowing rings at the bases of the sea stacks.
 - Do not commit reference images, and do not ship third-party art without a licence.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,

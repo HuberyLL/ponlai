@@ -1,9 +1,20 @@
 import * as THREE from 'three/webgpu';
 import { noise3, smoothstep } from '../world/noise.ts';
+import { ISLAND_TOP } from '../world/WorldShapes.ts';
 
 // The blades and the ground share one growth field, so tall tufts belong to the same
 // cool-green drifts as their roots instead of floating over unrelated painted patches.
 export const MEADOW_EXTENT = 128;
+export const MEADOW_MIN_UP = 0.85;
+export const MEADOW_MAX_DROP = 0.3;
+
+// The permissive worker rays also hit battered cliff faces. Keep their sampling order for
+// stable meadow randomness, then draw plants only on the shallow top and its upper shoulder.
+export function supportsMeadow( y: number, up: number ): boolean {
+
+	return y >= ISLAND_TOP - MEADOW_MAX_DROP && up >= MEADOW_MIN_UP;
+
+}
 const MEADOW_SIZE = 512;
 
 interface MeadowSample { growth: number; dry: number; variation: number }

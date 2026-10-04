@@ -30,8 +30,6 @@ export interface WorldData {
 	// turf anchors, 8 floats each: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
 	// (0 island)
 	vegetation: Float32Array;
-	// ivy points, 6 floats each: x, y, z, outward x, z, t along the strand
-	ivy: Float32Array;
 	shore: ShoreField;
 	// Half-resolution island distance field for the local breaking-surf pass.
 	islandShore: ShoreField;

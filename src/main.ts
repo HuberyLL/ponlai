@@ -10,7 +10,6 @@ import { generateWorld, buildWorldMeshes, shoreTextureFrom } from './world/World
 import { buildGrass } from './world/Grass.ts';
 import { buildFoliage } from './world/Foliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
-import { buildIvy } from './world/Ivy.ts';
 import { Pipeline } from './post/Pipeline.ts';
 import { shared } from './shared.ts';
 
@@ -150,8 +149,7 @@ scene.add( world.group );
 const grass = buildGrass( data.vegetation, shared );
 const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
-const ivy = buildIvy( data.ivy, shared );
-scene.add( grass, foliage, flowers, ivy );
+scene.add( grass, foliage, flowers );
 
 water = new Water( {
 	fft, sky, shared, shore: shore.tex, islandShore: islandShore.tex, foam: textures.heights,
@@ -296,4 +294,4 @@ function diagnostics(): void {
 
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, grass, foliage, flowers, ivy, applySun };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, grass, foliage, flowers, applySun };

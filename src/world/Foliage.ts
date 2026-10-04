@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { mulberry32, noise3, smoothstep, type Rng } from './noise.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
+import { supportsMeadow } from '../materials/Meadow.ts';
 import type { Shared } from '../shared.ts';
 
 interface Site { x: number; y: number; z: number; r: number; rim: number; nx: number; ny: number; nz: number }
@@ -248,7 +249,8 @@ export function buildFoliage( veg: Float32Array, shared: Shared ): THREE.Instanc
 	const col = new THREE.Color();
 	const greens = [ [ 0.065, 0.16, 0.04 ], [ 0.095, 0.19, 0.048 ], [ 0.15, 0.205, 0.046 ], [ 0.04, 0.12, 0.043 ], [ 0.18, 0.22, 0.058 ] ].map( ( [ r, gr, b ] ) => new THREE.Color( r, gr, b ) );
 
-	sites.forEach( ( s, i ) => {
+	let count = 0;
+	sites.forEach( ( s ) => {
 
 		// lean with the ground: bushes on the rim tip out over the edge
 		dir.set( s.nx, s.ny, s.nz ).lerp( up, 0.4 ).normalize();
@@ -258,12 +260,15 @@ export function buildFoliage( veg: Float32Array, shared: Shared ): THREE.Instanc
 		pos.set( s.x, s.y - 0.08 * s.r, s.z );
 		scl.set( s.r * ( 0.9 + rng() * 0.25 ), s.r * ( 1.1 + rng() * 0.4 ), s.r * ( 0.9 + rng() * 0.25 ) );
 		m.compose( pos, q, scl );
-		mesh.setMatrixAt( i, m );
 		col.copy( greens[ Math.floor( rng() * greens.length ) ] ).multiplyScalar( 0.85 + rng() * 0.35 );
-		mesh.setColorAt( i, col );
+		// Keep proposal collisions and random draws stable, then omit bushes rooted on stone.
+		if ( ! supportsMeadow( s.y, s.ny ) ) return;
+		mesh.setMatrixAt( count, m );
+		mesh.setColorAt( count ++, col );
 
 	} );
 
+	mesh.count = count;
 	mesh.instanceMatrix.needsUpdate = true;
 	if ( mesh.instanceColor ) mesh.instanceColor.needsUpdate = true;
 	mesh.frustumCulled = false;

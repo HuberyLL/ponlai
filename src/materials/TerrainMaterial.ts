@@ -5,7 +5,7 @@ import {
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
 import type { DetailTextures } from './ProceduralTextures.ts';
-import { MEADOW_EXTENT } from './Meadow.ts';
+import { MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP } from './Meadow.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
@@ -159,27 +159,18 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 		const stoneRough = clamp( Fc.a.mul( 0.34 ).add( 0.62 ), 0.8, 0.98 );
 		const rough = stoneRough.toVar();
 
-		// Soil-connected island ledges carry moss and turf. Submerged boulders omit
-		// these nodes entirely, so an upward rock face cannot turn into a green cap.
+		// The meadow ends at the upper shoulder; exposed walls keep their mineral surface.
+		// Submerged boulders omit these nodes entirely.
 		if ( vegetation ) {
 
 			const mossN = H.g.sub( 0.5 ).mul( 0.5 ).add( big.sub( 0.5 ).mul( 0.6 ) );
-			const dry = smoothstep( 0.7, 1.6, p.y );
-			const lip = smoothstep( topY.sub( 0.55 ), topY.sub( 0.1 ), p.y.add( mossN.mul( 0.6 ) ) );
-			const streak = texture( tex.normalsB, vec2( p.x.add( p.z ).mul( 0.9 ), p.y.mul( 0.05 ) ) ).a;
-			const hang = smoothstep( topY.sub( 0.5 ).sub( streak.mul( 1.6 ) ), topY.sub( 0.2 ).sub( streak.mul( 0.9 ) ), p.y ).mul( smoothstep( 0.55, 0.72, streak.add( H.g.mul( 0.25 ) ) ) );
-			// Only ledges connected to the soil can carry an unbroken carpet. Isolated upward
-			// fracture facets receive sparse weathering, rather than a solid green triangle.
-			const nearSoil = smoothstep( topY.sub( 0.75 ), topY.sub( 0.22 ), p.y );
-			const ledgePatch = smoothstep( 0.38, 0.67, H.g.mul( 0.7 ).add( big2.mul( 0.3 ) ) );
-			const ledgeMoss = smoothstep( 0.55, 0.88, up.add( mossN ) ).mul( mix( ledgePatch.mul( 0.3 ), float( 1 ), nearSoil ) );
-			// Fully covered turf skips stone scan samples; slope transitions retain mineral shading.
-			const moss = max( turf, clamp( max( ledgeMoss, max( lip.mul( smoothstep( - 0.35, 0.3, up ) ), hang.mul( 0.6 ) ) ).mul( dry ), 0, 1 ) ).toVar();
+			const turfRim = smoothstep( MEADOW_MIN_UP, 0.97, up )
+				.mul( smoothstep( topY.sub( MEADOW_MAX_DROP ), topY.sub( 0.12 ), p.y.add( mossN.mul( 0.15 ) ) ) );
+			const moss = max( turf, turfRim ).toVar();
 			const mossC = mix( vec3( 0.025, 0.06, 0.015 ), vec3( 0.11, 0.2, 0.035 ), smoothstep( 0.2, 0.9, H.g ) ).toVar();
 			mossC.mulAssign( smoothstep( 0.3, 0.8, texture( tex.heights, p.xz.mul( 0.9 ).add( p.y.mul( 0.5 ) ) ).g ).mul( 0.6 ).add( 0.7 ) );
 			mossC.assign( mix( mossC, vec3( 0.2, 0.21, 0.06 ), smoothstep( 0.6, 0.9, big2 ).mul( 0.35 ) ) ); // sun-dried
-			// Continue the short meadow bed over the rounded shoulder before yielding to rock.
-			const turfRim = smoothstep( 0.4, 0.88, up ).mul( smoothstep( topY.sub( 0.48 ), topY.sub( 0.12 ), p.y.add( mossN.mul( 0.15 ) ) ) );
+			// Keep the same meadow bed on top, with a narrow blend into bare rock.
 			const turfCover = max( turf, turfRim ).toVar();
 			If( turfCover.greaterThan( 0 ), () => {
 
