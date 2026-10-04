@@ -26,10 +26,10 @@ function strandNodes( strand: RimStrand ): StrandNode[] {
 
 }
 
-function closestBush( root: THREE.Vector3, foliage: THREE.InstancedMesh | undefined, fallback: THREE.Color ): { color: THREE.Color; scale: number } {
+function closestBush( root: THREE.Vector3, foliage: THREE.InstancedMesh | undefined, fallback: THREE.Color ): { color: THREE.Color; scale: number; distance: number } {
 
 	const color = fallback.clone();
-	if ( ! foliage?.instanceColor ) return { color, scale: 0.75 };
+	if ( ! foliage?.instanceColor ) return { color, scale: 0.75, distance: Infinity };
 	const matrix = new THREE.Matrix4(), position = new THREE.Vector3(), scale = new THREE.Vector3();
 	let closest = Infinity, index = - 1, leafScale = 0.75;
 	for ( let i = 0; i < foliage.count; i ++ ) {
@@ -40,8 +40,8 @@ function closestBush( root: THREE.Vector3, foliage: THREE.InstancedMesh | undefi
 		if ( distance < closest ) { closest = distance; index = i; scale.setFromMatrixScale( matrix ); leafScale = Math.sqrt( scale.x * scale.z ); }
 
 	}
-	if ( index >= 0 && closest < 4 ) foliage.getColorAt( index, color );
-	return { color, scale: closest < 4 ? leafScale : 0.75 };
+	if ( index >= 0 ) foliage.getColorAt( index, color );
+	return { color, scale: index >= 0 ? leafScale : 0.75, distance: Math.sqrt( closest ) };
 
 }
 
@@ -82,7 +82,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 	const palette = [ [ 0.065, 0.16, 0.04 ], [ 0.095, 0.19, 0.048 ], [ 0.15, 0.205, 0.046 ], [ 0.04, 0.12, 0.043 ], [ 0.18, 0.22, 0.058 ] ];
 	const point = new THREE.Vector3(), outward = new THREE.Vector3(), tangent = new THREE.Vector3(), lateral = new THREE.Vector3();
 	const normal = new THREE.Vector3(), along = new THREE.Vector3(), width = new THREE.Vector3(), vertex = new THREE.Vector3(), radial = new THREE.Vector3();
-	let leafCount = 0, strandCount = 0, sprayCount = 0;
+	let leafCount = 0, strandCount = 0, sprayCount = 0, rootClusterCount = 0;
 	const add = ( p: THREE.Vector3, u: number, v: number, color: THREE.Color, shade: number, envelope: THREE.Vector3, weight: number, phase: number ) => {
 
 		P.push( p.x, p.y, p.z ); U.push( u, v );
@@ -152,7 +152,8 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 			along.addScaledVector( normal, - along.dot( normal ) ).normalize();
 			width.crossVectors( normal, along ).normalize();
 			const baseLength = Math.max( 0.11, Math.min( 0.17, ( 0.17 + rng() * 0.045 ) * bush.scale * 1.10 ) );
-			const terminal = 0.07 + rng() * 0.04, taper = smoothstep( 0.68, 0.97, t );
+			const hangingProgress = Math.max( 0, ( t - lipT ) / Math.max( 0.001, 1 - lipT ) );
+			const terminal = 0.07 + rng() * 0.04, taper = smoothstep( 0.73, 0.99, hangingProgress );
 			const L = baseLength * ( 1 - taper ) + terminal * taper;
 			const B = L * ( 0.46 + rng() * 0.12 ), fold = L * ( 0.08 + rng() * 0.07 ), shade = 0.84 + rng() * 0.18;
 			// A small real stalk connects each individual blade to the woody spray.
@@ -184,19 +185,38 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 		};
 		const lip = Math.max( 1, Math.min( nodes.length - 1, strand.lip ) );
 		const lipT = nodes[ lip ].distance / length;
+		// Meadow-rooted trails borrow the nearest shrub's palette. A few low folded leaves on
+		// the existing root stem conceal an exposed attachment without adding a separate bush.
+		if ( bush.distance > Math.max( 0.30, bush.scale * 0.88 ) ) {
+
+			const leaves = 3 + Math.floor( rng() * 3 );
+			const rotation = rng() * Math.PI * 2;
+			for ( let i = 0; i < leaves; i ++ ) {
+
+				const node = nodes[ 1 + i % Math.min( 3, lip ) ];
+				const angle = rotation + i / leaves * Math.PI * 2 + ( rng() - 0.5 ) * 0.45;
+				const direction = new THREE.Vector3( Math.cos( angle ), 0.14, Math.sin( angle ) ).normalize();
+				leaf( node.point, direction, node.outward, 0, i % 2 ? - 1 : 1, 0 );
+
+			}
+			rootClusterCount ++;
+
+		}
 		const hiddenPairs = 2 + Math.floor( rng() * 2 );
-		const visiblePairs = Math.max( 6, Math.min( 9, Math.round( ( length - nodes[ lip ].distance ) / 0.073 ) ) );
+		const spacing = 0.065 + rng() * 0.021;
+		const visiblePairs = Math.max( 4, Math.min( 19, Math.round( ( length - nodes[ lip ].distance ) / spacing ) ) );
 		// The hidden root arc gets only a few leaves. Most foliage belongs beyond the lip,
 		// where irregular opposing pairs form small hanging sprays rather than sparse bead chains.
 		for ( const [ begin, end, pairs ] of [ [ 0.07, lipT, hiddenPairs ], [ lipT, 0.98, visiblePairs ] ] ) {
 
 			for ( let pair = 0; pair < pairs; pair ++ ) {
 
-				const t = begin + ( end - begin ) * ( pair + 0.30 + rng() * 0.50 ) / ( pairs + 0.25 );
+				const t = begin + ( end - begin ) * ( pair + 0.22 + rng() * 0.65 ) / ( pairs + 0.25 );
+				const hangingProgress = Math.max( 0, ( t - lipT ) / Math.max( 0.001, 1 - lipT ) );
 				for ( const side of [ - 1, 1 ] ) {
 
-					if ( side > 0 && rng() < ( t > 0.86 ? 0.60 : 0.15 ) ) continue;
-					const leafT = Math.min( 0.97, Math.max( 0.04, t + ( rng() - 0.5 ) * 0.018 ) );
+					if ( side > 0 && rng() < 0.12 + smoothstep( 0.72, 0.98, hangingProgress ) * 0.55 ) continue;
+					const leafT = Math.min( 0.985, Math.max( 0.04, t + ( rng() - 0.5 ) * spacing / length * 0.42 ) );
 					sample( leafT );
 					leaf( point, tangent, outward, leafT, side );
 
@@ -205,15 +225,16 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 			}
 
 		}
-		const sprays = rng() < 0.72 ? ( rng() < 0.18 ? 2 : 1 ) : 0;
+		const hangingLength = length - nodes[ lip ].distance;
+		const sprays = rng() < 0.76 ? ( rng() < ( hangingLength > 0.80 ? 0.40 : 0.20 ) ? 2 : 1 ) : 0;
 		for ( let spray = 0; spray < sprays; spray ++ ) {
 
-			const t = lipT + ( 1 - lipT ) * ( 0.16 + rng() * 0.18 + spray * 0.12 );
+			const t = lipT + ( 1 - lipT ) * ( 0.08 + rng() * 0.32 + spray * ( 0.06 + rng() * 0.14 ) );
 			sample( t );
 			if ( outward.y > 0.65 ) continue;
 			const root = point.clone(), surface = outward.clone();
 			const side = spray ? - 1 : rng() < 0.5 ? - 1 : 1;
-			const direction = lateral.clone().multiplyScalar( side * 0.70 ).addScaledVector( outward, 0.66 ).addScaledVector( tangent, 0.32 );
+			const direction = lateral.clone().multiplyScalar( side * ( 0.52 + rng() * 0.30 ) ).addScaledVector( outward, 0.58 + rng() * 0.17 ).addScaledVector( tangent, 0.20 + rng() * 0.22 );
 			direction.y -= 0.30;
 			if ( direction.dot( surface ) < 0.32 ) direction.addScaledVector( surface, 0.32 - direction.dot( surface ) );
 			direction.normalize();
@@ -255,7 +276,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 		strandCount ++;
 
 	}
-	group.userData = { strands: strandCount, leaves: leafCount, sprays: sprayCount, maxWind: 0.007 };
+	group.userData = { strands: strandCount, leaves: leafCount, sprays: sprayCount, rootClusters: rootClusterCount, maxWind: 0.007 };
 	if ( ! P.length ) return group;
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( P, 3 ) );

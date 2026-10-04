@@ -3,7 +3,7 @@
 A small stylised island in an open sea, rendered in the browser: a visual sample for a game.
 The look is stylised fantasy-realistic: warm golden light, airy lifted shadows, deep muted
 teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with bushes,
-wildflowers, with sparse branches hanging from top shrubs over the rim. Keep most cliff stone exposed.
+wildflowers, with irregular hanging leaf clusters distributed around the rim. Keep the lower cliff stone exposed.
 
 ## Stack and commands
 
@@ -27,7 +27,7 @@ wildflowers, with sparse branches hanging from top shrubs over the rim. Keep mos
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor,
   shoreline field, vegetation anchors; instanced grass, bushes and flowers on the island top,
-  with sparse top-rooted overhanging branches.
+  with top-rooted overhanging branches of mixed lengths.
 - `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
   sea floor, light under the water).
 - `src/ocean/`: FFT ocean (compute), caustics, water shading.
@@ -40,8 +40,8 @@ wildflowers, with sparse branches hanging from top shrubs over the rim. Keep mos
 - Keep the island tile layout and flat central plateau. Natural contour, slope and weathering
   variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
   patchy seabed detail; no exposed sea stacks or reefs.
-- Keep plants and meadow cover rooted on the island top. Sparse branches may hang from top shrubs
-  over the upper rim; avoid plants rooted on cliff faces or a continuous curtain hiding the stone.
+- Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
+  around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - No glowing rings at the bases of the sea stacks.
 - Do not commit reference images, and do not ship third-party art without a licence.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
