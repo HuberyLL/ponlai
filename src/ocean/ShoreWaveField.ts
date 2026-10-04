@@ -135,9 +135,11 @@ function phaseSpeed( depth: number, omega: number ): number {
 }
 
 /**
- * An offline Eikonal field over exactly data.shore's domain. RGBA is arrival time (s),
- * dT/dx and dT/dz (s/m), and actual seabed depth (m, sea level 0). Rebuild after changing
- * direction or period; the caller owns disposal. Direction points along wave travel.
+ * An offline Eikonal field over exactly data.shore's domain. RGB stores the unwrapped
+ * arrival-time correction (s) and its x/z derivatives (s/m) relative to a global plane
+ * wave. A stores actual nearshore depth, continued to referenceDepth at the cache edge.
+ * Rebuild after changing direction or period; the caller owns disposal. Direction points
+ * along wave travel. A zero correction outside the cache continues the same global wave.
  */
 export function createShoreWaveField( data: WorldData, direction: THREE.Vector2, period: number ): THREE.DataTexture {
 
@@ -260,6 +262,30 @@ export function createShoreWaveField( data: WorldData, direction: THREE.Vector2,
 		}
 
 	}
+	// Continue the unwrapped phase and depth to their global values before differentiating.
+	// The smooth product leaves the whole island unchanged and makes the outer guard a
+	// literal zero residual, so clamped samples cannot freeze a wave at the cache border.
+	const blendStart = 1.5, blendEnd = 15.5;
+	const edgeWeight = ( distance: number ): number => {
+
+		const u = Math.max( 0, Math.min( 1, ( distance - blendStart ) / ( blendEnd - blendStart ) ) );
+		return u * u * ( 3 - 2 * u );
+
+	};
+	const weights = new Float32Array( count );
+	for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
+
+		const k = j * nx + i;
+		const x = shore.x0 + ( i + 0.5 ) * hx, z = shore.z0 + ( j + 0.5 ) * hz;
+		const weight = edgeWeight( x - shore.x0 ) * edgeWeight( shore.x0 + width - x )
+			* edgeWeight( z - shore.z0 ) * edgeWeight( shore.z0 + height - z );
+		weights[ k ] = weight;
+		depths[ k ] = maxDepth + weight * ( depths[ k ] - maxDepth );
+		if ( state[ k ] !== 2 ) continue;
+		const plane = ( x * dx + z * dz ) / referenceSpeed - timeOffset;
+		arrival[ k ] = weight * ( arrival[ k ] - plane );
+
+	}
 	const pixels = new Float32Array( count * 4 ), queue = new Int32Array( count );
 	let head = 0, tail = 0;
 	for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
@@ -270,16 +296,18 @@ export function createShoreWaveField( data: WorldData, direction: THREE.Vector2,
 		const left = i > 0 && state[ k - 1 ] === 2, right = i < nx - 1 && state[ k + 1 ] === 2;
 		const down = j > 0 && state[ k - nx ] === 2, up = j < nz - 1 && state[ k + nx ] === 2;
 		pixels[ out ] = t;
-		pixels[ out + 1 ] = left && right ? ( arrival[ k + 1 ] - arrival[ k - 1 ] ) / ( 2 * hx )
-			: right ? ( arrival[ k + 1 ] - t ) / hx : left ? ( t - arrival[ k - 1 ] ) / hx : dx / referenceSpeed;
-		pixels[ out + 2 ] = down && up ? ( arrival[ k + nx ] - arrival[ k - nx ] ) / ( 2 * hz )
-			: up ? ( arrival[ k + nx ] - t ) / hz : down ? ( t - arrival[ k - nx ] ) / hz : dz / referenceSpeed;
+		// Central differences include the transition-weight derivative. The zero guard
+		// has an exact zero derivative rather than reaching into the first feather texel.
+		pixels[ out + 1 ] = weights[ k ] === 0 ? 0 : left && right ? ( arrival[ k + 1 ] - arrival[ k - 1 ] ) / ( 2 * hx )
+			: right ? ( arrival[ k + 1 ] - t ) / hx : left ? ( t - arrival[ k - 1 ] ) / hx : 0;
+		pixels[ out + 2 ] = weights[ k ] === 0 ? 0 : down && up ? ( arrival[ k + nx ] - arrival[ k - nx ] ) / ( 2 * hz )
+			: up ? ( arrival[ k + nx ] - t ) / hz : down ? ( t - arrival[ k - nx ] ) / hz : 0;
 		queue[ tail ++ ] = k;
 
 	}
-	// Extend from the nearest reached water cells into land. Copy T and its water-side
-	// gradient together, keeping bilinear shoreline samples finite without crossing land
-	// during propagation. Any disconnected water pocket receives the same safe extension.
+	// Extend absolute arrival and the water-side gradient into land, expressed as residuals
+	// at each destination. Copying only the residual would add an artificial plane-wave
+	// phase shift at the contact. Any disconnected water pocket receives the same extension.
 	while ( head < tail ) {
 
 		const k = queue[ head ++ ], i = k % nx, j = Math.floor( k / nx );
@@ -289,19 +317,13 @@ export function createShoreWaveField( data: WorldData, direction: THREE.Vector2,
 			const next = nj * nx + ni;
 			if ( state[ next ] === 2 ) return;
 			state[ next ] = 2;
-			pixels[ next * 4 ] = pixels[ k * 4 ];
+			arrival[ next ] = arrival[ k ] - ( ( ni - i ) * hx * dx + ( nj - j ) * hz * dz ) / referenceSpeed;
+			pixels[ next * 4 ] = arrival[ next ];
 			pixels[ next * 4 + 1 ] = pixels[ k * 4 + 1 ]; pixels[ next * 4 + 2 ] = pixels[ k * 4 + 2 ];
 			queue[ tail ++ ] = next;
 
 		};
 		fill( i - 1, j ); fill( i + 1, j ); fill( i, j - 1 ); fill( i, j + 1 );
-
-	}
-	if ( tail === 0 ) for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
-
-		const k = j * nx + i, x = shore.x0 + ( i + 0.5 ) * hx, z = shore.z0 + ( j + 0.5 ) * hz;
-		pixels[ k * 4 ] = ( x * dx + z * dz ) / referenceSpeed - timeOffset;
-		pixels[ k * 4 + 1 ] = dx / referenceSpeed; pixels[ k * 4 + 2 ] = dz / referenceSpeed;
 
 	}
 	const texture = new THREE.DataTexture( pixels, nx, nz, THREE.RGBAFormat, THREE.FloatType );
@@ -310,6 +332,7 @@ export function createShoreWaveField( data: WorldData, direction: THREE.Vector2,
 	texture.wrapS = THREE.ClampToEdgeWrapping; texture.wrapT = THREE.ClampToEdgeWrapping;
 	texture.generateMipmaps = false; texture.flipY = false; texture.needsUpdate = true;
 	texture.userData.shoreWaveField = { period, direction: [ dx, dz ], referenceSpeed, timeOffset,
+		referenceDepth: maxDepth, blendStart, blendEnd, phaseResidual: true,
 		x0: shore.x0, z0: shore.z0, width, height, cellX: hx, cellZ: hz, buildMs: performance.now() - started };
 	return texture;
 
@@ -322,6 +345,8 @@ export function createShoreContactField( data: WorldData, waveField: THREE.DataT
 	const { width: nx, height: nz, data: values } = waveField.image;
 	const pixels = values as Float32Array;
 	const info = waveField.userData.shoreWaveField;
+	const [ dx, dz ] = info.direction as [ number, number ];
+	const plane = ( x: number, z: number ): number => ( x * dx + z * dz ) / info.referenceSpeed - info.timeOffset;
 	const output = new Float32Array( nx * nz * 4 );
 	const sample = ( x: number, z: number, channel: number, source = pixels ): number => {
 
@@ -340,14 +365,16 @@ export function createShoreContactField( data: WorldData, waveField: THREE.DataT
 		const gx = ( sampleShore( data.shore, x + 0.4, z ) - sampleShore( data.shore, x - 0.4, z ) ) / 0.8;
 		const gz = ( sampleShore( data.shore, x, z + 0.4 ) - sampleShore( data.shore, x, z - 0.4 ) ) / 0.8;
 		const gl = Math.hypot( gx, gz ), normalX = gx / Math.max( gl, 1e-5 ), normalZ = gz / Math.max( gl, 1e-5 );
-		const tx = sample( x, z, 1 ), tz = sample( x, z, 2 ), tl = Math.max( Math.hypot( tx, tz ), 1e-5 );
+		const tx = sample( x, z, 1 ) + dx / info.referenceSpeed, tz = sample( x, z, 2 ) + dz / info.referenceSpeed;
+		const tl = Math.max( Math.hypot( tx, tz ), 1e-5 );
 		const incidence = Math.max( 0, - ( tx * normalX + tz * normalZ ) / tl );
 		// Distance-field corners are not planar reflecting walls. Suppress their uncertain
 		// reflected front instead of exposing a seam when the closest contact changes branch.
 		const confidence = Math.min( 1, Math.max( 0, ( gl - 0.45 ) / 0.45 ) );
 		const contactDistance = Math.max( 0, Math.min( sd, 12 ) );
 		const k = ( j * nx + i ) * 4;
-		output[ k ] = sample( x - normalX * contactDistance, z - normalZ * contactDistance, 0 );
+		const contactX = x - normalX * contactDistance, contactZ = z - normalZ * contactDistance;
+		output[ k ] = plane( contactX, contactZ ) + sample( contactX, contactZ, 0 );
 		// Query just outside the contact, so a visible parcel next to a sheltered recess
 		// cannot light up an occluded wall. The contact and parcel may have different shelter.
 		const contactExposure = sample( x - normalX * ( contactDistance - 0.3 ), z - normalZ * ( contactDistance - 0.3 ), 0, shelter.image.data as Float32Array );

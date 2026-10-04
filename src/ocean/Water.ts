@@ -200,17 +200,21 @@ export class Water {
 		const vertexShelter = shoreWaves.shelter.sample( xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) );
 		const coastDamp = mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) );
 		const windDamp = mix( float( 0.35 ), float( 1 ), vertexShelter.r );
-		const damp = coastDamp.mul( windDamp );
 		const far = length( xz.sub( cameraPosition.xz ) );
-		const d = texture( disp[ 0 ], xz.div( sizes.x ) ).level( float( 0 ) ).xyz
-			.add( texture( disp[ 1 ], xz.div( sizes.y ) ).level( float( 0 ) ).xyz )
+		// Land screens the long waves. Preserve small wind ripples so the wave shadow
+		// does not read as a fixed patch with a different surface texture when zoomed out.
+		const mediumDamp = mix( float( 0.8 ), float( 1 ), vertexShelter.r );
+		const largeDisp = texture( disp[ 0 ], xz.div( sizes.x ) ).level( float( 0 ) ).xyz;
+		const mediumDisp = texture( disp[ 1 ], xz.div( sizes.y ) ).level( float( 0 ) ).xyz;
+		const d = largeDisp.mul( windDamp ).add( mediumDisp.mul( mediumDamp ) )
 			.add( texture( disp[ 2 ], xz.div( sizes.z ) ).level( float( 0 ) ).xyz.mul( float( 1 ).sub( smoothstep( 60, 140, far ) ) ) )
-			.mul( damp );
+			.mul( coastDamp );
 		const material = new THREE.NodeMaterial();
-		material.positionNode = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y ).add( shoreWaves.texture.sample( xz.add( d.xz ).sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) ).x ), xz.y.add( d.z ) );
-		const vLag = varying( xz ), vDamp = varying( damp );
+		material.positionNode = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y ).add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) );
+		const vLag = varying( xz ), vDamp = varying( coastDamp );
 		const vShelter = varying( windDamp );
-		const vShelterSlope = varying( vertexShelter.ba.mul( 0.65 ).mul( coastDamp ).mul( d.y.div( max( damp, 0.01 ) ) ) );
+		const vMediumDamp = varying( mediumDamp );
+		const vShelterSlope = varying( vertexShelter.ba.mul( coastDamp ).mul( largeDisp.y.mul( 0.65 ).add( mediumDisp.y.mul( 0.2 ) ) ) );
 
 		// ---- fragment
 		const tDepth = texture( linearDepth );
@@ -367,11 +371,11 @@ export class Water {
 			// Preserve the broad swell, but let the finest capillary ripples act as polish rather
 			// than a uniform etched pattern over the entire sea.
 			const foamUV = wp.xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
-			const shoreWave = shoreWaves.texture.sample( foamUV ).level( float( 0 ) ).toVar();
+			const shoreWave = shoreWaves.surfaceAt( wp.xz, time ).toVar();
 			const clearShoulder = smoothstep( 0.015, 0.18, shoreWave.x ).mul( float( 1 ).sub( shoreWave.w ) );
 			const fineDetail = u.detail.mul( float( 1 ).sub( clearShoulder.mul( 0.42 ) ) );
-			const dd0 = texture( der[ 0 ], vLag.div( sizes.x ) )
-				.add( texture( der[ 1 ], vLag.div( sizes.y ) ).add( texture( der[ 2 ], vLag.div( sizes.z ) ).mul( 0.56 ) ).mul( fineDetail ) ).toVar();
+			const dd0 = texture( der[ 0 ], vLag.div( sizes.x ) ).mul( vShelter )
+				.add( texture( der[ 1 ], vLag.div( sizes.y ) ).mul( vMediumDamp ).add( texture( der[ 2 ], vLag.div( sizes.z ) ).mul( 0.56 ) ).mul( fineDetail ) ).toVar();
 			const event = foamState.sample( foamUV ).toVar();
 			// Fine strands are material detail; the advancing wave decides where they become white.
 			const foamP = wp.xz.add( event.gb );

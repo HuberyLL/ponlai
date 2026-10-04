@@ -31,9 +31,14 @@ packages, into `dist/licenses/`.
   shoaling cross-sections ported to TSL. Soomi adds a separate upwave land-visibility field: a
   narrow angular fan and water-only smoothing soften the wave shadow, which attenuates input
   amplitude, contact, reflection and foam transport together. Residual wind ripples remain in
-  sheltered water, and the distant sea recovers before the field edge. This closed-island
-  shelter treatment is our extension, rather than an upstream diffraction solver. The horizontal
-  profile is inverted into world space; surface normals include its complete changing shape. A
+  sheltered water. Soomi also continues the same swell over the whole sea using a periodically
+  baked phase/along-crest template; the local cache holds only the nearshore residual. Unwrapped
+  travel time and depth blend to the global reference before differentiation, with an exact zero
+  residual rim. The 14-wave / 128 m template is seamless and changes only with wave parameters;
+  fine FFT ripples retain their continuity through the shelter transition. This global continuation
+  and closed-island shelter treatment are our extensions, rather than an upstream diffraction
+  solver. The horizontal profile is inverted into world space; surface normals include its complete
+  changing shape. A
   restrained shape floor makes quiet waves readable in the stylised scene. A local rock-contact
   clock supplies weak reflection and wave-triggered whitewater rather than offshore crest lace.
   Finite-depth orbital velocity advects foam, and expansion thins its density. Dense fresh churn

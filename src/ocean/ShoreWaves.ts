@@ -5,7 +5,7 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { Fn, texture, uniform, uv, float, vec2, vec3, vec4, dot, length, max, abs, sin, cos, floor, fract, pow, mix, smoothstep, exp, tanh } from 'three/tsl';
+import { Fn, texture, uniform, uv, float, vec2, vec3, vec4, dot, length, max, abs, sin, cos, floor, fract, pow, mix, smoothstep, exp, tanh, min, select } from 'three/tsl';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
 import type { WorldData } from '../world/types.ts';
@@ -14,6 +14,8 @@ import { createShoreWaveField, createShoreContactField, createShoreShelterField 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 const TAU = Math.PI * 2;
+const WAVE_COUNT = 14;
+const ALONG_TILE = 128;
 
 // Tidewater's grouped, asymmetric shoaling cross-section, with a rocky boundary condition.
 // A clear swell reaches the cliff first. Only its contact makes whitewater; the offshore
@@ -26,7 +28,12 @@ export class ShoreWaves {
 	readonly field: THREE.TextureNode;
 	readonly contact: THREE.TextureNode;
 	readonly shelter: THREE.TextureNode;
+	// RGBA: nearshore height/slope residual relative to the continuous offshore swell, impact.
 	readonly texture: THREE.TextureNode;
+	readonly globalSurface: THREE.TextureNode;
+	readonly offshore = uniform( new THREE.Vector3() ); // reference speed, phase origin, depth
+	readonly sampleGlobal: ( p: V2, time: F ) => THREE.Node<'vec4'>;
+	readonly surfaceAt: ( p: V2, time: F ) => THREE.Node<'vec4'>;
 	// RG: surface-particle velocity (m/s), B: contact whitewater, A: surface height.
 	readonly motion: THREE.TextureNode;
 	fieldRevision = 0;
@@ -41,6 +48,9 @@ export class ShoreWaves {
 	private surfaceTime = uniform( 0 );
 	private lastTime: number | undefined;
 	private drawnAmplitude = - 1;
+	private globalTarget: THREE.RenderTarget;
+	private globalQuad: THREE.QuadMesh;
+	private globalDirty = true;
 
 	constructor( renderer: THREE.WebGPURenderer, data: WorldData, shared: Shared, shore: THREE.Texture, fft: OceanFFT ) {
 
@@ -49,6 +59,8 @@ export class ShoreWaves {
 		this.setDirection( fft );
 		const field = createShoreWaveField( data, this.direction.value, this.period.value );
 		this.field = texture( field );
+		const info = field.userData.shoreWaveField;
+		this.offshore.value.set( info.referenceSpeed, info.timeOffset, info.referenceDepth ?? 10 );
 		const shelter = createShoreShelterField( data, field );
 		this.shelter = texture( shelter );
 		this.contact = texture( createShoreContactField( data, field, shelter ) );
@@ -57,12 +69,14 @@ export class ShoreWaves {
 
 		const ampAt = Fn( ( [ wave, along, amplitude ]: [ F, F, F ] ) => {
 
-			// Tidewater's seven-wave sets and uneven shoulders, shortened to this island's scale.
+			// A phase/along-coordinate tile continues over the whole sea. Integer harmonics and
+			// wrapped wave ids join the tile smoothly, without a fixed world-space birth zone.
+			wave = wave.sub( floor( wave.div( WAVE_COUNT ) ).mul( WAVE_COUNT ) );
 			const set = abs( sin( wave.mul( Math.PI / 7 ) ) ).mul( 0.36 ).add( 0.64 );
 			const random = fract( sin( wave.mul( 127.1 ).add( 31.7 ) ).mul( 43758.5453 ) );
-			const warp = sin( along.mul( 0.11 ).add( wave.mul( 0.9 ) ) ).mul( 1.2 );
-			const broad = sin( along.mul( 0.32 ).add( wave.mul( 1.7 ) ).add( warp ) );
-			const shoulder = sin( along.mul( 0.71 ).add( wave.mul( 4.1 ) ).sub( warp.mul( 0.7 ) ) );
+			const warp = sin( along.mul( TAU * 2 / ALONG_TILE ).add( wave.mul( 0.9 ) ) ).mul( 1.2 );
+			const broad = sin( along.mul( TAU * 7 / ALONG_TILE ).add( wave.mul( 1.7 ) ).add( warp ) );
+			const shoulder = sin( along.mul( TAU * 14 / ALONG_TILE ).add( wave.mul( 4.1 ) ).sub( warp.mul( 0.7 ) ) );
 			return amplitude.mul( set ).mul( random.mul( 0.18 ).add( 0.82 ) )
 				.mul( broad.mul( 0.12 ).add( shoulder.mul( 0.06 ) ).add( 0.88 ) );
 
@@ -102,7 +116,53 @@ export class ShoreWaves {
 
 		} ).setLayout( { name: 'shoreSwellSection', type: 'vec3', inputs: [ { name: 's', type: 'float' }, { name: 'along', type: 'float' }, { name: 'depth', type: 'float' }, { name: 'invSpeed', type: 'float' }, { name: 'period', type: 'float' }, { name: 'amplitude', type: 'float' } ] } );
 
-		const evaluate = Fn( ( [ p, time, field, boundary, transmission, sd, period, amplitude, incoming ]: [ V2, F, THREE.Node<'vec4'>, THREE.Node<'vec4'>, F, F, F, F, V2 ] ) => {
+		const wobbleAt = ( along: F ) => sin( along.mul( TAU * 6 / ALONG_TILE ) ).mul( 0.015 )
+			.add( sin( along.mul( TAU * 14 / ALONG_TILE ).add( 2.6 ) ).mul( 0.006 ) );
+		const globalHeight = Fn( ( [ phase, along, reference, period, amplitude ]: [ F, F, THREE.Node<'vec3'>, F, F ] ) =>
+			crossSection( phase.add( wobbleAt( along ) ), along, reference.z, float( 1 ).div( reference.x ), period, amplitude ).x
+		).setLayout( { name: 'offshoreSwellHeight', type: 'float', inputs: [ { name: 'phase', type: 'float' }, { name: 'along', type: 'float' }, { name: 'reference', type: 'vec3' }, { name: 'period', type: 'float' }, { name: 'amplitude', type: 'float' } ] } );
+		const globalAt = ( p: V2, time: F ) => {
+
+			const phase = time.sub( dot( p, this.direction ).div( this.offshore.x ).sub( this.offshore.y ) ).div( this.period );
+			const along = dot( p, vec2( this.direction.y.negate(), this.direction.x ) );
+			return globalHeight( phase, along, this.offshore, this.period, this.amplitude );
+
+		};
+		const e = 0.12;
+		// Bake the wave's phase coordinates once per spectrum/amplitude change, not a finite
+		// world patch each frame. Sampling coordinates move with time and can cover all sea.
+		this.globalTarget = new THREE.RenderTarget( 1024, 512, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false } );
+		this.globalTarget.texture.name = 'offshoreSwellProfile';
+		this.globalTarget.texture.wrapS = this.globalTarget.texture.wrapT = THREE.RepeatWrapping;
+		this.globalSurface = texture( this.globalTarget.texture );
+		const globalMaterial = new THREE.NodeMaterial();
+		globalMaterial.fragmentNode = Fn( () => {
+
+			const phase = uv().x.mul( WAVE_COUNT ), along = uv().y.mul( ALONG_TILE );
+			const tangent = vec2( this.direction.y.negate(), this.direction.x );
+			const at = ( delta: V2 ) => globalHeight( phase.sub( dot( delta, this.direction ).div( this.offshore.x.mul( this.period ) ) ),
+				along.add( dot( delta, tangent ) ), this.offshore, this.period, this.amplitude );
+			return vec4( at( vec2( 0 ) ), at( vec2( e, 0 ) ).sub( at( vec2( - e, 0 ) ) ).div( 2 * e ),
+				at( vec2( 0, e ) ).sub( at( vec2( 0, - e ) ) ).div( 2 * e ), float( 0 ) );
+
+		} )();
+		this.globalQuad = new THREE.QuadMesh( globalMaterial );
+		this.sampleGlobal = ( p, time ) => {
+
+			const phase = time.sub( dot( p, this.direction ).div( this.offshore.x ).sub( this.offshore.y ) ).div( this.period );
+			const along = dot( p, vec2( this.direction.y.negate(), this.direction.x ) );
+			return this.globalSurface.sample( vec2( phase.div( WAVE_COUNT ), along.div( ALONG_TILE ) ) ).level( float( 0 ) );
+
+		};
+		const correctionWeight = ( p: V2 ) => {
+
+			const q = p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
+			const lo = q.div( shared.shoreXform.zw ), hi = vec2( 1 ).sub( q ).div( shared.shoreXform.zw );
+			return smoothstep( 1.5, 15.5, lo.x ).mul( smoothstep( 1.5, 15.5, lo.y ) )
+				.mul( smoothstep( 1.5, 15.5, hi.x ) ).mul( smoothstep( 1.5, 15.5, hi.y ) );
+
+		};
+		const evaluate = Fn( ( [ p, time, field, boundary, transmission, correction, sd, period, amplitude, incoming ]: [ V2, F, THREE.Node<'vec4'>, THREE.Node<'vec4'>, F, F, F, F, F, V2 ] ) => {
 
 			const invSpeed = max( length( field.gb ), 0.08 );
 			const dir = field.gb.div( invSpeed );
@@ -110,19 +170,19 @@ export class ShoreWaves {
 			// before shaping the wave, so sheltered crests also lose their sharp shoulders.
 			const exposure = transmission.mul( mix( float( 0.18 ), float( 1 ), smoothstep( - 0.2, 0.7, dot( dir, incoming ) ) ) );
 			const localAmplitude = amplitude.mul( exposure );
-			const envelope = float( 1 ).sub( smoothstep( 18, 32, sd ) );
+			// The incident swell exists everywhere. Only contact/reflection are local.
 			const tangent = vec2( incoming.y.negate(), incoming.x );
 			const normal = boundary.ba.div( max( length( boundary.ba ), 1e-5 ) );
 			const along = dot( p, tangent );
 			const contactAlong = dot( p.sub( normal.mul( max( sd, 0 ) ) ), tangent );
-			const wobble = sin( along.mul( 0.29 ) ).mul( 0.015 ).add( sin( along.mul( 0.67 ).add( 2.6 ) ).mul( 0.006 ) );
-			const contactWobble = sin( contactAlong.mul( 0.29 ) ).mul( 0.015 ).add( sin( contactAlong.mul( 0.67 ).add( 2.6 ) ).mul( 0.006 ) );
+			const wobble = wobbleAt( along );
+			const contactWobble = wobbleAt( contactAlong );
 			const incident = crossSection( time.sub( field.r ).div( period ).add( wobble ), along, field.a, invSpeed, period, localAmplitude );
 			// Reflection shares the incident phase at contact. It loses energy over rough rock;
 			// its low amplitude avoids fixed standing-wave scallops around the whole island.
 			const reflectedTime = boundary.r.mul( 2 ).sub( field.r );
 			const reflected = crossSection( time.sub( reflectedTime ).div( period ).add( contactWobble ), contactAlong, field.a, invSpeed, period, localAmplitude );
-			const reflection = boundary.g.mul( boundary.g ).mul( exp( max( sd, 0 ).mul( - 0.4 ) ) ).mul( 0.20 );
+			const reflection = boundary.g.mul( boundary.g ).mul( exp( max( sd, 0 ).mul( - 0.4 ) ) ).mul( 0.20 ).mul( correction );
 			const reflectedDir = dir.sub( normal.mul( dot( dir, normal ).mul( 2 ) ) );
 			const contactPhase = time.sub( boundary.r ).div( period ).add( contactWobble );
 			const contactU = contactPhase.sub( floor( contactPhase.add( 0.5 ) ) );
@@ -137,20 +197,24 @@ export class ShoreWaves {
 			const energy = smoothstep( 0.065, 0.25, contactA.mul( pow( float( 6 ).div( max( field.a, 0.7 ) ), 0.25 ) ) ).mul( smoothstep( 0.2, 0.85, boundary.g ) )
 				.mul( mix( float( 0.12 ), float( 1 ), smoothstep( - 0.55, 0.7, contactPatch ) ) );
 			const impact = impactWindow.mul( exp( max( sd, 0 ).div( impactWidth ).pow( 2 ).negate() ) ).mul( energy )
-				.mul( smoothstep( 0, 0.15, sd ) );
-			const height = incident.x.add( reflected.x.mul( reflection ) ).mul( envelope );
-			const flow = dir.mul( incident.y ).add( reflectedDir.mul( reflected.y ).mul( reflection ) ).mul( envelope ).toVar();
+				.mul( smoothstep( 0, 0.15, sd ) ).mul( correction );
+			const height = incident.x.add( reflected.x.mul( reflection ) );
+			const flow = dir.mul( incident.y ).add( reflectedDir.mul( reflected.y ).mul( reflection ) ).toVar();
 			const coast = float( 1 ).sub( smoothstep( 0.05, 0.65, sd ) );
 			flow.subAssign( normal.mul( dot( flow, normal ).min( 0 ) ).mul( coast ) );
 			flow.addAssign( normal.mul( impact ).mul( 0.38 ) );
 			return vec4( height, flow.x, flow.y, impact );
 
-		} ).setLayout( { name: 'shoreSwellDynamics', type: 'vec4', inputs: [ { name: 'p', type: 'vec2' }, { name: 'time', type: 'float' }, { name: 'field', type: 'vec4' }, { name: 'boundary', type: 'vec4' }, { name: 'transmission', type: 'float' }, { name: 'sd', type: 'float' }, { name: 'period', type: 'float' }, { name: 'amplitude', type: 'float' }, { name: 'incoming', type: 'vec2' } ] } );
+		} ).setLayout( { name: 'shoreSwellDynamics', type: 'vec4', inputs: [ { name: 'p', type: 'vec2' }, { name: 'time', type: 'float' }, { name: 'field', type: 'vec4' }, { name: 'boundary', type: 'vec4' }, { name: 'transmission', type: 'float' }, { name: 'correction', type: 'float' }, { name: 'sd', type: 'float' }, { name: 'period', type: 'float' }, { name: 'amplitude', type: 'float' }, { name: 'incoming', type: 'vec2' } ] } );
 
 		const dynamicsAt = ( p: V2, time: F ) => {
 
 			const q = p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
-			return evaluate( p, time, this.field.sample( q ).level( float( 0 ) ), this.contact.sample( q ).level( float( 0 ) ), this.shelter.sample( q ).level( float( 0 ) ).r,
+			const phaseResidual = this.field.sample( q ).level( float( 0 ) );
+			const planeTime = dot( p, this.direction ).div( this.offshore.x ).sub( this.offshore.y );
+			const field = vec4( planeTime.add( phaseResidual.r ), this.direction.div( this.offshore.x ).add( phaseResidual.gb ), phaseResidual.a );
+			const correction = correctionWeight( p );
+			return evaluate( p, time, field, this.contact.sample( q ).level( float( 0 ) ), mix( float( 1 ), this.shelter.sample( q ).level( float( 0 ) ).r, correction ), correction,
 				texture( shore, q ).level( float( 0 ) ).r, this.period, this.amplitude, this.direction );
 
 		};
@@ -158,7 +222,6 @@ export class ShoreWaves {
 		this.sample = ( p, time ) => {
 
 			const centre = dynamicsAt( p, time ).toVar();
-			const e = 0.12;
 			const dx = dynamicsAt( p.add( vec2( e, 0 ) ), time ).x.sub( dynamicsAt( p.sub( vec2( e, 0 ) ), time ).x ).div( 2 * e );
 			const dz = dynamicsAt( p.add( vec2( 0, e ) ), time ).x.sub( dynamicsAt( p.sub( vec2( 0, e ) ), time ).x ).div( 2 * e );
 			return vec4( centre.x, dx, dz, centre.w );
@@ -179,12 +242,21 @@ export class ShoreWaves {
 			material.fragmentNode = Fn( () => {
 
 				const p = uv().div( shared.shoreXform.zw ).add( shared.shoreXform.xy );
-				return i === 0 ? this.sample( p, this.surfaceTime ) : dynamicsAt( p, this.surfaceTime ).yzwx;
+				if ( i === 1 ) return dynamicsAt( p, this.surfaceTime ).yzwx;
+				const total = this.sample( p, this.surfaceTime );
+				const gx = globalAt( p.add( vec2( e, 0 ) ), this.surfaceTime ).sub( globalAt( p.sub( vec2( e, 0 ) ), this.surfaceTime ) ).div( 2 * e );
+				const gz = globalAt( p.add( vec2( 0, e ) ), this.surfaceTime ).sub( globalAt( p.sub( vec2( 0, e ) ), this.surfaceTime ) ).div( 2 * e );
+				const residual = vec4( total.x.sub( globalAt( p, this.surfaceTime ) ), total.y.sub( gx ), total.z.sub( gz ), total.w );
+				// An exact zero rim makes clamp-to-edge reads valid outside the local cache.
+				const q = uv(), edge = min( q.div( shared.shoreXform.zw ), vec2( 1 ).sub( q ).div( shared.shoreXform.zw ) );
+				return select( min( edge.x, edge.y ).greaterThan( 1 ), residual, vec4( 0 ) );
 
 			} )();
 			return new THREE.QuadMesh( material );
 
 		} );
+
+		this.surfaceAt = ( p, time ) => this.sampleGlobal( p, time ).add( this.texture.sample( p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) ) );
 
 	}
 
@@ -196,6 +268,9 @@ export class ShoreWaves {
 			const oldField = this.field.value, oldContact = this.contact.value, oldShelter = this.shelter.value;
 			const field = createShoreWaveField( this.data, this.direction.value, this.period.value );
 			this.field.value = field;
+			const info = field.userData.shoreWaveField;
+			this.offshore.value.set( info.referenceSpeed, info.timeOffset, info.referenceDepth );
+			this.globalDirty = true;
 			const shelter = createShoreShelterField( this.data, field );
 			this.shelter.value = shelter;
 			this.contact.value = createShoreContactField( this.data, field, shelter );
@@ -209,6 +284,13 @@ export class ShoreWaves {
 		if ( time === undefined || ( time === this.lastTime && this.amplitude.value === this.drawnAmplitude ) ) return;
 		this.surfaceTime.value = time;
 		const previousTarget = this.renderer.getRenderTarget();
+		if ( this.globalDirty || this.drawnAmplitude !== this.amplitude.value ) {
+
+			this.renderer.setRenderTarget( this.globalTarget );
+			this.globalQuad.render( this.renderer );
+			this.globalDirty = false;
+
+		}
 		for ( let i = 0; i < this.targets.length; i ++ ) {
 
 			this.renderer.setRenderTarget( this.targets[ i ] );
