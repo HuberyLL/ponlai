@@ -45,9 +45,9 @@ wildflowers and ivy.
   Public-domain code (CC0, Unlicense) needs no notice; credit it in a comment instead. Techniques
   borrowed without code are credited in a comment where they are used.
 - `CREDITS.md` lists every third-party source: adapted code, assets (source, author, licence and how
-  each file was processed), bundled libraries, and techniques. Update it with any of these. A licence
-  text that must ship with the build goes in `LICENCE_FILES` in `vite.config.ts`, which copies it to
-  `dist/licenses/` (the npm dependencies' licences are collected there automatically).
+  each file was processed) and techniques. Update it with any of these. npm dependencies are not
+  listed; their licences are collected into `dist/licenses/` by the build. Any other licence text that
+  must ship with the build goes in `LICENCE_FILES` in `vite.config.ts`, which copies it there too.
 
 ## Conventions
 
@@ -57,12 +57,13 @@ wildflowers and ivy.
   whole frame); report measured differences.
 - Measure frame time at 2400x1500 (DPR 1.5) with background tabs closed, before and after a change.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
-  `type(scope): summary`, the summary in lower case, imperative, without a full stop, and the body
-  explaining why. Types: `feat`, `fix`, `perf`, `refactor`, `style`, `test`, `docs`, `build`, `ci`,
-  `chore`, `revert`. Scopes follow the area changed: `ocean`, `world`, `sky`, `materials`, `post`,
-  `app` (`src/main.ts`, `src/shared.ts`), `tools`, and new top-level areas by their directory name
-  (for example `ai` for the Python side). Leave the scope out only for repository-wide changes. Mark
-  breaking changes with `!` after the scope and a `BREAKING CHANGE:` footer.
+  `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
+  most 100 characters, and the body explaining why. Types: `feat`, `fix`, `perf`, `refactor`,
+  `style`, `test`, `docs`, `build`, `ci`, `chore`, `revert`. Scopes follow the area changed: `ocean`,
+  `world`, `sky`, `materials`, `post`, `app` (`src/main.ts`, `src/shared.ts`), `tools`, and new
+  top-level areas by their directory name (for example `ai` for the Python side). Leave the scope out
+  only for repository-wide changes. Mark breaking changes with `!` after the scope or a
+  `BREAKING CHANGE:` footer.
 
 ## WebGPU / TSL pitfalls met here
 
