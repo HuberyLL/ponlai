@@ -159,7 +159,12 @@ setStatus( 'Lighting the sky…' );
 await applySun();
 
 const textures = await bakeProceduralTextures( renderer );
-const fft = new OceanFFT( renderer, { windSpeed: 3.0, windDirection: 40, fetch: 1500, amplitude: 0.68, choppiness: 0.5, spread: 0.52 } );
+// Recover mid-scale wave volume through wind/fetch, while the spectrum still filters fine crests.
+// Keep the swell broad and modest so it supports the body without becoming a dominant wave train.
+const fft = new OceanFFT( renderer, {
+	windSpeed: 3.8, windDirection: 40, fetch: 3500, amplitude: 0.76, choppiness: 0.55, spread: 0.52,
+	swell: { height: 0.18 },
+} );
 const caustics = new Caustics( renderer, fft );
 const pipeline = new Pipeline( renderer );
 
