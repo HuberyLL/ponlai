@@ -7,15 +7,14 @@ import { mulberry32, smoothstep } from './noise.ts';
 import { sampleMeadow, meadowColor } from '../materials/Meadow.ts';
 import { sampleMeadowSoil, soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
+import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import type { Shared } from '../shared.ts';
 
-// Stylised meadow on the island top and the stack tops: instanced tufts, each a fan of tapered,
+// Stylised meadow on the island top: instanced tufts, each a fan of tapered,
 // bending blades. Most blades make a low, continuous bed; taller shoots grow in loose patches.
 // Soft upward normals join the blades to that bed rather than lighting every tuft as a cushion.
 // A gentle wind sways the tips. Anchors come from the world worker (x, y, z, normal, rim distance,
-// kind).
-
-const STRIDE = 8;
+// kind and local sky visibility).
 
 function tuftGeometry( seed = 3, blades = 8, segs = 3 ) {
 
@@ -93,7 +92,8 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	mat.colorNode = mix( root, vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) );
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
-	mat.aoNode = mix( float( 0.55 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) );
+	// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
+	mat.aoNode = mix( float( 0.55 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( attribute<'float'>( 'skyVisibility', 'float' ) );
 	// light through the blades: strongest when the grass stands against the sun
 	useLighting( mat, () => new VegetationLighting( mix( float( 0.72 ), float( 1 ), t ), ( L, V ) =>
 		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.42 ).add( 0.04 ).mul( t2 ) ) );
@@ -106,6 +106,8 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 
 	const n = veg.length / STRIDE;
 	const mesh = new THREE.InstancedMesh( tuftGeometry(), grassMaterial( shared ), n );
+	const visibility = new Float32Array( n );
+	mesh.geometry.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( visibility, 1 ) );
 	const soilCover = new Float32Array( n ), tuftOrigin = new Float32Array( n * 3 );
 	const rng = mulberry32( 99 );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
@@ -115,6 +117,7 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 	for ( let i = 0; i < n; i ++ ) {
 
 		const k = i * STRIDE;
+		visibility[ i ] = veg[ k + 8 ];
 		const x = veg[ k ], y = veg[ k + 1 ], z = veg[ k + 2 ];
 		const rim = veg[ k + 6 ];
 		// stand with the ground, leaning out a little more over the rim
@@ -152,7 +155,7 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 	mesh.instanceMatrix.needsUpdate = true;
 	mesh.instanceColor!.needsUpdate = true;
 	mesh.frustumCulled = false;
-	mesh.castShadow = false;
+	mesh.castShadow = true;
 	mesh.receiveShadow = true;
 	mesh.name = 'grass';
 	mesh.renderOrder = - 1; // before the terrain: the turf it covers then fails the depth test

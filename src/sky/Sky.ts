@@ -10,6 +10,7 @@ import {
 	vec2, vec3, vec4, float, sqrt, max, atan, asin, acos, clamp, cos, sin, mix, abs, select,
 } from 'three/tsl';
 import { Atmosphere, SUN_ANGULAR_RADIUS, SUN_ILLUMINANCE } from './Atmosphere.ts';
+import { SCENE_RADIANCE_SCALE, SUN_PROJECTED_SOLID_ANGLE } from '../lighting/Radiometry.ts';
 
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
@@ -103,9 +104,10 @@ export class Sky {
 			const r = acos( clamp( dot( d, this.atmosphere.sunDir ), - 1, 1 ) ).div( SUN_ANGULAR_RADIUS ).toVar();
 			const mask = float( 1 ).sub( smoothstep( 0.9, 1.0, r ) );
 			const limb = sqrt( max( float( 1 ).sub( r.mul( r ) ), 0 ) ).mul( 0.6 ).add( 0.4 );
-			// Keep the fp16 disk finite and scale it with the same irradiance as the key light.
+			// The integral of the visible disk is the key light's irradiance. A shared scene unit
+			// scale keeps the normalised disk finite in fp16 without dimming it independently.
 			const disk = this.atmosphere.transmittanceToSpace( d ).mul( this.atmosphere.sunIlluminance )
-				.mul( mask ).mul( limb ).mul( 2500 / SUN_ILLUMINANCE ).mul( smoothstep( 0, 0.001, d.y ) );
+				.mul( mask ).mul( limb ).div( SUN_PROJECTED_SOLID_ANGLE ).mul( smoothstep( 0, 0.001, d.y ) );
 			const background = texture( this.equirect.texture, dirToEquirect( d ) ).level( float( 0 ) ).rgb;
 			return vec4( background.add( disk ), 1 );
 
@@ -130,10 +132,11 @@ export class Sky {
 		const el = THREE.MathUtils.degToRad( this.elevation ), az = THREE.MathUtils.degToRad( this.azimuth );
 		this.sunDir.set( Math.cos( el ) * Math.cos( az ), Math.sin( el ), Math.cos( el ) * Math.sin( az ) ).normalize();
 		this.atmosphere.sunDir.value.copy( this.sunDir );
-		this.atmosphere.sunIlluminance.value.copy( this.sunTint ).multiplyScalar( this.sunIlluminance );
-		this.sea.value.copy( this.seaColor ).multiplyScalar( this.sunIlluminance );
+		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
+		this.atmosphere.sunIlluminance.value.copy( this.sunTint ).multiplyScalar( illuminance );
+		this.sea.value.copy( this.seaColor ).multiplyScalar( illuminance );
 		await this.atmosphere.update();
-		this.sunColor.copy( this.atmosphere.transmittanceToSun() ).multiply( this.sunTint ).multiplyScalar( this.sunIlluminance );
+		this.sunColor.copy( this.atmosphere.transmittanceToSun() ).multiply( this.sunTint ).multiplyScalar( illuminance );
 
 		const r = this.renderer, prev = r.getRenderTarget();
 		try {

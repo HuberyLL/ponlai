@@ -1,18 +1,17 @@
 import * as THREE from 'three/webgpu';
 import {
-	positionGeometry, positionLocal, normalViewGeometry, vec3, float, mix, dot, sin, cos, pow, clamp,
+	attribute, positionGeometry, positionLocal, normalViewGeometry, vec3, float, mix, dot, sin, cos, pow, clamp,
 	smoothstep as smoothstepN,
 } from 'three/tsl';
 import { mulberry32, noise3, smoothstep, type Rng } from './noise.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
+import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import type { Shared } from '../shared.ts';
 
-interface Site { x: number; y: number; z: number; r: number; rim: number; nx: number; ny: number; nz: number }
+interface Site { x: number; y: number; z: number; r: number; rim: number; nx: number; ny: number; nz: number; visibility: number }
 
 // Individual folded leaves on short branching sprays. Three offset crowns keep bushes
 // irregular; real leaf normals separate sunlit faces from their shaded neighbours.
-
-const STRIDE = 8;
 
 export function leafTexture( size = 128 ): THREE.CanvasTexture {
 
@@ -189,7 +188,7 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.Mesh
 	// Each folded leaf keeps its own highlights and shading across the canopy.
 	mat.normalNode = normalViewGeometry;
 	// deep inside and underneath a bush the light is gone
-	mat.aoNode = mix( float( 0.32 ), float( 1 ), smoothstepN( 0, 0.85, vH ) );
+	mat.aoNode = mix( float( 0.32 ), float( 1 ), smoothstepN( 0, 0.85, vH ) ).mul( attribute<'float'>( 'skyVisibility', 'float' ) );
 	useLighting( mat, () => new VegetationLighting( mix( float( 0.7 ), float( 1 ), smoothstepN( 0, 0.6, vH ) ), ( L, V, N ) => {
 
 		// wrapped light (leaves scatter light round to the shadow side) + glow against the sun
@@ -227,7 +226,7 @@ function pickSites( veg: Float32Array, rng: Rng ): Site[] {
 		if ( rng() > p ) continue;
 		const r = onStack ? 0.35 + rng() * 0.25 : ( 0.35 + Math.pow( rng(), 1.5 ) * 0.75 ) * ( 0.8 + 0.5 * nearRim );
 		if ( sites.some( ( s ) => Math.hypot( s.x - x, s.z - z ) < ( s.r + r ) * 0.75 ) ) continue;
-		sites.push( { x, y, z, r, rim, nx: veg[ k + 3 ], ny: veg[ k + 4 ], nz: veg[ k + 5 ] } );
+		sites.push( { x, y, z, r, rim, nx: veg[ k + 3 ], ny: veg[ k + 4 ], nz: veg[ k + 5 ], visibility: veg[ k + 8 ] } );
 
 	}
 
@@ -241,6 +240,8 @@ export function buildFoliage( veg: Float32Array, shared: Shared ): THREE.Instanc
 	const sites = pickSites( veg, rng );
 	const map = leafTexture();
 	const geo = bushGeometry();
+	const visibility = new Float32Array( sites.length );
+	geo.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( visibility, 1 ) );
 	const mat = foliageMaterial( shared, map );
 	const mesh = new THREE.InstancedMesh( geo, mat, sites.length );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
@@ -250,6 +251,7 @@ export function buildFoliage( veg: Float32Array, shared: Shared ): THREE.Instanc
 
 	sites.forEach( ( s, i ) => {
 
+		visibility[ i ] = s.visibility;
 		// lean with the ground: bushes on the rim tip out over the edge
 		dir.set( s.nx, s.ny, s.nz ).lerp( up, 0.4 ).normalize();
 		q.setFromUnitVectors( up, dir );

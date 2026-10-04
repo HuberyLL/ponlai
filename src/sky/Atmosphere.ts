@@ -7,6 +7,7 @@ import {
 	Fn, If, Loop, uv, uniform, texture, vec2, vec3, vec4, float, int,
 	sqrt, max, pow, exp, length, abs, acos, clamp, cos, sin, dot, normalize, mix, select,
 } from 'three/tsl';
+import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 
 // Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique".
 // Tidewater's transmittance, multiple-scattering and sky-view LUTs are ported to TSL fragment
@@ -19,7 +20,7 @@ const RAYLEIGH = [ 5.802e-3, 13.558e-3, 33.1e-3 ] as const;
 const OZONE = [ 0.650e-3, 1.881e-3, 0.085e-3 ] as const;
 
 export const SUN_ILLUMINANCE = 11;
-export const SUN_ANGULAR_RADIUS = 0.004675 * 1.15;
+export { SUN_ANGULAR_RADIUS } from '../lighting/Radiometry.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -100,7 +101,7 @@ function makeQuad( fragmentNode: THREE.Node ): THREE.QuadMesh {
 export class Atmosphere {
 
 	readonly sunDir = uniform( new THREE.Vector3( 0.3, 0.6, - 0.7 ).normalize() );
-	readonly sunIlluminance = uniform( new THREE.Color( SUN_ILLUMINANCE, SUN_ILLUMINANCE, SUN_ILLUMINANCE ) );
+	readonly sunIlluminance = uniform( new THREE.Color().setScalar( SUN_ILLUMINANCE * SCENE_RADIANCE_SCALE ) );
 	readonly rayleighScale = uniform( 1 );
 	readonly mieScale = uniform( 1 );
 	readonly mieG = uniform( 0.8 );

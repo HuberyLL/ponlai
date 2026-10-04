@@ -68,7 +68,7 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 	// seabed
 	{
 
-		const { positions, res: n } = data.seabed;
+		const { positions, ao, res: n } = data.seabed;
 		const idx = new Uint32Array( n * n * 6 );
 		for ( let j = 0, k = 0; j < n; j ++ ) for ( let i = 0; i < n; i ++ ) {
 
@@ -82,8 +82,7 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 		geo.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
 		geo.setIndex( new THREE.BufferAttribute( idx, 1 ) );
 		geo.computeVertexNormals();
-		const nv = positions.length / 3;
-		geo.setAttribute( 'ao', new THREE.BufferAttribute( new Float32Array( nv ).fill( 1 ), 1 ) );
+		geo.setAttribute( 'ao', new THREE.BufferAttribute( ao, 1 ) );
 		geo.computeBoundingSphere();
 		const mesh = new THREE.Mesh( geo, makeTerrainMaterial( 'seabed', tex, shared, caustics, shore ) );
 		mesh.name = 'seabed';

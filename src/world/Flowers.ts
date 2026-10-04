@@ -1,12 +1,11 @@
 import * as THREE from 'three/webgpu';
 import { attribute, positionGeometry, positionLocal, normalViewGeometry, vec2, vec3, dot, sin, mix, smoothstep as smoothstepN } from 'three/tsl';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
+import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import type { Shared } from '../shared.ts';
 
 // Small cupped wildflowers, grouped in quiet drifts. Folded geometry catches the sun on the
 // petal edges while the throat stays shaded; the meadow should never read as a carpet of icons.
-
-const STRIDE = 8;
 
 function blossomGeometry() {
 
@@ -79,6 +78,7 @@ function flowerMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const gust = sin( ph ).mul( 0.45 ).add( 0.55 );
 	mat.positionNode = p.add( vec3( 0.8, 0, - 0.6 ).mul( gust.mul( 0.035 ).mul( g.y.mul( g.y ) ) ) );
 	mat.normalNode = normalViewGeometry;
+	mat.aoNode = attribute<'float'>( 'skyVisibility', 'float' );
 	return mat;
 
 }
@@ -110,13 +110,16 @@ export function buildFlowers( veg: Float32Array, shared: Shared ): THREE.Instanc
 	const count = picks.length;
 	const geo = blossomGeometry();
 	const colors = new Float32Array( count * 3 );
+	const visibility = new Float32Array( count );
 	geo.setAttribute( 'flowerColor', new THREE.InstancedBufferAttribute( colors, 3 ) );
+	geo.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( visibility, 1 ) );
 	const mesh = new THREE.InstancedMesh( geo, flowerMaterial( shared ), count );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), tilt = new THREE.Quaternion(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
 	const up = new THREE.Vector3( 0, 1, 0 ), lean = new THREE.Vector3(), col = new THREE.Color();
 	for ( let i = 0; i < count; i ++ ) {
 
 		const k = picks[ i ];
+		visibility[ i ] = veg[ k + 8 ];
 		const x = veg[ k ] + ( rng() - 0.5 ) * 0.22, z = veg[ k + 2 ] + ( rng() - 0.5 ) * 0.22;
 		const hue = noise3( x * 0.11 + 2.0, 8.8, z * 0.11 ) * 0.5 + 0.5;
 		const ci = Math.floor( ( ( hue * 3.7 ) % 1 ) * 4 );
@@ -136,6 +139,7 @@ export function buildFlowers( veg: Float32Array, shared: Shared ): THREE.Instanc
 
 	mesh.instanceMatrix.needsUpdate = true;
 	mesh.frustumCulled = false;
+	mesh.castShadow = true;
 	mesh.receiveShadow = true;
 	mesh.name = 'flowers';
 	mesh.renderOrder = - 1;

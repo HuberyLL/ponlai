@@ -6,6 +6,7 @@ import {
 } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
+import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA x4, half float, multisampled depth)
@@ -32,9 +33,11 @@ export class Pipeline {
 	width = 1;
 	height = 1;
 	settings: PipelineSettings = {
-		exposure: 1.5, saturation: 0.93, vibrance: 0.15, contrast: 0.12, split: 0.55,
-		lift: new THREE.Color( 0.018, 0.025, 0.03 ),
-		vignette: 0.18, grain: 0.004,
+		// The look's bright midtones and soft shadows are a display grade; keep the
+		// calibrated sunlight and water transport intact, with a nearly neutral black lift.
+		exposure: 2.35, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 0.45,
+		lift: new THREE.Color( 0.027, 0.027, 0.026 ),
+		vignette: 0.06, grain: 0.004,
 		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0,
 		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,
 		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
@@ -186,7 +189,7 @@ export class Pipeline {
 			const chroma = max( c.r, max( c.g, c.b ) ).sub( min( c.r, min( c.g, c.b ) ) );
 			const satAmt = u.saturation.add( u.vibrance.mul( float( 1 ).sub( smoothstep( 0, 0.35, chroma.div( max( l2, 1e-3 ) ).mul( 0.5 ) ) ) ) );
 			c.assign( max( mix( vec3( l2 ), c, satAmt ), vec3( 0 ) ) );
-			// lifted blacks: the airy, sunlit look (shadows never go below a cool haze)
+			// A display black lift softens dark colours without adding atmospheric scattering.
 			c.assign( c.add( vec3( 1 ).sub( c ).mul( u.lift ) ) );
 			// vignette
 			const q = uv().sub( 0.5 ).mul( vec2( u.resolution.x.div( u.resolution.y ), 1 ) );
@@ -252,9 +255,9 @@ export class Pipeline {
 
 		// 4. composite, bloom, depth of field, grade
 		const [ b, g ] = this.blooms;
-		b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold; b.maxLum.value = S.bloomMaxLum;
-		g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold; g.maxLum.value = S.glowMaxLum;
-		u.exposure.value = S.exposure; u.saturation.value = S.saturation; u.vibrance.value = S.vibrance; u.contrast.value = S.contrast;
+		b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE;
+		g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
+		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE; u.saturation.value = S.saturation; u.vibrance.value = S.vibrance; u.contrast.value = S.contrast;
 		u.split.value = S.split; u.lift.value.copy( S.lift ); u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.dof.value = S.dof; u.range.value = S.dofRange;
 		u.maxRadius.value = S.dofMaxRadius * this.height / 900; // blur scales with the image, not the pixel count

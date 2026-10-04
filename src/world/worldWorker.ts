@@ -10,11 +10,13 @@ import {
 import { Field2D } from './Field2D.ts';
 import { deepenSeabed } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
+import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
+import { VEGETATION_STRIDE } from './types.ts';
 import type { SDF, MeshData, MeshKind, NamedMesh, WorldData, WorldOptions } from './types.ts';
 
 self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
-	const { islandVoxel = 0.12, seabedRes = 320, seabedSize = 420, shoreSize = 96, shoreCell = 0.125 } = e.data || {};
+	const { islandVoxel = 0.12, seabedRes = 320, seabedSize = 420, shoreSize = 96, shoreCell = 0.125, contactOcclusion = true } = e.data || {};
 	const t0 = performance.now();
 	const timings: Record<string, number> = {};
 	const mark = ( k: string, t: number ) => { timings[ k ] = Math.round( performance.now() - t ); };
@@ -30,25 +32,51 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	const n = seabedRes;
 	const sb = new Float32Array( ( n + 1 ) * ( n + 1 ) * 3 );
 	const warp = ( u: number ) => Math.sign( u ) * Math.pow( Math.abs( u ), 1.9 );
+	let floorCeiling = - Infinity;
 	for ( let j = 0; j <= n; j ++ ) for ( let i = 0; i <= n; i ++ ) {
 
 		const x = warp( i / n * 2 - 1 ) * seabedSize / 2;
 		const z = warp( j / n * 2 - 1 ) * seabedSize / 2;
 		const k = ( j * ( n + 1 ) + i ) * 3;
 		sb[ k ] = x; sb[ k + 1 ] = seabedHeight( x, z ); sb[ k + 2 ] = z;
+		floorCeiling = Math.max( floorCeiling, sb[ k + 1 ] );
 
 	}
 
-	mark( 'seabed', t );
+	mark( 'seabedGeometry', t );
 
 	// Ground each stone on the same triangles the renderer uses. Sampling the analytic
 	// floor alone can hide a small crown beneath a coarser seabed mesh.
-	const rocks = makeRocks( fp, seabedSampler( sb, n, seabedSize ) );
+	const renderedFloor = seabedSampler( sb, n, seabedSize );
+	const rocks = makeRocks( fp, renderedFloor );
 	const islandSDF = makeIslandSDF( fp );
 	const rockSDFs = rocks.map( makeRockSDF );
+	// The rendered grid's highest vertex bounds contact queries on the floor.
+	t = performance.now();
+	const b = layoutBounds(), pad = 2.6;
+	// Reuse the meshing bounds: contacts refer to the same fixed solids as the rendered world.
+	const islandBounds: SolidBounds = {
+		field: islandSDF, min: [ b.x0 - pad, ISLAND_BOTTOM - 0.3, b.z0 - pad ],
+		max: [ b.x1 + pad, ISLAND_TOP + 0.6, b.z1 + pad ],
+	};
+	const rockBounds = rocks.map( ( r, i ): SolidBounds => {
+
+		const R = r.s * 1.25 * 1.6 + 0.08, Ry = r.sy * 1.6 + 0.08;
+		return { field: rockSDFs[ i ], min: [ r.x - R, Math.min( r.floor - 0.5, r.y - Ry ), r.z - R ], max: [ r.x + R, r.y + Ry, r.z + R ] };
+
+	} );
+	// A heightfield is a local distance proxy, not an exact signed-distance field. Shortened
+	// steps reduce overshoot on its slopes; it also occludes the buried rock faces.
+	const seabedSDF: SDF = ( x, y, z ) => y - renderedFloor( x, z );
+	const solids: SolidBounds[] = [ islandBounds, ...rockBounds, {
+		field: seabedSDF, min: [ - seabedSize / 2, - 32, - seabedSize / 2 ], max: [ seabedSize / 2, floorCeiling, seabedSize / 2 ],
+	} ];
+	const aoSdf = contactOcclusion ? boundedSceneField( solids ) : undefined;
+	const contacts = ( receiver?: SDF ) => contactOcclusion ? contactVisibilitySampler( solids, receiver ) : undefined;
+	mark( 'contactSetup', t );
 
 	const meshes: NamedMesh[] = [];
-	const transfer: Transferable[] = [ sb.buffer ];
+	const transfer: Transferable[] = [];
 	const push = ( name: string, m: MeshData, kind: MeshKind ) => {
 
 		meshes.push( { name, kind, ...m } );
@@ -58,12 +86,9 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
 	// --- island
 	t = performance.now();
-	const b = layoutBounds();
-	const pad = 2.6;
 	push( 'island', surfaceNets( islandSDF, {
-		min: [ b.x0 - pad, ISLAND_BOTTOM - 0.3, b.z0 - pad ],
-		max: [ b.x1 + pad, ISLAND_TOP + 0.6, b.z1 + pad ],
-		voxel: islandVoxel,
+		min: [ ...islandBounds.min ], max: [ ...islandBounds.max ], voxel: islandVoxel,
+		aoSdf, contactVisibility: contacts( islandSDF ),
 	} ), 'cliff' );
 	mark( 'island', t );
 
@@ -73,12 +98,12 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
 		const parts = rocks.map( ( r, i ) => {
 
-			const R = r.s * 1.25 * 1.6 + 0.08, Ry = r.sy * 1.6 + 0.08;
 			return surfaceNets( rockSDFs[ i ], {
-				min: [ r.x - R, Math.min( r.floor - 0.5, r.y - Ry ), r.z - R ], max: [ r.x + R, r.y + Ry, r.z + R ],
+				min: [ ...rockBounds[ i ].min ], max: [ ...rockBounds[ i ].max ],
 				// Small stones still need enough samples across their broad faces; one merged mesh
 				// keeps their count independent of the draw budget.
 				voxel: Math.max( 0.025, Math.min( 0.11, r.s * 0.12 ) ),
+				aoSdf, contactVisibility: contacts( rockSDFs[ i ] ),
 			} );
 
 		} );
@@ -94,7 +119,17 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	const rngV = mulberry32( 4242 );
 	const veg: number[] = [];
 	scatterTop( islandSDF, b.x0 - 0.6, b.x1 + 0.6, b.z0 - 0.6, b.z1 + 0.6, 0.235, ISLAND_TOP, rngV, veg, ( x, z ) => fp.dist( x, z ), 0 );
-	const vegetation = new Float32Array( veg );
+	const vegetation = new Float32Array( veg.length / 8 * VEGETATION_STRIDE );
+	// The raw eight-float anchors and random streams still determine all placement. Visibility
+	// is appended only after scattering, and is a local scalar proxy for an entire small plant.
+	const vegetationVisibility = contacts();
+	for ( let i = 0; i < veg.length / 8; i ++ ) {
+
+		const k = i * 8, dst = i * VEGETATION_STRIDE;
+		for ( let j = 0; j < 8; j ++ ) vegetation[ dst + j ] = veg[ k + j ];
+		vegetation[ dst + 8 ] = vegetationVisibility?.( veg[ k ], veg[ k + 1 ], veg[ k + 2 ], veg[ k + 3 ], veg[ k + 4 ], veg[ k + 5 ] ) ?? 1;
+
+	}
 	// ivy curtains hanging from the island's rim down its faces
 	const ivyPts: number[] = [];
 	// A separate stream keeps ivy placement independent of future turf sampling changes.
@@ -102,6 +137,25 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	const ivy = new Float32Array( ivyPts );
 	transfer.push( vegetation.buffer, ivy.buffer );
 	mark( 'vegetation', t );
+
+	// --- seabed contact visibility; the warped geometry was generated before the mesh bake.
+	t = performance.now();
+	const sbAO = new Float32Array( ( n + 1 ) * ( n + 1 ) ).fill( 1 );
+	const seabedVisibility = contacts( seabedSDF );
+	if ( seabedVisibility ) for ( let j = 0; j <= n; j ++ ) for ( let i = 0; i <= n; i ++ ) {
+
+		const v = j * ( n + 1 ) + i, k = v * 3;
+		// Match the rendered heightfield's finite-difference normal without re-evaluating its
+		// noise. Distant grid points return visible before any hemisphere traces are performed.
+		const l = ( j * ( n + 1 ) + Math.max( 0, i - 1 ) ) * 3, r = ( j * ( n + 1 ) + Math.min( n, i + 1 ) ) * 3;
+		const d = ( Math.max( 0, j - 1 ) * ( n + 1 ) + i ) * 3, u = ( Math.min( n, j + 1 ) * ( n + 1 ) + i ) * 3;
+		const nx = - ( sb[ r + 1 ] - sb[ l + 1 ] ) / ( sb[ r ] - sb[ l ] );
+		const nz = - ( sb[ u + 1 ] - sb[ d + 1 ] ) / ( sb[ u + 2 ] - sb[ d + 2 ] );
+		sbAO[ v ] = seabedVisibility( sb[ k ], sb[ k + 1 ], sb[ k + 2 ], nx, 1, nz );
+
+	}
+	transfer.push( sb.buffer, sbAO.buffer );
+	mark( 'seabed', t );
 
 	// --- shoreline: only the island intersects sea level. Submerged stones must not
 	// damp surface waves or grow circular foam collars above their hidden silhouettes.
@@ -124,7 +178,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	const result: WorldData = {
 		meshes,
 		rocks,
-		seabed: { positions: sb, res: n, size: seabedSize },
+		seabed: { positions: sb, ao: sbAO, res: n, size: seabedSize },
 		vegetation,
 		ivy,
 		shore: { data: shore.data, nx: shore.nx, nz: shore.nz, x0: shore.x0, z0: shore.z0, cell: shore.cell },

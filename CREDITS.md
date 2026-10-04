@@ -53,6 +53,30 @@ comment where it is used.
 - Atmosphere LUTs and multiple-scattering approximation: Sébastien Hillaire,
   [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), implemented through the adapted Tidewater source above.
+- Solar radiance normalisation: the projected-solid-angle irradiance integral described in
+  [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Radiometry,_Spectra,_and_Color/Working_with_Radiometric_Integrals),
+  independently implemented with a shared scene radiance unit and an integrated limb-darkening profile.
+- Contact-hardening solar shadows: Randima Fernando,
+  [*Percentage-Closer Soft Shadows*](https://download.nvidia.com/developer/presentations/2005/SIGGRAPH/Percentage_Closer_Soft_Shadows.pdf)
+  (SIGGRAPH 2005), independently implemented in TSL for a directional solar disk.
+- Air/water optical interface: Snell's law and dielectric transport as described in
+  [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF),
+  independently implemented for solar direction, beam-area conservation, two-segment shadows,
+  full view-ray refraction and the radiance/index-squared invariant at the exit interface.
+- Static local sky/contact visibility: John C. Hart,
+  [*Sphere Tracing*](https://doi.org/10.1007/s003710050084) (1996), and the
+  [cosine-weighted hemisphere sampler in PBRT](https://pbr-book.org/4ed/Sampling_Algorithms/Sampling_Multidimensional_Functions),
+  independently implemented on bounded procedural fields; this is finite-radius contact visibility.
+- Filtered wave-slope moments: Marc Olano and Dan Baker,
+  [*LEAN Mapping*](https://userpages.cs.umbc.edu/olano/papers/lean/) (I3D 2010),
+  independently implemented for the FFT cascades with an anisotropic Beckmann slope distribution.
+- Microfacet masking: Eric Heitz,
+  [*Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs*](https://jcgt.org/published/0003/02/03/)
+  (JCGT 2014), independently implemented with correlated Smith visibility. The error-function
+  approximation uses Abramowitz and Stegun, equation 7.1.26.
+- Bounded foam diffuse reflectance: Lambert's irradiance/radiance relation described in
+  [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Reflection_Models/Diffuse_Reflection),
+  independently implemented with a 0.95 hemispheric reflectance and separate direct/sky inputs.
 
 - Seabed substrate reference: Page C. Valentine, USGS,
   [*Sediment classification and the characterization, identification, and mapping of geologic substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)

@@ -14,6 +14,8 @@ import { buildFlowers } from './world/Flowers.ts';
 import { buildIvy } from './world/Ivy.ts';
 import { Pipeline } from './post/Pipeline.ts';
 import { shared } from './shared.ts';
+import { installSolarShadowFilter } from './lighting/SolarShadow.ts';
+import { RefractedSun } from './lighting/RefractedSun.ts';
 
 const params = new URLSearchParams( location.search );
 const ground = { soil: params.get( 'soil' ) !== '0' };
@@ -65,16 +67,18 @@ controls.update();
 const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
 scene.add( sky.dome );
 scene.environmentIntensity = 1;
-const lighting = { skyFill: 1.5 };
+const lighting = { skyFill: 1 };
 
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
 sun.castShadow = true;
 sun.shadow.mapSize.set( 2048, 2048 );
 const sc = sun.shadow.camera;
 sc.left = - 36; sc.right = 36; sc.top = 36; sc.bottom = - 36; sc.near = 1; sc.far = 220;
-sun.shadow.bias = - 0.0005;
-sun.shadow.normalBias = 0.06;
-sun.shadow.radius = 4;
+// Bias in metres along the light ray, converted to this orthographic map's depth range.
+// Receiver-plane correction in the shared filter keeps contacts sharp without a wide blur.
+sun.shadow.bias = - 0.01 / ( sc.far - sc.near );
+sun.shadow.normalBias = 0.012;
+installSolarShadowFilter( sun );
 scene.add( sun, sun.target );
 
 function fresnel( cosI: number, eta: number ): number {
@@ -151,6 +155,10 @@ const islandShore = shoreTextureFrom( data.islandShore );
 shared.shoreXform.value.copy( shore.xform );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
+const refractedSun = new RefractedSun( renderer, shared );
+refractedSun.setCasters( world.group );
+refractedSun.bindTerrain( world.group );
+await refractedSun.prepare();
 const grass = buildGrass( data.vegetation, shared );
 const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
@@ -199,8 +207,7 @@ waterF.add( W.backscatter, 'value', 0, 0.2, 0.001 ).name( 'backscatter' );
 waterF.add( W.roughness, 'value', 0.005, 0.2, 0.001 ).name( 'roughness' );
 waterF.add( W.foamAmount, 'value', 0, 2, 0.01 ).name( 'foam' );
 waterF.add( W.glitter, 'value', 0, 20, 0.1 ).name( 'glitter' );
-waterF.add( W.skyCap, 'value', 0.5, 10, 0.1 ).name( 'sky glare cap' );
-waterF.add( W.detail, 'value', 0, 1.5, 0.01 ).name( 'ripple detail' );
+waterF.add( W.skyCap, 'value', 0, 10, 0.1 ).name( 'sky glare cap (0 = off)' );
 waterF.add( W.sheen, 'value', 0, 1, 0.005 ).name( 'sun sheen' );
 waterF.add( W.ssr, 'value', 0, 1, 1 ).name( 'SSR' );
 const waveF = gui.addFolder( 'Waves' );
@@ -272,6 +279,7 @@ function tick(): void {
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
 	caustics.update( sky.sunDir );
+	refractedSun.update();
 	S.focusDistance = camera.position.distanceTo( controls.target );
 
 	pipeline.render( { scene, waterScene, camera, water: water!, sun, time: simTime } );
@@ -304,4 +312,4 @@ function diagnostics(): void {
 
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, grass, foliage, flowers, ivy, soilUniforms, applySun };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, ivy, soilUniforms, applySun };

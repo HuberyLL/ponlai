@@ -8,6 +8,7 @@ import type { DetailTextures } from './ProceduralTextures.ts';
 import { MEADOW_EXTENT } from './Meadow.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, meadowSoilCover, soilUniforms } from './Soil.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
+import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
@@ -265,7 +266,8 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 		albedo.mulAssign( mix( float( 1 ), float( 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
 		rough.assign( mix( rough, float( 0.28 ), wet.mul( float( 1 ).sub( deep ) ) ) );
 
-		const ao = max( vAO, 0.3 ).mul( mix( float( 1 ), float( 0.72 ), concave ) );
+		// A completely blocked local sky must not keep an arbitrary ambient-light floor.
+		const ao = clamp( vAO, 0, 1 ).mul( mix( float( 1 ), float( 0.72 ), concave ) );
 		return Surface( albedo, nW, rough, ao );
 
 	} )();
@@ -308,7 +310,9 @@ function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 		const nW = normalize( t.mul( dn.x ).add( n0.mul( dn.y ) ).add( b.mul( dn.z ) ) );
 
 		const albedo = mix( mix( sand, grassC, grass ), rubbleC, rubble );
-		const ao = mix( float( 1 ), float( 0.75 ), rubble ).mul( mix( float( 0.8 ), float( 1 ), H.b ) );
+		const detailAO = mix( float( 1 ), float( 0.75 ), rubble ).mul( mix( float( 0.8 ), float( 1 ), H.b ) );
+		// Baked solid contacts and procedural rubble can overlap: retain the stronger estimate.
+		const ao = min( attribute<'float'>( 'ao', 'float' ), detailAO );
 		return Surface( albedo, nW, float( 0.92 ), ao );
 
 	} )();
@@ -320,17 +324,22 @@ function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 class TerrainLightingModel extends THREE.PhysicalLightingModel {
 
 	sunAtt: V3; ambMul: V3; specMul: V3;
+	sunDirection: V3; underwater: THREE.Node<'bool'>;
 
-	constructor( sunAtt: V3, ambMul: V3, specMul: V3 ) {
+	constructor( sunAtt: V3, ambMul: V3, specMul: V3, sunDirection: V3, underwater: THREE.Node<'bool'> ) {
 
 		super();
 		this.sunAtt = sunAtt; this.ambMul = ambMul; this.specMul = specMul;
+		this.sunDirection = sunDirection; this.underwater = underwater;
 
 	}
 
 	direct( input: THREE.LightingModelDirectInput, builder: THREE.NodeBuilder ): void {
 
-		super.direct( { ...input, lightColor: ( input.lightColor as V3 ).mul( this.sunAtt ) }, builder );
+		super.direct( { ...input,
+			lightDirection: select( this.underwater, this.sunDirection, input.lightDirection as V3 ),
+			lightColor: ( input.lightColor as V3 ).mul( this.sunAtt ),
+		}, builder );
 
 	}
 
@@ -363,13 +372,21 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 	const sigT = shared.sigA.add( shared.sigS );
 	const under = dW.greaterThan( 0 );
 	const caus = causticsAt( caustics, p, dW.max( 0 ) );
-	const sunAtt = select( under, exp( sigT.negate().mul( dW ).div( shared.muSun ) ).mul( shared.sunIntoWater ).mul( caus ), vec3( 1 ) );
+	// Snell's direction and the beam-area factor must change together. For a horizontal
+	// floor, muWater * (muAir / muWater) preserves transmitted horizontal irradiance;
+	// steep submerged walls now receive the correct refracted projection as well.
+	const waterSun = refractedSunDirectionNode( shared.sunDir );
+	const waterSunView = normalize( cameraViewMatrix.mul( vec4( waterSun, 0 ) ).xyz );
+	const sunAtt = select( under, exp( sigT.negate().mul( dW ).div( waterSun.y ) )
+		.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( caus ), vec3( 1 ) );
 	const ambAtt = exp( sigT.negate().mul( dW.max( 0 ) ).mul( 1.25 ) );
 	const above = p.y.sub( shared.waterLevel );
 	const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 0.6 ).mul( 0.9 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
 	const ambMul = select( under, ambAtt, vec3( float( 1 ).add( shimmer ) ) );
 	const specMul = select( under, ambAtt.mul( 0.5 ), vec3( 1 ) );
-	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new TerrainLightingModel( sunAtt, ambMul, specMul );
+	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new TerrainLightingModel( sunAtt, ambMul, specMul, waterSunView, under );
+	mat.userData.refractedSolarReceiver = true;
+	mat.userData.refractedSolarFloor = kind === 'seabed';
 	mat.userData.topY = topYU;
 	mat.userData.vegetation = vegetation;
 	return mat;
