@@ -27,14 +27,20 @@ packages, into `dist/licenses/`.
 - Shore-wave files: `src/ocean/ShoreWaveField.ts`, `src/ocean/ShoreWaves.ts`,
   `src/ocean/FoamTexture.ts`; `src/ocean/Water.ts` adapts the surf-foam density and shading.
 - Shore-wave changes: finite-depth travel speed and an obstacle-aware arrival-time field over the
-  existing seabed, with grouped, asymmetric shoaling cross-sections ported to TSL. The horizontal
+  existing seabed, seeded only from the incoming domain edges, with grouped, asymmetric
+  shoaling cross-sections ported to TSL. Soomi adds a separate upwave land-visibility field: a
+  narrow angular fan and water-only smoothing soften the wave shadow, which attenuates input
+  amplitude, contact, reflection and foam transport together. Residual wind ripples remain in
+  sheltered water, and the distant sea recovers before the field edge. This closed-island
+  shelter treatment is our extension, rather than an upstream diffraction solver. The horizontal
   profile is inverted into world space; surface normals include its complete changing shape. A
   restrained shape floor makes quiet waves readable in the stylised scene. A local rock-contact
   clock supplies weak reflection and wave-triggered whitewater rather than offshore crest lace.
   Finite-depth orbital velocity advects foam, and expansion thins its density. Dense fresh churn
   opens into bubble holes, lace and short strands using the CPU-baked SurfFoam pattern, with
   small relief and cavity shading. The pattern has been scaled and its low-density strands broken
-  into shorter arcs. Beach run-up, plunging sheets and spray are omitted for the steep island cliffs.
+  into shorter arcs. Beach run-up, plunging sheets and spray are omitted for the steep island cliffs. See
+  `docs/water.md` in the source repository for the source mapping and approximation limits.
   FFT crest compression and persistent whitecaps follow this version's `src/ocean/OceanFFT.js`.
 - Sky files: `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`.
 - Sky changes: the WGSL atmosphere and solar disk are ported to TSL; compute LUT generation is

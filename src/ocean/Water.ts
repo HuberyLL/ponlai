@@ -195,8 +195,12 @@ export class Water {
 		// reads the displaced position.
 		const xz = positionGeometry.xz;
 		const sd = texture( shore, xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) ).r;
-		// sheltered water right against the rock is calmer
-		const damp = mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) );
+		// The island screens the swell and the larger FFT waves together. Residual local
+		// wind ripples stay alive in the lee, rather than turning the sheltered sea to glass.
+		const vertexShelter = shoreWaves.shelter.sample( xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) );
+		const coastDamp = mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) );
+		const windDamp = mix( float( 0.35 ), float( 1 ), vertexShelter.r );
+		const damp = coastDamp.mul( windDamp );
 		const far = length( xz.sub( cameraPosition.xz ) );
 		const d = texture( disp[ 0 ], xz.div( sizes.x ) ).level( float( 0 ) ).xyz
 			.add( texture( disp[ 1 ], xz.div( sizes.y ) ).level( float( 0 ) ).xyz )
@@ -205,6 +209,8 @@ export class Water {
 		const material = new THREE.NodeMaterial();
 		material.positionNode = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y ).add( shoreWaves.texture.sample( xz.add( d.xz ).sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) ).x ), xz.y.add( d.z ) );
 		const vLag = varying( xz ), vDamp = varying( damp );
+		const vShelter = varying( windDamp );
+		const vShelterSlope = varying( vertexShelter.ba.mul( 0.65 ).mul( coastDamp ).mul( d.y.div( max( damp, 0.01 ) ) ) );
 
 		// ---- fragment
 		const tDepth = texture( linearDepth );
@@ -371,7 +377,7 @@ export class Water {
 			const foamP = wp.xz.add( event.gb );
 			const whitecaps = texture( disp[ 0 ], vLag.div( sizes.x ) ).a
 				.add( texture( disp[ 1 ], vLag.div( sizes.y ) ).a )
-				.add( texture( disp[ 2 ], vLag.div( sizes.z ) ).a.mul( 0.56 ) ).toVar();
+				.add( texture( disp[ 2 ], vLag.div( sizes.z ) ).a.mul( 0.56 ) ).mul( vShelter ).toVar();
 			// A dedicated distance-to-strand texture lets coverage change the shape: dense
 			// churn opens into perforated mats, lace and separate bubbles, not fading moss noise.
 			const laceSample = texture( laceTexture, foamP.mul( 1.5 / FOAM_TILE ) ).toVar();
@@ -388,7 +394,7 @@ export class Water {
 
 			// ---- surface normal from the cascades' slopes (sampled at the undisplaced position)
 			const dd = dd0.mul( vDamp ).toVar();
-			const slope = vec2( dd.x.div( max( dd.z.add( 1 ), 0.2 ) ), dd.y.div( max( dd.w.add( 1 ), 0.2 ) ) );
+			const slope = vec2( dd.x.div( max( dd.z.add( 1 ), 0.2 ) ), dd.y.div( max( dd.w.add( 1 ), 0.2 ) ) ).add( vShelterSlope );
 			const totalSlope = slope.add( shoreWave.yz );
 			const N = normalize( vec3( totalSlope.x.negate(), 1, totalSlope.y.negate() ) ).toVar();
 
@@ -569,7 +575,7 @@ export class Water {
 			const clearCrest = smoothstep( 0.035, 0.22, shoreWave.x ).mul( smoothstep( 0.018, 0.11, length( shoreWave.yz ) ) )
 				.mul( float( 1 ).sub( foamAmt ) );
 			const sss = sunLight.mul( vec3( 0.12, 0.55, 0.45 ) ).mul( back.mul( crest ).mul( 0.035 ) )
-				.add( shared.skyIrradiance.mul( vec3( 0.06, 0.3, 0.27 ) ).mul( clearCrest ).mul( 0.045 ) );
+				.add( shared.skyIrradiance.mul( vec3( 0.06, 0.3, 0.27 ) ).mul( clearCrest ).mul( 0.018 ) );
 			const transmitted = bottom.add( inSun ).add( inAmb ).add( sss );
 
 			// ---- foam: bright diffuse scatterer

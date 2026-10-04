@@ -9,7 +9,7 @@ import { Fn, texture, uniform, uv, float, vec2, vec3, vec4, dot, length, max, ab
 import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
 import type { WorldData } from '../world/types.ts';
-import { createShoreWaveField, createShoreContactField } from './ShoreWaveField.ts';
+import { createShoreWaveField, createShoreContactField, createShoreShelterField } from './ShoreWaveField.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -21,10 +21,11 @@ const TAU = Math.PI * 2;
 export class ShoreWaves {
 
 	readonly period = uniform( 2.8 );
-	readonly amplitude = uniform( 0.30 );
+	readonly amplitude = uniform( 0.20 );
 	readonly direction = uniform( new THREE.Vector2() );
 	readonly field: THREE.TextureNode;
 	readonly contact: THREE.TextureNode;
+	readonly shelter: THREE.TextureNode;
 	readonly texture: THREE.TextureNode;
 	// RG: surface-particle velocity (m/s), B: contact whitewater, A: surface height.
 	readonly motion: THREE.TextureNode;
@@ -48,7 +49,9 @@ export class ShoreWaves {
 		this.setDirection( fft );
 		const field = createShoreWaveField( data, this.direction.value, this.period.value );
 		this.field = texture( field );
-		this.contact = texture( createShoreContactField( data, field ) );
+		const shelter = createShoreShelterField( data, field );
+		this.shelter = texture( shelter );
+		this.contact = texture( createShoreContactField( data, field, shelter ) );
 		this.revision = fft.spectrumRevision;
 		this.fieldPeriod = this.period.value;
 
@@ -75,9 +78,9 @@ export class ShoreWaves {
 			// The H/d ratio controls extra sharpening. A gentle shape floor keeps the stylised
 			// clear shoulder readable; distance to land must not invent a beach breaker.
 			const nonlinear = smoothstep( 0.08, 0.42, A.mul( 2 ).div( max( depth, 0.7 ) ) );
-			const power = nonlinear.mul( 0.9 ).add( 1.55 );
-			const skew = nonlinear.mul( 0.24 ).add( 0.22 );
-			const Q = nonlinear.mul( 0.25 ).add( 0.55 );
+			const power = nonlinear.mul( 0.9 ).add( 1.35 );
+			const skew = nonlinear.mul( 0.24 ).add( 0.16 );
+			const Q = nonlinear.mul( 0.25 ).add( 0.45 );
 			// Invert Tidewater's horizontal xPre before evaluating in world space. This compresses
 			// the crest and yields the same surface for geometry, normals and foam deposition.
 			const uLag = u.add( sin( u.mul( TAU ) ).mul( A ).mul( Q ).div( wavelength ) ).toVar();
@@ -99,11 +102,14 @@ export class ShoreWaves {
 
 		} ).setLayout( { name: 'shoreSwellSection', type: 'vec3', inputs: [ { name: 's', type: 'float' }, { name: 'along', type: 'float' }, { name: 'depth', type: 'float' }, { name: 'invSpeed', type: 'float' }, { name: 'period', type: 'float' }, { name: 'amplitude', type: 'float' } ] } );
 
-		const evaluate = Fn( ( [ p, time, field, boundary, sd, period, amplitude, incoming ]: [ V2, F, THREE.Node<'vec4'>, THREE.Node<'vec4'>, F, F, F, V2 ] ) => {
+		const evaluate = Fn( ( [ p, time, field, boundary, transmission, sd, period, amplitude, incoming ]: [ V2, F, THREE.Node<'vec4'>, THREE.Node<'vec4'>, F, F, F, F, V2 ] ) => {
 
 			const invSpeed = max( length( field.gb ), 0.08 );
 			const dir = field.gb.div( invSpeed );
-			const exposure = mix( float( 0.18 ), float( 1 ), smoothstep( - 0.2, 0.7, dot( dir, incoming ) ) );
+			// Travel-time gradients describe phase, not energy. Reduce the input amplitude
+			// before shaping the wave, so sheltered crests also lose their sharp shoulders.
+			const exposure = transmission.mul( mix( float( 0.18 ), float( 1 ), smoothstep( - 0.2, 0.7, dot( dir, incoming ) ) ) );
+			const localAmplitude = amplitude.mul( exposure );
 			const envelope = float( 1 ).sub( smoothstep( 18, 32, sd ) );
 			const tangent = vec2( incoming.y.negate(), incoming.x );
 			const normal = boundary.ba.div( max( length( boundary.ba ), 1e-5 ) );
@@ -111,40 +117,40 @@ export class ShoreWaves {
 			const contactAlong = dot( p.sub( normal.mul( max( sd, 0 ) ) ), tangent );
 			const wobble = sin( along.mul( 0.29 ) ).mul( 0.015 ).add( sin( along.mul( 0.67 ).add( 2.6 ) ).mul( 0.006 ) );
 			const contactWobble = sin( contactAlong.mul( 0.29 ) ).mul( 0.015 ).add( sin( contactAlong.mul( 0.67 ).add( 2.6 ) ).mul( 0.006 ) );
-			const incident = crossSection( time.sub( field.r ).div( period ).add( wobble ), along, field.a, invSpeed, period, amplitude );
+			const incident = crossSection( time.sub( field.r ).div( period ).add( wobble ), along, field.a, invSpeed, period, localAmplitude );
 			// Reflection shares the incident phase at contact. It loses energy over rough rock;
 			// its low amplitude avoids fixed standing-wave scallops around the whole island.
 			const reflectedTime = boundary.r.mul( 2 ).sub( field.r );
-			const reflected = crossSection( time.sub( reflectedTime ).div( period ).add( contactWobble ), contactAlong, field.a, invSpeed, period, amplitude );
-			const reflection = boundary.g.mul( boundary.g ).mul( exp( max( sd, 0 ).mul( - 0.4 ) ) ).mul( 0.28 );
+			const reflected = crossSection( time.sub( reflectedTime ).div( period ).add( contactWobble ), contactAlong, field.a, invSpeed, period, localAmplitude );
+			const reflection = boundary.g.mul( boundary.g ).mul( exp( max( sd, 0 ).mul( - 0.4 ) ) ).mul( 0.20 );
 			const reflectedDir = dir.sub( normal.mul( dot( dir, normal ).mul( 2 ) ) );
 			const contactPhase = time.sub( boundary.r ).div( period ).add( contactWobble );
 			const contactU = contactPhase.sub( floor( contactPhase.add( 0.5 ) ) );
 			// Whitewater starts at rock contact, spreads briefly outward, then leaves the clear
 			// next wave alone. This is a small cliff surge, not Tidewater's sand-beach barrel.
 			const impactWindow = smoothstep( - 0.035, 0.025, contactU ).mul( float( 1 ).sub( smoothstep( 0.14, 0.24, contactU ) ) );
-			const impactWidth = smoothstep( 0, 0.2, contactU ).mul( 0.65 ).add( 0.25 );
-			const contactA = ampAt( floor( contactPhase.add( 0.5 ) ), contactAlong, amplitude );
+			const impactWidth = smoothstep( 0, 0.2, contactU ).mul( 0.48 ).add( 0.22 );
+			const contactA = ampAt( floor( contactPhase.add( 0.5 ) ), contactAlong, localAmplitude );
 			const waveId = floor( contactPhase.add( 0.5 ) );
 			const contactPatch = sin( contactAlong.mul( 2.1 ).add( waveId.mul( 2.3 ) ) )
 				.add( sin( contactAlong.mul( 3.8 ).sub( waveId.mul( 1.7 ) ) ).mul( 0.45 ) );
-			const energy = smoothstep( 0.065, 0.25, contactA.mul( exposure ).mul( pow( float( 6 ).div( max( field.a, 0.7 ) ), 0.25 ) ) ).mul( smoothstep( 0.2, 0.85, boundary.g ) )
+			const energy = smoothstep( 0.065, 0.25, contactA.mul( pow( float( 6 ).div( max( field.a, 0.7 ) ), 0.25 ) ) ).mul( smoothstep( 0.2, 0.85, boundary.g ) )
 				.mul( mix( float( 0.12 ), float( 1 ), smoothstep( - 0.55, 0.7, contactPatch ) ) );
 			const impact = impactWindow.mul( exp( max( sd, 0 ).div( impactWidth ).pow( 2 ).negate() ) ).mul( energy )
 				.mul( smoothstep( 0, 0.15, sd ) );
-			const height = incident.x.add( reflected.x.mul( reflection ) ).mul( exposure ).mul( envelope );
-			const flow = dir.mul( incident.y ).add( reflectedDir.mul( reflected.y ).mul( reflection ) ).mul( exposure ).mul( envelope ).toVar();
+			const height = incident.x.add( reflected.x.mul( reflection ) ).mul( envelope );
+			const flow = dir.mul( incident.y ).add( reflectedDir.mul( reflected.y ).mul( reflection ) ).mul( envelope ).toVar();
 			const coast = float( 1 ).sub( smoothstep( 0.05, 0.65, sd ) );
 			flow.subAssign( normal.mul( dot( flow, normal ).min( 0 ) ).mul( coast ) );
 			flow.addAssign( normal.mul( impact ).mul( 0.38 ) );
 			return vec4( height, flow.x, flow.y, impact );
 
-		} ).setLayout( { name: 'shoreSwellDynamics', type: 'vec4', inputs: [ { name: 'p', type: 'vec2' }, { name: 'time', type: 'float' }, { name: 'field', type: 'vec4' }, { name: 'boundary', type: 'vec4' }, { name: 'sd', type: 'float' }, { name: 'period', type: 'float' }, { name: 'amplitude', type: 'float' }, { name: 'incoming', type: 'vec2' } ] } );
+		} ).setLayout( { name: 'shoreSwellDynamics', type: 'vec4', inputs: [ { name: 'p', type: 'vec2' }, { name: 'time', type: 'float' }, { name: 'field', type: 'vec4' }, { name: 'boundary', type: 'vec4' }, { name: 'transmission', type: 'float' }, { name: 'sd', type: 'float' }, { name: 'period', type: 'float' }, { name: 'amplitude', type: 'float' }, { name: 'incoming', type: 'vec2' } ] } );
 
 		const dynamicsAt = ( p: V2, time: F ) => {
 
 			const q = p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
-			return evaluate( p, time, this.field.sample( q ).level( float( 0 ) ), this.contact.sample( q ).level( float( 0 ) ),
+			return evaluate( p, time, this.field.sample( q ).level( float( 0 ) ), this.contact.sample( q ).level( float( 0 ) ), this.shelter.sample( q ).level( float( 0 ) ).r,
 				texture( shore, q ).level( float( 0 ) ).r, this.period, this.amplitude, this.direction );
 
 		};
@@ -187,11 +193,13 @@ export class ShoreWaves {
 		if ( this.revision !== fft.spectrumRevision || this.fieldPeriod !== this.period.value ) {
 
 			this.setDirection( fft );
-			const oldField = this.field.value, oldContact = this.contact.value;
+			const oldField = this.field.value, oldContact = this.contact.value, oldShelter = this.shelter.value;
 			const field = createShoreWaveField( this.data, this.direction.value, this.period.value );
 			this.field.value = field;
-			this.contact.value = createShoreContactField( this.data, field );
-			oldField.dispose(); oldContact.dispose();
+			const shelter = createShoreShelterField( this.data, field );
+			this.shelter.value = shelter;
+			this.contact.value = createShoreContactField( this.data, field, shelter );
+			oldField.dispose(); oldContact.dispose(); oldShelter.dispose();
 			this.revision = fft.spectrumRevision;
 			this.fieldPeriod = this.period.value;
 			this.fieldRevision ++;

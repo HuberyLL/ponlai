@@ -188,7 +188,11 @@ export function createShoreWaveField( data: WorldData, direction: THREE.Vector2,
 	const heap = new MinHeap( Math.max( 64, count * 2 ) );
 	for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
 
-		if ( i !== 0 && j !== 0 && i !== nx - 1 && j !== nz - 1 ) continue;
+		// Only the inflow edges supply the incident wave. A prescribed phase on the
+		// downstream border would illuminate the lee from a second, artificial source.
+		const inflow = ( dx > 1e-8 && i === 0 ) || ( dx < - 1e-8 && i === nx - 1 )
+			|| ( dz > 1e-8 && j === 0 ) || ( dz < - 1e-8 && j === nz - 1 );
+		if ( ! inflow ) continue;
 		const k = j * nx + i;
 		if ( speeds[ k ] <= 0 ) continue;
 		const x = shore.x0 + ( i + 0.5 ) * hx, z = shore.z0 + ( j + 0.5 ) * hz;
@@ -312,19 +316,19 @@ export function createShoreWaveField( data: WorldData, direction: THREE.Vector2,
 }
 
 // A boundary condition for the rocky island, rather than a synthetic shallow beach.
-// R: incident arrival time at the contact; G: reliable incidence; BA: outward rock normal.
-export function createShoreContactField( data: WorldData, waveField: THREE.DataTexture ): THREE.DataTexture {
+// R: incident arrival time at contact; G: exposed, reliable incidence; BA: outward rock normal.
+export function createShoreContactField( data: WorldData, waveField: THREE.DataTexture, shelter: THREE.DataTexture ): THREE.DataTexture {
 
 	const { width: nx, height: nz, data: values } = waveField.image;
 	const pixels = values as Float32Array;
 	const info = waveField.userData.shoreWaveField;
 	const output = new Float32Array( nx * nz * 4 );
-	const sample = ( x: number, z: number, channel: number ): number => {
+	const sample = ( x: number, z: number, channel: number, source = pixels ): number => {
 
 		const fx = Math.max( 0, Math.min( nx - 1.001, ( x - info.x0 ) / info.cellX - 0.5 ) );
 		const fz = Math.max( 0, Math.min( nz - 1.001, ( z - info.z0 ) / info.cellZ - 0.5 ) );
 		const i = Math.floor( fx ), j = Math.floor( fz ), u = fx - i, v = fz - j;
-		const at = ( a: number, b: number ) => pixels[ ( b * nx + a ) * 4 + channel ];
+		const at = ( a: number, b: number ) => source[ ( b * nx + a ) * 4 + channel ];
 		return ( at( i, j ) * ( 1 - u ) + at( i + 1, j ) * u ) * ( 1 - v )
 			+ ( at( i, j + 1 ) * ( 1 - u ) + at( i + 1, j + 1 ) * u ) * v;
 
@@ -344,7 +348,10 @@ export function createShoreContactField( data: WorldData, waveField: THREE.DataT
 		const contactDistance = Math.max( 0, Math.min( sd, 12 ) );
 		const k = ( j * nx + i ) * 4;
 		output[ k ] = sample( x - normalX * contactDistance, z - normalZ * contactDistance, 0 );
-		output[ k + 1 ] = incidence * confidence;
+		// Query just outside the contact, so a visible parcel next to a sheltered recess
+		// cannot light up an occluded wall. The contact and parcel may have different shelter.
+		const contactExposure = sample( x - normalX * ( contactDistance - 0.3 ), z - normalZ * ( contactDistance - 0.3 ), 0, shelter.image.data as Float32Array );
+		output[ k + 1 ] = incidence * confidence * contactExposure;
 		output[ k + 2 ] = normalX; output[ k + 3 ] = normalZ;
 
 	}
@@ -352,6 +359,138 @@ export function createShoreContactField( data: WorldData, waveField: THREE.DataT
 	texture.name = 'shoreWaveContact';
 	texture.minFilter = texture.magFilter = THREE.LinearFilter;
 	texture.generateMipmaps = false; texture.flipY = false; texture.needsUpdate = true;
+	return texture;
+
+}
+
+/**
+ * Directional energy shelter, independently of the Eikonal arrival field. Our closed-island
+ * extension: Tidewater's local direction alignment alone does not test intervening land.
+ * R: swell amplitude transmission, G: central-ray visibility, BA: spatial derivatives of R.
+ * This is an art-directed soft wave shadow, not a diffraction or fluid solver.
+ */
+export function createShoreShelterField( data: WorldData, waveField: THREE.DataTexture ): THREE.DataTexture {
+
+	const started = performance.now();
+	const { width: nx, height: nz } = waveField.image;
+	const info = waveField.userData.shoreWaveField;
+	const [ dx, dz ] = info.direction as [ number, number ];
+	const shore = data.shore, count = nx * nz;
+	const visible = new Float32Array( count ), direct = new Float32Array( count );
+	const water = new Uint8Array( count ), distances = new Float32Array( count );
+	const angles = [ - 10, - 5, 0, 5, 10 ], weights = [ 1, 2, 6, 2, 1 ];
+	const rays = angles.map( ( degrees, i ) => {
+
+		const a = degrees * Math.PI / 180;
+		return { x: - dx * Math.cos( a ) + dz * Math.sin( a ), z: - dx * Math.sin( a ) - dz * Math.cos( a ), weight: weights[ i ] };
+
+	} );
+	const x1 = info.x0 + info.width, z1 = info.z0 + info.height;
+	const minimumStep = Math.min( info.cellX, info.cellZ, shore.cell ) * 0.5;
+	const trace = ( x: number, z: number, rx: number, rz: number ): number => {
+
+		let distance = minimumStep;
+		// The shore SDF is sampled more densely than this field. Conservative, capped steps
+		// retain narrow rock shoulders without marching at fixed resolution across open sea.
+		while ( distance < Math.hypot( info.width, info.height ) ) {
+
+			const px = x + rx * distance, pz = z + rz * distance;
+			if ( px < info.x0 || pz < info.z0 || px > x1 || pz > z1 ) return 1;
+			const clearance = sampleShore( shore, px, pz );
+			// A millimetre tolerance covers grazing contacts below the shore-grid precision.
+			if ( clearance <= 0.001 ) return 0;
+			distance += Math.max( minimumStep, Math.min( 2, clearance * 0.65 ) );
+
+		}
+		return 1;
+
+	};
+	for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
+
+		const k = j * nx + i, x = info.x0 + ( i + 0.5 ) * info.cellX, z = info.z0 + ( j + 0.5 ) * info.cellZ;
+		const sd = sampleShore( shore, x, z );
+		distances[ k ] = sd;
+		if ( sd <= 0 ) continue;
+		water[ k ] = 1;
+		let sum = 0;
+		for ( let ray = 0; ray < rays.length; ray ++ ) {
+
+			const r = rays[ ray ], visibility = trace( x, z, r.x, r.z );
+			sum += visibility * r.weight;
+			if ( ray === 2 ) direct[ k ] = visibility;
+
+		}
+		visible[ k ] = sum / 12;
+
+	}
+	// Blur water neighbours only. This removes fan/grid steps at penumbra boundaries
+	// without bleeding a fully exposed wave through the solid island into a small inlet.
+	for ( let pass = 0; pass < 4; pass ++ ) {
+
+		const previous = visible.slice();
+		for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
+
+			const k = j * nx + i;
+			if ( ! water[ k ] ) continue;
+			let sum = previous[ k ] * 4, weight = 4;
+			for ( const next of [ i > 0 ? k - 1 : - 1, i < nx - 1 ? k + 1 : - 1, j > 0 ? k - nx : - 1, j < nz - 1 ? k + nx : - 1 ] ) {
+
+				if ( next >= 0 && water[ next ] ) { sum += previous[ next ]; weight ++; }
+
+			}
+			visible[ k ] = sum / weight;
+
+		}
+
+	}
+	const pixels = new Float32Array( count * 4 );
+	const amplitude = ( k: number ): number => {
+
+		if ( ! water[ k ] ) return 0;
+		// Recover distant wind sea before the finite field edge; clamp-to-edge samples
+		// must not carry an infinite, straight shadow strip across the offshore FFT.
+		const t = Math.max( 0, Math.min( 1, ( distances[ k ] - 18 ) / 18 ) );
+		const recovery = t * t * ( 3 - 2 * t );
+		return 1 - ( 1 - ( 0.06 + 0.94 * visible[ k ] ) ) * ( 1 - recovery );
+
+	};
+	for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
+
+		const k = j * nx + i, out = k * 4;
+		pixels[ out ] = amplitude( k ); pixels[ out + 1 ] = direct[ k ];
+		if ( ! water[ k ] ) continue;
+		// One-sided water differences avoid an artificial damping-gradient seam at land.
+		const left = i > 0 && water[ k - 1 ] ? k - 1 : k, right = i < nx - 1 && water[ k + 1 ] ? k + 1 : k;
+		const down = j > 0 && water[ k - nx ] ? k - nx : k, up = j < nz - 1 && water[ k + nx ] ? k + nx : k;
+		pixels[ out + 2 ] = ( amplitude( right ) - amplitude( left ) ) / Math.max( ( right - left ) * info.cellX, info.cellX );
+		pixels[ out + 3 ] = ( amplitude( up ) - amplitude( down ) ) / Math.max( ( up - down ) / nx * info.cellZ, info.cellZ );
+
+	}
+	// Extend the water-side amplitude and gradient into land for linear filtering. A zero
+	// land amplitude would add a false shoreline ramp that its one-sided gradient omits.
+	// This extension never participates in tracing, smoothing or foam source generation.
+	const queue = new Int32Array( count ), reached = water.slice();
+	let head = 0, tail = 0;
+	for ( let k = 0; k < count; k ++ ) if ( water[ k ] ) queue[ tail ++ ] = k;
+	while ( head < tail ) {
+
+		const k = queue[ head ++ ], i = k % nx, j = Math.floor( k / nx );
+		for ( const next of [ i > 0 ? k - 1 : - 1, i < nx - 1 ? k + 1 : - 1, j > 0 ? k - nx : - 1, j < nz - 1 ? k + nx : - 1 ] ) {
+
+			if ( next < 0 || reached[ next ] ) continue;
+			reached[ next ] = 1;
+			pixels[ next * 4 ] = pixels[ k * 4 ];
+			pixels[ next * 4 + 2 ] = pixels[ k * 4 + 2 ]; pixels[ next * 4 + 3 ] = pixels[ k * 4 + 3 ];
+			queue[ tail ++ ] = next;
+
+		}
+
+	}
+	const texture = new THREE.DataTexture( pixels, nx, nz, THREE.RGBAFormat, THREE.FloatType );
+	texture.name = 'shoreWaveShelter';
+	texture.minFilter = texture.magFilter = THREE.LinearFilter;
+	texture.generateMipmaps = false; texture.flipY = false; texture.needsUpdate = true;
+	texture.userData.shoreWaveShelter = { direction: [ dx, dz ], fanDegrees: angles, residualAmplitude: 0.06, buildMs: performance.now() - started };
 	return texture;
 
 }
