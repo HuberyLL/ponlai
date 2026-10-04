@@ -111,6 +111,11 @@ comment where it is used.
 - Bounded foam diffuse reflectance: Lambert's irradiance/radiance relation described in
   [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Reflection_Models/Diffuse_Reflection),
   independently implemented with a 0.95 hemispheric reflectance and separate direct/sky inputs.
+- Depth-dependent water shadows: the volume-lighting integral described in
+  [*Physically Based Rendering*, third edition](https://pbr-book.org/3ed-2018/Light_Transport_II_Volume_Rendering/Volumetric_Light_Transport),
+  independently implemented in TSL with exponential depth strata, exact per-channel attenuation
+  weights and separate air/submerged visibility along each scattering point's refracted solar path.
+  No source code is copied; the retained multiple-scattering boost is empirical.
 
 - Seabed substrate reference: Page C. Valentine, USGS,
   [*Sediment classification and the characterization, identification, and mapping of geologic substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)

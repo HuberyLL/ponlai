@@ -185,7 +185,7 @@ const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 scene.add( grass, foliage, flowers, rimFoliage );
 
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, foamState: foam.texture, shoreWaves,
+	fft, sky, shared, shore: shore.tex, foamState: foam.texture, shoreWaves, refractedSun,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 water.uniforms.wind.value = fft.params.windSpeed;

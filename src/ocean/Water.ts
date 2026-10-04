@@ -18,13 +18,13 @@ import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import { createFoamTexture, FOAM_TILE } from './FoamTexture.ts';
 import type { Shared } from '../shared.ts';
-import { solarShadowVisibility } from '../lighting/SolarShadow.ts';
+import { solarShadowVisibility, solarVolumeVisibility, volumeShadowRayMayIntersect } from '../lighting/SolarShadow.ts';
 import {
 	waveSlopeCovariance, waveLodCovariance, waveParameterGradient, waveSurfaceNormal, waveCovarianceToTangent,
 	waveLocalDirection, waveBeckmannD, waveSmithVisibility, waveSolarSlopeCovariance, waveReflectionAngularVariance, waveAirFacing,
 } from './WaveOptics.ts';
-import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
-import { waterIncidentSun, waterColumnRadiance, foamLambertRadiance } from './WaterTransport.ts';
+import { RefractedSun, refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
+import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance, foamLambertRadiance } from './WaterTransport.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
@@ -129,6 +129,7 @@ export interface WaterInputs {
 	// Transported coverage, material-coordinate offset and fresh rock-contact whitewater.
 	foamState: THREE.TextureNode;
 	shoreWaves: ShoreWaves;
+	refractedSun: RefractedSun;
 	sceneColor: THREE.Texture;
 	linearDepth: THREE.Texture;
 	size?: number;
@@ -161,7 +162,7 @@ export class Water {
 	private shadowNormalBias = uniform( 0 );
 	private shadowIntensity = uniform( 1 );
 
-	constructor( { fft, sky, shared, shore, foamState, shoreWaves, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
+	constructor( { fft, sky, shared, shore, foamState, shoreWaves, refractedSun, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
 
 		// grid in world xz, warped dense under the island and sparse toward the horizon
 		const n = res;
@@ -192,7 +193,7 @@ export class Water {
 		const u = this.uniforms;
 		const sizes = uniform( new THREE.Vector3( ...fft.sizes ) );
 		const disp = fft.displacementTextures, der = fft.derivativeTextures, moments = fft.slopeMomentTextures;
-		const velocities = fft.velocityTextures;
+		const whitecapTexture = fft.whitecapTexture;
 		const laceTexture = createFoamTexture();
 
 		// ---- vertex: displace the grid by the three cascades (the finest fades out far away). The
@@ -393,9 +394,11 @@ export class Water {
 			const event = foamState.sample( foamUV ).toVar();
 			// Fine strands are material detail; the advancing wave decides where they become white.
 			const foamP = wp.xz.add( event.gb );
-			const whitecaps = texture( velocities[ 0 ], vLag.div( sizes.x ) ).a
-				.add( texture( velocities[ 1 ], vLag.div( sizes.y ) ).a )
-				.add( texture( velocities[ 2 ], vLag.div( sizes.z ) ).a.mul( 0.56 ) ).mul( vShelter ).toVar();
+			// Packed cascades retain their original UVs and filtering, leaving texture bindings
+			// for both air and submerged shadows within WebGPU's baseline limit.
+			const whitecaps = texture( whitecapTexture, vLag.div( sizes.x ) ).r
+				.add( texture( whitecapTexture, vLag.div( sizes.y ) ).g )
+				.add( texture( whitecapTexture, vLag.div( sizes.z ) ).b.mul( 0.56 ) ).mul( vShelter ).toVar();
 			// A dedicated distance-to-strand texture lets coverage change the shape: dense
 			// churn opens into perforated mats, lace and separate bubbles, not fading moss noise.
 			const laceSample = texture( laceTexture, foamP.mul( 1.5 / FOAM_TILE ) ).toVar();
@@ -406,7 +409,7 @@ export class Water {
 				texture( laceTexture, foamP.add( vec2( 0, 0.04 ) ).div( FOAM_TILE * 2.2 ).add( vec2( 0.17, 0.39 ) ) ).r.sub( lumps.r ).div( 0.04 ),
 			).toVar();
 			// Share lace density with the optional glitter control to stay within WebGPU's
-			// baseline 16 sampled textures, including slope moments and orbital velocity.
+			// baseline 16 sampled textures, including slope moments and the packed whitecaps.
 			const fLow = lumps.b;
 			const footprint = max( length( fwidth( vLag ) ), 1e-4 ).toVar();
 
@@ -599,15 +602,54 @@ export class Water {
 			} );
 			// Match the terrain's refracted beam: transmission retains horizontal power,
 			// while beam-normal irradiance changes with the Snell area projection.
-			// Surface visibility approximates the whole column; indirect sky remains separate.
-			const sunIn = waterIncidentSun( shared.sunColor, shadow, shared.sunIntoWater, refractedSunBeamScaleNode( L ) );
+			// Surface glint and foam retain their own shadow. A scattering point deeper along
+			// the view ray can enter or leave the island's shadow independently of that surface.
+			const sunIn = waterIncidentSun( shared.sunColor, float( 1 ), shared.sunIntoWater, refractedSunBeamScaleNode( L ) );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
 			const kAmb = sigT.mul( muV.div( 0.75 ).add( 1 ) ).toVar();
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
 			const bb = sigS.mul( u.backscatter );
 			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
 			// The MS source remains an empirical backscatter boost, not a conserved GI model.
-			const inSun = waterColumnRadiance( sunIn.mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ), kSun, pathLen );
+			const solarSource = sunIn.mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) );
+			// Both solar cameras are orthographic. Project the ray once, not at every depth.
+			// The air entry has a kink only where a raised wave crosses the mean interface.
+			const airBase = u.shadowMatrix.mul( vec4( wp, 1 ) ).xyz.toVar();
+			const airStep = u.shadowMatrix.mul( vec4( Tv, 0 ) ).xyz.toVar();
+			const airBend = u.shadowMatrix.mul( vec4( Ls.div( muS ), 0 ) ).xyz.toVar();
+			const columnDepth = ( distance: F ) => max( shared.waterLevel.sub( wp.y ).sub( Tv.y.mul( distance ) ), 0 );
+			const airCoordinate = ( distance: F ) => {
+
+				const p = airBase.add( airStep.mul( distance ) ).add( airBend.mul( columnDepth( distance ) ) );
+				return vec3( p.x, float( 1 ).sub( p.y ), p.z.add( this.shadowBias ) );
+
+			};
+			const wetStart = refractedSun.submergedVolumeCoordinateNode( wp ).toVar();
+			const wetEnd = refractedSun.submergedVolumeCoordinateNode( wp.add( Tv.mul( pathLen ) ) ).toVar();
+			const interfaceDistance = clamp( shared.waterLevel.sub( wp.y ).div( min( Tv.y, - 1e-5 ) ), 0, pathLen );
+			const airStart = airCoordinate( float( 0 ) ).toVar();
+			const airTurn = airCoordinate( interfaceDistance ).toVar();
+			const airEnd = airCoordinate( pathLen ).toVar();
+			const mayBeShadowed = volumeShadowRayMayIntersect( airStart, airTurn )
+				.or( volumeShadowRayMayIntersect( airTurn, airEnd ) ).or( volumeShadowRayMayIntersect( wetStart, wetEnd ) );
+			const inSun = waterColumnRadiance( solarSource, kSun, pathLen ).toVar();
+			// Open-sea rays outside both maps keep the exact analytic solution without marching.
+			If( u.shadowOn.greaterThan( 0 ).and( this.shadowIntensity.greaterThan( 0 ) ).and( mayBeShadowed ), () => {
+
+				inSun.assign( waterShadowedColumnRadiance( solarSource, kSun, pathLen, ( distance ) => {
+
+					const visibility = solarVolumeVisibility( this.shadowTex, airCoordinate( distance ), shadowSize ).toVar();
+					If( visibility.greaterThan( 0 ).and( columnDepth( distance ).greaterThan( 0 ) ), () => {
+
+						const coordinate = mix( wetStart, wetEnd, distance.div( max( pathLen, 1e-5 ) ) );
+						visibility.mulAssign( refractedSun.submergedVolumeVisibilityAtCoordinateNode( coordinate ) );
+
+					} );
+					return mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) );
+
+				} ) );
+
+			} );
 			const inAmb = waterColumnRadiance( shared.skyIrradiance.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ), kAmb, pathLen );
 			// sun shining through the thin crests of the waves
 			const vH = normalize( V.xz.add( 1e-5 ) ), lH = normalize( L.xz.add( 1e-5 ) );

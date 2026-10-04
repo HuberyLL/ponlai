@@ -4,7 +4,7 @@ import {
 	max, sqrt, normalize, select, clamp,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
-import { solarShadowVisibility } from './SolarShadow.ts';
+import { solarShadowVisibility, solarVolumeVisibility } from './SolarShadow.ts';
 import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
 
 type F = THREE.Node<'float'>;
@@ -198,6 +198,28 @@ export class RefractedSun {
 		return solarShadowVisibility( this.target.depthTexture!, coordinate, {
 			mapSize: this.mapSize, worldSpan: this.worldSpan, depthRange: this.depthRange, angularRadius,
 		} );
+
+	}
+
+	submergedVolumeCoordinateNode( point: V3 ): V3 {
+
+		return shadowCoordinate( point, this.matrix, this.contactBias.div( this.depthRange ) );
+
+	}
+
+	submergedVolumeVisibilityAtCoordinateNode( coordinate: V3 ): F {
+
+		return solarVolumeVisibility( this.target.depthTexture!, coordinate, this.mapSize );
+
+	}
+
+	submergedVolumeVisibilityNode( point: V3 ): F {
+
+		// A point in water has no surface normal to offset. Retain only the small ray
+		// clearance used by terrain; points above the interface have no submerged ray leg.
+		const coordinate = this.submergedVolumeCoordinateNode( point );
+		const visibility = this.submergedVolumeVisibilityAtCoordinateNode( coordinate );
+		return select( point.y.lessThan( this.shared.waterLevel ), visibility, float( 1 ) );
 
 	}
 

@@ -61,6 +61,7 @@ export class OceanFFT {
 	derivativeTextures: THREE.Texture[];
 	slopeMomentTextures: THREE.Texture[];
 	velocityTextures: THREE.Texture[];
+	whitecapTexture: THREE.Texture;
 
 	private time = uniform( 0 );
 	private foamDt = uniform( 0 );
@@ -231,6 +232,27 @@ export class OceanFFT {
 
 		}
 
+		// Water only needs the foam channel from each velocity texture. Pack those channels
+		// without changing their half-float values or filtering, freeing two sampled bindings.
+		// This observes the same foam history after its compute update; it never advances it.
+		{
+
+			const rt = new THREE.RenderTarget( N, N, {
+				type: THREE.HalfFloatType, generateMipmaps: false,
+				minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+				wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, anisotropy: 8,
+			} );
+			rt.texture.name = 'oceanWhitecaps';
+			const mat = new THREE.NodeMaterial();
+			const px = ivec2( screenCoordinate.xy );
+			const idx = uint( px.y.mul( N ).add( px.x ) );
+			const cap = ( cascade: number ) => cascade < C ? capsRead.element( idx.add( cascade * NN ) ) : float( 0 );
+			mat.fragmentNode = vec4( cap( 0 ), cap( 1 ), cap( 2 ), 0 );
+			this.outputs.push( { rt, quad: new THREE.QuadMesh( mat ) } );
+			this.whitecapTexture = rt.texture;
+
+		}
+
 		this.rebuildSpectrum();
 
 	}
@@ -349,7 +371,7 @@ export class OceanFFT {
 
 	}
 
-	// Moments and velocity targets have the same lifetime as the existing FFT outputs.
+	// Moments, velocity and packed whitecaps have the same lifetime as the FFT outputs.
 	dispose(): void {
 
 		for ( const output of this.outputs ) {

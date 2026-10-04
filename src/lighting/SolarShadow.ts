@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uniform, texture, textureLoad, reference, float, vec2, vec3, vec4, ivec2, uv,
-	max, abs, clamp, cos, sin, pow, tan, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep,
+	min, max, abs, clamp, cos, sin, pow, tan, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep,
 } from 'three/tsl';
 import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
 
@@ -60,6 +60,46 @@ export interface SolarShadowParameters {
 	depthRange: F;
 	angularRadius?: F;
 	depthKind?: 'depth' | 'color';
+}
+
+// An orthographic ray stays inside its endpoints' bounds. Reject only disjoint
+// bounds so a ray crossing a shadow map between two outside endpoints is retained.
+export const volumeShadowRayMayIntersect = Fn( ( [ start, end ]: [ V3, V3 ] ) => {
+
+	const low = min( start, end ).toVar(), high = max( start, end ).toVar();
+	return low.x.lessThanEqual( 1 ).and( low.y.lessThanEqual( 1 ) ).and( low.z.lessThanEqual( 1 ) )
+		.and( high.x.greaterThanEqual( 0 ) ).and( high.y.greaterThanEqual( 0 ) ).and( high.z.greaterThanEqual( 0 ) );
+
+} ).setLayout( { name: 'volumeShadowRayMayIntersect', type: 'bool', inputs: [
+	{ name: 'start', type: 'vec3' }, { name: 'end', type: 'vec3' },
+] } );
+
+// Volume samples have no receiver plane. Gather four base-level depth comparisons
+// without derivatives, so depth integration can run in nonuniform control flow.
+// Keep texture bindings local to the material, as for the surface-shadow factory below.
+export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, mapSize: V2 ): F {
+
+	return Fn( () => {
+
+		const sc = coordinate.toVar();
+		const inside = sc.x.greaterThanEqual( 0 ).and( sc.y.greaterThanEqual( 0 ) )
+			.and( sc.x.lessThanEqual( 1 ) ).and( sc.y.lessThanEqual( 1 ) )
+			.and( sc.z.greaterThanEqual( 0 ) ).and( sc.z.lessThanEqual( 1 ) );
+		const visibility = float( 1 ).toVar();
+		If( inside, () => {
+
+			const size = max( mapSize, vec2( 1 ) ).toVar();
+			const weight = fract( sc.xy.mul( size ).sub( 0.5 ) ).toVar();
+			// TSL gather().compare() emits textureGatherCompare, which has no implicit LOD
+			// or uniform-flow restriction. WGSL returns (0,1), (1,1), (1,0), (0,0).
+			const taps = texture( depth, sc.xy ).gather().compare( sc.z ).toVar();
+			visibility.assign( mix( mix( taps.w, taps.z, weight.x ), mix( taps.x, taps.y, weight.x ), weight.y ) );
+
+		} );
+		return visibility;
+
+	} )();
+
 }
 
 // Texture access stays in a material-local node factory. A shared layout function must never
