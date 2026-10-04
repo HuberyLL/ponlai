@@ -58,3 +58,9 @@ comment where it is used.
   [*Sediment classification and the characterization, identification, and mapping of geologic substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)
   (2019, SIR 2019–5073). Rock patches, mixed clast sizes and partial sand burial inform the
   procedural seabed layout; no source code, survey data or images are used.
+
+- Cliff and rim reference: U.S. National Park Service,
+  [*Coastal Processes—Erosion*](https://www.nps.gov/articles/coastal-processes-erosion.htm),
+  and USGS, [*Factors affecting sea cliff erosion*](https://www.usgs.gov/media/images/factors-affecting-sea-cliff-erosion).
+  Uneven retreat, varied cliff slopes and local toe wear inform the procedural island edge;
+  no source code, survey data or images are used.

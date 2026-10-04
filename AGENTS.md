@@ -36,8 +36,9 @@ wildflowers and ivy.
 ## Decisions (keep to these)
 
 - No clouds, mist or aerial haze. No waterfall or pond.
-- The island tile footprint stays as built. Offshore stones remain submerged and form patchy
-  seabed detail; no exposed sea stacks or reefs.
+- Keep the island tile layout and flat central plateau. Natural contour, slope and weathering
+  variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
+  patchy seabed detail; no exposed sea stacks or reefs.
 - No glowing rings at the bases of the sea stacks.
 - Do not commit reference images, and do not ship third-party art without a licence.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
