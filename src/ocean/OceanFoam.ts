@@ -4,8 +4,8 @@ import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { Shared } from '../shared.ts';
 
-// Broad whitewater history: R coverage, GB transported material-coordinate offsets (m),
-// A fresh aerated whitewater. Coverage opens holes as it thins; the lace rides its parcels.
+// Gentle rock-contact foam: R coverage, GB transported material-coordinate offsets (m),
+// A fresh aeration. Small waves leave only brief, thin traces beside the wall.
 export class OceanFoam {
 
 	readonly texture: THREE.TextureNode;
@@ -67,16 +67,18 @@ export class OceanFoam {
 			// Stop traces that cross land, including thin rock shoulders between water parcels.
 			const segmentWater = select( sampleShore( upstream ).greaterThan( 0 )
 				.and( sampleShore( mix( q, upstream, float( 0.5 ) ) ).greaterThan( 0 ) ), float( 1 ), float( 0 ) );
-			// After Tidewater's ShoreSim: dense churn collapses faster than the thin foam it leaves.
-			const decay = mix( float( 0.48 ), float( 1.10 ), smoothstep( 0.18, 0.58, carried.r ) );
-			const remaining = carried.r.mul( segmentWater ).mul( exp( expansion.add( decay ).mul( this.dt ).negate() ) );
+			// After Tidewater's ShoreSim: dense aeration collapses faster than its thin traces.
+			// Quiet rock contacts do not leave detached whitewater drifting over the open sea.
+			const decay = mix( float( 1.5 ), float( 2.4 ), smoothstep( 0.18, 0.58, carried.r ) );
+			const offshoreDecay = max( sd.sub( 0.15 ), 0 ).mul( 4 );
+			const remaining = carried.r.mul( segmentWater ).mul( exp( expansion.add( decay ).add( offshoreDecay ).mul( this.dt ).negate() ) );
 			// No white line on an unbroken offshore crest. The wave's actual rock contact
-			// supplies aerated mass; its dense core survives briefly after the impact ends.
-			const birth = float( 1 ).sub( exp( wave.z.mul( this.dt ).mul( - 7.2 ) ) );
+			// supplies a little aerated mass that thins quickly when the contact ends.
+			const birth = float( 1 ).sub( exp( wave.z.mul( this.dt ).mul( - 3.2 ) ) );
 			const newMass = float( 1 ).sub( remaining ).mul( birth );
 			const coverage = remaining.add( newMass );
-			// Keep the impact body for part of a second, then let only the carried lace remain.
-			const freshOld = carried.a.mul( segmentWater ).mul( exp( expansion.add( 1.65 ).mul( this.dt ).negate() ) );
+			// Fresh aeration follows the brief tap instead of growing into a broad foamy body.
+			const freshOld = carried.a.mul( segmentWater ).mul( exp( expansion.add( 4.5 ).add( offshoreDecay ).mul( this.dt ).negate() ) );
 			const fresh = freshOld.add( float( 1 ).sub( freshOld ).mul( birth ) );
 			const openWater = select( sd.greaterThan( 0 ), float( 1 ), float( 0 ) );
 			const offset = select( carried.r.greaterThan( 0.001 ), carried.gb.sub( flow.mul( this.dt ) ), vec2( 0 ) );

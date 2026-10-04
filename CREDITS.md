@@ -33,7 +33,8 @@ packages, into `dist/licenses/`.
   `src/ocean/Water.ts` adapts its density-to-hole mapping, pattern-only surface-gradient
   normals, bubbly relief and cavity shading.
   The repeatable pattern is mipmapped, scaled down and has its low-density strands broken into
-  shorter arcs. Dense fresh whitewater opens into holes, lace and separate bubbles as it thins.
+  shorter arcs. In Soomi's mild sea, instantaneous rock contact shows a thin broken lip; carried foam supplies
+  only sparse, short-lived residue rather than a dense beach-whitewater body.
 - Rocky-boundary changes: `src/ocean/ShoreWaves.ts` and `src/ocean/ShoreWaveField.ts` retain the
   notice from the earlier shore-wave adaptation. Their current geometric boundary, weak mirrored
   response and closed-island shelter are Soomi extensions. They read actual FFT heights and Airy

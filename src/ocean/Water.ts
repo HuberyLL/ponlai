@@ -398,7 +398,7 @@ export class Water {
 				.add( texture( velocities[ 2 ], vLag.div( sizes.z ) ).a.mul( 0.56 ) ).mul( vShelter ).toVar();
 			// A dedicated distance-to-strand texture lets coverage change the shape: dense
 			// churn opens into perforated mats, lace and separate bubbles, not fading moss noise.
-			const laceSample = texture( laceTexture, foamP.mul( 1.5 / FOAM_TILE ) ).toVar();
+			const laceSample = texture( laceTexture, foamP.mul( 2.4 / FOAM_TILE ) ).toVar();
 			const lumps = texture( laceTexture, foamP.div( FOAM_TILE * 2.2 ).add( vec2( 0.17, 0.39 ) ) ).toVar();
 			// SurfFoam's pattern-only surface gradients avoid a bright bevel around every
 			// density edge. Centimetre-scale relief belongs to the carried bubble pattern.
@@ -462,27 +462,29 @@ export class Water {
 			const thick = select( skyBehind, float( 1e4 ), posV.z.sub( sv0.z ) ).toVar(); // view distance from the surface to whatever is behind it
 
 			// ---- shoreline and foam
-			// Tidewater's SurfFoam density mapping: a fresh bubbly core, then wider holes,
-			// finally translucent strands. The irregular edge belongs to the moving mass.
+			// In this mild sea, whiteness comes mainly from the wave touching the rock now.
+			// History leaves only faint, short-lived flecks, never a new opaque foam body.
 			const coverage = sat( event.r );
-			const fresh = sat( event.a.mul( 1.65 ) );
-			const width = pow( coverage, 1.15 ).mul( 0.95 ).mul( laceSample.b.mul( 0.5 ).add( 0.75 ) );
-			const soft = footprint.mul( 2 ).add( 0.035 );
+			const fresh = sat( event.a );
+			const width = pow( coverage, 1.2 ).mul( 0.85 ).mul( laceSample.b.mul( 0.5 ).add( 0.75 ) );
+			const soft = footprint.mul( 2 ).add( 0.025 );
 			const mat = float( 1 ).sub( smoothstep( width.sub( soft ), width.add( soft ), laceSample.r ) )
 				.mul( smoothstep( 0.005, 0.06, coverage ) );
 			const inner = sat( width.sub( laceSample.r ).div( 0.25 ) );
 			const strandOpacity = inner.mul( 0.35 ).add( laceSample.b.mul( 0.3 ) ).add( 0.4 );
 			const bubbles = laceSample.g.mul( smoothstep( width.add( 0.25 ), width, laceSample.r ) ).mul( smoothstep( 0.03, 0.2, coverage ) ).mul( 0.4 );
-			const pop = smoothstep( 0.03, 0.15, coverage.sub( laceSample.a.mul( 0.16 ) ) );
+			const pop = smoothstep( 0.015, 0.1, coverage.sub( laceSample.a.mul( 0.12 ) ) );
 			const foamLace = max( mat.mul( strandOpacity ), bubbles ).mul( pop );
-			// Wave contact first fills a small ragged patch. As the fresh channel decays,
-			// holes open into that same patch instead of unrelated thin lines appearing.
-			const bodyDensity = sat( fresh.mul( 1.25 ).add( coverage.mul( 0.2 ) ) );
-			const raggedCore = smoothstep( 0.15, 0.62, bodyDensity.sub( laceSample.r.mul( 0.45 ) ).sub( lumps.r.mul( 0.22 ) ) );
-			const churn = raggedCore.mul( smoothstep( 0.08, 0.22, fresh ) ).mul( laceSample.b.mul( 0.1 ).add( 0.9 ) );
-			const nearFoam = max( foamLace, churn );
-			const farFoam = max( pow( width, 1.45 ).mul( 1.8 ).min( 1 ).mul( 0.75 ).mul( pop ), smoothstep( 0.1, 0.55, fresh ).mul( 0.75 ) );
-			const foamAmt = mix( nearFoam, farFoam, smoothstep( 0.07, 0.2, footprint ) ).mul( smoothstep( 0.02, 0.12, thick ) ).toVar();
+			// The contact cache already clips to the real water-side SDF. A second narrow
+			// mask interpolated from grid vertices would erase the lip around concave walls.
+			const lap = sat( shoreWave.w.mul( 7 ) );
+			const brokenLip = float( 1 ).sub( smoothstep( 0.05, 0.38, laceSample.r ) ).mul( 0.75 ).add( 0.25 );
+			const contactLip = lap.mul( brokenLip ).mul( laceSample.b.mul( 0.35 ).add( 0.65 ) ).mul( 0.32 );
+			const residue = foamLace.mul( sat( coverage.mul( 3 ) ) ).mul( 0.15 );
+			const nearFoam = contactLip.add( residue );
+			const farFoam = lap.mul( 0.22 ).add( coverage.mul( 0.035 ) );
+			const foamAmt = mix( nearFoam, farFoam, smoothstep( 0.07, 0.2, footprint ) )
+				.mul( smoothstep( 0.005, 0.045, thick ) ).toVar();
 			const foamBounds = smoothstep( 0, 0.015, foamUV.x ).mul( smoothstep( 1, 0.985, foamUV.x ) )
 				.mul( smoothstep( 0, 0.015, foamUV.y ) ).mul( smoothstep( 1, 0.985, foamUV.y ) );
 			foamAmt.mulAssign( foamBounds );
@@ -628,9 +630,9 @@ export class Water {
 			const skyE = shared.skyIrradiance.mul( PI );
 			// Transform pattern derivatives on the actual tilted water surface, following
 			// SurfFoam's surface-gradient construction. Density controls height only.
-			const lumpHeight = fresh.mul( 0.035 ).add( coverage.mul( 0.006 ) );
-			const laceHeight = fresh.add( coverage.mul( 0.3 ) ).mul( 0.01 );
-			const bubbleHeight = fresh.mul( 0.0035 );
+			const lumpHeight = fresh.mul( 0.01 ).add( coverage.mul( 0.002 ) );
+			const laceHeight = fresh.add( coverage.mul( 0.3 ) ).mul( 0.004 );
+			const bubbleHeight = fresh.mul( 0.0015 );
 			const reliefDx = lumpDx.mul( lumpHeight ).add( laceDx.mul( laceHeight ) ).add( bubbleDx.mul( bubbleHeight ) );
 			const reliefDy = lumpDy.mul( lumpHeight ).add( laceDy.mul( laceHeight ) ).add( bubbleDy.mul( bubbleHeight ) );
 			const r1 = cross( surfaceDy, N ), r2 = cross( N, surfaceDx );

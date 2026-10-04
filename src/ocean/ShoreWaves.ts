@@ -53,9 +53,11 @@ export class ShoreWaves {
 		const contactEnergy = Fn( ( [ height, velocity, normal, sd, confidence, exposure ]: [ F, V2, V2, F, F, F ] ) => {
 
 			const approaching = max( dot( velocity, normal ).negate(), 0 );
+			// Small waves aerate a thin strip touching the wall, not a separate offshore mat.
+			// Keep the water-side ramp below one history texel to avoid an artificial dry gap.
 			return smoothstep( 0.008, 0.040, height ).mul( smoothstep( 0.025, 0.16, approaching ) )
-				.mul( confidence ).mul( exposure.mul( exposure ) ).mul( exp( sd.div( 0.42 ).pow( 2 ).negate() ) )
-				.mul( smoothstep( 0, 0.12, sd ) );
+				.mul( confidence ).mul( exposure.mul( exposure ) ).mul( exp( sd.div( 0.24 ).pow( 2 ).negate() ) )
+				.mul( smoothstep( 0, 0.02, sd ) );
 
 		} ).setLayout( { name: 'rockContactEnergy', type: 'float', inputs: [ { name: 'height', type: 'float' }, { name: 'velocity', type: 'vec2' },
 			{ name: 'normal', type: 'vec2' }, { name: 'sd', type: 'float' }, { name: 'confidence', type: 'float' }, { name: 'exposure', type: 'float' } ] } );
@@ -128,7 +130,7 @@ export class ShoreWaves {
 				flow.addAssign( reflectedVelocity.mul( response ) );
 				If( sd.lessThan( 1.4 ), () => {
 
-					const contactP = p.sub( normal.mul( sd ) ).add( normal.mul( 0.32 ) );
+					const contactP = p.sub( normal.mul( sd ) ).add( normal.mul( 0.16 ) );
 					const contact = incidence( contactP ).toVar();
 					// Compute contact before enforcing no flow into rock; projecting first erases impact.
 					const contactExposure = this.shelter.sample( toUV( contactP ) ).level( float( 0 ) ).r;
