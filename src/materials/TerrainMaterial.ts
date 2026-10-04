@@ -6,6 +6,7 @@ import {
 import type { Shared } from '../shared.ts';
 import type { DetailTextures } from './ProceduralTextures.ts';
 import { MEADOW_EXTENT } from './Meadow.ts';
+import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, meadowSoilCover, soilUniforms } from './Soil.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 
@@ -15,7 +16,7 @@ import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lightin
 // the water column, caustics, ambient) by a lighting model of its own, so the water shader only
 // has to add the view path.
 //
-// kind 'cliff'  : island block, sea stacks and rocks (triplanar)
+// kind 'cliff'  : island block and submerged rocks (triplanar)
 // kind 'seabed' : sand, ripples, seagrass and rubble (planar)
 
 type V3 = THREE.Node<'vec3'>;
@@ -61,7 +62,7 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 
 		const p = positionWorld;
 		const n0 = normalize( normalWorldGeometry ).toVar();
-		// Bare stone must always sample its mineral maps, including upward sea-stack caps.
+		// Bare stone must always sample its mineral maps, including upward boulder faces.
 		const turf = ( vegetation ? smoothstep( 0.85, 0.97, n0.y ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ) : float( 0 ) ).toVar();
 		const vAO = attribute<'float'>( 'ao', 'float' ), vTint = attribute<'float'>( 'tint', 'float' ), vCurv = attribute<'float'>( 'curv', 'float' );
 
@@ -160,7 +161,7 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 		const stoneRough = clamp( Fc.a.mul( 0.34 ).add( 0.62 ), 0.8, 0.98 );
 		const rough = stoneRough.toVar();
 
-		// Soil-connected island ledges carry moss and turf. Bare sea stacks and reefs omit
+		// Soil-connected island ledges carry moss and turf. Submerged boulders omit
 		// these nodes entirely, so an upward rock face cannot turn into a green cap.
 		if ( vegetation ) {
 
@@ -182,6 +183,7 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 			// Continue the short meadow bed over the rounded shoulder before yielding to rock.
 			const turfRim = smoothstep( 0.4, 0.88, up ).mul( smoothstep( topY.sub( 0.48 ), topY.sub( 0.12 ), p.y.add( mossN.mul( 0.15 ) ) ) );
 			const turfCover = max( turf, turfRim ).toVar();
+			const groundSoil = float( 0 ).toVar();
 			If( turfCover.greaterThan( 0 ), () => {
 
 				const q1 = p.xz.mul( 0.23 ), q2 = mat2( 0.8, - 0.6, 0.6, 0.8 ).mul( p.xz ).mul( 0.61 ).add( 0.37 );
@@ -194,6 +196,16 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 				// A little exposed humus in the shortest patches interrupts the continuous green lid.
 				const sparse = smoothstep( 0.2, 0.03, meadow.a );
 				grassC.assign( mix( grassC, vec3( 0.072, 0.064, 0.036 ), sparse.mul( 0.45 ) ) );
+				If( soilUniforms.strength.greaterThan( 0 ).and( soilUniforms.blend.greaterThan( 0 ) ), () => {
+
+					const soil = texture( tex.soil, p.xz.div( SOIL_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).toVar();
+					// The same broad cover field narrows nearby grass tufts. Fine detail modulates
+					// earth colour only, so gaps belong to the meadow rather than random brown dots.
+					groundSoil.assign( meadowSoilCover( meadow.a, soil.b ).mul( soilUniforms.blend ).mul( soilUniforms.strength ).mul( turfCover ) );
+					const earth = vec3( ...SOIL_PALETTE.surface ).mul( mix( float( 0.9 ), float( 1.12 ), soil.a ) ).mul( mix( float( 0.88 ), float( 1.08 ), fibres ) );
+					grassC.assign( mix( grassC, earth, groundSoil.mul( 0.5 ) ) );
+
+				} );
 				mossC.assign( mix( mossC, grassC, turfCover ) );
 				Hg.assign( mix( Hg, c1.mul( 0.5 ).add( c2.mul( 0.5 ) ), turf ) );
 
@@ -201,9 +213,39 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 
 			const nMoss = triNormal( unpack2( aX.zw ), unpack2( aY.zw ), unpack2( aZ.zw ), n0, w, float( 0.8 ) );
 			albedo.assign( mix( rock, mossC, moss ) );
-			const nBed = normalize( mix( nMoss, n0, turfCover.mul( 0.2 ) ) );
+			const nBed = normalize( mix( nMoss, n0, turfCover.mul( 0.2 ).add( groundSoil.mul( 0.25 ) ) ) );
 			nW.assign( normalize( mix( nRock, nBed, moss ) ) );
-			rough.assign( mix( stoneRough, float( 0.94 ), moss ) );
+			rough.assign( mix( mix( stoneRough, float( 0.94 ), moss ), float( 0.98 ), groundSoil ) );
+
+			// A shallow, broken root-soil cut follows the existing cap. Sampling only this shoulder
+			// keeps the meadow and lower mineral faces intact; chips naturally interrupt the layer.
+			If( soilUniforms.strength.greaterThan( 0 ).and( p.y.greaterThan( topY.sub( 0.4 ) ) ).and( up.lessThan( 0.97 ) ), () => {
+
+				const soil = texture( tex.soil, p.xz.div( SOIL_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).toVar();
+				const localTop = topY.add( soil.r.sub( 0.5 ).mul( SOIL_HEIGHT_RANGE ) );
+				const depth = localTop.sub( p.y ).toVar();
+				const thickness = mix( float( 0.07 ), float( 0.18 ), soil.g ).mul( soilUniforms.depth ).toVar();
+				const grain = H.g.sub( 0.5 ).mul( 0.05 ).add( soil.a.sub( 0.5 ).mul( 0.04 ) );
+				const upper = smoothstep( 0.014, 0.04, depth.add( grain.mul( 0.3 ) ) );
+				const lower = float( 1 ).sub( smoothstep( thickness.mul( 0.72 ), thickness.add( 0.025 ), depth.add( grain ) ) );
+				const shoulder = float( 1 ).sub( smoothstep( 0.72, 0.94, up ) );
+				const exposure = smoothstep( 0.06, 0.4, soil.b );
+				const cut = upper.mul( lower ).mul( shoulder ).mul( exposure ).mul( soilUniforms.strength ).toVar();
+				// Root-rich earth is darker at the grass contact. Below it, small mineral flecks
+				// soften the change into bedrock without an artificial black seam or brown belt.
+				const root = float( 1 ).sub( smoothstep( 0.12, 0.8, depth.div( thickness ) ) );
+				const earth = mix( vec3( ...SOIL_PALETTE.cut ), vec3( ...SOIL_PALETTE.root ), root.mul( 0.45 ) ).toVar();
+				earth.mulAssign( mix( float( 0.88 ), float( 1.14 ), soil.a ).mul( H.r.mul( 0.35 ).add( 0.83 ) ) );
+				const grit = smoothstep( 0.58, 0.73, H.r ).mul( smoothstep( 0.35, 1, depth.div( thickness ) ) ).mul( 0.38 );
+				earth.assign( mix( earth, rock, grit ) );
+				const stoneBreak = smoothstep( 0.4, 0.7, H.g ).mul( smoothstep( 0.55, 1.15, depth.div( thickness ) ) );
+				cut.mulAssign( float( 1 ).sub( stoneBreak.mul( 0.55 ) ) );
+				albedo.assign( mix( albedo, earth, cut ) );
+				const nSoil = normalize( mix( nRock, n0, 0.65 ) );
+				nW.assign( normalize( mix( nW, nSoil, cut ) ) );
+				rough.assign( mix( rough, float( 0.98 ), cut ) );
+
+			} );
 
 		}
 

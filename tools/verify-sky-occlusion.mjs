@@ -55,7 +55,12 @@ console.log( JSON.stringify( { isolated: 1, neighbouring: neighbouring( 0, 0, 0,
 if ( process.argv.includes( '--world' ) ) {
 
 	let world;
-	globalThis.self = { postMessage( data ) { world = data; } };
+	globalThis.self = { postMessage( data, { transfer } ) {
+
+		assert.equal( new Set( transfer ).size, transfer.length, 'Every worker buffer must be transferred only once.' );
+		world = data;
+
+	} };
 	await import( '../src/world/worldWorker.ts' );
 	const generate = ( contactOcclusion ) => {
 
@@ -65,7 +70,14 @@ if ( process.argv.includes( '--world' ) ) {
 
 	};
 	const before = generate( false ), after = generate( true );
-	assert.deepEqual( after.data.stacks, before.data.stacks );
+	assert.equal( 'stacks' in after.data, false, 'The current scene has no exposed stack API.' );
+	assert.equal( 'stacks' in before.data, false );
+	assert.ok( after.data.meshes.every( mesh => mesh.kind !== 'stack' && ! mesh.name.startsWith( 'stack' ) ) );
+	const rocksMesh = after.data.meshes.find( mesh => mesh.name === 'rocks' );
+	assert.ok( rocksMesh && rocksMesh.positions.length > 0 );
+	let maximumRockY = - Infinity;
+	for ( let k = 1; k < rocksMesh.positions.length; k += 3 ) maximumRockY = Math.max( maximumRockY, rocksMesh.positions[ k ] );
+	assert.ok( maximumRockY <= - 1.15, 'All offshore stones must remain below the accepted submergence limit.' );
 	assert.deepEqual( after.data.rocks, before.data.rocks );
 	assert.deepEqual( after.data.ivy, before.data.ivy );
 	assert.deepEqual( after.data.shore, before.data.shore );
@@ -74,6 +86,7 @@ if ( process.argv.includes( '--world' ) ) {
 	assert.equal( after.data.vegetation.length, before.data.vegetation.length );
 	for ( let k = 0; k < after.data.vegetation.length; k += VEGETATION_STRIDE ) {
 
+		assert.equal( after.data.vegetation[ k + 7 ], 0, 'Vegetation must remain on the main island.' );
 		for ( let j = 0; j < 8; j ++ ) assert.equal( after.data.vegetation[ k + j ], before.data.vegetation[ k + j ] );
 
 	}
@@ -110,7 +123,8 @@ if ( process.argv.includes( '--world' ) ) {
 	console.log( JSON.stringify( {
 		beforeMs: before.elapsedMs, afterMs: after.elapsedMs, overheadMs: after.elapsedMs - before.elapsedMs,
 		beforeTimings: before.data.timings, afterTimings: after.data.timings, geometryAndPlacementUnchanged: true,
-		minSeabedAO, changedVegetationAnchors: anchors.filter( ( value ) => value < 0.999 ).length,
+		minSeabedAO, maximumRockY, submergedStoneCount: after.data.rocks.length,
+		changedVegetationAnchors: anchors.filter( ( value ) => value < 0.999 ).length,
 		minVegetationVisibility: Math.min( ...anchors ), meshChanges: changes,
 	}, null, 2 ) );
 

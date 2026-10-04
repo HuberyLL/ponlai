@@ -6,6 +6,7 @@ import assert from 'node:assert/strict';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification';
+const production = process.argv.includes( '--production' ) || base.includes( '5191' );
 await mkdir( out, { recursive: true } );
 const browser = await chromium.launch( {
 	headless: true, channel: 'chromium',
@@ -29,14 +30,18 @@ try {
 				const a = o.geometry.getAttribute( key );
 				if ( a && ! a.array.every( Number.isFinite ) ) bad.push( `${ o.name }:${ key }` );
 			}
-			if ( o.parent?.name === 'world' ) world.push( { name: o.name, vertices: o.geometry.getAttribute( 'position' ).count } );
+			if ( o.parent?.name === 'world' ) world.push( { name: o.name, vertices: o.geometry.getAttribute( 'position' ).count, maxY: o.geometry.boundingBox?.max.y, vegetation: o.material.userData.vegetation } );
 		} );
 		return { bad, world, diag: window.__THREE_GAME_DIAGNOSTICS__, t: s.shared.time.value };
 	} );
 	assert.deepEqual( inspect.bad, [] );
-	assert.equal( inspect.world.filter( ( m ) => m.name.startsWith( 'stack' ) ).length, 7 );
+	assert.equal( inspect.world.filter( ( m ) => m.name.startsWith( 'stack' ) ).length, 0 );
+	const rocks = inspect.world.find( ( m ) => m.name === 'rocks' );
+	assert.ok( rocks && rocks.vertices > 0 && rocks.maxY <= - 1.15 );
+	assert.equal( rocks.vegetation, false );
+	assert.equal( inspect.world.find( ( m ) => m.name === 'island' )?.vegetation, true );
 	assert.equal( inspect.t, 12 );
-	checks.push( 'Finite geometry, seven sea stacks, frozen shared time t=12, WebGPU rendered' );
+	checks.push( 'Finite geometry, no exposed offshore rocks, bare submerged stone, frozen time t=12, WebGPU rendered' );
 	await page.screenshot( { path: `${ out }/overview.png` } );
 	await page.keyboard.press( 'Space' );
 	await page.waitForTimeout( 1200 );
@@ -74,7 +79,7 @@ try {
 	await page.locator( '.lil-gui.lil-root' ).waitFor( { state: 'hidden' } );
 	assert.equal( await page.locator( '.lil-gui.lil-root' ).isVisible(), false );
 	checks.push( 'H toggles the hidden tuning controls' );
-	if ( base.includes( '5191' ) ) {
+	if ( production ) {
 		await page.goto( base );
 		await page.waitForFunction( () => document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 60000 } );
 		assert.equal( await page.evaluate( () => window.__SOOMI__ === undefined && window.__THREE_GAME_DIAGNOSTICS__ === undefined ), true );

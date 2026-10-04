@@ -77,3 +77,8 @@ comment where it is used.
 - Bounded foam diffuse reflectance: Lambert's irradiance/radiance relation described in
   [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Reflection_Models/Diffuse_Reflection),
   independently implemented with a 0.95 hemispheric reflectance and separate direct/sky inputs.
+
+- Seabed substrate reference: Page C. Valentine, USGS,
+  [*Sediment classification and the characterization, identification, and mapping of geologic substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)
+  (2019, SIR 2019–5073). Rock patches, mixed clast sizes and partial sand burial inform the
+  procedural seabed layout; no source code, survey data or images are used.

@@ -36,8 +36,8 @@ wildflowers and ivy.
 ## Decisions (keep to these)
 
 - No clouds, mist or aerial haze. No waterfall or pond.
-- The island layout (tile footprint, sea stacks, rock placement) stays as built; work changes quality,
-  not layout.
+- The island tile footprint stays as built. Offshore stones remain submerged and form patchy
+  seabed detail; no exposed sea stacks or reefs.
 - No glowing rings at the bases of the sea stacks.
 - Do not commit reference images, and do not ship third-party art without a licence.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
