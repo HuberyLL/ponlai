@@ -22,6 +22,7 @@ import {
 	waveLocalDirection, waveBeckmannD, waveSmithVisibility, waveSolarSlopeCovariance, waveReflectionAngularVariance, waveAirFacing,
 } from './WaveOptics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
+import { waterIncidentSun, waterColumnRadiance } from './WaterTransport.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
@@ -554,18 +555,18 @@ export class Water {
 				sceneAt( screenUV ).mul( exp( sigT.negate().mul( fallbackLength ) ) ),
 				refractedCol.mul( exp( sigT.negate().mul( hit.z ) ) ), refractionTrust
 			);
-			// (in a shadow the volume still glows: light scattered in sideways from the sunlit water)
 			// Match the terrain's refracted beam: transmission retains horizontal power,
 			// while beam-normal irradiance changes with the Snell area projection.
-			const sunIn = shared.sunColor.mul( mix( float( 0.45 ), float( 1 ), shadow ) )
-				.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( L ) );
+			// Surface visibility approximates the whole column; indirect sky remains separate.
+			const sunIn = waterIncidentSun( shared.sunColor, shadow, shared.sunIntoWater, refractedSunBeamScaleNode( L ) );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
 			const kAmb = sigT.mul( muV.div( 0.75 ).add( 1 ) ).toVar();
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
 			const bb = sigS.mul( u.backscatter );
 			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
-			const inSun = sunIn.mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ).mul( float( 1 ).sub( exp( kSun.negate().mul( pathLen ) ) ) ).div( kSun );
-			const inAmb = shared.skyIrradiance.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ).mul( float( 1 ).sub( exp( kAmb.negate().mul( pathLen ) ) ) ).div( kAmb );
+			// The MS source remains an empirical backscatter boost, not a conserved GI model.
+			const inSun = waterColumnRadiance( sunIn.mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) ), kSun, pathLen );
+			const inAmb = waterColumnRadiance( shared.skyIrradiance.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ), kAmb, pathLen );
 			// sun shining through the thin crests of the waves
 			const vH = normalize( V.xz.add( 1e-5 ) ), lH = normalize( L.xz.add( 1e-5 ) );
 			const back = pow( sat( dot( vH, lH.negate() ).mul( 0.6 ).add( 0.4 ) ), 2.5 );
