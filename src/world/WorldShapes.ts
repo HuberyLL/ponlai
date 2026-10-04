@@ -3,7 +3,7 @@
 // rocks, the seabed height and the shoreline distance at sea level.
 
 import { Field2D, roundCorners } from './Field2D.ts';
-import { noise3, fbm2, hash3i, mulberry32, smoothstep, smax, smin, type Rng } from './noise.ts';
+import { noise3, fbm2, mulberry32, smoothstep, smax, type Rng } from './noise.ts';
 import type { SDF, Stack, Rock } from './types.ts';
 
 export interface Footprint {
@@ -95,52 +95,90 @@ function softMax( vals: Float64Array, n: number, k: number ): number {
 
 }
 
-// A broken flake has an inclined floor and unequal, clipped shoulders. Keeping a broad
-// interior plane avoids the repeated pyramidal dents that make a cliff look kneaded.
-function spallDepth( u: number, v: number, cuts: number[], i: number ): number {
-
-	const du = u - cuts[ i ];
-	const dv = v - cuts[ i + 1 ] + du * cuts[ i + 7 ];
-	const left = cuts[ i + 2 ], right = cuts[ i + 3 ];
-	const lower = cuts[ i + 4 ], upper = cuts[ i + 5 ], depth = cuts[ i + 6 ];
-	return Math.max( 0, Math.min(
-		depth * ( 0.82 + du / ( left + right ) * cuts[ i + 8 ] + dv / ( lower + upper ) * 0.22 ),
-		( du + left ) * 0.72, ( right - du ) * 1.1,
-		( dv + lower ) * 0.85, ( upper - dv ) * 0.58,
-		( upper * 0.92 - dv - du * 0.38 ) * 0.9,
-	) );
-
+interface CliffFace {
+	x: number; z: number; nx: number; nz: number;
+	left: number; right: number; bottom: number; upper: number; y: number;
+	depth: number; leanU: number; leanY: number; chip: number;
 }
 
+// Sparse, broad planar losses follow the shore's local direction. Their unequal shoulders
+// leave intact stone between cuts instead of deforming every point with a volume-noise lattice.
+function makeCliffFaces( fp: Footprint ): CliffFace[] {
 
-// Linear interpolation over the six tetrahedra of each lattice cell produces continuous
-// angular relief. Separate orientations at each scale avoid a visible grid of repeated faces.
-function stoneRelief( x: number, y: number, z: number ): number {
+	const b = layoutBounds(), candidates: number[][] = [];
+	const step = 0.45, e = 0.16;
+	for ( let z = b.z0 - 1; z < b.z1 + 1; z += step ) for ( let x = b.x0 - 1; x < b.x1 + 1; x += step ) {
 
-	const ix = Math.floor( x ), iy = Math.floor( y ), iz = Math.floor( z );
-	const fx = x - ix, fy = y - iy, fz = z - iz;
-	const hi = fx >= fy ? ( fx >= fz ? 0 : 2 ) : ( fy >= fz ? 1 : 2 );
-	const lo = fx <= fy ? ( fx <= fz ? 0 : 2 ) : ( fy <= fz ? 1 : 2 );
-	const u = Math.max( fx, fy, fz ), w = Math.min( fx, fy, fz ), v = fx + fy + fz - u - w;
-	const a = hash3i( ix, iy, iz );
-	const b = hash3i( ix + ( hi === 0 ? 1 : 0 ), iy + ( hi === 1 ? 1 : 0 ), iz + ( hi === 2 ? 1 : 0 ) );
-	const c = hash3i( ix + ( lo === 0 ? 0 : 1 ), iy + ( lo === 1 ? 0 : 1 ), iz + ( lo === 2 ? 0 : 1 ) );
-	const d = hash3i( ix + 1, iy + 1, iz + 1 );
-	return ( a * ( 1 - u ) + b * ( u - v ) + c * ( v - w ) + d * w ) * 2 - 1;
+		const d = fp.dist( x, z );
+		if ( Math.abs( d ) > step ) continue;
+		for ( let axis = 0; axis < 2; axis ++ ) {
+
+			const d1 = fp.dist( x + ( axis === 0 ? step : 0 ), z + ( axis === 1 ? step : 0 ) );
+			if ( d * d1 >= 0 ) continue;
+			const t = d / ( d - d1 );
+			const px = x + ( axis === 0 ? step * t : 0 ), pz = z + ( axis === 1 ? step * t : 0 );
+			const nx = fp.dist( px + e, pz ) - fp.dist( px - e, pz );
+			const nz = fp.dist( px, pz + e ) - fp.dist( px, pz - e );
+			const l = Math.hypot( nx, nz );
+			if ( l > 0.01 ) candidates.push( [ px, pz, nx / l, nz / l ] );
+
+		}
+
+	}
+	const rng = mulberry32( 1937 );
+	for ( let i = candidates.length - 1; i > 0; i -- ) {
+
+		const j = Math.floor( rng() * ( i + 1 ) );
+		[ candidates[ i ], candidates[ j ] ] = [ candidates[ j ], candidates[ i ] ];
+
+	}
+	const faces: CliffFace[] = [];
+	for ( const p of candidates ) {
+
+		if ( faces.some( ( f ) => Math.hypot( f.x - p[ 0 ], f.z - p[ 1 ] ) < 1.9 ) || rng() < 0.18 ) continue;
+		faces.push( {
+			x: p[ 0 ], z: p[ 1 ], nx: p[ 2 ], nz: p[ 3 ],
+			left: 0.65 + rng() * 1.1, right: 0.55 + rng() * 1.25,
+			bottom: 0.9 + rng() * 1.8, upper: 0.65 + rng() * 1.8, y: 0.2 + rng() * 2.3,
+			depth: 0.08 + rng() * 0.18, leanU: ( rng() - 0.5 ) * 0.05, leanY: ( rng() - 0.5 ) * 0.055,
+			chip: rng() < 0.3 ? 0.06 + rng() * 0.1 : 0,
+		} );
+
+	}
+	return faces;
 
 }
 
 export function makeIslandSDF( fp: Footprint ): SDF {
 
 	const top = ( x: number, z: number ) => ISLAND_TOP + noise3( x * 0.18, 4.1, z * 0.18 ) * 0.12 + noise3( x * 0.7, 1.3, z * 0.7 ) * 0.04;
-	// Cache the footprint because the worker samples the entire height at each (x, z).
-	let cx = NaN, cz = NaN, cD2 = 0, cTop = 0;
+	const faces = makeCliffFaces( fp );
+	// Cache horizontal cut bounds because the worker samples the full height at each (x, z).
+	let cx = NaN, cz = NaN, cD2 = 0, cTop = 0, cLean = 0, cChip = 0;
+	const active: { face: CliffFace; u: number; shoulder: number; support: number }[] = [];
 	function column( x: number, z: number ): void {
 
 		if ( x === cx && z === cz ) return;
 		cx = x; cz = z;
 		cD2 = fp.dist( x, z );
 		cTop = top( x, z );
+		cLean = noise3( x * 0.16 + 6.1, 9.7, z * 0.16 ) * 0.035;
+		cChip = 0;
+		active.length = 0;
+		if ( Math.abs( cD2 ) > 1 ) return;
+		for ( const face of faces ) {
+
+			const dx = x - face.x, dz = z - face.z;
+			const across = Math.abs( dx * face.nx + dz * face.nz );
+			if ( across >= 0.85 ) continue;
+			const support = 1 - smoothstep( 0.5, 0.85, across );
+			const u = - dx * face.nz + dz * face.nx;
+			const shoulder = Math.min( ( u + face.left ) * 0.24, ( face.right - u ) * 0.3 );
+			if ( shoulder <= 0 ) continue;
+			active.push( { face, u, shoulder, support } );
+			cChip = Math.max( cChip, Math.min( face.chip, shoulder * 0.8 ) * support );
+
+		}
 
 	}
 
@@ -149,26 +187,25 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 		column( x, z );
 		const dBot = ISLAND_BOTTOM - y;
 		if ( Math.abs( cD2 ) > 1 ) return Math.max( cD2, y - cTop, dBot );
+		let cut = 0;
+		for ( const { face, u, shoulder, support } of active ) {
 
-		// One continuous rock skin follows the whole perimeter, without column joints or beds.
-		// Broad cuts carry the form; weaker, differently oriented flakes break up their edges.
-		const broad = stoneRelief( x * 0.34 + z * 0.24 + 8.3, y * 0.68 + x * 0.07 - z * 0.05 + 3.1,
-			z * 0.36 - x * 0.23 + y * 0.04 - 6.8 );
-		const flakes = stoneRelief( x * 0.41 - z * 0.92 + y * 0.13 - 3.7, y * 0.86 + x * 0.18 + z * 0.12 + 9.4,
-			x * 0.91 + z * 0.38 - y * 0.17 + 2.6 );
-		const detail = noise3( x * 2.1 + 3.8, y * 1.7, z * 2.1 ) * 0.012;
-		// Only the higher flake peaks cut into the face, leaving broad shoulders between spalls.
-		const spall = Math.max( 0, flakes - 0.12 ) * 0.24;
-		let d = cD2 + broad * 0.34 + flakes * 0.10 + spall + detail;
-		const edge = smoothstep( - 0.5, 0.1, cD2 );
-		const chip = Math.max( 0, stoneRelief( x * 1.3 + 7.1, 4.3, z * 1.3 - 2.7 ) - 0.15 ) * 0.10;
-		const rim = cTop - chip * edge;
-		d = smax( d, y - rim, 0.09 );
+			const v = y - face.y;
+			cut = Math.max( cut, Math.min( face.depth + u * face.leanU + v * face.leanY,
+				shoulder, ( v + face.bottom ) * 0.13, ( face.upper - v ) * 0.18 ) * support );
+
+		}
+		// Shallow, smooth weathering stays subordinate to the broad rock planes.
+		const wear = noise3( x * 0.55 + 3.8, y * 0.8, z * 0.55 ) * 0.025
+			+ noise3( x * 2.1, y * 1.3 + 4.7, z * 2.1 ) * 0.008;
+		const domain = 1 - smoothstep( 0.55, 0.95, Math.abs( cD2 ) );
+		let d = cD2 + ( cLean * ( y - 1.3 ) + cut + wear ) * domain;
+		const rim = cTop - cChip * domain * smoothstep( - 0.5, 0.1, cD2 );
+		d = smax( d, y - rim, 0.065 );
 		return Math.max( d, dBot );
 
 	};
 
-	// Slow continuous tint variation cannot reintroduce boundaries between generated pieces.
 	islandSDF.tint = ( x, y, z ) => 0.5 + noise3( x * 0.2 + 9.3, y * 0.16, z * 0.2 ) * 0.3;
 	return islandSDF;
 
@@ -179,125 +216,102 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 export function makeStacks(): Stack[] {
 
 	return [
-		{ x: - 21.5, z: - 9.5, r: 1.35, h: 5.9 },
-		{ x: - 18.5, z: 11.5, r: 1.5, h: 4.4 },
-		{ x: 19.5, z: - 13.5, r: 1.2, h: 6.6 },
-		{ x: 23.0, z: 3.5, r: 1.35, h: 5.0 },
-		{ x: 7.5, z: 17.0, r: 1.05, h: 3.4 },
-		{ x: - 5.5, z: - 17.5, r: 1.15, h: 4.6 },
-		{ x: 12.5, z: - 18.0, r: 0.8, h: 2.6 },
+		{ x: - 21.5, z: - 9.5, r: 1.22, h: 5.6 },
+		{ x: - 18.5, z: 11.5, r: 1.38, h: 4.2 },
+		{ x: 19.5, z: - 13.5, r: 1.10, h: 6.3 },
+		{ x: 23.0, z: 3.5, r: 1.23, h: 4.7 },
+		{ x: 7.5, z: 17.0, r: 0.96, h: 3.2 },
+		{ x: - 5.5, z: - 17.5, r: 1.04, h: 4.4 },
+		{ x: 12.5, z: - 18.0, r: 0.76, h: 2.5 },
 	];
 
 }
 
 const STACK_FOOT = - 6.8;
 
-// Hewn monoliths retain the same cleavage directions. Each face folds and sheds chips at
-// independently staggered heights; no complete horizontal ring divides a pillar into drums.
+// Long, unequal cleavage planes carry the monolith. Inclined losses span a whole shoulder,
+// so the mass changes direction gradually instead of pinching into repeated narrow bands.
 export function makeStackSDF( s: Stack, seed: number ): SDF {
 
 	const rng = mulberry32( 1000 + seed * 77 );
-	const N = 7 + Math.floor( rng() * 2 );
+	const N = 6 + Math.floor( rng() * 3 );
 	const rot = rng() * Math.PI * 2;
 	const planes: number[] = [];
-	const spalls: number[][] = [];
 	for ( let i = 0; i < N; i ++ ) {
 
-		const a = rot + ( i + ( rng() - 0.5 ) * 0.3 ) * Math.PI * 2 / N;
-		planes.push( Math.cos( a ), Math.sin( a ), s.r * ( 0.87 + rng() * 0.19 ), ( rng() - 0.5 ) * 0.065,
-			1.1 + rng() * 1.3, rng() * 3 );
-		const faceChips: number[] = [];
-		for ( let j = 0; j < 3; j ++ ) {
-
-			// Consume the original six values so changing a flake cannot reshuffle the pillar.
-			const u = rng(), height = rng(), width = rng(), length = rng(), depth = rng(), skew = rng();
-			// The upper flake crosses the cap, so the silhouette carries the break as well.
-			const v = j === 2 ? s.h - 0.05 + height * 0.18 : ( j + height ) / 2.6 * s.h;
-			faceChips.push( ( u - 0.5 ) * s.r * 1.45, v,
-				0.26 + width * 0.5, 0.22 + hash3i( seed, i, j + 101 ) * 0.45,
-				0.35 + length * 0.65, 0.22 + hash3i( seed, i, j + 201 ) * 0.4,
-				0.18 + depth * 0.2, ( skew - 0.5 ) * 0.85, ( hash3i( seed, i, j + 301 ) - 0.5 ) * 0.8 );
-
-		}
-		spalls.push( faceChips );
+		const a = rot + ( i + ( rng() - 0.5 ) * 0.36 ) * Math.PI * 2 / N;
+		planes.push( Math.cos( a ), Math.sin( a ), s.r * ( 0.76 + rng() * 0.34 ),
+			( rng() - 0.5 ) * 0.085 );
 
 	}
-
-	const cracks: number[] = [];
+	const losses: number[] = [];
 	for ( let i = 0; i < 2; i ++ ) {
 
-		const a = rot + ( 0.2 + i * 0.65 ) * Math.PI;
-		cracks.push( Math.cos( a ), Math.sin( a ), ( rng() - 0.5 ) * s.r * 0.8, ( rng() - 0.5 ) * 0.045 );
+		const a = rot + i * 2.15 + rng() * 0.7;
+		const ny = 0.075 + rng() * 0.11, nr = Math.sqrt( 1 - ny * ny );
+		losses.push( Math.cos( a ) * nr, ny, Math.sin( a ) * nr,
+			s.r * ( 0.84 + rng() * 0.22 ), s.h * ( 0.24 + rng() * 0.24 ) );
 
 	}
+	const upperCount = rng() < 0.5 ? 1 : 2;
+	const shoulderA = rot + 0.35 + rng() * 0.9;
+	for ( let i = 0; i < upperCount; i ++ ) {
 
-	const beds: number[] = [];
-	let yBed = - 0.6 + rng() * 0.5;
-	while ( yBed < s.h - 0.45 ) {
-
-		beds.push( yBed, ( rng() - 0.5 ) * 0.2, ( rng() - 0.5 ) * 0.2, rng() * Math.PI * 2 );
-		yBed += 1.3 + rng() * 1.4;
+		const a = shoulderA + i * ( 1.5 + rng() * 1.1 );
+		const ny = 0.43 + rng() * 0.25, nr = Math.sqrt( 1 - ny * ny );
+		// A deep loss enters one shoulder while the opposite side keeps its taller crown.
+		const offset = i === 0 ? s.r * ( 0.30 + rng() * 0.18 ) : s.r * ( 0.65 + rng() * 0.22 );
+		const height = i === 0 ? s.h - 0.20 - rng() * 0.25 : s.h + rng() * 0.20;
+		losses.push( Math.cos( a ) * nr, ny, Math.sin( a ) * nr, offset, height );
 
 	}
+	const leanX = ( rng() - 0.5 ) * 0.080, leanZ = ( rng() - 0.5 ) * 0.080;
+	const topA = rng() * Math.PI * 2, topSlope = 0.28 + rng() * 0.20;
+	const crown: number[] = [ Math.cos( topA ) * topSlope, Math.sin( topA ) * topSlope, s.h + 0.06 ];
+	for ( let i = 0; i < 2; i ++ ) {
 
-	const tilt = [ ( rng() - 0.5 ) * 0.18, ( rng() - 0.5 ) * 0.18 ];
+		const a = topA + 1.8 + i * 1.7 + rng() * 0.45, slope = 0.42 + rng() * 0.35;
+		crown.push( Math.cos( a ) * slope, Math.sin( a ) * slope, s.h + 0.10 + rng() * 0.18 );
+
+	}
 	const tint = rng();
 	const vals = new Float64Array( N );
 	const stackSDF: SDF = ( x, y, z ) => {
 
-		const lx = x - s.x, lz = z - s.z;
+		const lx = x - s.x - y * leanX, lz = z - s.z - y * leanZ;
 		const rr = Math.hypot( lx, lz );
-		if ( rr > s.r * 1.5 + 0.8 ) return rr - s.r * 1.45;
-
+		if ( rr > s.r * 1.7 + 0.8 ) return rr - s.r * 1.5;
 		const t = Math.max( 0, Math.min( 1, y / s.h ) );
-		const foot = smoothstep( - 0.3, - 3.2, y ) * s.r * 0.14;
+		const foot = smoothstep( - 0.3, - 3.2, y ) * s.r * 0.11;
 		for ( let i = 0; i < N; i ++ ) {
 
-			const k = i * 6;
-			// Linear segments make broad tilted faces. Independent breaks on neighbouring
-			// planes create irregular corners rather than a single extruded polygon.
-			const by = y / planes[ k + 4 ] + planes[ k + 5 ], bi = Math.floor( by ), bf = by - bi;
-			const ra = hash3i( seed, i + 71, bi ), rb = hash3i( seed, i + 71, bi + 1 );
-			const relief = ( ra + ( rb - ra ) * bf - 0.5 ) * s.r * 0.39;
-			const u = - lx * planes[ k + 1 ] + lz * planes[ k ];
-			let cut = 0;
-			const chips = spalls[ i ];
-			for ( let j = 0; j < chips.length; j += 9 ) {
-
-				cut += spallDepth( u, y, chips, j );
-
-			}
+			const k = i * 4;
 			vals[ i ] = lx * planes[ k ] + lz * planes[ k + 1 ] + y * planes[ k + 3 ]
-				- planes[ k + 2 ] * ( 1 - t * 0.09 ) - foot + relief + cut;
+				- planes[ k + 2 ] * ( 1 - t * 0.045 ) - foot;
 
 		}
+		let d = softMax( vals, N, 0.035 );
+		// Subtle erosion softens the arrises; the larger shape still comes from oblique planes.
+		d += noise3( lx * 0.65 + seed * 3.1, y * 0.45, lz * 0.65 ) * s.r * 0.055;
+		for ( let i = 0; i < losses.length; i += 5 ) {
 
-		let d = softMax( vals, N, 0.018 );
-		d += noise3( lx * 1.6 + seed, y * 0.75, lz * 1.6 ) * 0.028;
-		for ( let i = 0; i < cracks.length; i += 4 ) {
-
-			const u = Math.abs( lx * cracks[ i ] + lz * cracks[ i + 1 ] - cracks[ i + 2 ] + y * cracks[ i + 3 ]
-				+ noise3( lx * 1.8, y * 0.65 + seed, lz * 1.8 ) * 0.035 );
-			d += 0.135 * ( 1 - smoothstep( 0.02, 0.13, u ) );
-
-		}
-
-		for ( let i = 0; i < beds.length; i += 4 ) {
-
-			const e = Math.abs( y - beds[ i ] - lx * beds[ i + 1 ] - lz * beds[ i + 2 ] );
-			// A bed erodes from one exposed side, never into a dark ring around the pillar.
-			const side = smoothstep( - 0.1, 0.65, ( lx * Math.cos( beds[ i + 3 ] ) + lz * Math.sin( beds[ i + 3 ] ) ) / s.r );
-			d += ( 1 - smoothstep( 0.015, 0.14, e ) ) * side * 0.15;
+			const cut = lx * losses[ i ] + ( y - losses[ i + 4 ] ) * losses[ i + 1 ]
+				+ lz * losses[ i + 2 ] - losses[ i + 3 ];
+			d = smax( d, cut, 0.045 );
 
 		}
+		for ( let i = 0; i < crown.length; i += 3 ) {
 
-		const topY = s.h + lx * tilt[ 0 ] + lz * tilt[ 1 ] + noise3( lx * 1.4 + seed, 3.3, lz * 1.4 ) * 0.12;
-		d = smax( d, y - topY, 0.08 );
+			const cap = y - crown[ i + 2 ] - lx * crown[ i ] - lz * crown[ i + 1 ]
+				+ noise3( lx * 1.1 + seed, 3.3, lz * 1.1 ) * 0.065;
+			d = smax( d, cap, 0.04 );
+
+		}
 		return Math.max( d, STACK_FOOT - y );
 
 	};
 
-	stackSDF.tint = ( x, y, z ) => Math.min( 1, Math.max( 0, tint + noise3( x * 0.7, y * 0.12, z * 0.7 ) * 0.12 ) );
+	stackSDF.tint = ( x, y, z ) => Math.min( 1, Math.max( 0, tint + noise3( x * 0.35, y * 0.24, z * 0.35 ) * 0.08 ) );
 	return stackSDF;
 
 }
@@ -308,32 +322,62 @@ export function makeRocks( fp: Footprint, stacks: Stack[], seabedHeight: HeightF
 
 	const rng = mulberry32( 77 );
 	const rocks: Rock[] = [];
-	let tries = 0;
-	while ( rocks.length < 46 && tries ++ < 4000 ) {
+	const place = ( x: number, z: number, size: number, sy: number, y?: number ): boolean => {
 
-		const a = rng() * Math.PI * 2;
-		const R = 15 + Math.pow( rng(), 1.4 ) * 26;
-		const x = Math.cos( a ) * R * 1.15, z = Math.sin( a ) * R;
 		const d = fp.dist( x, z );
-		if ( d < 0.4 || d > 22 ) continue;
-		// mostly near the cliffs and around the stacks
-		const nearStack = stacks.some( ( s ) => Math.hypot( s.x - x, s.z - z ) < 5 );
-		if ( d > 7 && ! nearStack && rng() < 0.6 ) continue;
-		const size = 0.35 + Math.pow( rng(), 2.2 ) * 1.6 + ( d < 2.5 ? 0.4 : 0 );
-		if ( rocks.some( ( r ) => Math.hypot( r.x - x, r.z - z ) < ( r.s + size ) * 0.9 ) ) continue;
-		if ( stacks.some( ( s ) => Math.hypot( s.x - x, s.z - z ) < s.r + size + 0.2 ) ) continue;
-		// most sit on the seabed below the surface; a few big ones break it
-		const emerge = size > 0.9 && rng() < 0.45;
-		const sz = emerge ? size * 1.35 : size;
-		const sy = sz * ( emerge ? 0.6 + rng() * 0.45 : 0.45 + rng() * 0.35 );
+		if ( d < 0.65 || d > 24 ) return false;
+		if ( rocks.some( ( r ) => Math.hypot( r.x - x, r.z - z ) < ( r.s + size ) * 1.08 ) ) return false;
+		if ( stacks.some( ( s ) => Math.hypot( s.x - x, s.z - z ) < s.r + size * 1.35 + 0.55 ) ) return false;
 		const floor = seabedHeight( x, z );
 		rocks.push( {
-			x, z, s: sz, sy,
-			y: emerge ? - sz * 0.1 : floor + sy * ( 0.25 + rng() * 0.3 ),
-			floor,
-			rot: rng() * Math.PI,
-			seed: rocks.length + 1,
+			x, z, s: size, sy, y: y ?? floor + sy * ( 0.28 + rng() * 0.22 ), floor,
+			rot: rng() * Math.PI, seed: rocks.length + 1,
 		} );
+		return true;
+
+	};
+
+	// A handful of distinct exposed masses leaves open water between groups. Different crown
+	// heights mix low slabs with chunky blocks; their smaller companions stay under the waves.
+	const groups = [
+		{ x: - 21, z: 19, s: 1.65, sy: 1.05, y: - 0.12 },
+		{ x: - 4, z: 25, s: 1.30, sy: 0.62, y: - 0.08 },
+		{ x: 22, z: 12, s: 1.45, sy: 0.95, y: - 0.16 },
+		{ x: - 23, z: - 2, s: 1.15, sy: 1.08, y: - 0.07 },
+		{ x: 15, z: - 19, s: 1.00, sy: 0.77, y: - 0.10 },
+	];
+	for ( const r of groups ) place( r.x, r.z, r.s, r.sy, r.y );
+
+	// These broad, shallow stones can be read through the water close to the island, rather
+	// than all becoming another row of similar peaks above it.
+	for ( const [ x, z, size, sy ] of [
+		[ 16, 0, 1.05, 0.58 ], [ - 12, 13, 0.95, 0.62 ],
+		[ - 6, - 13, 1.10, 0.65 ], [ 9, 13, 0.85, 0.50 ],
+	] ) place( x, z, size, sy, - 0.65 );
+
+	let tries = 0;
+	while ( rocks.length < 38 && tries ++ < 4000 ) {
+
+		let x: number, z: number;
+		const a = rng() * Math.PI * 2;
+		if ( rng() < 0.64 ) {
+
+			const group = rng() < 0.58 ? groups[ Math.floor( rng() * groups.length ) ] : stacks[ Math.floor( rng() * stacks.length ) ];
+			const R = 3.0 + rng() * 5.5;
+			x = group.x + Math.cos( a ) * R; z = group.z + Math.sin( a ) * R;
+
+		} else {
+
+			const R = 14 + Math.pow( rng(), 1.3 ) * 22;
+			x = Math.cos( a ) * R * 1.1; z = Math.sin( a ) * R;
+
+		}
+		const d = fp.dist( x, z );
+		const nearStack = stacks.some( ( s ) => Math.hypot( s.x - x, s.z - z ) < 6 );
+		if ( d > 11 && ! nearStack && rng() < 0.65 ) continue;
+		const size = 0.27 + Math.pow( rng(), 1.8 ) * 0.94 + ( d < 3 ? 0.12 : 0 );
+		const sy = size * ( 0.40 + rng() * 0.54 );
+		place( x, z, size, sy );
 
 	}
 
@@ -341,35 +385,31 @@ export function makeRocks( fp: Footprint, stacks: Stack[], seabedHeight: HeightF
 
 }
 
-// a faceted boulder: a convex polyhedron (planes from a jittered Fibonacci sphere, a flat bed
-// underneath) with softly rounded arrises; some get a second, smaller chunk fused to one side
-function polyhedron( rng: Rng, K: number ): number[] {
+// Unequal side faces, clipped shoulders and one broad inclined crown keep a boulder chunky.
+// Independently sampled plane offsets avoid the regular pointed cap of a sparse sphere mesh.
+function polyhedron( rng: Rng ): number[] {
 
 	const planes: number[] = [];
 	const spin = rng() * Math.PI * 2;
-	// the whole set tipped over a random horizontal axis, so no facet lies flat on top
-	const ta = rng() * Math.PI * 2, tilt = 0.25 + rng() * 0.4;
-	const kx = Math.cos( ta ), kz = Math.sin( ta ), ct = Math.cos( tilt ), st = Math.sin( tilt );
-	for ( let i = 0; i < K; i ++ ) {
+	const N = 7 + Math.floor( rng() * 3 );
+	for ( let i = 0; i < N; i ++ ) {
 
-		const yy = 1 - ( i + 0.5 ) / K * 2;
-		const rad = Math.sqrt( 1 - yy * yy );
-		const phi = spin + i * 2.39996 + ( rng() - 0.5 ) * 0.8;
-		let nx = Math.cos( phi ) * rad + ( rng() - 0.5 ) * 0.5;
-		let ny = yy * 1.1 + ( rng() - 0.5 ) * 0.5;
-		let nz = Math.sin( phi ) * rad + ( rng() - 0.5 ) * 0.5;
-		const l = Math.hypot( nx, ny, nz );
-		nx /= l; ny /= l; nz /= l;
-		// Rodrigues: rotate n about k = ( kx, 0, kz ) by tilt
-		const kd = kx * nx + kz * nz;
-		const cx = - kz * ny, cy = kz * nx - kx * nz, cz = kx * ny; // k x n
-		const rx = nx * ct + cx * st + kx * kd * ( 1 - ct );
-		const ry = ny * ct + cy * st;
-		const rz = nz * ct + cz * st + kz * kd * ( 1 - ct );
-		planes.push( rx, ry, rz, 0.68 + rng() * 0.45 );
+		const a = spin + ( i + ( rng() - 0.5 ) * 0.35 ) * Math.PI * 2 / N;
+		const ny = ( rng() - 0.5 ) * 0.17, nr = Math.sqrt( 1 - ny * ny );
+		planes.push( Math.cos( a ) * nr, ny, Math.sin( a ) * nr, 0.77 + rng() * 0.24 );
 
 	}
+	for ( let i = 0; i < 4; i ++ ) {
 
+		const a = spin + ( i + 0.36 + ( rng() - 0.5 ) * 0.32 ) * Math.PI * 0.5;
+		const ny = 0.48 + rng() * 0.30, nr = Math.sqrt( 1 - ny * ny );
+		planes.push( Math.cos( a ) * nr, ny, Math.sin( a ) * nr, 0.75 + rng() * 0.18 );
+		const by = - 0.56 - rng() * 0.24, br = Math.sqrt( 1 - by * by );
+		planes.push( Math.cos( a + 0.4 ) * br, by, Math.sin( a + 0.4 ) * br, 0.75 + rng() * 0.16 );
+
+	}
+	const a = rng() * Math.PI * 2, nr = 0.09 + rng() * 0.18;
+	planes.push( Math.cos( a ) * nr, Math.sqrt( 1 - nr * nr ), Math.sin( a ) * nr, 0.70 + rng() * 0.19 );
 	planes.push( 0, - 1, 0, 0.72 );
 	return planes;
 
@@ -379,87 +419,45 @@ export function makeRockSDF( r: Rock ): SDF {
 
 	const rng = mulberry32( r.seed * 7919 + 13 );
 	const c = Math.cos( r.rot ), s = Math.sin( r.rot );
-	const A = polyhedron( rng, 8 + Math.floor( rng() * 4 ) );
-	const twin = rng() < 0.4;
-	const B = twin ? polyhedron( rng, 7 + Math.floor( rng() * 3 ) ) : null;
-	const ba = rng() * Math.PI * 2;
-	const bo = [ Math.cos( ba ) * 0.75, - 0.15, Math.sin( ba ) * 0.75 ];
-	const vals = new Float64Array( 16 );
+	const planes = polyhedron( rng );
+	// A few exposed masses have a broad sheared corner. Keeping this treatment sparse makes
+	// low slabs and taller blocks distinct instead of giving every stone the same silhouette.
+	if ( r.seed === 2 || r.seed === 3 ) {
+
+		const wx = r.seed === 3 ? - 0.67 : 0.82, wz = r.seed === 3 ? 0.74 : 0.57;
+		let nx = 1.25 * ( c * wx + s * wz ), nz = - s * wx + c * wz;
+		const length = Math.hypot( nx, nz );
+		nx /= length; nz /= length;
+		const ny = r.seed === 3 ? 0.26 : - 0.08, nr = Math.sqrt( 1 - ny * ny );
+		planes.push( nx * nr, ny, nz * nr, r.seed === 3 ? 0.60 : 0.65 );
+		if ( r.seed === 3 ) planes.push( - nz * 0.64, 0.768, nx * 0.64, 0.73 );
+
+	}
+	const vals = new Float64Array( planes.length / 4 );
 	const k = Math.min( r.s, r.sy );
-	// Oblique breaks clip two shoulders instead of rounding every corner equally.
-	for ( let i = 0; i < 2; i ++ ) {
-
-		const a = ba + i * 2.1 + rng() * 0.7;
-		const ny = 0.4 + rng() * 0.36, nr = Math.sqrt( 1 - ny * ny );
-		A.push( Math.cos( a ) * nr, ny, Math.sin( a ) * nr, 0.73 + rng() * 0.16 );
-
-	}
-	const exposed: number[] = [];
-	for ( let i = 0; i < A.length / 4; i ++ ) if ( A[ i * 4 + 1 ] > - 0.25 ) exposed.push( i );
-	const scars: { face: number; tangent: number[]; bitangent: number[]; cut: number[] }[] = [];
-	for ( let i = 0; i < 3; i ++ ) {
-
-		const face = exposed[ Math.floor( rng() * exposed.length ) ];
-		const nx = A[ face * 4 ], ny = A[ face * 4 + 1 ], nz = A[ face * 4 + 2 ];
-		const tl = Math.hypot( nx, nz );
-		const tx = tl > 0.001 ? - nz / tl : 1, tz = tl > 0.001 ? nx / tl : 0;
-		const bx = ny * tz, by = nz * tx - nx * tz, bz = - ny * tx;
-		scars.push( {
-			face, tangent: [ tx, 0, tz ], bitangent: [ bx, by, bz ],
-			// Off-centre cuts often reach an outer edge, creating a chipped silhouette.
-			cut: [ ( rng() < 0.5 ? - 1 : 1 ) * ( 0.28 + rng() * 0.34 ), ( rng() - 0.5 ) * 0.9,
-				0.25 + rng() * 0.28, 0.18 + rng() * 0.32, 0.2 + rng() * 0.35, 0.2 + rng() * 0.3,
-				0.16 + rng() * 0.17, ( rng() - 0.5 ) * 0.75, ( rng() - 0.5 ) * 0.7 ],
-		} );
-
-	}
-	// Cleavage terraces divide a large boulder into a few substantial planes. Unlike noise
-	// or isolated dents, each shoulder crosses the surface and reads at the scene camera.
-	const terraces: number[] = [];
-	for ( let i = 0; i < 2; i ++ ) {
-
-		const angle = ba + i * 1.35 + ( rng() - 0.5 ) * 0.55;
-		terraces.push( Math.cos( angle ), Math.sin( angle ), ( rng() - 0.5 ) * 0.65,
-			( rng() - 0.5 ) * 0.75, 0.1 + rng() * 0.12, ( 0.13 + rng() * 0.1 ) * ( i === 0 ? 1 : 0.65 ) );
-
-	}
-
-	const poly = ( P: number[], qx: number, qy: number, qz: number ) => {
-
-		const n = P.length / 4;
-		for ( let i = 0; i < n; i ++ ) vals[ i ] = qx * P[ i * 4 ] + qy * P[ i * 4 + 1 ] + qz * P[ i * 4 + 2 ] - P[ i * 4 + 3 ];
-		if ( P === A ) for ( const scar of scars ) {
-
-			const t = scar.tangent, b = scar.bitangent;
-			vals[ scar.face ] += spallDepth( qx * t[ 0 ] + qz * t[ 2 ], qx * b[ 0 ] + qy * b[ 1 ] + qz * b[ 2 ], scar.cut, 0 );
-
-		}
-		return softMax( vals, n, 0.018 );
-
-	};
-
-	// below its middle the rock stretches down to the sea floor (no boulder floats)
+	const bevel = r.seed === 2 || r.seed === 3 ? 0.016 : 0.035 + rng() * 0.018;
+	// The buried half stretches to the seabed so a shallow exposed stone never floats.
 	const syLow = Math.max( r.sy, ( r.y - r.floor + 0.3 ) / 0.72 );
 	const rockSDF: SDF = ( x, y, z ) => {
 
 		const lx = x - r.x, lz = z - r.z, ly = y - r.y;
-		const qx = ( c * lx + s * lz ) / ( r.s * 1.25 ), qz = ( - s * lx + c * lz ) / r.s, qy = ly / ( ly < 0 ? syLow : r.sy );
+		const qx = ( c * lx + s * lz ) / ( r.s * 1.25 ), qz = ( - s * lx + c * lz ) / r.s;
+		const qy = ly / ( ly < 0 ? syLow : r.sy );
 		const rad = Math.sqrt( qx * qx + qy * qy + qz * qz );
 		if ( rad > 2.2 ) return ( rad - 1.9 ) * k;
-		let d = poly( A, qx, qy, qz );
-		if ( B ) d = smin( d, poly( B, ( qx - bo[ 0 ] ) / 0.62, ( qy - bo[ 1 ] ) / 0.62, ( qz - bo[ 2 ] ) / 0.62 ) * 0.62, 0.08 );
-		for ( let i = 0; i < terraces.length; i += 6 ) {
+		for ( let i = 0; i < vals.length; i ++ ) {
 
-			const across = qx * terraces[ i ] + qz * terraces[ i + 1 ] + qy * terraces[ i + 2 ] - terraces[ i + 3 ];
-			d += ( Math.max( 0, Math.min( 1, across / terraces[ i + 4 ] + 0.5 ) ) - 0.35 ) * terraces[ i + 5 ];
+			const p = i * 4;
+			vals[ i ] = qx * planes[ p ] + qy * planes[ p + 1 ] + qz * planes[ p + 2 ] - planes[ p + 3 ];
 
 		}
-		// sediment-buried bottom
+		let d = softMax( vals, vals.length, bevel );
+		d += noise3( qx * 1.7 + r.seed * 1.37, qy * 1.4, qz * 1.7 ) * 0.018;
 		return Math.max( d * k, r.floor - 0.4 - y );
 
 	};
 
-	rockSDF.tint = () => ( r.seed * 0.618034 ) % 1;
+	rockSDF.tint = ( x, y, z ) => Math.min( 1, Math.max( 0, ( r.seed * 0.618034 ) % 1 + noise3( x * 0.5, y * 0.4, z * 0.5 ) * 0.06 ) );
 	return rockSDF;
 
 }

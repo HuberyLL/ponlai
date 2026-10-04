@@ -39,7 +39,7 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 	const group = new THREE.Group();
 	group.name = 'world';
 	const cliffMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, shore, { topY: ISLAND_TOP } );
-	const rockMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, shore, { topY: 40 } ); // boulders: no turf rim, no hanging moss
+	const rockMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, shore, { vegetation: false } );
 	let triangles = 0;
 
 	for ( const m of data.meshes ) {
@@ -55,13 +55,7 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 		geo.computeBoundingBox();
 		triangles += m.indices.length / 3;
 
-		let mat = cliffMat;
-		if ( m.kind === 'stack' ) {
-
-			const s = data.stacks[ Number( m.name.slice( 5 ) ) ];
-			mat = makeTerrainMaterial( 'cliff', tex, shared, caustics, shore, { topY: s.h } );
-
-		} else if ( m.kind === 'rock' ) mat = rockMat;
+		const mat = m.kind === 'cliff' ? cliffMat : rockMat;
 
 		const mesh = new THREE.Mesh( geo, mat );
 		mesh.name = m.name;

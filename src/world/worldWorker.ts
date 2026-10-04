@@ -1,6 +1,6 @@
 // Builds the world geometry off the main thread: island, sea stacks and rocks (surface nets over
 // their SDFs), the seabed heightfield, the shoreline distance field at sea level, and the anchors
-// for the vegetation (turf points on the island and stack tops, ivy strands down the cliffs).
+// for the vegetation (turf points on the island, ivy strands down the cliffs).
 
 import { surfaceNets } from './SurfaceNets.ts';
 import {
@@ -80,22 +80,17 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
 	mark( 'rocks', t );
 
-	// --- vegetation anchors: points on the turf of the island and the stack tops, found by
-	// marching each shape's field down from above; position, surface normal, distance to the rim
+	// --- vegetation anchors: island turf only; exposed sea stacks and reefs stay bare.
+	// March the field down from above for position, surface normal and distance to the rim.
 	t = performance.now();
 	const rngV = mulberry32( 4242 );
 	const veg: number[] = [];
 	scatterTop( islandSDF, b.x0 - 0.6, b.x1 + 0.6, b.z0 - 0.6, b.z1 + 0.6, 0.235, ISLAND_TOP, rngV, veg, ( x, z ) => fp.dist( x, z ), 0 );
-	stacks.forEach( ( s, i ) => {
-
-		const R = s.r * 1.5;
-		scatterTop( stackSDFs[ i ], s.x - R, s.x + R, s.z - R, s.z + R, 0.2, s.h, rngV, veg, ( x, z ) => Math.hypot( x - s.x, z - s.z ) - s.r * 0.95, 1 + i );
-
-	} );
 	const vegetation = new Float32Array( veg );
 	// ivy curtains hanging from the island's rim down its faces
 	const ivyPts: number[] = [];
-	hangIvy( islandSDF, veg, rngV, ivyPts );
+	// A separate stream keeps ivy placement independent of future turf sampling changes.
+	hangIvy( islandSDF, veg, mulberry32( 4243 ), ivyPts );
 	const ivy = new Float32Array( ivyPts );
 	transfer.push( vegetation.buffer, ivy.buffer );
 	mark( 'vegetation', t );
