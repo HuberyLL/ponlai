@@ -22,7 +22,7 @@ import {
 	waveLocalDirection, waveBeckmannD, waveSmithVisibility, waveSolarSlopeCovariance, waveReflectionAngularVariance, waveAirFacing,
 } from './WaveOptics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
-import { waterIncidentSun, waterColumnRadiance } from './WaterTransport.ts';
+import { waterIncidentSun, waterColumnRadiance, foamLambertRadiance } from './WaterTransport.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
@@ -574,10 +574,10 @@ export class Water {
 			const sss = sunLight.mul( vec3( 0.12, 0.55, 0.45 ) ).mul( back.mul( crest ).mul( 0.035 ) );
 			const transmitted = bottom.add( inSun ).add( inAmb ).add( sss );
 
-			// ---- foam: bright diffuse scatterer
-			const coolWash = smoothstep( 0.015, 0.25, reefWash );
-			const foamCol = sunLight.mul( NdL.mul( 0.57 ).add( 0.2 ) ).div( PI ).mul( mix( float( 1 ), float( 0.65 ), coolWash ) )
-				.add( shared.skyIrradiance.mul( mix( float( 1.5 ), float( 1.9 ), coolWash ) ) ).mul( 0.95 );
+			// ---- foam: Lambert diffuse scatterer with a 95% hemispheric reflectance
+			// The shared sky value stores E_sky / PI; convert explicitly to irradiance.
+			const skyE = shared.skyIrradiance.mul( PI );
+			const foamCol = foamLambertRadiance( sunLight, skyE, NdL, float( 0.95 ) );
 
 			// The opaque underwater pass and column terms are radiance inside water. Convert
 			// that radiance once at the exit interface; mix already supplies Fresnel 1 - Fr.
@@ -585,7 +585,7 @@ export class Water {
 			const water = mix( exiting, refl, Fr ).add( sunSpec );
 			// Backfacing facets are self-occluded: neither the air reflection nor underwater
 			// transmission emerges through their back side. Neighbor-wave transport is unresolved.
-			const col = mix( water, foamCol.add( sunSpec.mul( 0.05 ) ), foamAmt ).mul( airFacing ).toVar();
+			const col = mix( water, foamCol, foamAmt ).mul( airFacing ).toVar();
 
 			// soften the line where the surface cuts the rock (no hard seam); behind rock: the rock
 			const edge = select( skyBehind, float( 1 ), smoothstep( 0, 0.06, thick ) );

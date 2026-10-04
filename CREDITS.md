@@ -74,3 +74,6 @@ comment where it is used.
   [*Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs*](https://jcgt.org/published/0003/02/03/)
   (JCGT 2014), independently implemented with correlated Smith visibility. The error-function
   approximation uses Abramowitz and Stegun, equation 7.1.26.
+- Bounded foam diffuse reflectance: Lambert's irradiance/radiance relation described in
+  [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Reflection_Models/Diffuse_Reflection),
+  independently implemented with a 0.95 hemispheric reflectance and separate direct/sky inputs.
