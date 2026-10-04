@@ -3,6 +3,8 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { Sky } from './sky/Sky.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
+import { ShoreWaves } from './ocean/ShoreWaves.ts';
+import { OceanFoam } from './ocean/OceanFoam.ts';
 import { Caustics } from './ocean/Caustics.ts';
 import { Water } from './ocean/Water.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
@@ -157,7 +159,7 @@ setStatus( 'Lighting the sky…' );
 await applySun();
 
 const textures = await bakeProceduralTextures( renderer );
-const fft = new OceanFFT( renderer, { windSpeed: 4.4, windDirection: 40, fetch: 5000, amplitude: 0.82, choppiness: 0.7, spread: 0.52 } );
+const fft = new OceanFFT( renderer, { windSpeed: 3.0, windDirection: 40, fetch: 1500, amplitude: 0.68, choppiness: 0.5, spread: 0.52 } );
 const caustics = new Caustics( renderer, fft );
 const pipeline = new Pipeline( renderer );
 
@@ -167,8 +169,9 @@ setStatus( 'Generating the island…' );
 const t0 = performance.now();
 const data = await generateWorld();
 const shore = shoreTextureFrom( data.shore );
-const islandShore = shoreTextureFrom( data.islandShore );
 shared.shoreXform.value.copy( shore.xform );
+const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
+const foam = new OceanFoam( renderer, fft, shared, shore.tex, shoreWaves );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
 const refractedSun = new RefractedSun( renderer, shared );
@@ -182,7 +185,7 @@ const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 scene.add( grass, foliage, flowers, rimFoliage );
 
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, islandShore: islandShore.tex, foam: textures.heights,
+	fft, sky, shared, shore: shore.tex, foamState: foam.texture, shoreWaves,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 water.uniforms.wind.value = fft.params.windSpeed;
@@ -301,6 +304,8 @@ function tick(): void {
 	renderer.info.reset();
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
+	shoreWaves.update( fft, simTime );
+	foam.update( simTime );
 	caustics.update( sky.sunDir );
 	refractedSun.update();
 	S.focusDistance = camera.position.distanceTo( controls.target );
@@ -336,4 +341,4 @@ function diagnostics(): void {
 
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, soilUniforms, applySun, invalidateSunShadow };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, foam, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, soilUniforms, applySun, invalidateSunShadow };

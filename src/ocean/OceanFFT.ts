@@ -10,20 +10,25 @@ import {
 	screenCoordinate, ivec2,
 } from 'three/tsl';
 import { mulberry32 } from '../world/noise.ts';
+import { createWaveSpectrum, type SwellParams } from './OceanSpectrum.ts';
 
 // Multi-cascade FFT ocean (Tessendorf) on WebGPU compute, after tidewater's OceanFFT: a JONSWAP
-// spectrum is sampled once per cascade in JS; every frame one kernel evolves all cascades in time,
+// local wind-sea and swell spectra are summed once per cascade in JS; every frame one kernel evolves all cascades in time,
 // then a Stockham radix-2 inverse FFT runs as 8 row + 8 column dispatches over all cascades at
 // once, and a small fragment pass per cascade writes the mipmapped textures the water samples.
 //
 // Packed complex fields (two real fields per complex IFFT, as in tidewater):
 //   c0 = Dx + i Dz          c1 = Dy + i dDx/dz
 //   c2 = dDy/dx + i dDy/dz  c3 = dDx/dx + i dDz/dz
+//   c4 = Ux + i Uz          c5 = Vy + i 0
 //
-// Per cascade outputs (half float, mipmapped, repeat):
+// Per cascade outputs (half float, repeat; velocity needs no mip chain):
 //   displacement  (Dx, Dy, Dz, jacobian)       derivatives  (dDy/dx, dDy/dz, dDx/dx, dDz/dz)
 //   slope moments (dDy/dx squared, dDy/dz squared, their product, signed dDx/dz)
-// Sample all three fields with the same filtering kernel at world xz / size.
+//   orbital velocity (Ux, Uz, Vy, persistent foam), RGB without artistic choppiness
+// Derivatives and slope moments use the same filtering kernel; their mip chains retain
+// unresolved slope variance. The velocity alpha keeps crest foam without changing disp.a.
+// Sample a cascade at its undisplaced world xz / size.
 
 const FFT_N = 256;
 const LOG2N = 8;
@@ -34,7 +39,7 @@ const CASCADE_SIZES = [ 71.3, 16.0, 4.0 ];
 
 export interface OceanParams {
 	windSpeed: number; // m/s
-	windDirection: number; // degrees, toward which the wind blows
+	windDirection: number; // Fourier heading in degrees; the positive IFFT travels oppositely
 	fetch: number; // m
 	amplitude: number;
 	choppiness: number;
@@ -50,11 +55,17 @@ export class OceanFFT {
 	renderer: THREE.WebGPURenderer;
 	sizes: number[];
 	params: OceanParams;
+	readonly swell: SwellParams;
+	spectrumRevision = 0;
 	displacementTextures: THREE.Texture[];
 	derivativeTextures: THREE.Texture[];
 	slopeMomentTextures: THREE.Texture[];
+	velocityTextures: THREE.Texture[];
 
 	private time = uniform( 0 );
+	private foamDt = uniform( 0 );
+	private foamReset = uniform( 1 );
+	private previousTime: number | undefined;
 	private chop = uniform( 0.85 );
 	private depthU = uniform( 8 );
 	private h0Attr: THREE.StorageBufferAttribute;
@@ -71,26 +82,29 @@ export class OceanFFT {
 		depth = 8,
 		spread = 0.82,
 		seed = 1234,
-	}: Partial<OceanParams> & { sizes?: number[] } = {} ) {
+		swell = {},
+	}: Partial<OceanParams> & { sizes?: number[]; swell?: Partial<SwellParams> } = {} ) {
 
 		this.renderer = renderer;
 		this.sizes = sizes;
 		this.params = { windSpeed, windDirection, fetch, amplitude, choppiness, depth, spread, seed };
+		this.swell = { height: 0.16, period: 3.4, directionOffset: 20, spread: 0.85, peakEnhancement: 1.8, ...swell };
 
 		const N = FFT_N, NN = N * N, C = sizes.length, count = NN * C;
 		this.h0Attr = new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 );
 		const h0 = storage( this.h0Attr, 'vec4', count ).toReadOnly();
-		// ping-pong: A holds ( c0, c1 ), B holds ( c2, c3 )
+		// ping-pong: A holds ( c0, c1 ), B holds ( c2, c3 ), C holds ( c4, c5 )
 		const buf = [ 0, 1 ].map( () => ( {
 			attrA: new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 ),
 			attrB: new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 ),
+			attrC: new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 ),
 		} ) );
-		const rw = ( i: number ) => ( { A: storage( buf[ i ].attrA, 'vec4', count ), B: storage( buf[ i ].attrB, 'vec4', count ) } );
+		const rw = ( i: number ) => ( { A: storage( buf[ i ].attrA, 'vec4', count ), B: storage( buf[ i ].attrB, 'vec4', count ), C: storage( buf[ i ].attrC, 'vec4', count ) } );
 		const sizeAt = ( c: THREE.Node<'uint'> ) => select( c.equal( uint( 0 ) ), float( sizes[ 0 ] ), select( c.equal( uint( 1 ) ), float( sizes[ 1 ] ?? 1 ), float( sizes[ 2 ] ?? 1 ) ) );
 		const cmul = ( a: THREE.Node<'vec2'>, b: THREE.Node<'vec2'> ) => vec2( a.x.mul( b.x ).sub( a.y.mul( b.y ) ), a.x.mul( b.y ).add( a.y.mul( b.x ) ) );
 		const ci = ( a: THREE.Node<'vec2'> ) => vec2( a.y.negate(), a.x ); // i * a
 
-		// 1. h( k, t ) and the 8 derived fields, packed into 4 complex numbers
+		// 1. h( k, t ) and its displacement, derivative and velocity fields, packed into 6 complex numbers
 		{
 
 			const out = rw( 0 );
@@ -107,19 +121,29 @@ export class OceanFFT {
 				const h0v = h0.element( idx );
 				const w = sqrt( float( G ).mul( kl ).mul( tanh( min( kl.mul( this.depthU ), 20 ) ) ) );
 				const cs = cos( w.mul( this.time ) ), sn = sin( w.mul( this.time ) );
-				const h = cmul( h0v.xy, vec2( cs, sn ) ).add( cmul( h0v.zw, vec2( cs, sn.negate() ) ) ).toVar();
+				const forward = cmul( h0v.xy, vec2( cs, sn ) ).toVar();
+				const backward = cmul( h0v.zw, vec2( cs, sn.negate() ) ).toVar();
+				const h = forward.add( backward ).toVar();
+				const difference = forward.sub( backward ).toVar();
 				const klSafe = kl.max( 1e-6 );
 				const kn = k.div( klSafe );
-				const dx = ci( h ).mul( kn.x.negate() ).mul( this.chop );
-				const dz = ci( h ).mul( kn.y.negate() ).mul( this.chop );
+				// With the positive IFFT, +i k/|k| compresses crests, not troughs.
+				const dx = ci( h ).mul( kn.x ).mul( this.chop );
+				const dz = ci( h ).mul( kn.y ).mul( this.chop );
 				const dydx = ci( h ).mul( k.x );
 				const dydz = ci( h ).mul( k.y );
-				const dxdx = h.mul( k.x.mul( k.x ).div( klSafe ) ).mul( this.chop );
-				const dzdz = h.mul( k.y.mul( k.y ).div( klSafe ) ).mul( this.chop );
-				const dxdz = h.mul( k.x.mul( k.y ).div( klSafe ) ).mul( this.chop );
+				const dxdx = h.mul( k.x.mul( k.x ).div( klSafe ).negate() ).mul( this.chop );
+				const dzdz = h.mul( k.y.mul( k.y ).div( klSafe ).negate() ).mul( this.chop );
+				const dxdz = h.mul( k.x.mul( k.y ).div( klSafe ).negate() ).mul( this.chop );
+				// With a positive IFFT, exp(+i omega t) travels against k. Airy horizontal
+				// velocity therefore has the opposite sign to this component's height.
+				// Velocity is physical surface orbital motion, independent of the shape dial.
+				const orbital = difference.mul( w.negate().div( tanh( min( kl.mul( this.depthU ), 20 ) ).max( 1e-5 ) ) );
+				const ux = orbital.mul( kn.x ), uz = orbital.mul( kn.y ), vy = ci( difference ).mul( w );
 				const zero = kl.lessThan( 1e-6 );
 				out.A.element( idx ).assign( select( zero, vec4( 0 ), vec4( dx.add( ci( dz ) ), h.add( ci( dxdz ) ) ) ) );
 				out.B.element( idx ).assign( select( zero, vec4( 0 ), vec4( dydx.add( ci( dydz ) ), dxdx.add( ci( dzdz ) ) ) ) );
+				out.C.element( idx ).assign( select( zero, vec4( 0 ), vec4( ux.add( ci( uz ) ), vy ) ) );
 
 			} )().compute( count, [ 64 ] ) );
 
@@ -146,10 +170,11 @@ export class OceanFFT {
 					const po = pe.add( horiz ? N / 2 : NN / 2 );
 					const a = float( i ).mul( 2 * Math.PI / sub );
 					const tw = vec2( cos( a ), sin( a ) );
-					const eA = from.A.element( pe ), eB = from.B.element( pe );
-					const dA = from.A.element( po ), dB = from.B.element( po );
+					const eA = from.A.element( pe ), eB = from.B.element( pe ), eC = from.C.element( pe );
+					const dA = from.A.element( po ), dB = from.B.element( po ), dC = from.C.element( po );
 					to.A.element( idx ).assign( eA.add( vec4( cmul( dA.xy, tw ), cmul( dA.zw, tw ) ) ) );
 					to.B.element( idx ).assign( eB.add( vec4( cmul( dB.xy, tw ), cmul( dB.zw, tw ) ) ) );
+					to.C.element( idx ).assign( eC.add( vec4( cmul( dC.xy, tw ), cmul( dC.zw, tw ) ) ) );
 
 				} )().compute( count, [ 64 ] ) );
 				src = 1 - src;
@@ -158,33 +183,49 @@ export class OceanFFT {
 
 		}
 
-		// 3. per cascade: displacement, derivatives, and linearly filterable slope moments
-		const fin = { A: storage( buf[ src ].attrA, 'vec4', count ).toReadOnly(), B: storage( buf[ src ].attrB, 'vec4', count ).toReadOnly() };
+		// 3. Observe the final IFFT: integrate whitecaps, then write all four per-cascade fields.
+		const fin = { A: storage( buf[ src ].attrA, 'vec4', count ).toReadOnly(), B: storage( buf[ src ].attrB, 'vec4', count ).toReadOnly(), C: storage( buf[ src ].attrC, 'vec4', count ).toReadOnly() };
+		// Tidewater keeps foam at each FFT parcel after a compressed crest has passed.
+		// Integrate the complete displacement Jacobian, independently of shading-detail weights.
+		const foamAttr = new THREE.StorageBufferAttribute( new Float32Array( count ), 1 );
+		const caps = storage( foamAttr, 'float', count );
+		this.kernels.push( Fn( () => {
+
+			const idx = instanceIndex, a = fin.A.element( idx ), b = fin.B.element( idx );
+			const J = float( 1 ).add( b.z ).mul( float( 1 ).add( b.w ) ).sub( a.w.mul( a.w ) );
+			const source = J.negate().add( 0.68 ).mul( 3 ).clamp( 0, 1 );
+			const remaining = caps.element( idx ).mul( this.foamDt.mul( - 0.8 ).exp() ).mul( float( 1 ).sub( this.foamReset ) );
+			caps.element( idx ).assign( remaining.add( source.mul( this.foamDt ).mul( 2.5 ) ).min( 1 ) );
+
+		} )().compute( count, [ 64 ] ) );
+		const capsRead = storage( foamAttr, 'float', count ).toReadOnly();
 		this.displacementTextures = [];
 		this.derivativeTextures = [];
 		this.slopeMomentTextures = [];
+		this.velocityTextures = [];
 		for ( let c = 0; c < C; c ++ ) {
 
-			for ( const which of [ 0, 1, 2 ] ) {
+			for ( const which of [ 0, 1, 2, 3 ] ) {
 
 				const rt = new THREE.RenderTarget( N, N, {
-					type: THREE.HalfFloatType, generateMipmaps: true,
-					minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
+					type: THREE.HalfFloatType, generateMipmaps: which !== 3,
+					minFilter: which === 3 ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
 					wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, anisotropy: 8,
 				} );
-				rt.texture.name = [ 'oceanDisp', 'oceanDeriv', 'oceanSlopeMoments' ][ which ] + c;
+				rt.texture.name = [ 'oceanDisp', 'oceanDeriv', 'oceanSlopeMoments', 'oceanVelocity' ][ which ] + c;
 				const mat = new THREE.NodeMaterial();
 				const px = ivec2( screenCoordinate.xy );
 				const idx = uint( px.y.mul( N ).add( px.x ).add( c * NN ) );
 				const a = fin.A.element( idx ), b = fin.B.element( idx ); // ( Dx, Dz, Dy, dDx/dz ), ( dDy/dx, dDy/dz, dDx/dx, dDz/dz )
 				const J = float( 1 ).add( b.z ).mul( float( 1 ).add( b.w ) ).sub( a.w.mul( a.w ) );
+				const velocity = fin.C.element( idx );
 				// LEAN filtering (Olano and Baker, 2010): squared slopes retain unresolved
 				// variance in the mip chain. The existing derivatives store their means.
 				// This pass observes the final IFFT; it never changes wave evolution or shape.
-				mat.fragmentNode = which === 0 ? vec4( a.x, a.z, a.y, J ) : which === 1 ? b :
-					vec4( b.x.mul( b.x ), b.y.mul( b.y ), b.x.mul( b.y ), a.w );
+				mat.fragmentNode = which === 0 ? vec4( a.x, a.z, a.y, J ) : which === 1 ? b : which === 2 ?
+					vec4( b.x.mul( b.x ), b.y.mul( b.y ), b.x.mul( b.y ), a.w ) : vec4( velocity.xyz, capsRead.element( idx ) );
 				this.outputs.push( { rt, quad: new THREE.QuadMesh( mat ) } );
-				[ this.displacementTextures, this.derivativeTextures, this.slopeMomentTextures ][ which ].push( rt.texture );
+				[ this.displacementTextures, this.derivativeTextures, this.slopeMomentTextures, this.velocityTextures ][ which ].push( rt.texture );
 
 			}
 
@@ -208,11 +249,38 @@ export class OceanFFT {
 
 		const { windSpeed: U, windDirection, fetch: F, amplitude, spread, seed } = this.params;
 		const N = FFT_N, NN = N * N;
-		// JONSWAP (Hasselmann et al.)
-		const alpha = 0.076 * Math.pow( U * U / ( F * G ), 0.22 );
-		const wp = 22 * Math.pow( G * G / ( U * F ), 1 / 3 );
-		const gamma = 3.3;
-		const theta0 = windDirection * Math.PI / 180;
+		const depth = this.params.depth;
+		const local = createWaveSpectrum( { windSpeed: U, windDirection, fetch: F, spread,
+			swell: 0.05, peakEnhancement: 3.3, shortWavesFade: 0.04 }, depth );
+		const swellOmega = 2 * Math.PI / this.swell.period;
+		// The swell is a second directional frequency spectrum, not an additional regular
+		// wave train. Derive its fetch from the authored period, then normalise its energy.
+		const swellFetch = G * G / Math.max( U, 0.1 ) * ( 22 / swellOmega ) ** 3;
+		const swell = createWaveSpectrum( { windSpeed: U, windDirection: windDirection + this.swell.directionOffset,
+			fetch: swellFetch, spread: this.swell.spread, swell: 0.9, peakEnhancement: this.swell.peakEnhancement,
+			shortWavesFade: 0.1, peakPeriod: this.swell.period }, depth );
+		const localEnergy = new Float64Array( NN * this.sizes.length ), swellEnergy = new Float64Array( localEnergy.length );
+		let swellVariance = 0;
+		for ( let c = 0; c < this.sizes.length; c ++ ) {
+
+			const dk = 2 * Math.PI / this.sizes[ c ], [ lo, hi ] = this.cuts( c );
+			for ( let j = 0; j < N; j ++ ) for ( let i = 0; i < N; i ++ ) {
+
+				if ( i === N / 2 || j === N / 2 ) continue;
+				const kx = ( i < N / 2 ? i : i - N ) * dk, kz = ( j < N / 2 ? j : j - N ) * dk;
+				const k = Math.hypot( kx, kz );
+				if ( k < lo || k >= hi ) continue;
+				const at = c * NN + j * N + i;
+				localEnergy[ at ] = local( kx, kz ) * dk * dk;
+				swellEnergy[ at ] = swell( kx, kz ) * dk * dk;
+				swellVariance += swellEnergy[ at ];
+
+			}
+
+		}
+		// Hs = 4 sigma for the Gaussian sea. Normalise over the modes we actually render,
+		// so tile sizes and finite-depth filtering do not silently change the height dial.
+		const swellScale = swellVariance > 0 ? ( Math.max( 0, this.swell.height ) / 4 ) ** 2 / swellVariance : 0;
 		const rng = mulberry32( seed );
 		const gauss = () => {
 
@@ -221,42 +289,15 @@ export class OceanFFT {
 
 		};
 
-		const spectrum = ( kx: number, kz: number ) => {
-
-			const k = Math.hypot( kx, kz );
-			if ( k < 1e-6 ) return 0;
-			const w = Math.sqrt( G * k );
-			const sigma = w <= wp ? 0.07 : 0.09;
-			const r = Math.exp( - ( ( w - wp ) ** 2 ) / ( 2 * sigma * sigma * wp * wp ) );
-			const Sw = alpha * G * G / Math.pow( w, 5 ) * Math.exp( - 1.25 * Math.pow( wp / w, 4 ) ) * Math.pow( gamma, r );
-			const dwdk = G / ( 2 * w );
-			let th = Math.atan2( kz, kx ) - theta0;
-			th = Math.atan2( Math.sin( th ), Math.cos( th ) );
-			const c = Math.cos( th );
-			const dirTight = Math.abs( th ) < Math.PI / 2 ? ( 2 / Math.PI ) * c * c : 0;
-			const D = spread * dirTight + ( 1 - spread ) / ( 2 * Math.PI );
-			// short capillary-ish ripples die off smoothly (avoids aliasing sparkle)
-			const fade = Math.exp( - k * k * 0.0004 );
-			return Sw * dwdk / k * D * fade;
-
-		};
-
 		const data = this.h0Attr.array as Float32Array;
 		const re = new Float32Array( NN ), im = new Float32Array( NN );
 		for ( let ci = 0; ci < this.sizes.length; ci ++ ) {
 
-			const L = this.sizes[ ci ];
-			const dk = 2 * Math.PI / L;
-			const [ lo, hi ] = this.cuts( ci );
 			for ( let j = 0; j < N; j ++ ) for ( let i = 0; i < N; i ++ ) {
 
-				const mx = i < N / 2 ? i : i - N, mz = j < N / 2 ? j : j - N;
-				const kx = mx * dk, kz = mz * dk;
-				const k = Math.hypot( kx, kz );
-				const a = gauss(), b = gauss();
-				let S = ( k >= lo && k < hi ) ? spectrum( kx, kz ) : 0;
-				if ( i === N / 2 || j === N / 2 ) S = 0; // Nyquist: no consistent conjugate
-				const amp = Math.sqrt( S * dk * dk / 2 ) * amplitude;
+				const a = gauss(), b = gauss(), at = ci * NN + j * N + i;
+				const energy = localEnergy[ at ] + swellEnergy[ at ] * swellScale;
+				const amp = Math.sqrt( energy / 2 ) * amplitude;
 				re[ j * N + i ] = a * amp / Math.SQRT2;
 				im[ j * N + i ] = b * amp / Math.SQRT2;
 
@@ -279,13 +320,21 @@ export class OceanFFT {
 		this.h0Attr.needsUpdate = true;
 		this.chop.value = this.params.choppiness;
 		this.depthU.value = this.params.depth;
+		this.spectrumRevision ++;
+		this.previousTime = undefined;
 
 	}
 
 	update( dt: number, time?: number ): void {
 
 		// A shared clock makes frozen captures and resume agree with the foam and vegetation.
-		this.time.value = time ?? this.time.value + dt;
+		const next = time ?? this.time.value + dt;
+		const elapsed = this.previousTime === undefined ? 0 : next - this.previousTime;
+		const reset = this.previousTime === undefined || elapsed < 0 || elapsed > 0.25;
+		this.foamDt.value = reset ? 0 : elapsed;
+		this.foamReset.value = reset ? 1 : 0;
+		this.previousTime = next;
+		this.time.value = next;
 		const r = this.renderer;
 		r.compute( this.kernels );
 		const prev = r.getRenderTarget();
@@ -300,7 +349,7 @@ export class OceanFFT {
 
 	}
 
-	// The added moment targets have the same lifetime as the existing FFT outputs.
+	// Moments and velocity targets have the same lifetime as the existing FFT outputs.
 	dispose(): void {
 
 		for ( const output of this.outputs ) {
