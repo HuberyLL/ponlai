@@ -1,8 +1,9 @@
 // Builds the world geometry off the main thread: island and submerged stones (surface nets over
 // their SDFs), the seabed heightfield, the shoreline distance field at sea level, and the anchors
-// for the meadow vegetation. Rendering restricts those anchors to the island top.
+// for the meadow vegetation and sparse branches overhanging the upper rim. Plants root on the top.
 
 import { surfaceNets } from './SurfaceNets.ts';
+import { makeRimTrails } from './RimTrails.ts';
 import {
 	buildFootprint, makeIslandSDF, makeRocks, makeRockSDF, makeSeabed,
 	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
@@ -98,6 +99,11 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	transfer.push( vegetation.buffer );
 	mark( 'vegetation', t );
 
+	t = performance.now();
+	const rimStrands = makeRimTrails( islandSDF, fp, vegetation );
+	for ( const strand of rimStrands ) transfer.push( strand.points.buffer );
+	mark( 'rimFoliage', t );
+
 	// --- shoreline: only the island intersects sea level. Submerged stones must not
 	// damp surface waves or grow circular foam collars above their hidden silhouettes.
 	t = performance.now();
@@ -121,6 +127,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		rocks,
 		seabed: { positions: sb, res: n, size: seabedSize },
 		vegetation,
+		rimStrands,
 		shore: { data: shore.data, nx: shore.nx, nz: shore.nz, x0: shore.x0, z0: shore.z0, cell: shore.cell },
 		islandShore: { data: islandShore.data, nx: islandShore.nx, nz: islandShore.nz, x0: islandShore.x0, z0: islandShore.z0, cell: islandShore.cell },
 		timings,

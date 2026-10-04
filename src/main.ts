@@ -9,6 +9,7 @@ import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { generateWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
 import { buildGrass } from './world/Grass.ts';
 import { buildFoliage } from './world/Foliage.ts';
+import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
 import { Pipeline } from './post/Pipeline.ts';
 import { shared } from './shared.ts';
@@ -149,7 +150,8 @@ scene.add( world.group );
 const grass = buildGrass( data.vegetation, shared );
 const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
-scene.add( grass, foliage, flowers );
+const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
+scene.add( grass, foliage, flowers, rimFoliage );
 
 water = new Water( {
 	fft, sky, shared, shore: shore.tex, islandShore: islandShore.tex, foam: textures.heights,
@@ -286,6 +288,7 @@ function diagnostics(): void {
 		textures: info.memory.textures,
 		dpr: renderer.getPixelRatio(),
 		worldTriangles: world.triangles,
+		rimStrands: data.rimStrands.length,
 		timings: data.timings,
 		backend: 'webgpu',
 	};
@@ -294,4 +297,4 @@ function diagnostics(): void {
 
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, grass, foliage, flowers, applySun };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, grass, foliage, flowers, rimFoliage, applySun };

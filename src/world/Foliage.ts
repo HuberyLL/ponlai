@@ -3,17 +3,14 @@ import {
 	positionGeometry, positionLocal, normalViewGeometry, vec3, float, mix, dot, sin, cos, pow, clamp,
 	smoothstep as smoothstepN,
 } from 'three/tsl';
-import { mulberry32, noise3, smoothstep, type Rng } from './noise.ts';
+import { mulberry32 } from './noise.ts';
+import { pickFoliageSites } from './FoliageSites.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { supportsMeadow } from '../materials/Meadow.ts';
 import type { Shared } from '../shared.ts';
 
-interface Site { x: number; y: number; z: number; r: number; rim: number; nx: number; ny: number; nz: number }
-
 // Individual folded leaves on short branching sprays. Three offset crowns keep bushes
 // irregular; real leaf normals separate sunlit faces from their shaded neighbours.
-
-const STRIDE = 8;
 
 export function leafTexture( size = 128 ): THREE.CanvasTexture {
 
@@ -204,42 +201,10 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.Mesh
 
 }
 
-// pick bush sites among the turf anchors: crowded along the rim, scattered inland
-function pickSites( veg: Float32Array, rng: Rng ): Site[] {
-
-	const n = veg.length / STRIDE;
-	const order = Array.from( { length: n }, ( _, i ) => i );
-	for ( let i = n - 1; i > 0; i -- ) {
-
-		const j = Math.floor( rng() * ( i + 1 ) );
-		[ order[ i ], order[ j ] ] = [ order[ j ], order[ i ] ];
-
-	}
-
-	const sites: Site[] = [];
-	for ( const i of order ) {
-
-		const k = i * STRIDE;
-		const x = veg[ k ], y = veg[ k + 1 ], z = veg[ k + 2 ], rim = veg[ k + 6 ];
-		const onStack = veg[ k + 7 ] > 0;
-		const nearRim = smoothstep( - 2.2, - 0.6, rim );
-		const clump = noise3( x * 0.3, 7.7, z * 0.3 ) * 0.5 + 0.5;
-		const p = onStack ? 0.08 : nearRim * 0.3 * smoothstep( 0.3, 0.7, clump ) + 0.015 * smoothstep( 0.6, 0.85, clump );
-		if ( rng() > p ) continue;
-		const r = onStack ? 0.35 + rng() * 0.25 : ( 0.35 + Math.pow( rng(), 1.5 ) * 0.75 ) * ( 0.8 + 0.5 * nearRim );
-		if ( sites.some( ( s ) => Math.hypot( s.x - x, s.z - z ) < ( s.r + r ) * 0.75 ) ) continue;
-		sites.push( { x, y, z, r, rim, nx: veg[ k + 3 ], ny: veg[ k + 4 ], nz: veg[ k + 5 ] } );
-
-	}
-
-	return sites;
-
-}
-
 export function buildFoliage( veg: Float32Array, shared: Shared ): THREE.InstancedMesh {
 
 	const rng = mulberry32( 7 );
-	const sites = pickSites( veg, rng );
+	const sites = pickFoliageSites( veg, rng );
 	const map = leafTexture();
 	const geo = bushGeometry();
 	const mat = foliageMaterial( shared, map );
