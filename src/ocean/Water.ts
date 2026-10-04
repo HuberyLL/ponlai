@@ -225,7 +225,10 @@ export class Water {
 		const traceSSR = Fn( ( [ posV, Rv ]: [ V3, V3 ] ) => {
 
 			const res = vec4( 0 ).toVar();
-			If( Rv.z.lessThanEqual( 0.6 ), () => {
+			// A zero grazing weight cannot contribute a reflection. Reuse the exact fade
+			// below rather than marching those rays through the depth buffer.
+			const directionWeight = smoothstep( 0.5, 0.1, Rv.z ).toVar();
+			If( Rv.z.lessThanEqual( 0.6 ).and( directionWeight.greaterThan( 0 ) ), () => {
 
 				const t = float( 0.15 ).toVar(), dt = float( 0.25 ).toVar(), prevT = float( 0 ).toVar();
 				const hit = float( 0 ).toVar();
@@ -273,7 +276,7 @@ export class Water {
 					const touch = float( 1 ).sub( smoothstep( 0.15, 0.6, abs( sceneViewZ( q ).sub( hv.z ) ) ) );
 					const hw = cameraWorldMatrix.mul( vec4( hv, 1 ) ).xyz;
 					const edge = smoothstep( 0, 0.06, q.x ).mul( smoothstep( 1, 0.94, q.x ) ).mul( smoothstep( 0, 0.06, q.y ) ).mul( smoothstep( 1, 0.94, q.y ) );
-					const w = edge.mul( touch ).mul( smoothstep( 0.5, 0.1, Rv.z ) ).mul( smoothstep( shared.waterLevel.sub( 0.1 ), shared.waterLevel.add( 0.3 ), hw.y ) );
+					const w = edge.mul( touch ).mul( directionWeight ).mul( smoothstep( shared.waterLevel.sub( 0.1 ), shared.waterLevel.add( 0.3 ), hw.y ) );
 					res.assign( vec4( sceneAt( q ), w ) );
 
 				} );
@@ -495,7 +498,6 @@ export class Water {
 			// ---- sun glint
 			const H = normalize( L.add( V ) );
 			const NdL = max( dot( N, L ), 0 ).toVar();
-			const NdH = max( dot( N, H ), 0 ).toVar();
 			const VdH = max( dot( V, H ), 0 );
 			const localH = waveLocalDirection( H, N ).toVar();
 			const sunCovariance = seaCovariance.add( waveSolarSlopeCovariance( localL, localV ) );
@@ -504,14 +506,29 @@ export class Water {
 			const sunSpec = sunLight.mul( spec ).toVar();
 			// Optional artistic lobes add energy beyond the physical microfacet reflection.
 			// Both default to zero; the simulated slopes already generate the sun glitter.
-			const reflectionBudget = fresnelDielectric( VdH, float( IOR ) ).mul( NdL ).toVar();
-			const Hf = normalize( L.add( V ) ).toVar(); // half vector of a flat sea
-			const sheen = D_GGX( Hf.y, float( 0.06 ) ).mul( 0.06 * PI );
-			const wide = D_GGX( Hf.y, float( 0.12 ) ).mul( 0.12 * PI );
-			sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( sheen ).mul( u.sheen ).mul( float( 1 ).sub( foamAmt ) ) );
-			const facet = D_GGX( NdH, float( 0.012 ) ).mul( 0.012 * PI );
-			const glintPath = smoothstep( 0.13, 0.8, wide ).mul( smoothstep( 0.42, 0.63, fLow ) );
-			sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( glintPath ).mul( facet ).mul( sparkles( wp.xz.mul( 2.1 ).add( N.xz.mul( 2.5 ) ), time ) ).mul( u.glitter ).mul( float( 1 ).sub( foamAmt ) ) );
+			// Uniform branches avoid hashing and extra lobes when their art controls are off.
+			// Derivative-dependent foam samples above remain outside all branches.
+			If( u.sheen.greaterThan( 0 ).or( u.glitter.greaterThan( 0 ) ), () => {
+
+				const reflectionBudget = fresnelDielectric( VdH, float( IOR ) ).mul( NdL ).toVar();
+				const Hf = normalize( L.add( V ) ).toVar(); // half vector of a flat sea
+				If( u.sheen.greaterThan( 0 ), () => {
+
+					const sheen = D_GGX( Hf.y, float( 0.06 ) ).mul( 0.06 * PI );
+					sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( sheen ).mul( u.sheen ).mul( float( 1 ).sub( foamAmt ) ) );
+
+				} );
+				If( u.glitter.greaterThan( 0 ), () => {
+
+					const wide = D_GGX( Hf.y, float( 0.12 ) ).mul( 0.12 * PI );
+					const NdH = max( dot( N, H ), 0 );
+					const facet = D_GGX( NdH, float( 0.012 ) ).mul( 0.012 * PI );
+					const glintPath = smoothstep( 0.13, 0.8, wide ).mul( smoothstep( 0.42, 0.63, fLow ) );
+					sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( glintPath ).mul( facet ).mul( sparkles( wp.xz.mul( 2.1 ).add( N.xz.mul( 2.5 ) ), time ) ).mul( u.glitter ).mul( float( 1 ).sub( foamAmt ) ) );
+
+				} );
+
+			} );
 
 			// ---- refraction: trace the refracted ray to the floor through the depth
 			// The same resolved wave normal governs reflection and the Snell interface.
@@ -533,15 +550,7 @@ export class Water {
 
 			} );
 			const refractionTrust = hit.w;
-			const uvR = mix( screenUV, hit.xy, select( refractionTrust.greaterThan( 0 ), float( 1 ), float( 0 ) ) );
 			const pathLen = mix( fallbackLength, hit.z, refractionTrust ).toVar();
-
-			// Unresolved surface slopes soften deeper refraction slightly; near-surface rocks
-			// remain legible, while the far seabed no longer looks like an etched glass plate.
-			const refractBlur = min( pathLen.mul( 0.28 ), 1.8 ).div( depthSize );
-			const refractedCol = sceneAt( uvR ).mul( 0.5 )
-				.add( sceneAt( clamp( uvR.add( refractBlur.mul( vec2( 0.83, 0.56 ) ) ), vec2( 0.001 ), vec2( 0.999 ) ) ).mul( 0.25 ) )
-				.add( sceneAt( clamp( uvR.sub( refractBlur.mul( vec2( 0.83, 0.56 ) ) ), vec2( 0.001 ), vec2( 0.999 ) ) ).mul( 0.25 ) );
 
 			// ---- the water body: absorption along the path + single scattering of sun and sky
 			const sigA = shared.sigA, sigS = shared.sigS;
@@ -551,10 +560,21 @@ export class Water {
 			const muV = max( Tv.y.negate(), 1e-5 );
 			// Each source retains its own optical depth while confidence blends the hits.
 			// One mixed path would tint a bright shallow source as if it belonged to the basin.
-			const bottom = mix(
-				sceneAt( screenUV ).mul( exp( sigT.negate().mul( fallbackLength ) ) ),
-				refractedCol.mul( exp( sigT.negate().mul( hit.z ) ) ), refractionTrust
-			);
+			const opaqueCol = sceneAt( screenUV ).toVar();
+			const bottom = opaqueCol.mul( exp( sigT.negate().mul( fallbackLength ) ) ).toVar();
+			// Failed/off-screen rays use only the original floor. Their zero confidence makes
+			// the three blurred colour samples and refracted attenuation redundant.
+			If( refractionTrust.greaterThan( 0 ), () => {
+
+				const uvR = hit.xy;
+				// Unresolved slopes soften deeper refraction while near-surface rocks stay legible.
+				const refractBlur = min( pathLen.mul( 0.28 ), 1.8 ).div( depthSize );
+				const refractedCol = sceneAt( uvR ).mul( 0.5 )
+					.add( sceneAt( clamp( uvR.add( refractBlur.mul( vec2( 0.83, 0.56 ) ) ), vec2( 0.001 ), vec2( 0.999 ) ) ).mul( 0.25 ) )
+					.add( sceneAt( clamp( uvR.sub( refractBlur.mul( vec2( 0.83, 0.56 ) ) ), vec2( 0.001 ), vec2( 0.999 ) ) ).mul( 0.25 ) );
+				bottom.assign( mix( bottom, refractedCol.mul( exp( sigT.negate().mul( hit.z ) ) ), refractionTrust ) );
+
+			} );
 			// Match the terrain's refracted beam: transmission retains horizontal power,
 			// while beam-normal irradiance changes with the Snell area projection.
 			// Surface visibility approximates the whole column; indirect sky remains separate.
@@ -589,7 +609,7 @@ export class Water {
 
 			// soften the line where the surface cuts the rock (no hard seam); behind rock: the rock
 			const edge = select( skyBehind, float( 1 ), smoothstep( 0, 0.06, thick ) );
-			col.assign( mix( sceneAt( screenUV ), col, edge ) );
+			col.assign( mix( opaqueCol, col, edge ) );
 			return vec4( min( col, vec3( 30000 ) ), 1 );
 
 		} )();
