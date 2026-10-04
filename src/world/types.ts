@@ -23,6 +23,9 @@ export interface Rock { x: number; z: number; s: number; sy: number; y: number; 
 
 export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: number; z0: number; cell: number }
 
+// RGBA: actual upper-coast distance, local roof height, turf retreat and exposed root depth.
+export interface RimGroundField extends ShoreField {}
+
 // A top-rooted branch centreline: x, y, z and the outward surface normal per node.
 export interface RimStrand { points: Float32Array; seed: number; lip: number }
 
@@ -35,6 +38,7 @@ export interface WorldData {
 	vegetation: Float32Array;
 	// Sparse trails that start in top shrubs and overhang the upper cliff.
 	rimStrands: RimStrand[];
+	rimGround: RimGroundField;
 	shore: ShoreField;
 	// Half-resolution island distance field for the local breaking-surf pass.
 	islandShore: ShoreField;

@@ -4,6 +4,7 @@
 
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRimTrails } from './RimTrails.ts';
+import { buildRimGround } from './RimGround.ts';
 import {
 	buildFootprint, makeIslandSDF, makeRocks, makeRockSDF, makeSeabed,
 	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
@@ -104,6 +105,11 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	for ( const strand of rimStrands ) transfer.push( strand.points.buffer );
 	mark( 'rimFoliage', t );
 
+	t = performance.now();
+	const rimGround = buildRimGround( islandSDF );
+	transfer.push( rimGround.data.buffer );
+	mark( 'rimGround', t );
+
 	// --- shoreline: only the island intersects sea level. Submerged stones must not
 	// damp surface waves or grow circular foam collars above their hidden silhouettes.
 	t = performance.now();
@@ -128,6 +134,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		seabed: { positions: sb, res: n, size: seabedSize },
 		vegetation,
 		rimStrands,
+		rimGround,
 		shore: { data: shore.data, nx: shore.nx, nz: shore.nz, x0: shore.x0, z0: shore.z0, cell: shore.cell },
 		islandShore: { data: islandShore.data, nx: islandShore.nx, nz: islandShore.nz, x0: islandShore.x0, z0: islandShore.z0, cell: islandShore.cell },
 		timings,

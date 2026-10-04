@@ -3,6 +3,8 @@ import {
 	attribute, uniform, positionLocal, normalViewGeometry, vec3, float, mix, dot, sin, pow, clamp, normalize,
 	smoothstep as smoothstepN,
 } from 'three/tsl';
+import { sampleRimGround, rimGrassCover } from './RimGround.ts';
+import type { RimGroundField } from './types.ts';
 import { mulberry32, smoothstep } from './noise.ts';
 import { sampleMeadow, meadowColor, supportsMeadow } from '../materials/Meadow.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
@@ -83,7 +85,9 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
 	mat.positionNode = p.add( vec3( normalize( wind ).x, 0, normalize( wind ).y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
-	mat.colorNode = mix( vec3( 0.35, 0.43, 0.29 ), vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) );
+	const cover = attribute<'float'>( 'rimCover', 'float' );
+	const root = mix( vec3( 0.35, 0.43, 0.29 ), vec3( 0.55, 0.37, 0.23 ), float( 1 ).sub( cover ).mul( 0.55 ) );
+	mat.colorNode = mix( root, vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) );
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.55 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) );
@@ -95,10 +99,12 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 }
 
-export function buildGrass( veg: Float32Array, shared: Shared ): THREE.InstancedMesh {
+export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGroundField ): THREE.InstancedMesh {
 
 	const n = veg.length / STRIDE;
 	const mesh = new THREE.InstancedMesh( tuftGeometry(), grassMaterial( shared ), n );
+	const covers = new Float32Array( n ).fill( 1 );
+	mesh.geometry.setAttribute( 'rimCover', new THREE.InstancedBufferAttribute( covers, 1 ) );
 	const rng = mulberry32( 99 );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
@@ -133,6 +139,16 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 		meadowColor( x, z, col ).multiplyScalar( 0.93 + rng() * 0.14 );
 		// Consume the original random draws before filtering so inland tufts stay identical.
 		if ( ! supportsMeadow( y, veg[ k + 4 ] ) ) continue;
+		const cover = rimGround ? rimGrassCover( sampleRimGround( rimGround, x, z ) ) : 1;
+		covers[ count ] = cover;
+		if ( cover < 1 ) {
+
+			// Keep the planted origins and all RNG draws. A thin edge tuft reveals the same
+			// soil pocket as the ground without changing the inland meadow arrangement.
+			scl.multiply( new THREE.Vector3( 0.35 + cover * 0.65, 0.45 + cover * 0.55, 0.35 + cover * 0.65 ) );
+			m.compose( pos, q, scl );
+
+		}
 		mesh.setMatrixAt( count, m );
 		mesh.setColorAt( count ++, col );
 

@@ -152,9 +152,16 @@ function makeCliffFaces( fp: Footprint ): CliffFace[] {
 
 }
 
+// Expose the existing roof equation so the root bed follows the same local grade.
+export function islandSurfaceHeight( x: number, z: number ): number {
+
+	return ISLAND_TOP + noise3( x * 0.18, 4.1, z * 0.18 ) * 0.12 + noise3( x * 0.7, 1.3, z * 0.7 ) * 0.04;
+
+}
+
 export function makeIslandSDF( fp: Footprint ): SDF {
 
-	const top = ( x: number, z: number ) => ISLAND_TOP + noise3( x * 0.18, 4.1, z * 0.18 ) * 0.12 + noise3( x * 0.7, 1.3, z * 0.7 ) * 0.04;
+	const top = islandSurfaceHeight;
 	const faces = makeCliffFaces( fp );
 	// The horizontal fields are shared through a full sampled column. Their long correlation
 	// changes the coast's trace and inclination without rumpling the meadow's interior.

@@ -6,6 +6,7 @@ import {
 import type { Shared } from '../shared.ts';
 import type { DetailTextures } from './ProceduralTextures.ts';
 import { MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP } from './Meadow.ts';
+import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
@@ -51,17 +52,45 @@ const stoneSlope = Fn( ( [ v ]: [ THREE.Node<'vec4'> ] ) => {
 
 } ).setLayout( { name: 'stoneNormalSlope', type: 'vec2', inputs: [ { name: 'sample', type: 'vec4' } ] } );
 
-interface Ctx { tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: THREE.Texture }
-interface TerrainOptions { topY?: number; vegetation?: boolean }
+interface Ctx {
+	tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: THREE.Texture;
+	rimGround?: THREE.Texture; rimGroundXform?: THREE.Node<'vec4'>;
+}
+interface TerrainOptions { topY?: number; vegetation?: boolean; rimGround?: THREE.Texture; rimGroundXform?: THREE.Vector4 }
 
-function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
+function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXform }: Ctx ) {
 
 	return Fn( () => {
 
 		const p = positionWorld;
 		const n0 = normalize( normalWorldGeometry ).toVar();
 		// Bare stone must always sample its mineral maps, including upward boulder faces.
-		const turf = ( vegetation ? smoothstep( 0.85, 0.97, n0.y ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ) : float( 0 ) ).toVar();
+		const legacyTurf = ( vegetation ? smoothstep( 0.85, 0.97, n0.y ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ) : float( 0 ) ).toVar();
+		const turf = legacyTurf.toVar();
+		const rimBlend = float( 0 ).toVar(), rimTurf = float( 0 ).toVar(), rimSoil = float( 0 ).toVar();
+		if ( vegetation && rimGround && rimGroundXform ) {
+
+			// One cell-centred field also controls edge grass on the CPU. Sample it before any
+			// dynamic branches so the narrow fringe stays aligned and derivatives stay uniform.
+			const ground = texture( rimGround, p.xz.sub( rimGroundXform.xy ).mul( rimGroundXform.zw ) ).toVar();
+			const d = ground.r, roof = ground.g, retreat = ground.b, depth = ground.a;
+			const cover = smoothstep( retreat.sub( RIM_FRINGE_FADE ), retreat.add( RIM_FRINGE_FADE ), d.negate() );
+			const atRim = smoothstep( - RIM_INNER_LIMIT, - RIM_INNER_LIMIT + 0.15, d )
+				.mul( float( 1 ).sub( smoothstep( 0.20, 0.48, d ) ) );
+			const atRoof = smoothstep( roof.sub( RIM_MAX_DROP ), roof.sub( RIM_MAX_DROP - 0.045 ), p.y );
+			rimBlend.assign( atRim.mul( atRoof ) );
+			const greenDrop = clamp( depth.add( 0.02 ), 0.05, 0.16 );
+			rimTurf.assign( cover.mul( smoothstep( 0.65, 0.95, n0.y ) )
+				.mul( smoothstep( roof.sub( greenDrop ), roof.sub( 0.025 ), p.y ) ) );
+			// Root soil occupies small retreat pockets and rounded shoulders. Overlapping grass
+			// and exposed stone interrupt it, rather than drawing a continuous brown collar.
+			const soilBand = smoothstep( - 0.56, - 0.18, d ).mul( float( 1 ).sub( smoothstep( 0.10, 0.35, d ) ) );
+			const soilPocket = mix( float( 0.14 ), float( 0.76 ), smoothstep( - 0.045, 0.24, retreat ) );
+			rimSoil.assign( soilBand.mul( soilPocket ).mul( smoothstep( 0.15, 0.80, n0.y ) )
+				.mul( smoothstep( roof.sub( depth ).sub( 0.055 ), roof.sub( depth ).add( 0.02 ), p.y ) ) );
+			turf.assign( mix( legacyTurf, rimTurf, rimBlend ) );
+
+		}
 		const vAO = attribute<'float'>( 'ao', 'float' ), vTint = attribute<'float'>( 'tint', 'float' ), vCurv = attribute<'float'>( 'curv', 'float' );
 
 		// triplanar weights; projections with a negligible share are skipped (most pixels need one
@@ -166,13 +195,14 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 			const mossN = H.g.sub( 0.5 ).mul( 0.5 ).add( big.sub( 0.5 ).mul( 0.6 ) );
 			const turfRim = smoothstep( MEADOW_MIN_UP, 0.97, up )
 				.mul( smoothstep( topY.sub( MEADOW_MAX_DROP ), topY.sub( 0.12 ), p.y.add( mossN.mul( 0.15 ) ) ) );
-			const moss = max( turf, turfRim ).toVar();
+			const moss = max( legacyTurf, turfRim ).toVar();
 			const mossC = mix( vec3( 0.025, 0.06, 0.015 ), vec3( 0.11, 0.2, 0.035 ), smoothstep( 0.2, 0.9, H.g ) ).toVar();
 			mossC.mulAssign( smoothstep( 0.3, 0.8, texture( tex.heights, p.xz.mul( 0.9 ).add( p.y.mul( 0.5 ) ) ).g ).mul( 0.6 ).add( 0.7 ) );
 			mossC.assign( mix( mossC, vec3( 0.2, 0.21, 0.06 ), smoothstep( 0.6, 0.9, big2 ).mul( 0.35 ) ) ); // sun-dried
 			// Keep the same meadow bed on top, with a narrow blend into bare rock.
-			const turfCover = max( turf, turfRim ).toVar();
-			If( turfCover.greaterThan( 0 ), () => {
+			const turfCover = moss.toVar();
+			const rimGrassC = mossC.toVar();
+			If( max( turfCover, turf ).greaterThan( 0 ), () => {
 
 				const q1 = p.xz.mul( 0.23 ), q2 = mat2( 0.8, - 0.6, 0.6, 0.8 ).mul( p.xz ).mul( 0.61 ).add( 0.37 );
 				const c1 = texture( tex.heights, q1 ).level( float( 0 ) ).g, c2 = texture( tex.heights, q2 ).level( float( 0 ) ).g;
@@ -185,7 +215,8 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 				const sparse = smoothstep( 0.2, 0.03, meadow.a );
 				grassC.assign( mix( grassC, vec3( 0.072, 0.064, 0.036 ), sparse.mul( 0.45 ) ) );
 				mossC.assign( mix( mossC, grassC, turfCover ) );
-				Hg.assign( mix( Hg, c1.mul( 0.5 ).add( c2.mul( 0.5 ) ), turf ) );
+				rimGrassC.assign( grassC );
+				Hg.assign( mix( Hg, c1.mul( 0.5 ).add( c2.mul( 0.5 ) ), legacyTurf ) );
 
 			} );
 
@@ -194,6 +225,25 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 			const nBed = normalize( mix( nMoss, n0, turfCover.mul( 0.2 ) ) );
 			nW.assign( normalize( mix( nRock, nBed, moss ) ) );
 			rough.assign( mix( stoneRough, float( 0.94 ), moss ) );
+			if ( rimGround && rimGroundXform ) {
+
+				// Preserve the existing meadow and bare mineral surface exactly outside the fringe.
+				// The old detail maps supply subdued grains only; the shared field owns its boundary.
+				If( rimBlend.greaterThan( 0 ), () => {
+
+					const soilC = mix( vec3( 0.044, 0.035, 0.020 ), vec3( 0.102, 0.077, 0.042 ), smoothstep( 0.15, 0.85, H.r ) )
+						.mul( H.g.sub( 0.5 ).mul( 0.16 ).add( 1 ) );
+					const soilNormal = normalize( mix( n0, nRock, 0.18 ) );
+					const groundC = mix( mix( rock, soilC, rimSoil ), rimGrassC, rimTurf );
+					const groundN = normalize( mix( mix( nRock, soilNormal, rimSoil ), nBed, rimTurf ) );
+					const groundRough = mix( mix( stoneRough, float( 0.96 ), rimSoil ), float( 0.94 ), rimTurf );
+					albedo.assign( mix( albedo, groundC, rimBlend ) );
+					nW.assign( normalize( mix( nW, groundN, rimBlend ) ) );
+					rough.assign( mix( rough, groundRough, rimBlend ) );
+
+				} );
+
+			}
 
 		}
 
@@ -294,11 +344,11 @@ class TerrainLightingModel extends THREE.PhysicalLightingModel {
 
 }
 
-export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, caustics: Caustics, shore: THREE.Texture, { topY = 3.1, vegetation = true }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
+export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, caustics: Caustics, shore: THREE.Texture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
 
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.85, metalness: 0 } );
 	const topYU = uniform( topY );
-	const ctx: Ctx = { tex, shared, topY: topYU, vegetation, shore };
+	const ctx: Ctx = { tex, shared, topY: topYU, vegetation, shore, rimGround, rimGroundXform: rimGroundXform ? uniform( rimGroundXform ) : undefined };
 	const call = kind === 'seabed' ? seabedSurface( ctx, shared.shoreXform ) : cliffSurface( ctx );
 	const surf = ( call as unknown as { toVar( name: string ): SurfaceNode } ).toVar( 'surf' );
 	mat.colorNode = surf.get( 'albedo' );

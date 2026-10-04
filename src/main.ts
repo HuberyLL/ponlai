@@ -147,7 +147,7 @@ const islandShore = shoreTextureFrom( data.islandShore );
 shared.shoreXform.value.copy( shore.xform );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
-const grass = buildGrass( data.vegetation, shared );
+const grass = buildGrass( data.vegetation, shared, data.rimGround );
 const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
