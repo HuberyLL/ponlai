@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, uniform, texture, textureLoad, reference, screenCoordinate, float, vec2, vec3, vec4, ivec2, uv,
-	max, abs, clamp, cos, sin, pow, tan, dot, select, dFdx, dFdy, floor, fract, mix,
+	Fn, If, Loop, uniform, texture, textureLoad, reference, float, vec2, vec3, vec4, ivec2, uv,
+	max, abs, clamp, cos, sin, pow, tan, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep,
 } from 'three/tsl';
 import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
 
@@ -39,11 +39,16 @@ export const solarPenumbraRadius = Fn( ( [ receiverDepth, blockerDepth, depthRan
 const receiverGradient = Fn( ( [ dx, dy ]: [ V3, V3 ] ) => {
 
 	const determinant = dx.x.mul( dy.y ).sub( dx.y.mul( dy.x ) ).toVar();
-	const valid = abs( determinant ).greaterThan( 1e-10 );
+	// Judge the projected plane's conditioning relative to its derivative lengths. An
+	// absolute determinant threshold changes with viewport size and camera distance.
+	const scale = max( dot( dx.xy, dx.xy ).mul( dot( dy.xy, dy.xy ) ), 1e-30 );
+	const condition = determinant.mul( determinant ).div( scale ).toVar();
+	const valid = condition.greaterThan( 1e-6 ).and( abs( determinant ).greaterThan( 1e-20 ) );
 	const denominator = select( valid, determinant, float( 1 ) );
 	const gradient = vec2( dx.z.mul( dy.y ).sub( dy.z.mul( dx.y ) ),
 		dy.z.mul( dx.x ).sub( dx.z.mul( dy.x ) ) ).div( denominator );
-	return select( valid, clamp( gradient, vec2( - 16 ), vec2( 16 ) ), vec2( 0 ) );
+	return select( valid, clamp( gradient, vec2( - 16 ), vec2( 16 ) ), vec2( 0 ) )
+		.mul( smoothstep( 1e-6, 1e-4, condition ) );
 
 } ).setLayout( { name: 'solarShadowReceiverGradient', type: 'vec2', inputs: [
 	{ name: 'dx', type: 'vec3' }, { name: 'dy', type: 'vec3' },
@@ -68,8 +73,9 @@ export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode,
 		// Derivatives and comparison samples all execute in uniform control flow. The depth slope
 		// removes receiver-plane self-shadowing without moving the contact by a large fixed bias.
 		const gradient = receiverGradient( dFdx( sc ), dFdy( sc ) ).toVar();
-		const p = screenCoordinate.xy;
-		const rotation = p.x.mul( 0.06711056 ).add( p.y.mul( 0.00583715 ) ).fract().mul( 52.9829189 ).fract().mul( 2 * Math.PI ).toVar();
+		// A fixed disk pattern stays attached to the light projection. Screen noise would
+		// change a surface's sparse blocker samples as the camera moves, without a TAA pass.
+		const rotation = float( 0.7 );
 		const size = max( mapSize, vec2( 1 ) ).toVar();
 		const span = max( worldSpan, vec2( 1e-3 ) ).toVar();
 		const loadDepth = ( pixel: THREE.Node<'ivec2'> ): F => {
