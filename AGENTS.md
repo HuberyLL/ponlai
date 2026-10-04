@@ -59,11 +59,9 @@ wildflowers and ivy.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
   most 100 characters, and the body explaining why. Types: `feat`, `fix`, `perf`, `refactor`,
-  `style`, `test`, `docs`, `build`, `ci`, `chore`, `revert`. Scopes follow the area changed: `ocean`,
-  `world`, `sky`, `materials`, `post`, `app` (`src/main.ts`, `src/shared.ts`), `tools`, and new
-  top-level areas by their directory name (for example `ai` for the Python side). Leave the scope out
-  only for repository-wide changes. Mark breaking changes with `!` after the scope or a
-  `BREAKING CHANGE:` footer.
+  `style`, `test`, `docs`, `build`, `ci`, `chore`, `revert`. The scope is optional; when given, it
+  names the section of the codebase changed (for example `ocean`, `world`, `ai`). Mark breaking
+  changes with `!` after the scope or a `BREAKING CHANGE:` footer.
 
 ## WebGPU / TSL pitfalls met here
 
