@@ -56,3 +56,6 @@ comment where it is used.
 - Solar radiance normalisation: the projected-solid-angle irradiance integral described in
   [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Radiometry,_Spectra,_and_Color/Working_with_Radiometric_Integrals),
   independently implemented with a shared scene radiance unit and an integrated limb-darkening profile.
+- Contact-hardening solar shadows: Randima Fernando,
+  [*Percentage-Closer Soft Shadows*](https://developer.download.nvidia.com/shaderlibrary/docs/shadow_PCSS.pdf)
+  (SIGGRAPH 2005), independently implemented in TSL for a directional solar disk.

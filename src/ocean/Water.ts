@@ -8,13 +8,14 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
-	float, int, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
+	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
 	sin, abs, floor, fract, fwidth, reflect, refract, select,
 } from 'three/tsl';
 import { dirToEquirect } from '../sky/Sky.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
+import { solarShadowVisibility } from '../lighting/SolarShadow.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
@@ -153,6 +154,11 @@ export class Water {
 
 	private shadowTex: THREE.TextureNode;
 	private shadowSize = uniform( new THREE.Vector2( 1, 1 ) );
+	private shadowSpan = uniform( new THREE.Vector2( 72, 72 ) );
+	private shadowDepthRange = uniform( 219 );
+	private shadowBias = uniform( 0 );
+	private shadowNormalBias = uniform( 0 );
+	private shadowIntensity = uniform( 1 );
 
 	constructor( { fft, sky, shared, shore, islandShore, foam, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
 
@@ -209,7 +215,9 @@ export class Water {
 		const sceneViewZ = Fn( ( [ q ]: [ V2 ] ) => textureLoad( tDepth, pixel( q ) ).x )
 			.setLayout( { name: 'sceneViewZ', type: 'float', inputs: [ { name: 'q', type: 'vec2' } ] } );
 		const sceneAt = ( q: V2 ) => texture( sceneColor, q ).level( float( 0 ) ).rgb;
-		this.shadowTex = texture( new THREE.DepthTexture( 1, 1 ) );
+		const shadowPlaceholder = new THREE.DepthTexture( 1, 1 );
+		shadowPlaceholder.compareFunction = THREE.LessEqualCompare;
+		this.shadowTex = texture( shadowPlaceholder );
 		const shadowSize = this.shadowSize;
 
 		// screen-space reflection of the opaque scene (cliffs, stacks): geometric steps, then bisection
@@ -382,28 +390,15 @@ export class Water {
 			// keep facets that face away from the viewer at grazing instead of flipping them
 			N.assign( normalize( N.add( V.mul( max( dot( N, V ).negate().add( 0.03 ), 0 ) ) ) ) );
 
-			// ---- the sun's shadow on the water (3x3 taps)
-			const shadow = float( 1 ).toVar();
-			If( u.shadowOn.greaterThan( 0.5 ), () => {
-
-				const sc = u.shadowMatrix.mul( vec4( wp, 1 ) ).toVar();
-				const s3 = sc.xyz.div( sc.w ).toVar();
-				const suvS = vec2( s3.x, float( 1 ).sub( s3.y ) ).toVar();
-				If( suvS.x.greaterThan( 0 ).and( suvS.y.greaterThan( 0 ) ).and( suvS.x.lessThan( 1 ) ).and( suvS.y.lessThan( 1 ) ).and( s3.z.lessThan( 1 ) ), () => {
-
-					const s = float( 0 ).toVar();
-					Loop( { start: int( - 1 ), end: int( 1 ), condition: '<=' }, { start: int( - 1 ), end: int( 1 ), condition: '<=' }, ( { i: y, j: x } ) => {
-
-						const c = ivec2( clamp( suvS.mul( shadowSize ).add( vec2( float( x ), float( y ) ).mul( 2.5 ) ), vec2( 0 ), shadowSize.sub( 1 ) ) );
-						const stored = textureLoad( this.shadowTex, c ) as unknown as F; // a depth texture: one channel
-						s.addAssign( select( s3.z.sub( 0.0008 ).lessThanEqual( stored ), float( 1 ), float( 0 ) ) );
-
-					} );
-					shadow.assign( s.div( 9 ) );
-
-				} );
-
+			// The water uses the same solar angular size, receiver-plane correction and bias as
+			// standard materials. Keep comparison sampling outside pixel-dependent branches.
+			const sc = u.shadowMatrix.mul( vec4( wp.add( N.mul( this.shadowNormalBias ) ), 1 ) ).toVar();
+			const s3 = sc.xyz.div( max( sc.w, 1e-6 ) ).toVar();
+			const shadowCoord = vec3( s3.x, float( 1 ).sub( s3.y ), s3.z.add( this.shadowBias ) );
+			const visibility = solarShadowVisibility( this.shadowTex, shadowCoord, {
+				mapSize: shadowSize, worldSpan: this.shadowSpan, depthRange: this.shadowDepthRange,
 			} );
+			const shadow = mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) ).toVar();
 			const sunLight = shared.sunColor.mul( shadow ).toVar();
 
 			// ---- what lies straight behind this pixel (linear depth: view-space z, < -1e4 = sky)
@@ -588,6 +583,12 @@ export class Water {
 
 			this.shadowTex.value = map.depthTexture;
 			this.shadowSize.value.set( map.width, map.height );
+			const camera = sun.shadow.camera;
+			this.shadowSpan.value.set( camera.right - camera.left, camera.top - camera.bottom );
+			this.shadowDepthRange.value = camera.far - camera.near;
+			this.shadowBias.value = sun.shadow.bias;
+			this.shadowNormalBias.value = sun.shadow.normalBias;
+			this.shadowIntensity.value = sun.shadow.intensity;
 			u.shadowMatrix.value.copy( sun.shadow.matrix );
 			u.shadowOn.value = 1;
 

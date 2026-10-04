@@ -13,6 +13,7 @@ import { buildFlowers } from './world/Flowers.ts';
 import { buildIvy } from './world/Ivy.ts';
 import { Pipeline } from './post/Pipeline.ts';
 import { shared } from './shared.ts';
+import { installSolarShadowFilter } from './lighting/SolarShadow.ts';
 
 const params = new URLSearchParams( location.search );
 // scene handles and frame diagnostics on window, for the capture tool and the console: dev server
@@ -68,9 +69,11 @@ sun.castShadow = true;
 sun.shadow.mapSize.set( 2048, 2048 );
 const sc = sun.shadow.camera;
 sc.left = - 36; sc.right = 36; sc.top = 36; sc.bottom = - 36; sc.near = 1; sc.far = 220;
-sun.shadow.bias = - 0.0005;
-sun.shadow.normalBias = 0.06;
-sun.shadow.radius = 4;
+// Bias in metres along the light ray, converted to this orthographic map's depth range.
+// Receiver-plane correction in the shared filter keeps contacts sharp without a wide blur.
+sun.shadow.bias = - 0.01 / ( sc.far - sc.near );
+sun.shadow.normalBias = 0.012;
+installSolarShadowFilter( sun );
 scene.add( sun, sun.target );
 
 function fresnel( cosI: number, eta: number ): number {
