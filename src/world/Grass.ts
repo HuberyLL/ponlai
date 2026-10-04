@@ -3,14 +3,14 @@ import {
 	attribute, uniform, positionLocal, normalViewGeometry, vec3, float, mix, dot, sin, pow, clamp, normalize,
 	smoothstep as smoothstepN,
 } from 'three/tsl';
-import { mulberry32, noise3, smoothstep } from './noise.ts';
+import { mulberry32, smoothstep } from './noise.ts';
+import { sampleMeadow, meadowColor } from '../materials/Meadow.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import type { Shared } from '../shared.ts';
 
 // Stylised meadow on the island top and the stack tops: instanced tufts, each a fan of tapered,
-// bending blades. The shading is soft and painterly rather than per blade: the normal is the
-// tuft's rounded envelope (every tuft reads as a little lit cushion with a shadow side), dark at
-// the roots, sunlit at the tips, and the sun glows through the blades where the grass is backlit.
+// bending blades. Most blades make a low, continuous bed; taller shoots grow in loose patches.
+// Soft upward normals join the blades to that bed rather than lighting every tuft as a cushion.
 // A gentle wind sways the tips. Anchors come from the world worker (x, y, z, normal, rim distance,
 // kind).
 
@@ -22,12 +22,12 @@ function tuftGeometry( seed = 3, blades = 8, segs = 3 ) {
 	const P: number[] = [], N: number[] = [], T: number[] = [], I: number[] = [];
 	for ( let b = 0; b < blades; b ++ ) {
 
-		const a = ( b / blades ) * Math.PI * 2 + ( rng() - 0.5 ) * 0.9;
+		const a = rng() * Math.PI * 2;
 		const r0 = 0.03 + rng() * 0.1; // base offset from the tuft's axis
 		const ox = Math.cos( a ) * r0, oz = Math.sin( a ) * r0;
 		const h = 0.45 + rng() * 0.55; // varied blades keep the meadow from reading as a brush carpet
-		const lean = 0.3 + rng() * 0.7;
-		const w = 0.13 + rng() * 0.065;
+		const lean = 0.22 + rng() * 0.65;
+		const w = 0.085 + rng() * 0.055;
 		const dx = Math.cos( a ), dz = Math.sin( a );
 		const tw = a + Math.PI / 2 + ( rng() - 0.5 ) * 1.0; // width axis, a little twisted
 		const wx = Math.cos( tw ), wz = Math.sin( tw );
@@ -43,8 +43,8 @@ function tuftGeometry( seed = 3, blades = 8, segs = 3 ) {
 
 				const px = cx + wx * hw * sg, pz = cz + wz * hw * sg;
 				P.push( px, cy, pz );
-				const nx = px * 2.6, nz = pz * 2.6, l = Math.hypot( nx, 0.8, nz );
-				N.push( nx / l, 0.8 / l, nz / l );
+				const nx = px * 2.2, nz = pz * 2.2, l = Math.hypot( nx, 0.9, nz );
+				N.push( nx / l, 0.9 / l, nz / l );
 				T.push( t );
 
 			}
@@ -80,15 +80,16 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const p = positionLocal;
 	const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.time.mul( 1.6 ) );
 	const gust = sin( ph ).mul( 0.45 ).add( 0.55 ).add( sin( ph.mul( 2.7 ).add( p.x.mul( 0.9 ) ) ).mul( 0.2 ) );
-	mat.positionNode = p.add( vec3( normalize( wind ).x, 0, normalize( wind ).y ).mul( gust.mul( 0.05 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.016 ).mul( t2 ), 0 ) );
+	// Short growth needs a smaller world-space sway to keep its tips above the soil.
+	mat.positionNode = p.add( vec3( normalize( wind ).x, 0, normalize( wind ).y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
-	mat.colorNode = mix( vec3( 0.18, 0.25, 0.16 ), vec3( 1.08, 1, 0.78 ), smoothstepN( 0.02, 0.9, t ) );
+	mat.colorNode = mix( vec3( 0.35, 0.43, 0.29 ), vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) );
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
-	mat.aoNode = mix( float( 0.36 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) );
+	mat.aoNode = mix( float( 0.55 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) );
 	// light through the blades: strongest when the grass stands against the sun
-	useLighting( mat, () => new VegetationLighting( mix( float( 0.55 ), float( 1 ), t ), ( L, V ) =>
-		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.7 ).add( 0.05 ).mul( t2 ) ) );
+	useLighting( mat, () => new VegetationLighting( mix( float( 0.72 ), float( 1 ), t ), ( L, V ) =>
+		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.42 ).add( 0.04 ).mul( t2 ) ) );
 	mat.userData.wind = wind;
 	return mat;
 
@@ -101,9 +102,7 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 	const rng = mulberry32( 99 );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
-	const col = new THREE.Color(), tmp = new THREE.Color();
-	const deep = new THREE.Color( 0.022, 0.07, 0.025 ), mid = new THREE.Color( 0.065, 0.12, 0.029 );
-	const sunny = new THREE.Color( 0.17, 0.185, 0.044 ), straw = new THREE.Color( 0.25, 0.205, 0.075 );
+	const col = new THREE.Color();
 
 	for ( let i = 0; i < n; i ++ ) {
 
@@ -116,26 +115,22 @@ export function buildGrass( veg: Float32Array, shared: Shared ): THREE.Instanced
 		qy.setFromAxisAngle( up, rng() * Math.PI * 2 );
 		q.multiply( qy );
 
-		// drifts of tall lush grass and of short sunny grass, shaggier along the rim
-		const lush = noise3( x * 0.21, 0.5, z * 0.21 ) * 0.5 + 0.5;
-		const fine = noise3( x * 0.85, 2.5, z * 0.85 ) * 0.5 + 0.5;
+		// Keep the shared anchors: bushes and flowers use them too. Height, not a denser grid,
+		// gives the meadow a close-cropped bed with irregular islands of longer growth.
+		const { growth, variation } = sampleMeadow( x, z );
 		const onStack = veg[ k + 7 ] > 0;
-		const edge = onStack ? 0 : smoothstep( - 1.4, - 0.1, rim );
-		const meadow = smoothstep( 0.3, 0.7, lush );
-		const h = ( 0.19 + 0.39 * meadow + 0.1 * fine ) * ( 0.65 + rng() * 0.65 ) * ( 1 + 0.4 * edge ) * ( onStack ? 0.55 : 1 );
-		pos.set( x, y - 0.03, z );
-		const spread = 0.29 + h * 0.55;
+		const edge = smoothstep( - 1.1, - 0.05, rim );
+		const tall = rng() < smoothstep( 0.38, 0.74, growth ) * 0.46;
+		const h = ( 0.17 + 0.14 * growth + edge * growth * 0.07 + ( tall ? 0.16 + 0.1 * variation : 0 ) )
+			* ( 0.78 + rng() * 0.44 ) * ( 1 + edge * ( variation - 0.5 ) * 0.35 ) * ( onStack ? 0.55 : 1 );
+		pos.set( x, y - 0.018, z );
+		const spread = ( tall ? 0.34 : 0.44 ) + growth * 0.08;
 		scl.set( spread * ( 0.85 + rng() * 0.3 ), h, spread * ( 0.85 + rng() * 0.3 ) );
 		m.compose( pos, q, scl );
 		mesh.setMatrixAt( i, m );
 
-		// colour: deep green where it is lush, sunny yellow-green where short, the odd straw tuft
-		const patch = noise3( x * 0.5 + 3.3, 1.5, z * 0.5 ) * 0.5 + 0.5;
-		const shadePatch = smoothstep( 0.27, 0.66, noise3( x * 0.16 + 2.7, 5.1, z * 0.16 ) * 0.5 + 0.5 );
-		col.copy( mid ).lerp( deep, Math.min( 1, meadow * 0.5 + shadePatch * 0.68 ) );
-		col.lerp( tmp.copy( sunny ), Math.max( 0, smoothstep( 0.48, 0.18, lush ) * 0.7 + smoothstep( 0.62, 0.84, patch ) * 0.45 + ( rng() - 0.5 ) * 0.13 ) );
-		if ( rng() < 0.025 + 0.05 * smoothstep( 0.4, 0.1, lush ) ) col.lerp( straw, 0.65 );
-		col.multiplyScalar( 0.85 + rng() * 0.3 );
+		// The terrain samples the same colour field, so gaps read as short turf between shoots.
+		meadowColor( x, z, col ).multiplyScalar( 0.93 + rng() * 0.14 );
 		mesh.setColorAt( i, col );
 
 	}

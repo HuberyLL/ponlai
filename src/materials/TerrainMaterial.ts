@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
 import type { DetailTextures } from './ProceduralTextures.ts';
+import { MEADOW_EXTENT } from './Meadow.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
@@ -58,6 +59,7 @@ function cliffSurface( { tex, shared, topY }: Ctx ) {
 
 		const p = positionWorld;
 		const n0 = normalize( normalWorldGeometry ).toVar();
+		const turf = smoothstep( 0.85, 0.97, n0.y ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ).toVar();
 		const vAO = attribute<'float'>( 'ao', 'float' ), vTint = attribute<'float'>( 'tint', 'float' ), vCurv = attribute<'float'>( 'curv', 'float' );
 
 		// triplanar weights; projections with a negligible share are skipped (most pixels need one
@@ -78,22 +80,34 @@ function cliffSurface( { tex, shared, topY }: Ctx ) {
 		If( w.x.greaterThan( 0 ), () => {
 
 			hX.assign( texture( tex.heights, uvX ).grad( gxX, gyX ) ); aX.assign( texture( tex.normalsA, uvX ).grad( gxX, gyX ) );
-			fX.assign( texture( tex.rockDetail, uvX.mul( stoneScale ) ).grad( gxX.mul( stoneScale ), gyX.mul( stoneScale ) ) );
-			cX.assign( texture( tex.rockAlbedo, uvX.mul( stoneScale ) ).grad( gxX.mul( stoneScale ), gyX.mul( stoneScale ) ) );
+			If( turf.lessThan( 1 ), () => {
+
+				fX.assign( texture( tex.rockDetail, uvX.mul( stoneScale ) ).grad( gxX.mul( stoneScale ), gyX.mul( stoneScale ) ) );
+				cX.assign( texture( tex.rockAlbedo, uvX.mul( stoneScale ) ).grad( gxX.mul( stoneScale ), gyX.mul( stoneScale ) ) );
+
+			} );
 
 		} );
 		If( w.y.greaterThan( 0 ), () => {
 
 			hY.assign( texture( tex.heights, uvY ).grad( gxY, gyY ) ); aY.assign( texture( tex.normalsA, uvY ).grad( gxY, gyY ) );
-			fY.assign( texture( tex.rockDetail, uvY.mul( stoneScale ) ).grad( gxY.mul( stoneScale ), gyY.mul( stoneScale ) ) );
-			cY.assign( texture( tex.rockAlbedo, uvY.mul( stoneScale ) ).grad( gxY.mul( stoneScale ), gyY.mul( stoneScale ) ) );
+			If( turf.lessThan( 1 ), () => {
+
+				fY.assign( texture( tex.rockDetail, uvY.mul( stoneScale ) ).grad( gxY.mul( stoneScale ), gyY.mul( stoneScale ) ) );
+				cY.assign( texture( tex.rockAlbedo, uvY.mul( stoneScale ) ).grad( gxY.mul( stoneScale ), gyY.mul( stoneScale ) ) );
+
+			} );
 
 		} );
 		If( w.z.greaterThan( 0 ), () => {
 
 			hZ.assign( texture( tex.heights, uvZ ).grad( gxZ, gyZ ) ); aZ.assign( texture( tex.normalsA, uvZ ).grad( gxZ, gyZ ) );
-			fZ.assign( texture( tex.rockDetail, uvZ.mul( stoneScale ) ).grad( gxZ.mul( stoneScale ), gyZ.mul( stoneScale ) ) );
-			cZ.assign( texture( tex.rockAlbedo, uvZ.mul( stoneScale ) ).grad( gxZ.mul( stoneScale ), gyZ.mul( stoneScale ) ) );
+			If( turf.lessThan( 1 ), () => {
+
+				fZ.assign( texture( tex.rockDetail, uvZ.mul( stoneScale ) ).grad( gxZ.mul( stoneScale ), gyZ.mul( stoneScale ) ) );
+				cZ.assign( texture( tex.rockAlbedo, uvZ.mul( stoneScale ) ).grad( gxZ.mul( stoneScale ), gyZ.mul( stoneScale ) ) );
+
+			} );
 
 		} );
 		const H = hX.mul( w.x ).add( hY.mul( w.y ) ).add( hZ.mul( w.z ) ).toVar();
@@ -147,27 +161,30 @@ function cliffSurface( { tex, shared, topY }: Ctx ) {
 		const nearSoil = smoothstep( topY.sub( 0.75 ), topY.sub( 0.22 ), p.y );
 		const ledgePatch = smoothstep( 0.38, 0.67, H.g.mul( 0.7 ).add( big2.mul( 0.3 ) ) );
 		const ledgeMoss = smoothstep( 0.55, 0.88, up.add( mossN ) ).mul( mix( ledgePatch.mul( 0.3 ), float( 1 ), nearSoil ) );
-		const moss = clamp( max( ledgeMoss, max( lip.mul( smoothstep( - 0.35, 0.3, up ) ), hang.mul( 0.6 ) ) ).mul( dry ), 0, 1 ).toVar();
+		// The shorter canopy exposes more ground. Fully covered turf can skip the two stone
+		// scan samples per projection; slope transitions keep the existing rock shading.
+		const moss = max( turf, clamp( max( ledgeMoss, max( lip.mul( smoothstep( - 0.35, 0.3, up ) ), hang.mul( 0.6 ) ) ).mul( dry ), 0, 1 ) ).toVar();
 		const mossC = mix( vec3( 0.025, 0.06, 0.015 ), vec3( 0.11, 0.2, 0.035 ), smoothstep( 0.2, 0.9, H.g ) ).toVar();
 		mossC.mulAssign( smoothstep( 0.3, 0.8, texture( tex.heights, p.xz.mul( 0.9 ).add( p.y.mul( 0.5 ) ) ).g ).mul( 0.6 ).add( 0.7 ) );
 		mossC.assign( mix( mossC, vec3( 0.2, 0.21, 0.06 ), smoothstep( 0.6, 0.9, big2 ).mul( 0.35 ) ) ); // sun-dried
-		// the island's top: meadow turf (mostly under the grass), mottled at several scales
-		const turf = smoothstep( 0.85, 0.97, up ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ).toVar();
+		// Let short grass continue across the rounded shoulder before yielding to rock.
+		// Height and a little existing moss noise break the transition without moving the cliff.
+		const turfRim = smoothstep( 0.4, 0.88, up ).mul( smoothstep( topY.sub( 0.48 ), topY.sub( 0.12 ), p.y.add( mossN.mul( 0.15 ) ) ) );
+		const turfCover = max( turf, turfRim ).toVar();
 		const Hg = H.g.toVar();
-		If( turf.greaterThan( 0 ), () => {
+		If( turfCover.greaterThan( 0 ), () => {
 
 			const q1 = p.xz.mul( 0.23 ), q2 = mat2( 0.8, - 0.6, 0.6, 0.8 ).mul( p.xz ).mul( 0.61 ).add( 0.37 );
 			const c1 = texture( tex.heights, q1 ).level( float( 0 ) ).g, c2 = texture( tex.heights, q2 ).level( float( 0 ) ).g;
-			const m1 = texture( tex.normalsB, p.xz.mul( 0.031 ).add( 0.17 ) ).level( float( 0 ) ).a;
-			const m2 = texture( tex.normalsB, mat2( 0.6, 0.8, - 0.8, 0.6 ).mul( p.xz ).mul( 0.09 ) ).level( float( 0 ) ).a;
-			const m3 = texture( tex.normalsB, p.zx.mul( 0.27 ).add( 0.5 ) ).level( float( 0 ) ).a;
-			const lush = smoothstep( 0.3, 0.75, m1.mul( 0.7 ).add( m2.mul( 0.5 ) ).sub( 0.1 ) );
-			const grassC = mix( vec3( 0.05, 0.10, 0.018 ), vec3( 0.16, 0.27, 0.04 ), smoothstep( 0.2, 0.8, c1.mul( 0.55 ).add( c2.mul( 0.45 ) ) ) ).toVar();
-			grassC.assign( mix( grassC, vec3( 0.28, 0.29, 0.08 ), float( 1 ).sub( lush ).mul( smoothstep( 0.45, 0.8, m3 ) ).mul( 0.7 ) ) ); // dry drifts
-			grassC.mulAssign( mix( float( 0.62 ), float( 1.12 ), smoothstep( 0.25, 0.7, m2.mul( 0.6 ).add( c2.mul( 0.5 ) ) ) ) ); // clumps
-			const bare = smoothstep( 0.8, 0.9, m3.mul( 0.6 ).add( float( 1 ).sub( m1 ).mul( 0.5 ) ) );
-			grassC.assign( mix( grassC, vec3( 0.16, 0.12, 0.08 ), bare.mul( 0.6 ) ) );
-			mossC.assign( mix( mossC, grassC, turf ) );
+			const meadow = texture( tex.meadow, p.xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) );
+			// Broad growth and colour match the instanced blades. Fine relief stays subdued so
+			// the bed reads as soil-bound turf, rather than a second layer of rounded moss lumps.
+			const fibres = smoothstep( 0.2, 0.65, c1.mul( 0.55 ).add( c2.mul( 0.45 ) ) );
+			const grassC = meadow.rgb.mul( mix( float( 0.75 ), float( 1.2 ), fibres ) ).mul( 0.9 ).toVar();
+			// A little exposed humus in the shortest patches interrupts the continuous green lid.
+			const sparse = smoothstep( 0.2, 0.03, meadow.a );
+			grassC.assign( mix( grassC, vec3( 0.072, 0.064, 0.036 ), sparse.mul( 0.45 ) ) );
+			mossC.assign( mix( mossC, grassC, turfCover ) );
 			Hg.assign( mix( Hg, c1.mul( 0.5 ).add( c2.mul( 0.5 ) ), turf ) );
 
 		} );
@@ -182,7 +199,8 @@ function cliffSurface( { tex, shared, topY }: Ctx ) {
 		const silt = smoothstep( 0.35, 0.8, up ).mul( smoothstep( - 0.4, - 1.2, p.y ) );
 
 		const albedo = mix( rock, mossC, moss ).toVar();
-		const nW = normalize( mix( nRock, nMoss, moss ) );
+		const nBed = normalize( mix( nMoss, n0, turfCover.mul( 0.2 ) ) );
+		const nW = normalize( mix( nRock, nBed, moss ) );
 		const stoneRough = clamp( Fc.a.mul( 0.34 ).add( 0.62 ), 0.8, 0.98 );
 		const rough = mix( stoneRough, float( 0.94 ), moss ).toVar();
 		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algae.mul( 0.85 ) ) );
