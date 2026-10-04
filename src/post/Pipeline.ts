@@ -34,7 +34,7 @@ export class Pipeline {
 	height = 1;
 	settings: PipelineSettings = {
 		exposure: 1.5, saturation: 0.93, vibrance: 0.15, contrast: 0.12, split: 0.55,
-		lift: new THREE.Color( 0.018, 0.025, 0.03 ),
+		lift: new THREE.Color( 0, 0, 0 ),
 		vignette: 0.18, grain: 0.004,
 		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0,
 		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,

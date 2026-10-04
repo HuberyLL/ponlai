@@ -63,7 +63,7 @@ controls.update();
 const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
 scene.add( sky.dome );
 scene.environmentIntensity = 1;
-const lighting = { skyFill: 1.5 };
+const lighting = { skyFill: 1 };
 
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
 sun.castShadow = true;
