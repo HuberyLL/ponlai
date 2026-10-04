@@ -30,7 +30,8 @@ packages, into `dist/licenses/`.
   the two wave systems do not run as separate FFT simulations.
 - Foam files: `src/ocean/FoamTexture.ts` adapts the CPU lace generation from
   [`src/ocean/SurfFoam.js`](https://github.com/dgreenheck/tidewater/blob/4811ba48d795197de5621985f404e765c0b7c0ef/src/ocean/SurfFoam.js);
-  `src/ocean/Water.ts` adapts its density-to-hole mapping, bubbly relief and cavity shading.
+  `src/ocean/Water.ts` adapts its density-to-hole mapping, pattern-only surface-gradient
+  normals, bubbly relief and cavity shading.
   The repeatable pattern is mipmapped, scaled down and has its low-density strands broken into
   shorter arcs. Dense fresh whitewater opens into holes, lace and separate bubbles as it thins.
 - Rocky-boundary changes: `src/ocean/ShoreWaves.ts` and `src/ocean/ShoreWaveField.ts` retain the
@@ -43,8 +44,8 @@ packages, into `dist/licenses/`.
   incident phase and supplies weak local height/velocity correction; it is not a diffraction or
   fluid-impact solver. Geometry normals include spatial damping-gradient terms. Local seabed
   refraction, beach run-up, plunging sheets and spray are not implemented.
-- Foam transport reference: the carried-foam / fresh-whitewater separation and expansion-driven
-  thinning are informed by
+- Foam transport reference: the carried-foam / fresh-whitewater separation, density-dependent
+  lifetime and expansion-driven thinning are informed by
   [`src/ocean/ShoreSim.js`](https://github.com/dgreenheck/tidewater/blob/4811ba48d795197de5621985f404e765c0b7c0ef/src/ocean/ShoreSim.js).
   `src/ocean/OceanFoam.ts` is an original TSL history/advection implementation using the FFT-driven
   rock-boundary flow, with land checks; the backtracing technique is credited to Jos Stam below.

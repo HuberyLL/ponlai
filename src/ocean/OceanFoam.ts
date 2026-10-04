@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { Fn, texture, uniform, uv, float, vec2, vec4, clamp, mix, max, exp, select } from 'three/tsl';
+import { Fn, texture, uniform, uv, float, vec2, vec4, clamp, mix, max, exp, select, smoothstep } from 'three/tsl';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { Shared } from '../shared.ts';
@@ -67,13 +67,16 @@ export class OceanFoam {
 			// Stop traces that cross land, including thin rock shoulders between water parcels.
 			const segmentWater = select( sampleShore( upstream ).greaterThan( 0 )
 				.and( sampleShore( mix( q, upstream, float( 0.5 ) ) ).greaterThan( 0 ) ), float( 1 ), float( 0 ) );
-			const remaining = carried.r.mul( segmentWater ).mul( exp( expansion.add( 0.65 ).mul( this.dt ).negate() ) );
+			// After Tidewater's ShoreSim: dense churn collapses faster than the thin foam it leaves.
+			const decay = mix( float( 0.48 ), float( 1.10 ), smoothstep( 0.18, 0.58, carried.r ) );
+			const remaining = carried.r.mul( segmentWater ).mul( exp( expansion.add( decay ).mul( this.dt ).negate() ) );
 			// No white line on an unbroken offshore crest. The wave's actual rock contact
 			// supplies aerated mass; its dense core survives briefly after the impact ends.
-			const birth = float( 1 ).sub( exp( wave.z.mul( this.dt ).mul( - 4.8 ) ) );
+			const birth = float( 1 ).sub( exp( wave.z.mul( this.dt ).mul( - 7.2 ) ) );
 			const newMass = float( 1 ).sub( remaining ).mul( birth );
 			const coverage = remaining.add( newMass );
-			const freshOld = carried.a.mul( segmentWater ).mul( exp( this.dt.mul( - 3.4 ) ) );
+			// Keep the impact body for part of a second, then let only the carried lace remain.
+			const freshOld = carried.a.mul( segmentWater ).mul( exp( expansion.add( 1.65 ).mul( this.dt ).negate() ) );
 			const fresh = freshOld.add( float( 1 ).sub( freshOld ).mul( birth ) );
 			const openWater = select( sd.greaterThan( 0 ), float( 1 ), float( 0 ) );
 			const offset = select( carried.r.greaterThan( 0.001 ), carried.gb.sub( flow.mul( this.dt ) ), vec2( 0 ) );

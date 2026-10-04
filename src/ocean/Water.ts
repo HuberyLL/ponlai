@@ -9,7 +9,7 @@ import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
-	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
+	sin, abs, sign, cross, floor, fract, fwidth, reflect, select, dFdx, dFdy,
 } from 'three/tsl';
 import { dirToEquirect } from '../sky/Sky.ts';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
@@ -400,11 +400,15 @@ export class Water {
 			// churn opens into perforated mats, lace and separate bubbles, not fading moss noise.
 			const laceSample = texture( laceTexture, foamP.mul( 1.5 / FOAM_TILE ) ).toVar();
 			const lumps = texture( laceTexture, foamP.div( FOAM_TILE * 2.2 ).add( vec2( 0.17, 0.39 ) ) ).toVar();
-			const foamRelief = float( 1 ).sub( lumps.r ).mul( 0.65 ).add( float( 1 ).sub( laceSample.r ).mul( 0.35 ) ).toVar();
-			const reliefSlope = vec2(
-				texture( laceTexture, foamP.add( vec2( 0.04, 0 ) ).div( FOAM_TILE * 2.2 ).add( vec2( 0.17, 0.39 ) ) ).r.sub( lumps.r ).div( 0.04 ),
-				texture( laceTexture, foamP.add( vec2( 0, 0.04 ) ).div( FOAM_TILE * 2.2 ).add( vec2( 0.17, 0.39 ) ) ).r.sub( lumps.r ).div( 0.04 ),
-			).toVar();
+			// SurfFoam's pattern-only surface gradients avoid a bright bevel around every
+			// density edge. Centimetre-scale relief belongs to the carried bubble pattern.
+			const lumpRelief = float( 1 ).sub( sqrt( max( lumps.r, 0.012 ) ) ).toVar();
+			const laceRelief = float( 1 ).sub( sqrt( max( laceSample.r, 0.012 ) ) ).toVar();
+			const foamRelief = lumpRelief.mul( 0.65 ).add( laceRelief.mul( 0.35 ) ).toVar();
+			const lumpDx = dFdx( lumpRelief ).toVar(), lumpDy = dFdy( lumpRelief ).toVar();
+			const laceDx = dFdx( laceRelief ).toVar(), laceDy = dFdy( laceRelief ).toVar();
+			const bubbleDx = dFdx( laceSample.g ).toVar(), bubbleDy = dFdy( laceSample.g ).toVar();
+			const surfaceDx = dFdx( wp ).toVar(), surfaceDy = dFdy( wp ).toVar();
 			// Share lace density with the optional glitter control to stay within WebGPU's
 			// baseline 16 sampled textures, including slope moments and orbital velocity.
 			const fLow = lumps.b;
@@ -461,20 +465,23 @@ export class Water {
 			// Tidewater's SurfFoam density mapping: a fresh bubbly core, then wider holes,
 			// finally translucent strands. The irregular edge belongs to the moving mass.
 			const coverage = sat( event.r );
-			const fresh = sat( event.a.mul( 1.35 ) );
-			const width = pow( coverage, 1.3 ).mul( 0.9 ).mul( laceSample.b.mul( 0.5 ).add( 0.75 ) );
+			const fresh = sat( event.a.mul( 1.65 ) );
+			const width = pow( coverage, 1.15 ).mul( 0.95 ).mul( laceSample.b.mul( 0.5 ).add( 0.75 ) );
 			const soft = footprint.mul( 2 ).add( 0.035 );
 			const mat = float( 1 ).sub( smoothstep( width.sub( soft ), width.add( soft ), laceSample.r ) )
 				.mul( smoothstep( 0.005, 0.06, coverage ) );
 			const inner = sat( width.sub( laceSample.r ).div( 0.25 ) );
 			const strandOpacity = inner.mul( 0.35 ).add( laceSample.b.mul( 0.3 ) ).add( 0.4 );
 			const bubbles = laceSample.g.mul( smoothstep( width.add( 0.25 ), width, laceSample.r ) ).mul( smoothstep( 0.03, 0.2, coverage ) ).mul( 0.4 );
-			const pop = smoothstep( 0.015, 0.11, coverage.sub( laceSample.a.mul( 0.17 ) ) );
+			const pop = smoothstep( 0.03, 0.15, coverage.sub( laceSample.a.mul( 0.16 ) ) );
 			const foamLace = max( mat.mul( strandOpacity ), bubbles ).mul( pop );
-			const raggedCore = smoothstep( 0.16, 0.68, fresh.sub( laceSample.r.mul( 0.32 ) ).sub( lumps.r.mul( 0.42 ) ) );
-			const churn = raggedCore.mul( 0.84 ).add( fresh.mul( 0.16 ) ).mul( laceSample.b.mul( 0.12 ).add( 0.88 ) );
+			// Wave contact first fills a small ragged patch. As the fresh channel decays,
+			// holes open into that same patch instead of unrelated thin lines appearing.
+			const bodyDensity = sat( fresh.mul( 1.25 ).add( coverage.mul( 0.2 ) ) );
+			const raggedCore = smoothstep( 0.15, 0.62, bodyDensity.sub( laceSample.r.mul( 0.45 ) ).sub( lumps.r.mul( 0.22 ) ) );
+			const churn = raggedCore.mul( smoothstep( 0.08, 0.22, fresh ) ).mul( laceSample.b.mul( 0.1 ).add( 0.9 ) );
 			const nearFoam = max( foamLace, churn );
-			const farFoam = max( pow( width, 1.45 ).mul( 1.8 ).min( 1 ).mul( 0.75 ).mul( pop ), fresh.mul( 0.82 ) );
+			const farFoam = max( pow( width, 1.45 ).mul( 1.8 ).min( 1 ).mul( 0.75 ).mul( pop ), smoothstep( 0.1, 0.55, fresh ).mul( 0.75 ) );
 			const foamAmt = mix( nearFoam, farFoam, smoothstep( 0.07, 0.2, footprint ) ).mul( smoothstep( 0.02, 0.12, thick ) ).toVar();
 			const foamBounds = smoothstep( 0, 0.015, foamUV.x ).mul( smoothstep( 1, 0.985, foamUV.x ) )
 				.mul( smoothstep( 0, 0.015, foamUV.y ) ).mul( smoothstep( 1, 0.985, foamUV.y ) );
@@ -619,10 +626,19 @@ export class Water {
 			// ---- foam: Lambert diffuse scatterer with a 95% hemispheric reflectance
 			// The shared sky value stores E_sky / PI; convert explicitly to irradiance.
 			const skyE = shared.skyIrradiance.mul( PI );
-			// Bubble relief and cavities shape the existing bounded diffuse response.
-			const foamNormal = normalize( N.add( vec3( reliefSlope.x, 0, reliefSlope.y ).mul( fresh ).mul( 0.035 ) ) );
+			// Transform pattern derivatives on the actual tilted water surface, following
+			// SurfFoam's surface-gradient construction. Density controls height only.
+			const lumpHeight = fresh.mul( 0.035 ).add( coverage.mul( 0.006 ) );
+			const laceHeight = fresh.add( coverage.mul( 0.3 ) ).mul( 0.01 );
+			const bubbleHeight = fresh.mul( 0.0035 );
+			const reliefDx = lumpDx.mul( lumpHeight ).add( laceDx.mul( laceHeight ) ).add( bubbleDx.mul( bubbleHeight ) );
+			const reliefDy = lumpDy.mul( lumpHeight ).add( laceDy.mul( laceHeight ) ).add( bubbleDy.mul( bubbleHeight ) );
+			const r1 = cross( surfaceDy, N ), r2 = cross( N, surfaceDx );
+			const det = dot( surfaceDx, r1 );
+			const gradient = r1.mul( reliefDx ).add( r2.mul( reliefDy ) ).mul( sign( det ) );
+			const foamNormal = normalize( N.mul( abs( det ).add( 1e-6 ) ).sub( gradient ) );
 			const foamNdL = max( dot( foamNormal, L ), 0 );
-			const cavity = mix( float( 1 ), pow( foamRelief, 1.6 ).mul( 0.65 ).add( 0.35 ), fresh );
+			const cavity = mix( float( 1 ), pow( foamRelief, 0.8 ).mul( 0.65 ).add( 0.35 ), smoothstep( 0.05, 0.3, fresh ) );
 			const foamCol = foamLambertRadiance( sunLight, skyE, foamNdL, float( 0.95 ) ).mul( cavity );
 
 			// The opaque underwater pass and column terms are radiance inside water. Convert
