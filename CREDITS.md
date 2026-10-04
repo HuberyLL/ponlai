@@ -38,8 +38,9 @@ packages, into `dist/licenses/`.
   fine FFT ripples retain their continuity through the shelter transition. This global continuation
   and closed-island shelter treatment are our extensions, rather than an upstream diffraction
   solver. The horizontal profile is inverted into world space; surface normals include its complete
-  changing shape. A
-  restrained shape floor makes quiet waves readable in the stylised scene. A local rock-contact
+  changing shape. Calm offshore cross-sections stay round, with height/depth-dependent steepening;
+  restrained crest polishing and scattering avoid periodic mirror-like bands. Lower FFT amplitude
+  and horizontal compression soften the background wind sea. A local rock-contact
   clock supplies weak reflection and wave-triggered whitewater rather than offshore crest lace.
   Finite-depth orbital velocity advects foam, and expansion thins its density. Dense fresh churn
   opens into bubble holes, lace and short strands using the CPU-baked SurfFoam pattern, with

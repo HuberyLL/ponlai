@@ -148,7 +148,7 @@ export class Water {
 		reflection: uniform( 1 ),
 		glitter: uniform( 3.1 ),
 		skyCap: uniform( 2.2 ),
-		detail: uniform( 0.8 ), // the small cascades' share of the shading normal (glassier < 1)
+		detail: uniform( 0.68 ), // the small cascades' share of the shading normal (glassier < 1)
 		sheen: uniform( 0.025 ),
 		shadowMatrix: uniform( new THREE.Matrix4() ),
 		shadowOn: uniform( 0 ),
@@ -373,7 +373,9 @@ export class Water {
 			const foamUV = wp.xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
 			const shoreWave = shoreWaves.surfaceAt( wp.xz, time ).toVar();
 			const clearShoulder = smoothstep( 0.015, 0.18, shoreWave.x ).mul( float( 1 ).sub( shoreWave.w ) );
-			const fineDetail = u.detail.mul( float( 1 ).sub( clearShoulder.mul( 0.42 ) ) );
+			// Strong crest-dependent polishing creates regular mirror/rough bands. Keep the
+			// existing wind texture visible across a quiet swell instead of advertising its clock.
+			const fineDetail = u.detail.mul( float( 1 ).sub( clearShoulder.mul( 0.10 ) ) );
 			const dd0 = texture( der[ 0 ], vLag.div( sizes.x ) ).mul( vShelter )
 				.add( texture( der[ 1 ], vLag.div( sizes.y ) ).mul( vMediumDamp ).add( texture( der[ 2 ], vLag.div( sizes.z ) ).mul( 0.56 ) ).mul( fineDetail ) ).toVar();
 			const event = foamState.sample( foamUV ).toVar();
@@ -579,7 +581,7 @@ export class Water {
 			const clearCrest = smoothstep( 0.035, 0.22, shoreWave.x ).mul( smoothstep( 0.018, 0.11, length( shoreWave.yz ) ) )
 				.mul( float( 1 ).sub( foamAmt ) );
 			const sss = sunLight.mul( vec3( 0.12, 0.55, 0.45 ) ).mul( back.mul( crest ).mul( 0.035 ) )
-				.add( shared.skyIrradiance.mul( vec3( 0.06, 0.3, 0.27 ) ).mul( clearCrest ).mul( 0.018 ) );
+				.add( shared.skyIrradiance.mul( vec3( 0.06, 0.3, 0.27 ) ).mul( clearCrest ).mul( 0.006 ) );
 			const transmitted = bottom.add( inSun ).add( inAmb ).add( sss );
 
 			// ---- foam: bright diffuse scatterer

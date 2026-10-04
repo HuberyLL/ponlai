@@ -23,7 +23,7 @@ const ALONG_TILE = 128;
 export class ShoreWaves {
 
 	readonly period = uniform( 2.8 );
-	readonly amplitude = uniform( 0.20 );
+	readonly amplitude = uniform( 0.14 );
 	readonly direction = uniform( new THREE.Vector2() );
 	readonly field: THREE.TextureNode;
 	readonly contact: THREE.TextureNode;
@@ -72,7 +72,7 @@ export class ShoreWaves {
 			// A phase/along-coordinate tile continues over the whole sea. Integer harmonics and
 			// wrapped wave ids join the tile smoothly, without a fixed world-space birth zone.
 			wave = wave.sub( floor( wave.div( WAVE_COUNT ) ).mul( WAVE_COUNT ) );
-			const set = abs( sin( wave.mul( Math.PI / 7 ) ) ).mul( 0.36 ).add( 0.64 );
+			const set = abs( sin( wave.mul( Math.PI / 7 ) ) ).mul( 0.45 ).add( 0.55 );
 			const random = fract( sin( wave.mul( 127.1 ).add( 31.7 ) ).mul( 43758.5453 ) );
 			const warp = sin( along.mul( TAU * 2 / ALONG_TILE ).add( wave.mul( 0.9 ) ) ).mul( 1.2 );
 			const broad = sin( along.mul( TAU * 7 / ALONG_TILE ).add( wave.mul( 1.7 ) ).add( warp ) );
@@ -89,12 +89,12 @@ export class ShoreWaves {
 			const A = mix( ampAt( m, along, amplitude ), ampAt( m.add( u.sign() ), along, amplitude ), smoothstep( 0.32, 0.5, abs( u ) ).mul( 0.5 ) )
 				.mul( pow( float( 6 ).div( max( depth, 0.7 ) ), 0.25 ).min( 1.65 ) );
 			const wavelength = period.div( invSpeed );
-			// The H/d ratio controls extra sharpening. A gentle shape floor keeps the stylised
-			// clear shoulder readable; distance to land must not invent a beach breaker.
+			// The H/d ratio controls sharpening. Calm offshore swells stay round instead of
+			// inheriting a surf-like crest on every wave; depth must justify the steepening.
 			const nonlinear = smoothstep( 0.08, 0.42, A.mul( 2 ).div( max( depth, 0.7 ) ) );
-			const power = nonlinear.mul( 0.9 ).add( 1.35 );
-			const skew = nonlinear.mul( 0.24 ).add( 0.16 );
-			const Q = nonlinear.mul( 0.25 ).add( 0.45 );
+			const power = nonlinear.mul( 0.9 ).add( 1.0 );
+			const skew = nonlinear.mul( 0.24 ).add( 0.035 );
+			const Q = nonlinear.mul( 0.25 ).add( 0.15 );
 			// Invert Tidewater's horizontal xPre before evaluating in world space. This compresses
 			// the crest and yields the same surface for geometry, normals and foam deposition.
 			const uLag = u.add( sin( u.mul( TAU ) ).mul( A ).mul( Q ).div( wavelength ) ).toVar();
