@@ -1,7 +1,6 @@
 // Deterministic JS noise for the world generator (runs in the mesh worker).
 //   noise3( x, y, z )      improved Perlin, ~[-1, 1]
 //   fbm2( x, y, oct )      fractal sum, ~[-1, 1]
-//   voronoiEdge2( x, y, out )  nearest cell's id and site, exact distance to its border
 //   cellValue3( x, y, z )  random value of the nearest 3D cell (piecewise constant)
 //   hash2i / hash3i        integer hashes to [0, 1)
 //   mulberry32( seed )     small seeded RNG
@@ -101,43 +100,6 @@ export function hash2i( i: number, j: number ): number {
 export function hash3i( i: number, j: number, k: number ): number {
 
 	return hash2i( i + Math.imul( k | 0, 1013 ), j - Math.imul( k | 0, 7919 ) );
-
-}
-
-export interface VoronoiEdge { ci: number; cj: number; sx: number; sy: number; edge: number }
-
-// Voronoi with the exact distance to the nearest cell border (two passes, after Inigo Quilez)
-const jitX = ( cx: number, cy: number ) => cx + 0.15 + 0.7 * hash2i( cx, cy );
-const jitY = ( cx: number, cy: number ) => cy + 0.15 + 0.7 * hash2i( cy + 911, cx - 37 );
-export function voronoiEdge2( x: number, y: number, out: VoronoiEdge ): VoronoiEdge {
-
-	const xi = Math.floor( x ), yi = Math.floor( y );
-	let md = 1e9, ci = 0, cj = 0, mx = 0, my = 0;
-	for ( let j = - 1; j <= 1; j ++ ) for ( let i = - 1; i <= 1; i ++ ) {
-
-		const cx = xi + i, cy = yi + j;
-		const dx = jitX( cx, cy ) - x, dy = jitY( cx, cy ) - y;
-		const d = dx * dx + dy * dy;
-		if ( d < md ) { md = d; ci = cx; cj = cy; mx = dx; my = dy; }
-
-	}
-
-	let me = 1e9;
-	for ( let j = - 2; j <= 2; j ++ ) for ( let i = - 2; i <= 2; i ++ ) {
-
-		if ( i === 0 && j === 0 ) continue;
-		const cx = ci + i, cy = cj + j;
-		const dx = jitX( cx, cy ) - x, dy = jitY( cx, cy ) - y;
-		const ex = dx - mx, ey = dy - my;
-		const el = Math.sqrt( ex * ex + ey * ey );
-		if ( el < 1e-6 ) continue;
-		const e = ( ( mx + dx ) * 0.5 * ex + ( my + dy ) * 0.5 * ey ) / el;
-		if ( e < me ) me = e;
-
-	}
-
-	out.ci = ci; out.cj = cj; out.sx = x + mx; out.sy = y + my; out.edge = me;
-	return out;
 
 }
 

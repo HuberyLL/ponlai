@@ -25,7 +25,7 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 	const sx = nx + 1, sy = ny + 1, sz = nz + 1;
 	const sxy = sx * sy;
 
-	// y innermost: shapes that do per-(x, z) work (Voronoi columns) cache it across a column
+	// y innermost: shapes that do per-(x, z) work (the cliff wall's footprint lookup) cache it across a column
 	const field = new Float32Array( sx * sy * sz );
 	for ( let k = 0; k < sz; k ++ ) {
 
