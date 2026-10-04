@@ -18,6 +18,7 @@ import { shared } from './shared.ts';
 const params = new URLSearchParams( location.search );
 const ground = { soil: params.get( 'soil' ) !== '0' };
 soilUniforms.strength.value = ground.soil ? 1 : 0;
+soilUniforms.blend.value = params.get( 'blend' ) === '0' ? 0 : 1;
 // scene handles and frame diagnostics on window, for the capture tool and the console: dev server
 // or ?debug only
 const DEBUG = import.meta.env.DEV || params.has( 'debug' );
@@ -175,6 +176,7 @@ const W = water.uniforms;
 const groundF = gui.addFolder( 'Ground' );
 groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => { soilUniforms.strength.value = enabled ? 1 : 0; } );
 groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' );
+groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' );
 const sunF = gui.addFolder( 'Sun' );
 sunF.add( sky, 'elevation', - 6, 70, 0.5 ).onFinishChange( applySun );
 sunF.add( sky, 'azimuth', - 180, 180, 1 ).onFinishChange( applySun );
