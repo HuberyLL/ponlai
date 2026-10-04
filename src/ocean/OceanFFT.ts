@@ -22,7 +22,8 @@ import { mulberry32 } from '../world/noise.ts';
 //
 // Per cascade outputs (half float, mipmapped, repeat):
 //   displacement  (Dx, Dy, Dz, jacobian)       derivatives  (dDy/dx, dDy/dz, dDx/dx, dDz/dz)
-// Sample a cascade at world xz / size.
+//   slope moments (dDy/dx squared, dDy/dz squared, their product, signed dDx/dz)
+// Sample all three fields with the same filtering kernel at world xz / size.
 
 const FFT_N = 256;
 const LOG2N = 8;
@@ -51,6 +52,7 @@ export class OceanFFT {
 	params: OceanParams;
 	displacementTextures: THREE.Texture[];
 	derivativeTextures: THREE.Texture[];
+	slopeMomentTextures: THREE.Texture[];
 
 	private time = uniform( 0 );
 	private chop = uniform( 0.85 );
@@ -156,28 +158,33 @@ export class OceanFFT {
 
 		}
 
-		// 3. per cascade: displacement + Jacobian, and the derivatives, into mipmapped textures
+		// 3. per cascade: displacement, derivatives, and linearly filterable slope moments
 		const fin = { A: storage( buf[ src ].attrA, 'vec4', count ).toReadOnly(), B: storage( buf[ src ].attrB, 'vec4', count ).toReadOnly() };
 		this.displacementTextures = [];
 		this.derivativeTextures = [];
+		this.slopeMomentTextures = [];
 		for ( let c = 0; c < C; c ++ ) {
 
-			for ( const which of [ 0, 1 ] ) {
+			for ( const which of [ 0, 1, 2 ] ) {
 
 				const rt = new THREE.RenderTarget( N, N, {
 					type: THREE.HalfFloatType, generateMipmaps: true,
 					minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
 					wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, anisotropy: 8,
 				} );
-				rt.texture.name = ( which ? 'oceanDeriv' : 'oceanDisp' ) + c;
+				rt.texture.name = [ 'oceanDisp', 'oceanDeriv', 'oceanSlopeMoments' ][ which ] + c;
 				const mat = new THREE.NodeMaterial();
 				const px = ivec2( screenCoordinate.xy );
 				const idx = uint( px.y.mul( N ).add( px.x ).add( c * NN ) );
 				const a = fin.A.element( idx ), b = fin.B.element( idx ); // ( Dx, Dz, Dy, dDx/dz ), ( dDy/dx, dDy/dz, dDx/dx, dDz/dz )
 				const J = float( 1 ).add( b.z ).mul( float( 1 ).add( b.w ) ).sub( a.w.mul( a.w ) );
-				mat.fragmentNode = which ? b : vec4( a.x, a.z, a.y, J );
+				// LEAN filtering (Olano and Baker, 2010): squared slopes retain unresolved
+				// variance in the mip chain. The existing derivatives store their means.
+				// This pass observes the final IFFT; it never changes wave evolution or shape.
+				mat.fragmentNode = which === 0 ? vec4( a.x, a.z, a.y, J ) : which === 1 ? b :
+					vec4( b.x.mul( b.x ), b.y.mul( b.y ), b.x.mul( b.y ), a.w );
 				this.outputs.push( { rt, quad: new THREE.QuadMesh( mat ) } );
-				( which ? this.derivativeTextures : this.displacementTextures ).push( rt.texture );
+				[ this.displacementTextures, this.derivativeTextures, this.slopeMomentTextures ][ which ].push( rt.texture );
 
 			}
 
@@ -290,6 +297,20 @@ export class OceanFFT {
 		}
 
 		r.setRenderTarget( prev );
+
+	}
+
+	// The added moment targets have the same lifetime as the existing FFT outputs.
+	dispose(): void {
+
+		for ( const output of this.outputs ) {
+
+			output.rt.dispose();
+			( output.quad.material as THREE.NodeMaterial ).dispose();
+
+		}
+		for ( const kernel of this.kernels ) kernel.dispose();
+		// QuadMesh geometry is shared by other renderer passes.
 
 	}
 

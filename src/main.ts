@@ -200,7 +200,6 @@ waterF.add( W.roughness, 'value', 0.005, 0.2, 0.001 ).name( 'roughness' );
 waterF.add( W.foamAmount, 'value', 0, 2, 0.01 ).name( 'foam' );
 waterF.add( W.glitter, 'value', 0, 20, 0.1 ).name( 'glitter' );
 waterF.add( W.skyCap, 'value', 0.5, 10, 0.1 ).name( 'sky glare cap' );
-waterF.add( W.detail, 'value', 0, 1.5, 0.01 ).name( 'ripple detail' );
 waterF.add( W.sheen, 'value', 0, 1, 0.005 ).name( 'sun sheen' );
 waterF.add( W.ssr, 'value', 0, 1, 1 ).name( 'SSR' );
 const waveF = gui.addFolder( 'Waves' );

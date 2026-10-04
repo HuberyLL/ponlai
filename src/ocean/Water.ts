@@ -9,19 +9,23 @@ import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
-	sin, abs, floor, fract, fwidth, reflect, refract, select,
+	sin, abs, floor, fract, fwidth, reflect, refract, select, dFdx, dFdy,
 } from 'three/tsl';
 import { dirToEquirect } from '../sky/Sky.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
 import { solarShadowVisibility } from '../lighting/SolarShadow.ts';
+import {
+	waveSlopeCovariance, waveLodCovariance, waveParameterGradient, waveSurfaceNormal, waveCovarianceToTangent,
+	waveLocalDirection, waveBeckmannD, waveSmithVisibility, waveSolarSlopeCovariance, waveReflectionAngularVariance, waveAirFacing,
+} from './WaveOptics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
-//   - exact dielectric Fresnel, GGX sun glint shadowed by the island, roughness from the slope
-//     variance the mesh can't resolve at this pixel's footprint (Cox-Munk)
+//   - exact dielectric Fresnel, anisotropic Beckmann sun glint shadowed by the island,
+//     measured FFT slope covariance that this pixel cannot resolve
 //   - refraction: the refracted view ray is traced to the floor through the opaque pass's linear
 //     depth (bounded steps and bisection), the scene behind is sampled where it lands
 //   - water volume: Beer-Lambert absorption along the refracted path plus analytic single
@@ -78,14 +82,6 @@ const D_GGX = Fn( ( [ NdH, a2 ]: [ F, F ] ) => {
 
 } ).setLayout( { name: 'D_GGX', type: 'float', inputs: [ { name: 'NdH', type: 'float' }, { name: 'a2', type: 'float' } ] } );
 
-const V_SmithGGX = Fn( ( [ NdL, NdV, a2 ]: [ F, F, F ] ) => {
-
-	const gv = NdL.mul( sqrt( NdV.mul( NdV ).mul( float( 1 ).sub( a2 ) ).add( a2 ) ) );
-	const gl = NdV.mul( sqrt( NdL.mul( NdL ).mul( float( 1 ).sub( a2 ) ).add( a2 ) ) );
-	return float( 0.5 ).div( max( gv.add( gl ), 1e-5 ) );
-
-} ).setLayout( { name: 'V_SmithGGX', type: 'float', inputs: [ { name: 'NdL', type: 'float' }, { name: 'NdV', type: 'float' }, { name: 'a2', type: 'float' } ] } );
-
 const hash22 = Fn( ( [ p ]: [ V2 ] ) => {
 
 	const a = fract( vec3( p.x, p.y, p.x ).mul( vec3( 0.1031, 0.1030, 0.0973 ) ) ).toVar();
@@ -140,14 +136,13 @@ export class Water {
 	material: THREE.NodeMaterial;
 	uniforms = {
 		backscatter: uniform( 0.038 ),
-		roughness: uniform( 0.058 ),
+		roughness: uniform( 0.058 ), // Beckmann alpha: per-axis base slope variance = alpha squared / 2
 		wind: uniform( 3.4 ),
 		foamAmount: uniform( 1.0 ),
 		ssr: uniform( 1 ),
 		reflection: uniform( 1 ),
 		glitter: uniform( 3.1 ),
 		skyCap: uniform( 2.2 ),
-		detail: uniform( 0.8 ), // the small cascades' share of the shading normal (glassier < 1)
 		sheen: uniform( 0.025 ),
 		shadowMatrix: uniform( new THREE.Matrix4() ),
 		shadowOn: uniform( 0 ),
@@ -191,7 +186,7 @@ export class Water {
 
 		const u = this.uniforms;
 		const sizes = uniform( new THREE.Vector3( ...fft.sizes ) );
-		const disp = fft.displacementTextures, der = fft.derivativeTextures;
+		const disp = fft.displacementTextures, der = fft.derivativeTextures, moments = fft.slopeMomentTextures;
 
 		// ---- vertex: displace the grid by the three cascades (the finest fades out far away). The
 		// undisplaced grid point comes from the geometry: once positionNode is set, positionLocal
@@ -201,13 +196,16 @@ export class Water {
 		// sheltered water right against the rock is calmer
 		const damp = mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) );
 		const far = length( xz.sub( cameraPosition.xz ) );
-		const d = texture( disp[ 0 ], xz.div( sizes.x ) ).level( float( 0 ) ).xyz
+		const fineWeight = float( 1 ).sub( smoothstep( 60, 140, far ) );
+		const fineDisplacement = texture( disp[ 2 ], xz.div( sizes.z ) ).level( float( 0 ) ).xyz;
+		const undamped = texture( disp[ 0 ], xz.div( sizes.x ) ).level( float( 0 ) ).xyz
 			.add( texture( disp[ 1 ], xz.div( sizes.y ) ).level( float( 0 ) ).xyz )
-			.add( texture( disp[ 2 ], xz.div( sizes.z ) ).level( float( 0 ) ).xyz.mul( float( 1 ).sub( smoothstep( 60, 140, far ) ) ) )
-			.mul( damp );
+			.add( fineDisplacement.mul( fineWeight ) );
+		const d = undamped.mul( damp );
 		const material = new THREE.NodeMaterial();
 		material.positionNode = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y ), xz.y.add( d.z ) );
-		const vLag = varying( xz ), vDamp = varying( damp );
+		const vLag = varying( xz ), vDamp = varying( damp ), vFineWeight = varying( fineWeight );
+		const vUndamped = varying( undamped ), vFineDisplacement = varying( fineDisplacement );
 
 		// ---- fragment
 		const tDepth = texture( linearDepth );
@@ -363,10 +361,16 @@ export class Water {
 			const wp = positionWorld;
 
 			// ---- everything that needs screen-space derivatives, while control flow is still uniform
-			// Preserve the broad swell, but let the finest capillary ripples act as polish rather
-			// than a uniform etched pattern over the entire sea.
-			const dd0 = texture( der[ 0 ], vLag.div( sizes.x ) )
-				.add( texture( der[ 1 ], vLag.div( sizes.y ) ).add( texture( der[ 2 ], vLag.div( sizes.z ) ).mul( 0.56 ) ).mul( u.detail ) ).toVar();
+			// Mean slopes and second moments must use the same texture filtering kernel.
+			const d0 = texture( der[ 0 ], vLag.div( sizes.x ) ).toVar();
+			const d1 = texture( der[ 1 ], vLag.div( sizes.y ) ).toVar();
+			const d2 = texture( der[ 2 ], vLag.div( sizes.z ) ).toVar();
+			const m0 = texture( moments[ 0 ], vLag.div( sizes.x ) ).toVar();
+			const m1 = texture( moments[ 1 ], vLag.div( sizes.y ) ).toVar();
+			const m2 = texture( moments[ 2 ], vLag.div( sizes.z ) ).toVar();
+			const lagDx = dFdx( vLag ).toVar(), lagDy = dFdy( vLag ).toVar();
+			const dampGradient = waveParameterGradient( lagDx, lagDy, dFdx( vDamp ), dFdy( vDamp ) ).toVar();
+			const fineGradient = waveParameterGradient( lagDx, lagDy, dFdx( vFineWeight ), dFdy( vFineWeight ) ).toVar();
 			const fuv = wp.xz.mul( 0.14 );
 			const fA = texture( foam, fuv.add( vec2( time.mul( 0.013 ), time.mul( 0.008 ) ) ) ).g.toVar();
 			const fB = texture( foam, fuv.mul( 1.9 ).sub( vec2( time.mul( 0.017 ), time.mul( - 0.011 ) ) ) ).g.toVar();
@@ -378,18 +382,24 @@ export class Water {
 			const footprint = max( length( fwidth( vLag ) ), 1e-4 ).toVar();
 
 			// ---- surface normal from the cascades' slopes (sampled at the undisplaced position)
-			const dd = dd0.mul( vDamp ).toVar();
-			const slope = vec2( dd.x.div( max( dd.z.add( 1 ), 0.2 ) ), dd.y.div( max( dd.w.add( 1 ), 0.2 ) ) );
-			const N = normalize( vec3( slope.x.negate(), 1, slope.y.negate() ) ).toVar();
-			const jac = dd.z.add( 1 ).mul( dd.w.add( 1 ) ).toVar();
+			const dd = d0.add( d1 ).add( d2.mul( vFineWeight ) ).mul( vDamp ).toVar();
+			const horizontalCross = m0.w.add( m1.w ).add( m2.w.mul( vFineWeight ) ).mul( vDamp );
+			const heightGradient = dd.xy.add( dampGradient.mul( vUndamped.y ) )
+				.add( fineGradient.mul( vFineDisplacement.y ).mul( vDamp ) ).toVar();
+			const xWeight = dampGradient.mul( vUndamped.x ).add( fineGradient.mul( vFineDisplacement.x ).mul( vDamp ) ).toVar();
+			const zWeight = dampGradient.mul( vUndamped.z ).add( fineGradient.mul( vFineDisplacement.z ).mul( vDamp ) ).toVar();
+			const horizontal = vec4( dd.z.add( 1 ).add( xWeight.x ), horizontalCross.add( xWeight.y ),
+				horizontalCross.add( zWeight.x ), dd.w.add( 1 ).add( zWeight.y ) ).toVar();
+			const N = waveSurfaceNormal( heightGradient, horizontal ).toVar();
+			const jac = horizontal.x.mul( horizontal.w ).sub( horizontal.y.mul( horizontal.z ) ).toVar();
+			const rawCovariance = waveSlopeCovariance( d0.xy, m0.xyz ).add( waveSlopeCovariance( d1.xy, m1.xyz ) )
+				.add( waveLodCovariance( d2.xy, m2.xyz, vFineWeight ) ).mul( vDamp.mul( vDamp ) ).toVar();
+			const unresolvedCovariance = waveCovarianceToTangent( rawCovariance, heightGradient, horizontal ).toVar();
 
 			const toCam = cameraPosition.sub( wp ).toVar();
 			const V = toCam.div( length( toCam ) ).toVar();
 			const L = shared.sunDir;
 			const posV = cameraViewMatrix.mul( vec4( wp, 1 ) ).xyz.toVar();
-
-			// keep facets that face away from the viewer at grazing instead of flipping them
-			N.assign( normalize( N.add( V.mul( max( dot( N, V ).negate().add( 0.03 ), 0 ) ) ) ) );
 
 			// The water uses the same solar angular size, receiver-plane correction and bias as
 			// standard materials. Keep comparison sampling outside pixel-dependent branches.
@@ -445,20 +455,24 @@ export class Water {
 			foamAmt.assign( max( foamAmt, smoothstep( 0.69, 0.44, jac ).mul( smoothstep( 0.43, 0.65, bubbles ) ).mul( 0.58 ) ) );
 			foamAmt.assign( sat( foamAmt.mul( u.foamAmount ) ) );
 
-			// ---- roughness: base + the slope variance below this pixel's footprint
-			const mss = u.wind.mul( 0.00512 ).add( 0.003 ).toVar();
-			const unresolved = sat( log2( footprint.mul( 110 / PI ) ).div( 9 ) ).toVar();
-			const localRoughness = u.roughness.mul( fLow2.mul( 0.85 ).add( 0.68 ) );
-			const alpha2 = localRoughness.mul( localRoughness ).add( mss.mul( 0.8 ).mul( unresolved ) ).add( foamAmt.mul( 0.2 ) ).toVar();
-			const sigmaUnres = sqrt( mss.mul( unresolved ) );
+			// ---- roughness: measured unresolved spectrum plus a constant microscopic slope width
+			// Beckmann alpha squared is twice each Gaussian slope variance; no GGX moment mapping.
+			const baseVariance = u.roughness.mul( u.roughness ).mul( 0.5 ).add( foamAmt.mul( 0.1 ) );
+			const seaCovariance = unresolvedCovariance.add( vec3( baseVariance, baseVariance, 0 ) ).toVar();
+			const localL = waveLocalDirection( L, N ).toVar(), localV = waveLocalDirection( V, N ).toVar();
 
+			const airFacing = waveAirFacing( N, V ).toVar();
 			const NdV = max( dot( N, V ), 1e-4 ).toVar();
-			const Fr = fresnelDielectric( NdV, float( IOR ) ).toVar();
+			const Fr = fresnelDielectric( NdV, float( IOR ) ).mul( airFacing ).toVar();
 
 			// ---- reflection
 			const Rr = reflect( V.negate(), N ).toVar();
-			const R = normalize( vec3( Rr.x, max( Rr.y, 0.004 ).add( sigmaUnres.mul( 1.3 ).mul( float( 1 ).sub( max( Rr.y, 0 ) ) ) ), Rr.z ) );
-			const refl = texture( sky.equirect.texture, dirToEquirect( R ) ).level( clamp( log2( alpha2.mul( 400 ).add( 1 ) ).add( 1 ), 0, 6 ) ).rgb.toVar();
+			// An isotropic mip is an approximation to the anisotropic reflected Gaussian.
+			// Match its angular variance to a box mip kernel, keeping the reflection direction intact.
+			const reflectionSigma = sqrt( waveReflectionAngularVariance( localV, seaCovariance ) );
+			const skyMip = clamp( log2( max( reflectionSigma.mul( Math.sqrt( 12 ) * sky.equirect.height / PI ), 1 ) ),
+				0, Math.log2( sky.equirect.height ) );
+			const refl = texture( sky.equirect.texture, dirToEquirect( Rr ) ).level( skyMip ).rgb.toVar();
 			refl.mulAssign( u.reflection );
 			// soft knee on the reflected sky: the haze glare around the sun would wash the water out
 			const lr = lum( refl ).toVar();
@@ -482,8 +496,11 @@ export class Water {
 			const NdL = max( dot( N, L ), 0 ).toVar();
 			const NdH = max( dot( N, H ), 0 ).toVar();
 			const VdH = max( dot( V, H ), 0 );
-			const spec = D_GGX( NdH, alpha2 ).mul( V_SmithGGX( NdL, NdV, alpha2 ) ).mul( fresnelDielectric( VdH, float( IOR ) ) ).mul( NdL );
-			const sunSpec = sunLight.mul( min( spec, 300 ) ).toVar();
+			const localH = waveLocalDirection( H, N ).toVar();
+			const sunCovariance = seaCovariance.add( waveSolarSlopeCovariance( localL, localV ) );
+			const spec = waveBeckmannD( localH, sunCovariance ).mul( waveSmithVisibility( localL, localV, seaCovariance ) )
+				.mul( fresnelDielectric( VdH, float( IOR ) ) ).mul( NdL );
+			const sunSpec = sunLight.mul( spec ).toVar();
 			// stylised glare toward the sun: a broad, soft sheen over the water, and inside it glints on
 			// the wave facets that tip toward the sun, thinning out away from the sun's reflection
 			// The artistic accents share the dielectric reflection budget with the physical highlight.
@@ -562,7 +579,9 @@ export class Water {
 				.add( shared.skyIrradiance.mul( mix( float( 1.5 ), float( 1.9 ), coolWash ) ) ).mul( 0.95 );
 
 			const water = mix( transmitted, refl, Fr ).add( sunSpec );
-			const col = mix( water, foamCol.add( sunSpec.mul( 0.05 ) ), foamAmt ).toVar();
+			// Backfacing facets are self-occluded: neither the air reflection nor underwater
+			// transmission emerges through their back side. Neighbor-wave transport is unresolved.
+			const col = mix( water, foamCol.add( sunSpec.mul( 0.05 ) ), foamAmt ).mul( airFacing ).toVar();
 
 			// soften the line where the surface cuts the rock (no hard seam); behind rock: the rock
 			const edge = select( skyBehind, float( 1 ), smoothstep( 0, 0.06, thick ) );
