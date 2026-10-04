@@ -79,6 +79,11 @@ sc.left = - 36; sc.right = 36; sc.top = 36; sc.bottom = - 36; sc.near = 1; sc.fa
 sun.shadow.bias = - 0.01 / ( sc.far - sc.near );
 sun.shadow.normalBias = 0.012;
 installSolarShadowFilter( sun );
+// Vegetation casts its rest pose; wind only changes the visible mesh. The first render
+// builds the complete map, then sunlight or caster edits explicitly invalidate it.
+sun.shadow.autoUpdate = false;
+function invalidateSunShadow(): void { sun.shadow.needsUpdate = true; }
+invalidateSunShadow();
 scene.add( sun, sun.target );
 
 function fresnel( cosI: number, eta: number ): number {
@@ -105,6 +110,7 @@ function applySun(): Promise<void> {
 			sun.color.copy( sky.sunColor );
 			sun.intensity = 1;
 			sun.position.copy( sky.sunDir ).multiplyScalar( 120 ).add( sun.target.position );
+			invalidateSunShadow();
 			scene.environment = sky.envMap!.texture;
 			shared.sunDir.value.copy( sky.sunDir );
 			shared.sunColor.value.set( sky.sunColor.r, sky.sunColor.g, sky.sunColor.b );
@@ -182,9 +188,14 @@ if ( ! params.has( 'gui' ) ) gui.hide();
 const S = pipeline.settings;
 const W = water.uniforms;
 const groundF = gui.addFolder( 'Ground' );
-groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => { soilUniforms.strength.value = enabled ? 1 : 0; } );
-groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' );
-groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' );
+groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => {
+
+	soilUniforms.strength.value = enabled ? 1 : 0;
+	invalidateSunShadow();
+
+} );
+groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' ).onChange( invalidateSunShadow );
+groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' ).onChange( invalidateSunShadow );
 const sunF = gui.addFolder( 'Sun' );
 sunF.add( sky, 'elevation', - 6, 70, 0.5 ).onFinishChange( applySun );
 sunF.add( sky, 'azimuth', - 180, 180, 1 ).onFinishChange( applySun );
@@ -312,4 +323,4 @@ function diagnostics(): void {
 
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, ivy, soilUniforms, applySun };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, ivy, soilUniforms, applySun, invalidateSunShadow };
