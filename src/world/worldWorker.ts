@@ -45,6 +45,9 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	// floor alone can hide a small crown beneath a coarser seabed mesh.
 	const rocks = makeRocks( fp, seabedSampler( sb, n, seabedSize ) );
 	const islandSDF = makeIslandSDF( fp );
+	// Preserve the planting proposals while cliff weathering changes the lower rock faces.
+	// The unchanged upper rim still grounds every visible meadow instance on the real surface.
+	const meadowSDF = makeIslandSDF( fp, { cliffRelief: false } );
 	const rockSDFs = rocks.map( makeRockSDF );
 
 	const meshes: NamedMesh[] = [];
@@ -93,7 +96,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	t = performance.now();
 	const rngV = mulberry32( 4242 );
 	const veg: number[] = [];
-	scatterTop( islandSDF, b.x0 - 0.6, b.x1 + 0.6, b.z0 - 0.6, b.z1 + 0.6, 0.235, ISLAND_TOP, rngV, veg, ( x, z ) => fp.dist( x, z ), 0 );
+	scatterTop( meadowSDF, b.x0 - 0.6, b.x1 + 0.6, b.z0 - 0.6, b.z1 + 0.6, 0.235, ISLAND_TOP, rngV, veg, ( x, z ) => fp.dist( x, z ), 0 );
 	const vegetation = new Float32Array( veg );
 	transfer.push( vegetation.buffer );
 	mark( 'vegetation', t );

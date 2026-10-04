@@ -64,3 +64,9 @@ comment where it is used.
   and USGS, [*Factors affecting sea cliff erosion*](https://www.usgs.gov/media/images/factors-affecting-sea-cliff-erosion).
   Uneven retreat, varied cliff slopes and local toe wear inform the procedural island edge;
   no source code, survey data or images are used.
+
+- Cliff-face relief reference: USGS Professional Paper 1693,
+  [*Processes that Govern the Formation and Evolution of Coastal Cliffs*](https://pubs.usgs.gov/pp/pp1693/pp1693.pdf),
+  chapter 2, p. 9.
+  Differential erosion between stronger and weaker rock informs the staggered projections,
+  recesses and interrupted slope profiles; no source code, survey data or images are used.

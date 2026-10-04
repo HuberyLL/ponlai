@@ -152,14 +152,129 @@ function makeCliffFaces( fp: Footprint ): CliffFace[] {
 
 }
 
-export function makeIslandSDF( fp: Footprint ): SDF {
+interface CliffRelief {
+	x: number; z: number; nx: number; nz: number; left: number; right: number;
+	y: number; bottom: number; upper: number; depth: number;
+	gradeU: number; gradeY: number; lowerTilt: number; upperTilt: number;
+	leftGrade: number; rightGrade: number; leftSlope: number; rightSlope: number;
+	lowerSlope: number; upperSlope: number; corner: number; polarity: number;
+}
+
+// Resistant ledges beside weaker recesses motivate the local mass changes (USGS PP1693):
+// https://pubs.usgs.gov/pp/pp1693/pp1693.pdf . Unequal inclined shoulders retain a broad rock
+// face while the staggered heights prevent a regular course running around the entire island.
+function makeCliffReliefs( faces: CliffFace[] ): CliffRelief[] {
+
+	const rng = mulberry32( 60531 );
+	const reliefs: CliffRelief[] = [];
+	for ( const face of faces ) {
+
+		const exposure = - face.nx * 0.67 + face.nz * 0.74;
+		if ( rng() > ( exposure > 0.2 ? 0.96 : 0.68 ) ) continue;
+		const along = ( rng() - 0.5 ) * 1.7;
+		const left = 1.0 + rng() * 1.15, right = 0.85 + rng() * 1.1;
+		const upper = 0.55 + rng() * 0.35;
+		const upperTilt = ( rng() - 0.5 ) * 0.50;
+		const lowerTilt = - upperTilt * 0.5 + ( rng() - 0.5 ) * 0.62;
+		const ceiling = 2.12 + rng() * 0.23;
+		const y = Math.max( 0.42, Math.min( 0.88 + rng() * 0.96, ceiling - upper - Math.abs( upperTilt ) * Math.max( left, right ) ) );
+		// Some weathered slopes continue into the water. Their missing lower frame is part of
+		// the cliff mass, rather than a complete stamped panel enclosed on all four sides.
+		const waterward = rng() < 0.43;
+		const bottom = waterward ? y + 0.30 + rng() * 0.30 : 0.45 + rng() * 0.43;
+		const lowerSlope = waterward ? 0.42 + rng() * 0.35 : 0.80 + rng() * 0.60;
+		const upperSlope = 0.62 + rng() * 0.50;
+		const depth = Math.min( 0.29 + rng() * 0.32, bottom * lowerSlope * 0.90, upper * upperSlope * 0.90 );
+		const nose = rng() < 0.64;
+		const longLeft = rng() < 0.5;
+		const relief: CliffRelief = {
+			x: face.x - face.nz * along, z: face.z + face.nx * along, nx: face.nx, nz: face.nz,
+			left, right, bottom, upper, y, depth, lowerTilt, upperTilt, lowerSlope, upperSlope,
+			gradeU: ( rng() - 0.5 ) * 0.10, gradeY: ( rng() - 0.5 ) * 0.20,
+			leftGrade: ( rng() - 0.5 ) * 1.00, rightGrade: ( rng() - 0.5 ) * 0.86,
+			leftSlope: longLeft ? 0.24 + rng() * 0.17 : 0.70 + rng() * 0.40,
+			rightSlope: longLeft ? 0.70 + rng() * 0.40 : 0.24 + rng() * 0.17,
+			corner: rng() < 0.5 ? - 1 : 1, polarity: nose ? - 1 : 1,
+		};
+		if ( ! nose && ! waterward && exposure > 0.2 ) {
+
+			// A shallow recess can lose one clear boundary while neighbouring cuts retain their
+			// staggered profiles; opening every recess toward the sea would create a repeated groove.
+			relief.bottom += 0.18;
+			relief.lowerSlope = Math.min( relief.lowerSlope, 0.85 );
+			if ( longLeft ) { relief.left += 0.16; relief.leftSlope *= 0.90; }
+			else { relief.right += 0.16; relief.rightSlope *= 0.90; }
+
+		}
+		limitCliffCap( relief, ceiling );
+		reliefs.push( relief );
+		if ( nose && exposure > 0.2 && rng() < 0.44 ) {
+
+			// A few thick shoulders retain an offset weak patch beneath them. The weak patch
+			// opens toward the toe instead of enclosing a second rectangular inset.
+			const offset = ( rng() - 0.5 ) * 1.1;
+			const lowY = relief.y - Math.min( bottom, 0.75 ) * 0.65 - 0.10;
+			const weak: CliffRelief = {
+				...relief,
+				x: relief.x - relief.nz * offset, z: relief.z + relief.nx * offset,
+				left: left * ( 0.88 + rng() * 0.34 ), right: right * ( 0.80 + rng() * 0.40 ),
+				y: lowY, bottom: lowY + 0.48, upper: 0.55 + rng() * 0.28,
+				depth: 0.18 + rng() * 0.19, gradeY: - 0.04 + rng() * 0.10,
+				lowerTilt: lowerTilt * - 0.7, upperTilt: upperTilt + ( rng() - 0.5 ) * 0.22,
+				lowerSlope: 0.40, upperSlope: 0.85, corner: - relief.corner, polarity: 1,
+			};
+			limitCliffCap( weak, Math.min( 2.32, ceiling - 0.08 ) );
+			reliefs.push( weak );
+
+		}
+
+	}
+	return reliefs;
+
+}
+
+function limitCliffCap( relief: CliffRelief, ceiling: number ): void {
+
+	// The side width also changes with height. Its intersection with the inclined upper
+	// shoulder bounds the whole fragment, including the widened end, below the turf gate.
+	const t = relief.upperTilt;
+	const span = t >= 0 ? ( relief.upper + relief.right * t ) / ( 1 - relief.rightGrade * t )
+		: ( relief.upper - relief.left * t ) / ( 1 + relief.leftGrade * t );
+	relief.y = Math.min( relief.y, ceiling - span - 0.025 );
+
+}
+
+function cliffMin( a: number, b: number ): number {
+
+	return - smax( - a, - b, 0.065 );
+
+}
+
+function cliffPositive( value: number ): number {
+
+	return Math.max( 0, value ) * smoothstep( 0, 0.050, value );
+
+}
+
+function cliffUnion( a: number, b: number ): number {
+
+	// A high-order norm joins overlapping fragments without either a hard support crossing
+	// or a broad soft blob. Even 0.6 m faces gain less than 4 cm at an equal-strength join.
+	const hi = Math.max( a, b ), lo = Math.min( a, b );
+	return hi === 0 ? 0 : hi * Math.pow( 1 + Math.pow( lo / hi, 12 ), 1 / 12 );
+
+}
+
+export function makeIslandSDF( fp: Footprint, { cliffRelief = true }: { cliffRelief?: boolean } = {} ): SDF {
 
 	const top = ( x: number, z: number ) => ISLAND_TOP + noise3( x * 0.18, 4.1, z * 0.18 ) * 0.12 + noise3( x * 0.7, 1.3, z * 0.7 ) * 0.04;
 	const faces = makeCliffFaces( fp );
+	const reliefs = cliffRelief ? makeCliffReliefs( faces ) : [];
 	// The horizontal fields are shared through a full sampled column. Their long correlation
 	// changes the coast's trace and inclination without rumpling the meadow's interior.
-	let cx = NaN, cz = NaN, cD2 = 0, cTop = 0, cCoast = 0, cBatter = 0, cChip = 0, cRound = 0, cDomain = 0;
+	let cx = NaN, cz = NaN, cD2 = 0, cTop = 0, cCoast = 0, cBatter = 0, cChip = 0, cRound = 0, cDomain = 0, cBendDepth = 0, cBendY = 0;
 	const active: { face: CliffFace; u: number; shoulder: number; support: number }[] = [];
+	const activeRelief: { relief: CliffRelief; u: number; support: number }[] = [];
 	function column( x: number, z: number ): void {
 
 		if ( x === cx && z === cz ) return;
@@ -168,11 +283,16 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 		cTop = top( x, z );
 		cChip = 0;
 		active.length = 0;
+		activeRelief.length = 0;
 		if ( cD2 <= - 2.5 || cD2 >= 3.0 ) return;
 		const broad = noise3( x * 0.105 + 8.7, 4.2, z * 0.105 - 3.1 );
 		const shoulder = noise3( x * 0.22 - z * 0.07 - 4.6, 7.9, z * 0.21 + x * 0.04 );
 		cCoast = Math.tanh( broad * 2.25 + shoulder * 0.32 ) * 0.52;
 		const strength = noise3( x * 0.13 - 6.4, 3.7, z * 0.13 + 10.2 );
+		// A few broad changes in wall inclination bridge the local fragments. Their staggered
+		// shoulder heights and signed strengths leave quiet faces beside inclined rock noses.
+		cBendDepth = Math.tanh( shoulder * 4.0 ) * 0.19;
+		cBendY = 1.07 + Math.tanh( strength * 3.2 ) * 0.34;
 		// The exposed wall keeps a meaningful inclination while the submerged toe stays within
 		// the meshing bounds. Positive headlands have less room for an outward battered toe.
 		cBatter = Math.min( 0.028 + smoothstep( - 0.32, 0.31, strength ) * 0.33,
@@ -195,6 +315,17 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 
 		}
 
+		for ( const relief of reliefs ) {
+
+			const dx = x - relief.x, dz = z - relief.z;
+			const across = Math.abs( dx * relief.nx + dz * relief.nz );
+			if ( across >= 2.5 ) continue;
+			const u = - dx * relief.nz + dz * relief.nx;
+			if ( u < - relief.left - 1.5 || u > relief.right + 1.5 ) continue;
+			activeRelief.push( { relief, u, support: 1 - smoothstep( 1.85, 2.5, across ) } );
+
+		}
+
 	}
 
 	const islandSDF: SDF = ( x, y, z ) => {
@@ -214,13 +345,41 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 				* smoothstep( 0, 0.22, shoulder ) * support );
 
 		}
+		// Local mass changes take over from the old full-height affine shoulders on bare walls.
+		// The original lip and submerged toe smoothly keep their existing boundary profile.
+		const wallBand = smoothstep( - 0.50, 0.15, y ) * ( 1 - smoothstep( 2.15, 2.85, y ) );
+		if ( cliffRelief ) cut *= 1 - wallBand * 0.55;
+		let nose = 0, recess = 0;
+		for ( const { relief, u, support } of activeRelief ) {
+
+			const v = y - relief.y;
+			const front = relief.depth + u * relief.gradeU + v * relief.gradeY;
+			const left = ( u + relief.left + v * relief.leftGrade ) * relief.leftSlope;
+			const right = ( relief.right - u + v * relief.rightGrade ) * relief.rightSlope;
+			const bottom = ( v + relief.bottom - u * relief.lowerTilt ) * relief.lowerSlope;
+			const upper = ( relief.upper - v + u * relief.upperTilt ) * relief.upperSlope;
+			const cornerWidth = relief.corner > 0 ? relief.right : relief.left;
+			const corner = ( cornerWidth * 0.90 - u * relief.corner - v * 0.52 ) * 0.80;
+			let body = cliffMin( front, cliffMin( left, right ) );
+			body = cliffMin( body, cliffMin( bottom, upper ) );
+			body = cliffMin( body, corner );
+			const volume = cliffPositive( body ) * support * smoothstep( - 0.45, - 0.12, y );
+			if ( relief.polarity < 0 ) nose = cliffUnion( nose, volume );
+			else recess = cliffUnion( recess, volume );
+
+		}
+		// Narrow inherited cuts must not turn into evenly spaced teeth where a wide shoulder
+		// crosses them. The broad local volume governs that junction; the original lip is intact.
+		cut *= 1 - wallBand * smoothstep( 0.035, 0.20, nose ) * 0.55;
+		const bend = cliffRelief ? cliffPositive( cliffMin( 1, cliffMin( ( y - cBendY + 0.85 ) * 0.92,
+			( cBendY + 0.85 - y ) * 1.80 ) ) ) * cBendDepth : 0;
 		const drop = cTop - y;
 		// Inclined faces continue below the water into a gently easing toe. The derivative is
 		// continuous at the change, with no hard bevel or horizontal step at sea level.
 		const wallHeight = drop <= 2.8 ? drop : 2.8 + ( 1 - Math.exp( - ( drop - 2.8 ) / 1.2 ) ) * 1.2;
 		const wear = noise3( x * 0.55 + 3.8, y * 0.8, z * 0.55 ) * 0.020
 			+ noise3( x * 2.1, y * 1.3 + 4.7, z * 2.1 ) * 0.008;
-		let d = cD2 + ( - cCoast - cBatter * wallHeight + cut + toeWear + wear ) * cDomain;
+		let d = cD2 + ( - cCoast - cBatter * wallHeight + cut + toeWear + recess - nose + bend + wear ) * cDomain;
 		const rim = cTop - cChip * cDomain * smoothstep( - 1.25, 0.10, cD2 - cCoast );
 		d = smax( d, y - rim, cRound );
 		return Math.max( d, dBot );
