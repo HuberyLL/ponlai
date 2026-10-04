@@ -179,7 +179,8 @@ export class Pipeline {
 			const c = ( neutralToneMapping( lin, u.exposure ) as THREE.Node<'vec3'> ).toVar();
 			// teal-blue shadows, golden highlights
 			const l = luminance( c );
-			c.mulAssign( mix( vec3( 0.96, 1.0, 1.04 ), vec3( 1.1, 1.0, 0.82 ), smoothstep( 0.02, 0.45, l ).mul( u.split ).add( float( 1 ).sub( u.split ).mul( 0.5 ) ) ) );
+			const tint = mix( vec3( 0.96, 1.0, 1.04 ), vec3( 1.1, 1.0, 0.82 ), smoothstep( 0.02, 0.45, l ) );
+			c.mulAssign( mix( vec3( 1 ), tint, u.split ) );
 			// saturation with vibrance: muted colours gain more than already saturated ones
 			const l2 = luminance( c );
 			const chroma = max( c.r, max( c.g, c.b ) ).sub( min( c.r, min( c.g, c.b ) ) );

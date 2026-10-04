@@ -10,20 +10,22 @@ packages, into `dist/licenses/`.
 ### tidewater
 
 - Upstream: https://github.com/dgreenheck/tidewater
-- Version: the three.js (TSL) edition, commit
+- Ocean version: the three.js (TSL) edition, commit
   [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86)
   (2026). Later commits port tidewater to its own WebGPU engine, so they no longer match this code.
 - Copyright: (c) 2026 DRG Software Solutions LLC
-- License: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt)
-- Files: `src/ocean/OceanFFT.ts`, `src/ocean/Water.ts`, `src/ocean/Caustics.ts`
-- Changes: ported to TSL and modified for this project.
-
-### glsl-atmosphere
-
-- Upstream: https://github.com/wwwtyro/glsl-atmosphere
-- License: Unlicense (public domain); no notice is required.
-- Files: `src/sky/Sky.ts`
-- Changes: the ray march is ported to TSL and baked into an equirectangular texture.
+- Sky version: native WebGPU edition, commit
+  [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef)
+  (2026-09-25), `src/sky/Atmosphere.js` and `src/sky/Sky.js`.
+- License: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt) and
+  [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt).
+- Ocean files: `src/ocean/OceanFFT.ts`, `src/ocean/Water.ts`, `src/ocean/Caustics.ts`.
+- Ocean changes: ported to TSL and modified for this project's stylised rendering.
+- Sky files: `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`.
+- Sky changes: the WGSL atmosphere and solar disk are ported to TSL; compute LUT generation is
+  replaced by render-target bakes, the transmittance coordinates are made symmetric, and the
+  display, reflection and PBR environment share the same atmosphere. A flat distant-sea reflection
+  completes the finite wave grid. Clouds, aerial perspective, stars and moon rendering are omitted.
 
 ## Assets
 
@@ -48,6 +50,6 @@ comment where it is used.
   [*Rendering Realtime Caustics in WebGL*](https://medium.com/@evanwallace/rendering-realtime-caustics-in-webgl-2a99a29a0b2c).
 - Whiteout triplanar normal blend: Ben Golus,
   [*Normal Mapping for a Triplanar Shader*](https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader-10bf39dca05a) (2017).
-- Single-scattering atmosphere: T. Nishita, T. Shirai, K. Tadamura and E. Nakamae,
-  [*Display of the Earth Taking into Account Atmospheric Scattering*](https://doi.org/10.1145/166117.166140)
-  (SIGGRAPH 1993).
+- Atmosphere LUTs and multiple-scattering approximation: Sébastien Hillaire,
+  [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
+  (EGSR 2020), implemented through the adapted Tidewater source above.
