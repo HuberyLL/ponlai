@@ -39,7 +39,17 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 }
 
 const DPR_CAP = params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : 1.5;
-renderer.setPixelRatio( Math.min( devicePixelRatio, DPR_CAP ) );
+const resolution = { full: params.has( 'dpr' ) };
+const DEFAULT_PIXEL_BUDGET = 1920 * 1080;
+function renderPixelRatio( width: number, height: number ): number {
+
+	const requested = Math.min( devicePixelRatio, DPR_CAP );
+	// Ocean optics and post effects scale with pixel count. Bound the default workload on
+	// large/high-DPI windows; explicit DPR captures and the full-resolution control opt out.
+	return resolution.full ? requested : Math.min( requested, Math.sqrt( DEFAULT_PIXEL_BUDGET / ( width * height ) ) );
+
+}
+renderer.setPixelRatio( renderPixelRatio( innerWidth, innerHeight ) );
 renderer.setSize( innerWidth, innerHeight );
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -187,6 +197,7 @@ const gui = new GUI( { title: 'Soomi · lighting & water' } );
 if ( ! params.has( 'gui' ) ) gui.hide();
 const S = pipeline.settings;
 const W = water.uniforms;
+gui.addFolder( 'Performance' ).add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
 const groundF = gui.addFolder( 'Ground' );
 groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => {
 
@@ -250,6 +261,7 @@ postF.add( S, 'grain', 0, 0.05, 0.001 );
 function resize(): void {
 
 	const w = innerWidth, h = innerHeight;
+	renderer.setPixelRatio( renderPixelRatio( w, h ) );
 	renderer.setSize( w, h );
 	camera.aspect = w / h;
 	camera.updateProjectionMatrix();
