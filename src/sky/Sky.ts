@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, uv, uniform, texture, positionWorld, cameraPosition, normalize, smoothstep, dot,
 	vec2, vec3, vec4, ivec2, float, sqrt, max, atan, asin, acos, clamp, cos, sin, mix, abs, select,
-	pmremTexture, textureLoad, Loop,
+	pmremTexture, textureLoad, Loop, exp2,
 } from 'three/tsl';
 import { Atmosphere, SUN_ANGULAR_RADIUS, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_PROJECTED_SOLID_ANGLE } from '../lighting/Radiometry.ts';
@@ -34,6 +34,10 @@ interface SkyEndpoint {
 	keyColor: THREE.Color;
 	moonDir: THREE.Vector3;
 	moonColor: THREE.Color;
+	starVisibility: number;
+	exposure: number;
+	blackLift: number;
+	daylight: number;
 	irradiance: THREE.Color;
 }
 
@@ -56,6 +60,8 @@ function makeEndpoint(): SkyEndpoint {
 		solarIlluminance: new THREE.Color( 0, 0, 0 ),
 		keyDir: new THREE.Vector3( 0, 1, 0 ), keyColor: new THREE.Color( 0, 0, 0 ),
 		moonDir: new THREE.Vector3( 0, - 1, 0 ), moonColor: new THREE.Color( 0, 0, 0 ),
+		starVisibility: 0,
+		exposure: 2.35, blackLift: 0.027, daylight: 1,
 		irradiance: new THREE.Color( 0, 0, 0 ),
 	};
 
@@ -102,6 +108,7 @@ export class Sky {
 	sunColor = new THREE.Color(); // irradiance at sea level
 	keyDir = new THREE.Vector3();
 	keyColor = new THREE.Color();
+	readonly grade = { exposure: 2.35, blackLift: 0.027, daylight: 1 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
 	equirect: THREE.RenderTarget;
@@ -144,13 +151,19 @@ export class Sky {
 	private liveDiagnostics = false;
 	private displaySunDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
 	private displaySolarIlluminance = uniform( new THREE.Color( 0, 0, 0 ) );
+	private keyRotation = new THREE.Quaternion();
+	private keyRotationTarget = new THREE.Quaternion();
 	private pmrem: THREE.PMREMGenerator;
 	private quad: THREE.QuadMesh;
 	private upperHemisphere: THREE.RenderTarget;
+	private reflectionSource: THREE.RenderTarget;
 	private upperQuad: THREE.QuadMesh;
 	private sea = uniform( new THREE.Color() );
 	private nightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
 	private irradiancePass = uniform( 0 );
+	private includeStars = uniform( 0 );
+	private bakeStarVisibility = uniform( 0 );
+	private starFootprint = uniform( 1 );
 	private shadowQuad: THREE.QuadMesh;
 
 	constructor( renderer: THREE.WebGPURenderer, { sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 } = {} ) {
@@ -167,6 +180,10 @@ export class Sky {
 			wrapS: THREE.RepeatWrapping, wrapT: THREE.ClampToEdgeWrapping,
 		} );
 		this.upperHemisphere.texture.name = 'skyUpperHemisphere';
+		// Only the environment source contains filtered stars. The displayed panoramas stay
+		// star-free so the dome and water can evaluate sharp/rough stars without double counting.
+		this.reflectionSource = this.equirect.clone();
+		this.reflectionSource.texture.name = 'skyStarlitEnvironment';
 		this.cloudShadow = new THREE.RenderTarget( 128, 128, { type: THREE.HalfFloatType, depthBuffer: false } );
 		this.panoramaA = texture( this.equirect.texture );
 		this.panoramaB = texture( this.equirect.texture );
@@ -247,7 +264,9 @@ export class Sky {
 			const q = uv();
 			const d = equirectToDir( q ).toVar();
 			const cloud = upperTexture.sample( vec2( q.x, abs( q.y.sub( 0.5 ) ).mul( 2 ) ) ).level( float( 0 ) ).toVar();
-			const radiance = seaPanorama( d, cloud.rgb, this.sea.rgb );
+			const up = vec3( d.x, abs( d.y ), d.z );
+			const stars = this.night.stars( up, this.starFootprint, this.bakeStarVisibility.mul( this.includeStars ) );
+			const radiance = seaPanorama( d, cloud.rgb.add( stars.mul( cloud.a ) ), this.sea.rgb );
 			return vec4( radiance, mix( cloud.a, d.y, this.irradiancePass ) );
 
 		} )();
@@ -269,7 +288,7 @@ export class Sky {
 			const disk = this.atmosphere.transmittanceToSpace( d ).mul( this.displaySolarIlluminance )
 				.mul( mask ).mul( limb ).div( SUN_PROJECTED_SOLID_ANGLE ).mul( smoothstep( 0, 0.001, d.y ) );
 			const background = this.samplePanorama( d, float( 0 ) );
-			return vec4( background.rgb.add( disk.add( this.night.moon( d ) ).mul( background.a ) ), 1 );
+			return vec4( background.rgb.add( disk.add( this.night.moon( d ) ).add( this.night.stars( d ) ).mul( background.a ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
@@ -350,6 +369,9 @@ export class Sky {
 		const next = this.initialized ? 1 - this.front : 0;
 		const state = this.endpoints[ next ];
 		state.version = version;
+		state.exposure = celestial?.exposure ?? 2.35;
+		state.blackLift = celestial?.blackLift ?? 0.027;
+		state.daylight = celestial?.daylight ?? 1;
 		const el = THREE.MathUtils.degToRad( elevation ), az = THREE.MathUtils.degToRad( azimuth );
 		state.sunDir.set( Math.cos( el ) * Math.cos( az ), Math.sin( el ), Math.cos( el ) * Math.sin( az ) ).normalize();
 		state.solarIlluminance.copy( tint ).multiplyScalar( illuminance );
@@ -364,7 +386,8 @@ export class Sky {
 			// A modest art-directed moon remains orders darker than daylight on the island.
 			state.keyColor.add( new THREE.Color( 0.65, 0.76, 1 ).multiplyScalar( illuminance * 0.04 * celestial.moonKeyGain ) );
 			state.moonDir.copy( celestial.moonDir );
-			state.moonColor.setRGB( 0.14, 0.16, 0.19 ).multiplyScalar( celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
+			state.moonColor.setRGB( 0.035, 0.04, 0.0475 ).multiplyScalar( celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
+			state.starVisibility = celestial.nightVisibility * ( 1 - 0.22 * celestial.moonVisibility * celestial.moonIllumination );
 			this.nightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightVisibility );
 			this.sea.value.copy( this.seaColor ).multiplyScalar( illuminance * celestial.daylight )
 				.add( this.nightAmbient.value.clone().multiplyScalar( 0.22 ) );
@@ -373,6 +396,7 @@ export class Sky {
 
 			state.moonColor.setRGB( 0, 0, 0 );
 			state.moonDir.copy( state.sunDir ).negate();
+			state.starVisibility = 0;
 			this.nightAmbient.value.setRGB( 0, 0, 0 );
 			this.sea.value.copy( this.seaColor ).multiplyScalar( illuminance );
 
@@ -380,6 +404,7 @@ export class Sky {
 		this.clouds.lightDir.value.copy( state.keyDir );
 		this.clouds.lightColor.value.copy( state.keyColor );
 		this.clouds.ambientColor.value.setRGB( 0.04, 0.055, 0.08 ).multiplyScalar( illuminance * ( celestial ? celestial.daylight + celestial.nightVisibility * 0.008 : 1 ) );
+		this.bakeStarVisibility.value = state.starVisibility;
 		const r = this.renderer, prev = r.getRenderTarget();
 		try {
 
@@ -387,10 +412,13 @@ export class Sky {
 			this.upperQuad.render( r );
 			// Both samplers must have distinct textures at the first material compilation:
 			// Three deduplicates texture uniforms by UUID, even for separate TextureNodes.
-			const panoramas = this.initialized ? [ state.equirect, this.small ] : [ state.equirect, this.endpoints[ 1 ].equirect, this.small ];
+			const panoramas = this.initialized ? [ state.equirect, this.reflectionSource, this.small ] :
+				[ state.equirect, this.endpoints[ 1 ].equirect, this.reflectionSource, this.small ];
 			for ( const rt of panoramas ) {
 
 				this.irradiancePass.value = rt === this.small ? 1 : 0;
+				this.includeStars.value = rt === this.small || rt === this.reflectionSource ? 1 : 0;
+				this.starFootprint.value = Math.SQRT2 * Math.PI / rt.height;
 				r.setRenderTarget( rt );
 				this.quad.render( r );
 
@@ -431,12 +459,12 @@ export class Sky {
 			state.irradiance.setRGB( E[ 0 ] / Math.PI, E[ 1 ] / Math.PI, E[ 2 ] / Math.PI );
 
 		}
-		state.environment = this.pmrem.fromEquirectangular( state.equirect.texture, state.environment ?? undefined );
+		state.environment = this.pmrem.fromEquirectangular( this.reflectionSource.texture, state.environment ?? undefined );
 		if ( ! this.initialized ) {
 
 			this.front = next;
 			const spare = this.endpoints[ 1 ];
-			spare.environment = this.pmrem.fromEquirectangular( spare.equirect.texture );
+			spare.environment = this.pmrem.fromEquirectangular( this.reflectionSource.texture );
 
 		}
 		const previous = this.endpoints[ this.front ];
@@ -505,10 +533,12 @@ export class Sky {
 
 		const a = this.endpoints[ this.front ], b = this.endpoints[ this.destination ];
 		blendDirection( this.sunDir, a.sunDir, b.sunDir, amount );
-		blendDirection( this.keyDir, a.keyDir, b.keyDir, amount );
+		this.blendKey( a, b, amount );
 		blendDirection( this.night.moonDir.value, a.moonDir, b.moonDir, amount );
 		this.sunColor.copy( a.sunColor ).lerp( b.sunColor, amount );
-		this.keyColor.copy( a.keyColor ).lerp( b.keyColor, amount );
+		this.grade.exposure = THREE.MathUtils.lerp( a.exposure, b.exposure, amount );
+		this.grade.blackLift = THREE.MathUtils.lerp( a.blackLift, b.blackLift, amount );
+		this.grade.daylight = THREE.MathUtils.lerp( a.daylight, b.daylight, amount );
 		// During a running cycle this CPU value is diagnostic only. Water and characters use
 		// irradianceNode, which blends the exact GPU integrals on the same frame as the sky.
 		if ( ! this.liveDiagnostics ) this.skyIrradiance.copy( a.irradiance ).lerp( b.irradiance, amount );
@@ -516,7 +546,32 @@ export class Sky {
 		this.displaySolarIlluminance.value.copy( a.solarIlluminance ).lerp( b.solarIlluminance, amount );
 		this.night.sunDir.value.copy( this.sunDir );
 		this.night.moonColor.value.copy( a.moonColor ).lerp( b.moonColor, amount );
+		this.night.starVisibility.value = THREE.MathUtils.lerp( a.starVisibility, b.starVisibility, amount );
 		this.renderDisplayMaps();
+
+	}
+
+	private blendKey( a: SkyEndpoint, b: SkyEndpoint, amount: number ): void {
+
+		if ( this.transitionDuration > 0 && a.keyDir.dot( b.keyDir ) < Math.cos( Math.PI / 12 ) ) {
+
+			// A fast clock can skip the celestial controller's entire dark handoff band
+			// between two bakes. Never rotate a still-visible sun toward the moon: fade out,
+			// turn with exactly zero direct energy, then fade in the new source.
+			const turn = THREE.MathUtils.smoothstep( amount, 0.2, 0.8 );
+			this.keyRotationTarget.setFromUnitVectors( a.keyDir, b.keyDir );
+			this.keyRotation.identity().slerp( this.keyRotationTarget, turn );
+			this.keyDir.copy( a.keyDir ).applyQuaternion( this.keyRotation ).normalize();
+			if ( amount < 0.2 ) this.keyColor.copy( a.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( amount, 0, 0.2 ) );
+			else if ( amount > 0.8 ) this.keyColor.copy( b.keyColor ).multiplyScalar( THREE.MathUtils.smoothstep( amount, 0.8, 1 ) );
+			else this.keyColor.setRGB( 0, 0, 0 );
+
+		} else {
+
+			blendDirection( this.keyDir, a.keyDir, b.keyDir, amount );
+			this.keyColor.copy( a.keyColor ).lerp( b.keyColor, amount );
+
+		}
 
 	}
 
@@ -570,7 +625,16 @@ export class Sky {
 
 	}
 
-	sample( direction: V3, mip: F = float( 0 ) ): V3 { return this.samplePanorama( direction, mip ).rgb; }
+	sample( direction: V3, mip: F = float( 0 ) ): V3 {
+
+		const background = this.samplePanorama( direction, mip ).toVar();
+		// The ocean already converts its unresolved slope variance to this angular mip.
+		// Apply that same footprint to celestial points, keeping their locations fixed while
+		// spreading/dimming their finite energy rather than adding screen-space sparkles.
+		const footprint = exp2( mip ).mul( Math.SQRT2 * Math.PI / this.equirect.height );
+		return background.rgb.add( this.night.stars( direction, footprint ).mul( background.a ) );
+
+	}
 
 	cloudVisibility( worldPosition: V3 ): F {
 
@@ -586,6 +650,7 @@ export class Sky {
 		( this.quad.material as THREE.Material ).dispose();
 		( this.upperQuad.material as THREE.Material ).dispose();
 		this.upperHemisphere.dispose();
+		this.reflectionSource.dispose();
 		this.small.dispose();
 		this.cloudShadow.dispose();
 		this.envMap?.dispose();

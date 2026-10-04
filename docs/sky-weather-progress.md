@@ -73,10 +73,30 @@ single-page headless Chromium with WebGPU; no other page is opened in the captur
   mean (+1.42%) and 35.6–38.4 ms sampled P95, versus the 26.524 ms static baseline. Sky updates have a measurable
   periodic cost; this is not a 60 FPS claim. Texture count stabilizes at 84.
 
+### Stage 3 — stars and lunar detail
+
+- A fixed celestial star field uses angular, energy-preserving pixel filtering. Visible stars,
+  water reflections, PMREM and hemisphere irradiance share the field and cloud transmission.
+  The displayed panorama remains star-free so analytical stars are not counted twice.
+- New moon has exactly zero disk radiance. Resolved crescent/quarter/full lunar areas are
+  388/1167/2188 pixels in the fixed test. Lower disk radiance retains lunar markings without
+  the previous strong bloom; moonlight on the island is unchanged.
+- `verify-night-sky.mjs` passes: 1499 contributing star pixels in the 512² raw probe,
+  maximum scene radiance .01093; frozen-repeat and camera-return errors are exactly zero,
+  and daytime stellar contribution is exactly zero. Four lunar image pairs and the star pair
+  are byte-identical. Evidence: `artifacts/verification/night-sky/`.
+- Display grade follows the published sky endpoints. Fast sun/moon handoffs fade out the old
+  key, turn with zero direct energy, then fade in the new key, preventing an illuminated swing.
+- `verify-celestial-handoff.mjs` passes three rapid sunset/sunrise transitions with 36 samples
+  each, including 15 exactly dark turning samples. Published exposure agrees with the sky.
+- Required-resolution daylight benchmark: **27.060 ms** mean (+0.159 ms versus stage 2),
+  sampled P95 38.4–38.7 ms. Star reflection source adds one stable texture (85 total).
+
 ## Review controls
 
 Press **H** for controls and **Space** to pause scene animation and the day clock. `Time & moon`
 offers hours, seconds per day, independent clock pause, presets, phase and optional lunar advance.
+`Sky & clouds` includes island, horizon and sky review cameras.
 Reproducible URLs accept `paused&t=12&hour=16&moon=0.5&quality=medium&dpr=1`;
 `clock=paused` freezes only the day clock. Presets include dawn, sunrise, noon, golden-hour,
 sunset, dusk and midnight. The debug API is available only in development or with `?debug`.

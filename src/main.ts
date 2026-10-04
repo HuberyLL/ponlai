@@ -288,6 +288,26 @@ groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' )
 groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' ).onChange( invalidateSunShadow );
 const sunF = gui.addFolder( 'Sun' );
 const cloudF = gui.addFolder( 'Sky & clouds' );
+const reviewView = { camera: 'island' };
+cloudF.add( reviewView, 'camera', [ 'island', 'horizon', 'sky' ] ).name( 'review camera' ).onChange( ( view: string ) => {
+
+	controls.maxPolarAngle = view === 'sky' ? 2.8 : THREE.MathUtils.degToRad( 82 );
+	if ( view === 'sky' ) {
+
+		controls.target.set( 0, 65, 0 );
+		camera.position.set( - 80, 20, 55 );
+
+	} else {
+
+		controls.target.copy( target );
+		camera.position.setFromSphericalCoords( view === 'horizon' ? 110 : 58,
+			THREE.MathUtils.degToRad( view === 'horizon' ? 82 : 50 ),
+			THREE.MathUtils.degToRad( view === 'horizon' ? 125 : 318 ) ).add( target );
+
+	}
+	controls.update();
+
+} );
 cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover' ).onFinishChange( refreshEnvironment );
 cloudF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'sky quality' ).onFinishChange( () => { applySkyQuality(); void refreshEnvironment(); } );
 const timeF = gui.addFolder( 'Time & moon' );
@@ -403,7 +423,7 @@ function tick(): void {
 	publishLighting();
 	if ( ! manualSun && environmentLook.exposure ) {
 
-		const state = dayCycle.snapshot();
+		const state = sky.grade;
 		S.exposure = state.exposure;
 		S.lift.setRGB( state.blackLift, state.blackLift, state.blackLift * 0.97 );
 		S.split = 0.16 + state.daylight * 0.29;

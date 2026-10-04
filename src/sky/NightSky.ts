@@ -104,7 +104,10 @@ const nightMoon = Fn( ( [ direction, footprint, sunDir, moonDir, moonColor ]: [ 
 			.add( nightNoise( q.mul( 6.7 ).add( vec2( 23.4, 3.9 ) ) ).mul( 0.25 ) ).toVar();
 		const albedo = float( 0.94 ).sub( smoothstep( 0.38, 0.69, maria ).mul( 0.23 ) );
 		const horizon = smoothstep( - MOON_ANGULAR_RADIUS, 0.015, direction.y );
-		radiance.assign( moonColor.mul( albedo ).mul( terminator ).mul( disk ).mul( horizon ) );
+		// At exact conjunction, roundoff in the tangent plane can leave a faint positive
+		// incidence outside the antialiased rim. Suppress only this vanishing phase interval.
+		const phase = smoothstep( 0, 0.0002, float( 1 ).sub( dot( sunDir, moonDir ) ).mul( 0.5 ) );
+		radiance.assign( moonColor.mul( albedo ).mul( terminator ).mul( disk ).mul( horizon ).mul( phase ) );
 
 	} );
 	return radiance;
@@ -119,7 +122,7 @@ export class NightSky {
 	readonly sunDir = uniform( new THREE.Vector3( 1, 0, 0 ) );
 	readonly moonDir = uniform( new THREE.Vector3( - 1, 0, 0 ) );
 	// Full illuminated disk radiance in scene units. Phase comes only from the directions.
-	readonly moonColor = uniform( new THREE.Color( 0.14, 0.16, 0.19 ) );
+	readonly moonColor = uniform( new THREE.Color( 0.035, 0.04, 0.0475 ) );
 	readonly starVisibility = uniform( 0 );
 
 	stars( direction: V3, angularFootprint?: F, visibility: F = this.starVisibility ): V3 {
