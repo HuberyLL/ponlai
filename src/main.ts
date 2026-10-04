@@ -14,6 +14,7 @@ import { buildIvy } from './world/Ivy.ts';
 import { Pipeline } from './post/Pipeline.ts';
 import { shared } from './shared.ts';
 import { installSolarShadowFilter } from './lighting/SolarShadow.ts';
+import { RefractedSun } from './lighting/RefractedSun.ts';
 
 const params = new URLSearchParams( location.search );
 // scene handles and frame diagnostics on window, for the capture tool and the console: dev server
@@ -150,6 +151,10 @@ const islandShore = shoreTextureFrom( data.islandShore );
 shared.shoreXform.value.copy( shore.xform );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
+const refractedSun = new RefractedSun( renderer, shared );
+refractedSun.setCasters( world.group );
+refractedSun.bindTerrain( world.group );
+await refractedSun.prepare();
 const grass = buildGrass( data.vegetation, shared );
 const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
@@ -267,6 +272,7 @@ function tick(): void {
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
 	caustics.update( sky.sunDir );
+	refractedSun.update();
 	S.focusDistance = camera.position.distanceTo( controls.target );
 
 	pipeline.render( { scene, waterScene, camera, water: water!, sun, time: simTime } );
@@ -299,4 +305,4 @@ function diagnostics(): void {
 
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, grass, foliage, flowers, ivy, applySun };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, ivy, applySun };

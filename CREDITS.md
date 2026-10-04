@@ -59,3 +59,6 @@ comment where it is used.
 - Contact-hardening solar shadows: Randima Fernando,
   [*Percentage-Closer Soft Shadows*](https://developer.download.nvidia.com/shaderlibrary/docs/shadow_PCSS.pdf)
   (SIGGRAPH 2005), independently implemented in TSL for a directional solar disk.
+- Air/water optical interface: Snell's law and dielectric transport as described in
+  [*Physically Based Rendering*, fourth edition](https://pbr-book.org/4ed/Reflection_Models/Dielectric_BSDF),
+  independently implemented for solar direction, beam-area conservation and two-segment shadows.

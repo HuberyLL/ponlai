@@ -16,6 +16,7 @@ import type { Sky } from '../sky/Sky.ts';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
 import { solarShadowVisibility } from '../lighting/SolarShadow.ts';
+import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
@@ -527,8 +528,8 @@ export class Water {
 			// ---- the water body: absorption along the path + single scattering of sun and sky
 			const sigA = shared.sigA, sigS = shared.sigS;
 			const sigT = sigA.add( sigS ).toVar();
-			const Ls = refract( L.negate(), vec3( 0, 1, 0 ), 1 / IOR ).negate().toVar();
-			const muS = max( Ls.y, 0.1 );
+			const Ls = refractedSunDirectionNode( L ).toVar();
+			const muS = Ls.y;
 			const muV = max( Tv.y.negate(), 0.15 );
 			// Each source retains its own optical depth while confidence blends the hits.
 			// One mixed path would tint a bright shallow source as if it belonged to the basin.
@@ -537,7 +538,10 @@ export class Water {
 				refractedCol.mul( exp( sigT.negate().mul( hit.z ) ) ), refractionTrust
 			);
 			// (in a shadow the volume still glows: light scattered in sideways from the sunlit water)
-			const sunIn = shared.sunColor.mul( mix( float( 0.45 ), float( 1 ), shadow ) ).mul( shared.sunIntoWater );
+			// Match the terrain's refracted beam: transmission retains horizontal power,
+			// while beam-normal irradiance changes with the Snell area projection.
+			const sunIn = shared.sunColor.mul( mix( float( 0.45 ), float( 1 ), shadow ) )
+				.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( L ) );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
 			const kAmb = sigT.mul( muV.div( 0.75 ).add( 1 ) ).toVar();
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
