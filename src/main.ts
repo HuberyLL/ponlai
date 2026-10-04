@@ -3,6 +3,7 @@ import { Fn, positionWorld } from 'three/tsl';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { Sky } from './sky/Sky.ts';
+import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
 import { Caustics } from './ocean/Caustics.ts';
@@ -81,11 +82,28 @@ controls.update();
 // ------------------------------------------------------------------ sky, light, water optics
 
 const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
-sky.clouds.coverage.value = THREE.MathUtils.clamp( Number( params.get( 'clouds' ) ?? 0.28 ), 0, 1 );
+const numberParam = ( name: string, fallback: number ) => {
+
+	const value = Number( params.get( name ) ?? fallback );
+	return Number.isFinite( value ) ? value : fallback;
+
+};
+const dayCycle = new DayCycle( { hour: numberParam( 'hour', 16 ), dayLength: Math.max( 30, numberParam( 'dayLength', 600 ) ),
+	paused: params.has( 'paused' ) || params.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.5 ) } );
+const requestedPreset = params.get( 'preset' );
+if ( requestedPreset && Object.hasOwn( DAY_PRESETS, requestedPreset ) ) dayCycle.setPreset( requestedPreset as DayPreset );
+let manualSun = false;
+let paused = params.has( 'paused' );
+let simTime = numberParam( 't', 0 );
+let skyElapsed = 0;
+let lastSkyTime = simTime;
+let lastSkyHour = dayCycle.hour;
+sky.clouds.coverage.value = THREE.MathUtils.clamp( numberParam( 'clouds', 0.28 ), 0, 1 );
+sky.clouds.windOffset.value.set( - numberParam( 't', 0 ) * 0.61, - numberParam( 't', 0 ) * 0.51 );
 const skyQuality = { value: params.get( 'quality' ) ?? 'medium' };
 function applySkyQuality(): void {
 
-	sky.clouds.quality.value = skyQuality.value === 'low' ? 6 : skyQuality.value === 'high' ? 14 : 10;
+	sky.setQuality( skyQuality.value === 'low' ? 'low' : skyQuality.value === 'high' ? 'high' : 'medium' );
 
 }
 applySkyQuality();
@@ -130,47 +148,62 @@ function fresnel( cosI: number, eta: number ): number {
 }
 
 let sunUpdates = Promise.resolve();
-let skyUpdating = false;
-function applySun(): Promise<void> {
+function publishLighting(): void {
 
-	// GUI changes can arrive during GPU readback. Serialise the entire bake and publication so
-	// the key light, water uniforms and environment always belong to the same completed sky.
-	// Recover the queue after reporting a failed update, allowing the next adjustment to retry.
-	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( async () => {
+	sun.color.copy( sky.keyColor );
+	sun.intensity = 1;
+	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
+	shared.sunDir.value.copy( sky.keyDir );
+	shared.sunColor.value.set( sky.keyColor.r, sky.keyColor.g, sky.keyColor.b );
+	const cosI = Math.max( sky.keyDir.y, 0 );
+	shared.sunIntoWater.value = sky.keyDir.y > 0 ? 1 - fresnel( cosI, 1.333 ) : 0;
+	const eta = 1 / 1.333;
+	shared.muSun.value = Math.sqrt( 1 - eta * eta * ( 1 - cosI * cosI ) );
+	applySkyFill();
 
-		skyUpdating = true;
-		try {
+}
 
-			await sky.update();
-			sun.color.copy( sky.sunColor );
-			sun.intensity = 1;
-			sun.position.copy( sky.sunDir ).multiplyScalar( 120 ).add( sun.target.position );
-			invalidateSunShadow();
-			scene.environment = sky.envMap!.texture;
-			shared.sunDir.value.copy( sky.sunDir );
-			shared.sunColor.value.set( sky.sunColor.r, sky.sunColor.g, sky.sunColor.b );
-			// sunlight entering the water: Fresnel transmission and the refracted elevation
-			const cosI = Math.max( sky.sunDir.y, 0 );
-			shared.sunIntoWater.value = sky.sunDir.y > 0 ? 1 - fresnel( cosI, 1.333 ) : 0;
-			const eta = 1 / 1.333;
-			shared.muSun.value = Math.sqrt( 1 - eta * eta * ( 1 - cosI * cosI ) );
-			applySkyFill();
+async function bakeEnvironment(): Promise<void> {
 
-		} finally {
+	// Explicit preset changes settle any in-flight bake first. The running clock uses a single
+	// coalesced request below, never a growing async queue or a suspended animation loop.
+	if ( sky.busy ) await sky.update();
+	sky.setCelestial( manualSun ? null : dayCycle.snapshot() );
+	await sky.update();
+	scene.environment = sky.envMap!.texture;
+	( scene as unknown as { environmentNode: THREE.Node<'vec3'> | null } ).environmentNode = sky.environmentNode;
+	publishLighting();
+	invalidateSunShadow();
+	lastSkyHour = dayCycle.hour;
+	lastSkyTime = simTime;
+	skyElapsed = 0;
 
-			skyUpdating = false;
+}
 
-		}
+function refreshEnvironment(): Promise<void> {
 
-	} );
+	manualSun = false;
+	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( bakeEnvironment );
 	return sunUpdates;
 
 }
+
+function applySun(): Promise<void> {
+
+	manualSun = true;
+	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( bakeEnvironment );
+	return sunUpdates;
+
+}
+
+const setHour = async ( hour: number ) => { dayCycle.setHour( hour ); await refreshEnvironment(); };
+const setPreset = async ( preset: DayPreset ) => { dayCycle.setPreset( preset ); await refreshEnvironment(); };
 
 function applySkyFill(): void {
 
 	// One artistic fill gain drives PBR ambient, water scattering and sky reflections alike.
 	scene.environmentIntensity = lighting.skyFill;
+	shared.skyFill.value = lighting.skyFill;
 	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( lighting.skyFill );
 	if ( water ) water.uniforms.reflection.value = lighting.skyFill;
 
@@ -179,7 +212,8 @@ function applySkyFill(): void {
 let water: Water | undefined;
 
 setStatus( 'Lighting the sky…' );
-await applySun();
+await refreshEnvironment();
+shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill );
 
 const textures = await bakeProceduralTextures( renderer );
 // Recover mid-scale wave volume through wind/fetch, while the spectrum still filters fine crests.
@@ -240,6 +274,7 @@ console.info( 'world generated', data.timings, 'triangles', world.triangles, 'in
 const gui = new GUI( { title: 'Soomi · lighting & water' } );
 if ( ! params.has( 'gui' ) ) gui.hide();
 const S = pipeline.settings;
+const environmentLook = { exposure: true };
 const W = water.uniforms;
 gui.addFolder( 'Performance' ).add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
 const groundF = gui.addFolder( 'Ground' );
@@ -253,8 +288,17 @@ groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' )
 groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' ).onChange( invalidateSunShadow );
 const sunF = gui.addFolder( 'Sun' );
 const cloudF = gui.addFolder( 'Sky & clouds' );
-cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover' ).onFinishChange( applySun );
-cloudF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'sky quality' ).onFinishChange( () => { applySkyQuality(); void applySun(); } );
+cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover' ).onFinishChange( refreshEnvironment );
+cloudF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'sky quality' ).onFinishChange( () => { applySkyQuality(); void refreshEnvironment(); } );
+const timeF = gui.addFolder( 'Time & moon' );
+const timeView = { preset: requestedPreset ?? 'golden-hour' };
+timeF.add( dayCycle, 'hour', 0, 24, 0.01 ).name( 'hour' ).listen().onFinishChange( refreshEnvironment );
+timeF.add( dayCycle, 'dayLength', 30, 3600, 1 ).name( 'seconds per day' );
+timeF.add( dayCycle, 'paused' ).name( 'pause clock' );
+timeF.add( timeView, 'preset', Object.keys( DAY_PRESETS ) ).name( 'time preset' ).onChange( ( preset: DayPreset ) => { void setPreset( preset ); } );
+timeF.add( dayCycle, 'moonPhase', 0, 1, 0.01 ).name( 'moon phase' ).onFinishChange( refreshEnvironment );
+timeF.add( dayCycle, 'advanceMoonPhase' ).name( 'lunar cycle' );
+timeF.add( environmentLook, 'exposure' ).name( 'adapt exposure' );
 sunF.add( sky, 'elevation', - 6, 70, 0.5 ).onFinishChange( applySun );
 sunF.add( sky, 'azimuth', - 180, 180, 1 ).onFinishChange( applySun );
 sunF.add( sky, 'sunIlluminance', 2, 20, 0.1 ).name( 'illuminance' ).onFinishChange( applySun );
@@ -296,7 +340,7 @@ islanderF.add( characterLook.rimGain, 'value', 0, 4, 0.01 ).name( 'sun rim' );
 islanderF.add( characterLook.skyRimGain, 'value', 0, 4, 0.01 ).name( 'sky rim' );
 islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'shade saturation' );
 const postF = gui.addFolder( 'Post' );
-postF.add( S, 'exposure', 0.1, 3, 0.01 );
+postF.add( S, 'exposure', 0.1, 5, 0.01 );
 postF.add( S, 'saturation', 0, 2, 0.01 );
 postF.add( S, 'vibrance', 0, 1, 0.01 );
 postF.add( S, 'contrast', - 0.5, 1, 0.01 );
@@ -333,35 +377,66 @@ resize();
 const clock = new THREE.Timer();
 clock.connect( document );
 let frame = 0;
-let paused = params.has( 'paused' );
-let simTime = Number( params.get( 't' ) ?? 0 );
 addEventListener( 'keydown', ( e ) => {
 
-	if ( e.code === 'Space' ) paused = ! paused;
+	if ( e.code === 'Space' ) { paused = ! paused; dayCycle.paused = paused; }
 	if ( e.code === 'KeyH' ) gui.show( gui._hidden );
 
 } );
 
 const frameTimes: number[] = [];
+let shadowElapsed = 0;
+const shadowDirection = new THREE.Vector3();
 function tick(): void {
 
 	clock.update();
-	// Present the previous complete lighting state until the sky readback and IBL are ready.
-	if ( skyUpdating ) return;
 	const rawDt = clock.getDelta();
 	frameTimes.push( rawDt * 1000 );
 	if ( frameTimes.length > 120 ) frameTimes.shift();
 	const dt = Math.min( rawDt, 1 / 20 );
 	if ( ! paused ) simTime += dt;
+	dayCycle.advance( rawDt );
 	controls.update();
 
 	renderer.info.reset();
+	sky.advance( dt );
+	publishLighting();
+	if ( ! manualSun && environmentLook.exposure ) {
+
+		const state = dayCycle.snapshot();
+		S.exposure = state.exposure;
+		S.lift.setRGB( state.blackLift, state.blackLift, state.blackLift * 0.97 );
+		S.split = 0.16 + state.daylight * 0.29;
+
+	}
+	skyElapsed += dt;
+	const skyInterval = skyQuality.value === 'low' ? 0.8 : skyQuality.value === 'high' ? 0.3 : 0.5;
+	if ( ! sky.busy && ! sky.transitioning && skyElapsed >= skyInterval &&
+		( simTime !== lastSkyTime || ( ! manualSun && dayCycle.hour !== lastSkyHour ) ) ) {
+
+		skyElapsed = 0;
+		lastSkyTime = simTime;
+		lastSkyHour = dayCycle.hour;
+		sky.clouds.windOffset.value.set( - simTime * 0.61, - simTime * 0.51 );
+		sky.setCelestial( manualSun ? null : dayCycle.snapshot() );
+		void sky.update( skyInterval * 0.8 ).catch( ( error: unknown ) => console.error( error ) );
+
+	}
+	shadowElapsed += dt;
+	const shadowInterval = skyQuality.value === 'low' ? 0.2 : skyQuality.value === 'high' ? 0.08 : 0.12;
+	if ( shadowElapsed >= shadowInterval && shadowDirection.distanceToSquared( sky.keyDir ) > 1e-10 ) {
+
+		shadowElapsed = 0;
+		shadowDirection.copy( sky.keyDir );
+		invalidateSunShadow();
+
+	}
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
-	caustics.update( sky.sunDir );
-	refractedSun.update();
+	caustics.update( sky.keyDir );
+	if ( sun.shadow.needsUpdate ) refractedSun.update();
 	characters.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
 
@@ -390,6 +465,12 @@ function diagnostics(): void {
 		rimStrands: data.rimStrands.length,
 		timings: data.timings,
 		backend: 'webgpu',
+		hour: + dayCycle.hour.toFixed( 4 ),
+		clockPaused: dayCycle.paused,
+		skyBakeMs: + sky.lastBakeMs.toFixed( 2 ),
+		skyBusy: sky.busy,
+		skyTransitioning: sky.transitioning,
+		quality: skyQuality.value,
 	};
 
 }
@@ -398,4 +479,4 @@ renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
 // setTime moves the (paused) clock, so captures can step through an animation in one page load
 const setTime = ( t: number ) => { simTime = t; };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, applySun, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };

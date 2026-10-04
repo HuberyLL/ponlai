@@ -89,7 +89,9 @@ export class CharacterShadow {
 		sunCam.updateProjectionMatrix();
 		sun.updateMatrixWorld();
 		sun.target.updateMatrixWorld();
-		sun.shadow.updateMatrices( sun );
+		// The island depth map updates at a bounded cadence during day motion. Keep its
+		// matrix paired with that raster; the figures still get their own fresh map below.
+		if ( sun.shadow.needsUpdate || sun.shadow.autoUpdate ) sun.shadow.updateMatrices( sun );
 		this.direction.subVectors( sun.position, sun.target.position ).normalize();
 		cam.position.copy( centre ).addScaledVector( this.direction, this.range * 0.5 );
 		cam.up.set( 0, 1, 0 );

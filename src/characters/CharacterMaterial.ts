@@ -113,7 +113,7 @@ class CharacterLighting extends THREE.LightingModel {
 
 		const ctx = builder.context as unknown as { iblIrradiance: V3; reflectedLight: Reflected };
 		const look = characterLook;
-		const sky = this.shared.skyIrradiance; // E / pi on a level surface
+		const sky = this.shared.skyIrradianceSource; // E / pi on a level surface
 		const up = normalWorld.y;
 		// The shade side keeps one fill colour (a flattened sky dome), with a little of the
 		// environment's direction for warmth toward the sun and blue away from it.

@@ -40,36 +40,44 @@ const cloudNoise = Fn( ( [ p ]: [ V3 ] ) => {
 const cloudDensity = Fn( ( [ position, wind, coverage, density ]: [ V3, V2, F, F ] ) => {
 
 	const h = position.y.sub( CLOUD_BASE ).div( CLOUD_TOP - CLOUD_BASE ).toVar();
-	const envelope = smoothstep( 0, 0.1, h ).mul( float( 1 ).sub( smoothstep( 0.76, 1, h ) ) ).toVar();
-	const advected = position.xz.add( wind ).toVar();
-	const p = vec3( advected.x.mul( 0.83205 ).add( advected.y.mul( 0.55470 ) ), position.y,
-		advected.y.mul( 0.83205 ).sub( advected.x.mul( 0.55470 ) ) ).toVar();
-	const cell = floor( p.xz.div( 110 ) ).toVar();
-	const body = float( 0 ).toVar();
-	// Search adjacent cells so irregular cloud groups can overlap without tile seams.
-	// Each group is three offset ellipsoids; random placement and sizes break up rows.
-	Loop( { start: int( - 1 ), end: int( 2 ), type: 'int' }, { start: int( - 1 ), end: int( 2 ), type: 'int' }, ( { i, j } ) => {
+	const result = float( 0 ).toVar();
+	// Light probes above or below the layer have exactly zero density. Avoid evaluating
+	// the neighborhood and erosion field only to multiply their result by a zero envelope.
+	If( h.greaterThan( 0 ).and( h.lessThan( 1 ) ), () => {
 
-		const id = cell.add( vec2( float( i ), float( j ) ) ).toVar();
-		const seed = cloudHash( vec3( id.x, 11.7, id.y ) ).toVar();
-		const random = fract( vec3( 37.17, 73.91, 113.23 ).mul( seed ) ).toVar();
-		const centerXZ = id.add( random.xy.mul( 0.56 ).add( 0.22 ) ).mul( 110 );
-		const center = vec3( centerXZ.x, random.z.mul( 9 ).add( 122 ), centerXZ.y ).toVar();
-		const radius = mix( 30, 56, clamp( coverage, 0, 1 ) ).mul( mix( 0.85, 1.17, random.z ) ).toVar();
-		const local = p.sub( center ).div( vec3( radius, 17, radius ) ).toVar();
-		const offset = random.xy.sub( 0.5 ).mul( 1.2 ).toVar();
-		const puffA = local.sub( vec3( offset.x, 0.23, offset.y ) ).div( vec3( 0.73, 0.83, 0.73 ) ).toVar();
-		const puffB = local.sub( vec3( offset.y.negate(), 0.38, offset.x ) ).div( vec3( 0.65, 0.81, 0.65 ) ).toVar();
-		const shape = float( 1 ).sub( min( dot( local, local ), min( dot( puffA, puffA ), dot( puffB, puffB ) ) ) );
-		const active = smoothstep( seed.sub( 0.055 ), seed.add( 0.055 ), coverage );
-		body.assign( max( body, smoothstep( 0.02, 0.35, shape ).mul( active ) ) );
+		const envelope = smoothstep( 0, 0.1, h ).mul( float( 1 ).sub( smoothstep( 0.76, 1, h ) ) ).toVar();
+		const advected = position.xz.add( wind ).toVar();
+		const p = vec3( advected.x.mul( 0.83205 ).add( advected.y.mul( 0.55470 ) ), position.y,
+			advected.y.mul( 0.83205 ).sub( advected.x.mul( 0.55470 ) ) ).toVar();
+		const cell = floor( p.xz.div( 110 ) ).toVar();
+		const body = float( 0 ).toVar();
+		// Search adjacent cells so irregular cloud groups can overlap without tile seams.
+		// Each group is three offset ellipsoids; random placement and sizes break up rows.
+		Loop( { start: int( - 1 ), end: int( 2 ), type: 'int' }, { start: int( - 1 ), end: int( 2 ), type: 'int' }, ( { i, j } ) => {
+
+			const id = cell.add( vec2( float( i ), float( j ) ) ).toVar();
+			const seed = cloudHash( vec3( id.x, 11.7, id.y ) ).toVar();
+			const random = fract( vec3( 37.17, 73.91, 113.23 ).mul( seed ) ).toVar();
+			const centerXZ = id.add( random.xy.mul( 0.56 ).add( 0.22 ) ).mul( 110 );
+			const center = vec3( centerXZ.x, random.z.mul( 9 ).add( 122 ), centerXZ.y ).toVar();
+			const radius = mix( 30, 56, clamp( coverage, 0, 1 ) ).mul( mix( 0.85, 1.17, random.z ) ).toVar();
+			const local = p.sub( center ).div( vec3( radius, 17, radius ) ).toVar();
+			const offset = random.xy.sub( 0.5 ).mul( 1.2 ).toVar();
+			const puffA = local.sub( vec3( offset.x, 0.23, offset.y ) ).div( vec3( 0.73, 0.83, 0.73 ) ).toVar();
+			const puffB = local.sub( vec3( offset.y.negate(), 0.38, offset.x ) ).div( vec3( 0.65, 0.81, 0.65 ) ).toVar();
+			const shape = float( 1 ).sub( min( dot( local, local ), min( dot( puffA, puffA ), dot( puffB, puffB ) ) ) );
+			const active = smoothstep( seed.sub( 0.055 ), seed.add( 0.055 ), coverage );
+			body.assign( max( body, smoothstep( 0.02, 0.35, shape ).mul( active ) ) );
+
+		} );
+		const erosion = cloudNoise( p.mul( vec3( 0.075, 0.11, 0.075 ) ).add( vec3( 7.4, 2.8, 13.1 ) ) ).toVar();
+		const billows = max( body.sub( float( 1 ).sub( erosion ).mul( 0.18 ) ), 0 ).toVar();
+		// High coverage joins the puffs into a stratified overcast bank continuously.
+		const overcast = smoothstep( 0.76, 0.98, coverage ).mul( erosion.mul( 0.18 ).add( 0.45 ) );
+		result.assign( max( billows, overcast ).mul( envelope ).mul( max( density, 0 ) ).mul( smoothstep( 0, 0.02, coverage ) ) );
 
 	} );
-	const erosion = cloudNoise( p.mul( vec3( 0.075, 0.11, 0.075 ) ).add( vec3( 7.4, 2.8, 13.1 ) ) ).toVar();
-	const billows = max( body.sub( float( 1 ).sub( erosion ).mul( 0.18 ) ), 0 ).toVar();
-	// High coverage joins the puffs into a stratified overcast bank continuously.
-	const overcast = smoothstep( 0.76, 0.98, coverage ).mul( erosion.mul( 0.18 ).add( 0.45 ) );
-	return max( billows, overcast ).mul( envelope ).mul( max( density, 0 ) ).mul( smoothstep( 0, 0.02, coverage ) );
+	return result;
 
 } ).setLayout( { name: 'soomiCloudDensity', type: 'float', inputs: [
 	{ name: 'position', type: 'vec3' }, { name: 'wind', type: 'vec2' },
@@ -102,18 +110,24 @@ const cloudRadiance = Fn( ( [ direction, background, wind, coverage, density, li
 			const distance = near.add( float( i ).add( 0.5 ).mul( step ) ).toVar();
 			const p = direction.mul( distance ).toVar();
 			const d = cloudDensity( p, wind, coverage, density ).toVar();
-			const opacity = float( 1 ).sub( exp( d.mul( step ).mul( - CLOUD_EXTINCTION ) ) ).toVar();
-			// Two light-path probes give soft internal shade and sunlit rims without a second
-			// ray march. A small density-dependent fill approximates light scattered within a
-			// billow; all radiance remains proportional to the supplied celestial/sky light.
-			const lightNear = cloudDensity( p.add( lightDir.mul( 8 ) ), wind, coverage, density );
-			const lightFar = cloudDensity( p.add( lightDir.mul( 20 ) ), wind, coverage, density );
-			const lightThrough = exp( lightNear.mul( 8 ).add( lightFar.mul( 16 ) ).mul( - CLOUD_EXTINCTION ) ).toVar();
-			const height = clamp( p.y.sub( CLOUD_BASE ).div( CLOUD_TOP - CLOUD_BASE ), 0, 1 ).toVar();
-			const ambient = ambientColor.mul( mix( 0.13, 0.34, height ) );
-			const direct = lightColor.mul( phase ).mul( lightThrough.mul( 0.88 ).add( 0.12 ) );
-			scattered.addAssign( ambient.add( direct ).mul( transmission ).mul( opacity ) );
-			transmission.mulAssign( float( 1 ).sub( opacity ) );
+			// Empty samples neither scatter nor absorb. Most clear-weather rays spend their
+			// time between puffs, where both otherwise expensive light probes can be skipped.
+			If( d.greaterThan( 0.0001 ), () => {
+
+				const opacity = float( 1 ).sub( exp( d.mul( step ).mul( - CLOUD_EXTINCTION ) ) ).toVar();
+				// Two light-path probes give soft internal shade and sunlit rims without a second
+				// ray march. A small density-dependent fill approximates light scattered within a
+				// billow; all radiance remains proportional to the supplied celestial/sky light.
+				const lightNear = cloudDensity( p.add( lightDir.mul( 8 ) ), wind, coverage, density );
+				const lightFar = cloudDensity( p.add( lightDir.mul( 20 ) ), wind, coverage, density );
+				const lightThrough = exp( lightNear.mul( 8 ).add( lightFar.mul( 16 ) ).mul( - CLOUD_EXTINCTION ) ).toVar();
+				const height = clamp( p.y.sub( CLOUD_BASE ).div( CLOUD_TOP - CLOUD_BASE ), 0, 1 ).toVar();
+				const ambient = ambientColor.mul( mix( 0.13, 0.34, height ) );
+				const direct = lightColor.mul( phase ).mul( lightThrough.mul( 0.88 ).add( 0.12 ) );
+				scattered.addAssign( ambient.add( direct ).mul( transmission ).mul( opacity ) );
+				transmission.mulAssign( float( 1 ).sub( opacity ) );
+
+			} );
 
 		} );
 		result.assign( vec4( mix( background, scattered.add( background.mul( transmission ) ), horizon ),

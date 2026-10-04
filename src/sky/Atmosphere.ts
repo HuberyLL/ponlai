@@ -348,6 +348,15 @@ export class Atmosphere {
 
 	async update(): Promise<void> {
 
+		await this.renderer.init();
+		this.updateSync();
+
+	}
+
+	// Runtime sky updates run inside the frame after renderer initialisation, without an
+	// asynchronous boundary that would suspend or interleave the frame's GPU submissions.
+	updateSync(): void {
+
 		const albedo = this.groundAlbedo.value;
 		const staticKey = [ this.rayleighScale.value, this.mieScale.value, this.ozoneScale.value,
 			albedo.r, albedo.g, albedo.b ].join( ',' );
@@ -356,7 +365,6 @@ export class Atmosphere {
 			illuminance.r, illuminance.g, illuminance.b ].join( ',' );
 		if ( skyKey === this.skyKey ) return;
 
-		await this.renderer.init();
 		const previous = this.renderer.getRenderTarget();
 		try {
 

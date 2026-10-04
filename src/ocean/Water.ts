@@ -15,7 +15,6 @@ import {
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
 	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
 } from 'three/tsl';
-import { dirToEquirect } from '../sky/Sky.ts';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { OceanFFT } from './OceanFFT.ts';
@@ -457,11 +456,11 @@ export class Water {
 			const reflectionSigma = sqrt( waveReflectionAngularVariance( localV, seaCovariance ) );
 			const skyMip = clamp( log2( max( reflectionSigma.mul( Math.sqrt( 12 ) * sky.equirect.height / PI ), 1 ) ),
 				0, Math.log2( sky.equirect.height ) );
-			const refl = texture( sky.equirect.texture, dirToEquirect( Rr ) ).level( skyMip ).rgb.toVar();
+			const refl = sky.sample( Rr, skyMip ).toVar();
 			refl.mulAssign( u.reflection );
 			// Optional art control. Zero preserves the calibrated incident sky radiance.
 			const lr = lum( refl ).toVar();
-			const cap = lum( shared.skyIrradiance ).mul( u.skyCap ).toVar();
+			const cap = lum( shared.skyIrradianceSource ).mul( u.skyCap ).toVar();
 			If( u.skyCap.greaterThan( 0 ).and( lr.greaterThan( cap ) ), () => {
 
 				refl.mulAssign( cap.add( lr.sub( cap ).mul( 0.12 ) ).div( lr ) );
@@ -605,7 +604,7 @@ export class Water {
 				} ) );
 
 			} );
-			const inAmb = waterColumnRadiance( shared.skyIrradiance.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ), kAmb, pathLen );
+			const inAmb = waterColumnRadiance( shared.skyIrradianceSource.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ), kAmb, pathLen );
 			// sun shining through the thin crests of the waves
 			const vH = normalize( V.xz.add( 1e-5 ) ), lH = normalize( L.xz.add( 1e-5 ) );
 			const back = pow( sat( dot( vH, lH.negate() ).mul( 0.6 ).add( 0.4 ) ), 2.5 );

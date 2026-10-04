@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { uniform } from 'three/tsl';
+import { uniform, vec3 } from 'three/tsl';
 
 // Uniforms shared by the water, the terrain and the vegetation (one node each, read by every
 // material that uses it).
@@ -17,6 +17,10 @@ export const shared = {
 	sunDir: uniform( new THREE.Vector3( 0, 1, 0 ) ),
 	sunColor: uniform( new THREE.Vector3() ), // linear rgb
 	skyIrradiance: uniform( new THREE.Vector3() ), // linear rgb
+	// The live sky reduces hemispherical irradiance on the GPU, so shading never waits for
+	// a CPU readback. The uniform above remains a readback diagnostic for explicit snapshots.
+	skyFill: uniform( 1 ),
+	skyIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
 };
 
 export type Shared = typeof shared;

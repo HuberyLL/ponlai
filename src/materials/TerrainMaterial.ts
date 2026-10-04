@@ -433,7 +433,10 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 	const ambAtt = exp( sigT.negate().mul( dW.max( 0 ) ).mul( 1.25 ) );
 	const above = p.y.sub( shared.waterLevel );
 	const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 0.6 ).mul( 0.9 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
-	const ambMul = select( under, ambAtt, vec3( float( 1 ).add( shimmer ) ) );
+	// Reflected caustic sparkle is direct-light energy. It must not animate ambient light
+	// through the zero-energy sun/moon handoff or turn the moon into a daylight source.
+	const directGain = clamp( max( shared.sunColor.x, max( shared.sunColor.y, shared.sunColor.z ) ).mul( 3 ), 0, 1 );
+	const ambMul = select( under, ambAtt, vec3( float( 1 ).add( shimmer.mul( directGain ) ) ) );
 	const specMul = select( under, ambAtt.mul( 0.5 ), vec3( 1 ) );
 	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new TerrainLightingModel( sunAtt, ambMul, specMul, waterSunView, under );
 	mat.userData.refractedSolarReceiver = true;
