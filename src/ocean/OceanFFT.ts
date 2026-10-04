@@ -21,7 +21,7 @@ import { mulberry32 } from '../world/noise.ts';
 //   c2 = dDy/dx + i dDy/dz  c3 = dDx/dx + i dDz/dz
 //
 // Per cascade outputs (half float, mipmapped, repeat):
-//   displacement  (Dx, Dy, Dz, jacobian)       derivatives  (dDy/dx, dDy/dz, dDx/dx, dDz/dz)
+//   displacement  (Dx, Dy, Dz, persistent foam)       derivatives  (dDy/dx, dDy/dz, dDx/dx, dDz/dz)
 // Sample a cascade at world xz / size.
 
 const FFT_N = 256;
@@ -54,6 +54,9 @@ export class OceanFFT {
 	derivativeTextures: THREE.Texture[];
 
 	private time = uniform( 0 );
+	private foamDt = uniform( 0 );
+	private foamReset = uniform( 1 );
+	private previousTime: number | undefined;
 	private chop = uniform( 0.85 );
 	private depthU = uniform( 8 );
 	private h0Attr: THREE.StorageBufferAttribute;
@@ -109,13 +112,14 @@ export class OceanFFT {
 				const h = cmul( h0v.xy, vec2( cs, sn ) ).add( cmul( h0v.zw, vec2( cs, sn.negate() ) ) ).toVar();
 				const klSafe = kl.max( 1e-6 );
 				const kn = k.div( klSafe );
-				const dx = ci( h ).mul( kn.x.negate() ).mul( this.chop );
-				const dz = ci( h ).mul( kn.y.negate() ).mul( this.chop );
+				// With the positive IFFT, +i k/|k| compresses crests, not troughs.
+				const dx = ci( h ).mul( kn.x ).mul( this.chop );
+				const dz = ci( h ).mul( kn.y ).mul( this.chop );
 				const dydx = ci( h ).mul( k.x );
 				const dydz = ci( h ).mul( k.y );
-				const dxdx = h.mul( k.x.mul( k.x ).div( klSafe ) ).mul( this.chop );
-				const dzdz = h.mul( k.y.mul( k.y ).div( klSafe ) ).mul( this.chop );
-				const dxdz = h.mul( k.x.mul( k.y ).div( klSafe ) ).mul( this.chop );
+				const dxdx = h.mul( k.x.mul( k.x ).div( klSafe ).negate() ).mul( this.chop );
+				const dzdz = h.mul( k.y.mul( k.y ).div( klSafe ).negate() ).mul( this.chop );
+				const dxdz = h.mul( k.x.mul( k.y ).div( klSafe ).negate() ).mul( this.chop );
 				const zero = kl.lessThan( 1e-6 );
 				out.A.element( idx ).assign( select( zero, vec4( 0 ), vec4( dx.add( ci( dz ) ), h.add( ci( dxdz ) ) ) ) );
 				out.B.element( idx ).assign( select( zero, vec4( 0 ), vec4( dydx.add( ci( dydz ) ), dxdx.add( ci( dzdz ) ) ) ) );
@@ -157,8 +161,22 @@ export class OceanFFT {
 
 		}
 
-		// 3. per cascade: displacement + Jacobian, and the derivatives, into mipmapped textures
+		// 3. per cascade: displacement + persistent whitecaps, and derivatives, into mipmapped textures
 		const fin = { A: storage( buf[ src ].attrA, 'vec4', count ).toReadOnly(), B: storage( buf[ src ].attrB, 'vec4', count ).toReadOnly() };
+		// Tidewater keeps foam at each FFT parcel after a compressed crest has passed.
+		// Integrate the complete displacement Jacobian, independently of shading-detail weights.
+		const foamAttr = new THREE.StorageBufferAttribute( new Float32Array( count ), 1 );
+		const caps = storage( foamAttr, 'float', count );
+		this.kernels.push( Fn( () => {
+
+			const idx = instanceIndex, a = fin.A.element( idx ), b = fin.B.element( idx );
+			const J = float( 1 ).add( b.z ).mul( float( 1 ).add( b.w ) ).sub( a.w.mul( a.w ) );
+			const source = J.negate().add( 0.68 ).mul( 3 ).clamp( 0, 1 );
+			const remaining = caps.element( idx ).mul( this.foamDt.mul( - 0.8 ).exp() ).mul( float( 1 ).sub( this.foamReset ) );
+			caps.element( idx ).assign( remaining.add( source.mul( this.foamDt ).mul( 2.5 ) ).min( 1 ) );
+
+		} )().compute( count, [ 64 ] ) );
+		const capsRead = storage( foamAttr, 'float', count ).toReadOnly();
 		this.displacementTextures = [];
 		this.derivativeTextures = [];
 		for ( let c = 0; c < C; c ++ ) {
@@ -175,8 +193,7 @@ export class OceanFFT {
 				const px = ivec2( screenCoordinate.xy );
 				const idx = uint( px.y.mul( N ).add( px.x ).add( c * NN ) );
 				const a = fin.A.element( idx ), b = fin.B.element( idx ); // ( Dx, Dz, Dy, dDx/dz ), ( dDy/dx, dDy/dz, dDx/dx, dDz/dz )
-				const J = float( 1 ).add( b.z ).mul( float( 1 ).add( b.w ) ).sub( a.w.mul( a.w ) );
-				mat.fragmentNode = which ? b : vec4( a.x, a.z, a.y, J );
+				mat.fragmentNode = which ? b : vec4( a.x, a.z, a.y, capsRead.element( idx ) );
 				this.outputs.push( { rt, quad: new THREE.QuadMesh( mat ) } );
 				( which ? this.derivativeTextures : this.displacementTextures ).push( rt.texture );
 
@@ -274,13 +291,20 @@ export class OceanFFT {
 		this.chop.value = this.params.choppiness;
 		this.depthU.value = this.params.depth;
 		this.spectrumRevision ++;
+		this.previousTime = undefined;
 
 	}
 
 	update( dt: number, time?: number ): void {
 
 		// A shared clock makes frozen captures and resume agree with the foam and vegetation.
-		this.time.value = time ?? this.time.value + dt;
+		const next = time ?? this.time.value + dt;
+		const elapsed = this.previousTime === undefined ? 0 : next - this.previousTime;
+		const reset = this.previousTime === undefined || elapsed < 0 || elapsed > 0.25;
+		this.foamDt.value = reset ? 0 : elapsed;
+		this.foamReset.value = reset ? 1 : 0;
+		this.previousTime = next;
+		this.time.value = next;
 		const r = this.renderer;
 		r.compute( this.kernels );
 		const prev = r.getRenderTarget();

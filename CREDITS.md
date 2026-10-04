@@ -21,6 +21,14 @@ packages, into `dist/licenses/`.
   [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt).
 - Ocean files: `src/ocean/OceanFFT.ts`, `src/ocean/Water.ts`, `src/ocean/Caustics.ts`.
 - Ocean changes: ported to TSL and modified for this project's stylised rendering.
+- Shore-wave version: native WebGPU edition, commit
+  [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef),
+  `src/world/ShoreField.js` and `src/ocean/ShoreWaves.js`.
+- Shore-wave files: `src/ocean/ShoreWaveField.ts`, `src/ocean/ShoreWaves.ts`.
+- Shore-wave changes: finite-depth travel speed and an obstacle-aware arrival-time field over the
+  existing seabed, with a gentle shoaling wave train ported to TSL. Geometry, normals and foam
+  share its phase. Beach run-up, plunging sheets and spray are omitted for the steep island cliffs.
+  FFT crest compression and persistent whitecaps follow this version's `src/ocean/OceanFFT.js`.
 - Sky files: `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`.
 - Sky changes: the WGSL atmosphere and solar disk are ported to TSL; compute LUT generation is
   replaced by render-target bakes, the transmittance coordinates are made symmetric, and the
