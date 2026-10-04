@@ -15,11 +15,9 @@ export interface MeshData {
 	indices: Uint32Array;
 }
 
-export type MeshKind = 'cliff' | 'stack' | 'rock';
+export type MeshKind = 'cliff' | 'rock';
 
 export interface NamedMesh extends MeshData { name: string; kind: MeshKind }
-
-export interface Stack { x: number; z: number; r: number; h: number }
 
 export interface Rock { x: number; z: number; s: number; sy: number; y: number; floor: number; rot: number; seed: number }
 
@@ -27,16 +25,15 @@ export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: nu
 
 export interface WorldData {
 	meshes: NamedMesh[];
-	stacks: Stack[];
 	rocks: Rock[];
 	seabed: { positions: Float32Array; res: number; size: number };
 	// turf anchors, 8 floats each: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
-	// (0 island, 1 + i stack i)
+	// (0 island)
 	vegetation: Float32Array;
 	// ivy points, 6 floats each: x, y, z, outward x, z, t along the strand
 	ivy: Float32Array;
 	shore: ShoreField;
-	// Main-island-only distance field; the wash can be stronger here without outlining stacks.
+	// Half-resolution island distance field for the local breaking-surf pass.
 	islandShore: ShoreField;
 	timings: Record<string, number>;
 }

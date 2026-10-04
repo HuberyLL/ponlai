@@ -53,3 +53,8 @@ comment where it is used.
 - Atmosphere LUTs and multiple-scattering approximation: Sébastien Hillaire,
   [*A Scalable and Production Ready Sky and Atmosphere Rendering Technique*](https://sebh.github.io/publications/egsr2020.pdf)
   (EGSR 2020), implemented through the adapted Tidewater source above.
+
+- Seabed substrate reference: Page C. Valentine, USGS,
+  [*Sediment classification and the characterization, identification, and mapping of geologic substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)
+  (2019, SIR 2019–5073). Rock patches, mixed clast sizes and partial sand burial inform the
+  procedural seabed layout; no source code, survey data or images are used.

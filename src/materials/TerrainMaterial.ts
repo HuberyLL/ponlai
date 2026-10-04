@@ -14,7 +14,7 @@ import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 // the water column, caustics, ambient) by a lighting model of its own, so the water shader only
 // has to add the view path.
 //
-// kind 'cliff'  : island block, sea stacks and rocks (triplanar)
+// kind 'cliff'  : island block and submerged rocks (triplanar)
 // kind 'seabed' : sand, ripples, seagrass and rubble (planar)
 
 type V3 = THREE.Node<'vec3'>;
@@ -60,7 +60,7 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 
 		const p = positionWorld;
 		const n0 = normalize( normalWorldGeometry ).toVar();
-		// Bare stone must always sample its mineral maps, including upward sea-stack caps.
+		// Bare stone must always sample its mineral maps, including upward boulder faces.
 		const turf = ( vegetation ? smoothstep( 0.85, 0.97, n0.y ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ) : float( 0 ) ).toVar();
 		const vAO = attribute<'float'>( 'ao', 'float' ), vTint = attribute<'float'>( 'tint', 'float' ), vCurv = attribute<'float'>( 'curv', 'float' );
 
@@ -159,7 +159,7 @@ function cliffSurface( { tex, shared, topY, vegetation }: Ctx ) {
 		const stoneRough = clamp( Fc.a.mul( 0.34 ).add( 0.62 ), 0.8, 0.98 );
 		const rough = stoneRough.toVar();
 
-		// Soil-connected island ledges carry moss and turf. Bare sea stacks and reefs omit
+		// Soil-connected island ledges carry moss and turf. Submerged boulders omit
 		// these nodes entirely, so an upward rock face cannot turn into a green cap.
 		if ( vegetation ) {
 

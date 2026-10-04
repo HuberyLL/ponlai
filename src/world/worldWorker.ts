@@ -1,10 +1,10 @@
-// Builds the world geometry off the main thread: island, sea stacks and rocks (surface nets over
+// Builds the world geometry off the main thread: island and submerged stones (surface nets over
 // their SDFs), the seabed heightfield, the shoreline distance field at sea level, and the anchors
 // for the vegetation (turf points on the island, ivy strands down the cliffs).
 
 import { surfaceNets } from './SurfaceNets.ts';
 import {
-	buildFootprint, makeIslandSDF, makeStacks, makeStackSDF, makeRocks, makeRockSDF, makeSeabed,
+	buildFootprint, makeIslandSDF, makeRocks, makeRockSDF, makeSeabed,
 	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
 } from './WorldShapes.ts';
 import { Field2D } from './Field2D.ts';
@@ -23,18 +23,32 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	const fp = buildFootprint();
 	mark( 'footprint', t );
 
-	const stacks = makeStacks();
-	// Rock placement stays tied to the original shelf. Only the rendered floor between
-	// those fixed anchors becomes deeper.
-	const placementFloor = makeSeabed( fp, stacks );
-	const rocks = makeRocks( fp, stacks, placementFloor );
-	const seabedHeight = deepenSeabed( fp, rocks, placementFloor );
+	const seabedHeight = deepenSeabed( fp, makeSeabed( fp ) );
+
+	// --- seabed: a grid warped to be dense around the island and sparse toward the horizon
+	t = performance.now();
+	const n = seabedRes;
+	const sb = new Float32Array( ( n + 1 ) * ( n + 1 ) * 3 );
+	const warp = ( u: number ) => Math.sign( u ) * Math.pow( Math.abs( u ), 1.9 );
+	for ( let j = 0; j <= n; j ++ ) for ( let i = 0; i <= n; i ++ ) {
+
+		const x = warp( i / n * 2 - 1 ) * seabedSize / 2;
+		const z = warp( j / n * 2 - 1 ) * seabedSize / 2;
+		const k = ( j * ( n + 1 ) + i ) * 3;
+		sb[ k ] = x; sb[ k + 1 ] = seabedHeight( x, z ); sb[ k + 2 ] = z;
+
+	}
+
+	mark( 'seabed', t );
+
+	// Ground each stone on the same triangles the renderer uses. Sampling the analytic
+	// floor alone can hide a small crown beneath a coarser seabed mesh.
+	const rocks = makeRocks( fp, seabedSampler( sb, n, seabedSize ) );
 	const islandSDF = makeIslandSDF( fp );
-	const stackSDFs = stacks.map( ( s, i ) => makeStackSDF( s, i + 1 ) );
 	const rockSDFs = rocks.map( makeRockSDF );
 
 	const meshes: NamedMesh[] = [];
-	const transfer: Transferable[] = [];
+	const transfer: Transferable[] = [ sb.buffer ];
 	const push = ( name: string, m: MeshData, kind: MeshKind ) => {
 
 		meshes.push( { name, kind, ...m } );
@@ -53,28 +67,18 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	} ), 'cliff' );
 	mark( 'island', t );
 
-	// --- stacks
-	t = performance.now();
-	stacks.forEach( ( s, i ) => {
-
-		const R = s.r * 2.2 + 1.2;
-		push( 'stack' + i, surfaceNets( stackSDFs[ i ], {
-			min: [ s.x - R, - 7.0, s.z - R ], max: [ s.x + R, s.h + 0.8, s.z + R ], voxel: 0.11,
-		} ), 'stack' );
-
-	} );
-	mark( 'stacks', t );
-
 	// --- rocks: merged into one mesh
 	t = performance.now();
 	{
 
 		const parts = rocks.map( ( r, i ) => {
 
-			const R = r.s * 1.25 * 1.6 + 0.3, Ry = r.sy * 1.6 + 0.3;
+			const R = r.s * 1.25 * 1.6 + 0.08, Ry = r.sy * 1.6 + 0.08;
 			return surfaceNets( rockSDFs[ i ], {
-				min: [ r.x - R, r.floor - 0.6, r.z - R ], max: [ r.x + R, r.y + Ry, r.z + R ],
-				voxel: Math.max( 0.07, Math.min( 0.13, r.s * 0.085 ) ),
+				min: [ r.x - R, Math.min( r.floor - 0.5, r.y - Ry ), r.z - R ], max: [ r.x + R, r.y + Ry, r.z + R ],
+				// Small stones still need enough samples across their broad faces; one merged mesh
+				// keeps their count independent of the draw budget.
+				voxel: Math.max( 0.025, Math.min( 0.11, r.s * 0.12 ) ),
 			} );
 
 		} );
@@ -84,7 +88,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
 	mark( 'rocks', t );
 
-	// --- vegetation anchors: island turf only; exposed sea stacks and reefs stay bare.
+	// --- vegetation anchors: island turf only; submerged stones stay bare.
 	// March the field down from above for position, surface normal and distance to the rim.
 	t = performance.now();
 	const rngV = mulberry32( 4242 );
@@ -99,53 +103,15 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	transfer.push( vegetation.buffer, ivy.buffer );
 	mark( 'vegetation', t );
 
-	// --- seabed: a grid warped to be dense around the island and sparse toward the horizon
+	// --- shoreline: only the island intersects sea level. Submerged stones must not
+	// damp surface waves or grow circular foam collars above their hidden silhouettes.
 	t = performance.now();
-	const n = seabedRes;
-	const sb = new Float32Array( ( n + 1 ) * ( n + 1 ) * 3 );
-	const warp = ( u: number ) => Math.sign( u ) * Math.pow( Math.abs( u ), 1.9 );
-	for ( let j = 0; j <= n; j ++ ) for ( let i = 0; i <= n; i ++ ) {
-
-		const x = warp( i / n * 2 - 1 ) * seabedSize / 2;
-		const z = warp( j / n * 2 - 1 ) * seabedSize / 2;
-		const k = ( j * ( n + 1 ) + i ) * 3;
-		sb[ k ] = x; sb[ k + 1 ] = seabedHeight( x, z ); sb[ k + 2 ] = z;
-
-	}
-
-	transfer.push( sb.buffer );
-	mark( 'seabed', t );
-
-	// --- shoreline: horizontal distance (m) from open water to the nearest solid at sea level,
-	// signed (negative inside rock). Feeds shore foam, wave damping and wet rock.
-	t = performance.now();
-	const allSolid = ( x: number, y: number, z: number ) => {
-
-		let d = islandSDF( x, y, z );
-		for ( let i = 0; i < stacks.length; i ++ ) {
-
-			const s = stacks[ i ];
-			if ( Math.abs( x - s.x ) < 5 && Math.abs( z - s.z ) < 5 ) d = Math.min( d, stackSDFs[ i ]( x, y, z ) );
-
-		}
-
-		for ( let i = 0; i < rocks.length; i ++ ) {
-
-			const r = rocks[ i ];
-			if ( Math.abs( x - r.x ) < r.s * 2.5 + 0.5 && Math.abs( z - r.z ) < r.s * 2.5 + 0.5 ) d = Math.min( d, rockSDFs[ i ]( x, y, z ) );
-
-		}
-
-		return d;
-
-	};
-
 	const shore = Field2D.covering( - shoreSize / 2, shoreSize / 2, - shoreSize / 2, shoreSize / 2, shoreCell )
-		.fill( ( x: number, z: number ) => allSolid( x, 0.0, z ) )
+		.fill( ( x: number, z: number ) => islandSDF( x, 0, z ) )
 		.signedDistance();
 	transfer.push( shore.data.buffer );
-	// Match the full shoreline's world bounds exactly at half resolution. A separate island
-	// distance prevents local breaking surf from becoming a bright collar on scattered rocks.
+	// Match the shoreline's world bounds at half resolution for the breaking-surf pass.
+	// Keeping its resolution separate preserves the existing water sampling contract.
 	const islandRes = Math.ceil( shore.nx / 2 );
 	const islandShore = new Field2D( shore.x0, shore.z0, islandRes, islandRes, shore.nx * shore.cell / islandRes )
 		.fill( ( x: number, z: number ) => islandSDF( x, 0, z ) )
@@ -157,7 +123,6 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
 	const result: WorldData = {
 		meshes,
-		stacks,
 		rocks,
 		seabed: { positions: sb, res: n, size: seabedSize },
 		vegetation,
@@ -170,9 +135,29 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
 };
 
+// The inverse warp locates the grid cell; interpolation then uses its stored world positions,
+// rather than the warped grid fraction, to match buildWorldMeshes()'s two indexed triangles.
+function seabedSampler( positions: Float32Array, n: number, size: number ): ( x: number, z: number ) => number {
+
+	const index = ( v: number ) => Math.max( 0, Math.min( n - 1,
+		Math.floor( ( Math.sign( v ) * Math.pow( Math.abs( v / ( size / 2 ) ), 1 / 1.9 ) + 1 ) * n / 2 ) ) );
+	return ( x, z ) => {
+
+		const i = index( x ), j = index( z );
+		const a = ( j * ( n + 1 ) + i ) * 3, e = a + 3, s = a + ( n + 1 ) * 3, d = s + 3;
+		const u = Math.max( 0, Math.min( 1, ( x - positions[ a ] ) / ( positions[ e ] - positions[ a ] ) ) );
+		const v = Math.max( 0, Math.min( 1, ( z - positions[ a + 2 ] ) / ( positions[ s + 2 ] - positions[ a + 2 ] ) ) );
+		return u + v <= 1
+			? positions[ a + 1 ] + ( positions[ e + 1 ] - positions[ a + 1 ] ) * u + ( positions[ s + 1 ] - positions[ a + 1 ] ) * v
+			: positions[ d + 1 ] + ( positions[ s + 1 ] - positions[ d + 1 ] ) * ( 1 - u ) + ( positions[ e + 1 ] - positions[ d + 1 ] ) * ( 1 - v );
+
+	};
+
+}
+
 // jittered grid over [x0, x1] x [z0, z1]; for each sample march down to the surface and keep it
 // if it faces up enough to hold turf (the rounded rim included). Appends x, y, z, nx, ny, nz, rim
-// (signed distance to the shape's edge, negative inside), kind (0 island, 1 + i stack i).
+// (signed distance to the shape's edge, negative inside), kind (0 island).
 function scatterTop( sdf: SDF, x0: number, x1: number, z0: number, z1: number, spacing: number, yTop: number,
 	rng: Rng, out: number[], rimDist: ( x: number, z: number ) => number, kind: number ): void {
 
