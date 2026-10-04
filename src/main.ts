@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
+import { Weather, WEATHER_PRESETS, WEATHER_QUALITY, type WeatherName, type WeatherQuality } from './sky/Weather.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
 import { Caustics } from './ocean/Caustics.ts';
@@ -90,6 +91,8 @@ const numberParam = ( name: string, fallback: number ) => {
 };
 const dayCycle = new DayCycle( { hour: numberParam( 'hour', 16 ), dayLength: Math.max( 30, numberParam( 'dayLength', 600 ) ),
 	paused: params.has( 'paused' ) || params.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.5 ) } );
+const requestedWeather = params.get( 'weather' ) ?? 'fair';
+const weather = new Weather( Object.hasOwn( WEATHER_PRESETS, requestedWeather ) ? requestedWeather as WeatherName : 'fair' );
 const requestedPreset = params.get( 'preset' );
 if ( requestedPreset && Object.hasOwn( DAY_PRESETS, requestedPreset ) ) dayCycle.setPreset( requestedPreset as DayPreset );
 let manualSun = false;
@@ -98,9 +101,12 @@ let simTime = numberParam( 't', 0 );
 let skyElapsed = 0;
 let lastSkyTime = simTime;
 let lastSkyHour = dayCycle.hour;
-sky.clouds.coverage.value = THREE.MathUtils.clamp( numberParam( 'clouds', 0.28 ), 0, 1 );
+let lastWeatherSignature = '';
+// Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
+let cloudOverride: number | null = params.has( 'clouds' ) ? THREE.MathUtils.clamp( numberParam( 'clouds', 0.32 ), 0, 1 ) : null;
 sky.clouds.windOffset.value.set( - numberParam( 't', 0 ) * 0.61, - numberParam( 't', 0 ) * 0.51 );
-const skyQuality = { value: params.get( 'quality' ) ?? 'medium' };
+const requestedQuality = params.get( 'quality' ) ?? 'medium';
+const skyQuality = { value: ( Object.hasOwn( WEATHER_QUALITY, requestedQuality ) ? requestedQuality : 'medium' ) as WeatherQuality };
 function applySkyQuality(): void {
 
 	sky.setQuality( skyQuality.value === 'low' ? 'low' : skyQuality.value === 'high' ? 'high' : 'medium' );
@@ -148,6 +154,16 @@ function fresnel( cosI: number, eta: number ): number {
 }
 
 let sunUpdates = Promise.resolve();
+function prepareSkyState(): void {
+
+	sky.setCelestial( manualSun ? null : dayCycle.snapshot() );
+	const state = weather.snapshot();
+	if ( cloudOverride !== null ) state.coverage = cloudOverride;
+	sky.setWeather( state );
+	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.haze }`;
+
+}
+
 function publishLighting(): void {
 
 	sun.color.copy( sky.keyColor );
@@ -168,7 +184,7 @@ async function bakeEnvironment(): Promise<void> {
 	// Explicit preset changes settle any in-flight bake first. The running clock uses a single
 	// coalesced request below, never a growing async queue or a suspended animation loop.
 	if ( sky.busy ) await sky.update();
-	sky.setCelestial( manualSun ? null : dayCycle.snapshot() );
+	prepareSkyState();
 	await sky.update();
 	scene.environment = sky.envMap!.texture;
 	( scene as unknown as { environmentNode: THREE.Node<'vec3'> | null } ).environmentNode = sky.environmentNode;
@@ -198,6 +214,13 @@ function applySun(): Promise<void> {
 
 const setHour = async ( hour: number ) => { dayCycle.setHour( hour ); await refreshEnvironment(); };
 const setPreset = async ( preset: DayPreset ) => { dayCycle.setPreset( preset ); await refreshEnvironment(); };
+const setWeather = async ( name: WeatherName, seconds = 20 ) => {
+
+	cloudOverride = null;
+	weather.setWeather( name, seconds );
+	if ( seconds === 0 ) await refreshEnvironment();
+
+};
 
 function applySkyFill(): void {
 
@@ -223,7 +246,7 @@ const fft = new OceanFFT( renderer, {
 	swell: { height: 0.18 },
 } );
 const caustics = new Caustics( renderer, fft );
-const pipeline = new Pipeline( renderer );
+const pipeline = new Pipeline( renderer, sky );
 
 // ------------------------------------------------------------------ world
 
@@ -308,8 +331,12 @@ cloudF.add( reviewView, 'camera', [ 'island', 'horizon', 'sky' ] ).name( 'review
 	controls.update();
 
 } );
-cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover' ).onFinishChange( refreshEnvironment );
+cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover override' ).onFinishChange( ( value: number ) => { cloudOverride = value; void refreshEnvironment(); } );
 cloudF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'sky quality' ).onFinishChange( () => { applySkyQuality(); void refreshEnvironment(); } );
+const weatherF = gui.addFolder( 'Weather' );
+const weatherView = { preset: weather.target, seconds: 20 };
+weatherF.add( weatherView, 'preset', Object.keys( WEATHER_PRESETS ) ).name( 'weather' ).onChange( ( name: WeatherName ) => { void setWeather( name, weatherView.seconds ); } );
+weatherF.add( weatherView, 'seconds', 0, 120, 1 ).name( 'transition seconds' );
 const timeF = gui.addFolder( 'Time & moon' );
 const timeView = { preset: requestedPreset ?? 'golden-hour' };
 timeF.add( dayCycle, 'hour', 0, 24, 0.01 ).name( 'hour' ).listen().onFinishChange( refreshEnvironment );
@@ -416,11 +443,13 @@ function tick(): void {
 	const dt = Math.min( rawDt, 1 / 20 );
 	if ( ! paused ) simTime += dt;
 	dayCycle.advance( rawDt );
+	weather.update( paused ? 0 : rawDt );
 	controls.update();
 
 	renderer.info.reset();
 	sky.advance( dt );
 	publishLighting();
+	pipeline.air.haze.value = sky.weather.haze;
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		const state = sky.grade;
@@ -430,20 +459,22 @@ function tick(): void {
 
 	}
 	skyElapsed += dt;
-	const skyInterval = skyQuality.value === 'low' ? 0.8 : skyQuality.value === 'high' ? 0.3 : 0.5;
+	const skyInterval = WEATHER_QUALITY[ skyQuality.value ].skyUpdateInterval;
+	const ws = weather.state;
+	const weatherSignature = `${ cloudOverride ?? ws.coverage },${ ws.density },${ ws.directVisibility },${ ws.ambientGain },${ ws.haze }`;
 	if ( ! sky.busy && ! sky.transitioning && skyElapsed >= skyInterval &&
-		( simTime !== lastSkyTime || ( ! manualSun && dayCycle.hour !== lastSkyHour ) ) ) {
+		( simTime !== lastSkyTime || weatherSignature !== lastWeatherSignature || ( ! manualSun && dayCycle.hour !== lastSkyHour ) ) ) {
 
 		skyElapsed = 0;
 		lastSkyTime = simTime;
 		lastSkyHour = dayCycle.hour;
 		sky.clouds.windOffset.value.set( - simTime * 0.61, - simTime * 0.51 );
-		sky.setCelestial( manualSun ? null : dayCycle.snapshot() );
+		prepareSkyState();
 		void sky.update( skyInterval * 0.8 ).catch( ( error: unknown ) => console.error( error ) );
 
 	}
 	shadowElapsed += dt;
-	const shadowInterval = skyQuality.value === 'low' ? 0.2 : skyQuality.value === 'high' ? 0.08 : 0.12;
+	const shadowInterval = WEATHER_QUALITY[ skyQuality.value ].shadowUpdateInterval;
 	if ( shadowElapsed >= shadowInterval && shadowDirection.distanceToSquared( sky.keyDir ) > 1e-10 ) {
 
 		shadowElapsed = 0;
@@ -491,6 +522,9 @@ function diagnostics(): void {
 		skyBusy: sky.busy,
 		skyTransitioning: sky.transitioning,
 		quality: skyQuality.value,
+		weather: weather.target,
+		weatherProgress: + weather.progress.toFixed( 3 ),
+		rain: + sky.weather.rain.toFixed( 3 ),
 	};
 
 }
@@ -499,4 +533,4 @@ renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
 // setTime moves the (paused) clock, so captures can step through an animation in one page load
 const setTime = ( t: number ) => { simTime = t; };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };

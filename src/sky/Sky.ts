@@ -15,11 +15,13 @@ import { SCENE_RADIANCE_SCALE, SUN_PROJECTED_SOLID_ANGLE } from '../lighting/Rad
 import { Clouds } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
+import type { WeatherState } from './Weather.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
+type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'windSpeed' | 'windDirection'>;
 
 interface SkyEndpoint {
 	equirect: THREE.RenderTarget;
@@ -38,6 +40,7 @@ interface SkyEndpoint {
 	exposure: number;
 	blackLift: number;
 	daylight: number;
+	weather: DisplayedWeather;
 	irradiance: THREE.Color;
 }
 
@@ -62,6 +65,7 @@ function makeEndpoint(): SkyEndpoint {
 		moonDir: new THREE.Vector3( 0, - 1, 0 ), moonColor: new THREE.Color( 0, 0, 0 ),
 		starVisibility: 0,
 		exposure: 2.35, blackLift: 0.027, daylight: 1,
+		weather: { haze: 0, rain: 0, windSpeed: 3.8, windDirection: 40 },
 		irradiance: new THREE.Color( 0, 0, 0 ),
 	};
 
@@ -109,6 +113,7 @@ export class Sky {
 	keyDir = new THREE.Vector3();
 	keyColor = new THREE.Color();
 	readonly grade = { exposure: 2.35, blackLift: 0.027, daylight: 1 };
+	readonly weather: DisplayedWeather = { haze: 0, rain: 0, windSpeed: 3.8, windDirection: 40 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
 	equirect: THREE.RenderTarget;
@@ -125,6 +130,7 @@ export class Sky {
 	private destination = 0;
 	private initialized = false;
 	private celestial: DayCycleSnapshot | null = null;
+	private weatherState: WeatherState | null = null;
 	private pendingUpdate: Promise<void> | null = null;
 	private transitionDuration = 0;
 	private transitionElapsed = 0;
@@ -160,6 +166,8 @@ export class Sky {
 	private upperQuad: THREE.QuadMesh;
 	private sea = uniform( new THREE.Color() );
 	private nightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
+	private ambientGain = uniform( 1 );
+	private overcast = uniform( 0 );
 	private irradiancePass = uniform( 0 );
 	private includeStars = uniform( 0 );
 	private bakeStarVisibility = uniform( 0 );
@@ -251,8 +259,12 @@ export class Sky {
 			// March each upper-sky direction once. The lower panorama is its distant sea
 			// reflection, and the irradiance probe can reuse these same radiance samples.
 			const up = equirectToDir( vec2( uv().x, uv().y.mul( 0.5 ).add( 0.5 ) ) ).toVar();
-			const clear = this.atmosphere.skyRadiance( up ).add( this.nightAmbient.rgb );
-			return this.clouds.radiance( up, clear );
+			const clear = this.atmosphere.skyRadiance( up ).add( this.nightAmbient.rgb ).toVar();
+			// Clouds mute the existing sky's colour; they never introduce a white/grey
+			// radiance floor that would glow at night or bleach the transparent sea.
+			const muted = mix( clear, vec3( dot( clear, vec3( 0.2126, 0.7152, 0.0722 ) ) ), this.overcast.mul( 0.35 ) );
+			const cloud = this.clouds.radiance( up, muted ).toVar();
+			return vec4( cloud.rgb.mul( this.ambientGain ), cloud.a );
 
 		} )();
 		this.upperQuad = new THREE.QuadMesh( upperMat );
@@ -323,6 +335,12 @@ export class Sky {
 
 	}
 
+	setWeather( snapshot: WeatherState | null ): void {
+
+		this.weatherState = snapshot ? { ...snapshot } : null;
+
+	}
+
 	setQuality( quality: 'low' | 'medium' | 'high' ): void {
 
 		const samples = { low: 6, medium: 10, high: 14 }[ quality ];
@@ -361,6 +379,7 @@ export class Sky {
 		const readback = transitionSeconds === 0 || ! this.initialized;
 		if ( readback ) this.explicitVersion = version;
 		const celestial = this.celestial;
+		const weather = this.weatherState ? { ...this.weatherState } : null;
 		const elevation = celestial?.elevation ?? this.elevation;
 		const azimuth = celestial?.azimuth ?? this.azimuth;
 		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
@@ -372,6 +391,23 @@ export class Sky {
 		state.exposure = celestial?.exposure ?? 2.35;
 		state.blackLift = celestial?.blackLift ?? 0.027;
 		state.daylight = celestial?.daylight ?? 1;
+		state.weather.haze = weather?.haze ?? 0;
+		state.weather.rain = weather?.rain ?? 0;
+		state.weather.windSpeed = weather?.windSpeed ?? 3.8;
+		state.weather.windDirection = weather?.windDirection ?? 40;
+		if ( weather ) {
+
+			this.clouds.coverage.value = weather.coverage;
+			this.clouds.density.value = weather.density;
+
+		}
+		const ambientGain = weather?.ambientGain ?? 1;
+		const directVisibility = weather?.directVisibility ?? 1;
+		const overcast = weather ? THREE.MathUtils.smoothstep( weather.coverage, 0.65, 0.98 ) : 0;
+		// Preserve contrast under flat daytime light without lifting the night floor.
+		state.blackLift *= 1 - 0.48 * overcast * state.daylight;
+		this.ambientGain.value = ambientGain;
+		this.overcast.value = overcast;
 		const el = THREE.MathUtils.degToRad( elevation ), az = THREE.MathUtils.degToRad( azimuth );
 		state.sunDir.set( Math.cos( el ) * Math.cos( az ), Math.sin( el ), Math.cos( el ) * Math.sin( az ) ).normalize();
 		state.solarIlluminance.copy( tint ).multiplyScalar( illuminance );
@@ -402,8 +438,24 @@ export class Sky {
 
 		}
 		this.clouds.lightDir.value.copy( state.keyDir );
+		// Cloud interiors see the source above the cloud layer. Surface key attenuation
+		// is applied afterward, in addition to the resolved world-space cloud shadows.
 		this.clouds.lightColor.value.copy( state.keyColor );
 		this.clouds.ambientColor.value.setRGB( 0.04, 0.055, 0.08 ).multiplyScalar( illuminance * ( celestial ? celestial.daylight + celestial.nightVisibility * 0.008 : 1 ) );
+		if ( celestial && overcast > 0 ) {
+
+			const nightFill = new THREE.Color( 0.04, 0.055, 0.08 ).multiplyScalar( illuminance * celestial.nightVisibility * 0.008 );
+			// Solid night clouds replace the star-lit background. Compensate their internal
+			// .13–.34 scattering gain with a diffuse floor that keeps the island readable.
+			this.clouds.ambientColor.value.add( this.nightAmbient.value.clone().multiplyScalar( 12 ).sub( nightFill ).multiplyScalar( overcast ) );
+
+		}
+		this.sea.value.multiplyScalar( ambientGain );
+		state.sunColor.multiplyScalar( directVisibility );
+		state.keyColor.multiplyScalar( directVisibility );
+		state.solarIlluminance.multiplyScalar( directVisibility );
+		state.moonColor.multiplyScalar( directVisibility );
+		state.starVisibility *= ambientGain;
 		this.bakeStarVisibility.value = state.starVisibility;
 		const r = this.renderer, prev = r.getRenderTarget();
 		try {
@@ -539,6 +591,11 @@ export class Sky {
 		this.grade.exposure = THREE.MathUtils.lerp( a.exposure, b.exposure, amount );
 		this.grade.blackLift = THREE.MathUtils.lerp( a.blackLift, b.blackLift, amount );
 		this.grade.daylight = THREE.MathUtils.lerp( a.daylight, b.daylight, amount );
+		this.weather.haze = THREE.MathUtils.lerp( a.weather.haze, b.weather.haze, amount );
+		this.weather.rain = THREE.MathUtils.lerp( a.weather.rain, b.weather.rain, amount );
+		this.weather.windSpeed = THREE.MathUtils.lerp( a.weather.windSpeed, b.weather.windSpeed, amount );
+		const windTurn = THREE.MathUtils.euclideanModulo( b.weather.windDirection - a.weather.windDirection + 180, 360 ) - 180;
+		this.weather.windDirection = THREE.MathUtils.euclideanModulo( a.weather.windDirection + windTurn * amount, 360 );
 		// During a running cycle this CPU value is diagnostic only. Water and characters use
 		// irradianceNode, which blends the exact GPU integrals on the same frame as the sky.
 		if ( ! this.liveDiagnostics ) this.skyIrradiance.copy( a.irradiance ).lerp( b.irradiance, amount );
@@ -633,6 +690,12 @@ export class Sky {
 		// spreading/dimming their finite energy rather than adding screen-space sparkles.
 		const footprint = exp2( mip ).mul( Math.SQRT2 * Math.PI / this.equirect.height );
 		return background.rgb.add( this.night.stars( direction, footprint ).mul( background.a ) );
+
+	}
+
+	sampleBackground( direction: V3, mip: F = float( 0 ) ): V3 {
+
+		return this.samplePanorama( direction, mip ).rgb;
 
 	}
 

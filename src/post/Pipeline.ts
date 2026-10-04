@@ -7,6 +7,8 @@ import {
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
+import { AerialPerspective } from '../weather/AerialPerspective.ts';
+import type { Sky } from '../sky/Sky.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA x4, half float, multisampled depth)
@@ -46,6 +48,7 @@ export class Pipeline {
 	sceneRT: THREE.RenderTarget;
 	depthRT: THREE.RenderTarget;
 	waterRT: THREE.RenderTarget;
+	readonly air = new AerialPerspective();
 
 	private depthQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
@@ -59,7 +62,7 @@ export class Pipeline {
 		maxRadius: uniform( 6 ), texel: uniform( new THREE.Vector2( 1, 1 ) ),
 	};
 
-	constructor( renderer: THREE.WebGPURenderer ) {
+	constructor( renderer: THREE.WebGPURenderer, sky: Sky ) {
 
 		this.renderer = renderer;
 		const depthTexture = new THREE.DepthTexture( 1, 1 );
@@ -96,7 +99,7 @@ export class Pipeline {
 		// ---- composite: the water over the opaque image
 		const sceneTex = texture( this.sceneRT.texture );
 		const waterTex = texture( this.waterRT.texture );
-		const hdr = mix( sceneTex.rgb, waterTex.rgb, waterTex.a );
+		const hdr = this.air.apply( mix( sceneTex.rgb, waterTex.rgb, waterTex.a ), this.depthRT.texture, waterDepth, sky );
 
 		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a
 		// soft knee instead of a hard threshold
@@ -228,7 +231,9 @@ export class Pipeline {
 		const S = this.settings;
 		const u = this.u;
 
+		camera.updateMatrixWorld();
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
+		this.air.update( camera, this.width, this.height );
 
 		// 1. opaque
 		r.setRenderTarget( this.sceneRT );

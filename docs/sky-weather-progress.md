@@ -92,11 +92,40 @@ single-page headless Chromium with WebGPU; no other page is opened in the captur
 - Required-resolution daylight benchmark: **27.060 ms** mean (+0.159 ms versus stage 2),
   sampled P95 38.4–38.7 ms. Star reflection source adds one stable texture (85 total).
 
+### Stage 4 — coherent weather and distant air
+
+- Clear, fair, cloudy, overcast and rain presets interpolate cloud amount/density, direct
+  visibility, diffuse sky, distant air and wind. A new request starts from the current state,
+  so a transition can be reversed without resetting to the previous preset.
+- Sky, reflected panorama, PMREM, cloud shadows, celestial disks and displayed haze share
+  completed endpoints. Dense clouds desaturate their existing radiance rather than adding grey.
+- Air perspective reads the nearest opaque/water depth after water compositing; the first
+  85 m are protected and the original refraction source remains unchanged.
+- Initial night rain was rejected as too dark: meadow/cliff luma 11.64/10.56. Increasing only
+  the dense-cloud night diffuse fill gives 18.41/16.40, below clear full moon 25.20/19.63.
+  Evidence and paired crops: `artifacts/sky-weather/stage4-night/`.
+- Initial five-preset GPU verification passes fixed states, night rain, interrupted live
+  five-second transitions, and bounded resources across twelve repeated weather changes.
+  Evidence: `artifacts/verification/weather/`.
+- Reduced daytime overcast black lift from .027 to .01404 removes the grey floor without
+  changing exposure: rain meadow/cliff luma 60.29/58.86 → 50.79/49.13. Local adjacent-pixel
+  contrast rises from 3.04/1.63 to 3.60/1.93. Crops: `stage4-rain-afternoon/`.
+- Required-resolution live mean: fair **27.148 ms**, rain **27.046 ms**, with respective
+  sampled P95 ranges 32.3–32.7 / 32.3–32.4 ms. The medium sky interval is now .8 seconds;
+  low/medium/high use 6/10/14 cloud steps and 1.2/.8/.5-second bake intervals.
+- Final five-check weather regression and production build pass. Rain fog off/on gives
+  exactly **0/255 RGB difference** over the protected meadow, cliff, shallow-water and
+  foreground-sea crops; the distant sea changes by **32.77/255**. It is distance-based air,
+  not a white overlay across the island. See `report.json` fog measurements and paired PNGs.
+
 ## Review controls
 
 Press **H** for controls and **Space** to pause scene animation and the day clock. `Time & moon`
 offers hours, seconds per day, independent clock pause, presets, phase and optional lunar advance.
 `Sky & clouds` includes island, horizon and sky review cameras.
+`Weather` selects clear/fair/cloudy/overcast/rain and transition duration (0 for immediate review).
+Weather and cloud motion pause with the scene; the independent day-clock pause leaves them moving.
 Reproducible URLs accept `paused&t=12&hour=16&moon=0.5&quality=medium&dpr=1`;
+add `weather=rain` to load established rain, or `clouds=0` for a cloud-cover review override.
 `clock=paused` freezes only the day clock. Presets include dawn, sunrise, noon, golden-hour,
 sunset, dusk and midnight. The debug API is available only in development or with `?debug`.
