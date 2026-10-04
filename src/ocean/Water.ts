@@ -21,7 +21,7 @@ import type { Shared } from '../shared.ts';
 //   - exact dielectric Fresnel, GGX sun glint shadowed by the island, roughness from the slope
 //     variance the mesh can't resolve at this pixel's footprint (Cox-Munk)
 //   - refraction: the refracted view ray is traced to the floor through the opaque pass's linear
-//     depth (two refinements), the scene behind is sampled where it lands
+//     depth (bounded steps and bisection), the scene behind is sampled where it lands
 //   - water volume: Beer-Lambert absorption along the refracted path plus analytic single
 //     scattering of the sun (Henyey-Greenstein) and the sky, multiple-scatter backscatter boost
 //   - reflection: baked sky (glare softly capped) + screen-space reflection of cliffs and stacks
@@ -274,6 +274,80 @@ export class Water {
 
 		} ).setLayout( { name: 'traceSSR', type: 'vec4', inputs: [ { name: 'posV', type: 'vec3' }, { name: 'Rv', type: 'vec3' } ] } );
 
+		// Trace the first visible underwater surface, rather than iterating its height. A
+		// height-only solve can jump between shallow rocks and a deeper basin indefinitely.
+		const traceRefraction = Fn( ( [ posV, directionV, range, surfaceY, footprint ]: [ V3, V3, F, F, F ] ) => {
+
+			const result = vec4( 0 ).toVar();
+			const step = range.div( 8 );
+			const near = float( 0 ).toVar(), far = float( 0 ).toVar();
+			const found = float( 0 ).toVar();
+			Loop( 8, ( { i } ) => {
+
+				const distance = float( i ).add( 1 ).mul( step ).toVar();
+				const point = posV.add( directionV.mul( distance ) ).toVar();
+				const q = projectView( point, cameraProjectionMatrix ).toVar();
+				If( q.x.lessThan( 0.001 ).or( q.x.greaterThan( 0.999 ) ).or( q.y.lessThan( 0.001 ) ).or( q.y.greaterThan( 0.999 ) ).or( point.z.greaterThan( - 0.1 ) ), () => {
+
+					Break();
+
+				} );
+				const depth = sceneViewZ( q ).toVar();
+				If( point.z.lessThanEqual( depth ), () => {
+
+					far.assign( distance );
+					found.assign( 1 );
+					Break();
+
+				} );
+				near.assign( distance );
+
+			} );
+			If( found.greaterThan( 0.5 ), () => {
+
+				Loop( 5, () => {
+
+					const distance = near.add( far ).mul( 0.5 ).toVar();
+					const point = posV.add( directionV.mul( distance ) ).toVar();
+					If( point.z.lessThanEqual( sceneViewZ( projectView( point, cameraProjectionMatrix ) ) ), () => {
+
+						far.assign( distance );
+
+					} ).Else( () => {
+
+						near.assign( distance );
+
+					} );
+
+				} );
+				const point = posV.add( directionV.mul( far ) ).toVar();
+				const q = projectView( point, cameraProjectionMatrix ).toVar();
+				const ray = viewRay( q, cameraProjectionMatrixInverse ).toVar();
+				const visible = ray.mul( sceneViewZ( q ).div( ray.z ) ).toVar();
+				const worldHit = cameraWorldMatrix.mul( vec4( visible, 1 ) ).xyz;
+				// A depth discontinuity may bracket an occluder instead of an intersection.
+				// Such a hit fades to the visible floor, never to an above-water cliff colour.
+				const miss = length( visible.sub( point ) );
+				const trust = float( 1 ).sub( smoothstep( footprint.mul( 1.5 ).add( 0.08 ), footprint.mul( 3 ).add( 0.35 ), miss ) );
+				If( worldHit.y.lessThanEqual( surfaceY.add( 0.05 ) ), () => {
+
+					const edge = smoothstep( 0.001, 0.025, q.x ).mul( smoothstep( 0.999, 0.975, q.x ) )
+						.mul( smoothstep( 0.001, 0.025, q.y ) ).mul( smoothstep( 0.999, 0.975, q.y ) );
+					result.assign( vec4( q, max( dot( visible.sub( posV ), directionV ), 0 ), trust.mul( edge ) ) );
+
+				} );
+
+			} );
+			return result;
+
+		} ).setLayout( {
+			name: 'traceRefraction', type: 'vec4',
+			inputs: [
+				{ name: 'posV', type: 'vec3' }, { name: 'directionV', type: 'vec3' },
+				{ name: 'range', type: 'float' }, { name: 'surfaceY', type: 'float' }, { name: 'footprint', type: 'float' },
+			],
+		} );
+
 		material.fragmentNode = Fn( () => {
 
 			const time = shared.time;
@@ -425,52 +499,31 @@ export class Water {
 			sunSpec.addAssign( sunLight.mul( glintPath ).mul( facet ).mul( sparkles( wp.xz.mul( 2.1 ).add( N.xz.mul( 2.5 ) ), time ) ).mul( u.glitter ).mul( float( 1 ).sub( foamAmt ) ) );
 
 			// ---- refraction: trace the refracted ray to the floor through the depth
-			const Tr = refract( V.negate(), N, 1 / IOR );
+			// Fine facets can sparkle on the surface without stretching the deeper floor.
+			// A calmer optical normal keeps submerged silhouettes legible through the column.
+			const opticalNormal = normalize( mix( vec3( 0, 1, 0 ), N, 0.4 ) );
+			// Art-direct the bend as well as the fine distortion: the deeper shelf should
+			// retain its form rather than read as a strongly magnifying glass plate.
+			const Tr = normalize( mix( V.negate(), refract( V.negate(), opticalNormal, 1 / IOR ), 0.35 ) );
 			const Tv = normalize( vec3( Tr.x, min( Tr.y, - 0.08 ), Tr.z ) ).toVar();
 			const tDown = max( Tv.y.negate(), 0.04 ).toVar();
-			const uvR = screenUV.toVar();
-			const swR = sw0.toVar();
-			const Lt = select( skyBehind, float( 200 ), max( wp.y.sub( sw0.y ), 0 ).div( tDown ) ).toVar();
-			If( skyBehind.not(), () => {
+			const fallbackLength = select( skyBehind, float( 200 ), clamp( max( wp.y.sub( sw0.y ), 0 ).div( tDown ), 0, 200 ) );
+			const hit = vec4( screenUV, fallbackLength, 0 ).toVar();
+			If( skyBehind.not().and( thick.greaterThan( 0.02 ) ), () => {
 
-				Loop( 3, () => {
-
-					const pe = wp.add( Tv.mul( min( Lt, 60 ) ) );
-					const cl = cameraProjectionMatrix.mul( cameraViewMatrix ).mul( vec4( pe, 1 ) ).toVar();
-					const s = cl.xy.div( cl.w ).mul( 0.5 ).add( 0.5 );
-					const q = vec2( s.x, float( 1 ).sub( s.y ) ).toVar();
-					If( q.x.lessThan( 0.001 ).or( q.x.greaterThan( 0.999 ) ).or( q.y.lessThan( 0.001 ) ).or( q.y.greaterThan( 0.999 ) ), () => {
-
-						Break();
-
-					} );
-					const zR = sceneViewZ( q ).toVar();
-					If( zR.lessThan( - 1e4 ), () => {
-
-						Break();
-
-					} );
-					const rayR = viewRay( q, cameraProjectionMatrixInverse ).toVar();
-					const svR = rayR.mul( zR.div( rayR.z ) ).toVar();
-					const swr = cameraWorldMatrix.mul( vec4( svR, 1 ) ).xyz.toVar();
-					// only what lies behind this surface point and below the water can be seen through it
-					If( svR.z.greaterThan( posV.z.sub( 0.03 ) ).or( swr.y.greaterThan( wp.y.add( 0.05 ) ) ), () => {
-
-						Break();
-
-					} );
-					uvR.assign( q );
-					swR.assign( swr );
-					Lt.assign( max( wp.y.sub( swr.y ), 0 ).div( tDown ) );
-
-				} );
+				const directionV = normalize( cameraViewMatrix.mul( vec4( Tv, 0 ) ).xyz );
+				const range = min( max( fallbackLength.mul( 1.5 ), fallbackLength.add( 4 ) ), 40 );
+				hit.assign( traceRefraction( posV, directionV, range, wp.y, footprint ) );
 
 			} );
-			const pathLen = select( skyBehind, float( 200 ), clamp( min( Lt, length( swR.sub( wp ) ) ), 0, 200 ) ).toVar();
+			const refractionTrust = hit.w;
+			const uvR = mix( screenUV, hit.xy, select( refractionTrust.greaterThan( 0 ), float( 1 ), float( 0 ) ) );
+			const pathLen = mix( fallbackLength, hit.z, refractionTrust ).toVar();
+
 			// Unresolved surface slopes soften deeper refraction slightly; near-surface rocks
 			// remain legible, while the far seabed no longer looks like an etched glass plate.
 			const refractBlur = min( pathLen.mul( 0.28 ), 1.8 ).div( depthSize );
-			const sceneCol = sceneAt( uvR ).mul( 0.5 )
+			const refractedCol = sceneAt( uvR ).mul( 0.5 )
 				.add( sceneAt( clamp( uvR.add( refractBlur.mul( vec2( 0.83, 0.56 ) ) ), vec2( 0.001 ), vec2( 0.999 ) ) ).mul( 0.25 ) )
 				.add( sceneAt( clamp( uvR.sub( refractBlur.mul( vec2( 0.83, 0.56 ) ) ), vec2( 0.001 ), vec2( 0.999 ) ) ).mul( 0.25 ) );
 
@@ -480,7 +533,12 @@ export class Water {
 			const Ls = refract( L.negate(), vec3( 0, 1, 0 ), 1 / IOR ).negate().toVar();
 			const muS = max( Ls.y, 0.1 );
 			const muV = max( Tv.y.negate(), 0.15 );
-			const Tview = exp( sigT.negate().mul( pathLen ) );
+			// Each source retains its own optical depth while confidence blends the hits.
+			// One mixed path would tint a bright shallow source as if it belonged to the basin.
+			const bottom = mix(
+				sceneAt( screenUV ).mul( exp( sigT.negate().mul( fallbackLength ) ) ),
+				refractedCol.mul( exp( sigT.negate().mul( hit.z ) ) ), refractionTrust
+			);
 			// (in a shadow the volume still glows: light scattered in sideways from the sunlit water)
 			const sunIn = shared.sunColor.mul( mix( float( 0.45 ), float( 1 ), shadow ) ).mul( float( 1 ).sub( fresnelDielectric( max( L.y, 0.02 ), float( IOR ) ) ) );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
@@ -495,7 +553,7 @@ export class Water {
 			const back = pow( sat( dot( vH, lH.negate() ).mul( 0.6 ).add( 0.4 ) ), 2.5 );
 			const crest = sat( wp.y.sub( shared.waterLevel ).mul( 4 ).add( 0.2 ) ).mul( sat( float( 1 ).sub( N.y ).mul( 6 ) ).add( 0.2 ) );
 			const sss = sunLight.mul( vec3( 0.12, 0.55, 0.45 ) ).mul( back.mul( crest ).mul( 0.035 ) );
-			const transmitted = sceneCol.mul( Tview ).add( inSun ).add( inAmb ).add( sss );
+			const transmitted = bottom.add( inSun ).add( inAmb ).add( sss );
 
 			// ---- foam: bright diffuse scatterer
 			const coolWash = smoothstep( 0.015, 0.25, reefWash );

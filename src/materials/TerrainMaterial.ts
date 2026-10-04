@@ -185,7 +185,10 @@ function cliffSurface( { tex, shared, topY }: Ctx ) {
 		const nW = normalize( mix( nRock, nMoss, moss ) );
 		const stoneRough = clamp( Fc.a.mul( 0.34 ).add( 0.62 ), 0.8, 0.98 );
 		const rough = mix( stoneRough, float( 0.94 ), moss ).toVar();
-		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algae.mul( 0.85 ) ) );
+		// Keep a dark tidal band, but reveal mineral faces farther below it. A deeper
+		// water column should show a submerged cliff, rather than a solid green plinth.
+		const algaeCoverage = algae.mul( mix( float( 0.85 ), float( 0.5 ), deep ) );
+		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algaeCoverage ) );
 		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ), silt.mul( 0.7 ) ) );
 		albedo.mulAssign( mix( float( 1 ), float( 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
 		rough.assign( mix( rough, float( 0.28 ), wet.mul( float( 1 ).sub( deep ) ) ) );

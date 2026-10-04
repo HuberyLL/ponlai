@@ -8,6 +8,7 @@ import {
 	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
 } from './WorldShapes.ts';
 import { Field2D } from './Field2D.ts';
+import { deepenSeabed } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import type { SDF, MeshData, MeshKind, NamedMesh, WorldData, WorldOptions } from './types.ts';
 
@@ -23,8 +24,11 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	mark( 'footprint', t );
 
 	const stacks = makeStacks();
-	const seabedHeight = makeSeabed( fp, stacks );
-	const rocks = makeRocks( fp, stacks, seabedHeight );
+	// Rock placement stays tied to the original shelf. Only the rendered floor between
+	// those fixed anchors becomes deeper.
+	const placementFloor = makeSeabed( fp, stacks );
+	const rocks = makeRocks( fp, stacks, placementFloor );
+	const seabedHeight = deepenSeabed( fp, rocks, placementFloor );
 	const islandSDF = makeIslandSDF( fp );
 	const stackSDFs = stacks.map( ( s, i ) => makeStackSDF( s, i + 1 ) );
 	const rockSDFs = rocks.map( makeRockSDF );

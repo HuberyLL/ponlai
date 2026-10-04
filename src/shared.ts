@@ -6,9 +6,11 @@ import { uniform } from 'three/tsl';
 export const shared = {
 	time: uniform( 0 ),
 	waterLevel: uniform( 0 ),
-	// water optics: absorption and scattering coefficients (1 / m)
-	sigA: uniform( new THREE.Vector3( 0.39, 0.18, 0.125 ) ),
-	sigS: uniform( new THREE.Vector3( 0.05, 0.071, 0.078 ) ),
+	// Clear, deeper water: retain coloured absorption while keeping suspended-particle
+	// scattering low, so the shelf reads through a volume rather than a milky surface.
+	// Coefficients are shared with seabed lighting for both the sun and view paths (1 / m).
+	sigA: uniform( new THREE.Vector3( 0.28, 0.12, 0.10 ) ),
+	sigS: uniform( new THREE.Vector3( 0.02, 0.03, 0.03 ) ),
 	sunIntoWater: uniform( 1 ), // 1 - Fresnel of the sun at the surface
 	muSun: uniform( 1 ), // cosine of the refracted sun below the surface
 	shoreXform: uniform( new THREE.Vector4() ), // x0, z0, 1 / width, 1 / depth of the shoreline field
