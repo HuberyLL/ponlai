@@ -49,7 +49,6 @@ exposed.
 
 ## Decisions (keep to these)
 
-- No clouds, mist or aerial haze. No waterfall or pond.
 - Keep the island tile layout and flat central plateau. Natural contour, slope and weathering
   variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
   patchy seabed detail; no exposed sea stacks or reefs.
