@@ -33,9 +33,11 @@ export class Pipeline {
 	width = 1;
 	height = 1;
 	settings: PipelineSettings = {
-		exposure: 1.5, saturation: 0.93, vibrance: 0.15, contrast: 0.12, split: 0.55,
-		lift: new THREE.Color( 0, 0, 0 ),
-		vignette: 0.18, grain: 0.004,
+		// The look's bright midtones and soft shadows are a display grade; keep the
+		// calibrated sunlight and water transport intact, with a nearly neutral black lift.
+		exposure: 2.35, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 0.45,
+		lift: new THREE.Color( 0.027, 0.027, 0.026 ),
+		vignette: 0.06, grain: 0.004,
 		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0,
 		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,
 		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
@@ -187,7 +189,7 @@ export class Pipeline {
 			const chroma = max( c.r, max( c.g, c.b ) ).sub( min( c.r, min( c.g, c.b ) ) );
 			const satAmt = u.saturation.add( u.vibrance.mul( float( 1 ).sub( smoothstep( 0, 0.35, chroma.div( max( l2, 1e-3 ) ).mul( 0.5 ) ) ) ) );
 			c.assign( max( mix( vec3( l2 ), c, satAmt ), vec3( 0 ) ) );
-			// lifted blacks: the airy, sunlit look (shadows never go below a cool haze)
+			// A display black lift softens dark colours without adding atmospheric scattering.
 			c.assign( c.add( vec3( 1 ).sub( c ).mul( u.lift ) ) );
 			// vignette
 			const q = uv().sub( 0.5 ).mul( vec2( u.resolution.x.div( u.resolution.y ), 1 ) );
