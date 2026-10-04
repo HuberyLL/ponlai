@@ -42,8 +42,12 @@ wildflowers and ivy.
 - Do not commit reference images, and do not ship third-party art without a licence.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
   copyright line, licence) and the licence text sits next to them (see `src/ocean/tidewater.LICENSE.txt`).
-  Techniques borrowed without code are credited in a comment where they are used. Third-party assets,
-  when added, get a `CREDITS.md` listing source and licence for each.
+  Public-domain code (CC0, Unlicense) needs no notice; credit it in a comment instead. Techniques
+  borrowed without code are credited in a comment where they are used.
+- `CREDITS.md` lists every third-party source: adapted code, assets (source, author, licence and how
+  each file was processed), bundled libraries, and techniques. Update it with any of these. A licence
+  text that must ship with the build goes in `LICENCE_FILES` in `vite.config.ts`, which copies it to
+  `dist/licenses/` (the npm dependencies' licences are collected there automatically).
 
 ## Conventions
 

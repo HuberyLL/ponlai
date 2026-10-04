@@ -4,11 +4,11 @@ import {
 	sqrt, min, max, pow, exp, length, atan, asin, clamp, cos, sin, mix,
 } from 'three/tsl';
 
-// Single-scattering atmosphere (Rayleigh + Mie, Nishita-style ray march, after wwwtyro's
-// glsl-atmosphere) baked into an equirectangular HDR texture whenever the sun moves. The same
-// bake feeds the sky dome, the water's reflections (mipmapped for rough reflections), the PMREM
-// environment for the PBR materials, and a small read-back that gives the sky irradiance for
-// ambient terms.
+// Single-scattering atmosphere (Rayleigh + Mie, Nishita-style ray march, ported from wwwtyro's
+// glsl-atmosphere, public domain under the Unlicense) baked into an equirectangular HDR texture
+// whenever the sun moves. The same bake feeds the sky dome, the water's reflections (mipmapped for
+// rough reflections), the PMREM environment for the PBR materials, and a small read-back that gives
+// the sky irradiance for ambient terms.
 //
 // Units: the sun's irradiance at the top of the atmosphere is `sunIlluminance`; sky radiance and
 // the ground-level sun colour are in the same units.
