@@ -1,8 +1,10 @@
 // Builds the world geometry off the main thread: island and submerged stones (surface nets over
 // their SDFs), the seabed heightfield, the shoreline distance field at sea level, and the anchors
-// for the vegetation (turf points on the island, ivy strands down the cliffs).
+// for the meadow vegetation and sparse branches overhanging the upper rim. Plants root on the top.
 
 import { surfaceNets } from './SurfaceNets.ts';
+import { makeRimTrails } from './RimTrails.ts';
+import { buildRimGround } from './RimGround.ts';
 import {
 	buildFootprint, makeIslandSDF, makeRocks, makeRockSDF, makeSeabed,
 	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
@@ -130,13 +132,18 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		vegetation[ dst + 8 ] = vegetationVisibility?.( veg[ k ], veg[ k + 1 ], veg[ k + 2 ], veg[ k + 3 ], veg[ k + 4 ], veg[ k + 5 ] ) ?? 1;
 
 	}
-	// ivy curtains hanging from the island's rim down its faces
-	const ivyPts: number[] = [];
-	// A separate stream keeps ivy placement independent of future turf sampling changes.
-	hangIvy( islandSDF, veg, mulberry32( 4243 ), ivyPts );
-	const ivy = new Float32Array( ivyPts );
-	transfer.push( vegetation.buffer, ivy.buffer );
+	transfer.push( vegetation.buffer );
 	mark( 'vegetation', t );
+
+	t = performance.now();
+	const rimStrands = makeRimTrails( islandSDF, fp, vegetation );
+	for ( const strand of rimStrands ) transfer.push( strand.points.buffer );
+	mark( 'rimFoliage', t );
+
+	t = performance.now();
+	const rimGround = buildRimGround( islandSDF );
+	transfer.push( rimGround.data.buffer );
+	mark( 'rimGround', t );
 
 	// --- seabed contact visibility; the warped geometry was generated before the mesh bake.
 	t = performance.now();
@@ -180,7 +187,8 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		rocks,
 		seabed: { positions: sb, ao: sbAO, res: n, size: seabedSize },
 		vegetation,
-		ivy,
+		rimStrands,
+		rimGround,
 		shore: { data: shore.data, nx: shore.nx, nz: shore.nz, x0: shore.x0, z0: shore.z0, cell: shore.cell },
 		islandShore: { data: islandShore.data, nx: islandShore.nx, nz: islandShore.nz, x0: islandShore.x0, z0: islandShore.z0, cell: islandShore.cell },
 		timings,
@@ -238,59 +246,6 @@ function scatterTop( sdf: SDF, x0: number, x1: number, z0: number, z1: number, s
 		nx /= l; ny /= l; nz /= l;
 		if ( ny < 0.3 ) continue;
 		out.push( px, y, pz, nx, ny, nz, rimDist( px, pz ), kind );
-
-	}
-
-}
-
-// Curtains of ivy hanging from the rim: a few strands side by side, each followed down the rock
-// by marching in from outside along the rim's outward direction, so the leaves hug the faces.
-// Appends x, y, z, outward x, outward z, t (0 at the rim, 1 at the strand's tip).
-function hangIvy( sdf: SDF, veg: ArrayLike<number>, rng: Rng, out: number[] ): void {
-
-	const n = veg.length / 8;
-	const curtains: number[][] = [];
-	for ( let i = 0; i < n; i ++ ) {
-
-		const k = i * 8;
-		if ( veg[ k + 7 ] !== 0 || veg[ k + 6 ] < - 0.45 || rng() > 0.1 ) continue;
-		const x = veg[ k ], y = veg[ k + 1 ], z = veg[ k + 2 ];
-		let ox = veg[ k + 3 ], oz = veg[ k + 5 ];
-		const ol = Math.hypot( ox, oz );
-		if ( ol < 0.15 || curtains.some( ( c ) => Math.hypot( c[ 0 ] - x, c[ 1 ] - z ) < 1.4 ) ) continue;
-		curtains.push( [ x, z ] );
-		ox /= ol; oz /= ol;
-		const tx = - oz, tz = ox;
-		const strands = 4 + Math.floor( rng() * 4 );
-		const width = 0.7 + rng() * 1.0;
-		const length = 0.8 + Math.pow( rng(), 0.7 ) * 2.2;
-		for ( let s = 0; s < strands; s ++ ) {
-
-			const u = ( s / ( strands - 1 ) - 0.5 ) * width + ( rng() - 0.5 ) * 0.15;
-			const L = length * ( 0.5 + rng() * 0.6 ) * ( 1 - Math.min( Math.abs( u ) / width, 0.5 ) * 0.8 );
-			const sx = x + tx * u, sz = z + tz * u;
-			for ( let dy = - 0.05; dy < L; dy += 0.12 ) {
-
-				const yy = y - dy;
-				if ( yy < 0.35 ) break; // stays above the spray
-				let px = sx + ox * 1.2, pz = sz + oz * 1.2;
-				let hit = false;
-				for ( let it = 0; it < 40; it ++ ) {
-
-					const d = sdf( px, yy, pz );
-					if ( d < 0.02 ) { hit = true; break; }
-					const step = Math.max( d * 0.8, 0.01 );
-					px -= ox * step; pz -= oz * step;
-					if ( ( px - sx ) * ox + ( pz - sz ) * oz < - 1.5 ) break;
-
-				}
-
-				if ( ! hit ) break;
-				out.push( px + ox * 0.04, yy, pz + oz * 0.04, ox, oz, dy / L );
-
-			}
-
-		}
 
 	}
 

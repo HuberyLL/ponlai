@@ -10,8 +10,8 @@ import { soilUniforms } from './materials/Soil.ts';
 import { generateWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
 import { buildGrass } from './world/Grass.ts';
 import { buildFoliage } from './world/Foliage.ts';
+import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
-import { buildIvy } from './world/Ivy.ts';
 import { Pipeline } from './post/Pipeline.ts';
 import { shared } from './shared.ts';
 import { installSolarShadowFilter } from './lighting/SolarShadow.ts';
@@ -175,11 +175,11 @@ const refractedSun = new RefractedSun( renderer, shared );
 refractedSun.setCasters( world.group );
 refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
-const grass = buildGrass( data.vegetation, shared );
+const grass = buildGrass( data.vegetation, shared, data.rimGround );
 const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
-const ivy = buildIvy( data.ivy, shared );
-scene.add( grass, foliage, flowers, ivy );
+const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
+scene.add( grass, foliage, flowers, rimFoliage );
 
 water = new Water( {
 	fft, sky, shared, shore: shore.tex, islandShore: islandShore.tex, foam: textures.heights,
@@ -327,6 +327,7 @@ function diagnostics(): void {
 		textures: info.memory.textures,
 		dpr: renderer.getPixelRatio(),
 		worldTriangles: world.triangles,
+		rimStrands: data.rimStrands.length,
 		timings: data.timings,
 		backend: 'webgpu',
 	};
@@ -335,4 +336,4 @@ function diagnostics(): void {
 
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, ivy, soilUniforms, applySun, invalidateSunShadow };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, soilUniforms, applySun, invalidateSunShadow };
