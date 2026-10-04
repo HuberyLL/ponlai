@@ -156,7 +156,7 @@ const ivy = buildIvy( data.ivy, shared );
 scene.add( grass, foliage, flowers, ivy );
 
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, foam: textures.heights, foamState: foam.texture,
+	fft, sky, shared, shore: shore.tex, islandShore: islandShore.tex, foam: textures.heights, foamState: foam.texture, foamDirection: foam.direction,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 water.uniforms.wind.value = fft.params.windSpeed;

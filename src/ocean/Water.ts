@@ -26,7 +26,7 @@ import type { Shared } from '../shared.ts';
 //     scattering of the sun (Henyey-Greenstein) and the sky, multiple-scatter backscatter boost
 //   - reflection: baked sky (glare softly capped) + screen-space reflection of cliffs and stacks
 //   - stylised sun: a broad sheen toward the sun, glints riding the wave facets
-//   - foam: persistent, wave-triggered coverage drifting over the water surface
+//   - foam: a broken surf line at the rock, wave-timed lace, whitecaps from the Jacobian
 // Drawn in a pass of its own after the opaque pass, reading that pass's resolved colour and its
 // linear depth; the frame composites it over the opaque image.
 //
@@ -123,8 +123,11 @@ export interface WaterInputs {
 	sky: Sky;
 	shared: Shared;
 	shore: THREE.Texture;
+	// Main island only, signed metres at sea level; shares shore's world bounds/xform.
+	islandShore?: THREE.Texture;
 	foam: THREE.Texture;
 	foamState: THREE.TextureNode;
+	foamDirection: THREE.Node<'vec2'>;
 	sceneColor: THREE.Texture;
 	linearDepth: THREE.Texture;
 	size?: number;
@@ -153,7 +156,7 @@ export class Water {
 	private shadowTex: THREE.TextureNode;
 	private shadowSize = uniform( new THREE.Vector2( 1, 1 ) );
 
-	constructor( { fft, sky, shared, shore, foam, foamState, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
+	constructor( { fft, sky, shared, shore, islandShore, foam, foamState, foamDirection, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
 
 		// grid in world xz, warped dense under the island and sparse toward the horizon
 		const n = res;
@@ -357,16 +360,39 @@ export class Water {
 			// than a uniform etched pattern over the entire sea.
 			const dd0 = texture( der[ 0 ], vLag.div( sizes.x ) )
 				.add( texture( der[ 1 ], vLag.div( sizes.y ) ).add( texture( der[ 2 ], vLag.div( sizes.z ) ).mul( 0.56 ) ).mul( u.detail ) ).toVar();
+			const foamUV = wp.xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
+			const event = foamState.sample( foamUV ).toVar();
+			const foamAge = clamp( event.g.div( max( event.r, 1e-5 ) ), 0, 4 ).toVar();
+			const sd = texture( shore, foamUV ).level( float( 0 ) ).r.toVar();
+			const step = shared.shoreXform.zw.mul( 0.3 );
+			const shoreGradient = vec2(
+				texture( shore, foamUV.add( vec2( step.x, 0 ) ) ).level( float( 0 ) ).r.sub( texture( shore, foamUV.sub( vec2( step.x, 0 ) ) ).level( float( 0 ) ).r ),
+				texture( shore, foamUV.add( vec2( 0, step.y ) ) ).level( float( 0 ) ).r.sub( texture( shore, foamUV.sub( vec2( 0, step.y ) ) ).level( float( 0 ) ).r ),
+			);
+			const shoreNormal = shoreGradient.div( max( length( shoreGradient ), 1e-5 ) );
+			const coast = float( 1 ).sub( smoothstep( 0.2, 1.8, sd ) );
+			const foamFlow = foamDirection.mul( 0.2 ).toVar();
+			foamFlow.subAssign( shoreNormal.mul( min( dot( foamFlow, shoreNormal ), 0 ) ).mul( coast ) );
+			foamFlow.addAssign( shoreNormal.mul( event.r ).mul( coast ).mul( 0.25 ) );
+			const foamP = wp.xz.sub( foamFlow.mul( min( foamAge, 3.2 ) ) );
+			// Keep the original high-resolution lace. Both layers use the same transported
+			// material coordinate instead of scrolling in unrelated directions.
+			const fuv = foamP.mul( 0.14 );
+			const fA = texture( foam, fuv.add( vec2( 0.156, 0.096 ) ) ).g.toVar();
+			const fB = texture( foam, fuv.mul( 1.9 ).add( vec2( - 0.204, 0.132 ) ) ).g.toVar();
+			const foamLow = texture( foam, foamP.mul( 0.045 ).add( 0.024 ) ).r.toVar();
+			const foamWarp = texture( foam, foamP.yx.mul( 0.11 ).sub( 0.072 ) ).g.toVar();
+			const fChurn = texture( foam, foamP.mul( 0.018 ).add( vec2( 0.048, 0 ) ) ).r.toVar();
+			// Roughness and glints retain their existing art direction.
 			const fLow = texture( foam, wp.xz.mul( 0.045 ).add( time.mul( 0.002 ) ) ).r.toVar();
 			const fLow2 = texture( foam, wp.zx.mul( 0.11 ).sub( time.mul( 0.006 ) ) ).g.toVar();
-			const foamUV = wp.xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
-			const foamHistory = foamState.sample( foamUV ).r.toVar();
 			const footprint = max( length( fwidth( vLag ) ), 1e-4 ).toVar();
 
 			// ---- surface normal from the cascades' slopes (sampled at the undisplaced position)
 			const dd = dd0.mul( vDamp ).toVar();
 			const slope = vec2( dd.x.div( max( dd.z.add( 1 ), 0.2 ) ), dd.y.div( max( dd.w.add( 1 ), 0.2 ) ) );
 			const N = normalize( vec3( slope.x.negate(), 1, slope.y.negate() ) ).toVar();
+			const jac = dd.z.add( 1 ).mul( dd.w.add( 1 ) ).toVar();
 
 			const toCam = cameraPosition.sub( wp ).toVar();
 			const V = toCam.div( length( toCam ) ).toVar();
@@ -408,13 +434,42 @@ export class Water {
 			const sw0 = cameraWorldMatrix.mul( vec4( sv0, 1 ) ).xyz.toVar();
 			const thick = select( skyBehind, float( 1e4 ), posV.z.sub( sv0.z ) ).toVar(); // view distance from the surface to whatever is behind it
 
-			// ---- shoreline and foam: the history stores wave-triggered births and their
-			// drifting remnants. Shading never generates an independent animated white mask.
-			const sd = texture( shore, wp.xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) ).r.toVar();
+			// ---- shoreline and foam
+			const bubbles = fA.mul( 0.6 ).add( fB.mul( 0.4 ) ).toVar();
+			// Wash moves away from the wall in narrow filaments. Filling a depth-intersection
+			// band paints an unbroken luminous collar around every rock, so the actual contact
+			// stays transparent and the outgoing traces fade before a new surge begins.
+			const wash = clamp( foamAge.div( 3.2 ), 0, 1 ).toVar();
+			const surge = sin( wash.mul( PI ) ).toVar();
+			const sdJ = sd.add( foamWarp.sub( 0.4 ).mul( 0.42 ) ).add( bubbles.sub( 0.4 ).mul( 0.18 ) );
+			const lead = wash.mul( 1.25 ).add( 0.2 );
+			const width = footprint.mul( 0.32 ).add( 0.025 );
+			const front = float( 1 ).sub( smoothstep( width, width.add( 0.065 ), abs( sdJ.sub( lead ) ) ) );
+			const tail = float( 1 ).sub( smoothstep( width.mul( 0.7 ), width.add( 0.045 ), abs( sdJ.sub( lead.mul( 0.53 ).add( 0.16 ) ) ) ) );
+			const arcs = smoothstep( 0.22, 0.67, sin( foamP.x.mul( 0.8 ).add( foamP.y.mul( 0.56 ) ).add( fChurn.mul( 15 ) ).add( 2.76 ) ) );
+			const threads = float( 1 ).sub( smoothstep( 0.035, 0.095, abs( bubbles.sub( 0.43 ) ) ) );
+			const detached = smoothstep( 0.08, 0.22, sd ).mul( smoothstep( 0.03, 0.18, thick ) );
+			// No constant coverage underneath the lace: gaps must reach clear water, otherwise
+			// even a faint remainder reads as a drawn arc around a small rock.
+			const fragments = threads.mul( smoothstep( 0.3, 0.5, fA ) );
+			const lace = max( front.mul( fragments ).mul( 0.44 ), tail.mul( fragments ).mul( 0.23 ) );
+			const foamAmt = lace.mul( surge ).mul( arcs ).mul( detached ).mul( 0.6 ).toVar();
+			// The inhabited reef carries the wash; isolated sea stacks stay clear of collars.
+			// Its own coarse distance field lets us add broken foam at the main cliff foot
+			// without catching nearby stacks or imposing a rectangular island approximation.
+			const islandSD = islandShore ? texture( islandShore, wp.xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) ).r : float( 1e4 );
+			const reefDistance = islandSD.add( foamWarp.sub( 0.4 ).mul( 0.35 ) ).sub( surge.mul( 0.12 ) );
+			const reefBand = float( 1 ).sub( smoothstep( 0.04, surge.mul( 0.28 ).add( 0.4 ), abs( reefDistance ) ) );
+			const reefPatch = smoothstep( 0.24, 0.62, sin( foamP.x.mul( 1.2 ).sub( foamP.y.mul( 0.9 ) ).add( foamLow.mul( 19 ) ).add( 4.44 ) ) );
+			const reefWash = reefBand.mul( reefPatch ).mul( fragments )
+				.mul( surge.mul( 0.45 ).add( 0.55 ) ).mul( smoothstep( 0.02, 0.12, thick ) ).mul( 0.62 ).toVar();
+			foamAmt.assign( max( foamAmt, reefWash ) );
 			const foamBounds = smoothstep( 0, 0.015, foamUV.x ).mul( smoothstep( 1, 0.985, foamUV.x ) )
 				.mul( smoothstep( 0, 0.015, foamUV.y ) ).mul( smoothstep( 1, 0.985, foamUV.y ) );
-			const foamAmt = sat( foamHistory.mul( foamBounds ).mul( smoothstep( 0, 0.12, sd ) )
-				.mul( smoothstep( 0.03, 0.18, thick ) ).mul( u.foamAmount ).mul( 0.85 ) ).toVar();
+			foamAmt.mulAssign( smoothstep( 0.03, 0.18, event.r ).mul( float( 1 ).sub( smoothstep( 2.6, 3.2, foamAge ) ) ).mul( foamBounds ) );
+			// whitecaps where the cascades compress the surface
+			foamAmt.assign( max( foamAmt, smoothstep( 0.69, 0.44, jac ).mul( smoothstep( 0.43, 0.65, bubbles ) ).mul( 0.58 ) ) );
+			foamAmt.assign( sat( foamAmt.mul( u.foamAmount ) ) );
 
 			// ---- roughness: base + the slope variance below this pixel's footprint
 			const mss = u.wind.mul( 0.00512 ).add( 0.003 ).toVar();
@@ -525,7 +580,7 @@ export class Water {
 			const transmitted = bottom.add( inSun ).add( inAmb ).add( sss );
 
 			// ---- foam: bright diffuse scatterer
-			const coolWash = float( 1 ).sub( smoothstep( 0.4, 1.8, sd ) );
+			const coolWash = smoothstep( 0.015, 0.25, reefWash );
 			const foamCol = sunLight.mul( NdL.mul( 0.57 ).add( 0.2 ) ).div( PI ).mul( mix( float( 1 ), float( 0.65 ), coolWash ) )
 				.add( shared.skyIrradiance.mul( mix( float( 1.5 ), float( 1.9 ), coolWash ) ) ).mul( 0.95 );
 
