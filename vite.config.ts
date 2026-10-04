@@ -23,8 +23,7 @@ function licences(): Plugin {
 
 					// Release credits live beside the shipped notices, not in the source tree.
 					contents = new TextDecoder().decode( contents ).replaceAll( '](src/ocean/tidewater.LICENSE.txt)', '](tidewater.LICENSE.txt)' )
-						.replaceAll( '](src/sky/tidewater.LICENSE.txt)', '](tidewater-sky.LICENSE.txt)' )
-						.replaceAll( '[`docs/water.md`](docs/water.md)', '`docs/water.md` in the source checkout' );
+						.replaceAll( '](src/sky/tidewater.LICENSE.txt)', '](tidewater-sky.LICENSE.txt)' );
 
 				}
 				this.emitFile( { type: 'asset', fileName, source: contents } );

@@ -51,7 +51,7 @@ packages, into `dist/licenses/`.
   `src/ocean/OceanFoam.ts` is an original TSL history/advection implementation using the FFT-driven
   rock-boundary flow, with land checks; the backtracing technique is credited to Jos Stam below.
   It does not port Tidewater's analytic beach clock, sand wetness, stranded sand foam or spray
-  deposition. See [`docs/water.md`](docs/water.md) for the current source map, defaults and limits.
+  deposition.
 - Sky version: native WebGPU edition, the same pinned `4811ba4` commit (2026-09-25),
   `src/sky/Atmosphere.js` and `src/sky/Sky.js`.
 - Sky files: `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`.
