@@ -25,9 +25,9 @@ import { createWaveSpectrum, type SwellParams } from './OceanSpectrum.ts';
 // Per cascade outputs (half float, repeat; velocity needs no mip chain):
 //   displacement  (Dx, Dy, Dz, jacobian)       derivatives  (dDy/dx, dDy/dz, dDx/dx, dDz/dz)
 //   slope moments (dDy/dx squared, dDy/dz squared, their product, signed dDx/dz)
-//   orbital velocity (Ux, Uz, Vy, persistent foam), RGB without artistic choppiness
+//   orbital velocity (Ux, Uz, Vy, unused), without artistic choppiness
 // Derivatives and slope moments use the same filtering kernel; their mip chains retain
-// unresolved slope variance. The velocity alpha keeps crest foam without changing disp.a.
+// unresolved slope variance.
 // Sample a cascade at its undisplaced world xz / size.
 
 const FFT_N = 256;
@@ -48,7 +48,6 @@ export interface OceanParams {
 	seed: number;
 }
 
-type StorageNode = ReturnType<typeof storage>;
 
 export class OceanFFT {
 
@@ -63,9 +62,6 @@ export class OceanFFT {
 	velocityTextures: THREE.Texture[];
 
 	private time = uniform( 0 );
-	private foamDt = uniform( 0 );
-	private foamReset = uniform( 1 );
-	private previousTime: number | undefined;
 	private chop = uniform( 0.85 );
 	private depthU = uniform( 8 );
 	private h0Attr: THREE.StorageBufferAttribute;
@@ -183,22 +179,8 @@ export class OceanFFT {
 
 		}
 
-		// 3. Observe the final IFFT: integrate whitecaps, then write all four per-cascade fields.
+		// 3. Observe the final IFFT and write all four per-cascade fields.
 		const fin = { A: storage( buf[ src ].attrA, 'vec4', count ).toReadOnly(), B: storage( buf[ src ].attrB, 'vec4', count ).toReadOnly(), C: storage( buf[ src ].attrC, 'vec4', count ).toReadOnly() };
-		// Tidewater keeps foam at each FFT parcel after a compressed crest has passed.
-		// Integrate the complete displacement Jacobian, independently of shading-detail weights.
-		const foamAttr = new THREE.StorageBufferAttribute( new Float32Array( count ), 1 );
-		const caps = storage( foamAttr, 'float', count );
-		this.kernels.push( Fn( () => {
-
-			const idx = instanceIndex, a = fin.A.element( idx ), b = fin.B.element( idx );
-			const J = float( 1 ).add( b.z ).mul( float( 1 ).add( b.w ) ).sub( a.w.mul( a.w ) );
-			const source = J.negate().add( 0.68 ).mul( 3 ).clamp( 0, 1 );
-			const remaining = caps.element( idx ).mul( this.foamDt.mul( - 0.8 ).exp() ).mul( float( 1 ).sub( this.foamReset ) );
-			caps.element( idx ).assign( remaining.add( source.mul( this.foamDt ).mul( 2.5 ) ).min( 1 ) );
-
-		} )().compute( count, [ 64 ] ) );
-		const capsRead = storage( foamAttr, 'float', count ).toReadOnly();
 		this.displacementTextures = [];
 		this.derivativeTextures = [];
 		this.slopeMomentTextures = [];
@@ -223,7 +205,7 @@ export class OceanFFT {
 				// variance in the mip chain. The existing derivatives store their means.
 				// This pass observes the final IFFT; it never changes wave evolution or shape.
 				mat.fragmentNode = which === 0 ? vec4( a.x, a.z, a.y, J ) : which === 1 ? b : which === 2 ?
-					vec4( b.x.mul( b.x ), b.y.mul( b.y ), b.x.mul( b.y ), a.w ) : vec4( velocity.xyz, capsRead.element( idx ) );
+					vec4( b.x.mul( b.x ), b.y.mul( b.y ), b.x.mul( b.y ), a.w ) : vec4( velocity.xyz, 0 );
 				this.outputs.push( { rt, quad: new THREE.QuadMesh( mat ) } );
 				[ this.displacementTextures, this.derivativeTextures, this.slopeMomentTextures, this.velocityTextures ][ which ].push( rt.texture );
 
@@ -321,20 +303,13 @@ export class OceanFFT {
 		this.chop.value = this.params.choppiness;
 		this.depthU.value = this.params.depth;
 		this.spectrumRevision ++;
-		this.previousTime = undefined;
 
 	}
 
 	update( dt: number, time?: number ): void {
 
-		// A shared clock makes frozen captures and resume agree with the foam and vegetation.
-		const next = time ?? this.time.value + dt;
-		const elapsed = this.previousTime === undefined ? 0 : next - this.previousTime;
-		const reset = this.previousTime === undefined || elapsed < 0 || elapsed > 0.25;
-		this.foamDt.value = reset ? 0 : elapsed;
-		this.foamReset.value = reset ? 1 : 0;
-		this.previousTime = next;
-		this.time.value = next;
+		// A shared clock makes frozen captures and resume agree with the vegetation.
+		this.time.value = time ?? this.time.value + dt;
 		const r = this.renderer;
 		r.compute( this.kernels );
 		const prev = r.getRenderTarget();
@@ -364,5 +339,3 @@ export class OceanFFT {
 	}
 
 }
-
-export type { StorageNode };

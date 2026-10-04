@@ -166,7 +166,7 @@ export function createShoreShelterField( data: WorldData, direction: THREE.Vecto
 	}
 	// Extend the water-side amplitude and gradient into land for linear filtering. A zero
 	// land amplitude would add a false shoreline ramp that its one-sided gradient omits.
-	// This extension never participates in tracing, smoothing or foam source generation.
+	// This extension never participates in tracing or smoothing.
 	const queue = new Int32Array( count ), reached = water.slice();
 	let head = 0, tail = 0;
 	for ( let k = 0; k < count; k ++ ) if ( water[ k ] ) queue[ tail ++ ] = k;
