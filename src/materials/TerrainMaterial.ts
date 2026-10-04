@@ -301,16 +301,20 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		const wl = shared.waterLevel.add( sin( shared.time.mul( 0.9 ).add( p.x.mul( 0.4 ) ).add( p.z.mul( 0.3 ) ) ).mul( 0.08 ) );
 		const wet = float( 1 ).sub( smoothstep( 0, 0.32, p.y.sub( wl ).sub( 0.06 ).sub( H.r.sub( 0.5 ).mul( 0.25 ) ) ) );
 		const algae = float( 1 ).sub( smoothstep( - 0.05, 0.35, p.y.sub( wl ).add( Hg.sub( 0.5 ).mul( 0.5 ) ) ) );
-		const deep = smoothstep( - 0.6, - 2.5, p.y );
+		const deep = vegetation ? smoothstep( 0.35, 1.65, wl.sub( p.y ) ) : smoothstep( - 0.6, - 2.5, p.y );
 		const algaeC = mix( vec3( 0.035, 0.05, 0.02 ), vec3( 0.09, 0.085, 0.045 ), deep );
 		const silt = smoothstep( 0.35, 0.8, up ).mul( smoothstep( - 0.4, - 1.2, p.y ) );
 
-		// Keep a dark tidal band, but reveal mineral faces farther below it. A deeper
-		// water column should show a submerged cliff, rather than a solid green plinth.
-		const algaeCoverage = algae.mul( mix( float( 0.85 ), float( 0.5 ), deep ) );
+		// Patchy growth leaves mineral faces between damp crevices on the island. Reuse
+		// its broad stains and local grain so the tide does not paint an opaque collar.
+		// Offshore boulders keep their established sediment and algae treatment.
+		const colony = smoothstep( 0.35, 0.65, big2.mul( 0.65 ).add( Hg.mul( 0.35 ) ).add( concave.mul( 0.06 ) ) );
+		const algaeCoverage = algae.mul( vegetation
+			? mix( float( 0.65 ), float( 0.24 ), deep ).mul( mix( float( 0.28 ), float( 1 ), colony ) )
+			: mix( float( 0.85 ), float( 0.5 ), deep ) );
 		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algaeCoverage ) );
 		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ), silt.mul( 0.7 ) ) );
-		albedo.mulAssign( mix( float( 1 ), float( 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
+		albedo.mulAssign( mix( float( 1 ), float( vegetation ? 0.66 : 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
 		rough.assign( mix( rough, float( 0.28 ), wet.mul( float( 1 ).sub( deep ) ) ) );
 
 		// A completely blocked local sky must not keep an arbitrary ambient-light floor.
