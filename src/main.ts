@@ -58,9 +58,10 @@ controls.update();
 
 // ------------------------------------------------------------------ sky, light, water optics
 
-const sky = new Sky( renderer, { elevation: 32, azimuth: - 8, haze: 0.35 } );
+const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
 scene.add( sky.dome );
-scene.environmentIntensity = 2.7; // Cool sky fill preserves the relief on the shaded cliff faces.
+scene.environmentIntensity = 1;
+const lighting = { skyFill: 1.5 };
 
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
 sun.castShadow = true;
@@ -72,13 +73,6 @@ sun.shadow.normalBias = 0.06;
 sun.shadow.radius = 4;
 scene.add( sun, sun.target );
 
-// Broad reflected skylight brings out the front cliff planes while the warm key stays behind
-// the island, where it can pick out leaves and scatter across the sea. Only the sun casts shadows.
-const bounce = new THREE.DirectionalLight( 0xffffff, 1.5 );
-bounce.color.setRGB( 0.68, 0.8, 0.95 );
-bounce.position.set( - 35, 22, 28 );
-scene.add( bounce );
-
 function fresnel( cosI: number, eta: number ): number {
 
 	const g = Math.sqrt( eta * eta - 1 + cosI * cosI );
@@ -87,23 +81,53 @@ function fresnel( cosI: number, eta: number ): number {
 
 }
 
-async function applySun(): Promise<void> {
+let sunUpdates = Promise.resolve();
+let skyUpdating = false;
+function applySun(): Promise<void> {
 
-	await sky.update();
-	sun.color.copy( sky.sunColor );
-	sun.intensity = 1;
-	sun.position.copy( sky.sunDir ).multiplyScalar( 120 ).add( sun.target.position );
-	scene.environment = sky.envMap!.texture;
-	shared.sunDir.value.copy( sky.sunDir );
-	shared.sunColor.value.set( sky.sunColor.r, sky.sunColor.g, sky.sunColor.b );
-	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b );
-	// sunlight entering the water: Fresnel transmission and the refracted elevation
-	const cosI = Math.max( sky.sunDir.y, 0.02 );
-	shared.sunIntoWater.value = 1 - fresnel( cosI, 1.333 );
-	const eta = 1 / 1.333;
-	shared.muSun.value = Math.sqrt( 1 - eta * eta * ( 1 - cosI * cosI ) );
+	// GUI changes can arrive during GPU readback. Serialise the entire bake and publication so
+	// the key light, water uniforms and environment always belong to the same completed sky.
+	// Recover the queue after reporting a failed update, allowing the next adjustment to retry.
+	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( async () => {
+
+		skyUpdating = true;
+		try {
+
+			await sky.update();
+			sun.color.copy( sky.sunColor );
+			sun.intensity = 1;
+			sun.position.copy( sky.sunDir ).multiplyScalar( 120 ).add( sun.target.position );
+			scene.environment = sky.envMap!.texture;
+			shared.sunDir.value.copy( sky.sunDir );
+			shared.sunColor.value.set( sky.sunColor.r, sky.sunColor.g, sky.sunColor.b );
+			// sunlight entering the water: Fresnel transmission and the refracted elevation
+			const cosI = Math.max( sky.sunDir.y, 0 );
+			shared.sunIntoWater.value = sky.sunDir.y > 0 ? 1 - fresnel( cosI, 1.333 ) : 0;
+			const eta = 1 / 1.333;
+			shared.muSun.value = Math.sqrt( 1 - eta * eta * ( 1 - cosI * cosI ) );
+			applySkyFill();
+
+		} finally {
+
+			skyUpdating = false;
+
+		}
+
+	} );
+	return sunUpdates;
 
 }
+
+function applySkyFill(): void {
+
+	// One artistic fill gain drives PBR ambient, water scattering and sky reflections alike.
+	scene.environmentIntensity = lighting.skyFill;
+	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( lighting.skyFill );
+	if ( water ) water.uniforms.reflection.value = lighting.skyFill;
+
+}
+
+let water: Water | undefined;
 
 setStatus( 'Lighting the sky…' );
 await applySun();
@@ -129,11 +153,12 @@ const flowers = buildFlowers( data.vegetation, shared );
 const ivy = buildIvy( data.ivy, shared );
 scene.add( grass, foliage, flowers, ivy );
 
-const water = new Water( {
+water = new Water( {
 	fft, sky, shared, shore: shore.tex, islandShore: islandShore.tex, foam: textures.heights,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 water.uniforms.wind.value = fft.params.windSpeed;
+applySkyFill();
 waterScene.add( water.mesh );
 
 console.info( 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
@@ -145,11 +170,11 @@ if ( ! params.has( 'gui' ) ) gui.hide();
 const S = pipeline.settings;
 const W = water.uniforms;
 const sunF = gui.addFolder( 'Sun' );
-sunF.add( sky, 'elevation', 2, 70, 0.5 ).onFinishChange( applySun );
+sunF.add( sky, 'elevation', - 6, 70, 0.5 ).onFinishChange( applySun );
 sunF.add( sky, 'azimuth', - 180, 180, 1 ).onFinishChange( applySun );
 sunF.add( sky, 'sunIlluminance', 2, 20, 0.1 ).name( 'illuminance' ).onFinishChange( applySun );
-sunF.add( sky, 'haze', 0, 1, 0.01 ).onFinishChange( applySun );
-sunF.add( scene, 'environmentIntensity', 0, 5, 0.01 ).name( 'sky fill' );
+sunF.add( sky.atmosphere.mieScale, 'value', 0.1, 2, 0.01 ).name( 'aerosol scattering' ).onFinishChange( applySun );
+sunF.add( lighting, 'skyFill', 0, 3, 0.01 ).name( 'sky fill' ).onChange( applySkyFill );
 const waterF = gui.addFolder( 'Water' );
 const optics = { clarity: 1.0, turbidity: 1.0 };
 const baseA = shared.sigA.value.clone(), baseS = shared.sigS.value.clone();
@@ -226,6 +251,8 @@ const frameTimes: number[] = [];
 function tick(): void {
 
 	clock.update();
+	// Present the previous complete lighting state until the sky readback and IBL are ready.
+	if ( skyUpdating ) return;
 	const rawDt = clock.getDelta();
 	frameTimes.push( rawDt * 1000 );
 	if ( frameTimes.length > 120 ) frameTimes.shift();
@@ -239,7 +266,7 @@ function tick(): void {
 	caustics.update( sky.sunDir );
 	S.focusDistance = camera.position.distanceTo( controls.target );
 
-	pipeline.render( { scene, waterScene, camera, water, sun, time: simTime } );
+	pipeline.render( { scene, waterScene, camera, water: water!, sun, time: simTime } );
 	frame ++;
 	diagnostics();
 
@@ -269,4 +296,4 @@ function diagnostics(): void {
 
 renderer.setAnimationLoop( tick );
 loading?.classList.add( 'done' );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, grass, foliage, flowers, ivy };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, caustics, water, pipeline, shared, grass, foliage, flowers, ivy, applySun };

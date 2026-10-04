@@ -6,6 +6,7 @@ const LICENCE_FILES: Record<string, string> = {
 	'licenses/LICENSE.txt': 'LICENSE',
 	'licenses/CREDITS.md': 'CREDITS.md',
 	'licenses/tidewater.LICENSE.txt': 'src/ocean/tidewater.LICENSE.txt',
+	'licenses/tidewater-sky.LICENSE.txt': 'src/sky/tidewater.LICENSE.txt',
 };
 
 function licences(): Plugin {

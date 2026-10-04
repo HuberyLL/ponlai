@@ -389,6 +389,7 @@ export class Water {
 			const Rr = reflect( V.negate(), N ).toVar();
 			const R = normalize( vec3( Rr.x, max( Rr.y, 0.004 ).add( sigmaUnres.mul( 1.3 ).mul( float( 1 ).sub( max( Rr.y, 0 ) ) ) ), Rr.z ) );
 			const refl = texture( sky.equirect.texture, dirToEquirect( R ) ).level( clamp( log2( alpha2.mul( 400 ).add( 1 ) ).add( 1 ), 0, 6 ) ).rgb.toVar();
+			refl.mulAssign( u.reflection );
 			// soft knee on the reflected sky: the haze glare around the sun would wash the water out
 			const lr = lum( refl ).toVar();
 			const cap = lum( shared.skyIrradiance ).mul( u.skyCap ).toVar();
@@ -405,7 +406,6 @@ export class Water {
 				refl.assign( mix( refl, r.rgb, r.a ) );
 
 			} );
-			refl.mulAssign( u.reflection );
 
 			// ---- sun glint
 			const H = normalize( L.add( V ) );
@@ -416,13 +416,15 @@ export class Water {
 			const sunSpec = sunLight.mul( min( spec, 300 ) ).toVar();
 			// stylised glare toward the sun: a broad, soft sheen over the water, and inside it glints on
 			// the wave facets that tip toward the sun, thinning out away from the sun's reflection
+			// The artistic accents share the dielectric reflection budget with the physical highlight.
+			const reflectionBudget = fresnelDielectric( VdH, float( IOR ) ).mul( NdL ).toVar();
 			const Hf = normalize( L.add( V ) ).toVar(); // half vector of a flat sea
 			const sheen = D_GGX( Hf.y, float( 0.06 ) ).mul( 0.06 * PI );
 			const wide = D_GGX( Hf.y, float( 0.12 ) ).mul( 0.12 * PI );
-			sunSpec.addAssign( sunLight.mul( sheen ).mul( u.sheen ).mul( float( 1 ).sub( foamAmt ) ) );
+			sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( sheen ).mul( u.sheen ).mul( float( 1 ).sub( foamAmt ) ) );
 			const facet = D_GGX( NdH, float( 0.012 ) ).mul( 0.012 * PI );
 			const glintPath = smoothstep( 0.13, 0.8, wide ).mul( smoothstep( 0.42, 0.63, fLow ) );
-			sunSpec.addAssign( sunLight.mul( glintPath ).mul( facet ).mul( sparkles( wp.xz.mul( 2.1 ).add( N.xz.mul( 2.5 ) ), time ) ).mul( u.glitter ).mul( float( 1 ).sub( foamAmt ) ) );
+			sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( glintPath ).mul( facet ).mul( sparkles( wp.xz.mul( 2.1 ).add( N.xz.mul( 2.5 ) ), time ) ).mul( u.glitter ).mul( float( 1 ).sub( foamAmt ) ) );
 
 			// ---- refraction: trace the refracted ray to the floor through the depth
 			const Tr = refract( V.negate(), N, 1 / IOR );
@@ -482,7 +484,7 @@ export class Water {
 			const muV = max( Tv.y.negate(), 0.15 );
 			const Tview = exp( sigT.negate().mul( pathLen ) );
 			// (in a shadow the volume still glows: light scattered in sideways from the sunlit water)
-			const sunIn = shared.sunColor.mul( mix( float( 0.45 ), float( 1 ), shadow ) ).mul( float( 1 ).sub( fresnelDielectric( max( L.y, 0.02 ), float( IOR ) ) ) );
+			const sunIn = shared.sunColor.mul( mix( float( 0.45 ), float( 1 ), shadow ) ).mul( shared.sunIntoWater );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
 			const kAmb = sigT.mul( muV.div( 0.75 ).add( 1 ) ).toVar();
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
