@@ -1,4 +1,4 @@
-// GPU regression: a known blocker must produce a narrow contact and a wider distant penumbra.
+// GPU regression: physical contact hardening plus unoccluded receiver planes at low solar elevation.
 // Usage: node tools/verify-solar-shadows.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
 import assert from 'node:assert/strict';
@@ -21,7 +21,8 @@ try {
 		try {
 
 			const module = await import( '/src/lighting/SolarShadow.ts' );
-			return { probe: await module.verifySolarShadow( window.__SOOMI__.renderer ) };
+			return { probe: await module.verifySolarShadow( window.__SOOMI__.renderer ),
+				ramp: await module.verifySolarShadowRamp( window.__SOOMI__.renderer ) };
 
 		} catch ( error ) { return { failure: error.message }; }
 

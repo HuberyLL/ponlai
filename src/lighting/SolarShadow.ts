@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, Loop, texture, textureLoad, reference, screenCoordinate, float, vec2, vec3, vec4, ivec2, uv,
+	Fn, If, Loop, uniform, texture, textureLoad, reference, screenCoordinate, float, vec2, vec3, vec4, ivec2, uv,
 	max, abs, clamp, cos, sin, pow, tan, dot, select, dFdx, dFdy, floor, fract, mix,
 } from 'three/tsl';
 import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
@@ -80,21 +80,29 @@ export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode,
 		};
 		const compareSample = ( q: V2, compareDepth: F ): F => {
 
-			if ( depthKind === 'depth' ) return texture( depth, clamp( q, vec2( 0 ), vec2( 1 ) ) ).compare( compareDepth ) as unknown as F;
-			// Float colour depth cannot use a comparison sampler. Compare four nearest depths
-			// before bilinear interpolation, matching hardware PCF rather than blending depths.
+			// Hardware PCF applies one comparison depth to four texels. The receiver plane
+			// changes inside that footprint too, even when the solar disk radius is zero.
+			// Compare at each actual texel centre before interpolation: no extra slope bias
+			// is needed, so a nearby caster keeps its contact on a steep receiver.
 			const texel = q.mul( size ).sub( 0.5 ).toVar(), base = floor( texel ).toVar();
 			const weight = fract( texel ).toVar();
-			const compare = ( x: number, y: number ) => select( compareDepth.lessThanEqual(
-				loadDepth( ivec2( clamp( base.add( vec2( x, y ) ), vec2( 0 ), size.sub( 1 ) ) ) ) ), float( 1 ), float( 0 ) );
+			const compare = ( x: number, y: number ) => {
+
+				const pixel = clamp( base.add( vec2( x, y ) ), vec2( 0 ), size.sub( 1 ) ).toVar();
+				const centreOffset = pixel.add( 0.5 ).div( size ).sub( q );
+				const receiverDepth = compareDepth.add( dot( gradient, centreOffset ) );
+				return select( receiverDepth.lessThanEqual( loadDepth( ivec2( pixel ) ) ), float( 1 ), float( 0 ) );
+
+			};
 			return mix( mix( compare( 0, 0 ), compare( 1, 0 ), weight.x ),
 				mix( compare( 0, 1 ), compare( 1, 1 ), weight.x ), weight.y );
 
 		};
 		// Three deduplicates texture uniforms by UUID and chooses the first access's sampler
-		// type. Register this real centre comparison before raw blocker loads, so the shared
-		// DepthTexture binding is a comparison sampler. It is also the first filter sample.
-		const centre = compareSample( sc.xy, sc.z ).toVar();
+		// type. Register a real comparison before raw loads. It remains the exact centre
+		// result for a depth-constant receiver; sloped receivers use texel-plane comparisons.
+		const centre = ( depthKind === 'depth' ? texture( depth, clamp( sc.xy, vec2( 0 ), vec2( 1 ) ) )
+			.compare( sc.z ) as unknown as F : compareSample( sc.xy, sc.z ) ).toVar();
 		// This conservative search covers any caster between the receiver and the near plane.
 		// Progressive radii retain samples close to a thin leaf or a sharp contact, as well as
 		// finding more distant blockers. The first sample is the centre itself.
@@ -108,9 +116,12 @@ export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode,
 			const q = sc.xy.add( offset ).toVar();
 			const inside = q.x.greaterThanEqual( 0 ).and( q.y.greaterThanEqual( 0 ) )
 				.and( q.x.lessThanEqual( 1 ) ).and( q.y.lessThanEqual( 1 ) );
-			const pixel = ivec2( clamp( q.mul( size ), vec2( 0 ), size.sub( 1 ) ) );
-			const stored = loadDepth( pixel ).toVar();
-			const corrected = stored.sub( dot( gradient, offset ) ).toVar();
+			const pixel = clamp( floor( q.mul( size ) ), vec2( 0 ), size.sub( 1 ) ).toVar();
+			const stored = loadDepth( ivec2( pixel ) ).toVar();
+			// A raw load uses the containing texel centre, not the requested disk position.
+			// Correcting only the requested offset mistakes a sloped clear plane for a blocker.
+			const centreOffset = pixel.add( 0.5 ).div( size ).sub( sc.xy );
+			const corrected = stored.sub( dot( gradient, centreOffset ) ).toVar();
 			const blocker = select( inside.and( corrected.lessThan( sc.z ) ), float( 1 ), float( 0 ) ).toVar();
 			blockerDepth.addAssign( corrected.mul( blocker ) );
 			blockerCount.addAssign( blocker );
@@ -119,21 +130,33 @@ export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode,
 		const average = select( blockerCount.greaterThan( 0 ), blockerDepth.div( max( blockerCount, 1 ) ), sc.z );
 		const radius = solarPenumbraRadius( sc.z, average, depthRange, angularRadius, span ).toVar();
 		const visibility = centre.toVar();
-		Loop( FILTER_SAMPLES - 1, ( { i } ) => {
+		if ( depthKind === 'depth' ) If( max( abs( gradient.x ), abs( gradient.y ) ).greaterThan( 1e-7 ), () => {
 
-			const offset = solarShadowDiskOffset( float( i ).add( 1 ), float( FILTER_SAMPLES ), rotation, float( 0.5 ) ).mul( radius ).toVar();
-			const q = sc.xy.add( offset ).toVar();
-			const inside = q.x.greaterThanEqual( 0 ).and( q.y.greaterThanEqual( 0 ) )
-				.and( q.x.lessThanEqual( 1 ) ).and( q.y.lessThanEqual( 1 ) );
-			const compareDepth = sc.z.add( dot( gradient, offset ) );
-			const sample = compareSample( q, compareDepth );
-			visibility.addAssign( select( inside, sample, float( 1 ) ) );
+			visibility.assign( compareSample( sc.xy, sc.z ) );
+
+		} );
+		// With no blocker the radius is exactly zero: every disk tap equals the centre.
+		// Raw loads have no implicit derivatives, so only shadowed pixels need the other taps.
+		If( blockerCount.greaterThan( 0 ), () => {
+
+			Loop( FILTER_SAMPLES - 1, ( { i } ) => {
+
+				const offset = solarShadowDiskOffset( float( i ).add( 1 ), float( FILTER_SAMPLES ), rotation, float( 0.5 ) ).mul( radius ).toVar();
+				const q = sc.xy.add( offset ).toVar();
+				const inside = q.x.greaterThanEqual( 0 ).and( q.y.greaterThanEqual( 0 ) )
+					.and( q.x.lessThanEqual( 1 ) ).and( q.y.lessThanEqual( 1 ) );
+				const compareDepth = sc.z.add( dot( gradient, offset ) );
+				const sample = compareSample( q, compareDepth );
+				visibility.addAssign( select( inside, sample, float( 1 ) ) );
+
+			} );
+			visibility.divAssign( FILTER_SAMPLES );
 
 		} );
 		const inside = sc.x.greaterThanEqual( 0 ).and( sc.y.greaterThanEqual( 0 ) )
 			.and( sc.x.lessThanEqual( 1 ) ).and( sc.y.lessThanEqual( 1 ) )
 			.and( sc.z.greaterThanEqual( 0 ) ).and( sc.z.lessThanEqual( 1 ) );
-		return select( inside, visibility.div( FILTER_SAMPLES ), float( 1 ) );
+		return select( inside, visibility, float( 1 ) );
 
 	} )();
 
@@ -151,6 +174,36 @@ export function installSolarShadowFilter( sun: THREE.DirectionalLight ): void {
 		solarShadowVisibility( depthTexture, shadowCoord, { mapSize, worldSpan, depthRange } ) );
 	// The runtime exposes filterNode; @types/three has not declared this WebGPU hook yet.
 	( sun.shadow as unknown as { filterNode: typeof filter } ).filterNode = filter;
+
+}
+
+// QuadMesh temporarily installs its own full-screen vertex node during render. Capture that
+// node for compileAsync so the precompiled cache key is identical to the subsequent draw.
+async function renderSolarProbeQuad( renderer: THREE.WebGPURenderer, quad: THREE.QuadMesh ): Promise<void> {
+
+	const material = quad.material as THREE.NodeMaterial;
+	const before = quad.onBeforeRender, originalVertex = material.vertexNode;
+	let fullscreenVertex = originalVertex;
+	quad.onBeforeRender = ( ...args ) => {
+
+		fullscreenVertex = material.vertexNode;
+		before.apply( quad, args );
+
+	};
+	try {
+
+		quad.render( renderer );
+		material.vertexNode = fullscreenVertex;
+		await renderer.compileAsync( quad, quad.camera );
+		material.vertexNode = originalVertex;
+		quad.render( renderer );
+
+	} finally {
+
+		quad.onBeforeRender = before;
+		material.vertexNode = originalVertex;
+
+	}
 
 }
 
@@ -215,35 +268,7 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 	const animation = renderer.getAnimationLoop();
 	await renderer.setAnimationLoop( null );
 	const state = THREE.RendererUtils.resetRendererState( renderer, {} as THREE.RendererUtils.RendererState );
-	// QuadMesh temporarily installs its own full-screen vertex node during render. Capture that
-	// node for compileAsync so the precompiled cache key is identical to the subsequent draw.
-	const renderReady = async ( quad: THREE.QuadMesh ) => {
-
-		const material = quad.material as THREE.NodeMaterial;
-		const before = quad.onBeforeRender, originalVertex = material.vertexNode;
-		let fullscreenVertex = originalVertex;
-		quad.onBeforeRender = ( ...args ) => {
-
-			fullscreenVertex = material.vertexNode;
-			before.apply( quad, args );
-
-		};
-		try {
-
-			quad.render( renderer );
-			material.vertexNode = fullscreenVertex;
-			await renderer.compileAsync( quad, quad.camera );
-			material.vertexNode = originalVertex;
-			quad.render( renderer );
-
-		} finally {
-
-			quad.onBeforeRender = before;
-			material.vertexNode = originalVertex;
-
-		}
-
-	};
+	const renderReady = ( quad: THREE.QuadMesh ) => renderSolarProbeQuad( renderer, quad );
 	try {
 
 		renderer.setScissorTest( false );
@@ -316,6 +341,152 @@ export async function verifySolarShadow( renderer: THREE.WebGPURenderer ) {
 		field.dispose(); output.dispose(); diagnosticTarget.dispose();
 		fieldMaterial.dispose(); outputMaterial.dispose(); diagnosticMaterial.dispose();
 		// QuadMesh owns shared geometry; the test must leave it for other render passes.
+		await renderer.setAnimationLoop( animation );
+
+	}
+
+}
+
+// A clear tilted depth field must stay fully lit at every subtexel phase. The reference native
+// PCF intentionally omits the four-corner correction, proving that the fixture exercises the bug.
+// A 3 cm blocker on that same plane must keep its attached contact instead of needing slope bias.
+export async function verifySolarShadowRamp( renderer: THREE.WebGPURenderer ) {
+
+	const mapSize = 256, width = 512, height = 32, span = 8, depthRange = 219;
+	const depthTexture = new THREE.DepthTexture( mapSize, mapSize, THREE.FloatType );
+	depthTexture.compareFunction = THREE.LessEqualCompare;
+	depthTexture.minFilter = depthTexture.magFilter = THREE.LinearFilter;
+	const field = new THREE.RenderTarget( mapSize, mapSize, { type: THREE.FloatType, depthTexture } );
+	const output = new THREE.RenderTarget( width, height, { type: THREE.FloatType, depthBuffer: false } );
+	const fieldMaterial = new THREE.NodeMaterial(), outputMaterial = new THREE.NodeMaterial();
+	for ( const material of [ fieldMaterial, outputMaterial ] ) {
+
+		material.depthTest = false;
+		material.depthWrite = material === fieldMaterial;
+		material.toneMapped = false;
+		material.blending = THREE.NoBlending;
+
+	}
+	const gradient = uniform( new THREE.Vector2() ), phase = uniform( new THREE.Vector2() ), gap = uniform( 0 );
+	const planeDepth = ( q: V2 ) => float( 0.5 ).add( dot( gradient, q.sub( 0.5 ) ) );
+	const fieldDepth = planeDepth( uv() ).sub( select( uv().x.lessThan( 0.5 ), gap, float( 0 ) ) );
+	fieldMaterial.fragmentNode = vec4( fieldDepth, fieldDepth, fieldDepth, float( 1 ) );
+	fieldMaterial.depthNode = fieldDepth;
+	const sun = new THREE.DirectionalLight();
+	sun.shadow.camera.left = - span / 2; sun.shadow.camera.right = span / 2;
+	sun.shadow.camera.top = span / 2; sun.shadow.camera.bottom = - span / 2;
+	sun.shadow.camera.near = 0; sun.shadow.camera.far = depthRange;
+	sun.shadow.mapSize.set( mapSize, mapSize );
+	installSolarShadowFilter( sun );
+	const standardFilter = ( sun.shadow as unknown as { filterNode: ( input: { depthTexture: THREE.DepthTexture; shadowCoord: V3 } ) => F } ).filterNode;
+	const parameters = { mapSize: vec2( mapSize ), worldSpan: vec2( span ), depthRange: float( depthRange ) };
+	outputMaterial.fragmentNode = Fn( () => {
+
+		const q = uv().mul( vec2( 0.4, 0.2 ) ).add( vec2( 0.3, 0.4 ) ).add( phase.div( mapSize ) ).toVar();
+		// Only 1 cm of physical ray clearance: a slope-dependent blanket bias would erase
+		// this nearby 3 cm blocker at the lower elevation instead of fixing interpolation.
+		const receiverDepth = planeDepth( q ).sub( 0.01 / depthRange ).toVar();
+		const native = ( texture( depthTexture, q ).compare( receiverDepth ) as unknown as F ).toVar();
+		const coordinate = vec3( q, receiverDepth );
+		const standard = standardFilter( { depthTexture, shadowCoord: coordinate } );
+		const color = solarShadowVisibility( field.texture, coordinate, { ...parameters, depthKind: 'color' } );
+		return vec4( standard, color, native, float( 1 ) );
+
+	} )();
+	const fieldQuad = new THREE.QuadMesh( fieldMaterial ), outputQuad = new THREE.QuadMesh( outputMaterial );
+	const animation = renderer.getAnimationLoop();
+	await renderer.setAnimationLoop( null );
+	const state = THREE.RendererUtils.resetRendererState( renderer, {} as THREE.RendererUtils.RendererState );
+	const cases: { elevation: number; slopeDegrees: number; phase: number[]; clearMinimum: number[];
+		nativeClearMinimum: number; contactMaximumUmbra: number[]; contactMinimumLit: number[];
+		contactWidthMetres: number[]; contactEdgeErrorMetres: number[]; maximumDifference: number }[] = [];
+	let ready = false;
+	try {
+
+		renderer.setScissorTest( false );
+		renderer.autoClear = true;
+		for ( const elevation of [ 32, 10 ] ) for ( const slopeDegrees of [ 0, 37 ] ) for ( const subpixel of [
+			[ 0.125, 0.375 ], [ 0.375, 0.625 ], [ 0.625, 0.875 ], [ 0.875, 0.125 ],
+		] ) {
+
+			const slope = span / ( depthRange * Math.tan( THREE.MathUtils.degToRad( elevation ) ) );
+			const angle = THREE.MathUtils.degToRad( slopeDegrees );
+			gradient.value.set( Math.cos( angle ) * slope, Math.sin( angle ) * slope );
+			phase.value.set( subpixel[ 0 ], subpixel[ 1 ] );
+			const clearMinimum = [ 1, 1 ], maximumUmbra = [ 0, 0 ], minimumLit = [ 1, 1 ];
+			let nativeMinimum = 1, maximumDifference = 0;
+			const profiles = [ new Array<number>( width ).fill( 0 ), new Array<number>( width ).fill( 0 ) ];
+			for ( const contact of [ false, true ] ) {
+
+				gap.value = contact ? 0.03 / depthRange : 0;
+				renderer.setRenderTarget( field );
+				if ( ! ready ) await renderSolarProbeQuad( renderer, fieldQuad );
+				else fieldQuad.render( renderer );
+				renderer.setRenderTarget( output );
+				if ( ! ready ) await renderSolarProbeQuad( renderer, outputQuad );
+				else outputQuad.render( renderer );
+				ready = true;
+				const pixels = await renderer.readRenderTargetPixelsAsync( output, 0, 0, width, height ) as Float32Array;
+				for ( let k = 0; k < width * height; k ++ ) {
+
+					const x = k % width, y = Math.floor( k / width );
+					const qx = ( x + 0.5 ) / width * 0.4 + 0.3 + subpixel[ 0 ] / mapSize;
+					if ( pixels[ k * 4 + 3 ] < 0.99999 ) throw new Error( 'Solar slope fixture did not draw' );
+					for ( let c = 0; c < 3; c ++ ) {
+
+						const value = pixels[ k * 4 + c ];
+						if ( ! Number.isFinite( value ) || value < 0 || value > 1.00001 ) throw new Error( 'Solar slope fixture contains an invalid visibility' );
+						if ( ! contact ) {
+
+							if ( c < 2 ) clearMinimum[ c ] = Math.min( clearMinimum[ c ], value );
+							else nativeMinimum = Math.min( nativeMinimum, value );
+
+						} else if ( c < 2 ) {
+
+							if ( qx < 0.48 ) maximumUmbra[ c ] = Math.max( maximumUmbra[ c ], value );
+							if ( qx > 0.52 ) minimumLit[ c ] = Math.min( minimumLit[ c ], value );
+							if ( y >= height / 4 && y < height * 3 / 4 ) profiles[ c ][ x ] += value / ( height / 2 );
+
+						}
+
+					}
+					maximumDifference = Math.max( maximumDifference, Math.abs( pixels[ k * 4 ] - pixels[ k * 4 + 1 ] ) );
+
+				}
+
+			}
+			const contactWidthMetres = profiles.map( ( p ) => p.filter( ( v ) => v > 0.1 && v < 0.9 ).length * span * 0.4 / width );
+			const contactEdgeErrorMetres = profiles.map( ( p ) => {
+
+				let nearest = 0;
+				for ( let x = 1; x < width; x ++ ) if ( Math.abs( p[ x ] - 0.5 ) < Math.abs( p[ nearest ] - 0.5 ) ) nearest = x;
+				const q = ( nearest + 0.5 ) / width * 0.4 + 0.3 + subpixel[ 0 ] / mapSize;
+				return Math.abs( q - 0.5 ) * span;
+
+			} );
+			const result = { elevation, slopeDegrees, phase: subpixel, clearMinimum, nativeClearMinimum: nativeMinimum,
+				contactMaximumUmbra: maximumUmbra, contactMinimumLit: minimumLit, contactWidthMetres, contactEdgeErrorMetres, maximumDifference };
+			cases.push( result );
+			if ( clearMinimum.some( ( v ) => v < 0.99999 ) || nativeMinimum > 0.95 ||
+				maximumUmbra.some( ( v ) => v > 1e-5 ) || minimumLit.some( ( v ) => v < 0.99999 ) ||
+				contactWidthMetres.some( ( v ) => v > 1.5 * span / mapSize ) ||
+				contactEdgeErrorMetres.some( ( v ) => v > span / mapSize ) || maximumDifference > 1e-4 ) {
+
+				throw new Error( `Solar receiver-plane interpolation failed: ${ JSON.stringify( result ) }` );
+
+			}
+
+		}
+		return { mapSize, width, height, texelMetres: span / mapSize, physicalClearanceMetres: 0.01,
+			contactBlockerGapMetres: 0.03, blockerPositions: BLOCKER_SAMPLES, filterPositions: FILTER_SAMPLES,
+			maximumRawDepthReads: BLOCKER_SAMPLES + 4 * FILTER_SAMPLES, clearPlaneRawDepthReads: BLOCKER_SAMPLES + 4,
+			maximumNativeComparisons: 1, cases };
+
+	} finally {
+
+		THREE.RendererUtils.restoreRendererState( renderer, state );
+		field.dispose(); output.dispose();
+		fieldMaterial.dispose(); outputMaterial.dispose();
 		await renderer.setAnimationLoop( animation );
 
 	}

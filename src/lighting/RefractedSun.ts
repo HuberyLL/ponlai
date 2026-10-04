@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, Discard, uniform, textureLoad, float, vec2, vec3, vec4, ivec2, uv, positionWorld, normalWorldGeometry,
-	max, abs, dot, sqrt, normalize, select, clamp,
+	max, sqrt, normalize, select, clamp,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
 import { solarShadowVisibility } from './SolarShadow.ts';
@@ -9,7 +9,6 @@ import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
-type V2 = THREE.Node<'vec2'>;
 type M4 = THREE.Node<'mat4'>;
 
 export const WATER_IOR = 1.333;
@@ -49,22 +48,6 @@ const shadowCoordinate = Fn( ( [ point, matrix, bias ]: [ V3, M4, F ] ) => {
 
 } ).setLayout( { name: 'refractedSolarShadowCoordinate', type: 'vec3', inputs: [
 	{ name: 'point', type: 'vec3' }, { name: 'matrix', type: 'mat4' }, { name: 'bias', type: 'float' },
-] } );
-
-const receiverTexelDepth = Fn( ( [ normal, viewMatrix, span, mapSize ]: [ V3, M4, V2, V2 ] ) => {
-
-	const lightNormal = normalize( viewMatrix.mul( vec4( normal, 0 ) ).xyz ).toVar();
-	const texel = span.div( mapSize ).toVar();
-	// A comparison sampler blends four depth tests. Its furthest corner can be one full
-	// texel from the receiver, even when the PCSS disk radius is zero. Offset correction
-	// for disk taps alone cannot cover this internal receiver-plane depth variation.
-	// Limit only the denominator at a nearly edge-on plane. A fixed texel-width cap would
-	// under-bias genuinely grazing receivers, whose depth variation can exceed that cap.
-	return dot( abs( lightNormal.xy ), texel ).div( max( abs( lightNormal.z ), 0.02 ) );
-
-} ).setLayout( { name: 'refractedReceiverTexelDepth', type: 'float', inputs: [
-	{ name: 'normal', type: 'vec3' }, { name: 'viewMatrix', type: 'mat4' },
-	{ name: 'span', type: 'vec2' }, { name: 'mapSize', type: 'vec2' },
 ] } );
 
 export function refractedSunDirection( airDirection: THREE.Vector3, target = new THREE.Vector3() ): THREE.Vector3 {
@@ -151,7 +134,6 @@ export class RefractedSun {
 	readonly target: THREE.RenderTarget;
 	readonly camera = new THREE.OrthographicCamera();
 	readonly matrix = uniform( new THREE.Matrix4() );
-	readonly viewMatrix = uniform( new THREE.Matrix4() );
 	readonly worldSpan = uniform( new THREE.Vector2( 1, 1 ) );
 	readonly depthRange = uniform( 1 );
 	readonly mapSize: THREE.Node<'vec2'>;
@@ -208,8 +190,9 @@ export class RefractedSun {
 		// Geometry normals describe the caster plane; bump normals would move the receiver
 		// independently of the depth geometry and turn detail textures into shadow artefacts.
 		const receiver = normal ? point.add( normal.mul( 0.01 ) ) : point;
-		const texelDepth = normal ? receiverTexelDepth( normal, this.viewMatrix, this.worldSpan, this.mapSize ) : float( 0 );
-		const coordinate = shadowCoordinate( receiver, this.matrix, this.contactBias.add( texelDepth ).div( this.depthRange ) );
+		// The shared filter compares the receiver plane at all four texel centres. Its former
+		// full-texel slope guard is unnecessary and would detach nearby submerged contacts.
+		const coordinate = shadowCoordinate( receiver, this.matrix, this.contactBias.div( this.depthRange ) );
 		// Snell compresses the solar disk. Its oblique image is elliptical; radius / IOR
 		// conservatively retains the larger axis, while sharing directional PCSS with air.
 		return solarShadowVisibility( this.target.depthTexture!, coordinate, {
@@ -318,7 +301,6 @@ export class RefractedSun {
 		if ( ! Number.isFinite( floorY ) ) floorY = localBounds.min.y;
 		fitCamera( this.camera, localBounds, refractedSunDirection( sun ), floorY );
 		this.matrix.value.multiplyMatrices( this.camera.projectionMatrix, this.camera.matrixWorldInverse );
-		this.viewMatrix.value.copy( this.camera.matrixWorldInverse );
 		this.worldSpan.value.set( this.camera.right - this.camera.left, this.camera.top - this.camera.bottom );
 		this.depthRange.value = this.camera.far - this.camera.near;
 		// Keep local contact detail without unbounded GPU allocations. The static map can
@@ -371,7 +353,7 @@ export interface RefractedSunProbeResult {
 	horizontalIrradiance: { expected: number; measured: number; relativeError: number };
 	refractionShortening: number;
 	fixture: { role: string; expectedDepth: number; measuredDepth: number; absoluteError: number }[];
-	grazingPlane: { normalLightCosine: number; minimumVisibility: number; maximumDarkening: number; uncorrectedMinimumVisibility: number; sampledPixels: number };
+	grazingPlane: { normalLightCosine: number; minimumVisibility: number; maximumDarkening: number; unoffsetMinimumVisibility: number; sampledPixels: number };
 }
 
 // An isolated GPU regression probe, invoked through the dev harness after renderer.init().
@@ -485,9 +467,9 @@ export async function probeRefractedSun( renderer: THREE.WebGPURenderer ): Promi
 		const local = vec3( uv().x.mul( 12 ).sub( 6 ), 0, uv().y.mul( 4 ).sub( 2 ) );
 		const point = grazingTransform.mul( vec4( local, 1 ) ).xyz;
 		const normal = vec3( ...grazingNormal.toArray() );
-		const corrected = grazingMap.submergedVisibilityNode( point, undefined, normal );
-		const uncorrected = grazingMap.submergedVisibilityNode( point );
-		return vec4( corrected, uncorrected, 1, 1 );
+		const offset = grazingMap.submergedVisibilityNode( point, undefined, normal );
+		const unoffset = grazingMap.submergedVisibilityNode( point );
+		return vec4( offset, unoffset, 1, 1 );
 
 	} )();
 	const grazingQuad = new THREE.QuadMesh( grazingMaterial );
@@ -603,20 +585,21 @@ export async function probeRefractedSun( renderer: THREE.WebGPURenderer ): Promi
 		{ role: 'submerged-lit', expectedDepth: new THREE.Vector3( 0, floorY, 0 ).applyMatrix4( refracted.matrix.value ).z, measuredDepth: diagnosticData[ 13 ] },
 	];
 	const fixture = fixtureInputs.map( ( sample ) => ( { ...sample, absoluteError: Math.abs( sample.measuredDepth - sample.expectedDepth ) } ) );
-	let minimumVisibility = 1, uncorrectedMinimumVisibility = 1;
+	let minimumVisibility = 1, unoffsetMinimumVisibility = 1;
 	for ( let i = 0; i < 128 * 16; i ++ ) {
 
 		minimumVisibility = Math.min( minimumVisibility, grazingData[ i * 4 ] );
-		uncorrectedMinimumVisibility = Math.min( uncorrectedMinimumVisibility, grazingData[ i * 4 + 1 ] );
+		unoffsetMinimumVisibility = Math.min( unoffsetMinimumVisibility, grazingData[ i * 4 + 1 ] );
 
 	}
 	const grazing = { normalLightCosine: grazingNormal.dot( waterSun ), minimumVisibility,
-		maximumDarkening: 1 - minimumVisibility, uncorrectedMinimumVisibility, sampledPixels: 128 * 16 };
+		maximumDarkening: 1 - minimumVisibility, unoffsetMinimumVisibility, sampledPixels: 128 * 16 };
 	return {
 		passed: air.mismatchedInteriorPixels === 0 && submerged.mismatchedInteriorPixels === 0
 			&& air.maximumEdgeError < step * 1.5 && submerged.maximumEdgeError < step * 1.5 && relativeError < 1e-5
 			&& fixture.every( ( sample ) => Number.isFinite( sample.measuredDepth ) && sample.absoluteError < 0.004 )
-			&& Number.isFinite( minimumVisibility ) && minimumVisibility > 0.999,
+			&& Number.isFinite( minimumVisibility ) && minimumVisibility > 0.999
+			&& Number.isFinite( unoffsetMinimumVisibility ) && unoffsetMinimumVisibility > 0.999,
 		pixels, air, submerged, horizontalIrradiance: { expected: sun.y, measured, relativeError },
 		refractionShortening: - floorY * ( airSlope - waterSlope ), fixture, grazingPlane: grazing,
 	};
