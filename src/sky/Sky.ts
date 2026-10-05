@@ -270,7 +270,8 @@ export class Sky {
 			const up = vec3( d.x, abs( d.y ), d.z );
 			// The visible night sky is darker than the light it lends the island (see NIGHT_SKY).
 			const night = this.nightAmbient.rgb.mul( mix( float( NIGHT_SKY ), float( 1 ), this.irradiancePass ) );
-			const sky = this.clearSky( up, night, this.overcast ).mul( cloud.a ).add( cloud.rgb ).mul( this.ambientGain );
+			const sky = this.clearSky( up, night, this.overcast ).mul( cloud.a ).add( cloud.rgb ).mul( this.ambientGain )
+				.add( this.night.airglow( up, this.bakeStarVisibility ).mul( cloud.a ) );
 			const stars = this.night.stars( up, this.starFootprint, this.bakeStarVisibility.mul( this.includeStars ) );
 			const radiance = seaPanorama( d, sky.add( stars.mul( cloud.a ) ), this.sea.rgb );
 			return vec4( radiance, mix( cloud.a, d.y, this.irradiancePass ) );
@@ -306,7 +307,8 @@ export class Sky {
 			// A storm deck's base about a kilometre up, seen at the strike's distance.
 			const bow = this.rainbow( d ).mul( select( above, float( 1 ), float( 0 ) ) );
 			const strike = this.lightning.sky( d, atan( float( 950 ), this.lightning.distance ), float( 1 ).sub( cloud.a ) ).mul( this.lightningRadiance );
-			return vec4( background.add( strike ).add( bow ).add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
+			const airglow = this.night.airglow( d ).mul( select( above, float( 1 ), float( 0 ) ) );
+			return vec4( background.add( strike ).add( bow ).add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).add( airglow ).mul( through ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );

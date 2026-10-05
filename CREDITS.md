@@ -156,6 +156,12 @@ comment where it is used.
   [CVRL](http://www.cvrl.org/) data (Stockman & Sharpe 2000 cone fundamentals, CIE 1951 scotopic
   V'(lambda), CIE 1931 colour matching functions); the data is not shipped. Pupil size: P. Moon and
   D. E. Spencer, *On the Stiles-Crawford effect* (J. Opt. Soc. Am. 34, 1944).
+- Airglow: H. W. Jensen, F. Durand, M. M. Stark, S. Premoze, J. Dorsey and P. Shirley,
+  [*A Physically-Based Night Sky Model*](https://doi.org/10.1145/383259.383306) (SIGGRAPH 2001): a
+  thin emitting shell about 100 km up (the van Rhijn brightening toward the horizon) seen through
+  the lower atmosphere's extinction, with F. Kasten and A. T. Young's air mass (Applied Optics 28,
+  1989); dimmed by a bright moon as in [a-starry-sky](https://github.com/Dante83/a-starry-sky)
+  (MIT), whose code is not used.
 
 ## References
 

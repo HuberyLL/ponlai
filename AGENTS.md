@@ -55,7 +55,7 @@ exposed.
   64^3 shape noise in `public/clouds/`, loaded by `src/materials/CloudNoise.ts`; traced in screen
   space a sixteenth of the pixels per frame with a reprojected history, plus a panorama map for
   reflections and the environment, and a cloud-shadow map), high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
-  raining clouds, the day cycle (sun and moon), stars, Milky Way and moon, rainbows, weather
+  raining clouds, the day cycle (sun and moon), stars, Milky Way, airglow and moon, rainbows, weather
   presets, their blending and the auto-weather chain.
 - `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
   distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
