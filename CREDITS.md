@@ -29,7 +29,11 @@ packages, into `dist/licenses/`.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
     `Sky.js`, ported from WGSL to TSL. The volumetric clouds, their noise bake and cloud shadows
     in `src/sky/Clouds.ts` and `src/materials/CloudNoise.ts` are original Soomi code, not copied
-    from tidewater. The celestial
+    from tidewater.
+  - `src/sky/Cirrus.ts` and the cirrus veil in `src/sky/Clouds.ts`: the cirrus fibre bake (a flow
+    field of sparse seeds and tufts drawn out by line integral convolution), its anisotropic,
+    footprint-filtered lookup and the veil's coverage, optical depth and ice-crystal lighting,
+    from the cirrus in `Clouds.js`, ported from WGSL to TSL on this project's noise and weather map. The celestial
     clock, geometric lunar phase and filtered procedural stars are also original code;
     they introduce no third-party imagery or additional asset licence. Weather blending,
     integrated wind, analytic rain streaks/ripple gradients and wet-material response are

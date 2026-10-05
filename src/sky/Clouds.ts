@@ -2,9 +2,10 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, uniform, texture, texture3D, textureStore, instanceIndex, uint, int, float,
 	vec2, vec3, vec4, ivec2, fract, dot, mix, smoothstep, clamp, max, min, exp, sqrt, select,
-	asin, atan, cos, sin, normalize,
+	asin, acos, atan, cos, sin, normalize,
 } from 'three/tsl';
 import { bakeCloudNoise, cloudRemap as remap, type CloudNoise } from '../materials/CloudNoise.ts';
+import { bakeCirrusFibres, sampleCirrusFibres } from './Cirrus.ts';
 import type { Atmosphere } from './Atmosphere.ts';
 
 type F = THREE.Node<'float'>;
@@ -37,6 +38,9 @@ const MAX_STEPS = 96;
 const MULTIPLE_SCATTERING = 2.5;
 // A weather change sweeps across this many metres of sky, arriving from upwind.
 const FRONT_SPAN = 25000;
+const CIRRUS_ALTITUDE = 8000;
+// Angle across one dome texel: the footprint that filters the cirrus fibres.
+const DOME_TEXEL_ANGLE = 2 * Math.PI / 3072;
 
 // Upper-hemisphere map: longitude across, sqrt(latitude) up, denser near the horizon.
 export const directionToDome = Fn( ( [ d ]: [ V3 ] ) => {
@@ -119,6 +123,7 @@ export class Clouds {
 	readonly dome: THREE.StorageTexture;
 	readonly shadowMap: THREE.StorageTexture;
 	private noise: CloudNoise | null = null;
+	private cirrusFibres: THREE.RenderTarget | null = null;
 	private phase = uniform( new THREE.Vector2() );
 	private partialKernel: THREE.ComputeNode | null = null;
 	private shadowKernel: THREE.ComputeNode | null = null;
@@ -149,6 +154,7 @@ export class Clouds {
 
 		if ( this.noise ) return;
 		this.noise = bakeCloudNoise( renderer );
+		this.cirrusFibres = bakeCirrusFibres( renderer );
 		const { shape, detail, weather } = this.noise;
 		const shapeNode = texture3D( shape ), detailNode = texture3D( detail ), weatherNode = texture( weather );
 
@@ -285,42 +291,55 @@ export class Clouds {
 
 		};
 
-		// Thin ice cloud about eight kilometres up: fibrous streaks drawn out along the wind, very
-		// bright toward the sun (strong forward scattering from ice crystals), and golden or pink
-		// when the sun is low. Returns scattered radiance and transmittance like the cumulus.
+		// High cirrus: a thin sheet of ice about eight kilometres up on the curved Earth, so its
+		// fibres converge toward the horizon in true perspective. Its coverage varies over tens to
+		// hundreds of kilometres, with no outlines; within it, baked fibres (see Cirrus.ts) follow
+		// the upper wind, filtered by each dome texel's footprint on the sheet. Ice scatters
+		// strongly forward with a faint 22 degree halo, and thin cloud is mostly singly scattered.
+		// Distant air shows the sky's own light in front of it. Returns radiance and transmittance.
+		// The veil and its lighting follow tidewater's cirrus (Cirrus.ts names the source).
+		const fibres = this.cirrusFibres!.texture;
 		const cirrusVeil = ( direction: V3 ) => {
 
 			const result = vec4( 0, 0, 0, 1 ).toVar();
-			If( this.cirrus.greaterThan( 0.01 ).and( direction.y.greaterThan( 0.02 ) ), () => {
+			If( this.cirrus.greaterThan( 0.01 ).and( direction.y.greaterThan( 0 ) ), () => {
 
-				const t = float( 8000 ).div( direction.y ).toVar();
-				const p = direction.xz.mul( t ).add( this.windOffset.mul( 1.6 ) ).toVar();
+				const t = layerDistance( this.origin.y, direction.y, float( CIRRUS_ALTITUDE ) ).toVar();
+				const sheet = direction.xz.mul( t ).toVar();
+				const mu = max( direction.y.add( dot( direction.xz, sheet ).div( EARTH_RADIUS ) ), 0.02 ).toVar();
+				// The texel's footprint on the sheet: across the view, and along it stretched by 1 / mu.
+				const radial = normalize( direction.xz.add( vec2( 1e-6, 0 ) ) ).toVar();
+				const fa = vec2( radial.y.negate(), radial.x ).mul( t.mul( DOME_TEXEL_ANGLE ) );
+				const fb = radial.mul( t.mul( DOME_TEXEL_ANGLE ).div( mu ) );
+				// Into the wind's frame: the fibres run along +x.
 				const w = this.cirrusAxis;
-				const along = dot( p, w ).toVar();
-				// Shear in the upper wind bends the strands into long, gentle curves.
-				const sideways = dot( p, vec2( w.y.negate(), w.x ) ).toVar();
-				const bend = weatherNode.sample( vec2( along.div( 30000 ), sideways.div( 12000 ) ).add( 0.71 ) ).level( float( 0 ) ).g.sub( 0.5 ).mul( 7000 )
-					.add( weatherNode.sample( vec2( along.div( 9000 ), sideways.div( 5000 ) ).add( 0.29 ) ).level( float( 0 ) ).b.sub( 0.5 ).mul( 900 ) );
-				const across = sideways.add( bend ).toVar();
-				// Patches of veil a few tens of kilometres long, combed into fibres along the wind.
-				// The weather field's known distribution sets how much of the sky the veil covers.
-				const broad = weatherNode.sample( vec2( along.div( 96000 ), across.div( 30000 ) ).add( 0.37 ) ).level( float( 0 ) ).r;
-				// Fine strands a few hundred metres apart, sharp across and drawn out along the wind.
-				const fibres = shapeNode.sample( vec3( along.div( 9000 ), 0.71, across.div( 420 ) ) ).level( float( 0 ) ).r;
-				const fine = detailNode.sample( vec3( along.div( 2500 ), 0.23, across.div( 150 ) ) ).level( float( 0 ) ).r;
-				const strands = smoothstep( 0.5, 0.78, fibres.mul( 0.75 ).add( fine.mul( 0.25 ) ) );
-				// Tufts: strands thicken into heads here and there and trail off thin between them.
-				const heads = smoothstep( 0.35, 0.8, detailNode.sample( vec3( along.div( 6000 ), 0.53, across.div( 1200 ) ) ).level( float( 0 ) ).g );
-				const amount = this.cirrus;
-				const edge = coverThreshold( amount.mul( 0.6 ) ).toVar();
-				const veil = smoothstep( edge.sub( 0.05 ), edge.add( 0.12 ), broad );
-				const opacity = veil.mul( strands ).mul( heads.mul( 0.6 ).add( 0.4 ) ).mul( 0.4 ).mul( smoothstep( 0.02, 0.15, direction.y ) ).toVar();
-				// Ice scatters strongly forward, but a thin veil only brightens near the sun; it does
-				// not turn into a white blaze around it.
-				const cosine = dot( direction, this.lightDir );
-				const forward = float( 0.64 ).div( float( 1.36 ).sub( cosine.mul( 1.2 ) ).pow( 1.5 ).mul( 4 * Math.PI ) );
-				// The veil passes most of the sky behind it on, scattered rather than absorbed.
-				result.assign( vec4( this.lightColor.rgb.mul( forward.mul( 0.25 ).add( 0.06 ) ).mul( this.directGain ).mul( opacity ), float( 1 ).sub( opacity.mul( 0.12 ) ) ) );
+				const toWind = ( v: V2 ) => vec2( dot( v, w ), dot( v, vec2( w.y.negate(), w.x ) ) );
+				const q = toWind( sheet.add( this.windOffset.mul( 1.6 ) ) ).toVar();
+				// Coverage: patches of 5 - 50 km with clear gaps, modulated over hundreds of km.
+				const broad = weatherNode.sample( q.div( 300000 ).add( 0.37 ) ).level( float( 0 ) ).g;
+				const patches = weatherNode.sample( q.mul( vec2( 1 / 60000, 1 / 40000 ) ).add( 0.71 ) ).level( float( 0 ) ).b;
+				const cover = smoothstep( 0.25, 0.75, broad ).mul( smoothstep( 0.38, 0.68, patches ) );
+				// Fibres at two scales hide the texture's tiling.
+				const f1 = sampleCirrusFibres( fibres, q, toWind( fa ), toWind( fb ), 40000, 0 );
+				const f2 = sampleCirrusFibres( fibres, q, toWind( fa ), toWind( fb ), 92000, 0.5 );
+				const fibre = f1.x.mul( 0.6 ).add( f2.x.mul( 0.4 ) );
+				const veil = f1.y.mul( 0.5 ).add( f2.y.mul( 0.5 ) );
+				// Vertical optical depth: faint wisps over a thinner veil; the slant path is bounded so
+				// the sheet does not turn into a white band at the horizon.
+				const tau = this.cirrus.mul( 0.85 ).mul( cover ).mul( fibre.mul( 0.75 ).add( 0.25 ) ).mul( veil.mul( 0.4 ).add( 0.8 ) ).toVar();
+				const alpha = float( 1 ).sub( exp( tau.negate().div( max( mu, 0.25 ) ) ) ).toVar();
+				const cosine = dot( direction, this.lightDir ).toVar();
+				const halfAngle = acos( clamp( cosine, - 1, 1 ) ).sub( 22 * Math.PI / 180 ).div( 0.02 );
+				const halo = exp( halfAngle.mul( halfAngle ).negate() ).mul( 0.04 );
+				const phase = henyeyGreenstein( cosine, 0.85 ).mul( 0.4 ).add( henyeyGreenstein( cosine, 0.3 ).mul( 0.35 ) )
+					.add( henyeyGreenstein( cosine, - 0.15 ).mul( 0.25 ) ).add( halo );
+				const through = exp( tau.mul( - 0.5 ).div( max( this.lightDir.y, 0.1 ) ) );
+				const sun = this.lightColor.rgb.mul( this.directGain );
+				const skyLight = this.atmosphere.skyRadiance( vec3( 0, 1, 0 ) ).add( this.nightAmbient.rgb );
+				const lit = sun.mul( phase.mul( through ).add( float( 1 ).sub( through ).mul( 0.06 ) ) ).add( skyLight.mul( 0.9 ) ).mul( alpha );
+				const air = exp( t.mul( - 0.25 / 30000 ) );
+				const behind = this.atmosphere.skyRadiance( direction ).add( this.nightAmbient.rgb );
+				result.assign( vec4( lit.mul( air ).add( behind.mul( alpha ).mul( float( 1 ).sub( air ) ) ), float( 1 ).sub( alpha ) ) );
 
 			} );
 			return result;

@@ -24,7 +24,7 @@ try {
 		const s = window.__SOOMI__, r = s.renderer, sky = s.sky;
 		const animation = r.getAnimationLoop(), previous = r.getRenderTarget();
 		const original = { elevation: sky.elevation, illuminance: sky.sunIlluminance, weather: s.weather.target };
-		// The disk's integral equals the direct light only where no cloud covers it.
+		// The disk's integral equals the direct light only where no cloud covers it, cirrus included.
 		await s.setWeather( 'clear', 0 );
 		await r.setAnimationLoop( null );
 		const scene = new s.scene.constructor(), dome = sky.dome.clone();
@@ -40,6 +40,9 @@ try {
 
 				sky.elevation = elevation; sky.sunIlluminance = illuminance;
 				await s.applySun();
+				sky.clouds.cirrus.value = 0;
+				sky.clouds.invalidate();
+				sky.clouds.update( r, camera.position );
 				camera.lookAt( camera.position.clone().addScaledVector( sky.sunDir, 100 ) ); camera.updateMatrixWorld();
 				r.setRenderTarget( rt ); r.render( scene, camera ); r.setRenderTarget( previous );
 				const px = await r.readRenderTargetPixelsAsync( rt, 0, 0, size, size );

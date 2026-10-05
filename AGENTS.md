@@ -50,11 +50,11 @@ exposed.
 - `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
   sea floor, light under the water).
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading.
-- `src/sky/`: atmosphere LUTs, environment lighting, volumetric clouds (a direction map refreshed
-  a sixteenth per frame, plus a live cloud-shadow map) and their noise bake in
-  `src/materials/CloudNoise.ts`, high cirrus, rain curtains under raining clouds, the day cycle (sun
-  and moon), stars, Milky Way and moon, rainbows, weather presets, their blending and the
-  auto-weather chain.
+- `src/sky/`: atmosphere LUTs, environment lighting, volumetric clouds (a direction map refreshed a
+  sixteenth per frame, plus a live cloud-shadow map) and their noise bake in
+  `src/materials/CloudNoise.ts`, high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
+  raining clouds, the day cycle (sun and moon), stars, Milky Way and moon, rainbows, weather
+  presets, their blending and the auto-weather chain.
 - `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
   distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun

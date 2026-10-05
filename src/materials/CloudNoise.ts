@@ -21,7 +21,7 @@ type V3 = THREE.Node<'vec3'>;
 //   weather 512^2  R coverage field  G cloud-type variation  B height variation
 // All repeat over [0, 1) so a wrapped wind offset never shows a seam.
 
-const hash33 = Fn( ( [ p ]: [ V3 ] ) => {
+export const hash33 = Fn( ( [ p ]: [ V3 ] ) => {
 
 	const p3 = fract( p.mul( vec3( 0.1031, 0.1030, 0.0973 ) ) ).toVar();
 	p3.addAssign( dot( p3, p3.yxz.add( 33.33 ) ) );
@@ -30,7 +30,7 @@ const hash33 = Fn( ( [ p ]: [ V3 ] ) => {
 } ).setLayout( { name: 'cloudHash33', type: 'vec3', inputs: [ { name: 'p', type: 'vec3' } ] } );
 
 // Gradient noise with an integer period, in [-1, 1].
-const perlin3 = Fn( ( [ p, period ]: [ V3, F ] ) => {
+export const perlin3 = Fn( ( [ p, period ]: [ V3, F ] ) => {
 
 	const i = floor( p ).toVar();
 	const f = fract( p ).toVar();
