@@ -1,9 +1,10 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, uniform, vec2, vec3, float, floor, fract, sin, dot, cross, atan,
+	Fn, If, Loop, uniform, vec2, vec3, float, int, uint, floor, fract, sin, dot, cross, atan,
 	normalize, length, fwidth, abs, clamp, max, min, mix, pow, smoothstep, exp, sqrt, select, acos,
 } from 'three/tsl';
 import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS } from '../lighting/Radiometry.ts';
+import { STAR_CELLS, CELL_SLOTS, CELL_COUNT, MILKY_WAY_WIDTH, MILKY_WAY_HEIGHT, skyWords, starRecords, loadNightSkyData } from './StarCatalog.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -47,56 +48,59 @@ const noise3 = Fn( ( [ p ]: [ V3 ] ) => {
 
 } ).setLayout( { name: 'soomiNightNoise3', type: 'float', inputs: [ { name: 'p', type: 'vec3' } ] } );
 
-// Galactic plane and centre in the celestial frame. At midnight the band arches from the
-// horizon review view's sky, with its bright centre 35 degrees up, across near the zenith.
-const GALACTIC_NORMAL = new THREE.Vector3( - 0.0331, 0.8106, - 0.5846 ).normalize();
-const GALACTIC_CENTRE = new THREE.Vector3( 0.5864, - 0.4580, - 0.6681 ).projectOnPlane( GALACTIC_NORMAL ).normalize();
+// The Milky Way's floor: the mask's darkest open sky (about its median) holds the unresolved
+// light of faint stars everywhere; the stylised night keeps that sky dark.
+const MILKY_WAY_FLOOR = 0.03;
 
-// Brightness of the Milky Way (0 to about 1): a soft band, brighter toward the centre, broken
-// into grainy star clouds and split along its length by a dark rift and scattered dark clouds.
-// `fine` is 0 for blurred lookups (reflections, bakes), which skip the small-scale structure.
-const milkyWay = Fn( ( [ c, fine ]: [ V3, F ] ) => {
+// Brightness of the Milky Way (0 to about 2) in the equatorial direction c, from its mask value.
+// Its shape, the bulge toward Sagittarius, the Great Rift and the dark clouds come from the
+// NASA/Gaia mask; procedural grain breaks it up finer than the mask's third of a degree, so it
+// reads as unresolved stars rather than a blurred photograph. `fine` is 0 for blurred lookups
+// (reflections, bakes), which skip the small-scale structure.
+const milkyWay = Fn( ( [ c, mask, fine ]: [ V3, F, F ] ) => {
 
-	const n = vec3( GALACTIC_NORMAL.x, GALACTIC_NORMAL.y, GALACTIC_NORMAL.z );
-	const g = vec3( GALACTIC_CENTRE.x, GALACTIC_CENTRE.y, GALACTIC_CENTRE.z );
-	const latitude = dot( c, n ).toVar();
-	const core = pow( max( dot( c, g ), 0 ), 3 ).toVar();
-	// The band's edges wander, so it reads as clouds of stars rather than a painted stripe.
-	const edge = noise3( c.mul( 5 ).add( 9.1 ) ).sub( 0.5 ).mul( 0.05 );
-	const width = mix( float( 0.09 ), float( 0.19 ), core ).add( edge );
-	const band = exp( latitude.mul( latitude ).div( width.mul( width ) ).mul( - 0.5 ) ).toVar();
-	const result = float( 0 ).toVar();
-	// The structure costs a dozen noise lookups; most of the sky lies outside the band.
-	If( band.greaterThan( 0.004 ), () => {
+	const light = max( mask.mul( mask ).sub( MILKY_WAY_FLOOR ), 0 ).div( 1 - MILKY_WAY_FLOOR );
+	// A gentle lift keeps the faint outer band visible beside the bright core.
+	const result = pow( light, 0.75 ).mul( 2.2 ).toVar();
+	// The grain costs four noise lookups; most of the sky lies outside the band.
+	If( result.greaterThan( 0.01 ).and( fine.greaterThan( 0.5 ) ), () => {
 
-		const clouds = noise3( c.mul( 7 ) ).mul( 0.5 ).add( noise3( c.mul( 17 ).add( 3.1 ) ).mul( 0.35 ) ).add( 0.075 ).toVar();
-		// The rift runs the band's length a little off its centre line, wandering and widening.
-		const offset = latitude.sub( 0.012 ).add( noise3( c.mul( 5 ).add( 2.2 ) ).sub( 0.5 ).mul( 0.06 ) ).toVar();
-		const riftWidth = mix( float( 0.006 ), float( 0.03 ), noise3( c.mul( 3.5 ).add( 5.3 ) ) ).toVar();
-		const shade = float( 1 ).toVar();
-		If( fine.greaterThan( 0.5 ), () => {
-
-			clouds.addAssign( noise3( c.mul( 41 ).add( 7.7 ) ).sub( 0.5 ).mul( 0.15 ).add( noise3( c.mul( 97 ).add( 1.3 ) ).sub( 0.5 ).mul( 0.1 ) ) );
-			// Unresolved stars: a fine mottling over the clouds.
-			shade.assign( noise3( c.mul( 130 ).add( 4.4 ) ).mul( 0.6 ).add( noise3( c.mul( 270 ).add( 8.8 ) ).mul( 0.4 ) ).mul( 0.35 ).add( 0.82 ) );
-			offset.addAssign( noise3( c.mul( 17 ).add( 6.1 ) ).sub( 0.5 ).mul( 0.02 ) );
-			// The rift breaks into patches; smaller dark clouds lie scattered over the band.
-			const rift = exp( offset.mul( offset ).div( riftWidth.mul( riftWidth ) ).mul( - 0.5 ) )
-				.mul( smoothstep( 0.2, 0.65, noise3( c.mul( 9 ).add( 1.7 ) ) ).mul( 0.75 ).add( 0.25 ) );
-			const patches = smoothstep( 0.58, 0.82, noise3( c.mul( 13 ).add( 3.3 ) ) ).mul( smoothstep( 0.35, 0.75, noise3( c.mul( 31 ).add( 7.2 ) ) ) );
-			shade.mulAssign( float( 1 ).sub( max( rift.mul( 0.7 ), patches.mul( 0.4 ) ) ) );
-
-		} ).Else( () => {
-
-			shade.assign( float( 1 ).sub( exp( offset.mul( offset ).div( riftWidth.mul( riftWidth ) ).mul( - 0.5 ) ).mul( 0.45 ) ) );
-
-		} );
-		result.assign( band.mul( clouds.mul( 0.85 ).add( 0.15 ) ).mul( core.mul( 1.6 ).add( 0.45 ) ).mul( shade ) );
+		const clouds = noise3( c.mul( 61 ).add( 7.7 ) ).sub( 0.5 ).mul( 0.2 ).add( 1 );
+		// Unresolved stars: a fine mottling over the clouds.
+		const grain = noise3( c.mul( 170 ).add( 4.4 ) ).mul( 0.55 ).add( noise3( c.mul( 390 ).add( 8.8 ) ).mul( 0.45 ) );
+		result.mulAssign( clouds.mul( grain.mul( 0.5 ).add( 0.75 ) ) );
 
 	} );
 	return result;
 
-} ).setLayout( { name: 'soomiMilkyWay', type: 'float', inputs: [ { name: 'c', type: 'vec3' }, { name: 'fine', type: 'float' } ] } );
+} ).setLayout( { name: 'soomiMilkyWay', type: 'float', inputs: [ { name: 'c', type: 'vec3' }, { name: 'mask', type: 'float' }, { name: 'fine', type: 'float' } ] } );
+
+// One byte of the Milky Way mask, as 0 to 1.
+const maskTexel = ( x: THREE.Node<'int'>, y: THREE.Node<'int'> ) => {
+
+	const index = y.mul( MILKY_WAY_WIDTH ).add( x ).toVar();
+	const word = skyWords.element( index.shiftRight( 2 ).add( CELL_COUNT ) );
+	return float( word.shiftRight( uint( index.bitAnd( 3 ).mul( 8 ) ) ).bitAnd( uint( 255 ) ) ).div( 255 );
+
+};
+
+// The mask bilinearly filtered in the equatorial direction c (its layout: right ascension 0h at
+// the centre, increasing to the left; declination +90 on the first row), wrapping in right
+// ascension. Read here rather than in the shader function above, which cannot bind buffers.
+const milkyWayMaskAt = ( c: V3 ) => {
+
+	const x = fract( float( 0.5 ).sub( atan( c.y, c.x ).div( 2 * Math.PI ) ) ).mul( MILKY_WAY_WIDTH ).sub( 0.5 ).toVar();
+	const y = acos( clamp( c.z, - 1, 1 ) ).div( Math.PI ).mul( MILKY_WAY_HEIGHT ).sub( 0.5 ).toVar();
+	const x0 = floor( x ).toVar(), y0 = floor( y ).toVar();
+	const fx = x.sub( x0 ), fy = y.sub( y0 );
+	const left = int( x0 ).bitAnd( MILKY_WAY_WIDTH - 1 ).toVar();
+	const right = left.add( 1 ).bitAnd( MILKY_WAY_WIDTH - 1 ).toVar();
+	const top = int( clamp( y0, 0, MILKY_WAY_HEIGHT - 1 ) ).toVar();
+	const bottom = int( clamp( y0.add( 1 ), 0, MILKY_WAY_HEIGHT - 1 ) ).toVar();
+	return mix( mix( maskTexel( left, top ), maskTexel( right, top ), fx ),
+		mix( maskTexel( left, bottom ), maskTexel( right, bottom ), fx ), fy );
+
+};
 
 // Footprint (radians across a pixel's derivative) at which a baked star carries the energy of a
 // star drawn on screen. On screen a star stays a fixed fraction of a pixel wide and keeps its
@@ -106,14 +110,10 @@ const STAR_REFERENCE_FOOTPRINT = 0.0015;
 // the sky's rotation keeps its brightness as it crosses pixels instead of shimmering.
 const STAR_WIDTH = 0.5;
 
-// One layer of stars on the faces of a cube around the celestial sphere: at most one star per
-// cell, kept away from the cell's edges, so a direction only ever needs its own cell. Brightness
-// follows the sky's own statistics: every magnitude brighter holds about a third as many stars,
-// so most are faint and a few dozen stand out. `faintest` is the dimmest star's peak and `range`
-// how many times brighter the brightest may be.
-const starLayer = ( c: V3, footprint: F, conserve: boolean, cells: number, occupancy: F, seed: number, faintest: number, range: number, time: F, elevation: F ) => {
+// The face of a cube around the celestial sphere that c points through, and c's cell in a grid of
+// cells x cells on that face. StarCatalog.ts buckets the catalogue with the same selection.
+const cubeCell = ( c: V3, cells: number ) => {
 
-	const radiance = vec3( 0 ).toVar();
 	const a = abs( c ).toVar();
 	const xMajor = a.x.greaterThanEqual( a.y ).and( a.x.greaterThanEqual( a.z ) );
 	const yMajor = a.y.greaterThanEqual( a.z );
@@ -122,7 +122,66 @@ const starLayer = ( c: V3, footprint: F, conserve: boolean, cells: number, occup
 		select( yMajor, select( c.y.greaterThan( 0 ), float( 2 ), float( 3 ) ), select( c.z.greaterThan( 0 ), float( 4 ), float( 5 ) ) ) ).toVar();
 	const major = select( xMajor, a.x, select( yMajor, a.y, a.z ) );
 	const uv = select( xMajor, c.zy, select( yMajor, c.xz, c.xy ) ).div( major ).toVar();
-	const cell = floor( uv.mul( 0.5 ).add( 0.5 ).mul( cells ) ).toVar();
+	const cell = min( floor( uv.mul( 0.5 ).add( 0.5 ).mul( cells ) ), cells - 1 ).toVar();
+	return { xMajor, yMajor, face, cell };
+
+};
+
+// A star image: a Gaussian a little under a pixel wide around its direction. Bakes widen it to
+// their own footprint and keep its energy.
+const starProfile = ( c: V3, starDir: V3, footprint: F, conserve: boolean ) => {
+
+	const variance = footprint.mul( footprint ).mul( STAR_WIDTH * STAR_WIDTH ).toVar();
+	const separation = c.sub( starDir ).toVar();
+	const profile = exp( dot( separation, separation ).div( variance ).mul( - 0.5 ) ).toVar();
+	if ( conserve ) profile.mulAssign( float( STAR_REFERENCE_FOOTPRINT * STAR_REFERENCE_FOOTPRINT * STAR_WIDTH * STAR_WIDTH ).div( variance ) );
+	return profile;
+
+};
+
+// Only low stars scintillate, seen through the thick air near the horizon: an irregular flicker,
+// not a steady pulse; high stars burn steadily. seed and phase are two per-star constants.
+const scintillation = ( time: F, elevation: F, seed: F, phase: F ) => {
+
+	const flicker = nightNoise( vec2( time.mul( 2.3 ).add( seed.mul( 57 ) ), phase.mul( 91 ) ) ).sub( 0.5 );
+	return flicker.mul( float( 1 ).sub( smoothstep( 0.02, 0.2, elevation ) ) ).mul( 0.4 ).add( 1 );
+
+};
+
+// The real stars, from the Yale Bright Star Catalogue: the stars of the cell c falls in
+// (StarCatalog.ts lists each star in every cell its image reaches).
+const catalogueStars = ( c: V3, footprint: F, conserve: boolean, time: F, elevation: F ) => {
+
+	const radiance = vec3( 0 ).toVar();
+	const { face, cell } = cubeCell( c, STAR_CELLS );
+	const packed = skyWords.element( int( cell.y ).mul( 6 ).add( int( face ) ).mul( STAR_CELLS ).add( int( cell.x ) ) ).toVar();
+	const start = int( packed.shiftRight( uint( Math.log2( CELL_SLOTS ) ) ) ).toVar();
+	const count = int( packed.bitAnd( uint( CELL_SLOTS - 1 ) ) ).toVar();
+	Loop( { start: int( 0 ), end: count, type: 'int', condition: '<' }, ( { i } ) => {
+
+		const record = start.add( i ).mul( 2 ).toVar();
+		const star = starRecords.element( record ).toVar();
+		const profile = starProfile( c, star.xyz, footprint, conserve );
+		If( profile.greaterThan( 1e-4 ), () => {
+
+			const look = starRecords.element( record.add( 1 ) ).toVar();
+			radiance.addAssign( look.rgb.mul( star.w ).mul( profile ).mul( scintillation( time, elevation, look.w, star.w ) ) );
+
+		} );
+
+	} );
+	return radiance;
+
+};
+
+// A procedural layer of stars too faint for the catalogue: at most one star per cube cell, kept
+// away from the cell's edges, so a direction only ever needs its own cell. Brightness follows the
+// sky's own statistics: every magnitude brighter holds about a third as many stars. `faintest`
+// is the dimmest star's peak and `range` how many times brighter the brightest may be.
+const starLayer = ( c: V3, footprint: F, conserve: boolean, cells: number, occupancy: F, seed: number, faintest: number, range: number, time: F, elevation: F ) => {
+
+	const radiance = vec3( 0 ).toVar();
+	const { xMajor, yMajor, face, cell } = cubeCell( c, cells );
 	const key = cell.add( vec2( face.mul( 1031 ).add( seed ), face.mul( 557 ).sub( seed ) ) ).toVar();
 	If( nightHash( key ).lessThan( occupancy ), () => {
 
@@ -131,22 +190,14 @@ const starLayer = ( c: V3, footprint: F, conserve: boolean, cells: number, occup
 		const onFace = select( xMajor, vec3( select( c.x.greaterThan( 0 ), float( 1 ), float( - 1 ) ), st.y, st.x ),
 			select( yMajor, vec3( st.x, select( c.y.greaterThan( 0 ), float( 1 ), float( - 1 ) ), st.y ),
 				vec3( st.x, st.y, select( c.z.greaterThan( 0 ), float( 1 ), float( - 1 ) ) ) ) );
-		const starDir = normalize( onFace );
 		// Counts grow by about 2.8 per magnitude, so the brightness of a uniform draw u is u^-0.9.
 		const draw = max( nightHash( key.add( vec2( 41.7, 113.9 ) ) ), 1e-4 ).toVar();
-		const brightness = min( pow( draw, - 0.9 ), range ).mul( faintest ).toVar();
-		const variance = footprint.mul( footprint ).mul( STAR_WIDTH * STAR_WIDTH ).toVar();
-		const separation = c.sub( starDir ).toVar();
-		const profile = exp( dot( separation, separation ).div( variance ).mul( - 0.5 ) ).toVar();
-		if ( conserve ) profile.mulAssign( float( STAR_REFERENCE_FOOTPRINT * STAR_REFERENCE_FOOTPRINT * STAR_WIDTH * STAR_WIDTH ).div( variance ) );
+		const brightness = min( pow( draw, - 0.9 ), range ).mul( faintest );
+		const profile = starProfile( c, normalize( onFace ), footprint, conserve );
 		const temperature = nightHash( key.add( vec2( 197.1, 7.3 ) ) ).toVar();
 		const color = mix( mix( vec3( 1, 0.72, 0.5 ), vec3( 1, 0.95, 0.88 ), smoothstep( 0, 0.35, temperature ) ),
 			vec3( 0.7, 0.82, 1 ), smoothstep( 0.55, 1, temperature ) );
-		// Only low stars scintillate, seen through the thick air near the horizon: an irregular
-		// flicker, not a steady pulse; high stars burn steadily.
-		const flicker = nightNoise( vec2( time.mul( 2.3 ).add( temperature.mul( 57 ) ), draw.mul( 91 ) ) ).sub( 0.5 );
-		const twinkle = flicker.mul( float( 1 ).sub( smoothstep( 0.02, 0.2, elevation ) ) ).mul( 0.4 ).add( 1 );
-		radiance.assign( color.mul( brightness ).mul( profile ).mul( twinkle ) );
+		radiance.assign( color.mul( brightness ).mul( profile ).mul( scintillation( time, elevation, temperature, draw ) ) );
 
 	} );
 	return radiance;
@@ -276,6 +327,17 @@ export class NightSky {
 	// Strength of the haze glow around the moon (an art control; 0 leaves the bare disk).
 	readonly glow = uniform( 1 );
 
+	get ready(): boolean { return this.loaded; }
+	private loaded = false;
+
+	/** Load the star catalogue and the Milky Way mask; the sky waits for them before its first bake. */
+	async init(): Promise<void> {
+
+		await loadNightSkyData();
+		this.loaded = true;
+
+	}
+
 	stars( direction: V3, angularFootprint?: F, visibility: F = this.starVisibility ): V3 {
 
 		// The dome derives its pixel footprint before varying control flow. Reflection and
@@ -288,17 +350,21 @@ export class NightSky {
 		If( v.greaterThan( 0.0001 ), () => {
 
 			const c = normalize( this.frame.mul( direction ) ).toVar();
-			const band = milkyWay( c, float( conserve ? 0 : 1 ) ).toVar();
+			const band = milkyWay( c, milkyWayMaskAt( c ), float( conserve ? 0 : 1 ) ).toVar();
 			const elevation = direction.y;
-			// Bright scattered stars, a dense faint field thickening along the Milky Way, and the
-			// band's own unresolved glow.
-			// About five thousand stars on the whole sphere span six magnitudes; below them, a dense
-			// field at the edge of visibility thickens along the Milky Way.
-			const bright = starLayer( c, footprint, conserve, 64, float( 0.2 ), 0, 0.014, 160, this.time, elevation );
+			// The catalogue's nine thousand real stars, down to the edge of naked-eye visibility;
+			// below them a dense procedural field thickening along the Milky Way; and the band's
+			// own unresolved glow.
+			const bright = catalogueStars( c, footprint, conserve, this.time, elevation );
 			const wash = clamp( this.moonWash, 0, 1 );
-			const faint = starLayer( c, footprint, conserve, 180, band.mul( 0.5 ).add( 0.05 ), 17, 0.006, 3, this.time, elevation )
+			// Two procedural layers below the catalogue: a field everywhere, and a dense dust of
+			// barely resolved stars that only the Milky Way's star clouds hold, so the band reads
+			// as stars rather than mist.
+			const faint = starLayer( c, footprint, conserve, 180, band.mul( 0.4 ).add( 0.05 ), 17, 0.004, 3, this.time, elevation )
+				.add( starLayer( c, footprint, conserve, 400, band.mul( 0.6 ), 29, 0.004, 3, this.time, elevation ) )
 				.mul( float( 1 ).sub( wash.mul( 0.7 ) ) );
-			const glow = mix( vec3( 0.62, 0.72, 1 ), vec3( 1, 0.86, 0.72 ), smoothstep( 0.5, 1.4, band ) ).mul( band ).mul( 0.03 )
+			// Blue-white star clouds, warming only in the bulge toward Sagittarius.
+			const glow = mix( vec3( 0.66, 0.75, 1 ), vec3( 1, 0.88, 0.74 ), smoothstep( 0.9, 2, band ) ).mul( band ).mul( 0.03 )
 				.mul( float( 1 ).sub( wash.mul( 0.88 ) ) );
 			// Thick air near the horizon dims the stars and the band.
 			const horizon = smoothstep( - 0.01, 0.12, elevation );

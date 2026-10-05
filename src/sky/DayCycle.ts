@@ -1,4 +1,4 @@
-import { Matrix3, Matrix4, Vector3 } from 'three/webgpu';
+import { Matrix3, Vector3 } from 'three/webgpu';
 
 export const DAY_PRESETS = {
 	'dawn': 5.35,
@@ -35,7 +35,8 @@ export interface DayCycleSnapshot {
 	moonIllumination: number;
 	moonVisibility: number;
 	moonKeyGain: number;
-	// World to celestial frame: the fixed stars turn with the sun about the pole of its path.
+	// World to equatorial (J2000) frame: x toward right ascension 0h, z toward the north
+	// celestial pole. The stars turn with the sun about the pole of its path.
 	starFrame: Matrix3;
 	daylight: number;
 	nightVisibility: number;
@@ -53,9 +54,20 @@ const COS_INCLINATION = Math.cos( INCLINATION );
 const NOON_AZIMUTH = - 8 / DEG + Math.atan2( Math.sin( Math.PI / 3 ), COS_INCLINATION * Math.cos( Math.PI / 3 ) );
 const SIN_NOON_AZIMUTH = Math.sin( NOON_AZIMUTH );
 const COS_NOON_AZIMUTH = Math.cos( NOON_AZIMUTH );
-// direction(a) = cos(a) U + sin(a) V: a rotation by a about POLE = U x V.
-const POLE = new Vector3( COS_INCLINATION * COS_NOON_AZIMUTH, SIN_INCLINATION, COS_INCLINATION * SIN_NOON_AZIMUTH )
-	.cross( new Vector3( SIN_NOON_AZIMUTH, 0, - COS_NOON_AZIMUTH ) ).normalize();
+// direction(a) = cos(a) MERIDIAN + sin(a) WEST: a rotation by a about MERIDIAN x WEST.
+// The sun stands at the celestial equator (an equinox, every day): at noon it marks where the
+// equator crosses the meridian and at 18:00 the west point. Its path is tilted 62 degrees, so
+// the elevated pole is 28 degrees up. Seen from above, the sun turns anticlockwise, so that pole
+// is the south celestial pole and the island lies near 28 degrees south, like Rapa Nui.
+const MERIDIAN = new Vector3( COS_INCLINATION * COS_NOON_AZIMUTH, SIN_INCLINATION, COS_INCLINATION * SIN_NOON_AZIMUTH );
+const WEST = new Vector3( SIN_NOON_AZIMUTH, 0, - COS_NOON_AZIMUTH );
+const NORTH_POLE = WEST.clone().cross( MERIDIAN ).normalize();
+// Local sidereal time at midnight (radians): 14h puts Scorpius high in the east with the Milky
+// Way's core below it, Crux and Alpha Centauri high in the south, and the band through Aquila,
+// split by the Great Rift, rising out of the sea in the horizon view. The sky gains a turn a year
+// on the sun, so each authored day starts a little further on.
+const MIDNIGHT_SIDEREAL = 14 / 24 * TAU;
+const SIDEREAL_DAYS_PER_YEAR = 365.2422;
 
 function finite( value: number, name: string ): number {
 
@@ -82,6 +94,18 @@ function smoothstep( low: number, high: number, value: number ): number {
 
 	const t = Math.max( 0, Math.min( 1, ( value - low ) / ( high - low ) ) );
 	return t * t * ( 3 - 2 * t );
+
+}
+
+// World to equatorial frame at a local sidereal time: a star at right ascension a and
+// declination d lies at hour angle (time - a), cos(H) MERIDIAN + sin(H) WEST, raised by d.
+function equatorialFrame( sidereal: number ): Matrix3 {
+
+	const c = Math.cos( sidereal ), s = Math.sin( sidereal );
+	const x = MERIDIAN.clone().multiplyScalar( c ).addScaledVector( WEST, s );
+	const y = MERIDIAN.clone().multiplyScalar( s ).addScaledVector( WEST, - c );
+	const z = NORTH_POLE;
+	return new Matrix3().set( x.x, x.y, x.z, y.x, y.y, y.z, z.x, z.y, z.z );
 
 }
 
@@ -185,7 +209,7 @@ export class DayCycle {
 			moonIllumination,
 			moonVisibility,
 			moonKeyGain: ( 1 - smoothstep( - 7, - 3, elevation ) ) * moonVisibility * moonIllumination,
-			starFrame: new Matrix3().setFromMatrix4( new Matrix4().makeRotationAxis( POLE, - hourAngle ) ),
+			starFrame: equatorialFrame( MIDNIGHT_SIDEREAL + hourAngle + Math.PI + TAU * ( this.completedDays + this.currentHour / 24 ) / SIDEREAL_DAYS_PER_YEAR ),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),
 			// Modest adaptation preserves a visibly dark night. Scene lighting, not exposure,
