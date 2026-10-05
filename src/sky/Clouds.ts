@@ -205,8 +205,12 @@ export class Clouds {
 		const altitudeAt = ( h: F, mu: F, t: F ) =>
 			h.add( t.mul( mu ) ).add( t.mul( t ).mul( float( 1 ).sub( mu.mul( mu ) ) ).div( 2 * EARTH_RADIUS ) );
 
-		// Optical depth toward the key light: six samples on a widening cone, without detail.
-		const lightDepth = ( xz: V2, altitude: F ) => {
+		// Optical depth toward the key light: six samples on a widening cone, without detail. The
+		// near samples resolve a deck's cells shading each other; far samples see the deck without
+		// them. The cell texture's trilinear creases lie along the noise grid's axes; summed along
+		// light paths and seen at grazing angles they read as lines converging on the horizon, so
+		// distant view points (small `near`) drop the cells along their light paths as well.
+		const lightDepth = ( xz: V2, altitude: F, near: F ) => {
 
 			const depth = float( 0 ).toVar();
 			const L = this.lightDir;
@@ -214,7 +218,8 @@ export class Clouds {
 			for ( const step of [ 60, 140, 300, 600, 1200, 2400 ] ) {
 
 				const t = travelled + step * 0.5;
-				depth.addAssign( densityAt( xz.add( L.xz.mul( t ) ), altitude.add( L.y.mul( t ) ), false ).mul( step ) );
+				const cells = step < 600 ? near : float( 0 );
+				depth.addAssign( densityAt( xz.add( L.xz.mul( t ) ), altitude.add( L.y.mul( t ) ), false, cells ).mul( step ) );
 				travelled += step;
 
 			}
@@ -260,10 +265,11 @@ export class Clouds {
 					const dt = span.mul( u.mul( 2 ).add( inverseSteps ) ).mul( inverseSteps ).toVar();
 					const altitude = altitudeAt( h, direction.y, t ).toVar();
 					const xz = this.origin.xz.add( direction.xz.mul( t ) ).toVar();
-					const d = densityAt( xz, altitude, true, float( 1 ).sub( smoothstep( 2500, 9000, t ) ) ).toVar();
+					const near = float( 1 ).sub( smoothstep( 3500, 13000, t ) ).toVar();
+					const d = densityAt( xz, altitude, true, near ).toVar();
 					If( d.greaterThan( 0.0005 ), () => {
 
-						const od = lightDepth( xz, altitude ).toVar();
+						const od = lightDepth( xz, altitude, near ).toVar();
 						// Scattering octaves: each one less extinguished and less forward. A thick cloud
 						// returns most of its light after many bounces, several times the single
 						// scattering a phase function alone predicts at side angles.
