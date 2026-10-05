@@ -20,10 +20,10 @@ const regions = {
 	'near-water': { 'resolved-water': [ 0.05, 0.15, 0.95, 0.85 ] },
 };
 const scenarios = [
-	{ name: 'dry', wetness: false, rain: false, count: 384 },
-	{ name: 'wet', wetness: true, rain: false, count: 384 },
+	{ name: 'dry', wetness: false, rain: false, count: 32768 },
+	{ name: 'wet', wetness: true, rain: false, count: 32768 },
 	{ name: 'ripples', wetness: true, rain: true, count: 0 },
-	{ name: 'rain', wetness: true, rain: true, count: 384 },
+	{ name: 'rain', wetness: true, rain: true, count: 32768 },
 ];
 await mkdir( out, { recursive: true } );
 const browser = await chromium.launch( {
@@ -315,14 +315,14 @@ try {
 		await load( quality );
 		report.quality[ quality ] = await capture( `quality-${ quality }` );
 	}
-	for ( const [ quality, count ] of Object.entries( { low: 192, medium: 384, high: 640 } ) ) {
+	for ( const [ quality, count ] of Object.entries( { low: 16384, medium: 32768, high: 49152 } ) ) {
 		assert.equal( report.quality[ quality ].diagnostics.quality, quality, 'Requested quality preset is active' );
 		assert.equal( report.quality[ quality ].streaks.count, count, `${ quality }: actual bounded rain instance count` );
 	}
 	const resources = Object.values( report.captures ).filter( ( shot ) => shot.diagnostics.quality === 'medium' ).map( ( shot ) => shot.memory );
 	assert.ok( Math.max( ...resources.map( ( state ) => state.textures ) ) - Math.min( ...resources.map( ( state ) => state.textures ) ) <= 4,
 		'Effects toggles must not accumulate textures after first use' );
-	report.checks.push( 'Low/medium/high application presets draw 192/384/640 instances; effect toggles keep texture use bounded' );
+	report.checks.push( 'Low/medium/high application presets simulate 16384/32768/49152 drops; effect toggles keep texture use bounded' );
 	assert.deepEqual( report.errors, [], 'No GPU/browser errors' );
 	assert.deepEqual( report.failures, [], 'No failed asset requests' );
 	report.passed = true;

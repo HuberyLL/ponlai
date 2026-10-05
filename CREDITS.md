@@ -46,8 +46,8 @@ packages, into `dist/licenses/`.
     from the cirrus in `Clouds.js`, ported from WGSL to TSL.
   - The celestial clock, geometric lunar phase and filtered procedural stars are original code;
     they introduce no third-party imagery or additional asset licence. Weather blending,
-    integrated wind, analytic rain streaks/ripple gradients and wet-material response are
-    original Soomi code as well.
+    integrated wind, the rain veil and ripple gradients and wet-material response are original
+    Soomi code as well.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
 ### Hash without Sine
@@ -58,6 +58,26 @@ packages, into `dist/licenses/`.
 - Files: `hash22` in `src/materials/ProceduralTextures.ts` and `src/ocean/Water.ts`; `hash33` in
   `src/materials/CloudNoise.ts`
 - Changes: ported to TSL; the procedural textures remap it to [-1, 1].
+
+### threejs-conference collision rain
+
+- Upstream: https://github.com/ektogamat/threejs-conference, by Anderson Mancini and Sunag
+- Copyright: (c) 2026 Anderson Mancini and Sunag
+- Licence: MIT, see [`src/weather/threejs-conference.LICENSE.txt`](src/weather/threejs-conference.LICENSE.txt)
+- Files: `src/weather/RainCollision.ts` and `src/weather/RainDrops.ts`, after
+  `src/world/weather/createCollisionHeight.js`, `createCollisionRain.js` and
+  `docs/techniques/collision-rain.md`: a top-down orthographic pass that draws world height into a
+  nearest-filtered half-float target, rain drops in a camera-centred toroidal volume moved by a
+  compute pass that tests them against that map, and instanced billboards for the streaks and
+  splashes. The same pattern is in the three.js example `webgpu_compute_particles_rain.html`
+  (r186, MIT, three.js authors; the `three` package's licence ships with the build).
+- Changes: rewritten in TypeScript for this scene. The map is drawn once from the island's own
+  meshes with each material's rest pose and alpha test; drops are a stateless function of the
+  clock, the wind's integrated travel and the camera (no per-frame random respawn), in nested
+  volumes, searched along their wind-leaning path for the first surface; splashes (a crown with
+  droplets on land, rings on the sea) are procedural. Nothing from the project's `public/`
+  folder or its CC BY-NC-SA derived shaders (`rainRipples.js`, `surfaceRain.js`, `rainGlass.js`)
+  is used.
 
 ## Assets
 
@@ -133,6 +153,10 @@ comment where it is used.
 - Crepuscular rays: Kenny Mitchell,
   [*Volumetric Light Scattering as a Post-Process*](https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process)
   (GPU Gems 3, 2007): a radial blur of the open sky toward the sun.
+- Raindrop rings: Sébastien Lagarde,
+  [*Water drop 2b – Dynamic rain and its effects*](https://seblagarde.wordpress.com/2013/01/03/water-drop-2b-dynamic-rain-and-its-effects/)
+  (2013): the ring profile sin( clamp( 9 ( t - r ), 0, 3 ) pi ), a wave and a half behind the
+  front, for the rain's ring sprites on the sea.
 - Whitecaps: the horizontal Jacobian of the displaced surface as a breaking criterion, after
   J. Tessendorf, *Simulating Ocean Water* (above).
 - Depth-dependent water shadows: the volume-lighting integral described in

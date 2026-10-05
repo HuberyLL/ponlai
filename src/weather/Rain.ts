@@ -1,11 +1,12 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, attribute, cameraPosition, positionGeometry, positionWorld, positionView, uv, uniform,
-	texture, textureLoad, textureSize, screenCoordinate, ivec2, vec2, vec3, float, floor, fract, sin, cos, dot, cross, normalize, length,
-	abs, max, min, clamp, mix, smoothstep, exp, select, acos, atan, dFdx, dFdy,
+	Fn, If, Loop, uniform, vec2, vec3, float, floor, fract, sin, cos, dot, cross, normalize, length,
+	abs, max, clamp, mix, smoothstep, exp, select, acos, atan, luminance,
 } from 'three/tsl';
-import { buildFootprint, islandSurfaceHeight, layoutBounds } from '../world/WorldShapes.ts';
-import { mulberry32 } from '../world/noise.ts';
+import { RainCollision } from './RainCollision.ts';
+import { DRIFT, MEAN_FALL, RainDrops } from './RainDrops.ts';
+
+export { RAIN_MAX_DROPS } from './RainDrops.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -14,24 +15,17 @@ type V3 = THREE.Node<'vec3'>;
 // The veil: shells around the viewer at these distances (metres), each carrying a sheet of
 // streaks. Mapped on the sphere about the rain's own direction, streaks converge on its
 // vanishing points as in perspective, and a shell shows only where the scene lies beyond it.
-const VEIL_SHELLS = [ 5, 9, 16, 28, 48, 80, 130 ];
+const VEIL_SHELLS = [ 48, 80, 130 ];
 const DROP_WIDTH = 0.0016; // metres
 const STREAK_LENGTH = 0.4; // metres travelled during the eye's exposure
 const STREAK_SPACING = 0.22; // metres between columns of drops on a shell
 
-export const RAIN_MAX_DROPS = 640;
-const VOLUME_WIDTH = 128;
-const VOLUME_HEIGHT = 45;
-const FALL_SPEED = 18;
-const ANCHOR_STEP = 24;
+const FALL_SPEED = MEAN_FALL;
 
 export interface RainOptions {
 
 	count?: number;
 	seed?: number;
-	// Return world-space surface height (sea level outside the island). A caller can reuse
-	// its existing world field; the default builds a conservative footprint only once.
-	groundHeightAt?: ( x: number, z: number ) => number;
 
 }
 
@@ -87,9 +81,9 @@ export const rainRippleGradient = Fn( ( [ worldXZ, time, rain, footprint ]: [ V2
 	{ name: 'rain', type: 'float' }, { name: 'footprint', type: 'float' },
 ] } );
 
-/** One transparent, depth-tested streak draw. Render it after water in the transparent
- * water target, retaining water depth and rejecting the resolved opaque depth separately.
- * It contributes scene radiance before exposure/tone mapping, with no emissive minimum. */
+/** The rain: GPU drops that fall through the scene and splash where they land (RainDrops,
+ * with collision against RainCollision's height map), a veil of distant streaks added in
+ * the composite, and the analytic impact rings on the water normal (`rainRippleGradient`). */
 export class Rain {
 
 	readonly uniforms = {
@@ -99,105 +93,31 @@ export class Rain {
 		light: uniform( new THREE.Color( 0, 0, 0 ) ), // linear scene radiance, supplied by the shared sky/key
 		waterLevel: uniform( 0 ),
 	};
-	readonly mesh: THREE.InstancedMesh;
-	private readonly material: THREE.MeshBasicNodeMaterial;
-	private readonly ground: THREE.DataTexture;
-	private readonly anchor = uniform( new THREE.Vector2() );
-	private readonly focus = uniform( new THREE.Vector2() );
-	private readonly groundXform: THREE.Vector4;
-	private readonly baseOpacity: F;
-	private opaqueDepth: THREE.TextureNode | null = null;
-	private lightNode: THREE.Node<'vec3'> | null = null;
-	// Angle subtended by one pixel, for the veil's energy-preserving streak width.
+	// Angle subtended by one pixel, for the veil's and the drops' energy-preserving widths.
 	readonly pixelAngle = uniform( 0.001 );
-	// The camera, for placing splashes on the surfaces the veil looks at.
-	private readonly eye = uniform( new THREE.Vector3() );
+	readonly collision = new RainCollision();
+	readonly drops: RainDrops;
+	/** The drops' streak draw; `group` holds it with the splashes. */
+	readonly mesh: THREE.Mesh;
+	readonly group: THREE.Group;
+	private lightNode: THREE.Node<'vec3'> | null = null;
 
-	constructor( { count = 384, seed = 8371, groundHeightAt }: RainOptions = {} ) {
+	constructor( { count = 32768, seed = 8371 }: RainOptions = {} ) {
 
 		if ( ! Number.isFinite( count ) || count < 0 ) throw new RangeError( 'Rain count must be finite and non-negative' );
 		if ( ! Number.isFinite( seed ) ) throw new RangeError( 'Rain seed must be finite' );
-		const bounds = layoutBounds(), pad = 4;
-		const x0 = bounds.x0 - pad, z0 = bounds.z0 - pad;
-		const width = bounds.x1 - bounds.x0 + pad * 2, depth = bounds.z1 - bounds.z0 + pad * 2;
-		this.groundXform = new THREE.Vector4( x0, z0, 1 / width, 1 / depth );
-		if ( ! groundHeightAt ) {
-
-			const footprint = buildFootprint();
-			// The submerged cliff toe extends beyond the upper tile footprint. A conservative
-			// 1.8 m guard stops drops at meadow height before they could travel through its wall.
-			groundHeightAt = ( x, z ) => footprint.dist( x, z ) < 1.8 ? islandSurfaceHeight( x, z ) + 0.2 : 0;
-
-		}
-		// One small, unfiltered world-space height mask handles drifting drops at their current
-		// position, including camera recentering. It replaces per-frame CPU collision/respawn.
-		const resolution = 128, heights = new Float32Array( resolution * resolution );
-		for ( let z = 0; z < resolution; z ++ ) for ( let x = 0; x < resolution; x ++ ) {
-
-			const height = groundHeightAt( x0 + ( x + 0.5 ) / resolution * width, z0 + ( z + 0.5 ) / resolution * depth );
-			heights[ z * resolution + x ] = Number.isFinite( height ) ? Math.max( 0, height ) : 0;
-
-		}
-		this.ground = new THREE.DataTexture( heights, resolution, resolution, THREE.RedFormat, THREE.FloatType );
-		this.ground.name = 'rainGroundHeight';
-		this.ground.minFilter = this.ground.magFilter = THREE.NearestFilter;
-		this.ground.generateMipmaps = false;
-		this.ground.needsUpdate = true;
-
-		const geometry = new THREE.PlaneGeometry( 1, 1 );
-		const seeds = new Float32Array( RAIN_MAX_DROPS * 4 );
-		const rng = mulberry32( seed );
-		for ( let i = 0; i < RAIN_MAX_DROPS; i ++ ) {
-
-			seeds[ i * 4 ] = ( rng() - 0.5 ) * VOLUME_WIDTH;
-			seeds[ i * 4 + 1 ] = ( rng() - 0.5 ) * VOLUME_WIDTH;
-			seeds[ i * 4 + 2 ] = rng();
-			seeds[ i * 4 + 3 ] = 0.55 + rng() * 0.5;
-
-		}
-		geometry.setAttribute( 'rainSeed', new THREE.InstancedBufferAttribute( seeds, 4 ) );
-		const u = this.uniforms;
-		const material = new THREE.MeshBasicNodeMaterial( {
-			transparent: true, depthTest: true, depthWrite: false, side: THREE.DoubleSide,
-		} );
-		material.forceSinglePass = true;
-		const particle = attribute<'vec4'>( 'rainSeed', 'vec4' );
-		const lifetime = VOLUME_HEIGHT / FALL_SPEED;
-		const age = fract( u.time.div( lifetime ).add( particle.z ) );
-		const velocity = vec3( u.wind.x.mul( 0.65 ), - FALL_SPEED, u.wind.y.mul( 0.65 ) );
-		const drift = u.wind.mul( age.mul( lifetime * 0.65 ) );
-		const drifting = particle.xy.add( drift );
-		const tile = floor( this.anchor.sub( drifting ).div( VOLUME_WIDTH ).add( 0.5 ) ).mul( VOLUME_WIDTH );
-		const horizontal = drifting.add( tile );
-		const center = vec3( horizontal.x, float( 1 ).sub( age ).mul( VOLUME_HEIGHT ).add( u.waterLevel ), horizontal.y );
-		const tail = normalize( velocity ).negate();
-		const across = normalize( cross( tail, cameraPosition.sub( center ) ).add( vec3( 1e-5, 0, 0 ) ) );
-		material.positionNode = center.add( across.mul( positionGeometry.x.mul( 0.014 ) ) )
-			.add( tail.mul( positionGeometry.y.mul( particle.w ) ) );
-		material.colorNode = u.light;
-		const q = uv();
-		const streak = float( 1 ).sub( smoothstep( 0.10, 0.5, abs( q.x.sub( 0.5 ) ) ) )
-			.mul( smoothstep( 0, 0.12, q.y ) ).mul( float( 1 ).sub( smoothstep( 0.55, 1, q.y ) ) );
-		const fadeDistance = length( positionWorld.xz.sub( this.focus ) );
-		// The 50 m fade radius is smaller than half a tile minus anchor error. Any wrapped
-		// particles therefore move outside visibility, leaving nearby rain fixed in world space.
-		const volume = float( 1 ).sub( smoothstep( 38, 50, fadeDistance ) );
-		const groundXform = uniform( this.groundXform );
-		const groundUV = positionWorld.xz.sub( groundXform.xy ).mul( groundXform.zw );
-		const insideGround = groundUV.x.greaterThanEqual( 0 ).and( groundUV.x.lessThanEqual( 1 ) )
-			.and( groundUV.y.greaterThanEqual( 0 ) ).and( groundUV.y.lessThanEqual( 1 ) );
-		const groundY = max( select( insideGround, texture( this.ground, groundUV ).level( float( 0 ) ).r, u.waterLevel ), u.waterLevel );
-		const landing = smoothstep( groundY.add( 0.03 ), groundY.add( 0.25 ), positionWorld.y );
-		const ceiling = float( 1 ).sub( smoothstep( VOLUME_HEIGHT - 2, VOLUME_HEIGHT, positionWorld.y.sub( u.waterLevel ) ) );
-		this.baseOpacity = clamp( u.rain, 0, 1 ).mul( 0.2 ).mul( streak ).mul( volume ).mul( landing ).mul( ceiling );
-		material.opacityNode = this.baseOpacity;
-		this.material = material;
-		this.mesh = new THREE.InstancedMesh( geometry, material, RAIN_MAX_DROPS );
-		this.mesh.name = 'weatherRain';
-		this.mesh.frustumCulled = false;
-		this.mesh.castShadow = this.mesh.receiveShadow = false;
-		this.mesh.visible = false;
+		this.drops = new RainDrops( { collision: this.collision, amount: this.uniforms.rain, wind: this.uniforms.wind, pixelAngle: this.pixelAngle, seed } );
+		this.mesh = this.drops.streaks;
+		this.group = this.drops.group;
+		this.group.visible = false;
 		this.setQuality( count );
+
+	}
+
+	/** Draw the island's collision heights; call once the island and its plants exist. */
+	bakeCollision( renderer: THREE.WebGPURenderer, roots: THREE.Object3D[] ): void {
+
+		this.collision.bake( renderer, roots );
 
 	}
 
@@ -205,29 +125,21 @@ export class Rain {
 	 * its own depth test; this second test also rejects drops hidden by island/character pixels. */
 	bindOpaqueDepth( linearDepth: THREE.Texture ): void {
 
-		if ( this.opaqueDepth ) {
-
-			this.opaqueDepth.value = linearDepth;
-			return;
-
-		}
-		this.opaqueDepth = texture( linearDepth );
-		const size = vec2( textureSize( this.opaqueDepth ) as unknown as THREE.Node<'ivec2'> );
-		const pixel = ivec2( clamp( screenCoordinate.xy, vec2( 0 ), size.sub( 1 ) ) );
-		const surfaceZ = textureLoad( this.opaqueDepth, pixel ).r;
-		// View Z is negative in front of the camera: a nearer drop has the larger value.
-		const visibility = smoothstep( 0, 0.08, positionView.z.sub( surfaceZ ) );
-		this.material.opacityNode = this.baseOpacity.mul( visibility );
-		this.material.needsUpdate = true;
+		this.drops.bindOpaqueDepth( linearDepth );
 
 	}
 
-	/** Supply the displayed sky/key radiance directly, including GPU irradiance interpolation. */
-	setLightNode( light: THREE.Node<'vec3'> | null ): void {
+	/** Light the rain from the displayed sky irradiance (including the GPU interpolation, so it
+	 * stays in step with sky transitions) and the key light (direction toward it, linear colour),
+	 * without an emissive floor. Null restores the `light` uniform. */
+	setLightNode( sky: THREE.Node<'vec3'> | null, keyDirection?: THREE.Node<'vec3'>, keyColor?: THREE.Node<'vec3'> ): void {
 
-		this.lightNode = light;
-		this.material.colorNode = light ?? this.uniforms.light.rgb;
-		this.material.needsUpdate = true;
+		const key = keyColor ?? vec3( 0 );
+		// Drops scatter the environment and the key as the island does. Through a closed deck the
+		// key arrives mostly diffused, so its share is largely desaturated: streaks take the grey of
+		// the sky rather than the sun's tint. The key itself is thrown forward (RainDrops).
+		this.lightNode = sky ? sky.mul( 0.65 ).add( mix( vec3( luminance( key ) ), key, 0.3 ).mul( 0.045 ) ) : null;
+		this.drops.setLight( this.lightNode ?? this.uniforms.light.rgb, keyDirection ?? vec3( 0, 1, 0 ), key );
 
 	}
 
@@ -238,18 +150,10 @@ export class Rain {
 		const u = this.uniforms;
 		const light = this.lightNode ?? u.light.rgb;
 		const result = vec3( 0 ).toVar();
-		// The surface this pixel shows, and whether it faces up: derivatives come first, while
-		// control flow is still uniform. Steep faces and depth edges get no splashes.
-		const surface = this.eye.add( direction.mul( distance ) ).toVar();
-		const dx = dFdx( surface ), dy = dFdy( surface );
-		const facing = abs( normalize( cross( dx, dy ) ).y );
-		const footprint = distance.mul( this.pixelAngle ).toVar();
-		const continuous = float( 1 ).sub( smoothstep( 6, 14, max( length( dx ), length( dy ) ).div( max( footprint, 1e-4 ) ) ) );
-		const upward = smoothstep( 0.7, 0.9, facing ).mul( continuous ).mul( float( 1 ).sub( smoothstep( 35, 60, distance ) ) ).toVar();
 		If( u.rain.greaterThan( 0.001 ), () => {
 
 			// Axis toward where the rain comes from, tilted by the wind; a frame around it.
-			const source = normalize( vec3( u.wind.x.mul( - 0.65 ), FALL_SPEED, u.wind.y.mul( - 0.65 ) ) ).toVar();
+			const source = normalize( vec3( u.wind.x.mul( - DRIFT ), FALL_SPEED, u.wind.y.mul( - DRIFT ) ) ).toVar();
 			const side = normalize( cross( source, vec3( 0, 0, 1 ) ) ).toVar();
 			const other = cross( source, side ).toVar();
 			const cosine = clamp( dot( direction, source ), - 1, 1 ).toVar();
@@ -283,86 +187,52 @@ export class Rain {
 
 			}
 			result.assign( light.mul( result ).mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ).mul( 0.6 ) );
-			// Splashes where the drops land, on the sea and on level ground alike: a jet that leaps
-			// a few centimetres, a crown spreading round it and a spark at the impact, gone in a
-			// tenth of a second. They live in staggered world grids, so they stay put as the camera
-			// moves. Seen from low down a jet stands up against the surface behind it: a vertical
-			// extent h covers the surface out to h / tan(elevation) beyond the impact.
-			If( upward.greaterThan( 0.001 ), () => {
 
-				const splash = float( 0 ).toVar();
-				// Below a pixel, a splash keeps its energy spread over one pixel instead.
-				const size = max( footprint.mul( 0.6 ), 0.005 ).toVar();
-				const energy = min( float( 0.005 ).div( size ), 1 ).pow( 2 ).toVar();
-				const ahead = normalize( vec2( direction.x, direction.z ).add( vec2( 1e-5, 0 ) ) ).toVar();
-				const lift = float( 1 ).div( max( abs( direction.y ), 0.05 ) ).mul( max( float( 1 ).sub( direction.y.mul( direction.y ) ), 0 ).sqrt() ).toVar();
-				const CELL = 0.26;
-				for ( let layer = 0; layer < 3; layer ++ ) {
-
-					const grid = surface.xz.div( CELL ).add( vec2( 0.37, 0.61 ).mul( layer ) ).toVar();
-					const cell = floor( grid ).toVar();
-					const key = cell.add( vec2( 13.9, 7.3 ).mul( layer ) ).toVar();
-					// Each cell takes a drop about every half second in heavy rain.
-					const phase = u.time.mul( amount.mul( 1.6 ).add( 0.4 ) ).add( rainHash( key ) ).toVar();
-					const event = floor( phase ).toVar();
-					const age = fract( phase ).div( 0.12 ).toVar();
-					If( age.lessThan( 1 ), () => {
-
-						const centre = vec2( rainHash( key.add( event.mul( 2.31 ) ) ), rainHash( key.add( vec2( 6.1, 3.7 ) ).add( event.mul( 1.73 ) ) ) ).mul( 0.6 ).add( 0.2 );
-						const offset = fract( grid ).sub( centre ).mul( CELL ).toVar();
-						const d = length( offset ).toVar();
-						const along = dot( offset, ahead ), across = abs( dot( offset, vec2( ahead.y.negate(), ahead.x ) ) );
-						const fade = float( 1 ).sub( age ).pow( 2 ).toVar();
-						// The jet rises and falls back; its top is a bead of water.
-						const height = age.mul( float( 1 ).sub( age ) ).mul( 4 * 0.05 ).mul( rainHash( key.add( event ) ).mul( 0.6 ).add( 0.6 ) );
-						const reach = height.mul( lift ).toVar();
-						const jet = exp( across.div( size.mul( 0.7 ) ).pow( 2 ).negate() )
-							.mul( smoothstep( size.negate(), 0, along ) ).mul( float( 1 ).sub( smoothstep( reach, reach.add( size ), along ) ) );
-						const crown = exp( d.sub( age.mul( 0.035 ).add( 0.008 ) ).div( size ).pow( 2 ).negate() ).mul( 0.6 );
-						const spark = exp( d.div( size ).pow( 2 ).negate() ).mul( float( 1 ).sub( smoothstep( 0, 0.35, age ) ) );
-						splash.addAssign( jet.add( crown ).add( spark ).mul( fade ) );
-
-					} );
-
-				}
-				result.addAssign( light.mul( splash ).mul( energy ).mul( upward ).mul( amount ).mul( 3.5 ) );
-
-			} );
 		} );
 		return result;
+
+	}
+
+	/** Follow the composite's tilt-shift focus (distance and sharp range in metres, the widest
+	 * blur in pixels, its strength), so drops blur as the scene around them does. */
+	setFocus( distance: number, range: number, radius: number, strength: number ): void {
+
+		const f = this.drops.focus;
+		f.distance.value = Math.max( distance, 1 );
+		f.range.value = range;
+		f.radius.value = radius;
+		f.strength.value = strength;
 
 	}
 
 	setQuality( count: number ): void {
 
 		if ( ! Number.isFinite( count ) || count < 0 ) throw new RangeError( 'Rain count must be finite and non-negative' );
-		this.mesh.count = Math.min( RAIN_MAX_DROPS, Math.floor( count ) );
+		this.drops.setCount( count );
 
 	}
 
-	update( camera: THREE.Camera, time: number, viewportHeight = 0 ): void {
+	/** Advance the drops to `time` for this camera and run their simulation. `displacement`
+	 * is the wind's integrated travel (m), which carries the drops. */
+	update( renderer: THREE.WebGPURenderer, camera: THREE.Camera, time: number, displacement: THREE.Vector2, viewportHeight = 0 ): void {
 
 		if ( ! Number.isFinite( time ) ) throw new RangeError( 'Rain time must be finite' );
 		this.uniforms.time.value = time;
-		this.eye.value.copy( camera.position );
 		const fov = ( camera as THREE.PerspectiveCamera ).fov;
 		if ( fov && viewportHeight > 0 ) this.pixelAngle.value = 2 * Math.tan( fov * Math.PI / 360 ) / viewportHeight;
-		// Keep the island within the bounded rain field when viewing it from the distant sea.
-		// Only tile selection snaps; particle positions never inherit continuous camera motion.
-		this.focus.value.set( THREE.MathUtils.clamp( camera.position.x * 0.35, - 32, 32 ),
-			THREE.MathUtils.clamp( camera.position.z * 0.35, - 32, 32 ) );
-		this.anchor.value.set( Math.round( this.focus.value.x / ANCHOR_STEP ) * ANCHOR_STEP,
-			Math.round( this.focus.value.y / ANCHOR_STEP ) * ANCHOR_STEP );
-		this.mesh.visible = this.mesh.count > 0 && this.uniforms.rain.value > 0.0001;
+		this.collision.waterLevel.value = this.uniforms.waterLevel.value;
+		const visible = this.drops.count > 0 && this.uniforms.rain.value > 0.0001;
+		this.group.visible = this.mesh.visible = visible;
+		if ( ! visible ) return;
+		this.drops.update( camera, time, displacement );
+		renderer.compute( this.drops.compute );
 
 	}
 
 	dispose(): void {
 
-		this.mesh.geometry.dispose();
-		this.material.dispose();
-		this.ground.dispose();
-		this.mesh.dispose();
+		this.drops.dispose();
+		this.collision.dispose();
 
 	}
 

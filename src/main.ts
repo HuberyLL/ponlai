@@ -270,10 +270,10 @@ const caustics = new Caustics( renderer, fft );
 rain = new Rain( { count: WEATHER_QUALITY[ skyQuality.value ].rainDrops } );
 // Drops scatter the same linear environment and key light as the island, without an emissive
 // floor. Using the GPU integral keeps their light in step with the displayed sky transition.
-rain.setLightNode( shared.skyIrradianceSource.mul( 0.65 ).add( shared.sunColor.mul( 0.045 ) ) );
+rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor );
 const pipeline = new Pipeline( renderer, sky, rain );
 rain.bindOpaqueDepth( pipeline.depthRT.texture );
-rainScene.add( rain.mesh );
+rainScene.add( rain.group );
 
 // ------------------------------------------------------------------ world
 
@@ -294,6 +294,8 @@ const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 scene.add( grass, foliage, flowers, rimFoliage );
+// Drops stop on the first surface they meet: rock, turf, blades, leaves.
+rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage ] );
 setStatus( 'Waking the villagers…' );
 // Local, unversioned assets (artifacts/ is git-ignored) served by the dev server while the
 // character art is still changing.
@@ -585,7 +587,7 @@ function tick(): void {
 	rain!.uniforms.rain.value = shared.rain.value;
 	rain!.uniforms.wind.value.copy( shared.wind.velocity.value );
 	rain!.uniforms.waterLevel.value = shared.waterLevel.value;
-	rain!.update( camera, simTime, renderer.domElement.height );
+	rain!.update( renderer, camera, simTime, shared.wind.displacement.value, renderer.domElement.height );
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		const state = sky.grade;
@@ -626,6 +628,7 @@ function tick(): void {
 	caustics.update( sky.keyDir );
 	characters.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
+	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * renderer.domElement.height / 900, S.dof );
 
 	pipeline.render( { scene, waterScene, rainScene: rain!.mesh.visible ? rainScene : undefined, camera, water: water!, sun, time: simTime } );
 	frame ++;
