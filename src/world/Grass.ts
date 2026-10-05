@@ -89,9 +89,12 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const origin = tuft.xyz;
 	// Keep every planting anchor. Narrower, slightly shorter shoots reveal the same soil
 	// pockets as the ground material, and a zero blend restores their original footprint.
-	// Standing water drowns the lower blades: shorter shoots show the puddle between them.
-	const drowned = float( 1 ).sub( puddleCover( origin.xz, shared.wetness ).mul( 0.55 ) );
-	const rooted = p.sub( p.sub( origin ).mul( vec3( 0.22, 0.06, 0.22 ) ).mul( soil ) ).sub( origin ).mul( drowned ).add( origin );
+	// Standing water drowns the lower blades: shorter shoots sink below the waterline (the ground
+	// hides them), leaving their tips standing in the puddle.
+	const pool = puddleCover( origin.xz, shared.wetness );
+	const drowned = float( 1 ).sub( pool.mul( 0.4 ) );
+	const rooted = p.sub( p.sub( origin ).mul( vec3( 0.22, 0.06, 0.22 ) ).mul( soil ) ).sub( origin ).mul( drowned ).add( origin )
+		.sub( vec3( 0, pool.mul( 0.1 ), 0 ) );
 	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
 	const rest = useRestPoseShadows( mat, rooted, rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) ) );

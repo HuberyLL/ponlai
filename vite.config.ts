@@ -13,6 +13,8 @@ const LICENCE_FILES: Record<string, string> = {
 	'licenses/LightningStrike.LICENSE.txt': 'src/weather/LightningStrike.LICENSE.txt',
 	'licenses/VolumetricCloudsCS1.LICENSE.txt': 'src/sky/VolumetricCloudsCS1.LICENSE.txt',
 	'licenses/threejs-conference.LICENSE.txt': 'src/weather/threejs-conference.LICENSE.txt',
+	'licenses/tidewater-materials.LICENSE.txt': 'src/materials/tidewater.LICENSE.txt',
+	'licenses/godot-rain-shader.LICENSE.txt': 'src/materials/godot-rain-shader.LICENSE.txt',
 };
 
 function licences(): Plugin {

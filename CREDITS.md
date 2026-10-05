@@ -11,8 +11,9 @@ packages, into `dist/licenses/`.
 
 - Upstream: https://github.com/dgreenheck/tidewater, by Daniel Greenheck
 - Copyright: (c) 2026 DRG Software Solutions LLC
-- Licence: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt) and
-  [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt) (the same text)
+- Licence: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt),
+  [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt) and
+  [`src/materials/tidewater.LICENSE.txt`](src/materials/tidewater.LICENSE.txt) (the same text)
 - From the three.js (TSL) edition, commit
   [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86):
   - `src/ocean/OceanFFT.ts`: the multi-cascade FFT ocean.
@@ -44,11 +45,15 @@ packages, into `dist/licenses/`.
     field of sparse seeds and tufts drawn out by line integral convolution), its anisotropic,
     footprint-filtered lookup and the veil's coverage, optical depth and ice-crystal lighting,
     from the cirrus in `Clouds.js`, ported from WGSL to TSL.
+  - `src/materials/Wetness.ts` (`runnels`): the rain-streak stains of `terrainRockSurface` in
+    `src/world/terrain/TerrainShading.js` (the variation stretched down the two vertical projection
+    planes, weighted by how squarely each faces the surface, and its 40 % darkening), ported from
+    WGSL to TSL and turned into the paths that rain water takes down the cliffs while they are wet.
   - The celestial clock, geometric lunar phase and the star and Milky Way rendering are original
     code; the star catalogue and Milky Way map they draw are listed under Assets. (The lunar disk's
     shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,
-    integrated wind, the rain veil and ripple gradients and wet-material response are
-    original Soomi code as well.
+    integrated wind and the rain veil and ripple gradients are original Soomi code as well; the
+    wet-material response implements the published techniques acknowledged below.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
 ### three-geospatial
@@ -78,6 +83,16 @@ packages, into `dist/licenses/`.
   Lommel-Seeliger phase law and the night-side mask. None of its moon textures are used.
 - Changes: ported to TSL; the phase law is taken at Earth's phase as seen from the moon, and the
   earthshine fades out close to conjunction.
+
+### Godot_rain_shader
+
+- Upstream: https://github.com/Lexpartizan/Godot_rain_shader, by Lexpartizan, commit
+  [`0d38727`](https://github.com/Lexpartizan/Godot_rain_shader/tree/0d38727cd29eb1323c4b68fe689413859c525b10)
+- Copyright: (c) 2020 Lexpartizan
+- Licence: MIT, see [`src/materials/godot-rain-shader.LICENSE.txt`](src/materials/godot-rain-shader.LICENSE.txt)
+- Files: `runnels` in `src/materials/Wetness.ts`: the falling streak gradient of `rain.shader` (the
+  streak pattern sampled again with a scrolling vertical offset and thresholded into moving slugs
+  of water), ported from Godot shading language to TSL. No textures from the repository are used.
 
 ### Hash without Sine
 
@@ -287,6 +302,17 @@ comment where it is used.
   front, for the rain's ring sprites on the sea.
 - Whitecaps: the horizontal Jacobian of the displaced surface as a breaking criterion, after
   J. Tessendorf, *Simulating Ocean Water* (above).
+- Wet surfaces: Sébastien Lagarde,
+  [*Water drop 3a – Physically based wet surfaces*](https://seblagarde.wordpress.com/2013/03/19/water-drop-3a-physically-based-wet-surfaces/)
+  and [*Water drop 3b – Physically based wet surfaces*](https://seblagarde.wordpress.com/2013/04/14/water-drop-3b-physically-based-wet-surfaces/)
+  (2013): porosity from roughness, darkening and gloss as the pores fill, a water film with water's
+  specular reflectance and a flattened normal, and puddles whose shallow edges keep the ground's
+  relief. The darkening uses the total-internal-reflection model of J. Lekner and M. C. Dorf,
+  *Why some things are darker when wet* (Applied Optics 27, 1988), as summarised there. Rain rings
+  on puddles: Lagarde,
+  [*Water drop 2b – Dynamic rain and its effects*](https://seblagarde.wordpress.com/2013/01/03/water-drop-2b-dynamic-rain-and-its-effects/)
+  (2013), its ripple texture's terms computed analytically per cell. In `src/materials/Wetness.ts`
+  and `src/weather/Puddles.ts`.
 - Depth-dependent water shadows: the volume-lighting integral described in
   [*Physically Based Rendering*, third edition](https://pbr-book.org/3ed-2018/Light_Transport_II_Volume_Rendering/Volumetric_Light_Transport),
   independently implemented in TSL with exponential depth strata, exact per-channel attenuation
