@@ -54,7 +54,9 @@ exposed.
 - `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
   sea floor, light under the water), wet surfaces after Lagarde (soaked pores, water film, runnels
   down the cliffs).
-- `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading.
+- `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading, and
+  the storm sea (`StormSea.ts`: whitecap foam integrated on a world grid around the view, the
+  procedural foam pattern, spray particles).
 - `src/sky/`: atmosphere LUTs, environment lighting, volumetric clouds after tidewater's port of
   the Three.js Sky Pro clouds (a cloud shell 4 - 9 km up shaped by a procedural weather map and the
   64^3 shape noise in `public/clouds/`, loaded by `src/materials/CloudNoise.ts`; traced in screen
@@ -91,8 +93,10 @@ exposed.
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Larger casters keep
   the map, which redraws whenever the key light moves.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
-  rough sea with whitecaps on folding crests. Weather only scales the wave cascades' amplitude;
-  it never rebuilds the wave spectrum.
+  rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
+  Weather only scales the wave cascades' amplitude; it never rebuilds the wave spectrum. Storm foam
+  and spray are lit by the scene (never self-lit), and a paused frame replays their history at
+  fixed steps, so it stays exactly repeatable.
 - One dominant key light (sun by day, moon by night) drives terrain, characters, water, caustics
   and every shadow map; sun/moon handoffs pass through zero direct light. The day cycle is
   authored, not astronomical. The sun and moon are drawn at twice their true size (equal to each

@@ -11,6 +11,7 @@ import { OceanFFT } from './ocean/OceanFFT.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
 import { Caustics } from './ocean/Caustics.ts';
 import { Water } from './ocean/Water.ts';
+import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
 import { generateWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
@@ -311,12 +312,18 @@ const fisherman = await loadVillager( umc( 'Farmer' ), [
 const characters = new Villagers( fisherman, [ [ - 5.5, 1.5 ], [ - 1.5, 3.3 ], [ 3, 2.6 ], [ 5.6, 0 ], [ 3.8, - 2.8 ], [ - 0.5, - 2.7 ], [ - 4.5, - 1.8 ] ], islandSurfaceHeight, characterShadow );
 scene.add( characters.group );
 
+// Storm whitecap foam with a memory, and the spray torn off breaking crests (idle in calm weather).
+const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
+	sunDir: shared.sunDir, sunColor: shared.sunColor,
+	sky: shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).sqrt() ),
+	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: pipeline.depthRT.texture,
+} );
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun,
+	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun, storm: stormSea,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 applySkyFill();
-waterScene.add( water.mesh );
+waterScene.add( water.mesh, stormSea.spray.mesh );
 
 console.info( 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
@@ -627,6 +634,7 @@ function tick(): void {
 	if ( shadowElapsed >= WEATHER_QUALITY[ skyQuality.value ].underwaterShadowInterval && refractedSun.update() ) shadowElapsed = 0;
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
+	stormSea.update( simTime, weather.state.storm, camera );
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
 	caustics.update( sky.keyDir );
@@ -686,4 +694,4 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };
