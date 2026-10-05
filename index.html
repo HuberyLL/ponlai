@@ -17,10 +17,29 @@
 		}
 		#loading.done { opacity: 0; pointer-events: none; }
 		.lil-gui.root { --width: 280px; }
+		#camera-hint {
+			position: fixed; left: max( 16px, env( safe-area-inset-left ) ); bottom: max( 16px, env( safe-area-inset-bottom ) );
+			max-width: calc( 100vw - 64px ); padding: 10px 14px; border-radius: 8px;
+			background: rgb( 9 24 29 / 76% ); color: #d9e7e3; font: 12px/1.7 ui-sans-serif, system-ui, "PingFang SC", sans-serif;
+			z-index: 2; user-select: none;
+		}
+		#camera-hint[hidden] { display: none; }
+		#camera-hint strong { color: #f4deb0; }
+		#camera-hint button {
+			font: inherit; color: #f4deb0; background: transparent; border: 1px solid rgb( 244 222 176 / 28% );
+			border-radius: 4px; margin: 4px 6px 0 0; padding: 2px 8px; cursor: pointer;
+		}
+		#camera-hint button:hover, #camera-hint button:focus-visible { background: rgb( 244 222 176 / 16% ); }
 	</style>
 </head>
 <body>
 	<div id="app"></div>
+	<div id="camera-hint">
+		<strong id="camera-mode">自由镜头</strong> · <span id="camera-input">鼠标拖动转向 · WASD 移动 · Q/E 下降/上升 · Shift 加速 · 滚轮调速</span><br />
+		R 回岛 · 1/2/3 岛屿/海平线/天空 · N 午夜 · B 白天 · Space 暂停 · H 参数 · / 隐藏提示<br />
+		<button id="view-sky" type="button">看天空</button><button id="view-island" type="button">回到岛屿</button>
+		<button id="view-day" type="button">白天</button><button id="view-night" type="button">午夜</button>
+	</div>
 	<div id="loading"><span>Loading…</span></div>
 	<script type="module" src="/src/main.ts"></script>
 </body>

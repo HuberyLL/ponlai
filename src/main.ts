@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, positionWorld } from 'three/tsl';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
+import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WEATHER_QUALITY, type WeatherName, type WeatherQuality } from './sky/Weather.ts';
@@ -82,6 +83,9 @@ controls.minDistance = 22;
 controls.maxDistance = 190;
 controls.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
 controls.update();
+const initialCameraPosition = camera.position.clone();
+const initialCameraQuaternion = camera.quaternion.clone();
+const freeControls = new FreeCameraControls( camera, renderer.domElement );
 
 // ------------------------------------------------------------------ sky, light, water optics
 
@@ -311,6 +315,93 @@ console.info( 'world generated', data.timings, 'triangles', world.triangles, 'in
 const gui = new GUI( { title: 'Soomi · lighting & water' } );
 if ( ! params.has( 'gui' ) ) gui.hide();
 const S = pipeline.settings;
+type CameraView = 'island' | 'horizon' | 'sky';
+const cameraSettings = { mode: params.get( 'camera' ) === 'orbit' ? 'orbit' : 'free' };
+const reviewView = { camera: 'island' as CameraView };
+let orbitDof = S.dof;
+const cameraHint = document.getElementById( 'camera-hint' );
+const cameraModeLabel = document.getElementById( 'camera-mode' );
+const cameraInputLabel = document.getElementById( 'camera-input' );
+const viewDirection = new THREE.Vector3();
+
+function settleOrbit(): void {
+
+	// Drain residual orbit damping before changing ownership or jumping to a preset.
+	const damping = controls.enableDamping;
+	controls.enableDamping = false;
+	controls.update();
+	controls.enableDamping = damping;
+
+}
+
+function setCameraMode( mode: string ): void {
+
+	if ( controls.enabled ) settleOrbit();
+	if ( mode === 'free' && ! freeControls.enabled ) orbitDof = S.dof;
+	if ( mode === 'orbit' && freeControls.enabled ) {
+
+		camera.getWorldDirection( viewDirection );
+		controls.target.copy( camera.position ).addScaledVector( viewDirection, 58 );
+
+	}
+	cameraSettings.mode = mode;
+	controls.enabled = mode === 'orbit';
+	freeControls.enabled = mode === 'free';
+	// Sharp sky details are essential when inspecting stars and the lunar disk.
+	S.dof = freeControls.enabled ? 0 : orbitDof;
+	controls.maxPolarAngle = Math.PI;
+	if ( controls.enabled ) controls.update();
+	if ( cameraModeLabel ) cameraModeLabel.textContent = freeControls.enabled ? '自由镜头' : '环绕镜头';
+	if ( cameraInputLabel ) cameraInputLabel.textContent = freeControls.enabled
+		? '鼠标拖动转向 · WASD 移动 · Q/E 下降/上升 · Shift 加速 · 滚轮调速'
+		: '鼠标拖动环绕 · 滚轮缩放 · H 参数中可切换自由镜头';
+	renderer.domElement.style.cursor = freeControls.enabled ? 'grab' : '';
+
+}
+
+function setCameraView( view: CameraView ): void {
+
+	freeControls.clearInput();
+	settleOrbit();
+	reviewView.camera = view;
+	if ( view === 'sky' ) {
+
+		camera.position.set( 0, 15, 0 );
+		viewDirection.copy( sky.sunDir.y > 0 ? sky.sunDir : sky.moonDir );
+		// At new moon both bodies can be below the horizon; keep the review aimed at the sky.
+		if ( viewDirection.y <= 0 ) viewDirection.set( 0.6, 0.72, 0.35 ).normalize();
+		controls.target.copy( camera.position ).addScaledVector( viewDirection, 100 );
+		camera.fov = 65;
+		controls.maxPolarAngle = Math.PI;
+		camera.lookAt( controls.target );
+
+	} else if ( view === 'horizon' ) {
+
+		controls.target.copy( target );
+		camera.position.setFromSphericalCoords( 110, THREE.MathUtils.degToRad( 82 ), THREE.MathUtils.degToRad( 125 ) ).add( target );
+		camera.fov = 55;
+		camera.lookAt( controls.target );
+
+	} else {
+
+		controls.target.copy( target );
+		camera.position.copy( initialCameraPosition );
+		camera.quaternion.copy( initialCameraQuaternion );
+		camera.fov = 27;
+
+	}
+	camera.updateProjectionMatrix();
+	if ( controls.enabled ) controls.update();
+
+}
+
+setCameraMode( cameraSettings.mode );
+const cameraF = gui.addFolder( 'Camera' );
+cameraF.add( cameraSettings, 'mode', [ 'free', 'orbit' ] ).name( 'camera mode' ).listen().onChange( setCameraMode );
+cameraF.add( reviewView, 'camera', [ 'island', 'horizon', 'sky' ] ).name( 'view' ).listen().onChange( setCameraView );
+cameraF.add( freeControls, 'speed', 1, 160, 1 ).name( 'flight speed' ).listen();
+cameraF.add( camera, 'fov', 15, 100, 1 ).name( 'field of view' ).listen().onChange( () => camera.updateProjectionMatrix() );
+cameraF.add( { reset: () => setCameraView( 'island' ) }, 'reset' ).name( 'return to island (R)' );
 const environmentLook = { exposure: true };
 const W = water.uniforms;
 gui.addFolder( 'Performance' ).add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
@@ -325,26 +416,6 @@ groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' )
 groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' ).onChange( invalidateSunShadow );
 const sunF = gui.addFolder( 'Sun' );
 const cloudF = gui.addFolder( 'Sky & clouds' );
-const reviewView = { camera: 'island' };
-cloudF.add( reviewView, 'camera', [ 'island', 'horizon', 'sky' ] ).name( 'review camera' ).onChange( ( view: string ) => {
-
-	controls.maxPolarAngle = view === 'sky' ? 2.8 : THREE.MathUtils.degToRad( 82 );
-	if ( view === 'sky' ) {
-
-		controls.target.set( 0, 65, 0 );
-		camera.position.set( - 80, 20, 55 );
-
-	} else {
-
-		controls.target.copy( target );
-		camera.position.setFromSphericalCoords( view === 'horizon' ? 110 : 58,
-			THREE.MathUtils.degToRad( view === 'horizon' ? 82 : 50 ),
-			THREE.MathUtils.degToRad( view === 'horizon' ? 125 : 318 ) ).add( target );
-
-	}
-	controls.update();
-
-} );
 cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover override' ).onFinishChange( ( value: number ) => { cloudOverride = value; void refreshEnvironment(); } );
 cloudF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'sky quality' ).onFinishChange( () => { applySkyQuality(); void refreshEnvironment(); } );
 const weatherF = gui.addFolder( 'Weather' );
@@ -357,8 +428,8 @@ const timeF = gui.addFolder( 'Time & moon' );
 const timeView = { preset: requestedPreset ?? 'golden-hour' };
 timeF.add( dayCycle, 'hour', 0, 24, 0.01 ).name( 'hour' ).listen().onFinishChange( refreshEnvironment );
 timeF.add( dayCycle, 'dayLength', 30, 3600, 1 ).name( 'seconds per day' );
-timeF.add( dayCycle, 'paused' ).name( 'pause clock' );
-timeF.add( timeView, 'preset', Object.keys( DAY_PRESETS ) ).name( 'time preset' ).onChange( ( preset: DayPreset ) => { void setPreset( preset ); } );
+timeF.add( dayCycle, 'paused' ).name( 'pause clock' ).listen();
+timeF.add( timeView, 'preset', Object.keys( DAY_PRESETS ) ).name( 'time preset' ).listen().onChange( ( preset: DayPreset ) => { void setPreset( preset ); } );
 timeF.add( dayCycle, 'moonPhase', 0, 1, 0.01 ).name( 'moon phase' ).onFinishChange( refreshEnvironment );
 timeF.add( dayCycle, 'advanceMoonPhase' ).name( 'lunar cycle' );
 timeF.add( environmentLook, 'exposure' ).name( 'adapt exposure' );
@@ -414,11 +485,40 @@ postF.add( S, 'bloomThreshold', 0, 5, 0.01 );
 postF.add( S, 'bloomMaxLum', 0.5, 50, 0.1 ).name( 'bloom clamp' );
 postF.add( S, 'glowStrength', 0, 1, 0.01 ).name( 'glow' );
 postF.add( S, 'glowThreshold', 0, 3, 0.01 ).name( 'glow threshold' );
-postF.add( S, 'dof', 0, 1, 0.01 ).name( 'tilt-shift' );
+postF.add( S, 'dof', 0, 1, 0.01 ).name( 'tilt-shift' ).listen();
 postF.add( S, 'dofRange', 0, 20, 0.1 );
 postF.add( S, 'dofMaxRadius', 0, 20, 0.1 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
 postF.add( S, 'grain', 0, 0.05, 0.001 );
+
+function inspectTime( preset: DayPreset ): void {
+
+	dayCycle.paused = true;
+	timeView.preset = preset;
+	void setPreset( preset ).then( () => {
+
+		if ( reviewView.camera === 'sky' ) setCameraView( 'sky' );
+
+	} ).catch( ( error: unknown ) => console.error( error ) );
+
+}
+
+for ( const [ id, action ] of [
+	[ 'view-sky', () => setCameraView( 'sky' ) ],
+	[ 'view-island', () => setCameraView( 'island' ) ],
+	[ 'view-day', () => inspectTime( 'noon' ) ],
+	[ 'view-night', () => inspectTime( 'midnight' ) ],
+] as const ) {
+
+	document.getElementById( id )?.addEventListener( 'click', ( event ) => {
+
+		action();
+		// Preset buttons must not leave keyboard navigation trapped in a focused control.
+		( event.currentTarget as HTMLElement ).blur();
+
+	} );
+
+}
 
 // ------------------------------------------------------------------ loop
 
@@ -442,8 +542,15 @@ clock.connect( document );
 let frame = 0;
 addEventListener( 'keydown', ( e ) => {
 
-	if ( e.code === 'Space' ) { paused = ! paused; dayCycle.paused = paused; }
+	if ( e.repeat || e.ctrlKey || e.metaKey || e.altKey || isCameraInputTarget( e.target ) ) return;
+	if ( e.code === 'Space' ) { e.preventDefault(); paused = ! paused; dayCycle.paused = paused; }
 	if ( e.code === 'KeyH' ) gui.show( gui._hidden );
+	if ( e.code === 'KeyR' || e.code === 'Digit1' ) setCameraView( 'island' );
+	if ( e.code === 'Digit2' ) setCameraView( 'horizon' );
+	if ( e.code === 'Digit3' ) setCameraView( 'sky' );
+	if ( e.code === 'KeyN' ) inspectTime( 'midnight' );
+	if ( e.code === 'KeyB' ) inspectTime( 'noon' );
+	if ( e.code === 'Slash' && cameraHint ) cameraHint.hidden = ! cameraHint.hidden;
 
 } );
 
@@ -463,7 +570,8 @@ function tick(): void {
 	if ( ! paused ) simTime += dt;
 	dayCycle.advance( rawDt );
 	weather.update( paused ? 0 : rawDt );
-	controls.update();
+	if ( freeControls.enabled ) freeControls.update( rawDt );
+	else controls.update();
 
 	renderer.info.reset();
 	sky.advance( environmentDt );
@@ -553,6 +661,7 @@ function diagnostics(): void {
 		rain: + sky.weather.rain.toFixed( 3 ),
 		wetness: + shared.wetness.value.toFixed( 3 ),
 		windSpeed: + wind.speed.toFixed( 3 ),
+		cameraMode: cameraSettings.mode,
 	};
 
 }
@@ -568,4 +677,4 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };
