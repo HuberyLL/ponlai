@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { SCENE_RADIANCE_SCALE, SUN_PROJECTED_SOLID_ANGLE } from '../src/lighting/Radiometry.ts';
 
-assert.ok( SUN_PROJECTED_SOLID_ANGLE > 0 );
+assert.ok( SUN_PROJECTED_SOLID_ANGLE.every( ( omega ) => omega > 0 ) );
 const errors = [];
 const browser = await chromium.launch( {
 	headless: true,

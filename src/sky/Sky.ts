@@ -12,7 +12,7 @@ import {
 	If,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
-import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE } from '../lighting/Radiometry.ts';
+import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE, SUN_LIMB_EXPONENT } from '../lighting/Radiometry.ts';
 import { Clouds, EVOLVE_PERIOD } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
@@ -280,11 +280,13 @@ export class Sky {
 			const d = normalize( positionWorld.sub( cameraPosition ) ).toVar();
 			const r = acos( clamp( dot( d, this.displaySunDir ), - 1, 1 ) ).div( SUN_DISPLAY_RADIUS ).toVar();
 			const mask = float( 1 ).sub( smoothstep( 0.9, 1.0, r ) );
-			const limb = sqrt( max( float( 1 ).sub( r.mul( r ) ), 0 ) ).mul( 0.6 ).add( 0.4 );
-			// The integral of the visible disk is the key light's irradiance. A shared scene unit
-			// scale keeps the normalised disk finite in fp16 without dimming it independently.
+			// Limb darkening per channel (see SUN_LIMB_EXPONENT): a redder, darker rim.
+			const mu = max( float( 1 ).sub( r.mul( r ) ), 1e-6 ).log2().mul( 0.5 ).toVar();
+			const limb = vec3( mu.mul( SUN_LIMB_EXPONENT[ 0 ] ), mu.mul( SUN_LIMB_EXPONENT[ 1 ] ), mu.mul( SUN_LIMB_EXPONENT[ 2 ] ) ).exp2();
+			// The integral of the visible disk is the key light's irradiance, channel by channel. A
+			// shared scene unit scale keeps the normalised disk finite in fp16 without dimming it.
 			const disk = this.atmosphere.transmittanceToSpace( d ).mul( this.displaySolarIlluminance )
-				.mul( mask ).mul( limb ).div( SUN_DISPLAY_SOLID_ANGLE ).mul( smoothstep( 0, 0.001, d.y ) );
+				.mul( mask ).mul( limb ).div( vec3( ...SUN_DISPLAY_SOLID_ANGLE ) ).mul( smoothstep( 0, 0.001, d.y ) );
 			// Above the horizon the clear sky and the clouds are both live. Below, the baked distant-sea reflection continues the waves.
 			const lower = this.samplePanorama( d, float( 0 ) ).toVar();
 			const cloud = this.clouds.sampleView( d ).toVar();
