@@ -58,7 +58,9 @@ exposed.
   raining clouds, the day cycle (sun and moon), stars, Milky Way and moon, rainbows, weather
   presets, their blending and the auto-weather chain.
 - `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
-  distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
+  distant air (two exponential height layers after tidewater's `AirHaze`, lit by the horizon sky
+  and, near the camera, the key light through a phase function) and sea fog (the marine layer
+  thickened in drifting banks of varying height, thinner over the island, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
   glare, bloom, tilt-shift, grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation

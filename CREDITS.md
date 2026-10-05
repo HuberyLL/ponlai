@@ -11,8 +11,9 @@ packages, into `dist/licenses/`.
 
 - Upstream: https://github.com/dgreenheck/tidewater, by Daniel Greenheck
 - Copyright: (c) 2026 DRG Software Solutions LLC
-- Licence: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt) and
-  [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt) (the same text)
+- Licence: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt),
+  [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt) and
+  [`src/weather/tidewater.LICENSE.txt`](src/weather/tidewater.LICENSE.txt) (the same text)
 - From the three.js (TSL) edition, commit
   [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86):
   - `src/ocean/OceanFFT.ts`: the multi-cascade FFT ocean.
@@ -44,6 +45,14 @@ packages, into `dist/licenses/`.
     field of sparse seeds and tufts drawn out by line integral convolution), its anisotropic,
     footprint-filtered lookup and the veil's coverage, optical depth and ice-crystal lighting,
     from the cirrus in `Clouds.js`, ported from WGSL to TSL.
+  - `src/weather/AerialPerspective.ts`: the distant air from `src/post/AirHaze.js`, ported from WGSL
+    to TSL: two exponential height layers (a thin marine layer and a deeper aerosol layer, in its
+    proportions) with their optical depth integrated analytically along the view ray, the sky just
+    above the horizon in the view direction as the haze's light, and the key light's share of it
+    scattered through its Cornette-Shanks phase function near the camera. Its volumetric and
+    screen-space sun shafts were not ported (`src/post/LightShafts.ts` stays). The protected
+    foreground, the sea fog banks (marched, with bank-dependent heights and a clearing over the
+    island), their lighting and the morning mist are this project's.
   - The celestial clock, geometric lunar phase and filtered procedural stars are original code;
     they introduce no third-party imagery or additional asset licence. Weather blending,
     integrated wind, analytic rain streaks/ripple gradients and wet-material response are
