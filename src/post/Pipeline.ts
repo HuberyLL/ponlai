@@ -148,8 +148,8 @@ export class Pipeline {
 				z.assign( max( z, w.z.div( w.w ) ) );
 
 			} );
-			const dist = float( 1e4 ).toVar();
-			If( z.greaterThan( - 1e4 ), () => {
+			const dist = float( 1e5 ).toVar();
+			If( z.greaterThan( - 9e4 ), () => {
 
 				const v = u.projInv.mul( vec4( ndc, 1, 1 ) ).toVar();
 				const dir = v.xyz.div( v.w ).toVar();

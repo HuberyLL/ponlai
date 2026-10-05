@@ -28,7 +28,9 @@ export class AerialPerspective {
 			const viewFar = this.projectionInverse.mul( vec4( ndc, 1 ) ).toVar();
 			const ray = viewFar.xyz.div( viewFar.w ).toVar();
 			const direction = normalize( this.cameraWorld.mul( vec4( normalize( ray ), 0 ) ).xyz ).toVar();
-			const air = sky.sampleBackground( normalize( vec3( direction.x, 0.035, direction.z ) ), float( 3 ) ).toVar();
+			// Distant air takes the sky's colour just above the horizon, so the far sea fades into
+			// the horizon itself rather than stopping short of it in a darker band.
+			const air = sky.sampleBackground( normalize( vec3( direction.x, 0.008, direction.z ) ), float( 2 ) ).toVar();
 			If( dw.lessThan( 1 ), () => {
 
 				const water = this.projectionInverse.mul( vec4( ndc.xy, dw, 1 ) ).toVar();
@@ -36,7 +38,8 @@ export class AerialPerspective {
 
 			} );
 			const amount = float( 0 ).toVar();
-			If( z.greaterThan( - 1e4 ), () => {
+			// The resolved sky sits at -1e5; the sea's skirt reaches tens of kilometres.
+			If( z.greaterThan( - 9e4 ), () => {
 
 				const distance = length( ray.mul( z.div( ray.z ) ) ).toVar();
 				amount.assign( float( 1 ).sub( exp( max( distance.sub( this.clearDistance ), 0 ).mul( this.haze ).negate() ) ) );

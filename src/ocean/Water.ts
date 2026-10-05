@@ -107,6 +107,9 @@ const sparkles = Fn( ( [ p, t ]: [ V2, F ] ) => {
 
 } ).setLayout( { name: 'sparkles', type: 'float', inputs: [ { name: 'p', type: 'vec2' }, { name: 't', type: 'float' } ] } );
 
+// The sea continues to this distance (metres), well past the horizon for any review camera.
+const SKIRT_RADIUS = 40000;
+
 // view-space direction through a screen point (on the far plane; scaled by the caller)
 const viewRay = Fn( ( [ q, projInv ]: [ V2, M4 ] ) => {
 
@@ -174,19 +177,52 @@ export class Water {
 
 		}
 
-		const idx = new Uint32Array( n * n * 6 );
-		for ( let j = 0, m = 0; j < n; j ++ ) for ( let i = 0; i < n; i ++ ) {
+		const idx: number[] = [];
+		for ( let j = 0; j < n; j ++ ) for ( let i = 0; i < n; i ++ ) {
 
 			const a = j * ( n + 1 ) + i;
-			idx[ m ++ ] = a; idx[ m ++ ] = a + n + 1; idx[ m ++ ] = a + 1;
-			idx[ m ++ ] = a + 1; idx[ m ++ ] = a + n + 1; idx[ m ++ ] = a + n + 2;
+			idx.push( a, a + n + 1, a + 1, a + 1, a + n + 1, a + n + 2 );
+
+		}
+
+		// A skirt continues the grid's outer edge to the horizon in widening rows. Without it the
+		// sea stopped a couple of degrees below the horizon and a band of the sky's lower panorama
+		// showed between them. Its inner row is the grid's boundary, so the seam is exact.
+		const ring: number[] = [];
+		for ( let i = 0; i < n; i ++ ) ring.push( i ); // z = -size / 2
+		for ( let j = 0; j < n; j ++ ) ring.push( j * ( n + 1 ) + n ); // x = +size / 2
+		for ( let i = n; i > 0; i -- ) ring.push( n * ( n + 1 ) + i ); // z = +size / 2
+		for ( let j = n; j > 0; j -- ) ring.push( j * ( n + 1 ) ); // x = -size / 2
+		const rows = 28, reach = SKIRT_RADIUS / ( size / 2 );
+		const grid = pos.length / 3, skirt: number[] = [];
+		for ( let r = 1; r <= rows; r ++ ) {
+
+			const scale = Math.pow( reach, r / rows );
+			for ( const v of ring ) skirt.push( pos[ v * 3 ] * scale, 0, pos[ v * 3 + 2 ] * scale );
+
+		}
+		const vertex = ( r: number, k: number ) => r === 0 ? ring[ k % ring.length ] : grid + ( r - 1 ) * ring.length + k % ring.length;
+		const all = new Float32Array( pos.length + skirt.length );
+		all.set( pos );
+		all.set( skirt, pos.length );
+		for ( let r = 0; r < rows; r ++ ) for ( let k = 0; k < ring.length; k ++ ) {
+
+			const a = vertex( r, k ), b = vertex( r, k + 1 ), c = vertex( r + 1, k ), d = vertex( r + 1, k + 1 );
+			for ( const [ p, q, w ] of [ [ a, c, b ], [ b, c, d ] ] ) {
+
+				// Keep every triangle facing up, whichever way the boundary loop runs.
+				const ux = all[ q * 3 ] - all[ p * 3 ], uz = all[ q * 3 + 2 ] - all[ p * 3 + 2 ];
+				const vx = all[ w * 3 ] - all[ p * 3 ], vz = all[ w * 3 + 2 ] - all[ p * 3 + 2 ];
+				if ( uz * vx - ux * vz > 0 ) idx.push( p, q, w ); else idx.push( p, w, q );
+
+			}
 
 		}
 
 		const geo = new THREE.BufferGeometry();
-		geo.setAttribute( 'position', new THREE.BufferAttribute( pos, 3 ) );
-		geo.setIndex( new THREE.BufferAttribute( idx, 1 ) );
-		geo.boundingSphere = new THREE.Sphere( new THREE.Vector3(), size );
+		geo.setAttribute( 'position', new THREE.BufferAttribute( all, 3 ) );
+		geo.setIndex( new THREE.BufferAttribute( new Uint32Array( idx ), 1 ) );
+		geo.boundingSphere = new THREE.Sphere( new THREE.Vector3(), SKIRT_RADIUS * Math.SQRT2 );
 
 		const u = this.uniforms;
 		const sizes = uniform( new THREE.Vector3( ...fft.sizes ) );
@@ -209,7 +245,9 @@ export class Water {
 		const largeDisp = texture( disp[ 0 ], xz.div( sizes.x ) ).level( float( 0 ) ).xyz;
 		const mediumDisp = texture( disp[ 1 ], xz.div( sizes.y ) ).level( float( 0 ) ).xyz;
 		const fineDisp = texture( disp[ 2 ], xz.div( sizes.z ) ).level( float( 0 ) ).xyz;
-		const d = largeDisp.mul( weights.x ).add( mediumDisp.mul( weights.y ) ).add( fineDisp.mul( weights.z ) );
+		// The skirt's sparse rows cannot carry waves; there the shading's slopes alone describe them.
+		const geometric = float( 1 ).sub( smoothstep( 600, 1500, far ) );
+		const d = largeDisp.mul( weights.x ).add( mediumDisp.mul( weights.y ) ).add( fineDisp.mul( weights.z ) ).mul( geometric );
 		const material = new THREE.NodeMaterial();
 		material.positionNode = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y )
 			.add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) );
@@ -436,9 +474,9 @@ export class Water {
 			const cloudTransmission = sky.cloudVisibility( wp ).toVar();
 			const sunLight = shared.sunColor.mul( shadow ).mul( cloudTransmission ).toVar();
 
-			// ---- what lies straight behind this pixel (linear depth: view-space z, < -1e4 = sky)
+			// ---- what lies straight behind this pixel (linear depth: view-space z, < -9e4 = sky)
 			const z0 = sceneViewZ( screenUV ).toVar();
-			const skyBehind = z0.lessThan( - 1e4 );
+			const skyBehind = z0.lessThan( - 9e4 );
 			const ray0 = viewRay( screenUV, cameraProjectionMatrixInverse ).toVar();
 			const sv0 = ray0.mul( z0.div( ray0.z ) ).toVar();
 			const sw0 = cameraWorldMatrix.mul( vec4( sv0, 1 ) ).xyz.toVar();
