@@ -60,7 +60,7 @@ exposed.
 - `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
   distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
-  glare, bloom, tilt-shift, grade).
+  glare, bloom, tilt-shift, night vision (the rods' Purkinje shift, `Purkinje.ts`), grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -90,7 +90,8 @@ exposed.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
   sky reads as a low backdrop and turns stars into bokeh discs. Stars are points with a natural
   spread of brightness, kept below white except the brightest few; only those near the horizon
-  scintillate.
+  scintillate. Night vision follows the eye's adaptation set by the day cycle and scales with each
+  pixel's own light: subtle, black stays black, never a uniform tint.
 - One cloud field feeds the visible sky, water reflections, environment lighting and cloud
   shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
   Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer
