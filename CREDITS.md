@@ -18,12 +18,20 @@ packages, into `dist/licenses/`.
   - `src/ocean/OceanFFT.ts`: the multi-cascade FFT ocean.
   - `src/ocean/Water.ts`: the water shading (`WaterMaterial.js`).
   - `src/ocean/Caustics.ts`: the rasterised caustics.
+  - `src/ocean/FoamPattern.ts`: the procedural foam pattern from `FoamTexture.js` (rafts, holes,
+    bubbles, mottling and streaks, generated on the GPU; no image asset).
+  - `src/ocean/Spray.ts`: the GPU spray from `src/fx/Spray.js` (drops, ligaments, dense spray and
+    mist, their integration and lighting, the puff and drop-cluster textures), without its boat,
+    terrain and surf-foam couplings; emitters own fixed slot groups instead of an atomic ring.
 - From the native WebGPU edition, commit
   [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef):
   - `src/ocean/OceanSpectrum.ts`: the JONSWAP / TMA spectrum, directional spreading and dispersion
     helpers from `OceanFFT.js`, ported to TypeScript; `OceanFFT.ts` combines the wind sea and swell
     spectra they describe.
-  - `src/ocean/GlitterMask.ts`: the density channel of the lace pattern in `SurfFoam.js`.
+  - `src/ocean/StormSea.ts`: the persistent whitecap foam of `OceanFFT.js` (build-up where the
+    Jacobian folds, exponential decay), here on one world-space grid of the summed cascades; and
+    in `src/ocean/Water.ts` the whitecap compositing of `WaterSurface.js` (a foam pattern
+    thresholded by the coverage, at a distance the coverage itself).
   - `src/ocean/ShoreWaves.ts`, `src/ocean/ShoreWaveField.ts`: began as an adaptation of
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
