@@ -47,7 +47,7 @@ packages, into `dist/licenses/`.
   - The celestial clock, geometric lunar phase and the star and Milky Way rendering are original
     code; the star catalogue and Milky Way map they draw are listed under Assets. (The lunar disk's
     shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,
-    integrated wind, analytic rain streaks/ripple gradients and wet-material response are
+    integrated wind, the rain veil and ripple gradients and wet-material response are
     original Soomi code as well.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
@@ -137,6 +137,26 @@ packages, into `dist/licenses/`.
   instead of a random draw per frame; channels get sharp return strokes after their leader; the
   light is kept out of the view's accumulated history; reflections evaluate it where the ray meets
   the deck.
+
+### threejs-conference collision rain
+
+- Upstream: https://github.com/ektogamat/threejs-conference, by Anderson Mancini and Sunag
+- Copyright: (c) 2026 Anderson Mancini and Sunag
+- Licence: MIT, see [`src/weather/threejs-conference.LICENSE.txt`](src/weather/threejs-conference.LICENSE.txt)
+- Files: `src/weather/RainCollision.ts` and `src/weather/RainDrops.ts`, after
+  `src/world/weather/createCollisionHeight.js`, `createCollisionRain.js` and
+  `docs/techniques/collision-rain.md`: a top-down orthographic pass that draws world height into a
+  nearest-filtered half-float target, rain drops in a camera-centred toroidal volume moved by a
+  compute pass that tests them against that map, and instanced billboards for the streaks and
+  splashes. The same pattern is in the three.js example `webgpu_compute_particles_rain.html`
+  (r186, MIT, three.js authors; the `three` package's licence ships with the build).
+- Changes: rewritten in TypeScript for this scene. The map is drawn once from the island's own
+  meshes with each material's rest pose and alpha test; drops are a stateless function of the
+  clock, the wind's integrated travel and the camera (no per-frame random respawn), in nested
+  volumes, searched along their wind-leaning path for the first surface; splashes (a crown with
+  droplets on land, rings on the sea) are procedural. Nothing from the project's `public/`
+  folder or its CC BY-NC-SA derived shaders (`rainRipples.js`, `surfaceRain.js`, `rainGlass.js`)
+  is used.
 
 ## Assets
 
@@ -261,6 +281,10 @@ comment where it is used.
   [*Wavelength dependency of the Solar limb darkening*](https://adsabs.harvard.edu/abs/1998A%26A...333..338H)
   (A&A 333, 1998), evaluated at the Rec.709 primaries; per-RGB limb darkening as in
   [a-starry-sky](https://github.com/Dante83/a-starry-sky) by David Evans (MIT), whose code is not used.
+- Raindrop rings: Sébastien Lagarde,
+  [*Water drop 2b – Dynamic rain and its effects*](https://seblagarde.wordpress.com/2013/01/03/water-drop-2b-dynamic-rain-and-its-effects/)
+  (2013): the ring profile sin( clamp( 9 ( t - r ), 0, 3 ) pi ), a wave and a half behind the
+  front, for the rain's ring sprites on the sea.
 - Whitecaps: the horizontal Jacobian of the displaced surface as a breaking criterion, after
   J. Tessendorf, *Simulating Ocean Water* (above).
 - Depth-dependent water shadows: the volume-lighting integral described in

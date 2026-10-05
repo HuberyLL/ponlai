@@ -178,7 +178,7 @@ try {
 			near( linked.wetness, state.weather.wetness, 1e-6, `${ label }: material wetness binding` );
 			same( linked.rain.wind, linked.wind.velocity, `${ label }: rain wind` );
 			same( linked.fftGain, linked.wind.oceanGain, `${ label }: ocean wind response` );
-			assert.ok( linked.rain.count >= 0 && linked.rain.count <= 640, `${ label }: bounded rain draw` );
+			assert.ok( linked.rain.count >= 0 && linked.rain.count <= 49152, `${ label }: bounded rain draw` );
 			assert.equal( linked.rain.visible, linked.rain.amount > 0.0001 && linked.rain.count > 0, `${ label }: skip idle rain` );
 		}
 	};

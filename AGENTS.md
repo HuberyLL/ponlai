@@ -68,8 +68,9 @@ exposed.
   the auto-weather chain.
 - `src/weather/`: wind, lightning (branching channels after three.js's former LightningStrike and
   point sources lighting the clouds' march from inside, after VolumetricCloudsCS1), puddles, rain
-  (a streak veil in the post pass, world-space streaks, ripples), distant air (aerial perspective)
-  and sea fog (a low layer drifting in banks, plus morning mist).
+  (GPU drops in nested camera volumes, stopped by a top-down collision height map of the island and
+  splashing where they land; a distant streak veil in the post pass; analytic ripples), distant air
+  (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
   glare, bloom, tilt-shift, night vision (the rods' Purkinje shift, `Purkinje.ts`), grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
@@ -118,7 +119,10 @@ exposed.
   (`sky.lightning.force` stages one for review). Its light inside the clouds stays out of the
   view's accumulated history, the bake and the panorama; channel, cloud glow and the island's
   flash share one intensity per strike.
-- Rain is light streaks plus analytic ripples on the water normal. Wetness darkens exposed rock
+- Rain is light streaks plus analytic ripples on the water normal. Drops are a stateless function
+  of the clock, the wind's integrated travel and the camera (a paused frame repeats exactly); they
+  stop on the first surface in the collision map and splash there (crown and droplets on land,
+  rings on the sea). Out-of-focus drops follow the tilt-shift blur. Wetness darkens exposed rock
   and plants within small limits, glosses bare stone, persists after rain and leaves the tidal
   band alone. Standing water fills fixed hollows on level ground as the ground soaks, drowning
   the lower meadow blades, and shrinks as it dries.

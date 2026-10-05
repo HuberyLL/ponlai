@@ -56,9 +56,9 @@ export interface WeatherQualityProfile {
 // Intervals are seconds of wall time. The controller never uses a quality profile to alter
 // weather state, so changing render quality cannot change the time, rain or lighting mood.
 export const WEATHER_QUALITY: Readonly<Record<WeatherQuality, Readonly<WeatherQualityProfile>>> = {
-	low: { cloudSteps: 6, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 1.2, underwaterShadowInterval: 0.2, rainDrops: 192 },
-	medium: { cloudSteps: 10, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.8, underwaterShadowInterval: 0.12, rainDrops: 384 },
-	high: { cloudSteps: 14, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.5, underwaterShadowInterval: 0.08, rainDrops: 640 },
+	low: { cloudSteps: 6, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 1.2, underwaterShadowInterval: 0.2, rainDrops: 16384 },
+	medium: { cloudSteps: 10, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.8, underwaterShadowInterval: 0.12, rainDrops: 32768 },
+	high: { cloudSteps: 14, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.5, underwaterShadowInterval: 0.08, rainDrops: 49152 },
 };
 
 // Auto weather: from each state, the next one and its weight. Rain builds through overcast
