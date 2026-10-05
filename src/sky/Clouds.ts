@@ -172,7 +172,7 @@ export class Clouds {
 			// Heaped cumulus by default; flat stratus decks under overcast and in a few drifts.
 			const stratus = max( overcast, smoothstep( 0.62, 0.95, float( 1 ).sub( w.g ) ).mul( 0.4 ) ).toVar();
 			const base = mix( float( 1350 ), float( 950 ), stratus ).add( w.b.sub( 0.5 ).mul( 260 ) ).toVar();
-			const thickness = mix( w.b.mul( 1600 ).add( 900 ).mul( cover.mul( 0.5 ).add( 0.5 ) ), float( 750 ), stratus ).toVar();
+			const thickness = mix( w.b.mul( 1900 ).add( 1200 ).mul( cover.mul( 0.5 ).add( 0.5 ) ), float( 750 ), stratus ).toVar();
 			const reach = altitude.sub( base ).div( thickness ).toVar();
 			// Towers reach up to 1.25 x the layer's thickness; skip the noise outside that span.
 			If( reach.greaterThan( 0 ).and( reach.lessThan( 1.25 ) ).and( cover.greaterThan( 0.001 ) ), () => {
@@ -396,7 +396,10 @@ export class Clouds {
 				const cloudThrough = mix( float( 1 ), transmittance, mix( smoothstep( 0, 0.02, direction.y ), float( 1 ), deck ) ).toVar();
 				// High cirrus behind the cumulus; rain shafts hang below the cloud base in front.
 				const veil = cirrusVeil( direction ).toVar();
-				const shafts = rainShafts( direction, t0, skyLight ).toVar();
+				// Curtains fade into the haze with the clouds they fall from; otherwise showers far off
+				// under a broken sky hang as grey blocks on the horizon below clouds already lost in it.
+				const rain = rainShafts( direction, t0, skyLight );
+				const shafts = vec4( rain.rgb.mul( horizon ), mix( float( 1 ), rain.a, horizon ) ).toVar();
 				const layered = vec4( cloudRadiance.add( veil.rgb.mul( cloudThrough ) ), cloudThrough.mul( veil.a ) );
 				result.assign( vec4( shafts.rgb.add( layered.rgb.mul( shafts.a ) ), layered.a.mul( shafts.a ) ) );
 
