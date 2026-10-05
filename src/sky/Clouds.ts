@@ -67,6 +67,17 @@ const layerDistance = Fn( ( [ h, mu, a ]: [ F, F, F ] ) => {
 	{ name: 'h', type: 'float' }, { name: 'mu', type: 'float' }, { name: 'a', type: 'float' },
 ] } );
 
+// Weather-map value at a cloud's edge for a coverage: the field is roughly normal (deviation
+// .18), so the threshold is its quantile (Tukey's approximation of the probit). The mean is
+// calibrated on the rendered sky: fair weather (.32) clouds about a quarter of it, cloudy (.67)
+// about two thirds.
+const coverThreshold = ( coverage: F ) => {
+
+	const c = clamp( coverage, 0.001, 0.999 );
+	return float( 1 ).sub( c ).pow( 0.14 ).sub( c.pow( 0.14 ) ).mul( 4.91 * 0.177 ).add( 0.235 );
+
+};
+
 // Normalised Henyey-Greenstein phase.
 const henyeyGreenstein = ( cosTheta: F, g: number ) =>
 	float( 1 - g * g ).div( float( 1 + g * g ).sub( cosTheta.mul( 2 * g ) ).pow( 1.5 ).mul( 4 * Math.PI ) );
@@ -83,6 +94,8 @@ export class Clouds {
 	readonly densityFrom = uniform( 1 );
 	readonly densityTo = uniform( 1 );
 	readonly frontProgress = uniform( 1 );
+	readonly rainFrom = uniform( 0 );
+	readonly rainTo = uniform( 0 );
 	readonly frontAxis = uniform( new THREE.Vector2( 1, 0 ) );
 	// Set through setWindOffset, which keeps it within one noise period.
 	readonly windOffset = uniform( new THREE.Vector2() );
@@ -149,12 +162,8 @@ export class Clouds {
 			const cov = clamp( mix( this.coverageFrom, this.coverageTo, sweep ), 0, 1 ).toVar();
 			const localDensity = mix( this.densityFrom, this.densityTo, sweep ).toVar();
 			const overcast = smoothstep( 0.72, 0.97, cov ).toVar();
-			// Coverage carves the clumped weather field; a full overcast closes it into a deck. The
-			// field is roughly normal (deviation .18), so the threshold is its quantile (Tukey's
-			// approximation of the probit). The mean is calibrated on the rendered sky: fair weather
-			// (.32) clouds about a quarter of it, cloudy (.67) about two thirds.
-			const c = clamp( cov, 0.001, 0.999 );
-			const threshold = float( 1 ).sub( c ).pow( 0.14 ).sub( c.pow( 0.14 ) ).mul( 4.91 * 0.177 ).add( 0.235 ).toVar();
+			// Coverage carves the clumped weather field; a full overcast closes it into a deck.
+			const threshold = coverThreshold( cov ).toVar();
 			const local = smoothstep( threshold.sub( 0.12 ), threshold.add( 0.1 ), w.r );
 			const cover = max( local, overcast.mul( w.r.mul( 0.3 ).add( 0.7 ) ) ).toVar();
 			// Heaped cumulus by default; flat stratus decks under overcast and in a few drifts.
@@ -224,6 +233,52 @@ export class Clouds {
 
 			}
 			return depth.mul( SIGMA );
+
+		};
+
+		// Distant rain below the cloud base: grey curtains where the clouds above are raining.
+		// Showers also fall from the heaviest clumps of a cloudy sky. Streaks follow the fall,
+		// so curtains read as vertical strands that fade out before reaching the sea.
+		const rainShafts = ( direction: V3, cloudBase: F, light: V3 ) => {
+
+
+			const radiance = vec3( 0 ).toVar();
+			const through = float( 1 ).toVar();
+			// Rain under a cloud is lit by the shaded base above it: a dull, neutral grey.
+			const grey = mix( light, vec3( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), 0.75 ).mul( 0.4 ).toVar();
+			const start = float( 1500 ), end = min( cloudBase, 32000 ).toVar();
+			If( end.greaterThan( start ), () => {
+
+				for ( let i = 0; i < 8; i ++ ) {
+
+					// Logarithmic spacing: curtains a few kilometres off are resolved, far ones merge.
+					const a = Math.pow( i / 8, 1.6 ), b = Math.pow( ( i + 1 ) / 8, 1.6 );
+					const t = start.add( end.sub( start ).mul( ( a + b ) / 2 ) ).toVar();
+					const dt = end.sub( start ).mul( b - a );
+					const xz = this.origin.xz.add( direction.xz.mul( t ) ).toVar();
+					const altitude = this.origin.y.add( direction.y.mul( t ) );
+					const reached = clamp( this.frontProgress.add( dot( xz, this.frontAxis ).div( FRONT_SPAN ) ), 0, 1 );
+					const cov = clamp( mix( this.coverageFrom, this.coverageTo, reached ), 0, 1 );
+					const rain = mix( this.rainFrom, this.rainTo, reached );
+					const p = xz.add( this.windOffset );
+					const w = weatherNode.sample( p.div( WEATHER_TILE ) ).level( float( 0 ) );
+					// The thickest part of each clump, well inside its cloud edge.
+					const core = smoothstep( coverThreshold( cov ).add( 0.1 ), coverThreshold( cov ).add( 0.28 ), w.r );
+					const showers = smoothstep( 0.5, 0.7, cov ).mul( core );
+					const heavy = max( rain.mul( core.mul( 0.6 ).add( 0.4 ) ), showers );
+					// Vertical strands, slanted slightly downwind, broken up along their length.
+					// Few samples per ray: keep the strands broad so they do not alias into a barcode.
+					const strands = shapeNode.sample( vec3( p.x.mul( 1 / 2600 ), altitude.mul( 1 / 6000 ).add( this.evolve.mul( 0.0001 ) ), p.y.mul( 1 / 2600 ) ) ).level( float( 0 ) ).g;
+					const below = float( 1 ).sub( smoothstep( LAYER_BOTTOM * 0.7, LAYER_BOTTOM * 1.2, altitude ) );
+					const density = heavy.mul( strands.mul( 0.9 ).add( 0.35 ) ).mul( below ).mul( 0.00035 );
+					const step = exp( density.mul( dt ).negate() );
+					radiance.addAssign( grey.mul( through ).mul( float( 1 ).sub( step ) ) );
+					through.mulAssign( step );
+
+				}
+
+			} );
+			return vec4( radiance, through );
 
 		};
 
@@ -302,7 +357,11 @@ export class Clouds {
 				const fade = mix( exp( max( t0.sub( 12000 ), 0 ).div( - 38000 ) ), float( 1 ), deck );
 				const horizon = mix( smoothstep( 0, 0.035, direction.y ), float( 1 ), deck ).mul( fade );
 				const haze = this.atmosphere.skyRadiance( direction ).add( this.nightAmbient.rgb ).mul( float( 1 ).sub( transmittance ) );
-				result.assign( vec4( mix( haze, scattered, horizon ), mix( float( 1 ), transmittance, mix( smoothstep( 0, 0.02, direction.y ), float( 1 ), deck ) ) ) );
+				const cloudRadiance = mix( haze, scattered, horizon ).toVar();
+				const cloudThrough = mix( float( 1 ), transmittance, mix( smoothstep( 0, 0.02, direction.y ), float( 1 ), deck ) ).toVar();
+				// Rain shafts hang below the cloud base in front of the deck.
+				const shafts = rainShafts( direction, t0, skyLight ).toVar();
+				result.assign( vec4( shafts.rgb.add( cloudRadiance.mul( shafts.a ) ), cloudThrough.mul( shafts.a ) ) );
 
 			} );
 			return result;

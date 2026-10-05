@@ -465,6 +465,8 @@ export class Sky {
 		clouds.densityFrom.value = front ? front.from.density : clouds.density.value;
 		clouds.densityTo.value = front ? front.to.density : clouds.density.value;
 		clouds.frontProgress.value = front ? front.progress : 1;
+		clouds.rainFrom.value = front ? front.from.rain : weather?.rain ?? 0;
+		clouds.rainTo.value = front ? front.to.rain : weather?.rain ?? 0;
 		// Cloud tops a couple of kilometres up keep the sun a little after it has set below.
 		const sunAbove = this.atmosphere.transmittanceAt( this.sunDir, 2 ).multiply( this.sunTint ).multiplyScalar( illuminance );
 		const moonGain = celestial?.moonKeyGain ?? 0;
