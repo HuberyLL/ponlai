@@ -24,7 +24,8 @@ exposed.
 - Sky and weather URL options: `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk,
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain; rain loads
-  as established, already wet), `clouds` (coverage override), `quality` (low, medium, high).
+  as established, already wet; without it the weather evolves on its own), `clouds` (coverage
+  override), `quality` (low, medium, high).
   In the page, H toggles the GUI and Space pauses.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
   and wave optics (each file names the server it expects); `tools/verify-scene.mjs` checks a
@@ -47,9 +48,12 @@ exposed.
 - `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
   sea floor, light under the water).
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading.
-- `src/sky/`: atmosphere bake, environment lighting, volumetric clouds and their shadows, the day
-  cycle (sun and moon), stars and moon, weather presets and their blending.
-- `src/weather/`: wind, rain streaks and ripples, distant air (aerial perspective).
+- `src/sky/`: atmosphere LUTs, environment lighting, volumetric clouds (a direction map refreshed
+  a sixteenth per frame, plus a live cloud-shadow map) and their noise bake in
+  `src/materials/CloudNoise.ts`, the day cycle (sun and moon), stars, Milky Way and moon, weather
+  presets, their blending and the auto-weather chain.
+- `src/weather/`: wind, rain (a streak veil in the post pass, world-space streaks, ripples),
+  distant air (aerial perspective).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, bloom, tilt-shift, grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
@@ -71,10 +75,14 @@ exposed.
   it never rebuilds the wave spectrum.
 - One dominant key light (sun by day, moon by night) drives terrain, characters, water, caustics
   and every shadow map; sun/moon handoffs pass through zero direct light. The day cycle is
-  authored, not astronomical.
+  authored, not astronomical. The sky, sun, moon, stars, key light and grade follow the clock
+  every frame; only the reflection panorama, environment and irradiance cross-fade between bakes.
+- The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
+  the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
 - One cloud field feeds the visible sky, water reflections, environment lighting and cloud
   shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
-  Distant air applies only beyond the protected foreground.
+  Distant air applies only beyond the protected foreground. Weather changes sweep the sky as a
+  front from upwind; the island's lighting follows the front's progress over the island.
 - Rain is light streaks plus analytic ripples on the water normal: no droplets, puddles or splash
   foam. Wetness darkens exposed rock and plants within small limits, persists after rain and
   leaves the tidal band alone.
