@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, attribute, cameraPosition, positionGeometry, positionWorld, positionView, uv, uniform,
 	texture, textureLoad, textureSize, screenCoordinate, ivec2, vec2, vec3, float, floor, fract, sin, cos, dot, cross, normalize, length,
-	abs, max, clamp, mix, smoothstep, exp, select, acos, atan,
+	abs, max, min, clamp, mix, smoothstep, exp, select, acos, atan, dFdx, dFdy,
 } from 'three/tsl';
 import { buildFootprint, islandSurfaceHeight, layoutBounds } from '../world/WorldShapes.ts';
 import { mulberry32 } from '../world/noise.ts';
@@ -110,6 +110,8 @@ export class Rain {
 	private lightNode: THREE.Node<'vec3'> | null = null;
 	// Angle subtended by one pixel, for the veil's energy-preserving streak width.
 	readonly pixelAngle = uniform( 0.001 );
+	// The camera, for placing splashes on the surfaces the veil looks at.
+	private readonly eye = uniform( new THREE.Vector3() );
 
 	constructor( { count = 384, seed = 8371, groundHeightAt }: RainOptions = {} ) {
 
@@ -236,6 +238,14 @@ export class Rain {
 		const u = this.uniforms;
 		const light = this.lightNode ?? u.light.rgb;
 		const result = vec3( 0 ).toVar();
+		// The surface this pixel shows, and whether it faces up: derivatives come first, while
+		// control flow is still uniform. Steep faces and depth edges get no splashes.
+		const surface = this.eye.add( direction.mul( distance ) ).toVar();
+		const dx = dFdx( surface ), dy = dFdy( surface );
+		const facing = abs( normalize( cross( dx, dy ) ).y );
+		const footprint = distance.mul( this.pixelAngle ).toVar();
+		const continuous = float( 1 ).sub( smoothstep( 6, 14, max( length( dx ), length( dy ) ).div( max( footprint, 1e-4 ) ) ) );
+		const upward = smoothstep( 0.7, 0.9, facing ).mul( continuous ).mul( float( 1 ).sub( smoothstep( 35, 60, distance ) ) ).toVar();
 		If( u.rain.greaterThan( 0.001 ), () => {
 
 			// Axis toward where the rain comes from, tilted by the wind; a frame around it.
@@ -273,7 +283,51 @@ export class Rain {
 
 			}
 			result.assign( light.mul( result ).mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ).mul( 0.6 ) );
+			// Splashes where the drops land, on the sea and on level ground alike: a jet that leaps
+			// a few centimetres, a crown spreading round it and a spark at the impact, gone in a
+			// tenth of a second. They live in staggered world grids, so they stay put as the camera
+			// moves. Seen from low down a jet stands up against the surface behind it: a vertical
+			// extent h covers the surface out to h / tan(elevation) beyond the impact.
+			If( upward.greaterThan( 0.001 ), () => {
 
+				const splash = float( 0 ).toVar();
+				// Below a pixel, a splash keeps its energy spread over one pixel instead.
+				const size = max( footprint.mul( 0.6 ), 0.005 ).toVar();
+				const energy = min( float( 0.005 ).div( size ), 1 ).pow( 2 ).toVar();
+				const ahead = normalize( vec2( direction.x, direction.z ).add( vec2( 1e-5, 0 ) ) ).toVar();
+				const lift = float( 1 ).div( max( abs( direction.y ), 0.05 ) ).mul( max( float( 1 ).sub( direction.y.mul( direction.y ) ), 0 ).sqrt() ).toVar();
+				const CELL = 0.26;
+				for ( let layer = 0; layer < 3; layer ++ ) {
+
+					const grid = surface.xz.div( CELL ).add( vec2( 0.37, 0.61 ).mul( layer ) ).toVar();
+					const cell = floor( grid ).toVar();
+					const key = cell.add( vec2( 13.9, 7.3 ).mul( layer ) ).toVar();
+					// Each cell takes a drop about every half second in heavy rain.
+					const phase = u.time.mul( amount.mul( 1.6 ).add( 0.4 ) ).add( rainHash( key ) ).toVar();
+					const event = floor( phase ).toVar();
+					const age = fract( phase ).div( 0.12 ).toVar();
+					If( age.lessThan( 1 ), () => {
+
+						const centre = vec2( rainHash( key.add( event.mul( 2.31 ) ) ), rainHash( key.add( vec2( 6.1, 3.7 ) ).add( event.mul( 1.73 ) ) ) ).mul( 0.6 ).add( 0.2 );
+						const offset = fract( grid ).sub( centre ).mul( CELL ).toVar();
+						const d = length( offset ).toVar();
+						const along = dot( offset, ahead ), across = abs( dot( offset, vec2( ahead.y.negate(), ahead.x ) ) );
+						const fade = float( 1 ).sub( age ).pow( 2 ).toVar();
+						// The jet rises and falls back; its top is a bead of water.
+						const height = age.mul( float( 1 ).sub( age ) ).mul( 4 * 0.05 ).mul( rainHash( key.add( event ) ).mul( 0.6 ).add( 0.6 ) );
+						const reach = height.mul( lift ).toVar();
+						const jet = exp( across.div( size.mul( 0.7 ) ).pow( 2 ).negate() )
+							.mul( smoothstep( size.negate(), 0, along ) ).mul( float( 1 ).sub( smoothstep( reach, reach.add( size ), along ) ) );
+						const crown = exp( d.sub( age.mul( 0.035 ).add( 0.008 ) ).div( size ).pow( 2 ).negate() ).mul( 0.6 );
+						const spark = exp( d.div( size ).pow( 2 ).negate() ).mul( float( 1 ).sub( smoothstep( 0, 0.35, age ) ) );
+						splash.addAssign( jet.add( crown ).add( spark ).mul( fade ) );
+
+					} );
+
+				}
+				result.addAssign( light.mul( splash ).mul( energy ).mul( upward ).mul( amount ).mul( 3.5 ) );
+
+			} );
 		} );
 		return result;
 
@@ -290,6 +344,7 @@ export class Rain {
 
 		if ( ! Number.isFinite( time ) ) throw new RangeError( 'Rain time must be finite' );
 		this.uniforms.time.value = time;
+		this.eye.value.copy( camera.position );
 		const fov = ( camera as THREE.PerspectiveCamera ).fov;
 		if ( fov && viewportHeight > 0 ) this.pixelAngle.value = 2 * Math.tan( fov * Math.PI / 360 ) / viewportHeight;
 		// Keep the island within the bounded rain field when viewing it from the distant sea.
