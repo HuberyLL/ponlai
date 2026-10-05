@@ -90,6 +90,7 @@ const initialCameraPosition = camera.position.clone();
 const initialCameraQuaternion = camera.quaternion.clone();
 const initialCameraFov = camera.fov;
 const orbitMaxPolar = controls.maxPolarAngle;
+const orbitMinDistance = controls.minDistance;
 const freeControls = new FreeCameraControls( camera, renderer.domElement );
 
 // ------------------------------------------------------------------ sky, light, water optics
@@ -344,8 +345,13 @@ function settleOrbit(): void {
 
 function applyOrbitLimit(): void {
 
-	// Orbiting keeps the camera above the sea; only the sky view looks up from below its target.
-	controls.maxPolarAngle = reviewView.camera === 'sky' ? Math.PI : orbitMaxPolar;
+	// Orbiting keeps the camera above the sea. The sky view instead turns the camera where it
+	// stands: its target sits a few centimetres ahead, so even dragging the view straight up
+	// cannot swing the camera round below its target and under the sea.
+	const sky = reviewView.camera === 'sky';
+	controls.maxPolarAngle = sky ? Math.PI : orbitMaxPolar;
+	controls.minDistance = sky ? 0.01 : orbitMinDistance;
+	controls.enableZoom = controls.enablePan = ! sky;
 
 }
 
@@ -381,7 +387,7 @@ function setCameraView( view: CameraView ): void {
 		viewDirection.copy( sky.sunDir.y > 0 ? sky.sunDir : sky.moonDir );
 		// At new moon both bodies can be below the horizon; keep the review aimed at the sky.
 		if ( viewDirection.y <= 0 ) viewDirection.set( 0.6, 0.72, 0.35 ).normalize();
-		controls.target.copy( camera.position ).addScaledVector( viewDirection, 100 );
+		controls.target.copy( camera.position ).addScaledVector( viewDirection, 0.05 );
 		camera.fov = 65;
 		camera.lookAt( controls.target );
 
