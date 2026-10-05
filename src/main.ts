@@ -101,8 +101,11 @@ const numberParam = ( name: string, fallback: number ) => {
 	return Number.isFinite( value ) ? value : fallback;
 
 };
-const dayCycle = new DayCycle( { hour: numberParam( 'hour', 16 ), dayLength: Math.max( 30, numberParam( 'dayLength', 600 ) ),
-	paused: params.has( 'paused' ) || params.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.5 ) } );
+// A 48-minute day, as in many open-world games: slow enough to watch the light and the stars
+// turn. The default first-quarter moon lights the evening and sets at midnight, leaving the
+// small hours dark enough for the Milky Way.
+const dayCycle = new DayCycle( { hour: numberParam( 'hour', 16 ), dayLength: Math.max( 30, numberParam( 'dayLength', 2880 ) ),
+	paused: params.has( 'paused' ) || params.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.25 ) } );
 const requestedWeather = params.get( 'weather' ) ?? 'fair';
 const weather = new Weather( Object.hasOwn( WEATHER_PRESETS, requestedWeather ) ? requestedWeather as WeatherName : 'fair' );
 const weatherEffects = { rain: true, wetness: true };
@@ -436,7 +439,7 @@ weatherF.add( weatherEffects, 'wetness' ).name( 'wet surfaces' );
 const timeF = gui.addFolder( 'Time & moon' );
 const timeView = { preset: requestedPreset ?? 'golden-hour' };
 timeF.add( dayCycle, 'hour', 0, 24, 0.01 ).name( 'hour' ).listen().onFinishChange( refreshEnvironment );
-timeF.add( dayCycle, 'dayLength', 30, 3600, 1 ).name( 'seconds per day' );
+timeF.add( dayCycle, 'dayLength', 30, 7200, 1 ).name( 'seconds per day' );
 timeF.add( dayCycle, 'paused' ).name( 'pause clock' ).listen();
 timeF.add( timeView, 'preset', Object.keys( DAY_PRESETS ) ).name( 'time preset' ).listen().onChange( ( preset: DayPreset ) => { void setPreset( preset ); } );
 timeF.add( dayCycle, 'moonPhase', 0, 1, 0.01 ).name( 'moon phase' ).onFinishChange( refreshEnvironment );
@@ -534,6 +537,7 @@ addEventListener( 'keydown', ( e ) => {
 const frameTimes: number[] = [];
 let shadowElapsed = 0;
 const shadowDirection = new THREE.Vector3();
+const viewForward = new THREE.Vector3();
 function tick(): void {
 
 	clock.update();
@@ -558,10 +562,22 @@ function tick(): void {
 	sky.advance( environmentDt );
 	publishLighting();
 	pipeline.air.haze.value = sky.weather.haze;
+	pipeline.air.fog.value = sky.weather.fog;
+	pipeline.air.fogOffset.value.copy( shared.wind.displacement.value ).negate();
+	pipeline.air.fogTime.value = simTime;
+	pipeline.air.keyDir.value.copy( sky.keyDir );
+	pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );
 	pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
 	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
 	sky.updateClouds( camera.position, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
+	shared.storm.value = weather.state.storm;
+	camera.getWorldDirection( viewForward );
+	sky.lightning.update( paused ? 0 : rawDt, weather.state.storm, Math.atan2( viewForward.z, viewForward.x ) );
+	// A strike lights the island for an instant through the sky's fill.
+	const strikeFill = lighting.skyFill * ( 1 + sky.lightning.flash.value * 8 );
+	scene.environmentIntensity = strikeFill;
+	shared.skyFill.value = strikeFill;
 	shared.wetness.value = weatherEffects.wetness ? weather.state.wetness : 0;
 	fft.weatherGain.value.copy( shared.wind.oceanGain.value );
 	rain!.uniforms.rain.value = shared.rain.value;

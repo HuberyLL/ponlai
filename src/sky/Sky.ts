@@ -9,11 +9,13 @@ import {
 	Fn, uv, uniform, texture, positionWorld, cameraPosition, normalize, smoothstep, dot,
 	vec2, vec3, vec4, ivec2, float, sqrt, max, atan, asin, acos, clamp, cos, sin, mix, abs, select,
 	pmremTexture, textureLoad, Loop, exp2,
+	If,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE } from '../lighting/Radiometry.ts';
 import { Clouds } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
+import { Lightning } from '../weather/Lightning.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherFront, WeatherState } from './Weather.ts';
 
@@ -21,7 +23,7 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
-type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'windSpeed' | 'windDirection'>;
+type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
 // Baked products. Directions, colours, the grade and the clouds themselves are evaluated every
 // frame; only these slower reflection, environment and irradiance products cross-fade.
@@ -88,6 +90,7 @@ export class Sky {
 	atmosphere: Atmosphere;
 	clouds: Clouds;
 	night = new NightSky();
+	lightning = new Lightning();
 	sunIlluminance: number;
 	elevation: number;
 	azimuth: number;
@@ -105,7 +108,7 @@ export class Sky {
 	viewer = new THREE.Vector3( 0, 15, 0 );
 	solarIlluminance = new THREE.Color();
 	readonly grade = { exposure: 2.35, blackLift: 0.027, daylight: 1 };
-	readonly weather: DisplayedWeather = { haze: 0, rain: 0, windSpeed: 3.8, windDirection: 40 };
+	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
 	equirect: THREE.RenderTarget;
@@ -149,6 +152,9 @@ export class Sky {
 	private displayNightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
 	private displayOvercast = uniform( 0 );
 	private displayAmbientGain = uniform( 1 );
+	private rainbowAmount = uniform( 0 );
+	// Radiance scale of a lightning channel and its glow, in scene units.
+	private lightningRadiance = uniform( 1 );
 	private cloudLayer: THREE.TextureNode;
 	private pmrem: THREE.PMREMGenerator;
 	private quad: THREE.QuadMesh;
@@ -284,9 +290,13 @@ export class Sky {
 			const background = select( above, upper, lower.rgb );
 			const through = select( above, cloud.a, lower.a );
 			// Thin cloud turns most of the direct beam into the glow around it; the bare disk fades
-			// faster than its surroundings instead of burning through as a sharp point.
+			// faster than its surroundings, and a thick deck hides it entirely instead of letting
+			// its enormous radiance burn through a residual transmittance as a sharp point.
 			const stars = this.night.stars( d ).mul( this.night.moonOcclusion( d ) );
-			return vec4( background.add( disk.mul( through ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
+			// A storm deck's base about a kilometre up, seen at the strike's distance.
+			const bow = this.rainbow( d ).mul( select( above, float( 1 ), float( 0 ) ) );
+			const strike = this.lightning.sky( d, atan( float( 950 ), this.lightning.distance ), float( 1 ).sub( cloud.a ) ).mul( this.lightningRadiance );
+			return vec4( background.add( strike ).add( bow ).add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
@@ -377,6 +387,7 @@ export class Sky {
 		}
 		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
 		this.solarIlluminance.copy( this.sunTint ).multiplyScalar( illuminance );
+		this.lightningRadiance.value = illuminance * 0.08;
 		// The sky-view LUT re-renders only when the sun has moved: a small 192 x 108 march.
 		this.atmosphere.sunDir.value.copy( this.sunDir );
 		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance );
@@ -427,6 +438,9 @@ export class Sky {
 		// Like a camera, adapt a little to the dimmer diffuse daylight under a closed deck, less
 		// so in rain, which should read as heavy.
 		this.grade.exposure *= 1 + 0.5 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
+		// After dark a closed deck hides the moon and stars; the eye adapts further so a rainy
+		// dusk or night stays readable, still darker than a clear moonlit night.
+		this.grade.exposure *= 1 + 5 * overcast * ( 1 - this.grade.daylight );
 		this.sunColor.multiplyScalar( directVisibility );
 		this.keyColor.multiplyScalar( directVisibility );
 		this.solarIlluminance.multiplyScalar( directVisibility );
@@ -438,8 +452,20 @@ export class Sky {
 		this.displayOvercast.value = overcast;
 		this.displayAmbientGain.value = ambientGain;
 		this.trackClouds( celestial, weather, coverage, illuminance, coverageOverride === null ? front : null );
+		this.clouds.cirrus.value = weather?.cirrus ?? 0;
+		// A rainbow needs falling rain and direct sun at once, the sun lower than 42 degrees behind
+		// the viewer: most often as a shower clears, while it is still raining a few kilometres off.
+		const showers = weather?.showers ?? 0, sunlit = weather?.directVisibility ?? 1;
+		this.rainbowAmount.value = THREE.MathUtils.smoothstep( showers, 0.04, 0.3 ) * THREE.MathUtils.smoothstep( sunlit, 0.3, 0.7 )
+			* THREE.MathUtils.smoothstep( this.sunDir.y, 0, 0.08 ) * ( 1 - THREE.MathUtils.smoothstep( this.sunDir.y, 0.6, 0.72 ) );
 		this.weather.haze = weather?.haze ?? 0;
 		this.weather.rain = weather?.rain ?? 0;
+		// Morning mist: calm, dry air cools overnight; mist gathers before dawn and burns off
+		// a few hours after sunrise. Weather fog adds to it.
+		const hour = celestial?.hour ?? 12, wind = weather?.windSpeed ?? 3.8;
+		const mist = THREE.MathUtils.smoothstep( hour, 3.5, 5.5 ) * ( 1 - THREE.MathUtils.smoothstep( hour, 7.5, 9.5 ) )
+			* ( 1 - THREE.MathUtils.smoothstep( wind, 3.5, 5 ) ) * ( 1 - this.weather.rain ) * 0.3;
+		this.weather.fog = Math.max( weather?.fog ?? 0, mist );
 		this.weather.windSpeed = weather?.windSpeed ?? 3.8;
 		this.weather.windDirection = weather?.windDirection ?? 40;
 
@@ -455,6 +481,8 @@ export class Sky {
 		clouds.densityFrom.value = front ? front.from.density : clouds.density.value;
 		clouds.densityTo.value = front ? front.to.density : clouds.density.value;
 		clouds.frontProgress.value = front ? front.progress : 1;
+		clouds.rainFrom.value = front ? front.from.rain : weather?.rain ?? 0;
+		clouds.rainTo.value = front ? front.to.rain : weather?.rain ?? 0;
 		// Cloud tops a couple of kilometres up keep the sun a little after it has set below.
 		const sunAbove = this.atmosphere.transmittanceAt( this.sunDir, 2 ).multiply( this.sunTint ).multiplyScalar( illuminance );
 		const moonGain = celestial?.moonKeyGain ?? 0;
@@ -482,6 +510,7 @@ export class Sky {
 		this.clouds.setWindOffset( windOffset );
 		// Weather arrives from upwind.
 		this.clouds.frontAxis.value.copy( windDirection ).negate().normalize();
+		this.clouds.cirrusAxis.value.copy( windDirection ).normalize();
 		this.clouds.evolve.value = ( time * 0.6 ) % 6000;
 		this.night.time.value = time;
 		this.viewer.copy( viewer );
@@ -663,6 +692,38 @@ export class Sky {
 		// Clouds mute the existing sky's colour; they never introduce a white/grey
 		// radiance floor that would glow at night or bleach the transparent sea.
 		return mix( clear, vec3( dot( clear, vec3( 0.2126, 0.7152, 0.0722 ) ) ), overcast.mul( 0.35 ) );
+
+	}
+
+	/** The primary and secondary rainbows on falling rain opposite a low sun, with the darker
+	 * Alexander's band between them. */
+	private rainbow( direction: V3 ): V3 {
+
+		const result = vec3( 0 ).toVar();
+		If( this.rainbowAmount.greaterThan( 0.01 ), () => {
+
+			const antisolar = this.displaySunDir.negate();
+			const angle = acos( clamp( dot( direction, antisolar ), - 1, 1 ) ).mul( 180 / Math.PI ).toVar();
+			// Position across each bow, 0 at its inner (violet) edge to 1 at its outer (red) edge.
+			const primary = angle.sub( 40.4 ).div( 2.2 ).toVar();
+			const secondary = float( 53.8 ).sub( angle ).div( 3.4 ).toVar();
+			const spectrum = ( x: F ) => {
+
+				const band = smoothstep( 0, 0.15, x ).mul( float( 1 ).sub( smoothstep( 0.85, 1, x ) ) );
+				const r = smoothstep( 0.45, 0.85, x );
+				const g = float( 1 ).sub( abs( x.sub( 0.55 ) ).mul( 2.6 ) ).max( 0 );
+				const b = float( 1 ).sub( smoothstep( 0.1, 0.45, x ) );
+				return vec3( r, g, b ).mul( band );
+
+			};
+			const bows = spectrum( primary ).add( spectrum( secondary ).mul( 0.35 ) );
+			// Rain inside the primary bow scatters more light back than the band between the bows.
+			const inner = float( 1 ).sub( smoothstep( 36, 41, angle ) ).mul( 0.25 );
+			const light = this.displaySolarIlluminance.mul( 0.011 );
+			result.assign( light.mul( bows.add( inner ) ).mul( this.rainbowAmount ).mul( smoothstep( 0, 0.03, direction.y ) ) );
+
+		} );
+		return result;
 
 	}
 

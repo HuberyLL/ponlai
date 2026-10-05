@@ -56,7 +56,7 @@ for ( const invalid of [ NaN, Infinity, - 1, '1' ] ) {
 	assert.throws( () => weather.setWeather( 'rain', invalid ), RangeError );
 	assert.deepEqual( weather.snapshot(), before, 'invalid input must not mutate state' );
 }
-for ( const invalid of [ 'storm', '__proto__', '', null ] ) {
+for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 	assert.throws( () => new Weather( invalid ), RangeError );
 	assert.throws( () => weather.setWeather( invalid ), RangeError );
 }
@@ -95,14 +95,28 @@ for ( const invalid of [ 'storm', '__proto__', '', null ] ) {
 	const first = run(), second = run();
 	assert.deepEqual( first, second, 'auto weather must be deterministic' );
 	assert.ok( first.length >= 8 && first.length <= 40, `an hour should hold several changes, saw ${ first.length }` );
-	const order = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain' ];
+	// Fog sits beside clear and fair weather; the cloud states run from fair to rain.
+	const order = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm' ];
 	for ( let i = 1; i < first.length; i ++ ) {
-		assert.ok( Math.abs( order.indexOf( first[ i ] ) - order.indexOf( first[ i - 1 ] ) ) <= 2, `${ first[ i - 1 ] } -> ${ first[ i ] } skips too far` );
+		const pair = [ first[ i - 1 ], first[ i ] ];
+		if ( pair.includes( 'fog' ) ) assert.ok( pair.every( ( name ) => [ 'fog', 'clear', 'fair' ].includes( name ) ), `${ pair } leaves fog's neighbours` );
+		else assert.ok( Math.abs( order.indexOf( first[ i ] ) - order.indexOf( first[ i - 1 ] ) ) <= 2, `${ first[ i - 1 ] } -> ${ first[ i ] } skips too far` );
 	}
 	const held = new Weather( 'rain' );
 	for ( let t = 0; t < 600; t ++ ) held.update( 1 );
 	assert.equal( held.target, 'rain', 'without auto the weather holds' );
 }
+// Showers linger after the rain overhead stops, so a clearing sky can still hold a rainbow.
+{
+	const clearing = new Weather( 'rain' );
+	clearing.setWeather( 'clear', 10 );
+	clearing.update( 10 );
+	assert.equal( clearing.state.rain, 0 );
+	clearing.update( 60 );
+	assert.ok( clearing.state.showers > 0.25, `showers fade too fast: ${ clearing.state.showers }` );
+	clearing.update( 600 );
+	assert.ok( clearing.state.showers < 0.01, 'showers must clear within minutes' );
+}
 assert.ok( WEATHER_QUALITY.low.cloudSteps < WEATHER_QUALITY.high.cloudSteps );
 assert.ok( WEATHER_QUALITY.low.rainDrops < WEATHER_QUALITY.high.rainDrops );
-console.log( 'weather state: transition, interruption, pause, presets, heading wrap, auto chain, moisture, ranges and validation passed' );
+console.log( 'weather state: transition, interruption, pause, presets, heading wrap, auto chain, moisture, lingering showers, ranges and validation passed' );

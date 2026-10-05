@@ -203,7 +203,7 @@ try {
 		if ( ! previous || previous.width !== rt.width || previous.height !== rt.height ) throw new Error( 'Opaque probe dimensions changed' );
 		const p = s.camera.projectionMatrixInverse.elements, m = s.camera.matrixWorld.elements;
 		const width = rt.width, height = rt.height, wl = s.shared.waterLevel.value;
-		const result = { readback, dry: { pixels: 0, sum: 0, maximum: 0 }, tidal: { pixels: 0, sum: 0, maximum: 0 }, submerged: { pixels: 0, sum: 0, maximum: 0 }, finite: true, changedDepthPixels: 0 };
+		const result = { readback, dry: { pixels: 0, sum: 0, maximum: 0 }, tidal: { pixels: 0, sum: 0, maximum: 0 }, submerged: { pixels: 0, sum: 0, maximum: 0 }, finite: true, changedDepthPixels: 0, movedBelowPlateau: 0 };
 		for ( let y = 1; y < height - 1; y ++ ) for ( let x = 1; x < width - 1; x ++ ) {
 			const pixel = y * width + x, z = depth[ pixel ];
 			if ( z !== previous.depth[ pixel ] ) result.changedDepthPixels ++;
@@ -215,6 +215,12 @@ try {
 			const vy = p[ 1 ] * nx + p[ 5 ] * ny + p[ 9 ] * 0.5 + p[ 13 ];
 			const vz = p[ 2 ] * nx + p[ 6 ] * ny + p[ 10 ] * 0.5 + p[ 14 ], scale = z / vz;
 			const worldY = m[ 1 ] * vx * scale + m[ 5 ] * vy * scale + m[ 9 ] * z + m[ 13 ] - wl;
+			// Standing water shortens meadow blades on the island top; the tide band and below must not move.
+			// A shortened blade may uncover cliff or sea behind it; count only pixels that showed
+			// low geometry before as well.
+			const before = previous.depth[ pixel ], beforeScale = before / vz;
+			const beforeY = m[ 1 ] * vx * beforeScale + m[ 5 ] * vy * beforeScale + m[ 9 ] * before + m[ 13 ] - wl;
+			if ( z !== before && worldY < 1.25 && beforeY < 1.25 ) result.movedBelowPlateau ++;
 			const key = worldY > 1.25 ? 'dry' : worldY > - 0.15 && worldY < 0.3 ? 'tidal' : worldY < - 0.3 && worldY > - 6 ? 'submerged' : null;
 			if ( ! key ) continue;
 			const metric = result[ key ];
@@ -264,7 +270,7 @@ try {
 	report.comparisons[ 'near-water-ripples' ] = await compare( nearWaterOff, nearWaterOn, 'near-water' );
 	const opaque = report.opaqueWetness;
 	assert.ok( opaque.finite && opaque.dry.pixels > 100 && opaque.tidal.pixels > 100 && opaque.submerged.pixels > 100, 'Depth-classified terrain samples must contain finite dry, tidal and submerged radiance' );
-	assert.equal( opaque.changedDepthPixels, 0, 'Wetness must not move opaque geometry' );
+	assert.equal( opaque.movedBelowPlateau, 0, 'Wetness may only shorten meadow blades; cliffs, tide and seabed must not move' );
 	assert.ok( opaque.dry.meanAbsoluteRadianceDifference > 1e-6, 'Wetness must reach actual above-tide material pixels' );
 	for ( const band of [ 'tidal', 'submerged' ] ) assert.ok( opaque[ band ].meanAbsoluteRadianceDifference < 1e-5,
 		`Rain wetness must preserve existing ${ band } material radiance` );

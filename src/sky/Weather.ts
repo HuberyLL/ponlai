@@ -1,4 +1,4 @@
-export type WeatherName = 'clear' | 'fair' | 'cloudy' | 'overcast' | 'rain';
+export type WeatherName = 'clear' | 'fair' | 'cloudy' | 'overcast' | 'rain' | 'storm' | 'fog';
 export type WeatherQuality = 'low' | 'medium' | 'high';
 
 export interface WeatherState {
@@ -12,20 +12,34 @@ export interface WeatherState {
 	windSpeed: number; // m/s; kept within a calm coastal range
 	windDirection: number; // degrees, using the ocean spectrum's heading convention
 	rain: number;
+	// Sea fog: 0 none, 1 a dense bank a few hundred metres deep in visibility.
+	fog: number;
+	// Thunderstorm: lightning, storm seas and whitecaps (0 none, 1 a full storm).
+	storm: number;
+	// Thin, high cirrus veils above the cumulus layer.
+	cirrus: number;
 	wetness: number;
+	// Rain that fell recently: showers linger in the air nearby for a few minutes after the
+	// rain overhead stops, long enough for a rainbow (0 to 1).
+	showers: number;
 
 }
 
-type Preset = Omit<WeatherState, 'wetness'>;
+type Preset = Omit<WeatherState, 'wetness' | 'showers'>;
 
 // The atmosphere retains its colour. Cloud extinction, diffuse fill and distant air change
-// together; none of these presets adds a grey screen veil or rough storm seas.
+// together; none of these presets adds a grey screen veil. Fog is a low layer over the sea that
+// the camera looks through, not a tint over the frame.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<Preset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, ambientGain: 1, haze: 0.00035, windSpeed: 2.8, windDirection: 40, rain: 0 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, ambientGain: 0.99, haze: 0.0005, windSpeed: 3.8, windDirection: 40, rain: 0 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 0.78, ambientGain: 0.91, haze: 0.0009, windSpeed: 4.3, windDirection: 40, rain: 0 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.3, ambientGain: 0.76, haze: 0.0016, windSpeed: 4.6, windDirection: 40, rain: 0 },
-	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, ambientGain: 0.62, haze: 0.0025, windSpeed: 5.2, windDirection: 40, rain: 0.75 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, ambientGain: 1, haze: 0.00035, windSpeed: 2.8, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, ambientGain: 0.99, haze: 0.0005, windSpeed: 3.8, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 0.78, ambientGain: 0.91, haze: 0.0009, windSpeed: 4.3, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.3, ambientGain: 0.76, haze: 0.0016, windSpeed: 4.6, windDirection: 40, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, ambientGain: 0.62, haze: 0.0025, windSpeed: 5.2, windDirection: 40, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
+	// A squall: the darkest deck, heavy rain, gale-force wind and a rough, white-capped sea.
+	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, ambientGain: 0.45, haze: 0.0035, windSpeed: 11, windDirection: 40, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
+	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
+	fog: { coverage: 0.5, density: 0.85, directVisibility: 0.6, ambientGain: 0.92, haze: 0.0012, windSpeed: 1.8, windDirection: 40, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
 };
 
 export interface WeatherQualityProfile {
@@ -50,11 +64,13 @@ export const WEATHER_QUALITY: Readonly<Record<WeatherQuality, Readonly<WeatherQu
 // Auto weather: from each state, the next one and its weight. Rain builds through overcast
 // and clears through cloud; fair weather is the most common resting state.
 const NEXT: Readonly<Record<WeatherName, ReadonlyArray<readonly [ WeatherName, number ]>>> = {
-	clear: [ [ 'fair', 0.75 ], [ 'cloudy', 0.25 ] ],
-	fair: [ [ 'clear', 0.35 ], [ 'cloudy', 0.5 ], [ 'overcast', 0.15 ] ],
+	clear: [ [ 'fair', 0.65 ], [ 'cloudy', 0.2 ], [ 'fog', 0.15 ] ],
+	fair: [ [ 'clear', 0.3 ], [ 'cloudy', 0.5 ], [ 'overcast', 0.1 ], [ 'fog', 0.1 ] ],
 	cloudy: [ [ 'fair', 0.45 ], [ 'overcast', 0.35 ], [ 'rain', 0.2 ] ],
-	overcast: [ [ 'rain', 0.5 ], [ 'cloudy', 0.5 ] ],
-	rain: [ [ 'overcast', 0.6 ], [ 'cloudy', 0.4 ] ],
+	overcast: [ [ 'rain', 0.5 ], [ 'cloudy', 0.45 ], [ 'storm', 0.05 ] ],
+	rain: [ [ 'overcast', 0.5 ], [ 'cloudy', 0.3 ], [ 'storm', 0.2 ] ],
+	storm: [ [ 'rain', 0.75 ], [ 'overcast', 0.25 ] ],
+	fog: [ [ 'clear', 0.4 ], [ 'fair', 0.6 ] ],
 };
 
 /** A weather change as it sweeps the sky: values at the start and end, and the linear
@@ -102,7 +118,7 @@ export class Weather {
 		const preset = presetFor( name );
 		// Loading a rainy preset represents established weather for repeatable review captures.
 		// Subsequent weather changes preserve moisture and let the independent drying model run.
-		this.current = { ...preset, wetness: preset.rain * 0.8 };
+		this.current = { ...preset, wetness: preset.rain * 0.8, showers: preset.rain };
 		this.from = { ...preset };
 		this.destination = preset;
 		this.targetName = name;
@@ -197,6 +213,7 @@ export class Weather {
 		// drying takes minutes. A zero-time update leaves both transition and wetness untouched.
 		this.current.wetness = Math.min( 1, Math.max( 0,
 			equilibrium + ( this.current.wetness - equilibrium ) * Math.exp( - rate * dt ) ) );
+		this.current.showers = Math.max( this.current.rain, this.current.showers * Math.exp( - dt / 90 ) );
 
 	}
 

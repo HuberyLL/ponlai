@@ -67,6 +67,17 @@ const layerDistance = Fn( ( [ h, mu, a ]: [ F, F, F ] ) => {
 	{ name: 'h', type: 'float' }, { name: 'mu', type: 'float' }, { name: 'a', type: 'float' },
 ] } );
 
+// Weather-map value at a cloud's edge for a coverage: the field is roughly normal (deviation
+// .18), so the threshold is its quantile (Tukey's approximation of the probit). The mean is
+// calibrated on the rendered sky: fair weather (.32) clouds about a quarter of it, cloudy (.67)
+// about two thirds.
+const coverThreshold = ( coverage: F ) => {
+
+	const c = clamp( coverage, 0.001, 0.999 );
+	return float( 1 ).sub( c ).pow( 0.14 ).sub( c.pow( 0.14 ) ).mul( 4.91 * 0.177 ).add( 0.235 );
+
+};
+
 // Normalised Henyey-Greenstein phase.
 const henyeyGreenstein = ( cosTheta: F, g: number ) =>
 	float( 1 - g * g ).div( float( 1 + g * g ).sub( cosTheta.mul( 2 * g ) ).pow( 1.5 ).mul( 4 * Math.PI ) );
@@ -83,6 +94,11 @@ export class Clouds {
 	readonly densityFrom = uniform( 1 );
 	readonly densityTo = uniform( 1 );
 	readonly frontProgress = uniform( 1 );
+	readonly rainFrom = uniform( 0 );
+	// High cirrus: amount and the unit direction its fibres are combed along (the wind).
+	readonly cirrus = uniform( 0 );
+	readonly cirrusAxis = uniform( new THREE.Vector2( 1, 0 ) );
+	readonly rainTo = uniform( 0 );
 	readonly frontAxis = uniform( new THREE.Vector2( 1, 0 ) );
 	// Set through setWindOffset, which keeps it within one noise period.
 	readonly windOffset = uniform( new THREE.Vector2() );
@@ -149,18 +165,14 @@ export class Clouds {
 			const cov = clamp( mix( this.coverageFrom, this.coverageTo, sweep ), 0, 1 ).toVar();
 			const localDensity = mix( this.densityFrom, this.densityTo, sweep ).toVar();
 			const overcast = smoothstep( 0.72, 0.97, cov ).toVar();
-			// Coverage carves the clumped weather field; a full overcast closes it into a deck. The
-			// field is roughly normal (deviation .18), so the threshold is its quantile (Tukey's
-			// approximation of the probit). The mean is calibrated on the rendered sky: fair weather
-			// (.32) clouds about a quarter of it, cloudy (.67) about two thirds.
-			const c = clamp( cov, 0.001, 0.999 );
-			const threshold = float( 1 ).sub( c ).pow( 0.14 ).sub( c.pow( 0.14 ) ).mul( 4.91 * 0.177 ).add( 0.235 ).toVar();
+			// Coverage carves the clumped weather field; a full overcast closes it into a deck.
+			const threshold = coverThreshold( cov ).toVar();
 			const local = smoothstep( threshold.sub( 0.12 ), threshold.add( 0.1 ), w.r );
 			const cover = max( local, overcast.mul( w.r.mul( 0.3 ).add( 0.7 ) ) ).toVar();
 			// Heaped cumulus by default; flat stratus decks under overcast and in a few drifts.
 			const stratus = max( overcast, smoothstep( 0.62, 0.95, float( 1 ).sub( w.g ) ).mul( 0.4 ) ).toVar();
 			const base = mix( float( 1350 ), float( 950 ), stratus ).add( w.b.sub( 0.5 ).mul( 260 ) ).toVar();
-			const thickness = mix( w.b.mul( 1600 ).add( 900 ).mul( cover.mul( 0.5 ).add( 0.5 ) ), float( 750 ), stratus ).toVar();
+			const thickness = mix( w.b.mul( 1900 ).add( 1200 ).mul( cover.mul( 0.5 ).add( 0.5 ) ), float( 750 ), stratus ).toVar();
 			const reach = altitude.sub( base ).div( thickness ).toVar();
 			// Towers reach up to 1.25 x the layer's thickness; skip the noise outside that span.
 			If( reach.greaterThan( 0 ).and( reach.lessThan( 1.25 ) ).and( cover.greaterThan( 0.001 ) ), () => {
@@ -224,6 +236,94 @@ export class Clouds {
 
 			}
 			return depth.mul( SIGMA );
+
+		};
+
+		// Distant rain below the cloud base: grey curtains where the clouds above are raining.
+		// Showers also fall from the heaviest clumps of a cloudy sky. Streaks follow the fall,
+		// so curtains read as vertical strands that fade out before reaching the sea.
+		const rainShafts = ( direction: V3, cloudBase: F, light: V3 ) => {
+
+
+			const radiance = vec3( 0 ).toVar();
+			const through = float( 1 ).toVar();
+			// Rain under a cloud is lit by the shaded base above it: a dull, neutral grey.
+			const grey = mix( light, vec3( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), 0.75 ).mul( 0.4 ).toVar();
+			const start = float( 1500 ), end = min( cloudBase, 32000 ).toVar();
+			If( end.greaterThan( start ), () => {
+
+				for ( let i = 0; i < 8; i ++ ) {
+
+					// Logarithmic spacing: curtains a few kilometres off are resolved, far ones merge.
+					const a = Math.pow( i / 8, 1.6 ), b = Math.pow( ( i + 1 ) / 8, 1.6 );
+					const t = start.add( end.sub( start ).mul( ( a + b ) / 2 ) ).toVar();
+					const dt = end.sub( start ).mul( b - a );
+					const xz = this.origin.xz.add( direction.xz.mul( t ) ).toVar();
+					const altitude = this.origin.y.add( direction.y.mul( t ) );
+					const reached = clamp( this.frontProgress.add( dot( xz, this.frontAxis ).div( FRONT_SPAN ) ), 0, 1 );
+					const cov = clamp( mix( this.coverageFrom, this.coverageTo, reached ), 0, 1 );
+					const rain = mix( this.rainFrom, this.rainTo, reached );
+					const p = xz.add( this.windOffset );
+					const w = weatherNode.sample( p.div( WEATHER_TILE ) ).level( float( 0 ) );
+					// The thickest part of each clump, well inside its cloud edge.
+					const core = smoothstep( coverThreshold( cov ).add( 0.1 ), coverThreshold( cov ).add( 0.28 ), w.r );
+					const showers = smoothstep( 0.5, 0.7, cov ).mul( core );
+					const heavy = max( rain.mul( core.mul( 0.6 ).add( 0.4 ) ), showers );
+					// Vertical strands, slanted slightly downwind, broken up along their length.
+					// Few samples per ray: keep the strands broad so they do not alias into a barcode.
+					const strands = shapeNode.sample( vec3( p.x.mul( 1 / 2600 ), altitude.mul( 1 / 6000 ).add( this.evolve.mul( 0.0001 ) ), p.y.mul( 1 / 2600 ) ) ).level( float( 0 ) ).g;
+					const below = float( 1 ).sub( smoothstep( LAYER_BOTTOM * 0.7, LAYER_BOTTOM * 1.2, altitude ) );
+					const density = heavy.mul( strands.mul( 0.9 ).add( 0.35 ) ).mul( below ).mul( 0.00035 );
+					const step = exp( density.mul( dt ).negate() );
+					radiance.addAssign( grey.mul( through ).mul( float( 1 ).sub( step ) ) );
+					through.mulAssign( step );
+
+				}
+
+			} );
+			return vec4( radiance, through );
+
+		};
+
+		// Thin ice cloud about eight kilometres up: fibrous streaks drawn out along the wind, very
+		// bright toward the sun (strong forward scattering from ice crystals), and golden or pink
+		// when the sun is low. Returns scattered radiance and transmittance like the cumulus.
+		const cirrusVeil = ( direction: V3 ) => {
+
+			const result = vec4( 0, 0, 0, 1 ).toVar();
+			If( this.cirrus.greaterThan( 0.01 ).and( direction.y.greaterThan( 0.02 ) ), () => {
+
+				const t = float( 8000 ).div( direction.y ).toVar();
+				const p = direction.xz.mul( t ).add( this.windOffset.mul( 1.6 ) ).toVar();
+				const w = this.cirrusAxis;
+				const along = dot( p, w ).toVar();
+				// Shear in the upper wind bends the strands into long, gentle curves.
+				const sideways = dot( p, vec2( w.y.negate(), w.x ) ).toVar();
+				const bend = weatherNode.sample( vec2( along.div( 30000 ), sideways.div( 12000 ) ).add( 0.71 ) ).level( float( 0 ) ).g.sub( 0.5 ).mul( 7000 )
+					.add( weatherNode.sample( vec2( along.div( 9000 ), sideways.div( 5000 ) ).add( 0.29 ) ).level( float( 0 ) ).b.sub( 0.5 ).mul( 900 ) );
+				const across = sideways.add( bend ).toVar();
+				// Patches of veil a few tens of kilometres long, combed into fibres along the wind.
+				// The weather field's known distribution sets how much of the sky the veil covers.
+				const broad = weatherNode.sample( vec2( along.div( 96000 ), across.div( 30000 ) ).add( 0.37 ) ).level( float( 0 ) ).r;
+				// Fine strands a few hundred metres apart, sharp across and drawn out along the wind.
+				const fibres = shapeNode.sample( vec3( along.div( 9000 ), 0.71, across.div( 420 ) ) ).level( float( 0 ) ).r;
+				const fine = detailNode.sample( vec3( along.div( 2500 ), 0.23, across.div( 150 ) ) ).level( float( 0 ) ).r;
+				const strands = smoothstep( 0.5, 0.78, fibres.mul( 0.75 ).add( fine.mul( 0.25 ) ) );
+				// Tufts: strands thicken into heads here and there and trail off thin between them.
+				const heads = smoothstep( 0.35, 0.8, detailNode.sample( vec3( along.div( 6000 ), 0.53, across.div( 1200 ) ) ).level( float( 0 ) ).g );
+				const amount = this.cirrus;
+				const edge = coverThreshold( amount.mul( 0.6 ) ).toVar();
+				const veil = smoothstep( edge.sub( 0.05 ), edge.add( 0.12 ), broad );
+				const opacity = veil.mul( strands ).mul( heads.mul( 0.6 ).add( 0.4 ) ).mul( 0.4 ).mul( smoothstep( 0.02, 0.15, direction.y ) ).toVar();
+				// Ice scatters strongly forward, but a thin veil only brightens near the sun; it does
+				// not turn into a white blaze around it.
+				const cosine = dot( direction, this.lightDir );
+				const forward = float( 0.64 ).div( float( 1.36 ).sub( cosine.mul( 1.2 ) ).pow( 1.5 ).mul( 4 * Math.PI ) );
+				// The veil passes most of the sky behind it on, scattered rather than absorbed.
+				result.assign( vec4( this.lightColor.rgb.mul( forward.mul( 0.25 ).add( 0.06 ) ).mul( this.directGain ).mul( opacity ), float( 1 ).sub( opacity.mul( 0.12 ) ) ) );
+
+			} );
+			return result;
 
 		};
 
@@ -302,7 +402,22 @@ export class Clouds {
 				const fade = mix( exp( max( t0.sub( 12000 ), 0 ).div( - 38000 ) ), float( 1 ), deck );
 				const horizon = mix( smoothstep( 0, 0.035, direction.y ), float( 1 ), deck ).mul( fade );
 				const haze = this.atmosphere.skyRadiance( direction ).add( this.nightAmbient.rgb ).mul( float( 1 ).sub( transmittance ) );
-				result.assign( vec4( mix( haze, scattered, horizon ), mix( float( 1 ), transmittance, mix( smoothstep( 0, 0.02, direction.y ), float( 1 ), deck ) ) ) );
+				const cloudRadiance = mix( haze, scattered, horizon ).toVar();
+				const cloudThrough = mix( float( 1 ), transmittance, mix( smoothstep( 0, 0.02, direction.y ), float( 1 ), deck ) ).toVar();
+				// High cirrus behind the cumulus; rain shafts hang below the cloud base in front.
+				const veil = cirrusVeil( direction ).toVar();
+				// Curtains fade into the haze with the clouds they fall from; otherwise showers far off
+				// under a broken sky hang as grey blocks on the horizon below clouds already lost in it.
+				const rain = rainShafts( direction, t0, skyLight );
+				const shafts = vec4( rain.rgb.mul( horizon ), mix( float( 1 ), rain.a, horizon ) ).toVar();
+				const layered = vec4( cloudRadiance.add( veil.rgb.mul( cloudThrough ) ), cloudThrough.mul( veil.a ) );
+				result.assign( vec4( shafts.rgb.add( layered.rgb.mul( shafts.a ) ), layered.a.mul( shafts.a ) ) );
+
+			} );
+			// A clear sky can still carry cirrus.
+			If( direction.y.greaterThan( 0 ).and( this.coverage.lessThanEqual( 0.001 ) ), () => {
+
+				result.assign( cirrusVeil( direction ) );
 
 			} );
 			return result;

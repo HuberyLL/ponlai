@@ -24,7 +24,7 @@ exposed.
   WebGPU-capable Chrome.
 - Sky and weather URL options: `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk,
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
-  `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain; rain loads
+  `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
   override), `quality` (low, medium, high).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
@@ -52,10 +52,11 @@ exposed.
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading.
 - `src/sky/`: atmosphere LUTs, environment lighting, volumetric clouds (a direction map refreshed
   a sixteenth per frame, plus a live cloud-shadow map) and their noise bake in
-  `src/materials/CloudNoise.ts`, the day cycle (sun and moon), stars, Milky Way and moon, weather
-  presets, their blending and the auto-weather chain.
-- `src/weather/`: wind, rain (a streak veil in the post pass, world-space streaks, ripples),
-  distant air (aerial perspective).
+  `src/materials/CloudNoise.ts`, high cirrus, rain curtains under raining clouds, the day cycle (sun
+  and moon), stars, Milky Way and moon, rainbows, weather presets, their blending and the
+  auto-weather chain.
+- `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
+  distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
   glare, bloom, tilt-shift, grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
@@ -74,7 +75,8 @@ exposed.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Larger casters keep
   the map, which redraws whenever the key light moves.
-- The sea is calm: no shore foam or whitecaps. Weather only scales the wave cascades' amplitude;
+- The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
+  rough sea with whitecaps on folding crests. Weather only scales the wave cascades' amplitude;
   it never rebuilds the wave spectrum.
 - One dominant key light (sun by day, moon by night) drives terrain, characters, water, caustics
   and every shadow map; sun/moon handoffs pass through zero direct light. The day cycle is
@@ -83,13 +85,19 @@ exposed.
   every frame; only the reflection panorama, environment and irradiance cross-fade between bakes.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
+- The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
+  sky reads as a low backdrop and turns stars into bokeh discs. Stars are points with a natural
+  spread of brightness, kept below white except the brightest few; only those near the horizon
+  scintillate.
 - One cloud field feeds the visible sky, water reflections, environment lighting and cloud
   shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
-  Distant air applies only beyond the protected foreground. Weather changes sweep the sky as a
+  Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer
+  that may surround the island, never a uniform tint. Weather changes sweep the sky as a
   front from upwind; the island's lighting follows the front's progress over the island.
-- Rain is light streaks plus analytic ripples on the water normal: no droplets, puddles or splash
-  foam. Wetness darkens exposed rock and plants within small limits, persists after rain and
-  leaves the tidal band alone.
+- Rain is light streaks plus analytic ripples on the water normal. Wetness darkens exposed rock
+  and plants within small limits, glosses bare stone, persists after rain and leaves the tidal
+  band alone. Standing water fills fixed hollows on level ground as the ground soaks, drowning
+  the lower meadow blades, and shrinks as it dries.
 - Characters are simple low-poly figures with flat colours and simple faces, recoloured into the
   island's palette and lit by the island's own light in soft cel steps; no outlines. Plants and
   props keep their realistic shading.

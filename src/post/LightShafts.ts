@@ -30,6 +30,8 @@ export class LightShafts {
 	private readonly facing = uniform( 0 );
 	private readonly haze = uniform( 0 );
 	private readonly lowSun = uniform( 0 );
+	// The disk's transmittance through fog between the camera and the sky.
+	private readonly fogVisibility = uniform( 1 );
 	private readonly projectionInverse = uniform( new THREE.Matrix4() );
 	private readonly cameraWorld = uniform( new THREE.Matrix4() );
 	private readonly resolution = uniform( new THREE.Vector2( 1, 1 ) );
@@ -104,7 +106,7 @@ export class LightShafts {
 				.add( texture( source, s.sub( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g ).add( texture( source, s.add( vec2( 0, t.y ) ) ).level( float( 0 ) ).g )
 				.add( texture( source, s.sub( vec2( 0, t.y ) ) ).level( float( 0 ) ).g ).mul( 0.2 ).mul( inside( s ) );
 			const angle = acos( clamp( dot( direction( q ), this.sunDir ), - 1, 1 ) );
-			const glare = exp( angle.div( - 0.012 ) ).mul( 0.7 ).add( exp( angle.div( - 0.045 ) ).mul( 0.04 ) ).mul( visible ).mul( this.glare );
+			const glare = exp( angle.div( - 0.012 ) ).mul( 0.7 ).add( exp( angle.div( - 0.045 ) ).mul( 0.04 ) ).mul( visible ).mul( this.fogVisibility ).mul( this.glare );
 			// Beams need haze to scatter in, and a low sun's long path through it; clear air at
 			// midday still shows them faintly. Weak enough that a clear sky only gains a glow.
 			const air = min( this.haze.mul( 600 ).add( 0.5 ), 2 ).mul( this.lowSun.mul( 4 ).add( 1 ) );
@@ -117,6 +119,8 @@ export class LightShafts {
 
 	/** The sun's direction and its direct irradiance. The moon is far too faint for either
 	 * effect; its own haze glow is part of the night sky. */
+	get sunDirection(): THREE.Vector3 { return this.sunDir.value; }
+
 	setSun( direction: THREE.Vector3, color: THREE.Color ): void {
 
 		this.sunDir.value.copy( direction );
@@ -124,13 +128,14 @@ export class LightShafts {
 
 	}
 
-	update( camera: THREE.PerspectiveCamera, width: number, height: number, haze: number ): void {
+	update( camera: THREE.PerspectiveCamera, width: number, height: number, haze: number, fogVisibility = 1 ): void {
 
 		const key = this.sunDir.value;
 		this.projectionInverse.value.copy( camera.projectionMatrixInverse );
 		this.cameraWorld.value.copy( camera.matrixWorld );
 		this.resolution.value.set( width, height );
 		this.haze.value = haze;
+		this.fogVisibility.value = fogVisibility;
 		this.lowSun.value = 1 - THREE.MathUtils.smoothstep( key.y, 0.05, 0.35 );
 		const c = this.clip.set( key.x, key.y, key.z, 0 ).applyMatrix4( camera.matrixWorldInverse ).applyMatrix4( camera.projectionMatrix );
 		const forward = c.w > 1e-6;

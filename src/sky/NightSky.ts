@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, uniform, vec2, vec3, float, floor, fract, sin, dot, cross, atan,
-	normalize, length, fwidth, abs, clamp, max, mix, pow, smoothstep, exp, sqrt, select, acos,
+	normalize, length, fwidth, abs, clamp, max, min, mix, pow, smoothstep, exp, sqrt, select, acos,
 } from 'three/tsl';
 import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS } from '../lighting/Radiometry.ts';
 
@@ -53,31 +53,65 @@ const GALACTIC_NORMAL = new THREE.Vector3( - 0.0331, 0.8106, - 0.5846 ).normaliz
 const GALACTIC_CENTRE = new THREE.Vector3( 0.5864, - 0.4580, - 0.6681 ).projectOnPlane( GALACTIC_NORMAL ).normalize();
 
 // Brightness of the Milky Way (0 to about 1): a soft band, brighter toward the centre, broken
-// into star clouds and cut by darker dust lanes.
-const milkyWay = Fn( ( [ c ]: [ V3 ] ) => {
+// into grainy star clouds and split along its length by a dark rift and scattered dark clouds.
+// `fine` is 0 for blurred lookups (reflections, bakes), which skip the small-scale structure.
+const milkyWay = Fn( ( [ c, fine ]: [ V3, F ] ) => {
 
 	const n = vec3( GALACTIC_NORMAL.x, GALACTIC_NORMAL.y, GALACTIC_NORMAL.z );
 	const g = vec3( GALACTIC_CENTRE.x, GALACTIC_CENTRE.y, GALACTIC_CENTRE.z );
 	const latitude = dot( c, n ).toVar();
 	const core = pow( max( dot( c, g ), 0 ), 3 ).toVar();
-	const width = mix( float( 0.1 ), float( 0.2 ), core );
+	// The band's edges wander, so it reads as clouds of stars rather than a painted stripe.
+	const edge = noise3( c.mul( 5 ).add( 9.1 ) ).sub( 0.5 ).mul( 0.05 );
+	const width = mix( float( 0.09 ), float( 0.19 ), core ).add( edge );
 	const band = exp( latitude.mul( latitude ).div( width.mul( width ) ).mul( - 0.5 ) ).toVar();
-	const clouds = noise3( c.mul( 7 ) ).mul( 0.55 ).add( noise3( c.mul( 17 ).add( 3.1 ) ).mul( 0.3 ) ).add( noise3( c.mul( 41 ).add( 7.7 ) ).mul( 0.15 ) );
-	// The dust lane runs along the plane, a little off its centre line, and frays at its edges.
-	const offset = latitude.sub( 0.015 ).add( noise3( c.mul( 9 ).add( 2.2 ) ).sub( 0.5 ).mul( 0.03 ) );
-	const lane = exp( offset.mul( offset ).div( - 2 * 0.02 * 0.02 ) )
-		.mul( smoothstep( 0.32, 0.6, noise3( c.mul( 4.5 ).add( 5.3 ) ) ) )
-		.mul( smoothstep( 0.2, 0.7, noise3( c.mul( 15 ).add( 1.7 ) ) ).mul( 0.6 ).add( 0.4 ) );
-	return band.mul( clouds.mul( 0.8 ).add( 0.2 ) ).mul( core.mul( 1.6 ).add( 0.45 ) ).mul( float( 1 ).sub( lane.mul( 0.6 ) ) );
+	const result = float( 0 ).toVar();
+	// The structure costs a dozen noise lookups; most of the sky lies outside the band.
+	If( band.greaterThan( 0.004 ), () => {
 
-} ).setLayout( { name: 'soomiMilkyWay', type: 'float', inputs: [ { name: 'c', type: 'vec3' } ] } );
+		const clouds = noise3( c.mul( 7 ) ).mul( 0.5 ).add( noise3( c.mul( 17 ).add( 3.1 ) ).mul( 0.35 ) ).add( 0.075 ).toVar();
+		// The rift runs the band's length a little off its centre line, wandering and widening.
+		const offset = latitude.sub( 0.012 ).add( noise3( c.mul( 5 ).add( 2.2 ) ).sub( 0.5 ).mul( 0.06 ) ).toVar();
+		const riftWidth = mix( float( 0.006 ), float( 0.03 ), noise3( c.mul( 3.5 ).add( 5.3 ) ) ).toVar();
+		const shade = float( 1 ).toVar();
+		If( fine.greaterThan( 0.5 ), () => {
 
-// Angular radius of a star's own image: far below a pixel at any review field of view.
-const STAR_POINT = 0.00004;
+			clouds.addAssign( noise3( c.mul( 41 ).add( 7.7 ) ).sub( 0.5 ).mul( 0.15 ).add( noise3( c.mul( 97 ).add( 1.3 ) ).sub( 0.5 ).mul( 0.1 ) ) );
+			// Unresolved stars: a fine mottling over the clouds.
+			shade.assign( noise3( c.mul( 130 ).add( 4.4 ) ).mul( 0.6 ).add( noise3( c.mul( 270 ).add( 8.8 ) ).mul( 0.4 ) ).mul( 0.35 ).add( 0.82 ) );
+			offset.addAssign( noise3( c.mul( 17 ).add( 6.1 ) ).sub( 0.5 ).mul( 0.02 ) );
+			// The rift breaks into patches; smaller dark clouds lie scattered over the band.
+			const rift = exp( offset.mul( offset ).div( riftWidth.mul( riftWidth ) ).mul( - 0.5 ) )
+				.mul( smoothstep( 0.2, 0.65, noise3( c.mul( 9 ).add( 1.7 ) ) ).mul( 0.75 ).add( 0.25 ) );
+			const patches = smoothstep( 0.58, 0.82, noise3( c.mul( 13 ).add( 3.3 ) ) ).mul( smoothstep( 0.35, 0.75, noise3( c.mul( 31 ).add( 7.2 ) ) ) );
+			shade.mulAssign( float( 1 ).sub( max( rift.mul( 0.7 ), patches.mul( 0.4 ) ) ) );
+
+		} ).Else( () => {
+
+			shade.assign( float( 1 ).sub( exp( offset.mul( offset ).div( riftWidth.mul( riftWidth ) ).mul( - 0.5 ) ).mul( 0.45 ) ) );
+
+		} );
+		result.assign( band.mul( clouds.mul( 0.85 ).add( 0.15 ) ).mul( core.mul( 1.6 ).add( 0.45 ) ).mul( shade ) );
+
+	} );
+	return result;
+
+} ).setLayout( { name: 'soomiMilkyWay', type: 'float', inputs: [ { name: 'c', type: 'vec3' }, { name: 'fine', type: 'float' } ] } );
+
+// Footprint (radians across a pixel's derivative) at which a baked star carries the energy of a
+// star drawn on screen. On screen a star stays a fixed fraction of a pixel wide and keeps its
+// brightness at any resolution or zoom, as the eye sees a point; bakes conserve its energy.
+const STAR_REFERENCE_FOOTPRINT = 0.0015;
+// Star image width in footprints: a little under a pixel, wide enough that a star drifting with
+// the sky's rotation keeps its brightness as it crosses pixels instead of shimmering.
+const STAR_WIDTH = 0.5;
 
 // One layer of stars on the faces of a cube around the celestial sphere: at most one star per
-// cell, kept away from the cell's edges, so a direction only ever needs its own cell.
-const starLayer = ( c: V3, footprint: F, cells: number, occupancy: F, seed: number, sizeMin: number, sizeMax: number, peak: number, time: F, elevation: F ) => {
+// cell, kept away from the cell's edges, so a direction only ever needs its own cell. Brightness
+// follows the sky's own statistics: every magnitude brighter holds about a third as many stars,
+// so most are faint and a few dozen stand out. `faintest` is the dimmest star's peak and `range`
+// how many times brighter the brightest may be.
+const starLayer = ( c: V3, footprint: F, conserve: boolean, cells: number, occupancy: F, seed: number, faintest: number, range: number, time: F, elevation: F ) => {
 
 	const radiance = vec3( 0 ).toVar();
 	const a = abs( c ).toVar();
@@ -98,22 +132,20 @@ const starLayer = ( c: V3, footprint: F, cells: number, occupancy: F, seed: numb
 			select( yMajor, vec3( st.x, select( c.y.greaterThan( 0 ), float( 1 ), float( - 1 ) ), st.y ),
 				vec3( st.x, st.y, select( c.z.greaterThan( 0 ), float( 1 ), float( - 1 ) ) ) ) );
 		const starDir = normalize( onFace );
-		// Many faint stars, few bright ones.
-		const magnitude = nightHash( key.add( vec2( 41.7, 113.9 ) ) ).toVar();
-		// Energy as for a disk of this radius; the star itself is a point, so its image is the
-		// pixel footprint and stays a point however far the view zooms in.
-		const radius = mix( float( sizeMin ), float( sizeMax ), pow( magnitude, 4 ) ).toVar();
-		const energy = radius.mul( radius ).toVar();
-		const variance = float( STAR_POINT * STAR_POINT ).add( footprint.mul( footprint ).mul( 0.18 ) ).toVar();
+		// Counts grow by about 2.8 per magnitude, so the brightness of a uniform draw u is u^-0.9.
+		const draw = max( nightHash( key.add( vec2( 41.7, 113.9 ) ) ), 1e-4 ).toVar();
+		const brightness = min( pow( draw, - 0.9 ), range ).mul( faintest ).toVar();
+		const variance = footprint.mul( footprint ).mul( STAR_WIDTH * STAR_WIDTH ).toVar();
 		const separation = c.sub( starDir ).toVar();
-		const profile = exp( dot( separation, separation ).div( variance ).mul( - 0.5 ) ).mul( energy.div( variance ) ).mul( 0.6 );
+		const profile = exp( dot( separation, separation ).div( variance ).mul( - 0.5 ) ).toVar();
+		if ( conserve ) profile.mulAssign( float( STAR_REFERENCE_FOOTPRINT * STAR_REFERENCE_FOOTPRINT * STAR_WIDTH * STAR_WIDTH ).div( variance ) );
 		const temperature = nightHash( key.add( vec2( 197.1, 7.3 ) ) ).toVar();
 		const color = mix( mix( vec3( 1, 0.72, 0.5 ), vec3( 1, 0.95, 0.88 ), smoothstep( 0, 0.35, temperature ) ),
 			vec3( 0.7, 0.82, 1 ), smoothstep( 0.55, 1, temperature ) );
-		// Low stars scintillate a little through the thicker air near the horizon.
-		const twinkle = sin( time.mul( magnitude.mul( 5 ).add( 3 ) ).add( temperature.mul( 41 ) ) )
-			.mul( float( 1 ).sub( smoothstep( 0.05, 0.45, elevation ) ) ).mul( 0.35 ).add( 1 );
-		const brightness = pow( magnitude, 6 ).mul( peak ).add( peak * 0.02 );
+		// Only low stars scintillate, seen through the thick air near the horizon: an irregular
+		// flicker, not a steady pulse; high stars burn steadily.
+		const flicker = nightNoise( vec2( time.mul( 2.3 ).add( temperature.mul( 57 ) ), draw.mul( 91 ) ) ).sub( 0.5 );
+		const twinkle = flicker.mul( float( 1 ).sub( smoothstep( 0.02, 0.2, elevation ) ) ).mul( 0.4 ).add( 1 );
 		radiance.assign( color.mul( brightness ).mul( profile ).mul( twinkle ) );
 
 	} );
@@ -250,20 +282,23 @@ export class NightSky {
 		// bake callers may supply a roughness/texel footprint explicitly, avoiding derivatives
 		// in their branches. A separate bake visibility keeps future endpoints off the dome.
 		const footprint = max( angularFootprint ?? length( fwidth( direction ) ), 1e-5 ).toVar();
+		const conserve = angularFootprint !== undefined;
 		const radiance = vec3( 0 ).toVar();
 		const v = clamp( visibility, 0, 1 ).toVar();
 		If( v.greaterThan( 0.0001 ), () => {
 
 			const c = normalize( this.frame.mul( direction ) ).toVar();
-			const band = milkyWay( c ).toVar();
+			const band = milkyWay( c, float( conserve ? 0 : 1 ) ).toVar();
 			const elevation = direction.y;
 			// Bright scattered stars, a dense faint field thickening along the Milky Way, and the
 			// band's own unresolved glow.
-			const bright = starLayer( c, footprint, 40, float( 0.32 ), 0, 0.0004, 0.0011, 2.2, this.time, elevation );
+			// About five thousand stars on the whole sphere span six magnitudes; below them, a dense
+			// field at the edge of visibility thickens along the Milky Way.
+			const bright = starLayer( c, footprint, conserve, 64, float( 0.2 ), 0, 0.014, 160, this.time, elevation );
 			const wash = clamp( this.moonWash, 0, 1 );
-			const faint = starLayer( c, footprint, 150, band.mul( 0.45 ).add( 0.22 ), 17, 0.00025, 0.0005, 0.5, this.time, elevation )
-				.mul( float( 1 ).sub( wash.mul( 0.6 ) ) );
-			const glow = mix( vec3( 0.62, 0.72, 1 ), vec3( 1, 0.86, 0.72 ), smoothstep( 0.5, 1.4, band ) ).mul( band ).mul( 0.024 )
+			const faint = starLayer( c, footprint, conserve, 180, band.mul( 0.5 ).add( 0.05 ), 17, 0.006, 3, this.time, elevation )
+				.mul( float( 1 ).sub( wash.mul( 0.7 ) ) );
+			const glow = mix( vec3( 0.62, 0.72, 1 ), vec3( 1, 0.86, 0.72 ), smoothstep( 0.5, 1.4, band ) ).mul( band ).mul( 0.03 )
 				.mul( float( 1 ).sub( wash.mul( 0.88 ) ) );
 			// Thick air near the horizon dims the stars and the band.
 			const horizon = smoothstep( - 0.01, 0.12, elevation );

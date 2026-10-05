@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, cameraViewMatrix,
-	normalize, abs, pow, max, min, dot, sign, mix, smoothstep, clamp, fract, sin, exp, select, dFdx, dFdy,
+	normalize, abs, pow, max, min, dot, sign, mix, smoothstep, clamp, fract, sin, exp, select, dFdx, dFdy, length,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
 import type { DetailTextures } from './ProceduralTextures.ts';
@@ -11,6 +11,8 @@ import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGrou
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 import { meadowCanopyHeight, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
+import { puddleCover } from '../weather/Puddles.ts';
+import { rainRippleGradient } from '../weather/Rain.ts';
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
@@ -108,6 +110,8 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		const sg = sign( n0 );
 		const uvX = vec2( p.z.mul( sg.x ), p.y ).mul( S ).toVar(), uvY = vec2( p.x.mul( sg.y ), p.z ).mul( S ).toVar(), uvZ = vec2( p.x.negate().mul( sg.z ), p.y ).mul( S ).toVar();
 		const gxX = dFdx( uvX ).toVar(), gyX = dFdy( uvX ).toVar(), gxY = dFdx( uvY ).toVar(), gyY = dFdy( uvY ).toVar(), gxZ = dFdx( uvZ ).toVar(), gyZ = dFdy( uvZ ).toVar();
+		// World footprint of a pixel, for filtering the rain rings on puddles.
+		const footprint = max( length( dFdx( p.xz ) ), length( dFdy( p.xz ) ) ).toVar();
 		const half = vec4( 0.5 );
 		const hX = half.toVar(), hY = half.toVar(), hZ = half.toVar();
 		const aX = half.toVar(), aY = half.toVar(), aZ = half.toVar();
@@ -308,7 +312,20 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		const rainWet = clamp( shared.wetness, 0, 1 ).mul( smoothstep( 0.65, 1.0, p.y.sub( shared.waterLevel ) ) )
 			.mul( smoothstep( - 0.6, 0.1, up ) );
 		albedo.mulAssign( mix( float( 1 ), mix( float( 0.84 ), float( 0.9 ), turf ), rainWet ) );
-		rough.assign( mix( rough, max( float( 0.58 ), rough.mul( 0.8 ) ), rainWet ) );
+		// A water film glosses exposed stone; turf stays matte.
+		rough.assign( mix( rough, mix( float( 0.32 ), max( float( 0.58 ), rough.mul( 0.8 ) ), turf ), rainWet ) );
+		// Standing water in level hollows: dark, mirror-smooth, ringed by the falling rain.
+		const level = smoothstep( 0.93, 0.985, up ).mul( rainWet ).toVar();
+		If( level.greaterThan( 0.001 ), () => {
+
+			const puddle = puddleCover( p.xz, shared.wetness ).mul( level ).toVar();
+			const ring = rainRippleGradient( p.xz, shared.time, shared.rain, footprint );
+			const flat = normalize( vec3( ring.x.negate(), 1, ring.y.negate() ) );
+			albedo.mulAssign( mix( float( 1 ), float( 0.4 ), puddle ) );
+			rough.assign( mix( rough, float( 0.03 ), puddle ) );
+			nW.assign( normalize( mix( nW, flat, puddle ) ) );
+
+		} );
 
 		// --- the tidal band: wet, dark, glossy; green-black algae just below the waterline;
 		// silt and sediment on the submerged ledges

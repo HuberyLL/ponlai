@@ -14,6 +14,7 @@ import {
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
 	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
+	mx_noise_float,
 } from 'three/tsl';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
 import type { Sky } from '../sky/Sky.ts';
@@ -450,6 +451,11 @@ export class Water {
 			heightGradient.addAssign( vec2( rainGradient.x.mul( horizontal.x ).add( rainGradient.y.mul( horizontal.z ) ),
 				rainGradient.x.mul( horizontal.y ).add( rainGradient.y.mul( horizontal.w ) ) ) );
 			const N = waveSurfaceNormal( heightGradient, horizontal ).toVar();
+			// The shading normal of a steep storm crest can face away from a viewer who still sees
+			// the displaced surface; bend it back to just past grazing instead of shading it black.
+			const toEye = normalize( cameraPosition.sub( positionWorld ) );
+			const facing = dot( N, toEye );
+			N.assign( normalize( N.add( toEye.mul( max( float( 0.02 ).sub( facing ), 0 ) ) ) ) );
 			// Energy shelter scales variance by amplitude squared. Fine LOD only attenuates
 			// the resolved mean; its missing variance remains in the physical glint distribution.
 			const rawCovariance = waveSlopeCovariance( d0.xy, m0.xyz ).mul( vWeights.x.mul( vWeights.x ) )
@@ -662,6 +668,36 @@ export class Water {
 			// Backfacing facets are self-occluded: neither the air reflection nor underwater
 			// transmission emerges through their back side. Neighbor-wave transport is unresolved.
 			const col = water.mul( airFacing ).toVar();
+			// Whitecaps in a storm: crests whose horizontal Jacobian folds below a threshold are
+			// breaking (Tessendorf's choppy-wave criterion). A breaking crest is not a solid blot:
+			// its foam is torn into lace by the bubbles, and older foam is drawn out by the gale
+			// into long thin streaks along the wind over the rough water between crests.
+			If( shared.storm.greaterThan( 0.001 ), () => {
+
+				const fold = horizontal.x.mul( horizontal.w ).sub( horizontal.y.mul( horizontal.z ) ).toVar();
+				const wind = shared.wind.direction;
+				const along = dot( wp.xz, wind ).toVar(), across = dot( wp.xz, vec2( wind.y.negate(), wind.x ) ).toVar();
+				// This calm, gently choppy sea rarely folds far: compress the threshold toward 1.
+				const crest = mix( float( 0.7 ), float( 0.8 ), shared.storm );
+				const breaking = float( 1 ).sub( smoothstep( crest.sub( 0.12 ), crest.add( 0.05 ), fold ) );
+				const lace = mx_noise_float( vec3( along.mul( 0.9 ), across.mul( 1.4 ), time.mul( 0.5 ) ) ).mul( 0.6 )
+					.add( mx_noise_float( vec3( along.mul( 3.1 ), across.mul( 3.7 ), time.mul( 0.9 ).add( 4.2 ) ) ).mul( 0.4 ) ).mul( 0.5 ).add( 0.5 );
+				const caps = breaking.mul( smoothstep( 0.3, 0.56, lace ) );
+				// Streaks some twenty metres long and a metre or two wide, in patches, mostly where the
+				// surface is already rough.
+				const streak = mx_noise_float( vec3( along.mul( 0.045 ), across.mul( 0.55 ), time.mul( 0.04 ) ) ).mul( 0.5 ).add( 0.5 );
+				const patches = mx_noise_float( vec3( wp.xz.mul( 0.018 ), time.mul( 0.02 ).add( 1.3 ) ) ).mul( 0.5 ).add( 0.5 );
+				const rough = float( 1 ).sub( smoothstep( 0.8, 1.05, fold ) );
+				const trails = smoothstep( 0.58, 0.8, streak ).mul( smoothstep( 0.4, 0.7, patches ) ).mul( rough ).mul( 0.5 );
+				const foam = clamp( max( caps.mul( 0.9 ), trails ).mul( smoothstep( 0, 0.6, shared.storm ) ), 0, 0.9 );
+				// Diffuse off-white lit by the sky and the sun, like the island's surfaces. A lightning
+				// flash multiplies the sky fill several times over; on foam alone that turns the sea
+				// into white confetti, so the foam follows the flash only by its square root.
+				const fill = max( shared.skyFill, 1 );
+				const lit = shared.skyIrradianceSource.mul( 2 / PI ).div( fill.sqrt() ).add( sunLight.mul( max( N.y, 0 ) ).mul( 0.8 / PI ) );
+				col.assign( mix( col, lit, foam.mul( airFacing ) ) );
+
+			} );
 
 			// soften the line where the surface cuts the rock (no hard seam); behind rock: the rock
 			const edge = select( skyBehind, float( 1 ), smoothstep( 0, 0.06, thick ) );
