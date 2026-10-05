@@ -4,6 +4,11 @@
  * clouds (`SkyProClouds.js`, the density, lighting and march).
  * Copyright (c) 2026 DRG Software Solutions LLC
  * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ *
+ * The in-cloud lightning term (flashLight) is adapted from VolumetricCloudsCS1 by Anthony
+ * Ibrahim (https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1, CloudRaymarch.shader).
+ * Copyright (c) 2026 Anthony Ibrahim
+ * Licensed under the MIT License; see ../weather/VolumetricCloudsCS1.LICENSE.txt.
  */
 
 import * as THREE from 'three/webgpu';
@@ -40,7 +45,7 @@ type V4 = THREE.Node<'vec4'>;
 // Everything returns vec4( in-scattered radiance, transmittance ).
 
 export const EARTH_RADIUS = 6_360_000;
-const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
+export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // The preset's scales, rounded so they nest: the wrapped wind offset (TILE) holds a whole
 // number of periods of the weather map, the shape noise and the erosion noise.
 const WEATHER_SCALE = 28672, BASE_SCALE = 7168, EROSION_SCALE = BASE_SCALE / 8;
@@ -71,6 +76,8 @@ export const DOME_WIDTH = 1536, DOME_HEIGHT = 384;
 const DOME_TEXEL_ANGLE = 2 * Math.PI / DOME_WIDTH;
 const STRIDE = 4; // panorama refresh pattern: one texel in STRIDE x STRIDE per frame
 const SHADOW_SIZE = 256, SHADOW_SPAN = 12000;
+// Lightning inside the cloud: point sources lighting the march.
+export const FLASH_SOURCES = 4;
 // 4 x 4 ordered dither: one pixel of every block per frame.
 const ORDER = [ 0, 10, 2, 8, 5, 15, 7, 13, 1, 11, 3, 9, 4, 14, 6, 12 ];
 const REBUILD_SLOTS = 4; // slots traced per frame right after a camera cut
@@ -171,7 +178,7 @@ const weatherFbm = ( q: V2, profile: number[] ) => {
 
 interface View {
 	width: number; height: number;
-	trace: THREE.StorageTexture; depth: THREE.StorageTexture; high: THREE.StorageTexture; motion: THREE.StorageTexture;
+	trace: THREE.StorageTexture; depth: THREE.StorageTexture; high: THREE.StorageTexture; motion: THREE.StorageTexture; flash: THREE.StorageTexture;
 	boxMin: THREE.StorageTexture; boxMax: THREE.StorageTexture; history: THREE.StorageTexture[];
 	kernels: { trace: THREE.ComputeNode; high: THREE.ComputeNode; box: THREE.ComputeNode; resolve: THREE.ComputeNode[] };
 }
@@ -212,6 +219,10 @@ export class Clouds {
 	readonly quality = uniform( 56 );
 	readonly dome: THREE.StorageTexture;
 	readonly shadowMap: THREE.StorageTexture;
+	// Lightning (weather/Lightning.ts): each source's world position (m) and reach (m) in xyzw,
+	// and its radiance this frame; `flashOn` is 1 while any of them is lit.
+	readonly flash = Array.from( { length: FLASH_SOURCES }, () => ( { source: uniform( new THREE.Vector4( 0, - 1e6, 0, 1 ) ), color: uniform( new THREE.Color( 0, 0, 0 ) ) } ) );
+	readonly flashOn = uniform( 0 );
 
 	// Camera-relative frame: the camera sits on the planet axis at `camY` (below the base).
 	private readonly camY = uniform( 15 );
@@ -249,9 +260,12 @@ export class Clouds {
 	private loading: Promise<void> | null = null;
 	private partialKernel: THREE.ComputeNode | null = null;
 	private shadowKernel: THREE.ComputeNode | null = null;
+	private previousFlash = '';
 	private view: View | null = null;
 	private readonly viewNode = texture( new THREE.Texture() );
-	private marchView: ( ( rd: V3, jitter: F ) => { L: V3; T: F; depth: F } ) | null = null;
+	private marchView: ( ( rd: V3, jitter: F ) => { L: V3; F: V3; T: F; depth: F } ) | null = null;
+	// This frame's lightning in the view, traced at a quarter of its resolution.
+	private readonly flashNode = texture( new THREE.Texture() );
 	private highAt: ( ( rd: V3, pxAngle: F ) => V4 ) | null = null;
 	private rainAt: ( ( rd: V3 ) => V4 ) | null = null;
 	private skyAt: ( ( rd: V3 ) => V3 ) | null = null;
@@ -431,12 +445,13 @@ export class Clouds {
 		const skyAt = ( rd: V3 ) => this.atmosphere.skyRadiance( rd ).add( this.nightAmbient.rgb );
 		const heightAlongRay = ( t: F, rd: V3 ) => this.camY.add( rd.y.mul( t ) ).add( dot( rd.xz, rd.xz ).mul( t ).mul( t ).div( 2 * EARTH_RADIUS ) ).sub( SHELL_BOTTOM ).div( SHELL_THICKNESS );
 
-		// Ray march the shell along rd (camera relative). L includes aerial perspective.
-		const makeMarch = ( maxSteps: number, pixelCone: F, stepCone: F ) => ( rd: V3, jitter: F ) => {
+		// Ray march the shell along rd (camera relative). L includes aerial perspective; `flash`
+		// adds the lightning inside the cloud.
+		const makeMarch = ( maxSteps: number, pixelCone: F, stepCone: F, flash = false ) => ( rd: V3, jitter: F ) => {
 
 			const start = layerDistance( this.camY, rd.y, float( SHELL_BOTTOM ) ).toVar();
 			const end = min( layerDistance( this.camY, rd.y, float( SHELL_BOTTOM + SHELL_THICKNESS ) ), FAR ).toVar();
-			const color = vec3( 0 ).toVar();
+			const color = vec3( 0 ).toVar(), flashColor = vec3( 0 ).toVar();
 			const transmission = float( 1 ).toVar(), weightedDepth = float( 0 ).toVar();
 			// The shell's coverage at its fullest here: the bound for skipping empty cells.
 			const coverageBound = shellCoverage( max( this.coverageFrom, this.coverageTo ) ).toVar();
@@ -599,6 +614,15 @@ export class Clouds {
 					const stepT = exp( sigmaT.mul( stepLength ).negate() ).toVar();
 					const alpha = transmission.mul( float( 1 ).sub( stepT ) ).toVar();
 					color.addAssign( radiance.mul( alpha ) );
+					if ( flash ) {
+
+						If( this.flashOn.greaterThan( 0.5 ), () => {
+
+							flashColor.addAssign( this.flashLight( p ).mul( alpha ) );
+
+						} );
+
+					}
 					weightedDepth.addAssign( alpha.mul( t ) );
 					transmission.mulAssign( stepT );
 					accumulatedDepth.addAssign( sigmaT.mul( stepLength ) );
@@ -619,8 +643,10 @@ export class Clouds {
 			// A closed deck runs on to the horizon in its own grey rather than melting into a clear sky.
 			const melt = smoothstep( MELT_START, MELT_END, depth ).mul( float( 1 ).sub( closed ) );
 			const L = mix( hazed, sky.mul( alpha ), melt );
+			// The lightning inside the cloud, kept apart (see buildView), under the same air.
+			const F = flashColor.mul( ap ).mul( float( 1 ).sub( melt ) );
 			// The march stops once 0.3 % of the light gets through: the rest counts as opaque.
-			return { L, T: sat( transmission.sub( 0.003 ).div( 0.997 ) ), depth };
+			return { L, F, T: sat( transmission.sub( 0.003 ).div( 0.997 ) ), depth };
 
 		};
 
@@ -726,7 +752,10 @@ export class Clouds {
 		const domeCone = float( DOME_TEXEL_ANGLE );
 		const marchPano = makeMarch( 128, domeCone, domeCone );
 		const pixelCone = this.cam.tan.y.mul( 2 ).div( this.displayHeight );
-		this.marchView = makeMarch( 256, pixelCone, this.cam.tan.y.mul( 2 ).div( this.viewSize.y ) );
+		// The panorama refreshes a sixteenth of its texels per frame and feeds bakes that cross-fade
+		// over seconds, too slow for a flash: only the view carries the lightning in its march;
+		// reflections take it from `flashAt`.
+		this.marchView = makeMarch( 256, pixelCone, this.cam.tan.y.mul( 2 ).div( this.viewSize.y ), true );
 		this.highAt = highAt;
 		this.rainAt = rainAt;
 		this.skyAt = skyAt;
@@ -798,9 +827,14 @@ export class Clouds {
 			return t;
 
 		};
-		if ( this.view ) for ( const t of [ this.view.trace, this.view.depth, this.view.high, this.view.motion, this.view.boxMin, this.view.boxMax, ...this.view.history ] ) t.dispose();
+		if ( this.view ) for ( const t of [ this.view.trace, this.view.depth, this.view.high, this.view.motion, this.view.flash, this.view.boxMin, this.view.boxMax, ...this.view.history ] ) t.dispose();
 		const tw = Math.ceil( width / 4 ), th = Math.ceil( height / 4 );
 		const trace = make( tw, th, 'cloudTrace' ), depth = make( tw, th, 'cloudTraceDepth' ), high = make( tw, th, 'cloudHighTrace' );
+		// A flash lasts a fraction of a second, a pixel's history seconds: averaged in, a flash
+		// would be printed in a 4 x 4 pattern and linger as a ghost (the history's clamp cannot
+		// catch it in a dark sky). The lightning is kept out of the history and shown from each
+		// frame's own trace instead, upsampled; its glow is soft.
+		const flashTrace = make( tw, th, 'cloudFlashTrace' );
 		const motion = make( tw, th, 'cloudMotion' ), boxMin = make( tw, th, 'cloudBoxMin' ), boxMax = make( tw, th, 'cloudBoxMax' );
 		const history = [ make( width, height, 'cloudViewA' ), make( width, height, 'cloudViewB' ) ];
 		this.viewSize.value.set( width, height );
@@ -834,7 +868,9 @@ export class Clouds {
 			// structured pattern (interleaved gradient noise) leaves diagonal hatching.
 			const jitter = fract( hash( vec2( tp ).mul( 4 ).add( this.slot ) ).add( this.frameNoise ) );
 			const m = marchView( rd, jitter );
-			textureStore( trace, tp, over( rainAt( rd ), vec4( m.L, m.T ) ) );
+			const rain = rainAt( rd ).toVar();
+			textureStore( trace, tp, over( rain, vec4( m.L, m.T ) ) );
+			textureStore( flashTrace, tp, vec4( m.F.mul( rain.a ), 1 ) );
 			textureStore( depth, tp, vec4( m.depth, float( 1 ).sub( m.T ), 0, 1 ) );
 
 		} )().compute( tw * th, [ 64 ] ).setName( 'Clouds.ViewTrace' );
@@ -974,10 +1010,11 @@ export class Clouds {
 
 		};
 		this.view = {
-			width, height, trace, depth, high, motion, boxMin, boxMax, history,
+			width, height, trace, depth, high, motion, flash: flashTrace, boxMin, boxMax, history,
 			kernels: { trace: traceKernel, high: highKernel, box: boxKernel, resolve: [ resolve( history[ 1 ], history[ 0 ] ), resolve( history[ 0 ], history[ 1 ] ) ] },
 		};
 		this.viewNode.value = history[ 0 ];
+		this.flashNode.value = flashTrace;
 		this.viewValid.value = 0;
 		this.resetHistory();
 
@@ -1048,7 +1085,10 @@ export class Clouds {
 		this.camDeltaHi.value.set( dx + driftX * 1.6, dy, dz + driftZ * 1.6 );
 		// At rest: a paused clock and a still camera (a jump in weather or time while paused still
 		// counts, and settles at once).
-		const resting = this.hasPrevious && moved <= 1e-4 && this.turned <= 1e-6 && time === this.previousTime;
+		// A change of lightning while paused (a review strike) retraces the view, so its flash is current.
+		const flash = this.flash.map( ( { source, color } ) => `${ source.value.toArray() },${ color.value.toArray() }` ).join( ';' );
+		const resting = this.hasPrevious && moved <= 1e-4 && this.turned <= 1e-6 && time === this.previousTime && flash === this.previousFlash;
+		this.previousFlash = flash;
 		this.previousCamera.copy( position );
 		this.previousOffset.copy( this.windOffset.value );
 		this.previousTime = time;
@@ -1214,12 +1254,54 @@ export class Clouds {
 
 	}
 
+	// Light from the lightning sources at a camera-relative point: an inverse-square core,
+	// softened so a source never blows out, times an exponential reach standing in for the cloud
+	// the light crosses (VolumetricCloudsCS1's Lightning()). There is no march toward the source:
+	// added inside the front-to-back march, the cloud between the glow and the viewer dims it, so
+	// a flash reads as coming from within the cloud.
+	private flashLight( p: V3 ): V3 {
+
+		const world = vec3( p.x.add( this.camXZ.x ), p.y, p.z.add( this.camXZ.y ) ).toVar();
+		let sum: V3 = vec3( 0 );
+		for ( const { source, color } of this.flash ) {
+
+			const r = length( world.sub( source.xyz ) );
+			const core = source.w.mul( 0.2 );
+			sum = sum.add( color.mul( exp( r.div( source.w ).negate() ).div( r.mul( r ).div( core.mul( core ) ).add( 1 ) ) ) );
+
+		}
+		return sum;
+
+	}
+
+	/** Light of the lightning inside the clouds in a direction, for reflections and directions
+	 * outside the view: the march's light where the ray enters the cloud deck, times the cloud's
+	 * `opacity` there, with the view's aerial perspective. Without texture lookups it costs the
+	 * water shader no sampler. */
+	flashAt( direction: V3, opacity: F ): V3 {
+
+		const result = vec3( 0 ).toVar();
+		If( this.flashOn.greaterThan( 0.5 ).and( direction.y.greaterThan( 0 ) ), () => {
+
+			// A little above the base, where the march gathers most of a thick deck's light.
+			const t = layerDistance( this.camY, direction.y, float( SHELL_BOTTOM + 150 ) ).toVar();
+			const p = vec3( direction.x.mul( t ), this.camY.add( direction.y.mul( t ) ), direction.z.mul( t ) );
+			const closed = smoothstep( 0.7, 0.95, shellCoverage( this.coverage ) );
+			const ap = exp( t.mul( - 1 / AP_DIST ).div( closed.mul( 5 ).add( 1 ) ) );
+			result.assign( this.flashLight( p ).mul( opacity ).mul( ap ).mul( smoothstep( 0, 0.04, direction.y ) ) );
+
+		} );
+		return result;
+
+	}
+
 	/** The clouds as seen directly: the view, upsampled bicubically and looked up with the camera
 	 * it was traced with; directions outside it, or a view without data yet, take the panorama. */
 	sampleView( direction: V3 ): V4 {
 
 		const V = this.viewCam;
-		const result = this.sample( direction ).toVar();
+		const panorama = this.sample( direction ).toVar();
+		const result = vec4( panorama.rgb.add( this.flashAt( direction, float( 1 ).sub( panorama.a ) ) ), panorama.a ).toVar();
 		const z = dot( direction, V.fwd ).toVar();
 		const ndc = vec2( dot( direction, V.right ), dot( direction, V.up ) ).div( V.tan.mul( max( z, 1e-4 ) ) );
 		const uv = vec2( ndc.x.mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( ndc.y.mul( 0.5 ) ) ).toVar();
@@ -1227,8 +1309,11 @@ export class Clouds {
 			.and( uv.y.greaterThanEqual( 0 ) ).and( uv.y.lessThanEqual( 1 ) ), () => {
 
 			const v = max( catmullRom( this.viewNode, uv, this.viewSize ), vec4( 0 ) );
+			// The last trace's samples sit at its slot and sub-pixel offset in each 4 x 4 block.
+			const fuv = uv.mul( this.viewSize ).sub( this.slot ).sub( this.subPixel ).sub( 0.5 ).div( 4 ).add( 0.5 ).div( this.traceSize );
+			const flash = this.flashNode.sample( fuv ).level( float( 0 ) ).rgb.mul( this.flashOn );
 			const above = smoothstep( - 0.05, - 0.03, direction.y );
-			result.assign( vec4( v.rgb.mul( above ), mix( float( 1 ), min( v.a, 1 ), above ) ) );
+			result.assign( vec4( v.rgb.add( flash ).mul( above ), mix( float( 1 ), min( v.a, 1 ), above ) ) );
 
 		} );
 		return result;
@@ -1285,6 +1370,17 @@ export class Clouds {
 
 	}
 
+	/** The weather's cloud coverage over a world position (x, z), as the front has swept it in
+	 * (the CPU twin of the march's front, without the weather map). */
+	coverageAt( x: number, z: number ): number {
+
+		const axis = this.frontAxis.value;
+		const reached = THREE.MathUtils.clamp( this.frontProgress.value + ( x * axis.x + z * axis.y ) / FRONT_SPAN, 0, 1 );
+		const sweep = reached * reached * ( 3 - 2 * reached );
+		return THREE.MathUtils.lerp( this.coverageFrom.value, this.coverageTo.value, sweep );
+
+	}
+
 	setWindOffset( offset: THREE.Vector2 ): void {
 
 		const wrap = ( v: number ) => v - TILE * Math.round( v / TILE );
@@ -1298,7 +1394,7 @@ export class Clouds {
 		this.shadowMap.dispose();
 		for ( const t of [ this.shape, this.synoptic, this.weather, this.bounds ] ) t?.dispose();
 		this.cirrusFibres?.dispose();
-		if ( this.view ) for ( const t of [ this.view.trace, this.view.depth, this.view.high, this.view.motion, this.view.boxMin, this.view.boxMax, ...this.view.history ] ) t.dispose();
+		if ( this.view ) for ( const t of [ this.view.trace, this.view.depth, this.view.high, this.view.motion, this.view.flash, this.view.boxMin, this.view.boxMax, ...this.view.history ] ) t.dispose();
 
 	}
 
