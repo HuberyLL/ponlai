@@ -57,8 +57,10 @@ exposed.
   reflections and the environment, and a cloud-shadow map), high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
   raining clouds, the day cycle (sun and moon), stars, Milky Way and moon, rainbows, weather
   presets, their blending and the auto-weather chain.
-- `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
-  distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
+- `src/weather/`: wind, lightning (branching channels after three.js's former LightningStrike and
+  point sources lighting the clouds' march from inside, after VolumetricCloudsCS1), puddles, rain
+  (a streak veil in the post pass, world-space streaks, ripples), distant air (aerial perspective)
+  and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
   glare, bloom, tilt-shift, grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
@@ -99,6 +101,10 @@ exposed.
 - The directly seen clouds accumulate over frames; a scene at rest (paused clock, still camera)
   settles its clouds once and keeps them, so a paused frame is exactly repeatable. The cloud
   march assumes a camera below the cloud base.
+- Lightning is a function of the scene clock: a paused frame holds its strike exactly
+  (`sky.lightning.force` stages one for review). Its light inside the clouds stays out of the
+  view's accumulated history, the bake and the panorama; channel, cloud glow and the island's
+  flash share one intensity per strike.
 - Rain is light streaks plus analytic ripples on the water normal. Wetness darkens exposed rock
   and plants within small limits, glosses bare stone, persists after rain and leaves the tidal
   band alone. Standing water fills fixed hollows on level ground as the ground soaks, drowning

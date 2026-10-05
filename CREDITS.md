@@ -59,6 +59,39 @@ packages, into `dist/licenses/`.
   `src/materials/CloudNoise.ts`
 - Changes: ported to TSL; the procedural textures remap it to [-1, 1].
 
+### LightningStrike (three.js / three-stdlib)
+
+- Upstream: `LightningStrike.js` by yomboprime, from the three.js examples (removed in r153), as
+  kept in [three-stdlib](https://github.com/pmndrs/three-stdlib) (`src/geometries/LightningStrike.js`)
+- Copyright: 2010-2023 three.js authors; (c) 2021-2023 Poimandres
+- Licence: MIT, see [`src/weather/LightningStrike.LICENSE.txt`](src/weather/LightningStrike.LICENSE.txt)
+  (both notices)
+- Files: `src/weather/LightningStrike.ts`: the recursive midpoint-displaced channel, its subrays
+  (branches) in a cone around their parent, the triangular prism mesh and the seekable seeded
+  generator.
+- Changes: ported to TypeScript; the tree is built once per strike instead of every frame, and
+  its propagation and vanishing moved to per-vertex times compared on the GPU; vertices keep their
+  axis point so distant channels can be widened to a pixel; branches drop and lean out at set
+  angles, are not recycled over time and stay above the sea; all randomness comes from one seed.
+  `LightningStorm.js` was read but not used.
+
+### VolumetricCloudsCS1
+
+- Upstream: https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1, by Anthony Ibrahim
+- Copyright: (c) 2026 Anthony Ibrahim
+- Licence: MIT, see [`src/weather/VolumetricCloudsCS1.LICENSE.txt`](src/weather/VolumetricCloudsCS1.LICENSE.txt)
+  (the files used are covered by the repository's MIT licence; its listed exceptions are the
+  light halo shaders, not used here)
+- Files: `src/weather/Lightning.ts`: each strike's profile (duration, return strokes, flicker
+  reseed, power, reach, tint), the pulse envelope with its flicker and the in-cloud source depth,
+  from `VolumetricClouds/Sky/LightningFlicker.cs` and `CloudLightning.cs`, ported from C#.
+  `src/sky/Clouds.ts`: the light of up to four point sources inside the cloud (an inverse-square
+  core times an exponential reach) added inside the front-to-back march, from
+  `CloudRaymarch.shader`, ported from HLSL to TSL.
+- Changes: strikes follow a seeded schedule of the scene clock instead of a random draw per frame;
+  channels get sharp return strokes after their leader; the light is kept out of the view's
+  accumulated history; reflections evaluate it where the ray meets the deck.
+
 ## Assets
 
 ### Rock Face 03

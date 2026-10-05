@@ -157,8 +157,6 @@ export class Sky {
 	private displayOvercast = uniform( 0 );
 	private displayAmbientGain = uniform( 1 );
 	private rainbowAmount = uniform( 0 );
-	// Radiance scale of a lightning channel and its glow, in scene units.
-	private lightningRadiance = uniform( 1 );
 	private cloudLayer: THREE.TextureNode;
 	private pmrem: THREE.PMREMGenerator;
 	private quad: THREE.QuadMesh;
@@ -297,10 +295,8 @@ export class Sky {
 			// faster than its surroundings, and a thick deck hides it entirely instead of letting
 			// its enormous radiance burn through a residual transmittance as a sharp point.
 			const stars = this.night.stars( d ).mul( this.night.moonOcclusion( d ) );
-			// A storm deck's base about a kilometre up, seen at the strike's distance.
 			const bow = this.rainbow( d ).mul( select( above, float( 1 ), float( 0 ) ) );
-			const strike = this.lightning.sky( d, atan( float( 950 ), this.lightning.distance ), float( 1 ).sub( cloud.a ) ).mul( this.lightningRadiance );
-			return vec4( background.add( strike ).add( bow ).add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
+			return vec4( background.add( bow ).add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
@@ -391,7 +387,6 @@ export class Sky {
 		}
 		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
 		this.solarIlluminance.copy( this.sunTint ).multiplyScalar( illuminance );
-		this.lightningRadiance.value = illuminance * 0.08;
 		// The sky-view LUT re-renders only when the sun has moved: a small 192 x 108 march.
 		this.atmosphere.sunDir.value.copy( this.sunDir );
 		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance );
@@ -792,7 +787,8 @@ export class Sky {
 		// Apply that same footprint to celestial points, keeping their locations fixed while
 		// spreading/dimming their finite energy rather than adding screen-space sparkles.
 		const footprint = exp2( mip ).mul( Math.SQRT2 * Math.PI / this.equirect.height );
-		return background.rgb.add( this.night.stars( direction, footprint ).mul( background.a ) );
+		// Lightning inside the clouds is live, never baked: a flash lasts a fraction of a second.
+		return background.rgb.add( this.night.stars( direction, footprint ).mul( background.a ) ).add( this.clouds.flashAt( direction, float( 1 ).sub( background.a ) ) );
 
 	}
 
