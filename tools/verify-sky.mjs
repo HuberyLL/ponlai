@@ -152,13 +152,14 @@ try {
 			movedPosition.x += 150;
 			movedPosition.z += 50;
 			const movedDisk = await disk( movedPosition, sky.sunDir, 100 );
-			// The solar centre is below the horizon, but the upper part of the 0.308 degree disk remains visible.
-			await update( - 0.15 );
+			// The solar centre is below the horizon, but the upper part of the displayed disk (0.54 degree
+			// radius, twice the true sun) remains visible.
+			await update( - 0.3 );
 			const horizontal = sky.sunDir.clone();
 			horizontal.y = 0;
 			horizontal.normalize();
 			const sunsetDisk = await disk( position, horizontal, 20 );
-			await update( - 0.5 );
+			await update( - 0.8 );
 			const hiddenDisk = await disk( position, horizontal, 20 );
 			return { elevations, full, half, textureBaseline, memory, firstDisk, movedDisk, sunsetDisk, hiddenDisk };
 		} finally {
@@ -201,9 +202,9 @@ try {
 	}
 	closeArray( measurements.firstDisk.centroid, measurements.movedDisk.centroid, 1, 'Solar disk does not move when the camera translates' );
 	checks.push( 'The HDR solar disk matches its projected direction within one pixel before and after a 150 m × 50 m camera translation' );
-	assert.ok( measurements.sunsetDisk.finite && measurements.sunsetDisk.count > 0, 'Upper solar rim remains visible with its centre at −0.15°' );
-	assert.ok( measurements.hiddenDisk.finite && measurements.hiddenDisk.count === 0, 'The disk is fully hidden at −0.5°' );
-	checks.push( 'A partial solar disk survives at −0.15° and disappears at −0.5°' );
+	assert.ok( measurements.sunsetDisk.finite && measurements.sunsetDisk.count > 0, 'Upper solar rim remains visible with its centre at −0.3°' );
+	assert.ok( measurements.hiddenDisk.finite && measurements.hiddenDisk.count === 0, 'The disk is fully hidden at −0.8°' );
+	checks.push( 'A partial solar disk survives at −0.3° and disappears at −0.8°' );
 	assert.deepEqual( errors, [] );
 	assert.deepEqual( failures, [] );
 	console.log( JSON.stringify( { checks, errors, failures, textureCounts: measurements.memory } ) );

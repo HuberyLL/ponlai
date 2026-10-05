@@ -10,8 +10,8 @@ import {
 	vec2, vec3, vec4, ivec2, float, sqrt, max, atan, asin, acos, clamp, cos, sin, mix, abs, select,
 	pmremTexture, textureLoad, Loop, exp2,
 } from 'three/tsl';
-import { Atmosphere, SUN_ANGULAR_RADIUS, SUN_ILLUMINANCE } from './Atmosphere.ts';
-import { SCENE_RADIANCE_SCALE, SUN_PROJECTED_SOLID_ANGLE } from '../lighting/Radiometry.ts';
+import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
+import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE } from '../lighting/Radiometry.ts';
 import { Clouds } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
@@ -268,13 +268,13 @@ export class Sky {
 		domeMat.colorNode = Fn( () => {
 
 			const d = normalize( positionWorld.sub( cameraPosition ) ).toVar();
-			const r = acos( clamp( dot( d, this.displaySunDir ), - 1, 1 ) ).div( SUN_ANGULAR_RADIUS ).toVar();
+			const r = acos( clamp( dot( d, this.displaySunDir ), - 1, 1 ) ).div( SUN_DISPLAY_RADIUS ).toVar();
 			const mask = float( 1 ).sub( smoothstep( 0.9, 1.0, r ) );
 			const limb = sqrt( max( float( 1 ).sub( r.mul( r ) ), 0 ) ).mul( 0.6 ).add( 0.4 );
 			// The integral of the visible disk is the key light's irradiance. A shared scene unit
 			// scale keeps the normalised disk finite in fp16 without dimming it independently.
 			const disk = this.atmosphere.transmittanceToSpace( d ).mul( this.displaySolarIlluminance )
-				.mul( mask ).mul( limb ).div( SUN_PROJECTED_SOLID_ANGLE ).mul( smoothstep( 0, 0.001, d.y ) );
+				.mul( mask ).mul( limb ).div( SUN_DISPLAY_SOLID_ANGLE ).mul( smoothstep( 0, 0.001, d.y ) );
 			// Above the horizon the clear sky and the clouds are both live. Below, the baked distant-sea reflection continues the waves.
 			const lower = this.samplePanorama( d, float( 0 ) ).toVar();
 			const cloud = this.clouds.sample( d ).toVar();
@@ -285,7 +285,8 @@ export class Sky {
 			const through = select( above, cloud.a, lower.a );
 			// Thin cloud turns most of the direct beam into the glow around it; the bare disk fades
 			// faster than its surroundings instead of burning through as a sharp point.
-			return vec4( background.add( disk.mul( through ).add( this.night.moon( d ) ).add( this.night.stars( d ) ).mul( through ) ), 1 );
+			const stars = this.night.stars( d ).mul( this.night.moonOcclusion( d ) );
+			return vec4( background.add( disk.mul( through ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
@@ -392,7 +393,10 @@ export class Sky {
 			this.keyColor.b += illuminance * 0.04 * celestial.moonKeyGain;
 			this.night.moonDir.value.copy( celestial.moonDir );
 			this.night.frame.value.copy( celestial.starFrame );
-			moonColor.setRGB( 0.035, 0.04, 0.0475 ).multiplyScalar( celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
+			this.night.moonWash.value = celestial.moonVisibility * celestial.moonIllumination;
+			// The disk sits in the upper tones at night exposure so its maria stay visible, as to the
+			// eye; the moonlight on the island is the key light above, not this disk.
+			moonColor.setRGB( 0.04, 0.041, 0.043 ).multiplyScalar( 0.32 * celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
 			this.night.starVisibility.value = celestial.nightVisibility * ( 1 - 0.22 * celestial.moonVisibility * celestial.moonIllumination );
 			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightVisibility );
 			this.grade.exposure = celestial.exposure;

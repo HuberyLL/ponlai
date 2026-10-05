@@ -23,7 +23,9 @@ try {
 
 		const s = window.__SOOMI__, r = s.renderer, sky = s.sky;
 		const animation = r.getAnimationLoop(), previous = r.getRenderTarget();
-		const original = { elevation: sky.elevation, illuminance: sky.sunIlluminance };
+		const original = { elevation: sky.elevation, illuminance: sky.sunIlluminance, weather: s.weather.target };
+		// The disk's integral equals the direct light only where no cloud covers it.
+		await s.setWeather( 'clear', 0 );
 		await r.setAnimationLoop( null );
 		const scene = new s.scene.constructor(), dome = sky.dome.clone();
 		dome.onBeforeRender = ( _renderer, _scene, camera ) => { dome.position.copy( camera.position ); dome.updateMatrixWorld(); };
@@ -63,7 +65,7 @@ try {
 		} finally {
 
 			rt.dispose(); r.setRenderTarget( previous );
-			sky.elevation = original.elevation; sky.sunIlluminance = original.illuminance; await s.applySun();
+			sky.elevation = original.elevation; sky.sunIlluminance = original.illuminance; await s.setWeather( original.weather, 0 ); await s.applySun();
 			await r.setAnimationLoop( animation );
 
 		}

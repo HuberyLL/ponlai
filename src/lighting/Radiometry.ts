@@ -2,7 +2,11 @@
 // fp16's finite range must not change its brightness relative to the sky or its reflections.
 // Exposure and display-space bloom thresholds undo this scale in Pipeline.
 export const SCENE_RADIANCE_SCALE = 1 / 16;
+// The physical sun (0.27 degrees) for shadow penumbrae and glints. The sky draws its disk at
+// SUN_DISPLAY_RADIUS: twice as wide, as games commonly do, since a true-size disk reads as a
+// point at a game's field of view. The moon matches it, as in reality.
 export const SUN_ANGULAR_RADIUS = 0.004675;
+export const SUN_DISPLAY_RADIUS = 2 * SUN_ANGULAR_RADIUS;
 
 function solarDiskProfile( radius: number ): number {
 
@@ -17,12 +21,18 @@ function solarDiskProfile( radius: number ): number {
 // Midpoint quadrature normalises the profile rather than treating a softened disk as uniform.
 // Radiometric integral: https://pbr-book.org/4ed/Radiometry,_Spectra,_and_Color/Working_with_Radiometric_Integrals
 const SAMPLES = 4096;
-let projectedSolidAngle = 0;
-for ( let i = 0; i < SAMPLES; i ++ ) {
+function projectedSolidAngle( radius: number ): number {
 
-	const theta = ( i + 0.5 ) * SUN_ANGULAR_RADIUS / SAMPLES;
-	projectedSolidAngle += solarDiskProfile( theta / SUN_ANGULAR_RADIUS )
-		* Math.sin( theta ) * Math.cos( theta ) * 2 * Math.PI * SUN_ANGULAR_RADIUS / SAMPLES;
+	let sum = 0;
+	for ( let i = 0; i < SAMPLES; i ++ ) {
+
+		const theta = ( i + 0.5 ) * radius / SAMPLES;
+		sum += solarDiskProfile( theta / radius ) * Math.sin( theta ) * Math.cos( theta ) * 2 * Math.PI * radius / SAMPLES;
+
+	}
+	return sum;
 
 }
-export const SUN_PROJECTED_SOLID_ANGLE = projectedSolidAngle;
+export const SUN_PROJECTED_SOLID_ANGLE = projectedSolidAngle( SUN_ANGULAR_RADIUS );
+// The displayed disk spreads the same irradiance over its larger area.
+export const SUN_DISPLAY_SOLID_ANGLE = projectedSolidAngle( SUN_DISPLAY_RADIUS );

@@ -1,16 +1,16 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, uniform, vec2, vec3, float, floor, fract, sin, dot, cross,
+	Fn, If, uniform, vec2, vec3, float, floor, fract, sin, dot, cross, atan,
 	normalize, length, fwidth, abs, clamp, max, mix, pow, smoothstep, exp, sqrt, select, acos,
 } from 'three/tsl';
-import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
+import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS } from '../lighting/Radiometry.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
-// A slightly enlarged moon reads better at this scene's scale than the true 0.26 degrees.
-export const MOON_ANGULAR_RADIUS = 0.014;
+// As wide as the displayed sun, as in reality; both are drawn at twice their true size.
+export const MOON_ANGULAR_RADIUS = SUN_DISPLAY_RADIUS;
 
 const nightHash = Fn( ( [ p ]: [ V2 ] ) => {
 
@@ -72,6 +72,9 @@ const milkyWay = Fn( ( [ c ]: [ V3 ] ) => {
 
 } ).setLayout( { name: 'soomiMilkyWay', type: 'float', inputs: [ { name: 'c', type: 'vec3' } ] } );
 
+// Angular radius of a star's own image: far below a pixel at any review field of view.
+const STAR_POINT = 0.00004;
+
 // One layer of stars on the faces of a cube around the celestial sphere: at most one star per
 // cell, kept away from the cell's edges, so a direction only ever needs its own cell.
 const starLayer = ( c: V3, footprint: F, cells: number, occupancy: F, seed: number, sizeMin: number, sizeMax: number, peak: number, time: F, elevation: F ) => {
@@ -97,12 +100,13 @@ const starLayer = ( c: V3, footprint: F, cells: number, occupancy: F, seed: numb
 		const starDir = normalize( onFace );
 		// Many faint stars, few bright ones.
 		const magnitude = nightHash( key.add( vec2( 41.7, 113.9 ) ) ).toVar();
+		// Energy as for a disk of this radius; the star itself is a point, so its image is the
+		// pixel footprint and stays a point however far the view zooms in.
 		const radius = mix( float( sizeMin ), float( sizeMax ), pow( magnitude, 4 ) ).toVar();
-		const radiusSquared = radius.mul( radius ).toVar();
-		// Convolve an angular Gaussian with the pixel footprint, preserving its energy.
-		const variance = radiusSquared.add( footprint.mul( footprint ).mul( 0.18 ) ).toVar();
+		const energy = radius.mul( radius ).toVar();
+		const variance = float( STAR_POINT * STAR_POINT ).add( footprint.mul( footprint ).mul( 0.18 ) ).toVar();
 		const separation = c.sub( starDir ).toVar();
-		const profile = exp( dot( separation, separation ).div( variance ).mul( - 0.5 ) ).mul( radiusSquared.div( variance ) );
+		const profile = exp( dot( separation, separation ).div( variance ).mul( - 0.5 ) ).mul( energy.div( variance ) ).mul( 0.6 );
 		const temperature = nightHash( key.add( vec2( 197.1, 7.3 ) ) ).toVar();
 		const color = mix( mix( vec3( 1, 0.72, 0.5 ), vec3( 1, 0.95, 0.88 ), smoothstep( 0, 0.35, temperature ) ),
 			vec3( 0.7, 0.82, 1 ), smoothstep( 0.55, 1, temperature ) );
@@ -116,6 +120,61 @@ const starLayer = ( c: V3, footprint: F, cells: number, occupancy: F, seed: numb
 	return radiance;
 
 };
+
+// The near side as seen from the northern hemisphere, north up, in disk units: the major maria
+// (centre x, y, radii) and the brightest young craters (centre, radius, brightness). Positions
+// are approximate, read from the well-known face of the full moon.
+const MARIA: ReadonlyArray<readonly [ number, number, number, number ]> = [
+	[ - 0.6, 0.15, 0.28, 0.42 ], // Oceanus Procellarum
+	[ - 0.25, 0.55, 0.26, 0.2 ], // Mare Imbrium
+	[ 0.25, 0.43, 0.15, 0.14 ], // Mare Serenitatis
+	[ 0.4, 0.14, 0.19, 0.15 ], // Mare Tranquillitatis
+	[ 0.68, 0.28, 0.11, 0.09 ], // Mare Crisium
+	[ 0.58, - 0.12, 0.13, 0.17 ], // Mare Fecunditatis
+	[ 0.38, - 0.27, 0.09, 0.09 ], // Mare Nectaris
+	[ - 0.18, - 0.35, 0.17, 0.13 ], // Mare Nubium
+	[ - 0.5, - 0.38, 0.09, 0.09 ], // Mare Humorum
+	[ - 0.3, 0.02, 0.12, 0.1 ], // Mare Cognitum and Insularum
+	[ 0.04, 0.25, 0.08, 0.06 ], // Mare Vaporum
+	[ 0.05, 0.78, 0.42, 0.07 ], // Mare Frigoris
+];
+const CRATERS: ReadonlyArray<readonly [ number, number, number, number ]> = [
+	[ - 0.1, - 0.68, 0.035, 0.45 ], // Tycho
+	[ - 0.28, 0.17, 0.03, 0.3 ], // Copernicus
+	[ - 0.66, 0.38, 0.016, 0.5 ], // Aristarchus
+	[ - 0.45, 0.13, 0.016, 0.25 ], // Kepler
+];
+
+// Relative albedo of the lunar surface at a disk position: dark maria with soft, broken shores,
+// bright highlands and young craters, and Tycho's faint ray system.
+const lunarAlbedo = Fn( ( [ q ]: [ V2 ] ) => {
+
+	const shore = nightNoise( q.mul( 7 ).add( vec2( 3.1, 7.7 ) ) ).sub( 0.5 ).mul( 0.5 )
+		.add( nightNoise( q.mul( 19 ).add( vec2( 8.3, 1.2 ) ) ).sub( 0.5 ).mul( 0.25 ) ).toVar();
+	// Neighbouring maria flow into each other: sum their soft footprints, then threshold.
+	const field = float( 0 ).toVar();
+	for ( const [ x, y, rx, ry ] of MARIA ) {
+
+		const e = q.sub( vec2( x, y ) ).div( vec2( rx * 1.2, ry * 1.2 ) );
+		field.addAssign( float( 1 ).sub( smoothstep( 0.45, 1.25, length( e ).add( shore ) ) ) );
+
+	}
+	const mare = smoothstep( 0.25, 0.75, field ).toVar();
+	const texture = nightNoise( q.mul( 6.7 ).add( vec2( 23.4, 3.9 ) ) ).mul( 0.6 ).add( nightNoise( q.mul( 17 ).add( vec2( 3.4, 9.9 ) ) ).mul( 0.4 ) );
+	// Maria are not uniform: lighter and darker lava flows within them.
+	const albedo = mix( float( 0.92 ), mix( float( 0.52 ), float( 0.66 ), texture ), mare ).mul( texture.sub( 0.5 ).mul( 0.12 ).add( 1 ) ).toVar();
+	for ( const [ x, y, r, brightness ] of CRATERS ) {
+
+		albedo.addAssign( float( 1 ).sub( smoothstep( r * 0.5, r * 1.6, length( q.sub( vec2( x, y ) ) ) ) ).mul( brightness ) );
+
+	}
+	// Tycho's rays: narrow radial streaks that fade with distance from the crater.
+	const fromTycho = q.sub( vec2( - 0.1, - 0.68 ) ).toVar();
+	const spokes = smoothstep( 0.7, 0.95, nightNoise( vec2( atan( fromTycho.y, fromTycho.x ).mul( 9 ), 1.7 ) ) );
+	albedo.addAssign( spokes.mul( float( 1 ).sub( smoothstep( 0.05, 0.9, length( fromTycho ) ) ) ).mul( 0.18 ) );
+	return albedo;
+
+} ).setLayout( { name: 'soomiLunarAlbedo', type: 'float', inputs: [ { name: 'q', type: 'vec2' } ] } );
 
 const nightMoon = Fn( ( [ direction, footprint, sunDir, moonDir, moonColor ]: [ V3, F, V3, V3, V3 ] ) => {
 
@@ -135,15 +194,13 @@ const nightMoon = Fn( ( [ direction, footprint, sunDir, moonDir, moonColor ]: [ 
 		const incidence = dot( normal, sunDir ).toVar();
 		const terminator = smoothstep( edgeWidth.mul( - 0.5 ), edgeWidth.mul( 0.5 ), incidence )
 			.mul( pow( max( incidence, 0 ), 0.36 ) ).toVar();
+		// The observer's right and up across the disk: lunar north stays up.
 		const up = select( abs( moonDir.y ).greaterThan( 0.98 ), vec3( 0, 0, 1 ), vec3( 0, 1, 0 ) );
-		const right = normalize( cross( up, moonDir ) ).toVar();
-		const north = cross( moonDir, right ).toVar();
+		const right = normalize( cross( moonDir, up ) ).toVar();
+		const north = cross( right, moonDir ).toVar();
 		const q = vec2( dot( tangent, right ), dot( tangent, north ) ).toVar();
-		// Dark maria, a few brighter highland blotches and a faint limb darkening.
-		const maria = nightNoise( q.mul( 2.8 ).add( vec2( 7.3, 19.1 ) ) ).mul( 0.6 )
-			.add( nightNoise( q.mul( 6.7 ).add( vec2( 23.4, 3.9 ) ) ).mul( 0.28 ) )
-			.add( nightNoise( q.mul( 15 ).add( vec2( 3.4, 9.9 ) ) ).mul( 0.12 ) ).toVar();
-		const albedo = float( 0.96 ).sub( smoothstep( 0.4, 0.68, maria ).mul( 0.3 ) ).mul( mix( float( 0.82 ), float( 1 ), depth ) );
+		// The near side's maria and craters, with a faint limb darkening.
+		const albedo = lunarAlbedo( q ).mul( mix( float( 0.85 ), float( 1 ), depth ) );
 		const horizon = smoothstep( - MOON_ANGULAR_RADIUS, 0.015, direction.y );
 		// At exact conjunction, roundoff in the tangent plane can leave a faint positive
 		// incidence outside the antialiased rim. Suppress only this vanishing phase interval.
@@ -164,7 +221,7 @@ const nightMoonGlow = Fn( ( [ direction, sunDir, moonDir, moonColor ]: [ V3, V3,
 
 	const angle = acos( clamp( dot( direction, moonDir ), - 1, 1 ) ).toVar();
 	const lit = float( 1 ).sub( dot( sunDir, moonDir ) ).mul( 0.5 );
-	const glow = exp( angle.div( - 0.035 ) ).mul( 0.05 ).add( exp( angle.div( - 0.3 ) ).mul( 0.006 ) );
+	const glow = exp( angle.div( - 0.035 ) ).mul( 0.12 ).add( exp( angle.div( - 0.3 ) ).mul( 0.015 ) );
 	return moonColor.mul( glow ).mul( lit ).mul( smoothstep( - 0.05, 0.05, moonDir.y ) );
 
 } ).setLayout( { name: 'soomiNightMoonGlow', type: 'vec3', inputs: [
@@ -182,6 +239,8 @@ export class NightSky {
 	// World to celestial frame: the stars turn about the pole of the sun's own path.
 	readonly frame = uniform( new THREE.Matrix3() );
 	readonly time = uniform( 0 );
+	// A bright moon's scattered light washes out the Milky Way and the faintest stars.
+	readonly moonWash = uniform( 0 );
 	// Strength of the haze glow around the moon (an art control; 0 leaves the bare disk).
 	readonly glow = uniform( 1 );
 
@@ -201,14 +260,26 @@ export class NightSky {
 			// Bright scattered stars, a dense faint field thickening along the Milky Way, and the
 			// band's own unresolved glow.
 			const bright = starLayer( c, footprint, 40, float( 0.32 ), 0, 0.0004, 0.0011, 2.2, this.time, elevation );
-			const faint = starLayer( c, footprint, 150, band.mul( 0.45 ).add( 0.22 ), 17, 0.00025, 0.0005, 0.5, this.time, elevation );
-			const glow = mix( vec3( 0.62, 0.72, 1 ), vec3( 1, 0.86, 0.72 ), smoothstep( 0.5, 1.4, band ) ).mul( band ).mul( 0.024 );
+			const wash = clamp( this.moonWash, 0, 1 );
+			const faint = starLayer( c, footprint, 150, band.mul( 0.45 ).add( 0.22 ), 17, 0.00025, 0.0005, 0.5, this.time, elevation )
+				.mul( float( 1 ).sub( wash.mul( 0.6 ) ) );
+			const glow = mix( vec3( 0.62, 0.72, 1 ), vec3( 1, 0.86, 0.72 ), smoothstep( 0.5, 1.4, band ) ).mul( band ).mul( 0.024 )
+				.mul( float( 1 ).sub( wash.mul( 0.88 ) ) );
 			// Thick air near the horizon dims the stars and the band.
 			const horizon = smoothstep( - 0.01, 0.12, elevation );
 			radiance.assign( bright.add( faint ).add( glow ).mul( v ).mul( horizon ).mul( SCENE_RADIANCE_SCALE ) );
 
 		} );
 		return radiance;
+
+	}
+
+	/** 1 except over the moon's disk, which hides the stars behind it. */
+	moonOcclusion( direction: V3 ): F {
+
+		const facing = dot( direction, this.moonDir );
+		const radius = length( direction.sub( this.moonDir.mul( facing ) ) ).div( MOON_ANGULAR_RADIUS );
+		return select( facing.greaterThan( 0 ), smoothstep( 0.98, 1.06, radius ), float( 1 ) );
 
 	}
 
