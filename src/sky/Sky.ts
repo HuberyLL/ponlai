@@ -15,7 +15,7 @@ import { SCENE_RADIANCE_SCALE, SUN_PROJECTED_SOLID_ANGLE } from '../lighting/Rad
 import { Clouds } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
-import type { WeatherState } from './Weather.ts';
+import type { WeatherFront, WeatherState } from './Weather.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -358,7 +358,7 @@ export class Sky {
 
 	/** Evaluate the sun, moon, key light, stars, grade and displayed weather for this frame.
 	 * Everything that moves with the clock is continuous here; bakes only capture this state. */
-	track( celestial: DayCycleSnapshot | null, weather: Readonly<WeatherState> | null, coverageOverride: number | null = null ): void {
+	track( celestial: DayCycleSnapshot | null, weather: Readonly<WeatherState> | null, coverageOverride: number | null = null, front: WeatherFront | null = null ): void {
 
 		if ( celestial ) {
 
@@ -418,8 +418,9 @@ export class Sky {
 		const directVisibility = weather?.directVisibility ?? 1;
 		// Preserve contrast under flat daytime light without lifting the night floor.
 		this.grade.blackLift *= 1 - 0.48 * overcast * this.grade.daylight;
-		// Like a camera, adapt a little to the dimmer diffuse daylight under a closed deck.
-		this.grade.exposure *= 1 + 0.5 * overcast * this.grade.daylight;
+		// Like a camera, adapt a little to the dimmer diffuse daylight under a closed deck, less
+		// so in rain, which should read as heavy.
+		this.grade.exposure *= 1 + 0.5 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
 		this.sunColor.multiplyScalar( directVisibility );
 		this.keyColor.multiplyScalar( directVisibility );
 		this.solarIlluminance.multiplyScalar( directVisibility );
@@ -430,7 +431,7 @@ export class Sky {
 		this.displaySolarIlluminance.value.copy( this.solarIlluminance );
 		this.displayOvercast.value = overcast;
 		this.displayAmbientGain.value = ambientGain;
-		this.trackClouds( celestial, weather, coverage, illuminance );
+		this.trackClouds( celestial, weather, coverage, illuminance, coverageOverride === null ? front : null );
 		this.weather.haze = weather?.haze ?? 0;
 		this.weather.rain = weather?.rain ?? 0;
 		this.weather.windSpeed = weather?.windSpeed ?? 3.8;
@@ -438,11 +439,16 @@ export class Sky {
 
 	}
 
-	private trackClouds( celestial: DayCycleSnapshot | null, weather: Readonly<WeatherState> | null, coverage: number, illuminance: number ): void {
+	private trackClouds( celestial: DayCycleSnapshot | null, weather: Readonly<WeatherState> | null, coverage: number, illuminance: number, front: WeatherFront | null ): void {
 
 		const clouds = this.clouds;
 		clouds.coverage.value = coverage;
 		clouds.density.value = weather?.density ?? 1;
+		clouds.coverageFrom.value = front ? front.from.coverage : coverage;
+		clouds.coverageTo.value = front ? front.to.coverage : coverage;
+		clouds.densityFrom.value = front ? front.from.density : clouds.density.value;
+		clouds.densityTo.value = front ? front.to.density : clouds.density.value;
+		clouds.frontProgress.value = front ? front.progress : 1;
 		// Cloud tops a couple of kilometres up keep the sun a little after it has set below.
 		const sunAbove = this.atmosphere.transmittanceAt( this.sunDir, 2 ).multiply( this.sunTint ).multiplyScalar( illuminance );
 		const moonGain = celestial?.moonKeyGain ?? 0;
@@ -460,10 +466,12 @@ export class Sky {
 	}
 
 	/** Advance the cloud field for this frame: wind, slow evolution and the viewer's position. */
-	updateClouds( viewer: THREE.Vector3, windOffset: THREE.Vector2, time: number ): void {
+	updateClouds( viewer: THREE.Vector3, windOffset: THREE.Vector2, windDirection: THREE.Vector2, time: number ): void {
 
 		if ( ! this.clouds.ready ) return;
 		this.clouds.setWindOffset( windOffset );
+		// Weather arrives from upwind.
+		this.clouds.frontAxis.value.copy( windDirection ).negate().normalize();
 		this.clouds.evolve.value = ( time * 0.6 ) % 6000;
 		this.night.time.value = time;
 		this.viewer.copy( viewer );

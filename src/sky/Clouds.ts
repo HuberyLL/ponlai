@@ -35,6 +35,8 @@ const STRIDE = 4; // refresh pattern: one texel in STRIDE x STRIDE per frame
 const SHADOW_SIZE = 256, SHADOW_SPAN = 8000;
 const MAX_STEPS = 96;
 const MULTIPLE_SCATTERING = 2.5;
+// A weather change sweeps across this many metres of sky, arriving from upwind.
+const FRONT_SPAN = 25000;
 
 // Upper-hemisphere map: longitude across, sqrt(latitude) up, denser near the horizon.
 export const directionToDome = Fn( ( [ d ]: [ V3 ] ) => {
@@ -71,8 +73,17 @@ const henyeyGreenstein = ( cosTheta: F, g: number ) =>
 
 export class Clouds {
 
+	// Coverage and density over the island; they drive the lighting decisions for the deck.
 	readonly coverage = uniform( 0.28 );
 	readonly density = uniform( 1 );
+	// The weather front: values before and after, the linear progress over the island and the
+	// unit horizontal direction the weather comes from.
+	readonly coverageFrom = uniform( 0.28 );
+	readonly coverageTo = uniform( 0.28 );
+	readonly densityFrom = uniform( 1 );
+	readonly densityTo = uniform( 1 );
+	readonly frontProgress = uniform( 1 );
+	readonly frontAxis = uniform( new THREE.Vector2( 1, 0 ) );
 	// Set through setWindOffset, which keeps it within one noise period.
 	readonly windOffset = uniform( new THREE.Vector2() );
 	readonly lightDir = uniform( new THREE.Vector3( 0.75, 0.53, - 0.12 ).normalize() );
@@ -125,9 +136,13 @@ export class Clouds {
 		const densityAt = ( xz: V2, altitude: F, withDetail: boolean ) => {
 
 			const result = float( 0 ).toVar();
+			// Upwind sky is further through a weather change than the island; downwind lags.
+			const reached = clamp( this.frontProgress.add( dot( xz, this.frontAxis ).div( FRONT_SPAN ) ), 0, 1 ).toVar();
+			const sweep = reached.mul( reached ).mul( float( 3 ).sub( reached.mul( 2 ) ) );
 			const p = xz.add( this.windOffset ).toVar();
 			const w = weatherNode.sample( p.div( WEATHER_TILE ) ).level( float( 0 ) ).toVar();
-			const cov = clamp( this.coverage, 0, 1 ).toVar();
+			const cov = clamp( mix( this.coverageFrom, this.coverageTo, sweep ), 0, 1 ).toVar();
+			const localDensity = mix( this.densityFrom, this.densityTo, sweep ).toVar();
 			const overcast = smoothstep( 0.72, 0.97, cov ).toVar();
 			// Coverage carves the clumped weather field; a full overcast closes it into a deck. The
 			// field is roughly normal (mean .27, deviation .18), so the threshold is its quantile:
@@ -167,7 +182,7 @@ export class Clouds {
 					} );
 
 				}
-				result.assign( body.mul( max( this.density, 0 ) ) );
+				result.assign( body.mul( max( localDensity, 0 ) ) );
 
 			} );
 			return result;
@@ -240,13 +255,16 @@ export class Clouds {
 						// Bright where the cloud is thin toward the light, dark inside thick heaps.
 						const powder = float( 1 ).sub( exp( d.mul( - 6 ) ) ).mul( 0.6 ).add( 0.4 );
 						const heightShade = clamp( altitude.sub( LAYER_BOTTOM ).div( 2600 ), 0, 1 ).toVar();
-						const ambient = mix( this.seaBounce.rgb.add( skyLight.mul( 0.25 ) ), skyLight, heightShade );
+						// A closed deck shades its own interior from the sky above it.
+						const ambient = mix( this.seaBounce.rgb.add( skyLight.mul( 0.25 ) ), skyLight, heightShade ).mul( mix( float( 1 ), float( 0.5 ), deck ) );
 						// Under a closed deck light arrives diffused rather than along the beam: two-stream
 						// transmission 1 / (1 + 0.75 (1 - g) tau) with g = 0.85, spread over 4 pi, beyond
 						// what the octaves carry. Separate heaps keep their contrast from the octaves alone.
 						// Many bounces also wash out the beam's colour.
-						const diffuse = max( float( 1 ).div( od.mul( 0.11 ).add( 1 ) ).sub( exp( od.mul( - 0.25 ) ) ), 0 ).mul( deck.mul( 1 / ( 4 * Math.PI ) ) );
-						const neutral = mix( this.lightColor.rgb, vec3( dot( this.lightColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ), 0.6 );
+						// Heavier rain decks (higher density) pass less, colder light.
+						const diffuse = max( float( 1 ).div( od.mul( 0.11 ).add( 1 ) ).sub( exp( od.mul( - 0.25 ) ) ), 0 )
+							.mul( deck.mul( 1 / ( 4 * Math.PI ) ) ).div( max( this.density, 0.5 ).sqrt() );
+						const neutral = mix( this.lightColor.rgb, vec3( dot( this.lightColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ).mul( vec3( 0.94, 0.98, 1.06 ) ), mix( float( 0.6 ), float( 0.9 ), deck ) );
 						const radiance = this.lightColor.rgb.mul( sun ).mul( powder ).add( neutral.mul( diffuse ) ).add( ambient );
 						const stepTransmittance = exp( d.mul( - SIGMA ).mul( dt ) );
 						scattered.addAssign( radiance.mul( transmittance ).mul( float( 1 ).sub( stepTransmittance ) ) );
@@ -257,7 +275,7 @@ export class Clouds {
 				} );
 				// Air between the viewer and distant clouds: they take the clear sky's colour. A closed
 				// deck reaches the horizon instead of opening onto a bright clear band beneath it.
-				const fade = exp( max( t0.sub( 12000 ), 0 ).div( mix( float( - 38000 ), float( - 400000 ), deck ) ) );
+				const fade = mix( exp( max( t0.sub( 12000 ), 0 ).div( - 38000 ) ), float( 1 ), deck );
 				const horizon = mix( smoothstep( 0, 0.035, direction.y ), float( 1 ), deck ).mul( fade );
 				const haze = this.atmosphere.skyRadiance( direction ).add( this.nightAmbient.rgb ).mul( float( 1 ).sub( transmittance ) );
 				result.assign( vec4( mix( haze, scattered, horizon ), mix( float( 1 ), transmittance, mix( smoothstep( 0, 0.02, direction.y ), float( 1 ), deck ) ) ) );

@@ -77,6 +77,32 @@ for ( const invalid of [ 'storm', '__proto__', '', null ] ) {
 		WEATHER_PRESETS.rain.windDirection = rain;
 	}
 }
+// Auto weather is a seeded chain: the same time steps give the same sky, changes move only
+// between neighbouring states, and the front reports the transition the clouds sweep through.
+{
+	const run = () => {
+		const auto = new Weather( 'fair' );
+		auto.auto = true;
+		const seen = [ auto.target ];
+		for ( let t = 0; t < 3600; t += 0.5 ) {
+			auto.update( 0.5 );
+			if ( auto.target !== seen.at( - 1 ) ) seen.push( auto.target );
+			const front = auto.front;
+			assert.ok( front.progress >= 0 && front.progress <= 1 );
+		}
+		return seen;
+	};
+	const first = run(), second = run();
+	assert.deepEqual( first, second, 'auto weather must be deterministic' );
+	assert.ok( first.length >= 8 && first.length <= 40, `an hour should hold several changes, saw ${ first.length }` );
+	const order = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain' ];
+	for ( let i = 1; i < first.length; i ++ ) {
+		assert.ok( Math.abs( order.indexOf( first[ i ] ) - order.indexOf( first[ i - 1 ] ) ) <= 2, `${ first[ i - 1 ] } -> ${ first[ i ] } skips too far` );
+	}
+	const held = new Weather( 'rain' );
+	for ( let t = 0; t < 600; t ++ ) held.update( 1 );
+	assert.equal( held.target, 'rain', 'without auto the weather holds' );
+}
 assert.ok( WEATHER_QUALITY.low.cloudSteps < WEATHER_QUALITY.high.cloudSteps );
 assert.ok( WEATHER_QUALITY.low.rainDrops < WEATHER_QUALITY.high.rainDrops );
-console.log( 'weather state: transition, interruption, pause, presets, heading wrap, moisture, ranges and validation passed' );
+console.log( 'weather state: transition, interruption, pause, presets, heading wrap, auto chain, moisture, ranges and validation passed' );
