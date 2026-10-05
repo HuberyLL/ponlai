@@ -54,7 +54,8 @@ exposed.
   presets, their blending and the auto-weather chain.
 - `src/weather/`: wind, rain (a streak veil in the post pass, world-space streaks, ripples),
   distant air (aerial perspective).
-- `src/post/`: frame graph (opaque pass, depth resolve, water pass, bloom, tilt-shift, grade).
+- `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
+  glare, bloom, tilt-shift, grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -75,7 +76,8 @@ exposed.
   it never rebuilds the wave spectrum.
 - One dominant key light (sun by day, moon by night) drives terrain, characters, water, caustics
   and every shadow map; sun/moon handoffs pass through zero direct light. The day cycle is
-  authored, not astronomical. The sky, sun, moon, stars, key light and grade follow the clock
+  authored, not astronomical. The sun and moon are drawn at twice their true size (equal to each
+  other); shadows and glints use the true sun. The sky, sun, moon, stars, key light and grade follow the clock
   every frame; only the reflection panorama, environment and irradiance cross-fade between bakes.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
