@@ -101,8 +101,11 @@ const numberParam = ( name: string, fallback: number ) => {
 	return Number.isFinite( value ) ? value : fallback;
 
 };
-const dayCycle = new DayCycle( { hour: numberParam( 'hour', 16 ), dayLength: Math.max( 30, numberParam( 'dayLength', 600 ) ),
-	paused: params.has( 'paused' ) || params.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.5 ) } );
+// A 48-minute day, as in many open-world games: slow enough to watch the light and the stars
+// turn. The default first-quarter moon lights the evening and sets at midnight, leaving the
+// small hours dark enough for the Milky Way.
+const dayCycle = new DayCycle( { hour: numberParam( 'hour', 16 ), dayLength: Math.max( 30, numberParam( 'dayLength', 2880 ) ),
+	paused: params.has( 'paused' ) || params.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.25 ) } );
 const requestedWeather = params.get( 'weather' ) ?? 'fair';
 const weather = new Weather( Object.hasOwn( WEATHER_PRESETS, requestedWeather ) ? requestedWeather as WeatherName : 'fair' );
 const weatherEffects = { rain: true, wetness: true };
@@ -436,7 +439,7 @@ weatherF.add( weatherEffects, 'wetness' ).name( 'wet surfaces' );
 const timeF = gui.addFolder( 'Time & moon' );
 const timeView = { preset: requestedPreset ?? 'golden-hour' };
 timeF.add( dayCycle, 'hour', 0, 24, 0.01 ).name( 'hour' ).listen().onFinishChange( refreshEnvironment );
-timeF.add( dayCycle, 'dayLength', 30, 3600, 1 ).name( 'seconds per day' );
+timeF.add( dayCycle, 'dayLength', 30, 7200, 1 ).name( 'seconds per day' );
 timeF.add( dayCycle, 'paused' ).name( 'pause clock' ).listen();
 timeF.add( timeView, 'preset', Object.keys( DAY_PRESETS ) ).name( 'time preset' ).listen().onChange( ( preset: DayPreset ) => { void setPreset( preset ); } );
 timeF.add( dayCycle, 'moonPhase', 0, 1, 0.01 ).name( 'moon phase' ).onFinishChange( refreshEnvironment );

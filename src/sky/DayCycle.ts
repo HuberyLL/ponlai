@@ -103,16 +103,16 @@ export class DayCycle {
 	paused: boolean;
 	advanceMoonPhase: boolean;
 	private currentHour = 16;
-	private secondsPerDay = 600;
-	private phase = 0.5;
+	private secondsPerDay = 2880;
+	private phase = 0.25;
 	private lunarDays = 29.53;
 	private completedDays = 0;
 
 	constructor( options: DayCycleOptions = {} ) {
 
 		this.hour = options.hour ?? 16;
-		this.dayLength = options.dayLength ?? 600;
-		this.moonPhase = options.moonPhase ?? 0.5;
+		this.dayLength = options.dayLength ?? 2880;
+		this.moonPhase = options.moonPhase ?? 0.25;
 		this.lunarPeriodDays = options.lunarPeriodDays ?? 29.53;
 		this.paused = options.paused ?? false;
 		this.advanceMoonPhase = options.advanceMoonPhase ?? false;
