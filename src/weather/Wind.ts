@@ -5,6 +5,10 @@ import { Fn, dot, sin, uniform } from 'three/tsl';
 const BASE_SPEED = 3.8;
 const CLOUD_DRIFT = 0.21;
 const clamp = ( value: number, low: number, high: number ) => Math.max( low, Math.min( high, value ) );
+// Shaders take sines of the phase at these rates: windGust 1 and 2.7; bushes and rim strands
+// 13/16 of it, times 1.3, .91 and .83. 1600 turns is a whole number of periods for every one of
+// them, so wrapping there is seamless and keeps the float32 phase precise in long sessions.
+const PHASE_PERIOD = 1600 * 2 * Math.PI;
 
 /** Add this object to shared before constructing materials, then give that same object to
  * Wind. Every consumer holds the same node identities throughout weather transitions. */
@@ -16,7 +20,7 @@ export function createWindUniforms() {
 		direction: uniform( direction ), // world-space travel direction; unit x/z
 		velocity: uniform( direction.clone().multiplyScalar( BASE_SPEED ) ), // air velocity, m/s
 		strength: uniform( 1 ), // vegetation amplitude relative to the authored fair-weather wind
-		phase: uniform( 0 ), // integrated gust phase, radians; never time * changing speed
+		phase: uniform( 0 ), // integrated gust phase, radians, modulo PHASE_PERIOD; never time * changing speed
 		displacement: uniform( new Vector2() ), // integrated air displacement, metres
 		cloudOffset: uniform( new Vector2() ), // offset for a density field sampled at p + offset
 		oceanGain: uniform( new Vector3( 1, 1, 1 ) ), // amplitude, not energy, for the FFT cascades
@@ -82,7 +86,7 @@ export class Wind {
 		validate( speed, heading, time );
 		this.publish( speed, heading );
 		this.elapsed = time;
-		this.uniforms.phase.value = time * speed / BASE_SPEED * 1.6;
+		this.uniforms.phase.value = ( time * speed / BASE_SPEED * 1.6 ) % PHASE_PERIOD;
 		this.uniforms.displacement.value.copy( this.uniforms.velocity.value ).multiplyScalar( time );
 		this.uniforms.cloudOffset.value.copy( this.uniforms.displacement.value ).multiplyScalar( - CLOUD_DRIFT );
 
@@ -98,7 +102,7 @@ export class Wind {
 		this.elapsed += dt;
 		// Trapezoidal integration follows the smoothly transitioning CPU weather state and
 		// does not change when a rendering-quality setting changes its update cadence.
-		this.uniforms.phase.value += dt * ( previousSpeed + speed ) * 0.5 / BASE_SPEED * 1.6;
+		this.uniforms.phase.value = ( this.uniforms.phase.value + dt * ( previousSpeed + speed ) * 0.5 / BASE_SPEED * 1.6 ) % PHASE_PERIOD;
 		this.uniforms.displacement.value.addScaledVector( this.previousVelocity.add( this.uniforms.velocity.value ), dt * 0.5 );
 		this.uniforms.cloudOffset.value.copy( this.uniforms.displacement.value ).multiplyScalar( - CLOUD_DRIFT );
 

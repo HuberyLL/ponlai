@@ -36,4 +36,15 @@ wind.reset( { time: 12 } );
 near( wind.uniforms.phase.value, start );
 assert.ok( wind.uniforms.cloudOffset.value.equals( offset ), 'Explicit fixed-time reset must reproduce startup' );
 for ( const invalid of [ NaN, Infinity, - 1 ] ) assert.throws( () => wind.update( invalid ), RangeError );
-console.log( 'Wind: pause, phase continuity, advection direction, update cadence, calm ocean bounds and deterministic seek pass.' );
+// The phase wraps where every shader rate completes whole turns, so long sessions stay seamless.
+const period = 1600 * 2 * Math.PI;
+const late = new Wind( createWindUniforms(), { time: period / 1.6 - 0.01 } );
+const before = late.uniforms.phase.value;
+late.update( 0.02 );
+assert.ok( late.uniforms.phase.value < before, 'phase must wrap' );
+for ( const rate of [ 1, 2.7, 13 / 16, 13 / 16 * 1.3, 13 / 16 * 0.91, 13 / 16 * 0.83 ] ) {
+	near( Math.sin( rate * late.uniforms.phase.value ), Math.sin( rate * ( before + 0.032 ) ), 1e-6 );
+}
+const day = new Wind( createWindUniforms(), { time: 86400 } );
+assert.ok( day.uniforms.phase.value >= 0 && day.uniforms.phase.value < period );
+console.log( 'Wind: pause, phase continuity and wrap, advection direction, update cadence, calm ocean bounds and deterministic seek pass.' );

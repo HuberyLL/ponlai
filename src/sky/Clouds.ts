@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, uniform, vec3, vec4, float, floor, fract, dot, mix, smoothstep,
-	clamp, max, min, exp, pow, sin, vec2, int,
+	clamp, max, min, exp, pow, sin, vec2, int, mod,
 } from 'three/tsl';
 
 type F = THREE.Node<'float'>;
@@ -12,6 +12,17 @@ type V4 = THREE.Node<'vec4'>;
 export const CLOUD_BASE = 110;
 export const CLOUD_TOP = 145;
 const CLOUD_EXTINCTION = 0.085;
+// Cloud groups sit on a 110 m grid and the erosion lattice has 1 / 0.075 m cells, both along the
+// field's rotated axes. The wind offset wraps every CLOUD_PERIOD metres on those axes (100 groups,
+// 825 lattice cells) and hash inputs repeat with it, so the drift is seamless and hash arguments
+// stay small however long the session runs. Cells within half a period of the origin are unchanged.
+const CLOUD_GROUP = 110, EROSION_SCALE = 0.075;
+const CLOUD_PERIOD = 11000;
+const FIELD_C = 0.83205, FIELD_S = 0.55470; // field axes: x' = c x + s z, z' = c z - s x
+const wrapCell = ( cell: F, cells: number ) => mod( cell.add( Math.floor( cells / 2 ) ), cells ).sub( Math.floor( cells / 2 ) );
+const EROSION_CELLS = Math.round( CLOUD_PERIOD * EROSION_SCALE );
+const latticeHash = ( cell: V3, x: number, y: number, z: number ) =>
+	cloudHash( vec3( wrapCell( cell.x.add( x ), EROSION_CELLS ), cell.y.add( y ), wrapCell( cell.z.add( z ), EROSION_CELLS ) ) );
 
 // Original procedural cloud field. Rounded groups provide the silhouette; lattice noise only
 // erodes their edges. No frame-dependent noise is used, so the panorama, reflected sky, and
@@ -22,17 +33,18 @@ const cloudHash = Fn( ( [ p ]: [ V3 ] ) => {
 
 } ).setLayout( { name: 'soomiCloudHash', type: 'float', inputs: [ { name: 'p', type: 'vec3' } ] } );
 
+// Value noise whose lattice repeats every `period` cells in x and z.
 const cloudNoise = Fn( ( [ p ]: [ V3 ] ) => {
 
 	const cell = floor( p ).toVar();
 	const f = fract( p ).toVar();
 	const w = f.mul( f ).mul( float( 3 ).sub( f.mul( 2 ) ) ).toVar();
 	const low = mix(
-		mix( cloudHash( cell ), cloudHash( cell.add( vec3( 1, 0, 0 ) ) ), w.x ),
-		mix( cloudHash( cell.add( vec3( 0, 1, 0 ) ) ), cloudHash( cell.add( vec3( 1, 1, 0 ) ) ), w.x ), w.y );
+		mix( latticeHash( cell, 0, 0, 0 ), latticeHash( cell, 1, 0, 0 ), w.x ),
+		mix( latticeHash( cell, 0, 1, 0 ), latticeHash( cell, 1, 1, 0 ), w.x ), w.y );
 	const high = mix(
-		mix( cloudHash( cell.add( vec3( 0, 0, 1 ) ) ), cloudHash( cell.add( vec3( 1, 0, 1 ) ) ), w.x ),
-		mix( cloudHash( cell.add( vec3( 0, 1, 1 ) ) ), cloudHash( cell.add( vec3( 1, 1, 1 ) ) ), w.x ), w.y );
+		mix( latticeHash( cell, 0, 0, 1 ), latticeHash( cell, 1, 0, 1 ), w.x ),
+		mix( latticeHash( cell, 0, 1, 1 ), latticeHash( cell, 1, 1, 1 ), w.x ), w.y );
 	return mix( low, high, w.z );
 
 } ).setLayout( { name: 'soomiCloudNoise', type: 'float', inputs: [ { name: 'p', type: 'vec3' } ] } );
@@ -47,18 +59,19 @@ const cloudDensity = Fn( ( [ position, wind, coverage, density ]: [ V3, V2, F, F
 
 		const envelope = smoothstep( 0, 0.1, h ).mul( float( 1 ).sub( smoothstep( 0.76, 1, h ) ) ).toVar();
 		const advected = position.xz.add( wind ).toVar();
-		const p = vec3( advected.x.mul( 0.83205 ).add( advected.y.mul( 0.55470 ) ), position.y,
-			advected.y.mul( 0.83205 ).sub( advected.x.mul( 0.55470 ) ) ).toVar();
-		const cell = floor( p.xz.div( 110 ) ).toVar();
+		const p = vec3( advected.x.mul( FIELD_C ).add( advected.y.mul( FIELD_S ) ), position.y,
+			advected.y.mul( FIELD_C ).sub( advected.x.mul( FIELD_S ) ) ).toVar();
+		const cell = floor( p.xz.div( CLOUD_GROUP ) ).toVar();
 		const body = float( 0 ).toVar();
 		// Search adjacent cells so irregular cloud groups can overlap without tile seams.
 		// Each group is three offset ellipsoids; random placement and sizes break up rows.
 		Loop( { start: int( - 1 ), end: int( 2 ), type: 'int' }, { start: int( - 1 ), end: int( 2 ), type: 'int' }, ( { i, j } ) => {
 
 			const id = cell.add( vec2( float( i ), float( j ) ) ).toVar();
-			const seed = cloudHash( vec3( id.x, 11.7, id.y ) ).toVar();
+			// Positions use the true cell; only the hash repeats with the wrapped wind offset.
+			const seed = cloudHash( vec3( wrapCell( id.x, CLOUD_PERIOD / CLOUD_GROUP ), 11.7, wrapCell( id.y, CLOUD_PERIOD / CLOUD_GROUP ) ) ).toVar();
 			const random = fract( vec3( 37.17, 73.91, 113.23 ).mul( seed ) ).toVar();
-			const centerXZ = id.add( random.xy.mul( 0.56 ).add( 0.22 ) ).mul( 110 );
+			const centerXZ = id.add( random.xy.mul( 0.56 ).add( 0.22 ) ).mul( CLOUD_GROUP );
 			const center = vec3( centerXZ.x, random.z.mul( 9 ).add( 122 ), centerXZ.y ).toVar();
 			const radius = mix( 30, 56, clamp( coverage, 0, 1 ) ).mul( mix( 0.85, 1.17, random.z ) ).toVar();
 			const local = p.sub( center ).div( vec3( radius, 17, radius ) ).toVar();
@@ -70,7 +83,7 @@ const cloudDensity = Fn( ( [ position, wind, coverage, density ]: [ V3, V2, F, F
 			body.assign( max( body, smoothstep( 0.02, 0.35, shape ).mul( active ) ) );
 
 		} );
-		const erosion = cloudNoise( p.mul( vec3( 0.075, 0.11, 0.075 ) ).add( vec3( 7.4, 2.8, 13.1 ) ) ).toVar();
+		const erosion = cloudNoise( p.mul( vec3( EROSION_SCALE, 0.11, EROSION_SCALE ) ).add( vec3( 7.4, 2.8, 13.1 ) ) ).toVar();
 		const billows = max( body.sub( float( 1 ).sub( erosion ).mul( 0.18 ) ), 0 ).toVar();
 		// High coverage joins the puffs into a stratified overcast bank continuously.
 		const overcast = smoothstep( 0.76, 0.98, coverage ).mul( erosion.mul( 0.18 ).add( 0.45 ) );
@@ -174,12 +187,23 @@ export class Clouds {
 
 	readonly coverage = uniform( 0.28 );
 	readonly density = uniform( 1 );
+	// Set through setWindOffset, which keeps it within one field period.
 	readonly windOffset = uniform( new THREE.Vector2() );
 	readonly lightDir = uniform( new THREE.Vector3( 0.75, 0.53, - 0.12 ).normalize() );
 	readonly lightColor = uniform( new THREE.Color( 0.5, 0.45, 0.38 ) );
 	readonly ambientColor = uniform( new THREE.Color( 0.026, 0.035, 0.044 ) );
 	// Set to 6 / 10 / 14 for low / medium / high; the shader has a fixed upper bound.
 	readonly quality = uniform( 10 );
+
+	/** Wraps an unbounded advection offset (density sampled at xz + offset) to an equivalent one. */
+	setWindOffset( offset: THREE.Vector2 ): void {
+
+		const wrap = ( v: number ) => v - CLOUD_PERIOD * Math.round( v / CLOUD_PERIOD );
+		const x = wrap( FIELD_C * offset.x + FIELD_S * offset.y ), z = wrap( FIELD_C * offset.y - FIELD_S * offset.x );
+		const det = FIELD_C * FIELD_C + FIELD_S * FIELD_S;
+		this.windOffset.value.set( ( FIELD_C * x - FIELD_S * z ) / det, ( FIELD_S * x + FIELD_C * z ) / det );
+
+	}
 
 	/** RGB is composited scene-linear radiance; alpha is remaining transmittance, not opacity. */
 	radiance( direction: V3, background: V3 ): V4 {

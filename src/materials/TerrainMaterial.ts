@@ -10,6 +10,7 @@ import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, meadowSoilCover, soilUnif
 import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
+import { meadowCanopyHeight, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
@@ -24,8 +25,9 @@ type V3 = THREE.Node<'vec3'>;
 type V2 = THREE.Node<'vec2'>;
 type F = THREE.Node<'float'>;
 
-const Surface = struct( { albedo: 'vec3', normal: 'vec3', rough: 'float', ao: 'float' } );
-interface SurfaceNode { get( name: 'albedo' | 'normal' ): V3; get( name: 'rough' | 'ao' ): F }
+// canopy: direct light left under the meadow's blades (1 where nothing grows)
+const Surface = struct( { albedo: 'vec3', normal: 'vec3', rough: 'float', ao: 'float', canopy: 'float' } );
+interface SurfaceNode { get( name: 'albedo' | 'normal' ): V3; get( name: 'rough' | 'ao' | 'canopy' ): F }
 
 // Whiteout triplanar blend (after Ben Golus), with the projection handedness preserved.
 // A principal axis must retain the geometry normal's sign: abs() would turn every west- or
@@ -194,6 +196,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 
 		// The meadow ends at the upper shoulder; exposed walls keep their mineral surface.
 		// Submerged boulders omit these nodes entirely.
+		const canopy = float( 1 ).toVar();
 		if ( vegetation ) {
 
 			const mossN = H.g.sub( 0.5 ).mul( 0.5 ).add( big.sub( 0.5 ).mul( 0.6 ) );
@@ -231,6 +234,9 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 				} );
 				mossC.assign( mix( mossC, grassC, turfCover ) );
 				rimGrassC.assign( grassC );
+				// The blades above shade the turf; soil pockets hold narrower, shorter shoots.
+				const canopyHeight = meadowCanopyHeight( meadow.a ).mul( turfCover ).mul( float( 1 ).sub( groundSoil.mul( 0.6 ) ) );
+				canopy.assign( meadowCanopyLight( p.xz, canopyHeight, shared.sunDir ) );
 				Hg.assign( mix( Hg, c1.mul( 0.5 ).add( c2.mul( 0.5 ) ), legacyTurf ) );
 
 			} );
@@ -327,7 +333,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 
 		// A completely blocked local sky must not keep an arbitrary ambient-light floor.
 		const ao = clamp( vAO, 0, 1 ).mul( mix( float( 1 ), float( 0.72 ), concave ) );
-		return Surface( albedo, nW, rough, ao );
+		return Surface( albedo, nW, rough, ao, canopy );
 
 	} )();
 
@@ -372,7 +378,7 @@ function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 		const detailAO = mix( float( 1 ), float( 0.75 ), rubble ).mul( mix( float( 0.8 ), float( 1 ), H.b ) );
 		// Baked solid contacts and procedural rubble can overlap: retain the stronger estimate.
 		const ao = min( attribute<'float'>( 'ao', 'float' ), detailAO );
-		return Surface( albedo, nW, float( 0.92 ), ao );
+		return Surface( albedo, nW, float( 0.92 ), ao, float( 1 ) );
 
 	} )();
 
@@ -437,7 +443,7 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 	const waterSun = refractedSunDirectionNode( shared.sunDir );
 	const waterSunView = normalize( cameraViewMatrix.mul( vec4( waterSun, 0 ) ).xyz );
 	const sunAtt = select( under, exp( sigT.negate().mul( dW ).div( waterSun.y ) )
-		.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( caus ), vec3( 1 ) );
+		.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( caus ), vec3( surf.get( 'canopy' ) ) );
 	const ambAtt = exp( sigT.negate().mul( dW.max( 0 ) ).mul( 1.25 ) );
 	const above = p.y.sub( shared.waterLevel );
 	const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 0.6 ).mul( 0.9 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );

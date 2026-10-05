@@ -34,7 +34,7 @@ export interface WeatherQualityProfile {
 	panoramaWidth: number;
 	panoramaHeight: number;
 	skyUpdateInterval: number;
-	shadowUpdateInterval: number;
+	underwaterShadowInterval: number; // refracted sun map; the sun's own map follows every key change
 	rainDrops: number;
 
 }
@@ -42,14 +42,16 @@ export interface WeatherQualityProfile {
 // Intervals are seconds of wall time. The controller never uses a quality profile to alter
 // weather state, so changing render quality cannot change the time, rain or lighting mood.
 export const WEATHER_QUALITY: Readonly<Record<WeatherQuality, Readonly<WeatherQualityProfile>>> = {
-	low: { cloudSteps: 6, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 1.2, shadowUpdateInterval: 0.2, rainDrops: 192 },
-	medium: { cloudSteps: 10, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.8, shadowUpdateInterval: 0.12, rainDrops: 384 },
-	high: { cloudSteps: 14, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.5, shadowUpdateInterval: 0.08, rainDrops: 640 },
+	low: { cloudSteps: 6, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 1.2, underwaterShadowInterval: 0.2, rainDrops: 192 },
+	medium: { cloudSteps: 10, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.8, underwaterShadowInterval: 0.12, rainDrops: 384 },
+	high: { cloudSteps: 14, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.5, underwaterShadowInterval: 0.08, rainDrops: 640 },
 };
 
 const fields = Object.keys( WEATHER_PRESETS.clear ) as ( keyof Preset )[];
 const smooth = ( t: number ) => t * t * ( 3 - 2 * t );
 const smoothIntegral = ( t: number ) => t * t * t * ( 1 - 0.5 * t );
+// Signed change of heading along the shorter arc, so 350° to 10° turns 20°, not 340°.
+const headingDelta = ( from: number, to: number ) => ( ( ( to - from ) % 360 ) + 540 ) % 360 - 180;
 
 function presetFor( name: WeatherName ): Readonly<Preset> {
 
@@ -123,8 +125,12 @@ export class Weather {
 			rainIntegral = this.from.rain * movingTime + ( this.destination.rain - this.from.rain ) * this.duration *
 				( smoothIntegral( b ) - smoothIntegral( a ) ) + this.destination.rain * ( dt - movingTime );
 			const blend = smooth( b );
-			for ( const key of fields ) this.current[ key ] = b === 1 ? this.destination[ key ] :
-				this.from[ key ] + ( this.destination[ key ] - this.from[ key ] ) * blend;
+			for ( const key of fields ) {
+
+				const delta = key === 'windDirection' ? headingDelta( this.from[ key ], this.destination[ key ] ) : this.destination[ key ] - this.from[ key ];
+				this.current[ key ] = b === 1 ? this.destination[ key ] : this.from[ key ] + delta * blend;
+
+			}
 
 		}
 

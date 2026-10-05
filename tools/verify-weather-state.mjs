@@ -60,6 +60,23 @@ for ( const invalid of [ 'storm', '__proto__', '', null ] ) {
 	assert.throws( () => new Weather( invalid ), RangeError );
 	assert.throws( () => weather.setWeather( invalid ), RangeError );
 }
+// Headings blend along the shorter arc. Presets currently share one heading, so swap two in.
+{
+	const clear = WEATHER_PRESETS.clear.windDirection, rain = WEATHER_PRESETS.rain.windDirection;
+	try {
+		WEATHER_PRESETS.clear.windDirection = 350;
+		WEATHER_PRESETS.rain.windDirection = 10;
+		const turning = new Weather( 'clear' );
+		turning.setWeather( 'rain', 20 );
+		turning.update( 10 );
+		close( ( ( turning.state.windDirection % 360 ) + 360 ) % 360, 0 );
+		turning.update( 10 );
+		assert.equal( turning.state.windDirection, 10 );
+	} finally {
+		WEATHER_PRESETS.clear.windDirection = clear;
+		WEATHER_PRESETS.rain.windDirection = rain;
+	}
+}
 assert.ok( WEATHER_QUALITY.low.cloudSteps < WEATHER_QUALITY.high.cloudSteps );
 assert.ok( WEATHER_QUALITY.low.rainDrops < WEATHER_QUALITY.high.rainDrops );
-console.log( 'weather state: transition, interruption, pause, presets, moisture, ranges and validation passed' );
+console.log( 'weather state: transition, interruption, pause, presets, heading wrap, moisture, ranges and validation passed' );

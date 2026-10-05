@@ -31,7 +31,7 @@ const hash22 = Fn( ( [ p ]: [ V2 ] ) => {
 } ).setLayout( { name: 'hash22', type: 'vec2', inputs: [ { name: 'p', type: 'vec2' } ] } );
 
 // gradient noise with an integer period
-const pnoise = Fn( ( [ p, per ]: [ V2, V2 ] ) => {
+export const pnoise = Fn( ( [ p, per ]: [ V2, V2 ] ) => {
 
 	const i = floor( p ).toVar();
 	const f = fract( p ).toVar();

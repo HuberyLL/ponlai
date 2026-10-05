@@ -143,7 +143,6 @@ export class Water {
 	uniforms = {
 		backscatter: uniform( 0.038 ),
 		roughness: uniform( 0.058 ), // Beckmann alpha: per-axis base slope variance = alpha squared / 2
-		wind: uniform( 3.4 ),
 		ssr: uniform( 1 ),
 		reflection: uniform( 1 ),
 		glitter: uniform( 0 ),

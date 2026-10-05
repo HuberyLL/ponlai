@@ -11,6 +11,7 @@ import { sampleMeadowSoil, soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
 import { windGust } from '../weather/Wind.ts';
+import { CANOPY_TOP, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import type { Shared } from '../shared.ts';
 
@@ -83,13 +84,14 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// by the instance here, i.e. in world space)
 	const p = positionLocal;
 	const soil = attribute<'float'>( 'soilCover', 'float' ).mul( soilUniforms.blend ).mul( soilUniforms.strength );
-	const origin = attribute<'vec3'>( 'tuftOrigin', 'vec3' );
+	const tuft = attribute<'vec4'>( 'tuftOrigin', 'vec4' );
+	const origin = tuft.xyz;
 	// Keep every planting anchor. Narrower, slightly shorter shoots reveal the same soil
 	// pockets as the ground material, and a zero blend restores their original footprint.
 	const rooted = p.sub( p.sub( origin ).mul( vec3( 0.22, 0.06, 0.22 ) ).mul( soil ) );
 	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
-	useRestPoseShadows( mat, rooted, rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) ) );
+	const rest = useRestPoseShadows( mat, rooted, rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) ) );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const cover = attribute<'float'>( 'rimCover', 'float' );
 	// Meadow gaps and the rim share one root tint instead of colouring the same blade twice.
@@ -103,7 +105,9 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
 	mat.aoNode = mix( float( 0.55 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( attribute<'float'>( 'skyVisibility', 'float' ) );
 	// light through the blades: strongest when the grass stands against the sun
-	useLighting( mat, () => new VegetationLighting( mix( float( 0.72 ), float( 1 ), t ), ( L, V ) =>
+	// Blades do not cast into the sun's shadow map; see MeadowCanopy.
+	const canopy = meadowCanopyLight( rest.xz, tuft.w.sub( rest.y.sub( origin.y ) ), shared.sunDir );
+	useLighting( mat, () => new VegetationLighting( mix( float( 0.72 ), float( 1 ), t ).mul( canopy ), ( L, V ) =>
 		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.42 ).add( 0.04 ).mul( t2 ) ) );
 	mat.userData.wind = wind;
 	return mat;
@@ -123,7 +127,8 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 	mesh.geometry.setAttribute( 'skyVisibility', visibility );
 	mesh.geometry.setAttribute( 'soilCover', soilCover );
 	mesh.geometry.setAttribute( 'rimCover', covers );
-	const tuftOrigin = new Float32Array( n * 3 );
+	// xyz: planting anchor; w: local canopy top above it, for the light through the blades
+	const tuftOrigin = new Float32Array( n * 4 );
 	const rng = mulberry32( 99 );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
@@ -161,9 +166,9 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 		// All attributes follow the compacted instance order, including the original sky bake.
 		visibility.setX( count, veg[ k + 8 ] );
 		soilCover.setX( count, onStack ? 0 : sampleMeadowSoil( x, z ) );
-		tuftOrigin[ count * 3 ] = pos.x;
-		tuftOrigin[ count * 3 + 1 ] = pos.y;
-		tuftOrigin[ count * 3 + 2 ] = pos.z;
+		tuftOrigin[ count * 4 ] = pos.x;
+		tuftOrigin[ count * 4 + 1 ] = pos.y;
+		tuftOrigin[ count * 4 + 2 ] = pos.z;
 		const cover = rimGround ? rimGrassCover( sampleRimGround( rimGround, x, z ) ) : 1;
 		covers.setX( count, cover );
 		if ( cover < 1 ) {
@@ -174,18 +179,19 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 			m.compose( pos, q, scl );
 
 		}
+		tuftOrigin[ count * 4 + 3 ] = scl.y * CANOPY_TOP;
 		mesh.setMatrixAt( count, m );
 		mesh.setColorAt( count ++, col );
 
 	}
 
 	ground.needsUpdate = true;
-	mesh.geometry.setAttribute( 'tuftOrigin', new THREE.InstancedBufferAttribute( tuftOrigin, 3 ) );
+	mesh.geometry.setAttribute( 'tuftOrigin', new THREE.InstancedBufferAttribute( tuftOrigin, 4 ) );
 	mesh.count = count;
 	mesh.instanceMatrix.needsUpdate = true;
 	mesh.instanceColor!.needsUpdate = true;
 	mesh.frustumCulled = false;
-	mesh.castShadow = true;
+	mesh.castShadow = false; // see MeadowCanopy
 	mesh.receiveShadow = true;
 	mesh.name = 'grass';
 	mesh.renderOrder = - 1; // before the terrain: the turf it covers then fails the depth test

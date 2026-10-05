@@ -16,6 +16,7 @@ import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
 import { generateWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
 import { buildGrass } from './world/Grass.ts';
+import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
@@ -114,7 +115,7 @@ let lastSkyHour = dayCycle.hour;
 let lastWeatherSignature = '';
 // Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
 let cloudOverride: number | null = params.has( 'clouds' ) ? THREE.MathUtils.clamp( numberParam( 'clouds', 0.32 ), 0, 1 ) : null;
-sky.clouds.windOffset.value.copy( shared.wind.cloudOffset.value );
+sky.clouds.setWindOffset( shared.wind.cloudOffset.value );
 const requestedQuality = params.get( 'quality' ) ?? 'medium';
 const skyQuality = { value: ( Object.hasOwn( WEATHER_QUALITY, requestedQuality ) ? requestedQuality : 'medium' ) as WeatherQuality };
 function applySkyQuality(): void {
@@ -171,7 +172,7 @@ function prepareSkyState(): void {
 	const state = weather.snapshot();
 	if ( cloudOverride !== null ) state.coverage = cloudOverride;
 	sky.setWeather( state );
-	sky.clouds.windOffset.value.copy( shared.wind.cloudOffset.value );
+	sky.clouds.setWindOffset( shared.wind.cloudOffset.value );
 	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.haze }`;
 
 }
@@ -304,7 +305,6 @@ water = new Water( {
 	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
-water.uniforms.wind.value = fft.params.windSpeed;
 applySkyFill();
 waterScene.add( water.mesh );
 
@@ -458,7 +458,7 @@ waterF.add( W.sheen, 'value', 0, 1, 0.005 ).name( 'sun sheen' );
 waterF.add( W.ssr, 'value', 0, 1, 1 ).name( 'SSR' );
 const waveF = gui.addFolder( 'Waves' );
 const rebuild = () => fft.rebuildSpectrum();
-waveF.add( fft.params, 'windSpeed', 1, 14, 0.1 ).onFinishChange( () => { W.wind.value = fft.params.windSpeed; rebuild(); } );
+waveF.add( fft.params, 'windSpeed', 1, 14, 0.1 ).onFinishChange( rebuild );
 waveF.add( fft.params, 'windDirection', - 180, 180, 1 ).onFinishChange( rebuild );
 waveF.add( fft.params, 'amplitude', 0, 3, 0.01 ).onFinishChange( rebuild );
 waveF.add( fft.params, 'choppiness', 0, 1.5, 0.01 ).onFinishChange( rebuild );
@@ -607,21 +607,22 @@ function tick(): void {
 		void sky.update( skyInterval * 0.8 ).catch( ( error: unknown ) => console.error( error ) );
 
 	}
-	shadowElapsed += environmentDt;
-	const shadowInterval = WEATHER_QUALITY[ skyQuality.value ].shadowUpdateInterval;
-	if ( shadowElapsed >= shadowInterval && shadowDirection.distanceToSquared( sky.keyDir ) > 1e-10 ) {
+	// Redraw the sun's map whenever the key moves. Its casters are all larger than a texel (the
+	// meadow shades itself, see MeadowCanopy), so their shadows slide with the light; a throttled
+	// redraw made them step at its cadence instead. The underwater map keeps the quality cadence.
+	if ( shadowDirection.distanceToSquared( sky.keyDir ) > 1e-10 ) {
 
-		shadowElapsed = 0;
 		shadowDirection.copy( sky.keyDir );
 		invalidateSunShadow();
 
 	}
+	shadowElapsed += environmentDt;
+	if ( shadowElapsed >= WEATHER_QUALITY[ skyQuality.value ].underwaterShadowInterval && refractedSun.update() ) shadowElapsed = 0;
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
 	caustics.update( sky.keyDir );
-	if ( sun.shadow.needsUpdate ) refractedSun.update();
 	characters.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
 
@@ -677,4 +678,4 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };

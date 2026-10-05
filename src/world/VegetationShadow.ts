@@ -5,7 +5,8 @@ type V3 = THREE.Node<'vec3'>;
 
 // Thin leaves move across individual shadow texels. Cast their rest silhouette and receive
 // its shadow in the same pose, while the visible surface keeps its original wind animation.
-export function useRestPoseShadows( material: THREE.NodeMaterial, restPosition: V3, animatedPosition: V3 ): void {
+// Returns the rest pose in world space for any other light term that must stay as still.
+export function useRestPoseShadows( material: THREE.NodeMaterial, restPosition: V3, animatedPosition: V3 ): V3 {
 
 	const restWorld = varyingProperty( 'vec3', 'vVegetationShadowRestWorld' );
 	// This is a material-local vertex stack, not a shared layout function: it writes a varying
@@ -21,5 +22,6 @@ export function useRestPoseShadows( material: THREE.NodeMaterial, restPosition: 
 	material.receivedShadowPositionNode = restWorld;
 	// Renderer caches shadow overrides by the source material's version.
 	material.needsUpdate = true;
+	return restWorld;
 
 }
