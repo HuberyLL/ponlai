@@ -19,10 +19,13 @@ export interface WeatherState {
 	// Thin, high cirrus veils above the cumulus layer.
 	cirrus: number;
 	wetness: number;
+	// Rain that fell recently: showers linger in the air nearby for a few minutes after the
+	// rain overhead stops, long enough for a rainbow (0 to 1).
+	showers: number;
 
 }
 
-type Preset = Omit<WeatherState, 'wetness'>;
+type Preset = Omit<WeatherState, 'wetness' | 'showers'>;
 
 // The atmosphere retains its colour. Cloud extinction, diffuse fill and distant air change
 // together; none of these presets adds a grey screen veil. Fog is a low layer over the sea that
@@ -115,7 +118,7 @@ export class Weather {
 		const preset = presetFor( name );
 		// Loading a rainy preset represents established weather for repeatable review captures.
 		// Subsequent weather changes preserve moisture and let the independent drying model run.
-		this.current = { ...preset, wetness: preset.rain * 0.8 };
+		this.current = { ...preset, wetness: preset.rain * 0.8, showers: preset.rain };
 		this.from = { ...preset };
 		this.destination = preset;
 		this.targetName = name;
@@ -210,6 +213,7 @@ export class Weather {
 		// drying takes minutes. A zero-time update leaves both transition and wetness untouched.
 		this.current.wetness = Math.min( 1, Math.max( 0,
 			equilibrium + ( this.current.wetness - equilibrium ) * Math.exp( - rate * dt ) ) );
+		this.current.showers = Math.max( this.current.rain, this.current.showers * Math.exp( - dt / 90 ) );
 
 	}
 

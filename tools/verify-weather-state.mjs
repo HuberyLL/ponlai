@@ -106,6 +106,17 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 	for ( let t = 0; t < 600; t ++ ) held.update( 1 );
 	assert.equal( held.target, 'rain', 'without auto the weather holds' );
 }
+// Showers linger after the rain overhead stops, so a clearing sky can still hold a rainbow.
+{
+	const clearing = new Weather( 'rain' );
+	clearing.setWeather( 'clear', 10 );
+	clearing.update( 10 );
+	assert.equal( clearing.state.rain, 0 );
+	clearing.update( 60 );
+	assert.ok( clearing.state.showers > 0.25, `showers fade too fast: ${ clearing.state.showers }` );
+	clearing.update( 600 );
+	assert.ok( clearing.state.showers < 0.01, 'showers must clear within minutes' );
+}
 assert.ok( WEATHER_QUALITY.low.cloudSteps < WEATHER_QUALITY.high.cloudSteps );
 assert.ok( WEATHER_QUALITY.low.rainDrops < WEATHER_QUALITY.high.rainDrops );
-console.log( 'weather state: transition, interruption, pause, presets, heading wrap, auto chain, moisture, ranges and validation passed' );
+console.log( 'weather state: transition, interruption, pause, presets, heading wrap, auto chain, moisture, lingering showers, ranges and validation passed' );

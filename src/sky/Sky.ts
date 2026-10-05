@@ -454,9 +454,9 @@ export class Sky {
 		this.trackClouds( celestial, weather, coverage, illuminance, coverageOverride === null ? front : null );
 		this.clouds.cirrus.value = weather?.cirrus ?? 0;
 		// A rainbow needs falling rain and direct sun at once, the sun lower than 42 degrees behind
-		// the viewer: most often as a shower clears.
-		const rain = weather?.rain ?? 0, sunlit = weather?.directVisibility ?? 1;
-		this.rainbowAmount.value = THREE.MathUtils.smoothstep( rain, 0.04, 0.3 ) * THREE.MathUtils.smoothstep( sunlit, 0.3, 0.7 )
+		// the viewer: most often as a shower clears, while it is still raining a few kilometres off.
+		const showers = weather?.showers ?? 0, sunlit = weather?.directVisibility ?? 1;
+		this.rainbowAmount.value = THREE.MathUtils.smoothstep( showers, 0.04, 0.3 ) * THREE.MathUtils.smoothstep( sunlit, 0.3, 0.7 )
 			* THREE.MathUtils.smoothstep( this.sunDir.y, 0, 0.08 ) * ( 1 - THREE.MathUtils.smoothstep( this.sunDir.y, 0.6, 0.72 ) );
 		this.weather.haze = weather?.haze ?? 0;
 		this.weather.rain = weather?.rain ?? 0;
