@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { Fn, If, uniform, vec2, vec3, float, abs, atan, asin, clamp, exp, max, smoothstep, fract, sin, dot, floor, mix, length } from 'three/tsl';
+import { Fn, If, uniform, vec2, vec3, float, abs, atan, asin, clamp, exp, max, smoothstep, fract, sin, dot, floor, mix, length, fwidth } from 'three/tsl';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -23,6 +23,9 @@ export class Lightning {
 
 	// Brightness of the current flash, 0 between strikes.
 	readonly flash = uniform( 0 );
+	// The channel itself: it glows between return strokes and fades more slowly than the
+	// flash, so the bolt stays on screen long enough to be seen.
+	readonly channel = uniform( 0 );
 	// Unit horizontal direction and distance (metres) of the current strike.
 	readonly direction = uniform( new THREE.Vector2( 1, 0 ) );
 	readonly distance = uniform( 6000 );
@@ -41,26 +44,33 @@ export class Lightning {
 
 	}
 
-	/** `storm` is 0 to 1; strikes come more often and closer as it grows. */
-	update( dt: number, storm: number ): void {
+	/** `storm` is 0 to 1; strikes come more often and closer as it grows. `viewAzimuth` is the
+	 * camera's heading (radians, atan2 of its forward z and x): most strikes fall in front of
+	 * the viewer, as a storm worth watching would, the rest anywhere around. */
+	update( dt: number, storm: number, viewAzimuth?: number ): void {
 
 		if ( dt <= 0 || this.strike === - 2 ) return;
 		if ( this.strike >= 0 ) {
 
 			this.strike += dt;
 			// Each stroke flares and decays in tens of milliseconds; the channel glows between.
-			let flash = 0;
+			let flash = 0, channel = 0;
 			for ( const at of this.strokes ) {
 
 				const t = this.strike - at;
-				if ( t >= 0 ) flash = Math.max( flash, Math.exp( - t / 0.06 ) * ( t < 0.012 ? t / 0.012 : 1 ) );
+				if ( t < 0 ) continue;
+				const rise = t < 0.012 ? t / 0.012 : 1;
+				flash = Math.max( flash, Math.exp( - t / 0.06 ) * rise );
+				channel = Math.max( channel, ( Math.exp( - t / 0.05 ) * 0.6 + Math.exp( - t / 0.25 ) * 0.4 ) * rise );
 
 			}
 			this.flash.value = flash;
-			if ( this.strike > this.strokes[ this.strokes.length - 1 ] + 0.6 ) {
+			this.channel.value = channel;
+			if ( this.strike > this.strokes[ this.strokes.length - 1 ] + 0.8 ) {
 
 				this.strike = - 1;
 				this.flash.value = 0;
+				this.channel.value = 0;
 
 			}
 			return;
@@ -70,7 +80,8 @@ export class Lightning {
 		this.wait -= dt * storm;
 		if ( this.wait > 0 ) return;
 		this.wait = 3 + this.random() * 12;
-		const angle = this.random() * Math.PI * 2;
+		const ahead = viewAzimuth !== undefined && this.random() < 0.7;
+		const angle = ahead ? viewAzimuth + ( this.random() - 0.5 ) * 1.1 : this.random() * Math.PI * 2;
 		this.direction.value.set( Math.cos( angle ), Math.sin( angle ) );
 		this.distance.value = 2500 + this.random() * 9000 * ( 1.4 - storm * 0.6 );
 		this.seed.value = Math.floor( this.random() * 1000 );
@@ -88,18 +99,21 @@ export class Lightning {
 		this.distance.value = distance;
 		this.seed.value = seed;
 		this.flash.value = 1;
+		this.channel.value = 1;
 		this.strike = - 2;
 
 	}
 
-	release(): void { this.strike = - 1; this.flash.value = 0; }
+	release(): void { this.strike = - 1; this.flash.value = 0; this.channel.value = 0; }
 
 	/** Light the sky adds along a direction: the channel, a branch, and the glow they cast into
 	 * the clouds (`cloudOpacity`, 0 in clear sky) around the strike. */
 	sky( direction: V3, cloudBaseAngle: F, cloudOpacity: F ): V3 {
 
 		const result = vec3( 0 ).toVar();
-		If( this.flash.greaterThan( 0.001 ), () => {
+		// At least about a pixel wide, so the bolt does not break up into dashes when far off.
+		const width = max( length( fwidth( direction ) ).mul( 0.5 ), 0.0004 ).toVar();
+		If( this.channel.greaterThan( 0.001 ), () => {
 
 			const flat = max( length( direction.xz ), 1e-4 );
 			const azimuth = fract( atan( direction.z, direction.x ).sub( atan( this.direction.y, this.direction.x ) ).div( 2 * Math.PI ).add( 0.5 ) )
@@ -117,13 +131,15 @@ export class Lightning {
 			const fork = clamp( float( 0.62 ).sub( along ).div( 0.35 ), 0, 1 ).toVar();
 			const branchWander = wander.add( fork.mul( 520 ).add( noise1( along.mul( 43 ), this.seed.add( 29 ) ).mul( 60 ) ).mul( scale ) );
 			const branchOffset = abs( azimuth.sub( branchWander ) ).mul( flat );
-			const branch = exp( branchOffset.div( 0.0004 ).negate() ).mul( 18 ).mul( smoothstep( 0, 0.1, fork ) ).mul( float( 1 ).sub( smoothstep( 0.6, 1, fork ) ) );
-			const core = exp( offset.div( 0.0004 ).negate() ).mul( 30 );
+			const branch = exp( branchOffset.div( width ).negate() ).mul( 18 ).mul( smoothstep( 0, 0.1, fork ) ).mul( float( 1 ).sub( smoothstep( 0.6, 1, fork ) ) );
+			const core = exp( offset.div( width ).negate() ).mul( 30 );
 			const halo = exp( offset.div( 0.002 ).negate() ).mul( 0.6 );
 			const channel = core.add( halo ).add( branch ).mul( inside );
 			// The cloud around the top of the channel lights up from within.
-			const near = exp( abs( azimuth ).mul( flat ).div( 0.09 ).negate() ).mul( exp( abs( elevation.sub( top ) ).div( 0.06 ).negate() ) );
-			result.assign( vec3( 0.75, 0.82, 1 ).mul( channel.add( near.mul( cloudOpacity ).mul( 1.2 ) ) ).mul( this.flash ) );
+			// Broad and soft: the glow spreads through kilometres of cloud, and a tight bright spot
+			// would bloom into a star.
+			const near = exp( abs( azimuth ).mul( flat ).div( 0.22 ).negate() ).mul( exp( abs( elevation.sub( top ) ).div( 0.12 ).negate() ) );
+			result.assign( vec3( 0.75, 0.82, 1 ).mul( channel.mul( this.channel ).add( near.mul( cloudOpacity ).mul( 0.45 ).mul( this.flash ) ) ) );
 
 		} );
 		return result;

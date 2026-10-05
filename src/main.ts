@@ -537,6 +537,7 @@ addEventListener( 'keydown', ( e ) => {
 const frameTimes: number[] = [];
 let shadowElapsed = 0;
 const shadowDirection = new THREE.Vector3();
+const viewForward = new THREE.Vector3();
 function tick(): void {
 
 	clock.update();
@@ -571,7 +572,8 @@ function tick(): void {
 	sky.updateClouds( camera.position, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
 	shared.storm.value = weather.state.storm;
-	sky.lightning.update( paused ? 0 : rawDt, weather.state.storm );
+	camera.getWorldDirection( viewForward );
+	sky.lightning.update( paused ? 0 : rawDt, weather.state.storm, Math.atan2( viewForward.z, viewForward.x ) );
 	// A strike lights the island for an instant through the sky's fill.
 	const strikeFill = lighting.skyFill * ( 1 + sky.lightning.flash.value * 8 );
 	scene.environmentIntensity = strikeFill;

@@ -669,18 +669,32 @@ export class Water {
 			// transmission emerges through their back side. Neighbor-wave transport is unresolved.
 			const col = water.mul( airFacing ).toVar();
 			// Whitecaps in a storm: crests whose horizontal Jacobian folds below a threshold are
-			// breaking (Tessendorf's choppy-wave criterion), streaked by the wind and broken up.
+			// breaking (Tessendorf's choppy-wave criterion). A breaking crest is not a solid blot:
+			// its foam is torn into lace by the bubbles, and older foam is drawn out by the gale
+			// into long thin streaks along the wind over the rough water between crests.
 			If( shared.storm.greaterThan( 0.001 ), () => {
 
-				const fold = horizontal.x.mul( horizontal.w ).sub( horizontal.y.mul( horizontal.z ) );
+				const fold = horizontal.x.mul( horizontal.w ).sub( horizontal.y.mul( horizontal.z ) ).toVar();
+				const wind = shared.wind.direction;
+				const along = dot( wp.xz, wind ).toVar(), across = dot( wp.xz, vec2( wind.y.negate(), wind.x ) ).toVar();
 				// This calm, gently choppy sea rarely folds far: compress the threshold toward 1.
 				const crest = mix( float( 0.7 ), float( 0.8 ), shared.storm );
-				const breaking = float( 1 ).sub( smoothstep( crest.sub( 0.06 ), crest, fold ) );
-				const streak = mx_noise_float( vec3( wp.xz.mul( vec2( 0.9, 0.35 ) ), time.mul( 0.3 ) ) ).mul( 0.5 ).add( 0.5 );
-				const foam = clamp( breaking.mul( smoothstep( 0.25, 0.65, streak ).mul( 0.8 ).add( 0.2 ) ).mul( shared.storm ), 0, 0.95 );
-				// Diffuse white lit by the sky and the sun, like the island's surfaces; aerated water
-				// scatters strongly, so it reads brighter than the sky's mean radiance.
-				const lit = shared.skyIrradianceSource.mul( 2.2 / PI ).add( sunLight.mul( max( N.y, 0 ) ).mul( 0.85 / PI ) );
+				const breaking = float( 1 ).sub( smoothstep( crest.sub( 0.12 ), crest.add( 0.05 ), fold ) );
+				const lace = mx_noise_float( vec3( along.mul( 0.9 ), across.mul( 1.4 ), time.mul( 0.5 ) ) ).mul( 0.6 )
+					.add( mx_noise_float( vec3( along.mul( 3.1 ), across.mul( 3.7 ), time.mul( 0.9 ).add( 4.2 ) ) ).mul( 0.4 ) ).mul( 0.5 ).add( 0.5 );
+				const caps = breaking.mul( smoothstep( 0.3, 0.56, lace ) );
+				// Streaks some twenty metres long and a metre or two wide, in patches, mostly where the
+				// surface is already rough.
+				const streak = mx_noise_float( vec3( along.mul( 0.045 ), across.mul( 0.55 ), time.mul( 0.04 ) ) ).mul( 0.5 ).add( 0.5 );
+				const patches = mx_noise_float( vec3( wp.xz.mul( 0.018 ), time.mul( 0.02 ).add( 1.3 ) ) ).mul( 0.5 ).add( 0.5 );
+				const rough = float( 1 ).sub( smoothstep( 0.8, 1.05, fold ) );
+				const trails = smoothstep( 0.58, 0.8, streak ).mul( smoothstep( 0.4, 0.7, patches ) ).mul( rough ).mul( 0.5 );
+				const foam = clamp( max( caps.mul( 0.9 ), trails ).mul( smoothstep( 0, 0.6, shared.storm ) ), 0, 0.9 );
+				// Diffuse off-white lit by the sky and the sun, like the island's surfaces. A lightning
+				// flash multiplies the sky fill several times over; on foam alone that turns the sea
+				// into white confetti, so the foam follows the flash only by its square root.
+				const fill = max( shared.skyFill, 1 );
+				const lit = shared.skyIrradianceSource.mul( 2 / PI ).div( fill.sqrt() ).add( sunLight.mul( max( N.y, 0 ) ).mul( 0.8 / PI ) );
 				col.assign( mix( col, lit, foam.mul( airFacing ) ) );
 
 			} );
