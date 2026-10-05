@@ -588,6 +588,7 @@ function tick(): void {
 	sky.advance( environmentDt );
 	publishLighting();
 	pipeline.air.haze.value = sky.weather.haze;
+	pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
 	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
 	sky.updateClouds( camera.position, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;

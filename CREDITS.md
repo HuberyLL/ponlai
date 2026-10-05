@@ -104,6 +104,9 @@ comment where it is used.
   (SIGGRAPH 2013 talk). Diffuse transmission through thick decks uses the two-stream
   approximation (e.g. Bohren, *Multiple scattering of light and some of its observable consequences*,
   Am. J. Phys. 55, 1987).
+- Crepuscular rays: Kenny Mitchell,
+  [*Volumetric Light Scattering as a Post-Process*](https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process)
+  (GPU Gems 3, 2007): a radial blur of the open sky toward the sun.
 - Depth-dependent water shadows: the volume-lighting integral described in
   [*Physically Based Rendering*, third edition](https://pbr-book.org/3ed-2018/Light_Transport_II_Volume_Rendering/Volumetric_Light_Transport),
   independently implemented in TSL with exponential depth strata, exact per-channel attenuation
