@@ -21,10 +21,17 @@ exposed.
   frame diagnostics. URL options: `paused`, `t`, `dpr`, `dist`, `polar`, `az`, `gui`. It needs
   Playwright's Chromium once (`npx playwright install chromium`), or `CHROME_PATH` set to a
   WebGPU-capable Chrome.
+- Sky and weather URL options: `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk,
+  midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
+  `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain; rain loads
+  as established, already wet), `clouds` (coverage override), `quality` (low, medium, high).
+  In the page, H toggles the GUI and Space pauses.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
   and wave optics (each file names the server it expects); `tools/verify-scene.mjs` checks a
   production preview; `tools/benchmark-lighting.mjs` A/B-times two builds;
   `tools/compare-captures.py` measures two overview captures (needs Pillow and NumPy).
+  `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs` and `verify-wind.mjs` are CPU-only
+  (plain `node`). Run GPU probes one at a time with no other page rendering the scene.
 
 ## Layout
 
@@ -35,11 +42,14 @@ exposed.
   with top-rooted overhanging branches of mixed lengths.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
-  the air/water optical interface, and baked local sky occlusion.
+  the air/water optical interface, baked local sky occlusion, and the meadow's light through its
+  own canopy.
 - `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
   sea floor, light under the water).
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading.
-- `src/sky/`: atmosphere bake, environment lighting.
+- `src/sky/`: atmosphere bake, environment lighting, volumetric clouds and their shadows, the day
+  cycle (sun and moon), stars and moon, weather presets and their blending.
+- `src/weather/`: wind, rain streaks and ripples, distant air (aerial perspective).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, bloom, tilt-shift, grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
@@ -54,7 +64,20 @@ exposed.
   patchy seabed detail; no exposed sea stacks or reefs.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
-- The sea is calm: no shore foam or whitecaps.
+- Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
+  the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Larger casters keep
+  the map, which redraws whenever the key light moves.
+- The sea is calm: no shore foam or whitecaps. Weather only scales the wave cascades' amplitude;
+  it never rebuilds the wave spectrum.
+- One dominant key light (sun by day, moon by night) drives terrain, characters, water, caustics
+  and every shadow map; sun/moon handoffs pass through zero direct light. The day cycle is
+  authored, not astronomical.
+- One cloud field feeds the visible sky, water reflections, environment lighting and cloud
+  shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
+  Distant air applies only beyond the protected foreground.
+- Rain is light streaks plus analytic ripples on the water normal: no droplets, puddles or splash
+  foam. Wetness darkens exposed rock and plants within small limits, persists after rain and
+  leaves the tidal band alone.
 - Characters are simple low-poly figures with flat colours and simple faces, recoloured into the
   island's palette and lit by the island's own light in soft cel steps; no outlines. Plants and
   props keep their realistic shading.
