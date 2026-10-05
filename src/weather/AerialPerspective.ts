@@ -49,8 +49,14 @@ export class AerialPerspective {
 			const ray = viewFar.xyz.div( viewFar.w ).toVar();
 			const direction = normalize( this.cameraWorld.mul( vec4( normalize( ray ), 0 ) ).xyz ).toVar();
 			// Distant air takes the sky's colour just above the horizon, so the far sea fades into
-			// the horizon itself rather than stopping short of it in a darker band.
-			const air = sky.sampleBackground( normalize( vec3( direction.x, 0.008, direction.z ) ), float( 2 ) ).toVar();
+			// the horizon itself rather than stopping short of it in a darker band. Looking down, the
+			// air is lit by the whole sky; a sharp horizon sample there would spread the horizon's
+			// clouds and the sun's glow into rays converging below the camera, so it turns to the
+			// horizon's average.
+			const down = smoothstep( 0.02, 0.35, direction.y.negate() ).toVar();
+			const around = sky.sampleBackground( vec3( 1, 0.06, 0 ), float( 6 ) ).add( sky.sampleBackground( vec3( - 1, 0.06, 0 ), float( 6 ) ) )
+				.add( sky.sampleBackground( vec3( 0, 0.06, 1 ), float( 6 ) ) ).add( sky.sampleBackground( vec3( 0, 0.06, - 1 ), float( 6 ) ) ).mul( 0.25 ).toVar();
+			const air = mix( sky.sampleBackground( normalize( vec3( direction.x, 0.008, direction.z ) ), float( 2 ) ), around, down ).toVar();
 			If( dw.lessThan( 1 ), () => {
 
 				const water = this.projectionInverse.mul( vec4( ndc.xy, dw, 1 ) ).toVar();
@@ -104,7 +110,7 @@ export class AerialPerspective {
 				// rather than banding against it; the sample is blurred so the horizon's clouds do not
 				// print into the fog, and high enough that the blur stays clear of the sea. It also
 				// glows toward the sun (Henyey-Greenstein forward scattering, g = 0.6).
-				const low = sky.sampleBackground( normalize( vec3( direction.x, 0.06, direction.z ) ), float( 4 ) );
+				const low = mix( sky.sampleBackground( normalize( vec3( direction.x, 0.06, direction.z ) ), float( 4 ) ), around, down );
 				const cosine = dot( direction, this.keyDir );
 				const forward = float( 0.64 ).div( float( 1.36 ).sub( cosine.mul( 1.2 ) ).pow( 1.5 ).mul( 4 * Math.PI ) );
 				const light = low.mul( 0.88 ).add( this.keyColor.rgb.mul( forward.mul( 0.22 ).add( 0.008 ) ) );
