@@ -1,7 +1,22 @@
+/*!
+ * The lunar disk is adapted from three-geospatial by Shota Matsuda
+ * (https://github.com/takram-design-engineering/three-geospatial).
+ * Copyright (c) 2024 Shota Matsuda
+ * Licensed under the MIT License; see ./three-geospatial.LICENSE.txt.
+ *
+ * Earthshine is adapted from a-starry-sky by David Evans (https://github.com/Dante83/a-starry-sky).
+ * Copyright (c) 2018-2026 David Evans
+ * Licensed under the MIT License; see ./a-starry-sky.LICENSE.txt.
+ *
+ * The moon's colour and heights come from NASA's Scientific Visualization Studio CGI Moon Kit
+ * (public domain), processed by tools/build-moon-textures.py.
+ */
+
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, uniform, vec2, vec3, float, floor, fract, sin, dot, cross, atan,
-	normalize, length, fwidth, abs, clamp, max, min, mix, pow, smoothstep, exp, sqrt, select, acos,
+	Fn, If, uniform, vec2, vec3, float, floor, fract, sin, tan, log, dot, cross, atan, asin,
+	normalize, length, fwidth, dFdx, dFdy, abs, clamp, max, min, mix, pow, smoothstep, exp, sqrt, select, acos,
+	sign, texture,
 } from 'three/tsl';
 import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS } from '../lighting/Radiometry.ts';
 
@@ -153,99 +168,80 @@ const starLayer = ( c: V3, footprint: F, conserve: boolean, cells: number, occup
 
 };
 
-// The near side as seen from the northern hemisphere, north up, in disk units: the major maria
-// (centre x, y, radii) and the brightest young craters (centre, radius, brightness). Positions
-// are approximate, read from the well-known face of the full moon.
-const MARIA: ReadonlyArray<readonly [ number, number, number, number ]> = [
-	[ - 0.6, 0.15, 0.28, 0.42 ], // Oceanus Procellarum
-	[ - 0.25, 0.55, 0.26, 0.2 ], // Mare Imbrium
-	[ 0.25, 0.43, 0.15, 0.14 ], // Mare Serenitatis
-	[ 0.4, 0.14, 0.19, 0.15 ], // Mare Tranquillitatis
-	[ 0.68, 0.28, 0.11, 0.09 ], // Mare Crisium
-	[ 0.58, - 0.12, 0.13, 0.17 ], // Mare Fecunditatis
-	[ 0.38, - 0.27, 0.09, 0.09 ], // Mare Nectaris
-	[ - 0.18, - 0.35, 0.17, 0.13 ], // Mare Nubium
-	[ - 0.5, - 0.38, 0.09, 0.09 ], // Mare Humorum
-	[ - 0.3, 0.02, 0.12, 0.1 ], // Mare Cognitum and Insularum
-	[ 0.04, 0.25, 0.08, 0.06 ], // Mare Vaporum
-	[ 0.05, 0.78, 0.42, 0.07 ], // Mare Frigoris
-];
-const CRATERS: ReadonlyArray<readonly [ number, number, number, number ]> = [
-	[ - 0.1, - 0.68, 0.035, 0.45 ], // Tycho
-	[ - 0.28, 0.17, 0.03, 0.3 ], // Copernicus
-	[ - 0.66, 0.38, 0.016, 0.5 ], // Aristarchus
-	[ - 0.45, 0.13, 0.016, 0.25 ], // Kepler
-];
+// The lunar disk follows takram's MoonNode (three-geospatial): the view ray meets a sphere for
+// the surface normal, which looks up NASA's colour map and is bent by the LOLA heights through
+// a screen-space cotangent frame, and an Oren-Nayar surface of roughness 1 is lit by the sun.
 
-// Relative albedo of the lunar surface at a disk position: dark maria with soft, broken shores,
-// bright highlands and young craters, and Tycho's faint ray system.
-const lunarAlbedo = Fn( ( [ q ]: [ V2 ] ) => {
+// The kit's mean lunar radius in metres: heights over it give slopes on the unit sphere.
+const LUNAR_RADIUS = 1737400;
+// Mean linear luminance of the colour map's near side, weighted by projected area on the disk
+// (printed by tools/build-moon-textures.py). Dividing by it keeps the disk's brightness in
+// moonColor, so the map only redistributes it into maria, highlands and craters.
+const NEAR_SIDE_LUMINANCE = 0.397;
+// Oren-Nayar (roughness 1) radiance at normal incidence and view: the full moon's centre.
+const OREN_NAYAR_A = ( 1 / Math.PI ) * ( 1 - 0.5 * ( 1 / 1.33 ) + 0.17 * ( 1 / 1.13 ) );
+const OREN_NAYAR_B = ( 1 / Math.PI ) * ( 0.45 * ( 1 / 1.09 ) );
+// Scales the textured disk so a full moon sends as much light as the painted disk it replaced
+// (within 1 % over the disk): the moon's brightness and the night grade were tuned against it.
+const MOON_BRIGHTNESS = 0.72;
+// Past first quarter the sunlit side turns away and the brightest point of the disk dims, so a
+// physically shaded crescent reads as a grey sliver. The eye, adapted to the little crescent,
+// sees it bright: this share of that loss is given back (an art direction; 0 is physical).
+const CRESCENT_LIFT = 0.7;
+// Earthshine, after a-starry-sky: the faint, bluish light of the sunlit Earth on the lunar
+// night side. FULL_EARTHSHINE is a-starry-sky's strength under a full Earth (at new moon, half
+// of 0.19) against its sunlit surface, which is about twice the albedo; the colour is its
+// blue-biased Earth albedo.
+const FULL_EARTHSHINE = 0.5 * 0.19 * 0.5;
+const EARTHSHINE_COLOR = new THREE.Vector3( 0.18, 0.30, 0.55 );
+// Steepest slope the relief may give the normal (about 22 degrees); the height map's own slopes
+// rarely pass 0.17.
+const MAX_MOON_SLOPE = 0.4;
+// Largest map footprint per pixel over the footprint at the disk's centre.
+const MOON_FOOTPRINT_CAP = 3;
+// Squared chord between the view ray and the moon's centre at the disk's edge.
+const MOON_CHORD = 2 * ( 1 - Math.cos( MOON_ANGULAR_RADIUS ) );
 
-	const shore = nightNoise( q.mul( 7 ).add( vec2( 3.1, 7.7 ) ) ).sub( 0.5 ).mul( 0.5 )
-		.add( nightNoise( q.mul( 19 ).add( vec2( 8.3, 1.2 ) ) ).sub( 0.5 ).mul( 0.25 ) ).toVar();
-	// Neighbouring maria flow into each other: sum their soft footprints, then threshold.
-	const field = float( 0 ).toVar();
-	for ( const [ x, y, rx, ry ] of MARIA ) {
+// Unit normal of the near side of a sphere of the given angular radius where the view ray
+// meets it. Off the disk it continues smoothly (unnormalised), so screen derivatives stay
+// meaningful across the rim.
+const raySphereNormal = Fn( ( [ ray, center, angularRadius ]: [ V3, V3, F ] ) => {
 
-		const e = q.sub( vec2( x, y ) ).div( vec2( rx * 1.2, ry * 1.2 ) );
-		field.addAssign( float( 1 ).sub( smoothstep( 0.45, 1.25, length( e ).add( shore ) ) ) );
+	const cosRay = dot( center, ray );
+	// From the centre to its projection on the ray, and the half chord along the ray.
+	const p = ray.mul( cosRay ).sub( center ).toVar();
+	const s = sqrt( max( angularRadius.mul( angularRadius ).sub( dot( p, p ) ), 0 ) );
+	return p.sub( ray.mul( s ) ).div( angularRadius );
 
-	}
-	const mare = smoothstep( 0.25, 0.75, field ).toVar();
-	const texture = nightNoise( q.mul( 6.7 ).add( vec2( 23.4, 3.9 ) ) ).mul( 0.6 ).add( nightNoise( q.mul( 17 ).add( vec2( 3.4, 9.9 ) ) ).mul( 0.4 ) );
-	// Maria are not uniform: lighter and darker lava flows within them.
-	const albedo = mix( float( 0.92 ), mix( float( 0.52 ), float( 0.66 ), texture ), mare ).mul( texture.sub( 0.5 ).mul( 0.12 ).add( 1 ) ).toVar();
-	for ( const [ x, y, r, brightness ] of CRATERS ) {
-
-		albedo.addAssign( float( 1 ).sub( smoothstep( r * 0.5, r * 1.6, length( q.sub( vec2( x, y ) ) ) ) ).mul( brightness ) );
-
-	}
-	// Tycho's rays: narrow radial streaks that fade with distance from the crater.
-	const fromTycho = q.sub( vec2( - 0.1, - 0.68 ) ).toVar();
-	const spokes = smoothstep( 0.7, 0.95, nightNoise( vec2( atan( fromTycho.y, fromTycho.x ).mul( 9 ), 1.7 ) ) );
-	albedo.addAssign( spokes.mul( float( 1 ).sub( smoothstep( 0.05, 0.9, length( fromTycho ) ) ) ).mul( 0.18 ) );
-	return albedo;
-
-} ).setLayout( { name: 'soomiLunarAlbedo', type: 'float', inputs: [ { name: 'q', type: 'vec2' } ] } );
-
-const nightMoon = Fn( ( [ direction, footprint, sunDir, moonDir, moonColor ]: [ V3, F, V3, V3, V3 ] ) => {
-
-	const radiance = vec3( 0 ).toVar();
-	const facing = dot( direction, moonDir ).toVar();
-	const tangent = direction.sub( moonDir.mul( facing ) ).div( MOON_ANGULAR_RADIUS ).toVar();
-	const radius = length( tangent ).toVar();
-	const edgeWidth = max( footprint.div( MOON_ANGULAR_RADIUS ).mul( 0.65 ), 0.008 ).toVar();
-	If( facing.greaterThan( 0 ).and( radius.lessThan( float( 1 ).add( edgeWidth ) ) ), () => {
-
-		const disk = float( 1 ).sub( smoothstep( float( 1 ).sub( edgeWidth ), float( 1 ).add( edgeWidth ), radius ) );
-		const depth = sqrt( max( float( 1 ).sub( radius.mul( radius ) ), 0 ) ).toVar();
-		// The visible sphere normal faces the observer at the disk center. Its incidence
-		// against the actual solar direction produces new, crescent, quarter, and full moon
-		// with the terminator oriented toward the sun; no independently painted phase mask.
-		const normal = normalize( tangent.sub( moonDir.mul( depth ) ) ).toVar();
-		const incidence = dot( normal, sunDir ).toVar();
-		const terminator = smoothstep( edgeWidth.mul( - 0.5 ), edgeWidth.mul( 0.5 ), incidence )
-			.mul( pow( max( incidence, 0 ), 0.36 ) ).toVar();
-		// The observer's right and up across the disk: lunar north stays up.
-		const up = select( abs( moonDir.y ).greaterThan( 0.98 ), vec3( 0, 0, 1 ), vec3( 0, 1, 0 ) );
-		const right = normalize( cross( moonDir, up ) ).toVar();
-		const north = cross( right, moonDir ).toVar();
-		const q = vec2( dot( tangent, right ), dot( tangent, north ) ).toVar();
-		// The near side's maria and craters, with a faint limb darkening.
-		const albedo = lunarAlbedo( q ).mul( mix( float( 0.85 ), float( 1 ), depth ) );
-		const horizon = smoothstep( - MOON_ANGULAR_RADIUS, 0.015, direction.y );
-		// At exact conjunction, roundoff in the tangent plane can leave a faint positive
-		// incidence outside the antialiased rim. Suppress only this vanishing phase interval.
-		const phase = smoothstep( 0, 0.0002, float( 1 ).sub( dot( sunDir, moonDir ) ).mul( 0.5 ) );
-		radiance.assign( moonColor.mul( albedo ).mul( terminator ).mul( disk ).mul( horizon ).mul( phase ) );
-
-	} );
-	return radiance;
-
-} ).setLayout( { name: 'soomiNightMoon', type: 'vec3', inputs: [
-	{ name: 'direction', type: 'vec3' }, { name: 'footprint', type: 'float' },
-	{ name: 'sunDir', type: 'vec3' }, { name: 'moonDir', type: 'vec3' }, { name: 'moonColor', type: 'vec3' },
+} ).setLayout( { name: 'soomiMoonNormal', type: 'vec3', inputs: [
+	{ name: 'ray', type: 'vec3' }, { name: 'center', type: 'vec3' }, { name: 'angularRadius', type: 'float' },
 ] } );
+
+// Oren-Nayar diffuse with roughness 1 and albedo 1 (Yasuhiro Fujii's improved form,
+// https://mimosa-pudica.net/improved-oren-nayar.html): the dusty regolith keeps a full moon
+// nearly flat to its limb instead of the darkening of a Lambertian ball.
+const orenNayar = Fn( ( [ light, view, normal ]: [ V3, V3, V3 ] ) => {
+
+	const cosLight = dot( normal, light ).toVar();
+	const cosView = dot( normal, view ).toVar();
+	const s = dot( light, view ).sub( cosLight.mul( cosView ) ).toVar();
+	// Avoids a seam at the edge, where max( cosLight, cosView ) goes to zero.
+	const t = mix( float( 1 ), max( max( cosLight, cosView ), 0.1 ), smoothstep( 0, 0.1, s ) );
+	return max( cosLight, 0 ).mul( s.div( t ).mul( OREN_NAYAR_B ).add( OREN_NAYAR_A ) );
+
+} ).setLayout( { name: 'soomiMoonOrenNayar', type: 'float', inputs: [
+	{ name: 'light', type: 'vec3' }, { name: 'view', type: 'vec3' }, { name: 'normal', type: 'vec3' },
+] } );
+
+// How much sunlit Earth the moon sees: the Lommel-Seeliger phase law from a-starry-sky's
+// earthshine, taken at Earth's phase angle as seen from the moon, which is the moon's
+// elongation from the sun (zero, a full Earth, at new moon).
+const earthPhaseLaw = Fn( ( [ elongation ]: [ F ] ) => {
+
+	const x = clamp( elongation.mul( 0.5 ), 1e-3, Math.PI / 2 - 1e-3 ).toVar();
+	return clamp( float( 1 ).sub( sin( x ).mul( tan( x ) ).mul( log( float( 1 ).div( tan( x.mul( 0.5 ) ) ) ) ) ), 0, 1 );
+
+} ).setLayout( { name: 'soomiEarthPhaseLaw', type: 'float', inputs: [ { name: 'elongation', type: 'float' } ] } );
 
 // Forward scattering by haze around the moon: a tight aureole and a wide, faint halo, scaled
 // by how much of the disk is lit.
@@ -275,6 +271,43 @@ export class NightSky {
 	readonly moonWash = uniform( 0 );
 	// Strength of the haze glow around the moon (an art control; 0 leaves the bare disk).
 	readonly glow = uniform( 1 );
+	// Scale of the lunar relief over its true height (an art control; 0 leaves a smooth ball).
+	readonly relief = uniform( 1 );
+	// Strength of the earthshine over a-starry-sky's (an art control).
+	readonly earthshine = uniform( 1 );
+	// The near side's colour and LOLA heights (see tools/build-moon-textures.py). Loading
+	// starts with the sky; the first bake waits for it, so no frame shows an untextured moon.
+	readonly colorMap: THREE.Texture;
+	readonly heightMap: THREE.Texture;
+	private readonly loading: Promise<void>;
+
+	constructor() {
+
+		const loader = new THREE.TextureLoader();
+		const base = import.meta.env.BASE_URL + 'sky/moon/';
+		const load = ( name: string, colorSpace: string ): [ THREE.Texture, Promise<void> ] => {
+
+			let map!: THREE.Texture;
+			const loaded = new Promise<void>( ( resolve, reject ) => {
+
+				map = loader.load( base + name, () => resolve(), undefined, () => reject( new Error( `Moon texture ${ name } failed to load` ) ) );
+
+			} );
+			map.colorSpace = colorSpace;
+			// Longitude wraps; latitude ends at the poles.
+			map.wrapS = THREE.RepeatWrapping;
+			// The map stretches toward its poles, and the disk toward its limb.
+			map.anisotropy = 4;
+			return [ map, loaded ];
+
+		};
+		const [ colorMap, colorLoaded ] = load( 'moon_color.jpg', THREE.SRGBColorSpace );
+		const [ heightMap, heightLoaded ] = load( 'moon_height.png', THREE.NoColorSpace );
+		this.colorMap = colorMap;
+		this.heightMap = heightMap;
+		this.loading = Promise.all( [ colorLoaded, heightLoaded ] ).then( () => undefined );
+
+	}
 
 	stars( direction: V3, angularFootprint?: F, visibility: F = this.starVisibility ): V3 {
 
@@ -318,11 +351,105 @@ export class NightSky {
 
 	}
 
+	/** Resolves once the moon's colour and height maps have loaded. */
+	load(): Promise<void> {
+
+		return this.loading;
+
+	}
+
 	moon( direction: V3 ): V3 {
 
-		const footprint = max( length( fwidth( direction ) ), 1e-5 ).toVar();
-		return nightMoon( direction, footprint, this.sunDir, this.moonDir, this.moonColor.rgb )
+		return this.lunarDisk( direction )
 			.add( nightMoonGlow( direction, this.sunDir, this.moonDir, this.moonColor.rgb ).mul( this.glow ) );
+
+	}
+
+	// After takram's MoonNode: the disk's normal from a ray/sphere intersection, NASA's colour,
+	// LOLA relief through a screen-space cotangent frame, Oren-Nayar shading and a limb
+	// antialiased by the chord's screen derivative. The phase still comes only from the sun and
+	// moon directions, and lunar north stays up as before.
+	private lunarDisk( direction: V3 ): V3 {
+
+		return Fn( () => {
+
+			const moonDir = this.moonDir, sunDir = this.sunDir;
+			// Squared chord to the moon's centre: its screen derivative gives the limb a one-pixel
+			// edge at any field of view.
+			const chord = direction.sub( moonDir ).toVar();
+			const chordLength = dot( chord, chord ).toVar();
+			const filterWidth = fwidth( chordLength ).toVar();
+			// The lunar frame: x toward the observer (0 degrees longitude), y lunar east (the
+			// observer's right), z lunar north. The normal, its map coordinates and their screen
+			// derivatives are all taken here in uniform control flow; past the rim the normal
+			// continues smoothly, so the derivatives hold up to the edge.
+			const up = select( abs( moonDir.y ).greaterThan( 0.98 ), vec3( 0, 0, 1 ), vec3( 0, 1, 0 ) );
+			const east = normalize( cross( moonDir, up ) ).toVar();
+			const north = cross( east, moonDir ).toVar();
+			const normal = raySphereNormal( direction, moonDir, float( MOON_ANGULAR_RADIUS ) ).toVar();
+			const local = vec3( dot( normal, moonDir ).negate(), dot( normal, east ), dot( normal, north ) ).toVar();
+			const uv = vec2( atan( local.y, local.x ).mul( 0.5 / Math.PI ).add( 0.5 ),
+				asin( clamp( local.z, - 1, 1 ) ).mul( 1 / Math.PI ).add( 0.5 ) ).toVar();
+			// The map's footprint grows without bound toward the limb and the poles. Capped at a few
+			// times the footprint at the disk's centre, the limb keeps its own albedo instead of the
+			// whole map's average from the smallest mips.
+			const cap = length( fwidth( direction ) ).mul( MOON_FOOTPRINT_CAP / ( Math.PI * MOON_ANGULAR_RADIUS ) ).toVar();
+			const footprint = ( d: V2 ) => d.mul( min( float( 1 ), cap.div( max( length( d ), 1e-9 ) ) ) );
+			const uvdx = footprint( dFdx( uv ) ).toVar(), uvdy = footprint( dFdy( uv ) ).toVar();
+			const ndx = dFdx( local ).toVar(), ndy = dFdy( local ).toVar();
+			const radiance = vec3( 0 ).toVar();
+			If( chordLength.lessThan( MOON_CHORD ), () => {
+
+				// Heights in lunar radii, from the map's two filtered bytes (see the build script).
+				const height = ( offset: V2 ) => {
+
+					const h = texture( this.heightMap, uv.add( offset ) ).grad( uvdx, uvdy );
+					return h.r.mul( 65280 ).add( h.g.mul( 255 ) ).mul( 0.5 / LUNAR_RADIUS );
+
+				};
+				const hdx = height( uvdx ).sub( height( uvdx.negate() ) ).mul( 0.5 );
+				const hdy = height( uvdy ).sub( height( uvdy.negate() ) ).mul( 0.5 );
+				// Cotangent frame: the surface gradient from the screen derivatives of the position
+				// on the unit sphere, which is its normal.
+				const r1 = cross( ndy, local ).toVar();
+				const r2 = cross( local, ndx ).toVar();
+				const det = dot( ndx, r1 ).toVar();
+				const gradient = r1.mul( hdx ).add( r2.mul( hdy ) ).mul( sign( det ) );
+				// The tilt is the gradient over |det|. A small disk's rim pixels share their quad with
+				// sky pixels, where the frame can collapse (det near 0) and throw the normal toward the
+				// sun; the true slopes at this map's scale stay far below the cap.
+				const tilt = gradient.mul( this.relief ).div( max( abs( det ), 1e-20 ) ).toVar();
+				const bumped = normalize( local.sub( tilt.mul( min( float( 1 ), float( MAX_MOON_SLOPE ).div( max( length( tilt ), 1e-9 ) ) ) ) ) );
+				// Fade the relief toward the limb, where the derivatives grow without bound.
+				const n = mix( local, bumped, smoothstep( 0, 0.3, dot( normal, direction ).negate() ) ).toVar();
+				const surface = moonDir.mul( n.x.negate() ).add( east.mul( n.y ) ).add( north.mul( n.z ) ).toVar();
+				// The colour map's luminance carries the albedo's pattern; moonColor its level.
+				const albedo = texture( this.colorMap, uv ).grad( uvdx, uvdy ).rgb.mul( MOON_BRIGHTNESS / NEAR_SIDE_LUMINANCE ).toVar();
+				// The disk's brightest point at this phase: the subsolar point while it is in view,
+				// then the bright limb, where the Oren-Nayar term above reduces to this.
+				const cosPhase = dot( sunDir, moonDir ).negate().toVar();
+				const peak = select( cosPhase.greaterThan( 0 ), float( 1 ),
+					sqrt( max( float( 1 ).sub( cosPhase.mul( cosPhase ) ), 0 ) ).mul( cosPhase.mul( OREN_NAYAR_B / OREN_NAYAR_A ).add( 1 ) ) );
+				const lift = float( 1 ).div( mix( float( 1 ), max( peak, 0.05 ), CRESCENT_LIFT ) );
+				const sunlit = orenNayar( sunDir, direction.negate(), surface ).mul( lift.mul( 1 / OREN_NAYAR_A ) );
+				// Earthshine on the night side (a-starry-sky): strongest under a full Earth at new
+				// moon, gone on the sunlit side and in the sun's glare close to conjunction.
+				const elongation = acos( clamp( cosPhase.negate(), - 1, 1 ) ).toVar();
+				const night = float( 1 ).sub( smoothstep( 0, 0.1, dot( surface, sunDir ) ) );
+				const earthshine = vec3( EARTHSHINE_COLOR.x, EARTHSHINE_COLOR.y, EARTHSHINE_COLOR.z )
+					.mul( earthPhaseLaw( elongation ).mul( night ).mul( smoothstep( 0.1, 0.35, elongation ) ).mul( this.earthshine ).mul( FULL_EARTHSHINE ) );
+				// (Reversed edges, as takram writes it, are undefined for smoothstep in WGSL.)
+				const limb = float( 1 ).sub( smoothstep( float( MOON_CHORD ).sub( filterWidth ), MOON_CHORD, chordLength ) );
+				const horizon = smoothstep( - MOON_ANGULAR_RADIUS, 0.015, direction.y );
+				// At exact conjunction, roundoff in the tangent plane can leave a faint positive
+				// incidence at the rim. Suppress only this vanishing phase interval.
+				const phase = smoothstep( 0, 0.0002, float( 1 ).sub( dot( sunDir, moonDir ) ).mul( 0.5 ) );
+				radiance.assign( this.moonColor.rgb.mul( albedo ).mul( sunlit.mul( phase ).add( earthshine ) ).mul( limb ).mul( horizon ) );
+
+			} );
+			return radiance;
+
+		} )();
 
 	}
 

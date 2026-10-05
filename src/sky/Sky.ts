@@ -539,6 +539,7 @@ export class Sky {
 		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
 		await this.renderer.init();
 		if ( ! this.clouds.ready ) await this.clouds.init( this.renderer );
+		await this.night.load();
 		// An explicit jump (preset, seek, weather change) refreshes the whole cloud map now.
 		if ( readback ) {
 
