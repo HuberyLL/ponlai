@@ -78,6 +78,10 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 
 } ).setLayout( { name: 'equirectToDir', type: 'vec3', inputs: [ { name: 'q', type: 'vec2' } ] } );
 
+// The displayed night sky's share of the night ambient that lights the island: a deeper sky
+// for the stars without darkening the island's own fill.
+const NIGHT_SKY = 0.55;
+
 export class Sky {
 
 	renderer: THREE.WebGPURenderer;
@@ -95,6 +99,8 @@ export class Sky {
 	keyColor = new THREE.Color();
 	// The key light's colour before cloud and weather attenuation: what lights the cloud tops.
 	keyColorAboveClouds = new THREE.Color();
+	// Fraction of the key light that mirror-like glints reflect (see Shared.glintScale).
+	glintScale = 1;
 	// The viewer the cloud map is computed for; clouds are far, so only small moves matter.
 	viewer = new THREE.Vector3( 0, 15, 0 );
 	solarIlluminance = new THREE.Color();
@@ -248,7 +254,9 @@ export class Sky {
 			const d = equirectToDir( q ).toVar();
 			const cloud = this.cloudLayer.sample( vec2( q.x, abs( q.y.sub( 0.5 ) ).mul( 2 ) ) ).level( float( 0 ) ).toVar();
 			const up = vec3( d.x, abs( d.y ), d.z );
-			const sky = this.clearSky( up, this.nightAmbient.rgb, this.overcast ).mul( cloud.a ).add( cloud.rgb ).mul( this.ambientGain );
+			// The visible night sky is darker than the light it lends the island (see NIGHT_SKY).
+			const night = this.nightAmbient.rgb.mul( mix( float( NIGHT_SKY ), float( 1 ), this.irradiancePass ) );
+			const sky = this.clearSky( up, night, this.overcast ).mul( cloud.a ).add( cloud.rgb ).mul( this.ambientGain );
 			const stars = this.night.stars( up, this.starFootprint, this.bakeStarVisibility.mul( this.includeStars ) );
 			const radiance = seaPanorama( d, sky.add( stars.mul( cloud.a ) ), this.sea.rgb );
 			return vec4( radiance, mix( cloud.a, d.y, this.irradiancePass ) );
@@ -270,7 +278,7 @@ export class Sky {
 			// Above the horizon the clear sky and the clouds are both live. Below, the baked distant-sea reflection continues the waves.
 			const lower = this.samplePanorama( d, float( 0 ) ).toVar();
 			const cloud = this.clouds.sample( d ).toVar();
-			const upper = this.clearSky( vec3( d.x, max( d.y, 0 ), d.z ), this.displayNightAmbient.rgb, this.displayOvercast )
+			const upper = this.clearSky( vec3( d.x, max( d.y, 0 ), d.z ), this.displayNightAmbient.rgb.mul( NIGHT_SKY ), this.displayOvercast )
 				.mul( cloud.a ).add( cloud.rgb ).mul( this.displayAmbientGain );
 			const above = d.y.greaterThanEqual( 0 );
 			const background = select( above, upper, lower.rgb );
@@ -381,6 +389,7 @@ export class Sky {
 			this.keyColor.g += 0.76 * illuminance * 0.04 * celestial.moonKeyGain;
 			this.keyColor.b += illuminance * 0.04 * celestial.moonKeyGain;
 			this.night.moonDir.value.copy( celestial.moonDir );
+			this.night.frame.value.copy( celestial.starFrame );
 			moonColor.setRGB( 0.035, 0.04, 0.0475 ).multiplyScalar( celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
 			this.night.starVisibility.value = celestial.nightVisibility * ( 1 - 0.22 * celestial.moonVisibility * celestial.moonIllumination );
 			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightVisibility );
@@ -400,6 +409,9 @@ export class Sky {
 
 		}
 		this.keyColorAboveClouds.copy( this.keyColor );
+		const sunLuma = this.sunColor.r * 0.2126 + this.sunColor.g * 0.7152 + this.sunColor.b * 0.0722;
+		const keyLuma = this.keyColor.r * 0.2126 + this.keyColor.g * 0.7152 + this.keyColor.b * 0.0722;
+		this.glintScale = keyLuma > 0 ? ( sunLuma + ( keyLuma - sunLuma ) * 0.06 ) / keyLuma : 1;
 		const coverage = coverageOverride ?? weather?.coverage ?? 0;
 		const overcast = weather ? THREE.MathUtils.smoothstep( coverage, 0.65, 0.98 ) : 0;
 		const ambientGain = weather?.ambientGain ?? 1;
@@ -453,6 +465,7 @@ export class Sky {
 		if ( ! this.clouds.ready ) return;
 		this.clouds.setWindOffset( windOffset );
 		this.clouds.evolve.value = ( time * 0.6 ) % 6000;
+		this.night.time.value = time;
 		this.viewer.copy( viewer );
 		this.clouds.update( this.renderer, viewer );
 
@@ -625,7 +638,10 @@ export class Sky {
 
 	private clearSky( direction: V3, nightAmbient: V3, overcast: F ): V3 {
 
-		const clear = this.atmosphere.skyRadiance( direction ).add( nightAmbient ).toVar();
+		// Night air glows a little toward the horizon and deepens toward the zenith; the cosine-
+		// weighted mean stays near one so the night's ambient light on the island is unchanged.
+		const airglow = mix( float( 2.85 ), float( 0.5 ), sqrt( clamp( direction.y, 0, 1 ) ) );
+		const clear = this.atmosphere.skyRadiance( direction ).add( nightAmbient.mul( airglow ) ).toVar();
 		// Clouds mute the existing sky's colour; they never introduce a white/grey
 		// radiance floor that would glow at night or bleach the transparent sea.
 		return mix( clear, vec3( dot( clear, vec3( 0.2126, 0.7152, 0.0722 ) ) ), overcast.mul( 0.35 ) );

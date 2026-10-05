@@ -525,7 +525,7 @@ export class Water {
 			const sunCovariance = seaCovariance.add( waveSolarSlopeCovariance( localL, localV ) );
 			const spec = waveBeckmannD( localH, sunCovariance ).mul( waveSmithVisibility( localL, localV, seaCovariance ) )
 				.mul( fresnelDielectric( VdH, float( IOR ) ) ).mul( NdL );
-			const sunSpec = sunLight.mul( spec ).toVar();
+			const sunSpec = sunLight.mul( spec ).mul( shared.glintScale ).toVar();
 			// Optional artistic lobes add energy beyond the physical microfacet reflection.
 			// Both default to zero; the simulated slopes already generate the sun glitter.
 			// Uniform branches avoid hashing and extra lobes when their art controls are off.

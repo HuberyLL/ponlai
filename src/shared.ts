@@ -20,6 +20,9 @@ export const shared = {
 	shoreXform: uniform( new THREE.Vector4() ), // x0, z0, 1 / width, 1 / depth of the shoreline field
 	sunDir: uniform( new THREE.Vector3( 0, 1, 0 ) ),
 	sunColor: uniform( new THREE.Vector3() ), // linear rgb
+	// The key's share in mirror-like glints. The art-directed moonlight that keeps the island
+	// readable is far brighter than the small disk could reflect; glints keep a faint fraction.
+	glintScale: uniform( 1 ),
 	skyIrradiance: uniform( new THREE.Vector3() ), // linear rgb
 	// The live sky reduces hemispherical irradiance on the GPU, so shading never waits for
 	// a CPU readback. The uniform above remains a readback diagnostic for explicit snapshots.

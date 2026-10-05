@@ -1,4 +1,4 @@
-import { Vector3 } from 'three/webgpu';
+import { Matrix3, Matrix4, Vector3 } from 'three/webgpu';
 
 export const DAY_PRESETS = {
 	'dawn': 5.35,
@@ -35,6 +35,8 @@ export interface DayCycleSnapshot {
 	moonIllumination: number;
 	moonVisibility: number;
 	moonKeyGain: number;
+	// World to celestial frame: the fixed stars turn with the sun about the pole of its path.
+	starFrame: Matrix3;
 	daylight: number;
 	nightVisibility: number;
 	exposure: number;
@@ -51,6 +53,9 @@ const COS_INCLINATION = Math.cos( INCLINATION );
 const NOON_AZIMUTH = - 8 / DEG + Math.atan2( Math.sin( Math.PI / 3 ), COS_INCLINATION * Math.cos( Math.PI / 3 ) );
 const SIN_NOON_AZIMUTH = Math.sin( NOON_AZIMUTH );
 const COS_NOON_AZIMUTH = Math.cos( NOON_AZIMUTH );
+// direction(a) = cos(a) U + sin(a) V: a rotation by a about POLE = U x V.
+const POLE = new Vector3( COS_INCLINATION * COS_NOON_AZIMUTH, SIN_INCLINATION, COS_INCLINATION * SIN_NOON_AZIMUTH )
+	.cross( new Vector3( SIN_NOON_AZIMUTH, 0, - COS_NOON_AZIMUTH ) ).normalize();
 
 function finite( value: number, name: string ): number {
 
@@ -177,6 +182,7 @@ export class DayCycle {
 			moonIllumination,
 			moonVisibility,
 			moonKeyGain: ( 1 - smoothstep( - 7, - 3, elevation ) ) * moonVisibility * moonIllumination,
+			starFrame: new Matrix3().setFromMatrix4( new Matrix4().makeRotationAxis( POLE, - hourAngle ) ),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),
 			// Modest adaptation preserves a visibly dark night. Scene lighting, not exposure,

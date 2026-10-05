@@ -148,11 +148,14 @@ try {
 				await s.setHour( phase.hour );
 				aim( sky.moonDir, 8 );
 				const color = sky.night.moonColor.value.clone();
+				// Measure the bare disk: the haze glow around it is separate.
+				sky.night.glow.value = 0;
 				const on = await render();
 				sky.night.moonColor.value.setRGB( 0, 0, 0 );
 				const off = await render();
 				sky.night.moonColor.value.copy( color );
 				const repeat = await render();
+				sky.night.glow.value = 1;
 				result.moons.push( { name: phase.name, ...compare( on, off, 0.001 ), determinism: difference( on, repeat ) } );
 			}
 
