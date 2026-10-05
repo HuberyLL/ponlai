@@ -48,7 +48,8 @@ exposed.
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
   own canopy.
 - `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
-  sea floor, light under the water).
+  sea floor, light under the water), wet surfaces after Lagarde (soaked pores, water film, runnels
+  down the cliffs).
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading.
 - `src/sky/`: atmosphere LUTs, environment lighting, volumetric clouds after tidewater's port of
   the Three.js Sky Pro clouds (a cloud shell 4 - 9 km up shaped by a procedural weather map and the
@@ -57,7 +58,7 @@ exposed.
   reflections and the environment, and a cloud-shadow map), high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
   raining clouds, the day cycle (sun and moon), stars, Milky Way and moon, rainbows, weather
   presets, their blending and the auto-weather chain.
-- `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
+- `src/weather/`: wind, lightning, puddles (with rain rings), rain (a streak veil in the post pass, world-space streaks, ripples),
   distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
   glare, bloom, tilt-shift, grade).
@@ -101,8 +102,10 @@ exposed.
   march assumes a camera below the cloud base.
 - Rain is light streaks plus analytic ripples on the water normal. Wetness darkens exposed rock
   and plants within small limits, glosses bare stone, persists after rain and leaves the tidal
-  band alone. Standing water fills fixed hollows on level ground as the ground soaks, drowning
-  the lower meadow blades, and shrinks as it dries.
+  band alone; dry weather renders exactly as without it. Water runs down the cliffs in sparse
+  darker runnels while they are wet. Standing water fills fixed hollows on level ground as the
+  ground soaks, drowning the lower meadow blades, and shrinks inside its own damp stain as it
+  dries.
 - Characters are simple low-poly figures with flat colours and simple faces, recoloured into the
   island's palette and lit by the island's own light in soft cel steps; no outlines. Plants and
   props keep their realistic shading.
