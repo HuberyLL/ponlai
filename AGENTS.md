@@ -57,7 +57,9 @@ exposed.
   reflections and the environment, and a cloud-shadow map), high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
   raining clouds, the day cycle (sun and moon), stars, Milky Way and moon, rainbows, weather
   presets, their blending and the auto-weather chain.
-- `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
+- `src/weather/`: wind, lightning, puddles, rain (GPU drops in nested camera volumes, stopped by a
+  top-down collision height map of the island and splashing where they land; a distant streak veil
+  in the post pass; analytic ripples),
   distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
   glare, bloom, tilt-shift, grade).
@@ -99,7 +101,10 @@ exposed.
 - The directly seen clouds accumulate over frames; a scene at rest (paused clock, still camera)
   settles its clouds once and keeps them, so a paused frame is exactly repeatable. The cloud
   march assumes a camera below the cloud base.
-- Rain is light streaks plus analytic ripples on the water normal. Wetness darkens exposed rock
+- Rain is light streaks plus analytic ripples on the water normal. Drops are a stateless function
+  of the clock, the wind's integrated travel and the camera (a paused frame repeats exactly); they
+  stop on the first surface in the collision map and splash there (crown and droplets on land,
+  rings on the sea). Out-of-focus drops follow the tilt-shift blur. Wetness darkens exposed rock
   and plants within small limits, glosses bare stone, persists after rain and leaves the tidal
   band alone. Standing water fills fixed hollows on level ground as the ground soaks, drowning
   the lower meadow blades, and shrinks as it dries.
