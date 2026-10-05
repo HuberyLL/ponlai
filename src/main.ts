@@ -1,5 +1,4 @@
 import * as THREE from 'three/webgpu';
-import { Fn, positionWorld } from 'three/tsl';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
@@ -22,7 +21,7 @@ import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
 import { Pipeline } from './post/Pipeline.ts';
 import { shared } from './shared.ts';
-import { installSolarShadowFilter } from './lighting/SolarShadow.ts';
+import { installSolarShadowFilter, installOpenShadow } from './lighting/SolarShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { islandSurfaceHeight } from './world/WorldShapes.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
@@ -149,12 +148,9 @@ sun.shadow.bias = - 0.01 / ( sc.far - sc.near );
 sun.shadow.normalBias = 0.012;
 installSolarShadowFilter( sun );
 // Cloud shadowing shares the density field in the visible/reflected sky. Bake its long solar
-// path once at low resolution, then sample the same transmission on every receiver.
-type ShadowFilter = ( input: { depthTexture: THREE.DepthTexture; shadowCoord: THREE.Node<'vec3'> } ) => THREE.Node<'float'>;
-const solarShadow = sun.shadow as unknown as { filterNode: ShadowFilter };
-const islandShadow = solarShadow.filterNode;
-solarShadow.filterNode = Fn( ( { depthTexture, shadowCoord }: Parameters<ShadowFilter>[0] ) =>
-	islandShadow( { depthTexture, shadowCoord } ).mul( sky.cloudVisibility( positionWorld ) ) ) as unknown as ShadowFilter;
+// path once at low resolution, then sample the same transmission on every receiver, including
+// those beyond the island's shadow map (the sea floor seen through the water).
+installOpenShadow( sun, ( position ) => sky.cloudVisibility( position ) );
 // Moving figures cast through a small map of their own that every receiver multiplies in. It
 // must be installed before any receiving material is built.
 const characterShadow = new CharacterShadow();
