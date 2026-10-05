@@ -8,6 +8,7 @@ const LICENCE_FILES: Record<string, string> = {
 	'licenses/tidewater.LICENSE.txt': 'src/ocean/tidewater.LICENSE.txt',
 	'licenses/tidewater-sky.LICENSE.txt': 'src/sky/tidewater.LICENSE.txt',
 	'licenses/hoskins-hash.LICENSE.txt': 'src/materials/hoskins-hash.LICENSE.txt',
+	'licenses/VolumetricCloudsCS1.LICENSE.txt': 'src/sky/VolumetricCloudsCS1.LICENSE.txt',
 };
 
 function licences(): Plugin {
