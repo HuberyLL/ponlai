@@ -674,13 +674,13 @@ export class Water {
 
 				const fold = horizontal.x.mul( horizontal.w ).sub( horizontal.y.mul( horizontal.z ) );
 				// This calm, gently choppy sea rarely folds far: compress the threshold toward 1.
-				const crest = mix( float( 0.78 ), float( 0.88 ), shared.storm );
+				const crest = mix( float( 0.7 ), float( 0.8 ), shared.storm );
 				const breaking = float( 1 ).sub( smoothstep( crest.sub( 0.06 ), crest, fold ) );
 				const streak = mx_noise_float( vec3( wp.xz.mul( vec2( 0.9, 0.35 ) ), time.mul( 0.3 ) ) ).mul( 0.5 ).add( 0.5 );
 				const foam = clamp( breaking.mul( smoothstep( 0.25, 0.65, streak ).mul( 0.8 ).add( 0.2 ) ).mul( shared.storm ), 0, 0.95 );
 				// Diffuse white lit by the sky and the sun, like the island's surfaces; aerated water
 				// scatters strongly, so it reads brighter than the sky's mean radiance.
-				const lit = shared.skyIrradianceSource.mul( 3 / PI ).add( sunLight.mul( max( N.y, 0 ) ).mul( 0.85 / PI ) );
+				const lit = shared.skyIrradianceSource.mul( 2.2 / PI ).add( sunLight.mul( max( N.y, 0 ) ).mul( 0.85 / PI ) );
 				col.assign( mix( col, lit, foam.mul( airFacing ) ) );
 
 			} );
