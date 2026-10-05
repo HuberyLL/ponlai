@@ -283,7 +283,9 @@ export class Sky {
 			const above = d.y.greaterThanEqual( 0 );
 			const background = select( above, upper, lower.rgb );
 			const through = select( above, cloud.a, lower.a );
-			return vec4( background.add( disk.add( this.night.moon( d ) ).add( this.night.stars( d ) ).mul( through ) ), 1 );
+			// Thin cloud turns most of the direct beam into the glow around it; the bare disk fades
+			// faster than its surroundings instead of burning through as a sharp point.
+			return vec4( background.add( disk.mul( through ).add( this.night.moon( d ) ).add( this.night.stars( d ) ).mul( through ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
@@ -459,6 +461,10 @@ export class Sky {
 		clouds.lightColor.value.g += 0.76 * illuminance * 0.04 * moonGain;
 		clouds.lightColor.value.b += illuminance * 0.04 * moonGain;
 		clouds.nightAmbient.value.copy( this.displayNightAmbient.value );
+		// Low sun: lift the reddened beam, and the cool violet fill on the shaded sides with it.
+		const lowSun = THREE.MathUtils.smoothstep( this.elevation, - 4, 1 ) * ( 1 - THREE.MathUtils.smoothstep( this.elevation, 6, 20 ) );
+		clouds.directGain.value = 1 + 0.7 * lowSun;
+		clouds.ambientGain.value = 1 + 0.35 * lowSun;
 		// The sea's albedo returns a little sun and sky light to the cloud bases.
 		const L = clouds.lightDir.value;
 		clouds.seaBounce.value.copy( clouds.lightColor.value ).multiplyScalar( Math.max( L.y, 0 ) * 0.06 / Math.PI );

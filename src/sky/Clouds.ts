@@ -92,6 +92,10 @@ export class Clouds {
 	// Night sky glow and moonlit fill, added to the atmosphere's own sky light.
 	readonly nightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
 	readonly seaBounce = uniform( new THREE.Color( 0, 0, 0 ) );
+	// Art balance of beam to sky light inside the clouds. A low sun's beam is already reddened
+	// by the atmosphere; favouring it keeps sunset clouds glowing instead of muddy.
+	readonly directGain = uniform( 1 );
+	readonly ambientGain = uniform( 1 );
 	readonly evolve = uniform( 0 );
 	readonly origin = uniform( new THREE.Vector3( 0, 15, 0 ) );
 	// Steps per view ray: 40 / 56 / 72 for low / medium / high.
@@ -132,7 +136,9 @@ export class Clouds {
 		const { shape, detail, weather } = this.noise;
 		const shapeNode = texture3D( shape ), detailNode = texture3D( detail ), weatherNode = texture( weather );
 
-		const densityAt = ( xz: V2, altitude: F, withDetail: boolean ) => {
+		// `near` (1 close, 0 far) fades small-scale structure that coarse grazing steps would
+		// stretch into streaks toward the horizon.
+		const densityAt = ( xz: V2, altitude: F, withDetail: boolean, near: F = float( 1 ) ) => {
 
 			const result = float( 0 ).toVar();
 			// Upwind sky is further through a weather change than the island; downwind lags.
@@ -144,10 +150,11 @@ export class Clouds {
 			const localDensity = mix( this.densityFrom, this.densityTo, sweep ).toVar();
 			const overcast = smoothstep( 0.72, 0.97, cov ).toVar();
 			// Coverage carves the clumped weather field; a full overcast closes it into a deck. The
-			// field is roughly normal (mean .27, deviation .18), so the threshold is its quantile:
-			// a coverage of .3 clouds about a third of the sky (Tukey's approximation of the probit).
+			// field is roughly normal (deviation .18), so the threshold is its quantile (Tukey's
+			// approximation of the probit). The mean is calibrated on the rendered sky: fair weather
+			// (.32) clouds about a quarter of it, cloudy (.67) about two thirds.
 			const c = clamp( cov, 0.001, 0.999 );
-			const threshold = float( 1 ).sub( c ).pow( 0.14 ).sub( c.pow( 0.14 ) ).mul( 4.91 * 0.177 ).add( 0.267 ).toVar();
+			const threshold = float( 1 ).sub( c ).pow( 0.14 ).sub( c.pow( 0.14 ) ).mul( 4.91 * 0.177 ).add( 0.235 ).toVar();
 			const local = smoothstep( threshold.sub( 0.12 ), threshold.add( 0.1 ), w.r );
 			const cover = max( local, overcast.mul( w.r.mul( 0.3 ).add( 0.7 ) ) ).toVar();
 			// Heaped cumulus by default; flat stratus decks under overcast and in a few drifts.
@@ -160,7 +167,9 @@ export class Clouds {
 
 				const shapeSample = shapeNode.sample( vec3( p.x, altitude.add( this.evolve ), p.y ).div( SHAPE_TILE ) ).level( float( 0 ) ).toVar();
 				const lowFbm = shapeSample.g.mul( 0.625 ).add( shapeSample.b.mul( 0.25 ) ).add( shapeSample.a.mul( 0.125 ) );
-				const heap = clamp( remap( shapeSample.r, lowFbm.sub( 1 ), 1, 0, 1 ), 0, 1 );
+				// A distant deck is seen through so much of itself that its texture averages out;
+				// coarse grazing steps would otherwise turn that texture into grain.
+				const heap = mix( float( 0.62 ), clamp( remap( shapeSample.r, lowFbm.sub( 1 ), 1, 0, 1 ), 0, 1 ), mix( float( 1 ), near, stratus ) );
 				// Cellular towers of uneven height above one flat base; stratus stays level.
 				const towers = mix( mix( float( 0.5 ), float( 1.25 ), shapeSample.g ), float( 1 ), stratus );
 				const hf = reach.div( towers ).toVar();
@@ -168,14 +177,19 @@ export class Clouds {
 				const profile = smoothstep( 0, 0.08, hf ).mul( smoothstep( 1, mix( float( 0.3 ), float( 0.7 ), stratus ), hf ) );
 				// Inside a clump, the heap noise still splits the mass into separate cumuli.
 				const body = clamp( remap( heap.mul( profile ), float( 1 ).sub( cover.mul( mix( float( 0.82 ), float( 1 ), stratus ) ) ), 1, 0, 1 ), 0, 1 ).mul( cover ).toVar();
+				// A deck's underside breaks into rolls and cells (stratocumulus), thinner between
+				// them so light leaks through; heavy rain decks (dense) stay more uniform.
+				const cells = smoothstep( 0.3, 0.6, shapeSample.b.mul( 0.6 ).add( shapeSample.a.mul( 0.4 ) ) );
+				const underside = float( 1 ).sub( smoothstep( 0.3, 0.85, hf ) ).mul( stratus ).mul( smoothstep( 2.6, 1.4, localDensity ).mul( 0.65 ).add( 0.3 ) ).mul( near );
+				body.mulAssign( mix( float( 1 ), cells.mul( 0.96 ).add( 0.04 ), underside ) );
 				if ( withDetail ) {
 
 					If( body.greaterThan( 0 ), () => {
 
 						const d = detailNode.sample( vec3( p.x, altitude.add( this.evolve.mul( 2 ) ), p.y ).div( DETAIL_TILE ) ).level( float( 0 ) );
 						const fbm = d.r.mul( 0.625 ).add( d.g.mul( 0.25 ) ).add( d.b.mul( 0.125 ) );
-						// Wispy, torn bases; billowed tops.
-						const erosion = mix( fbm, float( 1 ).sub( fbm ), clamp( hf.mul( 4 ), 0, 1 ) ).mul( 0.55 );
+						// Wispy, torn bases; billowed tops. Fades toward the horizon with the cells.
+						const erosion = mix( fbm, float( 1 ).sub( fbm ), clamp( hf.mul( 4 ), 0, 1 ) ).mul( near.mul( 0.35 ).add( 0.2 ) );
 						body.assign( clamp( remap( body, erosion, 1, 0, 1 ), 0, 1 ) );
 
 					} );
@@ -219,14 +233,17 @@ export class Clouds {
 				const span = min( t1.sub( t0 ), MAX_SPAN ).toVar();
 				// Grazing rays cross far more of the layer; give them more, still bounded, steps.
 				const steps = clamp( this.quality.mul( span.div( MAX_SPAN ).mul( 0.7 ).add( 1 ) ), 8, MAX_STEPS ).floor().toVar();
-				const dt = span.div( steps ).toVar();
+				// Steps grow quadratically: a cloud is opaque within a few tens of metres, so fine steps
+				// where the ray enters the layer resolve its surface, and coarse ones suffice beyond.
+				const inverseSteps = float( 1 ).div( steps ).toVar();
 				const cosTheta = dot( direction, this.lightDir ).toVar();
 				// Two lobes: a forward silver lining and a soft back-scatter for the shaded side.
 				const phases = [ 1, 0.5, 0.25 ].map( ( c ) =>
 					mix( henyeyGreenstein( cosTheta, - 0.25 * c ), henyeyGreenstein( cosTheta, 0.7 * c ), 0.7 ).toVar() );
-				// Isotropic sky light on the tops, the sea's bounce on the bases.
+				// Sky light on the tops, the sea's bounce on the bases. Shaded sides face away from the
+				// sun, so they take the cooler sky opposite it (violet at sunset), not its warm glow.
 				const skyLight = this.atmosphere.skyRadiance( vec3( 0, 1, 0 ) ).mul( 0.5 )
-					.add( this.atmosphere.skyRadiance( normalize( vec3( this.lightDir.x, 0.15, this.lightDir.z ) ) ).mul( 0.3 ) )
+					.add( this.atmosphere.skyRadiance( normalize( vec3( this.lightDir.x.negate(), 0.15, this.lightDir.z.negate() ) ) ).mul( 0.3 ) )
 					.add( this.nightAmbient.rgb ).toVar();
 				const deck = smoothstep( 0.7, 0.95, this.coverage ).toVar();
 				const transmittance = float( 1 ).toVar();
@@ -238,10 +255,12 @@ export class Clouds {
 						Break();
 
 					} );
-					const t = t0.add( float( i ).add( jitter ).mul( dt ) ).toVar();
+					const u = float( i ).add( jitter ).mul( inverseSteps ).toVar();
+					const t = t0.add( span.mul( u ).mul( u ) ).toVar();
+					const dt = span.mul( u.mul( 2 ).add( inverseSteps ) ).mul( inverseSteps ).toVar();
 					const altitude = altitudeAt( h, direction.y, t ).toVar();
 					const xz = this.origin.xz.add( direction.xz.mul( t ) ).toVar();
-					const d = densityAt( xz, altitude, true ).toVar();
+					const d = densityAt( xz, altitude, true, float( 1 ).sub( smoothstep( 2500, 9000, t ) ) ).toVar();
 					If( d.greaterThan( 0.0005 ), () => {
 
 						const od = lightDepth( xz, altitude ).toVar();
@@ -264,7 +283,7 @@ export class Clouds {
 						const diffuse = max( float( 1 ).div( od.mul( 0.11 ).add( 1 ) ).sub( exp( od.mul( - 0.25 ) ) ), 0 )
 							.mul( deck.mul( 1 / ( 4 * Math.PI ) ) ).div( max( this.density, 0.5 ).sqrt() );
 						const neutral = mix( this.lightColor.rgb, vec3( dot( this.lightColor.rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ).mul( vec3( 0.94, 0.98, 1.06 ) ), mix( float( 0.6 ), float( 0.9 ), deck ) );
-						const radiance = this.lightColor.rgb.mul( sun ).mul( powder ).add( neutral.mul( diffuse ) ).add( ambient );
+						const radiance = this.lightColor.rgb.mul( sun ).mul( powder ).mul( this.directGain ).add( neutral.mul( diffuse ) ).add( ambient.mul( this.ambientGain ) );
 						const stepTransmittance = exp( d.mul( - SIGMA ).mul( dt ) );
 						scattered.addAssign( radiance.mul( transmittance ).mul( float( 1 ).sub( stepTransmittance ) ) );
 						transmittance.mulAssign( stepTransmittance );
