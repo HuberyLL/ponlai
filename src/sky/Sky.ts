@@ -284,9 +284,10 @@ export class Sky {
 			const background = select( above, upper, lower.rgb );
 			const through = select( above, cloud.a, lower.a );
 			// Thin cloud turns most of the direct beam into the glow around it; the bare disk fades
-			// faster than its surroundings instead of burning through as a sharp point.
+			// faster than its surroundings, and a thick deck hides it entirely instead of letting
+			// its enormous radiance burn through a residual transmittance as a sharp point.
 			const stars = this.night.stars( d ).mul( this.night.moonOcclusion( d ) );
-			return vec4( background.add( disk.mul( through ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
+			return vec4( background.add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
@@ -427,6 +428,9 @@ export class Sky {
 		// Like a camera, adapt a little to the dimmer diffuse daylight under a closed deck, less
 		// so in rain, which should read as heavy.
 		this.grade.exposure *= 1 + 0.5 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
+		// After dark a closed deck hides the moon and stars; the eye adapts further so a rainy
+		// dusk or night stays readable, still darker than a clear moonlit night.
+		this.grade.exposure *= 1 + 5 * overcast * ( 1 - this.grade.daylight );
 		this.sunColor.multiplyScalar( directVisibility );
 		this.keyColor.multiplyScalar( directVisibility );
 		this.solarIlluminance.multiplyScalar( directVisibility );

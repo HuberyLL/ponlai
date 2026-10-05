@@ -26,7 +26,8 @@ export class AerialPerspective {
 	// Wind travel (metres) and slow change of the banks.
 	readonly fogOffset = uniform( new THREE.Vector2() );
 	readonly fogTime = uniform( 0 );
-	// The key light the fog scatters forward: its direction and irradiance.
+	// The key light the fog scatters forward: its direction and its irradiance below the clouds
+	// (a closed deck leaves no beam to scatter).
 	readonly keyDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
 	readonly keyColor = uniform( new THREE.Color( 0, 0, 0 ) );
 	private projectionInverse = uniform( new THREE.Matrix4() );
@@ -99,13 +100,14 @@ export class AerialPerspective {
 				const tailLevel = select( dy.lessThan( 0.002 ).and( dy.greaterThan( - 0.002 ) ), exp( max( start.y, 0 ).div( - FOG_HEIGHT ) ).mul( rest ), tail );
 				depth.addAssign( max( tailLevel, 0 ).mul( 0.9 ) );
 				const transmittance = exp( depth.mul( sigma ).negate() ).toVar();
-				// Fog takes the low sky's light, like the horizon it hides, and glows toward the sun
-				// (Henyey-Greenstein forward scattering, g = 0.6). A blurred sky: fog scatters light
-				// from all around, and a sharp sample would print the horizon's clouds into it.
-				const surround = sky.sampleBackground( normalize( vec3( direction.x, 0.05, direction.z ) ), float( 6 ) );
+				// Fog takes the low sky's light, as the horizon it hides would, so it merges with the sky
+				// rather than banding against it; the sample is blurred so the horizon's clouds do not
+				// print into the fog, and high enough that the blur stays clear of the sea. It also
+				// glows toward the sun (Henyey-Greenstein forward scattering, g = 0.6).
+				const low = sky.sampleBackground( normalize( vec3( direction.x, 0.06, direction.z ) ), float( 4 ) );
 				const cosine = dot( direction, this.keyDir );
 				const forward = float( 0.64 ).div( float( 1.36 ).sub( cosine.mul( 1.2 ) ).pow( 1.5 ).mul( 4 * Math.PI ) );
-				const light = surround.mul( 0.8 ).add( this.keyColor.rgb.mul( forward.mul( 0.22 ).add( 0.008 ) ) );
+				const light = low.mul( 0.88 ).add( this.keyColor.rgb.mul( forward.mul( 0.22 ).add( 0.008 ) ) );
 				result.assign( mix( light, result, transmittance ) );
 
 			} );
