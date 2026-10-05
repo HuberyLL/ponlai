@@ -296,21 +296,31 @@ export class Clouds {
 				const t = float( 8000 ).div( direction.y ).toVar();
 				const p = direction.xz.mul( t ).add( this.windOffset.mul( 1.6 ) ).toVar();
 				const w = this.cirrusAxis;
-				const along = dot( p, w ), across = dot( p, vec2( w.y.negate(), w.x ) );
+				const along = dot( p, w ).toVar();
+				// Shear in the upper wind bends the strands into long, gentle curves.
+				const sideways = dot( p, vec2( w.y.negate(), w.x ) ).toVar();
+				const bend = weatherNode.sample( vec2( along.div( 30000 ), sideways.div( 12000 ) ).add( 0.71 ) ).level( float( 0 ) ).g.sub( 0.5 ).mul( 7000 )
+					.add( weatherNode.sample( vec2( along.div( 9000 ), sideways.div( 5000 ) ).add( 0.29 ) ).level( float( 0 ) ).b.sub( 0.5 ).mul( 900 ) );
+				const across = sideways.add( bend ).toVar();
 				// Patches of veil a few tens of kilometres long, combed into fibres along the wind.
 				// The weather field's known distribution sets how much of the sky the veil covers.
 				const broad = weatherNode.sample( vec2( along.div( 96000 ), across.div( 30000 ) ).add( 0.37 ) ).level( float( 0 ) ).r;
-				const fibres = shapeNode.sample( vec3( along.div( 16000 ), 0.71, across.div( 1000 ) ) ).level( float( 0 ) ).r;
-				const hooks = detailNode.sample( vec3( along.div( 3000 ), 0.23, across.div( 330 ) ) ).level( float( 0 ) ).r;
+				// Fine strands a few hundred metres apart, sharp across and drawn out along the wind.
+				const fibres = shapeNode.sample( vec3( along.div( 9000 ), 0.71, across.div( 420 ) ) ).level( float( 0 ) ).r;
+				const fine = detailNode.sample( vec3( along.div( 2500 ), 0.23, across.div( 150 ) ) ).level( float( 0 ) ).r;
+				const strands = smoothstep( 0.5, 0.78, fibres.mul( 0.75 ).add( fine.mul( 0.25 ) ) );
+				// Tufts: strands thicken into heads here and there and trail off thin between them.
+				const heads = smoothstep( 0.35, 0.8, detailNode.sample( vec3( along.div( 6000 ), 0.53, across.div( 1200 ) ) ).level( float( 0 ) ).g );
 				const amount = this.cirrus;
 				const edge = coverThreshold( amount.mul( 0.6 ) ).toVar();
 				const veil = smoothstep( edge.sub( 0.05 ), edge.add( 0.12 ), broad );
-				const streaks = smoothstep( 0.45, 0.85, fibres ).mul( hooks.mul( 0.4 ).add( 0.6 ) );
-				const opacity = veil.mul( streaks ).mul( 0.42 ).mul( smoothstep( 0.02, 0.15, direction.y ) ).toVar();
+				const opacity = veil.mul( strands ).mul( heads.mul( 0.6 ).add( 0.4 ) ).mul( 0.4 ).mul( smoothstep( 0.02, 0.15, direction.y ) ).toVar();
+				// Ice scatters strongly forward, but a thin veil only brightens near the sun; it does
+				// not turn into a white blaze around it.
 				const cosine = dot( direction, this.lightDir );
-				const forward = float( 0.51 ).div( float( 1.49 ).sub( cosine.mul( 1.4 ) ).pow( 1.5 ).mul( 4 * Math.PI ) );
+				const forward = float( 0.64 ).div( float( 1.36 ).sub( cosine.mul( 1.2 ) ).pow( 1.5 ).mul( 4 * Math.PI ) );
 				// The veil passes most of the sky behind it on, scattered rather than absorbed.
-				result.assign( vec4( this.lightColor.rgb.mul( forward.mul( 0.6 ).add( 0.05 ) ).mul( this.directGain ).mul( opacity ), float( 1 ).sub( opacity.mul( 0.1 ) ) ) );
+				result.assign( vec4( this.lightColor.rgb.mul( forward.mul( 0.25 ).add( 0.06 ) ).mul( this.directGain ).mul( opacity ), float( 1 ).sub( opacity.mul( 0.12 ) ) ) );
 
 			} );
 			return result;
