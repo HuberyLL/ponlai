@@ -12,8 +12,9 @@ packages, into `dist/licenses/`.
 - Upstream: https://github.com/dgreenheck/tidewater, by Daniel Greenheck
 - Copyright: (c) 2026 DRG Software Solutions LLC
 - Licence: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt),
-  [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt) and
-  [`src/materials/tidewater.LICENSE.txt`](src/materials/tidewater.LICENSE.txt) (the same text)
+  [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt),
+  [`src/materials/tidewater.LICENSE.txt`](src/materials/tidewater.LICENSE.txt) and
+  [`src/weather/tidewater.LICENSE.txt`](src/weather/tidewater.LICENSE.txt) (the same text)
 - From the three.js (TSL) edition, commit
   [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86):
   - `src/ocean/OceanFFT.ts`: the multi-cascade FFT ocean.
@@ -57,6 +58,14 @@ packages, into `dist/licenses/`.
     `src/world/terrain/TerrainShading.js` (the variation stretched down the two vertical projection
     planes, weighted by how squarely each faces the surface, and its 40 % darkening), ported from
     WGSL to TSL and turned into the paths that rain water takes down the cliffs while they are wet.
+  - `src/weather/AerialPerspective.ts`: the distant air from `src/post/AirHaze.js`, ported from WGSL
+    to TSL: two exponential height layers (a thin marine layer and a deeper aerosol layer, in its
+    proportions) with their optical depth integrated analytically along the view ray, the sky just
+    above the horizon in the view direction as the haze's light, and the key light's share of it
+    scattered through its Cornette-Shanks phase function near the camera. Its volumetric and
+    screen-space sun shafts were not ported (`src/post/LightShafts.ts` stays). The protected
+    foreground, the sea fog banks (marched, with bank-dependent heights and a clearing over the
+    island), their lighting and the morning mist are this project's.
   - The celestial clock, geometric lunar phase and the star and Milky Way rendering are original
     code; the star catalogue and Milky Way map they draw are listed under Assets. (The lunar disk's
     shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,

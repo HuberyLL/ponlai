@@ -70,10 +70,12 @@ exposed.
   `public/sky/moon/`, built by `tools/build-moon-textures.py`), weather presets, their blending and
   the auto-weather chain.
 - `src/weather/`: wind, lightning (branching channels after three.js's former LightningStrike and
-  point sources lighting the clouds' march from inside, after VolumetricCloudsCS1), puddles (with rain rings), rain
-  (GPU drops in nested camera volumes, stopped by a top-down collision height map of the island and
+  point sources lighting the clouds' march from inside, after VolumetricCloudsCS1), puddles (with rain rings),
+  rain (GPU drops in nested camera volumes, stopped by a top-down collision height map of the island and
   splashing where they land; a distant streak veil in the post pass; analytic ripples), distant air
-  (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
+  (two exponential height layers after tidewater's `AirHaze`, lit by the horizon sky and, near the
+  camera, the key light through a phase function) and sea fog (the marine layer thickened in
+  drifting banks of varying height, thinner over the island, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
   glare, bloom, tilt-shift, night vision (the rods' Purkinje shift, `Purkinje.ts`), grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
