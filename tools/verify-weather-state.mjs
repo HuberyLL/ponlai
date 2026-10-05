@@ -95,9 +95,12 @@ for ( const invalid of [ 'storm', '__proto__', '', null ] ) {
 	const first = run(), second = run();
 	assert.deepEqual( first, second, 'auto weather must be deterministic' );
 	assert.ok( first.length >= 8 && first.length <= 40, `an hour should hold several changes, saw ${ first.length }` );
+	// Fog sits beside clear and fair weather; the cloud states run from fair to rain.
 	const order = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain' ];
 	for ( let i = 1; i < first.length; i ++ ) {
-		assert.ok( Math.abs( order.indexOf( first[ i ] ) - order.indexOf( first[ i - 1 ] ) ) <= 2, `${ first[ i - 1 ] } -> ${ first[ i ] } skips too far` );
+		const pair = [ first[ i - 1 ], first[ i ] ];
+		if ( pair.includes( 'fog' ) ) assert.ok( pair.every( ( name ) => [ 'fog', 'clear', 'fair' ].includes( name ) ), `${ pair } leaves fog's neighbours` );
+		else assert.ok( Math.abs( order.indexOf( first[ i ] ) - order.indexOf( first[ i - 1 ] ) ) <= 2, `${ first[ i - 1 ] } -> ${ first[ i ] } skips too far` );
 	}
 	const held = new Weather( 'rain' );
 	for ( let t = 0; t < 600; t ++ ) held.update( 1 );

@@ -21,7 +21,7 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
-type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'windSpeed' | 'windDirection'>;
+type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
 // Baked products. Directions, colours, the grade and the clouds themselves are evaluated every
 // frame; only these slower reflection, environment and irradiance products cross-fade.
@@ -105,7 +105,7 @@ export class Sky {
 	viewer = new THREE.Vector3( 0, 15, 0 );
 	solarIlluminance = new THREE.Color();
 	readonly grade = { exposure: 2.35, blackLift: 0.027, daylight: 1 };
-	readonly weather: DisplayedWeather = { haze: 0, rain: 0, windSpeed: 3.8, windDirection: 40 };
+	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
 	equirect: THREE.RenderTarget;
@@ -440,6 +440,12 @@ export class Sky {
 		this.trackClouds( celestial, weather, coverage, illuminance, coverageOverride === null ? front : null );
 		this.weather.haze = weather?.haze ?? 0;
 		this.weather.rain = weather?.rain ?? 0;
+		// Morning mist: calm, dry air cools overnight; mist gathers before dawn and burns off
+		// a few hours after sunrise. Weather fog adds to it.
+		const hour = celestial?.hour ?? 12, wind = weather?.windSpeed ?? 3.8;
+		const mist = THREE.MathUtils.smoothstep( hour, 3.5, 5.5 ) * ( 1 - THREE.MathUtils.smoothstep( hour, 7.5, 9.5 ) )
+			* ( 1 - THREE.MathUtils.smoothstep( wind, 3.5, 5 ) ) * ( 1 - this.weather.rain ) * 0.3;
+		this.weather.fog = Math.max( weather?.fog ?? 0, mist );
 		this.weather.windSpeed = weather?.windSpeed ?? 3.8;
 		this.weather.windDirection = weather?.windDirection ?? 40;
 

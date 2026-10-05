@@ -24,7 +24,7 @@ exposed.
   WebGPU-capable Chrome.
 - Sky and weather URL options: `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk,
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
-  `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain; rain loads
+  `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, fog; rain loads
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
   override), `quality` (low, medium, high).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
@@ -55,7 +55,7 @@ exposed.
   `src/materials/CloudNoise.ts`, the day cycle (sun and moon), stars, Milky Way and moon, weather
   presets, their blending and the auto-weather chain.
 - `src/weather/`: wind, rain (a streak veil in the post pass, world-space streaks, ripples),
-  distant air (aerial perspective).
+  distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
   glare, bloom, tilt-shift, grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
@@ -85,7 +85,8 @@ exposed.
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
 - One cloud field feeds the visible sky, water reflections, environment lighting and cloud
   shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
-  Distant air applies only beyond the protected foreground. Weather changes sweep the sky as a
+  Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer
+  that may surround the island, never a uniform tint. Weather changes sweep the sky as a
   front from upwind; the island's lighting follows the front's progress over the island.
 - Rain is light streaks plus analytic ripples on the water normal: no droplets, puddles or splash
   foam. Wetness darkens exposed rock and plants within small limits, persists after rain and

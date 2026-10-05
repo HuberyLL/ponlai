@@ -242,7 +242,8 @@ export class Pipeline {
 		camera.updateMatrixWorld();
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
 		this.air.update( camera, this.width, this.height );
-		this.shafts.update( camera as THREE.PerspectiveCamera, this.width, this.height, this.air.haze.value );
+		this.shafts.update( camera as THREE.PerspectiveCamera, this.width, this.height, this.air.haze.value,
+			this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ) );
 
 		// 1. opaque
 		r.setRenderTarget( this.sceneRT );

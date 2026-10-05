@@ -558,6 +558,11 @@ function tick(): void {
 	sky.advance( environmentDt );
 	publishLighting();
 	pipeline.air.haze.value = sky.weather.haze;
+	pipeline.air.fog.value = sky.weather.fog;
+	pipeline.air.fogOffset.value.copy( shared.wind.displacement.value ).negate();
+	pipeline.air.fogTime.value = simTime;
+	pipeline.air.keyDir.value.copy( sky.keyDir );
+	pipeline.air.keyColor.value.copy( sky.keyColor );
 	pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
 	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
 	sky.updateClouds( camera.position, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
