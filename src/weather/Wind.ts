@@ -119,11 +119,13 @@ export class Wind {
 		const ratio = speed / BASE_SPEED;
 		this.uniforms.strength.value = clamp( ratio, 0, 1.6 );
 		// Long swell changes little; local and capillary bands respond more. These gentle
-		// amplitude limits keep every weather preset within the island's calm-water design.
+		// amplitude limits keep everyday weather within the island's calm-water design; only a
+		// gale (above about 1.5 x the fair-weather wind) builds a rough storm sea beyond them.
+		const gale = clamp( ratio - 1.5, 0, 1.6 );
 		this.uniforms.oceanGain.value.set(
-			clamp( 1 + ( ratio - 1 ) * 0.18, 0.82, 1.15 ),
-			clamp( 1 + ( ratio - 1 ) * 0.55, 0.55, 1.45 ),
-			clamp( 1 + ( ratio - 1 ) * 0.85, 0.35, 1.65 ),
+			clamp( 1 + ( ratio - 1 ) * 0.18, 0.82, 1.15 ) + gale * 1.2,
+			clamp( 1 + ( ratio - 1 ) * 0.55, 0.55, 1.45 ) + gale * 1.5,
+			clamp( 1 + ( ratio - 1 ) * 0.85, 0.35, 1.65 ) + gale * 0.5,
 		);
 
 	}

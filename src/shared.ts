@@ -16,6 +16,8 @@ export const shared = {
 	sigA: uniform( new THREE.Vector3( 0.28, 0.12, 0.10 ) ),
 	sigS: uniform( new THREE.Vector3( 0.02, 0.03, 0.03 ) ),
 	sunIntoWater: uniform( 1 ), // 1 - Fresnel of the sun at the surface
+	// Storm strength: whitecaps on breaking crests (0 calm).
+	storm: uniform( 0 ),
 	muSun: uniform( 1 ), // cosine of the refracted sun below the surface
 	shoreXform: uniform( new THREE.Vector4() ), // x0, z0, 1 / width, 1 / depth of the shoreline field
 	sunDir: uniform( new THREE.Vector3( 0, 1, 0 ) ),

@@ -107,6 +107,8 @@ comment where it is used.
 - Crepuscular rays: Kenny Mitchell,
   [*Volumetric Light Scattering as a Post-Process*](https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process)
   (GPU Gems 3, 2007): a radial blur of the open sky toward the sun.
+- Whitecaps: the horizontal Jacobian of the displaced surface as a breaking criterion, after
+  J. Tessendorf, *Simulating Ocean Water* (above).
 - Depth-dependent water shadows: the volume-lighting integral described in
   [*Physically Based Rendering*, third edition](https://pbr-book.org/3ed-2018/Light_Transport_II_Volume_Rendering/Volumetric_Light_Transport),
   independently implemented in TSL with exponential depth strata, exact per-channel attenuation

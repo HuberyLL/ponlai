@@ -567,6 +567,12 @@ function tick(): void {
 	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
 	sky.updateClouds( camera.position, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
+	shared.storm.value = weather.state.storm;
+	sky.lightning.update( paused ? 0 : rawDt, weather.state.storm );
+	// A strike lights the island for an instant through the sky's fill.
+	const strikeFill = lighting.skyFill * ( 1 + sky.lightning.flash.value * 8 );
+	scene.environmentIntensity = strikeFill;
+	shared.skyFill.value = strikeFill;
 	shared.wetness.value = weatherEffects.wetness ? weather.state.wetness : 0;
 	fft.weatherGain.value.copy( shared.wind.oceanGain.value );
 	rain!.uniforms.rain.value = shared.rain.value;

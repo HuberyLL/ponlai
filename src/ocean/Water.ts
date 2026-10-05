@@ -14,6 +14,7 @@ import {
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
 	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
+	mx_noise_float,
 } from 'three/tsl';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
 import type { Sky } from '../sky/Sky.ts';
@@ -450,6 +451,11 @@ export class Water {
 			heightGradient.addAssign( vec2( rainGradient.x.mul( horizontal.x ).add( rainGradient.y.mul( horizontal.z ) ),
 				rainGradient.x.mul( horizontal.y ).add( rainGradient.y.mul( horizontal.w ) ) ) );
 			const N = waveSurfaceNormal( heightGradient, horizontal ).toVar();
+			// The shading normal of a steep storm crest can face away from a viewer who still sees
+			// the displaced surface; bend it back to just past grazing instead of shading it black.
+			const toEye = normalize( cameraPosition.sub( positionWorld ) );
+			const facing = dot( N, toEye );
+			N.assign( normalize( N.add( toEye.mul( max( float( 0.02 ).sub( facing ), 0 ) ) ) ) );
 			// Energy shelter scales variance by amplitude squared. Fine LOD only attenuates
 			// the resolved mean; its missing variance remains in the physical glint distribution.
 			const rawCovariance = waveSlopeCovariance( d0.xy, m0.xyz ).mul( vWeights.x.mul( vWeights.x ) )
@@ -662,6 +668,22 @@ export class Water {
 			// Backfacing facets are self-occluded: neither the air reflection nor underwater
 			// transmission emerges through their back side. Neighbor-wave transport is unresolved.
 			const col = water.mul( airFacing ).toVar();
+			// Whitecaps in a storm: crests whose horizontal Jacobian folds below a threshold are
+			// breaking (Tessendorf's choppy-wave criterion), streaked by the wind and broken up.
+			If( shared.storm.greaterThan( 0.001 ), () => {
+
+				const fold = horizontal.x.mul( horizontal.w ).sub( horizontal.y.mul( horizontal.z ) );
+				// This calm, gently choppy sea rarely folds far: compress the threshold toward 1.
+				const crest = mix( float( 0.78 ), float( 0.88 ), shared.storm );
+				const breaking = float( 1 ).sub( smoothstep( crest.sub( 0.06 ), crest, fold ) );
+				const streak = mx_noise_float( vec3( wp.xz.mul( vec2( 0.9, 0.35 ) ), time.mul( 0.3 ) ) ).mul( 0.5 ).add( 0.5 );
+				const foam = clamp( breaking.mul( smoothstep( 0.25, 0.65, streak ).mul( 0.8 ).add( 0.2 ) ).mul( shared.storm ), 0, 0.95 );
+				// Diffuse white lit by the sky and the sun, like the island's surfaces; aerated water
+				// scatters strongly, so it reads brighter than the sky's mean radiance.
+				const lit = shared.skyIrradianceSource.mul( 3 / PI ).add( sunLight.mul( max( N.y, 0 ) ).mul( 0.85 / PI ) );
+				col.assign( mix( col, lit, foam.mul( airFacing ) ) );
+
+			} );
 
 			// soften the line where the surface cuts the rock (no hard seam); behind rock: the rock
 			const edge = select( skyBehind, float( 1 ), smoothstep( 0, 0.06, thick ) );

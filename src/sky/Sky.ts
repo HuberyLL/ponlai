@@ -14,6 +14,7 @@ import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE } from '../lighting/Radiometry.ts';
 import { Clouds } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
+import { Lightning } from '../weather/Lightning.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherFront, WeatherState } from './Weather.ts';
 
@@ -88,6 +89,7 @@ export class Sky {
 	atmosphere: Atmosphere;
 	clouds: Clouds;
 	night = new NightSky();
+	lightning = new Lightning();
 	sunIlluminance: number;
 	elevation: number;
 	azimuth: number;
@@ -149,6 +151,8 @@ export class Sky {
 	private displayNightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
 	private displayOvercast = uniform( 0 );
 	private displayAmbientGain = uniform( 1 );
+	// Radiance scale of a lightning channel and its glow, in scene units.
+	private lightningRadiance = uniform( 1 );
 	private cloudLayer: THREE.TextureNode;
 	private pmrem: THREE.PMREMGenerator;
 	private quad: THREE.QuadMesh;
@@ -287,7 +291,9 @@ export class Sky {
 			// faster than its surroundings, and a thick deck hides it entirely instead of letting
 			// its enormous radiance burn through a residual transmittance as a sharp point.
 			const stars = this.night.stars( d ).mul( this.night.moonOcclusion( d ) );
-			return vec4( background.add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
+			// A storm deck's base about a kilometre up, seen at the strike's distance.
+			const strike = this.lightning.sky( d, atan( float( 950 ), this.lightning.distance ), float( 1 ).sub( cloud.a ) ).mul( this.lightningRadiance );
+			return vec4( background.add( strike ).add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
@@ -378,6 +384,7 @@ export class Sky {
 		}
 		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
 		this.solarIlluminance.copy( this.sunTint ).multiplyScalar( illuminance );
+		this.lightningRadiance.value = illuminance * 0.08;
 		// The sky-view LUT re-renders only when the sun has moved: a small 192 x 108 march.
 		this.atmosphere.sunDir.value.copy( this.sunDir );
 		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance );

@@ -24,7 +24,7 @@ exposed.
   WebGPU-capable Chrome.
 - Sky and weather URL options: `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk,
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
-  `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, fog; rain loads
+  `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
   override), `quality` (low, medium, high).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
@@ -54,7 +54,7 @@ exposed.
   a sixteenth per frame, plus a live cloud-shadow map) and their noise bake in
   `src/materials/CloudNoise.ts`, the day cycle (sun and moon), stars, Milky Way and moon, weather
   presets, their blending and the auto-weather chain.
-- `src/weather/`: wind, rain (a streak veil in the post pass, world-space streaks, ripples),
+- `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
   distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
   glare, bloom, tilt-shift, grade).
@@ -74,7 +74,8 @@ exposed.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Larger casters keep
   the map, which redraws whenever the key light moves.
-- The sea is calm: no shore foam or whitecaps. Weather only scales the wave cascades' amplitude;
+- The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
+  rough sea with whitecaps on folding crests. Weather only scales the wave cascades' amplitude;
   it never rebuilds the wave spectrum.
 - One dominant key light (sun by day, moon by night) drives terrain, characters, water, caustics
   and every shadow map; sun/moon handoffs pass through zero direct light. The day cycle is

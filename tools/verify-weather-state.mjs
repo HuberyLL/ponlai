@@ -56,7 +56,7 @@ for ( const invalid of [ NaN, Infinity, - 1, '1' ] ) {
 	assert.throws( () => weather.setWeather( 'rain', invalid ), RangeError );
 	assert.deepEqual( weather.snapshot(), before, 'invalid input must not mutate state' );
 }
-for ( const invalid of [ 'storm', '__proto__', '', null ] ) {
+for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 	assert.throws( () => new Weather( invalid ), RangeError );
 	assert.throws( () => weather.setWeather( invalid ), RangeError );
 }
@@ -96,7 +96,7 @@ for ( const invalid of [ 'storm', '__proto__', '', null ] ) {
 	assert.deepEqual( first, second, 'auto weather must be deterministic' );
 	assert.ok( first.length >= 8 && first.length <= 40, `an hour should hold several changes, saw ${ first.length }` );
 	// Fog sits beside clear and fair weather; the cloud states run from fair to rain.
-	const order = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain' ];
+	const order = [ 'clear', 'fair', 'cloudy', 'overcast', 'rain', 'storm' ];
 	for ( let i = 1; i < first.length; i ++ ) {
 		const pair = [ first[ i - 1 ], first[ i ] ];
 		if ( pair.includes( 'fog' ) ) assert.ok( pair.every( ( name ) => [ 'fog', 'clear', 'fair' ].includes( name ) ), `${ pair } leaves fog's neighbours` );
