@@ -10,6 +10,8 @@ const LICENCE_FILES: Record<string, string> = {
 	'licenses/hoskins-hash.LICENSE.txt': 'src/materials/hoskins-hash.LICENSE.txt',
 	'licenses/three-geospatial.LICENSE.txt': 'src/sky/three-geospatial.LICENSE.txt',
 	'licenses/a-starry-sky.LICENSE.txt': 'src/sky/a-starry-sky.LICENSE.txt',
+	'licenses/LightningStrike.LICENSE.txt': 'src/weather/LightningStrike.LICENSE.txt',
+	'licenses/VolumetricCloudsCS1.LICENSE.txt': 'src/weather/VolumetricCloudsCS1.LICENSE.txt',
 };
 
 function licences(): Plugin {

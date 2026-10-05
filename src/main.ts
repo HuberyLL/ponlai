@@ -133,7 +133,7 @@ function applySkyQuality(): void {
 
 }
 applySkyQuality();
-scene.add( sky.dome );
+scene.add( sky.dome, sky.lightning.group );
 scene.environmentIntensity = 1;
 const lighting = { skyFill: 1 };
 
@@ -539,7 +539,6 @@ addEventListener( 'keydown', ( e ) => {
 const frameTimes: number[] = [];
 let shadowElapsed = 0;
 const shadowDirection = new THREE.Vector3();
-const viewForward = new THREE.Vector3();
 function tick(): void {
 
 	clock.update();
@@ -571,15 +570,19 @@ function tick(): void {
 	pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );
 	pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
 	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
+	// Lightning follows the scene clock, so a paused frame holds its strike; it lights the clouds'
+	// march below, so it goes first.
+	sky.lightning.update( simTime, weather.state.storm, camera, renderer.domElement.height, sky.clouds );
 	sky.updateClouds( camera, renderer.domElement.width, renderer.domElement.height, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
 	shared.storm.value = weather.state.storm;
-	camera.getWorldDirection( viewForward );
-	sky.lightning.update( paused ? 0 : rawDt, weather.state.storm, Math.atan2( viewForward.z, viewForward.x ) );
-	// A strike lights the island for an instant through the sky's fill.
-	const strikeFill = lighting.skyFill * ( 1 + sky.lightning.flash.value * 8 );
+	// A strike lights the island for an instant through the sky's fill: the lit cloud deck adds its
+	// radiance to the sky's, so a flash that barely shows by day floods a dark night.
+	const skyLuma = sky.skyIrradiance.r * 0.2126 + sky.skyIrradiance.g * 0.7152 + sky.skyIrradiance.b * 0.0722;
+	const strikeFill = lighting.skyFill * Math.min( 1 + sky.lightning.fill / Math.max( skyLuma, 1e-5 ), 60 );
 	scene.environmentIntensity = strikeFill;
 	shared.skyFill.value = strikeFill;
+	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
 	shared.wetness.value = weatherEffects.wetness ? weather.state.wetness : 0;
 	fft.weatherGain.value.copy( shared.wind.oceanGain.value );
 	rain!.uniforms.rain.value = shared.rain.value;
