@@ -162,6 +162,9 @@ export class DayCycle {
 		const elevation = Math.asin( Math.max( - 1, Math.min( 1, sunDir.y ) ) ) * DEG;
 		const moonElevation = Math.asin( Math.max( - 1, Math.min( 1, moonDir.y ) ) ) * DEG;
 		const daylight = smoothstep( - 7, 8, elevation );
+		// A low sun's light is thin and warm, and twilight thinner still; adapt toward both so
+		// sunrise, sunset and the blue hour stay readable. Deep night keeps its own exposure.
+		const lowSun = smoothstep( - 14, - 5, elevation ) * ( 1 - smoothstep( 4, 18, elevation ) );
 		const moonIllumination = ( 1 - Math.cos( TAU * this.phase ) ) * 0.5;
 		const moonVisibility = smoothstep( 0, 5, moonElevation );
 		// Rotate within the orbital plane only after the sun is blocked and before the
@@ -187,7 +190,7 @@ export class DayCycle {
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),
 			// Modest adaptation preserves a visibly dark night. Scene lighting, not exposure,
 			// supplies its readable forms; reduce display lift so blacks do not turn milky.
-			exposure: 4.4 + ( 2.35 - 4.4 ) * daylight,
+			exposure: ( 4.4 + ( 2.6 - 4.4 ) * daylight ) * ( 1 + 0.6 * lowSun ),
 			blackLift: 0.002 + ( 0.027 - 0.002 ) * daylight,
 		};
 

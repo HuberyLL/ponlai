@@ -101,7 +101,6 @@ export class Clouds {
 	private noise: CloudNoise | null = null;
 	private phase = uniform( new THREE.Vector2() );
 	private partialKernel: THREE.ComputeNode | null = null;
-	private fullKernel: THREE.ComputeNode | null = null;
 	private shadowKernel: THREE.ComputeNode | null = null;
 	private frame = 0;
 	private needsFull = true;
@@ -302,11 +301,6 @@ export class Clouds {
 			domeTexel( x, y );
 
 		} )().compute( DOME_WIDTH * DOME_HEIGHT / ( STRIDE * STRIDE ), [ 64 ] ).setName( 'Clouds.DomePartial' );
-		this.fullKernel = Fn( () => {
-
-			domeTexel( instanceIndex.mod( uint( DOME_WIDTH ) ), instanceIndex.div( uint( DOME_WIDTH ) ) );
-
-		} )().compute( DOME_WIDTH * DOME_HEIGHT, [ 64 ] ).setName( 'Clouds.DomeFull' );
 
 		this.shadowKernel = Fn( () => {
 
@@ -338,18 +332,16 @@ export class Clouds {
 	/** Refreshes part of the dome (or all of it after a jump) and the whole shadow map. */
 	update( renderer: THREE.WebGPURenderer, viewer: THREE.Vector3 ): void {
 
-		if ( ! this.partialKernel || ! this.fullKernel || ! this.shadowKernel ) return;
+		if ( ! this.partialKernel || ! this.shadowKernel ) return;
 		this.origin.value.copy( viewer );
-		if ( this.needsFull ) {
+		// A 4 x 4 ordered pattern spreads each frame's texels evenly over the map. A full refresh
+		// runs all sixteen phases through the same kernel, so every texel always comes from one
+		// compiled program and a refreshed map matches a progressively updated one exactly.
+		const order = [ 0, 10, 2, 8, 5, 15, 7, 13, 1, 11, 3, 9, 4, 14, 6, 12 ];
+		const phases = this.needsFull ? order : [ order[ this.frame ++ % 16 ] ];
+		this.needsFull = false;
+		for ( const k of phases ) {
 
-			renderer.compute( this.fullKernel );
-			this.needsFull = false;
-
-		} else {
-
-			// A 4 x 4 ordered pattern spreads each frame's texels evenly over the map.
-			const order = [ 0, 10, 2, 8, 5, 15, 7, 13, 1, 11, 3, 9, 4, 14, 6, 12 ];
-			const k = order[ this.frame ++ % 16 ];
 			this.phase.value.set( k % STRIDE, Math.floor( k / STRIDE ) );
 			renderer.compute( this.partialKernel );
 

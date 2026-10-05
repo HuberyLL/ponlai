@@ -50,7 +50,7 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	near( s.moonDir.length(), 1 );
 	near( s.keyDir.length(), 1 );
 	for ( const key of [ 'daylight', 'nightVisibility', 'moonVisibility', 'moonIllumination', 'moonKeyGain' ] ) assert.ok( Number.isFinite( s[ key ] ) && s[ key ] >= 0 && s[ key ] <= 1, key );
-	assert.ok( s.exposure >= 2.35 && s.exposure <= 4.4 );
+	assert.ok( s.exposure >= 2.6 && s.exposure <= 4.4 * 1.6 );
 	assert.ok( s.blackLift >= 0.002 - 1e-12 && s.blackLift <= 0.027 + 1e-12 );
 
 }
