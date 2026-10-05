@@ -12,7 +12,7 @@ import {
 	If,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
-import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE } from '../lighting/Radiometry.ts';
+import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE, SUN_LIMB_EXPONENT } from '../lighting/Radiometry.ts';
 import { Clouds, EVOLVE_PERIOD } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
@@ -83,6 +83,8 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // The displayed night sky's share of the night ambient that lights the island: a deeper sky
 // for the stars without darkening the island's own fill.
 const NIGHT_SKY = 0.55;
+// A mid-grey surface in daylight, cd/m^2: far above the range where the rods tint vision.
+const DAYLIGHT_ADAPTATION = 3000;
 
 export class Sky {
 
@@ -111,7 +113,9 @@ export class Sky {
 	private viewHeight = 1;
 	private cloudTime = 0;
 	solarIlluminance = new THREE.Color();
-	readonly grade = { exposure: 2.35, blackLift: 0.027, daylight: 1 };
+	// adaptation: the luminance (cd/m^2) the eye adapts a mid-grey surface to, for the grade's
+	// night vision; the scene's compressed night stands for a real one this dim.
+	readonly grade = { exposure: 2.35, blackLift: 0.027, daylight: 1, adaptation: DAYLIGHT_ADAPTATION };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
@@ -266,7 +270,8 @@ export class Sky {
 			const up = vec3( d.x, abs( d.y ), d.z );
 			// The visible night sky is darker than the light it lends the island (see NIGHT_SKY).
 			const night = this.nightAmbient.rgb.mul( mix( float( NIGHT_SKY ), float( 1 ), this.irradiancePass ) );
-			const sky = this.clearSky( up, night, this.overcast ).mul( cloud.a ).add( cloud.rgb ).mul( this.ambientGain );
+			const sky = this.clearSky( up, night, this.overcast ).mul( cloud.a ).add( cloud.rgb ).mul( this.ambientGain )
+				.add( this.night.airglow( up, this.bakeStarVisibility ).mul( cloud.a ) );
 			const stars = this.night.stars( up, this.starFootprint, this.bakeStarVisibility.mul( this.includeStars ) );
 			const radiance = seaPanorama( d, sky.add( stars.mul( cloud.a ) ), this.sea.rgb );
 			return vec4( radiance, mix( cloud.a, d.y, this.irradiancePass ) );
@@ -280,11 +285,13 @@ export class Sky {
 			const d = normalize( positionWorld.sub( cameraPosition ) ).toVar();
 			const r = acos( clamp( dot( d, this.displaySunDir ), - 1, 1 ) ).div( SUN_DISPLAY_RADIUS ).toVar();
 			const mask = float( 1 ).sub( smoothstep( 0.9, 1.0, r ) );
-			const limb = sqrt( max( float( 1 ).sub( r.mul( r ) ), 0 ) ).mul( 0.6 ).add( 0.4 );
-			// The integral of the visible disk is the key light's irradiance. A shared scene unit
-			// scale keeps the normalised disk finite in fp16 without dimming it independently.
+			// Limb darkening per channel (see SUN_LIMB_EXPONENT): a redder, darker rim.
+			const mu = max( float( 1 ).sub( r.mul( r ) ), 1e-6 ).log2().mul( 0.5 ).toVar();
+			const limb = vec3( mu.mul( SUN_LIMB_EXPONENT[ 0 ] ), mu.mul( SUN_LIMB_EXPONENT[ 1 ] ), mu.mul( SUN_LIMB_EXPONENT[ 2 ] ) ).exp2();
+			// The integral of the visible disk is the key light's irradiance, channel by channel. A
+			// shared scene unit scale keeps the normalised disk finite in fp16 without dimming it.
 			const disk = this.atmosphere.transmittanceToSpace( d ).mul( this.displaySolarIlluminance )
-				.mul( mask ).mul( limb ).div( SUN_DISPLAY_SOLID_ANGLE ).mul( smoothstep( 0, 0.001, d.y ) );
+				.mul( mask ).mul( limb ).div( vec3( ...SUN_DISPLAY_SOLID_ANGLE ) ).mul( smoothstep( 0, 0.001, d.y ) );
 			// Above the horizon the clear sky and the clouds are both live. Below, the baked distant-sea reflection continues the waves.
 			const lower = this.samplePanorama( d, float( 0 ) ).toVar();
 			const cloud = this.clouds.sampleView( d ).toVar();
@@ -300,7 +307,8 @@ export class Sky {
 			// A storm deck's base about a kilometre up, seen at the strike's distance.
 			const bow = this.rainbow( d ).mul( select( above, float( 1 ), float( 0 ) ) );
 			const strike = this.lightning.sky( d, atan( float( 950 ), this.lightning.distance ), float( 1 ).sub( cloud.a ) ).mul( this.lightningRadiance );
-			return vec4( background.add( strike ).add( bow ).add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).mul( through ) ), 1 );
+			const airglow = this.night.airglow( d ).mul( select( above, float( 1 ), float( 0 ) ) );
+			return vec4( background.add( strike ).add( bow ).add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).add( airglow ).mul( through ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
@@ -445,6 +453,19 @@ export class Sky {
 		// After dark a closed deck hides the moon and stars; the eye adapts further so a rainy
 		// dusk or night stays readable, still darker than a clear moonlit night.
 		this.grade.exposure *= 1 + 5 * overcast * ( 1 - this.grade.daylight );
+		// The eye's adaptation, on a log scale: photopic until the sun sets, mesopic through
+		// twilight, scotopic by night; moonlight keeps it a little higher and a closed deck lower.
+		if ( celestial ) {
+
+			const night = 1 - this.grade.daylight;
+			const twilight = THREE.MathUtils.smoothstep( this.elevation, - 12, 1 );
+			this.grade.adaptation = 10 ** ( - 1.5 + 5 * twilight + night * ( 0.6 * celestial.moonKeyGain - 0.5 * overcast ) );
+
+		} else {
+
+			this.grade.adaptation = DAYLIGHT_ADAPTATION;
+
+		}
 		this.sunColor.multiplyScalar( directVisibility );
 		this.keyColor.multiplyScalar( directVisibility );
 		this.solarIlluminance.multiplyScalar( directVisibility );

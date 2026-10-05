@@ -206,6 +206,11 @@ comment where it is used.
 - Crepuscular rays: Kenny Mitchell,
   [*Volumetric Light Scattering as a Post-Process*](https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process)
   (GPU Gems 3, 2007): a radial blur of the open sky toward the sun.
+- Solar limb darkening: the per-channel power law I(mu) = mu^alpha with
+  alpha = -0.023 + 0.292 / lambda from D. Hestroffer and C. Magnan,
+  [*Wavelength dependency of the Solar limb darkening*](https://adsabs.harvard.edu/abs/1998A%26A...333..338H)
+  (A&A 333, 1998), evaluated at the Rec.709 primaries; per-RGB limb darkening as in
+  [a-starry-sky](https://github.com/Dante83/a-starry-sky) by David Evans (MIT), whose code is not used.
 - Whitecaps: the horizontal Jacobian of the displaced surface as a breaking criterion, after
   J. Tessendorf, *Simulating Ocean Water* (above).
 - Depth-dependent water shadows: the volume-lighting integral described in
@@ -213,6 +218,23 @@ comment where it is used.
   independently implemented in TSL with exponential depth strata, exact per-channel attenuation
   weights and separate air/submerged visibility along each scattering point's refracted solar path.
   No source code is copied; the retained multiple-scattering boost is empirical.
+- Night vision (Purkinje shift): Jasmin Patry,
+  [*Real-Time Samurai Cinema*](https://advances.realtimerendering.com/s2021/jpatry_advances2021/index.html)
+  (SIGGRAPH 2021 Advances in Real-Time Rendering): the rods' input to the cone pathways as a delta
+  in opponent colour space, with the constants of D. Cao et al.,
+  [*Rod contributions to color perception: linear with rod contrast*](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2630540/)
+  (Vision Research 48, 2008), and A. G. Kirk and J. F. O'Brien,
+  [*Perceptually based tone mapping for low-light conditions*](http://graphics.berkeley.edu/papers/Kirk-PBT-2011-08/)
+  (SIGGRAPH 2011). The RGB to cone/rod matrix is our own least-squares fit of
+  [CVRL](http://www.cvrl.org/) data (Stockman & Sharpe 2000 cone fundamentals, CIE 1951 scotopic
+  V'(lambda), CIE 1931 colour matching functions); the data is not shipped. Pupil size: P. Moon and
+  D. E. Spencer, *On the Stiles-Crawford effect* (J. Opt. Soc. Am. 34, 1944).
+- Airglow: H. W. Jensen, F. Durand, M. M. Stark, S. Premoze, J. Dorsey and P. Shirley,
+  [*A Physically-Based Night Sky Model*](https://doi.org/10.1145/383259.383306) (SIGGRAPH 2001): a
+  thin emitting shell about 100 km up (the van Rhijn brightening toward the horizon) seen through
+  the lower atmosphere's extinction, with F. Kasten and A. T. Young's air mass (Applied Optics 28,
+  1989); dimmed by a bright moon as in [a-starry-sky](https://github.com/Dante83/a-starry-sky)
+  (MIT), whose code is not used.
 
 ## References
 

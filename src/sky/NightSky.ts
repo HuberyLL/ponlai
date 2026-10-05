@@ -308,6 +308,27 @@ const nightMoonGlow = Fn( ( [ direction, sunDir, moonDir, moonColor ]: [ V3, V3,
 	{ name: 'moonDir', type: 'vec3' }, { name: 'moonColor', type: 'vec3' },
 ] } );
 
+// Airglow: the upper atmosphere's own faint light, mostly the green 557.7 nm oxygen line from a
+// layer about 100 km up. Seen through that thin shell it brightens toward the horizon (the van
+// Rhijn factor) until extinction in the thick low air wins, so it peaks some 10 - 15 degrees up.
+// After H. W. Jensen et al., "A Physically-Based Night Sky Model" (SIGGRAPH 2001); a bright moon
+// halves it, as a-starry-sky (https://github.com/Dante83/a-starry-sky) does. Soft green, a faint
+// band low on a clear moonless sky; zenith extinction per channel as at a clear sea-level site.
+const AIRGLOW_SHELL = ( 6371 / ( 6371 + 100 ) ) ** 2;
+const AIRGLOW_COLOR = new THREE.Vector3( 0.35, 1, 0.3 ).multiplyScalar( 0.0016 * SCENE_RADIANCE_SCALE );
+const nightAirglow = Fn( ( [ direction, moonWash ]: [ V3, F ] ) => {
+
+	const height = max( direction.y, 0 ).toVar();
+	const vanRhijn = float( 1 ).div( sqrt( float( 1 ).sub( height.mul( height ).oneMinus().mul( AIRGLOW_SHELL ) ) ) );
+	// Kasten and Young's (1989) air mass stays finite at the horizon.
+	const elevation = float( 90 ).sub( acos( height ).mul( 180 / Math.PI ) );
+	const airMass = float( 1 ).div( height.add( pow( elevation.add( 6.07995 ), - 1.6364 ).mul( 0.50572 ) ) );
+	const transmittance = exp( vec3( 0.1, 0.17, 0.28 ).mul( airMass ).negate() );
+	return vec3( AIRGLOW_COLOR.x, AIRGLOW_COLOR.y, AIRGLOW_COLOR.z ).mul( vanRhijn ).mul( transmittance )
+		.mul( float( 1 ).sub( clamp( moonWash, 0, 1 ).mul( 0.5 ) ) );
+
+} ).setLayout( { name: 'soomiNightAirglow', type: 'vec3', inputs: [ { name: 'direction', type: 'vec3' }, { name: 'moonWash', type: 'float' } ] } );
+
 export class NightSky {
 
 	readonly sunDir = uniform( new THREE.Vector3( 1, 0, 0 ) );
@@ -516,6 +537,13 @@ export class NightSky {
 			return radiance;
 
 		} )();
+
+	}
+
+	/** The night sky's faint glow of its own, fading with twilight, moonlight and cloud like the stars. */
+	airglow( direction: V3, visibility: F = this.starVisibility ): V3 {
+
+		return nightAirglow( direction, this.moonWash ).mul( clamp( visibility, 0, 1 ) );
 
 	}
 

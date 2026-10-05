@@ -61,13 +61,13 @@ exposed.
   reflections and the environment, and a cloud-shadow map), high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
   raining clouds, the day cycle (sun and moon), the night sky (the Yale Bright Star Catalogue's
   stars in a sidereal frame, a Milky Way shaped by NASA's Gaia map, both in `public/sky/` and
-  loaded by `StarCatalog.ts`) and moon (NASA's colour and LOLA heights in `public/sky/moon/`, built
-  by `tools/build-moon-textures.py`), rainbows, weather presets, their blending and the
-  auto-weather chain.
+  loaded by `StarCatalog.ts`), airglow and moon (NASA's colour and LOLA heights in
+  `public/sky/moon/`, built by `tools/build-moon-textures.py`), rainbows, weather presets, their
+  blending and the auto-weather chain.
 - `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
   distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
-  glare, bloom, tilt-shift, grade).
+  glare, bloom, tilt-shift, night vision (the rods' Purkinje shift, `Purkinje.ts`), grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -99,7 +99,9 @@ exposed.
   spread of brightness, kept below white except the brightest few; only those near the horizon
   scintillate. The stars and Milky Way are the real sky as seen near 28 degrees south (the
   sun's authored path fixes the latitude), turning with the clock about the south celestial pole;
-  procedural grain and faint stars only add detail below the catalogue and the map.
+  procedural grain and faint stars only add detail below the catalogue and the map. Night vision
+  follows the eye's adaptation set by the day cycle and scales with each pixel's own light: subtle,
+  black stays black, never a uniform tint.
 - One cloud field feeds the visible sky, water reflections, environment lighting and cloud
   shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
   Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer
