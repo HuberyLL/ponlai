@@ -34,7 +34,9 @@ exposed.
   production preview; `tools/benchmark-lighting.mjs` A/B-times two builds;
   `tools/compare-captures.py` measures two overview captures (needs Pillow and NumPy);
   `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
-  (`uv run --with pillow --with numpy`).
+  (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and
+  `tools/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
+  and map (each file says where to get them and how to run it).
   `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs` and `verify-wind.mjs` are CPU-only
   (plain `node`). Run GPU probes one at a time with no other page rendering the scene.
 
@@ -57,9 +59,11 @@ exposed.
   64^3 shape noise in `public/clouds/`, loaded by `src/materials/CloudNoise.ts`; traced in screen
   space a sixteenth of the pixels per frame with a reprojected history, plus a panorama map for
   reflections and the environment, and a cloud-shadow map), high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
-  raining clouds, the day cycle (sun and moon), stars, Milky Way and moon (NASA's colour and LOLA
-  heights in `public/sky/moon/`, built by `tools/build-moon-textures.py`), rainbows, weather
-  presets, their blending and the auto-weather chain.
+  raining clouds, the day cycle (sun and moon), the night sky (the Yale Bright Star Catalogue's
+  stars in a sidereal frame, a Milky Way shaped by NASA's Gaia map, both in `public/sky/` and
+  loaded by `StarCatalog.ts`) and moon (NASA's colour and LOLA heights in `public/sky/moon/`, built
+  by `tools/build-moon-textures.py`), rainbows, weather presets, their blending and the
+  auto-weather chain.
 - `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
   distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
@@ -93,7 +97,9 @@ exposed.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
   sky reads as a low backdrop and turns stars into bokeh discs. Stars are points with a natural
   spread of brightness, kept below white except the brightest few; only those near the horizon
-  scintillate.
+  scintillate. The stars and Milky Way are the real sky as seen near 28 degrees south (the
+  sun's authored path fixes the latitude), turning with the clock about the south celestial pole;
+  procedural grain and faint stars only add detail below the catalogue and the map.
 - One cloud field feeds the visible sky, water reflections, environment lighting and cloud
   shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
   Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer

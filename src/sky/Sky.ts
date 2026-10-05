@@ -540,6 +540,7 @@ export class Sky {
 		await this.renderer.init();
 		if ( ! this.clouds.ready ) await this.clouds.init( this.renderer );
 		await this.night.load();
+		if ( ! this.night.ready ) await this.night.init();
 		// An explicit jump (preset, seek, weather change) refreshes the whole cloud map now.
 		if ( readback ) {
 

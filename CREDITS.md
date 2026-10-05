@@ -44,8 +44,8 @@ packages, into `dist/licenses/`.
     field of sparse seeds and tufts drawn out by line integral convolution), its anisotropic,
     footprint-filtered lookup and the veil's coverage, optical depth and ice-crystal lighting,
     from the cirrus in `Clouds.js`, ported from WGSL to TSL.
-  - The celestial clock, geometric lunar phase and filtered procedural stars are original code;
-    they introduce no third-party imagery or additional asset licence. (The lunar disk's
+  - The celestial clock, geometric lunar phase and the star and Milky Way rendering are original
+    code; the star catalogue and Milky Way map they draw are listed under Assets. (The lunar disk's
     shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,
     integrated wind, analytic rain streaks/ripple gradients and wet-material response are
     original Soomi code as well.
@@ -133,6 +133,29 @@ packages, into `dist/licenses/`.
 - Files: `public/clouds/baseShape64.bin`, unchanged: a gzip-compressed 64^3 RGBA8 Perlin-Worley
   shape noise with its mip chain.
 
+### Yale Bright Star Catalogue
+
+- Authors: D. Hoffleit and W. H. Warren Jr., *The Bright Star Catalogue*, 5th Revised Ed. (1991),
+  Astronomical Data Center, NASA Goddard Space Flight Center
+- Source: the CDS catalogue [V/50](https://cdsarc.cds.unistra.fr/viz-bin/cat/V/50) (`catalog.gz` and
+  its `ReadMe`)
+- Licence: none stated; the CDS distributes the catalogue freely and asks for an acknowledgement,
+  which this entry is.
+- Files: `public/sky/stars.bin`, written by `tools/build-star-catalog.mjs`: for each of the 9096
+  stars with a position, the J2000 right ascension and declination, the V magnitude and a colour
+  from B-V (see the star colours under Acknowledgements), 8 bytes per star.
+
+### Deep Star Maps 2020 (Milky Way)
+
+- Credit: NASA/Goddard Space Flight Center Scientific Visualization Studio. Gaia DR2: ESA/Gaia/DPAC.
+- Source: [NASA SVS 4851](https://svs.gsfc.nasa.gov/4851), `milkyway_2020_4k.exr` (the Milky Way
+  background in celestial coordinates)
+- Licence: NASA SVS asks for the credit line above.
+- Files: `public/sky/milkyway.png`, written by `tools/build-milky-way.py`: the luminance halved,
+  cleared of residual point sources by a median filter, reduced to 1024 x 512, blurred along right
+  ascension toward the poles, and stored as the square root of its share of the brightest star
+  clouds in 8 bits.
+
 ## Acknowledgements
 
 Published techniques this project implements without using their code; each is also credited in a
@@ -174,6 +197,12 @@ comment where it is used.
 - Lunar shading: Yasuhiro Fujii,
   [*A tiny improvement of Oren-Nayar reflectance model*](https://mimosa-pudica.net/improved-oren-nayar.html),
   through the adapted three-geospatial source above.
+- Star colours: the effective temperature from B-V of F. J. Ballesteros,
+  [*New insights into black bodies*](https://doi.org/10.1209/0295-5075/97/34008) (EPL 97, 2012),
+  then Planck's law weighted by the CIE 1931 colour matching functions in the analytic fit of
+  C. Wyman, P.-P. Sloan and P. Shirley,
+  [*Simple Analytic Approximations to the CIE XYZ Color Matching Functions*](https://jcgt.org/published/0002/02/01/)
+  (JCGT 2013), and the sRGB matrix (`tools/build-star-catalog.mjs`).
 - Crepuscular rays: Kenny Mitchell,
   [*Volumetric Light Scattering as a Post-Process*](https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process)
   (GPU Gems 3, 2007): a radial blur of the open sky toward the sun.
