@@ -1,0 +1,335 @@
+/*!
+ * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
+ * Copyright (c) 2026 DRG Software Solutions LLC
+ * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ */
+
+import * as THREE from 'three/webgpu';
+import {
+	Fn, uniform, float, int, ivec2, vec2, vec3, uint, instanceIndex, instancedArray, storage, texture,
+	clamp, max, mix, exp, smoothstep, select, floor, fract, abs, dot, mx_noise_float,
+} from 'three/tsl';
+import type { OceanFFT } from './OceanFFT.ts';
+import type { ShoreWaves } from './ShoreWaves.ts';
+import type { Shared } from '../shared.ts';
+import { createFoamPattern } from './FoamPattern.ts';
+import { Spray, type SprayLighting } from './Spray.ts';
+
+type F = THREE.Node<'float'>;
+type V2 = THREE.Node<'vec2'>;
+type V3 = THREE.Node<'vec3'>;
+type IV2 = THREE.Node<'ivec2'>;
+
+// The storm sea's memory: persistent whitecap foam and the spray torn off breaking crests.
+//
+// Whitecaps are born where the sea's horizontal Jacobian folds (Tessendorf's choppy-wave
+// criterion), but real foam outlives the crest that made it: it trails behind the breaker and
+// fades over seconds. After tidewater's OceanFFT, foam therefore integrates in time:
+//   foam = foam * exp( -decay dt ) + generation * add * dt, at least half the fresh generation.
+// Tidewater keeps that per FFT cascade; here a single cascade folds rarely, and a short tile
+// would repeat its whitecaps in step, so the foam lives on one world-space grid that sees the
+// summed cascades with the same shore shelter as the water's own displacement. The grid sits in
+// the water's undisplaced (Lagrangian) coordinates, so foam rides the orbiting water rather than
+// the travelling wave form, and a crest leaves its foam behind as it moves on.
+//
+// The grid is a torus: cell n of the world lives in texel n mod RES, so the window can follow the
+// camera in whole cells without copying; cells that wrap into a new place start empty. The water
+// reads it as a storage buffer (foam, fresh breaking) with its own bilinear filter: its fragment
+// stage already binds as many sampled textures as WebGPU guarantees. It fades out toward the
+// window's edge, and where a pixel covers several cells (the pixel's own fold takes over there).
+//
+// Determinism: a paused frame must be exactly repeatable, so the state is a function of scene
+// time and weather. A jump in time, or a change of the weather while the clock stands still,
+// rebuilds the state by replaying the last seconds at fixed steps (the FFT is a closed-form
+// function of time); live frames integrate their own time step.
+
+const RES = 512;
+const CELL = 0.625; // m
+const SPAN = RES * CELL;
+const MOVE = 64; // window moves in steps of this many cells
+const WARM_SECONDS = 6;
+const WARM_STEP = 0.1;
+const MAX_LIVE_STEP = 0.25;
+
+export class StormSea {
+
+	readonly params = {
+		foamBias: uniform( 0.88 ), // generation starts where the summed Jacobian folds below this
+		foamGain: uniform( 10.0 ),
+		foamDecay: uniform( 0.6 ), // 1/s
+		foamAdd: uniform( 1.2 ),
+		groupDepth: uniform( 0.2 ), // how far wave groups move the threshold
+		groupSpeed: uniform( 2.5 ), // m/s downwind
+	};
+	/** Scales the whitecap coverage the water draws from the field. */
+	readonly coverage = uniform( 1 );
+	/** Diffuse albedo of the foam under the scene's light. Above a physical ~0.85 so that the
+	 * foam still reads as white water under a dark storm sky, which the stylised look wants. */
+	readonly albedo = uniform( 1.3 );
+	/** Repeats of the foam pattern per metre, and its size in texels. */
+	readonly patternScale = 0.09;
+	readonly patternSize = 1024;
+	/** Storm strength (0 calm): gates foam generation and spray. */
+	readonly gate = uniform( 0 );
+	/** World xz of the window's centre; the water fades the field out toward its edge. */
+	readonly center = uniform( new THREE.Vector2() );
+	readonly span = SPAN;
+	readonly pattern: THREE.StorageTexture;
+	readonly spray: Spray;
+
+	private renderer: THREE.WebGPURenderer;
+	private fft: OceanFFT;
+	private state;
+	private stateRead;
+	private dt = uniform( 0 );
+	private clock = uniform( 0 );
+	private lo = uniform( new THREE.Vector2() ); // first world cell of the window
+	private previousLo = uniform( new THREE.Vector2() );
+	private stepKernel: THREE.ComputeNode;
+	private clearKernel: THREE.ComputeNode;
+	private time: number | undefined;
+	private signature = '';
+	private active = false;
+	private readonly desired = new THREE.Vector2();
+	private readonly forward = new THREE.Vector3();
+
+	constructor( renderer: THREE.WebGPURenderer, fft: OceanFFT, shared: Shared, shore: THREE.Texture, shoreWaves: ShoreWaves,
+		light: Omit<SprayLighting, 'wind' | 'waterLevel'> ) {
+
+		this.renderer = renderer;
+		this.fft = fft;
+		this.pattern = createFoamPattern( renderer, this.patternSize );
+		this.state = instancedArray( RES * RES, 'vec2' ).setName( 'stormFoamState' ); // foam, fresh breaking
+		this.stateRead = storage( this.state.value, 'vec2', RES * RES ).toReadOnly().setName( 'stormFoamRead' );
+
+		const sizes = fft.sizes;
+		const der = fft.derivativeTextures, moments = fft.slopeMomentTextures, disp = fft.displacementTextures, vel = fft.velocityTextures;
+		// The water's own shore shelter of each cascade (Water.ts vertex stage), with the fine
+		// cascade at full weight: breaking is physical, not a level of detail.
+		const cascadeWeights = ( xz: V2 ): V3 => {
+
+			const q = xz.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
+			const sd = texture( shore, q ).level( float( 0 ) ).r;
+			const shelter = shoreWaves.shelter.sample( q ).level( float( 0 ) ).r;
+			const coastDamp = mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) );
+			return vec3( mix( float( 0.12 ), float( 1 ), shelter ), mix( float( 0.8 ), float( 1 ), shelter ), 1 ).mul( coastDamp );
+
+		};
+		// A cell spans many texels of the shorter cascades: read them through their mip chains,
+		// filtered to the cell, instead of aliasing their fine chop into false folds.
+		const lod = ( c: number ) => Math.max( 0, Math.log2( CELL / ( sizes[ c ] / 256 ) ) );
+
+		const cellOf = ( texel: IV2, lo: THREE.Node<'vec2'> ): V2 => {
+
+			// the world cell n with n = texel ( mod RES ) inside the window starting at lo
+			const d = vec2( texel ).sub( lo );
+			return lo.add( d.sub( floor( d.div( RES ) ).mul( RES ) ) );
+
+		};
+
+		this.clearKernel = Fn( () => {
+
+			this.state.element( instanceIndex ).assign( vec2( 0 ) );
+
+		} )().compute( RES * RES, [ 64 ] ).setName( 'StormSea.Clear' );
+
+		const P = this.params;
+		this.stepKernel = Fn( () => {
+
+			const texel = ivec2( int( instanceIndex.mod( uint( RES ) ) ), int( instanceIndex.div( uint( RES ) ) ) ).toVar();
+			const n = cellOf( texel, this.lo ).toVar();
+			const moved = abs( n.sub( cellOf( texel, this.previousLo ) ) ).dot( vec2( 1 ) ).greaterThan( 0.5 );
+			const xz = n.add( 0.5 ).mul( CELL ).toVar();
+			const w = cascadeWeights( xz ).toVar();
+			const jxx = float( 1 ).toVar(), jzz = float( 1 ).toVar(), jxz = float( 0 ).toVar();
+			for ( let c = 0; c < sizes.length; c ++ ) {
+
+				const q = xz.div( sizes[ c ] );
+				const d = texture( der[ c ], q ).level( float( lod( c ) ) );
+				const cross = texture( moments[ c ], q ).level( float( lod( c ) ) ).w;
+				const weight = c === 0 ? w.x : c === 1 ? w.y : w.z;
+				jxx.addAssign( d.z.mul( weight ) );
+				jzz.addAssign( d.w.mul( weight ) );
+				jxz.addAssign( cross.mul( weight ) );
+
+			}
+			const J = jxx.mul( jzz ).sub( jxz.mul( jxz ) ).toVar();
+			// Waves break in groups, not on every crest of a tile: a soft noise of group size,
+			// travelling downwind at about a group velocity, raises and lowers the threshold. It
+			// also hides the shorter cascade's tile, which would otherwise break in step.
+			const wind = shared.wind.direction;
+			const along = dot( xz, wind ).sub( this.clock.mul( P.groupSpeed ) ), across = dot( xz, vec2( wind.y.negate(), wind.x ) );
+			const groups = mx_noise_float( vec3( along.div( 42 ), across.div( 26 ), this.clock.mul( 0.03 ) ) );
+			const bias = P.foamBias.add( groups.mul( P.groupDepth ) );
+			const generation = clamp( bias.sub( J ).mul( P.foamGain ), 0, 1 ).mul( this.gate.min( 1 ) ).toVar();
+			const previous = select( moved, float( 0 ), this.state.element( instanceIndex ).x );
+			const foam = previous.mul( exp( P.foamDecay.mul( this.dt ).negate() ) ).add( generation.mul( P.foamAdd ).mul( this.dt ) );
+			const next = clamp( max( foam, generation.mul( 0.5 ) ), 0, 1.5 ).toVar();
+			this.state.element( instanceIndex ).assign( vec2( next, generation ) );
+
+		} )().compute( RES * RES, [ 64 ] ).setName( 'StormSea.Foam' );
+
+		const surfaceOffset = ( xz: V2 ): V3 => {
+
+			const w = cascadeWeights( xz ).toVar();
+			let offset: V3 = vec3( 0 );
+			for ( let c = 0; c < sizes.length; c ++ ) {
+
+				const weight = c === 0 ? w.x : c === 1 ? w.y : w.z;
+				offset = offset.add( texture( disp[ c ], xz.div( sizes[ c ] ) ).level( float( 0 ) ).xyz.mul( weight ) );
+
+			}
+			return offset;
+
+		};
+		const surfaceVelocity = ( xz: V2 ): V3 => {
+
+			const w = cascadeWeights( xz ).toVar();
+			let velocity: V3 = vec3( 0 );
+			for ( let c = 0; c < sizes.length; c ++ ) {
+
+				const weight = c === 0 ? w.x : c === 1 ? w.y : w.z;
+				const v = texture( vel[ c ], xz.div( sizes[ c ] ) ).level( float( 0 ) ); // ( Ux, Uz, Vy )
+				velocity = velocity.add( vec3( v.x, v.z, v.y ).mul( weight ) );
+
+			}
+			return velocity;
+
+		};
+		this.spray = new Spray( renderer, {
+			breakingAt: ( xz ) => {
+
+				const n = floor( xz.div( CELL ) );
+				const t = n.sub( floor( n.div( RES ) ).mul( RES ) );
+				const d = n.sub( this.lo );
+				const inside = d.x.greaterThanEqual( 0 ).and( d.y.greaterThanEqual( 0 ) ).and( d.x.lessThan( RES ) ).and( d.y.lessThan( RES ) );
+				return select( inside, this.state.element( int( t.y ).mul( RES ).add( int( t.x ) ) ).y, float( 0 ) );
+
+			},
+			surfaceOffset, surfaceVelocity,
+		}, { ...light, wind: shared.wind.velocity, waterLevel: shared.waterLevel } );
+		renderer.compute( this.clearKernel );
+
+	}
+
+	/** Foam for the water shader at an undisplaced xz: ( persistent, fresh, weight ), bilinear.
+	 * The weight fades the field out at the window's edge and where the pixel's footprint (m)
+	 * spans several cells, which the unfiltered buffer would alias. */
+	foamAt( xz: V2, footprint: F ): V3 {
+
+		const g = xz.div( CELL ).sub( 0.5 ).toVar();
+		const n0 = floor( g ).toVar();
+		const f = fract( g ).toVar();
+		const at = ( dx: number, dz: number ) => {
+
+			const n = n0.add( vec2( dx, dz ) );
+			const t = n.sub( floor( n.div( RES ) ).mul( RES ) );
+			return this.stateRead.element( int( t.y ).mul( RES ).add( int( t.x ) ) );
+
+		};
+		const s = mix( mix( at( 0, 0 ), at( 1, 0 ), f.x ), mix( at( 0, 1 ), at( 1, 1 ), f.x ), f.y );
+		const edge = abs( xz.sub( this.center ) ).div( SPAN );
+		const inside = float( 1 ).sub( smoothstep( 0.38, 0.47, max( edge.x, edge.y ) ) )
+			.mul( float( 1 ).sub( smoothstep( 1, 2.5, footprint.div( CELL ) ) ) );
+		return vec3( s.x, s.y, inside );
+
+	}
+
+	/** After the FFT has been evaluated at `time` this frame. */
+	update( time: number, storm: number, camera: THREE.Camera ): void {
+
+		this.gate.value = storm;
+		this.spray.params.gate.value = storm;
+		if ( storm <= 1e-3 ) {
+
+			// Calm: nothing to integrate. A later storm starts from a clean sea.
+			this.active = false;
+			this.spray.mesh.visible = false;
+			this.time = time;
+			return;
+
+		}
+		this.spray.mesh.visible = true;
+		this.spray.eye.value.copy( camera.position );
+
+		// Keep the window ahead of the camera, moving it in whole steps (with some slack) so the
+		// state rarely has to drop cells.
+		camera.getWorldDirection( this.forward );
+		const ahead = Math.hypot( this.forward.x, this.forward.z ) > 1e-3 ? SPAN * 0.25 / Math.hypot( this.forward.x, this.forward.z ) : 0;
+		this.desired.set( camera.position.x + this.forward.x * ahead, camera.position.z + this.forward.z * ahead );
+		const step = MOVE * CELL;
+		const lo = this.lo.value;
+		const centre = this.center.value;
+		if ( ! this.active || Math.max( Math.abs( this.desired.x - centre.x ), Math.abs( this.desired.y - centre.y ) ) > step ) {
+
+			lo.set( Math.round( this.desired.x / step ) * step / CELL - RES / 2, Math.round( this.desired.y / step ) * step / CELL - RES / 2 );
+
+		}
+		this.center.value.set( ( lo.x + RES / 2 ) * CELL, ( lo.y + RES / 2 ) * CELL );
+
+		const gain = this.fft.weatherGain.value;
+		const signature = `${ storm.toFixed( 4 ) },${ gain.x.toFixed( 4 ) },${ gain.y.toFixed( 4 ) },${ gain.z.toFixed( 4 ) },${ lo.x },${ lo.y }`;
+		const delta = this.time === undefined ? Infinity : time - this.time;
+		const onset = ! this.active;
+		// A jump in time, or anything new while the clock stands still, replays the history. A
+		// storm that sets in on a running clock builds its foam as it goes.
+		const rebuild = delta < 0 || delta > MAX_LIVE_STEP || ( delta === 0 && ( onset || signature !== this.signature ) );
+		this.signature = signature;
+		this.time = time;
+		this.active = true;
+		if ( rebuild ) {
+
+			this.warm( time );
+			return;
+
+		}
+		if ( onset ) this.clear();
+		if ( delta === 0 ) return;
+		this.integrate( delta, time );
+		this.previousLo.value.copy( lo );
+
+	}
+
+	private integrate( dt: number, time: number ): void {
+
+		this.dt.value = dt;
+		this.clock.value = time;
+		this.renderer.compute( this.stepKernel );
+		this.spray.step( dt, Math.round( time * 1000 ) );
+
+	}
+
+	// Replay the last seconds at fixed steps, ending at `time` (the FFT is left evaluated there).
+	private clear(): void {
+
+		this.renderer.compute( this.clearKernel );
+		this.spray.clear();
+		this.previousLo.value.copy( this.lo.value );
+
+	}
+
+	private warm( time: number ): void {
+
+		this.clear();
+		const steps = Math.round( WARM_SECONDS / WARM_STEP );
+		for ( let s = steps; s >= 0; s -- ) {
+
+			const t = time - s * WARM_STEP;
+			if ( t < 0 ) continue;
+			this.fft.update( 0, t );
+			this.integrate( s === steps ? 0 : WARM_STEP, t );
+
+		}
+
+	}
+
+	dispose(): void {
+
+		this.stepKernel.dispose();
+		this.clearKernel.dispose();
+		this.pattern.dispose();
+		this.spray.dispose();
+
+	}
+
+}
