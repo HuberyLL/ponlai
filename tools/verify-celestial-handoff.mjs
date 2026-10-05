@@ -1,4 +1,6 @@
-// Regression for a fast clock skipping the sun/moon controller's dark handoff interval.
+// Regression for the sun/moon key light handoff. The key light, grade and sky follow the clock
+// every frame, so a sweep through the handoff band must carry zero direct energy while the
+// key turns from one body to the other, and every frame must match the clock's own state.
 // Run against the dev server: node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
@@ -28,102 +30,89 @@ try {
 		s.dayCycle.paused = true;
 		s.dayCycle.moonPhase = 0.5;
 		await s.setWeather( 'clear', 0 );
-		const read = () => ( {
-			amount: s.sky.blend.value, dir: s.sky.keyDir.toArray(), color: s.sky.keyColor.toArray(),
-			grade: { ...s.sky.grade }, exposure: s.pipeline.settings.exposure, transitioning: s.sky.transitioning,
-		} );
+		const frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+		const read = () => {
+
+			const clock = s.dayCycle.snapshot();
+			return {
+				hour: clock.hour, elevation: clock.elevation, clockKey: clock.keyDir.toArray(),
+				clockGrade: { exposure: clock.exposure, blackLift: clock.blackLift, daylight: clock.daylight },
+				dir: s.sky.keyDir.toArray(), color: s.sky.keyColor.toArray(),
+				grade: { ...s.sky.grade }, exposure: s.pipeline.settings.exposure,
+			};
+
+		};
 		const runs = [];
-		// A 30-second day advances 0.4 hours per 0.5-second bake. Also exercise a larger
-		// skipped interval and the reverse sunrise handoff with nonzero endpoint radiance.
-		// Long same-source steps model a low frame rate with the fastest allowed day.
-		// They must preserve direct energy even though their angular motion exceeds 15°.
+		// Sunset and sunrise handoffs, plus long same-source moves.
 		const cases = [
-			{ from: 17.8, to: 18.2, kind: 'handoff' }, { from: 17.8, to: 18.5, kind: 'handoff' },
-			{ from: 5.5, to: 6.2, kind: 'handoff' }, { from: 10, to: 12, kind: 'same-sun' },
-			{ from: 22, to: 0, kind: 'same-moon' },
+			{ from: 17.6, to: 18.6, kind: 'handoff' }, { from: 5.4, to: 6.4, kind: 'handoff' },
+			{ from: 10, to: 12, kind: 'same-sun' }, { from: 22, to: 24, kind: 'same-moon' },
 		];
 		for ( const { from, to, kind } of cases ) {
 
 			await s.setHour( from );
-			await new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
-			const before = read();
-			s.dayCycle.setHour( to );
-			const destination = s.dayCycle.snapshot();
-			const cosine = destination.keyDir.x * before.dir[ 0 ] + destination.keyDir.y * before.dir[ 1 ] + destination.keyDir.z * before.dir[ 2 ];
-			// Keep the scheduler's clock unchanged while explicitly exercising its two baked
-			// endpoints, so it cannot start a second identical transition during our samples.
-			s.dayCycle.setHour( from );
-			s.sky.setCelestial( destination );
-			const pending = s.sky.update( 0.6 );
-			const duringBake = read();
-			await pending;
-			const initial = read();
 			const samples = [];
-			const end = performance.now() + 5000;
-			do {
+			for ( let i = 0; i <= 80; i ++ ) {
 
-				await new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+				s.dayCycle.setHour( from + ( to - from ) * i / 80 );
+				await frame();
 				samples.push( read() );
 
-			} while ( s.sky.transitioning && performance.now() < end );
-			runs.push( { from, to, kind, before, duringBake, initial,
-				angle: Math.acos( Math.min( 1, Math.max( - 1, cosine ) ) ) * 180 / Math.PI,
-				expectedGrade: { exposure: destination.exposure, blackLift: destination.blackLift, daylight: destination.daylight }, samples } );
-			await s.refreshEnvironment();
+			}
+			runs.push( { from, to, kind, samples } );
 
 		}
+		await s.refreshEnvironment();
 		return { runs, diagnostics: window.__THREE_GAME_DIAGNOSTICS__ };
 
 	} );
 	Object.assign( report, result );
+	const angle = ( a, b ) => Math.acos( Math.min( 1, Math.max( - 1, a[ 0 ] * b[ 0 ] + a[ 1 ] * b[ 1 ] + a[ 2 ] * b[ 2 ] ) ) ) * 180 / Math.PI;
+	const energy = ( c ) => c[ 0 ] + c[ 1 ] + c[ 2 ];
 	for ( const run of report.runs ) {
 
-		assert.deepEqual( run.duringBake.grade, run.before.grade, 'Pending bake must retain the displayed grade' );
-		assert.deepEqual( run.initial.grade, run.before.grade, 'Transition must start with the old displayed grade' );
-		const middle = run.samples.filter( ( sample ) => sample.amount >= 0.2 && sample.amount <= 0.8 );
-		assert.ok( middle.length >= 2, 'Transition must have multiple middle samples' );
-		const finalColor = run.samples.at( - 1 ).color;
-		if ( run.kind !== 'handoff' ) {
-
-			assert.ok( run.angle > 15, `${ run.kind } must exercise a large direction change` );
-			assert.ok( run.before.color.every( ( value ) => value > 0 ) && finalColor.every( ( value ) => value > 0 ),
-				`${ run.kind } needs two illuminated endpoints` );
-
-		}
-		for ( const sample of run.samples ) {
+		let turned = 0;
+		for ( const [ index, sample ] of run.samples.entries() ) {
 
 			assert.ok( sample.dir.every( Number.isFinite ) );
 			assert.ok( Math.abs( Math.hypot( ...sample.dir ) - 1 ) < 1e-8 );
-			if ( run.kind === 'handoff' && sample.amount >= 0.2 && sample.amount <= 0.8 ) {
-
-				assert.deepEqual( sample.color, [ 0, 0, 0 ], 'Changing the primary source must carry zero energy' );
-
-			} else if ( run.kind !== 'handoff' ) {
-
-				for ( let channel = 0; channel < 3; channel ++ ) {
-
-					const expected = run.before.color[ channel ] + ( finalColor[ channel ] - run.before.color[ channel ] ) * sample.amount;
-					assert.ok( Math.abs( sample.color[ channel ] - expected ) < 1e-8,
-						`${ run.kind } must retain interpolated direct energy at blend ${ sample.amount }` );
-
-				}
-
-			}
+			assert.ok( angle( sample.dir, sample.clockKey ) < 1e-4, 'The key light must follow the clock on the same frame' );
 			for ( const key of [ 'exposure', 'blackLift', 'daylight' ] ) {
 
-				const expected = run.before.grade[ key ] + ( run.expectedGrade[ key ] - run.before.grade[ key ] ) * sample.amount;
-				assert.ok( Math.abs( sample.grade[ key ] - expected ) < 1e-8, `${ key } must use the displayed blend` );
+				assert.ok( Math.abs( sample.grade[ key ] - sample.clockGrade[ key ] ) < 1e-8, `${ key } must follow the clock on the same frame` );
 
 			}
 			assert.ok( Math.abs( sample.exposure - sample.grade.exposure ) < 1e-8, 'Main exposure must use the displayed sky grade' );
+			if ( sample.elevation < - 0.3 && sample.elevation > - 2.9 ) {
+
+				assert.deepEqual( sample.color, [ 0, 0, 0 ], 'The handoff band must carry zero direct energy' );
+
+			}
+			if ( index > 0 ) {
+
+				const previous = run.samples[ index - 1 ];
+				const step = angle( previous.dir, sample.dir );
+				turned = Math.max( turned, step );
+				// The key turns faster than the clock only while it rotates between bodies.
+				if ( step > 2 ) assert.ok( energy( previous.color ) === 0 && energy( sample.color ) === 0, 'A turning key must be dark' );
+
+			}
 
 		}
-		assert.equal( run.samples.at( - 1 ).transitioning, false, 'Handoff must complete' );
+		if ( run.kind !== 'handoff' ) {
+
+			assert.ok( run.samples.every( ( sample ) => energy( sample.color ) > 0 ), `${ run.kind } stays lit throughout` );
+
+		} else {
+
+			assert.ok( turned > 2, 'The handoff must rotate the key between the bodies' );
+
+		}
 
 	}
 	assert.deepEqual( errors, [] );
 	console.log( JSON.stringify( { runs: report.runs.map( ( run ) => ( { from: run.from, to: run.to, kind: run.kind,
-		angle: run.angle, samples: run.samples.length, zeroEnergySamples: run.samples.filter( ( sample ) => sample.color.every( ( value ) => value === 0 ) ).length } ) ), errors } ) );
+		samples: run.samples.length, zeroEnergySamples: run.samples.filter( ( sample ) => sample.color.every( ( value ) => value === 0 ) ).length } ) ), errors } ) );
 
 } finally {
 

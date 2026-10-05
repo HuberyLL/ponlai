@@ -168,10 +168,12 @@ function fresnel( cosI: number, eta: number ): number {
 let sunUpdates = Promise.resolve();
 function prepareSkyState(): void {
 
-	sky.setCelestial( manualSun ? null : dayCycle.snapshot() );
+	const celestial = manualSun ? null : dayCycle.snapshot();
+	sky.setCelestial( celestial );
 	const state = weather.snapshot();
 	if ( cloudOverride !== null ) state.coverage = cloudOverride;
 	sky.setWeather( state );
+	sky.track( celestial, state );
 	sky.clouds.setWindOffset( shared.wind.cloudOffset.value );
 	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.haze }`;
 
@@ -574,6 +576,9 @@ function tick(): void {
 	else controls.update();
 
 	renderer.info.reset();
+	// Sun, moon, key light and grade follow the clock every frame; only the baked reflection,
+	// environment and cloud products cross-fade between bakes.
+	sky.track( manualSun ? null : dayCycle.snapshot(), weather.state, cloudOverride );
 	sky.advance( environmentDt );
 	publishLighting();
 	pipeline.air.haze.value = sky.weather.haze;
@@ -604,7 +609,7 @@ function tick(): void {
 		lastSkyTime = simTime;
 		lastSkyHour = dayCycle.hour;
 		prepareSkyState();
-		void sky.update( skyInterval * 0.8 ).catch( ( error: unknown ) => console.error( error ) );
+		void sky.update( skyInterval ).catch( ( error: unknown ) => console.error( error ) );
 
 	}
 	// Redraw the sun's map whenever the key moves. Its casters are all larger than a texel (the
