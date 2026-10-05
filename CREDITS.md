@@ -45,10 +45,39 @@ packages, into `dist/licenses/`.
     footprint-filtered lookup and the veil's coverage, optical depth and ice-crystal lighting,
     from the cirrus in `Clouds.js`, ported from WGSL to TSL.
   - The celestial clock, geometric lunar phase and filtered procedural stars are original code;
-    they introduce no third-party imagery or additional asset licence. Weather blending,
+    they introduce no third-party imagery or additional asset licence. (The lunar disk's
+    shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,
     integrated wind, analytic rain streaks/ripple gradients and wet-material response are
     original Soomi code as well.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
+
+### three-geospatial
+
+- Upstream: https://github.com/takram-design-engineering/three-geospatial, by Shota Matsuda
+  (takram)
+- Copyright: (c) 2024 Shota Matsuda
+- Licence: MIT, see [`src/sky/three-geospatial.LICENSE.txt`](src/sky/three-geospatial.LICENSE.txt)
+- From `packages/atmosphere/src/webgpu/MoonNode.ts` at commit
+  [`2047b5f`](https://github.com/takram-design-engineering/three-geospatial/blob/2047b5fbb31899bbab541274f6cf78d091872016/packages/atmosphere/src/webgpu/MoonNode.ts):
+  the lunar disk in `src/sky/NightSky.ts`: the ray/sphere intersection normal, the equirectangular
+  colour lookup, normals perturbed by the LOLA heights through a screen-space cotangent frame,
+  Oren-Nayar diffuse of roughness 1 and the limb antialiased by the chord's screen derivative.
+- Changes: written against this project's own sun and moon directions and lunar frame (north up)
+  instead of an Earth-fixed frame; explicit-gradient lookups with a capped footprint, a capped
+  relief slope and the disk's brightness normalised to this project's moon; an art-directed lift for
+  crescents.
+
+### a-starry-sky
+
+- Upstream: https://github.com/Dante83/a-starry-sky, by David Evans
+- Copyright: (c) 2018-2026 David Evans
+- Licence: MIT, see [`src/sky/a-starry-sky.LICENSE.txt`](src/sky/a-starry-sky.LICENSE.txt)
+- From `src/glsl/moon/base-moon-partial.glsl` and `src/cpp/state-engine/astro_bodies/Moon.cpp` at
+  commit [`8ef1c8a`](https://github.com/Dante83/a-starry-sky/tree/8ef1c8a35da8d568eb2684a858499934b80188b7):
+  the earthshine in `src/sky/NightSky.ts`: its blue-biased colour, full-Earth strength, the
+  Lommel-Seeliger phase law and the night-side mask. None of its moon textures are used.
+- Changes: ported to TSL; the phase law is taken at Earth's phase as seen from the moon, and the
+  earthshine fades out close to conjunction.
 
 ### Hash without Sine
 
@@ -69,6 +98,18 @@ packages, into `dist/licenses/`.
 - Files: `public/textures/rock/rock_albedo.jpg` is the 1K diffuse map, unchanged.
   `public/textures/rock/rock_detail.png` packs the 1K OpenGL normal map (RGB) and roughness map
   (alpha), reduced to 8 bits.
+
+### CGI Moon Kit
+
+- Author: Ernie Wright, NASA's Scientific Visualization Studio, from Lunar Reconnaissance Orbiter
+  data (LROC WAC colour mosaic, LOLA elevation)
+- Source: [NASA SVS 4720](https://svs.gsfc.nasa.gov/4720/)
+- Licence: public domain (NASA); credited as "NASA's Scientific Visualization Studio"
+- Files: built by `tools/build-moon-textures.py` from `lroc_color_2k.jpg` and `ldem_4_uint.tif`.
+  `public/sky/moon/moon_color.jpg` is the colour map halved to 1024 x 512 (a 2 x 2 average in
+  linear light, re-encoded as sRGB JPEG). `public/sky/moon/moon_height.png` is the LOLA height
+  grid area-averaged to 512 x 256, kept in the kit's 16-bit units (half-metres, +10 km) and split
+  into its high byte (red) and low byte (green).
 
 ### Ultimate Modular Men Pack
 
@@ -130,6 +171,9 @@ comment where it is used.
   (SIGGRAPH 2013 talk). Diffuse transmission through thick decks uses the two-stream
   approximation (e.g. Bohren, *Multiple scattering of light and some of its observable consequences*,
   Am. J. Phys. 55, 1987).
+- Lunar shading: Yasuhiro Fujii,
+  [*A tiny improvement of Oren-Nayar reflectance model*](https://mimosa-pudica.net/improved-oren-nayar.html),
+  through the adapted three-geospatial source above.
 - Crepuscular rays: Kenny Mitchell,
   [*Volumetric Light Scattering as a Post-Process*](https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process)
   (GPU Gems 3, 2007): a radial blur of the open sky toward the sun.

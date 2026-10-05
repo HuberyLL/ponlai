@@ -32,7 +32,9 @@ exposed.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
   and wave optics (each file names the server it expects); `tools/verify-scene.mjs` checks a
   production preview; `tools/benchmark-lighting.mjs` A/B-times two builds;
-  `tools/compare-captures.py` measures two overview captures (needs Pillow and NumPy).
+  `tools/compare-captures.py` measures two overview captures (needs Pillow and NumPy);
+  `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
+  (`uv run --with pillow --with numpy`).
   `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs` and `verify-wind.mjs` are CPU-only
   (plain `node`). Run GPU probes one at a time with no other page rendering the scene.
 
@@ -55,7 +57,8 @@ exposed.
   64^3 shape noise in `public/clouds/`, loaded by `src/materials/CloudNoise.ts`; traced in screen
   space a sixteenth of the pixels per frame with a reprojected history, plus a panorama map for
   reflections and the environment, and a cloud-shadow map), high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
-  raining clouds, the day cycle (sun and moon), stars, Milky Way and moon, rainbows, weather
+  raining clouds, the day cycle (sun and moon), stars, Milky Way and moon (NASA's colour and LOLA
+  heights in `public/sky/moon/`, built by `tools/build-moon-textures.py`), rainbows, weather
   presets, their blending and the auto-weather chain.
 - `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
   distant air (aerial perspective) and sea fog (a low layer drifting in banks, plus morning mist).
