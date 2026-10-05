@@ -88,9 +88,10 @@ exposed.
   Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer
   that may surround the island, never a uniform tint. Weather changes sweep the sky as a
   front from upwind; the island's lighting follows the front's progress over the island.
-- Rain is light streaks plus analytic ripples on the water normal: no droplets, puddles or splash
-  foam. Wetness darkens exposed rock and plants within small limits, persists after rain and
-  leaves the tidal band alone.
+- Rain is light streaks plus analytic ripples on the water normal. Wetness darkens exposed rock
+  and plants within small limits, glosses bare stone, persists after rain and leaves the tidal
+  band alone. Standing water fills fixed hollows on level ground as the ground soaks, drowning
+  the lower meadow blades, and shrinks as it dries.
 - Characters are simple low-poly figures with flat colours and simple faces, recoloured into the
   island's palette and lit by the island's own light in soft cel steps; no outlines. Plants and
   props keep their realistic shading.
