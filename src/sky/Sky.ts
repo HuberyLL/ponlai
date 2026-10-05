@@ -9,7 +9,6 @@ import {
 	Fn, uv, uniform, texture, positionWorld, cameraPosition, normalize, smoothstep, dot,
 	vec2, vec3, vec4, ivec2, float, sqrt, max, atan, asin, acos, clamp, cos, sin, mix, abs, select,
 	pmremTexture, textureLoad, Loop, exp2,
-	If,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE, SUN_LIMB_EXPONENT } from '../lighting/Radiometry.ts';
@@ -160,7 +159,6 @@ export class Sky {
 	private displayNightAmbient = uniform( new THREE.Color( 0, 0, 0 ) );
 	private displayOvercast = uniform( 0 );
 	private displayAmbientGain = uniform( 1 );
-	private rainbowAmount = uniform( 0 );
 	private cloudLayer: THREE.TextureNode;
 	private pmrem: THREE.PMREMGenerator;
 	private quad: THREE.QuadMesh;
@@ -302,9 +300,8 @@ export class Sky {
 			// faster than its surroundings, and a thick deck hides it entirely instead of letting
 			// its enormous radiance burn through a residual transmittance as a sharp point.
 			const stars = this.night.stars( d ).mul( this.night.moonOcclusion( d ) );
-			const bow = this.rainbow( d ).mul( select( above, float( 1 ), float( 0 ) ) );
 			const airglow = this.night.airglow( d ).mul( select( above, float( 1 ), float( 0 ) ) );
-			return vec4( background.add( bow ).add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).add( airglow ).mul( through ) ), 1 );
+			return vec4( background.add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).add( airglow ).mul( through ) ), 1 );
 
 		} )();
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
@@ -475,8 +472,13 @@ export class Sky {
 		this.clouds.cirrus.value = weather?.cirrus ?? 0;
 		// A rainbow needs falling rain and direct sun at once, the sun lower than 42 degrees behind
 		// the viewer: most often as a shower clears, while it is still raining a few kilometres off.
+		// The clouds draw it in their sunlit rain curtains.
 		const showers = weather?.showers ?? 0, sunlit = weather?.directVisibility ?? 1;
-		this.rainbowAmount.value = THREE.MathUtils.smoothstep( showers, 0.04, 0.3 ) * THREE.MathUtils.smoothstep( sunlit, 0.3, 0.7 )
+		this.clouds.showers.value = showers;
+		// Drops fall at about 9 m/s and drift with the wind, slower near the sea than aloft; a gale
+		// slants them steeply.
+		this.clouds.rainSlant.value = Math.min( ( weather?.windSpeed ?? 3.8 ) / 11, 1 );
+		this.clouds.rainbow.value = THREE.MathUtils.smoothstep( showers, 0.04, 0.3 ) * THREE.MathUtils.smoothstep( sunlit, 0.3, 0.7 )
 			* THREE.MathUtils.smoothstep( this.sunDir.y, 0, 0.08 ) * ( 1 - THREE.MathUtils.smoothstep( this.sunDir.y, 0.6, 0.72 ) );
 		this.weather.haze = weather?.haze ?? 0;
 		this.weather.rain = weather?.rain ?? 0;
@@ -720,38 +722,6 @@ export class Sky {
 		// Clouds mute the existing sky's colour; they never introduce a white/grey
 		// radiance floor that would glow at night or bleach the transparent sea.
 		return mix( clear, vec3( dot( clear, vec3( 0.2126, 0.7152, 0.0722 ) ) ), overcast.mul( 0.35 ) );
-
-	}
-
-	/** The primary and secondary rainbows on falling rain opposite a low sun, with the darker
-	 * Alexander's band between them. */
-	private rainbow( direction: V3 ): V3 {
-
-		const result = vec3( 0 ).toVar();
-		If( this.rainbowAmount.greaterThan( 0.01 ), () => {
-
-			const antisolar = this.displaySunDir.negate();
-			const angle = acos( clamp( dot( direction, antisolar ), - 1, 1 ) ).mul( 180 / Math.PI ).toVar();
-			// Position across each bow, 0 at its inner (violet) edge to 1 at its outer (red) edge.
-			const primary = angle.sub( 40.4 ).div( 2.2 ).toVar();
-			const secondary = float( 53.8 ).sub( angle ).div( 3.4 ).toVar();
-			const spectrum = ( x: F ) => {
-
-				const band = smoothstep( 0, 0.15, x ).mul( float( 1 ).sub( smoothstep( 0.85, 1, x ) ) );
-				const r = smoothstep( 0.45, 0.85, x );
-				const g = float( 1 ).sub( abs( x.sub( 0.55 ) ).mul( 2.6 ) ).max( 0 );
-				const b = float( 1 ).sub( smoothstep( 0.1, 0.45, x ) );
-				return vec3( r, g, b ).mul( band );
-
-			};
-			const bows = spectrum( primary ).add( spectrum( secondary ).mul( 0.35 ) );
-			// Rain inside the primary bow scatters more light back than the band between the bows.
-			const inner = float( 1 ).sub( smoothstep( 36, 41, angle ) ).mul( 0.25 );
-			const light = this.displaySolarIlluminance.mul( 0.011 );
-			result.assign( light.mul( bows.add( inner ) ).mul( this.rainbowAmount ).mul( smoothstep( 0, 0.03, direction.y ) ) );
-
-		} );
-		return result;
 
 	}
 

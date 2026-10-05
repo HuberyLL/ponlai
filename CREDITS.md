@@ -37,8 +37,8 @@ packages, into `dist/licenses/`.
     melt, the cloud shadow, and the shape noise loader. From `Clouds.js`: the screen-space view
     trace with its reprojected, neighbourhood-clamped history and bicubic upsampling, and the
     synoptic field. The weather fronts, the mapping of this project's coverage onto the shell,
-    the darker closed deck, rain curtains and the settled view of a paused scene are this
-    project's; the panorama map is this project's own, predating the port (`Clouds.js` has a
+    the darker closed deck and the settled view of a paused scene are this project's (the rain
+    curtains follow VolumetricCloudsCS1, below); the panorama map is this project's own, predating the port (`Clouds.js` has a
     similar one).
   - `src/sky/Cirrus.ts` and the cirrus veil in `src/sky/Clouds.ts`: the cirrus fibre bake (a flow
     field of sparse seeds and tufts drawn out by line integral convolution), its anisotropic,
@@ -106,20 +106,37 @@ packages, into `dist/licenses/`.
 
 ### VolumetricCloudsCS1
 
-- Upstream: https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1, by Anthony Ibrahim
+- Upstream: https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1, by Anthony Ibrahim (a
+  volumetric clouds mod for Cities: Skylines), commit
+  [`83b5e78`](https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1/tree/83b5e7802aa2ce8e72c3f6525cbd9fab3d0bde62)
 - Copyright: (c) 2026 Anthony Ibrahim
-- Licence: MIT, see [`src/weather/VolumetricCloudsCS1.LICENSE.txt`](src/weather/VolumetricCloudsCS1.LICENSE.txt)
-  (the files used are covered by the repository's MIT licence; its listed exceptions are the
-  light halo shaders, not used here)
-- Files: `src/weather/Lightning.ts`: each strike's profile (duration, return strokes, flicker
-  reseed, power, reach, tint), the pulse envelope with its flicker and the in-cloud source depth,
-  from `VolumetricClouds/Sky/LightningFlicker.cs` and `CloudLightning.cs`, ported from C#.
-  `src/sky/Clouds.ts`: the light of up to four point sources inside the cloud (an inverse-square
-  core times an exponential reach) added inside the front-to-back march, from
-  `CloudRaymarch.shader`, ported from HLSL to TSL.
-- Changes: strikes follow a seeded schedule of the scene clock instead of a random draw per frame;
-  channels get sharp return strokes after their leader; the light is kept out of the view's
-  accumulated history; reflections evaluate it where the ray meets the deck.
+- Licence: MIT, see [`src/sky/VolumetricCloudsCS1.LICENSE.txt`](src/sky/VolumetricCloudsCS1.LICENSE.txt)
+  (the upstream file; its exception covers light halo shaders that are not used here)
+- Files:
+  - `src/weather/Lightning.ts`: each strike's profile (duration, return strokes, flicker
+    reseed, power, reach, tint), the pulse envelope with its flicker and the in-cloud source depth,
+    from `VolumetricClouds/Sky/LightningFlicker.cs` and `CloudLightning.cs`, ported from C#.
+  - `src/sky/Clouds.ts`: the light of up to four point sources inside the cloud (an inverse-square
+    core times an exponential reach) added inside the front-to-back march, from
+    `CloudRaymarch.shader`, ported from HLSL to TSL.
+  - `tools/bake-rainbow-table.mjs`: a port of `VolumetricClouds/Sky/RainbowTable.cs` to
+    JavaScript (Airy theory per wavelength and drop size, primary and secondary bows with
+    Fresnel, a Marshall-Palmer drop spectrum, CIE 1931 to linear sRGB, the solar disc). It
+    generates `src/sky/RainbowTable.data.ts`, 512 RGB entries over 0 - 64 degrees from the
+    antisolar point, rounded to four significant digits (13.7 kB of source).
+  - The rain curtains in `src/sky/Clouds.ts` (`rainAt`): the rain march along the view ray under
+    the clouds (`MarchRain` in `CloudRaymarch.shader`), the rain read from the weather map where
+    a drop left the cloud base so the curtains lean with the wind (`SampleRain` in
+    `CloudCommon.cginc`), the noise stretched along the fall and sliding down with it
+    (`RainSigma` in `CloudMedia.cginc`), and the rainbow colours looked up by the angle from the
+    antisolar point and lit by the sun reaching the rain (`BowColour`).
+- Changes: ported to TSL and JavaScript; the curtains are shaped by this project's cloud shell,
+  weather fronts and lingering showers, lit by the light under the cloud, and fade into this
+  project's haze. The rainbow is drawn per camera in the rain it lights, not as the upstream's
+  arch fixed in the world. For the lightning, strikes follow a seeded schedule of the scene clock
+  instead of a random draw per frame; channels get sharp return strokes after their leader; the
+  light is kept out of the view's accumulated history; reflections evaluate it where the ray meets
+  the deck.
 
 ## Assets
 
@@ -268,6 +285,13 @@ comment where it is used.
   the lower atmosphere's extinction, with F. Kasten and A. T. Young's air mass (Applied Optics 28,
   1989); dimmed by a bright moon as in [a-starry-sky](https://github.com/Dante83/a-starry-sky)
   (MIT), whose code is not used.
+
+- Rainbow colours (through the adapted table bake above): G. B. Airy, *On the intensity of light
+  in the neighbourhood of a caustic* (Trans. Camb. Phil. Soc., 1838); J. S. Marshall and W. M.
+  Palmer, *The distribution of raindrops with size* (J. Meteorology 5, 1948); C. Wyman, P.-P. Sloan
+  and P. Shirley, [*Simple Analytic Approximations to the CIE XYZ Color Matching Functions*](https://jcgt.org/published/0002/02/01/)
+  (JCGT 2013). The baked bows peak where the classic values put them: the primary's red at about
+  42 degrees from the antisolar point, the secondary's at about 51.
 
 ## References
 

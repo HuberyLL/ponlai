@@ -3,7 +3,7 @@
  * VolumetricCloudsCS1 by Anthony Ibrahim (https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1:
  * VolumetricClouds/Sky/LightningFlicker.cs and CloudLightning.cs).
  * Copyright (c) 2026 Anthony Ibrahim
- * Licensed under the MIT License; see ./VolumetricCloudsCS1.LICENSE.txt.
+ * Licensed under the MIT License; see ../sky/VolumetricCloudsCS1.LICENSE.txt.
  */
 
 import * as THREE from 'three/webgpu';
