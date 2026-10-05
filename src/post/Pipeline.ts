@@ -160,7 +160,11 @@ export class Pipeline {
 				dist.assign( length( dir.mul( z.div( dir.z ) ) ) );
 
 			} );
-			return clamp( abs( dist.sub( u.focus ) ).sub( u.range ).div( u.focus.mul( 0.55 ) ), 0, 1 );
+			// The miniature blur is for the island's surroundings. Kilometres out it eases off, so the
+			// sky and the horizon keep their scale: blurred, clouds read as a backdrop close behind
+			// the island and every star spreads into a bokeh disc.
+			const far = mix( float( 1 ), float( 0.15 ), smoothstep( 1500, 15000, dist ) );
+			return clamp( abs( dist.sub( u.focus ) ).sub( u.range ).div( u.focus.mul( 0.55 ) ), 0, 1 ).mul( far );
 
 		} ).setLayout( { name: 'cocAt', type: 'float', inputs: [ { name: 'q', type: 'vec2' } ] } );
 		const TAPS = 36, GA = 2.39996323;

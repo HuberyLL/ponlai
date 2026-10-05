@@ -85,6 +85,10 @@ exposed.
   every frame; only the reflection panorama, environment and irradiance cross-fade between bakes.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
+- The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
+  sky reads as a low backdrop and turns stars into bokeh discs. Stars are points with a natural
+  spread of brightness, kept below white except the brightest few; only those near the horizon
+  scintillate.
 - One cloud field feeds the visible sky, water reflections, environment lighting and cloud
   shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
   Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer
