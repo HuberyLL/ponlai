@@ -571,7 +571,7 @@ function tick(): void {
 	pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );
 	pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
 	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
-	sky.updateClouds( camera.position, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
+	sky.updateClouds( camera, renderer.domElement.width, renderer.domElement.height, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
 	shared.storm.value = weather.state.storm;
 	camera.getWorldDirection( viewForward );

@@ -27,14 +27,24 @@ packages, into `dist/licenses/`.
   - `src/ocean/ShoreWaves.ts`, `src/ocean/ShoreWaveField.ts`: began as an adaptation of
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
-    `Sky.js`, ported from WGSL to TSL. The volumetric clouds, their noise bake and cloud shadows
-    in `src/sky/Clouds.ts` and `src/materials/CloudNoise.ts` are original Soomi code, not copied
-    from tidewater.
+    `Sky.js`, ported from WGSL to TSL.
+  - `src/sky/Clouds.ts`, `src/materials/CloudNoise.ts`: the volumetric cumulus from
+    `SkyProClouds.js`, tidewater's port of the Three.js Sky Pro clouds ("Partly cloudy" preset),
+    ported from WGSL to TSL: the procedural weather map and its bounds grid, the shell density
+    (weather plus coverage, dilated and eroded by the shape noise, soft height-dependent edges),
+    the cone-traced light march with three scattering orders, powder, darker bases and sky light
+    occlusion, the coarse / fine march with empty-cell skipping, aerial perspective and the far
+    melt, the cloud shadow, and the shape noise loader. From `Clouds.js`: the screen-space view
+    trace with its reprojected, neighbourhood-clamped history and bicubic upsampling, and the
+    synoptic field. The weather fronts, the mapping of this project's coverage onto the shell,
+    the darker closed deck, rain curtains and the settled view of a paused scene are this
+    project's; the panorama map is this project's own, predating the port (`Clouds.js` has a
+    similar one).
   - `src/sky/Cirrus.ts` and the cirrus veil in `src/sky/Clouds.ts`: the cirrus fibre bake (a flow
     field of sparse seeds and tufts drawn out by line integral convolution), its anisotropic,
     footprint-filtered lookup and the veil's coverage, optical depth and ice-crystal lighting,
-    from the cirrus in `Clouds.js`, ported from WGSL to TSL on this project's noise and weather map. The celestial
-    clock, geometric lunar phase and filtered procedural stars are also original code;
+    from the cirrus in `Clouds.js`, ported from WGSL to TSL.
+  - The celestial clock, geometric lunar phase and filtered procedural stars are original code;
     they introduce no third-party imagery or additional asset licence. Weather blending,
     integrated wind, analytic rain streaks/ripple gradients and wet-material response are
     original Soomi code as well.
@@ -69,6 +79,18 @@ packages, into `dist/licenses/`.
 - Files: parts of `Farmer.gltf` and `Adventurer.gltf`, recoloured into the island's palette and merged
   into one skinned mesh at load time. They are not in the repository yet: the dev server loads them
   from the git-ignored `artifacts/assets/` while the character art is settled.
+
+### Cloud shape noise
+
+- Author: Daniel Greenheck, from the Three.js Sky Pro clouds as bundled with tidewater
+- Source: `public/clouds/baseShape64.bin` in [tidewater](https://github.com/dgreenheck/tidewater) at commit
+  [`4811ba4`](https://github.com/dgreenheck/tidewater/tree/4811ba48d795197de5621985f404e765c0b7c0ef)
+- Licence: tidewater's repository is MIT licensed (see `src/sky/tidewater.LICENSE.txt`). The
+  `LICENSING.md` beside this file in `public/clouds/` says the textures it lists "are not covered by
+  the Three.js Sky Pro license", which suggests the other files there, this one included, come
+  under that licence.
+- Files: `public/clouds/baseShape64.bin`, unchanged: a gzip-compressed 64^3 RGBA8 Perlin-Worley
+  shape noise with its mip chain.
 
 ## Acknowledgements
 

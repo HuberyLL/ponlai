@@ -27,10 +27,10 @@ const LIC_STEPS = 44;
 
 // Tileable gradient noise in [-1, 1] on the unit square, `period` cells across.
 const noise2 = ( p: V2, period: number, seed: number ) => perlin3( vec3( p.mul( period ), seed ), float( period ) );
-// Fractal noise in [0, 1].
-const fbm2 = ( p: V2, period: number, seed: number ) => noise2( p, period, seed ).mul( 0.5 )
-	.add( noise2( p, period * 2, seed + 1.7 ).mul( 0.25 ) ).add( noise2( p, period * 4, seed + 3.1 ).mul( 0.125 ) )
-	.div( 0.875 ).mul( 0.5 ).add( 0.5 );
+// Fractal noise about [0, 1], with the contrast the clustering and breakup thresholds expect.
+const fbm2 = ( p: V2, period: number, seed: number ) => noise2( p, period, seed ).mul( 0.55 )
+	.add( noise2( p, period * 2, seed + 1.7 ).mul( 0.3 ) ).add( noise2( p, period * 4, seed + 3.1 ).mul( 0.15 ) )
+	.mul( 1.6 ).add( 0.5 );
 const sat = ( x: F ) => clamp( x, 0, 1 );
 
 // Sparse jittered points, `n` cells across the texture: each cell holds one with probability

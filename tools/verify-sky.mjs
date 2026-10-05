@@ -38,7 +38,8 @@ try {
 	page.on( 'response', ( r ) => { if ( r.status() >= 400 ) failures.push( `${ r.status() } ${ r.url() }` ); } );
 	page.on( 'requestfailed', ( r ) => failures.push( `${ r.failure()?.errorText } ${ r.url() }` ) );
 	const url = new URL( base );
-	url.search = 'debug&paused&t=12&dpr=1';
+	// A clear sky: the shell's clouds reach the horizon and could hide the setting disk under test.
+	url.search = 'debug&paused&t=12&dpr=1&weather=clear&clouds=0';
 	await page.goto( url.href );
 	await page.waitForFunction( () => window.__SOOMI__?.applySun && window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 90000 } );
 

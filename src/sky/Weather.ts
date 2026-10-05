@@ -39,7 +39,7 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<Preset>>> = 
 	// A squall: the darkest deck, heavy rain, gale-force wind and a rough, white-capped sea.
 	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, ambientGain: 0.45, haze: 0.0035, windSpeed: 11, windDirection: 40, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.5, density: 0.85, directVisibility: 0.6, ambientGain: 0.92, haze: 0.0012, windSpeed: 1.8, windDirection: 40, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
+	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, ambientGain: 0.92, haze: 0.0012, windSpeed: 1.8, windDirection: 40, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
 };
 
 export interface WeatherQualityProfile {

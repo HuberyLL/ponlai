@@ -50,9 +50,11 @@ exposed.
 - `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
   sea floor, light under the water).
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading.
-- `src/sky/`: atmosphere LUTs, environment lighting, volumetric clouds (a direction map refreshed a
-  sixteenth per frame, plus a live cloud-shadow map) and their noise bake in
-  `src/materials/CloudNoise.ts`, high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
+- `src/sky/`: atmosphere LUTs, environment lighting, volumetric clouds after tidewater's port of
+  the Three.js Sky Pro clouds (a cloud shell 4 - 9 km up shaped by a procedural weather map and the
+  64^3 shape noise in `public/clouds/`, loaded by `src/materials/CloudNoise.ts`; traced in screen
+  space a sixteenth of the pixels per frame with a reprojected history, plus a panorama map for
+  reflections and the environment, and a cloud-shadow map), high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
   raining clouds, the day cycle (sun and moon), stars, Milky Way and moon, rainbows, weather
   presets, their blending and the auto-weather chain.
 - `src/weather/`: wind, lightning, puddles, rain (a streak veil in the post pass, world-space streaks, ripples),
@@ -94,6 +96,9 @@ exposed.
   Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer
   that may surround the island, never a uniform tint. Weather changes sweep the sky as a
   front from upwind; the island's lighting follows the front's progress over the island.
+- The directly seen clouds accumulate over frames; a scene at rest (paused clock, still camera)
+  settles its clouds once and keeps them, so a paused frame is exactly repeatable. The cloud
+  march assumes a camera below the cloud base.
 - Rain is light streaks plus analytic ripples on the water normal. Wetness darkens exposed rock
   and plants within small limits, glosses bare stone, persists after rain and leaves the tidal
   band alone. Standing water fills fixed hollows on level ground as the ground soaks, drowning

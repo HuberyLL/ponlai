@@ -2,24 +2,30 @@
  * hash33 is "Hash without Sine" by David Hoskins (https://www.shadertoy.com/view/4djSRW).
  * Copyright (c) 2014 David Hoskins
  * Licensed under the MIT License; see ./hoskins-hash.LICENSE.txt.
+ *
+ * The synoptic field and the shape noise loader are adapted from tidewater by Daniel Greenheck
+ * (https://github.com/dgreenheck/tidewater).
+ * Copyright (c) 2026 DRG Software Solutions LLC
+ * Licensed under the MIT License; see ../sky/tidewater.LICENSE.txt.
  */
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, instanceIndex, textureStore, uint, int, float, vec2, vec3, vec4, ivec2, uvec3,
-	floor, fract, dot, mix, min, clamp, length, mod,
+	Fn, instanceIndex, textureStore, uint, int, vec2, vec3, vec4, ivec2,
+	floor, fract, dot, mix, clamp, mod, sin, cos,
 } from 'three/tsl';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
-// Tileable cloud noise baked once on the GPU (the technique follows Schneider, "The Real-time
-// Volumetric Cloudscapes of Horizon Zero Dawn", SIGGRAPH 2015; the code is original):
-//   shape   128^3  R Perlin-Worley   G B A Worley fBm at rising frequencies (low-frequency erosion)
-//   detail   32^3  R G B Worley fBm at rising frequencies (edge erosion)
-//   weather 512^2  R coverage field  G cloud-type variation  B height variation
-// All repeat over [0, 1) so a wrapped wind offset never shows a seam.
+// Tileable fields for the clouds:
+//   shape    64^3 RGB  Perlin-Worley shape noise at three frequencies, with its mip chain
+//            (`public/clouds/baseShape64.bin`, from tidewater's Sky Pro clouds)
+//   synoptic 256^2     R cirrus coverage  G broad streets along the upper wind  B patches
+// Every field repeats over [0, 1), so a wrapped wind offset never shows a seam.
+
+export const SYNOPTIC_RES = 256;
 
 export const hash33 = Fn( ( [ p ]: [ V3 ] ) => {
 
@@ -50,110 +56,97 @@ export const perlin3 = Fn( ( [ p, period ]: [ V3, F ] ) => {
 
 } ).setLayout( { name: 'cloudPerlin3', type: 'float', inputs: [ { name: 'p', type: 'vec3' }, { name: 'period', type: 'float' } ] } );
 
-// Inverted cellular noise (1 at feature points), with an integer period.
-const worley3 = Fn( ( [ p, period ]: [ V3, F ] ) => {
+const hash2 = ( p: V2 ) => fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ).mul( 43758.5453 ) );
+const fade = ( f: V2 ) => f.mul( f ).mul( f.mul( f.mul( 6 ).sub( 15 ) ).add( 10 ) );
+// Tileable 2D gradient noise, about [-1, 1].
+const gradientNoise2 = ( p: V2, cx: number, cy: number ) => {
 
-	const i = floor( p ).toVar();
-	const f = fract( p ).toVar();
-	const nearest = float( 1 ).toVar();
-	// The 27 neighbouring cells, unrolled: this runs once at startup.
-	for ( let x = - 1; x <= 1; x ++ ) for ( let y = - 1; y <= 1; y ++ ) for ( let z = - 1; z <= 1; z ++ ) {
+	const cells = vec2( cx, cy );
+	const q = p.mul( cells );
+	const i = floor( q ).toVar(), f = fract( q ).toVar();
+	const u = fade( f ).toVar();
+	const g = ( x: number, y: number ) => {
 
-		const o = vec3( x, y, z );
-		const feature = o.add( hash33( mod( i.add( o ), period ) ) );
-		nearest.assign( min( nearest, length( feature.sub( f ) ) ) );
+		const o = vec2( x, y );
+		const a = hash2( mod( i.add( o ), cells ) ).mul( 2 * Math.PI );
+		return dot( vec2( cos( a ), sin( a ) ), f.sub( o ) );
 
-	}
-	return float( 1 ).sub( clamp( nearest, 0, 1 ) );
-
-} ).setLayout( { name: 'cloudWorley3', type: 'float', inputs: [ { name: 'p', type: 'vec3' }, { name: 'period', type: 'float' } ] } );
-
-const worleyFbm = ( q: V3, cells: number ) =>
-	worley3( q.mul( cells ), float( cells ) ).mul( 0.625 )
-		.add( worley3( q.mul( cells * 2 ), float( cells * 2 ) ).mul( 0.25 ) )
-		.add( worley3( q.mul( cells * 4 ), float( cells * 4 ) ).mul( 0.125 ) );
-
-const remap = ( v: F, lo: F | number, hi: F | number, a: number, b: number ) =>
-	v.sub( lo ).div( ( typeof hi === 'number' ? float( hi ) : hi ).sub( lo ) ).mul( b - a ).add( a );
-
-function storage3D( size: number ): THREE.Storage3DTexture {
-
-	const texture = new THREE.Storage3DTexture( size, size, size );
-	texture.type = THREE.UnsignedByteType;
-	texture.format = THREE.RGBAFormat;
-	texture.wrapS = texture.wrapT = texture.wrapR = THREE.RepeatWrapping;
-	texture.minFilter = texture.magFilter = THREE.LinearFilter;
-	texture.generateMipmaps = false;
-	return texture;
-
-}
-
-const voxel = ( size: number ) => {
-
-	const n = uint( size );
-	return uvec3( instanceIndex.mod( n ), instanceIndex.div( n ).mod( n ), instanceIndex.div( n.mul( n ) ) );
+	};
+	return mix( mix( g( 0, 0 ), g( 1, 0 ), u.x ), mix( g( 0, 1 ), g( 1, 1 ), u.x ), u.y );
 
 };
+// Gradient fBm remapped to about [0, 1]: smoother than value noise, with no grid artefacts.
+const gradientFbm = ( p: V2, cx: number, cy: number, seed: number ) =>
+	gradientNoise2( p.add( seed ), cx, cy ).mul( 0.55 ).add( gradientNoise2( p.add( seed * 1.7 ), cx * 2, cy * 2 ).mul( 0.3 ) )
+		.add( gradientNoise2( p.add( seed * 2.3 ), cx * 4, cy * 4 ).mul( 0.15 ) ).mul( 1.6 ).add( 0.5 );
 
-export interface CloudNoise {
-	shape: THREE.Storage3DTexture;
-	detail: THREE.Storage3DTexture;
-	weather: THREE.StorageTexture;
-}
 
-export function bakeCloudNoise( renderer: THREE.WebGPURenderer ): CloudNoise {
+/** Bake the synoptic field (cirrus coverage and its streets). Needs an initialised renderer. */
+export function bakeSynoptic( renderer: THREE.WebGPURenderer ): THREE.StorageTexture {
 
-	const shape = storage3D( 128 ), detail = storage3D( 32 );
-	const shapeKernel = Fn( () => {
+	const synoptic = new THREE.StorageTexture( SYNOPTIC_RES, SYNOPTIC_RES );
+	synoptic.type = THREE.UnsignedByteType;
+	synoptic.wrapS = synoptic.wrapT = THREE.RepeatWrapping;
+	synoptic.minFilter = synoptic.magFilter = THREE.LinearFilter;
+	synoptic.generateMipmaps = false;
+	const kernel = Fn( () => {
 
-		const c = voxel( 128 );
-		const q = vec3( c ).add( 0.5 ).div( 128 ).toVar();
-		// Perlin fBm, its billows reshaped by cellular noise: rounded heaps with connected bases.
-		const perlin = perlin3( q.mul( 4 ), float( 4 ) ).mul( 0.5 )
-			.add( perlin3( q.mul( 8 ), float( 8 ) ).mul( 0.25 ) )
-			.add( perlin3( q.mul( 16 ), float( 16 ) ).mul( 0.125 ) )
-			.add( perlin3( q.mul( 32 ), float( 32 ) ).mul( 0.0625 ) ).mul( 0.5 ).add( 0.5 ).toVar();
-		const cells = worleyFbm( q, 4 ).toVar();
-		const perlinWorley = clamp( remap( perlin, cells.sub( 1 ), 1, 0, 1 ), 0, 1 );
-		textureStore( shape, c, vec4( perlinWorley, cells, worleyFbm( q, 8 ), worleyFbm( q, 16 ) ) );
-
-	} )().compute( 128 * 128 * 128, [ 64 ] ).setName( 'Clouds.ShapeNoise' );
-	const detailKernel = Fn( () => {
-
-		const c = voxel( 32 );
-		const q = vec3( c ).add( 0.5 ).div( 32 ).toVar();
-		textureStore( detail, c, vec4( worleyFbm( q, 2 ), worleyFbm( q, 4 ), worleyFbm( q, 8 ), 1 ) );
-
-	} )().compute( 32 * 32 * 32, [ 64 ] ).setName( 'Clouds.DetailNoise' );
-
-	const weather = new THREE.StorageTexture( 512, 512 );
-	weather.type = THREE.UnsignedByteType;
-	weather.wrapS = weather.wrapT = THREE.RepeatWrapping;
-	weather.minFilter = weather.magFilter = THREE.LinearFilter;
-	weather.generateMipmaps = false;
-	const weatherKernel = Fn( () => {
-
-		const n = uint( 512 );
+		const n = uint( SYNOPTIC_RES );
 		const c = ivec2( int( instanceIndex.mod( n ) ), int( instanceIndex.div( n ) ) );
-		const q = vec2( c ).add( 0.5 ).div( 512 ).toVar();
-		const at = ( p: V2, z: number ) => vec3( p, z );
-		// A 2D slice of the periodic 3D noises keeps the field seamless in x and z.
-		const broad = perlin3( at( q.mul( 6 ), 0.37 ), float( 6 ) ).mul( 0.55 )
-			.add( perlin3( at( q.mul( 12 ), 3.71 ), float( 12 ) ).mul( 0.3 ) )
-			.add( perlin3( at( q.mul( 24 ), 7.13 ), float( 24 ) ).mul( 0.15 ) ).mul( 0.5 ).add( 0.5 ).toVar();
-		const clumps = worley3( at( q.mul( 10 ), 0.5 ), float( 10 ) ).mul( 0.6 )
-			.add( worley3( at( q.mul( 20 ), 2.5 ), float( 20 ) ).mul( 0.4 ) ).toVar();
-		// Clumped coverage: Perlin drifts set where clouds gather, cells break them into heaps.
-		const coverage = clamp( remap( broad, clumps.oneMinus().mul( 0.6 ), 1, 0, 1 ), 0, 1 );
-		const type = perlin3( at( q.mul( 3 ), 9.1 ), float( 3 ) ).mul( 0.5 ).add( 0.5 );
-		const height = perlin3( at( q.mul( 5 ), 5.3 ), float( 5 ) ).mul( 0.5 ).add( 0.5 );
-		textureStore( weather, c, vec4( coverage, clamp( type, 0, 1 ), clamp( height, 0, 1 ), 1 ) );
+		const p = vec2( c ).add( 0.5 ).div( SYNOPTIC_RES ).toVar();
+		const coverage = gradientFbm( p, 2, 3, 0.31 );
+		const streets = gradientFbm( p, 4, 14, 0.59 );
+		const patches = gradientFbm( p, 10, 14, 0.83 ).mul( 0.7 ).add( gradientFbm( p, 28, 40, 0.21 ).mul( 0.3 ) );
+		textureStore( synoptic, c, clamp( vec4( coverage, streets, patches, 1 ), 0, 1 ) );
 
-	} )().compute( 512 * 512, [ 64 ] ).setName( 'Clouds.WeatherMap' );
-
-	renderer.compute( [ shapeKernel, detailKernel, weatherKernel ] );
-	return { shape, detail, weather };
+	} )().compute( SYNOPTIC_RES ** 2, [ 64 ] ).setName( 'Clouds.SynopticMap' );
+	renderer.compute( kernel );
+	return synoptic;
 
 }
 
-export { remap as cloudRemap };
+/** Load the 64^3 shape noise and its mip chain. The file is gzip-compressed: a 16 byte header
+ * ('NZZ1', version, channel count, three u16 dimensions, a u8 mip count) and RGBA8 mips. */
+export async function loadCloudShape( renderer: THREE.WebGPURenderer ): Promise<THREE.Data3DTexture> {
+
+	const response = await fetch( import.meta.env.BASE_URL + 'clouds/baseShape64.bin' );
+	if ( ! response.ok || ! response.body ) throw new Error( `Cloud shape noise: HTTP ${ response.status }` );
+	const data = new Uint8Array( await new Response( response.body.pipeThrough( new DecompressionStream( 'gzip' ) ) ).arrayBuffer() );
+	const view = new DataView( data.buffer, data.byteOffset, data.byteLength );
+	if ( view.getUint32( 0, true ) !== 0x315a5a4e ) throw new Error( 'Cloud shape noise: bad header' );
+	const dims = [ view.getUint16( 6, true ), view.getUint16( 8, true ), view.getUint16( 10, true ) ];
+	const levels = view.getUint8( 12 );
+	const mips: { data: Uint8Array; width: number; height: number; depth: number }[] = [];
+	let offset = 16;
+	for ( let m = 0; m < levels; m ++ ) {
+
+		const [ width, height, depth ] = dims.map( ( x ) => Math.max( 1, x >> m ) );
+		const bytes = width * height * depth * 4;
+		mips.push( { data: data.subarray( offset, offset + bytes ), width, height, depth } );
+		offset += bytes;
+
+	}
+	const shape = new THREE.Data3DTexture( mips[ 0 ].data, dims[ 0 ], dims[ 1 ], dims[ 2 ] );
+	shape.format = THREE.RGBAFormat;
+	shape.type = THREE.UnsignedByteType;
+	shape.wrapS = shape.wrapT = shape.wrapR = THREE.RepeatWrapping;
+	shape.minFilter = THREE.LinearMipmapLinearFilter;
+	shape.magFilter = THREE.LinearFilter;
+	shape.unpackAlignment = 1;
+	// Listing the mips allocates the whole chain; three uploads only the first level of a 3D
+	// texture, so the rest are written directly.
+	shape.mipmaps = mips as unknown as THREE.Texture[ 'mipmaps' ];
+	shape.needsUpdate = true;
+	renderer.initTexture( shape );
+	type Queue = { writeTexture( destination: { texture: unknown; mipLevel: number }, data: Uint8Array, layout: { bytesPerRow: number; rowsPerImage: number }, size: number[] ): void };
+	const backend = renderer.backend as unknown as { device: { queue: Queue }; get( object: object ): { texture: unknown } };
+	for ( let m = 1; m < levels; m ++ ) {
+
+		const { data: bytes, width, height, depth } = mips[ m ];
+		backend.device.queue.writeTexture( { texture: backend.get( shape ).texture, mipLevel: m }, bytes,
+			{ bytesPerRow: width * 4, rowsPerImage: height }, [ width, height, depth ] );
+
+	}
+	return shape;
+
+}

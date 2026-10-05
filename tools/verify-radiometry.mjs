@@ -42,7 +42,7 @@ try {
 				await s.applySun();
 				sky.clouds.cirrus.value = 0;
 				sky.clouds.invalidate();
-				sky.clouds.update( r, camera.position );
+				sky.clouds.update( r, null, 1, 1, 0 );
 				camera.lookAt( camera.position.clone().addScaledVector( sky.sunDir, 100 ) ); camera.updateMatrixWorld();
 				r.setRenderTarget( rt ); r.render( scene, camera ); r.setRenderTarget( previous );
 				const px = await r.readRenderTargetPixelsAsync( rt, 0, 0, size, size );

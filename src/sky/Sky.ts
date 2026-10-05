@@ -13,7 +13,7 @@ import {
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE } from '../lighting/Radiometry.ts';
-import { Clouds } from './Clouds.ts';
+import { Clouds, EVOLVE_PERIOD } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import type { DayCycleSnapshot } from './DayCycle.ts';
@@ -106,6 +106,10 @@ export class Sky {
 	glintScale = 1;
 	// The viewer the cloud map is computed for; clouds are far, so only small moves matter.
 	viewer = new THREE.Vector3( 0, 15, 0 );
+	private viewCamera: THREE.PerspectiveCamera | null = null;
+	private viewWidth = 1;
+	private viewHeight = 1;
+	private cloudTime = 0;
 	solarIlluminance = new THREE.Color();
 	readonly grade = { exposure: 2.35, blackLift: 0.027, daylight: 1 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
@@ -283,7 +287,7 @@ export class Sky {
 				.mul( mask ).mul( limb ).div( SUN_DISPLAY_SOLID_ANGLE ).mul( smoothstep( 0, 0.001, d.y ) );
 			// Above the horizon the clear sky and the clouds are both live. Below, the baked distant-sea reflection continues the waves.
 			const lower = this.samplePanorama( d, float( 0 ) ).toVar();
-			const cloud = this.clouds.sample( d ).toVar();
+			const cloud = this.clouds.sampleView( d ).toVar();
 			const upper = this.clearSky( vec3( d.x, max( d.y, 0 ), d.z ), this.displayNightAmbient.rgb.mul( NIGHT_SKY ), this.displayOvercast )
 				.mul( cloud.a ).add( cloud.rgb ).mul( this.displayAmbientGain );
 			const above = d.y.greaterThanEqual( 0 );
@@ -503,18 +507,24 @@ export class Sky {
 
 	}
 
-	/** Advance the cloud field for this frame: wind, slow evolution and the viewer's position. */
-	updateClouds( viewer: THREE.Vector3, windOffset: THREE.Vector2, windDirection: THREE.Vector2, time: number ): void {
+	/** Advance the cloud field for this frame: wind, slow evolution and the view from `camera`,
+	 * whose drawing buffer is `width` by `height` pixels. */
+	updateClouds( camera: THREE.PerspectiveCamera, width: number, height: number, windOffset: THREE.Vector2, windDirection: THREE.Vector2, time: number ): void {
 
 		if ( ! this.clouds.ready ) return;
+		this.viewCamera = camera;
+		this.viewWidth = width;
+		this.viewHeight = height;
+		this.cloudTime = time;
 		this.clouds.setWindOffset( windOffset );
 		// Weather arrives from upwind.
 		this.clouds.frontAxis.value.copy( windDirection ).negate().normalize();
 		this.clouds.cirrusAxis.value.copy( windDirection ).normalize();
-		this.clouds.evolve.value = ( time * 0.6 ) % 6000;
+		// The shape of the clouds evolves at about two thirds of the trade wind's drift.
+		this.clouds.evolve.value = ( time * 2.5 ) % EVOLVE_PERIOD;
 		this.night.time.value = time;
-		this.viewer.copy( viewer );
-		this.clouds.update( this.renderer, viewer );
+		this.viewer.copy( camera.position );
+		this.clouds.update( this.renderer, camera, width, height, time );
 
 	}
 
@@ -528,12 +538,12 @@ export class Sky {
 		const weather = this.weatherState ? { ...this.weatherState } : null;
 		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
 		await this.renderer.init();
-		if ( ! this.clouds.ready ) this.clouds.init( this.renderer );
+		if ( ! this.clouds.ready ) await this.clouds.init( this.renderer );
 		// An explicit jump (preset, seek, weather change) refreshes the whole cloud map now.
 		if ( readback ) {
 
 			this.clouds.invalidate();
-			this.clouds.update( this.renderer, this.viewer );
+			this.clouds.update( this.renderer, this.viewCamera, this.viewWidth, this.viewHeight, this.cloudTime );
 
 		}
 		const next = this.initialized ? 1 - this.front : 0;
