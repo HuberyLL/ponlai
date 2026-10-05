@@ -18,14 +18,16 @@ exposed.
   `npm run preview` (port 5191).
 - `node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval "js"] [--verbose]`
   takes a screenshot of the running dev server into `artifacts/captures/` (git-ignored) and prints
-  frame diagnostics. URL options: `paused`, `t`, `dpr`, `dist`, `polar`, `az`, `gui`. It needs
+  frame diagnostics. URL options: `paused`, `t`, `dpr`, `dist`, `polar`, `az`, `gui`, `camera`
+  (orbit, the default, or free: fly with the mouse, WASD, Q/E and Shift). It needs
   Playwright's Chromium once (`npx playwright install chromium`), or `CHROME_PATH` set to a
   WebGPU-capable Chrome.
 - Sky and weather URL options: `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk,
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain; rain loads
   as established, already wet), `clouds` (coverage override), `quality` (low, medium, high).
-  In the page, H toggles the GUI and Space pauses.
+  In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
+  sky views.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
   and wave optics (each file names the server it expects); `tools/verify-scene.mjs` checks a
   production preview; `tools/benchmark-lighting.mjs` A/B-times two builds;

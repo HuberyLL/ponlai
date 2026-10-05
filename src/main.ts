@@ -86,6 +86,8 @@ controls.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
 controls.update();
 const initialCameraPosition = camera.position.clone();
 const initialCameraQuaternion = camera.quaternion.clone();
+const initialCameraFov = camera.fov;
+const orbitMaxPolar = controls.maxPolarAngle;
 const freeControls = new FreeCameraControls( camera, renderer.domElement );
 
 // ------------------------------------------------------------------ sky, light, water optics
@@ -316,12 +318,9 @@ const gui = new GUI( { title: 'Soomi · lighting & water' } );
 if ( ! params.has( 'gui' ) ) gui.hide();
 const S = pipeline.settings;
 type CameraView = 'island' | 'horizon' | 'sky';
-const cameraSettings = { mode: params.get( 'camera' ) === 'orbit' ? 'orbit' : 'free' };
+const cameraSettings = { mode: params.get( 'camera' ) === 'free' ? 'free' : 'orbit' };
 const reviewView = { camera: 'island' as CameraView };
 let orbitDof = S.dof;
-const cameraHint = document.getElementById( 'camera-hint' );
-const cameraModeLabel = document.getElementById( 'camera-mode' );
-const cameraInputLabel = document.getElementById( 'camera-input' );
 const viewDirection = new THREE.Vector3();
 
 function settleOrbit(): void {
@@ -331,6 +330,13 @@ function settleOrbit(): void {
 	controls.enableDamping = false;
 	controls.update();
 	controls.enableDamping = damping;
+
+}
+
+function applyOrbitLimit(): void {
+
+	// Orbiting keeps the camera above the sea; only the sky view looks up from below its target.
+	controls.maxPolarAngle = reviewView.camera === 'sky' ? Math.PI : orbitMaxPolar;
 
 }
 
@@ -349,12 +355,8 @@ function setCameraMode( mode: string ): void {
 	freeControls.enabled = mode === 'free';
 	// Sharp sky details are essential when inspecting stars and the lunar disk.
 	S.dof = freeControls.enabled ? 0 : orbitDof;
-	controls.maxPolarAngle = Math.PI;
+	applyOrbitLimit();
 	if ( controls.enabled ) controls.update();
-	if ( cameraModeLabel ) cameraModeLabel.textContent = freeControls.enabled ? '自由镜头' : '环绕镜头';
-	if ( cameraInputLabel ) cameraInputLabel.textContent = freeControls.enabled
-		? '鼠标拖动转向 · WASD 移动 · Q/E 下降/上升 · Shift 加速 · 滚轮调速'
-		: '鼠标拖动环绕 · 滚轮缩放 · H 参数中可切换自由镜头';
 	renderer.domElement.style.cursor = freeControls.enabled ? 'grab' : '';
 
 }
@@ -372,7 +374,6 @@ function setCameraView( view: CameraView ): void {
 		if ( viewDirection.y <= 0 ) viewDirection.set( 0.6, 0.72, 0.35 ).normalize();
 		controls.target.copy( camera.position ).addScaledVector( viewDirection, 100 );
 		camera.fov = 65;
-		controls.maxPolarAngle = Math.PI;
 		camera.lookAt( controls.target );
 
 	} else if ( view === 'horizon' ) {
@@ -387,10 +388,11 @@ function setCameraView( view: CameraView ): void {
 		controls.target.copy( target );
 		camera.position.copy( initialCameraPosition );
 		camera.quaternion.copy( initialCameraQuaternion );
-		camera.fov = 27;
+		camera.fov = initialCameraFov;
 
 	}
 	camera.updateProjectionMatrix();
+	applyOrbitLimit();
 	if ( controls.enabled ) controls.update();
 
 }
@@ -491,35 +493,6 @@ postF.add( S, 'dofMaxRadius', 0, 20, 0.1 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
 postF.add( S, 'grain', 0, 0.05, 0.001 );
 
-function inspectTime( preset: DayPreset ): void {
-
-	dayCycle.paused = true;
-	timeView.preset = preset;
-	void setPreset( preset ).then( () => {
-
-		if ( reviewView.camera === 'sky' ) setCameraView( 'sky' );
-
-	} ).catch( ( error: unknown ) => console.error( error ) );
-
-}
-
-for ( const [ id, action ] of [
-	[ 'view-sky', () => setCameraView( 'sky' ) ],
-	[ 'view-island', () => setCameraView( 'island' ) ],
-	[ 'view-day', () => inspectTime( 'noon' ) ],
-	[ 'view-night', () => inspectTime( 'midnight' ) ],
-] as const ) {
-
-	document.getElementById( id )?.addEventListener( 'click', ( event ) => {
-
-		action();
-		// Preset buttons must not leave keyboard navigation trapped in a focused control.
-		( event.currentTarget as HTMLElement ).blur();
-
-	} );
-
-}
-
 // ------------------------------------------------------------------ loop
 
 function resize(): void {
@@ -548,9 +521,6 @@ addEventListener( 'keydown', ( e ) => {
 	if ( e.code === 'KeyR' || e.code === 'Digit1' ) setCameraView( 'island' );
 	if ( e.code === 'Digit2' ) setCameraView( 'horizon' );
 	if ( e.code === 'Digit3' ) setCameraView( 'sky' );
-	if ( e.code === 'KeyN' ) inspectTime( 'midnight' );
-	if ( e.code === 'KeyB' ) inspectTime( 'noon' );
-	if ( e.code === 'Slash' && cameraHint ) cameraHint.hidden = ! cameraHint.hidden;
 
 } );
 
