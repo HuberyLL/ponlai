@@ -27,8 +27,9 @@ packages, into `dist/licenses/`.
   - `src/ocean/ShoreWaves.ts`, `src/ocean/ShoreWaveField.ts`: began as an adaptation of
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
-    `Sky.js`, ported from WGSL to TSL. The new cloud density, bounded ray march and cloud shadows
-    in `src/sky/Clouds.ts` are original Soomi code, not copied from tidewater. The celestial
+    `Sky.js`, ported from WGSL to TSL. The volumetric clouds, their noise bake and cloud shadows
+    in `src/sky/Clouds.ts` and `src/materials/CloudNoise.ts` are original Soomi code, not copied
+    from tidewater. The celestial
     clock, geometric lunar phase and filtered procedural stars are also original code;
     they introduce no third-party imagery or additional asset licence. Weather blending,
     integrated wind, analytic rain streaks/ripple gradients and wet-material response are
@@ -40,7 +41,8 @@ packages, into `dist/licenses/`.
 - Upstream: https://www.shadertoy.com/view/4djSRW, by David Hoskins
 - Copyright: (c) 2014 David Hoskins
 - Licence: MIT, see [`src/materials/hoskins-hash.LICENSE.txt`](src/materials/hoskins-hash.LICENSE.txt)
-- Files: `hash22` in `src/materials/ProceduralTextures.ts` and `src/ocean/Water.ts`
+- Files: `hash22` in `src/materials/ProceduralTextures.ts` and `src/ocean/Water.ts`; `hash33` in
+  `src/materials/CloudNoise.ts`
 - Changes: ported to TSL; the procedural textures remap it to [-1, 1].
 
 ## Assets
@@ -94,6 +96,14 @@ comment where it is used.
 - Microfacet masking: Eric Heitz,
   [*Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs*](https://jcgt.org/published/0003/02/03/)
   (JCGT 2014); the error-function approximation is Abramowitz and Stegun, equation 7.1.26.
+- Volumetric clouds: Andrew Schneider,
+  [*The Real-time Volumetric Cloudscapes of Horizon Zero Dawn*](https://www.guerrilla-games.com/read/the-real-time-volumetric-cloudscapes-of-horizon-zero-dawn)
+  (SIGGRAPH 2015): Perlin-Worley shape noise, Worley erosion, weather-map coverage and height
+  profiles. Multiple-scattering octaves: Magnus Wrenninge et al.,
+  [*Oz: The Great and Volumetric*](https://magnuswrenninge.com/wp-content/uploads/2021/03/Wrenninge-OzTheGreatAndVolumetric.pdf)
+  (SIGGRAPH 2013 talk). Diffuse transmission through thick decks uses the two-stream
+  approximation (e.g. Bohren, *Multiple scattering of light and some of its observable consequences*,
+  Am. J. Phys. 55, 1987).
 - Depth-dependent water shadows: the volume-lighting integral described in
   [*Physically Based Rendering*, third edition](https://pbr-book.org/3ed-2018/Light_Transport_II_Volume_Rendering/Volumetric_Light_Transport),
   independently implemented in TSL with exponential depth strata, exact per-channel attenuation

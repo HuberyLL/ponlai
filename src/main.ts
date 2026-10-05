@@ -115,7 +115,6 @@ let lastSkyHour = dayCycle.hour;
 let lastWeatherSignature = '';
 // Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
 let cloudOverride: number | null = params.has( 'clouds' ) ? THREE.MathUtils.clamp( numberParam( 'clouds', 0.32 ), 0, 1 ) : null;
-sky.clouds.setWindOffset( shared.wind.cloudOffset.value );
 const requestedQuality = params.get( 'quality' ) ?? 'medium';
 const skyQuality = { value: ( Object.hasOwn( WEATHER_QUALITY, requestedQuality ) ? requestedQuality : 'medium' ) as WeatherQuality };
 function applySkyQuality(): void {
@@ -174,7 +173,6 @@ function prepareSkyState(): void {
 	if ( cloudOverride !== null ) state.coverage = cloudOverride;
 	sky.setWeather( state );
 	sky.track( celestial, state );
-	sky.clouds.setWindOffset( shared.wind.cloudOffset.value );
 	lastWeatherSignature = `${ state.coverage },${ state.density },${ state.directVisibility },${ state.ambientGain },${ state.haze }`;
 
 }
@@ -583,6 +581,7 @@ function tick(): void {
 	publishLighting();
 	pipeline.air.haze.value = sky.weather.haze;
 	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
+	sky.updateClouds( camera.position, shared.wind.cloudOffset.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
 	shared.wetness.value = weatherEffects.wetness ? weather.state.wetness : 0;
 	fft.weatherGain.value.copy( shared.wind.oceanGain.value );
