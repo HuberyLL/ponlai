@@ -1,4 +1,4 @@
-import { Vector3 } from 'three/webgpu';
+import { Matrix3, Matrix4, Vector3 } from 'three/webgpu';
 
 export const DAY_PRESETS = {
 	'dawn': 5.35,
@@ -35,6 +35,8 @@ export interface DayCycleSnapshot {
 	moonIllumination: number;
 	moonVisibility: number;
 	moonKeyGain: number;
+	// World to celestial frame: the fixed stars turn with the sun about the pole of its path.
+	starFrame: Matrix3;
 	daylight: number;
 	nightVisibility: number;
 	exposure: number;
@@ -51,6 +53,9 @@ const COS_INCLINATION = Math.cos( INCLINATION );
 const NOON_AZIMUTH = - 8 / DEG + Math.atan2( Math.sin( Math.PI / 3 ), COS_INCLINATION * Math.cos( Math.PI / 3 ) );
 const SIN_NOON_AZIMUTH = Math.sin( NOON_AZIMUTH );
 const COS_NOON_AZIMUTH = Math.cos( NOON_AZIMUTH );
+// direction(a) = cos(a) U + sin(a) V: a rotation by a about POLE = U x V.
+const POLE = new Vector3( COS_INCLINATION * COS_NOON_AZIMUTH, SIN_INCLINATION, COS_INCLINATION * SIN_NOON_AZIMUTH )
+	.cross( new Vector3( SIN_NOON_AZIMUTH, 0, - COS_NOON_AZIMUTH ) ).normalize();
 
 function finite( value: number, name: string ): number {
 
@@ -157,6 +162,9 @@ export class DayCycle {
 		const elevation = Math.asin( Math.max( - 1, Math.min( 1, sunDir.y ) ) ) * DEG;
 		const moonElevation = Math.asin( Math.max( - 1, Math.min( 1, moonDir.y ) ) ) * DEG;
 		const daylight = smoothstep( - 7, 8, elevation );
+		// A low sun's light is thin and warm, and twilight thinner still; adapt toward both so
+		// sunrise, sunset and the blue hour stay readable. Deep night keeps its own exposure.
+		const lowSun = smoothstep( - 14, - 5, elevation ) * ( 1 - smoothstep( 4, 18, elevation ) );
 		const moonIllumination = ( 1 - Math.cos( TAU * this.phase ) ) * 0.5;
 		const moonVisibility = smoothstep( 0, 5, moonElevation );
 		// Rotate within the orbital plane only after the sun is blocked and before the
@@ -177,11 +185,12 @@ export class DayCycle {
 			moonIllumination,
 			moonVisibility,
 			moonKeyGain: ( 1 - smoothstep( - 7, - 3, elevation ) ) * moonVisibility * moonIllumination,
+			starFrame: new Matrix3().setFromMatrix4( new Matrix4().makeRotationAxis( POLE, - hourAngle ) ),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),
 			// Modest adaptation preserves a visibly dark night. Scene lighting, not exposure,
 			// supplies its readable forms; reduce display lift so blacks do not turn milky.
-			exposure: 4.4 + ( 2.35 - 4.4 ) * daylight,
+			exposure: ( 4.4 + ( 2.6 - 4.4 ) * daylight ) * ( 1 + 0.6 * lowSun ),
 			blackLift: 0.002 + ( 0.027 - 0.002 ) * daylight,
 		};
 

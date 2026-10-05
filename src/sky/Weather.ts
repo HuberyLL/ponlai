@@ -24,8 +24,8 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<Preset>>> = 
 	clear: { coverage: 0, density: 0.8, directVisibility: 1, ambientGain: 1, haze: 0.00035, windSpeed: 2.8, windDirection: 40, rain: 0 },
 	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, ambientGain: 0.99, haze: 0.0005, windSpeed: 3.8, windDirection: 40, rain: 0 },
 	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 0.78, ambientGain: 0.91, haze: 0.0009, windSpeed: 4.3, windDirection: 40, rain: 0 },
-	overcast: { coverage: 0.94, density: 1.35, directVisibility: 0.3, ambientGain: 0.76, haze: 0.0016, windSpeed: 4.6, windDirection: 40, rain: 0 },
-	rain: { coverage: 1, density: 1.55, directVisibility: 0.14, ambientGain: 0.62, haze: 0.0025, windSpeed: 5.2, windDirection: 40, rain: 0.75 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.3, ambientGain: 0.76, haze: 0.0016, windSpeed: 4.6, windDirection: 40, rain: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, ambientGain: 0.62, haze: 0.0025, windSpeed: 5.2, windDirection: 40, rain: 0.75 },
 };
 
 export interface WeatherQualityProfile {
@@ -46,6 +46,24 @@ export const WEATHER_QUALITY: Readonly<Record<WeatherQuality, Readonly<WeatherQu
 	medium: { cloudSteps: 10, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.8, underwaterShadowInterval: 0.12, rainDrops: 384 },
 	high: { cloudSteps: 14, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.5, underwaterShadowInterval: 0.08, rainDrops: 640 },
 };
+
+// Auto weather: from each state, the next one and its weight. Rain builds through overcast
+// and clears through cloud; fair weather is the most common resting state.
+const NEXT: Readonly<Record<WeatherName, ReadonlyArray<readonly [ WeatherName, number ]>>> = {
+	clear: [ [ 'fair', 0.75 ], [ 'cloudy', 0.25 ] ],
+	fair: [ [ 'clear', 0.35 ], [ 'cloudy', 0.5 ], [ 'overcast', 0.15 ] ],
+	cloudy: [ [ 'fair', 0.45 ], [ 'overcast', 0.35 ], [ 'rain', 0.2 ] ],
+	overcast: [ [ 'rain', 0.5 ], [ 'cloudy', 0.5 ] ],
+	rain: [ [ 'overcast', 0.6 ], [ 'cloudy', 0.4 ] ],
+};
+
+/** A weather change as it sweeps the sky: values at the start and end, and the linear
+ * progress reached at the island. Places upwind are further along, places downwind behind. */
+export interface WeatherFront {
+	from: Readonly<Preset>;
+	to: Readonly<Preset>;
+	progress: number;
+}
 
 const fields = Object.keys( WEATHER_PRESETS.clear ) as ( keyof Preset )[];
 const smooth = ( t: number ) => t * t * ( 3 - 2 * t );
@@ -74,6 +92,10 @@ export class Weather {
 	private targetName: WeatherName;
 	private elapsed = 0;
 	private duration = 0;
+	// Auto weather: a seeded chain, so a given start and time always give the same sky.
+	auto = false;
+	private dwell = 0;
+	private seed = 0x5eed;
 
 	constructor( name: WeatherName = 'fair' ) {
 
@@ -90,6 +112,7 @@ export class Weather {
 	get state(): Readonly<WeatherState> { return this.current; }
 	get target(): WeatherName { return this.targetName; }
 	get progress(): number { return this.duration > 0 ? this.elapsed / this.duration : 1; }
+	get front(): WeatherFront { return { from: this.from, to: this.destination, progress: this.progress }; }
 
 	snapshot(): WeatherState { return { ...this.current }; }
 
@@ -104,7 +127,38 @@ export class Weather {
 		this.targetName = name;
 		this.elapsed = 0;
 		this.duration = duration;
+		this.dwell = 0;
 		if ( duration === 0 ) for ( const key of fields ) this.current[ key ] = preset[ key ];
+
+	}
+
+	private random(): number {
+
+		// mulberry32
+		let t = this.seed = ( this.seed + 0x6D2B79F5 ) | 0;
+		t = Math.imul( t ^ ( t >>> 15 ), t | 1 );
+		t ^= t + Math.imul( t ^ ( t >>> 7 ), t | 61 );
+		return ( ( t ^ ( t >>> 14 ) ) >>> 0 ) / 4294967296;
+
+	}
+
+	// Rest for 90 to 240 seconds, then move to a neighbouring state over 30 to 60 seconds.
+	private advanceAuto( dt: number ): void {
+
+		if ( this.duration > this.elapsed ) return;
+		if ( this.dwell <= 0 ) this.dwell = 90 + this.random() * 150;
+		this.dwell -= dt;
+		if ( this.dwell > 0 ) return;
+		let pick = this.random();
+		const options = NEXT[ this.targetName ];
+		let next = options[ options.length - 1 ][ 0 ];
+		for ( const [ name, weight ] of options ) {
+
+			if ( pick < weight ) { next = name; break; }
+			pick -= weight;
+
+		}
+		this.setWeather( next, 30 + this.random() * 30 );
 
 	}
 
@@ -112,6 +166,7 @@ export class Weather {
 
 		requireDuration( dt, 'Weather delta time' );
 		if ( dt === 0 ) return;
+		if ( this.auto ) this.advanceAuto( dt );
 		const previous = this.elapsed;
 		const transitioning = this.duration > previous;
 		let rainIntegral = this.current.rain * dt;

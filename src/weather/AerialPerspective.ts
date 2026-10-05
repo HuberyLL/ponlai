@@ -15,7 +15,8 @@ export class AerialPerspective {
 	private cameraWorld = uniform( new THREE.Matrix4() );
 	private resolution = uniform( new THREE.Vector2( 1, 1 ) );
 
-	apply( color: V3, depth: THREE.Texture, waterDepth: THREE.Texture, sky: Sky ): V3 {
+	/** `veil` adds radiance along a view direction in front of content at a given distance. */
+	apply( color: V3, depth: THREE.Texture, waterDepth: THREE.Texture, sky: Sky, veil?: ( direction: V3, distance: F ) => V3 ): V3 {
 
 		const sceneDepth = texture( depth ), surfaceDepth = texture( waterDepth );
 		return Fn( () => {
@@ -28,7 +29,9 @@ export class AerialPerspective {
 			const viewFar = this.projectionInverse.mul( vec4( ndc, 1 ) ).toVar();
 			const ray = viewFar.xyz.div( viewFar.w ).toVar();
 			const direction = normalize( this.cameraWorld.mul( vec4( normalize( ray ), 0 ) ).xyz ).toVar();
-			const air = sky.sampleBackground( normalize( vec3( direction.x, 0.035, direction.z ) ), float( 3 ) ).toVar();
+			// Distant air takes the sky's colour just above the horizon, so the far sea fades into
+			// the horizon itself rather than stopping short of it in a darker band.
+			const air = sky.sampleBackground( normalize( vec3( direction.x, 0.008, direction.z ) ), float( 2 ) ).toVar();
 			If( dw.lessThan( 1 ), () => {
 
 				const water = this.projectionInverse.mul( vec4( ndc.xy, dw, 1 ) ).toVar();
@@ -36,13 +39,16 @@ export class AerialPerspective {
 
 			} );
 			const amount = float( 0 ).toVar();
-			If( z.greaterThan( - 1e4 ), () => {
+			const distance = float( 1e5 ).toVar();
+			// The resolved sky sits at -1e5; the sea's skirt reaches tens of kilometres.
+			If( z.greaterThan( - 9e4 ), () => {
 
-				const distance = length( ray.mul( z.div( ray.z ) ) ).toVar();
+				distance.assign( length( ray.mul( z.div( ray.z ) ) ) );
 				amount.assign( float( 1 ).sub( exp( max( distance.sub( this.clearDistance ), 0 ).mul( this.haze ).negate() ) ) );
 
 			} );
-			return mix( color, air, amount );
+			const hazed = mix( color, air, amount );
+			return veil ? hazed.add( veil( direction, distance ) ) : hazed;
 
 		} )();
 

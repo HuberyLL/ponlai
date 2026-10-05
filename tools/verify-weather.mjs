@@ -199,16 +199,16 @@ try {
 	assert.ok( rain.haze > clear.haze, 'Rain must affect distant air, not only cloud geometry' );
 	report.checks.push( 'Five deterministic weather states drive coherent sky, scene/water lighting and air perspective' );
 
-	// Isolate aerial perspective from the already baked rainy sky and lighting. The paused
-	// frame loop copies displayed weather haze into the pipeline without triggering a bake.
-	const savedHaze = await page.evaluate( () => window.__SOOMI__.sky.weather.haze );
+	// Isolate aerial perspective from the already baked rainy sky and lighting. The sky reads
+	// the weather state every frame; a paused clock leaves that state alone between frames.
+	const savedHaze = await page.evaluate( () => window.__SOOMI__.weather.state.haze );
 	report.fog = { hour: 16, weather: 'rain', restoredHaze: savedHaze, units: 'absolute display RGB/luma differences, 0..255' };
 	try {
-		await page.evaluate( () => { window.__SOOMI__.sky.weather.haze = 0; } );
+		await page.evaluate( () => { window.__SOOMI__.weather.state.haze = 0; } );
 		await frames();
 		near( await page.evaluate( () => window.__SOOMI__.pipeline.air.haze.value ), 0, 1e-8, 'Fog-off state reaches the pipeline' );
 		report.fog.off = await screenshots( 'fog-off', [ 'overview', 'horizon' ] );
-		await page.evaluate( ( haze ) => { window.__SOOMI__.sky.weather.haze = haze; }, savedHaze );
+		await page.evaluate( ( haze ) => { window.__SOOMI__.weather.state.haze = haze; }, savedHaze );
 		await frames();
 		near( await page.evaluate( () => window.__SOOMI__.pipeline.air.haze.value ), savedHaze, 1e-8, 'Fog-on state reaches the pipeline' );
 		report.fog.on = await screenshots( 'fog-on', [ 'overview', 'horizon' ] );
@@ -226,7 +226,7 @@ try {
 		assert.ok( report.fog.horizon[ 'foreground-sea' ].meanAbsolutePixelDifference <= 1, 'Haze must preserve the near water in the horizon view' );
 		report.checks.push( 'Fog A/B pixel crops preserve the near island and shallow water while changing the distant sea' );
 	} finally {
-		await page.evaluate( ( haze ) => { window.__SOOMI__.sky.weather.haze = haze; }, savedHaze );
+		await page.evaluate( ( haze ) => { window.__SOOMI__.weather.state.haze = haze; }, savedHaze );
 		await frames();
 	}
 

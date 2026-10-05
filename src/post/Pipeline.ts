@@ -8,7 +8,9 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective } from '../weather/AerialPerspective.ts';
+import { LightShafts } from './LightShafts.ts';
 import type { Sky } from '../sky/Sky.ts';
+import type { Rain } from '../weather/Rain.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA x4, half float, multisampled depth)
@@ -49,6 +51,7 @@ export class Pipeline {
 	depthRT: THREE.RenderTarget;
 	waterRT: THREE.RenderTarget;
 	readonly air = new AerialPerspective();
+	readonly shafts = new LightShafts();
 
 	private depthQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
@@ -63,7 +66,7 @@ export class Pipeline {
 		maxRadius: uniform( 6 ), texel: uniform( new THREE.Vector2( 1, 1 ) ),
 	};
 
-	constructor( renderer: THREE.WebGPURenderer, sky: Sky ) {
+	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain ) {
 
 		this.renderer = renderer;
 		const depthTexture = new THREE.DepthTexture( 1, 1 );
@@ -103,7 +106,8 @@ export class Pipeline {
 		// Water writes alpha 1. Rain is normal-blended over transparent black, so this
 		// combined target already contains premultiplied radiance; do not apply alpha twice.
 		const overlay = sceneTex.rgb.mul( float( 1 ).sub( waterTex.a ) ).add( waterTex.rgb );
-		const hdr = this.air.apply( overlay, this.depthRT.texture, waterDepth, sky );
+		const hdr = this.air.apply( overlay, this.depthRT.texture, waterDepth, sky, rain ? ( d, distance ) => rain.veil( d, distance ) : undefined )
+			.add( this.shafts.build( this.depthRT.texture, waterDepth, sky ) );
 
 		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a
 		// soft knee instead of a hard threshold
@@ -148,8 +152,8 @@ export class Pipeline {
 				z.assign( max( z, w.z.div( w.w ) ) );
 
 			} );
-			const dist = float( 1e4 ).toVar();
-			If( z.greaterThan( - 1e4 ), () => {
+			const dist = float( 1e5 ).toVar();
+			If( z.greaterThan( - 9e4 ), () => {
 
 				const v = u.projInv.mul( vec4( ndc, 1, 1 ) ).toVar();
 				const dir = v.xyz.div( v.w ).toVar();
@@ -238,6 +242,7 @@ export class Pipeline {
 		camera.updateMatrixWorld();
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
 		this.air.update( camera, this.width, this.height );
+		this.shafts.update( camera as THREE.PerspectiveCamera, this.width, this.height, this.air.haze.value );
 
 		// 1. opaque
 		r.setRenderTarget( this.sceneRT );

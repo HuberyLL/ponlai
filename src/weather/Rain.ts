@@ -2,13 +2,22 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, attribute, cameraPosition, positionGeometry, positionWorld, positionView, uv, uniform,
 	texture, textureLoad, textureSize, screenCoordinate, ivec2, vec2, vec3, float, floor, fract, sin, cos, dot, cross, normalize, length,
-	abs, max, clamp, mix, smoothstep, exp, select,
+	abs, max, clamp, mix, smoothstep, exp, select, acos, atan,
 } from 'three/tsl';
 import { buildFootprint, islandSurfaceHeight, layoutBounds } from '../world/WorldShapes.ts';
 import { mulberry32 } from '../world/noise.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
+type V3 = THREE.Node<'vec3'>;
+
+// The veil: shells around the viewer at these distances (metres), each carrying a sheet of
+// streaks. Mapped on the sphere about the rain's own direction, streaks converge on its
+// vanishing points as in perspective, and a shell shows only where the scene lies beyond it.
+const VEIL_SHELLS = [ 5, 9, 16, 28, 48, 80, 130 ];
+const DROP_WIDTH = 0.0016; // metres
+const STREAK_LENGTH = 0.4; // metres travelled during the eye's exposure
+const STREAK_SPACING = 0.22; // metres between columns of drops on a shell
 
 export const RAIN_MAX_DROPS = 640;
 const VOLUME_WIDTH = 128;
@@ -98,6 +107,9 @@ export class Rain {
 	private readonly groundXform: THREE.Vector4;
 	private readonly baseOpacity: F;
 	private opaqueDepth: THREE.TextureNode | null = null;
+	private lightNode: THREE.Node<'vec3'> | null = null;
+	// Angle subtended by one pixel, for the veil's energy-preserving streak width.
+	readonly pixelAngle = uniform( 0.001 );
 
 	constructor( { count = 384, seed = 8371, groundHeightAt }: RainOptions = {} ) {
 
@@ -158,7 +170,7 @@ export class Rain {
 		const center = vec3( horizontal.x, float( 1 ).sub( age ).mul( VOLUME_HEIGHT ).add( u.waterLevel ), horizontal.y );
 		const tail = normalize( velocity ).negate();
 		const across = normalize( cross( tail, cameraPosition.sub( center ) ).add( vec3( 1e-5, 0, 0 ) ) );
-		material.positionNode = center.add( across.mul( positionGeometry.x.mul( 0.035 ) ) )
+		material.positionNode = center.add( across.mul( positionGeometry.x.mul( 0.014 ) ) )
 			.add( tail.mul( positionGeometry.y.mul( particle.w ) ) );
 		material.colorNode = u.light;
 		const q = uv();
@@ -175,7 +187,7 @@ export class Rain {
 		const groundY = max( select( insideGround, texture( this.ground, groundUV ).level( float( 0 ) ).r, u.waterLevel ), u.waterLevel );
 		const landing = smoothstep( groundY.add( 0.03 ), groundY.add( 0.25 ), positionWorld.y );
 		const ceiling = float( 1 ).sub( smoothstep( VOLUME_HEIGHT - 2, VOLUME_HEIGHT, positionWorld.y.sub( u.waterLevel ) ) );
-		this.baseOpacity = clamp( u.rain, 0, 1 ).mul( 0.3 ).mul( streak ).mul( volume ).mul( landing ).mul( ceiling );
+		this.baseOpacity = clamp( u.rain, 0, 1 ).mul( 0.2 ).mul( streak ).mul( volume ).mul( landing ).mul( ceiling );
 		material.opacityNode = this.baseOpacity;
 		this.material = material;
 		this.mesh = new THREE.InstancedMesh( geometry, material, RAIN_MAX_DROPS );
@@ -211,8 +223,59 @@ export class Rain {
 	/** Supply the displayed sky/key radiance directly, including GPU irradiance interpolation. */
 	setLightNode( light: THREE.Node<'vec3'> | null ): void {
 
+		this.lightNode = light;
 		this.material.colorNode = light ?? this.uniforms.light.rgb;
 		this.material.needsUpdate = true;
+
+	}
+
+	/** Radiance the falling rain adds along a view direction, for scene content at `distance`
+	 * metres (very large for the sky). Thin drops are widened to a pixel at reduced energy. */
+	veil( direction: V3, distance: F ): V3 {
+
+		const u = this.uniforms;
+		const light = this.lightNode ?? u.light.rgb;
+		const result = vec3( 0 ).toVar();
+		If( u.rain.greaterThan( 0.001 ), () => {
+
+			// Axis toward where the rain comes from, tilted by the wind; a frame around it.
+			const source = normalize( vec3( u.wind.x.mul( - 0.65 ), FALL_SPEED, u.wind.y.mul( - 0.65 ) ) ).toVar();
+			const side = normalize( cross( source, vec3( 0, 0, 1 ) ) ).toVar();
+			const other = cross( source, side ).toVar();
+			const cosine = clamp( dot( direction, source ), - 1, 1 ).toVar();
+			const polar = acos( cosine ).toVar(); // 0 toward the source, pi along the fall
+			const azimuth = atan( dot( direction, other ), dot( direction, side ) ).div( 2 * Math.PI ).add( 0.5 ).toVar();
+			// Columns crowd toward both vanishing points; fade them out before they alias.
+			const away = smoothstep( 0.12, 0.45, abs( sin( polar ) ) ).toVar();
+			const amount = clamp( u.rain, 0, 1 ).toVar();
+			for ( const [ index, radius ] of VEIL_SHELLS.entries() ) {
+
+				const columns = Math.round( 2 * Math.PI * radius / STREAK_SPACING );
+				const column = azimuth.mul( columns ).toVar();
+				const cell = floor( column ).toVar();
+				const seed = vec2( cell, index * 17.13 ).toVar();
+				// Arc length along the fall, scrolling at the fall speed with a per-column offset.
+				const fall = polar.mul( radius ).sub( u.time.mul( FALL_SPEED * ( 0.9 + 0.04 * index ) ) ).sub( rainHash( seed ).mul( 37 ) ).toVar();
+				const row = floor( fall.div( STREAK_LENGTH * 2.6 ) ).toVar();
+				const along = fract( fall.div( STREAK_LENGTH * 2.6 ) ).mul( 2.6 ).toVar();
+				const present = rainHash( vec2( cell.add( row.mul( 0.618 ) ), row.add( index * 3.7 ) ) ).lessThan( amount.mul( 0.8 ) );
+				const centre = rainHash( seed.add( row ) ).mul( 0.6 ).add( 0.2 );
+				// Angular half-width of the streak, at least half a pixel; energy kept by the ratio.
+				const drop = DROP_WIDTH / radius;
+				const halfWidth = max( float( drop ), this.pixelAngle.mul( 0.5 ) ).toVar();
+				const across = abs( fract( column ).sub( centre ) ).mul( 2 * Math.PI / columns ).mul( sin( polar ) );
+				const profile = float( 1 ).sub( smoothstep( halfWidth.mul( 0.4 ), halfWidth, across ) ).mul( float( drop ).div( halfWidth ) );
+				// Each drop has its own brightness: some catch the light, most are faint.
+				const glint = rainHash( seed.add( row.mul( 1.31 ) ).add( 5.1 ) ).pow( 2 ).mul( 1.6 ).add( 0.25 );
+				const streak = smoothstep( 0, 0.15, along ).mul( float( 1 ).sub( smoothstep( 0.6, 1, along ) ) ).mul( glint );
+				const shown = smoothstep( radius * 0.9, radius * 1.1, distance );
+				result.addAssign( select( present, profile.mul( streak ).mul( shown ), float( 0 ) ) );
+
+			}
+			result.assign( light.mul( result ).mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ).mul( 0.6 ) );
+
+		} );
+		return result;
 
 	}
 
@@ -223,10 +286,12 @@ export class Rain {
 
 	}
 
-	update( camera: THREE.Camera, time: number ): void {
+	update( camera: THREE.Camera, time: number, viewportHeight = 0 ): void {
 
 		if ( ! Number.isFinite( time ) ) throw new RangeError( 'Rain time must be finite' );
 		this.uniforms.time.value = time;
+		const fov = ( camera as THREE.PerspectiveCamera ).fov;
+		if ( fov && viewportHeight > 0 ) this.pixelAngle.value = 2 * Math.tan( fov * Math.PI / 360 ) / viewportHeight;
 		// Keep the island within the bounded rain field when viewing it from the distant sea.
 		// Only tile selection snaps; particle positions never inherit continuous camera motion.
 		this.focus.value.set( THREE.MathUtils.clamp( camera.position.x * 0.35, - 32, 32 ),

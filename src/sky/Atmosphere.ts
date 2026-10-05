@@ -327,7 +327,14 @@ export class Atmosphere {
 	// than the LUT bake stabilize the very low sun without a GPU readback or a separate light model.
 	transmittanceToSun(): THREE.Color {
 
-		const dir = this.sunDir.value, r = this.viewHeight.value;
+		return this.transmittanceAt( this.sunDir.value, this.viewHeight.value - RG );
+
+	}
+
+	/** Sunlight transmittance from `heightKm` above sea level toward a direction. */
+	transmittanceAt( dir: THREE.Vector3, heightKm: number ): THREE.Color {
+
+		const r = RG + heightKm;
 		const b = r * dir.y, groundDisc = b * b - ( r * r - RG * RG );
 		if ( groundDisc >= 0 && - b - Math.sqrt( groundDisc ) > 0 ) return new THREE.Color( 0, 0, 0 );
 		const distance = - b + Math.sqrt( b * b - ( r * r - RT * RT ) );
