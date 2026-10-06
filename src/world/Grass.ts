@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	attribute, positionLocal, normalViewGeometry, vec3, float, mix, max, dot, pow, clamp,
+	attribute, positionLocal, normalViewGeometry, vec2, vec3, float, mix, max, dot, pow, clamp, fract, sin, select,
 	smoothstep as smoothstepN,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
@@ -89,12 +89,18 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const origin = tuft.xyz;
 	// Keep every planting anchor. Narrower, slightly shorter shoots reveal the same soil
 	// pockets as the ground material, and a zero blend restores their original footprint.
-	// Standing water drowns the lower blades: shorter shoots sink below the waterline (the ground
-	// hides them), leaving their tips standing in the puddle.
+	// Standing water drowns the blades: the tufts sink below the waterline (the ground, which
+	// carries the water's surface, hides them). About a third keep a few centimetres of their
+	// tips above it, so sparse drowned spikes stand in an open sheet of water rather than a
+	// meadow that hides it. Which tufts and how much is a hash of the planting anchor, fixed.
 	const pool = puddleCover( origin.xz, shared.wetness );
-	const drowned = float( 1 ).sub( pool.mul( 0.4 ) );
+	const drowned = float( 1 ).sub( pool.mul( 0.15 ) );
+	const pick = fract( sin( dot( origin.xz, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
+	const tip = select( pick.greaterThan( 0.66 ), pick.sub( 0.66 ).mul( 0.25 ).add( 0.03 ), float( - 0.03 ) );
+	// The tallest blade of a tuft reaches about 0.9 of its height ( tuft.w / CANOPY_TOP ).
+	const sink = max( tuft.w.div( CANOPY_TOP ).mul( drowned ).mul( 0.9 ).sub( tip ), 0 );
 	const rooted = p.sub( p.sub( origin ).mul( vec3( 0.22, 0.06, 0.22 ) ).mul( soil ) ).sub( origin ).mul( drowned ).add( origin )
-		.sub( vec3( 0, pool.mul( 0.1 ), 0 ) );
+		.sub( vec3( 0, pool.mul( sink ), 0 ) );
 	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
 	const rest = useRestPoseShadows( mat, rooted, rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) ) );
