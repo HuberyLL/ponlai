@@ -80,7 +80,7 @@ export function buildStarGrid( buffer: ArrayBuffer ): StarGrid {
 	const records = new Float32Array( RECORD_CAPACITY * 8 );
 	const capacity = RECORD_CAPACITY;
 	let entries = 0, dropped = 0;
-	const color = new THREE.Color();
+	const color = new THREE.Color(), hue = new THREE.Color();
 	lists.forEach( ( list, cell ) => {
 
 		const count = Math.min( list.length, CELL_SLOTS - 1, capacity - entries );
@@ -94,7 +94,8 @@ export function buildStarGrid( buffer: ArrayBuffer ): StarGrid {
 			// Desaturate toward the colour's own luminance, then normalise to unit luminance so
 			// the magnitude alone sets how bright the star looks.
 			const luminance = color.r * 0.2126 + color.g * 0.7152 + color.b * 0.0722;
-			color.setRGB( luminance, luminance, luminance ).lerp( color.clone(), SATURATION ).multiplyScalar( 1 / luminance );
+			hue.copy( color );
+			color.setRGB( luminance, luminance, luminance ).lerp( hue, SATURATION ).multiplyScalar( 1 / luminance );
 			records.set( [ directions[ i * 3 ], directions[ i * 3 + 1 ], directions[ i * 3 + 2 ],
 				FAINTEST * 10 ** ( 0.4 * RANGE * ( 6.5 - magnitude ) ),
 				color.r, color.g, color.b, ( i * 0.6180339887 ) % 1 ], r );

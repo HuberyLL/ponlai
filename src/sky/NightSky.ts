@@ -124,6 +124,10 @@ const STAR_REFERENCE_FOOTPRINT = 0.0015;
 // Star image width in footprints: a little under a pixel, wide enough that a star drifting with
 // the sky's rotation keeps its brightness as it crosses pixels instead of shimmering.
 const STAR_WIDTH = 0.5;
+// Stars brighter than about first magnitude (in the catalogue's brightness units) get a coloured
+// halo BRIGHT_STAR_HALO_WIDTH times the star's width, of a fixed faint peak BRIGHT_STAR_HALO: it
+// shows the colour the clipped core has lost, without swelling the brightest into blobs.
+const BRIGHT_STAR_HALO_START = 0.4, BRIGHT_STAR_HALO_WIDTH = 4, BRIGHT_STAR_HALO = 0.05;
 
 // The face of a cube around the celestial sphere that c points through, and c's cell in a grid of
 // cells x cells on that face. StarCatalog.ts buckets the catalogue with the same selection.
@@ -181,6 +185,17 @@ const catalogueStars = ( c: V3, footprint: F, conserve: boolean, time: F, elevat
 
 			const look = starRecords.element( record.add( 1 ) ).toVar();
 			radiance.addAssign( look.rgb.mul( star.w ).mul( profile ).mul( scintillation( time, elevation, look.w, star.w ) ) );
+
+		} );
+		// The brightest stars' cores clip to white on screen and lose their colour; a faint halo a
+		// few pixels wide, in their colour deepened, lets Antares read orange and Rigel blue.
+		if ( ! conserve ) If( star.w.greaterThan( BRIGHT_STAR_HALO_START ), () => {
+
+			const look = starRecords.element( record.add( 1 ) ).toVar();
+			const halo = starProfile( c, star.xyz, footprint.mul( BRIGHT_STAR_HALO_WIDTH ), false );
+			const hue = pow( look.rgb.div( max( look.rgb.x, max( look.rgb.y, look.rgb.z ) ) ), vec3( 2.5 ) );
+			const strength = smoothstep( BRIGHT_STAR_HALO_START, BRIGHT_STAR_HALO_START * 3, star.w ).mul( BRIGHT_STAR_HALO );
+			radiance.addAssign( hue.mul( halo ).mul( strength ) );
 
 		} );
 
