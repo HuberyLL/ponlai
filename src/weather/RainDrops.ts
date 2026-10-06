@@ -37,6 +37,11 @@ export const DRIFT = 0.8;
 // The eye's exposure: a drop is seen as the streak it travels meanwhile.
 const EXPOSURE = 0.032;
 const DIAMETER = 0.003; // m, a little larger than real drops, for a stylised read
+// Out of focus, a streak is drawn at most this many pixels wide: wider, a near drop would read
+// as a glowing band rather than a line of water. The energy it loses fades the drop instead.
+const SOFT_PIXELS = 3;
+// Drops closer than this fade out (m): at arm's length a streak would cross much of the screen.
+const NEAR_FADE = [ 0.8, 2 ];
 // Lifetimes (s) of a splash on land, of the jet a drop throws up from the sea, and of its ring.
 const SPRAY_LIFE = 0.26, SEA_SPRAY_LIFE = 0.16, RING_LIFE = 0.75;
 const SPRAY_SIZE = 0.18, RING_SIZE = 0.5; // m
@@ -151,7 +156,7 @@ export class RainDrops {
 			// Soft faces, so drops leaving a window fade rather than vanish; none right at the eye.
 			const across = max( abs( relative.x ), abs( relative.z ) ).mul( 2 ).toVar();
 			const face = max( across, abs( relative.y ).mul( 2 ) );
-			const fade = float( 1 ).sub( smoothstep( 0.72, 1, face ) ).mul( smoothstep( 0.6, 1.6, length( position.sub( this.eye ) ) ) ).toVar();
+			const fade = float( 1 ).sub( smoothstep( 0.72, 1, face ) ).mul( smoothstep( NEAR_FADE[ 0 ], NEAR_FADE[ 1 ], length( position.sub( this.eye ) ) ) ).toVar();
 			const visible = select( present, fade.mul( phase.w ), float( 0 ) ).toVar();
 			const splash = vec4( 0, 0, 0, - 1 ).toVar();
 
@@ -230,12 +235,16 @@ export class RainDrops {
 			const toEye = cameraPosition.sub( head );
 			const distance = length( toEye );
 			const side = normalize( cross( axis, toEye ).add( vec3( 1e-6, 0, 0 ) ) );
-			// Thinner than a pixel, a drop is drawn a pixel wide at the same total energy; out of
-			// focus it spreads over the tilt-shift blur the composite gives the scene at its distance,
-			// so near drops pass as soft, faint streaks (the same circle of confusion as Pipeline's).
+			// Thinner than a pixel, a drop is drawn a pixel wide (`sharp`); out of focus it would spread
+			// over the tilt-shift blur the composite gives the scene at its distance (`blurred`, the same
+			// circle of confusion as Pipeline's). Only a little of that softness is drawn, so near drops
+			// stay fine lines of water instead of bands.
 			const f = this.focus;
 			const blur = clamp( abs( distance.sub( f.distance ) ).sub( f.range ).div( f.distance.mul( 0.55 ) ), 0, 1 ).mul( f.radius ).mul( f.strength );
-			const width = max( float( DIAMETER ), distance.mul( pixelAngle ).mul( blur.mul( 2 ).add( 1.3 ) ) );
+			const pixel = distance.mul( pixelAngle );
+			const sharp = max( float( DIAMETER ), pixel.mul( 1.3 ) );
+			const blurred = max( sharp, pixel.mul( blur.mul( 2 ).add( 1.3 ) ) );
+			const width = min( blurred, max( sharp, pixel.mul( SOFT_PIXELS ) ) );
 			const streak = speed.mul( EXPOSURE ).mul( random( instanceIndex, 5 ).mul( 0.5 ).add( 0.75 ) ).add( width );
 			const shown = select( data.w.greaterThan( 0.004 ), float( 1 ), float( 0 ) );
 			const material = this.makeMaterial( 'rainStreaks', true );
@@ -243,8 +252,13 @@ export class RainDrops {
 				.add( side.mul( positionGeometry.x.mul( width ) ) ).mul( shown ) );
 			// Some drops catch the light, most are faint.
 			const glint = random( instanceIndex, 6 ).pow( 3 ).mul( 1.5 ).add( 0.25 );
-			// Each drawn drop stands for many unseen ones, so thin coverage is lifted (power < 1).
-			const strength = varying( data.w.mul( pow( float( DIAMETER ).div( width ), 0.6 ) ).mul( glint ) as F, 'vRainStreak' );
+			// Each drawn drop stands for many unseen ones, so sub-pixel coverage is lifted (power < 1).
+			// Defocus only spreads that energy: over the drawn width it is conserved, and the share
+			// that would fall beyond the drawn width fades the drop, so a strongly blurred near drop
+			// grows fainter, never brighter or wider.
+			const lift = pow( float( DIAMETER ).div( sharp ), 0.6 );
+			const spread = sharp.div( width ).mul( sqrt( width.div( blurred ) ) );
+			const strength = varying( data.w.mul( lift ).mul( spread ).mul( glint ) as F, 'vRainStreak' );
 			const q = uv();
 			const across = abs( q.x.sub( 0.5 ) ).mul( 2 );
 			const profile = float( 1 ).sub( across.mul( across ) ).mul( smoothstep( 0, 0.2, q.y ) ).mul( smoothstep( 0, 0.06, float( 1 ).sub( q.y ) ) );
