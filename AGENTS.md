@@ -133,8 +133,9 @@ exposed.
   and plants within small limits, glosses bare stone, persists after rain and leaves the tidal
   band alone; dry weather renders exactly as without it. Water runs down the cliffs in sparse
   darker runnels while they are wet. Standing water fills fixed hollows on level ground as the
-  ground soaks, drowning the lower meadow blades, and shrinks inside its own damp stain as it
-  dries.
+  ground soaks, drowning the meadow blades but for a few tips, and shrinks inside its own damp
+  stain as it dries. Puddles mirror the sky through an art-directed reflectance (stronger than
+  water's 2 %, still following Fresnel), so they read as water from above.
 - Characters are simple low-poly figures with flat colours and simple faces, recoloured into the
   island's palette and lit by the island's own light in soft cel steps; no outlines. Plants and
   props keep their realistic shading.

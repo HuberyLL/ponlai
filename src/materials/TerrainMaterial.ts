@@ -31,8 +31,9 @@ type F = THREE.Node<'float'>;
 // canopy: direct light left under the meadow's blades (1 where nothing grows)
 // water: share under a water film or standing water (water's specular reflectance)
 // puddle: share under standing water
-const Surface = struct( { albedo: 'vec3', normal: 'vec3', rough: 'float', ao: 'float', canopy: 'float', water: 'float', puddle: 'float' } );
-interface SurfaceNode { get( name: 'albedo' | 'normal' ): V3; get( name: 'rough' | 'ao' | 'canopy' | 'water' | 'puddle' ): F }
+// flow: share under water running down a runnel now
+const Surface = struct( { albedo: 'vec3', normal: 'vec3', rough: 'float', ao: 'float', canopy: 'float', water: 'float', puddle: 'float', flow: 'float' } );
+interface SurfaceNode { get( name: 'albedo' | 'normal' ): V3; get( name: 'rough' | 'ao' | 'canopy' | 'water' | 'puddle' | 'flow' ): F }
 
 // Whiteout triplanar blend (after Ben Golus), with the projection handedness preserved.
 // A principal axis must retain the geometry normal's sign: abs() would turn every west- or
@@ -61,8 +62,11 @@ const stoneSlope = Fn( ( [ v ]: [ THREE.Node<'vec4'> ] ) => {
 
 } ).setLayout( { name: 'stoneNormalSlope', type: 'vec2', inputs: [ { name: 'sample', type: 'vec4' } ] } );
 
-// Gain on the sky reflected by standing water (see specMul below).
-const PUDDLE_SHEEN = 2.2;
+// Art-directed reflectance at normal incidence for the sky mirrored by standing water and by
+// the slugs of water running down the runnels (see the specular setup below); the runnels'
+// darkening of the stone and their shade on its ambient light.
+const PUDDLE_F0 = 0.2, FLOW_F0 = 0.5, RING_GAIN = 5;
+const RUNNEL_DARKENING = 0.6, RUNNEL_SHADE = 0.7;
 
 interface Ctx {
 	tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: THREE.Texture;
@@ -317,7 +321,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		// --- rain: wet materials after Lagarde (see Wetness.ts). The mask starts above the highest
 		// tidal modulation, preserving that band and all submerged detail exactly; downward-facing
 		// overhangs receive less rain. Dry weather skips the branch, so it renders as before.
-		const water = float( 0 ).toVar(), puddle = float( 0 ).toVar();
+		const water = float( 0 ).toVar(), puddle = float( 0 ).toVar(), flow = float( 0 ).toVar(), runShade = float( 1 ).toVar();
 		const exposure = smoothstep( 0.65, 1.0, p.y.sub( shared.waterLevel ) ).mul( smoothstep( - 0.6, 0.1, up ) ).toVar();
 		If( shared.wetness.greaterThan( 0 ).and( exposure.greaterThan( 0 ) ), () => {
 
@@ -344,13 +348,20 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			const face = mix( float( 0.5 ), float( 1 ), smoothstep( 0.1, 0.6, up ) );
 			const soaked = max( max( porosity.mul( soak ).mul( face ), run.x.mul( soak ) ).mul( plant ), max( pool.x, pool.z ).mul( mix( float( 1 ), float( 0.8 ), turf ) ) );
 			albedo.assign( wetAlbedo( albedo, soaked ) );
-			// The runnels darken further, as much as tidewater's stains (40 %): water streaming
-			// over the stone, beyond what the pores alone hold.
-			albedo.mulAssign( float( 1 ).sub( run.x.mul( soak ).mul( 0.4 ) ) );
+			// The runnels darken further, beyond tidewater's stains (40 %): water streaming over the
+			// stone and the dark stain it leaves.
+			albedo.mulAssign( float( 1 ).sub( run.x.mul( soak ).mul( RUNNEL_DARKENING ) ) );
+			// On a wall in shade or under an overcast the sky's specular reflection from the wet
+			// stone is about as bright as its diffuse light, and the grade's black lift adds a
+			// floor, so a darker albedo alone left the runnels invisible in the rain. The water's
+			// paths also return less of the sky's light (an art-directed shade on the ambient and
+			// sky reflection), except where a slug of water running down them catches the sky.
+			runShade.assign( float( 1 ).sub( run.x.mul( soak ).mul( RUNNEL_SHADE ).mul( float( 1 ).sub( run.y ) ) ) );
 			rough.assign( wetRoughness( rough, porosity, soak ) );
 			// A water film on bare stone that faces the sky and in the runnels; the turf only glistens.
 			const filmCover = max( film.mul( smoothstep( 0.25, 0.75, up ) ), max( run.x.mul( film ), run.y.mul( exposure ) ) )
 				.mul( float( 1 ).sub( turf ) ).toVar();
+			flow.assign( run.y.mul( exposure ).mul( float( 1 ).sub( turf ) ) );
 			rough.assign( mix( rough, float( FILM_ROUGHNESS ), filmCover ) );
 			rough.assign( mix( rough, max( float( 0.55 ), rough.mul( 0.8 ) ), film.mul( turf ) ) );
 			// Lagarde 3b: a thin layer fills the fine relief, so the normal leans to the geometry's.
@@ -364,7 +375,11 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 				const ripples = puddleRipples( p.xz, shared.time, shared.rain, footprint ).toVar();
 				const surface = normalize( vec3( ripples.x.negate(), 1, ripples.y.negate() ) );
 				nW.assign( normalize( mix( nW, surface, pool.x.mul( mix( float( 0.75 ), float( 1 ), pool.y ) ) ) ) );
-				albedo.mulAssign( mix( float( 1 ), mix( float( 0.75 ), float( 0.3 ), pool.y ), pool.x ) );
+				// Silt stirred into the water and the drowned blades' shade hide the bed: it sinks
+				// toward a dull, dark brown-olive, so the sky reflected above it carries the colour
+				// and the puddle no longer reads as a patch of greener turf.
+				const bed = mix( float( 0.6 ), float( 0.22 ), pool.y ).toVar();
+				albedo.assign( mix( albedo, mix( albedo, vec3( dot( albedo, vec3( 0.3, 0.5, 0.2 ) ) ).mul( vec3( 1.1, 1, 0.75 ) ), 0.6 ).mul( bed ), pool.x ) );
 				// Rings below a pixel's footprint roughen the water instead.
 				rough.assign( mix( rough, ripples.z.mul( 0.6 ).add( 0.02 ), pool.x ) );
 				water.assign( max( water, pool.x ) );
@@ -398,8 +413,8 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		rough.assign( mix( rough, float( 0.28 ), wet.mul( float( 1 ).sub( deep ) ) ) );
 
 		// A completely blocked local sky must not keep an arbitrary ambient-light floor.
-		const ao = clamp( vAO, 0, 1 ).mul( mix( float( 1 ), float( 0.72 ), concave ) );
-		return Surface( albedo, nW, rough, ao, canopy, water, puddle );
+		const ao = clamp( vAO, 0, 1 ).mul( mix( float( 1 ), float( 0.72 ), concave ) ).mul( runShade );
+		return Surface( albedo, nW, rough, ao, canopy, water, puddle, flow );
 
 	} )();
 
@@ -444,7 +459,7 @@ function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 		const detailAO = mix( float( 1 ), float( 0.75 ), rubble ).mul( mix( float( 0.8 ), float( 1 ), H.b ) );
 		// Baked solid contacts and procedural rubble can overlap: retain the stronger estimate.
 		const ao = min( attribute<'float'>( 'ao', 'float' ), detailAO );
-		return Surface( albedo, nW, float( 0.92 ), ao, float( 1 ), float( 0 ), float( 0 ) );
+		return Surface( albedo, nW, float( 0.92 ), ao, float( 1 ), float( 0 ), float( 0 ), float( 0 ) );
 
 	} )();
 
@@ -497,11 +512,27 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 	mat.normalNode = normalize( cameraViewMatrix.mul( vec4( surf.get( 'normal' ), 0 ) ).xyz );
 	mat.aoNode = surf.get( 'ao' );
 	// A water film or puddle reflects with water's specular reflectance instead of the stone's.
-	const f0 = vec3( mix( float( DRY_F0 ), float( WATER_F0 ), surf.get( 'water' ) ) );
+	const f0 = mix( float( DRY_F0 ), float( WATER_F0 ), surf.get( 'water' ) ).toVar();
+	// Seen from above, a puddle mirrors only 2 % of the sky, about as much light as the dark ground
+	// around it returns, so physically it nearly vanishes into the turf. Art direction lets
+	// standing water (and the slugs of water running down the runnels) mirror the sky as a
+	// brighter interface: the sky's own brightness and colour, through Schlick's Fresnel, so the
+	// reflection still grows toward grazing view and the bed below loses what it gains (the
+	// diffuse layer keeps only 1 - F). specularColor drives the sky reflection and that energy
+	// split; specularColorBlended drives the key light's glint, which stays at water's own F0 so
+	// the sun's mirror image does not flare twelve times brighter.
+	// The lifted reflectance also flattens Fresnel's contrast between a rain ring's two flanks,
+	// which is what lets the rings read: the flank tilted toward the eye mirrors less sky and
+	// shows the dark bed, the one tilted away mirrors more. Steepen that response with the ring's
+	// tilt against the level surface (zero on calm water, so a still puddle keeps PUDDLE_F0).
+	const view = normalize( cameraPosition.sub( positionWorld ) );
+	const tilt = dot( surf.get( 'normal' ), view ).sub( view.y );
+	const puddleF0 = clamp( float( PUDDLE_F0 ).mul( float( 1 ).sub( tilt.mul( RING_GAIN ) ) ), WATER_F0, 0.6 );
+	const f0Sky = mix( mix( f0, puddleF0, surf.get( 'puddle' ) ), FLOW_F0, surf.get( 'flow' ) );
 	( mat as unknown as { setupSpecular: () => void } ).setupSpecular = () => {
 
-		specularColor.assign( f0 );
-		specularColorBlended.assign( f0 );
+		specularColor.assign( vec3( f0Sky ) );
+		specularColorBlended.assign( vec3( f0 ) );
 		specularF90.assign( 1 );
 
 	};
@@ -526,13 +557,7 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 	// through the zero-energy sun/moon handoff or turn the moon into a daylight source.
 	const directGain = clamp( max( shared.sunColor.x, max( shared.sunColor.y, shared.sunColor.z ) ).mul( 3 ), 0, 1 );
 	const ambMul = select( under, ambAtt, vec3( float( 1 ).add( shimmer.mul( directGain ) ) ) );
-	// Seen from above, a puddle mirrors only a few per cent of the sky, about as much light as the
-	// dark ground around it returns, so physically it nearly vanishes into the turf. Art direction
-	// lifts its sky reflection so standing water reads as water; toward grazing view Fresnel
-	// already reflects most of the sky, and the lift fades so a puddle never outshines it.
-	const steepView = smoothstep( 0.1, 0.5, normalize( cameraPosition.sub( p ) ).y );
-	const sheen = mix( float( 1 ), mix( float( 1 ), float( PUDDLE_SHEEN ), steepView ), surf.get( 'puddle' ) );
-	const specMul = select( under, ambAtt.mul( 0.5 ), vec3( sheen ) );
+	const specMul = select( under, ambAtt.mul( 0.5 ), vec3( 1 ) );
 	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new TerrainLightingModel( sunAtt, ambMul, specMul, waterSunView, under );
 	mat.userData.refractedSolarReceiver = true;
 	mat.userData.refractedSolarFloor = kind === 'seabed';
