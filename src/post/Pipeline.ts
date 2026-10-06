@@ -9,7 +9,6 @@ import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
-import { nightVision } from './Purkinje.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { Rain } from '../weather/Rain.ts';
 
@@ -18,9 +17,8 @@ import type { Rain } from '../weather/Rain.ts';
 //   depth resolve ── depthRT (view-space z, single sample: the water and the depth of field read it)
 //   water ── waterRT + its depth (reads sceneRT's resolved colour and depthRT)
 //   composite ── bloom (tight) + glow (wide), both through a clamped soft-knee prefilter
-//   ── tilt-shift depth of field (half-res gather) ── night vision (Purkinje shift), exposure,
-//   PBR Neutral tone map, split-tone grade, vibrance, lifted blacks, vignette, S-curve, grain,
-//   sRGB ── screen
+//   ── tilt-shift depth of field (half-res gather) ── exposure, PBR Neutral tone map,
+//   split-tone grade, vibrance, lifted blacks, vignette, S-curve, grain, sRGB ── screen
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -31,11 +29,6 @@ export interface PipelineSettings {
 	bloomStrength: number; bloomRadius: number; bloomThreshold: number; bloomMaxLum: number;
 	glowStrength: number; glowRadius: number; glowThreshold: number; glowMaxLum: number;
 	dof: number; dofRange: number; dofMaxRadius: number; focusDistance: number;
-	// The luminance (cd/m^2) a mid-grey surface has to the eye: it sets how far the rods take over
-	// (see Purkinje.ts). The scene's own night is far brighter than a real one; this is the
-	// level it stands for. nightShift scales the rods' colour shift, nightDesaturation the
-	// saturation lost in full rod vision.
-	adaptation: number; nightShift: number; nightDesaturation: number;
 }
 
 export class Pipeline {
@@ -52,7 +45,6 @@ export class Pipeline {
 		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0,
 		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,
 		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
-		adaptation: 3000, nightShift: 0.006, nightDesaturation: 0.2,
 	};
 
 	sceneRT: THREE.RenderTarget;
@@ -72,7 +64,6 @@ export class Pipeline {
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ),
 		maxRadius: uniform( 6 ), texel: uniform( new THREE.Vector2( 1, 1 ) ),
-		retina: uniform( 0 ), nightShift: uniform( 0 ), nightDesaturation: uniform( 0 ),
 	};
 
 	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain ) {
@@ -198,8 +189,7 @@ export class Pipeline {
 
 		} )();
 		const blur = rtt( gather, null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } );
-		// The eye's own shift in dim light (see Purkinje.ts), on the scene's light before the tone map.
-		const lin = nightVision( mix( sharp.rgb, blur.rgb, smoothstep( 0, 0.35, blur.a ).mul( u.dof ) ), u.retina, u.nightShift, u.nightDesaturation );
+		const lin = mix( sharp.rgb, blur.rgb, smoothstep( 0, 0.35, blur.a ).mul( u.dof ) );
 
 		// ---- grade
 		const graded = Fn( () => {
@@ -302,11 +292,6 @@ export class Pipeline {
 		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE; u.saturation.value = S.saturation; u.vibrance.value = S.vibrance; u.contrast.value = S.contrast;
 		u.split.value = S.split; u.lift.value.copy( S.lift ); u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.dof.value = S.dof; u.range.value = S.dofRange;
-		// Retinal illuminance (trolands) per scene unit: exposed mid grey (0.18) is the adaptation
-		// luminance, seen through a pupil sized for it (Moon and Spencer, J. Opt. Soc. Am. 34, 1944).
-		const pupil = 4.9 - 3 * Math.tanh( 0.4 * Math.log10( Math.max( S.adaptation, 1e-6 ) ) );
-		u.retina.value = u.exposure.value / 0.18 * S.adaptation * Math.PI * pupil * pupil / 4;
-		u.nightShift.value = S.nightShift; u.nightDesaturation.value = S.nightDesaturation;
 		u.maxRadius.value = S.dofMaxRadius * this.height / 900; // blur scales with the image, not the pixel count
 		u.focus.value = S.focusDistance > 0 ? S.focusDistance : camera.position.length();
 		this.output.render();

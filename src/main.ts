@@ -604,7 +604,6 @@ function tick(): void {
 		S.exposure = state.exposure;
 		S.lift.setRGB( state.blackLift, state.blackLift, state.blackLift * 0.97 );
 		S.split = 0.16 + state.daylight * 0.29;
-		S.adaptation = state.adaptation;
 
 	}
 	skyElapsed += environmentDt;

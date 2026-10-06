@@ -77,7 +77,7 @@ exposed.
   camera, the key light through a phase function) and sea fog (the marine layer thickened in
   drifting banks of varying height, thinner over the island, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
-  glare, bloom, tilt-shift, night vision (the rods' Purkinje shift, `Purkinje.ts`), grade).
+  glare, bloom, tilt-shift, grade).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -111,9 +111,9 @@ exposed.
   spread of brightness, kept below white except the brightest few; only those near the horizon
   scintillate. The stars and Milky Way are the real sky as seen near 28 degrees south (the
   sun's authored path fixes the latitude), turning with the clock about the south celestial pole;
-  procedural grain and faint stars only add detail below the catalogue and the map. Night vision
-  follows the eye's adaptation set by the day cycle and scales with each pixel's own light: subtle,
-  black stays black, never a uniform tint.
+  procedural grain and faint stars only add detail below the catalogue and the map.
+  The night is art-directed, not a simulation of the eye's night vision: colours stay as authored
+  so a future fantasy palette (glowing plants, magic) keeps its saturation.
 - One cloud field feeds the visible sky, water reflections, environment lighting and cloud
   shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
   Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer

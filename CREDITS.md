@@ -335,17 +335,6 @@ comment where it is used.
   independently implemented in TSL with exponential depth strata, exact per-channel attenuation
   weights and separate air/submerged visibility along each scattering point's refracted solar path.
   No source code is copied; the retained multiple-scattering boost is empirical.
-- Night vision (Purkinje shift): Jasmin Patry,
-  [*Real-Time Samurai Cinema*](https://advances.realtimerendering.com/s2021/jpatry_advances2021/index.html)
-  (SIGGRAPH 2021 Advances in Real-Time Rendering): the rods' input to the cone pathways as a delta
-  in opponent colour space, with the constants of D. Cao et al.,
-  [*Rod contributions to color perception: linear with rod contrast*](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC2630540/)
-  (Vision Research 48, 2008), and A. G. Kirk and J. F. O'Brien,
-  [*Perceptually based tone mapping for low-light conditions*](http://graphics.berkeley.edu/papers/Kirk-PBT-2011-08/)
-  (SIGGRAPH 2011). The RGB to cone/rod matrix is our own least-squares fit of
-  [CVRL](http://www.cvrl.org/) data (Stockman & Sharpe 2000 cone fundamentals, CIE 1951 scotopic
-  V'(lambda), CIE 1931 colour matching functions); the data is not shipped. Pupil size: P. Moon and
-  D. E. Spencer, *On the Stiles-Crawford effect* (J. Opt. Soc. Am. 34, 1944).
 - Airglow: H. W. Jensen, F. Durand, M. M. Stark, S. Premoze, J. Dorsey and P. Shirley,
   [*A Physically-Based Night Sky Model*](https://doi.org/10.1145/383259.383306) (SIGGRAPH 2001): a
   thin emitting shell about 100 km up (the van Rhijn brightening toward the horizon) seen through

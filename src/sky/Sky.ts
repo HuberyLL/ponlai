@@ -82,8 +82,6 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // The displayed night sky's share of the night ambient that lights the island: a deeper sky
 // for the stars without darkening the island's own fill.
 const NIGHT_SKY = 0.55;
-// A mid-grey surface in daylight, cd/m^2: far above the range where the rods tint vision.
-const DAYLIGHT_ADAPTATION = 3000;
 
 export class Sky {
 
@@ -112,9 +110,7 @@ export class Sky {
 	private viewHeight = 1;
 	private cloudTime = 0;
 	solarIlluminance = new THREE.Color();
-	// adaptation: the luminance (cd/m^2) the eye adapts a mid-grey surface to, for the grade's
-	// night vision; the scene's compressed night stands for a real one this dim.
-	readonly grade = { exposure: 2.35, blackLift: 0.027, daylight: 1, adaptation: DAYLIGHT_ADAPTATION };
+	readonly grade = { exposure: 2.35, blackLift: 0.027, daylight: 1 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
@@ -445,19 +441,6 @@ export class Sky {
 		// After dark a closed deck hides the moon and stars; the eye adapts further so a rainy
 		// dusk or night stays readable, still darker than a clear moonlit night.
 		this.grade.exposure *= 1 + 5 * overcast * ( 1 - this.grade.daylight );
-		// The eye's adaptation, on a log scale: photopic until the sun sets, mesopic through
-		// twilight, scotopic by night; moonlight keeps it a little higher and a closed deck lower.
-		if ( celestial ) {
-
-			const night = 1 - this.grade.daylight;
-			const twilight = THREE.MathUtils.smoothstep( this.elevation, - 12, 1 );
-			this.grade.adaptation = 10 ** ( - 1.5 + 5 * twilight + night * ( 0.6 * celestial.moonKeyGain - 0.5 * overcast ) );
-
-		} else {
-
-			this.grade.adaptation = DAYLIGHT_ADAPTATION;
-
-		}
 		this.sunColor.multiplyScalar( directVisibility );
 		this.keyColor.multiplyScalar( directVisibility );
 		this.solarIlluminance.multiplyScalar( directVisibility );
