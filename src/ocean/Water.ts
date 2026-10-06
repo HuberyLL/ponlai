@@ -676,12 +676,13 @@ export class Water {
 			// transmission emerges through their back side. Neighbor-wave transport is unresolved.
 			const col = water.mul( airFacing ).toVar();
 			// Whitecaps in a storm (Tessendorf's choppy-wave criterion: the horizontal Jacobian of the
-			// summed cascades folds). StormSea integrates where the sea breaks and the foam that
-			// trails behind a breaker and fades over seconds; this pixel's own fold sharpens the
-			// crest inside the breaking regions it reports. As in tidewater's WaterSurface, a bubbly
-			// foam mat is thresholded by the coverage, so a patch grows, tears into lace and
-			// dissolves instead of fading as a uniform white blot; old foam is thinner than a fresh
-			// crest. Older foam is also drawn out by the gale into long streaks along the wind.
+			// summed cascades nears a fold). StormSea integrates where the steepest crests break and
+			// the foam that trails behind a breaker and fades over seconds; this pixel's own fold
+			// sharpens the crest inside the breaking cells it reports. Two looks, as on a real sea:
+			// at the crest a dense bubbly mat (tidewater's WaterSurface thresholds it by the fresh
+			// breaking, so it grows and tears with ragged, soft edges), behind it a marbled lace of
+			// veins around dark open cells, drawn out along the wind, whose veins thin as the foam
+			// decays. Old foam never closes back into a mat, so between the crests the sea stays dark.
 			If( shared.storm.greaterThan( 0.001 ), () => {
 
 				const fold = horizontal.x.mul( horizontal.w ).sub( horizontal.y.mul( horizontal.z ) ).toVar();
@@ -692,38 +693,48 @@ export class Water {
 				const patternLevel = log2( max( foamFootprint.mul( scale ).mul( storm.patternSize ), 1e-4 ) ).toVar();
 				const streakLevel = log2( max( foamFootprint.mul( 0.11 ).mul( storm.patternSize ), 1e-4 ) ).toVar();
 				// Large soft patches (the pattern's mottling, some 250 m across) stand in for the
-				// field's wave groups beyond its window.
+				// field's wave groups beyond its window, where only this pixel's fold can find a crest.
 				const patches = texture( storm.pattern, vLag.mul( 0.004 ).add( 0.37 ) ).level( streakLevel.sub( 4.8 ).max( 0 ) ).z.toVar();
-				const region = mix( smoothstep( 0.5, 0.62, patches ), smoothstep( 0.03, 0.3, field.y.add( field.x.mul( 0.25 ) ) ), field.z );
-				const crest = clamp( float( 0.88 ).sub( fold ).mul( 4 ), 0, 1 ).mul( region ).toVar();
-				const persistent = field.x.mul( field.z ).toVar();
-				const active = clamp( crest.mul( 1.4 ), 0, 1 ).toVar();
-				// Old foam saturates at half coverage: however much has piled up, it stays a torn lace,
-				// while only an active crest closes into a solid mat.
-				const residual = float( 1 ).sub( exp( persistent.mul( - 1.6 ) ) ).mul( 0.5 );
-				const coverage = clamp( residual.add( active ).mul( storm.coverage ), 0, 1 ).toVar();
-				// The mat: two layers of the foam pattern at different scales and angles (explicit
-				// levels from the footprint, since this is a branch).
+				const farCrest = clamp( float( 0.88 ).sub( fold ).mul( 6 ), 0, 1 ).mul( smoothstep( 0.5, 0.62, patches ) )
+					.mul( float( 1 ).sub( field.z ) ).mul( 0.75 );
+				const sharpen = smoothstep( 1.0, 0.78, fold );
+				const aged = clamp( field.x.mul( field.z ).mul( storm.coverage ), 0, 1 ).toVar();
+				// The mat covers the breaking crest and, for a second or so after it has passed, the
+				// thick foam it left (the field's foam stays near 1 there) before that tears into lace.
+				const crest = clamp( max( max( field.y.mul( field.z ).mul( sharpen.mul( 0.8 ).add( 0.6 ) ), smoothstep( 0.55, 1, aged ).mul( 0.8 ) ),
+					farCrest ).mul( storm.coverage ), 0, 1 ).toVar();
+				const soft = foamFootprint.mul( 0.1 ).add( 0.07 ).toVar();
+				// The mat: two layers of the pattern at different scales and angles (explicit levels
+				// from the footprint, since this is a branch). Thin at its torn edges, dense inside.
 				const fuv = vLag.mul( scale ).toVar();
 				const p1 = texture( storm.pattern, fuv ).level( patternLevel ).toVar();
 				const r2 = vec2( fuv.x.mul( 0.8 ).sub( fuv.y.mul( 0.6 ) ), fuv.x.mul( 0.6 ).add( fuv.y.mul( 0.8 ) ) );
 				const p2 = texture( storm.pattern, r2.mul( 2.37 ).add( vec2( 0.31, 0.77 ) ) ).level( patternLevel.add( Math.log2( 2.37 ) ) ).toVar();
-				const pattern = p1.x.mul( 0.62 ).add( p2.x.mul( 0.38 ) );
-				const threshold = float( 1.05 ).sub( coverage.mul( 1.1 ) );
-				const soft = foamFootprint.mul( 0.1 ).add( mix( float( 0.1 ), float( 0.05 ), active ) );
-				// Thin at its torn edges, dense inside, speckled with bubbles.
-				const body = smoothstep( threshold.sub( soft ), threshold.add( soft ), pattern )
-					.mul( smoothstep( threshold, threshold.add( 0.3 ), pattern ).mul( 0.5 ).add( 0.5 ) );
-				const detail = body.mul( p1.y.mul( 0.3 ).add( 0.75 ) );
-				// At a distance the mat averages out: use the coverage itself.
-				const mat = mix( detail, coverage.mul( 0.7 ), smoothstep( 0.15, 1.2, foamFootprint ) )
-					.mul( mix( float( 0.8 ), float( 1 ), active ) );
-				// Streaks a few tens of metres long and a metre or two wide, where foam has been and in
-				// the rough patches between.
+				const matPattern = p1.x.mul( 0.62 ).add( p2.x.mul( 0.38 ) );
+				const threshold = float( 1.02 ).sub( crest.mul( 0.78 ) );
+				const mat = smoothstep( threshold.sub( soft ), threshold.add( soft ), matPattern )
+					.mul( smoothstep( threshold, threshold.add( 0.25 ), matPattern ).mul( 0.35 ).add( 0.65 ) ).mul( 0.95 );
+				// The lace, stretched 2.4 times along the wind. A vein's width follows the foam left;
+				// a thin film of bubbles lets the water show through, so lace is never fully opaque.
+				const lscale = scale * 1.1;
+				const lace = texture( storm.pattern, vec2( along.mul( lscale / 2.4 ), across.mul( lscale ) ).add( vec2( 0.13, 0.58 ) ) )
+					.level( patternLevel.add( Math.log2( 1.1 ) ) ).y;
+				const veinWidth = aged.mul( 0.5 ).toVar();
+				const veinOpacity = aged.mul( 0.45 ).add( 0.4 ).mul( smoothstep( 0.02, 0.12, aged ) ).toVar();
+				const veins = smoothstep( float( 1 ).sub( veinWidth ).sub( soft ), float( 1 ).sub( veinWidth ).add( soft ), lace ).mul( veinOpacity );
+				// At a distance the pattern averages out: the veins become their mean coverage, and the
+				// mat the crest itself, sharpened so that a distant whitecap stays a small white fleck
+				// on its crest rather than a grey film.
+				const laceMean = veinWidth.mul( veinOpacity ).mul( 0.5 );
+				const far = smoothstep( 0.15, 1.2, foamFootprint ).toVar();
+				const near = max( mix( mat, smoothstep( 0.08, 0.6, crest ).mul( 0.85 ), far ), mix( veins, laceMean, far ) );
+				// Fine streaks a few tens of metres long where foam has been, and far out in the rough
+				// patches between, where they are what is left of the whitecaps.
 				const streak = texture( storm.pattern, vec2( along.mul( 0.012 ), across.mul( 0.11 ) ) ).level( streakLevel ).w;
-				const rough = float( 1 ).sub( smoothstep( 0.8, 1.05, fold ) );
-				const streaks = smoothstep( 0.56, 0.74, streak ).mul( clamp( persistent.mul( 1.5 ).add( rough.mul( smoothstep( 0.45, 0.6, patches ) ).mul( 0.4 ) ), 0, 1 ) ).mul( 0.35 );
-				const foam = clamp( max( mat, streaks ).mul( smoothstep( 0, 0.6, shared.storm ) ), 0, 0.95 );
+				const rough = float( 1 ).sub( smoothstep( 0.8, 1.02, fold ) );
+				const streaks = smoothstep( 0.6, 0.78, streak )
+					.mul( clamp( aged.mul( 1.2 ).add( rough.mul( smoothstep( 0.5, 0.62, patches ) ).mul( 0.3 ) ), 0, 1 ) ).mul( 0.25 );
+				const foam = clamp( max( near, streaks ).mul( smoothstep( 0, 0.6, shared.storm ) ), 0, 0.95 );
 				// A diffuse off-white lit by the scene's key light (shadowed by the island and the clouds)
 				// and by the sky, like the island's surfaces: dark under a storm sky and at night. A
 				// lightning flash multiplies the sky fill several times over; on foam alone that turns the
