@@ -308,11 +308,6 @@ comment where it is used.
 - Crepuscular rays: Kenny Mitchell,
   [*Volumetric Light Scattering as a Post-Process*](https://developer.nvidia.com/gpugems/gpugems3/part-ii-light-and-shadows/chapter-13-volumetric-light-scattering-post-process)
   (GPU Gems 3, 2007): a radial blur of the open sky toward the sun.
-- Solar limb darkening: the per-channel power law I(mu) = mu^alpha with
-  alpha = -0.023 + 0.292 / lambda from D. Hestroffer and C. Magnan,
-  [*Wavelength dependency of the Solar limb darkening*](https://adsabs.harvard.edu/abs/1998A%26A...333..338H)
-  (A&A 333, 1998), evaluated at the Rec.709 primaries; per-RGB limb darkening as in
-  [a-starry-sky](https://github.com/Dante83/a-starry-sky) by David Evans (MIT), whose code is not used.
 - Raindrop rings: Sébastien Lagarde,
   [*Water drop 2b – Dynamic rain and its effects*](https://seblagarde.wordpress.com/2013/01/03/water-drop-2b-dynamic-rain-and-its-effects/)
   (2013): the ring profile sin( clamp( 9 ( t - r ), 0, 3 ) pi ), a wave and a half behind the
