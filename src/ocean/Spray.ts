@@ -107,7 +107,7 @@ export class Spray {
 	readonly groups: number;
 	readonly count: number;
 	readonly params = {
-		rate: uniform( 10 ), // bursts per second per idle emitter at full breaking
+		rate: uniform( 20 ), // bursts per second per idle emitter at full breaking (only the steepest crests break)
 		intensity: uniform( 1 ),
 		gate: uniform( 0 ), // storm strength
 		maxDistance: uniform( 160 ),
