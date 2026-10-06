@@ -22,10 +22,10 @@ type IV2 = THREE.Node<'ivec2'>;
 
 // The storm sea's memory: persistent whitecap foam and the spray torn off breaking crests.
 //
-// Whitecaps are born where the sea's horizontal Jacobian folds (Tessendorf's choppy-wave
+// Whitecaps are born where the sea's horizontal Jacobian nears a fold (Tessendorf's choppy-wave
 // criterion), but real foam outlives the crest that made it: it trails behind the breaker and
 // fades over seconds. After tidewater's OceanFFT, foam therefore integrates in time:
-//   foam = foam * exp( -decay dt ) + generation * add * dt, at least half the fresh generation.
+//   foam = foam * exp( -decay dt ) + generation * add * dt, at least the fresh generation.
 // Tidewater keeps that per FFT cascade; here a single cascade folds rarely, and a short tile
 // would repeat its whitecaps in step, so the foam lives on one world-space grid that sees the
 // summed cascades with the same shore shelter as the water's own displacement. The grid sits in
