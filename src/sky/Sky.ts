@@ -478,6 +478,8 @@ export class Sky {
 		// Drops fall at about 9 m/s and drift with the wind, slower near the sea than aloft; a gale
 		// slants them steeply.
 		this.clouds.rainSlant.value = Math.min( ( weather?.windSpeed ?? 3.8 ) / 11, 1 );
+		// A fog's cover is mist and stratus, not rain cells: its broken sky does not shower.
+		this.clouds.heapShowers.value = 1 - THREE.MathUtils.smoothstep( weather?.fog ?? 0, 0.3, 0.8 );
 		this.clouds.rainbow.value = THREE.MathUtils.smoothstep( showers, 0.04, 0.3 ) * THREE.MathUtils.smoothstep( sunlit, 0.3, 0.7 )
 			* THREE.MathUtils.smoothstep( this.sunDir.y, 0, 0.08 ) * ( 1 - THREE.MathUtils.smoothstep( this.sunDir.y, 0.6, 0.72 ) );
 		this.weather.haze = weather?.haze ?? 0;
