@@ -239,6 +239,13 @@ const MOON_BRIGHTNESS = 0.72;
 // physically shaded crescent reads as a grey sliver. The eye, adapted to the little crescent,
 // sees it bright: this share of that loss is given back (an art direction; 0 is physical).
 const CRESCENT_LIFT = 0.7;
+// The colour map exaggerates the moon's tint (warm highlands, bluish maria); the eye sees a
+// near-neutral silver grey, so only this share of the map's colour is kept.
+const MOON_SATURATION = 0.4;
+// Near full, the disk alone is drawn this much dimmer than the light it sends (the key light and
+// the glow keep their level): at full brightness the night grade clipped the highlands to white
+// and the maria lost their contrast. Quarters and crescents keep their brightness.
+const FULL_MOON_EXPOSURE = 0.65;
 // Earthshine, after a-starry-sky: the faint, bluish light of the sunlit Earth on the lunar
 // night side. FULL_EARTHSHINE is a-starry-sky's strength under a full Earth (at new moon, half
 // of 0.19) against its sunlit surface, which is about twice the albedo; the colour is its
@@ -344,7 +351,7 @@ export class NightSky {
 	// Strength of the haze glow around the moon (an art control; 0 leaves the bare disk).
 	readonly glow = uniform( 1 );
 	// Scale of the lunar relief over its true height (an art control; 0 leaves a smooth ball).
-	readonly relief = uniform( 1 );
+	readonly relief = uniform( 1.4 );
 	// Strength of the earthshine over a-starry-sky's (an art control).
 	readonly earthshine = uniform( 1 );
 	// The near side's colour and LOLA heights (see tools/build-moon-textures.py). Loading
@@ -511,7 +518,9 @@ export class NightSky {
 				const n = mix( local, bumped, smoothstep( 0, 0.3, dot( normal, direction ).negate() ) ).toVar();
 				const surface = moonDir.mul( n.x.negate() ).add( east.mul( n.y ) ).add( north.mul( n.z ) ).toVar();
 				// The colour map's luminance carries the albedo's pattern; moonColor its level.
-				const albedo = texture( this.colorMap, uv ).grad( uvdx, uvdy ).rgb.mul( MOON_BRIGHTNESS / NEAR_SIDE_LUMINANCE ).toVar();
+				const map = texture( this.colorMap, uv ).grad( uvdx, uvdy ).rgb.toVar();
+				const grey = dot( map, vec3( 0.2126, 0.7152, 0.0722 ) );
+				const albedo = mix( vec3( grey ), map, MOON_SATURATION ).mul( MOON_BRIGHTNESS / NEAR_SIDE_LUMINANCE ).toVar();
 				// The disk's brightest point at this phase: the subsolar point while it is in view,
 				// then the bright limb, where the Oren-Nayar term above reduces to this.
 				const cosPhase = dot( sunDir, moonDir ).negate().toVar();
@@ -531,7 +540,8 @@ export class NightSky {
 				// At exact conjunction, roundoff in the tangent plane can leave a faint positive
 				// incidence at the rim. Suppress only this vanishing phase interval.
 				const phase = smoothstep( 0, 0.0002, float( 1 ).sub( dot( sunDir, moonDir ) ).mul( 0.5 ) );
-				radiance.assign( this.moonColor.rgb.mul( albedo ).mul( sunlit.mul( phase ).add( earthshine ) ).mul( limb ).mul( horizon ) );
+				const exposure = mix( float( 1 ), float( FULL_MOON_EXPOSURE ), smoothstep( 0, 0.9, cosPhase ) );
+				radiance.assign( this.moonColor.rgb.mul( albedo ).mul( exposure ).mul( sunlit.mul( phase ).add( earthshine ) ).mul( limb ).mul( horizon ) );
 
 			} );
 			return radiance;
