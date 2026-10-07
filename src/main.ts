@@ -19,6 +19,7 @@ import { buildGrass } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
+import { buildTurfSkirt } from './world/RimSkirt.ts';
 import { buildFlowers } from './world/Flowers.ts';
 import { Pipeline, TONE_CURVES, type ToneCurve } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
@@ -296,13 +297,14 @@ const grass = buildGrass( data.vegetation, shared, data.rimGround );
 const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
-scene.add( grass, foliage, flowers, rimFoliage );
+const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
+scene.add( grass, foliage, flowers, rimFoliage, turfSkirt );
 {
 
 	// Everything that casts into the sun's map: the figures cast through their own map, and the
 	// sea floor's stones only into the refracted one.
 	const casters = new THREE.Box3();
-	for ( const root of [ world.group, foliage, flowers, rimFoliage ] ) {
+	for ( const root of [ world.group, foliage, flowers, rimFoliage, turfSkirt ] ) {
 
 		root.updateWorldMatrix( true, true );
 		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) casters.expandByObject( object ); } );
@@ -312,7 +314,7 @@ scene.add( grass, foliage, flowers, rimFoliage );
 
 }
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
-rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage ] );
+rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt ] );
 setStatus( 'Waking the villagers…' );
 // Local, unversioned assets (artifacts/ is git-ignored) served by the dev server while the
 // character art is still changing.
@@ -725,4 +727,4 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime };

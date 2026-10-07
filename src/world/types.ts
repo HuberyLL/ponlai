@@ -31,6 +31,10 @@ export interface RimGroundField extends ShoreField {}
 // A top-rooted branch centreline: x, y, z and the outward surface normal per node.
 export interface RimStrand { points: Float32Array; seed: number; lip: number }
 
+// The turf skirt over the rim: SKIRT_RING cross-section points ( x, y, z ) per coast sample,
+// per sample ( outward x, z, presence, droop ), and ( first sample, count ) per traced loop.
+export interface RimSkirtData { points: Float32Array; info: Float32Array; loops: Int32Array }
+
 export interface WorldData {
 	meshes: NamedMesh[];
 	rocks: Rock[];
@@ -42,6 +46,7 @@ export interface WorldData {
 	// Sparse trails that start in top shrubs and overhang the upper cliff.
 	rimStrands: RimStrand[];
 	rimGround: RimGroundField;
+	rimSkirt: RimSkirtData;
 	shore: ShoreField;
 	// Half-resolution island distance field for the local breaking-surf pass.
 	islandShore: ShoreField;

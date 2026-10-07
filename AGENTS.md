@@ -47,7 +47,7 @@ exposed.
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor
   (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
-  vegetation anchors; instanced grass, bushes and flowers on the island top,
+  vegetation anchors; instanced grass, bushes and flowers on the island top, a turf skirt over the lip,
   with top-rooted overhanging branches of mixed lengths.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
@@ -95,6 +95,10 @@ exposed.
   patchy seabed detail; no exposed sea stacks or reefs.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
+  The meadow's sod curls a little over the lip as a ragged turf skirt (`RimSkirt.ts`), swept along
+  the coast line traced from the rim field, so it follows any shape the rim takes. Rim greenery is
+  generic: it is derived from the footprint, the island SDF and noise fields with fixed seeds, never
+  placed at coordinates, so it grows with the island when tiles are added.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Stems, leaf stalks
   and twigs (a few millimetres across) stay out of it too. The map is fitted to the island's
