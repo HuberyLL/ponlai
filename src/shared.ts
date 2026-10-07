@@ -10,11 +10,16 @@ export const shared = {
 	rain: uniform( 0 ),
 	wetness: uniform( 0 ),
 	waterLevel: uniform( 0 ),
-	// Clear, deeper water: retain coloured absorption while keeping suspended-particle
-	// scattering low, so the shelf reads through a volume rather than a milky surface.
-	// Coefficients are shared with seabed lighting for both the sun and view paths (1 / m).
-	sigA: uniform( new THREE.Vector3( 0.28, 0.12, 0.10 ) ),
-	sigS: uniform( new THREE.Vector3( 0.02, 0.03, 0.03 ) ),
+	// Clear teal water: red is absorbed within a few metres, green and blue alike over about
+	// 10 m (e-folding of the extinction), so the sandy shelf reads through 2 - 5 m of water as
+	// bright teal shallows while the 9 - 15 m basin deepens to a muted teal. Coastal water's
+	// faster green and blue absorption veils the shelf and turns the low sun's light grey;
+	// tidewater's open ocean, absorbing blue far less than green, would read blue.
+	// Red absorbed a little below pure water's mean keeps the shallows from going neon cyan.
+	// Low suspended-particle scattering keeps the volume from going milky. Shared with the
+	// seabed lighting for both the sun and view paths (1 / m).
+	sigA: uniform( new THREE.Vector3( 0.25, 0.08, 0.066 ) ),
+	sigS: uniform( new THREE.Vector3( 0.014, 0.024, 0.028 ) ),
 	sunIntoWater: uniform( 1 ), // 1 - Fresnel of the sun at the surface
 	// Storm strength: whitecaps on breaking crests (0 calm).
 	storm: uniform( 0 ),
