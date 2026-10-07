@@ -94,7 +94,10 @@ exposed.
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Larger casters keep
-  the map, which redraws whenever the key light moves.
+  the map, which redraws whenever the key light moves. On screen a blade is kept at least two
+  pixels wide (0.75 on the outer rim, where partly covered pixels show a pale fringe over the sea)
+  with its coverage lowered to match through alpha to coverage, so the meadow does not crawl as
+  the camera moves; close up the blades render unchanged.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
   Weather only scales the wave cascades' amplitude; it never rebuilds the wave spectrum. Storm foam
