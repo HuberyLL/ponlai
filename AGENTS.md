@@ -93,11 +93,12 @@ exposed.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
-  the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Larger casters keep
-  the map. It is fitted to the island's casters (the sea floor's stones cast only into the
-  refracted map) and redrawn each time the key light has turned 0.2 degrees; every receiver
-  cross-fades from the previous step's map by the light's progress (`SunShadow`), so shadows move
-  smoothly instead of re-rasterising every frame, and a paused clock holds them exactly.
+  the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Stems, leaf stalks
+  and twigs (a few millimetres across) stay out of it too. The map is fitted to the island's
+  casters (the sea floor's stones cast only into the refracted map) and redrawn each time the key
+  light has turned 0.2 degrees; every receiver cross-fades from the previous step's map by the
+  light's progress (`SunShadow`), so shadows move smoothly instead of re-rasterising every frame,
+  and a paused clock holds them exactly.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
   Weather only scales the wave cascades' amplitude; it never rebuilds the wave spectrum. Storm foam
