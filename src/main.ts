@@ -16,7 +16,7 @@ import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
 import { generateWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
 import { buildGrass } from './world/Grass.ts';
-import { meadowCanopy } from './lighting/MeadowCanopy.ts';
+import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
@@ -190,6 +190,7 @@ function publishLighting(): void {
 	sun.intensity = 1;
 	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
 	shared.sunDir.value.copy( sky.keyDir );
+	trackMeadowCanopy( sky.keyDir );
 	shared.sunColor.value.set( sky.keyColor.r, sky.keyColor.g, sky.keyColor.b );
 	shared.glintScale.value = sky.glintScale;
 	const cosI = Math.max( sky.keyDir.y, 0 );
