@@ -769,7 +769,8 @@ export class Pipeline {
 		// the threshold in the sharp image's units: display values before the curve, over its exposure
 		this.diffusion.threshold.value = L.glowThreshold / Math.max( u.curveExposure.value, 1e-9 );
 		u.glowTint.value.setRGB( 1 + 0.2 * L.glowWarmth, 1, 1 - 0.35 * L.glowWarmth );
-		u.vignette.value = S.vignette + ( on ? L.vignette : 0 ); u.grain.value = S.grain; u.time.value = time;
+		// (the look's own vignette fades with the night too; the base vignette stays)
+		u.vignette.value = S.vignette + ( on ? L.vignette * lookDay : 0 ); u.grain.value = S.grain; u.time.value = time;
 		u.dof.value = S.dof; u.range.value = S.dofRange;
 		u.maxRadius.value = S.dofMaxRadius * this.height / 900; // blur scales with the image, not the pixel count
 		u.focus.value = S.focusDistance > 0 ? S.focusDistance : camera.position.length();
