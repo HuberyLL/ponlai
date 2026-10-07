@@ -22,10 +22,10 @@ type IV2 = THREE.Node<'ivec2'>;
 
 // The storm sea's memory: persistent whitecap foam and the spray torn off breaking crests.
 //
-// Whitecaps are born where the sea's horizontal Jacobian folds (Tessendorf's choppy-wave
+// Whitecaps are born where the sea's horizontal Jacobian nears a fold (Tessendorf's choppy-wave
 // criterion), but real foam outlives the crest that made it: it trails behind the breaker and
 // fades over seconds. After tidewater's OceanFFT, foam therefore integrates in time:
-//   foam = foam * exp( -decay dt ) + generation * add * dt, at least half the fresh generation.
+//   foam = foam * exp( -decay dt ) + generation * add * dt, at least the fresh generation.
 // Tidewater keeps that per FFT cascade; here a single cascade folds rarely, and a short tile
 // would repeat its whitecaps in step, so the foam lives on one world-space grid that sees the
 // summed cascades with the same shore shelter as the water's own displacement. The grid sits in
@@ -54,18 +54,23 @@ const MAX_LIVE_STEP = 0.25;
 export class StormSea {
 
 	readonly params = {
-		foamBias: uniform( 0.88 ), // generation starts where the summed Jacobian folds below this
-		foamGain: uniform( 10.0 ),
-		foamDecay: uniform( 0.6 ), // 1/s
-		foamAdd: uniform( 1.2 ),
-		groupDepth: uniform( 0.2 ), // how far wave groups move the threshold
+		// Generation ramps up where the summed Jacobian falls from foamBias by foamWidth. At the
+		// field's cell size the storm sea's Jacobian is narrow (mean ~1, deviation ~0.09, it never
+		// folds outright), so the bias sits about two deviations down: only the steepest crests
+		// break, a few percent of the sea, instead of the compressed half of every wave.
+		foamBias: uniform( 0.86 ),
+		foamWidth: uniform( 0.07 ),
+		foamDecay: uniform( 0.5 ), // 1/s: a trail thins over a few seconds
+		foamAdd: uniform( 1.5 ),
+		groupDepth: uniform( 0.025 ), // how far wave groups move the threshold
 		groupSpeed: uniform( 2.5 ), // m/s downwind
 	};
 	/** Scales the whitecap coverage the water draws from the field. */
 	readonly coverage = uniform( 1 );
-	/** Diffuse albedo of the foam under the scene's light. Above a physical ~0.85 so that the
-	 * foam still reads as white water under a dark storm sky, which the stylised look wants. */
-	readonly albedo = uniform( 1.3 );
+	/** Diffuse albedo of the foam under the scene's light: at most as bright as a white surface
+	 * lit by the same sky, so it reads grey-blue under a storm sky and never glows. Aged lace is
+	 * a thinner film than that (its opacity, in the water shader). */
+	readonly albedo = uniform( 1 );
 	/** Repeats of the foam pattern per metre, and its size in texels. */
 	readonly patternScale = 0.09;
 	readonly patternSize = 1024;
@@ -155,16 +160,22 @@ export class StormSea {
 			}
 			const J = jxx.mul( jzz ).sub( jxz.mul( jxz ) ).toVar();
 			// Waves break in groups, not on every crest of a tile: a soft noise of group size,
-			// travelling downwind at about a group velocity, raises and lowers the threshold. It
-			// also hides the shorter cascade's tile, which would otherwise break in step.
+			// travelling downwind at about a group velocity, switches breaking on in some groups and
+			// off in others, and nudges the threshold a little within them. It also hides the shorter
+			// cascade's tile, which would otherwise break in step. The noise only gates crests the
+			// Jacobian already picked out: if it moved the threshold by more than the Jacobian's own
+			// spread, the foam would take the noise's round blobs instead of the crests' shape.
 			const wind = shared.wind.direction;
 			const along = dot( xz, wind ).sub( this.clock.mul( P.groupSpeed ) ), across = dot( xz, vec2( wind.y.negate(), wind.x ) );
-			const groups = mx_noise_float( vec3( along.div( 42 ), across.div( 26 ), this.clock.mul( 0.03 ) ) );
+			const groups = mx_noise_float( vec3( along.div( 42 ), across.div( 26 ), this.clock.mul( 0.03 ) ) ).toVar();
 			const bias = P.foamBias.add( groups.mul( P.groupDepth ) );
-			const generation = clamp( bias.sub( J ).mul( P.foamGain ), 0, 1 ).mul( this.gate.min( 1 ) ).toVar();
+			const generation = clamp( bias.sub( J ).div( P.foamWidth ), 0, 1 ).mul( smoothstep( - 0.25, 0.3, groups ) )
+				.mul( this.gate.min( 1 ) ).toVar();
+			// A crest's foam is dense while it breaks and then decays; it never stays thicker than
+			// the fresh mat (1).
 			const previous = select( moved, float( 0 ), this.state.element( instanceIndex ).x );
 			const foam = previous.mul( exp( P.foamDecay.mul( this.dt ).negate() ) ).add( generation.mul( P.foamAdd ).mul( this.dt ) );
-			const next = clamp( max( foam, generation.mul( 0.5 ) ), 0, 1.5 ).toVar();
+			const next = clamp( max( foam, generation ), 0, 1 ).toVar();
 			this.state.element( instanceIndex ).assign( vec2( next, generation ) );
 
 		} )().compute( RES * RES, [ 64 ] ).setName( 'StormSea.Foam' );

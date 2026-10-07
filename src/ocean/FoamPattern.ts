@@ -6,7 +6,7 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, float, vec2, vec4, int, ivec2, uint, instanceIndex, textureStore, fract, floor, sin, dot, min, length,
+	Fn, float, vec2, vec4, int, ivec2, uint, instanceIndex, textureStore, fract, floor, sin, dot, min, max, length,
 	smoothstep, mix, clamp,
 } from 'three/tsl';
 
@@ -15,12 +15,14 @@ type V2 = THREE.Node<'vec2'>;
 
 // Tileable procedural sea foam, generated once on the GPU (no external asset).
 //
-// Real foam is an irregular bubbly mat: dense rafts with ragged edges, holes of every size and
-// fine bubbles. The water shader thresholds the density against the local foam coverage, so a
-// patch grows, tears into lace and dissolves as its coverage changes, instead of fading as a
-// uniform white blot.
-//   R: foam density (thresholded by coverage)   G: fine bubbles
-//   B: soft large-scale mottling                A: streaks (stretched along the wind by the caller)
+// Real foam comes in two forms. A fresh whitecap is an irregular bubbly mat: dense rafts with
+// ragged edges, holes of every size and fine bubbles. As it ages the bubbles burst from the inside
+// of the cells first, and what remains is a marbled lace: thin veins of foam along the borders of
+// dark open-water cells, which the gale draws out into streaks. The water shader thresholds both
+// against the local foam, so a crest's mat grows and tears, and a trail thins into lace and
+// dissolves, instead of fading as a uniform white blot.
+//   R: mat density (thresholded by fresh breaking)   G: lace, 1 on a vein (thresholded by old foam)
+//   B: soft large-scale mottling                     A: streaks (stretched along the wind by the caller)
 export function createFoamPattern( renderer: THREE.WebGPURenderer, size = 1024 ): THREE.StorageTexture {
 
 	const tex = new THREE.StorageTexture( size, size );
@@ -35,23 +37,26 @@ export function createFoamPattern( renderer: THREE.WebGPURenderer, size = 1024 )
 
 	const hash2 = ( p: V2 ) => fract( sin( vec2( dot( p, vec2( 127.1, 311.7 ) ), dot( p, vec2( 269.5, 183.3 ) ) ) ).mul( 43758.5453 ) );
 
-	// periodic Worley F1
-	const worley = ( uv: V2, cells: number ): F => {
+	// periodic Worley: ( F1, F2 ), the distances to the nearest and second nearest feature point
+	const worley2 = ( uv: V2, cells: number ): V2 => {
 
 		const p = uv.mul( cells );
 		const ip = floor( p ).toVar();
 		const fp = fract( p ).toVar();
-		const f1 = float( 8 ).toVar();
+		const f1 = float( 8 ).toVar(), f2 = float( 8 ).toVar();
 		for ( let j = - 1; j <= 1; j ++ ) for ( let i = - 1; i <= 1; i ++ ) {
 
 			const o = vec2( i, j );
 			const h = hash2( ip.add( o ).mod( cells ) );
-			f1.assign( min( f1, length( o.add( h ).sub( fp ) ) ) );
+			const d = length( o.add( h ).sub( fp ) ).toVar();
+			f2.assign( max( min( f2, d ), f1 ) );
+			f1.assign( min( f1, d ) );
 
 		}
-		return f1;
+		return vec2( f1, f2 );
 
 	};
+	const worley = ( uv: V2, cells: number ): F => worley2( uv, cells ).x;
 
 	const vnoise = ( uv: V2, cells: number ): F => {
 
@@ -109,7 +114,21 @@ export function createFoamPattern( renderer: THREE.WebGPURenderer, size = 1024 )
 
 		const foam = clamp( dens.mul( 1.35 ).sub( holes.mul( 0.55 ) ).add( bubbles.mul( 0.08 ) ), 0, 1 );
 		const mottle = fbm( uv, 2, 3 );
-		textureStore( tex, px, vec4( foam, clamp( bubbles, 0, 1 ), mottle, streak ) );
+
+		// Lace: the borders between Worley cells (F2 - F1 is twice the distance to the nearest
+		// border), two sizes of cell in a strongly warped domain so the veins meander like marbling.
+		// The value falls off linearly from a vein, so a threshold sets the vein's width: young
+		// foam keeps a wide web, the last of it a few hairlines. The veins' strength wanders along
+		// them (and fine bubbles cling to them), so they break up rather than draw a closed net.
+		const lw = vec2( fbm( uv.add( 0.11 ), 5, 4 ), fbm( uv.add( 0.67 ), 5, 4 ) ).sub( 0.5 ).mul( 0.2 );
+		const luv = uv.add( lw ).add( w1 ).toVar();
+		const cellsA = worley2( luv, 13 ).toVar(), cellsB = worley2( luv.add( 0.29 ), 31 ).toVar();
+		const veinA = float( 1 ).sub( smoothstep( 0, 0.55, cellsA.y.sub( cellsA.x ) ) );
+		const veinB = float( 1 ).sub( smoothstep( 0, 0.5, cellsB.y.sub( cellsB.x ) ) );
+		const strength = fbm( uv.add( 0.53 ), 24, 3 ).toVar();
+		const lace = clamp( max( veinA.mul( strength.mul( 0.5 ).add( 0.62 ) ), veinB.mul( strength.mul( 0.6 ).add( 0.42 ) ) )
+			.add( bubbles.mul( 0.12 ) ), 0, 1 );
+		textureStore( tex, px, vec4( foam, lace, mottle, streak ) );
 
 	} )().compute( size * size, [ 64 ] ).setName( 'Ocean.FoamPattern' );
 	renderer.compute( kernel );
