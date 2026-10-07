@@ -46,7 +46,9 @@ exposed.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor
-  (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
+  (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
+  cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
+  tile), shoreline field,
   vegetation anchors; instanced grass, bushes and flowers on the island top,
   with top-rooted overhanging branches of mixed lengths.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
@@ -93,6 +95,11 @@ exposed.
 - Keep the island tile layout and flat central plateau. Natural contour, slope and weathering
   variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
   patchy seabed detail; no exposed sea stacks or reefs.
+- Everything around the island is generic, so the island can grow by more tiles: the shelf's
+  width and depth, the talus at the cliff foot and its shallow benches are derived from the
+  footprint's distance and world-space noise with fixed seeds, never placed at coordinates. The
+  floor off the island stays below -1.6 m and every stone crown below -1.30 m, so nothing breaks
+  the surface.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as

@@ -482,23 +482,31 @@ export function makeRockSDF( r: Rock ): SDF {
 // ------------------------------------------------------------------ seabed
 
 // height of the sea floor (m, negative): a shallow lagoon around the island whose floor shows
-// through the water, dropping off within ~20 m into deep, even-coloured water; gentle sand waves
+// through the water, dropping off within ~20 m into deep, even-coloured water; gentle sand waves.
+// The shelf's width and depth vary along the coast through fields sampled in world space, so a
+// larger footprint gets its own wide and narrow stretches without any per-tile tuning. The cliff
+// foot (talus, benches) is shaped afterwards by `shapeShelf` in Bathymetry.ts.
 export function makeSeabed( fp: Footprint ): HeightFn {
 
 	return function seabedHeight( x: number, z: number ) {
 
 		const d = fp.dist( x, z );
 		const dd = Math.max( d, 0 );
+		// Shelf width: 0.6 to 1.8 times the old even ring, changing over a few
+		// tens of metres of coast; a smaller warp keeps the drop-off from tracing the coastline.
+		const width = Math.min( 1.8, Math.max( 0.6, 1.15 + fbm2( x * 0.028 + 1.7, z * 0.028 - 4.2, 3 ) * 2.4 ) );
+		const warp = fbm2( x * 0.075 - 6.3, z * 0.075 + 2.9, 2 ) * 6 * smoothstep( 2, 8, dd );
+		const ds = Math.max( 0, dd / width + warp );
 		// a shallow lagoon: sand visible everywhere near the island, the reef edge drops off far out
 		let h = - 1.6
 			- 1.2 * smoothstep( 0, 5, dd )
-			- 3.6 * smoothstep( 6, 26, dd )
+			- 3.6 * smoothstep( 6, 26, ds )
 			- 6.0 * smoothstep( 40, 110, dd );
+		// the shelf's own level rises and sinks by about half a metre along the coast
+		h += fbm2( x * 0.045 - 2.2, z * 0.045 + 7.4, 3 ) * 2.2 * smoothstep( 2, 6, dd ) * ( 1 - smoothstep( 22, 40, dd ) );
 		// broad undulation and a sandbar or two
 		h += fbm2( x * 0.035 + 3.0, z * 0.035, 4 ) * 1.2 * smoothstep( 2, 14, dd );
 		h += Math.max( 0, noise3( x * 0.06, 9.1, z * 0.06 ) ) * 1.4 * smoothstep( 6, 18, dd ) * ( 1 - smoothstep( 30, 50, dd ) );
-		// scour right at the foot of the cliffs
-		h -= 0.6 * ( 1 - smoothstep( 0, 2.5, dd ) );
 
 		return h;
 
