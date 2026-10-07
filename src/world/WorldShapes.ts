@@ -4,7 +4,7 @@
 
 import { Field2D, roundCorners } from './Field2D.ts';
 import { noise3, fbm2, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
-import { CoastColumns, CliffWall } from './Cliff.ts';
+import { CoastColumns, CliffWall, bedCoordinate, bedShift } from './Cliff.ts';
 import type { SDF, Rock } from './types.ts';
 
 export interface Footprint {
@@ -162,6 +162,25 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 	};
 
 	islandSDF.tint = ( x, y, z ) => 0.5 + noise3( x * 0.2 + 9.3, y * 0.16, z * 0.2 ) * 0.3;
+	// Per vertex for the cliff material: the block's identity (column and bed), how deep inside
+	// a joint the point lies, the bed coordinate (strata and partings) and the depth below the
+	// column's own top (stains and moss start under each block's lip, fallen or not).
+	islandSDF.detail = ( x, y, z, out, o ) => {
+
+		column( x, z );
+		if ( cDomain <= 0 || wall.at( x, y, z, cTop ) === Infinity ) {
+
+			out[ o ] = 0.5; out[ o + 1 ] = 0; out[ o + 2 ] = bedCoordinate( y + bedShift( x, z ) ); out[ o + 3 ] = cTop - y;
+			return;
+
+		}
+		const key = wall.owner >= 0 ? columns.columns[ wall.owner ].key : 0;
+		out[ o ] = hash3i( key, wall.bed, 4231 );
+		out[ o + 1 ] = wall.joint * cDomain;
+		out[ o + 2 ] = wall.beta;
+		out[ o + 3 ] = wall.lipY - y;
+
+	};
 	return islandSDF;
 
 }

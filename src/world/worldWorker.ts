@@ -83,6 +83,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
 		meshes.push( { name, kind, ...m } );
 		transfer.push( m.positions.buffer, m.normals.buffer, m.ao.buffer, m.tint.buffer, m.curv.buffer, m.indices.buffer );
+		if ( m.detail ) transfer.push( m.detail.buffer );
 
 	};
 

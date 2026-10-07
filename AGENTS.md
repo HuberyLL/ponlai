@@ -47,7 +47,8 @@ exposed.
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets; the cliff band
   places its vertices by dual contouring so block edges stay sharp), its cliffs as jointed,
-  bedded columns seeded along the coast (`Cliff.ts`), sea floor
+  bedded columns seeded along the coast (`Cliff.ts`, with per-vertex block, joint, bed and lip
+  detail for the material), sea floor
   (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
   vegetation anchors; instanced grass, bushes and flowers on the island top,
   with top-rooted overhanging branches of mixed lengths.
@@ -55,9 +56,10 @@ exposed.
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
   own canopy.
-- `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
-  sea floor, light under the water), wet surfaces after Lagarde (soaked pores, water film, runnels
-  down the cliffs).
+- `src/materials/`: procedural detail textures, terrain materials (triplanar stone with per-block
+  shade, strata, parting seams, runoff stains, upper-cliff moss and a spray zone, turf, sea floor,
+  light under the water), wet surfaces after Lagarde (soaked pores, water film, runnels down the
+  cliffs).
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading, and
   the storm sea (`StormSea.ts`: whitecap foam integrated on a world grid around the view, the
   procedural foam pattern, spray particles).
@@ -106,8 +108,8 @@ exposed.
   masonry: joints lean and some die out at a parting, and off the coast-wide ledges many
   partings are welded per column. The wave-cut notch's roof stays above the calm sea's crests,
   and the weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight`.
-  Stumps of fallen columns stop at a parting below the meadow's planting height (2.8 m). No
-  waterfalls.
+  Stumps of fallen columns stop at a parting below the meadow's planting height (2.8 m) and carry
+  no turf. No waterfalls. Moss and greenery on the wall stay in its upper 1.2 m.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
