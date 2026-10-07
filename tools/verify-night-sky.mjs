@@ -200,7 +200,10 @@ try {
 		assert.ok( entry.determinism.maximum <= 1e-7, `${ entry.name } raw disk must be deterministic` );
 	}
 	assert.ok( moon.new.maximum < 1e-7 && moon.new.count === 0, 'New moon must emit no visible disk radiance' );
-	assert.ok( moon.full.count > 1000 && moon.full.maximum > 0.01, 'Full moon must show a resolved illuminated disk' );
+	// The disk's radiance scales back as the night's exposure rises (DayCycleSnapshot.nightSkyLevel):
+	// compare what the display shows, at the exposure the night sky was tuned with (4.4).
+	const fullExposure = report.phases.find( ( phase ) => phase.name === 'full' ).exposure;
+	assert.ok( moon.full.count > 1000 && moon.full.maximum * fullExposure > 0.01 * 4.4, 'Full moon must show a resolved illuminated disk' );
 	assert.ok( moon.quarter.count / moon.full.count > 0.35 && moon.quarter.count / moon.full.count < 0.7, 'Quarter moon must illuminate roughly half the resolved disk' );
 	assert.ok( moon.crescent.count / moon.full.count > 0.04 && moon.crescent.count / moon.full.count < 0.3, 'Crescent must illuminate a smaller curved fraction' );
 	report.checks.push( 'New, crescent, quarter, full disks use geometric phases and deterministic scene-linear radiance' );

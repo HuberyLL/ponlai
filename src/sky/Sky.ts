@@ -80,7 +80,8 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 } ).setLayout( { name: 'equirectToDir', type: 'vec3', inputs: [ { name: 'q', type: 'vec2' } ] } );
 
 // The displayed night sky's share of the night ambient that lights the island: a deeper sky
-// for the stars without darkening the island's own fill.
+// for the stars without darkening the island's own fill. The characters, water and air take
+// all of it; the environment that lights the terrain and plants takes this share.
 const NIGHT_SKY = 0.55;
 
 export class Sky {
@@ -166,6 +167,11 @@ export class Sky {
 	private overcast = uniform( 0 );
 	private irradiancePass = uniform( 0 );
 	private includeStars = uniform( 0 );
+	// Share of the night ambient a panorama carries (see NIGHT_SKY and bake()).
+	private nightShare = uniform( NIGHT_SKY );
+	// The night sky's own light at this frame's exposure (DayCycleSnapshot.nightSkyLevel).
+	private nightSkyLevel = 1;
+	private displayNightSky = uniform( NIGHT_SKY );
 	private bakeStarVisibility = uniform( 0 );
 	private starFootprint = uniform( 1 );
 
@@ -261,7 +267,7 @@ export class Sky {
 			const cloud = this.cloudLayer.sample( vec2( q.x, abs( q.y.sub( 0.5 ) ).mul( 2 ) ) ).level( float( 0 ) ).toVar();
 			const up = vec3( d.x, abs( d.y ), d.z );
 			// The visible night sky is darker than the light it lends the island (see NIGHT_SKY).
-			const night = this.nightAmbient.rgb.mul( mix( float( NIGHT_SKY ), float( 1 ), this.irradiancePass ) );
+			const night = this.nightAmbient.rgb.mul( this.nightShare );
 			const sky = this.clearSky( up, night, this.overcast ).mul( cloud.a ).add( cloud.rgb ).mul( this.ambientGain )
 				.add( this.night.airglow( up, this.bakeStarVisibility ).mul( cloud.a ) );
 			const stars = this.night.stars( up, this.starFootprint, this.bakeStarVisibility.mul( this.includeStars ) );
@@ -285,7 +291,7 @@ export class Sky {
 			// Above the horizon the clear sky and the clouds are both live. Below, the baked distant-sea reflection continues the waves.
 			const lower = this.samplePanorama( d, float( 0 ) ).toVar();
 			const cloud = this.clouds.sampleView( d ).toVar();
-			const upper = this.clearSky( vec3( d.x, max( d.y, 0 ), d.z ), this.displayNightAmbient.rgb.mul( NIGHT_SKY ), this.displayOvercast )
+			const upper = this.clearSky( vec3( d.x, max( d.y, 0 ), d.z ), this.displayNightAmbient.rgb.mul( this.displayNightSky ), this.displayOvercast )
 				.mul( cloud.a ).add( cloud.rgb ).mul( this.displayAmbientGain );
 			const above = d.y.greaterThanEqual( 0 );
 			const background = select( above, upper, lower.rgb );
@@ -407,7 +413,7 @@ export class Sky {
 			// eye; the moonlight on the island is the key light above, not this disk.
 			moonColor.setRGB( 0.04, 0.041, 0.043 ).multiplyScalar( 0.32 * celestial.moonVisibility * this.sunIlluminance / SUN_ILLUMINANCE );
 			this.night.starVisibility.value = celestial.nightVisibility * ( 1 - 0.22 * celestial.moonVisibility * celestial.moonIllumination );
-			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightVisibility );
+			this.displayNightAmbient.value.setRGB( 0.001, 0.001625, 0.003125 ).multiplyScalar( illuminance * celestial.nightAmbient );
 			this.grade.exposure = celestial.exposure;
 			this.grade.blackLift = celestial.blackLift;
 			this.grade.daylight = celestial.daylight;
@@ -438,7 +444,14 @@ export class Sky {
 		this.grade.exposure *= 1 + 0.5 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );
 		// After dark a closed deck hides the moon and stars; the eye adapts further so a rainy
 		// dusk or night stays readable, still darker than a clear moonlit night.
-		this.grade.exposure *= 1 + 5 * overcast * ( 1 - this.grade.daylight );
+		this.grade.exposure *= 1 + overcast * ( celestial?.overcastAdaptation ?? 0 );
+		// The night sky's own light keeps the brightness it was tuned at, under the exposure the
+		// night had then (with a closed deck's adaptation fivefold); only the island reads brighter.
+		this.nightSkyLevel = celestial ? Math.min( 1, celestial.nightSkyLevel
+			* ( 1 + 5 * overcast * ( 1 - celestial.daylight ) ) / ( 1 + overcast * celestial.overcastAdaptation ) ) : 1;
+		this.displayNightSky.value = NIGHT_SKY * this.nightSkyLevel;
+		this.night.starVisibility.value *= this.nightSkyLevel;
+		moonColor.multiplyScalar( this.nightSkyLevel );
 		this.sunColor.multiplyScalar( directVisibility );
 		this.keyColor.multiplyScalar( directVisibility );
 		this.solarIlluminance.multiplyScalar( directVisibility );
@@ -494,10 +507,12 @@ export class Sky {
 		const sunUp = ! celestial || celestial.elevation > - 2.5;
 		clouds.lightDir.value.copy( sunUp ? this.sunDir : this.keyDir );
 		clouds.lightColor.value.copy( sunUp ? sunAbove : new THREE.Color( 0, 0, 0 ) );
-		clouds.lightColor.value.r += 0.65 * illuminance * 0.04 * moonGain;
-		clouds.lightColor.value.g += 0.76 * illuminance * 0.04 * moonGain;
-		clouds.lightColor.value.b += illuminance * 0.04 * moonGain;
-		clouds.nightAmbient.value.copy( this.displayNightAmbient.value );
+		// The clouds belong to the night sky: their moonlight and night ambient keep its level.
+		const moonLight = illuminance * 0.04 * moonGain * this.nightSkyLevel;
+		clouds.lightColor.value.r += 0.65 * moonLight;
+		clouds.lightColor.value.g += 0.76 * moonLight;
+		clouds.lightColor.value.b += moonLight;
+		clouds.nightAmbient.value.copy( this.displayNightAmbient.value ).multiplyScalar( this.nightSkyLevel );
 		// Low sun: lift the reddened beam, and the cool violet fill on the shaded sides with it.
 		const lowSun = THREE.MathUtils.smoothstep( this.elevation, - 4, 1 ) * ( 1 - THREE.MathUtils.smoothstep( this.elevation, 6, 20 ) );
 		clouds.directGain.value = 1 + 0.7 * lowSun;
@@ -577,6 +592,9 @@ export class Sky {
 
 				this.irradiancePass.value = rt === this.small ? 1 : 0;
 				this.includeStars.value = rt === this.small || rt === this.reflectionSource ? 1 : 0;
+				// The seen sky and its reflections show the night sky's level; the environment that
+				// lights the terrain and plants keeps its full share, as the island's light does.
+				this.nightShare.value = rt === this.small ? 1 : rt === this.reflectionSource ? NIGHT_SKY : this.displayNightSky.value;
 				this.starFootprint.value = Math.SQRT2 * Math.PI / rt.height;
 				r.setRenderTarget( rt );
 				this.quad.render( r );

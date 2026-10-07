@@ -105,6 +105,11 @@ exposed.
   authored, not astronomical. The sun and moon are drawn at twice their true size (equal to each
   other); shadows and glints use the true sun. The sky, sun, moon, stars, key light and grade follow the clock
   every frame; only the reflection panorama, environment and irradiance cross-fade between bakes.
+- The exposure only rises from afternoon into night and holds from the end of the blue hour (about
+  -7 degrees) on, higher than the night sky was tuned for, so the island reads by moonlight and
+  starlight. The night ambient rises as the sun's skylight fades
+  after sunset, so twilight is never darker than the night; the night sky's own light (stars,
+  airglow, moon disk, the sky's night floor, clouds) scales back to keep its tuned look.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
