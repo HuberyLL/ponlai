@@ -97,8 +97,10 @@ exposed.
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
   The meadow is a sward: dense lawn tufts of narrow blades (doubled where the growth field runs
   thick, the extras folding away beyond about 35 m) and taller tussocks on a clump field; toward
-  the coast the tufts grow taller and lean out over the lip instead of thinning. Tussocks keep off
-  the islander's walking loop (`WalkLoop.ts`).
+  the coast the tufts grow taller and lean out over the lip instead of thinning. Wildflowers are
+  plants of four species (daisy, umbel, spike, cup) with leaf rosettes, their heads just above the
+  sward, in beds of 3-9 gathered in drifts. Tussocks and flower beds (spikes furthest) keep off the
+  islander's walking loop (`WalkLoop.ts`).
 - Generic, grows with the island: every planting and ground feature is derived from the footprint,
   the SDF and noise fields with fixed seeds (a seeded hash per vegetation anchor), never placed at
   coordinates, so it works unchanged for any tile layout.

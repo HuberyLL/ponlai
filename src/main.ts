@@ -297,7 +297,7 @@ await refractedSun.prepare();
 const walkDistance = walkLoopDistance( WALK_LOOP );
 const grass = buildGrass( data.vegetation, shared, data.rimGround, walkDistance );
 const foliage = buildFoliage( data.vegetation, shared );
-const flowers = buildFlowers( data.vegetation, shared );
+const flowers = buildFlowers( data.vegetation, shared, walkDistance );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 scene.add( grass, foliage, flowers, rimFoliage );
 {
