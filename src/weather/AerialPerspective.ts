@@ -24,6 +24,11 @@ const AEROSOL = { share: 3.2e-5 / 1.82e-4, height: 1400 };
 // Within this distance the haze is lit by the key light through its phase function; beyond it, the
 // haze takes the horizon sky's colour, which already holds the in-scatter of the whole path.
 const NEAR = 900;
+// The protected foreground: the air fades in between these distances from the camera (metres), so
+// the island keeps its contrast up close and gains its veil gradually as the view pulls back,
+// rather than all at once past a fixed edge. Thick air (rain, storm) closes in sooner: its ramp
+// ends nearer, so a rainy island at a distance keeps its grey veil.
+const CLEAR = { start: 40, end: 200, thickEnd: 120, thin: 5e-4, thick: 2e-3 };
 
 // Sea fog: a third, low layer of the marine air whose density drifts in banks. Extinction at sea
 // level per unit of fog. A bank is denser and stands taller than the thin air between banks, so
@@ -70,11 +75,11 @@ const phase = Fn( ( [ cosine ]: [ F ] ) => {
 /** Distant air and sea fog over the completed opaque/water image.
  *
  * The haze is two exponential height layers with their optical depth integrated analytically
- * along the view ray, and acts only beyond a protected foreground. Its light is the sky just above
+ * along the view ray, and fades in across a protected foreground. Its light is the sky just above
  * the horizon in the view direction, so the far sea fades into the horizon itself; near the camera
  * the key light's share of it is scattered through a phase function instead, warm and bright toward
- * a low sun and dimmer away from it (after tidewater's `AirHaze`). Sky pixels get no haze: the sky
- * already holds its own.
+ * a low sun and dimmer away from it (after tidewater's `AirHaze`), and dark in the clouds' shadow.
+ * Sky pixels get no haze: the sky already holds its own.
  *
  * The sea fog raises the marine air's density in a low layer that falls with height and drifts in
  * banks with the wind, so it can surround the island and still leave the sky clear above. It is lit
@@ -82,7 +87,8 @@ const phase = Fn( ( [ cosine ]: [ F ] ) => {
 export class AerialPerspective {
 
 	readonly haze = uniform( 0 );
-	readonly clearDistance = uniform( 85 );
+	// Where the air reaches its full density (metres from the camera), set from the haze each frame.
+	readonly clearEnd = uniform( CLEAR.end );
 	readonly fog = uniform( 0 );
 	// Wind travel (metres) and slow change of the banks.
 	readonly fogOffset = uniform( new THREE.Vector2() );
@@ -139,16 +145,32 @@ export class AerialPerspective {
 			If( z.greaterThan( - 9e4 ), () => {
 
 				distance.assign( length( ray.mul( z.div( ray.z ) ) ) );
-				// Integrated from the edge of the protected foreground.
-				const start = origin.y.add( direction.y.mul( this.clearDistance ) );
-				const d = max( distance.sub( this.clearDistance ), 0 );
+				// The air's density along the ray is weighted by smoothstep( start, end ) of the distance.
+				// Integrated, the weight holds back `held` metres of air; the rest is integrated from
+				// there to the content (the held air is the near part, the remaining depth the far).
+				const ramp = this.clearEnd.sub( CLEAR.start ).toVar();
+				const u = clamp( distance.sub( CLEAR.start ).div( ramp ), 0, 1 ).toVar();
+				const u3 = u.mul( u ).mul( u ).toVar();
+				const held = min( distance, CLEAR.start ).add( u.sub( u3 ).add( u3.mul( u ).mul( 0.5 ) ).mul( ramp ) ).toVar();
+				const start = origin.y.add( direction.y.mul( held ) );
+				const d = max( distance.sub( held ), 0 );
 				hazeDepth.assign( layerDepth( this.haze.mul( MARINE.share ), float( MARINE.height ), start, direction.y, d )
 					.add( layerDepth( this.haze.mul( AEROSOL.share ), float( AEROSOL.height ), start, direction.y, d ) ) );
 
 			} );
+			// The near air lies in the clouds' shadow wherever the ground does: the beam it scatters is
+			// the one the cloud shadow map lets through, sampled along the near stretch of the ray
+			// where the air shows (from the foreground's edge on). The sky's share keeps its
+			// light, so a shadowed haze toward a low sun is lit by the sky alone, not by its aureole.
+			const reachNear = min( distance, NEAR ).toVar();
+			const from = min( float( CLEAR.start ), reachNear ).toVar();
+			const shade = sky.cloudVisibility( origin.add( direction.mul( mix( from, reachNear, 1 / 6 ) ) ) )
+				.add( sky.cloudVisibility( origin.add( direction.mul( mix( from, reachNear, 0.5 ) ) ) ) )
+				.add( sky.cloudVisibility( origin.add( direction.mul( mix( from, reachNear, 5 / 6 ) ) ) ) ).div( 3 ).toVar();
+			const beam = scattered.mul( shade ).toVar();
 			// Near the camera the sun's share of the light is its explicit, phase-weighted scattering;
 			// far away the horizon's colour (whose sun glow already holds it).
-			const lit = ( sky: V3, near: F ) => sky.mul( float( 1 ).sub( sunShare.mul( near ) ) ).add( scattered.mul( near ) );
+			const lit = ( sky: V3, near: F ) => sky.mul( float( 1 ).sub( sunShare.mul( near ) ) ).add( beam.mul( near ) );
 			const hazeLight = lit( air, float( 1 ).sub( smoothstep( 0, NEAR, distance ) ) ).toVar();
 
 			const fogDepth = float( 0 ).toVar();
@@ -199,8 +221,11 @@ export class AerialPerspective {
 				// Seen from above, the bank's top is a thick, white scattering layer lit like a cloud by
 				// the key light and the sky (multiple scattering, which the phase term alone misses).
 				const low = mix( sky.sampleBackground( normalize( vec3( direction.x, 0.06, direction.z ) ), float( 4 ) ), around, down ).mul( 0.9 );
-				// Many scattering events also wash out the low sun's colour toward white.
-				const lambert = this.keyColor.rgb.mul( max( this.keyDir.y, 0 ).mul( this.fogSun ).div( Math.PI ) ).add( sky.irradianceNode ).mul( FOG_ALBEDO ).toVar();
+				// Many scattering events also wash out the low sun's colour toward white. The cloud shadow
+				// reuses the near air's samples (within the ray's first 900 m) rather than the spot where
+				// the ray meets the bank's top: close enough for banks seen from the island's height, but
+				// a top far below a high camera may take a neighbouring patch's shadow.
+				const lambert = this.keyColor.rgb.mul( max( this.keyDir.y, 0 ).mul( this.fogSun ).mul( shade ).div( Math.PI ) ).add( sky.irradianceNode ).mul( FOG_ALBEDO ).toVar();
 				const top = mix( vec3( luminance( lambert ) ), lambert, 0.25 );
 				const near = float( 1 ).sub( smoothstep( 0, NEAR, weighted.div( max( weight, 1e-6 ) ) ) ).mul( this.fogSun );
 				fogLight.assign( lit( mix( low, top, smoothstep( 0.15, 0.6, direction.y.negate() ) ), near.mul( FOG_SUN ) ) );
@@ -222,6 +247,7 @@ export class AerialPerspective {
 		this.projectionInverse.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
 		this.cameraWorld.value.copy( camera.matrixWorld );
 		this.resolution.value.set( width, height );
+		this.clearEnd.value = THREE.MathUtils.lerp( CLEAR.end, CLEAR.thickEnd, THREE.MathUtils.smoothstep( this.haze.value, CLEAR.thin, CLEAR.thick ) );
 		// The beam reaching the banks low over the sea.
 		this.fogSun.value = this.fogTransmittance( 8, this.keyDir.value );
 

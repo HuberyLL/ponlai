@@ -44,8 +44,9 @@ exposed.
 
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
-- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor,
-  shoreline field, vegetation anchors; instanced grass, bushes and flowers on the island top,
+- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor
+  (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
+  vegetation anchors; instanced grass, bushes and flowers on the island top,
   with top-rooted overhanging branches of mixed lengths.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
@@ -100,10 +101,18 @@ exposed.
   and spray are lit by the scene (never self-lit), and a paused frame replays their history at
   fixed steps, so it stays exactly repeatable.
 - One dominant key light (sun by day, moon by night) drives terrain, characters, water, caustics
-  and every shadow map; sun/moon handoffs pass through zero direct light. The day cycle is
+  and every shadow map; sun/moon handoffs pass through zero direct light: the sun's key fades as
+  its drawn disk sinks below the horizon, and only then turns toward the moon. The day cycle is
   authored, not astronomical. The sun and moon are drawn at twice their true size (equal to each
-  other); shadows and glints use the true sun. The sky, sun, moon, stars, key light and grade follow the clock
-  every frame; only the reflection panorama, environment and irradiance cross-fade between bakes.
+  other); shadows and glints use the true sun. A low sun's key stays golden orange: the optical
+  depth that sets its hue is capped, while its brightness still follows the full extinction.
+  The sky, sun, moon, stars, key light and grade follow the clock every frame; only the
+  reflection panorama, environment and irradiance cross-fade between bakes.
+- The exposure only rises from afternoon into night and holds from the end of the blue hour (about
+  -7 degrees) on, higher than the night sky was tuned for, so the island reads by moonlight and
+  starlight. The night ambient rises as the sun's skylight fades after sunset, so twilight is
+  never darker than the night; the night sky's own light (stars, airglow, moon disk, the sky's
+  night floor, clouds) scales back to keep its tuned look in deep night.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
@@ -116,9 +125,11 @@ exposed.
   so a future fantasy palette (glowing plants, magic) keeps its saturation.
 - One cloud field feeds the visible sky, water reflections, environment lighting and cloud
   shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
-  Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer
-  that may surround the island, never a uniform tint. Weather changes sweep the sky as a
-  front from upwind; the island's lighting follows the front's progress over the island.
+  Distant air fades in across a protected foreground (from 40 m, in full by 200 m, sooner in
+  thick air), so the island does not fog up as the view pulls back; it scatters only the sunlight
+  the cloud shadows let through. Sea fog is a low height-fog layer that may surround the island,
+  never a uniform tint. Weather changes sweep the sky as a front from upwind; the island's
+  lighting follows the front's progress over the island.
 - The directly seen clouds accumulate over frames; a scene at rest (paused clock, still camera)
   settles its clouds once and keeps them, so a paused frame is exactly repeatable. The cloud
   march assumes a camera below the cloud base.
@@ -175,5 +186,8 @@ exposed.
   them (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
 - Nested loops: pass both ranges to one `Loop()` call so the counters get distinct names (`i`, `j`).
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`: alpha-tested foliage sets both `map`
-  and `alphaMap`.
+  and `alphaMap`. The leaf `map` is opaque and the silhouette lives in `alphaMap` alone, whose mips
+  are built on the CPU to keep the leaf's coverage at the cutoff (box-filtered mips fill the card).
+  Alpha-to-coverage turns alpha short of cutoff + `fwidth` into partial coverage, so keep leaf
+  interiors at 1 rather than scaling alpha down.
 - Vegetation draws before the terrain (`renderOrder = -1`) so the turf under it fails the depth test.

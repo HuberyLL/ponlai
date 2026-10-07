@@ -27,6 +27,8 @@ export class Caustics {
 	tile: number;
 	target: THREE.RenderTarget;
 	texture: THREE.Texture;
+	// the 1x1 mip: the target's mean light concentration per focal plane
+	meanLevel: number;
 	// flat refracted sun ray: horizontal metres per metre of depth
 	shift = uniform( new THREE.Vector2() );
 
@@ -45,6 +47,7 @@ export class Caustics {
 		} );
 		this.target.texture.name = 'caustics';
 		this.texture = this.target.texture;
+		this.meanLevel = Math.log2( res );
 
 		// indexed grid over [-margin, 1 + margin]^2 (in tile units)
 		const g = Math.ceil( grid * ( 1 + 2 * margin ) );
@@ -136,18 +139,24 @@ export class Caustics {
 
 }
 
-// caustic light factor (mean ~1) at a world point `depth` metres below the surface
+// caustic light factor (mean 1) at a world point `depth` metres below the surface
 export function causticsAt( caustics: Caustics, wp: THREE.Node<'vec3'>, depth: THREE.Node<'float'> ): THREE.Node<'float'> {
 
 	// entry point of the light that lands here
 	const e = wp.xz.add( caustics.shift.mul( depth ) );
-	const blur = clamp( log2( depth.mul( 0.7 ).add( 1 ) ).add( 0.35 ), 0, 4 );
+	const blur = clamp( log2( depth.mul( 0.7 ).add( 1 ) ).sub( 0.15 ), 0, 4 );
 	const c = texture( caustics.texture, e.div( caustics.tile ) ).level( blur ).rg;
-	const shallow = mix( float( 1 ), c.r, smoothstep( 0, 0.9, depth ) );
-	const v = mix( shallow, c.g, smoothstep( CAUSTIC_DEPTHS[ 0 ], CAUSTIC_DEPTHS[ 1 ], depth ) );
-	// A clear shelf carries delicate moving light, not saturated pools of light and dark.
-	// Compress caustic contrast before the water's absorption tints it, then lose it at depth.
-	const restrained = mix( float( 1 ), clamp( v, 0.35, 2.8 ), 0.48 );
-	return select( depth.greaterThan( 0 ), mix( restrained, float( 1 ), smoothstep( 3.5, 11, depth ) ), float( 1 ) );
+	// The soft limit on folded cells and the light lost in the folds leave the splat's mean below
+	// one (about 0.8 at 1.4 m and 0.7 at 4.2 m), so the pattern would only dim the floor. Divide by
+	// the target's own mean (its 1x1 mip, the same texel everywhere) so caustics only move light.
+	const mean = texture( caustics.texture, vec2( 0.5 ) ).level( float( caustics.meanLevel ) ).rg;
+	const cn = c.div( max( mean, vec2( 0.05 ) ) );
+	const shallow = mix( float( 1 ), cn.x, smoothstep( 0, 0.9, depth ) );
+	const v = mix( shallow, cn.y, smoothstep( CAUSTIC_DEPTHS[ 0 ], CAUSTIC_DEPTHS[ 1 ], depth ) );
+	// A clear shelf carries delicate moving light, not saturated pools of light and dark:
+	// compress the contrast a little before the water's absorption tints it, then lose it in
+	// the basin's depth.
+	const restrained = mix( float( 1 ), clamp( v, 0.35, 3.5 ), 0.7 );
+	return select( depth.greaterThan( 0 ), mix( restrained, float( 1 ), smoothstep( 5, 14, depth ) ), float( 1 ) );
 
 }

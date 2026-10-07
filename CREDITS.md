@@ -330,6 +330,10 @@ comment where it is used.
   independently implemented in TSL with exponential depth strata, exact per-channel attenuation
   weights and separate air/submerged visibility along each scattering point's refracted solar path.
   No source code is copied; the retained multiple-scattering boost is empirical.
+- Coverage-preserving alpha mips for the leaves: Ignacio Castano,
+  [*Computing Alpha Mipmaps*](http://the-witness.net/news/2010/09/computing-alpha-mipmaps/) (2010):
+  each mip keeps the full-size leaf's share above the alpha-test cutoff, remapped through a steep
+  ramp instead of a scale so alpha-to-coverage keeps leaves solid (`src/world/Foliage.ts`).
 - Airglow: H. W. Jensen, F. Durand, M. M. Stark, S. Premoze, J. Dorsey and P. Shirley,
   [*A Physically-Based Night Sky Model*](https://doi.org/10.1145/383259.383306) (SIGGRAPH 2001): a
   thin emitting shell about 100 km up (the van Rhijn brightening toward the horizon) seen through
@@ -343,6 +347,13 @@ comment where it is used.
   and P. Shirley, [*Simple Analytic Approximations to the CIE XYZ Color Matching Functions*](https://jcgt.org/published/0002/02/01/)
   (JCGT 2013). The baked bows peak where the classic values put them: the primary's red at about
   42 degrees from the antisolar point, the secondary's at about 51.
+- Depth of field, highlights averaged compressed by their luminance (c / (1 + L)) and expanded
+  again: Brian Karis, [*Tone mapping*](https://graphicrants.blogspot.com/2013/12/tone-mapping.html)
+  (2013).
+- Depth of field, gather taps weighted by depth order (a tap behind the pixel reaches no further
+  than the pixel's own blur): Jorge Jimenez,
+  [*Next Generation Post Processing in Call of Duty: Advanced Warfare*](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare)
+  (SIGGRAPH 2014 course *Advances in Real-Time Rendering in Games*).
 
 ## References
 

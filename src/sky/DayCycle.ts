@@ -39,10 +39,24 @@ export interface DayCycleSnapshot {
 	// celestial pole. The stars turn with the sun about the pole of its path.
 	starFrame: Matrix3;
 	daylight: number;
+	// The stars, airglow and Milky Way: they come out late, as the sky darkens.
 	nightVisibility: number;
+	// The authored night ambient that lights the island: it takes over as the sun's own sky fades
+	// soon after sunset, so the blue hour reads blue and is never darker than the night.
+	nightAmbient: number;
 	exposure: number;
+	// Further exposure, as a fraction, under a fully closed deck after dark (see Sky.track).
+	overcastAdaptation: number;
+	// Scale on the night sky's own light (stars, airglow, moon disk, the sky's night floor,
+	// clouds): it was tuned at a night exposure of NIGHT_SKY_EXPOSURE and keeps that look.
+	nightSkyLevel: number;
 	blackLift: number;
 }
+
+// The display's black lift by day (linear, added before the sRGB curve): black shows at about
+// 31/255. Shadows stay airy; the earlier 0.027 (46/255) read as a milky veil over the frame.
+export const DAY_BLACK_LIFT = 0.014;
+const NIGHT_BLACK_LIFT = 0.002;
 
 const TAU = 2 * Math.PI;
 const DEG = 180 / Math.PI;
@@ -68,6 +82,14 @@ const NORTH_POLE = WEST.clone().cross( MERIDIAN ).normalize();
 // on the sun, so each authored day starts a little further on.
 const MIDNIGHT_SIDEREAL = 14 / 24 * TAU;
 const SIDEREAL_DAYS_PER_YEAR = 365.2422;
+// The night keeps the blue hour's exposure, so a moonlit or moonless island keeps its forms and
+// colours against the sea. The night sky's own light (stars, airglow, moon, clouds) was tuned at
+// NIGHT_SKY_EXPOSURE and is scaled to keep its displayed brightness (see Sky.track).
+export const NIGHT_EXPOSURE = 4.4 * 1.6;
+export const NIGHT_SKY_EXPOSURE = 4.4;
+// Highest elevation (degrees) at which the key may turn from the sun toward the moon: below the
+// end of the sun's fade as its drawn disk sinks into the sea (see Atmosphere.sunlightAt).
+const HANDOFF_TOP = - 0.7;
 
 function finite( value: number, name: string ): number {
 
@@ -187,13 +209,23 @@ export class DayCycle {
 		const moonElevation = Math.asin( Math.max( - 1, Math.min( 1, moonDir.y ) ) ) * DEG;
 		const daylight = smoothstep( - 7, 8, elevation );
 		// A low sun's light is thin and warm, and twilight thinner still; adapt toward both so
-		// sunrise, sunset and the blue hour stay readable. Deep night keeps its own exposure.
-		const lowSun = smoothstep( - 14, - 5, elevation ) * ( 1 - smoothstep( 4, 18, elevation ) );
+		// sunrise, sunset and the blue hour stay readable. The night then holds the blue hour's
+		// exposure (NIGHT_EXPOSURE): moonlight does not dim as the evening goes on.
+		// lowSun stays 1 below four degrees, through the night: the night inherits the adaptation.
+		const lowSun = 1 - smoothstep( 4, 18, elevation );
+		// The low-sun adaptation used to fade out over -5 to -14 degrees, and the night sky was
+		// tuned under it.
+		const skyAdaptation = 1 + 0.6 * smoothstep( - 14, - 5, elevation ) * lowSun;
+		// A closed deck hides the moon and stars, and the eye adapts further. Its night was
+		// tuned at six times NIGHT_SKY_EXPOSURE and keeps that exposure; from the end of the
+		// blue hour up its adaptation is as before.
+		const deck = 6 * NIGHT_SKY_EXPOSURE / NIGHT_EXPOSURE - 1;
+		const dusk = smoothstep( - 6, - 1, elevation );
 		const moonIllumination = ( 1 - Math.cos( TAU * this.phase ) ) * 0.5;
 		const moonVisibility = smoothstep( 0, 5, moonElevation );
 		// Rotate within the orbital plane only after the sun is blocked and before the
 		// moon's key light fades in. Opposing full-moon vectors never cancel as in a lerp.
-		const handoff = 1 - smoothstep( - 2, - 0.25, elevation );
+		const handoff = 1 - smoothstep( - 2.5, HANDOFF_TOP, elevation );
 		const keyDir = direction( hourAngle - this.phase * TAU * handoff );
 		return {
 			hour: this.currentHour,
@@ -212,10 +244,15 @@ export class DayCycle {
 			starFrame: equatorialFrame( MIDNIGHT_SIDEREAL + hourAngle + Math.PI + TAU * ( this.completedDays + this.currentHour / 24 ) / SIDEREAL_DAYS_PER_YEAR ),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),
-			// Modest adaptation preserves a visibly dark night. Scene lighting, not exposure,
-			// supplies its readable forms; reduce display lift so blacks do not turn milky.
+			// The sun's scattered skylight falls about tenfold between the horizon and -4 degrees;
+			// the night's ambient rises across the same band so the two together never dip.
+			nightAmbient: 1 - smoothstep( - 5, 1, elevation ),
+			// The night sky stays dark through its own scaled light (see NIGHT_SKY_EXPOSURE); the
+			// display lift falls with daylight so blacks do not turn milky.
 			exposure: ( 4.4 + ( 2.6 - 4.4 ) * daylight ) * ( 1 + 0.6 * lowSun ),
-			blackLift: 0.002 + ( 0.027 - 0.002 ) * daylight,
+			overcastAdaptation: ( deck + ( 5 - deck ) * dusk ) * ( 1 - daylight ),
+			nightSkyLevel: skyAdaptation / ( 1 + 0.6 * lowSun ),
+			blackLift: NIGHT_BLACK_LIFT + ( DAY_BLACK_LIFT - NIGHT_BLACK_LIFT ) * daylight,
 		};
 
 	}

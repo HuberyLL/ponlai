@@ -323,10 +323,35 @@ export class Water {
 					const hv = posV.add( Rv.mul( b ) ).toVar();
 					const q = projectView( hv, cameraProjectionMatrix ).toVar();
 					const touch = float( 1 ).sub( smoothstep( 0.15, 0.6, abs( sceneViewZ( q ).sub( hv.z ) ) ) );
-					const hw = cameraWorldMatrix.mul( vec4( hv, 1 ) ).xyz;
+					const hw = cameraWorldMatrix.mul( vec4( hv, 1 ) ).xyz.toVar();
 					const edge = smoothstep( 0, 0.06, q.x ).mul( smoothstep( 1, 0.94, q.x ) ).mul( smoothstep( 0, 0.06, q.y ) ).mul( smoothstep( 1, 0.94, q.y ) );
-					const w = edge.mul( touch ).mul( directionWeight ).mul( smoothstep( shared.waterLevel.sub( 0.1 ), shared.waterLevel.add( 0.3 ), hw.y ) );
-					res.assign( vec4( sceneAt( q ), w ) );
+					res.assign( vec4( sceneAt( q ), edge.mul( touch ).mul( directionWeight ) ) );
+					// Where the ray meets the cliff below the sea's reach, it could only have got there
+					// through the water it meets first. Falling back to the sky there (tidewater fades
+					// the lowest 0.4 m, sized for cliffs ten times taller) drew a bright band along every
+					// cliff foot. The sea at this island's cliffs is a near mirror in everyday weather,
+					// so the reflected rock continues down to the waterline, and rock just below it shows
+					// the rock where it leaves the water: the hit lifted to the waterline, if the depth
+					// buffer confirms rock there (a cliff face, not open seabed). A gale's swell heaves
+					// the surface at the rock by tens of centimetres; the reach grows with it and the
+					// lifted rock gives way to the sky, as before, so a rough sea keeps its sky-lit facets.
+					const gale = sat( shared.wind.oceanGain.x.sub( 1.15 ).div( 1.2 ) ).toVar();
+					const waterline = shared.waterLevel.add( mix( float( 0.03 ), float( 0.3 ), gale ) ).toVar();
+					const above = smoothstep( shared.waterLevel.sub( gale.mul( 0.1 ) ), waterline, hw.y ).toVar();
+					If( above.lessThan( 1 ), () => {
+
+						const lifted = cameraViewMatrix.mul( vec4( hw.x, waterline, hw.z, 1 ) ).xyz.toVar();
+						const ql = projectView( lifted, cameraProjectionMatrix ).toVar();
+						const liftedTouch = float( 1 ).sub( smoothstep( 0.15, 0.6, abs( sceneViewZ( ql ).sub( lifted.z ) ) ) );
+						// Deep hits (the seabed, rock seen past a downward-tilted facet) keep the sky.
+						const shallow = smoothstep( shared.waterLevel.sub( 0.35 ), shared.waterLevel.sub( 0.15 ), hw.y ).mul( float( 1 ).sub( gale ) );
+						// Weighted, so that a gale's sea (no lifted rock) blends exactly as before.
+						const direct = res.a.mul( above ).toVar();
+						const rock = res.a.mul( liftedTouch ).mul( shallow ).mul( float( 1 ).sub( above ) ).toVar();
+						const weight = direct.add( rock ).toVar();
+						res.assign( vec4( sceneAt( ql ).mul( rock ).add( res.rgb.mul( direct ) ).div( max( weight, 1e-4 ) ), weight ) );
+
+					} );
 
 				} );
 

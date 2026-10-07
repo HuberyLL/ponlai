@@ -7,7 +7,9 @@ export interface WeatherState {
 	density: number;
 	directVisibility: number;
 	ambientGain: number;
-	// Air extinction per metre, applied only beyond the scene's clear foreground.
+	// Air extinction per metre at sea level, faded in across the scene's clear foreground. A clear
+	// maritime day sees 20 - 50 km (Koschmieder: 3.912 / extinction), so clear and fair air stay
+	// near 1 - 2e-4; cloud, rain and fog thicken it.
 	haze: number;
 	windSpeed: number; // m/s; kept within a calm coastal range
 	windDirection: number; // degrees, using the ocean spectrum's heading convention
@@ -31,9 +33,9 @@ type Preset = Omit<WeatherState, 'wetness' | 'showers'>;
 // together; none of these presets adds a grey screen veil. Fog is a low layer over the sea that
 // the camera looks through, not a tint over the frame.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<Preset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, ambientGain: 1, haze: 0.00035, windSpeed: 2.8, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, ambientGain: 0.99, haze: 0.0005, windSpeed: 3.8, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 0.78, ambientGain: 0.91, haze: 0.0009, windSpeed: 4.3, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, ambientGain: 1, haze: 0.00012, windSpeed: 2.8, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, ambientGain: 0.99, haze: 0.0002, windSpeed: 3.8, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 0.78, ambientGain: 0.91, haze: 0.00042, windSpeed: 4.3, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
 	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.3, ambientGain: 0.76, haze: 0.0016, windSpeed: 4.6, windDirection: 40, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
 	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, ambientGain: 0.62, haze: 0.0025, windSpeed: 5.2, windDirection: 40, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
 	// A squall: the darkest deck, heavy rain, gale-force wind and a rough, white-capped sea.
