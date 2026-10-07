@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, normalViewGeometry, materialColor, vec3, vec4, float, mix, sin, cos, dot, pow, clamp } from 'three/tsl';
-import { leafTexture, leafAlphaTexture } from './Foliage.ts';
+import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
 import { mulberry32, smoothstep } from './noise.ts';
@@ -50,11 +50,11 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh ): THREE.Mes
 
 	const source = Array.isArray( foliage?.material ) ? foliage.material[ 0 ] : foliage?.material;
 	const mat = source instanceof THREE.MeshStandardNodeMaterial ? source.clone() : new THREE.MeshStandardNodeMaterial( {
-		map: leafTexture(), alphaTest: 0.3, alphaToCoverage: true, side: THREE.DoubleSide,
+		map: leafTexture(), alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: true, side: THREE.DoubleSide,
 		roughness: 0.82, metalness: 0, vertexColors: true,
 	} );
 	// Reusing both silhouettes also keeps the shadow pass consistent with the existing bush.
-	if ( ! mat.alphaMap ) mat.alphaMap = leafAlphaTexture( mat.map as THREE.CanvasTexture );
+	if ( ! mat.alphaMap ) mat.alphaMap = leafAlphaTexture();
 	const wetness = clamp( shared.wetness, 0, 1 );
 	const wetTint = mix( 1, 0.92, wetness );
 	// Replace the cloned colour graph so wetness applies once, including the fallback material.

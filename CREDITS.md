@@ -330,6 +330,10 @@ comment where it is used.
   independently implemented in TSL with exponential depth strata, exact per-channel attenuation
   weights and separate air/submerged visibility along each scattering point's refracted solar path.
   No source code is copied; the retained multiple-scattering boost is empirical.
+- Coverage-preserving alpha mips for the leaves: Ignacio Castano,
+  [*Computing Alpha Mipmaps*](http://the-witness.net/news/2010/09/computing-alpha-mipmaps/) (2010):
+  each mip keeps the full-size leaf's share above the alpha-test cutoff, remapped through a steep
+  ramp instead of a scale so alpha-to-coverage keeps leaves solid (`src/world/Foliage.ts`).
 - Airglow: H. W. Jensen, F. Durand, M. M. Stark, S. Premoze, J. Dorsey and P. Shirley,
   [*A Physically-Based Night Sky Model*](https://doi.org/10.1145/383259.383306) (SIGGRAPH 2001): a
   thin emitting shell about 100 km up (the van Rhijn brightening toward the horizon) seen through
