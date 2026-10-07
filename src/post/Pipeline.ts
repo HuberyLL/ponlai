@@ -496,14 +496,16 @@ export class Pipeline {
 		// luminance contrast round mid grey, the warm / cool split by luminance (log-spaced, crossing
 		// at `pivot`; each tint normalised to keep luminance) and a coloured lift of the darkest tones.
 		const SQRT3_2 = Math.sqrt( 3 ) / 2, INV_SQRT3 = 1 / Math.sqrt( 3 );
+		// (edges in ascending order: SPIR-V and Metal leave smoothstep undefined when they are not)
 		const band = ( hue: F, centre: number, width: number ) =>
-			smoothstep( width, 0, abs( mod( hue.sub( centre ).add( Math.PI ), 2 * Math.PI ).sub( Math.PI ) ) );
+			float( 1 ).sub( smoothstep( 0, width, abs( mod( hue.sub( centre ).add( Math.PI ), 2 * Math.PI ).sub( Math.PI ) ) ) );
 		const lookColour = Fn( ( [ c0, onSurface ]: [ V3, F ] ) => {
 
 			const c = c0.toVar();
 			const ca = c.r.sub( c.g.add( c.b ).mul( 0.5 ) ).toVar();
 			const cb = c.g.sub( c.b ).mul( SQRT3_2 ).toVar();
-			const hue = atan( cb, ca ).toVar();
+			// (atan2 ( 0, 0 ) is undefined on some backends; a grey's hue is keyed out below anyway)
+			const hue = atan( cb, select( abs( ca ).add( abs( cb ) ).greaterThan( 1e-7 ), ca, float( 1 ) ) ).toVar();
 			const peak = max( c.r, max( c.g, c.b ) );
 			const sat = peak.sub( min( c.r, min( c.g, c.b ) ) ).div( max( peak, 1e-5 ) );
 			const keyed = smoothstep( 0.04, 0.3, sat ).mul( u.lookColour ).toVar();
