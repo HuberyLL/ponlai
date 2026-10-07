@@ -13,7 +13,7 @@ import { Field2D } from './Field2D.ts';
 import { deepenSeabed, seabedBeds } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
-import { VEGETATION_STRIDE } from './types.ts';
+import { VEGETATION_STRIDE, VEGETATION_SPACING } from './types.ts';
 import type { SDF, MeshData, MeshKind, NamedMesh, WorldData, WorldOptions } from './types.ts';
 
 self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
@@ -120,7 +120,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	t = performance.now();
 	const rngV = mulberry32( 4242 );
 	const veg: number[] = [];
-	scatterTop( islandSDF, b.x0 - 0.6, b.x1 + 0.6, b.z0 - 0.6, b.z1 + 0.6, 0.235, ISLAND_TOP, rngV, veg, ( x, z ) => fp.dist( x, z ), 0 );
+	scatterTop( islandSDF, b.x0 - 0.6, b.x1 + 0.6, b.z0 - 0.6, b.z1 + 0.6, VEGETATION_SPACING, ISLAND_TOP, rngV, veg, ( x, z ) => fp.dist( x, z ), 0 );
 	const vegetation = new Float32Array( veg.length / 8 * VEGETATION_STRIDE );
 	// The raw eight-float anchors and random streams still determine all placement. Visibility
 	// is appended only after scattering, and is a local scalar proxy for an entire small plant.
