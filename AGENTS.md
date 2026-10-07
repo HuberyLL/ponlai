@@ -1,10 +1,11 @@
 # Soomi
 
 A small stylised island in an open sea, rendered in the browser: a visual sample for a game.
-The look is stylised fantasy-realistic: warm golden light, airy lifted shadows, deep muted
-teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with bushes
-and wildflowers, and irregular hanging leaf clusters around the rim. Keep the lower cliff stone
-exposed.
+The look is stylised fantasy-realistic: a physically based scene graded toward a painted
+game's colour, with warm golden light, softly glowing highlights, airy lifted shadows, rich greens,
+deep teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with
+bushes and wildflowers, and irregular hanging leaf clusters around the rim. Keep the lower cliff
+stone exposed.
 
 ## Stack and commands
 
@@ -27,7 +28,8 @@ exposed.
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
   override), `quality` (low, medium, high: the clouds' march, bake cadences and rain count, and
-  the render scale, see Decisions), `tone` (agx-hue, the default, agx, neutral).
+  the render scale, see Decisions), `tone` (agx-hue, the default, agx, neutral), `look`
+  (soft-fantasy, the default, rich-fantasy, realistic).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
   sky views.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
@@ -80,7 +82,7 @@ exposed.
   drifting banks of varying height, thinner over the island, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
   and rain drawn into the same multisampled target, crepuscular rays and sun glare, bloom,
-  tilt-shift, tone curve and grade, FSR 1 upscale), render scale per quality preset
+  tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale), render scale per quality preset
   (`RenderScale.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
@@ -141,6 +143,18 @@ exposed.
   so twilight is no darker than under PBR Neutral): its toe holds the night's dark colours
   saturated where AgX's greys and lifts them, and its short shoulder lets the brightest few stars
   reach near white.
+- The fantasy look is an art-directed layer over the physically based image, never baked into the
+  lighting or the tone curve: after the curve and its grade, `Pipeline`'s look adds a soft
+  Orton-style glow round the island's highlights (the sky and what lies beyond a few hundred metres
+  glow only weakly, and the glow is held back over dark parts, so it never lays a veil), richer
+  greens and teal water keyed by hue and saturation (grey stone and skin stay as they are), golden
+  highlights over cool teal shadows, a teal shadow lift and a little depth. `soft-fantasy` is the
+  default, `rich-fantasy` a bolder step toward a painted scene. `realistic` leaves the
+  image exactly as the curve and grade make it and stays selectable (`look` URL option, GUI Look
+  folder) for comparison; every parameter is in the GUI. The look fades out with the night (the
+  night keeps its authored colours); its glow, golden highlights and lift follow the weather's
+  direct sunlight, and only part of its colour holds under a closed sky, so bad weather stays dimmer
+  and greyer than a clear day.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
   sky reads as a low backdrop and turns stars into bokeh discs. Stars are points with a natural
   spread of brightness, kept below white except the brightest few; only those near the horizon
