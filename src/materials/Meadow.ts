@@ -2,17 +2,24 @@ import * as THREE from 'three/webgpu';
 import { noise3, smoothstep } from '../world/noise.ts';
 export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowSurface.ts';
 
-// The blades and the ground share one growth field, so tall tufts belong to the same
-// cool-green drifts as their roots instead of floating over unrelated painted patches.
+// Two independent fields. Growth sets the sward's structure: tuft height (and with it the canopy
+// that shades the meadow, see MeadowCanopy), soil pockets and the humus between short shoots.
+// Tone sets the colour. Tying the colour to growth as well made dark albedo and deep canopy shade
+// coincide, so ~4 m drifts swung the meadow's luminance about 2x and read as camouflage from the
+// overview; separate fields with a ~1.3x albedo swing keep the lawn even, and a finer hue-only
+// field (yellow-green against blue-green, about a metre across) carries the variety instead.
 export const MEADOW_EXTENT = 128;
 const MEADOW_SIZE = 512;
 
-interface MeadowSample { growth: number; dry: number; variation: number }
+interface MeadowSample { growth: number; tone: number; dry: number; hue: number; variation: number }
 
 const deep = new THREE.Color( 0.024, 0.062, 0.028 );
 const mid = new THREE.Color( 0.062, 0.108, 0.03 );
 const sunny = new THREE.Color( 0.13, 0.157, 0.044 );
 const dryColor = new THREE.Color( 0.18, 0.162, 0.054 );
+// Channel weights for the hue shift; each is rescaled to keep the colour's luminance.
+const yellowGreen = new THREE.Color( 1.16, 1, 0.7 );
+const blueGreen = new THREE.Color( 0.88, 1, 1.2 );
 
 export function sampleMeadow( x: number, z: number ): MeadowSample {
 
@@ -21,19 +28,30 @@ export function sampleMeadow( x: number, z: number ): MeadowSample {
 	const growth = smoothstep( 0.3, 0.7, broad * 0.72 + clump * 0.28 );
 	const variation = noise3( x * 1.1 + 5.4, 4.1, z * 1.1 - 7.2 ) * 0.5 + 0.5;
 	const warm = noise3( x * 0.18 - 8.2, 6.3, z * 0.18 + 3.7 ) * 0.5 + 0.5;
-	// Dry colour follows shorter growth in coherent drifts, rather than isolated straw tufts.
-	const dry = ( 1 - growth ) * smoothstep( 0.38, 0.72, warm );
-	return { growth, dry, variation };
+	const lush = noise3( x * 0.22 + 11.3, 7.7, z * 0.22 - 4.6 ) * 0.5 + 0.5;
+	const patch = noise3( x * 0.55 - 6.9, 9.1, z * 0.55 + 2.2 ) * 0.5 + 0.5;
+	const tone = smoothstep( 0.3, 0.7, lush * 0.7 + patch * 0.3 );
+	// Dry colour follows the paler tone in coherent drifts, rather than isolated straw tufts.
+	const dry = ( 1 - tone ) * smoothstep( 0.38, 0.72, warm );
+	const hue = smoothstep( 0.25, 0.75, ( noise3( x * 0.8 - 1.7, 3.3, z * 0.8 + 6.1 ) * 0.65 + noise3( x * 1.35 + 9.4, 5.9, z * 1.35 - 2.8 ) * 0.35 ) * 0.5 + 0.5 );
+	return { growth, tone, dry, hue, variation };
 
 }
 
+const shift = new THREE.Color();
+const luminance = ( c: THREE.Color ) => 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+
 function colorFromSample( sample: MeadowSample, target: THREE.Color ): THREE.Color {
 
-	target.copy( mid ).lerp( deep, sample.growth * 0.68 );
-	target.lerp( sunny, ( 1 - sample.growth ) * 0.55 );
-	target.lerp( dryColor, sample.dry * 0.5 );
+	// Small pulls keep the albedo within about 1.3x across the drifts, at the old mean.
+	target.copy( mid ).lerp( deep, sample.tone * 0.15 );
+	target.lerp( sunny, ( 1 - sample.tone ) * 0.3 );
+	target.lerp( dryColor, sample.dry * 0.2 );
+	const l = luminance( target );
+	target.multiply( shift.copy( blueGreen ).lerp( yellowGreen, sample.hue ) );
+	target.multiplyScalar( l / luminance( target ) );
 	// Small, continuous variation retains a quiet grass bed beneath the readable blades.
-	return target.multiplyScalar( 0.9 + sample.variation * 0.2 );
+	return target.multiplyScalar( 0.92 + sample.variation * 0.16 );
 
 }
 
