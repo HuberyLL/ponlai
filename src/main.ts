@@ -142,11 +142,10 @@ const lighting = { skyFill: 1 };
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
 sun.castShadow = true;
 sun.shadow.mapSize.set( 2048, 2048 );
-const sc = sun.shadow.camera;
-sc.left = - 36; sc.right = 36; sc.top = 36; sc.bottom = - 36; sc.near = 1; sc.far = 220;
-// The map is redrawn in small steps of the key light with a cross-fade (SunShadow). Its bias,
-// 1 cm along the light ray, follows the map's depth range; receiver-plane correction in the
-// shared filter keeps contacts sharp without a wide blur.
+// The map is fitted to the island's casters once the world exists, and redrawn in small steps of
+// the key light with a cross-fade (SunShadow). Its bias, 1 cm along the light ray, follows each
+// fit's depth range; receiver-plane correction in the shared filter keeps contacts sharp without
+// a wide blur.
 sun.shadow.normalBias = 0.012;
 const sunShadow = new SunShadow( sun, { bias: 0.01 } );
 sunShadow.install();
@@ -298,6 +297,20 @@ const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 scene.add( grass, foliage, flowers, rimFoliage );
+{
+
+	// Everything that casts into the sun's map: the figures cast through their own map, and the
+	// sea floor's stones only into the refracted one.
+	const casters = new THREE.Box3();
+	for ( const root of [ world.group, foliage, flowers, rimFoliage ] ) {
+
+		root.updateWorldMatrix( true, true );
+		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) casters.expandByObject( object ); } );
+
+	}
+	sunShadow.setCasters( casters );
+
+}
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
 rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage ] );
 setStatus( 'Waking the villagers…' );

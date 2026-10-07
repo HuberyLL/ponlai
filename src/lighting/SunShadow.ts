@@ -40,8 +40,13 @@ function shadowCoordinateMatrix( shadow: THREE.LightShadow, target: THREE.Matrix
 }
 
 export interface SunShadowOptions {
-	// Bias along the light ray, in metres; converted to the map's depth range.
+	// Bias along the light ray, in metres; converted to each fitted map's depth range.
 	bias?: number;
+	// Lowest surface that reads this map: the sea's wave troughs. Submerged receivers read it at
+	// their refracted entry point on the surface (see RefractedSun), never below it.
+	floor?: number;
+	// light-space margin around the casters (m): the filter's footprint and the normal bias
+	margin?: number;
 }
 
 export class SunShadow {
@@ -64,22 +69,30 @@ export class SunShadow {
 	// it: a depth texture without one is taken for a multisampled attachment of the main pass.
 	private readonly maps: THREE.RenderTarget;
 	private readonly depth: THREE.TextureNode;
+	private readonly casters = new THREE.Box3();
 	private readonly drawn = new THREE.Vector3();
 	private readonly bias: number;
+	private readonly floor: number;
+	private readonly margin: number;
 	// the light's turn between redraws (radians)
 	step = STEP;
 	private hasPrevious = false;
 	private cut = true;
 	private readonly previousCoordinate = new THREE.Matrix4();
 	private readonly currentCoordinate = new THREE.Matrix4();
+	private readonly corner = new THREE.Vector3();
+	private readonly target = new THREE.Vector3();
+	private readonly lightBounds = new THREE.Box3();
 	private readonly currentLayer = new THREE.Box3( new THREE.Vector3( 0, 0, CURRENT ), new THREE.Vector3( 1, 1, CURRENT + 1 ) );
 	private readonly toCurrentLayer = new THREE.Vector3( 0, 0, CURRENT );
 	private readonly toPreviousLayer = new THREE.Vector3( 0, 0, PREVIOUS );
 
-	constructor( sun: THREE.DirectionalLight, { bias = 0.01 }: SunShadowOptions = {} ) {
+	constructor( sun: THREE.DirectionalLight, { bias = 0.01, floor = - 3, margin = 0.6 }: SunShadowOptions = {} ) {
 
 		this.sun = sun;
 		this.bias = bias;
+		this.floor = floor;
+		this.margin = margin;
 		// the format three gives the sun's own map (ShadowNode.setupRenderTarget, PCF filtering)
 		const { width, height } = sun.shadow.mapSize;
 		const depth = new THREE.DepthTexture( width, height, THREE.UnsignedIntType, undefined, undefined, undefined,
@@ -128,6 +141,16 @@ export class SunShadow {
 			solarVolumeVisibility( this.depth, this.previousCoordinateNode( coordinate ), this.mapSize, this.weight.lessThan( 1 ), PREVIOUS ),
 			solarVolumeVisibility( this.depth, coordinate, this.mapSize, this.ready.greaterThan( 0 ), CURRENT ),
 			this.weight );
+
+	}
+
+	/** World-space bounds of everything that casts into this map (static). Only their part
+	 * above the floor can shade a receiver of this map. */
+	setCasters( box: THREE.Box3 ): void {
+
+		this.casters.copy( box );
+		this.casters.min.y = Math.max( this.casters.min.y, this.floor );
+		this.cut = true;
 
 	}
 
@@ -184,7 +207,7 @@ export class SunShadow {
 
 		const shadow = this.sun.shadow, shadowCamera = shadow.camera;
 		this.drawn.copy( keyDir );
-		this.project( renderer );
+		this.fit( renderer, keyDir );
 		// Draw now rather than inside the next scene render, so the copy below lands before any
 		// receiver reads the array. This is what ShadowNode.updateBefore would do with the flag.
 		node.updateShadow( { renderer, scene, camera } );
@@ -199,12 +222,42 @@ export class SunShadow {
 
 	}
 
-	// The projection for the light's current direction, as LightShadow.updateMatrices builds it.
-	private project( renderer: THREE.WebGPURenderer ): void {
+	// Fit the orthographic frustum to the casters and the shadows they throw down to the floor.
+	// Light-space x and y of a shadow equal its caster's, so the casters' footprint bounds every
+	// shadowed receiver; only the depth range reaches down to the floor. The island's footprint
+	// is far smaller than the sea floor's stones' (which cast into the refracted map, not this
+	// one), so its texels are a few times finer than a fixed frame around both.
+	private fit( renderer: THREE.WebGPURenderer, keyDir: THREE.Vector3 ): void {
 
 		const sun = this.sun, shadow = sun.shadow, camera = shadow.camera;
 		sun.updateMatrixWorld();
 		sun.target.updateMatrixWorld();
+		if ( ! this.casters.isEmpty() ) {
+
+			// the view LightShadow.updateMatrices builds, before its projection is known
+			camera.position.setFromMatrixPosition( sun.matrixWorld );
+			camera.lookAt( this.target.setFromMatrixPosition( sun.target.matrixWorld ) );
+			camera.updateMatrixWorld();
+			const bounds = this.lightBounds.makeEmpty(), box = this.casters;
+			// Toward the horizon the depth reach is bounded; the key light has faded out by then.
+			const rise = Math.max( keyDir.y, 0.02 );
+			for ( let i = 0; i < 8; i ++ ) {
+
+				const corner = this.corner.set( i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z );
+				const drop = Math.max( corner.y - this.floor, 0 ) / rise;
+				bounds.expandByPoint( this.target.copy( corner ).applyMatrix4( camera.matrixWorldInverse ) );
+				bounds.expandByPoint( corner.addScaledVector( keyDir, - drop ).applyMatrix4( camera.matrixWorldInverse ) );
+
+			}
+			const margin = this.margin;
+			camera.left = bounds.min.x - margin;
+			camera.right = bounds.max.x + margin;
+			camera.bottom = bounds.min.y - margin;
+			camera.top = bounds.max.y + margin;
+			camera.near = Math.max( 0.1, - bounds.max.z - margin );
+			camera.far = - bounds.min.z + margin;
+
+		}
 		camera.coordinateSystem = renderer.coordinateSystem;
 		camera.updateProjectionMatrix();
 		shadow.bias = - this.bias / ( camera.far - camera.near );
