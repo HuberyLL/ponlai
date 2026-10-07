@@ -84,6 +84,10 @@ export function leafTexture( size = 128 ): THREE.CanvasTexture {
 
 export const LEAF_ALPHA_TEST = 0.3;
 
+// Per-vertex flag on twigs, stems and leaf stalks, which stay out of the sun's shadow map.
+export const LEAF_STEM = 'leafStem';
+export const leafCastMask = () => float( 1 ).sub( attribute<'float'>( LEAF_STEM, 'float' ) );
+
 // Share of a w x w alpha level above the cutoff once bilinearly filtered (clamped at the
 // edges, as the texture is), sampled on a grid at least 64 samples across.
 function filteredCoverage( alpha: Float32Array, w: number, cutoff: number ): number {
@@ -185,7 +189,7 @@ export function leafAlphaTexture( size = 128, cutoff = LEAF_ALPHA_TEST ): THREE.
 function bushGeometry( seed = 5 ) {
 
 	const rng = mulberry32( seed );
-	const P: number[] = [], U: number[] = [], C: number[] = [], E: number[] = [], I: number[] = [];
+	const P: number[] = [], U: number[] = [], C: number[] = [], E: number[] = [], S: number[] = [], I: number[] = [];
 	const crowns = [
 		new THREE.Vector3( - 0.28, 0.29, 0.08 ),
 		new THREE.Vector3( 0.27, 0.35, 0.15 ),
@@ -201,6 +205,7 @@ function bushGeometry( seed = 5 ) {
 		if ( stem ) C.push( shade * 0.68, shade * 0.52, shade * 0.28 );
 		else C.push( shade * 0.97, shade, shade * 0.9 );
 		E.push( envelope.x, envelope.y, envelope.z );
+		S.push( stem ? 1 : 0 );
 
 	};
 
@@ -257,6 +262,7 @@ function bushGeometry( seed = 5 ) {
 	g.setAttribute( 'position', new THREE.Float32BufferAttribute( P, 3 ) );
 	g.setAttribute( 'uv', new THREE.Float32BufferAttribute( U, 2 ) );
 	g.setAttribute( 'color', new THREE.Float32BufferAttribute( C, 3 ) );
+	g.setAttribute( LEAF_STEM, new THREE.Float32BufferAttribute( S, 1 ) );
 	g.setIndex( I );
 	g.computeVertexNormals();
 	const normals = g.getAttribute( 'normal' );
@@ -291,7 +297,7 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.Mesh
 	const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.wind.phase.mul( 1.3 / 1.6 ) );
 	const along = vec3( wind.x, 0, wind.y ).mul( sin( ph.add( g.y.mul( 3 ) ) ) );
 	const across = vec3( wind.y.negate(), 0, wind.x ).mul( cos( ph.mul( 1.3 ).add( g.x.mul( 3 ) ) ).mul( 0.35 ) );
-	useRestPoseShadows( mat, p, p.add( along.add( across ).mul( vH.mul( 0.02 ).mul( shared.wind.strength ) ) ) );
+	useRestPoseShadows( mat, p, p.add( along.add( across ).mul( vH.mul( 0.02 ).mul( shared.wind.strength ) ) ), leafCastMask() );
 	// Each folded leaf keeps its own highlights and shading across the canopy.
 	mat.normalNode = normalViewGeometry;
 	// deep inside and underneath a bush the light is gone

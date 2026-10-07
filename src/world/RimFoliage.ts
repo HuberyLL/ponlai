@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, normalViewGeometry, materialColor, vec3, vec4, float, mix, sin, cos, dot, pow, clamp } from 'three/tsl';
-import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST } from './Foliage.ts';
+import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, LEAF_STEM, leafCastMask } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
 import { mulberry32, smoothstep } from './noise.ts';
@@ -69,7 +69,7 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh ): THREE.Mes
 	// The cloned bush material has shadow hooks for its own wind graph. Replace both
 	// hooks with this mesh's rest pose, retaining its authored 4.8 mm sway scale.
 	useRestPoseShadows( mat, positionLocal, positionLocal.add( along.add( across ).add( lift )
-		.mul( weight.mul( 0.0048 ).mul( shared.wind.strength ) ) ) );
+		.mul( weight.mul( 0.0048 ).mul( shared.wind.strength ) ) ), leafCastMask() );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.72 ), float( 0.96 ), weight );
 	useLighting( mat, () => new VegetationLighting( float( 0.94 ), ( L, V, N ) => {
@@ -89,17 +89,17 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 
 	const group = new THREE.Group();
 	group.name = 'rimFoliage';
-	const P: number[] = [], U: number[] = [], C: number[] = [], E: number[] = [], W: number[] = [], F: number[] = [], I: number[] = [];
+	const P: number[] = [], U: number[] = [], C: number[] = [], E: number[] = [], W: number[] = [], F: number[] = [], S: number[] = [], I: number[] = [];
 	const up = new THREE.Vector3( 0, 1, 0 );
 	const palette = [ [ 0.065, 0.16, 0.04 ], [ 0.095, 0.19, 0.048 ], [ 0.15, 0.205, 0.046 ], [ 0.04, 0.12, 0.043 ], [ 0.18, 0.22, 0.058 ] ];
 	const point = new THREE.Vector3(), outward = new THREE.Vector3(), tangent = new THREE.Vector3(), lateral = new THREE.Vector3();
 	const normal = new THREE.Vector3(), along = new THREE.Vector3(), width = new THREE.Vector3(), vertex = new THREE.Vector3(), radial = new THREE.Vector3();
 	let leafCount = 0, strandCount = 0, sprayCount = 0, rootClusterCount = 0;
-	const add = ( p: THREE.Vector3, u: number, v: number, color: THREE.Color, shade: number, envelope: THREE.Vector3, weight: number, phase: number ) => {
+	const add = ( p: THREE.Vector3, u: number, v: number, color: THREE.Color, shade: number, envelope: THREE.Vector3, weight: number, phase: number, stem = false ) => {
 
 		P.push( p.x, p.y, p.z ); U.push( u, v );
 		C.push( color.r * shade, color.g * shade, color.b * shade );
-		E.push( envelope.x, envelope.y, envelope.z ); W.push( weight ); F.push( phase );
+		E.push( envelope.x, envelope.y, envelope.z ); W.push( weight ); F.push( phase ); S.push( stem ? 1 : 0 );
 
 	};
 	for ( const strand of strands ) {
@@ -140,7 +140,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 				const angle = side * Math.PI / 2;
 				radial.copy( lateral ).multiplyScalar( Math.cos( angle ) ).addScaledVector( width, Math.sin( angle ) );
 				vertex.copy( point ).addScaledVector( radial, radius );
-				add( vertex, 0.5, 0.5, stemColor, 0.85 + t * 0.15, radial, sway( t ), phase );
+				add( vertex, 0.5, 0.5, stemColor, 0.85 + t * 0.15, radial, sway( t ), phase, true );
 
 			}
 			if ( i === 0 ) continue;
@@ -170,10 +170,10 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 			const B = L * ( 0.46 + rng() * 0.12 ), fold = L * ( 0.08 + rng() * 0.07 ), shade = 0.84 + rng() * 0.18;
 			// A small real stalk connects each individual blade to the woody spray.
 			const stalk = P.length / 3;
-			add( vertex.copy( point ).addScaledVector( width, - 0.0012 ), 0.5, 0.5, stemColor, 0.85, normal, sway( windT ), phase );
-			add( vertex.copy( point ).addScaledVector( width, 0.0012 ), 0.5, 0.5, stemColor, 0.85, normal, sway( windT ), phase );
-			add( vertex.copy( origin ).addScaledVector( width, 0.0006 ), 0.5, 0.5, stemColor, 1, normal, sway( windT ), phase );
-			add( vertex.copy( origin ).addScaledVector( width, - 0.0006 ), 0.5, 0.5, stemColor, 1, normal, sway( windT ), phase );
+			add( vertex.copy( point ).addScaledVector( width, - 0.0012 ), 0.5, 0.5, stemColor, 0.85, normal, sway( windT ), phase, true );
+			add( vertex.copy( point ).addScaledVector( width, 0.0012 ), 0.5, 0.5, stemColor, 0.85, normal, sway( windT ), phase, true );
+			add( vertex.copy( origin ).addScaledVector( width, 0.0006 ), 0.5, 0.5, stemColor, 1, normal, sway( windT ), phase, true );
+			add( vertex.copy( origin ).addScaledVector( width, - 0.0006 ), 0.5, 0.5, stemColor, 1, normal, sway( windT ), phase, true );
 			I.push( stalk, stalk + 1, stalk + 2, stalk, stalk + 2, stalk + 3 );
 			const base = P.length / 3;
 			const leafVertex = ( length: number, breadth: number, lift: number, u: number, v: number, brightness: number ) => {
@@ -261,7 +261,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 					const angle = side * Math.PI / 2;
 					radial.copy( lateral ).multiplyScalar( Math.cos( angle ) ).addScaledVector( width, Math.sin( angle ) );
 					vertex.copy( root ).addScaledVector( direction, extent * u ).addScaledVector( radial, radius );
-					add( vertex, 0.5, 0.5, stemColor, 0.90, radial, sway( Math.min( 1, t + u * 0.04 ) ), phase );
+					add( vertex, 0.5, 0.5, stemColor, 0.90, radial, sway( Math.min( 1, t + u * 0.04 ) ), phase, true );
 
 				}
 				if ( ring === 0 ) continue;
@@ -296,6 +296,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 	geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( C, 3 ) );
 	geometry.setAttribute( 'rimSway', new THREE.Float32BufferAttribute( W, 1 ) );
 	geometry.setAttribute( 'rimPhase', new THREE.Float32BufferAttribute( F, 1 ) );
+	geometry.setAttribute( LEAF_STEM, new THREE.Float32BufferAttribute( S, 1 ) );
 	geometry.setIndex( I );
 	geometry.computeVertexNormals();
 	const normals = geometry.getAttribute( 'normal' );
