@@ -48,7 +48,7 @@ exposed.
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor
   (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
   vegetation anchors; instanced grass, bushes and flowers on the island top, a turf skirt over the lip,
-  with top-rooted overhanging branches of mixed lengths.
+  with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds on the lip.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
@@ -95,6 +95,10 @@ exposed.
   patchy seabed detail; no exposed sea stacks or reefs.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
+  They grow in clumped patches of one to nine strands with runs of bare stone between (0.4-4 m:
+  a sparse patch breaks any longer run), a long tail of strands that wander and fork down to
+  1.5-2.6 m, leaves shrinking toward the tips, and a mounded leaf clump over each patch's lip; the
+  lowest quarter of the cliff above the sea stays bare.
   The meadow's sod curls a little over the lip as a ragged turf skirt (`RimSkirt.ts`), swept along
   the coast line traced from the rim field, so it follows any shape the rim takes. Rim greenery is
   generic: it is derived from the footprint, the island SDF and noise fields with fixed seeds, never

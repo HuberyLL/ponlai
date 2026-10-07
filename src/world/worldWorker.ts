@@ -144,7 +144,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
 	t = performance.now();
 	const rimStrands = makeRimTrails( islandSDF, fp, vegetation );
-	for ( const strand of rimStrands ) transfer.push( strand.points.buffer );
+	for ( const strand of rimStrands ) transfer.push( strand.points.buffer, ...( strand.clump ? [ strand.clump.buffer ] : [] ) );
 	mark( 'rimFoliage', t );
 
 	// --- seabed contact visibility; the warped geometry was generated before the mesh bake.

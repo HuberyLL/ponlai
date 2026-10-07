@@ -28,8 +28,11 @@ export const VEGETATION_STRIDE = 9;
 // RGBA: actual upper-coast distance, local roof height, turf retreat and exposed root depth.
 export interface RimGroundField extends ShoreField {}
 
-// A top-rooted branch centreline: x, y, z and the outward surface normal per node.
-export interface RimStrand { points: Float32Array; seed: number; lip: number }
+// A top-rooted branch centreline: x, y, z and the outward surface normal per node. `lip` is the
+// node where it crosses the edge. A fork starts on node `from` of strand `parent` (an index into
+// the same list) instead of in the turf. `clump`: leaf anchors ( x, y, z, normal ) of the leafy
+// mound over the lip at the root of a patch, carried by the patch's first strand.
+export interface RimStrand { points: Float32Array; seed: number; lip: number; parent?: number; from?: number; clump?: Float32Array }
 
 // The turf skirt over the rim: SKIRT_RING cross-section points ( x, y, z ) per coast sample,
 // per sample ( outward x, z, presence, droop ), and ( first sample, count ) per traced loop.
