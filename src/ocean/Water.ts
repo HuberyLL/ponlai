@@ -582,6 +582,9 @@ export class Water {
 
 			// ---- reflection
 			const Rr = reflect( V.negate(), N ).toVar();
+			// How the reflected direction turns across a quarter of the pixel, diagonally (taken here,
+			// while control flow is uniform): the screen-space reflection traces a ray on either side.
+			const reflectionJitter = dFdx( Rr ).add( dFdy( Rr ) ).mul( 0.25 ).toVar();
 			// An isotropic mip is an approximation to the anisotropic reflected Gaussian.
 			// Match its angular variance to a box mip kernel, keeping the reflection direction intact.
 			const reflectionSigma = sqrt( waveReflectionAngularVariance( localV, seaCovariance ) );
@@ -599,9 +602,14 @@ export class Water {
 			} );
 			If( u.ssr.greaterThan( 0.5 ).and( Fr.greaterThan( 0.01 ) ), () => {
 
-				const Rv = normalize( cameraViewMatrix.mul( vec4( Rr, 0 ) ).xyz );
-				const r = traceSSR( posV, Rv ).toVar();
-				refl.assign( mix( refl, r.rgb, r.a ) );
+				// Two rays a quarter pixel either side of the pixel's centre, averaged: a ray either hits
+				// the island or shows the sky, so with one ray per pixel the reflected island's edge and
+				// the sky seen through it between the waves were pixel stair-steps and single bright
+				// specks (that the depth of field then spread into discs). Two rays give the edges a
+				// half step and halve a lone speck. The offsets are fixed, so a paused frame repeats.
+				const ra = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr.sub( reflectionJitter ), 0 ) ).xyz ) ).toVar();
+				const rb = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr.add( reflectionJitter ), 0 ) ).xyz ) ).toVar();
+				refl.assign( mix( refl, ra.rgb, ra.a ).add( mix( refl, rb.rgb, rb.a ) ).mul( 0.5 ) );
 
 			} );
 
