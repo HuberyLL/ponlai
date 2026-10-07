@@ -3,7 +3,8 @@
 // rocks, the seabed height and the shoreline distance at sea level.
 
 import { Field2D, roundCorners } from './Field2D.ts';
-import { noise3, fbm2, hash3i, mulberry32, smoothstep, smax, type Rng } from './noise.ts';
+import { noise3, fbm2, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
+import { CoastColumns, CliffWall } from './Cliff.ts';
 import type { SDF, Rock } from './types.ts';
 
 export interface Footprint {
@@ -95,113 +96,42 @@ function softMax( vals: Float64Array, n: number, k: number ): number {
 
 }
 
-interface CliffFace {
-	x: number; z: number; nx: number; nz: number;
-	left: number; right: number; y: number; depth: number; leanU: number; leanY: number;
-	chip: number; wearDepth: number; wearY: number; wearSpan: number;
-}
+// The macro coast: a slow wobble of the wall around the tile footprint (m, + outward).
+function coastWobble( x: number, z: number ): number {
 
-// Unequal rock strength and local wave exposure suggest broad intact faces beside scattered
-// retreats. Coastal observations inspire the art direction; no erosion simulation is implied:
-// https://www.nps.gov/articles/coastal-processes-erosion.htm
-// https://www.usgs.gov/media/images/factors-affecting-sea-cliff-erosion
-function makeCliffFaces( fp: Footprint ): CliffFace[] {
-
-	const b = layoutBounds(), candidates: number[][] = [];
-	const step = 0.45, e = 0.16;
-	for ( let z = b.z0 - 1; z < b.z1 + 1; z += step ) for ( let x = b.x0 - 1; x < b.x1 + 1; x += step ) {
-
-		const d = fp.dist( x, z );
-		if ( Math.abs( d ) > step ) continue;
-		for ( let axis = 0; axis < 2; axis ++ ) {
-
-			const d1 = fp.dist( x + ( axis === 0 ? step : 0 ), z + ( axis === 1 ? step : 0 ) );
-			if ( d * d1 >= 0 ) continue;
-			const t = d / ( d - d1 );
-			const px = x + ( axis === 0 ? step * t : 0 ), pz = z + ( axis === 1 ? step * t : 0 );
-			const nx = fp.dist( px + e, pz ) - fp.dist( px - e, pz );
-			const nz = fp.dist( px, pz + e ) - fp.dist( px, pz - e );
-			const l = Math.hypot( nx, nz );
-			if ( l > 0.01 ) candidates.push( [ px, pz, nx / l, nz / l ] );
-
-		}
-
-	}
-	const rng = mulberry32( 1937 );
-	for ( let i = candidates.length - 1; i > 0; i -- ) {
-
-		const j = Math.floor( rng() * ( i + 1 ) );
-		[ candidates[ i ], candidates[ j ] ] = [ candidates[ j ], candidates[ i ] ];
-
-	}
-	const faces: CliffFace[] = [];
-	for ( const p of candidates ) {
-
-		if ( faces.some( ( f ) => Math.hypot( f.x - p[ 0 ], f.z - p[ 1 ] ) < 3.6 ) || rng() < 0.20 ) continue;
-		const wearDepth = rng() < 0.24 ? 0.10 + rng() * 0.17 : 0;
-		faces.push( {
-			x: p[ 0 ], z: p[ 1 ], nx: p[ 2 ], nz: p[ 3 ],
-			left: 1.1 + rng() * 1.8, right: 0.9 + rng() * 1.9, y: 0.7 + rng() * 1.1,
-			depth: 0.12 + rng() * 0.22, leanU: ( rng() - 0.5 ) * 0.08, leanY: 0.03 + rng() * 0.11,
-			chip: rng() < 0.24 ? 0.04 + rng() * 0.12 : 0,
-			wearDepth, wearY: - 0.45 + rng() * 0.90, wearSpan: 0.45 + rng() * 0.50,
-		} );
-
-	}
-	return faces;
+	const broad = noise3( x * 0.105 + 8.7, 4.2, z * 0.105 - 3.1 );
+	const shoulder = noise3( x * 0.22 - z * 0.07 - 4.6, 7.9, z * 0.21 + x * 0.04 );
+	return Math.tanh( broad * 2.25 + shoulder * 0.32 ) * 0.52;
 
 }
 
 // Soil support and the rim root bed follow the same undisturbed surface as the mesh.
-// Rim chips remain geometry-owned, so exposed stone can interrupt the turf.
+// Fallen columns and chips remain geometry-owned, so exposed stone can interrupt the turf.
 export function islandSurfaceHeight( x: number, z: number ): number {
 
 	return ISLAND_TOP + noise3( x * 0.18, 4.1, z * 0.18 ) * 0.12 + noise3( x * 0.7, 1.3, z * 0.7 ) * 0.04;
 
 }
 
+// The island block: the flat meadow plateau inside a wall of jointed, bedded columns (Cliff.ts).
+// Everything derives from the footprint, so a grown layout gets the same kind of coast.
 export function makeIslandSDF( fp: Footprint ): SDF {
 
 	const top = islandSurfaceHeight;
-	const faces = makeCliffFaces( fp );
-	// The horizontal fields are shared through a full sampled column. Their long correlation
-	// changes the coast's trace and inclination without rumpling the meadow's interior.
-	let cx = NaN, cz = NaN, cD2 = 0, cTop = 0, cCoast = 0, cBatter = 0, cChip = 0, cRound = 0, cDomain = 0;
-	const active: { face: CliffFace; u: number; shoulder: number; support: number }[] = [];
+	const columns = new CoastColumns( ( x, z ) => fp.dist( x, z ), coastWobble, top, layoutBounds() );
+	const wall = new CliffWall( columns );
+	// The horizontal fields are shared through a full sampled column (y is innermost when meshing).
+	let cx = NaN, cz = NaN, cD2 = 0, cTop = 0, cDomain = 0;
 	function column( x: number, z: number ): void {
 
 		if ( x === cx && z === cz ) return;
 		cx = x; cz = z;
 		cD2 = fp.dist( x, z );
 		cTop = top( x, z );
-		cChip = 0;
-		active.length = 0;
-		if ( cD2 <= - 2.5 || cD2 >= 3.0 ) return;
-		const broad = noise3( x * 0.105 + 8.7, 4.2, z * 0.105 - 3.1 );
-		const shoulder = noise3( x * 0.22 - z * 0.07 - 4.6, 7.9, z * 0.21 + x * 0.04 );
-		cCoast = Math.tanh( broad * 2.25 + shoulder * 0.32 ) * 0.52;
-		const strength = noise3( x * 0.13 - 6.4, 3.7, z * 0.13 + 10.2 );
-		// The exposed wall keeps a meaningful inclination while the submerged toe stays within
-		// the meshing bounds. Positive headlands have less room for an outward battered toe.
-		cBatter = Math.min( 0.028 + smoothstep( - 0.32, 0.31, strength ) * 0.33,
-			( 1.55 - Math.max( 0, cCoast ) ) / 4.0 );
-		cRound = 0.09 + smoothstep( - 0.35, 0.3, noise3( x * 0.26 + 2.7, 4.7, z * 0.26 ) ) * 0.14;
-		// The intact centre matches its previous SDF exactly. The outer fade is beyond every
-		// possible displaced surface, avoiding the clipped seams of a narrow relief domain.
-		cDomain = smoothstep( - 2.5, - 1.8, cD2 ) * ( 1 - smoothstep( 2.0, 3.0, cD2 ) );
-		for ( const face of faces ) {
-
-			const dx = x - face.x, dz = z - face.z;
-			const across = Math.abs( dx * face.nx + dz * face.nz );
-			if ( across >= 2.5 ) continue;
-			const support = 1 - smoothstep( 1.85, 2.5, across );
-			const u = - dx * face.nz + dz * face.nx;
-			const shoulder = Math.min( ( u + face.left ) * 0.24, ( face.right - u ) * 0.28 );
-			if ( shoulder <= 0 ) continue;
-			active.push( { face, u, shoulder, support } );
-			cChip = Math.max( cChip, Math.min( face.chip, shoulder * 0.8 ) * support );
-
-		}
+		// The plain plateau inside, the wall's columns around the coast. The outer fade lies
+		// beyond every possible displaced surface, and the inner one behind the deepest fallen
+		// block, so neither clips the relief.
+		cDomain = smoothstep( - 3.4, - 2.8, cD2 ) * ( 1 - smoothstep( 2.2, 3.2, cD2 ) );
 
 	}
 
@@ -209,34 +139,45 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 
 		column( x, z );
 		const dBot = ISLAND_BOTTOM - y;
-		if ( cD2 <= - 2.5 || cD2 >= 3.0 ) return Math.max( cD2, y - cTop, dBot );
-		let cut = 0, toeWear = 0;
-		for ( const { face, u, shoulder, support } of active ) {
+		const plain = Math.max( cD2, y - cTop );
+		if ( cDomain <= 0 ) return Math.max( plain, dBot );
+		let d = wall.at( x, y, z, cTop );
+		if ( d === Infinity ) return Math.max( plain, dBot );
+		// Weathering: low relief across the faces at two scales, so no block face is a plane.
+		// The broad term is ridged (|noise|): faces break into shallow facets meeting at crisp
+		// crests, as fractured stone does, rather than swelling into soft cushions.
+		// It only shapes the surface, so it fades out (and is skipped) away from it.
+		const near = 1 - smoothstep( 0.12, 0.3, Math.abs( d ) );
+		if ( near > 0 ) {
 
-			const v = y - face.y;
-			cut = Math.max( cut, Math.max( 0, Math.min( face.depth + u * face.leanU + v * face.leanY, shoulder ) ) * support );
-			// Wave wear is shallow, local and staggered in height. Quiet lengths of shore retain
-			// a full toe, so this cannot become a continuous groove around the waterline.
-			const wave = ( y - face.wearY ) / face.wearSpan;
-			toeWear = Math.max( toeWear, face.wearDepth * Math.exp( - wave * wave )
-				* smoothstep( 0, 0.22, shoulder ) * support );
+			const wear = ( Math.abs( noise3( x * 0.6 + 3.8, y * 0.85, z * 0.6 ) ) - 0.22 ) * 0.07
+				+ noise3( x * 1.5 - 2.3, y * 1.2 + 4.7, z * 1.5 + 6.1 ) * 0.02;
+			// (faded out at the meadow's height, which must stay islandSurfaceHeight for the
+			// villagers, the root soil and the rim ground that read it)
+			d += wear * near * smoothstep( 0.04, 0.5, cTop - y );
 
 		}
-		const drop = cTop - y;
-		// Inclined faces continue below the water into a gently easing toe. The derivative is
-		// continuous at the change, with no hard bevel or horizontal step at sea level.
-		const wallHeight = drop <= 2.8 ? drop : 2.8 + ( 1 - Math.exp( - ( drop - 2.8 ) / 1.2 ) ) * 1.2;
-		const wear = noise3( x * 0.55 + 3.8, y * 0.8, z * 0.55 ) * 0.020
-			+ noise3( x * 2.1, y * 1.3 + 4.7, z * 2.1 ) * 0.008;
-		let d = cD2 + ( - cCoast - cBatter * wallHeight + cut + toeWear + wear ) * cDomain;
-		const rim = cTop - cChip * cDomain * smoothstep( - 1.25, 0.10, cD2 - cCoast );
-		d = smax( d, y - rim, cRound );
-		return Math.max( d, dBot );
+		return Math.max( plain + ( d - plain ) * cDomain, dBot );
 
 	};
 
 	islandSDF.tint = ( x, y, z ) => 0.5 + noise3( x * 0.2 + 9.3, y * 0.16, z * 0.2 ) * 0.3;
 	return islandSDF;
+
+}
+
+// The mesh cells that should keep the cliff's edges sharp (dual contouring): the wall and its
+// lip down to below the reach of clear water; the flat meadow and the deep toe keep the plain
+// surface-nets vertex, which needs no extra field samples.
+export function cliffSharpCells( fp: Footprint ): ( x: number, y: number, z: number ) => boolean {
+
+	return ( x, y, z ) => {
+
+		if ( y < - 1.8 ) return false;
+		const d = fp.dist( x, z );
+		return d > - 3.4 && d < 3.2 && ( d > - 1.4 || y < islandSurfaceHeight( x, z ) - 0.08 );
+
+	};
 
 }
 

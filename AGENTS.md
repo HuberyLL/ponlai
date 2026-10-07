@@ -45,7 +45,9 @@ exposed.
 
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
-- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor
+- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets; the cliff band
+  places its vertices by dual contouring so block edges stay sharp), its cliffs as jointed,
+  bedded columns seeded along the coast (`Cliff.ts`), sea floor
   (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
   vegetation anchors; instanced grass, bushes and flowers on the island top,
   with top-rooted overhanging branches of mixed lengths.
@@ -93,6 +95,19 @@ exposed.
 - Keep the island tile layout and flat central plateau. Natural contour, slope and weathering
   variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
   patchy seabed detail; no exposed sea stacks or reefs.
+- The island must be able to grow (more tiles), so every cliff feature is generic: columns,
+  beds, ledges, notches, gullies, buttresses and fallen blocks derive from the footprint with
+  seeds hashed from position (`Cliff.ts`), never placed by hand at coordinates, and an
+  unchanged stretch of coast keeps its columns when the layout grows elsewhere: every property of
+  a column or feature (a gully's or buttress's role included) comes from its own hash, never from
+  a running count. The wall is built as solid geometry (cell-clipped, bed-sliced blocks with
+  chamfered edges, overlapping a little near the face and generously behind it) so its field
+  stays near a true distance; blended offsets stair-step on the mesh. It must not read as
+  masonry: joints lean and some die out at a parting, and off the coast-wide ledges many
+  partings are welded per column. The wave-cut notch's roof stays above the calm sea's crests,
+  and the weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight`.
+  Stumps of fallen columns stop at a parting below the meadow's planting height (2.8 m). No
+  waterfalls.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as

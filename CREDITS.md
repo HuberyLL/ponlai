@@ -369,6 +369,9 @@ comment where it is used.
   crossings' tangent planes): Tao Ju, Frank Losasso, Scott Schaefer and Joe Warren,
   [*Dual Contouring of Hermite Data*](https://www.cs.rice.edu/~jwarren/papers/dualcontour.pdf)
   (SIGGRAPH 2002).
+- Chamfered edges of the cliff's blocks, the 45-degree chamfer of two distance fields
+  ( a + b + r ) / sqrt( 2 ): Mercury, [*hg_sdf*](https://mercury.sexy/hg_sdf/) (`fOpUnionChamfer`),
+  used as a technique only.
 
 ## References
 
