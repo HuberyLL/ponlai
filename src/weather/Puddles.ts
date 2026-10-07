@@ -81,8 +81,10 @@ export const puddleRipples = Fn( ( [ xz, time, rain, footprint ]: [ V2, F, F, F 
 
 		} );
 		// Lagarde scales the slope by 0.35; steeper rings tilt the reflection further across the
-		// sky's gradient, so they still read under a flat overcast.
-		const strength = clamp( rain.mul( 1.5 ), 0, 1 ).mul( 0.6 );
+		// sky's gradient and the Fresnel curve, so they still read under a flat overcast and over
+		// the puddles' art-directed reflectance, which flattens Fresnel's contrast between a
+		// ring's crest and trough.
+		const strength = clamp( rain.mul( 1.5 ), 0, 1 ).mul( 0.9 );
 		result.assign( vec3( gradient.mul( strength ).mul( resolved ), float( 1 ).sub( resolved ).mul( strength ) ) );
 
 	} );

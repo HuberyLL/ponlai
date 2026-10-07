@@ -71,9 +71,11 @@ export interface RunnelInput {
 // projection, scaled to this island's smaller cliffs and narrower water paths). The pattern
 // repeats every 1.6 m across a face, so a slow warp shifts the columns to hide the period.
 const RUN_U = 1 / 1.6, RUN_V = 1 / 14, RUN_WARP = 2.7;
-// The flow pattern is four times finer down the runnel (slugs of water around a metre
-// long) and falls at FLOW_RATE / ( FLOW_V * RUN_V ), about 0.9 m/s.
-const FLOW_V = 4, FLOW_RATE = 0.25;
+// The streaks inside them: the same projection 3.2 times finer across and 1.6 times down.
+const FINE = vec2( 3.2, 1.6 );
+// The flow pattern is four times finer again down the streaks (slugs of water around half a
+// metre long) and falls at FLOW_RATE / ( FLOW_V * FINE.y * RUN_V ), about 0.9 m/s.
+const FLOW_V = 4, FLOW_RATE = 0.4;
 
 /** Water running down steep rock while it is wet: x = runnel (the paths the water takes, which
  * stay damp), y = water flowing in them now (only while it rains). Samples use explicit
@@ -92,17 +94,28 @@ export function runnels( { tex, p, n, dpx, dpy, warp, time, rain }: RunnelInput 
 	const stainS = texture( tex, uvA ).grad( gA[ 0 ], gA[ 1 ] ).a.mul( w4.x )
 		.add( texture( tex, uvB ).grad( gB[ 0 ], gB[ 1 ] ).a.mul( w4.y ) ).div( wSum );
 	const steep = float( 1 ).sub( smoothstep( 0.55, 0.85, n.y ) );
-	const runnel = smoothstep( 0.56, 0.64, stainS ).mul( steep ).toVar();
+	// Where the water gathers on a face: broad, soft-edged zones. On their own they read as damp
+	// patches rather than as water running down the rock.
+	const gather = smoothstep( 0.52, 0.62, stainS ).mul( steep ).toVar();
+	// Inside them the water keeps to a few narrow paths: the same variation, about three times
+	// finer across the face and a little finer down it, cut at a threshold into streaks a hand
+	// or two wide, so each zone splits into separate dark lines with crisp edges.
+	const fA = [ uvA.mul( FINE ).add( vec2( 0.23, 0.61 ) ), gA[ 0 ].mul( FINE ), gA[ 1 ].mul( FINE ) ];
+	const fB = [ uvB.mul( FINE ).add( vec2( 0.71, 0.13 ) ), gB[ 0 ].mul( FINE ), gB[ 1 ].mul( FINE ) ];
+	const fineS = texture( tex, fA[ 0 ] ).grad( fA[ 1 ], fA[ 2 ] ).a.mul( w4.x )
+		.add( texture( tex, fB[ 0 ] ).grad( fB[ 1 ], fB[ 2 ] ).a.mul( w4.y ) ).div( wSum );
+	const streak = smoothstep( 0.47, 0.55, fineS );
+	const runnel = gather.mul( mix( float( 0.25 ), float( 1 ), streak ) ).toVar();
 
-	// After Godot_rain_shader: the same columns sampled again with a falling offset; where the
+	// After Godot_rain_shader: the streaks sampled again with a falling offset; where the
 	// moving pattern clears a threshold, a slug of water is running down the runnel.
 	const fall = time.mul( FLOW_RATE );
-	const flowA = texture( tex, uvA.mul( vec2( 1, FLOW_V ) ).add( vec2( 0.17, fall ) ) )
-		.grad( gA[ 0 ].mul( vec2( 1, FLOW_V ) ), gA[ 1 ].mul( vec2( 1, FLOW_V ) ) ).a;
-	const flowB = texture( tex, uvB.mul( vec2( 1, FLOW_V ) ).add( vec2( 0.41, fall ) ) )
-		.grad( gB[ 0 ].mul( vec2( 1, FLOW_V ) ), gB[ 1 ].mul( vec2( 1, FLOW_V ) ) ).a;
+	const flowA = texture( tex, fA[ 0 ].mul( vec2( 1, FLOW_V ) ).add( vec2( 0.17, fall ) ) )
+		.grad( fA[ 1 ].mul( vec2( 1, FLOW_V ) ), fA[ 2 ].mul( vec2( 1, FLOW_V ) ) ).a;
+	const flowB = texture( tex, fB[ 0 ].mul( vec2( 1, FLOW_V ) ).add( vec2( 0.41, fall ) ) )
+		.grad( fB[ 1 ].mul( vec2( 1, FLOW_V ) ), fB[ 2 ].mul( vec2( 1, FLOW_V ) ) ).a;
 	const flowS = flowA.mul( w4.x ).add( flowB.mul( w4.y ) ).div( wSum );
-	const flowing = smoothstep( 0, 0.2, max( flowS.sub( 0.55 ), 0 ) ).mul( runnel ).mul( clamp( rain.mul( 2 ), 0, 1 ) );
+	const flowing = smoothstep( 0, 0.12, max( flowS.sub( 0.5 ), 0 ) ).mul( gather ).mul( streak ).mul( clamp( rain.mul( 2 ), 0, 1 ) );
 	return vec2( runnel, flowing );
 
 }
