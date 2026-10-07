@@ -13,7 +13,9 @@ import type { Shared } from '../shared.ts';
 // Individual folded leaves on short branching sprays. Three offset crowns keep bushes
 // irregular; real leaf normals separate sunlit faces from their shaded neighbours.
 
-export function leafTexture( size = 128 ): THREE.CanvasTexture {
+// The leaf as a transparent silhouette; the colour map and the coverage map are both made
+// from it, so they always agree.
+function drawLeaf( size: number ): HTMLCanvasElement {
 
 	const c = document.createElement( 'canvas' );
 	c.width = c.height = size;
@@ -55,6 +57,23 @@ export function leafTexture( size = 128 ): THREE.CanvasTexture {
 
 	}
 	g.restore();
+	return c;
+
+}
+
+// The leaf's colour, opaque. Its silhouette lives only in leafAlphaTexture, whose mips keep
+// the leaf's coverage: an alpha here would be box-filtered by the GPU and, multiplied into the
+// alpha map, thin distant leaves again. Shadow passes read the alpha map alone, so both passes
+// now cut the same silhouette. The card around the leaf stays black, as the transparent texels
+// were, so the colour mips match the previous ones.
+export function leafTexture( size = 128 ): THREE.CanvasTexture {
+
+	const c = document.createElement( 'canvas' );
+	c.width = c.height = size;
+	const g = c.getContext( '2d' )!;
+	g.fillStyle = '#000';
+	g.fillRect( 0, 0, size, size );
+	g.drawImage( drawLeaf( size ), 0, 0 );
 	const tex = new THREE.CanvasTexture( c );
 	tex.colorSpace = THREE.SRGBColorSpace;
 	tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -63,19 +82,98 @@ export function leafTexture( size = 128 ): THREE.CanvasTexture {
 
 }
 
-export function leafAlphaTexture( map: THREE.CanvasTexture ): THREE.CanvasTexture {
+export const LEAF_ALPHA_TEST = 0.3;
 
-	const c = document.createElement( 'canvas' );
-	c.width = map.image.width;
-	c.height = map.image.height;
-	const g = c.getContext( '2d' )!;
-	g.drawImage( map.image, 0, 0 );
-	g.globalCompositeOperation = 'source-in';
-	g.fillStyle = '#fff';
-	g.fillRect( 0, 0, c.width, c.height );
-	// Alpha maps read color channels, not alpha. A white silhouette keeps shaded leaf
-	// veins from being cut away or casting incomplete shadows.
-	const tex = new THREE.CanvasTexture( c );
+// Share of a w x w alpha level above the cutoff once bilinearly filtered (clamped at the
+// edges, as the texture is), sampled on a grid at least 64 samples across.
+function filteredCoverage( alpha: Float32Array, w: number, cutoff: number ): number {
+
+	const steps = Math.max( 1, Math.ceil( 64 / w ) ), n = w * steps;
+	const at = ( x: number, y: number ) => alpha[ Math.min( w - 1, Math.max( 0, y ) ) * w + Math.min( w - 1, Math.max( 0, x ) ) ];
+	let covered = 0;
+	for ( let j = 0; j < n; j ++ ) for ( let i = 0; i < n; i ++ ) {
+
+		const u = ( i + 0.5 ) / steps - 0.5, v = ( j + 0.5 ) / steps - 0.5;
+		const x = Math.floor( u ), y = Math.floor( v ), fx = u - x, fy = v - y;
+		const top = at( x, y ) + ( at( x + 1, y ) - at( x, y ) ) * fx;
+		const bottom = at( x, y + 1 ) + ( at( x + 1, y + 1 ) - at( x, y + 1 ) ) * fx;
+		if ( top + ( bottom - top ) * fy > cutoff ) covered ++;
+
+	}
+	return covered / ( n * n );
+
+}
+
+// Coverage-preserving alpha mips, after Ignacio Castano, "Computing Alpha Mipmaps" (2010). The
+// leaf covers under half its card, yet its mean alpha (~0.46) is above the 0.3 cutoff, so plain
+// box mips fill the card: distant leaves turned into squares. Each level is box-filtered from
+// the unremapped level above, then remapped so the share of its bilinearly filtered surface
+// above the cutoff matches the full-size leaf. Castano scales alpha down; alpha-to-coverage turns
+// anything short of cutoff + fwidth into partial coverage, so a scaled-down interior would make
+// whole leaves see-through. The remap is a steep ramp through the cutoff instead: leaves stay
+// solid, with a filtered edge. Built once on the CPU; the GPU does not regenerate them. The
+// levels are opaque grey canvases (alpha maps read colour, not alpha), uploaded with the same
+// flip as the colour map.
+export function leafAlphaTexture( size = 128, cutoff = LEAF_ALPHA_TEST ): THREE.CanvasTexture {
+
+	const leaf = drawLeaf( size ).getContext( '2d' )!.getImageData( 0, 0, size, size ).data;
+	let level = new Float32Array( size * size );
+	for ( let i = 0; i < level.length; i ++ ) level[ i ] = leaf[ i * 4 + 3 ] / 255;
+	let covered = 0;
+	for ( const a of level ) if ( a > cutoff ) covered ++;
+	const coverage = covered / level.length;
+
+	const mips: HTMLCanvasElement[] = [];
+	for ( let w = size; ; w >>= 1 ) {
+
+		let remapped = level;
+		if ( w < size ) {
+
+			let peak = 0;
+			for ( const a of level ) peak = Math.max( peak, a );
+			const ramp = ( 1 - cutoff ) / ( 0.1 * peak );
+			const remap = ( threshold: number ) => level.map( ( a ) => Math.min( 1, Math.max( 0, cutoff + ( a - threshold ) * ramp ) ) );
+			// Coverage falls as the threshold rises: bisect for the full-size leaf's share,
+			// but keep the densest texel solid so a far bush never vanishes outright.
+			let lo = 0, hi = peak * 0.9;
+			for ( let i = 0; i < 20; i ++ ) {
+
+				const mid = ( lo + hi ) * 0.5;
+				if ( filteredCoverage( remap( mid ), w, cutoff ) > coverage ) lo = mid; else hi = mid;
+
+			}
+			remapped = remap( ( lo + hi ) * 0.5 );
+
+		}
+		const c = document.createElement( 'canvas' );
+		c.width = c.height = w;
+		const g = c.getContext( '2d' )!;
+		const image = g.createImageData( w, w );
+		for ( let i = 0; i < remapped.length; i ++ ) {
+
+			const v = Math.round( remapped[ i ] * 255 );
+			image.data[ i * 4 ] = image.data[ i * 4 + 1 ] = image.data[ i * 4 + 2 ] = v;
+			image.data[ i * 4 + 3 ] = 255;
+
+		}
+		g.putImageData( image, 0, 0 );
+		mips.push( c );
+		if ( w === 1 ) break;
+
+		const half = w >> 1, next = new Float32Array( half * half );
+		for ( let y = 0; y < half; y ++ ) for ( let x = 0; x < half; x ++ ) {
+
+			const i = 2 * y * w + 2 * x;
+			next[ y * half + x ] = ( level[ i ] + level[ i + 1 ] + level[ i + w ] + level[ i + w + 1 ] ) * 0.25;
+
+		}
+		level = next;
+
+	}
+
+	const tex = new THREE.CanvasTexture( mips[ 0 ] );
+	tex.mipmaps = mips as unknown as THREE.Texture[ 'mipmaps' ];
+	tex.generateMipmaps = false;
 	tex.minFilter = THREE.LinearMipmapLinearFilter;
 	tex.anisotropy = 4;
 	return tex;
@@ -177,9 +275,9 @@ function bushGeometry( seed = 5 ) {
 function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.MeshStandardNodeMaterial {
 
 	const mat = new THREE.MeshStandardNodeMaterial( {
-		map, alphaTest: 0.3, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
+		map, alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
 	} );
-	mat.alphaMap = leafAlphaTexture( map );
+	mat.alphaMap = leafAlphaTexture( map.image.width );
 	const wetness = clamp( shared.wetness, 0, 1 );
 	const wetTint = mix( 1, 0.92, wetness );
 	// materialColor retains the leaf map and its alpha; Three applies vertex and instance

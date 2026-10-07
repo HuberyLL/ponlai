@@ -186,5 +186,8 @@ exposed.
   them (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
 - Nested loops: pass both ranges to one `Loop()` call so the counters get distinct names (`i`, `j`).
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`: alpha-tested foliage sets both `map`
-  and `alphaMap`.
+  and `alphaMap`. The leaf `map` is opaque and the silhouette lives in `alphaMap` alone, whose mips
+  are built on the CPU to keep the leaf's coverage at the cutoff (box-filtered mips fill the card).
+  Alpha-to-coverage turns alpha short of cutoff + `fwidth` into partial coverage, so keep leaf
+  interiors at 1 rather than scaling alpha down.
 - Vegetation draws before the terrain (`renderOrder = -1`) so the turf under it fails the depth test.
