@@ -9,6 +9,7 @@ import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
+import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { Rain } from '../weather/Rain.ts';
 
@@ -40,7 +41,7 @@ export class Pipeline {
 		// The look's bright midtones and soft shadows are a display grade; keep the
 		// calibrated sunlight and water transport intact, with a nearly neutral black lift.
 		exposure: 2.35, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 0.45,
-		lift: new THREE.Color( 0.027, 0.027, 0.026 ),
+		lift: new THREE.Color( DAY_BLACK_LIFT, DAY_BLACK_LIFT, DAY_BLACK_LIFT * 0.97 ),
 		vignette: 0.06, grain: 0.004,
 		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0, bloomSurfaceMaxLum: 2.0,
 		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,

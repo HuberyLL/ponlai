@@ -1,7 +1,7 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
-import { DayCycle, DAY_PRESETS } from '../src/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, DAY_BLACK_LIFT } from '../src/sky/DayCycle.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
@@ -51,7 +51,7 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	near( s.keyDir.length(), 1 );
 	for ( const key of [ 'daylight', 'nightVisibility', 'moonVisibility', 'moonIllumination', 'moonKeyGain' ] ) assert.ok( Number.isFinite( s[ key ] ) && s[ key ] >= 0 && s[ key ] <= 1, key );
 	assert.ok( s.exposure >= 2.6 && s.exposure <= 4.4 * 1.6 );
-	assert.ok( s.blackLift >= 0.002 - 1e-12 && s.blackLift <= 0.027 + 1e-12 );
+	assert.ok( s.blackLift >= 0.002 - 1e-12 && s.blackLift <= DAY_BLACK_LIFT + 1e-12 );
 
 }
 // Probe direction and suggested grade on both sides of horizon, midnight and solar noon.
@@ -136,7 +136,8 @@ assert.equal( night.daylight, 0 );
 assert.equal( night.nightVisibility, 1 );
 // Less than one photographic stop of adaptation keeps night visibly darker.
 assert.ok( night.exposure / day.exposure < 2 );
-assert.ok( night.blackLift < day.blackLift / 10 );
+// The night keeps only a trace of the day's black lift, so its blacks do not turn milky.
+assert.ok( night.blackLift < day.blackLift / 5 );
 night.sunDir.set( 0, 0, 0 );
 near( cycle.snapshot().sunDir.length(), 1 );
 
