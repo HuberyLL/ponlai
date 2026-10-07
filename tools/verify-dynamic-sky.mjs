@@ -207,6 +207,13 @@ try {
 		return { before, samples };
 	} );
 	for ( const hour of report.clock.paused.samples ) near( hour, report.clock.paused.before, 1e-10, 'Paused day clock' );
+	// Pause the scene again before the explicit refresh. While it runs, the clouds keep drifting
+	// and the sky rebakes on its own cadence; the snapshot's two readbacks take a second or more
+	// each under load, so one of those live bakes could start between them and leave the CPU
+	// irradiance (diagnostic only during a live transition) behind the blended GPU value. With
+	// the scene paused the explicit bake is the last one, as the coherence check assumes.
+	await page.keyboard.press( 'Space' );
+	await twoFrames();
 	await page.evaluate( () => window.__SOOMI__.refreshEnvironment() );
 	validateState( await snapshot(), 'paused live clock' );
 	report.checks.push( 'Accelerated live clock advances monotonically and freezes while the scene keeps rendering' );
