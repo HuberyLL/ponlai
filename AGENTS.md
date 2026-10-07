@@ -103,7 +103,9 @@ exposed.
   and every shadow map; sun/moon handoffs pass through zero direct light: the sun's key fades as
   its drawn disk sinks below the horizon, and only then turns toward the moon. The day cycle is
   authored, not astronomical. The sun and moon are drawn at twice their true size (equal to each
-  other); shadows and glints use the true sun. The sky, sun, moon, stars, key light and grade follow the clock
+  other); shadows and glints use the true sun. A low sun's key stays golden orange: the optical
+  depth that sets its hue is capped, while its brightness still follows the full extinction.
+  The sky, sun, moon, stars, key light and grade follow the clock
   every frame; only the reflection panorama, environment and irradiance cross-fade between bakes.
 - The exposure only rises from afternoon into night and holds from the end of the blue hour (about
   -7 degrees) on, higher than the night sky was tuned for, so the island reads by moonlight and

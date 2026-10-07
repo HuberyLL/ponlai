@@ -84,6 +84,26 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // all of it; the environment that lights the terrain and plants takes this share.
 const NIGHT_SKY = 0.55;
 
+// Art direction: within a few degrees of the horizon the sun shines through twenty to forty air
+// masses and its light turns an almost pure red (red/blue above 100 at one degree), which paints
+// the island like lava. The optical depth that sets the key's hue is capped softly a little past
+// that at six degrees, while its luminance keeps the full extinction: a low sun stays golden
+// orange (red/green about 2, red/blue at most about 10) and still dims as it sets. The sky and
+// clouds keep their own colours.
+const SUN_HUE_DEPTH = 1.35;
+function capSunHue( transmittance: THREE.Color ): THREE.Color {
+
+	const { r, g, b } = transmittance;
+	if ( g <= 0 ) return transmittance;
+	const depth = - Math.log( g );
+	const scale = 1 / Math.pow( 1 + Math.pow( depth / SUN_HUE_DEPTH, 6 ), 1 / 6 );
+	const luma = ( c: THREE.Color ) => c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
+	const before = luma( transmittance );
+	transmittance.setRGB( Math.pow( r, scale ), Math.pow( g, scale ), Math.pow( b, scale ) );
+	return transmittance.multiplyScalar( before / luma( transmittance ) );
+
+}
+
 export class Sky {
 
 	renderer: THREE.WebGPURenderer;
@@ -396,7 +416,11 @@ export class Sky {
 		this.atmosphere.sunDir.value.copy( this.sunDir );
 		this.atmosphere.sunIlluminance.value.copy( this.solarIlluminance );
 		this.atmosphere.updateSync();
-		this.sunColor.copy( this.atmosphere.transmittanceToSun() ).multiply( this.solarIlluminance );
+		// Cap the hue of the air's extinction first, then fade by the disk's visible share, so the
+		// setting disk only dims the key and does not bleach it.
+		const sunVisible = this.atmosphere.sunVisibleShareToSun();
+		if ( sunVisible > 0 ) this.sunColor.copy( capSunHue( this.atmosphere.transmittanceToSun() ) ).multiplyScalar( sunVisible ).multiply( this.solarIlluminance );
+		else this.sunColor.setRGB( 0, 0, 0 );
 		this.keyDir.copy( celestial?.keyDir ?? this.sunDir );
 		this.keyColor.copy( this.sunColor );
 		const moonColor = this.night.moonColor.value;
