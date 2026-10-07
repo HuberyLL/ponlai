@@ -47,8 +47,10 @@ exposed.
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor
   (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
-  vegetation anchors; instanced grass, bushes and flowers on the island top,
-  with top-rooted overhanging branches of mixed lengths.
+  vegetation anchors; instanced grass, rim bushes and flowers on the island top,
+  with top-rooted overhanging branches of mixed lengths; shrub groups (round shrubs, broad-leaved
+  clumps, ferns) and small trees, each grown from its own seed and merged into one mesh
+  (`Plants.ts`, sited by `PlantSites.ts`).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
@@ -95,6 +97,15 @@ exposed.
   patchy seabed detail; no exposed sea stacks or reefs.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
+- Shrubs (up to about head height) and small trees (2.5 - 3.5 m) grow on the plateau in loose
+  groups. Their sites come from fields and the meadow's area (one tree per about 120 m^2, one
+  group per about 13 m^2), never from fixed coordinates, so a larger island of more tiles plants
+  itself the same way. They keep off the islander's walk and out of the puddle hollows
+  (`PuddleHollows.ts` repeats `puddleField`'s hollows on the CPU: change both together), draw from
+  their own random stream (the rim bushes' stream also places the rim trails), sway with the rim
+  bushes' wind, cast into the sun's map and stop the rain. A limb casts whole or not at all: limbs
+  that leave their parent 3 cm or more in radius cast; thinner twigs, shrub stems and stalks do
+  not.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Stems, leaf stalks
   and twigs (a few millimetres across) stay out of it too. The map is fitted to the island's

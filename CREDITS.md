@@ -190,6 +190,16 @@ packages, into `dist/licenses/`.
   folder or its CC BY-NC-SA derived shaders (`rainRipples.js`, `surfaceRain.js`, `rainGlass.js`)
   is used.
 
+### three.js MaterialX noise (CPU port)
+
+- Upstream: three.js `src/nodes/materialx/MaterialXNoise.js` (r186), which three.js transpiled
+  from MaterialX's `mx_noise.glsl` (Contributors to the MaterialX project)
+- Copyright: 2010-2026 three.js authors
+- Licence: MIT (the `three` package's licence, shipped with the build)
+- File: `src/weather/PuddleHollows.ts`: `mx_perlin_noise_float` for a vec3 (Bob Jenkins' lookup3
+  final mix as the lattice hash, Perlin's gradients, MaterialX's 0.982 scale) in plain
+  TypeScript, so the shrub and tree picker reads the same puddle hollows as the shader.
+
 ## Assets
 
 ### Rock Face 03
@@ -263,6 +273,8 @@ packages, into `dist/licenses/`.
 Published techniques this project implements without using their code; each is also credited in a
 comment where it is used.
 
+- Rosettes of broad leaves and fern fronds turned by the golden angle: H. Vogel,
+  *A better way to construct the sunflower head* (Mathematical Biosciences 44, 1979).
 - FFT ocean: J. Tessendorf,
   [*Simulating Ocean Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
   (SIGGRAPH course notes, 2002 revision).
