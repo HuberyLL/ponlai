@@ -2,13 +2,14 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, texture, textureLoad, rtt, uniform, uv, screenCoordinate, ivec2, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, luminance, neutralToneMapping, sRGBTransferOETF,
-	fract, convertToTexture, select,
+	fract, convertToTexture, select, nodeObject,
 } from 'three/tsl';
-import { bloom } from 'three/addons/tsl/display/BloomNode.js';
-import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
+import BloomNode from 'three/addons/tsl/display/BloomNode.js';
+import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
+import { sizeRtt } from './RenderScale.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { Rain } from '../weather/Rain.ts';
@@ -19,10 +20,31 @@ import type { Rain } from '../weather/Rain.ts';
 //   water ── waterRT + its depth (reads sceneRT's resolved colour and depthRT)
 //   composite ── bloom (tight) + glow (wide), both through a clamped soft-knee prefilter
 //   ── tilt-shift depth of field (half-res gather) ── exposure, PBR Neutral tone map,
-//   split-tone grade, vibrance, lifted blacks, vignette, S-curve, grain, sRGB ── screen
+//   split-tone grade, vibrance, lifted blacks, vignette, S-curve, sRGB, grain ── displayRT
+//   ── copied to the screen
+// Every pass runs at the scene's render size. When the canvas is larger (a quality preset below
+// the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling, then
+// contrast-adaptive sharpening) to the screen instead, and the grain is added there, at display
+// pixels.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
+type V3 = THREE.Node<'vec3'>;
+
+// BloomNode sizes its chain to the canvas every frame; this one follows the scene's render
+// instead, so the glow keeps its size and cost when the frame is upscaled.
+class RenderBloomNode extends BloomNode {
+
+	renderWidth = 1;
+	renderHeight = 1;
+
+	override setSize(): void {
+
+		super.setSize( this.renderWidth, this.renderHeight );
+
+	}
+
+}
 
 export interface PipelineSettings {
 	exposure: number; saturation: number; vibrance: number; contrast: number; split: number;
@@ -48,6 +70,14 @@ export class Pipeline {
 		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
 	};
 
+	// The canvas's size; larger than width x height while the frame is upscaled.
+	outputWidth = 1;
+	outputHeight = 1;
+	// RCAS sharpening after the upscale, in stops (0 the strongest, 2 none). AMD's default 0.2
+	// sharpened the meadow past the native render's detail; at 0.6 the upscaled cliff matches
+	// native and the meadow keeps most of it, without ringing.
+	readonly sharpness = uniform( 0.6 );
+
 	sceneRT: THREE.RenderTarget;
 	depthRT: THREE.RenderTarget;
 	waterRT: THREE.RenderTarget;
@@ -56,8 +86,14 @@ export class Pipeline {
 
 	private depthQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
+	private upscaledOutput: THREE.RenderPipeline;
+	// the graded image at the render's size, before the copy or upscale to the canvas
+	private display: THREE.RenderPipeline;
+	private displayRT: THREE.RenderTarget;
+	// passes sized with the scene's render, not the canvas
+	private passes: THREE.RTTNode[] = [];
 	private previousClearColor = new THREE.Color();
-	private blooms: { node: BloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
+	private blooms: { node: RenderBloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
 	private u = {
 		exposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ),
 		lift: uniform( new THREE.Color() ), vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
@@ -65,6 +101,7 @@ export class Pipeline {
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ),
 		maxRadius: uniform( 6 ), texel: uniform( new THREE.Vector2( 1, 1 ) ), halfRes: uniform( new THREE.Vector2( 1, 1 ) ),
+		output: uniform( new THREE.Vector2( 1, 1 ) ), grainOn: uniform( 1 ),
 	};
 
 	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain ) {
@@ -120,7 +157,7 @@ export class Pipeline {
 		const makeBloom = () => {
 
 			const maxLum = uniform( 5 ), surfaceMaxLum = uniform( 5 );
-			const node = bloom( vec4( hdr, 1 ), 0.3, 0.5, 1.5 );
+			const node = new RenderBloomNode( nodeObject( vec4( hdr, 1 ) ), 0.3, 0.5, 1.5 );
 			( node as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input, threshold }: { input: THREE.Node<'vec4'>; threshold: THREE.Node<'float'> } ) => {
 
 				const px = ivec2( clamp( uv().mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
@@ -147,6 +184,7 @@ export class Pipeline {
 		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
 		// the blur is mixed over the sharp image by the full-resolution coc
 		const sharp = convertToTexture( vec4( withBloom, 1 ) );
+		this.passes.push( sharp );
 		const tD = texture( this.depthRT.texture ), tW = texture( waterDepth );
 		// The circle of confusion (0..1 of the widest blur) and the distance to the nearest surface,
 		// the water's included (view-space z: closer is larger). One function per pass: a layout
@@ -224,6 +262,7 @@ export class Pipeline {
 
 		} )();
 		const blur = rtt( gather, null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } );
+		this.passes.push( blur );
 		// Upsample the half-res blur by its four nearest texels, each weighted by how much it would
 		// itself show as blur: plain bilinear filtering pulled a sharp figure's colour (a texel whose
 		// coc is near zero) a pixel or two out over the blurred sea beside it. Texels that are
@@ -252,10 +291,9 @@ export class Pipeline {
 			return mix( sharp.rgb, blurred, smoothstep( 0, 0.35, c ).mul( u.dof ) );
 
 		} );
-		const lin = composite();
 
-		// ---- grade
-		const graded = Fn( () => {
+		// ---- grade, to display values (sRGB, 0..1)
+		const grade = ( lin: V3 ): V3 => {
 
 			const c = ( neutralToneMapping( lin, u.exposure ) as THREE.Node<'vec3'> ).toVar();
 			// teal-blue shadows, golden highlights
@@ -275,30 +313,70 @@ export class Pipeline {
 			const s = ( sRGBTransferOETF( clamp( c, 0, 1 ) ) as THREE.Node<'vec3'> ).toVar();
 			// gentle S-curve in display space
 			s.assign( mix( s, s.mul( s ).mul( float( 3 ).sub( s.mul( 2 ) ) ), u.contrast ) );
-			// grain + dither
+			return s;
+
+		};
+		// grain + dither, per pixel of the canvas (`on` 0 leaves them out)
+		const finish = ( s: V3, size: THREE.UniformNode<'vec2', THREE.Vector2>, on: F ) => {
+
 			const hash = ( p: THREE.Node<'vec2'> ) => fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
-			const px = uv().mul( u.resolution );
+			const px = uv().mul( size );
 			const g = hash( px.add( fract( u.time.mul( 13 ) ).mul( 100 ) ) ).sub( 0.5 );
-			s.addAssign( g.mul( u.grain ).add( hash( px.mul( 1.37 ) ).sub( 0.5 ).div( 255 ) ) );
+			If( on.greaterThan( 0.5 ), () => {
+
+				s.addAssign( g.mul( u.grain ).add( hash( px.mul( 1.37 ) ).sub( 0.5 ).div( 255 ) ) );
+
+			} );
 			return vec4( s, 1 );
 
-		} )();
+		};
 
-		this.output = new THREE.RenderPipeline( renderer, graded );
+		// The graded image, at the render's size, always into one float target: building the graph
+		// above for a second output (another shader or target format) set its rtt() passes up again,
+		// and their layout functions kept the first build's uniform bindings. Float, so the copy
+		// below hands the canvas exactly the values a direct draw would.
+		this.displayRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false } );
+		this.displayRT.texture.name = 'display';
+		this.display = new THREE.RenderPipeline( renderer, Fn( () => finish( grade( composite() ), u.resolution, u.grainOn ) )() );
+		this.display.outputColorTransform = false;
+
+		// At the display's resolution it is copied to the canvas, grain and all.
+		this.output = new THREE.RenderPipeline( renderer, textureLoad( this.displayRT.texture, ivec2( screenCoordinate.xy ) ) );
 		this.output.outputColorTransform = false;
+
+		// Below it, FSR 1 (AMD FidelityFX Super Resolution 1, three's FSR1Node) upscales the image
+		// (it expects display values) before the grain, so the grain stays one display pixel fine
+		// and is not sharpened. The browser's stretch of a small canvas was a plain bilinear filter.
+		const upscaled = fsr1( texture( this.displayRT.texture ), this.sharpness );
+		this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), u.output, float( 1 ) ) )() );
+		this.upscaledOutput.outputColorTransform = false;
 
 	}
 
-	setSize( w: number, h: number ): void {
+	/** The scene's render size, and the canvas's when it is larger (the frame is then upscaled). */
+	setSize( w: number, h: number, outputWidth = w, outputHeight = h ): void {
 
 		this.width = w; this.height = h;
+		this.outputWidth = Math.max( outputWidth, w ); this.outputHeight = Math.max( outputHeight, h );
+		this.u.output.value.set( this.outputWidth, this.outputHeight );
+		for ( const node of this.passes ) sizeRtt( node, w, h );
+		for ( const { node } of this.blooms ) { node.renderWidth = w; node.renderHeight = h; }
+		this.shafts.setSize( w, h );
 		this.sceneRT.setSize( w, h );
 		this.depthRT.setSize( w, h );
 		this.waterRT.setSize( w, h );
+		this.displayRT.setSize( w, h );
 		this.u.resolution.value.set( w, h );
 		this.u.texel.value.set( 1 / w, 1 / h );
 		// the size rtt() gives the half-res blur
 		this.u.halfRes.value.set( Math.max( Math.floor( w * 0.5 ), 1 ), Math.max( Math.floor( h * 0.5 ), 1 ) );
+
+	}
+
+	/** Whether the frame is rendered below the canvas's resolution and upscaled. */
+	get upscaling(): boolean {
+
+		return this.outputWidth !== this.width || this.outputHeight !== this.height;
 
 	}
 
@@ -359,7 +437,11 @@ export class Pipeline {
 		u.dof.value = S.dof; u.range.value = S.dofRange;
 		u.maxRadius.value = S.dofMaxRadius * this.height / 900; // blur scales with the image, not the pixel count
 		u.focus.value = S.focusDistance > 0 ? S.focusDistance : camera.position.length();
-		this.output.render();
+		u.grainOn.value = this.upscaling ? 0 : 1;
+		r.setRenderTarget( this.displayRT );
+		this.display.render();
+		r.setRenderTarget( null );
+		( this.upscaling ? this.upscaledOutput : this.output ).render();
 
 	}
 

@@ -26,7 +26,8 @@ exposed.
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
-  override), `quality` (low, medium, high).
+  override), `quality` (low, medium, high: the clouds' march, bake cadences and rain count, and
+  the render scale, see Decisions).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
   sky views.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
@@ -78,7 +79,8 @@ exposed.
   camera, the key light through a phase function) and sea fog (the marine layer thickened in
   drifting banks of varying height, thinner over the island, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
-  glare, bloom, tilt-shift, grade).
+  glare, bloom, tilt-shift, grade, FSR 1 upscale), render scale per quality preset
+  (`RenderScale.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -113,6 +115,12 @@ exposed.
   starlight. The night ambient rises as the sun's skylight fades after sunset, so twilight is
   never darker than the night; the night sky's own light (stars, airglow, moon disk, the sky's
   night floor, clouds) scales back to keep its tuned look in deep night.
+- The scene renders at a pixel ratio set by the quality preset (high: the display's, up to 1.5;
+  medium, the default: a 1920x1080 pixel budget; low: 1600x900); `dpr` and the GUI's full
+  resolution lift the budget. The canvas always matches the display (up to 2x): a render below
+  it is upscaled inside the frame graph with FSR 1 and the grain added after, never stretched by
+  the browser. Every pass is sized to the render, not the canvas (`rtt()` passes through
+  `sizeRtt`). At the display's ratio nothing is upscaled, so `dpr=1` captures are unchanged.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
