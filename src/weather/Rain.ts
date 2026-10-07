@@ -123,11 +123,12 @@ export class Rain {
 
 	}
 
-	/** Bind the opaque pass's resolved linear view-Z texture. The water render target keeps
-	 * its own depth test; this second test also rejects drops hidden by island/character pixels. */
-	bindOpaqueDepth( linearDepth: THREE.Texture ): void {
+	/** Bind the resolved linear view-Z textures of the opaque pass and of the nearest surface (the
+	 * sea's included). The drops draw into the scene's target after the water; these tests reject
+	 * drops hidden by island/character pixels with a little slack for the splashes on them. */
+	bindOpaqueDepth( linearDepth: THREE.Texture, surfaceDepth: THREE.Texture ): void {
 
-		this.drops.bindOpaqueDepth( linearDepth );
+		this.drops.bindOpaqueDepth( linearDepth, surfaceDepth );
 
 	}
 

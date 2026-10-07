@@ -41,8 +41,8 @@ import { rainRippleGradient } from '../weather/Rain.ts';
 //     scattering of the sun (Henyey-Greenstein) and the sky, multiple-scatter backscatter boost
 //   - reflection: calibrated baked sky + screen-space reflection of cliffs and stacks
 //   - sun glint: simulated slope moments, with optional additional artistic lobes
-// Drawn in a pass of its own after the opaque pass, reading that pass's resolved colour and its
-// linear depth; the frame composites it over the opaque image.
+// Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
+// the opaque surfaces, reading a copy of that pass's resolved colour and its linear depth.
 //
 // Screen conventions (WebGPU): uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
 // Texture samples that need screen-space derivatives are taken first, while control flow is still
@@ -114,6 +114,9 @@ const SKIRT_RADIUS = 40000;
 // Metres per repeat of the glitter lobe's patches.
 const GLITTER_TILE = 8.8;
 
+// Refraction hits within this share of the screen's edges fade to the fallback.
+const EDGE_FADE = 0.06;
+
 // view-space direction through a screen point (on the far plane; scaled by the caller)
 const viewRay = Fn( ( [ q, projInv ]: [ V2, M4 ] ) => {
 
@@ -139,8 +142,8 @@ export interface WaterInputs {
 	refractedSun: RefractedSun;
 	sunShadow: SunShadow;
 	storm: StormSea;
-	sceneColor: THREE.Texture;
-	linearDepth: THREE.Texture;
+	sceneColor: THREE.Texture; // the opaque pass's resolved colour
+	linearDepth: THREE.Texture; // its view-space z: sample 0 (x) and the farthest sample (y)
 	size?: number;
 	res?: number;
 }
@@ -262,6 +265,10 @@ export class Water {
 		const pixel = ( q: V2 ) => ivec2( clamp( q.mul( depthSize ), vec2( 0 ), depthSize.sub( 1 ) ) );
 		const sceneViewZ = Fn( ( [ q ]: [ V2 ] ) => textureLoad( tDepth, pixel( q ) ).x )
 			.setLayout( { name: 'sceneViewZ', type: 'float', inputs: [ { name: 'q', type: 'vec2' } ] } );
+		// What lies behind the water at its own pixel: the farthest of the opaque samples. The sea is
+		// drawn only into the samples it is in front of, so where a cliff or a figure covers part of
+		// the pixel, the sea's samples hold what is behind them, not the figure of sample 0.
+		const behindViewZ = textureLoad( tDepth, pixel( screenUV ) ).y;
 		const sceneAt = ( q: V2 ) => texture( sceneColor, q ).level( float( 0 ) ).rgb;
 
 		// screen-space reflection of the opaque scene (cliffs, stacks): geometric steps, then bisection
@@ -354,14 +361,56 @@ export class Water {
 
 		} ).setLayout( { name: 'traceSSR', type: 'vec4', inputs: [ { name: 'posV', type: 'vec3' }, { name: 'Rv', type: 'vec3' } ] } );
 
+		// The distance along a ray at which it crosses the depth buffer, between a sample in front of
+		// it (a) and one behind it (b): bisection.
+		const refineCrossing = Fn( ( [ posV, directionV, a0, b0 ]: [ V3, V3, F, F ] ) => {
+
+			const a = a0.toVar(), b = b0.toVar();
+			Loop( 5, () => {
+
+				const distance = a.add( b ).mul( 0.5 ).toVar();
+				const point = posV.add( directionV.mul( distance ) ).toVar();
+				If( point.z.lessThanEqual( sceneViewZ( projectView( point, cameraProjectionMatrix ) ) ), () => {
+
+					b.assign( distance );
+
+				} ).Else( () => {
+
+					a.assign( distance );
+
+				} );
+
+			} );
+			return b;
+
+		} ).setLayout( {
+			name: 'refineCrossing', type: 'float',
+			inputs: [ { name: 'posV', type: 'vec3' }, { name: 'directionV', type: 'vec3' }, { name: 'a0', type: 'float' }, { name: 'b0', type: 'float' } ],
+		} );
+
 		// Trace the first visible underwater surface, rather than iterating its height. A
 		// height-only solve can jump between shallow rocks and a deeper basin indefinitely.
+		// Where the ray passes behind the depth buffer, the crossing is an intersection only if the
+		// scene there meets the ray under the water. Otherwise it is an occluder that hides the ray's
+		// continuation on the screen (a stone the ray passes behind, the cliff above the sea, which
+		// an underwater ray cannot meet at all), and the march goes on behind it, so the ray may find
+		// the floor where it comes out. (Ending there, the ray fell back to the floor straight behind
+		// its pixel, and the water changed colour along every silhouette the rays passed behind.)
+		// A ray that finds nothing (off the screen, hidden to the end, out of range) returns no trust
+		// and, in z, the length it is known to run through open water: at least as far as it was
+		// traced in front of the scene, and on down to the depth of the last surface seen beyond it.
+		// Its fallback then continues its traced neighbours' path instead of starting again from the
+		// floor straight behind (whose depth jumps at every submerged silhouette: a straight seam
+		// down the screen below each cliff edge).
 		const traceRefraction = Fn( ( [ posV, directionV, range, surfaceY, footprint ]: [ V3, V3, F, F, F ] ) => {
 
-			const result = vec4( 0 ).toVar();
-			const step = range.div( 8 );
-			const near = float( 0 ).toVar(), far = float( 0 ).toVar();
-			const found = float( 0 ).toVar();
+			const step = range.div( 8 ).toVar();
+			// the world's up axis in view space: a view-space point's height is dot( up, p ) plus the camera's
+			const up = cameraViewMatrix.mul( vec4( 0, 1, 0, 0 ) ).xyz.toVar();
+			const height = ( p: V3 ) => dot( up, p ).add( cameraPosition.y );
+			const near = float( 0 ).toVar(), open = float( 1 ).toVar();
+			const beyond = surfaceY.toVar(); // the height of the scene seen past the last open-water sample
+			const result = vec4( 0 ).toVar(), found = float( 0 ).toVar();
 			Loop( 8, ( { i } ) => {
 
 				const distance = float( i ).add( 1 ).mul( step ).toVar();
@@ -369,53 +418,58 @@ export class Water {
 				const q = projectView( point, cameraProjectionMatrix ).toVar();
 				If( q.x.lessThan( 0.001 ).or( q.x.greaterThan( 0.999 ) ).or( q.y.lessThan( 0.001 ) ).or( q.y.greaterThan( 0.999 ) ).or( point.z.greaterThan( - 0.1 ) ), () => {
 
+					// Leaving the screen, the last thing it shows on the ray's way is the scene at its
+					// edge (the floor or rock just above the bottom edge, for a ray heading down it).
+					const edge = clamp( q, vec2( 0.001 ), vec2( 0.999 ) ).toVar();
+					const ray = viewRay( edge, cameraProjectionMatrixInverse ).toVar();
+					const seen = height( ray.mul( sceneViewZ( edge ).div( ray.z ) ) );
+					If( seen.lessThan( surfaceY ), () => {
+
+						beyond.assign( seen );
+
+					} );
 					Break();
 
 				} );
 				const depth = sceneViewZ( q ).toVar();
-				If( point.z.lessThanEqual( depth ), () => {
+				// (view z is negative: nearer is larger)
+				If( point.z.greaterThan( depth ), () => {
 
-					far.assign( distance );
-					found.assign( 1 );
-					Break();
+					near.assign( distance );
+					beyond.assign( height( point.mul( depth.div( point.z ) ) ) );
+					open.assign( 1 );
 
-				} );
-				near.assign( distance );
+				} ).ElseIf( open.greaterThan( 0.5 ), () => {
 
-			} );
-			If( found.greaterThan( 0.5 ), () => {
+					open.assign( 0 );
+					const crossing = refineCrossing( posV, directionV, near, distance ).toVar();
+					const hit = posV.add( directionV.mul( crossing ) ).toVar();
+					const qh = projectView( hit, cameraProjectionMatrix ).toVar();
+					const visible = hit.mul( sceneViewZ( qh ).div( hit.z ) ).toVar();
+					// A crossing at a depth discontinuity brackets an occluder instead of an intersection
+					// (the scene seen there lies well in front of the ray); never an above-water surface.
+					const miss = length( visible.sub( hit ) );
+					const trust = float( 1 ).sub( smoothstep( footprint.mul( 1.5 ).add( 0.08 ), footprint.mul( 3 ).add( 0.35 ), miss ) ).toVar();
+					If( trust.greaterThan( 0 ).and( height( visible ).lessThanEqual( surfaceY.add( 0.05 ) ) ), () => {
 
-				Loop( 5, () => {
-
-					const distance = near.add( far ).mul( 0.5 ).toVar();
-					const point = posV.add( directionV.mul( distance ) ).toVar();
-					If( point.z.lessThanEqual( sceneViewZ( projectView( point, cameraProjectionMatrix ) ) ), () => {
-
-						far.assign( distance );
-
-					} ).Else( () => {
-
-						near.assign( distance );
+						// Hits near the screen's edges fade to the fallback over a band wide enough that the
+						// change from traced to lost rays, where the refracted rays leave the screen, is a
+						// gradual one rather than a line across the water.
+						const edge = smoothstep( 0.001, EDGE_FADE, qh.x ).mul( smoothstep( 0.999, 1 - EDGE_FADE, qh.x ) )
+							.mul( smoothstep( 0.001, EDGE_FADE, qh.y ) ).mul( smoothstep( 0.999, 1 - EDGE_FADE, qh.y ) );
+						result.assign( vec4( qh, max( dot( visible.sub( posV ), directionV ), 0 ), trust.mul( edge ) ) );
+						found.assign( 1 );
+						Break();
 
 					} );
 
 				} );
-				const point = posV.add( directionV.mul( far ) ).toVar();
-				const q = projectView( point, cameraProjectionMatrix ).toVar();
-				const ray = viewRay( q, cameraProjectionMatrixInverse ).toVar();
-				const visible = ray.mul( sceneViewZ( q ).div( ray.z ) ).toVar();
-				const worldHit = cameraWorldMatrix.mul( vec4( visible, 1 ) ).xyz;
-				// A depth discontinuity may bracket an occluder instead of an intersection.
-				// Such a hit fades to the visible floor, never to an above-water cliff colour.
-				const miss = length( visible.sub( point ) );
-				const trust = float( 1 ).sub( smoothstep( footprint.mul( 1.5 ).add( 0.08 ), footprint.mul( 3 ).add( 0.35 ), miss ) );
-				If( worldHit.y.lessThanEqual( surfaceY.add( 0.05 ) ), () => {
 
-					const edge = smoothstep( 0.001, 0.025, q.x ).mul( smoothstep( 0.999, 0.975, q.x ) )
-						.mul( smoothstep( 0.001, 0.025, q.y ) ).mul( smoothstep( 0.999, 0.975, q.y ) );
-					result.assign( vec4( q, max( dot( visible.sub( posV ), directionV ), 0 ), trust.mul( edge ) ) );
+			} );
+			If( found.lessThan( 0.5 ), () => {
 
-				} );
+				const down = max( dot( up, directionV ).negate(), 1e-3 );
+				result.assign( vec4( 0, 0, clamp( max( near, surfaceY.sub( beyond ).div( down ) ), 0, 200 ), 0 ) );
 
 			} );
 			return result;
@@ -502,7 +556,7 @@ export class Water {
 			const sunLight = shared.sunColor.mul( shadow ).mul( cloudTransmission ).toVar();
 
 			// ---- what lies straight behind this pixel (linear depth: view-space z, < -9e4 = sky)
-			const z0 = sceneViewZ( screenUV ).toVar();
+			const z0 = behindViewZ.toVar();
 			const skyBehind = z0.lessThan( - 9e4 );
 			const ray0 = viewRay( screenUV, cameraProjectionMatrixInverse ).toVar();
 			const sv0 = ray0.mul( z0.div( ray0.z ) ).toVar();
@@ -521,6 +575,9 @@ export class Water {
 
 			// ---- reflection
 			const Rr = reflect( V.negate(), N ).toVar();
+			// How the reflected direction turns across a quarter of the pixel, diagonally (taken here,
+			// while control flow is uniform): the screen-space reflection traces a ray on either side.
+			const reflectionJitter = dFdx( Rr ).add( dFdy( Rr ) ).mul( 0.25 ).toVar();
 			// An isotropic mip is an approximation to the anisotropic reflected Gaussian.
 			// Match its angular variance to a box mip kernel, keeping the reflection direction intact.
 			const reflectionSigma = sqrt( waveReflectionAngularVariance( localV, seaCovariance ) );
@@ -538,9 +595,14 @@ export class Water {
 			} );
 			If( u.ssr.greaterThan( 0.5 ).and( Fr.greaterThan( 0.01 ) ), () => {
 
-				const Rv = normalize( cameraViewMatrix.mul( vec4( Rr, 0 ) ).xyz );
-				const r = traceSSR( posV, Rv ).toVar();
-				refl.assign( mix( refl, r.rgb, r.a ) );
+				// Two rays a quarter pixel either side of the pixel's centre, averaged: a ray either hits
+				// the island or shows the sky, so with one ray per pixel the reflected island's edge and
+				// the sky seen through it between the waves were pixel stair-steps and single bright
+				// specks (that the depth of field then spread into discs). Two rays give the edges a
+				// half step and halve a lone speck. The offsets are fixed, so a paused frame repeats.
+				const ra = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr.sub( reflectionJitter ), 0 ) ).xyz ) ).toVar();
+				const rb = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr.add( reflectionJitter ), 0 ) ).xyz ) ).toVar();
+				refl.assign( mix( refl, ra.rgb, ra.a ).add( mix( refl, rb.rgb, rb.a ) ).mul( 0.5 ) );
 
 			} );
 
@@ -595,7 +657,8 @@ export class Water {
 			const tDown = max( Tv.y.negate(), 1e-5 ).toVar();
 			const fallbackLength = select( skyBehind, float( 200 ), clamp( max( wp.y.sub( sw0.y ), 0 ).div( tDown ), 0, 200 ) );
 			const hit = vec4( screenUV, fallbackLength, 0 ).toVar();
-			If( skyBehind.not().and( thick.greaterThan( 0.02 ) ).and( validRefraction ), () => {
+			const traced = skyBehind.not().and( thick.greaterThan( 0.02 ) ).and( validRefraction ).toVar();
+			If( traced, () => {
 
 				const directionV = normalize( cameraViewMatrix.mul( vec4( Tv, 0 ) ).xyz );
 				const range = min( max( fallbackLength.mul( 1.5 ), fallbackLength.add( 4 ) ), 40 );
@@ -603,7 +666,10 @@ export class Water {
 
 			} );
 			const refractionTrust = hit.w;
-			const pathLen = mix( fallbackLength, hit.z, refractionTrust ).toVar();
+			// The fallback shows the floor straight behind, as far down as the refracted ray is known
+			// to run through open water.
+			const fallbackPath = max( fallbackLength, hit.z ).toVar();
+			const pathLen = mix( fallbackPath, hit.z, refractionTrust ).toVar();
 
 			// ---- the water body: absorption along the path + single scattering of sun and sky
 			const sigA = shared.sigA, sigS = shared.sigS;
@@ -614,9 +680,28 @@ export class Water {
 			// Each source retains its own optical depth while confidence blends the hits.
 			// One mixed path would tint a bright shallow source as if it belonged to the basin.
 			const opaqueCol = sceneAt( screenUV ).toVar();
-			const bottom = opaqueCol.mul( exp( sigT.negate().mul( fallbackLength ) ) ).toVar();
-			// Failed/off-screen rays use only the original floor. Their zero confidence makes
-			// the three blurred colour samples and refracted attenuation redundant.
+			// The fallback's floor moves with the waves' share of the refraction (the bend of this
+			// facet beyond a level sea's), as the traced floor does, so where the two meet, and along
+			// the edges of what lies straight behind, the water wobbles instead of standing still.
+			// Shifted onto rock above the sea, it keeps the floor straight behind.
+			const behindCol = opaqueCol.toVar();
+			If( traced, () => {
+
+				const level = airToWaterDirectionNode( V, vec3( 0, 1, 0 ), float( IOR ) );
+				const shifted = sv0.add( cameraViewMatrix.mul( vec4( Tv.sub( normalize( level ) ), 0 ) ).xyz.mul( fallbackPath ) ).toVar();
+				const qs = projectView( shifted, cameraProjectionMatrix ).toVar();
+				const zs = sceneViewZ( qs ).toVar();
+				const seen = cameraWorldMatrix.mul( vec4( shifted.mul( zs.div( shifted.z ) ), 1 ) ).y;
+				If( seen.lessThanEqual( wp.y.add( 0.05 ) ).and( zs.greaterThan( - 9e4 ) ), () => {
+
+					behindCol.assign( sceneAt( clamp( qs, vec2( 0.001 ), vec2( 0.999 ) ) ) );
+
+				} );
+
+			} );
+			const bottom = behindCol.mul( exp( sigT.negate().mul( fallbackPath ) ) ).toVar();
+			// Lost rays use only the fallback floor. Their zero confidence makes the three blurred
+			// colour samples and refracted attenuation redundant.
 			If( refractionTrust.greaterThan( 0 ), () => {
 
 				const uvR = hit.xy;

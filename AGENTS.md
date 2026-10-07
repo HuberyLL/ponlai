@@ -78,9 +78,9 @@ exposed.
   (two exponential height layers after tidewater's `AirHaze`, lit by the horizon sky and, near the
   camera, the key light through a phase function) and sea fog (the marine layer thickened in
   drifting banks of varying height, thinner over the island, plus morning mist).
-- `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
-  glare, bloom, tilt-shift, grade, FSR 1 upscale), render scale per quality preset
-  (`RenderScale.ts`).
+- `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
+  and rain drawn into the same multisampled target, crepuscular rays and sun glare, bloom,
+  tilt-shift, grade, FSR 1 upscale), render scale per quality preset (`RenderScale.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -193,7 +193,12 @@ exposed.
 - In a full-screen pass (`QuadMesh`, `RenderPipeline`) the camera nodes refer to the pass's own
   camera: pass the scene camera's matrices as uniforms.
 - Screen uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
-- Multisampled depth can only be read with `textureLoad`; `Pipeline` resolves it to linear view z.
+- Multisampled depth can only be read with `textureLoad`, one sample at a time (the sample index
+  goes in its level argument); `Pipeline` resolves it to linear view z.
+- The water draws into the scene's multisampled target and cannot sample it: it reads
+  `Pipeline.opaqueRT` (a copy of the opaque colour) and `depthRT` (sample 0, and the farthest
+  sample for what lies behind the sea at an edge pixel). Post passes read `surfaceRT`, the
+  nearest surface's depth with the sea's included.
 - WebGPU needs uniform control flow for implicitly filtered texture samples and derivatives: take
   them (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
 - Nested loops: pass both ranges to one `Loop()` call so the counters get distinct names (`i`, `j`).
