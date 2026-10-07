@@ -116,9 +116,11 @@ exposed.
   so a future fantasy palette (glowing plants, magic) keeps its saturation.
 - One cloud field feeds the visible sky, water reflections, environment lighting and cloud
   shadows. Bad weather dims and desaturates the existing light; it never adds a grey screen veil.
-  Distant air applies only beyond the protected foreground; sea fog is a low height-fog layer
-  that may surround the island, never a uniform tint. Weather changes sweep the sky as a
-  front from upwind; the island's lighting follows the front's progress over the island.
+  Distant air fades in across a protected foreground (from 40 m, in full by 200 m, sooner in
+  thick air), so the island does not fog up as the view pulls back; it scatters only the sunlight
+  the cloud shadows let through. Sea fog is a low height-fog layer that may surround the island,
+  never a uniform tint. Weather changes sweep the sky as a front from upwind; the island's
+  lighting follows the front's progress over the island.
 - The directly seen clouds accumulate over frames; a scene at rest (paused clock, still camera)
   settles its clouds once and keeps them, so a paused frame is exactly repeatable. The cloud
   march assumes a camera below the cloud base.
