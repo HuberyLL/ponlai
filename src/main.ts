@@ -20,7 +20,7 @@ import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
-import { pickPlantSites, loopDistance } from './world/PlantSites.ts';
+import { pickPlantSites, loopDistance, bakeGroundContact, bakeAnchorContact } from './world/PlantSites.ts';
 import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, type ToneCurve } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
@@ -28,7 +28,7 @@ import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
-import { islandSurfaceHeight } from './world/WorldShapes.ts';
+import { islandSurfaceHeight, ISLAND_TOP } from './world/WorldShapes.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook, KIND } from './characters/CharacterMaterial.ts';
@@ -290,16 +290,20 @@ shared.shoreXform.value.copy( shore.xform );
 const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
 // The islander's walk through the meadow; shrubs and trees keep clear of it.
 const walkerLoop: [ number, number ][] = [ [ - 5.5, 1.5 ], [ - 1.5, 3.3 ], [ 3, 2.6 ], [ 5.6, 0 ], [ 3.8, - 2.8 ], [ - 0.5, - 2.7 ], [ - 4.5, - 1.8 ] ];
-// Shrubs and small trees on the island top.
+// Shrubs and small trees on the island top, and the ambient shade they cast on the turf around
+// them, baked into the island's occlusion before its mesh is built.
 const plantSites = pickPlantSites( data.vegetation, loopDistance( walkerLoop ) );
+for ( const m of data.meshes ) if ( m.kind === 'cliff' ) bakeGroundContact( m, plantSites, ISLAND_TOP );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
 const refractedSun = new RefractedSun( renderer, shared );
 refractedSun.setCasters( world.group );
 refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
-const grass = buildGrass( data.vegetation, shared, data.rimGround );
 const foliage = buildFoliage( data.vegetation, shared );
+// The grass and flowers read the anchors' sky visibility with the plants' shade in it.
+bakeAnchorContact( data.vegetation, plantSites );
+const grass = buildGrass( data.vegetation, shared, data.rimGround );
 const flowers = buildFlowers( data.vegetation, shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 const plants = buildPlants( plantSites, shared );

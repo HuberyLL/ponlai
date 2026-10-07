@@ -105,7 +105,9 @@ exposed.
   their own random stream (the rim bushes' stream also places the rim trails), sway with the rim
   bushes' wind, cast into the sun's map and stop the rain. A limb casts whole or not at all: limbs
   that leave their parent 3 cm or more in radius cast; thinner twigs, shrub stems and stalks do
-  not.
+  not. Around their stems the turf, grass and flowers lose ambient light (baked on the CPU into the
+  island's occlusion and the anchors' sky visibility), so they stand in the meadow rather than on
+  it.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Stems, leaf stalks
   and twigs (a few millimetres across) stay out of it too. The map is fitted to the island's

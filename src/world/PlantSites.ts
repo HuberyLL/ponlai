@@ -215,3 +215,50 @@ export function pickPlantSites( veg: Float32Array, clearance: ( x: number, z: nu
 	return sites;
 
 }
+
+/** Contact shade around the plants for the ground and the low growth around them: 1 in the open,
+ * darker toward a stem. Indirect light only; the plants' own sun shadows cover the direct. */
+export function plantContact( sites: PlantSite[] ): ( x: number, z: number ) => number {
+
+	return ( x, z ) => {
+
+		let v = 1;
+		for ( const s of sites ) {
+
+			const reach = s.kind === 'tree' ? 1.6 : s.radius * 1.25 + 0.15;
+			const d = Math.hypot( x - s.x, z - s.z );
+			if ( d >= reach ) continue;
+			// Under a shrub little sky gets through; a tree's lifted crown leaves more of it.
+			const depth = s.kind === 'tree' ? 0.4 : 0.62 * Math.min( 1, 0.55 + s.height * 0.4 );
+			v *= 1 - depth * ( 1 - smoothstep( 0.2, 1, d / reach ) );
+
+		}
+		return v;
+
+	};
+
+}
+
+/** Darken the turf's ambient light around the plants: the island mesh's baked occlusion, on
+ * level ground near the top only (the cliffs keep theirs). */
+export function bakeGroundContact( mesh: { positions: Float32Array; normals: Float32Array; ao: Float32Array }, sites: PlantSite[], top: number ): void {
+
+	const contact = plantContact( sites );
+	const { positions, normals, ao } = mesh;
+	for ( let i = 0; i < ao.length; i ++ ) {
+
+		if ( positions[ i * 3 + 1 ] < top - 0.6 || normals[ i * 3 + 1 ] < 0.5 ) continue;
+		ao[ i ] *= contact( positions[ i * 3 ], positions[ i * 3 + 2 ] );
+
+	}
+
+}
+
+/** The same shade on the anchors' sky visibility, which the grass and flowers read. Call it
+ * after the rim bushes are built: they read the open-sky value of their own anchor. */
+export function bakeAnchorContact( veg: Float32Array, sites: PlantSite[] ): void {
+
+	const contact = plantContact( sites );
+	for ( let k = 0; k < veg.length; k += STRIDE ) veg[ k + 8 ] *= contact( veg[ k ], veg[ k + 2 ] );
+
+}
