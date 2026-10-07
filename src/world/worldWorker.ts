@@ -10,7 +10,7 @@ import {
 	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
 } from './WorldShapes.ts';
 import { Field2D } from './Field2D.ts';
-import { deepenSeabed } from './Bathymetry.ts';
+import { deepenSeabed, seabedBeds } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
 import { VEGETATION_STRIDE } from './types.ts';
@@ -161,7 +161,15 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		sbAO[ v ] = seabedVisibility( sb[ k ], sb[ k + 1 ], sb[ k + 2 ], nx, 1, nz );
 
 	}
-	transfer.push( sb.buffer, sbAO.buffer );
+	const sbBed = new Float32Array( ( n + 1 ) * ( n + 1 ) * 2 );
+	const beds = seabedBeds( fp );
+	for ( let v = 0; v < ( n + 1 ) * ( n + 1 ); v ++ ) {
+
+		const [ grass, pale ] = beds( sb[ v * 3 ], sb[ v * 3 + 2 ] );
+		sbBed[ v * 2 ] = grass; sbBed[ v * 2 + 1 ] = pale;
+
+	}
+	transfer.push( sb.buffer, sbAO.buffer, sbBed.buffer );
 	mark( 'seabed', t );
 
 	// --- shoreline: only the island intersects sea level. Submerged stones must not
@@ -185,7 +193,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	const result: WorldData = {
 		meshes,
 		rocks,
-		seabed: { positions: sb, ao: sbAO, res: n, size: seabedSize },
+		seabed: { positions: sb, ao: sbAO, bed: sbBed, res: n, size: seabedSize },
 		vegetation,
 		rimStrands,
 		rimGround,

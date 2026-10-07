@@ -34,7 +34,8 @@ export interface RimStrand { points: Float32Array; seed: number; lip: number }
 export interface WorldData {
 	meshes: NamedMesh[];
 	rocks: Rock[];
-	seabed: { positions: Float32Array; ao: Float32Array; res: number; size: number };
+	// bed: seagrass cover and pale-sand share per vertex (see seabedBeds)
+	seabed: { positions: Float32Array; ao: Float32Array; bed: Float32Array; res: number; size: number };
 	// Turf anchors: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
 	// (0 island), local sky visibility. Placement still uses the first eight.
 	vegetation: Float32Array;

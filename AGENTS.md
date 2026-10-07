@@ -44,8 +44,9 @@ exposed.
 
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
-- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor,
-  shoreline field, vegetation anchors; instanced grass, bushes and flowers on the island top,
+- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor
+  (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
+  vegetation anchors; instanced grass, bushes and flowers on the island top,
   with top-rooted overhanging branches of mixed lengths.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
