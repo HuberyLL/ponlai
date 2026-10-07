@@ -6,7 +6,7 @@ import {
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
-import { mulberry32, smoothstep } from './noise.ts';
+import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { sampleMeadow, meadowColor, supportsMeadow } from '../materials/Meadow.ts';
 import { sampleMeadowSoil, soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
@@ -17,25 +17,48 @@ import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import type { Shared } from '../shared.ts';
 
-// Stylised meadow on the island top: instanced tufts, each a fan of tapered,
-// bending blades. Most blades make a low, continuous bed; taller shoots grow in loose patches.
-// Soft upward normals join the blades to that bed rather than lighting every tuft as a cushion.
-// A gentle wind sways the tips. Anchors come from the world worker (x, y, z, normal, rim distance,
-// kind and local sky visibility).
+// Stylised meadow on the island top, a sward of two instanced tuft kinds. The lawn is a dense
+// tuft of narrow blades on every planting anchor, with a second one where the growth field runs
+// thick (so the density varies as well as the height); tussocks are taller fans of arching blades
+// grouped by a clump field. Soft upward normals join the blades to the turf rather than lighting
+// every tuft as a cushion, each blade takes its own small shift of value and hue, and a gentle
+// wind sways the tips. Anchors come from the world worker (x, y, z, normal, rim distance, kind and
+// local sky visibility); every choice below is a field or a seeded hash of the anchor, so the
+// meadow grows with the island's footprint and needs no placed features.
 
-function tuftGeometry( seed = 3, blades = 8, segs = 3 ) {
+interface TuftShape {
+	blades: number; segs: number;
+	r0: [ number, number ]; // base offset from the tuft's axis
+	h: [ number, number ]; // blade height
+	lean: [ number, number ];
+	w: [ number, number ]; // blade width at the root
+	droop: number; // how far a leaning blade's tip falls back: arching tussock blades
+	reachPow: number; // < 2 bends the blade out sooner, from lower down
+}
+
+// Lawn: many narrow, short blades. Two segments are enough for blades this short, and keep the
+// doubled blade count near the old tuft's triangle cost per segment.
+const LAWN: TuftShape = { blades: 16, segs: 2, r0: [ 0.02, 0.15 ], h: [ 0.45, 0.95 ], lean: [ 0.2, 0.8 ], w: [ 0.038, 0.072 ], droop: 0.3, reachPow: 2 };
+// Tussock: long blades fountaining out and over, as tufted hair grass or sedge grows.
+const TUSSOCK: TuftShape = { blades: 18, segs: 4, r0: [ 0.01, 0.08 ], h: [ 0.55, 1 ], lean: [ 0.45, 1.05 ], w: [ 0.05, 0.085 ], droop: 0.6, reachPow: 1.6 };
+
+function tuftGeometry( shape: TuftShape, seed = 3 ) {
 
 	const rng = mulberry32( seed );
-	// T: blade parameter along its length, then the half-width offset from the centreline (x, z)
+	const range = ( [ a, b ]: [ number, number ] ) => a + rng() * ( b - a );
+	const { blades, segs } = shape;
+	// T: blade parameter along its length, the half-width offset from the centreline (x, z), and
+	// the blade's own hash for its colour shift
 	const P: number[] = [], N: number[] = [], T: number[] = [], I: number[] = [];
 	for ( let b = 0; b < blades; b ++ ) {
 
 		const a = rng() * Math.PI * 2;
-		const r0 = 0.03 + rng() * 0.1; // base offset from the tuft's axis
+		const r0 = range( shape.r0 );
 		const ox = Math.cos( a ) * r0, oz = Math.sin( a ) * r0;
-		const h = 0.45 + rng() * 0.55; // varied blades keep the meadow from reading as a brush carpet
-		const lean = 0.22 + rng() * 0.65;
-		const w = 0.085 + rng() * 0.055;
+		const h = range( shape.h ); // varied blades keep the meadow from reading as a brush carpet
+		const lean = range( shape.lean );
+		const w = range( shape.w );
+		const id = rng();
 		const dx = Math.cos( a ), dz = Math.sin( a );
 		const tw = a + Math.PI / 2 + ( rng() - 0.5 ) * 1.0; // width axis, a little twisted
 		const wx = Math.cos( tw ), wz = Math.sin( tw );
@@ -43,9 +66,9 @@ function tuftGeometry( seed = 3, blades = 8, segs = 3 ) {
 		for ( let i = 0; i <= segs; i ++ ) {
 
 			const t = i / segs;
-			const reach = lean * h * t * t;
+			const reach = lean * h * Math.pow( t, shape.reachPow );
 			const cx = ox + dx * reach, cz = oz + dz * reach;
-			const cy = h * t * ( 1.0 - 0.3 * lean * t );
+			const cy = h * t * ( 1.0 - shape.droop * lean * t );
 			const hw = w * 0.5 * Math.pow( 1 - t, 0.85 ) + 0.004;
 			for ( const sg of [ - 1, 1 ] ) {
 
@@ -53,7 +76,7 @@ function tuftGeometry( seed = 3, blades = 8, segs = 3 ) {
 				P.push( px, cy, pz );
 				const nx = px * 2.2, nz = pz * 2.2, l = Math.hypot( nx, 0.9, nz );
 				N.push( nx / l, 0.9 / l, nz / l );
-				T.push( t, wx * hw * sg, wz * hw * sg );
+				T.push( t, wx * hw * sg, wz * hw * sg, id );
 
 			}
 
@@ -71,7 +94,7 @@ function tuftGeometry( seed = 3, blades = 8, segs = 3 ) {
 	const g = new THREE.BufferGeometry();
 	g.setAttribute( 'position', new THREE.Float32BufferAttribute( P, 3 ) );
 	g.setAttribute( 'normal', new THREE.Float32BufferAttribute( N, 3 ) );
-	g.setAttribute( 'blade', new THREE.Float32BufferAttribute( T, 3 ) );
+	g.setAttribute( 'blade', new THREE.Float32BufferAttribute( T, 4 ) );
 	g.setIndex( I );
 	return g;
 
@@ -88,6 +111,11 @@ function tuftGeometry( seed = 3, blades = 8, segs = 3 ) {
 const grassUniforms = {
 	minWidth: uniform( 2 ), // render-target pixels
 	rimMinWidth: uniform( 0.75 ), // on the outer rim, see `rimEdge` in buildGrass
+	// The extra lawn tufts of thick patches fold away between these view distances (m): beyond
+	// them a blade is under a pixel wide and the widened blades of the remaining tufts already
+	// cover the turf, so the extras would only cost vertices.
+	thinNear: uniform( 30 ),
+	thinFar: uniform( 42 ),
 };
 // Beyond this the blade is seen nearly edge on; widening further would only smear it.
 const MAX_WIDEN = 8;
@@ -126,7 +154,7 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.86, metalness: 0, side: THREE.DoubleSide, alphaToCoverage: true } );
 	mat.opacityNode = bladeCoverage;
 	const wind = shared.wind.direction;
-	const blade = attribute<'vec3'>( 'blade', 'vec3' );
+	const blade = attribute<'vec4'>( 'blade', 'vec4' );
 	const t = blade.x;
 	const t2 = t.mul( t );
 	// sway: gusts travel across the meadow, the tips move most (positionLocal is already placed
@@ -135,6 +163,9 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const soil = attribute<'float'>( 'soilCover', 'float' ).mul( soilUniforms.blend ).mul( soilUniforms.strength );
 	const tuft = attribute<'vec4'>( 'tuftOrigin', 'vec4' );
 	const origin = tuft.xyz;
+	// Folding a thinned tuft into its root: a scale about the anchor, applied like the drowning.
+	const thin = attribute<'float'>( 'thin', 'float' );
+	const kept = float( 1 ).sub( thin.mul( smoothstepN( grassUniforms.thinNear, grassUniforms.thinFar, length( cameraPosition.sub( origin ) ) ) ) );
 	// Keep every planting anchor. Narrower, slightly shorter shoots reveal the same soil
 	// pockets as the ground material, and a zero blend restores their original footprint.
 	// Standing water drowns the blades: the tufts sink below the waterline (the ground, which
@@ -142,7 +173,7 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// tips above it, so sparse drowned spikes stand in an open sheet of water rather than a
 	// meadow that hides it. Which tufts and how much is a hash of the planting anchor, fixed.
 	const pool = puddleCover( origin.xz, shared.wetness );
-	const drowned = float( 1 ).sub( pool.mul( 0.15 ) );
+	const drowned = float( 1 ).sub( pool.mul( 0.15 ) ).mul( kept );
 	const pick = fract( sin( dot( origin.xz, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
 	const tip = select( pick.greaterThan( 0.66 ), pick.sub( 0.66 ).mul( 0.25 ).add( 0.03 ), float( - 0.03 ) );
 	// The tallest blade of a tuft reaches about 0.9 of its height ( tuft.w / CANOPY_TOP ).
@@ -161,11 +192,17 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const rest = useRestPoseShadows( mat, rooted, pixelWideBlade( swayed, across, minWidth ) );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const cover = attribute<'float'>( 'rimCover', 'float' );
+	// Each blade shifts its value by up to +/-8 % and its hue a little toward yellow or blue
+	// green: a hash of the blade within its tuft and of the tuft's anchor, so neighbouring tufts
+	// of one geometry do not repeat the same light and dark blades.
+	const jitter = fract( sin( blade.w.mul( 91.7 ).add( pick.mul( 37.3 ) ) ).mul( 43758.5453 ) );
+	const tint = fract( jitter.mul( 7.13 ).add( pick.mul( 3.7 ) ) );
+	const bladeShift = mix( vec3( 0.95, 1, 1.07 ), vec3( 1.06, 1, 0.86 ), tint ).mul( jitter.mul( 0.16 ).add( 0.92 ) );
 	// Meadow gaps and the rim share one root tint instead of colouring the same blade twice.
 	const rootSoil = max( soil.mul( 0.7 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
 	const root = mix( vec3( 0.35, 0.43, 0.29 ), vec3( 0.55, 0.38, 0.23 ), rootSoil );
 	const wetness = clamp( shared.wetness, 0, 1 );
-	mat.colorNode = mix( root, vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) ).mul( mix( 1, 0.92, wetness ) );
+	mat.colorNode = mix( root, vec3( 1.04, 1, 0.86 ), smoothstepN( 0.02, 0.9, t ) ).mul( bladeShift ).mul( mix( 1, 0.92, wetness ) );
 	mat.roughnessNode = mix( 0.86, 0.76, wetness );
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
@@ -181,40 +218,93 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 }
 
-export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGroundField ): THREE.InstancedMesh {
+interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; soil: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3 }
 
-	const n = veg.length / STRIDE;
-	const mesh = new THREE.InstancedMesh( tuftGeometry(), grassMaterial( shared ), n );
-	// Share one input buffer for the three scalar fields and the width axes. Separate buffers plus
-	// the existing tuft inputs and instance transform would exceed WebGPU's default eight-buffer limit.
-	const ground = new THREE.InstancedInterleavedBuffer( new Float32Array( n * 10 ), 10 );
+// One instanced mesh per tuft kind. One input buffer carries the scalar fields and the width axes:
+// separate buffers plus the tuft inputs and instance transform would exceed WebGPU's default
+// eight-buffer limit.
+function tuftMesh( geometry: THREE.BufferGeometry, material: THREE.Material, tufts: Tuft[], name: string ): THREE.InstancedMesh {
+
+	const n = tufts.length;
+	const mesh = new THREE.InstancedMesh( geometry, material, Math.max( n, 1 ) );
+	const ground = new THREE.InstancedInterleavedBuffer( new Float32Array( Math.max( n, 1 ) * 11 ), 11 );
 	const visibility = new THREE.InterleavedBufferAttribute( ground, 1, 0 );
 	const soilCover = new THREE.InterleavedBufferAttribute( ground, 1, 1 );
 	const covers = new THREE.InterleavedBufferAttribute( ground, 1, 2 );
-	mesh.geometry.setAttribute( 'skyVisibility', visibility );
-	mesh.geometry.setAttribute( 'soilCover', soilCover );
-	mesh.geometry.setAttribute( 'rimCover', covers );
+	geometry.setAttribute( 'skyVisibility', visibility );
+	geometry.setAttribute( 'soilCover', soilCover );
+	geometry.setAttribute( 'rimCover', covers );
 	// The instance transform's local x and z axes: a blade's width lies in that plane, and the
 	// vertex stage needs it in world space to keep thin blades a minimum width on screen (the
 	// instance matrix itself is not exposed to the material).
 	const widthX = new THREE.InterleavedBufferAttribute( ground, 3, 3 );
 	const widthZ = new THREE.InterleavedBufferAttribute( ground, 3, 6 );
-	mesh.geometry.setAttribute( 'widthX', widthX );
-	mesh.geometry.setAttribute( 'widthZ', widthZ );
+	geometry.setAttribute( 'widthX', widthX );
+	geometry.setAttribute( 'widthZ', widthZ );
 	// 1 on the plateau's outer rim, where blades stand against the sea. The opaque pass's MSAA
 	// edge pixels there resolve against the sky-coloured clear behind the island (the sea is drawn
 	// in a later, single-sampled pass), so every partly covered pixel a widened blade adds shows
 	// as a pale fringe over the sea; the rim keeps blades narrower.
 	const rimEdge = new THREE.InterleavedBufferAttribute( ground, 1, 9 );
-	mesh.geometry.setAttribute( 'rimEdge', rimEdge );
+	geometry.setAttribute( 'rimEdge', rimEdge );
+	// 1 for the extra tufts that fold away with distance (grassUniforms.thinNear / thinFar)
+	geometry.setAttribute( 'thin', new THREE.InterleavedBufferAttribute( ground, 1, 10 ) );
 	// xyz: planting anchor; w: local canopy top above it, for the light through the blades
-	const tuftOrigin = new Float32Array( n * 4 );
-	const rng = mulberry32( 99 );
-	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
-	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
-	const col = new THREE.Color();
+	const tuftOrigin = new Float32Array( Math.max( n, 1 ) * 4 );
+	for ( let i = 0; i < n; i ++ ) {
 
-	let count = 0;
+		const t = tufts[ i ];
+		visibility.setX( i, t.visibility );
+		soilCover.setX( i, t.soil );
+		covers.setX( i, t.cover );
+		const e = t.m.elements;
+		widthX.setXYZ( i, e[ 0 ], e[ 1 ], e[ 2 ] );
+		widthZ.setXYZ( i, e[ 8 ], e[ 9 ], e[ 10 ] );
+		rimEdge.setX( i, t.rimEdge );
+		ground.array[ i * 11 + 10 ] = t.thin;
+		t.origin.toArray( tuftOrigin, i * 4 );
+		tuftOrigin[ i * 4 + 3 ] = t.top;
+		mesh.setMatrixAt( i, t.m );
+		mesh.setColorAt( i, t.col );
+
+	}
+
+	ground.needsUpdate = true;
+	geometry.setAttribute( 'tuftOrigin', new THREE.InstancedBufferAttribute( tuftOrigin, 4 ) );
+	mesh.count = n;
+	mesh.instanceMatrix.needsUpdate = true;
+	if ( mesh.instanceColor ) mesh.instanceColor.needsUpdate = true;
+	mesh.frustumCulled = false;
+	mesh.castShadow = false; // see MeadowCanopy
+	mesh.receiveShadow = true;
+	mesh.name = name;
+	mesh.renderOrder = - 1; // before the terrain: the turf it covers then fails the depth test
+	return mesh;
+
+}
+
+/** The meadow: lawn and tussock meshes in one group. `walkDistance` (m from a point to the
+ * islander's loop) keeps tussocks off the path. */
+export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): THREE.Group {
+
+	const n = veg.length / STRIDE;
+	const lawn: Tuft[] = [], tussocks: Tuft[] = [];
+	// The lawn's own draws keep their old order; everything added since draws from a second
+	// stream, a fixed count per anchor, so the planting stays the same wherever a gate changes.
+	const rng = mulberry32( 99 );
+	const more = mulberry32( 131 );
+	const draws = new Float32Array( 12 );
+	const q = new THREE.Quaternion(), qy = new THREE.Quaternion();
+	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
+	const out = new THREE.Vector3();
+	const col = new THREE.Color();
+	const tussockTint = new THREE.Color( 1.1, 1.03, 0.82 );
+	const plant = ( list: Tuft[], at: THREE.Vector3, rotation: THREE.Quaternion, scale: THREE.Vector3, color: THREE.Color,
+		k: number, soil: number, cover: number, rimEdge: number, thin: number ) => list.push( {
+		m: new THREE.Matrix4().compose( at, rotation, scale ), col: color.clone(), visibility: veg[ k + 8 ], soil, cover, rimEdge, thin,
+		top: scale.y * CANOPY_TOP, origin: at.clone(),
+	} );
+
 	for ( let i = 0; i < n; i ++ ) {
 
 		const k = i * STRIDE;
@@ -226,8 +316,8 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 		qy.setFromAxisAngle( up, rng() * Math.PI * 2 );
 		q.multiply( qy );
 
-		// Keep the shared anchors: bushes and flowers use them too. Height, not a denser grid,
-		// gives the meadow a close-cropped bed with irregular islands of longer growth.
+		// Height gives the meadow a close-cropped bed with irregular islands of longer growth;
+		// the canopy's light (meadowCanopyHeight) follows this mean.
 		const { growth, variation } = sampleMeadow( x, z );
 		const onStack = veg[ k + 7 ] > 0;
 		const edge = smoothstep( - 1.1, - 0.05, rim );
@@ -237,51 +327,94 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 		pos.set( x, y - 0.018, z );
 		const spread = ( tall ? 0.34 : 0.44 ) + growth * 0.08;
 		scl.set( spread * ( 0.85 + rng() * 0.3 ), h, spread * ( 0.85 + rng() * 0.3 ) );
-		m.compose( pos, q, scl );
 
 		// The terrain samples the same colour field, so gaps read as short turf between shoots.
 		meadowColor( x, z, col ).multiplyScalar( 0.93 + rng() * 0.14 );
-		// Consume the original random draws before filtering so inland tufts stay identical.
+		for ( let d = 0; d < draws.length; d ++ ) draws[ d ] = more();
 		if ( ! supportsMeadow( y, veg[ k + 4 ] ) ) continue;
-		// All attributes follow the compacted instance order, including the original sky bake.
-		visibility.setX( count, veg[ k + 8 ] );
-		soilCover.setX( count, onStack ? 0 : sampleMeadowSoil( x, z ) );
-		tuftOrigin[ count * 4 ] = pos.x;
-		tuftOrigin[ count * 4 + 1 ] = pos.y;
-		tuftOrigin[ count * 4 + 2 ] = pos.z;
-		const cover = rimGround ? rimGrassCover( sampleRimGround( rimGround, x, z ) ) : 1;
-		covers.setX( count, cover );
-		if ( cover < 1 ) {
+		const soil = onStack ? 0 : sampleMeadowSoil( x, z );
+		const rimEdge = smoothstep( - 1.5, - 0.3, rim );
 
-			// Keep the planted origins and all RNG draws. A thin edge tuft reveals the same
-			// soil pocket as the ground without changing the inland meadow arrangement.
-			scl.multiply( new THREE.Vector3( 0.35 + cover * 0.65, 0.45 + cover * 0.55, 0.35 + cover * 0.65 ) );
-			m.compose( pos, q, scl );
+		// The meadow spills to the lip. Toward the coast the tufts grow taller and lean out over
+		// it, along the coast field's gradient (any coast line, wherever the footprint puts it),
+		// so they drape the root soil instead of stopping short of it. Where that field exposes a
+		// soil pocket the tufts narrow only a little: the pocket shows between leaning blades.
+		let cover = 1, spill = 0;
+		if ( rimGround ) {
+
+			const g = sampleRimGround( rimGround, x, z );
+			cover = rimGrassCover( g );
+			spill = smoothstep( - 0.95, - 0.1, g.distance );
+			const e = 0.2;
+			out.set( sampleRimGround( rimGround, x + e, z ).distance - sampleRimGround( rimGround, x - e, z ).distance, 0,
+				sampleRimGround( rimGround, x, z + e ).distance - sampleRimGround( rimGround, x, z - e ).distance );
+
+		} else {
+
+			spill = smoothstep( - 1.1, - 0.2, rim );
+			out.set( veg[ k + 3 ], 0, veg[ k + 5 ] );
 
 		}
-		tuftOrigin[ count * 4 + 3 ] = scl.y * CANOPY_TOP;
-		const e = m.elements;
-		widthX.setXYZ( count, e[ 0 ], e[ 1 ], e[ 2 ] );
-		widthZ.setXYZ( count, e[ 8 ], e[ 9 ], e[ 10 ] );
-		rimEdge.setX( count, smoothstep( - 1.5, - 0.3, rim ) );
-		mesh.setMatrixAt( count, m );
-		mesh.setColorAt( count ++, col );
+		if ( out.lengthSq() > 1e-8 ) out.normalize();
+		if ( spill > 0 && ! onStack ) {
+
+			dir.addScaledVector( out, spill * ( 0.3 + 0.45 * draws[ 0 ] ) ).normalize();
+			q.setFromUnitVectors( up, dir ).multiply( qy );
+			scl.y *= 1 + spill * ( 0.3 + 0.5 * draws[ 1 ] );
+
+		}
+		scl.x *= 0.65 + 0.35 * cover;
+		scl.z *= 0.65 + 0.35 * cover;
+		scl.y *= 0.8 + 0.2 * cover;
+		plant( lawn, pos, q, scl, col, k, soil, cover, rimEdge, 0 );
+
+		// Thick patches take a second lawn tuft beside the first, so the sward's density varies
+		// with its growth instead of every anchor holding one rosette. Clear of the rim, where an
+		// offset root could leave the turf.
+		const dense = noise3( x * 0.9 - 4.3, 6.6, z * 0.9 + 1.9 ) * 0.5 + 0.5;
+		const thick = smoothstep( 0.42, 0.78, growth * 0.55 + dense * 0.45 ) * ( 1 - smoothstep( - 0.7, - 0.35, rim ) );
+		if ( draws[ 2 ] < thick * 0.9 && ! onStack ) {
+
+			pos.set( x + ( draws[ 3 ] - 0.5 ) * 0.2, y - 0.018, z + ( draws[ 4 ] - 0.5 ) * 0.2 );
+			dir.set( veg[ k + 3 ], veg[ k + 4 ], veg[ k + 5 ] ).lerp( up, 0.3 ).normalize();
+			q.setFromUnitVectors( up, dir ).multiply( qy.setFromAxisAngle( up, draws[ 5 ] * Math.PI * 2 ) );
+			scl.set( spread * ( 0.85 + draws[ 6 ] * 0.3 ), h * ( 0.8 + draws[ 7 ] * 0.35 ), spread * ( 0.85 + draws[ 6 ] * 0.3 ) );
+			meadowColor( x, z, col ).multiplyScalar( 0.9 + draws[ 8 ] * 0.18 );
+			plant( lawn, pos, q, scl, col, k, soil, cover, rimEdge, 1 );
+
+		}
+
+		// Tussocks grouped by a clump field, a little more often toward the coast: knee-high
+		// fountains of arching blades that give the lawn a vertical structure. Kept off the walking
+		// loop, where they would hide the walker's legs.
+		const clump = noise3( x * 0.42 + 17.3, 2.2, z * 0.42 - 5.1 ) * 0.5 + 0.5;
+		const chance = smoothstep( 0.5, 0.7, clump ) * 0.32 + spill * 0.05;
+		const clear = walkDistance ? walkDistance( x, z ) : Infinity;
+		if ( draws[ 9 ] < chance && clear > 1.0 && ! onStack && soil < 0.3 ) {
+
+			pos.set( x, y - 0.02, z );
+			dir.set( veg[ k + 3 ], veg[ k + 4 ], veg[ k + 5 ] ).lerp( up, 0.6 ).addScaledVector( out, spill * 0.35 ).normalize();
+			q.setFromUnitVectors( up, dir ).multiply( qy.setFromAxisAngle( up, draws[ 10 ] * Math.PI * 2 ) );
+			const th = ( 0.42 + 0.3 * draws[ 11 ] ) * ( 0.8 + 0.4 * growth );
+			const ts = 0.5 + 0.2 * draws[ 3 ];
+			scl.set( ts, th, ts * ( 0.85 + 0.3 * draws[ 4 ] ) );
+			meadowColor( x, z, col ).multiply( tussockTint ).multiplyScalar( 0.92 + draws[ 8 ] * 0.16 );
+			plant( tussocks, pos, q, scl, col, k, 0, 1, rimEdge, 0 );
+
+		}
 
 	}
 
-	ground.needsUpdate = true;
-	mesh.geometry.setAttribute( 'tuftOrigin', new THREE.InstancedBufferAttribute( tuftOrigin, 4 ) );
-	mesh.count = count;
-	mesh.instanceMatrix.needsUpdate = true;
-	mesh.instanceColor!.needsUpdate = true;
-	mesh.frustumCulled = false;
-	mesh.castShadow = false; // see MeadowCanopy
-	mesh.receiveShadow = true;
-	mesh.name = 'grass';
+	const material = grassMaterial( shared );
+	const group = new THREE.Group();
+	group.name = 'grass';
+	group.add( tuftMesh( tuftGeometry( LAWN, 3 ), material, lawn, 'grass-lawn' ) );
+	group.add( tuftMesh( tuftGeometry( TUSSOCK, 17 ), material, tussocks, 'grass-tussocks' ) );
 	// for probes and tuning from the console ( __SOOMI__.grass )
-	mesh.userData.minWidth = grassUniforms.minWidth;
-	mesh.userData.rimMinWidth = grassUniforms.rimMinWidth;
-	mesh.renderOrder = - 1; // before the terrain: the turf it covers then fails the depth test
-	return mesh;
+	group.userData.minWidth = grassUniforms.minWidth;
+	group.userData.rimMinWidth = grassUniforms.rimMinWidth;
+	group.userData.thinNear = grassUniforms.thinNear;
+	group.userData.thinFar = grassUniforms.thinFar;
+	return group;
 
 }

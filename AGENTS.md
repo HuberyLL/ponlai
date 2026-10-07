@@ -95,6 +95,13 @@ exposed.
   patchy seabed detail; no exposed sea stacks or reefs.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
+  The meadow is a sward: dense lawn tufts of narrow blades (doubled where the growth field runs
+  thick, the extras folding away beyond about 35 m) and taller tussocks on a clump field; toward
+  the coast the tufts grow taller and lean out over the lip instead of thinning. Tussocks keep off
+  the islander's walking loop (`WalkLoop.ts`).
+- Generic, grows with the island: every planting and ground feature is derived from the footprint,
+  the SDF and noise fields with fixed seeds (a seeded hash per vegetation anchor), never placed at
+  coordinates, so it works unchanged for any tile layout.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Stems, leaf stalks
   and twigs (a few millimetres across) stay out of it too. The map is fitted to the island's
