@@ -21,12 +21,13 @@ import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { StormSea } from './StormSea.ts';
 import type { Shared } from '../shared.ts';
-import { solarShadowVisibility, solarVolumeVisibility, volumeShadowRayMayIntersect } from '../lighting/SolarShadow.ts';
+import { volumeShadowRayMayIntersect } from '../lighting/SolarShadow.ts';
 import {
 	waveSlopeCovariance, waveLodCovariance, waveParameterGradient, waveSurfaceNormal, waveCovarianceToTangent,
 	waveLocalDirection, waveBeckmannD, waveSmithVisibility, waveSolarSlopeCovariance, waveReflectionAngularVariance, waveAirFacing,
 } from './WaveOptics.ts';
 import { RefractedSun, refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
+import type { SunShadow } from '../lighting/SunShadow.ts';
 import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance } from './WaterTransport.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
 
@@ -136,6 +137,7 @@ export interface WaterInputs {
 	shore: THREE.Texture;
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
+	sunShadow: SunShadow;
 	storm: StormSea;
 	sceneColor: THREE.Texture;
 	linearDepth: THREE.Texture;
@@ -159,15 +161,11 @@ export class Water {
 		shadowOn: uniform( 0 ),
 	};
 
-	private shadowTex: THREE.TextureNode;
-	private shadowSize = uniform( new THREE.Vector2( 1, 1 ) );
-	private shadowSpan = uniform( new THREE.Vector2( 72, 72 ) );
-	private shadowDepthRange = uniform( 219 );
 	private shadowBias = uniform( 0 );
 	private shadowNormalBias = uniform( 0 );
 	private shadowIntensity = uniform( 1 );
 
-	constructor( { fft, sky, shared, shore, shoreWaves, refractedSun, storm, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
+	constructor( { fft, sky, shared, shore, shoreWaves, refractedSun, sunShadow, storm, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
 
 		// grid in world xz, warped dense under the island and sparse toward the horizon
 		const n = res;
@@ -265,10 +263,6 @@ export class Water {
 		const sceneViewZ = Fn( ( [ q ]: [ V2 ] ) => textureLoad( tDepth, pixel( q ) ).x )
 			.setLayout( { name: 'sceneViewZ', type: 'float', inputs: [ { name: 'q', type: 'vec2' } ] } );
 		const sceneAt = ( q: V2 ) => texture( sceneColor, q ).level( float( 0 ) ).rgb;
-		const shadowPlaceholder = new THREE.DepthTexture( 1, 1 );
-		shadowPlaceholder.compareFunction = THREE.LessEqualCompare;
-		this.shadowTex = texture( shadowPlaceholder );
-		const shadowSize = this.shadowSize;
 
 		// screen-space reflection of the opaque scene (cliffs, stacks): geometric steps, then bisection
 		const traceSSR = Fn( ( [ posV, Rv ]: [ V3, V3 ] ) => {
@@ -497,13 +491,12 @@ export class Water {
 			const posV = cameraViewMatrix.mul( vec4( wp, 1 ) ).xyz.toVar();
 
 			// The water uses the same solar angular size, receiver-plane correction and bias as
-			// standard materials. Keep comparison sampling outside pixel-dependent branches.
+			// standard materials, and the same fade from the previous map (see SunShadow). Keep
+			// comparison sampling outside pixel-dependent branches.
 			const sc = u.shadowMatrix.mul( vec4( wp.add( N.mul( this.shadowNormalBias ) ), 1 ) ).toVar();
 			const s3 = sc.xyz.div( max( sc.w, 1e-6 ) ).toVar();
-			const shadowCoord = vec3( s3.x, float( 1 ).sub( s3.y ), s3.z.add( this.shadowBias ) );
-			const visibility = solarShadowVisibility( this.shadowTex, shadowCoord, {
-				mapSize: shadowSize, worldSpan: this.shadowSpan, depthRange: this.shadowDepthRange,
-			} );
+			const shadowCoord = vec3( s3.x, float( 1 ).sub( s3.y ), s3.z.add( this.shadowBias ) ).toVar();
+			const visibility = sunShadow.surfaceVisibility( shadowCoord );
 			const shadow = mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) ).toVar();
 			const cloudTransmission = sky.cloudVisibility( wp ).toVar();
 			const sunLight = shared.sunColor.mul( shadow ).mul( cloudTransmission ).toVar();
@@ -673,7 +666,7 @@ export class Water {
 
 				inSun.assign( waterShadowedColumnRadiance( solarSource, kSun, pathLen, ( distance ) => {
 
-					const visibility = solarVolumeVisibility( this.shadowTex, airCoordinate( distance ), shadowSize ).toVar();
+					const visibility = sunShadow.volumeVisibility( airCoordinate( distance ) ).toVar();
 					If( visibility.greaterThan( 0 ).and( columnDepth( distance ).greaterThan( 0 ) ), () => {
 
 						const coordinate = mix( wetStart, wetEnd, distance.div( max( pathLen, 1e-5 ) ) );
@@ -792,11 +785,7 @@ export class Water {
 		const map = sun.shadow.map as ( THREE.RenderTarget | null );
 		if ( sun.castShadow && map && map.depthTexture ) {
 
-			this.shadowTex.value = map.depthTexture;
-			this.shadowSize.value.set( map.width, map.height );
-			const camera = sun.shadow.camera;
-			this.shadowSpan.value.set( camera.right - camera.left, camera.top - camera.bottom );
-			this.shadowDepthRange.value = camera.far - camera.near;
+			// the maps themselves are read through SunShadow
 			this.shadowBias.value = sun.shadow.bias;
 			this.shadowNormalBias.value = sun.shadow.normalBias;
 			this.shadowIntensity.value = sun.shadow.intensity;

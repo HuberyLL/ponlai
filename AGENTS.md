@@ -82,7 +82,7 @@ exposed.
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
-  map multiplied into the island's static one. While the character art is settled, models load from the
+  map multiplied into the island's. While the character art is settled, models load from the
   git-ignored `artifacts/assets/` (dev server only).
 
 ## Decisions (keep to these)
@@ -94,7 +94,9 @@ exposed.
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Larger casters keep
-  the map, which redraws whenever the key light moves.
+  the map, which is redrawn each time the key light has turned 0.2 degrees; every receiver
+  cross-fades from the previous step's map by the light's progress (`SunShadow`), so shadows move
+  smoothly instead of re-rasterising every frame, and a paused clock holds them exactly.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
   Weather only scales the wave cascades' amplitude; it never rebuilds the wave spectrum. Storm foam
@@ -191,3 +193,8 @@ exposed.
   Alpha-to-coverage turns alpha short of cutoff + `fwidth` into partial coverage, so keep leaf
   interiors at 1 rather than scaling alpha down.
 - Vegetation draws before the terrain (`renderOrder = -1`) so the turf under it fails the depth test.
+- A `DepthTexture` without a `RenderTarget` takes the renderer's sample count, so a standalone one
+  is declared multisampled and cannot be sampled with a comparison; give it a render target.
+- The water's fragment stage already binds 16 sampled textures, the most WebGPU guarantees; a new
+  texture there fails pipeline creation unless another one goes (the sun's two shadow steps share
+  one array texture for this reason).

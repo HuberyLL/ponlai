@@ -22,7 +22,8 @@ import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
 import { Pipeline } from './post/Pipeline.ts';
 import { shared } from './shared.ts';
-import { installSolarShadowFilter, installOpenShadow } from './lighting/SolarShadow.ts';
+import { installOpenShadow } from './lighting/SolarShadow.ts';
+import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { islandSurfaceHeight } from './world/WorldShapes.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
@@ -143,11 +144,12 @@ sun.castShadow = true;
 sun.shadow.mapSize.set( 2048, 2048 );
 const sc = sun.shadow.camera;
 sc.left = - 36; sc.right = 36; sc.top = 36; sc.bottom = - 36; sc.near = 1; sc.far = 220;
-// Bias in metres along the light ray, converted to this orthographic map's depth range.
-// Receiver-plane correction in the shared filter keeps contacts sharp without a wide blur.
-sun.shadow.bias = - 0.01 / ( sc.far - sc.near );
+// The map is redrawn in small steps of the key light with a cross-fade (SunShadow). Its bias,
+// 1 cm along the light ray, follows the map's depth range; receiver-plane correction in the
+// shared filter keeps contacts sharp without a wide blur.
 sun.shadow.normalBias = 0.012;
-installSolarShadowFilter( sun );
+const sunShadow = new SunShadow( sun, { bias: 0.01 } );
+sunShadow.install();
 // Cloud shadowing shares the density field in the visible/reflected sky. Bake its long solar
 // path once at low resolution, then sample the same transmission on every receiver, including
 // those beyond the island's shadow map (the sea floor seen through the water).
@@ -156,11 +158,9 @@ installOpenShadow( sun, ( position ) => sky.cloudVisibility( position ) );
 // must be installed before any receiving material is built.
 const characterShadow = new CharacterShadow();
 characterShadow.install( sun );
-// Vegetation casts its rest pose; wind only changes the visible mesh. The first render
-// builds the complete map, then sunlight or caster edits explicitly invalidate it.
-sun.shadow.autoUpdate = false;
-function invalidateSunShadow(): void { sun.shadow.needsUpdate = true; }
-invalidateSunShadow();
+// Vegetation casts its rest pose; wind only changes the visible mesh. The key light's steps
+// redraw the map; a jump of the light or an edit to the casters redraws it from scratch.
+function invalidateSunShadow(): void { sunShadow.invalidate(); }
 scene.add( sun, sun.target );
 
 function fresnel( cosI: number, eta: number ): number {
@@ -322,7 +322,7 @@ const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
 	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: pipeline.depthRT.texture,
 } );
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun, storm: stormSea,
+	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun, sunShadow, storm: stormSea,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 applySkyFill();
@@ -551,7 +551,6 @@ addEventListener( 'keydown', ( e ) => {
 
 const frameTimes: number[] = [];
 let shadowElapsed = 0;
-const shadowDirection = new THREE.Vector3();
 function tick(): void {
 
 	clock.update();
@@ -624,15 +623,10 @@ function tick(): void {
 		void sky.update( skyInterval ).catch( ( error: unknown ) => console.error( error ) );
 
 	}
-	// Redraw the sun's map whenever the key moves. Its casters are all larger than a texel (the
-	// meadow shades itself, see MeadowCanopy), so their shadows slide with the light; a throttled
-	// redraw made them step at its cadence instead. The underwater map keeps the quality cadence.
-	if ( shadowDirection.distanceToSquared( sky.keyDir ) > 1e-10 ) {
-
-		shadowDirection.copy( sky.keyDir );
-		invalidateSunShadow();
-
-	}
+	// The sun's map steps with the key light and cross-fades between steps, so its shadows move
+	// smoothly without re-rasterising sub-texel casters every frame. The underwater map keeps the
+	// quality cadence.
+	sunShadow.update( renderer, scene, camera, sky.keyDir );
 	shadowElapsed += environmentDt;
 	if ( shadowElapsed >= WEATHER_QUALITY[ skyQuality.value ].underwaterShadowInterval && refractedSun.update() ) shadowElapsed = 0;
 	shared.time.value = simTime;
@@ -697,4 +691,4 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime };
