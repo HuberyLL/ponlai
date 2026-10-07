@@ -271,7 +271,9 @@ const caustics = new Caustics( renderer, fft );
 rain = new Rain( { count: WEATHER_QUALITY[ skyQuality.value ].rainDrops } );
 // Drops scatter the same linear environment and key light as the island, without an emissive
 // floor. Using the GPU integral keeps their light in step with the displayed sky transition.
-rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor );
+// A strike's fill lights the ground they show in full; the sky they show and reflect takes it
+// damped (like the storm spray's), since the displayed deck brightens far less than the fill.
+rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).pow( 0.35 ) ) );
 const pipeline = new Pipeline( renderer, sky, rain );
 rain.bindOpaqueDepth( pipeline.depthRT.texture );
 rainScene.add( rain.group );

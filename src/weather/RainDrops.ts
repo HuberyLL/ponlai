@@ -37,6 +37,11 @@ export const DRIFT = 0.8;
 // The eye's exposure: a drop is seen as the streak it travels meanwhile.
 const EXPOSURE = 0.032;
 const DIAMETER = 0.003; // m, a little larger than real drops, for a stylised read
+// Out of focus, a streak is drawn at most this many pixels wide: wider, a near drop would read
+// as a glowing band rather than a line of water. The energy it loses fades the drop instead.
+const SOFT_PIXELS = 3;
+// Drops closer than this fade out (m): at arm's length a streak would cross much of the screen.
+const NEAR_FADE = [ 0.8, 2 ];
 // Lifetimes (s) of a splash on land, of the jet a drop throws up from the sea, and of its ring.
 const SPRAY_LIFE = 0.26, SEA_SPRAY_LIFE = 0.16, RING_LIFE = 0.75;
 const SPRAY_SIZE = 0.18, RING_SIZE = 0.5; // m
@@ -57,6 +62,47 @@ const CASCADES = [
 	{ size: 84, height: 48, ahead: 36, share: 2, drawn: true, floor: - 8 },
 	{ size: 36, height: 15, ahead: 36, share: 3, drawn: false, floor: - 8 },
 ];
+
+// A drop is a small lens: it shows the scene behind it, inverted and squeezed, from a cone some
+// 40 degrees around the line of sight, and reflects the sky off its rim. So rain has no light of
+// its own: looking up it takes the sky's radiance, looking down the darker ground's and sea's, and
+// only toward the key light (sun, moon) or in a flash does it glow.
+const GROUND_ALBEDO = 0.14; // the island and sea under the rain, as seen through a drop
+const SKY_SEEN = 0.9; // the sky inside the cone, a little under its cosine-weighted mean
+// The sky reflected off the drop, lifted above Fresnel's few percent so that the streaks still
+// read as faint lines against dark ground.
+const REFLECTED = 0.25;
+// Light refracted through a drop leaves within about 80 degrees of its path, mostly near it:
+// a normalised lobe ( n + 1 ) / 2 pi cos^n, scaled by the share that is not reflected away.
+const FORWARD_POWER = 4, FORWARD_SHARE = 0.6;
+
+/** Radiance a falling drop sends along `view` (unit, from the eye), lit by the key light's
+ * irradiance `key` from `keyDirection` and the sky: `sky` is its irradiance over pi lighting
+ * the ground (a lightning flash brightens it as it does the island), `skySeen` the sky itself
+ * as the drop shows and reflects it. `skyBias` adds to the sky's share of the cone behind. */
+export const rainRadiance = Fn( ( [ view, sky, skySeen, keyDirection, key, skyBias ]: [ V3, V3, V3, V3, V3, F ] ) => {
+
+	const share = clamp( view.y.mul( 0.6 ).add( 0.5 ).add( skyBias ), 0, 1 );
+	const ground = sky.add( key.mul( max( keyDirection.y, 0 ).div( Math.PI ) ) ).mul( GROUND_ALBEDO );
+	const behind = mix( ground, skySeen.mul( SKY_SEEN ), share );
+	const forward = pow( max( dot( view, keyDirection ), 0 ), FORWARD_POWER ).mul( ( FORWARD_POWER + 1 ) / ( 2 * Math.PI ) * FORWARD_SHARE );
+	return behind.add( skySeen.mul( REFLECTED ) ).add( key.mul( forward ) );
+
+} ).setLayout( { name: 'soomiRainRadiance', type: 'vec3', inputs: [
+	{ name: 'view', type: 'vec3' }, { name: 'sky', type: 'vec3' }, { name: 'skySeen', type: 'vec3' },
+	{ name: 'keyDirection', type: 'vec3' }, { name: 'key', type: 'vec3' }, { name: 'skyBias', type: 'float' },
+] } );
+
+/** The light around the rain, in linear radiometric units (see `rainRadiance`). */
+export interface RainLight {
+	sky: V3;
+	skySeen: V3;
+	keyDirection: V3;
+	key: V3;
+}
+
+export const lightRain = ( view: V3, light: RainLight, skyBias: F ): V3 =>
+	rainRadiance( view, light.sky, light.skySeen, light.keyDirection, light.key, skyBias );
 
 interface CascadeUniforms {
 	centre: THREE.UniformNode<'vec3', THREE.Vector3>;
@@ -93,9 +139,7 @@ export class RainDrops {
 	private readonly materials: THREE.MeshBasicNodeMaterial[] = [];
 	private readonly opacities: F[] = [];
 	private readonly colours: ( () => V3 )[] = [];
-	private lightNode: V3 = vec3( 0 );
-	private keyDirection: V3 = vec3( 0, 1, 0 );
-	private keyColor: V3 = vec3( 0 );
+	private light: RainLight = { sky: vec3( 0 ), skySeen: vec3( 0 ), keyDirection: vec3( 0, 1, 0 ), key: vec3( 0 ) };
 	private readonly options: RainDropsOptions;
 	private readonly forward = new THREE.Vector3();
 
@@ -151,7 +195,7 @@ export class RainDrops {
 			// Soft faces, so drops leaving a window fade rather than vanish; none right at the eye.
 			const across = max( abs( relative.x ), abs( relative.z ) ).mul( 2 ).toVar();
 			const face = max( across, abs( relative.y ).mul( 2 ) );
-			const fade = float( 1 ).sub( smoothstep( 0.72, 1, face ) ).mul( smoothstep( 0.6, 1.6, length( position.sub( this.eye ) ) ) ).toVar();
+			const fade = float( 1 ).sub( smoothstep( 0.72, 1, face ) ).mul( smoothstep( NEAR_FADE[ 0 ], NEAR_FADE[ 1 ], length( position.sub( this.eye ) ) ) ).toVar();
 			const visible = select( present, fade.mul( phase.w ), float( 0 ) ).toVar();
 			const splash = vec4( 0, 0, 0, - 1 ).toVar();
 
@@ -230,26 +274,35 @@ export class RainDrops {
 			const toEye = cameraPosition.sub( head );
 			const distance = length( toEye );
 			const side = normalize( cross( axis, toEye ).add( vec3( 1e-6, 0, 0 ) ) );
-			// Thinner than a pixel, a drop is drawn a pixel wide at the same total energy; out of
-			// focus it spreads over the tilt-shift blur the composite gives the scene at its distance,
-			// so near drops pass as soft, faint streaks (the same circle of confusion as Pipeline's).
+			// Thinner than a pixel, a drop is drawn a pixel wide (`sharp`); out of focus it would spread
+			// over the tilt-shift blur the composite gives the scene at its distance (`blurred`, the same
+			// circle of confusion as Pipeline's). Only a little of that softness is drawn, so near drops
+			// stay fine lines of water instead of bands.
 			const f = this.focus;
 			const blur = clamp( abs( distance.sub( f.distance ) ).sub( f.range ).div( f.distance.mul( 0.55 ) ), 0, 1 ).mul( f.radius ).mul( f.strength );
-			const width = max( float( DIAMETER ), distance.mul( pixelAngle ).mul( blur.mul( 2 ).add( 1.3 ) ) );
+			const pixel = distance.mul( pixelAngle );
+			const sharp = max( float( DIAMETER ), pixel.mul( 1.3 ) );
+			const blurred = max( sharp, pixel.mul( blur.mul( 2 ).add( 1.3 ) ) );
+			const width = min( blurred, max( sharp, pixel.mul( SOFT_PIXELS ) ) );
 			const streak = speed.mul( EXPOSURE ).mul( random( instanceIndex, 5 ).mul( 0.5 ).add( 0.75 ) ).add( width );
 			const shown = select( data.w.greaterThan( 0.004 ), float( 1 ), float( 0 ) );
 			const material = this.makeMaterial( 'rainStreaks', true );
 			material.positionNode = head.add( axis.mul( positionGeometry.y.sub( 0.5 ).mul( streak ) )
 				.add( side.mul( positionGeometry.x.mul( width ) ) ).mul( shown ) );
 			// Some drops catch the light, most are faint.
-			const glint = random( instanceIndex, 6 ).pow( 3 ).mul( 1.5 ).add( 0.25 );
-			// Each drawn drop stands for many unseen ones, so thin coverage is lifted (power < 1).
-			const strength = varying( data.w.mul( pow( float( DIAMETER ).div( width ), 0.6 ) ).mul( glint ) as F, 'vRainStreak' );
+			const glint = random( instanceIndex, 6 ).pow( 2 ).mul( 1.3 ).add( 0.35 );
+			// Each drawn drop stands for many unseen ones, so sub-pixel coverage is lifted (power < 1).
+			// Defocus only spreads that energy: over the drawn width it is conserved, and the share
+			// that would fall beyond the drawn width fades the drop, so a strongly blurred near drop
+			// grows fainter, never brighter or wider.
+			const lift = pow( float( DIAMETER ).div( sharp ), 0.6 );
+			const spread = sharp.div( width ).mul( sqrt( width.div( blurred ) ) );
+			const strength = varying( data.w.mul( lift ).mul( spread ).mul( glint ) as F, 'vRainStreak' );
 			const q = uv();
 			const across = abs( q.x.sub( 0.5 ) ).mul( 2 );
 			const profile = float( 1 ).sub( across.mul( across ) ).mul( smoothstep( 0, 0.2, q.y ) ).mul( smoothstep( 0, 0.06, float( 1 ).sub( q.y ) ) );
 			// Heavier rain falls in bigger drops: brighter streaks in a storm.
-			this.setOpacity( material, strength.mul( profile ).mul( amount.mul( 0.3 ).add( 0.25 ) ) );
+			this.setOpacity( material, strength.mul( profile ).mul( amount.mul( 0.6 ).add( 0.5 ) ) );
 			this.setColour( material, () => this.shade( head ) );
 			this.streaks = this.makeMesh( material, new THREE.PlaneGeometry( 1, 1 ) );
 
@@ -297,7 +350,9 @@ export class RainDrops {
 
 			} )() as unknown as F;
 			this.setOpacity( material, shape.mul( vEnergy ) );
-			this.setColour( material, () => this.shade( base ).mul( 1.6 ) );
+			// The crown's walls and the droplets thrown up catch the sky above, and the churned water
+			// scatters a little more than a single clear drop.
+			this.setColour( material, () => this.shade( base, 0.6 ).mul( 1.3 ) );
 			this.sprays = this.makeMesh( material, new THREE.PlaneGeometry( 1, 1 ) );
 
 		}
@@ -319,7 +374,7 @@ export class RainDrops {
 			const wave = ringWave( length( uv().sub( 0.5 ) ).mul( 2 ), vT );
 			// Crests catch the sky, troughs face the darker sea: light and shade, not a white line.
 			this.setOpacity( material, abs( wave ).mul( vEnergy ).mul( 0.16 ) );
-			this.setColour( material, () => this.shade( base ).mul( select( wave.greaterThan( 0 ), float( 1.2 ), float( 0.35 ) ) ) );
+			this.setColour( material, () => this.shade( base, 1 ).mul( select( wave.greaterThan( 0 ), float( 1.2 ), float( 0.35 ) ) ) );
 			this.rings = this.makeMesh( material, new THREE.PlaneGeometry( 1, 1 ) );
 
 		}
@@ -363,26 +418,19 @@ export class RainDrops {
 
 	}
 
-	/** Light a drop at `point` scatters toward the eye: the sky's and the key's, which it
-	 * throws forward, so rain against the sun or the moon glows. */
-	private shade( point: V3 ): V3 {
+	/** Light the water at `point` sends toward the eye (see `rainRadiance`); `skyBias` raises
+	 * the sky's share for splashes and rings, whose curved walls face up. */
+	private shade( point: V3, skyBias = 0 ): V3 {
 
-		return Fn( () => {
-
-			const view = normalize( point.sub( cameraPosition ) );
-			const forward = pow( max( dot( view, this.keyDirection ), 0 ), 12 );
-			return this.lightNode.add( this.keyColor.mul( forward.mul( 0.04 ) ) );
-
-		} )() as unknown as V3;
+		const view = normalize( point.sub( cameraPosition ) );
+		return lightRain( view, this.light, float( skyBias ) );
 
 	}
 
-	/** Light falling on the drops (linear scene radiance), and the key light they scatter. */
-	setLight( light: V3, keyDirection: V3, keyColor: V3 ): void {
+	/** The light around the drops (see `RainLight`). */
+	setLight( light: RainLight ): void {
 
-		this.lightNode = light;
-		this.keyDirection = keyDirection;
-		this.keyColor = keyColor;
+		this.light = light;
 		this.materials.forEach( ( material, i ) => {
 
 			material.colorNode = this.colours[ i ]();

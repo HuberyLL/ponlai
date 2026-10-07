@@ -106,7 +106,7 @@ export class Pipeline {
 		// Water writes alpha 1. Rain is normal-blended over transparent black, so this
 		// combined target already contains premultiplied radiance; do not apply alpha twice.
 		const overlay = sceneTex.rgb.mul( float( 1 ).sub( waterTex.a ) ).add( waterTex.rgb );
-		const hdr = this.air.apply( overlay, this.depthRT.texture, waterDepth, sky, rain ? ( d, distance ) => rain.veil( d, distance ) : undefined )
+		const hdr = this.air.apply( overlay, this.depthRT.texture, waterDepth, sky, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
 			.add( this.shafts.build( this.depthRT.texture, waterDepth, sky ) );
 
 		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a

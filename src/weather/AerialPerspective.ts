@@ -97,8 +97,9 @@ export class AerialPerspective {
 	private cameraWorld = uniform( new THREE.Matrix4() );
 	private resolution = uniform( new THREE.Vector2( 1, 1 ) );
 
-	/** `veil` adds radiance along a view direction in front of content at a given distance. */
-	apply( color: V3, depth: THREE.Texture, waterDepth: THREE.Texture, sky: Sky, veil?: ( direction: V3, distance: F ) => V3 ): V3 {
+	/** `veil` returns the colour `background` seen through the rain along a view direction, in front
+	 * of content at a given distance. */
+	apply( color: V3, depth: THREE.Texture, waterDepth: THREE.Texture, sky: Sky, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
 
 		const sceneDepth = texture( depth ), surfaceDepth = texture( waterDepth );
 		return Fn( () => {
@@ -210,7 +211,7 @@ export class AerialPerspective {
 			const transmittance = exp( total.negate() );
 			const light = hazeLight.mul( hazeDepth ).add( fogLight.mul( fogDepth ) ).div( max( total, 1e-6 ) );
 			const result = mix( light, color, transmittance );
-			return veil ? result.add( veil( direction, distance ) ) : result;
+			return veil ? veil( direction, distance, result ) : result;
 
 		} )();
 

@@ -1,10 +1,10 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uniform, vec2, vec3, float, floor, fract, sin, cos, dot, cross, normalize, length,
-	abs, max, clamp, mix, smoothstep, exp, select, acos, atan, luminance,
+	abs, max, clamp, mix, smoothstep, exp, select, acos, atan,
 } from 'three/tsl';
 import { RainCollision } from './RainCollision.ts';
-import { DRIFT, MEAN_FALL, RainDrops } from './RainDrops.ts';
+import { DRIFT, MEAN_FALL, RainDrops, lightRain, type RainLight } from './RainDrops.ts';
 
 export { RAIN_MAX_DROPS } from './RainDrops.ts';
 
@@ -82,7 +82,7 @@ export const rainRippleGradient = Fn( ( [ worldXZ, time, rain, footprint ]: [ V2
 ] } );
 
 /** The rain: GPU drops that fall through the scene and splash where they land (RainDrops,
- * with collision against RainCollision's height map), a veil of distant streaks added in
+ * with collision against RainCollision's height map), a veil of distant streaks laid over
  * the composite, and the analytic impact rings on the water normal (`rainRippleGradient`). */
 export class Rain {
 
@@ -100,7 +100,7 @@ export class Rain {
 	/** The drops' streak draw; `group` holds it with the splashes. */
 	readonly mesh: THREE.Mesh;
 	readonly group: THREE.Group;
-	private lightNode: THREE.Node<'vec3'> | null = null;
+	private light: RainLight;
 
 	constructor( { count = 32768, seed = 8371 }: RainOptions = {} ) {
 
@@ -111,6 +111,8 @@ export class Rain {
 		this.group = this.drops.group;
 		this.group.visible = false;
 		this.setQuality( count );
+		this.light = { sky: this.uniforms.light.rgb, skySeen: this.uniforms.light.rgb, keyDirection: vec3( 0, 1, 0 ), key: vec3( 0 ) };
+		this.drops.setLight( this.light );
 
 	}
 
@@ -129,27 +131,29 @@ export class Rain {
 
 	}
 
-	/** Light the rain from the displayed sky irradiance (including the GPU interpolation, so it
-	 * stays in step with sky transitions) and the key light (direction toward it, linear colour),
-	 * without an emissive floor. Null restores the `light` uniform. */
-	setLightNode( sky: THREE.Node<'vec3'> | null, keyDirection?: THREE.Node<'vec3'>, keyColor?: THREE.Node<'vec3'> ): void {
+	/** Light the rain from the displayed sky irradiance over pi (including the GPU interpolation,
+	 * so it stays in step with sky transitions, and the lightning's fill) and the key light
+	 * (direction toward it, linear irradiance), without an emissive floor. `skySeen` is the sky
+	 * as the drops show it, if it differs (default `sky`). Null restores the `light` uniform.
+	 * Drops take the light around them (`rainRadiance`): grey under a dark deck and at night,
+	 * bright only toward the key or in a flash. */
+	setLightNode( sky: V3 | null, keyDirection?: V3, keyColor?: V3, skySeen?: V3 ): void {
 
-		const key = keyColor ?? vec3( 0 );
-		// Drops scatter the environment and the key as the island does. Through a closed deck the
-		// key arrives mostly diffused, so its share is largely desaturated: streaks take the grey of
-		// the sky rather than the sun's tint. The key itself is thrown forward (RainDrops).
-		this.lightNode = sky ? sky.mul( 0.65 ).add( mix( vec3( luminance( key ) ), key, 0.3 ).mul( 0.045 ) ) : null;
-		this.drops.setLight( this.lightNode ?? this.uniforms.light.rgb, keyDirection ?? vec3( 0, 1, 0 ), key );
+		const ambient = sky ?? this.uniforms.light.rgb;
+		this.light = { sky: ambient, skySeen: skySeen ?? ambient, keyDirection: keyDirection ?? vec3( 0, 1, 0 ), key: keyColor ?? vec3( 0 ) };
+		this.drops.setLight( this.light );
 
 	}
 
-	/** Radiance the falling rain adds along a view direction, for scene content at `distance`
-	 * metres (very large for the sky). Thin drops are widened to a pixel at reduced energy. */
-	veil( direction: V3, distance: F ): V3 {
+	/** The `background` radiance along a view direction seen through the falling rain, for scene
+	 * content at `distance` metres (very large for the sky). Thin drops are widened to a pixel at
+	 * reduced coverage; each covers the background with the light it takes from around it, so
+	 * the veil only lightens what is darker than the rain and dims what is brighter. */
+	veil( direction: V3, distance: F, background: V3 ): V3 {
 
 		const u = this.uniforms;
-		const light = this.lightNode ?? u.light.rgb;
-		const result = vec3( 0 ).toVar();
+		const output = background.toVar();
+		const result = float( 0 ).toVar();
 		If( u.rain.greaterThan( 0.001 ), () => {
 
 			// Axis toward where the rain comes from, tilted by the wind; a frame around it.
@@ -186,10 +190,12 @@ export class Rain {
 				result.addAssign( select( present, profile.mul( streak ).mul( shown ), float( 0 ) ) );
 
 			}
-			result.assign( light.mul( result ).mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ).mul( 0.6 ) );
+			const coverage = clamp( result.mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ), 0, 1 );
+			const drop = lightRain( direction, this.light, float( 0 ) );
+			output.assign( mix( background, drop, coverage ) );
 
 		} );
-		return result;
+		return output;
 
 	}
 
