@@ -27,7 +27,7 @@ exposed.
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
   override), `quality` (low, medium, high: the clouds' march, bake cadences and rain count, and
-  the render scale, see Decisions).
+  the render scale, see Decisions), `tone` (agx-hue, the default, agx, neutral).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
   sky views.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
@@ -80,7 +80,8 @@ exposed.
   drifting banks of varying height, thinner over the island, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
   and rain drawn into the same multisampled target, crepuscular rays and sun glare, bloom,
-  tilt-shift, grade, FSR 1 upscale), render scale per quality preset (`RenderScale.ts`).
+  tilt-shift, tone curve and grade, FSR 1 upscale), render scale per quality preset
+  (`RenderScale.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -127,6 +128,15 @@ exposed.
   `sizeRtt`). At the display's ratio nothing is upscaled, so `dpr=1` captures are unchanged.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
+- The tone curve is AgX with hue-kept highlights (`agx-hue` in `src/post/Pipeline.ts`): AgX's long
+  shoulder keeps gradation in a low sun's sky and glare, and above the deep shadows each colour is
+  scaled by its brightest channel, so bright skies and sea keep their hue instead of washing to
+  cream or grey; only far above white do highlights fade to white. Each curve carries its own grade
+  (exposure gain, saturation, vibrance, contrast); PBR Neutral and plain AgX stay selectable in
+  the GUI (`tone` URL option) for comparison. The night keeps PBR Neutral's look with its grade
+  whichever curve is chosen, crossfading over the blue hour (from about -2 to -6 degrees): its
+  toe holds the night's dark colours saturated where AgX's greys and lifts them, and its short
+  shoulder lets the brightest few stars reach near white.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
   sky reads as a low backdrop and turns stars into bokeh discs. Stars are points with a natural
   spread of brightness, kept below white except the brightest few; only those near the horizon

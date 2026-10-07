@@ -350,6 +350,11 @@ comment where it is used.
 - Upscaling a render below the display's resolution: AMD FidelityFX Super Resolution 1 (EASU
   edge-adaptive upsampling and RCAS sharpening), [GPUOpen](https://gpuopen.com/fidelityfx-superresolution/);
   the code is three.js's `FSR1Node` (an npm dependency).
+- Tone curve: Troy Sobotka's [AgX](https://github.com/sobotka/AgX), through three.js's
+  `agxToneMapping` (Benjamin Wrensch's
+  [minimal AgX fit](https://iolite-engine.com/blog_posts/minimal_agx_implementation)); the hue-kept
+  highlights scale each colour by its brightest channel as Khronos'
+  [PBR Neutral](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral) does.
 - Depth of field, highlights averaged compressed by their luminance (c / (1 + L)) and expanded
   again: Brian Karis, [*Tone mapping*](https://graphicrants.blogspot.com/2013/12/tone-mapping.html)
   (2013).
