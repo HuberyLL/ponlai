@@ -332,7 +332,9 @@ export class RainDrops {
 			const energy = size.div( drawn ).pow( 2 );
 			// The impact point sits low in the sprite seen from the side, central seen from above.
 			const origin = e.mul( 0.38 ).add( - 0.42 );
-			const material = this.makeMaterial( 'rainSprays', true );
+			// Not depth-tested: a splash sinks a little way into the ground it lands on (see
+			// bindOpaqueDepth), which the scene target's depth, holding the ground, would cut off.
+			const material = this.makeMaterial( 'rainSprays', false );
 			material.positionNode = base.add( right.mul( positionGeometry.x ).add( up.mul( positionGeometry.y.sub( origin ) ) )
 				.mul( drawn ).mul( select( live, float( 1 ), float( 0 ) ) ) );
 			const vT = varying( t, 'vSprayAge' ), vE = varying( e, 'vSprayTilt' ), vSeed = varying( random( instanceIndex, 7 ), 'vSpraySeed' );
@@ -441,18 +443,24 @@ export class RainDrops {
 	}
 
 	/** Reject drops and splashes behind the island and the figures, using the opaque pass's
-	 * resolved linear view z. Splashes lie on surfaces, so they get a little slack. */
-	bindOpaqueDepth( linearDepth: THREE.Texture ): void {
+	 * resolved linear view z. Splashes lie on surfaces, so they get a little slack. The sea hides
+	 * the splashes behind it outright, as the depth test did (`surfaceDepth`: the nearest
+	 * surface's view z, the sea's included); streaks keep the depth test. */
+	bindOpaqueDepth( linearDepth: THREE.Texture, surfaceDepth: THREE.Texture ): void {
 
-		const depth = texture( linearDepth );
+		const depth = texture( linearDepth ), surface = texture( surfaceDepth );
 		const size = vec2( textureSize( depth ) as unknown as THREE.Node<'ivec2'> );
-		const surfaceZ = textureLoad( depth, ivec2( clamp( screenCoordinate.xy, vec2( 0 ), size.sub( 1 ) ) ) ).r;
+		const pixel = ivec2( clamp( screenCoordinate.xy, vec2( 0 ), size.sub( 1 ) ) );
+		const surfaceZ = textureLoad( depth, pixel ).r;
+		const nearestZ = textureLoad( surface, pixel ).r;
 		// View z is negative in front of the camera: a nearer fragment has the larger value.
 		const ahead = positionView.z.sub( surfaceZ );
+		const behindSea = nearestZ.greaterThan( surfaceZ ).and( positionView.z.lessThan( nearestZ ) );
 		this.materials.forEach( ( material, i ) => {
 
 			const slack = material === this.streaks.material ? 0 : 0.12;
-			material.opacityNode = this.opacities[ i ].mul( smoothstep( - slack, 0.06 - slack * 0.5, ahead ) );
+			const visible = smoothstep( - slack, 0.06 - slack * 0.5, ahead );
+			material.opacityNode = this.opacities[ i ].mul( material === this.sprays.material ? select( behindSea, float( 0 ), visible ) : visible );
 			material.needsUpdate = true;
 
 		} );

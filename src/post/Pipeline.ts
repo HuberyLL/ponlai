@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, texture, textureLoad, rtt, uniform, uv, screenCoordinate, ivec2, vec2, vec3, vec4, float, mix,
+	Fn, If, Loop, texture, textureLoad, rtt, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, luminance, neutralToneMapping, sRGBTransferOETF,
 	fract, convertToTexture, select,
 } from 'three/tsl';
@@ -15,8 +15,11 @@ import type { Rain } from '../weather/Rain.ts';
 
 // Frame graph:
 //   opaque scene ── sceneRT (MSAA x4, half float, multisampled depth)
-//   depth resolve ── depthRT (view-space z, single sample: the water and the depth of field read it)
-//   water ── waterRT + its depth (reads sceneRT's resolved colour and depthRT)
+//   depth resolve ── depthRT (view-space z of the opaque pass: sample 0, and the farthest sample)
+//   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts and reflects)
+//   water ── back into sceneRT, depth-tested per sample against the opaque samples
+//   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
+//   rain ── into sceneRT
 //   composite ── bloom (tight) + glow (wide), both through a clamped soft-knee prefilter
 //   ── tilt-shift depth of field (half-res gather) ── exposure, PBR Neutral tone map,
 //   split-tone grade, vibrance, lifted blacks, vignette, S-curve, grain, sRGB ── screen
@@ -50,13 +53,15 @@ export class Pipeline {
 
 	sceneRT: THREE.RenderTarget;
 	depthRT: THREE.RenderTarget;
-	waterRT: THREE.RenderTarget;
+	opaqueRT: THREE.RenderTarget;
+	surfaceRT: THREE.RenderTarget;
 	readonly air = new AerialPerspective();
 	readonly shafts = new LightShafts();
 
 	private depthQuad: THREE.QuadMesh;
+	private copyQuad: THREE.QuadMesh;
+	private surfaceQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
-	private previousClearColor = new THREE.Color();
 	private blooms: { node: BloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
 	private u = {
 		exposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ),
@@ -74,20 +79,17 @@ export class Pipeline {
 		depthTexture.type = THREE.FloatType;
 		this.sceneRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture } );
 		this.sceneRT.texture.name = 'sceneColor';
-		this.depthRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RedFormat, depthBuffer: false } );
+		this.depthRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RGFormat, depthBuffer: false } );
 		this.depthRT.texture.name = 'linearDepth';
-		const waterDepth = new THREE.DepthTexture( 1, 1 );
-		waterDepth.type = THREE.FloatType;
-		this.waterRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, depthTexture: waterDepth } );
-		this.waterRT.texture.name = 'water';
+		this.opaqueRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, depthBuffer: false } );
+		this.opaqueRT.texture.name = 'opaqueColor';
+		this.surfaceRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RedFormat, depthBuffer: false } );
+		this.surfaceRT.texture.name = 'surfaceDepth';
 
 		const u = this.u;
-		const resolveMat = new THREE.NodeMaterial();
-		// multisampled depth can only be loaded (sample 0); sky stays far away (-1e5)
-		resolveMat.fragmentNode = Fn( () => {
+		// Multisampled depth can only be loaded, a sample at a time. The sky stays far away (-1e5).
+		const viewZ = ( coord: V2, d: F ) => {
 
-			const coord = screenCoordinate.xy;
-			const d = ( textureLoad( texture( depthTexture ), ivec2( coord ) ) as unknown as F ).toVar();
 			const z = float( - 1e5 ).toVar();
 			If( d.lessThan( 0.999999 ), () => {
 
@@ -96,19 +98,38 @@ export class Pipeline {
 				z.assign( v.z.div( v.w ) );
 
 			} );
-			return vec4( z );
+			return z;
+
+		};
+		const msDepth = texture( depthTexture );
+		const depthSample = ( coord: V2, i: number ) => textureLoad( msDepth, ivec2( coord ), int( i ) ) as unknown as F;
+		// Sample 0 for what reads the depth at a point (the water's traces, rain, spray, the haze and
+		// the blur), and the farthest of the four samples for the water's view of what lies behind it.
+		// The water is shaded once per pixel, but drawn only into the samples it is in front of: at an
+		// edge pixel where a cliff, a figure or a leaf covers sample 0, the samples the water does
+		// cover hold what is behind it, the farthest one.
+		const resolveMat = new THREE.NodeMaterial();
+		resolveMat.fragmentNode = Fn( () => {
+
+			const coord = screenCoordinate.xy;
+			const d0 = depthSample( coord, 0 ).toVar();
+			const far = max( max( d0, depthSample( coord, 1 ) ), max( depthSample( coord, 2 ), depthSample( coord, 3 ) ) );
+			return vec4( viewZ( coord, d0 ), viewZ( coord, far ), 0, 0 );
 
 		} )();
 		this.depthQuad = new THREE.QuadMesh( resolveMat );
+		const copyMat = new THREE.NodeMaterial();
+		copyMat.fragmentNode = textureLoad( texture( this.sceneRT.texture ), ivec2( screenCoordinate.xy ) );
+		this.copyQuad = new THREE.QuadMesh( copyMat );
+		const surfaceMat = new THREE.NodeMaterial();
+		surfaceMat.fragmentNode = Fn( () => vec4( viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ) ) )();
+		this.surfaceQuad = new THREE.QuadMesh( surfaceMat );
 
-		// ---- composite: the water over the opaque image
+		// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it
 		const sceneTex = texture( this.sceneRT.texture );
-		const waterTex = texture( this.waterRT.texture );
-		// Water writes alpha 1. Rain is normal-blended over transparent black, so this
-		// combined target already contains premultiplied radiance; do not apply alpha twice.
-		const overlay = sceneTex.rgb.mul( float( 1 ).sub( waterTex.a ) ).add( waterTex.rgb );
-		const hdr = this.air.apply( overlay, this.depthRT.texture, waterDepth, sky, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
-			.add( this.shafts.build( this.depthRT.texture, waterDepth, sky ) );
+		const surfaceDepth = this.surfaceRT.texture;
+		const hdr = this.air.apply( sceneTex.rgb, surfaceDepth, sky, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
+			.add( this.shafts.build( surfaceDepth, sky ) );
 
 		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a
 		// soft knee instead of a hard threshold. On surfaces (anything in front of the sky) the
@@ -116,7 +137,7 @@ export class Pipeline {
 		// every pixel of the sun's glitter path reaches the clamp, so a higher one let the path's
 		// bloom pile up into a bright column over the island. The sky keeps the higher clamp, so
 		// the sun's disc and a lightning channel (drawn without depth) keep their glow.
-		const tBloomD = texture( this.depthRT.texture ), tBloomW = texture( waterDepth );
+		const tBloomD = texture( surfaceDepth );
 		const makeBloom = () => {
 
 			const maxLum = uniform( 5 ), surfaceMaxLum = uniform( 5 );
@@ -124,7 +145,7 @@ export class Pipeline {
 			( node as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input, threshold }: { input: THREE.Node<'vec4'>; threshold: THREE.Node<'float'> } ) => {
 
 				const px = ivec2( clamp( uv().mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
-				const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 ).or( ( textureLoad( tBloomW, px ) as unknown as F ).lessThan( 1 ) );
+				const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 );
 				const clampLum = select( surface, surfaceMaxLum, maxLum );
 				const c = input.rgb;
 				const v0 = luminance( c );
@@ -147,7 +168,7 @@ export class Pipeline {
 		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
 		// the blur is mixed over the sharp image by the full-resolution coc
 		const sharp = convertToTexture( vec4( withBloom, 1 ) );
-		const tD = texture( this.depthRT.texture ), tW = texture( waterDepth );
+		const tD = texture( surfaceDepth );
 		// The circle of confusion (0..1 of the widest blur) and the distance to the nearest surface,
 		// the water's included (view-space z: closer is larger). One function per pass: a layout
 		// function shared by two shaders keeps the first one's uniform bindings.
@@ -155,14 +176,7 @@ export class Pipeline {
 
 			const px = ivec2( clamp( q.mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
 			const z = ( textureLoad( tD, px ) as unknown as F ).toVar();
-			const dw = ( textureLoad( tW, px ) as unknown as F ).toVar();
 			const ndc = vec2( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ) ).toVar();
-			If( dw.lessThan( 1 ), () => {
-
-				const w = u.projInv.mul( vec4( ndc, dw, 1 ) ).toVar();
-				z.assign( max( z, w.z.div( w.w ) ) );
-
-			} );
 			const dist = float( 1e5 ).toVar();
 			If( z.greaterThan( - 9e4 ), () => {
 
@@ -294,7 +308,8 @@ export class Pipeline {
 		this.width = w; this.height = h;
 		this.sceneRT.setSize( w, h );
 		this.depthRT.setSize( w, h );
-		this.waterRT.setSize( w, h );
+		this.opaqueRT.setSize( w, h );
+		this.surfaceRT.setSize( w, h );
 		this.u.resolution.value.set( w, h );
 		this.u.texel.value.set( 1 / w, 1 / h );
 		// the size rtt() gives the half-res blur
@@ -318,21 +333,25 @@ export class Pipeline {
 		r.setRenderTarget( this.sceneRT );
 		r.render( scene, camera );
 
-		// 2. linear depth
+		// 2. linear depth, and a copy of the opaque colour for the water to refract and reflect
+		// (a pass cannot sample the target it draws into)
 		r.setRenderTarget( this.depthRT );
 		this.depthQuad.render( r );
+		r.setRenderTarget( this.opaqueRT );
+		this.copyQuad.render( r );
 
-		// 3. Water, then world-space rain in the same target. The attached water depth
-		// occludes drops; their material also compares the resolved opaque depth. Rain does
-		// not write depth, so surface focus and overlapping translucent streaks are preserved.
-		const prevAlpha = r.getClearAlpha();
-		r.getClearColor( this.previousClearColor );
+		// 3. The water, then the world-space rain, over the opaque image in the scene's multisampled
+		// target. Each sample keeps the opaque surface or the sea, whichever is nearer, so
+		// silhouettes against the sea are antialiased like the rest of the image. (Drawn into a
+		// target of their own, single-sampled, the water had to decide per pixel between the sea
+		// and the opaque colour: edges stepped, and the opaque colour at an edge pixel held the
+		// sky the sea was not there to cover, a pale outline round everything over the sea.)
+		// Rain does not write depth, so surface focus and overlapping translucent streaks are
+		// preserved; its splashes compare the resolved depths themselves.
 		const autoClear = r.autoClear;
-		r.setRenderTarget( this.waterRT );
+		r.setRenderTarget( this.sceneRT );
 		try {
 
-			r.setClearColor( 0, 0 );
-			r.clear();
 			r.autoClear = false;
 			if ( water ) {
 
@@ -340,12 +359,18 @@ export class Pipeline {
 				r.render( waterScene, camera );
 
 			}
-			if ( rainScene ) r.render( rainScene, camera );
+			r.setRenderTarget( this.surfaceRT );
+			this.surfaceQuad.render( r );
+			if ( rainScene ) {
+
+				r.setRenderTarget( this.sceneRT );
+				r.render( rainScene, camera );
+
+			}
 
 		} finally {
 
 			r.autoClear = autoClear;
-			r.setClearColor( this.previousClearColor, prevAlpha );
 			r.setRenderTarget( null );
 
 		}

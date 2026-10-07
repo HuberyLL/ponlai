@@ -103,17 +103,17 @@ export class AerialPerspective {
 	private cameraWorld = uniform( new THREE.Matrix4() );
 	private resolution = uniform( new THREE.Vector2( 1, 1 ) );
 
-	/** `veil` returns the colour `background` seen through the rain along a view direction, in front
-	 * of content at a given distance. */
-	apply( color: V3, depth: THREE.Texture, waterDepth: THREE.Texture, sky: Sky, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
+	/** `depth` is the linear view z of the nearest surface, the sea's included. `veil` returns the
+	 * colour `background` seen through the rain along a view direction, in front of content at a
+	 * given distance. */
+	apply( color: V3, depth: THREE.Texture, sky: Sky, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
 
-		const sceneDepth = texture( depth ), surfaceDepth = texture( waterDepth );
+		const sceneDepth = texture( depth );
 		return Fn( () => {
 
 			const q = uv().toVar();
 			const px = ivec2( clamp( q.mul( this.resolution ), 0, this.resolution.sub( 1 ) ) );
 			const z = ( textureLoad( sceneDepth, px ) as unknown as F ).toVar();
-			const dw = ( textureLoad( surfaceDepth, px ) as unknown as F ).toVar();
 			const ndc = vec3( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1 ).toVar();
 			const viewFar = this.projectionInverse.mul( vec4( ndc, 1 ) ).toVar();
 			const ray = viewFar.xyz.div( viewFar.w ).toVar();
@@ -133,12 +133,6 @@ export class AerialPerspective {
 			const scattered = this.keyColor.rgb.mul( phase( dot( direction, this.keyDir ) ) ).toVar();
 			const sunLuma = luminance( scattered );
 			const sunShare = sunLuma.div( sunLuma.add( luminance( sky.irradianceNode ) ).add( 1e-5 ) ).toVar();
-			If( dw.lessThan( 1 ), () => {
-
-				const water = this.projectionInverse.mul( vec4( ndc.xy, dw, 1 ) ).toVar();
-				z.assign( max( z, water.z.div( water.w ) ) );
-
-			} );
 			const distance = float( 1e5 ).toVar();
 			const hazeDepth = float( 0 ).toVar();
 			// The resolved sky sits at -1e5; the sea's skirt reaches tens of kilometres.

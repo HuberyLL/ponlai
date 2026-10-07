@@ -276,7 +276,7 @@ rain = new Rain( { count: WEATHER_QUALITY[ skyQuality.value ].rainDrops } );
 // damped (like the storm spray's), since the displayed deck brightens far less than the fill.
 rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).pow( 0.35 ) ) );
 const pipeline = new Pipeline( renderer, sky, rain );
-rain.bindOpaqueDepth( pipeline.depthRT.texture );
+rain.bindOpaqueDepth( pipeline.depthRT.texture, pipeline.surfaceRT.texture );
 rainScene.add( rain.group );
 
 // ------------------------------------------------------------------ world
@@ -323,7 +323,7 @@ const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
 } );
 water = new Water( {
 	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun, storm: stormSea,
-	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
+	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 applySkyFill();
 waterScene.add( water.mesh, stormSea.spray.mesh );

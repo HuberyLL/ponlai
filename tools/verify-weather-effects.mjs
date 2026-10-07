@@ -163,12 +163,13 @@ try {
 			return result;
 		}, { pngs, crops: regions[ view ] } );
 	};
-	// Read the actual opaque HDR target, using its actual depth to classify surfaces. This
+	// Read the opaque pass's resolved HDR colour (the copy the water reads, taken before the sea
+	// and the rain are drawn over it), using its actual depth to classify surfaces. This
 	// separates material preservation below the tide from legitimate changes in water SSR.
 	const opaqueProbe = async ( mode ) => page.evaluate( async ( mode ) => {
-		const s = window.__SOOMI__, rt = s.pipeline.sceneRT, depthRT = s.pipeline.depthRT;
+		const s = window.__SOOMI__, rt = s.pipeline.opaqueRT, depthRT = s.pipeline.depthRT;
 		// Three's WebGPU readback returns the mapped buffer without removing its 256-byte
-		// row alignment; the last row alone has no tail padding. Colour and R32F depth
+		// row alignment; the last row alone has no tail padding. Colour and RG32F depth
 		// require different strides. Compact each one before indexing screen pixels.
 		const compactRows = ( storage, width, height, channels ) => {
 			const tightElements = width * channels, bytes = storage.BYTES_PER_ELEMENT;
@@ -189,11 +190,12 @@ try {
 		const packedColor = compactRows( storage, rt.width, rt.height, 4 );
 		const color = packedColor instanceof Uint16Array ? Float32Array.from( packedColor, half ) : packedColor;
 		const depthStorage = await s.renderer.readRenderTargetPixelsAsync( depthRT, 0, 0, depthRT.width, depthRT.height );
-		if ( ! ( depthStorage instanceof Float32Array ) ) throw new Error( 'Expected R32F linear-depth readback' );
-		const depth = compactRows( depthStorage, depthRT.width, depthRT.height, 1 );
+		if ( ! ( depthStorage instanceof Float32Array ) ) throw new Error( 'Expected RG32F linear-depth readback' );
+		// sample 0's view z (the farthest sample's in the second channel)
+		const depth = compactRows( depthStorage, depthRT.width, depthRT.height, 2 ).filter( ( _, i ) => i % 2 === 0 );
 		const readback = { width: rt.width, height: rt.height, colorBytes: storage.byteLength, depthBytes: depthStorage.byteLength,
 			colorRowBytes: Math.ceil( rt.width * 4 * storage.BYTES_PER_ELEMENT / 256 ) * 256,
-			depthRowBytes: Math.ceil( depthRT.width * depthStorage.BYTES_PER_ELEMENT / 256 ) * 256 };
+			depthRowBytes: Math.ceil( depthRT.width * 2 * depthStorage.BYTES_PER_ELEMENT / 256 ) * 256 };
 		if ( mode === 'before' ) {
 			window.__weatherEffectsProbe = { color, depth, width: rt.width, height: rt.height };
 			return null;

@@ -40,8 +40,8 @@ import { rainRippleGradient } from '../weather/Rain.ts';
 //     scattering of the sun (Henyey-Greenstein) and the sky, multiple-scatter backscatter boost
 //   - reflection: calibrated baked sky + screen-space reflection of cliffs and stacks
 //   - sun glint: simulated slope moments, with optional additional artistic lobes
-// Drawn in a pass of its own after the opaque pass, reading that pass's resolved colour and its
-// linear depth; the frame composites it over the opaque image.
+// Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
+// the opaque surfaces, reading a copy of that pass's resolved colour and its linear depth.
 //
 // Screen conventions (WebGPU): uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
 // Texture samples that need screen-space derivatives are taken first, while control flow is still
@@ -137,8 +137,8 @@ export interface WaterInputs {
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
 	storm: StormSea;
-	sceneColor: THREE.Texture;
-	linearDepth: THREE.Texture;
+	sceneColor: THREE.Texture; // the opaque pass's resolved colour
+	linearDepth: THREE.Texture; // its view-space z: sample 0 (x) and the farthest sample (y)
 	size?: number;
 	res?: number;
 }
@@ -264,6 +264,10 @@ export class Water {
 		const pixel = ( q: V2 ) => ivec2( clamp( q.mul( depthSize ), vec2( 0 ), depthSize.sub( 1 ) ) );
 		const sceneViewZ = Fn( ( [ q ]: [ V2 ] ) => textureLoad( tDepth, pixel( q ) ).x )
 			.setLayout( { name: 'sceneViewZ', type: 'float', inputs: [ { name: 'q', type: 'vec2' } ] } );
+		// What lies behind the water at its own pixel: the farthest of the opaque samples. The sea is
+		// drawn only into the samples it is in front of, so where a cliff or a figure covers part of
+		// the pixel, the sea's samples hold what is behind them, not the figure of sample 0.
+		const behindViewZ = textureLoad( tDepth, pixel( screenUV ) ).y;
 		const sceneAt = ( q: V2 ) => texture( sceneColor, q ).level( float( 0 ) ).rgb;
 		const shadowPlaceholder = new THREE.DepthTexture( 1, 1 );
 		shadowPlaceholder.compareFunction = THREE.LessEqualCompare;
@@ -509,7 +513,7 @@ export class Water {
 			const sunLight = shared.sunColor.mul( shadow ).mul( cloudTransmission ).toVar();
 
 			// ---- what lies straight behind this pixel (linear depth: view-space z, < -9e4 = sky)
-			const z0 = sceneViewZ( screenUV ).toVar();
+			const z0 = behindViewZ.toVar();
 			const skyBehind = z0.lessThan( - 9e4 );
 			const ray0 = viewRay( screenUV, cameraProjectionMatrixInverse ).toVar();
 			const sv0 = ray0.mul( z0.div( ray0.z ) ).toVar();

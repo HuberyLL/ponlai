@@ -37,10 +37,10 @@ export class LightShafts {
 	private readonly resolution = uniform( new THREE.Vector2( 1, 1 ) );
 	private readonly clip = new THREE.Vector4();
 
-	/** Radiance to add to the HDR image, from the resolved depth, the water depth and the sky. */
-	build( depth: THREE.Texture, waterDepth: THREE.Texture, sky: Sky ): V3 {
+	/** Radiance to add to the HDR image, from the resolved depth (the sea's included) and the sky. */
+	build( depth: THREE.Texture, sky: Sky ): V3 {
 
-		const sceneDepth = texture( depth ), surfaceDepth = texture( waterDepth );
+		const sceneDepth = texture( depth );
 		const direction = ( q: V2 ) => {
 
 			const ndc = vec4( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1, 1 );
@@ -55,10 +55,9 @@ export class LightShafts {
 			const q = uv().toVar();
 			const px = ivec2( clamp( q.mul( this.resolution ), vec2( 0 ), this.resolution.sub( 1 ) ) );
 			const z = ( textureLoad( sceneDepth, px ) as unknown as F ).toVar();
-			const dw = ( textureLoad( surfaceDepth, px ) as unknown as F ).toVar();
 			const d = direction( q ).toVar();
 			const open = float( 0 ).toVar();
-			If( z.lessThan( - 9e4 ).and( dw.greaterThanEqual( 1 ) ).and( d.y.greaterThan( 0 ) ), () => {
+			If( z.lessThan( - 9e4 ).and( d.y.greaterThan( 0 ) ), () => {
 
 				open.assign( sky.clouds.sample( d ).a );
 
