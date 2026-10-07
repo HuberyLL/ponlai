@@ -21,6 +21,7 @@ import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
 import { Pipeline } from './post/Pipeline.ts';
+import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
@@ -51,18 +52,12 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 
 }
 
+// The scene renders at a pixel ratio set by the quality preset (see RenderScale.ts), at most the
+// display's and DPR_CAP; the canvas matches the display and the frame graph upscales to it.
+// Explicit DPR captures and the full-resolution control lift the preset's pixel budget.
 const DPR_CAP = params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : 1.5;
-const resolution = { full: params.has( 'dpr' ) };
-const DEFAULT_PIXEL_BUDGET = 1920 * 1080;
-function renderPixelRatio( width: number, height: number ): number {
-
-	const requested = Math.min( devicePixelRatio, DPR_CAP );
-	// Ocean optics and post effects scale with pixel count. Bound the default workload on
-	// large/high-DPI windows; explicit DPR captures and the full-resolution control opt out.
-	return resolution.full ? requested : Math.min( requested, Math.sqrt( DEFAULT_PIXEL_BUDGET / ( width * height ) ) );
-
-}
-renderer.setPixelRatio( renderPixelRatio( innerWidth, innerHeight ) );
+const resolution = { full: params.has( 'dpr' ), render: '' };
+renderer.setPixelRatio( outputPixelRatio( 1 ) );
 renderer.setSize( innerWidth, innerHeight );
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -132,8 +127,11 @@ function applySkyQuality(): void {
 
 	sky.setQuality( skyQuality.value === 'low' ? 'low' : skyQuality.value === 'high' ? 'high' : 'medium' );
 	rain?.setQuality( WEATHER_QUALITY[ skyQuality.value ].rainDrops );
+	// the render scale follows the preset too (the pipeline exists from the first resize on)
+	if ( pipelineReady ) resize();
 
 }
+let pipelineReady = false;
 applySkyQuality();
 scene.add( sky.dome, sky.lightning.group );
 scene.environmentIntensity = 1;
@@ -442,7 +440,12 @@ cameraF.add( camera, 'fov', 15, 100, 1 ).name( 'field of view' ).listen().onChan
 cameraF.add( { reset: () => setCameraView( 'island' ) }, 'reset' ).name( 'return to island (R)' );
 const environmentLook = { exposure: true };
 const W = water.uniforms;
-gui.addFolder( 'Performance' ).add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
+// Quality sets the clouds' march, bake cadences, rain count and the render scale together.
+const performanceF = gui.addFolder( 'Performance' );
+performanceF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'quality' ).listen().onFinishChange( () => { applySkyQuality(); void refreshEnvironment(); } );
+performanceF.add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
+performanceF.add( pipeline.sharpness, 'value', 0, 2, 0.05 ).name( 'upscale softness' );
+performanceF.add( resolution, 'render' ).name( 'render → canvas' ).listen().disable();
 const groundF = gui.addFolder( 'Ground' );
 groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => {
 
@@ -455,7 +458,6 @@ groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' ).on
 const sunF = gui.addFolder( 'Sun' );
 const cloudF = gui.addFolder( 'Sky & clouds' );
 cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover override' ).onFinishChange( ( value: number ) => { cloudOverride = value; void refreshEnvironment(); } );
-cloudF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'sky quality' ).onFinishChange( () => { applySkyQuality(); void refreshEnvironment(); } );
 const weatherF = gui.addFolder( 'Weather' );
 const weatherView = { preset: weather.target, seconds: 20 };
 weatherF.add( weatherView, 'preset', Object.keys( WEATHER_PRESETS ) ).name( 'weather' ).listen().onChange( ( name: WeatherName ) => { void setWeather( name, weatherView.seconds ); } );
@@ -533,20 +535,27 @@ postF.add( S, 'grain', 0, 0.05, 0.001 );
 
 // ------------------------------------------------------------------ loop
 
+const canvasSize = new THREE.Vector2();
 function resize(): void {
 
 	const w = innerWidth, h = innerHeight;
-	renderer.setPixelRatio( renderPixelRatio( w, h ) );
+	const ratio = renderPixelRatio( w, h, skyQuality.value, resolution.full, DPR_CAP );
+	renderer.setPixelRatio( outputPixelRatio( ratio ) );
 	renderer.setSize( w, h );
 	camera.aspect = w / h;
 	camera.updateProjectionMatrix();
-	const pr = renderer.getPixelRatio();
-	pipeline.setSize( Math.floor( w * pr ), Math.floor( h * pr ) );
+	renderer.getDrawingBufferSize( canvasSize );
+	// at the display's ratio the render is the canvas, to the pixel, and nothing is upscaled
+	const rw = ratio === renderer.getPixelRatio() ? canvasSize.x : Math.floor( w * ratio );
+	const rh = ratio === renderer.getPixelRatio() ? canvasSize.y : Math.floor( h * ratio );
+	pipeline.setSize( rw, rh, canvasSize.x, canvasSize.y );
+	resolution.render = `${ rw }x${ rh } → ${ canvasSize.x }x${ canvasSize.y }` + ( pipeline.upscaling ? ` (${ Math.round( rw / canvasSize.x * 100 ) } %, FSR)` : '' );
 
 }
 
 addEventListener( 'resize', resize );
 resize();
+pipelineReady = true;
 
 const clock = new THREE.Timer();
 clock.connect( document );
@@ -597,8 +606,9 @@ function tick(): void {
 	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
 	// Lightning follows the scene clock, so a paused frame holds its strike; it lights the clouds'
 	// march below, so it goes first.
-	sky.lightning.update( simTime, weather.state.storm, camera, renderer.domElement.height, sky.clouds );
-	sky.updateClouds( camera, renderer.domElement.width, renderer.domElement.height, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
+	// (the scene's render size: the canvas is larger while the frame is upscaled)
+	sky.lightning.update( simTime, weather.state.storm, camera, pipeline.height, sky.clouds );
+	sky.updateClouds( camera, pipeline.width, pipeline.height, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
 	shared.storm.value = weather.state.storm;
 	// A strike lights the island for an instant through the sky's fill: the lit cloud deck adds its
@@ -613,7 +623,7 @@ function tick(): void {
 	rain!.uniforms.rain.value = shared.rain.value;
 	rain!.uniforms.wind.value.copy( shared.wind.velocity.value );
 	rain!.uniforms.waterLevel.value = shared.waterLevel.value;
-	rain!.update( renderer, camera, simTime, shared.wind.displacement.value, renderer.domElement.height );
+	rain!.update( renderer, camera, simTime, shared.wind.displacement.value, pipeline.height );
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		const state = sky.grade;
@@ -650,7 +660,7 @@ function tick(): void {
 	caustics.update( sky.keyDir );
 	characters.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
-	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * renderer.domElement.height / 900, S.dof );
+	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * pipeline.height / 900, S.dof );
 
 	pipeline.render( { scene, waterScene, rainScene: rain!.mesh.visible ? rainScene : undefined, camera, water: water!, sun, time: simTime } );
 	frame ++;
@@ -667,12 +677,15 @@ function diagnostics(): void {
 		frameMs: + ( frameTimes.reduce( ( a, b ) => a + b, 0 ) / frameTimes.length ).toFixed( 2 ),
 		frameMsP95: + [ ...frameTimes ].sort( ( a, b ) => a - b )[ Math.floor( frameTimes.length * 0.95 ) ].toFixed( 2 ),
 		canvas: [ renderer.domElement.width, renderer.domElement.height ],
+		render: [ pipeline.width, pipeline.height ],
+		upscaled: pipeline.upscaling,
 		calls: info.render.drawCalls,
 		triangles: info.render.triangles,
 		computeCalls: info.compute.frameCalls,
 		geometries: info.memory.geometries,
 		textures: info.memory.textures,
-		dpr: renderer.getPixelRatio(),
+		dpr: + ( pipeline.width / innerWidth ).toFixed( 4 ), // the render's pixel ratio
+		canvasDpr: renderer.getPixelRatio(),
 		worldTriangles: world.triangles,
 		rimStrands: data.rimStrands.length,
 		timings: data.timings,
