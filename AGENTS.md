@@ -101,7 +101,10 @@ exposed.
   casters (the sea floor's stones cast only into the refracted map) and redrawn each time the key
   light has turned 0.2 degrees; every receiver cross-fades from the previous step's map by the
   light's progress (`SunShadow`), so shadows move smoothly instead of re-rasterising every frame,
-  and a paused clock holds them exactly.
+  and a paused clock holds them exactly. On screen a blade is kept at least two pixels wide (0.75
+  on the outer rim, where partly covered pixels show a pale fringe over the sea) with its coverage
+  lowered to match through alpha to coverage, so the meadow does not crawl as the camera moves;
+  close up the blades render unchanged.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
   Weather only scales the wave cascades' amplitude; it never rebuilds the wave spectrum. Storm foam

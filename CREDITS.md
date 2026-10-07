@@ -362,6 +362,9 @@ comment where it is used.
   than the pixel's own blur): Jorge Jimenez,
   [*Next Generation Post Processing in Call of Duty: Advanced Warfare*](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare)
   (SIGGRAPH 2014 course *Advances in Real-Time Rendering in Games*).
+- Grass blades kept a minimum width on screen with their coverage lowered to match (alpha to
+  coverage), so thin blades stop crawling under camera motion: Emil Persson, *Phone-wire AA*
+  (2012 demo and write-up on [humus.name](http://www.humus.name/)).
 
 ## References
 
