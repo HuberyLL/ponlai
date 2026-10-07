@@ -11,6 +11,7 @@ import { OceanFFT } from './ocean/OceanFFT.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
 import { Caustics } from './ocean/Caustics.ts';
 import { Water } from './ocean/Water.ts';
+import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
 import { generateWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
@@ -133,7 +134,7 @@ function applySkyQuality(): void {
 
 }
 applySkyQuality();
-scene.add( sky.dome );
+scene.add( sky.dome, sky.lightning.group );
 scene.environmentIntensity = 1;
 const lighting = { skyFill: 1 };
 
@@ -270,10 +271,12 @@ const caustics = new Caustics( renderer, fft );
 rain = new Rain( { count: WEATHER_QUALITY[ skyQuality.value ].rainDrops } );
 // Drops scatter the same linear environment and key light as the island, without an emissive
 // floor. Using the GPU integral keeps their light in step with the displayed sky transition.
-rain.setLightNode( shared.skyIrradianceSource.mul( 0.65 ).add( shared.sunColor.mul( 0.045 ) ) );
+// A strike's fill lights the ground they show in full; the sky they show and reflect takes it
+// damped (like the storm spray's), since the displayed deck brightens far less than the fill.
+rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).pow( 0.35 ) ) );
 const pipeline = new Pipeline( renderer, sky, rain );
 rain.bindOpaqueDepth( pipeline.depthRT.texture );
-rainScene.add( rain.mesh );
+rainScene.add( rain.group );
 
 // ------------------------------------------------------------------ world
 
@@ -294,6 +297,8 @@ const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 scene.add( grass, foliage, flowers, rimFoliage );
+// Drops stop on the first surface they meet: rock, turf, blades, leaves.
+rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage ] );
 setStatus( 'Waking the villagers…' );
 // Local, unversioned assets (artifacts/ is git-ignored) served by the dev server while the
 // character art is still changing.
@@ -309,12 +314,18 @@ const fisherman = await loadVillager( umc( 'Farmer' ), [
 const characters = new Villagers( fisherman, [ [ - 5.5, 1.5 ], [ - 1.5, 3.3 ], [ 3, 2.6 ], [ 5.6, 0 ], [ 3.8, - 2.8 ], [ - 0.5, - 2.7 ], [ - 4.5, - 1.8 ] ], islandSurfaceHeight, characterShadow );
 scene.add( characters.group );
 
+// Storm whitecap foam with a memory, and the spray torn off breaking crests (idle in calm weather).
+const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
+	sunDir: shared.sunDir, sunColor: shared.sunColor,
+	sky: shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).sqrt() ),
+	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: pipeline.depthRT.texture,
+} );
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun,
+	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun, storm: stormSea,
 	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 applySkyFill();
-waterScene.add( water.mesh );
+waterScene.add( water.mesh, stormSea.spray.mesh );
 
 console.info( 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
@@ -539,7 +550,6 @@ addEventListener( 'keydown', ( e ) => {
 const frameTimes: number[] = [];
 let shadowElapsed = 0;
 const shadowDirection = new THREE.Vector3();
-const viewForward = new THREE.Vector3();
 function tick(): void {
 
 	clock.update();
@@ -571,21 +581,25 @@ function tick(): void {
 	pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );
 	pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
 	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
+	// Lightning follows the scene clock, so a paused frame holds its strike; it lights the clouds'
+	// march below, so it goes first.
+	sky.lightning.update( simTime, weather.state.storm, camera, renderer.domElement.height, sky.clouds );
 	sky.updateClouds( camera, renderer.domElement.width, renderer.domElement.height, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
 	shared.storm.value = weather.state.storm;
-	camera.getWorldDirection( viewForward );
-	sky.lightning.update( paused ? 0 : rawDt, weather.state.storm, Math.atan2( viewForward.z, viewForward.x ) );
-	// A strike lights the island for an instant through the sky's fill.
-	const strikeFill = lighting.skyFill * ( 1 + sky.lightning.flash.value * 8 );
+	// A strike lights the island for an instant through the sky's fill: the lit cloud deck adds its
+	// radiance to the sky's, so a flash that barely shows by day floods a dark night.
+	const skyLuma = sky.skyIrradiance.r * 0.2126 + sky.skyIrradiance.g * 0.7152 + sky.skyIrradiance.b * 0.0722;
+	const strikeFill = lighting.skyFill * Math.min( 1 + sky.lightning.fill / Math.max( skyLuma, 1e-5 ), 60 );
 	scene.environmentIntensity = strikeFill;
 	shared.skyFill.value = strikeFill;
+	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
 	shared.wetness.value = weatherEffects.wetness ? weather.state.wetness : 0;
 	fft.weatherGain.value.copy( shared.wind.oceanGain.value );
 	rain!.uniforms.rain.value = shared.rain.value;
 	rain!.uniforms.wind.value.copy( shared.wind.velocity.value );
 	rain!.uniforms.waterLevel.value = shared.waterLevel.value;
-	rain!.update( camera, simTime, renderer.domElement.height );
+	rain!.update( renderer, camera, simTime, shared.wind.displacement.value, renderer.domElement.height );
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		const state = sky.grade;
@@ -621,11 +635,13 @@ function tick(): void {
 	if ( shadowElapsed >= WEATHER_QUALITY[ skyQuality.value ].underwaterShadowInterval && refractedSun.update() ) shadowElapsed = 0;
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
+	stormSea.update( simTime, weather.state.storm, camera );
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
 	caustics.update( sky.keyDir );
 	characters.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
+	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * renderer.domElement.height / 900, S.dof );
 
 	pipeline.render( { scene, waterScene, rainScene: rain!.mesh.visible ? rainScene : undefined, camera, water: water!, sun, time: simTime } );
 	frame ++;
@@ -679,4 +695,4 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };

@@ -4,6 +4,14 @@
  * clouds (`SkyProClouds.js`, the density, lighting and march).
  * Copyright (c) 2026 DRG Software Solutions LLC
  * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ *
+ * The in-cloud lightning term (flashLight), the rain curtains and the rainbow drawn in them are
+ * adapted from VolumetricCloudsCS1 by Anthony Ibrahim
+ * (https://github.com/anthonytoumaibrahim/VolumetricCloudsCS1): `CloudRaymarch.shader`
+ * (the point lights, MarchRain, BowColour) and `CloudMedia.cginc` / `CloudCommon.cginc`
+ * (RainSigma, SampleRain).
+ * Copyright (c) 2026 Anthony Ibrahim
+ * Licensed under the MIT License; see ./VolumetricCloudsCS1.LICENSE.txt.
  */
 
 import * as THREE from 'three/webgpu';
@@ -14,6 +22,7 @@ import {
 } from 'three/tsl';
 import { bakeSynoptic, loadCloudShape } from '../materials/CloudNoise.ts';
 import { bakeCirrusFibres, sampleCirrusFibres } from './Cirrus.ts';
+import { RAINBOW_MAX_ANGLE, RAINBOW_SIZE, RAINBOW_TABLE } from './RainbowTable.data.ts';
 import type { Atmosphere } from './Atmosphere.ts';
 
 type F = THREE.Node<'float'>;
@@ -40,7 +49,7 @@ type V4 = THREE.Node<'vec4'>;
 // Everything returns vec4( in-scattered radiance, transmittance ).
 
 export const EARTH_RADIUS = 6_360_000;
-const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
+export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // The preset's scales, rounded so they nest: the wrapped wind offset (TILE) holds a whole
 // number of periods of the weather map, the shape noise and the erosion noise.
 const WEATHER_SCALE = 28672, BASE_SCALE = 7168, EROSION_SCALE = BASE_SCALE / 8;
@@ -71,6 +80,28 @@ export const DOME_WIDTH = 1536, DOME_HEIGHT = 384;
 const DOME_TEXEL_ANGLE = 2 * Math.PI / DOME_WIDTH;
 const STRIDE = 4; // panorama refresh pattern: one texel in STRIDE x STRIDE per frame
 const SHADOW_SIZE = 256, SHADOW_SPAN = 12000;
+// Lightning inside the cloud: point sources lighting the march.
+export const FLASH_SOURCES = 4;
+// Rain curtains: marched from RAIN_START (nearer rain is the streaks of weather/Rain.ts) to the
+// cloud base or RAIN_FAR, in RAIN_STEPS segments that lengthen with distance.
+const RAIN_START = 700, RAIN_FAR = 42000, RAIN_STEPS = 16;
+const RAIN_SIGMA = 0.0004; // extinction (1/m) of a full shower: about ten kilometres of visibility
+// The curtains' pattern: lumps RAIN_LUMPS metres across and streaks RAIN_STREAK metres across
+// (both dividing TILE, so the wrapped wind offset shows no seam),
+// stretched along the fall (vertical period RAIN_PERIOD) and sliding down RAIN_FALL metres per unit
+// of `evolve` (2.5 per second: about 8 m/s). The fall over one evolve period is a whole number of
+// vertical periods, so the wrap of `evolve` never shows.
+const RAIN_STREAK = 512, RAIN_LUMPS = 2048, RAIN_FALL = 3.2;
+const RAIN_PERIOD = EVOLVE_PERIOD * RAIN_FALL / 6;
+// Share of the rain's extinction the bows scatter: the table is per geometric cross-section,
+// and large drops extinguish twice that (the other half is diffracted straight ahead). Doubled
+// for the art: the stylised curtains are thinner than real rain, and a bow should still read.
+const BOW_SHARE = 0.5 * 2;
+// The secondary bow is lifted further (to about a quarter of the primary instead of a seventh):
+// in curtains this thin it would otherwise not read at all.
+const SECONDARY_BOW_GAIN = 1.8;
+// Share of a strike's light the rain returns, against the cloud's: drops scatter less of it back.
+const RAIN_FLASH = 0.5;
 // 4 x 4 ordered dither: one pixel of every block per frame.
 const ORDER = [ 0, 10, 2, 8, 5, 15, 7, 13, 1, 11, 3, 9, 4, 14, 6, 12 ];
 const REBUILD_SLOTS = 4; // slots traced per frame right after a camera cut
@@ -171,7 +202,7 @@ const weatherFbm = ( q: V2, profile: number[] ) => {
 
 interface View {
 	width: number; height: number;
-	trace: THREE.StorageTexture; depth: THREE.StorageTexture; high: THREE.StorageTexture; motion: THREE.StorageTexture;
+	trace: THREE.StorageTexture; depth: THREE.StorageTexture; high: THREE.StorageTexture; motion: THREE.StorageTexture; flash: THREE.StorageTexture;
 	boxMin: THREE.StorageTexture; boxMax: THREE.StorageTexture; history: THREE.StorageTexture[];
 	kernels: { trace: THREE.ComputeNode; high: THREE.ComputeNode; box: THREE.ComputeNode; resolve: THREE.ComputeNode[] };
 }
@@ -190,6 +221,15 @@ export class Clouds {
 	readonly frontProgress = uniform( 1 );
 	readonly rainFrom = uniform( 0 );
 	readonly rainTo = uniform( 0 );
+	// Rain that fell recently (WeatherState.showers): it lingers in showers under the thicker cells.
+	readonly showers = uniform( 0 );
+	// Horizontal metres a drop drifts downwind per metre it falls.
+	readonly rainSlant = uniform( 0.4 );
+	// Strength of the rainbows in sunlit rain (0 to 1), set by the sky's rules for when they show.
+	readonly rainbow = uniform( 0 );
+	// How far the heaps of a broken sky may shower (0 to 1): none in fog, whose cover is a layer of
+	// mist and stratus rather than rain cells.
+	readonly heapShowers = uniform( 1 );
 	readonly frontAxis = uniform( new THREE.Vector2( 1, 0 ) );
 	// High cirrus: amount and the unit direction its fibres are combed along (the wind).
 	readonly cirrus = uniform( 0 );
@@ -212,6 +252,10 @@ export class Clouds {
 	readonly quality = uniform( 56 );
 	readonly dome: THREE.StorageTexture;
 	readonly shadowMap: THREE.StorageTexture;
+	// Lightning (weather/Lightning.ts): each source's world position (m) and reach (m) in xyzw,
+	// and its radiance this frame; `flashOn` is 1 while any of them is lit.
+	readonly flash = Array.from( { length: FLASH_SOURCES }, () => ( { source: uniform( new THREE.Vector4( 0, - 1e6, 0, 1 ) ), color: uniform( new THREE.Color( 0, 0, 0 ) ) } ) );
+	readonly flashOn = uniform( 0 );
 
 	// Camera-relative frame: the camera sits on the planet axis at `camY` (below the base).
 	private readonly camY = uniform( 15 );
@@ -249,11 +293,15 @@ export class Clouds {
 	private loading: Promise<void> | null = null;
 	private partialKernel: THREE.ComputeNode | null = null;
 	private shadowKernel: THREE.ComputeNode | null = null;
+	private previousFlash = '';
 	private view: View | null = null;
 	private readonly viewNode = texture( new THREE.Texture() );
-	private marchView: ( ( rd: V3, jitter: F ) => { L: V3; T: F; depth: F } ) | null = null;
+	private marchView: ( ( rd: V3, jitter: F ) => { L: V3; F: V3; T: F; depth: F } ) | null = null;
+	// This frame's lightning in the view, traced at a quarter of its resolution.
+	private readonly flashNode = texture( new THREE.Texture() );
 	private highAt: ( ( rd: V3, pxAngle: F ) => V4 ) | null = null;
-	private rainAt: ( ( rd: V3 ) => V4 ) | null = null;
+	private rainAt: ( ( rd: V3, pxAngle: F, jitter: F, withFlash?: boolean ) => { color: V4; flash: V3 } ) | null = null;
+	private rainbowTable: THREE.DataTexture | null = null;
 	private skyAt: ( ( rd: V3 ) => V3 ) | null = null;
 	private frame = 0;
 	private needsFull = true;
@@ -431,12 +479,13 @@ export class Clouds {
 		const skyAt = ( rd: V3 ) => this.atmosphere.skyRadiance( rd ).add( this.nightAmbient.rgb );
 		const heightAlongRay = ( t: F, rd: V3 ) => this.camY.add( rd.y.mul( t ) ).add( dot( rd.xz, rd.xz ).mul( t ).mul( t ).div( 2 * EARTH_RADIUS ) ).sub( SHELL_BOTTOM ).div( SHELL_THICKNESS );
 
-		// Ray march the shell along rd (camera relative). L includes aerial perspective.
-		const makeMarch = ( maxSteps: number, pixelCone: F, stepCone: F ) => ( rd: V3, jitter: F ) => {
+		// Ray march the shell along rd (camera relative). L includes aerial perspective; `flash`
+		// adds the lightning inside the cloud.
+		const makeMarch = ( maxSteps: number, pixelCone: F, stepCone: F, flash = false ) => ( rd: V3, jitter: F ) => {
 
 			const start = layerDistance( this.camY, rd.y, float( SHELL_BOTTOM ) ).toVar();
 			const end = min( layerDistance( this.camY, rd.y, float( SHELL_BOTTOM + SHELL_THICKNESS ) ), FAR ).toVar();
-			const color = vec3( 0 ).toVar();
+			const color = vec3( 0 ).toVar(), flashColor = vec3( 0 ).toVar();
 			const transmission = float( 1 ).toVar(), weightedDepth = float( 0 ).toVar();
 			// The shell's coverage at its fullest here: the bound for skipping empty cells.
 			const coverageBound = shellCoverage( max( this.coverageFrom, this.coverageTo ) ).toVar();
@@ -599,6 +648,15 @@ export class Clouds {
 					const stepT = exp( sigmaT.mul( stepLength ).negate() ).toVar();
 					const alpha = transmission.mul( float( 1 ).sub( stepT ) ).toVar();
 					color.addAssign( radiance.mul( alpha ) );
+					if ( flash ) {
+
+						If( this.flashOn.greaterThan( 0.5 ), () => {
+
+							flashColor.addAssign( this.flashLight( p ).mul( alpha ) );
+
+						} );
+
+					}
 					weightedDepth.addAssign( alpha.mul( t ) );
 					transmission.mulAssign( stepT );
 					accumulatedDepth.addAssign( sigmaT.mul( stepLength ) );
@@ -619,56 +677,157 @@ export class Clouds {
 			// A closed deck runs on to the horizon in its own grey rather than melting into a clear sky.
 			const melt = smoothstep( MELT_START, MELT_END, depth ).mul( float( 1 ).sub( closed ) );
 			const L = mix( hazed, sky.mul( alpha ), melt );
+			// The lightning inside the cloud, kept apart (see buildView), under the same air.
+			const F = flashColor.mul( ap ).mul( float( 1 ).sub( melt ) );
 			// The march stops once 0.3 % of the light gets through: the rest counts as opaque.
-			return { L, T: sat( transmission.sub( 0.003 ).div( 0.997 ) ), depth };
+			return { L, F, T: sat( transmission.sub( 0.003 ).div( 0.997 ) ), depth };
 
 		};
 
-		// Distant rain below the cloud base: grey curtains where the clouds above are raining.
-		// Showers also fall from the tallest cells of a cloudy sky. Streaks follow the fall, so
-		// curtains read as vertical strands that fade out before reaching the sea.
-		const rainAt = ( rd: V3 ) => {
+		// Distant rain below the cloud base, after VolumetricCloudsCS1's rain march: grey curtains
+		// marched along the view ray under the cloud that is raining. A drop at some height left
+		// the base upwind of where it is now, so the cloud above is read where the drop came from
+		// and the curtains lean with the wind; their streaky texture is the shape noise stretched
+		// along the fall and sliding down with it. A raining deck rains everywhere, harder under
+		// its richest cells; the tall heaps of a broken sky shower; and after the rain has passed
+		// showers linger under the thicker cells. The curtains are lit by the light under the
+		// cloud (dark under a thick deck) and by the sun where it reaches them under the clouds,
+		// bright from the side; in sunlight opposite the sun they carry the rainbows. They fade
+		// into the haze with distance as the clouds do.
+		const rainbowTable = this.rainbowTable = makeRainbowTexture();
+		const rainbowNode = texture( rainbowTable );
+		// Cloud standing at the shell height h above a camera-relative point, from the weather map
+		// and the front alone (the shape noise at its mean): enough to say whether the sun gets
+		// through to the rain, or how thick the cloud a drop fell from is.
+		const cloudAbove = ( pxz: V2, h: number ) => {
 
-			const radiance = vec3( 0 ).toVar();
+			const w = weatherNode.sample( weatherUV( pxz ) ).level( float( 0 ) ).r;
+			const coverage = frontAt( pxz ).x;
+			const top = w.add( coverage ).sub( 1 ).add( coverage.mul( 0.45 ) );
+			const required = ( 1 - Math.min( h / BASE_WEATHER_END, 1 ) ** 2 * ( 3 - 2 * Math.min( h / BASE_WEATHER_END, 1 ) ) ) * BASE_WEATHER;
+			return { w, top, coverage, presence: smoothstep( - EDGE, EDGE, top.sub( h ) ).mul( smoothstep( required - 0.1, required, w ) ) };
+
+		};
+		const rainAt = ( rd: V3, pxAngle: F, jitter: F, withFlash = false ) => {
+
+			const radiance = vec3( 0 ).toVar(), flash = vec3( 0 ).toVar();
 			const through = float( 1 ).toVar();
-			const light = this.atmosphere.skyRadiance( vec3( 0, 1, 0 ) ).mul( 0.5 ).add( this.nightAmbient.rgb );
-			// Rain under a cloud is lit by the shaded base above it: a dull, neutral grey.
-			const grey = mix( light, vec3( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), 0.75 ).mul( 0.4 ).toVar();
-			const start = float( 1500 ), end = min( layerDistance( this.camY, rd.y, float( SHELL_BOTTOM ) ), 32000 ).toVar();
-			If( end.greaterThan( start ).and( rd.y.greaterThan( 0 ) ), () => {
+			const end = min( layerDistance( this.camY, rd.y, float( SHELL_BOTTOM ) ), RAIN_FAR ).toVar();
+			// Nothing to march without rain, lingering showers or a sky broken into heaps.
+			const raining = max( max( this.rainFrom, this.rainTo ), max( this.showers, max( this.coverageFrom, this.coverageTo ).sub( 0.5 ).mul( this.heapShowers ) ) );
+			If( end.greaterThan( RAIN_START * 2 ).and( rd.y.greaterThan( 0 ) ).and( raining.greaterThan( 0 ) ), () => {
 
-				for ( let i = 0; i < 8; i ++ ) {
+				const L = this.lightDir;
+				const cosine = dot( rd, L ).toVar();
+				const sun = this.lightColor.rgb.mul( this.directGain ).toVar();
+				const hasSun = L.y.greaterThan( 0.01 ).and( max( sun.x, max( sun.y, sun.z ) ).greaterThan( 1e-5 ) ).toVar();
+				// Drops scatter forward far more than cloud does, and a little back by their outer
+				// reflection; opposite the sun the bows add the colours of the table (relative to
+				// isotropic, so the phase is that over 4 pi).
+				const bowAt = acos( clamp( cosine.negate(), - 1, 1 ) ).mul( 180 / Math.PI / RAINBOW_MAX_ANGLE ).toVar();
+				const secondary = smoothstep( 46 / RAINBOW_MAX_ANGLE, 48 / RAINBOW_MAX_ANGLE, bowAt ).mul( SECONDARY_BOW_GAIN - 1 ).add( 1 );
+				const bow = rainbowNode.sample( vec2( min( bowAt, 1 ), 0.5 ) ).level( float( 0 ) ).rgb.mul( secondary ).mul( select( bowAt.lessThan( 1 ), this.rainbow, float( 0 ) ) );
+				const grey = min( henyeyGreenstein( cosine, 0.75 ).mul( 4 * Math.PI ), 8 ).mul( 0.85 ).add( 0.15 );
+				const phase = bow.mul( BOW_SHARE ).add( grey ).mul( 1 / ( 4 * Math.PI ) ).toVar();
+				// The rain has no colour of its own: it takes the light where it falls. From above, the
+				// base of the cloud it falls from, lit as the clouds light their own bases (dimmer still
+				// under a closed deck); from the sides, the sky toward the horizon in the view
+				// direction; from below the dark sea gives back almost nothing. Where the sun reaches
+				// the drops they add its light, brightest looking toward it.
+				const zenith = skyAt( vec3( 0, 1, 0 ) ).toVar();
+				const sunHorizon = skyAt( normalize( vec3( L.x.add( 1e-5 ), 0.03, L.z ) ) );
+				const closed = smoothstep( 0.7, 0.95, shellCoverage( this.coverage ) ).toVar();
+				const deckLight = mix( float( 1 ), float( 0.3 ), closed ).toVar();
+				const cloudBase = mix( zenith, sunHorizon, 0.55 ).mul( AMBIENT * 0.25 ).mul( deckLight ).toVar();
+				const sideLight = skyAt( normalize( vec3( rd.x.add( 1e-5 ), 0.03, rd.z ) ) ).mul( deckLight ).toVar();
+				// Distant curtains fade into the air ahead: toward the sky behind them where it is
+				// open, toward the deck's base where a closed deck hides it; under a deck the haze is
+				// thinner too (as for the clouds themselves).
+				const sky = mix( skyAt( rd ), cloudBase, closed ).toVar();
+				const airScale = float( - 1 / AP_DIST ).div( closed.mul( 5 ).add( 1 ) ).toVar();
+				const span = end.sub( RAIN_START ).toVar();
+				const lean = this.windN.mul( this.rainSlant ).toVar();
+				const fall = this.evolve.mul( RAIN_FALL ).toVar();
+				const ly = max( L.y, 0.03 ).toVar();
+				Loop( RAIN_STEPS, ( { i } ) => {
 
-					// Logarithmic spacing: curtains a few kilometres off are resolved, far ones merge.
-					const a = Math.pow( i / 8, 1.6 ), b = Math.pow( ( i + 1 ) / 8, 1.6 );
-					const t = start.add( end.sub( start ).mul( ( a + b ) / 2 ) ).toVar();
-					const dt = end.sub( start ).mul( b - a );
+					If( through.lessThan( 0.01 ), () => {
+
+						Break();
+
+					} );
+					// Segments lengthen with distance: a shower's edge a kilometre off needs precision,
+					// the far end of a 40 km ray does not.
+					const t0 = float( i ).div( RAIN_STEPS ).pow( 1.8 ).mul( span ).add( RAIN_START ).toVar();
+					const dt = float( i ).add( 1 ).div( RAIN_STEPS ).pow( 1.8 ).mul( span ).add( RAIN_START ).sub( t0 ).toVar();
+					const t = t0.add( dt.mul( jitter ) ).toVar();
+					const altitude = this.camY.add( rd.y.mul( t ) ).add( dot( rd.xz, rd.xz ).mul( t ).mul( t ).div( 2 * EARTH_RADIUS ) ).toVar();
+					const below = max( float( SHELL_BOTTOM ).sub( altitude ), 0 ).toVar();
 					const pxz = rd.xz.mul( t ).toVar();
-					const altitude = this.camY.add( rd.y.mul( t ) );
-					const reached = clamp( this.frontProgress.add( dot( pxz.add( this.camXZ ), this.frontAxis ).div( FRONT_SPAN ) ), 0, 1 );
-					const rain = mix( this.rainFrom, this.rainTo, reached );
-					const coverage = frontAt( pxz ).x;
-					// How tall the cloud above stands (with the shape noise at its mean): the heart of
-					// each cell rains, and the tallest cells of a cloudy sky shower.
-					const top = weatherNode.sample( weatherUV( pxz ) ).level( float( 0 ) ).r.add( coverage ).sub( 1 ).add( coverage.mul( 0.45 ) );
-					const core = smoothstep( 0.1, 0.45, top );
-					// Showers fall from the heaps of a broken sky; a closed deck rains only with the weather.
-					const showers = smoothstep( 0.55, 0.85, top ).mul( smoothstep( 0.55, 0.62, coverage ) ).mul( float( 1 ).sub( smoothstep( 0.7, 0.85, coverage ) ) );
-					const heavy = max( rain.mul( core.mul( 0.6 ).add( 0.4 ) ), showers );
-					const np = pxz.add( this.camXZ ).add( this.windOffset );
-					const strands = shapeNode.sample( vec3( np.x.mul( 1 / 2048 ), altitude.mul( 1 / 6000 ).add( this.evolve.div( EVOLVE_PERIOD ) ), np.y.mul( 1 / 2048 ) ) ).level( float( 0 ) ).g;
-					const below = float( 1 ).sub( smoothstep( SHELL_BOTTOM * 0.7, SHELL_BOTTOM * 1.1, altitude ) );
-					const density = heavy.mul( strands.mul( 1.4 ).sub( 0.1 ) ).mul( below ).mul( 0.00035 );
-					const step = exp( max( density, 0 ).mul( dt ).negate() );
-					radiance.addAssign( grey.mul( through ).mul( float( 1 ).sub( step ) ) );
-					through.mulAssign( step );
+					// Where the drop left the cloud base, and how much it rains there.
+					const source = pxz.sub( lean.mul( below ) ).toVar();
+					// The base sits anywhere in the lowest part of the shell, lower under richer weather.
+					const above = cloudAbove( source, BASE_WEATHER_END );
+					const reached = clamp( this.frontProgress.add( dot( source.add( this.camXZ ), this.frontAxis ).div( FRONT_SPAN ) ), 0, 1 );
+					const rain = mix( this.rainFrom, this.rainTo, reached.mul( reached ).mul( float( 3 ).sub( reached.mul( 2 ) ) ) ).toVar();
+					// A raining deck rains everywhere, hardest under the richest weather of its cells.
+					const core = smoothstep( 0.25, 0.45, above.w );
+					const deck = rain.mul( core.mul( core ).mul( 0.75 ).add( 0.25 ) ).mul( above.presence );
+					const broken = smoothstep( 0.55, 0.62, above.coverage ).mul( float( 1 ).sub( smoothstep( 0.7, 0.85, above.coverage ) ) );
+					const heaps = smoothstep( 0.2, 0.35, above.top ).mul( above.presence ).mul( broken ).mul( this.heapShowers ).mul( 0.4 );
+					const linger = max( this.showers.sub( rain ), 0 ).mul( smoothstep( 0.12, 0.3, above.top ) ).mul( above.presence ).mul( 0.5 );
+					const amount = max( deck, max( heaps, linger ) ).toVar();
+					If( amount.greaterThan( 0.003 ), () => {
 
-				}
+						// Uneven curtains: broad lumps, and streaks stretched along the fall, both
+						// following the drops' slanted paths and sliding down as they fall.
+						const world = source.add( this.camXZ ).add( this.windOffset ).toVar();
+						const v = altitude.add( fall ).div( RAIN_PERIOD ).toVar();
+						const footprint = t.mul( pxAngle );
+						const lumps = shapeNode.sample( vec3( world.x.div( RAIN_LUMPS ), v.div( 6 ), world.y.div( RAIN_LUMPS ) ) ).level( coneLod( footprint, RAIN_LUMPS ) ).r;
+						const streaks = shapeNode.sample( vec3( world.x.div( RAIN_STREAK ), v, world.y.div( RAIN_STREAK ) ) ).level( coneLod( footprint, RAIN_STREAK ) ).g;
+						const pattern = sat( lumps.mul( 3 ).sub( 1.2 ) ).mul( streaks.mul( streaks ).mul( 2.6 ).add( 0.15 ) );
+						// Light showers evaporate on the way down; rain starts at the base, and the
+						// nearest is left to the streaks around the camera.
+						const reach = float( 1 ).sub( sat( amount.mul( 2.5 ) ) ).mul( 2600 ).sub( 1500 );
+						const shape = smoothstep( reach, reach.add( 1500 ), altitude ).mul( smoothstep( 0, 300, below ) ).mul( smoothstep( RAIN_START, RAIN_START * 2.5, t ) );
+						const sigma = amount.mul( pattern ).mul( shape ).mul( RAIN_SIGMA ).toVar();
+						// The sun reaches the drops where no cloud stands on its way: the base and
+						// two heights in the shell, where the beam from this point crosses them.
+						const lit = float( 0 ).toVar();
+						If( hasSun, () => {
+
+							const reachShell = ( h: number ) => pxz.add( L.xz.mul( below.add( h * SHELL_THICKNESS ).div( ly ) ) );
+							const tau = cloudAbove( reachShell( 0.02 ), 0.02 ).presence.add( cloudAbove( reachShell( 0.18 ), 0.18 ).presence )
+								.add( cloudAbove( reachShell( 0.4 ), 0.4 ).presence ).mul( 3 );
+							lit.assign( exp( tau.negate() ) );
+
+						} );
+						// Under the cloud it falls from the rain sees the dark base above (about as bright
+						// as the clouds' own base light) and the darker sea below; only a broken sky lets
+						// the sky's own light in from the sides.
+						// Rain always falls from a cloud: overhead it sees that cloud's base.
+						const ambient = cloudBase.mul( 0.4 ).add( sideLight.mul( 0.2 ) ).mul( this.ambientGain ).add( this.nightAmbient.rgb.mul( 0.3 ) );
+						const light = sun.mul( phase ).mul( lit ).add( ambient );
+						const air = exp( t.mul( airScale ) );
+						const alpha = float( 1 ).sub( exp( sigma.mul( dt ).negate() ) ).toVar();
+						radiance.addAssign( mix( sky, light, air ).mul( through ).mul( alpha ) );
+						// A strike lights the rain around it: added apart from the rest, like the clouds' own
+						// flash, so it stays out of the accumulated view.
+						if ( withFlash ) If( this.flashOn.greaterThan( 0.5 ), () => {
+
+							const p = vec3( pxz.x, altitude, pxz.y );
+							flash.addAssign( this.flashLight( p ).mul( RAIN_FLASH ).mul( air ).mul( through ).mul( alpha ) );
+
+						} );
+						through.mulAssign( float( 1 ).sub( alpha ) );
+
+					} );
+
+				} );
 
 			} );
-			// Curtains fade into the haze with distance, as the clouds they fall from do.
-			const air = exp( end.mul( - 1 / AP_DIST ) );
-			return vec4( radiance.mul( air ), mix( float( 1 ), through, air ) );
+			return { color: vec4( radiance, through ), flash };
 
 		};
 
@@ -726,7 +885,10 @@ export class Clouds {
 		const domeCone = float( DOME_TEXEL_ANGLE );
 		const marchPano = makeMarch( 128, domeCone, domeCone );
 		const pixelCone = this.cam.tan.y.mul( 2 ).div( this.displayHeight );
-		this.marchView = makeMarch( 256, pixelCone, this.cam.tan.y.mul( 2 ).div( this.viewSize.y ) );
+		// The panorama refreshes a sixteenth of its texels per frame and feeds bakes that cross-fade
+		// over seconds, too slow for a flash: only the view carries the lightning in its march;
+		// reflections take it from `flashAt`.
+		this.marchView = makeMarch( 256, pixelCone, this.cam.tan.y.mul( 2 ).div( this.viewSize.y ), true );
 		this.highAt = highAt;
 		this.rainAt = rainAt;
 		this.skyAt = skyAt;
@@ -741,7 +903,7 @@ export class Clouds {
 			const jitter = fract( sin( dot( vec2( float( x ), float( y ) ), vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
 			const rd = domeToDirection( q ).toVar();
 			const m = marchPano( rd, jitter );
-			const result = over( rainAt( rd ), over( vec4( m.L, m.T ), highAt( rd, float( DOME_TEXEL_ANGLE ) ) ) );
+			const result = over( rainAt( rd, float( DOME_TEXEL_ANGLE ), jitter ).color, over( vec4( m.L, m.T ), highAt( rd, float( DOME_TEXEL_ANGLE ) ) ) );
 			textureStore( this.dome, ivec2( int( x ), int( y ) ), result );
 
 		} )().compute( DOME_WIDTH * DOME_HEIGHT / ( STRIDE * STRIDE ), [ 64 ] ).setName( 'Clouds.Panorama' );
@@ -798,9 +960,14 @@ export class Clouds {
 			return t;
 
 		};
-		if ( this.view ) for ( const t of [ this.view.trace, this.view.depth, this.view.high, this.view.motion, this.view.boxMin, this.view.boxMax, ...this.view.history ] ) t.dispose();
+		if ( this.view ) for ( const t of [ this.view.trace, this.view.depth, this.view.high, this.view.motion, this.view.flash, this.view.boxMin, this.view.boxMax, ...this.view.history ] ) t.dispose();
 		const tw = Math.ceil( width / 4 ), th = Math.ceil( height / 4 );
 		const trace = make( tw, th, 'cloudTrace' ), depth = make( tw, th, 'cloudTraceDepth' ), high = make( tw, th, 'cloudHighTrace' );
+		// A flash lasts a fraction of a second, a pixel's history seconds: averaged in, a flash
+		// would be printed in a 4 x 4 pattern and linger as a ghost (the history's clamp cannot
+		// catch it in a dark sky). The lightning is kept out of the history and shown from each
+		// frame's own trace instead, upsampled; its glow is soft.
+		const flashTrace = make( tw, th, 'cloudFlashTrace' );
 		const motion = make( tw, th, 'cloudMotion' ), boxMin = make( tw, th, 'cloudBoxMin' ), boxMax = make( tw, th, 'cloudBoxMax' );
 		const history = [ make( width, height, 'cloudViewA' ), make( width, height, 'cloudViewB' ) ];
 		this.viewSize.value.set( width, height );
@@ -834,7 +1001,10 @@ export class Clouds {
 			// structured pattern (interleaved gradient noise) leaves diagonal hatching.
 			const jitter = fract( hash( vec2( tp ).mul( 4 ).add( this.slot ) ).add( this.frameNoise ) );
 			const m = marchView( rd, jitter );
-			textureStore( trace, tp, over( rainAt( rd ), vec4( m.L, m.T ) ) );
+			const rainSample = rainAt( rd, C.tan.y.mul( 2 ).div( this.displayHeight ), jitter, true );
+			const rain = rainSample.color.toVar();
+			textureStore( trace, tp, over( rain, vec4( m.L, m.T ) ) );
+			textureStore( flashTrace, tp, vec4( m.F.mul( rain.a ).add( rainSample.flash ), 1 ) );
 			textureStore( depth, tp, vec4( m.depth, float( 1 ).sub( m.T ), 0, 1 ) );
 
 		} )().compute( tw * th, [ 64 ] ).setName( 'Clouds.ViewTrace' );
@@ -974,10 +1144,11 @@ export class Clouds {
 
 		};
 		this.view = {
-			width, height, trace, depth, high, motion, boxMin, boxMax, history,
+			width, height, trace, depth, high, motion, flash: flashTrace, boxMin, boxMax, history,
 			kernels: { trace: traceKernel, high: highKernel, box: boxKernel, resolve: [ resolve( history[ 1 ], history[ 0 ] ), resolve( history[ 0 ], history[ 1 ] ) ] },
 		};
 		this.viewNode.value = history[ 0 ];
+		this.flashNode.value = flashTrace;
 		this.viewValid.value = 0;
 		this.resetHistory();
 
@@ -1048,7 +1219,10 @@ export class Clouds {
 		this.camDeltaHi.value.set( dx + driftX * 1.6, dy, dz + driftZ * 1.6 );
 		// At rest: a paused clock and a still camera (a jump in weather or time while paused still
 		// counts, and settles at once).
-		const resting = this.hasPrevious && moved <= 1e-4 && this.turned <= 1e-6 && time === this.previousTime;
+		// A change of lightning while paused (a review strike) retraces the view, so its flash is current.
+		const flash = this.flash.map( ( { source, color } ) => `${ source.value.toArray() },${ color.value.toArray() }` ).join( ';' );
+		const resting = this.hasPrevious && moved <= 1e-4 && this.turned <= 1e-6 && time === this.previousTime && flash === this.previousFlash;
+		this.previousFlash = flash;
 		this.previousCamera.copy( position );
 		this.previousOffset.copy( this.windOffset.value );
 		this.previousTime = time;
@@ -1214,12 +1388,54 @@ export class Clouds {
 
 	}
 
+	// Light from the lightning sources at a camera-relative point: an inverse-square core,
+	// softened so a source never blows out, times an exponential reach standing in for the cloud
+	// the light crosses (VolumetricCloudsCS1's Lightning()). There is no march toward the source:
+	// added inside the front-to-back march, the cloud between the glow and the viewer dims it, so
+	// a flash reads as coming from within the cloud.
+	private flashLight( p: V3 ): V3 {
+
+		const world = vec3( p.x.add( this.camXZ.x ), p.y, p.z.add( this.camXZ.y ) ).toVar();
+		let sum: V3 = vec3( 0 );
+		for ( const { source, color } of this.flash ) {
+
+			const r = length( world.sub( source.xyz ) );
+			const core = source.w.mul( 0.2 );
+			sum = sum.add( color.mul( exp( r.div( source.w ).negate() ).div( r.mul( r ).div( core.mul( core ) ).add( 1 ) ) ) );
+
+		}
+		return sum;
+
+	}
+
+	/** Light of the lightning inside the clouds in a direction, for reflections and directions
+	 * outside the view: the march's light where the ray enters the cloud deck, times the cloud's
+	 * `opacity` there, with the view's aerial perspective. Without texture lookups it costs the
+	 * water shader no sampler. */
+	flashAt( direction: V3, opacity: F ): V3 {
+
+		const result = vec3( 0 ).toVar();
+		If( this.flashOn.greaterThan( 0.5 ).and( direction.y.greaterThan( 0 ) ), () => {
+
+			// A little above the base, where the march gathers most of a thick deck's light.
+			const t = layerDistance( this.camY, direction.y, float( SHELL_BOTTOM + 150 ) ).toVar();
+			const p = vec3( direction.x.mul( t ), this.camY.add( direction.y.mul( t ) ), direction.z.mul( t ) );
+			const closed = smoothstep( 0.7, 0.95, shellCoverage( this.coverage ) );
+			const ap = exp( t.mul( - 1 / AP_DIST ).div( closed.mul( 5 ).add( 1 ) ) );
+			result.assign( this.flashLight( p ).mul( opacity ).mul( ap ).mul( smoothstep( 0, 0.04, direction.y ) ) );
+
+		} );
+		return result;
+
+	}
+
 	/** The clouds as seen directly: the view, upsampled bicubically and looked up with the camera
 	 * it was traced with; directions outside it, or a view without data yet, take the panorama. */
 	sampleView( direction: V3 ): V4 {
 
 		const V = this.viewCam;
-		const result = this.sample( direction ).toVar();
+		const panorama = this.sample( direction ).toVar();
+		const result = vec4( panorama.rgb.add( this.flashAt( direction, float( 1 ).sub( panorama.a ) ) ), panorama.a ).toVar();
 		const z = dot( direction, V.fwd ).toVar();
 		const ndc = vec2( dot( direction, V.right ), dot( direction, V.up ) ).div( V.tan.mul( max( z, 1e-4 ) ) );
 		const uv = vec2( ndc.x.mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( ndc.y.mul( 0.5 ) ) ).toVar();
@@ -1227,8 +1443,11 @@ export class Clouds {
 			.and( uv.y.greaterThanEqual( 0 ) ).and( uv.y.lessThanEqual( 1 ) ), () => {
 
 			const v = max( catmullRom( this.viewNode, uv, this.viewSize ), vec4( 0 ) );
+			// The last trace's samples sit at its slot and sub-pixel offset in each 4 x 4 block.
+			const fuv = uv.mul( this.viewSize ).sub( this.slot ).sub( this.subPixel ).sub( 0.5 ).div( 4 ).add( 0.5 ).div( this.traceSize );
+			const flash = this.flashNode.sample( fuv ).level( float( 0 ) ).rgb.mul( this.flashOn );
 			const above = smoothstep( - 0.05, - 0.03, direction.y );
-			result.assign( vec4( v.rgb.mul( above ), mix( float( 1 ), min( v.a, 1 ), above ) ) );
+			result.assign( vec4( v.rgb.add( flash ).mul( above ), mix( float( 1 ), min( v.a, 1 ), above ) ) );
 
 		} );
 		return result;
@@ -1285,6 +1504,17 @@ export class Clouds {
 
 	}
 
+	/** The weather's cloud coverage over a world position (x, z), as the front has swept it in
+	 * (the CPU twin of the march's front, without the weather map). */
+	coverageAt( x: number, z: number ): number {
+
+		const axis = this.frontAxis.value;
+		const reached = THREE.MathUtils.clamp( this.frontProgress.value + ( x * axis.x + z * axis.y ) / FRONT_SPAN, 0, 1 );
+		const sweep = reached * reached * ( 3 - 2 * reached );
+		return THREE.MathUtils.lerp( this.coverageFrom.value, this.coverageTo.value, sweep );
+
+	}
+
 	setWindOffset( offset: THREE.Vector2 ): void {
 
 		const wrap = ( v: number ) => v - TILE * Math.round( v / TILE );
@@ -1296,11 +1526,32 @@ export class Clouds {
 
 		this.dome.dispose();
 		this.shadowMap.dispose();
-		for ( const t of [ this.shape, this.synoptic, this.weather, this.bounds ] ) t?.dispose();
+		for ( const t of [ this.shape, this.synoptic, this.weather, this.bounds, this.rainbowTable ] ) t?.dispose();
 		this.cirrusFibres?.dispose();
-		if ( this.view ) for ( const t of [ this.view.trace, this.view.depth, this.view.high, this.view.motion, this.view.boxMin, this.view.boxMax, ...this.view.history ] ) t.dispose();
+		if ( this.view ) for ( const t of [ this.view.trace, this.view.depth, this.view.high, this.view.motion, this.view.flash, this.view.boxMin, this.view.boxMax, ...this.view.history ] ) t.dispose();
 
 	}
+
+}
+
+// The rainbow's colours by angle from the antisolar point (RainbowTable.data.ts), as a half-float
+// strip, linearly filtered between its 0.125 degree entries.
+function makeRainbowTexture(): THREE.DataTexture {
+
+	const data = new Uint16Array( RAINBOW_SIZE * 4 );
+	for ( let i = 0; i < RAINBOW_SIZE; i ++ ) {
+
+		for ( let c = 0; c < 3; c ++ ) data[ i * 4 + c ] = THREE.DataUtils.toHalfFloat( RAINBOW_TABLE[ i * 3 + c ] );
+		data[ i * 4 + 3 ] = THREE.DataUtils.toHalfFloat( 1 );
+
+	}
+	const table = new THREE.DataTexture( data, RAINBOW_SIZE, 1, THREE.RGBAFormat, THREE.HalfFloatType );
+	table.minFilter = table.magFilter = THREE.LinearFilter;
+	table.wrapS = table.wrapT = THREE.ClampToEdgeWrapping;
+	table.generateMipmaps = false;
+	table.name = 'rainbowTable';
+	table.needsUpdate = true;
+	return table;
 
 }
 

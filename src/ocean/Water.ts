@@ -14,13 +14,12 @@ import {
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
 	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
-	mx_noise_float,
 } from 'three/tsl';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
-import { createGlitterMask, GLITTER_TILE } from './GlitterMask.ts';
+import type { StormSea } from './StormSea.ts';
 import type { Shared } from '../shared.ts';
 import { solarShadowVisibility, solarVolumeVisibility, volumeShadowRayMayIntersect } from '../lighting/SolarShadow.ts';
 import {
@@ -111,6 +110,9 @@ const sparkles = Fn( ( [ p, t ]: [ V2, F ] ) => {
 // The sea continues to this distance (metres), well past the horizon for any review camera.
 const SKIRT_RADIUS = 40000;
 
+// Metres per repeat of the glitter lobe's patches.
+const GLITTER_TILE = 8.8;
+
 // view-space direction through a screen point (on the far plane; scaled by the caller)
 const viewRay = Fn( ( [ q, projInv ]: [ V2, M4 ] ) => {
 
@@ -134,6 +136,7 @@ export interface WaterInputs {
 	shore: THREE.Texture;
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
+	storm: StormSea;
 	sceneColor: THREE.Texture;
 	linearDepth: THREE.Texture;
 	size?: number;
@@ -164,7 +167,7 @@ export class Water {
 	private shadowNormalBias = uniform( 0 );
 	private shadowIntensity = uniform( 1 );
 
-	constructor( { fft, sky, shared, shore, shoreWaves, refractedSun, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
+	constructor( { fft, sky, shared, shore, shoreWaves, refractedSun, storm, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
 
 		// grid in world xz, warped dense under the island and sparse toward the horizon
 		const n = res;
@@ -228,7 +231,6 @@ export class Water {
 		const u = this.uniforms;
 		const sizes = uniform( new THREE.Vector3( ...fft.sizes ) );
 		const disp = fft.displacementTextures, der = fft.derivativeTextures, moments = fft.slopeMomentTextures;
-		const glitterMask = createGlitterMask();
 
 		// ---- vertex: displace the grid by the three cascades (the finest fades out far away). The
 		// undisplaced grid point comes from the geometry: once positionNode is set, positionLocal
@@ -426,9 +428,10 @@ export class Water {
 			const weight1Gradient = waveParameterGradient( lagDx, lagDy, dFdx( vWeights.y ), dFdy( vWeights.y ) ).toVar();
 			const weight2Gradient = waveParameterGradient( lagDx, lagDy, dFdx( vWeights.z ), dFdy( vWeights.z ) ).toVar();
 			const shoreWave = shoreWaves.surfaceAt( wp.xz, time ).toVar();
-			// Patches for the optional glitter lobe, sampled here while control flow is uniform.
-			const fLow = texture( glitterMask, wp.xz.div( GLITTER_TILE ).add( vec2( 0.17, 0.39 ) ) ).r.toVar();
 			const footprint = max( length( fwidth( vLag ) ), 1e-4 ).toVar();
+			// The foam's texture level: the pixel's area, not its longest side. At grazing angles the
+			// longest side is many times the width and would blur the mat into a flat grey film.
+			const foamFootprint = max( abs( lagDx.x.mul( lagDy.y ).sub( lagDx.y.mul( lagDy.x ) ) ).sqrt(), 1e-4 ).toVar();
 
 			// ---- surface normal from the cascades' slopes (sampled at the undisplaced position)
 			const dd = d0.mul( vWeights.x ).add( d1.mul( vWeights.y ) ).add( d2.mul( vWeights.z ) ).toVar();
@@ -535,7 +538,9 @@ export class Water {
 			// Optional artistic lobes add energy beyond the physical microfacet reflection.
 			// Both default to zero; the simulated slopes already generate the sun glitter.
 			// Uniform branches avoid hashing and extra lobes when their art controls are off.
-			// The derivative-dependent glitter mask above stays outside all branches.
+			// The glitter's patches are the soft mottling of the storm's foam pattern (one binding
+			// serves both: this fragment stage already binds WebGPU's guaranteed 16 sampled textures),
+			// read at a level from the footprint so that it costs nothing while the lobe is off.
 			If( u.sheen.greaterThan( 0 ).or( u.glitter.greaterThan( 0 ) ), () => {
 
 				const reflectionBudget = fresnelDielectric( VdH, float( IOR ) ).mul( NdL ).toVar();
@@ -551,6 +556,8 @@ export class Water {
 					const wide = D_GGX( Hf.y, float( 0.12 ) ).mul( 0.12 * PI );
 					const NdH = max( dot( N, H ), 0 );
 					const facet = D_GGX( NdH, float( 0.012 ) ).mul( 0.012 * PI );
+					const glitterLevel = log2( max( footprint.div( GLITTER_TILE ).mul( storm.patternSize ), 1e-4 ) );
+					const fLow = texture( storm.pattern, wp.xz.div( GLITTER_TILE ).add( vec2( 0.17, 0.39 ) ) ).level( glitterLevel ).z;
 					const glintPath = smoothstep( 0.13, 0.8, wide ).mul( smoothstep( 0.42, 0.63, fLow ) );
 					sunSpec.addAssign( sunLight.mul( reflectionBudget ).mul( glintPath ).mul( facet ).mul( sparkles( wp.xz.mul( 2.1 ).add( N.xz.mul( 2.5 ) ), time ) ).mul( u.glitter ) );
 
@@ -668,33 +675,73 @@ export class Water {
 			// Backfacing facets are self-occluded: neither the air reflection nor underwater
 			// transmission emerges through their back side. Neighbor-wave transport is unresolved.
 			const col = water.mul( airFacing ).toVar();
-			// Whitecaps in a storm: crests whose horizontal Jacobian folds below a threshold are
-			// breaking (Tessendorf's choppy-wave criterion). A breaking crest is not a solid blot:
-			// its foam is torn into lace by the bubbles, and older foam is drawn out by the gale
-			// into long thin streaks along the wind over the rough water between crests.
+			// Whitecaps in a storm (Tessendorf's choppy-wave criterion: the horizontal Jacobian of the
+			// summed cascades nears a fold). StormSea integrates where the steepest crests break and
+			// the foam that trails behind a breaker and fades over seconds; this pixel's own fold
+			// sharpens the crest inside the breaking cells it reports. Two looks, as on a real sea:
+			// at the crest a dense bubbly mat (tidewater's WaterSurface thresholds it by the fresh
+			// breaking, so it grows and tears with ragged, soft edges), behind it a marbled lace of
+			// veins around dark open cells, drawn out along the wind, whose veins thin as the foam
+			// decays. Old foam never closes back into a mat, so between the crests the sea stays dark.
 			If( shared.storm.greaterThan( 0.001 ), () => {
 
 				const fold = horizontal.x.mul( horizontal.w ).sub( horizontal.y.mul( horizontal.z ) ).toVar();
 				const wind = shared.wind.direction;
-				const along = dot( wp.xz, wind ).toVar(), across = dot( wp.xz, vec2( wind.y.negate(), wind.x ) ).toVar();
-				// This calm, gently choppy sea rarely folds far: compress the threshold toward 1.
-				const crest = mix( float( 0.7 ), float( 0.8 ), shared.storm );
-				const breaking = float( 1 ).sub( smoothstep( crest.sub( 0.12 ), crest.add( 0.05 ), fold ) );
-				const lace = mx_noise_float( vec3( along.mul( 0.9 ), across.mul( 1.4 ), time.mul( 0.5 ) ) ).mul( 0.6 )
-					.add( mx_noise_float( vec3( along.mul( 3.1 ), across.mul( 3.7 ), time.mul( 0.9 ).add( 4.2 ) ) ).mul( 0.4 ) ).mul( 0.5 ).add( 0.5 );
-				const caps = breaking.mul( smoothstep( 0.3, 0.56, lace ) );
-				// Streaks some twenty metres long and a metre or two wide, in patches, mostly where the
-				// surface is already rough.
-				const streak = mx_noise_float( vec3( along.mul( 0.045 ), across.mul( 0.55 ), time.mul( 0.04 ) ) ).mul( 0.5 ).add( 0.5 );
-				const patches = mx_noise_float( vec3( wp.xz.mul( 0.018 ), time.mul( 0.02 ).add( 1.3 ) ) ).mul( 0.5 ).add( 0.5 );
-				const rough = float( 1 ).sub( smoothstep( 0.8, 1.05, fold ) );
-				const trails = smoothstep( 0.58, 0.8, streak ).mul( smoothstep( 0.4, 0.7, patches ) ).mul( rough ).mul( 0.5 );
-				const foam = clamp( max( caps.mul( 0.9 ), trails ).mul( smoothstep( 0, 0.6, shared.storm ) ), 0, 0.9 );
-				// Diffuse off-white lit by the sky and the sun, like the island's surfaces. A lightning
-				// flash multiplies the sky fill several times over; on foam alone that turns the sea
-				// into white confetti, so the foam follows the flash only by its square root.
+				const along = dot( vLag, wind ).toVar(), across = dot( vLag, vec2( wind.y.negate(), wind.x ) ).toVar();
+				const field = storm.foamAt( vLag, foamFootprint ).toVar(); // persistent, breaking, weight
+				const scale = storm.patternScale;
+				const patternLevel = log2( max( foamFootprint.mul( scale ).mul( storm.patternSize ), 1e-4 ) ).toVar();
+				const streakLevel = log2( max( foamFootprint.mul( 0.11 ).mul( storm.patternSize ), 1e-4 ) ).toVar();
+				// Large soft patches (the pattern's mottling, some 250 m across) stand in for the
+				// field's wave groups beyond its window, where only this pixel's fold can find a crest.
+				const patches = texture( storm.pattern, vLag.mul( 0.004 ).add( 0.37 ) ).level( streakLevel.sub( 4.8 ).max( 0 ) ).z.toVar();
+				const farCrest = clamp( float( 0.88 ).sub( fold ).mul( 6 ), 0, 1 ).mul( smoothstep( 0.5, 0.62, patches ) )
+					.mul( float( 1 ).sub( field.z ) ).mul( 0.75 );
+				const sharpen = smoothstep( 1.0, 0.78, fold );
+				const aged = clamp( field.x.mul( field.z ).mul( storm.coverage ), 0, 1 ).toVar();
+				// The mat covers the breaking crest and, for a second or so after it has passed, the
+				// thick foam it left (the field's foam stays near 1 there) before that tears into lace.
+				const crest = clamp( max( max( field.y.mul( field.z ).mul( sharpen.mul( 0.8 ).add( 0.6 ) ), smoothstep( 0.55, 1, aged ).mul( 0.8 ) ),
+					farCrest ).mul( storm.coverage ), 0, 1 ).toVar();
+				const soft = foamFootprint.mul( 0.1 ).add( 0.07 ).toVar();
+				// The mat: two layers of the pattern at different scales and angles (explicit levels
+				// from the footprint, since this is a branch). Thin at its torn edges, dense inside.
+				const fuv = vLag.mul( scale ).toVar();
+				const p1 = texture( storm.pattern, fuv ).level( patternLevel ).toVar();
+				const r2 = vec2( fuv.x.mul( 0.8 ).sub( fuv.y.mul( 0.6 ) ), fuv.x.mul( 0.6 ).add( fuv.y.mul( 0.8 ) ) );
+				const p2 = texture( storm.pattern, r2.mul( 2.37 ).add( vec2( 0.31, 0.77 ) ) ).level( patternLevel.add( Math.log2( 2.37 ) ) ).toVar();
+				const matPattern = p1.x.mul( 0.62 ).add( p2.x.mul( 0.38 ) );
+				const threshold = float( 1.02 ).sub( crest.mul( 0.78 ) );
+				const mat = smoothstep( threshold.sub( soft ), threshold.add( soft ), matPattern )
+					.mul( smoothstep( threshold, threshold.add( 0.25 ), matPattern ).mul( 0.35 ).add( 0.65 ) ).mul( 0.95 );
+				// The lace, stretched 2.4 times along the wind. A vein's width follows the foam left;
+				// a thin film of bubbles lets the water show through, so lace is never fully opaque.
+				const lscale = scale * 1.1;
+				const lace = texture( storm.pattern, vec2( along.mul( lscale / 2.4 ), across.mul( lscale ) ).add( vec2( 0.13, 0.58 ) ) )
+					.level( patternLevel.add( Math.log2( 1.1 ) ) ).y;
+				const veinWidth = aged.mul( 0.5 ).toVar();
+				const veinOpacity = aged.mul( 0.45 ).add( 0.4 ).mul( smoothstep( 0.02, 0.12, aged ) ).toVar();
+				const veins = smoothstep( float( 1 ).sub( veinWidth ).sub( soft ), float( 1 ).sub( veinWidth ).add( soft ), lace ).mul( veinOpacity );
+				// At a distance the pattern averages out: the veins become their mean coverage, and the
+				// mat the crest itself, sharpened so that a distant whitecap stays a small white fleck
+				// on its crest rather than a grey film.
+				const laceMean = veinWidth.mul( veinOpacity ).mul( 0.5 );
+				const far = smoothstep( 0.15, 1.2, foamFootprint ).toVar();
+				const near = max( mix( mat, smoothstep( 0.08, 0.6, crest ).mul( 0.85 ), far ), mix( veins, laceMean, far ) );
+				// Fine streaks a few tens of metres long where foam has been, and far out in the rough
+				// patches between, where they are what is left of the whitecaps.
+				const streak = texture( storm.pattern, vec2( along.mul( 0.012 ), across.mul( 0.11 ) ) ).level( streakLevel ).w;
+				const rough = float( 1 ).sub( smoothstep( 0.8, 1.02, fold ) );
+				const streaks = smoothstep( 0.6, 0.78, streak )
+					.mul( clamp( aged.mul( 1.2 ).add( rough.mul( smoothstep( 0.5, 0.62, patches ) ).mul( 0.3 ) ), 0, 1 ) ).mul( 0.25 );
+				const foam = clamp( max( near, streaks ).mul( smoothstep( 0, 0.6, shared.storm ) ), 0, 0.95 );
+				// A diffuse off-white lit by the scene's key light (shadowed by the island and the clouds)
+				// and by the sky, like the island's surfaces: dark under a storm sky and at night. A
+				// lightning flash multiplies the sky fill several times over; on foam alone that turns the
+				// sea into white confetti, so the foam follows the flash only by its square root.
 				const fill = max( shared.skyFill, 1 );
-				const lit = shared.skyIrradianceSource.mul( 2 / PI ).div( fill.sqrt() ).add( sunLight.mul( max( N.y, 0 ) ).mul( 0.8 / PI ) );
+				const wrap = max( dot( N, L ), 0 ).mul( 0.75 ).add( 0.25 );
+				const lit = shared.skyIrradianceSource.div( fill.sqrt() ).add( sunLight.mul( wrap ).div( PI ) ).mul( storm.albedo );
 				col.assign( mix( col, lit, foam.mul( airFacing ) ) );
 
 			} );
