@@ -633,9 +633,11 @@ function tick(): void {
 		S.exposure = state.exposure;
 		S.lift.setRGB( state.blackLift, state.blackLift, state.blackLift * 0.97 );
 		S.split = 0.16 + state.daylight * 0.29;
-		// The night returns to PBR Neutral's look over the blue hour: fully from about -6 degrees,
-		// none from about -2, before a low sun's bright sky needs AgX's shoulder.
-		S.nightLook = 1 - THREE.MathUtils.smoothstep( state.daylight, 0.02, 0.24 );
+		// The night returns to PBR Neutral's look as the sun sets: none while the sun is up (a low
+		// sun's bright sky needs AgX's shoulder), fully from about -3 degrees. AgX's grade darkens a
+		// dim frame, so a crossfade held back to -2 .. -6 degrees left the frame up to a fifth darker
+		// than PBR Neutral's just after sunset, and darker than the night.
+		S.nightLook = 1 - THREE.MathUtils.smoothstep( state.daylight, 0.2, 0.45 );
 
 	}
 	skyElapsed += environmentDt;

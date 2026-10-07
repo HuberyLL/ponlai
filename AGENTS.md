@@ -137,9 +137,10 @@ exposed.
   cream or grey; only far above white do highlights fade to white. Each curve carries its own grade
   (exposure gain, saturation, vibrance, contrast); PBR Neutral and plain AgX stay selectable in
   the GUI (`tone` URL option) for comparison. The night keeps PBR Neutral's look with its grade
-  whichever curve is chosen, crossfading over the blue hour (from about -2 to -6 degrees): its
-  toe holds the night's dark colours saturated where AgX's greys and lifts them, and its short
-  shoulder lets the brightest few stars reach near white.
+  whichever curve is chosen, crossfading as the sun sets (from the horizon to about -3 degrees,
+  so twilight is no darker than under PBR Neutral): its toe holds the night's dark colours
+  saturated where AgX's greys and lifts them, and its short shoulder lets the brightest few stars
+  reach near white.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
   sky reads as a low backdrop and turns stars into bokeh discs. Stars are points with a natural
   spread of brightness, kept below white except the brightest few; only those near the horizon
