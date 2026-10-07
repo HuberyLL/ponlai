@@ -168,6 +168,13 @@ export class Pipeline {
 
 		} ).setLayout( { name: 'cocAt', type: 'float', inputs: [ { name: 'q', type: 'vec2' } ] } );
 		const TAPS = 36, GA = 2.39996323;
+		// The gather averages colours compressed by their displayed luminance (c / (1 + L), after
+		// Karis) and expands the mean again. A plain mean of HDR samples let a single sun glint,
+		// tens of times white, clip every pixel of its circle of confusion: each out-of-focus glint
+		// on the sea became a flat white disc. Compressed, a lone glint only brightens its blur a
+		// little, while a dense glitter path stays bright.
+		const compress = Fn( ( [ c ]: [ THREE.Node<'vec3'> ] ) => c.div( luminance( c ).mul( u.exposure ).add( 1 ) ) )
+			.setLayout( { name: 'dofCompress', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' } ] } );
 		const gather = Fn( () => {
 
 			const q = uv();
@@ -180,12 +187,17 @@ export class Pipeline {
 				const a = fi.mul( GA );
 				const o = vec2( cos( a ), sin( a ) ).mul( r ).mul( u.maxRadius ).mul( u.texel );
 				const p = q.add( o.mul( max( c0, 0 ) ) ).toVar();
-				const w = smoothstep( r.sub( 0.15 ), r, max( cocAt( p ), c0.mul( 0.5 ) ).add( 0.1 ) ).toVar();
-				acc.addAssign( texture( sharp, p ).level( float( 0 ) ).rgb.mul( w ) );
+				// a kernel falling to a third at the rim, so what remains of a highlight's disc has a
+				// soft edge rather than a cut-out one
+				const w = smoothstep( r.sub( 0.15 ), r, max( cocAt( p ), c0.mul( 0.5 ) ).add( 0.1 ) ).mul( r.mul( r ).mul( - 0.7 ).add( 1 ) ).toVar();
+				acc.addAssign( compress( texture( sharp, p ).level( float( 0 ) ).rgb ).mul( w ) );
 				wsum.addAssign( w );
 
 			} );
-			return vec4( acc.div( max( wsum, 1e-4 ) ), c0 );
+			const mean = acc.div( max( wsum, 1e-4 ) ).toVar();
+			// the inverse of compress(): the mean's compressed luminance stays below one (the floor
+			// caps an expanded mean near a thousand times display white, far past what the grade shows)
+			return vec4( mean.div( max( float( 1 ).sub( luminance( mean ).mul( u.exposure ) ), 1e-3 ) ), c0 );
 
 		} )();
 		const blur = rtt( gather, null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } );
