@@ -15,7 +15,7 @@ import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE } fro
 import { Clouds, EVOLVE_PERIOD } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
-import type { DayCycleSnapshot } from './DayCycle.ts';
+import { DAY_BLACK_LIFT, type DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherFront, WeatherState } from './Weather.ts';
 
 type F = THREE.Node<'float'>;
@@ -110,7 +110,7 @@ export class Sky {
 	private viewHeight = 1;
 	private cloudTime = 0;
 	solarIlluminance = new THREE.Color();
-	readonly grade = { exposure: 2.35, blackLift: 0.027, daylight: 1 };
+	readonly grade = { exposure: 2.35, blackLift: DAY_BLACK_LIFT, daylight: 1 };
 	readonly weather: DisplayedWeather = { haze: 0, rain: 0, fog: 0, windSpeed: 3.8, windDirection: 40 };
 	skyIrradiance = new THREE.Color(); // E / PI over the upper hemisphere
 	seaColor = new THREE.Color( 0.0045, 0.0125, 0.0140 );
@@ -419,7 +419,7 @@ export class Sky {
 			this.night.starVisibility.value = 0;
 			this.displayNightAmbient.value.setRGB( 0, 0, 0 );
 			this.grade.exposure = 2.35;
-			this.grade.blackLift = 0.027;
+			this.grade.blackLift = DAY_BLACK_LIFT;
 			this.grade.daylight = 1;
 
 		}
@@ -431,8 +431,8 @@ export class Sky {
 		const overcast = weather ? THREE.MathUtils.smoothstep( coverage, 0.65, 0.98 ) : 0;
 		const ambientGain = weather?.ambientGain ?? 1;
 		const directVisibility = weather?.directVisibility ?? 1;
-		// Preserve contrast under flat daytime light without lifting the night floor.
-		this.grade.blackLift *= 1 - 0.48 * overcast * this.grade.daylight;
+		// The day's black lift is low enough to keep contrast under a closed deck's flat light, so
+		// overcast and rain share it rather than lowering it further.
 		// Like a camera, adapt a little to the dimmer diffuse daylight under a closed deck, less
 		// so in rain, which should read as heavy.
 		this.grade.exposure *= 1 + 0.5 * overcast * this.grade.daylight * ( 1 - 0.7 * ( weather?.rain ?? 0 ) );

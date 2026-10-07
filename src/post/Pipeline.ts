@@ -2,13 +2,14 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, texture, textureLoad, rtt, uniform, uv, screenCoordinate, ivec2, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, luminance, neutralToneMapping, sRGBTransferOETF,
-	fract, convertToTexture,
+	fract, convertToTexture, select,
 } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
+import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { Rain } from '../weather/Rain.ts';
 
@@ -26,7 +27,7 @@ type V2 = THREE.Node<'vec2'>;
 export interface PipelineSettings {
 	exposure: number; saturation: number; vibrance: number; contrast: number; split: number;
 	lift: THREE.Color; vignette: number; grain: number;
-	bloomStrength: number; bloomRadius: number; bloomThreshold: number; bloomMaxLum: number;
+	bloomStrength: number; bloomRadius: number; bloomThreshold: number; bloomMaxLum: number; bloomSurfaceMaxLum: number;
 	glowStrength: number; glowRadius: number; glowThreshold: number; glowMaxLum: number;
 	dof: number; dofRange: number; dofMaxRadius: number; focusDistance: number;
 }
@@ -40,9 +41,9 @@ export class Pipeline {
 		// The look's bright midtones and soft shadows are a display grade; keep the
 		// calibrated sunlight and water transport intact, with a nearly neutral black lift.
 		exposure: 2.35, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 0.45,
-		lift: new THREE.Color( 0.027, 0.027, 0.026 ),
+		lift: new THREE.Color( DAY_BLACK_LIFT, DAY_BLACK_LIFT, DAY_BLACK_LIFT * 0.97 ),
 		vignette: 0.06, grain: 0.004,
-		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0,
+		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0, bloomSurfaceMaxLum: 2.0,
 		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,
 		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
 	};
@@ -56,14 +57,14 @@ export class Pipeline {
 	private depthQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
 	private previousClearColor = new THREE.Color();
-	private blooms: { node: BloomNode; maxLum: THREE.UniformNode<'float', number> }[] = [];
+	private blooms: { node: BloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
 	private u = {
 		exposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ),
 		lift: uniform( new THREE.Color() ), vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		dof: uniform( 1 ), focus: uniform( 50 ), range: uniform( 3 ), resolution: uniform( new THREE.Vector2( 1, 1 ) ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ),
-		maxRadius: uniform( 6 ), texel: uniform( new THREE.Vector2( 1, 1 ) ),
+		maxRadius: uniform( 6 ), texel: uniform( new THREE.Vector2( 1, 1 ) ), halfRes: uniform( new THREE.Vector2( 1, 1 ) ),
 	};
 
 	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain ) {
@@ -110,24 +111,32 @@ export class Pipeline {
 			.add( this.shafts.build( this.depthRT.texture, waterDepth, sky ) );
 
 		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a
-		// soft knee instead of a hard threshold
+		// soft knee instead of a hard threshold. On surfaces (anything in front of the sky) the
+		// tight bloom's clamp sits just above its threshold (bloomSurfaceMaxLum 2 against 1.4):
+		// every pixel of the sun's glitter path reaches the clamp, so a higher one let the path's
+		// bloom pile up into a bright column over the island. The sky keeps the higher clamp, so
+		// the sun's disc and a lightning channel (drawn without depth) keep their glow.
+		const tBloomD = texture( this.depthRT.texture ), tBloomW = texture( waterDepth );
 		const makeBloom = () => {
 
-			const maxLum = uniform( 5 );
+			const maxLum = uniform( 5 ), surfaceMaxLum = uniform( 5 );
 			const node = bloom( vec4( hdr, 1 ), 0.3, 0.5, 1.5 );
 			( node as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input, threshold }: { input: THREE.Node<'vec4'>; threshold: THREE.Node<'float'> } ) => {
 
+				const px = ivec2( clamp( uv().mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
+				const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 ).or( ( textureLoad( tBloomW, px ) as unknown as F ).lessThan( 1 ) );
+				const clampLum = select( surface, surfaceMaxLum, maxLum );
 				const c = input.rgb;
 				const v0 = luminance( c );
-				const c1 = c.mul( min( float( 1 ), maxLum.div( max( v0, 1e-4 ) ) ) );
-				const v = min( v0, maxLum );
+				const c1 = c.mul( min( float( 1 ), clampLum.div( max( v0, 1e-4 ) ) ) );
+				const v = min( v0, clampLum );
 				const knee = threshold.mul( 0.5 );
 				const soft0 = clamp( v.sub( threshold ).add( knee ), 0, knee.mul( 2 ) );
 				const soft = soft0.mul( soft0 ).div( knee.mul( 4 ).add( 1e-4 ) );
 				return vec4( c1.mul( max( soft, v.sub( threshold ) ) ).div( max( v, 1e-4 ) ), 1 );
 
 			} );
-			this.blooms.push( { node, maxLum } );
+			this.blooms.push( { node, maxLum, surfaceMaxLum } );
 			return node;
 
 		};
@@ -135,12 +144,14 @@ export class Pipeline {
 		const withBloom = hdr.add( makeBloom().rgb ).add( makeBloom().rgb );
 
 		// ---- tilt-shift depth of field: a half-res gather over a golden-angle disc whose radius grows
-		// with the circle of confusion; a sample only counts where its own blur reaches this pixel
-		// (no sharp halos round in-focus edges), then mixed over the sharp image by its coc
+		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
+		// the blur is mixed over the sharp image by the full-resolution coc
 		const sharp = convertToTexture( vec4( withBloom, 1 ) );
 		const tD = texture( this.depthRT.texture ), tW = texture( waterDepth );
-		// the distance to the nearest surface, the water's included (view-space z: closer is larger)
-		const cocAt = Fn( ( [ q ]: [ V2 ] ) => {
+		// The circle of confusion (0..1 of the widest blur) and the distance to the nearest surface,
+		// the water's included (view-space z: closer is larger). One function per pass: a layout
+		// function shared by two shaders keeps the first one's uniform bindings.
+		const makeCocAt = () => Fn( ( [ q ]: [ V2 ] ) => {
 
 			const px = ivec2( clamp( q.mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
 			const z = ( textureLoad( tD, px ) as unknown as F ).toVar();
@@ -164,32 +175,84 @@ export class Pipeline {
 			// sky and the horizon keep their scale: blurred, clouds read as a backdrop close behind
 			// the island and every star spreads into a bokeh disc.
 			const far = mix( float( 1 ), float( 0.15 ), smoothstep( 1500, 15000, dist ) );
-			return clamp( abs( dist.sub( u.focus ) ).sub( u.range ).div( u.focus.mul( 0.55 ) ), 0, 1 ).mul( far );
+			return vec2( clamp( abs( dist.sub( u.focus ) ).sub( u.range ).div( u.focus.mul( 0.55 ) ), 0, 1 ).mul( far ), dist );
 
-		} ).setLayout( { name: 'cocAt', type: 'float', inputs: [ { name: 'q', type: 'vec2' } ] } );
+		} ).setLayout( { name: 'cocAt', type: 'vec2', inputs: [ { name: 'q', type: 'vec2' } ] } );
+		const cocAt = makeCocAt();
+		// The blur's radius, in units of the widest one. It grows faster than the coc, so the
+		// transition out of focus stays gentle (as the earlier gather's weights made it).
+		const spread = ( c: F ) => c.mul( min( c.add( 0.15 ), 1 ) );
 		const TAPS = 36, GA = 2.39996323;
+		// The gather averages colours compressed by their displayed luminance (c / (1 + L), after
+		// Karis) and expands the mean again. A plain mean of HDR samples let a single sun glint,
+		// tens of times white, clip every pixel of its circle of confusion: each out-of-focus glint
+		// on the sea became a flat white disc. Compressed, a lone glint only brightens its blur a
+		// little, while a dense glitter path stays bright.
+		const compress = Fn( ( [ c ]: [ THREE.Node<'vec3'> ] ) => c.div( luminance( c ).mul( u.exposure ).add( 1 ) ) )
+			.setLayout( { name: 'dofCompress', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' } ] } );
 		const gather = Fn( () => {
 
 			const q = uv();
-			const c0 = cocAt( q ).toVar();
-			const acc = vec3( 0 ).toVar(), wsum = float( 0 ).toVar();
+			const centre = cocAt( q ).toVar();
+			const c0 = centre.x, s0 = spread( c0 ).toVar();
+			const acc = compress( texture( sharp, q ).level( float( 0 ) ).rgb ).toVar(), wsum = float( 1 ).toVar();
 			Loop( TAPS, ( { i } ) => {
 
 				const fi = float( i );
 				const r = sqrt( fi.add( 0.5 ).div( TAPS ) ).toVar();
 				const a = fi.mul( GA );
 				const o = vec2( cos( a ), sin( a ) ).mul( r ).mul( u.maxRadius ).mul( u.texel );
-				const p = q.add( o.mul( max( c0, 0 ) ) ).toVar();
-				const w = smoothstep( r.sub( 0.15 ), r, max( cocAt( p ), c0.mul( 0.5 ) ).add( 0.1 ) ).toVar();
-				acc.addAssign( texture( sharp, p ).level( float( 0 ) ).rgb.mul( w ) );
+				const p = q.add( o.mul( s0 ) ).toVar();
+				const tap = cocAt( p ).toVar();
+				// Depth order (after Jimenez's scatter-as-gather): a tap in front of this pixel reaches
+				// as far as its own blur, a tap behind no further than this pixel's. A sharp figure in
+				// front of the blurred sea then keeps to its silhouette instead of spreading a halo
+				// over the sea, while a blurred foreground still spills over what lies behind it.
+				const reach = spread( select( tap.y.lessThan( centre.y ), tap.x, min( tap.x, c0 ) ) );
+				// it counts where that reach covers its distance here, with a pixel-wide edge, under a
+				// kernel falling to a third at the rim, so what remains of a highlight's disc has a
+				// soft edge rather than a cut-out one
+				const w = clamp( reach.sub( r.mul( s0 ) ).mul( u.maxRadius ).add( 1 ), 0, 1 ).mul( r.mul( r ).mul( - 0.7 ).add( 1 ) ).toVar();
+				acc.addAssign( compress( texture( sharp, p ).level( float( 0 ) ).rgb ).mul( w ) );
 				wsum.addAssign( w );
 
 			} );
-			return vec4( acc.div( max( wsum, 1e-4 ) ), c0 );
+			const mean = acc.div( max( wsum, 1e-4 ) ).toVar();
+			// the inverse of compress(): the mean's compressed luminance stays below one (the floor
+			// caps an expanded mean near a thousand times display white, far past what the grade shows)
+			return vec4( mean.div( max( float( 1 ).sub( luminance( mean ).mul( u.exposure ) ), 1e-3 ) ), c0 );
 
 		} )();
 		const blur = rtt( gather, null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } );
-		const lin = mix( sharp.rgb, blur.rgb, smoothstep( 0, 0.35, blur.a ).mul( u.dof ) );
+		// Upsample the half-res blur by its four nearest texels, each weighted by how much it would
+		// itself show as blur: plain bilinear filtering pulled a sharp figure's colour (a texel whose
+		// coc is near zero) a pixel or two out over the blurred sea beside it. Texels that are
+		// blurred themselves keep their bilinear weight, so a soft bush in front of a softer sea
+		// stays soft at its edge instead of snapping to the half-res grid. The mix factor comes from
+		// the full-resolution coc for the same reason.
+		const composite = Fn( () => {
+
+			const c = makeCocAt()( uv() ).x.toVar();
+			const hp = uv().mul( u.halfRes ).sub( 0.5 ).toVar();
+			const base = hp.floor().toVar();
+			const f = hp.sub( base ).toVar();
+			const acc = vec3( 0 ).toVar(), wsum = float( 0 ).toVar();
+			for ( const [ ox, oy ] of [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ] ) {
+
+				const t = blur.sample( clamp( base.add( vec2( ox, oy ) ), vec2( 0 ), u.halfRes.sub( 1 ) ).add( 0.5 ).div( u.halfRes ) ).level( float( 0 ) ).toVar();
+				const bl = ( ox ? f.x : float( 1 ).sub( f.x ) ).mul( oy ? f.y : float( 1 ).sub( f.y ) );
+				const w = bl.mul( smoothstep( 0, 0.35, t.a ).add( 1e-3 ) );
+				acc.addAssign( t.rgb.mul( w ) );
+				wsum.addAssign( w );
+
+			}
+			// (the plain bilinear blur keeps the half-res pass in the graph; it only shows where
+			// every weight vanished, which they cannot)
+			const blurred = select( wsum.greaterThan( 0 ), acc.div( max( wsum, 1e-6 ) ), blur.rgb );
+			return mix( sharp.rgb, blurred, smoothstep( 0, 0.35, c ).mul( u.dof ) );
+
+		} );
+		const lin = composite();
 
 		// ---- grade
 		const graded = Fn( () => {
@@ -234,6 +297,8 @@ export class Pipeline {
 		this.waterRT.setSize( w, h );
 		this.u.resolution.value.set( w, h );
 		this.u.texel.value.set( 1 / w, 1 / h );
+		// the size rtt() gives the half-res blur
+		this.u.halfRes.value.set( Math.max( Math.floor( w * 0.5 ), 1 ), Math.max( Math.floor( h * 0.5 ), 1 ) );
 
 	}
 
@@ -287,8 +352,8 @@ export class Pipeline {
 
 		// 4. composite, bloom, depth of field, grade
 		const [ b, g ] = this.blooms;
-		b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE;
-		g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
+		b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
+		g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
 		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE; u.saturation.value = S.saturation; u.vibrance.value = S.vibrance; u.contrast.value = S.contrast;
 		u.split.value = S.split; u.lift.value.copy( S.lift ); u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.dof.value = S.dof; u.range.value = S.dofRange;

@@ -343,6 +343,13 @@ comment where it is used.
   and P. Shirley, [*Simple Analytic Approximations to the CIE XYZ Color Matching Functions*](https://jcgt.org/published/0002/02/01/)
   (JCGT 2013). The baked bows peak where the classic values put them: the primary's red at about
   42 degrees from the antisolar point, the secondary's at about 51.
+- Depth of field, highlights averaged compressed by their luminance (c / (1 + L)) and expanded
+  again: Brian Karis, [*Tone mapping*](https://graphicrants.blogspot.com/2013/12/tone-mapping.html)
+  (2013).
+- Depth of field, gather taps weighted by depth order (a tap behind the pixel reaches no further
+  than the pixel's own blur): Jorge Jimenez,
+  [*Next Generation Post Processing in Call of Duty: Advanced Warfare*](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare)
+  (SIGGRAPH 2014 course *Advances in Real-Time Rendering in Games*).
 
 ## References
 

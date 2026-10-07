@@ -44,6 +44,11 @@ export interface DayCycleSnapshot {
 	blackLift: number;
 }
 
+// The display's black lift by day (linear, added before the sRGB curve): black shows at about
+// 31/255. Shadows stay airy; the earlier 0.027 (46/255) read as a milky veil over the frame.
+export const DAY_BLACK_LIFT = 0.014;
+const NIGHT_BLACK_LIFT = 0.002;
+
 const TAU = 2 * Math.PI;
 const DEG = 180 / Math.PI;
 const INCLINATION = 62 / DEG;
@@ -215,7 +220,7 @@ export class DayCycle {
 			// Modest adaptation preserves a visibly dark night. Scene lighting, not exposure,
 			// supplies its readable forms; reduce display lift so blacks do not turn milky.
 			exposure: ( 4.4 + ( 2.6 - 4.4 ) * daylight ) * ( 1 + 0.6 * lowSun ),
-			blackLift: 0.002 + ( 0.027 - 0.002 ) * daylight,
+			blackLift: NIGHT_BLACK_LIFT + ( DAY_BLACK_LIFT - NIGHT_BLACK_LIFT ) * daylight,
 		};
 
 	}
