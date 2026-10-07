@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, texture, textureLoad, rtt, uniform, uv, screenCoordinate, ivec2, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, luminance, neutralToneMapping, sRGBTransferOETF,
-	fract, convertToTexture,
+	fract, convertToTexture, select,
 } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
@@ -63,7 +63,7 @@ export class Pipeline {
 		dof: uniform( 1 ), focus: uniform( 50 ), range: uniform( 3 ), resolution: uniform( new THREE.Vector2( 1, 1 ) ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ),
-		maxRadius: uniform( 6 ), texel: uniform( new THREE.Vector2( 1, 1 ) ),
+		maxRadius: uniform( 6 ), texel: uniform( new THREE.Vector2( 1, 1 ) ), halfRes: uniform( new THREE.Vector2( 1, 1 ) ),
 	};
 
 	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain ) {
@@ -135,12 +135,14 @@ export class Pipeline {
 		const withBloom = hdr.add( makeBloom().rgb ).add( makeBloom().rgb );
 
 		// ---- tilt-shift depth of field: a half-res gather over a golden-angle disc whose radius grows
-		// with the circle of confusion; a sample only counts where its own blur reaches this pixel
-		// (no sharp halos round in-focus edges), then mixed over the sharp image by its coc
+		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
+		// the blur is mixed over the sharp image by the full-resolution coc
 		const sharp = convertToTexture( vec4( withBloom, 1 ) );
 		const tD = texture( this.depthRT.texture ), tW = texture( waterDepth );
-		// the distance to the nearest surface, the water's included (view-space z: closer is larger)
-		const cocAt = Fn( ( [ q ]: [ V2 ] ) => {
+		// The circle of confusion (0..1 of the widest blur) and the distance to the nearest surface,
+		// the water's included (view-space z: closer is larger). One function per pass: a layout
+		// function shared by two shaders keeps the first one's uniform bindings.
+		const makeCocAt = () => Fn( ( [ q ]: [ V2 ] ) => {
 
 			const px = ivec2( clamp( q.mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
 			const z = ( textureLoad( tD, px ) as unknown as F ).toVar();
@@ -164,9 +166,13 @@ export class Pipeline {
 			// sky and the horizon keep their scale: blurred, clouds read as a backdrop close behind
 			// the island and every star spreads into a bokeh disc.
 			const far = mix( float( 1 ), float( 0.15 ), smoothstep( 1500, 15000, dist ) );
-			return clamp( abs( dist.sub( u.focus ) ).sub( u.range ).div( u.focus.mul( 0.55 ) ), 0, 1 ).mul( far );
+			return vec2( clamp( abs( dist.sub( u.focus ) ).sub( u.range ).div( u.focus.mul( 0.55 ) ), 0, 1 ).mul( far ), dist );
 
-		} ).setLayout( { name: 'cocAt', type: 'float', inputs: [ { name: 'q', type: 'vec2' } ] } );
+		} ).setLayout( { name: 'cocAt', type: 'vec2', inputs: [ { name: 'q', type: 'vec2' } ] } );
+		const cocAt = makeCocAt();
+		// The blur's radius, in units of the widest one. It grows faster than the coc, so the
+		// transition out of focus stays gentle (as the earlier gather's weights made it).
+		const spread = ( c: F ) => c.mul( min( c.add( 0.15 ), 1 ) );
 		const TAPS = 36, GA = 2.39996323;
 		// The gather averages colours compressed by their displayed luminance (c / (1 + L), after
 		// Karis) and expands the mean again. A plain mean of HDR samples let a single sun glint,
@@ -178,18 +184,26 @@ export class Pipeline {
 		const gather = Fn( () => {
 
 			const q = uv();
-			const c0 = cocAt( q ).toVar();
-			const acc = vec3( 0 ).toVar(), wsum = float( 0 ).toVar();
+			const centre = cocAt( q ).toVar();
+			const c0 = centre.x, s0 = spread( c0 ).toVar();
+			const acc = compress( texture( sharp, q ).level( float( 0 ) ).rgb ).toVar(), wsum = float( 1 ).toVar();
 			Loop( TAPS, ( { i } ) => {
 
 				const fi = float( i );
 				const r = sqrt( fi.add( 0.5 ).div( TAPS ) ).toVar();
 				const a = fi.mul( GA );
 				const o = vec2( cos( a ), sin( a ) ).mul( r ).mul( u.maxRadius ).mul( u.texel );
-				const p = q.add( o.mul( max( c0, 0 ) ) ).toVar();
-				// a kernel falling to a third at the rim, so what remains of a highlight's disc has a
+				const p = q.add( o.mul( s0 ) ).toVar();
+				const tap = cocAt( p ).toVar();
+				// Depth order (after Jimenez's scatter-as-gather): a tap in front of this pixel reaches
+				// as far as its own blur, a tap behind no further than this pixel's. A sharp figure in
+				// front of the blurred sea then keeps to its silhouette instead of spreading a halo
+				// over the sea, while a blurred foreground still spills over what lies behind it.
+				const reach = spread( select( tap.y.lessThan( centre.y ), tap.x, min( tap.x, c0 ) ) );
+				// it counts where that reach covers its distance here, with a pixel-wide edge, under a
+				// kernel falling to a third at the rim, so what remains of a highlight's disc has a
 				// soft edge rather than a cut-out one
-				const w = smoothstep( r.sub( 0.15 ), r, max( cocAt( p ), c0.mul( 0.5 ) ).add( 0.1 ) ).mul( r.mul( r ).mul( - 0.7 ).add( 1 ) ).toVar();
+				const w = clamp( reach.sub( r.mul( s0 ) ).mul( u.maxRadius ).add( 1 ), 0, 1 ).mul( r.mul( r ).mul( - 0.7 ).add( 1 ) ).toVar();
 				acc.addAssign( compress( texture( sharp, p ).level( float( 0 ) ).rgb ).mul( w ) );
 				wsum.addAssign( w );
 
@@ -201,7 +215,35 @@ export class Pipeline {
 
 		} )();
 		const blur = rtt( gather, null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } );
-		const lin = mix( sharp.rgb, blur.rgb, smoothstep( 0, 0.35, blur.a ).mul( u.dof ) );
+		// Upsample the half-res blur by its four nearest texels, each weighted by how much it would
+		// itself show as blur: plain bilinear filtering pulled a sharp figure's colour (a texel whose
+		// coc is near zero) a pixel or two out over the blurred sea beside it. Texels that are
+		// blurred themselves keep their bilinear weight, so a soft bush in front of a softer sea
+		// stays soft at its edge instead of snapping to the half-res grid. The mix factor comes from
+		// the full-resolution coc for the same reason.
+		const composite = Fn( () => {
+
+			const c = makeCocAt()( uv() ).x.toVar();
+			const hp = uv().mul( u.halfRes ).sub( 0.5 ).toVar();
+			const base = hp.floor().toVar();
+			const f = hp.sub( base ).toVar();
+			const acc = vec3( 0 ).toVar(), wsum = float( 0 ).toVar();
+			for ( const [ ox, oy ] of [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ] ) {
+
+				const t = blur.sample( clamp( base.add( vec2( ox, oy ) ), vec2( 0 ), u.halfRes.sub( 1 ) ).add( 0.5 ).div( u.halfRes ) ).level( float( 0 ) ).toVar();
+				const bl = ( ox ? f.x : float( 1 ).sub( f.x ) ).mul( oy ? f.y : float( 1 ).sub( f.y ) );
+				const w = bl.mul( smoothstep( 0, 0.35, t.a ).add( 1e-3 ) );
+				acc.addAssign( t.rgb.mul( w ) );
+				wsum.addAssign( w );
+
+			}
+			// (the plain bilinear blur keeps the half-res pass in the graph; it only shows where
+			// every weight vanished, which they cannot)
+			const blurred = select( wsum.greaterThan( 0 ), acc.div( max( wsum, 1e-6 ) ), blur.rgb );
+			return mix( sharp.rgb, blurred, smoothstep( 0, 0.35, c ).mul( u.dof ) );
+
+		} );
+		const lin = composite();
 
 		// ---- grade
 		const graded = Fn( () => {
@@ -246,6 +288,8 @@ export class Pipeline {
 		this.waterRT.setSize( w, h );
 		this.u.resolution.value.set( w, h );
 		this.u.texel.value.set( 1 / w, 1 / h );
+		// the size rtt() gives the half-res blur
+		this.u.halfRes.value.set( Math.max( Math.floor( w * 0.5 ), 1 ), Math.max( Math.floor( h * 0.5 ), 1 ) );
 
 	}
 
