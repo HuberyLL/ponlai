@@ -28,7 +28,10 @@ export function buildRimGround( sdf: SDF ): RimGroundField {
 		data[ k ] = coast.data[ k / 4 ];
 		data[ k + 1 ] = islandSurfaceHeight( x, z );
 		data[ k + 2 ] = - 0.09 + pocket * 0.43;
-		data[ k + 3 ] = 0.055 + smoothstep( 0.28, 0.75, roots ) * 0.085;
+		// The root bed's depth below the roof, patchy along the coast: deep cuts expose a band of
+		// root soil, and where it runs shallow the turf creeps down over the lip instead (see
+		// TerrainMaterial), so the edge alternates between earth and overgrown stretches.
+		data[ k + 3 ] = 0.035 + Math.pow( smoothstep( 0.3, 0.72, roots ), 1.4 ) * 0.17;
 
 	}
 	return { data, nx: coast.nx, nz: coast.nz, x0: coast.x0, z0: coast.z0, cell };
