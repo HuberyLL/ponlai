@@ -26,7 +26,7 @@ type V2 = THREE.Node<'vec2'>;
 export interface PipelineSettings {
 	exposure: number; saturation: number; vibrance: number; contrast: number; split: number;
 	lift: THREE.Color; vignette: number; grain: number;
-	bloomStrength: number; bloomRadius: number; bloomThreshold: number; bloomMaxLum: number;
+	bloomStrength: number; bloomRadius: number; bloomThreshold: number; bloomMaxLum: number; bloomSurfaceMaxLum: number;
 	glowStrength: number; glowRadius: number; glowThreshold: number; glowMaxLum: number;
 	dof: number; dofRange: number; dofMaxRadius: number; focusDistance: number;
 }
@@ -42,7 +42,7 @@ export class Pipeline {
 		exposure: 2.35, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 0.45,
 		lift: new THREE.Color( 0.027, 0.027, 0.026 ),
 		vignette: 0.06, grain: 0.004,
-		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0,
+		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0, bloomSurfaceMaxLum: 2.0,
 		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,
 		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
 	};
@@ -56,7 +56,7 @@ export class Pipeline {
 	private depthQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
 	private previousClearColor = new THREE.Color();
-	private blooms: { node: BloomNode; maxLum: THREE.UniformNode<'float', number> }[] = [];
+	private blooms: { node: BloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
 	private u = {
 		exposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ),
 		lift: uniform( new THREE.Color() ), vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
@@ -110,24 +110,32 @@ export class Pipeline {
 			.add( this.shafts.build( this.depthRT.texture, waterDepth, sky ) );
 
 		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a
-		// soft knee instead of a hard threshold
+		// soft knee instead of a hard threshold. On surfaces (anything in front of the sky) the
+		// tight bloom's clamp sits just above its threshold (bloomSurfaceMaxLum 2 against 1.4):
+		// every pixel of the sun's glitter path reaches the clamp, so a higher one let the path's
+		// bloom pile up into a bright column over the island. The sky keeps the higher clamp, so
+		// the sun's disc and a lightning channel (drawn without depth) keep their glow.
+		const tBloomD = texture( this.depthRT.texture ), tBloomW = texture( waterDepth );
 		const makeBloom = () => {
 
-			const maxLum = uniform( 5 );
+			const maxLum = uniform( 5 ), surfaceMaxLum = uniform( 5 );
 			const node = bloom( vec4( hdr, 1 ), 0.3, 0.5, 1.5 );
 			( node as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input, threshold }: { input: THREE.Node<'vec4'>; threshold: THREE.Node<'float'> } ) => {
 
+				const px = ivec2( clamp( uv().mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
+				const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 ).or( ( textureLoad( tBloomW, px ) as unknown as F ).lessThan( 1 ) );
+				const clampLum = select( surface, surfaceMaxLum, maxLum );
 				const c = input.rgb;
 				const v0 = luminance( c );
-				const c1 = c.mul( min( float( 1 ), maxLum.div( max( v0, 1e-4 ) ) ) );
-				const v = min( v0, maxLum );
+				const c1 = c.mul( min( float( 1 ), clampLum.div( max( v0, 1e-4 ) ) ) );
+				const v = min( v0, clampLum );
 				const knee = threshold.mul( 0.5 );
 				const soft0 = clamp( v.sub( threshold ).add( knee ), 0, knee.mul( 2 ) );
 				const soft = soft0.mul( soft0 ).div( knee.mul( 4 ).add( 1e-4 ) );
 				return vec4( c1.mul( max( soft, v.sub( threshold ) ) ).div( max( v, 1e-4 ) ), 1 );
 
 			} );
-			this.blooms.push( { node, maxLum } );
+			this.blooms.push( { node, maxLum, surfaceMaxLum } );
 			return node;
 
 		};
@@ -343,8 +351,8 @@ export class Pipeline {
 
 		// 4. composite, bloom, depth of field, grade
 		const [ b, g ] = this.blooms;
-		b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE;
-		g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
+		b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
+		g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
 		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE; u.saturation.value = S.saturation; u.vibrance.value = S.vibrance; u.contrast.value = S.contrast;
 		u.split.value = S.split; u.lift.value.copy( S.lift ); u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.dof.value = S.dof; u.range.value = S.dofRange;
