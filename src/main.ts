@@ -20,7 +20,7 @@ import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
-import { Pipeline } from './post/Pipeline.ts';
+import { Pipeline, TONE_CURVES, type ToneCurve } from './post/Pipeline.ts';
 import { shared } from './shared.ts';
 import { installSolarShadowFilter, installOpenShadow } from './lighting/SolarShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
@@ -276,6 +276,8 @@ rain = new Rain( { count: WEATHER_QUALITY[ skyQuality.value ].rainDrops } );
 // damped (like the storm spray's), since the displayed deck brightens far less than the fill.
 rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).pow( 0.35 ) ) );
 const pipeline = new Pipeline( renderer, sky, rain );
+const requestedTone = params.get( 'tone' ) as ToneCurve | null;
+if ( requestedTone && TONE_CURVES.includes( requestedTone ) ) pipeline.setToneMapping( requestedTone );
 rain.bindOpaqueDepth( pipeline.depthRT.texture );
 rainScene.add( rain.group );
 
@@ -500,10 +502,11 @@ islanderF.add( characterLook.rimGain, 'value', 0, 4, 0.01 ).name( 'sun rim' );
 islanderF.add( characterLook.skyRimGain, 'value', 0, 4, 0.01 ).name( 'sky rim' );
 islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'shade saturation' );
 const postF = gui.addFolder( 'Post' );
+postF.add( S, 'toneMapping', TONE_CURVES ).name( 'tone curve' ).onChange( ( curve: ToneCurve ) => pipeline.setToneMapping( curve ) );
 postF.add( S, 'exposure', 0.1, 5, 0.01 );
-postF.add( S, 'saturation', 0, 2, 0.01 );
-postF.add( S, 'vibrance', 0, 1, 0.01 );
-postF.add( S, 'contrast', - 0.5, 1, 0.01 );
+postF.add( S, 'saturation', 0, 2, 0.01 ).listen();
+postF.add( S, 'vibrance', 0, 1, 0.01 ).listen();
+postF.add( S, 'contrast', - 0.5, 1, 0.01 ).listen();
 postF.add( S, 'split', 0, 1, 0.01 ).name( 'split tone' );
 postF.addColor( S, 'lift' );
 postF.add( S, 'bloomStrength', 0, 1.5, 0.01 );
@@ -608,6 +611,9 @@ function tick(): void {
 		S.exposure = state.exposure;
 		S.lift.setRGB( state.blackLift, state.blackLift, state.blackLift * 0.97 );
 		S.split = 0.16 + state.daylight * 0.29;
+		// The night returns to PBR Neutral's look over the blue hour: fully from about -6 degrees,
+		// none from about -2, before a low sun's bright sky needs AgX's shoulder.
+		S.nightLook = 1 - THREE.MathUtils.smoothstep( state.daylight, 0.02, 0.24 );
 
 	}
 	skyElapsed += environmentDt;

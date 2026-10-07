@@ -1,8 +1,8 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, texture, textureLoad, rtt, uniform, uv, screenCoordinate, ivec2, vec2, vec3, vec4, float, mix,
-	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, luminance, neutralToneMapping, sRGBTransferOETF,
-	fract, convertToTexture, select,
+	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, log2, luminance, neutralToneMapping, agxToneMapping,
+	sRGBTransferOETF, fract, convertToTexture, select,
 } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
@@ -18,13 +18,36 @@ import type { Rain } from '../weather/Rain.ts';
 //   depth resolve ── depthRT (view-space z, single sample: the water and the depth of field read it)
 //   water ── waterRT + its depth (reads sceneRT's resolved colour and depthRT)
 //   composite ── bloom (tight) + glow (wide), both through a clamped soft-knee prefilter
-//   ── tilt-shift depth of field (half-res gather) ── exposure, PBR Neutral tone map,
+//   ── tilt-shift depth of field (half-res gather) ── exposure, tone curve (AgX by default),
 //   split-tone grade, vibrance, lifted blacks, vignette, S-curve, grain, sRGB ── screen
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
+type V3 = THREE.Node<'vec3'>;
+
+// The tone curves. AgX (after Troy Sobotka, in three's approximation) has a long shoulder, about
+// four stops above display white, that keeps gradation in a low sun's sky and glare, where PBR
+// Neutral flattened everything above white into one cream band. Plain AgX also greys those
+// highlights: each channel runs through the curve on its own, so a bright warm sky drifts toward
+// white long before it clips, and a pale blue sky turns beige under the grade's golden highlights.
+// 'agx-hue' runs AgX's curve on each colour's brightest channel only and keeps the colour's ratios
+// (plain AgX only in the deep shadows): a low sun's sky stays golden and a noon sky blue, with
+// AgX's gradation. 'neutral' is the earlier curve, kept for comparison.
+// The night keeps PBR Neutral's look whichever curve is chosen (see `nightLook`): its toe, which
+// subtracts the darkest channel, holds the night's dark colours saturated where AgX's toe greys
+// and lifts them, and its short shoulder lets the brightest few stars reach near white.
+export const TONE_CURVES = [ 'agx-hue', 'agx', 'neutral' ] as const;
+export type ToneCurve = typeof TONE_CURVES[ number ];
+
+// Each curve's own grade: a gain on the clock's exposure (the clock's exposures were tuned under
+// PBR Neutral), its saturation, vibrance and display contrast, and gains on the clock's split tone
+// and black lift.
+export interface ToneLook { exposure: number; saturation: number; vibrance: number; contrast: number; split: number; lift: number }
 
 export interface PipelineSettings {
+	toneMapping: ToneCurve;
+	// 0 by day, 1 at night (from the clock): how far the frame returns to PBR Neutral's look
+	nightLook: number;
 	exposure: number; saturation: number; vibrance: number; contrast: number; split: number;
 	lift: THREE.Color; vignette: number; grain: number;
 	bloomStrength: number; bloomRadius: number; bloomThreshold: number; bloomMaxLum: number; bloomSurfaceMaxLum: number;
@@ -37,7 +60,13 @@ export class Pipeline {
 	renderer: THREE.WebGPURenderer;
 	width = 1;
 	height = 1;
+	readonly looks: Record<ToneCurve, ToneLook> = {
+		'agx-hue': { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1 },
+		agx: { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1 },
+		neutral: { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1 },
+	};
 	settings: PipelineSettings = {
+		toneMapping: 'agx-hue', nightLook: 0,
 		// The look's bright midtones and soft shadows are a display grade; keep the
 		// calibrated sunlight and water transport intact, with a nearly neutral black lift.
 		exposure: 2.35, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 0.45,
@@ -59,7 +88,9 @@ export class Pipeline {
 	private previousClearColor = new THREE.Color();
 	private blooms: { node: BloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
 	private u = {
-		exposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ),
+		// (exposure: the clock's, for PBR Neutral and the depth of field; curveExposure: with the
+		// chosen curve's gain; day: 1 - the night's return to PBR Neutral)
+		curve: uniform( 0 ), day: uniform( 1 ), exposure: uniform( 1 ), curveExposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ),
 		lift: uniform( new THREE.Color() ), vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		dof: uniform( 1 ), focus: uniform( 50 ), range: uniform( 3 ), resolution: uniform( new THREE.Vector2( 1, 1 ) ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
@@ -255,9 +286,41 @@ export class Pipeline {
 		const lin = composite();
 
 		// ---- grade
+		// AgX with hue-kept highlights ('agx-hue'). The colour is scaled by what AgX's curve makes of
+		// its brightest channel (AgX maps a grey to a grey, to within its matrices' rounding), so its
+		// ratios, hue and saturation, hold; scaling by the brightest channel, as PBR Neutral does,
+		// never lets another channel pass white. Only from two stops above white does it fade toward
+		// white, fully six stops up, so the sun's disc and its glints still burn out. In the deep
+		// shadows it is plain AgX; the two cross over between an eighth of display white and white.
+		// AgX's per-channel toe greys dark colours against PBR Neutral's toe, which is why the
+		// night returns to PBR Neutral (see `nightLook`).
+		const hueToneMapping = Fn( ( [ color, exposure ]: [ V3, F ] ) => {
+
+			const c = max( color.mul( exposure ), vec3( 0 ) ).toVar();
+			const peak = max( max( c.r, max( c.g, c.b ) ), 1e-6 ).toVar();
+			const stops = log2( peak ).toVar();
+			const mapped = ( agxToneMapping( vec3( peak ), float( 1 ) ) as V3 ).g.toVar();
+			const kept = mix( c.mul( mapped.div( peak ) ), vec3( mapped ), smoothstep( 1, 6, stops ) );
+			return mix( agxToneMapping( c, float( 1 ) ) as V3, kept, smoothstep( - 3, 0, stops ) );
+
+		} ).setLayout( { name: 'agxHueToneMapping', type: 'vec3', inputs: [ { name: 'color', type: 'vec3' }, { name: 'exposure', type: 'float' } ] } );
 		const graded = Fn( () => {
 
-			const c = ( neutralToneMapping( lin, u.exposure ) as THREE.Node<'vec3'> ).toVar();
+			// (a uniform branch: the GUI switches the curve without rebuilding the pass. PBR Neutral
+			// is evaluated outside it, every frame: called inside the branch it rendered black, and
+			// the night mixes it in anyway.)
+			const night = ( neutralToneMapping( lin, u.exposure ) as V3 ).toVar();
+			const c = night.toVar();
+			If( u.curve.equal( 0 ), () => {
+
+				c.assign( hueToneMapping( lin, u.curveExposure ) );
+
+			} ).ElseIf( u.curve.equal( 1 ), () => {
+
+				c.assign( agxToneMapping( lin, u.curveExposure ) as V3 );
+
+			} );
+			c.assign( mix( night, c, u.day ) );
 			// teal-blue shadows, golden highlights
 			const l = luminance( c );
 			const tint = mix( vec3( 0.96, 1.0, 1.04 ), vec3( 1.1, 1.0, 0.82 ), smoothstep( 0.02, 0.45, l ) );
@@ -286,6 +349,17 @@ export class Pipeline {
 
 		this.output = new THREE.RenderPipeline( renderer, graded );
 		this.output.outputColorTransform = false;
+		this.setToneMapping( this.settings.toneMapping );
+
+	}
+
+	// Switches the curve and loads its saturation, vibrance and contrast into the settings (the
+	// GUI may tune them from there); its exposure, split and lift gains apply every frame.
+	setToneMapping( curve: ToneCurve ): void {
+
+		const S = this.settings, look = this.looks[ curve ];
+		S.toneMapping = curve;
+		S.saturation = look.saturation; S.vibrance = look.vibrance; S.contrast = look.contrast;
 
 	}
 
@@ -354,8 +428,16 @@ export class Pipeline {
 		const [ b, g ] = this.blooms;
 		b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
 		g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
-		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE; u.saturation.value = S.saturation; u.vibrance.value = S.vibrance; u.contrast.value = S.contrast;
-		u.split.value = S.split; u.lift.value.copy( S.lift ); u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
+		// The night crossfades the curve and its grade to PBR Neutral's (the grade's own night values,
+		// not the GUI's, which tune the chosen curve by day).
+		const look = this.looks[ S.toneMapping ], night = this.looks.neutral;
+		const day = S.toneMapping === 'neutral' ? 1 : 1 - THREE.MathUtils.clamp( S.nightLook, 0, 1 );
+		const lerp = THREE.MathUtils.lerp;
+		u.curve.value = TONE_CURVES.indexOf( S.toneMapping ); u.day.value = day;
+		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE; u.curveExposure.value = u.exposure.value * look.exposure;
+		u.saturation.value = lerp( night.saturation, S.saturation, day ); u.vibrance.value = lerp( night.vibrance, S.vibrance, day ); u.contrast.value = lerp( night.contrast, S.contrast, day );
+		u.split.value = S.split * lerp( night.split, look.split, day ); u.lift.value.copy( S.lift ).multiplyScalar( lerp( night.lift, look.lift, day ) );
+		u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.dof.value = S.dof; u.range.value = S.dofRange;
 		u.maxRadius.value = S.dofMaxRadius * this.height / 900; // blur scales with the image, not the pixel count
 		u.focus.value = S.focusDistance > 0 ? S.focusDistance : camera.position.length();
