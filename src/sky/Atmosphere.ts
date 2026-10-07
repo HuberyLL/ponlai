@@ -9,7 +9,7 @@ import {
 	Fn, If, Loop, uv, uniform, texture, vec2, vec3, vec4, float, int,
 	sqrt, max, pow, exp, length, abs, acos, clamp, cos, sin, dot, normalize, mix, select,
 } from 'three/tsl';
-import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
+import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS } from '../lighting/Radiometry.ts';
 
 // Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique".
 // Tidewater's transmittance, multiple-scattering and sky-view LUTs are ported to TSL fragment
@@ -20,6 +20,7 @@ const T_W = 256, T_H = 64, MS_RES = 32, SV_W = 192, SV_H = 108;
 const H = Math.sqrt( RT * RT - RG * RG );
 const RAYLEIGH = [ 5.802e-3, 13.558e-3, 33.1e-3 ] as const;
 const OZONE = [ 0.650e-3, 1.881e-3, 0.085e-3 ] as const;
+const _traced = new THREE.Vector3();
 
 export const SUN_ILLUMINANCE = 11;
 export { SUN_ANGULAR_RADIUS } from '../lighting/Radiometry.ts';
@@ -325,9 +326,53 @@ export class Atmosphere {
 
 	// CPU twin of the extinction march, used for the DirectionalLight's irradiance. More samples
 	// than the LUT bake stabilize the very low sun without a GPU readback or a separate light model.
+	// The disk's visible share is kept apart (sunVisibleShareToSun) so the key's hue can be art-directed
+	// from the air's extinction alone: folded in, the fading disk would read as extra air mass.
 	transmittanceToSun(): THREE.Color {
 
-		return this.transmittanceAt( this.sunDir.value, this.viewHeight.value - RG );
+		return this.sunTransmittance( this.sunDir.value, this.viewHeight.value - RG );
+
+	}
+
+	/** The drawn sun disk's share above the horizon seen from the view height. */
+	sunVisibleShareToSun(): number {
+
+		return this.sunVisibleShare( this.sunDir.value, this.viewHeight.value - RG );
+
+	}
+
+	/** Share of a sun disk of angular radius `radius` (radians) centred on `dir` that stands
+	 * above the horizon seen from `heightKm`. */
+	sunVisibleShare( dir: THREE.Vector3, heightKm: number, radius = SUN_DISPLAY_RADIUS ): number {
+
+		const horizon = - Math.acos( RG / ( RG + heightKm ) );
+		const elevation = Math.asin( THREE.MathUtils.clamp( dir.y, - 1, 1 ) );
+		return THREE.MathUtils.smoothstep( elevation, horizon - radius, horizon + radius );
+
+	}
+
+	/** Sunlight transmittance from `heightKm` toward the sun centred on `dir`, before its disk's
+	 * visible share. The ray to the disk's centre meets the ground while its upper limb still
+	 * shines: trace the ray just above the horizon instead, so the light fades with the setting
+	 * disk rather than cutting out at once. */
+	sunTransmittance( dir: THREE.Vector3, heightKm: number ): THREE.Color {
+
+		const horizon = - Math.acos( RG / ( RG + heightKm ) );
+		const elevation = Math.asin( THREE.MathUtils.clamp( dir.y, - 1, 1 ) );
+		// Transmittance depends only on the ray's elevation.
+		const traced = Math.max( elevation, horizon + 1e-4 );
+		_traced.set( Math.cos( traced ), Math.sin( traced ), 0 );
+		return this.transmittanceAt( _traced, heightKm );
+
+	}
+
+	/** Sunlight from `heightKm` toward a sun disk of angular radius `radius` (radians) centred on
+	 * `dir`: its transmittance weighted by the share of the disk above the horizon. */
+	sunlightAt( dir: THREE.Vector3, heightKm: number, radius = SUN_DISPLAY_RADIUS ): THREE.Color {
+
+		const visible = this.sunVisibleShare( dir, heightKm, radius );
+		if ( visible === 0 ) return new THREE.Color( 0, 0, 0 );
+		return this.sunTransmittance( dir, heightKm ).multiplyScalar( visible );
 
 	}
 

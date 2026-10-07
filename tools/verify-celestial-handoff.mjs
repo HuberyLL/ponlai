@@ -83,7 +83,7 @@ try {
 
 			}
 			assert.ok( Math.abs( sample.exposure - sample.grade.exposure ) < 1e-8, 'Main exposure must use the displayed sky grade' );
-			if ( sample.elevation < - 0.3 && sample.elevation > - 2.9 ) {
+			if ( sample.elevation < - 0.6 && sample.elevation > - 2.9 ) {
 
 				assert.deepEqual( sample.color, [ 0, 0, 0 ], 'The handoff band must carry zero direct energy' );
 

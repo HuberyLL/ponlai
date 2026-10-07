@@ -101,10 +101,18 @@ exposed.
   and spray are lit by the scene (never self-lit), and a paused frame replays their history at
   fixed steps, so it stays exactly repeatable.
 - One dominant key light (sun by day, moon by night) drives terrain, characters, water, caustics
-  and every shadow map; sun/moon handoffs pass through zero direct light. The day cycle is
+  and every shadow map; sun/moon handoffs pass through zero direct light: the sun's key fades as
+  its drawn disk sinks below the horizon, and only then turns toward the moon. The day cycle is
   authored, not astronomical. The sun and moon are drawn at twice their true size (equal to each
-  other); shadows and glints use the true sun. The sky, sun, moon, stars, key light and grade follow the clock
+  other); shadows and glints use the true sun. A low sun's key stays golden orange: the optical
+  depth that sets its hue is capped, while its brightness still follows the full extinction.
+  The sky, sun, moon, stars, key light and grade follow the clock
   every frame; only the reflection panorama, environment and irradiance cross-fade between bakes.
+- The exposure only rises from afternoon into night and holds from the end of the blue hour (about
+  -7 degrees) on, higher than the night sky was tuned for, so the island reads by moonlight and
+  starlight. The night ambient rises as the sun's skylight fades
+  after sunset, so twilight is never darker than the night; the night sky's own light (stars,
+  airglow, moon disk, the sky's night floor, clouds) scales back to keep its tuned look.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
