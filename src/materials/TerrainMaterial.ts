@@ -552,7 +552,9 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 		.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( caus ), vec3( surf.get( 'canopy' ) ) );
 	const ambAtt = exp( sigT.negate().mul( dW.max( 0 ) ).mul( 1.25 ) );
 	const above = p.y.sub( shared.waterLevel );
-	const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 0.6 ).mul( 0.9 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
+	// Light reflected up from the sea onto the rock just above it: a steady 28 % lift of the
+	// ambient with the moving caustic pattern (mean 1) on top.
+	const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 1 ).mul( 0.6 ).add( 0.28 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
 	// Reflected caustic sparkle is direct-light energy. It must not animate ambient light
 	// through the zero-energy sun/moon handoff or turn the moon into a daylight source.
 	const directGain = clamp( max( shared.sunColor.x, max( shared.sunColor.y, shared.sunColor.z ) ).mul( 3 ), 0, 1 );
