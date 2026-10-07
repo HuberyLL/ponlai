@@ -81,7 +81,7 @@ for ( const phase of [ 0, 0.125, 0.25, 0.5, 0.75, 0.875, 1 ] ) {
 for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.999999 ] ) {
 
 	cycle.moonPhase = phase;
-	for ( const elevation of [ - 7, - 3.01, - 3, - 2, - 1.125, - 0.25, 0, 0.5 ] ) {
+	for ( const elevation of [ - 7, - 3.01, - 3, - 2.5, - 1.6, - 0.7, - 0.25, 0, 0.5 ] ) {
 
 		const sunsetHour = 12 + Math.acos( Math.sin( elevation * Math.PI / 180 ) / Math.sin( 62 * Math.PI / 180 ) ) * 12 / Math.PI;
 		for ( const hour of [ sunsetHour, 24 - sunsetHour ] ) {
@@ -92,8 +92,8 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 			assert.ok( state.keyDir.toArray().every( Number.isFinite ) );
 			if ( elevation >= - 3 ) near( state.moonKeyGain, 0 );
 			if ( phase === 0 || state.moonElevation <= 0 ) assert.equal( state.moonKeyGain, 0 );
-			if ( elevation >= - 0.25 ) assert.ok( state.keyDir.distanceTo( state.sunDir ) < 1e-10 );
-			if ( elevation <= - 2 ) assert.ok( state.keyDir.distanceTo( state.moonDir ) < 1e-10 );
+			if ( elevation >= - 0.7 ) assert.ok( state.keyDir.distanceTo( state.sunDir ) < 1e-10 );
+			if ( elevation <= - 2.5 ) assert.ok( state.keyDir.distanceTo( state.moonDir ) < 1e-10 );
 			cycle.setHour( hour - 1e-7 );
 			const before = cycle.snapshot();
 			cycle.setHour( hour + 1e-7 );

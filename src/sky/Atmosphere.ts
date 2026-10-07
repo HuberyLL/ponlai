@@ -9,7 +9,7 @@ import {
 	Fn, If, Loop, uv, uniform, texture, vec2, vec3, vec4, float, int,
 	sqrt, max, pow, exp, length, abs, acos, clamp, cos, sin, dot, normalize, mix, select,
 } from 'three/tsl';
-import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
+import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS } from '../lighting/Radiometry.ts';
 
 // Hillaire 2020, "A Scalable and Production Ready Sky and Atmosphere Rendering Technique".
 // Tidewater's transmittance, multiple-scattering and sky-view LUTs are ported to TSL fragment
@@ -20,6 +20,7 @@ const T_W = 256, T_H = 64, MS_RES = 32, SV_W = 192, SV_H = 108;
 const H = Math.sqrt( RT * RT - RG * RG );
 const RAYLEIGH = [ 5.802e-3, 13.558e-3, 33.1e-3 ] as const;
 const OZONE = [ 0.650e-3, 1.881e-3, 0.085e-3 ] as const;
+const _traced = new THREE.Vector3();
 
 export const SUN_ILLUMINANCE = 11;
 export { SUN_ANGULAR_RADIUS } from '../lighting/Radiometry.ts';
@@ -327,7 +328,24 @@ export class Atmosphere {
 	// than the LUT bake stabilize the very low sun without a GPU readback or a separate light model.
 	transmittanceToSun(): THREE.Color {
 
-		return this.transmittanceAt( this.sunDir.value, this.viewHeight.value - RG );
+		return this.sunlightAt( this.sunDir.value, this.viewHeight.value - RG );
+
+	}
+
+	/** Sunlight transmittance from `heightKm` toward a sun disk of angular radius `radius`
+	 * (radians) centred on `dir`, weighted by the share of the disk above the horizon. The ray to
+	 * the disk's centre meets the ground while its upper limb still shines: trace the ray just above
+	 * the horizon instead, so the light fades with the setting disk rather than cutting out at once. */
+	sunlightAt( dir: THREE.Vector3, heightKm: number, radius = SUN_DISPLAY_RADIUS ): THREE.Color {
+
+		const horizon = - Math.acos( RG / ( RG + heightKm ) );
+		const elevation = Math.asin( THREE.MathUtils.clamp( dir.y, - 1, 1 ) );
+		const visible = THREE.MathUtils.smoothstep( elevation, horizon - radius, horizon + radius );
+		if ( visible === 0 ) return new THREE.Color( 0, 0, 0 );
+		// Transmittance depends only on the ray's elevation.
+		const traced = Math.max( elevation, horizon + 1e-4 );
+		_traced.set( Math.cos( traced ), Math.sin( traced ), 0 );
+		return this.transmittanceAt( _traced, heightKm ).multiplyScalar( visible );
 
 	}
 

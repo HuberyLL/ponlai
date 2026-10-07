@@ -100,7 +100,8 @@ exposed.
   and spray are lit by the scene (never self-lit), and a paused frame replays their history at
   fixed steps, so it stays exactly repeatable.
 - One dominant key light (sun by day, moon by night) drives terrain, characters, water, caustics
-  and every shadow map; sun/moon handoffs pass through zero direct light. The day cycle is
+  and every shadow map; sun/moon handoffs pass through zero direct light: the sun's key fades as
+  its drawn disk sinks below the horizon, and only then turns toward the moon. The day cycle is
   authored, not astronomical. The sun and moon are drawn at twice their true size (equal to each
   other); shadows and glints use the true sun. The sky, sun, moon, stars, key light and grade follow the clock
   every frame; only the reflection panorama, environment and irradiance cross-fade between bakes.

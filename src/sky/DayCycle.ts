@@ -68,6 +68,9 @@ const NORTH_POLE = WEST.clone().cross( MERIDIAN ).normalize();
 // on the sun, so each authored day starts a little further on.
 const MIDNIGHT_SIDEREAL = 14 / 24 * TAU;
 const SIDEREAL_DAYS_PER_YEAR = 365.2422;
+// Highest elevation (degrees) at which the key may turn from the sun toward the moon: below the
+// end of the sun's fade as its drawn disk sinks into the sea (see Atmosphere.sunlightAt).
+const HANDOFF_TOP = - 0.7;
 
 function finite( value: number, name: string ): number {
 
@@ -193,7 +196,7 @@ export class DayCycle {
 		const moonVisibility = smoothstep( 0, 5, moonElevation );
 		// Rotate within the orbital plane only after the sun is blocked and before the
 		// moon's key light fades in. Opposing full-moon vectors never cancel as in a lerp.
-		const handoff = 1 - smoothstep( - 2, - 0.25, elevation );
+		const handoff = 1 - smoothstep( - 2.5, HANDOFF_TOP, elevation );
 		const keyDir = direction( hourAngle - this.phase * TAU * handoff );
 		return {
 			hour: this.currentHour,
