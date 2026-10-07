@@ -409,6 +409,14 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			: mix( float( 0.85 ), float( 0.5 ), deep ) );
 		albedo.assign( mix( albedo, algaeC.mul( H.r.mul( 0.6 ).add( 0.7 ) ), algaeCoverage ) );
 		albedo.assign( mix( albedo, vec3( 0.30, 0.26, 0.19 ), silt.mul( 0.7 ) ) );
+		// Below the tidal band the stone wears an olive-brown film of algae and diatoms on the faces
+		// that catch the light, in patches, so submerged stones and the underwater cliff separate
+		// from the pale sand by hue as well as value. Each stone also keeps more of its own shade.
+		const subtidal = smoothstep( - 0.3, - 0.8, p.y.sub( wl ) );
+		const film = subtidal.mul( smoothstep( 0.15, 0.7, up ) )
+			.mul( smoothstep( 0.3, 0.62, big2.mul( 0.55 ).add( Hg.mul( 0.3 ) ).add( vTint.mul( 0.25 ) ) ) );
+		albedo.mulAssign( mix( vec3( 1 ), vec3( 0.84, 0.74, 0.46 ), film ) );
+		if ( ! vegetation ) albedo.mulAssign( mix( vec3( 0.8, 0.83, 0.86 ), vec3( 1.18, 1.12, 1.0 ), vTint ) );
 		albedo.mulAssign( mix( float( 1 ), float( vegetation ? 0.66 : 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
 		rough.assign( mix( rough, float( 0.28 ), wet.mul( float( 1 ).sub( deep ) ) ) );
 
