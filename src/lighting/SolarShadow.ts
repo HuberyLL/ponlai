@@ -206,7 +206,10 @@ export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode,
 			const radiusTexels = max( radius.x.mul( size.x ), radius.y.mul( size.y ) ).toVar();
 			// Bilinear comparison already covers a texel footprint. A solar penumbra below a
 			// quarter texel needs no extra disk taps; fade them in to avoid a threshold jump.
-			If( blockerCount.greaterThan( 0 ).and( radiusTexels.greaterThan( 0.25 ) ), () => {
+			// When every search tap is blocked the point lies in the umbra, since the search
+			// spans the widest penumbra possible at this depth: the bilinear result stands, and
+			// the disk taps are left to the penumbra bands.
+			If( blockerCount.greaterThan( 0 ).and( blockerCount.lessThan( BLOCKER_SAMPLES ) ).and( radiusTexels.greaterThan( 0.25 ) ), () => {
 
 				const filtered = visibility.toVar();
 
