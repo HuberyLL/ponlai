@@ -1,10 +1,11 @@
 # Soomi
 
 A small stylised island in an open sea, rendered in the browser: a visual sample for a game.
-The look is stylised fantasy-realistic: warm golden light, airy lifted shadows, deep muted
-teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with bushes
-and wildflowers, and irregular hanging leaf clusters around the rim. Keep the lower cliff stone
-exposed.
+The look is stylised fantasy-realistic: a physically based scene graded toward a painted
+game's colour, with warm golden light, softly glowing highlights, airy lifted shadows, rich greens,
+deep teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with
+bushes and wildflowers, and irregular hanging leaf clusters around the rim. Keep the lower cliff
+stone exposed.
 
 ## Stack and commands
 
@@ -28,7 +29,7 @@ exposed.
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
   override), `quality` (low, medium, high: the clouds' march, bake cadences and rain count, and
   the render scale, see Decisions), `tone` (agx-hue, the default, agx, neutral), `look`
-  (realistic, the default, soft-fantasy, rich-fantasy).
+  (soft-fantasy, the default, rich-fantasy, realistic).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
   sky views.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
@@ -147,7 +148,8 @@ exposed.
   Orton-style glow round the island's highlights (the sky and what lies beyond a few hundred metres
   glow only weakly, and the glow is held back over dark parts, so it never lays a veil), richer
   greens and teal water keyed by hue and saturation (grey stone and skin stay as they are), golden
-  highlights over cool teal shadows, a teal shadow lift and a little depth. `realistic` leaves the
+  highlights over cool teal shadows, a teal shadow lift and a little depth. `soft-fantasy` is the
+  default, `rich-fantasy` a bolder step toward a painted scene. `realistic` leaves the
   image exactly as the curve and grade make it and stays selectable (`look` URL option, GUI Look
   folder) for comparison; every parameter is in the GUI. The look fades out with the night (the
   night keeps its authored colours); its glow, golden highlights and lift follow the weather's

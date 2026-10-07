@@ -84,7 +84,9 @@ export interface ToneLook { exposure: number; saturation: number; vibrance: numb
 // teal shadows, and airy shadows lifted toward teal rather than grey.
 export const LOOKS = [ 'realistic', 'soft-fantasy', 'rich-fantasy' ] as const;
 export type LookName = typeof LOOKS[ number ];
-export const DEFAULT_LOOK: LookName = 'realistic';
+// The gentle look by default: it holds across the day and the weather (a backlit low sun stays
+// clear), while the rich one leans further toward a painted scene and is a step away in the GUI.
+export const DEFAULT_LOOK: LookName = 'soft-fantasy';
 
 export interface LookSettings {
 	// Orton-style diffusion: a wide blur of what lies above `glowThreshold` (in display values,
