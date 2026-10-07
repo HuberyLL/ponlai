@@ -270,7 +270,7 @@ function debrisPatches( fp: Footprint, rng: Rng ): DebrisPatch[] {
 			x, z, rot, outer,
 			major: ( outer ? 3.0 : 2.5 ) + rng() * 2.8,
 			minor: ( outer ? 1.4 : 1.1 ) + rng() * 1.7,
-			count: outer ? 9 + Math.floor( rng() * 4 ) : 17 + Math.floor( rng() * 6 ),
+			count: outer ? 9 + Math.floor( rng() * 4 ) : 14 + Math.floor( rng() * 6 ),
 		} );
 
 	}
@@ -297,40 +297,157 @@ function rockExtent( r: Rock, ux: number, uz: number ): number {
 
 }
 
-const ROCK_LIMIT = 193;
+// A safety cap; each pass sets its own count.
+const ROCK_LIMIT = 320;
 
-export function makeRocks( fp: Footprint, seabedHeight: HeightFn ): Rock[] {
+// Eight horizontal directions for footprint and clearance probes around a stone.
+const RING = Array.from( { length: 8 }, ( _, i ) => [ Math.cos( i * Math.PI / 4 ), Math.sin( i * Math.PI / 4 ) ] );
+
+// Points on a stone's surface, relative to its centre, as ( dx, height / sy, dz ): rays at most
+// 0.25 m apart round its widest outline at seven heights, each found by bisection along a
+// horizontal ray of its own SDF. The stone's SDF is scaled to its height, so the points depend
+// only on its seed, size, orientation and slab or block proportions, not on where it lies.
+function rockOutline( r: Rock ): number[] {
+
+	const sdf = makeRockSDF( r );
+	const points: number[] = [];
+	const n = Math.max( 16, Math.ceil( Math.PI * 2 * r.s * 1.3 / 0.25 / 4 ) * 4 );
+	for ( const qy of [ - 0.71, - 0.6, - 0.35, - 0.05, 0.3, 0.6, 0.85 ] ) {
+
+		const y = r.y + qy * r.sy;
+		if ( sdf( r.x, y, r.z ) >= 0 ) continue;
+		for ( let k = 0; k < n; k ++ ) {
+
+			const ux = Math.cos( k * Math.PI * 2 / n ), uz = Math.sin( k * Math.PI * 2 / n );
+			let lo = 0, hi = r.s * 1.45;
+			for ( let i = 0; i < 7; i ++ ) {
+
+				const mid = ( lo + hi ) * 0.5;
+				if ( sdf( r.x + ux * mid, y, r.z + uz * mid ) < 0 ) lo = mid; else hi = mid;
+
+			}
+			points.push( ux * hi, qy, uz * hi );
+
+		}
+
+	}
+	return points;
+
+}
+
+// `island` is the island's solid. Stones keep clear of it by their own extent, wherever the cliff
+// and its battered underwater toe happen to run, so a changed or grown coast moves them with it.
+export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF ): Rock[] {
 
 	const rng = mulberry32( 9177 );
 	const patches = debrisPatches( fp, rng );
 	const rocks: Rock[] = [];
+	// Builds a stone seated on the floor, or null where the water above it is too shallow.
+	const build = ( x: number, z: number, size: number, thickness: number, rot: number, variation: number ): Rock | null => {
+
+		const seed = rocks.length + 1;
+		const cr = Math.cos( rot ), sr = Math.sin( rot );
+		// Seat the stone on the lowest floor under its body. On the cliff-foot talus the centre
+		// alone left the downhill edge hanging above the slope; the uphill side is buried instead,
+		// as a fallen block settles into scree.
+		const lowest = ( ratio: number ) => {
+
+			const [ ax, az ] = rockAxes( seed, ratio );
+			let floor = seabedHeight( x, z );
+			for ( const reach of [ 0.45, 0.75 ] ) for ( const [ ux, uz ] of RING ) {
+
+				const lx = ux * size * ax * reach, lz = uz * size * az * reach;
+				floor = Math.min( floor, seabedHeight( x + cr * lx - sr * lz, z + sr * lx + cr * lz ) );
+
+			}
+			return floor;
+
+		};
+		const slab = thickness < 0.40;
+		const burial = slab ? 0.08 + variation * 0.28 : 0.12 + variation * 0.28;
+		// Larger fragments show most of their natural mass above the sediment; gravel remains
+		// partly blanketed. Their buried lower faces still give each body a real floor contact.
+		const lift = size > 0.9 ? 0.18 + variation * 0.14
+			: size > 0.5 && hash3i( seed, 71, 19 ) < 0.65 ? 0.12 + variation * 0.14 : - burial;
+		// Budget the whole crown below the wave trough, leaving every sloping face intact.
+		// Neither emergence prevention nor sediment burial adds a horizontal clipping plane.
+		const height = ( floor: number ) => Math.min( size * thickness, ( - 1.30 - floor ) / ( 1.6 + lift ) );
+		let floor = lowest( thickness );
+		let sy = height( floor );
+		// A shallow floor can flatten a block into a slab, which has other proportions: seat it
+		// again with the axes the stone will really have.
+		if ( ( sy / size < 0.40 ) !== slab ) {
+
+			floor = Math.min( floor, lowest( sy / size ) );
+			sy = height( floor );
+
+		}
+		if ( sy < 0.055 ) return null;
+		return { x, z, s: size, sy, y: floor + sy * lift, floor, rot, seed };
+
+	};
+	// Most stones keep clear of the island through a ring of probes just beyond their bounding
+	// ellipse at base, middle and crown: cheap, and generous enough for any stone.
+	const wideOfIsland = ( r: Rock ): boolean => {
+
+		if ( ! island ) return true;
+		for ( const [ ux, uz ] of RING ) {
+
+			const reach = rockExtent( r, ux, uz ) * 1.15 + 0.1;
+			for ( const y of [ r.floor, r.y, r.y + r.sy * 0.9 ] )
+				if ( island( r.x + ux * reach, y, r.z + uz * reach ) < 0.06 ) return false;
+
+		}
+		return true;
+
+	};
+	// Stones walked to the cliff's underwater toe come closer: a few centimetres between the
+	// stone's real outline (not its bounding ellipse, which held blocks a body's width off the
+	// wall) and the island's solid, so they rest right against the toe wherever it runs.
+	let outlineKey = '', outline: number[] = [];
+	const touchesIsland = ( r: Rock ): boolean => {
+
+		if ( ! island ) return false;
+		// The island's field is no true distance where the cliff relief is displaced (locally up
+		// to about 3.3 times as steep), so the quick test for a stone well clear of it allows
+		// for that; anything nearer is traced.
+		const bound = ( r.s * 1.45 + 0.05 ) * 3.5;
+		if ( island( r.x, r.floor, r.z ) > bound && island( r.x, r.y, r.z ) > bound
+			&& island( r.x, r.y + r.sy, r.z ) > bound ) return false;
+		// The walk tries one stone at many spots; its outline is traced once and kept.
+		const key = `${r.seed} ${r.s} ${r.rot} ${r.sy / r.s < 0.40}`;
+		if ( key !== outlineKey ) {
+
+			outlineKey = key;
+			outline = rockOutline( r );
+
+		}
+		for ( let i = 0; i < outline.length; i += 3 )
+			if ( island( r.x + outline[ i ], r.y + outline[ i + 1 ] * r.sy, r.z + outline[ i + 2 ] ) < 0.05 ) return true;
+		return false;
+
+	};
+	const clearOfRocks = ( r: Rock ): boolean => {
+
+		for ( const other of rocks ) {
+
+			const dx = other.x - r.x, dz = other.z - r.z, distance = Math.hypot( dx, dz );
+			if ( distance === 0 ) return false;
+			if ( distance > ( other.s + r.s ) * 2 ) continue;
+			const ux = dx / distance, uz = dz / distance;
+			if ( distance < ( rockExtent( r, ux, uz ) + rockExtent( other, ux, uz ) ) * 0.98 ) return false;
+
+		}
+		return true;
+
+	};
 	const place = ( x: number, z: number, size: number, thickness: number, rot: number ): boolean => {
 
 		if ( rocks.length >= ROCK_LIMIT ) return false;
 		const d = fp.dist( x, z );
 		if ( d < Math.max( 0.36, size * 0.32 ) || d > 29 ) return false;
-		const floor = seabedHeight( x, z );
-		const slab = thickness < 0.40;
-		const variation = rng();
-		const burial = slab ? 0.08 + variation * 0.28 : 0.12 + variation * 0.28;
-		// Larger fragments show most of their natural mass above the sediment; gravel remains
-		// partly blanketed. Their buried lower faces still give each body a real floor contact.
-		const lift = size > 0.9 ? 0.18 + variation * 0.14
-			: size > 0.5 && hash3i( rocks.length + 1, 71, 19 ) < 0.65 ? 0.12 + variation * 0.14 : - burial;
-		// Budget the whole crown below the wave trough, leaving every sloping face intact.
-		// Neither emergence prevention nor sediment burial adds a horizontal clipping plane.
-		const sy = Math.min( size * thickness, ( - 1.30 - floor ) / ( 1.6 + lift ) );
-		if ( sy < 0.055 ) return false;
-		const r: Rock = { x, z, s: size, sy, y: floor + sy * lift, floor, rot, seed: rocks.length + 1 };
-		for ( const other of rocks ) {
-
-			const dx = other.x - x, dz = other.z - z, distance = Math.hypot( dx, dz );
-			if ( distance === 0 ) return false;
-			if ( distance > ( other.s + size ) * 2 ) continue;
-			const ux = dx / distance, uz = dz / distance;
-			if ( distance < ( rockExtent( r, ux, uz ) + rockExtent( other, ux, uz ) ) * 0.98 ) return false;
-
-		}
+		const r = build( x, z, size, thickness, rot, rng() );
+		if ( ! r || ! clearOfRocks( r ) || ( d < 6 && ! wideOfIsland( r ) ) ) return false;
 		rocks.push( r );
 		return true;
 
@@ -383,6 +500,117 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn ): Rock[] {
 			}
 			const rot = rng() < 0.65 ? patch.rot + ( rng() - 0.5 ) * 1.6 : rng() * Math.PI;
 			if ( place( x, z, size, thickness, rot ) ) placed ++;
+
+		}
+
+	}
+
+	// Rockfall at the cliff foot: blocks broken off the wall lie on its talus in uneven runs,
+	// dense below some stretches and absent below others, with cobbles spalled around them.
+	// Candidates come from the footprint distance alone (any coast, any size); a world-space
+	// field decides where the wall has shed, and the blocks thin out away from the foot.
+	{
+
+		const b = layoutBounds(), pad = 6;
+		// the coast's length, from the band of footprint cells just outside the edge
+		let coast = 0;
+		for ( let z = b.z0 - 2; z < b.z1 + 2; z += 0.25 ) for ( let x = b.x0 - 2; x < b.x1 + 2; x += 0.25 ) {
+
+			const d = fp.dist( x, z );
+			if ( d >= 0 && d < 1 ) coast += 0.0625;
+
+		}
+		const shed = ( x: number, z: number ) => smoothstep( - 0.2, 0.15, noise3( x * 0.085 + 4.9, 12.7, z * 0.085 - 2.3 ) );
+		// the seaward normal of the footprint's distance field
+		const normal = ( x: number, z: number ): [ number, number ] => {
+
+			const e = 0.2;
+			const nx = fp.dist( x + e, z ) - fp.dist( x - e, z ), nz = fp.dist( x, z + e ) - fp.dist( x, z - e );
+			const l = Math.hypot( nx, nz );
+			return l < 1e-6 ? [ 0, 0 ] : [ nx / l, nz / l ];
+
+		};
+		// Walks out from a coast point to the first spot where the stone clears the island's
+		// solid: the foot of the wall's underwater toe, wherever the cliff and its batter run.
+		const atToe = ( cx: number, cz: number, nx: number, nz: number, size: number, thickness: number, rot: number, variation: number ): Rock | null => {
+
+			const at = ( t: number ) => {
+
+				const r = build( cx + nx * t, cz + nz * t, size, thickness, rot, variation );
+				return r && ! touchesIsland( r ) ? r : null;
+
+			};
+			// coarse steps out, then halve the last one back towards the wall
+			const start = Math.max( 0.36, size * 0.32 );
+			let hi = start, rock = at( hi );
+			while ( ! rock && hi < 5.75 ) rock = at( hi += 0.25 );
+			if ( ! rock ) return null;
+			let lo = Math.max( start, hi - 0.25 );
+			for ( let i = 0; i < 3 && hi > lo; i ++ ) {
+
+				const mid = ( lo + hi ) * 0.5, r = at( mid );
+				if ( r ) {
+
+					hi = mid;
+					rock = r;
+
+				} else lo = mid;
+
+			}
+			return rock;
+
+		};
+		const blocks: [ number, number ][] = [];
+		// About one fallen block per 3.5 m of coast, gathered where the wall sheds.
+		const blockTarget = Math.round( coast / 3.5 );
+		let tries = 0;
+		while ( blocks.length < blockTarget && rocks.length < ROCK_LIMIT && tries ++ < blockTarget * 200 ) {
+
+			const x = b.x0 - pad + rng() * ( b.x1 - b.x0 + pad * 2 );
+			const z = b.z0 - pad + rng() * ( b.z1 - b.z0 + pad * 2 );
+			const d = fp.dist( x, z );
+			if ( d < 0 || d > 3.0 || rng() > shed( x, z ) ) continue;
+			const [ nx, nz ] = normal( x, z );
+			if ( nx === 0 && nz === 0 ) continue;
+			const size = 0.6 + Math.pow( rng(), 1.3 ) * 1.1;
+			const thickness = rng() < 0.2 ? 0.30 + rng() * 0.09 : 0.58 + rng() * 0.30;
+			// long axes lie roughly along the wall they fell from, with some tumbled
+			const rot = rng() < 0.7 ? Math.atan2( - nx, nz ) + ( rng() - 0.5 ) * 1.0 : rng() * Math.PI;
+			// Most blocks come to rest against the toe; a few roll on down the talus.
+			const roll = Math.pow( rng(), 2.5 ) * 2.5, variation = rng();
+			let rock = atToe( x - nx * d, z - nz * d, nx, nz, size, thickness, rot, variation );
+			if ( rock && roll > 0.05 ) rock = build( rock.x + nx * roll, rock.z + nz * roll, size, thickness, rot, variation );
+			if ( ! rock || fp.dist( rock.x, rock.z ) > 6 || ! clearOfRocks( rock ) || touchesIsland( rock ) ) continue;
+			rocks.push( rock );
+			blocks.push( [ rock.x, rock.z ] );
+
+		}
+		// Cobbles spalled from the blocks: half lodged against the toe beside them, the rest
+		// scattered mostly on their seaward side.
+		let cobbles = 0;
+		tries = 0;
+		while ( cobbles < blocks.length * 1.5 && rocks.length < ROCK_LIMIT && tries ++ < blocks.length * 160 ) {
+
+			const [ bx, bz ] = blocks[ Math.floor( rng() * blocks.length ) ];
+			const size = 0.16 + Math.pow( rng(), 1.5 ) * 0.38, thickness = 0.38 + rng() * 0.40, rot = rng() * Math.PI;
+			if ( rng() < 0.5 ) {
+
+				const [ nx, nz ] = normal( bx, bz );
+				const d = fp.dist( bx, bz ), along = ( rng() - 0.5 ) * 5;
+				const rock = atToe( bx - nx * d - nz * along, bz - nz * d + nx * along, nx, nz, size, thickness, rot, rng() );
+				if ( rock && clearOfRocks( rock ) ) {
+
+					rocks.push( rock );
+					cobbles ++;
+
+				}
+				continue;
+
+			}
+			const a = rng() * Math.PI * 2, rr = 0.8 + rng() * 2.2;
+			const x = bx + Math.cos( a ) * rr, z = bz + Math.sin( a ) * rr;
+			if ( fp.dist( x, z ) < fp.dist( bx, bz ) - 0.4 ) continue;
+			if ( place( x, z, size, thickness, rot ) ) cobbles ++;
 
 		}
 

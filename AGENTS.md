@@ -96,10 +96,12 @@ exposed.
   variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
   patchy seabed detail; no exposed sea stacks or reefs.
 - Everything around the island is generic, so the island can grow by more tiles: the shelf's
-  width and depth, the talus at the cliff foot and its shallow benches are derived from the
-  footprint's distance and world-space noise with fixed seeds, never placed at coordinates. The
-  floor off the island stays below -1.6 m and every stone crown below -1.30 m, so nothing breaks
-  the surface.
+  width and depth, the talus at the cliff foot, its shallow benches and the fallen blocks on it
+  are derived from the footprint's distance, the island's SDF and world-space noise with fixed
+  seeds, never placed at coordinates. The floor off the island stays below -1.6 m and every stone
+  crown below -1.30 m, so nothing breaks the surface. Fallen blocks are walked out from the coast
+  until their traced outline clears the island's solid, so they rest against the cliff's
+  underwater toe wherever it runs; other stones keep a wider berth.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as

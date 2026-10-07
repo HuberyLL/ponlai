@@ -50,8 +50,8 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	// Ground each stone on the same triangles the renderer uses. Sampling the analytic
 	// floor alone can hide a small crown beneath a coarser seabed mesh.
 	const renderedFloor = seabedSampler( sb, n, seabedSize );
-	const rocks = makeRocks( fp, renderedFloor );
 	const islandSDF = makeIslandSDF( fp );
+	const rocks = makeRocks( fp, renderedFloor, islandSDF );
 	const rockSDFs = rocks.map( makeRockSDF );
 	// The rendered grid's highest vertex bounds contact queries on the floor.
 	t = performance.now();
