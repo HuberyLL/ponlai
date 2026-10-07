@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, texture, textureLoad, rtt, uniform, uv, screenCoordinate, ivec2, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, log2, luminance, neutralToneMapping, agxToneMapping,
-	sRGBTransferOETF, fract, convertToTexture, select,
+	sRGBTransferOETF, fract, convertToTexture, select, exp,
 } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import type BloomNode from 'three/addons/tsl/display/BloomNode.js';
@@ -40,9 +40,9 @@ export const TONE_CURVES = [ 'agx-hue', 'agx', 'neutral' ] as const;
 export type ToneCurve = typeof TONE_CURVES[ number ];
 
 // Each curve's own grade: a gain on the clock's exposure (the clock's exposures were tuned under
-// PBR Neutral), its saturation, vibrance and display contrast, and gains on the clock's split tone
-// and black lift.
-export interface ToneLook { exposure: number; saturation: number; vibrance: number; contrast: number; split: number; lift: number }
+// PBR Neutral), its saturation, vibrance and display contrast, gains on the clock's split tone
+// and black lift, and the weight of a soft knee that keeps the brightest channel below white.
+export interface ToneLook { exposure: number; saturation: number; vibrance: number; contrast: number; split: number; lift: number; clipGuard: number }
 
 export interface PipelineSettings {
 	toneMapping: ToneCurve;
@@ -60,10 +60,16 @@ export class Pipeline {
 	renderer: THREE.WebGPURenderer;
 	width = 1;
 	height = 1;
+	// AgX lifts the shadows and compresses the upper midtones that PBR Neutral left linear; a
+	// lower exposure and a firmer display S-curve bring the island, meadow and sea back to about
+	// their earlier brightness, and saturation and vibrance their colour (plain AgX needs more:
+	// it greys every channel's midtones). 'agx-hue' keeps its highlights' colour up to white, where
+	// that boost and the split tone's golden highlights would push the brightest channel past
+	// white and clip it into a flat band of another hue, so it rolls them off below white.
 	readonly looks: Record<ToneCurve, ToneLook> = {
-		'agx-hue': { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1 },
-		agx: { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1 },
-		neutral: { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1 },
+		'agx-hue': { exposure: 0.78, saturation: 1.2, vibrance: 0.3, contrast: 0.38, split: 1, lift: 1, clipGuard: 1 },
+		agx: { exposure: 0.8, saturation: 1.3, vibrance: 0.4, contrast: 0.35, split: 1, lift: 1, clipGuard: 0 },
+		neutral: { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1, clipGuard: 0 },
 	};
 	settings: PipelineSettings = {
 		toneMapping: 'agx-hue', nightLook: 0,
@@ -90,7 +96,7 @@ export class Pipeline {
 	private u = {
 		// (exposure: the clock's, for PBR Neutral and the depth of field; curveExposure: with the
 		// chosen curve's gain; day: 1 - the night's return to PBR Neutral)
-		curve: uniform( 0 ), day: uniform( 1 ), exposure: uniform( 1 ), curveExposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ),
+		curve: uniform( 0 ), day: uniform( 1 ), exposure: uniform( 1 ), curveExposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ), clipGuard: uniform( 0 ),
 		lift: uniform( new THREE.Color() ), vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		dof: uniform( 1 ), focus: uniform( 50 ), range: uniform( 3 ), resolution: uniform( new THREE.Vector2( 1, 1 ) ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
@@ -330,6 +336,13 @@ export class Pipeline {
 			const chroma = max( c.r, max( c.g, c.b ) ).sub( min( c.r, min( c.g, c.b ) ) );
 			const satAmt = u.saturation.add( u.vibrance.mul( float( 1 ).sub( smoothstep( 0, 0.35, chroma.div( max( l2, 1e-3 ) ).mul( 0.5 ) ) ) ) );
 			c.assign( max( mix( vec3( l2 ), c, satAmt ), vec3( 0 ) ) );
+			// A soft knee on the brightest channel, scaling the whole colour so its hue holds: the
+			// golden split tone and the saturation push a bright warm sky's red past white, where
+			// it clipped alone into a flat band while green and blue still rose.
+			const peak = max( c.r, max( c.g, c.b ) );
+			const knee = float( 0.9 );
+			const soft = knee.add( float( 1 ).sub( knee ).mul( float( 1 ).sub( exp( peak.sub( knee ).div( float( 1 ).sub( knee ) ).negate() ) ) ) );
+			c.mulAssign( mix( float( 1 ), select( peak.greaterThan( knee ), soft.div( peak ), float( 1 ) ), u.clipGuard ) );
 			// A display black lift softens dark colours without adding atmospheric scattering.
 			c.assign( c.add( vec3( 1 ).sub( c ).mul( u.lift ) ) );
 			// vignette
@@ -436,6 +449,7 @@ export class Pipeline {
 		u.curve.value = TONE_CURVES.indexOf( S.toneMapping ); u.day.value = day;
 		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE; u.curveExposure.value = u.exposure.value * look.exposure;
 		u.saturation.value = lerp( night.saturation, S.saturation, day ); u.vibrance.value = lerp( night.vibrance, S.vibrance, day ); u.contrast.value = lerp( night.contrast, S.contrast, day );
+		u.clipGuard.value = look.clipGuard * day;
 		u.split.value = S.split * lerp( night.split, look.split, day ); u.lift.value.copy( S.lift ).multiplyScalar( lerp( night.lift, look.lift, day ) );
 		u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.dof.value = S.dof; u.range.value = S.dofRange;
