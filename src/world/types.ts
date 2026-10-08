@@ -1,9 +1,11 @@
 // Data shared between the world worker and the main thread.
 
-// a signed distance function (m), optionally with a per-point value baked onto the mesh
+// a signed distance function (m), optionally with per-point values baked onto the mesh: one
+// float (`tint`) and four more (`detail`, written to out[ o .. o + 3 ])
 export interface SDF {
 	( x: number, y: number, z: number ): number;
 	tint?: ( x: number, y: number, z: number ) => number;
+	detail?: ( x: number, y: number, z: number, out: Float32Array, o: number ) => void;
 }
 
 export interface MeshData {
@@ -12,6 +14,8 @@ export interface MeshData {
 	ao: Float32Array;
 	tint: Float32Array;
 	curv: Float32Array;
+	// the island's cliff detail (see makeIslandSDF), four floats per vertex
+	detail?: Float32Array;
 	indices: Uint32Array;
 }
 

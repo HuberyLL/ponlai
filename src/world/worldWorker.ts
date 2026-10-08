@@ -6,7 +6,7 @@ import { surfaceNets } from './SurfaceNets.ts';
 import { makeRimTrails } from './RimTrails.ts';
 import { buildRimGround } from './RimGround.ts';
 import {
-	buildFootprint, makeIslandSDF, makeRocks, makeRockSDF, makeSeabed,
+	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF, makeSeabed,
 	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
 } from './WorldShapes.ts';
 import { Field2D } from './Field2D.ts';
@@ -83,6 +83,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
 		meshes.push( { name, kind, ...m } );
 		transfer.push( m.positions.buffer, m.normals.buffer, m.ao.buffer, m.tint.buffer, m.curv.buffer, m.indices.buffer );
+		if ( m.detail ) transfer.push( m.detail.buffer );
 
 	};
 
@@ -90,6 +91,10 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	t = performance.now();
 	push( 'island', surfaceNets( islandSDF, {
 		min: [ ...islandBounds.min ], max: [ ...islandBounds.max ], voxel: islandVoxel,
+		// The cliff's blocks meet at chamfered edges about a voxel wide: vertices placed on the
+		// edges and a short normal step keep each face flat up to its edge instead of rounding
+		// it off.
+		normalStep: islandVoxel * 0.15, sharpen: cliffSharpCells( fp ),
 		aoSdf, contactVisibility: contacts( islandSDF ),
 	} ), 'cliff' );
 	mark( 'island', t );

@@ -365,6 +365,13 @@ comment where it is used.
 - Grass blades kept a minimum width on screen with their coverage lowered to match (alpha to
   coverage), so thin blades stop crawling under camera motion: Emil Persson, *Phone-wire AA*
   (2012 demo and write-up on [humus.name](http://www.humus.name/)).
+- Sharp cliff edges on the island mesh (vertices placed at the least-squares point of the edge
+  crossings' tangent planes): Tao Ju, Frank Losasso, Scott Schaefer and Joe Warren,
+  [*Dual Contouring of Hermite Data*](https://www.cs.rice.edu/~jwarren/papers/dualcontour.pdf)
+  (SIGGRAPH 2002).
+- Chamfered edges of the cliff's blocks, the 45-degree chamfer of two distance fields
+  ( a + b + r ) / sqrt( 2 ): Mercury, [*hg_sdf*](https://mercury.sexy/hg_sdf/) (`fOpUnionChamfer`),
+  used as a technique only.
 
 ## References
 
