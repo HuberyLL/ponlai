@@ -31,6 +31,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance } from './WaterTransport.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
 import { ISLAND_TOP, layoutBounds } from '../world/WorldShapes.ts';
+import { TREE_HEIGHT } from '../world/PlantSites.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
@@ -273,12 +274,12 @@ export const WATER_QUALITY: Record<'low' | 'medium' | 'high', WaterQuality> = {
 // its plants and its people. A box around them, from the tile layout (so it grows with the island):
 // out past the layout's edge by the rim's overhang (the turf skirt, the leaf mounds and trails over
 // the lip, a crown near the rim) plus a metre's margin, and up past the meadow by the tallest tree
-// (3.5 m, the top of TREE_HEIGHT in world/PlantSites.ts, above the islanders' 2 m) plus a metre.
+// (the top of TREE_HEIGHT, 3.5 m, above the islanders' 2 m) plus a metre.
 // Hits below REFLECTION_FLOOR under the sea level already weigh nothing (see traceSSR), so the box
 // ends there. Taller plants or a wider rim overhang must grow these, or their reflection is lost
 // (debug builds warn, see checkReflectionBounds).
 const REFLECTOR_REACH = 1.5 + 1;
-const REFLECTOR_HEIGHT = 3.5 + 1;
+const REFLECTOR_HEIGHT = TREE_HEIGHT[ 1 ] + 1;
 const REFLECTION_FLOOR = 0.35;
 
 // How the reflection's march uses that box. cull: a ray that never meets it within the march's
