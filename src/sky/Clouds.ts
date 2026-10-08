@@ -24,6 +24,7 @@ import { bakeSynoptic, loadCloudShape } from '../materials/CloudNoise.ts';
 import { bakeCirrusFibres, sampleCirrusFibres } from './Cirrus.ts';
 import { RAINBOW_MAX_ANGLE, RAINBOW_SIZE, RAINBOW_TABLE } from './RainbowTable.data.ts';
 import type { Atmosphere } from './Atmosphere.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -83,8 +84,8 @@ const SYNOPTIC_SIZE = 409600;
 // is far quicker than the clouds drift.
 export const DOME_DEFAULTS = { width: 1024, height: 256, strideX: 4, strideY: 8 } as const;
 const SHADOW_SIZE = 256, SHADOW_SPAN = 12000;
-// The cloud shadow map refreshes one of every SHADOW_PHASES rows per pass, a few passes per frame
-// (see setShadowRefresh).
+// The cloud shadow map refreshes one of every SHADOW_PHASES rows per pass (see setShadowRefresh);
+// cloud shadows drift across its 47 m texels far slower than a full refresh.
 const SHADOW_PHASES = 8;
 const SHADOW_ORDER = [ 0, 4, 2, 6, 1, 5, 3, 7 ];
 // Lightning inside the cloud: point sources lighting the march.
@@ -329,7 +330,7 @@ export class Clouds {
 	// Half a panorama texel in uv: the tent filter's tap offsets.
 	private readonly domeTexel = uniform( new THREE.Vector2( 0.5 / DOME_DEFAULTS.width, 0.5 / DOME_DEFAULTS.height ) );
 	private march: CloudMarch = { ...MARCH_DEFAULTS };
-	private shadowRowsPerFrame = 2 / SHADOW_PHASES;
+	private shadowRowsPerFrame = 1 / SHADOW_PHASES;
 	private viewScale: CloudViewScale = { render: 0.5 };
 	// The view: camera basis and frustum tangents now, at the previous trace, and as last traced.
 	private readonly cam = { right: uniform( new THREE.Vector3( 1, 0, 0 ) ), up: uniform( new THREE.Vector3( 0, 1, 0 ) ), fwd: uniform( new THREE.Vector3( 0, 0, - 1 ) ), tan: uniform( new THREE.Vector2( 1, 1 ) ) };
@@ -1238,7 +1239,9 @@ export class Clouds {
 	update( renderer: THREE.WebGPURenderer, camera: THREE.PerspectiveCamera | null, width: number, height: number, time: number ): void {
 
 		if ( ! this.partialKernel || ! this.shadowKernel ) return;
-		const shadowRows = this.shadowRowsPerFrame;
+		// debugFlags.cloudShadowRows = 4 restores the old rate (a quarter of the rows per frame).
+		const rowsFlag = debugFlags.cloudShadowRows;
+		const shadowRows = typeof rowsFlag === 'number' && Number.isFinite( rowsFlag ) && rowsFlag > 0 ? 1 / rowsFlag : this.shadowRowsPerFrame;
 		// Before the first frame there is no view yet, only the panorama for the first bake.
 		const position = camera ? camera.position : this.origin.value;
 		this.origin.value.copy( position );
@@ -1696,7 +1699,7 @@ export class Clouds {
 
 	}
 
-	/** The share of the cloud shadow map's rows refreshed per frame: 1/8, 1/4 (the default),
+	/** The share of the cloud shadow map's rows refreshed per frame: 1/8 (the default), 1/4,
 	 * 1/2 or 1. A jump still refreshes all of it at once. */
 	setShadowRefresh( rowsPerFrame: number ): void {
 
