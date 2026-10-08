@@ -11,7 +11,7 @@ import {
 	positionGeometry, positionView, positionWorld, cameraPosition, cameraProjectionMatrix, screenSize, screenCoordinate,
 	textureLoad, texture, varyingProperty,
 } from 'three/tsl';
-import { compileDraws } from '../weather/RainDrops.ts';
+import { compileDraws } from '../post/Warm.ts';
 
 type F = THREE.Node<'float'>;
 type U = THREE.Node<'uint'>;

@@ -16,6 +16,7 @@ import { Clouds, EVOLVE_PERIOD } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { compileInto } from '../post/Warm.ts';
 import { DAY_BLACK_LIFT, type DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherFront, WeatherState } from './Weather.ts';
 
@@ -461,15 +462,7 @@ export class Sky {
 			[ this.irradianceQuad, e.irradianceMap ], [ this.irradianceBlendQuad, this.irradianceDisplay ],
 		];
 		if ( this.environmentBlendQuad && this.envMap ) pairs.push( [ this.environmentBlendQuad, this.envMap ] );
-		const previous = r.getRenderTarget();
-		const compiling: Promise<void>[] = [];
-		for ( const [ quad, target ] of pairs ) {
-
-			r.setRenderTarget( target );
-			compiling.push( r.compileAsync( quad, quad.camera ) );
-
-		}
-		r.setRenderTarget( previous );
+		const compiling = pairs.map( ( [ quad, target ] ) => compileInto( r, quad, quad.camera, target ) );
 		compiling.push( this.pmrem.compileEquirectangularShader() );
 		await Promise.all( compiling );
 

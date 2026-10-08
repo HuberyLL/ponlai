@@ -10,6 +10,7 @@ import {
 	Fn, float, vec2, vec3, vec4, ivec2, uv, abs, max, min, clamp, saturate, sqrt, select, exp2, texture, textureLoad,
 	screenCoordinate, uniform,
 } from 'three/tsl';
+import { compileInto } from './Warm.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -66,11 +67,7 @@ export class FSR {
 	/** Compiles EASU ahead of its first frame (see `AerialPerspective.warm`). */
 	async warm( renderer: THREE.WebGPURenderer ): Promise<void> {
 
-		const target = renderer.getRenderTarget();
-		renderer.setRenderTarget( this.easuRT );
-		const compile = renderer.compileAsync( this.quad, ( this.quad as unknown as { camera: THREE.Camera } ).camera );
-		renderer.setRenderTarget( target );
-		await compile;
+		await compileInto( renderer, this.quad, ( this.quad as unknown as { camera: THREE.Camera } ).camera, this.easuRT );
 
 	}
 

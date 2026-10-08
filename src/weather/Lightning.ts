@@ -9,7 +9,7 @@
 import * as THREE from 'three/webgpu';
 import { attribute, cameraPosition, exp, float, length, max, min, mix, positionGeometry, smoothstep, step, uniform } from 'three/tsl';
 import { LightningStrike } from './LightningStrike.ts';
-import { compileDraws } from './RainDrops.ts';
+import { compileDraws } from '../post/Warm.ts';
 import { FLASH_SOURCES, SHELL_BOTTOM, SHELL_THICKNESS, type Clouds } from '../sky/Clouds.ts';
 import { SUN_ILLUMINANCE } from '../sky/Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';

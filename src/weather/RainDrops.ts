@@ -19,6 +19,7 @@ import {
 	length, normalize, cross, dot, smoothstep, clamp, exp, sin, sqrt, pow, mix,
 } from 'three/tsl';
 import type { RainCollision } from './RainCollision.ts';
+import { compileDraws } from '../post/Warm.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -103,43 +104,6 @@ export interface RainLight {
 
 export const lightRain = ( view: V3, light: RainLight, skyBias: F ): V3 =>
 	rainRadiance( view, light.sky, light.skySeen, light.keyDirection, light.key, skyBias );
-
-/** Compile the pipelines `objects` draw with as `scene` would draw them for `camera` into
- * `target` (null: the canvas), whether they are shown now or not, so that their first frame
- * does not stall on pipeline creation. The objects' visibility and culling are restored before
- * this returns its promise: compileAsync reads them only while it is collecting the draws. */
-export function compileDraws( renderer: THREE.WebGPURenderer, objects: THREE.Object3D[], scene: THREE.Scene, camera: THREE.Camera,
-	target: THREE.RenderTarget | null ): Promise<void> {
-
-	const saved: [ THREE.Object3D, boolean, boolean ][] = [];
-	for ( const root of objects ) root.traverse( ( object ) => {
-
-		saved.push( [ object, object.visible, object.frustumCulled ] );
-		object.visible = true;
-		object.frustumCulled = false;
-
-	} );
-	const previous = renderer.getRenderTarget();
-	renderer.setRenderTarget( target );
-	let pending: Promise<void>[];
-	try {
-
-		pending = objects.map( ( object ) => renderer.compileAsync( object, camera, scene ) );
-
-	} finally {
-
-		renderer.setRenderTarget( previous );
-		for ( const [ object, visible, culled ] of saved ) {
-
-			object.visible = visible;
-			object.frustumCulled = culled;
-
-		}
-
-	}
-	return Promise.all( pending ).then( () => undefined );
-
-}
 
 interface CascadeUniforms {
 	centre: THREE.UniformNode<'vec3', THREE.Vector3>;
