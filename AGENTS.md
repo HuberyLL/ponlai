@@ -261,9 +261,14 @@ stone exposed.
   ground soaks, drowning the meadow blades but for a few tips, and shrinks inside its own damp
   stain as it dries. Puddles mirror the sky through an art-directed reflectance (stronger than
   water's 2 %, still following Fresnel), so they read as water from above.
+- The art has three layers in one world: nature (cliffs, sea, plants) is realistic; things people
+  make (huts, boats, baskets, lanterns) are semi-realistic and handmade, a little chunky and
+  rounded in form but with real materials (wood grain, rope, fired clay), and bridge the other two;
+  people are stylised, with simplified forms and blocks of colour. All three share one lighting,
+  one grade and one palette, so they read as one place (as in Alba, Sky and Tchia).
 - Characters are simple low-poly figures with flat colours and simple faces, recoloured into the
-  island's palette and lit by the island's own light in soft cel steps; no outlines. Plants and
-  props keep their realistic shading. The islanders are a Hylian-like people (after The Legend of
+  island's palette and lit by the island's own light in soft cel steps; no outlines. Plants keep
+  their realistic shading. The islanders are a Hylian-like people (after The Legend of
   Zelda: Breath of the Wild): human in every way but for long pointed ears that sweep back and a
   little up, grown on any head of the kit (`Ears.ts`) and bound to its head bone. Their dress stays
   plain while the basic look settles: undyed linen and calm earthy tones, leather shoes, no hat.
