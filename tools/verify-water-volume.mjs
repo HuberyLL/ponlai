@@ -1,10 +1,13 @@
 // Isolated GPU regression for depth-varying water shadows and RGB transport weights.
 // Usage: node tools/verify-water-volume.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
+import { acquireGpuLock } from './gpu-lock.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const errors = [];
+// one rendering browser at a time on this machine (released when the process exits)
+await acquireGpuLock( 'verify-water-volume' );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

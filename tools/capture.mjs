@@ -2,6 +2,7 @@
 //   node tools/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval "js"] [--wait 6000] [--verbose]
 // Writes artifacts/captures/<name>.png and prints the page's console errors and diagnostics.
 import { chromium } from 'playwright';
+import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const args = process.argv.slice( 2 );
@@ -15,6 +16,8 @@ const url = `${ opt( 'url', 'http://127.0.0.1:5190/' ) }?${ query }`;
 const sampleCount = Number( opt( 'samples', 1 ) );
 
 await mkdir( 'artifacts/captures', { recursive: true } );
+// one rendering browser at a time on this machine (tools/gpu-lock.mjs)
+await acquireGpuLock( `capture ${ name }` );
 // Playwright's full Chromium (`npx playwright install chromium`; the headless shell may lack
 // WebGPU), or another build through CHROME_PATH
 const browser = await chromium.launch( {
@@ -62,4 +65,5 @@ try {
 	if ( errors.some( ( e ) => e.startsWith( 'pageerror:' ) || e.startsWith( 'error:' ) ) || failures.length ) process.exitCode = 1;
 } finally {
 	await browser.close();
+	releaseGpuLock();
 }

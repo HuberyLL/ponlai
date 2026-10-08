@@ -1,12 +1,15 @@
 // Compare production URLs in one browser/page, alternating A/B/B/A to reduce clock drift.
 // Usage: node tools/benchmark-lighting.mjs <before URL> <after URL>
 import { chromium } from 'playwright';
+import { acquireGpuLock } from './gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 
 const urls = process.argv.slice( 2 );
 assert.equal( urls.length, 2 );
 const errors = [], measurements = [];
+// one rendering browser at a time on this machine (released when the process exits)
+await acquireGpuLock( 'benchmark-lighting' );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

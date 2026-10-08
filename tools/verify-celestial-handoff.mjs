@@ -4,11 +4,14 @@
 // Run against the dev server: node tools/verify-celestial-handoff.mjs http://127.0.0.1:5190
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
+import { acquireGpuLock } from './gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const errors = [];
 const report = { base, errors, runs: [] };
+// one rendering browser at a time on this machine (released when the process exits)
+await acquireGpuLock( 'verify-celestial-handoff' );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

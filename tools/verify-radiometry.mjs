@@ -1,12 +1,15 @@
 // Integrate the rendered HDR solar disk, rather than testing its brightness coefficient.
 // Usage: node tools/verify-radiometry.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
+import { acquireGpuLock } from './gpu-lock.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { SCENE_RADIANCE_SCALE, SUN_PROJECTED_SOLID_ANGLE } from '../src/lighting/Radiometry.ts';
 
 assert.ok( SUN_PROJECTED_SOLID_ANGLE > 0 );
 const errors = [];
+// one rendering browser at a time on this machine (released when the process exits)
+await acquireGpuLock( 'verify-radiometry' );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

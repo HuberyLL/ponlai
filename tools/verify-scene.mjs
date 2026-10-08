@@ -1,6 +1,7 @@
 // Real browser regression checks for the visual sample; no synthetic gameplay hooks required.
 // Run against a production preview: node tools/verify-scene.mjs http://127.0.0.1:5191
 import { chromium } from 'playwright';
+import { acquireGpuLock } from './gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 
@@ -8,6 +9,8 @@ const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification';
 const production = process.argv.includes( '--production' ) || base.includes( '5191' );
 await mkdir( out, { recursive: true } );
+// one rendering browser at a time on this machine (released when the process exits)
+await acquireGpuLock( 'verify-scene' );
 const browser = await chromium.launch( {
 	headless: true, channel: 'chromium',
 	args: [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--disable-gpu-vsync', '--disable-frame-rate-limit' ],

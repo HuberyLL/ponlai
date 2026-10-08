@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
+import { acquireGpuLock } from './gpu-lock.mjs';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/weather-effects';
@@ -26,6 +27,8 @@ const scenarios = [
 	{ name: 'rain', wetness: true, rain: true, count: 32768 },
 ];
 await mkdir( out, { recursive: true } );
+// one rendering browser at a time on this machine (released when the process exits)
+await acquireGpuLock( 'verify-weather-effects' );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),
