@@ -39,18 +39,28 @@ stone exposed.
   scenes (`--list`: fair, golden, horizon, sky, overcast, rain, storm, fog, night, close over the
   meadow, a weather front), each with the clock running, fixed weather and a slow orbit, and writes
   `artifacts/perf/<label>/` (profile.json, summary.md): frame interval median, p95 and p99, GPU
-  time per pass, the tick's JS time, hitches with their cause, and the startup. `--compare urlA urlB`
-  alternates A B B A and reports deltas against the run-to-run spread; `--eval` runs in the page
-  with `s` = `window.__SOOMI__` (an ablation, e.g. `--eval "s.pipeline.settings.dof = 0"`);
-  `--report profile.json` re-renders a summary. The `profile` URL option (`?profile`, or
-  `?profile=frames` without GPU timestamps) loads `src/debug/FrameProfiler.ts`, which labels every
-  render and compute pass, reads their GPU timestamps and exposes `window.__SOOMI_PROFILE__`;
-  without it the page builds the same pipelines and image.
+  time per pass, the tick's JS time, hitches with their cause, and the startup. It loads each
+  variant once and switches scenes at runtime (`--mode reload` reloads per scene, the original
+  method); pages load with `?worldCache`, which keeps the generated island in IndexedDB (in the
+  tool's own Chrome profile) while the generator's sources are unchanged. `--compare urlA urlB`
+  runs A and B as two pages in one browser, in alternating slices with the other page stopped,
+  and reports deltas with their 95 % interval; `--toggle "js"` A/Bs inside one page by applying
+  the expression (with `s` = `window.__SOOMI__` and `on` false for A, true for B) every few frames,
+  for example `--toggle "s.flags.myChange = on"` with a flag an optimisation reads from
+  `src/debug/DebugFlags.ts`. Decide A/Bs on GPU time per pass (timestamps on); take frame rates
+  from `--timestamps off` or `both`. `--eval` runs in the page with `s` = `window.__SOOMI__` (an
+  ablation, e.g. `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a
+  summary. The `profile` URL option (`?profile`, or `?profile=frames` without GPU timestamps)
+  loads `src/debug/FrameProfiler.ts`, which labels every render and compute pass, reads their GPU
+  timestamps and exposes `window.__SOOMI_PROFILE__`; without it the page builds the same pipelines
+  and image.
 - Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
-  machine-wide GPU lock in `tools/gpu-lock.mjs`, so only one runs at a time, across sessions;
-  `node tools/gpu-lock.mjs run [--label x] -- <command ...>` wraps any other script, `status` names
-  the holder and `gpu` shows the GPU's utilisation and the processes using it. The profiler also
-  checks that the GPU is idle before it measures and marks its results contended otherwise.
+  machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running
+  captures) hold it alone; paused captures and the verify probes share it with each other, since
+  their pixels do not depend on the load. `node tools/gpu-lock.mjs run [--shared] [--label x] --
+  <command ...>` wraps any other script, `status` names the holders and `gpu` shows the GPU's
+  utilisation and the processes using it. The profiler also checks that the GPU is idle before it
+  measures and marks its results contended otherwise.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
   and wave optics (each file names the server it expects); `tools/verify-scene.mjs` checks a
   production preview; `tools/benchmark-lighting.mjs` A/B-times two builds;
@@ -310,10 +320,11 @@ stone exposed.
   whole frame); report measured differences.
 - Measure frame time with `tools/profile-frame.mjs` on a production build, under the GPU lock: its
   scene matrix at the default generic display (1920x1080 CSS at DPR 2, quality high), before and
-  after a change (`--compare` for an A/B). Take frame rates from a run without GPU timestamps
-  (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them on, so their
-  per-pass split shows where the time goes, not the frame rate a player sees. Report contended runs
-  as such.
+  after a change (`--compare` for an A/B, or `--toggle` on a debug flag while the change is in
+  development). Judge an A/B by its GPU time per pass; take frame rates from a run without GPU
+  timestamps (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them
+  on, so their per-pass split shows where the time goes, not the frame rate a player sees. Report
+  contended runs as such.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
   most 100 characters, and the body explaining why. Types: `feat`, `fix`, `perf`, `refactor`,
