@@ -487,7 +487,12 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 
 		}
 		albedo.mulAssign( mix( float( 1 ), float( vegetation ? 0.66 : 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );
-		rough.assign( mix( rough, float( 0.28 ), wet.mul( float( 1 ).sub( deep ) ) ) );
+		// The wave-washed band glistens on the walls. On a face that looks up at the sky (a sloping
+		// foot or ledge in a gully at the waterline) the same gloss mirrored the bright low sky as
+		// a pale sheet streaked by the stone's relief, which read from afar as water running down
+		// the gully, so it fades out on such faces; they keep the band's darker, damp albedo.
+		const washed = wet.mul( float( 1 ).sub( deep ) ).mul( float( 1 ).sub( smoothstep( 0.2, 0.55, up ) ) );
+		rough.assign( mix( rough, float( 0.28 ), washed ) );
 
 		// A completely blocked local sky must not keep an arbitrary ambient-light floor.
 		// The island's jointed wall occludes much of its own sky; a share of that occlusion keeps
