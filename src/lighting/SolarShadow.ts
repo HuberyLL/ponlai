@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, uniform, texture, textureLoad, reference, float, vec2, vec3, vec4, ivec2, uv,
+	Fn, If, Loop, uniform, texture, textureLoad, reference, float, int, vec2, vec3, vec4, ivec2, uv,
 	min, max, abs, clamp, cos, sin, pow, tan, dot, select, dFdx, dFdy, floor, fract, mix, smoothstep, positionWorld,
 } from 'three/tsl';
 import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
@@ -8,6 +8,7 @@ import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
+type B = THREE.Node<'bool'>;
 
 const BLOCKER_SAMPLES = 6, FILTER_SAMPLES = 8;
 
@@ -60,6 +61,17 @@ export interface SolarShadowParameters {
 	depthRange: F;
 	angularRadius?: F;
 	depthKind?: 'depth' | 'color';
+	// false skips the raw depth reads (the result is then fully lit): a map that is not in use
+	active?: B;
+	// the layer of an array depth texture
+	layer?: number;
+}
+
+// Address one layer of an array depth texture; a plain texture passes through.
+function inLayer( node: THREE.TextureNode, layer?: number ): THREE.TextureNode {
+
+	return layer === undefined ? node : node.depth( int( layer ) ) as unknown as THREE.TextureNode;
+
 }
 
 // An orthographic ray stays inside its endpoints' bounds. Reject only disjoint
@@ -77,14 +89,15 @@ export const volumeShadowRayMayIntersect = Fn( ( [ start, end ]: [ V3, V3 ] ) =>
 // Volume samples have no receiver plane. Gather four base-level depth comparisons
 // without derivatives, so depth integration can run in nonuniform control flow.
 // Keep texture bindings local to the material, as for the surface-shadow factory below.
-export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, mapSize: V2 ): F {
+export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3, mapSize: V2, active?: B, layer?: number ): F {
 
 	return Fn( () => {
 
 		const sc = coordinate.toVar();
-		const inside = sc.x.greaterThanEqual( 0 ).and( sc.y.greaterThanEqual( 0 ) )
+		let inside = sc.x.greaterThanEqual( 0 ).and( sc.y.greaterThanEqual( 0 ) )
 			.and( sc.x.lessThanEqual( 1 ) ).and( sc.y.lessThanEqual( 1 ) )
 			.and( sc.z.greaterThanEqual( 0 ) ).and( sc.z.lessThanEqual( 1 ) );
+		if ( active ) inside = inside.and( active );
 		const visibility = float( 1 ).toVar();
 		If( inside, () => {
 
@@ -92,7 +105,7 @@ export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode,
 			const weight = fract( sc.xy.mul( size ).sub( 0.5 ) ).toVar();
 			// TSL gather().compare() emits textureGatherCompare, which has no implicit LOD
 			// or uniform-flow restriction. WGSL returns (0,1), (1,1), (1,0), (0,0).
-			const taps = texture( depth, sc.xy ).gather().compare( sc.z ).toVar();
+			const taps = inLayer( texture( depth, sc.xy ), layer ).gather().compare( sc.z ).toVar();
 			visibility.assign( mix( mix( taps.w, taps.z, weight.x ), mix( taps.x, taps.y, weight.x ), weight.y ) );
 
 		} );
@@ -105,7 +118,7 @@ export function solarVolumeVisibility( depth: THREE.Texture | THREE.TextureNode,
 // Texture access stays in a material-local node factory. A shared layout function must never
 // close over a texture or uniform binding generated for a different material.
 export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode, coordinate: V3,
-	{ mapSize, worldSpan, depthRange, angularRadius = float( SUN_ANGULAR_RADIUS ), depthKind = 'depth' }: SolarShadowParameters ): F {
+	{ mapSize, worldSpan, depthRange, angularRadius = float( SUN_ANGULAR_RADIUS ), depthKind = 'depth', active, layer }: SolarShadowParameters ): F {
 
 	return Fn( () => {
 
@@ -120,7 +133,7 @@ export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode,
 		const span = max( worldSpan, vec2( 1e-3 ) ).toVar();
 		const loadDepth = ( pixel: THREE.Node<'ivec2'> ): F => {
 
-			const loaded = textureLoad( depth, pixel );
+			const loaded = inLayer( textureLoad( depth, pixel ), layer );
 			return depthKind === 'color' ? loaded.x : loaded as unknown as F;
 
 		};
@@ -147,11 +160,12 @@ export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode,
 		// Three deduplicates texture uniforms by UUID and chooses the first access's sampler
 		// type. Register a real comparison before raw loads. It remains the exact centre
 		// result for a depth-constant receiver; sloped receivers use texel-plane comparisons.
-		const centre = ( depthKind === 'depth' ? texture( depth, clamp( sc.xy, vec2( 0 ), vec2( 1 ) ) )
+		const centre = ( depthKind === 'depth' ? inLayer( texture( depth, clamp( sc.xy, vec2( 0 ), vec2( 1 ) ) ), layer )
 			.compare( sc.z ) as unknown as F : float( 1 ) ).toVar();
-		const inside = sc.x.greaterThanEqual( 0 ).and( sc.y.greaterThanEqual( 0 ) )
+		let inside = sc.x.greaterThanEqual( 0 ).and( sc.y.greaterThanEqual( 0 ) )
 			.and( sc.x.lessThanEqual( 1 ) ).and( sc.y.lessThanEqual( 1 ) )
 			.and( sc.z.greaterThanEqual( 0 ) ).and( sc.z.lessThanEqual( 1 ) );
+		if ( active ) inside = inside.and( active );
 		const visibility = float( 1 ).toVar();
 		// Ocean pixels beyond the island's light frustum need no raw shadow-map accesses.
 		// Derivatives and the binding's comparison sample above still run uniformly.
@@ -192,7 +206,10 @@ export function solarShadowVisibility( depth: THREE.Texture | THREE.TextureNode,
 			const radiusTexels = max( radius.x.mul( size.x ), radius.y.mul( size.y ) ).toVar();
 			// Bilinear comparison already covers a texel footprint. A solar penumbra below a
 			// quarter texel needs no extra disk taps; fade them in to avoid a threshold jump.
-			If( blockerCount.greaterThan( 0 ).and( radiusTexels.greaterThan( 0.25 ) ), () => {
+			// When every search tap is blocked the point lies in the umbra, since the search
+			// spans the widest penumbra possible at this depth: the bilinear result stands, and
+			// the disk taps are left to the penumbra bands.
+			If( blockerCount.greaterThan( 0 ).and( blockerCount.lessThan( BLOCKER_SAMPLES ) ).and( radiusTexels.greaterThan( 0.25 ) ), () => {
 
 				const filtered = visibility.toVar();
 

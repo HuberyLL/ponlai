@@ -26,7 +26,8 @@ exposed.
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
-  override), `quality` (low, medium, high).
+  override), `quality` (low, medium, high: the clouds' march, bake cadences and rain count, and
+  the render scale, see Decisions), `tone` (neutral-hue, the default, agx-hue, agx, neutral).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
   sky views.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
@@ -77,12 +78,14 @@ exposed.
   (two exponential height layers after tidewater's `AirHaze`, lit by the horizon sky and, near the
   camera, the key light through a phase function) and sea fog (the marine layer thickened in
   drifting banks of varying height, thinner over the island, plus morning mist).
-- `src/post/`: frame graph (opaque pass, depth resolve, water pass, crepuscular rays and sun
-  glare, bloom, tilt-shift, grade).
+- `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
+  and rain drawn into the same multisampled target, crepuscular rays and sun glare, bloom,
+  tilt-shift, tone curve and grade, FSR 1 upscale), render scale per quality preset
+  (`RenderScale.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
-  map multiplied into the island's static one. While the character art is settled, models load from the
+  map multiplied into the island's. While the character art is settled, models load from the
   git-ignored `artifacts/assets/` (dev server only).
 
 ## Decisions (keep to these)
@@ -93,8 +96,15 @@ exposed.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
-  the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Larger casters keep
-  the map, which redraws whenever the key light moves.
+  the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Stems, leaf stalks
+  and twigs (a few millimetres across) stay out of it too. The map is fitted to the island's
+  casters (the sea floor's stones cast only into the refracted map) and redrawn each time the key
+  light has turned 0.2 degrees; every receiver cross-fades from the previous step's map by the
+  light's progress (`SunShadow`), so shadows move smoothly instead of re-rasterising every frame,
+  and a paused clock holds them exactly. On screen a blade is kept at least two pixels wide (0.75
+  on the outer rim, where partly covered pixels show a pale fringe over the sea) with its coverage
+  lowered to match through alpha to coverage, so the meadow does not crawl as the camera moves;
+  close up the blades render unchanged.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
   Weather only scales the wave cascades' amplitude; it never rebuilds the wave spectrum. Storm foam
@@ -113,8 +123,30 @@ exposed.
   starlight. The night ambient rises as the sun's skylight fades after sunset, so twilight is
   never darker than the night; the night sky's own light (stars, airglow, moon disk, the sky's
   night floor, clouds) scales back to keep its tuned look in deep night.
+- The scene renders at a pixel ratio set by the quality preset (high: the display's, up to 1.5;
+  medium, the default: a 1920x1080 pixel budget; low: 1600x900); `dpr` and the GUI's full
+  resolution lift the budget. The canvas always matches the display (up to 2x): a render below
+  it is upscaled inside the frame graph with FSR 1 and the grain added after, never stretched by
+  the browser. Every pass is sized to the render, not the canvas (`rtt()` passes through
+  `sizeRtt`). At the display's ratio nothing is upscaled, so `dpr=1` captures are unchanged.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
+- The tone curve is PBR Neutral with hue-kept highlights (`neutral-hue` in `src/post/Pipeline.ts`):
+  PBR Neutral's toe, linear midtones and grade, where the scene was tuned, keep the water clear
+  (deep sea dark and saturated, the shallows' seabed and caustics in full contrast). Above the
+  start of its shoulder each colour is scaled by its brightest channel without PBR Neutral's
+  desaturation, so a low sun's sky and sea keep their hue instead of washing to cream; only above
+  white do highlights fade to white. A soft knee below white leaves the split tone's golden red
+  room for gradation, and bright colours alone gain a little saturation; both give way for scene
+  colours far above the brightest sky (8 - 32 times white), so the sun and its glints burn out. AgX was tried as the
+  default and dropped: its toe greyed the deep water and its shoulder flattened the shallows.
+  Each curve carries its own grade (exposure gain, saturation, vibrance, contrast); AgX with
+  hue-kept highlights (`agx-hue`), plain AgX and plain PBR Neutral stay selectable in the GUI
+  (`tone` URL option) for comparison. The night keeps PBR Neutral's look with its grade
+  whichever curve is chosen, crossfading as the sun sets (from the horizon to about -3 degrees,
+  so twilight is no darker than under PBR Neutral): its toe holds the night's dark colours
+  saturated where AgX's greys and lifts them, and its short shoulder lets the brightest few stars
+  reach near white.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
   sky reads as a low backdrop and turns stars into bokeh discs. Stars are points with a natural
   spread of brightness, kept below white except the brightest few; only those near the horizon
@@ -181,7 +213,12 @@ exposed.
 - In a full-screen pass (`QuadMesh`, `RenderPipeline`) the camera nodes refer to the pass's own
   camera: pass the scene camera's matrices as uniforms.
 - Screen uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
-- Multisampled depth can only be read with `textureLoad`; `Pipeline` resolves it to linear view z.
+- Multisampled depth can only be read with `textureLoad`, one sample at a time (the sample index
+  goes in its level argument); `Pipeline` resolves it to linear view z.
+- The water draws into the scene's multisampled target and cannot sample it: it reads
+  `Pipeline.opaqueRT` (a copy of the opaque colour) and `depthRT` (sample 0, and the farthest
+  sample for what lies behind the sea at an edge pixel). Post passes read `surfaceRT`, the
+  nearest surface's depth with the sea's included.
 - WebGPU needs uniform control flow for implicitly filtered texture samples and derivatives: take
   them (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
 - Nested loops: pass both ranges to one `Loop()` call so the counters get distinct names (`i`, `j`).
@@ -191,3 +228,8 @@ exposed.
   Alpha-to-coverage turns alpha short of cutoff + `fwidth` into partial coverage, so keep leaf
   interiors at 1 rather than scaling alpha down.
 - Vegetation draws before the terrain (`renderOrder = -1`) so the turf under it fails the depth test.
+- A `DepthTexture` without a `RenderTarget` takes the renderer's sample count, so a standalone one
+  is declared multisampled and cannot be sampled with a comparison; give it a render target.
+- The water's fragment stage already binds 16 sampled textures, the most WebGPU guarantees; a new
+  texture there fails pipeline creation unless another one goes (the sun's two shadow steps share
+  one array texture for this reason).

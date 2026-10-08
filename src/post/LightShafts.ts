@@ -4,6 +4,7 @@ import {
 	dot, normalize, acos, exp, select,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
+import { sizeRtt } from './RenderScale.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -36,11 +37,13 @@ export class LightShafts {
 	private readonly cameraWorld = uniform( new THREE.Matrix4() );
 	private readonly resolution = uniform( new THREE.Vector2( 1, 1 ) );
 	private readonly clip = new THREE.Vector4();
+	// the half-resolution passes, sized with the scene's render
+	private readonly passes: THREE.RTTNode[] = [];
 
-	/** Radiance to add to the HDR image, from the resolved depth, the water depth and the sky. */
-	build( depth: THREE.Texture, waterDepth: THREE.Texture, sky: Sky ): V3 {
+	/** Radiance to add to the HDR image, from the resolved depth (the sea's included) and the sky. */
+	build( depth: THREE.Texture, sky: Sky ): V3 {
 
-		const sceneDepth = texture( depth ), surfaceDepth = texture( waterDepth );
+		const sceneDepth = texture( depth );
 		const direction = ( q: V2 ) => {
 
 			const ndc = vec4( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1, 1 );
@@ -50,15 +53,14 @@ export class LightShafts {
 		};
 
 		// Half resolution: the open sky's brightness near the sun (r) and its plain visibility (g).
-		const source = rtt( Fn( () => {
+		const source = this.pass( rtt( Fn( () => {
 
 			const q = uv().toVar();
 			const px = ivec2( clamp( q.mul( this.resolution ), vec2( 0 ), this.resolution.sub( 1 ) ) );
 			const z = ( textureLoad( sceneDepth, px ) as unknown as F ).toVar();
-			const dw = ( textureLoad( surfaceDepth, px ) as unknown as F ).toVar();
 			const d = direction( q ).toVar();
 			const open = float( 0 ).toVar();
-			If( z.lessThan( - 9e4 ).and( dw.greaterThanEqual( 1 ) ).and( d.y.greaterThan( 0 ) ), () => {
+			If( z.lessThan( - 9e4 ).and( d.y.greaterThan( 0 ) ), () => {
 
 				open.assign( sky.clouds.sample( d ).a );
 
@@ -68,11 +70,11 @@ export class LightShafts {
 			const bright = exp( angle.div( - 0.05 ) ).mul( 1.5 ).add( exp( angle.div( - 0.15 ) ).mul( 0.15 ) );
 			return vec4( open.mul( bright ), open, 0, 1 );
 
-		} )(), null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } );
+		} )(), null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } ) );
 
 		const inside = ( p: V2 ) => select( p.x.greaterThanEqual( 0 ).and( p.x.lessThanEqual( 1 ) ).and( p.y.greaterThanEqual( 0 ) ).and( p.y.lessThanEqual( 1 ) ), float( 1 ), float( 0 ) );
 
-		const rays = rtt( Fn( () => {
+		const rays = this.pass( rtt( Fn( () => {
 
 			const result = float( 0 ).toVar();
 			If( this.facing.greaterThan( 0.001 ), () => {
@@ -94,7 +96,7 @@ export class LightShafts {
 			} );
 			return vec4( result, 0, 0, 1 );
 
-		} )(), null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } );
+		} )(), null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } ) );
 
 		return Fn( () => {
 
@@ -114,6 +116,20 @@ export class LightShafts {
 			return this.color.rgb.mul( glare.add( beams ) ).mul( this.facing );
 
 		} )();
+
+	}
+
+	private pass( node: THREE.RTTNode ): THREE.RTTNode {
+
+		this.passes.push( node );
+		return node;
+
+	}
+
+	/** The size of the scene's render (the canvas may be larger while the frame is upscaled). */
+	setSize( width: number, height: number ): void {
+
+		for ( const node of this.passes ) sizeRtt( node, width, height );
 
 	}
 

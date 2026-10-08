@@ -20,9 +20,11 @@ import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildFlowers } from './world/Flowers.ts';
-import { Pipeline } from './post/Pipeline.ts';
+import { Pipeline, TONE_CURVES, type ToneCurve } from './post/Pipeline.ts';
+import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { shared } from './shared.ts';
-import { installSolarShadowFilter, installOpenShadow } from './lighting/SolarShadow.ts';
+import { installOpenShadow } from './lighting/SolarShadow.ts';
+import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { islandSurfaceHeight } from './world/WorldShapes.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
@@ -50,18 +52,12 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 
 }
 
+// The scene renders at a pixel ratio set by the quality preset (see RenderScale.ts), at most the
+// display's and DPR_CAP; the canvas matches the display and the frame graph upscales to it.
+// Explicit DPR captures and the full-resolution control lift the preset's pixel budget.
 const DPR_CAP = params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : 1.5;
-const resolution = { full: params.has( 'dpr' ) };
-const DEFAULT_PIXEL_BUDGET = 1920 * 1080;
-function renderPixelRatio( width: number, height: number ): number {
-
-	const requested = Math.min( devicePixelRatio, DPR_CAP );
-	// Ocean optics and post effects scale with pixel count. Bound the default workload on
-	// large/high-DPI windows; explicit DPR captures and the full-resolution control opt out.
-	return resolution.full ? requested : Math.min( requested, Math.sqrt( DEFAULT_PIXEL_BUDGET / ( width * height ) ) );
-
-}
-renderer.setPixelRatio( renderPixelRatio( innerWidth, innerHeight ) );
+const resolution = { full: params.has( 'dpr' ), render: '' };
+renderer.setPixelRatio( outputPixelRatio( 1 ) );
 renderer.setSize( innerWidth, innerHeight );
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -131,8 +127,11 @@ function applySkyQuality(): void {
 
 	sky.setQuality( skyQuality.value === 'low' ? 'low' : skyQuality.value === 'high' ? 'high' : 'medium' );
 	rain?.setQuality( WEATHER_QUALITY[ skyQuality.value ].rainDrops );
+	// the render scale follows the preset too (the pipeline exists from the first resize on)
+	if ( pipelineReady ) resize();
 
 }
+let pipelineReady = false;
 applySkyQuality();
 scene.add( sky.dome, sky.lightning.group );
 scene.environmentIntensity = 1;
@@ -141,13 +140,13 @@ const lighting = { skyFill: 1 };
 const sun = new THREE.DirectionalLight( 0xffffff, 1 );
 sun.castShadow = true;
 sun.shadow.mapSize.set( 2048, 2048 );
-const sc = sun.shadow.camera;
-sc.left = - 36; sc.right = 36; sc.top = 36; sc.bottom = - 36; sc.near = 1; sc.far = 220;
-// Bias in metres along the light ray, converted to this orthographic map's depth range.
-// Receiver-plane correction in the shared filter keeps contacts sharp without a wide blur.
-sun.shadow.bias = - 0.01 / ( sc.far - sc.near );
+// The map is fitted to the island's casters once the world exists, and redrawn in small steps of
+// the key light with a cross-fade (SunShadow). Its bias, 1 cm along the light ray, follows each
+// fit's depth range; receiver-plane correction in the shared filter keeps contacts sharp without
+// a wide blur.
 sun.shadow.normalBias = 0.012;
-installSolarShadowFilter( sun );
+const sunShadow = new SunShadow( sun, { bias: 0.01 } );
+sunShadow.install();
 // Cloud shadowing shares the density field in the visible/reflected sky. Bake its long solar
 // path once at low resolution, then sample the same transmission on every receiver, including
 // those beyond the island's shadow map (the sea floor seen through the water).
@@ -156,11 +155,9 @@ installOpenShadow( sun, ( position ) => sky.cloudVisibility( position ) );
 // must be installed before any receiving material is built.
 const characterShadow = new CharacterShadow();
 characterShadow.install( sun );
-// Vegetation casts its rest pose; wind only changes the visible mesh. The first render
-// builds the complete map, then sunlight or caster edits explicitly invalidate it.
-sun.shadow.autoUpdate = false;
-function invalidateSunShadow(): void { sun.shadow.needsUpdate = true; }
-invalidateSunShadow();
+// Vegetation casts its rest pose; wind only changes the visible mesh. The key light's steps
+// redraw the map; a jump of the light or an edit to the casters redraws it from scratch.
+function invalidateSunShadow(): void { sunShadow.invalidate(); }
 scene.add( sun, sun.target );
 
 function fresnel( cosI: number, eta: number ): number {
@@ -276,7 +273,9 @@ rain = new Rain( { count: WEATHER_QUALITY[ skyQuality.value ].rainDrops } );
 // damped (like the storm spray's), since the displayed deck brightens far less than the fill.
 rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).pow( 0.35 ) ) );
 const pipeline = new Pipeline( renderer, sky, rain );
-rain.bindOpaqueDepth( pipeline.depthRT.texture );
+const requestedTone = params.get( 'tone' ) as ToneCurve | null;
+if ( requestedTone && TONE_CURVES.includes( requestedTone ) ) pipeline.setToneMapping( requestedTone );
+rain.bindOpaqueDepth( pipeline.depthRT.texture, pipeline.surfaceRT.texture );
 rainScene.add( rain.group );
 
 // ------------------------------------------------------------------ world
@@ -298,6 +297,20 @@ const foliage = buildFoliage( data.vegetation, shared );
 const flowers = buildFlowers( data.vegetation, shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 scene.add( grass, foliage, flowers, rimFoliage );
+{
+
+	// Everything that casts into the sun's map: the figures cast through their own map, and the
+	// sea floor's stones only into the refracted one.
+	const casters = new THREE.Box3();
+	for ( const root of [ world.group, foliage, flowers, rimFoliage ] ) {
+
+		root.updateWorldMatrix( true, true );
+		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) casters.expandByObject( object ); } );
+
+	}
+	sunShadow.setCasters( casters );
+
+}
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
 rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage ] );
 setStatus( 'Waking the villagers…' );
@@ -322,8 +335,8 @@ const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
 	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: pipeline.depthRT.texture,
 } );
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun, storm: stormSea,
-	sceneColor: pipeline.sceneRT.texture, linearDepth: pipeline.depthRT.texture,
+	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun, sunShadow, storm: stormSea,
+	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 applySkyFill();
 waterScene.add( water.mesh, stormSea.spray.mesh );
@@ -429,7 +442,12 @@ cameraF.add( camera, 'fov', 15, 100, 1 ).name( 'field of view' ).listen().onChan
 cameraF.add( { reset: () => setCameraView( 'island' ) }, 'reset' ).name( 'return to island (R)' );
 const environmentLook = { exposure: true };
 const W = water.uniforms;
-gui.addFolder( 'Performance' ).add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
+// Quality sets the clouds' march, bake cadences, rain count and the render scale together.
+const performanceF = gui.addFolder( 'Performance' );
+performanceF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'quality' ).listen().onFinishChange( () => { applySkyQuality(); void refreshEnvironment(); } );
+performanceF.add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
+performanceF.add( pipeline.sharpness, 'value', 0, 2, 0.05 ).name( 'upscale softness' );
+performanceF.add( resolution, 'render' ).name( 'render → canvas' ).listen().disable();
 const groundF = gui.addFolder( 'Ground' );
 groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => {
 
@@ -442,7 +460,6 @@ groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' ).on
 const sunF = gui.addFolder( 'Sun' );
 const cloudF = gui.addFolder( 'Sky & clouds' );
 cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover override' ).onFinishChange( ( value: number ) => { cloudOverride = value; void refreshEnvironment(); } );
-cloudF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'sky quality' ).onFinishChange( () => { applySkyQuality(); void refreshEnvironment(); } );
 const weatherF = gui.addFolder( 'Weather' );
 const weatherView = { preset: weather.target, seconds: 20 };
 weatherF.add( weatherView, 'preset', Object.keys( WEATHER_PRESETS ) ).name( 'weather' ).listen().onChange( ( name: WeatherName ) => { void setWeather( name, weatherView.seconds ); } );
@@ -500,10 +517,11 @@ islanderF.add( characterLook.rimGain, 'value', 0, 4, 0.01 ).name( 'sun rim' );
 islanderF.add( characterLook.skyRimGain, 'value', 0, 4, 0.01 ).name( 'sky rim' );
 islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'shade saturation' );
 const postF = gui.addFolder( 'Post' );
+postF.add( S, 'toneMapping', TONE_CURVES ).name( 'tone curve' ).onChange( ( curve: ToneCurve ) => pipeline.setToneMapping( curve ) );
 postF.add( S, 'exposure', 0.1, 5, 0.01 );
-postF.add( S, 'saturation', 0, 2, 0.01 );
-postF.add( S, 'vibrance', 0, 1, 0.01 );
-postF.add( S, 'contrast', - 0.5, 1, 0.01 );
+postF.add( S, 'saturation', 0, 2, 0.01 ).listen();
+postF.add( S, 'vibrance', 0, 1, 0.01 ).listen();
+postF.add( S, 'contrast', - 0.5, 1, 0.01 ).listen();
 postF.add( S, 'split', 0, 1, 0.01 ).name( 'split tone' );
 postF.addColor( S, 'lift' );
 postF.add( S, 'bloomStrength', 0, 1.5, 0.01 );
@@ -520,20 +538,27 @@ postF.add( S, 'grain', 0, 0.05, 0.001 );
 
 // ------------------------------------------------------------------ loop
 
+const canvasSize = new THREE.Vector2();
 function resize(): void {
 
 	const w = innerWidth, h = innerHeight;
-	renderer.setPixelRatio( renderPixelRatio( w, h ) );
+	const ratio = renderPixelRatio( w, h, skyQuality.value, resolution.full, DPR_CAP );
+	renderer.setPixelRatio( outputPixelRatio( ratio ) );
 	renderer.setSize( w, h );
 	camera.aspect = w / h;
 	camera.updateProjectionMatrix();
-	const pr = renderer.getPixelRatio();
-	pipeline.setSize( Math.floor( w * pr ), Math.floor( h * pr ) );
+	renderer.getDrawingBufferSize( canvasSize );
+	// at the display's ratio the render is the canvas, to the pixel, and nothing is upscaled
+	const rw = ratio === renderer.getPixelRatio() ? canvasSize.x : Math.floor( w * ratio );
+	const rh = ratio === renderer.getPixelRatio() ? canvasSize.y : Math.floor( h * ratio );
+	pipeline.setSize( rw, rh, canvasSize.x, canvasSize.y );
+	resolution.render = `${ rw }x${ rh } → ${ canvasSize.x }x${ canvasSize.y }` + ( pipeline.upscaling ? ` (${ Math.round( rw / canvasSize.x * 100 ) } %, FSR)` : '' );
 
 }
 
 addEventListener( 'resize', resize );
 resize();
+pipelineReady = true;
 
 const clock = new THREE.Timer();
 clock.connect( document );
@@ -551,7 +576,6 @@ addEventListener( 'keydown', ( e ) => {
 
 const frameTimes: number[] = [];
 let shadowElapsed = 0;
-const shadowDirection = new THREE.Vector3();
 function tick(): void {
 
 	clock.update();
@@ -585,8 +609,9 @@ function tick(): void {
 	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
 	// Lightning follows the scene clock, so a paused frame holds its strike; it lights the clouds'
 	// march below, so it goes first.
-	sky.lightning.update( simTime, weather.state.storm, camera, renderer.domElement.height, sky.clouds );
-	sky.updateClouds( camera, renderer.domElement.width, renderer.domElement.height, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
+	// (the scene's render size: the canvas is larger while the frame is upscaled)
+	sky.lightning.update( simTime, weather.state.storm, camera, pipeline.height, sky.clouds );
+	sky.updateClouds( camera, pipeline.width, pipeline.height, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
 	shared.storm.value = weather.state.storm;
 	// A strike lights the island for an instant through the sky's fill: the lit cloud deck adds its
@@ -601,13 +626,18 @@ function tick(): void {
 	rain!.uniforms.rain.value = shared.rain.value;
 	rain!.uniforms.wind.value.copy( shared.wind.velocity.value );
 	rain!.uniforms.waterLevel.value = shared.waterLevel.value;
-	rain!.update( renderer, camera, simTime, shared.wind.displacement.value, renderer.domElement.height );
+	rain!.update( renderer, camera, simTime, shared.wind.displacement.value, pipeline.height );
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		const state = sky.grade;
 		S.exposure = state.exposure;
 		S.lift.setRGB( state.blackLift, state.blackLift, state.blackLift * 0.97 );
 		S.split = 0.16 + state.daylight * 0.29;
+		// The night returns to PBR Neutral's look as the sun sets: none while the sun is up (a low
+		// sun's bright sky needs AgX's shoulder), fully from about -3 degrees. AgX's grade darkens a
+		// dim frame, so a crossfade held back to -2 .. -6 degrees left the frame up to a fifth darker
+		// than PBR Neutral's just after sunset, and darker than the night.
+		S.nightLook = 1 - THREE.MathUtils.smoothstep( state.daylight, 0.2, 0.45 );
 
 	}
 	skyElapsed += environmentDt;
@@ -624,15 +654,10 @@ function tick(): void {
 		void sky.update( skyInterval ).catch( ( error: unknown ) => console.error( error ) );
 
 	}
-	// Redraw the sun's map whenever the key moves. Its casters are all larger than a texel (the
-	// meadow shades itself, see MeadowCanopy), so their shadows slide with the light; a throttled
-	// redraw made them step at its cadence instead. The underwater map keeps the quality cadence.
-	if ( shadowDirection.distanceToSquared( sky.keyDir ) > 1e-10 ) {
-
-		shadowDirection.copy( sky.keyDir );
-		invalidateSunShadow();
-
-	}
+	// The sun's map steps with the key light and cross-fades between steps, so its shadows move
+	// smoothly without re-rasterising sub-texel casters every frame. The underwater map keeps the
+	// quality cadence.
+	sunShadow.update( renderer, scene, camera, sky.keyDir );
 	shadowElapsed += environmentDt;
 	if ( shadowElapsed >= WEATHER_QUALITY[ skyQuality.value ].underwaterShadowInterval && refractedSun.update() ) shadowElapsed = 0;
 	shared.time.value = simTime;
@@ -643,7 +668,7 @@ function tick(): void {
 	caustics.update( sky.keyDir );
 	characters.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
-	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * renderer.domElement.height / 900, S.dof );
+	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * pipeline.height / 900, S.dof );
 
 	pipeline.render( { scene, waterScene, rainScene: rain!.mesh.visible ? rainScene : undefined, camera, water: water!, sun, time: simTime } );
 	frame ++;
@@ -660,12 +685,15 @@ function diagnostics(): void {
 		frameMs: + ( frameTimes.reduce( ( a, b ) => a + b, 0 ) / frameTimes.length ).toFixed( 2 ),
 		frameMsP95: + [ ...frameTimes ].sort( ( a, b ) => a - b )[ Math.floor( frameTimes.length * 0.95 ) ].toFixed( 2 ),
 		canvas: [ renderer.domElement.width, renderer.domElement.height ],
+		render: [ pipeline.width, pipeline.height ],
+		upscaled: pipeline.upscaling,
 		calls: info.render.drawCalls,
 		triangles: info.render.triangles,
 		computeCalls: info.compute.frameCalls,
 		geometries: info.memory.geometries,
 		textures: info.memory.textures,
-		dpr: renderer.getPixelRatio(),
+		dpr: + ( pipeline.width / innerWidth ).toFixed( 4 ), // the render's pixel ratio
+		canvasDpr: renderer.getPixelRatio(),
 		worldTriangles: world.triangles,
 		rimStrands: data.rimStrands.length,
 		timings: data.timings,
@@ -697,4 +725,4 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime };

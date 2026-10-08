@@ -50,7 +50,7 @@ export interface WeatherQualityProfile {
 	panoramaWidth: number;
 	panoramaHeight: number;
 	skyUpdateInterval: number;
-	underwaterShadowInterval: number; // refracted sun map; the sun's own map follows every key change
+	underwaterShadowInterval: number; // refracted sun map; the sun's own map steps with the key light (SunShadow)
 	rainDrops: number;
 
 }

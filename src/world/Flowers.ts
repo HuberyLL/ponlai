@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionGeometry, positionLocal, normalViewGeometry, vec3, clamp, mix, smoothstep as smoothstepN } from 'three/tsl';
+import { attribute, positionGeometry, positionLocal, normalViewGeometry, vec3, clamp, mix, step, smoothstep as smoothstepN } from 'three/tsl';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
@@ -43,10 +43,11 @@ function blossomGeometry() {
 
 	}
 
-	const stem = add( - 0.016, 0, 0, 0, 0.25, 1, 0.65, 0 );
-	add( 0.016, 0, 0, 0, 0.25, 1, 0.65, 0 );
-	add( 0.025, 1, 0, 0, 0.25, 1, 1, 0 );
-	add( - 0.009, 1, 0, 0, 0.25, 1, 1, 0 );
+	// part - 1: the stem, coloured as the leaves (part 0) but kept out of the sun's shadow map
+	const stem = add( - 0.016, 0, 0, 0, 0.25, 1, 0.65, - 1 );
+	add( 0.016, 0, 0, 0, 0.25, 1, 0.65, - 1 );
+	add( 0.025, 1, 0, 0, 0.25, 1, 1, - 1 );
+	add( - 0.009, 1, 0, 0, 0.25, 1, 1, - 1 );
 	I.push( stem, stem + 1, stem + 2, stem, stem + 2, stem + 3 );
 	for ( const side of [ - 1, 1 ] ) {
 
@@ -81,7 +82,7 @@ function flowerMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const g = positionGeometry, p = positionLocal;
 	const wind = shared.wind.direction;
 	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
-	useRestPoseShadows( mat, p, p.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.035 ).mul( g.y.mul( g.y ) ) ) ) );
+	useRestPoseShadows( mat, p, p.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.035 ).mul( g.y.mul( g.y ) ) ) ), step( - 0.5, part ) );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = attribute<'float'>( 'skyVisibility', 'float' );
 	return mat;

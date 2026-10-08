@@ -347,6 +347,17 @@ comment where it is used.
   and P. Shirley, [*Simple Analytic Approximations to the CIE XYZ Color Matching Functions*](https://jcgt.org/published/0002/02/01/)
   (JCGT 2013). The baked bows peak where the classic values put them: the primary's red at about
   42 degrees from the antisolar point, the secondary's at about 51.
+- Upscaling a render below the display's resolution: AMD FidelityFX Super Resolution 1 (EASU
+  edge-adaptive upsampling and RCAS sharpening), [GPUOpen](https://gpuopen.com/fidelityfx-superresolution/);
+  the code is three.js's `FSR1Node` (an npm dependency).
+- Tone curve: Troy Sobotka's [AgX](https://github.com/sobotka/AgX), through three.js's
+  `agxToneMapping` (Benjamin Wrensch's
+  [minimal AgX fit](https://iolite-engine.com/blog_posts/minimal_agx_implementation)); the hue-kept
+  highlights scale each colour by its brightest channel as Khronos'
+  [PBR Neutral](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral) does.
+- Default tone curve: Khronos' [PBR Neutral](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)
+  (Emmett Lalish's curve, as in three.js's `neutralToneMapping`), reimplemented in TSL without its
+  desaturation toward white so highlights keep their hue.
 - Depth of field, highlights averaged compressed by their luminance (c / (1 + L)) and expanded
   again: Brian Karis, [*Tone mapping*](https://graphicrants.blogspot.com/2013/12/tone-mapping.html)
   (2013).
@@ -354,6 +365,9 @@ comment where it is used.
   than the pixel's own blur): Jorge Jimenez,
   [*Next Generation Post Processing in Call of Duty: Advanced Warfare*](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare)
   (SIGGRAPH 2014 course *Advances in Real-Time Rendering in Games*).
+- Grass blades kept a minimum width on screen with their coverage lowered to match (alpha to
+  coverage), so thin blades stop crawling under camera motion: Emil Persson, *Phone-wire AA*
+  (2012 demo and write-up on [humus.name](http://www.humus.name/)).
 
 ## References
 

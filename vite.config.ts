@@ -53,6 +53,11 @@ function licences(): Plugin {
 export default defineConfig( {
 	base: './',
 	plugins: [ licences() ],
+	server: {
+		// Worktrees for parallel branches live under .claude/. A build or checkout there writes an
+		// index.html inside this root, which would make the dev server reload every open page.
+		watch: { ignored: [ '**/.claude/**' ] },
+	},
 	build: {
 		target: 'es2022',
 		chunkSizeWarningLimit: 1500,

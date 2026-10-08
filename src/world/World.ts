@@ -72,7 +72,10 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 
 		const mesh = new THREE.Mesh( geo, mat );
 		mesh.name = m.name;
-		mesh.castShadow = true;
+		// The sea floor's stones lie well under the surface, so they cannot shade anything lit
+		// through the air; submerged receivers take their shadows from the refracted map.
+		// Keeping them out of the sun's map lets it fit the island alone.
+		mesh.castShadow = m.kind === 'cliff';
 		mesh.receiveShadow = true;
 		group.add( mesh );
 

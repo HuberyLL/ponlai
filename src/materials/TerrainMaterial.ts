@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, cameraViewMatrix,
+	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, normalViewGeometry, cameraViewMatrix,
 	cameraPosition, specularColor, specularColorBlended, specularF90,
 	normalize, abs, pow, max, min, dot, sign, mix, smoothstep, clamp, fract, sin, exp, select, dFdx, dFdy, length,
 } from 'three/tsl';
@@ -494,9 +494,16 @@ class TerrainLightingModel extends THREE.PhysicalLightingModel {
 
 	direct( input: THREE.LightingModelDirectInput, builder: THREE.NodeBuilder ): void {
 
+		const lightDirection = select( this.underwater, this.sunDirection, input.lightDirection as V3 );
+		// The bump terminator: past the geometric terminator the stone's detail normals still
+		// tilt some texels toward the light, and the shadow map cannot shade them, since the
+		// surface there occludes only itself (the bias clears it). Their sunlit specks twinkled
+		// inside the cliff's own shadow along its creases. A surface facing away from the light
+		// cannot see it; fade the key light out over the last few degrees before the terminator.
+		const facing = smoothstep( 0, 0.06, dot( normalViewGeometry, lightDirection ) );
 		super.direct( { ...input,
-			lightDirection: select( this.underwater, this.sunDirection, input.lightDirection as V3 ),
-			lightColor: ( input.lightColor as V3 ).mul( this.sunAtt ),
+			lightDirection,
+			lightColor: ( input.lightColor as V3 ).mul( this.sunAtt ).mul( facing ),
 		}, builder );
 
 	}
