@@ -252,7 +252,10 @@ stone exposed.
   water's 2 %, still following Fresnel), so they read as water from above.
 - Characters are simple low-poly figures with flat colours and simple faces, recoloured into the
   island's palette and lit by the island's own light in soft cel steps; no outlines. Plants and
-  props keep their realistic shading.
+  props keep their realistic shading. The islanders are a Hylian-like people (after The Legend of
+  Zelda: Breath of the Wild): human in every way but for long pointed ears that sweep back and a
+  little up, grown on any head of the kit (`Ears.ts`) and bound to its head bone. Their dress stays
+  plain while the basic look settles: undyed linen and calm earthy tones, leather shoes, no hat.
 - Do not commit reference images, and do not ship third-party art without a licence.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
   copyright line, licence) and the licence text sits next to them (see `src/ocean/tidewater.LICENSE.txt`).
