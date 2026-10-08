@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, dot, pow, clamp, fract, sin, select,
-	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, varying, varyingProperty, uniform,
+	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, screenCoordinate, ivec2, varying, varyingProperty, uniform,
 	smoothstep as smoothstepN,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
@@ -15,6 +15,7 @@ import { windGust } from '../weather/Wind.ts';
 import { CANOPY_TOP, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
+import { ALPHA_TO_COVERAGE, markVegetation } from './Foliage.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import type { Shared } from '../shared.ts';
 
@@ -185,12 +186,31 @@ function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F ): V3 {
 
 }
 
+// The single-sample stand-in for alpha to coverage: a 4x4 Bayer threshold (16 levels, as many as
+// the hardware's 4x pattern gives). Like that pattern it is the same for every blade over a
+// pixel, so overlapping blades share their covered pixels rather than adding up: the soil and
+// the flowers keep showing through a stack of widened blades as they do at 4x. A hash per blade
+// (alphaHash) drew independent pixels for each and closed the meadow over them.
+const coverageDither = Fn( () => {
+
+	const p = ivec2( screenCoordinate.xy );
+	const x = p.x.bitAnd( 3 ), y = p.y.bitAnd( 3 );
+	const d = x.bitXor( y );
+	const index = d.bitAnd( 1 ).shiftLeft( 3 ).bitOr( y.bitAnd( 1 ).shiftLeft( 2 ) ).bitOr( d.bitAnd( 2 ) ).bitOr( y.shiftRight( 1 ) );
+	return float( index ).add( 0.5 ).div( 16 );
+
+} );
+
 function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 	// Alpha to coverage carries the widened blades' coverage (see `pixelWideBlade`); a blade at
-	// least `minWidth` wide keeps full coverage and renders as before.
-	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.86, metalness: 0, side: THREE.DoubleSide, alphaToCoverage: true } );
+	// least `minWidth` wide keeps full coverage and renders as before. Without multisampling
+	// there is no coverage to lower, and the widened blades would draw solid: an ordered dither
+	// threshold per pixel keeps that share of a blade's pixels instead (`coverageDither`).
+	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.86, metalness: 0, side: THREE.DoubleSide, alphaToCoverage: ALPHA_TO_COVERAGE } );
 	mat.opacityNode = bladeCoverage;
+	if ( ! ALPHA_TO_COVERAGE ) mat.alphaTestNode = coverageDither();
+	markVegetation( mat );
 	const wind = shared.wind.direction;
 	const blade = attribute<'vec4'>( 'blade', 'vec4' );
 	const t = blade.x;

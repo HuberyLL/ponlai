@@ -8,6 +8,7 @@ import { pickFoliageSites } from './FoliageSites.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
 import { supportsMeadow } from '../materials/Meadow.ts';
+import { SCENE_SAMPLES } from '../post/SceneSamples.ts';
 import type { Shared } from '../shared.ts';
 
 // Individual folded leaves on short branching sprays. Three offset crowns keep bushes
@@ -83,6 +84,23 @@ export function leafTexture( size = 128 ): THREE.CanvasTexture {
 }
 
 export const LEAF_ALPHA_TEST = 0.3;
+
+// Whether the vegetation's cut-outs and thin blades use alpha to coverage. WebGPU multisamples
+// with 4 samples or none (three maps any other count to one sample), and with one sample there
+// is no coverage to give: the pipeline then ignores alpha, so the softened alpha-tested edges and
+// the grass's lowered coverage would all draw solid. Without it leaves take a plain alpha test at
+// the cutoff their coverage-preserving mips were built for (`leafAlphaTexture`), and grass blades
+// an ordered 4x4 dither (`coverageDither` in Grass.ts).
+export const ALPHA_TO_COVERAGE = SCENE_SAMPLES >= 4;
+
+// Tags a material as vegetation (leaves and grass blades) for passes that treat it apart, such
+// as a lighter shadow filter. `alphaToCoverage` cannot tell: it is off without multisampling.
+// The tag lives in userData, so a cloned material keeps it.
+export function markVegetation( material: THREE.Material ): void {
+
+	material.userData.vegetation = true;
+
+}
 
 // Per-vertex flag on twigs, stems and leaf stalks, which stay out of the sun's shadow map.
 export const LEAF_STEM = 'leafStem';
@@ -281,9 +299,10 @@ function bushGeometry( seed = 5 ) {
 function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.MeshStandardNodeMaterial {
 
 	const mat = new THREE.MeshStandardNodeMaterial( {
-		map, alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
+		map, alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: ALPHA_TO_COVERAGE, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
 	} );
 	mat.alphaMap = leafAlphaTexture( map.image.width );
+	markVegetation( mat );
 	const wetness = clamp( shared.wetness, 0, 1 );
 	const wetTint = mix( 1, 0.92, wetness );
 	// materialColor retains the leaf map and its alpha; Three applies vertex and instance
