@@ -145,21 +145,6 @@ const projectView = Fn( ( [ p, proj ]: [ V3, M4 ] ) => {
 
 } ).setLayout( { name: 'projectView', type: 'vec2', inputs: [ { name: 'p', type: 'vec3' }, { name: 'proj', type: 'mat4' } ] } );
 
-// The seabed's height at a distance from the shoreline at sea level (m): makeSeabed's and
-// deepenSeabed's terms of the footprint distance, without their noise (keep the three in step;
-// see src/world/WorldShapes.ts and Bathymetry.ts). The cliff stands about
-// half a metre outside its footprint at sea level. Against the floor the worker builds, this
-// is within a quarter metre on average (at most about 0.9 m) out to 30 m from the shore.
-const seabedProfile = Fn( ( [ shoreDistance ]: [ F ] ) => {
-
-	const d = shoreDistance.add( 0.55 ).toVar();
-	const dd = max( d, 0 ).toVar();
-	return float( - 1.6 ).sub( smoothstep( 0, 5, dd ).mul( 1.2 ) ).sub( smoothstep( 6, 26, dd ).mul( 3.6 ) )
-		.sub( smoothstep( 40, 110, dd ).mul( 6 ) ).sub( float( 1 ).sub( smoothstep( 0, 2.5, dd ) ).mul( 0.6 ) )
-		.sub( smoothstep( - 1, 3, d ).mul( 1.5 ) ).sub( smoothstep( 5, 22, d ).mul( 1.2 ) );
-
-} ).setLayout( { name: 'seabedProfile', type: 'float', inputs: [ { name: 'shoreDistance', type: 'float' } ] } );
-
 // The synthetic floor's albedos, matched to the traced floor where both are known: the shelf's
 // sand by the cliffs, the basin's silted sand (seagrass beds averaged in), the cliff's submerged
 // face under its algae, and the seagrass beds' tint on the sand.
@@ -167,32 +152,39 @@ const SHELF_ALBEDO = vec3( 0.32, 0.31, 0.29 );
 const BASIN_ALBEDO = vec3( 0.26, 0.24, 0.21 );
 const FACE_ALBEDO = vec3( 0.14, 0.15, 0.14 );
 const SEAGRASS_TINT = vec3( 0.28, 0.36, 0.22 );
+// The submerged face's share of the sky's light, against the floor's: matched to the traced face,
+// whose shaded stone the terrain lights by the whole sky's irradiance for its normal (bright
+// toward the horizon) and whose jointed blocks catch it on their ledges.
+const FACE_SKY = 2;
 
-// The cliff's submerged face leans out by about this much per metre of depth (its battered toe).
-const WALL_LEAN = 0.15;
+// The cliff's submerged face stands nearly plumb below its waterline (its jointed columns step
+// out a few centimetres per metre of depth, the wave-cut notch aside).
+const WALL_LEAN = 0.04;
 
-// Drops below the surface (m) at which the shoreline distance is sampled down each vertex's
-// refracted ray: dense near the surface, where the shelf by the cliffs lies, sparse in the basin.
+// Drops below the surface (m) at which the shoreline distance and the floor's height are sampled
+// down each vertex's refracted ray: dense near the surface, where the shelf by the cliffs lies,
+// sparse in the basin.
 const SHORE_DROPS = [ 0, 0.75, 1.5, 2.5, 3.75, 5.5, 8, 12 ];
 
 // Where a refracted ray from a surface point meets the seabed or the island's submerged face, in
-// world space. The shoreline distance is known at fixed drops down the ray (`near`, `far`: four
-// each, see SHORE_DROPS) and varies linearly between them; `skew` adds the distance this ray
-// gains per metre of drop over the ray the samples were taken along. The ray is open water while
-// it is above the floor that the seabed's profile puts at its shoreline distance, and outside
-// the face, which stands WALL_LEAN * depth outside the shoreline. Returns the drop at which it
-// stops being open, the shoreline distance there, and the share of the face rather than the
-// floor, which turns over the last half metre (along the ray) before the face cuts the ray off,
-// so that the face's foot is a soft line on the water rather than a pixel step.
-const seabedLanding = Fn( ( [ originY, level, near, far, skew, down ]: [ F, F, V4, V4, F, F ] ) => {
+// world space. The shoreline distance and the floor's height are known at fixed drops down the
+// ray (`near`, `far`, `floorNear`, `floorFar`: four each, see SHORE_DROPS) and vary linearly
+// between them; `skew` adds what each gains per metre of drop on this ray over the ray the
+// samples were taken along. The ray is open water while it is above the floor and outside the
+// face, which stands WALL_LEAN * depth outside the shoreline. Returns the drop at which it stops
+// being open, the shoreline distance there, and the share of the face rather than the floor,
+// which turns over the last half metre (along the ray) before the face cuts the ray off, so that
+// the face's foot is a soft line on the water rather than a pixel step.
+const seabedLanding = Fn( ( [ originY, level, near, far, floorNear, floorFar, skew, down ]: [ F, F, V4, V4, V4, V4, V2, F ] ) => {
 
 	const samples = [ near.x, near.y, near.z, near.w, far.x, far.y, far.z, far.w ];
-	const shore = SHORE_DROPS.map( ( drop, k ) => samples[ k ].add( skew.mul( drop ) ).toVar() );
-	const floor = SHORE_DROPS.map( ( drop, k ) => originY.sub( drop ).sub( seabedProfile( max( shore[ k ], 0 ) ) ).toVar() );
+	const heights = [ floorNear.x, floorNear.y, floorNear.z, floorNear.w, floorFar.x, floorFar.y, floorFar.z, floorFar.w ];
+	const shore = SHORE_DROPS.map( ( drop, k ) => samples[ k ].add( skew.x.mul( drop ) ).toVar() );
+	const floor = SHORE_DROPS.map( ( drop, k ) => originY.sub( drop ).sub( heights[ k ].add( skew.y.mul( drop ) ) ).toVar() );
 	const face = SHORE_DROPS.map( ( drop, k ) => shore[ k ].sub( max( level.sub( originY ).add( drop ), 0 ).mul( WALL_LEAN ) ).toVar() );
 	const last = SHORE_DROPS.length - 1;
-	// Below the last sample the floor lies at the profile's depth for the last distance.
-	const result = vec3( max( originY.sub( seabedProfile( max( shore[ last ], 0 ) ) ), SHORE_DROPS[ last ] ), shore[ last ], 0 ).toVar();
+	// Below the last sample the floor stays at the last sample's height.
+	const result = vec3( max( floor[ last ].add( SHORE_DROPS[ last ] ), SHORE_DROPS[ last ] ), shore[ last ], 0 ).toVar();
 	const found = float( 0 ).toVar();
 	If( floor[ 0 ].lessThanEqual( 0 ).or( face[ 0 ].lessThanEqual( 0 ) ), () => {
 
@@ -223,7 +215,8 @@ const seabedLanding = Fn( ( [ originY, level, near, far, skew, down ]: [ F, F, V
 	name: 'seabedLanding', type: 'vec3',
 	inputs: [
 		{ name: 'originY', type: 'float' }, { name: 'level', type: 'float' }, { name: 'near', type: 'vec4' },
-		{ name: 'far', type: 'vec4' }, { name: 'skew', type: 'float' }, { name: 'down', type: 'float' },
+		{ name: 'far', type: 'vec4' }, { name: 'floorNear', type: 'vec4' }, { name: 'floorFar', type: 'vec4' },
+		{ name: 'skew', type: 'vec2' }, { name: 'down', type: 'float' },
 	],
 } );
 
@@ -232,6 +225,7 @@ export interface WaterInputs {
 	sky: Sky;
 	shared: Shared;
 	shore: THREE.Texture;
+	seabedHeight: THREE.Texture; // the rendered floor's height over the shoreline field's bounds
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
 	sunShadow: SunShadow;
@@ -262,7 +256,7 @@ export class Water {
 	private shadowNormalBias = uniform( 0 );
 	private shadowIntensity = uniform( 1 );
 
-	constructor( { fft, sky, shared, shore, shoreWaves, refractedSun, sunShadow, storm, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
+	constructor( { fft, sky, shared, shore, seabedHeight, shoreWaves, refractedSun, sunShadow, storm, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
 
 		// grid in world xz, warped dense under the island and sparse toward the horizon
 		const n = res;
@@ -351,29 +345,38 @@ export class Water {
 			.add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) ).toVar();
 		material.positionNode = displaced;
 		const vLag = varying( xz ), vDamp = varying( coastDamp ), vFineWeight = varying( fineWeight );
-		// The shoreline distance for the refraction's world-space estimate of the floor, sampled down
-		// this vertex's refracted ray as a level sea bends it, at fixed drops below the surface.
-		// Interpolated across the triangles, the distances stay continuous where the field's
-		// gradient is not (around the cliffs' corners, between facing cliffs), so that the fragment
-		// follows its own ray past a corner or into a cove. The gradient is taken where that ray
-		// lands: it faces the floor's slope and the cliff's face the ray meets, not the nearest
-		// shore of the surface point. Past the field's edge the distance keeps growing with the
-		// distance from that edge.
+		// The shoreline distance and the floor's height for the refraction's world-space estimate of
+		// the floor, sampled down this vertex's refracted ray as a level sea bends it, at fixed drops
+		// below the surface. Interpolated across the triangles, the distances stay continuous where
+		// the field's gradient is not (around the cliffs' corners, between facing cliffs), so that the
+		// fragment follows its own ray past a corner or into a cove. The floor's height is the floor
+		// the world generator built (its shelf, benches and talus vary along the coast), read from a
+		// field over the same bounds. The gradients are taken where that ray lands: they face the
+		// floor's slope and the cliff's face the ray meets, not the nearest shore of the surface
+		// point. Past the field's edge the distance keeps growing with the distance from that edge,
+		// and the floor keeps the edge's height.
 		const fieldEnd = shared.shoreXform.xy.add( vec2( 1 ).div( shared.shoreXform.zw ) );
-		const shoreDistance = ( p: V2 ) => texture( shore, p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) ).r
+		const fieldUV = ( p: V2 ) => p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
+		const shoreDistance = ( p: V2 ) => texture( shore, fieldUV( p ) ).level( float( 0 ) ).r
 			.add( length( p.sub( clamp( p, shared.shoreXform.xy, fieldEnd ) ) ) );
+		const floorHeight = ( p: V2 ) => texture( seabedHeight, fieldUV( p ) ).level( float( 0 ) ).r;
 		const surfaceXZ = displaced.xz;
 		const levelRay = airToWaterDirectionNode( normalize( cameraPosition.sub( displaced ) ), vec3( 0, 1, 0 ), float( IOR ) ).toVar();
 		const across = levelRay.xz.div( max( levelRay.y.negate(), 1e-3 ) ).toVar(); // horizontal metres per metre of drop
-		const ray = SHORE_DROPS.map( ( drop ) => shoreDistance( surfaceXZ.add( across.mul( drop ) ) ) );
-		const vShoreNear = varying( vec4( ray[ 0 ], ray[ 1 ], ray[ 2 ], ray[ 3 ] ) );
-		const vShoreFar = varying( vec4( ray[ 4 ], ray[ 5 ], ray[ 6 ], ray[ 7 ] ) );
-		const levelLanding = seabedLanding( displaced.y, shared.waterLevel, vec4( ray[ 0 ], ray[ 1 ], ray[ 2 ], ray[ 3 ] ),
-			vec4( ray[ 4 ], ray[ 5 ], ray[ 6 ], ray[ 7 ] ), float( 0 ), max( levelRay.y.negate(), 1e-3 ) );
+		const along = SHORE_DROPS.map( ( drop ) => surfaceXZ.add( across.mul( drop ) ).toVar() );
+		const ray = along.map( shoreDistance );
+		const heights = along.map( floorHeight );
+		const shoreNear = vec4( ray[ 0 ], ray[ 1 ], ray[ 2 ], ray[ 3 ] ), shoreFar = vec4( ray[ 4 ], ray[ 5 ], ray[ 6 ], ray[ 7 ] );
+		const floorNear = vec4( heights[ 0 ], heights[ 1 ], heights[ 2 ], heights[ 3 ] ), floorFar = vec4( heights[ 4 ], heights[ 5 ], heights[ 6 ], heights[ 7 ] );
+		const vShoreNear = varying( shoreNear ), vShoreFar = varying( shoreFar );
+		const vFloorNear = varying( floorNear ), vFloorFar = varying( floorFar );
+		const levelLanding = seabedLanding( displaced.y, shared.waterLevel, shoreNear, shoreFar, floorNear, floorFar,
+			vec2( 0 ), max( levelRay.y.negate(), 1e-3 ) );
 		const landedXZ = surfaceXZ.add( across.mul( levelLanding.x ) ).toVar();
-		const vShoreGradient = varying( vec2(
-			shoreDistance( landedXZ.add( vec2( 0.5, 0 ) ) ).sub( shoreDistance( landedXZ.sub( vec2( 0.5, 0 ) ) ) ),
-			shoreDistance( landedXZ.add( vec2( 0, 0.5 ) ) ).sub( shoreDistance( landedXZ.sub( vec2( 0, 0.5 ) ) ) ) ) );
+		const gradientOf = ( field: ( p: V2 ) => F ) => vec2(
+			field( landedXZ.add( vec2( 0.5, 0 ) ) ).sub( field( landedXZ.sub( vec2( 0.5, 0 ) ) ) ),
+			field( landedXZ.add( vec2( 0, 0.5 ) ) ).sub( field( landedXZ.sub( vec2( 0, 0.5 ) ) ) ) );
+		const vLandingGradients = varying( vec4( gradientOf( shoreDistance ), gradientOf( floorHeight ) ) ); // shore, floor
 		const vWeights = varying( weights );
 		const vLargeDisp = varying( largeDisp ), vMediumDisp = varying( mediumDisp ), vFineDisp = varying( fineDisp );
 
@@ -754,21 +757,23 @@ export class Water {
 			const hit = vec4( screenUV, fallbackLength, 0 ).toVar();
 			const traced = skyBehind.not().and( thick.greaterThan( 0.02 ) ).and( validRefraction ).toVar();
 			// Where the refracted ray meets the seabed or the island's submerged face, estimated in world
-			// space from the shoreline field and the seabed's profile (drop below the surface, shoreline
-			// distance there, share of the face), and the distance to it along the ray.
+			// space from the shoreline and floor fields (drop below the surface, shoreline distance there,
+			// share of the face), and the distance to it along the ray.
 			const landing = vec3( 0 ).toVar(), landingDistance = float( 0 ).toVar();
 			If( traced, () => {
 
 				// This ray's horizontal course per metre of drop departs from the level sea's, along
 				// which the distances were sampled, with the waves' tilt of the surface.
 				const level = normalize( airToWaterDirectionNode( V, vec3( 0, 1, 0 ), float( IOR ) ) );
-				const skew = dot( vShoreGradient, Tv.xz.div( tDown ).sub( level.xz.div( max( level.y.negate(), 1e-3 ) ) ) );
-				landing.assign( seabedLanding( wp.y, shared.waterLevel, vShoreNear, vShoreFar, skew, max( tDown, 1e-3 ) ) );
+				const bend = Tv.xz.div( tDown ).sub( level.xz.div( max( level.y.negate(), 1e-3 ) ) ).toVar();
+				const skew = vec2( dot( vLandingGradients.xy, bend ), dot( vLandingGradients.zw, bend ) );
+				landing.assign( seabedLanding( wp.y, shared.waterLevel, vShoreNear, vShoreFar, vFloorNear, vFloorFar, skew, max( tDown, 1e-3 ) ) );
 				landingDistance.assign( landing.x.div( max( tDown, 1e-3 ) ) );
-				// The trace runs a little past the estimate (the floor's undulations and sandbars depart
-				// from the profile by a metre or so). Sized from what lies straight behind the pixel, it
-				// ran far past the floor where that was the basin seen at a glancing angle, and its coarse
-				// steps then bracketed the island's silhouette instead of the floor in front of it.
+				// The trace runs a little past the estimate (its linear steps between the samples and the
+				// stones on the floor depart from what the trace meets). Sized from what lies straight
+				// behind the pixel, it ran far past the floor where that was the basin seen at a glancing
+				// angle, and its coarse steps then bracketed the island's silhouette instead of the floor
+				// in front of it.
 				const directionV = normalize( cameraViewMatrix.mul( vec4( Tv, 0 ) ).xyz );
 				const range = min( landingDistance.mul( 1.25 ).add( 2 ), 40 );
 				hit.assign( traceRefraction( posV, directionV, range, wp.y, footprint ) );
@@ -814,13 +819,12 @@ export class Water {
 			const lostBottom = opaqueCol.mul( exp( sigT.negate().mul( fallbackLength ) ) ).toVar();
 			If( traced.and( refractionTrust.lessThan( 1 ) ), () => {
 
-				const gradient = vShoreGradient.toVar();
+				const gradient = vLandingGradients.toVar();
 				const at = wp.add( Tv.mul( landingDistance ) ).toVar();
 				const depthAt = max( shared.waterLevel.sub( at.y ), 0 ).toVar();
 				const shoreAt = landing.y.toVar();
 				const wall = landing.z;
-				const slope = seabedProfile( shoreAt.add( 0.25 ) ).sub( seabedProfile( shoreAt.sub( 0.25 ) ) ).mul( 2 );
-				const normal = normalize( mix( vec3( gradient.x.mul( slope ).negate(), 1, gradient.y.mul( slope ).negate() ),
+				const normal = normalize( mix( vec3( gradient.z.negate(), 1, gradient.w.negate() ),
 					vec3( gradient.x, WALL_LEAN, gradient.y ), wall ) ).toVar();
 				// The key light: the island's shadow where the refracted beam enters the sea, and the
 				// submerged map halfway up the beam, where the cliff's foot and the walls of a cove shade
@@ -834,7 +838,7 @@ export class Water {
 				} );
 				const lit = mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) );
 				const direct = sunIn.mul( exp( sigT.negate().mul( depthAt ).div( muS ) ) ).mul( max( dot( normal, Ls ), 0 ) ).mul( lit );
-				const ambient = shared.skyIrradianceSource.mul( exp( sigT.negate().mul( depthAt ).mul( 1.25 ) ) ).mul( mix( float( 1 ), float( 0.5 ), wall ) );
+				const ambient = shared.skyIrradianceSource.mul( exp( sigT.negate().mul( depthAt ).mul( 1.25 ) ) ).mul( mix( float( 1 ), float( FACE_SKY ), wall ) );
 				// The floor's beds, which no screen shows here: dark seagrass in ragged patches from a
 				// few metres off the cliffs on, and the sand's mottling. A world-space pattern, so that it
 				// stays put under the waves and runs on across lost rays; its mean is the floor's albedo.
@@ -865,7 +869,10 @@ export class Water {
 					const across = select( abs( right.z.sub( sv0.z ) ).lessThan( abs( left.z.sub( sv0.z ) ) ), right.sub( sv0 ), sv0.sub( left ) );
 					const along = select( abs( below.z.sub( sv0.z ) ).lessThan( abs( above.z.sub( sv0.z ) ) ), below.sub( sv0 ), sv0.sub( above ) );
 					const facing = normalize( cameraWorldMatrix.mul( vec4( across.cross( along ), 0 ) ).xyz );
-					const stand = smoothstep( 0.2, 0.6, abs( dot( facing, normal ) ) )
+					// The talus at the cliff's foot slopes toward the face's normal, so the kinds are told
+					// apart by how far each looks up as well.
+					const upward = smoothstep( 0.35, 0.75, abs( facing.y ) );
+					const stand = smoothstep( 0.2, 0.6, abs( dot( facing, normal ) ) ).mul( mix( upward, float( 1 ).sub( upward ), wall ) )
 						.mul( float( 1 ).sub( smoothstep( 0.5, 2.5, length( sw0.sub( at ) ) ) ) ).toVar();
 					If( stand.greaterThan( 0 ), () => {
 

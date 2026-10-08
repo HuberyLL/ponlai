@@ -59,6 +59,8 @@ export interface WorldData {
 	shore: ShoreField;
 	// Half-resolution island distance field for the local breaking-surf pass.
 	islandShore: ShoreField;
+	// The seabed's height (m) over the shoreline field's bounds, at half its resolution.
+	seabedField: ShoreField;
 	timings: Record<string, number>;
 }
 
