@@ -22,6 +22,7 @@ import type { Rain } from '../weather/Rain.ts';
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
 //   rain ── into sceneRT
+//   sea fog (in fog: the bank noise baked into a map)
 //   composite (air, fog, rain veil, shafts) ── hdr, once
 //   bloom (tight) + glow (wide) from hdr, both through a clamped soft-knee prefilter ── sharp
 //   ── tilt-shift depth of field (half-res gather) ── exposure, tone curve (PBR Neutral with
@@ -52,6 +53,7 @@ export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
 
 const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
 	'inline-composite': { compositeOnce: false },
+	'no-bank': { bankSize: 0 },
 };
 
 /** The defaults, with `?post=legacy` (every switch below) or `?post=a,b` applied. */
@@ -862,6 +864,9 @@ export class Pipeline {
 
 		}
 
+		// the sea fog's bank map
+		this.air.render( r );
+
 		// 4. composite, bloom, depth of field, grade
 		const [ b, g ] = this.blooms;
 		if ( g ) {
@@ -917,6 +922,14 @@ export class Pipeline {
 		this.display.render();
 		r.setRenderTarget( null );
 		( this.upscaling ? this.upscaledOutput : this.output ).render();
+
+	}
+
+	/** Compiles the passes that first run later than the first frame (fog setting in), so they
+	 * do not stall the frame that first needs them. */
+	async warm(): Promise<void> {
+
+		await this.air.warm( this.renderer );
 
 	}
 

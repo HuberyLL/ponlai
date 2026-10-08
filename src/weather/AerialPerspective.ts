@@ -9,9 +9,10 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uniform, texture, textureLoad, uv, ivec2, vec3, vec4, float, max, min, clamp, length,
-	normalize, exp, pow, mix, dot, abs, select, smoothstep, luminance, mx_noise_float,
+	normalize, exp, pow, mix, dot, abs, select, smoothstep, luminance, mx_noise_float, screenCoordinate,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -40,6 +41,17 @@ const FOG_GAP_HEIGHT = 6;
 const FOG_BANK_HEIGHT = 28;
 const FOG_MEAN = { density: 0.9, height: 17 };
 const FOG_REACH = 4000; // metres marched through drifting banks; beyond, the mean layer
+// The banks' noise is baked into a map of BANK_SPAN metres around the camera (in the drifting
+// frame), wide enough for the march's reach plus the distance the camera may move before the map
+// is recentred.
+const BANK_SPAN = 8192;
+const BANK_RECENTRE = 48;
+// While the clock runs, the map is re-baked once the banks have evolved this long (seconds of
+// fog time): their slowest change, 0.015 noise units a second, moves a bank's density by about
+// a hundredth in that time, below what shows between two frames.
+const BANK_REBAKE = 0.2;
+// A frame step of the fog's clock longer than this (seconds) is taken for a seek.
+const FRAME_STEP_MAX = 0.1;
 // The island's warm rock thins the fog over it and in its lee: radii (metres) of the clearing.
 const CLEARING = { inner: 20, outer: 100, floor: 0.45 };
 // Fog droplets scatter the beam on through the bank: its forward glow is a softer, wider lobe than
@@ -56,13 +68,15 @@ interface AirRay {
 }
 
 /** The frame graph's structural choices for the air, fixed when the page loads (the quality tier
- * sets them). Today's high: 12 steps. */
+ * sets them). Today's high: 12 steps and the bank noise baked into a 2048^2 map. */
 export interface AirOptions {
 	// steps of the fog march through the banks
 	fogSteps: number;
+	// texels per side of the baked bank noise; 0 evaluates the noise at every step instead
+	bankSize: number;
 }
 
-export const DEFAULT_AIR_OPTIONS: Readonly<AirOptions> = { fogSteps: 12 };
+export const DEFAULT_AIR_OPTIONS: Readonly<AirOptions> = { fogSteps: 12, bankSize: 2048 };
 
 // Optical depth of one exponential layer (extinction `sigma` at sea level, scale height `height`)
 // from height `hc` along a ray whose direction has the vertical component `vy`, over `d` metres.
@@ -119,6 +133,22 @@ export class AerialPerspective {
 	private cameraWorld = uniform( new THREE.Matrix4() );
 	private resolution = uniform( new THREE.Vector2( 1, 1 ) );
 	readonly options: Readonly<AirOptions>;
+
+	// The banks' two noise octaves, baked around the camera in the drifting frame (fogOffset
+	// added), so the wind only shifts where the march reads the map. Texel centres lie on a
+	// lattice fixed in that frame (the centre snaps to whole texels and each texel's position comes
+	// from its exact pixel coordinate), so where the map is centred never changes a value. The map
+	// is a pure function of the time it was baked at: re-baked while the clock runs once the banks
+	// have evolved BANK_REBAKE seconds, and at rest (a paused clock, a seek) whenever that time or
+	// the centre differs at all, so a paused frame does not depend on the frames before it.
+	private bankRT: THREE.RenderTarget | null = null;
+	private bankQuad: THREE.QuadMesh | null = null;
+	private readonly bankCentre = uniform( new THREE.Vector2() );
+	private readonly bankTime = uniform( 0 );
+	private bank = { valid: false, time: 0, x: 0, z: 0 };
+	private bankDue = false;
+	private lastFogTime = NaN;
+	private lastStep = NaN;
 
 	constructor( options: Partial<AirOptions> = {} ) {
 
@@ -191,6 +221,7 @@ export class AerialPerspective {
 
 		const { direction, origin, distance, down, around, shade, lit } = r;
 		const steps = this.options.fogSteps;
+		const bank = this.bankRT ? texture( this.bankRT.texture ) : null;
 		const fogDepth = float( 0 ).toVar();
 		const fogLight = vec3( 0 ).toVar();
 		If( this.fog.greaterThan( 0.001 ), () => {
@@ -212,8 +243,9 @@ export class AerialPerspective {
 				// Banks: drifting patches a hundred metres or so across with wisps at their edges,
 				// thinner gaps between them; they evolve slowly as they drift.
 				const drift = p.xz.add( this.fogOffset ).toVar();
-				const noise = mx_noise_float( vec3( drift.div( 140 ), this.fogTime.mul( 0.006 ) ) ).mul( 0.65 )
-					.add( mx_noise_float( vec3( drift.div( 45 ), this.fogTime.mul( 0.015 ).add( 3.7 ) ) ).mul( 0.35 ) );
+				const noise = bank ? bank.sample( drift.sub( this.bankCentre ).div( BANK_SPAN ).add( 0.5 ) ).level( float( 0 ) ).r
+					: mx_noise_float( vec3( drift.div( 140 ), this.fogTime.mul( 0.006 ) ) ).mul( 0.65 )
+						.add( mx_noise_float( vec3( drift.div( 45 ), this.fogTime.mul( 0.015 ).add( 3.7 ) ) ).mul( 0.35 ) );
 				const bank_ = smoothstep( 0.2, 0.75, noise.mul( 0.5 ).add( 0.5 ) ).toVar();
 				const clearing = mix( float( CLEARING.floor ), float( 1 ), smoothstep( CLEARING.inner, CLEARING.outer, length( p.xz ) ) );
 				const local = exp( max( p.y, 0 ).div( mix( float( FOG_GAP_HEIGHT ), float( FOG_BANK_HEIGHT ), bank_ ) ).negate() )
@@ -259,6 +291,8 @@ export class AerialPerspective {
 	 * given distance. Called once, by the frame graph. */
 	apply( color: V3, depth: THREE.Texture, sky: Sky, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
 
+		const { bankSize } = this.options;
+		if ( bankSize > 0 ) this.buildBank( bankSize );
 		const sceneDepth = texture( depth );
 		return Fn( () => {
 
@@ -279,6 +313,57 @@ export class AerialPerspective {
 
 	}
 
+	private buildBank( size: number ): void {
+
+		this.bankRT = new THREE.RenderTarget( size, size, { type: THREE.HalfFloatType, format: THREE.RedFormat, depthBuffer: false } );
+		this.bankRT.texture.name = 'fogBanks';
+		const material = new THREE.NodeMaterial();
+		material.name = 'Fog.Banks';
+		material.fragmentNode = Fn( () => {
+
+			// (the texel's exact position in the drifting frame, from its pixel coordinate)
+			const drift = this.bankCentre.add( screenCoordinate.xy.sub( size / 2 ).mul( BANK_SPAN / size ) ).toVar();
+			const n = mx_noise_float( vec3( drift.div( 140 ), this.bankTime.mul( 0.006 ) ) ).mul( 0.65 )
+				.add( mx_noise_float( vec3( drift.div( 45 ), this.bankTime.mul( 0.015 ).add( 3.7 ) ) ).mul( 0.35 ) );
+			return vec4( n, 0, 0, 1 );
+
+		} )();
+		this.bankQuad = new THREE.QuadMesh( material );
+		this.bankQuad.name = 'Fog.Banks';
+
+	}
+
+	/** Bakes the bank map when it is due, before the composite reads it (after `update`). */
+	render( renderer: THREE.WebGPURenderer ): void {
+
+		if ( this.fog.value <= 0.001 || ! this.bankQuad || ! this.bankDue ) return;
+		const target = renderer.getRenderTarget();
+		renderer.setRenderTarget( this.bankRT );
+		this.bankQuad.render( renderer );
+		this.bankDue = false;
+		renderer.setRenderTarget( target );
+
+	}
+
+	/** Compiles the pass that first runs when fog sets in, so the first foggy frame does not
+	 * stall on it. */
+	async warm( renderer: THREE.WebGPURenderer ): Promise<void> {
+
+		if ( ! this.bankQuad || ! this.bankRT ) return;
+		const target = renderer.getRenderTarget();
+		try {
+
+			renderer.setRenderTarget( this.bankRT );
+			await renderer.compileAsync( this.bankQuad, ( this.bankQuad as unknown as { camera: THREE.Camera } ).camera );
+
+		} finally {
+
+			renderer.setRenderTarget( target );
+
+		}
+
+	}
+
 	update( camera: THREE.Camera, width: number, height: number ): void {
 
 		this.projectionInverse.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
@@ -287,6 +372,42 @@ export class AerialPerspective {
 		this.clearEnd.value = THREE.MathUtils.lerp( CLEAR.end, CLEAR.thickEnd, THREE.MathUtils.smoothstep( this.haze.value, CLEAR.thin, CLEAR.thick ) );
 		// The beam reaching the banks low over the sea.
 		this.fogSun.value = this.fogTransmittance( 8, this.keyDir.value );
+		if ( this.bankRT ) this.scheduleBank( camera );
+
+	}
+
+	// Decides whether the bank map is re-baked this frame (see `bankRT`).
+	private scheduleBank( camera: THREE.Camera ): void {
+
+		// Running: this frame and the one before each stepped the fog's clock forward by an ordinary
+		// frame's time. Anything else (a paused clock, a seek, the first frame after either) takes
+		// the map at its exact time, so a frame rendered at rest never depends on the ones before.
+		const time = this.fogTime.value;
+		const step = time - this.lastFogTime;
+		const running = step > 0 && step <= FRAME_STEP_MAX && this.lastStep > 0 && this.lastStep <= FRAME_STEP_MAX;
+		this.lastFogTime = time;
+		this.lastStep = step;
+		if ( this.fog.value <= 0.001 ) return;
+		const texel = BANK_SPAN / this.options.bankSize;
+		const e = camera.matrixWorld.elements, offset = this.fogOffset.value;
+		const x = e[ 12 ] + offset.x, z = e[ 14 ] + offset.y;
+		const sx = Math.round( x / texel ) * texel, sz = Math.round( z / texel ) * texel;
+		const b = this.bank;
+		const recentre = ! b.valid || Math.max( Math.abs( x - b.x ), Math.abs( z - b.z ) ) > BANK_RECENTRE;
+		const differs = time !== b.time || sx !== b.x || sz !== b.z;
+		const due = recentre || ( differs && ( ! running || Math.abs( time - b.time ) >= BANK_REBAKE || debugFlags.fogBankLazy === false ) );
+		if ( ! due ) return;
+		b.valid = true; b.time = time; b.x = sx; b.z = sz;
+		this.bankCentre.value.set( sx, sz );
+		this.bankTime.value = time;
+		this.bankDue = true;
+
+	}
+
+	/** Re-bakes the bank map on the next frame (after a seek or a jump of the camera). */
+	invalidate(): void {
+
+		this.bank.valid = false;
 
 	}
 
