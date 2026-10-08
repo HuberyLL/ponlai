@@ -236,7 +236,7 @@ export class RefractedSun {
 
 	}
 
-	submergedVisibilityNode( point: V3, angularRadius: F = float( SUN_ANGULAR_RADIUS / WATER_IOR ), geometricNormal?: V3 ): F {
+	submergedVisibilityNode( point: V3, angularRadius: F = float( SUN_ANGULAR_RADIUS / WATER_IOR ), geometricNormal?: V3, active?: THREE.Node<'bool'> ): F {
 
 		const normal = geometricNormal ? normalize( geometricNormal ) : undefined;
 		// Geometry normals describe the caster plane; bump normals would move the receiver
@@ -248,7 +248,7 @@ export class RefractedSun {
 		// Snell compresses the solar disk. Its oblique image is elliptical; radius / IOR
 		// conservatively retains the larger axis, while sharing directional PCSS with air.
 		return solarShadowVisibility( this.target.depthTexture!, coordinate, {
-			mapSize: this.mapSize, worldSpan: this.worldSpan, depthRange: this.depthRange, angularRadius,
+			mapSize: this.mapSize, worldSpan: this.worldSpan, depthRange: this.depthRange, angularRadius, active,
 		} );
 
 	}
@@ -292,8 +292,15 @@ export class RefractedSun {
 				const underwater = positionWorld.y.lessThan( this.shared.waterLevel );
 				receiver.receivedShadowPositionNode = select( underwater, this.surfaceEntryNode( positionWorld ), positionWorld );
 				// The runtime passes the existing shadow node; @types/three omits that argument.
-				receiver.receivedShadowNode = Fn( ( [ airVisibility ]: [ V3 ] ) =>
-					airVisibility.mul( select( underwater, this.submergedVisibilityNode( positionWorld, undefined, normalWorldGeometry ), float( 1 ) ) ) ) as unknown as THREE.NodeMaterial['receivedShadowNode'];
+				// The filter takes derivatives, so it runs for every pixel (in uniform control flow, not
+				// inside the underwater branch, where a quad straddling the waterline would read
+				// undefined ones); above the water it skips its map reads and returns lit.
+				receiver.receivedShadowNode = Fn( ( [ airVisibility ]: [ V3 ] ) => {
+
+					const submerged = this.submergedVisibilityNode( positionWorld, undefined, normalWorldGeometry, underwater ).toVar();
+					return airVisibility.mul( select( underwater, submerged, float( 1 ) ) );
+
+				} ) as unknown as THREE.NodeMaterial['receivedShadowNode'];
 				receiver.needsUpdate = true;
 
 			}

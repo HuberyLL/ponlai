@@ -350,17 +350,30 @@ export function installSolarShadowFilter( sun: THREE.DirectionalLight ): void {
 
 }
 
-type FrustumShadowFilter = ( builder: THREE.NodeBuilder, inputs: object ) => F;
+type ShadowFilterInputs = { filterFn: ( inputs: object ) => F; shadowCoord: V3; depthTexture: unknown; shadow: unknown; depthLayer: unknown };
+type FrustumShadowFilter = ( builder: THREE.NodeBuilder, inputs: ShadowFilterInputs ) => F;
 
 // three.js runs a light's shadow filter only inside its shadow camera's frustum and leaves every
 // receiver outside it fully lit. A visibility that covers the whole scene (the clouds') would stop
 // at the map's edge if it lived in the filter, so it multiplies the frustum-tested result instead:
 // once per receiver, inside the frustum or beyond it.
+// three also emits the filter inside the frustum test's branch, where the receiver plane's
+// derivatives are undefined for a quad that straddles the test (the refracted entry points at the
+// waterline jump in and out of the map): such pixels read whatever the neighbouring lanes left and
+// changed with any edit to the shader. The filter is evaluated first, in uniform control flow (it
+// returns lit outside the map itself), and only its result is selected.
 export function installOpenShadow( sun: THREE.DirectionalLight, visibility: ( position: V3 ) => F ): void {
 
 	const node = new THREE.ShadowNode( sun, null ) as unknown as { setupShadowFilter: FrustumShadowFilter };
-	const frustumShadow = node.setupShadowFilter.bind( node );
-	node.setupShadowFilter = ( builder, inputs ) => frustumShadow( builder, inputs ).mul( visibility( positionWorld ) );
+	node.setupShadowFilter = ( _builder, { filterFn, depthTexture, shadowCoord, shadow, depthLayer } ) => Fn( () => {
+
+		const filtered = filterFn( { depthTexture, shadowCoord, shadow, depthLayer } ).toVar();
+		const frustum = shadowCoord.x.greaterThanEqual( 0 ).and( shadowCoord.x.lessThanEqual( 1 ) )
+			.and( shadowCoord.y.greaterThanEqual( 0 ) ).and( shadowCoord.y.lessThanEqual( 1 ) )
+			.and( shadowCoord.z.lessThanEqual( 1 ) );
+		return select( frustum, filtered, float( 1 ) ).mul( visibility( positionWorld ) );
+
+	} )();
 	sun.shadow.shadowNode = node as unknown as THREE.Node;
 
 }
