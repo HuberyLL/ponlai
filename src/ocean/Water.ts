@@ -234,12 +234,44 @@ export interface WaterInputs {
 	linearDepth: THREE.Texture; // its view-space z: sample 0 (x) and the farthest sample (y)
 	size?: number;
 	res?: number;
+	quality?: Partial<WaterQuality>; // compile-time: read once, a change needs a new Water (a reload)
 }
+
+// The water's quality knobs. They are compiled into the shader (a uniform-gated branch keeps its
+// registers), so they are fixed for the material's life. High is today's image; the lower tiers
+// trade a little of it for time:
+//   ssrRays: rays per pixel for the screen-space reflection, either side of the centre (2) or
+//     through it (1, a little stair-stepping on the reflected island's edge);
+//   ssrSteps, ssrGrowth: its geometric steps, each this much longer than the last. The march
+//     reaches 0.15 + 0.25 (growth^steps - 1) / (growth - 1) metres: 158 m on high, 100 m for
+//     14 steps at x1.45 (14 at about x1.51 would keep the 158 m);
+//   refractionSteps, refractionRefine: the refraction's linear steps and bisection steps;
+//   columnSamples: samples of the water column's shadow march (both cross-faded sun maps at each);
+//   stormFoam: 'merged' reads the storm foam's mat and lace from one pattern fetch instead of
+//     three: the mat keeps only its first layer, and the lace takes the mat's coordinates, so it
+//     is no longer drawn out along the wind. The streaks keep their own fetch (they need
+//     coordinates stretched along the wind), so 'merged' saves two of the five fetches.
+export interface WaterQuality {
+	ssrRays: 1 | 2;
+	ssrSteps: number;
+	ssrGrowth: number;
+	refractionSteps: number;
+	refractionRefine: number;
+	columnSamples: number;
+	stormFoam: 'full' | 'merged';
+}
+
+export const WATER_QUALITY: Record<'low' | 'medium' | 'high', WaterQuality> = {
+	low: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.45, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'merged' },
+	medium: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.45, refractionSteps: 6, refractionRefine: 4, columnSamples: 6, stormFoam: 'full' },
+	high: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' },
+};
 
 export class Water {
 
 	mesh: THREE.Mesh;
 	material: THREE.NodeMaterial;
+	readonly quality: WaterQuality;
 	uniforms = {
 		backscatter: uniform( 0.038 ),
 		roughness: uniform( 0.058 ), // Beckmann alpha: per-axis base slope variance = alpha squared / 2
@@ -255,8 +287,11 @@ export class Water {
 	private shadowBias = uniform( 0 );
 	private shadowNormalBias = uniform( 0 );
 	private shadowIntensity = uniform( 1 );
+	private inputs: WaterInputs;
 
-	constructor( { fft, sky, shared, shore, seabedHeight, shoreWaves, refractedSun, sunShadow, storm, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
+	constructor( inputs: WaterInputs ) {
+
+		const { size = 700, res = 320, quality } = inputs;
 
 		// grid in world xz, warped dense under the island and sparse toward the horizon
 		const n = res;
@@ -317,6 +352,20 @@ export class Water {
 		geo.setIndex( new THREE.BufferAttribute( new Uint32Array( idx ), 1 ) );
 		geo.boundingSphere = new THREE.Sphere( new THREE.Vector3(), SKIRT_RADIUS * Math.SQRT2 );
 
+		this.inputs = inputs;
+		this.quality = { ...WATER_QUALITY.high, ...quality };
+		this.material = this.buildMaterial();
+		this.mesh = new THREE.Mesh( geo, this.material );
+		this.mesh.frustumCulled = false;
+		this.mesh.name = 'water';
+
+	}
+
+	// The sea's shading at this water's quality.
+	private buildMaterial(): THREE.NodeMaterial {
+
+		const { fft, sky, shared, shore, seabedHeight, shoreWaves, refractedSun, sunShadow, storm, sceneColor, linearDepth } = this.inputs;
+		const quality = this.quality;
 		const u = this.uniforms;
 		const sizes = uniform( new THREE.Vector3( ...fft.sizes ) );
 		const disp = fft.displacementTextures, der = fft.derivativeTextures, moments = fft.slopeMomentTextures;
@@ -403,11 +452,8 @@ export class Water {
 
 				const t = float( 0.15 ).toVar(), dt = float( 0.25 ).toVar(), prevT = float( 0 ).toVar();
 				const hit = float( 0 ).toVar();
-				Loop( 20, () => {
+				const step = () => {
 
-					prevT.assign( t );
-					t.addAssign( dt );
-					dt.mulAssign( 1.3 );
 					const p = posV.add( Rv.mul( t ) ).toVar();
 					const q = projectView( p, cameraProjectionMatrix ).toVar();
 					If( q.x.lessThan( 0 ).or( q.x.greaterThan( 1 ) ).or( q.y.lessThan( 0 ) ).or( q.y.greaterThan( 1 ) ).or( p.z.greaterThan( - 0.1 ) ), () => {
@@ -422,6 +468,14 @@ export class Water {
 						Break();
 
 					} );
+
+				};
+				Loop( quality.ssrSteps, () => {
+
+					prevT.assign( t );
+					t.addAssign( dt );
+					dt.mulAssign( quality.ssrGrowth );
+					step();
 
 				} );
 				If( hit.greaterThan( 0.5 ), () => {
@@ -487,7 +541,7 @@ export class Water {
 		const refineCrossing = Fn( ( [ posV, directionV, a0, b0 ]: [ V3, V3, F, F ] ) => {
 
 			const a = a0.toVar(), b = b0.toVar();
-			Loop( 5, () => {
+			Loop( quality.refractionRefine, () => {
 
 				const distance = a.add( b ).mul( 0.5 ).toVar();
 				const point = posV.add( directionV.mul( distance ) ).toVar();
@@ -521,13 +575,13 @@ export class Water {
 		// the shading then takes the floor from the world-space estimate (see the lost rays below).
 		const traceRefraction = Fn( ( [ posV, directionV, range, surfaceY, footprint ]: [ V3, V3, F, F, F ] ) => {
 
-			const step = range.div( 8 ).toVar();
+			const step = range.div( quality.refractionSteps ).toVar();
 			// the world's up axis in view space: a view-space point's height is dot( up, p ) plus the camera's
 			const up = cameraViewMatrix.mul( vec4( 0, 1, 0, 0 ) ).xyz.toVar();
 			const height = ( p: V3 ) => dot( up, p ).add( cameraPosition.y );
 			const near = float( 0 ).toVar(), open = float( 1 ).toVar();
 			const result = vec4( 0 ).toVar();
-			Loop( 8, ( { i } ) => {
+			Loop( quality.refractionSteps, ( { i } ) => {
 
 				const distance = float( i ).add( 1 ).mul( step ).toVar();
 				const point = posV.add( directionV.mul( distance ) ).toVar();
@@ -698,9 +752,19 @@ export class Water {
 				// the sky seen through it between the waves were pixel stair-steps and single bright
 				// specks (that the depth of field then spread into discs). Two rays give the edges a
 				// half step and halve a lone speck. The offsets are fixed, so a paused frame repeats.
-				const ra = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr.sub( reflectionJitter ), 0 ) ).xyz ) ).toVar();
-				const rb = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr.add( reflectionJitter ), 0 ) ).xyz ) ).toVar();
-				refl.assign( mix( refl, ra.rgb, ra.a ).add( mix( refl, rb.rgb, rb.a ) ).mul( 0.5 ) );
+				// The lower tiers take the one ray through the centre.
+				if ( quality.ssrRays === 1 ) {
+
+					const rc = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr, 0 ) ).xyz ) ).toVar();
+					refl.assign( mix( refl, rc.rgb, rc.a ) );
+
+				} else {
+
+					const ra = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr.sub( reflectionJitter ), 0 ) ).xyz ) ).toVar();
+					const rb = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr.add( reflectionJitter ), 0 ) ).xyz ) ).toVar();
+					refl.assign( mix( refl, ra.rgb, ra.a ).add( mix( refl, rb.rgb, rb.a ) ).mul( 0.5 ) );
+
+				}
 
 			} );
 
@@ -943,7 +1007,7 @@ export class Water {
 					} );
 					return mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) );
 
-				} ) );
+				}, quality.columnSamples ) );
 
 			} );
 			const inAmb = waterColumnRadiance( shared.skyIrradianceSource.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ), kAmb, pathLen );
@@ -994,16 +1058,23 @@ export class Water {
 				// from the footprint, since this is a branch). Thin at its torn edges, dense inside.
 				const fuv = vLag.mul( scale ).toVar();
 				const p1 = texture( storm.pattern, fuv ).level( patternLevel ).toVar();
-				const r2 = vec2( fuv.x.mul( 0.8 ).sub( fuv.y.mul( 0.6 ) ), fuv.x.mul( 0.6 ).add( fuv.y.mul( 0.8 ) ) );
-				const p2 = texture( storm.pattern, r2.mul( 2.37 ).add( vec2( 0.31, 0.77 ) ) ).level( patternLevel.add( Math.log2( 2.37 ) ) ).toVar();
-				const matPattern = p1.x.mul( 0.62 ).add( p2.x.mul( 0.38 ) );
+				const merged = quality.stormFoam === 'merged';
+				let matPattern: F = p1.x;
+				if ( ! merged ) {
+
+					const r2 = vec2( fuv.x.mul( 0.8 ).sub( fuv.y.mul( 0.6 ) ), fuv.x.mul( 0.6 ).add( fuv.y.mul( 0.8 ) ) );
+					const p2 = texture( storm.pattern, r2.mul( 2.37 ).add( vec2( 0.31, 0.77 ) ) ).level( patternLevel.add( Math.log2( 2.37 ) ) ).toVar();
+					matPattern = p1.x.mul( 0.62 ).add( p2.x.mul( 0.38 ) );
+
+				}
 				const threshold = float( 1.02 ).sub( crest.mul( 0.78 ) );
 				const mat = smoothstep( threshold.sub( soft ), threshold.add( soft ), matPattern )
 					.mul( smoothstep( threshold, threshold.add( 0.25 ), matPattern ).mul( 0.35 ).add( 0.65 ) ).mul( 0.95 );
 				// The lace, stretched 2.4 times along the wind. A vein's width follows the foam left;
 				// a thin film of bubbles lets the water show through, so lace is never fully opaque.
+				// (Merged, the mat's own fetch carries the lace, unstretched.)
 				const lscale = scale * 1.1;
-				const lace = texture( storm.pattern, vec2( along.mul( lscale / 2.4 ), across.mul( lscale ) ).add( vec2( 0.13, 0.58 ) ) )
+				const lace = merged ? p1.y : texture( storm.pattern, vec2( along.mul( lscale / 2.4 ), across.mul( lscale ) ).add( vec2( 0.13, 0.58 ) ) )
 					.level( patternLevel.add( Math.log2( 1.1 ) ) ).y;
 				const veinWidth = aged.mul( 0.5 ).toVar();
 				const veinOpacity = aged.mul( 0.45 ).add( 0.4 ).mul( smoothstep( 0.02, 0.12, aged ) ).toVar();
@@ -1039,10 +1110,7 @@ export class Water {
 
 		} )();
 		material.side = THREE.DoubleSide;
-		this.material = material;
-		this.mesh = new THREE.Mesh( geo, material );
-		this.mesh.frustumCulled = false;
-		this.mesh.name = 'water';
+		return material;
 
 	}
 
