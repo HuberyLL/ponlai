@@ -1,0 +1,787 @@
+// three is imported for its types only: the page hands in the inspector's base class, so this
+// lazily loaded module does not split three out of the main bundle into a chunk of its own.
+import type * as THREE from 'three/webgpu';
+
+// Frame profiler for `?profile` (loaded only then; without it the page builds the same renderer,
+// pipelines and image). Three's inspector hooks see every render and compute pass with the uid of
+// its timestamp query; the renderer's `trackTimestamp` writes each pass's GPU start and end, which
+// are resolved here every frame into a ring of read-back buffers (three's own pool resolves into
+// one buffer and drops a frame's queries while that buffer is mapped).
+//
+// A pass's GPU time is the time it adds to the GPU's timeline, not its end minus its start: a
+// tile-based GPU stamps a render pass's start when its vertex stage begins, and the tiler runs a
+// full-screen pass's few vertices long before the passes it reads have finished, so the raw
+// intervals overlap and summed to several times the frame. The passes are taken in the
+// order they complete, each charged from the previous completion (or its own start, if later) to
+// its end; the charges sum to the time the GPU was busy with the frame, which on a GPU-bound frame
+// is the frame interval. Where passes run one after another this is simply each one's duration.
+//
+// The tick's wall time includes the browser's backpressure: once the GPU falls behind, Chrome
+// blocks `queue.submit` until earlier frames drain, so a GPU-bound tick looks as long as the
+// frame. That wait is measured apart and the tick's own JS work is the rest.
+//
+// With the frame rate uncapped (no vsync, as the profiling tool runs Chrome), nothing but that
+// backpressure bounds how far the page runs ahead of the GPU: headless Chrome queued about two
+// dozen frames before blocking. A GPU spike then surfaces in the frame interval that many
+// frames later, so the tool attributes GPU hitches on the GPU's own timeline (`gpuInterval`), and
+// the timestamps take as long to read back (hence the ring of buffers and the patient settle).
+// Holding the tick until fewer frames are queued was tried and dropped: Chrome reports finished
+// work in batches, which bunched the ticks and made the intervals jitter.
+//
+// Work issued outside the tick (the sky's bakes resume in microtasks after a GPU read-back) is
+// timed apart: the JS time of its render and compute calls, and the gap between two ticks.
+//
+// Each pass is labelled by what it draws or computes:
+//   1. a registered render target (`target()`), else
+//   2. a registered scene, quad or compute node (`object()`, optionally only into one target), or a
+//      name pattern on the compute node, quad or target (`pattern()`), else
+//   3. the pass it is nested in (an rtt() pass rendered from another pass's node graph), else
+//   4. the innermost wrapped method on the call stack (`scope()`), else
+//   5. a wrapped async method still running (`scope( ..., { async: true } )`: the sky's bakes run
+//      in microtasks after the frame's tick), else 'other'.
+// The page exposes `window.__SOOMI_PROFILE__` (see `api`), read by tools/profile-frame.mjs.
+// `?profile=frames` keeps the frame and tick timing but skips the GPU timestamps. Measure frame
+// rates that way: with timestamp queries on, Chrome ran the same frames up to a quarter faster
+// (light scenes most; a scene that keeps the GPU saturated hardly at all), so the per-pass split
+// shows where the time goes, not the frame rate a player sees.
+
+interface Pass {
+	uid: string;
+	group: string;
+	name: string;
+	parent: Pass | null;
+	start: number;
+	end: number;
+	done: boolean;
+}
+
+interface Frame {
+	id: number;
+	// rAF timestamp and performance.now() when the frame's callback started
+	time: number;
+	now: number;
+	js: number;
+	jsWall: number;
+	wait: number;
+	outside: number;
+	gap: number;
+	passes: Pass[];
+	pending: number;
+	pipelines: number;
+	pipelineMs: number;
+	calls: number;
+	triangles: number;
+	finishedAt: number;
+}
+
+/** A finished frame, as read by the profiling tool. Times in milliseconds. */
+export interface FrameRecord {
+	id: number;
+	t: number; // since navigation start
+	interval: number; // rAF time since the previous frame
+	nowInterval: number; // performance.now() since the previous frame's callback
+	js: number; // the synchronous tick's own work (its wall time less the submit waits)
+	jsWall: number; // the tick's wall time
+	submitWait: number; // time the tick spent blocked in queue.submit (GPU backpressure)
+	outsideJs: number; // JS time of render and compute calls issued after the tick (async bakes)
+	gap: number; // from the end of the previous tick to the start of this one
+	gpu: number; // GPU busy time: the passes' charges (see above)
+	gpuInterval: number; // the GPU's completion of this frame since the previous frame's
+	span: number; // first pass start to last pass end on the GPU (may overlap the previous frame)
+	passes: number;
+	missing: number; // passes whose timestamps never arrived
+	pipelines: number; // render and compute pipelines created this frame
+	pipelineMs: number; // JS time spent creating them
+	calls: number;
+	triangles: number;
+	groups: Record<string, number>;
+	detail?: Record<string, number>;
+	raw?: [ string, string, number, number, number ][]; // group, what, start, end (ms from the frame's first start), charge
+}
+
+// The few WebGPU types used here (the project builds without @webgpu/types).
+type GPUBuffer = { size: number; mapAsync( mode: number, offset: number, size: number ): Promise<void>; getMappedRange( offset: number, size: number ): ArrayBuffer; unmap(): void };
+type GPUQuerySet = object;
+type GPUDevice = {
+	createBuffer( descriptor: { label: string; size: number; usage: number } ): GPUBuffer;
+	createCommandEncoder( descriptor: { label: string } ): {
+		resolveQuerySet( set: GPUQuerySet, first: number, count: number, destination: GPUBuffer, offset: number ): void;
+		copyBufferToBuffer( source: GPUBuffer, sourceOffset: number, destination: GPUBuffer, destinationOffset: number, size: number ): void;
+		finish(): object;
+	};
+	queue: { submit( buffers: object[] ): void };
+};
+// GPUBufferUsage.MAP_READ | COPY_DST, GPUMapMode.READ
+const READBACK_USAGE = 0x0001 | 0x0008;
+const MAP_READ = 0x0001;
+
+type Pool = {
+	querySet: GPUQuerySet; resolveBuffer: GPUBuffer; queryOffsets: Map<string, number>;
+	currentQueryIndex: number; maxQueries: number; resolveQueriesAsync: () => Promise<number>;
+};
+type Backend = {
+	device: GPUDevice; trackTimestamp: boolean; timestampQueryPool: Record<string, Pool | null>;
+	createRenderPipeline: ( ...args: unknown[] ) => unknown; createComputePipeline: ( ...args: unknown[] ) => unknown;
+};
+type Named = { name?: string; isQuadMesh?: boolean; isScene?: boolean; isComputeNode?: boolean; texture?: THREE.Texture; width?: number; height?: number };
+
+// read-back buffers in flight: one per pool (render, compute) per frame, for a GPU a few dozen
+// frames behind
+const RING = 128;
+// a frame whose timestamps have not arrived by then is recorded with its passes missing
+const LATE_MS = 4000;
+
+/** The profiler, built on the renderer's inspector base (`THREE.InspectorBase`). */
+export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: { timestamps?: boolean } = {} ) {
+
+	class FrameProfiler extends Base {
+
+		readonly timestamps: boolean;
+		private targets = new WeakMap<object, string>();
+		private objects = new WeakMap<object, { label: string; target?: object }[]>();
+		private patterns: [ RegExp, string ][] = [];
+		private stack: string[] = [];
+		private asyncScopes = new Map<number, string>();
+		private asyncId = 0;
+		private frame: Frame | null = null;
+		private context: Pass | null = null;
+		private open: Frame[] = [];
+		private done: FrameRecord[] = [];
+		private byUid = new Map<string, Pass>();
+		private lastTime = 0;
+		private lastNow = 0;
+		private lastEnd = - Infinity;
+		private lastComplete = false;
+		private submitWait = 0;
+		private inTick = false;
+		private lastTickEnd = NaN;
+		private outsideDepth = 0;
+		private outsideStart = 0;
+		private queueWrapped = false;
+		private origin: bigint | null = null;
+		private buffers: { buffer: GPUBuffer; busy: boolean }[] = [];
+		private pipelineCount = 0;
+		private pipelineMs = 0;
+		private detail = false;
+		private raw = false;
+		private lost = 0;
+		private failed = { map: 0, zero: 0, order: 0, late: 0 };
+		private latency: number[] = [];
+		readonly marks: Record<string, number> = {};
+		// the first frames: their ticks, and when the GPU finished each (`done`, since navigation: the
+		// first one waits for the GPU process to compile every pipeline it uses)
+		readonly startup: { firstFrame?: Record<string, number>; frames: { at: number; interval: number; js: number; wait: number; pipelines: number; pipelineMs: number; done?: number }[] } = { frames: [] };
+
+		constructor( { timestamps = true }: { timestamps?: boolean } = {} ) {
+
+			super();
+			this.timestamps = timestamps;
+			( window as unknown as Record<string, unknown> ).__SOOMI_PROFILE__ = this.api;
+
+		}
+
+		// ------------------------------------------------------------------ labels
+
+		/** Every pass into `target` belongs to `label`. */
+		target( target: object | null | undefined, label: string ): void {
+
+			if ( target && ! this.targets.has( target ) ) this.targets.set( target, label );
+
+		}
+
+		/** Passes drawing `object` (a scene, quad or compute node), optionally only into `target`. */
+		object( object: object | null | undefined, label: string, target?: object ): void {
+
+			if ( ! object ) return;
+			const list = this.objects.get( object ) ?? [];
+			list.push( { label, target } );
+			this.objects.set( object, list );
+
+		}
+
+		/** Passes whose compute node, quad or target name matches. */
+		pattern( match: RegExp, label: string ): void {
+
+			this.patterns.push( [ match, label ] );
+
+		}
+
+		/** Registers the render targets, quads and compute nodes reachable from `root` (own fields,
+		 * arrays and plain objects, `depth` levels down) that are not labelled yet. */
+		scan( root: unknown, label: string, depth = 3 ): void {
+
+			const seen = new Set<unknown>();
+			const visit = ( value: unknown, level: number ) => {
+
+				if ( ! value || typeof value !== 'object' || seen.has( value ) ) return;
+				seen.add( value );
+				const v = value as Record<string, unknown> & Named & { isRenderTarget?: boolean; isTexture?: boolean; isNode?: boolean; isMaterial?: boolean; isBufferGeometry?: boolean; isObject3D?: boolean };
+				if ( v.isRenderTarget ) { this.target( v, label ); return; }
+				if ( v.isQuadMesh || v.isComputeNode ) { if ( ! this.objects.has( v ) ) this.object( v, label ); return; }
+				if ( v.isTexture || v.isMaterial || v.isBufferGeometry || ( v.isObject3D && ! v.isScene ) ) return;
+				if ( level >= depth ) return;
+				if ( v.isNode && ! ( 'renderTarget' in v || '_quadMesh' in v ) && level > 0 ) return;
+				for ( const key of Object.keys( v ) ) {
+
+					if ( key === 'renderer' || key === 'parent' || key === 'children' ) continue;
+					visit( v[ key ], level + 1 );
+
+				}
+
+			};
+			visit( root, 0 );
+
+		}
+
+		/** Passes issued while `object[ method ]` runs belong to `label` (unless labelled otherwise).
+		 * An async method keeps its label for passes issued outside any tick until it settles. */
+		scope( object: unknown, method: string, label: string, { async = false }: { async?: boolean } = {} ): void {
+
+			const host = object as Record<string, ( ...args: unknown[] ) => unknown> | null;
+			const original = host?.[ method ];
+			if ( typeof original !== 'function' ) return;
+			const profiler = this;
+			host![ method ] = function ( this: unknown, ...args: unknown[] ) {
+
+				profiler.stack.push( label );
+				let result: unknown;
+				try {
+
+					result = original.apply( this, args );
+
+				} finally {
+
+					profiler.stack.pop();
+
+				}
+				if ( async && result instanceof Promise ) {
+
+					const id = ++ profiler.asyncId;
+					profiler.asyncScopes.set( id, label );
+					result.finally( () => profiler.asyncScopes.delete( id ) ).catch( () => {} );
+
+				}
+				return result;
+
+			};
+
+		}
+
+		private labelFor( drawn: object | object[], target: Named | null, parent: Pass | null ): string {
+
+			if ( target && this.targets.has( target ) ) return this.targets.get( target )!;
+			for ( const object of Array.isArray( drawn ) ? drawn : [ drawn ] ) {
+
+				for ( const entry of this.objects.get( object ) ?? [] ) if ( ! entry.target || entry.target === target ) return entry.label;
+
+			}
+			const names = this.names( drawn, target );
+			for ( const [ match, label ] of this.patterns ) if ( names.some( ( n ) => match.test( n ) ) ) return label;
+			if ( parent ) return parent.group;
+			if ( this.stack.length ) return this.stack[ this.stack.length - 1 ];
+			if ( this.asyncScopes.size ) return [ ...this.asyncScopes.values() ].pop()!;
+			return 'other';
+
+		}
+
+		private names( drawn: object | object[], target: Named | null ): string[] {
+
+			const names: string[] = [];
+			for ( const object of Array.isArray( drawn ) ? drawn : [ drawn ] ) {
+
+				const o = object as Named;
+				if ( o.name ) names.push( o.name );
+				const material = ( o as { material?: { name?: string } } ).material;
+				if ( material?.name ) names.push( material.name );
+
+			}
+			if ( target?.texture?.name ) names.push( target.texture.name );
+			return names;
+
+		}
+
+		private describe( drawn: object | object[], target: Named | null ): string {
+
+			const what = ( Array.isArray( drawn ) ? drawn : [ drawn ] ).map( ( object ) => {
+
+				const o = object as Named;
+				return o.name || ( o.isScene ? 'scene' : o.isQuadMesh ? 'quad' : o.isComputeNode ? 'compute' : 'object' );
+
+			} ).join( '+' );
+			const into = target ? target.texture?.name || `${ target.width }x${ target.height }` : 'canvas';
+			return ( Array.isArray( drawn ) || ( drawn as Named ).isComputeNode ) ? what : `${ what } > ${ into }`;
+
+		}
+
+		// ------------------------------------------------------------------ inspector hooks
+
+		override setRenderer( renderer: THREE.Renderer ): this {
+
+			super.setRenderer( renderer );
+			const backend = ( renderer as unknown as { backend?: Backend } | null )?.backend;
+			if ( backend && ! ( backend as unknown as { profiled?: boolean } ).profiled ) {
+
+				( backend as unknown as { profiled: boolean } ).profiled = true;
+				// pipelines created per frame: a compile shows up as a hitch
+				for ( const method of [ 'createRenderPipeline', 'createComputePipeline' ] as const ) {
+
+					const original = backend[ method ];
+					backend[ method ] = ( ...args: unknown[] ) => {
+
+						const t0 = performance.now();
+						try {
+
+							return original.apply( backend, args );
+
+						} finally {
+
+							this.pipelineCount ++;
+							this.pipelineMs += performance.now() - t0;
+
+						}
+
+					};
+
+				}
+
+			}
+			return this;
+
+		}
+
+		/** Times the tick's waits in `queue.submit` (Chrome's backpressure once the GPU falls behind). */
+		private wrapQueue(): void {
+
+			const backend = ( this.getRenderer() as unknown as { backend?: { device?: { queue: { submit: ( buffers: unknown[] ) => void } } } } | null )?.backend;
+			const queue = backend?.device?.queue;
+			if ( ! queue ) return;
+			this.queueWrapped = true;
+			const submit = queue.submit;
+			queue.submit = ( buffers: unknown[] ) => {
+
+				if ( ! this.inTick ) return submit.call( queue, buffers );
+				const t0 = performance.now();
+				try {
+
+					return submit.call( queue, buffers );
+
+				} finally {
+
+					this.submitWait += performance.now() - t0;
+
+				}
+
+			};
+
+		}
+
+		override begin(): void {
+
+			super.begin();
+			if ( ! this.queueWrapped ) this.wrapQueue();
+			this.context = null;
+			this.frame = {
+				id: this.nodeFrame.frameId, time: 0, now: performance.now(), js: 0, jsWall: 0, wait: 0, outside: 0, gap: NaN, passes: [], pending: 0,
+				pipelines: 0, pipelineMs: 0, calls: 0, triangles: 0, finishedAt: 0,
+			};
+			this.pipelineCount = 0;
+			this.pipelineMs = 0;
+
+		}
+
+		override finish(): void {
+
+			super.finish();
+			const frame = this.frame;
+			this.frame = null;
+			this.context = null;
+			if ( ! frame ) return;
+			frame.pipelines = this.pipelineCount;
+			frame.pipelineMs = this.pipelineMs;
+			frame.finishedAt = performance.now();
+			this.open.push( frame );
+			if ( this.timestamps ) this.resolve();
+			this.settle();
+
+		}
+
+		override beginRender( uid: string, scene: THREE.Scene, _camera: THREE.Camera, renderTarget: THREE.RenderTarget ): void {
+
+			this.beginPass( uid, scene, renderTarget as unknown as Named | null );
+
+		}
+
+		override finishRender(): void {
+
+			this.context = this.context?.parent ?? null;
+			this.endOutside();
+
+		}
+
+		override beginCompute( uid: string, computeNodes: THREE.ComputeNode ): void {
+
+			// (a list of kernels dispatched in one pass arrives as an array)
+			this.beginPass( uid, computeNodes as THREE.ComputeNode | THREE.ComputeNode[], null );
+
+		}
+
+		override finishCompute(): void {
+
+			this.context = this.context?.parent ?? null;
+			this.endOutside();
+
+		}
+
+		private endOutside(): void {
+
+			if ( this.inTick || this.outsideDepth === 0 ) return;
+			if ( -- this.outsideDepth === 0 && this.frame ) this.frame.outside += performance.now() - this.outsideStart;
+
+		}
+
+		private beginPass( uid: string, drawn: object | object[], target: Named | null ): void {
+
+			if ( ! this.inTick && this.outsideDepth ++ === 0 ) this.outsideStart = performance.now();
+			const parent = this.context;
+			const pass: Pass = { uid, group: this.labelFor( drawn, target, parent ), name: this.describe( drawn, target ), parent, start: 0, end: 0, done: ! this.timestamps };
+			this.context = pass;
+			const frame = this.frame;
+			if ( ! frame ) return; // before the loop starts (startup passes)
+			frame.passes.push( pass );
+			if ( this.timestamps ) {
+
+				frame.pending ++;
+				this.byUid.set( uid, pass );
+
+			}
+
+		}
+
+		// ------------------------------------------------------------------ timestamps
+
+		private resolve(): void {
+
+			const backend = ( this.getRenderer() as unknown as { backend: Backend } | null )?.backend;
+			if ( ! backend?.trackTimestamp ) return;
+			for ( const pool of Object.values( backend.timestampQueryPool ) ) {
+
+				if ( ! pool || pool.currentQueryIndex === 0 ) continue;
+				// three resolves on its own only when the pool overflows; route that through here too
+				if ( ! ( pool as unknown as { profiled?: boolean } ).profiled ) {
+
+					( pool as unknown as { profiled: boolean } ).profiled = true;
+					pool.resolveQueriesAsync = () => { this.resolvePool( backend.device, pool ); return Promise.resolve( 0 ); };
+
+				}
+				this.resolvePool( backend.device, pool );
+
+			}
+
+		}
+
+		private resolvePool( device: GPUDevice, pool: Pool ): void {
+
+			const count = pool.currentQueryIndex;
+			if ( count === 0 ) return;
+			const offsets = new Map( pool.queryOffsets );
+			pool.currentQueryIndex = 0;
+			pool.queryOffsets.clear();
+			let slot = this.buffers.find( ( b ) => ! b.busy && b.buffer.size >= pool.maxQueries * 8 );
+			if ( ! slot && this.buffers.length < RING ) {
+
+				slot = { buffer: device.createBuffer( { label: 'profiler.timestamps', size: pool.maxQueries * 8, usage: READBACK_USAGE } ), busy: false };
+				this.buffers.push( slot );
+
+			}
+			if ( ! slot ) {
+
+				// every read-back buffer is still in flight: these passes go unmeasured
+				this.lost += offsets.size;
+				for ( const uid of offsets.keys() ) this.deliver( uid, null, null );
+				return;
+
+			}
+			slot.busy = true;
+			const bytes = count * 8;
+			const encoder = device.createCommandEncoder( { label: 'profiler.resolve' } );
+			encoder.resolveQuerySet( pool.querySet, 0, count, pool.resolveBuffer, 0 );
+			encoder.copyBufferToBuffer( pool.resolveBuffer, 0, slot.buffer, 0, bytes );
+			device.queue.submit( [ encoder.finish() ] );
+			const buffer = slot.buffer;
+			const submitted = performance.now();
+			buffer.mapAsync( MAP_READ, 0, bytes ).then( () => {
+
+				this.latency.push( performance.now() - submitted );
+				if ( this.latency.length > 600 ) this.latency.shift();
+
+				const times = new BigUint64Array( buffer.getMappedRange( 0, bytes ).slice( 0 ) );
+				buffer.unmap();
+				slot!.busy = false;
+				for ( const [ uid, base ] of offsets ) this.deliver( uid, times[ base ], times[ base + 1 ] );
+				this.settle();
+
+			}, () => {
+
+				slot!.busy = false;
+				this.failed.map += offsets.size;
+				for ( const uid of offsets.keys() ) this.deliver( uid, null, null );
+
+			} );
+
+		}
+
+		private deliver( uid: string, start: bigint | null, end: bigint | null ): void {
+
+			const pass = this.byUid.get( uid );
+			if ( ! pass ) return;
+			this.byUid.delete( uid );
+			pass.done = true;
+			if ( start !== null && end !== null && end >= start && start > 0n ) {
+
+				if ( this.origin === null ) this.origin = start;
+				pass.start = Number( start - this.origin ) / 1e6;
+				pass.end = Number( end - this.origin ) / 1e6;
+
+			} else {
+
+				if ( start === 0n ) this.failed.zero ++;
+				else if ( start !== null && end !== null ) this.failed.order ++;
+				pass.start = pass.end = NaN;
+
+			}
+
+		}
+
+		/** Moves frames whose passes all reported (or that waited more than a second) to `done`. */
+		private settle(): void {
+
+			const now = performance.now();
+			while ( this.open.length ) {
+
+				const frame = this.open[ 0 ];
+				const pending = frame.passes.filter( ( p ) => ! p.done );
+				if ( pending.length && now - frame.finishedAt < LATE_MS ) break;
+				this.open.shift();
+				for ( const pass of pending ) this.byUid.delete( pass.uid );
+				this.failed.late += pending.length;
+				this.done.push( this.record( frame, pending.length ) );
+				if ( this.done.length > 20000 ) this.done.splice( 0, this.done.length - 20000 );
+
+			}
+
+		}
+
+		private record( frame: Frame, missing: number ): FrameRecord {
+
+			const groups: Record<string, number> = {};
+			const detail: Record<string, number> = {};
+			const charges = new Map<Pass, number>();
+			const timed: Pass[] = [];
+			let gpu = 0, first = Infinity;
+			for ( const pass of frame.passes ) {
+
+				if ( ! pass.done || ! Number.isFinite( pass.start ) ) {
+
+					if ( this.timestamps ) missing ++;
+					continue;
+
+				}
+				if ( ! this.timestamps ) continue;
+				timed.push( pass );
+				first = Math.min( first, pass.start );
+
+			}
+			// in the order they complete, each from the previous completion (this frame's, or the end of
+			// the last frame's work still running) or its own start, whichever is later
+			timed.sort( ( a, b ) => a.end - b.end );
+			let cursor = this.lastEnd;
+			for ( const pass of timed ) {
+
+				const ms = Math.max( pass.end - Math.max( pass.start, cursor ), 0 );
+				cursor = Math.max( cursor, pass.end );
+				charges.set( pass, ms );
+				gpu += ms;
+				groups[ pass.group ] = ( groups[ pass.group ] ?? 0 ) + ms;
+				if ( this.detail ) {
+
+					const key = `${ pass.group } | ${ pass.name }`;
+					detail[ key ] = ( detail[ key ] ?? 0 ) + ms;
+
+				}
+
+			}
+			const end = timed.length ? cursor : NaN;
+			// the GPU's interval only between two frames that both reported every pass
+			const complete = timed.length > 0 && missing === 0;
+			const record: FrameRecord = {
+				id: frame.id, t: frame.now, interval: frame.time - this.lastTime, nowInterval: frame.now - this.lastNow,
+				js: frame.js, jsWall: frame.jsWall, submitWait: frame.wait, outsideJs: frame.outside, gap: frame.gap,
+				gpu, gpuInterval: complete && this.lastComplete ? end - this.lastEnd : NaN,
+				span: timed.length ? end - first : 0, passes: frame.passes.length, missing: this.timestamps ? missing : 0,
+				pipelines: frame.pipelines, pipelineMs: frame.pipelineMs, calls: frame.calls, triangles: frame.triangles, groups,
+			};
+			if ( this.detail ) record.detail = detail;
+			if ( this.raw ) record.raw = frame.passes.map( ( p ) => [ p.group, p.name, p.start - first, p.end - first, charges.get( p ) ?? NaN ] );
+			if ( timed.length ) this.lastEnd = end;
+			this.lastComplete = complete;
+			this.lastTime = frame.time;
+			this.lastNow = frame.now;
+			return record;
+
+		}
+
+		// ------------------------------------------------------------------ loop and startup
+
+		/** Times the synchronous tick (its pipeline creation included, its submit waits apart) and
+		 * stamps the frame. */
+		wrapLoop( tick: ( time: number ) => void ): ( time: number ) => void {
+
+			return ( time: number ) => {
+
+				const frame = this.frame;
+				this.submitWait = 0;
+				this.inTick = true;
+				const t0 = performance.now();
+				try {
+
+					tick( time );
+
+				} finally {
+
+					this.inTick = false;
+
+				}
+				const t1 = performance.now();
+				const wall = t1 - t0;
+				const gap = t0 - this.lastTickEnd;
+				this.lastTickEnd = t1;
+				const wait = this.submitWait;
+				const js = Math.max( wall - wait, 0 );
+				if ( frame ) {
+
+					frame.time = time;
+					frame.now = t0;
+					frame.js = js;
+					frame.jsWall = wall;
+					frame.wait = wait;
+					frame.gap = gap;
+					const info = ( this.getRenderer() as THREE.Renderer | null )?.info;
+					frame.calls = info?.render.drawCalls ?? 0;
+					frame.triangles = info?.render.triangles ?? 0;
+
+				}
+				const frames = this.startup.frames;
+				if ( frames.length < 30 ) {
+
+					const entry: ( typeof frames )[ number ] = { at: t0, interval: frames.length ? t0 - this.startupLast : 0, js, wait, pipelines: this.pipelineCount, pipelineMs: this.pipelineMs };
+					frames.push( entry );
+					if ( frames.length === 1 ) this.startup.firstFrame = { at: t0, js, wait, pipelines: this.pipelineCount, pipelineMs: this.pipelineMs };
+					this.startupLast = t0;
+					const queue = ( this.getRenderer() as unknown as { backend?: { device?: { queue: { onSubmittedWorkDone(): Promise<void> } } } } | null )?.backend?.device?.queue;
+					queue?.onSubmittedWorkDone().then( () => {
+
+						entry.done = performance.now();
+						if ( frames[ 0 ] === entry && this.startup.firstFrame ) this.startup.firstFrame.done = entry.done;
+
+					} ).catch( () => {} );
+
+				}
+
+			};
+
+		}
+
+		private startupLast = 0;
+
+		/** Milliseconds since navigation start for a named point of the startup. */
+		mark( name: string ): void {
+
+			this.marks[ name ] = performance.now();
+
+		}
+
+		// ------------------------------------------------------------------ tool API
+
+		readonly api = {
+			/** Drops the frames measured so far (a warm-up's). */
+			reset: () => {
+
+				this.settle();
+				this.done.length = 0;
+
+			},
+			/** The frames finished since the last take, oldest first. */
+			take: (): FrameRecord[] => {
+
+				this.settle();
+				return this.done.splice( 0, this.done.length );
+
+			},
+			/** Whether frames carry each pass's detail (group | what > target) besides the groups. */
+			setDetail: ( on: boolean ) => { this.detail = on; },
+			/** Whether frames carry every pass's GPU start and end (ms from the frame's first start). */
+			setRaw: ( on: boolean ) => { this.raw = on; },
+			/** Frames still waiting for their timestamps (started before `before`, if given). */
+			pending: ( before = Infinity ) => this.open.filter( ( f ) => f.now < before ).length,
+			info: () => ( {
+				timestamps: this.timestamps && Boolean( ( this.getRenderer() as unknown as { backend: Backend } | null )?.backend.trackTimestamp ),
+				lostPasses: this.lost, failedPasses: this.failed, readbackMs: [ ...this.latency ].sort( ( a, b ) => a - b ).filter( ( _, i, a ) => i === 0 || i === a.length >> 1 || i === a.length - 1 ), marks: this.marks, startup: this.startup,
+			} ),
+		};
+
+	}
+
+	return new FrameProfiler( options );
+
+}
+
+export type FrameProfiler = ReturnType<typeof createFrameProfiler>;
+
+/** The scene's passes by subsystem. `handles` are main.ts's objects. */
+export function labelSoomiPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
+
+	const h = handles as Record<string, Record<string, unknown>>;
+	const pipeline = h.pipeline;
+	const P = pipeline as Record<string, unknown> & { blooms: { node: unknown }[]; diffusion: { node: unknown }; passes: unknown[] };
+	// the frame graph
+	profiler.object( h.scene, 'opaque scene', P.sceneRT as object );
+	profiler.object( h.waterScene, 'water', P.sceneRT as object );
+	profiler.object( h.rainScene, 'rain draw', P.sceneRT as object );
+	for ( const quad of [ P.depthQuad, P.copyQuad, P.surfaceQuad ] ) profiler.object( quad as object, 'depth & copy resolves' );
+	// the frame graph's own rtt() passes first: a bloom's scan reaches the targets of the passes
+	// it reads, and the first label a target gets is kept
+	profiler.scan( P.shafts, 'light shafts' );
+	profiler.scan( P.passes[ 0 ], 'composite (air, fog, veil)', 1 );
+	profiler.scan( P.passes[ 1 ], 'tilt-shift blur', 1 );
+	profiler.scan( P.blooms[ 0 ]?.node, 'bloom' );
+	profiler.scan( P.blooms[ 1 ]?.node, 'wide glow' );
+	profiler.scan( P.diffusion?.node, 'look glow' );
+	profiler.scan( P.display, 'grade & look' );
+	profiler.target( P.displayRT as object, 'grade & look' );
+	profiler.scan( P.output, 'output' );
+	profiler.scan( P.upscaledOutput, 'output & FSR' );
+	profiler.pattern( /^FSR1/, 'output & FSR' );
+	// the sky's per-frame compute and its bakes
+	profiler.pattern( /^Clouds\.View/, 'clouds view march' );
+	profiler.pattern( /^Clouds\.Panorama/, 'clouds panorama' );
+	profiler.pattern( /^Clouds\.Shadow/, 'cloud shadow map' );
+	profiler.pattern( /^PMREM/, 'sky bake' );
+	profiler.pattern( /^Rain\./, 'rain drops' );
+	profiler.pattern( /^(StormSea|Spray)\./, 'storm sea' );
+	const sky = h.sky;
+	profiler.scope( sky, 'track', 'atmosphere LUT' );
+	profiler.scope( sky, 'advance', 'sky env blend' );
+	profiler.scope( sky, 'updateClouds', 'clouds other' );
+	profiler.scope( sky, 'update', 'sky bake', { async: true } );
+	profiler.scope( sky.lightning, 'update', 'lightning' );
+	profiler.scope( h.rain, 'update', 'rain drops' );
+	profiler.scope( h.rain, 'bakeCollision', 'rain collision (startup)' );
+	profiler.scope( h.sunShadow, 'update', 'sun shadow map' );
+	profiler.scope( h.refractedSun, 'update', 'refracted sun map' );
+	profiler.scope( h.fft, 'update', 'ocean FFT' );
+	profiler.scope( h.stormSea, 'update', 'storm sea' );
+	profiler.scope( h.shoreWaves, 'update', 'shore waves' );
+	profiler.scope( h.caustics, 'update', 'caustics' );
+	profiler.scope( h.characters, 'update', 'character shadow' );
+
+}

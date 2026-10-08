@@ -39,16 +39,23 @@ const params = new URLSearchParams( location.search );
 const ground = { soil: params.get( 'soil' ) !== '0' };
 soilUniforms.strength.value = ground.soil ? 1 : 0;
 soilUniforms.blend.value = params.get( 'blend' ) === '0' ? 0 : 1;
-// scene handles and frame diagnostics on window, for the capture tool and the console: dev server
-// or ?debug only
-const DEBUG = import.meta.env.DEV || params.has( 'debug' );
+// GPU time per pass, tick time and startup marks for tools/profile-frame.mjs (?profile, or
+// ?profile=frames without the GPU timestamps). The profiler loads only then; without it the
+// renderer, its pipelines and the image are unchanged.
+const profiler = params.has( 'profile' ) ? ( await import( './debug/FrameProfiler.ts' ) ).createFrameProfiler( THREE.InspectorBase, { timestamps: params.get( 'profile' ) !== 'frames' } ) : null;
+const mark = ( name: string ) => profiler?.mark( name );
+// scene handles and frame diagnostics on window, for the capture tool and the console: dev server,
+// ?debug or ?profile only
+const DEBUG = import.meta.env.DEV || params.has( 'debug' ) || profiler !== null;
 const loading = document.getElementById( 'loading' );
 const setStatus = ( s: string ) => { const el = loading?.querySelector( 'span' ); if ( el ) el.textContent = s; };
 
 // ------------------------------------------------------------------ renderer
 
-const renderer = new THREE.WebGPURenderer( { antialias: false, powerPreference: 'high-performance' } );
+const renderer = new THREE.WebGPURenderer( { antialias: false, powerPreference: 'high-performance', trackTimestamp: profiler?.timestamps ?? false } );
+if ( profiler ) renderer.inspector = profiler;
 await renderer.init();
+mark( 'renderer' );
 if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBackend !== true ) {
 
 	setStatus( 'This scene needs WebGPU (Chrome / Edge 113+, Safari 26+).' );
@@ -260,6 +267,7 @@ let water: Water | undefined;
 
 setStatus( 'Lighting the sky…' );
 await refreshEnvironment();
+mark( 'sky' );
 shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill );
 
 const textures = await bakeProceduralTextures( renderer );
@@ -289,6 +297,7 @@ rainScene.add( rain.group );
 setStatus( 'Generating the island…' );
 const t0 = performance.now();
 const data = await generateWorld();
+mark( 'world' );
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
 // The floor's height shares the shoreline field's bounds, and so its transform.
@@ -331,6 +340,7 @@ scene.add( grass, foliage, flowers, rimFoliage, turfSkirt, plants );
 }
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
 rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt, plants ] );
+mark( 'meshes' );
 setStatus( 'Waking the villagers…' );
 // Local, unversioned assets (artifacts/ is git-ignored) served by the dev server while the
 // character art is still changing.
@@ -347,6 +357,7 @@ const islander = await loadVillager( umc( 'Farmer' ), [
 ], shared );
 const characters = new Villagers( islander, WALK_LOOP, islandSurfaceHeight, characterShadow );
 scene.add( characters.group );
+mark( 'villagers' );
 
 // Storm whitecap foam with a memory, and the spray torn off breaking crests (idle in calm weather).
 const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
@@ -760,7 +771,14 @@ function diagnostics(): void {
 
 }
 
-renderer.setAnimationLoop( tick );
+if ( profiler ) {
+
+	const { labelSoomiPasses } = await import( './debug/FrameProfiler.ts' );
+	labelSoomiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, caustics, characters } );
+
+}
+mark( 'loop' );
+renderer.setAnimationLoop( profiler ? profiler.wrapLoop( tick ) : tick );
 loading?.classList.add( 'done' );
 // setTime moves the (paused) clock, so captures can step through an animation in one page load
 const setTime = ( t: number ) => {
