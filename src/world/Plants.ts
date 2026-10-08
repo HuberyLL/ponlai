@@ -4,7 +4,7 @@ import {
 	mx_noise_float,
 } from 'three/tsl';
 import { mulberry32, type Rng } from './noise.ts';
-import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST } from './Foliage.ts';
+import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, markVegetation } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
 import type { PlantSite } from './PlantSites.ts';
@@ -497,9 +497,10 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 	const map = leafTexture();
 	const mat = new THREE.MeshStandardNodeMaterial( {
-		map, alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: true, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
+		map, alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: ALPHA_TO_COVERAGE, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
 	} );
 	mat.alphaMap = leafAlphaTexture( map.image.width );
+	markVegetation( mat );
 	const motion = attribute<'vec4'>( 'plantMotion', 'vec4' );
 	const shade = attribute<'vec2'>( 'plantShade', 'vec2' );
 	const bark = motion.w;
