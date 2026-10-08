@@ -35,12 +35,29 @@ try {
 		} catch ( error ) { return { failure: error.message }; }
 
 	} );
+	// A paused clock moved by less than the map's angle gate (a capture's seek) must still leave
+	// the map drawn at exactly the key light's direction, as a fresh load at that time would.
+	const seek = await page.evaluate( async () => {
+
+		const s = window.__SOOMI__, map = s.refractedSun;
+		const before = map.lastSun.clone();
+		await s.setHour( s.dayCycle.hour + 0.001 );
+		const sun = s.shared.sunDir.value;
+		const until = performance.now() + 1000;
+		while ( performance.now() < until ) await new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+		return { turnDegrees: before.angleTo( sun ) * 180 / Math.PI, gateDegrees: map.angleGate * 180 / Math.PI,
+			drawnExactly: map.lastSun.equals( sun ) };
+
+	} );
+	result.pausedSeek = seek;
 	await mkdir( 'artifacts/verification', { recursive: true } );
 	await writeFile( 'artifacts/verification/refracted-sun.json', JSON.stringify( { result, errors }, null, 2 ) );
 	console.log( JSON.stringify( { ...result, errors } ) );
 	assert.equal( result.failure, undefined );
 	assert.equal( result.probe?.passed, true, 'Refracted sun geometry/irradiance probe failed' );
 	assert.ok( result.productionMap.metresPerTexel.every( length => length <= 0.08 ), 'Local submerged shadow texel exceeds8cm' );
+	assert.ok( seek.turnDegrees > 0 && seek.turnDegrees < seek.gateDegrees, `The paused seek did not test a turn below the gate: ${ JSON.stringify( seek ) }` );
+	assert.equal( seek.drawnExactly, true, 'A paused seek below the angle gate left the refracted map behind the key light' );
 	assert.deepEqual( errors, [] );
 
 } finally { await browser.close(); }
