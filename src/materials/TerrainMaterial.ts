@@ -90,7 +90,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		// Bare stone must always sample its mineral maps, including upward boulder faces.
 		const legacyTurf = ( vegetation ? smoothstep( 0.85, 0.97, n0.y ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ).mul( meadowTop ) : float( 0 ) ).toVar();
 		const turf = legacyTurf.toVar();
-		const rimBlend = float( 0 ).toVar(), rimTurf = float( 0 ).toVar(), rimSoil = float( 0 ).toVar();
+		const rimBlend = float( 0 ).toVar(), rimTurf = float( 0 ).toVar(), rimSoil = float( 0 ).toVar(), rimOvergrown = float( 0 ).toVar();
 		if ( vegetation && rimGround && rimGroundXform ) {
 
 			// One cell-centred field also controls edge grass on the CPU. Sample it before any
@@ -103,15 +103,20 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 				.mul( float( 1 ).sub( smoothstep( 0.20, 0.48, d ) ) );
 			const atRoof = smoothstep( roof.sub( RIM_MAX_DROP ), roof.sub( RIM_MAX_DROP - 0.045 ), p.y );
 			rimBlend.assign( atRim.mul( atRoof ) );
-			const greenDrop = clamp( depth.add( 0.02 ), 0.05, 0.16 );
-			rimTurf.assign( cover.mul( smoothstep( 0.65, 0.95, n0.y ) )
-				.mul( smoothstep( roof.sub( greenDrop ), roof.sub( 0.025 ), p.y ) ).mul( meadowTop ) );
+			// A shallow root bed lets the turf grow down over the lip, onto steeper faces and further
+			// below the roof, with a ragged lower edge; deep beds stop it short above their soil.
+			const overgrown = float( 1 ).sub( smoothstep( 0.08, 0.14, depth ) ).mul( soilUniforms.strength.min( 1 ) );
+			rimOvergrown.assign( overgrown.mul( rimBlend ) );
+			const ragged = texture( tex.heights, p.xz.mul( 1.3 ).add( p.y.mul( 0.9 ) ) ).g.sub( 0.5 ).mul( 0.12 );
+			const greenDrop = mix( clamp( depth.add( 0.02 ), 0.05, 0.16 ), float( 0.27 ).add( ragged ), overgrown );
+			rimTurf.assign( cover.mul( smoothstep( mix( 0.65, 0.18, overgrown ), mix( 0.95, 0.6, overgrown ), n0.y ) )
+				.mul( smoothstep( roof.sub( greenDrop ), mix( roof.sub( 0.025 ), roof.sub( greenDrop ).add( 0.04 ), overgrown ), p.y ) ).mul( meadowTop ) );
 			// Root soil occupies small retreat pockets and rounded shoulders. Overlapping grass
 			// and exposed stone interrupt it, rather than drawing a continuous brown collar.
 			const soilBand = smoothstep( - 0.56, - 0.18, d ).mul( float( 1 ).sub( smoothstep( 0.10, 0.35, d ) ) );
 			const soilPocket = mix( float( 0.14 ), float( 0.76 ), smoothstep( - 0.045, 0.24, retreat ) );
 			rimSoil.assign( soilBand.mul( soilPocket ).mul( smoothstep( 0.15, 0.80, n0.y ) )
-				.mul( smoothstep( roof.sub( depth ).sub( 0.055 ), roof.sub( depth ).add( 0.02 ), p.y ) )
+				.mul( smoothstep( roof.sub( depth ).sub( 0.055 ).add( ragged ), roof.sub( depth ).add( 0.02 ).add( ragged ), p.y ) )
 				.mul( soilUniforms.strength ) );
 			turf.assign( mix( legacyTurf, rimTurf, rimBlend ) );
 
@@ -281,7 +286,10 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 					const soil = texture( tex.soil, p.xz.div( SOIL_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).toVar();
 					// The same broad cover field narrows nearby grass tufts. Fine detail modulates
 					// earth colour only, so gaps belong to the meadow rather than random brown dots.
-					groundSoil.assign( meadowSoilCover( meadow.a, soil.b ).mul( soilUniforms.blend ).mul( soilUniforms.strength ).mul( turfCover ) );
+					// The overgrown stretches of the lip keep their turf closed to the edge, so the
+					// meadow's soil pockets show at the rim only where the root bed is cut open.
+					groundSoil.assign( meadowSoilCover( meadow.a, soil.b ).mul( soilUniforms.blend ).mul( soilUniforms.strength ).mul( turfCover )
+						.mul( float( 1 ).sub( rimOvergrown ) ) );
 					const earth = vec3( ...SOIL_PALETTE.surface ).mul( mix( float( 0.9 ), float( 1.12 ), soil.a ) ).mul( mix( float( 0.88 ), float( 1.08 ), fibres ) );
 					grassC.assign( mix( grassC, earth, groundSoil.mul( 0.5 ) ) );
 

@@ -27,6 +27,7 @@ import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { islandSurfaceHeight } from './world/WorldShapes.ts';
+import { WALK_LOOP, walkLoopDistance } from './world/WalkLoop.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook, KIND } from './characters/CharacterMaterial.ts';
@@ -292,9 +293,11 @@ const refractedSun = new RefractedSun( renderer, shared );
 refractedSun.setCasters( world.group );
 refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
-const grass = buildGrass( data.vegetation, shared, data.rimGround );
+// Tussocks and tall flowers keep clear of the islander's walking loop.
+const walkDistance = walkLoopDistance( WALK_LOOP );
+const grass = buildGrass( data.vegetation, shared, data.rimGround, walkDistance );
 const foliage = buildFoliage( data.vegetation, shared );
-const flowers = buildFlowers( data.vegetation, shared );
+const flowers = buildFlowers( data.vegetation, shared, walkDistance );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 scene.add( grass, foliage, flowers, rimFoliage );
 {
@@ -325,7 +328,7 @@ const fisherman = await loadVillager( umc( 'Farmer' ), [
 	{ from: umc( 'Farmer' ), part: 'Farmer_Pants', paint: { LightBlue: [ '#285878', KIND.cloth ] } },
 	{ from: umc( 'Adventurer' ), part: 'Adventurer_Feet', paint: { Grey: [ '#3c4a3e', KIND.leather ], Black: [ '#2a2622', KIND.leather ] } },
 ], shared );
-const characters = new Villagers( fisherman, [ [ - 5.5, 1.5 ], [ - 1.5, 3.3 ], [ 3, 2.6 ], [ 5.6, 0 ], [ 3.8, - 2.8 ], [ - 0.5, - 2.7 ], [ - 4.5, - 1.8 ] ], islandSurfaceHeight, characterShadow );
+const characters = new Villagers( fisherman, WALK_LOOP, islandSurfaceHeight, characterShadow );
 scene.add( characters.group );
 
 // Storm whitecap foam with a memory, and the spray torn off breaking crests (idle in calm weather).
