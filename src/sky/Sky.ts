@@ -196,6 +196,7 @@ export class Sky {
 	private sliceMs = 0;
 	// The scene clock did not advance over the last cloud update: a paused scene does its bakes whole.
 	private clockStill = false;
+	private readonly displaySize = new THREE.Vector2();
 	private front = 0;
 	private destination = 0;
 	private initialized = false;
@@ -416,8 +417,10 @@ export class Sky {
 
 	setQuality( quality: 'low' | 'medium' | 'high' ): void {
 
-		// The cloud view's resolution as a share of the render.
-		const scale = { low: { render: 0.4 }, medium: { render: 0.5 }, high: { render: 0.65 } }[ quality ];
+		// High's cloud view is a share of the display (0.58 of the render high draws at its nominal
+		// ratio), so a lower render scale does not soften the clouds a second time; medium and low
+		// keep their share of the render until the quality tiers give them budgets of their own.
+		const scale = { low: { render: 0.4 }, medium: { render: 0.5 }, high: { display: 0.58 } }[ quality ];
 		if ( scale === undefined ) throw new RangeError( `Unknown sky quality: ${ quality }` );
 		// Fixed targets keep sampler dimensions and both PMREM endpoints compatible while
 		// quality changes. Cloud march steps and the caller's bake cadence set the GPU budget.
@@ -658,6 +661,8 @@ export class Sky {
 		this.viewHeight = height;
 		this.clockStill = time === this.cloudTime;
 		this.cloudTime = time;
+		const display = this.renderer.getSize( this.displaySize );
+		this.clouds.setDisplay( display.x, display.y, this.renderer.getPixelRatio() );
 		this.clouds.setWindOffset( windOffset );
 		// Weather arrives from upwind.
 		this.clouds.frontAxis.value.copy( windDirection ).negate().normalize();

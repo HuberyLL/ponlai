@@ -125,8 +125,10 @@ export interface CloudMarch {
 }
 const MARCH_DEFAULTS: CloudMarch = { viewSteps: 256, panoramaSteps: 128, lightTaps: 5, rainSteps: 16 };
 
-// How the view's resolution is set: a fraction of the render.
-export type CloudViewScale = { render: number };
+// How the view's resolution is set: a fraction of the render, or of the display (the render high
+// draws at its nominal ratio: the display's, up to 1.5), so a lower render scale does not soften
+// the clouds a second time.
+export type CloudViewScale = { render: number } | { display: number };
 
 // The panorama's refresh order over its sx x sy pattern (powers of two): consecutive frames land
 // far apart, as an ordered dither does, so a partly refreshed map shows no sweep. A larger axis
@@ -332,6 +334,8 @@ export class Clouds {
 	private march: CloudMarch = { ...MARCH_DEFAULTS };
 	private shadowRowsPerFrame = 1 / SHADOW_PHASES;
 	private viewScale: CloudViewScale = { render: 0.5 };
+	// The display the view's budget refers to: CSS pixels and the canvas's pixel ratio.
+	private readonly display = { width: 1, height: 1, ratio: 1 };
 	// The view: camera basis and frustum tangents now, at the previous trace, and as last traced.
 	private readonly cam = { right: uniform( new THREE.Vector3( 1, 0, 0 ) ), up: uniform( new THREE.Vector3( 0, 1, 0 ) ), fwd: uniform( new THREE.Vector3( 0, 0, - 1 ) ), tan: uniform( new THREE.Vector2( 1, 1 ) ) };
 	private readonly prev = { right: uniform( new THREE.Vector3( 1, 0, 0 ) ), up: uniform( new THREE.Vector3( 0, 1, 0 ) ), fwd: uniform( new THREE.Vector3( 0, 0, - 1 ) ), tan: uniform( new THREE.Vector2( 1, 1 ) ) };
@@ -1647,16 +1651,40 @@ export class Clouds {
 	// The view's size for a render of width x height pixels (see CloudViewScale).
 	private viewDimensions( width: number, height: number ): [ number, number ] {
 
-		const scale = this.viewScale.render;
-		return [ Math.max( 8, Math.round( width * scale ) ), Math.max( 8, Math.round( height * scale ) ) ];
+		const override = debugFlags.cloudViewScale;
+		const scale = typeof override === 'number' ? { render: override } : this.viewScale;
+		let w: number, h: number;
+		if ( 'render' in scale ) {
+
+			w = width * scale.render;
+			h = height * scale.render;
+
+		} else {
+
+			// The render high draws at its nominal ratio, never more than the render itself.
+			const nominal = Math.min( this.display.ratio, 1.5 ) * scale.display;
+			w = Math.min( this.display.width * nominal, width );
+			h = Math.min( this.display.height * nominal, height );
+
+		}
+		return [ Math.max( 8, Math.round( w ) ), Math.max( 8, Math.round( h ) ) ];
 
 	}
 
-	/** The view's resolution, as a fraction of the render (CloudViewScale). A new size rebuilds
-	 * the view on the next update. */
+	/** The display the view's budget refers to (CSS pixels and the canvas's pixel ratio). */
+	setDisplay( width: number, height: number, ratio: number ): void {
+
+		this.display.width = width;
+		this.display.height = height;
+		this.display.ratio = ratio;
+
+	}
+
+	/** The view's resolution, as a fraction of the render or of the display (CloudViewScale). A
+	 * new size rebuilds the view on the next update. */
 	setViewScale( scale: CloudViewScale ): void {
 
-		const value = scale.render;
+		const value = 'render' in scale ? scale.render : scale.display;
 		if ( ! ( value > 0 && value <= 1 ) ) throw new RangeError( 'The cloud view scale must lie in (0, 1]' );
 		this.viewScale = { ...scale };
 
