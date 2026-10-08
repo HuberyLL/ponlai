@@ -58,7 +58,7 @@ export interface GrassQuality {
 	 * lost close up, so it suits the lower tiers only. */
 	canopyPerVertex: boolean;
 }
-const grassQuality: GrassQuality = { lawnBlades: [ 16, 16, 16 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false };
+const grassQuality: GrassQuality = { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false };
 
 export function setGrassQuality( quality: Partial<GrassQuality> ): void {
 
