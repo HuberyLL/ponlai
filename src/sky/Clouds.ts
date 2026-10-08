@@ -1434,8 +1434,7 @@ export class Clouds {
 	sampleView( direction: V3 ): V4 {
 
 		const V = this.viewCam;
-		const panorama = this.sample( direction ).toVar();
-		const result = vec4( panorama.rgb.add( this.flashAt( direction, float( 1 ).sub( panorama.a ) ) ), panorama.a ).toVar();
+		const result = vec4( 0 ).toVar();
 		const z = dot( direction, V.fwd ).toVar();
 		const ndc = vec2( dot( direction, V.right ), dot( direction, V.up ) ).div( V.tan.mul( max( z, 1e-4 ) ) );
 		const uv = vec2( ndc.x.mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( ndc.y.mul( 0.5 ) ) ).toVar();
@@ -1448,6 +1447,13 @@ export class Clouds {
 			const flash = this.flashNode.sample( fuv ).level( float( 0 ) ).rgb.mul( this.flashOn );
 			const above = smoothstep( - 0.05, - 0.03, direction.y );
 			result.assign( vec4( v.rgb.add( flash ).mul( above ), mix( float( 1 ), min( v.a, 1 ), above ) ) );
+
+		} ).Else( () => {
+
+			// Only outside the view (or before it has data) does the panorama show, so only there
+			// are its taps and the lightning's light evaluated.
+			const panorama = this.sample( direction ).toVar();
+			result.assign( vec4( panorama.rgb.add( this.flashAt( direction, float( 1 ).sub( panorama.a ) ) ), panorama.a ) );
 
 		} );
 		return result;
