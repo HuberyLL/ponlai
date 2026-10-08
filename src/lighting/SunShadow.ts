@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { Fn, uniform, texture, vec4, mix } from 'three/tsl';
+import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, select, mix } from 'three/tsl';
 import { solarSteppedShadowVisibility, solarVolumeVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
 
 type F = THREE.Node<'float'>;
@@ -30,6 +30,14 @@ const PREVIOUS = 0, CURRENT = 1;
 // penumbrae, which a close view of shaded foliage shows as scattered pixels changing by up to half
 // their brightness.
 export const VEGETATION_TAPS: Readonly<SolarShadowTaps> = { soft: true, blockerSamples: 4, filterSamples: 4 };
+// The caster-depth grid (nearestCasterDepth): light-space cells per side of each map, world cells
+// along the casters' longer side, and the padding for what the rest pose leaves out (wind sway,
+// the rim's lean): metres up, and world cells sideways.
+const GRID = 16, WORLD_CELLS = 64, GRID_HEIGHT_PAD = 0.35, GRID_SIDE_PAD = 1;
+// a cell without casters: farther than any receiver's depth
+const NO_CASTER = 2;
+// a cell not projected yet: nearer than any receiver, so nothing is skipped on its word
+const UNKNOWN = 0;
 
 // three's shadow coordinate is ( s.x, 1 - s.y, s.z + bias ) for s = shadow.matrix * world
 const FLIP_Y = new THREE.Matrix4().set(
@@ -96,6 +104,16 @@ export class SunShadow {
 	private readonly currentLayer = new THREE.Box3( new THREE.Vector3( 0, 0, CURRENT ), new THREE.Vector3( 1, 1, CURRENT + 1 ) );
 	private readonly toCurrentLayer = new THREE.Vector3( 0, 0, CURRENT );
 	private readonly toPreviousLayer = new THREE.Vector3( 0, 0, PREVIOUS );
+	// Per map (previous, current), the nearest caster's depth in each GRID x GRID light-space cell,
+	// four cells per vec4. Built only once a receiver asks for it (nearestCasterDepth); until then
+	// every cell reads UNKNOWN, which never lets a march skip a lookup.
+	private readonly casterDepths = uniformArray( Array.from( { length: 2 * GRID * GRID / 4 }, () => new THREE.Vector4().setScalar( UNKNOWN ) ), 'vec4' );
+	private gridWanted = false;
+	// A receiver asked for the grid since the last projection: project both halves on the next
+	// update, whether or not the map is redrawn then (a paused clock may never redraw it).
+	private gridDirty = false;
+	// world-space caster columns: per WORLD_CELLS cell, the lowest and highest caster point
+	private columns: { x0: number; z0: number; cell: number; nx: number; nz: number; low: Float32Array; high: Float32Array } | null = null;
 
 	constructor( sun: THREE.DirectionalLight, { bias = 0.01, floor = - 3, margin = 0.6 }: SunShadowOptions = {} ) {
 
@@ -163,12 +181,33 @@ export class SunShadow {
 
 	}
 
+	/** The nearest caster's depth (in that map's shadow coordinate z, bias included) over the
+	 * light-space cell holding a coordinate of the current map, or of the previous one with
+	 * `previous`; 2 where nothing casts, 0 before the grid's first projection. A point of that
+	 * map no deeper than it is lit by the 2x2 bilinear lookups (volumeVisibility, the water
+	 * column), whose footprint the cells already include, so a march may skip those lookups. It
+	 * does not bound the surface filter's PCSS search, which can reach many texels further: never
+	 * skip surfaceVisibility on its word. The grid comes from the casters' geometry at rest,
+	 * padded for wind and the rim's lean, and is re-projected at each step. */
+	nearestCasterDepth( coordinate: V3, previous = false ): F {
+
+		if ( ! this.gridWanted ) this.gridWanted = this.gridDirty = true;
+		const cell = clamp( floor( coordinate.xy.mul( GRID ) ), 0, GRID - 1 );
+		const index = int( cell.y.mul( GRID ).add( cell.x ) ).add( previous ? 0 : GRID * GRID );
+		const packed = this.casterDepths.element( index.div( 4 ) ) as unknown as THREE.Node<'vec4'>;
+		const lane = index.mod( 4 );
+		const pick = ( k: number ) => select( lane.equal( k ), float( 1 ), float( 0 ) );
+		return dot( packed, vec4( pick( 0 ), pick( 1 ), pick( 2 ), pick( 3 ) ) );
+
+	}
+
 	/** World-space bounds of everything that casts into this map (static). Only their part
 	 * above the floor can shade a receiver of this map. */
 	setCasters( box: THREE.Box3 ): void {
 
 		this.casters.copy( box );
 		this.casters.min.y = Math.max( this.casters.min.y, this.floor );
+		this.columns = null;
 		this.cut = true;
 
 	}
@@ -200,6 +239,12 @@ export class SunShadow {
 			this.draw( renderer, scene, camera, node, map, keyDir );
 			this.hasPrevious = false;
 			this.cut = false;
+			if ( this.gridWanted ) {
+
+				this.projectGrid( scene, CURRENT, shadowCoordinateMatrix( shadow, new THREE.Matrix4() ) );
+				this.clearGrid( PREVIOUS );
+
+			}
 
 		} else if ( turned >= this.step ) {
 
@@ -210,6 +255,21 @@ export class SunShadow {
 			this.previousRange.value = this.range.value;
 			this.draw( renderer, scene, camera, node, map, keyDir );
 			this.hasPrevious = true;
+			if ( this.gridWanted ) {
+
+				this.shiftGrid();
+				this.projectGrid( scene, CURRENT, shadowCoordinateMatrix( shadow, new THREE.Matrix4() ) );
+
+			}
+
+		}
+		if ( this.gridDirty ) {
+
+			// a receiver arrived after the last redraw: project what is drawn now
+			this.projectGrid( scene, CURRENT, shadowCoordinateMatrix( shadow, new THREE.Matrix4() ) );
+			if ( this.hasPrevious ) this.projectGrid( scene, PREVIOUS, this.previousCoordinate );
+			else this.clearGrid( PREVIOUS );
+			this.gridDirty = false;
 
 		}
 		if ( this.hasPrevious ) {
@@ -238,6 +298,153 @@ export class SunShadow {
 		this.span.value.set( shadowCamera.right - shadowCamera.left, shadowCamera.top - shadowCamera.bottom );
 		this.range.value = shadowCamera.far - shadowCamera.near;
 		this.ready.value = 1;
+
+	}
+
+	// The casters' columns on a world-space grid over their bounds: the lowest and highest point
+	// of every shadow-casting mesh in each cell (instances by their bounding boxes), padded for
+	// what the rest pose leaves out. Generic: it follows whatever casts, on any layout. It walks
+	// every casting vertex once, so each is binned into its own cell and the sideways padding is
+	// a separate pass over the cells.
+	private buildColumns( scene: THREE.Scene ): void {
+
+		const box = this.casters;
+		const cell = Math.max( box.max.x - box.min.x, box.max.z - box.min.z, 1e-3 ) / WORLD_CELLS;
+		const nx = Math.ceil( ( box.max.x - box.min.x ) / cell ) + 2 * GRID_SIDE_PAD + 1, nz = Math.ceil( ( box.max.z - box.min.z ) / cell ) + 2 * GRID_SIDE_PAD + 1;
+		const x0 = box.min.x - GRID_SIDE_PAD * cell, z0 = box.min.z - GRID_SIDE_PAD * cell;
+		const binLow = new Float64Array( nx * nz ).fill( Infinity ), binHigh = new Float64Array( nx * nz ).fill( - Infinity );
+		// a caster outside the bounds lands in the nearest border cell, which only adds to it
+		const column = ( x: number ) => Math.min( Math.max( Math.floor( ( x - x0 ) / cell ), 0 ), nx - 1 );
+		const row = ( z: number ) => Math.min( Math.max( Math.floor( ( z - z0 ) / cell ), 0 ), nz - 1 );
+		const mark = ( xa: number, xb: number, za: number, zb: number, ya: number, yb: number ) => {
+
+			const ib = column( xb ), jb = row( zb );
+			for ( let j = row( za ); j <= jb; j ++ ) for ( let i = column( xa ); i <= ib; i ++ ) {
+
+				const k = j * nx + i;
+				if ( ya < binLow[ k ] ) binLow[ k ] = ya;
+				if ( yb > binHigh[ k ] ) binHigh[ k ] = yb;
+
+			}
+
+		};
+		const bounds = new THREE.Box3(), instance = new THREE.Matrix4();
+		const shadowLayers = this.sun.shadow.camera.layers;
+		scene.updateMatrixWorld();
+		scene.traverseVisible( ( object ) => {
+
+			const mesh = object as THREE.Mesh;
+			if ( ! mesh.isMesh || ! mesh.castShadow || ! mesh.layers.test( shadowLayers ) ) return;
+			const geometry = mesh.geometry;
+			if ( ! geometry.boundingBox ) geometry.computeBoundingBox();
+			const instanced = mesh as THREE.InstancedMesh;
+			const position = geometry.getAttribute( 'position' );
+			if ( instanced.isInstancedMesh ) {
+
+				for ( let n = 0; n < instanced.count; n ++ ) {
+
+					instanced.getMatrixAt( n, instance );
+					bounds.copy( geometry.boundingBox! ).applyMatrix4( instance.premultiply( mesh.matrixWorld ) );
+					mark( bounds.min.x, bounds.max.x, bounds.min.z, bounds.max.z, bounds.min.y, bounds.max.y );
+
+				}
+
+			} else if ( position && ! position.normalized && ! ( mesh as THREE.SkinnedMesh ).isSkinnedMesh ) {
+
+				// a mesh's world matrix is affine: apply it by hand, without Vector3's divide
+				const e = mesh.matrixWorld.elements;
+				const interleaved = position as THREE.InterleavedBufferAttribute;
+				const values = interleaved.isInterleavedBufferAttribute ? interleaved.data.array : position.array;
+				const stride = interleaved.isInterleavedBufferAttribute ? interleaved.data.stride : position.itemSize;
+				const offset = interleaved.isInterleavedBufferAttribute ? interleaved.offset : 0;
+				for ( let v = offset, end = offset + position.count * stride; v < end; v += stride ) {
+
+					const px = values[ v ], py = values[ v + 1 ], pz = values[ v + 2 ];
+					const x = e[ 0 ] * px + e[ 4 ] * py + e[ 8 ] * pz + e[ 12 ];
+					const y = e[ 1 ] * px + e[ 5 ] * py + e[ 9 ] * pz + e[ 13 ];
+					const z = e[ 2 ] * px + e[ 6 ] * py + e[ 10 ] * pz + e[ 14 ];
+					const k = row( z ) * nx + column( x );
+					if ( y < binLow[ k ] ) binLow[ k ] = y;
+					if ( y > binHigh[ k ] ) binHigh[ k ] = y;
+
+				}
+
+			} else {
+
+				bounds.copy( geometry.boundingBox! ).applyMatrix4( mesh.matrixWorld );
+				mark( bounds.min.x, bounds.max.x, bounds.min.z, bounds.max.z, bounds.min.y, bounds.max.y );
+
+			}
+
+		} );
+		// pad each column by its neighbours within GRID_SIDE_PAD cells, and upward
+		const low = new Float32Array( nx * nz ).fill( Infinity ), high = new Float32Array( nx * nz ).fill( - Infinity );
+		for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
+
+			const k = j * nx + i;
+			if ( ! ( binHigh[ k ] >= binLow[ k ] ) ) continue;
+			const top = binHigh[ k ] + GRID_HEIGHT_PAD;
+			const jb = Math.min( j + GRID_SIDE_PAD, nz - 1 ), ib = Math.min( i + GRID_SIDE_PAD, nx - 1 );
+			for ( let b = Math.max( j - GRID_SIDE_PAD, 0 ); b <= jb; b ++ ) for ( let a = Math.max( i - GRID_SIDE_PAD, 0 ); a <= ib; a ++ ) {
+
+				const c = b * nx + a;
+				if ( binLow[ k ] < low[ c ] ) low[ c ] = binLow[ k ];
+				if ( top > high[ c ] ) high[ c ] = top;
+
+			}
+
+		}
+		this.columns = { x0, z0, cell, nx, nz, low, high };
+
+	}
+
+	// The previous map's half becomes the current one's on a step.
+	private shiftGrid(): void {
+
+		const values = this.casterDepths.array as THREE.Vector4[];
+		const half = GRID * GRID / 4;
+		for ( let k = 0; k < half; k ++ ) values[ PREVIOUS * half + k ].copy( values[ CURRENT * half + k ] );
+
+	}
+
+	private clearGrid( layer: number ): void {
+
+		const values = this.casterDepths.array as THREE.Vector4[];
+		const half = GRID * GRID / 4;
+		for ( let k = 0; k < half; k ++ ) values[ layer * half + k ].setScalar( UNKNOWN );
+
+	}
+
+	// Project the columns into one map's light-space grid, through that map's shadow coordinate.
+	private projectGrid( scene: THREE.Scene, layer: number, matrix: THREE.Matrix4 ): void {
+
+		if ( ! this.columns ) this.buildColumns( scene );
+		const { x0, z0, cell, nx, nz, low, high } = this.columns!;
+		const values = this.casterDepths.array as THREE.Vector4[];
+		const half = GRID * GRID / 4;
+		const depth = new Float32Array( GRID * GRID ).fill( NO_CASTER );
+		const p = new THREE.Vector3();
+		// the bilinear footprint beyond a cell's edge, in map units
+		const reach = 2 / Math.max( this.mapSize.value.x, 1 );
+		for ( let j = 0; j < nz; j ++ ) for ( let i = 0; i < nx; i ++ ) {
+
+			const k = j * nx + i;
+			if ( ! ( high[ k ] >= low[ k ] ) ) continue;
+			let minX = Infinity, maxX = - Infinity, minY = Infinity, maxY = - Infinity, nearest = Infinity;
+			for ( let c = 0; c < 8; c ++ ) {
+
+				p.set( x0 + ( i + ( c & 1 ) ) * cell, c & 4 ? high[ k ] : low[ k ], z0 + ( j + ( ( c >> 1 ) & 1 ) ) * cell ).applyMatrix4( matrix );
+				minX = Math.min( minX, p.x ); maxX = Math.max( maxX, p.x );
+				minY = Math.min( minY, p.y ); maxY = Math.max( maxY, p.y );
+				nearest = Math.min( nearest, p.z );
+
+			}
+			const ia = Math.max( Math.floor( ( minX - reach ) * GRID ), 0 ), ib = Math.min( Math.floor( ( maxX + reach ) * GRID ), GRID - 1 );
+			const ja = Math.max( Math.floor( ( minY - reach ) * GRID ), 0 ), jb = Math.min( Math.floor( ( maxY + reach ) * GRID ), GRID - 1 );
+			for ( let b = ja; b <= jb; b ++ ) for ( let a = ia; a <= ib; a ++ ) depth[ b * GRID + a ] = Math.min( depth[ b * GRID + a ], nearest );
+
+		}
+		for ( let k = 0; k < half; k ++ ) values[ layer * half + k ].fromArray( depth, k * 4 );
 
 	}
 
