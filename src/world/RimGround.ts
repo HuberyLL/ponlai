@@ -82,11 +82,14 @@ export function rimSkirtShape( x: number, z: number, retreat: number ): RimSkirt
 	// A finer field breaks the longest runs, so no stretch reads as a continuous hem.
 	const breakup = noise3( x * 1.6 - 3.7, 0.9, z * 1.6 + 8.1 ) * 0.5 + 0.5;
 	const presence = smoothstep( 0.27, 0.48, broad ) * smoothstep( 0.30, 0.50, breakup ) * ( 1 - smoothstep( - 0.03, 0.09, retreat ) );
-	// Ragged lower edge: short tongues of sod and roots between shallower curls.
+	// Ragged lower edge: rounded lobes of sod a few decimetres wide between torn notches where it
+	// barely curls over, each lobe frayed by shorter tongues, so the edge never reads as a smooth
+	// hem. (Tongues alone, a hand's width apart, cut it into even saw teeth.)
 	const tongue = noise3( x * 6.3 + 0.7, 9.2, z * 6.3 - 1.9 ) * 0.5 + 0.5;
+	const lobe = smoothstep( 0.3, 0.62, noise3( x * 2.9 - 6.1, 3.3, z * 2.9 + 0.4 ) * 0.5 + 0.5 );
 	const vigour = smoothstep( 0.30, 0.80, broad * 0.6 + thick * 0.4 );
-	const reach = 0.07 + 0.17 * vigour;
-	const droop = ( 0.09 + 0.23 * vigour ) * ( 0.65 + 0.55 * tongue );
+	const reach = ( 0.07 + 0.17 * vigour ) * ( 0.65 + 0.4 * lobe );
+	const droop = ( 0.09 + 0.23 * vigour ) * ( 0.25 + 0.85 * lobe ) * ( 0.8 + 0.4 * tongue );
 	return { presence, reach, droop };
 
 }
