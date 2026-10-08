@@ -22,7 +22,8 @@ import type { Rain } from '../weather/Rain.ts';
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
 //   rain ── into sceneRT
-//   sea fog (in fog: the bank noise baked into a map, the march at half resolution)
+//   sea fog (in fog: the bank noise baked into a map, the march at half resolution), the view
+//   distance for the depth of field
 //   composite (air, fog, rain veil, shafts) ── hdr, once
 //   bloom (tight) + glow (wide) from hdr, both through a clamped soft-knee prefilter ── sharp
 //   ── tilt-shift depth of field (half-res gather) ── exposure, tone curve (PBR Neutral with
@@ -43,18 +44,22 @@ export interface PostOptions extends AirOptions {
 	compositeOnce: boolean;
 	// the depth of field's gather taps
 	dofTaps: number;
+	// the depth of field reads the view distance from a target written once per pixel (else each
+	// tap derives it from the depth)
+	dofDistance: boolean;
 	// two bloom chains (tight and wide), or one with the wide glow's radius and the two strengths
 	bloomChains: 1 | 2;
 }
 
 export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
-	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 36, bloomChains: 2,
+	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 36, dofDistance: true, bloomChains: 2,
 };
 
 const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
 	'inline-composite': { compositeOnce: false },
 	'full-fog': { fogScale: 1 },
 	'no-bank': { bankSize: 0 },
+	'inline-coc': { dofDistance: false },
 };
 
 /** The defaults, with `?post=legacy` (every switch below) or `?post=a,b` applied. */
@@ -270,6 +275,9 @@ export class Pipeline {
 	private surfaceQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
 	private upscaledOutput: THREE.RenderPipeline;
+	// the view distance per pixel, for the depth of field (the dofDistance option)
+	private distanceRT: THREE.RenderTarget | null = null;
+	private distanceQuad: THREE.QuadMesh | null = null;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private display: THREE.RenderPipeline;
 	private displayRT: THREE.RenderTarget;
@@ -405,13 +413,9 @@ export class Pipeline {
 		const sharp = convertToTexture( vec4( withBloom, 1 ) );
 		if ( ! hdrRT ) this.passes.push( sharp );
 		const tD = texture( surfaceDepth );
-		// The circle of confusion (0..1 of the widest blur) and the distance to the nearest surface,
-		// the water's included (view-space z: closer is larger). One function per pass: a layout
-		// function shared by two shaders keeps the first one's uniform bindings.
-		const makeCocAt = () => Fn( ( [ q ]: [ V2 ] ) => {
+		// The distance to the nearest surface, the water's included (view-space z: closer is larger).
+		const distanceAt = ( q: V2, z: F ) => {
 
-			const px = ivec2( clamp( q.mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
-			const z = ( textureLoad( tD, px ) as unknown as F ).toVar();
 			const ndc = vec2( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ) ).toVar();
 			const dist = float( 1e5 ).toVar();
 			If( z.greaterThan( - 9e4 ), () => {
@@ -421,6 +425,36 @@ export class Pipeline {
 				dist.assign( length( dir.mul( z.div( dir.z ) ) ) );
 
 			} );
+			return dist;
+
+		};
+		// Written once per pixel, in full float: the gather's taps then read it instead of each
+		// deriving it from the depth (half float tied distances, and the depth order below flipped).
+		let tDistance: THREE.TextureNode | null = null;
+		if ( O.dofDistance ) {
+
+			this.distanceRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RedFormat, depthBuffer: false } );
+			this.distanceRT.texture.name = 'viewDistance';
+			const distanceMat = new THREE.NodeMaterial();
+			distanceMat.name = 'Post.ViewDistance';
+			distanceMat.fragmentNode = Fn( () => {
+
+				const px = ivec2( screenCoordinate.xy );
+				return vec4( distanceAt( uv(), ( textureLoad( tD, px ) as unknown as F ).toVar() ), 0, 0, 1 );
+
+			} )();
+			this.distanceQuad = new THREE.QuadMesh( distanceMat );
+			this.distanceQuad.name = 'Post.ViewDistance';
+			tDistance = texture( this.distanceRT.texture );
+
+		}
+		// The circle of confusion (0..1 of the widest blur) and the distance. One function per pass:
+		// a layout function shared by two shaders keeps the first one's uniform bindings.
+		const makeCocAt = () => Fn( ( [ q ]: [ V2 ] ) => {
+
+			const px = ivec2( clamp( q.mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
+			const dist = tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).toVar()
+				: distanceAt( q, ( textureLoad( tD, px ) as unknown as F ).toVar() );
 			// The miniature blur is for the island's surroundings. Kilometres out it eases off, so the
 			// sky and the horizon keep their scale: blurred, clouds read as a backdrop close behind
 			// the island and every star spreads into a bokeh disc.
@@ -793,6 +827,7 @@ export class Pipeline {
 		this.opaqueRT.setSize( w, h );
 		this.surfaceRT.setSize( w, h );
 		this.displayRT.setSize( w, h );
+		this.distanceRT?.setSize( w, h );
 		this.air.setSize( w, h );
 		this.u.resolution.value.set( w, h );
 		this.u.texel.value.set( 1 / w, 1 / h );
@@ -866,8 +901,16 @@ export class Pipeline {
 
 		}
 
-		// the reduced sea fog and its bank map
+		// the reduced sea fog and its bank map, and the depth of field's distances
 		this.air.render( r );
+		// (without the depth of field its blur is mixed in at weight 0, so stale distances never show)
+		if ( this.distanceQuad && S.dof > 0 ) {
+
+			r.setRenderTarget( this.distanceRT );
+			this.distanceQuad.render( r );
+			r.setRenderTarget( null );
+
+		}
 
 		// 4. composite, bloom, depth of field, grade
 		const [ b, g ] = this.blooms;
