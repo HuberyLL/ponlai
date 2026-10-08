@@ -187,6 +187,8 @@ async function generateParallel( options: WorldOptions, sets: number ): Promise<
 			const worker = new Worker( self.location.href, { type: 'module' } );
 			worker.onmessage = ( e: MessageEvent<PartResult> ) => { worker.terminate(); resolve( e.data ); };
 			worker.onerror = ( e ) => { e.preventDefault(); worker.terminate(); resolve( local( part ) ); };
+			// a reply that cannot be deserialised fires neither of the above
+			worker.onmessageerror = () => { worker.terminate(); resolve( local( part ) ); };
 			worker.postMessage( { ...options, part } satisfies PartJob );
 
 		} catch {

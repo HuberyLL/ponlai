@@ -38,6 +38,7 @@ export function loadWorld( options: WorldOptions = {}, { cache = true } = {} ): 
 		// The worker closes itself once it has stored the world in the cache.
 		worker.onmessage = ( e: MessageEvent<WorldReply> ) => resolve( { data: e.data.world, cache: e.data.cache, ms: e.data.cacheMs } );
 		worker.onerror = ( e ) => { worker.terminate(); reject( e ); };
+		worker.onmessageerror = () => { worker.terminate(); reject( new Error( 'The world worker\'s reply could not be read' ) ); };
 		worker.postMessage( { options, cacheKey: cache ? worldCacheKey( options ) : null } satisfies PageJob );
 
 	} );

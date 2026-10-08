@@ -14,7 +14,7 @@ import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
-import { loadWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
+import { loadWorld, buildWorldMeshes, shoreTextureFrom, type LoadedWorld } from './world/World.ts';
 import { buildGrass } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
@@ -40,8 +40,11 @@ const params = new URLSearchParams( location.search );
 // The world's generation needs nothing from the page, so its workers start first and run while
 // the renderer, sky, textures and frame graph are set up; its result is awaited below. The world
 // worker's last result comes from IndexedDB while the generator and its options are unchanged
-// (src/world/WorldCache.ts); ?worldCache=off generates it regardless, as on a first visit.
-const worldJob = loadWorld( {}, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } );
+// (src/world/WorldCache.ts); ?worldCache=off generates it regardless, as on a first visit. A
+// browser without WebGPU stops at the renderer below, so it starts no workers.
+const worldJob: Promise<LoadedWorld> = 'gpu' in navigator ? loadWorld( {}, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } )
+	: new Promise( () => undefined );
+worldJob.catch( () => undefined ); // reported where it is awaited, under the world section
 const ground = { soil: params.get( 'soil' ) !== '0' };
 soilUniforms.strength.value = ground.soil ? 1 : 0;
 soilUniforms.blend.value = params.get( 'blend' ) === '0' ? 0 : 1;
