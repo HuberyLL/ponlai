@@ -24,6 +24,19 @@ export interface PlantSite {
 
 // One small tree per this much meadow (m^2): three on the present island.
 const TREE_AREA = 120;
+// Trees grow 2.5 - 3.5 m tall, their leaf clusters reaching about half that from the trunk.
+const TREE_HEIGHT = [ 2.5, 3.5 ];
+const TREE_CROWN = 0.5;
+// Open meadow (m) between a crown's reach and the walking loop. From the low orbit views (the
+// camera 10 - 20 degrees above the walker) any crown nearer than this stands in the line of sight
+// to the walker's upper body from a wide arc of azimuths; one this far off covers a narrow arc.
+const TREE_SIGHT = 3.25;
+// Among the grove field's crests, each metre farther from the walk counts this much: a crown far
+// off hides the walker from fewer directions.
+const TREE_REMOTE = 0.1;
+// A shrub taller than this (m) stands back from the walk by twice its extra height, so the
+// walker's chest and head stay in view over it from the low views.
+const SHRUB_SIGHT_HEIGHT = 1;
 // One shrub group per this much meadow (m^2), their centres at least this far apart (m).
 const GROUP_AREA = 13;
 const GROUP_SPACING = 2.8;
@@ -110,16 +123,17 @@ export function pickPlantSites( veg: Float32Array, clearance: ( x: number, z: nu
 	// --- small trees, at the crests of a broad grove field, well inside the rim so the crown
 	// overhangs the cliff no more than a branch's length
 	const trees = Math.max( 1, Math.round( area / TREE_AREA ) );
-	const grove = ( a: Anchor ) => noise3( a.x * 0.085 + 31.7, 2.9, a.z * 0.085 ) + rng() * 0.25;
+	const grove = ( a: Anchor ) => noise3( a.x * 0.085 + 31.7, 2.9, a.z * 0.085 ) + rng() * 0.25 + TREE_REMOTE * clearance( a.x, a.z );
 	const ranked = meadow.filter( ( a ) => a.rim < - 1.8 ).map( ( a ) => ( { a, score: grove( a ) } ) ).sort( ( p, q ) => q.score - p.score );
 	const treeSites: PlantSite[] = [];
 	for ( const { a } of ranked ) {
 
 		if ( treeSites.length >= trees ) break;
 		if ( treeSites.some( ( t ) => Math.hypot( t.x - a.x, t.z - a.z ) < 7 ) ) continue;
-		// The trunk stays 3 m off the path, so the walker never passes under the crown.
-		if ( ! free( a.x, a.z, 0.5, 2.5 ) ) continue;
-		const s = site( a, 'tree', 2.5 + rng() * 1.0, 1.2 );
+		// The crown of the tallest tree stays TREE_SIGHT clear of the walk.
+		if ( clearance( a.x, a.z ) < TREE_HEIGHT[ 1 ] * TREE_CROWN + TREE_SIGHT ) continue;
+		if ( ! free( a.x, a.z, 0.5, 0 ) ) continue;
+		const s = site( a, 'tree', TREE_HEIGHT[ 0 ] + rng() * ( TREE_HEIGHT[ 1 ] - TREE_HEIGHT[ 0 ] ), 1.2 );
 		treeSites.push( s );
 		sites.push( s );
 
@@ -181,7 +195,7 @@ export function pickPlantSites( veg: Float32Array, clearance: ( x: number, z: nu
 			const radius = kind === 'round' ? 0.28 + height * 0.4 : kind === 'broadleaf' ? 0.25 + height * 0.7 : 0.2 + height * 0.6;
 			// Shrubs stand back from the edge by their own radius; the rim bushes own the lip.
 			if ( a.rim > - 0.35 - radius * 0.6 ) continue;
-			if ( ! free( a.x, a.z, radius, 0.45 ) ) continue;
+			if ( ! free( a.x, a.z, radius, 0.45 + 2 * Math.max( 0, height - SHRUB_SIGHT_HEIGHT ) ) ) continue;
 			sites.push( site( a, kind, Math.max( 0.35, height ), radius ) );
 			m ++;
 

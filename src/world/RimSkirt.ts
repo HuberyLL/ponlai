@@ -5,13 +5,14 @@ import { SOIL_PALETTE } from '../materials/Soil.ts';
 import { SKIRT_RING } from './RimGround.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
-import { mulberry32, noise3 } from './noise.ts';
+import { mulberry32, noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
 import type { RimSkirtData } from './types.ts';
 
 // The turf skirt: the meadow's sod curling a little over the rim, swept along the coast the
-// worker traced (RimGround.buildRimSkirt), with a fringe of short blades on its shoulder and
-// hanging grass and root hairs along its ragged lower edge. One mesh, one draw.
+// worker traced (RimGround.buildRimSkirt), with a thatch of short blades gathered in tufts on
+// its shoulder and face, and bundles of hanging grass and root hairs along its ragged lower edge.
+// One mesh, one draw.
 
 const SHADE = [ 0.86, 0.94, 1, 0.9, 0.7, 0.52, 0.4 ];
 
@@ -26,6 +27,14 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 	const rng = mulberry32( 5501 );
 	let blades = 0;
 
+	// Torn gaps: short stretches where the curl has broken off below the shoulder, so the sod's
+	// face reads as separate lobes and tufts rather than one smooth mat. Sample s is in a gap.
+	const torn = ( s: number ) => {
+
+		ring( s, 3, base );
+		return noise3( base.x * 4.7 + 3.9, 7.1, base.z * 4.7 - 2.6 ) * 0.5 + 0.5 > 0.6;
+
+	};
 	// Body: the sod sheet, smooth-shaded from its own triangles.
 	for ( let l = 0; l < loops.length; l += 2 ) {
 
@@ -50,8 +59,10 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 			const a = first + s, b = first + ( s + 1 ) % count;
 			if ( Math.max( info[ a * 4 + 2 ], info[ b * 4 + 2 ] ) < 0.03 ) continue;
 			if ( s === count - 1 && ring( a, 0 ).distanceTo( ring( b, 0, base ) ) > 0.2 ) continue;
+			const gap = torn( a ) || torn( b );
 			for ( let k = 0; k + 1 < SKIRT_RING; k ++ ) {
 
+				if ( gap && k >= 3 ) break;
 				const a0 = a * SKIRT_RING + k, a1 = a0 + 1, b0 = b * SKIRT_RING + k, b1 = b0 + 1;
 				I.push( a0, b0, a1, a1, b0, b1 );
 
@@ -94,13 +105,17 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 			const along = new THREE.Vector3( - nz, 0, nx );
 			out.set( nx, 0, nz );
 			// The sod's outer face is a thatch of short blades over the dark root mat, as the meadow
-			// is blades over turf: it reads as grass spilling over, not as a smooth green sheet.
-			const n = Math.round( presence * ( 12 + rng() * 6 ) );
+			// is blades over turf: it reads as grass spilling over, not as a smooth green sheet. The
+			// blades gather in tufts a few decimetres apart, thinning between them to show the mat.
+			const gap = torn( s );
+			ring( s, 3, base );
+			const tuft = smoothstep( 0.36, 0.7, noise3( base.x * 3.7 - 2.1, 5.5, base.z * 3.7 + 1.2 ) * 0.5 + 0.5 );
+			const n = Math.round( presence * ( 12 + rng() * 6 ) * ( 0.4 + 0.9 * tuft ) );
 			for ( let i = 0; i < n; i ++ ) {
 
 				// Where on the cross-section: shoulder to lower edge. Over the top of the curl they
 				// stand up out of the sod, so its crest reads as tufts rather than a smooth sheet.
-				const r = 1.6 + Math.pow( rng(), 0.8 ) * 4.3, k = Math.min( SKIRT_RING - 2, Math.floor( r ) ), f = r - k;
+				const r = 1.6 + Math.pow( rng(), 0.8 ) * ( gap ? 1.4 : 4.3 ), k = Math.min( SKIRT_RING - 2, Math.floor( r ) ), f = r - k;
 				ring( s, k, a ); ring( s, k + 1, b );
 				base.lerpVectors( a, b, f ).addScaledVector( along, ( rng() - 0.5 ) * 0.05 );
 				tangent.subVectors( b, a ).normalize();
@@ -110,18 +125,26 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 				meadowColor( base.x, base.z, col ).multiplyScalar( ( 0.8 + rng() * 0.35 ) * ( 1 - low * 0.3 ) );
 				if ( rng() < 0.1 ) col.setRGB( 0.34, 0.29, 0.13 );
 				normal.copy( out ).multiplyScalar( 0.5 ).addScaledVector( up, 1 - low * 0.6 ).normalize();
-				blade( base, dir, ( 0.06 + rng() * 0.11 ) * ( 0.7 + presence * 0.4 ), 0.006 + rng() * 0.004, 0.3, col, normal );
+				blade( base, dir, ( 0.06 + rng() * 0.11 ) * ( 0.7 + presence * 0.4 ) * ( 0.75 + 0.55 * tuft ), ( 0.014 + rng() * 0.012 ) * ( 0.8 + 0.4 * tuft ), 0.3, col, normal );
 
 			}
-			// Lower edge: hanging grass and root hairs, the ragged end of the sod.
-			if ( droop < 0.04 || rng() > 0.3 + presence * 0.5 ) continue;
-			ring( s, 6, base ).lerp( ring( s, 5 ), rng() * 0.4 ).addScaledVector( along, ( rng() - 0.5 ) * 0.05 );
-			const hair = rng() < 0.4;
-			dir.copy( out ).multiplyScalar( 0.15 + rng() * 0.25 ).addScaledVector( up, - 1 ).addScaledVector( along, ( rng() - 0.5 ) * 0.5 ).normalize();
-			if ( hair ) col.setRGB( 0.13, 0.095, 0.05 ).multiplyScalar( 0.8 + rng() * 0.4 );
-			else meadowColor( base.x, base.z, col ).multiplyScalar( 0.6 + rng() * 0.3 );
-			normal.set( nx, 0.3, nz ).normalize();
-			blade( base, dir, ( hair ? 0.05 + rng() * 0.12 : 0.06 + rng() * 0.14 ) * ( 0.7 + droop ), hair ? 0.0025 : 0.005, - 0.1, col, normal );
+			// Lower edge: a bundle of hanging grass under each tuft, a stray root hair between, so
+			// the sod ends in a broken fringe rather than an even comb.
+			if ( droop < 0.04 ) continue;
+			const hanging = tuft > 0.45 ? 1 + Math.floor( rng() * ( 1 + 4 * tuft * presence ) ) : rng() < 0.3 + presence * 0.5 ? 1 : 0;
+			for ( let h = 0; h < hanging; h ++ ) {
+
+				// in a torn gap they hang from the broken shoulder
+				( gap ? ring( s, 3, base ) : ring( s, 6, base ).lerp( ring( s, 5 ), rng() * 0.5 ) ).addScaledVector( along, ( rng() - 0.5 ) * 0.06 );
+				const hair = rng() < ( tuft > 0.45 ? 0.2 : 0.6 );
+				dir.copy( out ).multiplyScalar( 0.15 + rng() * 0.3 ).addScaledVector( up, - 1 ).addScaledVector( along, ( rng() - 0.5 ) * 0.7 ).normalize();
+				if ( hair ) col.setRGB( 0.13, 0.095, 0.05 ).multiplyScalar( 0.8 + rng() * 0.4 );
+				else meadowColor( base.x, base.z, col ).multiplyScalar( 0.6 + rng() * 0.3 );
+				normal.set( nx, 0.3, nz ).normalize();
+				const length = hair ? 0.05 + rng() * 0.12 : ( 0.06 + rng() * 0.14 ) * ( 1 + 1.1 * tuft );
+				blade( base, dir, length * ( 0.7 + droop ), hair ? 0.004 : 0.01 + 0.01 * tuft, - 0.1, col, normal );
+
+			}
 
 		}
 

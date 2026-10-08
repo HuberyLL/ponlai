@@ -212,10 +212,10 @@ interface Species {
 }
 
 const SPECIES: Species[] = [
-	{ name: 'daisy', geometry: daisyGeometry, palette: [ [ 0.62, 0.6, 0.5 ], [ 0.6, 0.44, 0.46 ] ], centre: [ 0.55, 0.33, 0.03 ], lift: [ 0.02, 0.1 ], size: [ 0.85, 1.2 ], clear: 0.55 },
-	{ name: 'umbel', geometry: umbelGeometry, palette: [ [ 0.56, 0.53, 0.42 ], [ 0.46, 0.3, 0.4 ], [ 0.56, 0.34, 0.37 ] ], centre: [ 0.4, 0.38, 0.28 ], lift: [ 0.06, 0.18 ], size: [ 0.85, 1.2 ], clear: 0.7 },
+	{ name: 'daisy', geometry: daisyGeometry, palette: [ [ 0.62, 0.6, 0.5 ], [ 0.68, 0.42, 0.045 ], [ 0.6, 0.44, 0.46 ] ], centre: [ 0.55, 0.33, 0.03 ], lift: [ 0.02, 0.1 ], size: [ 0.85, 1.2 ], clear: 0.55 },
+	{ name: 'umbel', geometry: umbelGeometry, palette: [ [ 0.56, 0.53, 0.42 ], [ 0.62, 0.46, 0.06 ], [ 0.56, 0.34, 0.37 ] ], centre: [ 0.4, 0.38, 0.28 ], lift: [ 0.06, 0.18 ], size: [ 0.85, 1.2 ], clear: 0.7 },
 	{ name: 'spike', geometry: spikeGeometry, palette: [ [ 0.25, 0.21, 0.5 ], [ 0.18, 0.18, 0.47 ], [ 0.47, 0.2, 0.31 ] ], centre: [ 0.2, 0.15, 0.3 ], lift: [ 0.08, 0.24 ], size: [ 0.85, 1.25 ], clear: 1.1 },
-	{ name: 'cup', geometry: cupGeometry, palette: [ [ 0.65, 0.39, 0.045 ], [ 0.62, 0.24, 0.055 ], [ 0.6, 0.27, 0.19 ] ], centre: [ 0.3, 0.17, 0.03 ], lift: [ 0.02, 0.12 ], size: [ 0.85, 1.2 ], clear: 0.55 },
+	{ name: 'cup', geometry: cupGeometry, palette: [ [ 0.65, 0.39, 0.045 ], [ 0.7, 0.46, 0.05 ], [ 0.62, 0.24, 0.055 ] ], centre: [ 0.3, 0.17, 0.03 ], lift: [ 0.02, 0.12 ], size: [ 0.85, 1.2 ], clear: 0.55 },
 ];
 
 function flowerMaterial( shared: Shared, centre: number[] ): THREE.MeshStandardNodeMaterial {

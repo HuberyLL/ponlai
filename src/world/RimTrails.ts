@@ -79,6 +79,18 @@ const SEA_LEVEL = 0;
 // 0.4-4 m on any coast.
 const FILL_DISTANCE = 1.9;
 
+// On a short coast the growth field's clumps can fall unevenly: one side had a third of another's
+// hanging growth. Strands hanging more than a quarter metre below the lip, summed within
+// BALANCE_REACH (m) either way along the coast, are held near HANG_DENSITY m per metre of coast:
+// a vigorous patch is skipped where they already exceed BALANCE_HIGH of it, and a full patch
+// roots at a lip at least BALANCE_GAP from the others where they fall below BALANCE_LOW of it.
+// Clumps and the bare stone between them stay; only whole sides are evened out.
+const BALANCE_REACH = 3;
+const HANG_DENSITY = 1.5;
+const BALANCE_LOW = 0.9;
+const BALANCE_HIGH = 1.2;
+const BALANCE_GAP = 0.8;
+
 interface Lip { site: FoliageSite; x: number; z: number; nx: number; nz: number }
 
 // Distances measured along the traced coast. Across a gully or the scar of a fallen column two
@@ -165,8 +177,24 @@ export function makeRimTrails( sdf: SDF, fp: Footprint, vegetation: Float32Array
 	}
 	const rng = mulberry32( 9067 );
 	const strands: RimStrand[] = [];
-	const patches: { x: number; z: number; spacing: number }[] = [];
+	const patches: { x: number; z: number; spacing: number; hang: number }[] = [];
 	const ruler = new CoastRuler( coast );
+	const at: number[] = []; // each patch's coast sample
+	// The hanging length of the patches around a lip within BALANCE_REACH along the coast, and
+	// whether one stands within BALANCE_GAP.
+	const around = ( lip: Lip, here: number ) => {
+
+		let hang = 0, crowded = false;
+		patches.forEach( ( p, i ) => {
+
+			const d = ruler.separation( p.x, p.z, at[ i ], lip.x, lip.z, here );
+			if ( d < BALANCE_REACH ) hang += p.hang;
+			if ( d < BALANCE_GAP ) crowded = true;
+
+		} );
+		return { hang, crowded };
+
+	};
 	for ( const lip of lips ) {
 
 		// Where the coast's growth field is low the stone stays bare for metres; inside a clump
@@ -176,28 +204,70 @@ export function makeRimTrails( sdf: SDF, fp: Footprint, vegetation: Float32Array
 		const fringe = 1 - smoothstep( 0.40, 0.68, growth );
 		const spacing = ( 0.40 + Math.pow( rng(), 1.6 ) * 1.1 ) * ( 1 + fringe * 1.6 );
 		if ( patches.some( ( p ) => Math.hypot( p.x - lip.x, p.z - lip.z ) < Math.max( spacing, p.spacing ) ) ) continue;
+		const here = ruler.locate( lip.x, lip.z );
+		if ( around( lip, here ).hang > BALANCE_HIGH * HANG_DENSITY * 2 * BALANCE_REACH ) continue;
 		// One to nine strands, few in most patches and many in the vigorous ones.
 		const vigour = smoothstep( 0.40, 0.85, growth );
 		const count = 1 + Math.floor( Math.pow( rng(), 1.5 - vigour * 0.7 ) * 8.99 );
-		if ( growPatch( sdf, lip, count, false, strands, rng ) ) patches.push( { x: lip.x, z: lip.z, spacing } );
+		const first = strands.length;
+		if ( growPatch( sdf, lip, count, false, strands, rng ) ) {
+
+			patches.push( { x: lip.x, z: lip.z, spacing, hang: hanging( strands, first ) } );
+			at.push( here );
+
+		}
+
+	}
+	// Where a side came out thin, a full patch of two to seven strands at the free lips.
+	for ( const lip of lips ) {
+
+		const here = ruler.locate( lip.x, lip.z );
+		const { hang, crowded } = around( lip, here );
+		if ( crowded || hang >= BALANCE_LOW * HANG_DENSITY * 2 * BALANCE_REACH ) continue;
+		const first = strands.length;
+		if ( growPatch( sdf, lip, 2 + Math.floor( rng() * 5.99 ), false, strands, rng ) ) {
+
+			patches.push( { x: lip.x, z: lip.z, spacing: BALANCE_GAP, hang: hanging( strands, first ) } );
+			at.push( here );
+
+		}
 
 	}
 	// The growth field's low stretches can run for many metres on a long coast. A sparse patch of
 	// one to three strands breaks any longer bare run; the vigorous patches above are unchanged.
-	const at = patches.map( ( p ) => ruler.locate( p.x, p.z ) );
 	for ( const lip of lips ) {
 
 		const here = ruler.locate( lip.x, lip.z );
 		if ( patches.some( ( p, i ) => ruler.separation( p.x, p.z, at[ i ], lip.x, lip.z, here ) < FILL_DISTANCE ) ) continue;
 		if ( growPatch( sdf, lip, 1 + Math.floor( rng() * 2.99 ), true, strands, rng ) ) {
 
-			patches.push( { x: lip.x, z: lip.z, spacing: FILL_DISTANCE } );
+			patches.push( { x: lip.x, z: lip.z, spacing: FILL_DISTANCE, hang: 0 } );
 			at.push( here );
 
 		}
 
 	}
 	return strands;
+
+}
+
+// Length (m) of the strands from index `first` on that hangs more than a quarter metre below
+// the turf they root in (a fork measures from its parent's root).
+function hanging( strands: RimStrand[], first: number ): number {
+
+	let length = 0;
+	for ( let i = first; i < strands.length; i ++ ) {
+
+		const p = strands[ i ].points, parent = strands[ i ].parent;
+		const top = ( parent === undefined ? p : strands[ parent ].points )[ 1 ] - 0.25;
+		for ( let k = 6; k < p.length; k += 6 ) {
+
+			if ( p[ k + 1 ] < top ) length += Math.hypot( p[ k ] - p[ k - 6 ], p[ k + 1 ] - p[ k - 5 ], p[ k + 2 ] - p[ k - 4 ] );
+
+		}
+
+	}
+	return length;
 
 }
 
