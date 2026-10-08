@@ -10,12 +10,13 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
 import { sizeRtt } from './RenderScale.ts';
+import { SCENE_SAMPLES } from './SceneSamples.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { Rain } from '../weather/Rain.ts';
 
 // Frame graph:
-//   opaque scene ── sceneRT (MSAA x4, half float, multisampled depth)
+//   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth)
 //   depth resolve ── depthRT (view-space z of the opaque pass: sample 0, and the farthest sample)
 //   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts and reflects)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
@@ -260,7 +261,7 @@ export class Pipeline {
 		this.renderer = renderer;
 		const depthTexture = new THREE.DepthTexture( 1, 1 );
 		depthTexture.type = THREE.FloatType;
-		this.sceneRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture } );
+		this.sceneRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, samples: SCENE_SAMPLES, depthTexture } );
 		this.sceneRT.texture.name = 'sceneColor';
 		this.depthRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RGFormat, depthBuffer: false } );
 		this.depthRT.texture.name = 'linearDepth';
@@ -287,7 +288,7 @@ export class Pipeline {
 		const msDepth = texture( depthTexture );
 		const depthSample = ( coord: V2, i: number ) => textureLoad( msDepth, ivec2( coord ), int( i ) ) as unknown as F;
 		// Sample 0 for what reads the depth at a point (the water's traces, rain, spray, the haze and
-		// the blur), and the farthest of the four samples for the water's view of what lies behind it.
+		// the blur), and the farthest of the samples for the water's view of what lies behind it.
 		// The water is shaded once per pixel, but drawn only into the samples it is in front of: at an
 		// edge pixel where a cliff, a figure or a leaf covers sample 0, the samples the water does
 		// cover hold what is behind it, the farthest one.
@@ -296,7 +297,8 @@ export class Pipeline {
 
 			const coord = screenCoordinate.xy;
 			const d0 = depthSample( coord, 0 ).toVar();
-			const far = max( max( d0, depthSample( coord, 1 ) ), max( depthSample( coord, 2 ), depthSample( coord, 3 ) ) );
+			const far = SCENE_SAMPLES === 4 ? max( max( d0, depthSample( coord, 1 ) ), max( depthSample( coord, 2 ), depthSample( coord, 3 ) ) )
+				: max( d0, depthSample( coord, 1 ) );
 			return vec4( viewZ( coord, d0 ), viewZ( coord, far ), 0, 0 );
 
 		} )();
