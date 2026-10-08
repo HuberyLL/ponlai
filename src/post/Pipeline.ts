@@ -22,7 +22,8 @@ import type { Rain } from '../weather/Rain.ts';
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
 //   rain ── into sceneRT
-//   composite ── bloom (tight) + glow (wide), both through a clamped soft-knee prefilter
+//   composite (air, fog, rain veil, shafts) ── hdr, once
+//   bloom (tight) + glow (wide) from hdr, both through a clamped soft-knee prefilter ── sharp
 //   ── tilt-shift depth of field (half-res gather) ── exposure, tone curve (PBR Neutral with
 //   hue-kept highlights by default), split-tone grade, vibrance, the art-directed look (diffusion
 //   glow, hue-selective colour, warm / cool split, coloured shadow lift), lifted blacks, vignette,
@@ -37,6 +38,8 @@ import type { Rain } from '../weather/Rain.ts';
  * the defaults are today's high). `?post=legacy` restores the graph before they were introduced,
  * for A/B timing; `?post=` also takes a comma list of single switches (see `postOptionsFromURL`). */
 export interface PostOptions extends AirOptions {
+	// the composite evaluated once into a texture both blooms read (else each re-evaluates it)
+	compositeOnce: boolean;
 	// the depth of field's gather taps
 	dofTaps: number;
 	// two bloom chains (tight and wide), or one with the wide glow's radius and the two strengths
@@ -44,10 +47,11 @@ export interface PostOptions extends AirOptions {
 }
 
 export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
-	...DEFAULT_AIR_OPTIONS, dofTaps: 36, bloomChains: 2,
+	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 36, bloomChains: 2,
 };
 
 const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
+	'inline-composite': { compositeOnce: false },
 };
 
 /** The defaults, with `?post=legacy` (every switch below) or `?post=a,b` applied. */
@@ -348,8 +352,15 @@ export class Pipeline {
 		// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it
 		const sceneTex = texture( this.sceneRT.texture );
 		const surfaceDepth = this.surfaceRT.texture;
-		const hdr = this.air.apply( sceneTex.rgb, surfaceDepth, sky, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
+		const composited = this.air.apply( sceneTex.rgb, surfaceDepth, sky, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
 			.add( this.shafts.build( surfaceDepth, sky ) );
+		// Rendered once, the composite feeds the sharp image and both blooms' high passes; as an
+		// expression each of them evaluated it again, the sea fog's march included. The high passes
+		// run at half resolution and sample it bilinearly, as they sampled the scene colour before.
+		const hdrRT = O.compositeOnce ? convertToTexture( vec4( composited, 1 ) ) : null;
+		if ( hdrRT ) this.passes.push( hdrRT );
+		const hdr: V3 = hdrRT ? hdrRT.rgb : composited;
+		const bloomInput = hdrRT ? nodeObject( hdrRT ) : nodeObject( vec4( hdr, 1 ) );
 
 		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a
 		// soft knee instead of a hard threshold. On surfaces (anything in front of the sky) the
@@ -361,7 +372,7 @@ export class Pipeline {
 		const makeBloom = () => {
 
 			const maxLum = uniform( 5 ), surfaceMaxLum = uniform( 5 );
-			const node = new RenderBloomNode( nodeObject( vec4( hdr, 1 ) ), 0.3, 0.5, 1.5 );
+			const node = new RenderBloomNode( bloomInput, 0.3, 0.5, 1.5 );
 			( node as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input, threshold }: { input: THREE.Node<'vec4'>; threshold: THREE.Node<'float'> } ) => {
 
 				const px = ivec2( clamp( uv().mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
@@ -389,7 +400,7 @@ export class Pipeline {
 		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
 		// the blur is mixed over the sharp image by the full-resolution coc
 		const sharp = convertToTexture( vec4( withBloom, 1 ) );
-		this.passes.push( sharp );
+		if ( ! hdrRT ) this.passes.push( sharp );
 		const tD = texture( surfaceDepth );
 		// The circle of confusion (0..1 of the widest blur) and the distance to the nearest surface,
 		// the water's included (view-space z: closer is larger). One function per pass: a layout
@@ -461,6 +472,8 @@ export class Pipeline {
 		} )();
 		const blur = rtt( gather, null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } );
 		this.passes.push( blur );
+		// (after the composite and the blur, so the profiler's labels for passes[ 0 ] and [ 1 ] hold)
+		if ( hdrRT ) this.passes.push( sharp );
 		// Upsample the half-res blur by its four nearest texels, each weighted by how much it would
 		// itself show as blur: plain bilinear filtering pulled a sharp figure's colour (a texel whose
 		// coc is near zero) a pixel or two out over the blurred sea beside it. Texels that are
