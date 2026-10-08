@@ -52,8 +52,8 @@ exposed.
   (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
   cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
   tile), shoreline field,
-  vegetation anchors; instanced grass, bushes and flowers on the island top,
-  with top-rooted overhanging branches of mixed lengths.
+  vegetation anchors; instanced grass, bushes and flowers on the island top, a turf skirt over the lip,
+  with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds on the lip.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
@@ -121,6 +121,14 @@ exposed.
   underwater toe wherever it runs; other stones keep a wider berth.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
+  They grow in clumped patches of one to nine strands with runs of bare stone between (0.4-4 m:
+  a sparse patch breaks any longer run), a long tail of strands that wander and fork down to
+  1.5-2.6 m, leaves shrinking toward the tips, and a mounded leaf clump over each patch's lip; the
+  lowest quarter of the cliff above the sea stays bare.
+  The meadow's sod curls a little over the lip as a ragged turf skirt (`RimSkirt.ts`), swept along
+  the coast line traced from the rim field, so it follows any shape the rim takes. Rim greenery is
+  generic: it is derived from the footprint, the island SDF and noise fields with fixed seeds, never
+  placed at coordinates, so it grows with the island when tiles are added.
   The meadow is a sward: dense lawn tufts of narrow blades (doubled where the growth field runs
   thick, the extras folding away beyond about 35 m) and taller tussocks on a clump field; toward
   the coast the tufts grow taller and lean out over the lip instead of thinning, and the lip
