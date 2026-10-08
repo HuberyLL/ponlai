@@ -486,25 +486,21 @@ export class AerialPerspective {
 	}
 
 	/** Compiles the passes that first run when fog sets in, so the first foggy frame does not
-	 * stall on them. */
+	 * stall on them. (compileAsync takes the render target when it is called, so the renderer's
+	 * own is restored before the compiles finish, never across frames rendered meanwhile.) */
 	async warm( renderer: THREE.WebGPURenderer ): Promise<void> {
 
 		const target = renderer.getRenderTarget();
-		try {
+		const compiles: Promise<void>[] = [];
+		for ( const [ quad, rt ] of [ [ this.bankQuad, this.bankRT ], [ this.fogZQuad, this.fogZRT ], [ this.fogQuad, this.fogRT ] ] as const ) {
 
-			for ( const [ quad, rt ] of [ [ this.bankQuad, this.bankRT ], [ this.fogZQuad, this.fogZRT ], [ this.fogQuad, this.fogRT ] ] as const ) {
-
-				if ( ! quad || ! rt ) continue;
-				renderer.setRenderTarget( rt );
-				await renderer.compileAsync( quad, ( quad as unknown as { camera: THREE.Camera } ).camera );
-
-			}
-
-		} finally {
-
-			renderer.setRenderTarget( target );
+			if ( ! quad || ! rt ) continue;
+			renderer.setRenderTarget( rt );
+			compiles.push( renderer.compileAsync( quad, ( quad as unknown as { camera: THREE.Camera } ).camera ) );
 
 		}
+		renderer.setRenderTarget( target );
+		await Promise.all( compiles );
 
 	}
 

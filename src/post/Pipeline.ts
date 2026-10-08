@@ -291,6 +291,7 @@ export class Pipeline {
 	private distanceQuad: THREE.QuadMesh | null = null;
 	// set while the last pass into sceneRT is recorded (the discardScene option)
 	private discardSamples = false;
+	private warming: Promise<void> | null = null;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private display: THREE.RenderPipeline;
 	private displayRT: THREE.RenderTarget;
@@ -810,6 +811,9 @@ export class Pipeline {
 		this.upscaledOutputThree.outputColorTransform = false;
 		if ( O.discardScene ) this.interceptSceneStore();
 		this.setToneMapping( this.settings.toneMapping );
+		// The sea fog's passes run only once fog sets in, perhaps minutes later (morning mist, the
+		// weather turning): compiled now, in the background, the first foggy frame does not stall.
+		this.warm().catch( ( error ) => console.warn( 'Pipeline.warm', error ) );
 
 	}
 
@@ -1002,11 +1006,17 @@ export class Pipeline {
 	}
 
 	/** Compiles the passes that first run later than the first frame (fog setting in, the
-	 * upscale), so they do not stall the frame that first needs them. */
-	async warm(): Promise<void> {
+	 * upscale), so they do not stall the frame that first needs them. It starts when the graph is
+	 * built; later calls return the same promise. */
+	warm(): Promise<void> {
 
-		await this.air.warm( this.renderer );
-		await this.fsr.warm( this.renderer );
+		this.warming ??= ( async () => {
+
+			await this.air.warm( this.renderer );
+			await this.fsr.warm( this.renderer );
+
+		} )();
+		return this.warming;
 
 	}
 

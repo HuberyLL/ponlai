@@ -63,19 +63,14 @@ export class FSR {
 
 	}
 
+	/** Compiles EASU ahead of its first frame (see `AerialPerspective.warm`). */
 	async warm( renderer: THREE.WebGPURenderer ): Promise<void> {
 
 		const target = renderer.getRenderTarget();
 		renderer.setRenderTarget( this.easuRT );
-		try {
-
-			await renderer.compileAsync( this.quad, ( this.quad as unknown as { camera: THREE.Camera } ).camera );
-
-		} finally {
-
-			renderer.setRenderTarget( target );
-
-		}
+		const compile = renderer.compileAsync( this.quad, ( this.quad as unknown as { camera: THREE.Camera } ).camera );
+		renderer.setRenderTarget( target );
+		await compile;
 
 	}
 
