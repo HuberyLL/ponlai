@@ -335,15 +335,17 @@ setStatus( 'Waking the villagers…' );
 // Local, unversioned assets (artifacts/ is git-ignored) served by the dev server while the
 // character art is still changing.
 const umc = ( name: string ) => `/artifacts/assets/quaternius/ultimate-modular-characters/${ name }.gltf`;
-// A fisherman: the farmer's straw hat and bib trousers, the adventurer's boots, all repainted
-// in the island's palette (sRGB, as they should read in sunlight).
-const fisherman = await loadVillager( umc( 'Farmer' ), [
-	{ from: umc( 'Farmer' ), part: 'Farmer_Head', paint: { Skin: [ '#e2a882', KIND.skin ], Eyebrows: [ '#4a2f22', KIND.hair ], Beige: [ '#e3c88a', KIND.cloth ], Red: [ '#d2654a', KIND.cloth ], Eye: [ '#2a1d18', KIND.cloth ] } },
-	{ from: umc( 'Farmer' ), part: 'Farmer_Body', paint: { Skin: [ '#e2a882', KIND.skin ], LightBlue: [ '#285878', KIND.cloth ], Brown: [ '#ece0c4', KIND.cloth ], Beige: [ '#d8c8a4', KIND.cloth ] }, hands: [ '#e2a882', KIND.skin ] },
-	{ from: umc( 'Farmer' ), part: 'Farmer_Pants', paint: { LightBlue: [ '#285878', KIND.cloth ] } },
-	{ from: umc( 'Adventurer' ), part: 'Adventurer_Feet', paint: { Grey: [ '#3c4a3e', KIND.leather ], Black: [ '#2a2622', KIND.leather ] } },
+// A plain villager while the islanders' basic look settles: bare head (so the pointed ears read),
+// an undyed linen shirt, muted warm brown trousers and dark leather shoes, all repainted in the
+// island's palette (sRGB, as they should read in sunlight). The kit's pockets, trims and two-tone
+// panels are painted over in one colour.
+const islander = await loadVillager( umc( 'Farmer' ), [
+	{ from: umc( 'Casual_2' ), part: 'Casual2_Head', paint: { Skin: [ '#e2a882', KIND.skin ], Skin_Darker: [ '#e2a882', KIND.skin ], Eyebrows: [ '#4a2f22', KIND.hair ], Hair: [ '#5a3a26', KIND.hair ], Eye: [ '#2a1d18', KIND.cloth ] } },
+	{ from: umc( 'Adventurer' ), part: 'Adventurer_Body', paint: { Skin: [ '#e2a882', KIND.skin ], Green: [ '#dccfae', KIND.cloth ], LightGreen: [ '#dccfae', KIND.cloth ] }, hands: [ '#e2a882', KIND.skin ] },
+	{ from: umc( 'Adventurer' ), part: 'Adventurer_Legs', paint: { Brown: [ '#634a36', KIND.cloth ], Brown2: [ '#634a36', KIND.cloth ] } },
+	{ from: umc( 'Farmer' ), part: 'Farmer_Feet', paint: { Brown: [ '#4a3626', KIND.leather ], Brown2: [ '#2e241c', KIND.leather ] } },
 ], shared );
-const characters = new Villagers( fisherman, WALK_LOOP, islandSurfaceHeight, characterShadow );
+const characters = new Villagers( islander, WALK_LOOP, islandSurfaceHeight, characterShadow );
 scene.add( characters.group );
 
 // Storm whitecap foam with a memory, and the spray torn off breaking crests (idle in calm weather).

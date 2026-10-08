@@ -3,6 +3,7 @@ import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeVertexColourCharacterMaterial, KIND } from './CharacterMaterial.ts';
 import { CharacterShadow } from './CharacterShadow.ts';
+import { pointedEars } from './Ears.ts';
 import type { Shared } from '../shared.ts';
 
 // Islanders assembled from modular low-poly parts (Ultimate Modular Characters by Quaternius,
@@ -88,7 +89,19 @@ export async function loadVillager( base: string, parts: PartSpec[], shared: Sha
 
 		// a part with several materials loads as a group of single-material skinned meshes
 		const node = files.get( spec.from )!.scene.getObjectByName( spec.part )!;
-		node.traverse( ( o ) => { if ( ( o as THREE.SkinnedMesh ).isSkinnedMesh ) geometries.push( paintPart( o as THREE.SkinnedMesh, spec.paint, spec.hands ) ); } );
+		const painted: THREE.BufferGeometry[] = [];
+		let skinned: THREE.SkinnedMesh | null = null;
+		node.traverse( ( o ) => {
+
+			if ( ! ( o as THREE.SkinnedMesh ).isSkinnedMesh ) return;
+			skinned = o as THREE.SkinnedMesh;
+			painted.push( paintPart( skinned, spec.paint, spec.hands ) );
+
+		} );
+		geometries.push( ...painted );
+		// every head of the kit (named *_Head) grows the islanders' pointed ears
+		const ears = skinned && /Head$/.test( spec.part ) ? pointedEars( skinned, painted ) : null;
+		if ( ears ) geometries.push( ears );
 
 	}
 	// drop the rig file's own meshes; keep its armature
