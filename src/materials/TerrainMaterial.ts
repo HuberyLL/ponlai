@@ -82,11 +82,12 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		const n0 = normalize( normalWorldGeometry ).toVar();
 		// The island's cliff detail (makeIslandSDF): the facet's identity, how recently its scar
 		// fell, the bed coordinate and the depth below the column's own top; how much rock
-		// overhangs the point and how exposed the coast is to the waves. Submerged boulders have none.
+		// overhangs the point, how exposed the coast is to the waves and whether it lies in a pocket.
+		// Submerged boulders have none.
 		const detail = vegetation ? attribute<'vec4'>( 'detail', 'vec4' ) : vec4( 0.5, 0, 0, 0 );
-		const detail2 = vegetation ? attribute<'vec2'>( 'detail2', 'vec2' ) : vec2( 0, 0.5 );
+		const detail2 = vegetation ? attribute<'vec3'>( 'detail2', 'vec3' ) : vec3( 0, 0.5, 0 );
 		const lipDepth = detail.w.toVar();
-		const fresh = detail.y.toVar(), shelter = detail2.x.toVar();
+		const fresh = detail.y.toVar(), shelter = detail2.x.toVar(), pocket = detail2.z.toVar();
 		// Turf belongs on the meadow only: not on ledges below the lip nor on the stumps of fallen
 		// columns, which stand lower than the meadow's planting height and grow no grass.
 		const meadowTop = vegetation ? smoothstep( 0.32, 0.2, lipDepth ).mul( smoothstep( topY.sub( 0.3 ), topY.sub( 0.18 ), p.y.add( lipDepth ) ) ).toVar() : float( 1 );
@@ -521,7 +522,10 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		// A completely blocked local sky must not keep an arbitrary ambient-light floor.
 		// The island's jointed wall occludes much of its own sky; a share of that occlusion keeps
 		// the shadowed blocks airy while the crevices stay dark.
-		const ao = ( vegetation ? mix( float( 1 ), clamp( vAO, 0, 1 ), 0.7 ) : clamp( vAO, 0, 1 ) ).mul( mix( float( 1 ), float( 0.72 ), concave ) ).mul( runShade );
+		// A pocket keeps less of it again: the sky it sees past its rim is what lights it in the shade,
+		// and at full occlusion a small one read as a black hole.
+		const ao = ( vegetation ? mix( float( 1 ), clamp( vAO, 0, 1 ), float( 0.7 ).sub( pocket.mul( 0.3 ) ) ) : clamp( vAO, 0, 1 ) )
+			.mul( mix( float( 1 ), mix( float( 0.72 ), float( 0.88 ), pocket ), concave ) ).mul( runShade );
 		return Surface( albedo, nW, rough, ao, canopy, water, puddle, flow );
 
 	} )();

@@ -1,7 +1,7 @@
 // Naive surface nets: one vertex per sign-changing voxel (mean of its edge crossings), one quad
 // per sign-changing grid edge. Normals come from the SDF gradient (not the faceted mesh), a cheap
 // SDF ambient occlusion is baked per vertex, plus an optional per-vertex value from `sdf.tint`,
-// four from `sdf.detail` and two from `sdf.detail2`, and the mesh's mean curvature (convex arrises > 0, hollows < 0).
+// four from `sdf.detail` and three from `sdf.detail2`, and the mesh's mean curvature (convex arrises > 0, hollows < 0).
 //
 // surfaceNets( sdf, { min: [x,y,z], max: [x,y,z], voxel, ao } )
 //   -> { positions, normals, ao, tint, curv: Float32Array, indices: Uint32Array }
@@ -219,7 +219,7 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 	const occl = new Float32Array( vCount );
 	const tint = new Float32Array( vCount ).fill( 0.5 );
 	const detail = sdf.detail ? new Float32Array( vCount * 4 ) : undefined;
-	const detail2 = sdf.detail2 ? new Float32Array( vCount * 2 ) : undefined;
+	const detail2 = sdf.detail2 ? new Float32Array( vCount * 3 ) : undefined;
 	const e = normalStep;
 	for ( let v = 0; v < vCount; v ++ ) {
 
@@ -254,7 +254,7 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 
 		if ( sdf.tint ) tint[ v ] = sdf.tint( x - gx * voxel * 0.5, y - gy * voxel * 0.5, z - gz * voxel * 0.5 );
 		if ( detail ) sdf.detail!( x, y, z, detail, v * 4 );
-		if ( detail2 ) sdf.detail2!( x, y, z, detail2, v * 2 );
+		if ( detail2 ) sdf.detail2!( x, y, z, detail2, v * 3 );
 
 	}
 

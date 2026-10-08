@@ -137,8 +137,9 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 		out[ o + 3 ] = wall.onFloor ? 0 : Math.max( 0, wall.ownTop - y );
 
 	};
-	// How much rock overhangs the point (0 open sky .. 1 under a roof: dry, unstreaked stone) and
-	// the coast's exposure to the waves (the spray zone climbs higher where it is exposed).
+	// How much rock overhangs the point (0 open sky .. 1 under a roof: dry, unstreaked stone), the
+	// coast's exposure to the waves (the spray zone climbs higher where it is exposed) and whether
+	// it lies in a pocket (whose occlusion the material lifts, so it does not read as a hole).
 	islandSDF.detail2 = ( x, y, z, out, o ) => {
 
 		const e = 0.02;
@@ -153,9 +154,10 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 			if ( islandSDF( x + gx * 0.1, y + gy * 0.1 + h, z + gz * 0.1 ) < 0 ) shelter += w;
 
 		}
-		wall.at( x, y, z );
+		wall.at( x, y, z, true );
 		out[ o ] = shelter;
 		out[ o + 1 ] = wall.exposure;
+		out[ o + 2 ] = wall.owner >= 0 && wall.scars[ wall.owner ].kind === 'pocket' ? 1 : 0;
 
 	};
 	return islandSDF;

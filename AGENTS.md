@@ -123,14 +123,15 @@ stone exposed.
   on a parting only some of the time, partings and soft beds open over a few metres and pinch
   out, and under the meadow the wall weathers back to an upper slope rather than jutting as a
   slab. Pockets are much shallower than they are wide and tall, their roofs open outward, two
-  never crowd each other at one height, so none reads as a black hole or a pair of eyes in
-  the shade; the small breaks are flakes (a flat facet ending in a step). Above the waves the
-  breaks stay sharp (rims rounded by a few centimetres at most); only the wave zone rounds them.
-  The wave-cut notch comes and goes with the coast's exposure and its roof stays above the calm
-  sea's crests; the joint faces run on below the sea, so no ledge follows the waterline. The
-  weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight`. Steps where
-  a block fell from the lip stop below the meadow's planting height (2.8 m) and carry no turf. No
-  waterfalls. Moss and greenery on the wall stay in its upper 1.2 m.
+  never crowd each other at one height, and their occlusion is lifted a little, so none reads as
+  a black hole or a pair of eyes in the shade; the small breaks are flakes (a flat facet ending
+  in a step). Above the waves the breaks stay sharp (rims rounded by a few centimetres at most);
+  only the wave zone rounds them. The wave-cut notch comes and goes with the coast's exposure and
+  its roof stays above the calm sea's crests; the joint faces run on below the sea, so no ledge
+  follows the waterline. The weathering relief fades out at the meadow, whose height stays
+  `islandSurfaceHeight`. Steps where a block fell from the lip stop below the meadow's planting
+  height (2.8 m) and carry no turf. No waterfalls. Moss and greenery on the wall stay in its upper
+  1.2 m.
 - Around the island, the shelf's width and depth, the talus at the cliff foot, its shallow benches
   and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
   noise. The floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
