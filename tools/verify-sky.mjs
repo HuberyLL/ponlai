@@ -1,6 +1,7 @@
 // GPU regression checks for the shared atmosphere, lighting and camera-relative solar disk.
 // Run against the dev server: node tools/verify-sky.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
+import { acquireGpuLock } from './gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 
@@ -9,6 +10,9 @@ const out = 'artifacts/verification';
 await mkdir( out, { recursive: true } );
 const errors = [], failures = [], checks = [];
 const report = { base, checks, errors, failures };
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-sky', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

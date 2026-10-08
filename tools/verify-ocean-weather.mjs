@@ -4,6 +4,7 @@
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
+import { acquireGpuLock } from './gpu-lock.mjs';
 import { Wind } from '../src/weather/Wind.ts';
 import { WEATHER_PRESETS } from '../src/sky/Weather.ts';
 
@@ -14,6 +15,9 @@ const gains = Object.fromEntries( [ 'clear', 'rain' ].map( ( name ) => {
 	const state = WEATHER_PRESETS[ name ];
 	return [ name, new Wind( undefined, { speed: state.windSpeed, heading: state.windDirection } ).uniforms.oceanGain.value.toArray() ];
 } ) );
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-ocean-weather', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

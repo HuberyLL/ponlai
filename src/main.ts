@@ -34,21 +34,29 @@ import { WALK_LOOP, walkLoopDistance } from './world/WalkLoop.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook, KIND } from './characters/CharacterMaterial.ts';
+import { debugFlags } from './debug/DebugFlags.ts';
 
 const params = new URLSearchParams( location.search );
 const ground = { soil: params.get( 'soil' ) !== '0' };
 soilUniforms.strength.value = ground.soil ? 1 : 0;
 soilUniforms.blend.value = params.get( 'blend' ) === '0' ? 0 : 1;
-// scene handles and frame diagnostics on window, for the capture tool and the console: dev server
-// or ?debug only
-const DEBUG = import.meta.env.DEV || params.has( 'debug' );
+// GPU time per pass, tick time and startup marks for tools/profile-frame.mjs (?profile, or
+// ?profile=frames without the GPU timestamps). The profiler loads only then; without it the
+// renderer, its pipelines and the image are unchanged.
+const profiler = params.has( 'profile' ) ? ( await import( './debug/FrameProfiler.ts' ) ).createFrameProfiler( THREE.InspectorBase, { timestamps: params.get( 'profile' ) !== 'frames' } ) : null;
+const mark = ( name: string ) => profiler?.mark( name );
+// scene handles and frame diagnostics on window, for the capture tool and the console: dev server,
+// ?debug or ?profile only
+const DEBUG = import.meta.env.DEV || params.has( 'debug' ) || profiler !== null;
 const loading = document.getElementById( 'loading' );
 const setStatus = ( s: string ) => { const el = loading?.querySelector( 'span' ); if ( el ) el.textContent = s; };
 
 // ------------------------------------------------------------------ renderer
 
-const renderer = new THREE.WebGPURenderer( { antialias: false, powerPreference: 'high-performance' } );
+const renderer = new THREE.WebGPURenderer( { antialias: false, powerPreference: 'high-performance', trackTimestamp: profiler?.timestamps ?? false } );
+if ( profiler ) renderer.inspector = profiler;
 await renderer.init();
+mark( 'renderer' );
 if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBackend !== true ) {
 
 	setStatus( 'This scene needs WebGPU (Chrome / Edge 113+, Safari 26+).' );
@@ -245,6 +253,25 @@ const setWeather = async ( name: WeatherName, seconds = 20 ) => {
 	if ( seconds === 0 ) await refreshEnvironment();
 
 };
+// A scene as its URL options load it, for the frame profiler's scene switches within one page
+// load: the weather established at once (wet in rain), the time preset or hour, the scene clock
+// (and the wind integrated to it), with one bake of the environment.
+const establishScene = async ( options: { weather?: WeatherName; preset?: DayPreset; hour?: number; time?: number } ) => {
+
+	cloudOverride = null;
+	if ( options.weather ) {
+
+		weather.auto = false;
+		weather.establish( options.weather );
+
+	}
+	if ( options.preset ) dayCycle.setPreset( options.preset );
+	else if ( options.hour !== undefined ) dayCycle.setHour( options.hour );
+	if ( options.time !== undefined ) simTime = options.time;
+	wind.reset( { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
+	await refreshEnvironment();
+
+};
 
 function applySkyFill(): void {
 
@@ -260,6 +287,7 @@ let water: Water | undefined;
 
 setStatus( 'Lighting the sky…' );
 await refreshEnvironment();
+mark( 'sky' );
 shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill );
 
 const textures = await bakeProceduralTextures( renderer );
@@ -288,7 +316,12 @@ rainScene.add( rain.group );
 
 setStatus( 'Generating the island…' );
 const t0 = performance.now();
-const data = await generateWorld();
+// ?worldCache (debug builds): the world worker's last result from IndexedDB, while the generator
+// and its options are unchanged (src/world/WorldCache.ts), instead of generating it again
+const worldOptions = {};
+const worldCache = DEBUG && params.has( 'worldCache' ) ? await ( await import( './world/WorldCache.ts' ) ).cachedWorld( worldOptions, () => generateWorld( worldOptions ) ) : null;
+const data = worldCache?.data ?? await generateWorld( worldOptions );
+mark( 'world' );
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
 // The floor's height shares the shoreline field's bounds, and so its transform.
@@ -331,6 +364,7 @@ scene.add( grass, foliage, flowers, rimFoliage, turfSkirt, plants );
 }
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
 rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt, plants ] );
+mark( 'meshes' );
 setStatus( 'Waking the villagers…' );
 // Local, unversioned assets (artifacts/ is git-ignored) served by the dev server while the
 // character art is still changing.
@@ -347,6 +381,7 @@ const islander = await loadVillager( umc( 'Farmer' ), [
 ], shared );
 const characters = new Villagers( islander, WALK_LOOP, islandSurfaceHeight, characterShadow );
 scene.add( characters.group );
+mark( 'villagers' );
 
 // Storm whitecap foam with a memory, and the spray torn off breaking crests (idle in calm weather).
 const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
@@ -361,7 +396,7 @@ water = new Water( {
 applySkyFill();
 waterScene.add( water.mesh, stormSea.spray.mesh );
 
-console.info( 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
+console.info( worldCache?.cache === 'hit' ? 'world from the cache' : 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
 // ------------------------------------------------------------------ GUI
 
@@ -743,6 +778,7 @@ function diagnostics(): void {
 		worldTriangles: world.triangles,
 		rimStrands: data.rimStrands.length,
 		timings: data.timings,
+		worldCache: worldCache ? { cache: worldCache.cache, ms: + worldCache.ms.toFixed( 1 ) } : 'off',
 		backend: 'webgpu',
 		hour: + dayCycle.hour.toFixed( 4 ),
 		clockPaused: dayCycle.paused,
@@ -760,7 +796,15 @@ function diagnostics(): void {
 
 }
 
-renderer.setAnimationLoop( tick );
+if ( profiler ) {
+
+	const { labelSoomiPasses } = await import( './debug/FrameProfiler.ts' );
+	labelSoomiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, caustics, characters } );
+
+}
+mark( 'loop' );
+const animationLoop = profiler ? profiler.wrapLoop( tick ) : tick;
+renderer.setAnimationLoop( animationLoop );
 loading?.classList.add( 'done' );
 // setTime moves the (paused) clock, so captures can step through an animation in one page load
 const setTime = ( t: number ) => {
@@ -771,4 +815,31 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime };
+// Stops and restarts the frame loop, so the profiler can keep two pages in one browser and time one
+// at a time: stopped, the page requests no frames and leaves the GPU idle once the frames already
+// queued and a sky bake in flight are done (the bake is given 2 s). The clock resumes where it
+// stopped. Chrome let one page's stream of frames starve another's queue, so the profiler stops
+// one page and waits for this before it starts the other.
+const animation = ( renderer as unknown as { _animation: { start(): void; stop(): void } } )._animation;
+const loop = {
+	running: true,
+	async stop(): Promise<void> {
+
+		if ( ! loop.running ) return;
+		loop.running = false;
+		animation.stop();
+		const until = performance.now() + 2000;
+		while ( sky.busy && performance.now() < until ) await new Promise( ( resolve ) => setTimeout( resolve, 10 ) );
+		await ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue.onSubmittedWorkDone();
+
+	},
+	start(): void {
+
+		if ( loop.running ) return;
+		loop.running = true;
+		clock.reset();
+		animation.start();
+
+	},
+};
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags };

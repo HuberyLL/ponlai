@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
+import { worldGeneratorHash } from './tools/vite-world-generator.mjs';
 
 // Licence texts that must travel with the built site: MIT asks for the full notice in every copy,
 // and the /*! */ headers kept in the bundle only point to these files.
@@ -52,7 +53,8 @@ function licences(): Plugin {
 
 export default defineConfig( {
 	base: './',
-	plugins: [ licences() ],
+	// the world generator's source hash, for the world cache (src/world/WorldCache.ts)
+	plugins: [ licences(), worldGeneratorHash() ],
 	server: {
 		// Worktrees for parallel branches live under .claude/. A build or checkout there writes an
 		// index.html inside this root, which would make the dev server reload every open page.

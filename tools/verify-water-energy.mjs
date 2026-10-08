@@ -1,6 +1,7 @@
 // Actual WebGPU helper regression: separated solar/sky column sources in the water volume.
 // Usage: node tools/verify-water-energy.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
+import { acquireGpuLock } from './gpu-lock.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 
@@ -11,6 +12,9 @@ for ( const call of [ "from './WaterTransport.ts'", 'waterIncidentSun(', 'waterC
 
 }
 const errors = [];
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-water-energy', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),
