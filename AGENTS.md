@@ -123,8 +123,8 @@ exposed.
   underwater toe wherever it runs; other stones keep a wider berth.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
-  They grow in clumped patches of one to nine strands with runs of bare stone between (0.4-4 m:
-  a sparse patch breaks any longer run), a long tail of strands that wander and fork down to
+  They grow in clumped patches of one to nine strands with runs of bare stone between (0.4-4 m,
+  measured along the winding coast: a sparse patch breaks any longer run), a long tail of strands that wander and fork down to
   1.5-2.6 m, leaves shrinking toward the tips, and a mounded leaf clump over each patch's lip; the
   lowest quarter of the cliff above the sea stays bare.
   The meadow's sod curls a little over the lip as a ragged turf skirt (`RimSkirt.ts`), swept along

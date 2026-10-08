@@ -134,21 +134,34 @@ export function topAt( sdf: SDF, x: number, z: number ): number | undefined {
 // relative to the roof. The first ring is buried in the turf; the last is the ragged lower edge.
 export const SKIRT_RING = 7;
 
-// Trace the coast iso-line of the root bed (marching squares, chained into loops), resample it
-// evenly, and sweep the cross-section along it, kept clear of the rock.
+// The coast iso-line of the root bed (marching squares, chained into loops), resampled every
+// `step` metres; `closed` where a loop meets itself rather than the field's border.
+export interface CoastPath { points: [ number, number ][]; closed: boolean }
+
+export function coastPaths( field: RimGroundField, step = 0.05 ): CoastPath[] {
+
+	const paths: CoastPath[] = [];
+	for ( const loop of coastLoops( field ) ) {
+
+		const points = resample( loop, step );
+		if ( points.length < 12 ) continue;
+		const [ fx, fz ] = points[ 0 ], [ lx, lz ] = points[ points.length - 1 ];
+		paths.push( { points, closed: Math.hypot( fx - lx, fz - lz ) < step * 2 } );
+
+	}
+	return paths;
+
+}
+
+// Sweep the cross-section along the traced coast, kept clear of the rock.
 export function buildRimSkirt( sdf: SDF, field: RimGroundField ): RimSkirtData {
 
-	const loops = coastLoops( field );
 	const points: number[] = [], info: number[] = [], spans: number[] = [];
-	const step = 0.05;
-	for ( const loop of loops ) {
+	for ( const { points: samples, closed } of coastPaths( field ) ) {
 
-		const samples = resample( loop, step );
-		if ( samples.length < 12 ) continue;
 		const start = points.length / ( SKIRT_RING * 3 );
 		const shapes = samples.map( ( [ x, z ] ) => rimSkirtShape( x, z, sampleRimGround( field, x, z ).retreat ) );
-		const [ fx, fz ] = samples[ 0 ], [ lx, lz ] = samples[ samples.length - 1 ];
-		const eased = easeAlong( shapes.map( ( shape ) => shape.presence ), 4, Math.hypot( fx - lx, fz - lz ) < step * 2 );
+		const eased = easeAlong( shapes.map( ( shape ) => shape.presence ), 4, closed );
 		for ( let i = 0; i < samples.length; i ++ ) {
 
 			const [ x, z ] = samples[ i ];

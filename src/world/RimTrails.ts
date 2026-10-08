@@ -1,7 +1,7 @@
 import { pickFoliageSites, type FoliageSite } from './FoliageSites.ts';
 import { supportsMeadow } from './MeadowSurface.ts';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
-import { topAt } from './RimGround.ts';
+import { topAt, type CoastPath } from './RimGround.ts';
 import type { Footprint } from './WorldShapes.ts';
 import { VEGETATION_STRIDE } from './types.ts';
 import type { RimStrand, SDF } from './types.ts';
@@ -75,17 +75,86 @@ function rimSites( vegetation: Float32Array ): FoliageSite[] {
 const SEA_LEVEL = 0;
 
 // No stretch of coast stays bare for much longer than twice this: a second pass admits a small
-// patch wherever a lip lies this far from every patch, so the bare runs keep to 0.4-4 m on any coast.
+// patch wherever a lip lies this far from every patch along the coast, so the bare runs keep to
+// 0.4-4 m on any coast.
 const FILL_DISTANCE = 1.9;
 
 interface Lip { site: FoliageSite; x: number; z: number; nx: number; nz: number }
+
+// Distances measured along the traced coast. Across a gully or the scar of a fallen column two
+// lips can stand a metre apart while the coast between them winds for several, all of it bare.
+class CoastRuler {
+
+	private readonly x: number[] = [];
+	private readonly z: number[] = [];
+	private readonly path: number[] = [];
+	private readonly arc: number[] = [];
+	private readonly lengths: number[] = [];
+	private readonly closed: boolean[] = [];
+	private readonly cells = new Map<number, number[]>();
+
+	constructor( paths: CoastPath[] ) {
+
+		paths.forEach( ( { points, closed }, p ) => {
+
+			let s = 0;
+			points.forEach( ( [ x, z ], i ) => {
+
+				if ( i > 0 ) s += Math.hypot( x - points[ i - 1 ][ 0 ], z - points[ i - 1 ][ 1 ] );
+				const key = this.key( Math.floor( x ), Math.floor( z ) );
+				let cell = this.cells.get( key );
+				if ( ! cell ) this.cells.set( key, cell = [] );
+				cell.push( this.x.length );
+				this.x.push( x ); this.z.push( z ); this.path.push( p ); this.arc.push( s );
+
+			} );
+			const [ fx, fz ] = points[ 0 ], [ lx, lz ] = points[ points.length - 1 ];
+			this.lengths.push( s + ( closed ? Math.hypot( fx - lx, fz - lz ) : 0 ) );
+			this.closed.push( closed );
+
+		} );
+
+	}
+
+	private key( i: number, j: number ): number { return ( i + 2048 ) * 4096 + j + 2048; }
+
+	/** The nearest coast sample within a metre of ( x, z ), or -1. */
+	locate( x: number, z: number ): number {
+
+		let best = - 1, bestD = 1;
+		for ( let j = Math.floor( z ) - 1; j <= Math.floor( z ) + 1; j ++ ) for ( let i = Math.floor( x ) - 1; i <= Math.floor( x ) + 1; i ++ ) {
+
+			for ( const k of this.cells.get( this.key( i, j ) ) ?? [] ) {
+
+				const d = Math.hypot( this.x[ k ] - x, this.z[ k ] - z );
+				if ( d < bestD ) { bestD = d; best = k; }
+
+			}
+
+		}
+		return best;
+
+	}
+
+	/** Separation of two points that lie at the located coast samples: along the coast when
+	 * both sit on one traced loop (never less than the straight line), else the straight line. */
+	separation( ax: number, az: number, a: number, bx: number, bz: number, b: number ): number {
+
+		const straight = Math.hypot( ax - bx, az - bz );
+		if ( a < 0 || b < 0 || this.path[ a ] !== this.path[ b ] ) return straight;
+		const p = this.path[ a ], d = Math.abs( this.arc[ a ] - this.arc[ b ] );
+		return Math.max( straight, this.closed[ p ] ? Math.min( d, this.lengths[ p ] - d ) : d );
+
+	}
+
+}
 
 // Clumped patches of top-rooted trails cross the lip before bending down: bare stretches of
 // stone between patches of one to nine strands, mostly short with a long tail of strands that
 // wander, fork and reach far down the cliff, and a mounded clump of leaves over each patch's lip.
 // Every patch derives from the meadow anchors, the footprint and noise fields with fixed seeds,
 // so the coast is covered the same way whatever shape the island grows to.
-export function makeRimTrails( sdf: SDF, fp: Footprint, vegetation: Float32Array ): RimStrand[] {
+export function makeRimTrails( sdf: SDF, fp: Footprint, vegetation: Float32Array, coast: CoastPath[] ): RimStrand[] {
 
 	const lips: Lip[] = [];
 	for ( const site of rimSites( vegetation ) ) {
@@ -97,6 +166,7 @@ export function makeRimTrails( sdf: SDF, fp: Footprint, vegetation: Float32Array
 	const rng = mulberry32( 9067 );
 	const strands: RimStrand[] = [];
 	const patches: { x: number; z: number; spacing: number }[] = [];
+	const ruler = new CoastRuler( coast );
 	for ( const lip of lips ) {
 
 		// Where the coast's growth field is low the stone stays bare for metres; inside a clump
@@ -114,10 +184,17 @@ export function makeRimTrails( sdf: SDF, fp: Footprint, vegetation: Float32Array
 	}
 	// The growth field's low stretches can run for many metres on a long coast. A sparse patch of
 	// one to three strands breaks any longer bare run; the vigorous patches above are unchanged.
+	const at = patches.map( ( p ) => ruler.locate( p.x, p.z ) );
 	for ( const lip of lips ) {
 
-		if ( patches.some( ( p ) => Math.hypot( p.x - lip.x, p.z - lip.z ) < FILL_DISTANCE ) ) continue;
-		if ( growPatch( sdf, lip, 1 + Math.floor( rng() * 2.99 ), true, strands, rng ) ) patches.push( { x: lip.x, z: lip.z, spacing: FILL_DISTANCE } );
+		const here = ruler.locate( lip.x, lip.z );
+		if ( patches.some( ( p, i ) => ruler.separation( p.x, p.z, at[ i ], lip.x, lip.z, here ) < FILL_DISTANCE ) ) continue;
+		if ( growPatch( sdf, lip, 1 + Math.floor( rng() * 2.99 ), true, strands, rng ) ) {
+
+			patches.push( { x: lip.x, z: lip.z, spacing: FILL_DISTANCE } );
+			at.push( here );
+
+		}
 
 	}
 	return strands;

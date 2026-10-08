@@ -4,7 +4,7 @@
 
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRimTrails } from './RimTrails.ts';
-import { buildRimGround, buildRimSkirt } from './RimGround.ts';
+import { buildRimGround, buildRimSkirt, coastPaths } from './RimGround.ts';
 import {
 	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF, makeSeabed,
 	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
@@ -148,7 +148,8 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	mark( 'rimGround', t );
 
 	t = performance.now();
-	const rimStrands = makeRimTrails( islandSDF, fp, vegetation );
+	// Bare runs between the trails are measured along the same traced coast.
+	const rimStrands = makeRimTrails( islandSDF, fp, vegetation, coastPaths( rimGround ) );
 	for ( const strand of rimStrands ) transfer.push( strand.points.buffer, ...( strand.clump ? [ strand.clump.buffer ] : [] ) );
 	mark( 'rimFoliage', t );
 
