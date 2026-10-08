@@ -24,7 +24,7 @@ const STEP = THREE.MathUtils.degToRad( 0.2 );
 // A larger turn in one frame is a cut (a new hour, preset or manual sun): redraw without history.
 const CUT = THREE.MathUtils.degToRad( 1 );
 const PREVIOUS = 0, CURRENT = 1;
-// A lighter filter for alpha-to-coverage vegetation (grass, leaves, flowers), for the quality
+// A lighter filter for vegetation (grass blades and leaves, `markVegetation`), for the quality
 // tiers below high (setFilter): it fills much of the frame with small, overlapping receivers whose
 // own dapple hides a coarser penumbra. Not the default: fewer blocker taps re-roll the dapple's
 // penumbrae, which a close view of shaded foliage shows as scattered pixels changing by up to half
@@ -90,7 +90,7 @@ export class SunShadow {
 	private readonly margin: number;
 	// the light's turn between redraws (radians)
 	step = STEP;
-	// The filter for ordinary receivers and for alpha-to-coverage vegetation. They compile into
+	// The filter for ordinary receivers and for vegetation (`userData.vegetation`). They compile into
 	// each receiver's material, so set them (setFilter) before the first receiver is built.
 	private taps: Readonly<SolarShadowTaps> = SOLAR_SHADOW_TAPS;
 	private vegetationTaps: Readonly<SolarShadowTaps> = SHADOW_FILTER_PATH.vegetation ? VEGETATION_TAPS : SOLAR_SHADOW_TAPS;
@@ -137,7 +137,8 @@ export class SunShadow {
 	install(): void {
 
 		const filter = Fn( ( { shadowCoord }: FilterInput, builder: THREE.NodeBuilder ) => this.surfaceVisibility( shadowCoord,
-			( builder.material as THREE.Material | null )?.alphaToCoverage === true ? this.vegetationTaps : this.taps ) );
+			// Vegetation is told by its tag, not by alphaToCoverage, which is off without multisampling.
+			( builder.material as THREE.Material | null )?.userData.vegetation === true ? this.vegetationTaps : this.taps ) );
 		// The runtime exposes filterNode; @types/three has not declared this WebGPU hook yet.
 		( this.sun.shadow as unknown as { filterNode: typeof filter } ).filterNode = filter;
 
@@ -151,7 +152,7 @@ export class SunShadow {
 	}
 
 	/** The filter's taps for receivers built from now on (a quality tier's mode): ordinary
-	 * receivers and the alpha-to-coverage vegetation. `soft: false` keeps the bilinear comparison
+	 * receivers and the vegetation (`markVegetation`). `soft: false` keeps the bilinear comparison
 	 * of both stepped maps alone. Materials already built keep the filter they compiled with. */
 	setFilter( taps: Readonly<SolarShadowTaps>, vegetationTaps: Readonly<SolarShadowTaps> = taps ): void {
 
