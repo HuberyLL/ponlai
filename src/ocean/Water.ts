@@ -282,10 +282,14 @@ const REFLECTOR_HEIGHT = 3.5 + 1;
 const REFLECTION_FLOOR = 0.35;
 
 // How the reflection's march uses that box. cull: a ray that never meets it within the march's
-// reach keeps the sky without marching (most of the sea away from the island).
-interface SSRVariant { cull: boolean }
-const SSR_BOXED: SSRVariant = { cull: true };
-const variantKey = ( v: SSRVariant ) => ( v.cull ? 1 : 0 );
+// reach keeps the sky without marching (most of the sea away from the island). clip: a ray stops
+// at its first step past the box, where nothing is left to reflect. The steps before the box still
+// read the depth buffer: the march accepts a hit up to 1.4 steps behind it, so one of them can end
+// a ray on a far false hit (or on a hit that weighs nothing) where a ray started at the box would
+// march on and find another, and the image would change.
+interface SSRVariant { cull: boolean; clip: boolean }
+const SSR_BOXED: SSRVariant = { cull: true, clip: true };
+const variantKey = ( v: SSRVariant ) => ( v.cull ? 1 : 0 ) + ( v.clip ? 2 : 0 );
 
 // The distances along a ray (origin, unit direction) at which it enters and leaves a box (slab
 // method); enter > leave when it misses.
@@ -504,7 +508,7 @@ export class Water {
 			let marches = Rv.z.lessThanEqual( 0.6 ).and( directionWeight.greaterThan( 0 ) );
 			// Where the ray is inside the box of what it can reflect (in world space: the view is rigid,
 			// so distances along the ray are the same).
-			const span = variant.cull ? rayBoxSpan( cameraWorldMatrix.mul( vec4( posV, 1 ) ).xyz,
+			const span = variant.cull || variant.clip ? rayBoxSpan( cameraWorldMatrix.mul( vec4( posV, 1 ) ).xyz,
 				cameraWorldMatrix.mul( vec4( Rv, 0 ) ).xyz, this.reflectorMin, this.reflectorMax ).toVar() : vec2( 0, 1e9 );
 			if ( variant.cull ) marches = marches.and( span.y.greaterThanEqual( max( span.x, 0 ) ) ).and( span.x.lessThanEqual( ssrReach ) );
 			If( marches, () => {
@@ -535,6 +539,11 @@ export class Water {
 					t.addAssign( dt );
 					dt.mulAssign( quality.ssrGrowth );
 					step();
+					if ( variant.clip ) If( t.greaterThan( span.y ), () => {
+
+						Break();
+
+					} );
 
 				} );
 				If( hit.greaterThan( 0.5 ), () => {
@@ -1179,9 +1188,9 @@ export class Water {
 		const u = this.uniforms;
 		this.reflectorMin.value.copy( this.reflectionBounds.min );
 		this.reflectorMax.value.copy( this.reflectionBounds.max );
-		// debugFlags.ssrCull = false brings back the march without the box, for A/B timing in one
-		// page (each variant is its own material and pipeline, built on first use).
-		const variant = { cull: debugFlags.ssrCull !== false };
+		// debugFlags.ssrCull / ssrClip = false bring back the march without the box, for A/B timing
+		// in one page (each variant is its own material and pipeline, built on first use).
+		const variant = { cull: debugFlags.ssrCull !== false, clip: debugFlags.ssrClip !== false };
 		const key = variantKey( variant );
 		let material = this.materials.get( key );
 		if ( ! material ) this.materials.set( key, material = this.buildMaterial( variant ) );
