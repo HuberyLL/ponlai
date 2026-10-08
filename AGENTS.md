@@ -130,9 +130,9 @@ stone exposed.
 - Around the island, the shelf's width and depth, the talus at the cliff foot, its shallow benches
   and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
   noise. The floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
-  nothing breaks the surface. Fallen blocks are walked out from the coast until their traced
-  outline clears the island's solid, so they rest against the cliff's underwater toe wherever it
-  runs; other stones keep a wider berth.
+  nothing breaks the surface. Fallen blocks gather below the cliff's recent scars and are walked
+  out from the coast until their traced outline clears the island's solid, so they rest against
+  the cliff's underwater toe wherever it runs; other stones keep a wider berth.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
   They grow in clumped patches of one to nine strands with runs of bare stone between (0.4-4 m,

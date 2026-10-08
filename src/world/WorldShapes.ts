@@ -123,6 +123,7 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 	const islandSDF: SDF = ( x, y, z ) => Math.max( wall.at( x, y, z ), ISLAND_BOTTOM - y );
 
 	islandSDF.tint = ( x, y, z ) => 0.5 + noise3( x * 0.2 + 9.3, y * 0.16, z * 0.2 ) * 0.3;
+	islandSDF.shed = ( x, z ) => wall.shed( x, z );
 	// Per vertex for the cliff material: the facet's identity (which scar's face it lies on), how
 	// recently that scar fell, the bed coordinate (strata) and the depth below the column's own
 	// top (the meadow, or a ledge cut into the lip; 0 on a scar's floor).
@@ -456,7 +457,10 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF )
 			if ( d >= 0 && d < 1 ) coast += 0.0625;
 
 		}
-		const shed = ( x: number, z: number ) => smoothstep( - 0.2, 0.15, noise3( x * 0.085 + 4.9, 12.7, z * 0.085 - 2.3 ) );
+		// The blocks lie under the cliff's recent scars, where it has just shed them, and in runs
+		// where a world-space field says the wall sheds more.
+		const shed = ( x: number, z: number ) => Math.max( island?.shed?.( x, z ) ?? 0,
+			smoothstep( - 0.2, 0.15, noise3( x * 0.085 + 4.9, 12.7, z * 0.085 - 2.3 ) ) * 0.7 );
 		// the seaward normal of the footprint's distance field
 		const normal = ( x: number, z: number ): [ number, number ] => {
 

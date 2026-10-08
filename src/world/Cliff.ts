@@ -782,6 +782,24 @@ export class CliffWall {
 
 	}
 
+	// How much rock the wall has recently shed above a point at its foot (0 .. 1): the recent
+	// scars of the two larger generations, each over its own width and a little beyond.
+	shed( x: number, z: number ): number {
+
+		let w = 0;
+		for ( const s of this.scars ) {
+
+			if ( s.fresh <= 0 || s.level > 1 ) continue;
+			const cx = ( s.x0 + s.x1 ) * 0.5, cz = ( s.z0 + s.z1 ) * 0.5;
+			const r = Math.max( s.x1 - s.x0, s.z1 - s.z0 ) * 0.5 + 0.8;
+			const d2 = ( ( x - cx ) ** 2 + ( z - cz ) ** 2 ) / ( r * r );
+			if ( d2 < 1 ) w = Math.max( w, ( 1 - d2 ) * ( s.level === 0 ? 1 : 0.7 ) );
+
+		}
+		return w;
+
+	}
+
 	// the wave exposure of the column last evaluated (0 .. 1)
 	get exposure(): number {
 

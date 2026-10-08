@@ -7,6 +7,8 @@ export interface SDF {
 	tint?: ( x: number, y: number, z: number ) => number;
 	detail?: ( x: number, y: number, z: number, out: Float32Array, o: number ) => void;
 	detail2?: ( x: number, y: number, z: number, out: Float32Array, o: number ) => void;
+	// how much rock a cliff has recently shed above a point of the sea floor (0 .. 1)
+	shed?: ( x: number, z: number ) => number;
 }
 
 export interface MeshData {
