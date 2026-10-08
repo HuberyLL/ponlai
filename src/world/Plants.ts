@@ -31,7 +31,10 @@ const PALETTES: Record<string, RGB[]> = {
 	fern: [ [ 0.13, 0.22, 0.045 ], [ 0.16, 0.235, 0.05 ], [ 0.105, 0.2, 0.04 ] ],
 	tree: [ [ 0.06, 0.15, 0.045 ], [ 0.09, 0.175, 0.05 ], [ 0.14, 0.19, 0.05 ] ],
 };
-const BARK: RGB = [ 0.1, 0.088, 0.072 ];
+// Grey-brown bark. The leaf map's solid texel (about 0.6 linear) and the furrows multiply in
+// after, so the trunk's albedo settles near 0.17: a mid grey-brown that still reads under the
+// crown's shade instead of a black stroke.
+const BARK: RGB = [ 0.3, 0.255, 0.2 ];
 const STALK: RGB = [ 0.09, 0.13, 0.04 ];
 
 interface Look {
