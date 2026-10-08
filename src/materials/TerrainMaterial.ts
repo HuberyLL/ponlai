@@ -80,10 +80,13 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 
 		const p = positionWorld;
 		const n0 = normalize( normalWorldGeometry ).toVar();
-		// The island's cliff detail (makeIslandSDF): the block's identity, how deep in a joint,
-		// the bed coordinate and the depth below the block's own top. Submerged boulders have none.
+		// The island's cliff detail (makeIslandSDF): the facet's identity, how recently its scar
+		// fell, the bed coordinate and the depth below the column's own top; how much rock
+		// overhangs the point and how exposed the coast is to the waves. Submerged boulders have none.
 		const detail = vegetation ? attribute<'vec4'>( 'detail', 'vec4' ) : vec4( 0.5, 0, 0, 0 );
+		const detail2 = vegetation ? attribute<'vec2'>( 'detail2', 'vec2' ) : vec2( 0, 0.5 );
 		const lipDepth = detail.w.toVar();
+		const fresh = detail.y.toVar(), shelter = detail2.x.toVar();
 		// Turf belongs on the meadow only: not on ledges below the lip nor on the stumps of fallen
 		// columns, which stand lower than the meadow's planting height and grow no grass.
 		const meadowTop = vegetation ? smoothstep( 0.32, 0.2, lipDepth ).mul( smoothstep( topY.sub( 0.3 ), topY.sub( 0.18 ), p.y.add( lipDepth ) ) ).toVar() : float( 1 );
@@ -212,14 +215,13 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		rock.mulAssign( mix( float( 1 ), mix( float( 0.83 ), float( 1.055 ), streak ), vert ) );
 		if ( vegetation ) {
 
-			// Each block of the cliff has its own shade and a slight warm or cool cast, and each
-			// bed its own along the whole coast (the strata). Both stay faint: strong per-block
-			// and per-bed contrast outlined the blocks like dressed masonry.
-			const block = detail.x;
-			rock.mulAssign( mix( float( 0.95 ), float( 1.07 ), block ) );
-			rock.mulAssign( mix( vec3( 0.98, 0.995, 1.02 ), vec3( 1.02, 1.0, 0.975 ), fract( block.mul( 5.37 ) ) ) );
+			// Each facet of the cliff has its own faint shade and a slight warm or cool cast, and
+			// each bed its own (the strata); both stay faint, or the facets read as set stones.
+			const facet = detail.x;
+			rock.mulAssign( mix( float( 0.95 ), float( 1.06 ), facet ) );
+			rock.mulAssign( mix( vec3( 0.98, 0.995, 1.02 ), vec3( 1.02, 1.0, 0.975 ), fract( facet.mul( 5.37 ) ) ) );
 			const bed = fract( sin( floor( detail.z ).mul( 12.9898 ) ).mul( 43758.5453 ) );
-			rock.mulAssign( mix( vec3( 0.965, 0.968, 0.97 ), vec3( 1.03, 1.022, 1.0 ), bed ) );
+			rock.mulAssign( mix( vec3( 0.97, 0.972, 0.975 ), vec3( 1.025, 1.018, 1.0 ), bed ) );
 			// Parting lines: a fine dark seam at the beds' boundaries, only where the geometry
 			// opens a groove there (a crease in the mesh), and faded once it is thinner than a
 			// pixel so distant walls do not flicker.
@@ -228,23 +230,41 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			const open = smoothstep( - 0.4, - 2.5, vCurv );
 			const parting = float( 1 ).sub( smoothstep( 0, seamWidth, seam ) ).mul( float( 0.03 ).div( seamWidth ) ).mul( open );
 			rock.mulAssign( float( 1 ).sub( parting.mul( vert ).mul( 0.35 ) ) );
-			// Runoff stains: organic water from the soil darkens streaks that start under each
-			// block's lip, darker and wider down the joints that carry it, and fainter ones under
-			// each parting's overhang.
-			const underLip = smoothstep( 0.02, 0.12, lipDepth ).mul( float( 1 ).sub( smoothstep( 0.3, 2.0, lipDepth ) ) );
-			const runoff = float( 1 ).sub( streak ).mul( underLip ).mul( 0.2 ).add( detail.y.mul( float( 1 ).sub( smoothstep( 0.4, 2.6, lipDepth ) ) ).mul( 0.3 ) )
-				.add( smoothstep( 0.72, 1.0, fract( detail.z ) ).mul( float( 1 ).sub( streak ) ).mul( 0.08 ) );
-			rock.mulAssign( float( 1 ).sub( runoff.mul( vert ) ) );
+			// A recent scar is the rock's unweathered inside: paler and a little warmer, without
+			// the grey skin, lichen and stains the old faces around it carry (as in rockfall scar
+			// inventories, where fresh scars stand out by colour long after their edges round).
+			rock.assign( mix( rock, rock.mul( vec3( 1.24, 1.18, 1.07 ) ), fresh ) );
+			// Under an overhang the stone stays dry: no runoff reaches it and it keeps a paler,
+			// dusty skin.
+			rock.assign( mix( rock, rock.mul( vec3( 1.07, 1.05, 1.0 ) ), shelter.mul( vert ) ) );
+			// Runoff stains (the dark "ink stripes" of rock-dwelling cyanobacteria): water from the
+			// soil runs down from the lip and spills from each ledge, in streaks that are darkest
+			// at their head and wander down the face, gathered into the re-entrant corners. None
+			// form under an overhang or on a recent scar.
+			const flowHead = smoothstep( 0.02, 0.12, lipDepth ).mul( float( 1 ).sub( smoothstep( 0.8, 3.0, lipDepth ).mul( 0.8 ) ) );
+			const gathered = float( 1 ).add( concave.mul( 1.5 ) );
+			const ink = smoothstep( 0.5, 0.72, float( 1 ).sub( streak ) ).mul( flowHead ).mul( gathered )
+				.mul( float( 1 ).sub( shelter ) ).mul( float( 1 ).sub( fresh ) ).clamp( 0, 1 ).toVar();
+			rock.mulAssign( mix( vec3( 1 ), vec3( 0.42, 0.42, 0.4 ), ink.mul( vert ).mul( 0.85 ) ) );
 
 		}
 		// Worn arrises: the block edges catch a little light, never as an outline.
 		rock.assign( mix( rock, min( rock.mul( 1.12 ), vec3( 0.5 ) ), convex.mul( vegetation ? 0.45 : 0.24 ) ) );
 		rock.mulAssign( mix( float( 1 ), float( 0.9 ), concave ) );
-		// lichen: pale crusts and dark spots on the dry stone
-		const lichen = H.a.mul( smoothstep( 0.4, 1.4, p.y ) ).mul( smoothstep( 0.3, 0.6, big2 ) );
+		// lichen: pale crusts and dark spots on the dry stone, none yet on a recent scar
+		const lichen = H.a.mul( smoothstep( 0.4, 1.4, p.y ) ).mul( smoothstep( 0.3, 0.6, big2 ) ).mul( float( 1 ).sub( fresh ) );
 		rock.assign( mix( rock, vec3( 0.42, 0.41, 0.33 ), lichen.mul( 0.45 ) ) );
-		const spots = smoothstep( 0.62, 0.8, H.g ).mul( smoothstep( 0.45, 0.7, big ) ).mul( smoothstep( 0.5, 1.5, p.y ) );
+		const spots = smoothstep( 0.62, 0.8, H.g ).mul( smoothstep( 0.45, 0.7, big ) ).mul( smoothstep( 0.5, 1.5, p.y ) ).mul( float( 1 ).sub( fresh ) );
 		rock.mulAssign( float( 1 ).sub( spots.mul( 0.35 ) ) );
+		if ( vegetation ) {
+
+			// Orange and yellow lichens of the upper shore (Xanthoria, Caloplaca) in small patches
+			// on the faces that look up, toward the lip, above the black zone the spray keeps wet.
+			const orange = smoothstep( 0.55, 0.8, H.g.mul( 0.55 ).add( big2.mul( 0.45 ) ) ).mul( smoothstep( 0.15, 0.6, n0.y ) )
+				.mul( float( 1 ).sub( smoothstep( 0.3, 1.6, lipDepth ) ) ).mul( smoothstep( 1.4, 2.2, p.y ) ).mul( float( 1 ).sub( fresh ) );
+			rock.assign( mix( rock, vec3( 0.42, 0.24, 0.06 ), orange.mul( 0.55 ) ) );
+
+		}
 
 		const up = n0.y;
 		const Hg = H.g.toVar();
@@ -366,8 +386,8 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			// on the ledges and in the joints and hollows that hold water and grit, and on the bare
 			// stumps of fallen columns. The lower stone stays exposed.
 			const upper = smoothstep( 0.1, 0.25, lipDepth ).mul( float( 1 ).sub( smoothstep( 0.85, 1.3, lipDepth ) ) );
-			const stump = float( 1 ).sub( meadowTop ).mul( float( 1 ).sub( smoothstep( 0, 0.25, lipDepth ) ) );
-			const hold = max( smoothstep( 0.45, 0.8, up ), max( detail.y, concave ).mul( smoothstep( - 0.3, 0.2, up ) ).mul( 0.85 ) );
+			const stump = float( 1 ).sub( meadowTop ).mul( float( 1 ).sub( smoothstep( 0, 0.25, lipDepth ) ) ).mul( smoothstep( topY.sub( 1.3 ), topY.sub( 0.9 ), p.y ) );
+			const hold = max( smoothstep( 0.45, 0.8, up ), concave.mul( smoothstep( - 0.3, 0.2, up ) ).mul( 0.85 ) ).mul( float( 1 ).sub( fresh ) );
 			const patches = smoothstep( 0.4, 0.62, big2.mul( 0.45 ).add( H.g.mul( 0.35 ) ).add( streak.mul( 0.2 ) ) );
 			const cliffMoss = max( upper, stump ).mul( hold ).mul( patches ).mul( float( 1 ).sub( moss ) ).toVar();
 			const cliffMossC = mix( vec3( 0.04, 0.065, 0.02 ), vec3( 0.12, 0.155, 0.04 ), smoothstep( 0.25, 0.85, H.g ) );
@@ -479,11 +499,15 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		if ( ! vegetation ) albedo.mulAssign( mix( vec3( 0.8, 0.83, 0.86 ), vec3( 1.18, 1.12, 1.0 ), vTint ) );
 		if ( vegetation ) {
 
-			// Above the damp band, a darker zone of spray-fed lichen reaches 0.55 - 1.2 m up the
-			// island's walls, its upper edge jagged from block to block and raised along the joints.
-			const reach = float( 0.55 ).add( fract( detail.x.mul( 3.7 ) ).mul( 0.5 ) ).add( detail.y.mul( 0.35 ) ).add( H.r.sub( 0.5 ).mul( 0.25 ) );
-			const spray = float( 1 ).sub( smoothstep( reach.sub( 0.14 ), reach.add( 0.04 ), p.y.sub( wl ) ) );
-			albedo.mulAssign( mix( vec3( 1 ), vec3( 0.76, 0.77, 0.76 ), spray.mul( float( 1 ).sub( wet ) ) ) );
+			// Above the damp band, the black zone of spray-fed lichen (Verrucaria) reaches 0.4 -
+			// 1.4 m up the walls, higher where the coast meets the swell; its upper edge is jagged
+			// from facet to facet and frayed, with the grey stone showing through in places.
+			const reach = float( 0.4 ).add( detail2.y.mul( 0.7 ) ).add( fract( detail.x.mul( 3.7 ) ).mul( 0.3 ) ).add( H.r.sub( 0.5 ).mul( 0.3 ) );
+			const spray = float( 1 ).sub( smoothstep( reach.sub( 0.16 ), reach.add( 0.05 ), p.y.sub( wl ) ) );
+			const crust = mix( float( 0.55 ), float( 1 ), smoothstep( 0.35, 0.75, H.g.mul( 0.6 ).add( big.mul( 0.4 ) ) ) );
+			albedo.mulAssign( mix( vec3( 1 ), vec3( 0.62, 0.63, 0.6 ), spray.mul( crust ).mul( float( 1 ).sub( wet ) ) ) );
+			// The notch's floor and the ledges in the spray hold water, weed and grit: darker still.
+			albedo.mulAssign( mix( float( 1 ), float( 0.68 ), max( spray, wet ).mul( smoothstep( 0.3, 0.75, up ) ) ) );
 
 		}
 		albedo.mulAssign( mix( float( 1 ), float( vegetation ? 0.66 : 0.5 ), wet.mul( float( 1 ).sub( algae.mul( 0.5 ) ) ) ) );

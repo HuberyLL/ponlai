@@ -411,3 +411,8 @@ Sources that informed the procedural layout; no code, data or images from them a
 - The wave-cut notch (a sharp roof and a sloping floor near sea level, its depth varying along
   the coast): Fabrizio Antonioli et al., *Tidal notches in Mediterranean Sea: a comprehensive
   analysis* (Quaternary Science Reviews 119, 2015).
+- The cliff's shore zones and stains: the black *Verrucaria* band above the tide and the orange and
+  grey lichens of the splash zone, MarLIN,
+  [*Yellow and grey lichens on supralittoral rock*](https://www.marlin.ac.uk/habitats/detail/96/yellow_and_grey_lichens_on_supralittoral_rock);
+  the dark runoff streaks of rock-dwelling cyanobacteria ("Tintenstriche"),
+  [*Gloeocapsa magma*](https://en.wikipedia.org/wiki/Gloeocapsa_magma) and the literature it cites.

@@ -63,10 +63,11 @@ stone exposed.
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
   own canopy.
-- `src/materials/`: procedural detail textures, terrain materials (triplanar stone with per-block
-  shade, strata, parting seams, runoff stains, upper-cliff moss and a spray zone, turf, sea floor,
-  light under the water), wet surfaces after Lagarde (soaked pores, water film, runnels down the
-  cliffs).
+- `src/materials/`: procedural detail textures, terrain materials (triplanar stone with per-facet
+  shade, paler recent scars, strata, parting seams, runoff streaks from the lip and ledges, dry
+  stone under overhangs, orange lichen near the lip, upper-cliff moss, a black lichen spray zone
+  that climbs with the coast's exposure, turf, sea floor, light under the water), wet surfaces
+  after Lagarde (soaked pores, water film, runnels down the cliffs).
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading, and
   the storm sea (`StormSea.ts`: whitecap foam integrated on a world grid around the view, the
   procedural foam pattern, spray particles).
