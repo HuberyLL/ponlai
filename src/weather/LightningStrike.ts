@@ -194,11 +194,18 @@ export class LightningStrike extends THREE.BufferGeometry {
 		this.axes = new Float32Array( maxVerts * 3 );
 		// (time the front arrives, time it vanishes, fraction along its subray, branch generation)
 		this.timings = new Float32Array( maxVerts * 4 );
+		// 32-bit, and kept so: three r186 copies a 16-bit index into a new 32-bit array when it
+		// creates the GPU buffer and uploads that copy from then on, so `build` must write the
+		// array the attribute holds.
 		this.indices = new Uint32Array( maxIndices );
-		this.positionAttribute = new THREE.BufferAttribute( this.vertices, 3 ).setUsage( THREE.DynamicDrawUsage );
-		this.axisAttribute = new THREE.BufferAttribute( this.axes, 3 ).setUsage( THREE.DynamicDrawUsage );
-		this.timingAttribute = new THREE.BufferAttribute( this.timings, 4 ).setUsage( THREE.DynamicDrawUsage );
-		this.setIndex( new THREE.BufferAttribute( this.indices, 1 ).setUsage( THREE.DynamicDrawUsage ) );
+		// Static usage: a tree is built once per strike and lives on the GPU, so `build` uploads
+		// only the vertices it wrote, once, through the version bump and update ranges. Marked
+		// dynamic, three re-uploads the whole buffers on every draw (some 340 KB a frame, and a
+		// stall of hundreds of milliseconds at a bolt's first frame).
+		this.positionAttribute = new THREE.BufferAttribute( this.vertices, 3 );
+		this.axisAttribute = new THREE.BufferAttribute( this.axes, 3 );
+		this.timingAttribute = new THREE.BufferAttribute( this.timings, 4 );
+		this.setIndex( new THREE.BufferAttribute( this.indices, 1 ) );
 		this.setAttribute( 'position', this.positionAttribute );
 		this.setAttribute( 'axis', this.axisAttribute );
 		this.setAttribute( 'timing', this.timingAttribute );
