@@ -8,7 +8,7 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, uniform, texture, textureLoad, uv, ivec2, vec3, vec4, float, max, min, clamp, length,
+	Fn, If, Loop, uniform, texture, textureLoad, uv, ivec2, vec2, vec3, vec4, float, max, min, clamp, length,
 	normalize, exp, pow, mix, dot, abs, select, smoothstep, luminance, mx_noise_float, screenCoordinate,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
@@ -52,6 +52,13 @@ const BANK_RECENTRE = 48;
 const BANK_REBAKE = 0.2;
 // A frame step of the fog's clock longer than this (seconds) is taken for a seek.
 const FRAME_STEP_MAX = 0.1;
+// The reduced fog's upsample: a texel's weight falls to half where its depth differs from the
+// pixel's by this fraction of the pixel's distance (a Gaussian: a sixteenth at twice the
+// tolerance, nothing past four times, so a surface behind cannot outweigh the pixel's own however
+// small its bilinear share). Where none of the four texels lies within it
+// (sky or sea seen between leaves, a thin figure the reduced march missed), the pixel marches the
+// fog itself instead.
+const FOG_DEPTH_TOLERANCE = 0.05;
 // The island's warm rock thins the fog over it and in its lee: radii (metres) of the clearing.
 const CLEARING = { inner: 20, outer: 100, floor: 0.45 };
 // Fog droplets scatter the beam on through the bank: its forward glow is a softer, wider lobe than
@@ -64,19 +71,23 @@ const FOG_ALBEDO = 0.45;
 interface AirRay {
 	direction: V3; origin: V3; distance: F; down: F; around: V3; shade: F;
 	lit: ( sky: V3, near: F ) => V3;
-	hazeDepth: F; hazeLight: V3;
+	hazeDepth: F; hazeLight: V3 | null;
 }
 
 /** The frame graph's structural choices for the air, fixed when the page loads (the quality tier
- * sets them). Today's high: 12 steps and the bank noise baked into a 2048^2 map. */
+ * sets them). Today's high: 12 steps, the bank noise baked into a 2048^2 map, and the fog marched
+ * at half the render's resolution. */
 export interface AirOptions {
 	// steps of the fog march through the banks
 	fogSteps: number;
 	// texels per side of the baked bank noise; 0 evaluates the noise at every step instead
 	bankSize: number;
+	// the fog march's resolution relative to the render (1, 1/2 or 1/4); below 1 it runs in a pass
+	// of its own and the composite upsamples it by depth
+	fogScale: number;
 }
 
-export const DEFAULT_AIR_OPTIONS: Readonly<AirOptions> = { fogSteps: 12, bankSize: 2048 };
+export const DEFAULT_AIR_OPTIONS: Readonly<AirOptions> = { fogSteps: 12, bankSize: 2048, fogScale: 0.5 };
 
 // Optical depth of one exponential layer (extinction `sigma` at sea level, scale height `height`)
 // from height `hc` along a ray whose direction has the vertical component `vy`, over `d` metres.
@@ -150,6 +161,17 @@ export class AerialPerspective {
 	private lastFogTime = NaN;
 	private lastStep = NaN;
 
+	// The fog march at a reduced resolution: the nearest of the surface depths it covers, and the
+	// fog's light (rgb) and optical depth (a) at that depth.
+	private fogZRT: THREE.RenderTarget | null = null;
+	private fogRT: THREE.RenderTarget | null = null;
+	private fogZQuad: THREE.QuadMesh | null = null;
+	private fogQuad: THREE.QuadMesh | null = null;
+	private readonly fogRes = uniform( new THREE.Vector2( 1, 1 ) );
+	// below this depth similarity a pixel marches its own fog (0 turns the fallback off, for A/B:
+	// debugFlags.fogFallback = false)
+	private readonly fallbackBelow = uniform( 0.5 );
+
 	constructor( options: Partial<AirOptions> = {} ) {
 
 		this.options = { ...DEFAULT_AIR_OPTIONS, ...options };
@@ -157,8 +179,8 @@ export class AerialPerspective {
 	}
 
 	// The view ray through screen position `q` (uv) to a surface at view z `z`, and the light the
-	// air scatters along it.
-	private ray( q: V2, z: F, sky: Sky ): AirRay {
+	// air scatters along it: shared by the full-resolution composite and the reduced fog march.
+	private ray( q: V2, z: F, sky: Sky, haze: boolean ): AirRay {
 
 		const ndc = vec3( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1 ).toVar();
 		const viewFar = this.projectionInverse.mul( vec4( ndc, 1 ) ).toVar();
@@ -173,7 +195,7 @@ export class AerialPerspective {
 		const down = smoothstep( 0.02, 0.35, direction.y.negate() ).toVar();
 		const around = sky.sampleBackground( vec3( 1, 0.06, 0 ), float( 6 ) ).add( sky.sampleBackground( vec3( - 1, 0.06, 0 ), float( 6 ) ) )
 			.add( sky.sampleBackground( vec3( 0, 0.06, 1 ), float( 6 ) ) ).add( sky.sampleBackground( vec3( 0, 0.06, - 1 ), float( 6 ) ) ).mul( 0.25 ).toVar();
-		const air = mix( sky.sampleBackground( normalize( vec3( direction.x, 0.008, direction.z ) ), float( 2 ) ), around, down ).toVar();
+		const air = haze ? mix( sky.sampleBackground( normalize( vec3( direction.x, 0.008, direction.z ) ), float( 2 ) ), around, down ).toVar() : null;
 		// The key light scattered toward the eye, and its share of the air's light: the rest is
 		// the sky's (E / pi, comparable with a radiance).
 		const scattered = this.keyColor.rgb.mul( phase( dot( direction, this.keyDir ) ) ).toVar();
@@ -185,6 +207,7 @@ export class AerialPerspective {
 		If( z.greaterThan( - 9e4 ), () => {
 
 			distance.assign( length( ray.mul( z.div( ray.z ) ) ) );
+			if ( ! haze ) return;
 			// The air's density along the ray is weighted by smoothstep( start, end ) of the distance.
 			// Integrated, the weight holds back `held` metres of air; the rest is integrated from
 			// there to the content (the held air is the near part, the remaining depth the far).
@@ -211,7 +234,7 @@ export class AerialPerspective {
 		// Near the camera the sun's share of the light is its explicit, phase-weighted scattering;
 		// far away the horizon's colour (whose sun glow already holds it).
 		const lit = ( sky: V3, near: F ) => sky.mul( float( 1 ).sub( sunShare.mul( near ) ) ).add( beam.mul( near ) );
-		const hazeLight = lit( air, float( 1 ).sub( smoothstep( 0, NEAR, distance ) ) ).toVar();
+		const hazeLight = air ? lit( air, float( 1 ).sub( smoothstep( 0, NEAR, distance ) ) ).toVar() : null;
 		return { direction, origin, distance, down, around, shade, lit, hazeDepth, hazeLight };
 
 	}
@@ -291,18 +314,19 @@ export class AerialPerspective {
 	 * given distance. Called once, by the frame graph. */
 	apply( color: V3, depth: THREE.Texture, sky: Sky, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
 
-		const { bankSize } = this.options;
+		const { bankSize, fogScale } = this.options;
 		if ( bankSize > 0 ) this.buildBank( bankSize );
+		const reduced = fogScale < 1 ? this.buildFogPasses( depth, sky, Math.round( 1 / fogScale ) ) : null;
 		const sceneDepth = texture( depth );
 		return Fn( () => {
 
 			const q = uv().toVar();
 			const px = ivec2( clamp( q.mul( this.resolution ), 0, this.resolution.sub( 1 ) ) );
 			const z = ( textureLoad( sceneDepth, px ) as unknown as F ).toVar();
-			const r = this.ray( q, z, sky );
-			const { fogDepth, fogLight } = this.march( r, sky );
+			const r = this.ray( q, z, sky, true );
+			const { fogDepth, fogLight } = reduced ? reduced( q, z, () => this.march( r, sky ) ) : this.march( r, sky );
 			// One medium: the layers' light mixed by their share of the optical depth.
-			const hazeDepth = r.hazeDepth, hazeLight = r.hazeLight;
+			const hazeDepth = r.hazeDepth, hazeLight = r.hazeLight!;
 			const total = hazeDepth.add( fogDepth ).toVar();
 			const transmittance = exp( total.negate() );
 			const light = hazeLight.mul( hazeDepth ).add( fogLight.mul( fogDepth ) ).div( max( total, 1e-6 ) );
@@ -333,28 +357,148 @@ export class AerialPerspective {
 
 	}
 
-	/** Bakes the bank map when it is due, before the composite reads it (after `update`). */
+	// The fog march at 1 / `k` of the render's resolution, and the composite's depth-aware
+	// upsample of it. The march takes the nearest surface of the pixels it covers, so a thin
+	// figure or leaf in front of the fog keeps its own value; the upsample then weights the four
+	// texels round a pixel by how near their depth lies to the pixel's own, so the fog of the sea
+	// behind a cliff does not bleed onto the cliff's edge, nor the cliff's onto the sea. A pixel
+	// none of whose texels lies near its depth (the sky between leaves, whose texels all took a
+	// leaf's depth) marches at full resolution (`full`): normalised, the weights would hand it the
+	// leaves' fog, and the foliage would speckle against the fog banks.
+	private buildFogPasses( depth: THREE.Texture, sky: Sky, k: number ): ( q: V2, z: F, full: () => { fogDepth: F; fogLight: V3 } ) => { fogDepth: F; fogLight: V3 } {
+
+		const sceneDepth = texture( depth );
+		this.fogZRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RedFormat, depthBuffer: false } );
+		this.fogZRT.texture.name = 'fogNearestDepth';
+		this.fogRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, depthBuffer: false } );
+		this.fogRT.texture.name = 'fogMarch';
+		const a = Math.floor( k / 4 ), b = Math.floor( 3 * k / 4 );
+		const zMaterial = new THREE.NodeMaterial();
+		zMaterial.name = 'Fog.NearestDepth';
+		zMaterial.fragmentNode = Fn( () => {
+
+			const base = screenCoordinate.xy.floor().mul( k ).toVar();
+			const last = this.resolution.sub( 1 );
+			const load = ( x: number, y: number ) => textureLoad( sceneDepth, ivec2( min( base.add( vec2( x, y ) ), last ) ) ) as unknown as F;
+			// view z: the nearest surface is the largest (the sky's -1e5 the smallest)
+			return vec4( max( max( load( a, a ), load( b, a ) ), max( load( a, b ), load( b, b ) ) ), 0, 0, 1 );
+
+		} )();
+		this.fogZQuad = new THREE.QuadMesh( zMaterial );
+		this.fogZQuad.name = 'Fog.NearestDepth';
+		const tFogZ = texture( this.fogZRT.texture );
+		const marchMaterial = new THREE.NodeMaterial();
+		marchMaterial.name = 'Fog.March';
+		marchMaterial.fragmentNode = Fn( () => {
+
+			const coord = ivec2( screenCoordinate.xy ).toVar();
+			const z = ( textureLoad( tFogZ, coord ) as unknown as F ).toVar();
+			// the centre of the pixels this texel covers
+			const q = vec2( coord ).mul( k ).add( k / 2 ).div( this.resolution ).toVar();
+			const { fogDepth, fogLight } = this.march( this.ray( q, z, sky, false ), sky );
+			return vec4( fogLight, fogDepth );
+
+		} )();
+		this.fogQuad = new THREE.QuadMesh( marchMaterial );
+		this.fogQuad.name = 'Fog.March';
+
+		const tFog = texture( this.fogRT.texture ), tZ = texture( this.fogZRT.texture );
+		return ( q: V2, z: F, full: () => { fogDepth: F; fogLight: V3 } ) => {
+
+			const fogDepth = float( 0 ).toVar();
+			const fogLight = vec3( 0 ).toVar();
+			If( this.fog.greaterThan( 0.001 ), () => {
+
+				const hp = q.mul( this.resolution ).div( k ).sub( 0.5 ).toVar();
+				const base = hp.floor().toVar();
+				const f = hp.sub( base ).toVar();
+				const acc = vec4( 0 ).toVar(), wsum = float( 0 ).toVar(), best = float( 0 ).toVar();
+				const scale = max( abs( z ), 1 ).mul( FOG_DEPTH_TOLERANCE ).toVar();
+				for ( const [ ox, oy ] of [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ] ) {
+
+					const texel = ivec2( clamp( base.add( vec2( ox, oy ) ), vec2( 0 ), this.fogRes.sub( 1 ) ) ).toVar();
+					const bl = ( ox ? f.x : float( 1 ).sub( f.x ) ).mul( oy ? f.y : float( 1 ).sub( f.y ) );
+					const dz = abs( ( textureLoad( tZ, texel ) as unknown as F ).sub( z ) ).div( scale );
+					const near = exp( dz.mul( dz ).mul( - Math.LN2 ) ).toVar();
+					const w = bl.mul( near.add( 1e-4 ) );
+					acc.addAssign( ( textureLoad( tFog, texel ) as unknown as THREE.Node<'vec4'> ).mul( w ) );
+					wsum.addAssign( w );
+					best.assign( max( best, near ) );
+
+				}
+				// (the march samples its maps at explicit levels, so it may run in this branch)
+				If( best.lessThan( this.fallbackBelow ), () => {
+
+					const own = full();
+					fogLight.assign( own.fogLight );
+					fogDepth.assign( own.fogDepth );
+
+				} ).Else( () => {
+
+					const mean = acc.div( max( wsum, 1e-8 ) ).toVar();
+					fogLight.assign( mean.rgb );
+					fogDepth.assign( mean.a );
+
+				} );
+
+			} );
+			return { fogDepth, fogLight };
+
+		};
+
+	}
+
+	/** Sizes the reduced fog march to the scene's render. */
+	setSize( width: number, height: number ): void {
+
+		if ( ! this.fogRT ) return;
+		const k = Math.round( 1 / this.options.fogScale );
+		const w = Math.max( Math.floor( width / k ), 1 ), h = Math.max( Math.floor( height / k ), 1 );
+		this.fogRT.setSize( w, h );
+		this.fogZRT!.setSize( w, h );
+		this.fogRes.value.set( w, h );
+
+	}
+
+	/** Bakes the bank map when it is due and marches the fog at its reduced resolution, before
+	 * the composite reads them (after `update`, the surface depth resolved). */
 	render( renderer: THREE.WebGPURenderer ): void {
 
-		if ( this.fog.value <= 0.001 || ! this.bankQuad || ! this.bankDue ) return;
+		if ( this.fog.value <= 0.001 ) return;
 		const target = renderer.getRenderTarget();
-		renderer.setRenderTarget( this.bankRT );
-		this.bankQuad.render( renderer );
-		this.bankDue = false;
+		if ( this.bankQuad && this.bankDue ) {
+
+			renderer.setRenderTarget( this.bankRT );
+			this.bankQuad.render( renderer );
+			this.bankDue = false;
+
+		}
+		if ( this.fogQuad ) {
+
+			renderer.setRenderTarget( this.fogZRT );
+			this.fogZQuad!.render( renderer );
+			renderer.setRenderTarget( this.fogRT );
+			this.fogQuad.render( renderer );
+
+		}
 		renderer.setRenderTarget( target );
 
 	}
 
-	/** Compiles the pass that first runs when fog sets in, so the first foggy frame does not
-	 * stall on it. */
+	/** Compiles the passes that first run when fog sets in, so the first foggy frame does not
+	 * stall on them. */
 	async warm( renderer: THREE.WebGPURenderer ): Promise<void> {
 
-		if ( ! this.bankQuad || ! this.bankRT ) return;
 		const target = renderer.getRenderTarget();
 		try {
 
-			renderer.setRenderTarget( this.bankRT );
-			await renderer.compileAsync( this.bankQuad, ( this.bankQuad as unknown as { camera: THREE.Camera } ).camera );
+			for ( const [ quad, rt ] of [ [ this.bankQuad, this.bankRT ], [ this.fogZQuad, this.fogZRT ], [ this.fogQuad, this.fogRT ] ] as const ) {
+
+				if ( ! quad || ! rt ) continue;
+				renderer.setRenderTarget( rt );
+				await renderer.compileAsync( quad, ( quad as unknown as { camera: THREE.Camera } ).camera );
+
+			}
 
 		} finally {
 
@@ -373,6 +517,7 @@ export class AerialPerspective {
 		// The beam reaching the banks low over the sea.
 		this.fogSun.value = this.fogTransmittance( 8, this.keyDir.value );
 		if ( this.bankRT ) this.scheduleBank( camera );
+		this.fallbackBelow.value = debugFlags.fogFallback === false ? 0 : 0.5;
 
 	}
 

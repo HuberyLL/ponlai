@@ -22,7 +22,7 @@ import type { Rain } from '../weather/Rain.ts';
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
 //   rain ── into sceneRT
-//   sea fog (in fog: the bank noise baked into a map)
+//   sea fog (in fog: the bank noise baked into a map, the march at half resolution)
 //   composite (air, fog, rain veil, shafts) ── hdr, once
 //   bloom (tight) + glow (wide) from hdr, both through a clamped soft-knee prefilter ── sharp
 //   ── tilt-shift depth of field (half-res gather) ── exposure, tone curve (PBR Neutral with
@@ -53,6 +53,7 @@ export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
 
 const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
 	'inline-composite': { compositeOnce: false },
+	'full-fog': { fogScale: 1 },
 	'no-bank': { bankSize: 0 },
 };
 
@@ -792,6 +793,7 @@ export class Pipeline {
 		this.opaqueRT.setSize( w, h );
 		this.surfaceRT.setSize( w, h );
 		this.displayRT.setSize( w, h );
+		this.air.setSize( w, h );
 		this.u.resolution.value.set( w, h );
 		this.u.texel.value.set( 1 / w, 1 / h );
 		// the size rtt() gives the half-res blur
@@ -864,7 +866,7 @@ export class Pipeline {
 
 		}
 
-		// the sea fog's bank map
+		// the reduced sea fog and its bank map
 		this.air.render( r );
 
 		// 4. composite, bloom, depth of field, grade
