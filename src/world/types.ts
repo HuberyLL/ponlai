@@ -1,9 +1,11 @@
 // Data shared between the world worker and the main thread.
 
-// a signed distance function (m), optionally with a per-point value baked onto the mesh
+// a signed distance function (m), optionally with per-point values baked onto the mesh: one
+// float (`tint`) and four more (`detail`, written to out[ o .. o + 3 ])
 export interface SDF {
 	( x: number, y: number, z: number ): number;
 	tint?: ( x: number, y: number, z: number ) => number;
+	detail?: ( x: number, y: number, z: number, out: Float32Array, o: number ) => void;
 }
 
 export interface MeshData {
@@ -12,6 +14,8 @@ export interface MeshData {
 	ao: Float32Array;
 	tint: Float32Array;
 	curv: Float32Array;
+	// the island's cliff detail (see makeIslandSDF), four floats per vertex
+	detail?: Float32Array;
 	indices: Uint32Array;
 }
 
@@ -24,12 +28,21 @@ export interface Rock { x: number; z: number; s: number; sy: number; y: number; 
 export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: number; z0: number; cell: number }
 
 export const VEGETATION_STRIDE = 9;
+// The turf anchors' jittered grid (m): one anchor per this square of meadow.
+export const VEGETATION_SPACING = 0.235;
 
 // RGBA: actual upper-coast distance, local roof height, turf retreat and exposed root depth.
 export interface RimGroundField extends ShoreField {}
 
-// A top-rooted branch centreline: x, y, z and the outward surface normal per node.
-export interface RimStrand { points: Float32Array; seed: number; lip: number }
+// A top-rooted branch centreline: x, y, z and the outward surface normal per node. `lip` is the
+// node where it crosses the edge. A fork starts on node `from` of strand `parent` (an index into
+// the same list) instead of in the turf. `clump`: leaf anchors ( x, y, z, normal ) of the leafy
+// mound over the lip at the root of a patch, carried by the patch's first strand.
+export interface RimStrand { points: Float32Array; seed: number; lip: number; parent?: number; from?: number; clump?: Float32Array }
+
+// The turf skirt over the rim: SKIRT_RING cross-section points ( x, y, z ) per coast sample,
+// per sample ( outward x, z, presence, droop ), and ( first sample, count ) per traced loop.
+export interface RimSkirtData { points: Float32Array; info: Float32Array; loops: Int32Array }
 
 export interface WorldData {
 	meshes: NamedMesh[];
@@ -42,6 +55,7 @@ export interface WorldData {
 	// Sparse trails that start in top shrubs and overhang the upper cliff.
 	rimStrands: RimStrand[];
 	rimGround: RimGroundField;
+	rimSkirt: RimSkirtData;
 	shore: ShoreField;
 	// Half-resolution island distance field for the local breaking-surf pass.
 	islandShore: ShoreField;

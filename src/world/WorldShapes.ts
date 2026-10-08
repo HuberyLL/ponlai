@@ -3,7 +3,8 @@
 // rocks, the seabed height and the shoreline distance at sea level.
 
 import { Field2D, roundCorners } from './Field2D.ts';
-import { noise3, fbm2, hash3i, mulberry32, smoothstep, smax, type Rng } from './noise.ts';
+import { noise3, fbm2, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
+import { CoastColumns, CliffWall, bedCoordinate, bedShift } from './Cliff.ts';
 import type { SDF, Rock } from './types.ts';
 
 export interface Footprint {
@@ -95,113 +96,42 @@ function softMax( vals: Float64Array, n: number, k: number ): number {
 
 }
 
-interface CliffFace {
-	x: number; z: number; nx: number; nz: number;
-	left: number; right: number; y: number; depth: number; leanU: number; leanY: number;
-	chip: number; wearDepth: number; wearY: number; wearSpan: number;
-}
+// The macro coast: a slow wobble of the wall around the tile footprint (m, + outward).
+function coastWobble( x: number, z: number ): number {
 
-// Unequal rock strength and local wave exposure suggest broad intact faces beside scattered
-// retreats. Coastal observations inspire the art direction; no erosion simulation is implied:
-// https://www.nps.gov/articles/coastal-processes-erosion.htm
-// https://www.usgs.gov/media/images/factors-affecting-sea-cliff-erosion
-function makeCliffFaces( fp: Footprint ): CliffFace[] {
-
-	const b = layoutBounds(), candidates: number[][] = [];
-	const step = 0.45, e = 0.16;
-	for ( let z = b.z0 - 1; z < b.z1 + 1; z += step ) for ( let x = b.x0 - 1; x < b.x1 + 1; x += step ) {
-
-		const d = fp.dist( x, z );
-		if ( Math.abs( d ) > step ) continue;
-		for ( let axis = 0; axis < 2; axis ++ ) {
-
-			const d1 = fp.dist( x + ( axis === 0 ? step : 0 ), z + ( axis === 1 ? step : 0 ) );
-			if ( d * d1 >= 0 ) continue;
-			const t = d / ( d - d1 );
-			const px = x + ( axis === 0 ? step * t : 0 ), pz = z + ( axis === 1 ? step * t : 0 );
-			const nx = fp.dist( px + e, pz ) - fp.dist( px - e, pz );
-			const nz = fp.dist( px, pz + e ) - fp.dist( px, pz - e );
-			const l = Math.hypot( nx, nz );
-			if ( l > 0.01 ) candidates.push( [ px, pz, nx / l, nz / l ] );
-
-		}
-
-	}
-	const rng = mulberry32( 1937 );
-	for ( let i = candidates.length - 1; i > 0; i -- ) {
-
-		const j = Math.floor( rng() * ( i + 1 ) );
-		[ candidates[ i ], candidates[ j ] ] = [ candidates[ j ], candidates[ i ] ];
-
-	}
-	const faces: CliffFace[] = [];
-	for ( const p of candidates ) {
-
-		if ( faces.some( ( f ) => Math.hypot( f.x - p[ 0 ], f.z - p[ 1 ] ) < 3.6 ) || rng() < 0.20 ) continue;
-		const wearDepth = rng() < 0.24 ? 0.10 + rng() * 0.17 : 0;
-		faces.push( {
-			x: p[ 0 ], z: p[ 1 ], nx: p[ 2 ], nz: p[ 3 ],
-			left: 1.1 + rng() * 1.8, right: 0.9 + rng() * 1.9, y: 0.7 + rng() * 1.1,
-			depth: 0.12 + rng() * 0.22, leanU: ( rng() - 0.5 ) * 0.08, leanY: 0.03 + rng() * 0.11,
-			chip: rng() < 0.24 ? 0.04 + rng() * 0.12 : 0,
-			wearDepth, wearY: - 0.45 + rng() * 0.90, wearSpan: 0.45 + rng() * 0.50,
-		} );
-
-	}
-	return faces;
+	const broad = noise3( x * 0.105 + 8.7, 4.2, z * 0.105 - 3.1 );
+	const shoulder = noise3( x * 0.22 - z * 0.07 - 4.6, 7.9, z * 0.21 + x * 0.04 );
+	return Math.tanh( broad * 2.25 + shoulder * 0.32 ) * 0.52;
 
 }
 
 // Soil support and the rim root bed follow the same undisturbed surface as the mesh.
-// Rim chips remain geometry-owned, so exposed stone can interrupt the turf.
+// Fallen columns and chips remain geometry-owned, so exposed stone can interrupt the turf.
 export function islandSurfaceHeight( x: number, z: number ): number {
 
 	return ISLAND_TOP + noise3( x * 0.18, 4.1, z * 0.18 ) * 0.12 + noise3( x * 0.7, 1.3, z * 0.7 ) * 0.04;
 
 }
 
+// The island block: the flat meadow plateau inside a wall of jointed, bedded columns (Cliff.ts).
+// Everything derives from the footprint, so a grown layout gets the same kind of coast.
 export function makeIslandSDF( fp: Footprint ): SDF {
 
 	const top = islandSurfaceHeight;
-	const faces = makeCliffFaces( fp );
-	// The horizontal fields are shared through a full sampled column. Their long correlation
-	// changes the coast's trace and inclination without rumpling the meadow's interior.
-	let cx = NaN, cz = NaN, cD2 = 0, cTop = 0, cCoast = 0, cBatter = 0, cChip = 0, cRound = 0, cDomain = 0;
-	const active: { face: CliffFace; u: number; shoulder: number; support: number }[] = [];
+	const columns = new CoastColumns( ( x, z ) => fp.dist( x, z ), coastWobble, top, layoutBounds() );
+	const wall = new CliffWall( columns );
+	// The horizontal fields are shared through a full sampled column (y is innermost when meshing).
+	let cx = NaN, cz = NaN, cD2 = 0, cTop = 0, cDomain = 0;
 	function column( x: number, z: number ): void {
 
 		if ( x === cx && z === cz ) return;
 		cx = x; cz = z;
 		cD2 = fp.dist( x, z );
 		cTop = top( x, z );
-		cChip = 0;
-		active.length = 0;
-		if ( cD2 <= - 2.5 || cD2 >= 3.0 ) return;
-		const broad = noise3( x * 0.105 + 8.7, 4.2, z * 0.105 - 3.1 );
-		const shoulder = noise3( x * 0.22 - z * 0.07 - 4.6, 7.9, z * 0.21 + x * 0.04 );
-		cCoast = Math.tanh( broad * 2.25 + shoulder * 0.32 ) * 0.52;
-		const strength = noise3( x * 0.13 - 6.4, 3.7, z * 0.13 + 10.2 );
-		// The exposed wall keeps a meaningful inclination while the submerged toe stays within
-		// the meshing bounds. Positive headlands have less room for an outward battered toe.
-		cBatter = Math.min( 0.028 + smoothstep( - 0.32, 0.31, strength ) * 0.33,
-			( 1.55 - Math.max( 0, cCoast ) ) / 4.0 );
-		cRound = 0.09 + smoothstep( - 0.35, 0.3, noise3( x * 0.26 + 2.7, 4.7, z * 0.26 ) ) * 0.14;
-		// The intact centre matches its previous SDF exactly. The outer fade is beyond every
-		// possible displaced surface, avoiding the clipped seams of a narrow relief domain.
-		cDomain = smoothstep( - 2.5, - 1.8, cD2 ) * ( 1 - smoothstep( 2.0, 3.0, cD2 ) );
-		for ( const face of faces ) {
-
-			const dx = x - face.x, dz = z - face.z;
-			const across = Math.abs( dx * face.nx + dz * face.nz );
-			if ( across >= 2.5 ) continue;
-			const support = 1 - smoothstep( 1.85, 2.5, across );
-			const u = - dx * face.nz + dz * face.nx;
-			const shoulder = Math.min( ( u + face.left ) * 0.24, ( face.right - u ) * 0.28 );
-			if ( shoulder <= 0 ) continue;
-			active.push( { face, u, shoulder, support } );
-			cChip = Math.max( cChip, Math.min( face.chip, shoulder * 0.8 ) * support );
-
-		}
+		// The plain plateau inside, the wall's columns around the coast. The outer fade lies
+		// beyond every possible displaced surface, and the inner one behind the deepest fallen
+		// block, so neither clips the relief.
+		cDomain = smoothstep( - 3.4, - 2.8, cD2 ) * ( 1 - smoothstep( 2.2, 3.2, cD2 ) );
 
 	}
 
@@ -209,34 +139,64 @@ export function makeIslandSDF( fp: Footprint ): SDF {
 
 		column( x, z );
 		const dBot = ISLAND_BOTTOM - y;
-		if ( cD2 <= - 2.5 || cD2 >= 3.0 ) return Math.max( cD2, y - cTop, dBot );
-		let cut = 0, toeWear = 0;
-		for ( const { face, u, shoulder, support } of active ) {
+		const plain = Math.max( cD2, y - cTop );
+		if ( cDomain <= 0 ) return Math.max( plain, dBot );
+		let d = wall.at( x, y, z, cTop );
+		if ( d === Infinity ) return Math.max( plain, dBot );
+		// Weathering: low relief across the faces at two scales, so no block face is a plane.
+		// The broad term is ridged (|noise|): faces break into shallow facets meeting at crisp
+		// crests, as fractured stone does, rather than swelling into soft cushions.
+		// It only shapes the surface, so it fades out (and is skipped) away from it.
+		const near = 1 - smoothstep( 0.12, 0.3, Math.abs( d ) );
+		if ( near > 0 ) {
 
-			const v = y - face.y;
-			cut = Math.max( cut, Math.max( 0, Math.min( face.depth + u * face.leanU + v * face.leanY, shoulder ) ) * support );
-			// Wave wear is shallow, local and staggered in height. Quiet lengths of shore retain
-			// a full toe, so this cannot become a continuous groove around the waterline.
-			const wave = ( y - face.wearY ) / face.wearSpan;
-			toeWear = Math.max( toeWear, face.wearDepth * Math.exp( - wave * wave )
-				* smoothstep( 0, 0.22, shoulder ) * support );
+			const wear = ( Math.abs( noise3( x * 0.6 + 3.8, y * 0.85, z * 0.6 ) ) - 0.22 ) * 0.07
+				+ noise3( x * 1.5 - 2.3, y * 1.2 + 4.7, z * 1.5 + 6.1 ) * 0.02;
+			// (faded out at the meadow's height, which must stay islandSurfaceHeight for the
+			// villagers, the root soil and the rim ground that read it)
+			d += wear * near * smoothstep( 0.04, 0.5, cTop - y );
 
 		}
-		const drop = cTop - y;
-		// Inclined faces continue below the water into a gently easing toe. The derivative is
-		// continuous at the change, with no hard bevel or horizontal step at sea level.
-		const wallHeight = drop <= 2.8 ? drop : 2.8 + ( 1 - Math.exp( - ( drop - 2.8 ) / 1.2 ) ) * 1.2;
-		const wear = noise3( x * 0.55 + 3.8, y * 0.8, z * 0.55 ) * 0.020
-			+ noise3( x * 2.1, y * 1.3 + 4.7, z * 2.1 ) * 0.008;
-		let d = cD2 + ( - cCoast - cBatter * wallHeight + cut + toeWear + wear ) * cDomain;
-		const rim = cTop - cChip * cDomain * smoothstep( - 1.25, 0.10, cD2 - cCoast );
-		d = smax( d, y - rim, cRound );
-		return Math.max( d, dBot );
+		return Math.max( plain + ( d - plain ) * cDomain, dBot );
 
 	};
 
 	islandSDF.tint = ( x, y, z ) => 0.5 + noise3( x * 0.2 + 9.3, y * 0.16, z * 0.2 ) * 0.3;
+	// Per vertex for the cliff material: the block's identity (column and bed), how deep inside
+	// a joint the point lies, the bed coordinate (strata and partings) and the depth below the
+	// column's own top (stains and moss start under each block's lip, fallen or not).
+	islandSDF.detail = ( x, y, z, out, o ) => {
+
+		column( x, z );
+		if ( cDomain <= 0 || wall.at( x, y, z, cTop ) === Infinity ) {
+
+			out[ o ] = 0.5; out[ o + 1 ] = 0; out[ o + 2 ] = bedCoordinate( y + bedShift( x, z ) ); out[ o + 3 ] = cTop - y;
+			return;
+
+		}
+		const key = wall.owner >= 0 ? columns.columns[ wall.owner ].key : 0;
+		out[ o ] = hash3i( key, wall.bed, 4231 );
+		out[ o + 1 ] = wall.joint * cDomain;
+		out[ o + 2 ] = wall.beta;
+		out[ o + 3 ] = wall.lipY - y;
+
+	};
 	return islandSDF;
+
+}
+
+// The mesh cells that should keep the cliff's edges sharp (dual contouring): the wall and its
+// lip down to below the reach of clear water; the flat meadow and the deep toe keep the plain
+// surface-nets vertex, which needs no extra field samples.
+export function cliffSharpCells( fp: Footprint ): ( x: number, y: number, z: number ) => boolean {
+
+	return ( x, y, z ) => {
+
+		if ( y < - 1.8 ) return false;
+		const d = fp.dist( x, z );
+		return d > - 3.4 && d < 3.2 && ( d > - 1.4 || y < islandSurfaceHeight( x, z ) - 0.08 );
+
+	};
 
 }
 
@@ -270,7 +230,7 @@ function debrisPatches( fp: Footprint, rng: Rng ): DebrisPatch[] {
 			x, z, rot, outer,
 			major: ( outer ? 3.0 : 2.5 ) + rng() * 2.8,
 			minor: ( outer ? 1.4 : 1.1 ) + rng() * 1.7,
-			count: outer ? 9 + Math.floor( rng() * 4 ) : 17 + Math.floor( rng() * 6 ),
+			count: outer ? 9 + Math.floor( rng() * 4 ) : 14 + Math.floor( rng() * 6 ),
 		} );
 
 	}
@@ -297,40 +257,157 @@ function rockExtent( r: Rock, ux: number, uz: number ): number {
 
 }
 
-const ROCK_LIMIT = 193;
+// A safety cap; each pass sets its own count.
+const ROCK_LIMIT = 320;
 
-export function makeRocks( fp: Footprint, seabedHeight: HeightFn ): Rock[] {
+// Eight horizontal directions for footprint and clearance probes around a stone.
+const RING = Array.from( { length: 8 }, ( _, i ) => [ Math.cos( i * Math.PI / 4 ), Math.sin( i * Math.PI / 4 ) ] );
+
+// Points on a stone's surface, relative to its centre, as ( dx, height / sy, dz ): rays at most
+// 0.25 m apart round its widest outline at seven heights, each found by bisection along a
+// horizontal ray of its own SDF. The stone's SDF is scaled to its height, so the points depend
+// only on its seed, size, orientation and slab or block proportions, not on where it lies.
+function rockOutline( r: Rock ): number[] {
+
+	const sdf = makeRockSDF( r );
+	const points: number[] = [];
+	const n = Math.max( 16, Math.ceil( Math.PI * 2 * r.s * 1.3 / 0.25 / 4 ) * 4 );
+	for ( const qy of [ - 0.71, - 0.6, - 0.35, - 0.05, 0.3, 0.6, 0.85 ] ) {
+
+		const y = r.y + qy * r.sy;
+		if ( sdf( r.x, y, r.z ) >= 0 ) continue;
+		for ( let k = 0; k < n; k ++ ) {
+
+			const ux = Math.cos( k * Math.PI * 2 / n ), uz = Math.sin( k * Math.PI * 2 / n );
+			let lo = 0, hi = r.s * 1.45;
+			for ( let i = 0; i < 7; i ++ ) {
+
+				const mid = ( lo + hi ) * 0.5;
+				if ( sdf( r.x + ux * mid, y, r.z + uz * mid ) < 0 ) lo = mid; else hi = mid;
+
+			}
+			points.push( ux * hi, qy, uz * hi );
+
+		}
+
+	}
+	return points;
+
+}
+
+// `island` is the island's solid. Stones keep clear of it by their own extent, wherever the cliff
+// and its battered underwater toe happen to run, so a changed or grown coast moves them with it.
+export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF ): Rock[] {
 
 	const rng = mulberry32( 9177 );
 	const patches = debrisPatches( fp, rng );
 	const rocks: Rock[] = [];
+	// Builds a stone seated on the floor, or null where the water above it is too shallow.
+	const build = ( x: number, z: number, size: number, thickness: number, rot: number, variation: number ): Rock | null => {
+
+		const seed = rocks.length + 1;
+		const cr = Math.cos( rot ), sr = Math.sin( rot );
+		// Seat the stone on the lowest floor under its body. On the cliff-foot talus the centre
+		// alone left the downhill edge hanging above the slope; the uphill side is buried instead,
+		// as a fallen block settles into scree.
+		const lowest = ( ratio: number ) => {
+
+			const [ ax, az ] = rockAxes( seed, ratio );
+			let floor = seabedHeight( x, z );
+			for ( const reach of [ 0.45, 0.75 ] ) for ( const [ ux, uz ] of RING ) {
+
+				const lx = ux * size * ax * reach, lz = uz * size * az * reach;
+				floor = Math.min( floor, seabedHeight( x + cr * lx - sr * lz, z + sr * lx + cr * lz ) );
+
+			}
+			return floor;
+
+		};
+		const slab = thickness < 0.40;
+		const burial = slab ? 0.08 + variation * 0.28 : 0.12 + variation * 0.28;
+		// Larger fragments show most of their natural mass above the sediment; gravel remains
+		// partly blanketed. Their buried lower faces still give each body a real floor contact.
+		const lift = size > 0.9 ? 0.18 + variation * 0.14
+			: size > 0.5 && hash3i( seed, 71, 19 ) < 0.65 ? 0.12 + variation * 0.14 : - burial;
+		// Budget the whole crown below the wave trough, leaving every sloping face intact.
+		// Neither emergence prevention nor sediment burial adds a horizontal clipping plane.
+		const height = ( floor: number ) => Math.min( size * thickness, ( - 1.30 - floor ) / ( 1.6 + lift ) );
+		let floor = lowest( thickness );
+		let sy = height( floor );
+		// A shallow floor can flatten a block into a slab, which has other proportions: seat it
+		// again with the axes the stone will really have.
+		if ( ( sy / size < 0.40 ) !== slab ) {
+
+			floor = Math.min( floor, lowest( sy / size ) );
+			sy = height( floor );
+
+		}
+		if ( sy < 0.055 ) return null;
+		return { x, z, s: size, sy, y: floor + sy * lift, floor, rot, seed };
+
+	};
+	// Most stones keep clear of the island through a ring of probes just beyond their bounding
+	// ellipse at base, middle and crown: cheap, and generous enough for any stone.
+	const wideOfIsland = ( r: Rock ): boolean => {
+
+		if ( ! island ) return true;
+		for ( const [ ux, uz ] of RING ) {
+
+			const reach = rockExtent( r, ux, uz ) * 1.15 + 0.1;
+			for ( const y of [ r.floor, r.y, r.y + r.sy * 0.9 ] )
+				if ( island( r.x + ux * reach, y, r.z + uz * reach ) < 0.06 ) return false;
+
+		}
+		return true;
+
+	};
+	// Stones walked to the cliff's underwater toe come closer: a few centimetres between the
+	// stone's real outline (not its bounding ellipse, which held blocks a body's width off the
+	// wall) and the island's solid, so they rest right against the toe wherever it runs.
+	let outlineKey = '', outline: number[] = [];
+	const touchesIsland = ( r: Rock ): boolean => {
+
+		if ( ! island ) return false;
+		// The island's field is no true distance where the cliff relief is displaced (locally up
+		// to about 3.3 times as steep), so the quick test for a stone well clear of it allows
+		// for that; anything nearer is traced.
+		const bound = ( r.s * 1.45 + 0.05 ) * 3.5;
+		if ( island( r.x, r.floor, r.z ) > bound && island( r.x, r.y, r.z ) > bound
+			&& island( r.x, r.y + r.sy, r.z ) > bound ) return false;
+		// The walk tries one stone at many spots; its outline is traced once and kept.
+		const key = `${r.seed} ${r.s} ${r.rot} ${r.sy / r.s < 0.40}`;
+		if ( key !== outlineKey ) {
+
+			outlineKey = key;
+			outline = rockOutline( r );
+
+		}
+		for ( let i = 0; i < outline.length; i += 3 )
+			if ( island( r.x + outline[ i ], r.y + outline[ i + 1 ] * r.sy, r.z + outline[ i + 2 ] ) < 0.05 ) return true;
+		return false;
+
+	};
+	const clearOfRocks = ( r: Rock ): boolean => {
+
+		for ( const other of rocks ) {
+
+			const dx = other.x - r.x, dz = other.z - r.z, distance = Math.hypot( dx, dz );
+			if ( distance === 0 ) return false;
+			if ( distance > ( other.s + r.s ) * 2 ) continue;
+			const ux = dx / distance, uz = dz / distance;
+			if ( distance < ( rockExtent( r, ux, uz ) + rockExtent( other, ux, uz ) ) * 0.98 ) return false;
+
+		}
+		return true;
+
+	};
 	const place = ( x: number, z: number, size: number, thickness: number, rot: number ): boolean => {
 
 		if ( rocks.length >= ROCK_LIMIT ) return false;
 		const d = fp.dist( x, z );
 		if ( d < Math.max( 0.36, size * 0.32 ) || d > 29 ) return false;
-		const floor = seabedHeight( x, z );
-		const slab = thickness < 0.40;
-		const variation = rng();
-		const burial = slab ? 0.08 + variation * 0.28 : 0.12 + variation * 0.28;
-		// Larger fragments show most of their natural mass above the sediment; gravel remains
-		// partly blanketed. Their buried lower faces still give each body a real floor contact.
-		const lift = size > 0.9 ? 0.18 + variation * 0.14
-			: size > 0.5 && hash3i( rocks.length + 1, 71, 19 ) < 0.65 ? 0.12 + variation * 0.14 : - burial;
-		// Budget the whole crown below the wave trough, leaving every sloping face intact.
-		// Neither emergence prevention nor sediment burial adds a horizontal clipping plane.
-		const sy = Math.min( size * thickness, ( - 1.30 - floor ) / ( 1.6 + lift ) );
-		if ( sy < 0.055 ) return false;
-		const r: Rock = { x, z, s: size, sy, y: floor + sy * lift, floor, rot, seed: rocks.length + 1 };
-		for ( const other of rocks ) {
-
-			const dx = other.x - x, dz = other.z - z, distance = Math.hypot( dx, dz );
-			if ( distance === 0 ) return false;
-			if ( distance > ( other.s + size ) * 2 ) continue;
-			const ux = dx / distance, uz = dz / distance;
-			if ( distance < ( rockExtent( r, ux, uz ) + rockExtent( other, ux, uz ) ) * 0.98 ) return false;
-
-		}
+		const r = build( x, z, size, thickness, rot, rng() );
+		if ( ! r || ! clearOfRocks( r ) || ( d < 6 && ! wideOfIsland( r ) ) ) return false;
 		rocks.push( r );
 		return true;
 
@@ -383,6 +460,117 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn ): Rock[] {
 			}
 			const rot = rng() < 0.65 ? patch.rot + ( rng() - 0.5 ) * 1.6 : rng() * Math.PI;
 			if ( place( x, z, size, thickness, rot ) ) placed ++;
+
+		}
+
+	}
+
+	// Rockfall at the cliff foot: blocks broken off the wall lie on its talus in uneven runs,
+	// dense below some stretches and absent below others, with cobbles spalled around them.
+	// Candidates come from the footprint distance alone (any coast, any size); a world-space
+	// field decides where the wall has shed, and the blocks thin out away from the foot.
+	{
+
+		const b = layoutBounds(), pad = 6;
+		// the coast's length, from the band of footprint cells just outside the edge
+		let coast = 0;
+		for ( let z = b.z0 - 2; z < b.z1 + 2; z += 0.25 ) for ( let x = b.x0 - 2; x < b.x1 + 2; x += 0.25 ) {
+
+			const d = fp.dist( x, z );
+			if ( d >= 0 && d < 1 ) coast += 0.0625;
+
+		}
+		const shed = ( x: number, z: number ) => smoothstep( - 0.2, 0.15, noise3( x * 0.085 + 4.9, 12.7, z * 0.085 - 2.3 ) );
+		// the seaward normal of the footprint's distance field
+		const normal = ( x: number, z: number ): [ number, number ] => {
+
+			const e = 0.2;
+			const nx = fp.dist( x + e, z ) - fp.dist( x - e, z ), nz = fp.dist( x, z + e ) - fp.dist( x, z - e );
+			const l = Math.hypot( nx, nz );
+			return l < 1e-6 ? [ 0, 0 ] : [ nx / l, nz / l ];
+
+		};
+		// Walks out from a coast point to the first spot where the stone clears the island's
+		// solid: the foot of the wall's underwater toe, wherever the cliff and its batter run.
+		const atToe = ( cx: number, cz: number, nx: number, nz: number, size: number, thickness: number, rot: number, variation: number ): Rock | null => {
+
+			const at = ( t: number ) => {
+
+				const r = build( cx + nx * t, cz + nz * t, size, thickness, rot, variation );
+				return r && ! touchesIsland( r ) ? r : null;
+
+			};
+			// coarse steps out, then halve the last one back towards the wall
+			const start = Math.max( 0.36, size * 0.32 );
+			let hi = start, rock = at( hi );
+			while ( ! rock && hi < 5.75 ) rock = at( hi += 0.25 );
+			if ( ! rock ) return null;
+			let lo = Math.max( start, hi - 0.25 );
+			for ( let i = 0; i < 3 && hi > lo; i ++ ) {
+
+				const mid = ( lo + hi ) * 0.5, r = at( mid );
+				if ( r ) {
+
+					hi = mid;
+					rock = r;
+
+				} else lo = mid;
+
+			}
+			return rock;
+
+		};
+		const blocks: [ number, number ][] = [];
+		// About one fallen block per 3.5 m of coast, gathered where the wall sheds.
+		const blockTarget = Math.round( coast / 3.5 );
+		let tries = 0;
+		while ( blocks.length < blockTarget && rocks.length < ROCK_LIMIT && tries ++ < blockTarget * 200 ) {
+
+			const x = b.x0 - pad + rng() * ( b.x1 - b.x0 + pad * 2 );
+			const z = b.z0 - pad + rng() * ( b.z1 - b.z0 + pad * 2 );
+			const d = fp.dist( x, z );
+			if ( d < 0 || d > 3.0 || rng() > shed( x, z ) ) continue;
+			const [ nx, nz ] = normal( x, z );
+			if ( nx === 0 && nz === 0 ) continue;
+			const size = 0.6 + Math.pow( rng(), 1.3 ) * 1.1;
+			const thickness = rng() < 0.2 ? 0.30 + rng() * 0.09 : 0.58 + rng() * 0.30;
+			// long axes lie roughly along the wall they fell from, with some tumbled
+			const rot = rng() < 0.7 ? Math.atan2( - nx, nz ) + ( rng() - 0.5 ) * 1.0 : rng() * Math.PI;
+			// Most blocks come to rest against the toe; a few roll on down the talus.
+			const roll = Math.pow( rng(), 2.5 ) * 2.5, variation = rng();
+			let rock = atToe( x - nx * d, z - nz * d, nx, nz, size, thickness, rot, variation );
+			if ( rock && roll > 0.05 ) rock = build( rock.x + nx * roll, rock.z + nz * roll, size, thickness, rot, variation );
+			if ( ! rock || fp.dist( rock.x, rock.z ) > 6 || ! clearOfRocks( rock ) || touchesIsland( rock ) ) continue;
+			rocks.push( rock );
+			blocks.push( [ rock.x, rock.z ] );
+
+		}
+		// Cobbles spalled from the blocks: half lodged against the toe beside them, the rest
+		// scattered mostly on their seaward side.
+		let cobbles = 0;
+		tries = 0;
+		while ( cobbles < blocks.length * 1.5 && rocks.length < ROCK_LIMIT && tries ++ < blocks.length * 160 ) {
+
+			const [ bx, bz ] = blocks[ Math.floor( rng() * blocks.length ) ];
+			const size = 0.16 + Math.pow( rng(), 1.5 ) * 0.38, thickness = 0.38 + rng() * 0.40, rot = rng() * Math.PI;
+			if ( rng() < 0.5 ) {
+
+				const [ nx, nz ] = normal( bx, bz );
+				const d = fp.dist( bx, bz ), along = ( rng() - 0.5 ) * 5;
+				const rock = atToe( bx - nx * d - nz * along, bz - nz * d + nx * along, nx, nz, size, thickness, rot, rng() );
+				if ( rock && clearOfRocks( rock ) ) {
+
+					rocks.push( rock );
+					cobbles ++;
+
+				}
+				continue;
+
+			}
+			const a = rng() * Math.PI * 2, rr = 0.8 + rng() * 2.2;
+			const x = bx + Math.cos( a ) * rr, z = bz + Math.sin( a ) * rr;
+			if ( fp.dist( x, z ) < fp.dist( bx, bz ) - 0.4 ) continue;
+			if ( place( x, z, size, thickness, rot ) ) cobbles ++;
 
 		}
 
@@ -482,23 +670,31 @@ export function makeRockSDF( r: Rock ): SDF {
 // ------------------------------------------------------------------ seabed
 
 // height of the sea floor (m, negative): a shallow lagoon around the island whose floor shows
-// through the water, dropping off within ~20 m into deep, even-coloured water; gentle sand waves
+// through the water, dropping off within ~20 m into deep, even-coloured water; gentle sand waves.
+// The shelf's width and depth vary along the coast through fields sampled in world space, so a
+// larger footprint gets its own wide and narrow stretches without any per-tile tuning. The cliff
+// foot (talus, benches) is shaped afterwards by `shapeShelf` in Bathymetry.ts.
 export function makeSeabed( fp: Footprint ): HeightFn {
 
 	return function seabedHeight( x: number, z: number ) {
 
 		const d = fp.dist( x, z );
 		const dd = Math.max( d, 0 );
+		// Shelf width: 0.6 to 1.8 times the old even ring, changing over a few
+		// tens of metres of coast; a smaller warp keeps the drop-off from tracing the coastline.
+		const width = Math.min( 1.8, Math.max( 0.6, 1.15 + fbm2( x * 0.028 + 1.7, z * 0.028 - 4.2, 3 ) * 2.4 ) );
+		const warp = fbm2( x * 0.075 - 6.3, z * 0.075 + 2.9, 2 ) * 6 * smoothstep( 2, 8, dd );
+		const ds = Math.max( 0, dd / width + warp );
 		// a shallow lagoon: sand visible everywhere near the island, the reef edge drops off far out
 		let h = - 1.6
 			- 1.2 * smoothstep( 0, 5, dd )
-			- 3.6 * smoothstep( 6, 26, dd )
+			- 3.6 * smoothstep( 6, 26, ds )
 			- 6.0 * smoothstep( 40, 110, dd );
+		// the shelf's own level rises and sinks by about half a metre along the coast
+		h += fbm2( x * 0.045 - 2.2, z * 0.045 + 7.4, 3 ) * 2.2 * smoothstep( 2, 6, dd ) * ( 1 - smoothstep( 22, 40, dd ) );
 		// broad undulation and a sandbar or two
 		h += fbm2( x * 0.035 + 3.0, z * 0.035, 4 ) * 1.2 * smoothstep( 2, 14, dd );
 		h += Math.max( 0, noise3( x * 0.06, 9.1, z * 0.06 ) ) * 1.4 * smoothstep( 6, 18, dd ) * ( 1 - smoothstep( 30, 50, dd ) );
-		// scour right at the foot of the cliffs
-		h -= 0.6 * ( 1 - smoothstep( 0, 2.5, dd ) );
 
 		return h;
 

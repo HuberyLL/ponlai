@@ -190,6 +190,16 @@ packages, into `dist/licenses/`.
   folder or its CC BY-NC-SA derived shaders (`rainRipples.js`, `surfaceRain.js`, `rainGlass.js`)
   is used.
 
+### three.js MaterialX noise (CPU port)
+
+- Upstream: three.js `src/nodes/materialx/MaterialXNoise.js` (r186), which three.js transpiled
+  from MaterialX's `mx_noise.glsl` (Contributors to the MaterialX project)
+- Copyright: 2010-2026 three.js authors
+- Licence: MIT (the `three` package's licence, shipped with the build)
+- File: `src/weather/PuddleHollows.ts`: `mx_perlin_noise_float` for a vec3 (Bob Jenkins' lookup3
+  final mix as the lattice hash, Perlin's gradients, MaterialX's 0.982 scale) in plain
+  TypeScript, so the shrub and tree picker reads the same puddle hollows as the shader.
+
 ## Assets
 
 ### Rock Face 03
@@ -263,6 +273,8 @@ packages, into `dist/licenses/`.
 Published techniques this project implements without using their code; each is also credited in a
 comment where it is used.
 
+- Rosettes of broad leaves and fern fronds turned by the golden angle: H. Vogel,
+  *A better way to construct the sunflower head* (Mathematical Biosciences 44, 1979).
 - FFT ocean: J. Tessendorf,
   [*Simulating Ocean Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
   (SIGGRAPH course notes, 2002 revision).
@@ -355,6 +367,9 @@ comment where it is used.
   [minimal AgX fit](https://iolite-engine.com/blog_posts/minimal_agx_implementation)); the hue-kept
   highlights scale each colour by its brightest channel as Khronos'
   [PBR Neutral](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral) does.
+- Default tone curve: Khronos' [PBR Neutral](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)
+  (Emmett Lalish's curve, as in three.js's `neutralToneMapping`), reimplemented in TSL without its
+  desaturation toward white so highlights keep their hue.
 - Depth of field, highlights averaged compressed by their luminance (c / (1 + L)) and expanded
   again: Brian Karis, [*Tone mapping*](https://graphicrants.blogspot.com/2013/12/tone-mapping.html)
   (2013).
@@ -362,9 +377,20 @@ comment where it is used.
   than the pixel's own blur): Jorge Jimenez,
   [*Next Generation Post Processing in Call of Duty: Advanced Warfare*](https://www.iryoku.com/next-generation-post-processing-in-call-of-duty-advanced-warfare)
   (SIGGRAPH 2014 course *Advances in Real-Time Rendering in Games*).
+- The fantasy look's glow: Michael Orton's "Orton imagery" (slide sandwiches of a sharp and an
+  overexposed, defocused exposure of the same view, 1980s), as a blurred copy of the highlights added
+  back over the image (`src/post/Pipeline.ts`). Its hue-selective colour follows the secondary
+  (HSL-keyed) correction of colour grading, and its warm / cool split the photographic split tone.
 - Grass blades kept a minimum width on screen with their coverage lowered to match (alpha to
   coverage), so thin blades stop crawling under camera motion: Emil Persson, *Phone-wire AA*
   (2012 demo and write-up on [humus.name](http://www.humus.name/)).
+- Sharp cliff edges on the island mesh (vertices placed at the least-squares point of the edge
+  crossings' tangent planes): Tao Ju, Frank Losasso, Scott Schaefer and Joe Warren,
+  [*Dual Contouring of Hermite Data*](https://www.cs.rice.edu/~jwarren/papers/dualcontour.pdf)
+  (SIGGRAPH 2002).
+- Chamfered edges of the cliff's blocks, the 45-degree chamfer of two distance fields
+  ( a + b + r ) / sqrt( 2 ): Mercury, [*hg_sdf*](https://mercury.sexy/hg_sdf/) (`fOpUnionChamfer`),
+  used as a technique only.
 
 ## References
 
@@ -373,6 +399,8 @@ Sources that informed the procedural layout; no code, data or images from them a
 - Seabed substrate: Page C. Valentine, USGS,
   [*Sediment classification and the characterization, identification, and mapping of geologic substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)
   (2019, SIR 2019–5073).
+- Shelf at the cliff foot (talus aprons and wave-cut shore platforms, art-directed rather than
+  modelled): Alan S. Trenhaile, *The Geomorphology of Rock Coasts* (Oxford University Press, 1987).
 - Cliffs and rim: U.S. National Park Service,
   [*Coastal Processes—Erosion*](https://www.nps.gov/articles/coastal-processes-erosion.htm), and USGS,
   [*Factors affecting sea cliff erosion*](https://www.usgs.gov/media/images/factors-affecting-sea-cliff-erosion).

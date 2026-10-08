@@ -1,10 +1,11 @@
 # Soomi
 
 A small stylised island in an open sea, rendered in the browser: a visual sample for a game.
-The look is stylised fantasy-realistic: warm golden light, airy lifted shadows, deep muted
-teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with bushes
-and wildflowers, and irregular hanging leaf clusters around the rim. Keep the lower cliff stone
-exposed.
+The look is stylised fantasy-realistic: a physically based scene graded toward a painted
+game's colour, with warm golden light, softly glowing highlights, airy lifted shadows, rich greens,
+deep teal water with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with
+bushes and wildflowers, and irregular hanging leaf clusters around the rim. Keep the lower cliff
+stone exposed.
 
 ## Stack and commands
 
@@ -27,7 +28,8 @@ exposed.
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
   override), `quality` (low, medium, high: the clouds' march, bake cadences and rain count, and
-  the render scale, see Decisions), `tone` (agx-hue, the default, agx, neutral).
+  the render scale, see Decisions), `tone` (neutral-hue, the default, agx-hue, agx, neutral), `look`
+  (soft-fantasy, the default, rich-fantasy, realistic).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
   sky views.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
@@ -45,17 +47,25 @@ exposed.
 
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
-- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor
-  (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
-  vegetation anchors; instanced grass, bushes and flowers on the island top,
-  with top-rooted overhanging branches of mixed lengths.
+- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets; the cliff band
+  places its vertices by dual contouring so block edges stay sharp), its cliffs as jointed,
+  bedded columns seeded along the coast (`Cliff.ts`, with per-vertex block, joint, bed and lip
+  detail for the material), sea floor
+  (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
+  cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
+  tile), shoreline field,
+  vegetation anchors; instanced grass, rim bushes and flowers on the island top, a turf skirt over
+  the lip, with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds
+  on the lip; shrub groups (round shrubs, broad-leaved clumps, ferns) and small trees, each grown
+  from its own seed and merged into one mesh (`Plants.ts`, sited by `PlantSites.ts`).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
   own canopy.
-- `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
-  sea floor, light under the water), wet surfaces after Lagarde (soaked pores, water film, runnels
-  down the cliffs).
+- `src/materials/`: procedural detail textures, terrain materials (triplanar stone with per-block
+  shade, strata, parting seams, runoff stains, upper-cliff moss and a spray zone, turf, sea floor,
+  light under the water), wet surfaces after Lagarde (soaked pores, water film, runnels down the
+  cliffs).
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading, and
   the storm sea (`StormSea.ts`: whitecap foam integrated on a world grid around the view, the
   procedural foam pattern, spray particles).
@@ -80,7 +90,7 @@ exposed.
   drifting banks of varying height, thinner over the island, plus morning mist).
 - `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
   and rain drawn into the same multisampled target, crepuscular rays and sun glare, bloom,
-  tilt-shift, tone curve and grade, FSR 1 upscale), render scale per quality preset
+  tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale), render scale per quality preset
   (`RenderScale.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
@@ -93,8 +103,55 @@ exposed.
 - Keep the island tile layout and flat central plateau. Natural contour, slope and weathering
   variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
   patchy seabed detail; no exposed sea stacks or reefs.
+- The island must be able to grow by more tiles, so everything generated for it is generic: the
+  cliffs, the shelf and its stones, the rim greenery and the planting derive from the footprint,
+  the island's SDF and noise fields with fixed seeds (hashes of position, or random streams that
+  draw a fixed count per vegetation anchor), never from coordinates placed by hand, and their
+  counts follow the measured coast length or meadow area. Any tile layout then builds itself the
+  same way.
+- Cliff features (columns, beds, ledges, notches, gullies, buttresses) derive from the footprint
+  with seeds hashed from position (`Cliff.ts`), and an unchanged stretch of coast keeps its
+  columns when the layout grows elsewhere: every property of a column or feature (a gully's or
+  buttress's role included) comes from its own hash, never from a running count. The wall is built
+  as solid geometry (cell-clipped, bed-sliced blocks with chamfered edges, overlapping a little
+  near the face and generously behind it) so its field stays near a true distance; blended offsets
+  stair-step on the mesh. It must not read as masonry: joints lean and some die out at a parting,
+  and off the coast-wide ledges many partings are welded per column. The wave-cut notch's roof
+  stays above the calm sea's crests, and the weathering relief fades out at the meadow, whose
+  height stays `islandSurfaceHeight`. Stumps of fallen columns stop at a parting below the
+  meadow's planting height (2.8 m) and carry no turf. No waterfalls. Moss and greenery on the wall
+  stay in its upper 1.2 m.
+- Around the island, the shelf's width and depth, the talus at the cliff foot, its shallow benches
+  and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
+  noise. The floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
+  nothing breaks the surface. Fallen blocks are walked out from the coast until their traced
+  outline clears the island's solid, so they rest against the cliff's underwater toe wherever it
+  runs; other stones keep a wider berth.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
+  They grow in clumped patches of one to nine strands with runs of bare stone between (0.4-4 m,
+  measured along the winding coast: a sparse patch breaks any longer run), a long tail of strands
+  that wander and fork down to 1.5-2.6 m, leaves shrinking toward the tips, and a mounded leaf
+  clump over each patch's lip; the lowest quarter of the cliff above the sea stays bare.
+  The meadow's sod curls a little over the lip as a ragged turf skirt (`RimSkirt.ts`), swept along
+  the coast line traced from the rim field, so it follows any shape the rim takes.
+  The meadow is a sward: dense lawn tufts of narrow blades (doubled where the growth field runs
+  thick, the extras folding away beyond about 35 m) and taller tussocks on a clump field; toward
+  the coast the tufts grow taller and lean out over the lip instead of thinning, and the lip
+  alternates between overgrown stretches (turf down over the shoulder) and cut-open root soil,
+  by the rim field's root depth. Wildflowers are plants of four species (daisy, umbel, spike, cup)
+  with leaf rosettes, their heads just above the sward, in beds of 3-9 gathered in drifts.
+  Tussocks and flower beds (spikes furthest) keep off the islander's walking loop (`WalkLoop.ts`).
+- Shrubs (up to about head height) and small trees (2.5 - 3.5 m) grow on the plateau in loose
+  groups. Their sites come from fields and the meadow's area (one tree per about 120 m^2, one
+  group per about 13 m^2). They keep off the islander's walk and out of the puddle hollows
+  (`PuddleHollows.ts` repeats `puddleField`'s hollows on the CPU: change both together), draw from
+  their own random stream (the rim bushes' stream also places the rim trails), sway with the rim
+  bushes' wind, cast into the sun's map and stop the rain. A limb casts whole or not at all: limbs
+  that leave their parent 3 cm or more in radius cast; thinner twigs, shrub stems and stalks do
+  not. Around their stems the turf, grass and flowers lose ambient light (baked on the CPU into the
+  island's occlusion and the anchors' sky visibility), so they stand in the meadow rather than on
+  it.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Stems, leaf stalks
   and twigs (a few millimetres across) stay out of it too. The map is fitted to the island's
@@ -131,16 +188,34 @@ exposed.
   `sizeRtt`). At the display's ratio nothing is upscaled, so `dpr=1` captures are unchanged.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
-- The tone curve is AgX with hue-kept highlights (`agx-hue` in `src/post/Pipeline.ts`): AgX's long
-  shoulder keeps gradation in a low sun's sky and glare, and above the deep shadows each colour is
-  scaled by its brightest channel, so bright skies and sea keep their hue instead of washing to
-  cream or grey; only far above white do highlights fade to white. Each curve carries its own grade
-  (exposure gain, saturation, vibrance, contrast); PBR Neutral and plain AgX stay selectable in
-  the GUI (`tone` URL option) for comparison. The night keeps PBR Neutral's look with its grade
+- The tone curve is PBR Neutral with hue-kept highlights (`neutral-hue` in `src/post/Pipeline.ts`):
+  PBR Neutral's toe, linear midtones and grade, where the scene was tuned, keep the water clear
+  (deep sea dark and saturated, the shallows' seabed and caustics in full contrast). Above the
+  start of its shoulder each colour is scaled by its brightest channel without PBR Neutral's
+  desaturation, so a low sun's sky and sea keep their hue instead of washing to cream; only above
+  white do highlights fade to white. A soft knee below white leaves the split tone's golden red
+  room for gradation, and bright colours alone gain a little saturation; both give way for scene
+  colours far above the brightest sky (8 - 32 times white), so the sun and its glints burn out. AgX was tried as the
+  default and dropped: its toe greyed the deep water and its shoulder flattened the shallows.
+  Each curve carries its own grade (exposure gain, saturation, vibrance, contrast); AgX with
+  hue-kept highlights (`agx-hue`), plain AgX and plain PBR Neutral stay selectable in the GUI
+  (`tone` URL option) for comparison. The night keeps PBR Neutral's look with its grade
   whichever curve is chosen, crossfading as the sun sets (from the horizon to about -3 degrees,
   so twilight is no darker than under PBR Neutral): its toe holds the night's dark colours
   saturated where AgX's greys and lifts them, and its short shoulder lets the brightest few stars
   reach near white.
+- The fantasy look is an art-directed layer over the physically based image, never baked into the
+  lighting or the tone curve: after the curve and its grade, `Pipeline`'s look adds a soft
+  Orton-style glow round the island's highlights (the sky and what lies beyond a few hundred metres
+  glow only weakly, and the glow is held back over dark parts, so it never lays a veil), richer
+  greens and teal water keyed by hue and saturation (grey stone and skin stay as they are), golden
+  highlights over cool teal shadows, a teal shadow lift and a little depth. `soft-fantasy` is the
+  default, `rich-fantasy` a bolder step toward a painted scene. `realistic` leaves the
+  image exactly as the curve and grade make it and stays selectable (`look` URL option, GUI Look
+  folder) for comparison; every parameter is in the GUI. The look fades out with the night (the
+  night keeps its authored colours); its glow, golden highlights and lift follow the weather's
+  direct sunlight, and only part of its colour holds under a closed sky, so bad weather stays dimmer
+  and greyer than a clear day.
 - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a blurred
   sky reads as a low backdrop and turns stars into bokeh discs. Stars are points with a natural
   spread of brightness, kept below white except the brightest few; only those near the horizon
