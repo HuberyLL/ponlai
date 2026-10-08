@@ -290,7 +290,7 @@ export class StormSea {
 		this.active = true;
 		if ( rebuild ) {
 
-			this.warm( time );
+			this.replay( time );
 			return;
 
 		}
@@ -319,7 +319,7 @@ export class StormSea {
 
 	}
 
-	private warm( time: number ): void {
+	private replay( time: number ): void {
 
 		this.clear();
 		const steps = Math.round( WARM_SECONDS / WARM_STEP );
@@ -331,6 +331,24 @@ export class StormSea {
 			this.integrate( s === steps ? 0 : WARM_STEP, t );
 
 		}
+
+	}
+
+	/** Create the storm's pipelines before its onset: the foam step and the spray's kernels
+	 * (each run once with no storm, then cleared, which leaves the calm sea's state as it
+	 * was), and the spray's draw for `camera` into the scene's multisampled target
+	 * (`Pipeline.sceneRT`), as `waterScene` (which holds `spray.mesh`) draws it. Skipped
+	 * while a storm runs: its pipelines exist then. */
+	warm( renderer: THREE.WebGPURenderer, waterScene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
+
+		if ( this.active ) return Promise.resolve();
+		const gate = this.gate.value;
+		this.gate.value = 0;
+		this.dt.value = 0;
+		renderer.compute( this.stepKernel );
+		renderer.compute( this.clearKernel );
+		this.gate.value = gate;
+		return this.spray.warm( waterScene, camera, target );
 
 	}
 

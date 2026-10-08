@@ -104,6 +104,43 @@ export interface RainLight {
 export const lightRain = ( view: V3, light: RainLight, skyBias: F ): V3 =>
 	rainRadiance( view, light.sky, light.skySeen, light.keyDirection, light.key, skyBias );
 
+/** Compile the pipelines `objects` draw with as `scene` would draw them for `camera` into
+ * `target` (null: the canvas), whether they are shown now or not, so that their first frame
+ * does not stall on pipeline creation. The objects' visibility and culling are restored before
+ * this returns its promise: compileAsync reads them only while it is collecting the draws. */
+export function compileDraws( renderer: THREE.WebGPURenderer, objects: THREE.Object3D[], scene: THREE.Scene, camera: THREE.Camera,
+	target: THREE.RenderTarget | null ): Promise<void> {
+
+	const saved: [ THREE.Object3D, boolean, boolean ][] = [];
+	for ( const root of objects ) root.traverse( ( object ) => {
+
+		saved.push( [ object, object.visible, object.frustumCulled ] );
+		object.visible = true;
+		object.frustumCulled = false;
+
+	} );
+	const previous = renderer.getRenderTarget();
+	renderer.setRenderTarget( target );
+	let pending: Promise<void>[];
+	try {
+
+		pending = objects.map( ( object ) => renderer.compileAsync( object, camera, scene ) );
+
+	} finally {
+
+		renderer.setRenderTarget( previous );
+		for ( const [ object, visible, culled ] of saved ) {
+
+			object.visible = visible;
+			object.frustumCulled = culled;
+
+		}
+
+	}
+	return Promise.all( pending ).then( () => undefined );
+
+}
+
 interface CascadeUniforms {
 	centre: THREE.UniformNode<'vec3', THREE.Vector3>;
 	// size, height, 1 / size, 1 / height
@@ -464,6 +501,15 @@ export class RainDrops {
 			material.needsUpdate = true;
 
 		} );
+
+	}
+
+	/** Compile the simulation (one workgroup, which the next update overwrites) and the draws
+	 * of `group` for `camera` into `target`, as `scene` draws them. */
+	warm( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
+
+		renderer.compute( this.compute, 64 );
+		return compileDraws( renderer, [ this.group ], scene, camera, target );
 
 	}
 

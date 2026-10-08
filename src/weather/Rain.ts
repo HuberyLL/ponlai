@@ -254,6 +254,15 @@ export class Rain {
 
 	}
 
+	/** Compile the drops' simulation and draws before the first rain, for `camera` into the
+	 * scene's multisampled target (`Pipeline.sceneRT`), as `rainScene` draws them. Call it after
+	 * `bindOpaqueDepth` and `setLightNode`, which change the materials. */
+	warm( renderer: THREE.WebGPURenderer, rainScene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
+
+		return this.drops.warm( renderer, rainScene, camera, target );
+
+	}
+
 	dispose(): void {
 
 		this.drops.dispose();
