@@ -4,16 +4,16 @@
 
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRimTrails } from './RimTrails.ts';
-import { buildRimGround } from './RimGround.ts';
+import { buildRimGround, buildRimSkirt, coastPaths } from './RimGround.ts';
 import {
-	buildFootprint, makeIslandSDF, makeRocks, makeRockSDF, makeSeabed,
+	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF, makeSeabed,
 	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
 } from './WorldShapes.ts';
 import { Field2D } from './Field2D.ts';
-import { deepenSeabed, seabedBeds } from './Bathymetry.ts';
+import { deepenSeabed, seabedBeds, shapeShelf } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
-import { VEGETATION_STRIDE } from './types.ts';
+import { VEGETATION_STRIDE, VEGETATION_SPACING } from './types.ts';
 import type { SDF, MeshData, MeshKind, NamedMesh, WorldData, WorldOptions } from './types.ts';
 
 self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
@@ -27,7 +27,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	const fp = buildFootprint();
 	mark( 'footprint', t );
 
-	const seabedHeight = deepenSeabed( fp, makeSeabed( fp ) );
+	const seabedHeight = shapeShelf( fp, deepenSeabed( fp, makeSeabed( fp ) ) );
 
 	// --- seabed: a grid warped to be dense around the island and sparse toward the horizon
 	t = performance.now();
@@ -50,8 +50,8 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	// Ground each stone on the same triangles the renderer uses. Sampling the analytic
 	// floor alone can hide a small crown beneath a coarser seabed mesh.
 	const renderedFloor = seabedSampler( sb, n, seabedSize );
-	const rocks = makeRocks( fp, renderedFloor );
 	const islandSDF = makeIslandSDF( fp );
+	const rocks = makeRocks( fp, renderedFloor, islandSDF );
 	const rockSDFs = rocks.map( makeRockSDF );
 	// The rendered grid's highest vertex bounds contact queries on the floor.
 	t = performance.now();
@@ -83,6 +83,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 
 		meshes.push( { name, kind, ...m } );
 		transfer.push( m.positions.buffer, m.normals.buffer, m.ao.buffer, m.tint.buffer, m.curv.buffer, m.indices.buffer );
+		if ( m.detail ) transfer.push( m.detail.buffer );
 
 	};
 
@@ -90,6 +91,10 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	t = performance.now();
 	push( 'island', surfaceNets( islandSDF, {
 		min: [ ...islandBounds.min ], max: [ ...islandBounds.max ], voxel: islandVoxel,
+		// The cliff's blocks meet at chamfered edges about a voxel wide: vertices placed on the
+		// edges and a short normal step keep each face flat up to its edge instead of rounding
+		// it off.
+		normalStep: islandVoxel * 0.15, sharpen: cliffSharpCells( fp ),
 		aoSdf, contactVisibility: contacts( islandSDF ),
 	} ), 'cliff' );
 	mark( 'island', t );
@@ -120,7 +125,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	t = performance.now();
 	const rngV = mulberry32( 4242 );
 	const veg: number[] = [];
-	scatterTop( islandSDF, b.x0 - 0.6, b.x1 + 0.6, b.z0 - 0.6, b.z1 + 0.6, 0.235, ISLAND_TOP, rngV, veg, ( x, z ) => fp.dist( x, z ), 0 );
+	scatterTop( islandSDF, b.x0 - 0.6, b.x1 + 0.6, b.z0 - 0.6, b.z1 + 0.6, VEGETATION_SPACING, ISLAND_TOP, rngV, veg, ( x, z ) => fp.dist( x, z ), 0 );
 	const vegetation = new Float32Array( veg.length / 8 * VEGETATION_STRIDE );
 	// The raw eight-float anchors and random streams still determine all placement. Visibility
 	// is appended only after scattering, and is a local scalar proxy for an entire small plant.
@@ -136,14 +141,17 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	mark( 'vegetation', t );
 
 	t = performance.now();
-	const rimStrands = makeRimTrails( islandSDF, fp, vegetation );
-	for ( const strand of rimStrands ) transfer.push( strand.points.buffer );
-	mark( 'rimFoliage', t );
+	const rimGround = buildRimGround( islandSDF );
+	// The turf skirt drapes over the coast this field traces.
+	const rimSkirt = buildRimSkirt( islandSDF, rimGround );
+	transfer.push( rimGround.data.buffer, rimSkirt.points.buffer, rimSkirt.info.buffer, rimSkirt.loops.buffer );
+	mark( 'rimGround', t );
 
 	t = performance.now();
-	const rimGround = buildRimGround( islandSDF );
-	transfer.push( rimGround.data.buffer );
-	mark( 'rimGround', t );
+	// Bare runs between the trails are measured along the same traced coast.
+	const rimStrands = makeRimTrails( islandSDF, fp, vegetation, coastPaths( rimGround ) );
+	for ( const strand of rimStrands ) transfer.push( strand.points.buffer, ...( strand.clump ? [ strand.clump.buffer ] : [] ) );
+	mark( 'rimFoliage', t );
 
 	// --- seabed contact visibility; the warped geometry was generated before the mesh bake.
 	t = performance.now();
@@ -197,6 +205,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		vegetation,
 		rimStrands,
 		rimGround,
+		rimSkirt,
 		shore: { data: shore.data, nx: shore.nx, nz: shore.nz, x0: shore.x0, z0: shore.z0, cell: shore.cell },
 		islandShore: { data: islandShore.data, nx: islandShore.nx, nz: islandShore.nz, x0: islandShore.x0, z0: islandShore.z0, cell: islandShore.cell },
 		timings,

@@ -19,14 +19,18 @@ import { buildGrass } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
+import { buildTurfSkirt } from './world/RimSkirt.ts';
 import { buildFlowers } from './world/Flowers.ts';
+import { pickPlantSites, bakeGroundContact, bakeAnchorContact } from './world/PlantSites.ts';
+import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, type ToneCurve } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
-import { islandSurfaceHeight } from './world/WorldShapes.ts';
+import { islandSurfaceHeight, ISLAND_TOP } from './world/WorldShapes.ts';
+import { WALK_LOOP, walkLoopDistance } from './world/WalkLoop.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook, KIND } from './characters/CharacterMaterial.ts';
@@ -286,23 +290,33 @@ const data = await generateWorld();
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
 const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
+// Shrubs, small trees, tussocks and tall flowers keep clear of the islander's walking loop.
+const walkDistance = walkLoopDistance( WALK_LOOP );
+// Shrubs and small trees on the island top, and the ambient shade they cast on the turf around
+// them, baked into the island's occlusion before its mesh is built.
+const plantSites = pickPlantSites( data.vegetation, walkDistance );
+for ( const m of data.meshes ) if ( m.kind === 'cliff' ) bakeGroundContact( m, plantSites, ISLAND_TOP );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
 const refractedSun = new RefractedSun( renderer, shared );
 refractedSun.setCasters( world.group );
 refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
-const grass = buildGrass( data.vegetation, shared, data.rimGround );
 const foliage = buildFoliage( data.vegetation, shared );
-const flowers = buildFlowers( data.vegetation, shared );
+// The grass and flowers read the anchors' sky visibility with the plants' shade in it.
+bakeAnchorContact( data.vegetation, plantSites );
+const grass = buildGrass( data.vegetation, shared, data.rimGround, walkDistance );
+const flowers = buildFlowers( data.vegetation, shared, walkDistance );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
-scene.add( grass, foliage, flowers, rimFoliage );
+const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
+const plants = buildPlants( plantSites, shared );
+scene.add( grass, foliage, flowers, rimFoliage, turfSkirt, plants );
 {
 
 	// Everything that casts into the sun's map: the figures cast through their own map, and the
 	// sea floor's stones only into the refracted one.
 	const casters = new THREE.Box3();
-	for ( const root of [ world.group, foliage, flowers, rimFoliage ] ) {
+	for ( const root of [ world.group, foliage, flowers, rimFoliage, turfSkirt, plants ] ) {
 
 		root.updateWorldMatrix( true, true );
 		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) casters.expandByObject( object ); } );
@@ -312,7 +326,7 @@ scene.add( grass, foliage, flowers, rimFoliage );
 
 }
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
-rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage ] );
+rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt, plants ] );
 setStatus( 'Waking the villagers…' );
 // Local, unversioned assets (artifacts/ is git-ignored) served by the dev server while the
 // character art is still changing.
@@ -325,7 +339,7 @@ const fisherman = await loadVillager( umc( 'Farmer' ), [
 	{ from: umc( 'Farmer' ), part: 'Farmer_Pants', paint: { LightBlue: [ '#285878', KIND.cloth ] } },
 	{ from: umc( 'Adventurer' ), part: 'Adventurer_Feet', paint: { Grey: [ '#3c4a3e', KIND.leather ], Black: [ '#2a2622', KIND.leather ] } },
 ], shared );
-const characters = new Villagers( fisherman, [ [ - 5.5, 1.5 ], [ - 1.5, 3.3 ], [ 3, 2.6 ], [ 5.6, 0 ], [ 3.8, - 2.8 ], [ - 0.5, - 2.7 ], [ - 4.5, - 1.8 ] ], islandSurfaceHeight, characterShadow );
+const characters = new Villagers( fisherman, WALK_LOOP, islandSurfaceHeight, characterShadow );
 scene.add( characters.group );
 
 // Storm whitecap foam with a memory, and the spray torn off breaking crests (idle in calm weather).
@@ -725,4 +739,4 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime };

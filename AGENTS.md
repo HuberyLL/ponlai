@@ -45,17 +45,25 @@ exposed.
 
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
-- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets), sea floor
-  (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
-  vegetation anchors; instanced grass, bushes and flowers on the island top,
-  with top-rooted overhanging branches of mixed lengths.
+- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets; the cliff band
+  places its vertices by dual contouring so block edges stay sharp), its cliffs as jointed,
+  bedded columns seeded along the coast (`Cliff.ts`, with per-vertex block, joint, bed and lip
+  detail for the material), sea floor
+  (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
+  cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
+  tile), shoreline field,
+  vegetation anchors; instanced grass, rim bushes and flowers on the island top, a turf skirt over
+  the lip, with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds
+  on the lip; shrub groups (round shrubs, broad-leaved clumps, ferns) and small trees, each grown
+  from its own seed and merged into one mesh (`Plants.ts`, sited by `PlantSites.ts`).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
   own canopy.
-- `src/materials/`: procedural detail textures, terrain materials (triplanar stone, moss, turf,
-  sea floor, light under the water), wet surfaces after Lagarde (soaked pores, water film, runnels
-  down the cliffs).
+- `src/materials/`: procedural detail textures, terrain materials (triplanar stone with per-block
+  shade, strata, parting seams, runoff stains, upper-cliff moss and a spray zone, turf, sea floor,
+  light under the water), wet surfaces after Lagarde (soaked pores, water film, runnels down the
+  cliffs).
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading, and
   the storm sea (`StormSea.ts`: whitecap foam integrated on a world grid around the view, the
   procedural foam pattern, spray particles).
@@ -93,8 +101,55 @@ exposed.
 - Keep the island tile layout and flat central plateau. Natural contour, slope and weathering
   variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
   patchy seabed detail; no exposed sea stacks or reefs.
+- The island must be able to grow by more tiles, so everything generated for it is generic: the
+  cliffs, the shelf and its stones, the rim greenery and the planting derive from the footprint,
+  the island's SDF and noise fields with fixed seeds (hashes of position, or random streams that
+  draw a fixed count per vegetation anchor), never from coordinates placed by hand, and their
+  counts follow the measured coast length or meadow area. Any tile layout then builds itself the
+  same way.
+- Cliff features (columns, beds, ledges, notches, gullies, buttresses) derive from the footprint
+  with seeds hashed from position (`Cliff.ts`), and an unchanged stretch of coast keeps its
+  columns when the layout grows elsewhere: every property of a column or feature (a gully's or
+  buttress's role included) comes from its own hash, never from a running count. The wall is built
+  as solid geometry (cell-clipped, bed-sliced blocks with chamfered edges, overlapping a little
+  near the face and generously behind it) so its field stays near a true distance; blended offsets
+  stair-step on the mesh. It must not read as masonry: joints lean and some die out at a parting,
+  and off the coast-wide ledges many partings are welded per column. The wave-cut notch's roof
+  stays above the calm sea's crests, and the weathering relief fades out at the meadow, whose
+  height stays `islandSurfaceHeight`. Stumps of fallen columns stop at a parting below the
+  meadow's planting height (2.8 m) and carry no turf. No waterfalls. Moss and greenery on the wall
+  stay in its upper 1.2 m.
+- Around the island, the shelf's width and depth, the talus at the cliff foot, its shallow benches
+  and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
+  noise. The floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
+  nothing breaks the surface. Fallen blocks are walked out from the coast until their traced
+  outline clears the island's solid, so they rest against the cliff's underwater toe wherever it
+  runs; other stones keep a wider berth.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
+  They grow in clumped patches of one to nine strands with runs of bare stone between (0.4-4 m,
+  measured along the winding coast: a sparse patch breaks any longer run), a long tail of strands
+  that wander and fork down to 1.5-2.6 m, leaves shrinking toward the tips, and a mounded leaf
+  clump over each patch's lip; the lowest quarter of the cliff above the sea stays bare.
+  The meadow's sod curls a little over the lip as a ragged turf skirt (`RimSkirt.ts`), swept along
+  the coast line traced from the rim field, so it follows any shape the rim takes.
+  The meadow is a sward: dense lawn tufts of narrow blades (doubled where the growth field runs
+  thick, the extras folding away beyond about 35 m) and taller tussocks on a clump field; toward
+  the coast the tufts grow taller and lean out over the lip instead of thinning, and the lip
+  alternates between overgrown stretches (turf down over the shoulder) and cut-open root soil,
+  by the rim field's root depth. Wildflowers are plants of four species (daisy, umbel, spike, cup)
+  with leaf rosettes, their heads just above the sward, in beds of 3-9 gathered in drifts.
+  Tussocks and flower beds (spikes furthest) keep off the islander's walking loop (`WalkLoop.ts`).
+- Shrubs (up to about head height) and small trees (2.5 - 3.5 m) grow on the plateau in loose
+  groups. Their sites come from fields and the meadow's area (one tree per about 120 m^2, one
+  group per about 13 m^2). They keep off the islander's walk and out of the puddle hollows
+  (`PuddleHollows.ts` repeats `puddleField`'s hollows on the CPU: change both together), draw from
+  their own random stream (the rim bushes' stream also places the rim trails), sway with the rim
+  bushes' wind, cast into the sun's map and stop the rain. A limb casts whole or not at all: limbs
+  that leave their parent 3 cm or more in radius cast; thinner twigs, shrub stems and stalks do
+  not. Around their stems the turf, grass and flowers lose ambient light (baked on the CPU into the
+  island's occlusion and the anchors' sky visibility), so they stand in the meadow rather than on
+  it.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Stems, leaf stalks
   and twigs (a few millimetres across) stay out of it too. The map is fitted to the island's
