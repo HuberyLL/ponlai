@@ -78,8 +78,10 @@ const CIRRUS_ALTITUDE = 10000;
 const UPPER_VEER = 0.6; // radians the upper wind turns from the surface wind
 const SYNOPTIC_SIZE = 409600;
 // The panorama (see setDome): its size and refresh pattern, one texel of every strideX x strideY
-// per frame.
-export const DOME_DEFAULTS = { width: 1536, height: 384, strideX: 4, strideY: 4 } as const;
+// per frame. Its main consumer, the bake's 512 x 128 cloud layer, averages four taps of it, and
+// the light shafts and the sky outside the view read it directly; a full refresh every 32 frames
+// is far quicker than the clouds drift.
+export const DOME_DEFAULTS = { width: 1024, height: 256, strideX: 4, strideY: 8 } as const;
 const SHADOW_SIZE = 256, SHADOW_SPAN = 12000;
 // The cloud shadow map refreshes one of every SHADOW_PHASES rows per pass, a few passes per frame
 // (see setShadowRefresh).
@@ -1293,7 +1295,10 @@ export class Clouds {
 		if ( resting && ( ! this.settled || full ) ) {
 
 			// The scene has come to rest: settle the view once, from scratch, then keep it. Depending
-			// only on the scene, a paused frame is exactly repeatable.
+			// only on the scene, a paused frame is exactly repeatable. The panorama and the shadow map
+			// (camera-relative, refreshed a share per frame) are brought up to date with it, so a
+			// paused frame does not wait out their refresh cycles after a camera move.
+			if ( ! full ) this.refreshMaps( renderer, true, 1 );
 			this.settle( renderer );
 
 		} else if ( this.rebuild < 16 ) {
