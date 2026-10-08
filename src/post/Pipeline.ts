@@ -9,8 +9,10 @@ import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
+import { FSR } from './FSR.ts';
 import { sizeRtt } from './RenderScale.ts';
 import { SCENE_SAMPLES } from './SceneSamples.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { Rain } from '../weather/Rain.ts';
@@ -49,12 +51,14 @@ export interface PostOptions extends AirOptions {
 	dofDistance: boolean;
 	// two bloom chains (tight and wide), or one with the wide glow's radius and the two strengths
 	bloomChains: 1 | 2;
+	// FSR 1 from FSR.ts (EASU pass, sharpening folded into the canvas pass), or three's FSR1Node
+	fsrPort: boolean;
 	// the last pass into the multisampled scene target discards its samples
 	discardScene: boolean;
 }
 
 export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
-	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 36, dofDistance: true, bloomChains: 2, discardScene: true,
+	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 36, dofDistance: true, bloomChains: 2, fsrPort: true, discardScene: true,
 };
 
 const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
@@ -62,6 +66,7 @@ const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
 	'full-fog': { fogScale: 1 },
 	'no-bank': { bankSize: 0 },
 	'inline-coc': { dofDistance: false },
+	'three-fsr': { fsrPort: false },
 	'store-scene': { discardScene: false },
 };
 
@@ -278,6 +283,9 @@ export class Pipeline {
 	private surfaceQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
 	private upscaledOutput: THREE.RenderPipeline;
+	// three's FSR1Node, kept for A/B (debugFlags.fsrPort = false, or the fsrPort option off)
+	private upscaledOutputThree: THREE.RenderPipeline;
+	private fsr: FSR;
 	// the view distance per pixel, for the depth of field (the dofDistance option)
 	private distanceRT: THREE.RenderTarget | null = null;
 	private distanceQuad: THREE.QuadMesh | null = null;
@@ -788,12 +796,18 @@ export class Pipeline {
 		this.output = new THREE.RenderPipeline( renderer, textureLoad( this.displayRT.texture, ivec2( screenCoordinate.xy ) ) );
 		this.output.outputColorTransform = false;
 
-		// Below it, FSR 1 (AMD FidelityFX Super Resolution 1, three's FSR1Node) upscales the image
-		// (it expects display values) before the grain, so the grain stays one display pixel fine
-		// and is not sharpened. The browser's stretch of a small canvas was a plain bilinear filter.
-		const upscaled = fsr1( texture( this.displayRT.texture ), this.sharpness );
-		this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), u.output, float( 1 ) ) )() );
+		// Below it, FSR 1 (AMD FidelityFX Super Resolution 1, FSR.ts) upscales the image (it expects
+		// display values) before the grain, so the grain stays one display pixel fine and is not
+		// sharpened. The browser's stretch of a small canvas was a plain bilinear filter. The canvas
+		// pass sharpens EASU's result itself; three's FSR1Node, kept for A/B, took a canvas-sized
+		// pass and target more.
+		const backend = renderer.backend as unknown as { hasFeature?( name: string ): boolean };
+		this.fsr = new FSR( this.displayRT.texture, backend.hasFeature?.( 'float32-filterable' ) === true );
+		this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( this.fsr.rcas( this.sharpness ).toVar(), u.output, float( 1 ) ) )() );
 		this.upscaledOutput.outputColorTransform = false;
+		const upscaled = fsr1( texture( this.displayRT.texture ), this.sharpness );
+		this.upscaledOutputThree = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), u.output, float( 1 ) ) )() );
+		this.upscaledOutputThree.outputColorTransform = false;
 		if ( O.discardScene ) this.interceptSceneStore();
 		this.setToneMapping( this.settings.toneMapping );
 
@@ -835,6 +849,7 @@ export class Pipeline {
 		this.displayRT.setSize( w, h );
 		this.distanceRT?.setSize( w, h );
 		this.air.setSize( w, h );
+		this.fsr.setSize( this.outputWidth, this.outputHeight, w, h );
 		this.u.resolution.value.set( w, h );
 		this.u.texel.value.set( 1 / w, 1 / h );
 		// the size rtt() gives the half-res blur
@@ -975,15 +990,23 @@ export class Pipeline {
 		r.setRenderTarget( this.displayRT );
 		this.display.render();
 		r.setRenderTarget( null );
-		( this.upscaling ? this.upscaledOutput : this.output ).render();
+		if ( ! this.upscaling ) this.output.render();
+		else if ( ! this.options.fsrPort || debugFlags.fsrPort === false ) this.upscaledOutputThree.render();
+		else {
+
+			this.fsr.render( r );
+			this.upscaledOutput.render();
+
+		}
 
 	}
 
-	/** Compiles the passes that first run later than the first frame (fog setting in), so they
-	 * do not stall the frame that first needs them. */
+	/** Compiles the passes that first run later than the first frame (fog setting in, the
+	 * upscale), so they do not stall the frame that first needs them. */
 	async warm(): Promise<void> {
 
 		await this.air.warm( this.renderer );
+		await this.fsr.warm( this.renderer );
 
 	}
 
