@@ -631,7 +631,9 @@ export class CliffWall {
 				this.owner = this.near[ i ];
 				this.bed = owned;
 				this.joint = ownOpen > 0.02 ? 1 - smoothstep( 0, ownOpen * 1.4 + 0.04, ownInside ) : 0;
-				this.lipY = back > - 0.05 ? this.floor[ i ] : this.rim[ i ];
+				// Where the block fell (back < 0) the stump's top is the lip; behind the scar, and
+				// on every column that stands whole (back = -Infinity), the meadow's rim is.
+				this.lipY = back > - Infinity && back < - 0.05 ? this.floor[ i ] : this.rim[ i ];
 
 			}
 
