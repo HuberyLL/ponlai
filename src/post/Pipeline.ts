@@ -21,7 +21,7 @@ import type { Rain } from '../weather/Rain.ts';
 //   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts and reflects)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
-//   rain ── into sceneRT
+//   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them)
 //   sea fog (in fog: the bank noise baked into a map, the march at half resolution), the view
 //   distance for the depth of field
 //   composite (air, fog, rain veil, shafts) ── hdr, once
@@ -49,10 +49,12 @@ export interface PostOptions extends AirOptions {
 	dofDistance: boolean;
 	// two bloom chains (tight and wide), or one with the wide glow's radius and the two strengths
 	bloomChains: 1 | 2;
+	// the last pass into the multisampled scene target discards its samples
+	discardScene: boolean;
 }
 
 export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
-	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 36, dofDistance: true, bloomChains: 2,
+	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 36, dofDistance: true, bloomChains: 2, discardScene: true,
 };
 
 const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
@@ -60,6 +62,7 @@ const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
 	'full-fog': { fogScale: 1 },
 	'no-bank': { bankSize: 0 },
 	'inline-coc': { dofDistance: false },
+	'store-scene': { discardScene: false },
 };
 
 /** The defaults, with `?post=legacy` (every switch below) or `?post=a,b` applied. */
@@ -278,6 +281,8 @@ export class Pipeline {
 	// the view distance per pixel, for the depth of field (the dofDistance option)
 	private distanceRT: THREE.RenderTarget | null = null;
 	private distanceQuad: THREE.QuadMesh | null = null;
+	// set while the last pass into sceneRT is recorded (the discardScene option)
+	private discardSamples = false;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private display: THREE.RenderPipeline;
 	private displayRT: THREE.RenderTarget;
@@ -789,6 +794,7 @@ export class Pipeline {
 		const upscaled = fsr1( texture( this.displayRT.texture ), this.sharpness );
 		this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), u.output, float( 1 ) ) )() );
 		this.upscaledOutput.outputColorTransform = false;
+		if ( O.discardScene ) this.interceptSceneStore();
 		this.setToneMapping( this.settings.toneMapping );
 
 	}
@@ -890,12 +896,15 @@ export class Pipeline {
 			if ( rainScene ) {
 
 				r.setRenderTarget( this.sceneRT );
+				// the last pass into the scene target: its samples are resolved, then never read
+				this.discardSamples = this.options.discardScene;
 				r.render( rainScene, camera );
 
 			}
 
 		} finally {
 
+			this.discardSamples = false;
 			r.autoClear = autoClear;
 			r.setRenderTarget( null );
 
@@ -975,6 +984,41 @@ export class Pipeline {
 	async warm(): Promise<void> {
 
 		await this.air.warm( this.renderer );
+
+	}
+
+	// WebGPU lets a pass load its attachments and still discard them once resolved; three only
+	// offers a discard together with a clear (storeMultisampled*Buffer = false), which would wipe
+	// the opaque image the rain draws over. So while the last pass into sceneRT is recorded, its
+	// descriptor's multisampled colour and depth stores become discards: the resolved colour and
+	// surfaceRT are already written, and the next frame's opaque pass clears both. (This relies
+	// on three's WebGPUBackend beginning each pass on an encoder of its own.)
+	private interceptSceneStore(): void {
+
+		type Attachment = { resolveTarget?: unknown; storeOp?: string };
+		type Descriptor = { colorAttachments: ( Attachment | null )[]; depthStencilAttachment?: { depthStoreOp?: string } };
+		type Encoder = { beginRenderPass( descriptor: Descriptor ): unknown };
+		const device = ( this.renderer.backend as unknown as { device: { createCommandEncoder( descriptor?: unknown ): Encoder } } ).device;
+		const create = device.createCommandEncoder.bind( device );
+		device.createCommandEncoder = ( descriptor?: unknown ) => {
+
+			const encoder = create( descriptor );
+			if ( ! this.discardSamples ) return encoder;
+			const begin = encoder.beginRenderPass.bind( encoder );
+			encoder.beginRenderPass = ( pass: Descriptor ) => {
+
+				// only a multisampled pass resolving into its target: the scene's
+				if ( ! pass.colorAttachments[ 0 ]?.resolveTarget ) return begin( pass );
+				return begin( {
+					...pass,
+					colorAttachments: pass.colorAttachments.map( ( a ) => a && a.resolveTarget ? { ...a, storeOp: 'discard' } : a ),
+					depthStencilAttachment: pass.depthStencilAttachment && { ...pass.depthStencilAttachment, depthStoreOp: 'discard' },
+				} );
+
+			};
+			return encoder;
+
+		};
 
 	}
 
