@@ -170,6 +170,11 @@ export class Pipeline {
 		neutral: { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1, clipGuard: 0, knee: 0.9, highlightSat: 0, burn: 0 },
 		'neutral-hue': { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1, clipGuard: 1, knee: 0.8, highlightSat: 0.3, burn: 1 },
 	};
+	// The fantasy presets are tuned on 'neutral-hue'. Its linear midtones pass the glow (added
+	// before the curve) through almost as it is, and its shoulder keeps the glow's warm hue where
+	// AgX's compressed and whitened it, so the glow is weaker, narrower and less warm than it was on
+	// AgX; and its darker, more saturated toe made the coloured shadow lift read as haze on the deep
+	// water, so the lift and the cool shadow tone are smaller too.
 	readonly lookPresets: Record<LookName, LookSettings> = {
 		realistic: {
 			glow: 0, glowThreshold: 0.6, glowRadius: 0.8, glowWarmth: 0, glowHalo: 1,
@@ -178,16 +183,16 @@ export class Pipeline {
 			shadowLift: 0, contrast: 0, vignette: 0, sky: 1, overcast: 0,
 		},
 		'soft-fantasy': {
-			glow: 0.22, glowThreshold: 1.0, glowRadius: 0.8, glowWarmth: 0.4, glowHalo: 0.25,
+			glow: 0.12, glowThreshold: 1.0, glowRadius: 0.7, glowWarmth: 0.25, glowHalo: 0.15,
 			greenSaturation: 0.25, greenBrightness: 0.02, greenHue: 0.06, tealSaturation: 0.12, tealBrightness: 0.02, tealHue: 0.04,
-			shadowTint: new THREE.Color( 0.55, 0.85, 1.0 ), shadowTone: 0.25, highlightTint: new THREE.Color( 1.0, 0.86, 0.6 ), highlightTone: 0.25, pivot: 0.18,
-			shadowLift: 0.02, contrast: 0.08, vignette: 0.06, sky: 0.25, overcast: 0.5,
+			shadowTint: new THREE.Color( 0.55, 0.85, 1.0 ), shadowTone: 0.18, highlightTint: new THREE.Color( 1.0, 0.86, 0.6 ), highlightTone: 0.25, pivot: 0.18,
+			shadowLift: 0.01, contrast: 0.08, vignette: 0.06, sky: 0.25, overcast: 0.5,
 		},
 		'rich-fantasy': {
-			glow: 0.32, glowThreshold: 0.85, glowRadius: 0.85, glowWarmth: 0.6, glowHalo: 0.2,
+			glow: 0.2, glowThreshold: 0.9, glowRadius: 0.75, glowWarmth: 0.4, glowHalo: 0.15,
 			greenSaturation: 0.45, greenBrightness: 0.03, greenHue: 0.1, tealSaturation: 0.25, tealBrightness: 0.03, tealHue: 0.08,
-			shadowTint: new THREE.Color( 0.45, 0.8, 1.0 ), shadowTone: 0.4, highlightTint: new THREE.Color( 1.0, 0.8, 0.5 ), highlightTone: 0.4, pivot: 0.18,
-			shadowLift: 0.03, contrast: 0.15, vignette: 0.12, sky: 0.3, overcast: 0.5,
+			shadowTint: new THREE.Color( 0.45, 0.8, 1.0 ), shadowTone: 0.3, highlightTint: new THREE.Color( 1.0, 0.8, 0.5 ), highlightTone: 0.4, pivot: 0.18,
+			shadowLift: 0.018, contrast: 0.15, vignette: 0.12, sky: 0.3, overcast: 0.5,
 		},
 	};
 	// the live look, loaded from a preset by setLook() and tuned from there in the GUI
