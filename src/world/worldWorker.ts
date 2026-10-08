@@ -309,8 +309,10 @@ function buildRocks( ctx: Setup, set: number, sets: number ): MeshData[] {
 		parts.push( surfaceNets( rockSDFs[ i ], {
 			min: [ ...rockBounds[ i ].min ], max: [ ...rockBounds[ i ].max ],
 			// Small stones still need enough samples across their broad faces; one merged mesh
-			// keeps their count independent of the draw budget.
-			voxel: Math.max( 0.025, Math.min( 0.11, r.s * 0.12 ) ),
+			// keeps their count independent of the draw budget. They lie at least 1.3 m under a
+			// moving, refracting surface, so about five samples across a stone (4.5 - 15 cm) keep
+			// its form; finer sampling only cost triangles and generation time.
+			voxel: Math.max( 0.045, Math.min( 0.15, r.s * 0.2 ) ),
 			aoSdf, contactVisibility: contacts( rockSDFs[ i ] ),
 		} ) );
 
