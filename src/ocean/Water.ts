@@ -51,6 +51,7 @@ import { rainRippleGradient } from '../weather/Rain.ts';
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
+type V4 = THREE.Node<'vec4'>;
 type M4 = THREE.Node<'mat4'>;
 
 const PI = Math.PI;
@@ -98,6 +99,17 @@ const hash22 = Fn( ( [ p ]: [ V2 ] ) => {
 
 } ).setLayout( { name: 'waterHash22', type: 'vec2', inputs: [ { name: 'p', type: 'vec2' } ] } );
 
+// smooth value noise in [0, 1] over unit cells
+const valueNoise = Fn( ( [ p ]: [ V2 ] ) => {
+
+	const cell = floor( p ).toVar();
+	const f = fract( p ).toVar();
+	const w = f.mul( f ).mul( f.mul( - 2 ).add( 3 ) );
+	const corner = ( x: number, y: number ) => hash22( cell.add( vec2( x, y ) ) ).x;
+	return mix( mix( corner( 0, 0 ), corner( 1, 0 ), w.x ), mix( corner( 0, 1 ), corner( 1, 1 ), w.x ), w.y );
+
+} ).setLayout( { name: 'waterValueNoise', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
+
 // glitter: one tiny facet per cell, flashing briefly as the swell tips it toward the eye
 const sparkles = Fn( ( [ p, t ]: [ V2, F ] ) => {
 
@@ -133,11 +145,87 @@ const projectView = Fn( ( [ p, proj ]: [ V3, M4 ] ) => {
 
 } ).setLayout( { name: 'projectView', type: 'vec2', inputs: [ { name: 'p', type: 'vec3' }, { name: 'proj', type: 'mat4' } ] } );
 
+// The synthetic floor's albedos, matched to the traced floor where both are known: the shelf's
+// sand by the cliffs, the basin's silted sand (seagrass beds averaged in), the cliff's submerged
+// face under its algae, and the seagrass beds' tint on the sand.
+const SHELF_ALBEDO = vec3( 0.32, 0.31, 0.29 );
+const BASIN_ALBEDO = vec3( 0.26, 0.24, 0.21 );
+const FACE_ALBEDO = vec3( 0.14, 0.15, 0.14 );
+const SEAGRASS_TINT = vec3( 0.28, 0.36, 0.22 );
+// The submerged face's share of the sky's light, against the floor's: matched to the traced face,
+// whose shaded stone the terrain lights by the whole sky's irradiance for its normal (bright
+// toward the horizon) and whose jointed blocks catch it on their ledges.
+const FACE_SKY = 2;
+
+// The cliff's submerged face stands nearly plumb below its waterline (its jointed columns step
+// out a few centimetres per metre of depth, the wave-cut notch aside).
+const WALL_LEAN = 0.04;
+
+// Drops below the surface (m) at which the shoreline distance and the floor's height are sampled
+// down each vertex's refracted ray: dense near the surface, where the shelf by the cliffs lies,
+// sparse in the basin.
+const SHORE_DROPS = [ 0, 0.75, 1.5, 2.5, 3.75, 5.5, 8, 12 ];
+
+// Where a refracted ray from a surface point meets the seabed or the island's submerged face, in
+// world space. The shoreline distance and the floor's height are known at fixed drops down the
+// ray (`near`, `far`, `floorNear`, `floorFar`: four each, see SHORE_DROPS) and vary linearly
+// between them; `skew` adds what each gains per metre of drop on this ray over the ray the
+// samples were taken along. The ray is open water while it is above the floor and outside the
+// face, which stands WALL_LEAN * depth outside the shoreline. Returns the drop at which it stops
+// being open, the shoreline distance there, and the share of the face rather than the floor,
+// which turns over the last half metre (along the ray) before the face cuts the ray off, so that
+// the face's foot is a soft line on the water rather than a pixel step.
+const seabedLanding = Fn( ( [ originY, level, near, far, floorNear, floorFar, skew, down ]: [ F, F, V4, V4, V4, V4, V2, F ] ) => {
+
+	const samples = [ near.x, near.y, near.z, near.w, far.x, far.y, far.z, far.w ];
+	const heights = [ floorNear.x, floorNear.y, floorNear.z, floorNear.w, floorFar.x, floorFar.y, floorFar.z, floorFar.w ];
+	const shore = SHORE_DROPS.map( ( drop, k ) => samples[ k ].add( skew.x.mul( drop ) ).toVar() );
+	const floor = SHORE_DROPS.map( ( drop, k ) => originY.sub( drop ).sub( heights[ k ].add( skew.y.mul( drop ) ) ).toVar() );
+	const face = SHORE_DROPS.map( ( drop, k ) => shore[ k ].sub( max( level.sub( originY ).add( drop ), 0 ).mul( WALL_LEAN ) ).toVar() );
+	const last = SHORE_DROPS.length - 1;
+	// Below the last sample the floor stays at the last sample's height.
+	const result = vec3( max( floor[ last ].add( SHORE_DROPS[ last ] ), SHORE_DROPS[ last ] ), shore[ last ], 0 ).toVar();
+	const found = float( 0 ).toVar();
+	If( floor[ 0 ].lessThanEqual( 0 ).or( face[ 0 ].lessThanEqual( 0 ) ), () => {
+
+		result.assign( vec3( 0, shore[ 0 ], select( face[ 0 ].lessThanEqual( 0 ), float( 1 ), float( 0 ) ) ) );
+		found.assign( 1 );
+
+	} );
+	for ( let k = 1; k <= last; k ++ ) {
+
+		If( found.lessThan( 0.5 ).and( floor[ k ].lessThanEqual( 0 ).or( face[ k ].lessThanEqual( 0 ) ) ), () => {
+
+			// The share of this step at which each boundary is crossed (linearly; past the step's
+			// end, or never, if the ray does not close on it here).
+			const toFloor = select( floor[ k ].lessThan( floor[ k - 1 ] ), floor[ k - 1 ].div( floor[ k - 1 ].sub( floor[ k ] ) ), float( 1e3 ) );
+			const toFace = select( face[ k ].lessThan( face[ k - 1 ] ), face[ k - 1 ].div( face[ k - 1 ].sub( face[ k ] ) ), float( 1e3 ) );
+			const t = clamp( min( toFloor, toFace ), 0, 1 );
+			const step = SHORE_DROPS[ k ] - SHORE_DROPS[ k - 1 ];
+			const wall = smoothstep( - 0.25, 0.25, min( toFloor.sub( toFace ), 10 ).mul( step ).div( down ) );
+			result.assign( vec3( mix( float( SHORE_DROPS[ k - 1 ] ), float( SHORE_DROPS[ k ] ), t ), mix( shore[ k - 1 ], shore[ k ], t ), wall ) );
+			found.assign( 1 );
+
+		} );
+
+	}
+	return result;
+
+} ).setLayout( {
+	name: 'seabedLanding', type: 'vec3',
+	inputs: [
+		{ name: 'originY', type: 'float' }, { name: 'level', type: 'float' }, { name: 'near', type: 'vec4' },
+		{ name: 'far', type: 'vec4' }, { name: 'floorNear', type: 'vec4' }, { name: 'floorFar', type: 'vec4' },
+		{ name: 'skew', type: 'vec2' }, { name: 'down', type: 'float' },
+	],
+} );
+
 export interface WaterInputs {
 	fft: OceanFFT;
 	sky: Sky;
 	shared: Shared;
 	shore: THREE.Texture;
+	seabedHeight: THREE.Texture; // the rendered floor's height over the shoreline field's bounds
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
 	sunShadow: SunShadow;
@@ -168,7 +256,7 @@ export class Water {
 	private shadowNormalBias = uniform( 0 );
 	private shadowIntensity = uniform( 1 );
 
-	constructor( { fft, sky, shared, shore, shoreWaves, refractedSun, sunShadow, storm, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
+	constructor( { fft, sky, shared, shore, seabedHeight, shoreWaves, refractedSun, sunShadow, storm, sceneColor, linearDepth, size = 700, res = 320 }: WaterInputs ) {
 
 		// grid in world xz, warped dense under the island and sparse toward the horizon
 		const n = res;
@@ -253,9 +341,42 @@ export class Water {
 		const geometric = float( 1 ).sub( smoothstep( 600, 1500, far ) );
 		const d = largeDisp.mul( weights.x ).add( mediumDisp.mul( weights.y ) ).add( fineDisp.mul( weights.z ) ).mul( geometric );
 		const material = new THREE.NodeMaterial();
-		material.positionNode = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y )
-			.add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) );
+		const displaced = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y )
+			.add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) ).toVar();
+		material.positionNode = displaced;
 		const vLag = varying( xz ), vDamp = varying( coastDamp ), vFineWeight = varying( fineWeight );
+		// The shoreline distance and the floor's height for the refraction's world-space estimate of
+		// the floor, sampled down this vertex's refracted ray as a level sea bends it, at fixed drops
+		// below the surface. Interpolated across the triangles, the distances stay continuous where
+		// the field's gradient is not (around the cliffs' corners, between facing cliffs), so that the
+		// fragment follows its own ray past a corner or into a cove. The floor's height is the floor
+		// the world generator built (its shelf, benches and talus vary along the coast), read from a
+		// field over the same bounds. The gradients are taken where that ray lands: they face the
+		// floor's slope and the cliff's face the ray meets, not the nearest shore of the surface
+		// point. Past the field's edge the distance keeps growing with the distance from that edge,
+		// and the floor keeps the edge's height.
+		const fieldEnd = shared.shoreXform.xy.add( vec2( 1 ).div( shared.shoreXform.zw ) );
+		const fieldUV = ( p: V2 ) => p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
+		const shoreDistance = ( p: V2 ) => texture( shore, fieldUV( p ) ).level( float( 0 ) ).r
+			.add( length( p.sub( clamp( p, shared.shoreXform.xy, fieldEnd ) ) ) );
+		const floorHeight = ( p: V2 ) => texture( seabedHeight, fieldUV( p ) ).level( float( 0 ) ).r;
+		const surfaceXZ = displaced.xz;
+		const levelRay = airToWaterDirectionNode( normalize( cameraPosition.sub( displaced ) ), vec3( 0, 1, 0 ), float( IOR ) ).toVar();
+		const across = levelRay.xz.div( max( levelRay.y.negate(), 1e-3 ) ).toVar(); // horizontal metres per metre of drop
+		const along = SHORE_DROPS.map( ( drop ) => surfaceXZ.add( across.mul( drop ) ).toVar() );
+		const ray = along.map( shoreDistance );
+		const heights = along.map( floorHeight );
+		const shoreNear = vec4( ray[ 0 ], ray[ 1 ], ray[ 2 ], ray[ 3 ] ), shoreFar = vec4( ray[ 4 ], ray[ 5 ], ray[ 6 ], ray[ 7 ] );
+		const floorNear = vec4( heights[ 0 ], heights[ 1 ], heights[ 2 ], heights[ 3 ] ), floorFar = vec4( heights[ 4 ], heights[ 5 ], heights[ 6 ], heights[ 7 ] );
+		const vShoreNear = varying( shoreNear ), vShoreFar = varying( shoreFar );
+		const vFloorNear = varying( floorNear ), vFloorFar = varying( floorFar );
+		const levelLanding = seabedLanding( displaced.y, shared.waterLevel, shoreNear, shoreFar, floorNear, floorFar,
+			vec2( 0 ), max( levelRay.y.negate(), 1e-3 ) );
+		const landedXZ = surfaceXZ.add( across.mul( levelLanding.x ) ).toVar();
+		const gradientOf = ( field: ( p: V2 ) => F ) => vec2(
+			field( landedXZ.add( vec2( 0.5, 0 ) ) ).sub( field( landedXZ.sub( vec2( 0.5, 0 ) ) ) ),
+			field( landedXZ.add( vec2( 0, 0.5 ) ) ).sub( field( landedXZ.sub( vec2( 0, 0.5 ) ) ) ) );
+		const vLandingGradients = varying( vec4( gradientOf( shoreDistance ), gradientOf( floorHeight ) ) ); // shore, floor
 		const vWeights = varying( weights );
 		const vLargeDisp = varying( largeDisp ), vMediumDisp = varying( mediumDisp ), vFineDisp = varying( fineDisp );
 
@@ -396,12 +517,8 @@ export class Water {
 		// an underwater ray cannot meet at all), and the march goes on behind it, so the ray may find
 		// the floor where it comes out. (Ending there, the ray fell back to the floor straight behind
 		// its pixel, and the water changed colour along every silhouette the rays passed behind.)
-		// A ray that finds nothing (off the screen, hidden to the end, out of range) returns no trust
-		// and, in z, the length it is known to run through open water: at least as far as it was
-		// traced in front of the scene, and on down to the depth of the last surface seen beyond it.
-		// Its fallback then continues its traced neighbours' path instead of starting again from the
-		// floor straight behind (whose depth jumps at every submerged silhouette: a straight seam
-		// down the screen below each cliff edge).
+		// A ray that finds nothing (off the screen, hidden to the end, out of range) returns no trust;
+		// the shading then takes the floor from the world-space estimate (see the lost rays below).
 		const traceRefraction = Fn( ( [ posV, directionV, range, surfaceY, footprint ]: [ V3, V3, F, F, F ] ) => {
 
 			const step = range.div( 8 ).toVar();
@@ -409,8 +526,7 @@ export class Water {
 			const up = cameraViewMatrix.mul( vec4( 0, 1, 0, 0 ) ).xyz.toVar();
 			const height = ( p: V3 ) => dot( up, p ).add( cameraPosition.y );
 			const near = float( 0 ).toVar(), open = float( 1 ).toVar();
-			const beyond = surfaceY.toVar(); // the height of the scene seen past the last open-water sample
-			const result = vec4( 0 ).toVar(), found = float( 0 ).toVar();
+			const result = vec4( 0 ).toVar();
 			Loop( 8, ( { i } ) => {
 
 				const distance = float( i ).add( 1 ).mul( step ).toVar();
@@ -418,16 +534,6 @@ export class Water {
 				const q = projectView( point, cameraProjectionMatrix ).toVar();
 				If( q.x.lessThan( 0.001 ).or( q.x.greaterThan( 0.999 ) ).or( q.y.lessThan( 0.001 ) ).or( q.y.greaterThan( 0.999 ) ).or( point.z.greaterThan( - 0.1 ) ), () => {
 
-					// Leaving the screen, the last thing it shows on the ray's way is the scene at its
-					// edge (the floor or rock just above the bottom edge, for a ray heading down it).
-					const edge = clamp( q, vec2( 0.001 ), vec2( 0.999 ) ).toVar();
-					const ray = viewRay( edge, cameraProjectionMatrixInverse ).toVar();
-					const seen = height( ray.mul( sceneViewZ( edge ).div( ray.z ) ) );
-					If( seen.lessThan( surfaceY ), () => {
-
-						beyond.assign( seen );
-
-					} );
 					Break();
 
 				} );
@@ -436,7 +542,6 @@ export class Water {
 				If( point.z.greaterThan( depth ), () => {
 
 					near.assign( distance );
-					beyond.assign( height( point.mul( depth.div( point.z ) ) ) );
 					open.assign( 1 );
 
 				} ).ElseIf( open.greaterThan( 0.5 ), () => {
@@ -458,18 +563,11 @@ export class Water {
 						const edge = smoothstep( 0.001, EDGE_FADE, qh.x ).mul( smoothstep( 0.999, 1 - EDGE_FADE, qh.x ) )
 							.mul( smoothstep( 0.001, EDGE_FADE, qh.y ) ).mul( smoothstep( 0.999, 1 - EDGE_FADE, qh.y ) );
 						result.assign( vec4( qh, max( dot( visible.sub( posV ), directionV ), 0 ), trust.mul( edge ) ) );
-						found.assign( 1 );
 						Break();
 
 					} );
 
 				} );
-
-			} );
-			If( found.lessThan( 0.5 ), () => {
-
-				const down = max( dot( up, directionV ).negate(), 1e-3 );
-				result.assign( vec4( 0, 0, clamp( max( near, surfaceY.sub( beyond ).div( down ) ), 0, 200 ), 0 ) );
 
 			} );
 			return result;
@@ -658,18 +756,30 @@ export class Water {
 			const fallbackLength = select( skyBehind, float( 200 ), clamp( max( wp.y.sub( sw0.y ), 0 ).div( tDown ), 0, 200 ) );
 			const hit = vec4( screenUV, fallbackLength, 0 ).toVar();
 			const traced = skyBehind.not().and( thick.greaterThan( 0.02 ) ).and( validRefraction ).toVar();
+			// Where the refracted ray meets the seabed or the island's submerged face, estimated in world
+			// space from the shoreline and floor fields (drop below the surface, shoreline distance there,
+			// share of the face), and the distance to it along the ray.
+			const landing = vec3( 0 ).toVar(), landingDistance = float( 0 ).toVar();
 			If( traced, () => {
 
+				// This ray's horizontal course per metre of drop departs from the level sea's, along
+				// which the distances were sampled, with the waves' tilt of the surface.
+				const level = normalize( airToWaterDirectionNode( V, vec3( 0, 1, 0 ), float( IOR ) ) );
+				const bend = Tv.xz.div( tDown ).sub( level.xz.div( max( level.y.negate(), 1e-3 ) ) ).toVar();
+				const skew = vec2( dot( vLandingGradients.xy, bend ), dot( vLandingGradients.zw, bend ) );
+				landing.assign( seabedLanding( wp.y, shared.waterLevel, vShoreNear, vShoreFar, vFloorNear, vFloorFar, skew, max( tDown, 1e-3 ) ) );
+				landingDistance.assign( landing.x.div( max( tDown, 1e-3 ) ) );
+				// The trace runs a little past the estimate (its linear steps between the samples and the
+				// stones on the floor depart from what the trace meets). Sized from what lies straight
+				// behind the pixel, it ran far past the floor where that was the basin seen at a glancing
+				// angle, and its coarse steps then bracketed the island's silhouette instead of the floor
+				// in front of it.
 				const directionV = normalize( cameraViewMatrix.mul( vec4( Tv, 0 ) ).xyz );
-				const range = min( max( fallbackLength.mul( 1.5 ), fallbackLength.add( 4 ) ), 40 );
+				const range = min( landingDistance.mul( 1.25 ).add( 2 ), 40 );
 				hit.assign( traceRefraction( posV, directionV, range, wp.y, footprint ) );
 
 			} );
 			const refractionTrust = hit.w;
-			// The fallback shows the floor straight behind, as far down as the refracted ray is known
-			// to run through open water.
-			const fallbackPath = max( fallbackLength, hit.z ).toVar();
-			const pathLen = mix( fallbackPath, hit.z, refractionTrust ).toVar();
 
 			// ---- the water body: absorption along the path + single scattering of sun and sky
 			const sigA = shared.sigA, sigS = shared.sigS;
@@ -677,29 +787,119 @@ export class Water {
 			const Ls = refractedSunDirectionNode( L ).toVar();
 			const muS = Ls.y;
 			const muV = max( Tv.y.negate(), 1e-5 );
+			// Match the terrain's refracted beam: transmission retains horizontal power,
+			// while beam-normal irradiance changes with the Snell area projection.
+			// Surface glint retains its own shadow. A scattering point deeper along
+			// the view ray can enter or leave the island's shadow independently of that surface.
+			const sunIn = waterIncidentSun( shared.sunColor, cloudTransmission, shared.sunIntoWater, refractedSunBeamScaleNode( L ) ).toVar();
+			// Both solar cameras are orthographic. Project the ray once, not at every depth.
+			// The air entry has a kink only where a raised wave crosses the mean interface.
+			const airBase = u.shadowMatrix.mul( vec4( wp, 1 ) ).xyz.toVar();
+			const airStep = u.shadowMatrix.mul( vec4( Tv, 0 ) ).xyz.toVar();
+			const airBend = u.shadowMatrix.mul( vec4( Ls.div( muS ), 0 ) ).xyz.toVar();
+			const columnDepth = ( distance: F ) => max( shared.waterLevel.sub( wp.y ).sub( Tv.y.mul( distance ) ), 0 );
+			const airCoordinate = ( distance: F ) => {
+
+				const p = airBase.add( airStep.mul( distance ) ).add( airBend.mul( columnDepth( distance ) ) );
+				return vec3( p.x, float( 1 ).sub( p.y ), p.z.add( this.shadowBias ) );
+
+			};
+
 			// Each source retains its own optical depth while confidence blends the hits.
 			// One mixed path would tint a bright shallow source as if it belonged to the basin.
 			const opaqueCol = sceneAt( screenUV ).toVar();
-			// The fallback's floor moves with the waves' share of the refraction (the bend of this
-			// facet beyond a level sea's), as the traced floor does, so where the two meet, and along
-			// the edges of what lies straight behind, the water wobbles instead of standing still.
-			// Shifted onto rock above the sea, it keeps the floor straight behind.
-			const behindCol = opaqueCol.toVar();
-			If( traced, () => {
+			// A ray the trace lost (off the screen, or hidden behind what the screen shows) meets the
+			// floor somewhere the screen may not show at all: below a low camera the floor in front of
+			// a cliff lies below the frame, and what lies straight behind the pixel is the cliff's
+			// submerged face on one side of its silhouette and the floor far beyond on the other.
+			// Taking the colour and the depth from there drew a seam down the water below every cliff
+			// edge. The floor the ray meets is the world-space estimate instead, lit as the terrain
+			// lights it under water, so that lost rays continue each other and their traced neighbours.
+			const lostPath = fallbackLength.toVar();
+			const lostBottom = opaqueCol.mul( exp( sigT.negate().mul( fallbackLength ) ) ).toVar();
+			If( traced.and( refractionTrust.lessThan( 1 ) ), () => {
 
-				const level = airToWaterDirectionNode( V, vec3( 0, 1, 0 ), float( IOR ) );
-				const shifted = sv0.add( cameraViewMatrix.mul( vec4( Tv.sub( normalize( level ) ), 0 ) ).xyz.mul( fallbackPath ) ).toVar();
-				const qs = projectView( shifted, cameraProjectionMatrix ).toVar();
-				const zs = sceneViewZ( qs ).toVar();
-				const seen = cameraWorldMatrix.mul( vec4( shifted.mul( zs.div( shifted.z ) ), 1 ) ).y;
-				If( seen.lessThanEqual( wp.y.add( 0.05 ) ).and( zs.greaterThan( - 9e4 ) ), () => {
+				const gradient = vLandingGradients.toVar();
+				const at = wp.add( Tv.mul( landingDistance ) ).toVar();
+				const depthAt = max( shared.waterLevel.sub( at.y ), 0 ).toVar();
+				const shoreAt = landing.y.toVar();
+				const wall = landing.z;
+				const normal = normalize( mix( vec3( gradient.z.negate(), 1, gradient.w.negate() ),
+					vec3( gradient.x, WALL_LEAN, gradient.y ), wall ) ).toVar();
+				// The key light: the island's shadow where the refracted beam enters the sea, and the
+				// submerged map halfway up the beam, where the cliff's foot and the walls of a cove shade
+				// it while the stones on the floor, which the estimate cannot place, stay below.
+				const visibility = sunShadow.volumeVisibility( airCoordinate( landingDistance ) ).toVar();
+				If( visibility.greaterThan( 0 ), () => {
 
-					behindCol.assign( sceneAt( clamp( qs, vec2( 0.001 ), vec2( 0.999 ) ) ) );
+					const midway = at.add( Ls.mul( depthAt.mul( 0.5 ).div( muS ) ) );
+					visibility.mulAssign( refractedSun.submergedVolumeVisibilityAtCoordinateNode( refractedSun.submergedVolumeCoordinateNode( midway ) ) );
+
+				} );
+				const lit = mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) );
+				const direct = sunIn.mul( exp( sigT.negate().mul( depthAt ).div( muS ) ) ).mul( max( dot( normal, Ls ), 0 ) ).mul( lit );
+				const ambient = shared.skyIrradianceSource.mul( exp( sigT.negate().mul( depthAt ).mul( 1.25 ) ) ).mul( mix( float( 1 ), float( FACE_SKY ), wall ) );
+				// The floor's beds, which no screen shows here: dark seagrass in ragged patches from a
+				// few metres off the cliffs on, and the sand's mottling. A world-space pattern, so that it
+				// stays put under the waves and runs on across lost rays; its mean is the floor's albedo.
+				const beds = smoothstep( 4, 10, shoreAt ).toVar();
+				const patches = valueNoise( at.xz.div( 7.5 ) ).mul( 0.65 ).add( valueNoise( at.xz.div( 2.6 ).add( 17.3 ) ).mul( 0.35 ) );
+				const grass = smoothstep( 0.52, 0.66, patches ).mul( beds );
+				const mottle = valueNoise( at.xz.div( 1.3 ).add( 41.7 ) ).sub( 0.5 ).mul( 0.3 ).add( 1 );
+				const sand = mix( SHELF_ALBEDO, BASIN_ALBEDO, smoothstep( 6, 22, shoreAt ) ).mul( mottle ).div( float( 1 ).sub( beds.mul( 0.25 ) ) );
+				const albedo = mix( sand.mul( mix( vec3( 1 ), SEAGRASS_TINT, grass ) ), FACE_ALBEDO, wall );
+				lostBottom.assign( albedo.div( PI ).mul( direct.add( ambient ) ).mul( exp( sigT.negate().mul( landingDistance ) ) ) );
+				lostPath.assign( landingDistance );
+				// Where what lies straight behind the pixel is the place the ray meets (the floor below a
+				// high camera, a stone on it, the same cliff face a little higher), the screen shows it:
+				// its own colour and depth take over, as they did before the estimate.
+				If( skyBehind.not().and( sw0.y.lessThan( shared.waterLevel ) ), () => {
+
+					// Its kind from its normal (from the neighbouring depth texels: the nearer of each pair
+					// of one-sided differences, so that a silhouette does not tilt it): the floor behind a
+					// ray that meets the cliff, or the face behind a ray that meets the floor, never stands in.
+					const behindAt = ( dx: number, dy: number ) => {
+
+						const q = screenUV.add( vec2( dx, dy ).div( depthSize ) );
+						const ray = viewRay( q, cameraProjectionMatrixInverse );
+						return ray.mul( textureLoad( tDepth, pixel( q ) ).y.div( ray.z ) ).toVar();
+
+					};
+					const right = behindAt( 1, 0 ), left = behindAt( - 1, 0 ), below = behindAt( 0, 1 ), above = behindAt( 0, - 1 );
+					const across = select( abs( right.z.sub( sv0.z ) ).lessThan( abs( left.z.sub( sv0.z ) ) ), right.sub( sv0 ), sv0.sub( left ) );
+					const along = select( abs( below.z.sub( sv0.z ) ).lessThan( abs( above.z.sub( sv0.z ) ) ), below.sub( sv0 ), sv0.sub( above ) );
+					const facing = normalize( cameraWorldMatrix.mul( vec4( across.cross( along ), 0 ) ).xyz );
+					// The talus at the cliff's foot slopes toward the face's normal, so the kinds are told
+					// apart by how far each looks up as well.
+					const upward = smoothstep( 0.35, 0.75, abs( facing.y ) );
+					const stand = smoothstep( 0.2, 0.6, abs( dot( facing, normal ) ) ).mul( mix( upward, float( 1 ).sub( upward ), wall ) )
+						.mul( float( 1 ).sub( smoothstep( 0.5, 2.5, length( sw0.sub( at ) ) ) ) ).toVar();
+					If( stand.greaterThan( 0 ), () => {
+
+						// Moved with the waves' share of the refraction (the bend of this facet beyond a level
+						// sea's), so that it wobbles as the traced floor does; shifted onto what stands above
+						// the sea, it keeps the floor straight behind.
+						const behindCol = opaqueCol.toVar();
+						const level = airToWaterDirectionNode( V, vec3( 0, 1, 0 ), float( IOR ) );
+						const shifted = sv0.add( cameraViewMatrix.mul( vec4( Tv.sub( normalize( level ) ), 0 ) ).xyz.mul( fallbackLength ) ).toVar();
+						const qs = projectView( shifted, cameraProjectionMatrix ).toVar();
+						const zs = sceneViewZ( qs ).toVar();
+						const seen = cameraWorldMatrix.mul( vec4( shifted.mul( zs.div( shifted.z ) ), 1 ) ).y;
+						If( seen.lessThanEqual( wp.y.add( 0.05 ) ).and( zs.greaterThan( - 9e4 ) ), () => {
+
+							behindCol.assign( sceneAt( clamp( qs, vec2( 0.001 ), vec2( 0.999 ) ) ) );
+
+						} );
+						lostBottom.assign( mix( lostBottom, behindCol.mul( exp( sigT.negate().mul( fallbackLength ) ) ), stand ) );
+						lostPath.assign( mix( landingDistance, fallbackLength, stand ) );
+
+					} );
 
 				} );
 
 			} );
-			const bottom = behindCol.mul( exp( sigT.negate().mul( fallbackPath ) ) ).toVar();
+			const pathLen = mix( lostPath, hit.z, refractionTrust ).toVar();
+			const bottom = lostBottom.toVar();
 			// Lost rays use only the fallback floor. Their zero confidence makes the three blurred
 			// colour samples and refracted attenuation redundant.
 			If( refractionTrust.greaterThan( 0 ), () => {
@@ -713,11 +913,6 @@ export class Water {
 				bottom.assign( mix( bottom, refractedCol.mul( exp( sigT.negate().mul( hit.z ) ) ), refractionTrust ) );
 
 			} );
-			// Match the terrain's refracted beam: transmission retains horizontal power,
-			// while beam-normal irradiance changes with the Snell area projection.
-			// Surface glint retains its own shadow. A scattering point deeper along
-			// the view ray can enter or leave the island's shadow independently of that surface.
-			const sunIn = waterIncidentSun( shared.sunColor, cloudTransmission, shared.sunIntoWater, refractedSunBeamScaleNode( L ) );
 			const kSun = sigT.mul( muV.div( muS ).add( 1 ) ).toVar();
 			const kAmb = sigT.mul( muV.div( 0.75 ).add( 1 ) ).toVar();
 			const ph = phaseHG( dot( Tv, Ls ), float( 0.86 ) ).mul( 0.7 ).add( 0.3 / ( 4 * PI ) );
@@ -725,18 +920,6 @@ export class Water {
 			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
 			// The MS source remains an empirical backscatter boost, not a conserved GI model.
 			const solarSource = sunIn.mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) );
-			// Both solar cameras are orthographic. Project the ray once, not at every depth.
-			// The air entry has a kink only where a raised wave crosses the mean interface.
-			const airBase = u.shadowMatrix.mul( vec4( wp, 1 ) ).xyz.toVar();
-			const airStep = u.shadowMatrix.mul( vec4( Tv, 0 ) ).xyz.toVar();
-			const airBend = u.shadowMatrix.mul( vec4( Ls.div( muS ), 0 ) ).xyz.toVar();
-			const columnDepth = ( distance: F ) => max( shared.waterLevel.sub( wp.y ).sub( Tv.y.mul( distance ) ), 0 );
-			const airCoordinate = ( distance: F ) => {
-
-				const p = airBase.add( airStep.mul( distance ) ).add( airBend.mul( columnDepth( distance ) ) );
-				return vec3( p.x, float( 1 ).sub( p.y ), p.z.add( this.shadowBias ) );
-
-			};
 			const wetStart = refractedSun.submergedVolumeCoordinateNode( wp ).toVar();
 			const wetEnd = refractedSun.submergedVolumeCoordinateNode( wp.add( Tv.mul( pathLen ) ) ).toVar();
 			const interfaceDistance = clamp( shared.waterLevel.sub( wp.y ).div( min( Tv.y, - 1e-5 ) ), 0, pathLen );

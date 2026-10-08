@@ -194,6 +194,11 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		.fill( ( x: number, z: number ) => islandSDF( x, 0, z ) )
 		.signedDistance();
 	transfer.push( islandShore.data.buffer );
+	// The rendered floor's height (its stones aside) over the same bounds at half resolution, for the
+	// water's world-space estimate of where refracted rays the screen cannot follow meet the floor.
+	const seabedField = new Field2D( shore.x0, shore.z0, islandRes, islandRes, shore.nx * shore.cell / islandRes )
+		.fill( renderedFloor );
+	transfer.push( seabedField.data.buffer );
 	mark( 'shore', t );
 
 	timings.total = Math.round( performance.now() - t0 );
@@ -208,6 +213,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		rimSkirt,
 		shore: { data: shore.data, nx: shore.nx, nz: shore.nz, x0: shore.x0, z0: shore.z0, cell: shore.cell },
 		islandShore: { data: islandShore.data, nx: islandShore.nx, nz: islandShore.nz, x0: islandShore.x0, z0: islandShore.z0, cell: islandShore.cell },
+		seabedField: { data: seabedField.data, nx: seabedField.nx, nz: seabedField.nz, x0: seabedField.x0, z0: seabedField.z0, cell: seabedField.cell },
 		timings,
 	};
 	self.postMessage( result, { transfer } );

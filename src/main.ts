@@ -291,6 +291,8 @@ const t0 = performance.now();
 const data = await generateWorld();
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
+// The floor's height shares the shoreline field's bounds, and so its transform.
+const seabedField = shoreTextureFrom( data.seabedField );
 const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
 // Shrubs, small trees, tussocks and tall flowers keep clear of the islander's walking loop.
 const walkDistance = walkLoopDistance( WALK_LOOP );
@@ -351,7 +353,7 @@ const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
 	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: pipeline.depthRT.texture,
 } );
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, shoreWaves, refractedSun, sunShadow, storm: stormSea,
+	fft, sky, shared, shore: shore.tex, seabedHeight: seabedField.tex, shoreWaves, refractedSun, sunShadow, storm: stormSea,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture,
 } );
 applySkyFill();
