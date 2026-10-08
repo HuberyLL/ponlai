@@ -5,10 +5,13 @@ import type { Caustics } from '../ocean/Caustics.ts';
 import type { Shared } from '../shared.ts';
 import { ISLAND_TOP } from './WorldShapes.ts';
 import type { WorldData, WorldOptions, ShoreField, RimGroundField } from './types.ts';
+import type { WorldJob } from './worldWorker.ts';
 
 // Generates the world in a worker and turns the result into meshes and the shared shoreline
 // texture.
 
+// The worker shares the work with copies of itself (see worldWorker.ts); the world it returns is
+// the same as a single thread's, bit for bit.
 export function generateWorld( options: WorldOptions = {} ): Promise<WorldData> {
 
 	return new Promise( ( resolve, reject ) => {
@@ -16,7 +19,7 @@ export function generateWorld( options: WorldOptions = {} ): Promise<WorldData> 
 		const worker = new Worker( new URL( './worldWorker.ts', import.meta.url ), { type: 'module' } );
 		worker.onmessage = ( e: MessageEvent<WorldData> ) => { worker.terminate(); resolve( e.data ); };
 		worker.onerror = ( e ) => { worker.terminate(); reject( e ); };
-		worker.postMessage( options );
+		worker.postMessage( { ...options, parallel: true } satisfies WorldJob );
 
 	} );
 
