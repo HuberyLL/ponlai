@@ -52,8 +52,10 @@ exposed.
   (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
   cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
   tile), shoreline field,
-  vegetation anchors; instanced grass, bushes and flowers on the island top, a turf skirt over the lip,
-  with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds on the lip.
+  vegetation anchors; instanced grass, rim bushes and flowers on the island top, a turf skirt over
+  the lip, with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds
+  on the lip; shrub groups (round shrubs, broad-leaved clumps, ferns) and small trees, each grown
+  from its own seed and merged into one mesh (`Plants.ts`, sited by `PlantSites.ts`).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
@@ -139,6 +141,17 @@ exposed.
 - Generic, grows with the island: every planting and ground feature is derived from the footprint,
   the SDF and noise fields with fixed seeds (a seeded hash per vegetation anchor), never placed at
   coordinates, so it works unchanged for any tile layout.
+- Shrubs (up to about head height) and small trees (2.5 - 3.5 m) grow on the plateau in loose
+  groups. Their sites come from fields and the meadow's area (one tree per about 120 m^2, one
+  group per about 13 m^2), never from fixed coordinates, so a larger island of more tiles plants
+  itself the same way. They keep off the islander's walk and out of the puddle hollows
+  (`PuddleHollows.ts` repeats `puddleField`'s hollows on the CPU: change both together), draw from
+  their own random stream (the rim bushes' stream also places the rim trails), sway with the rim
+  bushes' wind, cast into the sun's map and stop the rain. A limb casts whole or not at all: limbs
+  that leave their parent 3 cm or more in radius cast; thinner twigs, shrub stems and stalks do
+  not. Around their stems the turf, grass and flowers lose ambient light (baked on the CPU into the
+  island's occlusion and the anchors' sky visibility), so they stand in the meadow rather than on
+  it.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Stems, leaf stalks
   and twigs (a few millimetres across) stay out of it too. The map is fitted to the island's

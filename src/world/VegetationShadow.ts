@@ -10,7 +10,8 @@ type V3 = THREE.Node<'vec3'>;
 // castMask (per vertex, 0 or 1) keeps parts out of the shadow map: stems and stalks are a few
 // millimetres across, well under a texel, so the map could only show them as dashes that come
 // and go with each redraw; the sun's own disk would blur such a thin shadow away within a few
-// decimetres anyway. A masked vertex collapses to the origin, so its triangles have no area.
+// decimetres anyway. A masked vertex collapses to the origin, so its triangles have no area;
+// keep the mask the same on all three corners (one flag per part), or the triangle stretches.
 export function useRestPoseShadows( material: THREE.NodeMaterial, restPosition: V3, animatedPosition: V3, castMask?: F ): V3 {
 
 	const restWorld = varyingProperty( 'vec3', 'vVegetationShadowRestWorld' );

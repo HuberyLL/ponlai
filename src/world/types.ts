@@ -28,6 +28,8 @@ export interface Rock { x: number; z: number; s: number; sy: number; y: number; 
 export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: number; z0: number; cell: number }
 
 export const VEGETATION_STRIDE = 9;
+// The turf anchors' jittered grid (m): one anchor per this square of meadow.
+export const VEGETATION_SPACING = 0.235;
 
 // RGBA: actual upper-coast distance, local roof height, turf retreat and exposed root depth.
 export interface RimGroundField extends ShoreField {}
