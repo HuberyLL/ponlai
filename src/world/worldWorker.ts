@@ -84,6 +84,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		meshes.push( { name, kind, ...m } );
 		transfer.push( m.positions.buffer, m.normals.buffer, m.ao.buffer, m.tint.buffer, m.curv.buffer, m.indices.buffer );
 		if ( m.detail ) transfer.push( m.detail.buffer );
+		if ( m.detail2 ) transfer.push( m.detail2.buffer );
 
 	};
 
@@ -91,9 +92,8 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	t = performance.now();
 	push( 'island', surfaceNets( islandSDF, {
 		min: [ ...islandBounds.min ], max: [ ...islandBounds.max ], voxel: islandVoxel,
-		// The cliff's blocks meet at chamfered edges about a voxel wide: vertices placed on the
-		// edges and a short normal step keep each face flat up to its edge instead of rounding
-		// it off.
+		// The cliff's scars meet at sharp edges: vertices placed on the edges and a short normal
+		// step keep each facet flat up to its edge instead of rounding it off.
 		normalStep: islandVoxel * 0.15, sharpen: cliffSharpCells( fp ),
 		aoSdf, contactVisibility: contacts( islandSDF ),
 	} ), 'cliff' );

@@ -4,7 +4,7 @@
 
 import { Field2D, roundCorners } from './Field2D.ts';
 import { noise3, fbm2, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
-import { CoastColumns, CliffWall, bedCoordinate, bedShift } from './Cliff.ts';
+import { CliffWall } from './Cliff.ts';
 import type { SDF, Rock } from './types.ts';
 
 export interface Footprint {
@@ -113,72 +113,48 @@ export function islandSurfaceHeight( x: number, z: number ): number {
 
 }
 
-// The island block: the flat meadow plateau inside a wall of jointed, bedded columns (Cliff.ts).
-// Everything derives from the footprint, so a grown layout gets the same kind of coast.
+// The island block: the flat meadow plateau inside a weathered sea cliff (Cliff.ts). Everything
+// derives from the footprint, so a grown layout gets the same kind of coast.
 export function makeIslandSDF( fp: Footprint ): SDF {
 
 	const top = islandSurfaceHeight;
-	const columns = new CoastColumns( ( x, z ) => fp.dist( x, z ), coastWobble, top, layoutBounds() );
-	const wall = new CliffWall( columns );
-	// The horizontal fields are shared through a full sampled column (y is innermost when meshing).
-	let cx = NaN, cz = NaN, cD2 = 0, cTop = 0, cDomain = 0;
-	function column( x: number, z: number ): void {
+	const wall = new CliffWall( ( x, z ) => fp.dist( x, z ), coastWobble, top, layoutBounds() );
 
-		if ( x === cx && z === cz ) return;
-		cx = x; cz = z;
-		cD2 = fp.dist( x, z );
-		cTop = top( x, z );
-		// The plain plateau inside, the wall's columns around the coast. The outer fade lies
-		// beyond every possible displaced surface, and the inner one behind the deepest fallen
-		// block, so neither clips the relief.
-		cDomain = smoothstep( - 3.4, - 2.8, cD2 ) * ( 1 - smoothstep( 2.2, 3.2, cD2 ) );
-
-	}
-
-	const islandSDF: SDF = ( x, y, z ) => {
-
-		column( x, z );
-		const dBot = ISLAND_BOTTOM - y;
-		const plain = Math.max( cD2, y - cTop );
-		if ( cDomain <= 0 ) return Math.max( plain, dBot );
-		let d = wall.at( x, y, z, cTop );
-		if ( d === Infinity ) return Math.max( plain, dBot );
-		// Weathering: low relief across the faces at two scales, so no block face is a plane.
-		// The broad term is ridged (|noise|): faces break into shallow facets meeting at crisp
-		// crests, as fractured stone does, rather than swelling into soft cushions.
-		// It only shapes the surface, so it fades out (and is skipped) away from it.
-		const near = 1 - smoothstep( 0.12, 0.3, Math.abs( d ) );
-		if ( near > 0 ) {
-
-			const wear = ( Math.abs( noise3( x * 0.6 + 3.8, y * 0.85, z * 0.6 ) ) - 0.22 ) * 0.07
-				+ noise3( x * 1.5 - 2.3, y * 1.2 + 4.7, z * 1.5 + 6.1 ) * 0.02;
-			// (faded out at the meadow's height, which must stay islandSurfaceHeight for the
-			// villagers, the root soil and the rim ground that read it)
-			d += wear * near * smoothstep( 0.04, 0.5, cTop - y );
-
-		}
-		return Math.max( plain + ( d - plain ) * cDomain, dBot );
-
-	};
+	const islandSDF: SDF = ( x, y, z ) => Math.max( wall.at( x, y, z ), ISLAND_BOTTOM - y );
 
 	islandSDF.tint = ( x, y, z ) => 0.5 + noise3( x * 0.2 + 9.3, y * 0.16, z * 0.2 ) * 0.3;
-	// Per vertex for the cliff material: the block's identity (column and bed), how deep inside
-	// a joint the point lies, the bed coordinate (strata and partings) and the depth below the
-	// column's own top (stains and moss start under each block's lip, fallen or not).
+	// Per vertex for the cliff material: the facet's identity (which scar's face it lies on), how
+	// recently that scar fell, the bed coordinate (strata) and the depth below the column's own
+	// top (the meadow, or a ledge cut into the lip; 0 on a scar's floor).
 	islandSDF.detail = ( x, y, z, out, o ) => {
 
-		column( x, z );
-		if ( cDomain <= 0 || wall.at( x, y, z, cTop ) === Infinity ) {
+		wall.at( x, y, z, true );
+		const s = wall.owner >= 0 ? wall.scars[ wall.owner ] : null;
+		out[ o ] = s ? s.id : 0.5;
+		out[ o + 1 ] = s ? s.fresh : 0;
+		out[ o + 2 ] = wall.beta;
+		out[ o + 3 ] = wall.onFloor ? 0 : Math.max( 0, wall.ownTop - y );
 
-			out[ o ] = 0.5; out[ o + 1 ] = 0; out[ o + 2 ] = bedCoordinate( y + bedShift( x, z ) ); out[ o + 3 ] = cTop - y;
-			return;
+	};
+	// How much rock overhangs the point (0 open sky .. 1 under a roof: dry, unstreaked stone) and
+	// the coast's exposure to the waves (the spray zone climbs higher where it is exposed).
+	islandSDF.detail2 = ( x, y, z, out, o ) => {
+
+		const e = 0.02;
+		let gx = islandSDF( x + e, y, z ) - islandSDF( x - e, y, z );
+		let gy = islandSDF( x, y + e, z ) - islandSDF( x, y - e, z );
+		let gz = islandSDF( x, y, z + e ) - islandSDF( x, y, z - e );
+		const l = Math.hypot( gx, gy, gz ) || 1;
+		gx /= l; gy /= l; gz /= l;
+		let shelter = 0;
+		if ( gy < 0.7 ) for ( const [ h, w ] of [ [ 0.25, 0.45 ], [ 0.6, 0.35 ], [ 1.3, 0.2 ] ] ) {
+
+			if ( islandSDF( x + gx * 0.1, y + gy * 0.1 + h, z + gz * 0.1 ) < 0 ) shelter += w;
 
 		}
-		const key = wall.owner >= 0 ? columns.columns[ wall.owner ].key : 0;
-		out[ o ] = hash3i( key, wall.bed, 4231 );
-		out[ o + 1 ] = wall.joint * cDomain;
-		out[ o + 2 ] = wall.beta;
-		out[ o + 3 ] = wall.lipY - y;
+		wall.at( x, y, z );
+		out[ o ] = shelter;
+		out[ o + 1 ] = wall.exposure;
 
 	};
 	return islandSDF;

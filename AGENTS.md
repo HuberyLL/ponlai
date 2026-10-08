@@ -48,9 +48,10 @@ stone exposed.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets; the cliff band
-  places its vertices by dual contouring so block edges stay sharp), its cliffs as jointed,
-  bedded columns seeded along the coast (`Cliff.ts`, with per-vertex block, joint, bed and lip
-  detail for the material), sea floor
+  places its vertices by dual contouring so scar edges stay sharp), its cliffs as a weathered face
+  that has shed blocks along its joints and beds (`Cliff.ts`: rockfall scars in three generations
+  of size, gullies, a wave-cut notch that follows the coast's exposure; per-vertex facet, scar
+  age, bed, lip, overhang and exposure detail for the material), sea floor
   (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
   cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
   tile), shoreline field,
@@ -109,18 +110,22 @@ stone exposed.
   draw a fixed count per vegetation anchor), never from coordinates placed by hand, and their
   counts follow the measured coast length or meadow area. Any tile layout then builds itself the
   same way.
-- Cliff features (columns, beds, ledges, notches, gullies, buttresses) derive from the footprint
-  with seeds hashed from position (`Cliff.ts`), and an unchanged stretch of coast keeps its
-  columns when the layout grows elsewhere: every property of a column or feature (a gully's or
-  buttress's role included) comes from its own hash, never from a running count. The wall is built
-  as solid geometry (cell-clipped, bed-sliced blocks with chamfered edges, overlapping a little
-  near the face and generously behind it) so its field stays near a true distance; blended offsets
-  stair-step on the mesh. It must not read as masonry: joints lean and some die out at a parting,
-  and off the coast-wide ledges many partings are welded per column. The wave-cut notch's roof
-  stays above the calm sea's crests, and the weathering relief fades out at the meadow, whose
-  height stays `islandSurfaceHeight`. Stumps of fallen columns stop at a parting below the
-  meadow's planting height (2.8 m) and carry no turf. No waterfalls. Moss and greenery on the wall
-  stay in its upper 1.2 m.
+- Cliff features (rockfall scars, joint faces, pockets, steps in the lip, gullies, the notch)
+  derive from the footprint with seeds hashed from position in world-anchored cells (`Cliff.ts`),
+  and an unchanged stretch of coast keeps its scars when the layout grows elsewhere: every
+  property of a scar comes from its own hash, never from a running count, and each generation is
+  cut into the surface the larger ones left. The wall is built as solid geometry: convex blocks
+  bounded by two regional joint sets (both oblique to the tile edges), bed partings and inclined
+  fractures are subtracted from a battered face, so its field stays a true distance and the
+  facets stay flat up to crisp edges. It must read as natural rock, never masonry: no level
+  courses or evenly spaced joints. Scar floors and roofs lie on a parting only some of the time,
+  partings and soft beds open over a few metres and pinch out, pockets are shallower than they
+  are wide, and under the meadow the wall weathers back to an upper slope rather than jutting as
+  a slab. The wave-cut notch comes and goes with the coast's exposure and its roof stays above the
+  calm sea's crests; the joint faces run on below the sea, so no ledge follows the waterline. The
+  weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight`. Steps where
+  a block fell from the lip stop below the meadow's planting height (2.8 m) and carry no turf. No
+  waterfalls. Moss and greenery on the wall stay in its upper 1.2 m.
 - Around the island, the shelf's width and depth, the talus at the cliff foot, its shallow benches
   and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
   noise. The floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
