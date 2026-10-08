@@ -14,7 +14,7 @@ import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
-import { generateWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
+import { loadWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
 import { buildGrass } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
@@ -37,6 +37,11 @@ import { characterLook, KIND } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 
 const params = new URLSearchParams( location.search );
+// The world's generation needs nothing from the page, so its workers start first and run while
+// the renderer, sky, textures and frame graph are set up; its result is awaited below. The world
+// worker's last result comes from IndexedDB while the generator and its options are unchanged
+// (src/world/WorldCache.ts); ?worldCache=off generates it regardless, as on a first visit.
+const worldJob = loadWorld( {}, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } );
 const ground = { soil: params.get( 'soil' ) !== '0' };
 soilUniforms.strength.value = ground.soil ? 1 : 0;
 soilUniforms.blend.value = params.get( 'blend' ) === '0' ? 0 : 1;
@@ -312,15 +317,35 @@ pipeline.setLook( requestedLook && LOOKS.includes( requestedLook ) ? requestedLo
 rain.bindOpaqueDepth( pipeline.depthRT.texture, pipeline.surfaceRT.texture );
 rainScene.add( rain.group );
 
+// ------------------------------------------------------------------ first-use pipelines
+
+// A weather change used to build its pipelines in the frame it first drew (rain's drops and
+// splashes, a storm's spray: a dropped frame each). They are compiled ahead instead, through
+// the async pipeline calls, so the GPU process builds them off the main thread. The objects draw
+// into the scene's multisampled target, so the compile sees that target (and the scene they draw
+// in) to build the same pipelines; hidden ones are shown for it and put back at once, since
+// compileAsync collects its objects before its first await.
+function precompile( root: THREE.Object3D, targetScene: THREE.Scene, hidden: THREE.Object3D[], compute: THREE.ComputeNode[] = [] ): Promise<unknown> {
+
+	const saved = hidden.map( ( object ) => [ object, object.visible, object.frustumCulled ] as const );
+	for ( const object of hidden ) { object.visible = true; object.frustumCulled = false; }
+	renderer.setRenderTarget( pipeline.sceneRT );
+	const compiling = [ renderer.compileAsync( root, camera, targetScene ) ];
+	renderer.setRenderTarget( null );
+	for ( const [ object, visible, culled ] of saved ) { object.visible = visible; object.frustumCulled = culled; }
+	if ( compute.length ) compiling.push( renderer.compileComputeAsync( compute ) );
+	return Promise.all( compiling );
+
+}
+// The rain needs nothing from the world, so it compiles while the world is generated.
+const warmRain = precompile( rain.group, rainScene, [ rain.group, ...rain.group.children ], [ rain.drops.compute ] );
+
 // ------------------------------------------------------------------ world
 
 setStatus( 'Generating the island…' );
 const t0 = performance.now();
-// ?worldCache (debug builds): the world worker's last result from IndexedDB, while the generator
-// and its options are unchanged (src/world/WorldCache.ts), instead of generating it again
-const worldOptions = {};
-const worldCache = DEBUG && params.has( 'worldCache' ) ? await ( await import( './world/WorldCache.ts' ) ).cachedWorld( worldOptions, () => generateWorld( worldOptions ) ) : null;
-const data = worldCache?.data ?? await generateWorld( worldOptions );
+const [ worldCache ] = await Promise.all( [ worldJob, warmRain ] );
+const data = worldCache.data;
 mark( 'world' );
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
@@ -396,7 +421,7 @@ water = new Water( {
 applySkyFill();
 waterScene.add( water.mesh, stormSea.spray.mesh );
 
-console.info( worldCache?.cache === 'hit' ? 'world from the cache' : 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
+console.info( worldCache.cache === 'hit' ? 'world from the cache' : 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
 // ------------------------------------------------------------------ GUI
 
@@ -778,7 +803,7 @@ function diagnostics(): void {
 		worldTriangles: world.triangles,
 		rimStrands: data.rimStrands.length,
 		timings: data.timings,
-		worldCache: worldCache ? { cache: worldCache.cache, ms: + worldCache.ms.toFixed( 1 ) } : 'off',
+		worldCache: worldCache.cache === 'off' ? 'off' : { cache: worldCache.cache, ms: + worldCache.ms.toFixed( 1 ) },
 		backend: 'webgpu',
 		hour: + dayCycle.hour.toFixed( 4 ),
 		clockPaused: dayCycle.paused,
@@ -795,6 +820,11 @@ function diagnostics(): void {
 	};
 
 }
+
+// The storm's spray draws with the water; it needs the world's shore fields, so it compiles last.
+// (Its compute kernels, the storm foam's and a lightning bolt's pipelines are still built on
+// first use: those need hooks in StormSea and Lightning.)
+await precompile( stormSea.spray.mesh, waterScene, [ stormSea.spray.mesh ] );
 
 if ( profiler ) {
 
