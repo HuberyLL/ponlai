@@ -317,11 +317,34 @@ pipeline.setLook( requestedLook && LOOKS.includes( requestedLook ) ? requestedLo
 rain.bindOpaqueDepth( pipeline.depthRT.texture, pipeline.surfaceRT.texture );
 rainScene.add( rain.group );
 
+// ------------------------------------------------------------------ first-use pipelines
+
+// A weather change used to build its pipelines in the frame it first drew (rain's drops and
+// splashes, a storm's spray: a dropped frame each). They are compiled ahead instead, through
+// the async pipeline calls, so the GPU process builds them off the main thread. The objects draw
+// into the scene's multisampled target, so the compile sees that target (and the scene they draw
+// in) to build the same pipelines; hidden ones are shown for it and put back at once, since
+// compileAsync collects its objects before its first await.
+function precompile( root: THREE.Object3D, targetScene: THREE.Scene, hidden: THREE.Object3D[], compute: THREE.ComputeNode[] = [] ): Promise<unknown> {
+
+	const saved = hidden.map( ( object ) => [ object, object.visible, object.frustumCulled ] as const );
+	for ( const object of hidden ) { object.visible = true; object.frustumCulled = false; }
+	renderer.setRenderTarget( pipeline.sceneRT );
+	const compiling = [ renderer.compileAsync( root, camera, targetScene ) ];
+	renderer.setRenderTarget( null );
+	for ( const [ object, visible, culled ] of saved ) { object.visible = visible; object.frustumCulled = culled; }
+	if ( compute.length ) compiling.push( renderer.compileComputeAsync( compute ) );
+	return Promise.all( compiling );
+
+}
+// The rain needs nothing from the world, so it compiles while the world is generated.
+const warmRain = precompile( rain.group, rainScene, [ rain.group, ...rain.group.children ], [ rain.drops.compute ] );
+
 // ------------------------------------------------------------------ world
 
 setStatus( 'Generating the island…' );
 const t0 = performance.now();
-const worldCache = await worldJob;
+const [ worldCache ] = await Promise.all( [ worldJob, warmRain ] );
 const data = worldCache.data;
 mark( 'world' );
 const shore = shoreTextureFrom( data.shore );
@@ -797,6 +820,11 @@ function diagnostics(): void {
 	};
 
 }
+
+// The storm's spray draws with the water; it needs the world's shore fields, so it compiles last.
+// (Its compute kernels, the storm foam's and a lightning bolt's pipelines are still built on
+// first use: those need hooks in StormSea and Lightning.)
+await precompile( stormSea.spray.mesh, waterScene, [ stormSea.spray.mesh ] );
 
 if ( profiler ) {
 
