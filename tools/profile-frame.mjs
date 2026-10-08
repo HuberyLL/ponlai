@@ -74,9 +74,10 @@
 // A url's own query options come first, so "http://host/?profile=frames" runs that side without
 // timestamps. `--timestamps both` takes a scene's frame intervals from a run without GPU
 // timestamps (the rate a player sees) and its passes from a run with them. `--hooks off` leaves
-// out ?profile (frame intervals only, as for a build without the profiler). `?worldCache` is added
-// to every url (`--world-cache off` leaves it out): a build that has it loads the island from
-// IndexedDB while its generator is unchanged; older builds ignore it, as they ignore the runtime
+// out ?profile (frame intervals only, as for a build without the profiler). Builds load the island
+// from IndexedDB while its generator is unchanged (older ones only with `?worldCache`, which is
+// added to every url); `--world-cache off` adds `worldCache=off` instead, so the island is
+// generated as on a first visit. Older builds ignore what they do not know, as they ignore the runtime
 // hooks this tool falls back from (it then drives their handles directly). `--shots` saves a JPEG
 // of each scene after its measurement (profile runs, not A/Bs), `--detail` adds each pass's own time and `--raw` every
 // frame.
@@ -423,7 +424,7 @@ function pageUrl( base, q, timestamps ) {
 	const url = new URL( base );
 	// the url's own options first (the page reads the first of a repeated option), then the
 	// scene's; `debug` too, so a build without the profiler still exposes its handles
-	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : '', `quality=${ QUALITY }`, q, EXTRA_Q, renderScale ? `dpr=${ renderScale }` : '' ].filter( Boolean ).join( '&' );
+	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : 'worldCache=off', `quality=${ QUALITY }`, q, EXTRA_Q, renderScale ? `dpr=${ renderScale }` : '' ].filter( Boolean ).join( '&' );
 	return url.href;
 
 }

@@ -801,6 +801,12 @@ export function labelSoomiPasses( profiler: FrameProfiler, handles: Record<strin
 	profiler.scan( P.shafts, 'light shafts' );
 	profiler.scan( P.passes[ 0 ], 'composite (air, fog, veil)', 1 );
 	profiler.scan( P.passes[ 1 ], 'tilt-shift blur', 1 );
+	// the sharp image (the composite plus both blooms) is passes[ 2 ] when the composite renders
+	// once; label it before the look glow's scan reaches it
+	if ( P.passes[ 2 ] ) profiler.scan( P.passes[ 2 ], 'sharp (composite + blooms)', 1 );
+	// the sea fog's bank map, nearest depth and half-resolution march, and the blur's distances
+	profiler.pattern( /^Fog\./, 'composite (air, fog, veil)' );
+	profiler.pattern( /^Post\.ViewDistance/, 'tilt-shift blur' );
 	profiler.scan( P.blooms[ 0 ]?.node, 'bloom' );
 	profiler.scan( P.blooms[ 1 ]?.node, 'wide glow' );
 	profiler.scan( P.diffusion?.node, 'look glow' );
@@ -808,7 +814,7 @@ export function labelSoomiPasses( profiler: FrameProfiler, handles: Record<strin
 	profiler.target( P.displayRT as object, 'grade & look' );
 	profiler.scan( P.output, 'output' );
 	profiler.scan( P.upscaledOutput, 'output & FSR' );
-	profiler.pattern( /^FSR1/, 'output & FSR' );
+	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes and the port's EASU (FSR.)
 	// the sky's per-frame compute and its bakes
 	profiler.pattern( /^Clouds\.View/, 'clouds view march' );
 	profiler.pattern( /^Clouds\.Panorama/, 'clouds panorama' );
