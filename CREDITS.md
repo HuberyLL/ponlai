@@ -355,6 +355,9 @@ comment where it is used.
   [minimal AgX fit](https://iolite-engine.com/blog_posts/minimal_agx_implementation)); the hue-kept
   highlights scale each colour by its brightest channel as Khronos'
   [PBR Neutral](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral) does.
+- Default tone curve: Khronos' [PBR Neutral](https://github.com/KhronosGroup/ToneMapping/tree/main/PBR_Neutral)
+  (Emmett Lalish's curve, as in three.js's `neutralToneMapping`), reimplemented in TSL without its
+  desaturation toward white so highlights keep their hue.
 - Depth of field, highlights averaged compressed by their luminance (c / (1 + L)) and expanded
   again: Brian Karis, [*Tone mapping*](https://graphicrants.blogspot.com/2013/12/tone-mapping.html)
   (2013).

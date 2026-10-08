@@ -183,12 +183,15 @@ try {
 		closeArray( state.waterSunColor, state.sunColor, 1e-6, 'Water shares solar irradiance' );
 		assert.ok( Number.isFinite( state.sunIntoWater ) && state.sunIntoWater >= 0 && state.sunIntoWater <= 1 );
 		assert.ok( Number.isFinite( state.muSun ) && state.muSun >= 0 && state.muSun <= 1 );
-		if ( state.elevation < 0 ) {
-			assert.ok( state.sunColor.every( ( c ) => c <= 1e-6 ), 'Earth blocks direct sunlight below the horizon' );
-			assert.equal( state.sunIntoWater, 0, 'No direct sunlight enters the sea below the horizon' );
-		}
+		if ( state.elevation < 0 ) assert.equal( state.sunIntoWater, 0, 'No direct sunlight enters the sea below the horizon' );
+		// The key fades with the drawn disk (twice the true sun, 0.54 degree radius) as it sinks,
+		// not at its centre (Atmosphere.sunlightAt): at -0.5 degrees its upper limb still shines.
+		// Earth blocks the sunlight completely once the whole drawn disk has set.
+		if ( state.elevation < - 0.54 ) assert.ok( state.sunColor.every( ( c ) => c <= 1e-6 ), 'Earth blocks direct sunlight once the drawn disk has set' );
 	}
-	checks.push( 'Shared solar direction, finite nonnegative irradiance and planet occlusion at 32°, +0.5°, 0°, −0.5° and −5°' );
+	const sunAt = ( elevation ) => measurements.elevations.find( ( state ) => state.elevation === elevation ).sunColor;
+	sunAt( - 0.5 ).forEach( ( c, i ) => assert.ok( c < sunAt( 0 )[ i ] * 0.1, `A sinking disk fades the direct sunlight[${ i }]: ${ c } vs ${ sunAt( 0 )[ i ] }` ) );
+	checks.push( 'Shared solar direction, finite nonnegative irradiance and planet occlusion at 32°, +0.5°, 0°, −0.5° (fading with the drawn disk) and −5°' );
 	for ( const key of [ 'sunColor', 'lightColor', 'waterSunColor', 'skyIrradiance', 'waterIrradiance' ] ) halfRadiance( measurements.half[ key ], measurements.full[ key ], key );
 	assert.ok( measurements.full.radiance.finite && measurements.half.radiance.finite );
 	assert.ok( measurements.full.radiance.minimum >= 0 && measurements.half.radiance.minimum >= 0 );

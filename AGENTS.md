@@ -28,7 +28,7 @@ stone exposed.
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
   override), `quality` (low, medium, high: the clouds' march, bake cadences and rain count, and
-  the render scale, see Decisions), `tone` (agx-hue, the default, agx, neutral), `look`
+  the render scale, see Decisions), `tone` (neutral-hue, the default, agx-hue, agx, neutral), `look`
   (soft-fantasy, the default, rich-fantasy, realistic).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
   sky views.
@@ -133,12 +133,18 @@ stone exposed.
   `sizeRtt`). At the display's ratio nothing is upscaled, so `dpr=1` captures are unchanged.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
-- The tone curve is AgX with hue-kept highlights (`agx-hue` in `src/post/Pipeline.ts`): AgX's long
-  shoulder keeps gradation in a low sun's sky and glare, and above the deep shadows each colour is
-  scaled by its brightest channel, so bright skies and sea keep their hue instead of washing to
-  cream or grey; only far above white do highlights fade to white. Each curve carries its own grade
-  (exposure gain, saturation, vibrance, contrast); PBR Neutral and plain AgX stay selectable in
-  the GUI (`tone` URL option) for comparison. The night keeps PBR Neutral's look with its grade
+- The tone curve is PBR Neutral with hue-kept highlights (`neutral-hue` in `src/post/Pipeline.ts`):
+  PBR Neutral's toe, linear midtones and grade, where the scene was tuned, keep the water clear
+  (deep sea dark and saturated, the shallows' seabed and caustics in full contrast). Above the
+  start of its shoulder each colour is scaled by its brightest channel without PBR Neutral's
+  desaturation, so a low sun's sky and sea keep their hue instead of washing to cream; only above
+  white do highlights fade to white. A soft knee below white leaves the split tone's golden red
+  room for gradation, and bright colours alone gain a little saturation; both give way for scene
+  colours far above the brightest sky (8 - 32 times white), so the sun and its glints burn out. AgX was tried as the
+  default and dropped: its toe greyed the deep water and its shoulder flattened the shallows.
+  Each curve carries its own grade (exposure gain, saturation, vibrance, contrast); AgX with
+  hue-kept highlights (`agx-hue`), plain AgX and plain PBR Neutral stay selectable in the GUI
+  (`tone` URL option) for comparison. The night keeps PBR Neutral's look with its grade
   whichever curve is chosen, crossfading as the sun sets (from the horizon to about -3 degrees,
   so twilight is no darker than under PBR Neutral): its toe holds the night's dark colours
   saturated where AgX's greys and lifts them, and its short shoulder lets the brightest few stars
