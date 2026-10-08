@@ -361,8 +361,9 @@ export class Pipeline {
 
 			const coord = screenCoordinate.xy;
 			const d0 = depthSample( coord, 0 ).toVar();
-			const far = SCENE_SAMPLES === 4 ? max( max( d0, depthSample( coord, 1 ) ), max( depthSample( coord, 2 ), depthSample( coord, 3 ) ) )
-				: max( d0, depthSample( coord, 1 ) );
+			// Single-sampled, the depth texture has no samples to load past 0 (the third argument
+			// would read a mip level instead).
+			const far = SCENE_SAMPLES === 4 ? max( max( d0, depthSample( coord, 1 ) ), max( depthSample( coord, 2 ), depthSample( coord, 3 ) ) ) : d0;
 			return vec4( viewZ( coord, d0 ), viewZ( coord, far ), 0, 0 );
 
 		} )();
