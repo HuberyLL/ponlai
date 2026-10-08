@@ -7,7 +7,7 @@ import {
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
-import { AerialPerspective } from '../weather/AerialPerspective.ts';
+import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
 import { sizeRtt } from './RenderScale.ts';
 import { SCENE_SAMPLES } from './SceneSamples.ts';
@@ -32,6 +32,37 @@ import type { Rain } from '../weather/Rain.ts';
 // the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling, then
 // contrast-adaptive sharpening) to the screen instead, and the grain is added there, at display
 // pixels.
+
+/** The frame graph's structural choices, fixed when the page loads (the quality tier sets them;
+ * the defaults are today's high). `?post=legacy` restores the graph before they were introduced,
+ * for A/B timing; `?post=` also takes a comma list of single switches (see `postOptionsFromURL`). */
+export interface PostOptions extends AirOptions {
+	// the depth of field's gather taps
+	dofTaps: number;
+	// two bloom chains (tight and wide), or one with the wide glow's radius and the two strengths
+	bloomChains: 1 | 2;
+}
+
+export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
+	...DEFAULT_AIR_OPTIONS, dofTaps: 36, bloomChains: 2,
+};
+
+const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
+};
+
+/** The defaults, with `?post=legacy` (every switch below) or `?post=a,b` applied. */
+export function postOptionsFromURL( search = location.search ): PostOptions {
+
+	const options = { ...DEFAULT_POST_OPTIONS };
+	for ( const name of ( new URLSearchParams( search ).get( 'post' ) ?? '' ).split( ',' ) ) {
+
+		if ( name === 'legacy' ) for ( const change of Object.values( LEGACY_SWITCHES ) ) Object.assign( options, change );
+		else if ( LEGACY_SWITCHES[ name ] ) Object.assign( options, LEGACY_SWITCHES[ name ] );
+
+	}
+	return options;
+
+}
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -223,8 +254,9 @@ export class Pipeline {
 	depthRT: THREE.RenderTarget;
 	opaqueRT: THREE.RenderTarget;
 	surfaceRT: THREE.RenderTarget;
-	readonly air = new AerialPerspective();
+	readonly air: AerialPerspective;
 	readonly shafts = new LightShafts();
+	readonly options: Readonly<PostOptions>;
 
 	private depthQuad: THREE.QuadMesh;
 	private copyQuad: THREE.QuadMesh;
@@ -256,9 +288,12 @@ export class Pipeline {
 	};
 	private diffusion!: { node: RenderBloomNode; threshold: THREE.UniformNode<'float', number> };
 
-	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain ) {
+	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL() ) {
 
 		this.renderer = renderer;
+		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
+		const O = this.options;
+		this.air = new AerialPerspective( O );
 		const depthTexture = new THREE.DepthTexture( 1, 1 );
 		depthTexture.type = THREE.FloatType;
 		this.sceneRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, samples: SCENE_SAMPLES, depthTexture } );
@@ -347,7 +382,8 @@ export class Pipeline {
 
 		};
 
-		const withBloom = hdr.add( makeBloom().rgb ).add( makeBloom().rgb );
+		// (one chain: the wide glow's radius and both strengths, see render())
+		const withBloom = O.bloomChains === 2 ? hdr.add( makeBloom().rgb ).add( makeBloom().rgb ) : hdr.add( makeBloom().rgb );
 
 		// ---- tilt-shift depth of field: a half-res gather over a golden-angle disc whose radius grows
 		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
@@ -382,7 +418,7 @@ export class Pipeline {
 		// The blur's radius, in units of the widest one. It grows faster than the coc, so the
 		// transition out of focus stays gentle (as the earlier gather's weights made it).
 		const spread = ( c: F ) => c.mul( min( c.add( 0.15 ), 1 ) );
-		const TAPS = 36, GA = 2.39996323;
+		const TAPS = O.dofTaps, GA = 2.39996323;
 		// The gather averages colours compressed by their displayed luminance (c / (1 + L), after
 		// Karis) and expands the mean again. A plain mean of HDR samples let a single sun glint,
 		// tens of times white, clip every pixel of its circle of confusion: each out-of-focus glint
@@ -815,8 +851,19 @@ export class Pipeline {
 
 		// 4. composite, bloom, depth of field, grade
 		const [ b, g ] = this.blooms;
-		b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
-		g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
+		if ( g ) {
+
+			b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
+			g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
+
+		} else {
+
+			// One chain for both: the wide glow's radius and threshold, the tight bloom's clamps, and
+			// the two strengths together (an approximation for the low tier).
+			b.node.strength.value = S.bloomStrength + S.glowStrength; b.node.radius.value = S.glowRadius; b.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE;
+			b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
+
+		}
 		// The night crossfades the curve and its grade to PBR Neutral's (the grade's own night values,
 		// not the GUI's, which tune the chosen curve by day).
 		const look = this.looks[ S.toneMapping ], night = this.looks.neutral;

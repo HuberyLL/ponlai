@@ -14,6 +14,7 @@ import {
 import type { Sky } from '../sky/Sky.ts';
 
 type F = THREE.Node<'float'>;
+type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
 // Distant air: two exponential height layers, a thin marine layer over the sea and a deeper aerosol
@@ -38,7 +39,6 @@ const FOG_EXTINCTION = 0.0085;
 const FOG_GAP_HEIGHT = 6;
 const FOG_BANK_HEIGHT = 28;
 const FOG_MEAN = { density: 0.9, height: 17 };
-const FOG_STEPS = 12;
 const FOG_REACH = 4000; // metres marched through drifting banks; beyond, the mean layer
 // The island's warm rock thins the fog over it and in its lee: radii (metres) of the clearing.
 const CLEARING = { inner: 20, outer: 100, floor: 0.45 };
@@ -47,6 +47,22 @@ const CLEARING = { inner: 20, outer: 100, floor: 0.45 };
 const FOG_SUN = 0.45;
 // The fog's diffuse reflectance seen from above (a thin layer: less than a cloud deck's).
 const FOG_ALBEDO = 0.45;
+
+// A view ray and the light the air scatters along it (see `AerialPerspective.ray`).
+interface AirRay {
+	direction: V3; origin: V3; distance: F; down: F; around: V3; shade: F;
+	lit: ( sky: V3, near: F ) => V3;
+	hazeDepth: F; hazeLight: V3;
+}
+
+/** The frame graph's structural choices for the air, fixed when the page loads (the quality tier
+ * sets them). Today's high: 12 steps. */
+export interface AirOptions {
+	// steps of the fog march through the banks
+	fogSteps: number;
+}
+
+export const DEFAULT_AIR_OPTIONS: Readonly<AirOptions> = { fogSteps: 12 };
 
 // Optical depth of one exponential layer (extinction `sigma` at sea level, scale height `height`)
 // from height `hc` along a ray whose direction has the vertical component `vy`, over `d` metres.
@@ -102,10 +118,145 @@ export class AerialPerspective {
 	private projectionInverse = uniform( new THREE.Matrix4() );
 	private cameraWorld = uniform( new THREE.Matrix4() );
 	private resolution = uniform( new THREE.Vector2( 1, 1 ) );
+	readonly options: Readonly<AirOptions>;
+
+	constructor( options: Partial<AirOptions> = {} ) {
+
+		this.options = { ...DEFAULT_AIR_OPTIONS, ...options };
+
+	}
+
+	// The view ray through screen position `q` (uv) to a surface at view z `z`, and the light the
+	// air scatters along it.
+	private ray( q: V2, z: F, sky: Sky ): AirRay {
+
+		const ndc = vec3( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1 ).toVar();
+		const viewFar = this.projectionInverse.mul( vec4( ndc, 1 ) ).toVar();
+		const ray = viewFar.xyz.div( viewFar.w ).toVar();
+		const direction = normalize( this.cameraWorld.mul( vec4( normalize( ray ), 0 ) ).xyz ).toVar();
+		const origin = this.cameraWorld.mul( vec4( 0, 0, 0, 1 ) ).xyz.toVar();
+		// The air takes the sky's colour just above the horizon, so the far sea fades into the
+		// horizon itself rather than stopping short of it in a darker band. Looking down, the air
+		// is lit by the whole sky; a sharp horizon sample there would spread the horizon's clouds
+		// and the sun's glow into rays converging below the camera, so it turns to the horizon's
+		// average.
+		const down = smoothstep( 0.02, 0.35, direction.y.negate() ).toVar();
+		const around = sky.sampleBackground( vec3( 1, 0.06, 0 ), float( 6 ) ).add( sky.sampleBackground( vec3( - 1, 0.06, 0 ), float( 6 ) ) )
+			.add( sky.sampleBackground( vec3( 0, 0.06, 1 ), float( 6 ) ) ).add( sky.sampleBackground( vec3( 0, 0.06, - 1 ), float( 6 ) ) ).mul( 0.25 ).toVar();
+		const air = mix( sky.sampleBackground( normalize( vec3( direction.x, 0.008, direction.z ) ), float( 2 ) ), around, down ).toVar();
+		// The key light scattered toward the eye, and its share of the air's light: the rest is
+		// the sky's (E / pi, comparable with a radiance).
+		const scattered = this.keyColor.rgb.mul( phase( dot( direction, this.keyDir ) ) ).toVar();
+		const sunLuma = luminance( scattered );
+		const sunShare = sunLuma.div( sunLuma.add( luminance( sky.irradianceNode ) ).add( 1e-5 ) ).toVar();
+		const distance = float( 1e5 ).toVar();
+		const hazeDepth = float( 0 ).toVar();
+		// The resolved sky sits at -1e5; the sea's skirt reaches tens of kilometres.
+		If( z.greaterThan( - 9e4 ), () => {
+
+			distance.assign( length( ray.mul( z.div( ray.z ) ) ) );
+			// The air's density along the ray is weighted by smoothstep( start, end ) of the distance.
+			// Integrated, the weight holds back `held` metres of air; the rest is integrated from
+			// there to the content (the held air is the near part, the remaining depth the far).
+			const ramp = this.clearEnd.sub( CLEAR.start ).toVar();
+			const u = clamp( distance.sub( CLEAR.start ).div( ramp ), 0, 1 ).toVar();
+			const u3 = u.mul( u ).mul( u ).toVar();
+			const held = min( distance, CLEAR.start ).add( u.sub( u3 ).add( u3.mul( u ).mul( 0.5 ) ).mul( ramp ) ).toVar();
+			const start = origin.y.add( direction.y.mul( held ) );
+			const d = max( distance.sub( held ), 0 );
+			hazeDepth.assign( layerDepth( this.haze.mul( MARINE.share ), float( MARINE.height ), start, direction.y, d )
+				.add( layerDepth( this.haze.mul( AEROSOL.share ), float( AEROSOL.height ), start, direction.y, d ) ) );
+
+		} );
+		// The near air lies in the clouds' shadow wherever the ground does: the beam it scatters is
+		// the one the cloud shadow map lets through, sampled along the near stretch of the ray
+		// where the air shows (from the foreground's edge on). The sky's share keeps its
+		// light, so a shadowed haze toward a low sun is lit by the sky alone, not by its aureole.
+		const reachNear = min( distance, NEAR ).toVar();
+		const from = min( float( CLEAR.start ), reachNear ).toVar();
+		const shade = sky.cloudVisibility( origin.add( direction.mul( mix( from, reachNear, 1 / 6 ) ) ) )
+			.add( sky.cloudVisibility( origin.add( direction.mul( mix( from, reachNear, 0.5 ) ) ) ) )
+			.add( sky.cloudVisibility( origin.add( direction.mul( mix( from, reachNear, 5 / 6 ) ) ) ) ).div( 3 ).toVar();
+		const beam = scattered.mul( shade ).toVar();
+		// Near the camera the sun's share of the light is its explicit, phase-weighted scattering;
+		// far away the horizon's colour (whose sun glow already holds it).
+		const lit = ( sky: V3, near: F ) => sky.mul( float( 1 ).sub( sunShare.mul( near ) ) ).add( beam.mul( near ) );
+		const hazeLight = lit( air, float( 1 ).sub( smoothstep( 0, NEAR, distance ) ) ).toVar();
+		return { direction, origin, distance, down, around, shade, lit, hazeDepth, hazeLight };
+
+	}
+
+	// The sea fog's optical depth and light along a ray (zero without fog).
+	private march( r: AirRay, sky: Sky ): { fogDepth: F; fogLight: V3 } {
+
+		const { direction, origin, distance, down, around, shade, lit } = r;
+		const steps = this.options.fogSteps;
+		const fogDepth = float( 0 ).toVar();
+		const fogLight = vec3( 0 ).toVar();
+		If( this.fog.greaterThan( 0.001 ), () => {
+
+			const sigma = this.fog.mul( FOG_EXTINCTION ).toVar();
+			// Quadratic steps along level rays: dense near the camera where banks are resolved, sparse
+			// beyond. A ray looking down crosses the layer only near its end, so it steps evenly.
+			const reach = min( distance, FOG_REACH ).toVar();
+			const even = smoothstep( 0.1, 0.5, direction.y.negate() ).toVar();
+			const previous = float( 0 ).toVar();
+			// The fog's scattering weighted by what reaches the eye, and its mean distance.
+			const weight = float( 0 ).toVar(), weighted = float( 0 ).toVar();
+			Loop( steps, ( { i } ) => {
+
+				const u = float( i ).add( 1 ).div( steps );
+				const t = reach.mul( mix( u.mul( u ), u, even ) ).toVar();
+				const mid = t.add( previous ).mul( 0.5 ).toVar();
+				const p = origin.add( direction.mul( mid ) ).toVar();
+				// Banks: drifting patches a hundred metres or so across with wisps at their edges,
+				// thinner gaps between them; they evolve slowly as they drift.
+				const drift = p.xz.add( this.fogOffset ).toVar();
+				const noise = mx_noise_float( vec3( drift.div( 140 ), this.fogTime.mul( 0.006 ) ) ).mul( 0.65 )
+					.add( mx_noise_float( vec3( drift.div( 45 ), this.fogTime.mul( 0.015 ).add( 3.7 ) ) ).mul( 0.35 ) );
+				const bank_ = smoothstep( 0.2, 0.75, noise.mul( 0.5 ).add( 0.5 ) ).toVar();
+				const clearing = mix( float( CLEARING.floor ), float( 1 ), smoothstep( CLEARING.inner, CLEARING.outer, length( p.xz ) ) );
+				const local = exp( max( p.y, 0 ).div( mix( float( FOG_GAP_HEIGHT ), float( FOG_BANK_HEIGHT ), bank_ ) ).negate() )
+					.mul( bank_.mul( 1.6 ).add( 0.12 ) ).mul( clearing );
+				const step = local.mul( t.sub( previous ) ).toVar();
+				const w = step.mul( exp( fogDepth.add( step.mul( 0.5 ) ).mul( sigma ).negate() ) );
+				weight.addAssign( w );
+				weighted.addAssign( w.mul( mid ) );
+				fogDepth.addAssign( step );
+				previous.assign( t );
+
+			} );
+			// Beyond the marched reach, the mean layer integrated analytically along the ray.
+			const start = origin.add( direction.mul( reach ) ).toVar();
+			const rest = max( distance.sub( reach ), 0 ).toVar();
+			const tail = layerDepth( float( FOG_MEAN.density ), float( FOG_MEAN.height ), start.y, direction.y, rest ).toVar();
+			const w = tail.mul( exp( fogDepth.mul( sigma ).negate() ) );
+			weight.addAssign( w );
+			weighted.addAssign( w.mul( reach.add( min( rest, FOG_REACH ).mul( 0.5 ) ) ) );
+			fogDepth.assign( fogDepth.add( tail ).mul( sigma ) );
+			// Seen edge-on, fog takes the low sky's light, as the horizon it hides would, so it merges
+			// with the sky rather than banding against it; the sample is blurred so the horizon's
+			// clouds do not print into the fog, and high enough that the blur stays clear of the sea.
+			// Seen from above, the bank's top is a thick, white scattering layer lit like a cloud by
+			// the key light and the sky (multiple scattering, which the phase term alone misses).
+			const low = mix( sky.sampleBackground( normalize( vec3( direction.x, 0.06, direction.z ) ), float( 4 ) ), around, down ).mul( 0.9 );
+			// Many scattering events also wash out the low sun's colour toward white. The cloud shadow
+			// reuses the near air's samples (within the ray's first 900 m) rather than the spot where
+			// the ray meets the bank's top: close enough for banks seen from the island's height, but
+			// a top far below a high camera may take a neighbouring patch's shadow.
+			const lambert = this.keyColor.rgb.mul( max( this.keyDir.y, 0 ).mul( this.fogSun ).mul( shade ).div( Math.PI ) ).add( sky.irradianceNode ).mul( FOG_ALBEDO ).toVar();
+			const top = mix( vec3( luminance( lambert ) ), lambert, 0.25 );
+			const near = float( 1 ).sub( smoothstep( 0, NEAR, weighted.div( max( weight, 1e-6 ) ) ) ).mul( this.fogSun );
+			fogLight.assign( lit( mix( low, top, smoothstep( 0.15, 0.6, direction.y.negate() ) ), near.mul( FOG_SUN ) ) );
+
+		} );
+		return { fogDepth, fogLight };
+
+	}
 
 	/** `depth` is the linear view z of the nearest surface, the sea's included. `veil` returns the
 	 * colour `background` seen through the rain along a view direction, in front of content at a
-	 * given distance. */
+	 * given distance. Called once, by the frame graph. */
 	apply( color: V3, depth: THREE.Texture, sky: Sky, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
 
 		const sceneDepth = texture( depth );
@@ -114,123 +265,15 @@ export class AerialPerspective {
 			const q = uv().toVar();
 			const px = ivec2( clamp( q.mul( this.resolution ), 0, this.resolution.sub( 1 ) ) );
 			const z = ( textureLoad( sceneDepth, px ) as unknown as F ).toVar();
-			const ndc = vec3( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1 ).toVar();
-			const viewFar = this.projectionInverse.mul( vec4( ndc, 1 ) ).toVar();
-			const ray = viewFar.xyz.div( viewFar.w ).toVar();
-			const direction = normalize( this.cameraWorld.mul( vec4( normalize( ray ), 0 ) ).xyz ).toVar();
-			const origin = this.cameraWorld.mul( vec4( 0, 0, 0, 1 ) ).xyz.toVar();
-			// The air takes the sky's colour just above the horizon, so the far sea fades into the
-			// horizon itself rather than stopping short of it in a darker band. Looking down, the air
-			// is lit by the whole sky; a sharp horizon sample there would spread the horizon's clouds
-			// and the sun's glow into rays converging below the camera, so it turns to the horizon's
-			// average.
-			const down = smoothstep( 0.02, 0.35, direction.y.negate() ).toVar();
-			const around = sky.sampleBackground( vec3( 1, 0.06, 0 ), float( 6 ) ).add( sky.sampleBackground( vec3( - 1, 0.06, 0 ), float( 6 ) ) )
-				.add( sky.sampleBackground( vec3( 0, 0.06, 1 ), float( 6 ) ) ).add( sky.sampleBackground( vec3( 0, 0.06, - 1 ), float( 6 ) ) ).mul( 0.25 ).toVar();
-			const air = mix( sky.sampleBackground( normalize( vec3( direction.x, 0.008, direction.z ) ), float( 2 ) ), around, down ).toVar();
-			// The key light scattered toward the eye, and its share of the air's light: the rest is
-			// the sky's (E / pi, comparable with a radiance).
-			const scattered = this.keyColor.rgb.mul( phase( dot( direction, this.keyDir ) ) ).toVar();
-			const sunLuma = luminance( scattered );
-			const sunShare = sunLuma.div( sunLuma.add( luminance( sky.irradianceNode ) ).add( 1e-5 ) ).toVar();
-			const distance = float( 1e5 ).toVar();
-			const hazeDepth = float( 0 ).toVar();
-			// The resolved sky sits at -1e5; the sea's skirt reaches tens of kilometres.
-			If( z.greaterThan( - 9e4 ), () => {
-
-				distance.assign( length( ray.mul( z.div( ray.z ) ) ) );
-				// The air's density along the ray is weighted by smoothstep( start, end ) of the distance.
-				// Integrated, the weight holds back `held` metres of air; the rest is integrated from
-				// there to the content (the held air is the near part, the remaining depth the far).
-				const ramp = this.clearEnd.sub( CLEAR.start ).toVar();
-				const u = clamp( distance.sub( CLEAR.start ).div( ramp ), 0, 1 ).toVar();
-				const u3 = u.mul( u ).mul( u ).toVar();
-				const held = min( distance, CLEAR.start ).add( u.sub( u3 ).add( u3.mul( u ).mul( 0.5 ) ).mul( ramp ) ).toVar();
-				const start = origin.y.add( direction.y.mul( held ) );
-				const d = max( distance.sub( held ), 0 );
-				hazeDepth.assign( layerDepth( this.haze.mul( MARINE.share ), float( MARINE.height ), start, direction.y, d )
-					.add( layerDepth( this.haze.mul( AEROSOL.share ), float( AEROSOL.height ), start, direction.y, d ) ) );
-
-			} );
-			// The near air lies in the clouds' shadow wherever the ground does: the beam it scatters is
-			// the one the cloud shadow map lets through, sampled along the near stretch of the ray
-			// where the air shows (from the foreground's edge on). The sky's share keeps its
-			// light, so a shadowed haze toward a low sun is lit by the sky alone, not by its aureole.
-			const reachNear = min( distance, NEAR ).toVar();
-			const from = min( float( CLEAR.start ), reachNear ).toVar();
-			const shade = sky.cloudVisibility( origin.add( direction.mul( mix( from, reachNear, 1 / 6 ) ) ) )
-				.add( sky.cloudVisibility( origin.add( direction.mul( mix( from, reachNear, 0.5 ) ) ) ) )
-				.add( sky.cloudVisibility( origin.add( direction.mul( mix( from, reachNear, 5 / 6 ) ) ) ) ).div( 3 ).toVar();
-			const beam = scattered.mul( shade ).toVar();
-			// Near the camera the sun's share of the light is its explicit, phase-weighted scattering;
-			// far away the horizon's colour (whose sun glow already holds it).
-			const lit = ( sky: V3, near: F ) => sky.mul( float( 1 ).sub( sunShare.mul( near ) ) ).add( beam.mul( near ) );
-			const hazeLight = lit( air, float( 1 ).sub( smoothstep( 0, NEAR, distance ) ) ).toVar();
-
-			const fogDepth = float( 0 ).toVar();
-			const fogLight = vec3( 0 ).toVar();
-			If( this.fog.greaterThan( 0.001 ), () => {
-
-				const sigma = this.fog.mul( FOG_EXTINCTION ).toVar();
-				// Quadratic steps along level rays: dense near the camera where banks are resolved, sparse
-				// beyond. A ray looking down crosses the layer only near its end, so it steps evenly.
-				const reach = min( distance, FOG_REACH ).toVar();
-				const even = smoothstep( 0.1, 0.5, direction.y.negate() ).toVar();
-				const previous = float( 0 ).toVar();
-				// The fog's scattering weighted by what reaches the eye, and its mean distance.
-				const weight = float( 0 ).toVar(), weighted = float( 0 ).toVar();
-				Loop( FOG_STEPS, ( { i } ) => {
-
-					const u = float( i ).add( 1 ).div( FOG_STEPS );
-					const t = reach.mul( mix( u.mul( u ), u, even ) ).toVar();
-					const mid = t.add( previous ).mul( 0.5 ).toVar();
-					const p = origin.add( direction.mul( mid ) ).toVar();
-					// Banks: drifting patches a hundred metres or so across with wisps at their edges,
-					// thinner gaps between them; they evolve slowly as they drift.
-					const drift = p.xz.add( this.fogOffset ).toVar();
-					const bank = smoothstep( 0.2, 0.75, mx_noise_float( vec3( drift.div( 140 ), this.fogTime.mul( 0.006 ) ) ).mul( 0.65 )
-						.add( mx_noise_float( vec3( drift.div( 45 ), this.fogTime.mul( 0.015 ).add( 3.7 ) ) ).mul( 0.35 ) ).mul( 0.5 ).add( 0.5 ) ).toVar();
-					const clearing = mix( float( CLEARING.floor ), float( 1 ), smoothstep( CLEARING.inner, CLEARING.outer, length( p.xz ) ) );
-					const local = exp( max( p.y, 0 ).div( mix( float( FOG_GAP_HEIGHT ), float( FOG_BANK_HEIGHT ), bank ) ).negate() )
-						.mul( bank.mul( 1.6 ).add( 0.12 ) ).mul( clearing );
-					const step = local.mul( t.sub( previous ) ).toVar();
-					const w = step.mul( exp( fogDepth.add( step.mul( 0.5 ) ).mul( sigma ).negate() ) );
-					weight.addAssign( w );
-					weighted.addAssign( w.mul( mid ) );
-					fogDepth.addAssign( step );
-					previous.assign( t );
-
-				} );
-				// Beyond the marched reach, the mean layer integrated analytically along the ray.
-				const start = origin.add( direction.mul( reach ) ).toVar();
-				const rest = max( distance.sub( reach ), 0 ).toVar();
-				const tail = layerDepth( float( FOG_MEAN.density ), float( FOG_MEAN.height ), start.y, direction.y, rest ).toVar();
-				const w = tail.mul( exp( fogDepth.mul( sigma ).negate() ) );
-				weight.addAssign( w );
-				weighted.addAssign( w.mul( reach.add( min( rest, FOG_REACH ).mul( 0.5 ) ) ) );
-				fogDepth.assign( fogDepth.add( tail ).mul( sigma ) );
-				// Seen edge-on, fog takes the low sky's light, as the horizon it hides would, so it merges
-				// with the sky rather than banding against it; the sample is blurred so the horizon's
-				// clouds do not print into the fog, and high enough that the blur stays clear of the sea.
-				// Seen from above, the bank's top is a thick, white scattering layer lit like a cloud by
-				// the key light and the sky (multiple scattering, which the phase term alone misses).
-				const low = mix( sky.sampleBackground( normalize( vec3( direction.x, 0.06, direction.z ) ), float( 4 ) ), around, down ).mul( 0.9 );
-				// Many scattering events also wash out the low sun's colour toward white. The cloud shadow
-				// reuses the near air's samples (within the ray's first 900 m) rather than the spot where
-				// the ray meets the bank's top: close enough for banks seen from the island's height, but
-				// a top far below a high camera may take a neighbouring patch's shadow.
-				const lambert = this.keyColor.rgb.mul( max( this.keyDir.y, 0 ).mul( this.fogSun ).mul( shade ).div( Math.PI ) ).add( sky.irradianceNode ).mul( FOG_ALBEDO ).toVar();
-				const top = mix( vec3( luminance( lambert ) ), lambert, 0.25 );
-				const near = float( 1 ).sub( smoothstep( 0, NEAR, weighted.div( max( weight, 1e-6 ) ) ) ).mul( this.fogSun );
-				fogLight.assign( lit( mix( low, top, smoothstep( 0.15, 0.6, direction.y.negate() ) ), near.mul( FOG_SUN ) ) );
-
-			} );
+			const r = this.ray( q, z, sky );
+			const { fogDepth, fogLight } = this.march( r, sky );
 			// One medium: the layers' light mixed by their share of the optical depth.
+			const hazeDepth = r.hazeDepth, hazeLight = r.hazeLight;
 			const total = hazeDepth.add( fogDepth ).toVar();
 			const transmittance = exp( total.negate() );
 			const light = hazeLight.mul( hazeDepth ).add( fogLight.mul( fogDepth ) ).div( max( total, 1e-6 ) );
 			const result = mix( light, color, transmittance );
-			return veil ? veil( direction, distance, result ) : result;
+			return veil ? veil( r.direction, r.distance, result ) : result;
 
 		} )();
 
