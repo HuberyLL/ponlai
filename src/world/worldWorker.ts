@@ -10,7 +10,7 @@ import {
 	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
 } from './WorldShapes.ts';
 import { Field2D } from './Field2D.ts';
-import { deepenSeabed, seabedBeds } from './Bathymetry.ts';
+import { deepenSeabed, seabedBeds, shapeShelf } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
 import { VEGETATION_STRIDE } from './types.ts';
@@ -27,7 +27,7 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	const fp = buildFootprint();
 	mark( 'footprint', t );
 
-	const seabedHeight = deepenSeabed( fp, makeSeabed( fp ) );
+	const seabedHeight = shapeShelf( fp, deepenSeabed( fp, makeSeabed( fp ) ) );
 
 	// --- seabed: a grid warped to be dense around the island and sparse toward the horizon
 	t = performance.now();
@@ -50,8 +50,8 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	// Ground each stone on the same triangles the renderer uses. Sampling the analytic
 	// floor alone can hide a small crown beneath a coarser seabed mesh.
 	const renderedFloor = seabedSampler( sb, n, seabedSize );
-	const rocks = makeRocks( fp, renderedFloor );
 	const islandSDF = makeIslandSDF( fp );
+	const rocks = makeRocks( fp, renderedFloor, islandSDF );
 	const rockSDFs = rocks.map( makeRockSDF );
 	// The rendered grid's highest vertex bounds contact queries on the floor.
 	t = performance.now();

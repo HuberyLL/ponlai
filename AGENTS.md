@@ -49,7 +49,9 @@ exposed.
   places its vertices by dual contouring so block edges stay sharp), its cliffs as jointed,
   bedded columns seeded along the coast (`Cliff.ts`, with per-vertex block, joint, bed and lip
   detail for the material), sea floor
-  (its seagrass beds and pale sand baked per vertex, so they never tile), shoreline field,
+  (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
+  cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
+  tile), shoreline field,
   vegetation anchors; instanced grass, bushes and flowers on the island top,
   with top-rooted overhanging branches of mixed lengths.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
@@ -110,6 +112,13 @@ exposed.
   and the weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight`.
   Stumps of fallen columns stop at a parting below the meadow's planting height (2.8 m) and carry
   no turf. No waterfalls. Moss and greenery on the wall stay in its upper 1.2 m.
+- Everything around the island is generic, so the island can grow by more tiles: the shelf's
+  width and depth, the talus at the cliff foot, its shallow benches and the fallen blocks on it
+  are derived from the footprint's distance, the island's SDF and world-space noise with fixed
+  seeds, never placed at coordinates. The floor off the island stays below -1.6 m and every stone
+  crown below -1.30 m, so nothing breaks the surface. Fallen blocks are walked out from the coast
+  until their traced outline clears the island's solid, so they rest against the cliff's
+  underwater toe wherever it runs; other stones keep a wider berth.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as

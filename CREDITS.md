@@ -380,6 +380,8 @@ Sources that informed the procedural layout; no code, data or images from them a
 - Seabed substrate: Page C. Valentine, USGS,
   [*Sediment classification and the characterization, identification, and mapping of geologic substrates*](https://www.usgs.gov/publications/sediment-classification-and-characterization-identification-and-mapping-geologic)
   (2019, SIR 2019–5073).
+- Shelf at the cliff foot (talus aprons and wave-cut shore platforms, art-directed rather than
+  modelled): Alan S. Trenhaile, *The Geomorphology of Rock Coasts* (Oxford University Press, 1987).
 - Cliffs and rim: U.S. National Park Service,
   [*Coastal Processes—Erosion*](https://www.nps.gov/articles/coastal-processes-erosion.htm), and USGS,
   [*Factors affecting sea cliff erosion*](https://www.usgs.gov/media/images/factors-affecting-sea-cliff-erosion).
