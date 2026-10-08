@@ -389,9 +389,8 @@ comment where it is used.
   crossings' tangent planes): Tao Ju, Frank Losasso, Scott Schaefer and Joe Warren,
   [*Dual Contouring of Hermite Data*](https://www.cs.rice.edu/~jwarren/papers/dualcontour.pdf)
   (SIGGRAPH 2002).
-- Chamfered edges of the cliff's blocks, the 45-degree chamfer of two distance fields
-  ( a + b + r ) / sqrt( 2 ): Mercury, [*hg_sdf*](https://mercury.sexy/hg_sdf/) (`fOpUnionChamfer`),
-  used as a technique only.
+- Rounded rims of the cliff's scars, the polynomial smooth maximum of two distance fields:
+  Inigo Quilez, [*smooth minimum*](https://iquilezles.org/articles/smin/), used as a technique only.
 
 ## References
 
@@ -405,3 +404,15 @@ Sources that informed the procedural layout; no code, data or images from them a
 - Cliffs and rim: U.S. National Park Service,
   [*Coastal Processes—Erosion*](https://www.nps.gov/articles/coastal-processes-erosion.htm), and USGS,
   [*Factors affecting sea cliff erosion*](https://www.usgs.gov/media/images/factors-affecting-sea-cliff-erosion).
+- Rockfall scars bounded by joint sets and bed partings, nested in size, and the debris below
+  them: Mélody Prémaillon, Thomas J. B. Dewez, Vincent Regard et al.,
+  [*Conceptual model of fracture-limited sea cliff erosion*](https://archimer.ifremer.fr/doc/00705/81660/)
+  (Earth Surface Processes and Landforms 46, 2021).
+- The wave-cut notch (a sharp roof and a sloping floor near sea level, its depth varying along
+  the coast): Fabrizio Antonioli et al., *Tidal notches in Mediterranean Sea: a comprehensive
+  analysis* (Quaternary Science Reviews 119, 2015).
+- The cliff's shore zones and stains: the black *Verrucaria* band above the tide and the orange and
+  grey lichens of the splash zone, MarLIN,
+  [*Yellow and grey lichens on supralittoral rock*](https://www.marlin.ac.uk/habitats/detail/96/yellow_and_grey_lichens_on_supralittoral_rock);
+  the dark runoff streaks of rock-dwelling cyanobacteria ("Tintenstriche"),
+  [*Gloeocapsa magma*](https://en.wikipedia.org/wiki/Gloeocapsa_magma) and the literature it cites.

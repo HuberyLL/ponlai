@@ -1,142 +1,255 @@
-// The jointed and bedded structure of the island's cliffs, derived from the footprint alone, so a
-// larger or different tile layout gets the same kind of wall with no hand-placed features.
+// The island's sea cliff, derived from the footprint alone, so a larger or different tile layout
+// gets the same kind of coast with no hand-placed features.
 //
-// Sea cliffs in bedded limestone break along two kinds of planes: near-vertical joints, which
-// split the wall into blocky columns, and bedding partings, which run along the whole coast at
-// nearly one height and give the columns ledges, small overhangs and recessed softer beds. The
-// sea undercuts the foot, and the columns retreat one by one, so the lip steps down where a block
-// has fallen (down to a parting) and gullies open along wider joints. Here the columns are the
-// cells of a Voronoi partition seeded along the coast line, so the joints meet the wall roughly
-// square, leaning and twisting a little and some dying out at a parting; each column is a stack
-// of blocks, one per bed or several welded together, each with its own face. Without that the
-// wall read as dressed masonry: plumb joints through the full height and every parting coursing
-// across every column.
+// A natural cliff face is not a stack of blocks: it is what is left after the rock mass has shed
+// pieces of every size along its discontinuities. In bedded sedimentary rock these are a few sets
+// of steep joints, each with its own regional strike, and gently dipping bedding partings. The sea
+// and the weather loosen blocks bounded by those planes and the face retreats scar by scar:
+// rockfall scars follow a power law of size (a few large, many small, the small ones nested in the
+// large), their floors and roofs often lie on a bed parting (the depth of a fall is a multiple of
+// bed thickness) and their sides on a cross joint. Where the coast runs oblique to the joints the
+// face breaks into long faces and short returns. The sea undercuts the foot in a notch that is
+// deepest where the coast is most exposed and gives way to a rounded ramp where it is sheltered,
+// and rounds every edge in the wave zone; above it the weather opens the softer beds into
+// recesses that pinch out within a few metres, and the edges stay as sharp as they broke.
+// (Scar inventory and the geometry of fracture-bounded blocks after Prémaillon et al., *Conceptual
+// model of fracture-limited sea cliff erosion*, Earth Surface Processes and Landforms 46, 2021;
+// tidal notches after Antonioli et al., *Tidal notches in Mediterranean Sea*, Quaternary Science
+// Reviews 119, 2015. No erosion is simulated: the forms are art-directed from those descriptions.)
 //
-// The wall is built as constructive solid geometry (union of cell-clipped, bed-sliced blocks
-// with chamfered edges) rather than by blending offsets: the field stays close to a true
-// distance (gradient ~1), so the 0.12 m surface nets keep ledges and joints crisp instead of
-// stair-stepping them, and the vertex normals, which come from the field's gradient, stay flat
-// on each block face.
-//
-// Art direction after observed coastal landforms (joint-controlled retreat, bedding ledges and
-// wave-cut notches); no erosion is simulated:
-// https://www.usgs.gov/media/images/factors-affecting-sea-cliff-erosion
-// https://www.nps.gov/articles/coastal-processes-erosion.htm
+// So the wall is a slightly battered face around the footprint from which convex blocks, each
+// bounded by those planes, are subtracted in three generations of size: the remaining surface is
+// the envelope of their inner faces, multi-facet scars meeting at sharp salient and re-entrant
+// edges at every angle the joint sets allow. The small breaks are flakes, a flat facet ending in
+// a step, rather than small pockets: those, and pairs of pockets side by side, read as dark holes
+// (eyes) in the shade, and many small rounded ones as the lumps of dissolved limestone. The field stays a true distance inside each block
+// (gradient 1), so the dual-contouring surface nets keep facets flat and their edges crisp.
+// Every scar is seeded from a coast point hashed from its position in a world-anchored cell, and
+// each generation is placed on the surface the larger ones left, so an unchanged stretch of coast
+// keeps its scars when the layout grows elsewhere.
 
-import { hash3i, noise3, smoothstep } from './noise.ts';
+import { hash3i, noise3, smax, smoothstep } from './noise.ts';
 
-// ------------------------------------------------------------------ bedding
+type Field = ( x: number, z: number ) => number;
 
-// Partings sit at whole numbers of bedCoordinate( y + bedShift( x, z ) ). Two sines of unrelated
-// periods make the beds' thickness vary without a rhythm, between ~0.6 and ~2 m up the wall; the
-// shift is a gentle dip (about 2 degrees) plus a slow warp, so a parting crosses the coast at
-// different heights.
-const BED = { spacing: 0.95, amplitude: 0.17, period: 2.9, phase: 1.3, amplitude2: 0.06, period2: 1.73, phase2: 4.1, dipX: 0.028, dipZ: 0.021 };
-const BED_W = 2 * Math.PI / BED.period, BED_W2 = 2 * Math.PI / BED.period2;
+// ------------------------------------------------------------------ structure
 
+// The two joint sets' normals (azimuth, rad, from +x toward +z), 85 degrees apart. Both run
+// oblique to the tile edges, so no stretch of the tile coast lies along a set.
+const SET_A = 0.47, SET_B = SET_A + 1.48;
+
+// Bedding partings at irregular heights: thicknesses 0.18 - 1.6 m, mostly thin, drawn once
+// (beds are regional), well below and above any wall.
+const BED_Y0 = - 12, BED_N = 64;
+const PARTING = new Float64Array( BED_N + 1 );
+{
+
+	let y = BED_Y0;
+	for ( let k = 0; k <= BED_N; k ++ ) {
+
+		PARTING[ k ] = y;
+		const r = hash3i( k, 31, 977 );
+		y += 0.18 + r * r * 1.45;
+
+	}
+
+}
+
+// Bed coordinate of a height (with bedShift already added): whole numbers at the partings.
 export function bedCoordinate( y: number ): number {
 
-	return y / BED.spacing + Math.sin( y * BED_W + BED.phase ) * BED.amplitude + Math.sin( y * BED_W2 + BED.phase2 ) * BED.amplitude2;
+	if ( y <= PARTING[ 0 ] ) return ( y - PARTING[ 0 ] ) / 0.66;
+	if ( y >= PARTING[ BED_N ] ) return BED_N + ( y - PARTING[ BED_N ] ) / 0.66;
+	let lo = 0, hi = BED_N;
+	while ( hi - lo > 1 ) {
+
+		const m = ( lo + hi ) >> 1;
+		if ( PARTING[ m ] <= y ) lo = m; else hi = m;
+
+	}
+	return lo + ( y - PARTING[ lo ] ) / ( PARTING[ lo + 1 ] - PARTING[ lo ] );
 
 }
 
-// beds per metre at a height (always positive: the coordinate rises monotonically)
-function bedRate( y: number ): number {
+function partingHeight( k: number ): number {
 
-	return 1 / BED.spacing + Math.cos( y * BED_W + BED.phase ) * BED.amplitude * BED_W + Math.cos( y * BED_W2 + BED.phase2 ) * BED.amplitude2 * BED_W2;
-
-}
-
-// Both tabulated for the wall's hot loop (two sines each per sample otherwise); linear
-// interpolation at 4 mm is exact to ~1e-5 bed.
-const LUT_Y0 = - 14, LUT_STEP = 0.004, LUT_N = 6001;
-const LUT_BETA = new Float64Array( LUT_N ), LUT_RATE = new Float64Array( LUT_N );
-for ( let i = 0; i < LUT_N; i ++ ) {
-
-	LUT_BETA[ i ] = bedCoordinate( LUT_Y0 + i * LUT_STEP );
-	LUT_RATE[ i ] = bedRate( LUT_Y0 + i * LUT_STEP );
+	return PARTING[ Math.max( 0, Math.min( BED_N, k ) ) ];
 
 }
 
-// bedCoordinate and bedRate at a height, written to out[ 0 ] and out[ 1 ]
-function bedAt( y: number, out: Float64Array ): void {
-
-	const u = ( y - LUT_Y0 ) / LUT_STEP, i = Math.floor( u );
-	if ( i < 0 || i >= LUT_N - 1 ) { out[ 0 ] = bedCoordinate( y ); out[ 1 ] = bedRate( y ); return; }
-	const t = u - i;
-	out[ 0 ] = LUT_BETA[ i ] + ( LUT_BETA[ i + 1 ] - LUT_BETA[ i ] ) * t;
-	out[ 1 ] = LUT_RATE[ i ] + ( LUT_RATE[ i + 1 ] - LUT_RATE[ i ] ) * t;
-
-}
-
-// the height at which bedCoordinate reaches beta
-function bedHeight( beta: number ): number {
-
-	let y = beta * BED.spacing;
-	for ( let i = 0; i < 6; i ++ ) y -= ( bedCoordinate( y ) - beta ) / bedRate( y );
-	return y;
-
-}
-
+// The bedding dips about 3 degrees and undulates over tens of metres, so a parting crosses the
+// coast at different heights and never rules a level line.
 export function bedShift( x: number, z: number ): number {
 
-	// a slow warp and a shorter one, so a parting undulates instead of ruling a line
-	return x * BED.dipX + z * BED.dipZ + noise3( x * 0.11 + 4.4, 6.1, z * 0.11 - 2.7 ) * 0.14
-		+ noise3( x * 0.37 - 1.1, 2.9, z * 0.37 + 5.5 ) * 0.06;
+	return x * 0.042 - z * 0.028 + noise3( x * 0.085 + 4.4, 6.1, z * 0.085 - 2.7 ) * 0.32
+		+ noise3( x * 0.29 - 1.1, 2.9, z * 0.29 + 5.5 ) * 0.07;
 
 }
 
-// Beds below and above these indices take the nearest one's values (the wall spans ~-6..3.7 m).
-const BED_MIN = - 10, BED_COUNT = 18;
-const bedSlot = ( b: number ) => Math.max( 0, Math.min( BED_COUNT - 1, b - BED_MIN ) );
+// How far a parting is opened by the weather here (0 .. 1): each over stretches of a few metres
+// and pinching out between them, so no seam runs along the whole coast.
+function partingOpen( k: number, x: number, z: number ): number {
 
-// A third of the beds are softer and weather back along the whole coast, leaving the bed above
-// as a small overhang.
-function softBed( b: number ): number {
-
-	const r = hash3i( b, 17, 4409 );
-	return r < 0.3 ? 0.07 + r / 0.3 * 0.1 : 0;
+	return smoothstep( 0.08, 0.42, noise3( x * 0.16 + k * 3.71, k * 0.73 + 0.31, z * 0.16 - k * 1.93 ) );
 
 }
 
-// ------------------------------------------------------------------ columns
+// A third of the beds are softer and weather back where their partings open.
+function softBed( k: number ): number {
 
-export interface CoastColumn {
-	key: number; // hashed from the quantised seed position: stable when the island grows elsewhere
-	x: number; z: number; // seed on the wobbled coast
-	nx: number; nz: number; // outward face normal (before the column's yaw)
-	offset: number; // recess (+) or projection (-) of the whole column, m
-	yaw: number; // face slope along the coast, m per m
-	batter: number; // backward lean of the wall, m per m of drop
-	steps: Float32Array; // per bed: extra recess (+) or projection (-), m
-	pitch: Float32Array; // per bed: face lean across the bed (+: the bed's top recedes), m per bed
-	// per bed: chamfer of the block's top and bottom edges (0: a sharp, broken edge), m, and how
-	// much a weathering noise chips further into its edges
-	parting: Float32Array; under: Float32Array; chipEdge: Float32Array;
-	// per bed: a spall, an oblique plane that has broken one edge of the block off (NaN: none):
-	// its tilt from the face (cosine, sine), its direction across the face (along the coast,
-	// up) and where it starts from the block's centre, m
-	spall: Float32Array;
-	// per bed: a minor joint that splits the block (NaN: none): where along the coast from the
-	// seed, the second part's extra recess and the joint's groove, m
-	split: Float32Array;
-	// wave-cut notch: depth, height of its back, and how far it reaches up (a sharp roof) and
-	// down (a sloping floor), m
-	notchDepth: number; notchY: number; notchUp: number; notchDown: number;
-	chip: number; // small lowering of an intact lip, m
-	lip: number; // chamfer of the lip, m
-	dropBed: number; // NaN, or the parting (bed coordinate) a fallen column's stump stops at
-	dropDepth: number; // how far behind the face the fallen block reached, m
-	// the break narrows away from its deepest point (along the coast from the seed, m) beyond a
-	// half width, by a taper (m of depth per m), so the scar is a wedge rather than a box
-	// (each side its own), and the scar's back leans away from the face higher up (m per m), so
-	// a broken slope rather than a vertical wall faces the sea
-	dropAt: number; dropWidth: number; dropTaper: number; dropTaper2: number; dropLean: number;
+	const r = hash3i( k, 17, 4409 );
+	return r < 0.33 ? 0.5 + r / 0.33 * 0.5 : 0;
+
 }
 
-const h = ( key: number, salt: number, k = 0 ) => hash3i( key, salt + k * 131, 7741 );
+// Exposure of the coast to the waves (0 sheltered .. 1 exposed): headlands and convex corners
+// take the swell, bays and re-entrant corners are spared. The mean signed distance round a ring
+// is positive where most of it lies offshore.
+function exposureAt( dist: Field, x: number, z: number ): number {
 
-function gradient( f: ( x: number, z: number ) => number, x: number, z: number, e: number ): [ number, number ] {
+	let s = 0;
+	for ( let i = 0; i < 10; i ++ ) {
+
+		const a = i * Math.PI * 0.2;
+		s += dist( x + Math.cos( a ) * 2.6, z + Math.sin( a ) * 2.6 );
+
+	}
+	const convex = s / 10 - dist( x, z );
+	return Math.min( 1, Math.max( 0, 0.5 + convex * 0.45 + noise3( x * 0.11 - 3.3, 8.2, z * 0.11 + 1.6 ) * 0.4 ) );
+
+}
+
+// ------------------------------------------------------------------ scars
+
+// A block the cliff has shed: the convex intersection of half-spaces n . p <= c. Its inner faces
+// are the scar left in the wall.
+export interface Scar {
+	planes: Float64Array; // nx, ny, nz, c per plane
+	n: number;
+	floor: number; // index of the plane the block rested on (the scar's floor), -1: none
+	lip: boolean; // reaches above the meadow: the floor is the new top where it cut in
+	id: number; // hash for the material's per-facet shade
+	fresh: number; // 0 old and weathered .. 1 recently fallen: paler, unlichened stone
+	round: number; // rounding of the scar's rim (m)
+	level: number;
+	kind: ScarKind;
+	prio: number; // hashed rank, which wins when two pockets crowd each other
+	cx: number; cy: number; cz: number; size: number; // a pocket's centre and half width
+	x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; // bounds
+}
+
+// a joint face, a step fallen from the lip, a pocket (a block fallen out of the face), a flake
+// (a slab spalled off along one fracture) or a gully
+type ScarKind = 'face' | 'lip' | 'pocket' | 'flake' | 'gully';
+
+interface Level {
+	cell: number; off: number; per: number; keep: number;
+	width: [ number, number ]; // half widths along the coast
+	depth: [ number, number ]; // behind the surface it is cut into
+	height: [ number, number ]; // of a pocket: floor to roof at the seed
+	floor: [ number, number ]; // height of its floor at the seed
+	face: number; // share that open the full height from below the sea (a joint face)
+	lip: number; // share that reach above the meadow
+	fresh: number;
+	round: [ number, number ]; // weathered rim rounding
+	irregular: number; // share broken along fractures of no set
+	flake: number; // share of the rest that spall off as flakes rather than fall out as pockets
+}
+
+// Three generations: joint faces that set the plan of a stretch of coast, pockets where blocks
+// fell out of them and flakes spalled off them, and smaller flakes on their faces. Above the
+// waves the rims stay sharp, a few centimetres at most: fractured rock breaks crisply, and only
+// the sea rounds its edges (see rimRound).
+const LEVELS: Level[] = [
+	{ cell: 3.6, off: 1.3, per: 1, keep: 0.95, width: [ 1.1, 2.5 ], depth: [ 0.3, 0.85 ], height: [ 1.3, 2.6 ], floor: [ - 1.6, - 0.3 ], face: 1, lip: 0.5, fresh: 0.25, round: [ 0.012, 0.035 ], irregular: 0.2, flake: 0 },
+	{ cell: 2.0, off: 0.6, per: 3, keep: 0.65, width: [ 0.35, 1.0 ], depth: [ 0.14, 0.4 ], height: [ 0.5, 1.6 ], floor: [ 0.35, 2.3 ], face: 0.35, lip: 0.12, fresh: 0.3, round: [ 0.01, 0.03 ], irregular: 0.3, flake: 0.5 },
+	{ cell: 1.1, off: 0.25, per: 2, keep: 0.45, width: [ 0.22, 0.55 ], depth: [ 0.05, 0.13 ], height: [ 0.3, 0.9 ], floor: [ 0.3, 2.5 ], face: 0, lip: 0, fresh: 0.25, round: [ 0.006, 0.014 ], irregular: 0.5, flake: 1 },
+];
+// Two pockets nearer than this (m, between their rims) at much the same height read as a pair
+// of eyes in the shade: only the higher-ranked one falls.
+const POCKET_GAP = 1.0, POCKET_RISE = 0.6;
+// Gullies: narrow slots opened along a joint from the sea to the lip, every 9 m or so of
+// straight coast.
+const GULLY = { cell: 9.0, off: 3.1, keep: 0.55 };
+// No scar reaches further behind the face than this (m), so the meadow keeps its plateau.
+const MAX_REACH = 1.3;
+// The meadow's planting height: a floor cut into the lip stays clear below it.
+const BARE_STEP = 2.55;
+
+const wrap = ( a: number ) => Math.atan2( Math.sin( a ), Math.cos( a ) );
+const lerp = ( a: number, b: number, t: number ) => a + ( b - a ) * t;
+
+// The polytope's vertices (all triple intersections inside every plane), for its bounds.
+function bounds( s: Scar ): boolean {
+
+	const p = s.planes, n = s.n;
+	let x0 = Infinity, x1 = - Infinity, y0 = Infinity, y1 = - Infinity, z0 = Infinity, z1 = - Infinity;
+	for ( let a = 0; a < n; a ++ ) for ( let b = a + 1; b < n; b ++ ) for ( let c = b + 1; c < n; c ++ ) {
+
+		const ax = p[ a * 4 ], ay = p[ a * 4 + 1 ], az = p[ a * 4 + 2 ], ac = p[ a * 4 + 3 ];
+		const bx = p[ b * 4 ], by = p[ b * 4 + 1 ], bz = p[ b * 4 + 2 ], bc = p[ b * 4 + 3 ];
+		const cx = p[ c * 4 ], cy = p[ c * 4 + 1 ], cz = p[ c * 4 + 2 ], cc = p[ c * 4 + 3 ];
+		// Cramer's rule
+		const det = ax * ( by * cz - bz * cy ) - ay * ( bx * cz - bz * cx ) + az * ( bx * cy - by * cx );
+		if ( Math.abs( det ) < 1e-6 ) continue;
+		const x = ( ac * ( by * cz - bz * cy ) - ay * ( bc * cz - bz * cc ) + az * ( bc * cy - by * cc ) ) / det;
+		const y = ( ax * ( bc * cz - bz * cc ) - ac * ( bx * cz - bz * cx ) + az * ( bx * cc - bc * cx ) ) / det;
+		const z = ( ax * ( by * cc - bc * cy ) - ay * ( bx * cc - bc * cx ) + ac * ( bx * cy - by * cx ) ) / det;
+		let inside = true;
+		for ( let k = 0; k < n && inside; k ++ ) if ( p[ k * 4 ] * x + p[ k * 4 + 1 ] * y + p[ k * 4 + 2 ] * z - p[ k * 4 + 3 ] > 1e-6 ) inside = false;
+		if ( ! inside ) continue;
+		x0 = Math.min( x0, x ); x1 = Math.max( x1, x ); y0 = Math.min( y0, y ); y1 = Math.max( y1, y ); z0 = Math.min( z0, z ); z1 = Math.max( z1, z );
+
+	}
+	if ( ! ( x1 > x0 ) || ! ( y1 > y0 ) || ! ( z1 > z0 ) ) return false;
+	// rounding reaches a little beyond the faces
+	const m = s.round + 0.05;
+	s.x0 = x0 - m; s.x1 = x1 + m; s.y0 = y0 - m; s.y1 = y1 + m; s.z0 = z0 - m; s.z1 = z1 + m;
+	return true;
+
+}
+
+// a candidate seed where the footprint's edge crosses a world-anchored grid
+interface Seed { x: number; z: number; key: number }
+
+// Coast points where the footprint edge crosses a fine grid anchored to the world, not to the
+// layout's bounds, so the same stretch of coast yields the same points when the island grows (its
+// half-step offset keeps the tile edges between its points).
+function coastSeeds( dist: Field, area: { x0: number; z0: number; x1: number; z1: number } ): Seed[] {
+
+	const step = 0.2, seeds: Seed[] = [];
+	const i0 = Math.floor( ( area.x0 - 1 ) / step ), i1 = Math.ceil( ( area.x1 + 1 ) / step );
+	const j0 = Math.floor( ( area.z0 - 1 ) / step ), j1 = Math.ceil( ( area.z1 + 1 ) / step );
+	for ( let j = j0; j < j1; j ++ ) for ( let i = i0; i < i1; i ++ ) {
+
+		const x = ( i + 0.5 ) * step, z = ( j + 0.5 ) * step;
+		const d = dist( x, z );
+		if ( Math.abs( d ) > step * 1.5 ) continue;
+		for ( let axis = 0; axis < 2; axis ++ ) {
+
+			const d1 = dist( x + ( axis === 0 ? step : 0 ), z + ( axis === 1 ? step : 0 ) );
+			if ( d * d1 >= 0 ) continue;
+			const t = d / ( d - d1 );
+			const px = x + ( axis === 0 ? step * t : 0 ), pz = z + ( axis === 1 ? step * t : 0 );
+			seeds.push( { x: px, z: pz, key: hash3i( Math.round( px * 10 ), Math.round( pz * 10 ), 911 ) * 0x7fffffff | 0 } );
+
+		}
+
+	}
+	// Crossings a few centimetres apart can share a key, and so would cut the same scar twice:
+	// keep one of each, the same one whatever order they were found in.
+	const byKey = new Map<number, Seed>();
+	for ( const s of seeds ) {
+
+		const o = byKey.get( s.key );
+		if ( ! o || s.x < o.x || ( s.x === o.x && s.z < o.z ) ) byKey.set( s.key, s );
+
+	}
+	return [ ...byKey.values() ];
+
+}
+
+function gradient( f: Field, x: number, z: number, e: number ): [ number, number ] {
 
 	const gx = f( x + e, z ) - f( x - e, z ), gz = f( x, z + e ) - f( x, z - e );
 	const l = Math.hypot( gx, gz ) || 1;
@@ -144,386 +257,535 @@ function gradient( f: ( x: number, z: number ) => number, x: number, z: number, 
 
 }
 
-// Joint opening between two columns (groove depth at the face, m): about a third are closed,
-// so two columns stand fused into one broader mass.
-export function jointDepth( a: CoastColumn, b: CoastColumn ): number {
-
-	const pair = hash3i( Math.min( a.key, b.key ), Math.max( a.key, b.key ), 5113 );
-	return pair < 0.3 ? 0.012 : 0.04 + ( pair - 0.3 ) / 0.7 * 0.11;
-
-}
-
-// The joint between two columns is no plumb plane: it leans (m per m of height) and twists (its
-// lean changes going inland), and a little under half of the joints die out at a parting, below
-// which the columns stand fused along a tight seam a little to one side. Displacements are
-// toward the column with the higher key (identical from both sides). [ lean, twist, the bed
-// below which the joint is closed (-Infinity: open all the way down), its sideways jog there ]
-export function jointShape( a: CoastColumn, b: CoastColumn, out: Float64Array, o: number ): void {
-
-	const lo = Math.min( a.key, b.key ), hi = Math.max( a.key, b.key );
-	const r = ( salt: number ) => hash3i( lo, hi, salt );
-	out[ o ] = ( r( 5201 ) - 0.5 ) * 0.26;
-	out[ o + 1 ] = ( r( 5202 ) - 0.5 ) * 0.16;
-	const ends = r( 5203 ) < 0.45;
-	out[ o + 2 ] = ends ? - 3 + Math.floor( r( 5204 ) * 5 ) : - Infinity;
-	out[ o + 3 ] = ends ? ( r( 5205 ) > 0.5 ? 1 : - 1 ) * ( 0.15 + r( 5206 ) * 0.2 ) : 0;
-
-}
-
-// The coast columns of a footprint. `dist` is the footprint's signed distance, `coast` the
-// macro wobble the island SDF adds to it (the wall sits at dist = coast) and `top` the meadow
-// height. Everything is hashed from positions, so an unchanged stretch of coast keeps its
-// columns whatever the rest of the layout is.
-export class CoastColumns {
-
-	columns: CoastColumn[] = [];
-	private grid = new Map<number, number[]>();
-	private cell = 2;
-
-	constructor( dist: ( x: number, z: number ) => number, coast: ( x: number, z: number ) => number,
-		top: ( x: number, z: number ) => number, bounds: { x0: number; z0: number; x1: number; z1: number } ) {
-
-		// Candidate seeds where the footprint edge crosses a fine grid, thinned by dart throwing in
-		// the order of a priority hashed from each candidate's own position.
-		// The grid is anchored to the world, not to the layout's bounds, so the same stretch of
-		// coast yields the same candidates when the island grows; its half-step offset keeps the
-		// tile edges between its points.
-		const step = 0.2, e = 0.12;
-		const cand: { x: number; z: number; key: number; prio: number; r: number }[] = [];
-		const i0 = Math.floor( ( bounds.x0 - 1 ) / step ), i1 = Math.ceil( ( bounds.x1 + 1 ) / step );
-		const j0 = Math.floor( ( bounds.z0 - 1 ) / step ), j1 = Math.ceil( ( bounds.z1 + 1 ) / step );
-		for ( let j = j0; j < j1; j ++ ) for ( let i = i0; i < i1; i ++ ) {
-
-			const x = ( i + 0.5 ) * step, z = ( j + 0.5 ) * step;
-			const d = dist( x, z );
-			if ( Math.abs( d ) > step * 1.5 ) continue;
-			for ( let axis = 0; axis < 2; axis ++ ) {
-
-				const d1 = dist( x + ( axis === 0 ? step : 0 ), z + ( axis === 1 ? step : 0 ) );
-				if ( d * d1 >= 0 ) continue;
-				const t = d / ( d - d1 );
-				const px = x + ( axis === 0 ? step * t : 0 ), pz = z + ( axis === 1 ? step * t : 0 );
-				const key = hash3i( Math.round( px * 10 ), Math.round( pz * 10 ), 911 ) * 0x7fffffff | 0;
-				// Columns mostly 0.8 - 2 m apart, unevenly; one in nine stands as a broad,
-				// unjointed mass.
-				const r = h( key, 1 ) < 0.11 ? 1.5 + h( key, 2 ) * 0.6 : 0.62 + h( key, 2 ) * h( key, 2 ) * 0.85;
-				cand.push( { x: px, z: pz, key, prio: h( key, 3 ), r } );
-
-			}
-
-		}
-		cand.sort( ( p, q ) => p.prio - q.prio );
-		const accepted: { x: number; z: number; r: number; key: number }[] = [];
-		const near = new Map<number, number[]>();
-		const ck = ( i: number, j: number ) => ( i + 512 ) * 1024 + ( j + 512 );
-		for ( const c of cand ) {
-
-			const i = Math.floor( c.x / 2.5 ), j = Math.floor( c.z / 2.5 );
-			let ok = true;
-			for ( let dj = - 1; dj <= 1 && ok; dj ++ ) for ( let di = - 1; di <= 1 && ok; di ++ ) {
-
-				for ( const a of near.get( ck( i + di, j + dj ) ) ?? [] ) {
-
-					const o = accepted[ a ];
-					if ( Math.hypot( o.x - c.x, o.z - c.z ) < ( o.r + c.r ) * 0.5 ) { ok = false; break; }
-
-				}
-
-			}
-			if ( ! ok ) continue;
-			const list = near.get( ck( i, j ) ) ?? [];
-			list.push( accepted.length );
-			near.set( ck( i, j ), list );
-			accepted.push( c );
-
-		}
-
-		// Wide features (a gully or a buttress) keep several metres apart and stay off the
-		// corners, where the wall turns: there they would read as damage to the plan.
-		const features: { x: number; z: number }[] = [];
-		const order = accepted.slice().sort( ( p, q ) => h( p.key, 4 ) - h( q.key, 4 ) );
-		const role = new Map<number, 'gully' | 'buttress'>();
-		for ( const s of order ) {
-
-			const roll = h( s.key, 5 );
-			if ( roll > 0.85 ) continue;
-			const g = gradient( dist, s.x, s.z, e );
-			let turn = 0;
-			for ( const side of [ - 1, 1 ] ) {
-
-				const q = gradient( dist, s.x - g[ 1 ] * side * 1.2, s.z + g[ 0 ] * side * 1.2, e );
-				turn = Math.max( turn, Math.acos( Math.max( - 1, Math.min( 1, q[ 0 ] * g[ 0 ] + q[ 1 ] * g[ 1 ] ) ) ) );
-
-			}
-			if ( turn > 0.4 ) continue;
-			if ( features.some( ( f ) => Math.hypot( f.x - s.x, f.z - s.z ) < 5.5 ) ) continue;
-			// Half of them each, from the feature's own hash: a global count would swap the roles
-			// of distant features whenever the layout grows.
-			role.set( s.key, h( s.key, 38 ) < 0.5 ? 'gully' : 'buttress' );
-			features.push( s );
-
-		}
-
-		for ( const s of accepted ) {
-
-			const g = gradient( dist, s.x, s.z, e );
-			// The wall sits at dist = coast: put the seed there, facing the wobbled coast's normal.
-			const w = coast( s.x, s.z );
-			const x = s.x + g[ 0 ] * w, z = s.z + g[ 1 ] * w;
-			const gc = gradient( ( px, pz ) => dist( px, pz ) - coast( px, pz ), x, z, e );
-			const k = s.key;
-			const kind = role.get( k );
-			// Softer beds weather back along the whole coast; a slow field decides how far here.
-			const soft = 0.55 + 0.45 * noise3( x * 0.17 + 1.9, 2.2, z * 0.17 - 5.3 );
-			const steps = new Float32Array( BED_COUNT ), pitch = new Float32Array( BED_COUNT );
-			const parting = new Float32Array( BED_COUNT ), under = new Float32Array( BED_COUNT ), chipEdge = new Float32Array( BED_COUNT );
-			const spall = new Float32Array( BED_COUNT * 5 ).fill( NaN );
-			const split = new Float32Array( BED_COUNT * 3 ).fill( NaN );
-			let walk = ( h( k, 6 ) - 0.5 ) * 0.2;
-			const lean = ( h( k, 9 ) - 0.4 ) * 0.12;
-			for ( let b = 0; b < BED_COUNT; b ++ ) {
-
-				// The face's recess wanders from bed to bed instead of jumping independently,
-				// and most partings pass without a step, so a column reads as one stack of
-				// related blocks, not loose bricks.
-				if ( h( k, 7, b ) < 0.38 ) walk += ( h( k, 8, b ) > 0.5 ? 1 : - 1 ) * ( 0.1 + h( k, 24, b ) * 0.14 );
-				walk = Math.max( - 0.2, Math.min( 0.2, walk ) );
-				steps[ b ] = walk + softBed( b + BED_MIN ) * soft;
-				// A column keeps its lean; a quarter of its blocks have tilted on their own.
-				pitch[ b ] = lean + ( h( k, 10, b ) < 0.25 ? ( h( k, 25, b ) - 0.45 ) * 0.4 : ( h( k, 25, b ) - 0.5 ) * 0.06 );
-				// Most partings are tight lines; some open into a groove along a few columns. A
-				// block's top and bottom edges are worn independently: many stay sharp and broken,
-				// a few are rounded off, and the weathering noise chips into them unevenly, so no
-				// block reads as a cushion with one even bevel.
-				const open = hash3i( b + BED_MIN, 23, 3301 ) * 0.45 + h( k, 11, b ) * 0.55;
-				parting[ b ] = open < 0.55 ? 0.004 + h( k, 39, b ) * 0.02 : 0.03 + ( open - 0.55 ) * 0.17;
-				const low = h( k, 40, b );
-				under[ b ] = low < 0.5 ? 0.004 : low < 0.85 ? 0.02 + ( low - 0.5 ) * 0.1 : 0.07 + ( low - 0.85 ) * 0.5;
-				chipEdge[ b ] = h( k, 41, b ) < 0.6 ? 0.03 + h( k, 42, b ) * 0.12 : 0;
-				// Only the partings that open along the coast cut every column. On most columns
-				// over half of the others are welded: the beds on either side stand as one block
-				// with one face, so the blocks' heights differ from column to column instead of
-				// coursing like masonry.
-				if ( b > 0 && hash3i( b - 1 + BED_MIN, 23, 3301 ) < 0.62 && softBed( b - 1 + BED_MIN ) === 0
-					&& softBed( b + BED_MIN ) === 0 && h( k, 45, b ) < 0.6 ) {
-
-					pitch[ b ] = pitch[ b - 1 ];
-					steps[ b ] = steps[ b - 1 ] + pitch[ b - 1 ];
-					walk = Math.max( - 0.25, Math.min( 0.25, steps[ b ] ) );
-					parting[ b - 1 ] = 0;
-					under[ b ] = 0;
-
-				}
-				// Nearly half the blocks have lost an edge or a corner along an oblique fracture.
-				if ( h( k, 26, b ) < 0.45 ) {
-
-					const tilt = 0.35 + h( k, 27, b ) * 0.45, dir = h( k, 28, b ) * Math.PI * 2;
-					spall.set( [ Math.cos( tilt ), Math.sin( tilt ), Math.cos( dir ), Math.sin( dir ), 0.12 + h( k, 29, b ) * 0.35 ], b * 5 );
-
-				}
-				// A minor joint that does not run through the column breaks up the grid of blocks.
-				if ( h( k, 30, b ) < 0.28 ) {
-
-					const shift = ( h( k, 32, b ) > 0.5 ? 1 : - 1 ) * ( 0.05 + h( k, 33, b ) * 0.12 );
-					split.set( [ ( h( k, 31, b ) - 0.5 ) * 0.7, shift, 0.02 + h( k, 34, b ) * 0.06 ], b * 3 );
-
-				}
-
-			}
-			let offset = ( h( k, 12 ) - 0.5 ) * 0.3;
-			if ( kind === 'gully' ) offset = 0.5 + h( k, 13 ) * 0.3;
-			else if ( kind === 'buttress' ) offset = - 0.22 - h( k, 13 ) * 0.16;
-			// A fallen column leaves a stump whose top is a parting below the meadow's planting
-			// height (2.8 m), so no grass is left on a bare step. Gullies always lose their head;
-			// intact columns only show small chips.
-			const fallen = kind === 'gully' || ( kind !== 'buttress' && h( k, 14 ) < 0.22 );
-			let dropBed = NaN;
-			if ( fallen ) {
-
-				const shift = bedShift( x, z ), t = top( x, z );
-				// (a few centimetres under 2.8 m, which the weathering relief must not reach)
-				const highest = Math.min( t - ( kind === 'gully' ? 0.7 : 0.36 ), 2.62 );
-				const bed = Math.floor( bedCoordinate( highest + shift ) );
-				// A thick bed would leave a stump far below the meadow: drop to it only where
-				// the step stays within ~1.2 m.
-				if ( t - ( bedHeight( bed ) - shift ) < 1.25 ) dropBed = bed;
-
-			}
-			this.columns.push( {
-				key: k, x, z, nx: gc[ 0 ], nz: gc[ 1 ],
-				offset, yaw: ( h( k, 15 ) - 0.5 ) * 0.34,
-				batter: 0.02 + h( k, 16 ) * 0.07,
-				steps, pitch, parting, under, chipEdge, spall, split,
-				notchDepth: h( k, 17 ) < 0.8 ? 0.1 + h( k, 18 ) * 0.22 : 0,
-				// The notch's sharp roof stays above the calm sea's crests (~0.3 m): a roof grazing
-				// the surface left a bright seam along the waterline. The water meets its sloping floor.
-				notchY: 0.2 + h( k, 19 ) * 0.2, notchUp: 0.13 + h( k, 20 ) * 0.1, notchDown: 0.4 + h( k, 20 ) * 0.25,
-				chip: Number.isNaN( dropBed ) ? h( k, 21 ) * h( k, 21 ) * 0.08 : 0,
-				lip: 0.02 + h( k, 22 ) * 0.07,
-				dropBed,
-				dropDepth: kind === 'gully' ? 0.7 + h( k, 23 ) * 0.35 : 0.3 + h( k, 23 ) * 0.45,
-				dropAt: ( h( k, 35 ) - 0.5 ) * 0.6, dropWidth: 0.05 + h( k, 36 ) * 0.25,
-				dropTaper: 1.1 + h( k, 37 ) * 1.3, dropTaper2: 0.7 + h( k, 43 ) * 1.6,
-				dropLean: 0.15 + h( k, 44 ) * 0.35,
-			} );
-
-		}
-
-		for ( let i = 0; i < this.columns.length; i ++ ) {
-
-			const c = this.columns[ i ];
-			const key = this.gridKey( Math.floor( c.x / this.cell ), Math.floor( c.z / this.cell ) );
-			const list = this.grid.get( key ) ?? [];
-			list.push( i );
-			this.grid.set( key, list );
-
-		}
-
-	}
-
-	private gridKey( i: number, j: number ): number {
-
-		return ( i + 512 ) * 1024 + ( j + 512 );
-
-	}
-
-	// Indices of the three nearest columns, nearest first (-1 where missing). The search reaches
-	// ~4 m; the island SDF only asks within ~3.5 m of the coast.
-	nearest( x: number, z: number, out: Int32Array ): void {
-
-		const ci = Math.floor( x / this.cell ), cj = Math.floor( z / this.cell );
-		let d1 = Infinity, d2 = Infinity, d3 = Infinity, i1 = - 1, i2 = - 1, i3 = - 1;
-		for ( let j = cj - 2; j <= cj + 2; j ++ ) for ( let i = ci - 2; i <= ci + 2; i ++ ) {
-
-			const list = this.grid.get( this.gridKey( i, j ) );
-			if ( ! list ) continue;
-			for ( const n of list ) {
-
-				const c = this.columns[ n ];
-				const d = ( c.x - x ) * ( c.x - x ) + ( c.z - z ) * ( c.z - z );
-				if ( d < d1 ) { d3 = d2; i3 = i2; d2 = d1; i2 = i1; d1 = d; i1 = n; } else if ( d < d2 ) { d3 = d2; i3 = i2; d2 = d; i2 = n; } else if ( d < d3 ) { d3 = d; i3 = n; }
-
-			}
-
-		}
-		out[ 0 ] = i1; out[ 1 ] = i2; out[ 2 ] = i3;
-
-	}
-
-}
-
 // ------------------------------------------------------------------ the wall
 
-const K = Math.SQRT1_2;
-// Neighbouring blocks overlap a little behind their chamfered edges. Touching solids would
-// leave the union's field at zero on every internal parting and joint, where the weathering
-// noise then raises stray surfaces inside the rock.
-const BED_OVERLAP = 0.1, CELL_OVERLAP = 0.15;
-// joints lean about this height (m), near the middle of the exposed wall
-const JOINT_PIVOT = 1, JOINT_FLOOR = - 1.2;
+const COLUMN_CELL = 1;
 
-// A block between two partings with face distance g, `above` / `below` its top and bottom
-// (m, + outside), its top and bottom edges chamfered by pTop and pBot, overlapping the blocks
-// above and below by `lap`.
-function block( g: number, above: number, below: number, pTop: number, pBot: number, lap: number ): number {
-
-	return Math.max( g, above - lap, below - lap, ( g + above + pTop ) * K, ( g + below + pBot ) * K );
-
-}
-
-// The cliff wall around a set of coast columns: a signed distance near the coast that
-// already includes the meadow's top. Per-(x, z) work is cached across the vertical sample
-// column the mesher runs through (y is innermost there).
+// The cliff wall: a signed distance near the coast that includes the meadow's top. `dist` is the
+// footprint's signed distance, `coast` the macro wobble the wall adds to it (the wall's top edge
+// sits at dist = coast) and `top` the meadow's height. Per-(x, z) work is cached across the
+// vertical sample column the mesher runs through (y is innermost there).
 export class CliffWall {
 
-	// after each evaluation: the column the surface belongs to, its bed, how deep inside a joint
-	// groove the point lies (0 .. 1), the bed coordinate and the height of that column's own top
-	owner = - 1; bed = 0; joint = 0; beta = 0; lipY = 0;
+	scars: Scar[] = [];
+	// after each `at` with tracking: the scar whose face the point lies on (-1: the weathered
+	// face no scar reached), whether that face is the scar's floor, the bed coordinate and the
+	// height of the column's own top (the meadow, or a ledge cut into the lip)
+	owner = - 1; onFloor = false; beta = 0; ownTop = 0;
 
-	private cols: CoastColumns;
-	private near = new Int32Array( 3 );
-	private n = 0;
+	private dist: Field; private coast: Field; private top: Field;
+	private grid = new Map<number, number[]>();
+	// column cache
 	private cx = NaN; private cz = NaN;
-	private shift = 0; private topY = 0;
-	// per neighbour: face distance, along the coast, rim, fallen cut distance, fallen floor
-	private face = new Float64Array( 3 );
-	private along = new Float64Array( 3 );
-	private rim = new Float64Array( 3 );
-	private cut = new Float64Array( 3 );
-	private floor = new Float64Array( 3 );
-	// per neighbour and each of its two others: the bisector's distance (+ inside), its sign
-	// toward the higher key, the joint's lean here (m per m), the bed it closes below, the jog
-	// there and the joint's opening at the face
-	private bis = new Float64Array( 6 );
-	private sgn = new Float64Array( 6 );
-	private lean = new Float64Array( 6 );
-	private closeBed = new Float64Array( 6 );
-	private jog = new Float64Array( 6 );
-	private jointC = new Float64Array( 6 );
-	private shape = new Float64Array( 4 );
-	private bedVal = new Float64Array( 2 );
-	private exposed = false; // whether the nearest face lies within reach of the surface
+	private s = 0; private topY = 0; private batter = 0; private lipRound = 0; private shift = 0;
+	private notch = 0; private notchY = 0; private ramp = 0; private expo = 0;
+	private list: number[] = []; // scar indices whose plan bounds hold the column
+	private coef: number[] = []; // per listed scar and plane: n.x * x + n.z * z - c, n.y
+	private colTop = 0;
 
-	constructor( columns: CoastColumns ) {
+	constructor( dist: Field, coast: Field, top: Field, layout: { x0: number; z0: number; x1: number; z1: number } ) {
 
-		this.cols = columns;
+		this.dist = dist; this.coast = coast; this.top = top;
+		const wall = ( x: number, z: number ) => dist( x, z ) - coast( x, z );
+		const seeds = coastSeeds( dist, layout );
+
+		// Each generation is cut into the surface the larger ones left.
+		for ( let level = 0; level <= LEVELS.length; level ++ ) {
+
+			const gully = level === LEVELS.length;
+			const L = gully ? null : LEVELS[ level ];
+			const cell = gully ? GULLY.cell : L!.cell, off = gully ? GULLY.off : L!.off, per = gully ? 1 : L!.per;
+			const salt = 6007 + level * 131;
+			// The seeds with the lowest priority in each world-anchored cell: a cell's choice
+			// depends on its own stretch of coast alone.
+			const cells = new Map<number, Seed[]>();
+			for ( const s of seeds ) {
+
+				const k = ( Math.floor( ( s.x + off ) / cell ) + 512 ) * 1024 + Math.floor( ( s.z + off * 0.7 ) / cell ) + 512;
+				const list = cells.get( k );
+				if ( list ) list.push( s ); else cells.set( k, [ s ] );
+
+			}
+			const made: Scar[] = [];
+			for ( const list of cells.values() ) {
+
+				list.sort( ( a, b ) => hash3i( a.key, salt, 3 ) - hash3i( b.key, salt, 3 ) );
+				for ( let j = 0; j < Math.min( per, list.length ); j ++ ) {
+
+					const seed = list[ j ];
+					const r = ( k: number ) => hash3i( seed.key, salt + k * 37, 7741 );
+					if ( r( 0 ) > ( gully ? GULLY.keep : L!.keep ) ) continue;
+					const n = gradient( wall, seed.x, seed.z, 0.12 );
+					// the seed moved onto the wall's top edge
+					const w = this.coast( seed.x, seed.z );
+					const sx = seed.x + n[ 0 ] * w, sz = seed.z + n[ 1 ] * w;
+					let scar: Scar | null;
+					if ( gully ) scar = this.makeGully( sx, sz, n, r, wall );
+					else if ( r( 38 ) >= L!.face && r( 39 ) < L!.flake ) scar = this.makeFlake( sx, sz, n, r, L!, level );
+					else scar = this.makeScar( sx, sz, n, r, L!, level );
+					if ( scar ) {
+
+						scar.prio = hash3i( seed.key, salt, 3 );
+						made.push( scar );
+
+					}
+
+				}
+
+			}
+			// (added after the whole generation: its members are placed on the older surface) A
+			// pocket gives way to any higher-ranked one crowding it, whether or not that one gives
+			// way in turn, so the outcome does not depend on the order the cells were visited in.
+			for ( const s of made ) {
+
+				if ( s.kind === 'pocket' && made.some( ( o ) => o !== s && o.kind === 'pocket' && o.prio < s.prio
+					&& Math.abs( o.cy - s.cy ) < POCKET_RISE
+					&& Math.hypot( o.cx - s.cx, o.cz - s.cz ) < o.size + s.size + POCKET_GAP ) ) continue;
+				this.add( s );
+
+			}
+
+		}
 
 	}
 
-	private column( x: number, z: number, top: number ): void {
+	private add( s: Scar ): void {
+
+		const i = this.scars.length;
+		this.scars.push( s );
+		for ( let gz = Math.floor( s.z0 / COLUMN_CELL ); gz <= Math.floor( s.z1 / COLUMN_CELL ); gz ++ ) {
+
+			for ( let gx = Math.floor( s.x0 / COLUMN_CELL ); gx <= Math.floor( s.x1 / COLUMN_CELL ); gx ++ ) {
+
+				const k = ( gx + 512 ) * 1024 + gz + 512;
+				const list = this.grid.get( k );
+				if ( list ) list.push( i ); else this.grid.set( k, [ i ] );
+
+			}
+
+		}
+		this.cx = NaN;
+
+	}
+
+	// The surface along a horizontal line inward from a point offshore (m along -n from it), or
+	// NaN where the line finds no rock within reach.
+	private surfaceAlong( x: number, y: number, z: number, nx: number, nz: number ): number {
+
+		let t = - 1.6;
+		if ( this.solid( x - nx * t, y, z - nz * t ) < 0 ) return NaN;
+		for ( ; t < 2.4; t += 0.08 ) {
+
+			if ( this.solid( x - nx * ( t + 0.08 ), y, z - nz * ( t + 0.08 ) ) < 0 ) {
+
+				let lo = t, hi = t + 0.08;
+				for ( let i = 0; i < 8; i ++ ) {
+
+					const m = ( lo + hi ) * 0.5;
+					if ( this.solid( x - nx * m, y, z - nz * m ) < 0 ) hi = m; else lo = m;
+
+				}
+				return ( lo + hi ) * 0.5;
+
+			}
+
+		}
+		return NaN;
+
+	}
+
+	// A scar: a block whose back is a joint of the set facing the sea most squarely (some along an
+	// irregular fracture instead) and whose sides are joints of the other set. A joint face opens
+	// the wall from below the sea to its cap or through the meadow; a pocket rested on a bed
+	// parting or on a fracture inclined across the face, and broke away under a parting, an
+	// inclined fracture or two fractures meeting in an arch (the semi-elliptic scars of a cliff).
+	// A corner or two broke off along further fractures.
+	private makeScar( x: number, z: number, n: [ number, number ], r: ( k: number ) => number, L: Level, level: number ): Scar | null {
+
+		const top = this.top( x, z );
+		const angN = Math.atan2( n[ 1 ], n[ 0 ] );
+		const facing = ( a: number ) => Math.abs( wrap( a - angN ) ) > Math.PI / 2 ? a + Math.PI : a;
+		const a = facing( SET_A ), b = facing( SET_B );
+		const useA = Math.abs( wrap( a - angN ) ) < Math.abs( wrap( b - angN ) );
+		let back = useA ? a : b;
+		let side = useA ? SET_B : SET_A;
+		if ( r( 1 ) < L.irregular ) {
+
+			back = angN + ( r( 2 ) - 0.5 ) * 0.9;
+			side = back + Math.PI / 2 + ( r( 3 ) - 0.5 ) * 0.9;
+
+		} else back += ( r( 2 ) - 0.5 ) * 0.28;
+		// never so oblique that the scar runs along the wall
+		const alpha = Math.max( - 0.75, Math.min( 0.75, wrap( back - angN ) ) );
+		back = angN + alpha;
+		const fx = Math.cos( back ), fz = Math.sin( back );
+		const tx = - n[ 1 ], tz = n[ 0 ];
+		const shift = bedShift( x, z );
+		const partingAt = ( y: number, up: boolean ) => {
+
+			const k = up ? Math.ceil( bedCoordinate( y + shift ) ) : Math.floor( bedCoordinate( y + shift ) );
+			return partingHeight( k ) - shift;
+
+		};
+
+		// heights at the seed: the floor, and the roof (or the meadow)
+		const face = r( 38 ) < L.face, lip = ! face && r( 5 ) < L.lip;
+		let yF: number, yR: number;
+		if ( face ) {
+
+			yF = lerp( - 2.4, - 1.3, r( 6 ) );
+			// a cap of the toughest beds overhangs the face here and there, its height uneven
+			yR = lip ? top + 1 : top - 0.35 - r( 7 ) * 0.9;
+
+		} else if ( lip ) {
+
+			// a block fell from the lip, leaving a bare step below the meadow's planting height
+			yF = BARE_STEP - r( 6 ) * 0.9;
+			yR = top + 1;
+
+		} else {
+
+			yF = lerp( L.floor[ 0 ], L.floor[ 1 ], r( 6 ) );
+			yR = Math.min( yF + lerp( L.height[ 0 ], L.height[ 1 ], r( 7 ) ), top - 0.25 - r( 8 ) * 0.6 );
+
+		}
+		// Floors and roofs on a bed parting a third of the time: a fall's depth is often a multiple of
+		// bed thickness.
+		const floorKind = face ? 3 : r( 9 ) < 0.35 ? 0 : r( 9 ) < 0.65 ? 1 : 2; // bed, inclined across, seaward, below the sea
+		// (a joint face under a cap: the weathered upper slope over the steep wall the sea keeps
+		// cut, as on most cliffs, rather than a slab of cap rock jutting over the face)
+		// (A pocket's roof opens outward, so its back sees some sky: under a level roof it was a
+		// dark slot. Arches only crown the wider ones.)
+		const roofKind = lip ? 3 : face ? 4 : r( 10 ) < 0.3 ? 0 : r( 10 ) < 0.7 || L.width[ 1 ] < 0.8 ? 1 : 2; // bed, inclined, arch, above the meadow, upper slope
+		if ( floorKind === 0 ) {
+
+			const y = partingAt( yF, false );
+			if ( ! lip || y < BARE_STEP ) yF = y;
+
+		}
+		if ( roofKind === 0 ) yR = Math.min( partingAt( yR, true ), top - 0.25 );
+		if ( ! lip && yR - yF < L.height[ 0 ] * 0.7 ) return null;
+
+		// the block's anchor: on the surface the larger scars left, halfway up its exposed height
+		const yA = Math.max( - 0.8, Math.min( ( Math.max( yF, - 0.5 ) + Math.min( yR, top ) ) * 0.5, top - 0.3 ) );
+		const t = this.surfaceAlong( x, yA, z, n[ 0 ], n[ 1 ] );
+		if ( Number.isNaN( t ) ) return null;
+		const px = x - n[ 0 ] * t, pz = z - n[ 1 ] * t;
+
+		const planes: number[] = [];
+		const plane = ( nx: number, ny: number, nz: number, qx: number, qy: number, qz: number ) => {
+
+			const l = Math.hypot( nx, ny, nz );
+			nx /= l; ny /= l; nz /= l;
+			planes.push( nx, ny, nz, nx * qx + ny * qy + nz * qz );
+
+		};
+		// The back: a joint face leaning back (or overhanging a little). Along an oblique joint the
+		// scar deepens to one side, so that side is kept short of the plateau.
+		let D = lerp( L.depth[ 0 ], L.depth[ 1 ], r( 11 ) );
+		const sinA = Math.sin( alpha ), cosA = Math.cos( alpha );
+		let wDeep = lerp( L.width[ 0 ], L.width[ 1 ], r( 12 ) ), wShallow = lerp( L.width[ 0 ], L.width[ 1 ], r( 13 ) );
+		if ( Math.abs( sinA ) > 0.05 ) wDeep = Math.min( wDeep, Math.max( 0.1, ( MAX_REACH * cosA - D ) / Math.abs( sinA ) ) );
+		D = Math.min( D, MAX_REACH * cosA - wDeep * Math.abs( sinA ) );
+		// A pocket is much shallower than it is wide and tall: a deep, narrow cavity reads as a
+		// black hole in the shade.
+		const pocket = ! face && ! lip;
+		if ( pocket ) D = Math.min( D, 0.22 * Math.min( wDeep + wShallow, Math.min( yR, top ) - yF ) );
+		if ( D < 0.04 || wDeep < 0.1 ) return null;
+		const lean = ( r( 14 ) - 0.25 ) * 0.3;
+		plane( - fx * Math.cos( lean ), - Math.sin( lean ), - fz * Math.cos( lean ), px - fx * D, yA, pz - fz * D );
+		const wPlus = sinA > 0 ? wDeep : wShallow, wMinus = sinA > 0 ? wShallow : wDeep;
+		// The sides: joints of the other set, each scattered and leaning on its own, so the scar
+		// narrows or widens into the rock.
+		for ( const sgn of [ 1, - 1 ] ) {
+
+			let az = side + ( r( sgn > 0 ? 15 : 16 ) - 0.5 ) * 0.45;
+			if ( Math.cos( az ) * tx * sgn + Math.sin( az ) * tz * sgn < 0 ) az += Math.PI;
+			let gx = Math.cos( az ), gz = Math.sin( az );
+			// a side nearly along the coast would leave the block open: keep it across the wall
+			if ( ( gx * tx + gz * tz ) * sgn < 0.4 ) { gx = tx * sgn; gz = tz * sgn; }
+			const dip = ( r( sgn > 0 ? 17 : 18 ) - 0.5 ) * ( face ? 0.9 : 0.5 );
+			const w = sgn > 0 ? wPlus : wMinus;
+			plane( gx * Math.cos( dip ), Math.sin( dip ), gz * Math.cos( dip ), px + tx * w * sgn, yA, pz + tz * w * sgn );
+
+		}
+		const bedNormal = ( sgn: number ) => {
+
+			const e = 0.3;
+			const sx = ( bedShift( px + e, pz ) - bedShift( px - e, pz ) ) / ( 2 * e ), sz = ( bedShift( px, pz + e ) - bedShift( px, pz - e ) ) / ( 2 * e );
+			return [ sx * sgn, sgn, sz * sgn ];
+
+		};
+		// the floor
+		const floor = planes.length / 4;
+		const along = ( r( 19 ) < 0.5 ? - 1 : 1 ) * ( 0.15 + r( 20 ) * 0.55 ); // inclination across the face
+		if ( floorKind === 0 ) {
+
+			const [ bx, by, bz ] = bedNormal( - 1 );
+			plane( bx, by, bz, px, yF, pz );
+
+		} else if ( floorKind === 1 ) {
+
+			const s = 0.15 + r( 21 ) * 0.35;
+			plane( - fx * s - tx * along, - 1, - fz * s - tz * along, px, yF, pz );
+
+		} else if ( floorKind === 2 ) {
+
+			const s = 0.25 + r( 21 ) * 0.75;
+			plane( - fx * s, - 1, - fz * s, px, yF, pz );
+
+		} else {
+
+			// (under a joint face the floor stays below the sea even where it meets the back)
+			const s = 0.05 + r( 21 ) * 0.35;
+			plane( - fx * s, - 1, - fz * s, px, yF, pz );
+
+		}
+		// the roof
+		if ( roofKind === 3 ) plane( 0, 1, 0, px, top + 1.2, pz );
+		else if ( roofKind === 4 ) {
+
+			const g = 0.8 + r( 22 ) * 1.7, s = ( r( 23 ) - 0.5 ) * 0.8;
+			plane( - fx * g + tx * s, 1, - fz * g + tz * s, px, yR, pz );
+
+		} else if ( roofKind === 0 ) {
+
+			const [ bx, by, bz ] = bedNormal( 1 );
+			plane( bx, by, bz, px, yR, pz );
+
+		} else if ( roofKind === 1 ) {
+
+			const g = 0.35 + r( 22 ) * 0.9, s = ( r( 23 ) < 0.5 ? - 1 : 1 ) * ( 0.2 + r( 24 ) * 0.7 );
+			plane( - fx * g + tx * s, 1, - fz * g + tz * s, px, yR, pz );
+
+		} else {
+
+			// an arch: two fractures meeting above the scar, its crown off to one side
+			const crown = ( r( 22 ) - 0.5 ) * ( wPlus + wMinus ) * 0.5, g = 0.3 + r( 23 ) * 0.5;
+			for ( const sgn of [ 1, - 1 ] ) {
+
+				const s = 0.45 + r( sgn > 0 ? 24 : 25 ) * 1.1;
+				plane( - fx * g + tx * s * sgn, 1, - fz * g + tz * s * sgn, px + tx * crown, yR, pz + tz * crown );
+
+			}
+
+		}
+		// the front, far offshore
+		plane( n[ 0 ], 0, n[ 1 ], px + n[ 0 ] * 1.7, yA, pz + n[ 1 ] * 1.7 );
+		// Corners broken off along further fractures: a facet between the back and a side, the
+		// floor or the roof (the block's edge there, cut back by a share of the block's size).
+		const chamfers = r( 26 ) < 0.65 ? ( r( 27 ) < 0.45 ? 2 : 1 ) : 0;
+		for ( let c = 0; c < chamfers; c ++ ) {
+
+			const which = 1 + Math.floor( r( 28 + c ) * 4 ); // side +, side -, floor, roof
+			const o = which * 4, wgt = 0.5 + r( 30 + c ) * 1.5;
+			const nx = planes[ 0 ] + planes[ o ] * wgt, ny = planes[ 1 ] + planes[ o + 1 ] * wgt, nz = planes[ 2 ] + planes[ o + 2 ] * wgt;
+			const l = Math.hypot( nx, ny, nz );
+			// the edge between the back and that plane, near the seed
+			const ex = px - fx * D + ( which === 1 ? tx * wPlus : which === 2 ? - tx * wMinus : 0 );
+			const ez = pz - fz * D + ( which === 1 ? tz * wPlus : which === 2 ? - tz * wMinus : 0 );
+			const ey = which === 3 ? Math.max( yF, - 1 ) : which === 4 ? Math.min( yR, top ) : yA;
+			const size = Math.min( D, which <= 2 ? Math.min( wPlus, wMinus ) : ( Math.min( yR, top ) - Math.max( yF, - 1 ) ) * 0.4 );
+			planes.push( nx / l, ny / l, nz / l, ( nx * ex + ny * ey + nz * ez ) / l - size * ( 0.25 + r( 32 + c ) * 0.45 ) );
+
+		}
+
+		const fresh = r( 34 ) < L.fresh ? 0.6 + r( 35 ) * 0.4 : 0;
+		const scar: Scar = {
+			planes: new Float64Array( planes ), n: planes.length / 4, floor, lip,
+			id: r( 36 ), fresh, level, kind: face ? 'face' : lip ? 'lip' : 'pocket', prio: 0,
+			cx: px, cy: ( yF + Math.min( yR, top ) ) * 0.5, cz: pz, size: ( wPlus + wMinus ) * 0.5,
+			round: fresh > 0 ? 0.006 + r( 37 ) * 0.01 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
+			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
+		};
+		return bounds( scar ) ? scar : null;
+
+	}
+
+	// A flake: a slab spalled off the face along one fracture inclined to it. It leaves a flat
+	// facet that runs out to nothing at one end and ends at the other in a sharp step where the
+	// slab broke across, its sides two further fractures that converge or splay, so it reads as
+	// broken rock (a chip with a riser) rather than a hollow. The facet is laid on the local face
+	// the larger scars left, whatever way that face looks.
+	private makeFlake( x: number, z: number, n: [ number, number ], r: ( k: number ) => number, L: Level, level: number ): Scar | null {
+
+		const top = this.top( x, z );
+		const yA = lerp( L.floor[ 0 ], L.floor[ 1 ], r( 6 ) );
+		if ( yA > top - 0.35 ) return null;
+		const t = this.surfaceAlong( x, yA, z, n[ 0 ], n[ 1 ] );
+		if ( Number.isNaN( t ) ) return null;
+		const px = x - n[ 0 ] * t, pz = z - n[ 1 ] * t;
+		// the local face's outward normal
+		const e = 0.03;
+		let mx = this.solid( px + e, yA, pz ) - this.solid( px - e, yA, pz );
+		let my = this.solid( px, yA + e, pz ) - this.solid( px, yA - e, pz );
+		let mz = this.solid( px, yA, pz + e ) - this.solid( px, yA, pz - e );
+		const ml = Math.hypot( mx, my, mz );
+		if ( ml < 1e-6 ) return null;
+		mx /= ml; my /= ml; mz /= ml;
+		// on a ledge or under a roof it would read as a pit
+		if ( Math.abs( my ) > 0.55 || mx * n[ 0 ] + mz * n[ 1 ] < 0.2 ) return null;
+		// a frame in the face: u along it, v up it
+		let ux = - mz, uz = mx;
+		const ul = Math.hypot( ux, uz ) || 1;
+		ux /= ul; uz /= ul;
+		const vx = my * uz, vy = mz * ux - mx * uz, vz = - my * ux;
+		// The facet's run: toward its shallow end. The deep end, with the step, lies mostly low
+		// or to one side, where the step catches light; rarely high, where it would hang over.
+		let psi = r( 7 ) * Math.PI * 2;
+		if ( Math.sin( psi ) < - 0.4 ) psi = Math.PI - psi;
+		const ex = ux * Math.cos( psi ) + vx * Math.sin( psi ), ey = vy * Math.sin( psi ), ez = uz * Math.cos( psi ) + vz * Math.sin( psi );
+		// the across direction
+		const qx = my * ez - mz * ey, qy = mz * ex - mx * ez, qz = mx * ey - my * ex;
+		const D = lerp( L.depth[ 0 ], L.depth[ 1 ], r( 11 ) ); // depth at the step
+		const Lr = lerp( L.width[ 0 ], L.width[ 1 ], r( 12 ) ) * ( 1.2 + r( 13 ) * 0.8 ); // the run to the shallow end
+		const W = lerp( L.width[ 0 ], L.width[ 1 ], r( 14 ) ); // half width across
+		const k = D / Lr; // the facet's slope against the face
+		const planes: number[] = [];
+		const plane = ( nx: number, ny: number, nz: number, c: number ) => {
+
+			const l = Math.hypot( nx, ny, nz );
+			planes.push( nx / l, ny / l, nz / l, c / l );
+
+		};
+		const dot = ( ax: number, ay: number, az: number ) => ax * px + ay * yA + az * pz;
+		// the facet: depth D at the step (s = 0 along e), nothing at s = Lr
+		{
+
+			const nx = - ( mx + k * ex ), ny = - ( my + k * ey ), nz = - ( mz + k * ez );
+			plane( nx, ny, nz, dot( nx, ny, nz ) + D );
+
+		}
+		// the step, leaning a little either way
+		const lean = ( r( 15 ) - 0.5 ) * 0.6;
+		{
+
+			const nx = - ex + mx * lean, ny = - ey + my * lean, nz = - ez + mz * lean;
+			plane( nx, ny, nz, dot( nx, ny, nz ) );
+
+		}
+		// the sides, converging toward the shallow end or splaying from it
+		for ( const sgn of [ 1, - 1 ] ) {
+
+			const splay = ( r( sgn > 0 ? 16 : 17 ) - 0.4 ) * 0.9;
+			const nx = qx * sgn + ex * splay, ny = qy * sgn + ey * splay, nz = qz * sgn + ez * splay;
+			plane( nx, ny, nz, dot( nx, ny, nz ) + W * Math.hypot( nx, ny, nz ) );
+
+		}
+		// the far bounds: beyond the shallow end and off the face
+		plane( ex, ey, ez, dot( ex, ey, ez ) + Lr + 0.3 );
+		plane( mx, my, mz, dot( mx, my, mz ) + 0.6 );
+		const fresh = r( 34 ) < L.fresh ? 0.6 + r( 35 ) * 0.4 : 0;
+		const scar: Scar = {
+			planes: new Float64Array( planes ), n: planes.length / 4, floor: - 1, lip: false,
+			id: r( 36 ), fresh, level, kind: 'flake', prio: 0,
+			cx: px, cy: yA, cz: pz, size: W,
+			round: fresh > 0 ? 0.005 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
+			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
+		};
+		return bounds( scar ) ? scar : null;
+
+	}
+
+	// A gully: a slot opened along a joint of the set crossing the coast, from below the sea to
+	// the meadow, its back a V where two fractures meet. Only on straight coast: at a corner it
+	// would read as a cut through the plan.
+	private makeGully( x: number, z: number, n: [ number, number ], r: ( k: number ) => number, wall: Field ): Scar | null {
+
+		for ( const side of [ - 1, 1 ] ) {
+
+			const q = gradient( wall, x - n[ 1 ] * side * 1.4, z + n[ 0 ] * side * 1.4, 0.12 );
+			if ( Math.acos( Math.max( - 1, Math.min( 1, q[ 0 ] * n[ 0 ] + q[ 1 ] * n[ 1 ] ) ) ) > 0.35 ) return null;
+
+		}
+		const top = this.top( x, z );
+		const t = this.surfaceAlong( x, 1.2, z, n[ 0 ], n[ 1 ] );
+		if ( Number.isNaN( t ) ) return null;
+		const px = x - n[ 0 ] * t, pz = z - n[ 1 ] * t;
+		const angN = Math.atan2( n[ 1 ], n[ 0 ] );
+		const tx = - n[ 1 ], tz = n[ 0 ];
+		const planes: number[] = [];
+		const plane = ( nx: number, ny: number, nz: number, qx: number, qy: number, qz: number ) => {
+
+			const l = Math.hypot( nx, ny, nz );
+			nx /= l; ny /= l; nz /= l;
+			planes.push( nx, ny, nz, nx * qx + ny * qy + nz * qz );
+
+		};
+		const D = 0.65 + r( 10 ) * 0.55, half = 0.2 + r( 12 ) * 0.22;
+		// the V back: two fractures meeting D behind the face
+		const open = 0.55 + r( 11 ) * 0.4;
+		for ( const sgn of [ 1, - 1 ] ) {
+
+			const a = angN + Math.PI + sgn * open + ( r( 13 ) - 0.5 ) * 0.2;
+			plane( Math.cos( a ), ( r( 14 ) - 0.3 ) * 0.25, Math.sin( a ), px - n[ 0 ] * D, 1.2, pz - n[ 1 ] * D );
+
+		}
+		// the walls: near-parallel joints of the set crossing the coast
+		const cross = Math.abs( wrap( SET_A - ( angN + Math.PI / 2 ) ) ) < Math.abs( wrap( SET_B - ( angN + Math.PI / 2 ) ) ) ? SET_A : SET_B;
+		for ( const sgn of [ 1, - 1 ] ) {
+
+			let az = cross + ( r( sgn > 0 ? 15 : 16 ) - 0.5 ) * 0.2;
+			if ( Math.cos( az ) * tx * sgn + Math.sin( az ) * tz * sgn < 0 ) az += Math.PI;
+			let gx = Math.cos( az ), gz = Math.sin( az );
+			if ( ( gx * tx + gz * tz ) * sgn < 0.6 ) { gx = tx * sgn; gz = tz * sgn; }
+			plane( gx, ( r( sgn > 0 ? 17 : 18 ) - 0.5 ) * 0.2, gz, px + tx * half * sgn, 1.2, pz + tz * half * sgn );
+
+		}
+		const floor = planes.length / 4;
+		plane( 0, - 1, 0, px, - 1.6, pz );
+		plane( 0, 1, 0, px, top + 1.2, pz );
+		plane( n[ 0 ], 0, n[ 1 ], px + n[ 0 ] * 1.7, 1.2, pz + n[ 1 ] * 1.7 );
+		const scar: Scar = {
+			planes: new Float64Array( planes ), n: planes.length / 4, floor, lip: true,
+			id: r( 29 ), fresh: 0, level: LEVELS.length, kind: 'gully', prio: 0,
+			cx: px, cy: 1.2, cz: pz, size: half, round: 0.025 + r( 30 ) * 0.025,
+			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
+		};
+		return bounds( scar ) ? scar : null;
+
+	}
+
+	private column( x: number, z: number ): void {
 
 		if ( x === this.cx && z === this.cz ) return;
 		this.cx = x; this.cz = z;
-		this.cols.nearest( x, z, this.near );
-		const cols = this.cols.columns;
-		this.n = this.near[ 2 ] >= 0 ? 3 : this.near[ 1 ] >= 0 ? 2 : this.near[ 0 ] >= 0 ? 1 : 0;
+		const d2 = this.dist( x, z );
+		this.s = d2 - this.coast( x, z );
+		this.topY = this.top( x, z );
 		this.shift = bedShift( x, z );
-		this.topY = top;
-		this.exposed = false;
-		for ( let i = 0; i < this.n; i ++ ) {
+		this.list.length = 0;
+		this.coef.length = 0;
+		this.colTop = this.topY;
+		if ( this.s < - 3 || this.s > 3 ) return;
+		// The wall leans back a little, by a slowly varying batter.
+		this.batter = 0.03 + 0.11 * smoothstep( - 0.5, 0.6, noise3( x * 0.13 + 2.2, 5.5, z * 0.13 - 1.4 ) );
+		// The lip is rounded where soil and roots have worked it, sharp where it has broken.
+		this.lipRound = 0.03 + 0.17 * smoothstep( - 0.3, 0.5, noise3( x * 0.37 - 4.1, 2.6, z * 0.37 + 3.3 ) );
+		this.expo = exposureAt( this.dist, x, z );
+		// The notch is cut deepest where the waves strike hardest; where it is shallow, a rounded
+		// ramp of rock stands at the foot instead.
+		// (it comes and goes over a few metres, as the rock's hardness and the swell's reach vary)
+		this.notch = 0.5 * smoothstep( 0.15, 0.6, this.expo * 0.5 + noise3( x * 0.21 + 1.1, 1.7, z * 0.21 - 0.6 ) * 0.8 );
+		this.notchY = 0.32 + noise3( x * 0.31 - 2.4, 0.6, z * 0.31 + 0.8 ) * 0.16;
+		this.ramp = ( 1 - this.notch / 0.5 ) * 0.18;
+		const list = this.grid.get( ( Math.floor( x / COLUMN_CELL ) + 512 ) * 1024 + Math.floor( z / COLUMN_CELL ) + 512 );
+		if ( ! list ) return;
+		for ( const i of list ) {
 
-			const c = cols[ this.near[ i ] ];
-			const dx = x - c.x, dz = z - c.z;
-			// plane through the seed, turned by the column's yaw: a flat face per block
-			const t = - dx * c.nz + dz * c.nx;
-			const f = dx * c.nx + dz * c.nz + t * c.yaw + c.offset;
-			this.face[ i ] = f;
-			this.along[ i ] = t;
-			// (the batter, notch, steps and fallen scars reach ~1.5 m behind the seed's plane)
-			if ( f > - 1.8 && f < 1.2 ) this.exposed = true;
-			// the cell's sides: the bisectors with the other two nearest columns
-			let m = i * 2;
-			this.bis[ m ] = this.bis[ m + 1 ] = Infinity;
-			for ( let j = 0; j < this.n; j ++ ) {
+			const s = this.scars[ i ];
+			if ( x < s.x0 || x > s.x1 || z < s.z0 || z > s.z1 ) continue;
+			this.list.push( i );
+			const p = s.planes;
+			for ( let k = 0; k < s.n; k ++ ) this.coef.push( p[ k * 4 ] * x + p[ k * 4 + 2 ] * z - p[ k * 4 + 3 ], p[ k * 4 + 1 ] );
+			// where a scar cut into the lip, its floor is the column's top
+			if ( s.lip && s.floor >= 0 ) {
 
-				if ( j === i ) continue;
-				const o = cols[ this.near[ j ] ];
-				const ex = c.x - o.x, ez = c.z - o.z, el = Math.hypot( ex, ez ) || 1;
-				const mx = x - ( c.x + o.x ) * 0.5, mz = z - ( c.z + o.z ) * 0.5;
-				jointShape( c, o, this.shape, 0 );
-				this.bis[ m ] = ( mx * ex + mz * ez ) / el;
-				this.sgn[ m ] = c.key < o.key ? 1 : - 1;
-				// the twist runs along the joint, outward from the pair's midpoint
-				const out = Math.max( - 1.5, Math.min( 1.5, ( mx * ( c.nx + o.nx ) + mz * ( c.nz + o.nz ) ) * 0.5 ) );
-				this.lean[ m ] = this.shape[ 0 ] + this.shape[ 1 ] * out;
-				this.closeBed[ m ] = this.shape[ 2 ];
-				this.jog[ m ] = this.shape[ 3 ];
-				// Joints open toward the face; inland they close, so no trench runs across the meadow.
-				this.jointC[ m ] = jointDepth( c, o ) * ( 1 - smoothstep( 0.2, 0.75, - f ) );
-				m ++;
-
-			}
-			// Intact lips lose a few centimetres here and there.
-			this.rim[ i ] = this.topY - c.chip * smoothstep( - 0.9, - 0.1, f );
-			// A fallen block reached a broken, uneven line behind the face, deepest at one point
-			// and narrowing to each side at its own rate.
-			if ( Number.isNaN( c.dropBed ) ) this.cut[ i ] = - Infinity;
-			else {
-
-				const a = t - c.dropAt;
-				this.cut[ i ] = - f - c.dropDepth + Math.max( 0, Math.abs( a ) - c.dropWidth ) * ( a > 0 ? c.dropTaper : c.dropTaper2 )
-					- noise3( x * 1.7 + c.key % 97, 3.3, z * 1.7 ) * 0.16;
-				this.floor[ i ] = bedHeight( c.dropBed ) - this.shift;
+				const f = s.floor * 4, base = this.coef.length - s.n * 2;
+				const yF = - this.coef[ base + s.floor * 2 ] / p[ f + 1 ];
+				let inside = yF < this.topY;
+				for ( let k = 0; k < s.n && inside; k ++ ) if ( k !== s.floor && this.coef[ base + k * 2 ] + this.coef[ base + k * 2 + 1 ] * yF > 0 ) inside = false;
+				if ( inside ) this.colTop = Math.min( this.colTop, yF );
 
 			}
 
@@ -531,115 +793,147 @@ export class CliffWall {
 
 	}
 
-	// Signed distance of the wall (with the meadow's top, `top` m high here) at a point.
-	at( x: number, y: number, z: number, top: number ): number {
+	// The plain base face: battered, notched at the sea, its lip rounded.
+	private base( y: number ): number {
 
-		this.column( x, z, top );
-		const cols = this.cols.columns;
 		const drop = this.topY - y;
-		// The wall continues below the water with a lean that eases off toward the toe.
-		const wallHeight = drop <= 2.8 ? drop : 2.8 + ( 1 - Math.exp( - ( drop - 2.8 ) / 1.2 ) ) * 1.2;
-		const by = y + this.shift;
-		bedAt( by, this.bedVal );
-		const beta = this.bedVal[ 0 ], rate = this.bedVal[ 1 ];
-		const k = Math.floor( beta );
-		// The lean stops below the visible wall: deeper down it would pinch cells shut.
-		const ly = Math.max( y, JOINT_FLOOR ) - JOINT_PIVOT;
-		// Weathering chips into the blocks' edges unevenly along their length (only near the
-		// face: behind it the chamfers it widens play no part).
-		const wear = this.exposed ? noise3( x * 2.6 + 1.7, y * 2.6, z * 2.6 - 3.2 ) : 0;
-		const chipP = Math.max( 0, wear ), chipJ = Math.max( 0, - wear );
-		const rise = 0.6 + 0.4 * smoothstep( 0.2, 2.6, y );
-		let best = Infinity;
-		for ( let i = 0; i < this.n; i ++ ) {
+		// (the lean eases off below the water, where it would carry the toe far out)
+		const h = drop <= 2.8 ? drop : 2.8 + ( 1 - Math.exp( - ( drop - 2.8 ) / 1.2 ) ) * 1.2;
+		let d = this.s - this.batter * h;
+		// the ramp at the foot of sheltered stretches
+		d -= this.ramp * smoothstep( 0.25, - 0.7, y );
+		return smax( d, y - this.topY, this.lipRound );
 
-			// Behind the face the blocks overlap generously: where leaning joints meet inland,
-			// their displaced sides would otherwise leave slivers of no cell inside the rock, and
-			// a parting just under the meadow would bring the field near zero there, where the
-			// lip's chamfer then lifts it into a flat, folded skin.
-			const deep = 0.6 * smoothstep( 0.4, 1.2, - this.face[ i ] );
-			const overlap = CELL_OVERLAP + deep, lap = BED_OVERLAP + deep;
-			// A column cannot come nearer than its cell's side: skip those that cannot win.
-			const m0 = i * 2;
-			let reach = Infinity;
-			for ( let m = m0; m < m0 + 2; m ++ ) reach = Math.min( reach, this.bis[ m ] + Math.abs( this.lean[ m ] * ly ) + Math.abs( this.jog[ m ] ) );
-			if ( - reach - overlap >= best ) continue;
-			const c = cols[ this.near[ i ] ];
-			const notch = ( y - c.notchY ) / ( y > c.notchY ? c.notchUp : c.notchDown );
-			const base = this.face[ i ] - c.batter * wallHeight + c.notchDepth * Math.exp( - notch * notch );
-			// one block per bed: its own face plane, sliced at the partings, edges chamfered
-			let d = Infinity, owned = k, ownInside = 0, ownOpen = 0;
-			for ( let b = k - 1; b <= k + 1; b ++ ) {
+	}
 
-				const s = bedSlot( b );
-				const mid = ( beta - b - 0.5 ) / rate; // height above the block's middle, m
-				const f = base + c.steps[ s ] + c.pitch[ s ] * ( beta - b - 0.5 );
-				const above = ( beta - b - 1 ) / rate, below = ( b - beta ) / rate;
-				// (a welded parting, chamfer 0, takes no chips)
-				const pTop = c.parting[ s ] > 0 ? c.parting[ s ] + c.chipEdge[ s ] * chipP : 0;
-				const pBot = c.under[ s ] > 0 ? c.under[ s ] + c.chipEdge[ s ] * chipJ : 0;
-				let v = block( f, above, below, pTop, pBot, lap );
-				const sp = s * 5;
-				if ( c.spall[ sp ] === c.spall[ sp ] ) {
+	// Rounding of a scar's rim: the waves round every edge in their reach.
+	private static rimRound( s: Scar, y: number ): number {
 
-					const u = this.along[ i ] * c.spall[ sp + 2 ] + mid * c.spall[ sp + 3 ];
-					v = Math.max( v, f * c.spall[ sp ] + ( u - c.spall[ sp + 4 ] ) * c.spall[ sp + 1 ] );
+		return s.round + 0.09 * smoothstep( - 1.1, - 0.3, y ) * ( 1 - smoothstep( 0.45, 1.1, y ) );
 
-				}
-				const sj = s * 3;
-				if ( c.split[ sj ] === c.split[ sj ] ) {
+	}
 
-					// the two parts of a split block, each clipped at the minor joint and chamfered
-					const a = this.along[ i ] - c.split[ sj ], g = c.split[ sj + 2 ];
-					const v2 = block( f + c.split[ sj + 1 ], above, below, pTop, pBot, lap );
-					v = Math.min( Math.max( v, a - CELL_OVERLAP, ( v + a + g ) * K ),
-						Math.max( v2, - a - CELL_OVERLAP, ( v2 - a + g ) * K ) );
+	// The solid without the weathering relief: the base face with the scars cut out.
+	solid( x: number, y: number, z: number, track = false ): number {
 
-				}
-				// Clipped to the column's cell at this bed, the joint edges chamfered. Joints open
-				// wider toward the top, where water and roots work them from above; below the
-				// parting where a joint dies out it is a tight seam, a little to one side.
-				let inside = Infinity, open = 0;
-				for ( let m = m0; m < m0 + 2; m ++ ) {
+		this.column( x, z );
+		const band = this.s > - 3 && this.s < 3;
+		let d = band ? this.base( y ) : Math.max( this.s, y - this.topY );
+		let owner = - 1, ownPlane = - 1;
+		let o = 0;
+		for ( let li = 0; li < this.list.length; li ++ ) {
 
-					const closed = b < this.closeBed[ m ];
-					const dm = this.bis[ m ] + this.sgn[ m ] * ( this.lean[ m ] * ly + ( closed ? this.jog[ m ] : 0 ) );
-					if ( dm < inside ) { inside = dm; open = this.jointC[ m ] * ( closed ? 0.12 : 1 ); }
+			const s = this.scars[ this.list[ li ] ];
+			const n = s.n;
+			if ( y < s.y0 || y > s.y1 ) { o += n * 2; continue; }
+			let db = - Infinity, arg = 0;
+			for ( let k = 0; k < n; k ++ ) {
 
-				}
-				open = open * rise + c.chipEdge[ s ] * chipJ * smoothstep( 0.01, 0.06, open );
-				v = Math.max( v, - inside - overlap, ( v - inside + open ) * K );
-				if ( v < d ) { d = v; owned = b; ownInside = inside; ownOpen = open; }
+				const v = this.coef[ o + k * 2 ] + this.coef[ o + k * 2 + 1 ] * y;
+				if ( v > db ) { db = v; arg = k; }
 
 			}
-			// the lip
-			const lid = y - this.rim[ i ];
-			d = Math.max( d, lid, ( d + lid + c.lip + 0.1 * chipP ) * K );
-			// What is left of a fallen column: the stump stops at a parting, and the scar's back
-			// slopes away from the face toward the top.
-			let back = - Infinity;
-			if ( this.cut[ i ] > - Infinity ) {
+			o += n * 2;
+			// (the rims rounded by the polynomial smooth maximum, after Inigo Quilez's smooth minimum)
+			const cut = - db, k = CliffWall.rimRound( s, y );
+			if ( cut > d - k ) {
 
-				back = this.cut[ i ] - c.dropLean * Math.max( 0, y - this.floor[ i ] );
-				const cut = Math.max( ( c.dropBed - beta ) / rate, back );
-				d = Math.max( d, - cut, ( d - cut + 0.06 ) * K );
-
-			}
-			if ( d < best ) {
-
-				best = d;
-				this.owner = this.near[ i ];
-				this.bed = owned;
-				this.joint = ownOpen > 0.02 ? 1 - smoothstep( 0, ownOpen * 1.4 + 0.04, ownInside ) : 0;
-				// Where the block fell (back < 0) the stump's top is the lip; behind the scar, and
-				// on every column that stands whole (back = -Infinity), the meadow's rim is.
-				this.lipY = back > - Infinity && back < - 0.05 ? this.floor[ i ] : this.rim[ i ];
+				if ( cut > d ) { owner = this.list[ li ]; ownPlane = arg; }
+				d = smax( d, cut, k );
 
 			}
 
 		}
-		this.beta = beta;
-		return best;
+		if ( track ) {
+
+			this.owner = owner;
+			this.onFloor = owner >= 0 && ownPlane === this.scars[ owner ].floor;
+			this.ownTop = this.colTop;
+
+		}
+		return d;
+
+	}
+
+	// The finished wall: the solid with the weathering relief on every face.
+	at( x: number, y: number, z: number, track = false ): number {
+
+		let d = this.solid( x, y, z, track );
+		const shift = this.shift;
+		const beta = bedCoordinate( y + shift );
+		if ( track ) this.beta = beta;
+		if ( this.s < - 3 || this.s > 3 ) return d;
+		// The wave-cut notch: a sharp roof above the calm sea's crests (a roof grazing the surface
+		// leaves a bright seam along the waterline), a back rounded by the swash and a sloping
+		// floor the water meets. It follows every face the sea reaches, scars included.
+		if ( this.notch > 0.01 ) {
+
+			const u = ( y - this.notchY ) / ( y > this.notchY ? 0.24 : 0.55 );
+			d += this.notch * Math.exp( - u * u );
+
+		}
+		const near = 1 - smoothstep( 0.15, 0.4, Math.abs( d ) );
+		if ( near <= 0 ) return d;
+		// (the rest fades out at the meadow, whose height must stay islandSurfaceHeight for the
+		// villagers, the root soil and the rim ground that read it)
+		const below = smoothstep( 0.04, 0.5, this.topY - y );
+		if ( below <= 0 ) return d;
+		let relief = 0;
+		// Weathered partings and soft beds: a groove where a parting has opened, and the softer
+		// beds set back between them, each over a few metres before it pinches out.
+		if ( y > - 0.6 ) {
+
+			const k = Math.round( beta );
+			const yk = partingHeight( k ) - shift;
+			const open = partingOpen( k, x, z );
+			if ( open > 0 ) {
+
+				// a V-shaped slit with sharp lips, not a rounded groove
+				relief += open * 0.075 * Math.max( 0, 1 - Math.abs( y - yk ) / 0.085 );
+
+			}
+			const kb = Math.floor( beta ), soft = softBed( kb );
+			if ( soft > 0 ) {
+
+				const lo = partingHeight( kb ) - shift, hi = partingHeight( kb + 1 ) - shift;
+				const inBed = smoothstep( lo - 0.01, lo + 0.04, y ) * ( 1 - smoothstep( hi - 0.04, hi + 0.01, y ) );
+				relief += soft * 0.1 * inBed * partingOpen( kb + 31, x, z );
+
+			}
+
+		}
+		// Low relief on every face, ridged, so faces break into shallow facets meeting at crests as
+		// fractured stone does. It stays small: broad swells of it melted the facets into the
+		// rounded lumps of dissolved limestone.
+		relief += ( Math.abs( noise3( x * 0.9 + 3.8, y * 1.1, z * 0.9 ) ) - 0.22 ) * 0.022
+			+ noise3( x * 2.1 - 2.3, y * 1.7 + 4.7, z * 2.1 + 6.1 ) * 0.008;
+		d += relief * near * below;
+		return d;
+
+	}
+
+	// How much rock the wall has recently shed above a point at its foot (0 .. 1): the recent
+	// scars of the two larger generations, each over its own width and a little beyond.
+	shed( x: number, z: number ): number {
+
+		let w = 0;
+		for ( const s of this.scars ) {
+
+			if ( s.fresh <= 0 || s.level > 1 ) continue;
+			const cx = ( s.x0 + s.x1 ) * 0.5, cz = ( s.z0 + s.z1 ) * 0.5;
+			const r = Math.max( s.x1 - s.x0, s.z1 - s.z0 ) * 0.5 + 0.8;
+			const d2 = ( ( x - cx ) ** 2 + ( z - cz ) ** 2 ) / ( r * r );
+			if ( d2 < 1 ) w = Math.max( w, ( 1 - d2 ) * ( s.level === 0 ? 1 : 0.7 ) );
+
+		}
+		return w;
+
+	}
+
+	// the wave exposure of the column last evaluated (0 .. 1)
+	get exposure(): number {
+
+		return this.expo;
 
 	}
 

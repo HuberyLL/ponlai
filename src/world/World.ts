@@ -64,6 +64,7 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 		geo.setAttribute( 'tint', new THREE.BufferAttribute( m.tint, 1 ) );
 		geo.setAttribute( 'curv', new THREE.BufferAttribute( m.curv, 1 ) );
 		if ( m.detail ) geo.setAttribute( 'detail', new THREE.BufferAttribute( m.detail, 4 ) );
+		if ( m.detail2 ) geo.setAttribute( 'detail2', new THREE.BufferAttribute( m.detail2, 3 ) );
 		geo.setIndex( new THREE.BufferAttribute( m.indices, 1 ) );
 		geo.computeBoundingSphere();
 		geo.computeBoundingBox();

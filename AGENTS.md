@@ -48,9 +48,10 @@ stone exposed.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets; the cliff band
-  places its vertices by dual contouring so block edges stay sharp), its cliffs as jointed,
-  bedded columns seeded along the coast (`Cliff.ts`, with per-vertex block, joint, bed and lip
-  detail for the material), sea floor
+  places its vertices by dual contouring so scar edges stay sharp), its cliffs as a weathered face
+  that has shed blocks along its joints and beds (`Cliff.ts`: rockfall scars in three generations
+  of size, gullies, a wave-cut notch that follows the coast's exposure; per-vertex facet, scar
+  age, bed, lip, overhang and exposure detail for the material), sea floor
   (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
   cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
   tile), shoreline field,
@@ -62,10 +63,11 @@ stone exposed.
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
   own canopy.
-- `src/materials/`: procedural detail textures, terrain materials (triplanar stone with per-block
-  shade, strata, parting seams, runoff stains, upper-cliff moss and a spray zone, turf, sea floor,
-  light under the water), wet surfaces after Lagarde (soaked pores, water film, runnels down the
-  cliffs).
+- `src/materials/`: procedural detail textures, terrain materials (triplanar stone with per-facet
+  shade, paler recent scars, strata, parting seams, runoff streaks from the lip and ledges, dry
+  stone under overhangs, orange lichen near the lip, upper-cliff moss, a black lichen spray zone
+  that climbs with the coast's exposure, turf, sea floor, light under the water), wet surfaces
+  after Lagarde (soaked pores, water film, runnels down the cliffs).
 - `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading, and
   the storm sea (`StormSea.ts`: whitecap foam integrated on a world grid around the view, the
   procedural foam pattern, spray particles).
@@ -109,24 +111,33 @@ stone exposed.
   draw a fixed count per vegetation anchor), never from coordinates placed by hand, and their
   counts follow the measured coast length or meadow area. Any tile layout then builds itself the
   same way.
-- Cliff features (columns, beds, ledges, notches, gullies, buttresses) derive from the footprint
-  with seeds hashed from position (`Cliff.ts`), and an unchanged stretch of coast keeps its
-  columns when the layout grows elsewhere: every property of a column or feature (a gully's or
-  buttress's role included) comes from its own hash, never from a running count. The wall is built
-  as solid geometry (cell-clipped, bed-sliced blocks with chamfered edges, overlapping a little
-  near the face and generously behind it) so its field stays near a true distance; blended offsets
-  stair-step on the mesh. It must not read as masonry: joints lean and some die out at a parting,
-  and off the coast-wide ledges many partings are welded per column. The wave-cut notch's roof
-  stays above the calm sea's crests, and the weathering relief fades out at the meadow, whose
-  height stays `islandSurfaceHeight`. Stumps of fallen columns stop at a parting below the
-  meadow's planting height (2.8 m) and carry no turf. No waterfalls. Moss and greenery on the wall
-  stay in its upper 1.2 m.
+- Cliff features (rockfall scars, joint faces, pockets, steps in the lip, gullies, the notch)
+  derive from the footprint with seeds hashed from position in world-anchored cells (`Cliff.ts`),
+  and an unchanged stretch of coast keeps its scars when the layout grows elsewhere: every
+  property of a scar comes from its own hash, never from a running count, and each generation is
+  cut into the surface the larger ones left. The wall is built as solid geometry: convex blocks
+  bounded by two regional joint sets (both oblique to the tile edges), bed partings and inclined
+  fractures are subtracted from a battered face, so its field stays a true distance and the
+  facets stay flat up to crisp edges. It must read as natural rock, never masonry: no level
+  courses or evenly spaced joints, and no lumps of dissolved limestone. Scar floors and roofs lie
+  on a parting only some of the time, partings and soft beds open over a few metres and pinch
+  out, and under the meadow the wall weathers back to an upper slope rather than jutting as a
+  slab. Pockets are much shallower than they are wide and tall, their roofs open outward, two
+  never crowd each other at one height, and their occlusion is lifted a little, so none reads as
+  a black hole or a pair of eyes in the shade; the small breaks are flakes (a flat facet ending
+  in a step). Above the waves the breaks stay sharp (rims rounded by a few centimetres at most);
+  only the wave zone rounds them. The wave-cut notch comes and goes with the coast's exposure and
+  its roof stays above the calm sea's crests; the joint faces run on below the sea, so no ledge
+  follows the waterline. The weathering relief fades out at the meadow, whose height stays
+  `islandSurfaceHeight`. Steps where a block fell from the lip stop below the meadow's planting
+  height (2.8 m) and carry no turf. No waterfalls. Moss and greenery on the wall stay in its upper
+  1.2 m.
 - Around the island, the shelf's width and depth, the talus at the cliff foot, its shallow benches
   and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
   noise. The floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
-  nothing breaks the surface. Fallen blocks are walked out from the coast until their traced
-  outline clears the island's solid, so they rest against the cliff's underwater toe wherever it
-  runs; other stones keep a wider berth.
+  nothing breaks the surface. Fallen blocks gather below the cliff's recent scars and are walked
+  out from the coast until their traced outline clears the island's solid, so they rest against
+  the cliff's underwater toe wherever it runs; other stones keep a wider berth.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
   They grow in clumped patches of one to nine strands with runs of bare stone between (0.4-4 m,
