@@ -37,6 +37,11 @@ import { characterLook, KIND } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 
 const params = new URLSearchParams( location.search );
+// The world's generation needs nothing from the page, so its workers start first and run while
+// the renderer, sky, textures and frame graph are set up; its result is awaited below. The world
+// worker's last result comes from IndexedDB while the generator and its options are unchanged
+// (src/world/WorldCache.ts); ?worldCache=off generates it regardless, as on a first visit.
+const worldJob = loadWorld( {}, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } );
 const ground = { soil: params.get( 'soil' ) !== '0' };
 soilUniforms.strength.value = ground.soil ? 1 : 0;
 soilUniforms.blend.value = params.get( 'blend' ) === '0' ? 0 : 1;
@@ -316,9 +321,7 @@ rainScene.add( rain.group );
 
 setStatus( 'Generating the island…' );
 const t0 = performance.now();
-// The world worker's last result comes from IndexedDB while the generator and its options are
-// unchanged (src/world/WorldCache.ts); ?worldCache=off generates it regardless, as on a first visit.
-const worldCache = await loadWorld( {}, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } );
+const worldCache = await worldJob;
 const data = worldCache.data;
 mark( 'world' );
 const shore = shoreTextureFrom( data.shore );
