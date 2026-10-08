@@ -86,14 +86,16 @@ export class ShoreWaves {
 
 		} )();
 		this.incidentAt = p => incidence( p );
-		const reflectionHeight = ( p: V2 ) => Fn( () => {
+		// `at` passes the shore distance and boundary already read at p's texel, so the centre
+		// sample does not read them a second time.
+		const reflectionHeight = ( p: V2, at?: { q: V2; sd: F; boundary: THREE.Node<'vec4'> } ) => Fn( () => {
 
-			const q = toUV( p );
-			const sd = texture( shore, q ).level( float( 0 ) ).r;
+			const q = at ? at.q : toUV( p );
+			const sd = at ? at.sd : texture( shore, q ).level( float( 0 ) ).r;
 			const height = float( 0 ).toVar();
 			If( sd.greaterThan( - 0.8 ).and( sd.lessThan( 3.5 ) ), () => {
 
-				const boundary = this.boundary.sample( q ).level( float( 0 ) );
+				const boundary = at ? at.boundary : this.boundary.sample( q ).level( float( 0 ) );
 				const normal = boundary.ba.div( max( length( boundary.ba ), 1e-5 ) );
 				const waterP = p.add( normal.mul( max( sd.negate(), 0 ) ) );
 				const waterSD = max( sd, 0 );
@@ -114,11 +116,13 @@ export class ShoreWaves {
 			return height;
 
 		} )();
-		const evaluate = ( p: V2 ) => Fn( () => {
+		// The surface pass takes ( reflected height, flow, impact ), the motion pass ( flow, impact,
+		// incident height ): each from the reads and the incident waves this pass already made.
+		const evaluate = ( p: V2, motion: boolean ) => Fn( () => {
 
-			const q = toUV( p ), edge = min( q.div( shared.shoreXform.zw ), vec2( 1 ).sub( q ).div( shared.shoreXform.zw ) );
-			const boundary = this.boundary.sample( q ).level( float( 0 ) );
-			const sd = texture( shore, q ).level( float( 0 ) ).r;
+			const q = toUV( p ).toVar(), edge = min( q.div( shared.shoreXform.zw ), vec2( 1 ).sub( q ).div( shared.shoreXform.zw ) );
+			const boundary = this.boundary.sample( q ).level( float( 0 ) ).toVar();
+			const sd = texture( shore, q ).level( float( 0 ) ).r.toVar();
 			const normal = boundary.ba.div( max( length( boundary.ba ), 1e-5 ) );
 			const incident = incidence( p ).toVar();
 			const flow = incident.yz.toVar(), impact = float( 0 ).toVar();
@@ -143,13 +147,14 @@ export class ShoreWaves {
 			const coast = float( 1 ).sub( smoothstep( 0.12, 0.7, sd ) );
 			flow.subAssign( normal.mul( dot( flow, normal ).min( 0 ) ).mul( coast ) );
 			const inWater = sd.greaterThan( 0 ).and( min( edge.x, edge.y ).greaterThan( 1 ) );
-			return vec4( reflectionHeight( p ), select( inWater, flow, vec2( 0 ) ), select( inWater, impact, float( 0 ) ) );
+			if ( motion ) return vec4( select( inWater, flow, vec2( 0 ) ), select( inWater, impact, float( 0 ) ), incident.x );
+			return vec4( reflectionHeight( p, { q, sd, boundary } ), select( inWater, flow, vec2( 0 ) ), select( inWater, impact, float( 0 ) ) );
 
 		} )();
 		const e = 0.12;
 		this.sample = ( p, _time ) => {
 
-			const centre = evaluate( p ).toVar();
+			const centre = evaluate( p, false ).toVar();
 			const dx = reflectionHeight( p.add( vec2( e, 0 ) ) ).sub( reflectionHeight( p.sub( vec2( e, 0 ) ) ) ).div( 2 * e );
 			const dz = reflectionHeight( p.add( vec2( 0, e ) ) ).sub( reflectionHeight( p.sub( vec2( 0, e ) ) ) ).div( 2 * e );
 			return vec4( centre.x, dx, dz, centre.w );
@@ -171,8 +176,7 @@ export class ShoreWaves {
 
 				const p = uv().div( shared.shoreXform.zw ).add( shared.shoreXform.xy );
 				if ( i === 0 ) return this.sample( p, float( 0 ) );
-				const response = evaluate( p ).toVar();
-				return vec4( response.yz, response.w, incidence( p ).x );
+				return evaluate( p, true );
 
 			} )();
 			return new THREE.QuadMesh( material );
