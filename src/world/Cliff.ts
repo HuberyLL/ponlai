@@ -11,7 +11,7 @@
 // face breaks into long faces and short returns. The sea undercuts the foot in a notch that is
 // deepest where the coast is most exposed and gives way to a rounded ramp where it is sheltered,
 // and rounds every edge in the wave zone; above it the weather opens the softer beds into
-// recesses that pinch out within a few metres and etches vertical flutes under the lip.
+// recesses that pinch out within a few metres, and the edges stay as sharp as they broke.
 // (Scar inventory and the geometry of fracture-bounded blocks after Prémaillon et al., *Conceptual
 // model of fracture-limited sea cliff erosion*, Earth Surface Processes and Landforms 46, 2021;
 // tidal notches after Antonioli et al., *Tidal notches in Mediterranean Sea*, Quaternary Science
@@ -20,7 +20,9 @@
 // So the wall is a slightly battered face around the footprint from which convex blocks, each
 // bounded by those planes, are subtracted in three generations of size: the remaining surface is
 // the envelope of their inner faces, multi-facet scars meeting at sharp salient and re-entrant
-// edges at every angle the joint sets allow. The field stays a true distance inside each block
+// edges at every angle the joint sets allow. The small breaks are flakes, a flat facet ending in
+// a step, rather than small pockets: those, and pairs of pockets side by side, read as dark holes
+// (eyes) in the shade, and many small rounded ones as the lumps of dissolved limestone. The field stays a true distance inside each block
 // (gradient 1), so the dual-contouring surface nets keep facets flat and their edges crisp.
 // Every scar is seeded from a coast point hashed from its position in a world-anchored cell, and
 // each generation is placed on the surface the larger ones left, so an unchanged stretch of coast
@@ -130,8 +132,15 @@ export interface Scar {
 	fresh: number; // 0 old and weathered .. 1 recently fallen: paler, unlichened stone
 	round: number; // rounding of the scar's rim (m)
 	level: number;
+	kind: ScarKind;
+	prio: number; // hashed rank, which wins when two pockets crowd each other
+	cx: number; cy: number; cz: number; size: number; // a pocket's centre and half width
 	x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; // bounds
 }
+
+// a joint face, a step fallen from the lip, a pocket (a block fallen out of the face), a flake
+// (a slab spalled off along one fracture) or a gully
+type ScarKind = 'face' | 'lip' | 'pocket' | 'flake' | 'gully';
 
 interface Level {
 	cell: number; off: number; per: number; keep: number;
@@ -144,15 +153,21 @@ interface Level {
 	fresh: number;
 	round: [ number, number ]; // weathered rim rounding
 	irregular: number; // share broken along fractures of no set
+	flake: number; // share of the rest that spall off as flakes rather than fall out as pockets
 }
 
 // Three generations: joint faces that set the plan of a stretch of coast, pockets where blocks
-// fell out of them, and chips on their faces.
+// fell out of them and flakes spalled off them, and smaller flakes on their faces. Above the
+// waves the rims stay sharp, a few centimetres at most: fractured rock breaks crisply, and only
+// the sea rounds its edges (see rimRound).
 const LEVELS: Level[] = [
-	{ cell: 3.6, off: 1.3, per: 1, keep: 0.95, width: [ 1.1, 2.5 ], depth: [ 0.3, 0.85 ], height: [ 1.3, 2.6 ], floor: [ - 1.6, - 0.3 ], face: 1, lip: 0.5, fresh: 0.25, round: [ 0.02, 0.06 ], irregular: 0.2 },
-	{ cell: 2.0, off: 0.6, per: 3, keep: 0.65, width: [ 0.3, 1.0 ], depth: [ 0.14, 0.45 ], height: [ 0.45, 1.6 ], floor: [ 0.35, 2.3 ], face: 0.35, lip: 0.12, fresh: 0.3, round: [ 0.02, 0.05 ], irregular: 0.3 },
-	{ cell: 0.95, off: 0.25, per: 3, keep: 0.45, width: [ 0.13, 0.42 ], depth: [ 0.06, 0.2 ], height: [ 0.22, 0.75 ], floor: [ 0.3, 2.7 ], face: 0, lip: 0.04, fresh: 0.25, round: [ 0.012, 0.025 ], irregular: 0.5 },
+	{ cell: 3.6, off: 1.3, per: 1, keep: 0.95, width: [ 1.1, 2.5 ], depth: [ 0.3, 0.85 ], height: [ 1.3, 2.6 ], floor: [ - 1.6, - 0.3 ], face: 1, lip: 0.5, fresh: 0.25, round: [ 0.012, 0.035 ], irregular: 0.2, flake: 0 },
+	{ cell: 2.0, off: 0.6, per: 3, keep: 0.65, width: [ 0.35, 1.0 ], depth: [ 0.14, 0.4 ], height: [ 0.5, 1.6 ], floor: [ 0.35, 2.3 ], face: 0.35, lip: 0.12, fresh: 0.3, round: [ 0.01, 0.03 ], irregular: 0.3, flake: 0.5 },
+	{ cell: 1.1, off: 0.25, per: 2, keep: 0.45, width: [ 0.22, 0.55 ], depth: [ 0.05, 0.13 ], height: [ 0.3, 0.9 ], floor: [ 0.3, 2.5 ], face: 0, lip: 0, fresh: 0.25, round: [ 0.006, 0.014 ], irregular: 0.5, flake: 1 },
 ];
+// Two pockets nearer than this (m, between their rims) at much the same height read as a pair
+// of eyes in the shade: only the higher-ranked one falls.
+const POCKET_GAP = 1.0, POCKET_RISE = 0.6;
 // Gullies: narrow slots opened along a joint from the sea to the lip, every 9 m or so of
 // straight coast.
 const GULLY = { cell: 9.0, off: 3.1, keep: 0.55 };
@@ -221,7 +236,16 @@ function coastSeeds( dist: Field, area: { x0: number; z0: number; x1: number; z1
 		}
 
 	}
-	return seeds;
+	// Crossings a few centimetres apart can share a key, and so would cut the same scar twice:
+	// keep one of each, the same one whatever order they were found in.
+	const byKey = new Map<number, Seed>();
+	for ( const s of seeds ) {
+
+		const o = byKey.get( s.key );
+		if ( ! o || s.x < o.x || ( s.x === o.x && s.z < o.z ) ) byKey.set( s.key, s );
+
+	}
+	return [ ...byKey.values() ];
 
 }
 
@@ -295,14 +319,31 @@ export class CliffWall {
 					// the seed moved onto the wall's top edge
 					const w = this.coast( seed.x, seed.z );
 					const sx = seed.x + n[ 0 ] * w, sz = seed.z + n[ 1 ] * w;
-					const scar = gully ? this.makeGully( sx, sz, n, r, wall ) : this.makeScar( sx, sz, n, r, L!, level );
-					if ( scar ) made.push( scar );
+					let scar: Scar | null;
+					if ( gully ) scar = this.makeGully( sx, sz, n, r, wall );
+					else if ( r( 38 ) >= L!.face && r( 39 ) < L!.flake ) scar = this.makeFlake( sx, sz, n, r, L!, level );
+					else scar = this.makeScar( sx, sz, n, r, L!, level );
+					if ( scar ) {
+
+						scar.prio = hash3i( seed.key, salt, 3 );
+						made.push( scar );
+
+					}
 
 				}
 
 			}
-			// (added after the whole generation: its members are placed on the older surface)
-			for ( const s of made ) this.add( s );
+			// (added after the whole generation: its members are placed on the older surface) A
+			// pocket gives way to any higher-ranked one crowding it, whether or not that one gives
+			// way in turn, so the outcome does not depend on the order the cells were visited in.
+			for ( const s of made ) {
+
+				if ( s.kind === 'pocket' && made.some( ( o ) => o !== s && o.kind === 'pocket' && o.prio < s.prio
+					&& Math.abs( o.cy - s.cy ) < POCKET_RISE
+					&& Math.hypot( o.cx - s.cx, o.cz - s.cz ) < o.size + s.size + POCKET_GAP ) ) continue;
+				this.add( s );
+
+			}
 
 		}
 
@@ -388,7 +429,7 @@ export class CliffWall {
 		};
 
 		// heights at the seed: the floor, and the roof (or the meadow)
-		const face = r( 4 ) < L.face, lip = r( 5 ) < L.lip;
+		const face = r( 38 ) < L.face, lip = ! face && r( 5 ) < L.lip;
 		let yF: number, yR: number;
 		if ( face ) {
 
@@ -413,7 +454,9 @@ export class CliffWall {
 		const floorKind = face ? 3 : r( 9 ) < 0.35 ? 0 : r( 9 ) < 0.65 ? 1 : 2; // bed, inclined across, seaward, below the sea
 		// (a joint face under a cap: the weathered upper slope over the steep wall the sea keeps
 		// cut, as on most cliffs, rather than a slab of cap rock jutting over the face)
-		const roofKind = lip ? 3 : face ? 4 : r( 10 ) < 0.3 ? 0 : r( 10 ) < 0.55 ? 1 : 2; // bed, inclined, arch, above the meadow, upper slope
+		// (A pocket's roof opens outward, so its back sees some sky: under a level roof it was a
+		// dark slot. Arches only crown the wider ones.)
+		const roofKind = lip ? 3 : face ? 4 : r( 10 ) < 0.3 ? 0 : r( 10 ) < 0.7 || L.width[ 1 ] < 0.8 ? 1 : 2; // bed, inclined, arch, above the meadow, upper slope
 		if ( floorKind === 0 ) {
 
 			const y = partingAt( yF, false );
@@ -444,8 +487,10 @@ export class CliffWall {
 		let wDeep = lerp( L.width[ 0 ], L.width[ 1 ], r( 12 ) ), wShallow = lerp( L.width[ 0 ], L.width[ 1 ], r( 13 ) );
 		if ( Math.abs( sinA ) > 0.05 ) wDeep = Math.min( wDeep, Math.max( 0.1, ( MAX_REACH * cosA - D ) / Math.abs( sinA ) ) );
 		D = Math.min( D, MAX_REACH * cosA - wDeep * Math.abs( sinA ) );
-		// a pocket is shallower than it is wide, or it reads as a hole
-		if ( ! face && ! lip ) D = Math.min( D, 0.3 * ( wDeep + wShallow ) );
+		// A pocket is much shallower than it is wide and tall: a deep, narrow cavity reads as a
+		// black hole in the shade.
+		const pocket = ! face && ! lip;
+		if ( pocket ) D = Math.min( D, 0.22 * Math.min( wDeep + wShallow, Math.min( yR, top ) - yF ) );
 		if ( D < 0.04 || wDeep < 0.1 ) return null;
 		const lean = ( r( 14 ) - 0.25 ) * 0.3;
 		plane( - fx * Math.cos( lean ), - Math.sin( lean ), - fz * Math.cos( lean ), px - fx * D, yA, pz - fz * D );
@@ -510,13 +555,13 @@ export class CliffWall {
 
 		} else if ( roofKind === 1 ) {
 
-			const g = - 0.3 + r( 22 ) * 1.1, s = ( r( 23 ) < 0.5 ? - 1 : 1 ) * ( 0.2 + r( 24 ) * 0.7 );
+			const g = 0.35 + r( 22 ) * 0.9, s = ( r( 23 ) < 0.5 ? - 1 : 1 ) * ( 0.2 + r( 24 ) * 0.7 );
 			plane( - fx * g + tx * s, 1, - fz * g + tz * s, px, yR, pz );
 
 		} else {
 
 			// an arch: two fractures meeting above the scar, its crown off to one side
-			const crown = ( r( 22 ) - 0.5 ) * ( wPlus + wMinus ) * 0.5, g = r( 23 ) * 0.5;
+			const crown = ( r( 22 ) - 0.5 ) * ( wPlus + wMinus ) * 0.5, g = 0.3 + r( 23 ) * 0.5;
 			for ( const sgn of [ 1, - 1 ] ) {
 
 				const s = 0.45 + r( sgn > 0 ? 24 : 25 ) * 1.1;
@@ -548,8 +593,94 @@ export class CliffWall {
 		const fresh = r( 34 ) < L.fresh ? 0.6 + r( 35 ) * 0.4 : 0;
 		const scar: Scar = {
 			planes: new Float64Array( planes ), n: planes.length / 4, floor, lip,
-			id: r( 36 ), fresh, level,
-			round: fresh > 0 ? 0.012 + r( 37 ) * 0.018 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
+			id: r( 36 ), fresh, level, kind: face ? 'face' : lip ? 'lip' : 'pocket', prio: 0,
+			cx: px, cy: ( yF + Math.min( yR, top ) ) * 0.5, cz: pz, size: ( wPlus + wMinus ) * 0.5,
+			round: fresh > 0 ? 0.006 + r( 37 ) * 0.01 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
+			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
+		};
+		return bounds( scar ) ? scar : null;
+
+	}
+
+	// A flake: a slab spalled off the face along one fracture inclined to it. It leaves a flat
+	// facet that runs out to nothing at one end and ends at the other in a sharp step where the
+	// slab broke across, its sides two further fractures that converge or splay, so it reads as
+	// broken rock (a chip with a riser) rather than a hollow. The facet is laid on the local face
+	// the larger scars left, whatever way that face looks.
+	private makeFlake( x: number, z: number, n: [ number, number ], r: ( k: number ) => number, L: Level, level: number ): Scar | null {
+
+		const top = this.top( x, z );
+		const yA = lerp( L.floor[ 0 ], L.floor[ 1 ], r( 6 ) );
+		if ( yA > top - 0.35 ) return null;
+		const t = this.surfaceAlong( x, yA, z, n[ 0 ], n[ 1 ] );
+		if ( Number.isNaN( t ) ) return null;
+		const px = x - n[ 0 ] * t, pz = z - n[ 1 ] * t;
+		// the local face's outward normal
+		const e = 0.03;
+		let mx = this.solid( px + e, yA, pz ) - this.solid( px - e, yA, pz );
+		let my = this.solid( px, yA + e, pz ) - this.solid( px, yA - e, pz );
+		let mz = this.solid( px, yA, pz + e ) - this.solid( px, yA, pz - e );
+		const ml = Math.hypot( mx, my, mz );
+		if ( ml < 1e-6 ) return null;
+		mx /= ml; my /= ml; mz /= ml;
+		// on a ledge or under a roof it would read as a pit
+		if ( Math.abs( my ) > 0.55 || mx * n[ 0 ] + mz * n[ 1 ] < 0.2 ) return null;
+		// a frame in the face: u along it, v up it
+		let ux = - mz, uz = mx;
+		const ul = Math.hypot( ux, uz ) || 1;
+		ux /= ul; uz /= ul;
+		const vx = my * uz, vy = mz * ux - mx * uz, vz = - my * ux;
+		// The facet's run: toward its shallow end. The deep end, with the step, lies mostly low
+		// or to one side, where the step catches light; rarely high, where it would hang over.
+		let psi = r( 7 ) * Math.PI * 2;
+		if ( Math.sin( psi ) < - 0.4 ) psi = Math.PI - psi;
+		const ex = ux * Math.cos( psi ) + vx * Math.sin( psi ), ey = vy * Math.sin( psi ), ez = uz * Math.cos( psi ) + vz * Math.sin( psi );
+		// the across direction
+		const qx = my * ez - mz * ey, qy = mz * ex - mx * ez, qz = mx * ey - my * ex;
+		const D = lerp( L.depth[ 0 ], L.depth[ 1 ], r( 11 ) ); // depth at the step
+		const Lr = lerp( L.width[ 0 ], L.width[ 1 ], r( 12 ) ) * ( 1.2 + r( 13 ) * 0.8 ); // the run to the shallow end
+		const W = lerp( L.width[ 0 ], L.width[ 1 ], r( 14 ) ); // half width across
+		const k = D / Lr; // the facet's slope against the face
+		const planes: number[] = [];
+		const plane = ( nx: number, ny: number, nz: number, c: number ) => {
+
+			const l = Math.hypot( nx, ny, nz );
+			planes.push( nx / l, ny / l, nz / l, c / l );
+
+		};
+		const dot = ( ax: number, ay: number, az: number ) => ax * px + ay * yA + az * pz;
+		// the facet: depth D at the step (s = 0 along e), nothing at s = Lr
+		{
+
+			const nx = - ( mx + k * ex ), ny = - ( my + k * ey ), nz = - ( mz + k * ez );
+			plane( nx, ny, nz, dot( nx, ny, nz ) + D );
+
+		}
+		// the step, leaning a little either way
+		const lean = ( r( 15 ) - 0.5 ) * 0.6;
+		{
+
+			const nx = - ex + mx * lean, ny = - ey + my * lean, nz = - ez + mz * lean;
+			plane( nx, ny, nz, dot( nx, ny, nz ) );
+
+		}
+		// the sides, converging toward the shallow end or splaying from it
+		for ( const sgn of [ 1, - 1 ] ) {
+
+			const splay = ( r( sgn > 0 ? 16 : 17 ) - 0.4 ) * 0.9;
+			const nx = qx * sgn + ex * splay, ny = qy * sgn + ey * splay, nz = qz * sgn + ez * splay;
+			plane( nx, ny, nz, dot( nx, ny, nz ) + W * Math.hypot( nx, ny, nz ) );
+
+		}
+		// the far bounds: beyond the shallow end and off the face
+		plane( ex, ey, ez, dot( ex, ey, ez ) + Lr + 0.3 );
+		plane( mx, my, mz, dot( mx, my, mz ) + 0.6 );
+		const fresh = r( 34 ) < L.fresh ? 0.6 + r( 35 ) * 0.4 : 0;
+		const scar: Scar = {
+			planes: new Float64Array( planes ), n: planes.length / 4, floor: - 1, lip: false,
+			id: r( 36 ), fresh, level, kind: 'flake', prio: 0,
+			cx: px, cy: yA, cz: pz, size: W,
+			round: fresh > 0 ? 0.005 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
 			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
 		};
 		return bounds( scar ) ? scar : null;
@@ -607,7 +738,8 @@ export class CliffWall {
 		plane( n[ 0 ], 0, n[ 1 ], px + n[ 0 ] * 1.7, 1.2, pz + n[ 1 ] * 1.7 );
 		const scar: Scar = {
 			planes: new Float64Array( planes ), n: planes.length / 4, floor, lip: true,
-			id: r( 29 ), fresh: 0, level: LEVELS.length, round: 0.07 + r( 30 ) * 0.05,
+			id: r( 29 ), fresh: 0, level: LEVELS.length, kind: 'gully', prio: 0,
+			cx: px, cy: 1.2, cz: pz, size: half, round: 0.025 + r( 30 ) * 0.025,
 			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
 		};
 		return bounds( scar ) ? scar : null;
@@ -677,7 +809,7 @@ export class CliffWall {
 	// Rounding of a scar's rim: the waves round every edge in their reach.
 	private static rimRound( s: Scar, y: number ): number {
 
-		return s.round + 0.05 * smoothstep( - 1.1, - 0.2, y ) * ( 1 - smoothstep( 0.5, 1.3, y ) );
+		return s.round + 0.09 * smoothstep( - 1.1, - 0.3, y ) * ( 1 - smoothstep( 0.45, 1.1, y ) );
 
 	}
 
@@ -756,27 +888,25 @@ export class CliffWall {
 			const open = partingOpen( k, x, z );
 			if ( open > 0 ) {
 
-				const u = ( y - yk ) / 0.11;
-				relief += open * 0.085 * Math.exp( - u * u );
+				// a V-shaped slit with sharp lips, not a rounded groove
+				relief += open * 0.075 * Math.max( 0, 1 - Math.abs( y - yk ) / 0.085 );
 
 			}
 			const kb = Math.floor( beta ), soft = softBed( kb );
 			if ( soft > 0 ) {
 
 				const lo = partingHeight( kb ) - shift, hi = partingHeight( kb + 1 ) - shift;
-				const inBed = smoothstep( lo - 0.02, lo + 0.1, y ) * ( 1 - smoothstep( hi - 0.1, hi + 0.02, y ) );
-				relief += soft * 0.11 * inBed * partingOpen( kb + 31, x, z );
+				const inBed = smoothstep( lo - 0.01, lo + 0.04, y ) * ( 1 - smoothstep( hi - 0.04, hi + 0.01, y ) );
+				relief += soft * 0.1 * inBed * partingOpen( kb + 31, x, z );
 
 			}
 
 		}
-		// Solution flutes running down from the lip, widest and deepest just under it.
-		const f = Math.abs( noise3( x * 1.45 + 0.3, y * 0.17 - 1.9, z * 1.45 - 2.2 ) );
-		relief += smoothstep( 0.16, 0.0, f ) * 0.045 * smoothstep( this.topY - 2.4, this.topY - 0.5, y );
-		// Low relief on every face at two scales; the broad term ridged, so faces break into
-		// shallow facets meeting at crisp crests, as fractured stone does.
-		relief += ( Math.abs( noise3( x * 0.62 + 3.8, y * 0.8, z * 0.62 ) ) - 0.22 ) * 0.035
-			+ noise3( x * 1.6 - 2.3, y * 1.3 + 4.7, z * 1.6 + 6.1 ) * 0.018;
+		// Low relief on every face, ridged, so faces break into shallow facets meeting at crests as
+		// fractured stone does. It stays small: broad swells of it melted the facets into the
+		// rounded lumps of dissolved limestone.
+		relief += ( Math.abs( noise3( x * 0.9 + 3.8, y * 1.1, z * 0.9 ) ) - 0.22 ) * 0.022
+			+ noise3( x * 2.1 - 2.3, y * 1.7 + 4.7, z * 2.1 + 6.1 ) * 0.008;
 		d += relief * near * below;
 		return d;
 

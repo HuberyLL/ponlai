@@ -119,11 +119,15 @@ stone exposed.
   bounded by two regional joint sets (both oblique to the tile edges), bed partings and inclined
   fractures are subtracted from a battered face, so its field stays a true distance and the
   facets stay flat up to crisp edges. It must read as natural rock, never masonry: no level
-  courses or evenly spaced joints. Scar floors and roofs lie on a parting only some of the time,
-  partings and soft beds open over a few metres and pinch out, pockets are shallower than they
-  are wide, and under the meadow the wall weathers back to an upper slope rather than jutting as
-  a slab. The wave-cut notch comes and goes with the coast's exposure and its roof stays above the
-  calm sea's crests; the joint faces run on below the sea, so no ledge follows the waterline. The
+  courses or evenly spaced joints, and no lumps of dissolved limestone. Scar floors and roofs lie
+  on a parting only some of the time, partings and soft beds open over a few metres and pinch
+  out, and under the meadow the wall weathers back to an upper slope rather than jutting as a
+  slab. Pockets are much shallower than they are wide and tall, their roofs open outward, two
+  never crowd each other at one height, so none reads as a black hole or a pair of eyes in
+  the shade; the small breaks are flakes (a flat facet ending in a step). Above the waves the
+  breaks stay sharp (rims rounded by a few centimetres at most); only the wave zone rounds them.
+  The wave-cut notch comes and goes with the coast's exposure and its roof stays above the calm
+  sea's crests; the joint faces run on below the sea, so no ledge follows the waterline. The
   weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight`. Steps where
   a block fell from the lip stop below the meadow's planting height (2.8 m) and carry no turf. No
   waterfalls. Moss and greenery on the wall stay in its upper 1.2 m.
