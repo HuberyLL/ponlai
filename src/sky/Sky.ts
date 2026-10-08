@@ -448,6 +448,33 @@ export class Sky {
 
 	}
 
+	/** Compile the bake's and the clouds' pipelines ahead of their first use (startup calls this
+	 * while the world generates). */
+	async warm( r: THREE.WebGPURenderer = this.renderer ): Promise<void> {
+
+		await r.init();
+		await this.clouds.warm( r );
+		// A pipeline depends on the target it draws into: compile each quad for its own.
+		const e = this.endpoints[ 0 ];
+		const pairs: [ THREE.QuadMesh, THREE.RenderTarget ][] = [
+			[ this.upperQuad, e.clouds ], [ this.quad, e.equirect ], [ this.quad, this.small ],
+			[ this.irradianceQuad, e.irradianceMap ], [ this.irradianceBlendQuad, this.irradianceDisplay ],
+		];
+		if ( this.environmentBlendQuad && this.envMap ) pairs.push( [ this.environmentBlendQuad, this.envMap ] );
+		const previous = r.getRenderTarget();
+		const compiling: Promise<void>[] = [];
+		for ( const [ quad, target ] of pairs ) {
+
+			r.setRenderTarget( target );
+			compiling.push( r.compileAsync( quad, quad.camera ) );
+
+		}
+		r.setRenderTarget( previous );
+		compiling.push( this.pmrem.compileEquirectangularShader() );
+		await Promise.all( compiling );
+
+	}
+
 	update( transitionSeconds = 0 ): Promise<void> {
 
 		if ( ! Number.isFinite( transitionSeconds ) || transitionSeconds < 0 ) return Promise.reject( new RangeError( 'Sky transition duration must be finite and nonnegative' ) );

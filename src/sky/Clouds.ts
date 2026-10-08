@@ -1737,6 +1737,17 @@ export class Clouds {
 
 	}
 
+	/** Compile the panorama, shadow and (once sized) view kernels ahead of their first use. */
+	async warm( renderer: THREE.WebGPURenderer ): Promise<void> {
+
+		await this.init( renderer );
+		const view = this.view;
+		const kernels = [ this.partialKernel!, this.shadowKernel! ];
+		if ( view ) kernels.push( view.kernels.trace, view.kernels.high, view.kernels.box, ...view.kernels.resolve );
+		await renderer.compileComputeAsync( kernels );
+
+	}
+
 }
 
 function makeDome( width: number, height: number ): THREE.StorageTexture {
