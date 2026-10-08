@@ -200,6 +200,20 @@ packages, into `dist/licenses/`.
   final mix as the lattice hash, Perlin's gradients, MaterialX's 0.982 scale) in plain
   TypeScript, so the shrub and tree picker reads the same puddle hollows as the shader.
 
+### FSR 1 (AMD FidelityFX, through three.js's FSR1Node)
+
+- Upstream: three.js `examples/jsm/tsl/display/FSR1Node.js` (r186), a TSL port of AMD FidelityFX
+  Super Resolution 1 ([FidelityFX-FSR](https://github.com/GPUOpen-Effects/FidelityFX-FSR),
+  `ffx_fsr1.h`: EASU and RCAS)
+- Copyright: (c) 2021 Advanced Micro Devices, Inc.; 2010-2026 three.js authors
+- Licence: MIT, see [`src/post/fsr.LICENSE.txt`](src/post/fsr.LICENSE.txt) (both notices)
+- File: `src/post/FSR.ts`: the edge-adaptive upsampling (EASU) and the contrast-adaptive
+  sharpening (RCAS).
+- Changes: EASU runs as its own pass and fetches its 12 texels as four 2x2 gathers per channel
+  (AMD's layout) where the input is filterable; RCAS is a function the frame graph's canvas pass
+  calls before the grain, instead of a second canvas-sized pass and target; the unused alpha
+  channel is dropped.
+
 ## Assets
 
 ### Rock Face 03
@@ -362,7 +376,7 @@ comment where it is used.
   42 degrees from the antisolar point, the secondary's at about 51.
 - Upscaling a render below the display's resolution: AMD FidelityFX Super Resolution 1 (EASU
   edge-adaptive upsampling and RCAS sharpening), [GPUOpen](https://gpuopen.com/fidelityfx-superresolution/);
-  the code is three.js's `FSR1Node` (an npm dependency).
+  the code is adapted from three.js's `FSR1Node` (see "FSR 1" above).
 - Tone curve: Troy Sobotka's [AgX](https://github.com/sobotka/AgX), through three.js's
   `agxToneMapping` (Benjamin Wrensch's
   [minimal AgX fit](https://iolite-engine.com/blog_posts/minimal_agx_implementation)); the hue-kept
