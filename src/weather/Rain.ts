@@ -16,6 +16,8 @@ type V3 = THREE.Node<'vec3'>;
 // streaks. Mapped on the sphere about the rain's own direction, streaks converge on its
 // vanishing points as in perspective, and a shell shows only where the scene lies beyond it.
 const VEIL_SHELLS = [ 48, 80, 130 ];
+// Fewer shells keep the nearest and the farthest, so the veil still spans the same depth.
+const VEIL_SETS: Record<number, number[]> = { 1: [ 80 ], 2: [ 48, 130 ], 3: VEIL_SHELLS };
 const DROP_WIDTH = 0.0016; // metres
 const STREAK_LENGTH = 0.4; // metres travelled during the eye's exposure
 const STREAK_SPACING = 0.22; // metres between columns of drops on a shell
@@ -26,6 +28,19 @@ export interface RainOptions {
 
 	count?: number;
 	seed?: number;
+
+}
+
+/** Quality knobs of the rain's shading, read when the water and post materials are built, so
+ * a change takes a reload (or a rebuild of those materials): the veil's shells (1 - 3) and the
+ * sea's ripple layers (1 - 2). The defaults are the high tier's. The drop count is separate
+ * (`Rain.setQuality`) and changes at once. */
+export const rainShading = { veilShells: 3, rippleLayers: 2 };
+
+export function setRainShading( { veilShells = rainShading.veilShells, rippleLayers = rainShading.rippleLayers }: Partial<typeof rainShading> ): void {
+
+	rainShading.veilShells = THREE.MathUtils.clamp( Math.round( veilShells ), 1, VEIL_SHELLS.length );
+	rainShading.rippleLayers = THREE.MathUtils.clamp( Math.round( rippleLayers ), 1, 2 );
 
 }
 
@@ -47,7 +62,8 @@ export const rainRippleGradient = Fn( ( [ worldXZ, time, rain, footprint ]: [ V2
 	const filter = float( 1 ).sub( smoothstep( 0.018, 0.075, footprint ) ).toVar();
 	If( rain.greaterThan( 0.0001 ).and( filter.greaterThan( 0.001 ) ), () => {
 
-		Loop( 2, ( { i } ) => {
+		// Read when a material using this is built (see `rainShading`).
+		Loop( rainShading.rippleLayers, ( { i } ) => {
 
 			const layer = float( i ).toVar();
 			const grid = worldXZ.mul( 0.625 ).add( vec2( 0.37, 0.61 ).mul( layer ) ).toVar();
@@ -167,8 +183,10 @@ export class Rain {
 			// Columns crowd toward both vanishing points; fade them out before they alias.
 			const away = smoothstep( 0.12, 0.45, abs( sin( polar ) ) ).toVar();
 			const amount = clamp( u.rain, 0, 1 ).toVar();
-			for ( const [ index, radius ] of VEIL_SHELLS.entries() ) {
+			for ( const radius of VEIL_SETS[ rainShading.veilShells ] ) {
 
+				// Each shell keeps its own pattern whichever set it is drawn in.
+				const index = VEIL_SHELLS.indexOf( radius );
 				const columns = Math.round( 2 * Math.PI * radius / STREAK_SPACING );
 				const column = azimuth.mul( columns ).toVar();
 				const cell = floor( column ).toVar();
