@@ -127,6 +127,21 @@ export class Weather {
 
 	}
 
+	/** Jumps to `name` as established weather, the way loading it does: no transition, a sky
+	 * without a front, and the ground as wet as the constructor leaves it. */
+	establish( name: WeatherName ): void {
+
+		const preset = presetFor( name );
+		Object.assign( this.current, preset, { wetness: preset.rain * 0.8, showers: preset.rain } );
+		this.from = { ...preset };
+		this.destination = preset;
+		this.targetName = name;
+		this.elapsed = 0;
+		this.duration = 0;
+		this.dwell = 0;
+
+	}
+
 	get state(): Readonly<WeatherState> { return this.current; }
 	get target(): WeatherName { return this.targetName; }
 	get progress(): number { return this.duration > 0 ? this.elapsed / this.duration : 1; }

@@ -34,6 +34,7 @@ import { WALK_LOOP, walkLoopDistance } from './world/WalkLoop.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook, KIND } from './characters/CharacterMaterial.ts';
+import { debugFlags } from './debug/DebugFlags.ts';
 
 const params = new URLSearchParams( location.search );
 const ground = { soil: params.get( 'soil' ) !== '0' };
@@ -250,6 +251,25 @@ const setWeather = async ( name: WeatherName, seconds = 20 ) => {
 	weather.auto = false;
 	weather.setWeather( name, seconds );
 	if ( seconds === 0 ) await refreshEnvironment();
+
+};
+// A scene as its URL options load it, for the frame profiler's scene switches within one page
+// load: the weather established at once (wet in rain), the time preset or hour, the scene clock
+// (and the wind integrated to it), with one bake of the environment.
+const establishScene = async ( options: { weather?: WeatherName; preset?: DayPreset; hour?: number; time?: number } ) => {
+
+	cloudOverride = null;
+	if ( options.weather ) {
+
+		weather.auto = false;
+		weather.establish( options.weather );
+
+	}
+	if ( options.preset ) dayCycle.setPreset( options.preset );
+	else if ( options.hour !== undefined ) dayCycle.setHour( options.hour );
+	if ( options.time !== undefined ) simTime = options.time;
+	wind.reset( { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
+	await refreshEnvironment();
 
 };
 
@@ -783,7 +803,8 @@ if ( profiler ) {
 
 }
 mark( 'loop' );
-renderer.setAnimationLoop( profiler ? profiler.wrapLoop( tick ) : tick );
+const animationLoop = profiler ? profiler.wrapLoop( tick ) : tick;
+renderer.setAnimationLoop( animationLoop );
 loading?.classList.add( 'done' );
 // setTime moves the (paused) clock, so captures can step through an animation in one page load
 const setTime = ( t: number ) => {
@@ -794,4 +815,31 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime };
+// Stops and restarts the frame loop, so the profiler can keep two pages in one browser and time one
+// at a time: stopped, the page requests no frames and leaves the GPU idle once the frames already
+// queued and a sky bake in flight are done (the bake is given 2 s). The clock resumes where it
+// stopped. Chrome let one page's stream of frames starve another's queue, so the profiler stops
+// one page and waits for this before it starts the other.
+const animation = ( renderer as unknown as { _animation: { start(): void; stop(): void } } )._animation;
+const loop = {
+	running: true,
+	async stop(): Promise<void> {
+
+		if ( ! loop.running ) return;
+		loop.running = false;
+		animation.stop();
+		const until = performance.now() + 2000;
+		while ( sky.busy && performance.now() < until ) await new Promise( ( resolve ) => setTimeout( resolve, 10 ) );
+		await ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue.onSubmittedWorkDone();
+
+	},
+	start(): void {
+
+		if ( loop.running ) return;
+		loop.running = true;
+		clock.reset();
+		animation.start();
+
+	},
+};
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags };
