@@ -10,6 +10,8 @@ import {
 	clamp, log2, mix, smoothstep, select,
 } from 'three/tsl';
 import type { OceanFFT } from './OceanFFT.ts';
+import { shared } from '../shared.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 
 // Caustics by rasterised photon splatting (Evan Wallace's "WebGL Water", as in tidewater's
 // Caustics.js). A grid over one 16 m wave tile is drawn into an offscreen target; each vertex is a
@@ -120,13 +122,22 @@ export class Caustics {
 
 		const r = this.renderer;
 		this.sunDir.value.copy( sunDir );
-		const prev = r.getRenderTarget();
-		const prevClear = r.getClearColor( new THREE.Color() ), prevAlpha = r.getClearAlpha();
-		r.setRenderTarget( this.target );
-		r.setClearColor( 0x000000, 0 );
-		r.render( this.scene, this.camera );
-		r.setRenderTarget( prev );
-		r.setClearColor( prevClear, prevAlpha );
+		// The pattern only scales the key light's direct share (TerrainMaterial), so while the key
+		// gives no light at all (the sun/moon handoff) a redraw cannot change the image. The next
+		// frame with light redraws before anything renders. (debugFlags.causticsSkip = false: always.)
+		const key = shared.sunColor.value;
+		const dark = key.x === 0 && key.y === 0 && key.z === 0 && debugFlags.causticsSkip !== false;
+		if ( ! dark ) {
+
+			const prev = r.getRenderTarget();
+			const prevClear = r.getClearColor( new THREE.Color() ), prevAlpha = r.getClearAlpha();
+			r.setRenderTarget( this.target );
+			r.setClearColor( 0x000000, 0 );
+			r.render( this.scene, this.camera );
+			r.setRenderTarget( prev );
+			r.setClearColor( prevClear, prevAlpha );
+
+		}
 
 		// flat refracted sun ray (pointing down into the water); the entry point lies up-sun
 		// refract( -sun, up, eta ): T.xz = -eta sun.xz, T.y = -sqrt( k )
