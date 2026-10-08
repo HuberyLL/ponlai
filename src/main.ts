@@ -14,7 +14,7 @@ import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
-import { generateWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
+import { loadWorld, buildWorldMeshes, shoreTextureFrom } from './world/World.ts';
 import { buildGrass } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
@@ -316,11 +316,10 @@ rainScene.add( rain.group );
 
 setStatus( 'Generating the island…' );
 const t0 = performance.now();
-// ?worldCache (debug builds): the world worker's last result from IndexedDB, while the generator
-// and its options are unchanged (src/world/WorldCache.ts), instead of generating it again
-const worldOptions = {};
-const worldCache = DEBUG && params.has( 'worldCache' ) ? await ( await import( './world/WorldCache.ts' ) ).cachedWorld( worldOptions, () => generateWorld( worldOptions ) ) : null;
-const data = worldCache?.data ?? await generateWorld( worldOptions );
+// The world worker's last result comes from IndexedDB while the generator and its options are
+// unchanged (src/world/WorldCache.ts); ?worldCache=off generates it regardless, as on a first visit.
+const worldCache = await loadWorld( {}, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } );
+const data = worldCache.data;
 mark( 'world' );
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
@@ -396,7 +395,7 @@ water = new Water( {
 applySkyFill();
 waterScene.add( water.mesh, stormSea.spray.mesh );
 
-console.info( worldCache?.cache === 'hit' ? 'world from the cache' : 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
+console.info( worldCache.cache === 'hit' ? 'world from the cache' : 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
 // ------------------------------------------------------------------ GUI
 
@@ -778,7 +777,7 @@ function diagnostics(): void {
 		worldTriangles: world.triangles,
 		rimStrands: data.rimStrands.length,
 		timings: data.timings,
-		worldCache: worldCache ? { cache: worldCache.cache, ms: + worldCache.ms.toFixed( 1 ) } : 'off',
+		worldCache: worldCache.cache === 'off' ? 'off' : { cache: worldCache.cache, ms: + worldCache.ms.toFixed( 1 ) },
 		backend: 'webgpu',
 		hour: + dayCycle.hour.toFixed( 4 ),
 		clockPaused: dayCycle.paused,

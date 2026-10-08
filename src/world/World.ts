@@ -5,21 +5,40 @@ import type { Caustics } from '../ocean/Caustics.ts';
 import type { Shared } from '../shared.ts';
 import { ISLAND_TOP } from './WorldShapes.ts';
 import type { WorldData, WorldOptions, ShoreField, RimGroundField } from './types.ts';
-import type { WorldJob } from './worldWorker.ts';
+import type { PageJob, WorldReply } from './worldWorker.ts';
+import { WORLD_GENERATOR_HASH } from 'virtual:world-generator';
 
 // Generates the world in a worker and turns the result into meshes and the shared shoreline
 // texture.
 
-// The worker shares the work with copies of itself (see worldWorker.ts); the world it returns is
-// the same as a single thread's, bit for bit.
-export function generateWorld( options: WorldOptions = {} ): Promise<WorldData> {
+// The world cache's key (see WorldCache.ts): the hash of every source file the worker imports
+// (vite.config.ts's world generator plugin), the options, a format version, and the browser.
+const CACHE_FORMAT = 2;
+function worldCacheKey( options: WorldOptions ): string {
+
+	return JSON.stringify( [ CACHE_FORMAT, WORLD_GENERATOR_HASH, options, navigator.userAgent ] );
+
+}
+
+export interface LoadedWorld {
+	data: WorldData;
+	cache: WorldReply[ 'cache' ];
+	// time spent reading the cache (a hit) or handing the world to it (a miss)
+	ms: number;
+}
+
+// The world, from the cache when it holds one for these options and this generator, else
+// generated (then stored). The worker shares the generation with copies of itself (see
+// worldWorker.ts); the world it returns is the same as a single thread's, bit for bit.
+export function loadWorld( options: WorldOptions = {}, { cache = true } = {} ): Promise<LoadedWorld> {
 
 	return new Promise( ( resolve, reject ) => {
 
 		const worker = new Worker( new URL( './worldWorker.ts', import.meta.url ), { type: 'module' } );
-		worker.onmessage = ( e: MessageEvent<WorldData> ) => { worker.terminate(); resolve( e.data ); };
+		// The worker closes itself once it has stored the world in the cache.
+		worker.onmessage = ( e: MessageEvent<WorldReply> ) => resolve( { data: e.data.world, cache: e.data.cache, ms: e.data.cacheMs } );
 		worker.onerror = ( e ) => { worker.terminate(); reject( e ); };
-		worker.postMessage( { ...options, parallel: true } satisfies WorldJob );
+		worker.postMessage( { options, cacheKey: cache ? worldCacheKey( options ) : null } satisfies PageJob );
 
 	} );
 

@@ -14,19 +14,36 @@ import { deepenSeabed, seabedBeds, shapeShelf } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
 import { VEGETATION_STRIDE, VEGETATION_SPACING } from './types.ts';
+import { openWorldStore } from './WorldCache.ts';
 import type { SDF, MeshData, MeshKind, NamedMesh, Rock, WorldData, WorldOptions } from './types.ts';
 
-// A job: the world's options, plus how to run it. Without `parallel` the whole world is built here
-// and posted synchronously (the node tools rely on that). With it, this worker only coordinates:
-// it starts copies of itself for the island, the stones (dealt round-robin into sets) and the
-// rest (meadow anchors, rim, sea floor, shore fields), and merges their results in the serial
-// order, so the world is identical to the serial one, bit for bit, whatever the number of
-// threads. It stays idle meanwhile, since a nested worker only starts while its parent's thread
-// is free. Every part repeats the cheap shared setup (footprint, SDFs, stones, contact solids)
-// from the same seeds instead of receiving it.
-export interface WorldJob extends WorldOptions {
-	parallel?: boolean;
-	part?: WorldPart;
+// The page's job (World.ts): the world's options and the cache key (null: no cache). The worker
+// answers with a WorldReply. It looks the world up in the cache (WorldCache.ts) first; otherwise
+// it only coordinates: it starts copies of itself for the island, the stones (dealt round-robin
+// into sets) and the rest (meadow anchors, rim, sea floor, shore fields), and merges their
+// results in the serial order, so the world is identical to the serial one, bit for bit, whatever
+// the number of threads. It stays idle meanwhile, since a nested worker only starts while its
+// parent's thread is free. Every part repeats the cheap shared setup (footprint, SDFs, stones,
+// contact solids) from the same seeds instead of receiving it.
+//
+// A message of bare WorldOptions (the node tools) builds the whole world here and posts the
+// WorldData synchronously; with `part` it builds one part.
+export interface PageJob {
+	options: WorldOptions;
+	cacheKey: string | null;
+}
+
+export interface WorldReply {
+	world: WorldData;
+	// 'hit': read from the cache; 'miss': generated and stored; 'error': generated, the store is
+	// unavailable; 'off': generated without the cache
+	cache: 'hit' | 'miss' | 'error' | 'off';
+	// time spent reading the cache (a hit) or handing the world to it (a miss)
+	cacheMs: number;
+}
+
+interface PartJob extends WorldOptions {
+	part: WorldPart;
 }
 
 type WorldPart = 'island' | { rocks: number; sets: number } | 'rest';
@@ -48,28 +65,68 @@ interface RestPart {
 
 interface PartResult { island?: MeshData; rocks?: MeshData[]; rest?: RestPart; timings: Record<string, number> }
 
-self.onmessage = ( e: MessageEvent<WorldJob | undefined> ) => {
+self.onmessage = ( e: MessageEvent<PageJob | PartJob | WorldOptions | undefined> ) => {
 
 	const job = e.data || {};
-	if ( job.part !== undefined ) {
+	if ( ( job as PartJob ).part !== undefined ) {
 
-		const [ result, transfer ] = buildPart( job, job.part );
+		const [ result, transfer ] = buildPart( job as PartJob, ( job as PartJob ).part );
 		self.postMessage( result, { transfer } );
-		return;
+
+	} else if ( 'options' in job ) {
+
+		void pageJob( job ).then( async ( [ reply, stored ] ) => {
+
+			self.postMessage( reply, { transfer: buffersOf( reply.world ) } );
+			// the page leaves this worker to close itself, once the cache has the world
+			await stored;
+			self.close();
+
+		} ).catch( ( error: unknown ) => {
+
+			// an uncaught error reaches the page's worker.onerror; a rejected promise would not
+			setTimeout( () => { throw error; } );
+
+		} );
+
+	} else {
+
+		const [ world, transfer ] = generateSerial( job as WorldOptions );
+		self.postMessage( world, { transfer } );
+
+	}
+
+};
+
+async function pageJob( { options, cacheKey }: PageJob ): Promise<[ WorldReply, Promise<void> ]> {
+
+	let t = performance.now();
+	const store = cacheKey !== null && typeof indexedDB !== 'undefined' ? await openWorldStore<WorldData>( cacheKey ) : null;
+	const hit = await store?.read();
+	if ( hit ) {
+
+		store!.close();
+		return [ { world: hit, cache: 'hit', cacheMs: performance.now() - t }, Promise.resolve() ];
 
 	}
 	const threads = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 1;
-	if ( job.parallel && typeof Worker !== 'undefined' && threads >= 3 ) {
+	// the island and the rest on a thread each, the stones on up to four
+	const world = typeof Worker !== 'undefined' && threads >= 3 ? await generateParallel( options, Math.min( 4, threads - 2 ) ) : generateSerial( options )[ 0 ];
+	if ( ! store ) return [ { world, cache: cacheKey === null ? 'off' : 'error', cacheMs: 0 }, Promise.resolve() ];
+	t = performance.now();
+	const stored = store.write( world );
+	return [ { world, cache: 'miss', cacheMs: performance.now() - t }, stored ];
 
-		// the island and the rest on a thread each, the stones on up to four
-		void generateParallel( job, Math.min( 4, threads - 2 ) ).then( ( [ world, transfer ] ) => self.postMessage( world, { transfer } ) );
-		return;
+}
 
-	}
-	const [ world, transfer ] = generateSerial( job );
-	self.postMessage( world, { transfer } );
+// Every buffer under a value, once each, to transfer it.
+function buffersOf( value: unknown, out = new Set<ArrayBufferLike>() ): ArrayBuffer[] {
 
-};
+	if ( ArrayBuffer.isView( value ) ) out.add( value.buffer );
+	else if ( value && typeof value === 'object' ) for ( const v of Object.values( value ) ) buffersOf( v, out );
+	return [ ...out ] as ArrayBuffer[];
+
+}
 
 function buildPart( options: WorldOptions, part: WorldPart, ctx?: Setup ): [ PartResult, Transferable[] ] {
 
@@ -117,7 +174,7 @@ function generateSerial( options: WorldOptions ): [ WorldData, Transferable[] ] 
 
 }
 
-async function generateParallel( options: WorldOptions, sets: number ): Promise<[ WorldData, Transferable[] ]> {
+async function generateParallel( options: WorldOptions, sets: number ): Promise<WorldData> {
 
 	const t0 = performance.now();
 	// A part whose worker fails is built here instead, so the result never depends on the threads.
@@ -130,7 +187,7 @@ async function generateParallel( options: WorldOptions, sets: number ): Promise<
 			const worker = new Worker( self.location.href, { type: 'module' } );
 			worker.onmessage = ( e: MessageEvent<PartResult> ) => { worker.terminate(); resolve( e.data ); };
 			worker.onerror = ( e ) => { e.preventDefault(); worker.terminate(); resolve( local( part ) ); };
-			worker.postMessage( { ...options, part } satisfies WorldJob );
+			worker.postMessage( { ...options, part } satisfies PartJob );
 
 		} catch {
 
@@ -146,7 +203,7 @@ async function generateParallel( options: WorldOptions, sets: number ): Promise<
 	// stone i went to set i % sets, as its ( i / sets )th mesh: deal them back into stone order
 	const rocks = rest.rest!.stones.map( ( _, i ) => rockParts[ i % sets ].rocks![ Math.floor( i / sets ) ] );
 	const timings: Record<string, number> = { ...rest.timings, island: island.timings.island, rocks: Math.max( ...rockParts.map( ( part ) => part.timings.rocks ) ) };
-	const world = assemble( island.island!, rocks, rest.rest!, options, timings );
+	const [ world ] = assemble( island.island!, rocks, rest.rest!, options, timings );
 	timings.merge = Math.round( performance.now() - t );
 	timings.total = Math.round( performance.now() - t0 );
 	return world;
