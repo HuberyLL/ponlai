@@ -101,36 +101,38 @@ exposed.
 - Keep the island tile layout and flat central plateau. Natural contour, slope and weathering
   variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
   patchy seabed detail; no exposed sea stacks or reefs.
-- The island must be able to grow (more tiles), so every cliff feature is generic: columns,
-  beds, ledges, notches, gullies, buttresses and fallen blocks derive from the footprint with
-  seeds hashed from position (`Cliff.ts`), never placed by hand at coordinates, and an
-  unchanged stretch of coast keeps its columns when the layout grows elsewhere: every property of
-  a column or feature (a gully's or buttress's role included) comes from its own hash, never from
-  a running count. The wall is built as solid geometry (cell-clipped, bed-sliced blocks with
-  chamfered edges, overlapping a little near the face and generously behind it) so its field
-  stays near a true distance; blended offsets stair-step on the mesh. It must not read as
-  masonry: joints lean and some die out at a parting, and off the coast-wide ledges many
-  partings are welded per column. The wave-cut notch's roof stays above the calm sea's crests,
-  and the weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight`.
-  Stumps of fallen columns stop at a parting below the meadow's planting height (2.8 m) and carry
-  no turf. No waterfalls. Moss and greenery on the wall stay in its upper 1.2 m.
-- Everything around the island is generic, so the island can grow by more tiles: the shelf's
-  width and depth, the talus at the cliff foot, its shallow benches and the fallen blocks on it
-  are derived from the footprint's distance, the island's SDF and world-space noise with fixed
-  seeds, never placed at coordinates. The floor off the island stays below -1.6 m and every stone
-  crown below -1.30 m, so nothing breaks the surface. Fallen blocks are walked out from the coast
-  until their traced outline clears the island's solid, so they rest against the cliff's
-  underwater toe wherever it runs; other stones keep a wider berth.
+- The island must be able to grow by more tiles, so everything generated for it is generic: the
+  cliffs, the shelf and its stones, the rim greenery and the planting derive from the footprint,
+  the island's SDF and noise fields with fixed seeds (hashes of position, or random streams that
+  draw a fixed count per vegetation anchor), never from coordinates placed by hand, and their
+  counts follow the measured coast length or meadow area. Any tile layout then builds itself the
+  same way.
+- Cliff features (columns, beds, ledges, notches, gullies, buttresses) derive from the footprint
+  with seeds hashed from position (`Cliff.ts`), and an unchanged stretch of coast keeps its
+  columns when the layout grows elsewhere: every property of a column or feature (a gully's or
+  buttress's role included) comes from its own hash, never from a running count. The wall is built
+  as solid geometry (cell-clipped, bed-sliced blocks with chamfered edges, overlapping a little
+  near the face and generously behind it) so its field stays near a true distance; blended offsets
+  stair-step on the mesh. It must not read as masonry: joints lean and some die out at a parting,
+  and off the coast-wide ledges many partings are welded per column. The wave-cut notch's roof
+  stays above the calm sea's crests, and the weathering relief fades out at the meadow, whose
+  height stays `islandSurfaceHeight`. Stumps of fallen columns stop at a parting below the
+  meadow's planting height (2.8 m) and carry no turf. No waterfalls. Moss and greenery on the wall
+  stay in its upper 1.2 m.
+- Around the island, the shelf's width and depth, the talus at the cliff foot, its shallow benches
+  and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
+  noise. The floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
+  nothing breaks the surface. Fallen blocks are walked out from the coast until their traced
+  outline clears the island's solid, so they rest against the cliff's underwater toe wherever it
+  runs; other stones keep a wider berth.
 - Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
   They grow in clumped patches of one to nine strands with runs of bare stone between (0.4-4 m,
-  measured along the winding coast: a sparse patch breaks any longer run), a long tail of strands that wander and fork down to
-  1.5-2.6 m, leaves shrinking toward the tips, and a mounded leaf clump over each patch's lip; the
-  lowest quarter of the cliff above the sea stays bare.
+  measured along the winding coast: a sparse patch breaks any longer run), a long tail of strands
+  that wander and fork down to 1.5-2.6 m, leaves shrinking toward the tips, and a mounded leaf
+  clump over each patch's lip; the lowest quarter of the cliff above the sea stays bare.
   The meadow's sod curls a little over the lip as a ragged turf skirt (`RimSkirt.ts`), swept along
-  the coast line traced from the rim field, so it follows any shape the rim takes. Rim greenery is
-  generic: it is derived from the footprint, the island SDF and noise fields with fixed seeds, never
-  placed at coordinates, so it grows with the island when tiles are added.
+  the coast line traced from the rim field, so it follows any shape the rim takes.
   The meadow is a sward: dense lawn tufts of narrow blades (doubled where the growth field runs
   thick, the extras folding away beyond about 35 m) and taller tussocks on a clump field; toward
   the coast the tufts grow taller and lean out over the lip instead of thinning, and the lip
@@ -138,13 +140,9 @@ exposed.
   by the rim field's root depth. Wildflowers are plants of four species (daisy, umbel, spike, cup)
   with leaf rosettes, their heads just above the sward, in beds of 3-9 gathered in drifts.
   Tussocks and flower beds (spikes furthest) keep off the islander's walking loop (`WalkLoop.ts`).
-- Generic, grows with the island: every planting and ground feature is derived from the footprint,
-  the SDF and noise fields with fixed seeds (a seeded hash per vegetation anchor), never placed at
-  coordinates, so it works unchanged for any tile layout.
 - Shrubs (up to about head height) and small trees (2.5 - 3.5 m) grow on the plateau in loose
   groups. Their sites come from fields and the meadow's area (one tree per about 120 m^2, one
-  group per about 13 m^2), never from fixed coordinates, so a larger island of more tiles plants
-  itself the same way. They keep off the islander's walk and out of the puddle hollows
+  group per about 13 m^2). They keep off the islander's walk and out of the puddle hollows
   (`PuddleHollows.ts` repeats `puddleField`'s hollows on the CPU: change both together), draw from
   their own random stream (the rim bushes' stream also places the rim trails), sway with the rim
   bushes' wind, cast into the sun's map and stop the rain. A limb casts whole or not at all: limbs
