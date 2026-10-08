@@ -296,7 +296,11 @@ rainScene.add( rain.group );
 
 setStatus( 'Generating the island…' );
 const t0 = performance.now();
-const data = await generateWorld();
+// ?worldCache (debug builds): the world worker's last result from IndexedDB, while the generator
+// and its options are unchanged (src/world/WorldCache.ts), instead of generating it again
+const worldOptions = {};
+const worldCache = DEBUG && params.has( 'worldCache' ) ? await ( await import( './world/WorldCache.ts' ) ).cachedWorld( worldOptions, () => generateWorld( worldOptions ) ) : null;
+const data = worldCache?.data ?? await generateWorld( worldOptions );
 mark( 'world' );
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
@@ -372,7 +376,7 @@ water = new Water( {
 applySkyFill();
 waterScene.add( water.mesh, stormSea.spray.mesh );
 
-console.info( 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
+console.info( worldCache?.cache === 'hit' ? 'world from the cache' : 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
 // ------------------------------------------------------------------ GUI
 
@@ -754,6 +758,7 @@ function diagnostics(): void {
 		worldTriangles: world.triangles,
 		rimStrands: data.rimStrands.length,
 		timings: data.timings,
+		worldCache: worldCache ? { cache: worldCache.cache, ms: + worldCache.ms.toFixed( 1 ) } : 'off',
 		backend: 'webgpu',
 		hour: + dayCycle.hour.toFixed( 4 ),
 		clockPaused: dayCycle.paused,
