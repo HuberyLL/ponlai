@@ -15,6 +15,7 @@ import { windGust } from '../weather/Wind.ts';
 import { CANOPY_TOP, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 import type { Shared } from '../shared.ts';
 
 // Stylised meadow on the island top, a sward of two instanced tuft kinds. The lawn is a dense
@@ -220,11 +221,16 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; soil: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3 }
 
-// One instanced mesh per tuft kind. One input buffer carries the scalar fields and the width axes:
-// separate buffers plus the tuft inputs and instance transform would exceed WebGPU's default
-// eight-buffer limit.
-function tuftMesh( geometry: THREE.BufferGeometry, material: THREE.Material, tufts: Tuft[], name: string ): THREE.InstancedMesh {
+// One instanced mesh per batch of tufts of one kind. One input buffer carries the scalar fields
+// and the width axes: separate buffers plus the tuft inputs and instance transform would exceed
+// WebGPU's default eight-buffer limit. `source` gives the tuft's own geometry; each mesh takes a
+// geometry of its own over the same buffers, since the instance inputs and the draw range belong
+// to it.
+function tuftMesh( source: THREE.BufferGeometry, material: THREE.Material, tufts: Tuft[], name: string ): THREE.InstancedMesh {
 
+	const geometry = new THREE.BufferGeometry();
+	for ( const key of [ 'position', 'normal', 'blade' ] ) geometry.setAttribute( key, source.getAttribute( key ) );
+	geometry.setIndex( source.getIndex() );
 	const n = tufts.length;
 	const mesh = new THREE.InstancedMesh( geometry, material, Math.max( n, 1 ) );
 	const ground = new THREE.InstancedInterleavedBuffer( new Float32Array( Math.max( n, 1 ) * 11 ), 11 );
@@ -283,12 +289,40 @@ function tuftMesh( geometry: THREE.BufferGeometry, material: THREE.Material, tuf
 
 }
 
+// The thin extra tufts are skipped once the view camera is beyond `thinFar` of every one of them
+// (of the box of their planting anchors), where all of them have folded into their roots: the
+// fold is the shader's, unchanged, so the frame is the same, and a function of the camera alone,
+// so a paused frame repeats exactly. Other cameras (the rain's collision bake looks straight
+// down, orthographic) draw them as before.
+const _cameraPosition = new THREE.Vector3();
+
+interface Batch { mesh: THREE.InstancedMesh; box: THREE.Box3; thin: boolean; count: number }
+
+function selectBatch( batch: Batch, camera: THREE.Camera ): void {
+
+	const far = batch.thin && debugFlags.grassThinCull !== false && ( camera as THREE.PerspectiveCamera ).isPerspectiveCamera &&
+		batch.box.distanceToPoint( _cameraPosition.setFromMatrixPosition( camera.matrixWorld ) ) >= grassUniforms.thinFar.value;
+	batch.mesh.count = far ? 0 : batch.count;
+
+}
+
+function batchOf( source: THREE.BufferGeometry, material: THREE.Material, tufts: Tuft[], name: string, thin = false ): Batch {
+
+	const mesh = tuftMesh( source, material, tufts, name );
+	const box = new THREE.Box3();
+	for ( const t of tufts ) box.expandByPoint( t.origin );
+	const batch: Batch = { mesh, box, thin, count: tufts.length };
+	if ( thin ) mesh.onBeforeRender = ( _renderer, _scene, camera ) => selectBatch( batch, camera );
+	return batch;
+
+}
+
 /** The meadow: lawn and tussock meshes in one group. `walkDistance` (m from a point to the
  * islander's loop) keeps tussocks off the path. */
 export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): THREE.Group {
 
 	const n = veg.length / STRIDE;
-	const lawn: Tuft[] = [], tussocks: Tuft[] = [];
+	const lawn: Tuft[] = [], tussocks: Tuft[] = [], lawnThin: Tuft[] = [];
 	// The lawn's own draws keep their old order; everything added since draws from a second
 	// stream, a fixed count per anchor, so the planting stays the same wherever a gate changes.
 	const rng = mulberry32( 99 );
@@ -380,7 +414,7 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 			q.setFromUnitVectors( up, dir ).multiply( qy.setFromAxisAngle( up, draws[ 5 ] * Math.PI * 2 ) );
 			scl.set( spread * ( 0.85 + draws[ 6 ] * 0.3 ), h * ( 0.8 + draws[ 7 ] * 0.35 ), spread * ( 0.85 + draws[ 6 ] * 0.3 ) );
 			meadowColor( x, z, col ).multiplyScalar( 0.9 + draws[ 8 ] * 0.18 );
-			plant( lawn, pos, q, scl, col, k, soil, cover, rimEdge, 1 );
+			plant( lawnThin, pos, q, scl, col, k, soil, cover, rimEdge, 1 );
 
 		}
 
@@ -408,13 +442,20 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 	const material = grassMaterial( shared );
 	const group = new THREE.Group();
 	group.name = 'grass';
-	group.add( tuftMesh( tuftGeometry( LAWN, 3 ), material, lawn, 'grass-lawn' ) );
-	group.add( tuftMesh( tuftGeometry( TUSSOCK, 17 ), material, tussocks, 'grass-tussocks' ) );
+	const lawnGeometry = tuftGeometry( LAWN, 3 );
+	// The extra tufts of thick patches draw on their own, so they can be skipped as a whole.
+	const batches = [
+		batchOf( lawnGeometry, material, lawn, 'grass-lawn' ),
+		batchOf( tuftGeometry( TUSSOCK, 17 ), material, tussocks, 'grass-tussocks' ),
+	];
+	if ( lawnThin.length ) batches.push( batchOf( lawnGeometry, material, lawnThin, 'grass-lawn-thin', true ) );
+	for ( const b of batches ) group.add( b.mesh );
 	// for probes and tuning from the console ( __SOOMI__.grass )
 	group.userData.minWidth = grassUniforms.minWidth;
 	group.userData.rimMinWidth = grassUniforms.rimMinWidth;
 	group.userData.thinNear = grassUniforms.thinNear;
 	group.userData.thinFar = grassUniforms.thinFar;
+	group.userData.batches = batches;
 	return group;
 
 }
