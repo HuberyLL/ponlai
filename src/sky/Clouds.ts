@@ -68,7 +68,8 @@ const POWDER = 0.7, AMBIENT = 0.7 * ( 1 + 0.99 ), BASE_SHADOW = 0.88, BASE_SHADO
 const BOUNCE = new THREE.Color( 0.009134058699157796, 0.015208514418949472, 0.018500220124016652 );
 const MELT_START = 25000, MELT_END = 45000;
 const STEP = 25; // metres: the finest step and the first light segment
-const LIGHT_TAPS = 5, FULL_LIGHTING_ALPHA = 0.5, LIGHT_REUSE_STEPS = 3;
+// The most light march taps a tier may ask for (see setMarch); the uniforms hold this many.
+const MAX_LIGHT_TAPS = 5, FULL_LIGHTING_ALPHA = 0.5, LIGHT_REUSE_STEPS = 3;
 const AP_DIST = 30000; // aerial perspective scale toward the horizon
 const FAR = 250000;
 // A weather change sweeps across this many metres of sky, arriving from upwind.
@@ -76,15 +77,19 @@ const FRONT_SPAN = 25000;
 const CIRRUS_ALTITUDE = 10000;
 const UPPER_VEER = 0.6; // radians the upper wind turns from the surface wind
 const SYNOPTIC_SIZE = 409600;
-export const DOME_WIDTH = 1536, DOME_HEIGHT = 384;
-const DOME_TEXEL_ANGLE = 2 * Math.PI / DOME_WIDTH;
-const STRIDE = 4; // panorama refresh pattern: one texel in STRIDE x STRIDE per frame
+// The panorama (see setDome): its size and refresh pattern, one texel of every strideX x strideY
+// per frame.
+export const DOME_DEFAULTS = { width: 1536, height: 384, strideX: 4, strideY: 4 } as const;
 const SHADOW_SIZE = 256, SHADOW_SPAN = 12000;
+// The cloud shadow map refreshes one of every SHADOW_PHASES rows per pass, a few passes per frame
+// (see setShadowRefresh).
+const SHADOW_PHASES = 8;
+const SHADOW_ORDER = [ 0, 4, 2, 6, 1, 5, 3, 7 ];
 // Lightning inside the cloud: point sources lighting the march.
 export const FLASH_SOURCES = 4;
 // Rain curtains: marched from RAIN_START (nearer rain is the streaks of weather/Rain.ts) to the
-// cloud base or RAIN_FAR, in RAIN_STEPS segments that lengthen with distance.
-const RAIN_START = 700, RAIN_FAR = 42000, RAIN_STEPS = 16;
+// cloud base or RAIN_FAR, in segments that lengthen with distance (CloudMarch.rainSteps).
+const RAIN_START = 700, RAIN_FAR = 42000;
 const RAIN_SIGMA = 0.0004; // extinction (1/m) of a full shower: about ten kilometres of visibility
 // The curtains' pattern: lumps RAIN_LUMPS metres across and streaks RAIN_STREAK metres across
 // (both dividing TILE, so the wrapped wind offset shows no seam),
@@ -106,6 +111,56 @@ const RAIN_FLASH = 0.5;
 const ORDER = [ 0, 10, 2, 8, 5, 15, 7, 13, 1, 11, 3, 9, 4, 14, 6, 12 ];
 const REBUILD_SLOTS = 4; // slots traced per frame right after a camera cut
 const SETTLE_CYCLES = 12; // samples per pixel a scene at rest averages before its view is kept
+
+// The march's step caps and taps per tier (setMarch): today's high values by default. Each is a
+// compile-time constant of the kernels, so a change rebuilds them once.
+export interface CloudMarch {
+	viewSteps: number; // the view's march
+	panoramaSteps: number; // the panorama's march
+	lightTaps: number; // taps of the light march toward the key light (1 to MAX_LIGHT_TAPS)
+	rainSteps: number; // segments of the rain curtains' march
+}
+const MARCH_DEFAULTS: CloudMarch = { viewSteps: 256, panoramaSteps: 128, lightTaps: 5, rainSteps: 16 };
+
+// How the view's resolution is set: a fraction of the render.
+export type CloudViewScale = { render: number };
+
+// The panorama's refresh order over its sx x sy pattern (powers of two): consecutive frames land
+// far apart, as an ordered dither does, so a partly refreshed map shows no sweep. A larger axis
+// first alternates its coarsest offset alone; then 2 x 2 Bayer steps, coarse to fine. For 4 x 4
+// this is the view's ORDER.
+function ditherOrder( sx: number, sy: number ): [ number, number ][] {
+
+	const ax = Math.log2( sx ), ay = Math.log2( sy ), pairs = Math.min( ax, ay );
+	const order: [ number, number ][] = [];
+	for ( let n = 0; n < sx * sy; n ++ ) {
+
+		let r = n, x = 0, y = 0;
+		for ( let level = Math.max( ax, ay ) - 1; level >= pairs; level -- ) {
+
+			if ( r & 1 ) {
+
+				if ( ax > ay ) x += 1 << level;
+				else y += 1 << level;
+
+			}
+			r >>= 1;
+
+		}
+		for ( let level = pairs - 1; level >= 0; level -- ) {
+
+			const v = r & 3;
+			r >>= 2;
+			x += [ 0, 1, 1, 0 ][ v ] << level;
+			y += [ 0, 1, 0, 1 ][ v ] << level;
+
+		}
+		order.push( [ x, y ] );
+
+	}
+	return order;
+
+}
 
 // The Sky Pro coverage for this project's weather coverage: fair weather (0.32) is the preset's
 // partly cloudy sky (0.49), a cloudy sky (0.67) stays broken into big heaps, and overcast and
@@ -248,9 +303,8 @@ export class Clouds {
 	readonly ambientGain = uniform( 1 );
 	readonly evolve = uniform( 0 );
 	readonly origin = uniform( new THREE.Vector3( 0, 15, 0 ) );
-	// 40 / 56 / 72 for low / medium / high: the view's resolution follows.
-	readonly quality = uniform( 56 );
-	readonly dome: THREE.StorageTexture;
+	// The panorama; replaced when its size changes (setDome), so readers go through domeNode.
+	dome: THREE.StorageTexture;
 	readonly shadowMap: THREE.StorageTexture;
 	// Lightning (weather/Lightning.ts): each source's world position (m) and reach (m) in xyzw,
 	// and its radiance this frame; `flashOn` is 1 while any of them is lit.
@@ -262,10 +316,19 @@ export class Clouds {
 	private readonly camXZ = uniform( new THREE.Vector2() );
 	private readonly windN = uniform( new THREE.Vector2( 1, 0 ) );
 	private readonly phase = uniform( new THREE.Vector2() );
-	private readonly shadowRow = uniform( 0 ); // which of every four shadow rows to refresh
+	private readonly shadowRow = uniform( 0 ); // which of every SHADOW_PHASES shadow rows to refresh
 	// Light march taps (offset, segment length) and their mip levels (shape, erosion).
-	private readonly lightTaps = Array.from( { length: LIGHT_TAPS }, () => uniform( new THREE.Vector4() ) );
-	private readonly lightLods = Array.from( { length: LIGHT_TAPS }, () => uniform( new THREE.Vector2() ) );
+	private readonly lightTaps = Array.from( { length: MAX_LIGHT_TAPS }, () => uniform( new THREE.Vector4() ) );
+	private readonly lightLods = Array.from( { length: MAX_LIGHT_TAPS }, () => uniform( new THREE.Vector2() ) );
+	// Tier knobs (setDome, setMarch, setShadowRefresh, setViewScale).
+	private domeSize: { width: number; height: number; strideX: number; strideY: number } = { ...DOME_DEFAULTS };
+	private domeOrder = ditherOrder( DOME_DEFAULTS.strideX, DOME_DEFAULTS.strideY );
+	private readonly domeNode: THREE.TextureNode;
+	// Half a panorama texel in uv: the tent filter's tap offsets.
+	private readonly domeTexel = uniform( new THREE.Vector2( 0.5 / DOME_DEFAULTS.width, 0.5 / DOME_DEFAULTS.height ) );
+	private march: CloudMarch = { ...MARCH_DEFAULTS };
+	private shadowRowsPerFrame = 2 / SHADOW_PHASES;
+	private viewScale: CloudViewScale = { render: 0.5 };
 	// The view: camera basis and frustum tangents now, at the previous trace, and as last traced.
 	private readonly cam = { right: uniform( new THREE.Vector3( 1, 0, 0 ) ), up: uniform( new THREE.Vector3( 0, 1, 0 ) ), fwd: uniform( new THREE.Vector3( 0, 0, - 1 ) ), tan: uniform( new THREE.Vector2( 1, 1 ) ) };
 	private readonly prev = { right: uniform( new THREE.Vector3( 1, 0, 0 ) ), up: uniform( new THREE.Vector3( 0, 1, 0 ) ), fwd: uniform( new THREE.Vector3( 0, 0, - 1 ) ), tan: uniform( new THREE.Vector2( 1, 1 ) ) };
@@ -320,13 +383,8 @@ export class Clouds {
 
 	constructor( private readonly atmosphere: Atmosphere ) {
 
-		this.dome = new THREE.StorageTexture( DOME_WIDTH, DOME_HEIGHT );
-		this.dome.type = THREE.HalfFloatType;
-		this.dome.wrapS = THREE.RepeatWrapping;
-		this.dome.wrapT = THREE.ClampToEdgeWrapping;
-		this.dome.minFilter = this.dome.magFilter = THREE.LinearFilter;
-		this.dome.generateMipmaps = false;
-		this.dome.name = 'cloudDome';
+		this.dome = makeDome( DOME_DEFAULTS.width, DOME_DEFAULTS.height );
+		this.domeNode = texture( this.dome );
 		this.shadowMap = new THREE.StorageTexture( SHADOW_SIZE, SHADOW_SIZE );
 		this.shadowMap.type = THREE.UnsignedByteType;
 		this.shadowMap.minFilter = this.shadowMap.magFilter = THREE.LinearFilter;
@@ -349,9 +407,8 @@ export class Clouds {
 	private build( renderer: THREE.WebGPURenderer, shape: THREE.Data3DTexture ): void {
 
 		this.shape = shape;
-		const synoptic = this.synoptic = bakeSynoptic( renderer );
+		this.synoptic = bakeSynoptic( renderer );
 		this.cirrusFibres = bakeCirrusFibres( renderer );
-		const fibres = this.cirrusFibres.texture;
 		const storage = ( size: number, filter: THREE.MagnificationTextureFilter ) => {
 
 			const t = new THREE.StorageTexture( size, size );
@@ -395,7 +452,22 @@ export class Clouds {
 		} )().compute( BOUNDS_RES * BOUNDS_RES, [ 64 ] ).setName( 'Clouds.WeatherBounds' );
 		renderer.compute( weatherKernel );
 		renderer.compute( boundsKernel );
+		this.rainbowTable = makeRainbowTexture();
+		this.buildKernels();
 
+	}
+
+	/** Build the march and the panorama and shadow kernels for the current tier knobs; the view's
+	 * kernels follow on its next update. */
+	private buildKernels(): void {
+
+		const shape = this.shape!, weather = this.weather!, bounds = this.bounds!, synoptic = this.synoptic!;
+		const fibres = this.cirrusFibres!.texture;
+		const { viewSteps, panoramaSteps, lightTaps, rainSteps } = this.march;
+		const { width: domeWidth, height: domeHeight, strideX, strideY } = this.domeSize;
+		const domeTexelAngle = 2 * Math.PI / domeWidth;
+		this.partialKernel?.dispose();
+		this.shadowKernel?.dispose();
 		const shapeNode = texture3D( shape ), weatherNode = texture( weather ), boundsNode = texture( bounds ), synopticNode = texture( synoptic );
 
 		// The weather front at a camera-relative position: (coverage of the shell, density scale).
@@ -608,7 +680,7 @@ export class Clouds {
 
 							// The light march: taps growing along a narrow cone toward the key light.
 							const tau = float( 0 ).toVar();
-							for ( let i = 0; i < LIGHT_TAPS; i ++ ) {
+							for ( let i = 0; i < lightTaps; i ++ ) {
 
 								If( tau.lessThan( 32 ), () => {
 
@@ -694,8 +766,7 @@ export class Clouds {
 		// cloud (dark under a thick deck) and by the sun where it reaches them under the clouds,
 		// bright from the side; in sunlight opposite the sun they carry the rainbows. They fade
 		// into the haze with distance as the clouds do.
-		const rainbowTable = this.rainbowTable = makeRainbowTexture();
-		const rainbowNode = texture( rainbowTable );
+		const rainbowNode = texture( this.rainbowTable! );
 		// Cloud standing at the shell height h above a camera-relative point, from the weather map
 		// and the front alone (the shape noise at its mean): enough to say whether the sun gets
 		// through to the rain, or how thick the cloud a drop fell from is.
@@ -749,7 +820,7 @@ export class Clouds {
 				const lean = this.windN.mul( this.rainSlant ).toVar();
 				const fall = this.evolve.mul( RAIN_FALL ).toVar();
 				const ly = max( L.y, 0.03 ).toVar();
-				Loop( RAIN_STEPS, ( { i } ) => {
+				Loop( rainSteps, ( { i } ) => {
 
 					If( through.lessThan( 0.01 ), () => {
 
@@ -758,8 +829,8 @@ export class Clouds {
 					} );
 					// Segments lengthen with distance: a shower's edge a kilometre off needs precision,
 					// the far end of a 40 km ray does not.
-					const t0 = float( i ).div( RAIN_STEPS ).pow( 1.8 ).mul( span ).add( RAIN_START ).toVar();
-					const dt = float( i ).add( 1 ).div( RAIN_STEPS ).pow( 1.8 ).mul( span ).add( RAIN_START ).sub( t0 ).toVar();
+					const t0 = float( i ).div( rainSteps ).pow( 1.8 ).mul( span ).add( RAIN_START ).toVar();
+					const dt = float( i ).add( 1 ).div( rainSteps ).pow( 1.8 ).mul( span ).add( RAIN_START ).sub( t0 ).toVar();
 					const t = t0.add( dt.mul( jitter ) ).toVar();
 					const altitude = this.camY.add( rd.y.mul( t ) ).add( dot( rd.xz, rd.xz ).mul( t ).mul( t ).div( 2 * EARTH_RADIUS ) ).toVar();
 					const below = max( float( SHELL_BOTTOM ).sub( altitude ), 0 ).toVar();
@@ -882,38 +953,39 @@ export class Clouds {
 
 		};
 
-		const domeCone = float( DOME_TEXEL_ANGLE );
-		const marchPano = makeMarch( 128, domeCone, domeCone );
+		const domeCone = float( domeTexelAngle );
+		const marchPano = makeMarch( panoramaSteps, domeCone, domeCone );
 		const pixelCone = this.cam.tan.y.mul( 2 ).div( this.displayHeight );
-		// The panorama refreshes a sixteenth of its texels per frame and feeds bakes that cross-fade
+		// The panorama refreshes a fraction of its texels per frame and feeds bakes that cross-fade
 		// over seconds, too slow for a flash: only the view carries the lightning in its march;
 		// reflections take it from `flashAt`.
-		this.marchView = makeMarch( 256, pixelCone, this.cam.tan.y.mul( 2 ).div( this.viewSize.y ), true );
+		this.marchView = makeMarch( viewSteps, pixelCone, this.cam.tan.y.mul( 2 ).div( this.viewSize.y ), true );
 		this.highAt = highAt;
 		this.rainAt = rainAt;
 		this.skyAt = skyAt;
 
 		// ---- panorama: a fixed per-texel offset breaks step banding; the tent filter averages it.
-		const columns = DOME_WIDTH / STRIDE;
+		const columns = domeWidth / strideX;
+		const dome = this.dome;
 		this.partialKernel = Fn( () => {
 
-			const x = instanceIndex.mod( uint( columns ) ).mul( uint( STRIDE ) ).add( uint( this.phase.x ) );
-			const y = instanceIndex.div( uint( columns ) ).mul( uint( STRIDE ) ).add( uint( this.phase.y ) );
-			const q = vec2( float( x ).add( 0.5 ).div( DOME_WIDTH ), float( y ).add( 0.5 ).div( DOME_HEIGHT ) );
+			const x = instanceIndex.mod( uint( columns ) ).mul( uint( strideX ) ).add( uint( this.phase.x ) );
+			const y = instanceIndex.div( uint( columns ) ).mul( uint( strideY ) ).add( uint( this.phase.y ) );
+			const q = vec2( float( x ).add( 0.5 ).div( domeWidth ), float( y ).add( 0.5 ).div( domeHeight ) );
 			const jitter = fract( sin( dot( vec2( float( x ), float( y ) ), vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
 			const rd = domeToDirection( q ).toVar();
 			const m = marchPano( rd, jitter );
-			const result = over( rainAt( rd, float( DOME_TEXEL_ANGLE ), jitter ).color, over( vec4( m.L, m.T ), highAt( rd, float( DOME_TEXEL_ANGLE ) ) ) );
-			textureStore( this.dome, ivec2( int( x ), int( y ) ), result );
+			const result = over( rainAt( rd, float( domeTexelAngle ), jitter ).color, over( vec4( m.L, m.T ), highAt( rd, float( domeTexelAngle ) ) ) );
+			textureStore( dome, ivec2( int( x ), int( y ) ), result );
 
-		} )().compute( DOME_WIDTH * DOME_HEIGHT / ( STRIDE * STRIDE ), [ 64 ] ).setName( 'Clouds.Panorama' );
+		} )().compute( domeWidth * domeHeight / ( strideX * strideY ), [ 64 ] ).setName( 'Clouds.Panorama' );
 
-		// ---- cloud shadow: transmittance of the shell along the key light around the island, a
-		// quarter of the rows per frame.
+		// ---- cloud shadow: transmittance of the shell along the key light around the island, one
+		// of every SHADOW_PHASES rows per pass.
 		this.shadowKernel = Fn( () => {
 
 			const n = uint( SHADOW_SIZE );
-			const x = instanceIndex.mod( n ), y = instanceIndex.div( n ).mul( uint( 4 ) ).add( uint( this.shadowRow ) );
+			const x = instanceIndex.mod( n ), y = instanceIndex.div( n ).mul( uint( SHADOW_PHASES ) ).add( uint( this.shadowRow ) );
 			const ground = vec2( float( x ), float( y ) ).add( 0.5 ).div( SHADOW_SIZE ).sub( 0.5 ).mul( SHADOW_SPAN ).sub( this.camXZ ).toVar();
 			const L = this.lightDir;
 			const visibility = float( 1 ).toVar();
@@ -941,7 +1013,10 @@ export class Clouds {
 			} );
 			textureStore( this.shadowMap, ivec2( int( x ), int( y ) ), vec4( visibility ) );
 
-		} )().compute( SHADOW_SIZE * SHADOW_SIZE / 4, [ 64 ] ).setName( 'Clouds.Shadow' );
+		} )().compute( SHADOW_SIZE * SHADOW_SIZE / SHADOW_PHASES, [ 64 ] ).setName( 'Clouds.Shadow' );
+		// The view's kernels close over the march: rebuild them on the next update.
+		this.disposeView();
+		this.needsFull = true;
 
 	}
 
@@ -960,7 +1035,7 @@ export class Clouds {
 			return t;
 
 		};
-		if ( this.view ) for ( const t of [ this.view.trace, this.view.depth, this.view.high, this.view.motion, this.view.flash, this.view.boxMin, this.view.boxMax, ...this.view.history ] ) t.dispose();
+		this.disposeView();
 		const tw = Math.ceil( width / 4 ), th = Math.ceil( height / 4 );
 		const trace = make( tw, th, 'cloudTrace' ), depth = make( tw, th, 'cloudTraceDepth' ), high = make( tw, th, 'cloudHighTrace' );
 		// A flash lasts a fraction of a second, a pixel's history seconds: averaged in, a flash
@@ -1161,6 +1236,7 @@ export class Clouds {
 	update( renderer: THREE.WebGPURenderer, camera: THREE.PerspectiveCamera | null, width: number, height: number, time: number ): void {
 
 		if ( ! this.partialKernel || ! this.shadowKernel ) return;
+		const shadowRows = this.shadowRowsPerFrame;
 		// Before the first frame there is no view yet, only the panorama for the first bake.
 		const position = camera ? camera.position : this.origin.value;
 		this.origin.value.copy( position );
@@ -1169,29 +1245,15 @@ export class Clouds {
 		this.camXZ.value.set( position.x, position.z );
 		this.windN.value.copy( this.cirrusAxis.value );
 		this.updateLightTaps();
-		// Panorama: a 4 x 4 ordered pattern spreads each frame's texels over the map. A full refresh
-		// runs all sixteen phases through the same kernel, so a refreshed map matches a progressive one.
+		// Panorama: an ordered pattern spreads each frame's texels over the map. A full refresh runs
+		// every phase through the same kernel, so a refreshed map matches a progressive one.
 		const full = this.needsFull;
-		const phases = full ? ORDER : [ ORDER[ this.frame % 16 ] ];
 		this.needsFull = false;
-		for ( const k of phases ) {
-
-			this.phase.value.set( k % STRIDE, Math.floor( k / STRIDE ) );
-			renderer.compute( this.partialKernel );
-
-		}
-		// The whole shadow map after a jump, else a quarter of its rows.
-		for ( const row of full ? [ 0, 1, 2, 3 ] : [ this.frame % 4 ] ) {
-
-			this.shadowRow.value = row;
-			renderer.compute( this.shadowKernel );
-
-		}
+		this.refreshMaps( renderer, full, shadowRows );
 
 		if ( ! camera ) return;
 		// ---- view
-		const scale = this.quality.value <= 40 ? 0.4 : this.quality.value >= 72 ? 0.65 : 0.5;
-		const w = Math.max( 8, Math.round( width * scale ) ), h = Math.max( 8, Math.round( height * scale ) );
+		const [ w, h ] = this.viewDimensions( width, height );
 		if ( ! this.view || this.view.width !== w || this.view.height !== h ) this.buildView( w, h );
 		this.displayHeight.value = Math.max( 4, height );
 		const e = camera.matrixWorld.elements;
@@ -1267,6 +1329,28 @@ export class Clouds {
 
 	}
 
+	// Refresh the panorama and the cloud shadow map: whole, or this frame's share (one phase of the
+	// panorama's pattern, `shadowRows` of the shadow map's rows).
+	private refreshMaps( renderer: THREE.WebGPURenderer, full: boolean, shadowRows: number ): void {
+
+		const order = this.domeOrder;
+		for ( const [ x, y ] of full ? order : [ order[ this.frame % order.length ] ] ) {
+
+			this.phase.value.set( x, y );
+			renderer.compute( this.partialKernel! );
+
+		}
+		const passes = full ? SHADOW_PHASES : Math.min( SHADOW_PHASES, Math.max( 1, Math.round( shadowRows * SHADOW_PHASES ) ) );
+		const first = full ? 0 : ( this.frame * passes ) % SHADOW_PHASES;
+		for ( let k = 0; k < passes; k ++ ) {
+
+			this.shadowRow.value = SHADOW_ORDER[ ( first + k ) % SHADOW_PHASES ];
+			renderer.compute( this.shadowKernel! );
+
+		}
+
+	}
+
 	// Trace one slot of every 4 x 4 block and resolve it into the history.
 	private trace( renderer: THREE.WebGPURenderer, order: number ): void {
 
@@ -1337,11 +1421,12 @@ export class Clouds {
 		const tangent = Math.abs( L.y ) > 0.99 ? new THREE.Vector3( 0, - L.z, L.y ) : new THREE.Vector3( L.z, 0, - L.x );
 		tangent.normalize();
 		const bitangent = new THREE.Vector3().crossVectors( L, tangent );
-		for ( let k = 0; k < LIGHT_TAPS; k ++ ) {
+		const taps = this.march.lightTaps;
+		for ( let k = 0; k < taps; k ++ ) {
 
 			const i = k + 1;
 			const growth = 1.7 ** i, mid = STEP * ( ( growth - 1 ) / 0.7 + growth * 0.5 );
-			const angle = i * 2.399963, radius = Math.sqrt( ( i + 0.5 ) / ( LIGHT_TAPS + 1 ) ) * 0.05 * mid;
+			const angle = i * 2.399963, radius = Math.sqrt( ( i + 0.5 ) / ( taps + 1 ) ) * 0.05 * mid;
 			const u = Math.cos( angle ) * radius, v = Math.sin( angle ) * radius;
 			this.lightTaps[ k ].value.set(
 				L.x * mid + tangent.x * u + bitangent.x * v, L.y * mid + tangent.y * u + bitangent.y * v,
@@ -1378,8 +1463,8 @@ export class Clouds {
 	sample( direction: V3 ): V4 {
 
 		const q = directionToDome( direction ).toVar();
-		const texel = vec2( 0.5 / DOME_WIDTH, 0.5 / DOME_HEIGHT );
-		const tap = ( x: number, y: number ) => texture( this.dome, q.add( texel.mul( vec2( x, y ) ) ) ).level( float( 0 ) );
+		const texel = this.domeTexel;
+		const tap = ( x: number, y: number ) => this.domeNode.sample( q.add( texel.mul( vec2( x, y ) ) ) ).level( float( 0 ) );
 		const s = tap( - 1, - 1 ).add( tap( 1, - 1 ) ).add( tap( - 1, 1 ) ).add( tap( 1, 1 ) ).mul( 0.25 ).toVar();
 		// The map holds the upper sky only: below the horizon the clouds fade out instead of
 		// repeating the horizon's row.
@@ -1469,7 +1554,7 @@ export class Clouds {
 		const material = new THREE.NodeMaterial();
 		material.depthTest = material.depthWrite = false;
 		material.toneMapped = false;
-		material.fragmentNode = vec4( texture( this.dome, uv() ).level( float( 0 ) ).a );
+		material.fragmentNode = vec4( this.domeNode.sample( uv() ).level( float( 0 ) ).a );
 		const quad = new THREE.QuadMesh( material );
 		const previous = renderer.getRenderTarget();
 		renderer.setRenderTarget( target );
@@ -1534,9 +1619,100 @@ export class Clouds {
 		this.shadowMap.dispose();
 		for ( const t of [ this.shape, this.synoptic, this.weather, this.bounds, this.rainbowTable ] ) t?.dispose();
 		this.cirrusFibres?.dispose();
-		if ( this.view ) for ( const t of [ this.view.trace, this.view.depth, this.view.high, this.view.motion, this.view.flash, this.view.boxMin, this.view.boxMax, ...this.view.history ] ) t.dispose();
+		this.partialKernel?.dispose();
+		this.shadowKernel?.dispose();
+		this.disposeView();
 
 	}
+
+	private disposeView(): void {
+
+		const view = this.view;
+		if ( ! view ) return;
+		for ( const t of [ view.trace, view.depth, view.high, view.motion, view.flash, view.boxMin, view.boxMax, ...view.history ] ) t.dispose();
+		for ( const kernel of [ view.kernels.trace, view.kernels.high, view.kernels.box, ...view.kernels.resolve ] ) kernel.dispose();
+		this.view = null;
+		this.viewValid.value = 0;
+
+	}
+
+	// The view's size for a render of width x height pixels (see CloudViewScale).
+	private viewDimensions( width: number, height: number ): [ number, number ] {
+
+		const scale = this.viewScale.render;
+		return [ Math.max( 8, Math.round( width * scale ) ), Math.max( 8, Math.round( height * scale ) ) ];
+
+	}
+
+	/** The view's resolution, as a fraction of the render (CloudViewScale). A new size rebuilds
+	 * the view on the next update. */
+	setViewScale( scale: CloudViewScale ): void {
+
+		const value = scale.render;
+		if ( ! ( value > 0 && value <= 1 ) ) throw new RangeError( 'The cloud view scale must lie in (0, 1]' );
+		this.viewScale = { ...scale };
+
+	}
+
+	/** The panorama's size and refresh pattern: one texel of every strideX x strideY (powers of
+	 * two dividing the size) per frame. A change rebuilds the panorama and refreshes it fully. */
+	setDome( width: number, height: number, strideX: number, strideY: number ): void {
+
+		const power = ( n: number ) => Number.isInteger( n ) && n > 0 && ( n & ( n - 1 ) ) === 0;
+		if ( ! power( strideX ) || ! power( strideY ) || width % strideX !== 0 || height % strideY !== 0 ) throw new RangeError( 'Panorama strides must be powers of two dividing its size' );
+		const d = this.domeSize;
+		if ( d.width === width && d.height === height && d.strideX === strideX && d.strideY === strideY ) return;
+		this.domeSize = { width, height, strideX, strideY };
+		this.domeOrder = ditherOrder( strideX, strideY );
+		if ( d.width !== width || d.height !== height ) {
+
+			const previous = this.dome;
+			this.dome = makeDome( width, height );
+			this.domeNode.value = this.dome;
+			this.domeTexel.value.set( 0.5 / width, 0.5 / height );
+			previous.dispose();
+
+		}
+		if ( this.partialKernel ) this.buildKernels();
+		this.invalidate();
+
+	}
+
+	/** The march's step caps and taps (CloudMarch); a change rebuilds the kernels once. */
+	setMarch( march: Partial<CloudMarch> ): void {
+
+		const next = { ...this.march, ...march };
+		if ( ! ( next.lightTaps >= 1 && next.lightTaps <= MAX_LIGHT_TAPS ) ) throw new RangeError( `Light taps must lie in 1 .. ${ MAX_LIGHT_TAPS }` );
+		for ( const key of [ 'viewSteps', 'panoramaSteps', 'rainSteps' ] as const ) if ( ! ( Number.isInteger( next[ key ] ) && next[ key ] > 0 ) ) throw new RangeError( `${ key } must be a positive integer` );
+		if ( ( Object.keys( next ) as ( keyof CloudMarch )[] ).every( ( key ) => next[ key ] === this.march[ key ] ) ) return;
+		this.march = next;
+		if ( this.partialKernel ) this.buildKernels();
+		this.invalidate();
+
+	}
+
+	/** The share of the cloud shadow map's rows refreshed per frame: 1/8, 1/4 (the default),
+	 * 1/2 or 1. A jump still refreshes all of it at once. */
+	setShadowRefresh( rowsPerFrame: number ): void {
+
+		const passes = rowsPerFrame * SHADOW_PHASES;
+		if ( ! ( Number.isInteger( passes ) && passes >= 1 && passes <= SHADOW_PHASES ) ) throw new RangeError( `Shadow rows per frame must be a multiple of 1/${ SHADOW_PHASES }` );
+		this.shadowRowsPerFrame = rowsPerFrame;
+
+	}
+
+}
+
+function makeDome( width: number, height: number ): THREE.StorageTexture {
+
+	const dome = new THREE.StorageTexture( width, height );
+	dome.type = THREE.HalfFloatType;
+	dome.wrapS = THREE.RepeatWrapping;
+	dome.wrapT = THREE.ClampToEdgeWrapping;
+	dome.minFilter = dome.magFilter = THREE.LinearFilter;
+	dome.generateMipmaps = false;
+	dome.name = 'cloudDome';
+	return dome;
 
 }
 

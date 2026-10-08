@@ -416,11 +416,12 @@ export class Sky {
 
 	setQuality( quality: 'low' | 'medium' | 'high' ): void {
 
-		const samples = { low: 40, medium: 56, high: 72 }[ quality ];
-		if ( samples === undefined ) throw new RangeError( `Unknown sky quality: ${ quality }` );
+		// The cloud view's resolution as a share of the render.
+		const scale = { low: { render: 0.4 }, medium: { render: 0.5 }, high: { render: 0.65 } }[ quality ];
+		if ( scale === undefined ) throw new RangeError( `Unknown sky quality: ${ quality }` );
 		// Fixed targets keep sampler dimensions and both PMREM endpoints compatible while
 		// quality changes. Cloud march steps and the caller's bake cadence set the GPU budget.
-		this.clouds.quality.value = samples;
+		this.clouds.setViewScale( scale );
 		this.clouds.invalidate();
 
 	}
