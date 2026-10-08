@@ -32,6 +32,25 @@ stone exposed.
   (soft-fantasy, the default, rich-fantasy, realistic).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
   sky views.
+- `node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
+  [--timestamps on|off|both] [--eval "js"] [--repeat n] [--shots]` profiles a production build
+  (`npm run build && npm run preview`; the url defaults to its port) in headless Chrome
+  (`CHROME_PATH`, else the system Chrome) with the frame rate uncapped. It plays a matrix of named
+  scenes (`--list`: fair, golden, horizon, sky, overcast, rain, storm, fog, night, close over the
+  meadow, a weather front), each with the clock running, fixed weather and a slow orbit, and writes
+  `artifacts/perf/<label>/` (profile.json, summary.md): frame interval median, p95 and p99, GPU
+  time per pass, the tick's JS time, hitches with their cause, and the startup. `--compare urlA urlB`
+  alternates A B B A and reports deltas against the run-to-run spread; `--eval` runs in the page
+  with `s` = `window.__SOOMI__` (an ablation, e.g. `--eval "s.pipeline.settings.dof = 0"`);
+  `--report profile.json` re-renders a summary. The `profile` URL option (`?profile`, or
+  `?profile=frames` without GPU timestamps) loads `src/debug/FrameProfiler.ts`, which labels every
+  render and compute pass, reads their GPU timestamps and exposes `window.__SOOMI_PROFILE__`;
+  without it the page builds the same pipelines and image.
+- Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
+  machine-wide GPU lock in `tools/gpu-lock.mjs`, so only one runs at a time, across sessions;
+  `node tools/gpu-lock.mjs run [--label x] -- <command ...>` wraps any other script, `status` names
+  the holder and `gpu` shows the GPU's utilisation and the processes using it. The profiler also
+  checks that the GPU is idle before it measures and marks its results contended otherwise.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
   and wave optics (each file names the server it expects); `tools/verify-scene.mjs` checks a
   production preview; `tools/benchmark-lighting.mjs` A/B-times two builds;
@@ -41,12 +60,13 @@ stone exposed.
   `tools/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
   and map (each file says where to get them and how to run it).
   `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs` and `verify-wind.mjs` are CPU-only
-  (plain `node`). Run GPU probes one at a time with no other page rendering the scene.
+  (plain `node`). GPU probes take the GPU lock; keep other pages that render the scene closed.
 
 ## Layout
 
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
-  handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`.
+  handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`
+  (or `?profile`, which also loads the frame profiler in `src/debug/`).
 - `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets; the cliff band
   places its vertices by dual contouring so scar edges stay sharp), its cliffs as a weathered face
   that has shed blocks along its joints and beds (`Cliff.ts`: rockfall scars in three generations
@@ -288,7 +308,12 @@ stone exposed.
   English that explain why.
 - Check visual changes with captures, compared against the previous capture (and crops, not only the
   whole frame); report measured differences.
-- Measure frame time at 2400x1500 (DPR 1.5) with background tabs closed, before and after a change.
+- Measure frame time with `tools/profile-frame.mjs` on a production build, under the GPU lock: its
+  scene matrix at the default generic display (1920x1080 CSS at DPR 2, quality high), before and
+  after a change (`--compare` for an A/B). Take frame rates from a run without GPU timestamps
+  (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them on, so their
+  per-pass split shows where the time goes, not the frame rate a player sees. Report contended runs
+  as such.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
   most 100 characters, and the body explaining why. Types: `feat`, `fix`, `perf`, `refactor`,
