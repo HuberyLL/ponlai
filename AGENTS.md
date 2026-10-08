@@ -207,9 +207,11 @@ stone exposed.
 - The fantasy look is an art-directed layer over the physically based image, never baked into the
   lighting or the tone curve: after the curve and its grade, `Pipeline`'s look adds a soft
   Orton-style glow round the island's highlights (the sky and what lies beyond a few hundred metres
-  glow only weakly, and the glow is held back over dark parts, so it never lays a veil), richer
+  glow only weakly, and the glow is held back over dark parts and over parts far darker than the
+  light it spreads from, so it never lays a veil, nor a haze over backlit foliage), richer
   greens and teal water keyed by hue and saturation (grey stone and skin stay as they are), golden
-  highlights over cool teal shadows, a teal shadow lift and a little depth. `soft-fantasy` is the
+  highlights over cool teal shadows, a teal shadow lift that turns a shadow's hue but keeps its
+  saturation (a dark meadow under a low sun stays green, not olive-grey), and a little depth. `soft-fantasy` is the
   default, `rich-fantasy` a bolder step toward a painted scene. `realistic` leaves the
   image exactly as the curve and grade make it and stays selectable (`look` URL option, GUI Look
   folder) for comparison; every parameter is in the GUI. The look fades out with the night (the

@@ -102,7 +102,7 @@ export interface LookSettings {
 	// Orton-style diffusion: a wide blur of what lies above `glowThreshold` (in display values,
 	// before the curve, so it follows the exposure) added back over the image, warmed by `glowWarmth`
 	glow: number; glowThreshold: number; glowRadius: number; glowWarmth: number;
-	// the share of the glow that spreads over the dark parts of the frame (1: a plain bloom)
+	// the share of the glow that spreads over the dark parts of the frame (1: as over the light ones)
 	glowHalo: number;
 	// hue-selective colour: saturation and brightness gains on greens and on teal-cyan, and a hue
 	// turn in radians (greens' toward pure green, the water's toward blue), weighted by chroma so
@@ -487,12 +487,21 @@ export class Pipeline {
 		// Over the dark parts of the frame the glow is held to `glowHalo` of itself: Orton's
 		// sandwich multiplies, so the defocused copy brightens the light parts and leaves the shade
 		// deep. Added in full, a backlit sea's glow lay over the shaded cliff in front of it as a
-		// pale veil. (glowOn is 0 while the chain is skipped: its texture holds the last glow.)
+		// pale veil. It also lands only where the frame is about as bright as the light it spreads
+		// from: against a low sun the glint and the sky behind the island are many times brighter
+		// than the backlit meadow and trees in front of them, and their glow laid a warm haze over
+		// the foliage. (The light it spreads from is the glow
+		// over its strength and the chain's five mip weights, which sum to 3 at any radius.)
+		// (glowOn is 0 while the chain is skipped: its texture holds the last glow.)
 		const diffused = () => {
 
 			const c = composite().toVar();
-			const lit = smoothstep( 0.03, 0.4, luminance( c ).mul( u.curveExposure ) );
-			return c.add( diffusionNode.rgb.mul( u.glowTint ).mul( mix( u.glowHalo, float( 1 ), lit ) ).mul( u.glowOn ) );
+			const glow = diffusionNode.rgb.toVar();
+			const l = luminance( c );
+			const lit = smoothstep( 0.03, 0.4, l.mul( u.curveExposure ) );
+			const source = luminance( glow ).div( max( diffusionNode.strength.mul( 3 ), 1e-6 ) );
+			const near = smoothstep( 0.3, 1.5, l.div( max( source, 1e-6 ) ) );
+			return c.add( glow.mul( u.glowTint ).mul( mix( u.glowHalo, float( 1 ), lit ).mul( near ) ).mul( u.glowOn ) );
 
 		};
 
@@ -546,6 +555,8 @@ export class Pipeline {
 		// (edges in ascending order: SPIR-V and Metal leave smoothstep undefined when they are not)
 		const band = ( hue: F, centre: number, width: number ) =>
 			float( 1 ).sub( smoothstep( 0, width, abs( mod( hue.sub( centre ).add( Math.PI ), 2 * Math.PI ).sub( Math.PI ) ) ) );
+		// (saturation as HSV's: the spread of the channels over the brightest)
+		const chroma = ( c: V3 ) => max( c.r, max( c.g, c.b ) ).sub( min( c.r, min( c.g, c.b ) ) ).div( max( max( c.r, max( c.g, c.b ) ), 1e-6 ) );
 		const lookColour = Fn( ( [ c0, onSurface ]: [ V3, F ] ) => {
 
 			const c = c0.toVar();
@@ -581,11 +592,18 @@ export class Pipeline {
 			const hi = smoothstep( 0, 2.5, stops );
 			const shadowTint = u.shadowTint.div( max( luminance( u.shadowTint ), 1e-3 ) );
 			const highlightTint = u.highlightTint.div( max( luminance( u.highlightTint ), 1e-3 ) );
+			const s0 = chroma( c ).toVar();
 			c.mulAssign( mix( vec3( 1 ), shadowTint, lo.mul( u.shadowTone ).mul( u.lookColour ) ) );
-			// (the sky takes `lookSky` of the golden highlights: on a pale blue sky they turn green)
-			c.mulAssign( mix( vec3( 1 ), highlightTint, hi.mul( u.highlightTone ).mul( u.lookSun ).mul( mix( u.lookSky, float( 1 ), onSurface ) ) ) );
 			// airy shadows: the darkest tones lifted toward the shadow tint, not toward grey
 			c.addAssign( vec3( 1 ).sub( c ).mul( u.shadowTint ).mul( u.shadowLift.mul( u.lookSun ).mul( lo.mul( lo ) ) ) );
+			// The cool tint and the lift turn a shadow's hue toward teal but keep its saturation: on
+			// a warm colour they add the colour's weakest channel, so a dawn meadow, dark and lit
+			// orange, went olive-grey. A colour they greyed gets its saturation back round its
+			// luminance (a grey shadow, which they colour, keeps its teal).
+			const l3 = luminance( c );
+			c.assign( max( mix( vec3( l3 ), c, clamp( s0.div( max( chroma( c ), 1e-6 ) ), 1, 2 ) ), vec3( 0 ) ) );
+			// (the sky takes `lookSky` of the golden highlights: on a pale blue sky they turn green)
+			c.mulAssign( mix( vec3( 1 ), highlightTint, hi.mul( u.highlightTone ).mul( u.lookSun ).mul( mix( u.lookSky, float( 1 ), onSurface ) ) ) );
 			return c;
 
 		} ).setLayout( { name: 'lookColour', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'onSurface', type: 'float' } ] } );
