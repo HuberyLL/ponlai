@@ -7,15 +7,24 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, uniform, storage, instanceIndex, float, vec2, vec4, uint, sqrt, tanh, min, cos, sin, length, select,
-	screenCoordinate, ivec2,
+	screenCoordinate, ivec2, workgroupArray, workgroupBarrier, workgroupId, localId,
 } from 'three/tsl';
 import { mulberry32 } from '../world/noise.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 import { createWaveSpectrum, type SwellParams } from './OceanSpectrum.ts';
 
 // Multi-cascade FFT ocean (Tessendorf) on WebGPU compute, after tidewater's OceanFFT: a JONSWAP
-// local wind-sea and swell spectra are summed once per cascade in JS; every frame one kernel evolves all cascades in time,
-// then a Stockham radix-2 inverse FFT runs as 8 row + 8 column dispatches over all cascades at
-// once, and a small fragment pass per cascade writes the mipmapped textures the water samples.
+// local wind-sea and swell spectra are summed once per cascade in JS; every frame one kernel evolves
+// all cascades in time, then a Stockham radix-2 inverse FFT runs as one row and one column dispatch
+// over all cascades at once, and a small fragment pass per cascade writes the mipmapped textures the
+// water samples.
+//
+// Each FFT dispatch runs one workgroup per row (or column) through its 8 stages in workgroup
+// memory, with the index maths, twiddles and butterfly order of one dispatch per stage, so the
+// fields are bit for bit the same; only the trips through global memory between the stages go.
+// debugFlags.fftShared = false runs the earlier 16 per-stage dispatches into the same buffers, to
+// A/B the two in one page. Unlike most debug flags, an unset fftShared reads as the new path: this
+// optimisation ships on, and only an explicit false selects the old kernels.
 //
 // Packed complex fields (two real fields per complex IFFT, as in tidewater):
 //   c0 = Dx + i Dz          c1 = Dy + i dDx/dz
@@ -69,6 +78,7 @@ export class OceanFFT {
 	private depthU = uniform( 8 );
 	private h0Attr: THREE.StorageBufferAttribute;
 	private kernels: THREE.ComputeNode[] = [];
+	private sharedKernels: THREE.ComputeNode[] = [];
 	private outputs: { rt: THREE.RenderTarget; quad: THREE.QuadMesh }[] = [];
 
 	constructor( renderer: THREE.WebGPURenderer, {
@@ -179,6 +189,62 @@ export class OceanFFT {
 				src = 1 - src;
 
 			}
+
+		}
+
+		// 2b. The same stages in two dispatches. A workgroup holds one line ( a row, then a column )
+		// of every packed field in workgroup memory: 3 x 256 vec4, 12 KB of the 16 KB WebGPU
+		// guarantees. Its 256 threads each own one output element per stage and run the stages
+		// above with the same even / odd indices and twiddle constants; a barrier separates every
+		// stage's reads from its writes. The fields go from buffer 0 to 1 ( rows ) and back to 0
+		// ( columns ), where the 16 dispatches above leave them. ( Evolving the spectrum inside the
+		// row pass as well would save its dispatch but changes the rounding of a few hundred
+		// texels by one half-float step, so it stays a kernel of its own and the fields stay
+		// bit-identical. )
+		{
+
+			const line = ( horiz: boolean, from: ReturnType<typeof rw>, to: ReturnType<typeof rw> ) => Fn( () => {
+
+				// ( three's typings lack the workgroup array's element accessor )
+				const lane = [ 0, 1, 2 ].map( () => workgroupArray( 'vec4', N ) as unknown as { element: ( i: THREE.Node<'uint'> ) => THREE.Node<'vec4'> } );
+				const g = workgroupId.x, i = localId.x;
+				const c = g.div( N ), other = g.mod( N );
+				const at = horiz ? c.mul( NN ).add( other.mul( N ) ).add( i ) : c.mul( NN ).add( i.mul( N ) ).add( other );
+				const input = [ from.A, from.B, from.C ], out = [ to.A, to.B, to.C ];
+				for ( let k = 0; k < 3; k ++ ) lane[ k ].element( i ).assign( input[ k ].element( at ) );
+				for ( let s = 1; s <= LOG2N; s ++ ) {
+
+					const sub = 1 << s, half = sub >> 1;
+					const even = i.div( sub ).mul( half ).add( i.mod( half ) );
+					const odd = even.add( N / 2 );
+					const a = float( i ).mul( 2 * Math.PI / sub );
+					const tw = vec2( cos( a ), sin( a ) );
+					workgroupBarrier();
+					const result = lane.map( ( l ) => {
+
+						const e = l.element( even ).toVar(), d = l.element( odd ).toVar();
+						return e.add( vec4( cmul( d.xy, tw ), cmul( d.zw, tw ) ) ).toVar();
+
+					} );
+					if ( s < LOG2N ) {
+
+						workgroupBarrier();
+						for ( let k = 0; k < 3; k ++ ) lane[ k ].element( i ).assign( result[ k ] );
+
+					} else {
+
+						for ( let k = 0; k < 3; k ++ ) out[ k ].element( at ).assign( result[ k ] );
+
+					}
+
+				}
+
+			} )().computeKernel( [ N ] );
+			// One workgroup per line of every cascade. A dispatch size rather than a thread count:
+			// a count adds a bounds check that returns early, which the barriers must not follow.
+			const passes = [ line( true, rw( 0 ), rw( 1 ) ), line( false, rw( 1 ), rw( 0 ) ) ];
+			for ( const pass of passes ) pass.dispatchSize = [ C * N, 1, 1 ];
+			this.sharedKernels.push( this.kernels[ 0 ], ...passes );
 
 		}
 
@@ -316,7 +382,7 @@ export class OceanFFT {
 		// A shared clock makes frozen captures and resume agree with the vegetation.
 		this.time.value = time ?? this.time.value + dt;
 		const r = this.renderer;
-		r.compute( this.kernels );
+		r.compute( debugFlags.fftShared === false ? this.kernels : this.sharedKernels );
 		const prev = r.getRenderTarget();
 		for ( const o of this.outputs ) {
 
@@ -338,7 +404,7 @@ export class OceanFFT {
 			( output.quad.material as THREE.NodeMaterial ).dispose();
 
 		}
-		for ( const kernel of this.kernels ) kernel.dispose();
+		for ( const kernel of new Set( [ ...this.kernels, ...this.sharedKernels ] ) ) kernel.dispose();
 		// QuadMesh geometry is shared by other renderer passes.
 
 	}
