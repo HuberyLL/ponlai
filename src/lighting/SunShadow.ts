@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { Fn, uniform, texture, vec4, mix } from 'three/tsl';
-import { solarShadowVisibility, solarVolumeVisibility } from './SolarShadow.ts';
+import { solarSteppedShadowVisibility, solarVolumeVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -24,6 +24,12 @@ const STEP = THREE.MathUtils.degToRad( 0.2 );
 // A larger turn in one frame is a cut (a new hour, preset or manual sun): redraw without history.
 const CUT = THREE.MathUtils.degToRad( 1 );
 const PREVIOUS = 0, CURRENT = 1;
+// A lighter filter for alpha-to-coverage vegetation (grass, leaves, flowers), for the quality
+// tiers below high (setFilter): it fills much of the frame with small, overlapping receivers whose
+// own dapple hides a coarser penumbra. Not the default: fewer blocker taps re-roll the dapple's
+// penumbrae, which a close view of shaded foliage shows as scattered pixels changing by up to half
+// their brightness.
+export const VEGETATION_TAPS: Readonly<SolarShadowTaps> = { soft: true, blockerSamples: 4, filterSamples: 4 };
 
 // three's shadow coordinate is ( s.x, 1 - s.y, s.z + bias ) for s = shadow.matrix * world
 const FLIP_Y = new THREE.Matrix4().set(
@@ -76,6 +82,10 @@ export class SunShadow {
 	private readonly margin: number;
 	// the light's turn between redraws (radians)
 	step = STEP;
+	// The filter for ordinary receivers and for alpha-to-coverage vegetation. They compile into
+	// each receiver's material, so set them (setFilter) before the first receiver is built.
+	private taps: Readonly<SolarShadowTaps> = SOLAR_SHADOW_TAPS;
+	private vegetationTaps: Readonly<SolarShadowTaps> = SHADOW_FILTER_PATH.vegetation ? VEGETATION_TAPS : SOLAR_SHADOW_TAPS;
 	private hasPrevious = false;
 	private cut = true;
 	private readonly previousCoordinate = new THREE.Matrix4();
@@ -108,7 +118,8 @@ export class SunShadow {
 	/** Install the blended filter on the sun's shadow; receivers built afterwards use it. */
 	install(): void {
 
-		const filter = Fn( ( { shadowCoord }: FilterInput ) => this.surfaceVisibility( shadowCoord ) );
+		const filter = Fn( ( { shadowCoord }: FilterInput, builder: THREE.NodeBuilder ) => this.surfaceVisibility( shadowCoord,
+			( builder.material as THREE.Material | null )?.alphaToCoverage === true ? this.vegetationTaps : this.taps ) );
 		// The runtime exposes filterNode; @types/three has not declared this WebGPU hook yet.
 		( this.sun.shadow as unknown as { filterNode: typeof filter } ).filterNode = filter;
 
@@ -121,16 +132,24 @@ export class SunShadow {
 
 	}
 
-	/** A surface's visibility from its coordinate in the current map (three's shadow coordinate). */
-	surfaceVisibility( coordinate: V3 ): F {
+	/** The filter's taps for receivers built from now on (a quality tier's mode): ordinary
+	 * receivers and the alpha-to-coverage vegetation. `soft: false` keeps the bilinear comparison
+	 * of both stepped maps alone. Materials already built keep the filter they compiled with. */
+	setFilter( taps: Readonly<SolarShadowTaps>, vegetationTaps: Readonly<SolarShadowTaps> = taps ): void {
 
-		const mapSize = this.mapSize;
-		return mix(
-			solarShadowVisibility( this.depth, this.previousCoordinateNode( coordinate ), {
-				mapSize, worldSpan: this.previousSpan, depthRange: this.previousRange, active: this.weight.lessThan( 1 ), layer: PREVIOUS } ),
-			solarShadowVisibility( this.depth, coordinate, {
-				mapSize, worldSpan: this.span, depthRange: this.range, active: this.ready.greaterThan( 0 ), layer: CURRENT } ),
-			this.weight );
+		this.taps = { ...taps };
+		this.vegetationTaps = { ...vegetationTaps };
+
+	}
+
+	/** A surface's visibility from its coordinate in the current map (three's shadow coordinate).
+	 * Both maps keep the same filter, so the cross-fade between them stays continuous. */
+	surfaceVisibility( coordinate: V3, taps: Readonly<SolarShadowTaps> = this.taps ): F {
+
+		return solarSteppedShadowVisibility( this.depth,
+			{ coordinate: this.previousCoordinateNode( coordinate ), worldSpan: this.previousSpan, depthRange: this.previousRange, active: this.weight.lessThan( 1 ), layer: PREVIOUS },
+			{ coordinate, worldSpan: this.span, depthRange: this.range, active: this.ready.greaterThan( 0 ), layer: CURRENT },
+			this.weight, { mapSize: this.mapSize, taps } );
 
 	}
 
