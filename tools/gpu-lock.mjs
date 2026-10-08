@@ -1,20 +1,34 @@
 // A machine-wide lock for everything that renders the scene in a browser (captures, profiles,
-// GPU probes). Frame times and pixel probes are only meaningful one browser at a time: two pages
-// sharing the GPU each measure the other's work, and parallel sessions or agents cannot see each
-// other's browsers. The lock is a directory (mkdir is atomic) under the user's temporary folder
-// holding owner.json (pid, label, start time); a lock whose process is gone is stale and taken over.
+// GPU probes). Frame times are only meaningful one browser at a time: two pages sharing the GPU
+// each measure the other's work, and parallel sessions or agents cannot see each other's browsers.
+// Pixels are not: a paused capture or a probe renders the same image however busy the GPU is.
+// So the lock has two modes:
+//   - exclusive (the default, every timing run): one holder, nothing else rendering;
+//   - shared (deterministic captures and probes): any number of holders together, none while an
+//     exclusive holder runs. An exclusive waiter blocks new shared holders and waits for the
+//     current ones to drain, so a stream of probes cannot starve a profile.
+//
+// The lock is a directory (mkdir is atomic) under the user's temporary folder holding owner.json
+// (pid, label, start time, mode); a lock whose process is gone is stale and taken over. Shared
+// holders list themselves in its `shared/` folder and owner.json names one of them, handed on to
+// another when it leaves, so a tool that knows only the exclusive protocol (an older copy of this
+// file) still sees one live owner and waits. Exclusive waiters announce themselves in
+// `soomi-gpu.lock.waiting/`; joining and leaving the shared lock is serialised by the
+// `soomi-gpu.lock.mutex` directory.
 //
 //   import { withGpuLock, acquireGpuLock } from './gpu-lock.mjs';
-//   await withGpuLock( 'profile island', async () => { ... } );   // held while fn runs
-//   await acquireGpuLock( 'capture overview' );                    // held until this process exits
+//   await withGpuLock( 'profile island', async () => { ... } );           // held while fn runs
+//   await acquireGpuLock( 'capture overview' );                           // held until this process exits
+//   await acquireGpuLock( 'verify-sky', { shared: true } );               // shared with other probes
 //
-//   node tools/gpu-lock.mjs run [--label name] [--timeout seconds] -- <command ...>
+//   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
 //   node tools/gpu-lock.mjs status
 //   node tools/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
 //
-// A command started through `run` inherits the lock (SOOMI_GPU_LOCK_HELD), so a wrapped tool that
-// takes the lock itself does not wait for its own parent. SOOMI_GPU_LOCK_DIR moves the lock.
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync, statSync } from 'node:fs';
+// A command started through `run` inherits the lock (SOOMI_GPU_LOCK_HELD, SOOMI_GPU_LOCK_MODE), so
+// a wrapped tool that takes the lock itself does not wait for its own parent (a timing tool under a
+// shared parent says so: its numbers may share the GPU). SOOMI_GPU_LOCK_DIR moves the lock.
+import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -40,13 +54,18 @@ function tempRoot() {
 
 export const LOCK_DIR = path.join( process.env.SOOMI_GPU_LOCK_DIR || tempRoot(), 'soomi-gpu.lock' );
 const OWNER = path.join( LOCK_DIR, 'owner.json' );
+const MEMBERS = path.join( LOCK_DIR, 'shared' );
+const WAITING = `${ LOCK_DIR }.waiting`;
+const MUTEX = `${ LOCK_DIR }.mutex`;
 const POLL_MS = 500;
 
 let depth = 0; // re-entrant within this process
+let heldMode = null; // 'exclusive' | 'shared' while this process holds the lock itself
 let installed = false;
 
 function alive( pid ) {
 
+	if ( ! ( pid > 0 ) ) return false;
 	try {
 
 		process.kill( pid, 0 );
@@ -61,36 +80,139 @@ function alive( pid ) {
 
 }
 
-/** The lock's current owner, or null when it is free. */
+const readJson = ( file ) => {
+
+	try { return JSON.parse( readFileSync( file, 'utf8' ) ); } catch { return null; }
+
+};
+// written whole or not at all, so a reader never sees half a file
+function writeJson( file, value ) {
+
+	const tmp = `${ file }.${ process.pid }.tmp`;
+	writeFileSync( tmp, JSON.stringify( value ) );
+	renameSync( tmp, file );
+
+}
+
+/** The lock's current owner, or null when it is free. A shared lock's owner carries
+ * `mode: 'shared'` and `members` (every shared holder). */
 export function lockOwner() {
 
+	const owner = readJson( OWNER );
+	if ( owner ) {
+
+		if ( owner.mode === 'shared' ) owner.members = sharedMembers();
+		return owner;
+
+	}
 	try {
 
-		return JSON.parse( readFileSync( OWNER, 'utf8' ) );
+		// the directory exists but owner.json is not written yet (or was lost)
+		const stat = statSync( LOCK_DIR );
+		return { pid: 0, label: '(unknown)', start: stat.mtime.toISOString(), unknown: true, ageMs: Date.now() - stat.mtimeMs };
 
 	} catch {
 
-		try {
-
-			// the directory exists but owner.json is not written yet (or was lost)
-			const stat = statSync( LOCK_DIR );
-			return { pid: 0, label: '(unknown)', start: stat.mtime.toISOString(), unknown: true, ageMs: Date.now() - stat.mtimeMs };
-
-		} catch {
-
-			return null;
-
-		}
+		return null;
 
 	}
+
+}
+
+function listJson( dir ) {
+
+	try {
+
+		return readdirSync( dir ).filter( ( f ) => f.endsWith( '.json' ) ).map( ( f ) => ( { file: path.join( dir, f ), ...readJson( path.join( dir, f ) ) } ) );
+
+	} catch {
+
+		return [];
+
+	}
+
+}
+
+/** The shared holders that are still running (files of dead ones are removed). */
+function sharedMembers() {
+
+	return listJson( MEMBERS ).filter( ( m ) => {
+
+		if ( alive( m.pid ) ) return true;
+		rmSync( m.file, { force: true } );
+		return false;
+
+	} ).map( ( { file, ...m } ) => m );
+
+}
+
+/** Exclusive holders-to-be waiting for the shared holders to drain. */
+function exclusiveWaiters() {
+
+	return listJson( WAITING ).filter( ( w ) => {
+
+		if ( w.pid !== process.pid && alive( w.pid ) ) return true;
+		if ( w.pid !== process.pid ) rmSync( w.file, { force: true } );
+		return false;
+
+	} );
 
 }
 
 function inherited() {
 
 	const held = Number( process.env.SOOMI_GPU_LOCK_HELD );
+	if ( ! ( held > 0 ) || ! alive( held ) ) return false;
 	const owner = lockOwner();
-	return held > 0 && owner && owner.pid === held && alive( held );
+	return Boolean( owner && ( owner.pid === held || owner.members?.some( ( m ) => m.pid === held ) ) );
+
+}
+
+// The mutex serialises joining and leaving the shared lock (and repairing it). Held for a few
+// file operations only; one whose holder is gone, or older than 10 s, is broken.
+async function withMutex( fn ) {
+
+	for ( ;; ) {
+
+		try {
+
+			mkdirSync( MUTEX );
+			break;
+
+		} catch ( error ) {
+
+			if ( error.code !== 'EEXIST' ) throw error;
+			const holder = readJson( path.join( MUTEX, 'owner.json' ) );
+			let age = 0;
+			try { age = Date.now() - statSync( MUTEX ).mtimeMs; } catch { continue; }
+			if ( ( holder && ! alive( holder.pid ) ) || age > 10000 ) rmSync( MUTEX, { recursive: true, force: true } );
+			else await new Promise( ( resolve ) => setTimeout( resolve, 20 ) );
+
+		}
+
+	}
+	try {
+
+		writeFileSync( path.join( MUTEX, 'owner.json' ), JSON.stringify( { pid: process.pid } ) );
+		return fn();
+
+	} finally {
+
+		rmSync( MUTEX, { recursive: true, force: true } );
+
+	}
+
+}
+// the synchronous variant, for the exit handler (which cannot wait); it breaks a busy mutex after 2 s
+function withMutexSync( fn ) {
+
+	const until = Date.now() + 2000;
+	while ( Date.now() < until ) {
+
+		try { mkdirSync( MUTEX ); break; } catch ( error ) { if ( error.code !== 'EEXIST' ) throw error; }
+
+	}
+	try { return fn(); } finally { rmSync( MUTEX, { recursive: true, force: true } ); }
 
 }
 
@@ -108,8 +230,7 @@ function removeStale( owner ) {
 		return;
 
 	}
-	let moved = null;
-	try { moved = JSON.parse( readFileSync( path.join( aside, 'owner.json' ), 'utf8' ) ); } catch { /* none */ }
+	const moved = readJson( path.join( aside, 'owner.json' ) );
 	if ( moved && owner && moved.pid !== owner.pid && alive( moved.pid ) ) {
 
 		// we moved a fresh lock: put it back if nobody took the place meanwhile
@@ -120,7 +241,25 @@ function removeStale( owner ) {
 
 }
 
-function tryAcquire( label ) {
+// A shared lock whose named owner is gone but whose other members still run: name one of them.
+// (A tool knowing only the exclusive protocol would take such a lock for stale, so the owner is
+// handed on whenever a member leaves.) Call inside the mutex.
+function repairShared() {
+
+	const owner = readJson( OWNER );
+	if ( ! owner || owner.mode !== 'shared' ) return;
+	const members = sharedMembers();
+	if ( members.length === 0 ) {
+
+		rmSync( LOCK_DIR, { recursive: true, force: true } );
+		return;
+
+	}
+	if ( ! members.some( ( m ) => m.pid === owner.pid ) ) writeJson( OWNER, { ...owner, pid: members[ 0 ].pid, label: `shared: ${ members[ 0 ].label }` } );
+
+}
+
+function tryAcquireExclusive( label ) {
 
 	try {
 
@@ -131,13 +270,66 @@ function tryAcquire( label ) {
 		if ( error.code !== 'EEXIST' ) throw error;
 		const owner = lockOwner();
 		if ( ! owner ) return false;
+		if ( owner.mode === 'shared' ) return 'shared';
 		const stale = owner.unknown ? owner.ageMs > 10000 : ! alive( owner.pid );
 		if ( stale ) removeStale( owner.unknown ? null : owner );
 		return false;
 
 	}
-	writeFileSync( OWNER, JSON.stringify( { pid: process.pid, label, start: new Date().toISOString() } ) );
+	writeFileSync( OWNER, JSON.stringify( { pid: process.pid, label, start: new Date().toISOString(), mode: 'exclusive' } ) );
 	return true;
+
+}
+
+function joinShared( label ) {
+
+	// a waiting exclusive holder goes first
+	if ( exclusiveWaiters().length ) return false;
+	const me = { pid: process.pid, label, start: new Date().toISOString() };
+	try {
+
+		mkdirSync( LOCK_DIR );
+
+	} catch ( error ) {
+
+		if ( error.code !== 'EEXIST' ) throw error;
+		const owner = readJson( OWNER );
+		if ( ! owner ) {
+
+			// being written, or lost
+			const info = lockOwner();
+			if ( info?.unknown && info.ageMs > 10000 ) removeStale( null );
+			return false;
+
+		}
+		if ( owner.mode !== 'shared' ) {
+
+			if ( ! alive( owner.pid ) ) removeStale( owner );
+			return false;
+
+		}
+		repairShared();
+		if ( ! readJson( OWNER ) ) return false; // it emptied: try again
+		mkdirSync( MEMBERS, { recursive: true } );
+		writeJson( path.join( MEMBERS, `${ process.pid }.json` ), me );
+		return true;
+
+	}
+	mkdirSync( MEMBERS, { recursive: true } );
+	writeJson( path.join( MEMBERS, `${ process.pid }.json` ), me );
+	writeJson( OWNER, { ...me, label: `shared: ${ label }`, mode: 'shared' } );
+	return true;
+
+}
+
+function leaveShared() {
+
+	withMutexSync( () => {
+
+		rmSync( path.join( MEMBERS, `${ process.pid }.json` ), { force: true } );
+		repairShared();
+
+	} );
 
 }
 
@@ -145,8 +337,17 @@ function tryAcquire( label ) {
 export function releaseGpuLock() {
 
 	depth = 0;
-	const owner = lockOwner();
-	if ( owner && owner.pid === process.pid ) rmSync( LOCK_DIR, { recursive: true, force: true } );
+	rmSync( path.join( WAITING, `${ process.pid }.json` ), { force: true } );
+	if ( heldMode === 'shared' ) {
+
+		heldMode = null;
+		leaveShared();
+		return;
+
+	}
+	heldMode = null;
+	const owner = readJson( OWNER );
+	if ( owner && owner.pid === process.pid && owner.mode !== 'shared' ) rmSync( LOCK_DIR, { recursive: true, force: true } );
 
 }
 
@@ -169,11 +370,14 @@ function installRelease() {
 }
 
 /** Waits for the lock and takes it. It is held until releaseGpuLock() or this process exits.
- * `timeout` in seconds (0: wait for ever). Returns the wait in milliseconds. */
-export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?? 'node' ), { timeout = 0, quiet = false } = {} ) {
+ * `timeout` in seconds (0: wait for ever); `shared: true` for work whose result does not depend
+ * on what else runs on the GPU (paused captures, pixel probes). Returns the wait in milliseconds. */
+export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?? 'node' ), { timeout = 0, quiet = false, shared = false } = {} ) {
 
 	if ( depth > 0 || inherited() ) {
 
+		const parentMode = depth > 0 ? heldMode : process.env.SOOMI_GPU_LOCK_MODE;
+		if ( ! shared && parentMode === 'shared' && ! quiet ) console.error( `[gpu-lock] "${ label }" wants the GPU to itself but runs under a shared lock: other probes may render meanwhile` );
 		depth ++;
 		return 0;
 
@@ -181,31 +385,53 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 	installRelease();
 	const started = Date.now();
 	let told = 0;
-	while ( ! tryAcquire( label ) ) {
+	const waitFile = path.join( WAITING, `${ process.pid }.json` );
+	if ( ! shared ) {
 
-		const waited = Date.now() - started;
-		if ( timeout > 0 && waited > timeout * 1000 ) {
+		mkdirSync( WAITING, { recursive: true } );
+		writeJson( waitFile, { pid: process.pid, label, start: new Date().toISOString() } );
 
-			const owner = lockOwner();
-			throw new Error( `GPU lock: still held by ${ owner?.label } (pid ${ owner?.pid }) after ${ timeout } s` );
+	}
+	try {
+
+		for ( ;; ) {
+
+			const got = shared ? await withMutex( () => joinShared( label ) ) : tryAcquireExclusive( label );
+			if ( got === true ) break;
+			// a shared lock whose named owner died while others hold it: hand it on
+			if ( got === 'shared' ) await withMutex( repairShared );
+			const waited = Date.now() - started;
+			if ( timeout > 0 && waited > timeout * 1000 ) {
+
+				const owner = lockOwner();
+				throw new Error( `GPU lock: still held by ${ owner?.label } (pid ${ owner?.pid }) after ${ timeout } s` );
+
+			}
+			if ( ! quiet && waited - told >= ( told === 0 ? 0 : 30000 ) ) {
+
+				const owner = lockOwner();
+				const waiters = shared ? exclusiveWaiters() : [];
+				if ( owner ) console.error( `[gpu-lock] waiting for "${ owner.label }" (pid ${ owner.pid }, since ${ owner.start }${ owner.members?.length > 1 ? `, ${ owner.members.length } shared holders` : '' })` );
+				else if ( waiters.length ) console.error( `[gpu-lock] waiting: "${ waiters[ 0 ].label }" (pid ${ waiters[ 0 ].pid }) wants the GPU to itself first` );
+				told = waited || 1;
+
+			}
+			await new Promise( ( resolve ) => setTimeout( resolve, POLL_MS ) );
 
 		}
-		if ( ! quiet && waited - told >= ( told === 0 ? 0 : 30000 ) ) {
 
-			const owner = lockOwner();
-			if ( owner ) console.error( `[gpu-lock] waiting for "${ owner.label }" (pid ${ owner.pid }, since ${ owner.start })` );
-			told = waited || 1;
+	} finally {
 
-		}
-		await new Promise( ( resolve ) => setTimeout( resolve, POLL_MS ) );
+		rmSync( waitFile, { force: true } );
 
 	}
 	depth = 1;
+	heldMode = shared ? 'shared' : 'exclusive';
 	return Date.now() - started;
 
 }
 
-/** Runs `fn` while holding the lock. */
+/** Runs `fn` while holding the lock (`options` as for acquireGpuLock). */
 export async function withGpuLock( label, fn, options = {} ) {
 
 	const reentrant = depth > 0 || inherited();
@@ -350,7 +576,8 @@ async function main( argv ) {
 	if ( command === 'status' ) {
 
 		const owner = lockOwner();
-		console.log( owner ? JSON.stringify( { ...owner, alive: owner.pid ? alive( owner.pid ) : null, dir: LOCK_DIR } ) : `free (${ LOCK_DIR })` );
+		const waiting = exclusiveWaiters().map( ( { file, ...w } ) => w );
+		console.log( owner ? JSON.stringify( { ...owner, alive: owner.pid ? alive( owner.pid ) : null, dir: LOCK_DIR, ...( waiting.length ? { waiting } : {} ) } ) : `free (${ LOCK_DIR })${ waiting.length ? ` ${ JSON.stringify( { waiting } ) }` : '' }` );
 		return 0;
 
 	}
@@ -366,11 +593,12 @@ async function main( argv ) {
 
 		const split = rest.indexOf( '--' );
 		const cmd = split >= 0 ? rest.slice( split + 1 ) : [];
-		if ( cmd.length === 0 ) throw new Error( 'usage: node tools/gpu-lock.mjs run [--label name] [--timeout s] -- <command ...>' );
+		if ( cmd.length === 0 ) throw new Error( 'usage: node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout s] -- <command ...>' );
 		const label = opt( 'label', cmd.join( ' ' ).slice( 0, 80 ) );
-		const waited = await acquireGpuLock( label, { timeout: Number( opt( 'timeout', 0 ) ) } );
-		if ( waited > 1000 ) console.error( `[gpu-lock] acquired after ${ ( waited / 1000 ).toFixed( 1 ) } s` );
-		const child = spawn( cmd[ 0 ], cmd.slice( 1 ), { stdio: 'inherit', env: { ...process.env, SOOMI_GPU_LOCK_HELD: String( process.pid ) } } );
+		const shared = ( split >= 0 ? rest.slice( 0, split ) : rest ).includes( '--shared' );
+		const waited = await acquireGpuLock( label, { timeout: Number( opt( 'timeout', 0 ) ), shared } );
+		if ( waited > 1000 ) console.error( `[gpu-lock] acquired${ shared ? ' (shared)' : '' } after ${ ( waited / 1000 ).toFixed( 1 ) } s` );
+		const child = spawn( cmd[ 0 ], cmd.slice( 1 ), { stdio: 'inherit', env: { ...process.env, SOOMI_GPU_LOCK_HELD: String( process.pid ), SOOMI_GPU_LOCK_MODE: shared ? 'shared' : 'exclusive' } } );
 		for ( const signal of [ 'SIGINT', 'SIGTERM', 'SIGHUP' ] ) {
 
 			process.removeAllListeners( signal );
@@ -385,7 +613,7 @@ async function main( argv ) {
 		} );
 
 	}
-	console.error( 'usage: node tools/gpu-lock.mjs run [--label name] [--timeout s] -- <command ...> | status | gpu [--seconds n]' );
+	console.error( 'usage: node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout s] -- <command ...> | status | gpu [--seconds n]' );
 	return 2;
 
 }

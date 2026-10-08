@@ -15,8 +15,9 @@ const near = ( a, b, tolerance, label ) => assert.ok( Math.abs( a - b ) <= toler
 const luma = ( rgb ) => rgb[ 0 ] * 0.2126 + rgb[ 1 ] * 0.7152 + rgb[ 2 ] * 0.0722;
 const same = ( a, b, label ) => a.forEach( ( value, i ) => near( value, b[ i ], 1e-6, `${ label }[${ i }]` ) );
 await mkdir( out, { recursive: true } );
-// one rendering browser at a time on this machine (released when the process exits)
-await acquireGpuLock( 'verify-weather' );
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-weather', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

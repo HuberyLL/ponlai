@@ -15,8 +15,9 @@ const gains = Object.fromEntries( [ 'clear', 'rain' ].map( ( name ) => {
 	const state = WEATHER_PRESETS[ name ];
 	return [ name, new Wind( undefined, { speed: state.windSpeed, heading: state.windDirection } ).uniforms.oceanGain.value.toArray() ];
 } ) );
-// one rendering browser at a time on this machine (released when the process exits)
-await acquireGpuLock( 'verify-ocean-weather' );
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-ocean-weather', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

@@ -9,8 +9,9 @@ const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification';
 const production = process.argv.includes( '--production' ) || base.includes( '5191' );
 await mkdir( out, { recursive: true } );
-// one rendering browser at a time on this machine (released when the process exits)
-await acquireGpuLock( 'verify-scene' );
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-scene', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true, channel: 'chromium',
 	args: [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--disable-gpu-vsync', '--disable-frame-rate-limit' ],

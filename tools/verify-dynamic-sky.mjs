@@ -12,8 +12,9 @@ const hours = [ [ 'dawn', 5.35 ], [ 'sunrise', 6.15 ], [ 'noon', 12 ], [ 'golden
 	[ 'sunset', 17.85 ], [ 'dusk', 18.65 ], [ 'midnight', 0 ] ];
 const report = { base, hours: [], phases: {}, clock: {}, resources: {}, checks: [], errors: [], failures: [] };
 await mkdir( out, { recursive: true } );
-// one rendering browser at a time on this machine (released when the process exits)
-await acquireGpuLock( 'verify-dynamic-sky' );
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-dynamic-sky', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

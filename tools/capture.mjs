@@ -1,6 +1,8 @@
 // Full-resolution captures of the running dev server for visual review.
-//   node tools/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval "js"] [--wait 6000] [--verbose]
+//   node tools/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval "js"] [--wait 6000] [--verbose] [--exclusive]
 // Writes artifacts/captures/<name>.png and prints the page's console errors and diagnostics.
+// A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
+// a running one, or --exclusive, takes it to itself, since its frame times are reported too.
 import { chromium } from 'playwright';
 import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -16,8 +18,9 @@ const url = `${ opt( 'url', 'http://127.0.0.1:5190/' ) }?${ query }`;
 const sampleCount = Number( opt( 'samples', 1 ) );
 
 await mkdir( 'artifacts/captures', { recursive: true } );
-// one rendering browser at a time on this machine (tools/gpu-lock.mjs)
-await acquireGpuLock( `capture ${ name }` );
+// tools/gpu-lock.mjs: shared for a paused scene, exclusive otherwise
+const sharedLock = new URLSearchParams( query ).has( 'paused' ) && ! args.includes( '--exclusive' );
+await acquireGpuLock( `capture ${ name }`, { shared: sharedLock } );
 // Playwright's full Chromium (`npx playwright install chromium`; the headless shell may lack
 // WebGPU), or another build through CHROME_PATH
 const browser = await chromium.launch( {

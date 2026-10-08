@@ -10,8 +10,9 @@ import { mkdir, writeFile } from 'node:fs/promises';
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const errors = [];
 const report = { base, errors, runs: [] };
-// one rendering browser at a time on this machine (released when the process exits)
-await acquireGpuLock( 'verify-celestial-handoff' );
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-celestial-handoff', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

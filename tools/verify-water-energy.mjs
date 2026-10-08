@@ -12,8 +12,9 @@ for ( const call of [ "from './WaterTransport.ts'", 'waterIncidentSun(', 'waterC
 
 }
 const errors = [];
-// one rendering browser at a time on this machine (released when the process exits)
-await acquireGpuLock( 'verify-water-energy' );
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-water-energy', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

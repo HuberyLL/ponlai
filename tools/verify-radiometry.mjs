@@ -8,8 +8,9 @@ import { SCENE_RADIANCE_SCALE, SUN_PROJECTED_SOLID_ANGLE } from '../src/lighting
 
 assert.ok( SUN_PROJECTED_SOLID_ANGLE > 0 );
 const errors = [];
-// one rendering browser at a time on this machine (released when the process exits)
-await acquireGpuLock( 'verify-radiometry' );
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-radiometry', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),

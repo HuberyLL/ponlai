@@ -27,8 +27,9 @@ const scenarios = [
 	{ name: 'rain', wetness: true, rain: true, count: 32768 },
 ];
 await mkdir( out, { recursive: true } );
-// one rendering browser at a time on this machine (released when the process exits)
-await acquireGpuLock( 'verify-weather-effects' );
+// shared with other probes (their pixels do not depend on the GPU load), never during a timing
+// run (tools/gpu-lock.mjs; released when the process exits)
+await acquireGpuLock( 'verify-weather-effects', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),
