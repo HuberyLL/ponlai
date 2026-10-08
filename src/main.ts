@@ -21,7 +21,7 @@ import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildTurfSkirt } from './world/RimSkirt.ts';
 import { buildFlowers } from './world/Flowers.ts';
-import { pickPlantSites, loopDistance, bakeGroundContact, bakeAnchorContact } from './world/PlantSites.ts';
+import { pickPlantSites, bakeGroundContact, bakeAnchorContact } from './world/PlantSites.ts';
 import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, type ToneCurve } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
@@ -290,9 +290,11 @@ const data = await generateWorld();
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
 const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
-// Shrubs and small trees on the island top, clear of the islander's walk, and the ambient shade
-// they cast on the turf around them, baked into the island's occlusion before its mesh is built.
-const plantSites = pickPlantSites( data.vegetation, loopDistance( WALK_LOOP ) );
+// Shrubs, small trees, tussocks and tall flowers keep clear of the islander's walking loop.
+const walkDistance = walkLoopDistance( WALK_LOOP );
+// Shrubs and small trees on the island top, and the ambient shade they cast on the turf around
+// them, baked into the island's occlusion before its mesh is built.
+const plantSites = pickPlantSites( data.vegetation, walkDistance );
 for ( const m of data.meshes ) if ( m.kind === 'cliff' ) bakeGroundContact( m, plantSites, ISLAND_TOP );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
@@ -303,8 +305,6 @@ await refractedSun.prepare();
 const foliage = buildFoliage( data.vegetation, shared );
 // The grass and flowers read the anchors' sky visibility with the plants' shade in it.
 bakeAnchorContact( data.vegetation, plantSites );
-// Tussocks and tall flowers keep clear of the islander's walking loop.
-const walkDistance = walkLoopDistance( WALK_LOOP );
 const grass = buildGrass( data.vegetation, shared, data.rimGround, walkDistance );
 const flowers = buildFlowers( data.vegetation, shared, walkDistance );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );

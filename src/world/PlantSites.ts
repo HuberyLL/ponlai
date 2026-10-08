@@ -58,29 +58,6 @@ class AnchorGrid {
 
 }
 
-/** Horizontal distance (m) to a closed walking loop through `waypoints` (x, z), traced like
- * the islander's own path (a centripetal Catmull-Rom loop). */
-export function loopDistance( waypoints: [ number, number ][] ): ( x: number, z: number ) => number {
-
-	const curve = new THREE.CatmullRomCurve3( waypoints.map( ( [ x, z ] ) => new THREE.Vector3( x, 0, z ) ), true, 'centripetal' );
-	const points = curve.getSpacedPoints( Math.max( 64, Math.ceil( curve.getLength() / 0.1 ) ) );
-	return ( x, z ) => {
-
-		let d = Infinity;
-		for ( let i = 1; i < points.length; i ++ ) {
-
-			const a = points[ i - 1 ], b = points[ i ];
-			const ex = b.x - a.x, ez = b.z - a.z;
-			const t = Math.max( 0, Math.min( 1, ( ( x - a.x ) * ex + ( z - a.z ) * ez ) / ( ex * ex + ez * ez || 1 ) ) );
-			d = Math.min( d, Math.hypot( x - a.x - ex * t, z - a.z - ez * t ) );
-
-		}
-		return d;
-
-	};
-
-}
-
 // No standing water under the plant: its stem and the ring of ground it covers stay dry.
 function dryGround( x: number, z: number, r: number ): boolean {
 
