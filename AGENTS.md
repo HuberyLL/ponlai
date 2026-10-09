@@ -27,8 +27,9 @@ stone exposed.
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
-  override), `quality` (low, medium, high: the clouds' march, bake cadences and rain count, and
-  the render scale, see Decisions), `tone` (neutral-hue, the default, agx-hue, agx, neutral), `look`
+  override), `quality` (low, medium (the default), high: the tier of every knob in `src/Quality.ts`,
+  see Decisions; `tier.<knob>=<value>` overrides one of them for an A/B, e.g.
+  `tier.post.fogScale=0.5`), `tone` (neutral-hue, the default, agx-hue, agx, neutral), `look`
   (soft-fantasy, the default, rich-fantasy, realistic).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
   sky views.
@@ -37,24 +38,32 @@ stone exposed.
   only), `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB
   cache, as on a first visit), `post=legacy` (or a comma list of `inline-composite`, `full-fog`,
   `no-bank`, `inline-coc`, `three-fsr`, `store-scene`: the frame graph without the first
-  performance round's changes) and `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter
-  path). Runtime switches for one-page A/Bs live in `src/debug/DebugFlags.ts`.
-- Quality knobs, each defaulting to today's high and set before the materials that read them are
-  built (so they change on reload): `WATER_QUALITY` (`Water.ts`: reflection rays and steps,
-  refraction steps, water-column samples, storm-foam layers), `setGrassQuality` (`Grass.ts`: blades
-  per tuft by distance, tussock segments, thin tufts, canopy light per vertex), `SunShadow.setFilter`
-  (PCSS taps, or the bilinear comparison alone, separately for vegetation), `setRainShading`
-  (`Rain.ts`: the veil's shells, the sea's ripple layers) and `PostOptions` (`new Pipeline`: sea-fog
-  resolution, steps and bank map, depth-of-field taps, bloom chains). Runtime ones:
-  `RefractedSun.angleGate`, the clouds' `setDome`, `setMarch`, `setShadowRefresh` and
-  `setViewScale`, and `Sky.setEnvironmentCadence` (`setEnvironmentSource` before the first bake).
+  performance round's changes), `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter
+  path) and `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then
+  steers by the frame intervals). Runtime switches for one-page A/Bs live in
+  `src/debug/DebugFlags.ts`.
+- Quality knobs: one table, `QUALITY` in `src/Quality.ts`, per tier. Load knobs are compiled into
+  materials or the frame graph and read once as those are built, so a change of tier reloads the
+  page (the GUI's quality control does): `QualityProfile.water` (`Water.ts`: reflection rays and
+  steps, refraction steps, water-column samples, storm-foam layers), `.grass` (`setGrassQuality`:
+  blades per tuft by distance, tussock segments, thin tufts, canopy light per vertex), `.shadow`
+  (`SunShadow.setFilter`: PCSS taps, or the bilinear comparison alone, separately for vegetation),
+  `.rainShading` (`setRainShading`: the veil's shells, the sea's ripple layers), `.post`
+  (`PostOptions` for `new Pipeline`: sea-fog resolution, steps and bank map, depth-of-field taps,
+  bloom chains), `.environmentSource` (`Sky.setEnvironmentSource`, before the first bake) and the
+  render scale rule. Runtime ones, applied by `applySkyQuality` in `main.ts`
+  (`s.applyQuality( { ... } )` overrides them in a debug page): the cloud view
+  (`Sky.setCloudView`), the clouds' `setDome`, `setMarch` and `setShadowRefresh`,
+  `Sky.setEnvironmentCadence`, the sky bake interval, the refracted sun's interval and
+  `angleGate`, and the rain's drop count. Every default in the modules themselves is high's.
 - `node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
   [--timestamps on|off|both] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
-  [--scales 1.5,1]` profiles a production build (`npm run build && npm run preview`; the url
-  defaults to its port) in headless Chrome (`CHROME_PATH`, else the system Chrome) with the frame
-  rate uncapped, or at 60 Hz with `--vsync` (the intervals a player sees; uncapped, a GPU-bound
-  scene's p95 is mostly pacing noise). It plays a matrix of named scenes (`--list`: fair, golden,
-  horizon, sky, overcast, rain, storm, fog, night, close over the meadow, a weather front), each with the clock running, fixed weather and a slow orbit, and writes
+  [--scales 1.5,1] [--scale-settle s]` profiles a production build (`npm run build && npm run
+  preview`; the url defaults to its port) in headless Chrome (`CHROME_PATH`, else the system
+  Chrome) with the frame rate uncapped, or at 60 Hz with `--vsync` (the intervals a player sees;
+  uncapped, a GPU-bound scene's p95 is mostly pacing noise). It plays a matrix of named scenes
+  (`--list`: fair, golden, horizon, sky, overcast, rain, storm, fog, night, close over the
+  meadow, a weather front), each with the clock running, fixed weather and a slow orbit, and writes
   `artifacts/perf/<label>/` (profile.json, summary.md): frame interval median, p95 and p99, GPU
   time per pass, the tick's JS time, hitches with their cause, and the startup. It loads each
   variant once and switches scenes at runtime (`--mode reload` reloads per scene, the original
@@ -73,7 +82,10 @@ stone exposed.
   `--strict` exits with 1 on a FAIL. Headless 60 Hz is the stricter stand-in for a 120 Hz display
   (a missed frame costs 33 ms there, 25 at 120 Hz); confirm a verdict once on the real display.
   `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
-  leave out) and tabulates every scene at every scale. `--eval` runs in the page with `s` =
+  leave out) and tabulates every scene at every scale. Every report gives the render scale the
+  measured frames were drawn at (its median, range and changes: high's moves);
+  `--scale-settle s` waits after each scene's warm-up until that scale has held for s seconds.
+  `--eval` runs in the page with `s` =
   `window.__SOOMI__` (an ablation, e.g. `--eval "s.pipeline.settings.dof = 0"`);
   `--report profile.json` re-renders a summary. The `profile` URL option (`?profile`, or
   `?profile=frames` without GPU timestamps) loads `src/debug/FrameProfiler.ts`, which labels every
@@ -101,6 +113,8 @@ stone exposed.
 
 ## Layout
 
+- `src/Quality.ts`: the quality tiers, every knob of the frame's cost in one table (see
+  Decisions).
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`
   (or `?profile`, which also loads the frame profiler in `src/debug/`).
@@ -118,7 +132,15 @@ stone exposed.
   vegetation anchors; instanced grass, rim bushes and flowers on the island top, a turf skirt over
   the lip, with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds
   on the lip; shrub groups (round shrubs, broad-leaved clumps, ferns) and small trees, each grown
-  from its own seed and merged into one mesh (`Plants.ts`, sited by `PlantSites.ts`).
+  from its own seed and merged into one mesh (`Plants.ts`, sited by `PlantSites.ts`). The
+  alpha-to-coverage vegetation (grass, bushes, plants, rim leaves) draws after a depth prepass
+  (`VegetationPrepass.ts`): a depth-only copy of each mesh with the same vertex stage, alpha and
+  coverage draws first, and the shaded mesh tests depth for equality without coverage, alpha test
+  or depth writes, so hidden blades and leaves are not shaded. The meadow's tuft instance data
+  live in storage buffers (`GrassCull.ts`); before the view camera draws the meadow a compute pass
+  culls the tufts against the frustum (and the thin tufts past their fold) into an
+  order-preserving list and each batch's indirect draw arguments, so off-screen tufts run no
+  vertex work.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
@@ -168,7 +190,9 @@ stone exposed.
   fog marched at half resolution over a baked bank map, the composite of air, fog, veil and shafts
   rendered once for the sharp image and both blooms, crepuscular rays and sun glare, bloom,
   tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale (`FSR.ts`: an EASU pass,
-  the sharpening in the canvas pass)), render scale per quality preset (`RenderScale.ts`), the
+  the sharpening in the canvas pass)), render scale per quality tier (`RenderScale.ts`) and
+  high's dynamic resolution (`DynamicResolution.ts`: the scale steered by the GPU's frame time
+  from timestamp queries), the
   scene's sample count (`SceneSamples.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
@@ -264,7 +288,28 @@ stone exposed.
   (`msaa=1`), leaves take a plain alpha test and grass blades an ordered 4x4 dither in place of
   alpha to coverage (`ALPHA_TO_COVERAGE` in `Foliage.ts`), the blades kept one pixel wide rather
   than two (a blade dithered across two pixels reads as a dotted line). Vegetation materials carry
-  `userData.vegetation` (`markVegetation`) for passes that treat them apart.
+  `userData.vegetation` (`markVegetation`) for passes that treat them apart; the terrain's meadow
+  detail is flagged `userData.meadowDetail` instead, so it never takes the vegetation's shadow
+  filter.
+- At 4x the vegetation's coverage is decided by the depth prepass alone; the shaded vegetation
+  draws as plain opaque geometry limited by equal depth to the prepass's samples, so each blade
+  and leaf covers exactly the samples it did. Its visible samples are shaded as an ordinary
+  pipeline shades them (a little crisper inside the canopy than a coverage pipeline, the same
+  brightness). `debugFlags.vegPrepass = false` (URL `vegPrepass=0`) brings back the single
+  coverage pass, `vegPrepassOpaque = false` (`vegPrepass=coverage`) keeps coverage in the shaded
+  draw. A depth copy follows its mesh's per-draw choices (blade count, `bladeGain`, the culled
+  list), so the equal test holds for every batch.
+- The view camera's grass draws are culled per tuft on the GPU by a padded bounding sphere (the
+  widening's 15 half widths, sway, standing water's sink) and compacted by a scan, never an
+  atomic append, so the tufts keep the order a draw of every tuft takes and a paused frame
+  repeats; the dispatch is skipped while the view and the blade selection are unchanged. Without
+  the prepass, or with coverage kept in its shaded draw, the image is that of a draw of every
+  tuft to the byte; behind the prepass's opaque shaded draw a few isolated pixels of the meadow
+  differ from it (the set depends on the drawn instance list; 2000 to 8000 px of a close meadow
+  view on high and medium, by up to 25 levels). Indirect
+  arguments are set on a batch's geometry for its own draw only: other draws over the same
+  geometry (the rain's collision proxies, orthographic cameras) draw every tuft.
+  `flags.grassCull = false` draws every tuft through the same storage path.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
   Weather only scales the wave cascades' amplitude; it never rebuilds the wave spectrum. Storm foam
@@ -288,12 +333,37 @@ stone exposed.
   starlight. The night ambient rises as the sun's skylight fades after sunset, so twilight is
   never darker than the night; the night sky's own light (stars, airglow, moon disk, the sky's
   night floor, clouds) scales back to keep its tuned look in deep night.
-- The scene renders at a pixel ratio set by the quality preset (high: the display's, up to 1.5;
-  medium, the default: a 1920x1080 pixel budget; low: 1600x900); `dpr` and the GUI's full
-  resolution lift the budget. The canvas always matches the display (up to 2x): a render below
-  it is upscaled inside the frame graph with FSR 1 and the grain added after, never stretched by
-  the browser. Every pass is sized to the render, not the canvas (`rtt()` passes through
-  `sizeRtt`). At the display's ratio nothing is upscaled, so `dpr=1` captures are unchanged.
+- Quality tiers (`src/Quality.ts`, one table): high, medium (the default) and low. High is the
+  reference image; medium and low trade a little of it for time, each knob judged in captures:
+  one screen-space reflection ray (its 14 steps grow by 1.51, so it reaches as far as high's),
+  fewer refraction and water-column samples, a lighter sun-shadow filter (bilinear on
+  vegetation, and on everything on low), fewer lawn blades with the canopy light per vertex, fewer
+  sea-fog steps and depth-of-field taps, a cheaper cloud march and panorama refresh, slower sky
+  bakes with the environment's PMREM on every second one from a 256-wide source, a coarser
+  refracted-sun gate and fewer rain drops; low also marches the sea fog at a quarter resolution
+  and draws fewer veil shells and ripple layers. Low keeps both bloom chains and the full storm
+  foam: one merged chain veiled a golden-hour island in glow, and the merged foam turned the
+  crests' streaks into scattered lace. No knob alters the weather, clock or lighting state, so a
+  tier changes the cost, not the mood. A change of tier reloads the page.
+- The scene is multisampled 4x on every tier (WebGPU has only 1 or 4 samples; there is no 2x):
+  without it alpha to coverage becomes a dither, the meadow turns to dots and edges alias, so the
+  tiers save through their render scale and knobs, never through multisampling.
+- The scene renders at a pixel ratio set by the quality tier. Medium renders at a 1600x900 pixel
+  budget and low at 1280x720. High's is dynamic (`DynamicResolution.ts`): from the display's ratio
+  (up to 1.5) down to a floor of 0.6, steered by the GPU's frame time (timestamp queries, read as
+  the time the GPU was busy with each frame; the frame intervals without them). It steps by 0.05,
+  at most every 2 s (sooner only downward when frames run far over budget), down when the window's
+  97th percentile of GPU time passes 15.2 ms, and up only when a pessimistic estimate of the
+  larger render stays under that with a margin; a scale it had to leave needs a wider margin for a
+  while, so it does not oscillate. A change only resizes the frame graph's targets: no pipeline
+  is built and no frame is dropped (the cloud view on high is sized from the display, so its
+  kernels never rebuild). Paused, under `dpr` or with the GUI's full resolution it renders at its
+  nominal ratio, so paused frames and captures render at the reference scale whatever scale the
+  running page had reached, and match the reference image. `dpr` and the full resolution also lift the lower tiers' budgets. The
+  canvas always matches the display (up to 2x): a render below it is upscaled inside the frame
+  graph with FSR 1 and the grain added after, never stretched by the browser. Every pass is sized
+  to the render, not the canvas (`rtt()` passes through `sizeRtt`). At the display's ratio nothing
+  is upscaled, so `dpr=1` captures are unchanged.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
 - The tone curve is PBR Neutral with hue-kept highlights (`neutral-hue` in `src/post/Pipeline.ts`):
@@ -351,8 +421,8 @@ stone exposed.
 - The directly seen clouds accumulate over frames; a scene at rest (paused clock, still camera)
   settles its clouds once and keeps them, so a paused frame is exactly repeatable. The cloud
   march assumes a camera below the cloud base. On high the view's resolution is a share of the
-  display (0.58 of the render at high's nominal ratio), not of the render, so a lower render scale
-  does not soften the clouds again.
+  display (0.58 of the render at high's nominal ratio), not of the render, so the dynamic render
+  scale neither softens the clouds again nor rebuilds the view.
 - Lightning is a function of the scene clock: a paused frame holds its strike exactly
   (`sky.lightning.force` stages one for review). Its light inside the clouds stays out of the
   view's accumulated history, the bake and the panorama; channel, cloud glow and the island's
@@ -399,8 +469,12 @@ stone exposed.
   after a change (`--compare` for an A/B, or `--toggle` on a debug flag while the change is in
   development). Judge an A/B by its GPU time per pass; take frame rates from a run without GPU
   timestamps (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them
-  on, so their per-pass split shows where the time goes, not the frame rate a player sees. Judge
-  whether a tier holds 60 fps with `--accept` (under vsync), not from uncapped intervals. Report
+  on, so their per-pass split shows where the time goes, not the frame rate a player sees. (High
+  keeps its dynamic resolution's own timestamp queries in every run, as a player's page does;
+  `--q gpuTimer=off` leaves them out.) Judge
+  whether a tier holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at the
+  tier's own settings (high with its dynamic scale, measured at its settle point with
+  `--scale-settle 5`; the report gives each scene's scale). Report
   contended runs as such.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
@@ -472,6 +546,31 @@ stone exposed.
   uploaded from then on (r186): an index rewritten in place must be a `Uint32Array`. Leave
   attributes that change once per event at the default static usage and set update ranges:
   `DynamicDrawUsage` re-uploads the whole buffer on every draw.
+- Two programs that must produce bit-identical depth (a depth prepass and an equal-depth draw)
+  need WGSL's `@invariant` on the clip position: three r186 does not emit it, so
+  `VegetationPrepass.ts` patches the material's builder (`getBuiltins`). Without it a few samples
+  fail the equal test and show the clear colour. A coverage (alpha-to-coverage) pipeline shades
+  differently from a plain one over the same samples, and its fragments cannot be rejected before
+  shading: with a prepass, drop coverage and the alpha test from the shaded draw. Keep
+  `material.alphaTest` itself at its value (the shadow passes copy it) and leave it out of the
+  shader build only. A new alpha-to-coverage vegetation group joins `installVegetationPrepass`'s
+  list, and anything that finds vegetation after the first frame reads `userData.vegetation`
+  (the prepass turns `alphaToCoverage` off).
+- A material that applies instancing itself from storage buffers (instead of three's instanced
+  attributes) must hold the placed position in a variable (`toVar`), as three's instancing
+  assigns it to `positionLocal`; an inline expression rounds differently and flips a few hundred
+  edge samples. `instanceColor` (exported from three/tsl) multiplies the diffuse colour whenever
+  the object has a truthy `instanceColor`: assign it in the vertex stage. A per-object uniform
+  (`onObjectUpdate`) reads the drawn object's own `userData`: a copy drawn over the same geometry
+  (the prepass's depth meshes) must carry the fields its shader reads (`grassCulled`).
+- A compute kernel dispatched by the size of a target (`compute( width * height )`) is rebuilt,
+  with new pipelines, whenever that size changes; at high's dynamic render scale that would be at
+  every step. Size such work from something fixed (the cloud view on high follows the display) or
+  keep it a render pass (render passes and their pipelines do not depend on the target's size).
+- With `trackTimestamp` three resolves its timestamp queries into a single buffer and drops what
+  it resolves while that one is mapped. `GpuFrameTimer` (dynamic resolution) and the frame
+  profiler each take over the pools' `resolveQueriesAsync`; only one may own them, so the page
+  feeds the dynamic resolution from the profiler while the profiler times passes.
 - `Sky.ts` drives three's `PMREMGenerator` private steps (`_setSizeFromTexture`, `_init`,
   `_textureToCubeUV`, `_applyGGXFilter`, `_setViewport`) to spread its filter chain over frames;
   re-check them on a three upgrade. Without them it falls back to `fromEquirectangular`.

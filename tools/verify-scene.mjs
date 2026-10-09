@@ -34,7 +34,7 @@ try {
 				const a = o.geometry.getAttribute( key );
 				if ( a && ! a.array.every( Number.isFinite ) ) bad.push( `${ o.name }:${ key }` );
 			}
-			if ( o.parent?.name === 'world' ) world.push( { name: o.name, vertices: o.geometry.getAttribute( 'position' ).count, maxY: o.geometry.boundingBox?.max.y, vegetation: o.material.userData.vegetation } );
+			if ( o.parent?.name === 'world' ) world.push( { name: o.name, vertices: o.geometry.getAttribute( 'position' ).count, maxY: o.geometry.boundingBox?.max.y, meadowDetail: o.material.userData.meadowDetail } );
 		} );
 		return { bad, world, diag: window.__THREE_GAME_DIAGNOSTICS__, t: s.shared.time.value };
 	} );
@@ -42,8 +42,8 @@ try {
 	assert.equal( inspect.world.filter( ( m ) => m.name.startsWith( 'stack' ) ).length, 0 );
 	const rocks = inspect.world.find( ( m ) => m.name === 'rocks' );
 	assert.ok( rocks && rocks.vertices > 0 && rocks.maxY <= - 1.15 );
-	assert.equal( rocks.vegetation, false );
-	assert.equal( inspect.world.find( ( m ) => m.name === 'island' )?.vegetation, true );
+	assert.equal( rocks.meadowDetail, false );
+	assert.equal( inspect.world.find( ( m ) => m.name === 'island' )?.meadowDetail, true );
 	assert.equal( inspect.t, 12 );
 	checks.push( 'Finite geometry, no exposed offshore rocks, bare submerged stone, frozen time t=12, WebGPU rendered' );
 	await page.screenshot( { path: `${ out }/overview.png` } );

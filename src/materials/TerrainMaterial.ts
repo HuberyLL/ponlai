@@ -714,7 +714,8 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 	mat.userData.refractedSolarReceiver = true;
 	mat.userData.refractedSolarFloor = kind === 'seabed';
 	mat.userData.topY = topYU;
-	mat.userData.vegetation = vegetation;
+	// whether the terrain carries the meadow's detail; not `userData.vegetation`, which tags the plants' materials (markVegetation)
+	mat.userData.meadowDetail = vegetation;
 	return mat;
 
 }

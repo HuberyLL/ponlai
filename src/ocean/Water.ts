@@ -264,11 +264,8 @@ export interface WaterQuality {
 	stormFoam: 'full' | 'merged';
 }
 
-export const WATER_QUALITY: Record<'low' | 'medium' | 'high', WaterQuality> = {
-	low: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.45, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'merged' },
-	medium: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.45, refractionSteps: 6, refractionRefine: 4, columnSamples: 6, stormFoam: 'full' },
-	high: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' },
-};
+// High's values, today's image; the tiers' values are in Quality.ts.
+export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' };
 
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
 // its plants and its people. A box around them, from the tile layout (so it grows with the island):
@@ -404,7 +401,7 @@ export class Water {
 		geo.boundingSphere = new THREE.Sphere( new THREE.Vector3(), SKIRT_RADIUS * Math.SQRT2 );
 
 		this.inputs = inputs;
-		this.quality = { ...WATER_QUALITY.high, ...quality };
+		this.quality = { ...DEFAULT_WATER_QUALITY, ...quality };
 		const b = layoutBounds();
 		this.reflectionBounds = new THREE.Box3(
 			new THREE.Vector3( b.x0 - REFLECTOR_REACH, shared.waterLevel.value - REFLECTION_FLOOR, b.z0 - REFLECTOR_REACH ),
