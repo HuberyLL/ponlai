@@ -21,7 +21,7 @@ try {
 	page.on( 'console', message => { if ( message.type() === 'error' ) errors.push( message.text() ); } );
 	for ( const version of [ 0, 1, 1, 0 ] ) {
 
-		await page.goto( `${ urls[ version ].replace( /\/$/, '' ) }/?debug&paused&t=12&dpr=1.5` );
+		await page.goto( `${ urls[ version ].replace( /\/$/, '' ) }/?debug&paused&t=12&dpr=1.5&frameRate=0` );
 		await page.waitForFunction( () => window.__THREE_GAME_DIAGNOSTICS__?.frame > 350, null, { timeout: 90000 } );
 		const samples = [];
 		for ( let i = 0; i < 4; i ++ ) {

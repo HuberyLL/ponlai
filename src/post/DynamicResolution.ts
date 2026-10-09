@@ -1,7 +1,8 @@
 import type * as THREE from 'three/webgpu';
 
 // Dynamic resolution (high tier): the scene's render scale moves between the tier's maximum and a
-// floor so that the GPU's frame time stays inside a 60 Hz frame, without the scale ever jumping.
+// floor so that the GPU's frame time stays inside the paced frame (a 60 Hz frame, `FramePacer.ts`),
+// without the scale ever jumping.
 //
 // - The GPU time comes from timestamp queries (`GpuFrameTimer`, or the frame profiler's own when it
 //   runs), as the time the GPU was busy with each frame: every pass charged from the previous
@@ -22,9 +23,10 @@ import type * as THREE from 'three/webgpu';
 // full resolution) or the scene is paused, so paused frames and captures render at the reference
 // scale whatever scale the running page had reached.
 
-// GPU busy time (ms) the window's high quantile must stay under. A 60 Hz frame is 16.7 ms; the
-// slack covers the spread between frames (periodic bakes and map redraws land on single frames)
-// and Chrome's pacing, which missed vblanks from about 16.2 ms of GPU time.
+// GPU busy time (ms) the window's high quantile must stay under, for a 60 Hz frame (16.7 ms; the
+// budgets scale with the paced interval). The slack covers the spread between frames (periodic
+// bakes and map redraws land on single frames) and the browser's pacing, which missed vblanks
+// from about 16 ms of GPU time.
 const UPPER = 15.2;
 const MARGIN = 0.4;
 // the quantile of the window's frames that steers it (its few worst frames must fit too)
@@ -72,6 +74,8 @@ export class DynamicResolution {
 	private intervals: number[] = [];
 	private lastChange = - Infinity;
 	private lastMiss = - Infinity;
+	// the frame interval's share of a 60 Hz frame: the budgets below are a 60 Hz frame's
+	private budget = 1;
 	private readonly bars = new Map<number, { until: number; seconds: number }>();
 
 	constructor( { max, floor, step }: DynamicResolutionOptions ) {
@@ -93,6 +97,13 @@ export class DynamicResolution {
 		this.max = max;
 		this.floor = Math.min( this.limitFloor, max );
 		this.change( Math.min( this.scale, max ), performance.now() / 1000 );
+
+	}
+
+	/** The interval (ms) the frames are paced to (FramePacer.ts); the GPU's budget scales with it. */
+	setFrameInterval( ms: number ): void {
+
+		if ( Number.isFinite( ms ) && ms > 0 ) this.budget = Math.min( Math.max( ms / ( 1000 / 60 ), 0.25 ), 4 );
 
 	}
 
@@ -153,12 +164,12 @@ export class DynamicResolution {
 		const since = now - this.lastChange;
 		if ( since >= EMERGENCY_HOLD && s.length >= EMERGENCY_FRAMES && this.scale > this.floor ) {
 
-			const recent = quantile( s.slice( - EMERGENCY_FRAMES ), 0.5 );
+			const recent = quantile( s.slice( - EMERGENCY_FRAMES ), 0.5 ) / this.budget;
 			if ( recent > UPPER + EMERGENCY_OVER ) return this.down( now );
 
 		}
 		if ( since < HOLD || s.length < MIN_SAMPLES ) return false;
-		const high = quantile( s, QUANTILE );
+		const high = quantile( s, QUANTILE ) / this.budget;
 		if ( high > UPPER && this.scale > this.floor ) return this.down( now );
 		if ( this.scale < this.max ) {
 

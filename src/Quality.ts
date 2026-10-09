@@ -48,6 +48,9 @@ export interface QualityProfile {
 	rainShading: { veilShells: number; rippleLayers: number };
 	// the environment's PMREM source width (fixes the atlases' size before the first bake)
 	environmentSource: number;
+	// the frame rate the loop holds on a display faster than that (post/FramePacer.ts: 60 renders on
+	// every second refresh at 120 Hz), or 0 to render on every refresh
+	frameRate: number;
 
 	// ---- runtime
 	cloudView: CloudViewScale;
@@ -78,6 +81,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		grass: { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
+		frameRate: 60,
 		cloudView: { display: 0.58 },
 		cloudDome: { width: 1024, height: 256, strideX: 4, strideY: 8 },
 		cloudMarch: { viewSteps: 256, panoramaSteps: 128, lightTaps: 5, rainSteps: 16 },
@@ -95,6 +99,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		grass: { lawnBlades: [ 12, 8, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 3, thinTufts: false, canopyPerVertex: true },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 256,
+		frameRate: 60,
 		cloudView: { render: 0.5 },
 		cloudDome: { width: 1024, height: 256, strideX: 8, strideY: 8 },
 		cloudMarch: { viewSteps: 192, panoramaSteps: 128, lightTaps: 5, rainSteps: 16 },
@@ -114,6 +119,10 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		grass: { lawnBlades: [ 8, 8, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 3, thinTufts: false, canopyPerVertex: true },
 		rainShading: { veilShells: 2, rippleLayers: 1 },
 		environmentSource: 256,
+		// light enough to render on most refreshes of a fast display: held to 60 Hz there, its
+		// frames finished right at the compositor's deadline and were shown one or three refreshes
+		// apart in turn (a quarter of them), where unpaced they keep the refresh's own steps
+		frameRate: 0,
 		cloudView: { render: 0.4 },
 		cloudDome: { width: 768, height: 192, strideX: 8, strideY: 8 },
 		cloudMarch: { viewSteps: 128, panoramaSteps: 96, lightTaps: 3, rainSteps: 10 },
