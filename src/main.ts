@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
+import { OrbitFrameControls } from './camera/OrbitFrameControls.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, type WeatherName } from './sky/Weather.ts';
@@ -27,6 +27,7 @@ import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer } from './post/DynamicResolution.ts';
+import { FramePacer } from './post/FramePacer.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
@@ -105,14 +106,15 @@ const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 600
 const target = new THREE.Vector3( 1.5, 0.5, 1.0 );
 const view = { distance: Number( params.get( 'dist' ) ?? 58 ), polar: Number( params.get( 'polar' ) ?? 50 ), azimuth: Number( params.get( 'az' ) ?? 318 ) };
 camera.position.setFromSphericalCoords( view.distance, THREE.MathUtils.degToRad( view.polar ), THREE.MathUtils.degToRad( view.azimuth ) ).add( target );
-const controls = new OrbitControls( camera, renderer.domElement );
+// the orbit's damping advances once per rendered frame, by its length (OrbitFrameControls.ts)
+const controls = new OrbitFrameControls( camera, renderer.domElement );
 controls.target.copy( target );
 controls.enableDamping = true;
-controls.dampingFactor = 0.06;
+controls.damping = 0.06;
 controls.minDistance = 22;
 controls.maxDistance = 190;
 controls.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
-controls.update();
+controls.settle();
 const initialCameraPosition = camera.position.clone();
 const initialCameraQuaternion = camera.quaternion.clone();
 const initialCameraFov = camera.fov;
@@ -469,10 +471,7 @@ const viewDirection = new THREE.Vector3();
 function settleOrbit(): void {
 
 	// Drain residual orbit damping before changing ownership or jumping to a preset.
-	const damping = controls.enableDamping;
-	controls.enableDamping = false;
-	controls.update();
-	controls.enableDamping = damping;
+	controls.settle();
 
 }
 
@@ -504,7 +503,7 @@ function setCameraMode( mode: string ): void {
 	// Sharp sky details are essential when inspecting stars and the lunar disk.
 	S.dof = freeControls.enabled ? 0 : orbitDof;
 	applyOrbitLimit();
-	if ( controls.enabled ) controls.update();
+	if ( controls.enabled ) controls.settle();
 	renderer.domElement.style.cursor = freeControls.enabled ? 'grab' : '';
 
 }
@@ -541,7 +540,7 @@ function setCameraView( view: CameraView ): void {
 	}
 	camera.updateProjectionMatrix();
 	applyOrbitLimit();
-	if ( controls.enabled ) controls.update();
+	if ( controls.enabled ) controls.settle();
 
 }
 
@@ -680,6 +679,10 @@ lookF.add( L, 'overcast', 0, 1, 0.01 ).name( 'kept in bad weather' ).listen();
 // resolution) or the scene is paused, so paused frames and captures render at the reference scale.
 const dynamicRule = 'dynamic' in quality.render ? quality.render.dynamic : null;
 const dynamicResolution = dynamicRule ? new DynamicResolution( dynamicRule ) : null;
+// The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
+// the same number of refreshes; `frameRate` overrides it (0 renders on every refresh: the profiler's
+// uncapped runs, where the animation frames' intervals measure the work, not a display).
+const pacer = new FramePacer( params.has( 'frameRate' ) ? Number( params.get( 'frameRate' ) ) : quality.frameRate );
 // the render scale each frame was drawn at (by three's frame id), for the GPU times read back later
 const frameScales = new Map<number, number>();
 let gpuTimer: GpuFrameTimer | null = null;
@@ -772,9 +775,11 @@ addEventListener( 'keydown', ( e ) => {
 
 const frameTimes: number[] = [];
 let shadowElapsed = 0;
-function tick(): void {
+function tick( time: number ): void {
 
-	clock.update();
+	// the frame's own vblank time, not the moment the tick starts: the main thread reaches the tick a
+	// few milliseconds into the frame, by a varying amount, which made the scene's steps uneven
+	clock.update( time );
 	const rawDt = clock.getDelta();
 	frameTimes.push( rawDt * 1000 );
 	if ( frameTimes.length > 120 ) frameTimes.shift();
@@ -787,7 +792,7 @@ function tick(): void {
 	weather.update( paused ? 0 : rawDt );
 	weatherView.preset = weather.target;
 	if ( freeControls.enabled ) freeControls.update( rawDt );
-	else controls.update();
+	else controls.advance( dt );
 
 	renderer.info.reset();
 	// Sun, moon, key light and grade follow the clock every frame; only the baked reflection,
@@ -880,6 +885,8 @@ function tick(): void {
 function steerRenderScale( rawDt: number ): void {
 
 	if ( ! dynamicResolution ) return;
+	// the GPU's budget follows the paced frame interval (a 60 Hz frame unpaced)
+	dynamicResolution.setFrameInterval( pacer.target > 0 ? pacer.interval : 1000 / 60 );
 	const steering = ! paused && ! resolution.full && renderScale === dynamicResolution.scale;
 	frameScales.set( renderer.info.frame, steering ? renderScale : NaN );
 	if ( frameScales.size > 240 ) frameScales.delete( frameScales.keys().next().value! );
@@ -914,6 +921,7 @@ function diagnostics(): void {
 		dpr: + ( pipeline.width / innerWidth ).toFixed( 4 ), // the render's pixel ratio
 		renderScale,
 		dynamicResolution: dynamicResolution ? { scale: dynamicResolution.scale, source: dynamicResolution.source, changes: dynamicResolution.changes.length } : null,
+		pacing: { target: pacer.target, refreshMs: + pacer.period.toFixed( 3 ), divisor: pacer.divisor, rendered: pacer.rendered, skipped: pacer.skipped },
 		canvasDpr: renderer.getPixelRatio(),
 		worldTriangles: world.triangles,
 		rimStrands: data.rimStrands.length,
@@ -948,8 +956,24 @@ if ( profiler ) {
 }
 mark( 'loop' );
 const animationLoop = profiler ? profiler.wrapLoop( tick ) : tick;
+dynamicResolution?.begin();
+// three's loop asks the pacer for its animation frames, so the frames it skips never reach it
+const animation = ( renderer as unknown as { _animation: { start(): void; stop(): void; setContext( context: unknown ): void } } )._animation;
+animation.setContext( pacer.context );
 renderer.setAnimationLoop( animationLoop );
-loading?.classList.add( 'done' );
+// High's first frames find its render scale behind the loading screen: from the nominal it jumps
+// to the scale the GPU's times call for within a second, out of sight (at most REVEAL_WAIT ms).
+const REVEAL_WAIT = 3000;
+const revealAt = performance.now() + REVEAL_WAIT;
+const reveal = () => {
+
+	const waiting = dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
+		! paused && ! resolution.full && performance.now() < revealAt;
+	if ( waiting ) setTimeout( reveal, 50 );
+	else loading?.classList.add( 'done' );
+
+};
+reveal();
 // setTime moves the (paused) clock, so captures can step through an animation in one page load
 const setTime = ( t: number ) => {
 
@@ -964,7 +988,6 @@ const setTime = ( t: number ) => {
 // queued and a sky bake in flight are done (the bake is given 2 s). The clock resumes where it
 // stopped. Chrome let one page's stream of frames starve another's queue, so the profiler stops
 // one page and waits for this before it starts the other.
-const animation = ( renderer as unknown as { _animation: { start(): void; stop(): void } } )._animation;
 const loop = {
 	running: true,
 	async stop(): Promise<void> {
@@ -987,4 +1010,4 @@ const loop = {
 	},
 };
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
-	quality, dynamicResolution, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
+	quality, dynamicResolution, pacer, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
