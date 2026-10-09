@@ -31,8 +31,12 @@ stone exposed.
   see Decisions; `tier.<knob>=<value>` overrides one of them for an A/B, e.g.
   `tier.post.fogScale=0.5`), `tone` (neutral-hue, the default, agx-hue, agx, neutral), `look`
   (soft-fantasy, the default, rich-fantasy, realistic).
-  In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
-  sky views.
+  In the page, H toggles the GUI, Space pauses, R or 1/2/3 jump to the island, horizon and
+  sky views, and F toggles a corner readout of the frame cadence. The GUI's Performance folder
+  shows the same live lines (`src/debug/FrameStats.ts`, from the rendered frames' rAF timestamps):
+  the frame rate over the last second, the interval's p95 and maximum over the last 5 s, the
+  frames late by a refresh against the paced interval and the intervals over 25 ms since the scene
+  showed (or the reset button), the render scale and the GPU's median frame time (high only).
 - Rendering and A/B URL options, read at load: `msaa` (the scene's sample count, `SceneSamples.ts`:
   4, the default, or 1 for none; `2` reads as 1, since WebGPU multisamples with 1 or 4 samples
   only), `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB
