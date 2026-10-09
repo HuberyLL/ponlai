@@ -10,7 +10,7 @@
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s]
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
-//        [--scale-settle s]
+//        [--scale-settle s] [--display [--motion user | orbit | none]]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
 //        [--slices 8] [--slice 1.5] [--settle 1]                 (two pages, alternating slices)
 //   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
@@ -54,12 +54,11 @@
 //   per scene for the 60 fps criterion. From the run without timestamps: the median and the p95
 //   within half a millisecond of `--target` (16.7), and no frame over 25 ms in the measured window
 //   (7 s by default); the p99, the maximum, and the GPU busy time of the run with timestamps are
-//   reported beside the verdict. Headless 60 Hz stands in for a faster display: at 120 Hz a missed
-//   frame costs 25 ms, not 33, so the headless test is the stricter one, but confirm a verdict once
-//   on the real display. Other work on the GPU costs frames, so a scene measured while something
+//   reported beside the verdict. Other work on the GPU costs frames, so a scene measured while something
 //   else kept the GPU busy (contended) that fails is INCONCLUSIVE, unless its own GPU busy time
 //   (median, with timestamps) is over the target, which no idle GPU would make up; one that passes
 //   is PASS (contended). The exit code stays 0 unless `--strict` is given, which exits 1 on a FAIL.
+//   Headless 60 Hz does not show how a faster display paces the frames (see --display).
 // - scales (`--scales 1.5,1.25,1`): the run once per render scale (the page's `dpr` option), in one
 //   invocation, with a table of every scene at every scale (for the threshold where a scene holds
 //   60 Hz, and the settle points of a dynamic resolution). The url and `--q` must not set `dpr`
@@ -69,6 +68,20 @@
 //   GPU's frame time; after a scene's warm-up the run waits until it has held for s seconds (at
 //   most 60), so the scene is measured at its settle point. Each scene's results give the scale
 //   its frames were drawn at (median, range and changes) beside the frame times.
+// - display (`--display`): the real display, headed. Chrome (the system's, without the switches the
+//   headless runs take) opens full screen (`--kiosk`) at the display's size and pixel ratio with
+//   its own vsync, so a 120 Hz display runs rAF at 120 Hz. The camera is dragged like a player's
+//   (`--motion user`, the default here: drags of 30 to 200 deg/s with pauses, a wheel zoom, a flick,
+//   through Chrome's own input; `orbit` keeps the slow orbit, `none` holds it still) for `--seconds`
+//   (20). Beside the usual figures each scene reports, by display refreshes, the intervals between
+//   the frames the scene rendered and between the frames the compositor presented (a trace of
+//   Chrome's frame pipeline), the share of intervals that change cadence (judder at a steady pace),
+//   and how much the camera's turning speed changes from frame to frame while it turns. Timestamps
+//   default to off, as in a player's page. Headless 60 Hz vsync passed every scene while this display
+//   showed a sixth of the frames 8.3 ms apart and a third of the intervals changing cadence (before
+//   the frame pacer): the headless run does not stand in for a faster display. A window appears on
+//   the screen for the run; keep other pages and animated windows closed (the window server itself
+//   took 15-30 % of the GPU's time during these runs).
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
 // numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
@@ -98,7 +111,7 @@ import { withGpuLock, waitForIdleGpu, sampleGpuUtilisation } from './gpu-lock.mj
 const argv = process.argv.slice( 2 );
 const flags = new Set( argv.filter( ( a ) => a.startsWith( '--' ) ) );
 const VALUE_FLAGS = new Set( [ 'report', 'scenes', 'scene', 'w', 'h', 'scale', 'quality', 'warmup', 'seconds', 'orbit', 'eval', 'eval-a', 'eval-b', 'repeat', 'out', 'label', 'q', 'compare', 'idle-wait', 'idle-threshold', 'timestamps', 'hooks',
-	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle' ] );
+	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion' ] );
 const opt = ( name, fallback ) => {
 
 	const i = argv.indexOf( '--' + name );
@@ -134,13 +147,20 @@ if ( flags.has( '--list' ) ) {
 
 }
 
+// --display: Chrome headed and full screen on the real display, with the display's own vsync (a
+// 120 Hz display stays 120 Hz), the camera dragged like a player's (`--motion user`), and the frames
+// the compositor presented read from a trace (see the header)
+const DISPLAY = flags.has( '--display' );
+const MOTION = opt( 'motion', DISPLAY ? 'user' : 'orbit' );
+if ( ! [ 'user', 'orbit', 'none' ].includes( MOTION ) ) throw new Error( '--motion user | orbit | none' );
+if ( MOTION === 'user' && ! DISPLAY ) throw new Error( '--motion user drives a headed page: give --display' );
 const MODE = opt( 'mode', 'page' );
 if ( ! [ 'page', 'reload' ].includes( MODE ) ) throw new Error( '--mode page | reload' );
 const TOGGLE = opt( 'toggle', '' );
 const W = Number( opt( 'w', 1920 ) ), H = Number( opt( 'h', 1080 ) ), SCALE = Number( opt( 'scale', 2 ) );
 const QUALITY = opt( 'quality', 'high' );
 // warm-up after a load (reload mode) or a scene switch (page modes, which also wait for compiles)
-const WARMUP = Number( opt( 'warmup', MODE === 'reload' ? 3 : 1.5 ) ), SECONDS = Number( opt( 'seconds', 7 ) ), ORBIT = Number( opt( 'orbit', 3 ) );
+const WARMUP = Number( opt( 'warmup', MODE === 'reload' ? 3 : 1.5 ) ), SECONDS = Number( opt( 'seconds', DISPLAY ? 20 : 7 ) ), ORBIT = Number( opt( 'orbit', 3 ) );
 // compare in page mode: alternating slices of each page, measured for SLICE seconds after SETTLE
 const SLICES = Math.max( 2, Number( opt( 'slices', 8 ) ) ), SLICE = Number( opt( 'slice', 1.5 ) ), SETTLE = Number( opt( 'settle', 1 ) );
 // toggle: frames per block, blocks per scene, frames dropped from the intervals after a change
@@ -163,7 +183,7 @@ const EXTRA_Q = opt( 'q', '' );
 // --accept: the 60 fps criterion per scene (see above), under vsync; frame intervals come from the
 // run without timestamps, the GPU busy time from the run with them
 const ACCEPT = flags.has( '--accept' );
-const VSYNC = flags.has( '--vsync' ) || ACCEPT;
+const VSYNC = flags.has( '--vsync' ) || ACCEPT || DISPLAY;
 // --strict: exit with 1 when an uncontended scene fails the acceptance (the verdicts are written
 // either way; without it the exit code stays 0, as for any profile run)
 const STRICT = flags.has( '--strict' );
@@ -171,7 +191,8 @@ if ( STRICT && ! ACCEPT ) throw new Error( '--strict goes with --accept' );
 // the frame interval to hold (ms), the slack allowed on its median and p95 (vblank timestamps
 // jitter by a few tenths), and the longest frame allowed
 const TARGET = Number( opt( 'target', 16.7 ) ), TARGET_SLACK = 0.5, ACCEPT_MAX = 25;
-const TIMESTAMP_MODE = opt( 'timestamps', ACCEPT ? 'both' : 'on' );
+// (display mode: off, as a player's page runs; high's dynamic resolution keeps its own queries)
+const TIMESTAMP_MODE = opt( 'timestamps', ACCEPT ? 'both' : DISPLAY ? 'off' : 'on' );
 if ( ! [ 'on', 'off', 'both' ].includes( TIMESTAMP_MODE ) ) throw new Error( '--timestamps on | off | both' );
 if ( ACCEPT && TIMESTAMP_MODE === 'on' ) throw new Error( '--accept judges the frame rate a player sees: --timestamps both (the default) or off' );
 // --scales: render scales (the page's dpr option) to sweep in one invocation
@@ -199,6 +220,7 @@ const stamp = new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 );
 const LABEL = opt( 'label', COMPARE ? `compare-${ stamp }` : TOGGLE ? `toggle-${ stamp }` : `profile-${ stamp }` );
 if ( COMPARE && TOGGLE ) throw new Error( '--toggle A/Bs inside one page: give one url, not --compare' );
 if ( TOGGLE && MODE === 'reload' ) throw new Error( '--toggle needs --mode page' );
+if ( DISPLAY && ( COMPARE || TOGGLE || ACCEPT || SCALES.length || MODE === 'reload' ) ) throw new Error( '--display is for profile runs in page mode (no --compare, --toggle, --accept, --scales or --mode reload)' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
 if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
@@ -206,7 +228,11 @@ const OUT = opt( 'out', path.join( 'artifacts/perf', LABEL ) );
 
 const SYSTEM_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const executablePath = process.env.CHROME_PATH || ( existsSync( SYSTEM_CHROME ) ? SYSTEM_CHROME : undefined );
-const CHROME_ARGS = [
+const CHROME_ARGS = DISPLAY ? [
+	// a player's Chrome: full screen without its bars (the window's size from the start), its own
+	// vsync and timestamp quantisation
+	'--kiosk',
+] : [
 	'--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu',
 	// uncapped: the frame interval measures the work, not the display's refresh (--vsync keeps
 	// Chrome's 60 Hz pacing instead: the frame interval a player sees)
@@ -671,7 +697,7 @@ async function prepare( page, scene, evalJs, establish ) {
 		T.startMotion( def, orbit );
 		return { switchMs, t: performance.now() };
 
-	}, { def: SCENES[ scene ], orbit: ORBIT, evalJs, establish } );
+	}, { def: SCENES[ scene ], orbit: MOTION === 'orbit' ? ORBIT : 0, evalJs, establish } );
 
 }
 
@@ -806,6 +832,211 @@ async function measure( page, scene ) {
 
 }
 
+// ------------------------------------------------------------------ display mode
+
+// The real display (--display): the frames the compositor presented, from a trace of Chrome's
+// frame pipeline (each PipelineReporter frame the page's renderer presented, at its presentation
+// time), and an in-page sampler of every animation frame (its vblank time, whether the scene
+// rendered in it, the camera's heading), started for one measuring window.
+async function startDisplay( page ) {
+
+	const cdp = await page.context().newCDPSession( page );
+	const events = [];
+	cdp.on( 'Tracing.dataCollected', ( e ) => { for ( const x of e.value ) if ( x.name === 'PipelineReporter' || x.name === 'soomi-display-sync' ) events.push( x ); } );
+	const done = new Promise( ( resolve ) => cdp.once( 'Tracing.tracingComplete', resolve ) );
+	await cdp.send( 'Tracing.start', { traceConfig: { includedCategories: [ 'cc', 'benchmark', 'disabled-by-default-devtools.timeline.frame', 'blink.user_timing' ] } } );
+	// the trace's clock against the page's: a mark seen by both
+	const sync = await page.evaluate( () => {
+
+		const s = window.__SOOMI__;
+		const dir = s.camera.getWorldDirection( s.camera.position.clone() );
+		const samples = window.__displaySamples = [];
+		let on = true;
+		window.__displayStop = () => { on = false; return samples; };
+		// registered after the page's loop, so it runs after the tick in each frame
+		const step = ( time ) => {
+
+			if ( ! on ) return;
+			s.camera.getWorldDirection( dir );
+			samples.push( [ time, s.renderer.info.render.calls, Math.atan2( dir.x, dir.z ), s.camera.position.x, s.camera.position.z ] );
+			requestAnimationFrame( step );
+
+		};
+		requestAnimationFrame( step );
+		performance.mark( 'soomi-display-sync' );
+		return performance.now();
+
+	} );
+	return {
+		async stop( t0, t1 ) {
+
+			const samples = await page.evaluate( () => window.__displayStop() );
+			const pacing = await page.evaluate( () => window.__THREE_GAME_DIAGNOSTICS__?.pacing ?? null );
+			await cdp.send( 'Tracing.end' );
+			await done;
+			await cdp.detach();
+			return displayStats( events, sync, samples, pacing, t0, t1 );
+
+		},
+	};
+
+}
+
+// The camera dragged as a player drags it: through Chrome's input (CDP mouse events, dispatched
+// once per display refresh as real ones are), drags of 30 to 200 degrees a second with pauses, a
+// wheel zoom in and out and a flick it glides on from, repeated until `seconds` have passed.
+async function driveUser( page, seconds ) {
+
+	const view = await page.evaluate( () => ( { w: innerWidth, h: innerHeight } ) );
+	const cx = view.w * 0.45, cy = view.h / 2;
+	// OrbitControls turns a full circle per window height dragged
+	const pxPerDeg = view.h / 360;
+	const end = Date.now() + seconds * 1000;
+	const left = () => end - Date.now();
+	const pause = ( s ) => sleep( Math.max( Math.min( s * 1000, left() ), 0 ) );
+	const drag = async ( degX, degY, s ) => {
+
+		if ( left() <= 0 ) return;
+		s = Math.min( s, left() / 1000 );
+		const dx = degX * pxPerDeg * s, dy = degY * pxPerDeg * s;
+		// starting where the whole drag fits, clear of the GUI's corner
+		const x0 = Math.min( Math.max( cx - dx / 2, 40 ), view.w * 0.75 ), y0 = Math.min( Math.max( cy - dy / 2, 40 ), view.h - 40 );
+		await page.mouse.move( x0, y0 );
+		await page.mouse.down();
+		const started = Date.now();
+		for ( ;; ) {
+
+			const f = Math.min( ( Date.now() - started ) / 1000 / s, 1 );
+			await page.mouse.move( x0 + dx * f, y0 + dy * f );
+			if ( f >= 1 ) break;
+			await sleep( 4 );
+
+		}
+		await page.mouse.up();
+
+	};
+	const wheel = async ( notches, s, dir ) => {
+
+		await page.mouse.move( cx, cy );
+		for ( let i = 0; i < notches && left() > 0; i ++ ) {
+
+			await page.mouse.wheel( 0, dir * 100 );
+			await sleep( s * 1000 / notches );
+
+		}
+
+	};
+	while ( left() > 0 ) {
+
+		await pause( 0.6 );
+		await drag( - 60, 0, 2 );
+		await pause( 0.6 );
+		await drag( 120, 0, 1.5 );
+		await pause( 0.5 );
+		await drag( 0, 30, 1 );
+		await drag( - 90, - 10, 1.5 );
+		await pause( 0.8 );
+		await wheel( 8, 1, - 1 );
+		await pause( 0.4 );
+		await wheel( 8, 1, 1 );
+		await drag( 90, 0, 2 );
+		await pause( 0.8 );
+		await drag( - 200, 0, 0.4 );
+		await pause( 1.5 );
+
+	}
+
+}
+
+const r3 = ( x ) => Number.isFinite( x ) ? Math.round( x * 1000 ) / 1000 : null;
+
+// Intervals by display refreshes (1, 2, 3, 4 or more), as shares; and the share of intervals that
+// differ from the one before by half a refresh or more (the cadence changing: judder)
+function cadence( intervals, refresh ) {
+
+	const counts = { 1: 0, 2: 0, 3: 0, '4+': 0 };
+	for ( const x of intervals ) {
+
+		const n = Math.max( 1, Math.round( x / refresh ) );
+		counts[ n >= 4 ? '4+' : n ] ++;
+
+	}
+	let changes = 0;
+	for ( let i = 1; i < intervals.length; i ++ ) if ( Math.abs( intervals[ i ] - intervals[ i - 1 ] ) >= refresh * 0.5 ) changes ++;
+	return {
+		frames: intervals.length + 1, refreshes: Object.fromEntries( Object.entries( counts ).map( ( [ k, v ] ) => [ k, r3( v / Math.max( intervals.length, 1 ) ) ] ) ),
+		cadenceChanges: r3( changes / Math.max( intervals.length - 1, 1 ) ), median: r2( quantile( intervals, 0.5 ) ), max: r2( intervals.length ? Math.max( ...intervals ) : NaN ),
+	};
+
+}
+
+function displayStats( events, sync, samples, pacing, t0, t1 ) {
+
+	// the refresh period: the pacer's measure, else the median of the shortest vblank intervals
+	const vblanks = samples.slice( 1 ).map( ( k, i ) => k[ 0 ] - samples[ i ][ 0 ] ).filter( ( x ) => x > 2 && x < 50 );
+	const low = quantile( vblanks, 0.05 );
+	const refresh = pacing?.refreshMs ?? quantile( vblanks.filter( ( x ) => x < low * 1.5 ), 0.5 );
+	// rendered frames: the animation frames in which the scene drew
+	const rendered = samples.filter( ( k, i ) => i > 0 && k[ 1 ] !== samples[ i - 1 ][ 1 ] && k[ 0 ] >= t0 && k[ 0 ] < t1 );
+	const renderedIntervals = rendered.slice( 1 ).map( ( k, i ) => k[ 0 ] - rendered[ i ][ 0 ] );
+	// the camera's turning speed from one rendered frame to the next (frames turning at 20 deg/s or
+	// more): a steady drag should turn it by the same amount per unit of time
+	const speeds = [];
+	for ( let i = 1; i < rendered.length; i ++ ) {
+
+		let d = rendered[ i ][ 2 ] - rendered[ i - 1 ][ 2 ];
+		if ( d > Math.PI ) d -= 2 * Math.PI;
+		if ( d < - Math.PI ) d += 2 * Math.PI;
+		speeds.push( d * 180 / Math.PI / ( ( rendered[ i ][ 0 ] - rendered[ i - 1 ][ 0 ] ) / 1000 ) );
+
+	}
+	const changes = [];
+	for ( let i = 1; i < speeds.length; i ++ ) {
+
+		const a = speeds[ i - 1 ], b = speeds[ i ];
+		if ( Math.abs( a ) < 20 || Math.abs( b ) < 20 || Math.sign( a ) !== Math.sign( b ) ) continue;
+		changes.push( Math.abs( b - a ) / ( ( Math.abs( a ) + Math.abs( b ) ) / 2 ) );
+
+	}
+	// presented frames: the renderer's (the process with most main-thread frames) presented ones,
+	// at their presentation, within the window (by the sync mark)
+	const mark = events.find( ( e ) => e.name === 'soomi-display-sync' );
+	const offset = mark ? mark.ts / 1000 - sync : NaN;
+	const begins = new Map(), frames = [];
+	for ( const e of events ) {
+
+		if ( e.name !== 'PipelineReporter' ) continue;
+		const key = `${ e.pid }:${ e.id2?.local ?? e.id }`;
+		if ( e.ph === 'b' ) begins.set( key, e );
+		else if ( e.ph === 'e' && begins.has( key ) ) {
+
+			const b = begins.get( key );
+			begins.delete( key );
+			frames.push( { pid: e.pid, end: e.ts / 1000 - offset, fr: b.args?.frame_reporter ?? {} } );
+
+		}
+
+	}
+	const byPid = {};
+	for ( const f of frames ) if ( f.fr.has_main_animation ) byPid[ f.pid ] = ( byPid[ f.pid ] ?? 0 ) + 1;
+	const pid = Number( Object.entries( byPid ).sort( ( a, b ) => b[ 1 ] - a[ 1 ] )[ 0 ]?.[ 0 ] );
+	const shown = [ ...new Set( frames.filter( ( f ) => f.pid === pid && f.fr.has_main_animation && /PRESENTED/.test( f.fr.state ?? '' ) && f.end >= t0 && f.end < t1 )
+		.map( ( f ) => Math.round( f.end * 10 ) / 10 ) ) ].sort( ( a, b ) => a - b );
+	const presentedIntervals = shown.slice( 1 ).map( ( t, i ) => t - shown[ i ] ).filter( ( x ) => x > 1 );
+	return {
+		refresh: r2( refresh ), pacing,
+		rendered: cadence( renderedIntervals, refresh ),
+		presented: Number.isFinite( offset ) && shown.length > 1 ? cadence( presentedIntervals, refresh ) : null,
+		camera: { frames: changes.length, median: r3( quantile( changes, 0.5 ) ), p90: r3( quantile( changes, 0.9 ) ), p99: r3( quantile( changes, 0.99 ) ), over25: r3( changes.filter( ( x ) => x > 0.25 ).length / Math.max( changes.length, 1 ) ) },
+	};
+
+}
+
+const pct = ( x ) => Number.isFinite( x ) ? `${ Math.round( x * 1000 ) / 10 } %` : '–';
+const refreshText = ( c ) => c ? Object.entries( c.refreshes ).map( ( [ k, v ] ) => `${ k }: ${ pct( v ) }` ).join( ', ' ) : '–';
+const displayLog = ( scene, d ) => `${ scene.padEnd( 20 ) } display ${ d.refresh } ms refresh${ d.pacing ? `, paced to ${ d.pacing.divisor } (target ${ d.pacing.target })` : '' }: rendered ${ refreshText( d.rendered ) } (cadence changes ${ pct( d.rendered.cadenceChanges ) }); ` +
+	`presented ${ refreshText( d.presented ) } (cadence changes ${ pct( d.presented?.cadenceChanges ) }, max ${ d.presented?.max ?? '–' } ms); camera speed change per frame median ${ pct( d.camera.median ) }, p90 ${ pct( d.camera.p90 ) }, over 25 % ${ pct( d.camera.over25 ) }`;
+
 function plan( names ) {
 
 	// page loads: scenes sharing a query share a load (a weather change last), unless --fresh
@@ -873,16 +1104,18 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 		const { switchMs, t } = await prepare( page, scene, evalJs, true );
 		const compile = ( await warm( frames, [ t ], WARMUP ) )[ 0 ];
 		if ( SCALE_SETTLE > 0 ) compile.scaleSettle = await settleScale( page );
+		const display = DISPLAY ? await startDisplay( page ) : null;
 		const t0 = await page.evaluate( ( { change } ) => {
 
 			if ( change ) window.__SOOMI__.setWeather( change.weather, change.seconds );
 			return performance.now();
 
 		}, { change: def.change ?? null } );
-		const [ utilisation ] = await Promise.all( [ sampleGpuUtilisation( Math.max( SECONDS - 0.5, 0.5 ) ), sleep( SECONDS * 1000 ) ] );
+		const [ utilisation ] = await Promise.all( [ sampleGpuUtilisation( Math.max( SECONDS - 0.5, 0.5 ) ), MOTION === 'user' ? driveUser( page, SECONDS ) : sleep( SECONDS * 1000 ) ] );
 		const t1 = await frames.now();
+		const displayed = display ? await display.stop( t0, t1 ) : undefined;
 		if ( SHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
-		windows.push( { scene, t0, t1, switch: { ms: r2( switchMs ), ...compile }, utilisation } );
+		windows.push( { scene, t0, t1, switch: { ms: r2( switchMs ), ...compile }, utilisation, display: displayed } );
 		log( `${ scene.padEnd( 20 ) } switched in ${ Math.round( switchMs ) } ms, warmed ${ compile.seconds } s (${ compile.pipelines } pipelines, ${ compile.pipelineMs } ms JS, last ${ compile.lastCompileMs } ms after the switch)${ compile.scaleSettle ? `, scale settled at ${ compile.scaleSettle.scale } after ${ compile.scaleSettle.seconds } s more` : '' }` );
 
 	}
@@ -899,8 +1132,10 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 
 		const list = frames.in( w.t0, w.t1 );
 		results[ w.scene ] = { ...summarise( list ), profiler: { ...info, utilisation: w.utilisation }, switch: w.switch, gpuIdle: gpuIdle.idle?.mean ?? null, contended: gpuIdle.contended };
+		if ( w.display ) results[ w.scene ].display = w.display;
 		if ( RAW ) results[ w.scene ].raw = list;
 		log( sceneLog( w.scene, results[ w.scene ], `[gpu ${ w.utilisation?.mean ?? '?' } %] ` ) );
+		if ( w.display ) log( displayLog( w.scene, w.display ) );
 
 	}
 	loaded.startup.startup = await page.evaluate( () => window.__SOOMI_PROFILE__.info().startup );
@@ -1126,9 +1361,9 @@ function topGroups( r, n = 5 ) {
 function markdownProfile( meta, runs ) {
 
 	const lines = [ `# Frame profile: ${ meta.label }`, '', `${ meta.url } at ${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; ` +
-		`render ${ meta.render ?? '?' }; warm-up ${ meta.warmup } s, ${ meta.seconds } s measured per scene, orbit ${ meta.orbit } deg/s; ` +
+		`render ${ meta.render ?? '?' }; warm-up ${ meta.warmup } s, ${ meta.seconds } s measured per scene, ${ meta.motion === 'user' ? 'the camera dragged like a player\'s' : meta.motion === 'none' ? 'the camera still' : `orbit ${ meta.orbit } deg/s` }${ meta.display ? ', headed on the real display at its own refresh' : '' }; ` +
 		`GPU utilisation before the run ${ meta.gpuIdle?.idle?.mean ?? '?' } %${ meta.gpuIdle?.contended ? ` (CONTENDED: something else was rendering${ meta.gpuIdle.clients?.length ? `: ${ meta.gpuIdle.clients.map( ( c ) => `${ c.name.replace( / \(pid \d+\)/, '' ) } ${ c.percent } %` ).join( ', ' ) }` : '' })` : '' }; GPU timestamps ${ meta.timestamps === 'both' ? 'both (frame intervals without them, passes with them)' : meta.timestamps ? 'on' : 'off' }.`, '',
-		`Frame interval in ms (rAF to rAF, ${ meta.vsync ? 'under vsync at 60 Hz' : 'uncapped' }). ` +
+		`Frame interval in ms (rAF to rAF, ${ meta.display ? 'at the display\'s refresh' : meta.vsync ? 'under vsync at 60 Hz' : 'uncapped' }). ` +
 		'GPU busy: the time the frame\'s passes add to the GPU\'s timeline (median); ' +
 		'GPU p95: the 95th percentile of the GPU\'s own frame-to-frame interval. JS: the tick\'s own work (median), without the time it was ' +
 		'blocked in queue.submit, writeBuffer and getCurrentTexture while the GPU caught up. Passes: mean GPU ms per frame. Hitches: frames over 25 ms and over 1.5 times the ' +
@@ -1153,6 +1388,23 @@ function markdownProfile( meta, runs ) {
 
 		}
 		lines.push( '' );
+		if ( Object.values( run.scenes ).some( ( r ) => r.display ) ) {
+
+			lines.push( 'On the display: the intervals between the frames the scene rendered and between the frames the compositor presented, by display refreshes ' +
+				'(their shares), and the share of intervals that differ from the one before by half a refresh or more (cadence changes: judder at a steady pace). ' +
+				'Camera: how much the camera\'s turning speed changes from one rendered frame to the next while it turns (median, p90, share over 25 %).', '',
+				'| scene | refresh | rendered (1 / 2 / 3 / 4+) | cadence changes | presented (1 / 2 / 3 / 4+) | cadence changes | presented max | camera speed change | scale |', '|---|---|---|---|---|---|---|---|---|' );
+			const shares = ( c ) => c ? [ 1, 2, 3, '4+' ].map( ( n ) => pct( c.refreshes[ n ] ) ).join( ' / ' ) : '–';
+			for ( const [ scene, r ] of Object.entries( run.scenes ) ) {
+
+				const d = r.display;
+				if ( ! d ) continue;
+				lines.push( `| ${ scene } | ${ fmt( d.refresh ) } ms${ d.pacing ? `, paced ${ d.pacing.divisor }` : '' } | ${ shares( d.rendered ) } | ${ pct( d.rendered.cadenceChanges ) } | ${ shares( d.presented ) } | ${ pct( d.presented?.cadenceChanges ) } | ${ fmt( d.presented?.max ) } | ${ pct( d.camera.median ) } / ${ pct( d.camera.p90 ) } / ${ pct( d.camera.over25 ) } | ${ scaleText( r.renderScale ) } |` );
+
+			}
+			lines.push( '' );
+
+		}
 		const s = run.loads[ 0 ]?.startup;
 		if ( s ) lines.push( `Startup (${ k === 0 ? 'first load, cold shader cache' : 'first load of this run' }): ${ startupLine( s ) }`, '' );
 		const warm = run.loads.slice( 1 ).map( ( l ) => l.startup ).filter( Boolean );
@@ -1184,7 +1436,7 @@ function markdownProfile( meta, runs ) {
 		const a = meta.accept;
 		lines.push( '## Acceptance (60 fps)', '', `Pass: frame interval median and p95 at most ${ a.limit } ms (${ a.target } plus vblank jitter) and no frame over ${ a.maxFrame } ms in the ${ meta.seconds } s measured, ` +
 			`from the run ${ meta.timestampMode === 'on' && meta.hooks !== false ? 'with' : 'without' } GPU timestamps under vsync; p99, the maximum and the GPU busy time (median / p95, from the run with timestamps) are reported. ` +
-			'Headless 60 Hz stands in for a faster display (at 120 Hz a missed frame costs 25 ms, not 33): confirm a verdict once on the real display. ' +
+			'Headless 60 Hz shows whether the GPU holds 60 fps, not how a faster display paces the frames: check that with --display. ' +
 			'A contended scene (something else kept the GPU busy) that fails is INCONCLUSIVE, not FAIL, unless its GPU busy median is over the target: run it again on an idle GPU.', '',
 			`| ${ meta.scales ? 'render scale | ' : '' }scene | verdict | median | p95 | p99 | max | frames over ${ a.maxFrame } ms | GPU busy | frames' scale (with timestamps) | why |`, `|${ meta.scales ? '---|' : '' }---|---|---|---|---|---|---|---|---|---|` );
 		for ( const run of runs ) for ( const [ scene, r ] of Object.entries( run.scenes ) ) {
@@ -1262,8 +1514,9 @@ function startupLine( s ) {
 async function launch() {
 
 	const options = {
-		headless: true, ...( executablePath ? { executablePath } : { channel: 'chromium' } ), args: CHROME_ARGS,
-		viewport: { width: W, height: H }, deviceScaleFactor: SCALE,
+		headless: ! DISPLAY, ...( executablePath ? { executablePath } : { channel: 'chromium' } ), args: CHROME_ARGS,
+		// on the display the page takes the screen's size and pixel ratio, and Chrome its field trials
+		...( DISPLAY ? { viewport: null, ignoreDefaultArgs: [ '--disable-field-trial-config' ] } : { viewport: { width: W, height: H }, deviceScaleFactor: SCALE } ),
 	};
 	try {
 
@@ -1322,7 +1575,7 @@ async function main() {
 			const meta = {
 				label: LABEL, url: URL_A, viewport: { width: W, height: H, scale: SCALE }, quality: QUALITY, warmup: WARMUP, seconds: SECONDS, orbit: ORBIT,
 				chrome: version, args: CHROME_ARGS, gpuIdle, started: new Date().toISOString(), fresh: FRESH, eval: opt( 'eval', '' ), extraQuery: EXTRA_Q,
-				mode: TOGGLE ? 'toggle' : MODE, worldCache: WORLD_CACHE, vsync: VSYNC, timestampMode: TIMESTAMP_MODE, hooks: HOOKS,
+				mode: TOGGLE ? 'toggle' : MODE, worldCache: WORLD_CACHE, vsync: VSYNC, timestampMode: TIMESTAMP_MODE, hooks: HOOKS, display: DISPLAY, motion: MOTION,
 			};
 			const evals = [ opt( 'eval-a', opt( 'eval', '' ) ), opt( 'eval-b', opt( 'eval', '' ) ) ];
 			const tsModes = TIMESTAMP_MODE === 'both' ? [ true, false ] : [ TIMESTAMP_MODE !== 'off' ];
@@ -1396,6 +1649,7 @@ async function main() {
 
 				}
 				renderScale = null;
+				if ( DISPLAY ) meta.viewport = await page.evaluate( () => ( { width: innerWidth, height: innerHeight, scale: devicePixelRatio } ) );
 				if ( SCALES.length ) meta.scales = SCALES;
 				if ( ACCEPT ) {
 
@@ -1532,6 +1786,7 @@ function mergeModes( off, on ) {
 		scenes[ scene ] = {
 			...r, frames: o.frames, fps: o.fps, interval: o.interval, over16: o.over16, over25: o.over25, over25Count: o.over25Count, hitchThreshold: o.hitchThreshold, hitches: o.hitches,
 			js: o.js, jsWall: o.jsWall, submitWait: o.submitWait, waits: o.waits, outsideJs: o.outsideJs, outsideWait: o.outsideWait, contended: o.contended || r.contended, renderScale: o.renderScale,
+			...( o.display ? { display: o.display, displayWithTimestamps: r.display } : {} ),
 			withTimestamps: { frames: r.frames, fps: r.fps, interval: r.interval, over16: r.over16, over25: r.over25, over25Count: r.over25Count, hitches: r.hitches, js: r.js, renderScale: r.renderScale },
 			...( r.raw ? { raw: r.raw, rawWithoutTimestamps: o.raw } : {} ),
 		};
