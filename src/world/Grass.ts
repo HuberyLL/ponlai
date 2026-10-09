@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, dot, pow, clamp, fract, sin, select,
 	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, screenCoordinate, ivec2, varying, varyingProperty, uniform,
-	smoothstep as smoothstepN,
+	smoothstep as smoothstepN, storage, instanceIndex, normalLocal, transformNormal, instanceColor,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
@@ -17,6 +17,7 @@ import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { ALPHA_TO_COVERAGE, markVegetation } from './Foliage.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { GrassCull, cullInputs, type CullRange } from './GrassCull.ts';
 import type { Shared } from '../shared.ts';
 
 // Stylised meadow on the island top, a sward of two instanced tuft kinds. The lawn is a dense
@@ -204,13 +205,28 @@ const coverageDither = Fn( () => {
 
 } );
 
-function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
+// The tuft a vertex belongs to. The meadow's instance data lives in `GrassCull`'s storage buffers,
+// one slot per tuft (each batch from its own first slot, `grassBase`): the view camera's draws read
+// the slot from the culled list it wrote, every other draw (the rain's collision bake, a draw with
+// the cull switched off) takes each slot in turn, as an instanced draw of every tuft did.
+const cullBase = uniform( 0, 'uint' ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassBase ?? 0 );
+const cullOn = uniform( 0, 'uint' ).onObjectUpdate( ( { object } ) => object?.userData.grassCulled === true ? 1 : 0 );
+
+function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNodeMaterial {
 
 	// Alpha to coverage carries the widened blades' coverage (see `pixelWideBlade`); a blade at
 	// least `minWidth` wide keeps full coverage and renders as before. Without multisampling
 	// there is no coverage to lower, and the widened blades would draw solid: an ordered dither
 	// threshold per pixel keeps that share of a blade's pixels instead (`coverageDither`).
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.86, metalness: 0, side: THREE.DoubleSide, alphaToCoverage: ALPHA_TO_COVERAGE } );
+	const slot = instanceIndex.add( cullBase );
+	const tuftSlot = select( cullOn.equal( 1 ), storage( cull.visible, 'uint', cull.slots ).toReadOnly().element( slot ), slot ).toVar( 'grassTuft' );
+	const input = cullInputs( cull, tuftSlot );
+	// The tuft's instance data, read as the instanced attributes were: what the fragment stage
+	// reads passes as a varying, as an attribute did.
+	const ground0 = input.ground( 0 ), ground1 = input.ground( 1 ), ground2 = input.ground( 2 );
+	const skyVisibility = varying( ground0.x, 'vGrassSkyVisibility' ), rimCover = varying( ground0.z, 'vGrassRimCover' );
+	const soilCover = varying( ground0.y, 'vGrassSoilCover' ), tuftOrigin = varying( input.origin, 'vGrassTuftOrigin' );
 	mat.opacityNode = bladeCoverage;
 	if ( ! ALPHA_TO_COVERAGE ) mat.alphaTestNode = coverageDither();
 	markVegetation( mat );
@@ -218,14 +234,16 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const blade = attribute<'vec4'>( 'blade', 'vec4' );
 	const t = blade.x;
 	const t2 = t.mul( t );
-	// sway: gusts travel across the meadow, the tips move most (positionLocal is already placed
-	// by the instance here, i.e. in world space)
-	const p = positionLocal;
-	const soil = attribute<'float'>( 'soilCover', 'float' ).mul( soilUniforms.blend ).mul( soilUniforms.strength );
-	const tuft = attribute<'vec4'>( 'tuftOrigin', 'vec4' );
+	// sway: gusts travel across the meadow, the tips move most. `p` is the vertex placed by the
+	// tuft's transform, i.e. in world space (the mesh itself stays untransformed), computed as
+	// three's instancing did; held in a variable as three's was, which keeps the rounding of
+	// every expression built on it.
+	const p = input.matrix.mul( positionLocal ).xyz.toVar( 'grassPlaced' );
+	const soil = soilCover.mul( soilUniforms.blend ).mul( soilUniforms.strength );
+	const tuft = tuftOrigin;
 	const origin = tuft.xyz;
 	// Folding a thinned tuft into its root: a scale about the anchor, applied like the drowning.
-	const thin = attribute<'float'>( 'thin', 'float' );
+	const thin = ground1.w;
 	const kept = float( 1 ).sub( thin.mul( smoothstepN( grassUniforms.thinNear, grassUniforms.thinFar, length( cameraPosition.sub( origin ) ) ) ) );
 	// Keep every planting anchor. Narrower, slightly shorter shoots reveal the same soil
 	// pockets as the ground material, and a zero blend restores their original footprint.
@@ -247,12 +265,21 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// The blade's half width at this vertex in world space: its local offset from the centreline
 	// through the instance's own axes, then the same soil and drowning scale as `rooted` (an
 	// affine map of the position, so it scales offsets alike; the gust barely varies across a blade).
-	const across = attribute<'vec3'>( 'widthX', 'vec3' ).mul( blade.y ).add( attribute<'vec3'>( 'widthZ', 'vec3' ).mul( blade.z ) )
+	const across = ground1.xyz.mul( blade.y ).add( ground2.xyz.mul( blade.z ) )
 		.mul( vec3( float( 1 ).sub( soil.mul( 0.22 ) ), float( 1 ).sub( soil.mul( 0.06 ) ), float( 1 ).sub( soil.mul( 0.22 ) ) ) ).mul( drowned );
-	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, attribute<'float'>( 'rimEdge', 'float' ) );
+	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, ground0.w );
 	const rest = useRestPoseShadows( mat, rooted, pixelWideBlade( swayed, across, minWidth ) );
+	// The rest of three's instancing: the normal and the instance colour, before the blade moves.
+	const placed = mat.positionNode!;
+	mat.positionNode = Fn( () => {
+
+		normalLocal.assign( transformNormal( normalLocal, input.matrix ) );
+		instanceColor.assign( input.color );
+		return placed;
+
+	} )();
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
-	const cover = attribute<'float'>( 'rimCover', 'float' );
+	const cover = rimCover;
 	// Each blade shifts its value by up to +/-8 % and its hue a little toward yellow or blue
 	// green: a hash of the blade within its tuft and of the tuft's anchor, so neighbouring tufts
 	// of one geometry do not repeat the same light and dark blades.
@@ -268,7 +295,7 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
 	// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
-	mat.aoNode = mix( float( 0.55 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( attribute<'float'>( 'skyVisibility', 'float' ) );
+	mat.aoNode = mix( float( 0.55 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( skyVisibility );
 	// light through the blades: strongest when the grass stands against the sun
 	// Blades do not cast into the sun's shadow map; see MeadowCanopy.
 	// Per vertex (lower tiers) it takes the rest pose before the widening, as the shadows do; the
@@ -285,65 +312,23 @@ function grassMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; soil: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3 }
 
-// One instanced mesh per batch of tufts of one kind. One input buffer carries the scalar fields
-// and the width axes: separate buffers plus the tuft inputs and instance transform would exceed
-// WebGPU's default eight-buffer limit. `source` gives the tuft's own geometry; each mesh takes a
-// geometry of its own over the same buffers, since the instance inputs and the draw range belong
-// to it.
-function tuftMesh( source: THREE.BufferGeometry, material: THREE.Material, tufts: Tuft[], name: string ): THREE.InstancedMesh {
+// One instanced mesh per batch of tufts of one kind, over its own geometry (the draw range and the
+// indirect arguments belong to it) that shares the tuft's vertex buffers. Its instance data (the
+// transform, colour, ground inputs and anchor) live in `GrassCull`'s storage buffers from the
+// batch's first slot on, read by the material through the drawn tuft's slot; `instanceMatrix`
+// and `instanceColor` point at those buffers for code that looks for them, and since neither is an
+// instanced attribute three leaves the instancing to the material.
+function tuftMesh( source: THREE.BufferGeometry, material: THREE.Material, cull: GrassCull, range: CullRange, name: string ): THREE.InstancedMesh {
 
 	const geometry = new THREE.BufferGeometry();
 	for ( const key of [ 'position', 'normal', 'blade' ] ) geometry.setAttribute( key, source.getAttribute( key ) );
 	geometry.setIndex( source.getIndex() );
-	const n = tufts.length;
-	const mesh = new THREE.InstancedMesh( geometry, material, Math.max( n, 1 ) );
-	const ground = new THREE.InstancedInterleavedBuffer( new Float32Array( Math.max( n, 1 ) * 11 ), 11 );
-	const visibility = new THREE.InterleavedBufferAttribute( ground, 1, 0 );
-	const soilCover = new THREE.InterleavedBufferAttribute( ground, 1, 1 );
-	const covers = new THREE.InterleavedBufferAttribute( ground, 1, 2 );
-	geometry.setAttribute( 'skyVisibility', visibility );
-	geometry.setAttribute( 'soilCover', soilCover );
-	geometry.setAttribute( 'rimCover', covers );
-	// The instance transform's local x and z axes: a blade's width lies in that plane, and the
-	// vertex stage needs it in world space to keep thin blades a minimum width on screen (the
-	// instance matrix itself is not exposed to the material).
-	const widthX = new THREE.InterleavedBufferAttribute( ground, 3, 3 );
-	const widthZ = new THREE.InterleavedBufferAttribute( ground, 3, 6 );
-	geometry.setAttribute( 'widthX', widthX );
-	geometry.setAttribute( 'widthZ', widthZ );
-	// 1 on the plateau's outer rim, where blades stand against the sea. The opaque pass's MSAA
-	// edge pixels there resolve against the sky-coloured clear behind the island (the sea is drawn
-	// in a later, single-sampled pass), so every partly covered pixel a widened blade adds shows
-	// as a pale fringe over the sea; the rim keeps blades narrower.
-	const rimEdge = new THREE.InterleavedBufferAttribute( ground, 1, 9 );
-	geometry.setAttribute( 'rimEdge', rimEdge );
-	// 1 for the extra tufts that fold away with distance (grassUniforms.thinNear / thinFar)
-	geometry.setAttribute( 'thin', new THREE.InterleavedBufferAttribute( ground, 1, 10 ) );
-	// xyz: planting anchor; w: local canopy top above it, for the light through the blades
-	const tuftOrigin = new Float32Array( Math.max( n, 1 ) * 4 );
-	for ( let i = 0; i < n; i ++ ) {
-
-		const t = tufts[ i ];
-		visibility.setX( i, t.visibility );
-		soilCover.setX( i, t.soil );
-		covers.setX( i, t.cover );
-		const e = t.m.elements;
-		widthX.setXYZ( i, e[ 0 ], e[ 1 ], e[ 2 ] );
-		widthZ.setXYZ( i, e[ 8 ], e[ 9 ], e[ 10 ] );
-		rimEdge.setX( i, t.rimEdge );
-		ground.array[ i * 11 + 10 ] = t.thin;
-		t.origin.toArray( tuftOrigin, i * 4 );
-		tuftOrigin[ i * 4 + 3 ] = t.top;
-		mesh.setMatrixAt( i, t.m );
-		mesh.setColorAt( i, t.col );
-
-	}
-
-	ground.needsUpdate = true;
-	geometry.setAttribute( 'tuftOrigin', new THREE.InstancedBufferAttribute( tuftOrigin, 4 ) );
-	mesh.count = n;
-	mesh.instanceMatrix.needsUpdate = true;
-	if ( mesh.instanceColor ) mesh.instanceColor.needsUpdate = true;
+	geometry.userData.grassBase = range.start;
+	const mesh = new THREE.InstancedMesh( geometry, material, Math.max( range.count, 1 ) );
+	mesh.instanceMatrix.array = new Float32Array( 16 ); // replaced below; drop the copy InstancedMesh allocates
+	( mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
+	( mesh as unknown as { instanceColor: THREE.BufferAttribute } ).instanceColor = cull.colors;
+	mesh.count = range.count;
 	mesh.frustumCulled = false;
 	mesh.castShadow = false; // see MeadowCanopy
 	mesh.receiveShadow = true;
@@ -367,9 +352,14 @@ function tuftMesh( source: THREE.BufferGeometry, material: THREE.Material, tufts
 // larger island keeps more of its meadow in the nearer bands and saves less.
 // Other cameras (the rain's collision bake looks straight down, orthographic) see every tuft
 // with all its blades, as before.
+// The view camera's draws are then culled per tuft on the GPU (`GrassCull`): one compute pass
+// for all batches, before the first of them draws, and only when the view or the selection
+// changed; each batch draws its surviving tufts through indirect arguments, set on its geometry
+// for that draw alone, so any other mesh over the same geometry (the collision bake's proxies)
+// draws every tuft.
 const _cameraPosition = new THREE.Vector3();
 
-interface Batch { mesh: THREE.InstancedMesh; box: THREE.Box3; shape: TuftShape; thin: boolean; count: number }
+interface Batch { mesh: THREE.InstancedMesh; box: THREE.Box3; shape: TuftShape; thin: boolean; count: number; range: CullRange }
 
 function selectBatch( batch: Batch, camera: THREE.Camera ): void {
 
@@ -395,14 +385,40 @@ function selectBatch( batch: Batch, camera: THREE.Camera ): void {
 
 }
 
-function batchOf( source: THREE.BufferGeometry, shape: TuftShape, material: THREE.Material, tufts: Tuft[], name: string, thin = false ): Batch {
+function drawBatch( batches: Batch[], cull: GrassCull, batch: Batch, renderer: THREE.Renderer, camera: THREE.Camera ): void {
 
-	const mesh = tuftMesh( source, material, tufts, name );
+	// Off (`flags.grassCull = false`): every tuft, as an instanced draw of all of them.
+	const culled = ( camera as THREE.PerspectiveCamera ).isPerspectiveCamera && debugFlags.grassCull !== false;
+	if ( ! culled ) {
+
+		selectBatch( batch, camera );
+		batch.mesh.userData.grassCulled = false;
+		return;
+
+	}
+	// The first batch drawn for this view selects every batch and culls them all at once.
+	if ( batch === batches.find( ( b ) => b.range.count > 0 ) ) {
+
+		for ( const b of batches ) {
+
+			selectBatch( b, camera );
+			b.range.indexCount.value = b.mesh.geometry.drawRange.count;
+
+		}
+		cull.update( renderer, camera );
+
+	} else selectBatch( batch, camera );
+	batch.mesh.userData.grassCulled = true;
+	batch.mesh.geometry.setIndirect( cull.indirect, batch.range.indirectOffset );
+
+}
+
+function batchOf( source: THREE.BufferGeometry, shape: TuftShape, material: THREE.Material, cull: GrassCull, range: CullRange, tufts: Tuft[], name: string, thin = false ): Batch {
+
+	const mesh = tuftMesh( source, material, cull, range, name );
 	const box = new THREE.Box3();
 	for ( const t of tufts ) box.expandByPoint( t.origin );
-	const batch: Batch = { mesh, box, shape, thin, count: tufts.length };
-	mesh.onBeforeRender = ( _renderer, _scene, camera ) => selectBatch( batch, camera );
-	return batch;
+	return { mesh, box, shape, thin, count: tufts.length, range };
 
 }
 
@@ -528,25 +544,41 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 
 	}
 
-	const material = grassMaterial( shared );
 	const group = new THREE.Group();
 	group.name = 'grass';
 	const lawnGeometry = tuftGeometry( LAWN, 3 );
 	const tussock = { ...TUSSOCK, segs: grassQuality.tussockSegments };
 	const tussockGeometry = tuftGeometry( tussock, 17 );
+	// Root half widths of the widest blade, for the cull's bounds.
+	const halfWidth = ( shape: TuftShape ) => shape.w[ 1 ] * 0.5 + 0.004;
 	// The extra tufts of thick patches draw on their own, so they can be skipped as a whole.
-	const batches = [
-		batchOf( lawnGeometry, LAWN, material, lawn, 'grass-lawn' ),
-		batchOf( tussockGeometry, tussock, material, tussocks, 'grass-tussocks' ),
+	const kinds = [
+		{ geometry: lawnGeometry, shape: LAWN, tufts: lawn, name: 'grass-lawn', thin: false },
+		{ geometry: tussockGeometry, shape: tussock, tufts: tussocks, name: 'grass-tussocks', thin: false },
 	];
-	if ( lawnThin.length ) batches.push( batchOf( lawnGeometry, LAWN, material, lawnThin, 'grass-lawn-thin', true ) );
-	for ( const b of batches ) group.add( b.mesh );
+	if ( lawnThin.length ) kinds.push( { geometry: lawnGeometry, shape: LAWN, tufts: lawnThin, name: 'grass-lawn-thin', thin: true } );
+	const cull = new GrassCull( kinds.map( ( k ) => ( { tufts: k.tufts, geometry: k.geometry, halfWidth: halfWidth( k.shape ) } ) ), grassUniforms.thinFar );
+	const material = grassMaterial( shared, cull );
+	const batches = kinds.map( ( k, i ) => batchOf( k.geometry, k.shape, material, cull, cull.ranges[ i ], k.tufts, k.name, k.thin ) );
+	for ( const b of batches ) {
+
+		b.mesh.onBeforeRender = ( renderer, _scene, camera ) => drawBatch( batches, cull, b, renderer as unknown as THREE.Renderer, camera );
+		// the indirect arguments belong to this draw alone
+		b.mesh.onAfterRender = () => {
+
+			b.mesh.geometry.indirect = null;
+
+		};
+		group.add( b.mesh );
+
+	}
 	// for probes and tuning from the console ( __SOOMI__.grass )
 	group.userData.minWidth = grassUniforms.minWidth;
 	group.userData.rimMinWidth = grassUniforms.rimMinWidth;
 	group.userData.thinNear = grassUniforms.thinNear;
 	group.userData.thinFar = grassUniforms.thinFar;
 	group.userData.batches = batches;
+	group.userData.cull = cull;
 	return group;
 
 }
