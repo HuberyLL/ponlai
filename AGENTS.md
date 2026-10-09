@@ -186,8 +186,7 @@ stone exposed.
   pipelines at startup (`compileDraws` in `src/post/Warm.ts`), so a weather change or the first
   bolt builds none.
 - `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
-  and rain drawn into the same multisampled target (its samples discarded by the last pass into
-  it: the rain's colour and depth, or without rain the water's colour), the sea
+  and rain drawn into the same multisampled target (its samples discarded after the rain), the sea
   fog marched at half resolution over a baked bank map, the composite of air, fog, veil and shafts
   rendered once for the sharp image and both blooms, crepuscular rays and sun glare, bloom,
   tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale (`FSR.ts`: an EASU pass,
@@ -529,11 +528,9 @@ stone exposed.
   its result. Keep any filter that takes `dFdx` / `dFdy` out of `select()` / `If` branches.
 - Passes in `Pipeline.passes` are resized to the render by `sizeRtt`. The sea fog's reduced targets
   are sized by `AerialPerspective.setSize` and its bank map has a fixed size: keep new reduced or
-  fixed passes out of that list. The last pass into `sceneRT` discards its multisampled samples
-  through a hook on the backend's command encoder (three r186 opens one encoder per render pass):
-  the rain its colour and depth, or, without rain, the water its colour (the surface resolve
-  still reads the depth; `debugFlags.waterColourStore` keeps it for an A/B). A pass added after
-  them that reads `sceneRT`'s samples or depth must move the discard.
+  fixed passes out of that list. The last pass into `sceneRT` (the rain) discards its multisampled
+  samples through a hook on the backend's command encoder (three r186 opens one encoder per render
+  pass); a pass added after it that reads `sceneRT`'s samples or depth must move the discard.
 - `renderer.compileAsync` collects its draws and reads the render target synchronously, before its
   first await: set the target, call it, restore the target at once, then await (`compileDraws`).
   It builds a transparent double-sided material's two passes after restoring its side, as one
