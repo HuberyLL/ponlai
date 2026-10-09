@@ -956,11 +956,24 @@ if ( profiler ) {
 }
 mark( 'loop' );
 const animationLoop = profiler ? profiler.wrapLoop( tick ) : tick;
+dynamicResolution?.begin();
 // three's loop asks the pacer for its animation frames, so the frames it skips never reach it
 const animation = ( renderer as unknown as { _animation: { start(): void; stop(): void; setContext( context: unknown ): void } } )._animation;
 animation.setContext( pacer.context );
 renderer.setAnimationLoop( animationLoop );
-loading?.classList.add( 'done' );
+// High's first frames find its render scale behind the loading screen: from the nominal it jumps
+// to the scale the GPU's times call for within a second, out of sight (at most REVEAL_WAIT ms).
+const REVEAL_WAIT = 3000;
+const revealAt = performance.now() + REVEAL_WAIT;
+const reveal = () => {
+
+	const waiting = dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
+		! paused && ! resolution.full && performance.now() < revealAt;
+	if ( waiting ) setTimeout( reveal, 50 );
+	else loading?.classList.add( 'done' );
+
+};
+reveal();
 // setTime moves the (paused) clock, so captures can step through an animation in one page load
 const setTime = ( t: number ) => {
 

@@ -2,7 +2,7 @@ import type * as THREE from 'three/webgpu';
 
 // Dynamic resolution (high tier): the scene's render scale moves between the tier's maximum and a
 // floor so that the GPU's frame time stays inside the paced frame (a 60 Hz frame, `FramePacer.ts`),
-// without the scale ever jumping.
+// changing as seldom as it can: every change softens or sharpens the whole image at once.
 //
 // - The GPU time comes from timestamp queries (`GpuFrameTimer`, or the frame profiler's own when it
 //   runs), as the time the GPU was busy with each frame: every pass charged from the previous
@@ -11,32 +11,48 @@ import type * as THREE from 'three/webgpu';
 //   intervals overlap; summed they come to several times the frame. Without timestamp queries the
 //   frame intervals steer it instead (`sampleInterval`): missed vblanks step it down, and a long
 //   run without one steps it up, backing off each time a step up costs frames.
-// - It changes by one step (0.05) at a time, at most every HOLD seconds, so a change is gradual
-//   and softens or sharpens the whole frame at once. Frames far over the budget step it down after
-//   EMERGENCY_HOLD instead, so a sudden heavy scene (a jump to a storm) recovers in seconds.
-// - Hysteresis: it steps down when the window's high quantile of GPU time exceeds UPPER, and up
-//   only when that quantile, grown by the cost of the larger render (a pessimistic model: the
-//   per-pixel share of the frame scaled by the pixel count), stays under UPPER - MARGIN. A scale it
-//   had to leave stays barred for a while (BAR, doubled each time): a step back up to it then needs
-//   a wider margin, so it does not oscillate, yet a lighter scene still climbs.
+// - Down: when the window's high quantile of GPU time exceeds UPPER (at most every HOLD seconds, or
+//   after EMERGENCY_HOLD when the last frames run far over it), straight to the scale a model of the
+//   frame's cost predicts the window fits at (a fixed share plus a share that follows the pixel
+//   count), in one change rather than a step at a time: a heavier view once cost three changes in
+//   a row, and the first seconds after a load a dozen.
+// - Up: only after UP_HOLD seconds at the scale with a full window, by at most UP_STEPS steps, when
+//   the same model (with a smaller fixed share, so the growth is predicted pessimistically) keeps
+//   the window under UPPER - MARGIN. A scale it had to leave stays barred for a while (BAR, doubled
+//   each time): a step back up to it needs a wider margin, so it does not oscillate, yet a lighter
+//   scene still climbs.
+// - Until its first decision (`settling`) it decides as soon as a few frames are in, so the page can
+//   keep its loading screen up over the first jump from the maximum.
 // The page renders at the tier's nominal scale whenever the scale is pinned (`?dpr`, the GUI's
 // full resolution) or the scene is paused, so paused frames and captures render at the reference
 // scale whatever scale the running page had reached.
 
 // GPU busy time (ms) the window's high quantile must stay under, for a 60 Hz frame (16.7 ms; the
 // budgets scale with the paced interval). The slack covers the spread between frames (periodic
-// bakes and map redraws land on single frames) and the browser's pacing, which missed vblanks
-// from about 16 ms of GPU time.
+// bakes and map redraws land on single frames) and the compositor: on a 120 Hz display frames
+// whose GPU work ran past about 14 ms were presented a refresh late now and then, and the next a
+// refresh early (a tenth of the intervals changed cadence at a median of 14.3 ms, a thirtieth at
+// 13.1 ms). Held under this, the median settles near 13.5 ms; a budget of 14.2 ms took 0.7 ms off
+// the median without a measurable change in the presented cadence.
 const UPPER = 15.2;
 const MARGIN = 0.4;
 // the quantile of the window's frames that steers it (its few worst frames must fit too)
 const QUANTILE = 0.97;
-// share of a frame's GPU time that does not scale with the render's pixels (shadow maps, FFT,
-// sky bakes, canvas-sized output and upscale), taken low so a step up is predicted pessimistically
-const FIXED_SHARE = 0.35;
-// seconds between changes, after a change before its frames count, and the least and most frames
-// in its window (the most about 2.5 s at 60 Hz, so a new scene soon replaces the old one's)
+// The part of a frame's GPU time that does not follow the render's pixels (shadow maps, FFT, sky
+// bakes, canvas-sized output and upscale). A step up takes it as a share of the frame, low, so the
+// growth is predicted pessimistically. A step down takes it in milliseconds of a 60 Hz frame:
+// around the settle point it came to over half the frame (8.5 ms of 13.5 - 16 ms, two scales apart
+// in one view), so a frame twice over the budget at the maximum is not cut to the floor as a share
+// of the frame would have it.
+const FIXED_SHARE = 0.35, FIXED_DOWN = 8.4;
+// seconds between steps down, after a change before its frames count, and the least and most
+// frames in its window (the most about 2.5 s at 60 Hz, so a new scene soon replaces the old one's)
 const HOLD = 2, SETTLE = 0.4, MIN_SAMPLES = 45, WINDOW = 150;
+// a step up: seconds after any change, the frames its window needs, and the most steps at once
+const UP_HOLD = 4, UP_SAMPLES = 120, UP_STEPS = 2;
+// frames a decision takes while settling (after SETTLE seconds at the scale), and how far under
+// UPPER their median must come (the window's high quantile lies about that far above it)
+const SETTLING_FRAMES = 20, SETTLING_GAP = 1.5;
 // frames far over the budget: the median of the last EMERGENCY_FRAMES over UPPER + EMERGENCY_OVER
 const EMERGENCY_HOLD = 0.5, EMERGENCY_FRAMES = 12, EMERGENCY_OVER = 2;
 // seconds a scale it stepped down from stays barred, doubling each time it is barred again; while
@@ -68,6 +84,8 @@ export class DynamicResolution {
 	source: 'gpu' | 'frames' = 'frames';
 	/** false holds the scale where it is (debug: with `force`, to time one scale). */
 	enabled = true;
+	/** true until its first decision from the GPU's times (the page keeps its loading screen up). */
+	settling = true;
 	/** The last frames' GPU busy times (ms), whatever their scale (shown in the GUI). */
 	readonly observed: number[] = [];
 	private samples: number[] = [];
@@ -151,6 +169,17 @@ export class DynamicResolution {
 
 	}
 
+	/** The frame loop starts (or restarts after a stop): its first frames (first-use work, whole
+	 * bakes) do not count, and the next decision comes as soon as a few frames are in. */
+	begin( now = performance.now() / 1000 ): void {
+
+		this.lastChange = now;
+		this.samples.length = 0;
+		this.intervals.length = 0;
+		this.settling = true;
+
+	}
+
 	/** Sets the scale (a debug override, or a seek to a known settle point); clears the window. */
 	force( scale: number, now = performance.now() / 1000 ): void {
 
@@ -162,25 +191,52 @@ export class DynamicResolution {
 
 		const s = this.samples;
 		const since = now - this.lastChange;
-		if ( since >= EMERGENCY_HOLD && s.length >= EMERGENCY_FRAMES && this.scale > this.floor ) {
+		// settling, it decides as soon as a few frames are in, until a window fits
+		if ( this.settling ) {
+
+			if ( s.length < SETTLING_FRAMES ) return false;
+			// the median: the first frames after a load carry one-off work (whole bakes, first draws)
+			const typical = quantile( s, 0.5 ) / this.budget;
+			if ( typical > UPPER - SETTLING_GAP && this.scale > this.floor ) return this.down( now, typical, UPPER - SETTLING_GAP );
+			this.settling = false;
+			return false;
+
+		}
+		if ( since >= EMERGENCY_HOLD && s.length >= EMERGENCY_FRAMES ) {
 
 			const recent = quantile( s.slice( - EMERGENCY_FRAMES ), 0.5 ) / this.budget;
-			if ( recent > UPPER + EMERGENCY_OVER ) return this.down( now );
+			if ( recent > UPPER + EMERGENCY_OVER && this.scale > this.floor ) return this.down( now, Math.max( recent, quantile( s, QUANTILE ) / this.budget ) );
 
 		}
 		if ( since < HOLD || s.length < MIN_SAMPLES ) return false;
 		const high = quantile( s, QUANTILE ) / this.budget;
-		if ( high > UPPER && this.scale > this.floor ) return this.down( now );
-		if ( this.scale < this.max ) {
+		if ( high > UPPER && this.scale > this.floor ) return this.down( now, high );
+		if ( this.scale < this.max && since >= UP_HOLD && s.length >= UP_SAMPLES ) {
 
-			const up = this.round( Math.min( this.scale + this.step, this.max ) );
-			const growth = FIXED_SHARE + ( 1 - FIXED_SHARE ) * ( up * up ) / ( this.scale * this.scale );
-			// a scale it recently had to leave needs a wider margin (the load may have fallen since)
-			const margin = this.barred( up, now ) ? MARGIN + BAR_MARGIN : MARGIN;
-			if ( high * growth < UPPER - margin ) return this.up( up, now );
+			// the largest of the next few scales up the model predicts fits; a scale it recently had
+			// to leave (or one it would jump past) needs a wider margin, as the load may have fallen since
+			let margin = MARGIN;
+			let best = 0;
+			for ( let k = 1; k <= UP_STEPS; k ++ ) {
+
+				const up = this.round( Math.min( this.scale + k * this.step, this.max ) );
+				if ( up <= this.scale || up === best ) break;
+				if ( this.barred( up, now ) ) margin = MARGIN + BAR_MARGIN;
+				if ( high * this.growth( up, FIXED_SHARE ) < UPPER - margin ) best = up;
+				else break;
+
+			}
+			if ( best > this.scale ) return this.up( best, now );
 
 		}
 		return false;
+
+	}
+
+	// the cost of rendering at `scale` relative to the current one, by the model above
+	private growth( scale: number, fixed: number ): number {
+
+		return fixed + ( 1 - fixed ) * ( scale * scale ) / ( this.scale * this.scale );
 
 	}
 
@@ -203,13 +259,23 @@ export class DynamicResolution {
 
 	}
 
-	private down( now: number ): boolean {
+	/** Steps down, to the largest scale the model predicts frames costing `high` now (ms, at a 60 Hz
+	 * budget) to fit at under `target`; one step without a cost (the frame-interval fallback). */
+	private down( now: number, high = NaN, target = UPPER - MARGIN * 0.5 ): boolean {
 
 		// the scale it leaves cost too much: keep away from it for a while, longer each time
 		const bar = this.bars.get( this.scale );
 		const seconds = bar && now - bar.until < BAR_MAX ? Math.min( bar.seconds * 2, BAR_MAX ) : BAR;
 		this.bars.set( this.scale, { until: now + seconds, seconds } );
-		this.change( this.round( Math.max( this.scale - this.step, this.floor ) ), now );
+		let scale = this.round( Math.max( this.scale - this.step, this.floor ) );
+		if ( high > 0 ) {
+
+			const fixed = Math.min( FIXED_DOWN, 0.8 * high );
+			const cost = ( x: number ) => fixed + ( high - fixed ) * ( x * x ) / ( this.scale * this.scale );
+			while ( scale > this.floor && cost( scale ) > target ) scale = this.round( Math.max( scale - this.step, this.floor ) );
+
+		}
+		this.change( scale, now );
 		return true;
 
 	}
