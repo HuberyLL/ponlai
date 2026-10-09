@@ -367,20 +367,31 @@ stone exposed.
   budget and low at 1280x720. High's is dynamic (`DynamicResolution.ts`): from the display's ratio
   (up to 1.5) down to a floor of 0.6 in steps of 0.05, steered by the GPU's frame time (timestamp
   queries, read as the time the GPU was busy with each frame; the frame intervals without them)
-  against the paced frame's budget (15.2 ms of a 60 Hz frame for the window's 97th percentile).
+  against the paced interval: the window's 90th percentile must stay under the interval less
+  1.8 ms (14.9 ms at 60 fps, 23.2 at 40). On a 120 Hz display the share of frames presented a
+  refresh late held its floor of 1-2 % until that quantile passed about 14.5 ms and rose steeply
+  past it (4 % at 15.1 - 15.4 ms, 13 % at 16.3, 31 % at 17.5); the 97th percentile it steered
+  before sits on the periodic bake frames, which hardly follow the pixel count. The GPU's clock
+  stays at its top step at every scale while frames are paced (its performance states, read
+  through IOReport), so the GPU time follows the scale; another page or app drawing at the same
+  time lengthens it, and the scale then goes down as it should.
   Every change softens or sharpens the whole image, so it changes as seldom as it can: down when
-  the window passes the budget (at most every 2 s, sooner when frames run far over it), straight to
-  the scale a cost model predicts the window fits at (a fixed part of about half the budget plus a
-  part that follows the pixel count), in one change; up only after 4 s at a scale with a full
-  window, by at most two steps, when a pessimistic estimate of the larger render stays under the
-  budget with a margin; a scale it had to leave needs a wider margin for a while, so it does not
-  oscillate. Its first decision comes behind the loading screen, which waits for it (at most 3 s):
-  from the nominal ratio it jumps once to the scale the first frames call for. On a 120 Hz display
-  the scale now changes once in the first quarter minute after a load (about ten single steps
-  before), and under scripted drags that switch views and zoom about 12 times a minute (16 before);
-  steady drags in one view left it alone; the rest follows the cost of the views (the horizon view
-  costs more than the island's). A change only
-  resizes the frame graph's targets: no pipeline is built and no frame is dropped (the cloud view
+  the window passes its limit (at most every 1.5 s, sooner when frames take the whole interval),
+  straight to the scale a cost model predicts lands under the interval less 2.4 ms (a fixed 6.8 ms,
+  fitted on the display, plus a part that follows the pixel count), in one change; up after 4 s at
+  a scale, by at most two steps, when the same model predicts the larger render lands there. A
+  scale it had to leave needs a wider margin for a while, and one it stepped up to and had to leave
+  at once is not tried again until its bar runs out (8 s, doubling up to 64 s), so a noisy load does
+  not make it oscillate; the bars expire, so the scale climbs back once a heavy view or another
+  page's load is gone and never drifts only down. Its first decision comes behind the loading
+  screen, which waits for it (at most 3 s): from the nominal ratio it jumps once to the scale the
+  first frames call for. On a 120 Hz display, in a player's normal window (four fifths of the
+  screen's height) dragged over the island, it holds 1.05 (1.0 before, with five times the
+  changes) at as few late frames, and 1.5 at `frameRate=40`; full screen it holds 0.9 in fair
+  weather and 0.8 in a storm (0.85 and 0.7 before) under drags that switch views and zoom, which
+  change its scale about 15 times a minute (as before): it follows the cost of the views (the
+  horizon view and a close zoom cost more than the island's). A change only resizes the frame
+  graph's targets: no pipeline is built and no frame is dropped (the cloud view
   on high is sized from the display, so its kernels never rebuild). Paused, under `dpr` or with
   the GUI's full resolution it renders at its nominal ratio, so paused frames and captures render at
   the reference scale whatever scale the running page had reached, and match the reference image.
@@ -403,6 +414,11 @@ stone exposed.
   length (`OrbitFrameControls`): three's OrbitControls damps on every `update()` and its pointer
   and wheel handlers call it on every event, so with input at the display's refresh a frame took
   one to three damping steps by chance and a steady drag turned the camera in uneven steps.
+  A hidden page renders nothing: the loop stops while the document is hidden and starts when it
+  shows (unless it was stopped or started otherwise meanwhile, as the profiler's pages are).
+  Browsers stop a hidden tab's animation frames themselves, but an app's embedded browser kept
+  running them: a page left in a hidden pane rendered high at 60 fps and took about half the GPU
+  from the page on screen, whose scale fell from about 1.0 to its floor of 0.6.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
 - The tone curve is PBR Neutral with hue-kept highlights (`neutral-hue` in `src/post/Pipeline.ts`):
@@ -515,7 +531,11 @@ stone exposed.
   tier's own settings (high with its dynamic scale, measured at its settle point with
   `--scale-settle 5`; the report gives each scene's scale), and check how a change plays on a fast
   display with `--display` (pacing, cadence, the scale's changes under drags). Report contended
-  runs as such.
+  runs as such: check `node tools/gpu-lock.mjs gpu` before each run (and during it when other
+  windows stay on screen). A player's window is not full screen: other apps stay visible
+  and may keep drawing (a Soomi page in an app's hidden browser pane took half the GPU and held the
+  player's scale at its floor), so check a change in a normal window too, not only `--kiosk`.
+  Headless at 60 Hz matched the display's GPU times within about 5 %.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
   most 100 characters, and the body explaining why. Types: `feat`, `fix`, `perf`, `refactor`,
