@@ -983,6 +983,8 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
+// set while the loop stands still because the page is hidden (see below)
+let hiddenStop = false;
 // Stops and restarts the frame loop, so the profiler can keep two pages in one browser and time one
 // at a time: stopped, the page requests no frames and leaves the GPU idle once the frames already
 // queued and a sky bake in flight are done (the bake is given 2 s). The clock resumes where it
@@ -992,6 +994,7 @@ const loop = {
 	running: true,
 	async stop(): Promise<void> {
 
+		hiddenStop = false;
 		if ( ! loop.running ) return;
 		loop.running = false;
 		animation.stop();
@@ -1002,6 +1005,7 @@ const loop = {
 	},
 	start(): void {
 
+		hiddenStop = false;
 		if ( loop.running ) return;
 		loop.running = true;
 		clock.reset();
@@ -1009,5 +1013,27 @@ const loop = {
 
 	},
 };
+// A hidden page draws nothing. Browsers stop a hidden tab's animation frames, but an app's embedded
+// browser can keep running them: a page left in a hidden pane rendered at 60 fps and took half the
+// GPU from the page on screen, whose dynamic scale fell to its floor. The loop stops while the
+// document is hidden and starts again when it shows, unless it was stopped or started otherwise
+// meanwhile (the profiler's two pages).
+document.addEventListener( 'visibilitychange', () => {
+
+	if ( document.hidden ) {
+
+		if ( ! loop.running ) return;
+		void loop.stop();
+		hiddenStop = true;
+
+	} else if ( hiddenStop ) {
+
+		loop.start();
+		// its first frames (cloud history, a whole bake) do not steer the scale
+		dynamicResolution?.begin();
+
+	}
+
+} );
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
 	quality, dynamicResolution, pacer, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };

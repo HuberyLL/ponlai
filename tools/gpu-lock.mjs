@@ -469,7 +469,10 @@ export function gpuUtilisation() {
 }
 
 // GPU time per process: the Apple GPU driver keeps each client's accumulated GPU time (ns) in the
-// I/O registry, so two snapshots name whatever else is rendering.
+// I/O registry, so two snapshots name whatever else is rendering. ioreg lists a client's
+// properties alphabetically, its "AppUsage" before its "IOUserClientCreator", so the time is
+// attributed per client node (from one "+-o" line to the next): read line by line it went to the
+// client listed before, and named the wrong process (another app's idle client) for a busy one.
 function gpuTimes() {
 
 	return new Promise( ( resolve ) => {
@@ -478,19 +481,23 @@ function gpuTimes() {
 
 			if ( error ) return resolve( null );
 			const times = new Map();
-			let creator = null;
+			let creator = null, ns = 0;
+			const flush = () => {
+
+				if ( creator ) times.set( creator, ( times.get( creator ) ?? 0 ) + ns );
+				creator = null;
+				ns = 0;
+
+			};
 			for ( const line of stdout.split( '\n' ) ) {
 
+				if ( line.includes( '+-o ' ) ) { flush(); continue; }
 				const c = line.match( /"IOUserClientCreator" = "pid (\d+), ([^"]*)"/ );
 				if ( c ) { creator = `${ c[ 2 ] } (pid ${ c[ 1 ] })`; continue; }
-				if ( creator && line.includes( '"AppUsage"' ) ) {
-
-					const ns = [ ...line.matchAll( /"accumulatedGPUTime"=(\d+)/g ) ].reduce( ( a, m ) => a + Number( m[ 1 ] ), 0 );
-					times.set( creator, ( times.get( creator ) ?? 0 ) + ns );
-
-				}
+				if ( line.includes( '"AppUsage"' ) ) ns += [ ...line.matchAll( /"accumulatedGPUTime"=(\d+)/g ) ].reduce( ( a, m ) => a + Number( m[ 1 ] ), 0 );
 
 			}
+			flush();
 			resolve( times );
 
 		} );

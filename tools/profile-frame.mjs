@@ -81,7 +81,11 @@
 //   showed a sixth of the frames 8.3 ms apart and a third of the intervals changing cadence (before
 //   the frame pacer): the headless run does not stand in for a faster display. A window appears on
 //   the screen for the run; keep other pages and animated windows closed (the window server itself
-//   took 15-30 % of the GPU's time during these runs).
+//   took 15-30 % of the GPU's time during these runs). `--window WxH` opens a normal window of that
+//   outer size instead (a player's, with its tab strip and toolbar): the other windows stay on
+//   screen, and a page drawing in one of them (an app's hidden browser pane kept rendering a second
+//   Soomi page) shares the GPU and lowers high's scale. Full screen covers them, and they drew less:
+//   the app with that pane took a tenth of the GPU beside a window, a hundredth behind full screen.
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
 // numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
@@ -151,6 +155,10 @@ if ( flags.has( '--list' ) ) {
 // 120 Hz display stays 120 Hz), the camera dragged like a player's (`--motion user`), and the frames
 // the compositor presented read from a trace (see the header)
 const DISPLAY = flags.has( '--display' );
+// --window WxH (with --display): a normal window of that outer size instead of full screen, as a
+// player's: the other windows stay on screen, and whatever they draw shares the GPU
+const WINDOW = opt( 'window', '' );
+if ( WINDOW && ! ( DISPLAY && /^\d+x\d+$/.test( WINDOW ) ) ) throw new Error( '--window WxH goes with --display' );
 const MOTION = opt( 'motion', DISPLAY ? 'user' : 'orbit' );
 if ( ! [ 'user', 'orbit', 'none' ].includes( MOTION ) ) throw new Error( '--motion user | orbit | none' );
 if ( MOTION === 'user' && ! DISPLAY ) throw new Error( '--motion user drives a headed page: give --display' );
@@ -228,7 +236,10 @@ const OUT = opt( 'out', path.join( 'artifacts/perf', LABEL ) );
 
 const SYSTEM_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const executablePath = process.env.CHROME_PATH || ( existsSync( SYSTEM_CHROME ) ? SYSTEM_CHROME : undefined );
-const CHROME_ARGS = DISPLAY ? [
+const CHROME_ARGS = DISPLAY ? WINDOW ? [
+	// a player's Chrome in a window of its own size, its tab strip and toolbar included
+	`--window-size=${ WINDOW.replace( 'x', ',' ) }`, '--window-position=0,0',
+] : [
 	// a player's Chrome: full screen without its bars (the window's size from the start), its own
 	// vsync and timestamp quantisation
 	'--kiosk',
