@@ -81,6 +81,7 @@ interface Frame {
 	calls: number;
 	triangles: number;
 	finishedAt: number;
+	scale: number;
 }
 
 /** A finished frame, as read by the profiling tool. Times in milliseconds. */
@@ -105,6 +106,7 @@ export interface FrameRecord {
 	pipelineMs: number; // JS time spent creating them
 	calls: number;
 	triangles: number;
+	scale: number; // the scene's render scale the frame was drawn at (`renderScale` then)
 	groups: Record<string, number>;
 	detail?: Record<string, number>;
 	raw?: [ string, string, number, number, number ][]; // group, what, start, end (ms from the frame's first start), charge
@@ -150,6 +152,10 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 	class FrameProfiler extends Base {
 
 		readonly timestamps: boolean;
+		/** The page's render scale, recorded with each frame as it starts. */
+		renderScale = NaN;
+		/** Called with each frame as it finishes (the page's dynamic resolution reads its GPU time). */
+		onRecord: ( ( record: FrameRecord ) => void ) | null = null;
 		private targets = new WeakMap<object, string>();
 		private objects = new WeakMap<object, { label: string; target?: object }[]>();
 		private patterns: [ RegExp, string ][] = [];
@@ -413,7 +419,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			this.context = null;
 			this.frame = {
 				id: this.nodeFrame.frameId, time: 0, now: performance.now(), js: 0, jsWall: 0, wait: 0, waits: { submit: 0, write: 0, texture: 0 }, outside: 0, outsideWait: 0, gap: NaN, passes: [], pending: 0,
-				pipelines: 0, pipelineMs: 0, calls: 0, triangles: 0, finishedAt: 0,
+				pipelines: 0, pipelineMs: 0, calls: 0, triangles: 0, finishedAt: 0, scale: this.renderScale,
 			};
 			this.pipelineCount = 0;
 			this.pipelineMs = 0;
@@ -611,7 +617,9 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 				this.open.shift();
 				for ( const pass of pending ) this.byUid.delete( pass.uid );
 				this.failed.late += pending.length;
-				this.done.push( this.record( frame, pending.length ) );
+				const record = this.record( frame, pending.length );
+				this.done.push( record );
+				this.onRecord?.( record );
 				if ( this.done.length > 20000 ) this.done.splice( 0, this.done.length - 20000 );
 
 			}
@@ -665,7 +673,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 				js: frame.js, jsWall: frame.jsWall, submitWait: frame.wait, waits: frame.waits, outsideJs: frame.outside, outsideWait: frame.outsideWait, gap: frame.gap,
 				gpu, gpuInterval: complete && this.lastComplete ? end - this.lastEnd : NaN,
 				span: timed.length ? end - first : 0, passes: frame.passes.length, missing: this.timestamps ? missing : 0,
-				pipelines: frame.pipelines, pipelineMs: frame.pipelineMs, calls: frame.calls, triangles: frame.triangles, groups,
+				pipelines: frame.pipelines, pipelineMs: frame.pipelineMs, calls: frame.calls, triangles: frame.triangles, scale: frame.scale, groups,
 			};
 			if ( this.detail ) record.detail = detail;
 			if ( this.raw ) record.raw = frame.passes.map( ( p ) => [ p.group, p.name, p.start - first, p.end - first, charges.get( p ) ?? NaN ] );

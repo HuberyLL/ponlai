@@ -12,7 +12,7 @@ import {
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE } from '../lighting/Radiometry.ts';
-import { Clouds, EVOLVE_PERIOD } from './Clouds.ts';
+import { Clouds, EVOLVE_PERIOD, type CloudViewScale } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -416,13 +416,11 @@ export class Sky {
 
 	}
 
-	setQuality( quality: 'low' | 'medium' | 'high' ): void {
+	/** The cloud view's resolution, a share of the render or of the display (`CloudViewScale`; the
+	 * quality tier's `cloudView`). High's share of the display keeps the view's size, and so its
+	 * kernels, while the render's scale moves, and does not soften the clouds a second time. */
+	setCloudView( scale: CloudViewScale ): void {
 
-		// High's cloud view is a share of the display (0.58 of the render high draws at its nominal
-		// ratio), so a lower render scale does not soften the clouds a second time; medium and low
-		// keep their share of the render until the quality tiers give them budgets of their own.
-		const scale = { low: { render: 0.4 }, medium: { render: 0.5 }, high: { display: 0.58 } }[ quality ];
-		if ( scale === undefined ) throw new RangeError( `Unknown sky quality: ${ quality }` );
 		// Fixed targets keep sampler dimensions and both PMREM endpoints compatible while
 		// quality changes. Cloud march steps and the caller's bake cadence set the GPU budget.
 		this.clouds.setViewScale( scale );

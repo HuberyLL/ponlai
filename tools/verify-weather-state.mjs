@@ -1,7 +1,8 @@
 // CPU-only transition contracts; Node's native TypeScript stripping needs no browser/GPU.
 // Run: node --experimental-strip-types tools/verify-weather-state.mjs
 import assert from 'node:assert/strict';
-import { Weather, WEATHER_PRESETS, WEATHER_QUALITY } from '../src/sky/Weather.ts';
+import { Weather, WEATHER_PRESETS } from '../src/sky/Weather.ts';
+import { QUALITY } from '../src/Quality.ts';
 
 const close = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const keys = Object.keys( WEATHER_PRESETS.clear );
@@ -117,6 +118,6 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 	clearing.update( 600 );
 	assert.ok( clearing.state.showers < 0.01, 'showers must clear within minutes' );
 }
-assert.ok( WEATHER_QUALITY.low.cloudSteps < WEATHER_QUALITY.high.cloudSteps );
-assert.ok( WEATHER_QUALITY.low.rainDrops < WEATHER_QUALITY.high.rainDrops );
+assert.ok( QUALITY.low.cloudMarch.viewSteps < QUALITY.high.cloudMarch.viewSteps );
+assert.ok( QUALITY.low.rainDrops < QUALITY.high.rainDrops );
 console.log( 'weather state: transition, interruption, pause, presets, heading wrap, auto chain, moisture, lingering showers, ranges and validation passed' );

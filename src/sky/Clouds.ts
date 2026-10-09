@@ -1661,10 +1661,12 @@ export class Clouds {
 
 		} else {
 
-			// The render high draws at its nominal ratio, never more than the render itself.
+			// A share (at most 1) of the render high draws at its nominal ratio. The size follows the
+			// display alone, not the render: high's dynamic resolution moves the render's scale, and a
+			// view that followed it would be rebuilt, with its kernels, at every step.
 			const nominal = Math.min( this.display.ratio, 1.5 ) * scale.display;
-			w = Math.min( this.display.width * nominal, width );
-			h = Math.min( this.display.height * nominal, height );
+			w = this.display.width * nominal;
+			h = this.display.height * nominal;
 
 		}
 		return [ Math.max( 8, Math.round( w ) ), Math.max( 8, Math.round( h ) ) ];

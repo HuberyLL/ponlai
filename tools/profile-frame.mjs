@@ -10,6 +10,7 @@
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s]
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
+//        [--scale-settle s]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
 //        [--slices 8] [--slice 1.5] [--settle 1]                 (two pages, alternating slices)
 //   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
@@ -64,6 +65,10 @@
 //   60 Hz, and the settle points of a dynamic resolution). The url and `--q` must not set `dpr`
 //   themselves (the page reads the first of a repeated option); a scale above the display's pixel
 //   ratio is capped by the page, and the run warns when the render's ratio differs from the scale.
+// - scale settle (`--scale-settle s`): a tier with a dynamic render scale (high) moves it by the
+//   GPU's frame time; after a scene's warm-up the run waits until it has held for s seconds (at
+//   most 60), so the scene is measured at its settle point. Each scene's results give the scale
+//   its frames were drawn at (median, range and changes) beside the frame times.
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
 // numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
@@ -93,7 +98,7 @@ import { withGpuLock, waitForIdleGpu, sampleGpuUtilisation } from './gpu-lock.mj
 const argv = process.argv.slice( 2 );
 const flags = new Set( argv.filter( ( a ) => a.startsWith( '--' ) ) );
 const VALUE_FLAGS = new Set( [ 'report', 'scenes', 'scene', 'w', 'h', 'scale', 'quality', 'warmup', 'seconds', 'orbit', 'eval', 'eval-a', 'eval-b', 'repeat', 'out', 'label', 'q', 'compare', 'idle-wait', 'idle-threshold', 'timestamps', 'hooks',
-	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales' ] );
+	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle' ] );
 const opt = ( name, fallback ) => {
 
 	const i = argv.indexOf( '--' + name );
@@ -143,6 +148,9 @@ const BLOCK = Math.max( 4, Number( opt( 'block', 60 ) ) ), BLOCKS = Math.max( 2,
 // the order of slices and toggle blocks: balanced against a drift over the run (0 = A, 1 = B)
 const ORDER = [ 0, 1, 1, 0, 1, 0, 0, 1 ];
 const WORLD_CACHE = opt( 'world-cache', 'on' ) !== 'off';
+// --scale-settle s: after a scene's warm-up, wait until a dynamic render scale (high's) has not
+// moved for s seconds (at most 60 s), so the scene is measured at its settle point
+const SCALE_SETTLE = Number( opt( 'scale-settle', 0 ) );
 const PROFILE_DIR = opt( 'profile-dir', path.join( os.tmpdir(), 'soomi-profile-frame-chrome' ) );
 const REPEAT = Math.max( 1, Number( opt( 'repeat', 1 ) ) );
 const EXTRA_Q = opt( 'q', '' );
@@ -304,9 +312,15 @@ function summarise( frames ) {
 		return causes;
 
 	};
+	// the render scale the frames were drawn at (a dynamic resolution moves it): its median, range
+	// and the changes within the window
+	const scales = frames.map( ( f ) => f.scale ).filter( Number.isFinite );
+	const renderScale = scales.length ? { median: r2( quantile( scales, 0.5 ) ), min: r2( Math.min( ...scales ) ), max: r2( Math.max( ...scales ) ),
+		changes: scales.filter( ( x, i ) => i > 0 && x !== scales[ i - 1 ] ).length } : null;
 	return {
 		frames: frames.length,
 		fps: r2( 1000 / mean( intervals ) ),
+		renderScale,
 		interval: stats( intervals ),
 		over16: r2( intervals.filter( ( x ) => x > 16.7 ).length / intervals.length ),
 		over25: r2( intervals.filter( ( x ) => x > 25 ).length / intervals.length ),
@@ -390,6 +404,8 @@ function acceptance( r ) {
 		median: r.interval.median, p95: r.interval.p95, p99: r.interval.p99, max: r.interval.max, framesOver25: r.over25Count, frames: r.frames,
 		// the GPU's busy time per frame, from the run with timestamps (null without one)
 		gpuBusy: r.gpu?.median ?? null, gpuBusyP95: r.gpu?.p95 ?? null, contended,
+		// the render scale of the measured frames (and of the run with timestamps), where it moves
+		scale: r.renderScale ?? null, scaleWithTimestamps: r.withTimestamps?.renderScale ?? null,
 	};
 
 }
@@ -736,6 +752,31 @@ async function warm( frames, since, seconds ) {
 
 }
 
+// Waits until the page's dynamic render scale has held for SCALE_SETTLE seconds; returns the
+// seconds waited and the scale it holds (null without a dynamic scale).
+async function settleScale( page ) {
+
+	// (the quiet time counts from the switch at the earliest: the scale may not have moved yet)
+	const started = Date.now();
+	for ( ;; ) {
+
+		const state = await page.evaluate( () => {
+
+			const d = window.__SOOMI__?.dynamicResolution;
+			if ( ! d ) return null;
+			const last = d.changes.length ? d.changes[ d.changes.length - 1 ].at : - Infinity;
+			return { scale: d.scale, quiet: performance.now() / 1000 - last };
+
+		} );
+		const waited = ( Date.now() - started ) / 1000;
+		if ( ! state ) return null;
+		if ( Math.min( state.quiet, waited ) >= SCALE_SETTLE || waited >= 60 ) return { seconds: r2( waited ), scale: state.scale };
+		await sleep( 250 );
+
+	}
+
+}
+
 async function measure( page, scene ) {
 
 	const def = SCENES[ scene ];
@@ -781,7 +822,8 @@ function plan( names ) {
 
 }
 
-const sceneLog = ( scene, r, extra = '' ) => `${ scene.padEnd( 20 ) } ${ extra }${ VSYNC ? `>25 ms ${ r.over25Count }  max ${ r.interval.max }  ` : '' }median ${ r.interval.median } p95 ${ r.interval.p95 } p99 ${ r.interval.p99 } ms  gpu busy ${ r.gpu.median } (gpu interval ${ r.gpuInterval.median } p95 ${ r.gpuInterval.p95 })  js ${ r.js.median } (+ ${ r.submitWait.median } blocked)  frames ${ r.frames }  hitches ${ r.hitches.count } / gpu ${ r.gpuHitches.count }  missing ${ r.missingPasses }  top ${ topGroups( r, 3 ) }`;
+const scaleText = ( s ) => s ? s.min === s.max ? `${ s.median }` : `${ s.median } (${ s.min }-${ s.max }, ${ s.changes } changes)` : '–';
+const sceneLog = ( scene, r, extra = '' ) => `${ scene.padEnd( 20 ) } ${ extra }scale ${ scaleText( r.renderScale ) }  ${ VSYNC ? `>25 ms ${ r.over25Count }  max ${ r.interval.max }  ` : '' }median ${ r.interval.median } p95 ${ r.interval.p95 } p99 ${ r.interval.p99 } ms  gpu busy ${ r.gpu.median } (gpu interval ${ r.gpuInterval.median } p95 ${ r.gpuInterval.p95 })  js ${ r.js.median } (+ ${ r.submitWait.median } blocked)  frames ${ r.frames }  hitches ${ r.hitches.count } / gpu ${ r.gpuHitches.count }  missing ${ r.missingPasses }  top ${ topGroups( r, 3 ) }`;
 
 // reload mode: a fresh page load per group of scenes
 async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ), shotSuffix = '', timestamps = TIMESTAMP_MODE !== 'off' ) {
@@ -829,6 +871,7 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 		const def = SCENES[ scene ];
 		const { switchMs, t } = await prepare( page, scene, evalJs, true );
 		const compile = ( await warm( frames, [ t ], WARMUP ) )[ 0 ];
+		if ( SCALE_SETTLE > 0 ) compile.scaleSettle = await settleScale( page );
 		const t0 = await page.evaluate( ( { change } ) => {
 
 			if ( change ) window.__SOOMI__.setWeather( change.weather, change.seconds );
@@ -839,7 +882,7 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 		const t1 = await frames.now();
 		if ( SHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
 		windows.push( { scene, t0, t1, switch: { ms: r2( switchMs ), ...compile }, utilisation } );
-		log( `${ scene.padEnd( 20 ) } switched in ${ Math.round( switchMs ) } ms, warmed ${ compile.seconds } s (${ compile.pipelines } pipelines, ${ compile.pipelineMs } ms JS, last ${ compile.lastCompileMs } ms after the switch)` );
+		log( `${ scene.padEnd( 20 ) } switched in ${ Math.round( switchMs ) } ms, warmed ${ compile.seconds } s (${ compile.pipelines } pipelines, ${ compile.pipelineMs } ms JS, last ${ compile.lastCompileMs } ms after the switch)${ compile.scaleSettle ? `, scale settled at ${ compile.scaleSettle.scale } after ${ compile.scaleSettle.seconds } s more` : '' }` );
 
 	}
 	await frames.settle( windows[ windows.length - 1 ].t1 );
@@ -1142,13 +1185,13 @@ function markdownProfile( meta, runs ) {
 			`from the run ${ meta.timestampMode === 'on' && meta.hooks !== false ? 'with' : 'without' } GPU timestamps under vsync; p99, the maximum and the GPU busy time (median / p95, from the run with timestamps) are reported. ` +
 			'Headless 60 Hz stands in for a faster display (at 120 Hz a missed frame costs 25 ms, not 33): confirm a verdict once on the real display. ' +
 			'A contended scene (something else kept the GPU busy) that fails is INCONCLUSIVE, not FAIL, unless its GPU busy median is over the target: run it again on an idle GPU.', '',
-			`| ${ meta.scales ? 'render scale | ' : '' }scene | verdict | median | p95 | p99 | max | frames over ${ a.maxFrame } ms | GPU busy | why |`, `|${ meta.scales ? '---|' : '' }---|---|---|---|---|---|---|---|---|` );
+			`| ${ meta.scales ? 'render scale | ' : '' }scene | verdict | median | p95 | p99 | max | frames over ${ a.maxFrame } ms | GPU busy | frames' scale (with timestamps) | why |`, `|${ meta.scales ? '---|' : '' }---|---|---|---|---|---|---|---|---|---|` );
 		for ( const run of runs ) for ( const [ scene, r ] of Object.entries( run.scenes ) ) {
 
 			const v = r.accept;
 			if ( ! v ) continue;
 			const verdict = v.verdict ?? ( v.pass ? 'PASS' : 'FAIL' );
-			lines.push( `| ${ meta.scales ? `${ run.scale } | ` : '' }${ scene } | ${ verdict === 'FAIL' ? '**FAIL**' : verdict } | ${ fmt( v.median ) } | ${ fmt( v.p95 ) } | ${ fmt( v.p99 ) } | ${ fmt( v.max ) } | ${ v.framesOver25 } of ${ v.frames } | ${ fmt( v.gpuBusy ) } / ${ fmt( v.gpuBusyP95 ) } | ${ v.reasons.join( ', ' ) } |` );
+			lines.push( `| ${ meta.scales ? `${ run.scale } | ` : '' }${ scene } | ${ verdict === 'FAIL' ? '**FAIL**' : verdict } | ${ fmt( v.median ) } | ${ fmt( v.p95 ) } | ${ fmt( v.p99 ) } | ${ fmt( v.max ) } | ${ v.framesOver25 } of ${ v.frames } | ${ fmt( v.gpuBusy ) } / ${ fmt( v.gpuBusyP95 ) } | ${ scaleText( v.scale ) } (${ scaleText( v.scaleWithTimestamps ) }) | ${ v.reasons.join( ', ' ) } |` );
 
 		}
 		lines.push( '' );
@@ -1343,7 +1386,7 @@ async function main() {
 
 							r.accept = acceptance( r );
 							const a = r.accept;
-							log( `accept ${ scale !== null ? `dpr ${ scale } ` : '' }${ scene.padEnd( 20 ) } ${ a.verdict }  median ${ a.median } p95 ${ a.p95 } p99 ${ a.p99 } max ${ a.max } ms, ${ a.framesOver25 } of ${ a.frames } frames over ${ ACCEPT_MAX } ms, gpu busy ${ a.gpuBusy ?? '–' } (p95 ${ a.gpuBusyP95 ?? '–' })${ a.pass ? '' : ` (${ a.reasons.join( ', ' ) })` }` );
+							log( `accept ${ scale !== null ? `dpr ${ scale } ` : '' }${ scene.padEnd( 20 ) } ${ a.verdict }  median ${ a.median } p95 ${ a.p95 } p99 ${ a.p99 } max ${ a.max } ms, ${ a.framesOver25 } of ${ a.frames } frames over ${ ACCEPT_MAX } ms, gpu busy ${ a.gpuBusy ?? '–' } (p95 ${ a.gpuBusyP95 ?? '–' }), scale ${ scaleText( a.scale ) } (${ scaleText( a.scaleWithTimestamps ) })${ a.pass ? '' : ` (${ a.reasons.join( ', ' ) })` }` );
 
 						}
 						runs.push( result );
@@ -1487,8 +1530,8 @@ function mergeModes( off, on ) {
 		const o = off.scenes[ scene ];
 		scenes[ scene ] = {
 			...r, frames: o.frames, fps: o.fps, interval: o.interval, over16: o.over16, over25: o.over25, over25Count: o.over25Count, hitchThreshold: o.hitchThreshold, hitches: o.hitches,
-			js: o.js, jsWall: o.jsWall, submitWait: o.submitWait, waits: o.waits, outsideJs: o.outsideJs, outsideWait: o.outsideWait, contended: o.contended || r.contended,
-			withTimestamps: { frames: r.frames, fps: r.fps, interval: r.interval, over16: r.over16, over25: r.over25, over25Count: r.over25Count, hitches: r.hitches, js: r.js },
+			js: o.js, jsWall: o.jsWall, submitWait: o.submitWait, waits: o.waits, outsideJs: o.outsideJs, outsideWait: o.outsideWait, contended: o.contended || r.contended, renderScale: o.renderScale,
+			withTimestamps: { frames: r.frames, fps: r.fps, interval: r.interval, over16: r.over16, over25: r.over25, over25Count: r.over25Count, hitches: r.hitches, js: r.js, renderScale: r.renderScale },
 			...( r.raw ? { raw: r.raw, rawWithoutTimestamps: o.raw } : {} ),
 		};
 
