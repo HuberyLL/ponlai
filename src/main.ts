@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
+import { OrbitFrameControls } from './camera/OrbitFrameControls.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, type WeatherName } from './sky/Weather.ts';
@@ -105,14 +105,15 @@ const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 600
 const target = new THREE.Vector3( 1.5, 0.5, 1.0 );
 const view = { distance: Number( params.get( 'dist' ) ?? 58 ), polar: Number( params.get( 'polar' ) ?? 50 ), azimuth: Number( params.get( 'az' ) ?? 318 ) };
 camera.position.setFromSphericalCoords( view.distance, THREE.MathUtils.degToRad( view.polar ), THREE.MathUtils.degToRad( view.azimuth ) ).add( target );
-const controls = new OrbitControls( camera, renderer.domElement );
+// the orbit's damping advances once per rendered frame, by its length (OrbitFrameControls.ts)
+const controls = new OrbitFrameControls( camera, renderer.domElement );
 controls.target.copy( target );
 controls.enableDamping = true;
-controls.dampingFactor = 0.06;
+controls.damping = 0.06;
 controls.minDistance = 22;
 controls.maxDistance = 190;
 controls.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
-controls.update();
+controls.settle();
 const initialCameraPosition = camera.position.clone();
 const initialCameraQuaternion = camera.quaternion.clone();
 const initialCameraFov = camera.fov;
@@ -469,10 +470,7 @@ const viewDirection = new THREE.Vector3();
 function settleOrbit(): void {
 
 	// Drain residual orbit damping before changing ownership or jumping to a preset.
-	const damping = controls.enableDamping;
-	controls.enableDamping = false;
-	controls.update();
-	controls.enableDamping = damping;
+	controls.settle();
 
 }
 
@@ -504,7 +502,7 @@ function setCameraMode( mode: string ): void {
 	// Sharp sky details are essential when inspecting stars and the lunar disk.
 	S.dof = freeControls.enabled ? 0 : orbitDof;
 	applyOrbitLimit();
-	if ( controls.enabled ) controls.update();
+	if ( controls.enabled ) controls.settle();
 	renderer.domElement.style.cursor = freeControls.enabled ? 'grab' : '';
 
 }
@@ -541,7 +539,7 @@ function setCameraView( view: CameraView ): void {
 	}
 	camera.updateProjectionMatrix();
 	applyOrbitLimit();
-	if ( controls.enabled ) controls.update();
+	if ( controls.enabled ) controls.settle();
 
 }
 
@@ -787,7 +785,7 @@ function tick(): void {
 	weather.update( paused ? 0 : rawDt );
 	weatherView.preset = weather.target;
 	if ( freeControls.enabled ) freeControls.update( rawDt );
-	else controls.update();
+	else controls.advance( dt );
 
 	renderer.info.reset();
 	// Sun, moon, key light and grade follow the clock every frame; only the baked reflection,
