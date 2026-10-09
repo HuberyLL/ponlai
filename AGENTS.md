@@ -61,11 +61,11 @@ stone exposed.
   `angleGate`, and the rain's drop count. Every default in the modules themselves is high's.
 - `node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
   [--timestamps on|off|both] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
-  [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none]]` profiles a
-  production build (`npm run build && npm run preview`; the url defaults to its port) in headless
-  Chrome (`CHROME_PATH`, else the system Chrome) with the frame rate uncapped, or at 60 Hz with
-  `--vsync` (the intervals a player sees; uncapped, a GPU-bound scene's p95 is mostly pacing
-  noise). It plays a matrix of named scenes
+  [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]`
+  profiles a production build (`npm run build && npm run preview`; the url defaults to its port)
+  in headless Chrome (`CHROME_PATH`, else the system Chrome) with the frame rate uncapped, or at
+  60 Hz with `--vsync` (the intervals a player sees; uncapped, a GPU-bound scene's p95 is mostly
+  pacing noise). It plays a matrix of named scenes
   (`--list`: fair, golden, horizon, sky, overcast, rain, storm, fog, night, close over the
   meadow, a weather front), each with the clock running, fixed weather and a slow orbit, and writes
   `artifacts/perf/<label>/` (profile.json, summary.md): frame interval median, p95 and p99, GPU
@@ -87,8 +87,9 @@ stone exposed.
   a faster display paces the frames: every scene passed it while a 120 Hz display showed a sixth of
   the frames 8.3 ms apart, a third of the intervals changing cadence and the dynamic scale moving
   about 16 times a minute under a player's drags. `--display` measures that: headed system Chrome
-  full screen (`--kiosk`) at the display's own size, pixel ratio and refresh, the camera dragged
-  like a player's through Chrome's input (`--motion user`, the default there: drags of 30 to
+  full screen (`--kiosk`; `--window WxH` opens a normal window of that outer size, as a player's,
+  with the other windows on screen) at the display's own size, pixel ratio and refresh, the camera
+  dragged like a player's through Chrome's input (`--motion user`, the default there: drags of 30 to
   200 deg/s with pauses, a wheel zoom, a flick; 20 s per scene), and per scene, by display
   refreshes, the intervals between the frames the scene rendered and between those the compositor
   presented (from a trace of Chrome's frame pipeline), the share of intervals that change cadence,
