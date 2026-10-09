@@ -284,12 +284,41 @@ stone exposed.
   groups. Their sites come from fields and the meadow's area (one tree per about 120 m^2, one
   group per about 13 m^2). They keep off the islander's walk and out of the puddle hollows
   (`PuddleHollows.ts` repeats `puddleField`'s hollows on the CPU: change both together), draw from
-  their own random stream (the rim bushes' stream also places the rim trails), sway with the rim
-  bushes' wind, cast into the sun's map and stop the rain. A limb casts whole or not at all: limbs
+  their own random stream (the rim bushes' stream also places the rim trails), sway with the
+  plants' wind, cast into the sun's map and stop the rain. A limb casts whole or not at all: limbs
   that leave their parent 3 cm or more in radius cast; thinner twigs, shrub stems and stalks do
   not. Around their stems the turf, grass and flowers lose ambient light (baked on the CPU into the
   island's occlusion and the anchors' sky visibility), so they stand in the meadow rather than on
   it.
+- All vegetation moves in one wind field (`windField` in `Wind.ts`): a
+  tileable gust map (two channels of periodic noise, ranked to an even spread) scrolled with the
+  wind's integrated along-wind travel, its gust fronts long across the wind (16 m along, 28 m
+  across) and finer eddies running 1.25 times faster inside them, so gusts visibly sweep the
+  meadow and change as they go. It gives a lean (tip offset over height) from the wind's pressure,
+  ( speed / fair )^2, times a calm share plus the gust's, eased toward a maximum: still air is the
+  rest pose, a fair day leans 0.03 between gusts and 0.13 in one, a storm 0.2 and 0.6. Plants
+  answer it in Crysis's layers (Sousa, GPU Gems 3 ch. 16): the whole plant bends from its root
+  with the field at the root, every vertex keeping its distance from it (`mainBend`), and sways
+  about the lean at its own rate (shrubs 0.9 Hz, trees half that); sprays, fronds and leaf stalks
+  swing on their own phase from where they leave the plant; leaf edges and tips flutter along
+  their normals, faster as the wind rises. Grass tufts bend with the field at their root and their
+  normals turn with the bend, so a gust shows as a sheen; flowers and the turf skirt follow the
+  same field. Rim trails lean and swing like pendulums but may be pressed toward the wall by
+  3 cm at most, and a gust lifts them off it. Everything is a function of the wind's integrated
+  clocks and travel (`clock`, `flutter`, `gustScroll`, wrapped where every rate completes whole
+  cycles), so a paused frame and a seek repeat exactly; shadows and the rain's collision map keep
+  the rest pose. The grass cull pads each tuft's sphere by twice its origin's offset from the
+  sphere's centre, since the bend turns every vertex about that origin. Each mesh keeps the old
+  global-sine sway's material for A/Bs (`flags.windLegacy`, URL `windLegacy`; `WindVariants.ts`),
+  and the depth prepass copies both.
+- For motion vectors (TAA) every wind displacement is a function of the wind's state alone, its
+  vertex inputs bound inside: each vegetation material records it with `setWindDisplacement`
+  (`material.userData.windDisplacement( state )`, read by `windDisplacement( material )`), where
+  `state` is `shared.wind` for the frame being drawn or `shared.wind.previous` (the same uniforms
+  as the last rendered frame had them, set by `Wind.update`; equal to the current ones while
+  paused and after a seek, so a jump leaves no motion). Evaluate it in the material's position
+  stage (its rest inputs read `positionLocal` before three assigns the swayed position); the
+  grass's widening keeps the current camera's.
 - Grass blades do not cast into the sun's shadow map (they are narrower than a texel and flicker as
   the sun moves); the meadow shades itself and its turf through `MeadowCanopy`. Stems, leaf stalks
   and twigs (a few millimetres across) stay out of it too. The map is fitted to the island's
