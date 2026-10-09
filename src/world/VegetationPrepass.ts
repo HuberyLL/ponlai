@@ -118,13 +118,16 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		depth.renderOrder = mesh.renderOrder - 2;
 		depth.visible = false;
 		// The grass picks its instances and blade count as it is drawn (Grass.ts); the copy draws
-		// first, so it makes the same choice for the same camera.
+		// first, so it makes the same choice for the same camera. It reads the culled list only
+		// when the mesh does (`grassCulled`): otherwise it would draw the first tufts in slot order
+		// and the shaded draw's equal test would fail over most of the meadow.
 		const before = mesh.onBeforeRender;
 		depth.onBeforeRender = ( renderer, s, camera, geometry, mat, group ) => {
 
 			before.call( mesh, renderer, s, camera, geometry, mat, group );
 			if ( ( depth as THREE.InstancedMesh ).isInstancedMesh ) ( depth as THREE.InstancedMesh ).count = ( mesh as THREE.InstancedMesh ).count;
 			depth.userData.bladeGain = mesh.userData.bladeGain;
+			depth.userData.grassCulled = mesh.userData.grassCulled;
 
 		};
 		// a child: it follows the mesh's transform and visibility
