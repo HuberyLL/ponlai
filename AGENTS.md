@@ -130,7 +130,15 @@ stone exposed.
   vegetation anchors; instanced grass, rim bushes and flowers on the island top, a turf skirt over
   the lip, with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds
   on the lip; shrub groups (round shrubs, broad-leaved clumps, ferns) and small trees, each grown
-  from its own seed and merged into one mesh (`Plants.ts`, sited by `PlantSites.ts`).
+  from its own seed and merged into one mesh (`Plants.ts`, sited by `PlantSites.ts`). The
+  alpha-to-coverage vegetation (grass, bushes, plants, rim leaves) draws after a depth prepass
+  (`VegetationPrepass.ts`): a depth-only copy of each mesh with the same vertex stage, alpha and
+  coverage draws first, and the shaded mesh tests depth for equality without coverage, alpha test
+  or depth writes, so hidden blades and leaves are not shaded. The meadow's tuft instance data
+  live in storage buffers (`GrassCull.ts`); before the view camera draws the meadow a compute pass
+  culls the tufts against the frustum (and the thin tufts past their fold) into an
+  order-preserving list and each batch's indirect draw arguments, so off-screen tufts run no
+  vertex work.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
@@ -176,7 +184,8 @@ stone exposed.
   pipelines at startup (`compileDraws` in `src/post/Warm.ts`), so a weather change or the first
   bolt builds none.
 - `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
-  and rain drawn into the same multisampled target (its samples discarded after the rain), the sea
+  and rain drawn into the same multisampled target (its samples discarded by the last pass into
+  it: the rain's colour and depth, or without rain the water's colour), the sea
   fog marched at half resolution over a baked bank map, the composite of air, fog, veil and shafts
   rendered once for the sharp image and both blooms, crepuscular rays and sun glare, bloom,
   tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale (`FSR.ts`: an EASU pass,
@@ -278,7 +287,24 @@ stone exposed.
   (`msaa=1`), leaves take a plain alpha test and grass blades an ordered 4x4 dither in place of
   alpha to coverage (`ALPHA_TO_COVERAGE` in `Foliage.ts`), the blades kept one pixel wide rather
   than two (a blade dithered across two pixels reads as a dotted line). Vegetation materials carry
-  `userData.vegetation` (`markVegetation`) for passes that treat them apart.
+  `userData.vegetation` (`markVegetation`) for passes that treat them apart; the terrain's meadow
+  detail is flagged `userData.meadowDetail` instead, so it never takes the vegetation's shadow
+  filter.
+- At 4x the vegetation's coverage is decided by the depth prepass alone; the shaded vegetation
+  draws as plain opaque geometry limited by equal depth to the prepass's samples, so each blade
+  and leaf covers exactly the samples it did. Its visible samples are shaded as an ordinary
+  pipeline shades them (a little crisper inside the canopy than a coverage pipeline, the same
+  brightness). `debugFlags.vegPrepass = false` (URL `vegPrepass=0`) brings back the single
+  coverage pass, `vegPrepassOpaque = false` (`vegPrepass=coverage`) keeps coverage in the shaded
+  draw. A depth copy follows its mesh's per-draw choices (blade count, `bladeGain`, the culled
+  list), so the equal test holds for every batch.
+- The view camera's grass draws are culled per tuft on the GPU by a padded bounding sphere (the
+  widening's 15 half widths, sway, standing water's sink) and compacted by a scan, never an
+  atomic append, so the draw order, alpha to coverage and paused frames match a draw of every
+  tuft; the dispatch is skipped while the view and the blade selection are unchanged. Indirect
+  arguments are set on a batch's geometry for its own draw only: other draws over the same
+  geometry (the rain's collision proxies, orthographic cameras) draw every tuft.
+  `flags.grassCull = false` draws every tuft through the same storage path.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
   Weather only scales the wave cascades' amplitude; it never rebuilds the wave spectrum. Storm foam
@@ -495,9 +521,11 @@ stone exposed.
   its result. Keep any filter that takes `dFdx` / `dFdy` out of `select()` / `If` branches.
 - Passes in `Pipeline.passes` are resized to the render by `sizeRtt`. The sea fog's reduced targets
   are sized by `AerialPerspective.setSize` and its bank map has a fixed size: keep new reduced or
-  fixed passes out of that list. The last pass into `sceneRT` (the rain) discards its multisampled
-  samples through a hook on the backend's command encoder (three r186 opens one encoder per render
-  pass); a pass added after it that reads `sceneRT`'s samples or depth must move the discard.
+  fixed passes out of that list. The last pass into `sceneRT` discards its multisampled samples
+  through a hook on the backend's command encoder (three r186 opens one encoder per render pass):
+  the rain its colour and depth, or, without rain, the water its colour (the surface resolve
+  still reads the depth; `debugFlags.waterColourStore` keeps it for an A/B). A pass added after
+  them that reads `sceneRT`'s samples or depth must move the discard.
 - `renderer.compileAsync` collects its draws and reads the render target synchronously, before its
   first await: set the target, call it, restore the target at once, then await (`compileDraws`).
   It builds a transparent double-sided material's two passes after restoring its side, as one
@@ -513,6 +541,23 @@ stone exposed.
   uploaded from then on (r186): an index rewritten in place must be a `Uint32Array`. Leave
   attributes that change once per event at the default static usage and set update ranges:
   `DynamicDrawUsage` re-uploads the whole buffer on every draw.
+- Two programs that must produce bit-identical depth (a depth prepass and an equal-depth draw)
+  need WGSL's `@invariant` on the clip position: three r186 does not emit it, so
+  `VegetationPrepass.ts` patches the material's builder (`getBuiltins`). Without it a few samples
+  fail the equal test and show the clear colour. A coverage (alpha-to-coverage) pipeline shades
+  differently from a plain one over the same samples, and its fragments cannot be rejected before
+  shading: with a prepass, drop coverage and the alpha test from the shaded draw. Keep
+  `material.alphaTest` itself at its value (the shadow passes copy it) and leave it out of the
+  shader build only. A new alpha-to-coverage vegetation group joins `installVegetationPrepass`'s
+  list, and anything that finds vegetation after the first frame reads `userData.vegetation`
+  (the prepass turns `alphaToCoverage` off).
+- A material that applies instancing itself from storage buffers (instead of three's instanced
+  attributes) must hold the placed position in a variable (`toVar`), as three's instancing
+  assigns it to `positionLocal`; an inline expression rounds differently and flips a few hundred
+  edge samples. `instanceColor` (exported from three/tsl) multiplies the diffuse colour whenever
+  the object has a truthy `instanceColor`: assign it in the vertex stage. A per-object uniform
+  (`onObjectUpdate`) reads the drawn object's own `userData`: a copy drawn over the same geometry
+  (the prepass's depth meshes) must carry the fields its shader reads (`grassCulled`).
 - A compute kernel dispatched by the size of a target (`compute( width * height )`) is rebuilt,
   with new pipelines, whenever that size changes; at high's dynamic render scale that would be at
   every step. Size such work from something fixed (the cloud view on high follows the display) or
