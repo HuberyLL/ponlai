@@ -38,8 +38,10 @@ stone exposed.
   only), `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB
   cache, as on a first visit), `post=legacy` (or a comma list of `inline-composite`, `full-fog`,
   `no-bank`, `inline-coc`, `three-fsr`, `store-scene`: the frame graph without the first
-  performance round's changes) and `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter
-  path). Runtime switches for one-page A/Bs live in `src/debug/DebugFlags.ts`.
+  performance round's changes), `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter
+  path) and `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then
+  steers by the frame intervals). Runtime switches for one-page A/Bs live in
+  `src/debug/DebugFlags.ts`.
 - Quality knobs: one table, `QUALITY` in `src/Quality.ts`, per tier. Load knobs are compiled into
   materials or the frame graph and read once as those are built, so a change of tier reloads the
   page (the GUI's quality control does): `QualityProfile.water` (`Water.ts`: reflection rays and
@@ -300,8 +302,12 @@ stone exposed.
   list), so the equal test holds for every batch.
 - The view camera's grass draws are culled per tuft on the GPU by a padded bounding sphere (the
   widening's 15 half widths, sway, standing water's sink) and compacted by a scan, never an
-  atomic append, so the draw order, alpha to coverage and paused frames match a draw of every
-  tuft; the dispatch is skipped while the view and the blade selection are unchanged. Indirect
+  atomic append, so the tufts keep the order a draw of every tuft takes and a paused frame
+  repeats; the dispatch is skipped while the view and the blade selection are unchanged. Without
+  the prepass, or with coverage kept in its shaded draw, the image is that of a draw of every
+  tuft to the byte; behind the prepass's opaque shaded draw a few isolated pixels of the meadow
+  differ from it (the set depends on the drawn instance list; 2000 to 8000 px of a close meadow
+  view on high and medium, by up to 25 levels). Indirect
   arguments are set on a batch's geometry for its own draw only: other draws over the same
   geometry (the rain's collision proxies, orthographic cameras) draw every tuft.
   `flags.grassCull = false` draws every tuft through the same storage path.
@@ -464,7 +470,9 @@ stone exposed.
   after a change (`--compare` for an A/B, or `--toggle` on a debug flag while the change is in
   development). Judge an A/B by its GPU time per pass; take frame rates from a run without GPU
   timestamps (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them
-  on, so their per-pass split shows where the time goes, not the frame rate a player sees. Judge
+  on, so their per-pass split shows where the time goes, not the frame rate a player sees. (High
+  keeps its dynamic resolution's own timestamp queries in every run, as a player's page does;
+  `--q gpuTimer=off` leaves them out.) Judge
   whether a tier holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at the
   tier's own settings (high with its dynamic scale, measured at its settle point with
   `--scale-settle 5`; the report gives each scene's scale). Report

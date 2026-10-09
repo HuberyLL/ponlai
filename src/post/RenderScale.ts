@@ -10,7 +10,7 @@ import type { RenderScaleRule } from '../Quality.ts';
 // cap (ocean optics, clouds and the post passes scale with the pixel count):
 // - high: dynamic, from the display's own ratio (up to 1.5, the image the reviews measure) down to
 //   a floor, steered by the GPU's frame time (DynamicResolution.ts); this returns its nominal;
-// - medium and low: a budget of rendered pixels (1920x1080 and 1600x900 today).
+// - medium and low: a budget of rendered pixels (1600x900 and 1280x720 today).
 
 // The canvas follows the display up to this ratio. Past it only the upscale and grade passes
 // would grow (a phone's 3x), and the browser's stretch of a 2x canvas is no longer visible.
