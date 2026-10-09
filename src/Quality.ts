@@ -1,8 +1,8 @@
 // The quality tiers: every knob the frame's cost depends on, per tier, in one table. `?quality`
 // picks the tier at load (medium by default); the GUI's quality control reloads the page with it.
 //
-// High is the reference image; medium and low render at fixed budgets that leave room on the
-// target display, for slower GPUs. All three multisample the scene with 4
+// High is the reference image and holds 60 fps on the target display through its dynamic render
+// scale; medium and low render at fixed budgets that leave room there, for slower GPUs. All three multisample the scene with 4
 // samples (WebGPU has 1 or 4, no 2): without it the meadow's alpha to coverage turns into a dither
 // and geometric edges alias, so the lower tiers save through their render scale and the knobs
 // below instead. No knob alters the weather, clock or lighting state: a tier changes the cost,
@@ -25,9 +25,13 @@ export const QUALITY_TIERS = [ 'low', 'medium', 'high' ] as const;
 export type QualityTier = typeof QUALITY_TIERS[ number ];
 export const DEFAULT_QUALITY: QualityTier = 'medium';
 
-/** How the scene's render scale (its pixel ratio relative to CSS pixels) is chosen: a budget of
- * rendered pixels (the scale follows the window's size; Infinity renders at the display's ratio). */
-export type RenderScaleRule = { budget: number };
+/** How the scene's render scale (its pixel ratio relative to CSS pixels) is chosen. */
+export type RenderScaleRule =
+	// a fixed budget of rendered pixels (the scale follows the window's size)
+	| { budget: number }
+	// dynamic resolution: from `max` (capped by the display's own ratio) down to `floor` in `step`s,
+	// steered by the GPU's frame time (post/DynamicResolution.ts)
+	| { dynamic: { max: number; floor: number; step: number } };
 
 export interface QualityProfile {
 
@@ -67,7 +71,7 @@ const BILINEAR: SolarShadowTaps = { soft: false, blockerSamples: 0, filterSample
 
 export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = {
 	high: {
-		render: { budget: Infinity },
+		render: { dynamic: { max: 1.5, floor: 0.6, step: 0.05 } },
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 36, bloomChains: 2 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },

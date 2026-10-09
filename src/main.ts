@@ -26,6 +26,7 @@ import { pickPlantSites, bakeGroundContact, bakeAnchorContact } from './world/Pl
 import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
+import { DynamicResolution, GpuFrameTimer } from './post/DynamicResolution.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
@@ -66,7 +67,10 @@ const setStatus = ( s: string ) => { const el = loading?.querySelector( 'span' )
 
 // ------------------------------------------------------------------ renderer
 
-const renderer = new THREE.WebGPURenderer( { antialias: false, powerPreference: 'high-performance', trackTimestamp: profiler?.timestamps ?? false } );
+// A dynamic render scale steers by the GPU's frame time, read from timestamp queries
+// (`gpuTimer=off` leaves them out: it then steers by the frame intervals, as where they are missing).
+const gpuTiming = ( profiler?.timestamps ?? false ) || ( 'dynamic' in quality.render && params.get( 'gpuTimer' ) !== 'off' );
+const renderer = new THREE.WebGPURenderer( { antialias: false, powerPreference: 'high-performance', trackTimestamp: gpuTiming } );
 if ( profiler ) renderer.inspector = profiler;
 await renderer.init();
 mark( 'renderer' );
@@ -79,9 +83,10 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 
 // The scene renders at a pixel ratio set by the quality tier (see RenderScale.ts), at most the
 // display's and DPR_CAP; the canvas matches the display and the frame graph upscales to it.
-// Explicit DPR captures and the full-resolution control lift the tier's pixel budget.
+// Explicit DPR captures and the full-resolution control lift the tier's pixel budget and pin a
+// dynamic scale at its nominal.
 const DPR_CAP = params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : 1.5;
-const resolution = { full: params.has( 'dpr' ), render: '' };
+const resolution = { full: params.has( 'dpr' ), render: '', scale: '' };
 renderer.setPixelRatio( outputPixelRatio( 1 ) );
 renderer.setSize( innerWidth, innerHeight );
 renderer.shadowMap.enabled = true;
@@ -552,6 +557,7 @@ const performanceF = gui.addFolder( 'Performance' );
 performanceF.add( skyQuality, 'value', QUALITY_TIERS ).name( 'quality (reloads)' ).onFinishChange( ( tier: QualityTier ) => { if ( tier !== qualityTier ) reloadWithQuality( tier ); } );
 performanceF.add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
 performanceF.add( pipeline.sharpness, 'value', 0, 2, 0.05 ).name( 'upscale softness' );
+performanceF.add( resolution, 'scale' ).name( 'render scale' ).listen().disable();
 performanceF.add( resolution, 'render' ).name( 'render → canvas' ).listen().disable();
 const groundF = gui.addFolder( 'Ground' );
 groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => {
@@ -667,21 +673,81 @@ lookF.add( L, 'overcast', 0, 1, 0.01 ).name( 'kept in bad weather' ).listen();
 
 // ------------------------------------------------------------------ loop
 
+// High's render scale is dynamic (DynamicResolution.ts): it moves between the tier's nominal and
+// a floor by the GPU's frame time, and renders at the nominal while it is pinned (?dpr, full
+// resolution) or the scene is paused, so paused frames and captures render at the reference scale.
+const dynamicRule = 'dynamic' in quality.render ? quality.render.dynamic : null;
+const dynamicResolution = dynamicRule ? new DynamicResolution( dynamicRule ) : null;
+// the render scale each frame was drawn at (by three's frame id), for the GPU times read back later
+const frameScales = new Map<number, number>();
+let gpuTimer: GpuFrameTimer | null = null;
+if ( dynamicResolution ) {
+
+	const sample = ( frame: number, ms: number ) => {
+
+		const scale = frameScales.get( frame );
+		if ( scale !== undefined ) dynamicResolution.sample( ms, scale );
+
+	};
+	// the frame profiler owns the timestamp queries while it times passes
+	if ( profiler?.timestamps ) profiler.onRecord = ( record ) => { if ( record.missing === 0 && record.passes > 0 ) sample( record.id, record.gpu ); };
+	else {
+
+		gpuTimer = GpuFrameTimer.create( renderer );
+		if ( gpuTimer ) gpuTimer.onFrame = sample;
+
+	}
+
+}
+
 const canvasSize = new THREE.Vector2();
+let nominalScale = 1, renderScale = 1;
 function resize(): void {
 
 	const w = innerWidth, h = innerHeight;
-	const ratio = renderPixelRatio( w, h, quality.render, resolution.full, DPR_CAP );
-	renderer.setPixelRatio( outputPixelRatio( ratio ) );
+	nominalScale = renderPixelRatio( w, h, quality.render, resolution.full, DPR_CAP );
+	dynamicResolution?.setMax( nominalScale );
+	renderer.setPixelRatio( outputPixelRatio( nominalScale ) );
 	renderer.setSize( w, h );
 	camera.aspect = w / h;
 	camera.updateProjectionMatrix();
+	applyRenderScale( true );
+
+}
+
+/** The scale this frame renders at: the dynamic one, unless pinned or paused. */
+function currentRenderScale(): number {
+
+	if ( ! dynamicResolution || resolution.full || paused ) return nominalScale;
+	return Math.min( dynamicResolution.scale, nominalScale );
+
+}
+
+// Sizes the frame graph to the render scale when it changed (a resize sets the canvas first).
+function applyRenderScale( force = false ): void {
+
+	const ratio = currentRenderScale();
+	if ( ! force && ratio === renderScale ) return;
+	renderScale = ratio;
+	if ( profiler ) profiler.renderScale = ratio;
 	renderer.getDrawingBufferSize( canvasSize );
+	const w = innerWidth, h = innerHeight;
 	// at the display's ratio the render is the canvas, to the pixel, and nothing is upscaled
 	const rw = ratio === renderer.getPixelRatio() ? canvasSize.x : Math.floor( w * ratio );
 	const rh = ratio === renderer.getPixelRatio() ? canvasSize.y : Math.floor( h * ratio );
 	pipeline.setSize( rw, rh, canvasSize.x, canvasSize.y );
 	resolution.render = `${ rw }x${ rh } → ${ canvasSize.x }x${ canvasSize.y }` + ( pipeline.upscaling ? ` (${ Math.round( rw / canvasSize.x * 100 ) } %, FSR)` : '' );
+	describeRenderScale();
+
+}
+
+// The GUI's line: the scale, how it is set and (dynamic) the GPU's recent frame time.
+function describeRenderScale(): void {
+
+	const d = dynamicResolution;
+	const how = ! d ? 'fixed' : resolution.full ? 'pinned' : paused ? 'paused: nominal' : `dynamic ${ d.floor }-${ d.max }`;
+	const gpu = d && d.observed.length ? `, GPU ${ [ ...d.observed ].sort( ( a, b ) => a - b )[ d.observed.length >> 1 ].toFixed( 1 ) } ms` : '';
+	resolution.scale = `${ renderScale.toFixed( 2 ) } (${ how }${ gpu })`;
 
 }
 
@@ -801,8 +867,29 @@ function tick(): void {
 	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * pipeline.height / 900, S.dof );
 
 	pipeline.render( { scene, waterScene, rainScene: rain!.mesh.visible ? rainScene : undefined, camera, water: water!, sun, time: simTime } );
+	steerRenderScale( rawDt );
 	frame ++;
 	diagnostics();
+
+}
+
+// After the frame's passes: read the GPU times back and move the dynamic scale (it applies from the
+// next frame on). Paused or pinned, the window keeps no samples and the scale holds.
+function steerRenderScale( rawDt: number ): void {
+
+	if ( ! dynamicResolution ) return;
+	const steering = ! paused && ! resolution.full && renderScale === dynamicResolution.scale;
+	frameScales.set( renderer.info.frame, steering ? renderScale : NaN );
+	if ( frameScales.size > 240 ) frameScales.delete( frameScales.keys().next().value! );
+	gpuTimer?.resolve();
+	if ( steering ) {
+
+		dynamicResolution.sampleInterval( rawDt * 1000 );
+		dynamicResolution.update();
+
+	}
+	applyRenderScale();
+	if ( frame % 30 === 0 ) describeRenderScale();
 
 }
 
@@ -823,6 +910,8 @@ function diagnostics(): void {
 		geometries: info.memory.geometries,
 		textures: info.memory.textures,
 		dpr: + ( pipeline.width / innerWidth ).toFixed( 4 ), // the render's pixel ratio
+		renderScale,
+		dynamicResolution: dynamicResolution ? { scale: dynamicResolution.scale, source: dynamicResolution.source, changes: dynamicResolution.changes.length } : null,
 		canvasDpr: renderer.getPixelRatio(),
 		worldTriangles: world.triangles,
 		rimStrands: data.rimStrands.length,
@@ -896,4 +985,4 @@ const loop = {
 	},
 };
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
-	quality, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
+	quality, dynamicResolution, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
