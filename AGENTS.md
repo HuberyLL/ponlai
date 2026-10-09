@@ -39,8 +39,10 @@ stone exposed.
   cache, as on a first visit), `post=legacy` (or a comma list of `inline-composite`, `full-fog`,
   `no-bank`, `inline-coc`, `three-fsr`, `store-scene`: the frame graph without the first
   performance round's changes), `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter
-  path) and `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then
-  steers by the frame intervals). Runtime switches for one-page A/Bs live in
+  path), `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then
+  steers by the frame intervals) and `frameRate` (the frame rate the loop holds on a faster
+  display, over the tier's; `frameRate=0` renders on every refresh, as the profiler's uncapped runs
+  do). Runtime switches for one-page A/Bs live in
   `src/debug/DebugFlags.ts`.
 - Quality knobs: one table, `QUALITY` in `src/Quality.ts`, per tier. Load knobs are compiled into
   materials or the frame graph and read once as those are built, so a change of tier reloads the
@@ -50,18 +52,20 @@ stone exposed.
   (`SunShadow.setFilter`: PCSS taps, or the bilinear comparison alone, separately for vegetation),
   `.rainShading` (`setRainShading`: the veil's shells, the sea's ripple layers), `.post`
   (`PostOptions` for `new Pipeline`: sea-fog resolution, steps and bank map, depth-of-field taps,
-  bloom chains), `.environmentSource` (`Sky.setEnvironmentSource`, before the first bake) and the
-  render scale rule. Runtime ones, applied by `applySkyQuality` in `main.ts`
-  (`s.applyQuality( { ... } )` overrides them in a debug page): the cloud view
+  bloom chains), `.environmentSource` (`Sky.setEnvironmentSource`, before the first bake),
+  `.frameRate` (`FramePacer`) and the render scale rule. Runtime ones, applied by
+  `applySkyQuality` in `main.ts` (`s.applyQuality( { ... } )` overrides them in a debug page): the
+  cloud view
   (`Sky.setCloudView`), the clouds' `setDome`, `setMarch` and `setShadowRefresh`,
   `Sky.setEnvironmentCadence`, the sky bake interval, the refracted sun's interval and
   `angleGate`, and the rain's drop count. Every default in the modules themselves is high's.
 - `node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
   [--timestamps on|off|both] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
-  [--scales 1.5,1] [--scale-settle s]` profiles a production build (`npm run build && npm run
-  preview`; the url defaults to its port) in headless Chrome (`CHROME_PATH`, else the system
-  Chrome) with the frame rate uncapped, or at 60 Hz with `--vsync` (the intervals a player sees;
-  uncapped, a GPU-bound scene's p95 is mostly pacing noise). It plays a matrix of named scenes
+  [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none]]` profiles a
+  production build (`npm run build && npm run preview`; the url defaults to its port) in headless
+  Chrome (`CHROME_PATH`, else the system Chrome) with the frame rate uncapped, or at 60 Hz with
+  `--vsync` (the intervals a player sees; uncapped, a GPU-bound scene's p95 is mostly pacing
+  noise). It plays a matrix of named scenes
   (`--list`: fair, golden, horizon, sky, overcast, rain, storm, fog, night, close over the
   meadow, a weather front), each with the clock running, fixed weather and a slow orbit, and writes
   `artifacts/perf/<label>/` (profile.json, summary.md): frame interval median, p95 and p99, GPU
@@ -79,8 +83,17 @@ stone exposed.
   within 0.5 ms of 16.7 (`--target`) and no frame over 25 ms in the 7 s measured, from the run
   without timestamps, with the p99, the maximum and the GPU busy time reported beside it. A
   contended scene that fails is INCONCLUSIVE unless its GPU busy median is over the target;
-  `--strict` exits with 1 on a FAIL. Headless 60 Hz is the stricter stand-in for a 120 Hz display
-  (a missed frame costs 33 ms there, 25 at 120 Hz); confirm a verdict once on the real display.
+  `--strict` exits with 1 on a FAIL. Headless 60 Hz shows whether the GPU holds 60 fps, not how
+  a faster display paces the frames: every scene passed it while a 120 Hz display showed a sixth of
+  the frames 8.3 ms apart, a third of the intervals changing cadence and the dynamic scale moving
+  about 16 times a minute under a player's drags. `--display` measures that: headed system Chrome
+  full screen (`--kiosk`) at the display's own size, pixel ratio and refresh, the camera dragged
+  like a player's through Chrome's input (`--motion user`, the default there: drags of 30 to
+  200 deg/s with pauses, a wheel zoom, a flick; 20 s per scene), and per scene, by display
+  refreshes, the intervals between the frames the scene rendered and between those the compositor
+  presented (from a trace of Chrome's frame pipeline), the share of intervals that change cadence,
+  and how much the camera's turning speed changes from frame to frame. A window covers the screen
+  while it runs: keep the runs short and other animated windows closed.
   `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
   leave out) and tabulates every scene at every scale. Every report gives the render scale the
   measured frames were drawn at (its median, range and changes: high's moves);
@@ -115,9 +128,10 @@ stone exposed.
 
 - `src/Quality.ts`: the quality tiers, every knob of the frame's cost in one table (see
   Decisions).
-- `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
-  handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`
-  (or `?profile`, which also loads the frame profiler in `src/debug/`).
+- `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics (the orbit's controls in
+  `src/camera/OrbitFrameControls.ts`, the free flight in `FreeCameraControls.ts`).
+  `window.__SOOMI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev
+  server or with `?debug` (or `?profile`, which also loads the frame profiler in `src/debug/`).
 - `src/world/`: the island generated in Web Workers (the island, the stones in up to four sets and
   the rest built in parallel copies of `worldWorker.ts` and merged in serial order, so the world is
   identical to a single thread's; kept in IndexedDB by `WorldCache.ts`, keyed by the hash of the
@@ -192,7 +206,7 @@ stone exposed.
   tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale (`FSR.ts`: an EASU pass,
   the sharpening in the canvas pass)), render scale per quality tier (`RenderScale.ts`) and
   high's dynamic resolution (`DynamicResolution.ts`: the scale steered by the GPU's frame time
-  from timestamp queries), the
+  from timestamp queries), the frame pacer (`FramePacer.ts`), the
   scene's sample count (`SceneSamples.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
@@ -350,20 +364,44 @@ stone exposed.
   tiers save through their render scale and knobs, never through multisampling.
 - The scene renders at a pixel ratio set by the quality tier. Medium renders at a 1600x900 pixel
   budget and low at 1280x720. High's is dynamic (`DynamicResolution.ts`): from the display's ratio
-  (up to 1.5) down to a floor of 0.6, steered by the GPU's frame time (timestamp queries, read as
-  the time the GPU was busy with each frame; the frame intervals without them). It steps by 0.05,
-  at most every 2 s (sooner only downward when frames run far over budget), down when the window's
-  97th percentile of GPU time passes 15.2 ms, and up only when a pessimistic estimate of the
-  larger render stays under that with a margin; a scale it had to leave needs a wider margin for a
-  while, so it does not oscillate. A change only resizes the frame graph's targets: no pipeline
-  is built and no frame is dropped (the cloud view on high is sized from the display, so its
-  kernels never rebuild). Paused, under `dpr` or with the GUI's full resolution it renders at its
-  nominal ratio, so paused frames and captures render at the reference scale whatever scale the
-  running page had reached, and match the reference image. `dpr` and the full resolution also lift the lower tiers' budgets. The
-  canvas always matches the display (up to 2x): a render below it is upscaled inside the frame
-  graph with FSR 1 and the grain added after, never stretched by the browser. Every pass is sized
-  to the render, not the canvas (`rtt()` passes through `sizeRtt`). At the display's ratio nothing
-  is upscaled, so `dpr=1` captures are unchanged.
+  (up to 1.5) down to a floor of 0.6 in steps of 0.05, steered by the GPU's frame time (timestamp
+  queries, read as the time the GPU was busy with each frame; the frame intervals without them)
+  against the paced frame's budget (15.2 ms of a 60 Hz frame for the window's 97th percentile).
+  Every change softens or sharpens the whole image, so it changes as seldom as it can: down when
+  the window passes the budget (at most every 2 s, sooner when frames run far over it), straight to
+  the scale a cost model predicts the window fits at (a fixed part of about half the budget plus a
+  part that follows the pixel count), in one change; up only after 4 s at a scale with a full
+  window, by at most two steps, when a pessimistic estimate of the larger render stays under the
+  budget with a margin; a scale it had to leave needs a wider margin for a while, so it does not
+  oscillate. Its first decision comes behind the loading screen, which waits for it (at most 3 s):
+  from the nominal ratio it jumps once to the scale the first frames call for. On a 120 Hz display
+  the scale now changes once in the first quarter minute after a load (about ten single steps
+  before), and under scripted drags that switch views and zoom about 12 times a minute (16 before);
+  steady drags in one view left it alone; the rest follows the cost of the views (the horizon view
+  costs more than the island's). A change only
+  resizes the frame graph's targets: no pipeline is built and no frame is dropped (the cloud view
+  on high is sized from the display, so its kernels never rebuild). Paused, under `dpr` or with
+  the GUI's full resolution it renders at its nominal ratio, so paused frames and captures render at
+  the reference scale whatever scale the running page had reached, and match the reference image.
+  `dpr` and the full resolution also lift the lower tiers' budgets. The canvas always matches the
+  display (up to 2x): a render below it is upscaled inside the frame graph with FSR 1 and the grain
+  added after, never stretched by the browser. Every pass is sized to the render, not the canvas
+  (`rtt()` passes through `sizeRtt`). At the display's ratio nothing is upscaled, so `dpr=1`
+  captures are unchanged.
+- The loop holds the tier's frame rate on a display faster than that (`FramePacer.ts`, 60 on high
+  and medium): it renders on every second refresh at 120 Hz (every refresh at 60 Hz, 72 fps at
+  144 Hz) and skips the other animation frames before three's loop sees them, so every frame stays
+  on screen equally long. Unpaced, frames that keep the GPU busy for 12-16 ms finished one, two or
+  three refreshes after the one before as the queue drained, a sixth of them 8.3 ms apart and a
+  third of the intervals changing cadence: stutter while the camera moved, at an average above
+  60 fps. Low renders on every refresh (`frameRate: 0`): its light frames, held to 60 Hz, finished
+  right at the compositor's deadline and were shown one and three refreshes apart in turn. The
+  refresh is measured from the animation frames' own timestamps. The scene's clock steps by the
+  frames' vblank times (rAF's timestamp), not by when the tick starts (a few milliseconds into the
+  frame, by a varying amount). The orbit's damping advances once per rendered frame, by the frame's
+  length (`OrbitFrameControls`): three's OrbitControls damps on every `update()` and its pointer
+  and wheel handlers call it on every event, so with input at the display's refresh a frame took
+  one to three damping steps by chance and a steady drag turned the camera in uneven steps.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
 - The tone curve is PBR Neutral with hue-kept highlights (`neutral-hue` in `src/post/Pipeline.ts`):
@@ -474,8 +512,9 @@ stone exposed.
   `--q gpuTimer=off` leaves them out.) Judge
   whether a tier holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at the
   tier's own settings (high with its dynamic scale, measured at its settle point with
-  `--scale-settle 5`; the report gives each scene's scale). Report
-  contended runs as such.
+  `--scale-settle 5`; the report gives each scene's scale), and check how a change plays on a fast
+  display with `--display` (pacing, cadence, the scale's changes under drags). Report contended
+  runs as such.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
   most 100 characters, and the body explaining why. Types: `feat`, `fix`, `perf`, `refactor`,
