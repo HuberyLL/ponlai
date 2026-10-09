@@ -23,7 +23,8 @@ import type { Rain } from '../weather/Rain.ts';
 //   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts and reflects)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
-//   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them)
+//   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them;
+//   without rain the water's multisampled colour is discarded instead)
 //   sea fog (in fog: the bank noise baked into a map, the march at half resolution), the view
 //   distance for the depth of field
 //   composite (air, fog, rain veil, shafts) ── hdr, once
@@ -289,8 +290,10 @@ export class Pipeline {
 	// the view distance per pixel, for the depth of field (the dofDistance option)
 	private distanceRT: THREE.RenderTarget | null = null;
 	private distanceQuad: THREE.QuadMesh | null = null;
-	// set while the last pass into sceneRT is recorded (the discardScene option)
-	private discardSamples = false;
+	// set while the last pass into sceneRT is recorded (the discardScene option): 'all' discards
+	// its multisampled colour and depth, 'colour' only the colour (the surface resolve still reads
+	// the depth)
+	private discardSamples: 'none' | 'colour' | 'all' = 'none';
 	private warming: Promise<void> | null = null;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private display: THREE.RenderPipeline;
@@ -908,7 +911,12 @@ export class Pipeline {
 			if ( water ) {
 
 				water.prepare( sun );
+				// Without rain the water is the last pass into the scene target: only the resolved
+				// colour is read after it, so its multisampled colour need not be stored (the surface
+				// resolve below still loads its depth). debugFlags.waterColourStore = true stores it.
+				if ( ! rainScene && debugFlags.waterColourStore !== true && this.options.discardScene ) this.discardSamples = 'colour';
 				r.render( waterScene, camera );
+				this.discardSamples = 'none';
 
 			}
 			r.setRenderTarget( this.surfaceRT );
@@ -917,14 +925,14 @@ export class Pipeline {
 
 				r.setRenderTarget( this.sceneRT );
 				// the last pass into the scene target: its samples are resolved, then never read
-				this.discardSamples = this.options.discardScene;
+				this.discardSamples = this.options.discardScene ? 'all' : 'none';
 				r.render( rainScene, camera );
 
 			}
 
 		} finally {
 
-			this.discardSamples = false;
+			this.discardSamples = 'none';
 			r.autoClear = autoClear;
 			r.setRenderTarget( null );
 
@@ -1025,7 +1033,9 @@ export class Pipeline {
 	// offers a discard together with a clear (storeMultisampled*Buffer = false), which would wipe
 	// the opaque image the rain draws over. So while the last pass into sceneRT is recorded, its
 	// descriptor's multisampled colour and depth stores become discards: the resolved colour and
-	// surfaceRT are already written, and the next frame's opaque pass clears both. (This relies
+	// surfaceRT are already written, and the next frame's opaque pass clears both. Without rain the
+	// water is that pass, and only its colour is discarded, since the surface resolve still loads
+	// the depth it leaves. (This relies
 	// on three's WebGPUBackend beginning each pass on an encoder of its own.)
 	private interceptSceneStore(): void {
 
@@ -1037,7 +1047,8 @@ export class Pipeline {
 		device.createCommandEncoder = ( descriptor?: unknown ) => {
 
 			const encoder = create( descriptor );
-			if ( ! this.discardSamples ) return encoder;
+			const mode = this.discardSamples;
+			if ( mode === 'none' ) return encoder;
 			const begin = encoder.beginRenderPass.bind( encoder );
 			encoder.beginRenderPass = ( pass: Descriptor ) => {
 
@@ -1046,7 +1057,7 @@ export class Pipeline {
 				return begin( {
 					...pass,
 					colorAttachments: pass.colorAttachments.map( ( a ) => a && a.resolveTarget ? { ...a, storeOp: 'discard' } : a ),
-					depthStencilAttachment: pass.depthStencilAttachment && { ...pass.depthStencilAttachment, depthStoreOp: 'discard' },
+					depthStencilAttachment: pass.depthStencilAttachment && ( mode === 'all' ? { ...pass.depthStencilAttachment, depthStoreOp: 'discard' } : pass.depthStencilAttachment ),
 				} );
 
 			};
