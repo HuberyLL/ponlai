@@ -5,6 +5,8 @@ import { SOIL_PALETTE } from '../materials/Soil.ts';
 import { SKIRT_RING } from './RimGround.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
+import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
+import { keepLegacyWind } from './WindVariants.ts';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
 import type { RimSkirtData } from './types.ts';
@@ -163,8 +165,10 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 	const normals = geometry.getAttribute( 'normal' ) as THREE.BufferAttribute;
 	( normals.array as Float32Array ).set( blade0, bodyVertices * 3 );
 	geometry.computeBoundingSphere();
+	geometry.boundingSphere!.radius += 0.12; // the thatch's lean in a gale
 
 	const mesh = new THREE.Mesh( geometry, skirtMaterial( shared ) );
+	keepLegacyWind( mesh, skirtMaterial( shared, true ) );
 	mesh.name = 'turfSkirt';
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
@@ -175,7 +179,7 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 
 }
 
-function skirtMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
+function skirtMaterial( shared: Shared, legacy = false ): THREE.MeshStandardNodeMaterial {
 
 	const mat = new THREE.MeshStandardNodeMaterial( { vertexColors: true, side: THREE.DoubleSide, roughness: 0.93, metalness: 0 } );
 	const wetness = clamp( shared.wetness, 0, 1 );
@@ -185,7 +189,20 @@ function skirtMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const blade = attribute<'float'>( 'skirtBlade', 'float' ), sway = attribute<'float'>( 'skirtSway', 'float' );
 	const wind = shared.wind.direction;
 	const phase = shared.wind.phase.mul( 1.3 ).add( dot( positionLocal.xz, vec2( 2.1, 1.7 ) ) );
-	const swayed = positionLocal.add( vec3( wind.x, 0.25, wind.y ).mul( sin( phase ).mul( sway ).mul( shared.wind.strength ).mul( 0.012 ) ) );
+	let swayed;
+	if ( legacy ) swayed = positionLocal.add( vec3( wind.x, 0.25, wind.y ).mul( sin( phase ).mul( sway ).mul( shared.wind.strength ).mul( 0.012 ) ) );
+	else {
+
+		// The thatch leans with the meadow's gust field and shivers on a phase of its place.
+		swayed = setWindDisplacement( mat, ( wind ) => {
+
+			const field = windField( wind, positionLocal.xz );
+			const shiver = wave( wind.flutter, 1.9, dot( positionLocal.xz, vec2( 2.1, 1.7 ) ) ).mul( wind.breeze ).mul( field.w.mul( 0.5 ).add( 0.3 ) );
+			return positionLocal.add( vec3( field.x, 0.25, field.y ).mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( sway ).mul( 0.012 ) );
+
+		}, shared.wind );
+
+	}
 	// Blades are a few millimetres wide, far under a shadow texel: only the sod casts.
 	useRestPoseShadows( mat, positionLocal, swayed, float( 1 ).sub( blade ) );
 	useLighting( mat, () => new VegetationLighting( float( 1 ), ( L, V ) =>

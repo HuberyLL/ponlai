@@ -41,6 +41,7 @@ import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook, KIND } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
+import { installWindVariants } from './world/WindVariants.ts';
 
 const params = new URLSearchParams( location.search );
 // The world's generation needs nothing from the page, so its workers start first and run while
@@ -410,6 +411,7 @@ const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
 const plants = buildPlants( plantSites, shared );
 scene.add( grass, foliage, flowers, rimFoliage, turfSkirt, plants );
+installWindVariants( scene, [ grass, foliage, flowers, rimFoliage, turfSkirt, plants ] );
 installVegetationPrepass( scene, [ grass, foliage, rimFoliage, plants ] );
 {
 

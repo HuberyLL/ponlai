@@ -1,5 +1,7 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionLocal, normalViewGeometry, materialColor, vec3, vec4, float, mix, sin, cos, dot, pow, clamp } from 'three/tsl';
+import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, materialColor, uv, vec3, vec4, float, mix, sin, cos, dot, pow, clamp, max } from 'three/tsl';
+import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
+import { keepLegacyWind } from './WindVariants.ts';
 import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, LEAF_STEM, leafCastMask, markVegetation } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
@@ -46,7 +48,14 @@ function closestBush( root: THREE.Vector3, foliage: THREE.InstancedMesh | undefi
 
 }
 
-function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh ): THREE.MeshStandardNodeMaterial {
+// The trails' sway at their tips (m) at a fair day's typical gust (see LEAN_REF): about 2 cm in a
+// fair gust, 8 - 10 cm in a gale's. Their nodes hang 0.11 m off the stone and their leaves a
+// little further, so they may be pressed toward the wall by at most PRESS (m).
+const RIM_SWAY = 0.012;
+const PRESS = 0.03;
+const LEAF_EDGE = 0.004;
+
+function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = false ): THREE.MeshStandardNodeMaterial {
 
 	const source = Array.isArray( foliage?.material ) ? foliage.material[ 0 ] : foliage?.material;
 	const mat = source instanceof THREE.MeshStandardNodeMaterial ? source.clone() : new THREE.MeshStandardNodeMaterial( {
@@ -62,15 +71,44 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh ): THREE.Mes
 	mat.colorNode = materialColor.mul( vec4( wetTint, wetTint, wetTint, 1 ) );
 	mat.roughnessNode = mix( 0.82, 0.68, wetness );
 	const weight = attribute( 'rimSway', 'float' );
-	const phase = attribute( 'rimPhase', 'float' ).sub( shared.wind.phase.mul( 1.3 / 1.6 ) );
-	const wind = shared.wind.direction;
-	const along = vec3( wind.x, 0, wind.y ).mul( sin( phase ) );
-	const across = vec3( wind.y.negate(), 0, wind.x ).mul( cos( phase.mul( 0.91 ) ).mul( 0.35 ) );
-	const lift = vec3( 0, sin( phase.mul( 0.83 ) ).mul( 0.10 ), 0 );
+	const strandPhase = attribute( 'rimPhase', 'float' );
+	let swayed: THREE.Node<'vec3'>;
+	if ( legacy ) {
+
+		const phase = strandPhase.sub( shared.wind.phase.mul( 1.3 / 1.6 ) );
+		const wind = shared.wind.direction;
+		const along = vec3( wind.x, 0, wind.y ).mul( sin( phase ) );
+		const across = vec3( wind.y.negate(), 0, wind.x ).mul( cos( phase.mul( 0.91 ) ).mul( 0.35 ) );
+		const lift = vec3( 0, sin( phase.mul( 0.83 ) ).mul( 0.10 ), 0 );
+		swayed = positionLocal.add( along.add( across ).add( lift ).mul( weight.mul( 0.0048 ).mul( shared.wind.strength ) ) );
+
+	} else {
+
+		// A hanging strand leans with the gust field and swings like a pendulum (1.5 - 2.6 m: about
+		// 0.4 Hz) on its own phase, its forks with it; its leaves flutter along their normals from
+		// stalk to tip. The wall bounds it: wind into the cliff presses the strand back by at most
+		// PRESS, and a gust lifts it off the stone a little.
+		const out = attribute<'vec3'>( 'rimOut', 'vec3' );
+		const leafEdge = float( 1 ).sub( attribute<'float'>( LEAF_STEM, 'float' ) ).mul( uv().y );
+		const leafPhase = strandPhase.mul( 3 ).add( dot( positionGeometry, vec3( 9.1, 7.3, 8.7 ) ) );
+		swayed = setWindDisplacement( mat, ( wind ) => {
+
+			const field = windField( wind, positionLocal.xz ).toVar();
+			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
+			const lively = wind.breeze.mul( field.w.mul( 0.6 ).add( 0.3 ) );
+			const swing = wave( wind.clock, 0.4, strandPhase ).mul( lively );
+			const free = along.mul( field.z.div( LEAN_REF ).add( swing.mul( 0.5 ) ) ).add( across.mul( wave( wind.clock, 0.31, strandPhase.mul( 1.6 ) ).mul( lively ) ) )
+				.mul( weight.mul( RIM_SWAY ) ).toVar();
+			const offset = free.add( out.mul( max( float( - PRESS ).sub( dot( free, out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( weight ).mul( 0.01 ) ) ) );
+			const flutter = wave( wind.flutter, 3.7, leafPhase );
+			return positionLocal.add( offset ).add( normalGeometry.mul( flutter.mul( leafEdge ).mul( lively ).mul( LEAF_EDGE ) ) );
+
+		}, shared.wind );
+
+	}
 	// The cloned bush material has shadow hooks for its own wind graph. Replace both
-	// hooks with this mesh's rest pose, retaining its authored 4.8 mm sway scale.
-	useRestPoseShadows( mat, positionLocal, positionLocal.add( along.add( across ).add( lift )
-		.mul( weight.mul( 0.0048 ).mul( shared.wind.strength ) ) ), leafCastMask() );
+	// hooks with this mesh's rest pose.
+	useRestPoseShadows( mat, positionLocal, swayed, leafCastMask() );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.72 ), float( 0.96 ), weight );
 	useLighting( mat, () => new VegetationLighting( float( 0.94 ), ( L, V, N ) => {
@@ -91,6 +129,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 	const group = new THREE.Group();
 	group.name = 'rimFoliage';
 	const P: number[] = [], U: number[] = [], C: number[] = [], E: number[] = [], W: number[] = [], F: number[] = [], S: number[] = [], I: number[] = [];
+	const O: number[] = []; // the wall's outward normal where the vertex hangs, for the wind
 	const up = new THREE.Vector3( 0, 1, 0 );
 	const palette = [ [ 0.065, 0.16, 0.04 ], [ 0.095, 0.19, 0.048 ], [ 0.15, 0.205, 0.046 ], [ 0.04, 0.12, 0.043 ], [ 0.18, 0.22, 0.058 ] ];
 	const point = new THREE.Vector3(), outward = new THREE.Vector3(), tangent = new THREE.Vector3(), lateral = new THREE.Vector3();
@@ -104,6 +143,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 		P.push( p.x, p.y, p.z ); U.push( u, v );
 		C.push( color.r * shade, color.g * shade, color.b * shade );
 		E.push( envelope.x, envelope.y, envelope.z ); W.push( weight ); F.push( phase ); S.push( stem ? 1 : 0 );
+		O.push( outward.x, outward.y, outward.z );
 
 	};
 	for ( let index = 0; index < strands.length; index ++ ) {
@@ -320,7 +360,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 		strandCount ++;
 
 	}
-	group.userData = { strands: strandCount, leaves: leafCount, sprays: sprayCount, rootClusters: rootClusterCount, clumps: clumpCount, maxWind: 0.007 };
+	group.userData = { strands: strandCount, leaves: leafCount, sprays: sprayCount, rootClusters: rootClusterCount, clumps: clumpCount };
 	if ( ! P.length ) return group;
 	const geometry = new THREE.BufferGeometry();
 	geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( P, 3 ) );
@@ -329,6 +369,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 	geometry.setAttribute( 'rimSway', new THREE.Float32BufferAttribute( W, 1 ) );
 	geometry.setAttribute( 'rimPhase', new THREE.Float32BufferAttribute( F, 1 ) );
 	geometry.setAttribute( LEAF_STEM, new THREE.Float32BufferAttribute( S, 1 ) );
+	geometry.setAttribute( 'rimOut', new THREE.Float32BufferAttribute( O, 3 ) );
 	geometry.setIndex( I );
 	geometry.computeVertexNormals();
 	const normals = geometry.getAttribute( 'normal' );
@@ -339,8 +380,9 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 
 	}
 	geometry.computeBoundingSphere();
-	geometry.boundingSphere!.radius += 0.01;
+	geometry.boundingSphere!.radius += 0.15; // the trails' sway in a gale
 	const mesh = new THREE.Mesh( geometry, rimMaterial( shared, foliage ) );
+	keepLegacyWind( mesh, rimMaterial( shared, foliage, true ) );
 	mesh.name = 'rimFoliageLeaves';
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;

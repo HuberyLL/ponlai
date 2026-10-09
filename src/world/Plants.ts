@@ -1,8 +1,11 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, attribute, positionGeometry, positionLocal, normalViewGeometry, materialColor, vec3, vec4, float, mix, dot, sin, cos, pow, clamp,
-	mx_noise_float,
+	Fn, If, attribute, positionGeometry, positionLocal, normalViewGeometry, normalGeometry, materialColor, vec3, vec4, float, mix, dot, sin, cos, pow, clamp,
+	mx_noise_float, smoothstep,
 } from 'three/tsl';
+import { setWindDisplacement, wave } from '../weather/Wind.ts';
+import { mainBend } from './Foliage.ts';
+import { keepLegacyWind } from './WindVariants.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, markVegetation } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
@@ -14,8 +17,10 @@ import type { Shared } from '../shared.ts';
 // two share a silhouette: round shrubs of small or larger leaves, broad-leaved clumps, ferns and
 // small trees with a forked trunk under clustered crowns. They use the rim bushes' folded leaf
 // (one texture, its coverage-preserving alpha mips) and their light model, and merge into one
-// mesh in world space: one draw, one shadow draw. Per vertex: plantMotion ( sway amplitude in
-// metres, wind phase, stem flag, bark flag ) and plantShade ( ambient occlusion, direct light ).
+// mesh in world space: one draw, one shadow draw. Per vertex: plantMotion ( the old sway's
+// amplitude in metres, wind phase, stem flag, bark flag ), plantShade ( ambient occlusion, direct
+// light ), and for the wind (see plantMaterial) plantRoot ( the plant's root in world space ) and
+// plantWind ( main bend, branch and leaf-edge amplitudes in metres, the plant's height ).
 
 const UP = new THREE.Vector3( 0, 1, 0 );
 // A texel inside the leaf body: bark and stalks take an opaque, constant colour from the map.
@@ -43,18 +48,28 @@ interface Look {
 	light: number; // 0 deep inside the plant, 1 on its outer shell
 	phase: number;
 	flutter: number; // extra sway (m) of this part on top of the plant's bend
+	// Where the part (a spray, a leaf's stalk, a frond) leaves the plant, local, and how far it
+	// reaches: its sway in the wind grows from 0 there to `flutter` at its far end.
+	base?: THREE.Vector3;
+	reach?: number;
 }
+
+// a leaf's edge and tip flutter in the wind (m, at a fair day's gust) on top of its part's sway
+const LEAF_EDGE = 0.005;
 
 class PlantBuilder {
 
 	readonly P: number[] = []; readonly U: number[] = []; readonly C: number[] = [];
 	readonly M: number[] = []; readonly S: number[] = []; readonly I: number[] = [];
+	readonly R: number[] = []; readonly W: number[] = [];
 	readonly intended: number[] = []; readonly envelope: number[] = []; readonly envelopeWeight: number[] = [];
 	// the plant being grown: its frame on the ground, its sky visibility and how it bends
 	readonly frame = new THREE.Matrix4();
 	readonly turn = new THREE.Matrix3();
 	visibility = 1;
+	height = 1;
 	bend: ( local: THREE.Vector3 ) => number = () => 0;
+	private readonly root = new THREE.Vector3();
 	private readonly w = new THREE.Vector3(); private readonly n = new THREE.Vector3(); private readonly e = new THREE.Vector3();
 
 	place( site: PlantSite, yaw: number, tilt: THREE.Vector3 ): void {
@@ -63,6 +78,8 @@ class PlantBuilder {
 		this.frame.compose( new THREE.Vector3( site.x, site.y - 0.03, site.z ), q, new THREE.Vector3( 1, 1, 1 ) );
 		this.turn.setFromMatrix4( this.frame );
 		this.visibility = site.visibility;
+		this.height = site.height;
+		this.root.setFromMatrixPosition( this.frame );
 
 	}
 
@@ -74,6 +91,9 @@ class PlantBuilder {
 		this.U.push( u, v );
 		this.C.push( color[ 0 ] * shade, color[ 1 ] * shade, color[ 2 ] * shade );
 		this.M.push( this.bend( p ) + flutter * look.flutter, look.phase, stem ? 1 : 0, bark ? 1 : 0 );
+		const branch = look.base ? THREE.MathUtils.clamp( p.distanceTo( look.base ) / Math.max( 1e-3, look.reach ?? 1 ), 0, 1 ) : flutter;
+		this.R.push( this.root.x, this.root.y, this.root.z );
+		this.W.push( this.bend( p ), branch * look.flutter, stem || bark ? 0 : flutter * LEAF_EDGE, this.height );
 		const light = THREE.MathUtils.clamp( look.light, 0, 1 );
 		this.S.push( THREE.MathUtils.lerp( 0.32, 1, light ) * this.visibility, THREE.MathUtils.lerp( 0.7, 1, light ) );
 		this.n.copy( normal ).applyMatrix3( this.turn ).normalize();
@@ -188,6 +208,8 @@ class PlantBuilder {
 		g.setAttribute( 'color', new THREE.Float32BufferAttribute( this.C, 3 ) );
 		g.setAttribute( 'plantMotion', new THREE.Float32BufferAttribute( this.M, 4 ) );
 		g.setAttribute( 'plantShade', new THREE.Float32BufferAttribute( this.S, 2 ) );
+		g.setAttribute( 'plantRoot', new THREE.Float32BufferAttribute( this.R, 3 ) );
+		g.setAttribute( 'plantWind', new THREE.Float32BufferAttribute( this.W, 4 ) );
 		g.setIndex( this.I );
 		g.computeVertexNormals();
 		// Each leaf keeps its fold's lighting, turned to the side it was grown to face (a
@@ -247,9 +269,11 @@ function leafCluster( b: PlantBuilder, rng: Rng, centre: THREE.Vector3, radius: 
 		start.copy( centre ).add( randomUnit( rng, j ).multiplyScalar( radius * 0.25 ) );
 		end.copy( start ).addScaledVector( dir, length );
 		const phase = rng() * Math.PI * 2;
+		const sprayBase = start.clone(), sprayReach = length + leafSize[ 1 ];
 		const look = ( q: THREE.Vector3 ): Look => ( {
 			envelope: new THREE.Vector3().subVectors( q, middle ).normalize(), envelopeWeight: 0.24,
 			light: 0.25 + 0.75 * Math.min( 1, q.distanceTo( middle ) / extent ), phase, flutter: 0.006,
+			base: sprayBase, reach: sprayReach,
 		} );
 		b.stalk( start, end, 0.005, 0.0018, twig, 0.5, look( start ) );
 		const pairs = Math.max( 3, Math.min( 7, Math.round( length / 0.075 ) ) );
@@ -322,7 +346,7 @@ function broadleafClump( b: PlantBuilder, rng: Rng, H: number ): void {
 		tip.copy( base ).addScaledVector( dirH, Math.cos( rise ) * stalkLength ).addScaledVector( UP, Math.sin( rise ) * stalkLength );
 		mid.lerpVectors( base, tip, 0.5 ).addScaledVector( UP, stalkLength * 0.06 );
 		const look: Look = { envelope: dirH.clone().addScaledVector( UP, 0.8 ).normalize(), envelopeWeight: 0.15,
-			light: 0.45 + 0.55 * ( 1 - young * 0.4 ), phase: rng() * Math.PI * 2, flutter: 0.012 };
+			light: 0.45 + 0.55 * ( 1 - young * 0.4 ), phase: rng() * Math.PI * 2, flutter: 0.012, base: base.clone(), reach: stalkLength + H * 0.8 };
 		b.stalk( base, mid, 0.008, 0.006, STALK, 0.6, look );
 		b.stalk( mid, tip, 0.006, 0.004, STALK, 0.7, look );
 		const L = THREE.MathUtils.clamp( H * ( 0.5 + rng() * 0.3 ) * ( 1 - 0.35 * young ), 0.16, 0.42 );
@@ -360,7 +384,8 @@ function fern( b: PlantBuilder, rng: Rng, H: number ): void {
 		p0.copy( dirH ).multiplyScalar( 0.025 );
 		p1.copy( p0 ).addScaledVector( UP, H * ( young ? 1.1 : 1.3 + rng() * 0.2 ) ).addScaledVector( dirH, reach * 0.3 );
 		p2.copy( p0 ).addScaledVector( dirH, reach ).addScaledVector( UP, H * ( young ? 0.95 : 0.35 + rng() * 0.3 ) );
-		const look: Look = { envelope: dirH.clone().addScaledVector( UP, 0.6 ).normalize(), envelopeWeight: 0.12, light: 0.85, phase: rng() * Math.PI * 2, flutter: 0.016 };
+		const look: Look = { envelope: dirH.clone().addScaledVector( UP, 0.6 ).normalize(), envelopeWeight: 0.12, light: 0.85, phase: rng() * Math.PI * 2, flutter: 0.016,
+			base: p0.clone(), reach: p0.distanceTo( p2 ) };
 		const segments = 6;
 		prev.copy( p0 );
 		for ( let s = 1; s <= segments; s ++ ) {
@@ -493,13 +518,13 @@ const GROW: Record<PlantSite[ 'kind' ], ( b: PlantBuilder, rng: Rng, H: number )
 	round: roundShrub, broadleaf: broadleafClump, fern, tree: smallTree,
 };
 
-function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
+function plantMaterial( shared: Shared, legacy = false, maps?: { map: THREE.Texture; alphaMap: THREE.Texture } ): THREE.MeshStandardNodeMaterial {
 
-	const map = leafTexture();
+	const map = ( maps?.map ?? leafTexture() ) as THREE.CanvasTexture;
 	const mat = new THREE.MeshStandardNodeMaterial( {
 		map, alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: ALPHA_TO_COVERAGE, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
 	} );
-	mat.alphaMap = leafAlphaTexture( map.image.width );
+	mat.alphaMap = maps?.alphaMap ?? leafAlphaTexture( map.image.width );
 	markVegetation( mat );
 	const motion = attribute<'vec4'>( 'plantMotion', 'vec4' );
 	const shade = attribute<'vec2'>( 'plantShade', 'vec2' );
@@ -526,14 +551,45 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// materialColor retains the leaf map and its alpha; the vertex colours multiply in after.
 	mat.colorNode = materialColor.mul( vec4( wetTint, wetTint, wetTint, 1 ) );
 	mat.roughnessNode = mix( mix( float( 0.82 ), float( 0.9 ), bark ), float( 0.68 ), wetness );
-	// The same travelling sway as the rim bushes (Foliage.ts), at the same rates of the shared
-	// phase; each spray, frond or leaf keeps its own phase, the trunk bends as a whole.
 	const p = positionLocal; // the mesh sits at the origin: world space
-	const wind = shared.wind.direction;
-	const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.wind.phase.mul( 1.3 / 1.6 ) ).add( motion.y );
-	const along = vec3( wind.x, 0, wind.y ).mul( sin( ph ) );
-	const across = vec3( wind.y.negate(), 0, wind.x ).mul( cos( ph.mul( 1.3 ) ).mul( 0.35 ) );
-	useRestPoseShadows( mat, p, p.add( along.add( across ).mul( motion.x.mul( shared.wind.strength ) ) ), float( 1 ).sub( motion.z ) );
+	let swayed: THREE.Node<'vec3'>;
+	if ( legacy ) {
+
+		// The same travelling sway as the rim bushes (Foliage.ts), at the same rates of the shared
+		// phase; each spray, frond or leaf keeps its own phase, the trunk bends as a whole.
+		const wind = shared.wind.direction;
+		const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.wind.phase.mul( 1.3 / 1.6 ) ).add( motion.y );
+		const along = vec3( wind.x, 0, wind.y ).mul( sin( ph ) );
+		const across = vec3( wind.y.negate(), 0, wind.x ).mul( cos( ph.mul( 1.3 ) ).mul( 0.35 ) );
+		swayed = p.add( along.add( across ).mul( motion.x.mul( shared.wind.strength ) ) );
+
+	} else {
+
+		// Three layers, after Sousa (GPU Gems 3, ch. 16): the whole plant bends from its root with
+		// the gust field (trees sway at half a shrub's rate); each spray, frond or leaf stalk swings
+		// on its own phase, from where it leaves the plant out; each leaf's edges and tip flutter
+		// along its normal. Branches and leaves move more in a gust and in a strong wind, and their
+		// flutter speeds up with it (the `flutter` clock).
+		const root = attribute<'vec3'>( 'plantRoot', 'vec3' );
+		const amp = attribute<'vec4'>( 'plantWind', 'vec4' );
+		const slow = smoothstep( 1.4, 2.6, amp.w );
+		const local = dot( positionGeometry, vec3( 1.7, 2.3, 1.9 ) );
+		swayed = setWindDisplacement( mat, ( wind ) => {
+
+			const bend = mainBend( wind, p, root, amp.x, 0.9, slow );
+			const field = bend.field;
+			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
+			const lively = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) );
+			const swing = wave( wind.flutter, 0.85, motion.y ).mul( 0.6 ).add( wave( wind.flutter, 1.37, motion.y.mul( 1.9 ).add( local ) ).mul( 0.4 ) );
+			const sway = wave( wind.flutter, 0.63, motion.y.mul( 2.3 ) );
+			const branch = vec3( 0, swing, 0 ).add( along.mul( sway.mul( 0.5 ).add( 0.35 ) ) ).add( across.mul( swing.mul( 0.4 ) ) ).mul( amp.y.mul( lively ) );
+			const edge = normalGeometry.mul( wave( wind.flutter, 4.1, motion.y.mul( 3 ).add( local.mul( 4 ) ) ).mul( amp.z.mul( lively ) ) );
+			return bend.position.add( branch ).add( edge );
+
+		}, shared.wind );
+
+	}
+	useRestPoseShadows( mat, p, swayed, float( 1 ).sub( motion.z ) );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = shade.x;
 	useLighting( mat, () => new VegetationLighting( shade.y, ( L, V, N ) => {
@@ -564,7 +620,11 @@ export function buildPlants( sites: PlantSite[], shared: Shared ): THREE.Mesh {
 		GROW[ site.kind ]( b, rng, site.height );
 
 	}
-	const mesh = new THREE.Mesh( b.geometry(), plantMaterial( shared ) );
+	const material = plantMaterial( shared );
+	const mesh = new THREE.Mesh( b.geometry(), material );
+	keepLegacyWind( mesh, plantMaterial( shared, true, { map: material.map!, alphaMap: material.alphaMap! } ) );
+	// Room for the bend: a gale's gust lays a crown over by a few decimetres.
+	mesh.geometry.boundingSphere!.radius += 0.5;
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
 	mesh.name = 'plants';

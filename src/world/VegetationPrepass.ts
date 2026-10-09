@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { materialColor, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { legacyWind, windVariants } from './WindVariants.ts';
 
 // A depth prepass for the alpha-to-coverage vegetation (grass, bushes, plants, rim leaves).
 //
@@ -77,7 +78,9 @@ function depthMaterial( source: THREE.MeshStandardNodeMaterial ): THREE.MeshBasi
 
 }
 
-type Pair = { mesh: THREE.Mesh; material: THREE.MeshStandardNodeMaterial; depth: THREE.Mesh };
+// `materials` holds the shaded mesh's material and, while the wind keeps its old sway for A/Bs
+// (WindVariants.ts), the old one; `depths` their depth copies, in the same order.
+type Pair = { mesh: THREE.Mesh; materials: THREE.MeshStandardNodeMaterial[]; depth: THREE.Mesh; depths: THREE.Material[] };
 
 /** Give every alpha-to-coverage mesh under `roots` its depth prepass. Without multisampling there
  * is no coverage material, and nothing changes. */
@@ -100,17 +103,19 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 	const patched = new Set<THREE.Material>();
 	for ( const mesh of meshes ) {
 
-		const material = mesh.material as THREE.MeshStandardNodeMaterial;
+		const variants = windVariants( mesh );
+		const materials = ( variants ? [ variants.shipped, variants.legacy ] : [ mesh.material ] ) as THREE.MeshStandardNodeMaterial[];
+		const depths = materials.map( depthMaterial );
 		let depth: THREE.Mesh;
 		if ( ( mesh as THREE.InstancedMesh ).isInstancedMesh ) {
 
 			const source = mesh as THREE.InstancedMesh;
-			const copy = new THREE.InstancedMesh( source.geometry, depthMaterial( material ), source.instanceMatrix.count );
+			const copy = new THREE.InstancedMesh( source.geometry, depths[ 0 ], source.instanceMatrix.count );
 			copy.instanceMatrix = source.instanceMatrix;
 			copy.count = source.count;
 			depth = copy;
 
-		} else depth = new THREE.Mesh( mesh.geometry, depthMaterial( material ) );
+		} else depth = new THREE.Mesh( mesh.geometry, depths[ 0 ] );
 		depth.name = mesh.name + '-depth';
 		depth.frustumCulled = mesh.frustumCulled;
 		depth.castShadow = false;
@@ -132,7 +137,9 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		};
 		// a child: it follows the mesh's transform and visibility
 		mesh.add( depth );
-		if ( ! patched.has( material ) ) {
+		for ( const material of materials ) {
+
+			if ( patched.has( material ) ) continue;
 
 			patched.add( material );
 			invariantPosition( material );
@@ -149,7 +156,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 			};
 
 		}
-		pairs.push( { mesh, material, depth } );
+		pairs.push( { mesh, materials, depth, depths } );
 
 	}
 
@@ -159,18 +166,25 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 
 		const on = debugFlags.vegPrepass !== false;
 		const opaque = on && debugFlags.vegPrepassOpaque !== false;
-		const key = `${ on } ${ opaque }`;
+		const legacy = legacyWind();
+		const key = `${ on } ${ opaque } ${ legacy }`;
 		if ( key === state ) return;
 		state = key;
 		for ( const p of pairs ) {
 
-			const m = p.material;
 			p.depth.visible = on;
-			m.depthWrite = ! on;
-			m.depthFunc = on ? THREE.EqualDepth : THREE.LessEqualDepth;
-			m.alphaToCoverage = ! opaque;
-			m.userData.prepassOpaque = opaque;
-			m.needsUpdate = true;
+			p.depth.material = p.depths[ legacy ? p.depths.length - 1 : 0 ];
+			for ( const m of p.materials ) {
+
+				if ( m.depthWrite === ! on && m.userData.prepassOpaque === opaque && m.userData.prepassOn === on ) continue;
+				m.depthWrite = ! on;
+				m.depthFunc = on ? THREE.EqualDepth : THREE.LessEqualDepth;
+				m.alphaToCoverage = ! opaque;
+				m.userData.prepassOpaque = opaque;
+				m.userData.prepassOn = on;
+				m.needsUpdate = true;
+
+			}
 
 		}
 

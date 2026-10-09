@@ -24,7 +24,10 @@ const LOG2_GROUP = 8;
 // A tuft's widened blades reach out by at most this many times their half width (`MAX_WIDEN` times
 // the largest blade gain, 16 / 8, less the blade itself), see `pixelWideBlade` in Grass.ts.
 export const WIDEN_REACH = 15;
-// Slack (m) for the wind's sway (a few centimetres at the tips in a gale) and rounding.
+// Slack (m) for the old global-sine sway (`flags.windLegacy`: a few centimetres at the tips in a
+// gale) and rounding. The wind's bend (`bendBlade` in Grass.ts) keeps every vertex at its
+// distance from the tuft's origin, so it stays inside the sphere when that is padded by twice
+// the origin's distance from the sphere's centre (see below), whatever the wind.
 const SWAY_PAD = 0.2;
 // The thin tufts are culled a little past their fold, so the test never takes a tuft the vertex
 // stage would still draw a sliver of.
@@ -124,7 +127,11 @@ export class GrassCull {
 				_world.getBoundingSphere( _sphere );
 				const axisScale = Math.max( Math.hypot( e[ 0 ], e[ 1 ], e[ 2 ] ), Math.hypot( e[ 8 ], e[ 9 ], e[ 10 ] ) );
 				_sphere.center.toArray( spheres, i * 4 );
-				spheres[ i * 4 + 3 ] = _sphere.radius + WIDEN_REACH * b.halfWidth * axisScale + SWAY_PAD;
+				// Every vertex lies in the box, so within the box's radius plus the origin's offset
+				// from its centre of the origin; a vertex turned about the origin stays that close to
+				// it, so within the radius plus twice the offset of the centre.
+				const bend = 2 * _sphere.center.distanceTo( t.origin );
+				spheres[ i * 4 + 3 ] = _sphere.radius + bend + WIDEN_REACH * b.halfWidth * axisScale + SWAY_PAD;
 
 			} );
 
