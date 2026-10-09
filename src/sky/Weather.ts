@@ -1,5 +1,4 @@
 export type WeatherName = 'clear' | 'fair' | 'cloudy' | 'overcast' | 'rain' | 'storm' | 'fog';
-export type WeatherQuality = 'low' | 'medium' | 'high';
 
 export interface WeatherState {
 
@@ -42,25 +41,6 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<Preset>>> = 
 	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, ambientGain: 0.45, haze: 0.0035, windSpeed: 11, windDirection: 40, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
 	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, ambientGain: 0.92, haze: 0.0012, windSpeed: 1.8, windDirection: 40, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
-};
-
-export interface WeatherQualityProfile {
-
-	cloudSteps: number;
-	panoramaWidth: number;
-	panoramaHeight: number;
-	skyUpdateInterval: number;
-	underwaterShadowInterval: number; // refracted sun map; the sun's own map steps with the key light (SunShadow)
-	rainDrops: number;
-
-}
-
-// Intervals are seconds of wall time. The controller never uses a quality profile to alter
-// weather state, so changing render quality cannot change the time, rain or lighting mood.
-export const WEATHER_QUALITY: Readonly<Record<WeatherQuality, Readonly<WeatherQualityProfile>>> = {
-	low: { cloudSteps: 6, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 1.2, underwaterShadowInterval: 0.2, rainDrops: 16384 },
-	medium: { cloudSteps: 10, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.8, underwaterShadowInterval: 0.12, rainDrops: 32768 },
-	high: { cloudSteps: 14, panoramaWidth: 512, panoramaHeight: 256, skyUpdateInterval: 0.5, underwaterShadowInterval: 0.08, rainDrops: 49152 },
 };
 
 // Auto weather: from each state, the next one and its weight. Rain builds through overcast

@@ -70,10 +70,11 @@ const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
 	'store-scene': { discardScene: false },
 };
 
-/** The defaults, with `?post=legacy` (every switch below) or `?post=a,b` applied. */
-export function postOptionsFromURL( search = location.search ): PostOptions {
+/** The defaults (with a tier's options over them), with `?post=legacy` (every switch below) or
+ * `?post=a,b` applied. */
+export function postOptionsFromURL( search = location.search, base: Partial<PostOptions> = {} ): PostOptions {
 
-	const options = { ...DEFAULT_POST_OPTIONS };
+	const options = { ...DEFAULT_POST_OPTIONS, ...base };
 	for ( const name of ( new URLSearchParams( search ).get( 'post' ) ?? '' ).split( ',' ) ) {
 
 		if ( name === 'legacy' ) for ( const change of Object.values( LEGACY_SWITCHES ) ) Object.assign( options, change );

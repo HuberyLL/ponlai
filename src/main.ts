@@ -4,9 +4,10 @@ import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, WEATHER_QUALITY, type WeatherName, type WeatherQuality } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, type WeatherName } from './sky/Weather.ts';
+import { QUALITY_TIERS, qualityFromURL, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { Wind } from './weather/Wind.ts';
-import { Rain } from './weather/Rain.ts';
+import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
 import { Caustics } from './ocean/Caustics.ts';
@@ -15,7 +16,7 @@ import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
 import { loadWorld, buildWorldMeshes, shoreTextureFrom, type LoadedWorld } from './world/World.ts';
-import { buildGrass } from './world/Grass.ts';
+import { buildGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
@@ -23,7 +24,7 @@ import { buildTurfSkirt } from './world/RimSkirt.ts';
 import { buildFlowers } from './world/Flowers.ts';
 import { pickPlantSites, bakeGroundContact, bakeAnchorContact } from './world/PlantSites.ts';
 import { buildPlants } from './world/Plants.ts';
-import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, type ToneCurve, type LookName } from './post/Pipeline.ts';
+import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
@@ -56,6 +57,10 @@ const mark = ( name: string ) => profiler?.mark( name );
 // scene handles and frame diagnostics on window, for the capture tool and the console: dev server,
 // ?debug or ?profile only
 const DEBUG = import.meta.env.DEV || params.has( 'debug' ) || profiler !== null;
+// The quality tier (Quality.ts): its load knobs are read below as the parts they shape are built,
+// its runtime ones applied by applySkyQuality. A change of tier reloads the page.
+const qualityTier: QualityTier = qualityFromURL();
+const quality: Readonly<QualityProfile> = qualityProfile( qualityTier );
 const loading = document.getElementById( 'loading' );
 const setStatus = ( s: string ) => { const el = loading?.querySelector( 'span' ); if ( el ) el.textContent = s; };
 
@@ -72,9 +77,9 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 
 }
 
-// The scene renders at a pixel ratio set by the quality preset (see RenderScale.ts), at most the
+// The scene renders at a pixel ratio set by the quality tier (see RenderScale.ts), at most the
 // display's and DPR_CAP; the canvas matches the display and the frame graph upscales to it.
-// Explicit DPR captures and the full-resolution control lift the preset's pixel budget.
+// Explicit DPR captures and the full-resolution control lift the tier's pixel budget.
 const DPR_CAP = params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : 1.5;
 const resolution = { full: params.has( 'dpr' ), render: '' };
 renderer.setPixelRatio( outputPixelRatio( 1 ) );
@@ -112,6 +117,7 @@ const freeControls = new FreeCameraControls( camera, renderer.domElement );
 // ------------------------------------------------------------------ sky, light, water optics
 
 const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
+sky.setEnvironmentSource( quality.environmentSource );
 const numberParam = ( name: string, fallback: number ) => {
 
 	const value = Number( params.get( name ) ?? fallback );
@@ -141,17 +147,32 @@ let lastSkyHour = dayCycle.hour;
 let lastWeatherSignature = '';
 // Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
 let cloudOverride: number | null = params.has( 'clouds' ) ? THREE.MathUtils.clamp( numberParam( 'clouds', 0.32 ), 0, 1 ) : null;
-const requestedQuality = params.get( 'quality' ) ?? 'medium';
-const skyQuality = { value: ( Object.hasOwn( WEATHER_QUALITY, requestedQuality ) ? requestedQuality : 'medium' ) as WeatherQuality };
-function applySkyQuality(): void {
+const skyQuality = { value: qualityTier };
+// The tier's runtime knobs (a debug override may replace some of them: `s.applyQuality( { ... } )`).
+const runtime = { refractedSun: null as RefractedSun | null };
+function applySkyQuality( q: Readonly<QualityProfile> = quality ): void {
 
-	sky.setQuality( skyQuality.value === 'low' ? 'low' : skyQuality.value === 'high' ? 'high' : 'medium' );
-	rain?.setQuality( WEATHER_QUALITY[ skyQuality.value ].rainDrops );
-	// the render scale follows the preset too (the pipeline exists from the first resize on)
-	if ( pipelineReady ) resize();
+	sky.setCloudView( q.cloudView );
+	sky.clouds.setDome( q.cloudDome.width, q.cloudDome.height, q.cloudDome.strideX, q.cloudDome.strideY );
+	sky.clouds.setMarch( q.cloudMarch );
+	sky.clouds.setShadowRefresh( q.cloudShadowRows );
+	sky.setEnvironmentCadence( q.environmentEvery );
+	rain?.setQuality( q.rainDrops );
+	if ( runtime.refractedSun ) runtime.refractedSun.angleGate = THREE.MathUtils.degToRad( q.refractedSun.angleGate );
+	runtimeQuality = q;
 
 }
-let pipelineReady = false;
+let runtimeQuality: Readonly<QualityProfile> = quality;
+// A tier change rebuilds materials and the frame graph: reload with the tier and the page's options.
+function reloadWithQuality( tier: QualityTier ): void {
+
+	const url = new URL( location.href );
+	url.searchParams.set( 'quality', tier );
+	if ( gui._hidden ) url.searchParams.delete( 'gui' );
+	else url.searchParams.set( 'gui', '' );
+	location.assign( url );
+
+}
 applySkyQuality();
 scene.add( sky.dome, sky.lightning.group );
 scene.environmentIntensity = 1;
@@ -166,6 +187,8 @@ sun.shadow.mapSize.set( 2048, 2048 );
 // a wide blur.
 sun.shadow.normalBias = 0.012;
 const sunShadow = new SunShadow( sun, { bias: 0.01 } );
+// compiled into every receiver's material, so set before any is built
+sunShadow.setFilter( quality.shadow.surface, quality.shadow.vegetation );
 sunShadow.install();
 // Cloud shadowing shares the density field in the visible/reflected sky. Bake its long solar
 // path once at low resolution, then sample the same transmission on every receiver, including
@@ -306,13 +329,15 @@ const fft = new OceanFFT( renderer, {
 	swell: { height: 0.18 },
 } );
 const caustics = new Caustics( renderer, fft );
-rain = new Rain( { count: WEATHER_QUALITY[ skyQuality.value ].rainDrops } );
+// the veil's shells and the sea's ripple layers are built into the rain's and the water's materials
+setRainShading( quality.rainShading );
+rain = new Rain( { count: runtimeQuality.rainDrops } );
 // Drops scatter the same linear environment and key light as the island, without an emissive
 // floor. Using the GPU integral keeps their light in step with the displayed sky transition.
 // A strike's fill lights the ground they show in full; the sky they show and reflect takes it
 // damped (like the storm spray's), since the displayed deck brightens far less than the fill.
 rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).pow( 0.35 ) ) );
-const pipeline = new Pipeline( renderer, sky, rain );
+const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ) );
 const requestedTone = params.get( 'tone' ) as ToneCurve | null;
 if ( requestedTone && TONE_CURVES.includes( requestedTone ) ) pipeline.setToneMapping( requestedTone );
 const requestedLook = params.get( 'look' ) as LookName | null;
@@ -358,12 +383,15 @@ for ( const m of data.meshes ) if ( m.kind === 'cliff' ) bakeGroundContact( m, p
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
 const refractedSun = new RefractedSun( renderer, shared );
+runtime.refractedSun = refractedSun;
+refractedSun.angleGate = THREE.MathUtils.degToRad( runtimeQuality.refractedSun.angleGate );
 refractedSun.setCasters( world.group );
 refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
 const foliage = buildFoliage( data.vegetation, shared );
 // The grass and flowers read the anchors' sky visibility with the plants' shade in it.
 bakeAnchorContact( data.vegetation, plantSites );
+setGrassQuality( quality.grass );
 const grass = buildGrass( data.vegetation, shared, data.rimGround, walkDistance );
 const flowers = buildFlowers( data.vegetation, shared, walkDistance );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
@@ -413,7 +441,7 @@ const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
 } );
 water = new Water( {
 	fft, sky, shared, shore: shore.tex, seabedHeight: seabedField.tex, shoreWaves, refractedSun, sunShadow, storm: stormSea,
-	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture,
+	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 } );
 applySkyFill();
 waterScene.add( water.mesh, stormSea.spray.mesh );
@@ -519,9 +547,9 @@ cameraF.add( camera, 'fov', 15, 100, 1 ).name( 'field of view' ).listen().onChan
 cameraF.add( { reset: () => setCameraView( 'island' ) }, 'reset' ).name( 'return to island (R)' );
 const environmentLook = { exposure: true };
 const W = water.uniforms;
-// Quality sets the clouds' march, bake cadences, rain count and the render scale together.
+// The quality tier sets every knob of the frame's cost (Quality.ts); a change reloads the page.
 const performanceF = gui.addFolder( 'Performance' );
-performanceF.add( skyQuality, 'value', [ 'low', 'medium', 'high' ] ).name( 'quality' ).listen().onFinishChange( () => { applySkyQuality(); void refreshEnvironment(); } );
+performanceF.add( skyQuality, 'value', QUALITY_TIERS ).name( 'quality (reloads)' ).onFinishChange( ( tier: QualityTier ) => { if ( tier !== qualityTier ) reloadWithQuality( tier ); } );
 performanceF.add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
 performanceF.add( pipeline.sharpness, 'value', 0, 2, 0.05 ).name( 'upscale softness' );
 performanceF.add( resolution, 'render' ).name( 'render → canvas' ).listen().disable();
@@ -643,7 +671,7 @@ const canvasSize = new THREE.Vector2();
 function resize(): void {
 
 	const w = innerWidth, h = innerHeight;
-	const ratio = renderPixelRatio( w, h, skyQuality.value, resolution.full, DPR_CAP );
+	const ratio = renderPixelRatio( w, h, quality.render, resolution.full, DPR_CAP );
 	renderer.setPixelRatio( outputPixelRatio( ratio ) );
 	renderer.setSize( w, h );
 	camera.aspect = w / h;
@@ -659,7 +687,6 @@ function resize(): void {
 
 addEventListener( 'resize', resize );
 resize();
-pipelineReady = true;
 
 const clock = new THREE.Timer();
 clock.connect( document );
@@ -744,7 +771,7 @@ function tick(): void {
 	// the look's sunlit layers follow the weather's sunlight, as the key light does
 	S.lookSunlight = weather.state.directVisibility;
 	skyElapsed += environmentDt;
-	const skyInterval = WEATHER_QUALITY[ skyQuality.value ].skyUpdateInterval;
+	const skyInterval = runtimeQuality.skyUpdateInterval;
 	const ws = weather.state;
 	const weatherSignature = `${ cloudOverride ?? ws.coverage },${ ws.density },${ ws.directVisibility },${ ws.ambientGain },${ ws.haze }`;
 	if ( ! sky.busy && ! sky.transitioning && skyElapsed >= skyInterval &&
@@ -762,7 +789,7 @@ function tick(): void {
 	// quality cadence.
 	sunShadow.update( renderer, scene, camera, sky.keyDir );
 	shadowElapsed += environmentDt;
-	if ( shadowElapsed >= WEATHER_QUALITY[ skyQuality.value ].underwaterShadowInterval && refractedSun.update() ) shadowElapsed = 0;
+	if ( shadowElapsed >= runtimeQuality.refractedSun.interval && refractedSun.update() ) shadowElapsed = 0;
 	shared.time.value = simTime;
 	fft.update( paused ? 0 : dt, simTime );
 	stormSea.update( simTime, weather.state.storm, camera );
@@ -807,7 +834,7 @@ function diagnostics(): void {
 		skyBakeMs: + sky.lastBakeMs.toFixed( 2 ),
 		skyBusy: sky.busy,
 		skyTransitioning: sky.transitioning,
-		quality: skyQuality.value,
+		quality: qualityTier,
 		weather: weather.target,
 		weatherProgress: + weather.progress.toFixed( 3 ),
 		rain: + sky.weather.rain.toFixed( 3 ),
@@ -868,4 +895,5 @@ const loop = {
 
 	},
 };
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
+	quality, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
