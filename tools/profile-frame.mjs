@@ -894,14 +894,23 @@ async function startDisplay( page ) {
 }
 
 // The camera dragged as a player drags it: through Chrome's input (CDP mouse events, dispatched
-// once per display refresh as real ones are), drags of 30 to 200 degrees a second with pauses, a
-// wheel zoom in and out and a flick it glides on from, repeated until `seconds` have passed.
+// once per display refresh as real ones are), turning drags of 30 to 200 degrees a second with
+// pauses, a wheel zoom in and out and a flick it glides on from, repeated until `seconds` have
+// passed.
 async function driveUser( page, seconds ) {
 
-	const view = await page.evaluate( () => ( { w: innerWidth, h: innerHeight } ) );
+	// the island camera turns with the right button, by its turn per window height dragged, and
+	// zooms by its own step a wheel notch; older builds' OrbitControls with the left, a full circle
+	// per window height, 5 % a notch. The zoom takes the notches that make the same 0.95^8.
+	const view = await page.evaluate( () => {
+
+		const c = window.__SOOMI__.controls, island = c.isIslandCamera === true;
+		return { w: innerWidth, h: innerHeight, button: island ? 'right' : 'left', perHeight: island ? c.turnPerHeight * 180 / Math.PI : 360,
+			notches: island ? Math.max( 1, Math.round( - 8 * Math.log( 0.95 ) / c.wheelZoom ) ) : 8 };
+
+	} );
 	const cx = view.w * 0.45, cy = view.h / 2;
-	// OrbitControls turns a full circle per window height dragged
-	const pxPerDeg = view.h / 360;
+	const pxPerDeg = view.h / view.perHeight;
 	const end = Date.now() + seconds * 1000;
 	const left = () => end - Date.now();
 	const pause = ( s ) => sleep( Math.max( Math.min( s * 1000, left() ), 0 ) );
@@ -913,7 +922,7 @@ async function driveUser( page, seconds ) {
 		// starting where the whole drag fits, clear of the GUI's corner
 		const x0 = Math.min( Math.max( cx - dx / 2, 40 ), view.w * 0.75 ), y0 = Math.min( Math.max( cy - dy / 2, 40 ), view.h - 40 );
 		await page.mouse.move( x0, y0 );
-		await page.mouse.down();
+		await page.mouse.down( { button: view.button } );
 		const started = Date.now();
 		for ( ;; ) {
 
@@ -923,7 +932,7 @@ async function driveUser( page, seconds ) {
 			await sleep( 4 );
 
 		}
-		await page.mouse.up();
+		await page.mouse.up( { button: view.button } );
 
 	};
 	const wheel = async ( notches, s, dir ) => {
@@ -947,9 +956,9 @@ async function driveUser( page, seconds ) {
 		await drag( 0, 30, 1 );
 		await drag( - 90, - 10, 1.5 );
 		await pause( 0.8 );
-		await wheel( 8, 1, - 1 );
+		await wheel( view.notches, 1, - 1 );
 		await pause( 0.4 );
-		await wheel( 8, 1, 1 );
+		await wheel( view.notches, 1, 1 );
 		await drag( 90, 0, 2 );
 		await pause( 0.8 );
 		await drag( - 200, 0, 0.4 );
