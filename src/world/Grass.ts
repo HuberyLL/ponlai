@@ -132,9 +132,12 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 // coverage, so it hides as much of the ground as the thin blade did at every distance. This is
 // the treatment of thin wires after Emil Persson ("Phone-wire AA", Humus, 2012). Two pixels
 // brought a slow orbit's meadow flicker most of the way to a supersampled render's; narrower
-// widths left more of it, wider ones soften the blades further for little gain.
+// widths left more of it, wider ones soften the blades further for little gain. Without
+// multisampling the coverage is dithered instead (`coverageDither`), and a blade dithered at half
+// its pixels across two reads as a dotted line, sharpened further by the upscale: one pixel keeps
+// such blades solid, with the meadow's brightness as at two.
 const grassUniforms = {
-	minWidth: uniform( 2 ), // render-target pixels
+	minWidth: uniform( ALPHA_TO_COVERAGE ? 2 : 1 ), // render-target pixels
 	rimMinWidth: uniform( 0.75 ), // on the outer rim, see `rimEdge` in buildGrass
 	// The extra lawn tufts of thick patches fold away between these view distances (m): beyond
 	// them a blade is under a pixel wide and the widened blades of the remaining tufts already
