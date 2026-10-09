@@ -262,7 +262,8 @@ stone exposed.
   took; one box spans each batch, so a larger island keeps more of its meadow in the nearer bands.
   The thin extra tufts are not drawn once the camera is beyond their fold (42 m). Single-sampled
   (`msaa=1`), leaves take a plain alpha test and grass blades an ordered 4x4 dither in place of
-  alpha to coverage (`ALPHA_TO_COVERAGE` in `Foliage.ts`). Vegetation materials carry
+  alpha to coverage (`ALPHA_TO_COVERAGE` in `Foliage.ts`), the blades kept one pixel wide rather
+  than two (a blade dithered across two pixels reads as a dotted line). Vegetation materials carry
   `userData.vegetation` (`markVegetation`) for passes that treat them apart.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
