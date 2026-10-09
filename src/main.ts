@@ -28,6 +28,7 @@ import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type To
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
+import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
@@ -88,7 +89,7 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 // Explicit DPR captures and the full-resolution control lift the tier's pixel budget and pin a
 // dynamic scale at its nominal.
 const DPR_CAP = params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : 1.5;
-const resolution = { full: params.has( 'dpr' ), render: '', scale: '' };
+const resolution = { full: params.has( 'dpr' ), render: '', scale: '', gpu: '–' };
 renderer.setPixelRatio( outputPixelRatio( 1 ) );
 renderer.setSize( innerWidth, innerHeight );
 renderer.shadowMap.enabled = true;
@@ -558,8 +559,25 @@ const performanceF = gui.addFolder( 'Performance' );
 performanceF.add( skyQuality, 'value', QUALITY_TIERS ).name( 'quality (reloads)' ).onFinishChange( ( tier: QualityTier ) => { if ( tier !== qualityTier ) reloadWithQuality( tier ); } );
 performanceF.add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
 performanceF.add( pipeline.sharpness, 'value', 0, 2, 0.05 ).name( 'upscale softness' );
-performanceF.add( resolution, 'scale' ).name( 'render scale' ).listen().disable();
-performanceF.add( resolution, 'render' ).name( 'render → canvas' ).listen().disable();
+// The live readout (FrameStats.ts): the rendered frames' cadence by their rAF timestamps, the render
+// scale and the GPU's frame time, refreshed a few times a second while the folder shows (F toggles a
+// corner overlay with the same numbers).
+const frameStats = new FrameStats();
+const statsF = [
+	performanceF.add( frameStats.readout, 'fps' ).name( 'fps (1 s)' ),
+	performanceF.add( frameStats.readout, 'p95' ).name( 'interval p95' ),
+	performanceF.add( frameStats.readout, 'max' ).name( 'interval max' ),
+	performanceF.add( frameStats.readout, 'late' ).name( 'late frames' ),
+	performanceF.add( frameStats.readout, 'hitches' ).name( 'over 25 ms' ),
+	performanceF.add( resolution, 'scale' ).name( 'render scale' ),
+	performanceF.add( resolution, 'gpu' ).name( 'GPU (median)' ),
+	performanceF.add( resolution, 'render' ).name( 'render → canvas' ),
+];
+for ( const c of statsF ) c.disable();
+performanceF.add( { reset: () => frameStats.reset() }, 'reset' ).name( 'reset counts' );
+frameStats.visible = () => ! gui._hidden && ! gui._closed && ! performanceF._closed;
+frameStats.onReadout = () => { for ( const c of statsF ) c.updateDisplay(); };
+frameStats.extra = () => `scale ${ resolution.scale }   GPU ${ resolution.gpu }`;
 const groundF = gui.addFolder( 'Ground' );
 groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => {
 
@@ -746,13 +764,13 @@ function applyRenderScale( force = false ): void {
 
 }
 
-// The GUI's line: the scale, how it is set and (dynamic) the GPU's recent frame time.
+// The GUI's lines: the scale and how it is set, and (dynamic) the GPU's recent frame time.
 function describeRenderScale(): void {
 
 	const d = dynamicResolution;
-	const how = ! d ? 'fixed' : resolution.full ? 'pinned' : paused ? 'paused: nominal' : `dynamic ${ d.floor }-${ d.max }`;
-	const gpu = d && d.observed.length ? `, GPU ${ [ ...d.observed ].sort( ( a, b ) => a - b )[ d.observed.length >> 1 ].toFixed( 1 ) } ms` : '';
-	resolution.scale = `${ renderScale.toFixed( 2 ) } (${ how }${ gpu })`;
+	const how = ! d ? 'fixed' : resolution.full ? 'pinned' : paused ? 'paused' : `${ d.floor }–${ d.max }`;
+	resolution.scale = `${ renderScale.toFixed( 2 ) } (${ how })`;
+	resolution.gpu = d && d.observed.length ? `${ [ ...d.observed ].sort( ( a, b ) => a - b )[ d.observed.length >> 1 ].toFixed( 1 ) } ms` : '–';
 
 }
 
@@ -780,6 +798,7 @@ function tick( time: number ): void {
 	// the frame's own vblank time, not the moment the tick starts: the main thread reaches the tick a
 	// few milliseconds into the frame, by a varying amount, which made the scene's steps uneven
 	clock.update( time );
+	frameStats.record( time, pacer.interval, pacer.period );
 	const rawDt = clock.getDelta();
 	frameTimes.push( rawDt * 1000 );
 	if ( frameTimes.length > 120 ) frameTimes.shift();
@@ -970,7 +989,13 @@ const reveal = () => {
 	const waiting = dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
 		! paused && ! resolution.full && performance.now() < revealAt;
 	if ( waiting ) setTimeout( reveal, 50 );
-	else loading?.classList.add( 'done' );
+	else {
+
+		loading?.classList.add( 'done' );
+		// the counts start where the scene shows
+		frameStats.reset();
+
+	}
 
 };
 reveal();
