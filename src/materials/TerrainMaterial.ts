@@ -665,23 +665,50 @@ export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextur
 	const dW = shared.waterLevel.sub( p.y );
 	const sigT = shared.sigA.add( shared.sigS );
 	const under = dW.greaterThan( 0 );
-	const caus = causticsAt( caustics, p, dW.max( 0 ) );
 	// Snell's direction and the beam-area factor must change together. For a horizontal
 	// floor, muWater * (muAir / muWater) preserves transmitted horizontal irradiance;
 	// steep submerged walls now receive the correct refracted projection as well.
 	const waterSun = refractedSunDirectionNode( shared.sunDir );
 	const waterSunView = normalize( cameraViewMatrix.mul( vec4( waterSun, 0 ) ).xyz );
-	const sunAtt = select( under, exp( sigT.negate().mul( dW ).div( waterSun.y ) )
-		.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( caus ), vec3( surf.get( 'canopy' ) ) );
+	// The caustics are read only where they are seen: below the water for the sun's path, and
+	// in the band above it for the reflected shimmer, which has faded to nothing 1.2 m up. Most
+	// of the island's rock lies above both, and a select() would read them everywhere. They sample
+	// with an explicit level, so the reads may sit inside these branches.
+	const sunAtt = Fn( () => {
+
+		const att = vec3( surf.get( 'canopy' ) ).toVar();
+		If( under, () => {
+
+			att.assign( exp( sigT.negate().mul( dW ).div( waterSun.y ) )
+				.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( causticsAt( caustics, p, dW.max( 0 ) ) ) );
+
+		} );
+		return att;
+
+	} )();
 	const ambAtt = exp( sigT.negate().mul( dW.max( 0 ) ).mul( 1.25 ) );
 	const above = p.y.sub( shared.waterLevel );
-	// Light reflected up from the sea onto the rock just above it: a steady 28 % lift of the
-	// ambient with the moving caustic pattern (mean 1) on top.
-	const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 1 ).mul( 0.6 ).add( 0.28 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
 	// Reflected caustic sparkle is direct-light energy. It must not animate ambient light
 	// through the zero-energy sun/moon handoff or turn the moon into a daylight source.
 	const directGain = clamp( max( shared.sunColor.x, max( shared.sunColor.y, shared.sunColor.z ) ).mul( 3 ), 0, 1 );
-	const ambMul = select( under, ambAtt, vec3( float( 1 ).add( shimmer.mul( directGain ) ) ) );
+	const ambMul = Fn( () => {
+
+		const mul = vec3( 1 ).toVar();
+		If( under, () => {
+
+			mul.assign( ambAtt );
+
+		} ).ElseIf( above.lessThan( 1.2 ), () => {
+
+			// Light reflected up from the sea onto the rock just above it: a steady 28 % lift of
+			// the ambient with the moving caustic pattern (mean 1) on top.
+			const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 1 ).mul( 0.6 ).add( 0.28 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
+			mul.assign( vec3( float( 1 ).add( shimmer.mul( directGain ) ) ) );
+
+		} );
+		return mul;
+
+	} )();
 	const specMul = select( under, ambAtt.mul( 0.5 ), vec3( 1 ) );
 	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new TerrainLightingModel( sunAtt, ambMul, specMul, waterSunView, under );
 	mat.userData.refractedSolarReceiver = true;

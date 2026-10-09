@@ -1,7 +1,7 @@
 // Frame profiler: plays a matrix of scenes (running clock, fixed weather, a slow camera orbit) in
-// headless Chrome with an uncapped frame rate, and reports the frame interval, the GPU time per
-// pass (timestamp queries, labelled by `src/debug/FrameProfiler.ts` through `?profile`), the tick's
-// JS time, hitches with their cause, and the startup. Runs under the machine-wide GPU lock (held
+// headless Chrome with an uncapped frame rate (or at 60 Hz with `--vsync`), and reports the frame
+// interval, the GPU time per pass (timestamp queries, labelled by `src/debug/FrameProfiler.ts`
+// through `?profile`), the tick's JS time, hitches with their cause, and the startup. Runs under the machine-wide GPU lock (held
 // exclusively) and first checks that nothing else keeps the GPU busy (its results are marked
 // contended otherwise).
 //
@@ -9,7 +9,7 @@
 //        [--quality high] [--timestamps on|off|both] [--warmup s] [--seconds 7] [--orbit 3]
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s]
-//        [--mode page | reload] [--fresh]
+//        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
 //        [--slices 8] [--slice 1.5] [--settle 1]                 (two pages, alternating slices)
 //   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
@@ -44,6 +44,26 @@
 //   counts for the state its tick ran in; GPU figures drop the first 2 frames after a change, frame
 //   intervals the first `--lag` (30: headless Chrome queues about two dozen frames, so a change
 //   reaches the rAF interval that much later).
+// - vsync (`--vsync`): Chrome keeps its vsync and frame-rate limit (60 Hz headless), so the frame
+//   interval is what a player sees: 16.7 ms while every frame makes its vblank, 33.3 when one
+//   misses. Uncapped, a GPU-bound scene's p95 is mostly pacing noise (a sky that holds 60 Hz under
+//   vsync showed a p95 of 33.5 ms uncapped); with vsync the queue stays shallow and the intervals
+//   quantise to vblanks.
+// - acceptance (`--accept`, implies --vsync and, unless given, --timestamps both): a pass or fail
+//   per scene for the 60 fps criterion. From the run without timestamps: the median and the p95
+//   within half a millisecond of `--target` (16.7), and no frame over 25 ms in the measured window
+//   (7 s by default); the p99, the maximum, and the GPU busy time of the run with timestamps are
+//   reported beside the verdict. Headless 60 Hz stands in for a faster display: at 120 Hz a missed
+//   frame costs 25 ms, not 33, so the headless test is the stricter one, but confirm a verdict once
+//   on the real display. Other work on the GPU costs frames, so a scene measured while something
+//   else kept the GPU busy (contended) that fails is INCONCLUSIVE, unless its own GPU busy time
+//   (median, with timestamps) is over the target, which no idle GPU would make up; one that passes
+//   is PASS (contended). The exit code stays 0 unless `--strict` is given, which exits 1 on a FAIL.
+// - scales (`--scales 1.5,1.25,1`): the run once per render scale (the page's `dpr` option), in one
+//   invocation, with a table of every scene at every scale (for the threshold where a scene holds
+//   60 Hz, and the settle points of a dynamic resolution). The url and `--q` must not set `dpr`
+//   themselves (the page reads the first of a repeated option); a scale above the display's pixel
+//   ratio is capped by the page, and the run warns when the render's ratio differs from the scale.
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
 // numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
@@ -54,9 +74,10 @@
 // A url's own query options come first, so "http://host/?profile=frames" runs that side without
 // timestamps. `--timestamps both` takes a scene's frame intervals from a run without GPU
 // timestamps (the rate a player sees) and its passes from a run with them. `--hooks off` leaves
-// out ?profile (frame intervals only, as for a build without the profiler). `?worldCache` is added
-// to every url (`--world-cache off` leaves it out): a build that has it loads the island from
-// IndexedDB while its generator is unchanged; older builds ignore it, as they ignore the runtime
+// out ?profile (frame intervals only, as for a build without the profiler). Builds load the island
+// from IndexedDB while its generator is unchanged (older ones only with `?worldCache`, which is
+// added to every url); `--world-cache off` adds `worldCache=off` instead, so the island is
+// generated as on a first visit. Older builds ignore what they do not know, as they ignore the runtime
 // hooks this tool falls back from (it then drives their handles directly). `--shots` saves a JPEG
 // of each scene after its measurement (profile runs, not A/Bs), `--detail` adds each pass's own time and `--raw` every
 // frame.
@@ -72,7 +93,7 @@ import { withGpuLock, waitForIdleGpu, sampleGpuUtilisation } from './gpu-lock.mj
 const argv = process.argv.slice( 2 );
 const flags = new Set( argv.filter( ( a ) => a.startsWith( '--' ) ) );
 const VALUE_FLAGS = new Set( [ 'report', 'scenes', 'scene', 'w', 'h', 'scale', 'quality', 'warmup', 'seconds', 'orbit', 'eval', 'eval-a', 'eval-b', 'repeat', 'out', 'label', 'q', 'compare', 'idle-wait', 'idle-threshold', 'timestamps', 'hooks',
-	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir' ] );
+	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales' ] );
 const opt = ( name, fallback ) => {
 
 	const i = argv.indexOf( '--' + name );
@@ -131,8 +152,23 @@ const EXTRA_Q = opt( 'q', '' );
 // a quarter faster (light scenes most, a GPU-bound heavy scene hardly at all), so the frame rate a
 // player sees is the one without them; their per-pass split stays the reference for where the time
 // goes, and A/B deltas in one mode cancel the bias.
-const TIMESTAMP_MODE = opt( 'timestamps', 'on' );
+// --accept: the 60 fps criterion per scene (see above), under vsync; frame intervals come from the
+// run without timestamps, the GPU busy time from the run with them
+const ACCEPT = flags.has( '--accept' );
+const VSYNC = flags.has( '--vsync' ) || ACCEPT;
+// --strict: exit with 1 when an uncontended scene fails the acceptance (the verdicts are written
+// either way; without it the exit code stays 0, as for any profile run)
+const STRICT = flags.has( '--strict' );
+if ( STRICT && ! ACCEPT ) throw new Error( '--strict goes with --accept' );
+// the frame interval to hold (ms), the slack allowed on its median and p95 (vblank timestamps
+// jitter by a few tenths), and the longest frame allowed
+const TARGET = Number( opt( 'target', 16.7 ) ), TARGET_SLACK = 0.5, ACCEPT_MAX = 25;
+const TIMESTAMP_MODE = opt( 'timestamps', ACCEPT ? 'both' : 'on' );
 if ( ! [ 'on', 'off', 'both' ].includes( TIMESTAMP_MODE ) ) throw new Error( '--timestamps on | off | both' );
+if ( ACCEPT && TIMESTAMP_MODE === 'on' ) throw new Error( '--accept judges the frame rate a player sees: --timestamps both (the default) or off' );
+// --scales: render scales (the page's dpr option) to sweep in one invocation
+const SCALES = opt( 'scales', '' ).split( ',' ).map( ( x ) => x.trim() ).filter( Boolean ).map( Number );
+if ( SCALES.some( ( x ) => ! ( x > 0 ) ) ) throw new Error( '--scales takes a list of positive numbers, e.g. 1.5,1.25,1' );
 // --hooks off: no ?profile, frame intervals only (to check what the hooks cost, or a build without them)
 const HOOKS = opt( 'hooks', 'on' ) !== 'off';
 // GPU utilisation (%) above which something outside the run is rendering, and how long to wait
@@ -155,14 +191,18 @@ const stamp = new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 );
 const LABEL = opt( 'label', COMPARE ? `compare-${ stamp }` : TOGGLE ? `toggle-${ stamp }` : `profile-${ stamp }` );
 if ( COMPARE && TOGGLE ) throw new Error( '--toggle A/Bs inside one page: give one url, not --compare' );
 if ( TOGGLE && MODE === 'reload' ) throw new Error( '--toggle needs --mode page' );
+if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
+// the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
+if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
 const OUT = opt( 'out', path.join( 'artifacts/perf', LABEL ) );
 
 const SYSTEM_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const executablePath = process.env.CHROME_PATH || ( existsSync( SYSTEM_CHROME ) ? SYSTEM_CHROME : undefined );
 const CHROME_ARGS = [
 	'--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu',
-	// uncapped: the frame interval measures the work, not the display's refresh
-	'--disable-gpu-vsync', '--disable-frame-rate-limit',
+	// uncapped: the frame interval measures the work, not the display's refresh (--vsync keeps
+	// Chrome's 60 Hz pacing instead: the frame interval a player sees)
+	...( VSYNC ? [] : [ '--disable-gpu-vsync', '--disable-frame-rate-limit' ] ),
 	// unquantised timestamp queries (Chrome rounds them to 100 µs otherwise)
 	'--enable-webgpu-developer-features', '--disable-dawn-features=timestamp_quantization',
 	'--disable-renderer-backgrounding', '--disable-background-timer-throttling', '--disable-backgrounding-occluded-windows',
@@ -237,8 +277,12 @@ function summarise( frames ) {
 	// Frame hitches: long rAF intervals. The tick's own work shows in its own frame (new pipelines,
 	// a long JS tick), work issued after the previous tick (async bakes) in the next interval; a GPU
 	// hitch reaches the interval through the queue up to a few seconds later (the largest one in
-	// the 2.5 s before is taken as the cause); the rest is the browser's pacing.
+	// the 2.5 s before is taken as the cause). A tick held up in one of the queue calls (their time
+	// is not JS: a large upload's copy counts there too) names the call; the rest is the browser's
+	// pacing.
 	const outsideMedian = quantile( of( 'outsideJs' ), 0.5 );
+	const CALLS = { submit: 'queue.submit', write: 'queue writes', texture: 'getCurrentTexture' };
+	const waitMedians = Object.fromEntries( Object.keys( CALLS ).map( ( k ) => [ k, quantile( frames.map( ( f ) => f.waits?.[ k ] ).filter( Number.isFinite ), 0.5 ) || 0 ] ) );
 	const hitches = [];
 	frames.forEach( ( f, i ) => {
 
@@ -246,9 +290,11 @@ function summarise( frames ) {
 		const before = frames[ i - 1 ];
 		const outside = before ? before.outsideJs : 0;
 		const queued = gpuHitches.filter( ( h ) => h.at <= f.t && h.at > f.t - 2500 ).sort( ( a, b ) => b.gpuInterval - a.gpuInterval )[ 0 ];
+		const blocked = Object.keys( CALLS ).map( ( k ) => [ k, ( f.waits?.[ k ] ?? 0 ) - waitMedians[ k ] ] ).sort( ( a, b ) => b[ 1 ] - a[ 1 ] )[ 0 ];
 		const cause = f.pipelines > 0 && f.js > jsMedian + 4 ? 'pipeline compile' : f.js > jsMedian + 4 ? 'js tick' :
-			outside > outsideMedian + 4 ? 'js after the tick (bakes)' : queued ? `${ queued.cause } (via the queue)` : 'pacing';
-		hitches.push( { t: r2( ( f.t - frames[ 0 ].t ) / 1000 ), interval: r2( f.interval ), cause, js: r2( f.js ), outsideJs: r2( outside ), gap: r2( f.gap ), pipelines: f.pipelines, pipelineMs: r2( f.pipelineMs ) } );
+			outside > outsideMedian + 4 ? 'js after the tick (bakes)' : queued ? `${ queued.cause } (via the queue)` :
+				blocked[ 1 ] > 4 ? `blocked in ${ CALLS[ blocked[ 0 ] ] }` : 'pacing';
+		hitches.push( { t: r2( ( f.t - frames[ 0 ].t ) / 1000 ), interval: r2( f.interval ), cause, js: r2( f.js ), wait: r2( f.submitWait ), outsideJs: r2( outside ), gap: r2( f.gap ), pipelines: f.pipelines, pipelineMs: r2( f.pipelineMs ) } );
 
 	} );
 	const tally = ( list ) => {
@@ -264,19 +310,23 @@ function summarise( frames ) {
 		interval: stats( intervals ),
 		over16: r2( intervals.filter( ( x ) => x > 16.7 ).length / intervals.length ),
 		over25: r2( intervals.filter( ( x ) => x > 25 ).length / intervals.length ),
+		over25Count: intervals.filter( ( x ) => x > 25 ).length,
 		// GPU busy time per frame (the passes' charges) and the GPU's own frame-to-frame interval
 		gpu: stats( timed.map( ( f ) => f.gpu ) ),
 		gpuInterval: stats( gpuIntervals ),
 		// the GPU's share of the frame: near 1 the frame is GPU-bound
 		gpuShare: r2( mean( timed.map( ( f ) => f.gpu ) ) / mean( intervals ) ),
 		span: stats( timed.map( ( f ) => f.span ) ),
-		// the tick's own JS work, its wall time and the part of it spent blocked in queue.submit
+		// the tick's own JS work, its wall time and the part of it spent blocked in the queue calls
+		// (submit, writeBuffer, getCurrentTexture; by call in `waits`)
 		js: stats( of( 'js' ) ),
 		jsWall: stats( of( 'jsWall' ) ),
 		submitWait: stats( of( 'submitWait' ) ),
-		// JS of the render and compute calls issued after the tick (the sky's bakes) and the gap
-		// between ticks
+		...( frames.some( ( f ) => f.waits ) ? { waits: Object.fromEntries( [ 'submit', 'write', 'texture' ].map( ( k ) => [ k, stats( frames.map( ( f ) => f.waits?.[ k ] ).filter( Number.isFinite ) ) ] ) ) } : {} ),
+		// JS of the render and compute calls issued after the tick (the sky's bakes), less their
+		// queue waits (`outsideWait`), and the gap between ticks
 		outsideJs: stats( of( 'outsideJs' ) ),
+		outsideWait: stats( of( 'outsideWait' ) ),
 		gap: stats( of( 'gap' ) ),
 		calls: Math.round( mean( frames.map( ( f ) => f.calls ) ) ), triangles: Math.round( mean( frames.map( ( f ) => f.triangles ) ) ),
 		passes: Math.round( mean( frames.map( ( f ) => f.passes ) ) ),
@@ -318,6 +368,32 @@ function t95( df ) {
 
 }
 
+// B / A, to three places (null when A is zero)
+const ratio = ( a, b ) => Number.isFinite( a ) && Number.isFinite( b ) && a !== 0 ? Math.round( b / a * 1000 ) / 1000 : null;
+
+// The 60 fps criterion for one scene's results (frame intervals from the run without timestamps
+// when there was one): median and p95 within TARGET_SLACK of TARGET, no frame over ACCEPT_MAX.
+function acceptance( r ) {
+
+	const limit = TARGET + TARGET_SLACK;
+	const reasons = [];
+	if ( ! ( r.interval.median <= limit ) ) reasons.push( `median ${ r.interval.median }` );
+	if ( ! ( r.interval.p95 <= limit ) ) reasons.push( `p95 ${ r.interval.p95 }` );
+	if ( r.over25Count > 0 ) reasons.push( `${ r.over25Count } frames over ${ ACCEPT_MAX } ms` );
+	const pass = reasons.length === 0, contended = Boolean( r.contended );
+	// a contended run's failure proves nothing (see the file's header) unless the scene's own GPU
+	// work already takes longer than a frame
+	const overBudget = r.gpu?.median > TARGET;
+	if ( ! pass && overBudget ) reasons.push( `gpu busy ${ r.gpu.median } over ${ TARGET }` );
+	return {
+		pass, verdict: pass ? contended ? 'PASS (contended)' : 'PASS' : contended && ! overBudget ? 'INCONCLUSIVE (contended)' : 'FAIL', reasons, target: TARGET, limit: r2( limit ),
+		median: r.interval.median, p95: r.interval.p95, p99: r.interval.p99, max: r.interval.max, framesOver25: r.over25Count, frames: r.frames,
+		// the GPU's busy time per frame, from the run with timestamps (null without one)
+		gpuBusy: r.gpu?.median ?? null, gpuBusyP95: r.gpu?.p95 ?? null, contended,
+	};
+
+}
+
 // B - A over slices (or blocks): the mean difference, its 95 % interval (Welch) and the larger
 // range of either side (the old mode's noise)
 function delta( a, b ) {
@@ -332,7 +408,7 @@ function delta( a, b ) {
 	const d = mean( b ) - mean( a );
 	const ci = t95( Math.max( 1, df ) ) * se;
 	const noise = Math.max( Math.max( ...a ) - Math.min( ...a ), Math.max( ...b ) - Math.min( ...b ) );
-	return { a: r2( mean( a ) ), b: r2( mean( b ) ), delta: r2( d ), ci: r2( ci ), noise: r2( noise ), significant: Number.isFinite( ci ) && Math.abs( d ) > ci };
+	return { a: r2( mean( a ) ), b: r2( mean( b ) ), delta: r2( d ), ratio: ratio( mean( a ), mean( b ) ), ci: r2( ci ), noise: r2( noise ), significant: Number.isFinite( ci ) && Math.abs( d ) > ci };
 
 }
 
@@ -340,12 +416,15 @@ function delta( a, b ) {
 
 const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
 
+// the render scale of the run under way (--scales), added to every page's url as `dpr`
+let renderScale = null;
+
 function pageUrl( base, q, timestamps ) {
 
 	const url = new URL( base );
 	// the url's own options first (the page reads the first of a repeated option), then the
 	// scene's; `debug` too, so a build without the profiler still exposes its handles
-	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : '', `quality=${ QUALITY }`, q, EXTRA_Q ].filter( Boolean ).join( '&' );
+	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : 'worldCache=off', `quality=${ QUALITY }`, q, EXTRA_Q, renderScale ? `dpr=${ renderScale }` : '' ].filter( Boolean ).join( '&' );
 	return url.href;
 
 }
@@ -702,7 +781,7 @@ function plan( names ) {
 
 }
 
-const sceneLog = ( scene, r, extra = '' ) => `${ scene.padEnd( 20 ) } ${ extra }median ${ r.interval.median } p95 ${ r.interval.p95 } p99 ${ r.interval.p99 } ms  gpu busy ${ r.gpu.median } (gpu interval ${ r.gpuInterval.median } p95 ${ r.gpuInterval.p95 })  js ${ r.js.median } (+ ${ r.submitWait.median } blocked)  frames ${ r.frames }  hitches ${ r.hitches.count } / gpu ${ r.gpuHitches.count }  missing ${ r.missingPasses }  top ${ topGroups( r, 3 ) }`;
+const sceneLog = ( scene, r, extra = '' ) => `${ scene.padEnd( 20 ) } ${ extra }${ VSYNC ? `>25 ms ${ r.over25Count }  max ${ r.interval.max }  ` : '' }median ${ r.interval.median } p95 ${ r.interval.p95 } p99 ${ r.interval.p99 } ms  gpu busy ${ r.gpu.median } (gpu interval ${ r.gpuInterval.median } p95 ${ r.gpuInterval.p95 })  js ${ r.js.median } (+ ${ r.submitWait.median } blocked)  frames ${ r.frames }  hitches ${ r.hitches.count } / gpu ${ r.gpuHitches.count }  missing ${ r.missingPasses }  top ${ topGroups( r, 3 ) }`;
 
 // reload mode: a fresh page load per group of scenes
 async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ), shotSuffix = '', timestamps = TIMESTAMP_MODE !== 'off' ) {
@@ -990,6 +1069,8 @@ async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames,
 
 // ------------------------------------------------------------------ reports
 
+// B / A in a cell: x0.912 (a report re-rendered from an older profile.json has no ratio)
+const ratioText = ( x ) => x === null || x === undefined ? 'x –' : `x${ x.toFixed( 3 ) }`;
 const fmt = ( x ) => x === null || x === undefined ? '–' : typeof x === 'number' ? x.toFixed( 2 ).replace( /\.?0+$/, '' ) || '0' : x;
 
 function topGroups( r, n = 5 ) {
@@ -1003,14 +1084,17 @@ function markdownProfile( meta, runs ) {
 	const lines = [ `# Frame profile: ${ meta.label }`, '', `${ meta.url } at ${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; ` +
 		`render ${ meta.render ?? '?' }; warm-up ${ meta.warmup } s, ${ meta.seconds } s measured per scene, orbit ${ meta.orbit } deg/s; ` +
 		`GPU utilisation before the run ${ meta.gpuIdle?.idle?.mean ?? '?' } %${ meta.gpuIdle?.contended ? ` (CONTENDED: something else was rendering${ meta.gpuIdle.clients?.length ? `: ${ meta.gpuIdle.clients.map( ( c ) => `${ c.name.replace( / \(pid \d+\)/, '' ) } ${ c.percent } %` ).join( ', ' ) }` : '' })` : '' }; GPU timestamps ${ meta.timestamps === 'both' ? 'both (frame intervals without them, passes with them)' : meta.timestamps ? 'on' : 'off' }.`, '',
-		'Frame interval in ms (rAF to rAF, uncapped). GPU busy: the time the frame\'s passes add to the GPU\'s timeline (median); ' +
+		`Frame interval in ms (rAF to rAF, ${ meta.vsync ? 'under vsync at 60 Hz' : 'uncapped' }). ` +
+		'GPU busy: the time the frame\'s passes add to the GPU\'s timeline (median); ' +
 		'GPU p95: the 95th percentile of the GPU\'s own frame-to-frame interval. JS: the tick\'s own work (median), without the time it was ' +
-		'blocked in queue.submit while the GPU caught up. Passes: mean GPU ms per frame. Hitches: frames over 25 ms and over 1.5 times the ' +
+		'blocked in queue.submit, writeBuffer and getCurrentTexture while the GPU caught up. Passes: mean GPU ms per frame. Hitches: frames over 25 ms and over 1.5 times the ' +
 		'median, as frame intervals (cause: pipeline compile, JS tick, or GPU work through the queue) / on the GPU\'s timeline (cause: the pass ' +
-		'that rose most above its median).', '' ];
+		'that rose most above its median).' + ( meta.vsync ? ' Under vsync the intervals quantise to vblanks (16.7, 33.3 ms) and a GPU-bound frame waits for the display in getCurrentTexture.' : '' ), '' ];
 	runs.forEach( ( run, k ) => {
 
-		if ( runs.length > 1 ) lines.push( `## Run ${ k + 1 }`, '' );
+		const repeat = runs.filter( ( r ) => r.scale === run.scale ).indexOf( run );
+		if ( run.scale !== undefined && run.scale !== null ) lines.push( `## Render scale ${ run.scale }${ run.render ? ` (render ${ run.render })` : '' }${ runs.length > ( meta.scales?.length ?? 1 ) ? `, run ${ repeat + 1 }` : '' }`, '' );
+		else if ( runs.length > 1 ) lines.push( `## Run ${ k + 1 }`, '' );
 		const both = meta.timestamps === 'both';
 		lines.push( `| scene | median | p95 | p99 | max | >16.7 | >25 |${ both ? ' median (timestamps on) |' : '' } GPU busy | GPU p95 | JS | hitches frame / GPU | top passes (mean GPU ms) |`, `|---|---|---|---|---|---|---|${ both ? '---|' : '' }---|---|---|---|---|` );
 		for ( const [ scene, r ] of Object.entries( run.scenes ) ) {
@@ -1031,18 +1115,60 @@ function markdownProfile( meta, runs ) {
 		if ( warm.length ) lines.push( `Startup (later loads, median of ${ warm.length }): ${ startupLine( medianStartup( warm ) ) }`, '' );
 
 	} );
-	if ( runs.length > 1 ) {
+	// repeats at one render scale: their spread
+	for ( const scale of [ ...new Set( runs.map( ( r ) => r.scale ) ) ] ) {
 
-		lines.push( '## Spread between runs (max - min of the run medians)', '', '| scene | median | p95 | p99 | GPU busy |', '|---|---|---|---|---|' );
-		for ( const scene of Object.keys( runs[ 0 ].scenes ) ) {
+		const same = runs.filter( ( r ) => r.scale === scale );
+		if ( same.length < 2 ) continue;
+		lines.push( `## Spread between runs${ scale !== undefined && scale !== null ? ` at render scale ${ scale }` : '' } (max - min of the run medians)`, '', '| scene | median | p95 | p99 | GPU busy |', '|---|---|---|---|---|' );
+		for ( const scene of Object.keys( same[ 0 ].scenes ) ) {
 
 			const spread = ( f ) => {
 
-				const v = runs.map( ( run ) => f( run.scenes[ scene ] ) );
+				const v = same.map( ( run ) => f( run.scenes[ scene ] ) );
 				return `${ fmt( Math.max( ...v ) - Math.min( ...v ) ) } (${ v.map( fmt ).join( ' / ' ) })`;
 
 			};
 			lines.push( `| ${ scene } | ${ spread( ( r ) => r.interval.median ) } | ${ spread( ( r ) => r.interval.p95 ) } | ${ spread( ( r ) => r.interval.p99 ) } | ${ spread( ( r ) => r.gpu.median ) } |` );
+
+		}
+		lines.push( '' );
+
+	}
+	if ( meta.accept ) {
+
+		const a = meta.accept;
+		lines.push( '## Acceptance (60 fps)', '', `Pass: frame interval median and p95 at most ${ a.limit } ms (${ a.target } plus vblank jitter) and no frame over ${ a.maxFrame } ms in the ${ meta.seconds } s measured, ` +
+			`from the run ${ meta.timestampMode === 'on' && meta.hooks !== false ? 'with' : 'without' } GPU timestamps under vsync; p99, the maximum and the GPU busy time (median / p95, from the run with timestamps) are reported. ` +
+			'Headless 60 Hz stands in for a faster display (at 120 Hz a missed frame costs 25 ms, not 33): confirm a verdict once on the real display. ' +
+			'A contended scene (something else kept the GPU busy) that fails is INCONCLUSIVE, not FAIL, unless its GPU busy median is over the target: run it again on an idle GPU.', '',
+			`| ${ meta.scales ? 'render scale | ' : '' }scene | verdict | median | p95 | p99 | max | frames over ${ a.maxFrame } ms | GPU busy | why |`, `|${ meta.scales ? '---|' : '' }---|---|---|---|---|---|---|---|---|` );
+		for ( const run of runs ) for ( const [ scene, r ] of Object.entries( run.scenes ) ) {
+
+			const v = r.accept;
+			if ( ! v ) continue;
+			const verdict = v.verdict ?? ( v.pass ? 'PASS' : 'FAIL' );
+			lines.push( `| ${ meta.scales ? `${ run.scale } | ` : '' }${ scene } | ${ verdict === 'FAIL' ? '**FAIL**' : verdict } | ${ fmt( v.median ) } | ${ fmt( v.p95 ) } | ${ fmt( v.p99 ) } | ${ fmt( v.max ) } | ${ v.framesOver25 } of ${ v.frames } | ${ fmt( v.gpuBusy ) } / ${ fmt( v.gpuBusyP95 ) } | ${ v.reasons.join( ', ' ) } |` );
+
+		}
+		lines.push( '' );
+
+	}
+	if ( ( meta.scales?.length ?? 0 ) > 1 ) {
+
+		// every scene at every scale (the first run at each): where it holds the frame rate
+		const first = meta.scales.map( ( scale ) => runs.find( ( r ) => r.scale === scale ) );
+		lines.push( '## Scenes by render scale', '', 'Each cell: frame interval median / p95 (ms), frames over 25 ms, GPU busy median' + ( meta.accept ? ', and the verdict' : '' ) + '.', '',
+			`| scene | ${ meta.scales.join( ' | ' ) } |`, `|---|${ meta.scales.map( () => '---|' ).join( '' ) }` );
+		for ( const scene of Object.keys( first[ 0 ].scenes ) ) {
+
+			const cells = first.map( ( run ) => {
+
+				const r = run?.scenes[ scene ];
+				return r ? `${ fmt( r.interval.median ) } / ${ fmt( r.interval.p95 ) }, ${ r.over25Count ?? '–' }, ${ fmt( r.gpu.median ) }${ r.accept ? ` ${ r.accept.verdict ?? ( r.accept.pass ? 'PASS' : 'FAIL' ) }` : '' }` : '–';
+
+			} );
+			lines.push( `| ${ scene } | ${ cells.join( ' | ' ) } |` );
 
 		}
 		lines.push( '' );
@@ -1123,7 +1249,7 @@ async function main() {
 		if ( started - requested > 1000 ) console.error( `[profile] GPU lock acquired after ${ ( ( started - requested ) / 1000 ).toFixed( 0 ) } s` );
 		const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, wait: IDLE_WAIT } );
 		if ( gpuIdle.contended ) idleWaitLoad = 0;
-		console.error( `[profile] GPU idle ${ gpuIdle.idle?.mean ?? '?' } % (max ${ gpuIdle.idle?.max ?? '?' } %)${ gpuIdle.contended ? ', CONTENDED' : '' }; Chrome: ${ executablePath ?? 'Playwright Chromium' }; mode ${ TOGGLE ? 'toggle' : MODE }` );
+		console.error( `[profile] GPU idle ${ gpuIdle.idle?.mean ?? '?' } % (max ${ gpuIdle.idle?.max ?? '?' } %)${ gpuIdle.contended ? ', CONTENDED' : '' }; Chrome: ${ executablePath ?? 'Playwright Chromium' }; mode ${ TOGGLE ? 'toggle' : MODE }${ VSYNC ? ', vsync' : ', uncapped' }${ ACCEPT ? `, accept at ${ TARGET } ms` : '' }` );
 		const { context, dir, temporary } = await launch();
 		const errors = [];
 		const watch = ( p ) => {
@@ -1152,7 +1278,7 @@ async function main() {
 			const meta = {
 				label: LABEL, url: URL_A, viewport: { width: W, height: H, scale: SCALE }, quality: QUALITY, warmup: WARMUP, seconds: SECONDS, orbit: ORBIT,
 				chrome: version, args: CHROME_ARGS, gpuIdle, started: new Date().toISOString(), fresh: FRESH, eval: opt( 'eval', '' ), extraQuery: EXTRA_Q,
-				mode: TOGGLE ? 'toggle' : MODE, worldCache: WORLD_CACHE,
+				mode: TOGGLE ? 'toggle' : MODE, worldCache: WORLD_CACHE, vsync: VSYNC, timestampMode: TIMESTAMP_MODE, hooks: HOOKS,
 			};
 			const evals = [ opt( 'eval-a', opt( 'eval', '' ) ), opt( 'eval-b', opt( 'eval', '' ) ) ];
 			const tsModes = TIMESTAMP_MODE === 'both' ? [ true, false ] : [ TIMESTAMP_MODE !== 'off' ];
@@ -1186,23 +1312,55 @@ async function main() {
 				const run = ( timestamps, suffix ) => MODE === 'reload' ? runVariant( page, URL_A, opt( 'eval', '' ), log, plan( sceneNames ), suffix, timestamps ) :
 					runPage( page, URL_A, opt( 'eval', '' ), log, sceneNames, suffix, timestamps );
 				const runs = [];
-				for ( let k = 0; k < REPEAT; k ++ ) {
+				for ( const scale of SCALES.length ? SCALES : [ null ] ) {
 
-					if ( REPEAT > 1 ) log( `run ${ k + 1 } / ${ REPEAT }` );
-					const suffix = REPEAT > 1 ? `-run${ k + 1 }` : '';
-					if ( TIMESTAMP_MODE === 'both' ) {
+					renderScale = scale;
+					if ( scale !== null ) log( `render scale ${ scale } (dpr=${ scale })` );
+					for ( let k = 0; k < REPEAT; k ++ ) {
 
-						log( 'without timestamps (frame intervals)' );
-						const off = await run( false, suffix );
-						log( 'with timestamps (GPU time per pass)' );
-						const on = await run( true, suffix );
-						runs.push( mergeModes( off, on ) );
+						if ( REPEAT > 1 ) log( `run ${ k + 1 } / ${ REPEAT }` );
+						const suffix = ( scale !== null ? `-dpr${ scale }` : '' ) + ( REPEAT > 1 ? `-run${ k + 1 }` : '' );
+						let result;
+						if ( TIMESTAMP_MODE === 'both' ) {
 
-					} else {
+							log( 'without timestamps (frame intervals)' );
+							const off = await run( false, suffix );
+							log( 'with timestamps (GPU time per pass)' );
+							const on = await run( true, suffix );
+							result = mergeModes( off, on );
 
-						runs.push( await run( TIMESTAMP_MODE !== 'off', suffix ) );
+						} else {
+
+							result = await run( TIMESTAMP_MODE !== 'off', suffix );
+
+						}
+						const d = result.loads[ 0 ]?.startup?.diagnostics;
+						result.scale = scale;
+						result.render = d ? `${ d.render.join( 'x' ) } -> ${ d.canvas.join( 'x' ) }${ d.upscaled ? ' (FSR)' : '' }` : null;
+						// the page caps the render's ratio at the display's (and a quality's budget may lower it)
+						if ( scale !== null && d && Math.abs( d.dpr - scale ) > 0.01 ) log( `WARNING: render scale ${ scale } asked, the page renders at ${ d.dpr } (${ d.render.join( 'x' ) })` );
+						if ( ACCEPT ) for ( const [ scene, r ] of Object.entries( result.scenes ) ) {
+
+							r.accept = acceptance( r );
+							const a = r.accept;
+							log( `accept ${ scale !== null ? `dpr ${ scale } ` : '' }${ scene.padEnd( 20 ) } ${ a.verdict }  median ${ a.median } p95 ${ a.p95 } p99 ${ a.p99 } max ${ a.max } ms, ${ a.framesOver25 } of ${ a.frames } frames over ${ ACCEPT_MAX } ms, gpu busy ${ a.gpuBusy ?? '–' } (p95 ${ a.gpuBusyP95 ?? '–' })${ a.pass ? '' : ` (${ a.reasons.join( ', ' ) })` }` );
+
+						}
+						runs.push( result );
 
 					}
+
+				}
+				renderScale = null;
+				if ( SCALES.length ) meta.scales = SCALES;
+				if ( ACCEPT ) {
+
+					meta.accept = { target: TARGET, limit: r2( TARGET + TARGET_SLACK ), maxFrame: ACCEPT_MAX };
+					const verdicts = runs.flatMap( ( run ) => Object.values( run.scenes ).map( ( r ) => r.accept.verdict ) );
+					const tally = {};
+					for ( const v of verdicts ) tally[ v ] = ( tally[ v ] ?? 0 ) + 1;
+					log( `accept: ${ verdicts.length } scene runs: ${ Object.entries( tally ).map( ( [ v, n ] ) => `${ n } ${ v }` ).join( ', ' ) }` );
+					if ( STRICT && tally.FAIL ) process.exitCode = 1;
 
 				}
 				const s = runs[ 0 ].loads.find( ( l ) => l.startup?.timestamps )?.startup ?? runs[ 0 ].loads[ 0 ]?.startup;
@@ -1289,8 +1447,8 @@ function sliceMarkdown( meta, reports ) {
 		`A: ${ c.A }${ c.evalA ? ` (eval ${ c.evalA })` : '' }`, `B: ${ c.B }${ c.evalB ? ` (eval ${ c.evalB })` : '' }`, '',
 		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; render ${ meta.render ?? '?' }; ${ how }. ` +
 		`Scenes are switched at runtime and warmed ${ meta.warmup } s and until no pipeline compiled for a second. Each cell: A -> B (B - A ± its 95 % interval over the slices); * marks a delta beyond it. ` +
-		`Decide on GPU busy and the passes (GPU time per frame); take frame rates from the run without timestamps. ${ meta.wallSeconds ? `Wall time ${ Math.round( meta.wallSeconds ) } s.` : '' }`, '' ];
-	const cell = ( m ) => m.delta === null ? '–' : `${ fmt( m.a ) } -> ${ fmt( m.b ) } (${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) } ± ${ fmt( m.ci ) })${ m.significant ? ' *' : '' }`;
+		`B/A follows each delta as a ratio (x0.9: B takes 10 % less). Decide on GPU busy and the passes (GPU time per frame); take frame rates from the run without timestamps. ${ meta.wallSeconds ? `Wall time ${ Math.round( meta.wallSeconds ) } s.` : '' }`, '' ];
+	const cell = ( m ) => m.delta === null ? '–' : `${ fmt( m.a ) } -> ${ fmt( m.b ) } (${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) } ± ${ fmt( m.ci ) }; ${ ratioText( m.ratio ) })${ m.significant ? ' *' : '' }`;
 	for ( const { timestamps, report, strayFrames } of reports ) {
 
 		lines.push( `## ${ timestamps ? 'With GPU timestamps (GPU time per pass)' : 'Without timestamps (the frame rate a player sees)' }`, '' );
@@ -1328,9 +1486,9 @@ function mergeModes( off, on ) {
 
 		const o = off.scenes[ scene ];
 		scenes[ scene ] = {
-			...r, fps: o.fps, interval: o.interval, over16: o.over16, over25: o.over25, hitchThreshold: o.hitchThreshold, hitches: o.hitches,
-			js: o.js, jsWall: o.jsWall, submitWait: o.submitWait, contended: o.contended || r.contended,
-			withTimestamps: { fps: r.fps, interval: r.interval, over16: r.over16, over25: r.over25, hitches: r.hitches, js: r.js },
+			...r, frames: o.frames, fps: o.fps, interval: o.interval, over16: o.over16, over25: o.over25, over25Count: o.over25Count, hitchThreshold: o.hitchThreshold, hitches: o.hitches,
+			js: o.js, jsWall: o.jsWall, submitWait: o.submitWait, waits: o.waits, outsideJs: o.outsideJs, outsideWait: o.outsideWait, contended: o.contended || r.contended,
+			withTimestamps: { frames: r.frames, fps: r.fps, interval: r.interval, over16: r.over16, over25: r.over25, over25Count: r.over25Count, hitches: r.hitches, js: r.js },
 			...( r.raw ? { raw: r.raw, rawWithoutTimestamps: o.raw } : {} ),
 		};
 
@@ -1349,7 +1507,7 @@ function compareReport( runs ) {
 			const a = runs.A.map( ( r ) => f( r.scenes[ scene ] ) ), b = runs.B.map( ( r ) => f( r.scenes[ scene ] ) );
 			const noise = Math.max( Math.max( ...a ) - Math.min( ...a ), Math.max( ...b ) - Math.min( ...b ) );
 			const delta = mean( b ) - mean( a );
-			return { a: r2( mean( a ) ), b: r2( mean( b ) ), delta: r2( delta ), noise: r2( noise ), significant: Math.abs( delta ) > noise };
+			return { a: r2( mean( a ) ), b: r2( mean( b ) ), delta: r2( delta ), ratio: ratio( mean( a ), mean( b ) ), noise: r2( noise ), significant: Math.abs( delta ) > noise };
 
 		};
 		const groups = new Set( [ ...runs.A, ...runs.B ].flatMap( ( r ) => Object.keys( r.scenes[ scene ].groups ) ) );
@@ -1367,9 +1525,9 @@ function compareReport( runs ) {
 function compareMarkdown( meta, report ) {
 
 	const lines = [ `# Frame profile compare: ${ meta.label }`, '', `A: ${ meta.compare.A }${ meta.compare.evalA ? ` (eval ${ meta.compare.evalA })` : '' }`, `B: ${ meta.compare.B }${ meta.compare.evalB ? ` (eval ${ meta.compare.evalB })` : '' }`, '',
-		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; A B B A per load; noise = the larger run-to-run spread of A or B; * marks a delta beyond it.`, '',
+		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; A B B A per load; noise = the larger run-to-run spread of A or B; * marks a delta beyond it; B/A follows as a ratio.`, '',
 		'| scene | median A -> B (delta, noise) | p95 | p99 | GPU busy | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|' ];
-	const cell = ( m ) => `${ fmt( m.a ) } -> ${ fmt( m.b ) } (${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }, ±${ fmt( m.noise ) })${ m.significant ? ' *' : '' }`;
+	const cell = ( m ) => `${ fmt( m.a ) } -> ${ fmt( m.b ) } (${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }, ±${ fmt( m.noise ) }; ${ ratioText( m.ratio ) })${ m.significant ? ' *' : '' }`;
 	for ( const [ scene, r ] of Object.entries( report ) ) {
 
 		const passes = Object.entries( r.groups ).slice( 0, 3 ).map( ( [ g, m ] ) => `${ g } ${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }${ m.significant ? '*' : '' }` ).join( ', ' );

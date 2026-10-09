@@ -56,10 +56,16 @@ export function noise3( x: number, y: number, z: number ): number {
 	const A = P[ X ] + Y, AA = P[ A ] + Z, AB = P[ A + 1 ] + Z;
 	const B = P[ X + 1 ] + Y, BA = P[ B ] + Z, BB = P[ B + 1 ] + Z;
 	const x1 = x - 1, y1 = y - 1, z1 = z - 1;
-	const l1 = grad( P[ AA ] & 15, x, y, z ) + u * ( grad( P[ BA ] & 15, x1, y, z ) - grad( P[ AA ] & 15, x, y, z ) );
-	const l2 = grad( P[ AB ] & 15, x, y1, z ) + u * ( grad( P[ BB ] & 15, x1, y1, z ) - grad( P[ AB ] & 15, x, y1, z ) );
-	const l3 = grad( P[ AA + 1 ] & 15, x, y, z1 ) + u * ( grad( P[ BA + 1 ] & 15, x1, y, z1 ) - grad( P[ AA + 1 ] & 15, x, y, z1 ) );
-	const l4 = grad( P[ AB + 1 ] & 15, x, y1, z1 ) + u * ( grad( P[ BB + 1 ] & 15, x1, y1, z1 ) - grad( P[ AB + 1 ] & 15, x, y1, z1 ) );
+	// Each corner's gradient once (the lerps below used to evaluate every one of them twice); the
+	// arithmetic is unchanged, so the field stays bit-identical.
+	const gAA = grad( P[ AA ] & 15, x, y, z ), gBA = grad( P[ BA ] & 15, x1, y, z );
+	const gAB = grad( P[ AB ] & 15, x, y1, z ), gBB = grad( P[ BB ] & 15, x1, y1, z );
+	const gAA1 = grad( P[ AA + 1 ] & 15, x, y, z1 ), gBA1 = grad( P[ BA + 1 ] & 15, x1, y, z1 );
+	const gAB1 = grad( P[ AB + 1 ] & 15, x, y1, z1 ), gBB1 = grad( P[ BB + 1 ] & 15, x1, y1, z1 );
+	const l1 = gAA + u * ( gBA - gAA );
+	const l2 = gAB + u * ( gBB - gAB );
+	const l3 = gAA1 + u * ( gBA1 - gAA1 );
+	const l4 = gAB1 + u * ( gBB1 - gAB1 );
 	const m1 = l1 + v * ( l2 - l1 );
 	const m2 = l3 + v * ( l4 - l3 );
 	return m1 + w * ( m2 - m1 );

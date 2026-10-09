@@ -14,13 +14,216 @@ import { deepenSeabed, seabedBeds, shapeShelf } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
 import { VEGETATION_STRIDE, VEGETATION_SPACING } from './types.ts';
-import type { SDF, MeshData, MeshKind, NamedMesh, WorldData, WorldOptions } from './types.ts';
+import { openWorldStore } from './WorldCache.ts';
+import type { SDF, MeshData, MeshKind, NamedMesh, Rock, WorldData, WorldOptions } from './types.ts';
 
-self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
+// The page's job (World.ts): the world's options and the cache key (null: no cache). The worker
+// answers with a WorldReply. It looks the world up in the cache (WorldCache.ts) first; otherwise
+// it only coordinates: it starts copies of itself for the island, the stones (dealt round-robin
+// into sets) and the rest (meadow anchors, rim, sea floor, shore fields), and merges their
+// results in the serial order, so the world is identical to the serial one, bit for bit, whatever
+// the number of threads. It stays idle meanwhile, since a nested worker only starts while its
+// parent's thread is free. Every part repeats the cheap shared setup (footprint, SDFs, stones,
+// contact solids) from the same seeds instead of receiving it.
+//
+// A message of bare WorldOptions (the node tools) builds the whole world here and posts the
+// WorldData synchronously; with `part` it builds one part.
+export interface PageJob {
+	options: WorldOptions;
+	cacheKey: string | null;
+}
 
-	const { islandVoxel = 0.12, seabedRes = 320, seabedSize = 420, shoreSize = 96, shoreCell = 0.125, contactOcclusion = true } = e.data || {};
+export interface WorldReply {
+	world: WorldData;
+	// 'hit': read from the cache; 'miss': generated and stored; 'error': generated, the store is
+	// unavailable; 'off': generated without the cache
+	cache: 'hit' | 'miss' | 'error' | 'off';
+	// time spent reading the cache (a hit) or handing the world to it (a miss)
+	cacheMs: number;
+}
+
+interface PartJob extends WorldOptions {
+	part: WorldPart;
+}
+
+type WorldPart = 'island' | { rocks: number; sets: number } | 'rest';
+
+interface RestPart {
+	// the shared setup's seabed grid and stones, which the merged world carries
+	seabedPositions: Float32Array;
+	stones: Rock[];
+	vegetation: Float32Array;
+	rimGround: WorldData[ 'rimGround' ];
+	rimSkirt: WorldData[ 'rimSkirt' ];
+	rimStrands: WorldData[ 'rimStrands' ];
+	seabedAO: Float32Array;
+	seabedBed: Float32Array;
+	shore: WorldData[ 'shore' ];
+	islandShore: WorldData[ 'islandShore' ];
+	seabedField: WorldData[ 'seabedField' ];
+}
+
+interface PartResult { island?: MeshData; rocks?: MeshData[]; rest?: RestPart; timings: Record<string, number> }
+
+self.onmessage = ( e: MessageEvent<PageJob | PartJob | WorldOptions | undefined> ) => {
+
+	const job = e.data || {};
+	if ( ( job as PartJob ).part !== undefined ) {
+
+		const [ result, transfer ] = buildPart( job as PartJob, ( job as PartJob ).part );
+		self.postMessage( result, { transfer } );
+
+	} else if ( 'options' in job ) {
+
+		void pageJob( job ).then( async ( [ reply, stored ] ) => {
+
+			self.postMessage( reply, { transfer: buffersOf( reply.world ) } );
+			// the page leaves this worker to close itself, once the cache has the world
+			await stored;
+			self.close();
+
+		} ).catch( ( error: unknown ) => {
+
+			// an uncaught error reaches the page's worker.onerror; a rejected promise would not
+			setTimeout( () => { throw error; } );
+
+		} );
+
+	} else {
+
+		const [ world, transfer ] = generateSerial( job as WorldOptions );
+		self.postMessage( world, { transfer } );
+
+	}
+
+};
+
+async function pageJob( { options, cacheKey }: PageJob ): Promise<[ WorldReply, Promise<void> ]> {
+
+	let t = performance.now();
+	const store = cacheKey !== null && typeof indexedDB !== 'undefined' ? await openWorldStore<WorldData>( cacheKey ) : null;
+	const hit = await store?.read();
+	if ( hit ) {
+
+		store!.close();
+		return [ { world: hit, cache: 'hit', cacheMs: performance.now() - t }, Promise.resolve() ];
+
+	}
+	const threads = typeof navigator !== 'undefined' ? navigator.hardwareConcurrency || 4 : 1;
+	// the island and the rest on a thread each, the stones on up to four
+	const world = typeof Worker !== 'undefined' && threads >= 3 ? await generateParallel( options, Math.min( 4, threads - 2 ) ) : generateSerial( options )[ 0 ];
+	if ( ! store ) return [ { world, cache: cacheKey === null ? 'off' : 'error', cacheMs: 0 }, Promise.resolve() ];
+	t = performance.now();
+	const stored = store.write( world );
+	return [ { world, cache: 'miss', cacheMs: performance.now() - t }, stored ];
+
+}
+
+// Every buffer under a value, once each, to transfer it.
+function buffersOf( value: unknown, out = new Set<ArrayBufferLike>() ): ArrayBuffer[] {
+
+	if ( ArrayBuffer.isView( value ) ) out.add( value.buffer );
+	else if ( value && typeof value === 'object' ) for ( const v of Object.values( value ) ) buffersOf( v, out );
+	return [ ...out ] as ArrayBuffer[];
+
+}
+
+function buildPart( options: WorldOptions, part: WorldPart, ctx?: Setup ): [ PartResult, Transferable[] ] {
+
+	const timings: Record<string, number> = {};
+	ctx ??= setup( options, timings );
+	const result: PartResult = { timings };
+	const transfer: Transferable[] = [];
+	if ( part === 'island' ) {
+
+		result.island = buildIsland( ctx, timings );
+		transferMesh( result.island, transfer );
+
+	} else if ( part === 'rest' ) {
+
+		result.rest = buildRest( ctx, timings );
+		transferRest( result.rest, transfer );
+
+	} else {
+
+		const t = performance.now();
+		result.rocks = buildRocks( ctx, part.rocks, part.sets );
+		for ( const m of result.rocks ) transferMesh( m, transfer );
+		timings.rocks = Math.round( performance.now() - t );
+
+	}
+	return [ result, transfer ];
+
+}
+
+function generateSerial( options: WorldOptions ): [ WorldData, Transferable[] ] {
+
 	const t0 = performance.now();
 	const timings: Record<string, number> = {};
+	const ctx = setup( options, timings );
+	const island = buildIsland( ctx, timings );
+	let t = performance.now();
+	const rocks = buildRocks( ctx, 0, 1 );
+	timings.rocks = Math.round( performance.now() - t );
+	const rest = buildRest( ctx, timings );
+	t = performance.now();
+	const world = assemble( island, rocks, rest, options, timings );
+	timings.merge = Math.round( performance.now() - t );
+	timings.total = Math.round( performance.now() - t0 );
+	return world;
+
+}
+
+async function generateParallel( options: WorldOptions, sets: number ): Promise<WorldData> {
+
+	const t0 = performance.now();
+	// A part whose worker fails is built here instead, so the result never depends on the threads.
+	let ctx: Setup | undefined;
+	const local = ( part: WorldPart ) => buildPart( options, part, ctx ??= setup( options, {} ) )[ 0 ];
+	const spawn = ( part: WorldPart ) => new Promise<PartResult>( ( resolve ) => {
+
+		try {
+
+			const worker = new Worker( self.location.href, { type: 'module' } );
+			worker.onmessage = ( e: MessageEvent<PartResult> ) => { worker.terminate(); resolve( e.data ); };
+			worker.onerror = ( e ) => { e.preventDefault(); worker.terminate(); resolve( local( part ) ); };
+			// a reply that cannot be deserialised fires neither of the above
+			worker.onmessageerror = () => { worker.terminate(); resolve( local( part ) ); };
+			worker.postMessage( { ...options, part } satisfies PartJob );
+
+		} catch {
+
+			resolve( local( part ) );
+
+		}
+
+	} );
+	const parts = [ spawn( 'island' ), spawn( 'rest' ), ...Array.from( { length: sets }, ( _, set ) => spawn( { rocks: set, sets } ) ) ];
+	const [ island, rest, ...rockParts ] = await Promise.all( parts );
+
+	const t = performance.now();
+	// stone i went to set i % sets, as its ( i / sets )th mesh: deal them back into stone order
+	const rocks = rest.rest!.stones.map( ( _, i ) => rockParts[ i % sets ].rocks![ Math.floor( i / sets ) ] );
+	const timings: Record<string, number> = { ...rest.timings, island: island.timings.island, rocks: Math.max( ...rockParts.map( ( part ) => part.timings.rocks ) ) };
+	const [ world ] = assemble( island.island!, rocks, rest.rest!, options, timings );
+	timings.merge = Math.round( performance.now() - t );
+	timings.total = Math.round( performance.now() - t0 );
+	return world;
+
+}
+
+type Setup = ReturnType<typeof setup>;
+
+const defaults = ( options: WorldOptions ) => {
+
+	const { islandVoxel = 0.12, seabedRes = 320, seabedSize = 420, shoreSize = 96, shoreCell = 0.125, contactOcclusion = true } = options;
+	return { islandVoxel, seabedRes, seabedSize, shoreSize, shoreCell, contactOcclusion };
+
+};
+
+function setup( options: WorldOptions, timings: Record<string, number> ) {
+
+	const { islandVoxel, seabedRes, seabedSize, shoreSize, shoreCell, contactOcclusion } = defaults( options );
 	const mark = ( k: string, t: number ) => { timings[ k ] = Math.round( performance.now() - t ); };
 
 	let t = performance.now();
@@ -77,52 +280,59 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	const contacts = ( receiver?: SDF ) => contactOcclusion ? contactVisibilitySampler( solids, receiver ) : undefined;
 	mark( 'contactSetup', t );
 
-	const meshes: NamedMesh[] = [];
-	const transfer: Transferable[] = [];
-	const push = ( name: string, m: MeshData, kind: MeshKind ) => {
+	return { fp, n, sb, seabedSize, shoreSize, shoreCell, islandVoxel, renderedFloor, islandSDF, rocks, rockSDFs, b, islandBounds, rockBounds, seabedSDF, aoSdf, contacts };
 
-		meshes.push( { name, kind, ...m } );
-		transfer.push( m.positions.buffer, m.normals.buffer, m.ao.buffer, m.tint.buffer, m.curv.buffer, m.indices.buffer );
-		if ( m.detail ) transfer.push( m.detail.buffer );
-		if ( m.detail2 ) transfer.push( m.detail2.buffer );
+}
 
-	};
+function buildIsland( ctx: Setup, timings: Record<string, number> ): MeshData {
 
-	// --- island
-	t = performance.now();
-	push( 'island', surfaceNets( islandSDF, {
+	const { islandSDF, islandBounds, islandVoxel, fp, aoSdf, contacts } = ctx;
+	const t = performance.now();
+	const mesh = surfaceNets( islandSDF, {
 		min: [ ...islandBounds.min ], max: [ ...islandBounds.max ], voxel: islandVoxel,
 		// The cliff's scars meet at sharp edges: vertices placed on the edges and a short normal
 		// step keep each facet flat up to its edge instead of rounding it off.
 		normalStep: islandVoxel * 0.15, sharpen: cliffSharpCells( fp ),
 		aoSdf, contactVisibility: contacts( islandSDF ),
-	} ), 'cliff' );
-	mark( 'island', t );
+	} );
+	timings.island = Math.round( performance.now() - t );
+	return mesh;
 
-	// --- rocks: merged into one mesh
-	t = performance.now();
-	{
+}
 
-		const parts = rocks.map( ( r, i ) => {
+// The stones of one set (stone i belongs to set i % sets), each meshed on its own.
+function buildRocks( ctx: Setup, set: number, sets: number ): MeshData[] {
 
-			return surfaceNets( rockSDFs[ i ], {
-				min: [ ...rockBounds[ i ].min ], max: [ ...rockBounds[ i ].max ],
-				// Small stones still need enough samples across their broad faces; one merged mesh
-				// keeps their count independent of the draw budget.
-				voxel: Math.max( 0.025, Math.min( 0.11, r.s * 0.12 ) ),
-				aoSdf, contactVisibility: contacts( rockSDFs[ i ] ),
-			} );
+	const { rocks, rockSDFs, rockBounds, aoSdf, contacts } = ctx;
+	const parts: MeshData[] = [];
+	for ( let i = set; i < rocks.length; i += sets ) {
 
-		} );
-		push( 'rocks', mergeParts( parts ), 'rock' );
+		const r = rocks[ i ];
+		parts.push( surfaceNets( rockSDFs[ i ], {
+			min: [ ...rockBounds[ i ].min ], max: [ ...rockBounds[ i ].max ],
+			// Small stones still need enough samples across their broad faces; one merged mesh
+			// keeps their count independent of the draw budget. They lie at least 1.3 m under a
+			// moving, refracting surface, so about five samples across a stone (4.5 - 15 cm) keep
+			// its form; finer sampling only cost triangles and generation time.
+			voxel: Math.max( 0.045, Math.min( 0.15, r.s * 0.2 ) ),
+			aoSdf, contactVisibility: contacts( rockSDFs[ i ] ),
+		} ) );
 
 	}
+	return parts;
 
-	mark( 'rocks', t );
+}
+
+// Everything but the meshes: meadow anchors, rim ground, skirt and trails, the sea floor's
+// contact visibility and beds, and the shore fields.
+function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
+
+	const { islandSDF, fp, b, contacts, n, sb, seabedSDF, renderedFloor, shoreSize, shoreCell, rocks } = ctx;
+	const mark = ( k: string, t: number ) => { timings[ k ] = Math.round( performance.now() - t ); };
 
 	// --- vegetation anchors: island turf only; submerged stones stay bare.
 	// March the field down from above for position, surface normal and distance to the rim.
-	t = performance.now();
+	let t = performance.now();
 	const rngV = mulberry32( 4242 );
 	const veg: number[] = [];
 	scatterTop( islandSDF, b.x0 - 0.6, b.x1 + 0.6, b.z0 - 0.6, b.z1 + 0.6, VEGETATION_SPACING, ISLAND_TOP, rngV, veg, ( x, z ) => fp.dist( x, z ), 0 );
@@ -137,20 +347,17 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		vegetation[ dst + 8 ] = vegetationVisibility?.( veg[ k ], veg[ k + 1 ], veg[ k + 2 ], veg[ k + 3 ], veg[ k + 4 ], veg[ k + 5 ] ) ?? 1;
 
 	}
-	transfer.push( vegetation.buffer );
 	mark( 'vegetation', t );
 
 	t = performance.now();
 	const rimGround = buildRimGround( islandSDF );
 	// The turf skirt drapes over the coast this field traces.
 	const rimSkirt = buildRimSkirt( islandSDF, rimGround );
-	transfer.push( rimGround.data.buffer, rimSkirt.points.buffer, rimSkirt.info.buffer, rimSkirt.loops.buffer );
 	mark( 'rimGround', t );
 
 	t = performance.now();
 	// Bare runs between the trails are measured along the same traced coast.
 	const rimStrands = makeRimTrails( islandSDF, fp, vegetation, coastPaths( rimGround ) );
-	for ( const strand of rimStrands ) transfer.push( strand.points.buffer, ...( strand.clump ? [ strand.clump.buffer ] : [] ) );
 	mark( 'rimFoliage', t );
 
 	// --- seabed contact visibility; the warped geometry was generated before the mesh bake.
@@ -177,7 +384,6 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 		sbBed[ v * 2 ] = grass; sbBed[ v * 2 + 1 ] = pale;
 
 	}
-	transfer.push( sb.buffer, sbAO.buffer, sbBed.buffer );
 	mark( 'seabed', t );
 
 	// --- shoreline: only the island intersects sea level. Submerged stones must not
@@ -186,39 +392,74 @@ self.onmessage = ( e: MessageEvent<WorldOptions> ) => {
 	const shore = Field2D.covering( - shoreSize / 2, shoreSize / 2, - shoreSize / 2, shoreSize / 2, shoreCell )
 		.fill( ( x: number, z: number ) => islandSDF( x, 0, z ) )
 		.signedDistance();
-	transfer.push( shore.data.buffer );
 	// Match the shoreline's world bounds at half resolution for the breaking-surf pass.
 	// Keeping its resolution separate preserves the existing water sampling contract.
 	const islandRes = Math.ceil( shore.nx / 2 );
 	const islandShore = new Field2D( shore.x0, shore.z0, islandRes, islandRes, shore.nx * shore.cell / islandRes )
 		.fill( ( x: number, z: number ) => islandSDF( x, 0, z ) )
 		.signedDistance();
-	transfer.push( islandShore.data.buffer );
 	// The rendered floor's height (its stones aside) over the same bounds at half resolution, for the
 	// water's world-space estimate of where refracted rays the screen cannot follow meet the floor.
 	const seabedField = new Field2D( shore.x0, shore.z0, islandRes, islandRes, shore.nx * shore.cell / islandRes )
 		.fill( renderedFloor );
-	transfer.push( seabedField.data.buffer );
 	mark( 'shore', t );
 
-	timings.total = Math.round( performance.now() - t0 );
+	const field = ( f: Field2D ) => ( { data: f.data, nx: f.nx, nz: f.nz, x0: f.x0, z0: f.z0, cell: f.cell } );
+	return {
+		seabedPositions: sb, stones: rocks,
+		vegetation, rimGround, rimSkirt, rimStrands, seabedAO: sbAO, seabedBed: sbBed,
+		shore: field( shore ), islandShore: field( islandShore ), seabedField: field( seabedField ),
+	};
 
-	const result: WorldData = {
+}
+
+function transferMesh( m: MeshData, transfer: Transferable[] ): void {
+
+	transfer.push( m.positions.buffer, m.normals.buffer, m.ao.buffer, m.tint.buffer, m.curv.buffer, m.indices.buffer );
+	if ( m.detail ) transfer.push( m.detail.buffer );
+	if ( m.detail2 ) transfer.push( m.detail2.buffer );
+
+}
+
+function transferRest( rest: RestPart, transfer: Transferable[] ): void {
+
+	transfer.push( rest.seabedPositions.buffer, rest.vegetation.buffer, rest.rimGround.data.buffer, rest.rimSkirt.points.buffer, rest.rimSkirt.info.buffer, rest.rimSkirt.loops.buffer );
+	for ( const strand of rest.rimStrands ) transfer.push( strand.points.buffer, ...( strand.clump ? [ strand.clump.buffer ] : [] ) );
+	transfer.push( rest.seabedAO.buffer, rest.seabedBed.buffer, rest.shore.data.buffer, rest.islandShore.data.buffer, rest.seabedField.data.buffer );
+
+}
+
+function assemble( island: MeshData, rocks: MeshData[], rest: RestPart, options: WorldOptions, timings: Record<string, number> ): [ WorldData, Transferable[] ] {
+
+	const meshes: NamedMesh[] = [];
+	const transfer: Transferable[] = [];
+	const push = ( name: string, m: MeshData, kind: MeshKind ) => {
+
+		meshes.push( { name, kind, ...m } );
+		transferMesh( m, transfer );
+
+	};
+	push( 'island', island, 'cliff' );
+	// the stones merged into one mesh, in stone order
+	push( 'rocks', mergeParts( rocks ), 'rock' );
+	transferRest( rest, transfer );
+
+	const world: WorldData = {
 		meshes,
-		rocks,
-		seabed: { positions: sb, ao: sbAO, bed: sbBed, res: n, size: seabedSize },
-		vegetation,
-		rimStrands,
-		rimGround,
-		rimSkirt,
-		shore: { data: shore.data, nx: shore.nx, nz: shore.nz, x0: shore.x0, z0: shore.z0, cell: shore.cell },
-		islandShore: { data: islandShore.data, nx: islandShore.nx, nz: islandShore.nz, x0: islandShore.x0, z0: islandShore.z0, cell: islandShore.cell },
-		seabedField: { data: seabedField.data, nx: seabedField.nx, nz: seabedField.nz, x0: seabedField.x0, z0: seabedField.z0, cell: seabedField.cell },
+		rocks: rest.stones,
+		seabed: { positions: rest.seabedPositions, ao: rest.seabedAO, bed: rest.seabedBed, res: defaults( options ).seabedRes, size: defaults( options ).seabedSize },
+		vegetation: rest.vegetation,
+		rimStrands: rest.rimStrands,
+		rimGround: rest.rimGround,
+		rimSkirt: rest.rimSkirt,
+		shore: rest.shore,
+		islandShore: rest.islandShore,
+		seabedField: rest.seabedField,
 		timings,
 	};
-	self.postMessage( result, { transfer } );
+	return [ world, transfer ];
 
-};
+}
 
 // The inverse warp locates the grid cell; interpolation then uses its stored world positions,
 // rather than the warped grid fraction, to match buildWorldMeshes()'s two indexed triangles.

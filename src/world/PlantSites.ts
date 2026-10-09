@@ -24,8 +24,9 @@ export interface PlantSite {
 
 // One small tree per this much meadow (m^2): three on the present island.
 const TREE_AREA = 120;
-// Trees grow 2.5 - 3.5 m tall, their leaf clusters reaching about half that from the trunk.
-const TREE_HEIGHT = [ 2.5, 3.5 ];
+// Trees grow 2.5 - 3.5 m tall, their leaf clusters reaching about half that from the trunk. (The
+// water's reflection box, Water.ts, reaches the tallest.)
+export const TREE_HEIGHT = [ 2.5, 3.5 ] as const;
 const TREE_CROWN = 0.5;
 // Open meadow (m) between a crown's reach and the walking loop. From the low orbit views (the
 // camera 10 - 20 degrees above the walker) any crown nearer than this stands in the line of sight

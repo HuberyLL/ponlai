@@ -7,21 +7,27 @@ import {
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
-import { AerialPerspective } from '../weather/AerialPerspective.ts';
+import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
+import { FSR } from './FSR.ts';
 import { sizeRtt } from './RenderScale.ts';
+import { SCENE_SAMPLES } from './SceneSamples.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { Rain } from '../weather/Rain.ts';
 
 // Frame graph:
-//   opaque scene ── sceneRT (MSAA x4, half float, multisampled depth)
+//   opaque scene ── sceneRT (MSAA, SCENE_SAMPLES, half float, multisampled depth)
 //   depth resolve ── depthRT (view-space z of the opaque pass: sample 0, and the farthest sample)
 //   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts and reflects)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
-//   rain ── into sceneRT
-//   composite ── bloom (tight) + glow (wide), both through a clamped soft-knee prefilter
+//   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them)
+//   sea fog (in fog: the bank noise baked into a map, the march at half resolution), the view
+//   distance for the depth of field
+//   composite (air, fog, rain veil, shafts) ── hdr, once
+//   bloom (tight) + glow (wide) from hdr, both through a clamped soft-knee prefilter ── sharp
 //   ── tilt-shift depth of field (half-res gather) ── exposure, tone curve (PBR Neutral with
 //   hue-kept highlights by default), split-tone grade, vibrance, the art-directed look (diffusion
 //   glow, hue-selective colour, warm / cool split, coloured shadow lift), lifted blacks, vignette,
@@ -31,6 +37,52 @@ import type { Rain } from '../weather/Rain.ts';
 // the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling, then
 // contrast-adaptive sharpening) to the screen instead, and the grain is added there, at display
 // pixels.
+
+/** The frame graph's structural choices, fixed when the page loads (the quality tier sets them;
+ * the defaults are today's high). `?post=legacy` restores the graph before they were introduced,
+ * for A/B timing; `?post=` also takes a comma list of single switches (see `postOptionsFromURL`). */
+export interface PostOptions extends AirOptions {
+	// the composite evaluated once into a texture both blooms read (else each re-evaluates it)
+	compositeOnce: boolean;
+	// the depth of field's gather taps
+	dofTaps: number;
+	// the depth of field reads the view distance from a target written once per pixel (else each
+	// tap derives it from the depth)
+	dofDistance: boolean;
+	// two bloom chains (tight and wide), or one with the wide glow's radius and the two strengths
+	bloomChains: 1 | 2;
+	// FSR 1 from FSR.ts (EASU pass, sharpening folded into the canvas pass), or three's FSR1Node
+	fsrPort: boolean;
+	// the last pass into the multisampled scene target discards its samples
+	discardScene: boolean;
+}
+
+export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
+	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 36, dofDistance: true, bloomChains: 2, fsrPort: true, discardScene: true,
+};
+
+const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
+	'inline-composite': { compositeOnce: false },
+	'full-fog': { fogScale: 1 },
+	'no-bank': { bankSize: 0 },
+	'inline-coc': { dofDistance: false },
+	'three-fsr': { fsrPort: false },
+	'store-scene': { discardScene: false },
+};
+
+/** The defaults, with `?post=legacy` (every switch below) or `?post=a,b` applied. */
+export function postOptionsFromURL( search = location.search ): PostOptions {
+
+	const options = { ...DEFAULT_POST_OPTIONS };
+	for ( const name of ( new URLSearchParams( search ).get( 'post' ) ?? '' ).split( ',' ) ) {
+
+		if ( name === 'legacy' ) for ( const change of Object.values( LEGACY_SWITCHES ) ) Object.assign( options, change );
+		else if ( LEGACY_SWITCHES[ name ] ) Object.assign( options, LEGACY_SWITCHES[ name ] );
+
+	}
+	return options;
+
+}
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -222,14 +274,24 @@ export class Pipeline {
 	depthRT: THREE.RenderTarget;
 	opaqueRT: THREE.RenderTarget;
 	surfaceRT: THREE.RenderTarget;
-	readonly air = new AerialPerspective();
+	readonly air: AerialPerspective;
 	readonly shafts = new LightShafts();
+	readonly options: Readonly<PostOptions>;
 
 	private depthQuad: THREE.QuadMesh;
 	private copyQuad: THREE.QuadMesh;
 	private surfaceQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
 	private upscaledOutput: THREE.RenderPipeline;
+	// three's FSR1Node, kept for A/B (debugFlags.fsrPort = false, or the fsrPort option off)
+	private upscaledOutputThree: THREE.RenderPipeline;
+	private fsr: FSR;
+	// the view distance per pixel, for the depth of field (the dofDistance option)
+	private distanceRT: THREE.RenderTarget | null = null;
+	private distanceQuad: THREE.QuadMesh | null = null;
+	// set while the last pass into sceneRT is recorded (the discardScene option)
+	private discardSamples = false;
+	private warming: Promise<void> | null = null;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private display: THREE.RenderPipeline;
 	private displayRT: THREE.RenderTarget;
@@ -255,12 +317,15 @@ export class Pipeline {
 	};
 	private diffusion!: { node: RenderBloomNode; threshold: THREE.UniformNode<'float', number> };
 
-	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain ) {
+	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL() ) {
 
 		this.renderer = renderer;
+		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
+		const O = this.options;
+		this.air = new AerialPerspective( O );
 		const depthTexture = new THREE.DepthTexture( 1, 1 );
 		depthTexture.type = THREE.FloatType;
-		this.sceneRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, samples: 4, depthTexture } );
+		this.sceneRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, samples: SCENE_SAMPLES, depthTexture } );
 		this.sceneRT.texture.name = 'sceneColor';
 		this.depthRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RGFormat, depthBuffer: false } );
 		this.depthRT.texture.name = 'linearDepth';
@@ -287,7 +352,7 @@ export class Pipeline {
 		const msDepth = texture( depthTexture );
 		const depthSample = ( coord: V2, i: number ) => textureLoad( msDepth, ivec2( coord ), int( i ) ) as unknown as F;
 		// Sample 0 for what reads the depth at a point (the water's traces, rain, spray, the haze and
-		// the blur), and the farthest of the four samples for the water's view of what lies behind it.
+		// the blur), and the farthest of the samples for the water's view of what lies behind it.
 		// The water is shaded once per pixel, but drawn only into the samples it is in front of: at an
 		// edge pixel where a cliff, a figure or a leaf covers sample 0, the samples the water does
 		// cover hold what is behind it, the farthest one.
@@ -296,7 +361,9 @@ export class Pipeline {
 
 			const coord = screenCoordinate.xy;
 			const d0 = depthSample( coord, 0 ).toVar();
-			const far = max( max( d0, depthSample( coord, 1 ) ), max( depthSample( coord, 2 ), depthSample( coord, 3 ) ) );
+			// Single-sampled, the depth texture has no samples to load past 0 (the third argument
+			// would read a mip level instead).
+			const far = SCENE_SAMPLES === 4 ? max( max( d0, depthSample( coord, 1 ) ), max( depthSample( coord, 2 ), depthSample( coord, 3 ) ) ) : d0;
 			return vec4( viewZ( coord, d0 ), viewZ( coord, far ), 0, 0 );
 
 		} )();
@@ -311,8 +378,15 @@ export class Pipeline {
 		// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it
 		const sceneTex = texture( this.sceneRT.texture );
 		const surfaceDepth = this.surfaceRT.texture;
-		const hdr = this.air.apply( sceneTex.rgb, surfaceDepth, sky, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
+		const composited = this.air.apply( sceneTex.rgb, surfaceDepth, sky, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
 			.add( this.shafts.build( surfaceDepth, sky ) );
+		// Rendered once, the composite feeds the sharp image and both blooms' high passes; as an
+		// expression each of them evaluated it again, the sea fog's march included. The high passes
+		// run at half resolution and sample it bilinearly, as they sampled the scene colour before.
+		const hdrRT = O.compositeOnce ? convertToTexture( vec4( composited, 1 ) ) : null;
+		if ( hdrRT ) this.passes.push( hdrRT );
+		const hdr: V3 = hdrRT ? hdrRT.rgb : composited;
+		const bloomInput = hdrRT ? nodeObject( hdrRT ) : nodeObject( vec4( hdr, 1 ) );
 
 		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a
 		// soft knee instead of a hard threshold. On surfaces (anything in front of the sky) the
@@ -324,7 +398,7 @@ export class Pipeline {
 		const makeBloom = () => {
 
 			const maxLum = uniform( 5 ), surfaceMaxLum = uniform( 5 );
-			const node = new RenderBloomNode( nodeObject( vec4( hdr, 1 ) ), 0.3, 0.5, 1.5 );
+			const node = new RenderBloomNode( bloomInput, 0.3, 0.5, 1.5 );
 			( node as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input, threshold }: { input: THREE.Node<'vec4'>; threshold: THREE.Node<'float'> } ) => {
 
 				const px = ivec2( clamp( uv().mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
@@ -345,21 +419,18 @@ export class Pipeline {
 
 		};
 
-		const withBloom = hdr.add( makeBloom().rgb ).add( makeBloom().rgb );
+		// (one chain: the wide glow's radius and both strengths, see render())
+		const withBloom = O.bloomChains === 2 ? hdr.add( makeBloom().rgb ).add( makeBloom().rgb ) : hdr.add( makeBloom().rgb );
 
 		// ---- tilt-shift depth of field: a half-res gather over a golden-angle disc whose radius grows
 		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
 		// the blur is mixed over the sharp image by the full-resolution coc
 		const sharp = convertToTexture( vec4( withBloom, 1 ) );
-		this.passes.push( sharp );
+		if ( ! hdrRT ) this.passes.push( sharp );
 		const tD = texture( surfaceDepth );
-		// The circle of confusion (0..1 of the widest blur) and the distance to the nearest surface,
-		// the water's included (view-space z: closer is larger). One function per pass: a layout
-		// function shared by two shaders keeps the first one's uniform bindings.
-		const makeCocAt = () => Fn( ( [ q ]: [ V2 ] ) => {
+		// The distance to the nearest surface, the water's included (view-space z: closer is larger).
+		const distanceAt = ( q: V2, z: F ) => {
 
-			const px = ivec2( clamp( q.mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
-			const z = ( textureLoad( tD, px ) as unknown as F ).toVar();
 			const ndc = vec2( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ) ).toVar();
 			const dist = float( 1e5 ).toVar();
 			If( z.greaterThan( - 9e4 ), () => {
@@ -369,6 +440,36 @@ export class Pipeline {
 				dist.assign( length( dir.mul( z.div( dir.z ) ) ) );
 
 			} );
+			return dist;
+
+		};
+		// Written once per pixel, in full float: the gather's taps then read it instead of each
+		// deriving it from the depth (half float tied distances, and the depth order below flipped).
+		let tDistance: THREE.TextureNode | null = null;
+		if ( O.dofDistance ) {
+
+			this.distanceRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RedFormat, depthBuffer: false } );
+			this.distanceRT.texture.name = 'viewDistance';
+			const distanceMat = new THREE.NodeMaterial();
+			distanceMat.name = 'Post.ViewDistance';
+			distanceMat.fragmentNode = Fn( () => {
+
+				const px = ivec2( screenCoordinate.xy );
+				return vec4( distanceAt( uv(), ( textureLoad( tD, px ) as unknown as F ).toVar() ), 0, 0, 1 );
+
+			} )();
+			this.distanceQuad = new THREE.QuadMesh( distanceMat );
+			this.distanceQuad.name = 'Post.ViewDistance';
+			tDistance = texture( this.distanceRT.texture );
+
+		}
+		// The circle of confusion (0..1 of the widest blur) and the distance. One function per pass:
+		// a layout function shared by two shaders keeps the first one's uniform bindings.
+		const makeCocAt = () => Fn( ( [ q ]: [ V2 ] ) => {
+
+			const px = ivec2( clamp( q.mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
+			const dist = tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).toVar()
+				: distanceAt( q, ( textureLoad( tD, px ) as unknown as F ).toVar() );
 			// The miniature blur is for the island's surroundings. Kilometres out it eases off, so the
 			// sky and the horizon keep their scale: blurred, clouds read as a backdrop close behind
 			// the island and every star spreads into a bokeh disc.
@@ -380,7 +481,7 @@ export class Pipeline {
 		// The blur's radius, in units of the widest one. It grows faster than the coc, so the
 		// transition out of focus stays gentle (as the earlier gather's weights made it).
 		const spread = ( c: F ) => c.mul( min( c.add( 0.15 ), 1 ) );
-		const TAPS = 36, GA = 2.39996323;
+		const TAPS = O.dofTaps, GA = 2.39996323;
 		// The gather averages colours compressed by their displayed luminance (c / (1 + L), after
 		// Karis) and expands the mean again. A plain mean of HDR samples let a single sun glint,
 		// tens of times white, clip every pixel of its circle of confusion: each out-of-focus glint
@@ -423,6 +524,8 @@ export class Pipeline {
 		} )();
 		const blur = rtt( gather, null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } );
 		this.passes.push( blur );
+		// (after the composite and the blur, so the profiler's labels for passes[ 0 ] and [ 1 ] hold)
+		if ( hdrRT ) this.passes.push( sharp );
 		// Upsample the half-res blur by its four nearest texels, each weighted by how much it would
 		// itself show as blur: plain bilinear filtering pulled a sharp figure's colour (a texel whose
 		// coc is near zero) a pixel or two out over the blurred sea beside it. Texels that are
@@ -695,13 +798,23 @@ export class Pipeline {
 		this.output = new THREE.RenderPipeline( renderer, textureLoad( this.displayRT.texture, ivec2( screenCoordinate.xy ) ) );
 		this.output.outputColorTransform = false;
 
-		// Below it, FSR 1 (AMD FidelityFX Super Resolution 1, three's FSR1Node) upscales the image
-		// (it expects display values) before the grain, so the grain stays one display pixel fine
-		// and is not sharpened. The browser's stretch of a small canvas was a plain bilinear filter.
-		const upscaled = fsr1( texture( this.displayRT.texture ), this.sharpness );
-		this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), u.output, float( 1 ) ) )() );
+		// Below it, FSR 1 (AMD FidelityFX Super Resolution 1, FSR.ts) upscales the image (it expects
+		// display values) before the grain, so the grain stays one display pixel fine and is not
+		// sharpened. The browser's stretch of a small canvas was a plain bilinear filter. The canvas
+		// pass sharpens EASU's result itself; three's FSR1Node, kept for A/B, took a canvas-sized
+		// pass and target more.
+		const backend = renderer.backend as unknown as { hasFeature?( name: string ): boolean };
+		this.fsr = new FSR( this.displayRT.texture, backend.hasFeature?.( 'float32-filterable' ) === true );
+		this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( this.fsr.rcas( this.sharpness ).toVar(), u.output, float( 1 ) ) )() );
 		this.upscaledOutput.outputColorTransform = false;
+		const upscaled = fsr1( texture( this.displayRT.texture ), this.sharpness );
+		this.upscaledOutputThree = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), u.output, float( 1 ) ) )() );
+		this.upscaledOutputThree.outputColorTransform = false;
+		if ( O.discardScene ) this.interceptSceneStore();
 		this.setToneMapping( this.settings.toneMapping );
+		// The sea fog's passes run only once fog sets in, perhaps minutes later (morning mist, the
+		// weather turning): compiled now, in the background, the first foggy frame does not stall.
+		this.warm().catch( ( error ) => console.warn( 'Pipeline.warm', error ) );
 
 	}
 
@@ -739,6 +852,9 @@ export class Pipeline {
 		this.opaqueRT.setSize( w, h );
 		this.surfaceRT.setSize( w, h );
 		this.displayRT.setSize( w, h );
+		this.distanceRT?.setSize( w, h );
+		this.air.setSize( w, h );
+		this.fsr.setSize( this.outputWidth, this.outputHeight, w, h );
 		this.u.resolution.value.set( w, h );
 		this.u.texel.value.set( 1 / w, 1 / h );
 		// the size rtt() gives the half-res blur
@@ -800,21 +916,46 @@ export class Pipeline {
 			if ( rainScene ) {
 
 				r.setRenderTarget( this.sceneRT );
+				// the last pass into the scene target: its samples are resolved, then never read
+				this.discardSamples = this.options.discardScene;
 				r.render( rainScene, camera );
 
 			}
 
 		} finally {
 
+			this.discardSamples = false;
 			r.autoClear = autoClear;
+			r.setRenderTarget( null );
+
+		}
+
+		// the reduced sea fog and its bank map, and the depth of field's distances
+		this.air.render( r );
+		// (without the depth of field its blur is mixed in at weight 0, so stale distances never show)
+		if ( this.distanceQuad && S.dof > 0 ) {
+
+			r.setRenderTarget( this.distanceRT );
+			this.distanceQuad.render( r );
 			r.setRenderTarget( null );
 
 		}
 
 		// 4. composite, bloom, depth of field, grade
 		const [ b, g ] = this.blooms;
-		b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
-		g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
+		if ( g ) {
+
+			b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
+			g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
+
+		} else {
+
+			// One chain for both: the wide glow's radius and threshold, the tight bloom's clamps, and
+			// the two strengths together (an approximation for the low tier).
+			b.node.strength.value = S.bloomStrength + S.glowStrength; b.node.radius.value = S.glowRadius; b.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE;
+			b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
+
+		}
 		// The night crossfades the curve and its grade to PBR Neutral's (the grade's own night values,
 		// not the GUI's, which tune the chosen curve by day).
 		const look = this.looks[ S.toneMapping ], night = this.looks.neutral;
@@ -854,7 +995,64 @@ export class Pipeline {
 		r.setRenderTarget( this.displayRT );
 		this.display.render();
 		r.setRenderTarget( null );
-		( this.upscaling ? this.upscaledOutput : this.output ).render();
+		if ( ! this.upscaling ) this.output.render();
+		else if ( ! this.options.fsrPort || debugFlags.fsrPort === false ) this.upscaledOutputThree.render();
+		else {
+
+			this.fsr.render( r );
+			this.upscaledOutput.render();
+
+		}
+
+	}
+
+	/** Compiles the passes that first run later than the first frame (fog setting in, the
+	 * upscale), so they do not stall the frame that first needs them. It starts when the graph is
+	 * built; later calls return the same promise. */
+	warm(): Promise<void> {
+
+		this.warming ??= ( async () => {
+
+			await this.air.warm( this.renderer );
+			await this.fsr.warm( this.renderer );
+
+		} )();
+		return this.warming;
+
+	}
+
+	// WebGPU lets a pass load its attachments and still discard them once resolved; three only
+	// offers a discard together with a clear (storeMultisampled*Buffer = false), which would wipe
+	// the opaque image the rain draws over. So while the last pass into sceneRT is recorded, its
+	// descriptor's multisampled colour and depth stores become discards: the resolved colour and
+	// surfaceRT are already written, and the next frame's opaque pass clears both. (This relies
+	// on three's WebGPUBackend beginning each pass on an encoder of its own.)
+	private interceptSceneStore(): void {
+
+		type Attachment = { resolveTarget?: unknown; storeOp?: string };
+		type Descriptor = { colorAttachments: ( Attachment | null )[]; depthStencilAttachment?: { depthStoreOp?: string } };
+		type Encoder = { beginRenderPass( descriptor: Descriptor ): unknown };
+		const device = ( this.renderer.backend as unknown as { device: { createCommandEncoder( descriptor?: unknown ): Encoder } } ).device;
+		const create = device.createCommandEncoder.bind( device );
+		device.createCommandEncoder = ( descriptor?: unknown ) => {
+
+			const encoder = create( descriptor );
+			if ( ! this.discardSamples ) return encoder;
+			const begin = encoder.beginRenderPass.bind( encoder );
+			encoder.beginRenderPass = ( pass: Descriptor ) => {
+
+				// only a multisampled pass resolving into its target: the scene's
+				if ( ! pass.colorAttachments[ 0 ]?.resolveTarget ) return begin( pass );
+				return begin( {
+					...pass,
+					colorAttachments: pass.colorAttachments.map( ( a ) => a && a.resolveTarget ? { ...a, storeOp: 'discard' } : a ),
+					depthStencilAttachment: pass.depthStencilAttachment && { ...pass.depthStencilAttachment, depthStoreOp: 'discard' },
+				} );
+
+			};
+			return encoder;
+
+		};
 
 	}
 

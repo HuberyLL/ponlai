@@ -13,12 +13,14 @@ export interface LocalVisibilityOptions {
 	bias?: number;
 }
 
-function boundsDistance( solid: SolidBounds, x: number, y: number, z: number ): number {
+// Squared distance from a point to a solid's bounds: the filters below compare it with the squared
+// radius, which skips Math.hypot's careful (and slow) scaling in the generator's hottest loop.
+function boundsDistance2( solid: SolidBounds, x: number, y: number, z: number ): number {
 
 	const dx = Math.max( solid.min[ 0 ] - x, 0, x - solid.max[ 0 ] );
 	const dy = Math.max( solid.min[ 1 ] - y, 0, y - solid.max[ 1 ] );
 	const dz = Math.max( solid.min[ 2 ] - z, 0, z - solid.max[ 2 ] );
-	return Math.hypot( dx, dy, dz );
+	return dx * dx + dy * dy + dz * dz;
 
 }
 
@@ -44,6 +46,7 @@ export function boundedSceneField( solids: readonly SolidBounds[], radius = 1.8,
 
 	}
 
+	const radius2 = radius * radius;
 	let previousKey = '', previous: readonly SolidBounds[] = [];
 	return ( x, y, z ) => {
 
@@ -59,7 +62,7 @@ export function boundedSceneField( solids: readonly SolidBounds[], radius = 1.8,
 
 			// Test against the query radius, not the current signed minimum: overlapping
 			// solids can both be negative, and their union must keep the more negative one.
-			if ( boundsDistance( solid, x, y, z ) < radius ) distance = Math.min( distance, solid.field( x, y, z ) );
+			if ( boundsDistance2( solid, x, y, z ) < radius2 ) distance = Math.min( distance, solid.field( x, y, z ) );
 
 		}
 		return distance;
@@ -125,17 +128,18 @@ export function contactVisibilitySampler( solids: readonly SolidBounds[], receiv
 	options: LocalVisibilityOptions = {} ): ( x: number, y: number, z: number, nx: number, ny: number, nz: number ) => number {
 
 	const radius = options.radius ?? 1.5;
+	const radius2 = radius * radius;
 	const others = solids.filter( ( solid ) => solid.field !== receiver );
 	return ( x, y, z, nx, ny, nz ) => {
 
-		const neighbours = others.filter( ( solid ) => boundsDistance( solid, x, y, z ) < radius );
+		const neighbours = others.filter( ( solid ) => boundsDistance2( solid, x, y, z ) < radius2 );
 		if ( neighbours.length === 0 ) return 1;
 		const field: SDF = ( px, py, pz ) => {
 
 			let distance = radius;
 			for ( const solid of neighbours ) {
 
-				if ( boundsDistance( solid, px, py, pz ) < radius ) distance = Math.min( distance, solid.field( px, py, pz ) );
+				if ( boundsDistance2( solid, px, py, pz ) < radius2 ) distance = Math.min( distance, solid.field( px, py, pz ) );
 
 			}
 			return distance;

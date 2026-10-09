@@ -6,12 +6,19 @@ import {
 import type { Shared } from '../shared.ts';
 import { solarShadowVisibility, solarVolumeVisibility } from './SolarShadow.ts';
 import { SUN_ANGULAR_RADIUS } from './Radiometry.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type M4 = THREE.Node<'mat4'>;
 
 const WATER_IOR = 1.333;
+// Turn of the key light below which a running clock keeps the drawn map (see RefractedSun.update).
+const ANGLE_GATE = THREE.MathUtils.degToRad( 0.03 );
+// Caster triangles reaching no lower than this above the water level cannot write the map (its
+// material discards everything above the level), so the proxies leave them out. The margin only
+// guards a level that moves.
+const LEVEL_MARGIN = 0.5;
 
 // Snell's law for the mean horizontal surface. Both vectors point toward the source.
 // The source beam's irradiance changes by cos(thetaAir) / cos(thetaWater): a horizontal
@@ -123,6 +130,43 @@ function fitCamera( camera: THREE.OrthographicCamera, bounds: THREE.Box3, direct
 
 interface RefractedSunOptions { mapSize?: number; contactBias?: number }
 interface Caster { source: THREE.Mesh; proxy: THREE.Mesh; floor: boolean }
+
+// The source's triangles that reach below `level` in world space, sharing its attributes; null
+// when every triangle does (the proxy then draws the source geometry itself).
+function submergedTriangles( source: THREE.Mesh, level: number ): THREE.BufferGeometry | null {
+
+	const geometry = source.geometry, position = geometry.getAttribute( 'position' );
+	if ( ! position ) return null;
+	const index = geometry.getIndex();
+	const count = index ? index.count : position.count;
+	const e = source.matrixWorld.elements;
+	const worldY = ( v: number ) => e[ 1 ] * position.getX( v ) + e[ 5 ] * position.getY( v ) + e[ 9 ] * position.getZ( v ) + e[ 13 ];
+	const below = new Uint8Array( position.count );
+	for ( let v = 0; v < position.count; v ++ ) below[ v ] = worldY( v ) < level ? 1 : 0;
+	const kept: number[] = [];
+	for ( let t = 0; t + 2 < count; t += 3 ) {
+
+		const a = index ? index.getX( t ) : t, b = index ? index.getX( t + 1 ) : t + 1, c = index ? index.getX( t + 2 ) : t + 2;
+		if ( below[ a ] || below[ b ] || below[ c ] ) kept.push( a, b, c );
+
+	}
+	if ( kept.length === count ) return null;
+	// the map's material reads the position alone
+	const subset = new THREE.BufferGeometry();
+	subset.setAttribute( 'position', position );
+	subset.setIndex( position.count > 65535 ? new THREE.Uint32BufferAttribute( kept, 1 ) : new THREE.Uint16BufferAttribute( kept, 1 ) );
+	return subset;
+
+}
+
+// Disposing a geometry releases every attribute's GPU buffer: detach the shared position first,
+// so only the subset's own index goes.
+function disposeSubset( subset: THREE.BufferGeometry ): void {
+
+	subset.deleteAttribute( 'position' );
+	subset.dispose();
+
+}
 interface Receiver {
 	material: THREE.NodeMaterial;
 	position: THREE.Node | null;
@@ -145,9 +189,17 @@ export class RefractedSun {
 	private readonly casters: Caster[] = [];
 	private readonly receivers: Receiver[] = [];
 	private readonly lastSun = new THREE.Vector3( NaN, NaN, NaN );
+	// the key direction at the previous update call, drawn or not
+	private readonly seenSun = new THREE.Vector3( NaN, NaN, NaN );
 	private readonly mapResolution = uniform( new THREE.Vector2() );
 	private lastLevel = NaN;
+	// the level the proxies' triangle subsets were cut at
+	private subsetLevel = NaN;
+	private readonly subsets: THREE.BufferGeometry[] = [];
 	private dirty = true;
+	// Turn of the key light (radians) below which a moving light keeps the drawn map: a quality
+	// tier's knob. A light at rest is always drawn exactly.
+	angleGate = ANGLE_GATE;
 
 	constructor( private readonly renderer: THREE.WebGPURenderer, private readonly shared: Pick<Shared, 'waterLevel' | 'sunDir'>, { mapSize = 1024, contactBias = 0.02 }: RefractedSunOptions = {} ) {
 
@@ -184,7 +236,7 @@ export class RefractedSun {
 
 	}
 
-	submergedVisibilityNode( point: V3, angularRadius: F = float( SUN_ANGULAR_RADIUS / WATER_IOR ), geometricNormal?: V3 ): F {
+	submergedVisibilityNode( point: V3, angularRadius: F = float( SUN_ANGULAR_RADIUS / WATER_IOR ), geometricNormal?: V3, active?: THREE.Node<'bool'> ): F {
 
 		const normal = geometricNormal ? normalize( geometricNormal ) : undefined;
 		// Geometry normals describe the caster plane; bump normals would move the receiver
@@ -196,7 +248,7 @@ export class RefractedSun {
 		// Snell compresses the solar disk. Its oblique image is elliptical; radius / IOR
 		// conservatively retains the larger axis, while sharing directional PCSS with air.
 		return solarShadowVisibility( this.target.depthTexture!, coordinate, {
-			mapSize: this.mapSize, worldSpan: this.worldSpan, depthRange: this.depthRange, angularRadius,
+			mapSize: this.mapSize, worldSpan: this.worldSpan, depthRange: this.depthRange, angularRadius, active,
 		} );
 
 	}
@@ -240,8 +292,15 @@ export class RefractedSun {
 				const underwater = positionWorld.y.lessThan( this.shared.waterLevel );
 				receiver.receivedShadowPositionNode = select( underwater, this.surfaceEntryNode( positionWorld ), positionWorld );
 				// The runtime passes the existing shadow node; @types/three omits that argument.
-				receiver.receivedShadowNode = Fn( ( [ airVisibility ]: [ V3 ] ) =>
-					airVisibility.mul( select( underwater, this.submergedVisibilityNode( positionWorld, undefined, normalWorldGeometry ), float( 1 ) ) ) ) as unknown as THREE.NodeMaterial['receivedShadowNode'];
+				// The filter takes derivatives, so it runs for every pixel (in uniform control flow, not
+				// inside the underwater branch, where a quad straddling the waterline would read
+				// undefined ones); above the water it skips its map reads and returns lit.
+				receiver.receivedShadowNode = Fn( ( [ airVisibility ]: [ V3 ] ) => {
+
+					const submerged = this.submergedVisibilityNode( positionWorld, undefined, normalWorldGeometry, underwater ).toVar();
+					return airVisibility.mul( select( underwater, submerged, float( 1 ) ) );
+
+				} ) as unknown as THREE.NodeMaterial['receivedShadowNode'];
 				receiver.needsUpdate = true;
 
 			}
@@ -254,6 +313,7 @@ export class RefractedSun {
 
 		this.scene.clear();
 		this.casters.length = 0;
+		this.subsetLevel = NaN;
 		root.updateWorldMatrix( true, true );
 		root.traverse( ( object ) => {
 
@@ -298,10 +358,41 @@ export class RefractedSun {
 
 	}
 
+	// Leave out the caster triangles that lie wholly above the water (plus a margin): the map's
+	// material discards their fragments anyway, so the map is unchanged and their vertices are
+	// not transformed at every redraw.
+	private cutSubsets( level: number ): void {
+
+		for ( const subset of this.subsets ) disposeSubset( subset );
+		this.subsets.length = 0;
+		for ( const { source, proxy } of this.casters ) {
+
+			source.updateWorldMatrix( true, false );
+			const subset = debugFlags.refractedSunSubset === false ? null : submergedTriangles( source, level + LEVEL_MARGIN );
+			proxy.geometry = subset ?? source.geometry;
+			if ( subset ) this.subsets.push( subset );
+
+		}
+		this.subsetLevel = level;
+
+	}
+
 	update(): boolean {
 
 		const sun = this.shared.sunDir.value, level = this.shared.waterLevel.value;
-		if ( ! this.dirty && this.lastSun.equals( sun ) && this.lastLevel === level ) return false;
+		// A light that has not moved since the previous call is at rest (a paused clock, or a seek
+		// on one): draw it exactly, so a paused frame is the same however it was reached. A moving
+		// light keeps the drawn map until it has turned by the gate; the map then trails the light
+		// by at most that turn (debugFlags.refractedSunGate = false: redraw at any turn, as before).
+		const resting = this.seenSun.equals( sun );
+		this.seenSun.copy( sun );
+		if ( ! this.dirty && this.lastLevel === level ) {
+
+			if ( this.lastSun.equals( sun ) ) return false;
+			if ( ! resting && debugFlags.refractedSunGate !== false && this.lastSun.angleTo( sun ) < this.angleGate ) return false;
+
+		}
+		if ( ! ( Math.abs( level - this.subsetLevel ) <= LEVEL_MARGIN * 0.5 ) ) this.cutSubsets( level );
 		const localBounds = new THREE.Box3();
 		let floorY = Infinity;
 		for ( const { source, proxy, floor } of this.casters ) {
@@ -359,6 +450,8 @@ export class RefractedSun {
 		}
 		this.receivers.length = 0;
 		this.casters.length = 0;
+		for ( const subset of this.subsets ) disposeSubset( subset );
+		this.subsets.length = 0;
 		this.scene.clear();
 		this.material.dispose();
 		this.target.dispose();

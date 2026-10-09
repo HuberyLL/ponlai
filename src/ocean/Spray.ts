@@ -11,6 +11,7 @@ import {
 	positionGeometry, positionView, positionWorld, cameraPosition, cameraProjectionMatrix, screenSize, screenCoordinate,
 	textureLoad, texture, varyingProperty,
 } from 'three/tsl';
+import { compileDraws } from '../post/Warm.ts';
 
 type F = THREE.Node<'float'>;
 type U = THREE.Node<'uint'>;
@@ -260,6 +261,21 @@ export class Spray {
 
 		this.mesh = this.buildMesh( light );
 		renderer.compute( this.clearKernel );
+
+	}
+
+	/** Create the spray's pipelines before the first storm: its kernels (one step that moves
+	 * nothing, dt 0 and no breaking, then a clear) and its draw for `camera` into `target`, as
+	 * `scene` (which holds `mesh`) draws it. Only while no storm runs. */
+	warm( scene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
+
+		const gate = this.params.gate.value;
+		this.params.gate.value = 0;
+		this.dt.value = 0;
+		this.renderer.compute( [ this.emitKernel, this.updateKernel ] );
+		this.renderer.compute( this.clearKernel );
+		this.params.gate.value = gate;
+		return compileDraws( this.renderer, [ this.mesh ], scene, camera, target );
 
 	}
 

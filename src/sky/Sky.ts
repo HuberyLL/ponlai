@@ -15,6 +15,8 @@ import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE } fro
 import { Clouds, EVOLVE_PERIOD } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
+import { compileInto } from '../post/Warm.ts';
 import { DAY_BLACK_LIFT, type DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherFront, WeatherState } from './Weather.ts';
 
@@ -25,15 +27,54 @@ type V4 = THREE.Node<'vec4'>;
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
 // Baked products. Directions, colours, the grade and the clouds themselves are evaluated every
-// frame; only these slower reflection, environment and irradiance products cross-fade.
+// frame; only these slower reflection, environment and irradiance products cross-fade. The
+// environment's two atlases are kept apart (Sky.environments), so a tier may refresh it on only
+// every few bakes.
 interface SkyEndpoint {
 	equirect: THREE.RenderTarget;
 	clouds: THREE.RenderTarget;
-	environment: THREE.RenderTarget | null;
 	irradianceMap: THREE.RenderTarget;
 	version: number;
 	irradiance: THREE.Color;
 }
+
+// One bake: its endpoint, whether it is explicit (reads its irradiance back and shows at once),
+// and the environment atlas it refreshes (null: it keeps the one shown).
+interface Bake {
+	version: number;
+	readback: boolean;
+	transitionSeconds: number;
+	next: number;
+	state: SkyEndpoint;
+	environment: number | null;
+}
+
+// A step of a periodic bake spread over frames; `cost` counts its render passes.
+interface Slice {
+	cost: number;
+	run: () => void;
+}
+
+// PMREMGenerator's own steps (three r186), driven one at a time so a periodic bake's GGX filter
+// chain spreads over frames. Their order and arguments are those of its _fromTexture, so the
+// atlas comes out the same; Sky.environmentSlices falls back to the whole call without them.
+interface PMREMSteps {
+	_lodMeshes: unknown[] | undefined;
+	_setSizeFromTexture( texture: THREE.Texture ): void;
+	_init( target: THREE.RenderTarget ): void;
+	_textureToCubeUV( texture: THREE.Texture, target: THREE.RenderTarget ): void;
+	_applyGGXFilter( target: THREE.RenderTarget, lodIn: number, lodOut: number ): void;
+	_setViewport( target: THREE.RenderTarget, x: number, y: number, width: number, height: number ): void;
+}
+
+// Render passes of a periodic bake per frame after its first (the panoramas): the conversion to
+// the cube atlas and its GGX filters (two passes each), a fraction of a millisecond each at high.
+// A frame takes whole steps up to this many passes: the conversion and one filter, then two
+// filters a frame.
+const SLICE_PASSES = 4;
+// A periodic bake whose frames stop coming (a stopped loop, a hidden page) completes after this
+// long, so it never holds the sky busy.
+const SLICE_TIMEOUT_MS = 250;
 
 function makeEndpoint(): SkyEndpoint {
 
@@ -55,7 +96,6 @@ function makeEndpoint(): SkyEndpoint {
 	return {
 		equirect,
 		clouds,
-		environment: null,
 		irradianceMap: new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter } ),
 		version: 0,
 		irradiance: new THREE.Color( 0, 0, 0 ),
@@ -144,6 +184,20 @@ export class Sky {
 	busy = false;
 
 	private endpoints = [ makeEndpoint(), makeEndpoint() ];
+	// The environment's PMREM atlases: the one shown (environmentFront) and the next one.
+	private environments: [ THREE.RenderTarget | null, THREE.RenderTarget | null ] = [ null, null ];
+	private environmentFront = 0;
+	// The environment refreshes on every environmentEvery-th periodic bake (setEnvironmentCadence).
+	private environmentEvery = 1;
+	private bakesSinceEnvironment = 0;
+	// A periodic bake spread over frames: its remaining steps, and the promise to settle.
+	private slices: Slice[] = [];
+	private sliceDone: { resolve: () => void; reject: ( error: unknown ) => void } | null = null;
+	private sliceTimer: ReturnType<typeof setTimeout> | null = null;
+	private sliceMs = 0;
+	// The scene clock did not advance over the last cloud update: a paused scene does its bakes whole.
+	private clockStill = false;
+	private readonly displaySize = new THREE.Vector2();
 	private front = 0;
 	private destination = 0;
 	private initialized = false;
@@ -364,18 +418,69 @@ export class Sky {
 
 	setQuality( quality: 'low' | 'medium' | 'high' ): void {
 
-		const samples = { low: 40, medium: 56, high: 72 }[ quality ];
-		if ( samples === undefined ) throw new RangeError( `Unknown sky quality: ${ quality }` );
+		// High's cloud view is a share of the display (0.58 of the render high draws at its nominal
+		// ratio), so a lower render scale does not soften the clouds a second time; medium and low
+		// keep their share of the render until the quality tiers give them budgets of their own.
+		const scale = { low: { render: 0.4 }, medium: { render: 0.5 }, high: { display: 0.58 } }[ quality ];
+		if ( scale === undefined ) throw new RangeError( `Unknown sky quality: ${ quality }` );
 		// Fixed targets keep sampler dimensions and both PMREM endpoints compatible while
 		// quality changes. Cloud march steps and the caller's bake cadence set the GPU budget.
-		this.clouds.quality.value = samples;
+		this.clouds.setViewScale( scale );
 		this.clouds.invalidate();
+
+	}
+
+	/** The environment's PMREM source: an equirect `width` x `width / 2` (512 today; 256 gives
+	 * an atlas a quarter the size). It fixes the atlases' size, so it is set before the first bake. */
+	setEnvironmentSource( width: number ): void {
+
+		if ( this.initialized ) throw new Error( 'The environment source is fixed by the first bake' );
+		if ( ! ( Number.isInteger( Math.log2( width ) ) && width >= 64 ) ) throw new RangeError( 'The environment source width must be a power of two of at least 64' );
+		this.reflectionSource.setSize( width, width / 2 );
+
+	}
+
+	/** Refresh the environment (PMREM) on every `every`-th periodic bake only; the panoramas and
+	 * irradiance keep their cadence, and explicit bakes always refresh it. */
+	setEnvironmentCadence( every: number ): void {
+
+		if ( ! ( Number.isInteger( every ) && every >= 1 ) ) throw new RangeError( 'The environment cadence must be a positive integer' );
+		this.environmentEvery = every;
+
+	}
+
+	/** Compile the bake's and the clouds' pipelines ahead of their first use (startup calls this
+	 * while the world generates). */
+	async warm( r: THREE.WebGPURenderer = this.renderer ): Promise<void> {
+
+		await r.init();
+		await this.clouds.warm( r );
+		// A pipeline depends on the target it draws into: compile each quad for its own.
+		const e = this.endpoints[ 0 ];
+		const pairs: [ THREE.QuadMesh, THREE.RenderTarget ][] = [
+			[ this.upperQuad, e.clouds ], [ this.quad, e.equirect ], [ this.quad, this.small ],
+			[ this.irradianceQuad, e.irradianceMap ], [ this.irradianceBlendQuad, this.irradianceDisplay ],
+		];
+		if ( this.environmentBlendQuad && this.envMap ) pairs.push( [ this.environmentBlendQuad, this.envMap ] );
+		const compiling = pairs.map( ( [ quad, target ] ) => compileInto( r, quad, quad.camera, target ) );
+		compiling.push( this.pmrem.compileEquirectangularShader() );
+		await Promise.all( compiling );
 
 	}
 
 	update( transitionSeconds = 0 ): Promise<void> {
 
 		if ( ! Number.isFinite( transitionSeconds ) || transitionSeconds < 0 ) return Promise.reject( new RangeError( 'Sky transition duration must be finite and nonnegative' ) );
+		if ( this.slices.length > 0 ) {
+
+			// A periodic bake is under way over frames. Another periodic request joins it; anyone
+			// else (an explicit bake waiting for it) has it completed now, as a whole bake would be.
+			const pending = this.pendingUpdate!;
+			if ( transitionSeconds > 0 ) return pending;
+			this.finishSlices();
+			return pending;
+
+		}
 		if ( this.pendingUpdate ) return this.pendingUpdate;
 		if ( this.transitioning ) {
 
@@ -384,6 +489,25 @@ export class Sky {
 
 		}
 		this.busy = true;
+		// A periodic bake on a running clock spreads over frames: its panoramas now, inside this
+		// frame, then the environment's filter chain a few passes a frame (see advance()). Its
+		// products are those of a whole bake; they arrive a few frames later.
+		if ( transitionSeconds > 0 && this.initialized && this.clouds.ready && this.night.ready && debugFlags.skyWholeBake !== true ) {
+
+			const pending = new Promise<void>( ( resolve, reject ) => { this.sliceDone = { resolve, reject }; } );
+			this.pendingUpdate = pending;
+			try {
+
+				this.startSlices( transitionSeconds );
+
+			} catch ( error ) {
+
+				this.abortSlices( error );
+
+			}
+			return pending;
+
+		}
 		this.pendingUpdate = this.bake( transitionSeconds ).finally( () => {
 
 			this.busy = false;
@@ -555,7 +679,10 @@ export class Sky {
 		this.viewCamera = camera;
 		this.viewWidth = width;
 		this.viewHeight = height;
+		this.clockStill = time === this.cloudTime;
 		this.cloudTime = time;
+		const display = this.renderer.getSize( this.displaySize );
+		this.clouds.setDisplay( display.x, display.y, this.renderer.getPixelRatio() );
 		this.clouds.setWindOffset( windOffset );
 		// Weather arrives from upwind.
 		this.clouds.frontAxis.value.copy( windDirection ).negate().normalize();
@@ -576,7 +703,6 @@ export class Sky {
 		if ( readback ) this.explicitVersion = version;
 		const celestial = this.celestial;
 		const weather = this.weatherState ? { ...this.weatherState } : null;
-		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
 		await this.renderer.init();
 		if ( ! this.clouds.ready ) await this.clouds.init( this.renderer );
 		await this.night.load();
@@ -588,6 +714,45 @@ export class Sky {
 			this.clouds.update( this.renderer, this.viewCamera, this.viewWidth, this.viewHeight, this.cloudTime );
 
 		}
+		const bake = this.beginBake( version, readback, transitionSeconds, celestial, weather );
+		this.renderPanoramas( bake );
+		const r = this.renderer;
+		if ( readback ) {
+
+			const W = this.small.width, H = this.small.height;
+			const px = await r.readRenderTargetPixelsAsync( this.small, 0, 0, W, H ) as Float32Array;
+			const E = [ 0, 0, 0 ];
+			const dOmegaLon = 2 * Math.PI / W, dTh = Math.PI / H;
+			for ( let k = 0; k < W * H; k ++ ) {
+
+				const sinTh = px[ k * 4 + 3 ];
+				if ( sinTh <= 0 ) continue;
+				const dOmega = dOmegaLon * dTh * Math.sqrt( Math.max( 0, 1 - sinTh * sinTh ) );
+				for ( let c = 0; c < 3; c ++ ) E[ c ] += px[ k * 4 + c ] * sinTh * dOmega;
+
+			}
+			bake.state.irradiance.setRGB( E[ 0 ] / Math.PI, E[ 1 ] / Math.PI, E[ 2 ] / Math.PI );
+
+		}
+		if ( bake.environment !== null ) this.filterEnvironment( bake.environment );
+		if ( ! this.initialized ) {
+
+			// The first bake fills both atlases from the same source.
+			this.front = bake.next;
+			this.filterEnvironment( 1 );
+
+		}
+		this.publishBake( bake );
+		this.lastBakeMs = performance.now() - started;
+
+	}
+
+	// Pick the endpoint a bake writes and capture the state it bakes: the live state from
+	// track() (the atmosphere LUT, key light, clouds and stars already describe this frame's sun
+	// and moon) and the weather and day it was requested with.
+	private beginBake( version: number, readback: boolean, transitionSeconds: number, celestial: DayCycleSnapshot | null, weather: WeatherState | null ): Bake {
+
+		const illuminance = this.sunIlluminance * SCENE_RADIANCE_SCALE;
 		const next = this.initialized ? 1 - this.front : 0;
 		const state = this.endpoints[ next ];
 		state.version = version;
@@ -595,13 +760,30 @@ export class Sky {
 		const overcast = weather ? THREE.MathUtils.smoothstep( weather.coverage, 0.65, 0.98 ) : 0;
 		this.ambientGain.value = ambientGain;
 		this.overcast.value = overcast;
-		// The bake captures the live state from track(): the atmosphere LUT, key light, clouds
-		// and stars already describe this frame's sun and moon.
 		this.nightAmbient.value.copy( this.displayNightAmbient.value );
 		const daylight = celestial ? celestial.daylight : 1;
 		this.sea.value.copy( this.seaColor ).multiplyScalar( illuminance * daylight )
 			.add( this.nightAmbient.value.clone().multiplyScalar( 0.22 ) ).multiplyScalar( ambientGain );
 		this.bakeStarVisibility.value = this.night.starVisibility.value;
+		// The environment refreshes on explicit bakes and on every environmentEvery-th periodic one,
+		// into the atlas not shown.
+		let environment: number | null = 0;
+		if ( this.initialized ) {
+
+			const refresh = readback || ++ this.bakesSinceEnvironment >= this.environmentEvery;
+			environment = refresh ? 1 - this.environmentFront : null;
+
+		}
+		if ( environment !== null ) this.bakesSinceEnvironment = 0;
+		return { version, readback, transitionSeconds, next, state, environment };
+
+	}
+
+	// The cloud layer, the panoramas (seen, starlit environment source, irradiance probe) and the
+	// irradiance integral.
+	private renderPanoramas( bake: Bake ): void {
+
+		const { state } = bake;
 		const r = this.renderer, prev = r.getRenderTarget();
 		try {
 
@@ -637,36 +819,163 @@ export class Sky {
 
 		}
 
-		if ( readback ) {
+	}
 
-			const W = this.small.width, H = this.small.height;
-			const px = await r.readRenderTargetPixelsAsync( this.small, 0, 0, W, H ) as Float32Array;
-			const E = [ 0, 0, 0 ];
-			const dOmegaLon = 2 * Math.PI / W, dTh = Math.PI / H;
-			for ( let k = 0; k < W * H; k ++ ) {
+	// The environment of the starlit source in atlas `index`, whole.
+	private filterEnvironment( index: number ): void {
 
-				const sinTh = px[ k * 4 + 3 ];
-				if ( sinTh <= 0 ) continue;
-				const dOmega = dOmegaLon * dTh * Math.sqrt( Math.max( 0, 1 - sinTh * sinTh ) );
-				for ( let c = 0; c < 3; c ++ ) E[ c ] += px[ k * 4 + c ] * sinTh * dOmega;
+		this.environments[ index ] = this.pmrem.fromEquirectangular( this.reflectionSource.texture, this.environments[ index ] );
+
+	}
+
+	// The same as filterEnvironment, as steps of one or two render passes: the conversion to the
+	// cube atlas, then each level's GGX filter from the one above. Each step restores what
+	// PMREMGenerator restores after a whole conversion.
+	private environmentSlices( index: number ): Slice[] {
+
+		const pmrem = this.pmrem as unknown as PMREMSteps;
+		const target = this.environments[ index ];
+		const stepwise = target && pmrem._lodMeshes && [ pmrem._setSizeFromTexture, pmrem._init, pmrem._textureToCubeUV, pmrem._applyGGXFilter, pmrem._setViewport ]
+			.every( ( f ) => typeof f === 'function' );
+		if ( ! stepwise || ! target ) return [ { cost: 20, run: () => this.filterEnvironment( index ) } ];
+		const r = this.renderer, source = this.reflectionSource.texture;
+		const step = ( work: () => void ) => () => {
+
+			const previous = r.getRenderTarget(), face = r.getActiveCubeFace(), level = r.getActiveMipmapLevel(), autoClear = r.autoClear;
+			try {
+
+				work();
+
+			} finally {
+
+				r.autoClear = autoClear;
+				r.setRenderTarget( previous, face, level );
+				target.scissorTest = false;
+				pmrem._setViewport( target, 0, 0, target.width, target.height );
 
 			}
-			state.irradiance.setRGB( E[ 0 ] / Math.PI, E[ 1 ] / Math.PI, E[ 2 ] / Math.PI );
+
+		};
+		const slices: Slice[] = [ { cost: 1, run: step( () => {
+
+			pmrem._setSizeFromTexture( source );
+			pmrem._init( target );
+			pmrem._textureToCubeUV( source, target );
+
+		} ) } ];
+		// _init keeps the levels of the source size the first bake set up, so their count is known.
+		const levels = pmrem._lodMeshes!.length;
+		for ( let i = 1; i < levels; i ++ ) slices.push( { cost: 2, run: step( () => {
+
+			r.autoClear = false;
+			pmrem._applyGGXFilter( target, i - 1, i );
+
+		} ) } );
+		return slices;
+
+	}
+
+	// Start a periodic bake over frames: the panoramas now, the rest from advance().
+	private startSlices( transitionSeconds: number ): void {
+
+		const started = performance.now();
+		const weather = this.weatherState ? { ...this.weatherState } : null;
+		const bake = this.beginBake( ++ this.bakeVersion, false, transitionSeconds, this.celestial, weather );
+		this.renderPanoramas( bake );
+		this.slices = bake.environment === null ? [] : this.environmentSlices( bake.environment );
+		this.slices.push( { cost: 0, run: () => this.publishBake( bake ) } );
+		this.sliceMs = performance.now() - started;
+		// A paused scene does it whole, so a paused frame never depends on how many frames ran.
+		if ( this.clockStill ) this.finishSlices();
+		else this.armSliceTimer();
+
+	}
+
+	// Run whole steps of the bake under way, up to `passes` render passes (at least one step); its
+	// publication ends it. An error ends the bake and rejects its promise, as a whole bake's would,
+	// so the sky is free for the next one.
+	private runSlices( passes: number ): void {
+
+		const started = performance.now();
+		let spent = 0;
+		try {
+
+			while ( this.slices.length > 0 && ( spent === 0 || spent + this.slices[ 0 ].cost <= passes ) ) {
+
+				const slice = this.slices.shift()!;
+				spent += slice.cost;
+				slice.run();
+
+			}
+
+		} catch ( error ) {
+
+			this.abortSlices( error );
+			return;
 
 		}
-		state.environment = this.pmrem.fromEquirectangular( this.reflectionSource.texture, state.environment ?? undefined );
-		if ( ! this.initialized ) {
+		this.sliceMs += performance.now() - started;
+		if ( this.slices.length > 0 ) {
 
-			this.front = next;
-			const spare = this.endpoints[ 1 ];
-			spare.environment = this.pmrem.fromEquirectangular( this.reflectionSource.texture );
+			this.armSliceTimer();
+			return;
 
 		}
+		if ( this.sliceTimer !== null ) clearTimeout( this.sliceTimer );
+		this.sliceTimer = null;
+		this.lastBakeMs = this.sliceMs;
+		this.busy = false;
+		this.pendingUpdate = null;
+		const done = this.sliceDone;
+		this.sliceDone = null;
+		done?.resolve();
+
+	}
+
+	// End the bake under way unfinished: `error` rejects its promise, none resolves it (dispose).
+	private abortSlices( error?: unknown ): void {
+
+		if ( this.sliceTimer !== null ) clearTimeout( this.sliceTimer );
+		this.sliceTimer = null;
+		this.slices = [];
+		this.busy = false;
+		this.pendingUpdate = null;
+		const done = this.sliceDone;
+		this.sliceDone = null;
+		if ( error === undefined ) done?.resolve();
+		else done?.reject( error );
+
+	}
+
+	private finishSlices(): void {
+
+		this.runSlices( Infinity );
+
+	}
+
+	private armSliceTimer(): void {
+
+		if ( this.sliceTimer !== null ) clearTimeout( this.sliceTimer );
+		this.sliceTimer = setTimeout( () => {
+
+			this.sliceTimer = null;
+			if ( this.slices.length > 0 ) this.finishSlices();
+
+		}, SLICE_TIMEOUT_MS );
+
+	}
+
+	// Show a finished bake: an explicit one at once, a periodic one by cross-fading to it.
+	private publishBake( bake: Bake ): void {
+
+		const { state, readback, version, transitionSeconds } = bake;
+		const r = this.renderer;
 		const previous = this.endpoints[ this.front ];
 		const displayedNext = this.initialized ? state : this.endpoints[ 1 ];
 		if ( ! this.initialized ) {
 
 			// Both endpoints start from this bake's cloud layer.
+			const prev = r.getRenderTarget();
 			r.setRenderTarget( this.endpoints[ 1 ].clouds );
 			this.upperQuad.render( r );
 			r.setRenderTarget( prev );
@@ -676,11 +985,16 @@ export class Sky {
 		this.panoramaB.value = displayedNext.equirect.texture;
 		this.irradianceA.value = previous.irradianceMap.texture;
 		this.irradianceB.value = displayedNext.irradianceMap.texture;
+		// The environment cross-fades from the atlas shown to the one this bake filtered (the
+		// first bake filled both); a bake that kept it fades it to itself.
+		const shown = this.environments[ this.environmentFront ]!;
+		const nextEnvironment = ! this.initialized ? this.environments[ 1 ]! : bake.environment !== null ? this.environments[ bake.environment ]! : shown;
+		if ( this.initialized && bake.environment !== null ) this.environmentFront = bake.environment;
 		if ( ! this.environmentA || ! this.environmentB ) {
 
-			this.environmentA = texture( previous.environment!.texture );
-			this.environmentB = texture( displayedNext.environment!.texture );
-			this.envMap = state.environment.clone();
+			this.environmentA = texture( shown.texture );
+			this.environmentB = texture( nextEnvironment.texture );
+			this.envMap = shown.clone();
 			this.envMap.texture.mapping = THREE.CubeUVReflectionMapping;
 			( this.envMap.texture as THREE.Texture & { isPMREMTexture: boolean } ).isPMREMTexture = true;
 			this.envMap.texture.name = 'skyDisplayedPMREM';
@@ -698,11 +1012,11 @@ export class Sky {
 
 		} else {
 
-			this.environmentA.value = previous.environment!.texture;
-			this.environmentB.value = state.environment.texture;
+			this.environmentA.value = shown.texture;
+			this.environmentB.value = nextEnvironment.texture;
 
 		}
-		this.destination = next;
+		this.destination = bake.next;
 		this.transitionElapsed = 0;
 		this.transitionDuration = this.initialized ? transitionSeconds : 0;
 		this.blend.value = ! this.initialized || this.transitionDuration > 0 ? 0 : 1;
@@ -711,7 +1025,6 @@ export class Sky {
 		this.liveDiagnostics = ! readback;
 		this.publish( this.blend.value );
 		if ( this.transitionDuration === 0 ) this.front = this.destination;
-		this.lastBakeMs = performance.now() - started;
 		if ( ! readback ) this.refreshDiagnosticIrradiance( state, version );
 
 	}
@@ -719,6 +1032,15 @@ export class Sky {
 	advance( dt: number ): void {
 
 		if ( ! Number.isFinite( dt ) || dt < 0 ) throw new RangeError( 'Sky dt must be finite and nonnegative' );
+		if ( this.slices.length > 0 ) {
+
+			// A periodic bake under way takes this frame's share; once published, its cross-fade
+			// starts on the next frame. A paused scene completes it at once.
+			if ( this.clockStill ) this.finishSlices();
+			else this.runSlices( SLICE_PASSES );
+			return;
+
+		}
 		if ( ! this.transitioning ) return;
 		this.transitionElapsed = Math.min( this.transitionElapsed + dt, this.transitionDuration );
 		// Linear: back-to-back bakes then change at a constant rate, never easing to a halt.
@@ -841,9 +1163,10 @@ export class Sky {
 			endpoint.equirect.dispose();
 			endpoint.clouds.dispose();
 			endpoint.irradianceMap.dispose();
-			endpoint.environment?.dispose();
 
 		}
+		for ( const environment of this.environments ) environment?.dispose();
+		this.abortSlices();
 		this.pmrem.dispose();
 		this.atmosphere.dispose();
 

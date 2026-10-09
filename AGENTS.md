@@ -32,28 +32,55 @@ stone exposed.
   (soft-fantasy, the default, rich-fantasy, realistic).
   In the page, H toggles the GUI, Space pauses, and R or 1/2/3 jump to the island, horizon and
   sky views.
+- Rendering and A/B URL options, read at load: `msaa` (the scene's sample count, `SceneSamples.ts`:
+  4, the default, or 1 for none; `2` reads as 1, since WebGPU multisamples with 1 or 4 samples
+  only), `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB
+  cache, as on a first visit), `post=legacy` (or a comma list of `inline-composite`, `full-fog`,
+  `no-bank`, `inline-coc`, `three-fsr`, `store-scene`: the frame graph without the first
+  performance round's changes) and `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter
+  path). Runtime switches for one-page A/Bs live in `src/debug/DebugFlags.ts`.
+- Quality knobs, each defaulting to today's high and set before the materials that read them are
+  built (so they change on reload): `WATER_QUALITY` (`Water.ts`: reflection rays and steps,
+  refraction steps, water-column samples, storm-foam layers), `setGrassQuality` (`Grass.ts`: blades
+  per tuft by distance, tussock segments, thin tufts, canopy light per vertex), `SunShadow.setFilter`
+  (PCSS taps, or the bilinear comparison alone, separately for vegetation), `setRainShading`
+  (`Rain.ts`: the veil's shells, the sea's ripple layers) and `PostOptions` (`new Pipeline`: sea-fog
+  resolution, steps and bank map, depth-of-field taps, bloom chains). Runtime ones:
+  `RefractedSun.angleGate`, the clouds' `setDome`, `setMarch`, `setShadowRefresh` and
+  `setViewScale`, and `Sky.setEnvironmentCadence` (`setEnvironmentSource` before the first bake).
 - `node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
-  [--timestamps on|off|both] [--eval "js"] [--repeat n] [--shots]` profiles a production build
-  (`npm run build && npm run preview`; the url defaults to its port) in headless Chrome
-  (`CHROME_PATH`, else the system Chrome) with the frame rate uncapped. It plays a matrix of named
-  scenes (`--list`: fair, golden, horizon, sky, overcast, rain, storm, fog, night, close over the
-  meadow, a weather front), each with the clock running, fixed weather and a slow orbit, and writes
+  [--timestamps on|off|both] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
+  [--scales 1.5,1]` profiles a production build (`npm run build && npm run preview`; the url
+  defaults to its port) in headless Chrome (`CHROME_PATH`, else the system Chrome) with the frame
+  rate uncapped, or at 60 Hz with `--vsync` (the intervals a player sees; uncapped, a GPU-bound
+  scene's p95 is mostly pacing noise). It plays a matrix of named scenes (`--list`: fair, golden,
+  horizon, sky, overcast, rain, storm, fog, night, close over the meadow, a weather front), each with the clock running, fixed weather and a slow orbit, and writes
   `artifacts/perf/<label>/` (profile.json, summary.md): frame interval median, p95 and p99, GPU
   time per pass, the tick's JS time, hitches with their cause, and the startup. It loads each
   variant once and switches scenes at runtime (`--mode reload` reloads per scene, the original
-  method); pages load with `?worldCache`, which keeps the generated island in IndexedDB (in the
-  tool's own Chrome profile) while the generator's sources are unchanged. `--compare urlA urlB`
-  runs A and B as two pages in one browser, in alternating slices with the other page stopped,
-  and reports deltas with their 95 % interval; `--toggle "js"` A/Bs inside one page by applying
+  method); every page keeps the generated island in IndexedDB (in the tool's own Chrome profile)
+  while the generator's sources are unchanged (`--world-cache off` loads with `worldCache=off`).
+  `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
+  other page stopped, and reports deltas with their 95 % interval; `--toggle "js"` A/Bs inside one page by applying
   the expression (with `s` = `window.__SOOMI__` and `on` false for A, true for B) every few frames,
   for example `--toggle "s.flags.myChange = on"` with a flag an optimisation reads from
-  `src/debug/DebugFlags.ts`. Decide A/Bs on GPU time per pass (timestamps on); take frame rates
-  from `--timestamps off` or `both`. `--eval` runs in the page with `s` = `window.__SOOMI__` (an
-  ablation, e.g. `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a
-  summary. The `profile` URL option (`?profile`, or `?profile=frames` without GPU timestamps)
-  loads `src/debug/FrameProfiler.ts`, which labels every render and compute pass, reads their GPU
-  timestamps and exposes `window.__SOOMI_PROFILE__`; without it the page builds the same pipelines
-  and image.
+  `src/debug/DebugFlags.ts`. Both give B/A as a ratio beside the delta. Decide A/Bs on GPU time
+  per pass (timestamps on); take frame rates from `--timestamps off` or `both`. `--accept`
+  (vsync, timestamps both) judges the 60 fps criterion per scene: frame interval median and p95
+  within 0.5 ms of 16.7 (`--target`) and no frame over 25 ms in the 7 s measured, from the run
+  without timestamps, with the p99, the maximum and the GPU busy time reported beside it. A
+  contended scene that fails is INCONCLUSIVE unless its GPU busy median is over the target;
+  `--strict` exits with 1 on a FAIL. Headless 60 Hz is the stricter stand-in for a 120 Hz display
+  (a missed frame costs 33 ms there, 25 at 120 Hz); confirm a verdict once on the real display.
+  `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
+  leave out) and tabulates every scene at every scale. `--eval` runs in the page with `s` =
+  `window.__SOOMI__` (an ablation, e.g. `--eval "s.pipeline.settings.dof = 0"`);
+  `--report profile.json` re-renders a summary. The `profile` URL option (`?profile`, or
+  `?profile=frames` without GPU timestamps) loads `src/debug/FrameProfiler.ts`, which labels every
+  render and compute pass, reads their GPU timestamps and exposes `window.__SOOMI_PROFILE__`;
+  without it the page builds the same pipelines and image. Its JS times leave out the time blocked
+  in `queue.submit`, the queue writes and `getCurrentTexture` (Chrome's backpressure once the GPU
+  falls behind), reported apart.
 - Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
   machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running
   captures) hold it alone; paused captures and the verify probes share it with each other, since
@@ -77,7 +104,10 @@ stone exposed.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__SOOMI__` (scene
   handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug`
   (or `?profile`, which also loads the frame profiler in `src/debug/`).
-- `src/world/`: the island generated in a Web Worker (SDF shapes → surface nets; the cliff band
+- `src/world/`: the island generated in Web Workers (the island, the stones in up to four sets and
+  the rest built in parallel copies of `worldWorker.ts` and merged in serial order, so the world is
+  identical to a single thread's; kept in IndexedDB by `WorldCache.ts`, keyed by the hash of the
+  generator's sources, its options and the browser; SDF shapes → surface nets; the cliff band
   places its vertices by dual contouring so scar edges stay sharp), its cliffs as a weathered face
   that has shed blocks along its joints and beds (`Cliff.ts`: rockfall scars in three generations
   of size, gullies, a wave-cut notch that follows the coast's exposure; per-vertex facet, scar
@@ -92,22 +122,31 @@ stone exposed.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
-  own canopy.
+  own canopy. The sun's soft shadow reads each 2x2 footprint with one `textureGather` and compares
+  it by hand (`SolarShadow`); its filter mode is set per quality tier before the materials build
+  (`SunShadow.setFilter`). `SunShadow` also exposes a caster-depth grid (`nearestCasterDepth`) that
+  bounds its 2x2 volume lookups, so a march through the water may skip them where nothing casts
+  (never the surface filter's PCSS search).
 - `src/materials/`: procedural detail textures, terrain materials (triplanar stone with per-facet
   shade, paler recent scars, strata, parting seams, runoff streaks from the lip and ledges, dry
   stone under overhangs, orange lichen near the lip, upper-cliff moss, a black lichen spray zone
   that climbs with the coast's exposure, turf, sea floor, light under the water), wet surfaces
   after Lagarde (soaked pores, water film, runnels down the cliffs).
-- `src/ocean/`: FFT ocean (compute), waves against the rock boundary, caustics, water shading, and
+- `src/ocean/`: FFT ocean (compute: each axis's eight Stockham stages run in workgroup memory, one
+  dispatch per axis after the spectrum kernel), waves against the rock boundary, caustics, water
+  shading (its screen-space reflection marches only rays that cross `Water.reflectionBounds`, the
+  box of everything opaque above the sea built from the tile layout, and stops them past it), and
   the storm sea (`StormSea.ts`: whitecap foam integrated on a world grid around the view, the
   procedural foam pattern, spray particles).
 - `src/sky/`: atmosphere LUTs, environment lighting, volumetric clouds after tidewater's port of
   the Three.js Sky Pro clouds (a cloud shell 4 - 9 km up shaped by a procedural weather map and the
   64^3 shape noise in `public/clouds/`, loaded by `src/materials/CloudNoise.ts`; traced in screen
   space a sixteenth of the pixels per frame with a reprojected history, plus a panorama map for
-  reflections and the environment, and a cloud-shadow map), high cirrus (fibres baked in `Cirrus.ts`), rain curtains under
-  raining clouds and showers (marched along the view ray, leaning with the wind) with the rainbows
-  in their sunlit rain (colours from `RainbowTable.data.ts`, generated by
+  reflections and the environment, and a cloud-shadow map: the panorama 1024 x 256 with a
+  thirty-second of it refreshed per frame, the shadow map an eighth of its rows, both refreshed
+  whole on a jump and when a paused scene settles), high cirrus (fibres baked in `Cirrus.ts`), rain
+  curtains under raining clouds and showers (marched along the view ray, leaning with the wind)
+  with the rainbows in their sunlit rain (colours from `RainbowTable.data.ts`, generated by
   `tools/bake-rainbow-table.mjs`), the day cycle (sun and moon), the night sky (the Yale Bright Star
   Catalogue's stars in a sidereal frame, a Milky Way shaped by NASA's Gaia map, both in
   `public/sky/` and loaded by `StarCatalog.ts`), airglow and moon (NASA's colour and LOLA heights in
@@ -119,11 +158,18 @@ stone exposed.
   splashing where they land; a distant streak veil in the post pass; analytic ripples), distant air
   (two exponential height layers after tidewater's `AirHaze`, lit by the horizon sky and, near the
   camera, the key light through a phase function) and sea fog (the marine layer thickened in
-  drifting banks of varying height, thinner over the island, plus morning mist).
+  drifting banks of varying height, thinner over the island, plus morning mist; the banks' noise
+  baked into a map, the march at half resolution, in `AerialPerspective.ts`). `warm()` on `Rain`,
+  `StormSea` and `Lightning` (with `Sky.warm` and `Pipeline.warm`) precompiles their first-use
+  pipelines at startup (`compileDraws` in `src/post/Warm.ts`), so a weather change or the first
+  bolt builds none.
 - `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
-  and rain drawn into the same multisampled target, crepuscular rays and sun glare, bloom,
-  tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale), render scale per quality preset
-  (`RenderScale.ts`).
+  and rain drawn into the same multisampled target (its samples discarded after the rain), the sea
+  fog marched at half resolution over a baked bank map, the composite of air, fog, veil and shafts
+  rendered once for the sharp image and both blooms, crepuscular rays and sun glare, bloom,
+  tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale (`FSR.ts`: an EASU pass,
+  the sharpening in the canvas pass)), render scale per quality preset (`RenderScale.ts`), the
+  scene's sample count (`SceneSamples.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -140,7 +186,8 @@ stone exposed.
   the island's SDF and noise fields with fixed seeds (hashes of position, or random streams that
   draw a fixed count per vegetation anchor), never from coordinates placed by hand, and their
   counts follow the measured coast length or meadow area. Any tile layout then builds itself the
-  same way.
+  same way. World generation stays deterministic whatever the thread count: parts never share
+  running counts, and the merge restores the serial order.
 - Cliff features (rockfall scars, joint faces, pockets, steps in the lip, gullies, the notch)
   derive from the footprint with seeds hashed from position in world-anchored cells (`Cliff.ts`),
   and an unchanged stretch of coast keeps its scars when the layout grows elsewhere: every
@@ -199,10 +246,25 @@ stone exposed.
   casters (the sea floor's stones cast only into the refracted map) and redrawn each time the key
   light has turned 0.2 degrees; every receiver cross-fades from the previous step's map by the
   light's progress (`SunShadow`), so shadows move smoothly instead of re-rasterising every frame,
-  and a paused clock holds them exactly. On screen a blade is kept at least two pixels wide (0.75
-  on the outer rim, where partly covered pixels show a pale fringe over the sea) with its coverage
-  lowered to match through alpha to coverage, so the meadow does not crawl as the camera moves;
-  close up the blades render unchanged.
+  and a paused clock holds them exactly. Both stepped sun maps always share one filter mode, each
+  with its own blocker search, so the cross-fade stays continuous across a redraw. The underwater
+  (refracted) map redraws when the key light has turned by its angle gate (0.03 degrees on high),
+  and exactly whenever the light is at rest (the same direction on two consecutive updates), so a
+  paused frame is the same however it was reached: after a paused seek it redraws on the second
+  update. On screen a blade is kept at least two pixels wide (0.75 on the outer rim, where partly
+  covered pixels show a pale fringe over the sea) with its coverage lowered to match through alpha
+  to coverage, so the meadow does not crawl as the camera moves; close up the blades render
+  unchanged. Beyond 40 and 70 m from a batch of tufts the lawn draws 12 and 8 of its 16 blades per
+  tuft (tussocks in proportion; `GrassQuality`). Blades a few pixels wide widen and cover for the
+  dropped ones (`bladeGain` = n / k, in full at 4 pixels and fading out by 16), so the meadow keeps
+  its density and brightness while broad near blades keep their own width. The band follows the
+  camera's position alone (no hysteresis), so a paused frame does not depend on the path the camera
+  took; one box spans each batch, so a larger island keeps more of its meadow in the nearer bands.
+  The thin extra tufts are not drawn once the camera is beyond their fold (42 m). Single-sampled
+  (`msaa=1`), leaves take a plain alpha test and grass blades an ordered 4x4 dither in place of
+  alpha to coverage (`ALPHA_TO_COVERAGE` in `Foliage.ts`), the blades kept one pixel wide rather
+  than two (a blade dithered across two pixels reads as a dotted line). Vegetation materials carry
+  `userData.vegetation` (`markVegetation`) for passes that treat them apart.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
   Weather only scales the wave cascades' amplitude; it never rebuilds the wave spectrum. Storm foam
@@ -215,7 +277,12 @@ stone exposed.
   other); shadows and glints use the true sun. A low sun's key stays golden orange: the optical
   depth that sets its hue is capped, while its brightness still follows the full extinction.
   The sky, sun, moon, stars, key light and grade follow the clock every frame; only the
-  reflection panorama, environment and irradiance cross-fade between bakes.
+  reflection panorama, environment and irradiance cross-fade between bakes. A periodic bake on a
+  running clock spreads over frames: its panoramas and irradiance in the frame that asks for it,
+  then the environment's PMREM conversion and GGX filters at most four render passes a frame,
+  published (with the same products as a whole bake) a few frames later. Explicit bakes (presets,
+  seeks, weather jumps, the first bake) and any bake while the scene clock is paused run whole, so
+  paused frames stay exact.
 - The exposure only rises from afternoon into night and holds from the end of the blue hour (about
   -7 degrees) on, higher than the night sky was tuned for, so the island reads by moonlight and
   starlight. The night ambient rises as the sun's skylight fades after sunset, so twilight is
@@ -272,11 +339,20 @@ stone exposed.
   Distant air fades in across a protected foreground (from 40 m, in full by 200 m, sooner in
   thick air), so the island does not fog up as the view pulls back; it scatters only the sunlight
   the cloud shadows let through. Sea fog is a low height-fog layer that may surround the island,
-  never a uniform tint. Weather changes sweep the sky as a front from upwind; the island's
-  lighting follows the front's progress over the island.
+  never a uniform tint. The sea fog's bank noise is baked into a map around the camera in the
+  drifting frame, on a lattice fixed in that frame. While the fog's clock steps forward frame by
+  frame, the map is re-baked after 0.2 s of fog time or 48 m of camera travel; otherwise (paused,
+  after any seek, and on the first frame after either) it is re-baked whenever its time or centre
+  differs, so a paused frame stays exact. The fog is marched at half the render's resolution on
+  the nearest surface depth and upsampled with Gaussian depth weights; a pixel that none of its
+  texels matches in depth (sky or sea between leaves) marches its own fog at full resolution. Haze
+  and rain veil stay at full resolution. Weather changes sweep the sky as a front from upwind; the
+  island's lighting follows the front's progress over the island.
 - The directly seen clouds accumulate over frames; a scene at rest (paused clock, still camera)
   settles its clouds once and keeps them, so a paused frame is exactly repeatable. The cloud
-  march assumes a camera below the cloud base.
+  march assumes a camera below the cloud base. On high the view's resolution is a share of the
+  display (0.58 of the render at high's nominal ratio), not of the render, so a lower render scale
+  does not soften the clouds again.
 - Lightning is a function of the scene clock: a paused frame holds its strike exactly
   (`sky.lightning.force` stages one for review). Its light inside the clouds stays out of the
   view's accumulated history, the bake and the panorama; channel, cloud glow and the island's
@@ -323,7 +399,8 @@ stone exposed.
   after a change (`--compare` for an A/B, or `--toggle` on a debug flag while the change is in
   development). Judge an A/B by its GPU time per pass; take frame rates from a run without GPU
   timestamps (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them
-  on, so their per-pass split shows where the time goes, not the frame rate a player sees. Report
+  on, so their per-pass split shows where the time goes, not the frame rate a player sees. Judge
+  whether a tier holds 60 fps with `--accept` (under vsync), not from uncapped intervals. Report
   contended runs as such.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):
   `type(scope): summary`, the summary in lower case, imperative, without a full stop, the header at
@@ -340,7 +417,12 @@ stone exposed.
   camera: pass the scene camera's matrices as uniforms.
 - Screen uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
 - Multisampled depth can only be read with `textureLoad`, one sample at a time (the sample index
-  goes in its level argument); `Pipeline` resolves it to linear view z.
+  goes in its level argument); `Pipeline` resolves it to linear view z. Single-sampled, that
+  argument is a mip level: load sample 0 only.
+- WebGPU multisamples with 1 or 4 samples only: three turns `samples: 2` into one sample, with no
+  MSAA. A material with `alphaToCoverage` still builds its coverage alpha (three reads the
+  requested count) and then draws it opaque. Vegetation follows `ALPHA_TO_COVERAGE`; to find
+  vegetation materials use `userData.vegetation`, not `alphaToCoverage`.
 - The water draws into the scene's multisampled target and cannot sample it: it reads
   `Pipeline.opaqueRT` (a copy of the opaque colour) and `depthRT` (sample 0, and the farthest
   sample for what lies behind the sea at an edge pixel). Post passes read `surfaceRT`, the
@@ -359,3 +441,37 @@ stone exposed.
 - The water's fragment stage already binds 16 sampled textures, the most WebGPU guarantees; a new
   texture there fails pipeline creation unless another one goes (the sun's two shadow steps share
   one array texture for this reason).
+- The water's reflection only finds what lies inside `Water.reflectionBounds`: the layout's box,
+  padded 2.5 m for the rim overhang and to a metre above the tallest tree (`TREE_HEIGHT`), down to
+  0.35 m below the sea. Anything opaque built off the island or above the trees (a boat, a hut, a
+  mast) must grow that box, or the sea will not reflect it; debug builds warn once if a mesh pokes
+  out.
+- three picks one sampler type per depth texture per material. In a material whose shadow filter
+  gathers a map (`SolarShadow`), read that map only by gather and compare by hand
+  (`solarVolumeVisibility`); a comparison-sampler reference belongs in a material of its own.
+- three emits a light's shadow filter inside the branch of its frustum test, where derivatives are
+  undefined for quads that straddle it; `installOpenShadow` evaluates the filter first and selects
+  its result. Keep any filter that takes `dFdx` / `dFdy` out of `select()` / `If` branches.
+- Passes in `Pipeline.passes` are resized to the render by `sizeRtt`. The sea fog's reduced targets
+  are sized by `AerialPerspective.setSize` and its bank map has a fixed size: keep new reduced or
+  fixed passes out of that list. The last pass into `sceneRT` (the rain) discards its multisampled
+  samples through a hook on the backend's command encoder (three r186 opens one encoder per render
+  pass); a pass added after it that reads `sceneRT`'s samples or depth must move the discard.
+- `renderer.compileAsync` collects its draws and reads the render target synchronously, before its
+  first await: set the target, call it, restore the target at once, then await (`compileDraws`).
+  It builds a transparent double-sided material's two passes after restoring its side, as one
+  unused double-sided pipeline (r186): compile a copy of the material per side and keep the copies
+  (disposing them releases the shared pipelines; see `Lightning.warm`).
+- Dispatch a compute kernel that uses `workgroupBarrier()` by size (`computeKernel( [ n ] )` with
+  `dispatchSize` set), not by a thread count: a count makes three insert an early-return bounds
+  check ahead of the barriers. A multiple-render-target `QuadMesh` writing the FFT's four fields
+  measured slower than four single-target passes (sky-bake frames blocked in JS), so they stay
+  separate. A `Fn( ... ).setLayout( ... )` helper that reads uniforms can be emitted with another
+  kernel's uniform names when two compute kernels that use it are built (r186).
+- A 16-bit index is copied into a new 32-bit array when its GPU buffer is created, and the copy is
+  uploaded from then on (r186): an index rewritten in place must be a `Uint32Array`. Leave
+  attributes that change once per event at the default static usage and set update ranges:
+  `DynamicDrawUsage` re-uploads the whole buffer on every draw.
+- `Sky.ts` drives three's `PMREMGenerator` private steps (`_setSizeFromTexture`, `_init`,
+  `_textureToCubeUV`, `_applyGGXFilter`, `_setViewport`) to spread its filter chain over frames;
+  re-check them on a three upgrade. Without them it falls back to `fromEquirectangular`.

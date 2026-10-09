@@ -17,12 +17,19 @@ import type * as THREE from 'three/webgpu';
 // is the frame interval. Where passes run one after another this is simply each one's duration.
 //
 // The tick's wall time includes the browser's backpressure: once the GPU falls behind, Chrome
-// blocks `queue.submit` until earlier frames drain, so a GPU-bound tick looks as long as the
-// frame. That wait is measured apart and the tick's own JS work is the rest.
+// blocks the calls that hand work to its GPU process until earlier frames drain, so a GPU-bound
+// tick looks as long as the frame. Not only `queue.submit`: a `queue.writeBuffer` of a few dozen
+// kilobytes waited 10-25 ms for Chrome's transfer buffer at night and on the horizon, the other
+// queue writes (`writeTexture`, `copyExternalImageToTexture`) go through the same buffer, and
+// `getCurrentTexture` may wait for a free swap-chain image. Time in these calls is measured apart,
+// by call (`waits`), and the tick's own JS work is the rest. That time includes the calls' own
+// copying: about 0.15 ms a frame for the uniform uploads, more for a large upload, which then
+// shows as a long write wait rather than as JS. The same holds for the work issued after the
+// tick (the sky's bakes), whose submits block as well.
 //
-// With the frame rate uncapped (no vsync, as the profiling tool runs Chrome), nothing but that
-// backpressure bounds how far the page runs ahead of the GPU: headless Chrome queued about two
-// dozen frames before blocking. A GPU spike then surfaces in the frame interval that many
+// With the frame rate uncapped (no vsync, as the profiling tool runs Chrome by default), nothing
+// but that backpressure bounds how far the page runs ahead of the GPU: headless Chrome queued
+// about two dozen frames before blocking. A GPU spike then surfaces in the frame interval that many
 // frames later, so the tool attributes GPU hitches on the GPU's own timeline (`gpuInterval`), and
 // the timestamps take as long to read back (hence the ring of buffers and the patient settle).
 // Holding the tick until fewer frames are queued was tried and dropped: Chrome reports finished
@@ -63,7 +70,9 @@ interface Frame {
 	js: number;
 	jsWall: number;
 	wait: number;
+	waits: { submit: number; write: number; texture: number };
 	outside: number;
+	outsideWait: number;
 	gap: number;
 	passes: Pass[];
 	pending: number;
@@ -80,10 +89,12 @@ export interface FrameRecord {
 	t: number; // since navigation start
 	interval: number; // rAF time since the previous frame
 	nowInterval: number; // performance.now() since the previous frame's callback
-	js: number; // the synchronous tick's own work (its wall time less the submit waits)
+	js: number; // the synchronous tick's own work (its wall time less the queue waits)
 	jsWall: number; // the tick's wall time
-	submitWait: number; // time the tick spent blocked in queue.submit (GPU backpressure)
-	outsideJs: number; // JS time of render and compute calls issued after the tick (async bakes)
+	submitWait: number; // time the tick spent in queue.submit, the queue writes and getCurrentTexture (GPU backpressure)
+	waits: { submit: number; write: number; texture: number }; // submitWait by call
+	outsideJs: number; // JS time of render and compute calls issued after the tick (async bakes), less their queue waits
+	outsideWait: number; // time those calls spent in the queue calls
 	gap: number; // from the end of the previous tick to the start of this one
 	gpu: number; // GPU busy time: the passes' charges (see above)
 	gpuInterval: number; // the GPU's completion of this frame since the previous frame's
@@ -111,6 +122,8 @@ type GPUDevice = {
 	};
 	queue: { submit( buffers: object[] ): void };
 };
+// the calls whose time is counted as waiting (see above), by key in `Frame.waits`
+type QueueCall = 'submit' | 'write' | 'texture';
 // GPUBufferUsage.MAP_READ | COPY_DST, GPUMapMode.READ
 const READBACK_USAGE = 0x0001 | 0x0008;
 const MAP_READ = 0x0001;
@@ -152,7 +165,8 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		private lastNow = 0;
 		private lastEnd = - Infinity;
 		private lastComplete = false;
-		private submitWait = 0;
+		private waits = { submit: 0, write: 0, texture: 0 };
+		private outsideWait = 0;
 		private inTick = false;
 		private lastTickEnd = NaN;
 		private outsideDepth = 0;
@@ -349,29 +363,46 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 		}
 
-		/** Times the tick's waits in `queue.submit` (Chrome's backpressure once the GPU falls behind). */
+		/** Times the waits in `queue.submit`, the queue writes and the canvas's `getCurrentTexture`
+		 * (Chrome's backpressure once the GPU falls behind): in the tick, and outside it while a
+		 * render or compute call issued after the tick runs. */
 		private wrapQueue(): void {
 
-			const backend = ( this.getRenderer() as unknown as { backend?: { device?: { queue: { submit: ( buffers: unknown[] ) => void } } } } | null )?.backend;
+			type Callable = ( ...args: unknown[] ) => unknown;
+			const backend = ( this.getRenderer() as unknown as { backend?: { device?: { queue: Record<string, Callable> }; context?: Record<string, Callable> | null } } | null )?.backend;
 			const queue = backend?.device?.queue;
 			if ( ! queue ) return;
 			this.queueWrapped = true;
-			const submit = queue.submit;
-			queue.submit = ( buffers: unknown[] ) => {
+			const wrap = ( host: Record<string, Callable> | null | undefined, method: string, key: QueueCall ) => {
 
-				if ( ! this.inTick ) return submit.call( queue, buffers );
-				const t0 = performance.now();
-				try {
+				const original = host?.[ method ];
+				if ( ! host || typeof original !== 'function' ) return;
+				host[ method ] = ( ...args: unknown[] ) => {
 
-					return submit.call( queue, buffers );
+					const outside = ! this.inTick && this.outsideDepth > 0;
+					if ( ! this.inTick && ! outside ) return original.apply( host, args );
+					const t0 = performance.now();
+					try {
 
-				} finally {
+						return original.apply( host, args );
 
-					this.submitWait += performance.now() - t0;
+					} finally {
 
-				}
+						const ms = performance.now() - t0;
+						if ( outside ) this.outsideWait += ms;
+						else this.waits[ key ] += ms;
+
+					}
+
+				};
 
 			};
+			wrap( queue, 'submit', 'submit' );
+			wrap( queue, 'writeBuffer', 'write' );
+			wrap( queue, 'writeTexture', 'write' );
+			wrap( queue, 'copyExternalImageToTexture', 'write' );
+			// the canvas context (it hands out the swap chain's image, the render's final target)
+			wrap( backend?.context, 'getCurrentTexture', 'texture' );
 
 		}
 
@@ -381,7 +412,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			if ( ! this.queueWrapped ) this.wrapQueue();
 			this.context = null;
 			this.frame = {
-				id: this.nodeFrame.frameId, time: 0, now: performance.now(), js: 0, jsWall: 0, wait: 0, outside: 0, gap: NaN, passes: [], pending: 0,
+				id: this.nodeFrame.frameId, time: 0, now: performance.now(), js: 0, jsWall: 0, wait: 0, waits: { submit: 0, write: 0, texture: 0 }, outside: 0, outsideWait: 0, gap: NaN, passes: [], pending: 0,
 				pipelines: 0, pipelineMs: 0, calls: 0, triangles: 0, finishedAt: 0,
 			};
 			this.pipelineCount = 0;
@@ -435,13 +466,29 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		private endOutside(): void {
 
 			if ( this.inTick || this.outsideDepth === 0 ) return;
-			if ( -- this.outsideDepth === 0 && this.frame ) this.frame.outside += performance.now() - this.outsideStart;
+			if ( -- this.outsideDepth === 0 ) {
+
+				// the call's wall time less what it spent blocked in the queue calls
+				if ( this.frame ) {
+
+					this.frame.outside += Math.max( performance.now() - this.outsideStart - this.outsideWait, 0 );
+					this.frame.outsideWait += this.outsideWait;
+
+				}
+				this.outsideWait = 0;
+
+			}
 
 		}
 
 		private beginPass( uid: string, drawn: object | object[], target: Named | null ): void {
 
-			if ( ! this.inTick && this.outsideDepth ++ === 0 ) this.outsideStart = performance.now();
+			if ( ! this.inTick && this.outsideDepth ++ === 0 ) {
+
+				this.outsideStart = performance.now();
+				this.outsideWait = 0;
+
+			}
 			const parent = this.context;
 			const pass: Pass = { uid, group: this.labelFor( drawn, target, parent ), name: this.describe( drawn, target ), parent, start: 0, end: 0, done: ! this.timestamps };
 			this.context = pass;
@@ -615,7 +662,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			const complete = timed.length > 0 && missing === 0;
 			const record: FrameRecord = {
 				id: frame.id, t: frame.now, interval: frame.time - this.lastTime, nowInterval: frame.now - this.lastNow,
-				js: frame.js, jsWall: frame.jsWall, submitWait: frame.wait, outsideJs: frame.outside, gap: frame.gap,
+				js: frame.js, jsWall: frame.jsWall, submitWait: frame.wait, waits: frame.waits, outsideJs: frame.outside, outsideWait: frame.outsideWait, gap: frame.gap,
 				gpu, gpuInterval: complete && this.lastComplete ? end - this.lastEnd : NaN,
 				span: timed.length ? end - first : 0, passes: frame.passes.length, missing: this.timestamps ? missing : 0,
 				pipelines: frame.pipelines, pipelineMs: frame.pipelineMs, calls: frame.calls, triangles: frame.triangles, groups,
@@ -639,7 +686,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			return ( time: number ) => {
 
 				const frame = this.frame;
-				this.submitWait = 0;
+				const waits = this.waits = { submit: 0, write: 0, texture: 0 };
 				this.inTick = true;
 				const t0 = performance.now();
 				try {
@@ -655,7 +702,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 				const wall = t1 - t0;
 				const gap = t0 - this.lastTickEnd;
 				this.lastTickEnd = t1;
-				const wait = this.submitWait;
+				const wait = waits.submit + waits.write + waits.texture;
 				const js = Math.max( wall - wait, 0 );
 				if ( frame ) {
 
@@ -664,6 +711,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 					frame.js = js;
 					frame.jsWall = wall;
 					frame.wait = wait;
+					frame.waits = waits;
 					frame.gap = gap;
 					const info = ( this.getRenderer() as THREE.Renderer | null )?.info;
 					frame.calls = info?.render.drawCalls ?? 0;
@@ -753,6 +801,12 @@ export function labelSoomiPasses( profiler: FrameProfiler, handles: Record<strin
 	profiler.scan( P.shafts, 'light shafts' );
 	profiler.scan( P.passes[ 0 ], 'composite (air, fog, veil)', 1 );
 	profiler.scan( P.passes[ 1 ], 'tilt-shift blur', 1 );
+	// the sharp image (the composite plus both blooms) is passes[ 2 ] when the composite renders
+	// once; label it before the look glow's scan reaches it
+	if ( P.passes[ 2 ] ) profiler.scan( P.passes[ 2 ], 'sharp (composite + blooms)', 1 );
+	// the sea fog's bank map, nearest depth and half-resolution march, and the blur's distances
+	profiler.pattern( /^Fog\./, 'composite (air, fog, veil)' );
+	profiler.pattern( /^Post\.ViewDistance/, 'tilt-shift blur' );
 	profiler.scan( P.blooms[ 0 ]?.node, 'bloom' );
 	profiler.scan( P.blooms[ 1 ]?.node, 'wide glow' );
 	profiler.scan( P.diffusion?.node, 'look glow' );
@@ -760,7 +814,7 @@ export function labelSoomiPasses( profiler: FrameProfiler, handles: Record<strin
 	profiler.target( P.displayRT as object, 'grade & look' );
 	profiler.scan( P.output, 'output' );
 	profiler.scan( P.upscaledOutput, 'output & FSR' );
-	profiler.pattern( /^FSR1/, 'output & FSR' );
+	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes and the port's EASU (FSR.)
 	// the sky's per-frame compute and its bakes
 	profiler.pattern( /^Clouds\.View/, 'clouds view march' );
 	profiler.pattern( /^Clouds\.Panorama/, 'clouds panorama' );
