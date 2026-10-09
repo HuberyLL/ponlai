@@ -37,6 +37,7 @@ import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook, KIND } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
+import { installVegetationPrepass } from './world/VegetationPrepass.ts';
 
 const params = new URLSearchParams( location.search );
 // The world's generation needs nothing from the page, so its workers start first and run while
@@ -403,6 +404,7 @@ const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
 const plants = buildPlants( plantSites, shared );
 scene.add( grass, foliage, flowers, rimFoliage, turfSkirt, plants );
+installVegetationPrepass( scene, [ grass, foliage, rimFoliage, plants ] );
 {
 
 	// Everything that casts into the sun's map: the figures cast through their own map, and the
