@@ -25,14 +25,10 @@ export const name = 'seabed';
 const S = SEABED_TILE, N = TILE_SIDE;
 const key = ( ci, cj ) => `${ ci },${ cj }`;
 
-// the island as a solid that shades the floor within `box`, its scars seeded over `area` (the
-// page seeds them over the land's box)
-function islandSolid( fp, area, box ) {
+// the island's solid `field` as it shades the floor within `box`
+function islandSolid( field, box ) {
 
-	return {
-		field: makeIslandSDF( { ...fp, bounds: area } ),
-		min: [ box.x0, ISLAND_BOTTOM - 0.3, box.z0 ], max: [ box.x1, ISLAND_TOP + 0.6, box.z1 ],
-	};
+	return { field, min: [ box.x0, ISLAND_BOTTOM - 0.3, box.z0 ], max: [ box.x1, ISLAND_TOP + 0.6, box.z1 ] };
 
 }
 
@@ -108,12 +104,15 @@ function windowTile( land, ci, cj, shaded = true ) {
 	const t = tileBox( ci, cj );
 	const fp = buildFootprint( land, grownBox( t, 32 ) );
 	const area = grownBox( t, 26 );
-	return buildFloorTile( ci, cj, fp, shaded ? [ islandSolid( fp, area, area ) ] : [] );
+	// (the cliff evaluated in a box reads the land within 25 m of it: makeIslandSDF's area)
+	return buildFloorTile( ci, cj, fp, shaded ? [ islandSolid( makeIslandSDF( fp, grownBox( area, 25 ) ), area ) ] : [] );
 
 }
 
-// The page's tiles against the chunk's, unshaded: the island's scars are seeded over the land's
-// box on the page, so its contact shade becomes local with the cliffs, not here.
+// The page's tiles against the chunk's, unshaded. The cliff is local given the same land distance,
+// but a chunk's footprint reads that distance with other last bits than the page's (the fine
+// field's origin follows its window): the floor's float32 vertices round that away, the cliff's
+// scar choices may not (seed 2 grow 8 shades one vertex 0.625 on the page and 0.75 in a chunk).
 function checkChunkBuild( land, fp, cells ) {
 
 	for ( const [ ci, cj ] of cells ) {
@@ -170,7 +169,7 @@ export async function setup( { seed, grow } ) {
 
 	const { land } = growLand( seed, grow );
 	const fp = buildFootprint( land );
-	const solids = [ islandSolid( fp, fp.bounds, grownBox( fp.bounds, 2.6 ) ) ];
+	const solids = [ islandSolid( makeIslandSDF( fp ), grownBox( fp.bounds, 2.6 ) ) ];
 	const cells = floorTileCells( land );
 	const tiles = new Map( cells.map( ( [ ci, cj ] ) => [ key( ci, cj ), buildFloorTile( ci, cj, fp, solids ) ] ) );
 
