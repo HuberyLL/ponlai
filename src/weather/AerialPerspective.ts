@@ -522,6 +522,15 @@ export class AerialPerspective {
 
 	}
 
+	/** The inverse projection the view rays are reconstructed with (`update` takes the camera's):
+	 * under the temporal modes the jittered one the depth they read was drawn with, set by
+	 * Pipeline's jitter hook, so each pixel's ray meets its own depth sample. */
+	setProjectionInverse( inverse: THREE.Matrix4 ): void {
+
+		this.projectionInverse.value.copy( inverse );
+
+	}
+
 	// Decides whether the bank map is re-baked this frame (see `bankTexture`).
 	private scheduleBank( camera: THREE.Camera ): void {
 

@@ -970,12 +970,17 @@ export class Pipeline {
 
 			// The jitter shifts the camera's projection through the scene half (the graph's jittered
 			// span) and is undone after it; the post passes reconstruct positions with the inverse
-			// the frame was drawn with, set once the jitter is on (Jitter.ts).
+			// the frame was drawn with, set once the jitter is on (Jitter.ts): the composite's own, the
+			// air's rays (its fog march and composite) and the shafts' (only the sun's position on
+			// screen stays unjittered, from `update`).
 			jitter.mode = AA_MODE === 'taau' ? 'taau' : 'taa';
 			g.hooks.jitterBegin = ( f ) => {
 
 				jitter.begin( f.camera );
-				this.u.projInv.value.copy( f.camera.projectionMatrixInverse );
+				const inverse = f.camera.projectionMatrixInverse;
+				this.u.projInv.value.copy( inverse );
+				this.air.setProjectionInverse( inverse );
+				this.shafts.setProjectionInverse( inverse );
 
 			};
 			g.hooks.jitterEnd = ( f ) => jitter.end( f.camera );
