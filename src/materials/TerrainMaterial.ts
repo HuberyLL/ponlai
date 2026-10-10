@@ -13,6 +13,7 @@ import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 import { meadowCanopyHeight, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
+import { seabedAlbedo } from './SeabedLook.ts';
 import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
@@ -548,20 +549,7 @@ function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 		// seagrass cover and pale-sand share, baked per vertex without repetition (seabedBeds)
 		const bed = attribute<'vec2'>( 'bed', 'vec2' );
 
-		// Broad sand colour carries the shallows; low-relief ripples stay subordinate so the
-		// ocean does not look like a transparent lid over an engraved, striped floor. Warm, fairly
-		// bright sand is what turns the clear water over the shelf into teal shallows; the clean
-		// sand washed off the island is paler still, while the basin's silted sand darkens so
-		// the sea deepens in colour away from the island.
-		const sand = mix( vec3( 0.36, 0.34, 0.28 ), vec3( 0.56, 0.53, 0.45 ), smoothstep( 0.1, 0.9, H.b.mul( 0.23 ).add( big.mul( 0.87 ) ) ) )
-			.mul( H.g.mul( 0.1 ).add( 0.95 ) ).mul( mix( float( 0.4 ), float( 1.06 ), bed.y ) );
-		// seagrass and algae beds: dark olive patches with soft, ragged edges
-		const grass = smoothstep( 0.3, 0.7, bed.x.add( H.r.sub( 0.5 ).mul( 0.3 ) ) );
-		const grassC = mix( vec3( 0.06, 0.085, 0.045 ), vec3( 0.13, 0.17, 0.085 ), H.g );
-		// rubble and boulders shed from the cliffs: weathered limestone grit, a shade darker than
-		// the sand, so the cliff foot reads as a stony apron rather than a dark moat
-		const rubble = float( 1 ).sub( smoothstep( 0.5, big.mul( 3 ).add( 5 ), sd ) ).mul( smoothstep( 0.3, 0.55, H.r ) );
-		const rubbleC = mix( vec3( 0.2, 0.2, 0.18 ), vec3( 0.38, 0.37, 0.32 ), H.r );
+		const { albedo, grass, rubble } = seabedAlbedo( bed, big, H.xyz, sd );
 
 		const nSand = normalize( vec3( B.r.mul( 2 ).sub( 1 ), 0, B.g.mul( 2 ).sub( 1 ) ).mul( 0.18 ).add( vec3( 0, 1, 0 ) ) );
 		const nRock = normalize( vec3( A.r.mul( 2 ).sub( 1 ), 0, A.g.mul( 2 ).sub( 1 ) ).mul( 1.3 ).add( vec3( 0, 1, 0 ) ) );
@@ -571,7 +559,6 @@ function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 		const dn = mix( nSand, nRock, max( rubble, grass.mul( 0.6 ) ) );
 		const nW = normalize( t.mul( dn.x ).add( n0.mul( dn.y ) ).add( b.mul( dn.z ) ) );
 
-		const albedo = mix( mix( sand, grassC, grass ), rubbleC, rubble );
 		const detailAO = mix( float( 1 ), float( 0.85 ), rubble ).mul( mix( float( 0.8 ), float( 1 ), H.b ) );
 		// Baked solid contacts and procedural rubble can overlap: retain the stronger estimate.
 		const ao = min( attribute<'float'>( 'ao', 'float' ), detailAO );
