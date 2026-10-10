@@ -17,7 +17,7 @@
 // (`QualityProfile.aa`, with `tier.aa=` over it), else `msaa`. The tier is chosen here, once, for
 // the whole page (main.ts reads `QUALITY_CHOICE`): modules that read the mode when they load
 // (Foliage.ts, Grass.ts) are evaluated before the page's own code runs.
-import { qualityProfile, type QualityProfile } from '../Quality.ts';
+import { qualityProfile, type QualityProfile, type TemporalSettings } from '../Quality.ts';
 import { chooseQuality, type QualityChoice } from '../QualityDetect.ts';
 
 export const AA_MODES = [ 'msaa', 'taa', 'taau', 'off' ] as const;
@@ -112,7 +112,7 @@ export const ALPHA_TO_COVERAGE: boolean = SCENE_SAMPLES === 4;
 
 /** The temporal resolve's sharpening for a mode: TAA's own, TAAU's eased from its 1:1 value to
  * its 2:1 value as the upscale `ratio` (canvas over render, per axis) goes from 1 to 2. */
-export function temporalSharpness( settings: Pick<QualityProfile, 'taa'>[ 'taa' ], mode: AAMode, ratio: number ): number {
+export function temporalSharpness( settings: TemporalSettings, mode: AAMode, ratio: number ): number {
 
 	const s = settings.sharpness;
 	if ( mode !== 'taau' ) return s.taa;
