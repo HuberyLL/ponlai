@@ -27,7 +27,7 @@ import { pickPlantSites, bakeGroundContact, bakeAnchorContact } from './world/Pl
 import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
-import { DynamicResolution, GpuFrameTimer } from './post/DynamicResolution.ts';
+import { DynamicResolution, GpuFrameTimer, PassScaling } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
@@ -730,23 +730,31 @@ const frameScales = new Map<number, number>();
 let gpuTimer: GpuFrameTimer | null = null;
 // A load that measures the GPU for its tier (QualityDetect.ts), set up below once the timer is known.
 let detector: QualityDetector | null = null;
+// which passes follow the render's pixel count: the GPU time's split into a fixed part and one
+// that follows the scale
+const passScaling = dynamicResolution && gpuTiming ? PassScaling.install( renderer ) : null;
 if ( dynamicResolution ) {
 
-	const sample = ( frame: number, ms: number ) => {
+	const sample = ( frame: number, ms: number, pixel: number ) => {
 
 		detector?.gpu( frame, ms );
 		const scale = frameScales.get( frame );
-		if ( scale !== undefined ) dynamicResolution.sample( ms, scale );
+		if ( scale !== undefined ) dynamicResolution.sample( ms, scale, { pixel } );
 
 	};
 	// the frame profiler owns the timestamp queries while it times passes
-	if ( profiler?.timestamps ) profiler.onRecord = ( record ) => { if ( record.missing === 0 && record.passes > 0 ) sample( record.id, record.gpu ); };
-	else {
+	if ( profiler?.timestamps ) {
 
-		gpuTimer = GpuFrameTimer.create( renderer );
+		if ( passScaling ) profiler.pixelPass = ( uid ) => passScaling.take( uid );
+		profiler.onRecord = ( record ) => { if ( record.missing === 0 && record.passes > 0 ) sample( record.id, record.gpu, record.pixel ); };
+
+	} else if ( passScaling ) {
+
+		gpuTimer = GpuFrameTimer.create( renderer, passScaling );
 		if ( gpuTimer ) gpuTimer.onFrame = sample;
 
 	}
+	if ( DEBUG ) dynamicResolution.onWarning = ( message ) => console.warn( message );
 
 }
 
@@ -797,6 +805,7 @@ function applyRenderScale( force = false ): void {
 	const rw = ratio === renderer.getPixelRatio() ? canvasSize.x : Math.floor( w * ratio );
 	const rh = ratio === renderer.getPixelRatio() ? canvasSize.y : Math.floor( h * ratio );
 	pipeline.setSize( rw, rh, canvasSize.x, canvasSize.y );
+	passScaling?.setSize( rw, rh );
 	resolution.render = `${ rw }x${ rh } → ${ canvasSize.x }x${ canvasSize.y }` + ( pipeline.upscaling ? ` (${ Math.round( rw / canvasSize.x * 100 ) } %, FSR)` : '' );
 	describeRenderScale();
 
