@@ -45,7 +45,7 @@ import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { SCENE_SAMPLES } from './post/SceneSamples.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
-import { debugViewChoices, installDebugView } from './post/graph/DebugView.ts';
+import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
 import { installWindVariants } from './world/WindVariants.ts';
 import { ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
@@ -373,8 +373,8 @@ rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, s
 // `fgview=<resource>[.<output>]` (debug builds): the frame graph's debug view shows one of its
 // resources on the canvas (src/post/graph/DebugView.ts): only then it appends its pass to the graph
 // before the pipeline compiles it.
-const fgview = DEBUG ? params.get( 'fgview' ) : null;
-if ( fgview && fgview !== 'off' ) installDebugView( fgview, { exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE } );
+const fgview = DEBUG ? debugViewFromURL() : null;
+if ( fgview ) installDebugView( fgview, { exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE } );
 const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ) );
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).

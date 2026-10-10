@@ -311,33 +311,6 @@ export function compileLatent( renderer: THREE.WebGPURenderer, objects: readonly
 
 }
 
-/** `compileLatent` into `target` (null: the canvas), leaving the renderer's target as it was. */
-export function compileDraws( renderer: THREE.WebGPURenderer, objects: THREE.Object3D[], scene: THREE.Scene, camera: THREE.Camera,
-	target: THREE.RenderTarget | null ): Promise<void> {
-
-	const previous = renderer.getRenderTarget();
-	const { depth, stencil } = renderer;
-	renderer.setRenderTarget( target );
-	if ( target ) {
-
-		renderer.depth = target.depthBuffer;
-		renderer.stencil = target.stencilBuffer;
-
-	}
-	try {
-
-		return compileLatent( renderer, objects, scene, camera ).done;
-
-	} finally {
-
-		renderer.setRenderTarget( previous );
-		renderer.depth = depth;
-		renderer.stencil = stencil;
-
-	}
-
-}
-
 // ---- chains: the passes a full-screen material renders before itself
 
 /** What compiling a chain found: the pipelines' promise, and the passes it could not reach

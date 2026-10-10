@@ -191,13 +191,6 @@ export function resolveSize( s: SizeClass, e: Extents ): Size {
 
 }
 
-/** How a size class's cost follows the frame: with the pixel count, or fixed. */
-export function sizeScales( s: SizeClass | null ): 'pixel' | 'fixed' {
-
-	return s && s.of !== 'fixed' ? 'pixel' : 'fixed';
-
-}
-
 /** The declarations: resources, passes in execution order, frame-end copies, the debug view. */
 export class GraphDecl {
 
