@@ -11,7 +11,7 @@ import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weat
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
 import { sizeRtt } from './RenderScale.ts';
-import { SCENE_SAMPLES } from './SceneSamples.ts';
+import { SCENE_SAMPLES } from './Antialiasing.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
