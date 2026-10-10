@@ -36,6 +36,7 @@ import { RefractedSun } from './lighting/RefractedSun.ts';
 import { islandSurfaceHeight, landArea, landBounds, landCentroid } from './world/WorldShapes.ts';
 import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
 import { walkLoop, walkLoopDistance } from './world/WalkLoop.ts';
+import { setIslandClearing } from './weather/AerialPerspective.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
@@ -408,6 +409,9 @@ const landScale = Math.sqrt( landArea( land ) / Math.PI ) / FIRST_ISLAND.radius;
 /** The first island's point ( x, y, z ) on this land. */
 const onLand = ( x: number, y: number, z: number ) => new THREE.Vector3( centroid.x + ( x - FIRST_ISLAND.x ) * landScale, y, centroid.z + ( z - FIRST_ISLAND.z ) * landScale );
 target.copy( onLand( 1.5, 0.5, 1 ) );
+// the sea fog thins over the island and in its lee
+const fogClearing = onLand( 0, 0, 0 );
+setIslandClearing( fogClearing.x, fogClearing.z, 20 * landScale, 100 * landScale );
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
 // The floor's height shares the shoreline field's bounds, and so its transform.
