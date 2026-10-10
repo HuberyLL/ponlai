@@ -7,12 +7,12 @@ import { surfaceNets } from './SurfaceNets.ts';
 import { makeRimTrails } from './RimTrails.ts';
 import { buildRimGround, buildRimSkirt, coastPaths } from './RimGround.ts';
 import {
-	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF, makeSeabed,
+	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF,
 	landCentroid, ISLAND_TOP, ISLAND_BOTTOM,
 } from './WorldShapes.ts';
 import { growLand } from './IslandGrowth.ts';
 import { Field2D } from './Field2D.ts';
-import { deepenSeabed, seabedBeds, shapeShelf } from './Bathymetry.ts';
+import { seabedBeds, seabedFloor } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
 import { SEABED_WARP, VEGETATION_STRIDE, VEGETATION_SPACING } from './types.ts';
@@ -237,7 +237,7 @@ function setup( options: WorldOptions, timings: Record<string, number> ) {
 	const fp = buildFootprint( land );
 	mark( 'footprint', t );
 
-	const seabedHeight = shapeShelf( fp, deepenSeabed( fp, makeSeabed( fp ) ) );
+	const seabedHeight = seabedFloor( fp );
 
 	// --- seabed: a grid warped to be dense around the island and sparse toward the horizon
 	t = performance.now();
