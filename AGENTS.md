@@ -755,7 +755,12 @@ stone exposed.
   multisampled samples through the graph's attachment ops (`AttachmentOps` rewrites the pass's
   stores on the backend's command encoder; three r186 opens one encoder per render pass): a pass
   added after it that reads `sceneRT`'s samples or depth must declare that read and move the
-  legacy discard.
+  legacy discard. `Pipeline.render` is `graph.execute`: the sea fog's bank, depth and march, the
+  view distance and the output and FSR passes are graph passes too (the `post=` switches choose
+  which are declared at load), so new frame work goes in as a pass, not as a call around the
+  graph. A pass that declares no depth clears whatever depth its target holds outside the graph
+  (the canvas's, and the targets a display chain's own rtt() passes draw into), as three's
+  defaults do; declare the depth to keep it.
 - `renderer.compileAsync` collects its draws and reads the render target synchronously, before its
   first await: set the target, call it, restore the target at once, then await (`compileDraws`).
   It builds a transparent double-sided material's two passes after restoring its side, as one
