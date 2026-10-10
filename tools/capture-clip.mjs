@@ -98,7 +98,8 @@ const full = new Set( ( options.full ?? '' ).split( ',' ).filter( Boolean ).map(
 // runs of frames captured whole-clip dense under --every (the ground truth's gtDense, clips.mjs)
 const dense = ( options.dense ?? '' ).split( ',' ).filter( Boolean ).map( ( r ) => r.split( '-' ).map( Number ) );
 if ( dense.some( ( r ) => r.length !== 2 || r.some( ( x ) => ! Number.isInteger( x ) ) ) ) { console.error( `bad --dense ${ options.dense }` ); process.exit( 2 ); }
-const crops = options.crops ? options.crops.split( ',' ).filter( Boolean ) : view.crops ?? [];
+// the clip's own crops (clips.mjs `crops`) over the view's
+const crops = options.crops ? options.crops.split( ',' ).filter( Boolean ) : clip.crops ?? view.crops ?? [];
 const timeout = Number( options.timeout ?? 240000 );
 const outDir = path.resolve( options.out ?? path.join( REPO, 'artifacts/clips', name ) );
 // the crop box in CSS px (384 device px at a ratio of 2, as the parity crops)

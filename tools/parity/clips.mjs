@@ -85,6 +85,9 @@ export const CLIPS = {
 		about: 'a storm with a strike forced in front of the camera at frame 30' },
 	'night': { view: 'island-night-clear', clock: 'running', frames: 64, path: [ 'yaw', 0.05 ],
 		about: 'a moonlit night under a slow pan: stars and dark detail' },
+	// the clip names its crops: the horizon's stars are no crop of the view's rest image
+	'night-still': { view: 'night-moon', clock: 'running', frames: 64, path: [ 'still' ], crops: [ 'stars-horizon', 'stars' ],
+		about: 'the night sky over a still camera: the low stars\' scintillation, which a temporal resolve must not average away' },
 	'fog': { view: 'island-fog-dawn', clock: 'running', frames: 64, path: [ 'yaw', 0.05 ], gtDense: [ WINDOW ],
 		about: 'sea fog at dawn under a slow pan' },
 	// render scale and light

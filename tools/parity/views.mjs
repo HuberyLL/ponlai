@@ -195,6 +195,19 @@ const ANCHORS = {
 	// open night sky in the upper part of the frame
 	'stars': () => { if ( s.sky.sunDir.y > - 0.1 ) return null; for ( const [ x, y ] of [ [ 0.45, 0.6 ], [ - 0.45, 0.6 ], [ 0, 0.7 ], [ 0.6, 0.35 ], [ - 0.6, 0.35 ] ] ) {
 		const d = V( x, y, 0.5 ).unproject( s.camera ).sub( s.camera.position ).normalize(); if ( sky( d ) ) return s.camera.position.clone().addScaledVector( d, 5000 ); } return null; },
+	// open sky just above the sea horizon, where the stars scintillate (NightSky.ts: below about
+	// 11 degrees, most below 3): beside the camera's heading and clear of the moon, the box's
+	// lower edge above the horizon and sky along it
+	'stars-horizon': () => { if ( s.sky.sunDir.y > - 0.1 ) return null; const f = V( 0, 0, - 1 ).applyQuaternion( s.camera.quaternion ), a0 = Math.atan2( f.z, f.x );
+		const am = Math.atan2( s.sky.moonDir.z, s.sky.moonDir.x ), sc = screen(), c = s.camera.position;
+		const ray = ( x, y ) => V( x / sc.w * 2 - 1, 1 - y / sc.h * 2, 0.5 ).unproject( s.camera ).sub( c ).normalize();
+		for ( const da of [ 0.45, - 0.45, 0.3, - 0.3, 0.6, - 0.6 ] ) { const a = a0 + da; if ( Math.abs( Math.atan2( Math.sin( a - am ), Math.cos( a - am ) ) ) < 0.25 ) continue;
+			const h = project( horizonPoint( Math.cos( a ), Math.sin( a ) ) ); if ( ! h ) continue;
+			for ( const e of [ 0.07, 0.09, 0.11, 0.13 ] ) { const d = V( Math.cos( a ) * Math.cos( e ), Math.sin( e ), Math.sin( a ) * Math.cos( e ) ), p = c.clone().addScaledVector( d, 5000 ), px = project( p );
+				if ( ! px || ! inner( px ) || px[ 1 ] + CROP / 2 > h[ 1 ] - 4 ) continue;
+				const bottom = px[ 1 ] + CROP / 2 - 2;
+				if ( [ - 0.5, 0, 0.5 ].every( ( k ) => sky( ray( px[ 0 ] + k * CROP, bottom ) ) ) ) return p; } }
+		return null; },
 	// the moon's upper limb (drawn at twice its true radius); near the frame's edge its box is
 	// clamped into the image rather than dropped
 	'moon-limb': () => { const m = s.sky.moonDir.clone().normalize(); if ( m.y < 0 ) return null; const up = V( 0, 1, 0 ).addScaledVector( m, - m.y ).normalize();

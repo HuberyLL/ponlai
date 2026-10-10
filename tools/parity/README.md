@@ -95,6 +95,7 @@ the boxes placed before it.
 | sea-glints | the sea where it mirrors the sun (the moon at night) toward the camera, or where that glitter path enters the frame |
 | horizon-line | the horizon ahead, turned aside until the island does not hide it |
 | stars | open night sky in the upper part of the frame |
+| stars-horizon | open sky just above the sea horizon, beside the heading and clear of the moon, where the stars scintillate (the night-still clip's crop) |
 | moon-limb | the moon's upper limb |
 | rain-streaks | the rain a few metres ahead, upper left |
 | fog-cliff | the cliff face half way up, nearest the camera |
@@ -184,7 +185,8 @@ uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py 
   long its frames took either. Clips take the GPU lock shared.
 - Film grain is set to 0 on every side (it is re-seeded each frame and would add noise to the
   temporal metrics); `clip.json` records it.
-- Crops: the view's anchors (or `--crops`) are read once at the base pose, and each frame projects
+- Crops: the view's anchors, or the clip's own (`night-still`: the horizon's stars, no crop of the
+  view's rest image), or `--crops`, are read once at the base pose, and each frame projects
   their world points into a 192 CSS px box (384 device px at 2x). `--full` frames are captured whole.
   Output: `<crop>/<i>.png`, `full/<i>.png`, `clip.json` (boxes, the camera and render size per frame,
   diagnostics, pipelines created while stepping).
