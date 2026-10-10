@@ -44,7 +44,8 @@ import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
 import { installWindVariants } from './world/WindVariants.ts';
-import { ISLANDER } from './characters/looks.ts';
+import { ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
+import type { Game } from './game/Game.ts';
 
 const params = new URLSearchParams( location.search );
 // The world's generation needs nothing from the page, so its workers start first and run while
@@ -142,9 +143,12 @@ const numberParam = ( name: string, fallback: number ) => {
 
 };
 // A 48-minute day, as in many open-world games: slow enough to watch the light and the stars
-// turn. The default first-quarter moon lights the evening and sets at midnight, leaving the
-// small hours dark enough for the Milky Way.
-const dayCycle = new DayCycle( { hour: numberParam( 'hour', 16 ), dayLength: Math.max( 30, numberParam( 'dayLength', 2880 ) ),
+// turn. The game's day is 24 minutes at 1x, so a day's work and its evening fit one sitting.
+// The default first-quarter moon lights the evening and sets at midnight, leaving the small
+// hours dark enough for the Milky Way. The game starts at 8 (see Game.ts), so the sky is lit
+// once for that hour.
+const dayCycle = new DayCycle( { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : 16 ),
+	dayLength: Math.max( 30, numberParam( 'dayLength', params.has( 'game' ) ? 1440 : 2880 ) ),
 	paused: params.has( 'paused' ) || params.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.25 ) } );
 const requestedWeather = params.get( 'weather' ) ?? 'fair';
 const weather = new Weather( Object.hasOwn( WEATHER_PRESETS, requestedWeather ) ? requestedWeather as WeatherName : 'fair' );
@@ -440,14 +444,41 @@ rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage
 mark( 'meshes' );
 setStatus( 'Waking the villagers…' );
 // A plain islander while the basic look settles (src/characters/looks.ts: bare head, so the
-// pointed ears read, linen shirt, plain trousers, leather shoes).
+// pointed ears read, linen shirt, plain trousers, leather shoes); the game dresses its islanders
+// in the same look's colour variants.
 // Its proportions (`islander` URL option, GUI Islander folder) are the medium build of
 // Proportions.ts by default: chunkier and stylised, as the people layer of the art asks; the kit's
 // own (`stock`) and the other builds stay selectable for comparison.
 const islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : 'medium' };
 const buildIslander = ( name: ProportionName ) => loadVillager( ISLANDER.base, ISLANDER.parts, shared, PROPORTIONS[ name ] );
-const characters = new Villagers( await buildIslander( islanderBuild.proportions ), WALK_LOOP, islandSurfaceHeight, characterShadow );
-scene.add( characters.group );
+// ?game turns the island into the game: its own islanders and a clock that drives the sky (no
+// player interface yet: the GUI's Game folder and window.__PONLAI__.game drive it). Without it
+// the scene stays the art-review scene with one islander walking a loop.
+const GAME = params.has( 'game' );
+let characters: Villagers | null = null;
+let game: Game | null = null;
+if ( GAME ) {
+
+	// loaded only here, so the art-review page does not carry the game's code
+	const { Game } = await import( './game/Game.ts' );
+	game = await Game.start( {
+		params, scene, camera, canvas: renderer.domElement, vegetation: data.vegetation, plants: plantSites,
+		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment,
+		// every islander in the scene islander's proportions (the `islander` URL option)
+		loadLook: ( look ) => {
+
+			const dress = ISLANDER_LOOKS[ look % ISLANDER_LOOKS.length ];
+			return loadVillager( dress.base, dress.parts, shared, PROPORTIONS[ islanderBuild.proportions ] );
+
+		},
+	} );
+
+} else {
+
+	characters = new Villagers( await buildIslander( islanderBuild.proportions ), WALK_LOOP, islandSurfaceHeight, characterShadow );
+	scene.add( characters.group );
+
+}
 mark( 'villagers' );
 
 // Storm whitecap foam with a memory, and the spray torn off breaking crests (idle in calm weather).
@@ -624,6 +655,8 @@ timeF.add( timeView, 'preset', Object.keys( DAY_PRESETS ) ).name( 'time preset' 
 timeF.add( dayCycle, 'moonPhase', 0, 1, 0.01 ).name( 'moon phase' ).onFinishChange( refreshEnvironment );
 timeF.add( dayCycle, 'advanceMoonPhase' ).name( 'lunar cycle' );
 timeF.add( environmentLook, 'exposure' ).name( 'adapt exposure' );
+// in the game the simulation owns the time of day (see tick)
+if ( game ) for ( const c of timeF.controllers ) if ( c.object === timeView || ( c.object === dayCycle && ( c.property === 'hour' || c.property === 'paused' ) ) ) c.disable();
 sunF.add( sky, 'elevation', - 6, 70, 0.5 ).onFinishChange( applySun );
 sunF.add( sky, 'azimuth', - 180, 180, 1 ).onFinishChange( applySun );
 sunF.add( sky, 'sunIlluminance', 2, 20, 0.1 ).name( 'illuminance' ).onFinishChange( applySun );
@@ -654,7 +687,12 @@ waveF.add( fft.params, 'windDirection', - 180, 180, 1 ).onFinishChange( rebuild 
 waveF.add( fft.params, 'amplitude', 0, 3, 0.01 ).onFinishChange( rebuild );
 waveF.add( fft.params, 'choppiness', 0, 1.5, 0.01 ).onFinishChange( rebuild );
 const islanderF = gui.addFolder( 'Islander' );
-islanderF.add( islanderBuild, 'proportions', PROPORTION_NAMES ).onChange( async ( name: ProportionName ) => characters.setWalker( await buildIslander( name ) ) );
+const proportionsControl = islanderF.add( islanderBuild, 'proportions', PROPORTION_NAMES ).onChange( async ( name: ProportionName ) => characters?.setWalker( await buildIslander( name ) ) );
+// the game's islanders take their build as they load (the `islander` URL option); the scene's
+// walker is rebuilt in place
+if ( game ) proportionsControl.disable();
+// the game's developer controls (GameDebug.ts)
+if ( game ) await game.addDebugFolder( gui );
 islanderF.add( characterLook.albedo, 'value', 0.05, 1, 0.01 ).name( 'palette exposure' );
 islanderF.add( characterLook.sunGain, 'value', 0, 2, 0.01 ).name( 'sun' );
 islanderF.add( characterLook.fillGain, 'value', 0, 10, 0.05 ).name( 'shade fill' );
@@ -816,7 +854,14 @@ let frame = 0;
 addEventListener( 'keydown', ( e ) => {
 
 	if ( e.repeat || e.ctrlKey || e.metaKey || e.altKey || isCameraInputTarget( e.target ) ) return;
-	if ( e.code === 'Space' ) { e.preventDefault(); paused = ! paused; dayCycle.paused = paused; }
+	if ( e.code === 'Space' ) {
+
+		e.preventDefault();
+		// the game pauses its own clock; the sea keeps moving
+		if ( game ) game.togglePause();
+		else { paused = ! paused; dayCycle.paused = paused; }
+
+	}
 	if ( e.code === 'KeyH' ) gui.show( gui._hidden );
 	if ( e.code === 'KeyR' || e.code === 'Digit1' ) setCameraView( 'island' );
 	if ( e.code === 'Digit2' ) setCameraView( 'horizon' );
@@ -839,9 +884,15 @@ function tick( time: number ): void {
 	// Lighting cadence follows wall time even below 20 FPS. Bound a resumed/stalled frame;
 	// the scheduler still submits at most one coalesced bake instead of catching up a queue.
 	const environmentDt = Math.min( rawDt, 1 );
+	// ?game&paused starts the game paused; once the game runs, so does the scene
+	if ( paused && game && game.sim.speed !== 0 ) paused = false;
 	if ( ! paused ) simTime += dt;
-	dayCycle.advance( rawDt );
-	weather.update( paused ? 0 : rawDt );
+	// In the game the simulation's clock sets the pace of the day (and so of the page's weather).
+	const clockDt = game ? game.update( rawDt ) : rawDt;
+	dayCycle.advance( clockDt );
+	// the sky shows the simulation's hour, whatever else moved the day clock
+	if ( game ) dayCycle.setHour( game.hour() );
+	weather.update( paused ? 0 : clockDt );
 	weatherView.preset = weather.target;
 	if ( freeControls.enabled ) freeControls.update( rawDt );
 	else controls.advance( dt, time );
@@ -874,6 +925,7 @@ function tick( time: number ): void {
 	scene.environmentIntensity = strikeFill;
 	shared.skyFill.value = strikeFill;
 	shared.skyIrradiance.value.set( sky.skyIrradiance.r, sky.skyIrradiance.g, sky.skyIrradiance.b ).multiplyScalar( strikeFill );
+	// the page's own wetness, in the game too (soaking and drying on the day clock)
 	shared.wetness.value = weatherEffects.wetness ? weather.state.wetness : 0;
 	fft.weatherGain.value.copy( shared.wind.oceanGain.value );
 	rain!.uniforms.rain.value = shared.rain.value;
@@ -921,7 +973,8 @@ function tick( time: number ): void {
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
 	caustics.update( sky.keyDir );
-	characters.update( renderer, scene, sun, simTime, paused ? 0 : dt );
+	characters?.update( renderer, scene, sun, simTime, paused ? 0 : dt );
+	game?.render( renderer, sun, paused ? 0 : rawDt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
 	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * pipeline.height / 900, S.dof );
 
@@ -1106,5 +1159,5 @@ document.addEventListener( 'visibilitychange', () => {
 	}
 
 } );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
 	quality, dynamicResolution, pacer, submitBatch, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
