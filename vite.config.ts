@@ -66,7 +66,15 @@ export default defineConfig( {
 		target: 'es2022',
 		chunkSizeWarningLimit: 1500,
 		// keep third-party licence notices ( /*! ... */ ) in the bundle
-		rolldownOptions: { output: { comments: { legal: true } } },
+		rolldownOptions: {
+			output: {
+				comments: { legal: true },
+				// A chunk that is no entry of its own holds the code the page and its lazy parts
+				// (the game, the profiler) share, three.js first; Rolldown would name it after one
+				// of its modules (looks-*.js), which says nothing about what it is.
+				chunkFileNames: ( chunk ) => chunk.isDynamicEntry ? 'assets/[name]-[hash].js' : 'assets/shared-[hash].js',
+			},
+		},
 		// licences of the npm packages bundled into the build ( three, lil-gui )
 		license: { fileName: 'licenses/dependencies.md' },
 	},

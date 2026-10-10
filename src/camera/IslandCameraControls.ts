@@ -53,8 +53,9 @@ interface Drag {
 
 export type ScrollMode = 'auto' | 'zoom' | 'pan';
 
-// the drag that turns a left press into a pan (px), so a click stays a click
-const CLICK_SLOP = 3;
+// the drag that turns a left press into a pan (px), so a click stays a click (the game debug
+// panel's send-to-click reads the same slop)
+export const CLICK_SLOP = 3;
 // pointer samples kept for the release velocity (ms), and how recent the last must be for a glide
 const RELEASE_WINDOW = 80, RELEASE_STILL = 50;
 // the most a drag is resampled behind the frame's vblank (ms): one sample of a 125 Hz mouse
