@@ -24,7 +24,7 @@ const LICENCE_FILES: Record<string, string> = {
 function licences(): Plugin {
 
 	return {
-		name: 'soomi-licences',
+		name: 'ponlai-licences',
 		apply: 'build',
 		async generateBundle() {
 

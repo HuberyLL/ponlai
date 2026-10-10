@@ -53,13 +53,13 @@ try {
 		for ( const [ key, value ] of Object.entries( { debug: '', paused: '', hour: '16', t: '12', dpr: '1', weather: 'rain', quality, dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
 		await page.goto( url.href );
 		await page.waitForFunction( () => {
-			const s = window.__SOOMI__, loading = document.getElementById( 'loading' );
+			const s = window.__PONLAI__, loading = document.getElementById( 'loading' );
 			return s?.rain && s.weatherEffects && s.shared.wetness && ! s.sky.busy && ! s.sky.transitioning &&
 				window.__THREE_GAME_DIAGNOSTICS__?.frame > 80 && loading?.classList.contains( 'done' ) &&
 				Number( getComputedStyle( loading ).opacity ) === 0;
 		} );
 		await page.evaluate( () => {
-			const s = window.__SOOMI__;
+			const s = window.__PONLAI__;
 			s.dayCycle.paused = true;
 			s.dayCycle.advanceMoonPhase = false;
 			s.controls.enableDamping = false;
@@ -67,7 +67,7 @@ try {
 		await frames();
 	};
 	const snapshot = () => page.evaluate( () => {
-		const s = window.__SOOMI__;
+		const s = window.__PONLAI__;
 		return {
 			time: s.shared.time.value, hour: s.dayCycle.hour, paused: s.dayCycle.paused,
 			weather: s.weather.snapshot(), target: s.weather.target, effects: { ...s.weatherEffects },
@@ -82,7 +82,7 @@ try {
 	} );
 	const setCamera = async ( view ) => {
 		await page.evaluate( ( view ) => {
-			const s = window.__SOOMI__, horizon = view === 'horizon';
+			const s = window.__PONLAI__, horizon = view === 'horizon';
 			s.controls.minDistance = view === 'near-water' ? 2 : 22;
 			if ( view === 'near-water' ) {
 				// Resolve the small impact rings in front of the southern shoreline. At the
@@ -101,7 +101,7 @@ try {
 	};
 	const setEffects = async ( state ) => {
 		await page.evaluate( ( state ) => {
-			const s = window.__SOOMI__;
+			const s = window.__PONLAI__;
 			s.weatherEffects.rain = state.rain;
 			s.weatherEffects.wetness = state.wetness;
 			s.rain.setQuality( state.count );
@@ -171,7 +171,7 @@ try {
 	// and the rain are drawn over it), using its actual depth to classify surfaces. This
 	// separates material preservation below the tide from legitimate changes in water SSR.
 	const opaqueProbe = async ( mode ) => page.evaluate( async ( mode ) => {
-		const s = window.__SOOMI__, rt = s.pipeline.opaqueRT, depthRT = s.pipeline.depthRT;
+		const s = window.__PONLAI__, rt = s.pipeline.opaqueRT, depthRT = s.pipeline.depthRT;
 		// Three's WebGPU readback returns the mapped buffer without removing its 256-byte
 		// row alignment; the last row alone has no tail padding. Colour and RG32F depth
 		// require different strides. Compact each one before indexing screen pixels.
@@ -301,7 +301,7 @@ try {
 	report.checks.push( 'Actual opaque HDR readback changes above-tide surfaces while preserving tidal and submerged material pixels' );
 	report.checks.push( 'Isolated water rings and sparse rain streaks affect rendered pixels without flattening or whitening the scene' );
 
-	await page.evaluate( () => window.__SOOMI__.setHour( 0 ) );
+	await page.evaluate( () => window.__PONLAI__.setHour( 0 ) );
 	await setCamera( 'overview' );
 	await setEffects( scenarios[ 2 ] );
 	const nightOff = await capture( 'night-ripples' );

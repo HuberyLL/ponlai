@@ -19,13 +19,13 @@ try {
 	page.on( 'pageerror', error => errors.push( error.message ) );
 	page.on( 'console', message => { if ( message.type() === 'error' ) errors.push( message.text() ); } );
 	await page.goto( `${ process.argv[ 2 ] || 'http://127.0.0.1:5190' }/?debug&paused&t=12&dpr=1` );
-	await page.waitForFunction( () => window.__SOOMI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 80, null, { timeout: 90000 } );
+	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 80, null, { timeout: 90000 } );
 	const result = await page.evaluate( async () => {
 
 		try {
 
 			const module = await import( '/src/ocean/WaveOptics.ts' );
-			const { renderer, fft } = window.__SOOMI__;
+			const { renderer, fft } = window.__PONLAI__;
 			return {
 				probe: await module.verifyWaveOptics( renderer, fft ),
 				covarianceCorrections: await module.verifyWaveCovarianceCorrections( renderer ),

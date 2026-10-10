@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const GATE_FILE = path.join( os.homedir(), '.soomi', 'display-allowed' );
+export const GATE_FILE = path.join( os.homedir(), '.ponlai', 'display-allowed' );
 
 /** When the permission for headed runs ends, or null if they are not allowed now. */
 export function displayAllowedUntil() {

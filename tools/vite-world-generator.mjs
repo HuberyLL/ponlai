@@ -38,7 +38,7 @@ export function worldGeneratorHash() {
 
 	let root = process.cwd();
 	return {
-		name: 'soomi-world-generator-hash',
+		name: 'ponlai-world-generator-hash',
 		configResolved( config ) { root = config.root; },
 		resolveId( id ) { return id === MODULE ? RESOLVED : null; },
 		load( id ) {

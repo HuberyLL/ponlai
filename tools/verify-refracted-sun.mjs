@@ -20,16 +20,16 @@ try {
 	page.on( 'pageerror', e => errors.push( e.message ) );
 	page.on( 'console', m => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
 	await page.goto( `${ process.argv[ 2 ] || 'http://127.0.0.1:5190' }/?paused&t=12&dpr=1` );
-	await page.waitForFunction( () => window.__SOOMI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 80, null, { timeout: 90000 } );
+	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 80, null, { timeout: 90000 } );
 	const result = await page.evaluate( async () => {
 
 		try {
 
 			const module = await import( '/src/lighting/RefractedSun.ts' );
-			const map = window.__SOOMI__.refractedSun;
+			const map = window.__PONLAI__.refractedSun;
 			if ( ! map ) throw new Error( 'RefractedSun integration is missing from the dev scene' );
 			const span = map.worldSpan.value.toArray(), size = map.target.width;
-			return { probe: await module.probeRefractedSun( window.__SOOMI__.renderer ),
+			return { probe: await module.probeRefractedSun( window.__PONLAI__.renderer ),
 				productionMap: { worldSpan: span, mapSize: size, metresPerTexel: span.map( length => length / size ), depthRange: map.depthRange.value } };
 
 		} catch ( error ) { return { failure: error.message }; }
@@ -39,7 +39,7 @@ try {
 	// the map drawn at exactly the key light's direction, as a fresh load at that time would.
 	const seek = await page.evaluate( async () => {
 
-		const s = window.__SOOMI__, map = s.refractedSun;
+		const s = window.__PONLAI__, map = s.refractedSun;
 		const before = map.lastSun.clone();
 		await s.setHour( s.dayCycle.hour + 0.001 );
 		const sun = s.shared.sunDir.value;

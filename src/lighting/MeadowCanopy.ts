@@ -86,7 +86,7 @@ const gapNoise = Fn( ( [ exit, frame, gapScale ]: [ V2, V3, F ] ) => {
 		.add( pnoise( q.mul( 2.7 ).add( 17.1 ), PERIOD ).mul( 0.3 ) )
 		.add( pnoise( q.mul( 6.1 ).sub( 5.3 ), PERIOD ).mul( 0.15 ) );
 
-} ).setLayout( { name: 'soomiMeadowGaps', type: 'float', inputs: [
+} ).setLayout( { name: 'ponlaiMeadowGaps', type: 'float', inputs: [
 	{ name: 'exit', type: 'vec2' }, { name: 'frame', type: 'vec3' }, { name: 'gapScale', type: 'float' },
 ] } );
 
@@ -110,7 +110,7 @@ const canopyLight = Fn( ( [ xz, depth, key, density, gapScale, contrast, softnes
 	const open = smoothstep( softness.negate().mul( 0.5 ), softness.mul( 0.5 ), gaps ).mul( contrast );
 	return exp( density.negate().mul( reach ).mul( float( 1 ).sub( open ) ) );
 
-} ).setLayout( { name: 'soomiMeadowCanopy', type: 'float', inputs: [
+} ).setLayout( { name: 'ponlaiMeadowCanopy', type: 'float', inputs: [
 	{ name: 'xz', type: 'vec2' }, { name: 'depth', type: 'float' }, { name: 'key', type: 'vec3' },
 	{ name: 'density', type: 'float' }, { name: 'gapScale', type: 'float' }, { name: 'contrast', type: 'float' },
 	{ name: 'softness', type: 'float' }, { name: 'frame', type: 'vec3' }, { name: 'nextFrame', type: 'vec3' },
@@ -131,4 +131,4 @@ export function meadowCanopyLight( xz: V2, depth: F, key: V3 ): F {
 export const CANOPY_TOP = 0.8;
 export const meadowCanopyHeight = Fn( ( [ growth ]: [ F ] ) =>
 	growth.mul( 0.14 ).add( 0.17 ).add( smoothstep( 0.38, 0.74, growth ).mul( 0.46 * 0.21 ) ).mul( CANOPY_TOP )
-).setLayout( { name: 'soomiMeadowCanopyHeight', type: 'float', inputs: [ { name: 'growth', type: 'float' } ] } );
+).setLayout( { name: 'ponlaiMeadowCanopyHeight', type: 'float', inputs: [ { name: 'growth', type: 'float' } ] } );

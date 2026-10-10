@@ -89,7 +89,7 @@ export const rainRadiance = Fn( ( [ view, sky, skySeen, keyDirection, key, skyBi
 	const forward = pow( max( dot( view, keyDirection ), 0 ), FORWARD_POWER ).mul( ( FORWARD_POWER + 1 ) / ( 2 * Math.PI ) * FORWARD_SHARE );
 	return behind.add( skySeen.mul( REFLECTED ) ).add( key.mul( forward ) );
 
-} ).setLayout( { name: 'soomiRainRadiance', type: 'vec3', inputs: [
+} ).setLayout( { name: 'ponlaiRainRadiance', type: 'vec3', inputs: [
 	{ name: 'view', type: 'vec3' }, { name: 'sky', type: 'vec3' }, { name: 'skySeen', type: 'vec3' },
 	{ name: 'keyDirection', type: 'vec3' }, { name: 'key', type: 'vec3' }, { name: 'skyBias', type: 'float' },
 ] } );

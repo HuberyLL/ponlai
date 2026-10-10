@@ -102,7 +102,7 @@ export const windGust = Fn( ( [ position, direction, phase ]: [ Node<'vec2'>, No
 	const p = dot( position, direction ).mul( 0.45 ).sub( phase ).toVar();
 	return sin( p ).mul( 0.45 ).add( 0.55 ).add( sin( p.mul( 2.7 ).add( position.x.mul( 0.9 ) ) ).mul( 0.2 ) );
 
-} ).setLayout( { name: 'soomiWindGust', type: 'float', inputs: [
+} ).setLayout( { name: 'ponlaiWindGust', type: 'float', inputs: [
 	{ name: 'position', type: 'vec2' }, { name: 'direction', type: 'vec2' }, { name: 'phase', type: 'float' },
 ] } );
 

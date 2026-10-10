@@ -26,7 +26,7 @@ try {
 	await page.goto( `${ base }/?debug&paused&t=12&dpr=1` );
 	await page.waitForFunction( () => window.__THREE_GAME_DIAGNOSTICS__?.frame > 150, null, { timeout: 60000 } );
 	const inspect = await page.evaluate( () => {
-		const s = window.__SOOMI__;
+		const s = window.__PONLAI__;
 		const bad = [], world = [];
 		s.scene.traverse( ( o ) => {
 			if ( ! o.isMesh ) return;
@@ -49,23 +49,23 @@ try {
 	await page.screenshot( { path: `${ out }/overview.png` } );
 	await page.keyboard.press( 'Space' );
 	await page.waitForTimeout( 1200 );
-	const motionT = await page.evaluate( () => window.__SOOMI__.shared.time.value );
+	const motionT = await page.evaluate( () => window.__PONLAI__.shared.time.value );
 	assert.ok( motionT > 12.5 );
 	await page.screenshot( { path: `${ out }/motion-a.png` } );
 	await page.waitForTimeout( 1800 );
 	await page.screenshot( { path: `${ out }/motion-b.png` } );
 	await page.keyboard.press( 'Space' );
-	const stopT = await page.evaluate( () => window.__SOOMI__.shared.time.value );
+	const stopT = await page.evaluate( () => window.__PONLAI__.shared.time.value );
 	await page.waitForTimeout( 400 );
-	assert.equal( await page.evaluate( () => window.__SOOMI__.shared.time.value ), stopT );
+	assert.equal( await page.evaluate( () => window.__PONLAI__.shared.time.value ), stopT );
 	checks.push( 'Space resumes water and vegetation, then freezes the shared simulation clock' );
-	const before = await page.evaluate( () => window.__SOOMI__.camera.position.toArray() );
+	const before = await page.evaluate( () => window.__PONLAI__.camera.position.toArray() );
 	await page.mouse.move( 830, 470 );
 	await page.mouse.down();
 	await page.mouse.move( 1010, 490, { steps: 25 } );
 	await page.mouse.up();
 	await page.waitForTimeout( 1300 );
-	const after = await page.evaluate( () => window.__SOOMI__.camera.position.toArray() );
+	const after = await page.evaluate( () => window.__PONLAI__.camera.position.toArray() );
 	assert.ok( after.some( ( v, i ) => Math.abs( v - before[ i ] ) > 1 ) );
 	await page.screenshot( { path: `${ out }/orbit.png` } );
 	await page.mouse.wheel( 0, - 380 );
@@ -86,7 +86,7 @@ try {
 	if ( production ) {
 		await page.goto( base );
 		await page.waitForFunction( () => document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 60000 } );
-		assert.equal( await page.evaluate( () => window.__SOOMI__ === undefined && window.__THREE_GAME_DIAGNOSTICS__ === undefined ), true );
+		assert.equal( await page.evaluate( () => window.__PONLAI__ === undefined && window.__THREE_GAME_DIAGNOSTICS__ === undefined ), true );
 		checks.push( 'Production entry renders without exposing development scene handles' );
 	}
 	assert.deepEqual( errors, [] );

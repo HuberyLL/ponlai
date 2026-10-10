@@ -39,11 +39,11 @@ try {
 	const url = new URL( base );
 	for ( const [ key, value ] of Object.entries( { debug: '', paused: '', t: '12', dpr: '1', dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
 	await page.goto( url.href );
-	await page.waitForFunction( () => window.__SOOMI__?.dayCycle && typeof window.__SOOMI__.setHour === 'function' &&
-		typeof window.__SOOMI__.setPreset === 'function' && typeof window.__SOOMI__.refreshEnvironment === 'function' &&
+	await page.waitForFunction( () => window.__PONLAI__?.dayCycle && typeof window.__PONLAI__.setHour === 'function' &&
+		typeof window.__PONLAI__.setPreset === 'function' && typeof window.__PONLAI__.refreshEnvironment === 'function' &&
 		window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 && document.getElementById( 'loading' )?.classList.contains( 'done' ) );
 	await page.evaluate( () => {
-		const s = window.__SOOMI__;
+		const s = window.__PONLAI__;
 		s.dayCycle.paused = true;
 		s.dayCycle.advanceMoonPhase = false;
 		s.dayCycle.moonPhase = 0.5;
@@ -55,7 +55,7 @@ try {
 	const twoFrames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
 	const camera = async ( horizon ) => {
 		await page.evaluate( ( horizon ) => {
-			const s = window.__SOOMI__;
+			const s = window.__PONLAI__;
 			const distance = horizon ? 110 : 58, polar = horizon ? 82 : 50, azimuth = horizon ? 125 : 318;
 			s.controls.target.set( 1.5, 0.5, 1 );
 			s.camera.position.setFromSphericalCoords( distance, polar * Math.PI / 180, azimuth * Math.PI / 180 ).add( s.controls.target );
@@ -75,7 +75,7 @@ try {
 		return paths;
 	};
 	const snapshot = () => page.evaluate( async () => {
-		const s = window.__SOOMI__, sky = s.sky;
+		const s = window.__PONLAI__, sky = s.sky;
 		const pixels = await s.renderer.readRenderTargetPixelsAsync( sky.small, 0, 0, sky.small.width, sky.small.height );
 		const gpuIrradiance = await s.renderer.readRenderTargetPixelsAsync( sky.irradianceDisplay, 0, 0, 1, 1 );
 		let minimum = Infinity, maximum = - Infinity, finite = true, samples = 0;
@@ -132,7 +132,7 @@ try {
 	};
 
 	for ( const [ name, hour ] of hours ) {
-		await page.evaluate( ( hour ) => window.__SOOMI__.setHour( hour ), hour );
+		await page.evaluate( ( hour ) => window.__PONLAI__.setHour( hour ), hour );
 		await camera( false );
 		const record = { name, ...await snapshot(), overview: await screenshotPair( `${ name }-overview` ) };
 		if ( [ 'sunrise', 'sunset', 'midnight' ].includes( name ) ) {
@@ -152,46 +152,46 @@ try {
 	assert.ok( luma( midnight.keyColor ) > 0, 'A visible full moon must supply restrained direct light' );
 	report.checks.push( 'Night lighting energy is less than 15% of noon' );
 
-	await page.evaluate( async () => { window.__SOOMI__.dayCycle.moonPhase = 0; await window.__SOOMI__.setHour( 0 ); } );
+	await page.evaluate( async () => { window.__PONLAI__.dayCycle.moonPhase = 0; await window.__PONLAI__.setHour( 0 ); } );
 	report.phases.newMoon = await snapshot();
 	validateState( report.phases.newMoon, 'new moon' );
-	await page.evaluate( async () => { window.__SOOMI__.dayCycle.moonPhase = 0.5; await window.__SOOMI__.refreshEnvironment(); } );
+	await page.evaluate( async () => { window.__PONLAI__.dayCycle.moonPhase = 0.5; await window.__PONLAI__.refreshEnvironment(); } );
 	report.phases.fullMoon = await snapshot();
 	validateState( report.phases.fullMoon, 'full moon' );
 	assert.ok( luma( report.phases.newMoon.keyColor ) < luma( report.phases.fullMoon.keyColor ) * 0.25, 'New moon must suppress direct moonlight' );
 	assert.ok( energy( report.phases.newMoon ) < energy( report.phases.fullMoon ), 'The full moon must supply more lighting energy than the new moon' );
 	report.checks.push( 'Moon phase controls actual night lighting' );
-	await page.evaluate( () => window.__SOOMI__.setPreset( 'golden-hour' ) );
-	near( await page.evaluate( () => window.__SOOMI__.dayCycle.hour ), 16, 1e-8, 'Golden-hour preset' );
+	await page.evaluate( () => window.__PONLAI__.setPreset( 'golden-hour' ) );
+	near( await page.evaluate( () => window.__PONLAI__.dayCycle.hour ), 16, 1e-8, 'Golden-hour preset' );
 
 	// Warm both day and night paths before counting retained resources. A small allowance
 	// accommodates renderer-internal pooling; an allocation retained on each bake must fail.
-	for ( const hour of [ 0, 12, 0, 12 ] ) await page.evaluate( ( hour ) => window.__SOOMI__.setHour( hour ), hour );
+	for ( const hour of [ 0, 12, 0, 12 ] ) await page.evaluate( ( hour ) => window.__PONLAI__.setHour( hour ), hour );
 	await twoFrames();
-	report.resources.baseline = await page.evaluate( () => ( { ...window.__SOOMI__.renderer.info.memory } ) );
+	report.resources.baseline = await page.evaluate( () => ( { ...window.__PONLAI__.renderer.info.memory } ) );
 	report.resources.samples = [];
 	for ( let i = 0; i < 12; i ++ ) {
-		await page.evaluate( ( hour ) => window.__SOOMI__.setHour( hour ), [ 5.35, 12, 17.85, 0 ][ i % 4 ] );
+		await page.evaluate( ( hour ) => window.__PONLAI__.setHour( hour ), [ 5.35, 12, 17.85, 0 ][ i % 4 ] );
 		await twoFrames();
-		report.resources.samples.push( await page.evaluate( () => ( { ...window.__SOOMI__.renderer.info.memory } ) ) );
+		report.resources.samples.push( await page.evaluate( () => ( { ...window.__PONLAI__.renderer.info.memory } ) ) );
 	}
 	assert.ok( Math.max( ...report.resources.samples.map( ( state ) => state.textures ) ) <= report.resources.baseline.textures + 4, 'Repeated completed sky bakes must not retain a texture per update' );
 	assert.ok( Math.max( ...report.resources.samples.map( ( state ) => state.geometries ) ) <= report.resources.baseline.geometries + 2, 'Repeated sky bakes must not accumulate geometry' );
 	report.checks.push( 'Repeated explicit refreshes retain bounded textures and geometry' );
 
 	await camera( false );
-	await page.evaluate( () => window.__SOOMI__.setHour( 10 ) );
+	await page.evaluate( () => window.__PONLAI__.setHour( 10 ) );
 	// The page was opened globally paused for image evidence. Resume scene animation before
 	// checking the independently controllable day clock, then pause that clock itself.
 	await page.keyboard.press( 'Space' );
 	report.clock.running = await page.evaluate( async () => {
-		const cycle = window.__SOOMI__.dayCycle;
+		const cycle = window.__PONLAI__.dayCycle;
 		cycle.dayLength = 120;
 		cycle.paused = false;
-		const start = performance.now(), hour = cycle.hour, keyDir = window.__SOOMI__.sky.keyDir.toArray(), samples = [];
+		const start = performance.now(), hour = cycle.hour, keyDir = window.__PONLAI__.sky.keyDir.toArray(), samples = [];
 		while ( performance.now() - start < 3000 ) {
 			await new Promise( ( resolve ) => setTimeout( resolve, 200 ) );
-			samples.push( { elapsed: ( performance.now() - start ) / 1000, hour: cycle.hour, keyDir: window.__SOOMI__.sky.keyDir.toArray() } );
+			samples.push( { elapsed: ( performance.now() - start ) / 1000, hour: cycle.hour, keyDir: window.__PONLAI__.sky.keyDir.toArray() } );
 		}
 		cycle.paused = true;
 		return { startHour: hour, endHour: cycle.hour, startKeyDir: keyDir, wallSeconds: ( performance.now() - start ) / 1000, samples };
@@ -202,7 +202,7 @@ try {
 	assert.ok( Math.hypot( ...finalKeyDir.map( ( value, index ) => value - report.clock.running.startKeyDir[ index ] ) ) > 0.001, 'The running clock must actually move scene lighting' );
 	for ( let i = 1; i < report.clock.running.samples.length; i ++ ) assert.ok( report.clock.running.samples[ i ].hour >= report.clock.running.samples[ i - 1 ].hour, 'Day clock must not reverse between polls' );
 	report.clock.paused = await page.evaluate( async () => {
-		const cycle = window.__SOOMI__.dayCycle, before = cycle.hour;
+		const cycle = window.__PONLAI__.dayCycle, before = cycle.hour;
 		const samples = [];
 		for ( let i = 0; i < 6; i ++ ) {
 			await new Promise( ( resolve ) => setTimeout( resolve, 150 ) );
@@ -218,7 +218,7 @@ try {
 	// the scene paused the explicit bake is the last one, as the coherence check assumes.
 	await page.keyboard.press( 'Space' );
 	await twoFrames();
-	await page.evaluate( () => window.__SOOMI__.refreshEnvironment() );
+	await page.evaluate( () => window.__PONLAI__.refreshEnvironment() );
 	validateState( await snapshot(), 'paused live clock' );
 	report.checks.push( 'Accelerated live clock advances monotonically and freezes while the scene keeps rendering' );
 	assert.deepEqual( report.errors, [], 'No browser or GPU validation errors' );
