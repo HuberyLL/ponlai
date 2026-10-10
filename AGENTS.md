@@ -43,14 +43,15 @@ stone exposed.
   Option / Ctrl with the left) turns and tilts, the wheel zooms toward the pointer; on a trackpad a
   two-finger swipe pans, a pinch zooms and Option with a swipe turns and tilts; W A S D or the
   arrows pan, Q / E turn, T / G tilt, + / - zoom, Shift speeds them up.
-- Rendering and A/B URL options, read at load: `aa` (the anti-aliasing mode, `src/post/Antialiasing.ts`:
-  `msaa`, 4 samples, or `off`, one sample, over the tier's `aa` knob; `taa` and `taau` warn and run
-  `msaa` until the temporal modes are built) and its older alias `msaa` (`4` reads as `aa=msaa`,
-  `1` and `2` as `aa=off`, since WebGPU multisamples with 1 or 4 samples only), `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB
-  cache, as on a first visit), `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer
-  masks; for an A/B inside one page each cliff material swaps to its other variant through
-  `material.userData.terrainVariant`, as `TerrainMaterial.ts` shows: the flag itself is read only
-  when the material is built),
+- Rendering and A/B URL options, read at load: `aa` (the anti-aliasing mode,
+  `src/post/Antialiasing.ts`: `msaa`, 4 samples, or `off`, one sample, over the tier's `aa` knob;
+  `taa` and `taau` warn and run `msaa` until the temporal modes are built) and its older alias
+  `msaa` (`4` reads as `aa=msaa`, `1` and `2` as `aa=off`, since WebGPU multisamples with 1 or 4
+  samples only), `worldCache=off` (generate the island instead of loading it from the browser's
+  IndexedDB cache, as on a first visit), `terrainHex=0` (the cliff's plain triplanar tiling and
+  smooth layer masks; for an A/B inside one page each cliff material swaps to its other variant
+  through `material.userData.terrainVariant`, as `TerrainMaterial.ts` shows: the flag itself is
+  read only when the material is built),
   `post=legacy` (or a comma list of `inline-composite`, `full-fog`,
   `no-bank`, `inline-coc`, `three-fsr`, `store-scene`: the frame graph without the first
   performance round's changes), `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter
@@ -84,12 +85,14 @@ stone exposed.
   `.rainShading` (`setRainShading`: the veil's shells, the sea's ripple layers), `.post`
   (`PostOptions` for `new Pipeline`: sea-fog resolution, steps and bank map, depth-of-field taps,
   bloom chains), `.environmentSource` (`Sky.setEnvironmentSource`, before the first bake),
-  `.frameRate` (`FramePacer`) and the render scale rule. Runtime ones, applied by
-  `applySkyQuality` in `main.ts` (`s.applyQuality( { ... } )` overrides them in a debug page): the
-  cloud view
-  (`Sky.setCloudView`), the clouds' `setDome`, `setMarch` and `setShadowRefresh`,
-  `Sky.setEnvironmentCadence`, the sky bake interval, the refracted sun's interval and
-  `angleGate`, and the rain's drop count. Every default in the modules themselves is high's.
+  `.frameRate` (`FramePacer`), `.aa` (the anti-aliasing mode, `post/Antialiasing.ts`, which also
+  chooses the tier, since the vegetation's modules read the mode as they load), `.taa` (the
+  temporal resolve's settings, read once it exists) and the render scale rule. Runtime ones,
+  applied by `applySkyQuality` in `main.ts` (`s.applyQuality( { ... } )` overrides them in a debug
+  page): the cloud view (`Sky.setCloudView`), the clouds' `setDome`, `setMarch` and
+  `setShadowRefresh`, `Sky.setEnvironmentCadence`, the sky bake interval, the refracted sun's
+  interval and `angleGate`, and the rain's drop count. Every default in the modules themselves is
+  high's.
 - `node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
   [--timestamps on|off|both] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
   [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]`
@@ -212,14 +215,15 @@ stone exposed.
   `src/debug/PipelineCounter.ts`) and `graph` (the frame graph's dev counters: the attachment
   ops it rewrote and expected in the last frame, the frames they differed, targets found at a
   size other than their class's).
-- `src/world/`: the island generated in Web Workers (the island, the stones in up to four sets and
-  the rest built in parallel copies of `worldWorker.ts` and merged in serial order, so the world is
-  identical to a single thread's; kept in IndexedDB by `WorldCache.ts`, keyed by the hash of the
-  generator's sources, its options and the browser; SDF shapes → surface nets; the cliff band
-  places its vertices by dual contouring so scar edges stay sharp), its cliffs as a weathered face
-  that has shed blocks along its joints and beds (`Cliff.ts`: rockfall scars in three generations
-  of size, gullies, a wave-cut notch that follows the coast's exposure; per-vertex facet, scar
-  age, bed, lip, overhang and exposure detail for the material), sea floor
+- `src/world/`: the island generated in Web Workers (started as the page's modules load, by
+  `WorldStart.ts`, before the quality tier's adapter query; the island, the stones in up to four
+  sets and the rest built in parallel copies of `worldWorker.ts` and merged in serial order, so the
+  world is identical to a single thread's; kept in IndexedDB by `WorldCache.ts`, keyed by the hash
+  of the generator's sources, its options and the browser; SDF shapes → surface nets; the cliff
+  band places its vertices by dual contouring so scar edges stay sharp), its cliffs as a weathered
+  face that has shed blocks along its joints and beds (`Cliff.ts`: rockfall scars in three
+  generations of size, gullies, a wave-cut notch that follows the coast's exposure; per-vertex
+  facet, scar age, bed, lip, overhang and exposure detail for the material), sea floor
   (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
   cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
   tile), shoreline field,
@@ -295,7 +299,8 @@ stone exposed.
   pass or FSR 1 upscale (`FSR.ts`: an EASU pass, the sharpening in the canvas pass); render scale
   per quality tier (`RenderScale.ts`) and high's dynamic resolution (`DynamicResolution.ts`: the
   scale steered by the GPU's frame time from timestamp queries), the frame pacer (`FramePacer.ts`),
-  the submit batching (`SubmitBatch.ts`), the scene's sample count (`SceneSamples.ts`).
+  the submit batching (`SubmitBatch.ts`), the anti-aliasing mode and the scene's sample count
+  (`Antialiasing.ts`).
   `src/post/graph/` is the frame graph, after Frostbite's FrameGraph (O'Donnell, GDC 2017):
   `GraphCompiler.ts` (pure TypeScript: passes declare the resource versions they read and write,
   checked in declaration order, culled by liveness, their attachment ops derived per mask of the
@@ -555,8 +560,8 @@ stone exposed.
   `dpr` and the full resolution also lift the lower tiers' budgets. The canvas always matches the
   display (up to 2x): a render below it is upscaled inside the frame graph with FSR 1 and the grain
   added after, never stretched by the browser. Every pass is sized to the render, not the canvas
-  (`rtt()` passes through `sizeRtt`). At the display's ratio nothing is upscaled, so `dpr=1`
-  captures are unchanged.
+  (the frame graph sizes each target by its size class). At the display's ratio nothing is
+  upscaled, so `dpr=1` captures are unchanged.
 - The loop holds the tier's frame rate on a display faster than that (`FramePacer.ts`, 60 on high
   and medium): it renders on every second refresh at 120 Hz (every refresh at 60 Hz, 72 fps at
   144 Hz) and skips the other animation frames before three's loop sees them, so every frame stays
@@ -836,14 +841,14 @@ stone exposed.
   warm-up (`FrameGraph.warm`, with `src/post/graph/Compile.ts`); the world, vegetation, water,
   character and shadow-map materials still build in their first frames (the warm-up runs before the
   world exists, the water's pass on an empty scene). It compiles each pass under its own binding
-  (target, MRT, depth flags), the passes three's nodes render inside a chain (rtt(), bloom), and the
+  (target, MRT, depth flags), the passes three's nodes render inside a pass (a bloom chain), and the
   objects and kernels owners register as run only at times (`graph.latent( pass, objects, kernels
   )`: the rain, the bolts, the storm's spray and foam). A new pass, or a draw that first shows
   later, joins it the same way; `tools/verify-first-use.mjs` counts the pipelines any step still
   creates. three r186's `compileAsync` alone does not compile what a render draws: it collects its
   draws synchronously but builds them one await at a time, under whatever target, MRT, side (a
   double-sided draw's two passes) and colour space the renderer holds by then; it collects in the
-  top-level render context, where a pass rendered inside another (an rtt() or bloom pass) draws in
+  top-level render context, where a pass rendered inside another (a bloom chain's) draws in
   its own call depth's, which is part of the material's node key; and it compiles a QuadMesh without
   the vertex node `QuadMesh.render` sets. `compileBound` builds each draw inside the binding, at the
   call depth and with the quad's vertex node of the real draw, and leaves only the pipeline's
