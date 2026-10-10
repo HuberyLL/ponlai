@@ -5,7 +5,8 @@ import { OrbitFrameControls } from './camera/OrbitFrameControls.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, type WeatherName } from './sky/Weather.ts';
-import { QUALITY_TIERS, qualityFromURL, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
+import { QUALITY_TIERS, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
+import { chooseQuality, forgetQuality, qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
@@ -62,8 +63,10 @@ const mark = ( name: string ) => profiler?.mark( name );
 // ?debug or ?profile only
 const DEBUG = import.meta.env.DEV || params.has( 'debug' ) || profiler !== null;
 // The quality tier (Quality.ts): its load knobs are read below as the parts they shape are built,
-// its runtime ones applied by applySkyQuality. A change of tier reloads the page.
-const qualityTier: QualityTier = qualityFromURL();
+// its runtime ones applied by applySkyQuality. A change of tier reloads the page. Without ?quality
+// it is the one measured on this GPU (QualityDetect.ts), or high while this load measures.
+const qualityChoice = await chooseQuality( params );
+const qualityTier: QualityTier = qualityChoice.tier;
 const quality: Readonly<QualityProfile> = qualityProfile( qualityTier );
 const loading = document.getElementById( 'loading' );
 const setStatus = ( s: string ) => { const el = loading?.querySelector( 'span' ); if ( el ) el.textContent = s; };
@@ -173,10 +176,12 @@ function applySkyQuality( q: Readonly<QualityProfile> = quality ): void {
 }
 let runtimeQuality: Readonly<QualityProfile> = quality;
 // A tier change rebuilds materials and the frame graph: reload with the tier and the page's options.
-function reloadWithQuality( tier: QualityTier ): void {
+function reloadWithQuality( tier: QualityTier | null ): void {
 
 	const url = new URL( location.href );
-	url.searchParams.set( 'quality', tier );
+	if ( tier ) url.searchParams.set( 'quality', tier );
+	else url.searchParams.delete( 'quality' );
+	if ( url.searchParams.get( 'autoQuality' ) === 'detect' ) url.searchParams.delete( 'autoQuality' );
 	if ( gui._hidden ) url.searchParams.delete( 'gui' );
 	else url.searchParams.set( 'gui', '' );
 	location.assign( url );
@@ -557,6 +562,13 @@ const W = water.uniforms;
 // The quality tier sets every knob of the frame's cost (Quality.ts); a change reloads the page.
 const performanceF = gui.addFolder( 'Performance' );
 performanceF.add( skyQuality, 'value', QUALITY_TIERS ).name( 'quality (reloads)' ).onFinishChange( ( tier: QualityTier ) => { if ( tier !== qualityTier ) reloadWithQuality( tier ); } );
+// How the tier was chosen (QualityDetect.ts): the measurement and each tier's predicted GPU time
+// against the budget; re-detect forgets the choice and reloads without ?quality to measure again.
+const autoQuality = { ...qualityLines( qualityTier, qualityChoice.why, qualityChoice.record ), redetect: () => { forgetQuality(); reloadWithQuality( null ); } };
+performanceF.add( autoQuality, 'chosen' ).name( 'quality chosen' ).listen().disable();
+performanceF.add( autoQuality, 'measured' ).name( 'GPU measured' ).listen().disable();
+performanceF.add( autoQuality, 'predicted' ).name( 'predicted ms / budget' ).listen().disable();
+performanceF.add( autoQuality, 'redetect' ).name( 're-detect quality (reloads)' );
 performanceF.add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
 performanceF.add( pipeline.sharpness, 'value', 0, 2, 0.05 ).name( 'upscale softness' );
 // The live readout (FrameStats.ts): the rendered frames' cadence by their rAF timestamps, the render
@@ -704,10 +716,13 @@ const pacer = new FramePacer( params.has( 'frameRate' ) ? Number( params.get( 'f
 // the render scale each frame was drawn at (by three's frame id), for the GPU times read back later
 const frameScales = new Map<number, number>();
 let gpuTimer: GpuFrameTimer | null = null;
+// A load that measures the GPU for its tier (QualityDetect.ts), set up below once the timer is known.
+let detector: QualityDetector | null = null;
 if ( dynamicResolution ) {
 
 	const sample = ( frame: number, ms: number ) => {
 
+		detector?.gpu( frame, ms );
 		const scale = frameScales.get( frame );
 		if ( scale !== undefined ) dynamicResolution.sample( ms, scale );
 
@@ -720,6 +735,17 @@ if ( dynamicResolution ) {
 		if ( gpuTimer ) gpuTimer.onFrame = sample;
 
 	}
+
+}
+
+// The measuring load holds the dynamic scale at its nominal until it is done, and reads the GPU's
+// time from the timer above, or times frames on an idle queue where there is none.
+if ( qualityChoice.source === 'detect' ) {
+
+	const queue = ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue;
+	const view = () => ( { paused, hidden: document.hidden, scale: renderScale, interval: pacer.target > 0 ? pacer.interval : 1000 / 60, width: innerWidth, height: innerHeight, cap: DPR_CAP } );
+	detector = new QualityDetector( qualityChoice, view, gpuTimer !== null || profiler?.timestamps === true, () => queue.onSubmittedWorkDone(), () => renderer.info.frame );
+	if ( dynamicResolution ) dynamicResolution.enabled = false;
 
 }
 
@@ -974,7 +1000,18 @@ if ( profiler ) {
 
 }
 mark( 'loop' );
-const animationLoop = profiler ? profiler.wrapLoop( tick ) : tick;
+const loopBody = profiler ? profiler.wrapLoop( tick ) : tick;
+const animationLoop = detector ? ( time: number ) => detector.frame( loopBody, time ) : loopBody;
+if ( detector ) detector.onDone = ( record ) => {
+
+	Object.assign( autoQuality, qualityLines( record?.tier ?? qualityTier, record ? 'measured on this load' : detector.why, record ) );
+	// its frames were drawn at the nominal scale, so the dynamic scale's first decision follows at once
+	if ( dynamicResolution ) dynamicResolution.enabled = true;
+	// a lower tier reloads into it (from storage, or by ?quality where nothing can be stored)
+	const stored = record !== null && rememberQuality( record );
+	if ( record && record.tier !== qualityTier ) reloadWithQuality( stored ? null : record.tier );
+
+};
 dynamicResolution?.begin();
 // three's loop asks the pacer for its animation frames, so the frames it skips never reach it
 const animation = ( renderer as unknown as { _animation: { start(): void; stop(): void; setContext( context: unknown ): void } } )._animation;
@@ -986,7 +1023,7 @@ const REVEAL_WAIT = 3000;
 const revealAt = performance.now() + REVEAL_WAIT;
 const reveal = () => {
 
-	const waiting = dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
+	const waiting = ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
 		! paused && ! resolution.full && performance.now() < revealAt;
 	if ( waiting ) setTimeout( reveal, 50 );
 	else {
