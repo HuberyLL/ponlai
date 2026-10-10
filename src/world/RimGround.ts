@@ -1,7 +1,7 @@
 import { Field2D } from './Field2D.ts';
 import { ISLAND_TOP, islandSurfaceHeight, type Bounds } from './WorldShapes.ts';
 import { noise3, smoothstep } from './noise.ts';
-import type { RimGroundField, RimSkirtData, SDF } from './types.ts';
+import type { RimGroundField, RimSkirtData, SDF, ShoreField } from './types.ts';
 
 export const RIM_FRINGE_FADE = 0.12;
 export const RIM_INNER_LIMIT = 0.70;
@@ -216,11 +216,12 @@ export function buildRimSkirt( sdf: SDF, field: RimGroundField ): RimSkirtData {
 
 }
 
-// Iso-line d = 0 of the field's distance channel, as closed (or border-clipped) polylines.
-function coastLoops( field: RimGroundField ): [ number, number ][][] {
+// Iso-line d = 0 of the field's distance channel (the first of `stride` per texel), as closed (or
+// border-clipped) polylines.
+export function coastLoops( field: ShoreField, stride = 4 ): [ number, number ][][] {
 
 	const { nx, nz, cell, data } = field;
-	const d = ( i: number, j: number ) => data[ ( j * nx + i ) * 4 ];
+	const d = ( i: number, j: number ) => data[ ( j * nx + i ) * stride ];
 	const px = ( i: number ) => field.x0 + ( i + 0.5 ) * cell, pz = ( j: number ) => field.z0 + ( j + 0.5 ) * cell;
 	// Crossing on a cell edge: horizontal edge id 2 * ( j * nx + i ), vertical + 1.
 	const crossing = new Map<number, [ number, number ]>();

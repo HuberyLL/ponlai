@@ -35,7 +35,7 @@ import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { islandSurfaceHeight, landArea, landBounds, landCentroid } from './world/WorldShapes.ts';
 import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
-import { WALK_LOOP, walkLoopDistance } from './world/WalkLoop.ts';
+import { walkLoop, walkLoopDistance } from './world/WalkLoop.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
@@ -413,8 +413,9 @@ shared.shoreXform.value.copy( shore.xform );
 // The floor's height shares the shoreline field's bounds, and so its transform.
 const seabedField = shoreTextureFrom( data.seabedField );
 const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
-// Tussocks and tall flowers keep clear of the islander's walking loop.
-const walkDistance = walkLoopDistance( WALK_LOOP );
+// Tussocks and tall flowers keep clear of the islander's walking loop, 5 m in from the coast.
+const walk = walkLoop( land );
+const walkDistance = walkLoopDistance( walk );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
 const refractedSun = new RefractedSun( renderer, shared );
@@ -486,7 +487,7 @@ if ( GAME ) {
 
 } else {
 
-	characters = new Villagers( await buildIslander( islanderBuild.proportions ), WALK_LOOP, islandSurfaceHeight, characterShadow );
+	characters = new Villagers( await buildIslander( islanderBuild.proportions ), walk, islandSurfaceHeight, characterShadow );
 	scene.add( characters.group );
 
 }
