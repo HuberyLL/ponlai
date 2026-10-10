@@ -51,14 +51,11 @@ export interface SimState {
 
 /**
  * What the island looks like to the simulation, from the world generator's own exports (never
- * re-sampled here): the bushes FoliageSites' drawnFoliageSites returns and the shrubs and small
- * trees PlantSites' pickPlantSites placed, each an obstacle. The island's outline comes from
- * WorldShapes directly.
+ * re-sampled here): the bushes FoliageSites' drawnFoliageSites returns, each an obstacle. The
+ * island's outline comes from WorldShapes directly.
  */
 export interface IslandInput {
 	bushes: readonly { x: number; z: number; r: number }[];
-	/** r is the ground the plant covers */
-	plants: readonly { x: number; z: number; r: number }[];
 }
 
 export interface GridApi {

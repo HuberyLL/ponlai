@@ -60,8 +60,8 @@ export class RainCollision {
 		this.camera.position.set( x0 + width / 2, 40, z0 + depth / 2 );
 		this.camera.lookAt( x0 + width / 2, 0, z0 + depth / 2 );
 		this.camera.updateMatrixWorld();
-		// The small trees' crowns reach about three and a half metres above the meadow (bushes a
-		// metre and a half, figures two): a lower ceiling would let drops fall through their tops.
+		// Bushes reach about a metre and a half above the meadow and the figures two; the ceiling
+		// keeps a margin over them, so no drop falls through their tops.
 		this.ceiling = ISLAND_TOP + 4;
 		const texture = this.target.texture, xform = this.xform, size = this.size, waterLevel = this.waterLevel;
 		this.groundAt = Fn( ( [ xz ]: [ V2 ] ) => {

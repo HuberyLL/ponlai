@@ -2,14 +2,14 @@ import { buildFootprint, islandSurfaceHeight, layoutBounds } from '../../world/W
 import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 
 // The ground grid: 0.5 m cells over the layout's bounds. A cell is walkable on the island top,
-// clear of the cliff rim, and free of bushes, shrubs and trees. Everything here is derived: the
-// island from the world's own functions, its bushes and plants from the world generator's input,
+// clear of the cliff rim, and free of bushes. Everything here is derived: the
+// island from the world's own functions, its bushes from the world generator's input,
 // so a loaded game rebuilds the same grid.
 
 const CELL = 0.5;
 /** keep this far inside the island's edge (m), so feet never hang over the rim */
 const RIM_MARGIN = 0.9;
-/** a bush or a plant blocks the cells within this fraction of its radius (and the cell under its centre) */
+/** a bush blocks the cells within this fraction of its radius (and the cell under its centre) */
 const BLOCK_FRACTION = 0.6;
 
 // the island's top depends on the layout alone: computed once (the footprint takes a while, a
@@ -61,7 +61,7 @@ export class Grid implements GridApi {
 		this.rows = Math.round( ( b.z1 - b.z0 ) / CELL );
 		const n = this.cols * this.rows;
 		this.open = islandMask( this.cols, this.rows, this.x0, this.z0 ).slice();
-		for ( const o of [ ...input.bushes, ...input.plants ] ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
+		for ( const o of input.bushes ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
 		this.region = new Int32Array( n );
 		this.g = new Float64Array( n );
 		this.parent = new Int32Array( n );
