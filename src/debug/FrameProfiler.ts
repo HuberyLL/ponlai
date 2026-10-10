@@ -48,8 +48,9 @@ import type * as THREE from 'three/webgpu';
 //   5. the innermost wrapped method on the call stack (`scope()`), else
 //   6. a wrapped async method still running (`scope( ..., { async: true } )`: the sky's bakes run
 //      in microtasks after the frame's tick), else 'other'.
-// So the graph labels its own passes, and only what runs inside a chain pass with a group of its
-// own (the composite, the blooms and glows, the light shafts) is labelled by hand.
+// So the graph labels its own passes and what three's nodes render as part of them (the bloom
+// chains' passes); what runs outside the graph (the sky, the shadow maps, the ocean) is labelled
+// by hand.
 // The page exposes `window.__PONLAI_PROFILE__` (see `api`), read by tools/profile-frame.mjs.
 // `?profile=frames` keeps the frame and tick timing but skips the GPU timestamps. Measure frame
 // rates that way: with timestamp queries on, Chrome ran the same frames up to a quarter faster
@@ -831,20 +832,7 @@ export type FrameProfiler = ReturnType<typeof createFrameProfiler>;
 export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
 
 	const h = handles as Record<string, Record<string, unknown>>;
-	const pipeline = h.pipeline;
-	const P = pipeline as Record<string, unknown> & { blooms: { node: unknown }[]; diffusion: { node: unknown }; passes: unknown[] };
-	// the frame graph labels its passes itself (`graphPass`); inside its display chain, the passes
-	// with groups of their own: its rtt() passes first (a bloom's scan reaches the targets of the
-	// passes it reads, and the first label a target gets is kept)
-	profiler.scan( P.shafts, 'light shafts' );
-	profiler.scan( P.passes[ 0 ], 'composite (air, fog, veil)', 1 );
-	profiler.scan( P.passes[ 1 ], 'tilt-shift blur', 1 );
-	// the sharp image (the composite plus both blooms) is passes[ 2 ] when the composite renders
-	// once; label it before the look glow's scan reaches it
-	if ( P.passes[ 2 ] ) profiler.scan( P.passes[ 2 ], 'sharp (composite + blooms)', 1 );
-	profiler.scan( P.blooms[ 0 ]?.node, 'bloom' );
-	profiler.scan( P.blooms[ 1 ]?.node, 'wide glow' );
-	profiler.scan( P.diffusion?.node, 'look glow' );
+	// the frame graph labels its passes itself (`graphPass`), the bloom chains' own passes with them
 	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes inside its chain (post=three-fsr)
 	// the sky's per-frame compute and its bakes
 	profiler.pattern( /^Clouds\.View/, 'clouds view march' );

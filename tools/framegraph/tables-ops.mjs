@@ -14,14 +14,22 @@ const col = ( resource, load, store, resolve = null ) => ( { resource, load, sto
 const dep = ( resource, write, load, store ) => ( { resource, write, load, store } );
 const row = ( pass, colors, depth = null ) => ( { pass, colors, depth } );
 
-// every conditional pass but the upscale: rain, fog with a bank bake, the depth of field
-const FULL = [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'output' ];
+// every conditional pass but the upscale: rain, fog with a bank bake, the depth of field, the look glow
+const FULL = [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'diffusion', 'output' ];
 
 const POST = [
 	row( 'fogBank', [ col( 'fogBanks', 'clear', 'store' ) ] ),
 	row( 'fogDepth', [ col( 'fogNearestDepth', 'clear', 'store' ) ] ),
 	row( 'fogMarch', [ col( 'fogMarch', 'clear', 'store' ) ] ),
 	row( 'viewDistance', [ col( 'viewDistance', 'clear', 'store' ) ] ),
+	row( 'shaftsSource', [ col( 'shafts.source', 'clear', 'store' ) ] ),
+	row( 'shaftsRays', [ col( 'shafts.rays', 'clear', 'store' ) ] ),
+	row( 'composite', [ col( 'hdr', 'clear', 'store' ) ] ),
+	row( 'bloom', [ col( 'bloom', 'clear', 'store' ) ] ),
+	row( 'glow', [ col( 'glow', 'clear', 'store' ) ] ),
+	row( 'sharp', [ col( 'sharp', 'clear', 'store' ) ] ),
+	row( 'blur', [ col( 'blur', 'clear', 'store' ) ] ),
+	row( 'diffusion', [ col( 'diffusion', 'clear', 'store' ) ] ),
 	row( 'display', [ col( 'display', 'clear', 'store' ) ] ),
 	row( 'output', [ col( 'canvas', 'clear', 'store' ) ] ),
 ];
@@ -221,7 +229,7 @@ export const checks = [
 
 		const c = compileToday();
 		const clear = c.ops( 'derived', c.maskOf( [ 'rain', 'output' ] ) );
-		assert.deepEqual( clear.running, [ 'opaque', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'display', 'output' ] );
+		assert.deepEqual( clear.running, [ 'opaque', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'shaftsSource', 'shaftsRays', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'output' ] );
 		assert.deepEqual( strip( clear ).slice( 0, 6 ), DERIVED_FULL.slice( 0, 6 ) );
 		const up = c.ops( 'derived', c.maskOf( [ 'rain', 'viewDistance', 'easu', 'upscaledOutput' ] ) );
 		assert.deepEqual( find( up, 'easu' ).colors, [ col( 'FSR.easu', 'clear', 'store' ) ] );

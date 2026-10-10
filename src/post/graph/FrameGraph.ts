@@ -6,15 +6,16 @@ import {
 	type ResourceDecl, type ResourceDesc, type ResourceHandle, type Samples, type Size, type SizeClass, type TargetInfo,
 } from './GraphCompiler.ts';
 import { AttachmentOps } from './AttachmentOps.ts';
-import { compileBound, compileChain, compileLatent, compileQuad, sceneOf } from './Compile.ts';
+import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, sceneOf } from './Compile.ts';
 
 // The frame graph's runtime: it owns the graph's textures and render targets, their sizes and
 // lifetimes, and executes the compiled passes in order with three's own executors (a scene render,
-// a QuadMesh, a RenderPipeline and the rtt / bloom passes it updates on the way, a compute
-// dispatch, or a callback). The graph decides which passes run (`when`), binds each pass's target
-// and MRT, clears or loads its attachments, and rewrites the stores and resolves three records
-// (AttachmentOps); at the frame's end it swaps ping-pong histories and makes the persistent copies.
-// See GraphCompiler.ts for the model.
+// a QuadMesh, a RenderPipeline and the rtt / bloom passes it updates on the way, three's nodes that
+// render passes of their own (a bloom chain), a compute dispatch, or a callback). The graph
+// decides which passes run (`when`), binds each pass's target and MRT, clears or loads its
+// attachments, and rewrites the stores and resolves three records (AttachmentOps); at the frame's
+// end it swaps ping-pong histories and makes the persistent copies. See GraphCompiler.ts for the
+// model.
 //
 // Textures exist from their declaration (TSL nodes bind them while the passes are built), at 1x1
 // until `setExtents` sizes them. Each distinct tuple of attachments a pass writes is one
@@ -22,8 +23,8 @@ import { compileBound, compileChain, compileLatent, compileQuad, sceneOf } from 
 // render target (a DepthTexture outside one takes the renderer's sample count). `renderTarget`
 // makes the target of a tuple ahead of the passes (code that still binds its targets by hand,
 // probes and warm-ups); the passes that later draw into the same tuple use that target. Every
-// target the graph makes follows its size class through `setExtents`, and passes the graph does
-// not own (three's rtt and bloom chains inside a chain pass) follow it through `onResize`.
+// target the graph makes follows its size class through `setExtents`, and targets the graph does
+// not own (three's bloom chains, which make their own) follow it through `onResize`.
 //
 // A texture may sit in several of those render targets (a resource written alone by one pass and
 // with a velocity attachment by another). In three r186 `RenderTarget.setSize` disposes the target,
@@ -59,8 +60,10 @@ export interface PassDef<F> extends PassFlags {
 	invalidate?(): void;
 	// quad: a full-screen material
 	quad?: THREE.QuadMesh;
-	// chain: a render pipeline (with the rtt and bloom passes its output node updates)
+	// chain: a render pipeline (with the rtt and bloom passes its output node updates), or three's
+	// nodes that render passes of their own (`updateBefore`: a bloom chain), run in order
 	pipeline?: THREE.RenderPipeline;
+	nodes?: THREE.Node[];
 	// compute: the kernels to dispatch
 	compute?: THREE.ComputeNode | THREE.ComputeNode[] | ( ( f: F ) => THREE.ComputeNode | THREE.ComputeNode[] | null );
 	// any kind: replaces the default executor (callback: required)
@@ -80,6 +83,7 @@ export interface GraphResources {
 	renderTarget( colors: readonly ResourceHandle[], depth?: ResourceHandle | null ): THREE.RenderTarget;
 	texture( h: ResourceHandle, parity?: 0 | 1 ): THREE.Texture;
 	extent( size: SizeClass ): Uniform2;
+	texel( size: SizeClass ): Uniform2;
 	onResize( size: SizeClass, hook: ( width: number, height: number ) => void ): void;
 }
 
@@ -149,8 +153,8 @@ interface Physical {
 const filterOf = ( f: ResourceDesc[ 'filter' ] ) => f === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
 
 // Nodes rendering in `updateBefore` that keep nothing from one frame to the next, so priming
-// (rendering a pass once at startup) leaves no stale state in them: FSR1Node (`post=three-fsr`),
-// and the bloom and rtt() passes the walker reaches anyway.
+// (rendering a pass once at startup) leaves no stale state in them: FSR1Node (`post=three-fsr`) and
+// rtt() passes, out of the walker's reach, and the blooms it reaches anyway.
 const STATELESS_NODES = new Set( [ 'FSR1Node', 'BloomNode', 'RTTNode' ] );
 
 export class FrameGraph<F = unknown> implements LatentRegistry {
@@ -193,7 +197,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	private readonly resizeHooks: ResizeHook[] = [];
 	private extentsSet = false;
 	private extents: Extents = { render: { width: 1, height: 1 }, canvas: { width: 1, height: 1 } };
-	private readonly extentNodes = new Map<string, { size: SizeClass; node: Uniform2 }>();
+	// the shared extent uniforms per size class: its pixel size, or one over it (`texel`)
+	private readonly extentNodes = new Map<string, { size: SizeClass; node: Uniform2; texel: boolean }>();
 	private saved: {
 		target: THREE.RenderTarget | null; mrt: THREE.MRTNode | null; depth: boolean; stencil: boolean;
 		autoClear: boolean; autoClearColor: boolean; autoClearDepth: boolean; autoClearStencil: boolean;
@@ -204,12 +209,15 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	// during execute: the resources some running pass writes this frame
 	private frameWritten: Set<number> | null = null;
 	private readonly drawingBuffer = new THREE.Vector2();
+	// what a chain pass of three's nodes hands their updateBefore
+	private readonly nodeFrame: THREE.NodeFrame;
 
 	constructor( renderer: THREE.WebGPURenderer, options: FrameGraphOptions ) {
 
 		this.renderer = renderer;
 		this.options = { legacyDiscard: [ 'rain' ], dev: false, prime: true, ...options };
 		this.attachmentOps = new AttachmentOps( renderer.backend, { dev: this.options.dev } );
+		this.nodeFrame = { renderer } as unknown as THREE.NodeFrame;
 
 	}
 
@@ -340,15 +348,30 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 	}
 
-	/** A vec2 uniform holding a size class's pixel size, shared by every caller of that class. */
+	/** A vec2 uniform holding a size class's pixel size, shared by every caller of that class: the
+	 * passes read their sizes from the graph, which sets them with the targets' (`setExtents`). */
 	extent( size: SizeClass ): Uniform2 {
 
-		const key = sizeClassKey( size );
+		return this.extentNode( size, false );
+
+	}
+
+	/** A vec2 uniform holding one over a size class's pixel size (a texel's size in uv), shared like
+	 * `extent`. Computed on the CPU: a shader's own division rounds differently. */
+	texel( size: SizeClass ): Uniform2 {
+
+		return this.extentNode( size, true );
+
+	}
+
+	private extentNode( size: SizeClass, texel: boolean ): Uniform2 {
+
+		const key = `${ sizeClassKey( size ) }${ texel ? '/texel' : '' }`;
 		let e = this.extentNodes.get( key );
 		if ( ! e ) {
 
-			const s = resolveSize( size, this.extents );
-			e = { size, node: uniform( new THREE.Vector2( s.width, s.height ) ) as unknown as Uniform2 };
+			e = { size, node: uniform( new THREE.Vector2() ) as unknown as Uniform2, texel };
+			this.setExtentNode( e );
 			this.extentNodes.set( key, e );
 
 		}
@@ -356,9 +379,17 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 	}
 
+	private setExtentNode( e: { size: SizeClass; node: Uniform2; texel: boolean } ): void {
+
+		const s = resolveSize( e.size, this.extents );
+		if ( e.texel ) e.node.value.set( 1 / Math.max( s.width, 1 ), 1 / Math.max( s.height, 1 ) );
+		else e.node.value.set( s.width, s.height );
+
+	}
+
 	/** Calls `hook` with a size class's pixel size whenever `setExtents` changes it (and once
-	 * extents are first set): for render targets the graph does not own, such as three's rtt and
-	 * bloom passes inside a chain, so they follow the graph's extents with its rounding. */
+	 * extents are first set): for render targets the graph does not own, such as three's bloom
+	 * chains', so they follow the graph's extents with its rounding. */
 	onResize( size: SizeClass, hook: ( width: number, height: number ) => void ): void {
 
 		const entry: ResizeHook = { size, hook, last: null };
@@ -435,7 +466,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 		this.mutable( name );
 		const def = this.decl.addPass( name, kind, setup );
-		const ok = kind === 'scene' ? def.scene && def.camera : kind === 'quad' ? def.quad : kind === 'chain' ? def.pipeline
+		const ok = kind === 'scene' ? def.scene && def.camera : kind === 'quad' ? def.quad : kind === 'chain' ? def.pipeline ?? def.nodes?.length
 			: kind === 'compute' ? def.compute : def.run;
 		if ( ! ok && ! def.run ) throw new GraphError( `pass '${ name }' (${ kind }) has no executor` );
 		this.defs.push( def );
@@ -551,12 +582,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 	private applyExtents(): void {
 
-		for ( const { size, node } of this.extentNodes.values() ) {
-
-			const s = resolveSize( size, this.extents );
-			node.value.set( s.width, s.height );
-
-		}
+		for ( const e of this.extentNodes.values() ) this.setExtentNode( e );
 		if ( this.extentsSet ) for ( const entry of this.resizeHooks ) this.runHook( entry );
 		for ( const [ rt, size ] of this.targetSizes ) if ( this.sizeTarget( rt, size ) ) this.needsInit = true;
 		// the depth textures' own size (three sets it only through the target that owns one) and the
@@ -822,7 +848,14 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 			}
 			case 'quad': def.quad!.render( r ); break;
-			case 'chain': def.pipeline!.render(); break;
+			case 'chain': {
+
+				if ( def.pipeline ) def.pipeline.render();
+				// (three's nodes take the frame of the node system: they read its renderer)
+				else for ( const node of def.nodes! ) node.updateBefore( this.nodeFrame );
+				break;
+
+			}
 			case 'compute': {
 
 				const nodes = typeof def.compute === 'function' ? def.compute( f ) : def.compute!;
@@ -941,7 +974,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	 * under its own binding (`bind`: its target, MRT and depth flags), restored before anything
 	 * is awaited: a scene pass compiles its scene for its camera (from `f`, the frame it would
 	 * draw) and its latent objects; a quad its material; a chain its pipeline's material and the
-	 * passes three's nodes render before it (rtt(), bloom; see Compile.ts); a compute pass its
+	 * passes three's nodes render before it (a bloom; see Compile.ts), or its nodes' own
+	 * passes (a bloom's high pass, blurs and composite, each into its target); a compute pass its
 	 * kernels. A chain with a pass out of the compiler's reach is primed instead: rendered once at
 	 * the real extents (once they are set), whatever its `when`. Priming never leaves a persistent
 	 * resource written: a primed pass that writes one has its history reset (`resetHistory`) and
@@ -1061,8 +1095,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 			}
 			case 'chain': {
 
-				if ( ! def.pipeline ) break;
-				const c = compileChain( r, def.pipeline );
+				const c = def.pipeline ? compileChain( r, def.pipeline ) : def.nodes ? compileNodes( r, def.nodes ) : null;
+				if ( ! c ) break;
 				pending.push( this.warmPromise( decl.name, c.done ) );
 				stats.passes ++;
 				return c.unreached;
