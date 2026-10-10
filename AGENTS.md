@@ -200,9 +200,8 @@ stone exposed.
   tile), shoreline field,
   vegetation anchors; instanced grass, rim bushes and flowers on the island top, a turf skirt over
   the lip, with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds
-  on the lip; shrub groups (round shrubs, broad-leaved clumps, ferns) and small trees, each grown
-  from its own seed and merged into one mesh (`Plants.ts`, sited by `PlantSites.ts`). The
-  alpha-to-coverage vegetation (grass, bushes, plants, rim leaves) draws after a depth prepass
+  on the lip. The
+  alpha-to-coverage vegetation (grass, bushes, rim leaves) draws after a depth prepass
   (`VegetationPrepass.ts`): a depth-only copy of each mesh with the same vertex stage, alpha and
   coverage draws first, and the shaded mesh tests depth for equality without coverage, alpha test
   or depth writes, so hidden blades and leaves are not shaded. The meadow's tuft instance data
@@ -330,7 +329,7 @@ stone exposed.
   nothing breaks the surface. Fallen blocks gather below the cliff's recent scars and are walked
   out from the coast until their traced outline clears the island's solid, so they rest against
   the cliff's underwater toe wherever it runs; other stones keep a wider berth.
-- Keep plants and meadow cover rooted on the island top. Branches may hang from top shrubs and meadow
+- Keep plants and meadow cover rooted on the island top. Branches may hang from rim bushes and meadow
   around the upper rim, with uneven density and mixed lengths; avoid plants rooted on cliff faces.
   They grow in clumped patches of one to nine strands with runs of bare stone between (0.4-4 m,
   measured along the winding coast: a sparse patch breaks any longer run), a long tail of strands
@@ -345,16 +344,10 @@ stone exposed.
   by the rim field's root depth. Wildflowers are plants of four species (daisy, umbel, spike, cup)
   with leaf rosettes, their heads just above the sward, in beds of 3-9 gathered in drifts.
   Tussocks and flower beds (spikes furthest) keep off the islander's walking loop (`WalkLoop.ts`).
-- Shrubs (up to about head height) and small trees (2.5 - 3.5 m) grow on the plateau in loose
-  groups. Their sites come from fields and the meadow's area (one tree per about 120 m^2, one
-  group per about 13 m^2). They keep off the islander's walk and out of the puddle hollows
-  (`PuddleHollows.ts` repeats `puddleField`'s hollows on the CPU: change both together), draw from
-  their own random stream (the rim bushes' stream also places the rim trails), sway with the
-  plants' wind, cast into the sun's map and stop the rain. A limb casts whole or not at all: limbs
-  that leave their parent 3 cm or more in radius cast; thinner twigs, shrub stems and stalks do
-  not. Around their stems the turf, grass and flowers lose ambient light (baked on the CPU into the
-  island's occlusion and the anchors' sky visibility), so they stand in the meadow rather than on
-  it.
+- The terrain plants only the meadow (grass, wildflowers), the rim bushes and the rim's hanging
+  growth. Plants that matter to play (coconut palms) are content placed in the world, not
+  terrain; a placed object that stands off the island or above 3 m grows
+  `Water.reflectionBounds`.
 - All vegetation moves in one wind field (`windField` in `Wind.ts`): a
   tileable gust map (two channels of periodic noise, ranked to an even spread) scrolled with the
   wind's integrated along-wind travel, its gust fronts long across the wind (16 m along, 28 m
@@ -364,7 +357,8 @@ stone exposed.
   rest pose, a fair day leans 0.03 between gusts and 0.13 in one, a storm 0.2 and 0.6. Plants
   answer it in Crysis's layers (Sousa, GPU Gems 3 ch. 16): the whole plant bends from its root
   with the field at the root, every vertex keeping its distance from it (`mainBend`), and sways
-  about the lean at its own rate (shrubs 0.9 Hz, trees half that); sprays, fronds and leaf stalks
+  about the lean at its own rate (the rim bushes 0.9 Hz; a placed tree about half that, as a
+  guide); sprays, fronds and leaf stalks
   swing on their own phase from where they leave the plant; leaf edges and tips flutter along
   their normals, faster as the wind rises. Grass tufts bend with the field at their root and their
   normals turn with the bend, so a gust shows as a sheen; flowers and the turf skirt follow the
@@ -684,8 +678,8 @@ stone exposed.
   answer's tool calls run on the body when it arrives; one thought per islander may be in flight.
   What starts a thought is not decided: nothing calls `think` but the console. Walking is the
   body's motor, not a tool. The save is the state as JSON with a version number, in one slot. The
-  ground comes from the world generator's own exports: the bushes `buildFoliage` draws and the
-  shrubs and trees `pickPlantSites` placed, as obstacles.
+  ground comes from the world generator's own exports: the bushes `buildFoliage` draws, as
+  obstacles.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
   copyright line, licence) and the licence text sits next to them (see `src/ocean/tidewater.LICENSE.txt`).
   Public-domain code (CC0, Unlicense) needs no notice; credit it in a comment instead. Techniques
@@ -761,10 +755,10 @@ stone exposed.
   varyings have a ceiling too: the water uses 14 of the 16 inter-stage variables WebGPU
   guarantees.
 - The water's reflection only finds what lies inside `Water.reflectionBounds`: the layout's box,
-  padded 2.5 m for the rim overhang and to a metre above the tallest tree (`TREE_HEIGHT`), down to
-  0.35 m below the sea. Anything opaque built off the island or above the trees (a boat, a hut, a
-  mast) must grow that box, or the sea will not reflect it; debug builds warn once if a mesh pokes
-  out.
+  padded 2.5 m for the rim overhang and 3 m above the meadow (`REFLECTOR_HEIGHT`: the islanders'
+  2 m plus a metre), down to 0.35 m below the sea. Anything opaque placed off the island or above
+  3 m (a palm, a boat, a hut, a mast) must grow that box, or the sea will not reflect it; debug
+  builds warn once if a mesh pokes out.
 - three picks one sampler type per depth texture per material. In a material whose shadow filter
   gathers a map (`SolarShadow`), read that map only by gather and compare by hand
   (`solarVolumeVisibility`); a comparison-sampler reference belongs in a material of its own.

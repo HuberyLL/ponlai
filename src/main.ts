@@ -23,8 +23,6 @@ import { buildFoliage } from './world/Foliage.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildTurfSkirt } from './world/RimSkirt.ts';
 import { buildFlowers } from './world/Flowers.ts';
-import { pickPlantSites, bakeGroundContact, bakeAnchorContact } from './world/PlantSites.ts';
-import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer } from './post/DynamicResolution.ts';
@@ -35,7 +33,7 @@ import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
-import { islandSurfaceHeight, ISLAND_TOP } from './world/WorldShapes.ts';
+import { islandSurfaceHeight } from './world/WorldShapes.ts';
 import { WALK_LOOP, walkLoopDistance } from './world/WalkLoop.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
@@ -397,12 +395,8 @@ shared.shoreXform.value.copy( shore.xform );
 // The floor's height shares the shoreline field's bounds, and so its transform.
 const seabedField = shoreTextureFrom( data.seabedField );
 const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
-// Shrubs, small trees, tussocks and tall flowers keep clear of the islander's walking loop.
+// Tussocks and tall flowers keep clear of the islander's walking loop.
 const walkDistance = walkLoopDistance( WALK_LOOP );
-// Shrubs and small trees on the island top, and the ambient shade they cast on the turf around
-// them, baked into the island's occlusion before its mesh is built.
-const plantSites = pickPlantSites( data.vegetation, walkDistance );
-for ( const m of data.meshes ) if ( m.kind === 'cliff' ) bakeGroundContact( m, plantSites, ISLAND_TOP );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
 const refractedSun = new RefractedSun( renderer, shared );
@@ -412,23 +406,20 @@ refractedSun.setCasters( world.group );
 refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
 const foliage = buildFoliage( data.vegetation, shared );
-// The grass and flowers read the anchors' sky visibility with the plants' shade in it.
-bakeAnchorContact( data.vegetation, plantSites );
 setGrassQuality( quality.grass );
 const grass = buildGrass( data.vegetation, shared, data.rimGround, walkDistance );
 const flowers = buildFlowers( data.vegetation, shared, walkDistance );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
-const plants = buildPlants( plantSites, shared );
-scene.add( grass, foliage, flowers, rimFoliage, turfSkirt, plants );
-installWindVariants( scene, [ grass, foliage, flowers, rimFoliage, turfSkirt, plants ] );
-installVegetationPrepass( scene, [ grass, foliage, rimFoliage, plants ] );
+scene.add( grass, foliage, flowers, rimFoliage, turfSkirt );
+installWindVariants( scene, [ grass, foliage, flowers, rimFoliage, turfSkirt ] );
+installVegetationPrepass( scene, [ grass, foliage, rimFoliage ] );
 {
 
 	// Everything that casts into the sun's map: the figures cast through their own map, and the
 	// sea floor's stones only into the refracted one.
 	const casters = new THREE.Box3();
-	for ( const root of [ world.group, foliage, flowers, rimFoliage, turfSkirt, plants ] ) {
+	for ( const root of [ world.group, foliage, flowers, rimFoliage, turfSkirt ] ) {
 
 		root.updateWorldMatrix( true, true );
 		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) casters.expandByObject( object ); } );
@@ -440,7 +431,7 @@ installVegetationPrepass( scene, [ grass, foliage, rimFoliage, plants ] );
 // the camera grabs the island's ground and keeps its pivot over the island
 controls.setIsland( world.group.children.filter( ( object ): object is THREE.Mesh => ( object as THREE.Mesh ).isMesh && object.castShadow ) );
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
-rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt, plants ] );
+rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt ] );
 mark( 'meshes' );
 setStatus( 'Waking the villagers…' );
 // A plain islander while the basic look settles (src/characters/looks.ts: bare head, so the
@@ -462,7 +453,7 @@ if ( GAME ) {
 	// loaded only here, so the art-review page does not carry the game's code
 	const { Game } = await import( './game/Game.ts' );
 	game = await Game.start( {
-		params, scene, camera, canvas: renderer.domElement, vegetation: data.vegetation, plants: plantSites,
+		params, scene, camera, canvas: renderer.domElement, vegetation: data.vegetation,
 		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment,
 		// every islander in the scene islander's proportions (the `islander` URL option)
 		loadLook: ( look ) => {
@@ -1159,5 +1150,5 @@ document.addEventListener( 'visibilitychange', () => {
 	}
 
 } );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
 	quality, dynamicResolution, pacer, submitBatch, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };

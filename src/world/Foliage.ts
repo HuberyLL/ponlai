@@ -308,18 +308,16 @@ type F = THREE.Node<'float'>;
  * (Santa Monica Studio; Rupert Renard, GDC 2019), each plant answers the local wind like a spring
  * at its own natural frequency, swinging wider in a gust rather than in step with its
  * neighbours. `rate` is the sway's
- * frequency (Hz, an even number of thousandths), and `slow` (0..1) eases it to half that rate for
- * taller plants. `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the
+ * frequency (Hz, an even number of thousandths). `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the
  * bent position and the wind field's ( direction x, direction z, lean, gust ) at the root. */
-export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F, rate: number, slow?: F ): { position: V3; field: THREE.Node<'vec4'> } {
+export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F, rate: number ): { position: V3; field: THREE.Node<'vec4'> } {
 
 	const field = windField( wind, root.xz ).toVar();
 	const phase = rootPhase( root.xz );
 	// The sway grows with the wind and in a gust; the lean follows the gust field.
 	const swing = wind.breeze.mul( field.w.mul( 0.45 ).add( 0.25 ) );
-	const sway = ( r: number, ph: F ) => slow ? mix( wave( wind.clock, r, ph ), wave( wind.clock, r / 2, ph ), slow ) : wave( wind.clock, r, ph );
-	const response = field.z.div( LEAN_REF ).add( sway( rate, phase ).mul( swing ) );
-	const sideways = sway( rate * 0.78, phase.mul( 1.7 ) ).mul( swing ).mul( 0.35 );
+	const response = field.z.div( LEAN_REF ).add( wave( wind.clock, rate, phase ).mul( swing ) );
+	const sideways = wave( wind.clock, rate * 0.78, phase.mul( 1.7 ) ).mul( swing ).mul( 0.35 );
 	const offset = vec3( field.x, 0, field.y ).mul( response ).add( vec3( field.y.negate(), 0, field.x ).mul( sideways ) ).mul( amplitude );
 	const rel = position.sub( root ).toVar();
 	return { position: normalize( rel.add( offset ).add( vec3( 0, 1e-5, 0 ) ) ).mul( length( rel ) ).add( root ), field };

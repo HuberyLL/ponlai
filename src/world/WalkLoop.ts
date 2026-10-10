@@ -1,9 +1,7 @@
 import * as THREE from 'three/webgpu';
 
 // The islander's walking loop (x, z), shared by the figure that walks it and by the planting that
-// must leave it clear: tussocks and tall flowers there would hide the walker's legs, shrubs and
-// trees would stand in the way, and tall shrubs and tree crowns farther off would still hide the
-// walker from the low orbit views unless they keep their distance (see PlantSites).
+// must leave it clear: tussocks and tall flowers there would hide the walker's legs.
 export const WALK_LOOP: [ number, number ][] = [ [ - 5.5, 1.5 ], [ - 1.5, 3.3 ], [ 3, 2.6 ], [ 5.6, 0 ], [ 3.8, - 2.8 ], [ - 0.5, - 2.7 ], [ - 4.5, - 1.8 ] ];
 
 /** The closed curve the walker follows through `points` (the same centripetal Catmull-Rom). */

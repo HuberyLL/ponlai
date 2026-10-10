@@ -31,7 +31,6 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance } from './WaterTransport.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
 import { ISLAND_TOP, layoutBounds } from '../world/WorldShapes.ts';
-import { TREE_HEIGHT } from '../world/PlantSites.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { SEABED_WARP } from '../world/types.ts';
 import { seabedAlbedo } from '../materials/SeabedLook.ts';
@@ -277,13 +276,13 @@ export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSt
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
 // its plants and its people. A box around them, from the tile layout (so it grows with the island):
 // out past the layout's edge by the rim's overhang (the turf skirt, the leaf mounds and trails over
-// the lip, a crown near the rim) plus a metre's margin, and up past the meadow by the tallest tree
-// (the top of TREE_HEIGHT, 3.5 m, above the islanders' 2 m) plus a metre.
+// the lip, a bush near the rim) plus a metre's margin, and up past the meadow by the islanders'
+// 2 m plus a metre.
 // Hits below REFLECTION_FLOOR under the sea level already weigh nothing (see traceSSR), so the box
-// ends there. Taller plants or a wider rim overhang must grow these, or their reflection is lost
-// (debug builds warn, see checkReflectionBounds).
+// ends there. A placed object off the island or above 3 m (a palm, a hut, a mast) or a wider rim
+// overhang must grow these, or its reflection is lost (debug builds warn, see checkReflectionBounds).
 const REFLECTOR_REACH = 1.5 + 1;
-const REFLECTOR_HEIGHT = TREE_HEIGHT[ 1 ] + 1;
+const REFLECTOR_HEIGHT = 3;
 const REFLECTION_FLOOR = 0.35;
 
 // How the reflection's march uses that box. cull: a ray that never meets it within the march's

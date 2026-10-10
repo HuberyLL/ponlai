@@ -13,7 +13,6 @@ type V2 = THREE.Node<'vec2'>;
  * `relief` (0 to 1, 0.5 neutral) lets the waterline creep into the ground's cracks first. */
 export const puddleField = Fn( ( [ xz, wetness, relief ]: [ V2, F, F ] ) => {
 
-	// PuddleHollows.ts repeats these hollows on the CPU (the plants keep out of them): change both.
 	const hollows = mx_noise_float( vec3( xz.div( 3.2 ), 0.37 ) ).mul( 0.7 )
 		.add( mx_noise_float( vec3( xz.div( 1.1 ), 4.1 ) ).mul( 0.3 ) ).mul( 0.5 ).add( 0.5 )
 		.add( relief.sub( 0.5 ).mul( 0.05 ) ).toVar();
