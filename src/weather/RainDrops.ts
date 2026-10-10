@@ -19,6 +19,7 @@ import {
 	length, normalize, cross, dot, smoothstep, clamp, exp, sin, sqrt, pow, mix,
 } from 'three/tsl';
 import type { RainCollision } from './RainCollision.ts';
+import { overlayVelocity, velocityOutput } from '../post/Motion.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -390,6 +391,9 @@ export class RainDrops {
 		const material = new THREE.MeshBasicNodeMaterial( { transparent: true, depthTest, depthWrite: false, side: THREE.DoubleSide } );
 		material.forceSinglePass = true;
 		material.name = name;
+		// under the temporal modes the drops draw in the overlay pass, which keeps the velocity under
+		// them; only their reactive weight counts (Motion.ts)
+		material.mrtNode = velocityOutput( overlayVelocity( 0 ) );
 		this.materials.push( material );
 		return material;
 
