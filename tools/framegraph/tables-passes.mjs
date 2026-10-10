@@ -1,8 +1,8 @@
-// The frame graph's passes: the graph Pipeline declares (src/post/Pipeline.ts: the scene half as
-// passes, the rest of the frame as callbacks), today's msaa4 graph with every pass of its own as it
-// will be declared once the fog, the view distance and the output become passes, their load-time
-// and runtime variants, a mock temporal graph, and the compiler's checks of order, culling,
-// hazards, readOptional and determinism. Run by tools/verify-framegraph.mjs.
+// The frame graph's passes: today's msaa4 graph with every draw a pass of its own, the graph
+// Pipeline declares (src/post/Pipeline.ts, mirrored in its order of declaration: it compiles to
+// today's graph), their load-time and runtime variants, a mock temporal graph, and the compiler's
+// checks of order, culling, hazards, readOptional and determinism. Run by
+// tools/verify-framegraph.mjs.
 
 import assert from 'node:assert/strict';
 import { GraphDecl, GraphError, compileGraph, resolveSize } from '../../src/post/graph/GraphCompiler.ts';
@@ -10,9 +10,9 @@ import { GraphDecl, GraphError, compileGraph, resolveSize } from '../../src/post
 const RENDER = { of: 'render' };
 const CANVAS = { of: 'canvas' };
 
-/** Today's msaa4 graph with a pass for every draw (Pipeline, AerialPerspective.render, FSR): the
- * graph Pipeline declares (declarePipeline below) once the sea fog, the view distance and the
- * output, callbacks there, become passes of their own. For the post options of a variant:
+/** Today's msaa4 graph with a pass for every draw (Pipeline, AerialPerspective.passes, FSR), as
+ * the expected table: the graph Pipeline declares (declarePipeline below) compiles to it. For the
+ * post options of a variant:
  * `fogScale` (1: the full-resolution fog of post=full-fog), `bankSize` (0: no-bank),
  * `dofDistance` (false: inline-coc), `fsrPort` (false: three-fsr), `samples` (the scene's). */
 export function declareToday( options = {} ) {
@@ -177,17 +177,16 @@ export function declareToday( options = {} ) {
 export const compileToday = ( options = {}, samples = 4, legacyDiscard ) =>
 	compileGraph( declareToday( options ).g, { sceneSamples: samples, ...( legacyDiscard ? { legacyDiscard } : {} ) } );
 
-/** The graph Pipeline declares (Pipeline's constructor and declarePasses, AerialPerspective.apply,
- * the FSR constructor), for the post options of a variant as in declareToday. The scene half is
- * passes; the sea fog, the view distance, the grade and the canvas pass are callbacks that draw
- * into the graph's targets themselves (made by renderTarget(): not the compiled targets below)
- * and declare only what they read, so the passes they depend on stay live. */
+/** The graph Pipeline declares (Pipeline's constructor and declarePasses, AerialPerspective.apply
+ * and passes), in its order of declaration, for the post options of a variant as in declareToday:
+ * every draw of the frame is a pass of its own. Compiled, it is today's graph (declareToday). */
 export function declarePipeline( options = {} ) {
 
 	const o = { fogScale: 0.5, bankSize: 2048, dofDistance: true, fsrPort: true, ...options };
 	const g = new GraphDecl();
 	const k = Math.round( 1 / o.fogScale );
 	const h = {};
+	// Pipeline's constructor
 	h.sceneColor = g.color( 'sceneColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat', samples: 'scene' } );
 	h.sceneDepth = g.depth( 'sceneDepth', { size: RENDER, type: 'Float', samples: 'scene' } );
 	h.linearDepth = g.color( 'linearDepth', { size: RENDER, format: 'RG', type: 'Float' } );
@@ -195,6 +194,9 @@ export function declarePipeline( options = {} ) {
 	h.surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: 'Red', type: 'Float' } );
 	h.display = g.color( 'display', { size: RENDER, format: 'RGBA', type: 'Float' } );
 	if ( o.dofDistance ) h.viewDistance = g.color( 'viewDistance', { size: RENDER, format: 'Red', type: 'Float' } );
+	if ( o.fsrPort ) h.easu = g.color( 'FSR.easu', { size: CANVAS, format: 'RGBA', type: 'HalfFloat' } );
+	h.canvas = g.import( 'canvas', { size: CANVAS }, true );
+	// AerialPerspective.apply
 	if ( o.bankSize > 0 ) h.fogBanks = g.color( 'fogBanks', { size: { of: 'fixed', width: o.bankSize, height: o.bankSize }, format: 'Red', type: 'HalfFloat' }, true );
 	if ( o.fogScale < 1 ) {
 
@@ -202,9 +204,8 @@ export function declarePipeline( options = {} ) {
 		h.fogMarch = g.color( 'fogMarch', { size: { of: 'render', divisor: k }, format: 'RGBA', type: 'HalfFloat' } );
 
 	}
-	// (FSR is built whichever upscale runs: three's FSR1Node is its A/B)
-	h.easu = g.color( 'FSR.easu', { size: CANVAS, format: 'RGBA', type: 'HalfFloat' } );
 
+	// declarePasses: the scene half
 	g.addPass( 'opaque', 'scene', ( b ) => {
 
 		h.sceneColor = b.write( h.sceneColor, { clear: true } );
@@ -251,21 +252,46 @@ export function declarePipeline( options = {} ) {
 		return { label: 'rain draw', when: () => true, whenLabel: 'rainVisible' };
 
 	} );
-	g.addPass( 'fog', 'callback', ( b ) => {
+	// AerialPerspective.passes
+	const FOG = 'composite (air, fog, veil)';
+	if ( h.fogBanks ) g.addPass( 'fogBank', 'quad', ( b ) => ( h.fogBanks = b.write( h.fogBanks ), { label: FOG, when: () => true, whenLabel: 'fog && bankDue' } ) );
+	if ( h.fogMarch ) {
 
-		b.read( h.surfaceDepth );
-		return { label: 'composite (air, fog, veil)', neverCull: true, size: o.fogScale < 1 ? { of: 'render', divisor: k } : { of: 'fixed', width: o.bankSize, height: o.bankSize } };
+		g.addPass( 'fogDepth', 'quad', ( b ) => ( b.read( h.surfaceDepth ), h.fogNearestDepth = b.write( h.fogNearestDepth ), { label: FOG, when: () => true, whenLabel: 'fog' } ) );
+		g.addPass( 'fogMarch', 'quad', ( b ) => {
 
-	} );
-	g.addPass( 'viewDistance', 'callback', ( b ) => ( b.read( h.surfaceDepth ), { label: 'tilt-shift blur', neverCull: true, size: RENDER } ) );
-	g.addPass( 'display', 'callback', ( b ) => {
+			b.readOptional( h.fogNearestDepth );
+			if ( h.fogBanks ) b.readOptional( h.fogBanks );
+			h.fogMarch = b.write( h.fogMarch );
+			return { label: FOG, when: () => true, whenLabel: 'fog' };
+
+		} );
+
+	}
+	const fogReads = [ h.fogMarch, h.fogNearestDepth, h.fogBanks ].filter( Boolean );
+	// declarePasses: the post passes
+	if ( h.viewDistance ) g.addPass( 'viewDistance', 'quad', ( b ) => ( b.read( h.surfaceDepth ), h.viewDistance = b.write( h.viewDistance ), { label: 'tilt-shift blur', when: () => true, whenLabel: 'dof > 0' } ) );
+	g.addPass( 'display', 'chain', ( b ) => {
 
 		b.readOptional( h.sceneColor );
 		b.read( h.surfaceDepth );
-		return { label: 'grade & look', neverCull: true, size: RENDER };
+		for ( const x of fogReads ) b.readOptional( x );
+		if ( h.viewDistance ) b.readOptional( h.viewDistance );
+		h.display = b.write( h.display );
+		return { label: 'grade & look' };
 
 	} );
-	g.addPass( 'output', 'callback', () => ( { label: 'output & FSR', neverCull: true, size: CANVAS } ) );
+	g.addPass( 'output', 'chain', ( b ) => ( b.read( h.display ), h.canvas = b.write( h.canvas ), { label: 'output', when: () => true, whenLabel: '!upscaling' } ) );
+	if ( h.easu ) {
+
+		g.addPass( 'easu', 'quad', ( b ) => ( b.read( h.display ), h.easu = b.write( h.easu ), { label: 'output & FSR', when: () => true, whenLabel: 'upscaling' } ) );
+		g.addPass( 'upscaledOutput', 'chain', ( b ) => ( b.readOptional( h.easu ), h.canvas = b.write( h.canvas ), { label: 'output & FSR', when: () => true, whenLabel: 'upscaling' } ) );
+
+	} else {
+
+		g.addPass( 'upscaledOutputThree', 'chain', ( b ) => ( b.read( h.display ), h.canvas = b.write( h.canvas ), { label: 'output & FSR', when: () => true, whenLabel: 'upscaling' } ) );
+
+	}
 	return { g, h };
 
 }
@@ -294,20 +320,14 @@ export const TODAY = [
 	{ name: 'upscaledOutput', kind: 'chain', label: 'output & FSR', when: 'upscaling', size: C, writes: [ w( 'canvas', C, null, null ) ], depth: null, target: 'canvas|-' },
 ];
 
-// The graph Pipeline declares: today's scene half, then the callbacks (no attachments of their own)
-const callback = ( name, label, size ) => ( { name, kind: 'callback', label, when: null, size, writes: [], depth: null, target: null } );
-export const PIPELINE = [
-	...TODAY.slice( 0, 6 ),
-	callback( 'fog', 'composite (air, fog, veil)', 'render:1:2:0' ),
-	callback( 'viewDistance', 'tilt-shift blur', R ),
-	callback( 'display', 'grade & look', R ),
-	callback( 'output', 'output & FSR', C ),
-];
-export const PIPELINE_READS = {
+// what each pass of today's graph reads (`resource@version:mode`, `?` optional)
+export const TODAY_READS = {
 	opaque: [], depthResolve: [ 'sceneDepth@1:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
 	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
-	rain: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ], fog: [ 'surfaceDepth@1:sample' ], viewDistance: [ 'surfaceDepth@1:sample' ],
-	display: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample' ], output: [],
+	rain: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ], fogBank: [], fogDepth: [ 'surfaceDepth@1:sample' ],
+	fogMarch: [ 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?' ], viewDistance: [ 'surfaceDepth@1:sample' ],
+	display: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample', 'fogMarch@1:sample?', 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?', 'viewDistance@1:sample?' ],
+	output: [ 'display@1:sample' ], easu: [ 'display@1:sample' ], upscaledOutput: [ 'FSR.easu@1:sample?' ],
 };
 
 const ALL = TODAY.map( ( p ) => p.name );
@@ -325,31 +345,25 @@ function compareTable( summary, expected ) {
 
 export const checks = [
 
-	[ 'pipeline: the graph Pipeline declares matches its table (the scene half, then the callbacks)', () => {
+	[ 'pipeline: the graph Pipeline declares is today\'s graph, in every variant (passes, reads, targets, ops)', () => {
 
 		const c = compilePipeline();
 		const s = c.summary();
-		compareTable( s, PIPELINE );
-		assert.deepEqual( Object.fromEntries( s.passes.map( ( p ) => [ p.name, p.reads ] ) ), PIPELINE_READS );
-		assert.deepEqual( c.conditional.map( ( i ) => c.decl.passes[ i ].name ), [ 'rain' ] );
-		// the callbacks draw into targets of their own (renderTarget()): only the scene half's are compiled
-		assert.deepEqual( s.targets.map( ( t ) => [ t.key, t.size, t.samples ] ), [
-			[ 'sceneColor|sceneDepth', R, 4 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'surfaceDepth|-', R, 1 ],
-		] );
-		const run = ( ...enabled ) => c.running( c.maskOf( enabled ) ).map( ( i ) => c.decl.passes[ i ].name );
-		assert.deepEqual( run(), [ 'opaque', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'fog', 'viewDistance', 'display', 'output' ], 'rain off' );
-		assert.deepEqual( run( 'rain' ), PIPELINE.map( ( p ) => p.name ), 'rain on' );
-		// the variants keep the passes; full-fog's callback scales with the bank map alone
-		assert.deepEqual( compilePipeline( { fogScale: 1 } ).summary().passes.find( ( p ) => p.name === 'fog' ).size, 'fixed:2048x2048' );
-		for ( const options of [ { fogScale: 1 }, { bankSize: 0 }, { dofDistance: false }, { fsrPort: false } ] ) {
+		compareTable( s, TODAY );
+		assert.deepEqual( Object.fromEntries( s.passes.map( ( p ) => [ p.name, p.reads ] ) ), TODAY_READS );
+		const dump = ( x ) => JSON.stringify( {
+			summary: x.summary(),
+			ops: Array.from( { length: x.fullMask + 1 }, ( _, m ) => [ x.ops( 'legacy', m ), x.ops( 'derived', m ) ] ),
+		} );
+		const variants = [ {}, { fogScale: 1 }, { fogScale: 0.25 }, { bankSize: 0 }, { dofDistance: false }, { fsrPort: false }, { fogScale: 1, bankSize: 0, dofDistance: false, fsrPort: false } ];
+		for ( const options of variants ) for ( const [ samples, discard ] of [ [ 4, undefined ], [ 1, undefined ], [ 4, [] ] ] ) {
 
-			const v = compilePipeline( options );
-			assert.deepEqual( v.passNames, PIPELINE.map( ( p ) => p.name ), JSON.stringify( options ) );
-			assert.deepEqual( v.culled, [], JSON.stringify( options ) );
+			const what = `${ JSON.stringify( options ) } samples ${ samples }${ discard ? ' store-scene' : '' }`;
+			const pipeline = compilePipeline( options, samples, discard ), today = compileToday( options, samples, discard );
+			assert.equal( dump( pipeline ), dump( today ), what );
+			assert.deepEqual( pipeline.culled, [], what );
 
 		}
-		// msaa=1: the same passes, single-sampled
-		assert.deepEqual( compilePipeline( {}, 1 ).summary().targets[ 0 ], { key: 'sceneColor|sceneDepth', size: R, samples: 1, pingPong: false } );
 
 	} ],
 
@@ -357,7 +371,7 @@ export const checks = [
 
 		const c = compilePipeline();
 		const rows = ( t ) => t.passes.map( ( p ) => [ p.pass, p.colors.map( ( x ) => `${ x.resource }:${ x.load }/${ x.store }${ x.resolve === null ? '' : x.resolve ? '/resolve' : '/no-resolve' }` ), p.depth && `${ p.depth.resource }:${ p.depth.load }/${ p.depth.store }`, p.rewrite ] );
-		const rainOn = c.ops( 'legacy', c.maskOf( [ 'rain' ] ) );
+		const rainOn = c.ops( 'legacy', c.maskOf( [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'output' ] ) );
 		assert.deepEqual( rows( rainOn ), [
 			[ 'opaque', [ 'sceneColor:clear/store/resolve' ], 'sceneDepth:clear/store', false ],
 			[ 'depthResolve', [ 'linearDepth:clear/store' ], null, false ],
@@ -365,10 +379,18 @@ export const checks = [
 			[ 'water', [ 'sceneColor:load/store/resolve' ], 'sceneDepth:load/store', false ],
 			[ 'surfaceResolve', [ 'surfaceDepth:clear/store' ], null, false ],
 			[ 'rain', [ 'sceneColor:load/discard/resolve' ], 'sceneDepth:load/discard', true ],
-			[ 'fog', [], null, false ], [ 'viewDistance', [], null, false ], [ 'display', [], null, false ], [ 'output', [], null, false ],
+			[ 'fogBank', [ 'fogBanks:clear/store' ], null, false ],
+			[ 'fogDepth', [ 'fogNearestDepth:clear/store' ], null, false ],
+			[ 'fogMarch', [ 'fogMarch:clear/store' ], null, false ],
+			[ 'viewDistance', [ 'viewDistance:clear/store' ], null, false ],
+			[ 'display', [ 'display:clear/store' ], null, false ],
+			[ 'output', [ 'canvas:clear/store' ], null, false ],
 		] );
 		assert.equal( rainOn.rewrites, 1 );
-		assert.equal( c.ops( 'legacy', c.maskOf( [] ) ).rewrites, 0, 'without the rain nothing is discarded (the water\'s stores stay)' );
+		const upscaled = c.ops( 'legacy', c.maskOf( [ 'rain', 'easu', 'upscaledOutput' ] ) );
+		assert.deepEqual( upscaled.running.slice( - 3 ), [ 'display', 'easu', 'upscaledOutput' ] );
+		assert.equal( upscaled.rewrites, 1, 'the upscale rewrites nothing' );
+		assert.equal( c.ops( 'legacy', c.maskOf( [ 'output' ] ) ).rewrites, 0, 'without the rain nothing is discarded (the water\'s stores stay)' );
 		const single = compilePipeline( {}, 1 );
 		assert.equal( single.ops( 'legacy', single.fullMask ).rewrites, 0, 'msaa=1: no samples to discard' );
 		const stored = compilePipeline( {}, 4, [] );
