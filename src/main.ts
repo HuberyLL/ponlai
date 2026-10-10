@@ -47,7 +47,7 @@ import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { AA_GUI_MODES, AA_MODE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
-import { motionCheck, motionState, onTaaCut, taaCut } from './post/Motion.ts';
+import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
@@ -97,7 +97,9 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 // three r186 keys its node builds and pipelines by the first attachment, not the whole layout (an
 // MRT picks its outputs by the textures' names): patched before any material builds, so a material
 // drawn into two layouts gets a build each (graph/ThreePatches.ts)
-if ( ! installCacheKeyPatches( renderer ) ) console.warn( 'three\'s cache keys are not patched: the temporal anti-aliasing modes will refuse to run' );
+// (the temporal modes' scene materials build one shader per MRT: Antialiasing.ts refuses them where
+// the patches cannot be installed)
+if ( ! installCacheKeyPatches( renderer ) ) console.warn( 'three\'s cache keys are not patched: the temporal anti-aliasing modes run as msaa' );
 // three submits every pass on its own; the frame reaches the GPU in a few submits instead
 // (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
 const submitBatch = new SubmitBatch( ( renderer.backend as unknown as { device: ConstructorParameters<typeof SubmitBatch>[ 0 ] } ).device, { debug: DEBUG } );
@@ -388,7 +390,13 @@ rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, s
 // resources on the canvas (src/post/graph/DebugView.ts): only then it appends its pass to the graph
 // before the pipeline compiles it.
 const fgview = DEBUG ? debugViewFromURL() : null;
-if ( fgview ) installDebugView( fgview, { exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE } );
+if ( fgview ) installDebugView( fgview, {
+	exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE,
+	motion: {
+		previousViewProjection: motionUniforms.previousViewProjection, projectionInverse: jitter.uniforms.unjitteredProjectionInverse,
+		jitterNdc: jitter.uniforms.ndc, opaqueBelow: ( MOTION_CLASS.opaque + MOTION_CLASS.vegetation ) / 2,
+	},
+} );
 const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ) );
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).
