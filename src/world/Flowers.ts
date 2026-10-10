@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, normalViewGeometry, vec3, float, clamp, mix, max, pow, dot, step, smoothstep as smoothstepN } from 'three/tsl';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
+import { anchorStream } from './Anchors.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
@@ -258,13 +259,13 @@ function flowerMaterial( shared: Shared, centre: number[], legacy = false ): THR
 
 }
 
-interface Plant { m: THREE.Matrix4; color: THREE.Color; stretch: number; root: THREE.Vector3; sward: number; visibility: number }
+export interface Plant { m: THREE.Matrix4; color: THREE.Color; stretch: number; root: THREE.Vector3; sward: number; visibility: number }
 
-/** Wildflower beds on the meadow. `walkDistance` (m from a point to the islander's loop) keeps
- * the beds, and the tall spikes further, off the path. */
-export function buildFlowers( veg: Float32Array, shared: Shared, walkDistance?: ( x: number, z: number ) => number ): THREE.Group {
+/** The wildflowers grown on the anchors `veg` (any of them: a bed belongs to its anchor), one list
+ * per species. `walkDistance` (m from a point to the islander's loop) keeps the beds, and the tall
+ * spikes further, off the path. */
+export function plantFlowers( veg: Float32Array, walkDistance?: ( x: number, z: number ) => number ): Plant[][] {
 
-	const rng = mulberry32( 31 );
 	const plants: Plant[][] = SPECIES.map( () => [] );
 	const n = veg.length / STRIDE;
 	const draws = new Float32Array( 6 );
@@ -273,9 +274,10 @@ export function buildFlowers( veg: Float32Array, shared: Shared, walkDistance?: 
 	for ( let i = 0; i < n; i ++ ) {
 
 		const k = i * STRIDE;
-		// A fixed count of draws per anchor, before any gate: the beds stay put wherever one changes.
-		for ( let d = 0; d < draws.length; d ++ ) draws[ d ] = rng();
 		const x = veg[ k ], y = veg[ k + 1 ], z = veg[ k + 2 ];
+		// The anchor's draws and its bed's come from streams of its own cell.
+		const rng = anchorStream( x, z, 31 );
+		for ( let d = 0; d < draws.length; d ++ ) draws[ d ] = rng();
 		if ( veg[ k + 7 ] > 0 || ! supportsMeadow( y, veg[ k + 4 ] ) ) continue;
 		// Beds stay a bed's width inside the coast, so every plant roots on the plateau.
 		if ( veg[ k + 6 ] > - 0.8 ) continue;
@@ -291,7 +293,7 @@ export function buildFlowers( veg: Float32Array, shared: Shared, walkDistance?: 
 		if ( clearance < species.clear + radius ) continue;
 		const color = new THREE.Color().fromArray( species.palette[ Math.floor( draws[ 3 ] * species.palette.length ) ] );
 		const count = 3 + Math.floor( draws[ 4 ] * 7 );
-		const bed = mulberry32( 7919 + i );
+		const bed = anchorStream( x, z, 7919 );
 		for ( let c = 0; c < count; c ++ ) {
 
 			// spread over the bed, denser toward its middle
@@ -299,7 +301,7 @@ export function buildFlowers( veg: Float32Array, shared: Shared, walkDistance?: 
 			const px = x + Math.cos( a ) * r, pz = z + Math.sin( a ) * r;
 			const py = islandSurfaceHeight( px, pz );
 			if ( Math.abs( py - y ) > 0.08 ) continue;
-			// The sward top here, as buildGrass grows it: the head stands a little clear of it.
+			// The sward top here, as plantGrass grows it: the head stands a little clear of it.
 			const growth = sampleMeadow( px, pz ).growth;
 			const sward = ( 0.17 + 0.14 * growth ) * 0.85;
 			const size = species.size[ 0 ] + bed() * ( species.size[ 1 ] - species.size[ 0 ] );
@@ -323,6 +325,12 @@ export function buildFlowers( veg: Float32Array, shared: Shared, walkDistance?: 
 		}
 
 	}
+	return plants;
+
+}
+
+/** Wildflower beds on the meadow: the plants `plantFlowers` grew, one instanced mesh per species. */
+export function buildFlowers( plants: Plant[][], shared: Shared ): THREE.Group {
 
 	const group = new THREE.Group();
 	group.name = 'flowers';
