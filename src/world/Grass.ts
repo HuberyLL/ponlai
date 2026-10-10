@@ -62,8 +62,11 @@ export interface GrassQuality {
 	/** Light through the canopy per vertex instead of per pixel: the dapple inside a blade is
 	 * lost close up, so it suits the lower tiers only. */
 	canopyPerVertex: boolean;
+	/** The least width of a blade on screen (render pixels, see `pixelWideBlade`) under the
+	 * temporal modes; 4x multisampling keeps 2 and one sample outside them 1. */
+	minWidth: number;
 }
-const grassQuality: GrassQuality = { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false };
+const grassQuality: GrassQuality = { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 };
 
 export function setGrassQuality( quality: Partial<GrassQuality> ): void {
 
@@ -139,7 +142,10 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 // widths left more of it, wider ones soften the blades further for little gain. Without
 // multisampling the coverage is dithered instead (`coverageDither`), and a blade dithered at half
 // its pixels across two reads as a dotted line, sharpened further by the upscale: one pixel keeps
-// such blades solid, with the meadow's brightness as at two.
+// such blades solid, with the meadow's brightness as at two. Under the temporal modes the dither
+// turns from frame to frame and the resolve averages it, so a blade keeps its two pixels there
+// (`GrassQuality.minWidth`, set by `buildGrass`), as at 4x: one pixel darkened the meadow and lost
+// the flower heads between the blades.
 const grassUniforms = {
 	minWidth: uniform( ALPHA_TO_COVERAGE ? 2 : 1 ), // render-target pixels
 	rimMinWidth: uniform( 0.75 ), // on the outer rim, see `rimEdge` in buildGrass
@@ -467,6 +473,9 @@ function batchOf( source: THREE.BufferGeometry, shape: TuftShape, material: THRE
  * islander's loop) keeps tussocks off the path. */
 export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): THREE.Group {
 
+	// (the tier's least blade width applies under the temporal modes only: 4x and one sample keep
+	// theirs, see `grassUniforms`)
+	if ( TEMPORAL ) grassUniforms.minWidth.value = grassQuality.minWidth;
 	const n = veg.length / STRIDE;
 	const lawn: Tuft[] = [], tussocks: Tuft[] = [], lawnThin: Tuft[] = [];
 	// The lawn's own draws keep their old order; everything added since draws from a second
