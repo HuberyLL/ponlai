@@ -55,14 +55,15 @@ try {
 			if ( view === 'clouds' ) {
 				const elevation = 25 * Math.PI / 180, azimuth = - 30 * Math.PI / 180;
 				s.controls.maxPolarAngle = Math.PI;
-				s.camera.position.set( 0, 8, 0 );
-				s.controls.target.set( Math.cos( elevation ) * Math.cos( azimuth ) * 100,
-					8 + Math.sin( elevation ) * 100, Math.cos( elevation ) * Math.sin( azimuth ) * 100 );
+				s.camera.position.set( s.land.centroid.x, 8, s.land.centroid.z );
+				s.controls.target.set( s.land.centroid.x + Math.cos( elevation ) * Math.cos( azimuth ) * 100,
+					8 + Math.sin( elevation ) * 100, s.land.centroid.z + Math.cos( elevation ) * Math.sin( azimuth ) * 100 );
 			} else {
 				const horizon = view === 'horizon';
 				s.controls.maxPolarAngle = 82 * Math.PI / 180;
-				s.controls.target.set( 1.5, 0.5, 1 );
-				s.camera.position.setFromSphericalCoords( horizon ? 110 : 58,
+				// the page's island and horizon views on its land
+				s.controls.target.fromArray( s.land.target );
+				s.camera.position.setFromSphericalCoords( ( horizon ? 110 : 58 ) * s.land.scale,
 					( horizon ? 82 : 50 ) * Math.PI / 180, ( horizon ? 125 : 318 ) * Math.PI / 180 ).add( s.controls.target );
 			}
 			s.controls.update();
