@@ -1,16 +1,25 @@
 import { REVISION } from 'three/webgpu';
 
 // Cache-key patches for three r186's node and pipeline caches, so a material drawn into targets
-// of different layouts (another MRT, other attachment formats) gets a shader and a pipeline per
-// layout. Exported for the frame graph's warm-up (M4); not installed yet.
+// of different layouts (another MRT, other attachment formats or names) gets a shader and a
+// pipeline per layout. Installed by main.ts right after `renderer.init()`, before any material
+// builds.
 //
-// In r186 `NodeManager.getForRenderCacheKey( renderObject )` is the render object's initial cache
-// key (material and dynamic keys) alone. The node builder reads the renderer's MRT and the target's
-// textures (their names pick the MRT outputs) while it builds, so the first build of a material,
-// with or without an MRT, served every later layout: a warm-up compile without the MRT poisoned the
-// MRT draw's shader. The backend's `getRenderCacheKey` takes only the first colour attachment's
-// format, and nothing of the context MRT, which carries the per-attachment blend modes
-// (WebGPUPipelineUtils reads `context.mrt.getBlendMode( texture.name )`).
+// In r186 a draw's node build is cached by `NodeManager.getForRenderCacheKey( renderObject )`, the
+// render object's initial cache key. That key ends in its render context's id, and the contexts are
+// keyed by the attachment count, the first attachment's format and type, samples, depth, the MRT
+// and the call depth, so those already tell builds apart; the other attachments' formats and the
+// textures' names do not, though the node builder reads them while it builds (an MRT picks its
+// outputs by name): two targets of one such layout whose later attachments differ shared the first
+// one's build. The backend's `getRenderCacheKey` takes only the first colour attachment's format,
+// and nothing of the context MRT, which carries the per-attachment blend modes (WebGPUPipelineUtils
+// reads `context.mrt.getBlendMode( texture.name )`). Both keys gain the MRT and every attachment's
+// format, type and name.
+//
+// A render object keeps the node key it was first built under: three asks for it again when it
+// disposes the object (NodeManager.delete), when its shared context may hold another target's
+// textures, and a key read then would miss the build's cache entry (leaking it) or evict another
+// layout's. (A render object never changes its build: three makes a new one when its key changes.)
 
 type Texture = { format: unknown; type: unknown; name: string };
 type RenderContext = { mrt?: { id: number } | null; textures: Texture[] | null };
@@ -30,7 +39,7 @@ function layoutKey( context: RenderContext ): string {
 const patched = new WeakSet<object>();
 
 /** Patches the renderer's node manager and backend (instances) so their cache keys include the
- * context MRT and the attachment layout. Call after `renderer.init()`. Returns false (and warns)
+ * context MRT and the whole attachment layout (the node key fixed per render object). Call after `renderer.init()`. Returns false (and warns)
  * on a three revision other than 186, whose internals it was written against, or before init. */
 export function installCacheKeyPatches( renderer: unknown, revision: string = REVISION ): boolean {
 
@@ -52,10 +61,18 @@ export function installCacheKeyPatches( renderer: unknown, revision: string = RE
 	patched.add( nodes );
 
 	const nodeKey = nodes.getForRenderCacheKey as Callable;
+	const keys = new WeakMap<RenderObject, string>();
 	nodes.getForRenderCacheKey = function ( this: unknown, renderObject: RenderObject ) {
 
-		const context = renderObject.context;
-		return `${ nodeKey.call( this, renderObject ) }|${ context.mrt?.id ?? '-' }|${ layoutKey( context ) }`;
+		let key = keys.get( renderObject );
+		if ( key === undefined ) {
+
+			const context = renderObject.context;
+			key = `${ nodeKey.call( this, renderObject ) }|${ context.mrt?.id ?? '-' }|${ layoutKey( context ) }`;
+			keys.set( renderObject, key );
+
+		}
+		return key;
 
 	};
 	const pipelineKey = backend.getRenderCacheKey as Callable;
