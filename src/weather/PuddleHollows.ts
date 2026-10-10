@@ -14,6 +14,15 @@
 // The fullest waterline of `puddleField` (its level at full wetness): above it the ground floods
 // in heavy rain. The ground's relief moves the line by at most 0.025.
 export const PUDDLE_FULL_LEVEL = 0.63;
+// The puddles never reach below this hollow value, whatever the ground's relief.
+const PUDDLE_DRY_LEVEL = PUDDLE_FULL_LEVEL - 0.035;
+
+/** Whether standing water can ever collect here, whatever the ground's relief: the plants keep off it. */
+export function puddleGround( x: number, z: number ): boolean {
+
+	return puddleHollows( x, z ) > PUDDLE_DRY_LEVEL;
+
+}
 
 /** The hollows of the puddle field at a world position (0 to 1; water stands above the level). */
 export function puddleHollows( x: number, z: number ): number {
