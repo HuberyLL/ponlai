@@ -14,6 +14,10 @@ import { createShoreBoundaryField, createShoreShelterField } from './ShoreWaveFi
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 
+// The reflected surface's texel (m): the first island's 96 m field over 512 texels,
+// kept as the shore field grows with the land, so the contact strip along the rock stays as sharp.
+const TEXEL = 96 / 512;
+
 // Tidewater's FFT supplies every incident wave. This rocky boundary is a Ponlai extension:
 // a weak mirrored response and whitewater use that wave's height and orbital velocity,
 // without adding the independent, single-period beach wave over the open sea.
@@ -25,17 +29,13 @@ export class ShoreWaves {
 	readonly shelter: THREE.TextureNode;
 	// RGBA: local reflected height, its x/z slopes, incident rock-contact energy.
 	readonly texture: THREE.TextureNode;
-	// RGBA: horizontal particle velocity, contact energy, filtered incident height.
-	readonly motion: THREE.TextureNode;
 	readonly surfaceAt: ( p: V2, time: F ) => THREE.Node<'vec4'>;
-	readonly sample: ( p: V2, time: F ) => THREE.Node<'vec4'>;
-	readonly incidentAt: ( p: V2 ) => THREE.Node<'vec4'>;
 	fieldRevision = 0;
 	private data: WorldData;
 	private revision = - 1;
 	private renderer: THREE.WebGPURenderer;
-	private targets: THREE.RenderTarget[];
-	private quads: THREE.QuadMesh[];
+	private target: THREE.RenderTarget;
+	private quad: THREE.QuadMesh;
 	private lastTime: number | undefined;
 	private lastReflection = - 1;
 	private readonly lastWeatherGain = new THREE.Vector3( - 1, - 1, - 1 );
@@ -85,7 +85,6 @@ export class ShoreWaves {
 			return surface;
 
 		} )();
-		this.incidentAt = p => incidence( p );
 		// `at` passes the shore distance and boundary already read at p's texel, so the centre
 		// sample does not read them a second time.
 		const reflectionHeight = ( p: V2, at?: { q: V2; sd: F; boundary: THREE.Node<'vec4'> } ) => Fn( () => {
@@ -116,72 +115,45 @@ export class ShoreWaves {
 			return height;
 
 		} )();
-		// The surface pass takes ( reflected height, flow, impact ), the motion pass ( flow, impact,
-		// incident height ): each from the reads and the incident waves this pass already made.
-		const evaluate = ( p: V2, motion: boolean ) => Fn( () => {
+		// Every channel is zero away from the rock: the reflection fades out by 3.5 m from it (its
+		// slopes read 0.12 m to either side) and the contact energy by 1.4 m. Only that strip
+		// evaluates the waves, so the pass costs by the coast's length rather than the field's area,
+		// which grows with the land.
+		const e = 0.12;
+		const surface = ( p: V2 ) => Fn( () => {
 
 			const q = toUV( p ).toVar(), edge = min( q.div( shared.shoreXform.zw ), vec2( 1 ).sub( q ).div( shared.shoreXform.zw ) );
-			const boundary = this.boundary.sample( q ).level( float( 0 ) ).toVar();
 			const sd = texture( shore, q ).level( float( 0 ) ).r.toVar();
-			const normal = boundary.ba.div( max( length( boundary.ba ), 1e-5 ) );
-			const incident = incidence( p ).toVar();
-			const flow = incident.yz.toVar(), impact = float( 0 ).toVar();
-			If( sd.greaterThan( 0 ).and( sd.lessThan( 3.5 ) ), () => {
+			const out = vec4( 0 ).toVar();
+			If( sd.greaterThan( - 1 ).and( sd.lessThan( 3.75 ) ), () => {
 
-				const reflected = incidence( p.sub( normal.mul( sd.mul( 2 ) ) ) ).toVar();
-				const response = boundary.g.mul( this.reflection ).mul( exp( sd.mul( - 0.8 ) ) )
-					.mul( float( 1 ).sub( smoothstep( 2, 3.5, sd ) ) );
-				const reflectedVelocity = reflected.yz.sub( normal.mul( dot( reflected.yz, normal ).mul( 2 ) ) );
-				flow.addAssign( reflectedVelocity.mul( response ) );
-				If( sd.lessThan( 1.4 ), () => {
+				const boundary = this.boundary.sample( q ).level( float( 0 ) ).toVar();
+				const normal = boundary.ba.div( max( length( boundary.ba ), 1e-5 ) );
+				const impact = float( 0 ).toVar();
+				If( sd.greaterThan( 0 ).and( sd.lessThan( 1.4 ) ), () => {
 
 					const contactP = p.sub( normal.mul( sd ) ).add( normal.mul( 0.16 ) );
 					const contact = incidence( contactP ).toVar();
-					// Compute contact before enforcing no flow into rock; projecting first erases impact.
 					const contactExposure = this.shelter.sample( toUV( contactP ) ).level( float( 0 ) ).r;
 					impact.assign( contactEnergy( contact.x, contact.yz, normal, sd, boundary.g, contactExposure ) );
 
 				} );
+				const inWater = sd.greaterThan( 0 ).and( min( edge.x, edge.y ).greaterThan( 1 ) );
+				const dx = reflectionHeight( p.add( vec2( e, 0 ) ) ).sub( reflectionHeight( p.sub( vec2( e, 0 ) ) ) ).div( 2 * e );
+				const dz = reflectionHeight( p.add( vec2( 0, e ) ) ).sub( reflectionHeight( p.sub( vec2( 0, e ) ) ) ).div( 2 * e );
+				out.assign( vec4( reflectionHeight( p, { q, sd, boundary } ), dx, dz, select( inWater, impact, float( 0 ) ) ) );
 
 			} );
-			const coast = float( 1 ).sub( smoothstep( 0.12, 0.7, sd ) );
-			flow.subAssign( normal.mul( dot( flow, normal ).min( 0 ) ).mul( coast ) );
-			const inWater = sd.greaterThan( 0 ).and( min( edge.x, edge.y ).greaterThan( 1 ) );
-			if ( motion ) return vec4( select( inWater, flow, vec2( 0 ) ), select( inWater, impact, float( 0 ) ), incident.x );
-			return vec4( reflectionHeight( p, { q, sd, boundary } ), select( inWater, flow, vec2( 0 ) ), select( inWater, impact, float( 0 ) ) );
+			return out;
 
 		} )();
-		const e = 0.12;
-		this.sample = ( p, _time ) => {
-
-			const centre = evaluate( p, false ).toVar();
-			const dx = reflectionHeight( p.add( vec2( e, 0 ) ) ).sub( reflectionHeight( p.sub( vec2( e, 0 ) ) ) ).div( 2 * e );
-			const dz = reflectionHeight( p.add( vec2( 0, e ) ) ).sub( reflectionHeight( p.sub( vec2( 0, e ) ) ) ).div( 2 * e );
-			return vec4( centre.x, dx, dz, centre.w );
-
-		};
-		this.targets = [ 'rockWaveSurface', 'rockWaveMotion' ].map( name => {
-
-			const target = new THREE.RenderTarget( 512, 512, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false } );
-			target.texture.name = name;
-			return target;
-
-		} );
-		this.texture = texture( this.targets[ 0 ].texture );
-		this.motion = texture( this.targets[ 1 ].texture );
-		this.quads = this.targets.map( ( _, i ) => {
-
-			const material = new THREE.NodeMaterial();
-			material.fragmentNode = Fn( () => {
-
-				const p = uv().div( shared.shoreXform.zw ).add( shared.shoreXform.xy );
-				if ( i === 0 ) return this.sample( p, float( 0 ) );
-				return evaluate( p, true );
-
-			} )();
-			return new THREE.QuadMesh( material );
-
-		} );
+		const width = Math.ceil( data.shore.nx * data.shore.cell / TEXEL ), height = Math.ceil( data.shore.nz * data.shore.cell / TEXEL );
+		this.target = new THREE.RenderTarget( width, height, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false } );
+		this.target.texture.name = 'rockWaveSurface';
+		this.texture = texture( this.target.texture );
+		const material = new THREE.NodeMaterial();
+		material.fragmentNode = Fn( () => surface( uv().div( shared.shoreXform.zw ).add( shared.shoreXform.xy ) ) )();
+		this.quad = new THREE.QuadMesh( material );
 		this.surfaceAt = ( p, _time ) => this.texture.sample( toUV( p ) ).level( float( 0 ) );
 
 	}
@@ -209,12 +181,8 @@ export class ShoreWaves {
 		if ( time === undefined || ( time === this.lastTime && this.lastReflection === this.reflection.value &&
 			this.lastWeatherGain.equals( fft.weatherGain.value ) ) ) return;
 		const previousTarget = this.renderer.getRenderTarget();
-		for ( let i = 0; i < this.targets.length; i ++ ) {
-
-			this.renderer.setRenderTarget( this.targets[ i ] );
-			this.quads[ i ].render( this.renderer );
-
-		}
+		this.renderer.setRenderTarget( this.target );
+		this.quad.render( this.renderer );
 		this.renderer.setRenderTarget( previousTarget );
 		this.lastTime = time;
 		this.lastReflection = this.reflection.value;
