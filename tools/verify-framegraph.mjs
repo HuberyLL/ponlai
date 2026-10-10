@@ -1,7 +1,8 @@
 // CPU checks of the frame graph (src/post/graph/): today's msaa4 graph and its variants declared
 // on the compiler, the order, culling, hazard and determinism rules, both attachment-op tables,
 // AttachmentOps stacking with other wrappers of the command encoder, the runtime on a mock
-// renderer (histories, resizes, clear flags) and its warm-up. Plain node, no GPU:
+// renderer (histories, resizes, clear flags), its warm-up and its introspection (describe, dot,
+// the counters, fgview's parsing). Plain node, no GPU:
 //   node tools/verify-framegraph.mjs [filter]
 // The tables live in tools/framegraph/, one file per concern, so later work edits disjoint files.
 
@@ -9,9 +10,10 @@ import { checks as passes } from './framegraph/tables-passes.mjs';
 import { checks as ops } from './framegraph/tables-ops.mjs';
 import { checks as runtime } from './framegraph/tables-runtime.mjs';
 import { checks as warm } from './framegraph/tables-warm.mjs';
+import { checks as introspect } from './framegraph/tables-introspect.mjs';
 
 const filter = process.argv[ 2 ] ?? '';
-const groups = [ [ 'passes', passes ], [ 'ops', ops ], [ 'runtime', runtime ], [ 'warm', warm ] ];
+const groups = [ [ 'passes', passes ], [ 'ops', ops ], [ 'runtime', runtime ], [ 'warm', warm ], [ 'introspect', introspect ] ];
 let failed = 0, ran = 0;
 for ( const [ group, list ] of groups ) {
 
