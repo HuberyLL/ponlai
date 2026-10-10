@@ -903,16 +903,26 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	private warmFrame: F | undefined = undefined;
 	private warmStarted = false;
 	private readonly latents: Latent[] = [];
+	// failures reported before the warm-up started (a latent for a pass the graph does not have)
+	private readonly earlyFailures: string[] = [];
 
 	/** Registers objects the scene pass `pass` draws only at times (rain, a bolt, a storm's spray),
 	 * and the compute kernels their owner dispatches with them, for the warm-up to compile before
 	 * their first use, shown or not. An object compiles as part of the scene it is in (the pass's
 	 * own when it is in none). Registered once the warm-up has started, they compile at once.
-	 * Resolves when their pipelines exist (or their compile failed: see `warmStats.failed`). */
+	 * Resolves when their pipelines exist (or their compile failed, or the graph has no such scene
+	 * pass: see `warmStats.failed` and the warning). */
 	latent( pass: string, objects: readonly THREE.Object3D[], kernels: readonly THREE.ComputeNode[] = [] ): Promise<void> {
 
 		const index = this.decl.passes.findIndex( ( p ) => p.name === pass );
-		if ( index < 0 || this.decl.passes[ index ].kind !== 'scene' ) throw new GraphError( `latent( '${ pass }' ): the graph has no scene pass of that name` );
+		if ( index < 0 || this.decl.passes[ index ].kind !== 'scene' ) {
+
+			// (a graph variant without that pass: its objects build on first use, as without a
+			// warm-up, rather than stopping the page that registers them)
+			this.warmFailed( `latent( '${ pass }' )`, new GraphError( 'the graph has no scene pass of that name' ) );
+			return Promise.resolve();
+
+		}
 		const latent: Latent = { index, objects: [ ...objects ], kernels: [ ...kernels ] };
 		if ( this.warmStarted ) return this.compileLatents( latent );
 		return new Promise<void>( ( resolve ) => this.latents.push( { ...latent, resolve } ) );
@@ -946,7 +956,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 		if ( this.executing ) throw new GraphError( 'warm() inside execute()' );
 		this.warmFrame = f;
 		this.warmStarted = true;
-		const stats: WarmStats = this.warmStats = { passes: 0, latents: 0, kernels: 0, primed: [], skipped: [], failed: [], ms: 0, primeMs: 0 };
+		const stats: WarmStats = this.warmStats = { passes: 0, latents: 0, kernels: 0, primed: [], skipped: [], failed: this.earlyFailures.splice( 0 ), ms: 0, primeMs: 0 };
 		const pending: Promise<unknown>[] = [];
 		const unreached: { index: number; why: string[] }[] = [];
 		for ( const index of compiled.live ) {
@@ -993,7 +1003,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 	private warmFailed( what: string, error: unknown ): void {
 
-		this.warmStats?.failed.push( `${ what }: ${ String( ( error as Error )?.message ?? error ).split( '\n' )[ 0 ] }` );
+		const entry = `${ what }: ${ String( ( error as Error )?.message ?? error ).split( '\n' )[ 0 ] }`;
+		( this.warmStats?.failed ?? this.earlyFailures ).push( entry );
 		console.warn( `FrameGraph.warm: '${ what }' did not compile ahead (it will on its first frame)`, error );
 
 	}

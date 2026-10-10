@@ -198,9 +198,21 @@ export const checks = [
 		scene.add( group );
 		const kernel = { isComputeNode: true };
 		const early = g.latent( 'opaque', [ group ], [ kernel ] );
-		assert.throws( () => g.latent( 'output', [ group ] ), /no scene pass/ );
+		// a pass the graph does not have (another variant): reported, never thrown at the page
+		const warn = console.warn;
+		console.warn = () => {};
+		try {
+
+			await g.latent( 'output', [ group ] );
+
+		} finally {
+
+			console.warn = warn;
+
+		}
 		await g.warm( { scene, camera: new THREE.PerspectiveCamera() } );
 		await early;
+		assert.match( g.warmStats.failed.join( ';' ), /latent\( 'output' \): the graph has no scene pass/, 'kept in the warm-up\'s failures' );
 		const sides = r.builds.filter( ( b ) => b.object.geometry === bolt.geometry ).map( ( b ) => b.side );
 		assert.deepEqual( sides, [ THREE.BackSide, THREE.FrontSide ], 'one copy per side, each built with its side' );
 		assert.ok( r.builds.every( ( b ) => b.object !== bolt ), 'the double-sided mesh itself goes as its copies' );
