@@ -1,4 +1,3 @@
-import type * as THREE from 'three/webgpu';
 import type { RenderScaleRule } from '../Quality.ts';
 
 // Render scale per quality tier (`QualityProfile.render` in Quality.ts). The scene renders at a
@@ -33,16 +32,5 @@ export function renderPixelRatio( width: number, height: number, rule: RenderSca
 export function outputPixelRatio( render: number ): number {
 
 	return Math.max( Math.min( devicePixelRatio, OUTPUT_PIXEL_RATIO_CAP ), render );
-
-}
-
-/** Fixes an `rtt()` pass to a size (before its resolution scale). Left alone it follows the
- * canvas, which is larger than the scene's render while the frame is upscaled. */
-export function sizeRtt( node: THREE.RTTNode, width: number, height: number ): void {
-
-	// an RTTNode resizes itself to the canvas every frame while its width is null
-	node.width = width;
-	node.height = height;
-	node.setSize( width, height );
 
 }

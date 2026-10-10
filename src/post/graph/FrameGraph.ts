@@ -61,7 +61,10 @@ export interface PassDef<F> extends PassFlags {
 	// quad: a full-screen material
 	quad?: THREE.QuadMesh;
 	// chain: a render pipeline (with the rtt and bloom passes its output node updates), or three's
-	// nodes that render passes of their own (`updateBefore`: a bloom chain), run in order
+	// nodes that render passes of their own (`updateBefore`: a bloom chain), run in order. The
+	// pass's clear flags, and any attachment ops derived for it, apply to every pass the nodes draw
+	// into its target: a bloom draws into its first target twice (that mip's blur, then the
+	// composite), so keep such a pass out of derived store rewrites, or give it a target drawn once.
 	pipeline?: THREE.RenderPipeline;
 	nodes?: THREE.Node[];
 	// compute: the kernels to dispatch
@@ -153,9 +156,10 @@ interface Physical {
 const filterOf = ( f: ResourceDesc[ 'filter' ] ) => f === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
 
 // Nodes rendering in `updateBefore` that keep nothing from one frame to the next, so priming
-// (rendering a pass once at startup) leaves no stale state in them: FSR1Node (`post=three-fsr`) and
-// rtt() passes, out of the walker's reach, and the blooms it reaches anyway.
-const STATELESS_NODES = new Set( [ 'FSR1Node', 'BloomNode', 'RTTNode' ] );
+// (rendering a pass once at startup) leaves no stale state in them: FSR1Node (`post=three-fsr`),
+// out of the walker's reach, and the blooms it reaches anyway. Any other node (an rtt() inside a
+// pass's material, which the graph's own passes no longer use) is not primed.
+const STATELESS_NODES = new Set( [ 'FSR1Node', 'BloomNode' ] );
 
 export class FrameGraph<F = unknown> implements LatentRegistry {
 
@@ -700,9 +704,9 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 		const ops = table?.passes.find( ( p ) => p.index === index ) ?? null;
 		const colourClear = ops ? ops.colors.some( ( c ) => c.load === 'clear' ) : decl.writes.some( ( w ) => drawsOver( decl, w ) );
 		// A pass without a depth resource clears whatever depth its target holds that the graph
-		// does not own: the canvas's depth buffer, and the depth of the targets a chain's own rtt()
-		// passes draw into (they inherit the renderer's flags), as three's defaults do; with the flag
-		// off each of those passes loaded a depth nothing reads. A graph target with depth always
+		// does not own: the canvas's depth buffer, and that of any target three's nodes draw into
+		// inside the pass (they inherit the renderer's flags; a bloom chain's have none), as three's
+		// defaults do; with the flag off each of those passes loaded a depth nothing reads. A graph target with depth always
 		// holds a depth resource, which a pass that does not declare it keeps (loads).
 		const foreignDepth = ! decl.depth && ! rt?.depthBuffer;
 		const depthClear = ops?.depth ? ops.depth.load === 'clear' : decl.depth?.clear === true || foreignDepth;

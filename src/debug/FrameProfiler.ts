@@ -236,33 +236,6 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 		}
 
-		/** Registers the render targets, quads and compute nodes reachable from `root` (own fields,
-		 * arrays and plain objects, `depth` levels down) that are not labelled yet. */
-		scan( root: unknown, label: string, depth = 3 ): void {
-
-			const seen = new Set<unknown>();
-			const visit = ( value: unknown, level: number ) => {
-
-				if ( ! value || typeof value !== 'object' || seen.has( value ) ) return;
-				seen.add( value );
-				const v = value as Record<string, unknown> & Named & { isRenderTarget?: boolean; isTexture?: boolean; isNode?: boolean; isMaterial?: boolean; isBufferGeometry?: boolean; isObject3D?: boolean };
-				if ( v.isRenderTarget ) { this.target( v, label ); return; }
-				if ( v.isQuadMesh || v.isComputeNode ) { if ( ! this.objects.has( v ) ) this.object( v, label ); return; }
-				if ( v.isTexture || v.isMaterial || v.isBufferGeometry || ( v.isObject3D && ! v.isScene ) ) return;
-				if ( level >= depth ) return;
-				if ( v.isNode && ! ( 'renderTarget' in v || '_quadMesh' in v ) && level > 0 ) return;
-				for ( const key of Object.keys( v ) ) {
-
-					if ( key === 'renderer' || key === 'parent' || key === 'children' ) continue;
-					visit( v[ key ], level + 1 );
-
-				}
-
-			};
-			visit( root, 0 );
-
-		}
-
 		/** Passes issued until the next call belong to `label` (the frame graph's pass running; null
 		 * when it ends), unless a target, object, pattern or parent pass labels them. */
 		graphPass( label: string | null ): void {
