@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, dot, pow, clamp, fract, sin, select, normalize,
 	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, screenCoordinate, ivec2, varying, varyingProperty, uniform,
-	smoothstep as smoothstepN, storage, instanceIndex, normalLocal, transformNormal, instanceColor,
+	smoothstep as smoothstepN, storage, instanceIndex, normalLocal, transformNormal, instanceColor, int,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
@@ -18,6 +18,8 @@ import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { ALPHA_TO_COVERAGE, markVegetation } from './Foliage.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { TEMPORAL } from '../post/Antialiasing.ts';
+import { jitter } from '../post/Jitter.ts';
 import { GrassCull, cullInputs, type CullRange } from './GrassCull.ts';
 import type { Shared } from '../shared.ts';
 
@@ -196,12 +198,19 @@ function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F ): V3 {
 // pixel, so overlapping blades share their covered pixels rather than adding up: the soil and
 // the flowers keep showing through a stack of widened blades as they do at 4x. A hash per blade
 // (alphaHash) drew independent pixels for each and closed the meadow over them.
+// Under the temporal modes the threshold steps through the pattern from frame to frame, the
+// pixel's Bayer value plus 5 times the jitter's dither index (Jitter.ts), mod 16: over 16 frames
+// every pixel takes every threshold once (5 is coprime to 16), so the resolve sees each blade's
+// coverage rather than a fixed pattern of its pixels, while the blades over a pixel still share
+// one threshold in each frame. A scene at rest takes the rest sequence's indices, so a paused
+// frame does not depend on the frames before it.
 const coverageDither = Fn( () => {
 
 	const p = ivec2( screenCoordinate.xy );
 	const x = p.x.bitAnd( 3 ), y = p.y.bitAnd( 3 );
 	const d = x.bitXor( y );
-	const index = d.bitAnd( 1 ).shiftLeft( 3 ).bitOr( y.bitAnd( 1 ).shiftLeft( 2 ) ).bitOr( d.bitAnd( 2 ) ).bitOr( y.shiftRight( 1 ) );
+	const bayer = d.bitAnd( 1 ).shiftLeft( 3 ).bitOr( y.bitAnd( 1 ).shiftLeft( 2 ) ).bitOr( d.bitAnd( 2 ) ).bitOr( y.shiftRight( 1 ) );
+	const index = TEMPORAL ? bayer.add( int( jitter.uniforms.ditherIndex ).mul( 5 ) ).bitAnd( 15 ) : bayer;
 	return float( index ).add( 0.5 ).div( 16 );
 
 } );
