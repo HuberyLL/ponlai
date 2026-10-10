@@ -29,7 +29,8 @@ export type PassKind = 'scene' | 'quad' | 'chain' | 'compute' | 'callback';
  * samples themselves (a load per sample). */
 export type ReadMode = 'sample' | 'samples';
 /** 'legacy' is the graph before derived ops: the multisampled stores discarded in the rain pass
- * only (Pipeline.interceptSceneStore). 'derived' follows the passes that run. */
+ * only (as Pipeline discarded them by hand before the graph ran its passes). 'derived' follows the
+ * passes that run. */
 export type OpsMode = 'legacy' | 'derived';
 export type Samples = number | 'scene';
 
@@ -151,6 +152,15 @@ const sizeKey = ( s: SizeClass ): string => s.of === 'fixed' ? `fixed:${ s.width
 export function sizeClassKey( s: SizeClass ): string {
 
 	return sizeKey( s );
+
+}
+
+/** The key of a render target: its colour attachments in order and its depth attachment, by
+ * resource name. The compiler makes one target per key; FrameGraph.renderTarget makes the same
+ * target ahead of the passes that will draw into it. */
+export function targetKey( colors: readonly string[], depth: string | null ): string {
+
+	return `${ colors.join( '+' ) }|${ depth ?? '-' }`;
 
 }
 
@@ -580,7 +590,7 @@ export class CompiledGraph {
 			const depth = p.depth ? p.depth.resource : null;
 			if ( colors.length === 0 && depth === null ) continue;
 			const first = resources[ colors[ 0 ] ?? depth! ];
-			const key = `${ colors.map( ( c ) => resources[ c ].name ).join( '+' ) }|${ depth === null ? '-' : resources[ depth ].name }`;
+			const key = targetKey( colors.map( ( c ) => resources[ c ].name ), depth === null ? null : resources[ depth ].name );
 			let t = byKey.get( key );
 			if ( ! t ) {
 

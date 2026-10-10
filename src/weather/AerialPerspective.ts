@@ -14,6 +14,7 @@ import {
 import type { Sky } from '../sky/Sky.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { compileInto } from '../post/Warm.ts';
+import type { GraphResources, SizeClass } from '../post/graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -163,12 +164,12 @@ export class AerialPerspective {
 	private lastStep = NaN;
 
 	// The fog march at a reduced resolution: the nearest of the surface depths it covers, and the
-	// fog's light (rgb) and optical depth (a) at that depth.
+	// fog's light (rgb) and optical depth (a) at that depth. (The frame graph owns these targets
+	// and the bank map's, and sizes them.)
 	private fogZRT: THREE.RenderTarget | null = null;
 	private fogRT: THREE.RenderTarget | null = null;
 	private fogZQuad: THREE.QuadMesh | null = null;
 	private fogQuad: THREE.QuadMesh | null = null;
-	private readonly fogRes = uniform( new THREE.Vector2( 1, 1 ) );
 	// below this depth similarity a pixel marches its own fog (0 turns the fallback off, for A/B:
 	// debugFlags.fogFallback = false)
 	private readonly fallbackBelow = uniform( 0.5 );
@@ -312,12 +313,13 @@ export class AerialPerspective {
 
 	/** `depth` is the linear view z of the nearest surface, the sea's included. `veil` returns the
 	 * colour `background` seen through the rain along a view direction, in front of content at a
-	 * given distance. Called once, by the frame graph. */
-	apply( color: V3, depth: THREE.Texture, sky: Sky, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
+	 * given distance. The bank map and the reduced march are declared on `graph`, which owns and
+	 * sizes their targets. Called once, by the frame graph. */
+	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
 
 		const { bankSize, fogScale } = this.options;
-		if ( bankSize > 0 ) this.buildBank( bankSize );
-		const reduced = fogScale < 1 ? this.buildFogPasses( depth, sky, Math.round( 1 / fogScale ) ) : null;
+		if ( bankSize > 0 ) this.buildBank( bankSize, graph );
+		const reduced = fogScale < 1 ? this.buildFogPasses( depth, sky, Math.round( 1 / fogScale ), graph ) : null;
 		const sceneDepth = texture( depth );
 		return Fn( () => {
 
@@ -338,10 +340,10 @@ export class AerialPerspective {
 
 	}
 
-	private buildBank( size: number ): void {
+	private buildBank( size: number, graph: GraphResources ): void {
 
-		this.bankRT = new THREE.RenderTarget( size, size, { type: THREE.HalfFloatType, format: THREE.RedFormat, depthBuffer: false } );
-		this.bankRT.texture.name = 'fogBanks';
+		// (persistent: the map holds until the next bake, frames later)
+		this.bankRT = graph.renderTarget( [ graph.color( 'fogBanks', { size: { of: 'fixed', width: size, height: size }, format: THREE.RedFormat, type: THREE.HalfFloatType }, true ) ] );
 		const material = new THREE.NodeMaterial();
 		material.name = 'Fog.Banks';
 		material.fragmentNode = Fn( () => {
@@ -366,13 +368,14 @@ export class AerialPerspective {
 	// none of whose texels lies near its depth (the sky between leaves, whose texels all took a
 	// leaf's depth) marches at full resolution (`full`): normalised, the weights would hand it the
 	// leaves' fog, and the foliage would speckle against the fog banks.
-	private buildFogPasses( depth: THREE.Texture, sky: Sky, k: number ): ( q: V2, z: F, full: () => { fogDepth: F; fogLight: V3 } ) => { fogDepth: F; fogLight: V3 } {
+	private buildFogPasses( depth: THREE.Texture, sky: Sky, k: number, graph: GraphResources ): ( q: V2, z: F, full: () => { fogDepth: F; fogLight: V3 } ) => { fogDepth: F; fogLight: V3 } {
 
 		const sceneDepth = texture( depth );
-		this.fogZRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RedFormat, depthBuffer: false } );
-		this.fogZRT.texture.name = 'fogNearestDepth';
-		this.fogRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, depthBuffer: false } );
-		this.fogRT.texture.name = 'fogMarch';
+		// 1 / k of the render, at least a texel: max( floor( w / k ), 1 )
+		const reduced: SizeClass = { of: 'render', divisor: k };
+		this.fogZRT = graph.renderTarget( [ graph.color( 'fogNearestDepth', { size: reduced, format: THREE.RedFormat, type: THREE.FloatType } ) ] );
+		this.fogRT = graph.renderTarget( [ graph.color( 'fogMarch', { size: reduced, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) ] );
+		const fogRes = graph.extent( reduced );
 		const a = Math.floor( k / 4 ), b = Math.floor( 3 * k / 4 );
 		const zMaterial = new THREE.NodeMaterial();
 		zMaterial.name = 'Fog.NearestDepth';
@@ -417,7 +420,7 @@ export class AerialPerspective {
 				const scale = max( abs( z ), 1 ).mul( FOG_DEPTH_TOLERANCE ).toVar();
 				for ( const [ ox, oy ] of [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ] ) {
 
-					const texel = ivec2( clamp( base.add( vec2( ox, oy ) ), vec2( 0 ), this.fogRes.sub( 1 ) ) ).toVar();
+					const texel = ivec2( clamp( base.add( vec2( ox, oy ) ), vec2( 0 ), fogRes.sub( 1 ) ) ).toVar();
 					const bl = ( ox ? f.x : float( 1 ).sub( f.x ) ).mul( oy ? f.y : float( 1 ).sub( f.y ) );
 					const dz = abs( ( textureLoad( tZ, texel ) as unknown as F ).sub( z ) ).div( scale );
 					const near = exp( dz.mul( dz ).mul( - Math.LN2 ) ).toVar();
@@ -446,18 +449,6 @@ export class AerialPerspective {
 			return { fogDepth, fogLight };
 
 		};
-
-	}
-
-	/** Sizes the reduced fog march to the scene's render. */
-	setSize( width: number, height: number ): void {
-
-		if ( ! this.fogRT ) return;
-		const k = Math.round( 1 / this.options.fogScale );
-		const w = Math.max( Math.floor( width / k ), 1 ), h = Math.max( Math.floor( height / k ), 1 );
-		this.fogRT.setSize( w, h );
-		this.fogZRT!.setSize( w, h );
-		this.fogRes.value.set( w, h );
 
 	}
 

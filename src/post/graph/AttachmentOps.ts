@@ -2,8 +2,9 @@ import type { OpsMode, OpsTable, PassOps } from './GraphCompiler.ts';
 
 // The frame graph's attachment ops applied to the render passes three records: a store discarded
 // where nothing later reads the attachment, a multisample resolve dropped where nothing samples it
-// before the next draw into the same samples. It generalises Pipeline.interceptSceneStore (which
-// discards the scene's multisampled colour and depth in the rain pass only).
+// before the next draw into the same samples. Its legacy table is what Pipeline did by hand before
+// the graph ran its passes: the scene's multisampled colour and depth discarded in the rain pass
+// only.
 //
 // three r186 offers a discard only together with a clear (`storeMultisampled*Buffer = false`) and
 // always resolves a multisampled target, so the descriptor is rewritten as it reaches WebGPU:

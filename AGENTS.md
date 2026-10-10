@@ -734,11 +734,16 @@ stone exposed.
 - three emits a light's shadow filter inside the branch of its frustum test, where derivatives are
   undefined for quads that straddle it; `installOpenShadow` evaluates the filter first and selects
   its result. Keep any filter that takes `dFdx` / `dFdy` out of `select()` / `If` branches.
-- Passes in `Pipeline.passes` are resized to the render by `sizeRtt`. The sea fog's reduced targets
-  are sized by `AerialPerspective.setSize` and its bank map has a fixed size: keep new reduced or
-  fixed passes out of that list. The last pass into `sceneRT` (the rain) discards its multisampled
-  samples through a hook on the backend's command encoder (three r186 opens one encoder per render
-  pass); a pass added after it that reads `sceneRT`'s samples or depth must move the discard.
+- The frame graph (`src/post/graph/`) owns the post targets and sizes them by their size class
+  from `Pipeline.setSize`: the render, a share of it (the sea fog's reduced targets), the canvas
+  (FSR's EASU target) or fixed (the fog's bank map). Declare a new target on the graph with its
+  class instead of sizing it by hand. three's rtt() and bloom passes inside the display chain
+  follow the render through the graph's resize hook (`Pipeline.passes` through `sizeRtt`): keep
+  reduced or fixed passes out of that list. The last pass into `sceneRT` (the rain) discards its
+  multisampled samples through the graph's attachment ops (`AttachmentOps` rewrites the pass's
+  stores on the backend's command encoder; three r186 opens one encoder per render pass): a pass
+  added after it that reads `sceneRT`'s samples or depth must declare that read and move the
+  legacy discard.
 - `renderer.compileAsync` collects its draws and reads the render target synchronously, before its
   first await: set the target, call it, restore the target at once, then await (`compileDraws`).
   It builds a transparent double-sided material's two passes after restoring its side, as one

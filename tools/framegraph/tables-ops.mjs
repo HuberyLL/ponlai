@@ -355,7 +355,7 @@ export const checks = [
 		const table = c.ops( 'legacy', c.maskOf( FULL ) );
 		const m = mockWebGPU();
 		const backend = new m.Backend();
-		// an instance wrapper installed before (as Pipeline.interceptSceneStore wraps the device)
+		// an instance wrapper installed before (as Pipeline's own scene-store hook wrapped the device)
 		const device = backend.device;
 		const create = device.createCommandEncoder.bind( device );
 		device.createCommandEncoder = ( d ) => {
