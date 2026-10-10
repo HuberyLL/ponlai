@@ -27,10 +27,12 @@ stone exposed.
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
   as established, already wet; without it the weather evolves on its own), `clouds` (coverage
-  override), `quality` (low, medium (the default), high: the tier of every knob in `src/Quality.ts`,
-  see Decisions; `tier.<knob>=<value>` overrides one of them for an A/B, e.g.
-  `tier.post.fogScale=0.5`), `tone` (neutral-hue, the default, agx-hue, agx, neutral), `look`
-  (soft-fantasy, the default, rich-fantasy, realistic).
+  override), `quality` (low, medium, high: the tier of every knob in `src/Quality.ts`, see
+  Decisions; without it the tier measured for this GPU, see `src/QualityDetect.ts`;
+  `tier.<knob>=<value>` overrides one of them for an A/B, e.g. `tier.post.fogScale=0.5`),
+  `autoQuality` (`detect` measures again, `off` keeps medium), `autoQualitySlow=<factor>` (scales
+  the measured GPU time, to try the choice a slower GPU gets), `tone` (neutral-hue, the default,
+  agx-hue, agx, neutral), `look` (soft-fantasy, the default, rich-fantasy, realistic).
   In the page, H toggles the GUI, Space pauses, R or 1/2/3 jump to the island, horizon and
   sky views, and F toggles a corner readout of the frame cadence. The GUI's Performance folder
   shows the same live lines (`src/debug/FrameStats.ts`, from the rendered frames' rAF timestamps):
@@ -132,7 +134,7 @@ stone exposed.
 ## Layout
 
 - `src/Quality.ts`: the quality tiers, every knob of the frame's cost in one table (see
-  Decisions).
+  Decisions); `src/QualityDetect.ts` chooses one for the GPU at startup.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics (the orbit's controls in
   `src/camera/OrbitFrameControls.ts`, the free flight in `FreeCameraControls.ts`).
   `window.__SOOMI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev
@@ -352,7 +354,7 @@ stone exposed.
   starlight. The night ambient rises as the sun's skylight fades after sunset, so twilight is
   never darker than the night; the night sky's own light (stars, airglow, moon disk, the sky's
   night floor, clouds) scales back to keep its tuned look in deep night.
-- Quality tiers (`src/Quality.ts`, one table): high, medium (the default) and low. High is the
+- Quality tiers (`src/Quality.ts`, one table): high, medium and low. High is the
   reference image; medium and low trade a little of it for time, each knob judged in captures:
   one screen-space reflection ray (its 14 steps grow by 1.51, so it reaches as far as high's),
   fewer refraction and water-column samples, a lighter sun-shadow filter (bilinear on
@@ -364,6 +366,19 @@ stone exposed.
   foam: one merged chain veiled a golden-hour island in glow, and the merged foam turned the
   crests' streaks into scattered lace. No knob alters the weather, clock or lighting state, so a
   tier changes the cost, not the mood. A change of tier reloads the page.
+- The tier is chosen at startup, as games do (`src/QualityDetect.ts`): on a first visit without
+  `quality`, the page loads as high and, behind the loading screen, times the GPU's busy time for
+  30 frames (after half a second of warm-up) at high's nominal render scale, the dynamic scale held
+  there (timestamp queries; without them each frame's time to the queue's completion, which counts
+  its JS too). A cost model per tier (a fixed part and a part that follows the pixel count, fitted
+  to all three tiers at two scales) turns that into each tier's predicted time; the highest one
+  under the paced interval less 2.8 ms wins, high judged at medium's render scale (a GPU that needs
+  high below medium's pixel count gets medium's image instead). The choice is kept in localStorage
+  with the GPU adapter's name and measured again only on request (the GUI's re-detect,
+  `autoQuality=detect`) or when the adapter changes; a lower tier reloads the page into it. It
+  never measures or switches while paused, under `quality`, or in an automated browser (captures,
+  profiles and probes keep medium unless they pass `autoQuality=detect`), so their frames are as
+  before. The Performance folder shows how the tier was chosen and the numbers behind it.
 - The scene is multisampled 4x on every tier (WebGPU has only 1 or 4 samples; there is no 2x):
   without it alpha to coverage becomes a dither, the meadow turns to dots and edges alias, so the
   tiers save through their render scale and knobs, never through multisampling.
