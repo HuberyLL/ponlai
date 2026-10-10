@@ -119,6 +119,16 @@ stone exposed.
   without it the page builds the same pipelines and image. Its JS times leave out the time blocked
   in `queue.submit`, the queue writes and `getCurrentTexture` (Chrome's backpressure once the GPU
   falls behind), reported apart.
+- Which tool for which question: our tools automate and judge (`profile-frame.mjs`: the scene
+  matrix, A/B deltas with their intervals, per-pass GPU time under our own pass names, the 60 fps
+  acceptance; `gpu-lock.mjs`: one timing run at a time; the parity capture set). To find out why
+  a frame was late or a hitch happened, use the existing tools rather than new metrics: a Chrome
+  trace (DevTools Performance panel, or a trace file opened in Perfetto) shows what the main
+  thread, the GPU process and the compositor did in each frame, and Xcode Instruments' Metal
+  System Trace, Game Performance and Animation Hitches templates show when frames reached the
+  display and what the GPU ran (`xcrun xctrace record --template 'Metal System Trace' --attach
+  <Chrome GPU process pid> --time-limit 10s --output <file>.trace`, then open it in Instruments).
+  Extend our tools only for what these do not give (automation, A/B statistics, pass names).
 - Headed browser runs (`profile-frame --display`, any script that opens a visible Chrome window)
   take over the screen of whoever is using the machine, so they run only while the user allows
   them: `node tools/display-gate.mjs allow [hours]` (and `deny`, `status`) keeps the permission in
