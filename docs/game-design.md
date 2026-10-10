@@ -66,6 +66,27 @@ The player should want to rebuild after watching their islanders walk the long w
   they cannot, and must delegate (put someone in charge of fishing, have someone lead the roof
   repairs). Leadership structure grows out of play rather than from a rule system.
 
+## How the island grows
+
+- **Trigger**: population. Each time the island reaches the next population step, it grows by
+  one piece of land. No story has to justify it.
+- **Where**: chosen at random, but from the centre outward: each new piece joins the island's
+  current edge near its middle, so the island grows all round rather than stretching one way,
+  and the player can plan around it. The shape must stay irregular and natural, like a real
+  island: never drifting toward a square or a circle.
+- **Known in advance**: the next piece is decided (and generated) ahead of time. The sea floor
+  there rises gradually as the population approaches the step, so the water turns shallower and
+  brighter and the player can see where land will come and plan for it.
+- **How it appears**: the new piece rises out of the sea, water running off its rock, with spray
+  and mist around it; the old coast it meets turns into inland ground under that cover.
+- **Incremental, never regenerated**: the world is built in chunks, and everything on the land
+  (rock, cliffs, soil, turf, the grass and flowers, the rim's hanging growth) and the sea floor
+  belongs to a chunk. What a chunk holds depends only on the land within a fixed distance of it,
+  so a new piece rebuilds only itself and its neighbours; everything else stays exactly as it
+  was. The sea floor near the island follows the coast locally in the same way.
+- The trees and shrubs on today's island were placeholders for its look; plants that matter to
+  play (coconut palms) are content placed in the world, not part of the terrain.
+
 ## Time and thinking
 
 - The world never stops while an islander thinks. A model call takes seconds; meanwhile the
@@ -91,5 +112,5 @@ The player should want to rebuild after watching their islanders walk the long w
 
 - Which primitive actions the islanders have, and what they perceive.
 - How a storm is announced and how much warning the player gets.
-- What makes the island grow (what the player gathers or achieves).
+- The population steps at which the island grows, and how big each new piece is.
 - How a new islander arrives.
