@@ -52,7 +52,10 @@ stone exposed.
   path), `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then
   steers by the frame intervals) and `frameRate` (the frame rate the loop holds on a faster
   display, over the tier's; `frameRate=0` renders on every refresh, as the profiler's uncapped runs
-  do). Runtime switches for one-page A/Bs live in
+  do), `submits=each` (three's own submit per pass, without the submit batching; at runtime
+  `flags.batchSubmits`; its tracking wrappers stay installed, so compare against `main` for their
+  JS cost) and `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`).
+  Runtime switches for one-page A/Bs live in
   `src/debug/DebugFlags.ts`. `islander` picks the islanders' proportions (`medium`, the default, or
   `stock` (the kit's own), `subtle` and `strong` builds of `Proportions.ts`; also in
   the GUI's Islander folder, which rebuilds the figure in place).
@@ -236,8 +239,8 @@ stone exposed.
   tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale (`FSR.ts`: an EASU pass,
   the sharpening in the canvas pass)), render scale per quality tier (`RenderScale.ts`) and
   high's dynamic resolution (`DynamicResolution.ts`: the scale steered by the GPU's frame time
-  from timestamp queries), the frame pacer (`FramePacer.ts`), the
-  scene's sample count (`SceneSamples.ts`).
+  from timestamp queries), the frame pacer (`FramePacer.ts`), the submit batching
+  (`SubmitBatch.ts`), the scene's sample count (`SceneSamples.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -497,6 +500,24 @@ stone exposed.
   Browsers stop a hidden tab's animation frames themselves, but an app's embedded browser kept
   running them: a page left in a hidden pane rendered high at 60 fps and took about half the GPU
   from the page on screen, whose scale fell from about 1.0 to its floor of 0.6.
+- A frame reaches the GPU in about 16 submits, not the 90 three makes (one per render pass,
+  compute group, copy and mipmap chain): `SubmitBatch.ts` holds three's command buffers for a
+  fraction of a millisecond and submits them a few at a time in the same order, staging a queue
+  write that would overtake a held command buffer using its buffer as a copy in its place, so the
+  GPU runs the same commands in the same order and the image is unchanged. On macOS each submit
+  is a Metal command buffer and the queue holds at most 64 uncompleted ones: with 90 a frame, a
+  submit waited 9-20 ms whenever the GPU ran a frame behind, in the thread of Chrome's GPU process
+  that also presents the page, and the display held a frame for 3 to 10 refreshes (the hitches
+  over 25 ms). The first command buffer after a pause goes at once: held for most of the tick,
+  the frames came late more often. A test page paced the same way and drawing the same GPU load
+  in one pass was presented a refresh late 0.1-0.4 % of the time on a 120 Hz display (still, and
+  dragged in a window), the scene 1.5-2 % before. On that display, against `submits=each` in the
+  same build (ABBA pairs), in a player's normal window dragged over the island the share of frames
+  presented a refresh or more late fell by about two fifths, the longest interval by a third or
+  more and the changes of cadence by about two fifths; full screen alike. The late frames left
+  follow major GCs, which the batching does not address: a GC releases the WebGPU objects
+  (encoders, passes, command buffers) of every frame since the last one, and the GPU process's work
+  on them is the same either way (fewer, merged encoders are left to the frame-graph refactor).
 - The island camera (`IslandCameraControls.ts`) works as island and city-building games do
   (Islanders, Dorfromantik; Anno, Frostpunk and Planet Zoo differ mostly in the buttons): a left
   drag grabs the ground (the point under the press stays under the pointer, solved exactly each
@@ -746,6 +767,18 @@ stone exposed.
   it resolves while that one is mapped. `GpuFrameTimer` (dynamic resolution) and the frame
   profiler each take over the pools' `resolveQueriesAsync`; only one may own them, so the page
   feeds the dynamic resolution from the profiler while the profiler times passes.
+- `SubmitBatch.ts` wraps the device's, queue's and encoders' methods (installed when it loads,
+  before the renderer) and holds submitted command buffers: a queue operation that must not
+  overtake them flushes them first (texture writes, `mapAsync`, `onSubmittedWorkDone`, `destroy`,
+  error scopes, the canvas's `configure`). Raw WebGPU work outside three goes through the same
+  wrappers; a new kind of queue operation needs a flush there, and a buffer a new encoder method
+  reads must be added to its tracking, or a write may overtake a held command buffer that reads it.
+  One invalid command buffer makes the queue reject every command buffer submitted with it, the
+  staged copies included: a pipeline that fails to build (three records its pass once before it
+  skips the pipeline) loses the rest of that batch, not one pass, and the frame may show stale
+  uniforms or missing passes. Debug builds stop batching after the device's first uncaptured
+  error (one warning); a profiler or tool that times the queue's calls wraps the natives under
+  the batching (`QUEUE_NATIVES` on the queue), not `queue.submit`, or it times them twice.
 - `Sky.ts` drives three's `PMREMGenerator` private steps (`_setSizeFromTexture`, `_init`,
   `_textureToCubeUV`, `_applyGGXFilter`, `_setViewport`) to spread its filter chain over frames;
   re-check them on a three upgrade. Without them it falls back to `fromEquirectangular`.
