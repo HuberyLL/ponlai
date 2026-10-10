@@ -4,7 +4,7 @@ import type { DetailTextures } from '../materials/ProceduralTextures.ts';
 import type { Caustics } from '../ocean/Caustics.ts';
 import type { Shared } from '../shared.ts';
 import { ISLAND_TOP } from './WorldShapes.ts';
-import type { WorldData, WorldOptions, ShoreField, RimGroundField } from './types.ts';
+import type { WorldData, WorldOptions, ShoreField, RimGroundField, SeabedBedField } from './types.ts';
 import type { PageJob, WorldReply } from './worldWorker.ts';
 import { WORLD_GENERATOR_HASH } from 'virtual:world-generator';
 
@@ -58,12 +58,13 @@ export function shoreTextureFrom( shore: ShoreField ): { tex: THREE.DataTexture;
 
 }
 
-// The seabed's beds (seagrass cover, pale-sand share) on its own warped grid: texel ( i, j ) holds
-// vertex ( i, j ), so a lookup at the inverse warp of a point's offset from the grid's centre (see
-// SEABED_WARP) interpolates what the floor's mesh interpolates there.
-export function seabedBedTextureFrom( seabed: WorldData[ 'seabed' ] ): THREE.DataTexture {
+// The floor's beds (seagrass cover, pale-sand share) over the shoreline field's bounds, in half
+// floats (filterable everywhere); read through the same transform as the shoreline field.
+export function seabedBedTextureFrom( beds: SeabedBedField ): THREE.DataTexture {
 
-	const tex = new THREE.DataTexture( seabed.bed, seabed.res + 1, seabed.res + 1, THREE.RGFormat, THREE.FloatType );
+	const half = new Uint16Array( beds.data.length );
+	for ( let k = 0; k < half.length; k ++ ) half[ k ] = THREE.DataUtils.toHalfFloat( beds.data[ k ] );
+	const tex = new THREE.DataTexture( half, beds.nx, beds.nz, THREE.RGFormat, THREE.HalfFloatType );
 	tex.minFilter = tex.magFilter = THREE.LinearFilter;
 	tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
 	tex.generateMipmaps = false;
@@ -122,23 +123,15 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 
 	}
 
-	// seabed
+	// the sea floor: its near tiles and the far floor, one mesh (their normals come with them:
+	// the floor function's slopes, which agree along every tile's border)
 	{
 
-		const { positions, ao, bed, res: n } = data.seabed;
-		const idx = new Uint32Array( n * n * 6 );
-		for ( let j = 0, k = 0; j < n; j ++ ) for ( let i = 0; i < n; i ++ ) {
-
-			const a = j * ( n + 1 ) + i;
-			idx[ k ++ ] = a; idx[ k ++ ] = a + n + 1; idx[ k ++ ] = a + 1;
-			idx[ k ++ ] = a + 1; idx[ k ++ ] = a + n + 1; idx[ k ++ ] = a + n + 2;
-
-		}
-
+		const { positions, normals, ao, bed, indices } = data.seabed;
 		const geo = new THREE.BufferGeometry();
 		geo.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
-		geo.setIndex( new THREE.BufferAttribute( idx, 1 ) );
-		geo.computeVertexNormals();
+		geo.setAttribute( 'normal', new THREE.BufferAttribute( normals, 3 ) );
+		geo.setIndex( new THREE.BufferAttribute( indices, 1 ) );
 		geo.setAttribute( 'ao', new THREE.BufferAttribute( ao, 1 ) );
 		geo.setAttribute( 'bed', new THREE.BufferAttribute( bed, 2 ) );
 		geo.computeBoundingSphere();
@@ -146,7 +139,7 @@ export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: 
 		mesh.name = 'seabed';
 		mesh.receiveShadow = true;
 		group.add( mesh );
-		triangles += idx.length / 3;
+		triangles += indices.length / 3;
 
 	}
 

@@ -1,10 +1,10 @@
 // The island's solid geometry as signed distance functions (metres, y up, sea level at 0).
 // Everything here runs in the mesh worker: the island block, the submerged
-// rocks, the seabed height and the shoreline distance at sea level. The island's shape is the
-// grown land (IslandGrowth.ts).
+// rocks and the land's distance (the sea floor is Bathymetry.ts). The island's shape is the grown
+// land (IslandGrowth.ts).
 
 import { Field2D, roundCorners } from './Field2D.ts';
-import { noise3, fbm2, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
+import { noise3, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
 import { CliffWall } from './Cliff.ts';
 import { GROWTH, type LandLattice } from './IslandGrowth.ts';
 import type { SDF, Rock } from './types.ts';
@@ -28,6 +28,11 @@ export type HeightFn = ( x: number, z: number ) => number;
 
 export const ISLAND_TOP = 3.1;
 export const ISLAND_BOTTOM = - 5.6;
+
+// The farthest the generator reads the land (m): the footprint's distance is clamped to +-this, so
+// whatever is made at a point depends only on the land within about this distance of it, and the
+// sea floor has given way to the open sea by then (Bathymetry.ts).
+export const LAND_REACH = 24;
 
 // ------------------------------------------------------------------ the land
 
@@ -68,10 +73,14 @@ export function landArea( land: LandLattice ): number {
 
 // ------------------------------------------------------------------ footprint
 
-// The signed distance to the land's edge, its corners rounded: fine (0.08 m) over a window, by
-// default the land's box and 10 m round it, and the lattice's own distance beyond. The fine
-// field's mask is the lattice's distance, interpolated, below zero; its window snaps out to a
-// 2 m grid, so its cells lie on a lattice anchored to the world, whatever the window.
+// The signed distance to the land's edge, its corners rounded and clamped to +-LAND_REACH: fine
+// (0.08 m) over a window, by default the land's box and LAND_REACH + 4 m round it, and the
+// lattice's own distance beyond. The default window holds every point nearer the land than
+// LAND_REACH clear of the fine field's 3 m blend toward the lattice (with a metre for the lattice's
+// own error), so the distance there is the fine field's alone, as a chunk's window over its own
+// part of the world sees it: both build the same floor. The fine field's mask is the lattice's distance, interpolated, below zero; its
+// window snaps out to a 2 m grid, so its cells lie on a lattice anchored to the world, whatever the
+// window.
 export function buildFootprint( land: LandLattice, window?: Bounds ): Footprint {
 
 	const bounds = landBounds( land );
@@ -81,7 +90,7 @@ export function buildFootprint( land: LandLattice, window?: Bounds ): Footprint 
 	const lattice = ( x: number, z: number ) => coarse.sample( x, z )
 		+ Math.hypot( Math.max( - H - x, 0, x - H ), Math.max( - H - z, 0, z - H ) );
 
-	const pad = 10, w = window ?? { x0: bounds.x0 - pad, z0: bounds.z0 - pad, x1: bounds.x1 + pad, z1: bounds.z1 + pad };
+	const pad = LAND_REACH + 4, w = window ?? { x0: bounds.x0 - pad, z0: bounds.z0 - pad, x1: bounds.x1 + pad, z1: bounds.z1 + pad };
 	const snap = ( v: number, round: ( v: number ) => number ) => round( v / 2 ) * 2;
 	const fine = Field2D.covering( snap( w.x0, Math.floor ), snap( w.x1, Math.ceil ), snap( w.z0, Math.floor ), snap( w.z1, Math.ceil ), 0.08 )
 		.fill( ( x: number, z: number ) => lattice( x, z ) < 0 ? - 1 : 1 )
@@ -92,10 +101,11 @@ export function buildFootprint( land: LandLattice, window?: Bounds ): Footprint 
 		fine: rounded,
 		coarse,
 		bounds,
-		// signed horizontal distance to the island's edge (m)
+		// signed horizontal distance to the island's edge (m), clamped to +-LAND_REACH
 		dist( x: number, z: number ) {
 
-			return rounded.contains( x, z ) ? sampleFineOrCoarse( rounded, lattice, x, z ) : lattice( x, z );
+			const d = rounded.contains( x, z ) ? sampleFineOrCoarse( rounded, lattice, x, z ) : lattice( x, z );
+			return Math.max( - LAND_REACH, Math.min( LAND_REACH, d ) );
 
 		},
 	};
@@ -227,11 +237,11 @@ function debrisPatches( fp: Footprint, rng: Rng, coast: number ): DebrisPatch[] 
 	while ( patches.length < count && tries ++ < count * 900 ) {
 
 		const outer = patches.length >= inner;
-		const pad = outer ? 25 : 10;
+		const pad = outer ? LAND_REACH : 10;
 		const x = b.x0 - pad + rng() * ( b.x1 - b.x0 + pad * 2 );
 		const z = b.z0 - pad + rng() * ( b.z1 - b.z0 + pad * 2 );
 		const d = fp.dist( x, z );
-		if ( d < ( outer ? 9 : 1.6 ) || d > ( outer ? 24 : 6.5 ) ) continue;
+		if ( d < ( outer ? 9 : 1.6 ) || d >= ( outer ? LAND_REACH : 6.5 ) ) continue;
 		if ( patches.some( ( p ) => Math.hypot( p.x - x, p.z - z ) < ( outer ? 8 : 5.2 ) ) ) continue;
 		const e = 0.2;
 		const nx = fp.dist( x + e, z ) - fp.dist( x - e, z );
@@ -426,8 +436,9 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF )
 	const place = ( x: number, z: number, size: number, thickness: number, rot: number ): boolean => {
 
 		if ( rocks.length >= rockLimit ) return false;
+		// (an outer patch's stones lie within its ellipse, a few metres past the patch's centre)
 		const d = fp.dist( x, z );
-		if ( d < Math.max( 0.36, size * 0.32 ) || d > 29 ) return false;
+		if ( d < Math.max( 0.36, size * 0.32 ) ) return false;
 		const r = build( x, z, size, thickness, rot, rng() );
 		if ( ! r || ! clearOfRocks( r ) || ( d < 6 && ! wideOfIsland( r ) ) ) return false;
 		rocks.push( r );
@@ -596,13 +607,13 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF )
 	// Isolated fragments are sparse on the outer shelf, leaving broad sand corridors between
 	// the denser cliff debris and the few offshore patches: one per 9 m of coast.
 	let isolated = 0, tries = 0;
-	const pad = 25, isolatedCount = Math.round( coast / 9.1 );
+	const pad = LAND_REACH, isolatedCount = Math.round( coast / 9.1 );
 	while ( isolated < isolatedCount && rocks.length < rockLimit && tries ++ < 300 * isolatedCount ) {
 
 		const x = b.x0 - pad + rng() * ( b.x1 - b.x0 + pad * 2 );
 		const z = b.z0 - pad + rng() * ( b.z1 - b.z0 + pad * 2 );
 		const d = fp.dist( x, z );
-		if ( d < 9 || d > 26 ) continue;
+		if ( d < 9 || d >= LAND_REACH ) continue;
 		if ( patches.some( ( p ) => Math.hypot( p.x - x, p.z - z ) < p.major * 1.4 ) ) continue;
 		if ( place( x, z, 0.19 + rng() * 0.50, 0.30 + rng() * 0.45, rng() * Math.PI ) ) isolated ++;
 
@@ -681,40 +692,5 @@ export function makeRockSDF( r: Rock ): SDF {
 
 	rockSDF.tint = ( x, y, z ) => Math.min( 1, Math.max( 0, ( r.seed * 0.618034 ) % 1 + noise3( x * 0.5, y * 0.4, z * 0.5 ) * 0.06 ) );
 	return rockSDF;
-
-}
-
-// ------------------------------------------------------------------ seabed
-
-// height of the sea floor (m, negative): a shallow lagoon around the island whose floor shows
-// through the water, dropping off within ~20 m into deep, even-coloured water; gentle sand waves.
-// The shelf's width and depth vary along the coast through fields sampled in world space, so a
-// larger footprint gets its own wide and narrow stretches without any per-tile tuning. The cliff
-// foot (talus, benches) is shaped afterwards by `shapeShelf` in Bathymetry.ts.
-export function makeSeabed( fp: Footprint ): HeightFn {
-
-	return function seabedHeight( x: number, z: number ) {
-
-		const d = fp.dist( x, z );
-		const dd = Math.max( d, 0 );
-		// Shelf width: 0.6 to 1.8 times the old even ring, changing over a few
-		// tens of metres of coast; a smaller warp keeps the drop-off from tracing the coastline.
-		const width = Math.min( 1.8, Math.max( 0.6, 1.15 + fbm2( x * 0.028 + 1.7, z * 0.028 - 4.2, 3 ) * 2.4 ) );
-		const warp = fbm2( x * 0.075 - 6.3, z * 0.075 + 2.9, 2 ) * 6 * smoothstep( 2, 8, dd );
-		const ds = Math.max( 0, dd / width + warp );
-		// a shallow lagoon: sand visible everywhere near the island, the reef edge drops off far out
-		let h = - 1.6
-			- 1.2 * smoothstep( 0, 5, dd )
-			- 3.6 * smoothstep( 6, 26, ds )
-			- 6.0 * smoothstep( 40, 110, dd );
-		// the shelf's own level rises and sinks by about half a metre along the coast
-		h += fbm2( x * 0.045 - 2.2, z * 0.045 + 7.4, 3 ) * 2.2 * smoothstep( 2, 6, dd ) * ( 1 - smoothstep( 22, 40, dd ) );
-		// broad undulation and a sandbar or two
-		h += fbm2( x * 0.035 + 3.0, z * 0.035, 4 ) * 1.2 * smoothstep( 2, 14, dd );
-		h += Math.max( 0, noise3( x * 0.06, 9.1, z * 0.06 ) ) * 1.4 * smoothstep( 6, 18, dd ) * ( 1 - smoothstep( 30, 50, dd ) );
-
-		return h;
-
-	};
 
 }
