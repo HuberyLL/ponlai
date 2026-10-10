@@ -222,8 +222,13 @@ stone exposed.
   of size, gullies, a wave-cut notch that follows the coast's exposure; per-vertex facet, scar
   age, bed, lip, overhang and exposure detail for the material), sea floor
   (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
-  cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
-  tile), shoreline field (over the land's box and 32 m round it, on a 32 m grid),
+  cliff foot, blended onto the open sea, in `Bathymetry.ts`; drawn as 0.5 m near tiles, one per
+  world-anchored 16 m cell with land within 26 m but not under the land, and one far mesh on the
+  open sea's 4 m lattice round them (`SeabedTile.ts`), its seagrass beds and pale sand baked per
+  vertex, so they never tile; a tile's normals are the floor function's slopes, not `computeVertexNormals`, so
+  neighbouring tiles agree bit for bit along their borders; the water reads the rendered floor's
+  height and its beds from fields over the shoreline field's bounds), shoreline field (over the
+  land's box and 32 m round it, on a 32 m grid),
   vegetation anchors; instanced grass, rim bushes and flowers on the island top, a turf skirt over
   the lip, with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds
   on the lip. The alpha-to-coverage vegetation (grass, bushes, rim leaves) draws after a depth
@@ -369,7 +374,16 @@ stone exposed.
   waterfalls. Moss and greenery on the wall stay in its upper 1.2 m.
 - Around the island, the shelf's width and depth, the talus at the cliff foot, its shallow benches
   and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
-  noise. The floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
+  noise. The land's distance is clamped to 24 m (`LAND_REACH`), so the floor at a point depends
+  only on the land within about 24 m of it (the footprint's fine field covers the land and 28 m
+  round it, so the page and a chunk built over its own window read the same distance). The shelf
+  gives way to the open sea from a start 6 to 12 m out that comes and goes along the coast (a
+  noise field over a few tens of metres), blending onto it by 24 m; the shelf only lifts the floor
+  above the open sea. The blend stays 12 m or longer: the shelf can stand 3 to 5 m above the open
+  sea, and shorter blends cut that drop as walls of 40 to 60 degrees, steeper than sand rests.
+  Beyond, the floor is the open sea: world noise alone at an even mean depth (about -9.35 m), on
+  a world 4 m lattice the near tiles reproduce exactly, with no deepening toward any centre. The
+  floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
   nothing breaks the surface. Fallen blocks gather below the cliff's recent scars and are walked
   out from the coast until their traced outline clears the island's solid, so they rest against
   the cliff's underwater toe wherever it runs; other stones keep a wider berth.
