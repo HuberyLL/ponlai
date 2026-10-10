@@ -387,7 +387,9 @@ stone exposed.
   and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
   noise. The land's distance is clamped to 24 m (`LAND_REACH`), so the floor at a point depends
   only on the land within about 24 m of it (the footprint's fine field covers the land and 28 m
-  round it, so the page and a chunk built over its own window read the same distance). The shelf
+  round it, so the page and a chunk built over its own window read the same distance but for its
+  last bits, which follow the fine field's origin: the floor's float32 vertices round them away,
+  while a cliff scar's choice can still turn on them, so the wall is not yet chunk-exact). The shelf
   gives way to the open sea from a start 6 to 12 m out that comes and goes along the coast (a
   noise field over a few tens of metres), blending onto it by 24 m; the shelf only lifts the floor
   above the open sea. The blend stays 12 m or longer: the shelf can stand 3 to 5 m above the open
