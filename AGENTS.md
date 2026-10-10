@@ -173,7 +173,11 @@ stone exposed.
   `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   (a few checks of the game's skeleton: the clock, the ground and a path, a body walking to a
   point, a save round trip, a brain's late answer; its island is in `tools/game-fixture.mjs`) are
-  CPU-only (plain `node`). GPU probes take the GPU lock; keep
+  CPU-only (plain `node`), as is `tools/verify-growth-shape.mjs` (the island's growth over 32
+  seeds and 36 steps: the coast's solidity, elongation and share along the lattice axes, that a
+  grown land equals the same steps taken one at a time through a saved land, and the lattice's
+  margin; it writes a sheet of eight seeds to `artifacts/growth/shape-sheet-<label>.png`). GPU
+  probes take the GPU lock; keep
   other pages that render the scene closed.
 
 ## Layout
