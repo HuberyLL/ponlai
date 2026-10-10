@@ -310,7 +310,8 @@ export function viewNames( group = 'parity' ) {
 
 }
 
-export const viewEval = ( name ) => wrap( VIEWS[ name ].eval, VIEWS[ name ].crops ?? [] );
+// (`crops` names other anchors than the view's own: tools/capture-clip.mjs --crops)
+export const viewEval = ( name, crops = VIEWS[ name ].crops ?? [] ) => wrap( VIEWS[ name ].eval, crops );
 
 if ( process.argv[ 1 ] && path.resolve( process.argv[ 1 ] ) === fileURLToPath( import.meta.url ) ) {
 
