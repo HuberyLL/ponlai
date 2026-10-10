@@ -32,7 +32,8 @@ export interface Rock { x: number; z: number; s: number; sy: number; y: number; 
 export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: number; z0: number; cell: number }
 
 // The seabed grid's warp, dense around the island and sparse toward the horizon: vertex i of
-// res + 1 lies at sign( u ) * |u|^SEABED_WARP * size / 2, where u = i / res * 2 - 1.
+// res + 1 lies at centre + sign( u ) * |u|^SEABED_WARP * size / 2, where u = i / res * 2 - 1 and
+// the centre is the land's centroid.
 export const SEABED_WARP = 1.9;
 
 export const VEGETATION_STRIDE = 9;
@@ -53,10 +54,12 @@ export interface RimStrand { points: Float32Array; seed: number; lip: number; pa
 export interface RimSkirtData { points: Float32Array; info: Float32Array; loops: Int32Array }
 
 export interface WorldData {
+	// the grown land (LandLattice.toBytes)
+	land: Uint8Array;
 	meshes: NamedMesh[];
 	rocks: Rock[];
 	// bed: seagrass cover and pale-sand share per vertex (see seabedBeds)
-	seabed: { positions: Float32Array; ao: Float32Array; bed: Float32Array; res: number; size: number };
+	seabed: { positions: Float32Array; ao: Float32Array; bed: Float32Array; res: number; size: number; centre: [ number, number ] };
 	// Turf anchors: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
 	// (0 island), local sky visibility. Placement still uses the first eight.
 	vegetation: Float32Array;
@@ -73,10 +76,12 @@ export interface WorldData {
 }
 
 export interface WorldOptions {
+	// the land: the world's seed and the growth steps taken (IslandGrowth.ts's growLand)
+	worldSeed?: number;
+	step?: number;
 	islandVoxel?: number;
 	seabedRes?: number;
 	seabedSize?: number;
-	shoreSize?: number;
 	shoreCell?: number;
 	// Disable only the cross-object contact bake for CPU comparison; geometry stays identical.
 	contactOcclusion?: boolean;

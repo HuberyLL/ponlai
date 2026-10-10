@@ -30,7 +30,7 @@ import { RefractedSun, refractedSunDirectionNode, refractedSunBeamScaleNode } fr
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance } from './WaterTransport.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
-import { ISLAND_TOP, layoutBounds } from '../world/WorldShapes.ts';
+import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { SEABED_WARP } from '../world/types.ts';
 import { seabedAlbedo } from '../materials/SeabedLook.ts';
@@ -232,9 +232,10 @@ export interface WaterInputs {
 	shore: THREE.Texture;
 	seabedHeight: THREE.Texture; // the rendered floor's height over the shoreline field's bounds
 	// The floor's look: its beds on the floor mesh's warped grid of res + 1 vertices a side over
-	// size metres (seabedBedTextureFrom), and the terrain's normalsB detail texture, whose alpha is
-	// the sand's broad variation.
-	seabedLook: { beds: THREE.Texture; res: number; size: number; variation: THREE.Texture };
+	// size metres round centre (seabedBedTextureFrom), and the terrain's normalsB detail texture,
+	// whose alpha is the sand's broad variation.
+	seabedLook: { beds: THREE.Texture; res: number; size: number; centre: [ number, number ]; variation: THREE.Texture };
+	land: Bounds; // the land's box (WorldShapes.landBounds), for reflectionBounds
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
 	sunShadow: SunShadow;
@@ -274,8 +275,8 @@ export interface WaterQuality {
 export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' };
 
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
-// its plants and its people. A box around them, from the tile layout (so it grows with the island):
-// out past the layout's edge by the rim's overhang (the turf skirt, the leaf mounds and trails over
+// its plants and its people. A box around them, from the land's box (so it grows with the island):
+// out past the land's edge by the rim's overhang (the turf skirt, the leaf mounds and trails over
 // the lip, a bush near the rim) plus a metre's margin, and up past the meadow by the islanders'
 // 2 m plus a metre.
 // Hits below REFLECTION_FLOOR under the sea level already weigh nothing (see traceSSR), so the box
@@ -408,7 +409,7 @@ export class Water {
 
 		this.inputs = inputs;
 		this.quality = { ...DEFAULT_WATER_QUALITY, ...quality };
-		const b = layoutBounds();
+		const b = inputs.land;
 		this.reflectionBounds = new THREE.Box3(
 			new THREE.Vector3( b.x0 - REFLECTOR_REACH, shared.waterLevel.value - REFLECTION_FLOOR, b.z0 - REFLECTOR_REACH ),
 			new THREE.Vector3( b.x1 + REFLECTOR_REACH, ISLAND_TOP + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );
@@ -488,7 +489,7 @@ export class Water {
 		// The floor's look where the ray lands, for its colour (seabedAlbedo): the beds, read from the
 		// floor mesh's own grid at the inverse of its warp so that they interpolate as the mesh does,
 		// and the sand's broad variation. Both change over metres, so the vertices carry them.
-		const bedGrid = clamp( landedXZ.div( seabedLook.size / 2 ), - 1, 1 );
+		const bedGrid = clamp( landedXZ.sub( vec2( ...seabedLook.centre ) ).div( seabedLook.size / 2 ), - 1, 1 );
 		const bedUV = sign( bedGrid ).mul( pow( abs( bedGrid ), 1 / SEABED_WARP ) ).mul( 0.5 ).add( 0.5 )
 			.mul( seabedLook.res ).add( 0.5 ).div( seabedLook.res + 1 );
 		const vLandingLook = varying( vec3( texture( seabedLook.beds, bedUV ).level( float( 0 ) ).rg,

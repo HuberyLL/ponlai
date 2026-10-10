@@ -33,8 +33,10 @@ import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
-import { islandSurfaceHeight } from './world/WorldShapes.ts';
-import { WALK_LOOP, walkLoopDistance } from './world/WalkLoop.ts';
+import { islandSurfaceHeight, landArea, landBounds, landCentroid } from './world/WorldShapes.ts';
+import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
+import { walkLoop, walkLoopDistance } from './world/WalkLoop.ts';
+import { setIslandClearing } from './weather/AerialPerspective.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
@@ -46,12 +48,21 @@ import { ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
 import type { Game } from './game/Game.ts';
 
 const params = new URLSearchParams( location.search );
+// The island: the land a world seed grows in `grow` steps after the starting island (IslandGrowth.ts;
+// the `seed` and `grow` URL options, 1 and 0 by default).
+const intParam = ( name: string, fallback: number ) => {
+
+	const value = Math.trunc( Number( params.get( name ) ?? fallback ) );
+	return Number.isFinite( value ) ? value : fallback;
+
+};
+const landOptions = { worldSeed: intParam( 'seed', 1 ), step: THREE.MathUtils.clamp( intParam( 'grow', 0 ), 0, GROWTH.maxSteps ) };
 // The world's generation needs nothing from the page, so its workers start first and run while
 // the renderer, sky, textures and frame graph are set up; its result is awaited below. The world
 // worker's last result comes from IndexedDB while the generator and its options are unchanged
 // (src/world/WorldCache.ts); ?worldCache=off generates it regardless, as on a first visit. A
 // browser without WebGPU stops at the renderer below, so it starts no workers.
-const worldJob: Promise<LoadedWorld> = 'gpu' in navigator ? loadWorld( {}, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } )
+const worldJob: Promise<LoadedWorld> = 'gpu' in navigator ? loadWorld( landOptions, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } )
 	: new Promise( () => undefined );
 worldJob.catch( () => undefined ); // reported where it is awaited, under the world section
 const ground = { soil: params.get( 'soil' ) !== '0' };
@@ -113,18 +124,16 @@ const rainScene = new THREE.Scene();
 // The far plane reaches past the horizon so the sea's skirt meets the sky (the resolved sky
 // depth, -1e5, stays beyond it).
 const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 60000 );
-const target = new THREE.Vector3( 1.5, 0.5, 1.0 );
-const view = { distance: Number( params.get( 'dist' ) ?? 58 ), polar: Number( params.get( 'polar' ) ?? 50 ), azimuth: Number( params.get( 'az' ) ?? 318 ) };
-camera.position.setFromSphericalCoords( view.distance, THREE.MathUtils.degToRad( view.polar ), THREE.MathUtils.degToRad( view.azimuth ) ).add( target );
+// The views are framed on the land once the world has loaded (frameLand): the first island's
+// framing, moved to the land's centroid and scaled by its size. An explicit `dist` is in metres.
+const target = new THREE.Vector3();
+const view = { distance: params.has( 'dist' ) ? Number( params.get( 'dist' ) ) : null, polar: Number( params.get( 'polar' ) ?? 50 ), azimuth: Number( params.get( 'az' ) ?? 318 ) };
 // the island's camera: drags follow the hand on the frame that draws them (IslandCameraControls.ts)
 const controls = new IslandCameraControls( camera, renderer.domElement );
-controls.target.copy( target );
 controls.minDistance = 22;
-controls.maxDistance = 190;
 controls.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
-controls.settle();
-const initialCameraPosition = camera.position.clone();
-const initialCameraQuaternion = camera.quaternion.clone();
+const initialCameraPosition = new THREE.Vector3();
+const initialCameraQuaternion = new THREE.Quaternion();
 const initialCameraFov = camera.fov;
 const orbitMaxPolar = controls.maxPolarAngle;
 const orbitMinDistance = controls.minDistance;
@@ -390,13 +399,27 @@ const t0 = performance.now();
 const worldCache = await worldJob;
 const data = worldCache.data;
 mark( 'world' );
+// The grown land, and the framing it sets: the first island's (the tile layout's 384 m^2 round
+// ( 1/3, -1 ), which the views were placed for) moved to the land's centroid and scaled by the
+// ratio of their equivalent radii (a disc's of the same area).
+const land = LandLattice.fromBytes( data.land );
+const landBox = landBounds( land ), centroid = landCentroid( land );
+const FIRST_ISLAND = { x: 1 / 3, z: - 1, radius: Math.sqrt( 384 / Math.PI ) };
+const landScale = Math.sqrt( landArea( land ) / Math.PI ) / FIRST_ISLAND.radius;
+/** The first island's point ( x, y, z ) on this land. */
+const onLand = ( x: number, y: number, z: number ) => new THREE.Vector3( centroid.x + ( x - FIRST_ISLAND.x ) * landScale, y, centroid.z + ( z - FIRST_ISLAND.z ) * landScale );
+target.copy( onLand( 1.5, 0.5, 1 ) );
+// the sea fog thins over the island and in its lee
+const fogClearing = onLand( 0, 0, 0 );
+setIslandClearing( fogClearing.x, fogClearing.z, 20 * landScale, 100 * landScale );
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
 // The floor's height shares the shoreline field's bounds, and so its transform.
 const seabedField = shoreTextureFrom( data.seabedField );
 const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
-// Tussocks and tall flowers keep clear of the islander's walking loop.
-const walkDistance = walkLoopDistance( WALK_LOOP );
+// Tussocks and tall flowers keep clear of the islander's walking loop, 5 m in from the coast.
+const walk = walkLoop( land );
+const walkDistance = walkLoopDistance( walk );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
 const refractedSun = new RefractedSun( renderer, shared );
@@ -428,9 +451,11 @@ installVegetationPrepass( scene, [ grass, foliage, rimFoliage ] );
 	sunShadow.setCasters( casters );
 
 }
-// the camera grabs the island's ground and keeps its pivot over the island
-controls.setIsland( world.group.children.filter( ( object ): object is THREE.Mesh => ( object as THREE.Mesh ).isMesh && object.castShadow ) );
+// the camera grabs the island's ground and keeps its pivot over the land
+controls.setIsland( world.group.children.filter( ( object ): object is THREE.Mesh => ( object as THREE.Mesh ).isMesh && object.castShadow ), landBox );
+frameLand();
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
+rain.collision.setArea( landBox );
 rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt ] );
 mark( 'meshes' );
 setStatus( 'Waking the villagers…' );
@@ -453,7 +478,7 @@ if ( GAME ) {
 	// loaded only here, so the art-review page does not carry the game's code
 	const { Game } = await import( './game/Game.ts' );
 	game = await Game.start( {
-		params, scene, camera, canvas: renderer.domElement, vegetation: data.vegetation,
+		params, scene, camera, canvas: renderer.domElement, land, vegetation: data.vegetation,
 		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment,
 		// every islander in the scene islander's proportions (the `islander` URL option)
 		loadLook: ( look ) => {
@@ -466,7 +491,7 @@ if ( GAME ) {
 
 } else {
 
-	characters = new Villagers( await buildIslander( islanderBuild.proportions ), WALK_LOOP, islandSurfaceHeight, characterShadow );
+	characters = new Villagers( await buildIslander( islanderBuild.proportions ), walk, islandSurfaceHeight, characterShadow );
 	scene.add( characters.group );
 
 }
@@ -480,7 +505,8 @@ const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
 } );
 water = new Water( {
 	fft, sky, shared, shore: shore.tex, seabedHeight: seabedField.tex, shoreWaves,
-	seabedLook: { beds: seabedBedTextureFrom( data.seabed ), res: data.seabed.res, size: data.seabed.size, variation: textures.normalsB }, refractedSun, sunShadow, storm: stormSea,
+	seabedLook: { beds: seabedBedTextureFrom( data.seabed ), res: data.seabed.res, size: data.seabed.size, centre: data.seabed.centre, variation: textures.normalsB },
+	land: landBox, refractedSun, sunShadow, storm: stormSea,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 } );
 applySkyFill();
@@ -498,6 +524,18 @@ const cameraSettings = { mode: params.get( 'camera' ) === 'free' ? 'free' : 'orb
 const reviewView = { camera: 'island' as CameraView };
 let orbitDof = S.dof;
 const viewDirection = new THREE.Vector3();
+
+// The island view on this land: the default pivot, and the camera at the `dist`, `polar` and `az`
+// URL options (the distance scaled with the land unless given).
+function frameLand(): void {
+
+	controls.target.copy( target );
+	camera.position.setFromSphericalCoords( view.distance ?? 58 * landScale, THREE.MathUtils.degToRad( view.polar ), THREE.MathUtils.degToRad( view.azimuth ) ).add( target );
+	controls.settle();
+	initialCameraPosition.copy( camera.position );
+	initialCameraQuaternion.copy( camera.quaternion );
+
+}
 
 function settleOrbit(): void {
 
@@ -525,7 +563,7 @@ function setCameraMode( mode: string ): void {
 	if ( mode === 'orbit' && freeControls.enabled ) {
 
 		camera.getWorldDirection( viewDirection );
-		controls.target.copy( camera.position ).addScaledVector( viewDirection, 58 );
+		controls.target.copy( camera.position ).addScaledVector( viewDirection, 58 * landScale );
 
 	}
 	cameraSettings.mode = mode;
@@ -546,7 +584,7 @@ function setCameraView( view: CameraView ): void {
 	reviewView.camera = view;
 	if ( view === 'sky' ) {
 
-		camera.position.set( 0, 15, 0 );
+		camera.position.copy( onLand( 0, 15, 0 ) );
 		viewDirection.copy( sky.sunDir.y > 0 ? sky.sunDir : sky.moonDir );
 		// At new moon both bodies can be below the horizon; keep the review aimed at the sky.
 		if ( viewDirection.y <= 0 ) viewDirection.set( 0.6, 0.72, 0.35 ).normalize();
@@ -557,7 +595,7 @@ function setCameraView( view: CameraView ): void {
 	} else if ( view === 'horizon' ) {
 
 		controls.target.copy( target );
-		camera.position.setFromSphericalCoords( 110, THREE.MathUtils.degToRad( 82 ), THREE.MathUtils.degToRad( 125 ) ).add( target );
+		camera.position.setFromSphericalCoords( 110 * landScale, THREE.MathUtils.degToRad( 82 ), THREE.MathUtils.degToRad( 125 ) ).add( target );
 		camera.fov = 55;
 		camera.lookAt( controls.target );
 
@@ -1150,5 +1188,8 @@ document.addEventListener( 'visibilitychange', () => {
 	}
 
 } );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
+// the land for the tools: its seed and step, box, centroid, the framing's scale against the first
+// island and the default pivot
+const landInfo = { seed: landOptions.worldSeed, step: landOptions.step, bounds: landBox, centroid, scale: landScale, target: target.toArray() };
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
 	quality, dynamicResolution, pacer, submitBatch, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };

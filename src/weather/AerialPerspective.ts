@@ -60,8 +60,16 @@ const FRAME_STEP_MAX = 0.1;
 // (sky or sea seen between leaves, a thin figure the reduced march missed), the pixel marches the
 // fog itself instead.
 const FOG_DEPTH_TOLERANCE = 0.05;
-// The island's warm rock thins the fog over it and in its lee: radii (metres) of the clearing.
-const CLEARING = { inner: 20, outer: 100, floor: 0.45 };
+// The island's warm rock thins the fog over it and in its lee: the clearing's centre and radii
+// (metres), from the land (setIslandClearing), and the fog it keeps at its centre.
+const CLEARING = { centre: uniform( new THREE.Vector2() ), radii: uniform( new THREE.Vector2( 20, 100 ) ), floor: 0.45 };
+/** Centres the sea fog's clearing on ( cx, cz ), clear within r0 of it and back in full by r1. */
+export function setIslandClearing( cx: number, cz: number, r0: number, r1: number ): void {
+
+	CLEARING.centre.value.set( cx, cz );
+	CLEARING.radii.value.set( r0, r1 );
+
+}
 // Fog droplets scatter the beam on through the bank: its forward glow is a softer, wider lobe than
 // single scattering gives, so it is scaled down toward the sun (see `phase`).
 const FOG_SUN = 0.45;
@@ -271,7 +279,7 @@ export class AerialPerspective {
 					: mx_noise_float( vec3( drift.div( 140 ), this.fogTime.mul( 0.006 ) ) ).mul( 0.65 )
 						.add( mx_noise_float( vec3( drift.div( 45 ), this.fogTime.mul( 0.015 ).add( 3.7 ) ) ).mul( 0.35 ) );
 				const bank_ = smoothstep( 0.2, 0.75, noise.mul( 0.5 ).add( 0.5 ) ).toVar();
-				const clearing = mix( float( CLEARING.floor ), float( 1 ), smoothstep( CLEARING.inner, CLEARING.outer, length( p.xz ) ) );
+				const clearing = mix( float( CLEARING.floor ), float( 1 ), smoothstep( CLEARING.radii.x, CLEARING.radii.y, length( p.xz.sub( CLEARING.centre ) ) ) );
 				const local = exp( max( p.y, 0 ).div( mix( float( FOG_GAP_HEIGHT ), float( FOG_BANK_HEIGHT ), bank_ ) ).negate() )
 					.mul( bank_.mul( 1.6 ).add( 0.12 ) ).mul( clearing );
 				const step = local.mul( t.sub( previous ) ).toVar();

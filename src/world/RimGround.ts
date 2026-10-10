@@ -1,7 +1,7 @@
 import { Field2D } from './Field2D.ts';
-import { ISLAND_TOP, islandSurfaceHeight, layoutBounds } from './WorldShapes.ts';
+import { ISLAND_TOP, islandSurfaceHeight, type Bounds } from './WorldShapes.ts';
 import { noise3, smoothstep } from './noise.ts';
-import type { RimGroundField, RimSkirtData, SDF } from './types.ts';
+import type { RimGroundField, RimSkirtData, SDF, ShoreField } from './types.ts';
 
 export const RIM_FRINGE_FADE = 0.12;
 export const RIM_INNER_LIMIT = 0.70;
@@ -9,11 +9,12 @@ export const RIM_MAX_DROP = 0.30;
 
 export interface RimGroundSample { distance: number; roofY: number; retreat: number; depth: number }
 
-// The top coast differs from the nominal tile footprint. Trace its actual solid just below
-// the roof so grass thinning, exposed root soil and stone shoulders share one boundary.
-export function buildRimGround( sdf: SDF ): RimGroundField {
+// The top coast differs from the land's footprint. Trace its actual solid just below the roof
+// (over the land's box `b` and 2 m round it) so grass thinning, exposed root soil and stone
+// shoulders share one boundary.
+export function buildRimGround( sdf: SDF, b: Bounds ): RimGroundField {
 
-	const b = layoutBounds(), pad = 2, cell = 0.10;
+	const pad = 2, cell = 0.10;
 	const coast = Field2D.covering( b.x0 - pad, b.x1 + pad, b.z0 - pad, b.z1 + pad, cell )
 		.fill( ( x, z ) => sdf( x, islandSurfaceHeight( x, z ) - 0.25, z ) ).signedDistance();
 	const data = new Float32Array( coast.nx * coast.nz * 4 );
@@ -215,11 +216,12 @@ export function buildRimSkirt( sdf: SDF, field: RimGroundField ): RimSkirtData {
 
 }
 
-// Iso-line d = 0 of the field's distance channel, as closed (or border-clipped) polylines.
-function coastLoops( field: RimGroundField ): [ number, number ][][] {
+// Iso-line d = 0 of the field's distance channel (the first of `stride` per texel), as closed (or
+// border-clipped) polylines.
+export function coastLoops( field: ShoreField, stride = 4 ): [ number, number ][][] {
 
 	const { nx, nz, cell, data } = field;
-	const d = ( i: number, j: number ) => data[ ( j * nx + i ) * 4 ];
+	const d = ( i: number, j: number ) => data[ ( j * nx + i ) * stride ];
 	const px = ( i: number ) => field.x0 + ( i + 0.5 ) * cell, pz = ( j: number ) => field.z0 + ( j + 0.5 ) * cell;
 	// Crossing on a cell edge: horizontal edge id 2 * ( j * nx + i ), vertical + 1.
 	const crossing = new Map<number, [ number, number ]>();

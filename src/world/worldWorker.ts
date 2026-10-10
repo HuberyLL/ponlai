@@ -1,14 +1,16 @@
-// Builds the world geometry off the main thread: island and submerged stones (surface nets over
-// their SDFs), the seabed heightfield, the shoreline distance field at sea level, and the anchors
-// for the meadow vegetation and sparse branches overhanging the upper rim. Plants root on the top.
+// Builds the world geometry off the main thread from the grown land (IslandGrowth.ts): island and
+// submerged stones (surface nets over their SDFs), the seabed heightfield, the shoreline distance
+// field at sea level, and the anchors for the meadow vegetation and sparse branches overhanging the
+// upper rim. Plants root on the top.
 
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRimTrails } from './RimTrails.ts';
 import { buildRimGround, buildRimSkirt, coastPaths } from './RimGround.ts';
 import {
 	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF, makeSeabed,
-	layoutBounds, ISLAND_TOP, ISLAND_BOTTOM,
+	landCentroid, ISLAND_TOP, ISLAND_BOTTOM,
 } from './WorldShapes.ts';
+import { growLand } from './IslandGrowth.ts';
 import { Field2D } from './Field2D.ts';
 import { deepenSeabed, seabedBeds, shapeShelf } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
@@ -23,8 +25,8 @@ import type { SDF, MeshData, MeshKind, NamedMesh, Rock, WorldData, WorldOptions 
 // into sets) and the rest (meadow anchors, rim, sea floor, shore fields), and merges their
 // results in the serial order, so the world is identical to the serial one, bit for bit, whatever
 // the number of threads. It stays idle meanwhile, since a nested worker only starts while its
-// parent's thread is free. Every part repeats the cheap shared setup (footprint, SDFs, stones,
-// contact solids) from the same seeds instead of receiving it.
+// parent's thread is free. Every part repeats the cheap shared setup (the land, footprint, SDFs,
+// stones, contact solids) from the same seeds instead of receiving it.
 //
 // A message of bare WorldOptions (the node tools) builds the whole world here and posts the
 // WorldData synchronously; with `part` it builds one part.
@@ -49,8 +51,10 @@ interface PartJob extends WorldOptions {
 type WorldPart = 'island' | { rocks: number; sets: number } | 'rest';
 
 interface RestPart {
-	// the shared setup's seabed grid and stones, which the merged world carries
+	// the shared setup's land, seabed grid and stones, which the merged world carries
+	land: Uint8Array;
 	seabedPositions: Float32Array;
+	seabedCentre: [ number, number ];
 	stones: Rock[];
 	vegetation: Float32Array;
 	rimGround: WorldData[ 'rimGround' ];
@@ -216,18 +220,21 @@ type Setup = ReturnType<typeof setup>;
 
 const defaults = ( options: WorldOptions ) => {
 
-	const { islandVoxel = 0.12, seabedRes = 320, seabedSize = 420, shoreSize = 96, shoreCell = 0.125, contactOcclusion = true } = options;
-	return { islandVoxel, seabedRes, seabedSize, shoreSize, shoreCell, contactOcclusion };
+	const { worldSeed = 1, step = 0, islandVoxel = 0.12, seabedRes = 320, seabedSize = 420, shoreCell = 0.125, contactOcclusion = true } = options;
+	return { worldSeed, step, islandVoxel, seabedRes, seabedSize, shoreCell, contactOcclusion };
 
 };
 
 function setup( options: WorldOptions, timings: Record<string, number> ) {
 
-	const { islandVoxel, seabedRes, seabedSize, shoreSize, shoreCell, contactOcclusion } = defaults( options );
+	const { worldSeed, step, islandVoxel, seabedRes, seabedSize, shoreCell, contactOcclusion } = defaults( options );
 	const mark = ( k: string, t: number ) => { timings[ k ] = Math.round( performance.now() - t ); };
 
 	let t = performance.now();
-	const fp = buildFootprint();
+	const { land } = growLand( worldSeed, step );
+	mark( 'land', t );
+	t = performance.now();
+	const fp = buildFootprint( land );
 	mark( 'footprint', t );
 
 	const seabedHeight = shapeShelf( fp, deepenSeabed( fp, makeSeabed( fp ) ) );
@@ -237,11 +244,12 @@ function setup( options: WorldOptions, timings: Record<string, number> ) {
 	const n = seabedRes;
 	const sb = new Float32Array( ( n + 1 ) * ( n + 1 ) * 3 );
 	const warp = ( u: number ) => Math.sign( u ) * Math.pow( Math.abs( u ), SEABED_WARP );
+	const centroid = landCentroid( land ), centre: [ number, number ] = [ centroid.x, centroid.z ];
 	let floorCeiling = - Infinity;
 	for ( let j = 0; j <= n; j ++ ) for ( let i = 0; i <= n; i ++ ) {
 
-		const x = warp( i / n * 2 - 1 ) * seabedSize / 2;
-		const z = warp( j / n * 2 - 1 ) * seabedSize / 2;
+		const x = centre[ 0 ] + warp( i / n * 2 - 1 ) * seabedSize / 2;
+		const z = centre[ 1 ] + warp( j / n * 2 - 1 ) * seabedSize / 2;
 		const k = ( j * ( n + 1 ) + i ) * 3;
 		sb[ k ] = x; sb[ k + 1 ] = seabedHeight( x, z ); sb[ k + 2 ] = z;
 		floorCeiling = Math.max( floorCeiling, sb[ k + 1 ] );
@@ -252,13 +260,13 @@ function setup( options: WorldOptions, timings: Record<string, number> ) {
 
 	// Ground each stone on the same triangles the renderer uses. Sampling the analytic
 	// floor alone can hide a small crown beneath a coarser seabed mesh.
-	const renderedFloor = seabedSampler( sb, n, seabedSize );
+	const renderedFloor = seabedSampler( sb, n, seabedSize, centre );
 	const islandSDF = makeIslandSDF( fp );
 	const rocks = makeRocks( fp, renderedFloor, islandSDF );
 	const rockSDFs = rocks.map( makeRockSDF );
 	// The rendered grid's highest vertex bounds contact queries on the floor.
 	t = performance.now();
-	const b = layoutBounds(), pad = 2.6;
+	const b = fp.bounds, pad = 2.6;
 	// Reuse the meshing bounds: contacts refer to the same fixed solids as the rendered world.
 	const islandBounds: SolidBounds = {
 		field: islandSDF, min: [ b.x0 - pad, ISLAND_BOTTOM - 0.3, b.z0 - pad ],
@@ -274,13 +282,13 @@ function setup( options: WorldOptions, timings: Record<string, number> ) {
 	// steps reduce overshoot on its slopes; it also occludes the buried rock faces.
 	const seabedSDF: SDF = ( x, y, z ) => y - renderedFloor( x, z );
 	const solids: SolidBounds[] = [ islandBounds, ...rockBounds, {
-		field: seabedSDF, min: [ - seabedSize / 2, - 32, - seabedSize / 2 ], max: [ seabedSize / 2, floorCeiling, seabedSize / 2 ],
+		field: seabedSDF, min: [ centre[ 0 ] - seabedSize / 2, - 32, centre[ 1 ] - seabedSize / 2 ], max: [ centre[ 0 ] + seabedSize / 2, floorCeiling, centre[ 1 ] + seabedSize / 2 ],
 	} ];
 	const aoSdf = contactOcclusion ? boundedSceneField( solids ) : undefined;
 	const contacts = ( receiver?: SDF ) => contactOcclusion ? contactVisibilitySampler( solids, receiver ) : undefined;
 	mark( 'contactSetup', t );
 
-	return { fp, n, sb, seabedSize, shoreSize, shoreCell, islandVoxel, renderedFloor, islandSDF, rocks, rockSDFs, b, islandBounds, rockBounds, seabedSDF, aoSdf, contacts };
+	return { land, fp, n, sb, centre, seabedSize, shoreCell, islandVoxel, renderedFloor, islandSDF, rocks, rockSDFs, b, islandBounds, rockBounds, seabedSDF, aoSdf, contacts };
 
 }
 
@@ -327,7 +335,7 @@ function buildRocks( ctx: Setup, set: number, sets: number ): MeshData[] {
 // contact visibility and beds, and the shore fields.
 function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 
-	const { islandSDF, fp, b, contacts, n, sb, seabedSDF, renderedFloor, shoreSize, shoreCell, rocks } = ctx;
+	const { land, islandSDF, fp, b, contacts, n, sb, centre, seabedSDF, renderedFloor, shoreCell, rocks } = ctx;
 	const mark = ( k: string, t: number ) => { timings[ k ] = Math.round( performance.now() - t ); };
 
 	// --- vegetation anchors: island turf only; submerged stones stay bare.
@@ -350,7 +358,7 @@ function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 	mark( 'vegetation', t );
 
 	t = performance.now();
-	const rimGround = buildRimGround( islandSDF );
+	const rimGround = buildRimGround( islandSDF, b );
 	// The turf skirt drapes over the coast this field traces.
 	const rimSkirt = buildRimSkirt( islandSDF, rimGround );
 	mark( 'rimGround', t );
@@ -387,26 +395,28 @@ function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 	mark( 'seabed', t );
 
 	// --- shoreline: only the island intersects sea level. Submerged stones must not
-	// damp surface waves or grow circular foam collars above their hidden silhouettes.
+	// damp surface waves or grow circular foam collars above their hidden silhouettes. The field
+	// covers the land's box and 32 m round it, on a 32 m grid anchored to the world.
 	t = performance.now();
-	const shore = Field2D.covering( - shoreSize / 2, shoreSize / 2, - shoreSize / 2, shoreSize / 2, shoreCell )
+	const out = ( v: number, round: ( v: number ) => number, by: number ) => round( ( v + by ) / 32 ) * 32;
+	const shore = Field2D.covering( out( b.x0, Math.floor, - 32 ), out( b.x1, Math.ceil, 32 ), out( b.z0, Math.floor, - 32 ), out( b.z1, Math.ceil, 32 ), shoreCell )
 		.fill( ( x: number, z: number ) => islandSDF( x, 0, z ) )
 		.signedDistance();
-	// Match the shoreline's world bounds at half resolution for the breaking-surf pass.
-	// Keeping its resolution separate preserves the existing water sampling contract.
-	const islandRes = Math.ceil( shore.nx / 2 );
-	const islandShore = new Field2D( shore.x0, shore.z0, islandRes, islandRes, shore.nx * shore.cell / islandRes )
+	// Match the shoreline's world bounds at half resolution for the breaking-surf pass (its sides
+	// are whole multiples of 32 m, so of two cells). Keeping its resolution separate preserves the
+	// existing water sampling contract.
+	const islandShore = new Field2D( shore.x0, shore.z0, shore.nx / 2, shore.nz / 2, shore.cell * 2 )
 		.fill( ( x: number, z: number ) => islandSDF( x, 0, z ) )
 		.signedDistance();
 	// The rendered floor's height (its stones aside) over the same bounds at half resolution, for the
 	// water's world-space estimate of where refracted rays the screen cannot follow meet the floor.
-	const seabedField = new Field2D( shore.x0, shore.z0, islandRes, islandRes, shore.nx * shore.cell / islandRes )
+	const seabedField = new Field2D( shore.x0, shore.z0, shore.nx / 2, shore.nz / 2, shore.cell * 2 )
 		.fill( renderedFloor );
 	mark( 'shore', t );
 
 	const field = ( f: Field2D ) => ( { data: f.data, nx: f.nx, nz: f.nz, x0: f.x0, z0: f.z0, cell: f.cell } );
 	return {
-		seabedPositions: sb, stones: rocks,
+		land: land.toBytes(), seabedPositions: sb, seabedCentre: centre, stones: rocks,
 		vegetation, rimGround, rimSkirt, rimStrands, seabedAO: sbAO, seabedBed: sbBed,
 		shore: field( shore ), islandShore: field( islandShore ), seabedField: field( seabedField ),
 	};
@@ -423,7 +433,7 @@ function transferMesh( m: MeshData, transfer: Transferable[] ): void {
 
 function transferRest( rest: RestPart, transfer: Transferable[] ): void {
 
-	transfer.push( rest.seabedPositions.buffer, rest.vegetation.buffer, rest.rimGround.data.buffer, rest.rimSkirt.points.buffer, rest.rimSkirt.info.buffer, rest.rimSkirt.loops.buffer );
+	transfer.push( rest.land.buffer, rest.seabedPositions.buffer, rest.vegetation.buffer, rest.rimGround.data.buffer, rest.rimSkirt.points.buffer, rest.rimSkirt.info.buffer, rest.rimSkirt.loops.buffer );
 	for ( const strand of rest.rimStrands ) transfer.push( strand.points.buffer, ...( strand.clump ? [ strand.clump.buffer ] : [] ) );
 	transfer.push( rest.seabedAO.buffer, rest.seabedBed.buffer, rest.shore.data.buffer, rest.islandShore.data.buffer, rest.seabedField.data.buffer );
 
@@ -444,10 +454,12 @@ function assemble( island: MeshData, rocks: MeshData[], rest: RestPart, options:
 	push( 'rocks', mergeParts( rocks ), 'rock' );
 	transferRest( rest, transfer );
 
+	const { seabedRes, seabedSize } = defaults( options );
 	const world: WorldData = {
+		land: rest.land,
 		meshes,
 		rocks: rest.stones,
-		seabed: { positions: rest.seabedPositions, ao: rest.seabedAO, bed: rest.seabedBed, res: defaults( options ).seabedRes, size: defaults( options ).seabedSize },
+		seabed: { positions: rest.seabedPositions, ao: rest.seabedAO, bed: rest.seabedBed, res: seabedRes, size: seabedSize, centre: rest.seabedCentre },
 		vegetation: rest.vegetation,
 		rimStrands: rest.rimStrands,
 		rimGround: rest.rimGround,
@@ -463,13 +475,13 @@ function assemble( island: MeshData, rocks: MeshData[], rest: RestPart, options:
 
 // The inverse warp locates the grid cell; interpolation then uses its stored world positions,
 // rather than the warped grid fraction, to match buildWorldMeshes()'s two indexed triangles.
-function seabedSampler( positions: Float32Array, n: number, size: number ): ( x: number, z: number ) => number {
+function seabedSampler( positions: Float32Array, n: number, size: number, centre: [ number, number ] ): ( x: number, z: number ) => number {
 
 	const index = ( v: number ) => Math.max( 0, Math.min( n - 1,
 		Math.floor( ( Math.sign( v ) * Math.pow( Math.abs( v / ( size / 2 ) ), 1 / SEABED_WARP ) + 1 ) * n / 2 ) ) );
 	return ( x, z ) => {
 
-		const i = index( x ), j = index( z );
+		const i = index( x - centre[ 0 ] ), j = index( z - centre[ 1 ] );
 		const a = ( j * ( n + 1 ) + i ) * 3, e = a + 3, s = a + ( n + 1 ) * 3, d = s + 3;
 		const u = Math.max( 0, Math.min( 1, ( x - positions[ a ] ) / ( positions[ e ] - positions[ a ] ) ) );
 		const v = Math.max( 0, Math.min( 1, ( z - positions[ a + 2 ] ) / ( positions[ s + 2 ] - positions[ a + 2 ] ) ) );

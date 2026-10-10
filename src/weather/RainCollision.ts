@@ -12,7 +12,7 @@
 
 import * as THREE from 'three/webgpu';
 import { Fn, ivec2, max, positionWorld, select, textureLoad, uniform, vec4 } from 'three/tsl';
-import { ISLAND_TOP, layoutBounds } from '../world/WorldShapes.ts';
+import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -20,13 +20,13 @@ type V2 = THREE.Node<'vec2'>;
 // Texels per metre: a drop finds the meadow, a bush's crown or a hanging branch to within
 // a few centimetres, finer than a splash.
 const TEXELS_PER_METRE = 14;
-// Rim foliage hangs and the cliff toe flares beyond the tile footprint.
+// Rim foliage hangs and the cliff toe flares beyond the land's footprint.
 const PAD = 6;
 
 /** The highest surface under every point of the island, seen from straight above: an
- * orthographic camera draws world height into a small half-float target. Beyond it, and
- * wherever nothing was drawn, the sea is the ground. The island never moves, so the map is
- * drawn once (with the plants at rest), not every frame. */
+ * orthographic camera draws world height into a small half-float target over the land's box
+ * (`setArea`). Beyond it, and wherever nothing was drawn, the sea is the ground. The island
+ * never moves, so the map is drawn once (with the plants at rest), not every frame. */
 export class RainCollision {
 
 	readonly target: THREE.RenderTarget;
@@ -43,23 +43,16 @@ export class RainCollision {
 
 	constructor() {
 
-		const bounds = layoutBounds();
-		const x0 = bounds.x0 - PAD, z0 = bounds.z0 - PAD;
-		const width = bounds.x1 - bounds.x0 + PAD * 2, depth = bounds.z1 - bounds.z0 + PAD * 2;
-		const w = Math.ceil( width * TEXELS_PER_METRE ), h = Math.ceil( depth * TEXELS_PER_METRE );
-		this.target = new THREE.RenderTarget( w, h, { type: THREE.HalfFloatType, depthBuffer: true } );
+		// sized to the land by setArea; until then an empty map (the sea everywhere)
+		this.target = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, depthBuffer: true } );
 		this.target.texture.name = 'rainCollisionHeight';
 		// Nearest texels: a filtered lookup would blend the cliff top with the sea below it.
 		this.target.texture.minFilter = this.target.texture.magFilter = THREE.NearestFilter;
 		this.target.texture.generateMipmaps = false;
-		this.xform.value.set( x0, z0, 1 / width, 1 / depth );
-		this.size.value.set( w, h );
+		this.size.value.set( 1, 1 );
+		this.camera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 80 );
 		// Looking straight down with -z up the image: x runs right, z down the rows from z0.
-		this.camera = new THREE.OrthographicCamera( - width / 2, width / 2, depth / 2, - depth / 2, 0, 80 );
 		this.camera.up.set( 0, 0, - 1 );
-		this.camera.position.set( x0 + width / 2, 40, z0 + depth / 2 );
-		this.camera.lookAt( x0 + width / 2, 0, z0 + depth / 2 );
-		this.camera.updateMatrixWorld();
 		// Bushes reach about a metre and a half above the meadow and the figures two; the ceiling
 		// keeps a margin over them, so no drop falls through their tops.
 		this.ceiling = ISLAND_TOP + 4;
@@ -72,6 +65,24 @@ export class RainCollision {
 			return max( select( inside.and( sample.a.greaterThan( 0.5 ) ), sample.r, waterLevel ), waterLevel );
 
 		} ).setLayout( { name: 'ponlaiRainGround', type: 'float', inputs: [ { name: 'xz', type: 'vec2' } ] } ) as unknown as ( xz: V2 ) => F;
+
+	}
+
+	/** Covers the land's box `bounds` (WorldShapes.landBounds) and PAD round it; bake after. */
+	setArea( bounds: Bounds ): void {
+
+		const x0 = bounds.x0 - PAD, z0 = bounds.z0 - PAD;
+		const width = bounds.x1 - bounds.x0 + PAD * 2, depth = bounds.z1 - bounds.z0 + PAD * 2;
+		const w = Math.ceil( width * TEXELS_PER_METRE ), h = Math.ceil( depth * TEXELS_PER_METRE );
+		this.target.setSize( w, h );
+		this.xform.value.set( x0, z0, 1 / width, 1 / depth );
+		this.size.value.set( w, h );
+		const camera = this.camera;
+		camera.left = - width / 2; camera.right = width / 2; camera.top = depth / 2; camera.bottom = - depth / 2;
+		camera.updateProjectionMatrix();
+		camera.position.set( x0 + width / 2, 40, z0 + depth / 2 );
+		camera.lookAt( x0 + width / 2, 0, z0 + depth / 2 );
+		camera.updateMatrixWorld();
 
 	}
 

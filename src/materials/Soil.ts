@@ -2,13 +2,15 @@ import * as THREE from 'three/webgpu';
 import { Fn, float, smoothstep as smoothstepNode, uniform } from 'three/tsl';
 import { sampleMeadow } from './Meadow.ts';
 import { ISLAND_TOP, islandSurfaceHeight } from '../world/WorldShapes.ts';
+import { GROWTH } from '../world/IslandGrowth.ts';
 import { noise3, smoothstep } from '../world/noise.ts';
 
 // The narrow height encoding retains millimetre precision in an inexpensive RGBA8 map.
 // Thickness and exposed patches vary independently, so the root bed never becomes a belt.
-export const SOIL_EXTENT = 128;
+// The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m.
+export const SOIL_EXTENT = 2 * GROWTH.half;
 export const SOIL_HEIGHT_RANGE = 0.5;
-const SOIL_SIZE = 512;
+const SOIL_SIZE = SOIL_EXTENT * 4;
 
 export const soilUniforms = {
 	strength: uniform( 1 ),

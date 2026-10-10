@@ -605,17 +605,17 @@ function pageHelpers() {
 
 			if ( def.view === 'meadow' ) {
 
-				// a point on the meadow a little inside the rim (from the island mesh's bounds, so any
-				// layout works), the eye 1.6 m up, looking out over the lip and down a little
+				// a point on the meadow 5.5 m inside the rim, out from the land's centroid (so any land
+				// works), the eye 1.6 m up, looking out over the lip and down a little
 				s.setCameraView( 'island' );
 				s.setCameraMode( 'free' );
-				const island = s.scene.getObjectByName( 'island' );
-				island.geometry.computeBoundingBox();
-				const box = island.geometry.boundingBox;
-				const cx = ( box.min.x + box.max.x ) / 2, cz = ( box.min.z + box.max.z ) / 2;
-				const rx = ( box.max.x - box.min.x ) / 2, rz = ( box.max.z - box.min.z ) / 2;
-				const dir = { x: Math.cos( 0.7 ), z: Math.sin( 0.7 ) };
-				s.camera.position.set( cx + dir.x * rx * 0.45, box.max.y + 1.6, cz + dir.z * rz * 0.45 );
+				const { x: cx, z: cz } = s.land.centroid, dir = { x: Math.cos( 0.7 ), z: Math.sin( 0.7 ) };
+				const top = ( t ) => s.controls.ground.heightAt( cx + dir.x * t, cz + dir.z * t ) > 1;
+				let t = 0;
+				while ( ! top( t ) && t < 200 ) t += 0.25;
+				while ( top( t ) ) t += 0.25;
+				const x = cx + dir.x * ( t - 5.5 ), z = cz + dir.z * ( t - 5.5 );
+				s.camera.position.set( x, s.controls.ground.heightAt( x, z ) + 1.6, z );
 				s.camera.lookAt( s.camera.position.x + dir.x * 10, s.camera.position.y - 2.2, s.camera.position.z + dir.z * 10 );
 				s.camera.fov = 55;
 				s.camera.updateProjectionMatrix();

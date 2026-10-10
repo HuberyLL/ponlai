@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { noise3, smoothstep } from '../world/noise.ts';
+import { GROWTH } from '../world/IslandGrowth.ts';
 export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowSurface.ts';
 
 // Two independent fields. Growth sets the sward's structure: tuft height (and with it the canopy
@@ -8,8 +9,9 @@ export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowS
 // coincide, so ~4 m drifts swung the meadow's luminance about 2x and read as camouflage from the
 // overview; separate fields with a ~1.3x albedo swing keep the lawn even, and a finer hue-only
 // field (yellow-green against blue-green, about a metre across) carries the variety instead.
-export const MEADOW_EXTENT = 128;
-const MEADOW_SIZE = 512;
+// The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m.
+export const MEADOW_EXTENT = 2 * GROWTH.half;
+const MEADOW_SIZE = MEADOW_EXTENT * 4;
 
 interface MeadowSample { growth: number; tone: number; dry: number; hue: number; variation: number }
 
