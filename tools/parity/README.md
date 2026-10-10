@@ -139,6 +139,9 @@ uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [-
   frame inside the reference's spread passes (the note says so). A view that repeats on the
   reference must repeat on the test side and match it byte for byte. Diffing a set against itself
   lists its A/A floor; `--md` writes the table.
+- Each capture's JSON records the browser build (`browser`); diff-set warns when the two sets come
+  from different builds, since their frames never match byte for byte. Compare only sets captured
+  with the same browser (Playwright's Chromium, or one `CHROME_PATH`).
 - `--crops-from`: per anchor, the difference counts and a `ref | test | diff x8` sheet
   (`<out>/<view>.<anchor>.png`), and per view `<view>.anchors.png`, the test frame at a quarter size
   with its anchor boxes.

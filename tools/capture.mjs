@@ -84,7 +84,7 @@ try {
 		return adapter ? { vendor: adapter.info.vendor, architecture: adapter.info.architecture, device: adapter.info.device, description: adapter.info.description } : null;
 	} );
 	await writeFile( `artifacts/captures/${ name }.json`, JSON.stringify( {
-		url, viewport: { width: W, height: H }, samples, diag, gpu, errors, failures,
+		url, viewport: { width: W, height: H }, browser: browser.version(), samples, diag, gpu, errors, failures,
 		meanFrameMs: samples.reduce( ( s, d ) => s + d.frameMs, 0 ) / samples.length,
 		...( frameCount > 1 ? { frames } : {} ), ...( crops ? { crops } : {} ),
 	}, null, 2 ) );

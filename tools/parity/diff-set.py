@@ -21,7 +21,9 @@ level and the count of pixels over 1 and 2 levels). The test side need not be no
 a test that repeats while the reference does not passes when its frame lies within the reference's
 spread (noted as such). A view that repeats on the reference must repeat on the test side, and
 must match it byte for byte. Comparing a set with itself (refDir = testDir) lists its A/A floor.
---md writes the table as Markdown too.
+Both sets must come from the same browser build (`browser` in each capture's JSON): a mismatch is
+reported as a warning, since no frame then matches byte for byte. --md writes the table as
+Markdown too.
 
 --crops-from cuts the named crop anchors (views.mjs; `crops` in each capture's JSON) from both
 frames: `ref` or `test` reads <view>.json on that side, a directory reads <view>.json there, and a
@@ -171,6 +173,20 @@ def fmt(st):
         return "identical"
     return f"max {st['max']}, {st['over']['1']} px>1, {st['over']['2']} px>2"
 
+
+def browser(d, v):
+    f = d / f"{v}.json"
+    try:
+        return json.loads(f.read_text()).get("browser") if f.exists() else None
+    except ValueError:
+        return None
+
+
+# frames from two browser builds never match byte for byte: say so before the table
+seen = {(browser(ref, v), browser(test, v)) for v in views}
+mixed = sorted({f"{r} vs {t}" for r, t in seen if r and t and r != t})
+if mixed:
+    print("WARNING: the sets come from different browser builds (" + "; ".join(mixed) + ")")
 
 report, failed, rows = {}, False, []
 if a.aa_floor:
