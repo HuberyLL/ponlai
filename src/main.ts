@@ -40,10 +40,11 @@ import { WALK_LOOP, walkLoopDistance } from './world/WalkLoop.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
-import { characterLook, KIND } from './characters/CharacterMaterial.ts';
+import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
 import { installWindVariants } from './world/WindVariants.ts';
+import { ISLANDER } from './characters/looks.ts';
 
 const params = new URLSearchParams( location.search );
 // The world's generation needs nothing from the page, so its workers start first and run while
@@ -438,23 +439,13 @@ controls.setIsland( world.group.children.filter( ( object ): object is THREE.Mes
 rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt, plants ] );
 mark( 'meshes' );
 setStatus( 'Waking the villagers…' );
-// Local, unversioned assets (artifacts/ is git-ignored) served by the dev server while the
-// character art is still changing.
-const umc = ( name: string ) => `/artifacts/assets/quaternius/ultimate-modular-characters/${ name }.gltf`;
-// A plain villager while the islanders' basic look settles: bare head (so the pointed ears read),
-// an undyed linen shirt, muted warm brown trousers and dark leather shoes, all repainted in the
-// island's palette (sRGB, as they should read in sunlight). The kit's pockets, trims and two-tone
-// panels are painted over in one colour.
+// A plain islander while the basic look settles (src/characters/looks.ts: bare head, so the
+// pointed ears read, linen shirt, plain trousers, leather shoes).
 // Its proportions (`islander` URL option, GUI Islander folder) are the medium build of
 // Proportions.ts by default: chunkier and stylised, as the people layer of the art asks; the kit's
 // own (`stock`) and the other builds stay selectable for comparison.
 const islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : 'medium' };
-const buildIslander = ( name: ProportionName ) => loadVillager( umc( 'Farmer' ), [
-	{ from: umc( 'Casual_2' ), part: 'Casual2_Head', paint: { Skin: [ '#e2a882', KIND.skin ], Skin_Darker: [ '#e2a882', KIND.skin ], Eyebrows: [ '#4a2f22', KIND.hair ], Hair: [ '#5a3a26', KIND.hair ], Eye: [ '#2a1d18', KIND.cloth ] } },
-	{ from: umc( 'Adventurer' ), part: 'Adventurer_Body', paint: { Skin: [ '#e2a882', KIND.skin ], Green: [ '#dccfae', KIND.cloth ], LightGreen: [ '#dccfae', KIND.cloth ] }, hands: [ '#e2a882', KIND.skin ] },
-	{ from: umc( 'Adventurer' ), part: 'Adventurer_Legs', paint: { Brown: [ '#634a36', KIND.cloth ], Brown2: [ '#634a36', KIND.cloth ] } },
-	{ from: umc( 'Farmer' ), part: 'Farmer_Feet', paint: { Brown: [ '#4a3626', KIND.leather ], Brown2: [ '#2e241c', KIND.leather ] } },
-], shared, PROPORTIONS[ name ] );
+const buildIslander = ( name: ProportionName ) => loadVillager( ISLANDER.base, ISLANDER.parts, shared, PROPORTIONS[ name ] );
 const characters = new Villagers( await buildIslander( islanderBuild.proportions ), WALK_LOOP, islandSurfaceHeight, characterShadow );
 scene.add( characters.group );
 mark( 'villagers' );
