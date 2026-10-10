@@ -22,7 +22,7 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type I = THREE.Node<'int'>;
 
-const hash22 = Fn( ( [ p ]: [ V2 ] ) => {
+export const hash22 = Fn( ( [ p ]: [ V2 ] ) => {
 
 	const a = fract( vec3( p.x, p.y, p.x ).mul( vec3( 0.1031, 0.1030, 0.0973 ) ) ).toVar();
 	a.addAssign( dot( a, a.yzx.add( 33.33 ) ) );
