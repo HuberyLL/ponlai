@@ -2,9 +2,17 @@ import type { OpsMode, OpsTable, PassOps } from './GraphCompiler.ts';
 
 // The frame graph's attachment ops applied to the render passes three records: a store discarded
 // where nothing later reads the attachment, a multisample resolve dropped where nothing samples it
-// before the next draw into the same samples. Its legacy table is what Pipeline did by hand before
-// the graph ran its passes: the scene's multisampled colour and depth discarded in the rain pass
-// only.
+// before the next draw into the same samples. The table is derived from the passes that run in the
+// frame (GraphCompiler's enabled mask), so it follows the weather: under rain the water stores its
+// samples for the rain to load and leaves the resolve to it, and the rain discards the samples and
+// the depth once resolved; without rain the water itself discards its multisampled colour once
+// resolved, and stores the depth the surface resolve then reads. Its legacy table is what Pipeline
+// did by hand before the graph ran its passes: the scene's multisampled colour and depth discarded
+// in the rain pass only, the water's stores and resolve kept.
+//
+// A store is discarded only where no pass DECLARES a later read, so every texture a pass binds must
+// be declared (`read`, `readOptional`): an undeclared read of a discarded attachment shows garbage,
+// and one of a resolve the water left to the rain shows the scene without the sea.
 //
 // three r186 offers a discard only together with a clear (`storeMultisampled*Buffer = false`) and
 // always resolves a multisampled target, so the descriptor is rewritten as it reaches WebGPU:
@@ -36,16 +44,25 @@ import type { OpsMode, OpsTable, PassOps } from './GraphCompiler.ts';
 //
 // It acts only while the graph executes (`begin` / `end`) and only on the executing pass's own
 // target: a pass that renders other targets inside it (a shadow map, a bloom chain) is untouched.
-// The table comes from the URL option `fgOps` (legacy, the default until derived ops are judged,
-// derived, or off).
+// The table comes from the URL option `fgOps`: derived (the default), legacy (the graph's ops before
+// they were derived), store (every store and resolve kept, as three records them) or off (not
+// applied at all). Without `fgOps`, `post=store-scene` (and `post=legacy`, which includes it)
+// keeps every store: the A/B without the discards.
 
 export type AttachmentOpsMode = OpsMode | 'off';
 
-/** `fgOps` from the URL: legacy (default), derived or off. */
+const MODES: readonly AttachmentOpsMode[] = [ 'derived', 'legacy', 'store', 'off' ];
+
+/** `fgOps` from the URL (derived, legacy, store or off); without it `store` under
+ * `post=store-scene` or `post=legacy`, else `derived`. */
 export function opsModeFromURL( search: string | null = typeof location === 'undefined' ? null : location.search ): AttachmentOpsMode {
 
-	const value = search === null ? null : new URLSearchParams( search ).get( 'fgOps' );
-	return value === 'derived' || value === 'off' ? value : 'legacy';
+	if ( search === null ) return 'derived';
+	const params = new URLSearchParams( search );
+	const value = params.get( 'fgOps' ) as AttachmentOpsMode | null;
+	if ( value !== null && MODES.includes( value ) ) return value;
+	const post = ( params.get( 'post' ) ?? '' ).split( ',' );
+	return post.includes( 'store-scene' ) || post.includes( 'legacy' ) ? 'store' : 'derived';
 
 }
 

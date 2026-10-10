@@ -1,10 +1,12 @@
-// The frame graph's attachment ops: the legacy table (today's: the multisampled stores discarded
-// in the rain pass only) and the derived one, for today's graph, its variants and the temporal
-// mock, plus a CPU mock of AttachmentOps stacking with a prototype patch of the command encoder
-// (as fix/stutter's SubmitBatch installs) in either order. Run by tools/verify-framegraph.mjs.
+// The frame graph's attachment ops: the derived table (the default), the legacy one (the
+// multisampled stores discarded in the rain pass only) and the all-store one (`post=store-scene`),
+// for today's graph at msaa 4 and 1 with the rain on and off, direct and upscaled, its variants and
+// the temporal mock; the per-mask cache; the URL option; plus a CPU mock of AttachmentOps stacking
+// with a prototype patch of the command encoder (as SubmitBatch installs) in either order. Run by
+// tools/verify-framegraph.mjs.
 
 import assert from 'node:assert/strict';
-import { compileToday, declareTemporal } from './tables-passes.mjs';
+import { compilePipeline, compileToday, declareTemporal } from './tables-passes.mjs';
 import { GraphDecl, compileGraph } from '../../src/post/graph/GraphCompiler.ts';
 import { AttachmentOps, opsModeFromURL } from '../../src/post/graph/AttachmentOps.ts';
 
@@ -50,6 +52,20 @@ export const DERIVED_FULL = [
 	...POST,
 ];
 
+// the masks a frame can have: the canvas written either directly or through the upscale
+const frameMasks = ( c ) => {
+
+	const direct = c.maskOf( [ 'output' ] ), upscaled = c.maskOf( [ 'easu', 'upscaledOutput', 'upscaledOutputThree' ] );
+	const masks = [];
+	for ( let m = 0; m <= c.fullMask; m ++ ) {
+
+		const out = m & ( direct | upscaled );
+		if ( out === direct || out === upscaled ) masks.push( m );
+
+	}
+	return masks;
+
+};
 const strip = ( table ) => table.passes.map( ( p ) => row( p.pass, p.colors, p.depth ) );
 const find = ( table, name ) => table.passes.find( ( p ) => p.pass === name );
 
@@ -280,13 +296,143 @@ export const checks = [
 
 	} ],
 
-	[ 'fgOps: the URL picks the table, legacy by default', () => {
+	[ 'derived ops, msaa 4: the scene target per rain on/off, direct and upscaled, fog and dof on or off', () => {
+
+		// the scene target's rows depend on the rain alone; every other attachment is stored
+		const WET = [
+			row( 'opaque', [ col( 'sceneColor', 'clear', 'store', true ) ], dep( 'sceneDepth', true, 'clear', 'store' ) ),
+			row( 'water', [ col( 'sceneColor', 'load', 'store', false ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
+			row( 'rain', [ col( 'sceneColor', 'load', 'discard', true ) ], dep( 'sceneDepth', false, 'load', 'discard' ) ),
+		];
+		const DRY = [
+			WET[ 0 ],
+			row( 'water', [ col( 'sceneColor', 'load', 'discard', true ) ], dep( 'sceneDepth', true, 'load', 'store' ) ),
+		];
+		const variants = [ {}, { fsrPort: false }, { fogScale: 1, bankSize: 0, dofDistance: false } ];
+		for ( const [ compile, options ] of [ compileToday, compilePipeline ].flatMap( ( f ) => variants.map( ( o ) => [ f, o ] ) ) ) {
+
+			const c = compile( options );
+			const OUT = [ 'output', 'easu', 'upscaledOutput', 'upscaledOutputThree' ];
+			const rain = c.maskOf( [ 'rain' ] ), direct = c.maskOf( [ 'output' ] ), upscaled = c.maskOf( OUT.slice( 1 ) );
+			const masks = frameMasks( c );
+			const outputs = c.conditional.filter( ( i ) => OUT.includes( c.decl.passes[ i ].name ) ).length;
+			assert.equal( masks.length, 2 ** ( c.conditional.length - outputs ) * 2, 'every frame mask is checked' );
+			for ( const m of masks ) {
+
+				const out = m & ( direct | upscaled );
+				const t = c.ops( 'derived', m );
+				const wet = ( m & rain ) !== 0;
+				const what = `${ compile.name } ${ JSON.stringify( options ) } mask ${ m } (rain ${ wet ? 'on' : 'off' }, ${ out === direct ? 'direct' : 'upscaled' })`;
+				assert.deepEqual( strip( t ).filter( ( p ) => [ 'opaque', 'water', 'rain' ].includes( p.pass ) ), wet ? WET : DRY, what );
+				assert.equal( t.rewrites, wet ? 2 : 1, what );
+				for ( const p of t.passes ) {
+
+					if ( p.target === 'sceneColor|sceneDepth' ) continue;
+					for ( const x of p.colors ) assert.deepEqual( [ x.store, x.resolve ], [ 'store', null ], `${ what } ${ p.pass }` );
+					assert.equal( p.depth, null, `${ what } ${ p.pass }` );
+					assert.equal( p.rewrite, false, `${ what } ${ p.pass }` );
+
+				}
+				// derived and legacy differ only in the water's resolve (rain on) or its colour
+				// store (rain off), and the rain's ops are legacy's
+				const legacy = c.ops( 'legacy', m );
+				const diff = t.passes.flatMap( ( p, i ) => JSON.stringify( p ) === JSON.stringify( legacy.passes[ i ] ) ? [] : [ p.pass ] );
+				assert.deepEqual( diff, [ 'water' ], what );
+
+			}
+
+		}
+
+	} ],
+
+	[ 'derived ops, msaa 1: only the rain\'s depth is discarded, nothing else changes', () => {
+
+		const c = compileToday( {}, 1 );
+		const rain = c.maskOf( [ 'rain' ] );
+		for ( const m of frameMasks( c ) ) {
+
+			const t = c.ops( 'derived', m );
+			const wet = ( m & rain ) !== 0;
+			assert.equal( t.rewrites, wet ? 1 : 0, `mask ${ m }` );
+			for ( const p of t.passes ) {
+
+				for ( const x of p.colors ) assert.deepEqual( [ x.store, x.resolve ], [ 'store', null ], `mask ${ m } ${ p.pass }` );
+				if ( p.depth ) assert.equal( p.depth.store, p.pass === 'rain' ? 'discard' : 'store', `mask ${ m } ${ p.pass }` );
+
+			}
+
+		}
+
+	} ],
+
+	[ 'store ops (post=store-scene): every store and resolve kept, the loads derived\'s, nothing rewritten', () => {
+
+		for ( const [ samples, compile ] of [ [ 4, compileToday ], [ 1, compileToday ], [ 4, compilePipeline ] ] ) {
+
+			const c = compile( {}, samples, [] );
+			for ( const m of frameMasks( c ) ) {
+
+				const t = c.ops( 'store', m ), d = c.ops( 'derived', m );
+				const what = `${ compile.name } samples ${ samples } mask ${ m }`;
+				assert.equal( t.rewrites, 0, what );
+				assert.deepEqual( t.running, d.running, what );
+				t.passes.forEach( ( p, i ) => {
+
+					assert.equal( p.rewrite, false, what );
+					p.colors.forEach( ( x, j ) => {
+
+						assert.equal( x.store, 'store', `${ what } ${ p.pass }` );
+						assert.equal( x.resolve, samples > 1 && p.target === 'sceneColor|sceneDepth' ? true : null, `${ what } ${ p.pass }` );
+						assert.equal( x.load, d.passes[ i ].colors[ j ].load, `${ what } ${ p.pass }` );
+
+					} );
+					if ( p.depth ) assert.deepEqual( { ...p.depth, store: 'discard' }, { ...d.passes[ i ].depth, store: 'discard' }, `${ what } ${ p.pass }` );
+					if ( p.depth ) assert.equal( p.depth.store, 'store', `${ what } ${ p.pass }` );
+
+				} );
+
+			}
+
+		}
+		// the legacy table under store-scene (legacyDiscard []) is the same all-store table
+		const kept = compilePipeline( {}, 4, [] );
+		for ( let m = 0; m <= kept.fullMask; m ++ ) assert.deepEqual( strip( kept.ops( 'legacy', m ) ), strip( kept.ops( 'store', m ) ) );
+
+	} ],
+
+	[ 'ops cache: one table per mode and enabled mask, derived once', () => {
+
+		const c = compileToday();
+		const wet = c.maskOf( FULL ), dry = c.maskOf( FULL.filter( ( n ) => n !== 'rain' ) );
+		const a = c.ops( 'derived', wet );
+		assert.equal( c.ops( 'derived', wet ), a, 'the same object for the same mask' );
+		assert.notEqual( c.ops( 'derived', dry ), a );
+		assert.notEqual( c.ops( 'legacy', wet ), a );
+		assert.notEqual( c.ops( 'store', wet ), a );
+		assert.equal( a.mask, wet );
+		assert.equal( a.mode, 'derived' );
+		// a fresh compile derives equal tables (deterministic)
+		assert.deepEqual( compileToday().ops( 'derived', wet ), a );
+		assert.throws( () => c.ops( 'bogus', wet ), /unknown ops mode/ );
+
+	} ],
+
+	[ 'fgOps: the URL picks the table, derived by default, all-store under post=store-scene', () => {
 
 		assert.equal( opsModeFromURL( '?fgOps=derived' ), 'derived' );
+		assert.equal( opsModeFromURL( '?fgOps=legacy' ), 'legacy' );
+		assert.equal( opsModeFromURL( '?fgOps=store' ), 'store' );
 		assert.equal( opsModeFromURL( '?fgOps=off' ), 'off' );
-		assert.equal( opsModeFromURL( '?fgOps=bogus' ), 'legacy' );
-		assert.equal( opsModeFromURL( '' ), 'legacy' );
-		assert.equal( opsModeFromURL( null ), 'legacy' );
+		assert.equal( opsModeFromURL( '?fgOps=bogus' ), 'derived' );
+		assert.equal( opsModeFromURL( '' ), 'derived' );
+		assert.equal( opsModeFromURL( null ), 'derived' );
+		assert.equal( opsModeFromURL( '?post=store-scene' ), 'store' );
+		assert.equal( opsModeFromURL( '?post=full-fog,store-scene' ), 'store' );
+		assert.equal( opsModeFromURL( '?post=legacy' ), 'store', 'post=legacy includes store-scene' );
+		assert.equal( opsModeFromURL( '?post=full-fog' ), 'derived' );
+		assert.equal( opsModeFromURL( '?post=store-scene&fgOps=derived' ), 'derived', 'an explicit fgOps wins' );
+		assert.equal( opsModeFromURL( '?post=store-scene&fgOps=legacy' ), 'legacy' );
+		assert.equal( new AttachmentOps( mockWebGPU().Backend.prototype ).mode, 'derived', 'the default in a page without the option (node: no location)' );
 
 	} ],
 

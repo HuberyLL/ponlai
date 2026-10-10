@@ -28,10 +28,12 @@ export type PassKind = 'scene' | 'quad' | 'chain' | 'compute' | 'callback';
 /** 'sample': through a sampler or a load of the resolved texture; 'samples': the multisampled
  * samples themselves (a load per sample). */
 export type ReadMode = 'sample' | 'samples';
-/** 'legacy' is the graph before derived ops: the multisampled stores discarded in the rain pass
- * only (as Pipeline discarded them by hand before the graph ran its passes). 'derived' follows the
- * passes that run. */
-export type OpsMode = 'legacy' | 'derived';
+/** 'derived' (the default) follows the passes that run: a store is discarded where no later pass
+ * loads or reads the attachment, a multisample resolve dropped where nothing samples it before the
+ * next draw into the same samples. 'legacy' is the graph before derived ops: the multisampled stores
+ * discarded in the rain pass only (as Pipeline discarded them by hand before the graph ran its
+ * passes). 'store' keeps every store and resolve, as three records them (`post=store-scene`). */
+export type OpsMode = 'legacy' | 'derived' | 'store';
 export type Samples = number | 'scene';
 
 export interface ResourceHandle {
@@ -481,7 +483,8 @@ export class CompiledGraph {
 	readonly targetOf: ( TargetInfo | null )[];
 	readonly targets: TargetInfo[];
 	readonly jitterSpan: [ number, number ] | null;
-	private tables = new Map<string, OpsTable>();
+	// the derived tables, per mode and enabled mask: a frame looks its mask up without allocating
+	private tables: Record<OpsMode, Map<number, OpsTable>> = { legacy: new Map(), derived: new Map(), store: new Map() };
 	// resources whose last version in a frame is read by a later frame
 	private crossFrame: Set<number>;
 
@@ -657,15 +660,16 @@ export class CompiledGraph {
 
 	}
 
-	/** The attachment ops of every pass that runs under `mask` (memoised; deterministic). */
+	/** The attachment ops of every pass that runs under `mask`: derived on the first frame with that
+	 * mask, then cached (the same object every frame; deterministic). */
 	ops( mode: OpsMode, mask: number ): OpsTable {
 
-		const key = `${ mode }:${ mask }`;
-		let table = this.tables.get( key );
+		const cache = this.tables[ mode ] ?? fail( `unknown ops mode '${ mode }'` );
+		let table = cache.get( mask );
 		if ( ! table ) {
 
 			table = this.deriveOps( mode, mask );
-			this.tables.set( key, table );
+			cache.set( mask, table );
 
 		}
 		return table;
@@ -728,7 +732,12 @@ export class CompiledGraph {
 				const keep = r.canvas || r.kind === 'import' || this.decl.debugView === r.id;
 				const carried = this.crossFrame.has( r.id ) && last;
 				let store: StoreOp, resolve: boolean | null = null;
-				if ( mode === 'legacy' ) {
+				if ( mode === 'store' ) {
+
+					store = 'store';
+					if ( msaa ) resolve = true;
+
+				} else if ( mode === 'legacy' ) {
 
 					store = msaa && legacy.has( p.name ) ? 'discard' : 'store';
 					if ( msaa ) resolve = true;
@@ -769,9 +778,9 @@ export class CompiledGraph {
 
 				}
 				const carried = this.crossFrame.has( r.id ) && lastWriter.get( r.id ) === index;
-				const store: StoreOp = mode === 'legacy'
-					? ( msaa && legacy.has( p.name ) ? 'discard' : 'store' )
-					: ( used || carried || this.decl.debugView === r.id ? 'store' : 'discard' );
+				const store: StoreOp = mode === 'store' ? 'store'
+					: mode === 'legacy' ? ( msaa && legacy.has( p.name ) ? 'discard' : 'store' )
+						: ( used || carried || this.decl.debugView === r.id ? 'store' : 'discard' );
 				depth = { resource: r.name, write: d.write, load: d.clear ? 'clear' : 'load', store };
 
 			}
