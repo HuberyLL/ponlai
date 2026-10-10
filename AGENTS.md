@@ -166,6 +166,17 @@ stone exposed.
   and wave optics (each file names the server it expects); `tools/verify-scene.mjs` checks a
   production preview; `tools/benchmark-lighting.mjs` A/B-times two builds;
   `tools/compare-captures.py` measures two overview captures (needs Pillow and NumPy);
+  `node tools/capture-growth.mjs --base url [--cand url] [--seeds 1,2] [--grow 0,4,12]
+  [--views v1,v3] [--label x] [--q "query"]` sets a base and a candidate page side by side
+  (`tools/capture.mjs` per shot, headless and paused under the shared GPU lock, a few at a time) in
+  six views (v1 overview, also in golden hour; v2 top-down; v3 cliff, v4 meadow and v5 rim close;
+  v6 sea floor), framed on the land in the page (`__PONLAI__.land`: the overview is the page's own
+  island view; today's framing without it), into `artifacts/captures/growth/<label>/index.html`
+  with each pair's crop statistics (mean luma, saturation and edge density, by
+  compare-captures.py's metrics) and deltas beyond 10 % flagged; a URL's own query and `--q` pass
+  through and override the tool's settings (the default, seed 1 at steps 0 and 12, is 14 shots a
+  URL: base and candidate took about 8 min, most of a grown step's shot generating its world, as
+  each capture starts with an empty world cache);
   `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and
   `tools/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
@@ -707,6 +718,8 @@ stone exposed.
   English that explain why.
 - Check visual changes with captures, compared against the previous capture (and crops, not only the
   whole frame); report measured differences.
+- Where shapes differ (growth steps, seeds, a regenerated island), judge the look by eye and region
+  statistics (`tools/capture-growth.mjs`), not by pixel difference.
 - Measure frame time with `tools/profile-frame.mjs` on a production build, under the GPU lock: its
   scene matrix at the default generic display (1920x1080 CSS at DPR 2, quality high), before and
   after a change (`--compare` for an A/B, or `--toggle` on a debug flag while the change is in
