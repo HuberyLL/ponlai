@@ -50,7 +50,10 @@ stone exposed.
   `no-bank`, `inline-coc`, `three-fsr`, `store-scene`: the frame graph without the first
   performance round's changes), `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter
   path), `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then
-  steers by the frame intervals) and `frameRate` (the frame rate the loop holds on a faster
+  steers by the frame intervals), `renderScaleMemory=on|off` (whether high starts from the
+  render scale it last held, kept in localStorage: on by default, off in an automated browser so a
+  profile or capture does not start where the last run ended; `on` tests a returning load there)
+  and `frameRate` (the frame rate the loop holds on a faster
   display, over the tier's; `frameRate=0` renders on every refresh, as the profiler's uncapped runs
   do). Runtime switches for one-page A/Bs live in
   `src/debug/DebugFlags.ts`. `islander` picks the islanders' proportions (`medium`, the default, or
@@ -236,8 +239,8 @@ stone exposed.
   tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale (`FSR.ts`: an EASU pass,
   the sharpening in the canvas pass)), render scale per quality tier (`RenderScale.ts`) and
   high's dynamic resolution (`DynamicResolution.ts`: the scale steered by the GPU's frame time
-  from timestamp queries), the frame pacer (`FramePacer.ts`), the
-  scene's sample count (`SceneSamples.ts`).
+  from timestamp queries, split by pass into fixed and per-pixel work), the frame pacer
+  (`FramePacer.ts`), the scene's sample count (`SceneSamples.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -445,39 +448,79 @@ stone exposed.
   budget and low at 1280x720. High's is dynamic (`DynamicResolution.ts`): from the display's ratio
   (up to 1.5) down to a floor of 0.6 in steps of 0.05, steered by the GPU's frame time (timestamp
   queries, read as the time the GPU was busy with each frame; the frame intervals without them)
-  against the paced interval: the window's 90th percentile must stay under the interval less
-  1.8 ms (14.9 ms at 60 fps, 23.2 at 40). On a 120 Hz display the share of frames presented a
+  against the paced interval: the 90th percentile of the last 2 s must stay under the interval
+  less 1.8 ms (14.9 ms at 60 fps, 23.2 at 40). On a 120 Hz display the share of frames presented a
   refresh late held its floor of 1-2 % until that quantile passed about 14.5 ms and rose steeply
-  past it (4 % at 15.1 - 15.4 ms, 13 % at 16.3, 31 % at 17.5); the 97th percentile it steered
-  before sits on the periodic bake frames, which hardly follow the pixel count. The GPU's clock
-  stays at its top step at every scale while frames are paced (its performance states, read
-  through IOReport), so the GPU time follows the scale; another page or app drawing at the same
-  time lengthens it, and the scale then goes down as it should.
+  past it (4 % at 15.1 - 15.4 ms, 13 % at 16.3, 31 % at 17.5). The GPU's clock stays at its top
+  step at every scale while frames are paced (its performance states, read through IOReport), so
+  the GPU time follows the scale.
+  Its interface is one number per frame, `scale`, which the frame graph sizes its render from; any
+  upscaler (FSR 1 now, a temporal one later) takes the render from there and needs nothing else
+  from it. It reads back each frame's GPU time split by pass (`PassScaling`, by the pass's target):
+  passes into targets at the render's size or a power-of-two fraction of it, and the rest (shadow
+  maps, compute passes, the cloud view sized from the display, the canvas-sized upscale and
+  output), which cost the same at any scale. Each sample keeps the scale it was drawn at, and a
+  model moves it to any other: the fixed part plus the render-sized part times g(s') / g(s),
+  g(s) = k + (1 - k) s^2, where k, the render-sized passes' work that does not follow the pixel
+  count (their vertex stages), is measured again at every change. One fixed share for every view
+  (6.8 ms) had been half the horizon's (its cloud view and sky), so a step down there fell short
+  and one drop took three or four. Frames with periodic work (sky bake slices, the sun's and the
+  refracted sun's map redraws, the fog bank's re-bakes) stay out of the quantiles unless that kind
+  runs on more than a fifth of the frames: it hardly follows the pixel count.
   Every change softens or sharpens the whole image, so it changes as seldom as it can: down when
-  the window passes its limit (at most every 1.5 s, sooner when frames take the whole interval),
-  straight to the scale a cost model predicts lands under the interval less 2.4 ms (a fixed 6.8 ms,
-  fitted on the display, plus a part that follows the pixel count), in one change; up after 4 s at
-  a scale, by at most two steps, when the same model predicts the larger render lands there. A
-  scale it had to leave needs a wider margin for a while, and one it stepped up to and had to leave
-  at once is not tried again until its bar runs out (8 s, doubling up to 64 s), so a noisy load does
-  not make it oscillate; the bars expire, so the scale climbs back once a heavy view or another
-  page's load is gone and never drifts only down. Its first decision comes behind the loading
-  screen, which waits for it (at most 3 s): from the nominal ratio it jumps once to the scale the
-  first frames call for. On a 120 Hz display, in a player's normal window (four fifths of the
-  screen's height) dragged over the island, it holds 1.05 (1.0 before, with five times the
-  changes) at as few late frames, and 1.5 at `frameRate=40`; full screen it holds 0.9 in fair
-  weather and 0.8 in a storm (0.85 and 0.7 before) under drags that switch views and zoom, which
-  change its scale about 15 times a minute (as before): it follows the cost of the views (the
-  horizon view and a close zoom cost more than the island's). A change only resizes the frame
-  graph's targets: no pipeline is built and no frame is dropped (the cloud view
-  on high is sized from the display, so its kernels never rebuild). Paused, under `dpr` or with
-  the GUI's full resolution it renders at its nominal ratio, so paused frames and captures render at
-  the reference scale whatever scale the running page had reached, and match the reference image.
-  `dpr` and the full resolution also lift the lower tiers' budgets. The canvas always matches the
-  display (up to 2x): a render below it is upscaled inside the frame graph with FSR 1 and the grain
-  added after, never stretched by the browser. Every pass is sized to the render, not the canvas
-  (`rtt()` passes through `sizeRtt`). At the display's ratio nothing is upscaled, so `dpr=1`
-  captures are unchanged.
+  the quantile passes its limit (at most every 1.5 s, after 0.5 s when the last dozen frames take
+  the whole interval), in one change to the largest level predicted to land under the interval
+  less 2.4 ms, and not at all when that would save under 0.5 ms (a view bound by its fixed work);
+  up after 3 s, in one change to the largest level the last 2 s predict lands there with 0.3 ms to
+  spare, once the last 6 s allow as much (a view that has just turned lighter waits until the
+  heavier frames have left the window). A level it stepped up to and had to leave within 8 s is
+  barred, with those above it, for 30 s. A frame whose split finds no render-sized pass counts as
+  wholly render-sized, with a warning in debug builds.
+  A quality floor of 0.4 times the canvas's ratio (40 % of the canvas per axis, already below
+  FSR 1's Performance mode at 50 %; 30 % looked soft in captures) stops every step down. It goes
+  below only when the quantile is still over its limit after 3 s there, by the regular rule (never
+  the emergency's), one judged step at a time: to the nearest level predicted to save at least 1 ms
+  (a single level saves too little to tell from the frames' noise, so this is often two or three
+  levels), never further, whatever the fit asks for. Each step down is judged once its frames are
+  in: one that saved under 40 % of the time predicted means the GPU's time does not follow the pixel
+  count (another page or app drawing, whose work lands inside this page's passes), and from below
+  the floor it returns there and holds for 20 s, twice as long after each failed step; a further
+  step below needs the one before to have saved. Held at the floor with late frames for 10 s after a
+  failed step, it calls `onSustainedContention`, a hook for a lower frame rate (40 fps) that nothing
+  sets yet.
+  The frame-interval fallback (no timestamp queries, `gpuTimer=off`) moves one level at a time: down
+  while more than 2 % of a window's frames miss their vblank, up after 6 s without a miss. It keeps
+  the previous rule's bars: every step down bars the level it left from a step back up for 8 s,
+  doubling up to 64 s each time it is left again soon after, so a load that misses just above a
+  level settles below it (in a simulation of such a load it changes as often as the previous rule
+  did, a quarter as often as without the bars). It keeps the same quality floor and judges its steps
+  below it by the missed frames (a whole window after the step must cut their share to 0.6 of the
+  one that called for it).
+  It remembers the scale it has held for 4 s at the current canvas size in localStorage (by tier,
+  frame rate, canvas size, GPU adapter and whether GPU times or frame intervals steer it; not in an
+  automated browser, see `renderScaleMemory`) and starts there; its first decision (45 frames
+  without periodic work, up or down, with room for the first frames, which run about 7 % lighter
+  until the key light's first shadow step) comes behind the loading screen, which waits for it (at
+  most 3 s). A load that measures the GPU for its tier measures at the nominal scale.
+  On the display, measured with the build before its last review fixes (the same steering above the
+  quality floor; its runs started from a remembered scale), against the previous rule: in a normal
+  window dragged over the island it changed scale about a third as often at about as many late
+  frames, its 10th-percentile scale two levels higher. In fair weather in a taller window and full
+  screen its 10th-percentile scale sat two levels lower than the previous rule's, with slightly more
+  frames presented late (4 - 9 % more), and with another page drawing it had more late frames than
+  the previous rule in every run (1.3 to 5 times as many). A returning load settled in 40 - 85 % of
+  the time a load from the nominal scale took. The final build's pairs (island, fair weather, storm,
+  `frameRate=40`, full screen, another page drawing, a first and a returning load) are pending a run
+  on the display; the lower frame rate meant for contention is not chosen.
+  A change only resizes the frame graph's targets: no pipeline is built and no frame is dropped
+  (the cloud view on high is sized from the display, so its kernels never rebuild). Paused, under
+  `dpr` or with the GUI's full resolution it renders at its nominal ratio, so paused frames and
+  captures render at the reference scale whatever scale the running page had reached, and match
+  the reference image. `dpr` and the full resolution also lift the lower tiers' budgets. The
+  canvas always matches the display (up to 2x): a render below it is upscaled inside the frame
+  graph with FSR 1 and the grain added after, never stretched by the browser. Every pass is sized
+  to the render, not the canvas (`rtt()` passes through `sizeRtt`). At the display's ratio nothing
+  is upscaled, so `dpr=1` captures are unchanged.
 - The loop holds the tier's frame rate on a display faster than that (`FramePacer.ts`, 60 on high
   and medium): it renders on every second refresh at 120 Hz (every refresh at 60 Hz, 72 fps at
   144 Hz) and skips the other animation frames before three's loop sees them, so every frame stays
@@ -746,6 +789,13 @@ stone exposed.
   it resolves while that one is mapped. `GpuFrameTimer` (dynamic resolution) and the frame
   profiler each take over the pools' `resolveQueriesAsync`; only one may own them, so the page
   feeds the dynamic resolution from the profiler while the profiler times passes.
+- The dynamic scale sorts each pass by its target's size (`PassScaling`): a pass whose cost
+  should follow the render's pixel count renders into a target at the render's size or a
+  power-of-two fraction of it (a target at any other size counts as fixed cost; a frame graph that
+  renders into max-size targets through a viewport finds no render-sized pass, and every frame
+  then counts as wholly render-sized, with a warning in debug builds), and new periodic
+  work that lands on a few frames (a bake, a map redraw) tags them (`periodicWork` in `main.ts`,
+  `PeriodicWork`) so the quantiles leave them out.
 - `Sky.ts` drives three's `PMREMGenerator` private steps (`_setSizeFromTexture`, `_init`,
   `_textureToCubeUV`, `_applyGGXFilter`, `_setViewport`) to spread its filter chain over frames;
   re-check them on a three upgrade. Without them it falls back to `fromEquirectangular`.
