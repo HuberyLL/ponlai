@@ -441,9 +441,10 @@ const umc = ( name: string ) => `/artifacts/assets/quaternius/ultimate-modular-c
 // an undyed linen shirt, muted warm brown trousers and dark leather shoes, all repainted in the
 // island's palette (sRGB, as they should read in sunlight). The kit's pockets, trims and two-tone
 // panels are painted over in one colour.
-// Its proportions (`islander` URL option, GUI Islander folder) are the kit's own or one of the
-// chunkier, stylised builds in Proportions.ts.
-const islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : 'stock' };
+// Its proportions (`islander` URL option, GUI Islander folder) are the medium build of
+// Proportions.ts by default: chunkier and stylised, as the people layer of the art asks; the kit's
+// own (`stock`) and the other builds stay selectable for comparison.
+const islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : 'medium' };
 const buildIslander = ( name: ProportionName ) => loadVillager( umc( 'Farmer' ), [
 	{ from: umc( 'Casual_2' ), part: 'Casual2_Head', paint: { Skin: [ '#e2a882', KIND.skin ], Skin_Darker: [ '#e2a882', KIND.skin ], Eyebrows: [ '#4a2f22', KIND.hair ], Hair: [ '#5a3a26', KIND.hair ], Eye: [ '#2a1d18', KIND.cloth ] } },
 	{ from: umc( 'Adventurer' ), part: 'Adventurer_Body', paint: { Skin: [ '#e2a882', KIND.skin ], Green: [ '#dccfae', KIND.cloth ], LightGreen: [ '#dccfae', KIND.cloth ] }, hands: [ '#e2a882', KIND.skin ] },

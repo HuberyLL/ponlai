@@ -53,8 +53,8 @@ stone exposed.
   steers by the frame intervals) and `frameRate` (the frame rate the loop holds on a faster
   display, over the tier's; `frameRate=0` renders on every refresh, as the profiler's uncapped runs
   do). Runtime switches for one-page A/Bs live in
-  `src/debug/DebugFlags.ts`. `islander` picks the islanders' proportions (`stock`, the kit's own and
-  the default, or the chunkier `subtle`, `medium` and `strong` builds of `Proportions.ts`; also in
+  `src/debug/DebugFlags.ts`. `islander` picks the islanders' proportions (`medium`, the default, or
+  `stock` (the kit's own), `subtle` and `strong` builds of `Proportions.ts`; also in
   the GUI's Islander folder, which rebuilds the figure in place).
 - Quality knobs: one table, `QUALITY` in `src/Quality.ts`, per tier. Load knobs are compiled into
   materials or the frame graph and read once as those are built, so a change of tier reloads the
@@ -596,6 +596,9 @@ stone exposed.
   Zelda: Breath of the Wild): human in every way but for long pointed ears that sweep back and a
   little up, grown on any head of the kit (`Ears.ts`) and bound to its head bone. Their dress stays
   plain while the basic look settles: undyed linen and calm earthy tones, leather shoes, no hat.
+  They are built in the medium proportions of `Proportions.ts` (about 4.7 heads tall, against the
+  kit's 5.5: a larger head, shorter legs, broader shoulders and hands), chosen by the user from
+  four builds; the kit's own stays selectable for comparison.
 - Do not commit reference images, and do not ship third-party art without a licence.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
   copyright line, licence) and the licence text sits next to them (see `src/ocean/tidewater.LICENSE.txt`).
