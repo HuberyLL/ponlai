@@ -162,6 +162,8 @@ stone exposed.
 
 ## Layout
 
+- `docs/game-design.md`: the game's design (what the game is and why), kept up to date as
+  decisions change; read it before gameplay work.
 - `src/Quality.ts`: the quality tiers, every knob of the frame's cost in one table (see
   Decisions); `src/QualityDetect.ts` chooses one for the GPU at startup.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics (the island camera in
