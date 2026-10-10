@@ -25,8 +25,12 @@
 // (eyes) in the shade, and many small rounded ones as the lumps of dissolved limestone. The field stays a true distance inside each block
 // (gradient 1), so the dual-contouring surface nets keep facets flat and their edges crisp.
 // Every scar is seeded from a coast point hashed from its position in a world-anchored cell, and
-// each generation is placed on the surface the larger ones left, so an unchanged stretch of coast
-// keeps its scars when the land grows elsewhere.
+// placed in two tiers: the joint faces and gullies on the plain face, the smaller generations on
+// the face with those cut out. Each scar reaches a bounded distance from its anchor and they are
+// cut in a canonical order, so what the wall is at a point depends only on the coast within about
+// 25 m of it: given the same land distance there, an unchanged stretch of coast keeps its scars,
+// to the bit, when the land grows elsewhere, and a part of the coast can be built from its own
+// surroundings alone.
 
 import { hash3i, noise3, smax, smoothstep } from './noise.ts';
 
@@ -105,13 +109,14 @@ function softBed( k: number ): number {
 // Exposure of the coast to the waves (0 sheltered .. 1 exposed): headlands and convex corners
 // take the swell, bays and re-entrant corners are spared. The mean signed distance round a ring
 // is positive where most of it lies offshore.
+// (The ring's distances are clamped to 3 m, so the exposure reads only the coast near the ring.)
 function exposureAt( dist: Field, x: number, z: number ): number {
 
 	let s = 0;
 	for ( let i = 0; i < 10; i ++ ) {
 
 		const a = i * Math.PI * 0.2;
-		s += dist( x + Math.cos( a ) * 2.6, z + Math.sin( a ) * 2.6 );
+		s += Math.max( - 3, Math.min( 3, dist( x + Math.cos( a ) * 2.6, z + Math.sin( a ) * 2.6 ) ) );
 
 	}
 	const convex = s / 10 - dist( x, z );
@@ -133,8 +138,8 @@ export interface Scar {
 	round: number; // rounding of the scar's rim (m)
 	level: number;
 	kind: ScarKind;
-	prio: number; // hashed rank, which wins when two pockets crowd each other
-	cx: number; cy: number; cz: number; size: number; // a pocket's centre and half width
+	key: number; // its coast seed's key: with the level, the order the scars are cut in
+	cx: number; cy: number; cz: number; size: number; // its anchor on the surface (a pocket's centre) and half width
 	x0: number; x1: number; z0: number; z1: number; y0: number; y1: number; // bounds
 }
 
@@ -157,7 +162,7 @@ interface Level {
 }
 
 // Three generations: joint faces that set the plan of a stretch of coast, pockets where blocks
-// fell out of them and flakes spalled off them, and smaller flakes on their faces. Above the
+// fell out of them and flakes spalled off them, and smaller flakes on them. Above the
 // waves the rims stay sharp, a few centimetres at most: fractured rock breaks crisply, and only
 // the sea rounds its edges (see rimRound).
 const LEVELS: Level[] = [
@@ -168,9 +173,17 @@ const LEVELS: Level[] = [
 // Two pockets nearer than this (m, between their rims) at much the same height read as a pair
 // of eyes in the shade: only the higher-ranked one falls.
 const POCKET_GAP = 1.0, POCKET_RISE = 0.6;
-// Gullies: narrow slots opened along a joint from the sea to the lip, every 9 m or so of
-// straight coast.
-const GULLY = { cell: 9.0, off: 3.1, keep: 0.55 };
+// Gullies: narrow slots opened along a joint from the sea to the lip, at the seeds that rank first
+// among the seeds within `spacing` of them: one candidate per 2 x 3.7 m of coast, about as many as
+// the 9 m cells a coast crosses (one every 7 m or so) gave before, so one gully per 13 m or so.
+const GULLY = { spacing: 3.7, keep: 0.55, level: LEVELS.length };
+// How far a scar reaches from its anchor (m, either way in x and z): the joint faces and gullies,
+// and the smaller generations. A bounded reach is what makes the wall at a point depend only on
+// the coast near it. Most scars lie well inside it; the few that would cut rock beyond it (a wide
+// joint face whose leaning sides splay out at the toe, or that runs straight on across a bay) end
+// there in vertical breaks across the scar, in its own frame, rather than in a cut along the
+// world's axes.
+const REACH_A = 4.5, REACH_B = 3.0;
 // No scar reaches further behind the face than this (m), so the meadow keeps its plateau.
 const MAX_REACH = 1.3;
 // The meadow's planting height: a floor cut into the lip stays clear below it.
@@ -179,11 +192,10 @@ const BARE_STEP = 2.55;
 const wrap = ( a: number ) => Math.atan2( Math.sin( a ), Math.cos( a ) );
 const lerp = ( a: number, b: number, t: number ) => a + ( b - a ) * t;
 
-// The polytope's vertices (all triple intersections inside every plane), for its bounds.
-function bounds( s: Scar ): boolean {
+// The polytope's vertices: all triple intersections inside every plane (x, y, z each).
+function vertices( p: Float64Array, n: number ): number[] {
 
-	const p = s.planes, n = s.n;
-	let x0 = Infinity, x1 = - Infinity, y0 = Infinity, y1 = - Infinity, z0 = Infinity, z1 = - Infinity;
+	const v: number[] = [];
 	for ( let a = 0; a < n; a ++ ) for ( let b = a + 1; b < n; b ++ ) for ( let c = b + 1; c < n; c ++ ) {
 
 		const ax = p[ a * 4 ], ay = p[ a * 4 + 1 ], az = p[ a * 4 + 2 ], ac = p[ a * 4 + 3 ];
@@ -197,14 +209,58 @@ function bounds( s: Scar ): boolean {
 		const z = ( ax * ( by * cc - bc * cy ) - ay * ( bx * cc - bc * cx ) + ac * ( bx * cy - by * cx ) ) / det;
 		let inside = true;
 		for ( let k = 0; k < n && inside; k ++ ) if ( p[ k * 4 ] * x + p[ k * 4 + 1 ] * y + p[ k * 4 + 2 ] * z - p[ k * 4 + 3 ] > 1e-6 ) inside = false;
-		if ( ! inside ) continue;
-		x0 = Math.min( x0, x ); x1 = Math.max( x1, x ); y0 = Math.min( y0, y ); y1 = Math.max( y1, y ); z0 = Math.min( z0, z ); z1 = Math.max( z1, z );
+		if ( inside ) v.push( x, y, z );
+
+	}
+	return v;
+
+}
+
+// Keeps the scar within its reach of its anchor and sets its bounds. Where the block would pass
+// an octagon round the anchor (in the frame of `angle`, the coast's outward normal there; its
+// corners inside the reach less the rims' rounding), it breaks off along vertical planes of that
+// octagon; the bounds are then clamped to the reach as well, which makes the reach a guarantee
+// without cutting anything.
+function bounds( s: Scar, angle: number ): boolean {
+
+	const reach = s.level === 0 || s.kind === 'gully' ? REACH_A : REACH_B;
+	const apothem = ( reach - 0.15 ) * Math.cos( Math.PI / 8 );
+	let v = vertices( s.planes, s.n );
+	const ends: number[] = [];
+	for ( let k = 0; k < 8; k ++ ) {
+
+		const dx = Math.cos( angle + k * Math.PI / 4 ), dz = Math.sin( angle + k * Math.PI / 4 );
+		const c = dx * s.cx + dz * s.cz + apothem;
+		for ( let i = 0; i < v.length; i += 3 ) if ( dx * v[ i ] + dz * v[ i + 2 ] > c ) {
+
+			ends.push( dx, 0, dz, c );
+			break;
+
+		}
+
+	}
+	if ( ends.length > 0 ) {
+
+		const planes = new Float64Array( s.planes.length + ends.length );
+		planes.set( s.planes );
+		planes.set( ends, s.planes.length );
+		s.planes = planes; s.n = planes.length / 4;
+		v = vertices( s.planes, s.n );
+
+	}
+	let x0 = Infinity, x1 = - Infinity, y0 = Infinity, y1 = - Infinity, z0 = Infinity, z1 = - Infinity;
+	for ( let i = 0; i < v.length; i += 3 ) {
+
+		x0 = Math.min( x0, v[ i ] ); x1 = Math.max( x1, v[ i ] ); y0 = Math.min( y0, v[ i + 1 ] );
+		y1 = Math.max( y1, v[ i + 1 ] ); z0 = Math.min( z0, v[ i + 2 ] ); z1 = Math.max( z1, v[ i + 2 ] );
 
 	}
 	if ( ! ( x1 > x0 ) || ! ( y1 > y0 ) || ! ( z1 > z0 ) ) return false;
 	// rounding reaches a little beyond the faces
 	const m = s.round + 0.05;
-	s.x0 = x0 - m; s.x1 = x1 + m; s.y0 = y0 - m; s.y1 = y1 + m; s.z0 = z0 - m; s.z1 = z1 + m;
+	s.x0 = Math.max( x0 - m, s.cx - reach ); s.x1 = Math.min( x1 + m, s.cx + reach );
+	s.z0 = Math.max( z0 - m, s.cz - reach ); s.z1 = Math.min( z1 + m, s.cz + reach );
+	s.y0 = y0 - m; s.y1 = y1 + m;
 	return true;
 
 }
@@ -235,16 +291,18 @@ function coastSeeds( dist: Field, area: { x0: number; z0: number; x1: number; z1
 		}
 
 	}
-	// Crossings a few centimetres apart can share a key, and so would cut the same scar twice:
-	// keep one of each, the same one whatever order they were found in.
-	const byKey = new Map<number, Seed>();
+	// Crossings a few centimetres apart share a key, and so would cut the same scar twice: keep
+	// one of each, the same one whatever order they were found in. (By the rounded position the
+	// key is hashed from, so two distant seeds whose keys collide both stay.)
+	const byPoint = new Map<number, Seed>();
 	for ( const s of seeds ) {
 
-		const o = byKey.get( s.key );
-		if ( ! o || s.x < o.x || ( s.x === o.x && s.z < o.z ) ) byKey.set( s.key, s );
+		const k = ( Math.round( s.x * 10 ) + 32768 ) * 65536 + Math.round( s.z * 10 ) + 32768;
+		const o = byPoint.get( k );
+		if ( ! o || s.x < o.x || ( s.x === o.x && s.z < o.z ) ) byPoint.set( k, s );
 
 	}
-	return [ ...byKey.values() ];
+	return [ ...byPoint.values() ];
 
 }
 
@@ -282,69 +340,136 @@ export class CliffWall {
 	private coef: number[] = []; // per listed scar and plane: n.x * x + n.z * z - c, n.y
 	private colTop = 0;
 
+	// `area` is the box the caller evaluates the wall in, grown by 25 m: the scars that shape the
+	// wall there are seeded within it, and so is all that placed and chose them.
 	constructor( dist: Field, coast: Field, top: Field, area: { x0: number; z0: number; x1: number; z1: number } ) {
 
 		this.dist = dist; this.coast = coast; this.top = top;
 		const wall = ( x: number, z: number ) => dist( x, z ) - coast( x, z );
 		const seeds = coastSeeds( dist, area );
+		// Tier A, the joint faces that set the plan of the coast and the gullies, is placed on the
+		// plain face; tier B, the pockets and flakes, on the face with tier A cut out. (A chain of
+		// two placements rather than one per generation keeps the wall's reach short.)
+		this.place( [ ...this.generation( 0, seeds, wall ), ...this.gullies( seeds, wall ) ] );
+		this.place( [ ...this.generation( 1, seeds, wall ), ...this.generation( 2, seeds, wall ) ] );
 
-		// Each generation is cut into the surface the larger ones left.
-		for ( let level = 0; level <= LEVELS.length; level ++ ) {
+	}
 
-			const gully = level === LEVELS.length;
-			const L = gully ? null : LEVELS[ level ];
-			const cell = gully ? GULLY.cell : L!.cell, off = gully ? GULLY.off : L!.off, per = gully ? 1 : L!.per;
-			const salt = 6007 + level * 131;
-			// The seeds with the lowest priority in each world-anchored cell: a cell's choice
-			// depends on its own stretch of coast alone.
-			const cells = new Map<number, Seed[]>();
-			for ( const s of seeds ) {
+	// Adds a tier's scars in a canonical order, by level and seed key, whatever order they were
+	// found in: the smooth maximum that cuts them is order-dependent in its last bits, and every
+	// box that builds the wall must cut a point's scars in the same order.
+	private place( made: Scar[] ): void {
 
-				const k = ( Math.floor( ( s.x + off ) / cell ) + 512 ) * 1024 + Math.floor( ( s.z + off * 0.7 ) / cell ) + 512;
-				const list = cells.get( k );
-				if ( list ) list.push( s ); else cells.set( k, [ s ] );
+		made.sort( ( a, b ) => a.level - b.level || a.key - b.key || a.cx - b.cx || a.cz - b.cz );
+		for ( const s of made ) this.add( s );
 
-			}
-			const made: Scar[] = [];
-			for ( const list of cells.values() ) {
+	}
 
-				list.sort( ( a, b ) => hash3i( a.key, salt, 3 ) - hash3i( b.key, salt, 3 ) );
-				for ( let j = 0; j < Math.min( per, list.length ); j ++ ) {
+	// One generation's scars: at the seeds with the lowest priority in each world-anchored cell, so
+	// a cell's choice depends on its own stretch of coast alone.
+	private generation( level: number, seeds: Seed[], wall: Field ): Scar[] {
 
-					const seed = list[ j ];
-					const r = ( k: number ) => hash3i( seed.key, salt + k * 37, 7741 );
-					if ( r( 0 ) > ( gully ? GULLY.keep : L!.keep ) ) continue;
-					const n = gradient( wall, seed.x, seed.z, 0.12 );
-					// the seed moved onto the wall's top edge
-					const w = this.coast( seed.x, seed.z );
-					const sx = seed.x + n[ 0 ] * w, sz = seed.z + n[ 1 ] * w;
-					let scar: Scar | null;
-					if ( gully ) scar = this.makeGully( sx, sz, n, r, wall );
-					else if ( r( 38 ) >= L!.face && r( 39 ) < L!.flake ) scar = this.makeFlake( sx, sz, n, r, L!, level );
-					else scar = this.makeScar( sx, sz, n, r, L!, level );
-					if ( scar ) {
+		const L = LEVELS[ level ], salt = 6007 + level * 131;
+		const cells = new Map<number, Seed[]>();
+		for ( const s of seeds ) {
 
-						scar.prio = hash3i( seed.key, salt, 3 );
-						made.push( scar );
+			const k = ( Math.floor( ( s.x + L.off ) / L.cell ) + 512 ) * 1024 + Math.floor( ( s.z + L.off * 0.7 ) / L.cell ) + 512;
+			const list = cells.get( k );
+			if ( list ) list.push( s ); else cells.set( k, [ s ] );
 
-					}
+		}
+		const rank = ( s: Seed ) => hash3i( s.key, salt, 3 );
+		const proposals: {
+			seed: Seed; prio: number; r: ( k: number ) => number; n: [ number, number ]; x: number; z: number;
+			flake: boolean; pocket: { cy: number; size: number } | null;
+		}[] = [];
+		for ( const list of cells.values() ) {
 
-				}
+			list.sort( ( a, b ) => rank( a ) - rank( b ) || a.key - b.key );
+			for ( let j = 0; j < Math.min( L.per, list.length ); j ++ ) {
 
-			}
-			// (added after the whole generation: its members are placed on the older surface) A
-			// pocket gives way to any higher-ranked one crowding it, whether or not that one gives
-			// way in turn, so the outcome does not depend on the order the cells were visited in.
-			for ( const s of made ) {
-
-				if ( s.kind === 'pocket' && made.some( ( o ) => o !== s && o.kind === 'pocket' && o.prio < s.prio
-					&& Math.abs( o.cy - s.cy ) < POCKET_RISE
-					&& Math.hypot( o.cx - s.cx, o.cz - s.cz ) < o.size + s.size + POCKET_GAP ) ) continue;
-				this.add( s );
+				const seed = list[ j ];
+				const r = ( k: number ) => hash3i( seed.key, salt + k * 37, 7741 );
+				if ( r( 0 ) > L.keep ) continue;
+				const n = gradient( wall, seed.x, seed.z, 0.12 );
+				// the seed moved onto the wall's top edge
+				const w = this.coast( seed.x, seed.z );
+				const x = seed.x + n[ 0 ] * w, z = seed.z + n[ 1 ] * w;
+				const flake = r( 38 ) >= L.face && r( 39 ) < L.flake;
+				proposals.push( { seed, prio: rank( seed ), r, n, x, z, flake, pocket: flake ? null : this.pocketProposal( x, z, r, L ) } );
 
 			}
 
 		}
+		const made: Scar[] = [];
+		for ( const p of proposals ) {
+
+			// A pocket gives way to any higher-ranked one crowding it, whether or not that one gives
+			// way in turn, judged on what they would be (seed, hashed heights and widths) rather than
+			// on where they were placed, so the choice reads only the coast within a few metres.
+			const s = p.pocket;
+			if ( s && proposals.some( ( o ) => o !== p && o.pocket && o.prio < p.prio
+				&& Math.abs( o.pocket.cy - s.cy ) < POCKET_RISE
+				&& Math.hypot( o.x - p.x, o.z - p.z ) < o.pocket.size + s.size + POCKET_GAP ) ) continue;
+			const scar = p.flake ? this.makeFlake( p.x, p.z, p.n, p.r, L, level ) : this.makeScar( p.x, p.z, p.n, p.r, L, level );
+			if ( scar ) {
+
+				scar.key = p.seed.key;
+				made.push( scar );
+
+			}
+
+		}
+		return made;
+
+	}
+
+	// The gullies: at the seeds that rank first among the seeds within GULLY.spacing of them, a
+	// choice that reads only the coast near each seed.
+	private gullies( seeds: Seed[], wall: Field ): Scar[] {
+
+		const salt = 6007 + GULLY.level * 131, R = GULLY.spacing;
+		const rank = ( s: Seed ) => hash3i( s.key, salt, 3 );
+		const grid = new Map<number, Seed[]>();
+		const cell = ( x: number ) => Math.floor( x / R ) + 4096;
+		for ( const s of seeds ) {
+
+			const k = cell( s.x ) * 8192 + cell( s.z );
+			const list = grid.get( k );
+			if ( list ) list.push( s ); else grid.set( k, [ s ] );
+
+		}
+		const made: Scar[] = [];
+		for ( const seed of seeds ) {
+
+			const h = rank( seed );
+			let first = true;
+			for ( let gz = cell( seed.z ) - 1; gz <= cell( seed.z ) + 1 && first; gz ++ ) for ( let gx = cell( seed.x ) - 1; gx <= cell( seed.x ) + 1 && first; gx ++ ) {
+
+				for ( const o of grid.get( gx * 8192 + gz ) ?? [] ) {
+
+					if ( o === seed || Math.hypot( o.x - seed.x, o.z - seed.z ) > R ) continue;
+					const ho = rank( o );
+					if ( ho < h || ( ho === h && o.key < seed.key ) ) { first = false; break; }
+
+				}
+
+			}
+			if ( ! first ) continue;
+			const r = ( k: number ) => hash3i( seed.key, salt + k * 37, 7741 );
+			if ( r( 0 ) > GULLY.keep ) continue;
+			const n = gradient( wall, seed.x, seed.z, 0.12 );
+			const w = this.coast( seed.x, seed.z );
+			const scar = this.makeGully( seed.x + n[ 0 ] * w, seed.z + n[ 1 ] * w, n, r, wall );
+			if ( scar ) {
+
+				scar.key = seed.key;
+				made.push( scar );
+
+			}
+
+		}
+		return made;
 
 	}
 
@@ -393,32 +518,12 @@ export class CliffWall {
 
 	}
 
-	// A scar: a block whose back is a joint of the set facing the sea most squarely (some along an
-	// irregular fracture instead) and whose sides are joints of the other set. A joint face opens
-	// the wall from below the sea to its cap or through the meadow; a pocket rested on a bed
-	// parting or on a fracture inclined across the face, and broke away under a parting, an
-	// inclined fracture or two fractures meeting in an arch (the semi-elliptic scars of a cliff).
-	// A corner or two broke off along further fractures.
-	private makeScar( x: number, z: number, n: [ number, number ], r: ( k: number ) => number, L: Level, level: number ): Scar | null {
+	// A scar's heights at its seed, from its hashes alone: its floor and roof (or the meadow), what
+	// it is (a joint face, a step fallen from the lip or a pocket) and what bounds it above and
+	// below; null where too little height is left for it.
+	private heights( x: number, z: number, r: ( k: number ) => number, L: Level ) {
 
 		const top = this.top( x, z );
-		const angN = Math.atan2( n[ 1 ], n[ 0 ] );
-		const facing = ( a: number ) => Math.abs( wrap( a - angN ) ) > Math.PI / 2 ? a + Math.PI : a;
-		const a = facing( SET_A ), b = facing( SET_B );
-		const useA = Math.abs( wrap( a - angN ) ) < Math.abs( wrap( b - angN ) );
-		let back = useA ? a : b;
-		let side = useA ? SET_B : SET_A;
-		if ( r( 1 ) < L.irregular ) {
-
-			back = angN + ( r( 2 ) - 0.5 ) * 0.9;
-			side = back + Math.PI / 2 + ( r( 3 ) - 0.5 ) * 0.9;
-
-		} else back += ( r( 2 ) - 0.5 ) * 0.28;
-		// never so oblique that the scar runs along the wall
-		const alpha = Math.max( - 0.75, Math.min( 0.75, wrap( back - angN ) ) );
-		back = angN + alpha;
-		const fx = Math.cos( back ), fz = Math.sin( back );
-		const tx = - n[ 1 ], tz = n[ 0 ];
 		const shift = bedShift( x, z );
 		const partingAt = ( y: number, up: boolean ) => {
 
@@ -464,7 +569,51 @@ export class CliffWall {
 		}
 		if ( roofKind === 0 ) yR = Math.min( partingAt( yR, true ), top - 0.25 );
 		if ( ! lip && yR - yF < L.height[ 0 ] * 0.7 ) return null;
+		return { yF, yR, face, lip, floorKind, roofKind };
 
+	}
+
+	// A pocket as proposed at its seed (its middle height and half width), or null for a joint
+	// face, a step or a scar too low to fall: what the crowding rule judges.
+	private pocketProposal( x: number, z: number, r: ( k: number ) => number, L: Level ): { cy: number; size: number } | null {
+
+		const h = this.heights( x, z, r, L );
+		if ( ! h || h.face || h.lip ) return null;
+		const size = ( lerp( L.width[ 0 ], L.width[ 1 ], r( 12 ) ) + lerp( L.width[ 0 ], L.width[ 1 ], r( 13 ) ) ) * 0.5;
+		return { cy: ( h.yF + Math.min( h.yR, this.top( x, z ) ) ) * 0.5, size };
+
+	}
+
+	// A scar: a block whose back is a joint of the set facing the sea most squarely (some along an
+	// irregular fracture instead) and whose sides are joints of the other set. A joint face opens
+	// the wall from below the sea to its cap or through the meadow; a pocket rested on a bed
+	// parting or on a fracture inclined across the face, and broke away under a parting, an
+	// inclined fracture or two fractures meeting in an arch (the semi-elliptic scars of a cliff).
+	// A corner or two broke off along further fractures.
+	private makeScar( x: number, z: number, n: [ number, number ], r: ( k: number ) => number, L: Level, level: number ): Scar | null {
+
+		const top = this.top( x, z );
+		const hts = this.heights( x, z, r, L );
+		if ( ! hts ) return null;
+		const { face, lip, floorKind, roofKind } = hts;
+		let { yF, yR } = hts;
+		const angN = Math.atan2( n[ 1 ], n[ 0 ] );
+		const facing = ( a: number ) => Math.abs( wrap( a - angN ) ) > Math.PI / 2 ? a + Math.PI : a;
+		const a = facing( SET_A ), b = facing( SET_B );
+		const useA = Math.abs( wrap( a - angN ) ) < Math.abs( wrap( b - angN ) );
+		let back = useA ? a : b;
+		let side = useA ? SET_B : SET_A;
+		if ( r( 1 ) < L.irregular ) {
+
+			back = angN + ( r( 2 ) - 0.5 ) * 0.9;
+			side = back + Math.PI / 2 + ( r( 3 ) - 0.5 ) * 0.9;
+
+		} else back += ( r( 2 ) - 0.5 ) * 0.28;
+		// never so oblique that the scar runs along the wall
+		const alpha = Math.max( - 0.75, Math.min( 0.75, wrap( back - angN ) ) );
+		back = angN + alpha;
+		const fx = Math.cos( back ), fz = Math.sin( back );
+		const tx = - n[ 1 ], tz = n[ 0 ];
 		// the block's anchor: on the surface the larger scars left, halfway up its exposed height
 		const yA = Math.max( - 0.8, Math.min( ( Math.max( yF, - 0.5 ) + Math.min( yR, top ) ) * 0.5, top - 0.3 ) );
 		const t = this.surfaceAlong( x, yA, z, n[ 0 ], n[ 1 ] );
@@ -592,12 +741,12 @@ export class CliffWall {
 		const fresh = r( 34 ) < L.fresh ? 0.6 + r( 35 ) * 0.4 : 0;
 		const scar: Scar = {
 			planes: new Float64Array( planes ), n: planes.length / 4, floor, lip,
-			id: r( 36 ), fresh, level, kind: face ? 'face' : lip ? 'lip' : 'pocket', prio: 0,
+			id: r( 36 ), fresh, level, kind: face ? 'face' : lip ? 'lip' : 'pocket', key: 0,
 			cx: px, cy: ( yF + Math.min( yR, top ) ) * 0.5, cz: pz, size: ( wPlus + wMinus ) * 0.5,
 			round: fresh > 0 ? 0.006 + r( 37 ) * 0.01 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
 			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
 		};
-		return bounds( scar ) ? scar : null;
+		return bounds( scar, angN ) ? scar : null;
 
 	}
 
@@ -677,12 +826,12 @@ export class CliffWall {
 		const fresh = r( 34 ) < L.fresh ? 0.6 + r( 35 ) * 0.4 : 0;
 		const scar: Scar = {
 			planes: new Float64Array( planes ), n: planes.length / 4, floor: - 1, lip: false,
-			id: r( 36 ), fresh, level, kind: 'flake', prio: 0,
+			id: r( 36 ), fresh, level, kind: 'flake', key: 0,
 			cx: px, cy: yA, cz: pz, size: W,
 			round: fresh > 0 ? 0.005 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
 			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
 		};
-		return bounds( scar ) ? scar : null;
+		return bounds( scar, Math.atan2( n[ 1 ], n[ 0 ] ) ) ? scar : null;
 
 	}
 
@@ -737,11 +886,11 @@ export class CliffWall {
 		plane( n[ 0 ], 0, n[ 1 ], px + n[ 0 ] * 1.7, 1.2, pz + n[ 1 ] * 1.7 );
 		const scar: Scar = {
 			planes: new Float64Array( planes ), n: planes.length / 4, floor, lip: true,
-			id: r( 29 ), fresh: 0, level: LEVELS.length, kind: 'gully', prio: 0,
+			id: r( 29 ), fresh: 0, level: GULLY.level, kind: 'gully', key: 0,
 			cx: px, cy: 1.2, cz: pz, size: half, round: 0.025 + r( 30 ) * 0.025,
 			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
 		};
-		return bounds( scar ) ? scar : null;
+		return bounds( scar, angN ) ? scar : null;
 
 	}
 
@@ -912,17 +1061,18 @@ export class CliffWall {
 	}
 
 	// How much rock the wall has recently shed above a point at its foot (0 .. 1): the recent
-	// scars of the two larger generations, each over its own width and a little beyond.
+	// joint faces (tier A, so it reads only the coast near the point), each over its own width and
+	// a little beyond.
 	shed( x: number, z: number ): number {
 
 		let w = 0;
 		for ( const s of this.scars ) {
 
-			if ( s.fresh <= 0 || s.level > 1 ) continue;
+			if ( s.fresh <= 0 || s.level > 0 ) continue;
 			const cx = ( s.x0 + s.x1 ) * 0.5, cz = ( s.z0 + s.z1 ) * 0.5;
 			const r = Math.max( s.x1 - s.x0, s.z1 - s.z0 ) * 0.5 + 0.8;
 			const d2 = ( ( x - cx ) ** 2 + ( z - cz ) ** 2 ) / ( r * r );
-			if ( d2 < 1 ) w = Math.max( w, ( 1 - d2 ) * ( s.level === 0 ? 1 : 0.7 ) );
+			if ( d2 < 1 ) w = Math.max( w, 1 - d2 );
 
 		}
 		return w;
