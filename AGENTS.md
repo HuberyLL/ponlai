@@ -46,7 +46,11 @@ stone exposed.
 - Rendering and A/B URL options, read at load: `msaa` (the scene's sample count, `SceneSamples.ts`:
   4, the default, or 1 for none; `2` reads as 1, since WebGPU multisamples with 1 or 4 samples
   only), `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB
-  cache, as on a first visit), `post=legacy` (or a comma list of `inline-composite`, `full-fog`,
+  cache, as on a first visit), `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer
+  masks; for an A/B inside one page each cliff material swaps to its other variant through
+  `material.userData.terrainVariant`, as `TerrainMaterial.ts` shows: the flag itself is read only
+  when the material is built),
+  `post=legacy` (or a comma list of `inline-composite`, `full-fog`,
   `no-bank`, `inline-coc`, `three-fsr`, `store-scene`: the frame graph without the first
   performance round's changes), `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter
   path), `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then
@@ -196,11 +200,16 @@ stone exposed.
   (`SunShadow.setFilter`). `SunShadow` also exposes a caster-depth grid (`nearestCasterDepth`) that
   bounds its 2x2 volume lookups, so a march through the water may skip them where nothing casts
   (never the surface filter's PCSS search).
-- `src/materials/`: procedural detail textures, terrain materials (triplanar stone with per-facet
+- `src/materials/`: procedural detail textures, terrain materials (triplanar stone, hex-tiled
+  after Mikkelsen so the scan never repeats on a lattice (`HexTiling.ts`), with per-facet
   shade, paler recent scars, strata, parting seams, runoff streaks from the lip and ledges, dry
   stone under overhangs, orange lichen near the lip, upper-cliff moss, a black lichen spray zone
-  that climbs with the coast's exposure, turf, sea floor, light under the water), wet surfaces
-  after Lagarde (soaked pores, water film, runnels down the cliffs).
+  that climbs with the coast's exposure, turf, sea floor, light under the water; the layers over
+  the stone meet it by the scan's relief, moss, turf, soil and runoff filling its low points and
+  lichens taking its raised grain first, each keeping its mask's mean cover; stacked layers
+  (cliff moss, root soil and turf) take adjacent ranges of the relief in stacking order, so each
+  one's visible cover matches the plain mix's), wet surfaces after Lagarde (soaked pores, water
+  film, runnels down the cliffs).
 - `src/ocean/`: FFT ocean (compute: each axis's eight Stockham stages run in workgroup memory, one
   dispatch per axis after the spectrum kernel), waves against the rock boundary, caustics, water
   shading (its screen-space reflection marches only rays that cross `Water.reflectionBounds`, the
