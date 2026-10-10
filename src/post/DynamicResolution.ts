@@ -369,6 +369,13 @@ type Pool = {
 };
 type Backend = { device: GPUDevice; trackTimestamp: boolean; timestampQueryPool: Record<string, Pool | null> };
 
+// The frame (three's `info.frame`) a timestamp uid belongs to (`<prefix>:<id>:f<frame>`).
+function frameOf( uid: string ): number {
+
+	return Number( uid.slice( uid.lastIndexOf( ':f' ) + 2 ) );
+
+}
+
 // GPUBufferUsage.MAP_READ | COPY_DST, GPUMapMode.READ
 const READBACK_USAGE = 0x0001 | 0x0008, MAP_READ = 0x0001;
 const RING = 8;
@@ -386,6 +393,9 @@ export class GpuFrameTimer {
 	private origin: bigint | null = null;
 	private lastEnd = - Infinity;
 	private newest = - 1;
+	// the newest frame reported, and frames some of whose passes went unread
+	private reported = - 1;
+	private readonly lost = new Set<number>();
 
 	private constructor( backend: Backend ) {
 
@@ -403,6 +413,7 @@ export class GpuFrameTimer {
 
 	resolve(): void {
 
+		const pools: Pool[] = [];
 		for ( const pool of Object.values( this.backend.timestampQueryPool ) ) {
 
 			if ( ! pool ) continue;
@@ -414,13 +425,17 @@ export class GpuFrameTimer {
 				pool.resolveQueriesAsync = () => { this.resolvePool( pool ); return Promise.resolve( 0 ); };
 
 			}
-			this.resolvePool( pool );
+			if ( pool.currentQueryIndex > 0 ) pools.push( pool );
 
 		}
+		// The render and compute pools are read together or not at all: a frame read from one of them
+		// alone (its compute passes, the cloud view among them, left out) would pass for a light one.
+		const free = this.buffers.filter( ( b ) => ! b.busy ).length + RING - this.buffers.length;
+		for ( const pool of pools ) this.resolvePool( pool, free < pools.length );
 
 	}
 
-	private resolvePool( pool: Pool ): void {
+	private resolvePool( pool: Pool, drop = false ): void {
 
 		const count = pool.currentQueryIndex;
 		if ( count === 0 ) return;
@@ -428,14 +443,21 @@ export class GpuFrameTimer {
 		pool.currentQueryIndex = 0;
 		pool.queryOffsets.clear();
 		const device = this.backend.device;
-		let slot = this.buffers.find( ( b ) => ! b.busy && b.buffer.size >= pool.maxQueries * 8 );
-		if ( ! slot && this.buffers.length < RING ) {
+		let slot = drop ? undefined : this.buffers.find( ( b ) => ! b.busy && b.buffer.size >= pool.maxQueries * 8 );
+		if ( ! slot && ! drop && this.buffers.length < RING ) {
 
 			slot = { buffer: device.createBuffer( { label: 'frameTimer.timestamps', size: pool.maxQueries * 8, usage: READBACK_USAGE } ), busy: false };
 			this.buffers.push( slot );
 
 		}
-		if ( ! slot ) return; // every read-back buffer is in flight: these frames go unmeasured
+		if ( ! slot ) {
+
+			// every read-back buffer is in flight: these frames go unmeasured, with any of their passes
+			// read in another batch
+			for ( const [ uid ] of offsets ) this.lost.add( frameOf( uid ) );
+			return;
+
+		}
 		const target = slot;
 		target.busy = true;
 		const bytes = count * 8;
@@ -452,8 +474,9 @@ export class GpuFrameTimer {
 
 				const start = times[ base ], end = times[ base + 1 ];
 				if ( start === 0n || end < start ) continue;
-				const frame = Number( uid.slice( uid.lastIndexOf( ':f' ) + 2 ) );
-				if ( ! Number.isFinite( frame ) ) continue;
+				const frame = frameOf( uid );
+				// (a pass of a frame already reported arrived late: that frame is gone)
+				if ( ! Number.isFinite( frame ) || frame <= this.reported ) continue;
 				if ( this.origin === null ) this.origin = start;
 				const list = this.frames.get( frame ) ?? [];
 				list.push( [ Number( start - this.origin ) / 1e6, Number( end - this.origin ) / 1e6 ] );
@@ -476,6 +499,7 @@ export class GpuFrameTimer {
 
 			const passes = this.frames.get( frame )!.sort( ( a, b ) => a[ 1 ] - b[ 1 ] );
 			this.frames.delete( frame );
+			this.reported = Math.max( this.reported, frame );
 			let cursor = this.lastEnd, busy = 0;
 			for ( const [ start, end ] of passes ) {
 
@@ -484,9 +508,11 @@ export class GpuFrameTimer {
 
 			}
 			this.lastEnd = cursor;
-			this.onFrame?.( frame, busy );
+			if ( ! this.lost.delete( frame ) ) this.onFrame?.( frame, busy );
 
 		}
+		// frames lost whole never come up here
+		for ( const frame of this.lost ) if ( frame < this.newest - 64 ) this.lost.delete( frame );
 
 	}
 
