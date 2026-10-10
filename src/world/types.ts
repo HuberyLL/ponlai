@@ -31,6 +31,10 @@ export interface Rock { x: number; z: number; s: number; sy: number; y: number; 
 
 export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: number; z0: number; cell: number }
 
+// The seabed grid's warp, dense around the island and sparse toward the horizon: vertex i of
+// res + 1 lies at sign( u ) * |u|^SEABED_WARP * size / 2, where u = i / res * 2 - 1.
+export const SEABED_WARP = 1.9;
+
 export const VEGETATION_STRIDE = 9;
 // The turf anchors' jittered grid (m): one anchor per this square of meadow.
 export const VEGETATION_SPACING = 0.235;

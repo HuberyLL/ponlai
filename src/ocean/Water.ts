@@ -13,7 +13,7 @@ import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
-	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
+	sin, abs, sign, floor, fract, fwidth, reflect, select, dFdx, dFdy,
 } from 'three/tsl';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
 import type { Sky } from '../sky/Sky.ts';
@@ -33,6 +33,8 @@ import { rainRippleGradient } from '../weather/Rain.ts';
 import { ISLAND_TOP, layoutBounds } from '../world/WorldShapes.ts';
 import { TREE_HEIGHT } from '../world/PlantSites.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { SEABED_WARP } from '../world/types.ts';
+import { seabedAlbedo } from '../materials/SeabedLook.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
@@ -148,13 +150,14 @@ const projectView = Fn( ( [ p, proj ]: [ V3, M4 ] ) => {
 
 } ).setLayout( { name: 'projectView', type: 'vec2', inputs: [ { name: 'p', type: 'vec3' }, { name: 'proj', type: 'mat4' } ] } );
 
-// The synthetic floor's albedos, matched to the traced floor where both are known: the shelf's
-// sand by the cliffs, the basin's silted sand (seagrass beds averaged in), the cliff's submerged
-// face under its algae, and the seagrass beds' tint on the sand.
-const SHELF_ALBEDO = vec3( 0.32, 0.31, 0.29 );
-const BASIN_ALBEDO = vec3( 0.26, 0.24, 0.21 );
+// The synthetic floor takes the floor's own albedo (seabedAlbedo): with every ray lost, the shelf
+// seen from above came out within a few per cent of the traced floor's brightness, so it needs no
+// gain. The cliff's submerged face keeps an albedo of its own, under its algae.
 const FACE_ALBEDO = vec3( 0.14, 0.15, 0.14 );
-const SEAGRASS_TINT = vec3( 0.28, 0.36, 0.22 );
+// The terrain's tiled detail heights (r rock, g moss cushions, b sand ripples), which the estimate
+// stands in for with noise: their means and the spread of the noise about them.
+const DETAIL_MEAN = new THREE.Vector3( 0.52, 0.35, 0.45 );
+const DETAIL_SPREAD = new THREE.Vector3( 0.16, 0.4, 0.4 );
 // The submerged face's share of the sky's light, against the floor's: matched to the traced face,
 // whose shaded stone the terrain lights by the whole sky's irradiance for its normal (bright
 // toward the horizon) and whose jointed blocks catch it on their ledges.
@@ -229,6 +232,10 @@ export interface WaterInputs {
 	shared: Shared;
 	shore: THREE.Texture;
 	seabedHeight: THREE.Texture; // the rendered floor's height over the shoreline field's bounds
+	// The floor's look: its beds on the floor mesh's warped grid of res + 1 vertices a side over
+	// size metres (seabedBedTextureFrom), and the terrain's normalsB detail texture, whose alpha is
+	// the sand's broad variation.
+	seabedLook: { beds: THREE.Texture; res: number; size: number; variation: THREE.Texture };
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
 	sunShadow: SunShadow;
@@ -417,7 +424,7 @@ export class Water {
 	// The sea's shading for one way of marching the screen-space reflection (see SSRVariant).
 	private buildMaterial( variant: SSRVariant ): THREE.NodeMaterial {
 
-		const { fft, sky, shared, shore, seabedHeight, shoreWaves, refractedSun, sunShadow, storm, sceneColor, linearDepth } = this.inputs;
+		const { fft, sky, shared, shore, seabedHeight, seabedLook, shoreWaves, refractedSun, sunShadow, storm, sceneColor, linearDepth } = this.inputs;
 		const quality = this.quality;
 		const u = this.uniforms;
 		const sizes = uniform( new THREE.Vector3( ...fft.sizes ) );
@@ -479,6 +486,14 @@ export class Water {
 			field( landedXZ.add( vec2( 0.5, 0 ) ) ).sub( field( landedXZ.sub( vec2( 0.5, 0 ) ) ) ),
 			field( landedXZ.add( vec2( 0, 0.5 ) ) ).sub( field( landedXZ.sub( vec2( 0, 0.5 ) ) ) ) );
 		const vLandingGradients = varying( vec4( gradientOf( shoreDistance ), gradientOf( floorHeight ) ) ); // shore, floor
+		// The floor's look where the ray lands, for its colour (seabedAlbedo): the beds, read from the
+		// floor mesh's own grid at the inverse of its warp so that they interpolate as the mesh does,
+		// and the sand's broad variation. Both change over metres, so the vertices carry them.
+		const bedGrid = clamp( landedXZ.div( seabedLook.size / 2 ), - 1, 1 );
+		const bedUV = sign( bedGrid ).mul( pow( abs( bedGrid ), 1 / SEABED_WARP ) ).mul( 0.5 ).add( 0.5 )
+			.mul( seabedLook.res ).add( 0.5 ).div( seabedLook.res + 1 );
+		const vLandingLook = varying( vec3( texture( seabedLook.beds, bedUV ).level( float( 0 ) ).rg,
+			texture( seabedLook.variation, landedXZ.mul( 0.013 ).add( 0.2 ) ).level( float( 3 ) ).a ) ); // grass, pale, broad
 		const vWeights = varying( weights );
 		const vLargeDisp = varying( largeDisp ), vMediumDisp = varying( mediumDisp ), vFineDisp = varying( fineDisp );
 
@@ -969,15 +984,16 @@ export class Water {
 				const lit = mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) );
 				const direct = sunIn.mul( exp( sigT.negate().mul( depthAt ).div( muS ) ) ).mul( max( dot( normal, Ls ), 0 ) ).mul( lit );
 				const ambient = shared.skyIrradianceSource.mul( exp( sigT.negate().mul( depthAt ).mul( 1.25 ) ) ).mul( mix( float( 1 ), float( FACE_SKY ), wall ) );
-				// The floor's beds, which no screen shows here: dark seagrass in ragged patches from a
-				// few metres off the cliffs on, and the sand's mottling. A world-space pattern, so that it
-				// stays put under the waves and runs on across lost rays; its mean is the floor's albedo.
-				const beds = smoothstep( 4, 10, shoreAt ).toVar();
-				const patches = valueNoise( at.xz.div( 7.5 ) ).mul( 0.65 ).add( valueNoise( at.xz.div( 2.6 ).add( 17.3 ) ).mul( 0.35 ) );
-				const grass = smoothstep( 0.52, 0.66, patches ).mul( beds );
-				const mottle = valueNoise( at.xz.div( 1.3 ).add( 41.7 ) ).sub( 0.5 ).mul( 0.3 ).add( 1 );
-				const sand = mix( SHELF_ALBEDO, BASIN_ALBEDO, smoothstep( 6, 22, shoreAt ) ).mul( mottle ).div( float( 1 ).sub( beds.mul( 0.25 ) ) );
-				const albedo = mix( sand.mul( mix( vec3( 1 ), SEAGRASS_TINT, grass ) ), FACE_ALBEDO, wall );
+				// The floor as its material paints it, which no screen shows here: its seagrass beds, pale
+				// sand and rubble (seabedAlbedo) from where the vertices' rays land, and in place of its
+				// tiled detail heights, which this stage has no texture slot for, world-space noise about
+				// their means, so that the detail stays put under the waves and runs on across lost rays.
+				const detail = vec3(
+					valueNoise( at.xz.div( 1.1 ).add( 17.3 ) ).sub( 0.5 ).mul( DETAIL_SPREAD.x ).add( DETAIL_MEAN.x ),
+					valueNoise( at.xz.div( 1.6 ).add( 41.7 ) ).sub( 0.5 ).mul( DETAIL_SPREAD.y ).add( DETAIL_MEAN.y ),
+					valueNoise( at.xz.div( 0.9 ).add( 5.3 ) ).sub( 0.5 ).mul( DETAIL_SPREAD.z ).add( DETAIL_MEAN.z ) );
+				const floorLook = seabedAlbedo( vLandingLook.xy, vLandingLook.z, detail, shoreAt );
+				const albedo = mix( floorLook.albedo, FACE_ALBEDO, wall );
 				lostBottom.assign( albedo.div( PI ).mul( direct.add( ambient ) ).mul( exp( sigT.negate().mul( landingDistance ) ) ) );
 				lostPath.assign( landingDistance );
 				// Where what lies straight behind the pixel is the place the ray meets (the floor below a

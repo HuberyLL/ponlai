@@ -686,7 +686,10 @@ stone exposed.
   is declared multisampled and cannot be sampled with a comparison; give it a render target.
 - The water's fragment stage already binds 16 sampled textures, the most WebGPU guarantees; a new
   texture there fails pipeline creation unless another one goes (the sun's two shadow steps share
-  one array texture for this reason).
+  one array texture for this reason). Data that changes over metres can be read in its vertex
+  stage instead and passed on as a varying (the estimated sea floor's beds and sand), but the
+  varyings have a ceiling too: the water uses 14 of the 16 inter-stage variables WebGPU
+  guarantees.
 - The water's reflection only finds what lies inside `Water.reflectionBounds`: the layout's box,
   padded 2.5 m for the rim overhang and to a metre above the tallest tree (`TREE_HEIGHT`), down to
   0.35 m below the sea. Anything opaque built off the island or above the trees (a boat, a hut, a
