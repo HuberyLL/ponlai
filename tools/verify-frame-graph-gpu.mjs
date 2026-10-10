@@ -15,7 +15,22 @@
 //    with three's own compileAsync under the MRT (the second mesh builds after the MRT is unbound,
 //    without the velocity output), beside the same scene through `compileInto`, which must pass.
 //    The controls must fail where they are expected to.
-// 2. The app (`?debug`): the cache-key patches installed on its renderer, the warm-up done
+// 2. What the temporal frame graph rests on, in three r186 (bare page, patched renderer): blending
+//    per attachment comes only from the renderer's context MRT, here Motion.ts's sceneMRT and
+//    overlayMRT, the passes' own. Into a two-attachment target
+//    (`sceneColor`, `velocity`, half float, as the graph names them), each read back:
+//    - the scene MRT's clear: the colour takes the renderer's clear colour, the velocity its own
+//      clear colour (0, 0, 1, 0);
+//    - a base draw writes its velocity; an overlay drawn under the overlay MRT (the colour with the
+//      material's blending, the velocity kept: colour Zero / One, alpha One / One with Max) leaves
+//      the velocity's rgb as the base wrote it and its alpha the larger of the two, whether the
+//      material's velocity comes from its own mrtNode or from a fragmentNode's outputStruct (the
+//      rain's and the spray's), and a smaller alpha after it leaves the larger;
+//    - a transparent additive material under the scene MRT (no blend mode of its own for the
+//      velocity) overwrites the velocity while its colour adds;
+//    - `renderer.copyTextureToTexture` between single-sampled render-target textures, RGBA16F and
+//      R32F, copies every texel exactly.
+// 3. The app (`?debug`): the cache-key patches installed on its renderer, the warm-up done
 //    (FrameGraph.warmStats), and no pipeline created in the 60 frames after its first 60.
 // Shared GPU lock (no timing), headless (CHROME_PATH or Playwright's Chromium).
 
@@ -31,7 +46,7 @@ const browser = await chromium.launch( {
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),
 	args: [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu' ],
 } );
-const report = { mrt: null, app: null };
+const report = { mrt: null, temporal: null, app: null };
 let failed = false;
 const check = ( ok, what ) => {
 
@@ -50,10 +65,14 @@ try {
 	await page.goto( `${ base }/src/post/graph/ThreePatches.ts` );
 	report.mrt = await page.evaluate( probeMrt );
 	for ( const c of report.mrt.cases ) check( c.pass === c.expected, `${ c.name }: ${ c.detail }${ c.expected ? '' : ' (a control: expected to fail)' }` );
+
+	// ---- 2. the temporal graph's blends and copies
+	report.temporal = await page.evaluate( probeTemporal );
+	for ( const c of report.temporal.cases ) check( c.pass, `${ c.name }: ${ c.detail }` );
 	check( pageErrors.length === 0, `no page errors${ pageErrors.length ? `: ${ pageErrors.slice( 0, 3 ).join( '; ' ) }` : '' }` );
 	await page.close();
 
-	// ---- 2. the app
+	// ---- 3. the app
 	const app = await browser.newPage( { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 } );
 	const appErrors = [];
 	app.on( 'pageerror', ( e ) => appErrors.push( `pageerror: ${ e.message }` ) );
@@ -301,6 +320,159 @@ async function probeMrt() {
 		env.renderer.dispose();
 
 	}
+	return { cases };
+
+}
+
+async function probeTemporal() {
+
+	const source = await ( await fetch( '/src/post/graph/FrameGraph.ts' ) ).text();
+	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
+	const THREE = await import( url( 'three_webgpu' ) );
+	const TSL = await import( url( 'three_tsl' ) );
+	const { installCacheKeyPatches } = await import( '/src/post/graph/ThreePatches.ts' );
+
+	const SIZE = 4;
+	const CLEAR = [ 0.125, 0.25, 0.375, 1 ];
+	// the base's colour and velocity, the overlays' and the additive draw's (halves represent them exactly)
+	const C0 = [ 0.25, 0.5, 0.75, 1 ], V0 = [ 0.125, - 0.25, 0.375, 0.25 ];
+	const C1 = [ 1, 0.5, 0, 0.5 ], V1 = [ 0.75, 0.75, 0.5, 0.625 ];
+	const C2 = [ 0.5, 0.25, 0.125, 0.5 ], V2 = [ 0.875, 0.875, 0.875, 0.125 ];
+	const C3 = [ 0.25, 0.125, 0.0625, 0.5 ], V3 = [ - 0.5, 0.5, 0.25, 0.75 ];
+	const cases = [];
+
+	const renderer = new THREE.WebGPURenderer();
+	await renderer.init();
+	if ( ! installCacheKeyPatches( renderer ) ) throw new Error( 'installCacheKeyPatches failed' );
+	renderer.setClearColor( new THREE.Color( CLEAR[ 0 ], CLEAR[ 1 ], CLEAR[ 2 ] ), CLEAR[ 3 ] );
+	const errors = [];
+	renderer.backend.device.addEventListener( 'uncapturederror', ( e ) => errors.push( e.error.message.split( '\n' )[ 0 ] ) );
+	renderer.onError = ( e ) => errors.push( String( e?.message ?? e ).split( '\n' )[ 0 ] );
+
+	// the graph's scene target under the temporal modes: the colour and the motion vectors, named as
+	// its resources (an MRT finds its outputs, and its blend modes, by the textures' names)
+	const sceneTarget = () => {
+
+		const rt = new THREE.RenderTarget( SIZE, SIZE, { count: 2, type: THREE.HalfFloatType, depthBuffer: false } );
+		rt.textures[ 0 ].name = 'sceneColor';
+		rt.textures[ 1 ].name = 'velocity';
+		return rt;
+
+	};
+	// Motion.ts's MRTs: the scene MRT draws the colour with the material's blending, overwrites the
+	// velocity (no blend mode) and clears it to ( 0, 0, 1, 0 ); the overlay MRT draws the colour with
+	// the material's blending and keeps the velocity's rgb (Zero / One), its alpha the larger (One /
+	// One, Max). Each material below gives its velocity through its own MRT node or outputStruct.
+	const { sceneMRT, overlayMRT } = await import( '/src/post/Motion.ts' );
+
+	// a material writing a colour and (through its mrtNode) a velocity; `blending` makes it transparent
+	const meshMaterial = ( colour, velocity, blending = null ) => {
+
+		const m = new THREE.MeshBasicNodeMaterial();
+		m.colorNode = TSL.vec4( ...colour );
+		m.mrtNode = TSL.mrt( { velocity: TSL.vec4( ...velocity ) } );
+		if ( blending !== null ) {
+
+			m.transparent = true;
+			m.blending = blending;
+			m.depthWrite = false;
+			m.opacity = 1;
+
+		}
+		return m;
+
+	};
+	// a fragmentNode material writing both attachments by position, as the rain's drops and the spray do
+	const structMaterial = ( colour, velocity, blending ) => {
+
+		const m = new THREE.NodeMaterial();
+		m.fragmentNode = TSL.outputStruct( TSL.vec4( ...colour ), TSL.vec4( ...velocity ) );
+		m.transparent = true;
+		m.blending = blending;
+		m.depthWrite = false;
+		return m;
+
+	};
+	const draw = ( rt, mrt, material, clear ) => {
+
+		renderer.setRenderTarget( rt );
+		renderer.setMRT( mrt );
+		renderer.autoClear = clear;
+		new THREE.QuadMesh( material ).render( renderer );
+		renderer.setRenderTarget( null );
+		renderer.setMRT( null );
+
+	};
+	const clearOnly = ( rt, mrt ) => {
+
+		renderer.setRenderTarget( rt );
+		renderer.setMRT( mrt );
+		renderer.autoClear = true;
+		renderer.render( new THREE.Scene(), new THREE.OrthographicCamera() );
+		renderer.setRenderTarget( null );
+		renderer.setMRT( null );
+
+	};
+	// one texel's channels (a red target's one)
+	const read = async ( rt, index ) => {
+
+		const data = await renderer.readRenderTargetPixelsAsync( rt, 1, 1, 1, 1, index );
+		const channels = rt.textures[ index ].format === THREE.RedFormat ? 1 : 4;
+		return data instanceof Uint16Array ? Array.from( data.slice( 0, channels ), ( h ) => THREE.DataUtils.fromHalfFloat( h ) ) : Array.from( data.slice( 0, channels ) );
+
+	};
+	const near = ( a, b, e = 2e-3 ) => a.length === b.length && a.every( ( v, i ) => Math.abs( v - b[ i ] ) < e );
+	const show = ( v ) => `[${ v.map( ( x ) => + x.toFixed( 4 ) ).join( ', ' ) }]`;
+	const normal = ( dst, src ) => [ 0, 1, 2 ].map( ( i ) => src[ i ] * src[ 3 ] + dst[ i ] * ( 1 - src[ 3 ] ) ).concat( src[ 3 ] + dst[ 3 ] * ( 1 - src[ 3 ] ) );
+	const additive = ( dst, src ) => [ 0, 1, 2 ].map( ( i ) => src[ i ] * src[ 3 ] + dst[ i ] ).concat( src[ 3 ] + dst[ 3 ] );
+	const expect = async ( name, rt, colour, velocity ) => {
+
+		const got = [ await read( rt, 0 ), await read( rt, 1 ) ];
+		const pass = near( got[ 0 ], colour ) && near( got[ 1 ], velocity );
+		cases.push( { name, pass, detail: `colour ${ show( got[ 0 ] ) } (want ${ show( colour ) }), velocity ${ show( got[ 1 ] ) } (want ${ show( velocity ) })` } );
+
+	};
+
+	// the scene MRT's clear
+	const a = sceneTarget();
+	clearOnly( a, sceneMRT );
+	await expect( 'scene MRT clear: the renderer\'s clear colour, the velocity ( 0, 0, 1, 0 )', a, CLEAR, [ 0, 0, 1, 0 ] );
+	// a base, then overlays under the overlay MRT
+	draw( a, sceneMRT, meshMaterial( C0, V0 ), true );
+	await expect( 'scene MRT base draw: its colour and velocity', a, C0, V0 );
+	let colour = normal( C0, C1 );
+	draw( a, overlayMRT, meshMaterial( C1, V1, THREE.NormalBlending ), false );
+	await expect( 'overlay MRT, normal-blended mrtNode material: colour blended, velocity rgb kept, alpha max', a, colour, [ V0[ 0 ], V0[ 1 ], V0[ 2 ], Math.max( V0[ 3 ], V1[ 3 ] ) ] );
+	colour = additive( colour, C2 );
+	draw( a, overlayMRT, structMaterial( C2, V2, THREE.AdditiveBlending ), false );
+	await expect( 'overlay MRT, additive outputStruct material with a smaller alpha: colour added, velocity unchanged', a, colour, [ V0[ 0 ], V0[ 1 ], V0[ 2 ], Math.max( V0[ 3 ], V1[ 3 ], V2[ 3 ] ) ] );
+	// a transparent additive material under the scene MRT overwrites the velocity
+	const b = sceneTarget();
+	draw( b, sceneMRT, meshMaterial( C0, V0 ), true );
+	draw( b, sceneMRT, meshMaterial( C3, V3, THREE.AdditiveBlending ), false );
+	await expect( 'scene MRT, transparent additive material: colour added, velocity overwritten', b, additive( C0, C3 ), V3 );
+
+	// copyTextureToTexture between single-sampled render-target textures
+	const copyCase = async ( name, make, value ) => {
+
+		const src = make(), dst = make();
+		const m = new THREE.NodeMaterial();
+		m.fragmentNode = TSL.vec4( ...value );
+		draw( src, null, m, true );
+		clearOnly( dst, null );
+		renderer.copyTextureToTexture( src.texture, dst.texture );
+		const got = await read( dst, 0 );
+		const want = value.slice( 0, got.length );
+		const exact = got.every( ( v, i ) => v === ( src.texture.type === THREE.FloatType ? Math.fround( want[ i ] ) : want[ i ] ) );
+		cases.push( { name, pass: exact, detail: `${ show( got ) } (want ${ show( want ) }, exact)` } );
+
+	};
+	await copyCase( 'copyTextureToTexture, RGBA16F', () => new THREE.RenderTarget( SIZE, SIZE, { type: THREE.HalfFloatType, depthBuffer: false } ), [ 0.25, - 0.5, 0.75, 2.5 ] );
+	await copyCase( 'copyTextureToTexture, R32F', () => new THREE.RenderTarget( SIZE, SIZE, { type: THREE.FloatType, format: THREE.RedFormat, depthBuffer: false } ), [ - 1234.5678, 0, 0, 1 ] );
+
+	await renderer.backend.device.queue.onSubmittedWorkDone();
+	cases.push( { name: 'no WebGPU errors', pass: errors.length === 0, detail: errors.length ? errors.slice( 0, 3 ).join( '; ' ) : 'none' } );
+	renderer.dispose();
 	return { cases };
 
 }

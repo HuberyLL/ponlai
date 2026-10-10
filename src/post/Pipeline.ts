@@ -10,7 +10,9 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
-import { SCENE_SAMPLES } from './Antialiasing.ts';
+import { AA_MODE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
+import { beginMotionFrame, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
+import { jitter } from './Jitter.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
@@ -35,6 +37,17 @@ import type { Rain } from '../weather/Rain.ts';
 //   (hue-selective colour, warm / cool split, coloured shadow lift), lifted blacks, vignette,
 //   S-curve, sRGB, grain ── displayRT
 //   ── copied to the screen
+// Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene half is single-sampled and
+// jittered, and writes the motion vectors beside the colour:
+//   opaque scene ── sceneColor and velocity (an MRT: Motion.ts's sceneMRT), sceneDepth
+//   depth resolve ── depthRT (sample 0 twice: one sample)
+//   opaque copy ── opaqueRT, a copy of the texture (copyTextureToTexture)
+//   water ── sceneColor and velocity (sceneMRT), depth-tested against the opaque depth
+//   surface resolve ── surfaceRT, copied at the frame's end into surfaceDepthPrev (the next
+//     frame's history of the nearest surface)
+//   overlay ── the rain and the storm's spray (moved from the water's scene) over the scene, with
+//     Motion.ts's overlayMRT: the velocity under them kept
+// and the post passes follow as above.
 // Every pass runs at the scene's render size or a share of it. When the canvas is larger (a quality
 // preset below the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling,
 // then contrast-adaptive sharpening) to the screen instead, and the grain is added there, at
@@ -75,9 +88,11 @@ const CANVAS: SizeClass = { of: 'canvas' };
 // what the water pass draws in a frame without water: nothing
 const NO_WATER = new THREE.Scene();
 
-/** What a frame draws (`Pipeline.render`'s argument). */
+/** What a frame draws (`Pipeline.render`'s argument). `rainScene`: the rain, while it shows (under the
+ * temporal modes with the storm's spray in it: see `overlay`). `overlay`: whether the temporal modes'
+ * overlay pass draws `rainScene` this frame (rain or spray showing). */
 export interface PipelineFrame {
-	scene: THREE.Scene; waterScene: THREE.Scene; rainScene?: THREE.Scene; camera: THREE.Camera;
+	scene: THREE.Scene; waterScene: THREE.Scene; rainScene?: THREE.Scene; overlay?: boolean; camera: THREE.Camera;
 	water: { prepare( sun: THREE.DirectionalLight ): void } | null; sun: THREE.DirectionalLight; time: number;
 }
 
@@ -335,7 +350,8 @@ export class Pipeline {
 	readonly textures: { readonly opaqueColor: THREE.Texture; readonly linearDepth: THREE.Texture; readonly surfaceDepth: THREE.Texture };
 	private readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
-		surfaceDepth: ResourceHandle; hdr: ResourceHandle | null; sharp: ResourceHandle; blur: ResourceHandle; display: ResourceHandle;
+		surfaceDepth: ResourceHandle; velocity: ResourceHandle | null; surfaceDepthPrev: ResourceHandle | null;
+		hdr: ResourceHandle | null; sharp: ResourceHandle; blur: ResourceHandle; display: ResourceHandle;
 		viewDistance: ResourceHandle | null;
 		easu: ResourceHandle | null; canvas: ResourceHandle;
 	};
@@ -344,7 +360,8 @@ export class Pipeline {
 	readonly options: Readonly<PostOptions>;
 
 	private depthQuad: THREE.QuadMesh;
-	private copyQuad: THREE.QuadMesh;
+	// (msaa and off: under the temporal modes the opaque copy is a texture copy)
+	private copyQuad: THREE.QuadMesh | null = null;
 	private surfaceQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
 	// FSR.ts's sharpening canvas pass after EASU (the fsrPort option), or three's FSR1Node (post=three-fsr)
@@ -398,6 +415,12 @@ export class Pipeline {
 		const linearDepth = g.color( 'linearDepth', { size: RENDER, format: THREE.RGFormat, type: THREE.FloatType } );
 		const opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		const surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } );
+		// The temporal modes' motion vectors (rg: the NDC motion since the previous frame, b: the
+		// surface's class, a: its reactive weight; Motion.ts), and the nearest surface's depth of the
+		// frame before, for the resolve's disocclusion test (a copy at the frame's end).
+		// (in the scene's target: its sample count, one under the temporal modes)
+		const velocity = TEMPORAL ? g.color( 'velocity', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, samples: 'scene' } ) : null;
+		const surfaceDepthPrev = TEMPORAL ? g.color( 'surfaceDepthPrev', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType }, true ) : null;
 		// the composite, the sharp image and the depth of field's blur (half float, as three's rtt()
 		// made them)
 		const hdr = O.compositeOnce ? g.color( 'hdr', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
@@ -408,10 +431,10 @@ export class Pipeline {
 		// the upscale's EASU image (the canvas's size) and the canvas
 		const easu = O.fsrPort ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
-		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, hdr, sharp, blur, display, viewDistance, easu, canvas };
+		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, surfaceDepthPrev, hdr, sharp, blur, display, viewDistance, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
-		g.renderTarget( [ sceneColor ], sceneDepth );
+		g.renderTarget( velocity ? [ sceneColor, velocity ] : [ sceneColor ], sceneDepth );
 		for ( const h of [ linearDepth, opaqueColor, surfaceDepth, display, ...( viewDistance ? [ viewDistance ] : [] ) ] ) g.renderTarget( [ h ] );
 		this.textures = { opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ) };
 		// the sizes the passes read, the graph's shared extent uniforms (set with the targets' own
@@ -452,9 +475,13 @@ export class Pipeline {
 
 		} )();
 		this.depthQuad = new THREE.QuadMesh( resolveMat );
-		const copyMat = new THREE.NodeMaterial();
-		copyMat.fragmentNode = textureLoad( texture( g.texture( sceneColor ) ), ivec2( screenCoordinate.xy ) );
-		this.copyQuad = new THREE.QuadMesh( copyMat );
+		if ( ! TEMPORAL ) {
+
+			const copyMat = new THREE.NodeMaterial();
+			copyMat.fragmentNode = textureLoad( texture( g.texture( sceneColor ) ), ivec2( screenCoordinate.xy ) );
+			this.copyQuad = new THREE.QuadMesh( copyMat );
+
+		}
 		const surfaceMat = new THREE.NodeMaterial();
 		surfaceMat.fragmentNode = Fn( () => vec4( viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ) ) )();
 		this.surfaceQuad = new THREE.QuadMesh( surfaceMat );
@@ -939,6 +966,24 @@ export class Pipeline {
 
 		} );
 		this.declarePasses();
+		if ( TEMPORAL ) {
+
+			// The jitter shifts the camera's projection through the scene half (the graph's jittered
+			// span) and is undone after it; the post passes reconstruct positions with the inverse
+			// the frame was drawn with, set once the jitter is on (Jitter.ts).
+			jitter.mode = AA_MODE === 'taau' ? 'taau' : 'taa';
+			g.hooks.jitterBegin = ( f ) => {
+
+				jitter.begin( f.camera );
+				this.u.projInv.value.copy( f.camera.projectionMatrixInverse );
+
+			};
+			g.hooks.jitterEnd = ( f ) => jitter.end( f.camera );
+			// across a cut the nearest surface's history is no longer the frame before
+			const surfaceDepthPrev = this.resources.surfaceDepthPrev!;
+			onTaaCut( () => g.resetHistory( surfaceDepthPrev ) );
+
+		}
 		g.compile();
 		// The scene target's multisampled colour and depth are resolved, then never read: the
 		// graph's attachment ops discard them in the last pass that draws into them and drop a
@@ -965,61 +1010,67 @@ export class Pipeline {
 
 		const g = this.graph;
 		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth } = this.resources;
-		g.addPass( 'opaque', 'scene', ( b ) => {
+		if ( TEMPORAL ) [ sceneColor, surfaceDepth ] = this.declareTemporalScene();
+		else {
 
-			sceneColor = b.write( sceneColor, { clear: true } );
-			sceneDepth = b.depth( sceneDepth, { write: true, clear: true } );
-			return { label: 'opaque scene', scene: ( f ) => f.scene, camera: ( f ) => f.camera };
+			g.addPass( 'opaque', 'scene', ( b ) => {
 
-		} );
-		// linear depth, and a copy of the opaque colour for the water to refract and reflect (a pass
-		// cannot sample the target it draws into)
-		g.addPass( 'depthResolve', 'quad', ( b ) => {
+				sceneColor = b.write( sceneColor, { clear: true } );
+				sceneDepth = b.depth( sceneDepth, { write: true, clear: true } );
+				return { label: 'opaque scene', scene: ( f ) => f.scene, camera: ( f ) => f.camera };
 
-			b.read( sceneDepth, 'samples' );
-			linearDepth = b.write( linearDepth );
-			return { label: 'depth & copy resolves', quad: this.depthQuad };
+			} );
+			// linear depth, and a copy of the opaque colour for the water to refract and reflect (a pass
+			// cannot sample the target it draws into)
+			g.addPass( 'depthResolve', 'quad', ( b ) => {
 
-		} );
-		g.addPass( 'opaqueCopy', 'quad', ( b ) => {
+				b.read( sceneDepth, 'samples' );
+				linearDepth = b.write( linearDepth );
+				return { label: 'depth & copy resolves', quad: this.depthQuad };
 
-			b.read( sceneColor );
-			opaqueColor = b.write( opaqueColor );
-			return { label: 'depth & copy resolves', quad: this.copyQuad };
+			} );
+			const copyQuad = this.copyQuad!;
+			g.addPass( 'opaqueCopy', 'quad', ( b ) => {
 
-		} );
-		g.addPass( 'water', 'scene', ( b ) => {
+				b.read( sceneColor );
+				opaqueColor = b.write( opaqueColor );
+				return { label: 'depth & copy resolves', quad: copyQuad };
 
-			b.read( opaqueColor );
-			b.read( linearDepth );
-			sceneColor = b.write( sceneColor );
-			sceneDepth = b.depth( sceneDepth, { write: true } );
-			return {
-				label: 'water', before: ( f ) => f.water?.prepare( f.sun ),
-				scene: ( f ) => f.water ? f.waterScene : NO_WATER, camera: ( f ) => f.camera,
-			};
+			} );
+			g.addPass( 'water', 'scene', ( b ) => {
 
-		} );
-		g.addPass( 'surfaceResolve', 'quad', ( b ) => {
+				b.read( opaqueColor );
+				b.read( linearDepth );
+				sceneColor = b.write( sceneColor );
+				sceneDepth = b.depth( sceneDepth, { write: true } );
+				return {
+					label: 'water', before: ( f ) => f.water?.prepare( f.sun ),
+					scene: ( f ) => f.water ? f.waterScene : NO_WATER, camera: ( f ) => f.camera,
+				};
 
-			b.read( sceneDepth, 'samples' );
-			surfaceDepth = b.write( surfaceDepth );
-			return { label: 'depth & copy resolves', quad: this.surfaceQuad };
+			} );
+			g.addPass( 'surfaceResolve', 'quad', ( b ) => {
 
-		} );
-		// (the last pass into the scene target: its samples are resolved, then never read)
-		g.addPass( 'rain', 'scene', ( b ) => {
+				b.read( sceneDepth, 'samples' );
+				surfaceDepth = b.write( surfaceDepth );
+				return { label: 'depth & copy resolves', quad: this.surfaceQuad };
 
-			b.read( linearDepth );
-			b.read( surfaceDepth );
-			sceneColor = b.write( sceneColor );
-			b.depth( sceneDepth, { write: false } );
-			return {
-				label: 'rain draw', when: ( f ) => f.rainScene !== undefined, whenLabel: 'rainVisible',
-				scene: ( f ) => f.rainScene!, camera: ( f ) => f.camera,
-			};
+			} );
+			// (the last pass into the scene target: its samples are resolved, then never read)
+			g.addPass( 'rain', 'scene', ( b ) => {
 
-		} );
+				b.read( linearDepth );
+				b.read( surfaceDepth );
+				sceneColor = b.write( sceneColor );
+				b.depth( sceneDepth, { write: false } );
+				return {
+					label: 'rain draw', when: ( f ) => f.rainScene !== undefined, whenLabel: 'rainVisible',
+					scene: ( f ) => f.rainScene!, camera: ( f ) => f.camera,
+				};
+
+			} );
+
+		}
 		// the sea fog: its bank map when due, the nearest depth and the reduced march (only while
 		// there is fog; the composite reads what they last drew)
 		const fogReads = this.air.passes( g, surfaceDepth );
@@ -1165,6 +1216,82 @@ export class Pipeline {
 
 	}
 
+	// The scene half under the temporal modes: one sample, jittered (the passes from the opaque scene
+	// to the overlay are the graph's jittered span), the motion vectors written beside the colour.
+	// The opaque and water passes draw with the scene MRT (sceneMRT), the rain and the storm's spray
+	// in the overlay pass with the overlay MRT, which keeps the motion of the surfaces under them
+	// (Motion.ts). Returns the scene colour's and the nearest surface's last versions.
+	private declareTemporalScene(): [ ResourceHandle, ResourceHandle ] {
+
+		const g = this.graph;
+		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth } = this.resources;
+		let velocity = this.resources.velocity!;
+		g.addPass( 'opaque', 'scene', ( b ) => {
+
+			sceneColor = b.write( sceneColor, { clear: true } );
+			velocity = b.write( velocity, { clear: true } );
+			sceneDepth = b.depth( sceneDepth, { write: true, clear: true } );
+			return { label: 'opaque scene', mrt: sceneMRT, jittered: true, scene: ( f ) => f.scene, camera: ( f ) => f.camera };
+
+		} );
+		// (one sample: the farthest of the samples is sample 0)
+		g.addPass( 'depthResolve', 'quad', ( b ) => {
+
+			b.read( sceneDepth, 'samples' );
+			linearDepth = b.write( linearDepth );
+			return { label: 'depth & copy resolves', jittered: true, quad: this.depthQuad };
+
+		} );
+		// single-sampled, the opaque colour is copied as a texture (no draw: it replaces every texel)
+		const from = g.texture( sceneColor ), to = g.texture( opaqueColor );
+		g.addPass( 'opaqueCopy', 'callback', ( b ) => {
+
+			b.read( sceneColor );
+			opaqueColor = b.write( opaqueColor, { clear: true } );
+			return { label: 'depth & copy resolves', jittered: true, copy: true, run: () => this.renderer.copyTextureToTexture( from, to ) };
+
+		} );
+		g.addPass( 'water', 'scene', ( b ) => {
+
+			b.read( opaqueColor );
+			b.read( linearDepth );
+			sceneColor = b.write( sceneColor );
+			velocity = b.write( velocity );
+			sceneDepth = b.depth( sceneDepth, { write: true } );
+			return {
+				label: 'water', mrt: sceneMRT, jittered: true, before: ( f ) => f.water?.prepare( f.sun ),
+				scene: ( f ) => f.water ? f.waterScene : NO_WATER, camera: ( f ) => f.camera,
+			};
+
+		} );
+		g.addPass( 'surfaceResolve', 'quad', ( b ) => {
+
+			b.read( sceneDepth, 'samples' );
+			surfaceDepth = b.write( surfaceDepth );
+			return { label: 'depth & copy resolves', jittered: true, quad: this.surfaceQuad };
+
+		} );
+		// The rain and the spray over the finished scene: their colour blends as each material says,
+		// the velocity under them is kept and its reactive weight takes the larger value.
+		g.addPass( 'overlay', 'scene', ( b ) => {
+
+			b.read( linearDepth );
+			b.read( surfaceDepth );
+			sceneColor = b.write( sceneColor, { blend: 'material' } );
+			b.write( velocity, { blend: 'keep-max' } );
+			b.depth( sceneDepth, { write: false } );
+			return {
+				label: 'overlay', mrt: overlayMRT, jittered: true, when: ( f ) => f.overlay === true && f.rainScene !== undefined, whenLabel: 'rain || spray',
+				scene: ( f ) => f.rainScene!, camera: ( f ) => f.camera,
+			};
+
+		} );
+		// the nearest surface's depth, kept for the next frame
+		g.copyToPersistent( surfaceDepth, this.resources.surfaceDepthPrev! );
+		return [ sceneColor, surfaceDepth ];
+
+	}
+
 	// Switches the curve and loads its saturation, vibrance and contrast into the settings (the
 	// GUI may tune them from there); its exposure, split and lift gains apply every frame.
 	setToneMapping( curve: ToneCurve ): void {
@@ -1248,8 +1375,16 @@ export class Pipeline {
 		const u = this.u;
 		camera.updateMatrixWorld();
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
+		if ( TEMPORAL ) {
+
+			// this frame's jitter and motion, from the camera as it is (unjittered)
+			jitter.prepare( camera, this.width, this.height, this.outputWidth / this.width );
+			beginMotionFrame( camera );
+
+		}
 		this.air.update( camera );
-		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.haze.value, this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ) );
+		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.haze.value, this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ),
+			TEMPORAL ? jitter.uniforms.unjitteredProjection.value : camera.projectionMatrix );
 		this.updateDisplay( frame );
 		this.graph.execute( frame );
 

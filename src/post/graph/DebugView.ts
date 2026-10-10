@@ -1,10 +1,11 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, abs, atan, clamp, float, floor, fract, int, ivec2, length, log2, max, min, neutralToneMapping, screenCoordinate,
+	Fn, abs, atan, clamp, float, floor, fract, int, ivec2, length, log2, max, min, neutralToneMapping, round, screenCoordinate,
 	sRGBTransferOETF, select, texture, textureLoad, uniform, vec2, vec3, vec4,
 } from 'three/tsl';
 import { FrameGraph, type GraphDescription } from './FrameGraph.ts';
 import type { ResourceDecl, ResourceHandle } from './GraphCompiler.ts';
+import { debugFlags } from '../../debug/DebugFlags.ts';
 
 // The frame graph's debug view (debug and dev builds): `fgview=<resource>[.<output>]` shows one of
 // the graph's resources on the canvas in place of the frame. Only when the URL asks for it, it
@@ -33,6 +34,21 @@ import type { ResourceDecl, ResourceHandle } from './GraphCompiler.ts';
 // Every texel is loaded, not filtered, at the resource's own size stretched over the canvas. The
 // legacy attachment ops (`fgOps=legacy`) discard the scene target's samples in the rain pass
 // whatever reads them, so a view of `sceneDepth` while it rains needs the derived ops.
+//
+// The temporal modes' graph (a `velocity` resource) has views of its motion vectors besides
+// `velocity` itself:
+//   class           the velocity's b, a colour per class (Motion.ts MOTION_CLASS): opaque grey,
+//                   vegetation green, water blue, character orange, sky pale blue
+//   reactive        the velocity's a, grey
+//   reproject       the previous frame's `display` moved along this frame's motion vectors
+//                   (Catmull-Rom, no clip, no blend): over a moving camera it should match the frame
+//                   (the motion vectors' unit checks, MV-UNIT); the view keeps a copy of `display`
+//                   (`displayPrev`, made at the frame's end) for it
+//   reproject.diff  for measurements: r the largest channel's difference between `display` and its
+//                   reprojection, g 1 on static opaque geometry (class opaque, not the sky), b 1
+//                   where the point is disoccluded or was off screen (the previous frame's nearest
+//                   surface there lay more than 2 % nearer or farther than the point did, the point
+//                   moved by the camera alone: for static geometry)
 
 export type DebugViewKind = 'hdr' | 'display' | 'depth' | 'viewZ' | 'velocity' | 'single' | 'history' | 'colour';
 
@@ -41,6 +57,15 @@ export interface DebugViewRequest { resource: string; output: string | null }
 export interface DebugViewOptions {
 	// the grade's exposure on scene radiance (the HDR view's)
 	exposure(): number;
+	// the temporal modes' motion vectors (Motion.ts, Jitter.ts), for their views: the previous
+	// rendered frame's unjittered view-projection, the unjittered inverse projection, the jitter's
+	// NDC shift, and the velocity's b below which a surface is opaque (no class of its own)
+	motion?: {
+		previousViewProjection: THREE.UniformNode<'mat4', THREE.Matrix4>;
+		projectionInverse: THREE.UniformNode<'mat4', THREE.Matrix4>;
+		jitterNdc: THREE.UniformNode<'vec2', THREE.Vector2>;
+		opaqueBelow: number;
+	};
 }
 
 // resources that hold display values rather than scene radiance
@@ -85,12 +110,15 @@ function kindOf( r: ResourceDecl, output: string | null ): DebugViewKind {
 
 }
 
+// the temporal modes' views of the motion vectors (see the note at the top)
+const MOTION_VIEWS = [ 'class', 'reactive', 'reproject', 'reproject.diff' ];
+
 /** The choices the Debug folder offers for a graph: every resource but the canvas, plus the
  * channels worth a look of their own (a two-channel resource's second channel, an HDR colour's
- * alpha). */
+ * alpha), and the motion vectors' views where the graph has them. */
 export function debugViewChoices( d: GraphDescription ): string[] {
 
-	const choices: string[] = [];
+	const choices: string[] = d.resources.some( ( r ) => r.name === 'velocity' ) ? [ ...MOTION_VIEWS ] : [];
 	for ( const r of d.resources ) {
 
 		if ( r.canvas ) continue;
@@ -128,6 +156,13 @@ export function installDebugView( value: string, options: DebugViewOptions ): vo
 function declareDebugView( graph: FrameGraph<unknown>, value: string, options: DebugViewOptions ): void {
 
 	const decl = graph.decl;
+	if ( MOTION_VIEWS.includes( value ) ) {
+
+		if ( ! options.motion ) throw new Error( 'no motion vectors were given to the debug view' );
+		declareMotionView( graph, value, options.motion );
+		return;
+
+	}
 	const names = decl.resources.filter( ( r ) => ! r.canvas ).map( ( r ) => r.name );
 	const request = parseDebugView( value, names );
 	if ( ! request ) throw new Error( `no such resource (the graph has ${ names.join( ', ' ) })` );
@@ -211,6 +246,124 @@ function declareDebugView( graph: FrameGraph<unknown>, value: string, options: D
 				if ( camera ) projInv.value.copy( camera.projectionMatrixInverse );
 				// a ping-pong resource's current (or previous) texture moves every frame
 				if ( r.pingPong ) node.value = g.texture( handle );
+				pipeline.render();
+
+			},
+		};
+
+	} );
+
+}
+
+// The temporal modes' views of the motion vectors: `class`, `reactive`, `reproject` and
+// `reproject.diff` (see the note at the top).
+function declareMotionView( graph: FrameGraph<unknown>, value: string, motion: NonNullable<DebugViewOptions[ 'motion' ]> ): void {
+
+	const decl = graph.decl;
+	const find = ( name: string ) => decl.resources.find( ( r ) => r.name === name );
+	const velocity = find( 'velocity' ), display = find( 'display' ), canvas = find( 'canvas' );
+	if ( ! velocity || ! display || ! canvas ) throw new Error( 'the graph has no motion vectors (aa=taa or taau)' );
+	const latest = ( r: ResourceDecl ): ResourceHandle => ( { resource: r.id, version: r.latest, name: r.name } );
+	const vHandle = latest( velocity );
+	const size = graph.extent( velocity.desc.size );
+	const canvasSize = graph.extent( { of: 'canvas' } );
+	const coord = ivec2( clamp( floor( screenCoordinate.xy.mul( size ).div( canvasSize ) ), vec2( 0 ), size.sub( 1 ) ) );
+	const tVelocity = texture( graph.texture( vHandle ) );
+	const reproject = value.startsWith( 'reproject' );
+	// the previous frame's display, kept by a copy at each frame's end
+	let displayPrev: ResourceHandle | null = null, surface: ResourceDecl | undefined, surfacePrev: ResourceDecl | undefined;
+	if ( reproject ) {
+
+		surface = find( 'surfaceDepth' );
+		surfacePrev = find( 'surfaceDepthPrev' );
+		if ( ! surface || ! surfacePrev ) throw new Error( 'the graph keeps no previous surface depth' );
+		displayPrev = graph.color( 'displayPrev', { ...display.desc }, true );
+		graph.copyToPersistent( latest( display ), displayPrev );
+
+	}
+	const cameraWorld = uniform( new THREE.Matrix4() );
+	// (`flags.reprojectScale`: the motion scaled, to show the residual is least at its own length)
+	const reprojectScale = uniform( 1 );
+	type V3 = THREE.Node<'vec3'>;
+	const shown = Fn( (): V3 => {
+
+		const v = textureLoad( tVelocity, coord ) as unknown as THREE.Node<'vec4'>;
+		if ( value === 'class' ) {
+
+			const k = round( clamp( v.b, 0, 1 ).mul( 4 ) );
+			const colours: V3[] = [ vec3( 0.5 ), vec3( 0.2, 0.75, 0.2 ), vec3( 0.15, 0.35, 0.9 ), vec3( 0.95, 0.55, 0.15 ), vec3( 0.65, 0.8, 1 ) ];
+			let c: V3 = colours[ 4 ];
+			for ( let i = 3; i >= 0; i -- ) c = select( k.lessThan( i + 0.5 ), colours[ i ], c );
+			return c;
+
+		}
+		if ( value === 'reactive' ) return vec3( clamp( v.a, 0, 1 ) );
+		// the previous display where this pixel's point was, by a Catmull-Rom of 4 x 4 loads (a float
+		// texture may not be filterable), as the resolve fetches its history: bilinear blurs a
+		// pixel-wide blade by a quarter of its contrast at half a pixel, which no motion vector undoes
+		const tPrev = texture( graph.texture( displayPrev! ) );
+		const q = vec2( coord ).add( 0.5 ).toVar();
+		const qPrev = q.sub( v.xy.mul( vec2( 0.5, - 0.5 ) ).mul( size ).mul( reprojectScale ) ).sub( 0.5 ).toVar();
+		const base = floor( qPrev ).toVar();
+		const f = qPrev.sub( base ).toVar();
+		const weights = ( t: THREE.Node<'float'> ) => {
+
+			const t2 = t.mul( t ), t3 = t2.mul( t );
+			return [ t3.mul( - 0.5 ).add( t2 ).sub( t.mul( 0.5 ) ), t3.mul( 1.5 ).sub( t2.mul( 2.5 ) ).add( 1 ), t3.mul( - 1.5 ).add( t2.mul( 2 ) ).add( t.mul( 0.5 ) ), t3.mul( 0.5 ).sub( t2.mul( 0.5 ) ) ];
+
+		};
+		const wx = weights( f.x ), wy = weights( f.y );
+		const previous = vec3( 0 ).toVar();
+		for ( let j = 0; j < 4; j ++ ) for ( let i = 0; i < 4; i ++ ) {
+
+			const texel = textureLoad( tPrev, ivec2( clamp( base.add( vec2( i - 1, j - 1 ) ), vec2( 0 ), size.sub( 1 ) ) ) ) as unknown as THREE.Node<'vec4'>;
+			previous.addAssign( texel.rgb.mul( wx[ i ].mul( wy[ j ] ) ) );
+
+		}
+		if ( value === 'reproject' ) return previous as unknown as V3;
+		const now = ( textureLoad( texture( graph.texture( latest( display ) ) ), coord ) as unknown as THREE.Node<'vec4'> ).rgb;
+		const d = abs( now.sub( previous ) );
+		const diff = max( d.r, max( d.g, d.b ) );
+		// static opaque geometry: class opaque, not the sky
+		const z = ( textureLoad( texture( graph.texture( latest( surface! ) ) ), coord ) as unknown as THREE.Node<'vec4'> ).r.toVar();
+		const opaque = v.b.lessThan( motion.opaqueBelow ).and( z.greaterThan( - 9e4 ) );
+		// where the point was, moved by the camera alone, and the previous nearest surface there
+		const ndc = vec2( q.x.div( size.x ).mul( 2 ).sub( 1 ), float( 1 ).sub( q.y.div( size.y ).mul( 2 ) ) ).add( motion.jitterNdc );
+		const ray = motion.projectionInverse.mul( vec4( ndc, 1, 1 ) ).toVar();
+		const dir = ray.xyz.div( ray.w ).toVar();
+		const world = cameraWorld.mul( vec4( dir.mul( z.div( dir.z ) ), 1 ) );
+		const clip = motion.previousViewProjection.mul( world ).toVar();
+		const expected = clip.w.negate();
+		const uvPrev = qPrev.add( 0.5 ).div( size );
+		const off = uvPrev.x.lessThan( 0 ).or( uvPrev.y.lessThan( 0 ) ).or( uvPrev.x.greaterThan( 1 ) ).or( uvPrev.y.greaterThan( 1 ) );
+		const was = ( textureLoad( texture( graph.texture( { resource: surfacePrev!.id, version: 0, name: surfacePrev!.name } ) ), ivec2( clamp( floor( uvPrev.mul( size ) ), vec2( 0 ), size.sub( 1 ) ) ) ) as unknown as THREE.Node<'vec4'> ).r;
+		const disoccluded = off.or( abs( was.sub( expected ) ).greaterThan( abs( expected ).mul( 0.02 ) ) );
+		return vec3( diff, select( opaque, float( 1 ), float( 0 ) ), select( disoccluded, float( 1 ), float( 0 ) ) );
+
+	} );
+	const pipeline = new THREE.RenderPipeline( graph.renderer, vec4( shown() as THREE.Node<'vec3'>, 1 ) );
+	pipeline.outputColorTransform = false;
+	decl.setDebugView( vHandle );
+	graph.addPass( 'debugView', 'chain', ( b ) => {
+
+		b.readOptional( vHandle );
+		if ( reproject ) {
+
+			b.read( latest( display ) );
+			b.read( displayPrev! );
+			b.read( latest( surface! ) );
+			b.read( { resource: surfacePrev!.id, version: 0, name: surfacePrev!.name } );
+
+		}
+		b.write( latest( canvas ) );
+		return {
+			label: 'debug view',
+			pipeline,
+			run: ( f ) => {
+
+				const camera = ( f as { camera?: THREE.Camera } | undefined )?.camera;
+				if ( camera ) cameraWorld.value.copy( camera.matrixWorld );
+				reprojectScale.value = typeof debugFlags.reprojectScale === 'number' ? debugFlags.reprojectScale : 1;
 				pipeline.render();
 
 			},

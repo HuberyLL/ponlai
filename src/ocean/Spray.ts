@@ -11,6 +11,7 @@ import {
 	positionGeometry, positionView, positionWorld, cameraPosition, cameraProjectionMatrix, screenSize, screenCoordinate,
 	textureLoad, texture, varyingProperty,
 } from 'three/tsl';
+import { outputStruct, overlayVelocity } from '../post/Motion.ts';
 
 type F = THREE.Node<'float'>;
 type U = THREE.Node<'uint'>;
@@ -457,6 +458,8 @@ export class Spray {
 			return vec4( vCol.rgb.mul( shade ).add( vFwd.mul( glow ) ).mul( alpha ), alpha );
 
 		} )();
+		// under the temporal modes it draws in the overlay pass, whose velocity it keeps (Motion.ts)
+		material.fragmentNode = outputStruct( material.fragmentNode, overlayVelocity( 0 ) );
 
 		const mesh = new THREE.Mesh( geometry, material );
 		( mesh as unknown as { count: number } ).count = this.count;

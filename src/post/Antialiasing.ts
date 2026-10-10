@@ -8,7 +8,11 @@
 //   coverage, a render below the canvas upscaled by FSR 1 (today's image);
 // - `off`: one sample, leaves alpha-tested and grass blades dithered (`msaa=1` before);
 // - `taa`, `taau`: temporal anti-aliasing at the render's size, and temporal upsampling to the
-//   canvas. Not built yet: they warn and run `msaa` until the temporal frame graph lands.
+//   canvas: one sample, jittered, with motion vectors (Jitter.ts, Motion.ts, Pipeline.ts). Until
+//   the resolve lands they show the jittered frame as it is. Chosen by the URL only (the tiers'
+//   knob and the GUI keep to msaa and off until the tiers adopt them), and refused, with a warning,
+//   where three's cache keys cannot be patched (graph/ThreePatches.ts: three r186 only), since
+//   their scene materials build one shader per MRT.
 //
 // WebGPU multisamples with 1 or 4 samples only (three turns any other count into 1), so there is
 // no 2x: `msaa=1` and `msaa=2` are read as `off`, `msaa=4` as `msaa`.
@@ -17,6 +21,7 @@
 // (`QualityProfile.aa`, with `tier.aa=` over it), else `msaa`. The tier is chosen here, once, for
 // the whole page (main.ts reads `QUALITY_CHOICE`): modules that read the mode when they load
 // (Foliage.ts, Grass.ts) are evaluated before the page's own code runs.
+import { REVISION } from 'three/webgpu';
 import { qualityProfile, type QualityProfile, type TemporalSettings } from '../Quality.ts';
 import { chooseQuality, type QualityChoice } from '../QualityDetect.ts';
 
@@ -64,24 +69,30 @@ export function requestedAAMode( params: URLSearchParams, profile: Pick<QualityP
 	const tier = profile?.aa;
 	if ( tier !== undefined ) {
 
-		if ( isAAMode( tier ) ) return tier;
-		console.warn( `Unknown quality aa knob ${ String( tier ) }: expected one of ${ AA_MODES.join( ', ' ) }` );
+		if ( tier === 'taa' || tier === 'taau' ) console.warn( `The quality tier's aa knob asks for ${ tier }: the temporal modes are chosen by the URL only (aa=${ tier }); running msaa` );
+		else if ( isAAMode( tier ) ) return tier;
+		else console.warn( `Unknown quality aa knob ${ String( tier ) }: expected one of ${ AA_MODES.join( ', ' ) }` );
 
 	}
 	return 'msaa';
 
 }
 
-// whether the temporal modes are built (the temporal frame graph lifts this)
-const TEMPORAL_BUILT: boolean = false;
+/** Whether three's cache keys can be patched for MRTs (installCacheKeyPatches, which main.ts installs,
+ * is written for r186 and refuses another revision): the temporal modes need it. */
+export function temporalSupported( revision: string = REVISION ): boolean {
 
-/** What a mode builds. Temporal modes are not built yet: they run as `msaa`. */
-export function aaPlan( requested: AAMode ): AAPlan {
+	return /^186(\.|$)/.test( revision );
+
+}
+
+/** What a mode builds. A temporal mode where three's cache keys cannot be patched runs as `msaa`. */
+export function aaPlan( requested: AAMode, revision: string = REVISION ): AAPlan {
 
 	let mode: AAMode = requested;
-	if ( ( mode === 'taa' || mode === 'taau' ) && ! TEMPORAL_BUILT ) {
+	if ( ( mode === 'taa' || mode === 'taau' ) && ! temporalSupported( revision ) ) {
 
-		console.warn( `aa=${ mode } is not built yet: running msaa` );
+		console.warn( `aa=${ mode } needs three's cache keys patched for its MRTs (graph/ThreePatches.ts, r186), not r${ revision }: running msaa` );
 		mode = 'msaa';
 
 	}
@@ -99,7 +110,7 @@ export function aaPlan( requested: AAMode ): AAPlan {
 // measurement on this load), and the mode it asks for.
 const params = new URLSearchParams( location.search );
 export const QUALITY_CHOICE: QualityChoice = await chooseQuality( params );
-/** The mode the page asked for (before an unbuilt one falls back). */
+/** The mode the page asked for (before a refused one falls back). */
 export const AA_REQUESTED: AAMode = requestedAAMode( params, qualityProfile( QUALITY_CHOICE.tier ) );
 export const AA_PLAN: Readonly<AAPlan> = Object.freeze( aaPlan( AA_REQUESTED ) );
 /** The mode the page runs. */

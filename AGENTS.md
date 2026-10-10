@@ -45,7 +45,8 @@ stone exposed.
   arrows pan, Q / E turn, T / G tilt, + / - zoom, Shift speeds them up.
 - Rendering and A/B URL options, read at load: `aa` (the anti-aliasing mode,
   `src/post/Antialiasing.ts`: `msaa`, 4 samples, or `off`, one sample, over the tier's `aa` knob;
-  `taa` and `taau` warn and run `msaa` until the temporal modes are built) and its older alias
+  `taa` and `taau`, the temporal modes, from the URL only: one sample, jittered, with motion
+  vectors, the frame shown as it renders until their resolve lands) and its older alias
   `msaa` (`4` reads as `aa=msaa`, `1` and `2` as `aa=off`, since WebGPU multisamples with 1 or 4
   samples only), `worldCache=off` (generate the island instead of loading it from the browser's
   IndexedDB cache, as on a first visit), `terrainHex=0` (the cliff's plain triplanar tiling and
@@ -67,9 +68,13 @@ stone exposed.
   renders nothing ahead, see the pitfalls) and
   `fgview=<resource>[.<output>]` (debug builds: the frame graph's debug view draws one of its
   resources over the canvas, shown by what it holds, e.g. `linearDepth`, `fogMarch.a`, `FSR.easu`;
-  outputs `r` / `g` / `b` / `a`, `previous`, a depth's `sample<n>`; `src/post/graph/DebugView.ts`;
-  also the GUI's Debug folder, which reloads; `s.pipeline.graph.describe()` and `dot()` list the
-  graph).
+  outputs `r` / `g` / `b` / `a`, `previous`, a depth's `sample<n>`; under the temporal modes also
+  `class`, `reactive`, `reproject` and `reproject.diff`, views of the motion vectors;
+  `src/post/graph/DebugView.ts`; also the GUI's Debug folder, which reloads;
+  `s.pipeline.graph.describe()` and `dot()` list the graph). Under the temporal modes
+  `flags.mv.camera` / `object` = false leave a source out of the motion vectors, `flags.jitter =
+  false` the jitter, `s.taaCut( reason )` cuts the history and `s.motionCheck()` lists the
+  materials whose motion vectors are missing or partial.
   Runtime switches for one-page A/Bs live in
   `src/debug/DebugFlags.ts`. `islander` picks the islanders' proportions (`medium`, the default, or
   `stock` (the kit's own), `subtle` and `strong` builds of `Proportions.ts`; also in
@@ -300,7 +305,13 @@ stone exposed.
   per quality tier (`RenderScale.ts`) and high's dynamic resolution (`DynamicResolution.ts`: the
   scale steered by the GPU's frame time from timestamp queries), the frame pacer (`FramePacer.ts`),
   the submit batching (`SubmitBatch.ts`), the anti-aliasing mode and the scene's sample count
-  (`Antialiasing.ts`).
+  (`Antialiasing.ts`). Under the temporal modes the scene half is single-sampled and jittered
+  (`Jitter.ts`: Halton (2, 3), applied to the camera's projection over the graph's jittered span),
+  the opaque and water passes write the motion vectors beside the colour (`Motion.ts`: a `velocity`
+  target through the scene MRT, the previous rendered frame's view-projection and world matrices,
+  `taaCut` and the camera's jumps), the opaque copy is a texture copy, the rain and the storm's
+  spray draw in an `overlay` pass that keeps the velocity under them, and the nearest surface's
+  depth is copied into `surfaceDepthPrev` at the frame's end.
   `src/post/graph/` is the frame graph, after Frostbite's FrameGraph (O'Donnell, GDC 2017):
   `GraphCompiler.ts` (pure TypeScript: passes declare the resource versions they read and write,
   checked in declaration order, culled by liveness, their attachment ops derived per mask of the
@@ -869,8 +880,24 @@ stone exposed.
   (`src/post/graph/ThreePatches.ts`), installed in main.ts right after the renderer initialises
   and before any material builds, adds the MRT and the whole attachment layout to both keys;
   `tools/verify-frame-graph-gpu.mjs` checks it (both orders of an MRT and a plain draw, a swapped
-  layout). It refuses another three revision with a warning (the temporal modes need it): re-check
-  it on an upgrade.
+  layout). It refuses another three revision with a warning, and `Antialiasing.ts` then refuses the
+  temporal modes, which need it: re-check it on an upgrade.
+- In three r186 the blend of each attachment of a target comes only from the renderer's context
+  MRT (a graph pass's `mrt`: `context.mrt.getBlendMode( texture.name )`, NoBlending unless set),
+  never from a material's own MRT node, which changes its shader's outputs only; an MRT finds its
+  outputs and blend modes by the textures' names (the graph's resource names: `sceneColor`,
+  `velocity`). So the temporal scene MRT overwrites the velocity whatever is drawn (transparent
+  draws included) and the overlay MRT keeps it (colour Zero / One, alpha One / One with Max), as
+  `tools/verify-frame-graph-gpu.mjs` checks. A material with a fragmentNode ignores the MRT: under
+  the temporal modes it must write both outputs (`outputStruct` in `Motion.ts`), or its pipeline
+  has an output too few; a material whose positionNode animates supplies `positionPrevious` and sets
+  `userData.previousPosition`, else its motion vectors carry the camera's and the object's motion
+  only. A material's MRT node replaces its output when the pass has no MRT: set one only under the
+  temporal modes (`velocityOutput`). Drawing a scene material into a second target layout or MRT
+  in one page builds it twice, which r186 may emit with the first build's uniform names in a
+  layout function (the sea's `sceneViewZ` then fails to compile): time the velocity's cost by
+  comparing pages (`--compare` of `aa=off` against a temporal mode), not by switching a page's
+  target.
 - `AttachmentOps` rewrites a graph pass's stores and resolves as three hands its render pass
   descriptor to WebGPU, relying on r186's WebGPUBackend beginning every render pass on a command
   encoder of its own (in `beginRender`); only an encoder's first pass is rewritten (r186 begins a

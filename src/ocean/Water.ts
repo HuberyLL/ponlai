@@ -35,6 +35,7 @@ import { TREE_HEIGHT } from '../world/PlantSites.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { SEABED_WARP } from '../world/types.ts';
 import { seabedAlbedo } from '../materials/SeabedLook.ts';
+import { motionNode, outputStruct } from '../post/Motion.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
@@ -1191,6 +1192,10 @@ export class Water {
 			return vec4( min( col, vec3( 30000 ) ), 1 );
 
 		} )();
+		// the temporal modes' second output, the velocity (Motion.ts): the camera's and the sea
+		// object's motion for now, its waves' own still to come (their previous position)
+		material.fragmentNode = outputStruct( material.fragmentNode, motionNode( 'water' ) );
+		material.userData.motion = 'animated';
 		material.side = THREE.DoubleSide;
 		return material;
 

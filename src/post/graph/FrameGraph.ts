@@ -71,6 +71,9 @@ export interface PassDef<F> extends PassFlags {
 	compute?: THREE.ComputeNode | THREE.ComputeNode[] | ( ( f: F ) => THREE.ComputeNode | THREE.ComputeNode[] | null );
 	// any kind: replaces the default executor (callback: required)
 	run?( f: F, graph: FrameGraph<F> ): void;
+	// callback: it writes its attachments by copying into their textures, not by drawing (its target
+	// is then initialised after each resize, which three does on a target's next draw)
+	copy?: boolean;
 }
 
 /** The pass executing: its name, profiler label and size class, and whether its cost follows the
@@ -492,6 +495,23 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 		const compiled = compileGraph( this.decl, { sceneSamples: this.options.sceneSamples, legacyDiscard: this.options.legacyDiscard } );
 		// (a target made ahead by renderTarget() holds the same attachments, size class and samples)
 		for ( const t of compiled.targets ) if ( ! t.canvas && ! this.targets.has( t.key ) ) this.targets.set( t.key, this.makeTargets( t ) );
+		// A pass that writes its attachments by a copy (`copy`: the temporal modes' opaque copy) never
+		// draws into its target, which three would then leave at its old size after a resize (it
+		// recreates a target's textures on the target's next use, and a copy is none): such a target
+		// is initialised after every resize, like the targets no pass draws into.
+		for ( const index of compiled.live ) {
+
+			const t = compiled.targetOf[ index ];
+			if ( ! this.defs[ index ].copy || ! t || t.canvas ) continue;
+			for ( const rt of this.targets.get( t.key )! ) {
+
+				if ( ! this.targetSizes.has( rt ) ) continue; // imported
+				this.soloTargets.add( rt );
+				this.needsInit = true;
+
+			}
+
+		}
 		// a resource no live pass draws into still gets a render target of its own (a copy's
 		// destination, a texture written by storage): its textures need one to be allocated
 		// (a depth resource no live pass draws into needs none: nothing copies into depth)

@@ -7,12 +7,13 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { attribute, cameraPosition, exp, float, length, max, min, mix, positionGeometry, smoothstep, step, uniform } from 'three/tsl';
+import { attribute, cameraPosition, exp, float, length, max, min, mix, positionGeometry, smoothstep, step, uniform, vec4 } from 'three/tsl';
 import { LightningStrike } from './LightningStrike.ts';
 import { FLASH_SOURCES, SHELL_BOTTOM, SHELL_THICKNESS, type Clouds } from '../sky/Clouds.ts';
 import { SUN_ILLUMINANCE } from '../sky/Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import type { LatentRegistry } from '../post/graph/FrameGraph.ts';
+import { velocityOutput } from '../post/Motion.ts';
 
 // Thunderstorm lightning, kilometres out over the sea. Most strikes stay inside the cloud and
 // light it from within (sheet lightning); the rest come down to the sea as a branching channel
@@ -418,6 +419,10 @@ export class Lightning {
 		// The channel disappears into the cloud base.
 		const base = float( 1 ).sub( smoothstep( SHELL_BOTTOM - 600, SHELL_BOTTOM, height ) );
 		material.colorNode = color.mul( min( strength.mul( shown ).mul( thin ).mul( base ).mul( air ), 4 ) );
+		// Under the temporal modes the channel stays in the opaque pass (the water's reflection reads
+		// the opaque copy, and must still show it) and writes no motion and a reactive weight of 1:
+		// the resolve takes the bolt from this frame alone (Motion.ts).
+		material.mrtNode = velocityOutput( vec4( 0, 0, 0, 1 ) );
 		const mesh = new THREE.Mesh( geometry, material );
 		mesh.visible = false;
 		mesh.castShadow = mesh.receiveShadow = false;

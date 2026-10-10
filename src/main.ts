@@ -45,7 +45,10 @@ import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
-import { AA_GUI_MODES, AA_MODE, QUALITY_CHOICE, type AAMode } from './post/Antialiasing.ts';
+import { AA_GUI_MODES, AA_MODE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
+import type { LatentRegistry } from './post/graph/FrameGraph.ts';
+import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
+import { jitter } from './post/Jitter.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
@@ -94,7 +97,9 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 // three r186 keys its node builds and pipelines by the first attachment, not the whole layout (an
 // MRT picks its outputs by the textures' names): patched before any material builds, so a material
 // drawn into two layouts gets a build each (graph/ThreePatches.ts)
-if ( ! installCacheKeyPatches( renderer ) ) console.warn( 'three\'s cache keys are not patched: the temporal anti-aliasing modes will refuse to run' );
+// (the temporal modes' scene materials build one shader per MRT: Antialiasing.ts refuses them where
+// the patches cannot be installed)
+if ( ! installCacheKeyPatches( renderer ) ) console.warn( 'three\'s cache keys are not patched: the temporal anti-aliasing modes run as msaa' );
 // three submits every pass on its own; the frame reaches the GPU in a few submits instead
 // (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
 const submitBatch = new SubmitBatch( ( renderer.backend as unknown as { device: ConstructorParameters<typeof SubmitBatch>[ 0 ] } ).device, { debug: DEBUG } );
@@ -167,6 +172,21 @@ let manualSun = false;
 let paused = params.has( 'paused' );
 let simTime = Math.max( 0, numberParam( 't', 0 ) );
 const wind = new Wind( shared.wind, { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
+// Across a cut of the temporal modes' history (Motion.ts) the vegetation's wind has no motion either:
+// its previous state becomes the current one.
+if ( TEMPORAL ) onTaaCut( () => {
+
+	const current = shared.wind as unknown as Record<string, { value: number | THREE.Vector2 }>;
+	const previous = shared.wind.previous as unknown as Record<string, { value: number | THREE.Vector2 }>;
+	for ( const key in previous ) {
+
+		const from = current[ key ].value;
+		if ( typeof from === 'number' ) previous[ key ].value = from;
+		else ( previous[ key ].value as THREE.Vector2 ).copy( from );
+
+	}
+
+} );
 let rain: Rain | undefined;
 let skyElapsed = 0;
 let lastSkyTime = simTime;
@@ -370,7 +390,13 @@ rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, s
 // resources on the canvas (src/post/graph/DebugView.ts): only then it appends its pass to the graph
 // before the pipeline compiles it.
 const fgview = DEBUG ? debugViewFromURL() : null;
-if ( fgview ) installDebugView( fgview, { exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE } );
+if ( fgview ) installDebugView( fgview, {
+	exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE,
+	motion: {
+		previousViewProjection: motionUniforms.previousViewProjection, projectionInverse: jitter.uniforms.unjitteredProjectionInverse,
+		jitterNdc: jitter.uniforms.ndc, opaqueBelow: ( MOTION_CLASS.opaque + MOTION_CLASS.vegetation ) / 2,
+	},
+} );
 const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ) );
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).
@@ -397,6 +423,10 @@ const requestedLook = params.get( 'look' ) as LookName | null;
 pipeline.setLook( requestedLook && LOOKS.includes( requestedLook ) ? requestedLook : DEFAULT_LOOK );
 rain.bindOpaqueDepth( pipeline.depthRT.texture, pipeline.surfaceRT.texture );
 rainScene.add( rain.group );
+// Under the temporal modes the rain and the storm's spray draw in the overlay pass (rainScene,
+// Pipeline.ts), which keeps the motion vectors of the surfaces under them: their owners register
+// their latent draws for it.
+const overlayLatents: LatentRegistry = TEMPORAL ? { latent: ( _pass, objects, kernels ) => pipeline.graph.latent( 'overlay', objects, kernels ) } : pipeline.graph;
 
 // ------------------------------------------------------------------ first-use pipelines
 
@@ -415,7 +445,7 @@ const warming = Promise.all( [
 	caustics.warm(),
 	// the drops and splashes, and the bolts, registered with the passes they draw in before the
 	// graph's warm-up starts, which compiles them with every pass (graph/FrameGraph.ts `warm`)
-	rain.registerLatent( pipeline.graph ),
+	rain.registerLatent( overlayLatents ),
 	sky.lightning.registerLatent( pipeline.graph ),
 	pipeline.graph.warm( { scene, waterScene, rainScene, camera, water: null, sun, time: simTime } ),
 ] );
@@ -529,7 +559,8 @@ water = new Water( {
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 } );
 applySkyFill();
-waterScene.add( water.mesh, stormSea.spray.mesh );
+waterScene.add( water.mesh );
+( TEMPORAL ? rainScene : waterScene ).add( stormSea.spray.mesh );
 
 console.info( worldCache.cache === 'hit' ? 'world from the cache' : 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
@@ -1052,7 +1083,9 @@ function tick( time: number ): void {
 	S.focusDistance = camera.position.distanceTo( controls.target );
 	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * pipeline.height / 900, S.dof );
 
-	pipeline.render( { scene, waterScene, rainScene: rain!.mesh.visible ? rainScene : undefined, camera, water: water!, sun, time: simTime } );
+	// (the temporal modes draw the storm's spray with the rain, in the overlay pass)
+	const overlay = rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible );
+	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, camera, water: water!, sun, time: simTime } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
 	frame ++;
@@ -1158,7 +1191,12 @@ function diagnostics( now = false ): void {
 
 // The storm's foam and spray need the world's shore fields, so they register (and compile) last;
 // the loop then waits for every first-use pipeline (see "first-use pipelines").
-await Promise.all( [ warming, stormSea.registerLatent( pipeline.graph ) ] );
+await Promise.all( [ warming, stormSea.registerLatent( overlayLatents ) ] );
+
+// The temporal modes' debug check (Motion.ts): the materials whose velocity is missing or partial,
+// for the movers' motion vectors still to come.
+const motionPasses = () => [ { pass: 'opaque', scene, keeps: false }, { pass: 'water', scene: waterScene, keeps: false }, { pass: 'overlay', scene: rainScene, keeps: true } ];
+if ( DEBUG && TEMPORAL ) console.info( 'motion check', motionCheck( motionPasses() ) );
 
 if ( profiler ) {
 
@@ -1382,4 +1420,4 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 };
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
-	quality, dynamicResolution, pacer, submitBatch, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
+	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
