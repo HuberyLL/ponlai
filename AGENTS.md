@@ -53,7 +53,9 @@ stone exposed.
   steers by the frame intervals) and `frameRate` (the frame rate the loop holds on a faster
   display, over the tier's; `frameRate=0` renders on every refresh, as the profiler's uncapped runs
   do). Runtime switches for one-page A/Bs live in
-  `src/debug/DebugFlags.ts`.
+  `src/debug/DebugFlags.ts`. `islander` picks the islanders' proportions (`stock`, the kit's own and
+  the default, or the chunkier `subtle`, `medium` and `strong` builds of `Proportions.ts`; also in
+  the GUI's Islander folder, which rebuilds the figure in place).
 - Quality knobs: one table, `QUALITY` in `src/Quality.ts`, per tier. Load knobs are compiled into
   materials or the frame graph and read once as those are built, so a change of tier reloads the
   page (the GUI's quality control does): `QualityProfile.water` (`Water.ts`: reflection rays and
@@ -223,8 +225,15 @@ stone exposed.
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
-  map multiplied into the island's. While the character art is settled, models load from the
-  git-ignored `artifacts/assets/` (dev server only).
+  map multiplied into the island's. The assembled figure can be re-proportioned once at build time
+  (`Proportions.ts`: a larger head, shorter legs, a broader torso, thicker limbs, larger hands): its
+  vertices follow their bones' new bind positions with each bone's flesh scaled, the bind pose and
+  the clips' bone translations move with them, and the hips and legs are re-solved at every key
+  (the hips sink, each foot keeps its height, the thigh and shin reach it as a two-bone chain), so
+  feet stay planted and the stride shortens with the legs. Rotations elsewhere are untouched and
+  everything is keyed by the rig's bone names, so any figure of the kit takes the same build, and
+  per-frame skinning stays plain (bone matrices only). While the character art is settled, models
+  load from the git-ignored `artifacts/assets/` (dev server only).
 
 ## Decisions (keep to these)
 
