@@ -172,8 +172,9 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	 * table's `rewrites` while AttachmentOps was installed (bypassed by a later wrapper, a target
 	 * of another layout, a pass re-begun on its encoder). */
 	opsMismatchFrames = 0;
-	/** Dev counter: compiles after the first (the graph compiles once; a variant switch that
-	 * rebuilt it would count here). */
+	/** Render targets made after the first frame (the graph compiles once and makes its targets
+	 * then, resizing them in place: anything made later, such as a target remade at a resize, is
+	 * a rebuild that costs allocations and, for passes keyed by their target, pipelines). */
 	rebuilds = 0;
 	/** The enabled mask of the last frame executed (null: none yet). */
 	lastMask: number | null = null;
@@ -484,6 +485,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 	private makeTarget( colors: THREE.Texture[], depth: THREE.DepthTexture | null, samples: number ): THREE.RenderTarget {
 
+		if ( this.lastMask !== null ) this.rebuilds ++;
 		const rt = new THREE.RenderTarget( 1, 1, { count: Math.max( colors.length, 1 ), samples: samples > 1 ? samples : 0, depthBuffer: depth !== null } );
 		colors.forEach( ( texture, i ) => {
 
