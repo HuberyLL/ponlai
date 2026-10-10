@@ -115,6 +115,10 @@ export class AttachmentOps {
 		this.backend = backend as Backend;
 		this.mode = options.mode ?? opsModeFromURL();
 		this.dev = options.dev === true;
+		// (dev: a misspelt fgOps falls back to the default, which would make an A/B compare the
+		// default with itself)
+		const asked = this.dev && options.mode === undefined && typeof location !== 'undefined' ? new URLSearchParams( location.search ).get( 'fgOps' ) : null;
+		if ( asked !== null && asked !== this.mode ) console.warn( `fgOps=${ asked } is not one of ${ MODES.join( ', ' ) }: the ops are ${ this.mode }` );
 
 	}
 
