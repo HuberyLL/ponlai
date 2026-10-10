@@ -1,5 +1,6 @@
 // The quality tiers: every knob the frame's cost depends on, per tier, in one table. `?quality`
-// picks the tier at load (medium by default); the GUI's quality control reloads the page with it.
+// picks the tier at load; without it the tier is chosen by timing this GPU (QualityDetect.ts; medium
+// where it is not measured). The GUI's quality control reloads the page with it.
 //
 // High is the reference image and holds 60 fps on the target display through its dynamic render
 // scale; medium and low render at fixed budgets that leave room there, for slower GPUs. All three multisample the scene with 4
@@ -137,14 +138,6 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 export function isQualityTier( value: unknown ): value is QualityTier {
 
 	return typeof value === 'string' && ( QUALITY_TIERS as readonly string[] ).includes( value );
-
-}
-
-/** The tier `?quality` asks for, else the default. */
-export function qualityFromURL( search = location.search ): QualityTier {
-
-	const requested = new URLSearchParams( search ).get( 'quality' );
-	return isQualityTier( requested ) ? requested : DEFAULT_QUALITY;
 
 }
 
