@@ -1,6 +1,6 @@
 # Credits
 
-Soomi is released under the MIT License (see `LICENSE`). The third-party code and assets listed here
+Ponlai is released under the MIT License (see `LICENSE`). The third-party code and assets listed here
 keep their own licences. Adapted source files also carry the upstream notice in their header. A
 production build copies this file and the required licence texts, including those of the bundled npm
 packages, into `dist/licenses/`.
@@ -69,7 +69,7 @@ packages, into `dist/licenses/`.
   - The celestial clock, geometric lunar phase and the star and Milky Way rendering are original
     code; the star catalogue and Milky Way map they draw are listed under Assets. (The lunar disk's
     shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,
-    integrated wind and the rain veil and ripple gradients are original Soomi code as well; the
+    integrated wind and the rain veil and ripple gradients are original Ponlai code as well; the
     wet-material response implements the published techniques acknowledged below.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 

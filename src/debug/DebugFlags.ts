@@ -1,5 +1,5 @@
 // Runtime switches for timing a change inside one page (debug builds expose them as
-// window.__SOOMI__.flags). An optimisation under development keeps its old path and reads a flag
+// window.__PONLAI__.flags). An optimisation under development keeps its old path and reads a flag
 // where it chooses between the two, every frame:
 //
 //   import { debugFlags } from '../debug/DebugFlags.ts';

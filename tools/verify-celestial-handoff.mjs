@@ -27,10 +27,10 @@ try {
 	const url = new URL( base );
 	url.search = 'debug&paused&t=12&dpr=1';
 	await page.goto( url.href );
-	await page.waitForFunction( () => window.__SOOMI__?.sky?.grade && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30, null, { timeout: 90000 } );
+	await page.waitForFunction( () => window.__PONLAI__?.sky?.grade && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30, null, { timeout: 90000 } );
 	const result = await page.evaluate( async () => {
 
-		const s = window.__SOOMI__;
+		const s = window.__PONLAI__;
 		s.dayCycle.paused = true;
 		s.dayCycle.moonPhase = 0.5;
 		await s.setWeather( 'clear', 0 );

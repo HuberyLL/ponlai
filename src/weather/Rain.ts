@@ -51,7 +51,7 @@ const rainHash = Fn( ( [ p ]: [ V2 ] ) => {
 
 	return fract( sin( dot( p, vec2( 71.73, 139.91 ) ) ).mul( 19687.317 ) );
 
-} ).setLayout( { name: 'soomiRainHash', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
+} ).setLayout( { name: 'ponlaiRainHash', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
 
 /** World-space height gradient, in metres/metre. Add J-transpose times this gradient to a
  * displaced ocean's parameter-space height gradient before constructing its normal. The
@@ -92,7 +92,7 @@ export const rainRippleGradient = Fn( ( [ worldXZ, time, rain, footprint ]: [ V2
 	} );
 	return gradient.mul( clamp( rain, 0, 1 ) ).mul( filter );
 
-} ).setLayout( { name: 'soomiRainRippleGradient', type: 'vec2', inputs: [
+} ).setLayout( { name: 'ponlaiRainRippleGradient', type: 'vec2', inputs: [
 	{ name: 'worldXZ', type: 'vec2' }, { name: 'time', type: 'float' },
 	{ name: 'rain', type: 'float' }, { name: 'footprint', type: 'float' },
 ] } );

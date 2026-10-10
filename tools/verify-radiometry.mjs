@@ -22,10 +22,10 @@ try {
 	page.on( 'console', m => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
 	page.on( 'requestfailed', r => errors.push( r.url() ) );
 	await page.goto( `${ process.argv[ 2 ] || 'http://127.0.0.1:5190' }/?debug&paused&t=12&dpr=1` );
-	await page.waitForFunction( () => window.__SOOMI__?.applySun && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30, null, { timeout: 90000 } );
+	await page.waitForFunction( () => window.__PONLAI__?.applySun && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30, null, { timeout: 90000 } );
 	const measurements = await page.evaluate( async () => {
 
-		const s = window.__SOOMI__, r = s.renderer, sky = s.sky;
+		const s = window.__PONLAI__, r = s.renderer, sky = s.sky;
 		const animation = r.getAnimationLoop(), previous = r.getRenderTarget();
 		const original = { elevation: sky.elevation, illuminance: sky.sunIlluminance, weather: s.weather.target };
 		// The disk's integral equals the direct light only where no cloud covers it, cirrus included.

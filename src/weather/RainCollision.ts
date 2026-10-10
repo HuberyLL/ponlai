@@ -71,7 +71,7 @@ export class RainCollision {
 			const sample = textureLoad( texture, ivec2( uv.clamp( 0, 0.9999 ).mul( size ) ) ).toVar();
 			return max( select( inside.and( sample.a.greaterThan( 0.5 ) ), sample.r, waterLevel ), waterLevel );
 
-		} ).setLayout( { name: 'soomiRainGround', type: 'float', inputs: [ { name: 'xz', type: 'vec2' } ] } ) as unknown as ( xz: V2 ) => F;
+		} ).setLayout( { name: 'ponlaiRainGround', type: 'float', inputs: [ { name: 'xz', type: 'vec2' } ] } ) as unknown as ( xz: V2 ) => F;
 
 	}
 

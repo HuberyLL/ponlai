@@ -37,11 +37,11 @@ try {
 	const url = new URL( base );
 	for ( const [ key, value ] of Object.entries( { debug: '', paused: '', hour: '16', t: '12', dpr: '1', weather: 'clear', dist: '58', polar: '50', az: '318' } ) ) url.searchParams.set( key, value );
 	await page.goto( url.href );
-	await page.waitForFunction( () => window.__SOOMI__?.weather && typeof window.__SOOMI__.setWeather === 'function' &&
-		window.__SOOMI__.pipeline.air && window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 &&
+	await page.waitForFunction( () => window.__PONLAI__?.weather && typeof window.__PONLAI__.setWeather === 'function' &&
+		window.__PONLAI__.pipeline.air && window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 &&
 		document.getElementById( 'loading' )?.classList.contains( 'done' ) );
 	await page.evaluate( async () => {
-		const s = window.__SOOMI__;
+		const s = window.__PONLAI__;
 		s.dayCycle.paused = true;
 		s.dayCycle.moonPhase = 0.5;
 		s.dayCycle.advanceMoonPhase = false;
@@ -51,7 +51,7 @@ try {
 	const frames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
 	const camera = async ( view ) => {
 		await page.evaluate( ( view ) => {
-			const s = window.__SOOMI__;
+			const s = window.__PONLAI__;
 			if ( view === 'clouds' ) {
 				const elevation = 25 * Math.PI / 180, azimuth = - 30 * Math.PI / 180;
 				s.controls.maxPolarAngle = Math.PI;
@@ -122,7 +122,7 @@ try {
 		}, { pngs, regions } );
 	};
 	const snapshot = () => page.evaluate( async ( coupling ) => {
-		const s = window.__SOOMI__, sky = s.sky;
+		const s = window.__PONLAI__, sky = s.sky;
 		const scalar = ( node ) => node?.value ?? node;
 		const pixels = await s.renderer.readRenderTargetPixelsAsync( sky.small, 0, 0, sky.small.width, sky.small.height );
 		let minimum = Infinity, maximum = - Infinity, finite = true;
@@ -188,7 +188,7 @@ try {
 	};
 
 	for ( const name of presets ) {
-		await page.evaluate( ( name ) => window.__SOOMI__.setWeather( name, 0 ), name );
+		await page.evaluate( ( name ) => window.__PONLAI__.setWeather( name, 0 ), name );
 		await frames();
 		const state = { name, ...await snapshot(), screenshots: await screenshots( name ) };
 		report.presets.push( state );
@@ -205,16 +205,16 @@ try {
 
 	// Isolate aerial perspective from the already baked rainy sky and lighting. The sky reads
 	// the weather state every frame; a paused clock leaves that state alone between frames.
-	const savedHaze = await page.evaluate( () => window.__SOOMI__.weather.state.haze );
+	const savedHaze = await page.evaluate( () => window.__PONLAI__.weather.state.haze );
 	report.fog = { hour: 16, weather: 'rain', restoredHaze: savedHaze, units: 'absolute display RGB/luma differences, 0..255' };
 	try {
-		await page.evaluate( () => { window.__SOOMI__.weather.state.haze = 0; } );
+		await page.evaluate( () => { window.__PONLAI__.weather.state.haze = 0; } );
 		await frames();
-		near( await page.evaluate( () => window.__SOOMI__.pipeline.air.haze.value ), 0, 1e-8, 'Fog-off state reaches the pipeline' );
+		near( await page.evaluate( () => window.__PONLAI__.pipeline.air.haze.value ), 0, 1e-8, 'Fog-off state reaches the pipeline' );
 		report.fog.off = await screenshots( 'fog-off', [ 'overview', 'horizon' ] );
-		await page.evaluate( ( haze ) => { window.__SOOMI__.weather.state.haze = haze; }, savedHaze );
+		await page.evaluate( ( haze ) => { window.__PONLAI__.weather.state.haze = haze; }, savedHaze );
 		await frames();
-		near( await page.evaluate( () => window.__SOOMI__.pipeline.air.haze.value ), savedHaze, 1e-8, 'Fog-on state reaches the pipeline' );
+		near( await page.evaluate( () => window.__PONLAI__.pipeline.air.haze.value ), savedHaze, 1e-8, 'Fog-on state reaches the pipeline' );
 		report.fog.on = await screenshots( 'fog-on', [ 'overview', 'horizon' ] );
 		report.fog.overview = await cropDifferences( report.fog.off.overview[ 0 ], report.fog.on.overview[ 0 ], {
 			meadow: [ 0.28708, 0.25505, 0.66388, 0.59511 ], cliff: [ 0.19139, 0.63762, 0.65789, 0.83953 ],
@@ -230,11 +230,11 @@ try {
 		assert.ok( report.fog.horizon[ 'foreground-sea' ].meanAbsolutePixelDifference <= 1, 'Haze must preserve the near water in the horizon view' );
 		report.checks.push( 'Fog A/B pixel crops preserve the near island and shallow water while changing the distant sea' );
 	} finally {
-		await page.evaluate( ( haze ) => { window.__SOOMI__.weather.state.haze = haze; }, savedHaze );
+		await page.evaluate( ( haze ) => { window.__PONLAI__.weather.state.haze = haze; }, savedHaze );
 		await frames();
 	}
 
-	await page.evaluate( () => window.__SOOMI__.setHour( 0 ) );
+	await page.evaluate( () => window.__PONLAI__.setHour( 0 ) );
 	await frames();
 	report.nightRain = { ...await snapshot(), screenshots: await screenshots( 'midnight-rain', [ 'overview', 'horizon' ] ) };
 	validate( report.nightRain, 'night rain' );
@@ -247,12 +247,12 @@ try {
 		assert.ok( rain.coupling.fftGain.every( ( gain, i ) => gain > clear.coupling.fftGain[ i ] ), 'Weather must change actual wave output' );
 		assert.equal( rain.coupling.spectrumRevision, clear.coupling.spectrumRevision, 'Weather must not rebuild the CPU spectrum for each preset' );
 		const before = rain.weather.wetness;
-		await page.evaluate( async () => { const s = window.__SOOMI__; s.weather.update( 25 ); await s.refreshEnvironment(); } );
+		await page.evaluate( async () => { const s = window.__PONLAI__; s.weather.update( 25 ); await s.refreshEnvironment(); } );
 		await frames();
 		report.soaked = await snapshot();
 		validate( report.soaked, 'soaked surfaces' );
 		assert.ok( report.soaked.weather.wetness > before, 'Rain must accumulate bound material wetness' );
-		await page.evaluate( async () => { const s = window.__SOOMI__; await s.setWeather( 'clear', 0 ); s.weather.update( 60 ); await s.refreshEnvironment(); } );
+		await page.evaluate( async () => { const s = window.__PONLAI__; await s.setWeather( 'clear', 0 ); s.weather.update( 60 ); await s.refreshEnvironment(); } );
 		await frames();
 		report.drying = await snapshot();
 		validate( report.drying, 'drying surfaces' );
@@ -264,9 +264,9 @@ try {
 	// evolving while the requested afternoon lighting time stays fixed.
 	await camera( 'overview' );
 	await page.keyboard.press( 'Space' );
-	await page.evaluate( async () => { const s = window.__SOOMI__; s.dayCycle.paused = true; await s.setHour( 16 ); await s.setWeather( 'clear', 0 ); } );
+	await page.evaluate( async () => { const s = window.__PONLAI__; s.dayCycle.paused = true; await s.setHour( 16 ); await s.setWeather( 'clear', 0 ); } );
 	report.transition = await page.evaluate( async () => {
-		const s = window.__SOOMI__;
+		const s = window.__PONLAI__;
 		const take = () => ( { elapsed: performance.now(), hour: s.dayCycle.hour, weather: s.weather.snapshot(),
 			progress: s.weather.progress, target: s.weather.target, keyColor: s.sky.keyColor.toArray(), windPhase: s.shared.wind?.phase.value } );
 		await s.setWeather( 'rain', 5 );
@@ -304,19 +304,19 @@ try {
 	near( transition.towardClear.at( - 1 ).weather.coverage, clear.weather.coverage, 1e-6, 'Clear endpoint coverage' );
 	if ( coupling ) assert.ok( transition.towardClear.at( - 1 ).windPhase > transition.towardRain[ 0 ].windPhase, 'Wind animation must advance independently of celestial time' );
 	await page.keyboard.press( 'Space' );
-	await page.evaluate( () => window.__SOOMI__.refreshEnvironment() );
+	await page.evaluate( () => window.__PONLAI__.refreshEnvironment() );
 	await frames();
 	validate( await snapshot(), 'completed interrupted transition' );
 	report.checks.push( 'A live five-second weather transition can be interrupted continuously while the day clock stays paused' );
 
-	for ( const name of [ 'clear', 'rain', 'clear', 'rain' ] ) await page.evaluate( ( name ) => window.__SOOMI__.setWeather( name, 0 ), name );
+	for ( const name of [ 'clear', 'rain', 'clear', 'rain' ] ) await page.evaluate( ( name ) => window.__PONLAI__.setWeather( name, 0 ), name );
 	await frames();
-	report.resources.baseline = await page.evaluate( () => ( { ...window.__SOOMI__.renderer.info.memory } ) );
+	report.resources.baseline = await page.evaluate( () => ( { ...window.__PONLAI__.renderer.info.memory } ) );
 	report.resources.samples = [];
 	for ( let i = 0; i < 12; i ++ ) {
-		await page.evaluate( ( name ) => window.__SOOMI__.setWeather( name, 0 ), presets[ i % presets.length ] );
+		await page.evaluate( ( name ) => window.__PONLAI__.setWeather( name, 0 ), presets[ i % presets.length ] );
 		await frames();
-		report.resources.samples.push( await page.evaluate( () => ( { ...window.__SOOMI__.renderer.info.memory } ) ) );
+		report.resources.samples.push( await page.evaluate( () => ( { ...window.__PONLAI__.renderer.info.memory } ) ) );
 	}
 	assert.ok( Math.max( ...report.resources.samples.map( ( item ) => item.textures ) ) <= report.resources.baseline.textures + 4, 'Weather switches must not retain a new texture each time' );
 	assert.ok( Math.max( ...report.resources.samples.map( ( item ) => item.geometries ) ) <= report.resources.baseline.geometries + 2, 'Weather switches must not accumulate geometry' );

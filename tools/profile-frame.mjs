@@ -26,7 +26,7 @@
 //
 // Modes (most of a page load is generating the island, about 10 s; scenes are switched instead):
 // - page (the default): one page load per variant; each scene is set up at runtime through
-//   window.__SOOMI__ as its URL options would load it (weather established at once and wet in
+//   window.__PONLAI__ as its URL options would load it (weather established at once and wet in
 //   rain, the time preset, the clock from 0, the camera view and its motion), then warmed up for
 //   `--warmup` seconds (1.5) and until no pipeline was created for a second (a new weather compiles
 //   its pipelines on first use; that compile is reported per scene, outside the measured window).
@@ -37,7 +37,7 @@
 //   the same conditions. One page runs at a time: the other is stopped (no animation frame, no GPU
 //   work; its queued frames and any sky bake drained before the other starts; its camera and
 //   clock wait), since Chrome let one page's frames starve the other's queue. Deltas are reported with a 95 % interval from the slices' spread.
-// - toggle (`--toggle "js"`): A/B inside one page. The expression runs with `s` = window.__SOOMI__
+// - toggle (`--toggle "js"`): A/B inside one page. The expression runs with `s` = window.__PONLAI__
 //   and `on` (false for A, true for B), and is applied every `--block` frames in an A B B A B A A B
 //   pattern after both states were warmed: for example --toggle "s.water.mesh.visible = !on", or
 //   --toggle "s.flags.fastWater = on" for an optimisation that reads a flag of
@@ -84,7 +84,7 @@
 //   took 15-30 % of the GPU's time during these runs). `--window WxH` opens a normal window of that
 //   outer size instead (a player's, with its tab strip and toolbar): the other windows stay on
 //   screen, and a page drawing in one of them (an app's hidden browser pane kept rendering a second
-//   Soomi page) shares the GPU and lowers high's scale. Full screen covers them, and they drew less:
+//   Ponlai page) shares the GPU and lowers high's scale. Full screen covers them, and they drew less:
 //   the app with that pane took a tenth of the GPU beside a window, a hundredth behind full screen.
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
@@ -92,7 +92,7 @@
 // timestamp queries on (up to a quarter faster).
 //
 // `--eval` runs in the page for every scene, after its camera is placed and before its warm-up,
-// with `s` = window.__SOOMI__: an ablation, for example --eval "s.water.mesh.visible = false".
+// with `s` = window.__PONLAI__: an ablation, for example --eval "s.water.mesh.visible = false".
 // A url's own query options come first, so "http://host/?profile=frames" runs that side without
 // timestamps. `--timestamps both` takes a scene's frame intervals from a run without GPU
 // timestamps (the rate a player sees) and its passes from a run with them. `--hooks off` leaves
@@ -180,7 +180,7 @@ const WORLD_CACHE = opt( 'world-cache', 'on' ) !== 'off';
 // --scale-settle s: after a scene's warm-up, wait until a dynamic render scale (high's) has not
 // moved for s seconds (at most 60 s), so the scene is measured at its settle point
 const SCALE_SETTLE = Number( opt( 'scale-settle', 0 ) );
-const PROFILE_DIR = opt( 'profile-dir', path.join( os.tmpdir(), 'soomi-profile-frame-chrome' ) );
+const PROFILE_DIR = opt( 'profile-dir', path.join( os.tmpdir(), 'ponlai-profile-frame-chrome' ) );
 const REPEAT = Math.max( 1, Number( opt( 'repeat', 1 ) ) );
 const EXTRA_Q = opt( 'q', '' );
 // GPU timestamps: on (the default: frame intervals and the GPU time per pass), off (frame intervals
@@ -491,11 +491,11 @@ async function load( page, base, q, timestamps ) {
 	const url = pageUrl( base, q, timestamps );
 	const started = Date.now();
 	await page.goto( url );
-	await page.waitForFunction( () => window.__SOOMI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30 &&
+	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30 &&
 		document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 250 } );
 	const startup = await page.evaluate( () => {
 
-		if ( ! window.__SOOMI_PROFILE__ ) {
+		if ( ! window.__PONLAI_PROFILE__ ) {
 
 			// A build without the profiler: frame intervals only, from a rAF callback of our own (it
 			// runs in the same frames as the page's, so it sees the same intervals; it stops with the
@@ -510,13 +510,13 @@ async function load( page, base, q, timestamps ) {
 
 			};
 			requestAnimationFrame( step );
-			window.__SOOMI_PROFILE__ = {
+			window.__PONLAI_PROFILE__ = {
 				reset: () => { done = []; }, take: () => done.splice( 0, done.length ), setDetail: () => {}, setRaw: () => {}, pending: () => 0,
 				info: () => ( { timestamps: false, profiler: false, lostPasses: 0, failedPasses: {}, readbackMs: [], marks: {}, startup: { frames: [] } } ),
 			};
 
 		}
-		const info = window.__SOOMI_PROFILE__.info();
+		const info = window.__PONLAI_PROFILE__.info();
 		const d = window.__THREE_GAME_DIAGNOSTICS__;
 		return { ...info, diagnostics: { canvas: d.canvas, render: d.render, upscaled: d.upscaled, dpr: d.dpr, canvasDpr: d.canvasDpr, quality: d.quality, timings: d.timings, worldTriangles: d.worldTriangles, worldCache: d.worldCache ?? 'unsupported' } };
 
@@ -525,8 +525,8 @@ async function load( page, base, q, timestamps ) {
 	const hooks = await page.evaluate( pageHelpers );
 	await page.evaluate( ( { detail, raw } ) => {
 
-		window.__SOOMI_PROFILE__.setDetail( detail );
-		window.__SOOMI_PROFILE__.setRaw( raw );
+		window.__PONLAI_PROFILE__.setDetail( detail );
+		window.__PONLAI_PROFILE__.setRaw( raw );
 
 	}, { detail: DETAIL, raw: RAW } );
 	return { url, loadMs: Date.now() - started, startup, hooks };
@@ -538,7 +538,7 @@ async function load( page, base, q, timestamps ) {
 // loop) are driven through the handles they do have.
 function pageHelpers() {
 
-	const s = window.__SOOMI__;
+	const s = window.__PONLAI__;
 	const wait = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
 	const animation = s.renderer._animation;
 	const loop = s.loop ?? {
@@ -707,7 +707,7 @@ async function prepare( page, scene, evalJs, establish ) {
 		T.stopMotion();
 		const switchMs = establish ? await T.establish( def.q ) : 0;
 		T.place( def );
-		if ( evalJs ) ( 0, eval )( `( ( s ) => { ${ evalJs } } )` )( window.__SOOMI__ );
+		if ( evalJs ) ( 0, eval )( `( ( s ) => { ${ evalJs } } )` )( window.__PONLAI__ );
 		T.startMotion( def, orbit );
 		return { switchMs, t: performance.now() };
 
@@ -728,7 +728,7 @@ class Frames {
 
 	async pull() {
 
-		const fresh = await this.page.evaluate( () => window.__SOOMI_PROFILE__.take() );
+		const fresh = await this.page.evaluate( () => window.__PONLAI_PROFILE__.take() );
 		for ( const f of fresh ) this.all.push( f );
 		return fresh;
 
@@ -737,7 +737,7 @@ class Frames {
 	// waits until every frame started before `t1` has its timestamps, then pulls them
 	async settle( t1 ) {
 
-		await this.page.waitForFunction( ( t1 ) => window.__SOOMI_PROFILE__.pending( t1 ) === 0, t1, { timeout: 6000, polling: 50 } ).catch( () => {} );
+		await this.page.waitForFunction( ( t1 ) => window.__PONLAI_PROFILE__.pending( t1 ) === 0, t1, { timeout: 6000, polling: 50 } ).catch( () => {} );
 		await this.pull();
 
 	}
@@ -803,7 +803,7 @@ async function settleScale( page ) {
 
 		const state = await page.evaluate( () => {
 
-			const d = window.__SOOMI__?.dynamicResolution;
+			const d = window.__PONLAI__?.dynamicResolution;
 			if ( ! d ) return null;
 			const last = d.changes.length ? d.changes[ d.changes.length - 1 ].at : - Infinity;
 			return { scale: d.scale, quiet: performance.now() / 1000 - last };
@@ -824,8 +824,8 @@ async function measure( page, scene ) {
 	await page.waitForTimeout( WARMUP * 1000 );
 	const t0 = await page.evaluate( ( { change } ) => {
 
-		window.__SOOMI_PROFILE__.reset();
-		if ( change ) window.__SOOMI__.setWeather( change.weather, change.seconds );
+		window.__PONLAI_PROFILE__.reset();
+		if ( change ) window.__PONLAI__.setWeather( change.weather, change.seconds );
 		return performance.now();
 
 	}, { change: def.change ?? null } );
@@ -833,12 +833,12 @@ async function measure( page, scene ) {
 	const [ utilisation ] = await Promise.all( [ sampleGpuUtilisation( Math.max( SECONDS - 0.5, 0.5 ) ), page.waitForTimeout( SECONDS * 1000 ) ] );
 	const t1 = await page.evaluate( () => performance.now() );
 	// the last frames' timestamps arrive a few frames later
-	await page.waitForFunction( ( t1 ) => window.__SOOMI_PROFILE__.pending( t1 ) === 0, t1, { timeout: 6000, polling: 50 } ).catch( () => {} );
-	const frames = ( await page.evaluate( () => window.__SOOMI_PROFILE__.take() ) ).filter( ( f ) => f.t >= t0 && f.t < t1 );
+	await page.waitForFunction( ( t1 ) => window.__PONLAI_PROFILE__.pending( t1 ) === 0, t1, { timeout: 6000, polling: 50 } ).catch( () => {} );
+	const frames = ( await page.evaluate( () => window.__PONLAI_PROFILE__.take() ) ).filter( ( f ) => f.t >= t0 && f.t < t1 );
 	const info = await page.evaluate( () => {
 
 		window.__profileTools.stopMotion();
-		const { lostPasses, failedPasses, readbackMs } = window.__SOOMI_PROFILE__.info();
+		const { lostPasses, failedPasses, readbackMs } = window.__PONLAI_PROFILE__.info();
 		return { lostPasses, failedPasses, readbackMs };
 
 	} );
@@ -856,13 +856,13 @@ async function startDisplay( page ) {
 
 	const cdp = await page.context().newCDPSession( page );
 	const events = [];
-	cdp.on( 'Tracing.dataCollected', ( e ) => { for ( const x of e.value ) if ( x.name === 'PipelineReporter' || x.name === 'soomi-display-sync' ) events.push( x ); } );
+	cdp.on( 'Tracing.dataCollected', ( e ) => { for ( const x of e.value ) if ( x.name === 'PipelineReporter' || x.name === 'ponlai-display-sync' ) events.push( x ); } );
 	const done = new Promise( ( resolve ) => cdp.once( 'Tracing.tracingComplete', resolve ) );
 	await cdp.send( 'Tracing.start', { traceConfig: { includedCategories: [ 'cc', 'benchmark', 'disabled-by-default-devtools.timeline.frame', 'blink.user_timing' ] } } );
 	// the trace's clock against the page's: a mark seen by both
 	const sync = await page.evaluate( () => {
 
-		const s = window.__SOOMI__;
+		const s = window.__PONLAI__;
 		const dir = s.camera.getWorldDirection( s.camera.position.clone() );
 		const samples = window.__displaySamples = [];
 		let on = true;
@@ -877,7 +877,7 @@ async function startDisplay( page ) {
 
 		};
 		requestAnimationFrame( step );
-		performance.mark( 'soomi-display-sync' );
+		performance.mark( 'ponlai-display-sync' );
 		return performance.now();
 
 	} );
@@ -907,7 +907,7 @@ async function driveUser( page, seconds ) {
 	// per window height, 5 % a notch. The zoom takes the notches that make the same 0.95^8.
 	const view = await page.evaluate( () => {
 
-		const c = window.__SOOMI__.controls, island = c.isIslandCamera === true;
+		const c = window.__PONLAI__.controls, island = c.isIslandCamera === true;
 		return { w: innerWidth, h: innerHeight, button: island ? 'right' : 'left', perHeight: island ? c.turnPerHeight * 180 / Math.PI : 360,
 			notches: island ? Math.max( 1, Math.round( - 8 * Math.log( 0.95 ) / c.wheelZoom ) ) : 8 };
 
@@ -1023,7 +1023,7 @@ function displayStats( events, sync, samples, pacing, t0, t1 ) {
 	}
 	// presented frames: the renderer's (the process with most main-thread frames) presented ones,
 	// at their presentation, within the window (by the sync mark)
-	const mark = events.find( ( e ) => e.name === 'soomi-display-sync' );
+	const mark = events.find( ( e ) => e.name === 'ponlai-display-sync' );
 	const offset = mark ? mark.ts / 1000 - sync : NaN;
 	const begins = new Map(), frames = [];
 	for ( const e of events ) {
@@ -1105,7 +1105,7 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 
 		}
 		// the startup frames' GPU completions arrive late with a deep queue: read them again now
-		if ( entry.startup ) entry.startup.startup = await page.evaluate( () => window.__SOOMI_PROFILE__.info().startup );
+		if ( entry.startup ) entry.startup.startup = await page.evaluate( () => window.__PONLAI_PROFILE__.info().startup );
 
 	}
 	return { scenes: results, loads };
@@ -1130,7 +1130,7 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 		const display = DISPLAY ? await startDisplay( page ) : null;
 		const t0 = await page.evaluate( ( { change } ) => {
 
-			if ( change ) window.__SOOMI__.setWeather( change.weather, change.seconds );
+			if ( change ) window.__PONLAI__.setWeather( change.weather, change.seconds );
 			return performance.now();
 
 		}, { change: def.change ?? null } );
@@ -1146,7 +1146,7 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 	const info = await page.evaluate( () => {
 
 		window.__profileTools.stopMotion();
-		const { lostPasses, failedPasses, readbackMs } = window.__SOOMI_PROFILE__.info();
+		const { lostPasses, failedPasses, readbackMs } = window.__PONLAI_PROFILE__.info();
 		return { lostPasses, failedPasses, readbackMs };
 
 	} );
@@ -1161,7 +1161,7 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 		if ( w.display ) log( displayLog( w.scene, w.display ) );
 
 	}
-	loaded.startup.startup = await page.evaluate( () => window.__SOOMI_PROFILE__.info().startup );
+	loaded.startup.startup = await page.evaluate( () => window.__PONLAI_PROFILE__.info().startup );
 	return { scenes: results, loads: [ { scenes: names, loadMs: loaded.loadMs, url: loaded.url, gpuIdle, startup: loaded.startup, hooks: loaded.hooks } ] };
 
 }
@@ -1222,7 +1222,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			await run( v );
 			const prepared = await prepare( pages[ v ], scene, evals[ v ], true );
 			compile[ v ] = { ms: r2( prepared.switchMs ), ...( await warm( frames[ v ], [ prepared.t ], WARMUP ) )[ 0 ] };
-			if ( def.change ) await pages[ v ].evaluate( ( c ) => window.__SOOMI__.setWeather( c.weather, c.seconds ), def.change );
+			if ( def.change ) await pages[ v ].evaluate( ( c ) => window.__PONLAI__.setWeather( c.weather, c.seconds ), def.change );
 
 		}
 		if ( k === 0 ) switches[ scene ] = compile;
@@ -1285,7 +1285,7 @@ async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames,
 	const frames = new Frames( page );
 	const apply = ( on ) => page.evaluate( ( { js, on } ) => {
 
-		( 0, eval )( `( ( s, on ) => { ${ js } } )` )( window.__SOOMI__, on );
+		( 0, eval )( `( ( s, on ) => { ${ js } } )` )( window.__PONLAI__, on );
 		return performance.now();
 
 	}, { js: toggleJs, on } );
@@ -1297,10 +1297,10 @@ async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames,
 		// both states warmed (B, then A, which the blocks start with)
 		const warmed = [];
 		for ( const on of [ true, false ] ) warmed.push( ( await warm( frames, [ await apply( on ) ], on ? WARMUP : 1 ) )[ 0 ] );
-		if ( def.change ) await page.evaluate( ( c ) => window.__SOOMI__.setWeather( c.weather, c.seconds ), def.change );
+		if ( def.change ) await page.evaluate( ( c ) => window.__PONLAI__.setWeather( c.weather, c.seconds ), def.change );
 		const marks = await page.evaluate( ( { js, block, blocks, order } ) => new Promise( ( resolve ) => {
 
-			const s = window.__SOOMI__;
+			const s = window.__PONLAI__;
 			const set = ( 0, eval )( `( ( s, on ) => { ${ js } } )` );
 			const marks = [];
 			let n = 0, k = 0;
@@ -1549,7 +1549,7 @@ async function launch() {
 	} catch ( error ) {
 
 		console.error( `[profile] the Chrome profile ${ PROFILE_DIR } is unavailable (${ error.message.split( '\n' )[ 0 ] }); using a temporary one, without the world cache of earlier runs` );
-		const dir = await mkdtemp( path.join( os.tmpdir(), 'soomi-profile-frame-' ) );
+		const dir = await mkdtemp( path.join( os.tmpdir(), 'ponlai-profile-frame-' ) );
 		return { context: await chromium.launchPersistentContext( dir, options ), dir, temporary: true };
 
 	}

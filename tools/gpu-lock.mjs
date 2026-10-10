@@ -13,8 +13,8 @@
 // holders list themselves in its `shared/` folder and owner.json names one of them, handed on to
 // another when it leaves, so a tool that knows only the exclusive protocol (an older copy of this
 // file) still sees one live owner and waits. Exclusive waiters announce themselves in
-// `soomi-gpu.lock.waiting/`; joining and leaving the shared lock is serialised by the
-// `soomi-gpu.lock.mutex` directory.
+// `ponlai-gpu.lock.waiting/`; joining and leaving the shared lock is serialised by the
+// `ponlai-gpu.lock.mutex` directory.
 //
 //   import { withGpuLock, acquireGpuLock } from './gpu-lock.mjs';
 //   await withGpuLock( 'profile island', async () => { ... } );           // held while fn runs
@@ -25,9 +25,9 @@
 //   node tools/gpu-lock.mjs status
 //   node tools/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
 //
-// A command started through `run` inherits the lock (SOOMI_GPU_LOCK_HELD, SOOMI_GPU_LOCK_MODE), so
+// A command started through `run` inherits the lock (PONLAI_GPU_LOCK_HELD, PONLAI_GPU_LOCK_MODE), so
 // a wrapped tool that takes the lock itself does not wait for its own parent (a timing tool under a
-// shared parent says so: its numbers may share the GPU). SOOMI_GPU_LOCK_DIR moves the lock.
+// shared parent says so: its numbers may share the GPU). PONLAI_GPU_LOCK_DIR moves the lock.
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
@@ -52,7 +52,7 @@ function tempRoot() {
 
 }
 
-export const LOCK_DIR = path.join( process.env.SOOMI_GPU_LOCK_DIR || tempRoot(), 'soomi-gpu.lock' );
+export const LOCK_DIR = path.join( process.env.PONLAI_GPU_LOCK_DIR || tempRoot(), 'ponlai-gpu.lock' );
 const OWNER = path.join( LOCK_DIR, 'owner.json' );
 const MEMBERS = path.join( LOCK_DIR, 'shared' );
 const WAITING = `${ LOCK_DIR }.waiting`;
@@ -161,7 +161,7 @@ function exclusiveWaiters() {
 
 function inherited() {
 
-	const held = Number( process.env.SOOMI_GPU_LOCK_HELD );
+	const held = Number( process.env.PONLAI_GPU_LOCK_HELD );
 	if ( ! ( held > 0 ) || ! alive( held ) ) return false;
 	const owner = lockOwner();
 	return Boolean( owner && ( owner.pid === held || owner.members?.some( ( m ) => m.pid === held ) ) );
@@ -376,7 +376,7 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 
 	if ( depth > 0 || inherited() ) {
 
-		const parentMode = depth > 0 ? heldMode : process.env.SOOMI_GPU_LOCK_MODE;
+		const parentMode = depth > 0 ? heldMode : process.env.PONLAI_GPU_LOCK_MODE;
 		if ( ! shared && parentMode === 'shared' && ! quiet ) console.error( `[gpu-lock] "${ label }" wants the GPU to itself but runs under a shared lock: other probes may render meanwhile` );
 		depth ++;
 		return 0;
@@ -605,7 +605,7 @@ async function main( argv ) {
 		const shared = ( split >= 0 ? rest.slice( 0, split ) : rest ).includes( '--shared' );
 		const waited = await acquireGpuLock( label, { timeout: Number( opt( 'timeout', 0 ) ), shared } );
 		if ( waited > 1000 ) console.error( `[gpu-lock] acquired${ shared ? ' (shared)' : '' } after ${ ( waited / 1000 ).toFixed( 1 ) } s` );
-		const child = spawn( cmd[ 0 ], cmd.slice( 1 ), { stdio: 'inherit', env: { ...process.env, SOOMI_GPU_LOCK_HELD: String( process.pid ), SOOMI_GPU_LOCK_MODE: shared ? 'shared' : 'exclusive' } } );
+		const child = spawn( cmd[ 0 ], cmd.slice( 1 ), { stdio: 'inherit', env: { ...process.env, PONLAI_GPU_LOCK_HELD: String( process.pid ), PONLAI_GPU_LOCK_MODE: shared ? 'shared' : 'exclusive' } } );
 		for ( const signal of [ 'SIGINT', 'SIGTERM', 'SIGHUP' ] ) {
 
 			process.removeAllListeners( signal );

@@ -50,7 +50,7 @@ export const wetAlbedo = Fn( ( [ albedo, weight ]: [ V3, F ] ) => {
 	const trapped = vec3( ( 1 - R_EXTERNAL ) * ( 1 - R_INTERNAL ) ).div( vec3( 1 ).sub( albedo.mul( R_INTERNAL ) ) );
 	return albedo.mul( mix( vec3( 1 ), trapped, weight.mul( DARKENING ) ) );
 
-} ).setLayout( { name: 'soomiWetAlbedo', type: 'vec3', inputs: [ { name: 'albedo', type: 'vec3' }, { name: 'weight', type: 'float' } ] } );
+} ).setLayout( { name: 'ponlaiWetAlbedo', type: 'vec3', inputs: [ { name: 'albedo', type: 'vec3' }, { name: 'weight', type: 'float' } ] } );
 
 /** Roughness once the pores have filled: Lagarde 3b, written for roughness rather than gloss.
  * Water in the pores fills the finest relief, the more so the more porous the surface. */

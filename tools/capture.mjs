@@ -39,7 +39,7 @@ page.on( 'response', ( r ) => { if ( r.status() >= 400 ) failures.push( `${ r.st
 page.on( 'requestfailed', ( r ) => failures.push( `${ r.failure()?.errorText } ${ r.url() }` ) );
 try {
 	await page.goto( url );
-	await page.waitForFunction( () => window.__SOOMI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout: 60000 } );
+	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout: 60000 } );
 	if ( evalJs ) await page.evaluate( evalJs );
 	await page.waitForTimeout( wait );
 	// An edit can trigger a Vite reload during the settling delay. Never accept a loading screen.

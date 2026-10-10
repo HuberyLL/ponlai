@@ -284,7 +284,7 @@ function byteSize( data: unknown, dataOffset = 0, size?: number ): number {
  * and write the batching makes goes through (a registered symbol, so a lazily loaded module reads
  * it without importing this one). A tool that times the queue's calls (the frame profiler) wraps
  * these, so it times each native call once and not the batching's own work. */
-export const QUEUE_NATIVES = Symbol.for( 'soomi.submitBatch.natives' );
+export const QUEUE_NATIVES = Symbol.for( 'ponlai.submitBatch.natives' );
 
 export class SubmitBatch {
 

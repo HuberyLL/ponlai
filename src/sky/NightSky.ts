@@ -32,7 +32,7 @@ const nightHash = Fn( ( [ p ]: [ V2 ] ) => {
 
 	return fract( sin( dot( p, vec2( 153.71, 61.39 ) ) ).mul( 39241.173 ) );
 
-} ).setLayout( { name: 'soomiNightHash', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
+} ).setLayout( { name: 'ponlaiNightHash', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
 
 const nightNoise = Fn( ( [ p ]: [ V2 ] ) => {
 
@@ -42,13 +42,13 @@ const nightNoise = Fn( ( [ p ]: [ V2 ] ) => {
 	return mix( mix( nightHash( cell ), nightHash( cell.add( vec2( 1, 0 ) ) ), w.x ),
 		mix( nightHash( cell.add( vec2( 0, 1 ) ) ), nightHash( cell.add( vec2( 1, 1 ) ) ), w.x ), w.y );
 
-} ).setLayout( { name: 'soomiNightNoise', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
+} ).setLayout( { name: 'ponlaiNightNoise', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
 
 const hash3 = Fn( ( [ p ]: [ V3 ] ) => {
 
 	return fract( sin( dot( p, vec3( 127.1, 311.7, 74.7 ) ) ).mul( 43758.5453 ) );
 
-} ).setLayout( { name: 'soomiNightHash3', type: 'float', inputs: [ { name: 'p', type: 'vec3' } ] } );
+} ).setLayout( { name: 'ponlaiNightHash3', type: 'float', inputs: [ { name: 'p', type: 'vec3' } ] } );
 
 // Value noise on the celestial sphere, for the Milky Way's clouds and dust lanes.
 const noise3 = Fn( ( [ p ]: [ V3 ] ) => {
@@ -61,7 +61,7 @@ const noise3 = Fn( ( [ p ]: [ V3 ] ) => {
 		mix( mix( at( 0, 0, 0 ), at( 1, 0, 0 ), w.x ), mix( at( 0, 1, 0 ), at( 1, 1, 0 ), w.x ), w.y ),
 		mix( mix( at( 0, 0, 1 ), at( 1, 0, 1 ), w.x ), mix( at( 0, 1, 1 ), at( 1, 1, 1 ), w.x ), w.y ), w.z );
 
-} ).setLayout( { name: 'soomiNightNoise3', type: 'float', inputs: [ { name: 'p', type: 'vec3' } ] } );
+} ).setLayout( { name: 'ponlaiNightNoise3', type: 'float', inputs: [ { name: 'p', type: 'vec3' } ] } );
 
 // The Milky Way's floor: the mask's darkest open sky (about its median) holds the unresolved
 // light of faint stars everywhere; the stylised night keeps that sky dark.
@@ -88,7 +88,7 @@ const milkyWay = Fn( ( [ c, mask, fine ]: [ V3, F, F ] ) => {
 	} );
 	return result;
 
-} ).setLayout( { name: 'soomiMilkyWay', type: 'float', inputs: [ { name: 'c', type: 'vec3' }, { name: 'mask', type: 'float' }, { name: 'fine', type: 'float' } ] } );
+} ).setLayout( { name: 'ponlaiMilkyWay', type: 'float', inputs: [ { name: 'c', type: 'vec3' }, { name: 'mask', type: 'float' }, { name: 'fine', type: 'float' } ] } );
 
 // One byte of the Milky Way mask, as 0 to 1.
 const maskTexel = ( x: THREE.Node<'int'>, y: THREE.Node<'int'> ) => {
@@ -286,7 +286,7 @@ const raySphereNormal = Fn( ( [ ray, center, angularRadius ]: [ V3, V3, F ] ) =>
 	const s = sqrt( max( angularRadius.mul( angularRadius ).sub( dot( p, p ) ), 0 ) );
 	return p.sub( ray.mul( s ) ).div( angularRadius );
 
-} ).setLayout( { name: 'soomiMoonNormal', type: 'vec3', inputs: [
+} ).setLayout( { name: 'ponlaiMoonNormal', type: 'vec3', inputs: [
 	{ name: 'ray', type: 'vec3' }, { name: 'center', type: 'vec3' }, { name: 'angularRadius', type: 'float' },
 ] } );
 
@@ -302,7 +302,7 @@ const orenNayar = Fn( ( [ light, view, normal ]: [ V3, V3, V3 ] ) => {
 	const t = mix( float( 1 ), max( max( cosLight, cosView ), 0.1 ), smoothstep( 0, 0.1, s ) );
 	return max( cosLight, 0 ).mul( s.div( t ).mul( OREN_NAYAR_B ).add( OREN_NAYAR_A ) );
 
-} ).setLayout( { name: 'soomiMoonOrenNayar', type: 'float', inputs: [
+} ).setLayout( { name: 'ponlaiMoonOrenNayar', type: 'float', inputs: [
 	{ name: 'light', type: 'vec3' }, { name: 'view', type: 'vec3' }, { name: 'normal', type: 'vec3' },
 ] } );
 
@@ -314,7 +314,7 @@ const earthPhaseLaw = Fn( ( [ elongation ]: [ F ] ) => {
 	const x = clamp( elongation.mul( 0.5 ), 1e-3, Math.PI / 2 - 1e-3 ).toVar();
 	return clamp( float( 1 ).sub( sin( x ).mul( tan( x ) ).mul( log( float( 1 ).div( tan( x.mul( 0.5 ) ) ) ) ) ), 0, 1 );
 
-} ).setLayout( { name: 'soomiEarthPhaseLaw', type: 'float', inputs: [ { name: 'elongation', type: 'float' } ] } );
+} ).setLayout( { name: 'ponlaiEarthPhaseLaw', type: 'float', inputs: [ { name: 'elongation', type: 'float' } ] } );
 
 // Forward scattering by haze around the moon: a tight aureole and a wide, faint halo, scaled
 // by how much of the disk is lit.
@@ -325,7 +325,7 @@ const nightMoonGlow = Fn( ( [ direction, sunDir, moonDir, moonColor ]: [ V3, V3,
 	const glow = exp( angle.div( - 0.035 ) ).mul( 0.12 ).add( exp( angle.div( - 0.3 ) ).mul( 0.015 ) );
 	return moonColor.mul( glow ).mul( lit ).mul( smoothstep( - 0.05, 0.05, moonDir.y ) );
 
-} ).setLayout( { name: 'soomiNightMoonGlow', type: 'vec3', inputs: [
+} ).setLayout( { name: 'ponlaiNightMoonGlow', type: 'vec3', inputs: [
 	{ name: 'direction', type: 'vec3' }, { name: 'sunDir', type: 'vec3' },
 	{ name: 'moonDir', type: 'vec3' }, { name: 'moonColor', type: 'vec3' },
 ] } );
@@ -349,7 +349,7 @@ const nightAirglow = Fn( ( [ direction, moonWash ]: [ V3, F ] ) => {
 	return vec3( AIRGLOW_COLOR.x, AIRGLOW_COLOR.y, AIRGLOW_COLOR.z ).mul( vanRhijn ).mul( transmittance )
 		.mul( float( 1 ).sub( clamp( moonWash, 0, 1 ).mul( 0.5 ) ) );
 
-} ).setLayout( { name: 'soomiNightAirglow', type: 'vec3', inputs: [ { name: 'direction', type: 'vec3' }, { name: 'moonWash', type: 'float' } ] } );
+} ).setLayout( { name: 'ponlaiNightAirglow', type: 'vec3', inputs: [ { name: 'direction', type: 'vec3' }, { name: 'moonWash', type: 'float' } ] } );
 
 export class NightSky {
 
