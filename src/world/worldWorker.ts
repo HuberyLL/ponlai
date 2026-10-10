@@ -13,7 +13,7 @@ import { Field2D } from './Field2D.ts';
 import { deepenSeabed, seabedBeds, shapeShelf } from './Bathymetry.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
-import { VEGETATION_STRIDE, VEGETATION_SPACING } from './types.ts';
+import { SEABED_WARP, VEGETATION_STRIDE, VEGETATION_SPACING } from './types.ts';
 import { openWorldStore } from './WorldCache.ts';
 import type { SDF, MeshData, MeshKind, NamedMesh, Rock, WorldData, WorldOptions } from './types.ts';
 
@@ -236,7 +236,7 @@ function setup( options: WorldOptions, timings: Record<string, number> ) {
 	t = performance.now();
 	const n = seabedRes;
 	const sb = new Float32Array( ( n + 1 ) * ( n + 1 ) * 3 );
-	const warp = ( u: number ) => Math.sign( u ) * Math.pow( Math.abs( u ), 1.9 );
+	const warp = ( u: number ) => Math.sign( u ) * Math.pow( Math.abs( u ), SEABED_WARP );
 	let floorCeiling = - Infinity;
 	for ( let j = 0; j <= n; j ++ ) for ( let i = 0; i <= n; i ++ ) {
 
@@ -466,7 +466,7 @@ function assemble( island: MeshData, rocks: MeshData[], rest: RestPart, options:
 function seabedSampler( positions: Float32Array, n: number, size: number ): ( x: number, z: number ) => number {
 
 	const index = ( v: number ) => Math.max( 0, Math.min( n - 1,
-		Math.floor( ( Math.sign( v ) * Math.pow( Math.abs( v / ( size / 2 ) ), 1 / 1.9 ) + 1 ) * n / 2 ) ) );
+		Math.floor( ( Math.sign( v ) * Math.pow( Math.abs( v / ( size / 2 ) ), 1 / SEABED_WARP ) + 1 ) * n / 2 ) ) );
 	return ( x, z ) => {
 
 		const i = index( x ), j = index( z );
