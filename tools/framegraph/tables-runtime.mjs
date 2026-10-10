@@ -266,7 +266,7 @@ export const checks = [
 			g.execute( {} );
 			assert.equal( g.opsMismatchFrames, 0, 'not installed: nothing to check' );
 			g.attachmentOps.install();
-			// the passes never begin a render pass here, so the legacy discard in the rain is missed
+			// the passes never begin a render pass here, so the table's rewrites are missed
 			g.execute( {} );
 			assert.equal( g.opsMismatchFrames, 1 );
 			g.attachmentOps.uninstall();

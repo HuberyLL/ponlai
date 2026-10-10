@@ -23,7 +23,8 @@ import type { Rain } from '../weather/Rain.ts';
 //   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts and reflects)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
 //   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
-//   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them)
+//   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them;
+//     without rain the water discards the colour and the surface resolve's read keeps the depth)
 //   sea fog (in fog: the bank noise baked into a map, the march at half resolution), the view
 //   distance for the depth of field
 //   composite (air, fog, rain veil, shafts) ── hdr, once
@@ -50,8 +51,10 @@ import type { Rain } from '../weather/Rain.ts';
 // At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass and the passes
 // the display chain's nodes render inside it, so one that first runs later (fog, the upscale, the
 // look's glow) builds nothing then.
-// Its attachment ops (graph/AttachmentOps.ts) discard the scene target's multisampled samples in
-// its last pass.
+// Its attachment ops (graph/AttachmentOps.ts) are derived each frame from the passes that run:
+// the scene target's multisampled samples are discarded after the last pass that reads them, and
+// the water leaves its resolve to the rain when the rain follows. Every texture a pass binds must
+// be declared as its read, or the ops may discard what it samples.
 
 // The graph's dev checks (every target at its class's size, the attachment ops that reached
 // WebGPU): on the dev server and with `?debug`.
@@ -84,7 +87,9 @@ export interface PostOptions extends AirOptions {
 	bloomChains: 1 | 2;
 	// FSR 1 from FSR.ts (EASU pass, sharpening folded into the canvas pass), or three's FSR1Node
 	fsrPort: boolean;
-	// the last pass into the multisampled scene target discards its samples
+	// the legacy attachment ops (`fgOps=legacy`) discard the scene target's samples in the rain;
+	// false (`post=store-scene`) keeps them (the derived ops follow `fgOps` alone, see
+	// AttachmentOps.ts: `post=store-scene` maps to its `store` mode)
 	discardScene: boolean;
 }
 
@@ -868,11 +873,13 @@ export class Pipeline {
 		} );
 		this.declarePasses();
 		g.compile();
-		// The scene target's multisampled colour and depth are resolved, then never read: the last
-		// pass into them (the rain) discards them (the discardScene option, `legacyDiscard` above).
-		// WebGPU lets a pass load its attachments and still discard them once resolved, which three
-		// r186 offers only together with a clear, so AttachmentOps rewrites that pass's stores as
-		// three hands its descriptor to WebGPU.
+		// The scene target's multisampled colour and depth are resolved, then never read: the
+		// graph's attachment ops discard them in the last pass that draws into them and drop a
+		// resolve nothing samples before the next draw, derived per frame from the passes that run
+		// (the legacy table, `fgOps=legacy`, discards in the rain only: the discardScene option,
+		// `legacyDiscard` above). WebGPU lets a pass load its attachments and still discard them
+		// once resolved, which three r186 offers only together with a clear, so AttachmentOps
+		// rewrites the stores as three hands each pass's descriptor to WebGPU.
 		g.attachmentOps.install();
 		this.setToneMapping( this.settings.toneMapping );
 

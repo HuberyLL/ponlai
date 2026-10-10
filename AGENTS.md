@@ -58,7 +58,11 @@ stone exposed.
   display, over the tier's; `frameRate=0` renders on every refresh, as the profiler's uncapped runs
   do), `submits=each` (three's own submit per pass, without the submit batching; at runtime
   `flags.batchSubmits`; its tracking wrappers stay installed, so compare against `main` for their
-  JS cost), `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`) and
+  JS cost), `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`), `fgOps` (the frame
+  graph's attachment ops: `derived`, the default, per frame from the passes that run; `legacy`,
+  the scene target discarded in the rain only; `store`, every store and resolve kept, also what
+  `post=store-scene` and `post=legacy` choose; `off`, three's own), `fgPrime=0` (the warm-up
+  renders nothing ahead, see the pitfalls) and
   `fgview=<resource>[.<output>]` (debug builds: the frame graph's debug view draws one of its
   resources over the canvas, shown by what it holds, e.g. `linearDepth`, `fogMarch.a`, `FSR.easu`;
   outputs `r` / `g` / `b` / `a`, `previous`, a depth's `sample<n>`; `src/post/graph/DebugView.ts`;
@@ -280,14 +284,14 @@ stone exposed.
   passes (`registerLatent`), whose warm-up (`FrameGraph.warm`, with `Sky.warm`) compiles them at
   startup, so a weather change or the first bolt builds no pipeline.
 - `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
-  and rain drawn into the same multisampled target (its samples discarded after the rain), the sea
-  fog marched at half resolution over a baked bank map, the composite of air, fog, veil and shafts
-  rendered once for the sharp image and both blooms, crepuscular rays and sun glare, bloom,
+  and rain drawn into the same multisampled target (its samples discarded after their last reader),
+  the sea fog marched at half resolution over a baked bank map, the composite of air, fog, veil and
+  shafts rendered once for the sharp image and both blooms, crepuscular rays and sun glare, bloom,
   tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale (`FSR.ts`: an EASU pass,
-  the sharpening in the canvas pass)), render scale per quality tier (`RenderScale.ts`) and
-  high's dynamic resolution (`DynamicResolution.ts`: the scale steered by the GPU's frame time
-  from timestamp queries), the frame pacer (`FramePacer.ts`), the submit batching
-  (`SubmitBatch.ts`), the scene's sample count (`SceneSamples.ts`).
+  the sharpening in the canvas pass)), render scale per quality tier (`RenderScale.ts`) and high's
+  dynamic resolution (`DynamicResolution.ts`: the scale steered by the GPU's frame time from
+  timestamp queries), the frame pacer (`FramePacer.ts`), the submit batching (`SubmitBatch.ts`), the
+  scene's sample count (`SceneSamples.ts`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -796,36 +800,44 @@ stone exposed.
   (FSR's EASU target) or fixed (the fog's bank map). Declare a new target on the graph with its
   class instead of sizing it by hand. three's rtt() and bloom passes inside the display chain
   follow the render through the graph's resize hook (`Pipeline.passes` through `sizeRtt`): keep
-  reduced or fixed passes out of that list. The last pass into `sceneRT` (the rain) discards its
-  multisampled samples through the graph's attachment ops (`AttachmentOps` rewrites the pass's
-  stores on the backend's command encoder; three r186 opens one encoder per render pass): a pass
-  added after it that reads `sceneRT`'s samples or depth must declare that read and move the
-  legacy discard. `Pipeline.render` is `graph.execute`: the sea fog's bank, depth and march, the
+  reduced or fixed passes out of that list. The graph's attachment ops are derived each frame
+  from the passes that run and the reads they declare (`AttachmentOps` rewrites a pass's stores
+  and resolves on the backend's command encoder; three r186 opens one encoder per render pass):
+  with rain the water stores `sceneRT`'s samples and leaves the resolve to the rain, which then
+  discards colour and depth; without it the water discards the multisampled colour and keeps the
+  depth the surface resolve reads. So every texture a pass binds from the scene target (colour,
+  multisampled depth) must be declared (`read`, `readOptional`): an undeclared read of a
+  discarded attachment shows garbage, and one between the water and the rain sees the scene
+  without the sea. `Pipeline.render` is `graph.execute`: the sea fog's bank, depth and march, the
   view distance and the output and FSR passes are graph passes too (the `post=` switches choose
   which are declared at load), so new frame work goes in as a pass, not as a call around the
   graph. A pass that declares no depth clears whatever depth its target holds outside the graph
   (the canvas's, and the targets a display chain's own rtt() passes draw into), as three's
   defaults do; declare the depth to keep it.
-- Every pipeline is compiled at startup by the frame graph's warm-up (`FrameGraph.warm`, with
-  `src/post/graph/Compile.ts`): each pass under its own binding (target, MRT, depth flags), the
-  passes three's nodes render inside a chain (rtt(), bloom), and the objects and kernels owners
-  register as run only at times (`graph.latent( pass, objects, kernels )`: the rain, the bolts, the
-  storm's spray and foam). A new pass, or a draw that first shows later, joins it the same way;
-  `tools/verify-first-use.mjs` counts the pipelines any step still creates. three r186's
-  `compileAsync` alone does not compile what a render draws: it collects its draws synchronously
-  but builds them one await at a time, under whatever target, MRT, side (a double-sided draw's two
-  passes) and colour space the renderer holds by then; it collects in the top-level render
-  context, where a pass rendered inside another (an rtt() or bloom pass) draws in its own call
-  depth's, which is part of the material's node key; and it compiles a QuadMesh without the
-  vertex node `QuadMesh.render` sets. `compileBound` builds each draw inside the binding, at the
+- Every frame-graph pass and the latents registered with it are compiled at startup by the graph's
+  warm-up (`FrameGraph.warm`, with `src/post/graph/Compile.ts`); the world, vegetation, water,
+  character and shadow-map materials still build in their first frames (the warm-up runs before the
+  world exists, the water's pass on an empty scene). It compiles each pass under its own binding
+  (target, MRT, depth flags), the passes three's nodes render inside a chain (rtt(), bloom), and the
+  objects and kernels owners register as run only at times (`graph.latent( pass, objects, kernels
+  )`: the rain, the bolts, the storm's spray and foam). A new pass, or a draw that first shows
+  later, joins it the same way; `tools/verify-first-use.mjs` counts the pipelines any step still
+  creates. three r186's `compileAsync` alone does not compile what a render draws: it collects its
+  draws synchronously but builds them one await at a time, under whatever target, MRT, side (a
+  double-sided draw's two passes) and colour space the renderer holds by then; it collects in the
+  top-level render context, where a pass rendered inside another (an rtt() or bloom pass) draws in
+  its own call depth's, which is part of the material's node key; and it compiles a QuadMesh without
+  the vertex node `QuadMesh.render` sets. `compileBound` builds each draw inside the binding, at the
   call depth and with the quad's vertex node of the real draw, and leaves only the pipeline's
   creation asynchronous: compile ahead through it (`compileInto`, `compileLatent`). A miss is not
   harmless: a material built twice under two keys can be emitted with the first build's uniform
   names in a layout function (r186), an invalid shader. A transparent double-sided latent mesh
-  compiles one copy of its material per side, kept alive (disposing one releases the shared
-  builds). Priming (rendering a pass once at startup) covers only what the walker cannot reach
-  (three's FSR1Node, `post=three-fsr`), never leaves a persistent resource written, and is off with
-  `fgPrime=0`, for the check that it changes no frame.
+  compiles one copy of its material per side, kept alive (disposing one releases the shared builds).
+  Priming (rendering a pass once at startup) covers only what the walker cannot reach (three's
+  FSR1Node, `post=three-fsr`), never leaves a persistent resource written, skips a node that may
+  keep state of its own (a history) unless the pass's owner resets it (`invalidate`), and is off
+  with `fgPrime=0`, for the check that it changes no frame. A latent registered for a pass the graph
+  does not have is reported (`warmStats.failed`) and builds on first use.
 - three r186 keys a draw's node build by the material and the render context (attachment count,
   the first attachment's format and type, samples, depth, MRT, call depth), not by the other
   attachments' formats or the textures' names (an MRT picks its outputs by name), and its pipeline
