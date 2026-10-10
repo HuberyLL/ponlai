@@ -359,6 +359,25 @@ rain = new Rain( { count: runtimeQuality.rainDrops } );
 // damped (like the storm spray's), since the displayed deck brightens far less than the fill.
 rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).pow( 0.35 ) ) );
 const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ) );
+// The profiler labels each pass the graph runs by the pass's label (its groups), unless a
+// target or object it knows labels it otherwise (the passes inside the display chain).
+if ( profiler ) {
+
+	const hooks = pipeline.graph.hooks, begin = hooks.onPassBegin, end = hooks.onPassEnd;
+	hooks.onPassBegin = ( pass, f ) => {
+
+		begin?.( pass, f );
+		profiler.graphPass( pass.label );
+
+	};
+	hooks.onPassEnd = ( pass, f ) => {
+
+		profiler.graphPass( null );
+		end?.( pass, f );
+
+	};
+
+}
 const requestedTone = params.get( 'tone' ) as ToneCurve | null;
 if ( requestedTone && TONE_CURVES.includes( requestedTone ) ) pipeline.setToneMapping( requestedTone );
 const requestedLook = params.get( 'look' ) as LookName | null;
