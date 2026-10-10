@@ -1,8 +1,8 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, texture, textureLoad, rtt, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
+	Fn, If, Loop, texture, textureLoad, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, log2, luminance, neutralToneMapping, agxToneMapping,
-	sRGBTransferOETF, fract, convertToTexture, select, exp, nodeObject, atan, mod, pow,
+	sRGBTransferOETF, fract, select, exp, nodeObject, atan, mod, pow,
 } from 'three/tsl';
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
@@ -10,7 +10,6 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
-import { sizeRtt } from './RenderScale.ts';
 import { SCENE_SAMPLES } from './SceneSamples.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
@@ -44,8 +43,9 @@ import type { Rain } from '../weather/Rain.ts';
 // through a resize hook. The graph runs the whole frame as passes that declare what they read and
 // write: the scene half (opaque, the depth and copy resolves, water, the surface resolve, rain),
 // the sea fog (its bank map, nearest depth and march), the view distance, the composite, the
-// blooms (three's bloom chains, a pass each), the display chain (one pass: the depth of field and
-// grade run inside it), and the canvas pass, or
+// blooms (three's bloom chains, a pass each), the sharp image, the depth of field's blur, the look's
+// glow (a bloom chain), the display chain (one pass: the depth of field's mix, the grade and the
+// look), and the canvas pass, or
 // EASU and the sharpening canvas pass while upscaling. Each pass that runs only now and then
 // (rain, fog, the view distance, either output) says when by a predicate the graph evaluates at
 // the frame's start. The `post=` legacy switches are variants of the graph, chosen as it is built.
@@ -137,8 +137,6 @@ class RenderBloomNode extends BloomNode {
 
 	renderWidth = 1;
 	renderHeight = 1;
-	// false skips the chain (the look's diffusion, under the realistic look)
-	enabled = true;
 
 	override setSize(): void {
 
@@ -161,12 +159,6 @@ class RenderBloomNode extends BloomNode {
 	get output(): THREE.RenderTarget {
 
 		return ( this as unknown as { _renderTargetsHorizontal: THREE.RenderTarget[] } )._renderTargetsHorizontal[ 0 ];
-
-	}
-
-	override updateBefore( frame: Parameters<BloomNode[ 'updateBefore' ]>[ 0 ] ): boolean | undefined {
-
-		return this.enabled ? super.updateBefore( frame ) : undefined;
 
 	}
 
@@ -338,7 +330,8 @@ export class Pipeline {
 	readonly textures: { readonly opaqueColor: THREE.Texture; readonly linearDepth: THREE.Texture; readonly surfaceDepth: THREE.Texture };
 	private readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
-		surfaceDepth: ResourceHandle; hdr: ResourceHandle | null; display: ResourceHandle; viewDistance: ResourceHandle | null;
+		surfaceDepth: ResourceHandle; hdr: ResourceHandle | null; sharp: ResourceHandle; blur: ResourceHandle; display: ResourceHandle;
+		viewDistance: ResourceHandle | null;
 		easu: ResourceHandle | null; canvas: ResourceHandle;
 	};
 	readonly air: AerialPerspective;
@@ -358,12 +351,11 @@ export class Pipeline {
 	// the composite of the air, fog, rain veil and shafts over the scene, into hdr (the
 	// compositeOnce option)
 	private compositeQuad: THREE.QuadMesh | null = null;
+	// the composite and the blooms (the sharp image), its depth of field's half-resolution blur
+	private sharpQuad: THREE.QuadMesh;
+	private blurQuad: THREE.QuadMesh;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private display: THREE.RenderPipeline;
-	// the display chain's rtt() passes, sized with the scene's render (not the canvas) through the
-	// graph's resize hook, and the profiler's group for each (labelPonlaiPasses)
-	private passes: THREE.RTTNode[] = [];
-	private chainLabels: [ THREE.RTTNode, string ][] = [];
 	// the bloom chains (each a pass of the graph's: the tight bloom, and the wide glow when there are
 	// two) and their results, imported into the graph
 	private blooms: { node: RenderBloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number>; output: ResourceHandle }[] = [];
@@ -383,7 +375,9 @@ export class Pipeline {
 		shadowTint: uniform( new THREE.Color( 1, 1, 1 ) ), shadowTone: uniform( 0 ), highlightTint: uniform( new THREE.Color( 1, 1, 1 ) ), highlightTone: uniform( 0 ),
 		pivot: uniform( 0.3 ), shadowLift: uniform( 0 ), lookContrast: uniform( 0 ), lookSky: uniform( 1 ), glowHalo: uniform( 1 ),
 	};
-	private diffusion!: { node: RenderBloomNode; threshold: THREE.UniformNode<'float', number> };
+	// the look's diffusion glow: a bloom chain over the sharp image (its graph pass runs only while
+	// the glow shows: `enabled`)
+	private diffusion!: { node: RenderBloomNode; threshold: THREE.UniformNode<'float', number>; output: ResourceHandle; enabled: boolean };
 
 	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL() ) {
 
@@ -399,14 +393,17 @@ export class Pipeline {
 		const linearDepth = g.color( 'linearDepth', { size: RENDER, format: THREE.RGFormat, type: THREE.FloatType } );
 		const opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		const surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } );
-		// the composite (half float, as three's rtt() made it)
+		// the composite, the sharp image and the depth of field's blur (half float, as three's rtt()
+		// made them)
 		const hdr = O.compositeOnce ? g.color( 'hdr', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
+		const sharp = g.color( 'sharp', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
+		const blur = g.color( 'blur', { size: HALF, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		const display = g.color( 'display', { size: RENDER, format: THREE.RGBAFormat, type: THREE.FloatType } );
 		const viewDistance = O.dofDistance ? g.color( 'viewDistance', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } ) : null;
 		// the upscale's EASU image (the canvas's size) and the canvas
 		const easu = O.fsrPort ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
-		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, hdr, display, viewDistance, easu, canvas };
+		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, hdr, sharp, blur, display, viewDistance, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( [ sceneColor ], sceneDepth );
@@ -520,13 +517,19 @@ export class Pipeline {
 		// (one chain: the wide glow's radius and both strengths, see render())
 		const withBloom = O.bloomChains === 2 ? hdrColor.add( makeBloom( 'bloom' ).rgb ).add( makeBloom( 'glow' ).rgb ) : hdrColor.add( makeBloom( 'bloom' ).rgb );
 
+		// ---- the sharp image: the composite and the blooms (the composite evaluated here, inline,
+		// without the composite pass)
+		const sharpMat = new THREE.NodeMaterial();
+		sharpMat.name = 'Post.Sharp';
+		sharpMat.fragmentNode = vec4( withBloom, 1 );
+		this.sharpQuad = new THREE.QuadMesh( sharpMat );
+		this.sharpQuad.name = 'Post.Sharp';
+		// (the sharp image and the blur as their rtt() nodes were: with their uv, no uv transform)
+		const tSharp = texture( g.texture( sharp ), uv() );
+
 		// ---- tilt-shift depth of field: a half-res gather over a golden-angle disc whose radius grows
 		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
 		// the blur is mixed over the sharp image by the full-resolution coc
-		const sharp = convertToTexture( vec4( withBloom, 1 ) );
-		this.passes.push( sharp );
-		// (inlined, the composite is evaluated in the sharp image's pass: the profiler's composite)
-		this.chainLabels.push( [ sharp, hdr ? 'sharp (composite + blooms)' : 'composite (air, fog, veil)' ] );
 		const tD = texture( tSurfaceDepth );
 		// The distance to the nearest surface, the water's included (view-space z: closer is larger).
 		const distanceAt = ( q: V2, z: F ) => {
@@ -592,7 +595,7 @@ export class Pipeline {
 			const q = uv();
 			const centre = cocAt( q ).toVar();
 			const c0 = centre.x, s0 = spread( c0 ).toVar();
-			const acc = compress( texture( sharp, q ).level( float( 0 ) ).rgb ).toVar(), wsum = float( 1 ).toVar();
+			const acc = compress( texture( tSharp, q ).level( float( 0 ) ).rgb ).toVar(), wsum = float( 1 ).toVar();
 			Loop( TAPS, ( { i } ) => {
 
 				const fi = float( i );
@@ -610,7 +613,7 @@ export class Pipeline {
 				// kernel falling to a third at the rim, so what remains of a highlight's disc has a
 				// soft edge rather than a cut-out one
 				const w = clamp( reach.sub( r.mul( s0 ) ).mul( u.maxRadius ).add( 1 ), 0, 1 ).mul( r.mul( r ).mul( - 0.7 ).add( 1 ) ).toVar();
-				acc.addAssign( compress( texture( sharp, p ).level( float( 0 ) ).rgb ).mul( w ) );
+				acc.addAssign( compress( texture( tSharp, p ).level( float( 0 ) ).rgb ).mul( w ) );
 				wsum.addAssign( w );
 
 			} );
@@ -620,16 +623,19 @@ export class Pipeline {
 			return vec4( mean.div( max( float( 1 ).sub( luminance( mean ).mul( u.exposure ) ), 1e-3 ) ), c0 );
 
 		} )();
-		const blur = rtt( gather, null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } );
-		this.passes.push( blur );
-		this.chainLabels.push( [ blur, 'tilt-shift blur' ] );
+		const blurMat = new THREE.NodeMaterial();
+		blurMat.name = 'Post.Blur';
+		blurMat.fragmentNode = gather;
+		this.blurQuad = new THREE.QuadMesh( blurMat );
+		this.blurQuad.name = 'Post.Blur';
+		const tBlur = texture( g.texture( blur ), uv() );
 		// Upsample the half-res blur by its four nearest texels, each weighted by how much it would
 		// itself show as blur: plain bilinear filtering pulled a sharp figure's colour (a texel whose
 		// coc is near zero) a pixel or two out over the blurred sea beside it. Texels that are
 		// blurred themselves keep their bilinear weight, so a soft bush in front of a softer sea
 		// stays soft at its edge instead of snapping to the half-res grid. The mix factor comes from
 		// the full-resolution coc for the same reason.
-		const composite = Fn( () => {
+		const dofMix = Fn( () => {
 
 			const c = makeCocAt()( uv() ).x.toVar();
 			const hp = uv().mul( halfSize ).sub( 0.5 ).toVar();
@@ -638,7 +644,7 @@ export class Pipeline {
 			const acc = vec3( 0 ).toVar(), wsum = float( 0 ).toVar();
 			for ( const [ ox, oy ] of [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ] ) {
 
-				const t = blur.sample( clamp( base.add( vec2( ox, oy ) ), vec2( 0 ), halfSize.sub( 1 ) ).add( 0.5 ).div( halfSize ) ).level( float( 0 ) ).toVar();
+				const t = tBlur.sample( clamp( base.add( vec2( ox, oy ) ), vec2( 0 ), halfSize.sub( 1 ) ).add( 0.5 ).div( halfSize ) ).level( float( 0 ) ).toVar();
 				const bl = ( ox ? f.x : float( 1 ).sub( f.x ) ).mul( oy ? f.y : float( 1 ).sub( f.y ) );
 				const w = bl.mul( smoothstep( 0, 0.35, t.a ).add( 1e-3 ) );
 				acc.addAssign( t.rgb.mul( w ) );
@@ -647,8 +653,8 @@ export class Pipeline {
 			}
 			// (the plain bilinear blur keeps the half-res pass in the graph; it only shows where
 			// every weight vanished, which they cannot)
-			const blurred = select( wsum.greaterThan( 0 ), acc.div( max( wsum, 1e-6 ) ), blur.rgb );
-			return mix( sharp.rgb, blurred, smoothstep( 0, 0.35, c ).mul( u.dof ) );
+			const blurred = select( wsum.greaterThan( 0 ), acc.div( max( wsum, 1e-6 ) ), tBlur.rgb );
+			return mix( tSharp.rgb, blurred, smoothstep( 0, 0.35, c ).mul( u.dof ) );
 
 		} );
 
@@ -667,7 +673,7 @@ export class Pipeline {
 		// curve, whose shoulder keeps it soft.
 		const diffusionThreshold = uniform( 1 );
 		const tGlowD = texture( tSurfaceDepth );
-		const diffusionNode = new RenderBloomNode( nodeObject( sharp ), 0, 0.8, 1 );
+		const diffusionNode = new RenderBloomNode( tSharp, 0, 0.8, 1 );
 		diffusionNode.setResolutionScale( 0.5 );
 		( diffusionNode as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input }: { input: THREE.Node<'vec4'> } ) => {
 
@@ -683,7 +689,11 @@ export class Pipeline {
 			return vec4( coloured.mul( smoothstep( diffusionThreshold.mul( 0.7 ), diffusionThreshold.mul( 2 ), v ).mul( surface ) ), 1 );
 
 		} );
-		this.diffusion = { node: diffusionNode, threshold: diffusionThreshold };
+		// (its graph pass renders it, as the blooms')
+		const diffusion = g.import( 'diffusion', diffusionNode.setUpAlone().output, HALF );
+		this.diffusion = { node: diffusionNode, threshold: diffusionThreshold, output: diffusion, enabled: false };
+		const tDiffusion = texture( g.texture( diffusion ) );
+		tDiffusion.updateMatrix = false;
 		// Over the dark parts of the frame the glow is held to `glowHalo` of itself: Orton's
 		// sandwich multiplies, so the defocused copy brightens the light parts and leaves the shade
 		// deep. Added in full, a backlit sea's glow lay over the shaded cliff in front of it as a
@@ -695,8 +705,8 @@ export class Pipeline {
 		// (glowOn is 0 while the chain is skipped: its texture holds the last glow.)
 		const diffused = () => {
 
-			const c = composite().toVar();
-			const glow = diffusionNode.rgb.toVar();
+			const c = dofMix().toVar();
+			const glow = tDiffusion.rgb.toVar();
 			const l = luminance( c );
 			const lit = smoothstep( 0.03, 0.4, l.mul( u.curveExposure ) );
 			const source = luminance( glow ).div( max( diffusionNode.strength.mul( 3 ), 1e-6 ) );
@@ -918,11 +928,9 @@ export class Pipeline {
 		// is upscaled.
 		g.onResize( RENDER, ( w, h ) => {
 
-			for ( const node of this.passes ) sizeRtt( node, w, h );
 			// (the blooms' targets at once, as the graph's own: its dev check compares a pass's target
 			// with its size class before the pass runs)
-			for ( const { node } of this.blooms ) { node.renderWidth = w; node.renderHeight = h; node.setSize(); }
-			this.diffusion.node.renderWidth = w; this.diffusion.node.renderHeight = h;
+			for ( const { node } of [ ...this.blooms, this.diffusion ] ) { node.renderWidth = w; node.renderHeight = h; node.setSize(); }
 			this.shafts.setSize( w, h );
 
 		} );
@@ -1013,7 +1021,7 @@ export class Pipeline {
 		const fogReads = this.air.passes( g, surfaceDepth );
 		// the depth of field's distances (without the depth of field its blur is mixed in at weight
 		// 0, so stale distances never show)
-		let { hdr, viewDistance, display, easu, canvas } = this.resources;
+		let { hdr, sharp, blur, viewDistance, display, easu, canvas } = this.resources;
 		const distanceQuad = this.distanceQuad;
 		if ( viewDistance && distanceQuad ) g.addPass( 'viewDistance', 'quad', ( b ) => {
 
@@ -1061,18 +1069,48 @@ export class Pipeline {
 			return out;
 
 		} );
-		// depth of field, grade and look (and the composite inline, without the composite pass): one
-		// chain, whose rtt and bloom passes its output node updates on the way
+		// the sharp image: the composite (inline, without the composite pass: the profiler's
+		// composite then) and the blooms
+		const sharpQuad = this.sharpQuad;
+		g.addPass( 'sharp', 'quad', ( b ) => {
+
+			if ( hdr ) b.read( hdr );
+			else compositeReads( b );
+			for ( const h of blooms ) b.read( h );
+			sharp = b.write( sharp );
+			return { label: hdr ? 'sharp (composite + blooms)' : 'composite (air, fog, veil)', quad: sharpQuad };
+
+		} );
+		// the depth of field's half-resolution gather: its circle of confusion from the view distance
+		// (or the surface depth, inline-coc)
+		const blurQuad = this.blurQuad;
+		g.addPass( 'blur', 'quad', ( b ) => {
+
+			b.read( sharp );
+			if ( viewDistance ) b.readOptional( viewDistance );
+			else b.read( surfaceDepth );
+			blur = b.write( blur );
+			return { label: 'tilt-shift blur', quad: blurQuad };
+
+		} );
+		// the look's diffusion glow, a bloom chain over the sharp image, while it shows
+		const diffusion = this.diffusion;
+		let glow = diffusion.output;
+		g.addPass( 'diffusion', 'chain', ( b ) => {
+
+			b.read( sharp );
+			b.read( surfaceDepth );
+			glow = b.write( glow );
+			return { label: 'look glow', when: () => diffusion.enabled, whenLabel: 'look glow', nodes: [ diffusion.node ] };
+
+		} );
+		// the depth of field's mix, the look's glow, grade and look
 		g.addPass( 'display', 'chain', ( b ) => {
 
-			// (inline, the composite's reads include the depth the chain reads too)
-			if ( hdr ) {
-
-				b.read( hdr );
-				b.read( surfaceDepth );
-
-			} else compositeReads( b );
-			for ( const h of blooms ) b.read( h );
+			b.read( sharp );
+			b.read( blur );
+			b.readOptional( glow );
+			b.read( surfaceDepth );
 			if ( viewDistance ) b.readOptional( viewDistance );
 			display = b.write( display );
 			return { label: 'grade & look', pipeline: this.display };
@@ -1254,7 +1292,7 @@ export class Pipeline {
 		u.highlightTint.value.copy( L.highlightTint ); u.highlightTone.value = L.highlightTone;
 		u.pivot.value = L.pivot; u.shadowLift.value = L.shadowLift; u.lookContrast.value = L.contrast; u.lookSky.value = L.sky; u.glowHalo.value = L.glowHalo;
 		const d = this.diffusion.node, glow = on ? L.glow * u.lookSun.value : 0;
-		d.enabled = glow > 0; u.glowOn.value = d.enabled ? 1 : 0;
+		this.diffusion.enabled = glow > 0; u.glowOn.value = this.diffusion.enabled ? 1 : 0;
 		d.strength.value = glow; d.radius.value = L.glowRadius;
 		// the threshold in the sharp image's units: display values before the curve, over its exposure
 		this.diffusion.threshold.value = L.glowThreshold / Math.max( u.curveExposure.value, 1e-9 );
