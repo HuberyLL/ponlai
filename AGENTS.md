@@ -740,9 +740,10 @@ stone exposed.
   class instead of sizing it by hand. three's rtt() and bloom passes inside the display chain
   follow the render through the graph's resize hook (`Pipeline.passes` through `sizeRtt`): keep
   reduced or fixed passes out of that list. The last pass into `sceneRT` (the rain) discards its
-  multisampled samples through a hook on the backend's command encoder (three r186 opens one
-  encoder per render pass); a pass added after it that reads `sceneRT`'s samples or depth must move
-  the discard.
+  multisampled samples through the graph's attachment ops (`AttachmentOps` rewrites the pass's
+  stores on the backend's command encoder; three r186 opens one encoder per render pass): a pass
+  added after it that reads `sceneRT`'s samples or depth must declare that read and move the
+  legacy discard.
 - `renderer.compileAsync` collects its draws and reads the render target synchronously, before its
   first await: set the target, call it, restore the target at once, then await (`compileDraws`).
   It builds a transparent double-sided material's two passes after restoring its side, as one

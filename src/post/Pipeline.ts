@@ -41,11 +41,18 @@ import type { Rain } from '../weather/Rain.ts';
 // The targets are the frame graph's (graph/FrameGraph.ts): each is declared with its format,
 // sample count and size class (the render, a share of it, the canvas or fixed), and the graph sizes
 // them all from `setSize`'s render and canvas sizes, the display chain's own rtt and bloom passes
-// through a resize hook.
+// through a resize hook. The graph runs the frame: the scene half (opaque, the depth and copy
+// resolves, water, the surface resolve, rain) as passes that declare what they read and write,
+// the rest (the sea fog, the view distance, the grade, the canvas pass) as callbacks, in that
+// order. Its attachment ops (graph/AttachmentOps.ts) discard the scene target's multisampled
+// samples in its last pass.
 
-// The graph's dev checks (every target at its class's size): on the dev server and with `?debug`.
+// The graph's dev checks (every target at its class's size, the attachment ops that reached
+// WebGPU): on the dev server and with `?debug`.
 const DEV = import.meta.env.DEV || new URLSearchParams( globalThis.location?.search ?? '' ).has( 'debug' );
 const RENDER: SizeClass = { of: 'render' };
+// what the water pass draws in a frame without water: nothing
+const NO_WATER = new THREE.Scene();
 
 /** What a frame draws (`Pipeline.render`'s argument). */
 export interface PipelineFrame {
@@ -309,8 +316,6 @@ export class Pipeline {
 	private fsr: FSR;
 	// the view distance per pixel, for the depth of field (the dofDistance option)
 	private distanceQuad: THREE.QuadMesh | null = null;
-	// set while the last pass into sceneRT is recorded (the discardScene option)
-	private discardSamples = false;
 	private warming: Promise<void> | null = null;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private display: THREE.RenderPipeline;
@@ -842,11 +847,147 @@ export class Pipeline {
 			this.shafts.setSize( w, h );
 
 		} );
-		if ( O.discardScene ) this.interceptSceneStore();
+		this.declarePasses();
+		g.compile();
+		// The scene target's multisampled colour and depth are resolved, then never read: the last
+		// pass into them (the rain) discards them (the discardScene option, `legacyDiscard` above).
+		// WebGPU lets a pass load its attachments and still discard them once resolved, which three
+		// r186 offers only together with a clear, so AttachmentOps rewrites that pass's stores as
+		// three hands its descriptor to WebGPU.
+		g.attachmentOps.install();
 		this.setToneMapping( this.settings.toneMapping );
 		// The sea fog's passes run only once fog sets in, perhaps minutes later (morning mist, the
 		// weather turning): compiled now, in the background, the first foggy frame does not stall.
 		this.warm().catch( ( error ) => console.warn( 'Pipeline.warm', error ) );
+
+	}
+
+	// The frame's passes, in order. The scene half draws into the scene's multisampled target and
+	// resolves what the water, the rain and the post passes read. Each sample keeps the opaque
+	// surface or the sea, whichever is nearer, so silhouettes against the sea are antialiased like
+	// the rest of the image. (Drawn into a target of their own, single-sampled, the water had to
+	// decide per pixel between the sea and the opaque colour: edges stepped, and the opaque colour
+	// at an edge pixel held the sky the sea was not there to cover, a pale outline round everything
+	// over the sea.) Rain does not write depth, so surface focus and overlapping translucent streaks
+	// are preserved; its splashes compare the resolved depths themselves. The callbacks after it
+	// draw into the graph's targets themselves; they declare what they read, so the passes they
+	// depend on stay live.
+	private declarePasses(): void {
+
+		const g = this.graph;
+		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth } = this.resources;
+		g.addPass( 'opaque', 'scene', ( b ) => {
+
+			sceneColor = b.write( sceneColor, { clear: true } );
+			sceneDepth = b.depth( sceneDepth, { write: true, clear: true } );
+			return { label: 'opaque scene', scene: ( f ) => f.scene, camera: ( f ) => f.camera };
+
+		} );
+		// linear depth, and a copy of the opaque colour for the water to refract and reflect (a pass
+		// cannot sample the target it draws into)
+		g.addPass( 'depthResolve', 'quad', ( b ) => {
+
+			b.read( sceneDepth, 'samples' );
+			linearDepth = b.write( linearDepth );
+			return { label: 'depth & copy resolves', quad: this.depthQuad };
+
+		} );
+		g.addPass( 'opaqueCopy', 'quad', ( b ) => {
+
+			b.read( sceneColor );
+			opaqueColor = b.write( opaqueColor );
+			return { label: 'depth & copy resolves', quad: this.copyQuad };
+
+		} );
+		g.addPass( 'water', 'scene', ( b ) => {
+
+			b.read( opaqueColor );
+			b.read( linearDepth );
+			sceneColor = b.write( sceneColor );
+			sceneDepth = b.depth( sceneDepth, { write: true } );
+			return {
+				label: 'water', before: ( f ) => f.water?.prepare( f.sun ),
+				scene: ( f ) => f.water ? f.waterScene : NO_WATER, camera: ( f ) => f.camera,
+			};
+
+		} );
+		g.addPass( 'surfaceResolve', 'quad', ( b ) => {
+
+			b.read( sceneDepth, 'samples' );
+			surfaceDepth = b.write( surfaceDepth );
+			return { label: 'depth & copy resolves', quad: this.surfaceQuad };
+
+		} );
+		// (the last pass into the scene target: its samples are resolved, then never read)
+		g.addPass( 'rain', 'scene', ( b ) => {
+
+			b.read( linearDepth );
+			b.read( surfaceDepth );
+			sceneColor = b.write( sceneColor );
+			b.depth( sceneDepth, { write: false } );
+			return {
+				label: 'rain draw', when: ( f ) => f.rainScene !== undefined, whenLabel: 'rainVisible',
+				scene: ( f ) => f.rainScene!, camera: ( f ) => f.camera,
+			};
+
+		} );
+		// the reduced sea fog and its bank map (each only while there is fog)
+		const { fogScale, bankSize } = this.options;
+		g.addPass( 'fog', 'callback', ( b ) => {
+
+			b.read( surfaceDepth );
+			return {
+				label: 'composite (air, fog, veil)', neverCull: true,
+				size: fogScale < 1 ? { of: 'render', divisor: Math.round( 1 / fogScale ) } : { of: 'fixed', width: bankSize, height: bankSize },
+				run: () => this.air.render( this.renderer ),
+			};
+
+		} );
+		// the depth of field's distances (without the depth of field its blur is mixed in at weight
+		// 0, so stale distances never show)
+		g.addPass( 'viewDistance', 'callback', ( b ) => {
+
+			b.read( surfaceDepth );
+			return {
+				label: 'tilt-shift blur', neverCull: true, size: RENDER,
+				run: () => {
+
+					if ( ! this.distanceQuad || this.settings.dof <= 0 ) return;
+					const r = this.renderer;
+					r.setRenderTarget( this.distanceRT );
+					this.distanceQuad.render( r );
+					r.setRenderTarget( null );
+
+				},
+			};
+
+		} );
+		// composite, bloom, depth of field, grade
+		g.addPass( 'display', 'callback', ( b ) => {
+
+			b.readOptional( sceneColor );
+			b.read( surfaceDepth );
+			return { label: 'grade & look', neverCull: true, size: RENDER, run: ( f ) => this.renderDisplay( f ) };
+
+		} );
+		// to the canvas: copied at the display's resolution, upscaled below it
+		g.addPass( 'output', 'callback', () => ( {
+			label: 'output & FSR', neverCull: true, size: { of: 'canvas' },
+			run: () => {
+
+				const r = this.renderer;
+				r.setRenderTarget( null );
+				if ( ! this.upscaling ) this.output.render();
+				else if ( ! this.options.fsrPort || debugFlags.fsrPort === false ) this.upscaledOutputThree.render();
+				else {
+
+					this.fsr.render( r );
+					this.upscaledOutput.render();
+
+				}
+
+			},
+		} ) );
 
 	}
 
@@ -934,80 +1075,26 @@ export class Pipeline {
 
 	}
 
-	render( { scene, waterScene, rainScene, camera, water, sun, time }: { scene: THREE.Scene; waterScene: THREE.Scene; rainScene?: THREE.Scene; camera: THREE.Camera; water: { prepare( sun: THREE.DirectionalLight ): void } | null; sun: THREE.DirectionalLight; time: number } ): void {
+	render( frame: PipelineFrame ): void {
 
-		const r = this.renderer;
-		const S = this.settings;
+		const camera = frame.camera;
 		const u = this.u;
-		if ( DEV ) this.graph.validateSizes();
-
 		camera.updateMatrixWorld();
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
 		this.air.update( camera, this.width, this.height );
 		this.shafts.update( camera as THREE.PerspectiveCamera, this.width, this.height, this.air.haze.value,
 			this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ) );
+		this.graph.execute( frame );
 
-		// 1. opaque
-		r.setRenderTarget( this.sceneRT );
-		r.render( scene, camera );
+	}
 
-		// 2. linear depth, and a copy of the opaque colour for the water to refract and reflect
-		// (a pass cannot sample the target it draws into)
-		r.setRenderTarget( this.depthRT );
-		this.depthQuad.render( r );
-		r.setRenderTarget( this.opaqueRT );
-		this.copyQuad.render( r );
+	// The display callback: the grade's uniforms from the settings, then the composite, blooms,
+	// depth of field and grade into displayRT.
+	private renderDisplay( { camera, time }: PipelineFrame ): void {
 
-		// 3. The water, then the world-space rain, over the opaque image in the scene's multisampled
-		// target. Each sample keeps the opaque surface or the sea, whichever is nearer, so
-		// silhouettes against the sea are antialiased like the rest of the image. (Drawn into a
-		// target of their own, single-sampled, the water had to decide per pixel between the sea
-		// and the opaque colour: edges stepped, and the opaque colour at an edge pixel held the
-		// sky the sea was not there to cover, a pale outline round everything over the sea.)
-		// Rain does not write depth, so surface focus and overlapping translucent streaks are
-		// preserved; its splashes compare the resolved depths themselves.
-		const autoClear = r.autoClear;
-		r.setRenderTarget( this.sceneRT );
-		try {
-
-			r.autoClear = false;
-			if ( water ) {
-
-				water.prepare( sun );
-				r.render( waterScene, camera );
-
-			}
-			r.setRenderTarget( this.surfaceRT );
-			this.surfaceQuad.render( r );
-			if ( rainScene ) {
-
-				r.setRenderTarget( this.sceneRT );
-				// the last pass into the scene target: its samples are resolved, then never read
-				this.discardSamples = this.options.discardScene;
-				r.render( rainScene, camera );
-
-			}
-
-		} finally {
-
-			this.discardSamples = false;
-			r.autoClear = autoClear;
-			r.setRenderTarget( null );
-
-		}
-
-		// the reduced sea fog and its bank map, and the depth of field's distances
-		this.air.render( r );
-		// (without the depth of field its blur is mixed in at weight 0, so stale distances never show)
-		if ( this.distanceQuad && S.dof > 0 ) {
-
-			r.setRenderTarget( this.distanceRT );
-			this.distanceQuad.render( r );
-			r.setRenderTarget( null );
-
-		}
-
-		// 4. composite, bloom, depth of field, grade
+		const r = this.renderer;
+		const S = this.settings;
+		const u = this.u;
 		const [ b, g ] = this.blooms;
 		if ( g ) {
 
@@ -1061,14 +1148,6 @@ export class Pipeline {
 		r.setRenderTarget( this.displayRT );
 		this.display.render();
 		r.setRenderTarget( null );
-		if ( ! this.upscaling ) this.output.render();
-		else if ( ! this.options.fsrPort || debugFlags.fsrPort === false ) this.upscaledOutputThree.render();
-		else {
-
-			this.fsr.render( r );
-			this.upscaledOutput.render();
-
-		}
 
 	}
 
@@ -1084,41 +1163,6 @@ export class Pipeline {
 
 		} )();
 		return this.warming;
-
-	}
-
-	// WebGPU lets a pass load its attachments and still discard them once resolved; three only
-	// offers a discard together with a clear (storeMultisampled*Buffer = false), which would wipe
-	// the opaque image the rain draws over. So while the last pass into sceneRT is recorded, its
-	// descriptor's multisampled colour and depth stores become discards: the resolved colour and
-	// surfaceRT are already written, and the next frame's opaque pass clears both. (This relies
-	// on three's WebGPUBackend beginning each pass on an encoder of its own.)
-	private interceptSceneStore(): void {
-
-		type Attachment = { resolveTarget?: unknown; storeOp?: string };
-		type Descriptor = { colorAttachments: ( Attachment | null )[]; depthStencilAttachment?: { depthStoreOp?: string } };
-		type Encoder = { beginRenderPass( descriptor: Descriptor ): unknown };
-		const device = ( this.renderer.backend as unknown as { device: { createCommandEncoder( descriptor?: unknown ): Encoder } } ).device;
-		const create = device.createCommandEncoder.bind( device );
-		device.createCommandEncoder = ( descriptor?: unknown ) => {
-
-			const encoder = create( descriptor );
-			if ( ! this.discardSamples ) return encoder;
-			const begin = encoder.beginRenderPass.bind( encoder );
-			encoder.beginRenderPass = ( pass: Descriptor ) => {
-
-				// only a multisampled pass resolving into its target: the scene's
-				if ( ! pass.colorAttachments[ 0 ]?.resolveTarget ) return begin( pass );
-				return begin( {
-					...pass,
-					colorAttachments: pass.colorAttachments.map( ( a ) => a && a.resolveTarget ? { ...a, storeOp: 'discard' } : a ),
-					depthStencilAttachment: pass.depthStencilAttachment && { ...pass.depthStencilAttachment, depthStoreOp: 'discard' },
-				} );
-
-			};
-			return encoder;
-
-		};
 
 	}
 

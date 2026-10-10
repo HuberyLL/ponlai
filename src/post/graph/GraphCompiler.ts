@@ -29,7 +29,8 @@ export type PassKind = 'scene' | 'quad' | 'chain' | 'compute' | 'callback';
  * samples themselves (a load per sample). */
 export type ReadMode = 'sample' | 'samples';
 /** 'legacy' is the graph before derived ops: the multisampled stores discarded in the rain pass
- * only (Pipeline.interceptSceneStore). 'derived' follows the passes that run. */
+ * only (as Pipeline discarded them by hand before the graph ran its passes). 'derived' follows the
+ * passes that run. */
 export type OpsMode = 'legacy' | 'derived';
 export type Samples = number | 'scene';
 
