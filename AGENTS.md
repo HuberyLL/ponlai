@@ -156,6 +156,11 @@ stone exposed.
   `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
   (`capture-set.mjs`) and diffs it against a reference set, byte for byte or within the
   reference's own repeatability (`diff-set.py --aa-floor`; see its README);
+  `tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
+  motion, its camera path a function of the frame index) frame by frame with the page's stepper,
+  as crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA
+  and a ground truth (`--aa gt-hi`: MSAA at twice high's nominal ratio, downsampled) with gates
+  from a thresholds file (`uv run --with numpy --with pillow`; both described in the README);
   `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and
   `tools/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
@@ -172,6 +177,11 @@ stone exposed.
   flight in `FreeCameraControls.ts`).
   `window.__SOOMI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev
   server or with `?debug` (or `?profile`, which also loads the frame profiler in `src/debug/`).
+  `__SOOMI__.loop.step( { frames, dt, scale, camera, onFrame, clock } )` stops the live loop and
+  steps the tick itself with fixed timestamps, the frame pacer and the dynamic scale bypassed and
+  nothing taken from the wall clock (`loop.start()` resumes the live loop); the diagnostics add
+  the scene's anti-aliasing (`aa`), the pipelines created so far (`pipelines`, counted by
+  `src/debug/PipelineCounter.ts`) and `graph` (a placeholder for the frame graph).
 - `src/world/`: the island generated in Web Workers (the island, the stones in up to four sets and
   the rest built in parallel copies of `worldWorker.ts` and merged in serial order, so the world is
   identical to a single thread's; kept in IndexedDB by `WorldCache.ts`, keyed by the hash of the

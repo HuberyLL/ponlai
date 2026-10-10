@@ -7,6 +7,8 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
 - `views.mjs`: the views (camera, weather, time) and their crop anchors.
 - `capture-set.mjs`: captures a set through `tools/capture.mjs`.
 - `diff-set.py`: compares two sets.
+- `clips.mjs`, `../capture-clip.mjs`, `../clip-metrics.py`: stepped clips (a view set in motion),
+  their capture and their metrics against MSAA and a ground truth (see Clips below).
 
 ## Serving a build for captures
 
@@ -155,3 +157,49 @@ Keep references per merge-base, captured from a detached worktree of that commit
 two page loads (1-3 levels on a few pixels of vegetation, rarely more), and which views they are
 changes from run to run: compare with `--aa-floor` on sets captured with `--repeat`, and treat a
 byte-identical result on a view as luck, not a property of the view, unless it holds across runs.
+
+## Clips (clips.mjs, capture-clip.mjs, clip-metrics.py)
+
+A clip is a view set in motion: its base view, a paused or running scene clock, a frame count, a
+camera path that is a function of the frame index applied to the view's own pose (a pan, a flick, a
+dolly, an orbit about the islander), and where needed a render scale schedule (`drs-steps`, in
+shares of the tier's nominal ratio: 0.8, 0.6, 0.8, which is 1.2, 0.9, 1.2 on high at 2x), extra
+URL options (`sun-shadow`: `dayLength=600`) or a per-frame hook (`lightning`: a strike forced at
+frame 30). `node tools/parity/clips.mjs list | show <clip>`.
+
+```sh
+node tools/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt-hi]
+    [--view v] [--frames n] [--every k] [--crops a,b] [--full 0,30] [--q "extra"]
+    [--anchors-from clip.json] [--out dir] [--runs runs.csv]
+uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py \
+    --test DIR --msaa DIR --gt DIR [--thresholds t.json] [--baseline metrics.json]
+```
+
+- The page is stepped by `__SOOMI__.loop.step` (src/main.ts, debug builds only): the live loop
+  stops and the tick runs `frames` times with a fixed dt, nothing from the wall clock, the frame
+  pacer and the dynamic scale bypassed and the render scale given per frame. The clouds' trace phase
+  and the sky's and refracted sun's wall-clock cadences restart with each call, so a clip does not
+  depend on how long the page ran before it; every periodic sky bake reads its irradiance back (it
+  sets a lightning strike's fill) and the next frame waits for it, so a clip does not depend on how
+  long its frames took either. Clips take the GPU lock shared.
+- Film grain is set to 0 on every side (it is re-seeded each frame and would add noise to the
+  temporal metrics); `clip.json` records it.
+- Crops: the view's anchors (or `--crops`) are read once at the base pose, and each frame projects
+  their world points into a 192 CSS px box (384 device px at 2x). `--full` frames are captured whole.
+  Output: `<crop>/<i>.png`, `full/<i>.png`, `clip.json` (boxes, the camera and render size per frame,
+  diagnostics, pipelines created while stepping).
+- `--aa gt-hi`: the interim ground truth, MSAA on high at twice high's nominal ratio for the size
+  (3x at the default @2, where the nominal is 1.5) in a canvas that holds it, box-downsampled 2x2
+  (288 px crops at the default size). It renders every frame at that ratio: a clip's scale schedule
+  applies to the test and MSAA sides only. Its pixel-width vegetation rules are in render pixels,
+  so its meadow is finer than any real render: judge vegetation look against MSAA.
+- `clip-metrics.py`: per crop, the test's and MSAA's metrics against the GT (definitions in its
+  docstring), their ratio, and PASS / FAIL against a thresholds file of gates on a baseline (MSAA
+  measured here, or an earlier metrics.json): ratios with an absolute floor for magnitudes (a
+  paused clip's MSAA flicker is exactly 0), differences for the signed fringe and the lag. Whole
+  frames (`full/`) are measured only when `--crops` names them.
+- Repeatability: pan-slow on meadow-close repeats byte for byte between fresh loads. Vegetation
+  crops elsewhere can differ in single frames: with the vegetation depth prepass on, a few samples
+  pass its equal depth test differently from frame to frame (blobs of a few to 150 px on leaves
+  and blades; none with `vegPrepass=0`).
+
