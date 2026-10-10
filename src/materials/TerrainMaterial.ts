@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, normalViewGeometry, cameraViewMatrix,
 	cameraPosition, specularColor, specularColorBlended, specularF90,
-	normalize, abs, pow, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, exp, select, dFdx, dFdy, length,
+	normalize, abs, pow, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, exp, log2, select, dFdx, dFdy, length,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
 import type { DetailTextures } from './ProceduralTextures.ts';
@@ -15,6 +15,8 @@ import { meadowCanopyHeight, meadowCanopyLight } from '../lighting/MeadowCanopy.
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
 import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
+import { hexReadScan, heightBlend, type HexScan } from './HexTiling.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
@@ -55,6 +57,31 @@ const triNormal = Fn( ( [ tx, ty, tz, n, w, k ]: [ V2, V2, V2, V3, V3, F ] ) => 
 	],
 } );
 
+// The scan's hex tiles (HexTiling.ts): their centres lie 0.39 of its period apart (about 0.7 m on
+// the wall), and each turns by up to 0.4 rad, so the stone's grain keeps its general lie.
+const HEX_RATE = 0.75, HEX_MAX_ANGLE = 0.4, HEX_TRIPLANAR_CUT = 0.08;
+// The scan's brightness (linear) mapped to a height in [0, 1] for the hex tiles' seams: its 2nd to
+// 97th percentiles span the range, and the power lifts the darker half.
+const stoneHeight = ( luma: F ): F => pow( clamp( luma.sub( 0.08 ).div( 0.19 ), 0, 1 ), 0.7 );
+// The layers over the stone meet it by rank instead (heightBlend wants heights spread evenly over
+// [0, 1]): the share of the hex-tiled scan's texels that are darker. Measured on the scan as the
+// material composes it (hex blend included) at each mip level, its brightness keeps one skewed
+// shape about a mean of 0.16 while its spread narrows with the level, as the filter averages the
+// grain away (0.045 at full size, 0.030 four levels down). So the brightness is standardised by
+// the spread at the level the pixel reads, and the shape's distribution (a logistic of a cubic,
+// fitted to levels 0 - 5) turns it into the rank. The mean cover of a layer then stays within 0.02
+// of its mask up to level 5, and 0.045 at level 7.
+const STONE_TEXELS = 1024; // the scan's width: the fit above belongs to it
+const stoneRank = ( luma: F, level: F ): F => {
+
+	const l = clamp( level, 0, 7 );
+	const spread = float( 0.044754 ).sub( l.mul( 0.003201 ) ).sub( l.mul( l ).mul( 0.000126 ) );
+	const z = luma.sub( 0.16 ).div( spread );
+	const logit = z.mul( 0.059 ).sub( 0.2389 ).mul( z ).add( 1.7193 ).mul( z ).add( 0.1996 );
+	return float( 1 ).div( exp( logit.negate() ).add( 1 ) );
+
+};
+
 const unpack2 = ( v: THREE.Node<'vec4'> | V2 ) => ( v as V2 ).mul( 2 ).sub( 1 );
 // Convert tangent normals to slopes before whiteout blending, retaining the scan's +Y axis.
 const stoneSlope = Fn( ( [ v ]: [ THREE.Node<'vec4'> ] ) => {
@@ -71,11 +98,13 @@ const RUNNEL_DARKENING = 0.6, RUNNEL_SHADE = 0.7;
 
 interface Ctx {
 	tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: THREE.Texture;
-	rimGround?: THREE.Texture; rimGroundXform?: THREE.Node<'vec4'>;
+	rimGround?: THREE.Texture; rimGroundXform?: THREE.Node<'vec4'>; hex: boolean;
 }
-interface TerrainOptions { topY?: number; vegetation?: boolean; rimGround?: THREE.Texture; rimGroundXform?: THREE.Vector4 }
+// hex: hex-tiled stone and height-blended layers (the default; debugFlags.terrainHex = false
+// builds the plain tiling with smooth masks, as before)
+interface TerrainOptions { topY?: number; vegetation?: boolean; rimGround?: THREE.Texture; rimGroundXform?: THREE.Vector4; hex?: boolean }
 
-function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXform }: Ctx ) {
+function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXform, hex }: Ctx ) {
 
 	return Fn( () => {
 
@@ -133,6 +162,11 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		const w0 = pow( abs( n0 ), vec3( 4 ) );
 		const w1 = max( w0.div( dot( w0, vec3( 1 ) ) ).sub( 0.02 ), 0 );
 		const w = w1.div( dot( w1, vec3( 1 ) ) ).toVar();
+		// The hex-tiled scan reads up to three tiles per projection, so it drops projections under
+		// 8 % (instead of 2 %): only the steepest bevels then read two, and the blend between them
+		// narrows a little where the facets' own edges already break the stone.
+		const ws = hex ? max( w0.div( dot( w0, vec3( 1 ) ) ).sub( HEX_TRIPLANAR_CUT ), 0 ).toVar() : w;
+		if ( hex ) ws.divAssign( dot( ws, vec3( 1 ) ) );
 		const S = 0.55; // ~1.8 m per tile
 		const sg = sign( n0 );
 		const uvX = vec2( p.z.mul( sg.x ), p.y ).mul( S ).toVar(), uvY = vec2( p.x.mul( sg.y ), p.z ).mul( S ).toVar(), uvZ = vec2( p.x.negate().mul( sg.z ), p.y ).mul( S ).toVar();
@@ -148,51 +182,91 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		const fX = vec4( 0.5, 0.5, 1, 0.9 ).toVar(), fY = fX.toVar(), fZ = fX.toVar();
 		const cX = half.toVar(), cY = half.toVar(), cZ = half.toVar();
 		const stoneScale = ( 1 / 1.8 ) / S; // Art-direct the 2.7 m scan to smaller flakes beneath the mesh fractures.
-		If( w.x.greaterThan( 0 ), () => {
+		// Hex-tiled reads of the scan's colour and normal map (HexTiling.ts). The procedural
+		// heights keep their plain tiling: three more reads per projection cost more than their
+		// lattice shows under the hex-tiled stone.
+		// sX..: the scan's slope, turned back into the projection's frame; rX..: its roughness.
+		// The scan is read wherever the stone shows: off the turf, and in the rim's fringe, where the
+		// fringe's own masks may leave stone between its turf and soil.
+		const scanned = hex ? turf.lessThan( 1 ).or( rimBlend.greaterThan( 0 ) ).toVar() : null;
+		const sX = vec2( 0 ).toVar(), sY = vec2( 0 ).toVar(), sZ = vec2( 0 ).toVar();
+		const rX = float( 0.9 ).toVar(), rY = rX.toVar(), rZ = rX.toVar();
+		const scan: HexScan = {
+			colour: tex.rockAlbedo, normal: tex.rockDetail, scale: stoneScale, rate: HEX_RATE, maxAngle: HEX_MAX_ANGLE,
+			colourRest: half, normalRest: fX, height: ( rgb ) => stoneHeight( dot( rgb, vec3( 0.2126, 0.7152, 0.0722 ) ) ), slope: stoneSlope,
+		};
+		if ( hex ) {
 
-			hX.assign( texture( tex.heights, uvX ).grad( gxX, gyX ) );
-			if ( vegetation ) aX.assign( texture( tex.normalsA, uvX ).grad( gxX, gyX ) );
-			If( turf.lessThan( 1 ), () => {
+			const proj: [ F, F, V2, V2, V2, THREE.Node<'vec4'>, THREE.Node<'vec4'>, V2, F, THREE.Node<'vec4'> ][] = [
+				[ w.x, ws.x, uvX, gxX, gyX, hX, aX, sX, rX, cX ],
+				[ w.y, ws.y, uvY, gxY, gyY, hY, aY, sY, rY, cY ],
+				[ w.z, ws.z, uvZ, gxZ, gyZ, hZ, aZ, sZ, rZ, cZ ],
+			];
+			for ( const [ wi, wsi, st, gx, gy, h, a, s, r, c ] of proj ) {
 
-				fX.assign( texture( tex.rockDetail, uvX.mul( stoneScale ) ).grad( gxX.mul( stoneScale ), gyX.mul( stoneScale ) ) );
-				cX.assign( texture( tex.rockAlbedo, uvX.mul( stoneScale ) ).grad( gxX.mul( stoneScale ), gyX.mul( stoneScale ) ) );
+				If( wi.greaterThan( 0 ), () => {
+
+					h.assign( texture( tex.heights, st ).grad( gx, gy ) );
+					if ( vegetation ) a.assign( texture( tex.normalsA, st ).grad( gx, gy ) );
+
+				} );
+				If( wsi.greaterThan( 0 ).and( scanned! ), () => {
+
+					hexReadScan( st, gx, gy, scan, c, s, r );
+
+				} );
+
+			}
+
+		} else {
+
+			If( w.x.greaterThan( 0 ), () => {
+
+				hX.assign( texture( tex.heights, uvX ).grad( gxX, gyX ) );
+				if ( vegetation ) aX.assign( texture( tex.normalsA, uvX ).grad( gxX, gyX ) );
+				If( turf.lessThan( 1 ), () => {
+
+					fX.assign( texture( tex.rockDetail, uvX.mul( stoneScale ) ).grad( gxX.mul( stoneScale ), gyX.mul( stoneScale ) ) );
+					cX.assign( texture( tex.rockAlbedo, uvX.mul( stoneScale ) ).grad( gxX.mul( stoneScale ), gyX.mul( stoneScale ) ) );
+
+				} );
+
+			} );
+			If( w.y.greaterThan( 0 ), () => {
+
+				hY.assign( texture( tex.heights, uvY ).grad( gxY, gyY ) );
+				if ( vegetation ) aY.assign( texture( tex.normalsA, uvY ).grad( gxY, gyY ) );
+				If( turf.lessThan( 1 ), () => {
+
+					fY.assign( texture( tex.rockDetail, uvY.mul( stoneScale ) ).grad( gxY.mul( stoneScale ), gyY.mul( stoneScale ) ) );
+					cY.assign( texture( tex.rockAlbedo, uvY.mul( stoneScale ) ).grad( gxY.mul( stoneScale ), gyY.mul( stoneScale ) ) );
+
+				} );
+
+			} );
+			If( w.z.greaterThan( 0 ), () => {
+
+				hZ.assign( texture( tex.heights, uvZ ).grad( gxZ, gyZ ) );
+				if ( vegetation ) aZ.assign( texture( tex.normalsA, uvZ ).grad( gxZ, gyZ ) );
+				If( turf.lessThan( 1 ), () => {
+
+					fZ.assign( texture( tex.rockDetail, uvZ.mul( stoneScale ) ).grad( gxZ.mul( stoneScale ), gyZ.mul( stoneScale ) ) );
+					cZ.assign( texture( tex.rockAlbedo, uvZ.mul( stoneScale ) ).grad( gxZ.mul( stoneScale ), gyZ.mul( stoneScale ) ) );
+
+				} );
 
 			} );
 
-		} );
-		If( w.y.greaterThan( 0 ), () => {
-
-			hY.assign( texture( tex.heights, uvY ).grad( gxY, gyY ) );
-			if ( vegetation ) aY.assign( texture( tex.normalsA, uvY ).grad( gxY, gyY ) );
-			If( turf.lessThan( 1 ), () => {
-
-				fY.assign( texture( tex.rockDetail, uvY.mul( stoneScale ) ).grad( gxY.mul( stoneScale ), gyY.mul( stoneScale ) ) );
-				cY.assign( texture( tex.rockAlbedo, uvY.mul( stoneScale ) ).grad( gxY.mul( stoneScale ), gyY.mul( stoneScale ) ) );
-
-			} );
-
-		} );
-		If( w.z.greaterThan( 0 ), () => {
-
-			hZ.assign( texture( tex.heights, uvZ ).grad( gxZ, gyZ ) );
-			if ( vegetation ) aZ.assign( texture( tex.normalsA, uvZ ).grad( gxZ, gyZ ) );
-			If( turf.lessThan( 1 ), () => {
-
-				fZ.assign( texture( tex.rockDetail, uvZ.mul( stoneScale ) ).grad( gxZ.mul( stoneScale ), gyZ.mul( stoneScale ) ) );
-				cZ.assign( texture( tex.rockAlbedo, uvZ.mul( stoneScale ) ).grad( gxZ.mul( stoneScale ), gyZ.mul( stoneScale ) ) );
-
-			} );
-
-		} );
+		}
 		const H = hX.mul( w.x ).add( hY.mul( w.y ) ).add( hZ.mul( w.z ) ).toVar();
-		const Fc = fX.mul( w.x ).add( fY.mul( w.y ) ).add( fZ.mul( w.z ) ).toVar();
-		const stoneColor = cX.rgb.mul( w.x ).add( cY.rgb.mul( w.y ) ).add( cZ.rgb.mul( w.z ) ).toVar();
+		const Fc = hex ? null : fX.mul( w.x ).add( fY.mul( w.y ) ).add( fZ.mul( w.z ) ).toVar();
+		const stoneColor = cX.rgb.mul( ws.x ).add( cY.rgb.mul( ws.y ) ).add( cZ.rgb.mul( ws.z ) ).toVar();
 		const big = texture( tex.normalsB, p.xz.mul( 0.019 ).add( p.y.mul( 0.011 ) ) ).a.toVar(); // large-scale variation
 		const big2 = texture( tex.normalsB, p.zx.mul( 0.047 ).add( vec2( 0.31, p.y.mul( 0.03 ) ) ) ).a.toVar();
 
 		// Geometry owns the large fractures. Low-amplitude mineral relief avoids inflated,
 		// unrelated Voronoi facets that fight those planes and read as moulded plastic.
-		const nRock = triNormal( stoneSlope( fX ), stoneSlope( fY ), stoneSlope( fZ ), n0, w, float( 0.6 ) );
+		const nRock = hex ? triNormal( sX, sY, sZ, n0, ws, float( 0.6 ) ) : triNormal( stoneSlope( fX ), stoneSlope( fY ), stoneSlope( fZ ), n0, w, float( 0.6 ) );
 
 		// --- limestone: broad cool-grey faces with restrained mineral variation. Geometry and
 		// sunlight define the edges; curvature only adds a little weathering, never a white outline.
@@ -200,6 +274,27 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		// The island's blocks meet in sharp creases: only the deepest of them count as hollows.
 		const concave = ( vegetation ? smoothstep( - 1.5, - 6.0, vCurv ) : smoothstep( - 0.5, - 3.0, vCurv ) ).toVar();
 		const stoneLuma = dot( stoneColor, vec3( 0.2126, 0.7152, 0.0722 ) ).toVar();
+		// The stone's relief for the layers above it, read from the scan's brightness (its crevices
+		// and pits are its darkest texels): moss, turf, soil and runoff fill the low points first,
+		// lichens take the raised grain first, so their edges bite into the stone while each keeps
+		// its mean cover (heightBlend). Its rank depends on the level of the scan's mips the pixel
+		// reads: the area its footprint covers in texels (the anisotropic filter, up to 8 taps,
+		// averages along the footprint's long axis too).
+		const stoneLevel = ( () => {
+
+			if ( ! hex ) return float( 0 );
+			const texels = stoneScale * STONE_TEXELS;
+			const lx = dot( vec3( length( gxX ), length( gxY ), length( gxZ ) ), ws ).mul( texels );
+			const ly = dot( vec3( length( gyX ), length( gyY ), length( gyZ ) ), ws ).mul( texels );
+			const pMax = max( lx, ly ), pMin = min( lx, ly );
+			return log2( max( pMax.mul( max( pMin, pMax.div( 8 ) ) ), 1e-6 ) ).mul( 0.5 );
+
+		} )();
+		const hRock = stoneRank( stoneLuma, stoneLevel ).toVar();
+		// Where the scan was not read, the meadow's turf closes over the stone (its mask is 1 and
+		// hides the layers below it): the blend leaves the masks as they are there rather than
+		// reading the placeholder colour.
+		const hb = ( mask: F, height: F, width: number ): F => hex ? select( scanned!, heightBlend( mask, height, float( width ) ), mask ) : mask;
 		const rock = mix( vec3( 0.155, 0.162, 0.158 ), vec3( 0.235, 0.238, 0.22 ), vTint ).toVar();
 		rock.mulAssign( mix( vec3( 0.97, 0.99, 1.03 ), vec3( 1.025, 1.0, 0.965 ), fract( vTint.mul( 7.31 ) ) ) );
 		// Desaturate the source to fit this limestone palette, but keep its correlated grain,
@@ -242,11 +337,14 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			// Runoff stains (the dark "ink stripes" of rock-dwelling cyanobacteria): water from the
 			// soil runs down from the lip and spills from each ledge, in streaks that are darkest
 			// at their head and wander down the face, gathered into the re-entrant corners. None
-			// form under an overhang or on a recent scar.
+			// form under an overhang or on a recent scar. The stains lie under the moss and turf and
+			// fill the same low ranks without taking a range of their own (the layer stack below), so
+			// where both reach a face the moss hides a little more of them than a plain mix would;
+			// they meet only in the narrow band where the stains begin under the lip.
 			const flowHead = smoothstep( 0.02, 0.12, lipDepth ).mul( float( 1 ).sub( smoothstep( 0.8, 3.0, lipDepth ).mul( 0.8 ) ) );
 			const gathered = float( 1 ).add( concave.mul( 1.5 ) );
-			const ink = smoothstep( 0.5, 0.72, float( 1 ).sub( streak ) ).mul( flowHead ).mul( gathered )
-				.mul( float( 1 ).sub( shelter ) ).mul( float( 1 ).sub( fresh ) ).clamp( 0, 1 ).toVar();
+			const ink = hb( smoothstep( 0.5, 0.72, float( 1 ).sub( streak ) ).mul( flowHead ).mul( gathered )
+				.mul( float( 1 ).sub( shelter ) ).mul( float( 1 ).sub( fresh ) ).clamp( 0, 1 ), hRock, 0.3 ).toVar();
 			rock.mulAssign( mix( vec3( 1 ), vec3( 0.42, 0.42, 0.4 ), ink.mul( vert ).mul( 0.85 ) ) );
 
 		}
@@ -254,7 +352,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		rock.assign( mix( rock, min( rock.mul( 1.12 ), vec3( 0.5 ) ), convex.mul( vegetation ? 0.45 : 0.24 ) ) );
 		rock.mulAssign( mix( float( 1 ), float( 0.9 ), concave ) );
 		// lichen: pale crusts and dark spots on the dry stone, none yet on a recent scar
-		const lichen = H.a.mul( smoothstep( 0.4, 1.4, p.y ) ).mul( smoothstep( 0.3, 0.6, big2 ) ).mul( float( 1 ).sub( fresh ) );
+		const lichen = hb( H.a.mul( smoothstep( 0.4, 1.4, p.y ) ).mul( smoothstep( 0.3, 0.6, big2 ) ).mul( float( 1 ).sub( fresh ) ), float( 1 ).sub( hRock ), 0.3 );
 		rock.assign( mix( rock, vec3( 0.42, 0.41, 0.33 ), lichen.mul( 0.45 ) ) );
 		const spots = smoothstep( 0.62, 0.8, H.g ).mul( smoothstep( 0.45, 0.7, big ) ).mul( smoothstep( 0.5, 1.5, p.y ) ).mul( float( 1 ).sub( fresh ) );
 		rock.mulAssign( float( 1 ).sub( spots.mul( 0.35 ) ) );
@@ -262,8 +360,8 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 
 			// Orange and yellow lichens of the upper shore (Xanthoria, Caloplaca) in small patches
 			// on the faces that look up, toward the lip, above the black zone the spray keeps wet.
-			const orange = smoothstep( 0.55, 0.8, H.g.mul( 0.55 ).add( big2.mul( 0.45 ) ) ).mul( smoothstep( 0.15, 0.6, n0.y ) )
-				.mul( float( 1 ).sub( smoothstep( 0.3, 1.6, lipDepth ) ) ).mul( smoothstep( 1.4, 2.2, p.y ) ).mul( float( 1 ).sub( fresh ) );
+			const orange = hb( smoothstep( 0.55, 0.8, H.g.mul( 0.55 ).add( big2.mul( 0.45 ) ) ).mul( smoothstep( 0.15, 0.6, n0.y ) )
+				.mul( float( 1 ).sub( smoothstep( 0.3, 1.6, lipDepth ) ) ).mul( smoothstep( 1.4, 2.2, p.y ) ).mul( float( 1 ).sub( fresh ) ), float( 1 ).sub( hRock ), 0.25 );
 			rock.assign( mix( rock, vec3( 0.42, 0.24, 0.06 ), orange.mul( 0.55 ) ) );
 
 		}
@@ -272,7 +370,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		const Hg = H.g.toVar();
 		const albedo = rock.toVar();
 		const nW = nRock.toVar();
-		const stoneRough = clamp( Fc.a.mul( 0.34 ).add( 0.62 ), 0.8, 0.98 );
+		const stoneRough = clamp( ( Fc ? Fc.a : rX.mul( ws.x ).add( rY.mul( ws.y ) ).add( rZ.mul( ws.z ) ) ).mul( 0.34 ).add( 0.62 ), 0.8, 0.98 );
 		const rough = stoneRough.toVar();
 
 		// The meadow ends at the upper shoulder; exposed walls keep their mineral surface.
@@ -283,12 +381,14 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			const mossN = H.g.sub( 0.5 ).mul( 0.5 ).add( big.sub( 0.5 ).mul( 0.6 ) );
 			const turfRim = smoothstep( MEADOW_MIN_UP, 0.97, up )
 				.mul( smoothstep( topY.sub( MEADOW_MAX_DROP ), topY.sub( 0.12 ), p.y.add( mossN.mul( 0.15 ) ) ) ).mul( meadowTop );
-			const moss = max( legacyTurf, turfRim ).toVar();
+			// The turf's own cover, which also sets the blades' shade over it and its soil pockets,
+			// keeps the plain mask: only the visible mix of turf and stone follows the stone's relief
+			// (`layer` below).
+			const turfCover = max( legacyTurf, turfRim ).toVar();
 			const mossC = mix( vec3( 0.025, 0.06, 0.015 ), vec3( 0.11, 0.2, 0.035 ), smoothstep( 0.2, 0.9, H.g ) ).toVar();
 			mossC.mulAssign( smoothstep( 0.3, 0.8, texture( tex.heights, p.xz.mul( 0.9 ).add( p.y.mul( 0.5 ) ) ).g ).mul( 0.6 ).add( 0.7 ) );
 			mossC.assign( mix( mossC, vec3( 0.2, 0.21, 0.06 ), smoothstep( 0.6, 0.9, big2 ).mul( 0.35 ) ) ); // sun-dried
 			// Keep the same meadow bed on top, with a narrow blend into bare rock.
-			const turfCover = moss.toVar();
 			const groundSoil = float( 0 ).toVar();
 			const rimGrassC = mossC.toVar();
 			If( max( turfCover, turf ).greaterThan( 0 ), () => {
@@ -326,14 +426,24 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			} );
 
 			const nMoss = triNormal( unpack2( aX.zw ), unpack2( aY.zw ), unpack2( aZ.zw ), n0, w, float( 0.8 ) );
-			albedo.assign( mix( rock, mossC, moss ) );
 			const nBed = normalize( mix( nMoss, n0, turfCover.mul( 0.2 ).add( groundSoil.mul( 0.25 ) ) ) );
-			nW.assign( normalize( mix( nRock, nBed, moss ) ) );
-			rough.assign( mix( mix( stoneRough, float( 0.94 ), moss ), float( 0.98 ), groundSoil ) );
+
+			// Moss and small greenery on the upper cliff, 0.2 - 1.2 m below each block's own top:
+			// on the ledges and in the joints and hollows that hold water and grit, and on the bare
+			// stumps of fallen columns, where the meadow's turf does not reach. The lower stone
+			// stays exposed. Its colour is laid over everything below, last.
+			const ledge = smoothstep( 0.1, 0.25, lipDepth ).mul( float( 1 ).sub( smoothstep( 0.85, 1.3, lipDepth ) ) );
+			const stump = float( 1 ).sub( meadowTop ).mul( float( 1 ).sub( smoothstep( 0, 0.25, lipDepth ) ) ).mul( smoothstep( topY.sub( 1.3 ), topY.sub( 0.9 ), p.y ) );
+			const hold = max( smoothstep( 0.45, 0.8, up ), concave.mul( smoothstep( - 0.3, 0.2, up ) ).mul( 0.85 ) ).mul( float( 1 ).sub( fresh ) );
+			const patches = smoothstep( 0.4, 0.62, big2.mul( 0.45 ).add( H.g.mul( 0.35 ) ).add( streak.mul( 0.2 ) ) );
+			const cliffMossMask = max( ledge, stump ).mul( hold ).mul( patches ).mul( float( 1 ).sub( turfCover ) ).toVar();
 
 			// A shallow, broken root-soil cut follows the existing cap. Sampling only this shoulder
 			// keeps the meadow and lower mineral faces intact; chips naturally interrupt the layer.
-			If( soilUniforms.strength.greaterThan( 0 ).and( p.y.greaterThan( topY.sub( 0.4 ) ) ).and( up.lessThan( 0.97 ) ), () => {
+			// Its mask is found first, as the layers' blend below needs every mask of the stack.
+			const cutting = soilUniforms.strength.greaterThan( 0 ).and( p.y.greaterThan( topY.sub( 0.4 ) ) ).and( up.lessThan( 0.97 ) );
+			const cutMask = float( 0 ).toVar(), earth = vec3( 0 ).toVar();
+			If( cutting, () => {
 
 				const soil = texture( tex.soil, p.xz.div( SOIL_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).toVar();
 				const localTop = topY.add( soil.r.sub( 0.5 ).mul( SOIL_HEIGHT_RANGE ) );
@@ -344,23 +454,54 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 				const lower = float( 1 ).sub( smoothstep( thickness.mul( 0.72 ), thickness.add( 0.025 ), depth.add( grain ) ) );
 				const shoulder = float( 1 ).sub( smoothstep( 0.72, 0.94, up ) );
 				const exposure = smoothstep( 0.06, 0.4, soil.b );
-				// Inside the shared fringe, the same root bed is shaded by rimSoil below.
-				// Crossfade the old shoulder cut instead of layering two earth bands.
-				const cut = upper.mul( lower ).mul( shoulder ).mul( exposure ).mul( soilUniforms.strength )
-					.mul( float( 1 ).sub( rimBlend ) ).toVar();
 				// Root-rich earth is darker at the grass contact. Below it, small mineral flecks
 				// soften the change into bedrock without an artificial black seam or brown belt.
 				const root = float( 1 ).sub( smoothstep( 0.12, 0.8, depth.div( thickness ) ) );
-				const earth = mix( vec3( ...SOIL_PALETTE.cut ), vec3( ...SOIL_PALETTE.root ), root.mul( 0.45 ) ).toVar();
+				earth.assign( mix( vec3( ...SOIL_PALETTE.cut ), vec3( ...SOIL_PALETTE.root ), root.mul( 0.45 ) ) );
 				earth.mulAssign( mix( float( 0.88 ), float( 1.14 ), soil.a ).mul( H.r.mul( 0.35 ).add( 0.83 ) ) );
 				const grit = smoothstep( 0.58, 0.73, H.r ).mul( smoothstep( 0.35, 1, depth.div( thickness ) ) ).mul( 0.38 );
 				earth.assign( mix( earth, rock, grit ) );
 				const stoneBreak = smoothstep( 0.4, 0.7, H.g ).mul( smoothstep( 0.55, 1.15, depth.div( thickness ) ) );
-				cut.mulAssign( float( 1 ).sub( stoneBreak.mul( 0.55 ) ) );
-				albedo.assign( mix( albedo, earth, cut ) );
+				// Inside the shared fringe, the same root bed is shaded by rimSoil below.
+				// Crossfade the old shoulder cut instead of layering two earth bands.
+				cutMask.assign( upper.mul( lower ).mul( shoulder ).mul( exposure ).mul( soilUniforms.strength )
+					.mul( float( 1 ).sub( rimBlend ) ).mul( float( 1 ).sub( stoneBreak.mul( 0.55 ) ) ) );
+
+			} );
+
+			// The layers stack (from the top) cliff moss, root-soil cut, turf over the stone, or in
+			// the rim's fringe cliff moss, rim turf, rim soil. Blended one by one on the same relief,
+			// every layer would fill the same low points, and a lower one would keep only what its
+			// mask has beyond the masks above it (about A - B where a plain mix shows A (1 - B)).
+			// So each layer takes the next range of the stone's ranks in stacking order: the
+			// cumulative cover down to it (c = above + mask (1 - above)) is height-blended, the
+			// layer shows between that and the cover above it, and its mix factor is that share of
+			// what the layers above leave. Each layer's visible cover then has the plain mix's
+			// mean. One width serves a stack, so the cumulative covers nest.
+			const LAYER_WIDTH = 0.25;
+			const cover = ( c: F ): F => hb( c, hRock, LAYER_WIDTH );
+			const accumulate = ( above: F, mask: F ): F => above.add( mask.mul( float( 1 ).sub( above ) ) );
+			const share = ( blended: F, aboveBlended: F ): F => clamp( blended.sub( aboveBlended ).div( max( float( 1 ).sub( aboveBlended ), 1e-4 ) ), 0, 1 );
+			let mossCover: F = turfCover, cutCover: F = cutMask, cliffMoss: F = cliffMossMask;
+			if ( hex ) {
+
+				const toCut = accumulate( cliffMossMask, cutMask ).toVar();
+				const cliffB = cover( cliffMossMask ).toVar(), cutB = cover( toCut ).toVar();
+				cliffMoss = cliffB;
+				cutCover = share( cutB, cliffB ).toVar();
+				mossCover = share( cover( accumulate( toCut, turfCover ) ), cutB ).toVar();
+
+			}
+
+			albedo.assign( mix( rock, mossC, mossCover ) );
+			nW.assign( normalize( mix( nRock, nBed, mossCover ) ) );
+			rough.assign( mix( mix( stoneRough, float( 0.94 ), mossCover ), float( 0.98 ), groundSoil ) );
+			If( cutting, () => {
+
+				albedo.assign( mix( albedo, earth, cutCover ) );
 				const nSoil = normalize( mix( nRock, n0, 0.65 ) );
-				nW.assign( normalize( mix( nW, nSoil, cut ) ) );
-				rough.assign( mix( rough, float( 0.98 ), cut ) );
+				nW.assign( normalize( mix( nW, nSoil, cutCover ) ) );
+				rough.assign( mix( rough, float( 0.98 ), cutCover ) );
 
 			} );
 			if ( rimGround && rimGroundXform ) {
@@ -373,9 +514,18 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 					const soilC = mix( vec3( ...SOIL_PALETTE.root ), vec3( ...SOIL_PALETTE.cut ), smoothstep( 0.15, 0.85, H.r ) )
 						.mul( H.g.sub( 0.5 ).mul( 0.16 ).add( 1 ) );
 					const soilNormal = normalize( mix( n0, nRock, 0.18 ) );
-					const groundC = mix( mix( rock, soilC, rimSoil ), rimGrassC, rimTurf );
-					const groundN = normalize( mix( mix( nRock, soilNormal, rimSoil ), nBed, rimTurf ) );
-					const groundRough = mix( mix( stoneRough, float( 0.96 ), rimSoil ), float( 0.94 ), rimTurf );
+					let rimSoilCover: F = rimSoil, rimTurfCover: F = rimTurf;
+					if ( hex ) {
+
+						const toTurf = accumulate( cliffMossMask, rimTurf ).toVar();
+						const turfB = cover( toTurf ).toVar();
+						rimTurfCover = share( turfB, cliffMoss );
+						rimSoilCover = share( cover( accumulate( toTurf, rimSoil ) ), turfB );
+
+					}
+					const groundC = mix( mix( rock, soilC, rimSoilCover ), rimGrassC, rimTurfCover );
+					const groundN = normalize( mix( mix( nRock, soilNormal, rimSoilCover ), nBed, rimTurfCover ) );
+					const groundRough = mix( mix( stoneRough, float( 0.96 ), rimSoilCover ), float( 0.94 ), rimTurfCover );
 					albedo.assign( mix( albedo, groundC, rimBlend ) );
 					nW.assign( normalize( mix( nW, groundN, rimBlend ) ) );
 					rough.assign( mix( rough, groundRough, rimBlend ) );
@@ -384,14 +534,6 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 
 			}
 
-			// Moss and small greenery on the upper cliff, 0.2 - 1.2 m below each block's own top:
-			// on the ledges and in the joints and hollows that hold water and grit, and on the bare
-			// stumps of fallen columns. The lower stone stays exposed.
-			const upper = smoothstep( 0.1, 0.25, lipDepth ).mul( float( 1 ).sub( smoothstep( 0.85, 1.3, lipDepth ) ) );
-			const stump = float( 1 ).sub( meadowTop ).mul( float( 1 ).sub( smoothstep( 0, 0.25, lipDepth ) ) ).mul( smoothstep( topY.sub( 1.3 ), topY.sub( 0.9 ), p.y ) );
-			const hold = max( smoothstep( 0.45, 0.8, up ), concave.mul( smoothstep( - 0.3, 0.2, up ) ).mul( 0.85 ) ).mul( float( 1 ).sub( fresh ) );
-			const patches = smoothstep( 0.4, 0.62, big2.mul( 0.45 ).add( H.g.mul( 0.35 ) ).add( streak.mul( 0.2 ) ) );
-			const cliffMoss = max( upper, stump ).mul( hold ).mul( patches ).mul( float( 1 ).sub( moss ) ).toVar();
 			const cliffMossC = mix( vec3( 0.04, 0.065, 0.02 ), vec3( 0.12, 0.155, 0.04 ), smoothstep( 0.25, 0.85, H.g ) );
 			albedo.assign( mix( albedo, cliffMossC, cliffMoss ) );
 			nW.assign( normalize( mix( nW, nMoss, cliffMoss ) ) );
@@ -416,6 +558,8 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			const plant = mix( float( 1 ), float( 0.45 ), turf ).toVar();
 			// Water running down the steep faces in runnels, which stay damp after the rain.
 			const run = vegetation ? runnels( { tex: tex.normalsB, p, n: n0, dpx, dpy, warp: big2, time: shared.time, rain: shared.rain } ).mul( float( 1 ).sub( turf ) ).toVar() : vec2( 0 );
+			// The runnels' water and stain keep to the stone's grooves.
+			if ( vegetation && hex ) run.assign( vec2( hb( run.x, hRock, 0.35 ), run.y ) );
 			// Standing water in level hollows, and the soaked ground it has just left.
 			const pool = vec3( 0 ).toVar();
 			// Standing water collects on the meadow and the stumps' tops, not on narrow ledges.
@@ -505,7 +649,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			// 1.4 m up the walls, higher where the coast meets the swell; its upper edge is jagged
 			// from facet to facet and frayed, with the grey stone showing through in places.
 			const reach = float( 0.4 ).add( detail2.y.mul( 0.7 ) ).add( fract( detail.x.mul( 3.7 ) ).mul( 0.3 ) ).add( H.r.sub( 0.5 ).mul( 0.3 ) );
-			const spray = float( 1 ).sub( smoothstep( reach.sub( 0.16 ), reach.add( 0.05 ), p.y.sub( wl ) ) );
+			const spray = hb( float( 1 ).sub( smoothstep( reach.sub( 0.16 ), reach.add( 0.05 ), p.y.sub( wl ) ) ), hRock, 0.25 );
 			const crust = mix( float( 0.55 ), float( 1 ), smoothstep( 0.35, 0.75, H.g.mul( 0.6 ).add( big.mul( 0.4 ) ) ) );
 			albedo.mulAssign( mix( vec3( 1 ), vec3( 0.62, 0.63, 0.6 ), spray.mul( crust ).mul( float( 1 ).sub( wet ) ) ) );
 			// The notch's floor and the ledges in the spray hold water, weed and grit: darker still.
@@ -610,11 +754,48 @@ class TerrainLightingModel extends THREE.PhysicalLightingModel {
 
 }
 
-export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, caustics: Caustics, shore: THREE.Texture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
+type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;
 
-	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.85, metalness: 0 } );
+export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, caustics: Caustics, shore: THREE.Texture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform, hex }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
+
 	const topYU = uniform( topY );
-	const ctx: Ctx = { tex, shared, topY: topYU, vegetation, shore, rimGround, rimGroundXform: rimGroundXform ? uniform( rimGroundXform ) : undefined };
+	const ctx: Omit<Ctx, 'hex'> = { tex, shared, topY: topYU, vegetation, shore, rimGround, rimGroundXform: rimGroundXform ? uniform( rimGroundXform ) : undefined };
+	if ( kind === 'seabed' ) return buildTerrainMaterial( kind, { ...ctx, hex: false }, caustics );
+	// For an A/B inside one page, each cliff material can hand over its other variant (built on
+	// first use, sharing the uniforms) with the nodes RefractedSun installed on it:
+	//   s.scene.traverse( ( o ) => { const v = o.material?.userData.terrainVariant; if ( v ) o.material = v( on, o.material ); } )
+	const variants = new Map<boolean, THREE.MeshStandardNodeMaterial>();
+	const variant: TerrainVariant = ( on, from ) => {
+
+		let mat = variants.get( on );
+		if ( ! mat ) {
+
+			mat = buildTerrainMaterial( kind, { ...ctx, hex: on }, caustics );
+			mat.userData.terrainVariant = variant;
+			variants.set( on, mat );
+
+		}
+		if ( from && from !== mat && ( mat.receivedShadowNode !== from.receivedShadowNode || mat.receivedShadowPositionNode !== from.receivedShadowPositionNode ) ) {
+
+			mat.receivedShadowPositionNode = from.receivedShadowPositionNode;
+			mat.receivedShadowNode = from.receivedShadowNode;
+			mat.needsUpdate = true;
+
+		}
+		return mat;
+
+	};
+	// URL option, read at load: terrainHex=0 builds the plain tiling with smooth masks.
+	if ( typeof location !== 'undefined' && new URLSearchParams( location.search ).get( 'terrainHex' ) === '0' ) debugFlags.terrainHex = false;
+	return variant( hex ?? debugFlags.terrainHex !== false );
+
+}
+
+function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, caustics: Caustics ): THREE.MeshStandardNodeMaterial {
+
+	const { shared, vegetation } = ctx;
+	const topYU = ctx.topY;
+	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.85, metalness: 0 } );
 	const call = kind === 'seabed' ? seabedSurface( ctx, shared.shoreXform ) : cliffSurface( ctx );
 	const surf = ( call as unknown as { toVar( name: string ): SurfaceNode } ).toVar( 'surf' );
 	mat.colorNode = surf.get( 'albedo' );

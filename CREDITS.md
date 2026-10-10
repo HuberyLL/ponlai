@@ -116,9 +116,28 @@ packages, into `dist/licenses/`.
 - Upstream: https://www.shadertoy.com/view/4djSRW, by David Hoskins
 - Copyright: (c) 2014 David Hoskins
 - Licence: MIT, see [`src/materials/hoskins-hash.LICENSE.txt`](src/materials/hoskins-hash.LICENSE.txt)
-- Files: `hash22` in `src/materials/ProceduralTextures.ts` and `src/ocean/Water.ts`; `hash33` in
+- Files: `hash22` in `src/materials/ProceduralTextures.ts` (also seeding the hex tiles of
+  `src/materials/HexTiling.ts`) and `src/ocean/Water.ts`; `hash33` in
   `src/materials/CloudNoise.ts`
 - Changes: ported to TSL; the procedural textures remap it to [-1, 1].
+
+### hextile-demo
+
+- Upstream: https://github.com/mmikk/hextile-demo, by Morten S. Mikkelsen, commit
+  [`43c3ed7`](https://github.com/mmikk/hextile-demo/tree/43c3ed7e18e1e4539fa9323f72d5e2a65147ebb3),
+  the code of [*Practical Real-Time Hex-Tiling*](https://jcgt.org/published/0011/03/05/)
+  (Journal of Computer Graphics Techniques 11(3), 2022)
+- Copyright: (c) 2022 mmikk
+- Licence: MIT, see [`src/materials/hextile-demo.LICENSE.txt`](src/materials/hextile-demo.LICENSE.txt)
+- Files: `src/materials/HexTiling.ts`: the triangle grid (`TriangleGrid`), the tiles' centres
+  (`MakeCenST`), the blend's weights, and the rotated, offset reads with rotated gradients and
+  their weighted sum of colour, slope and roughness (`hex2colTex`, `bumphex2derivNMap`, in
+  `hexReadScan`), ported from HLSL to TSL.
+- Changes: each tile's offset and rotation come from Hoskins's hash (above) instead of the demo's
+  sine hash and integer angle formula, the rotation is limited to 0.4 rad; the blend is weighted by
+  a height read from the stone scan's brightness and shared by its colour, normal (as slopes,
+  turned back by each tile's rotation) and roughness; tiles under 3 % of the strongest
+  one's weight are not read, and those under 6 % fade out.
 
 ### LightningStrike (three.js / three-stdlib)
 
@@ -295,6 +314,13 @@ comment where it is used.
   (SIGGRAPH course notes, 2002 revision).
 - Rasterised caustics: Evan Wallace, [*WebGL Water*](https://madebyevan.com/webgl-water/) and
   [*Rendering Realtime Caustics in WebGL*](https://medium.com/@evanwallace/rendering-realtime-caustics-in-webgl-2a99a29a0b2c).
+- Hex-tiling's predecessor, by-example noise that blends randomly placed tiles with a
+  histogram-preserving blend: Eric Heitz and Fabrice Neyret,
+  [*High-Performance By-Example Noise using a Histogram-Preserving Blending Operator*](https://eheitzresearch.wordpress.com/722-2/)
+  (HPG 2018).
+- Height-based blending of terrain layers (moss, turf, soil, lichens, runoff stains on the stone):
+  Andrey Mishkinis, *Advanced Terrain Texture Splatting* (Gamasutra, 2013), and the height lerp
+  of Unreal Engine's landscape materials.
 - Whiteout triplanar normal blend: Ben Golus,
   [*Normal Mapping for a Triplanar Shader*](https://bgolus.medium.com/normal-mapping-for-a-triplanar-shader-10bf39dca05a) (2017).
 - Atmosphere LUTs and multiple scattering: Sébastien Hillaire,
