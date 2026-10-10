@@ -14,10 +14,11 @@ const CANVAS = { of: 'canvas' };
  * the expected table: the graph Pipeline declares (declarePipeline below) compiles to it. For the
  * post options of a variant:
  * `fogScale` (1: the full-resolution fog of post=full-fog), `bankSize` (0: no-bank),
- * `dofDistance` (false: inline-coc), `fsrPort` (false: three-fsr), `samples` (the scene's). */
+ * `dofDistance` (false: inline-coc), `fsrPort` (false: three-fsr), `compositeOnce` (false:
+ * inline-composite), `samples` (the scene's). */
 export function declareToday( options = {} ) {
 
-	const o = { fogScale: 0.5, bankSize: 2048, dofDistance: true, fsrPort: true, ...options };
+	const o = { fogScale: 0.5, bankSize: 2048, dofDistance: true, fsrPort: true, compositeOnce: true, ...options };
 	const g = new GraphDecl();
 	const k = Math.round( 1 / o.fogScale );
 	const h = {};
@@ -34,6 +35,7 @@ export function declareToday( options = {} ) {
 
 	}
 	if ( o.dofDistance ) h.viewDistance = g.color( 'viewDistance', { size: RENDER, format: 'Red', type: 'Float' } );
+	if ( o.compositeOnce ) h.hdr = g.color( 'hdr', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
 	h.display = g.color( 'display', { size: RENDER, format: 'RGBA', type: 'Float' } );
 	if ( o.fsrPort ) h.easu = g.color( 'FSR.easu', { size: CANVAS, format: 'RGBA', type: 'HalfFloat' } );
 	h.canvas = g.import( 'canvas', { size: CANVAS }, true );
@@ -116,9 +118,8 @@ export function declareToday( options = {} ) {
 		return { label: 'tilt-shift blur', when: () => true, whenLabel: 'dof > 0' };
 
 	} );
-	// the composite, blooms, depth of field, grade and look: rtt and bloom passes the display
-	// pipeline's output node updates on the way (one chain)
-	g.addPass( 'display', 'chain', ( b ) => {
+	// what the composite reads: the scene after the rain, the surface depth and the sea fog
+	const compositeReads = ( b ) => {
 
 		b.readOptional( h.sceneColor );
 		b.read( h.surfaceDepth );
@@ -129,6 +130,26 @@ export function declareToday( options = {} ) {
 
 		}
 		if ( h.fogBanks ) b.readOptional( h.fogBanks );
+
+	};
+	// the composite of air, fog, veil and shafts, rendered once into hdr
+	if ( h.hdr ) g.addPass( 'composite', 'quad', ( b ) => {
+
+		compositeReads( b );
+		h.hdr = b.write( h.hdr );
+		return { label: 'composite (air, fog, veil)' };
+
+	} );
+	// blooms, depth of field, grade and look: rtt and bloom passes the display pipeline's output
+	// node updates on the way (one chain; the composite too, inline-composite)
+	g.addPass( 'display', 'chain', ( b ) => {
+
+		if ( h.hdr ) {
+
+			b.read( h.hdr );
+			b.read( h.surfaceDepth );
+
+		} else compositeReads( b );
 		if ( h.viewDistance ) b.readOptional( h.viewDistance );
 		h.display = b.write( h.display );
 		return { label: 'grade & look' };
@@ -182,7 +203,7 @@ export const compileToday = ( options = {}, samples = 4, legacyDiscard ) =>
  * every draw of the frame is a pass of its own. Compiled, it is today's graph (declareToday). */
 export function declarePipeline( options = {} ) {
 
-	const o = { fogScale: 0.5, bankSize: 2048, dofDistance: true, fsrPort: true, ...options };
+	const o = { fogScale: 0.5, bankSize: 2048, dofDistance: true, fsrPort: true, compositeOnce: true, ...options };
 	const g = new GraphDecl();
 	const k = Math.round( 1 / o.fogScale );
 	const h = {};
@@ -192,6 +213,7 @@ export function declarePipeline( options = {} ) {
 	h.linearDepth = g.color( 'linearDepth', { size: RENDER, format: 'RG', type: 'Float' } );
 	h.opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
 	h.surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: 'Red', type: 'Float' } );
+	if ( o.compositeOnce ) h.hdr = g.color( 'hdr', { size: RENDER, format: 'RGBA', type: 'HalfFloat' } );
 	h.display = g.color( 'display', { size: RENDER, format: 'RGBA', type: 'Float' } );
 	if ( o.dofDistance ) h.viewDistance = g.color( 'viewDistance', { size: RENDER, format: 'Red', type: 'Float' } );
 	if ( o.fsrPort ) h.easu = g.color( 'FSR.easu', { size: CANVAS, format: 'RGBA', type: 'HalfFloat' } );
@@ -271,11 +293,22 @@ export function declarePipeline( options = {} ) {
 	const fogReads = [ h.fogMarch, h.fogNearestDepth, h.fogBanks ].filter( Boolean );
 	// declarePasses: the post passes
 	if ( h.viewDistance ) g.addPass( 'viewDistance', 'quad', ( b ) => ( b.read( h.surfaceDepth ), h.viewDistance = b.write( h.viewDistance ), { label: 'tilt-shift blur', when: () => true, whenLabel: 'dof > 0' } ) );
-	g.addPass( 'display', 'chain', ( b ) => {
+	const compositeReads = ( b ) => {
 
 		b.readOptional( h.sceneColor );
 		b.read( h.surfaceDepth );
 		for ( const x of fogReads ) b.readOptional( x );
+
+	};
+	if ( h.hdr ) g.addPass( 'composite', 'quad', ( b ) => ( compositeReads( b ), h.hdr = b.write( h.hdr ), { label: 'composite (air, fog, veil)' } ) );
+	g.addPass( 'display', 'chain', ( b ) => {
+
+		if ( h.hdr ) {
+
+			b.read( h.hdr );
+			b.read( h.surfaceDepth );
+
+		} else compositeReads( b );
 		if ( h.viewDistance ) b.readOptional( h.viewDistance );
 		h.display = b.write( h.display );
 		return { label: 'grade & look' };
@@ -314,6 +347,7 @@ export const TODAY = [
 	{ name: 'fogDepth', kind: 'quad', label: 'composite (air, fog, veil)', when: 'fog', size: 'render:1:2:0', writes: [ w( 'fogNearestDepth', 'render:1:2:0', 'Red', 'Float' ) ], depth: null, target: 'fogNearestDepth|-' },
 	{ name: 'fogMarch', kind: 'quad', label: 'composite (air, fog, veil)', when: 'fog', size: 'render:1:2:0', writes: [ w( 'fogMarch', 'render:1:2:0', 'RGBA', 'HalfFloat' ) ], depth: null, target: 'fogMarch|-' },
 	{ name: 'viewDistance', kind: 'quad', label: 'tilt-shift blur', when: 'dof > 0', size: R, writes: [ w( 'viewDistance', R, 'Red', 'Float' ) ], depth: null, target: 'viewDistance|-' },
+	{ name: 'composite', kind: 'quad', label: 'composite (air, fog, veil)', when: null, size: R, writes: [ w( 'hdr', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'hdr|-' },
 	{ name: 'display', kind: 'chain', label: 'grade & look', when: null, size: R, writes: [ w( 'display', R, 'RGBA', 'Float' ) ], depth: null, target: 'display|-' },
 	{ name: 'output', kind: 'chain', label: 'output', when: '!upscaling', size: C, writes: [ w( 'canvas', C, null, null ) ], depth: null, target: 'canvas|-' },
 	{ name: 'easu', kind: 'quad', label: 'output & FSR', when: 'upscaling', size: C, writes: [ w( 'FSR.easu', C, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'FSR.easu|-' },
@@ -326,7 +360,8 @@ export const TODAY_READS = {
 	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
 	rain: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ], fogBank: [], fogDepth: [ 'surfaceDepth@1:sample' ],
 	fogMarch: [ 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?' ], viewDistance: [ 'surfaceDepth@1:sample' ],
-	display: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample', 'fogMarch@1:sample?', 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?', 'viewDistance@1:sample?' ],
+	composite: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample', 'fogMarch@1:sample?', 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?' ],
+	display: [ 'hdr@1:sample', 'surfaceDepth@1:sample', 'viewDistance@1:sample?' ],
 	output: [ 'display@1:sample' ], easu: [ 'display@1:sample' ], upscaledOutput: [ 'FSR.easu@1:sample?' ],
 };
 
@@ -355,7 +390,7 @@ export const checks = [
 			summary: x.summary(),
 			ops: Array.from( { length: x.fullMask + 1 }, ( _, m ) => [ x.ops( 'legacy', m ), x.ops( 'derived', m ) ] ),
 		} );
-		const variants = [ {}, { fogScale: 1 }, { fogScale: 0.25 }, { bankSize: 0 }, { dofDistance: false }, { fsrPort: false }, { fogScale: 1, bankSize: 0, dofDistance: false, fsrPort: false } ];
+		const variants = [ {}, { fogScale: 1 }, { fogScale: 0.25 }, { bankSize: 0 }, { dofDistance: false }, { fsrPort: false }, { compositeOnce: false }, { fogScale: 1, bankSize: 0, dofDistance: false, fsrPort: false, compositeOnce: false } ];
 		for ( const options of variants ) for ( const [ samples, discard ] of [ [ 4, undefined ], [ 1, undefined ], [ 4, [] ] ] ) {
 
 			const what = `${ JSON.stringify( options ) } samples ${ samples }${ discard ? ' store-scene' : '' }`;
@@ -383,12 +418,13 @@ export const checks = [
 			[ 'fogDepth', [ 'fogNearestDepth:clear/store' ], null, false ],
 			[ 'fogMarch', [ 'fogMarch:clear/store' ], null, false ],
 			[ 'viewDistance', [ 'viewDistance:clear/store' ], null, false ],
+			[ 'composite', [ 'hdr:clear/store' ], null, false ],
 			[ 'display', [ 'display:clear/store' ], null, false ],
 			[ 'output', [ 'canvas:clear/store' ], null, false ],
 		] );
 		assert.equal( rainOn.rewrites, 1 );
 		const upscaled = c.ops( 'legacy', c.maskOf( [ 'rain', 'easu', 'upscaledOutput' ] ) );
-		assert.deepEqual( upscaled.running.slice( - 3 ), [ 'display', 'easu', 'upscaledOutput' ] );
+		assert.deepEqual( upscaled.running.slice( - 4 ), [ 'composite', 'display', 'easu', 'upscaledOutput' ] );
 		assert.equal( upscaled.rewrites, 1, 'the upscale rewrites nothing' );
 		assert.equal( c.ops( 'legacy', c.maskOf( [ 'output' ] ) ).rewrites, 0, 'without the rain nothing is discarded (the water\'s stores stay)' );
 		const single = compilePipeline( {}, 1 );
@@ -407,7 +443,7 @@ export const checks = [
 		assert.deepEqual( c.summary().targets.map( ( t ) => [ t.key, t.size, t.samples ] ), [
 			[ 'sceneColor|sceneDepth', R, 4 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'surfaceDepth|-', R, 1 ],
 			[ 'fogBanks|-', 'fixed:2048x2048', 1 ], [ 'fogNearestDepth|-', 'render:1:2:0', 1 ], [ 'fogMarch|-', 'render:1:2:0', 1 ],
-			[ 'viewDistance|-', R, 1 ], [ 'display|-', R, 1 ], [ 'canvas|-', C, 1 ], [ 'FSR.easu|-', C, 1 ],
+			[ 'viewDistance|-', R, 1 ], [ 'hdr|-', R, 1 ], [ 'display|-', R, 1 ], [ 'canvas|-', C, 1 ], [ 'FSR.easu|-', C, 1 ],
 		] );
 		assert.equal( c.jitterSpan, null );
 
@@ -446,9 +482,9 @@ export const checks = [
 			[ 'no-bank', { bankSize: 0 }, without( 'fogBank' ) ],
 			[ 'inline-coc', { dofDistance: false }, without( 'viewDistance' ) ],
 			[ 'three-fsr', { fsrPort: false }, [ ...without( 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
-			// inline-composite and store-scene change the display chain's inside and the ops only
-			[ 'inline-composite', {}, ALL ],
-			[ 'legacy (all)', { fogScale: 1, bankSize: 0, dofDistance: false, fsrPort: false }, [ ...without( 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
+			// (store-scene changes the ops only)
+			[ 'inline-composite', { compositeOnce: false }, without( 'composite' ) ],
+			[ 'legacy (all)', { fogScale: 1, bankSize: 0, dofDistance: false, fsrPort: false, compositeOnce: false }, [ ...without( 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'composite', 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
 		];
 		for ( const [ name, options, passes ] of cases ) {
 
@@ -465,11 +501,11 @@ export const checks = [
 		const c = compileToday();
 		const run = ( ...enabled ) => c.running( c.maskOf( enabled ) ).map( ( i ) => c.decl.passes[ i ].name );
 		const base = [ 'opaque', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve' ];
-		assert.deepEqual( run( 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'output' ), [ ...base, 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'display', 'output' ] );
-		assert.deepEqual( run( 'fogDepth', 'fogMarch', 'viewDistance', 'output' ), [ ...base, 'fogDepth', 'fogMarch', 'viewDistance', 'display', 'output' ], 'rain off' );
-		assert.deepEqual( run( 'rain', 'viewDistance', 'output' ), [ ...base, 'rain', 'viewDistance', 'display', 'output' ], 'fog off' );
-		assert.deepEqual( run( 'rain', 'output' ), [ ...base, 'rain', 'display', 'output' ], 'fog off, dof 0' );
-		assert.deepEqual( run( 'viewDistance', 'easu', 'upscaledOutput' ), [ ...base, 'viewDistance', 'display', 'easu', 'upscaledOutput' ], 'upscaling' );
+		assert.deepEqual( run( 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'output' ), [ ...base, 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'composite', 'display', 'output' ] );
+		assert.deepEqual( run( 'fogDepth', 'fogMarch', 'viewDistance', 'output' ), [ ...base, 'fogDepth', 'fogMarch', 'viewDistance', 'composite', 'display', 'output' ], 'rain off' );
+		assert.deepEqual( run( 'rain', 'viewDistance', 'output' ), [ ...base, 'rain', 'viewDistance', 'composite', 'display', 'output' ], 'fog off' );
+		assert.deepEqual( run( 'rain', 'output' ), [ ...base, 'rain', 'composite', 'display', 'output' ], 'fog off, dof 0' );
+		assert.deepEqual( run( 'viewDistance', 'easu', 'upscaledOutput' ), [ ...base, 'viewDistance', 'composite', 'display', 'easu', 'upscaledOutput' ], 'upscaling' );
 		assert.equal( c.fullMask, 255 );
 
 	} ],
