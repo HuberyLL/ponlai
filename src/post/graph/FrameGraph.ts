@@ -1244,7 +1244,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 				depth: p.depth ? { resource: name( p.depth.resource ), version: p.depth.version, write: p.depth.write, clear: p.depth.clear } : null,
 				target: target ? ( target.canvas ? 'canvas' : target.key ) : null,
 				size: cls ? sizeClassKey( cls ) : null, actual: cls ? size( cls ) : null, scales: passScales( p.kind, cls ),
-				ops: table?.passes.find( ( o ) => o.index === p.index ) ?? null,
+				// (a copy: the table is the one execute() applies)
+				ops: structuredClone( table?.passes.find( ( o ) => o.index === p.index ) ?? null ),
 			};
 
 		} );
@@ -1291,7 +1292,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	/** The graph in Graphviz's dot language (`dot -Tsvg`): passes as boxes in order (dashed when
 	 * culled, their `when` beside the label), each resource version as an ellipse, writes from a
 	 * pass to the version it makes and reads from a version to its pass (dashed: optional; bold:
-	 * the multisampled samples; dotted: a depth test without writes). */
+	 * the multisampled samples; dotted: a depth test, or the version a write loads and draws
+	 * over). */
 	dot(): string {
 
 		const d = this.describe();
@@ -1321,8 +1323,19 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 			lines.push( `\t${ pass } [shape=box, label=${ q( label ) }${ p.culled ? ', style=dashed' : '' }];` );
 			for ( const r of p.reads ) lines.push( `\t${ version( r.resource, r.version ) } -> ${ pass }${ r.mode === 'samples' ? ' [style=bold' + ( r.optional ? ', color=gray40' : '' ) + ']' : r.optional ? ' [style=dashed]' : '' };` );
 			if ( p.depth && ! p.depth.write ) lines.push( `\t${ version( p.depth.resource, p.depth.version ) } -> ${ pass } [style=dotted];` );
-			for ( const w of p.writes ) lines.push( `\t${ pass } -> ${ version( w.resource, w.version ) }${ w.load === 'load' ? ' [label="load"]' : '' };` );
-			if ( p.depth?.write ) lines.push( `\t${ pass } -> ${ version( p.depth.resource, p.depth.version ) } [label="depth"];` );
+			// a write that loads (draws over) the version before it depends on that version too
+			for ( const w of p.writes ) {
+
+				if ( w.load === 'load' && w.version > 0 ) lines.push( `\t${ version( w.resource, w.version - 1 ) } -> ${ pass } [style=dotted, label="load"];` );
+				lines.push( `\t${ pass } -> ${ version( w.resource, w.version ) };` );
+
+			}
+			if ( p.depth?.write ) {
+
+				if ( ! p.depth.clear && p.depth.version > 0 ) lines.push( `\t${ version( p.depth.resource, p.depth.version - 1 ) } -> ${ pass } [style=dotted];` );
+				lines.push( `\t${ pass } -> ${ version( p.depth.resource, p.depth.version ) } [label="depth"];` );
+
+			}
 
 		}
 		for ( const c of d.copies ) lines.push( `\t${ q( `${ c.from }@${ resources.get( c.from )!.versions.length - 1 }` ) } -> ${ q( `${ c.to }@0` ) } [label="frame-end copy", style=dashed];` );
