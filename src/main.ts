@@ -770,6 +770,8 @@ if ( qualityChoice.source === 'detect' ) {
 
 const canvasSize = new THREE.Vector2();
 let nominalScale = 1, renderScale = 1;
+// the render scale `loop.step` holds for the frame it draws (debug only; null otherwise)
+let steppedScale: number | null = null;
 function resize(): void {
 
 	const w = innerWidth, h = innerHeight;
@@ -786,6 +788,7 @@ function resize(): void {
 /** The scale this frame renders at: the dynamic one, unless pinned or paused. */
 function currentRenderScale(): number {
 
+	if ( steppedScale !== null ) return steppedScale;
 	if ( ! dynamicResolution || resolution.full || paused ) return nominalScale;
 	return Math.min( dynamicResolution.scale, nominalScale );
 
@@ -952,7 +955,7 @@ function steerRenderScale( rawDt: number ): void {
 	if ( ! dynamicResolution ) return;
 	// the GPU's budget follows the paced frame interval (a 60 Hz frame unpaced)
 	dynamicResolution.setFrameInterval( pacer.target > 0 ? pacer.interval : 1000 / 60 );
-	const steering = ! paused && ! resolution.full && renderScale === dynamicResolution.scale;
+	const steering = steppedScale === null && ! paused && ! resolution.full && renderScale === dynamicResolution.scale;
 	frameScales.set( renderer.info.frame, steering ? renderScale : NaN );
 	if ( frameScales.size > 240 ) frameScales.delete( frameScales.keys().next().value! );
 	gpuTimer?.resolve();
@@ -967,9 +970,9 @@ function steerRenderScale( rawDt: number ): void {
 
 }
 
-function diagnostics(): void {
+function diagnostics( now = false ): void {
 
-	if ( ! DEBUG || frame % 30 !== 1 ) return;
+	if ( ! DEBUG || ( ! now && frame % 30 !== 1 ) ) return;
 	const info = renderer.info;
 	( window as unknown as Record<string, unknown> ).__THREE_GAME_DIAGNOSTICS__ = {
 		frame,
@@ -1123,5 +1126,122 @@ document.addEventListener( 'visibilitychange', () => {
 	}
 
 } );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, pipelines: pipelineCount, flags: debugFlags,
+// Deterministic stepping for the clip tools (tools/capture-clip.mjs; debug builds only): stops the
+// live loop and drives the tick itself, `frames` times, `dt` seconds apart, with nothing taken from
+// the wall clock. Each frame gets the timestamp t0 + i * dt * 1000 and a delta of exactly `dt`
+// (three's Timer would take it from the timestamps less its own start time, which rounds
+// differently from load to load), does the node-frame bookkeeping three's animation loop does,
+// bypasses the frame pacer and renders at `scale` (a render pixel ratio, as `dpr`; one value, or
+// one per frame with the last repeated; the tier's nominal by default) with the dynamic controller
+// out of the loop. `camera( i )` runs before frame i's tick and `onFrame( i )` is awaited after it
+// (a screenshot then sees that frame: nothing renders until it returns). `clock` pauses or runs the
+// scene clock for the clip; left out, it keeps the page's. The loop stays stopped afterwards:
+// `loop.start()` brings the live one back.
+// What would still follow the wall clock or the page's history is pinned too, so a clip is the
+// same however long its frames, its `onFrame` or the wait before it took:
+// - a whole sky bake (a seek, a preset, a weather jump) publishes after a GPU readback, so the next
+//   frame waits for it (the live loop shows the old sky for a few frames first);
+// - the timer that completes a periodic bake spread over frames once the loop stalls is cancelled
+//   after each frame, so the bake takes its share of every frame as in a running loop;
+// - the clouds pick their trace slot and map refresh phase from the frames rendered since the load
+//   (Clouds.ts), and the periodic sky bake and the refracted sun's map count wall-clock seconds
+//   that grow while a paused page waits: all three restart with each call, as after a seek;
+// - a periodic bake reads its sky irradiance back from the GPU (`Sky.skyIrradiance`, which sets a
+//   lightning strike's fill light), at most every 2 s of wall clock and landing whenever the GPU
+//   answers: stepped, every bake reads it back and the next frame waits for the value, so it
+//   lands on the frame after the bake however long the frames took.
+interface StepOptions {
+	frames: number;
+	dt?: number;
+	scale?: number | number[];
+	camera?: ( i: number ) => void;
+	onFrame?: ( i: number ) => Promise<void> | void;
+	clock?: 'paused' | 'running';
+}
+const step = async ( options: StepOptions ): Promise<{ frames: number; t0: number; simTime: number; frameId: number }> => {
+
+	const { frames, dt = 1 / 60, scale, camera: moveCamera, onFrame, clock: clockMode } = options;
+	if ( ! Number.isInteger( frames ) || frames < 0 ) throw new RangeError( 'frames must be a whole number, 0 or more' );
+	if ( ! Number.isFinite( dt ) || dt <= 0 ) throw new RangeError( 'dt must be finite and positive' );
+	const scales = scale === undefined ? [] : Array.isArray( scale ) ? scale : [ scale ];
+	if ( scales.some( ( s ) => ! Number.isFinite( s ) || s <= 0 ) ) throw new RangeError( 'scale must be positive' );
+	await loop.stop();
+	if ( clockMode !== undefined ) {
+
+		paused = clockMode === 'paused';
+		dayCycle.paused = paused;
+
+	}
+	const r = renderer as unknown as { _nodes: { nodeFrame: { update(): void; frameId: number } }; _inspector: { isRunning?: boolean; begin(): void; finish(): void } };
+	const nodeFrame = r._nodes.nodeFrame, inspector = r._inspector;
+	const timer = clock as unknown as { update( time?: number ): unknown; getDelta(): number };
+	timer.update = () => timer;
+	timer.getDelta = () => dt;
+	const skyBake = sky as unknown as { slices: unknown[]; sliceTimer: ReturnType<typeof setTimeout> | null; pendingUpdate: Promise<void> | null;
+		diagnosticPending: boolean; lastDiagnosticMs: number };
+	// the sky irradiance readback in flight, if any, has landed (it resolves once the GPU answers;
+	// a map is not expected to take seconds, so a hang is reported rather than waited out)
+	const settleSkyReadback = async (): Promise<void> => {
+
+		const start = performance.now();
+		while ( skyBake.diagnosticPending ) {
+
+			if ( performance.now() - start > 10000 ) throw new Error( 'loop.step: the sky irradiance readback did not land within 10 s' );
+			await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
+
+		}
+
+	};
+	await settleSkyReadback();
+	( sky.clouds as unknown as { frame: number } ).frame = 0;
+	skyElapsed = 0;
+	shadowElapsed = 0;
+	const t0 = Math.round( performance.now() );
+	try {
+
+		for ( let i = 0; i < frames; i ++ ) {
+
+			if ( sky.busy && skyBake.slices.length === 0 ) await skyBake.pendingUpdate?.catch( () => {} );
+
+			// never above the canvas's ratio: the render would outgrow the canvas it is shown on
+			const ratio = scales.length ? scales[ Math.min( i, scales.length - 1 ) ] : nominalScale;
+			steppedScale = Math.min( ratio, renderer.getPixelRatio() );
+			moveCamera?.( i );
+			// every bake this frame reads its irradiance back (no wall-clock throttle)
+			skyBake.lastDiagnosticMs = - Infinity;
+			// three's Animation does this before each frame of its loop
+			if ( inspector.isRunning ) inspector.finish();
+			if ( renderer.info.autoReset ) renderer.info.reset();
+			nodeFrame.update();
+			( renderer.info as { frame: number } ).frame = nodeFrame.frameId;
+			inspector.begin();
+			// (the frame's size follows `steppedScale` from this tick's start: applyRenderScale)
+			applyRenderScale();
+			loopBody( t0 + i * dt * 1000 );
+			inspector.finish();
+			if ( skyBake.sliceTimer !== null ) {
+
+				clearTimeout( skyBake.sliceTimer );
+				skyBake.sliceTimer = null;
+
+			}
+			await settleSkyReadback();
+			await onFrame?.( i );
+
+		}
+
+	} finally {
+
+		delete ( timer as Partial<typeof timer> ).update;
+		delete ( timer as Partial<typeof timer> ).getDelta;
+		steppedScale = null;
+		applyRenderScale();
+		diagnostics( true );
+
+	}
+	return { frames, t0, simTime, frameId: renderer.info.frame };
+
+};
+
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	quality, dynamicResolution, pacer, submitBatch, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
