@@ -340,13 +340,17 @@ stone exposed.
   remain submerged and form patchy seabed detail; no exposed sea stacks or reefs.
 - Everything generated for the island is generic: the cliffs, the shelf and its stones, the rim
   greenery and the planting derive from the land's footprint, the island's SDF and noise fields
-  with fixed seeds (hashes of position, or random streams that draw a fixed count per vegetation
-  anchor), never from coordinates placed by hand, and their counts follow the measured coast
-  length or meadow area. Any land then builds itself the same way, and so does everything fitted
-  to it on the page (the views, the camera's limits, the shore and rain fields, the reflection's
-  box, the sea fog's clearing, the walking loop, the game's grid). World generation stays
-  deterministic whatever the thread count: parts never share running counts, and the merge
-  restores the serial order.
+  with fixed seeds (hashes of position, or random streams seeded per world-anchored cell, never
+  one running stream across many items), never from coordinates placed by hand, and their counts
+  follow the measured coast length or meadow area. The meadow's turf anchors are one per cell of
+  a world-anchored jittered grid (`Anchors.ts`, each owned by the box its jittered point lies in),
+  and each anchor's grass and flowers draw from streams of its own cell, so a box plants exactly
+  what the whole island plants there (`tools/world-local/meadow.mjs`); the rim's and the stones'
+  running streams are the next to go. Any land then builds itself the same way, and so does
+  everything fitted to it on the page (the views, the camera's limits, the shore and rain fields,
+  the reflection's box, the sea fog's clearing, the walking loop, the game's grid). World
+  generation stays deterministic whatever the thread count: parts never share running counts, and
+  the merge restores the serial order.
 - Cliff features (rockfall scars, joint faces, pockets, steps in the lip, gullies, the notch)
   derive from the footprint with seeds hashed from position in world-anchored cells (`Cliff.ts`),
   and an unchanged stretch of coast keeps its scars when the land grows elsewhere: every property
