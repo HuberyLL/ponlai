@@ -756,6 +756,10 @@ if ( dynamicResolution ) {
 
 	}
 	if ( DEBUG ) dynamicResolution.onWarning = ( message ) => console.warn( message );
+	// Under sustained contention (another page or app drawing, the frames still late at the quality
+	// floor) the scale holds at the quality floor at 60 fps. Falling back to 40 fps there is not
+	// chosen yet: it would hook in here, through `dynamicResolution.onSustainedContention`, and
+	// stays off.
 
 }
 
@@ -778,6 +782,7 @@ function resize(): void {
 	nominalScale = renderPixelRatio( w, h, quality.render, resolution.full, DPR_CAP );
 	dynamicResolution?.setMax( nominalScale );
 	renderer.setPixelRatio( outputPixelRatio( nominalScale ) );
+	dynamicResolution?.setCanvasRatio( renderer.getPixelRatio() );
 	renderer.setSize( w, h );
 	camera.aspect = w / h;
 	camera.updateProjectionMatrix();

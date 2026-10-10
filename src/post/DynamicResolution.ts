@@ -60,6 +60,21 @@ import type * as THREE from 'three/webgpu';
 //   UP_AFTER seconds without a miss. Every step down bars the scale it left from a step back up
 //   for FRAME_BAR seconds, doubling each time it is left again soon after (up to FRAME_BAR_MAX),
 //   so a load that misses just above a scale settles below it instead of flipping.
+// - A quality floor (QUALITY_FLOOR x the canvas's pixel ratio: a 40 % render per axis, already
+//   below FSR 1's Performance mode at 50 %; chosen from captures, where 30 % looked soft). A step
+//   down stops there, and it goes below only while late frames persist (the quantile of the last
+//   LATE_SPAN seconds still over its limit after FLOOR_DWELL seconds at the floor), by the regular
+//   rule, never the emergency's, one judged step at a time: to the nearest level predicted to save
+//   PROBE_SAVING (a single level saves too little to tell from the frames' noise, so this is often
+//   two or three), never further, and only once the step before it was judged to have saved.
+//   Each step down is judged once
+//   frames at the new scale are in: if it saved under RESPONSE of the time predicted, the GPU's time
+//   does not follow the pixel count (another page or app drawing: its work lands inside this page's
+//   passes, or a view bound by work that does not scale), and it holds at the quality floor for
+//   CONTENTION_HOLD seconds, twice as long each time a step below fails again, rather than sinking
+//   towards the floor, where the image is soft and the frames are still late. Held there with late
+//   frames for SUSTAINED seconds, it tells `onSustainedContention` (a hook for a lower frame rate,
+//   not set: the choice is open).
 // - Until its first decision (`settling`) it waits for SETTLE_FRAMES clean frames and then takes
 //   the largest scale their median predicts fits, up or down, with room for the first frames
 //   running lighter than the scene will (SETTLE_LIGHT); the page keeps its loading screen up over
@@ -86,9 +101,20 @@ const UP_EVERY = 0.25;
 const EMERGENCY_HOLD = 0.5, EMERGENCY_FRAMES = 12;
 // a step down within PROBE seconds of a step up bars the scale it left, and those above, for BAR s
 const PROBE = 8, BAR = 30;
-// the render-sized passes' time before a change is the median of its last PROBE_SPAN seconds at the
-// old scale (the frames that called for it, not those of a lighter view before them)
-const PROBE_SPAN = 0.5;
+// the quality floor's share of the canvas's pixel ratio
+const QUALITY_FLOOR = 0.4;
+// late frames persist at the quality floor: the quantile of the last LATE_SPAN seconds over its limit
+// after FLOOR_DWELL seconds there. (Under another page's load the GPU's busy time understates how
+// late the frames are shown: frames whose GPU time this page put at a level that has room alone
+// were shown a refresh late four times as often.)
+const LATE_SPAN = 2, FLOOR_DWELL = 3;
+// a step down that saved under RESPONSE of the predicted time reads as contention, held at the
+// quality floor CONTENTION_HOLD seconds (doubling up to CONTENTION_MAX); held there with late frames
+// for SUSTAINED seconds, it is sustained. The time before a step is the median of its last
+// PROBE_SPAN seconds at the old scale (the frames that called for it, not those of a lighter view
+// before them), and only steps predicted to save PROBE_SAVING ms or more are judged: a smaller one
+// drowns in the frames' noise.
+const RESPONSE = 0.4, CONTENTION_HOLD = 20, CONTENTION_MAX = 160, SUSTAINED = 10, PROBE_SPAN = 0.5, PROBE_SAVING = 1;
 // the render-sized passes' share that does not follow the pixel count: its first estimate, the
 // range it is kept in, the measurements it is the median of and the least change of the squared
 // scale a measurement takes (a smaller step drowns in the frames' noise)
@@ -102,10 +128,12 @@ const SETTLE_FRAMES = 45, SETTLE_SPREAD = 0.4, SETTLE_LIGHT = 0.07;
 // refracted sun's redraws on one in fifteen)
 const HEAVY_SHARE = 0.2;
 // samples kept (s)
-const KEEP = Math.max( UP_LONG, DOWN_SPAN ) + 0.5;
+const KEEP = Math.max( UP_LONG, DOWN_SPAN, LATE_SPAN ) + 0.5;
 // frame-interval fallback: a frame over 1.5 refresh periods missed its vblank; steps down when
-// more than MISS_SHARE of a window missed, up after UP_AFTER seconds without a miss
-const MISS_SHARE = 0.02, UP_AFTER = 6, INTERVALS = 150;
+// more than MISS_SHARE of a window missed (below the quality floor, more than MISS_LATE of a whole
+// window, and each step must cut the share to MISS_CUT of it), up after UP_AFTER seconds without a
+// miss
+const MISS_SHARE = 0.02, MISS_LATE = 0.06, MISS_CUT = 0.6, UP_AFTER = 6, INTERVALS = 150;
 // frame-interval fallback: seconds a scale it stepped down from is barred from a step back up,
 // doubled each time it is left again within FRAME_BAR_MAX seconds of the last bar's end
 const FRAME_BAR = 8, FRAME_BAR_MAX = 64;
@@ -145,14 +173,17 @@ interface Sample {
  * the 90th percentile predicted at the new scale and (once its frames are in) the one measured. */
 export interface ScaleChange { at: number; scale: number; why: string; from?: number; predicted?: number; measured?: number }
 
-// A change whose frames at the new scale are still to come, and the median of the render-sized
-// passes' time in the frames that called for it.
-interface Response { change: ScaleChange; beforePixel: number }
+// A change whose frames at the new scale are still to come: the median of the render-sized passes'
+// time in the frames that called for it and, for a step down, the saving predicted there (judged
+// when at least PROBE_SAVING).
+interface Response { change: ScaleChange; beforePixel: number; saving: number }
 
 export class DynamicResolution {
 
 	max: number;
 	floor: number;
+	/** The scale it goes below only while frames are really late and steps down save time. */
+	qualityFloor: number;
 	readonly step: number;
 	// the tier's own range
 	private readonly limit: number;
@@ -171,9 +202,23 @@ export class DynamicResolution {
 	readonly observed: number[] = [];
 	/** The render-sized passes' share of their time at scale 1 that does not follow the pixel count. */
 	nonScaling = NON_SCALING;
+	/** Until when (s) a step down that did not save time holds it at the quality floor. */
+	contendedUntil = - Infinity;
+	/** Whether the last step down it judged saved the time predicted (null: none judged since the
+	 * last step up). */
+	lastStepSaved: boolean | null = null;
 	/** Whether the last step down it considered would have saved too little (a view bound by its
 	 * fixed work). */
 	fixedBound = false;
+	/**
+	 * Hook: called with true once the frames stay late at the quality floor for SUSTAINED seconds
+	 * after a step down failed to save time (contention), and with false when that ends. The
+	 * fallback it is meant for (holding 40 fps instead of 60) is not chosen yet: nothing sets it, so
+	 * the scale holds at the quality floor at 60 fps.
+	 */
+	onSustainedContention: ( ( sustained: boolean ) => void ) | null = null;
+	/** Whether the sustained-contention hook was last called with true. */
+	sustained = false;
 	/** Called once with a message when something it reads looks wrong (main.ts sets it in debug
 	 * builds). */
 	onWarning: ( ( message: string ) => void ) | null = null;
@@ -189,9 +234,17 @@ export class DynamicResolution {
 	private response: Response | null = null;
 	// measurements of the non-scaling share (the prior counts once)
 	private readonly shares: number[] = [ NON_SCALING ];
+	private lateAtFloorSince = NaN;
+	// the last contention hold (s), doubled on each failed step until a step up or one that saves
+	private contentionHold = 0;
 	// periodic work steady enough to stay in the quantiles (PeriodicWork bits)
 	private steady = 0;
 	private nextUp = - Infinity;
+	// the frame-interval fallback: the share of frames that missed their vblank before a step below
+	// the quality floor, until the step is judged
+	private missedBefore: number | null = null;
+	// the canvas's pixel ratio
+	private canvasRatio = NaN;
 	// the frame-interval fallback's bars: a scale it stepped down from, until when it is barred and
 	// for how long it was
 	private readonly frameBars = new Map<number, { until: number; seconds: number }>();
@@ -202,6 +255,7 @@ export class DynamicResolution {
 		if ( ! ( floor > 0 && floor <= max && step > 0 ) ) throw new RangeError( 'Dynamic resolution needs 0 < floor <= max and a positive step' );
 		this.max = this.limit = max;
 		this.floor = this.limitFloor = floor;
+		this.qualityFloor = floor;
 		this.step = step;
 		this.scale = max;
 
@@ -215,7 +269,20 @@ export class DynamicResolution {
 		if ( max === this.max ) return;
 		this.max = max;
 		this.floor = Math.min( this.limitFloor, max );
+		this.qualityFloor = Math.min( Math.max( this.qualityFloor, this.floor ), max );
 		this.change( Math.min( this.scale, max ), performance.now() / 1000, 'max' );
+
+	}
+
+	/** The canvas's pixel ratio (the display's, up to its cap): the quality floor follows it. */
+	setCanvasRatio( ratio: number ): void {
+
+		if ( ! ( ratio > 0 ) ) return;
+		this.canvasRatio = ratio;
+		// the lowest level at or above the share
+		let floor = this.max;
+		for ( const s of this.steps ) if ( s >= QUALITY_FLOOR * ratio - 1e-6 ) floor = s;
+		this.qualityFloor = floor;
 
 	}
 
@@ -293,6 +360,7 @@ export class DynamicResolution {
 		this.samples.length = 0;
 		this.intervals.length = 0;
 		this.response = null;
+		this.missedBefore = null;
 		this.settling = true;
 
 	}
@@ -304,10 +372,22 @@ export class DynamicResolution {
 
 	}
 
+	/** The lowest scale it may step down to now: the quality floor, and below it only while frames
+	 * are really late, never past it in one step (the step to it is judged first), not while a
+	 * failed step holds it there, and from below it only once the step there saved time. */
+	lowestAllowed( now = performance.now() / 1000 ): number {
+
+		if ( this.scale > this.qualityFloor + 1e-6 || now < this.contendedUntil ) return this.qualityFloor;
+		if ( this.scale < this.qualityFloor - 1e-6 && ( this.response !== null || this.lastStepSaved !== true ) ) return this.scale;
+		if ( this.scale >= this.qualityFloor - 1e-6 && now - this.lastChange < FLOOR_DWELL ) return this.qualityFloor;
+		return this.overLimit( now ) ? this.floor : this.qualityFloor;
+
+	}
+
 	private steerByGpu( now: number ): boolean {
 
 		this.steady = this.steadyWork( now );
-		this.measureResponse();
+		this.measureResponse( now );
 		const since = now - this.lastChange;
 		const target = this.interval - TARGET_HEADROOM;
 		const clean = ( x: Sample ) => this.clean( x );
@@ -318,16 +398,20 @@ export class DynamicResolution {
 			const frames = current.filter( clean );
 			if ( frames.length < SETTLE_FRAMES ) return false;
 			this.settling = false;
-			const s = this.largestFitting( frames, ( target - SETTLE_SPREAD ) / ( 1 + SETTLE_LIGHT ), 0.5, this.floor );
+			const s = this.largestFitting( frames, ( target - SETTLE_SPREAD ) / ( 1 + SETTLE_LIGHT ), 0.5, this.qualityFloor );
 			if ( s < this.scale ) return this.down( s, now, 'settle', frames );
 			return this.to( s, now, 'settle', frames );
 
 		}
-		// frames that take the whole interval, periodic work included: no waiting for the window
+		this.watchSustained( now );
+		const lowest = this.lowestAllowed( now );
+		// Frames that take the whole interval, periodic work included: no waiting for the window. It
+		// stops at the quality floor: a dozen frames do not show late frames persisting.
 		const last = current.slice( - EMERGENCY_FRAMES );
-		if ( this.scale > this.floor && since >= EMERGENCY_HOLD && last.length === EMERGENCY_FRAMES && quantile( last.map( ( x ) => x.total ), 0.5 ) > this.interval ) {
+		const urgent = Math.max( lowest, Math.min( this.qualityFloor, this.scale ) );
+		if ( this.scale > urgent && since >= EMERGENCY_HOLD && last.length === EMERGENCY_FRAMES && quantile( last.map( ( x ) => x.total ), 0.5 ) > this.interval ) {
 
-			const s = this.largestFitting( last, target, 0.5, this.floor, this.scale );
+			const s = this.largestFitting( last, target, 0.5, urgent, this.scale );
 			if ( s < this.scale && this.down( s, now, 'emergency', current.filter( clean ) ) ) return true;
 
 		}
@@ -338,8 +422,8 @@ export class DynamicResolution {
 			const high = this.predict( recent, this.scale, QUANTILE );
 			if ( high > this.interval - DOWN_HEADROOM ) {
 
-				if ( this.scale <= this.floor ) return false;
-				const s = this.largestFitting( recent, target, QUANTILE, this.floor, this.scale );
+				if ( this.scale <= lowest ) return false;
+				const s = this.largestFitting( recent, target, QUANTILE, lowest, this.scale );
 				// a step that saves too little: the view is bound by its fixed work
 				this.fixedBound = high - this.predict( recent, s, QUANTILE ) < MIN_SAVING;
 				return this.fixedBound ? false : this.down( s, now, 'down', recent );
@@ -414,11 +498,34 @@ export class DynamicResolution {
 	}
 
 	// Steps down to `scale` (`frames`: the clean frames at the scale it leaves that called for it).
+	// Returns false when the step is not taken.
 	private down( scale: number, now: number, why: string, frames: readonly Sample[] ): boolean {
 
+		const from = this.scale;
+		const response = this.before( frames, now );
+		// the render-sized passes' saving: the fixed ones (the cloud view above all) change with the
+		// view, so a step taken as the camera turns would be judged by the turn
+		const saving = ( s: number ) => response ? response.beforePixel * ( 1 - this.growth( s ) / this.growth( from ) ) : NaN;
+		if ( scale < this.qualityFloor - 1e-6 ) {
+
+			// Below the quality floor every step is judged, one at a time: it goes to the nearest level
+			// below that is predicted to save enough to judge (often two or three levels: one saves too
+			// little to tell from the frames' noise), never further even when the fit asks for more,
+			// and is not taken if none does (a run of small steps would sink to the floor under
+			// contention, none of them judged).
+			const s = this.steps.find( ( l ) => l < from - 1e-6 && saving( l ) >= PROBE_SAVING );
+			if ( s === undefined ) {
+
+				this.fixedBound = true;
+				return false;
+
+			}
+			scale = s;
+
+		}
 		// a step up it has to take back at once: bar it, and every scale above, for a while
-		if ( this.lastWhy === 'up' && now - this.lastChange < PROBE ) this.bar = { scale: this.scale, until: now + BAR };
-		return this.to( scale, now, why, frames );
+		if ( this.lastWhy === 'up' && now - this.lastChange < PROBE ) this.bar = { scale: from, until: now + BAR };
+		return this.to( scale, now, why, frames, saving( scale ) );
 
 	}
 
@@ -434,18 +541,19 @@ export class DynamicResolution {
 	}
 
 	// Changes to `scale` by one of the GPU's rules, and arms the measurement of its response.
-	private to( scale: number, now: number, why: string, frames: readonly Sample[] ): boolean {
+	private to( scale: number, now: number, why: string, frames: readonly Sample[], saving = NaN ): boolean {
 
 		const response = this.before( frames, now );
 		const changed = this.change( scale, now, why, frames.length ? this.predict( frames, scale, QUANTILE ) : NaN );
-		if ( changed && response ) this.response = { change: this.changes[ this.changes.length - 1 ], beforePixel: response.beforePixel };
+		if ( changed && response ) this.response = { change: this.changes[ this.changes.length - 1 ], beforePixel: response.beforePixel, saving };
 		return changed;
 
 	}
 
-	// Once frames at the scale a change went to are in: the quantile it reached and what the
-	// render-sized passes' time did (the non-scaling share).
-	private measureResponse(): void {
+	// Once frames at the scale a change went to are in: the quantile it reached, what the
+	// render-sized passes' time did (the non-scaling share) and, for a step down, whether it saved
+	// what was predicted.
+	private measureResponse( now: number ): void {
 
 		const response = this.response;
 		if ( ! response ) return;
@@ -454,7 +562,29 @@ export class DynamicResolution {
 		if ( frames.length < MIN_FRAMES ) return;
 		this.response = null;
 		change.measured = quantile( frames.map( ( x ) => x.total ), QUANTILE );
-		this.learnShare( change.from!, change.scale, response.beforePixel, quantile( frames.map( ( x ) => x.pixel ), 0.5 ) );
+		const afterPixel = quantile( frames.map( ( x ) => x.pixel ), 0.5 );
+		let saved = true;
+		if ( response.saving >= PROBE_SAVING ) {
+
+			saved = response.beforePixel - afterPixel >= RESPONSE * response.saving;
+			this.lastStepSaved = saved;
+
+		}
+		if ( saved ) {
+
+			if ( response.saving >= PROBE_SAVING ) this.contentionHold = 0;
+			// Where the maximum is the canvas's own ratio, leaving it adds the canvas-sized upscale and
+			// moves the output pass to the fixed side: that change's ratio says nothing of the share.
+			const atCanvas = Math.abs( this.max - this.canvasRatio ) < 1e-6 && ( change.from === this.max || change.scale === this.max );
+			if ( ! atCanvas ) this.learnShare( change.from!, change.scale, response.beforePixel, afterPixel );
+			return;
+
+		}
+		// The GPU's time did not follow the pixel count: something else is drawing. Hold at the
+		// quality floor, twice as long each time a step below it fails again.
+		this.contentionHold = this.contentionHold > 0 ? Math.min( this.contentionHold * 2, CONTENTION_MAX ) : CONTENTION_HOLD;
+		this.contendedUntil = now + this.contentionHold;
+		if ( this.scale < this.qualityFloor ) this.change( this.qualityFloor, now, 'contention' );
 
 	}
 
@@ -476,6 +606,15 @@ export class DynamicResolution {
 
 	}
 
+	// Whether the quantile of the last LATE_SPAN seconds' clean frames (moved to the scale) is over
+	// the limit for a step down.
+	private overLimit( now: number ): boolean {
+
+		const frames = this.samples.filter( ( x ) => now - x.t <= LATE_SPAN && this.clean( x ) );
+		return frames.length >= MIN_FRAMES && this.predict( frames, this.scale, QUANTILE ) > this.interval - DOWN_HEADROOM;
+
+	}
+
 	// The kinds of periodic work that run on more than HEAVY_SHARE of the recent frames.
 	private steadyWork( now: number ): number {
 
@@ -487,21 +626,66 @@ export class DynamicResolution {
 
 	}
 
+	// Late frames held at the quality floor while its steps down did not save time: tells the hook.
+	private watchSustained( now: number ): void {
+
+		const held = this.scale <= this.qualityFloor + 1e-6 && this.lastStepSaved === false && this.overLimit( now );
+		if ( ! held ) this.lateAtFloorSince = NaN;
+		else if ( Number.isNaN( this.lateAtFloorSince ) ) this.lateAtFloorSince = now;
+		const sustained = held && now - this.lateAtFloorSince >= SUSTAINED;
+		if ( sustained === this.sustained ) return;
+		this.sustained = sustained;
+		this.onSustainedContention?.( sustained );
+
+	}
+
 	private steerByIntervals( now: number ): boolean {
 
 		const v = this.intervals;
 		if ( v.length < MIN_FRAMES ) return false;
 		const period = quantile( v, 0.1 );
-		const missed = v.filter( ( x ) => x > period * 1.5 ).length;
+		const missed = v.filter( ( x ) => x > period * 1.5 ).length / v.length;
 		if ( missed > 0 ) this.lastMiss = Math.max( this.lastMiss, now );
 		const since = now - this.lastChange;
-		if ( since >= HOLD && missed > v.length * MISS_SHARE && this.scale > this.floor ) {
+		const full = v.length >= INTERVALS;
+		// Below the quality floor only while frames keep missing their vblank, one step at a time, each
+		// judged once on a whole window after it: it must have cut the missed frames clearly (to
+		// MISS_CUT of the window that called for it, which was picked for its misses, so the next one
+		// has fewer by chance alone). One that did not reads as contention: it returns to the floor
+		// and holds there, twice as long each time a step fails again.
+		if ( this.missedBefore !== null ) {
 
-			// the scale it leaves missed: keep away from it for a while, longer each time
-			const bar = this.frameBars.get( this.scale );
-			const seconds = bar && now - bar.until < FRAME_BAR_MAX ? Math.min( bar.seconds * 2, FRAME_BAR_MAX ) : FRAME_BAR;
-			this.frameBars.set( this.scale, { until: now + seconds, seconds } );
-			return this.change( this.round( Math.max( this.scale - this.step, this.floor ) ), now, 'frames' );
+			if ( ! full ) return false;
+			const helped = missed <= this.missedBefore * MISS_CUT;
+			this.missedBefore = null;
+			this.lastStepSaved = helped;
+			if ( ! helped ) {
+
+				this.contentionHold = this.contentionHold > 0 ? Math.min( this.contentionHold * 2, CONTENTION_MAX ) : CONTENTION_HOLD;
+				this.contendedUntil = now + this.contentionHold;
+				return this.change( this.qualityFloor, now, 'contention' );
+
+			}
+			this.contentionHold = 0;
+
+		}
+		if ( since >= HOLD && missed > MISS_SHARE ) {
+
+			// a step below the quality floor reads a whole window, after FLOOR_DWELL at the scale
+			const late = missed > MISS_LATE && full && since >= FLOOR_DWELL && now >= this.contendedUntil;
+			const lowest = late && this.scale <= this.qualityFloor + 1e-6 ? this.floor : this.qualityFloor;
+			if ( this.scale > lowest + 1e-6 ) {
+
+				const scale = this.round( Math.max( this.scale - this.step, lowest ) );
+				// the scale it leaves missed: keep away from it for a while, longer each time
+				const bar = this.frameBars.get( this.scale );
+				const seconds = bar && now - bar.until < FRAME_BAR_MAX ? Math.min( bar.seconds * 2, FRAME_BAR_MAX ) : FRAME_BAR;
+				this.frameBars.set( this.scale, { until: now + seconds, seconds } );
+				const changed = this.change( scale, now, 'frames' );
+				if ( scale < this.qualityFloor - 1e-6 ) this.missedBefore = missed;
+				return changed;
+
+			}
 
 		}
 		if ( since >= UP_AFTER && now - this.lastMiss >= UP_AFTER && this.scale < this.max ) {
@@ -526,6 +710,15 @@ export class DynamicResolution {
 			this.changes.push( entry );
 			if ( this.changes.length > 200 ) this.changes.shift();
 			this.response = null;
+			this.missedBefore = null;
+			// room to step up: whatever held the time up has gone (below the quality floor the steps
+			// that saved time down there still count)
+			if ( why === 'up' ) {
+
+				this.contentionHold = 0;
+				if ( scale >= this.qualityFloor - 1e-6 ) this.lastStepSaved = null;
+
+			}
 
 		}
 		this.lastWhy = why;
