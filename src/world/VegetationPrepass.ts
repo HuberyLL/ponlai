@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { materialColor, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { TEMPORAL } from '../post/Antialiasing.ts';
+import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 import { legacyWind, windVariants } from './WindVariants.ts';
 
 // A depth prepass for the alpha-to-coverage vegetation (grass, bushes, plants, rim leaves).
@@ -22,10 +24,19 @@ import { legacyWind, windVariants } from './WindVariants.ts';
 // ones changes a little (same brightness, slightly crisper detail inside the canopy), since a
 // coverage pipeline shaded them more finely.
 //
+// Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene has one sample and no
+// coverage: the vegetation is alpha-tested instead (leaves at their cutoff, grass blades through
+// the per-frame dither of Grass.ts), and the same pair is drawn. The depth copy then discards what
+// the alpha test discards, and the shaded draw again keeps neither coverage nor an alpha test:
+// equal depth limits it to the pixels the copy kept, and an opaque draw rejects the hidden blades
+// and leaves before they are shaded (an alpha-tested one cannot: its discard is decided by the
+// shader). Without multisampling and outside the temporal modes (aa=off) nothing changes.
+//
 // debugFlags (A/B in one page with tools/profile-frame.mjs --toggle):
 // - vegPrepass = false: the old single coverage pass.
 // - vegPrepassOpaque = false: the shaded draw keeps its coverage and alpha test after the
-//   prepass. The image is then the old one, but it saves far less.
+//   prepass (under the temporal modes its alpha test alone). The image is then the old one, but
+//   it saves far less.
 // URL options, read at load: vegPrepass=0, vegPrepass=coverage (vegPrepassOpaque = false).
 
 // Equal depth needs the prepass and the shaded draw to place every vertex bit for bit alike. The
@@ -56,10 +67,14 @@ function invariantPosition( material: THREE.NodeMaterial ): void {
 }
 
 // The depth-only copy of a coverage material: its vertex stage, alpha (the leaf map's and the
-// alpha map's, or the blades' coverage) and alpha test, nothing else.
+// alpha map's, or the blades' coverage) and alpha test, nothing else. Under the temporal modes it
+// takes the alpha test without coverage (one sample: three would draw a coverage material's alpha
+// above zero solid), and a constant velocity of its own: `colorWrite = false` masks every
+// attachment, so the prepass writes no motion, and the copy need not compute the motion the
+// scene's MRT would ask of it (nor carry the varying).
 function depthMaterial( source: THREE.MeshStandardNodeMaterial ): THREE.MeshBasicNodeMaterial {
 
-	const m = new THREE.MeshBasicNodeMaterial( { side: source.side, alphaToCoverage: true } );
+	const m = new THREE.MeshBasicNodeMaterial( { side: source.side, alphaToCoverage: ! TEMPORAL } );
 	m.positionNode = source.positionNode;
 	m.opacityNode = source.opacityNode;
 	m.alphaTestNode = source.alphaTestNode;
@@ -72,6 +87,7 @@ function depthMaterial( source: THREE.MeshStandardNodeMaterial ): THREE.MeshBasi
 
 	} else m.colorNode = vec4( 1 );
 	m.colorWrite = false;
+	if ( TEMPORAL ) m.mrtNode = velocityOutput( vec4( ...VELOCITY_CLEAR ) );
 	m.name = ( source.name || 'vegetation' ) + '-depth';
 	invariantPosition( m );
 	return m;
@@ -82,9 +98,14 @@ function depthMaterial( source: THREE.MeshStandardNodeMaterial ): THREE.MeshBasi
 // (WindVariants.ts), the old one; `depths` their depth copies, in the same order.
 type Pair = { mesh: THREE.Mesh; materials: THREE.MeshStandardNodeMaterial[]; depth: THREE.Mesh; depths: THREE.Material[] };
 
-/** Give every alpha-to-coverage mesh under `roots` its depth prepass. Without multisampling there
- * is no coverage material, and nothing changes. */
-export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Object3D[] ): void {
+/** What `installVegetationPrepass` installed (kept on `scene.userData.vegetationPrepass` for the
+ * diagnostics): its pairs of a depth copy and a shaded mesh, and the shaded materials patched. */
+export interface VegetationPrepassInfo { pairs: number; materials: number }
+
+/** Give every alpha-to-coverage mesh under `roots` its depth prepass, and under the temporal modes
+ * every vegetation mesh (`markVegetation`: their coverage materials are alpha-tested there). With
+ * one sample outside the temporal modes there is no coverage material, and nothing changes. */
+export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Object3D[] ): VegetationPrepassInfo {
 
 	const params = new URLSearchParams( location.search );
 	const option = params.get( 'vegPrepass' );
@@ -95,7 +116,11 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 	for ( const root of roots ) root.traverse( ( object ) => {
 
 		const mesh = object as THREE.Mesh;
-		if ( mesh.isMesh && ! Array.isArray( mesh.material ) && ( mesh.material as THREE.Material ).alphaToCoverage === true ) meshes.push( mesh );
+		if ( ! mesh.isMesh || Array.isArray( mesh.material ) ) return;
+		// (`alphaToCoverage` is off under the temporal modes: the vegetation's tag finds the same
+		// meshes there, the grass, bushes, plants and rim leaves)
+		const material = mesh.material as THREE.Material;
+		if ( TEMPORAL ? material.userData.vegetation === true : material.alphaToCoverage === true ) meshes.push( mesh );
 
 	} );
 
@@ -144,16 +169,35 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 			patched.add( material );
 			invariantPosition( material );
 			// The opaque shaded draw leaves the alpha test out of its shader only: the shadow
-			// passes copy `alphaTest` from the material as they draw, and keep the leaf shapes.
+			// passes copy `alphaTest` from the material as they draw, and keep the leaf shapes. The
+			// grass's dither (its `alphaTestNode`, single-sampled) goes the same way.
 			const setup = material.setupDiffuseColor;
 			( material as unknown as { setupDiffuseColor: ( b: THREE.NodeBuilder ) => void } ).setupDiffuseColor = function ( this: THREE.MeshStandardNodeMaterial, builder: THREE.NodeBuilder ) {
 
-				const test = this.alphaTest;
-				if ( this.userData.prepassOpaque ) this.alphaTest = 0;
+				const test = this.alphaTest, testNode = this.alphaTestNode;
+				if ( this.userData.prepassOpaque ) {
+
+					this.alphaTest = 0;
+					this.alphaTestNode = null;
+
+				}
 				setup.call( this, builder );
 				this.alphaTest = test;
+				this.alphaTestNode = testNode;
 
 			};
+			// Under the temporal modes coverage stays off either way, and three's cache key leaves
+			// out userData: the shader with the alpha test and the one without need keys of their own.
+			if ( TEMPORAL ) {
+
+				const key = material.customProgramCacheKey;
+				material.customProgramCacheKey = function ( this: THREE.MeshStandardNodeMaterial ) {
+
+					return key.call( this ) + ( this.userData.prepassOpaque ? '|prepassOpaque' : '' );
+
+				};
+
+			}
 
 		}
 		pairs.push( { mesh, materials, depth, depths } );
@@ -179,7 +223,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 				if ( m.depthWrite === ! on && m.userData.prepassOpaque === opaque && m.userData.prepassOn === on ) continue;
 				m.depthWrite = ! on;
 				m.depthFunc = on ? THREE.EqualDepth : THREE.LessEqualDepth;
-				m.alphaToCoverage = ! opaque;
+				m.alphaToCoverage = ! opaque && ! TEMPORAL;
 				m.userData.prepassOpaque = opaque;
 				m.userData.prepassOn = on;
 				m.needsUpdate = true;
@@ -196,5 +240,8 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		previous.apply( scene, args );
 
 	};
+	const info: VegetationPrepassInfo = { pairs: pairs.length, materials: patched.size };
+	scene.userData.vegetationPrepass = info;
+	return info;
 
 }
