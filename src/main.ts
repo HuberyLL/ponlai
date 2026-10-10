@@ -45,7 +45,8 @@ import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
-import { AA_GUI_MODES, AA_MODE, QUALITY_CHOICE, type AAMode } from './post/Antialiasing.ts';
+import { AA_GUI_MODES, AA_MODE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
+import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
@@ -397,6 +398,10 @@ const requestedLook = params.get( 'look' ) as LookName | null;
 pipeline.setLook( requestedLook && LOOKS.includes( requestedLook ) ? requestedLook : DEFAULT_LOOK );
 rain.bindOpaqueDepth( pipeline.depthRT.texture, pipeline.surfaceRT.texture );
 rainScene.add( rain.group );
+// Under the temporal modes the rain and the storm's spray draw in the overlay pass (rainScene,
+// Pipeline.ts), which keeps the motion vectors of the surfaces under them: their owners register
+// their latent draws for it.
+const overlayLatents: LatentRegistry = TEMPORAL ? { latent: ( _pass, objects, kernels ) => pipeline.graph.latent( 'overlay', objects, kernels ) } : pipeline.graph;
 
 // ------------------------------------------------------------------ first-use pipelines
 
@@ -415,7 +420,7 @@ const warming = Promise.all( [
 	caustics.warm(),
 	// the drops and splashes, and the bolts, registered with the passes they draw in before the
 	// graph's warm-up starts, which compiles them with every pass (graph/FrameGraph.ts `warm`)
-	rain.registerLatent( pipeline.graph ),
+	rain.registerLatent( overlayLatents ),
 	sky.lightning.registerLatent( pipeline.graph ),
 	pipeline.graph.warm( { scene, waterScene, rainScene, camera, water: null, sun, time: simTime } ),
 ] );
@@ -529,7 +534,8 @@ water = new Water( {
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 } );
 applySkyFill();
-waterScene.add( water.mesh, stormSea.spray.mesh );
+waterScene.add( water.mesh );
+( TEMPORAL ? rainScene : waterScene ).add( stormSea.spray.mesh );
 
 console.info( worldCache.cache === 'hit' ? 'world from the cache' : 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
@@ -1052,7 +1058,9 @@ function tick( time: number ): void {
 	S.focusDistance = camera.position.distanceTo( controls.target );
 	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * pipeline.height / 900, S.dof );
 
-	pipeline.render( { scene, waterScene, rainScene: rain!.mesh.visible ? rainScene : undefined, camera, water: water!, sun, time: simTime } );
+	// (the temporal modes draw the storm's spray with the rain, in the overlay pass)
+	const overlay = rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible );
+	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, camera, water: water!, sun, time: simTime } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
 	frame ++;
@@ -1158,7 +1166,7 @@ function diagnostics( now = false ): void {
 
 // The storm's foam and spray need the world's shore fields, so they register (and compile) last;
 // the loop then waits for every first-use pipeline (see "first-use pipelines").
-await Promise.all( [ warming, stormSea.registerLatent( pipeline.graph ) ] );
+await Promise.all( [ warming, stormSea.registerLatent( overlayLatents ) ] );
 
 if ( profiler ) {
 
