@@ -61,7 +61,7 @@ The player should want to rebuild after watching their islanders walk the long w
 ## The long arc
 
 - Start: a few islanders on a small island.
-- Growth: the island grows tile by tile (the world is generated to grow) and more people arrive.
+- Growth: the island grows piece by piece (the world is generated to grow) and more people arrive.
 - The challenge grows with it: with three people the leader can talk to each one; with thirty
   they cannot, and must delegate (put someone in charge of fishing, have someone lead the roof
   repairs). Leadership structure grows out of play rather than from a rule system.
@@ -70,6 +70,9 @@ The player should want to rebuild after watching their islanders walk the long w
 
 - **Trigger**: population. Each time the island reaches the next population step, it grows by
   one piece of land. No story has to justify it.
+- **How much**: the island starts at about 400 m^2 (a little larger than today's) and a piece
+  adds about 180 m^2 on average (from about 100 to 270 m^2), for at most 36 steps, by which
+  the island has grown to about 7,500 m^2.
 - **Where**: chosen at random, but from the centre outward: each new piece joins the island's
   current edge near its middle, so the island grows all round rather than stretching one way,
   and the player can plan around it. The shape must stay irregular and natural, like a real
@@ -112,5 +115,5 @@ The player should want to rebuild after watching their islanders walk the long w
 
 - Which primitive actions the islanders have, and what they perceive.
 - How a storm is announced and how much warning the player gets.
-- The population steps at which the island grows, and how big each new piece is.
+- The population steps at which the island grows, and whether a piece's size should grow with the population.
 - How a new islander arrives.
