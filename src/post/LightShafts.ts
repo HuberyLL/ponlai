@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { sizeRtt } from './RenderScale.ts';
+import type { GraphResources } from './graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -35,15 +36,16 @@ export class LightShafts {
 	private readonly fogVisibility = uniform( 1 );
 	private readonly projectionInverse = uniform( new THREE.Matrix4() );
 	private readonly cameraWorld = uniform( new THREE.Matrix4() );
-	private readonly resolution = uniform( new THREE.Vector2( 1, 1 ) );
 	private readonly clip = new THREE.Vector4();
 	// the half-resolution passes, sized with the scene's render
 	private readonly passes: THREE.RTTNode[] = [];
 
-	/** Radiance to add to the HDR image, from the resolved depth (the sea's included) and the sky. */
-	build( depth: THREE.Texture, sky: Sky ): V3 {
+	/** Radiance to add to the HDR image, from the resolved depth (the sea's included) and the sky;
+	 * the render's size is the frame graph's. */
+	build( depth: THREE.Texture, sky: Sky, graph: GraphResources ): V3 {
 
 		const sceneDepth = texture( depth );
+		const resolution = graph.extent( { of: 'render' } );
 		const direction = ( q: V2 ) => {
 
 			const ndc = vec4( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1, 1 );
@@ -56,7 +58,7 @@ export class LightShafts {
 		const source = this.pass( rtt( Fn( () => {
 
 			const q = uv().toVar();
-			const px = ivec2( clamp( q.mul( this.resolution ), vec2( 0 ), this.resolution.sub( 1 ) ) );
+			const px = ivec2( clamp( q.mul( resolution ), vec2( 0 ), resolution.sub( 1 ) ) );
 			const z = ( textureLoad( sceneDepth, px ) as unknown as F ).toVar();
 			const d = direction( q ).toVar();
 			const open = float( 0 ).toVar();
@@ -103,7 +105,7 @@ export class LightShafts {
 			const q = uv().toVar();
 			// The unobstructed fraction of the disk: the sky's visibility at the sun's position.
 			const s = this.sunUV;
-			const t = vec2( 2 ).div( this.resolution );
+			const t = vec2( 2 ).div( resolution );
 			const visible = texture( source, s ).level( float( 0 ) ).g.add( texture( source, s.add( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g )
 				.add( texture( source, s.sub( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g ).add( texture( source, s.add( vec2( 0, t.y ) ) ).level( float( 0 ) ).g )
 				.add( texture( source, s.sub( vec2( 0, t.y ) ) ).level( float( 0 ) ).g ).mul( 0.2 ).mul( inside( s ) );
@@ -144,12 +146,11 @@ export class LightShafts {
 
 	}
 
-	update( camera: THREE.PerspectiveCamera, width: number, height: number, haze: number, fogVisibility = 1 ): void {
+	update( camera: THREE.PerspectiveCamera, haze: number, fogVisibility = 1 ): void {
 
 		const key = this.sunDir.value;
 		this.projectionInverse.value.copy( camera.projectionMatrixInverse );
 		this.cameraWorld.value.copy( camera.matrixWorld );
-		this.resolution.value.set( width, height );
 		this.haze.value = haze;
 		this.fogVisibility.value = fogVisibility;
 		this.lowSun.value = 1 - THREE.MathUtils.smoothstep( key.y, 0.05, 0.35 );

@@ -80,6 +80,7 @@ export interface GraphResources {
 	renderTarget( colors: readonly ResourceHandle[], depth?: ResourceHandle | null ): THREE.RenderTarget;
 	texture( h: ResourceHandle, parity?: 0 | 1 ): THREE.Texture;
 	extent( size: SizeClass ): Uniform2;
+	texel( size: SizeClass ): Uniform2;
 	onResize( size: SizeClass, hook: ( width: number, height: number ) => void ): void;
 }
 
@@ -193,7 +194,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	private readonly resizeHooks: ResizeHook[] = [];
 	private extentsSet = false;
 	private extents: Extents = { render: { width: 1, height: 1 }, canvas: { width: 1, height: 1 } };
-	private readonly extentNodes = new Map<string, { size: SizeClass; node: Uniform2 }>();
+	// the shared extent uniforms per size class: its pixel size, or one over it (`texel`)
+	private readonly extentNodes = new Map<string, { size: SizeClass; node: Uniform2; texel: boolean }>();
 	private saved: {
 		target: THREE.RenderTarget | null; mrt: THREE.MRTNode | null; depth: boolean; stencil: boolean;
 		autoClear: boolean; autoClearColor: boolean; autoClearDepth: boolean; autoClearStencil: boolean;
@@ -340,19 +342,42 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 	}
 
-	/** A vec2 uniform holding a size class's pixel size, shared by every caller of that class. */
+	/** A vec2 uniform holding a size class's pixel size, shared by every caller of that class: the
+	 * passes read their sizes from the graph, which sets them with the targets' (`setExtents`). */
 	extent( size: SizeClass ): Uniform2 {
 
-		const key = sizeClassKey( size );
+		return this.extentNode( size, false );
+
+	}
+
+	/** A vec2 uniform holding one over a size class's pixel size (a texel's size in uv), shared like
+	 * `extent`. Computed on the CPU: a shader's own division rounds differently. */
+	texel( size: SizeClass ): Uniform2 {
+
+		return this.extentNode( size, true );
+
+	}
+
+	private extentNode( size: SizeClass, texel: boolean ): Uniform2 {
+
+		const key = `${ sizeClassKey( size ) }${ texel ? '/texel' : '' }`;
 		let e = this.extentNodes.get( key );
 		if ( ! e ) {
 
-			const s = resolveSize( size, this.extents );
-			e = { size, node: uniform( new THREE.Vector2( s.width, s.height ) ) as unknown as Uniform2 };
+			e = { size, node: uniform( new THREE.Vector2() ) as unknown as Uniform2, texel };
+			this.setExtentNode( e );
 			this.extentNodes.set( key, e );
 
 		}
 		return e.node;
+
+	}
+
+	private setExtentNode( e: { size: SizeClass; node: Uniform2; texel: boolean } ): void {
+
+		const s = resolveSize( e.size, this.extents );
+		if ( e.texel ) e.node.value.set( 1 / Math.max( s.width, 1 ), 1 / Math.max( s.height, 1 ) );
+		else e.node.value.set( s.width, s.height );
 
 	}
 
@@ -551,12 +576,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 	private applyExtents(): void {
 
-		for ( const { size, node } of this.extentNodes.values() ) {
-
-			const s = resolveSize( size, this.extents );
-			node.value.set( s.width, s.height );
-
-		}
+		for ( const e of this.extentNodes.values() ) this.setExtentNode( e );
 		if ( this.extentsSet ) for ( const entry of this.resizeHooks ) this.runHook( entry );
 		for ( const [ rt, size ] of this.targetSizes ) if ( this.sizeTarget( rt, size ) ) this.needsInit = true;
 		// the depth textures' own size (three sets it only through the target that owns one) and the

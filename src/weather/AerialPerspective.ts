@@ -143,7 +143,8 @@ export class AerialPerspective {
 	private fogSun = uniform( 1 );
 	private projectionInverse = uniform( new THREE.Matrix4() );
 	private cameraWorld = uniform( new THREE.Matrix4() );
-	private resolution = uniform( new THREE.Vector2( 1, 1 ) );
+	// the render's size: the frame graph's (set in `apply`)
+	private resolution!: THREE.UniformNode<'vec2', THREE.Vector2>;
 	readonly options: Readonly<AirOptions>;
 
 	// The banks' two noise octaves, baked around the camera in the drifting frame (fogOffset
@@ -320,6 +321,7 @@ export class AerialPerspective {
 	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
 
 		const { bankSize, fogScale } = this.options;
+		this.resolution = graph.extent( { of: 'render' } );
 		if ( bankSize > 0 ) this.buildBank( bankSize, graph );
 		const reduced = fogScale < 1 ? this.buildFogPasses( depth, sky, Math.round( 1 / fogScale ), graph ) : null;
 		const sceneDepth = texture( depth );
@@ -508,11 +510,10 @@ export class AerialPerspective {
 
 	}
 
-	update( camera: THREE.Camera, width: number, height: number ): void {
+	update( camera: THREE.Camera ): void {
 
 		this.projectionInverse.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
 		this.cameraWorld.value.copy( camera.matrixWorld );
-		this.resolution.value.set( width, height );
 		this.clearEnd.value = THREE.MathUtils.lerp( CLEAR.end, CLEAR.thickEnd, THREE.MathUtils.smoothstep( this.haze.value, CLEAR.thin, CLEAR.thick ) );
 		// The beam reaching the banks low over the sea.
 		this.fogSun.value = this.fogTransmittance( 8, this.keyDir.value );

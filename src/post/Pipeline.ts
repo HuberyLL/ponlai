@@ -63,6 +63,9 @@ const DEV = import.meta.env.DEV || new URLSearchParams( globalThis.location?.sea
 // the check that priming changes no frame).
 const PRIME = new URLSearchParams( globalThis.location?.search ?? '' ).get( 'fgPrime' ) !== '0';
 const RENDER: SizeClass = { of: 'render' };
+// half the render, at least a texel (the depth of field's blur)
+const HALF: SizeClass = { of: 'render', scale: 0.5, min: 1 };
+const CANVAS: SizeClass = { of: 'canvas' };
 // what the water pass draws in a frame without water: nothing
 const NO_WATER = new THREE.Scene();
 
@@ -342,11 +345,10 @@ export class Pipeline {
 		// chosen curve's gain; day: 1 - the night's return to PBR Neutral)
 		curve: uniform( 0 ), day: uniform( 1 ), exposure: uniform( 1 ), curveExposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ), clipGuard: uniform( 0 ), knee: uniform( 0.9 ), highlightSat: uniform( 0 ), burn: uniform( 0 ),
 		lift: uniform( new THREE.Color() ), vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
-		dof: uniform( 1 ), focus: uniform( 50 ), range: uniform( 3 ), resolution: uniform( new THREE.Vector2( 1, 1 ) ),
+		dof: uniform( 1 ), focus: uniform( 50 ), range: uniform( 3 ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ),
-		maxRadius: uniform( 6 ), texel: uniform( new THREE.Vector2( 1, 1 ) ), halfRes: uniform( new THREE.Vector2( 1, 1 ) ),
-		output: uniform( new THREE.Vector2( 1, 1 ) ), grainOn: uniform( 1 ),
+		maxRadius: uniform( 6 ), grainOn: uniform( 1 ),
 		// the look (lookOn 0 skips it, so 'realistic' is exactly the curve's grade; lookColour and
 		// lookSun are its weights with and without sunlight, both 0 at night)
 		lookOn: uniform( 0 ), glowOn: uniform( 0 ), lookColour: uniform( 0 ), lookSun: uniform( 0 ), glowTint: uniform( new THREE.Color( 1, 1, 1 ) ),
@@ -381,6 +383,9 @@ export class Pipeline {
 		g.renderTarget( [ sceneColor ], sceneDepth );
 		for ( const h of [ linearDepth, opaqueColor, surfaceDepth, display, ...( viewDistance ? [ viewDistance ] : [] ) ] ) g.renderTarget( [ h ] );
 		this.textures = { opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ) };
+		// the sizes the passes read, the graph's shared extent uniforms (set with the targets' own
+		// sizes): the render's, its texel, the half-resolution blur's and the canvas's
+		const renderSize = g.extent( RENDER ), renderTexel = g.texel( RENDER ), halfSize = g.extent( HALF ), canvasSize = g.extent( CANVAS );
 
 		const u = this.u;
 		// Multisampled depth can only be loaded, a sample at a time. The sky stays far away (-1e5).
@@ -389,7 +394,7 @@ export class Pipeline {
 			const z = float( - 1e5 ).toVar();
 			If( d.lessThan( 0.999999 ), () => {
 
-				const q = coord.div( u.resolution );
+				const q = coord.div( renderSize );
 				const v = u.projInv.mul( vec4( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), d, 1 ) ).toVar();
 				z.assign( v.z.div( v.w ) );
 
@@ -427,7 +432,7 @@ export class Pipeline {
 		const sceneTex = texture( g.texture( sceneColor ) );
 		const tSurfaceDepth = this.textures.surfaceDepth;
 		const composited = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
-			.add( this.shafts.build( tSurfaceDepth, sky ) );
+			.add( this.shafts.build( tSurfaceDepth, sky, g ) );
 		// Rendered once, the composite feeds the sharp image and both blooms' high passes; as an
 		// expression each of them evaluated it again, the sea fog's march included. The high passes
 		// run at half resolution and sample it bilinearly, as they sampled the scene colour before.
@@ -449,7 +454,7 @@ export class Pipeline {
 			const node = new RenderBloomNode( bloomInput, 0.3, 0.5, 1.5 );
 			( node as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input, threshold }: { input: THREE.Node<'vec4'>; threshold: THREE.Node<'float'> } ) => {
 
-				const px = ivec2( clamp( uv().mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
+				const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
 				const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 );
 				const clampLum = select( surface, surfaceMaxLum, maxLum );
 				const c = input.rgb;
@@ -513,7 +518,7 @@ export class Pipeline {
 		// a layout function shared by two shaders keeps the first one's uniform bindings.
 		const makeCocAt = () => Fn( ( [ q ]: [ V2 ] ) => {
 
-			const px = ivec2( clamp( q.mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
+			const px = ivec2( clamp( q.mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
 			const dist = tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).toVar()
 				: distanceAt( q, ( textureLoad( tD, px ) as unknown as F ).toVar() );
 			// The miniature blur is for the island's surroundings. Kilometres out it eases off, so the
@@ -546,7 +551,7 @@ export class Pipeline {
 				const fi = float( i );
 				const r = sqrt( fi.add( 0.5 ).div( TAPS ) ).toVar();
 				const a = fi.mul( GA );
-				const o = vec2( cos( a ), sin( a ) ).mul( r ).mul( u.maxRadius ).mul( u.texel );
+				const o = vec2( cos( a ), sin( a ) ).mul( r ).mul( u.maxRadius ).mul( renderTexel );
 				const p = q.add( o.mul( s0 ) ).toVar();
 				const tap = cocAt( p ).toVar();
 				// Depth order (after Jimenez's scatter-as-gather): a tap in front of this pixel reaches
@@ -581,13 +586,13 @@ export class Pipeline {
 		const composite = Fn( () => {
 
 			const c = makeCocAt()( uv() ).x.toVar();
-			const hp = uv().mul( u.halfRes ).sub( 0.5 ).toVar();
+			const hp = uv().mul( halfSize ).sub( 0.5 ).toVar();
 			const base = hp.floor().toVar();
 			const f = hp.sub( base ).toVar();
 			const acc = vec3( 0 ).toVar(), wsum = float( 0 ).toVar();
 			for ( const [ ox, oy ] of [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ] ) {
 
-				const t = blur.sample( clamp( base.add( vec2( ox, oy ) ), vec2( 0 ), u.halfRes.sub( 1 ) ).add( 0.5 ).div( u.halfRes ) ).level( float( 0 ) ).toVar();
+				const t = blur.sample( clamp( base.add( vec2( ox, oy ) ), vec2( 0 ), halfSize.sub( 1 ) ).add( 0.5 ).div( halfSize ) ).level( float( 0 ) ).toVar();
 				const bl = ( ox ? f.x : float( 1 ).sub( f.x ) ).mul( oy ? f.y : float( 1 ).sub( f.y ) );
 				const w = bl.mul( smoothstep( 0, 0.35, t.a ).add( 1e-3 ) );
 				acc.addAssign( t.rgb.mul( w ) );
@@ -620,7 +625,7 @@ export class Pipeline {
 		diffusionNode.setResolutionScale( 0.5 );
 		( diffusionNode as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input }: { input: THREE.Node<'vec4'> } ) => {
 
-			const px = ivec2( clamp( uv().mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) );
+			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
 			// (view-space z: the sky's -1e5 lies far beyond the fade)
 			const surface = mix( float( 1 ), u.lookSky, smoothstep( 150, 700, ( textureLoad( tGlowD, px ) as unknown as F ).negate() ) );
 			const c = input.rgb;
@@ -792,7 +797,7 @@ export class Pipeline {
 			const satAmt = u.saturation.add( u.vibrance.mul( float( 1 ).sub( smoothstep( 0, 0.35, chroma.div( max( l2, 1e-3 ) ).mul( 0.5 ) ) ) ) ).add( u.highlightSat.mul( smoothstep( 0.6, 0.9, l2 ) ).mul( float( 1 ).sub( hot ) ) );
 			c.assign( max( mix( vec3( l2 ), c, satAmt ), vec3( 0 ) ) );
 			// The look (a uniform branch: 'realistic' skips it and keeps the grade above exactly).
-			const onSurface = select( ( textureLoad( tD, ivec2( clamp( uv().mul( u.resolution ), vec2( 0 ), u.resolution.sub( 1 ) ) ) ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) ).toVar();
+			const onSurface = select( ( textureLoad( tD, ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) ) ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) ).toVar();
 			If( u.lookOn.greaterThan( 0.5 ), () => {
 
 				c.assign( lookColour( c, onSurface ) );
@@ -808,7 +813,7 @@ export class Pipeline {
 			// A display black lift softens dark colours without adding atmospheric scattering.
 			c.assign( c.add( vec3( 1 ).sub( c ).mul( u.lift ) ) );
 			// vignette
-			const q = uv().sub( 0.5 ).mul( vec2( u.resolution.x.div( u.resolution.y ), 1 ) );
+			const q = uv().sub( 0.5 ).mul( vec2( renderSize.x.div( renderSize.y ), 1 ) );
 			c.mulAssign( mix( float( 1 ), smoothstep( 1.15, 0.3, length( q ) ), u.vignette ) );
 			const s = ( sRGBTransferOETF( clamp( c, 0, 1 ) ) as THREE.Node<'vec3'> ).toVar();
 			// gentle S-curve in display space
@@ -835,7 +840,7 @@ export class Pipeline {
 		// above for a second output (another shader or target format) set its rtt() passes up again,
 		// and their layout functions kept the first build's uniform bindings. Float, so the copy
 		// below hands the canvas exactly the values a direct draw would.
-		this.display = new THREE.RenderPipeline( renderer, Fn( () => finish( grade( diffused() ), u.resolution, u.grainOn ) )() );
+		this.display = new THREE.RenderPipeline( renderer, Fn( () => finish( grade( diffused() ), renderSize, u.grainOn ) )() );
 		this.display.outputColorTransform = false;
 
 		// At the display's resolution it is copied to the canvas, grain and all.
@@ -852,13 +857,13 @@ export class Pipeline {
 
 			const backend = renderer.backend as unknown as { hasFeature?( name: string ): boolean };
 			const fsr = this.fsr = new FSR( tDisplay, g.texture( easu ), backend.hasFeature?.( 'float32-filterable' ) === true, g );
-			this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( fsr.rcas( this.sharpness ).toVar(), u.output, float( 1 ) ) )() );
+			this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( fsr.rcas( this.sharpness ).toVar(), canvasSize, float( 1 ) ) )() );
 			this.upscaledOutput.outputColorTransform = false;
 
 		} else {
 
 			const upscaled = fsr1( texture( tDisplay ), this.sharpness );
-			this.upscaledOutputThree = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), u.output, float( 1 ) ) )() );
+			this.upscaledOutputThree = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), canvasSize, float( 1 ) ) )() );
 			this.upscaledOutputThree.outputColorTransform = false;
 
 		}
@@ -1045,13 +1050,9 @@ export class Pipeline {
 
 		this.width = w; this.height = h;
 		this.outputWidth = Math.max( outputWidth, w ); this.outputHeight = Math.max( outputHeight, h );
-		this.u.output.value.set( this.outputWidth, this.outputHeight );
-		this.u.resolution.value.set( w, h );
-		this.u.texel.value.set( 1 / w, 1 / h );
-		// the size rtt() gives the half-res blur
-		this.u.halfRes.value.set( Math.max( Math.floor( w * 0.5 ), 1 ), Math.max( Math.floor( h * 0.5 ), 1 ) );
 		// every target by its size class (the reduced fog's, the fixed bank map's, the upscale's at
-		// the canvas), and the chain's own passes through their resize hook
+		// the canvas), the extent uniforms the passes read their sizes from, and the chain's own
+		// passes through their resize hook
 		this.graph.setExtents( { render: { width: w, height: h }, canvas: { width: outputWidth, height: outputHeight } } );
 
 	}
@@ -1107,9 +1108,8 @@ export class Pipeline {
 		const u = this.u;
 		camera.updateMatrixWorld();
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
-		this.air.update( camera, this.width, this.height );
-		this.shafts.update( camera as THREE.PerspectiveCamera, this.width, this.height, this.air.haze.value,
-			this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ) );
+		this.air.update( camera );
+		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.haze.value, this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ) );
 		this.updateDisplay( frame );
 		this.graph.execute( frame );
 
