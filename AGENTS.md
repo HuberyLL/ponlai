@@ -204,13 +204,12 @@ stone exposed.
   tile), shoreline field,
   vegetation anchors; instanced grass, rim bushes and flowers on the island top, a turf skirt over
   the lip, with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds
-  on the lip. The
-  alpha-to-coverage vegetation (grass, bushes, rim leaves) draws after a depth prepass
-  (`VegetationPrepass.ts`): a depth-only copy of each mesh with the same vertex stage, alpha and
-  coverage draws first, and the shaded mesh tests depth for equality without coverage, alpha test
-  or depth writes, so hidden blades and leaves are not shaded. The meadow's tuft instance data
-  live in storage buffers (`GrassCull.ts`); before the view camera draws the meadow a compute pass
-  culls the tufts against the frustum (and the thin tufts past their fold) into an
+  on the lip. The alpha-to-coverage vegetation (grass, bushes, rim leaves) draws after a depth
+  prepass (`VegetationPrepass.ts`): a depth-only copy of each mesh with the same vertex stage,
+  alpha and coverage draws first, and the shaded mesh tests depth for equality without coverage,
+  alpha test or depth writes, so hidden blades and leaves are not shaded. The meadow's tuft
+  instance data live in storage buffers (`GrassCull.ts`); before the view camera draws the meadow
+  a compute pass culls the tufts against the frustum (and the thin tufts past their fold) into an
   order-preserving list and each batch's indirect draw arguments, so off-screen tufts run no
   vertex work.
 - `src/world/IslandGrowth.ts` (worker-safe, not yet wired into the world): the land as a bit
@@ -371,8 +370,8 @@ stone exposed.
   answer it in Crysis's layers (Sousa, GPU Gems 3 ch. 16): the whole plant bends from its root
   with the field at the root, every vertex keeping its distance from it (`mainBend`), and sways
   about the lean at its own rate (the rim bushes 0.9 Hz; a placed tree about half that, as a
-  guide); sprays, fronds and leaf stalks
-  swing on their own phase from where they leave the plant; leaf edges and tips flutter along
+  guide); a placed plant's sprays and fronds swing on their own phase from where they leave it,
+  as the rim trails' strands do; leaf edges and tips flutter along
   their normals, faster as the wind rises. Grass tufts bend with the field at their root and their
   normals turn with the bend, so a gust shows as a sheen; flowers and the turf skirt follow the
   same field. Rim trails lean and swing like pendulums but may be pressed toward the wall by
