@@ -22,6 +22,8 @@ import { chooseQuality, type QualityChoice } from '../QualityDetect.ts';
 
 export const AA_MODES = [ 'msaa', 'taa', 'taau', 'off' ] as const;
 export type AAMode = typeof AA_MODES[ number ];
+// the modes the GUI offers; the temporal ones stay URL-only until they are tuned
+export const AA_GUI_MODES: readonly AAMode[] = [ 'msaa', 'off' ];
 export type SceneSampleCount = 1 | 4;
 
 export interface AAPlan {
