@@ -48,8 +48,9 @@ import type * as THREE from 'three/webgpu';
 //   5. the innermost wrapped method on the call stack (`scope()`), else
 //   6. a wrapped async method still running (`scope( ..., { async: true } )`: the sky's bakes run
 //      in microtasks after the frame's tick), else 'other'.
-// So the graph labels its own passes, and only what runs inside a chain pass with a group of its
-// own (the composite, the blooms and glows, the light shafts) is labelled by hand.
+// So the graph labels its own passes and what three's nodes render as part of them (the bloom
+// chains' passes); what runs outside the graph (the sky, the shadow maps, the ocean) is labelled
+// by hand.
 // The page exposes `window.__PONLAI_PROFILE__` (see `api`), read by tools/profile-frame.mjs.
 // `?profile=frames` keeps the frame and tick timing but skips the GPU timestamps. Measure frame
 // rates that way: with timestamp queries on, Chrome ran the same frames up to a quarter faster
@@ -831,11 +832,7 @@ export type FrameProfiler = ReturnType<typeof createFrameProfiler>;
 export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
 
 	const h = handles as Record<string, Record<string, unknown>>;
-	const pipeline = h.pipeline;
-	const P = pipeline as Record<string, unknown>;
-	// the frame graph labels its passes itself (`graphPass`); inside its composite pass, the light
-	// shafts' rtt() passes have a group of their own
-	profiler.scan( P.shafts, 'light shafts' );
+	// the frame graph labels its passes itself (`graphPass`), the bloom chains' own passes with them
 	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes inside its chain (post=three-fsr)
 	// the sky's per-frame compute and its bakes
 	profiler.pattern( /^Clouds\.View/, 'clouds view march' );

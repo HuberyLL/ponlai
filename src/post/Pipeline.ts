@@ -26,32 +26,37 @@ import type { Rain } from '../weather/Rain.ts';
 //     without rain the water discards the colour and the surface resolve's read keeps the depth)
 //   sea fog (in fog: the bank noise baked into a map, the march at half resolution), the view
 //   distance for the depth of field
+//   light shafts: the open sky near the sun, the rays marched toward it (half resolution)
 //   composite (air, fog, rain veil, shafts) ── hdr, once
-//   bloom (tight) + glow (wide) from hdr, both through a clamped soft-knee prefilter ── sharp
-//   ── tilt-shift depth of field (half-res gather) ── exposure, tone curve (PBR Neutral with
-//   hue-kept highlights by default), split-tone grade, vibrance, the art-directed look (diffusion
-//   glow, hue-selective colour, warm / cool split, coloured shadow lift), lifted blacks, vignette,
+//   bloom (tight) and glow (wide) from hdr, both through a clamped soft-knee prefilter
+//   sharp (hdr + the blooms) ── tilt-shift blur (half-res gather) ── the look's diffusion glow
+//   display: the depth of field's mix, the diffusion glow, exposure, tone curve (PBR Neutral with
+//   hue-kept highlights by default), split-tone grade, vibrance, the art-directed look
+//   (hue-selective colour, warm / cool split, coloured shadow lift), lifted blacks, vignette,
 //   S-curve, sRGB, grain ── displayRT
 //   ── copied to the screen
-// Every pass runs at the scene's render size. When the canvas is larger (a quality preset below
-// the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling, then
-// contrast-adaptive sharpening) to the screen instead, and the grain is added there, at display
-// pixels.
+// Every pass runs at the scene's render size or a share of it. When the canvas is larger (a quality
+// preset below the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling,
+// then contrast-adaptive sharpening) to the screen instead, and the grain is added there, at
+// display pixels.
 // The targets are the frame graph's (graph/FrameGraph.ts): each is declared with its format,
 // sample count and size class (the render, a share of it, the canvas or fixed), and the graph sizes
-// them all from `setSize`'s render and canvas sizes, the display chain's own rtt and bloom passes
-// through a resize hook. The graph runs the whole frame as passes that declare what they read and
-// write: the scene half (opaque, the depth and copy resolves, water, the surface resolve, rain),
-// the sea fog (its bank map, nearest depth and march), the view distance, the composite, the
-// blooms (three's bloom chains, a pass each), the sharp image, the depth of field's blur, the look's
-// glow (a bloom chain), the display chain (one pass: the depth of field's mix, the grade and the
-// look), and the canvas pass, or
-// EASU and the sharpening canvas pass while upscaling. Each pass that runs only now and then
-// (rain, fog, the view distance, either output) says when by a predicate the graph evaluates at
-// the frame's start. The `post=` legacy switches are variants of the graph, chosen as it is built.
-// At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass and the passes
-// the display chain's nodes render inside it, so one that first runs later (fog, the upscale, the
-// look's glow) builds nothing then.
+// them all from `setSize`'s render and canvas sizes (three's bloom chains, which keep targets of
+// their own, through a resize hook). The passes read their sizes from the graph's extent uniforms.
+// The graph runs the whole frame as passes that declare what they read and write: the scene half
+// (opaque, the depth and copy resolves, water, the surface resolve, rain), the sea fog (its bank
+// map, nearest depth and march), the view distance, the light shafts' two passes, the composite,
+// the blooms (three's bloom chains, a pass each, their results imported into the graph), the sharp
+// image, the depth of field's blur, the look's glow (a bloom chain), the display pass, and the
+// canvas pass, or EASU and the sharpening canvas pass while upscaling. Every pass but the scene
+// passes, the blooms and the canvas passes is a full-screen quad of its own, and no pass renders
+// another inside it (but three's FSR1Node, `post=three-fsr`, in its canvas pass). Each pass
+// that runs only now and then (rain, fog, the view distance, the look's glow, either output) says
+// when by a predicate the graph evaluates at the frame's start. The `post=` legacy switches are
+// variants of the graph, chosen as it is built.
+// At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass and the bloom
+// chains' own passes, so one that first runs later (fog, the upscale, the look's glow) builds
+// nothing then.
 // Its attachment ops (graph/AttachmentOps.ts) are derived each frame from the passes that run:
 // the scene target's multisampled samples are discarded after the last pass that reads them, and
 // the water leaves its resolve to the rain when the rain follows. Every texture a pass binds must
@@ -355,7 +360,7 @@ export class Pipeline {
 	private sharpQuad: THREE.QuadMesh;
 	private blurQuad: THREE.QuadMesh;
 	// the graded image at the render's size, before the copy or upscale to the canvas
-	private display: THREE.RenderPipeline;
+	private displayQuad: THREE.QuadMesh;
 	// the bloom chains (each a pass of the graph's: the tight bloom, and the wide glow when there are
 	// two) and their results, imported into the graph
 	private blooms: { node: RenderBloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number>; output: ResourceHandle }[] = [];
@@ -892,12 +897,14 @@ export class Pipeline {
 
 		};
 
-		// The graded image, at the render's size, always into one float target: building the graph
-		// above for a second output (another shader or target format) set its rtt() passes up again,
-		// and their layout functions kept the first build's uniform bindings. Float, so the copy
-		// below hands the canvas exactly the values a direct draw would.
-		this.display = new THREE.RenderPipeline( renderer, Fn( () => finish( grade( diffused() ), renderSize, u.grainOn ) )() );
-		this.display.outputColorTransform = false;
+		// The graded image, at the render's size, always into one float target (the display pass),
+		// which the canvas pass copies or upscales: one build of the grade, whatever the output.
+		// Float, so the copy below hands the canvas exactly the values a direct draw would.
+		const displayMat = new THREE.NodeMaterial();
+		displayMat.name = 'Post.Display';
+		displayMat.fragmentNode = Fn( () => finish( grade( diffused() ), renderSize, u.grainOn ) )();
+		this.displayQuad = new THREE.QuadMesh( displayMat );
+		this.displayQuad.name = 'Post.Display';
 
 		// At the display's resolution it is copied to the canvas, grain and all.
 		const tDisplay = g.texture( display );
@@ -923,15 +930,12 @@ export class Pipeline {
 			this.upscaledOutputThree.outputColorTransform = false;
 
 		}
-		// The passes three's nodes render (the chain's rtt() passes, the bloom chains, the look's glow,
-		// the light shafts') follow the render's size, not the canvas, which is larger while the frame
-		// is upscaled.
+		// The bloom chains (three's, with targets of their own) follow the render's size, not the
+		// canvas, which is larger while the frame is upscaled; sized at once, as the graph sizes its
+		// own targets (its dev check compares a pass's target with its size class before it runs).
 		g.onResize( RENDER, ( w, h ) => {
 
-			// (the blooms' targets at once, as the graph's own: its dev check compares a pass's target
-			// with its size class before the pass runs)
 			for ( const { node } of [ ...this.blooms, this.diffusion ] ) { node.renderWidth = w; node.renderHeight = h; node.setSize(); }
-			this.shafts.setSize( w, h );
 
 		} );
 		this.declarePasses();
@@ -1030,13 +1034,16 @@ export class Pipeline {
 			return { label: 'tilt-shift blur', when: () => this.settings.dof > 0, whenLabel: 'dof > 0', quad: distanceQuad };
 
 		} );
+		// the light shafts: the open sky near the sun, and the rays marched over it
+		const shaftReads = this.shafts.passes( g, surfaceDepth );
 		// what the composite reads: the scene (after the rain, which may be skipped), the nearest
-		// surface's depth and the sea fog (its passes run only in fog)
+		// surface's depth, the sea fog (its passes run only in fog) and the light shafts
 		const compositeReads = ( b: PassBuilder ) => {
 
 			b.readOptional( sceneColor );
 			b.read( surfaceDepth );
 			for ( const h of fogReads ) b.readOptional( h );
+			for ( const h of shaftReads ) b.read( h );
 
 		};
 		// the composite of the air, fog, veil and shafts, rendered once
@@ -1105,7 +1112,8 @@ export class Pipeline {
 
 		} );
 		// the depth of field's mix, the look's glow, grade and look
-		g.addPass( 'display', 'chain', ( b ) => {
+		const displayQuad = this.displayQuad;
+		g.addPass( 'display', 'quad', ( b ) => {
 
 			b.read( sharp );
 			b.read( blur );
@@ -1113,7 +1121,7 @@ export class Pipeline {
 			b.read( surfaceDepth );
 			if ( viewDistance ) b.readOptional( viewDistance );
 			display = b.write( display );
-			return { label: 'grade & look', pipeline: this.display };
+			return { label: 'grade & look', quad: displayQuad };
 
 		} );
 		// to the canvas: copied at the display's resolution, upscaled below it

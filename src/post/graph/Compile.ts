@@ -24,7 +24,8 @@ import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 // (standing in for three's `_createObjectPipeline` for that call), at the call depth and with the
 // quad's vertex node of the real draw, and leaves only the pipelines' creation asynchronous. Its
 // result names the nodes that render passes of their own before the draw (`updateBeforeNodes`:
-// rtt(), bloom), which `compileQuad` compiles in turn. Without those internals (another three
+// a bloom), which `compileQuad` compiles in turn; `compileNodes` compiles those a frame-graph pass
+// runs itself. Without those internals (another three
 // revision) it falls back to `compileAsync`, and the frame graph primes the chains instead.
 
 type NodeState = { updateBeforeNodes: THREE.Node[] };
@@ -326,12 +327,13 @@ type Bloom = BloomNode & {
 	_highPassFilterMaterial: THREE.NodeMaterial | null; _separableBlurMaterials: THREE.NodeMaterial[]; _compositeMaterial: THREE.NodeMaterial | null;
 	_renderTargetBright: THREE.RenderTarget; _renderTargetsHorizontal: THREE.RenderTarget[]; _renderTargetsVertical: THREE.RenderTarget[]; _nMips: number;
 };
-type RTT = THREE.RTTNode & { _quadMesh: THREE.QuadMesh; renderTarget: THREE.RenderTarget };
 
-// The walker: compiles nodes that render passes of their own (`updateBefore`) as they draw them,
-// at the call depth they draw at, and the passes those draws render in turn (depth first, in each
-// material's order, as the frame renders them: a pass renders inside the first material that names
-// it, one level deeper). What it does not know is listed in `unreached`.
+// The walker: compiles the passes three's bloom chains render (`updateBefore`: the high pass, the
+// blurs and the composite) as they draw them, at the call depth they draw at, and the passes those
+// draws render in turn (depth first, in each material's order, as the frame renders them: a pass
+// renders inside the first material that names it, one level deeper). The frame graph runs every
+// other pass of the frame itself (an rtt() pass is a quad pass of the graph's), so any other node
+// that renders inside a pass is listed in `unreached`, for the graph to prime.
 class Walker {
 
 	readonly pending: Promise<void>[] = [];
@@ -351,12 +353,7 @@ class Walker {
 
 			if ( this.seen.has( node ) ) continue;
 			this.seen.add( node );
-			if ( ( node as RTT ).isRTTNode === true ) {
-
-				const rtt = node as RTT;
-				this.draw( rtt._quadMesh, rtt.renderTarget, depth );
-
-			} else if ( node instanceof BloomNode ) this.bloom( node as Bloom, depth );
+			if ( node instanceof BloomNode ) this.bloom( node as Bloom, depth );
 			else this.unreached.push( node.type );
 
 		}
@@ -418,9 +415,9 @@ class Walker {
 }
 
 /** Compiles a full-screen `quad` with the renderer's binding as it is now, then the passes its
- * material renders before it (rtt(): its own quad into its target; bloom: its high-pass, blur and
- * composite materials into their targets), and theirs in turn. Each nested pass compiles with the
- * state its updateBefore draws with (its target and its depth flags, no MRT). */
+ * material renders before it (a bloom: its high-pass, blur and composite materials into their
+ * targets), and theirs in turn. Each nested pass compiles with the state its updateBefore draws
+ * with (its target and its depth flags, no MRT). */
 export function compileQuad( renderer: THREE.WebGPURenderer, quad: THREE.QuadMesh ): ChainCompile {
 
 	const first = compileBound( renderer, quad, ( quad as unknown as { camera: THREE.Camera } ).camera );

@@ -23,8 +23,8 @@ import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, s
 // render target (a DepthTexture outside one takes the renderer's sample count). `renderTarget`
 // makes the target of a tuple ahead of the passes (code that still binds its targets by hand,
 // probes and warm-ups); the passes that later draw into the same tuple use that target. Every
-// target the graph makes follows its size class through `setExtents`, and passes the graph does
-// not own (three's rtt and bloom chains inside a chain pass) follow it through `onResize`.
+// target the graph makes follows its size class through `setExtents`, and targets the graph does
+// not own (three's bloom chains, which make their own) follow it through `onResize`.
 //
 // A texture may sit in several of those render targets (a resource written alone by one pass and
 // with a velocity attachment by another). In three r186 `RenderTarget.setSize` disposes the target,
@@ -153,8 +153,8 @@ interface Physical {
 const filterOf = ( f: ResourceDesc[ 'filter' ] ) => f === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
 
 // Nodes rendering in `updateBefore` that keep nothing from one frame to the next, so priming
-// (rendering a pass once at startup) leaves no stale state in them: FSR1Node (`post=three-fsr`),
-// and the bloom and rtt() passes the walker reaches anyway.
+// (rendering a pass once at startup) leaves no stale state in them: FSR1Node (`post=three-fsr`) and
+// rtt() passes, out of the walker's reach, and the blooms it reaches anyway.
 const STATELESS_NODES = new Set( [ 'FSR1Node', 'BloomNode', 'RTTNode' ] );
 
 export class FrameGraph<F = unknown> implements LatentRegistry {
@@ -388,8 +388,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	}
 
 	/** Calls `hook` with a size class's pixel size whenever `setExtents` changes it (and once
-	 * extents are first set): for render targets the graph does not own, such as three's rtt and
-	 * bloom passes inside a chain, so they follow the graph's extents with its rounding. */
+	 * extents are first set): for render targets the graph does not own, such as three's bloom
+	 * chains', so they follow the graph's extents with its rounding. */
 	onResize( size: SizeClass, hook: ( width: number, height: number ) => void ): void {
 
 		const entry: ResizeHook = { size, hook, last: null };
@@ -974,7 +974,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	 * under its own binding (`bind`: its target, MRT and depth flags), restored before anything
 	 * is awaited: a scene pass compiles its scene for its camera (from `f`, the frame it would
 	 * draw) and its latent objects; a quad its material; a chain its pipeline's material and the
-	 * passes three's nodes render before it (rtt(), bloom; see Compile.ts), or its nodes' own
+	 * passes three's nodes render before it (a bloom; see Compile.ts), or its nodes' own
 	 * passes (a bloom's high pass, blurs and composite, each into its target); a compute pass its
 	 * kernels. A chain with a pass out of the compiler's reach is primed instead: rendered once at
 	 * the real extents (once they are set), whatever its `when`. Priming never leaves a persistent

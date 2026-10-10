@@ -2,7 +2,7 @@
 // renderer and the internals the bound compile builds through: every compiled pass compiled once
 // under its own binding (a conditional one too), the renderer's binding restored, latent objects
 // compiled shown whatever their visibility (registered before the warm-up, or after it at once), a
-// chain's nested passes one call depth down, a chain of three's nodes (a bloom run as a pass of its
+// bloom nested in a pass one call depth down, a chain of three's nodes (a bloom run as a pass of its
 // own) at the top level, and priming: only what the walker cannot reach, at the
 // real extents, persistent writes invalidated, and off with `prime: false`. Run by
 // tools/verify-framegraph.mjs.
@@ -237,17 +237,17 @@ export const checks = [
 
 	} ],
 
-	[ 'warm: a chain\'s nested passes compile a call depth down; what the walker cannot reach is primed once the extents are set, if it keeps no state', async () => {
+	[ 'warm: a bloom nested in a pass compiles a call depth down; what the walker cannot reach is primed once the extents are set, if it keeps no state', async () => {
 
 		const r = mockRenderer();
 		const g = new FrameGraph( r, { sceneSamples: 1 } );
 		let display = g.color( 'display', { size: RENDER } );
 		let canvas = g.import( 'canvas', null, CANVAS );
-		const inner = new THREE.RenderTarget( 1, 1 );
-		const rtt = { isRTTNode: true, type: 'RTTNode', _quadMesh: quadOf( 'rtt' ), renderTarget: inner };
+		const bloom = new BloomNode( texture( new THREE.Texture() ) );
+		bloom.setup( { getSharedContext: () => ( {} ) } );
 		// three's FSR1Node: out of the walker's reach, known to keep nothing between frames
 		const stranger = { type: 'FSR1Node' };
-		const chainQuad = quadOf( 'display', [ rtt ] );
+		const chainQuad = quadOf( 'display', [ bloom ] );
 		g.addPass( 'display', 'quad', ( b ) => {
 
 			display = b.write( display );
@@ -266,9 +266,10 @@ export const checks = [
 		} );
 		g.compile();
 		const warming = g.warm( {} );
-		const nested = r.builds.find( ( b ) => b.material.name === 'rtt' );
-		assert.equal( nested.target, inner, 'the nested pass compiles into its own target' );
+		const nested = r.builds.find( ( b ) => b.material.name === 'Bloom_highPass' );
+		assert.equal( nested.target, bloom._renderTargetBright, 'the nested pass compiles into its own target' );
 		assert.equal( nested.contextDepth, 1, 'one call depth down, in the context its render draws in' );
+		assert.equal( r.builds.filter( ( b ) => b.material.name.startsWith( 'Bloom_' ) ).length, 12, 'the high pass, ten blurs and the composite' );
 		await Promise.resolve();
 		await new Promise( ( resolve ) => setTimeout( resolve, 0 ) );
 		assert.equal( rendered, 0, 'priming waits for the real extents' );
