@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { RainCollision } from './RainCollision.ts';
 import { DRIFT, MEAN_FALL, RainDrops, lightRain, type RainLight } from './RainDrops.ts';
+import type { LatentRegistry } from '../post/graph/FrameGraph.ts';
 
 export { RAIN_MAX_DROPS } from './RainDrops.ts';
 
@@ -254,12 +255,13 @@ export class Rain {
 
 	}
 
-	/** Compile the drops' simulation and draws before the first rain, for `camera` into the
-	 * scene's multisampled target (`Pipeline.sceneRT`), as `rainScene` draws them. Call it after
-	 * `bindOpaqueDepth` and `setLightNode`, which change the materials. */
-	warm( renderer: THREE.WebGPURenderer, rainScene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
+	/** Registers the drops and splashes with the frame graph's rain pass, and their simulation
+	 * kernel, so the graph's warm-up compiles them before the first rain. Call it after
+	 * `bindOpaqueDepth` and `setLightNode`, which change the materials, with `group` in the rain's
+	 * scene. */
+	registerLatent( graph: LatentRegistry ): Promise<void> {
 
-		return this.drops.warm( renderer, rainScene, camera, target );
+		return graph.latent( 'rain', [ this.group ], [ this.drops.compute ] );
 
 	}
 

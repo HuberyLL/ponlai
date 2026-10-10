@@ -13,7 +13,6 @@ import {
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { compileInto } from '../post/Warm.ts';
 import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from '../post/graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;
@@ -170,7 +169,6 @@ export class AerialPerspective {
 	// fog's light (rgb) and optical depth (a) at that depth. (The frame graph owns these resources
 	// and the bank map's, sizes them and runs their passes: see `passes`.)
 	private resources: { banks: ResourceHandle | null; nearest: ResourceHandle | null; march: ResourceHandle | null } = { banks: null, nearest: null, march: null };
-	private graph: FrameGraph<unknown> | null = null;
 	private fogZQuad: THREE.QuadMesh | null = null;
 	private fogQuad: THREE.QuadMesh | null = null;
 	// below this depth similarity a pixel marches its own fog (0 turns the fallback off, for A/B:
@@ -465,7 +463,6 @@ export class AerialPerspective {
 	 * skipped without fog, and the bank map holds a bake of frames before). */
 	passes<F>( graph: FrameGraph<F>, surfaceDepth: ResourceHandle ): ResourceHandle[] {
 
-		this.graph = graph as unknown as FrameGraph<unknown>;
 		const LABEL = 'composite (air, fog, veil)';
 		const fog = () => this.fog.value > 0.001;
 		let { banks, nearest, march } = this.resources;
@@ -482,6 +479,9 @@ export class AerialPerspective {
 					this.bankBakes ++;
 
 				},
+				// should the graph's warm-up ever render this pass, the first foggy frame bakes the map
+				// again, as on a cold load
+				invalidate: () => this.invalidate(),
 			};
 
 		} );
@@ -505,23 +505,6 @@ export class AerialPerspective {
 
 		}
 		return [ march, nearest, banks ].filter( ( h ): h is ResourceHandle => h !== null );
-
-	}
-
-	/** Compiles the passes that first run when fog sets in, so the first foggy frame does not
-	 * stall on them (`compileInto` restores the renderer's target at once, never across frames
-	 * rendered meanwhile). After the graph is compiled (it makes the passes' targets). */
-	async warm( renderer: THREE.WebGPURenderer ): Promise<void> {
-
-		const compiles: Promise<void>[] = [];
-		const { banks, nearest, march } = this.resources;
-		const graph = this.graph;
-		for ( const [ quad, h ] of [ [ this.bankQuad, banks ], [ this.fogZQuad, nearest ], [ this.fogQuad, march ] ] as const ) {
-
-			if ( graph && quad && h ) compiles.push( compileInto( renderer, quad, ( quad as unknown as { camera: THREE.Camera } ).camera, graph.target( h ) ) );
-
-		}
-		await Promise.all( compiles );
 
 	}
 

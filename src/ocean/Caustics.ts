@@ -12,6 +12,7 @@ import {
 import type { OceanFFT } from './OceanFFT.ts';
 import { shared } from '../shared.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { compileInto } from '../post/graph/Compile.ts';
 
 // Caustics by rasterised photon splatting (Evan Wallace's "WebGL Water", as in tidewater's
 // Caustics.js). A grid over one 16 m wave tile is drawn into an offscreen target; each vertex is a
@@ -115,6 +116,14 @@ export class Caustics {
 			this.scene.add( mesh );
 
 		} );
+
+	}
+
+	/** Compiles the splat's draws for its target ahead of their first frame: while the key light
+	 * gives none (a moonless night) that frame comes only with the dawn. */
+	warm(): Promise<void> {
+
+		return compileInto( this.renderer, this.scene, this.camera, this.target );
 
 	}
 

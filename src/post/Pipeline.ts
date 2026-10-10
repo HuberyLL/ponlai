@@ -47,12 +47,18 @@ import type { Rain } from '../weather/Rain.ts';
 // EASU and the sharpening canvas pass while upscaling. Each pass that runs only now and then
 // (rain, fog, the view distance, either output) says when by a predicate the graph evaluates at
 // the frame's start. The `post=` legacy switches are variants of the graph, chosen as it is built.
+// At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass and the passes
+// the display chain's nodes render inside it, so one that first runs later (fog, the upscale, the
+// look's glow) builds nothing then.
 // Its attachment ops (graph/AttachmentOps.ts) discard the scene target's multisampled samples in
 // its last pass.
 
 // The graph's dev checks (every target at its class's size, the attachment ops that reached
 // WebGPU): on the dev server and with `?debug`.
 const DEV = import.meta.env.DEV || new URLSearchParams( globalThis.location?.search ?? '' ).has( 'debug' );
+// The graph's warm-up renders the passes it cannot compile once at startup (`fgPrime=0`: not, for
+// the check that priming changes no frame).
+const PRIME = new URLSearchParams( globalThis.location?.search ?? '' ).get( 'fgPrime' ) !== '0';
 const RENDER: SizeClass = { of: 'render' };
 // what the water pass draws in a frame without water: nothing
 const NO_WATER = new THREE.Scene();
@@ -320,7 +326,6 @@ export class Pipeline {
 	private fsr: FSR | null = null;
 	// the view distance per pixel, for the depth of field (the dofDistance option)
 	private distanceQuad: THREE.QuadMesh | null = null;
-	private warming: Promise<void> | null = null;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private display: THREE.RenderPipeline;
 	// the display chain's rtt() passes, sized with the scene's render (not the canvas) through the
@@ -354,7 +359,7 @@ export class Pipeline {
 		this.air = new AerialPerspective( O );
 		// The scene's target: half-float colour and float depth at the scene's sample count, then
 		// the resolves the water and the post passes read (single-sampled).
-		const g = this.graph = new FrameGraph<PipelineFrame>( renderer, { sceneSamples: SCENE_SAMPLES, legacyDiscard: O.discardScene ? [ 'rain' ] : [], dev: DEV } );
+		const g = this.graph = new FrameGraph<PipelineFrame>( renderer, { sceneSamples: SCENE_SAMPLES, legacyDiscard: O.discardScene ? [ 'rain' ] : [], dev: DEV, prime: PRIME } );
 		const sceneColor = g.color( 'sceneColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, samples: 'scene' } );
 		const sceneDepth = g.depth( 'sceneDepth', { size: RENDER, samples: 'scene', type: THREE.FloatType } );
 		const linearDepth = g.color( 'linearDepth', { size: RENDER, format: THREE.RGFormat, type: THREE.FloatType } );
@@ -870,9 +875,6 @@ export class Pipeline {
 		// three hands its descriptor to WebGPU.
 		g.attachmentOps.install();
 		this.setToneMapping( this.settings.toneMapping );
-		// The sea fog's passes run only once fog sets in, perhaps minutes later (morning mist, the
-		// weather turning): compiled now, in the background, the first foggy frame does not stall.
-		this.warm().catch( ( error ) => console.warn( 'Pipeline.warm', error ) );
 
 	}
 
@@ -1162,21 +1164,6 @@ export class Pipeline {
 		u.maxRadius.value = S.dofMaxRadius * this.height / 900; // blur scales with the image, not the pixel count
 		u.focus.value = S.focusDistance > 0 ? S.focusDistance : camera.position.length();
 		u.grainOn.value = this.upscaling ? 0 : 1;
-
-	}
-
-	/** Compiles the passes that first run later than the first frame (fog setting in, the
-	 * upscale), so they do not stall the frame that first needs them. It starts when the graph is
-	 * built; later calls return the same promise. */
-	warm(): Promise<void> {
-
-		this.warming ??= ( async () => {
-
-			await this.air.warm( this.renderer );
-			if ( this.fsr && this.resources.easu ) await this.fsr.warm( this.renderer, this.graph.target( this.resources.easu ) );
-
-		} )();
-		return this.warming;
 
 	}
 

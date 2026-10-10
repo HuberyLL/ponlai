@@ -10,7 +10,6 @@ import {
 	Fn, float, vec2, vec3, vec4, ivec2, uv, abs, max, min, clamp, saturate, sqrt, select, exp2, texture, textureLoad,
 	screenCoordinate,
 } from 'three/tsl';
-import { compileInto } from './Warm.ts';
 import type { GraphResources } from './graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;
@@ -48,14 +47,6 @@ export class FSR {
 		material.fragmentNode = this.easu( input, gather );
 		this.quad = new THREE.QuadMesh( material );
 		this.quad.name = 'FSR.EASU';
-
-	}
-
-	/** Compiles EASU for `target` (the graph's, holding `output`) ahead of its first frame (see
-	 * `AerialPerspective.warm`). */
-	async warm( renderer: THREE.WebGPURenderer, target: THREE.RenderTarget ): Promise<void> {
-
-		await compileInto( renderer, this.quad, ( this.quad as unknown as { camera: THREE.Camera } ).camera, target );
 
 	}
 

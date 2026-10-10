@@ -30,6 +30,7 @@ import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
+import { installCacheKeyPatches } from './post/graph/ThreePatches.ts';
 import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
@@ -92,6 +93,10 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 	throw new Error( 'WebGPU is not available' );
 
 }
+// three r186 keys its node builds and pipelines by the first attachment, not the whole layout (an
+// MRT picks its outputs by the textures' names): patched before any material builds, so a material
+// drawn into two layouts gets a build each (graph/ThreePatches.ts)
+if ( ! installCacheKeyPatches( renderer ) ) console.warn( 'three\'s cache keys are not patched: the temporal anti-aliasing modes will refuse to run' );
 // three submits every pass on its own; the frame reaches the GPU in a few submits instead
 // (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
 const submitBatch = new SubmitBatch( ( renderer.backend as unknown as { device: ConstructorParameters<typeof SubmitBatch>[ 0 ] } ).device, { debug: DEBUG } );
@@ -377,14 +382,20 @@ rainScene.add( rain.group );
 // pipelines in the frame they first drew (rain's drops and splashes, the bolt's two passes, the
 // sky's blends and filters, the fog's passes: a dropped frame each). They are compiled ahead
 // instead, through the async pipeline calls, so the GPU process builds them off the main thread
-// while the world is generated and built; the loop starts once they are ready. The scene's draws
-// compile for the scene's multisampled target (`Pipeline.sceneRT`), which is part of their
-// pipelines' keys. The storm's foam and spray need the world's shore fields and compile with it.
+// while the world is generated and built; the loop starts once they are ready. The frame graph's
+// warm-up compiles every pass the frame may run, those that run only at times included (fog, rain,
+// the view distance, either output), each under its own binding (its target and MRT are part of
+// its pipelines' keys), with the objects their owners register as drawn only at times; the sky and
+// the caustics compile their own renders. The storm's foam and spray need the world's shore fields
+// and register with it.
 const warming = Promise.all( [
-	rain.warm( renderer, rainScene, camera, pipeline.sceneRT ),
-	sky.lightning.warm( renderer, scene, camera, pipeline.sceneRT ),
 	sky.warm( renderer ),
-	pipeline.warm(),
+	caustics.warm(),
+	// the drops and splashes, and the bolts, registered with the passes they draw in before the
+	// graph's warm-up starts, which compiles them with every pass (graph/FrameGraph.ts `warm`)
+	rain.registerLatent( pipeline.graph ),
+	sky.lightning.registerLatent( pipeline.graph ),
+	pipeline.graph.warm( { scene, waterScene, rainScene, camera, water: null, sun, time: simTime } ),
 ] );
 warming.catch( () => undefined ); // reported where it is awaited, before the loop
 
@@ -1067,9 +1078,9 @@ function diagnostics( now = false ): void {
 
 }
 
-// The storm's foam and spray need the world's shore fields, so they compile last; the loop then
-// waits for every first-use pipeline (see "first-use pipelines").
-await Promise.all( [ warming, stormSea.warm( renderer, waterScene, camera, pipeline.sceneRT ) ] );
+// The storm's foam and spray need the world's shore fields, so they register (and compile) last;
+// the loop then waits for every first-use pipeline (see "first-use pipelines").
+await Promise.all( [ warming, stormSea.registerLatent( pipeline.graph ) ] );
 
 if ( profiler ) {
 

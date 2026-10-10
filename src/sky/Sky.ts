@@ -16,7 +16,7 @@ import { Clouds, EVOLVE_PERIOD, type CloudViewScale } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { compileInto } from '../post/Warm.ts';
+import { compileInto } from '../post/graph/Compile.ts';
 import { DAY_BLACK_LIFT, type DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherFront, WeatherState } from './Weather.ts';
 

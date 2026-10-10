@@ -270,10 +270,10 @@ stone exposed.
   (two exponential height layers after tidewater's `AirHaze`, lit by the horizon sky and, near the
   camera, the key light through a phase function) and sea fog (the marine layer thickened in
   drifting banks of varying height, thinner over the island, plus morning mist; the banks' noise
-  baked into a map, the march at half resolution, in `AerialPerspective.ts`). `warm()` on `Rain`,
-  `StormSea` and `Lightning` (with `Sky.warm` and `Pipeline.warm`) precompiles their first-use
-  pipelines at startup (`compileDraws` in `src/post/Warm.ts`), so a weather change or the first
-  bolt builds none.
+  baked into a map, the march at half resolution, in `AerialPerspective.ts`). `Rain`, `StormSea`
+  and `Lightning` register the draws and kernels they run only at times with the frame graph's
+  passes (`registerLatent`), whose warm-up (`FrameGraph.warm`, with `Sky.warm`) compiles them at
+  startup, so a weather change or the first bolt builds no pipeline.
 - `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
   and rain drawn into the same multisampled target (its samples discarded after the rain), the sea
   fog marched at half resolution over a baked bank map, the composite of air, fog, veil and shafts
@@ -801,11 +801,45 @@ stone exposed.
   graph. A pass that declares no depth clears whatever depth its target holds outside the graph
   (the canvas's, and the targets a display chain's own rtt() passes draw into), as three's
   defaults do; declare the depth to keep it.
-- `renderer.compileAsync` collects its draws and reads the render target synchronously, before its
-  first await: set the target, call it, restore the target at once, then await (`compileDraws`).
-  It builds a transparent double-sided material's two passes after restoring its side, as one
-  unused double-sided pipeline (r186): compile a copy of the material per side and keep the copies
-  (disposing them releases the shared pipelines; see `Lightning.warm`).
+- Every pipeline is compiled at startup by the frame graph's warm-up (`FrameGraph.warm`, with
+  `src/post/graph/Compile.ts`): each pass under its own binding (target, MRT, depth flags), the
+  passes three's nodes render inside a chain (rtt(), bloom), and the objects and kernels owners
+  register as run only at times (`graph.latent( pass, objects, kernels )`: the rain, the bolts, the
+  storm's spray and foam). A new pass, or a draw that first shows later, joins it the same way;
+  `tools/verify-first-use.mjs` counts the pipelines any step still creates. three r186's
+  `compileAsync` alone does not compile what a render draws: it collects its draws synchronously
+  but builds them one await at a time, under whatever target, MRT, side (a double-sided draw's two
+  passes) and colour space the renderer holds by then; it collects in the top-level render
+  context, where a pass rendered inside another (an rtt() or bloom pass) draws in its own call
+  depth's, which is part of the material's node key; and it compiles a QuadMesh without the
+  vertex node `QuadMesh.render` sets. `compileBound` builds each draw inside the binding, at the
+  call depth and with the quad's vertex node of the real draw, and leaves only the pipeline's
+  creation asynchronous: compile ahead through it (`compileInto`, `compileLatent`). A miss is not
+  harmless: a material built twice under two keys can be emitted with the first build's uniform
+  names in a layout function (r186), an invalid shader. A transparent double-sided latent mesh
+  compiles one copy of its material per side, kept alive (disposing one releases the shared
+  builds). Priming (rendering a pass once at startup) covers only what the walker cannot reach
+  (three's FSR1Node, `post=three-fsr`), never leaves a persistent resource written, and is off with
+  `fgPrime=0`, for the check that it changes no frame.
+- three r186 keys a draw's node build by the material and the render context (attachment count,
+  the first attachment's format and type, samples, depth, MRT, call depth), not by the other
+  attachments' formats or the textures' names (an MRT picks its outputs by name), and its pipeline
+  by the first attachment's format alone: two targets of one layout whose attachments differ in
+  name or later format would share the first one's shader and pipeline. `installCacheKeyPatches`
+  (`src/post/graph/ThreePatches.ts`), installed in main.ts right after the renderer initialises
+  and before any material builds, adds the MRT and the whole attachment layout to both keys;
+  `tools/verify-frame-graph-gpu.mjs` checks it (both orders of an MRT and a plain draw, a swapped
+  layout). It refuses another three revision with a warning (the temporal modes need it): re-check
+  it on an upgrade.
+- `AttachmentOps` rewrites a graph pass's stores and resolves as three hands its render pass
+  descriptor to WebGPU, relying on r186's WebGPUBackend beginning every render pass on a command
+  encoder of its own (in `beginRender`); only an encoder's first pass is rewritten (r186 begins a
+  second one on it for a viewport-texture copy or a layered array-camera target, which the graph's
+  passes do not use). It wraps the device instance's `createCommandEncoder` and each encoder's
+  `beginRenderPass` and calls through to the prototype's methods at call time, so `SubmitBatch`'s
+  prototype patches stack under it whichever installs first; a wrapper installed after it that
+  hands out encoders of its own (a command recorder) bypasses it unless installed before it (dev
+  builds count such frames in `opsMismatchFrames`). Re-check both on a three upgrade.
 - Dispatch a compute kernel that uses `workgroupBarrier()` by size (`computeKernel( [ n ] )` with
   `dispatchSize` set), not by a thread count: a count makes three insert an early-return bounds
   check ahead of the barriers. A multiple-render-target `QuadMesh` writing the FFT's four fields
