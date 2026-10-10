@@ -1277,7 +1277,9 @@ export class Pipeline {
 
 		} );
 		// The rain and the spray over the finished scene: their colour blends as each material says,
-		// the velocity under them is kept and its reactive weight takes the larger value.
+		// the velocity under them is kept and its reactive weight takes the larger value. One scene
+		// draws both, sorted by renderOrder: the spray (20) over the rain, where msaa draws the spray
+		// in the water's pass and the rain over it, so where both show the image differs a little.
 		g.addPass( 'overlay', 'scene', ( b ) => {
 
 			b.read( linearDepth );

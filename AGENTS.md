@@ -310,8 +310,9 @@ stone exposed.
   the opaque and water passes write the motion vectors beside the colour (`Motion.ts`: a `velocity`
   target through the scene MRT, the previous rendered frame's view-projection and world matrices,
   `taaCut` and the camera's jumps), the opaque copy is a texture copy, the rain and the storm's
-  spray draw in an `overlay` pass that keeps the velocity under them, and the nearest surface's
-  depth is copied into `surfaceDepthPrev` at the frame's end.
+  spray draw in an `overlay` pass that keeps the velocity under them (one scene, so the spray,
+  `renderOrder` 20, draws over the rain, where under msaa the rain draws over the spray), and the
+  nearest surface's depth is copied into `surfaceDepthPrev` at the frame's end.
   `src/post/graph/` is the frame graph, after Frostbite's FrameGraph (O'Donnell, GDC 2017):
   `GraphCompiler.ts` (pure TypeScript: passes declare the resource versions they read and write,
   checked in declaration order, culled by liveness, their attachment ops derived per mask of the
@@ -814,7 +815,8 @@ stone exposed.
   one array texture for this reason). Data that changes over metres can be read in its vertex
   stage instead and passed on as a varying (the estimated sea floor's beds and sand), but the
   varyings have a ceiling too: the water uses 14 of the 16 inter-stage variables WebGPU
-  guarantees.
+  guarantees, 15 under the temporal modes (Motion.ts's previous clip position). The sea's own
+  motion must reach that varying through the water's previous position, not add another.
 - The water's reflection only finds what lies inside `Water.reflectionBounds`: the layout's box,
   padded 2.5 m for the rim overhang and to a metre above the tallest tree (`TREE_HEIGHT`), down to
   0.35 m below the sea. Anything opaque built off the island or above the trees (a boat, a hut, a
