@@ -34,6 +34,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VIEWS } from './views.mjs';
 
+// The measurement window of the clips whose gates pair consecutive frames against the ground truth
+// (TI, G, the lag): captured densely there (gtDense), frames 16 to 47 after the clip has settled
+// into its motion.
+const WINDOW = [ 16, 47 ];
+
 // A strike in front of the camera at frame 30 (lightning's `force`, at the scene time that frame
 // renders: the tick adds dt before it lights the strikes).
 const STRIKE_AT_30 = `if ( i === 30 ) { const f = new s.camera.position.constructor( 0, 0, - 1 ).applyQuaternion( s.camera.quaternion );
@@ -45,49 +50,65 @@ const STRIKE_AT_30 = `if ( i === 30 ) { const f = new s.camera.position.construc
 const WIND_FREEZE = `if ( 'windFreeze' in s.flags ) s.flags.windFreeze = true; else window.__PONLAI_CLIP_NOTES__.push( 'flags.windFreeze does not exist yet (mv-vegetation, M8): the vegetation sways with the wind' );`;
 
 export const CLIPS = {
+	// a still frame of any view (capture-clip.mjs --view): the rest sets of tools/parity/baseline.mjs
+	'rest': { view: 'island-fair-noon', clock: 'paused', frames: 1, path: [ 'still' ],
+		about: 'one paused frame of the view at its own pose: the image at rest, captured through the clip machinery so its crops and its ground truth are cut alike' },
 	// camera motion over a frozen scene
 	'static-jitter': { view: 'meadow-close', clock: 'paused', frames: 64, path: [ 'still' ],
 		about: 'a still camera and a paused scene: under MSAA every frame is the same; a temporal resolve shows its jitter and convergence' },
-	'pan-slow': { view: 'meadow-close', clock: 'paused', frames: 64, path: [ 'yaw', 0.05 ],
+	'pan-slow': { view: 'meadow-close', clock: 'paused', frames: 64, path: [ 'yaw', 0.05 ], gtDense: [ WINDOW ],
 		about: 'a slow pan (3 degrees a second at 60 fps, about 2 canvas px a frame)' },
 	'pan-fast': { view: 'meadow-close', clock: 'paused', frames: 64, path: [ 'yaw', 0.5 ],
 		about: 'a fast pan (30 degrees a second)' },
-	'flick': { view: 'island-fair-noon', clock: 'paused', frames: 64, path: [ 'flick', 40, 16, 10 ],
+	'flick': { view: 'island-fair-noon', clock: 'paused', frames: 64, path: [ 'flick', 40, 16, 10 ], gtDense: [ [ 14, 40 ] ],
 		about: 'rest, a 40 degree flick over 10 frames from frame 16, rest: disocclusion and the history rebuilding' },
 	'zoom': { view: 'island-fair-noon', clock: 'paused', frames: 64, path: [ 'dolly', 0.008 ],
 		about: 'a dolly toward the orbit pivot, to 60 % of the distance over 64 frames' },
 	// skinned motion
-	'islander-walk': { view: 'islander-close', clock: 'running', frames: 64, path: [ 'still' ],
+	'islander-walk': { view: 'islander-close', clock: 'running', frames: 64, path: [ 'still' ], gtDense: [ WINDOW ],
 		about: 'the islander walking past a still camera' },
-	'islander-orbit': { view: 'islander-close', clock: 'running', frames: 64, path: [ 'orbit', 1, 'islander' ],
+	'islander-orbit': { view: 'islander-close', clock: 'running', frames: 64, path: [ 'orbit', 1, 'islander' ], gtDense: [ WINDOW ],
 		about: 'the camera orbiting the walking islander, 1 degree a frame' },
 	// wind and sea
-	'wind-still': { view: 'meadow-close', clock: 'running', frames: 64, path: [ 'still' ],
+	'wind-still': { view: 'meadow-close', clock: 'running', frames: 64, path: [ 'still' ], gtDense: [ WINDOW ],
 		about: 'the meadow in the wind, a still camera' },
 	'sea-still': { view: 'water-skim-cliffs', clock: 'running', frames: 64, path: [ 'still' ],
 		about: 'the FFT sea against the cliffs, a still camera' },
-	'sea-pan': { view: 'water-skim-cliffs', clock: 'running', frames: 64, path: [ 'yaw', 0.25 ],
+	'sea-pan': { view: 'water-skim-cliffs', clock: 'running', frames: 64, path: [ 'yaw', 0.25 ], gtDense: [ WINDOW ],
 		about: 'the sea under a pan (15 degrees a second)' },
 	// weather
-	'storm': { view: 'island-storm', clock: 'running', frames: 64, path: [ 'still' ],
+	'storm': { view: 'island-storm', clock: 'running', frames: 64, path: [ 'still' ], gtDense: [ WINDOW ],
 		about: 'a storm: rain streaks, whitecaps, foam and spray' },
-	'rain': { view: 'island-rain', clock: 'running', frames: 64, path: [ 'still' ],
+	'rain': { view: 'island-rain', clock: 'running', frames: 64, path: [ 'still' ], gtDense: [ WINDOW ],
 		about: 'rain streaks, ripples and splashes' },
-	'lightning': { view: 'horizon-storm', clock: 'running', frames: 64, path: [ 'still' ], at: STRIKE_AT_30,
+	'lightning': { view: 'horizon-storm', clock: 'running', frames: 64, path: [ 'still' ], at: STRIKE_AT_30, gtDense: [ [ 26, 40 ] ],
 		about: 'a storm with a strike forced in front of the camera at frame 30' },
 	'night': { view: 'island-night-clear', clock: 'running', frames: 64, path: [ 'yaw', 0.05 ],
 		about: 'a moonlit night under a slow pan: stars and dark detail' },
-	'fog': { view: 'island-fog-dawn', clock: 'running', frames: 64, path: [ 'yaw', 0.05 ],
+	'fog': { view: 'island-fog-dawn', clock: 'running', frames: 64, path: [ 'yaw', 0.05 ], gtDense: [ WINDOW ],
 		about: 'sea fog at dawn under a slow pan' },
 	// render scale and light
 	'drs-steps': { view: 'island-fair-noon', clock: 'running', frames: 120, path: [ 'still' ],
-		scale: [ [ 0.8, 40 ], [ 0.6, 40 ], [ 0.8, 40 ] ],
+		scale: [ [ 0.8, 40 ], [ 0.6, 40 ], [ 0.8, 40 ] ], gtDense: [ [ 36, 44 ], [ 76, 84 ] ],
 		about: 'the render scale stepped to 0.8 -> 0.6 -> 0.8 of the nominal ratio (1.2 -> 0.9 -> 1.2 on high at a ratio of 2), 40 frames each, a still camera' },
 	'sun-shadow': { view: 'meadow-shade', clock: 'running', frames: 64, q: 'dayLength=600', path: [ 'still' ], setup: WIND_FREEZE,
 		about: 'a fast day (600 s) under a still camera: the sun map steps and cross-fades as the sun moves' },
 };
 
 export const clipNames = () => Object.keys( CLIPS );
+
+// The ground truth's frames (plan section 3.3): every frame of a clip of up to 60 frames, else
+// every 4th, plus the clip's `gtDense` runs [ first, last ] where a gate reads single frames or
+// consecutive pairs (the flick's stop and recovery, the strike, the scale steps, the window of the
+// crawl, wind, rain and fog instability and of the trails and lag). F, Vown and the other metrics
+// of a side's own frames use all of its frames; only those against the GT are limited to these.
+export const GT_DENSE_MAX = 60, GT_EVERY = 4;
+export function gtSampling( clip, frames = clip.frames ) {
+
+	if ( frames <= GT_DENSE_MAX ) return { every: 1, dense: [] };
+	return { every: GT_EVERY, dense: ( clip.gtDense ?? [] ).filter( ( [ a ] ) => a < frames ).map( ( [ a, b ] ) => [ a, Math.min( b, frames - 1 ) ] ) };
+
+}
 
 /** The clip's frame scales as shares of the nominal ratio, one per frame, from its
  * [ share, frames ] runs (null: the nominal throughout). */
@@ -155,7 +176,7 @@ if ( process.argv[ 1 ] && path.resolve( process.argv[ 1 ] ) === fileURLToPath( i
 
 	const [ cmd, name ] = process.argv.slice( 2 );
 	if ( cmd === 'list' ) console.log( clipNames().join( '\n' ) );
-	else if ( cmd === 'show' && CLIPS[ name ] ) console.log( JSON.stringify( { ...CLIPS[ name ], viewQuery: VIEWS[ CLIPS[ name ].view ].q }, null, 2 ) );
+	else if ( cmd === 'show' && CLIPS[ name ] ) console.log( JSON.stringify( { ...CLIPS[ name ], viewQuery: VIEWS[ CLIPS[ name ].view ].q, gt: gtSampling( CLIPS[ name ] ) }, null, 2 ) );
 	else if ( cmd === 'eval' && CLIPS[ name ] ) console.log( clipEval( name ) );
 	else { console.error( 'usage: node clips.mjs list | show <clip> | eval <clip>' ); process.exitCode = 2; }
 
