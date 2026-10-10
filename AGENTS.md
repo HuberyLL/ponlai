@@ -146,6 +146,9 @@ stone exposed.
   and wave optics (each file names the server it expects); `tools/verify-scene.mjs` checks a
   production preview; `tools/benchmark-lighting.mjs` A/B-times two builds;
   `tools/compare-captures.py` measures two overview captures (needs Pillow and NumPy);
+  `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
+  (`capture-set.mjs`) and diffs it against a reference set, byte for byte or within the
+  reference's own repeatability (`diff-set.py --aa-floor`; see its README);
   `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and
   `tools/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
