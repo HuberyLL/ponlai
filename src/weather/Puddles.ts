@@ -28,7 +28,7 @@ export const puddleField = Fn( ( [ xz, wetness, relief ]: [ V2, F, F ] ) => {
 	const margin = smoothstep( dampLevel, dampLevel.add( 0.03 ), hollows ).mul( smoothstep( 0.05, 0.2, wetness ) );
 	return vec3( cover, depth, margin );
 
-} ).setLayout( { name: 'soomiPuddleField', type: 'vec3', inputs: [ { name: 'xz', type: 'vec2' }, { name: 'wetness', type: 'float' }, { name: 'relief', type: 'float' } ] } );
+} ).setLayout( { name: 'ponlaiPuddleField', type: 'vec3', inputs: [ { name: 'xz', type: 'vec2' }, { name: 'wetness', type: 'float' }, { name: 'relief', type: 'float' } ] } );
 
 /** Standing water, 0 to 1 (the cover of `puddleField` on neutral relief). */
 export const puddleCover = ( xz: V2, wetness: F ) => puddleField( xz, wetness, float( 0.5 ) ).x;
@@ -37,7 +37,7 @@ const rippleHash = Fn( ( [ p ]: [ V2 ] ) => {
 
 	return fract( sin( dot( p, vec2( 127.1, 311.7 ) ) ).mul( 43758.5453 ) );
 
-} ).setLayout( { name: 'soomiPuddleRippleHash', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
+} ).setLayout( { name: 'ponlaiPuddleRippleHash', type: 'float', inputs: [ { name: 'p', type: 'vec2' } ] } );
 
 // One drop per cell and cycle; four staggered layers.
 const RIPPLE_CELL = 0.55; // metres
@@ -91,7 +91,7 @@ export const puddleRipples = Fn( ( [ xz, time, rain, footprint ]: [ V2, F, F, F 
 	} );
 	return result;
 
-} ).setLayout( { name: 'soomiPuddleRipples', type: 'vec3', inputs: [
+} ).setLayout( { name: 'ponlaiPuddleRipples', type: 'vec3', inputs: [
 	{ name: 'xz', type: 'vec2' }, { name: 'time', type: 'float' },
 	{ name: 'rain', type: 'float' }, { name: 'footprint', type: 'float' },
 ] } );

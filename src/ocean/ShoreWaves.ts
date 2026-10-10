@@ -14,7 +14,7 @@ import { createShoreBoundaryField, createShoreShelterField } from './ShoreWaveFi
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 
-// Tidewater's FFT supplies every incident wave. This rocky boundary is a Soomi extension:
+// Tidewater's FFT supplies every incident wave. This rocky boundary is a Ponlai extension:
 // a weak mirrored response and whitewater use that wave's height and orbital velocity,
 // without adding the independent, single-period beach wave over the open sea.
 export class ShoreWaves {

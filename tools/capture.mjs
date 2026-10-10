@@ -52,7 +52,7 @@ page.on( 'response', ( r ) => { if ( r.status() >= 400 ) failures.push( `${ r.st
 page.on( 'requestfailed', ( r ) => failures.push( `${ r.failure()?.errorText } ${ r.url() }` ) );
 try {
 	await page.goto( url );
-	await page.waitForFunction( () => window.__SOOMI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
+	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
 	if ( evalJs ) await page.evaluate( evalJs );
 	await page.waitForTimeout( wait );
 	// An edit can trigger a Vite reload during the settling delay. Never accept a loading screen.
@@ -67,10 +67,10 @@ try {
 	}
 	const out = `artifacts/captures/${ name }.png`;
 	// the renderer's frame counter (three's animation loop: rendered frames only)
-	const renderedFrame = () => page.evaluate( () => window.__SOOMI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
+	const renderedFrame = () => page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
 	const frames = [];
 	for ( let i = 0; i < frameCount; i ++ ) {
-		if ( i > 0 ) await page.waitForFunction( ( f ) => ( window.__SOOMI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 ) >= f,
+		if ( i > 0 ) await page.waitForFunction( ( f ) => ( window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 ) >= f,
 			frames[ i - 1 ].frame + frameEvery, { timeout, polling: 'raf' } );
 		const frame = await renderedFrame();
 		const file = i === 0 ? out : `artifacts/captures/${ name }.f${ i }.png`;

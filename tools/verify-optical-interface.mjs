@@ -20,13 +20,13 @@ try {
 	page.on( 'pageerror', e => errors.push( e.message ) );
 	page.on( 'console', m => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
 	await page.goto( `${ process.argv[ 2 ] || 'http://127.0.0.1:5190' }/?paused&t=12&dpr=1` );
-	await page.waitForFunction( () => window.__SOOMI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 80, null, { timeout: 90000 } );
+	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 80, null, { timeout: 90000 } );
 	const result = await page.evaluate( async () => {
 
 		try {
 
 			const module = await import( '/src/lighting/OpticalInterface.ts' );
-			return { probe: await module.probeOpticalInterface( window.__SOOMI__.renderer ) };
+			return { probe: await module.probeOpticalInterface( window.__PONLAI__.renderer ) };
 
 		} catch ( error ) { return { failure: error.message }; }
 

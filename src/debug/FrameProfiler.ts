@@ -46,7 +46,7 @@ import type * as THREE from 'three/webgpu';
 //   4. the innermost wrapped method on the call stack (`scope()`), else
 //   5. a wrapped async method still running (`scope( ..., { async: true } )`: the sky's bakes run
 //      in microtasks after the frame's tick), else 'other'.
-// The page exposes `window.__SOOMI_PROFILE__` (see `api`), read by tools/profile-frame.mjs.
+// The page exposes `window.__PONLAI_PROFILE__` (see `api`), read by tools/profile-frame.mjs.
 // `?profile=frames` keeps the frame and tick timing but skips the GPU timestamps. Measure frame
 // rates that way: with timestamp queries on, Chrome ran the same frames up to a quarter faster
 // (light scenes most; a scene that keeps the GPU saturated hardly at all), so the per-pass split
@@ -196,7 +196,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 			super();
 			this.timestamps = timestamps;
-			( window as unknown as Record<string, unknown> ).__SOOMI_PROFILE__ = this.api;
+			( window as unknown as Record<string, unknown> ).__PONLAI_PROFILE__ = this.api;
 
 		}
 
@@ -416,7 +416,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			};
 			// SubmitBatch's QUEUE_NATIVES (read by its registered symbol: importing it would split it
 			// out of the main bundle)
-			const natives = ( queue as unknown as Record<symbol, Record<string, Callable> | undefined> )[ Symbol.for( 'soomi.submitBatch.natives' ) ];
+			const natives = ( queue as unknown as Record<symbol, Record<string, Callable> | undefined> )[ Symbol.for( 'ponlai.submitBatch.natives' ) ];
 			wrap( natives ?? queue, 'submit', 'submit', queue );
 			wrap( natives ?? queue, 'writeBuffer', 'write', queue );
 			wrap( queue, 'writeTexture', 'write' );
@@ -808,7 +808,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 export type FrameProfiler = ReturnType<typeof createFrameProfiler>;
 
 /** The scene's passes by subsystem. `handles` are main.ts's objects. */
-export function labelSoomiPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
+export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
 
 	const h = handles as Record<string, Record<string, unknown>>;
 	const pipeline = h.pipeline;

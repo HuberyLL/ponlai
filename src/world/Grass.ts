@@ -606,7 +606,7 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 		group.add( b.mesh );
 
 	}
-	// for probes and tuning from the console ( __SOOMI__.grass )
+	// for probes and tuning from the console ( __PONLAI__.grass )
 	group.userData.minWidth = grassUniforms.minWidth;
 	group.userData.rimMinWidth = grassUniforms.rimMinWidth;
 	group.userData.thinNear = grassUniforms.thinNear;

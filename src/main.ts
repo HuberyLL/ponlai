@@ -480,7 +480,7 @@ console.info( worldCache.cache === 'hit' ? 'world from the cache' : 'world gener
 
 // ------------------------------------------------------------------ GUI
 
-const gui = new GUI( { title: 'Soomi · lighting & water' } );
+const gui = new GUI( { title: 'Ponlai · lighting & water' } );
 if ( ! params.has( 'gui' ) ) gui.hide();
 const S = pipeline.settings;
 type CameraView = 'island' | 'horizon' | 'sky';
@@ -1029,8 +1029,8 @@ await Promise.all( [ warming, stormSea.warm( renderer, waterScene, camera, pipel
 
 if ( profiler ) {
 
-	const { labelSoomiPasses } = await import( './debug/FrameProfiler.ts' );
-	labelSoomiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, caustics, characters } );
+	const { labelPonlaiPasses } = await import( './debug/FrameProfiler.ts' );
+	labelPonlaiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, caustics, characters } );
 
 }
 mark( 'loop' );
@@ -1248,5 +1248,5 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	quality, dynamicResolution, pacer, submitBatch, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };

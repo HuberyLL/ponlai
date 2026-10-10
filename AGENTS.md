@@ -1,4 +1,4 @@
-# Soomi
+# Ponlai
 
 A small stylised island in an open sea, rendered in the browser: a visual sample for a game.
 The look is stylised fantasy-realistic: a physically based scene graded toward a painted
@@ -94,7 +94,7 @@ stone exposed.
   while the generator's sources are unchanged (`--world-cache off` loads with `worldCache=off`).
   `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
   other page stopped, and reports deltas with their 95 % interval; `--toggle "js"` A/Bs inside one page by applying
-  the expression (with `s` = `window.__SOOMI__` and `on` false for A, true for B) every few frames,
+  the expression (with `s` = `window.__PONLAI__` and `on` false for A, true for B) every few frames,
   for example `--toggle "s.flags.myChange = on"` with a flag an optimisation reads from
   `src/debug/DebugFlags.ts`. Both give B/A as a ratio beside the delta. Decide A/Bs on GPU time
   per pass (timestamps on); take frame rates from `--timestamps off` or `both`. `--accept`
@@ -119,10 +119,10 @@ stone exposed.
   measured frames were drawn at (its median, range and changes: high's moves);
   `--scale-settle s` waits after each scene's warm-up until that scale has held for s seconds.
   `--eval` runs in the page with `s` =
-  `window.__SOOMI__` (an ablation, e.g. `--eval "s.pipeline.settings.dof = 0"`);
+  `window.__PONLAI__` (an ablation, e.g. `--eval "s.pipeline.settings.dof = 0"`);
   `--report profile.json` re-renders a summary. The `profile` URL option (`?profile`, or
   `?profile=frames` without GPU timestamps) loads `src/debug/FrameProfiler.ts`, which labels every
-  render and compute pass, reads their GPU timestamps and exposes `window.__SOOMI_PROFILE__`;
+  render and compute pass, reads their GPU timestamps and exposes `window.__PONLAI_PROFILE__`;
   without it the page builds the same pipelines and image. Its JS times leave out the time blocked
   in `queue.submit`, the queue writes and `getCurrentTexture` (Chrome's backpressure once the GPU
   falls behind), reported apart.
@@ -175,7 +175,7 @@ stone exposed.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics (the island camera in
   `src/camera/IslandCameraControls.ts`, with the ground it grabs in `IslandGround.ts`; the free
   flight in `FreeCameraControls.ts`).
-  `window.__SOOMI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev
+  `window.__PONLAI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev
   server or with `?debug` (or `?profile`, which also loads the frame profiler in `src/debug/`).
   `__SOOMI__.loop.step( { frames, dt, scale, camera, onFrame, clock } )` stops the live loop and
   steps the tick itself with fixed timestamps, the frame pacer and the dynamic scale bypassed and
@@ -690,7 +690,7 @@ stone exposed.
   display with `--display` (pacing, cadence, the scale's changes under drags). Report contended
   runs as such: check `node tools/gpu-lock.mjs gpu` before each run (and during it when other
   windows stay on screen). A player's window is not full screen: other apps stay visible
-  and may keep drawing (a Soomi page in an app's hidden browser pane took half the GPU and held the
+  and may keep drawing (a Ponlai page in an app's hidden browser pane took half the GPU and held the
   player's scale at its floor), so check a change in a normal window too, not only `--kiosk`.
   Headless at 60 Hz matched the display's GPU times within about 5 %.
 - Commit messages follow [Conventional Commits](https://www.conventionalcommits.org/):

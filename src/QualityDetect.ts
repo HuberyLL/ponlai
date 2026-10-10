@@ -26,7 +26,7 @@ import { renderPixelRatio } from './post/RenderScale.ts';
 
 // bumped when the model or the tiers change, so remembered choices are made again
 const VERSION = 1;
-const STORAGE_KEY = 'soomi.quality.auto';
+const STORAGE_KEY = 'ponlai.quality.auto';
 // seconds before frames count, the frames taken, and the most seconds it may take before it gives up
 const WARMUP = 0.5, MEASURE_FRAMES = 30, TIMEOUT = 5;
 // seconds after the warm-up without a timestamp before it times frames on an idle queue instead

@@ -45,10 +45,10 @@ try {
 	// A clear sky: the shell's clouds reach the horizon and could hide the setting disk under test.
 	url.search = 'debug&paused&t=12&dpr=1&weather=clear&clouds=0';
 	await page.goto( url.href );
-	await page.waitForFunction( () => window.__SOOMI__?.applySun && window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 90000 } );
+	await page.waitForFunction( () => window.__PONLAI__?.applySun && window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 90000 } );
 
 	const measurements = await page.evaluate( async () => {
-		const s = window.__SOOMI__, renderer = s.renderer, sky = s.sky;
+		const s = window.__PONLAI__, renderer = s.renderer, sky = s.sky;
 		const original = { elevation: sky.elevation, azimuth: sky.azimuth, illuminance: sky.sunIlluminance };
 		const animation = renderer.getAnimationLoop(), previousTarget = renderer.getRenderTarget();
 		const elevations = [], memory = [];

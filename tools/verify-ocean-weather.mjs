@@ -34,11 +34,11 @@ try {
 	const url = new URL( base );
 	for ( const [ key, value ] of Object.entries( { debug: '', paused: '', t: '12', dpr: '1', hour: '16', weather: 'clear' } ) ) url.searchParams.set( key, value );
 	await page.goto( url.href );
-	await page.waitForFunction( () => window.__SOOMI__?.fft.weatherGain && ! window.__SOOMI__.sky.busy &&
-		! window.__SOOMI__.sky.transitioning && window.__THREE_GAME_DIAGNOSTICS__?.frame > 80 &&
+	await page.waitForFunction( () => window.__PONLAI__?.fft.weatherGain && ! window.__PONLAI__.sky.busy &&
+		! window.__PONLAI__.sky.transitioning && window.__THREE_GAME_DIAGNOSTICS__?.frame > 80 &&
 		document.getElementById( 'loading' )?.classList.contains( 'done' ) );
 	report.result = await page.evaluate( async ( gains ) => {
-		const s = window.__SOOMI__, fft = s.fft, shore = s.shoreWaves, renderer = s.renderer;
+		const s = window.__PONLAI__, fft = s.fft, shore = s.shoreWaves, renderer = s.renderer;
 		const animation = renderer.getAnimationLoop();
 		const originalGain = fft.weatherGain.value.clone(), originalTime = s.shared.time.value;
 		const originalTarget = renderer.getRenderTarget();

@@ -35,12 +35,12 @@ try {
 	const url = new URL( base );
 	url.search = 'debug&paused&t=12&dpr=1&hour=0&moon=0.5&clouds=0&quality=medium';
 	await page.goto( url.href );
-	await page.waitForFunction( () => window.__SOOMI__?.sky?.night && window.__SOOMI__?.setHour &&
+	await page.waitForFunction( () => window.__PONLAI__?.sky?.night && window.__PONLAI__?.setHour &&
 		window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 && document.getElementById( 'loading' )?.classList.contains( 'done' ) );
 	// Fast paused frames can finish before the loading overlay's one-second CSS fade.
 	await page.waitForFunction( () => getComputedStyle( document.getElementById( 'loading' ) ).opacity === '0' );
 	await page.evaluate( () => {
-		const s = window.__SOOMI__;
+		const s = window.__PONLAI__;
 		s.dayCycle.paused = true;
 		s.dayCycle.advanceMoonPhase = false;
 		s.controls.enableDamping = false;
@@ -52,13 +52,13 @@ try {
 	} );
 	const frames = () => page.evaluate( () => new Promise( ( resolve ) => requestAnimationFrame( () => requestAnimationFrame( resolve ) ) ) );
 	const setState = ( phase, hour ) => page.evaluate( async ( { phase, hour } ) => {
-		const s = window.__SOOMI__;
+		const s = window.__PONLAI__;
 		s.dayCycle.moonPhase = phase;
 		await s.setHour( hour );
 	}, { phase, hour } );
 	const setView = async ( moon, fov = 8 ) => {
 		await page.evaluate( ( { moon, fov } ) => {
-			const s = window.__SOOMI__;
+			const s = window.__PONLAI__;
 			const direction = moon ? s.sky.moonDir.clone() : s.sky.sunDir.clone().set( 0.6, 0.72, 0.35 ).normalize();
 			s.camera.position.set( 0, 15, 0 );
 			s.controls.target.copy( s.camera.position ).addScaledVector( direction, 100 );
@@ -83,7 +83,7 @@ try {
 		await setState( phase.phase, phase.hour );
 		await setView( true );
 		const state = await page.evaluate( () => {
-			const s = window.__SOOMI__, snapshot = s.dayCycle.snapshot();
+			const s = window.__PONLAI__, snapshot = s.dayCycle.snapshot();
 			return { illumination: snapshot.moonIllumination, moonElevation: snapshot.moonElevation,
 				moonDir: s.sky.moonDir.toArray(), sunDir: s.sky.sunDir.toArray(),
 				starVisibility: s.sky.night.starVisibility.value, exposure: s.pipeline.settings.exposure };
@@ -97,7 +97,7 @@ try {
 	// Render the real dome material to float targets. Difference against the same render with
 	// the moon/star uniform disabled isolates those contributions from the changing atmosphere.
 	report.gpu = await page.evaluate( async ( phases ) => {
-		const s = window.__SOOMI__, r = s.renderer, sky = s.sky;
+		const s = window.__PONLAI__, r = s.renderer, sky = s.sky;
 		const animation = r.getAnimationLoop(), previousTarget = r.getRenderTarget();
 		const scene = new s.scene.constructor();
 		const dome = sky.dome.clone();

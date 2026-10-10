@@ -7,7 +7,7 @@
 // every typed array bit for bit), before the page bakes anything into it. Any failure of the
 // store (a private window, a full quota, blocked site data) falls back to generating.
 
-const DB = 'soomi-world-cache';
+const DB = 'ponlai-world-cache';
 const STORE = 'worlds';
 
 function request<T>( r: IDBRequest<T> ): Promise<T> {
