@@ -6,10 +6,10 @@ import {
 import { LEAN_REF, rootPhase, setWindDisplacement, wave, windField, type WindState } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
 import { mulberry32 } from './noise.ts';
+import { ALPHA_TO_COVERAGE } from '../post/Antialiasing.ts';
 import { bushRooted, FOLIAGE_SEED, pickFoliageSites } from './FoliageSites.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
-import { SCENE_SAMPLES } from '../post/SceneSamples.ts';
 import type { Shared } from '../shared.ts';
 
 // Individual folded leaves on short branching sprays. Three offset crowns keep bushes
@@ -86,13 +86,14 @@ export function leafTexture( size = 128 ): THREE.CanvasTexture {
 
 export const LEAF_ALPHA_TEST = 0.3;
 
-// Whether the vegetation's cut-outs and thin blades use alpha to coverage. WebGPU multisamples
-// with 4 samples or none (three maps any other count to one sample), and with one sample there
-// is no coverage to give: the pipeline then ignores alpha, so the softened alpha-tested edges and
-// the grass's lowered coverage would all draw solid. Without it leaves take a plain alpha test at
-// the cutoff their coverage-preserving mips were built for (`leafAlphaTexture`), and grass blades
-// an ordered 4x4 dither (`coverageDither` in Grass.ts).
-export const ALPHA_TO_COVERAGE = SCENE_SAMPLES >= 4;
+// Whether the vegetation's cut-outs and thin blades use alpha to coverage (the AA mode's plan,
+// post/Antialiasing.ts: with 4 samples only). WebGPU multisamples with 4 samples or none (three
+// maps any other count to one sample), and with one sample there is no coverage to give: the
+// pipeline then ignores alpha, so the softened alpha-tested edges and the grass's lowered coverage
+// would all draw solid. Without it leaves take a plain alpha test at the cutoff their
+// coverage-preserving mips were built for (`leafAlphaTexture`), and grass blades an ordered 4x4
+// dither (`coverageDither` in Grass.ts).
+export { ALPHA_TO_COVERAGE };
 
 // Tags a material as vegetation (leaves and grass blades) for passes that treat it apart, such
 // as a lighter shadow filter. `alphaToCoverage` cannot tell: it is off without multisampling.

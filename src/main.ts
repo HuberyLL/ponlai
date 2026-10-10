@@ -6,7 +6,7 @@ import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, type WeatherName } from './sky/Weather.ts';
 import { QUALITY_TIERS, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
-import { chooseQuality, forgetQuality, qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
+import { forgetQuality, qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
@@ -43,7 +43,7 @@ import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
-import { SCENE_SAMPLES } from './post/SceneSamples.ts';
+import { AA_GUI_MODES, AA_MODE, QUALITY_CHOICE, type AAMode } from './post/Antialiasing.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
@@ -73,8 +73,10 @@ const mark = ( name: string ) => profiler?.mark( name );
 const DEBUG = import.meta.env.DEV || params.has( 'debug' ) || profiler !== null;
 // The quality tier (Quality.ts): its load knobs are read below as the parts they shape are built,
 // its runtime ones applied by applySkyQuality. A change of tier reloads the page. Without ?quality
-// it is the one measured on this GPU (QualityDetect.ts), or high while this load measures.
-const qualityChoice = await chooseQuality( params );
+// it is the one measured on this GPU (QualityDetect.ts), or high while this load measures. It is
+// chosen where the anti-aliasing mode is (post/Antialiasing.ts), since that mode is read as the
+// vegetation's modules load, before this code runs.
+const qualityChoice = QUALITY_CHOICE;
 const qualityTier: QualityTier = qualityChoice.tier;
 const quality: Readonly<QualityProfile> = qualityProfile( qualityTier );
 const loading = document.getElementById( 'loading' );
@@ -667,6 +669,21 @@ performanceF.add( { reset: () => frameStats.reset() }, 'reset' ).name( 'reset co
 frameStats.visible = () => ! gui._hidden && ! gui._closed && ! performanceF._closed;
 frameStats.onReadout = () => { for ( const c of statsF ) c.updateDisplay(); };
 frameStats.extra = () => `scale ${ resolution.scale }   GPU ${ resolution.gpu }`;
+// The anti-aliasing mode (post/Antialiasing.ts) is built into materials and the frame graph, so a
+// change reloads the page with `aa=` (the older `msaa` alias dropped). The temporal modes stay
+// URL-only until they are tuned.
+const antialiasingF = gui.addFolder( 'Antialiasing' );
+antialiasingF.add( { mode: AA_MODE }, 'mode', AA_GUI_MODES ).name( 'mode (reloads)' ).onFinishChange( ( mode: AAMode ) => {
+
+	if ( mode === AA_MODE ) return;
+	const url = new URL( location.href );
+	url.searchParams.set( 'aa', mode );
+	url.searchParams.delete( 'msaa' );
+	if ( gui._hidden ) url.searchParams.delete( 'gui' );
+	else url.searchParams.set( 'gui', '' );
+	location.assign( url );
+
+} );
 const groundF = gui.addFolder( 'Ground' );
 groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => {
 
@@ -1138,7 +1155,7 @@ function diagnostics( now = false ): void {
 		cameraMode: cameraSettings.mode,
 		// the scene's anti-aliasing, the pipelines created so far and the frame graph's state and
 		// dev counters, for the clip and first-use tools
-		aa: SCENE_SAMPLES === 1 ? 'off' : 'msaa',
+		aa: AA_MODE,
 		pipelines: pipelineCount?.total ?? 0,
 		graph: graphDiagnostics(),
 	};

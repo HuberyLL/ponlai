@@ -10,7 +10,7 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
-import { SCENE_SAMPLES } from './SceneSamples.ts';
+import { SCENE_SAMPLES } from './Antialiasing.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';

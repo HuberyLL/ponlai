@@ -43,9 +43,10 @@ stone exposed.
   Option / Ctrl with the left) turns and tilts, the wheel zooms toward the pointer; on a trackpad a
   two-finger swipe pans, a pinch zooms and Option with a swipe turns and tilts; W A S D or the
   arrows pan, Q / E turn, T / G tilt, + / - zoom, Shift speeds them up.
-- Rendering and A/B URL options, read at load: `msaa` (the scene's sample count, `SceneSamples.ts`:
-  4, the default, or 1 for none; `2` reads as 1, since WebGPU multisamples with 1 or 4 samples
-  only), `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB
+- Rendering and A/B URL options, read at load: `aa` (the anti-aliasing mode, `src/post/Antialiasing.ts`:
+  `msaa`, 4 samples, or `off`, one sample, over the tier's `aa` knob; `taa` and `taau` warn and run
+  `msaa` until the temporal modes are built) and its older alias `msaa` (`4` reads as `aa=msaa`,
+  `1` and `2` as `aa=off`, since WebGPU multisamples with 1 or 4 samples only), `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB
   cache, as on a first visit), `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer
   masks; for an A/B inside one page each cliff material swaps to its other variant through
   `material.userData.terrainVariant`, as `TerrainMaterial.ts` shows: the flag itself is read only
