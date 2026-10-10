@@ -1,6 +1,13 @@
 // Full-resolution captures of the running dev server for visual review.
 //   node tools/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval "js"] [--wait 6000] [--verbose] [--exclusive]
+//                          [--wait-for "js expression"] [--frames n --every k] [--timeout 60000]
 // Writes artifacts/captures/<name>.png and prints the page's console errors and diagnostics.
+// --wait-for polls the expression in the page (up to 60 s) after the settling wait and captures
+// once it is truthy (e.g. a temporal resolve's convergence flag). --frames n captures n frames,
+// k rendered frames apart (default 1): <name>.png, then <name>.f1.png ... <name>.f<n-1>.png.
+// --timeout (ms) bounds each wait for the page (its load, its first 150 frames, a screenshot);
+// raise it when other pages keep the GPU busy. The JSON holds the page's `window.__SOOMI_CROPS__`
+// (tools/parity/views.mjs) as `crops` when it is set.
 // A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
 // a running one, or --exclusive, takes it to itself, since its frame times are reported too.
 import { chromium } from 'playwright';
@@ -16,6 +23,12 @@ const evalJs = opt( 'eval', '' );
 const wait = Number( opt( 'wait', 7000 ) );
 const url = `${ opt( 'url', 'http://127.0.0.1:5190/' ) }?${ query }`;
 const sampleCount = Number( opt( 'samples', 1 ) );
+const waitFor = opt( 'wait-for', '' );
+const timeout = Number( opt( 'timeout', 60000 ) );
+// Playwright's own screenshot timeout (30 s) unless --timeout is given
+const shotTimeout = args.includes( '--timeout' ) ? timeout : undefined;
+const frameCount = Math.max( 1, Number( opt( 'frames', 1 ) ) );
+const frameEvery = Math.max( 1, Number( opt( 'every', 1 ) ) );
 
 await mkdir( 'artifacts/captures', { recursive: true } );
 // tools/gpu-lock.mjs: shared for a paused scene, exclusive otherwise
@@ -39,28 +52,41 @@ page.on( 'response', ( r ) => { if ( r.status() >= 400 ) failures.push( `${ r.st
 page.on( 'requestfailed', ( r ) => failures.push( `${ r.failure()?.errorText } ${ r.url() }` ) );
 try {
 	await page.goto( url );
-	await page.waitForFunction( () => window.__SOOMI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout: 60000 } );
+	await page.waitForFunction( () => window.__SOOMI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
 	if ( evalJs ) await page.evaluate( evalJs );
 	await page.waitForTimeout( wait );
 	// An edit can trigger a Vite reload during the settling delay. Never accept a loading screen.
 	await page.waitForFunction( () => window.__THREE_GAME_DIAGNOSTICS__?.frame > 150 &&
-		document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 60000 } );
+		document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout } );
 	await page.waitForTimeout( 1100 );
+	if ( waitFor ) await page.waitForFunction( waitFor, null, { timeout: 60000, polling: 100 } );
 	const samples = [];
 	for ( let i = 0; i < sampleCount; i ++ ) {
 		if ( i > 0 ) await page.waitForTimeout( 1000 );
 		samples.push( await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) ) );
 	}
 	const out = `artifacts/captures/${ name }.png`;
-	await page.screenshot( { path: out } );
+	// the renderer's frame counter (three's animation loop: rendered frames only)
+	const renderedFrame = () => page.evaluate( () => window.__SOOMI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
+	const frames = [];
+	for ( let i = 0; i < frameCount; i ++ ) {
+		if ( i > 0 ) await page.waitForFunction( ( f ) => ( window.__SOOMI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 ) >= f,
+			frames[ i - 1 ].frame + frameEvery, { timeout, polling: 'raf' } );
+		const frame = await renderedFrame();
+		const file = i === 0 ? out : `artifacts/captures/${ name }.f${ i }.png`;
+		await page.screenshot( { path: file, timeout: shotTimeout } );
+		frames.push( { file, frame } );
+	}
 	const diag = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
+	const crops = await page.evaluate( () => window.__SOOMI_CROPS__ ?? null );
 	const gpu = await page.evaluate( async () => {
 		const adapter = await navigator.gpu.requestAdapter();
 		return adapter ? { vendor: adapter.info.vendor, architecture: adapter.info.architecture, device: adapter.info.device, description: adapter.info.description } : null;
 	} );
 	await writeFile( `artifacts/captures/${ name }.json`, JSON.stringify( {
-		url, viewport: { width: W, height: H }, samples, diag, gpu, errors, failures,
+		url, viewport: { width: W, height: H }, browser: browser.version(), samples, diag, gpu, errors, failures,
 		meanFrameMs: samples.reduce( ( s, d ) => s + d.frameMs, 0 ) / samples.length,
+		...( frameCount > 1 ? { frames } : {} ), ...( crops ? { crops } : {} ),
 	}, null, 2 ) );
 	console.log( out, JSON.stringify( diag ) );
 	if ( errors.length ) console.log( errors.slice( 0, verbose ? 60 : 12 ).join( '\n' ) );
