@@ -26,9 +26,11 @@
 // (gradient 1), so the dual-contouring surface nets keep facets flat and their edges crisp.
 // Every scar is seeded from a coast point hashed from its position in a world-anchored cell, and
 // placed in two tiers: the joint faces and gullies on the plain face, the smaller generations on
-// the face with those cut out. Every choice reads only the seeds near it and the scars are cut in
-// a canonical order, so an unchanged stretch of coast keeps its scars when the land grows
-// elsewhere.
+// the face with those cut out. Each scar reaches a bounded distance from its anchor and they are
+// cut in a canonical order, so what the wall is at a point depends only on the coast within about
+// 25 m of it: given the same land distance there, an unchanged stretch of coast keeps its scars,
+// to the bit, when the land grows elsewhere, and a part of the coast can be built from its own
+// surroundings alone.
 
 import { hash3i, noise3, smax, smoothstep } from './noise.ts';
 
@@ -175,6 +177,13 @@ const POCKET_GAP = 1.0, POCKET_RISE = 0.6;
 // among the seeds within `spacing` of them: one candidate per 2 x 3.7 m of coast, about as many as
 // the 9 m cells a coast crosses (one every 7 m or so) gave before, so one gully per 13 m or so.
 const GULLY = { spacing: 3.7, keep: 0.55, level: LEVELS.length };
+// How far a scar reaches from its anchor (m, either way in x and z): the joint faces and gullies,
+// and the smaller generations. A bounded reach is what makes the wall at a point depend only on
+// the coast near it. Most scars lie well inside it; the few that would cut rock beyond it (a wide
+// joint face whose leaning sides splay out at the toe, or that runs straight on across a bay) end
+// there in vertical breaks across the scar, in its own frame, rather than in a cut along the
+// world's axes.
+const REACH_A = 4.5, REACH_B = 3.0;
 // No scar reaches further behind the face than this (m), so the meadow keeps its plateau.
 const MAX_REACH = 1.3;
 // The meadow's planting height: a floor cut into the lip stays clear below it.
@@ -183,11 +192,10 @@ const BARE_STEP = 2.55;
 const wrap = ( a: number ) => Math.atan2( Math.sin( a ), Math.cos( a ) );
 const lerp = ( a: number, b: number, t: number ) => a + ( b - a ) * t;
 
-// The polytope's vertices (all triple intersections inside every plane), for its bounds.
-function bounds( s: Scar ): boolean {
+// The polytope's vertices: all triple intersections inside every plane (x, y, z each).
+function vertices( p: Float64Array, n: number ): number[] {
 
-	const p = s.planes, n = s.n;
-	let x0 = Infinity, x1 = - Infinity, y0 = Infinity, y1 = - Infinity, z0 = Infinity, z1 = - Infinity;
+	const v: number[] = [];
 	for ( let a = 0; a < n; a ++ ) for ( let b = a + 1; b < n; b ++ ) for ( let c = b + 1; c < n; c ++ ) {
 
 		const ax = p[ a * 4 ], ay = p[ a * 4 + 1 ], az = p[ a * 4 + 2 ], ac = p[ a * 4 + 3 ];
@@ -201,14 +209,58 @@ function bounds( s: Scar ): boolean {
 		const z = ( ax * ( by * cc - bc * cy ) - ay * ( bx * cc - bc * cx ) + ac * ( bx * cy - by * cx ) ) / det;
 		let inside = true;
 		for ( let k = 0; k < n && inside; k ++ ) if ( p[ k * 4 ] * x + p[ k * 4 + 1 ] * y + p[ k * 4 + 2 ] * z - p[ k * 4 + 3 ] > 1e-6 ) inside = false;
-		if ( ! inside ) continue;
-		x0 = Math.min( x0, x ); x1 = Math.max( x1, x ); y0 = Math.min( y0, y ); y1 = Math.max( y1, y ); z0 = Math.min( z0, z ); z1 = Math.max( z1, z );
+		if ( inside ) v.push( x, y, z );
+
+	}
+	return v;
+
+}
+
+// Keeps the scar within its reach of its anchor and sets its bounds. Where the block would pass
+// an octagon round the anchor (in the frame of `angle`, the coast's outward normal there; its
+// corners inside the reach less the rims' rounding), it breaks off along vertical planes of that
+// octagon; the bounds are then clamped to the reach as well, which makes the reach a guarantee
+// without cutting anything.
+function bounds( s: Scar, angle: number ): boolean {
+
+	const reach = s.level === 0 || s.kind === 'gully' ? REACH_A : REACH_B;
+	const apothem = ( reach - 0.15 ) * Math.cos( Math.PI / 8 );
+	let v = vertices( s.planes, s.n );
+	const ends: number[] = [];
+	for ( let k = 0; k < 8; k ++ ) {
+
+		const dx = Math.cos( angle + k * Math.PI / 4 ), dz = Math.sin( angle + k * Math.PI / 4 );
+		const c = dx * s.cx + dz * s.cz + apothem;
+		for ( let i = 0; i < v.length; i += 3 ) if ( dx * v[ i ] + dz * v[ i + 2 ] > c ) {
+
+			ends.push( dx, 0, dz, c );
+			break;
+
+		}
+
+	}
+	if ( ends.length > 0 ) {
+
+		const planes = new Float64Array( s.planes.length + ends.length );
+		planes.set( s.planes );
+		planes.set( ends, s.planes.length );
+		s.planes = planes; s.n = planes.length / 4;
+		v = vertices( s.planes, s.n );
+
+	}
+	let x0 = Infinity, x1 = - Infinity, y0 = Infinity, y1 = - Infinity, z0 = Infinity, z1 = - Infinity;
+	for ( let i = 0; i < v.length; i += 3 ) {
+
+		x0 = Math.min( x0, v[ i ] ); x1 = Math.max( x1, v[ i ] ); y0 = Math.min( y0, v[ i + 1 ] );
+		y1 = Math.max( y1, v[ i + 1 ] ); z0 = Math.min( z0, v[ i + 2 ] ); z1 = Math.max( z1, v[ i + 2 ] );
 
 	}
 	if ( ! ( x1 > x0 ) || ! ( y1 > y0 ) || ! ( z1 > z0 ) ) return false;
 	// rounding reaches a little beyond the faces
 	const m = s.round + 0.05;
-	s.x0 = x0 - m; s.x1 = x1 + m; s.y0 = y0 - m; s.y1 = y1 + m; s.z0 = z0 - m; s.z1 = z1 + m;
+	s.x0 = Math.max( x0 - m, s.cx - reach ); s.x1 = Math.min( x1 + m, s.cx + reach );
+	s.z0 = Math.max( z0 - m, s.cz - reach ); s.z1 = Math.min( z1 + m, s.cz + reach );
+	s.y0 = y0 - m; s.y1 = y1 + m;
 	return true;
 
 }
@@ -694,7 +746,7 @@ export class CliffWall {
 			round: fresh > 0 ? 0.006 + r( 37 ) * 0.01 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
 			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
 		};
-		return bounds( scar ) ? scar : null;
+		return bounds( scar, angN ) ? scar : null;
 
 	}
 
@@ -779,7 +831,7 @@ export class CliffWall {
 			round: fresh > 0 ? 0.005 : lerp( L.round[ 0 ], L.round[ 1 ], r( 37 ) ),
 			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
 		};
-		return bounds( scar ) ? scar : null;
+		return bounds( scar, Math.atan2( n[ 1 ], n[ 0 ] ) ) ? scar : null;
 
 	}
 
@@ -838,7 +890,7 @@ export class CliffWall {
 			cx: px, cy: 1.2, cz: pz, size: half, round: 0.025 + r( 30 ) * 0.025,
 			x0: 0, x1: 0, y0: 0, y1: 0, z0: 0, z1: 0,
 		};
-		return bounds( scar ) ? scar : null;
+		return bounds( scar, angN ) ? scar : null;
 
 	}
 
