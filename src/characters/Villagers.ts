@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeVertexColourCharacterMaterial, KIND } from './CharacterMaterial.ts';
 import { CharacterShadow } from './CharacterShadow.ts';
 import { pointedEars } from './Ears.ts';
+import { reproportion, PROPORTIONS, type Proportions } from './Proportions.ts';
 import type { Shared } from '../shared.ts';
 
 // Islanders assembled from modular low-poly parts (Ultimate Modular Characters by Quaternius,
@@ -75,8 +76,11 @@ function paintPart( mesh: THREE.SkinnedMesh, paint: PartSpec[ 'paint' ], hands?:
 
 }
 
-/** Assemble parts on the rig of the first part's file, with that file's animation clips. */
-export async function loadVillager( base: string, parts: PartSpec[], shared: Shared ): Promise<Villager> {
+/**
+ * Assemble parts on the rig of the first part's file, with that file's animation clips, and
+ * re-proportion the figure (Proportions.ts; the kit's own proportions by default).
+ */
+export async function loadVillager( base: string, parts: PartSpec[], shared: Shared, proportions: Proportions = PROPORTIONS.stock ): Promise<Villager> {
 
 	const loader = new GLTFLoader();
 	const files = new Map<string, GLTF>();
@@ -115,6 +119,7 @@ export async function loadVillager( base: string, parts: PartSpec[], shared: Sha
 	mesh.name = 'villager';
 	parent.add( mesh );
 	mesh.bind( template.skeleton, template.bindMatrix );
+	reproportion( mesh, rig.animations, proportions );
 	mesh.castShadow = false;
 	mesh.receiveShadow = true;
 	mesh.frustumCulled = false;
