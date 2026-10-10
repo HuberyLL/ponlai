@@ -649,7 +649,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 				this.open.shift();
 				for ( const pass of pending ) this.byUid.delete( pass.uid );
 				this.failed.late += pending.length;
-				const record = this.record( frame, pending.length );
+				const record = this.record( frame );
 				this.done.push( record );
 				this.onRecord?.( record );
 				if ( this.done.length > 20000 ) this.done.splice( 0, this.done.length - 20000 );
@@ -658,8 +658,10 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 		}
 
-		private record( frame: Frame, missing: number ): FrameRecord {
+		private record( frame: Frame ): FrameRecord {
 
+			// (passes that never reported are not done, and counted here once)
+			let missing = 0;
 			const groups: Record<string, number> = {};
 			const detail: Record<string, number> = {};
 			const charges = new Map<Pass, number>();
