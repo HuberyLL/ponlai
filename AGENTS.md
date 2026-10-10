@@ -181,7 +181,9 @@ stone exposed.
   steps the tick itself with fixed timestamps, the frame pacer and the dynamic scale bypassed and
   nothing taken from the wall clock (`loop.start()` resumes the live loop); the diagnostics add
   the scene's anti-aliasing (`aa`), the pipelines created so far (`pipelines`, counted by
-  `src/debug/PipelineCounter.ts`) and `graph` (a placeholder for the frame graph).
+  `src/debug/PipelineCounter.ts`) and `graph` (the frame graph's dev counters: the attachment
+  ops it rewrote and expected in the last frame, the frames they differed, targets found at a
+  size other than their class's).
 - `src/world/`: the island generated in Web Workers (the island, the stones in up to four sets and
   the rest built in parallel copies of `worldWorker.ts` and merged in serial order, so the world is
   identical to a single thread's; kept in IndexedDB by `WorldCache.ts`, keyed by the hash of the

@@ -1009,11 +1009,16 @@ function diagnostics( now = false ): void {
 		wetness: + shared.wetness.value.toFixed( 3 ),
 		windSpeed: + wind.speed.toFixed( 3 ),
 		cameraMode: cameraSettings.mode,
-		// the scene's anti-aliasing, the pipelines created so far and the frame graph (not yet
-		// introspected), for the clip and first-use tools
+		// the scene's anti-aliasing, the pipelines created so far and the frame graph's dev
+		// counters (its description comes later), for the clip and first-use tools
 		aa: SCENE_SAMPLES === 1 ? 'off' : 'msaa',
 		pipelines: pipelineCount?.total ?? 0,
-		graph: null,
+		graph: {
+			opsApplied: pipeline.graph.opsApplied,
+			opsExpected: pipeline.graph.opsExpected,
+			opsMismatchFrames: pipeline.graph.opsMismatchFrames,
+			sizeErrors: pipeline.graph.sizeErrors,
+		},
 	};
 
 }
