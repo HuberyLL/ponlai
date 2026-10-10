@@ -347,26 +347,33 @@ stone exposed.
   box, the sea fog's clearing, the walking loop, the game's grid). World generation stays
   deterministic whatever the thread count: parts never share running counts, and the merge
   restores the serial order.
-- Cliff features (rockfall scars, joint faces, pockets, steps in the lip, gullies, the notch)
-  derive from the footprint with seeds hashed from position in world-anchored cells (`Cliff.ts`),
-  and an unchanged stretch of coast keeps its scars when the land grows elsewhere: every property
-  of a scar comes from its own hash, never from a running count, and each generation is cut into
-  the surface the larger ones left. The wall is built as solid geometry: convex blocks bounded by
-  two regional joint sets (both oblique to the world's axes), bed partings and inclined fractures
-  are subtracted from a battered face, so its field stays a true distance and the facets stay flat
-  up to crisp edges. It must read as natural rock, never masonry: no level courses or evenly spaced
-  joints, and no lumps of dissolved limestone. Scar floors and roofs lie on a parting only some of
-  the time, partings and soft beds open over a few metres and pinch out, and under the meadow the
-  wall weathers back to an upper slope rather than jutting as a slab. Pockets are much shallower
-  than they are wide and tall, their roofs open outward, two never crowd each other at one height,
-  and their occlusion is lifted a little, so none reads as a black hole or a pair of eyes in the
-  shade; the small breaks are flakes (a flat facet ending in a step). Above the waves the breaks
-  stay sharp (rims rounded by a few centimetres at most); only the wave zone rounds them. The
-  wave-cut notch comes and goes with the coast's exposure and its roof stays above the calm sea's
-  crests; the joint faces run on below the sea, so no ledge follows the waterline. The weathering
-  relief fades out at the meadow, whose height stays `islandSurfaceHeight`. Steps where a block
-  fell from the lip stop below the meadow's planting height (2.8 m) and carry no turf. No
-  waterfalls. Moss and greenery on the wall stay in its upper 1.2 m.
+- Cliff features (rockfall scars, joint faces, pockets, steps in the lip, gullies, the notch) derive
+  from the footprint with seeds hashed from position in world-anchored cells (`Cliff.ts`), and an
+  unchanged stretch of coast keeps its scars when the land grows elsewhere: every property of a scar
+  comes from its own hash, never from a running count. The scars are placed in two tiers: the joint
+  faces and gullies on the plain face, the pockets and flakes on the face with those cut out. Every
+  choice reads only seeds near it (a gully at the seed that ranks first within 3.7 m, a pocket
+  giving way to a higher-ranked pocket proposal crowding it), a scar ends within 4.5 m (first tier)
+  or 3 m (second tier) of its anchor, breaking off along vertical planes in its own frame where it
+  would reach further, and the scars are cut in order of level and seed key. So the wall at a point
+  depends only on the land's distance field within 25 m of it, bit for bit (`CliffWall`'s `area` is
+  the box it is evaluated in, grown by 25 m; `tools/world-local/cliff.mjs`). The wall is built as
+  solid geometry: convex blocks bounded by two regional joint sets (both oblique to the world's
+  axes), bed partings and inclined fractures are subtracted from a battered face, so its field stays
+  a true distance and the facets stay flat up to crisp edges. It must read as natural rock, never
+  masonry: no level courses or evenly spaced joints, and no lumps of dissolved limestone. Scar
+  floors and roofs lie on a parting only some of the time, partings and soft beds open over a few
+  metres and pinch out, and under the meadow the wall weathers back to an upper slope rather than
+  jutting as a slab. Pockets are much shallower than they are wide and tall, their roofs open
+  outward, two never crowd each other at one height, and their occlusion is lifted a little, so none
+  reads as a black hole or a pair of eyes in the shade; the small breaks are flakes (a flat facet
+  ending in a step). Above the waves the breaks stay sharp (rims rounded by a few centimetres at
+  most); only the wave zone rounds them. The wave-cut notch comes and goes with the coast's exposure
+  and its roof stays above the calm sea's crests; the joint faces run on below the sea, so no ledge
+  follows the waterline. The weathering relief fades out at the meadow, whose height stays
+  `islandSurfaceHeight`. Steps where a block fell from the lip stop below the meadow's planting
+  height (2.8 m) and carry no turf. No waterfalls. Moss and greenery on the wall stay in its upper
+  1.2 m.
 - Around the island, the shelf's width and depth, the talus at the cliff foot, its shallow benches
   and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
   noise. The floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
