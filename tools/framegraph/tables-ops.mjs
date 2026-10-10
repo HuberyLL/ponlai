@@ -107,9 +107,11 @@ function mockWebGPU() {
 		};
 
 	};
-	// fix/stutter's CommandBatch: an instance wrapper of createCommandEncoder that, while batching,
-	// returns a recording encoder without calling the earlier wrapper, and replays the recording
-	// into real encoders through the device method it saved, outside beginRender
+	// a command recorder (CommandBatch, tried for the frame pacing and not shipped; the shipped
+	// SubmitBatch is a prototype patch, mocked above): an instance wrapper of createCommandEncoder
+	// that, while batching, returns a recording encoder without calling the earlier wrapper, and
+	// replays the recording into real encoders through the device method it saved, outside
+	// beginRender
 	const installBatch = ( device ) => {
 
 		const create = device.createCommandEncoder.bind( device );

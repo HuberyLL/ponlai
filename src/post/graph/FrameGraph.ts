@@ -579,7 +579,7 @@ export class FrameGraph<F = unknown> {
 			this.opsApplied = ops.applied;
 			// dev: every rewrite the table expects reached WebGPU (AttachmentOps must be installed
 			// after any wrapper of the device's createCommandEncoder that does not call through,
-			// such as fix/stutter's CommandBatch; see AttachmentOps.ts)
+			// such as a command recorder; see AttachmentOps.ts)
 			if ( this.options.dev && ops.installed && table && ops.applied !== table.rewrites ) {
 
 				if ( this.opsMismatchFrames ++ < 8 ) console.warn( `FrameGraph: ${ ops.applied } descriptors rewritten, the ops table expects ${ table.rewrites }${ ops.overwrapped ? ' (createCommandEncoder was wrapped after AttachmentOps)' : '' }` );

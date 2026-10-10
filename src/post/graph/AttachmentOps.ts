@@ -24,12 +24,14 @@ import type { OpsMode, OpsTable, PassOps } from './GraphCompiler.ts';
 // installed before or after this one runs under it and sees the rewritten descriptor. An instance
 // wrapper of `createCommandEncoder` installed before it is called through as well. One installed
 // AFTER it that returns encoders of its own without calling the earlier wrapper bypasses it
-// silently: fix/stutter's CommandBatch does exactly that while it batches (it hands three a
-// recording encoder and replays it later through the device method it saved). AttachmentOps must
-// therefore be installed after CommandBatch: it then wraps the recording encoder's
-// `beginRenderPass`, and the recording keeps the rewritten descriptor. A wrapper installed later
-// is flagged (`overwrapped`), and the graph's dev check compares the rewrites that reached the
-// encoder with the table's. The copied descriptor leaves three's cached one as it was.
+// silently. The frame's submit batching (`SubmitBatch.ts`) patches the encoder prototypes and makes
+// its own staging encoders from the native method, so it composes in either order. A command
+// recorder (tried for the frame pacing as CommandBatch, not shipped: it hands three a recording
+// encoder and replays it later through the device method it saved) is the case that bypasses it,
+// so such a wrapper must be installed before AttachmentOps: AttachmentOps then wraps the recording
+// encoder's `beginRenderPass`, and the recording keeps the rewritten descriptor. A wrapper
+// installed later is flagged (`overwrapped`), and the graph's dev check compares the rewrites that
+// reached the encoder with the table's. The copied descriptor leaves three's cached one as it was.
 //
 // It acts only while the graph executes (`begin` / `end`) and only on the executing pass's own
 // target: a pass that renders other targets inside it (a shadow map, a bloom chain) is untouched.
@@ -106,7 +108,7 @@ export class AttachmentOps {
 
 	/** Wraps the backend's `beginRender` and the device's `createCommandEncoder` (instance
 	 * properties; `uninstall` restores what was there). Install after any wrapper of
-	 * createCommandEncoder that does not call through (CommandBatch). */
+	 * createCommandEncoder that does not call through (a command recorder). */
 	install(): void {
 
 		if ( this.restore ) return;
