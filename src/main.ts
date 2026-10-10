@@ -16,7 +16,9 @@ import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
-import { loadWorld, buildWorldMeshes, shoreTextureFrom, seabedBedTextureFrom, type LoadedWorld } from './world/World.ts';
+import { buildWorldMeshes, shoreTextureFrom, seabedBedTextureFrom } from './world/World.ts';
+// first of all that may wait as the modules load: the world's workers start here (WorldStart.ts)
+import { worldJob } from './world/WorldStart.ts';
 import { buildGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
@@ -52,14 +54,6 @@ import { ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
 import type { Game } from './game/Game.ts';
 
 const params = new URLSearchParams( location.search );
-// The world's generation needs nothing from the page, so its workers start first and run while
-// the renderer, sky, textures and frame graph are set up; its result is awaited below. The world
-// worker's last result comes from IndexedDB while the generator and its options are unchanged
-// (src/world/WorldCache.ts); ?worldCache=off generates it regardless, as on a first visit. A
-// browser without WebGPU stops at the renderer below, so it starts no workers.
-const worldJob: Promise<LoadedWorld> = 'gpu' in navigator ? loadWorld( {}, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } )
-	: new Promise( () => undefined );
-worldJob.catch( () => undefined ); // reported where it is awaited, under the world section
 const ground = { soil: params.get( 'soil' ) !== '0' };
 soilUniforms.strength.value = ground.soil ? 1 : 0;
 soilUniforms.blend.value = params.get( 'blend' ) === '0' ? 0 : 1;
