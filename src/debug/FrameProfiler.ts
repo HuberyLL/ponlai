@@ -144,9 +144,13 @@ type Backend = {
 };
 type Named = { name?: string; isQuadMesh?: boolean; isScene?: boolean; isComputeNode?: boolean; texture?: THREE.Texture; width?: number; height?: number };
 
-// read-back buffers in flight: one per pool (render, compute) per frame, for a GPU a few dozen
-// frames behind
-const RING = 128;
+// read-back buffers in flight: one per pool (render, compute) per frame. In an uncapped run their
+// maps resolved more than 64 frames after their frame, so a ring of 128 ran out and lost a pool's
+// passes in about a third of the frames; a buffer holds one frame's queries, so a deeper ring
+// costs little memory
+const RING = 1024;
+// a read-back buffer's size: its frame's queries, rounded up so most frames reuse any free buffer
+const readbackBytes = ( queries: number ) => Math.max( 4096, 2 ** Math.ceil( Math.log2( queries * 8 ) ) );
 // a frame whose timestamps have not arrived by then is recorded with its passes missing
 const LATE_MS = 4000;
 
@@ -567,10 +571,11 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			const offsets = new Map( pool.queryOffsets );
 			pool.currentQueryIndex = 0;
 			pool.queryOffsets.clear();
-			let slot = this.buffers.find( ( b ) => ! b.busy && b.buffer.size >= pool.maxQueries * 8 );
+			const bytes = count * 8;
+			let slot = this.buffers.find( ( b ) => ! b.busy && b.buffer.size >= bytes );
 			if ( ! slot && this.buffers.length < RING ) {
 
-				slot = { buffer: device.createBuffer( { label: 'profiler.timestamps', size: pool.maxQueries * 8, usage: READBACK_USAGE } ), busy: false };
+				slot = { buffer: device.createBuffer( { label: 'profiler.timestamps', size: readbackBytes( count ), usage: READBACK_USAGE } ), busy: false };
 				this.buffers.push( slot );
 
 			}
@@ -583,7 +588,6 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 			}
 			slot.busy = true;
-			const bytes = count * 8;
 			const encoder = device.createCommandEncoder( { label: 'profiler.resolve' } );
 			encoder.resolveQuerySet( pool.querySet, 0, count, pool.resolveBuffer, 0 );
 			encoder.copyBufferToBuffer( pool.resolveBuffer, 0, slot.buffer, 0, bytes );
