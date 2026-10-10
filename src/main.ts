@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
-import { OrbitFrameControls } from './camera/OrbitFrameControls.ts';
+import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, type WeatherName } from './sky/Weather.ts';
@@ -110,11 +110,9 @@ const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 600
 const target = new THREE.Vector3( 1.5, 0.5, 1.0 );
 const view = { distance: Number( params.get( 'dist' ) ?? 58 ), polar: Number( params.get( 'polar' ) ?? 50 ), azimuth: Number( params.get( 'az' ) ?? 318 ) };
 camera.position.setFromSphericalCoords( view.distance, THREE.MathUtils.degToRad( view.polar ), THREE.MathUtils.degToRad( view.azimuth ) ).add( target );
-// the orbit's damping advances once per rendered frame, by its length (OrbitFrameControls.ts)
-const controls = new OrbitFrameControls( camera, renderer.domElement );
+// the island's camera: drags follow the hand on the frame that draws them (IslandCameraControls.ts)
+const controls = new IslandCameraControls( camera, renderer.domElement );
 controls.target.copy( target );
-controls.enableDamping = true;
-controls.damping = 0.06;
 controls.minDistance = 22;
 controls.maxDistance = 190;
 controls.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
@@ -427,6 +425,8 @@ installVegetationPrepass( scene, [ grass, foliage, rimFoliage, plants ] );
 	sunShadow.setCasters( casters );
 
 }
+// the camera grabs the island's ground and keeps its pivot over the island
+controls.setIsland( world.group.children.filter( ( object ): object is THREE.Mesh => ( object as THREE.Mesh ).isMesh && object.castShadow ) );
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
 rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt, plants ] );
 mark( 'meshes' );
@@ -554,6 +554,9 @@ setCameraMode( cameraSettings.mode );
 const cameraF = gui.addFolder( 'Camera' );
 cameraF.add( cameraSettings, 'mode', [ 'free', 'orbit' ] ).name( 'camera mode' ).listen().onChange( setCameraMode );
 cameraF.add( reviewView, 'camera', [ 'island', 'horizon', 'sky' ] ).name( 'view' ).listen().onChange( setCameraView );
+cameraF.add( controls, 'scrollMode', [ 'auto', 'zoom', 'pan' ] ).name( 'scroll / swipe' );
+cameraF.add( controls, 'enableDamping' ).name( 'glide and ease' );
+cameraF.add( controls, 'edgePan' ).name( 'pan at the edge' );
 cameraF.add( freeControls, 'speed', 1, 160, 1 ).name( 'flight speed' ).listen();
 cameraF.add( camera, 'fov', 15, 100, 1 ).name( 'field of view' ).listen().onChange( () => camera.updateProjectionMatrix() );
 cameraF.add( { reset: () => setCameraView( 'island' ) }, 'reset' ).name( 'return to island (R)' );
@@ -837,7 +840,7 @@ function tick( time: number ): void {
 	weather.update( paused ? 0 : rawDt );
 	weatherView.preset = weather.target;
 	if ( freeControls.enabled ) freeControls.update( rawDt );
-	else controls.advance( dt );
+	else controls.advance( dt, time );
 
 	renderer.info.reset();
 	// Sun, moon, key light and grade follow the clock every frame; only the baked reflection,

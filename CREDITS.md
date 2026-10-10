@@ -405,6 +405,13 @@ comment where it is used.
   (SIGGRAPH 2002).
 - Rounded rims of the cliff's scars, the polynomial smooth maximum of two distance fields:
   Inigo Quilez, [*smooth minimum*](https://iquilezles.org/articles/smin/), used as a technique only.
+- Telling a mouse wheel from a trackpad's scroll by its deltas (macOS reports a wheel notch in
+  multiples of 4.000244140625 px; deltas under 4 px are a trackpad's): the scroll zoom handler of
+  [Mapbox GL JS](https://github.com/mapbox/mapbox-gl-js/blob/main/src/ui/handler/scroll_zoom.ts),
+  used as a technique only (`src/camera/IslandCameraControls.ts`).
+- A drag sampled at a fixed delay behind the frame, interpolated between the input samples around
+  it, so a steady drag moves the view by the same amount every frame: the input resampling of
+  Android's `InputTransport` (`RESAMPLE_LATENCY`), used as a technique only.
 
 ## References
 

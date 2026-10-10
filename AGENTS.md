@@ -20,8 +20,8 @@ stone exposed.
 - `node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval "js"] [--verbose]`
   takes a screenshot of the running dev server into `artifacts/captures/` (git-ignored) and prints
   frame diagnostics. URL options: `paused`, `t`, `dpr`, `dist`, `polar`, `az`, `gui`, `camera`
-  (orbit, the default, or free: fly with the mouse, WASD, Q/E and Shift). It needs
-  Playwright's Chromium once (`npx playwright install chromium`), or `CHROME_PATH` set to a
+  (orbit, the default: the island camera; or free: fly with the mouse, WASD, Q/E and Shift). It
+  needs Playwright's Chromium once (`npx playwright install chromium`), or `CHROME_PATH` set to a
   WebGPU-capable Chrome.
 - Sky and weather URL options: `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk,
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
@@ -39,6 +39,10 @@ stone exposed.
   the frame rate over the last second, the interval's p95 and maximum over the last 5 s, the
   frames late by a refresh against the paced interval and the intervals over 25 ms since the scene
   showed (or the reset button), the render scale and the GPU's median frame time (high only).
+  The island camera (see Decisions): a left drag grabs the ground, a right or middle drag (or
+  Option / Ctrl with the left) turns and tilts, the wheel zooms toward the pointer; on a trackpad a
+  two-finger swipe pans, a pinch zooms and Option with a swipe turns and tilts; W A S D or the
+  arrows pan, Q / E turn, T / G tilt, + / - zoom, Shift speeds them up.
 - Rendering and A/B URL options, read at load: `msaa` (the scene's sample count, `SceneSamples.ts`:
   4, the default, or 1 for none; `2` reads as 1, since WebGPU multisamples with 1 or 4 samples
   only), `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB
@@ -95,8 +99,8 @@ stone exposed.
   about 16 times a minute under a player's drags. `--display` measures that: headed system Chrome
   full screen (`--kiosk`; `--window WxH` opens a normal window of that outer size, as a player's,
   with the other windows on screen) at the display's own size, pixel ratio and refresh, the camera
-  dragged like a player's through Chrome's input (`--motion user`, the default there: drags of 30 to
-  200 deg/s with pauses, a wheel zoom, a flick; 20 s per scene), and per scene, by display
+  dragged like a player's through Chrome's input (`--motion user`, the default there: turning drags
+  of 30 to 200 deg/s with pauses, a wheel zoom, a flick; 20 s per scene), and per scene, by display
   refreshes, the intervals between the frames the scene rendered and between those the compositor
   presented (from a trace of Chrome's frame pipeline), the share of intervals that change cadence,
   and how much the camera's turning speed changes from frame to frame. A window covers the screen
@@ -135,8 +139,9 @@ stone exposed.
 
 - `src/Quality.ts`: the quality tiers, every knob of the frame's cost in one table (see
   Decisions); `src/QualityDetect.ts` chooses one for the GPU at startup.
-- `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics (the orbit's controls in
-  `src/camera/OrbitFrameControls.ts`, the free flight in `FreeCameraControls.ts`).
+- `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics (the island camera in
+  `src/camera/IslandCameraControls.ts`, with the ground it grabs in `IslandGround.ts`; the free
+  flight in `FreeCameraControls.ts`).
   `window.__SOOMI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev
   server or with `?debug` (or `?profile`, which also loads the frame profiler in `src/debug/`).
 - `src/world/`: the island generated in Web Workers (the island, the stones in up to four sets and
@@ -429,15 +434,46 @@ stone exposed.
   right at the compositor's deadline and were shown one and three refreshes apart in turn. The
   refresh is measured from the animation frames' own timestamps. The scene's clock steps by the
   frames' vblank times (rAF's timestamp), not by when the tick starts (a few milliseconds into the
-  frame, by a varying amount). The orbit's damping advances once per rendered frame, by the frame's
-  length (`OrbitFrameControls`): three's OrbitControls damps on every `update()` and its pointer
-  and wheel handlers call it on every event, so with input at the display's refresh a frame took
-  one to three damping steps by chance and a steady drag turned the camera in uneven steps.
+  frame, by a varying amount). The camera applies its input once per rendered frame (see the
+  island camera below): three's OrbitControls damped on every `update()` and its pointer and wheel
+  handlers called it on every event, so with input at the display's refresh a frame took one to
+  three damping steps by chance and a steady drag turned the camera in uneven steps.
   A hidden page renders nothing: the loop stops while the document is hidden and starts when it
   shows (unless it was stopped or started otherwise meanwhile, as the profiler's pages are).
   Browsers stop a hidden tab's animation frames themselves, but an app's embedded browser kept
   running them: a page left in a hidden pane rendered high at 60 fps and took about half the GPU
   from the page on screen, whose scale fell from about 1.0 to its floor of 0.6.
+- The island camera (`IslandCameraControls.ts`) works as island and city-building games do
+  (Islanders, Dorfromantik; Anno, Frostpunk and Planet Zoo differ mostly in the buttons): a left
+  drag grabs the ground (the point under the press stays under the pointer, solved exactly each
+  frame; a press stays a click until it moves 3 px, so a left-click action can share the button),
+  a right or middle drag (Option or Ctrl with the left, for a trackpad) turns about the ground at
+  the screen's centre and tilts, and the wheel zooms toward the point under the pointer while the
+  view tilts toward the horizon as it closes in (12 degrees per e-fold of distance). On a trackpad
+  a two-finger swipe moves the ground with the fingers and a pinch zooms (Chrome sends it as a
+  wheel event with ctrlKey); a mouse wheel is told from a swipe by its deltas (macOS reports a notch
+  in multiples of 4.000244140625 px, a trackpad in whole pixels with `wheelDeltaY` three times
+  `-deltaY`), and the GUI's scroll setting overrides the guess. Keys pan, turn, tilt and zoom;
+  panning at the window's edge is off by default (in a normal window the edge is where the pointer
+  leaves). What the hand moves directly (a drag, a swipe, a pinch) has no smoothing between hand
+  and view; only the wheel's zoom glides (80 ms), the keys ease in and out (100 ms), and a drag
+  let go while moving glides on (220 ms). The orbit before damped every input by 6 % a 60 Hz frame
+  (a 0.27 s time constant): in a steady drag on the real display the view trailed the hand by
+  260 ms (120 px at 450 px/s), 290 ms to the photons, which players read as dropped frames; now it
+  trails by 8 ms (3.6 px), 36 ms to the photons. Input is gathered by the event handlers and
+  applied once, at the start of the tick that draws it (`advance( dt, time )`), never between
+  frames. A drag is read one input sample interval (at most 8 ms) behind the frame's vblank,
+  between the two pointer samples around that time (input resampling): read at its newest sample,
+  a 125 Hz mouse moved the view by up to two fifths more or less from one frame to the next (p90),
+  and by 4 % resampled. The motion is taken as deltas on the camera's current position and pivot,
+  so placements by hand (the views, the tools) keep their pose, and the limits constrain input
+  only: the pivot within the island's bounds plus 12 m, the farthest zoom from the island's
+  diagonal (190 m for this layout), the camera 2 m above the ground (a height grid of the island's
+  meshes, `IslandGround.ts`). At rest the update is three's OrbitControls' arithmetic to the bit,
+  its constructor's update included, so paused frames do not depend on input history and match
+  captures from before. The pipeline adds about 28 ms from a frame's vblank to its presentation
+  (the GPU's frame and the compositor's next refresh, steady: no queued frames), and a pointer move
+  waits about 8 ms for the next paced frame.
 - The sea continues to the horizon (a skirt around the wave grid); the camera's far plane and
   the sky-depth thresholds (`-9e4`; the resolved sky is `-1e5`) stay beyond it.
 - The tone curve is PBR Neutral with hue-kept highlights (`neutral-hue` in `src/post/Pipeline.ts`):
