@@ -505,7 +505,7 @@ const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
 } );
 water = new Water( {
 	fft, sky, shared, shore: shore.tex, seabedHeight: seabedField.tex, shoreWaves,
-	seabedLook: { beds: seabedBedTextureFrom( data.seabed ), res: data.seabed.res, size: data.seabed.size, centre: data.seabed.centre, variation: textures.normalsB },
+	seabedLook: { beds: seabedBedTextureFrom( data.seabedBeds ), variation: textures.normalsB },
 	land: landBox, refractedSun, sunShadow, storm: stormSea,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 } );

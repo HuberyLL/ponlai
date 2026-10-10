@@ -13,7 +13,7 @@ import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
-	sin, abs, sign, floor, fract, fwidth, reflect, select, dFdx, dFdy,
+	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
 } from 'three/tsl';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
 import type { Sky } from '../sky/Sky.ts';
@@ -32,7 +32,7 @@ import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance } fr
 import { rainRippleGradient } from '../weather/Rain.ts';
 import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { SEABED_WARP } from '../world/types.ts';
+import { OPEN_SEAGRASS_MEAN } from '../world/Bathymetry.ts';
 import { seabedAlbedo } from '../materials/SeabedLook.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
@@ -231,10 +231,9 @@ export interface WaterInputs {
 	shared: Shared;
 	shore: THREE.Texture;
 	seabedHeight: THREE.Texture; // the rendered floor's height over the shoreline field's bounds
-	// The floor's look: its beds on the floor mesh's warped grid of res + 1 vertices a side over
-	// size metres round centre (seabedBedTextureFrom), and the terrain's normalsB detail texture,
-	// whose alpha is the sand's broad variation.
-	seabedLook: { beds: THREE.Texture; res: number; size: number; centre: [ number, number ]; variation: THREE.Texture };
+	// The floor's look: its beds over the shoreline field's bounds (seabedBedTextureFrom), and the
+	// terrain's normalsB detail texture, whose alpha is the sand's broad variation.
+	seabedLook: { beds: THREE.Texture; variation: THREE.Texture };
 	land: Bounds; // the land's box (WorldShapes.landBounds), for reflectionBounds
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
@@ -486,13 +485,13 @@ export class Water {
 			field( landedXZ.add( vec2( 0.5, 0 ) ) ).sub( field( landedXZ.sub( vec2( 0.5, 0 ) ) ) ),
 			field( landedXZ.add( vec2( 0, 0.5 ) ) ).sub( field( landedXZ.sub( vec2( 0, 0.5 ) ) ) ) );
 		const vLandingGradients = varying( vec4( gradientOf( shoreDistance ), gradientOf( floorHeight ) ) ); // shore, floor
-		// The floor's look where the ray lands, for its colour (seabedAlbedo): the beds, read from the
-		// floor mesh's own grid at the inverse of its warp so that they interpolate as the mesh does,
-		// and the sand's broad variation. Both change over metres, so the vertices carry them.
-		const bedGrid = clamp( landedXZ.sub( vec2( ...seabedLook.centre ) ).div( seabedLook.size / 2 ), - 1, 1 );
-		const bedUV = sign( bedGrid ).mul( pow( abs( bedGrid ), 1 / SEABED_WARP ) ).mul( 0.5 ).add( 0.5 )
-			.mul( seabedLook.res ).add( 0.5 ).div( seabedLook.res + 1 );
-		const vLandingLook = varying( vec3( texture( seabedLook.beds, bedUV ).level( float( 0 ) ).rg,
+		// The floor's look where the ray lands, for its colour (seabedAlbedo): the beds, read from
+		// their field over the shoreline field's bounds, and the sand's broad variation. Both change
+		// over metres, so the vertices carry them. Past the field's edge the beds fade over 8 m to the
+		// open sea's mean (no pale sand), so its edge texels never streak across the deep floor.
+		const beyond = smoothstep( 0, 8, length( landedXZ.sub( clamp( landedXZ, shared.shoreXform.xy, fieldEnd ) ) ) );
+		const beds = mix( texture( seabedLook.beds, fieldUV( landedXZ ) ).level( float( 0 ) ).rg, vec2( OPEN_SEAGRASS_MEAN, 0 ), beyond );
+		const vLandingLook = varying( vec3( beds,
 			texture( seabedLook.variation, landedXZ.mul( 0.013 ).add( 0.2 ) ).level( float( 3 ) ).a ) ); // grass, pale, broad
 		const vWeights = varying( weights );
 		const vLargeDisp = varying( largeDisp ), vMediumDisp = varying( mediumDisp ), vFineDisp = varying( fineDisp );

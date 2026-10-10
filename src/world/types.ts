@@ -31,17 +31,15 @@ export interface Rock { x: number; z: number; s: number; sy: number; y: number; 
 
 export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: number; z0: number; cell: number }
 
-// The seabed grid's warp, dense around the island and sparse toward the horizon: vertex i of
-// res + 1 lies at centre + sign( u ) * |u|^SEABED_WARP * size / 2, where u = i / res * 2 - 1 and
-// the centre is the land's centroid.
-export const SEABED_WARP = 1.9;
-
 export const VEGETATION_STRIDE = 9;
 // The turf anchors' jittered grid (m): one anchor per this square of meadow.
 export const VEGETATION_SPACING = 0.235;
 
 // RGBA: actual upper-coast distance, local roof height, turf retreat and exposed root depth.
 export interface RimGroundField extends ShoreField {}
+
+// RG: the sea floor's seagrass cover and pale-sand share (Bathymetry's seabedBeds).
+export interface SeabedBedField extends ShoreField {}
 
 // A top-rooted branch centreline: x, y, z and the outward surface normal per node. `lip` is the
 // node where it crosses the edge. A fork starts on node `from` of strand `parent` (an index into
@@ -58,8 +56,9 @@ export interface WorldData {
 	land: Uint8Array;
 	meshes: NamedMesh[];
 	rocks: Rock[];
-	// bed: seagrass cover and pale-sand share per vertex (see seabedBeds)
-	seabed: { positions: Float32Array; ao: Float32Array; bed: Float32Array; res: number; size: number; centre: [ number, number ] };
+	// The sea floor as one mesh: its near tiles, then the far floor (SeabedTile.ts). ao: contact
+	// visibility of the island and stones; bed: seagrass cover and pale-sand share (seabedBeds).
+	seabed: { positions: Float32Array; normals: Float32Array; ao: Float32Array; bed: Float32Array; indices: Uint32Array };
 	// Turf anchors: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
 	// (0 island), local sky visibility. Placement still uses the first eight.
 	vegetation: Float32Array;
@@ -70,8 +69,10 @@ export interface WorldData {
 	shore: ShoreField;
 	// Half-resolution island distance field for the local breaking-surf pass.
 	islandShore: ShoreField;
-	// The seabed's height (m) over the shoreline field's bounds, at half its resolution.
+	// The rendered floor's height (m) over the shoreline field's bounds, at half its resolution.
 	seabedField: ShoreField;
+	// The floor's beds over the same bounds at 0.5 m.
+	seabedBeds: SeabedBedField;
 	timings: Record<string, number>;
 }
 
@@ -80,8 +81,6 @@ export interface WorldOptions {
 	worldSeed?: number;
 	step?: number;
 	islandVoxel?: number;
-	seabedRes?: number;
-	seabedSize?: number;
 	shoreCell?: number;
 	// Disable only the cross-object contact bake for CPU comparison; geometry stays identical.
 	contactOcclusion?: boolean;

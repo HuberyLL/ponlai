@@ -1,21 +1,22 @@
 // Builds the world geometry off the main thread from the grown land (IslandGrowth.ts): island and
-// submerged stones (surface nets over their SDFs), the seabed heightfield, the shoreline distance
-// field at sea level, and the anchors for the meadow vegetation and sparse branches overhanging the
-// upper rim. Plants root on the top.
+// submerged stones (surface nets over their SDFs), the sea floor's tiles (SeabedTile.ts), the
+// shoreline distance field at sea level, and the anchors for the meadow vegetation and sparse
+// branches overhanging the upper rim. Plants root on the top.
 
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRimTrails } from './RimTrails.ts';
 import { buildRimGround, buildRimSkirt, coastPaths } from './RimGround.ts';
 import {
 	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF,
-	landCentroid, ISLAND_TOP, ISLAND_BOTTOM,
+	ISLAND_TOP, ISLAND_BOTTOM,
 } from './WorldShapes.ts';
 import { growLand } from './IslandGrowth.ts';
 import { Field2D } from './Field2D.ts';
-import { seabedBeds, seabedFloor } from './Bathymetry.ts';
+import { floorAt, seabedBeds, SHELF_CEILING } from './Bathymetry.ts';
+import { buildFarFloor, buildFloorTile, floorTileCells, nearLandCells, tileIndices, FAR_HALF, TILE_SIDE, type FarFloor, type FloorTile } from './SeabedTile.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
-import { SEABED_WARP, VEGETATION_STRIDE, VEGETATION_SPACING } from './types.ts';
+import { VEGETATION_STRIDE, VEGETATION_SPACING } from './types.ts';
 import { openWorldStore } from './WorldCache.ts';
 import type { SDF, MeshData, MeshKind, NamedMesh, Rock, WorldData, WorldOptions } from './types.ts';
 
@@ -51,20 +52,18 @@ interface PartJob extends WorldOptions {
 type WorldPart = 'island' | { rocks: number; sets: number } | 'rest';
 
 interface RestPart {
-	// the shared setup's land, seabed grid and stones, which the merged world carries
+	// the shared setup's land and stones, which the merged world carries
 	land: Uint8Array;
-	seabedPositions: Float32Array;
-	seabedCentre: [ number, number ];
 	stones: Rock[];
 	vegetation: Float32Array;
 	rimGround: WorldData[ 'rimGround' ];
 	rimSkirt: WorldData[ 'rimSkirt' ];
 	rimStrands: WorldData[ 'rimStrands' ];
-	seabedAO: Float32Array;
-	seabedBed: Float32Array;
+	seabed: WorldData[ 'seabed' ];
 	shore: WorldData[ 'shore' ];
 	islandShore: WorldData[ 'islandShore' ];
 	seabedField: WorldData[ 'seabedField' ];
+	seabedBeds: WorldData[ 'seabedBeds' ];
 }
 
 interface PartResult { island?: MeshData; rocks?: MeshData[]; rest?: RestPart; timings: Record<string, number> }
@@ -171,7 +170,7 @@ function generateSerial( options: WorldOptions ): [ WorldData, Transferable[] ] 
 	timings.rocks = Math.round( performance.now() - t );
 	const rest = buildRest( ctx, timings );
 	t = performance.now();
-	const world = assemble( island, rocks, rest, options, timings );
+	const world = assemble( island, rocks, rest, timings );
 	timings.merge = Math.round( performance.now() - t );
 	timings.total = Math.round( performance.now() - t0 );
 	return world;
@@ -209,7 +208,7 @@ async function generateParallel( options: WorldOptions, sets: number ): Promise<
 	// stone i went to set i % sets, as its ( i / sets )th mesh: deal them back into stone order
 	const rocks = rest.rest!.stones.map( ( _, i ) => rockParts[ i % sets ].rocks![ Math.floor( i / sets ) ] );
 	const timings: Record<string, number> = { ...rest.timings, island: island.timings.island, rocks: Math.max( ...rockParts.map( ( part ) => part.timings.rocks ) ) };
-	const [ world ] = assemble( island.island!, rocks, rest.rest!, options, timings );
+	const [ world ] = assemble( island.island!, rocks, rest.rest!, timings );
 	timings.merge = Math.round( performance.now() - t );
 	timings.total = Math.round( performance.now() - t0 );
 	return world;
@@ -220,14 +219,14 @@ type Setup = ReturnType<typeof setup>;
 
 const defaults = ( options: WorldOptions ) => {
 
-	const { worldSeed = 1, step = 0, islandVoxel = 0.12, seabedRes = 320, seabedSize = 420, shoreCell = 0.125, contactOcclusion = true } = options;
-	return { worldSeed, step, islandVoxel, seabedRes, seabedSize, shoreCell, contactOcclusion };
+	const { worldSeed = 1, step = 0, islandVoxel = 0.12, shoreCell = 0.125, contactOcclusion = true } = options;
+	return { worldSeed, step, islandVoxel, shoreCell, contactOcclusion };
 
 };
 
 function setup( options: WorldOptions, timings: Record<string, number> ) {
 
-	const { worldSeed, step, islandVoxel, seabedRes, seabedSize, shoreCell, contactOcclusion } = defaults( options );
+	const { worldSeed, step, islandVoxel, shoreCell, contactOcclusion } = defaults( options );
 	const mark = ( k: string, t: number ) => { timings[ k ] = Math.round( performance.now() - t ); };
 
 	let t = performance.now();
@@ -237,34 +236,12 @@ function setup( options: WorldOptions, timings: Record<string, number> ) {
 	const fp = buildFootprint( land );
 	mark( 'footprint', t );
 
-	const seabedHeight = seabedFloor( fp );
-
-	// --- seabed: a grid warped to be dense around the island and sparse toward the horizon
-	t = performance.now();
-	const n = seabedRes;
-	const sb = new Float32Array( ( n + 1 ) * ( n + 1 ) * 3 );
-	const warp = ( u: number ) => Math.sign( u ) * Math.pow( Math.abs( u ), SEABED_WARP );
-	const centroid = landCentroid( land ), centre: [ number, number ] = [ centroid.x, centroid.z ];
-	let floorCeiling = - Infinity;
-	for ( let j = 0; j <= n; j ++ ) for ( let i = 0; i <= n; i ++ ) {
-
-		const x = centre[ 0 ] + warp( i / n * 2 - 1 ) * seabedSize / 2;
-		const z = centre[ 1 ] + warp( j / n * 2 - 1 ) * seabedSize / 2;
-		const k = ( j * ( n + 1 ) + i ) * 3;
-		sb[ k ] = x; sb[ k + 1 ] = seabedHeight( x, z ); sb[ k + 2 ] = z;
-		floorCeiling = Math.max( floorCeiling, sb[ k + 1 ] );
-
-	}
-
-	mark( 'seabedGeometry', t );
-
-	// Ground each stone on the same triangles the renderer uses. Sampling the analytic
-	// floor alone can hide a small crown beneath a coarser seabed mesh.
-	const renderedFloor = seabedSampler( sb, n, seabedSize, centre );
+	// Ground each stone on the same triangles the renderer uses (the floor tiles' lattice).
+	// Sampling the analytic floor alone can hide a small crown beneath the seabed mesh.
+	const renderedFloor = floorAt( fp );
 	const islandSDF = makeIslandSDF( fp );
 	const rocks = makeRocks( fp, renderedFloor, islandSDF );
 	const rockSDFs = rocks.map( makeRockSDF );
-	// The rendered grid's highest vertex bounds contact queries on the floor.
 	t = performance.now();
 	const b = fp.bounds, pad = 2.6;
 	// Reuse the meshing bounds: contacts refer to the same fixed solids as the rendered world.
@@ -281,14 +258,15 @@ function setup( options: WorldOptions, timings: Record<string, number> ) {
 	// A heightfield is a local distance proxy, not an exact signed-distance field. Shortened
 	// steps reduce overshoot on its slopes; it also occludes the buried rock faces.
 	const seabedSDF: SDF = ( x, y, z ) => y - renderedFloor( x, z );
+	// (the floor never rises past the shelf's ceiling)
 	const solids: SolidBounds[] = [ islandBounds, ...rockBounds, {
-		field: seabedSDF, min: [ centre[ 0 ] - seabedSize / 2, - 32, centre[ 1 ] - seabedSize / 2 ], max: [ centre[ 0 ] + seabedSize / 2, floorCeiling, centre[ 1 ] + seabedSize / 2 ],
+		field: seabedSDF, min: [ - FAR_HALF, - 32, - FAR_HALF ], max: [ FAR_HALF, SHELF_CEILING, FAR_HALF ],
 	} ];
 	const aoSdf = contactOcclusion ? boundedSceneField( solids ) : undefined;
 	const contacts = ( receiver?: SDF ) => contactOcclusion ? contactVisibilitySampler( solids, receiver ) : undefined;
 	mark( 'contactSetup', t );
 
-	return { land, fp, n, sb, centre, seabedSize, shoreCell, islandVoxel, renderedFloor, islandSDF, rocks, rockSDFs, b, islandBounds, rockBounds, seabedSDF, aoSdf, contacts };
+	return { land, fp, shoreCell, islandVoxel, contactOcclusion, renderedFloor, islandSDF, rocks, rockSDFs, b, islandBounds, rockBounds, aoSdf, contacts };
 
 }
 
@@ -335,7 +313,7 @@ function buildRocks( ctx: Setup, set: number, sets: number ): MeshData[] {
 // contact visibility and beds, and the shore fields.
 function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 
-	const { land, islandSDF, fp, b, contacts, n, sb, centre, seabedSDF, renderedFloor, shoreCell, rocks } = ctx;
+	const { land, islandSDF, fp, b, contacts, contactOcclusion, islandBounds, rockBounds, renderedFloor, shoreCell, rocks } = ctx;
 	const mark = ( k: string, t: number ) => { timings[ k ] = Math.round( performance.now() - t ); };
 
 	// --- vegetation anchors: island turf only; submerged stones stay bare.
@@ -368,30 +346,10 @@ function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 	const rimStrands = makeRimTrails( islandSDF, fp, vegetation, coastPaths( rimGround ) );
 	mark( 'rimFoliage', t );
 
-	// --- seabed contact visibility; the warped geometry was generated before the mesh bake.
+	// --- sea floor: the near tiles, shaded by the island and its stones, and the far floor
 	t = performance.now();
-	const sbAO = new Float32Array( ( n + 1 ) * ( n + 1 ) ).fill( 1 );
-	const seabedVisibility = contacts( seabedSDF );
-	if ( seabedVisibility ) for ( let j = 0; j <= n; j ++ ) for ( let i = 0; i <= n; i ++ ) {
-
-		const v = j * ( n + 1 ) + i, k = v * 3;
-		// Match the rendered heightfield's finite-difference normal without re-evaluating its
-		// noise. Distant grid points return visible before any hemisphere traces are performed.
-		const l = ( j * ( n + 1 ) + Math.max( 0, i - 1 ) ) * 3, r = ( j * ( n + 1 ) + Math.min( n, i + 1 ) ) * 3;
-		const d = ( Math.max( 0, j - 1 ) * ( n + 1 ) + i ) * 3, u = ( Math.min( n, j + 1 ) * ( n + 1 ) + i ) * 3;
-		const nx = - ( sb[ r + 1 ] - sb[ l + 1 ] ) / ( sb[ r ] - sb[ l ] );
-		const nz = - ( sb[ u + 1 ] - sb[ d + 1 ] ) / ( sb[ u + 2 ] - sb[ d + 2 ] );
-		sbAO[ v ] = seabedVisibility( sb[ k ], sb[ k + 1 ], sb[ k + 2 ], nx, 1, nz );
-
-	}
-	const sbBed = new Float32Array( ( n + 1 ) * ( n + 1 ) * 2 );
-	const beds = seabedBeds( fp );
-	for ( let v = 0; v < ( n + 1 ) * ( n + 1 ); v ++ ) {
-
-		const [ grass, pale ] = beds( sb[ v * 3 ], sb[ v * 3 + 2 ] );
-		sbBed[ v * 2 ] = grass; sbBed[ v * 2 + 1 ] = pale;
-
-	}
+	const shading = contactOcclusion ? [ islandBounds, ...rockBounds ] : [];
+	const seabed = mergeFloor( floorTileCells( land ).map( ( [ ci, cj ] ) => buildFloorTile( ci, cj, fp, shading ) ), buildFarFloor( nearLandCells( land ) ) );
 	mark( 'seabed', t );
 
 	// --- shoreline: only the island intersects sea level. Submerged stones must not
@@ -409,16 +367,25 @@ function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 		.fill( ( x: number, z: number ) => islandSDF( x, 0, z ) )
 		.signedDistance();
 	// The rendered floor's height (its stones aside) over the same bounds at half resolution, for the
-	// water's world-space estimate of where refracted rays the screen cannot follow meet the floor.
+	// water's world-space estimate of where refracted rays the screen cannot follow meet the floor,
+	// and the floor's beds over them at 0.5 m, for the colour it finds there.
 	const seabedField = new Field2D( shore.x0, shore.z0, shore.nx / 2, shore.nz / 2, shore.cell * 2 )
 		.fill( renderedFloor );
+	const bedCell = 0.5, beds = seabedBeds( fp );
+	const bx = shore.nx * shore.cell / bedCell, bz = shore.nz * shore.cell / bedCell, bedData = new Float32Array( bx * bz * 2 );
+	for ( let j = 0; j < bz; j ++ ) for ( let i = 0; i < bx; i ++ ) {
+
+		const [ grass, pale ] = beds( shore.x0 + ( i + 0.5 ) * bedCell, shore.z0 + ( j + 0.5 ) * bedCell );
+		bedData[ ( j * bx + i ) * 2 ] = grass; bedData[ ( j * bx + i ) * 2 + 1 ] = pale;
+
+	}
 	mark( 'shore', t );
 
 	const field = ( f: Field2D ) => ( { data: f.data, nx: f.nx, nz: f.nz, x0: f.x0, z0: f.z0, cell: f.cell } );
 	return {
-		land: land.toBytes(), seabedPositions: sb, seabedCentre: centre, stones: rocks,
-		vegetation, rimGround, rimSkirt, rimStrands, seabedAO: sbAO, seabedBed: sbBed,
+		land: land.toBytes(), stones: rocks, vegetation, rimGround, rimSkirt, rimStrands, seabed,
 		shore: field( shore ), islandShore: field( islandShore ), seabedField: field( seabedField ),
+		seabedBeds: { data: bedData, nx: bx, nz: bz, x0: shore.x0, z0: shore.z0, cell: bedCell },
 	};
 
 }
@@ -433,13 +400,15 @@ function transferMesh( m: MeshData, transfer: Transferable[] ): void {
 
 function transferRest( rest: RestPart, transfer: Transferable[] ): void {
 
-	transfer.push( rest.land.buffer, rest.seabedPositions.buffer, rest.vegetation.buffer, rest.rimGround.data.buffer, rest.rimSkirt.points.buffer, rest.rimSkirt.info.buffer, rest.rimSkirt.loops.buffer );
+	transfer.push( rest.land.buffer, rest.vegetation.buffer, rest.rimGround.data.buffer, rest.rimSkirt.points.buffer, rest.rimSkirt.info.buffer, rest.rimSkirt.loops.buffer );
 	for ( const strand of rest.rimStrands ) transfer.push( strand.points.buffer, ...( strand.clump ? [ strand.clump.buffer ] : [] ) );
-	transfer.push( rest.seabedAO.buffer, rest.seabedBed.buffer, rest.shore.data.buffer, rest.islandShore.data.buffer, rest.seabedField.data.buffer );
+	const { positions, normals, ao, bed, indices } = rest.seabed;
+	transfer.push( positions.buffer, normals.buffer, ao.buffer, bed.buffer, indices.buffer );
+	transfer.push( rest.shore.data.buffer, rest.islandShore.data.buffer, rest.seabedField.data.buffer, rest.seabedBeds.data.buffer );
 
 }
 
-function assemble( island: MeshData, rocks: MeshData[], rest: RestPart, options: WorldOptions, timings: Record<string, number> ): [ WorldData, Transferable[] ] {
+function assemble( island: MeshData, rocks: MeshData[], rest: RestPart, timings: Record<string, number> ): [ WorldData, Transferable[] ] {
 
 	const meshes: NamedMesh[] = [];
 	const transfer: Transferable[] = [];
@@ -454,12 +423,11 @@ function assemble( island: MeshData, rocks: MeshData[], rest: RestPart, options:
 	push( 'rocks', mergeParts( rocks ), 'rock' );
 	transferRest( rest, transfer );
 
-	const { seabedRes, seabedSize } = defaults( options );
 	const world: WorldData = {
 		land: rest.land,
 		meshes,
 		rocks: rest.stones,
-		seabed: { positions: rest.seabedPositions, ao: rest.seabedAO, bed: rest.seabedBed, res: seabedRes, size: seabedSize, centre: rest.seabedCentre },
+		seabed: rest.seabed,
 		vegetation: rest.vegetation,
 		rimStrands: rest.rimStrands,
 		rimGround: rest.rimGround,
@@ -467,29 +435,35 @@ function assemble( island: MeshData, rocks: MeshData[], rest: RestPart, options:
 		shore: rest.shore,
 		islandShore: rest.islandShore,
 		seabedField: rest.seabedField,
+		seabedBeds: rest.seabedBeds,
 		timings,
 	};
 	return [ world, transfer ];
 
 }
 
-// The inverse warp locates the grid cell; interpolation then uses its stored world positions,
-// rather than the warped grid fraction, to match buildWorldMeshes()'s two indexed triangles.
-function seabedSampler( positions: Float32Array, n: number, size: number, centre: [ number, number ] ): ( x: number, z: number ) => number {
+// The sea floor as one mesh: the near tiles in their order, then the far floor (its contact shade 1).
+function mergeFloor( tiles: FloorTile[], far: FarFloor ): WorldData[ 'seabed' ] {
 
-	const index = ( v: number ) => Math.max( 0, Math.min( n - 1,
-		Math.floor( ( Math.sign( v ) * Math.pow( Math.abs( v / ( size / 2 ) ), 1 / SEABED_WARP ) + 1 ) * n / 2 ) ) );
-	return ( x, z ) => {
+	const tileVertices = TILE_SIDE * TILE_SIDE, nt = tiles.length * tileVertices, nv = nt + far.positions.length / 3;
+	const positions = new Float32Array( nv * 3 ), normals = new Float32Array( nv * 3 );
+	const ao = new Float32Array( nv ).fill( 1 ), bed = new Float32Array( nv * 2 );
+	const cell = tileIndices();
+	const indices = new Uint32Array( tiles.length * cell.length + far.indices.length );
+	tiles.forEach( ( tile, t ) => {
 
-		const i = index( x - centre[ 0 ] ), j = index( z - centre[ 1 ] );
-		const a = ( j * ( n + 1 ) + i ) * 3, e = a + 3, s = a + ( n + 1 ) * 3, d = s + 3;
-		const u = Math.max( 0, Math.min( 1, ( x - positions[ a ] ) / ( positions[ e ] - positions[ a ] ) ) );
-		const v = Math.max( 0, Math.min( 1, ( z - positions[ a + 2 ] ) / ( positions[ s + 2 ] - positions[ a + 2 ] ) ) );
-		return u + v <= 1
-			? positions[ a + 1 ] + ( positions[ e + 1 ] - positions[ a + 1 ] ) * u + ( positions[ s + 1 ] - positions[ a + 1 ] ) * v
-			: positions[ d + 1 ] + ( positions[ s + 1 ] - positions[ d + 1 ] ) * ( 1 - u ) + ( positions[ e + 1 ] - positions[ d + 1 ] ) * ( 1 - v );
+		positions.set( tile.positions, t * tileVertices * 3 );
+		normals.set( tile.normals, t * tileVertices * 3 );
+		ao.set( tile.ao, t * tileVertices );
+		bed.set( tile.bed, t * tileVertices * 2 );
+		for ( let k = 0; k < cell.length; k ++ ) indices[ t * cell.length + k ] = cell[ k ] + t * tileVertices;
 
-	};
+	} );
+	positions.set( far.positions, nt * 3 );
+	normals.set( far.normals, nt * 3 );
+	bed.set( far.bed, nt * 2 );
+	for ( let k = 0; k < far.indices.length; k ++ ) indices[ tiles.length * cell.length + k ] = far.indices[ k ] + nt;
+	return { positions, normals, ao, bed, indices };
 
 }
 

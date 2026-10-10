@@ -71,6 +71,10 @@ export function openSeaBeds( x: number, z: number ): [ number, number ] {
 
 }
 
+// The open sea's mean seagrass cover (openSeaBeds over a large area), for the water's estimate of
+// the floor beyond the beds it is given.
+export const OPEN_SEAGRASS_MEAN = 0.157;
+
 // ------------------------------------------------------------------ the shelf
 
 // How wide the shelf runs along the coast, changing over a few tens of metres of coast (about
@@ -210,6 +214,43 @@ export function seabedFloor( fp: Footprint ): HeightFn {
 		const open = openSeaHeight( x, z );
 		const h = open + Math.max( 0, shelf( x, z ) - open ) * shelfShare( x, z, fp.dist( x, z ) );
 		return - smax( - h, - SHELF_CEILING, 0.3 );
+
+	};
+
+}
+
+// The floor's lattice (m): the near tiles sample the floor on it, and the floor is drawn as its
+// triangles.
+export const FLOOR_STEP = 0.5;
+
+/**
+ * The rendered floor: `seabedFloor`'s 0.5 m lattice, as the tiles store it (float32), interpolated
+ * on the meshes' diagonal, so a stone seated on it sits on the triangles that are drawn.
+ */
+export function floorAt( fp: Footprint ): HeightFn {
+
+	const floor = seabedFloor( fp );
+	const nodes = new Map<number, number>();
+	const node = ( i: number, j: number ) => {
+
+		const key = ( i + 32768 ) * 65536 + j + 32768;
+		let v = nodes.get( key );
+		if ( v === undefined ) nodes.set( key, v = Math.fround( floor( i * FLOOR_STEP, j * FLOOR_STEP ) ) );
+		return v;
+
+	};
+	return ( x, z ) => {
+
+		const fx = x / FLOOR_STEP, fz = z / FLOOR_STEP;
+		const i = Math.floor( fx ), j = Math.floor( fz ), u = fx - i, v = fz - j;
+		if ( u + v <= 1 ) {
+
+			const a = node( i, j );
+			return a + ( node( i + 1, j ) - a ) * u + ( node( i, j + 1 ) - a ) * v;
+
+		}
+		const d = node( i + 1, j + 1 );
+		return d + ( node( i, j + 1 ) - d ) * ( 1 - u ) + ( node( i + 1, j ) - d ) * ( 1 - v );
 
 	};
 
