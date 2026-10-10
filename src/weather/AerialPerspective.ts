@@ -159,6 +159,9 @@ export class AerialPerspective {
 	private readonly bankTime = uniform( 0 );
 	private bank = { valid: false, time: 0, x: 0, z: 0 };
 	private bankDue = false;
+	/** Bank map bakes so far (the dynamic resolution leaves frames with periodic work out of its
+	 * quantiles). */
+	bankBakes = 0;
 	private lastFogTime = NaN;
 	private lastStep = NaN;
 
@@ -472,6 +475,7 @@ export class AerialPerspective {
 			renderer.setRenderTarget( this.bankRT );
 			this.bankQuad.render( renderer );
 			this.bankDue = false;
+			this.bankBakes ++;
 
 		}
 		if ( this.fogQuad ) {

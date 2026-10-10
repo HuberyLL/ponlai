@@ -8,8 +8,8 @@ import type * as THREE from 'three/webgpu';
 // read after `update()` and applied to the next frame (main.ts sizes the frame graph's targets
 // from it and upscales the render to the canvas). In return it takes, per frame, the GPU's busy
 // time, the part of it in passes whose targets are sized from the render (`PassScaling` sorts them
-// by size, so an upscaler's canvas-sized passes count as fixed whatever upscaler it is). Nothing
-// else about the frame graph is assumed.
+// by size, so an upscaler's canvas-sized passes count as fixed whatever upscaler it is) and tags for
+// periodic work. Nothing else about the frame graph is assumed.
 //
 // - The GPU time comes from timestamp queries (`GpuFrameTimer`, or the frame profiler's own when it
 //   runs), as the time the GPU was busy with each frame: every pass charged from the previous
@@ -36,6 +36,11 @@ import type * as THREE from 'three/webgpu';
 //   to every second refresh, the share of frames presented a refresh late stayed at its floor
 //   (1-2 %) until that quantile passed about seven eighths of the paced interval, then rose steeply
 //   (to about a third of the frames once it ran 5 % over the interval).
+// - Periodic work (sky bake slices, the sun's shadow redraws, the refracted sun's redraws, the fog
+//   bank's re-bakes) is tagged by frame (`sample`'s `heavy`) and left out of the quantiles: it hardly
+//   follows the pixel count, and a quantile sitting on it stepped the scale down while most frames
+//   had room. A kind of work that runs on more than HEAVY_SHARE of the frames is steady cost and
+//   stays in. Tagged frames still count where frames take the whole interval (the emergency).
 // - Down: when the quantile of the frames at the scale passes the paced interval less
 //   DOWN_HEADROOM (at most every HOLD seconds; after EMERGENCY_HOLD when the last frames take the
 //   whole interval), straight to the largest scale predicted to land under the interval less
@@ -55,7 +60,7 @@ import type * as THREE from 'three/webgpu';
 //   UP_AFTER seconds without a miss. Every step down bars the scale it left from a step back up
 //   for FRAME_BAR seconds, doubling each time it is left again soon after (up to FRAME_BAR_MAX),
 //   so a load that misses just above a scale settles below it instead of flipping.
-// - Until its first decision (`settling`) it waits for SETTLE_FRAMES frames and then takes
+// - Until its first decision (`settling`) it waits for SETTLE_FRAMES clean frames and then takes
 //   the largest scale their median predicts fits, up or down, with room for the first frames
 //   running lighter than the scene will (SETTLE_LIGHT); the page keeps its loading screen up over
 //   that first jump.
@@ -69,7 +74,7 @@ import type * as THREE from 'three/webgpu';
 // TARGET_HEADROOM (14.9 and 14.3 ms at 60 fps, 23.2 and 22.6 ms at 40 fps).
 const QUANTILE = 0.9, DOWN_HEADROOM = 1.8, TARGET_HEADROOM = 2.4;
 // seconds between steps down, after a change before frames at the new scale count, the seconds a
-// step down reads and the least frames a decision takes
+// step down reads and the least clean frames a decision takes
 const HOLD = 1.5, SETTLE = 0.4, DOWN_SPAN = 2, MIN_FRAMES = 45;
 // the least a step down must save (ms); less, and the view is bound by its fixed work
 const MIN_SAVING = 0.5;
@@ -88,10 +93,14 @@ const PROBE_SPAN = 0.5;
 // range it is kept in, the measurements it is the median of and the least change of the squared
 // scale a measurement takes (a smaller step drowns in the frames' noise)
 const NON_SCALING = 0.45, SHARE_MIN = 0, SHARE_MAX = 0.85, SHARE_KEEP = 7, SHARE_SPAN = 0.12;
-// settling: the frames it reads, the usual lead of the quantile over their median (ms) and
+// settling: the clean frames it reads, the usual lead of the quantile over their median (ms) and
 // how much lighter the first frames run than the scene will (until the key light's first shadow step
 // its receivers read one shadow map, not two: about 7 % of a frame)
 const SETTLE_FRAMES = 45, SETTLE_SPREAD = 0.4, SETTLE_LIGHT = 0.07;
+// a kind of periodic work on more than this share of the frames is steady cost, part of the frames'
+// usual time (at noon on high the sky's bake slices ran on about a sixth of the frames and the
+// refracted sun's redraws on one in fifteen)
+const HEAVY_SHARE = 0.2;
 // samples kept (s)
 const KEEP = Math.max( UP_LONG, DOWN_SPAN ) + 0.5;
 // frame-interval fallback: a frame over 1.5 refresh periods missed its vblank; steps down when
@@ -100,6 +109,10 @@ const MISS_SHARE = 0.02, UP_AFTER = 6, INTERVALS = 150;
 // frame-interval fallback: seconds a scale it stepped down from is barred from a step back up,
 // doubled each time it is left again within FRAME_BAR_MAX seconds of the last bar's end
 const FRAME_BAR = 8, FRAME_BAR_MAX = 64;
+
+/** Periodic work in a frame (bits of `sample`'s `heavy`). */
+export const PeriodicWork = { skyBake: 1, sunShadow: 2, refractedSun: 4, fogBank: 8 } as const;
+const WORK_KINDS = Object.values( PeriodicWork );
 
 export interface DynamicResolutionOptions {
 	max: number; // the largest scale (the tier's nominal: the display's ratio, up to its cap)
@@ -112,6 +125,8 @@ export interface FrameSampleOptions {
 	/** the part of `ms` in passes whose targets are sized from the render (NaN: not known; the
 	 * whole frame is then taken as render-sized) */
 	pixel?: number;
+	/** periodic work in the frame (`PeriodicWork` bits) */
+	heavy?: number;
 	/** when it arrived (s of `performance.now`) */
 	now?: number;
 }
@@ -123,6 +138,7 @@ interface Sample {
 	// the part in fixed passes and in render-sized ones
 	fixed: number;
 	pixel: number;
+	heavy: number;
 }
 
 /** A change of scale (seconds of `performance.now`), the rule that made it and, for the GPU's rules,
@@ -173,6 +189,8 @@ export class DynamicResolution {
 	private response: Response | null = null;
 	// measurements of the non-scaling share (the prior counts once)
 	private readonly shares: number[] = [ NON_SCALING ];
+	// periodic work steady enough to stay in the quantiles (PeriodicWork bits)
+	private steady = 0;
 	private nextUp = - Infinity;
 	// the frame-interval fallback's bars: a scale it stepped down from, until when it is barred and
 	// for how long it was
@@ -220,7 +238,7 @@ export class DynamicResolution {
 
 	/** One frame's GPU busy time (ms), rendered at `scale` (NaN: a frame that does not steer it, while
 	 * paused or pinned). */
-	sample( ms: number, scale: number, { pixel = NaN, now = performance.now() / 1000 }: FrameSampleOptions = {} ): void {
+	sample( ms: number, scale: number, { pixel = NaN, heavy = 0, now = performance.now() / 1000 }: FrameSampleOptions = {} ): void {
 
 		if ( ! Number.isFinite( ms ) || ms <= 0 ) return;
 		this.source = 'gpu';
@@ -244,7 +262,7 @@ export class DynamicResolution {
 
 		}
 		const p = Number.isFinite( pixel ) ? Math.min( pixel, ms ) : ms;
-		this.samples.push( { t: now, scale, total: ms, fixed: ms - p, pixel: p } );
+		this.samples.push( { t: now, scale, total: ms, fixed: ms - p, pixel: p, heavy } );
 		while ( this.samples.length && now - this.samples[ 0 ].t > KEEP ) this.samples.shift();
 
 	}
@@ -268,7 +286,7 @@ export class DynamicResolution {
 	}
 
 	/** The frame loop starts (or restarts after a stop): its first frames (first-use work, whole
-	 * bakes) do not count, and it settles again from the next frames. */
+	 * bakes) do not count, and it settles again from the next clean frames. */
 	begin( now = performance.now() / 1000 ): void {
 
 		this.lastChange = now;
@@ -288,14 +306,16 @@ export class DynamicResolution {
 
 	private steerByGpu( now: number ): boolean {
 
+		this.steady = this.steadyWork( now );
 		this.measureResponse();
 		const since = now - this.lastChange;
 		const target = this.interval - TARGET_HEADROOM;
+		const clean = ( x: Sample ) => this.clean( x );
 		// the frames drawn at the scale since it was set
 		const current = this.samples.filter( ( x ) => x.scale === this.scale && x.t - this.lastChange >= SETTLE );
 		if ( this.settling ) {
 
-			const frames = current;
+			const frames = current.filter( clean );
 			if ( frames.length < SETTLE_FRAMES ) return false;
 			this.settling = false;
 			const s = this.largestFitting( frames, ( target - SETTLE_SPREAD ) / ( 1 + SETTLE_LIGHT ), 0.5, this.floor );
@@ -303,16 +323,16 @@ export class DynamicResolution {
 			return this.to( s, now, 'settle', frames );
 
 		}
-		// frames that take the whole interval: no waiting for the window
+		// frames that take the whole interval, periodic work included: no waiting for the window
 		const last = current.slice( - EMERGENCY_FRAMES );
 		if ( this.scale > this.floor && since >= EMERGENCY_HOLD && last.length === EMERGENCY_FRAMES && quantile( last.map( ( x ) => x.total ), 0.5 ) > this.interval ) {
 
 			const s = this.largestFitting( last, target, 0.5, this.floor, this.scale );
-			if ( s < this.scale && this.down( s, now, 'emergency', current ) ) return true;
+			if ( s < this.scale && this.down( s, now, 'emergency', current.filter( clean ) ) ) return true;
 
 		}
 		if ( since < HOLD ) return false;
-		const recent = current.filter( ( x ) => now - x.t <= DOWN_SPAN );
+		const recent = current.filter( ( x ) => clean( x ) && now - x.t <= DOWN_SPAN );
 		if ( recent.length >= MIN_FRAMES ) {
 
 			const high = this.predict( recent, this.scale, QUANTILE );
@@ -332,7 +352,7 @@ export class DynamicResolution {
 		if ( since >= UP_HOLD && this.scale < this.max && now >= this.nextUp ) {
 
 			this.nextUp = now + UP_EVERY;
-			const long = this.samples.filter( ( x ) => now - x.t <= UP_LONG );
+			const long = this.samples.filter( ( x ) => clean( x ) && now - x.t <= UP_LONG );
 			const short = long.filter( ( x ) => now - x.t <= UP_SHORT );
 			if ( short.length >= MIN_FRAMES ) {
 
@@ -348,6 +368,13 @@ export class DynamicResolution {
 
 		}
 		return false;
+
+	}
+
+	// Not periodic work, or only work that runs on so many frames it is steady cost.
+	private clean( x: Sample ): boolean {
+
+		return ( x.heavy & ~ this.steady ) === 0;
 
 	}
 
@@ -386,7 +413,7 @@ export class DynamicResolution {
 
 	}
 
-	// Steps down to `scale` (`frames`: the frames at the scale it leaves that called for it).
+	// Steps down to `scale` (`frames`: the clean frames at the scale it leaves that called for it).
 	private down( scale: number, now: number, why: string, frames: readonly Sample[] ): boolean {
 
 		// a step up it has to take back at once: bar it, and every scale above, for a while
@@ -423,7 +450,7 @@ export class DynamicResolution {
 		const response = this.response;
 		if ( ! response ) return;
 		const change = response.change;
-		const frames = this.samples.filter( ( x ) => x.scale === change.scale && x.t - change.at >= SETTLE );
+		const frames = this.samples.filter( ( x ) => x.scale === change.scale && x.t - change.at >= SETTLE && this.clean( x ) );
 		if ( frames.length < MIN_FRAMES ) return;
 		this.response = null;
 		change.measured = quantile( frames.map( ( x ) => x.total ), QUANTILE );
@@ -446,6 +473,17 @@ export class DynamicResolution {
 		this.shares.push( Math.min( Math.max( k, SHARE_MIN ), SHARE_MAX ) );
 		if ( this.shares.length > SHARE_KEEP ) this.shares.shift();
 		this.nonScaling = quantile( this.shares, 0.5 );
+
+	}
+
+	// The kinds of periodic work that run on more than HEAVY_SHARE of the recent frames.
+	private steadyWork( now: number ): number {
+
+		const frames = this.samples.filter( ( x ) => now - x.t <= UP_LONG );
+		let steady = 0;
+		if ( frames.length === 0 ) return steady;
+		for ( const kind of WORK_KINDS ) if ( frames.filter( ( x ) => x.heavy & kind ).length > frames.length * HEAVY_SHARE ) steady |= kind;
+		return steady;
 
 	}
 

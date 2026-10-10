@@ -27,7 +27,7 @@ import { pickPlantSites, bakeGroundContact, bakeAnchorContact } from './world/Pl
 import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
-import { DynamicResolution, GpuFrameTimer, PassScaling } from './post/DynamicResolution.ts';
+import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
@@ -725,8 +725,9 @@ const dynamicResolution = dynamicRule ? new DynamicResolution( dynamicRule ) : n
 // the same number of refreshes; `frameRate` overrides it (0 renders on every refresh: the profiler's
 // uncapped runs, where the animation frames' intervals measure the work, not a display).
 const pacer = new FramePacer( params.has( 'frameRate' ) ? Number( params.get( 'frameRate' ) ) : quality.frameRate );
-// the render scale each frame was drawn at (by three's frame id), for the GPU times read back later
-const frameScales = new Map<number, number>();
+// the render scale each frame was drawn at and its periodic work (by three's frame id), for the
+// GPU times read back later
+const frameScales = new Map<number, { scale: number; heavy: number }>();
 let gpuTimer: GpuFrameTimer | null = null;
 // A load that measures the GPU for its tier (QualityDetect.ts), set up below once the timer is known.
 let detector: QualityDetector | null = null;
@@ -738,8 +739,8 @@ if ( dynamicResolution ) {
 	const sample = ( frame: number, ms: number, pixel: number ) => {
 
 		detector?.gpu( frame, ms );
-		const scale = frameScales.get( frame );
-		if ( scale !== undefined ) dynamicResolution.sample( ms, scale, { pixel } );
+		const drawn = frameScales.get( frame );
+		if ( drawn !== undefined ) dynamicResolution.sample( ms, drawn.scale, { pixel, heavy: drawn.heavy } );
 
 	};
 	// the frame profiler owns the timestamp queries while it times passes
@@ -946,6 +947,26 @@ function tick( time: number ): void {
 
 }
 
+// The periodic work in this frame (PeriodicWork bits): its frames stay out of the dynamic scale's
+// quantiles. A periodic sky bake runs its slices in the ticks while the sky is busy, from the one
+// that starts it to the one that publishes it.
+let skyWasBusy = false;
+const periodicCounts = { sunShadow: 0, refractedSun: 0, fogBank: 0 };
+function periodicWork(): number {
+
+	let heavy = 0;
+	if ( sky.busy || skyWasBusy ) heavy |= PeriodicWork.skyBake;
+	skyWasBusy = sky.busy;
+	if ( sunShadow.redraws !== periodicCounts.sunShadow ) heavy |= PeriodicWork.sunShadow;
+	if ( refractedSun.redraws !== periodicCounts.refractedSun ) heavy |= PeriodicWork.refractedSun;
+	if ( pipeline.air.bankBakes !== periodicCounts.fogBank ) heavy |= PeriodicWork.fogBank;
+	periodicCounts.sunShadow = sunShadow.redraws;
+	periodicCounts.refractedSun = refractedSun.redraws;
+	periodicCounts.fogBank = pipeline.air.bankBakes;
+	return heavy;
+
+}
+
 // After the frame's passes: read the GPU times back and move the dynamic scale (it applies from the
 // next frame on). Paused or pinned, the window keeps no samples and the scale holds.
 function steerRenderScale( rawDt: number ): void {
@@ -954,7 +975,7 @@ function steerRenderScale( rawDt: number ): void {
 	// the GPU's budget follows the paced frame interval (a 60 Hz frame unpaced)
 	dynamicResolution.setFrameInterval( pacer.target > 0 ? pacer.interval : 1000 / 60 );
 	const steering = ! paused && ! resolution.full && renderScale === dynamicResolution.scale;
-	frameScales.set( renderer.info.frame, steering ? renderScale : NaN );
+	frameScales.set( renderer.info.frame, { scale: steering ? renderScale : NaN, heavy: periodicWork() } );
 	if ( frameScales.size > 240 ) frameScales.delete( frameScales.keys().next().value! );
 	gpuTimer?.resolve();
 	if ( steering ) {
