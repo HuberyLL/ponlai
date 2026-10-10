@@ -217,6 +217,36 @@ export const checks = [
 
 	} ],
 
+	[ 'runtime: a pass without a depth resource clears the depth the graph does not own (the canvas\'s, a chain\'s own targets\'); a declared depth clears or loads as declared', () => {
+
+		const r = mockRenderer();
+		const g = new FrameGraph( r, { sceneSamples: 1 } );
+		let color = g.color( 'sceneColor', { size: RENDER } );
+		let depth = g.depth( 'sceneDepth', { size: RENDER } );
+		let x = g.color( 'x', { size: RENDER } );
+		let canvas = g.import( 'canvas', null, CANVAS );
+		const flags = {};
+		const record = ( name ) => () => ( flags[ name ] = r.autoClearDepth && r.autoClearStencil );
+		g.addPass( 'opaque', 'callback', ( b ) => ( color = b.write( color, { clear: true } ), depth = b.depth( depth, { write: true, clear: true } ), { label: 'o', run: record( 'opaque' ) } ) );
+		g.addPass( 'overlay', 'callback', ( b ) => ( color = b.write( color ), b.depth( depth, { write: false } ), { label: 'v', run: record( 'overlay' ) } ) );
+		// a chain's own rtt() passes draw into targets with depth and inherit the flags its pass binds
+		g.addPass( 'display', 'chain', ( b ) => ( b.read( color ), x = b.write( x ), { label: 'd', pipeline: { render: record( 'display' ) } } ) );
+		g.addPass( 'output', 'chain', ( b ) => ( b.read( x ), canvas = b.write( canvas ), { label: 'out', pipeline: { render: record( 'output' ) } } ) );
+		g.compile();
+		g.setExtents( extents( 8, 8 ) );
+		assert.equal( g.targetOf( 2 ).depthBuffer, false, 'the chain\'s graph target holds no depth' );
+		for ( const mode of [ 'legacy', 'derived', 'off' ] ) {
+
+			Object.defineProperty( g.attachmentOps, 'mode', { value: mode } );
+			r.autoClearDepth = r.autoClearStencil = false;
+			g.execute( {} );
+			assert.deepEqual( flags, { opaque: true, overlay: false, display: true, output: true }, mode );
+			assert.equal( r.autoClearDepth, false, 'the renderer\'s depth flag is restored after the frame' );
+
+		}
+
+	} ],
+
 	[ 'runtime: the dev check counts frames whose rewrites did not reach the encoder', () => {
 
 		const r = mockRenderer();
