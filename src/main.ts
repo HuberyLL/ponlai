@@ -27,7 +27,7 @@ import { pickPlantSites, bakeGroundContact, bakeAnchorContact } from './world/Pl
 import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
-import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork } from './post/DynamicResolution.ts';
+import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
@@ -775,6 +775,12 @@ if ( qualityChoice.source === 'detect' ) {
 }
 
 const canvasSize = new THREE.Vector2();
+// High remembers the scale it held (DynamicResolution.ts), except in an automated browser: a
+// profile or capture would start where the last run on the same origin ended, so its start-up and
+// first decision would depend on run history (QualityDetect.ts skips them for the same reason).
+// `renderScaleMemory=on` turns it on there (a returning load's test), `off` turns it off anywhere.
+const scaleMemoryParam = params.get( 'renderScaleMemory' );
+const scaleMemory = scaleMemoryParam === 'on' || ( scaleMemoryParam !== 'off' && ! navigator.webdriver );
 let nominalScale = 1, renderScale = 1;
 function resize(): void {
 
@@ -787,6 +793,7 @@ function resize(): void {
 	camera.aspect = w / h;
 	camera.updateProjectionMatrix();
 	applyRenderScale( true );
+	if ( scaleMemory ) dynamicResolution?.setStoreKey( renderScaleKey( renderer, qualityTier, pacer.target, canvasSize.x, canvasSize.y, gpuTimer !== null || profiler?.timestamps === true ? 'gpu' : 'frames' ) );
 
 }
 
@@ -829,6 +836,15 @@ function describeRenderScale(): void {
 
 addEventListener( 'resize', resize );
 resize();
+// High starts from the scale it last held on this display, tier and frame rate (remembered in the
+// browser, unless `scaleMemory` is off), and settles from there once its first frames are in; a
+// load that measures the GPU for its tier measures at the nominal scale.
+if ( dynamicResolution && ! detector ) {
+
+	dynamicResolution.restore();
+	applyRenderScale();
+
+}
 
 const clock = new THREE.Timer();
 clock.connect( document );

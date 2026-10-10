@@ -77,8 +77,12 @@ import type * as THREE from 'three/webgpu';
 //   not set: the choice is open).
 // - Until its first decision (`settling`) it waits for SETTLE_FRAMES clean frames and then takes
 //   the largest scale their median predicts fits, up or down, with room for the first frames
-//   running lighter than the scene will (SETTLE_LIGHT); the page keeps its loading screen up over
-//   that first jump.
+//   running lighter than the scene will (SETTLE_LIGHT). It starts from the scale it last held
+//   on this display (`restore`: localStorage, keyed by tier, frame rate, canvas size, GPU and
+//   whether GPU times or frame intervals steer it), so a returning player's first frames are near
+//   it and the page keeps its loading screen up over the first jump only. A scale is remembered
+//   once it has held STORE_AFTER seconds at the current key (main.ts leaves the memory off in an
+//   automated browser, so a measurement does not start where the last one ended).
 // The page renders at the tier's nominal scale whenever the scale is pinned (`?dpr`, the GUI's
 // full resolution) or the scene is paused, so paused frames and captures render at the reference
 // scale whatever scale the running page had reached.
@@ -123,6 +127,8 @@ const NON_SCALING = 0.45, SHARE_MIN = 0, SHARE_MAX = 0.85, SHARE_KEEP = 7, SHARE
 // how much lighter the first frames run than the scene will (until the key light's first shadow step
 // its receivers read one shadow map, not two: about 7 % of a frame)
 const SETTLE_FRAMES = 45, SETTLE_SPREAD = 0.4, SETTLE_LIGHT = 0.07;
+// seconds a scale holds before it is remembered
+const STORE_AFTER = 4;
 // a kind of periodic work on more than this share of the frames is steady cost, part of the frames'
 // usual time (at noon on high the sky's bake slices ran on about a sixth of the frames and the
 // refracted sun's redraws on one in fifteen)
@@ -137,6 +143,8 @@ const MISS_SHARE = 0.02, MISS_LATE = 0.06, MISS_CUT = 0.6, UP_AFTER = 6, INTERVA
 // frame-interval fallback: seconds a scale it stepped down from is barred from a step back up,
 // doubled each time it is left again within FRAME_BAR_MAX seconds of the last bar's end
 const FRAME_BAR = 8, FRAME_BAR_MAX = 64;
+// the stored scales (localStorage) and how many displays it remembers
+const STORE_KEY = 'soomi.renderScale', STORE_ENTRIES = 8;
 
 /** Periodic work in a frame (bits of `sample`'s `heavy`). */
 export const PeriodicWork = { skyBake: 1, sunShadow: 2, refractedSun: 4, fogBank: 8 } as const;
@@ -243,6 +251,10 @@ export class DynamicResolution {
 	// the frame-interval fallback: the share of frames that missed their vblank before a step below
 	// the quality floor, until the step is judged
 	private missedBefore: number | null = null;
+	private storeKey: string | null = null;
+	// the scale last remembered under the store key, and since when the key holds (s)
+	private stored = NaN;
+	private keySince = - Infinity;
 	// the canvas's pixel ratio
 	private canvasRatio = NaN;
 	// the frame-interval fallback's bars: a scale it stepped down from, until when it is barred and
@@ -303,6 +315,29 @@ export class DynamicResolution {
 
 	}
 
+	/** The key the scales it holds are remembered under (`renderScaleKey`: tier, frame rate, canvas
+	 * size, GPU and steering), or null to remember nothing; set again whenever the canvas changes
+	 * size. A new key gets its entry once the scale has held STORE_AFTER seconds under it. */
+	setStoreKey( key: string | null, now = performance.now() / 1000 ): void {
+
+		if ( key === this.storeKey ) return;
+		this.storeKey = key;
+		this.stored = NaN;
+		this.keySince = now;
+
+	}
+
+	/** Starts from the scale last held under the store key, if any (before the first frame). */
+	restore(): void {
+
+		const entry = this.storeKey === null ? undefined : readStore()[ this.storeKey ];
+		if ( ! entry || ! Number.isFinite( entry.scale ) ) return;
+		// before the first frame, behind the loading screen: not a change anyone sees
+		this.scale = this.stored = this.round( Math.min( Math.max( entry.scale, this.floor ), this.max ) );
+		this.lastWhy = 'restore';
+
+	}
+
 	/** One frame's GPU busy time (ms), rendered at `scale` (NaN: a frame that does not steer it, while
 	 * paused or pinned). */
 	sample( ms: number, scale: number, { pixel = NaN, heavy = 0, now = performance.now() / 1000 }: FrameSampleOptions = {} ): void {
@@ -348,7 +383,9 @@ export class DynamicResolution {
 	update( now = performance.now() / 1000 ): boolean {
 
 		if ( ! this.enabled ) return false;
-		return this.source === 'gpu' ? this.steerByGpu( now ) : this.steerByIntervals( now );
+		const changed = this.source === 'gpu' ? this.steerByGpu( now ) : this.steerByIntervals( now );
+		this.remember( now );
+		return changed;
 
 	}
 
@@ -643,6 +680,8 @@ export class DynamicResolution {
 
 		const v = this.intervals;
 		if ( v.length < MIN_FRAMES ) return false;
+		// its first decision (its scales are remembered from here on)
+		this.settling = false;
 		const period = quantile( v, 0.1 );
 		const missed = v.filter( ( x ) => x > period * 1.5 ).length / v.length;
 		if ( missed > 0 ) this.lastMiss = Math.max( this.lastMiss, now );
@@ -729,6 +768,15 @@ export class DynamicResolution {
 
 	}
 
+	// Remembers a scale once it has held STORE_AFTER seconds under the current key.
+	private remember( now: number ): void {
+
+		if ( this.storeKey === null || this.settling || this.scale === this.stored || now - Math.max( this.lastChange, this.keySince ) < STORE_AFTER ) return;
+		this.stored = this.scale;
+		writeStore( this.storeKey, this.scale );
+
+	}
+
 	private round( x: number ): number {
 
 		return Math.round( x * 1000 ) / 1000;
@@ -742,6 +790,65 @@ function quantile( values: readonly number[], q: number ): number {
 	const s = [ ...values ].sort( ( a, b ) => a - b );
 	const i = ( s.length - 1 ) * q, lo = Math.floor( i ), hi = Math.ceil( i );
 	return s[ lo ] + ( s[ hi ] - s[ lo ] ) * ( i - lo );
+
+}
+
+// ------------------------------------------------------------------ the remembered scale
+
+type Store = Record<string, { scale: number; at: number }>;
+
+// Storage can be missing or refuse (a private window, blocked site data): the page then starts from
+// the nominal scale, as on a first visit.
+function readStore(): Store {
+
+	try {
+
+		const text = globalThis.localStorage?.getItem( STORE_KEY );
+		const store = text ? JSON.parse( text ) as unknown : null;
+		return store && typeof store === 'object' ? store as Store : {};
+
+	} catch {
+
+		return {};
+
+	}
+
+}
+
+function writeStore( key: string, scale: number ): void {
+
+	try {
+
+		const store = readStore();
+		store[ key ] = { scale, at: Date.now() };
+		// the displays used most recently
+		const keep = Object.entries( store ).sort( ( a, b ) => b[ 1 ].at - a[ 1 ].at ).slice( 0, STORE_ENTRIES );
+		globalThis.localStorage?.setItem( STORE_KEY, JSON.stringify( Object.fromEntries( keep ) ) );
+
+	} catch {
+
+		// not remembered: the next visit settles from the nominal scale
+
+	}
+
+}
+
+/** The key a scale is remembered under: the tier, its frame rate, the canvas's size, the GPU and what
+ * steers it ('gpu' times or frame intervals: the fallback's scales are not the GPU rule's). */
+export function renderScaleKey( renderer: THREE.WebGPURenderer, tier: string, frameRate: number, canvasWidth: number, canvasHeight: number, steering: 'gpu' | 'frames' ): string {
+
+	let gpu = '';
+	try {
+
+		const info = ( renderer.backend as unknown as { device?: { adapterInfo?: { vendor?: string; architecture?: string; device?: string; description?: string } } } ).device?.adapterInfo;
+		if ( info ) gpu = [ info.vendor, info.architecture, info.device, info.description ].filter( Boolean ).join( '/' );
+
+	} catch {
+
+		// no adapter info: the key still holds the canvas and tier
+
+	}
+	return `${ tier }|${ frameRate }|${ canvasWidth }x${ canvasHeight }|${ gpu }` + ( steering === 'gpu' ? '' : '|frames' );
 
 }
 
