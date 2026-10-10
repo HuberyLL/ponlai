@@ -19,26 +19,28 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
 // FSR 1 for the frame graph's upscale, split differently from three's FSR1Node: EASU (edge-adaptive
-// upsampling) runs as its own pass into a canvas-sized target, and RCAS (contrast-adaptive
-// sharpening) is a function the canvas pass calls before it adds the grain, so the canvas no longer
-// takes a second full-size pass and target between the two. EASU fetches its 12-texel cross as four
+// upsampling) runs as its own pass (the graph's `easu`) into a canvas-sized texture the graph owns,
+// and RCAS (contrast-adaptive sharpening) is a function the canvas pass calls before it adds the
+// grain, so the canvas no longer takes a second full-size pass and target between the two. EASU fetches its 12-texel cross as four
 // 2x2 gathers per channel where the input is filterable (AMD's own layout), and with single texel
 // loads otherwise; either way the taps and the maths are three's, and only the alpha channel,
 // which the frame never uses, is dropped.
 export class FSR {
 
-	/** The upscaled image, before sharpening (the canvas's size; the frame graph owns and sizes it). */
-	readonly easuRT: THREE.RenderTarget;
-	private readonly quad: THREE.QuadMesh;
+	/** EASU's full-screen pass: the frame graph draws it into `output`. */
+	readonly quad: THREE.QuadMesh;
+	// the upscaled image, before sharpening (the canvas's size; the frame graph owns and sizes it)
+	private readonly output: THREE.Texture;
 	// the render's size (the input's) and the canvas's (the frame graph's extents)
 	private readonly inputSize: THREE.UniformNode<'vec2', THREE.Vector2>;
 	private readonly outputSize: THREE.UniformNode<'vec2', THREE.Vector2>;
 
 	/** `input` holds display values at the render's size; `gather` reads it with textureGather
-	 * (it must then be filterable). The EASU target is declared on `graph`. */
-	constructor( input: THREE.Texture, gather: boolean, graph: GraphResources ) {
+	 * (it must then be filterable). EASU draws into `output`, a texture of the canvas's size on
+	 * `graph`, which also gives both sizes. */
+	constructor( input: THREE.Texture, output: THREE.Texture, gather: boolean, graph: GraphResources ) {
 
-		this.easuRT = graph.renderTarget( [ graph.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) ] );
+		this.output = output;
 		this.inputSize = graph.extent( { of: 'render' } );
 		this.outputSize = graph.extent( { of: 'canvas' } );
 		const material = new THREE.NodeMaterial();
@@ -49,20 +51,11 @@ export class FSR {
 
 	}
 
-	/** Runs EASU into `easuRT`. */
-	render( renderer: THREE.WebGPURenderer ): void {
+	/** Compiles EASU for `target` (the graph's, holding `output`) ahead of its first frame (see
+	 * `AerialPerspective.warm`). */
+	async warm( renderer: THREE.WebGPURenderer, target: THREE.RenderTarget ): Promise<void> {
 
-		const target = renderer.getRenderTarget();
-		renderer.setRenderTarget( this.easuRT );
-		this.quad.render( renderer );
-		renderer.setRenderTarget( target );
-
-	}
-
-	/** Compiles EASU ahead of its first frame (see `AerialPerspective.warm`). */
-	async warm( renderer: THREE.WebGPURenderer ): Promise<void> {
-
-		await compileInto( renderer, this.quad, ( this.quad as unknown as { camera: THREE.Camera } ).camera, this.easuRT );
+		await compileInto( renderer, this.quad, ( this.quad as unknown as { camera: THREE.Camera } ).camera, target );
 
 	}
 
@@ -213,11 +206,11 @@ export class FSR {
 
 	}
 
-	/** RCAS on `easuRT` at the canvas pixel being drawn. `sharpness` in stops: 0 the strongest, 2
+	/** RCAS on `output` at the canvas pixel being drawn. `sharpness` in stops: 0 the strongest, 2
 	 * none (three's fsr1() leaves its noise attenuation off, and so does this). */
 	rcas( sharpness: F ): V3 {
 
-		const easu = this.easuRT.texture;
+		const easu = this.output;
 		return Fn( () => {
 
 			// (the cross clamped at the frame's edge, as EASU's taps are)
@@ -245,7 +238,7 @@ export class FSR {
 
 	}
 
-	// (the frame graph owns the EASU target)
+	// (the frame graph owns the EASU texture)
 	dispose(): void {
 
 		( this.quad.material as THREE.Material ).dispose();

@@ -13,7 +13,6 @@ import { FSR } from './FSR.ts';
 import { sizeRtt } from './RenderScale.ts';
 import { SCENE_SAMPLES } from './SceneSamples.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
-import { debugFlags } from '../debug/DebugFlags.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
 import type { Rain } from '../weather/Rain.ts';
@@ -41,11 +40,15 @@ import type { Rain } from '../weather/Rain.ts';
 // The targets are the frame graph's (graph/FrameGraph.ts): each is declared with its format,
 // sample count and size class (the render, a share of it, the canvas or fixed), and the graph sizes
 // them all from `setSize`'s render and canvas sizes, the display chain's own rtt and bloom passes
-// through a resize hook. The graph runs the frame: the scene half (opaque, the depth and copy
-// resolves, water, the surface resolve, rain) as passes that declare what they read and write,
-// the rest (the sea fog, the view distance, the grade, the canvas pass) as callbacks, in that
-// order. Its attachment ops (graph/AttachmentOps.ts) discard the scene target's multisampled
-// samples in its last pass.
+// through a resize hook. The graph runs the whole frame as passes that declare what they read and
+// write: the scene half (opaque, the depth and copy resolves, water, the surface resolve, rain),
+// the sea fog (its bank map, nearest depth and march), the view distance, the display chain (one
+// pass: the composite, blooms, depth of field and grade run inside it), and the canvas pass, or
+// EASU and the sharpening canvas pass while upscaling. Each pass that runs only now and then
+// (rain, fog, the view distance, either output) says when by a predicate the graph evaluates at
+// the frame's start. The `post=` legacy switches are variants of the graph, chosen as it is built.
+// Its attachment ops (graph/AttachmentOps.ts) discard the scene target's multisampled samples in
+// its last pass.
 
 // The graph's dev checks (every target at its class's size, the attachment ops that reached
 // WebGPU): on the dev server and with `?debug`.
@@ -301,6 +304,7 @@ export class Pipeline {
 	private readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
 		surfaceDepth: ResourceHandle; display: ResourceHandle; viewDistance: ResourceHandle | null;
+		easu: ResourceHandle | null; canvas: ResourceHandle;
 	};
 	readonly air: AerialPerspective;
 	readonly shafts = new LightShafts();
@@ -310,10 +314,10 @@ export class Pipeline {
 	private copyQuad: THREE.QuadMesh;
 	private surfaceQuad: THREE.QuadMesh;
 	private output: THREE.RenderPipeline;
-	private upscaledOutput: THREE.RenderPipeline;
-	// three's FSR1Node, kept for A/B (debugFlags.fsrPort = false, or the fsrPort option off)
-	private upscaledOutputThree: THREE.RenderPipeline;
-	private fsr: FSR;
+	// FSR.ts's sharpening canvas pass after EASU (the fsrPort option), or three's FSR1Node (post=three-fsr)
+	private upscaledOutput: THREE.RenderPipeline | null = null;
+	private upscaledOutputThree: THREE.RenderPipeline | null = null;
+	private fsr: FSR | null = null;
 	// the view distance per pixel, for the depth of field (the dofDistance option)
 	private distanceQuad: THREE.QuadMesh | null = null;
 	private warming: Promise<void> | null = null;
@@ -358,7 +362,10 @@ export class Pipeline {
 		const surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } );
 		const display = g.color( 'display', { size: RENDER, format: THREE.RGBAFormat, type: THREE.FloatType } );
 		const viewDistance = O.dofDistance ? g.color( 'viewDistance', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } ) : null;
-		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, display, viewDistance };
+		// the upscale's EASU image (the canvas's size) and the canvas
+		const easu = O.fsrPort ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
+		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
+		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, display, viewDistance, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( [ sceneColor ], sceneDepth );
@@ -829,15 +836,22 @@ export class Pipeline {
 		// Below it, FSR 1 (AMD FidelityFX Super Resolution 1, FSR.ts) upscales the image (it expects
 		// display values) before the grain, so the grain stays one display pixel fine and is not
 		// sharpened. The browser's stretch of a small canvas was a plain bilinear filter. The canvas
-		// pass sharpens EASU's result itself; three's FSR1Node, kept for A/B, took a canvas-sized
-		// pass and target more.
-		const backend = renderer.backend as unknown as { hasFeature?( name: string ): boolean };
-		this.fsr = new FSR( tDisplay, backend.hasFeature?.( 'float32-filterable' ) === true, g );
-		this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( this.fsr.rcas( this.sharpness ).toVar(), u.output, float( 1 ) ) )() );
-		this.upscaledOutput.outputColorTransform = false;
-		const upscaled = fsr1( texture( tDisplay ), this.sharpness );
-		this.upscaledOutputThree = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), u.output, float( 1 ) ) )() );
-		this.upscaledOutputThree.outputColorTransform = false;
+		// pass sharpens EASU's result itself; three's FSR1Node, kept for A/B (post=three-fsr), took
+		// a canvas-sized pass and target more.
+		if ( easu ) {
+
+			const backend = renderer.backend as unknown as { hasFeature?( name: string ): boolean };
+			const fsr = this.fsr = new FSR( tDisplay, g.texture( easu ), backend.hasFeature?.( 'float32-filterable' ) === true, g );
+			this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( fsr.rcas( this.sharpness ).toVar(), u.output, float( 1 ) ) )() );
+			this.upscaledOutput.outputColorTransform = false;
+
+		} else {
+
+			const upscaled = fsr1( texture( tDisplay ), this.sharpness );
+			this.upscaledOutputThree = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), u.output, float( 1 ) ) )() );
+			this.upscaledOutputThree.outputColorTransform = false;
+
+		}
 		// The chain's own passes (its rtt() passes, the bloom and glow chains, the light shafts')
 		// follow the render's size, not the canvas, which is larger while the frame is upscaled.
 		g.onResize( RENDER, ( w, h ) => {
@@ -869,9 +883,8 @@ export class Pipeline {
 	// decide per pixel between the sea and the opaque colour: edges stepped, and the opaque colour
 	// at an edge pixel held the sky the sea was not there to cover, a pale outline round everything
 	// over the sea.) Rain does not write depth, so surface focus and overlapping translucent streaks
-	// are preserved; its splashes compare the resolved depths themselves. The callbacks after it
-	// draw into the graph's targets themselves; they declare what they read, so the passes they
-	// depend on stay live.
+	// are preserved; its splashes compare the resolved depths themselves. The post passes follow,
+	// each into a target of the graph's or the canvas.
 	private declarePasses(): void {
 
 		const g = this.graph;
@@ -931,63 +944,70 @@ export class Pipeline {
 			};
 
 		} );
-		// the reduced sea fog and its bank map (each only while there is fog)
-		const { fogScale, bankSize } = this.options;
-		g.addPass( 'fog', 'callback', ( b ) => {
-
-			b.read( surfaceDepth );
-			return {
-				label: 'composite (air, fog, veil)', neverCull: true,
-				size: fogScale < 1 ? { of: 'render', divisor: Math.round( 1 / fogScale ) } : { of: 'fixed', width: bankSize, height: bankSize },
-				run: () => this.air.render( this.renderer ),
-			};
-
-		} );
+		// the sea fog: its bank map when due, the nearest depth and the reduced march (only while
+		// there is fog; the composite reads what they last drew)
+		const fogReads = this.air.passes( g, surfaceDepth );
 		// the depth of field's distances (without the depth of field its blur is mixed in at weight
 		// 0, so stale distances never show)
-		g.addPass( 'viewDistance', 'callback', ( b ) => {
+		let { viewDistance, display, easu, canvas } = this.resources;
+		const distanceQuad = this.distanceQuad;
+		if ( viewDistance && distanceQuad ) g.addPass( 'viewDistance', 'quad', ( b ) => {
 
 			b.read( surfaceDepth );
-			return {
-				label: 'tilt-shift blur', neverCull: true, size: RENDER,
-				run: () => {
-
-					if ( ! this.distanceQuad || this.settings.dof <= 0 ) return;
-					const r = this.renderer;
-					r.setRenderTarget( this.distanceRT );
-					this.distanceQuad.render( r );
-					r.setRenderTarget( null );
-
-				},
-			};
+			viewDistance = b.write( viewDistance! );
+			return { label: 'tilt-shift blur', when: () => this.settings.dof > 0, whenLabel: 'dof > 0', quad: distanceQuad };
 
 		} );
-		// composite, bloom, depth of field, grade
-		g.addPass( 'display', 'callback', ( b ) => {
+		// composite, blooms, depth of field, grade and look: one chain, whose rtt and bloom passes its
+		// output node updates on the way
+		g.addPass( 'display', 'chain', ( b ) => {
 
 			b.readOptional( sceneColor );
 			b.read( surfaceDepth );
-			return { label: 'grade & look', neverCull: true, size: RENDER, run: ( f ) => this.renderDisplay( f ) };
+			for ( const h of fogReads ) b.readOptional( h );
+			if ( viewDistance ) b.readOptional( viewDistance );
+			display = b.write( display );
+			return { label: 'grade & look', pipeline: this.display };
 
 		} );
 		// to the canvas: copied at the display's resolution, upscaled below it
-		g.addPass( 'output', 'callback', () => ( {
-			label: 'output & FSR', neverCull: true, size: { of: 'canvas' },
-			run: () => {
+		g.addPass( 'output', 'chain', ( b ) => {
 
-				const r = this.renderer;
-				r.setRenderTarget( null );
-				if ( ! this.upscaling ) this.output.render();
-				else if ( ! this.options.fsrPort || debugFlags.fsrPort === false ) this.upscaledOutputThree.render();
-				else {
+			b.read( display );
+			canvas = b.write( canvas );
+			return { label: 'output', when: () => ! this.upscaling, whenLabel: '!upscaling', pipeline: this.output };
 
-					this.fsr.render( r );
-					this.upscaledOutput.render();
+		} );
+		const fsr = this.fsr, upscaledOutput = this.upscaledOutput, upscaledOutputThree = this.upscaledOutputThree;
+		if ( easu && fsr && upscaledOutput ) {
 
-				}
+			g.addPass( 'easu', 'quad', ( b ) => {
 
-			},
-		} ) );
+				b.read( display );
+				easu = b.write( easu! );
+				return { label: 'output & FSR', when: () => this.upscaling, whenLabel: 'upscaling', quad: fsr.quad };
+
+			} );
+			g.addPass( 'upscaledOutput', 'chain', ( b ) => {
+
+				b.readOptional( easu! );
+				canvas = b.write( canvas );
+				return { label: 'output & FSR', when: () => this.upscaling, whenLabel: 'upscaling', pipeline: upscaledOutput };
+
+			} );
+
+		} else if ( upscaledOutputThree ) {
+
+			// three's FSR1Node: its passes run inside the chain, at the canvas's size
+			g.addPass( 'upscaledOutputThree', 'chain', ( b ) => {
+
+				b.read( display );
+				canvas = b.write( canvas );
+				return { label: 'output & FSR', when: () => this.upscaling, whenLabel: 'upscaling', pipeline: upscaledOutputThree };
+
+			} );
+
+		}
 
 	}
 
@@ -1056,15 +1076,10 @@ export class Pipeline {
 
 	}
 
-	private get displayRT(): THREE.RenderTarget {
+	/** The graded image at the render's size (the profiler labels its pass by it). */
+	get displayRT(): THREE.RenderTarget {
 
 		return this.graph.target( this.resources.display );
-
-	}
-
-	private get distanceRT(): THREE.RenderTarget | null {
-
-		return this.resources.viewDistance ? this.graph.target( this.resources.viewDistance ) : null;
 
 	}
 
@@ -1075,6 +1090,8 @@ export class Pipeline {
 
 	}
 
+	/** Renders the frame: its uniforms from the camera and the settings, then the frame graph's
+	 * passes (`graph.execute`). */
 	render( frame: PipelineFrame ): void {
 
 		const camera = frame.camera;
@@ -1084,15 +1101,15 @@ export class Pipeline {
 		this.air.update( camera, this.width, this.height );
 		this.shafts.update( camera as THREE.PerspectiveCamera, this.width, this.height, this.air.haze.value,
 			this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ) );
+		this.updateDisplay( frame );
 		this.graph.execute( frame );
 
 	}
 
-	// The display callback: the grade's uniforms from the settings, then the composite, blooms,
-	// depth of field and grade into displayRT.
-	private renderDisplay( { camera, time }: PipelineFrame ): void {
+	// The display chain's and the canvas pass's uniforms from the settings (the grade, the look,
+	// the blooms, the depth of field, the grain).
+	private updateDisplay( { camera, time }: PipelineFrame ): void {
 
-		const r = this.renderer;
 		const S = this.settings;
 		const u = this.u;
 		const [ b, g ] = this.blooms;
@@ -1145,9 +1162,6 @@ export class Pipeline {
 		u.maxRadius.value = S.dofMaxRadius * this.height / 900; // blur scales with the image, not the pixel count
 		u.focus.value = S.focusDistance > 0 ? S.focusDistance : camera.position.length();
 		u.grainOn.value = this.upscaling ? 0 : 1;
-		r.setRenderTarget( this.displayRT );
-		this.display.render();
-		r.setRenderTarget( null );
 
 	}
 
@@ -1159,7 +1173,7 @@ export class Pipeline {
 		this.warming ??= ( async () => {
 
 			await this.air.warm( this.renderer );
-			await this.fsr.warm( this.renderer );
+			if ( this.fsr && this.resources.easu ) await this.fsr.warm( this.renderer, this.graph.target( this.resources.easu ) );
 
 		} )();
 		return this.warming;

@@ -14,7 +14,7 @@ import {
 import type { Sky } from '../sky/Sky.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { compileInto } from '../post/Warm.ts';
-import type { GraphResources, SizeClass } from '../post/graph/FrameGraph.ts';
+import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from '../post/graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -154,20 +154,23 @@ export class AerialPerspective {
 	// is a pure function of the time it was baked at: re-baked while the clock runs once the banks
 	// have evolved BANK_REBAKE seconds, and at rest (a paused clock, a seek) whenever that time or
 	// the centre differs at all, so a paused frame does not depend on the frames before it.
-	private bankRT: THREE.RenderTarget | null = null;
+	private bankTexture: THREE.Texture | null = null;
 	private bankQuad: THREE.QuadMesh | null = null;
 	private readonly bankCentre = uniform( new THREE.Vector2() );
 	private readonly bankTime = uniform( 0 );
 	private bank = { valid: false, time: 0, x: 0, z: 0 };
 	private bankDue = false;
+	/** Bakes of the bank map so far (the fogBank pass counts them; the dynamic resolution tells
+	 * a bake's frame from the others by it). */
+	bankBakes = 0;
 	private lastFogTime = NaN;
 	private lastStep = NaN;
 
 	// The fog march at a reduced resolution: the nearest of the surface depths it covers, and the
-	// fog's light (rgb) and optical depth (a) at that depth. (The frame graph owns these targets
-	// and the bank map's, and sizes them.)
-	private fogZRT: THREE.RenderTarget | null = null;
-	private fogRT: THREE.RenderTarget | null = null;
+	// fog's light (rgb) and optical depth (a) at that depth. (The frame graph owns these resources
+	// and the bank map's, sizes them and runs their passes: see `passes`.)
+	private resources: { banks: ResourceHandle | null; nearest: ResourceHandle | null; march: ResourceHandle | null } = { banks: null, nearest: null, march: null };
+	private graph: FrameGraph<unknown> | null = null;
 	private fogZQuad: THREE.QuadMesh | null = null;
 	private fogQuad: THREE.QuadMesh | null = null;
 	// below this depth similarity a pixel marches its own fog (0 turns the fallback off, for A/B:
@@ -246,7 +249,7 @@ export class AerialPerspective {
 
 		const { direction, origin, distance, down, around, shade, lit } = r;
 		const steps = this.options.fogSteps;
-		const bank = this.bankRT ? texture( this.bankRT.texture ) : null;
+		const bank = this.bankTexture ? texture( this.bankTexture ) : null;
 		const fogDepth = float( 0 ).toVar();
 		const fogLight = vec3( 0 ).toVar();
 		If( this.fog.greaterThan( 0.001 ), () => {
@@ -314,7 +317,8 @@ export class AerialPerspective {
 	/** `depth` is the linear view z of the nearest surface, the sea's included. `veil` returns the
 	 * colour `background` seen through the rain along a view direction, in front of content at a
 	 * given distance. The bank map and the reduced march are declared on `graph`, which owns and
-	 * sizes their targets. Called once, by the frame graph. */
+	 * sizes them; `passes` then adds the passes that draw them. Called once, as the frame graph is
+	 * built. */
 	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
 
 		const { bankSize, fogScale } = this.options;
@@ -343,7 +347,8 @@ export class AerialPerspective {
 	private buildBank( size: number, graph: GraphResources ): void {
 
 		// (persistent: the map holds until the next bake, frames later)
-		this.bankRT = graph.renderTarget( [ graph.color( 'fogBanks', { size: { of: 'fixed', width: size, height: size }, format: THREE.RedFormat, type: THREE.HalfFloatType }, true ) ] );
+		const banks = this.resources.banks = graph.color( 'fogBanks', { size: { of: 'fixed', width: size, height: size }, format: THREE.RedFormat, type: THREE.HalfFloatType }, true );
+		this.bankTexture = graph.texture( banks );
 		const material = new THREE.NodeMaterial();
 		material.name = 'Fog.Banks';
 		material.fragmentNode = Fn( () => {
@@ -373,8 +378,8 @@ export class AerialPerspective {
 		const sceneDepth = texture( depth );
 		// 1 / k of the render, at least a texel: max( floor( w / k ), 1 )
 		const reduced: SizeClass = { of: 'render', divisor: k };
-		this.fogZRT = graph.renderTarget( [ graph.color( 'fogNearestDepth', { size: reduced, format: THREE.RedFormat, type: THREE.FloatType } ) ] );
-		this.fogRT = graph.renderTarget( [ graph.color( 'fogMarch', { size: reduced, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) ] );
+		const nearest = this.resources.nearest = graph.color( 'fogNearestDepth', { size: reduced, format: THREE.RedFormat, type: THREE.FloatType } );
+		const march = this.resources.march = graph.color( 'fogMarch', { size: reduced, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		const fogRes = graph.extent( reduced );
 		const a = Math.floor( k / 4 ), b = Math.floor( 3 * k / 4 );
 		const zMaterial = new THREE.NodeMaterial();
@@ -390,7 +395,7 @@ export class AerialPerspective {
 		} )();
 		this.fogZQuad = new THREE.QuadMesh( zMaterial );
 		this.fogZQuad.name = 'Fog.NearestDepth';
-		const tFogZ = texture( this.fogZRT.texture );
+		const tFogZ = texture( graph.texture( nearest ) );
 		const marchMaterial = new THREE.NodeMaterial();
 		marchMaterial.name = 'Fog.March';
 		marchMaterial.fragmentNode = Fn( () => {
@@ -406,7 +411,7 @@ export class AerialPerspective {
 		this.fogQuad = new THREE.QuadMesh( marchMaterial );
 		this.fogQuad.name = 'Fog.March';
 
-		const tFog = texture( this.fogRT.texture ), tZ = texture( this.fogZRT.texture );
+		const tFog = texture( graph.texture( march ) ), tZ = texture( graph.texture( nearest ) );
 		return ( q: V2, z: F, full: () => { fogDepth: F; fogLight: V3 } ) => {
 
 			const fogDepth = float( 0 ).toVar();
@@ -452,40 +457,68 @@ export class AerialPerspective {
 
 	}
 
-	/** Bakes the bank map when it is due and marches the fog at its reduced resolution, before
-	 * the composite reads them (after `update`, the surface depth resolved). */
-	render( renderer: THREE.WebGPURenderer ): void {
+	/** Adds the sea fog's passes to `graph`, after the pass that writes `surfaceDepth` (the nearest
+	 * surface's linear view z) and before the composite: the bank map's bake when it is due
+	 * (`scheduleBank`), the nearest depth and the march at the reduced resolution, each only while
+	 * there is fog. Their `when` predicates read what `update` set for the frame. Returns the
+	 * resources the composite reads (its readers declare them with readOptional: the passes are
+	 * skipped without fog, and the bank map holds a bake of frames before). */
+	passes<F>( graph: FrameGraph<F>, surfaceDepth: ResourceHandle ): ResourceHandle[] {
 
-		if ( this.fog.value <= 0.001 ) return;
-		const target = renderer.getRenderTarget();
-		if ( this.bankQuad && this.bankDue ) {
+		this.graph = graph as unknown as FrameGraph<unknown>;
+		const LABEL = 'composite (air, fog, veil)';
+		const fog = () => this.fog.value > 0.001;
+		let { banks, nearest, march } = this.resources;
+		const bankQuad = this.bankQuad, fogZQuad = this.fogZQuad, fogQuad = this.fogQuad;
+		if ( banks && bankQuad ) graph.addPass( 'fogBank', 'quad', ( b ) => {
 
-			renderer.setRenderTarget( this.bankRT );
-			this.bankQuad.render( renderer );
-			this.bankDue = false;
+			banks = b.write( banks! );
+			return {
+				label: LABEL, when: () => fog() && this.bankDue, whenLabel: 'fog && bankDue', quad: bankQuad,
+				run: ( _f, g ) => {
+
+					bankQuad.render( g.renderer );
+					this.bankDue = false;
+					this.bankBakes ++;
+
+				},
+			};
+
+		} );
+		if ( nearest && march && fogZQuad && fogQuad ) {
+
+			graph.addPass( 'fogDepth', 'quad', ( b ) => {
+
+				b.read( surfaceDepth );
+				nearest = b.write( nearest! );
+				return { label: LABEL, when: fog, whenLabel: 'fog', quad: fogZQuad };
+
+			} );
+			graph.addPass( 'fogMarch', 'quad', ( b ) => {
+
+				b.readOptional( nearest! );
+				if ( banks ) b.readOptional( banks );
+				march = b.write( march! );
+				return { label: LABEL, when: fog, whenLabel: 'fog', quad: fogQuad };
+
+			} );
 
 		}
-		if ( this.fogQuad ) {
-
-			renderer.setRenderTarget( this.fogZRT );
-			this.fogZQuad!.render( renderer );
-			renderer.setRenderTarget( this.fogRT );
-			this.fogQuad.render( renderer );
-
-		}
-		renderer.setRenderTarget( target );
+		return [ march, nearest, banks ].filter( ( h ): h is ResourceHandle => h !== null );
 
 	}
 
 	/** Compiles the passes that first run when fog sets in, so the first foggy frame does not
 	 * stall on them (`compileInto` restores the renderer's target at once, never across frames
-	 * rendered meanwhile). */
+	 * rendered meanwhile). After the graph is compiled (it makes the passes' targets). */
 	async warm( renderer: THREE.WebGPURenderer ): Promise<void> {
 
 		const compiles: Promise<void>[] = [];
-		for ( const [ quad, rt ] of [ [ this.bankQuad, this.bankRT ], [ this.fogZQuad, this.fogZRT ], [ this.fogQuad, this.fogRT ] ] as const ) {
+		const { banks, nearest, march } = this.resources;
+		const graph = this.graph;
+		for ( const [ quad, h ] of [ [ this.bankQuad, banks ], [ this.fogZQuad, nearest ], [ this.fogQuad, march ] ] as const ) {
 
-			if ( quad && rt ) compiles.push( compileInto( renderer, quad, ( quad as unknown as { camera: THREE.Camera } ).camera, rt ) );
+			if ( graph && quad && h ) compiles.push( compileInto( renderer, quad, ( quad as unknown as { camera: THREE.Camera } ).camera, graph.target( h ) ) );
 
 		}
 		await Promise.all( compiles );
@@ -500,12 +533,12 @@ export class AerialPerspective {
 		this.clearEnd.value = THREE.MathUtils.lerp( CLEAR.end, CLEAR.thickEnd, THREE.MathUtils.smoothstep( this.haze.value, CLEAR.thin, CLEAR.thick ) );
 		// The beam reaching the banks low over the sea.
 		this.fogSun.value = this.fogTransmittance( 8, this.keyDir.value );
-		if ( this.bankRT ) this.scheduleBank( camera );
+		if ( this.bankQuad ) this.scheduleBank( camera );
 		this.fallbackBelow.value = debugFlags.fogFallback === false ? 0 : 0.5;
 
 	}
 
-	// Decides whether the bank map is re-baked this frame (see `bankRT`).
+	// Decides whether the bank map is re-baked this frame (see `bankTexture`).
 	private scheduleBank( camera: THREE.Camera ): void {
 
 		// Running: this frame and the one before each stepped the fog's clock forward by an ordinary

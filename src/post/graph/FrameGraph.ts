@@ -624,7 +624,13 @@ export class FrameGraph<F = unknown> {
 		// all clear or all load, as the compiler checks)
 		const ops = table?.passes.find( ( p ) => p.index === index ) ?? null;
 		const colourClear = ops ? ops.colors.some( ( c ) => c.load === 'clear' ) : decl.writes.some( ( w ) => drawsOver( decl, w ) );
-		const depthClear = ops?.depth ? ops.depth.load === 'clear' : decl.depth?.clear === true;
+		// A pass without a depth resource clears whatever depth its target holds that the graph
+		// does not own: the canvas's depth buffer, and the depth of the targets a chain's own rtt()
+		// passes draw into (they inherit the renderer's flags), as three's defaults do; with the flag
+		// off each of those passes loaded a depth nothing reads. A graph target with depth always
+		// holds a depth resource, which a pass that does not declare it keeps (loads).
+		const foreignDepth = ! decl.depth && ! rt?.depthBuffer;
+		const depthClear = ops?.depth ? ops.depth.load === 'clear' : decl.depth?.clear === true || foreignDepth;
 		r.autoClear = colourClear || depthClear;
 		r.autoClearColor = colourClear;
 		r.autoClearDepth = depthClear;
