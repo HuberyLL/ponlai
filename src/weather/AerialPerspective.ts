@@ -13,7 +13,7 @@ import {
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { compileInto } from '../post/Warm.ts';
+import { compileInto } from '../post/graph/Compile.ts';
 import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from '../post/graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;

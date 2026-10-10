@@ -10,7 +10,7 @@ import {
 	Fn, float, vec2, vec3, vec4, ivec2, uv, abs, max, min, clamp, saturate, sqrt, select, exp2, texture, textureLoad,
 	screenCoordinate,
 } from 'three/tsl';
-import { compileInto } from './Warm.ts';
+import { compileInto } from './graph/Compile.ts';
 import type { GraphResources } from './graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;
