@@ -371,7 +371,11 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 		/** Times the waits in `queue.submit`, the queue writes and the canvas's `getCurrentTexture`
 		 * (Chrome's backpressure once the GPU falls behind): in the tick, and outside it while a
-		 * render or compute call issued after the tick runs. */
+		 * render or compute call issued after the tick runs. Under the submit batching it times the
+		 * queue's own submit and writeBuffer beneath it (`QUEUE_NATIVES`), so each real call counts
+		 * once and the batching's bookkeeping counts as JS. A timed call made inside another (a
+		 * texture write that first submits what is held) counts under its own key, and the outer
+		 * one only for the rest of its time, so no time counts twice. */
 		private wrapQueue(): void {
 
 			type Callable = ( ...args: unknown[] ) => unknown;
@@ -379,32 +383,42 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			const queue = backend?.device?.queue;
 			if ( ! queue ) return;
 			this.queueWrapped = true;
-			const wrap = ( host: Record<string, Callable> | null | undefined, method: string, key: QueueCall ) => {
+			// time of the timed calls made inside the one running
+			let inner = 0;
+			// `target`: the object the method is called on (the queue, for its natives)
+			const wrap = ( host: Record<string, Callable> | null | undefined, method: string, key: QueueCall, target: object | null | undefined = host ) => {
 
 				const original = host?.[ method ];
 				if ( ! host || typeof original !== 'function' ) return;
 				host[ method ] = ( ...args: unknown[] ) => {
 
 					const outside = ! this.inTick && this.outsideDepth > 0;
-					if ( ! this.inTick && ! outside ) return original.apply( host, args );
+					if ( ! this.inTick && ! outside ) return original.apply( target, args );
+					const outer = inner;
+					inner = 0;
 					const t0 = performance.now();
 					try {
 
-						return original.apply( host, args );
+						return original.apply( target, args );
 
 					} finally {
 
 						const ms = performance.now() - t0;
-						if ( outside ) this.outsideWait += ms;
-						else this.waits[ key ] += ms;
+						const own = ms - inner;
+						inner = outer + ms;
+						if ( outside ) this.outsideWait += own;
+						else this.waits[ key ] += own;
 
 					}
 
 				};
 
 			};
-			wrap( queue, 'submit', 'submit' );
-			wrap( queue, 'writeBuffer', 'write' );
+			// SubmitBatch's QUEUE_NATIVES (read by its registered symbol: importing it would split it
+			// out of the main bundle)
+			const natives = ( queue as unknown as Record<symbol, Record<string, Callable> | undefined> )[ Symbol.for( 'soomi.submitBatch.natives' ) ];
+			wrap( natives ?? queue, 'submit', 'submit', queue );
+			wrap( natives ?? queue, 'writeBuffer', 'write', queue );
 			wrap( queue, 'writeTexture', 'write' );
 			wrap( queue, 'copyExternalImageToTexture', 'write' );
 			// the canvas context (it hands out the swap chain's image, the render's final target)

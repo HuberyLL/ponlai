@@ -29,6 +29,7 @@ import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type To
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
+import { SubmitBatch } from './post/SubmitBatch.ts';
 import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
@@ -88,6 +89,9 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 	throw new Error( 'WebGPU is not available' );
 
 }
+// three submits every pass on its own; the frame reaches the GPU in a few submits instead
+// (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
+const submitBatch = new SubmitBatch( ( renderer.backend as unknown as { device: ConstructorParameters<typeof SubmitBatch>[ 0 ] } ).device, { debug: DEBUG } );
 
 // The scene renders at a pixel ratio set by the quality tier (see RenderScale.ts), at most the
 // display's and DPR_CAP; the canvas matches the display and the frame graph upscales to it.
@@ -932,6 +936,7 @@ function tick( time: number ): void {
 
 	pipeline.render( { scene, waterScene, rainScene: rain!.mesh.visible ? rainScene : undefined, camera, water: water!, sun, time: simTime } );
 	steerRenderScale( rawDt );
+	submitBatch.flush();
 	frame ++;
 	diagnostics();
 
@@ -979,6 +984,7 @@ function diagnostics(): void {
 		renderScale,
 		dynamicResolution: dynamicResolution ? { scale: dynamicResolution.scale, source: dynamicResolution.source, changes: dynamicResolution.changes.length } : null,
 		pacing: { target: pacer.target, refreshMs: + pacer.period.toFixed( 3 ), divisor: pacer.divisor, rendered: pacer.rendered, skipped: pacer.skipped },
+		submits: { ...submitBatch.stats, why: { ...submitBatch.stats.why } },
 		canvasDpr: renderer.getPixelRatio(),
 		worldTriangles: world.triangles,
 		rimStrands: data.rimStrands.length,
@@ -1110,4 +1116,4 @@ document.addEventListener( 'visibilitychange', () => {
 
 } );
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
-	quality, dynamicResolution, pacer, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
+	quality, dynamicResolution, pacer, submitBatch, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
