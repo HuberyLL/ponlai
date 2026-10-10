@@ -119,6 +119,12 @@ stone exposed.
   without it the page builds the same pipelines and image. Its JS times leave out the time blocked
   in `queue.submit`, the queue writes and `getCurrentTexture` (Chrome's backpressure once the GPU
   falls behind), reported apart.
+- Headed browser runs (`profile-frame --display`, any script that opens a visible Chrome window)
+  take over the screen of whoever is using the machine, so they run only while the user allows
+  them: `node tools/display-gate.mjs allow [hours]` (and `deny`, `status`) keeps the permission in
+  a file under the user's home, `profile-frame --display` refuses without it, and scripts that open
+  a headed window call `requireDisplayAllowed` from the same module. Everything else runs headless;
+  a headed run that is not allowed now is recorded as pending and run later in one batch.
 - Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
   machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running
   captures) hold it alone; paused captures and the verify probes share it with each other, since

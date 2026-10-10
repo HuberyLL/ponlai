@@ -109,6 +109,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { withGpuLock, waitForIdleGpu, sampleGpuUtilisation } from './gpu-lock.mjs';
+import { requireDisplayAllowed } from './display-gate.mjs';
 
 // ------------------------------------------------------------------ options
 
@@ -229,6 +230,8 @@ const LABEL = opt( 'label', COMPARE ? `compare-${ stamp }` : TOGGLE ? `toggle-${
 if ( COMPARE && TOGGLE ) throw new Error( '--toggle A/Bs inside one page: give one url, not --compare' );
 if ( TOGGLE && MODE === 'reload' ) throw new Error( '--toggle needs --mode page' );
 if ( DISPLAY && ( COMPARE || TOGGLE || ACCEPT || SCALES.length || MODE === 'reload' ) ) throw new Error( '--display is for profile runs in page mode (no --compare, --toggle, --accept, --scales or --mode reload)' );
+// a headed window takes over the user's screen: only while they allow it (tools/display-gate.mjs)
+if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
 if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
