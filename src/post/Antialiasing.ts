@@ -12,7 +12,8 @@
 //   the resolve lands they show the jittered frame as it is. Chosen by the URL only (the tiers'
 //   knob and the GUI keep to msaa and off until the tiers adopt them), and refused, with a warning,
 //   where three's cache keys cannot be patched (graph/ThreePatches.ts: three r186 only), since
-//   their scene materials build one shader per MRT.
+//   their scene materials build one shader per MRT (if the patches still fail to install, main.ts
+//   stops the page).
 //
 // WebGPU multisamples with 1 or 4 samples only (three turns any other count into 1), so there is
 // no 2x: `msaa=1` and `msaa=2` are read as `off`, `msaa=4` as `msaa`.

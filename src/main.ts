@@ -97,9 +97,15 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 // three r186 keys its node builds and pipelines by the first attachment, not the whole layout (an
 // MRT picks its outputs by the textures' names): patched before any material builds, so a material
 // drawn into two layouts gets a build each (graph/ThreePatches.ts)
-// (the temporal modes' scene materials build one shader per MRT: Antialiasing.ts refuses them where
-// the patches cannot be installed)
-if ( ! installCacheKeyPatches( renderer ) ) console.warn( 'three\'s cache keys are not patched: the temporal anti-aliasing modes run as msaa' );
+// (the temporal modes' scene materials build one shader per MRT: Antialiasing.ts refuses them on a
+// revision the patches are not written for, before the renderer exists; failing here for another
+// reason, the page stops rather than draw them with another layout's shader outputs)
+if ( ! installCacheKeyPatches( renderer ) && TEMPORAL ) {
+
+	setStatus( `aa=${ AA_MODE } needs three's cache keys patched for its MRTs, which failed: load the page without aa=${ AA_MODE }.` );
+	throw new Error( `three's cache keys could not be patched for aa=${ AA_MODE }` );
+
+}
 // three submits every pass on its own; the frame reaches the GPU in a few submits instead
 // (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
 const submitBatch = new SubmitBatch( ( renderer.backend as unknown as { device: ConstructorParameters<typeof SubmitBatch>[ 0 ] } ).device, { debug: DEBUG } );
