@@ -16,7 +16,7 @@ import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
-import { loadWorld, buildWorldMeshes, shoreTextureFrom, type LoadedWorld } from './world/World.ts';
+import { loadWorld, buildWorldMeshes, shoreTextureFrom, seabedBedTextureFrom, type LoadedWorld } from './world/World.ts';
 import { buildGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
@@ -462,7 +462,8 @@ const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
 	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: pipeline.depthRT.texture,
 } );
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, seabedHeight: seabedField.tex, shoreWaves, refractedSun, sunShadow, storm: stormSea,
+	fft, sky, shared, shore: shore.tex, seabedHeight: seabedField.tex, shoreWaves,
+	seabedLook: { beds: seabedBedTextureFrom( data.seabed ), res: data.seabed.res, size: data.seabed.size, variation: textures.normalsB }, refractedSun, sunShadow, storm: stormSea,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 } );
 applySkyFill();

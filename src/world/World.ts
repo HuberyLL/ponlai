@@ -57,6 +57,21 @@ export function shoreTextureFrom( shore: ShoreField ): { tex: THREE.DataTexture;
 
 }
 
+// The seabed's beds (seagrass cover, pale-sand share) on its own warped grid: texel ( i, j ) holds
+// vertex ( i, j ), so a lookup at the inverse warp of a point (see SEABED_WARP) interpolates what
+// the floor's mesh interpolates there.
+export function seabedBedTextureFrom( seabed: WorldData[ 'seabed' ] ): THREE.DataTexture {
+
+	const tex = new THREE.DataTexture( seabed.bed, seabed.res + 1, seabed.res + 1, THREE.RGFormat, THREE.FloatType );
+	tex.minFilter = tex.magFilter = THREE.LinearFilter;
+	tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+	tex.generateMipmaps = false;
+	tex.needsUpdate = true;
+	tex.name = 'seabed-beds';
+	return tex;
+
+}
+
 function rimGroundTextureFrom( ground: RimGroundField ): { tex: THREE.DataTexture; xform: THREE.Vector4 } {
 
 	const tex = new THREE.DataTexture( ground.data, ground.nx, ground.nz, THREE.RGBAFormat, THREE.FloatType );
