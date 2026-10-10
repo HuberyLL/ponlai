@@ -283,15 +283,29 @@ stone exposed.
   and `Lightning` register the draws and kernels they run only at times with the frame graph's
   passes (`registerLatent`), whose warm-up (`FrameGraph.warm`, with `Sky.warm`) compiles them at
   startup, so a weather change or the first bolt builds no pipeline.
-- `src/post/`: frame graph (opaque pass, depth resolve and a copy of the opaque colour, the water
-  and rain drawn into the same multisampled target (its samples discarded after their last reader),
-  the sea fog marched at half resolution over a baked bank map, the composite of air, fog, veil and
-  shafts rendered once for the sharp image and both blooms, crepuscular rays and sun glare, bloom,
-  tilt-shift, tone curve and grade, the art-directed look, FSR 1 upscale (`FSR.ts`: an EASU pass,
-  the sharpening in the canvas pass)), render scale per quality tier (`RenderScale.ts`) and high's
-  dynamic resolution (`DynamicResolution.ts`: the scale steered by the GPU's frame time from
-  timestamp queries), the frame pacer (`FramePacer.ts`), the submit batching (`SubmitBatch.ts`), the
-  scene's sample count (`SceneSamples.ts`).
+- `src/post/`: the frame's passes, declared on the frame graph by `Pipeline.ts`: the opaque pass,
+  depth resolve and a copy of the opaque colour, the water and rain drawn into the same
+  multisampled target (its samples discarded after their last reader), the sea fog marched at half
+  resolution over a baked bank map, crepuscular rays and sun glare (`LightShafts.ts`: two
+  half-resolution passes), the composite of air, fog, veil and shafts rendered once into `hdr`, the
+  tight bloom and the wide glow (three's bloom chains, a pass each, their results imported into the
+  graph), the sharp image, the tilt-shift's half-resolution blur, the look's diffusion glow, the
+  display pass (the tilt-shift's mix, tone curve and grade, the art-directed look), then the canvas
+  pass or FSR 1 upscale (`FSR.ts`: an EASU pass, the sharpening in the canvas pass); render scale
+  per quality tier (`RenderScale.ts`) and high's dynamic resolution (`DynamicResolution.ts`: the
+  scale steered by the GPU's frame time from timestamp queries), the frame pacer (`FramePacer.ts`),
+  the submit batching (`SubmitBatch.ts`), the scene's sample count (`SceneSamples.ts`).
+  `src/post/graph/` is the frame graph, after Frostbite's FrameGraph (O'Donnell, GDC 2017):
+  `GraphCompiler.ts` (pure TypeScript: passes declare the resource versions they read and write,
+  checked in declaration order, culled by liveness, their attachment ops derived per mask of the
+  passes that run; `tools/verify-framegraph.mjs` checks it and the runtime on the CPU),
+  `FrameGraph.ts` (the runtime: it owns the targets, sizes them by size class and sets the extent
+  uniforms the passes read, runs each pass with three's executors (a scene, a full-screen quad, a
+  render pipeline or three's own nodes, a compute dispatch), warms every pass up at startup and
+  describes itself: `describe()`, `dot()`), `AttachmentOps.ts` (the derived stores and resolves,
+  applied on the command encoder), `ThreePatches.ts` (three r186's cache keys),
+  `Compile.ts` (the warm-up's bound compiles, and the walker of three's bloom chains) and
+  `DebugView.ts` (`fgview`).
 - `src/characters/`: the islanders. Low-poly modular figures (one shared rig and its animation
   clips) assembled from parts, repainted in the island's palette as vertex colours and merged into
   one skinned mesh; a stepped light model lit by the scene's sun and sky; a small moving sun-shadow
@@ -795,12 +809,15 @@ stone exposed.
 - three emits a light's shadow filter inside the branch of its frustum test, where derivatives are
   undefined for quads that straddle it; `installOpenShadow` evaluates the filter first and selects
   its result. Keep any filter that takes `dFdx` / `dFdy` out of `select()` / `If` branches.
-- The frame graph (`src/post/graph/`) owns the post targets and sizes them by their size class
-  from `Pipeline.setSize`: the render, a share of it (the sea fog's reduced targets), the canvas
-  (FSR's EASU target) or fixed (the fog's bank map). Declare a new target on the graph with its
-  class instead of sizing it by hand. three's rtt() and bloom passes inside the display chain
-  follow the render through the graph's resize hook (`Pipeline.passes` through `sizeRtt`): keep
-  reduced or fixed passes out of that list. The graph's attachment ops are derived each frame
+- Sizes are owned by the graph (`src/post/graph/`): it sizes every target by its size class from
+  `Pipeline.setSize` (the render; a share of it: the sea fog's reduced targets, the blur's and the
+  shafts' halves; the canvas: FSR's EASU target; fixed: the fog's bank map), and every pass reads
+  its sizes from the graph's shared extent uniforms (`graph.extent( cls )`, `graph.texel( cls )`
+  for one over it), never from a copy of its own. Declare a new target on the graph with its class,
+  and new post work as a pass of its own drawing into it, not as an rtt() inside another pass's
+  material (three sizes an rtt() to the canvas, not the render, and runs it out of the graph's
+  sight). A target three makes itself (a bloom chain's) is imported into the graph and follows the
+  render through `graph.onResize`. The graph's attachment ops are derived each frame
   from the passes that run and the reads they declare (`AttachmentOps` rewrites a pass's stores
   and resolves on the backend's command encoder; three r186 opens one encoder per render pass):
   with rain the water stores `sceneRT`'s samples and leaves the resolve to the rain, which then
@@ -812,8 +829,8 @@ stone exposed.
   view distance and the output and FSR passes are graph passes too (the `post=` switches choose
   which are declared at load), so new frame work goes in as a pass, not as a call around the
   graph. A pass that declares no depth clears whatever depth its target holds outside the graph
-  (the canvas's, and the targets a display chain's own rtt() passes draw into), as three's
-  defaults do; declare the depth to keep it.
+  (the canvas's, and the targets three's nodes draw into inside a pass), as three's defaults do;
+  declare the depth to keep it.
 - Every frame-graph pass and the latents registered with it are compiled at startup by the graph's
   warm-up (`FrameGraph.warm`, with `src/post/graph/Compile.ts`); the world, vegetation, water,
   character and shadow-map materials still build in their first frames (the warm-up runs before the
