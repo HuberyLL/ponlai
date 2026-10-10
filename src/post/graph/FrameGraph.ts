@@ -6,15 +6,16 @@ import {
 	type ResourceDecl, type ResourceDesc, type ResourceHandle, type Samples, type Size, type SizeClass, type TargetInfo,
 } from './GraphCompiler.ts';
 import { AttachmentOps } from './AttachmentOps.ts';
-import { compileBound, compileChain, compileLatent, compileQuad, sceneOf } from './Compile.ts';
+import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, sceneOf } from './Compile.ts';
 
 // The frame graph's runtime: it owns the graph's textures and render targets, their sizes and
 // lifetimes, and executes the compiled passes in order with three's own executors (a scene render,
-// a QuadMesh, a RenderPipeline and the rtt / bloom passes it updates on the way, a compute
-// dispatch, or a callback). The graph decides which passes run (`when`), binds each pass's target
-// and MRT, clears or loads its attachments, and rewrites the stores and resolves three records
-// (AttachmentOps); at the frame's end it swaps ping-pong histories and makes the persistent copies.
-// See GraphCompiler.ts for the model.
+// a QuadMesh, a RenderPipeline and the rtt / bloom passes it updates on the way, three's nodes that
+// render passes of their own (a bloom chain), a compute dispatch, or a callback). The graph
+// decides which passes run (`when`), binds each pass's target and MRT, clears or loads its
+// attachments, and rewrites the stores and resolves three records (AttachmentOps); at the frame's
+// end it swaps ping-pong histories and makes the persistent copies. See GraphCompiler.ts for the
+// model.
 //
 // Textures exist from their declaration (TSL nodes bind them while the passes are built), at 1x1
 // until `setExtents` sizes them. Each distinct tuple of attachments a pass writes is one
@@ -59,8 +60,10 @@ export interface PassDef<F> extends PassFlags {
 	invalidate?(): void;
 	// quad: a full-screen material
 	quad?: THREE.QuadMesh;
-	// chain: a render pipeline (with the rtt and bloom passes its output node updates)
+	// chain: a render pipeline (with the rtt and bloom passes its output node updates), or three's
+	// nodes that render passes of their own (`updateBefore`: a bloom chain), run in order
 	pipeline?: THREE.RenderPipeline;
+	nodes?: THREE.Node[];
 	// compute: the kernels to dispatch
 	compute?: THREE.ComputeNode | THREE.ComputeNode[] | ( ( f: F ) => THREE.ComputeNode | THREE.ComputeNode[] | null );
 	// any kind: replaces the default executor (callback: required)
@@ -206,12 +209,15 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	// during execute: the resources some running pass writes this frame
 	private frameWritten: Set<number> | null = null;
 	private readonly drawingBuffer = new THREE.Vector2();
+	// what a chain pass of three's nodes hands their updateBefore
+	private readonly nodeFrame: THREE.NodeFrame;
 
 	constructor( renderer: THREE.WebGPURenderer, options: FrameGraphOptions ) {
 
 		this.renderer = renderer;
 		this.options = { legacyDiscard: [ 'rain' ], dev: false, prime: true, ...options };
 		this.attachmentOps = new AttachmentOps( renderer.backend, { dev: this.options.dev } );
+		this.nodeFrame = { renderer } as unknown as THREE.NodeFrame;
 
 	}
 
@@ -460,7 +466,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 		this.mutable( name );
 		const def = this.decl.addPass( name, kind, setup );
-		const ok = kind === 'scene' ? def.scene && def.camera : kind === 'quad' ? def.quad : kind === 'chain' ? def.pipeline
+		const ok = kind === 'scene' ? def.scene && def.camera : kind === 'quad' ? def.quad : kind === 'chain' ? def.pipeline ?? def.nodes?.length
 			: kind === 'compute' ? def.compute : def.run;
 		if ( ! ok && ! def.run ) throw new GraphError( `pass '${ name }' (${ kind }) has no executor` );
 		this.defs.push( def );
@@ -842,7 +848,14 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 			}
 			case 'quad': def.quad!.render( r ); break;
-			case 'chain': def.pipeline!.render(); break;
+			case 'chain': {
+
+				if ( def.pipeline ) def.pipeline.render();
+				// (three's nodes take the frame of the node system: they read its renderer)
+				else for ( const node of def.nodes! ) node.updateBefore( this.nodeFrame );
+				break;
+
+			}
 			case 'compute': {
 
 				const nodes = typeof def.compute === 'function' ? def.compute( f ) : def.compute!;
@@ -961,7 +974,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	 * under its own binding (`bind`: its target, MRT and depth flags), restored before anything
 	 * is awaited: a scene pass compiles its scene for its camera (from `f`, the frame it would
 	 * draw) and its latent objects; a quad its material; a chain its pipeline's material and the
-	 * passes three's nodes render before it (rtt(), bloom; see Compile.ts); a compute pass its
+	 * passes three's nodes render before it (rtt(), bloom; see Compile.ts), or its nodes' own
+	 * passes (a bloom's high pass, blurs and composite, each into its target); a compute pass its
 	 * kernels. A chain with a pass out of the compiler's reach is primed instead: rendered once at
 	 * the real extents (once they are set), whatever its `when`. Priming never leaves a persistent
 	 * resource written: a primed pass that writes one has its history reset (`resetHistory`) and
@@ -1081,8 +1095,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 			}
 			case 'chain': {
 
-				if ( ! def.pipeline ) break;
-				const c = compileChain( r, def.pipeline );
+				const c = def.pipeline ? compileChain( r, def.pipeline ) : def.nodes ? compileNodes( r, def.nodes ) : null;
+				if ( ! c ) break;
 				pending.push( this.warmPromise( decl.name, c.done ) );
 				stats.passes ++;
 				return c.unreached;

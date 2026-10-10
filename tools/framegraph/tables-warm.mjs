@@ -2,12 +2,15 @@
 // renderer and the internals the bound compile builds through: every compiled pass compiled once
 // under its own binding (a conditional one too), the renderer's binding restored, latent objects
 // compiled shown whatever their visibility (registered before the warm-up, or after it at once), a
-// chain's nested passes one call depth down, and priming: only what the walker cannot reach, at the
+// chain's nested passes one call depth down, a chain of three's nodes (a bloom run as a pass of its
+// own) at the top level, and priming: only what the walker cannot reach, at the
 // real extents, persistent writes invalidated, and off with `prime: false`. Run by
 // tools/verify-framegraph.mjs.
 
 import assert from 'node:assert/strict';
 import * as THREE from 'three/webgpu';
+import { texture } from 'three/tsl';
+import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { FrameGraph } from '../../src/post/graph/FrameGraph.ts';
 
 const RENDER = { of: 'render' };
@@ -298,6 +301,49 @@ export const checks = [
 			if ( ! invalidate ) assert.match( g2.warmStats.skipped.join( ';' ), /output: not primed, it may keep state \(TRAANode\)/ );
 
 		}
+
+	} ],
+
+	[ 'warm and run: a chain of three\'s nodes (a bloom as a pass) runs their updateBefore with the renderer and compiles their own passes at the top level', async () => {
+
+		const r = mockRenderer();
+		const g = new FrameGraph( r, { sceneSamples: 1 } );
+		// a bloom set up without a material holding it, as Pipeline sets up its blooms
+		const bloom = new BloomNode( texture( new THREE.Texture() ) );
+		bloom.setup( { getSharedContext: () => ( {} ) } );
+		const output = g.import( 'bloom', bloom._renderTargetsHorizontal[ 0 ], { of: 'render', scale: 0.5, min: 1 } );
+		let canvas = g.import( 'canvas', null, CANVAS );
+		const frames = [];
+		bloom.updateBefore = ( frame ) => { frames.push( frame ); };
+		let out;
+		g.addPass( 'bloom', 'chain', ( b ) => {
+
+			out = b.write( output );
+			return { label: 'bloom', nodes: [ bloom ] };
+
+		} );
+		g.addPass( 'output', 'callback', ( b ) => {
+
+			b.read( out );
+			canvas = b.write( canvas );
+			return { label: 'output', run: () => {} };
+
+		} );
+		g.compile();
+		g.setExtents( extents( 64, 32 ) );
+		await g.warm( {} );
+		const draws = r.builds.filter( ( x ) => x.material.name.startsWith( 'Bloom_' ) );
+		// the high pass, two blurs per mip (five), the composite
+		assert.deepEqual( draws.map( ( x ) => x.material.name ), [ 'Bloom_highPass', ...Array( 10 ).fill( 'Bloom_separable' ), 'Bloom_comp' ] );
+		assert.ok( draws.every( ( x ) => x.contextDepth === 0 ), 'at the top level, where the pass renders them' );
+		assert.equal( draws[ 0 ].target, bloom._renderTargetBright );
+		assert.equal( draws.at( - 1 ).target, bloom._renderTargetsHorizontal[ 0 ], 'the composite into the imported result' );
+		assert.deepEqual( g.warmStats.primed, [] );
+		assert.deepEqual( g.warmStats.failed, [] );
+		g.execute( {} );
+		assert.equal( frames.length, 1, 'the pass runs the node once' );
+		assert.equal( frames[ 0 ].renderer, r );
+		assert.equal( g.describe().passes.find( ( p ) => p.name === 'bloom' ).kind, 'chain' );
 
 	} ],
 

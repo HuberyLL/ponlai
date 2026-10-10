@@ -43,8 +43,9 @@ import type { Rain } from '../weather/Rain.ts';
 // them all from `setSize`'s render and canvas sizes, the display chain's own rtt and bloom passes
 // through a resize hook. The graph runs the whole frame as passes that declare what they read and
 // write: the scene half (opaque, the depth and copy resolves, water, the surface resolve, rain),
-// the sea fog (its bank map, nearest depth and march), the view distance, the composite, the display
-// chain (one pass: the blooms, depth of field and grade run inside it), and the canvas pass, or
+// the sea fog (its bank map, nearest depth and march), the view distance, the composite, the
+// blooms (three's bloom chains, a pass each), the display chain (one pass: the depth of field and
+// grade run inside it), and the canvas pass, or
 // EASU and the sharpening canvas pass while upscaling. Each pass that runs only now and then
 // (rain, fog, the view distance, either output) says when by a predicate the graph evaluates at
 // the frame's start. The `post=` legacy switches are variants of the graph, chosen as it is built.
@@ -142,6 +143,24 @@ class RenderBloomNode extends BloomNode {
 	override setSize(): void {
 
 		super.setSize( this.renderWidth, this.renderHeight );
+
+	}
+
+	// A chain that renders as a pass of the frame graph's own (its updateBefore), not from inside a
+	// material that holds the node, is set up by no node build: its materials are made here, once,
+	// with an empty shared context (inside the display chain they took the render pipeline's, whose
+	// fields none of their nodes reads).
+	setUpAlone(): this {
+
+		( this as unknown as { setup( builder: { getSharedContext(): object } ): unknown } ).setup( { getSharedContext: () => ( {} ) } );
+		return this;
+
+	}
+
+	/** The chain's result (its composite's target, which the graph imports). */
+	get output(): THREE.RenderTarget {
+
+		return ( this as unknown as { _renderTargetsHorizontal: THREE.RenderTarget[] } )._renderTargetsHorizontal[ 0 ];
 
 	}
 
@@ -345,7 +364,9 @@ export class Pipeline {
 	// graph's resize hook, and the profiler's group for each (labelPonlaiPasses)
 	private passes: THREE.RTTNode[] = [];
 	private chainLabels: [ THREE.RTTNode, string ][] = [];
-	private blooms: { node: RenderBloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
+	// the bloom chains (each a pass of the graph's: the tight bloom, and the wide glow when there are
+	// two) and their results, imported into the graph
+	private blooms: { node: RenderBloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number>; output: ResourceHandle }[] = [];
 	private u = {
 		// (exposure: the clock's, for PBR Neutral and the depth of field; curveExposure: with the
 		// chosen curve's gain; day: 1 - the night's return to PBR Neutral)
@@ -467,7 +488,7 @@ export class Pipeline {
 		// bloom pile up into a bright column over the island. The sky keeps the higher clamp, so
 		// the sun's disc and a lightning channel (drawn without depth) keep their glow.
 		const tBloomD = texture( tSurfaceDepth );
-		const makeBloom = () => {
+		const makeBloom = ( name: string ) => {
 
 			const maxLum = uniform( 5 ), surfaceMaxLum = uniform( 5 );
 			const node = new RenderBloomNode( bloomInput, 0.3, 0.5, 1.5 );
@@ -486,13 +507,18 @@ export class Pipeline {
 				return vec4( c1.mul( max( soft, v.sub( threshold ) ) ).div( max( v, 1e-4 ) ), 1 );
 
 			} );
-			this.blooms.push( { node, maxLum, surfaceMaxLum } );
-			return node;
+			// (its graph pass renders it: the sharp image reads its result as a texture, without the uv
+			// transform texture() gives a node made without a uv, as the bloom's own output node)
+			const output = g.import( name, node.setUpAlone().output, HALF );
+			this.blooms.push( { node, maxLum, surfaceMaxLum, output } );
+			const result = texture( g.texture( output ) );
+			result.updateMatrix = false;
+			return result;
 
 		};
 
 		// (one chain: the wide glow's radius and both strengths, see render())
-		const withBloom = O.bloomChains === 2 ? hdrColor.add( makeBloom().rgb ).add( makeBloom().rgb ) : hdrColor.add( makeBloom().rgb );
+		const withBloom = O.bloomChains === 2 ? hdrColor.add( makeBloom( 'bloom' ).rgb ).add( makeBloom( 'glow' ).rgb ) : hdrColor.add( makeBloom( 'bloom' ).rgb );
 
 		// ---- tilt-shift depth of field: a half-res gather over a golden-angle disc whose radius grows
 		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
@@ -887,12 +913,16 @@ export class Pipeline {
 			this.upscaledOutputThree.outputColorTransform = false;
 
 		}
-		// The chain's own passes (its rtt() passes, the bloom and glow chains, the light shafts')
-		// follow the render's size, not the canvas, which is larger while the frame is upscaled.
+		// The passes three's nodes render (the chain's rtt() passes, the bloom chains, the look's glow,
+		// the light shafts') follow the render's size, not the canvas, which is larger while the frame
+		// is upscaled.
 		g.onResize( RENDER, ( w, h ) => {
 
 			for ( const node of this.passes ) sizeRtt( node, w, h );
-			for ( const { node } of [ ...this.blooms, this.diffusion ] ) { node.renderWidth = w; node.renderHeight = h; }
+			// (the blooms' targets at once, as the graph's own: its dev check compares a pass's target
+			// with its size class before the pass runs)
+			for ( const { node } of this.blooms ) { node.renderWidth = w; node.renderHeight = h; node.setSize(); }
+			this.diffusion.node.renderWidth = w; this.diffusion.node.renderHeight = h;
 			this.shafts.setSize( w, h );
 
 		} );
@@ -1010,8 +1040,29 @@ export class Pipeline {
 			return { label: 'composite (air, fog, veil)', quad: compositeQuad };
 
 		} );
-		// blooms, depth of field, grade and look (and the composite inline, without the composite
-		// pass): one chain, whose rtt and bloom passes its output node updates on the way
+		// the blooms (three's bloom chains, each a pass): from hdr, or the composite inline; their high
+		// passes keep the surfaces' glints below the sky's
+		const blooms = this.blooms.map( ( { node, output }, i ) => {
+
+			let out = output;
+			g.addPass( i === 0 ? 'bloom' : 'glow', 'chain', ( b ) => {
+
+				// (inline, the composite's reads include the surface depth)
+				if ( hdr ) {
+
+					b.read( hdr );
+					b.read( surfaceDepth );
+
+				} else compositeReads( b );
+				out = b.write( out );
+				return { label: i === 0 ? 'bloom' : 'wide glow', nodes: [ node ] };
+
+			} );
+			return out;
+
+		} );
+		// depth of field, grade and look (and the composite inline, without the composite pass): one
+		// chain, whose rtt and bloom passes its output node updates on the way
 		g.addPass( 'display', 'chain', ( b ) => {
 
 			// (inline, the composite's reads include the depth the chain reads too)
@@ -1021,6 +1072,7 @@ export class Pipeline {
 				b.read( surfaceDepth );
 
 			} else compositeReads( b );
+			for ( const h of blooms ) b.read( h );
 			if ( viewDistance ) b.readOptional( viewDistance );
 			display = b.write( display );
 			return { label: 'grade & look', pipeline: this.display };

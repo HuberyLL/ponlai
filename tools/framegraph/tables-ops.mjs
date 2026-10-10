@@ -23,6 +23,8 @@ const POST = [
 	row( 'fogMarch', [ col( 'fogMarch', 'clear', 'store' ) ] ),
 	row( 'viewDistance', [ col( 'viewDistance', 'clear', 'store' ) ] ),
 	row( 'composite', [ col( 'hdr', 'clear', 'store' ) ] ),
+	row( 'bloom', [ col( 'bloom', 'clear', 'store' ) ] ),
+	row( 'glow', [ col( 'glow', 'clear', 'store' ) ] ),
 	row( 'display', [ col( 'display', 'clear', 'store' ) ] ),
 	row( 'output', [ col( 'canvas', 'clear', 'store' ) ] ),
 ];
@@ -222,7 +224,7 @@ export const checks = [
 
 		const c = compileToday();
 		const clear = c.ops( 'derived', c.maskOf( [ 'rain', 'output' ] ) );
-		assert.deepEqual( clear.running, [ 'opaque', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'composite', 'display', 'output' ] );
+		assert.deepEqual( clear.running, [ 'opaque', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'composite', 'bloom', 'glow', 'display', 'output' ] );
 		assert.deepEqual( strip( clear ).slice( 0, 6 ), DERIVED_FULL.slice( 0, 6 ) );
 		const up = c.ops( 'derived', c.maskOf( [ 'rain', 'viewDistance', 'easu', 'upscaledOutput' ] ) );
 		assert.deepEqual( find( up, 'easu' ).colors, [ col( 'FSR.easu', 'clear', 'store' ) ] );

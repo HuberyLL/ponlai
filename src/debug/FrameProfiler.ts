@@ -832,14 +832,12 @@ export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<stri
 
 	const h = handles as Record<string, Record<string, unknown>>;
 	const pipeline = h.pipeline;
-	const P = pipeline as Record<string, unknown> & { blooms: { node: unknown }[]; diffusion: { node: unknown }; chainLabels: [ unknown, string ][] };
+	const P = pipeline as Record<string, unknown> & { diffusion: { node: unknown }; chainLabels: [ unknown, string ][] };
 	// the frame graph labels its passes itself (`graphPass`); inside its display chain, the passes
 	// with groups of their own: its rtt() passes first (a bloom's scan reaches the targets of the
 	// passes it reads, and the first label a target gets is kept)
 	profiler.scan( P.shafts, 'light shafts' );
 	for ( const [ node, label ] of P.chainLabels ) profiler.scan( node, label, 1 );
-	profiler.scan( P.blooms[ 0 ]?.node, 'bloom' );
-	profiler.scan( P.blooms[ 1 ]?.node, 'wide glow' );
 	profiler.scan( P.diffusion?.node, 'look glow' );
 	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes inside its chain (post=three-fsr)
 	// the sky's per-frame compute and its bakes

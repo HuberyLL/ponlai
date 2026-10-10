@@ -328,6 +328,95 @@ type Bloom = BloomNode & {
 };
 type RTT = THREE.RTTNode & { _quadMesh: THREE.QuadMesh; renderTarget: THREE.RenderTarget };
 
+// The walker: compiles nodes that render passes of their own (`updateBefore`) as they draw them,
+// at the call depth they draw at, and the passes those draws render in turn (depth first, in each
+// material's order, as the frame renders them: a pass renders inside the first material that names
+// it, one level deeper). What it does not know is listed in `unreached`.
+class Walker {
+
+	readonly pending: Promise<void>[] = [];
+	readonly unreached: string[] = [];
+	private readonly seen = new Set<THREE.Node>();
+	private readonly renderer: THREE.WebGPURenderer;
+
+	constructor( renderer: THREE.WebGPURenderer ) {
+
+		this.renderer = renderer;
+
+	}
+
+	nodes( nodes: Iterable<THREE.Node>, depth: number ): void {
+
+		for ( const node of nodes ) {
+
+			if ( this.seen.has( node ) ) continue;
+			this.seen.add( node );
+			if ( ( node as RTT ).isRTTNode === true ) {
+
+				const rtt = node as RTT;
+				this.draw( rtt._quadMesh, rtt.renderTarget, depth );
+
+			} else if ( node instanceof BloomNode ) this.bloom( node as Bloom, depth );
+			else this.unreached.push( node.type );
+
+		}
+
+	}
+
+	states( states: NodeState[] | null, depth: number ): void {
+
+		for ( const state of states ?? [] ) this.nodes( state.updateBeforeNodes, depth );
+
+	}
+
+	private draw( quad: THREE.QuadMesh, target: THREE.RenderTarget, depth: number ): void {
+
+		const c = compileTargeted( this.renderer, quad, ( quad as unknown as { camera: THREE.Camera } ).camera, target, null, null, depth );
+		this.pending.push( c.done );
+		this.states( c.states, depth + 1 );
+
+	}
+
+	// as updateBefore draws them: the high pass, each mip's two blur passes (their input set as it
+	// sets it), the composite; only the first mips' blur materials are drawn (setup appends a set per
+	// build of the material that holds the bloom)
+	private bloom( bloom: Bloom, depth: number ): void {
+
+		const draws: [ THREE.NodeMaterial | null, THREE.RenderTarget, THREE.Texture | null ][] = [ [ bloom._highPassFilterMaterial, bloom._renderTargetBright, null ] ];
+		let input = bloom._renderTargetBright;
+		for ( let i = 0; i < bloom._nMips; i ++ ) {
+
+			const material = bloom._separableBlurMaterials[ i ] ?? null;
+			draws.push( [ material, bloom._renderTargetsHorizontal[ i ], input.texture ], [ material, bloom._renderTargetsVertical[ i ], bloom._renderTargetsHorizontal[ i ].texture ] );
+			input = bloom._renderTargetsVertical[ i ];
+
+		}
+		draws.push( [ bloom._compositeMaterial, bloom._renderTargetsHorizontal[ 0 ], null ] );
+		for ( const [ material, target, colour ] of draws ) {
+
+			if ( ! material ) {
+
+				this.unreached.push( `${ bloom.type } (not set up)` );
+				continue;
+
+			}
+			const blur = material as THREE.NodeMaterial & { colorTexture?: THREE.TextureNode };
+			if ( colour && blur.colorTexture ) blur.colorTexture.value = colour;
+			bloomQuad.material = material;
+			this.draw( bloomQuad, target, depth );
+
+		}
+
+	}
+
+	get result(): ChainCompile {
+
+		return { done: Promise.all( this.pending ).then( () => undefined ), unreached: this.unreached };
+
+	}
+
+}
+
 /** Compiles a full-screen `quad` with the renderer's binding as it is now, then the passes its
  * material renders before it (rtt(): its own quad into its target; bloom: its high-pass, blur and
  * composite materials into their targets), and theirs in turn. Each nested pass compiles with the
@@ -335,65 +424,23 @@ type RTT = THREE.RTTNode & { _quadMesh: THREE.QuadMesh; renderTarget: THREE.Rend
 export function compileQuad( renderer: THREE.WebGPURenderer, quad: THREE.QuadMesh ): ChainCompile {
 
 	const first = compileBound( renderer, quad, ( quad as unknown as { camera: THREE.Camera } ).camera );
-	const pending: Promise<void>[] = [ first.done ];
-	const unreached: string[] = [];
 	if ( ! first.states ) return { done: first.done, unreached: [ 'nested passes (no bound compile on this three)' ] };
-	const seen = new Set<THREE.Node>();
-	// (depth first, in each material's order, as the frame renders them: a pass renders inside the
-	// first material that names it, one level deeper)
-	const walk = ( states: NodeState[] | null, depth: number ) => {
+	const walker = new Walker( renderer );
+	walker.pending.push( first.done );
+	walker.states( first.states, 1 );
+	return walker.result;
 
-		for ( const state of states ?? [] ) for ( const node of state.updateBeforeNodes ) {
+}
 
-			if ( seen.has( node ) ) continue;
-			seen.add( node );
-			if ( ( node as RTT ).isRTTNode === true ) {
+/** Compiles the passes of nodes a frame-graph pass runs itself (their `updateBefore`, at the top
+ * level: a bloom's high pass, blurs and composite into their targets), and the passes those draws
+ * render in turn. */
+export function compileNodes( renderer: THREE.WebGPURenderer, nodes: readonly THREE.Node[] ): ChainCompile {
 
-				const rtt = node as RTT;
-				const c = compileTargeted( renderer, rtt._quadMesh, ( rtt._quadMesh as unknown as { camera: THREE.Camera } ).camera, rtt.renderTarget, null, null, depth );
-				pending.push( c.done );
-				walk( c.states, depth + 1 );
-
-			} else if ( node instanceof BloomNode ) {
-
-				const bloom = node as Bloom;
-				// as updateBefore draws them: the high pass, each mip's two blur passes (their input set
-				// as it sets it), the composite; only the first mips' blur materials are drawn (setup
-				// appends a set per build of the material that holds the bloom)
-				const draws: [ THREE.NodeMaterial | null, THREE.RenderTarget, THREE.Texture | null ][] = [ [ bloom._highPassFilterMaterial, bloom._renderTargetBright, null ] ];
-				let input = bloom._renderTargetBright;
-				for ( let i = 0; i < bloom._nMips; i ++ ) {
-
-					const material = bloom._separableBlurMaterials[ i ] ?? null;
-					draws.push( [ material, bloom._renderTargetsHorizontal[ i ], input.texture ], [ material, bloom._renderTargetsVertical[ i ], bloom._renderTargetsHorizontal[ i ].texture ] );
-					input = bloom._renderTargetsVertical[ i ];
-
-				}
-				draws.push( [ bloom._compositeMaterial, bloom._renderTargetsHorizontal[ 0 ], null ] );
-				for ( const [ material, target, colour ] of draws ) {
-
-					if ( ! material ) {
-
-						unreached.push( `${ node.type } (not set up)` );
-						continue;
-
-					}
-					const blur = material as THREE.NodeMaterial & { colorTexture?: THREE.TextureNode };
-					if ( colour && blur.colorTexture ) blur.colorTexture.value = colour;
-					bloomQuad.material = material;
-					const c = compileTargeted( renderer, bloomQuad, ( bloomQuad as unknown as { camera: THREE.Camera } ).camera, target, null, null, depth );
-					pending.push( c.done );
-					walk( c.states, depth + 1 );
-
-				}
-
-			} else unreached.push( node.type );
-
-		}
-
-	};
-	walk( first.states, 1 );
-	return { done: Promise.all( pending ).then( () => undefined ), unreached };
+	if ( ! boundCompileAvailable( renderer ) ) return { done: Promise.resolve(), unreached: nodes.map( ( node ) => `${ node.type } (no bound compile on this three)` ) };
+	const walker = new Walker( renderer );
+	walker.nodes( nodes, 0 );
+	return walker.result;
 
 }
 
