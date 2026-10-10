@@ -24,7 +24,9 @@ import { fileURLToPath } from 'node:url';
 const PRE = `const s = window.__PONLAI__;
 const isl = () => { const i = s.scene.getObjectByName( 'island' ); i.geometry.computeBoundingBox(); const b = i.geometry.boundingBox;
 	return { cx: ( b.min.x + b.max.x ) / 2, cz: ( b.min.z + b.max.z ) / 2, rx: ( b.max.x - b.min.x ) / 2, rz: ( b.max.z - b.min.z ) / 2, top: b.max.y }; };
-const free = ( p, l, fov ) => { s.setCameraView( 'island' ); s.setCameraMode( 'free' ); s.camera.position.set( p[ 0 ], p[ 1 ], p[ 2 ] );
+// (older builds, such as the exp/taa preview, have no setCameraView or controls.settle: the views
+// fall back to what those builds have, so the experiment's images can be cut alike)
+const free = ( p, l, fov ) => { s.setCameraView?.( 'island' ); s.setCameraMode( 'free' ); s.camera.position.set( p[ 0 ], p[ 1 ], p[ 2 ] );
 	s.camera.lookAt( l[ 0 ], l[ 1 ], l[ 2 ] ); s.camera.fov = fov; s.camera.updateProjectionMatrix(); };
 const orbitAround = ( dirx, dirz ) => { const t = s.controls.target, p = s.camera.position; const r = Math.hypot( p.x - t.x, p.z - t.z ), len = Math.hypot( dirx, dirz ) || 1;
 	p.x = t.x + dirx / len * r; p.z = t.z + dirz / len * r; s.camera.lookAt( t ); s.controls.update(); };`;
@@ -270,7 +272,7 @@ export const VIEWS = {
 	'low-36': { group: 'taa', q: 'weather=fair&preset=noon&dist=36&polar=80&az=330', crops: [ 'rim-lip', 'cliff-edge-sea', 'meadow-band-40m', 'horizon-line', 'tree-crown' ] },
 	// the islander a few metres away (skinned motion, ears, hands)
 	'islander-close': { group: 'taa', q: 'weather=fair&preset=noon', eval: `${ ISLANDER }
-		s.controls.minDistance = 2; s.controls.target.copy( c ); s.camera.position.set( c.x + 3.2, c.y + 2.4, c.z + 3.6 ); s.camera.lookAt( c ); s.controls.settle();`,
+		s.controls.minDistance = 2; s.controls.target.copy( c ); s.camera.position.set( c.x + 3.2, c.y + 2.4, c.z + 3.6 ); s.camera.lookAt( c ); ( s.controls.settle ?? s.controls.update ).call( s.controls );`,
 	crops: [ 'islander-head', 'islander-hands', 'meadow-near' ] },
 	// 1.2 m over the densest flower drift (3 m cells of the flower instances), looking 35 degrees down
 	// and away from the island's centre
