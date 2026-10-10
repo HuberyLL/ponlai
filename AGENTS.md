@@ -202,7 +202,8 @@ stone exposed.
   land's box and the lattice's own distance beyond; the island, the stones in up to four sets and
   the rest built in parallel copies of `worldWorker.ts` and merged in serial order, so the world is
   identical to a single thread's; kept in IndexedDB by `WorldCache.ts`, keyed by the hash of the
-  generator's sources, its options and the browser; SDF shapes → surface nets; the cliff band
+  generator's sources, its options and the browser, its typed arrays in records of about 64 MB
+  (Chrome refuses a single value over about 133 MB, which a grown world passes); SDF shapes → surface nets; the cliff band
   places its vertices by dual contouring so scar edges stay sharp), its cliffs as a weathered face
   that has shed blocks along its joints and beds (`Cliff.ts`: rockfall scars in three generations
   of size, gullies, a wave-cut notch that follows the coast's exposure; per-vertex facet, scar
