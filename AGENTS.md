@@ -19,10 +19,16 @@ stone exposed.
   `npm run preview` (port 5191).
 - `node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval "js"] [--verbose]`
   takes a screenshot of the running dev server into `artifacts/captures/` (git-ignored) and prints
-  frame diagnostics. URL options: `paused`, `t`, `dpr`, `dist`, `polar`, `az`, `gui`, `camera`
+  frame diagnostics. URL options: `paused`, `t`, `dpr`, `dist` (m; without it the island view's
+  distance follows the land's size), `polar`, `az`, `gui`, `camera`
   (orbit, the default: the island camera; or free: fly with the mouse, WASD, Q/E and Shift). It
   needs Playwright's Chromium once (`npx playwright install chromium`), or `CHROME_PATH` set to a
   WebGPU-capable Chrome.
+- The island's URL options: `seed` (the world's seed, 1 by default: Ponlai's island) and `grow`
+  (growth steps after the starting island, 0 by default, up to `GROWTH.maxSteps`). The page
+  generates its whole world from that land and frames its views on it; debug
+  pages expose `window.__PONLAI__.land` (`seed`, `step`, `bounds`, `centroid`, the views' `scale`
+  against the first island and the default pivot `target`) for the tools to frame by.
 - Sky and weather URL options: `hour`, `preset` (dawn, sunrise, noon, golden-hour, sunset, dusk,
   midnight), `dayLength` (seconds), `moon` (phase), `clock=paused` (freezes only the day clock;
   `paused` freezes it with the scene), `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load
@@ -191,7 +197,9 @@ stone exposed.
   flight in `FreeCameraControls.ts`).
   `window.__PONLAI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev
   server or with `?debug` (or `?profile`, which also loads the frame profiler in `src/debug/`).
-- `src/world/`: the island generated in Web Workers (the island, the stones in up to four sets and
+- `src/world/`: the island generated in Web Workers from the grown land (its footprint in
+  `WorldShapes.buildFootprint`: the land lattice's signed distance, rounded at 0.08 m over the
+  land's box and the lattice's own distance beyond; the island, the stones in up to four sets and
   the rest built in parallel copies of `worldWorker.ts` and merged in serial order, so the world is
   identical to a single thread's; kept in IndexedDB by `WorldCache.ts`, keyed by the hash of the
   generator's sources, its options and the browser; SDF shapes → surface nets; the cliff band
@@ -201,7 +209,7 @@ stone exposed.
   age, bed, lip, overhang and exposure detail for the material), sea floor
   (a shelf that widens and narrows along the coast, a talus apron and shallow benches at the
   cliff foot in `Bathymetry.ts`; its seagrass beds and pale sand baked per vertex, so they never
-  tile), shoreline field,
+  tile), shoreline field (over the land's box and 32 m round it, on a 32 m grid),
   vegetation anchors; instanced grass, rim bushes and flowers on the island top, a turf skirt over
   the lip, with clumped, top-rooted trailing branches (forking, of mixed lengths) under leaf mounds
   on the lip. The alpha-to-coverage vegetation (grass, bushes, rim leaves) draws after a depth
@@ -212,15 +220,15 @@ stone exposed.
   a compute pass culls the tufts against the frustum (and the thin tufts past their fold) into an
   order-preserving list and each batch's indirect draw arguments, so off-screen tufts run no
   vertex work.
-- `src/world/IslandGrowth.ts` (worker-safe, not yet wired into the world): the land as a bit
-  lattice (0.25 m cells over +-96 m, `LandLattice`, saved with `toBytes`) grown one piece at a
-  time (`growLand`, `nextPiece`): a starting island of 400 m^2 flooded from the world's centre,
-  then per step a priority flood of about 180 m^2 over a fixed hidden relief from a coast site
-  near the island's middle and away from the last pieces, rounded, its lakes filled, old land
+- `src/world/IslandGrowth.ts` (worker-safe; the world worker grows the land it builds on): the land
+  as a bit lattice (0.25 m cells over +-96 m, `LandLattice`, saved with `toBytes`) grown one piece
+  at a time (`growLand`, `nextPiece`): a starting island of 400 m^2 flooded from the world's
+  centre, then per step a priority flood of about 180 m^2 over a fixed hidden relief from a coast
+  site near the island's middle and away from the last pieces, rounded, its lakes filled, old land
   never removed. Exact arithmetic only (no library transcendentals), so a seed grows the same
   island in every engine. The site is chosen over the whole island (its middle needs the whole
-  land's distance field); the flood and the rounding work in windows around the piece.
-  `GROWTH` holds every parameter, `maxSteps` (36) the growth horizon.
+  land's distance field); the flood and the rounding work in windows around the piece. `GROWTH`
+  holds every parameter, `maxSteps` (36) the growth horizon.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
@@ -242,7 +250,7 @@ stone exposed.
 - `src/ocean/`: FFT ocean (compute: each axis's eight Stockham stages run in workgroup memory, one
   dispatch per axis after the spectrum kernel), waves against the rock boundary, caustics, water
   shading (its screen-space reflection marches only rays that cross `Water.reflectionBounds`, the
-  box of everything opaque above the sea built from the tile layout, and stops them past it), and
+  box of everything opaque above the sea built from the land's box, and stops them past it), and
   the storm sea (`StormSea.ts`: whitecap foam integrated on a world grid around the view, the
   procedural foam pattern, spray particles).
 - `src/sky/`: atmosphere LUTs, environment lighting, volumetric clouds after tidewater's port of
@@ -294,8 +302,9 @@ stone exposed.
 - `src/game/`: the game behind `?game`, wired into `main.ts` by `Game.ts`: an engine skeleton with
   no gameplay content. `sim/` is the headless simulation (no three.js or DOM; node runs it by
   stripping types, so `import type` and erasable syntax only): a fixed tick of one game second
-  and its clock, a seeded generator kept in the state, a 0.5 m ground grid of walkable cells with
-  A* paths (`grid.ts`, `path.ts`), and the islanders' bodies (id, name, position, heading) with a
+  and its clock, a seeded generator kept in the state, a 0.5 m ground grid of walkable cells over
+  the land lattice's extent (anchored to the world, so growth only opens cells) with A* paths
+  (`grid.ts`, `path.ts`), and the islanders' bodies (id, name, position, heading) with a
   motor that walks a path to a point (`Sim.walkTo`). `sim/agent.ts` is the agent loop's frame: a
   tool registry (name to a handler acting on a body; empty), the perception hook (a placeholder:
   the time and the islander's own position) and the `Brain` interface. `view/` draws the
@@ -304,37 +313,46 @@ stone exposed.
 
 ## Decisions (keep to these)
 
-- Keep the island tile layout and flat central plateau. Natural contour, slope and weathering
-  variation belongs to the outer rim and cliffs. Offshore stones remain submerged and form
-  patchy seabed detail; no exposed sea stacks or reefs.
-- The island must be able to grow by more tiles, so everything generated for it is generic: the
-  cliffs, the shelf and its stones, the rim greenery and the planting derive from the footprint,
-  the island's SDF and noise fields with fixed seeds (hashes of position, or random streams that
-  draw a fixed count per vegetation anchor), never from coordinates placed by hand, and their
-  counts follow the measured coast length or meadow area. Any tile layout then builds itself the
-  same way. World generation stays deterministic whatever the thread count: parts never share
-  running counts, and the merge restores the serial order.
+- The island grows with its population, one piece of land at a time (docs/game-design.md, "How
+  the island grows"): a starting island of about 400 m^2 at the world's centre, then a piece of
+  about 180 m^2 per step (at most `GROWTH.maxSteps`), joined to the coast near the island's
+  middle so it grows from the centre outward, chosen at random but always irregular and natural,
+  never drifting toward a square or a circle; old land is never removed. One fixed world seed is
+  Ponlai's island (`seed` overrides it for testing). The next piece is decided ahead and the sea
+  floor there rises first; the new land rises out of the sea under spray and mist; the world is
+  built in chunks, so a piece rebuilds only itself and its neighbours (until the chunks come, a
+  step regenerates the whole world from the land). Keep the flat central plateau. Natural
+  contour, slope and weathering variation belongs to the outer rim and cliffs. Offshore stones
+  remain submerged and form patchy seabed detail; no exposed sea stacks or reefs.
+- Everything generated for the island is generic: the cliffs, the shelf and its stones, the rim
+  greenery and the planting derive from the land's footprint, the island's SDF and noise fields
+  with fixed seeds (hashes of position, or random streams that draw a fixed count per vegetation
+  anchor), never from coordinates placed by hand, and their counts follow the measured coast
+  length or meadow area. Any land then builds itself the same way, and so does everything fitted
+  to it on the page (the views, the camera's limits, the shore and rain fields, the reflection's
+  box, the sea fog's clearing, the walking loop, the game's grid). World generation stays
+  deterministic whatever the thread count: parts never share running counts, and the merge
+  restores the serial order.
 - Cliff features (rockfall scars, joint faces, pockets, steps in the lip, gullies, the notch)
   derive from the footprint with seeds hashed from position in world-anchored cells (`Cliff.ts`),
-  and an unchanged stretch of coast keeps its scars when the layout grows elsewhere: every
-  property of a scar comes from its own hash, never from a running count, and each generation is
-  cut into the surface the larger ones left. The wall is built as solid geometry: convex blocks
-  bounded by two regional joint sets (both oblique to the tile edges), bed partings and inclined
-  fractures are subtracted from a battered face, so its field stays a true distance and the
-  facets stay flat up to crisp edges. It must read as natural rock, never masonry: no level
-  courses or evenly spaced joints, and no lumps of dissolved limestone. Scar floors and roofs lie
-  on a parting only some of the time, partings and soft beds open over a few metres and pinch
-  out, and under the meadow the wall weathers back to an upper slope rather than jutting as a
-  slab. Pockets are much shallower than they are wide and tall, their roofs open outward, two
-  never crowd each other at one height, and their occlusion is lifted a little, so none reads as
-  a black hole or a pair of eyes in the shade; the small breaks are flakes (a flat facet ending
-  in a step). Above the waves the breaks stay sharp (rims rounded by a few centimetres at most);
-  only the wave zone rounds them. The wave-cut notch comes and goes with the coast's exposure and
-  its roof stays above the calm sea's crests; the joint faces run on below the sea, so no ledge
-  follows the waterline. The weathering relief fades out at the meadow, whose height stays
-  `islandSurfaceHeight`. Steps where a block fell from the lip stop below the meadow's planting
-  height (2.8 m) and carry no turf. No waterfalls. Moss and greenery on the wall stay in its upper
-  1.2 m.
+  and an unchanged stretch of coast keeps its scars when the land grows elsewhere: every property
+  of a scar comes from its own hash, never from a running count, and each generation is cut into
+  the surface the larger ones left. The wall is built as solid geometry: convex blocks bounded by
+  two regional joint sets (both oblique to the world's axes), bed partings and inclined fractures
+  are subtracted from a battered face, so its field stays a true distance and the facets stay flat
+  up to crisp edges. It must read as natural rock, never masonry: no level courses or evenly spaced
+  joints, and no lumps of dissolved limestone. Scar floors and roofs lie on a parting only some of
+  the time, partings and soft beds open over a few metres and pinch out, and under the meadow the
+  wall weathers back to an upper slope rather than jutting as a slab. Pockets are much shallower
+  than they are wide and tall, their roofs open outward, two never crowd each other at one height,
+  and their occlusion is lifted a little, so none reads as a black hole or a pair of eyes in the
+  shade; the small breaks are flakes (a flat facet ending in a step). Above the waves the breaks
+  stay sharp (rims rounded by a few centimetres at most); only the wave zone rounds them. The
+  wave-cut notch comes and goes with the coast's exposure and its roof stays above the calm sea's
+  crests; the joint faces run on below the sea, so no ledge follows the waterline. The weathering
+  relief fades out at the meadow, whose height stays `islandSurfaceHeight`. Steps where a block
+  fell from the lip stop below the meadow's planting height (2.8 m) and carry no turf. No
+  waterfalls. Moss and greenery on the wall stay in its upper 1.2 m.
 - Around the island, the shelf's width and depth, the talus at the cliff foot, its shallow benches
   and the fallen blocks on it follow the footprint's distance, the island's SDF and world-space
   noise. The floor off the island stays below -1.6 m and every stone crown below -1.30 m, so
@@ -355,7 +373,8 @@ stone exposed.
   alternates between overgrown stretches (turf down over the shoulder) and cut-open root soil,
   by the rim field's root depth. Wildflowers are plants of four species (daisy, umbel, spike, cup)
   with leaf rosettes, their heads just above the sward, in beds of 3-9 gathered in drifts.
-  Tussocks and flower beds (spikes furthest) keep off the islander's walking loop (`WalkLoop.ts`).
+  Tussocks and flower beds (spikes furthest) keep off the islander's walking loop (`WalkLoop.ts`:
+  the land's contour 5 m in from the coast, smoothed).
 - The terrain plants only the meadow (grass, wildflowers), the rim bushes and the rim's hanging
   growth. Plants that matter to play (coconut palms) are content placed in the world, not
   terrain; a placed object that stands off the island or above 3 m grows
@@ -585,9 +604,10 @@ stone exposed.
   a 125 Hz mouse moved the view by up to two fifths more or less from one frame to the next (p90),
   and by 4 % resampled. The motion is taken as deltas on the camera's current position and pivot,
   so placements by hand (the views, the tools) keep their pose, and the limits constrain input
-  only: the pivot within the island's bounds plus 12 m, the farthest zoom from the island's
-  diagonal (190 m for this layout), the camera 2 m above the ground (a height grid of the island's
-  meshes, `IslandGround.ts`). At rest the update is three's OrbitControls' arithmetic to the bit,
+  only: the pivot within the land's box plus 12 m, the farthest zoom from its diagonal (about
+  190 m for the starting island), both recomputed when the land grows (`setIsland`), the camera
+  2 m above the ground (a height grid of the island's meshes, `IslandGround.ts`). At rest the
+  update is three's OrbitControls' arithmetic to the bit,
   its constructor's update included, so paused frames do not depend on input history and match
   captures from before. The pipeline adds about 28 ms from a frame's vblank to its presentation
   (the GPU's frame and the compositor's next refresh, steady: no queued frames), and a pointer move
@@ -766,7 +786,7 @@ stone exposed.
   stage instead and passed on as a varying (the estimated sea floor's beds and sand), but the
   varyings have a ceiling too: the water uses 14 of the 16 inter-stage variables WebGPU
   guarantees.
-- The water's reflection only finds what lies inside `Water.reflectionBounds`: the layout's box,
+- The water's reflection only finds what lies inside `Water.reflectionBounds`: the land's box,
   padded 2.5 m for the rim overhang and 3 m above the meadow (`REFLECTOR_HEIGHT`: the islanders'
   2 m plus a metre), down to 0.35 m below the sea. Anything opaque placed off the island or above
   3 m (a palm, a boat, a hut, a mast) must grow that box, or the sea will not reflect it; debug
