@@ -5,6 +5,7 @@ import { performance } from 'node:perf_hooks';
 import { boundedSceneField, localSkyVisibility, contactVisibilitySampler } from '../src/lighting/SkyOcclusion.ts';
 import { surfaceNets } from '../src/world/SurfaceNets.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
+import { loadWorldWorker } from './world-node.mjs';
 
 const plane = ( x, y, z ) => y;
 const sphere = ( x, y, z ) => Math.hypot( x, y - 0.8, z ) - 0.35;
@@ -54,19 +55,12 @@ console.log( JSON.stringify( { isolated: 1, neighbouring: neighbouring( 0, 0, 0,
 
 if ( process.argv.includes( '--world' ) ) {
 
-	let world;
-	globalThis.self = { postMessage( data, { transfer } ) {
-
-		assert.equal( new Set( transfer ).size, transfer.length, 'Every worker buffer must be transferred only once.' );
-		world = data;
-
-	} };
-	await import( '../src/world/worldWorker.ts' );
+	const runWorker = await loadWorldWorker();
 	const generate = ( contactOcclusion ) => {
 
 		const start = performance.now();
-		self.onmessage( { data: { contactOcclusion } } );
-		return { data: world, elapsedMs: performance.now() - start };
+		const data = runWorker( { contactOcclusion } );
+		return { data, elapsedMs: performance.now() - start };
 
 	};
 	const before = generate( false ), after = generate( true );

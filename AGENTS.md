@@ -193,7 +193,9 @@ stone exposed.
   CPU-only (plain `node`), as is `tools/verify-growth-shape.mjs` (the island's growth over 32
   seeds and 36 steps: the coast's solidity, elongation and share along the lattice axes, that a
   grown land equals the same steps taken one at a time through a saved land, and the lattice's
-  margin; it writes a sheet of eight seeds to `artifacts/growth/shape-sheet-<label>.png`). GPU
+  margin; it writes a sheet of eight seeds to `artifacts/growth/shape-sheet-<label>.png`), and
+  `tools/verify-world-local.mjs` (each generator case in `tools/world-local/` built over a box whole
+  and as 2 x 2 sub-boxes, bit for bit; helpers in `tools/world-node.mjs`, see the runner's header). GPU
   probes take the GPU lock; keep
   other pages that render the scene closed.
 
