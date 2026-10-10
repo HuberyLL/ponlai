@@ -210,6 +210,15 @@ stone exposed.
   culls the tufts against the frustum (and the thin tufts past their fold) into an
   order-preserving list and each batch's indirect draw arguments, so off-screen tufts run no
   vertex work.
+- `src/world/IslandGrowth.ts` (worker-safe, not yet wired into the world): the land as a bit
+  lattice (0.25 m cells over +-96 m, `LandLattice`, saved with `toBytes`) grown one piece at a
+  time (`growLand`, `nextPiece`): a starting island of 400 m^2 flooded from the world's centre,
+  then per step a priority flood of about 180 m^2 over a fixed hidden relief from a coast site
+  near the island's middle and away from the last pieces, rounded, its lakes filled, old land
+  never removed. Exact arithmetic only (no library transcendentals), so a seed grows the same
+  island in every engine. The site is chosen over the whole island (its middle needs the whole
+  land's distance field); the flood and the rounding work in windows around the piece.
+  `GROWTH` holds every parameter, `maxSteps` (36) the growth horizon.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
