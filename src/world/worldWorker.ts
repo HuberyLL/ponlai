@@ -13,9 +13,9 @@ import {
 import { growLand } from './IslandGrowth.ts';
 import { Field2D } from './Field2D.ts';
 import { deepenSeabed, seabedBeds, shapeShelf } from './Bathymetry.ts';
-import { mulberry32, type Rng } from './noise.ts';
+import { scatterTop } from './Anchors.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
-import { SEABED_WARP, VEGETATION_STRIDE, VEGETATION_SPACING } from './types.ts';
+import { SEABED_WARP, VEGETATION_STRIDE } from './types.ts';
 import { openWorldStore } from './WorldCache.ts';
 import type { SDF, MeshData, MeshKind, NamedMesh, Rock, WorldData, WorldOptions } from './types.ts';
 
@@ -341,12 +341,12 @@ function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 	// --- vegetation anchors: island turf only; submerged stones stay bare.
 	// March the field down from above for position, surface normal and distance to the rim.
 	let t = performance.now();
-	const rngV = mulberry32( 4242 );
 	const veg: number[] = [];
-	scatterTop( islandSDF, b.x0 - 0.6, b.x1 + 0.6, b.z0 - 0.6, b.z1 + 0.6, VEGETATION_SPACING, ISLAND_TOP, rngV, veg, ( x, z ) => fp.dist( x, z ), 0 );
+	scatterTop( islandSDF, { x0: b.x0 - 0.6, z0: b.z0 - 0.6, x1: b.x1 + 0.6, z1: b.z1 + 0.6 }, ISLAND_TOP, ( x, z ) => fp.dist( x, z ), veg );
 	const vegetation = new Float32Array( veg.length / 8 * VEGETATION_STRIDE );
-	// The raw eight-float anchors and random streams still determine all placement. Visibility
-	// is appended only after scattering, and is a local scalar proxy for an entire small plant.
+	// The raw eight-float anchors and their cells' random streams still determine all placement.
+	// Visibility is appended only after scattering, and is a local scalar proxy for an entire
+	// small plant.
 	const vegetationVisibility = contacts();
 	for ( let i = 0; i < veg.length / 8; i ++ ) {
 
@@ -490,40 +490,6 @@ function seabedSampler( positions: Float32Array, n: number, size: number, centre
 			: positions[ d + 1 ] + ( positions[ s + 1 ] - positions[ d + 1 ] ) * ( 1 - u ) + ( positions[ e + 1 ] - positions[ d + 1 ] ) * ( 1 - v );
 
 	};
-
-}
-
-// jittered grid over [x0, x1] x [z0, z1]; for each sample march down to the surface and keep it
-// if it faces up enough to hold turf (the rounded rim included). Appends x, y, z, nx, ny, nz, rim
-// (signed distance to the shape's edge, negative inside), kind (0 island).
-function scatterTop( sdf: SDF, x0: number, x1: number, z0: number, z1: number, spacing: number, yTop: number,
-	rng: Rng, out: number[], rimDist: ( x: number, z: number ) => number, kind: number ): void {
-
-	for ( let z = z0; z < z1; z += spacing ) for ( let x = x0; x < x1; x += spacing ) {
-
-		const px = x + ( rng() - 0.5 ) * spacing * 0.95, pz = z + ( rng() - 0.5 ) * spacing * 0.95;
-		let y = yTop + 1.2;
-		let hit = false;
-		for ( let i = 0; i < 80; i ++ ) {
-
-			const d = sdf( px, y, pz );
-			if ( d < 0.003 ) { hit = true; break; }
-			y -= Math.max( d * 0.7, 0.004 );
-			if ( y < yTop - 1.5 ) break;
-
-		}
-
-		if ( ! hit ) continue;
-		const e = 0.04;
-		let nx = sdf( px + e, y, pz ) - sdf( px - e, y, pz );
-		let ny = sdf( px, y + e, pz ) - sdf( px, y - e, pz );
-		let nz = sdf( px, y, pz + e ) - sdf( px, y, pz - e );
-		const l = Math.hypot( nx, ny, nz ) || 1;
-		nx /= l; ny /= l; nz /= l;
-		if ( ny < 0.3 ) continue;
-		out.push( px, y, pz, nx, ny, nz, rimDist( px, pz ), kind );
-
-	}
 
 }
 

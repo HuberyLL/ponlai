@@ -7,6 +7,7 @@ import {
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
+import { anchorStream } from './Anchors.ts';
 import { sampleMeadow, meadowColor, supportsMeadow } from '../materials/Meadow.ts';
 import { sampleMeadowSoil, soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
@@ -47,7 +48,7 @@ const LAWN: TuftShape = { blades: 16, segs: 2, r0: [ 0.02, 0.15 ], h: [ 0.45, 0.
 const TUSSOCK: TuftShape = { blades: 18, segs: 4, r0: [ 0.01, 0.08 ], h: [ 0.55, 1 ], lean: [ 0.45, 1.05 ], w: [ 0.05, 0.085 ], droop: 0.6, reachPow: 1.6 };
 
 /** The meadow's cost knobs for a quality tier. They shape the meshes and shaders, so they apply
- * when the grass is built (set them before `buildGrass`); the defaults are the high tier's. */
+ * when the grass is planted and built (set them before `plantGrass`); the defaults are the high tier's. */
 export interface GrassQuality {
 	/** Lawn blades drawn per tuft near, mid and far from the camera (of 16), see `selectBatch`. */
 	lawnBlades: [ number, number, number ];
@@ -140,7 +141,7 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 // such blades solid, with the meadow's brightness as at two.
 const grassUniforms = {
 	minWidth: uniform( ALPHA_TO_COVERAGE ? 2 : 1 ), // render-target pixels
-	rimMinWidth: uniform( 0.75 ), // on the outer rim, see `rimEdge` in buildGrass
+	rimMinWidth: uniform( 0.75 ), // on the outer rim, see `rimEdge` in plantGrass
 	// The extra lawn tufts of thick patches fold away between these view distances (m): beyond
 	// them a blade is under a pixel wide and the widened blades of the remaining tufts already
 	// cover the turf, so the extras would only cost vertices.
@@ -342,7 +343,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 
 }
 
-interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; soil: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3 }
+export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; soil: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3 }
 
 // One instanced mesh per batch of tufts of one kind, over its own geometry (the draw range and the
 // indirect arguments belong to it) that shares the tuft's vertex buffers. Its instance data (the
@@ -454,16 +455,15 @@ function batchOf( source: THREE.BufferGeometry, shape: TuftShape, material: THRE
 
 }
 
-/** The meadow: lawn and tussock meshes in one group. `walkDistance` (m from a point to the
- * islander's loop) keeps tussocks off the path. */
-export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): THREE.Group {
+/** The meadow's tufts of each kind, one record per instance. */
+export interface GrassTufts { lawn: Tuft[]; tussocks: Tuft[]; lawnThin: Tuft[] }
+
+/** The tufts grown on the anchors `veg` (any of them: each anchor's tufts depend on that anchor
+ * alone). `walkDistance` (m from a point to the islander's loop) keeps tussocks off the path. */
+export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): GrassTufts {
 
 	const n = veg.length / STRIDE;
 	const lawn: Tuft[] = [], tussocks: Tuft[] = [], lawnThin: Tuft[] = [];
-	// The lawn's own draws keep their old order; everything added since draws from a second
-	// stream, a fixed count per anchor, so the planting stays the same wherever a gate changes.
-	const rng = mulberry32( 99 );
-	const more = mulberry32( 131 );
 	const draws = new Float32Array( 12 );
 	const q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
@@ -481,6 +481,9 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 		const k = i * STRIDE;
 		const x = veg[ k ], y = veg[ k + 1 ], z = veg[ k + 2 ];
 		const rim = veg[ k + 6 ];
+		// Two streams of the anchor's own cell, the lawn's and one for everything added since (a
+		// fixed count of draws), so no anchor's planting depends on another's.
+		const rng = anchorStream( x, z, 99 ), more = anchorStream( x, z, 131 );
 		// stand with the ground, leaning out a little more over the rim
 		dir.set( veg[ k + 3 ], veg[ k + 4 ], veg[ k + 5 ] ).lerp( up, 0.3 ).normalize();
 		q.setFromUnitVectors( up, dir );
@@ -575,6 +578,12 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 		}
 
 	}
+	return { lawn, tussocks, lawnThin };
+
+}
+
+/** The meadow: lawn and tussock meshes in one group, drawing the tufts `plantGrass` grew. */
+export function buildGrass( { lawn, tussocks, lawnThin }: GrassTufts, shared: Shared ): THREE.Group {
 
 	const group = new THREE.Group();
 	group.name = 'grass';
