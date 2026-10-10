@@ -412,6 +412,20 @@ comment where it is used.
 - A drag sampled at a fixed delay behind the frame, interpolated between the input samples around
   it, so a steady drag moves the view by the same amount every frame: the input resampling of
   Android's `InputTransport` (`RESAMPLE_LATENCY`), used as a technique only.
+- Vegetation wind in layers (the whole plant bent from its root keeping each vertex's distance to
+  it, branches swinging on their own phase, leaf edges fluttering along the normal): Tiago Sousa,
+  *Vegetation Procedural Animation and Shading in Crysis* (GPU Gems 3, chapter 16, 2007), in
+  `src/world/Foliage.ts` (`mainBend`), `Plants.ts` and `RimFoliage.ts`. Each plant answering the
+  local wind like a spring at its own natural frequency: Santa Monica Studio's wind in *God of War*
+  (Rupert Renard, *Wind Simulation in God of War*, GDC 2019), in `mainBend`.
+- Gusts as a noise field scrolled with the wind, sweeping across the grass: Sucker Punch
+  Productions' wind and grass in *Ghost of Tsushima* (Eric Wohllaib, *Procedural Grass in 'Ghost
+  of Tsushima'*, GDC 2021: 2D Perlin noise scrolled in the wind's direction; Bill Rockenbeck,
+  *Blowing from the West: Simulating Wind in Ghost of Tsushima*, GDC 2021: the wind's strength
+  varied by time-varying Perlin noise), in `src/weather/Wind.ts` (`windField`) and
+  `src/world/Grass.ts`. Used as a technique only; the gust map is our own.
+  The map's noise is Ken Perlin's improved gradient noise (*Improving Noise*, SIGGRAPH 2002),
+  made periodic.
 
 ## References
 

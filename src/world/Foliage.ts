@@ -1,8 +1,10 @@
 import * as THREE from 'three/webgpu';
 import {
 	attribute, positionGeometry, positionLocal, normalViewGeometry, materialColor, vec3, vec4, float, mix, dot, sin, cos, pow, clamp,
-	smoothstep as smoothstepN,
+	smoothstep as smoothstepN, normalize, length,
 } from 'three/tsl';
+import { LEAN_REF, rootPhase, setWindDisplacement, wave, windField, type WindState } from '../weather/Wind.ts';
+import { keepLegacyWind } from './WindVariants.ts';
 import { mulberry32 } from './noise.ts';
 import { pickFoliageSites } from './FoliageSites.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
@@ -296,12 +298,41 @@ function bushGeometry( seed = 5 ) {
 
 }
 
-function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.MeshStandardNodeMaterial {
+type V3 = THREE.Node<'vec3'>;
+type F = THREE.Node<'float'>;
+
+/** A plant's main bend, after Sousa's "Vegetation Procedural Animation and Shading in Crysis"
+ * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways about
+ * that lean at its own natural rate, each vertex by `amplitude` (metres at a fair day's typical
+ * gust, see LEAN_REF; it carries the plant's stiffness and grows from the root up), keeping its
+ * distance from the root so the plant arcs over instead of shearing. As in God of War's wind
+ * (Santa Monica Studio; Rupert Renard, GDC 2019), each plant answers the local wind like a spring
+ * at its own natural frequency, swinging wider in a gust rather than in step with its
+ * neighbours. `rate` is the sway's
+ * frequency (Hz, an even number of thousandths), and `slow` (0..1) eases it to half that rate for
+ * taller plants. `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the
+ * bent position and the wind field's ( direction x, direction z, lean, gust ) at the root. */
+export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F, rate: number, slow?: F ): { position: V3; field: THREE.Node<'vec4'> } {
+
+	const field = windField( wind, root.xz ).toVar();
+	const phase = rootPhase( root.xz );
+	// The sway grows with the wind and in a gust; the lean follows the gust field.
+	const swing = wind.breeze.mul( field.w.mul( 0.45 ).add( 0.25 ) );
+	const sway = ( r: number, ph: F ) => slow ? mix( wave( wind.clock, r, ph ), wave( wind.clock, r / 2, ph ), slow ) : wave( wind.clock, r, ph );
+	const response = field.z.div( LEAN_REF ).add( sway( rate, phase ).mul( swing ) );
+	const sideways = sway( rate * 0.78, phase.mul( 1.7 ) ).mul( swing ).mul( 0.35 );
+	const offset = vec3( field.x, 0, field.y ).mul( response ).add( vec3( field.y.negate(), 0, field.x ).mul( sideways ) ).mul( amplitude );
+	const rel = position.sub( root ).toVar();
+	return { position: normalize( rel.add( offset ).add( vec3( 0, 1e-5, 0 ) ) ).mul( length( rel ) ).add( root ), field };
+
+}
+
+function foliageMaterial( shared: Shared, map: THREE.CanvasTexture, legacy = false, alphaMap?: THREE.Texture ): THREE.MeshStandardNodeMaterial {
 
 	const mat = new THREE.MeshStandardNodeMaterial( {
 		map, alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: ALPHA_TO_COVERAGE, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
 	} );
-	mat.alphaMap = leafAlphaTexture( map.image.width );
+	mat.alphaMap = alphaMap ?? leafAlphaTexture( map.image.width );
 	markVegetation( mat );
 	const wetness = clamp( shared.wetness, 0, 1 );
 	const wetTint = mix( 1, 0.92, wetness );
@@ -313,10 +344,33 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.Mesh
 	const vH = clamp( g.y.div( 0.72 ), 0, 1 );
 	const p = positionLocal; // placed: world space
 	const wind = shared.wind.direction;
-	const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.wind.phase.mul( 1.3 / 1.6 ) );
-	const along = vec3( wind.x, 0, wind.y ).mul( sin( ph.add( g.y.mul( 3 ) ) ) );
-	const across = vec3( wind.y.negate(), 0, wind.x ).mul( cos( ph.mul( 1.3 ).add( g.x.mul( 3 ) ) ).mul( 0.35 ) );
-	useRestPoseShadows( mat, p, p.add( along.add( across ).mul( vH.mul( 0.02 ).mul( shared.wind.strength ) ) ), leafCastMask() );
+	let swayed: V3;
+	if ( legacy ) {
+
+		const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.wind.phase.mul( 1.3 / 1.6 ) );
+		const along = vec3( wind.x, 0, wind.y ).mul( sin( ph.add( g.y.mul( 3 ) ) ) );
+		const across = vec3( wind.y.negate(), 0, wind.x ).mul( cos( ph.mul( 1.3 ).add( g.x.mul( 3 ) ) ).mul( 0.35 ) );
+		swayed = p.add( along.add( across ).mul( vH.mul( 0.02 ).mul( shared.wind.strength ) ) );
+
+	} else {
+
+		// The bush bends from its root (2 cm at the crown in a fair gust); its sprays flutter on
+		// top, each leaf on a phase of its place in the bush, so neighbours move nearly together.
+		const root = attribute<'vec4'>( 'bushRoot', 'vec4' ).xyz;
+		const ph = dot( g, vec3( 4.1, 3.3, 5.7 ) );
+		swayed = setWindDisplacement( mat, ( wind ) => {
+
+			const bend = mainBend( wind, p, root, vH.mul( vH ).mul( 0.022 ), 0.9 );
+			const field = bend.field;
+			const shake = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) ).mul( vH ).mul( 0.006 );
+			const flutter = vec3( 0, wave( wind.flutter, 2.3, ph ), 0 )
+				.add( vec3( field.y.negate(), 0, field.x ).mul( wave( wind.flutter, 3.1, ph.mul( 1.3 ) ).mul( 0.6 ) ) );
+			return bend.position.add( flutter.mul( shake ) );
+
+		}, shared.wind );
+
+	}
+	useRestPoseShadows( mat, p, swayed, leafCastMask() );
 	// Each folded leaf keeps its own highlights and shading across the canopy.
 	mat.normalNode = normalViewGeometry;
 	// deep inside and underneath a bush the light is gone
@@ -342,8 +396,12 @@ export function buildFoliage( veg: Float32Array, shared: Shared ): THREE.Instanc
 	const geo = bushGeometry();
 	const visibility = new Float32Array( sites.length );
 	geo.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( visibility, 1 ) );
+	// each bush's root in world space, where it leans from and reads the gust field
+	const roots = new Float32Array( sites.length * 4 );
+	geo.setAttribute( 'bushRoot', new THREE.InstancedBufferAttribute( roots, 4 ) );
 	const mat = foliageMaterial( shared, map );
 	const mesh = new THREE.InstancedMesh( geo, mat, sites.length );
+	keepLegacyWind( mesh, foliageMaterial( shared, map, true, mat.alphaMap! ) );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
 	const col = new THREE.Color();
@@ -364,6 +422,7 @@ export function buildFoliage( veg: Float32Array, shared: Shared ): THREE.Instanc
 		// Keep proposal collisions and random draws stable, then omit bushes rooted on stone.
 		if ( ! supportsMeadow( s.y, s.ny ) ) return;
 		visibility[ count ] = s.visibility;
+		roots.set( [ pos.x, pos.y, pos.z, 0 ], count * 4 );
 		mesh.setMatrixAt( count, m );
 		mesh.setColorAt( count ++, col );
 
