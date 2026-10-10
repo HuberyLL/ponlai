@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { uniform } from 'three/tsl';
 import {
-	GraphDecl, GraphError, compileGraph, drawsOver, resolveSize, sizeClassKey, sizeScales, targetKey,
+	GraphDecl, GraphError, compileGraph, drawsOver, resolveSize, sizeClassKey, targetKey,
 	type CompiledGraph, type Extents, type OpsTable, type PassBuilder, type PassFlags, type PassKind,
 	type ResourceDecl, type ResourceDesc, type ResourceHandle, type Samples, type Size, type SizeClass, type TargetInfo,
 } from './GraphCompiler.ts';
@@ -63,7 +63,12 @@ export interface PassDef<F> extends PassFlags {
 	run?( f: F, graph: FrameGraph<F> ): void;
 }
 
+/** The pass executing: its name, profiler label and size class, and whether its cost follows the
+ * render's pixel count ('pixel': a pass at the render's size or a share of it) or not ('fixed':
+ * the canvas, a fixed size, a compute or callback pass without a render-sized attachment). */
 export interface CurrentPass { readonly name: string; readonly label: string; readonly size: SizeClass | null; readonly scales: 'pixel' | 'fixed' }
+
+const passScales = ( kind: PassKind, size: SizeClass | null ): 'pixel' | 'fixed' => kind !== 'compute' && size?.of === 'render' ? 'pixel' : 'fixed';
 
 /** What the owners of passes (the sea fog, the upscale) declare on the graph while it is built. */
 export interface GraphResources {
@@ -131,6 +136,11 @@ export class FrameGraph<F = unknown> {
 	 * table's `rewrites` while AttachmentOps was installed (bypassed by a later wrapper, a target
 	 * of another layout, a pass re-begun on its encoder). */
 	opsMismatchFrames = 0;
+	/** Dev counter: compiles after the first (the graph compiles once; a variant switch that
+	 * rebuilt it would count here). */
+	rebuilds = 0;
+	/** The enabled mask of the last frame executed (null: none yet). */
+	lastMask: number | null = null;
 	readonly attachmentOps: AttachmentOps;
 	private readonly options: Required<FrameGraphOptions>;
 	private readonly defs: PassDef<F>[] = [];
@@ -675,7 +685,7 @@ export class FrameGraph<F = unknown> {
 		const compiled = this.compiled ?? this.compile();
 		if ( this.executing ) throw new GraphError( 'execute() re-entered' );
 		this.executing = true;
-		const mask = this.maskFor( f );
+		const mask = this.lastMask = this.maskFor( f );
 		const ops = this.attachmentOps;
 		const table = ops.mode === 'off' ? null : compiled.ops( ops.mode, mask );
 		this.opsExpected = table ? table.rewrites : 0;
@@ -730,7 +740,7 @@ export class FrameGraph<F = unknown> {
 		const def = this.defs[ index ];
 		const target = this.compiled!.targetOf[ index ];
 		const size = decl.size ?? target?.size ?? null;
-		const current: CurrentPass = { name: decl.name, label: decl.label, size, scales: sizeScales( size ) };
+		const current: CurrentPass = { name: decl.name, label: decl.label, size, scales: passScales( decl.kind, size ) };
 		this.currentPass = current;
 		this.bind( index, table );
 		const rt = target ? this.targetOf( index ) : undefined;
@@ -858,18 +868,206 @@ export class FrameGraph<F = unknown> {
 
 	}
 
-	/** A description of the graph for diagnostics. Not yet (M4). */
-	describe(): object {
+	// ---- introspection
 
-		throw new GraphError( 'FrameGraph.describe: not yet' );
+	/** The graph as plain JSON: the passes in order (kind, label, `when`, reads and writes with
+	 * their versions, size class and size, the attachment ops of the last frame's mask), the
+	 * resources (format, samples, persistence, size, bytes) and the totals. For diagnostics, the
+	 * debug view's list and tests; deterministic for a graph and its extents. */
+	describe(): GraphDescription {
+
+		const { passes, resources } = this.decl;
+		const compiled = this.compiled;
+		const live = compiled ? new Set( compiled.live ) : null;
+		const mask = compiled ? this.lastMask ?? compiled.fullMask : 0;
+		const running = compiled ? new Set( compiled.running( mask ) ) : null;
+		const table = compiled ? this.opsTable( mask ) : null;
+		const size = ( cls: SizeClass ) => {
+
+			const s = resolveSize( cls, this.extents );
+			return { width: Math.max( s.width, 1 ), height: Math.max( s.height, 1 ) };
+
+		};
+		const name = ( id: number ) => resources[ id ].name;
+		const describedPasses = passes.map( ( p ): PassDescription => {
+
+			const target = compiled?.targetOf[ p.index ] ?? null;
+			const cls = p.size ?? target?.size ?? null;
+			return {
+				index: p.index, name: p.name, kind: p.kind, label: p.label,
+				culled: live ? ! live.has( p.index ) : false, runs: running ? running.has( p.index ) : false,
+				when: p.whenLabel, jittered: p.jittered, mrt: p.hasMrt,
+				reads: p.reads.map( ( r ) => ( { resource: name( r.resource ), version: r.previous ? 'previous' : r.version, mode: r.mode, optional: r.optional } ) ),
+				writes: p.writes.map( ( w ) => ( { resource: name( w.resource ), version: w.version, load: drawsOver( p, w ) ? 'clear' : 'load', blend: w.blend ?? null } ) ),
+				depth: p.depth ? { resource: name( p.depth.resource ), version: p.depth.version, write: p.depth.write, clear: p.depth.clear } : null,
+				target: target ? ( target.canvas ? 'canvas' : target.key ) : null,
+				size: cls ? sizeClassKey( cls ) : null, actual: cls ? size( cls ) : null, scales: passScales( p.kind, cls ),
+				ops: table?.passes.find( ( o ) => o.index === p.index ) ?? null,
+			};
+
+		} );
+		const describedResources = resources.map( ( r ): ResourceDescription => {
+
+			const p = this.physical[ r.id ];
+			const samples = compiled ? compiled.samplesOf( r ) : this.samplesOfDecl( r );
+			const actual = size( r.desc.size );
+			const owned = ! r.canvas && r.kind !== 'import';
+			// a multisampled colour also has its resolve texture; a ping-pong resource two textures
+			const perTexel = texelBytes( r.kind, r.desc.format, r.desc.type );
+			const copies = ( r.kind === 'color' && samples > 1 ? samples + 1 : samples ) * ( p?.textures.length ?? 1 );
+			return {
+				name: r.name, kind: r.kind, format: constantName( FORMATS, r.desc.format ) ?? ( r.kind === 'depth' ? 'Depth' : null ), type: constantName( TYPES, r.desc.type ),
+				samples, persistent: r.persistent, pingPong: r.pingPong, imported: ! owned, canvas: r.canvas,
+				historyValid: r.persistent || r.pingPong ? p?.valid ?? false : null,
+				size: sizeClassKey( r.desc.size ), actual,
+				versions: r.producers.map( ( i ) => i < 0 ? null : passes[ i ].name ),
+				bytes: owned ? actual.width * actual.height * perTexel * copies : 0,
+				debugView: this.decl.debugView === r.id,
+			};
+
+		} );
+		const signature = JSON.stringify( [
+			this.options.sceneSamples, this.attachmentOps.mode,
+			describedPasses.filter( ( p ) => ! p.culled ).map( ( p ) => [ p.name, p.kind, p.when, p.target, p.size ] ),
+		] );
+		return {
+			ready: compiled !== null && this.extentsSet,
+			variant: `s${ this.options.sceneSamples }-${ this.attachmentOps.mode }-${ fnv1a( signature ) }`,
+			sceneSamples: this.options.sceneSamples, opsMode: this.attachmentOps.mode, mask,
+			extents: { render: { ...this.extents.render }, canvas: { ...this.extents.canvas } },
+			passes: describedPasses,
+			resources: describedResources,
+			culled: compiled ? [ ...compiled.culled ] : [],
+			copies: this.decl.copies.map( ( c ) => ( { from: c.src.name, to: c.dst.name } ) ),
+			jitterSpan: compiled?.jitterSpan ? compiled.jitterSpan.map( ( i ) => passes[ i ].name ) as [ string, string ] : null,
+			bytes: describedResources.reduce( ( sum, r ) => sum + r.bytes, 0 ),
+			rebuilds: this.rebuilds,
+		};
 
 	}
 
-	/** The graph in Graphviz's dot language. Not yet (M4). */
+	/** The graph in Graphviz's dot language (`dot -Tsvg`): passes as boxes in order (dashed when
+	 * culled, their `when` beside the label), each resource version as an ellipse, writes from a
+	 * pass to the version it makes and reads from a version to its pass (dashed: optional; bold:
+	 * the multisampled samples; dotted: a depth test without writes). */
 	dot(): string {
 
-		throw new GraphError( 'FrameGraph.dot: not yet' );
+		const d = this.describe();
+		// a quoted ID: quotes and backslashes escaped, line breaks as dot's own \n
+		const q = ( text: string ) => `"${ text.replace( /["\\]/g, '\\$&' ).replace( /\n/g, '\\n' ) }"`;
+		const lines = [ 'digraph FrameGraph {', '\trankdir=LR;', '\tnode [fontname="Helvetica", fontsize=10];', '\tedge [fontname="Helvetica", fontsize=9];' ];
+		const resources = new Map( d.resources.map( ( r ) => [ r.name, r ] ) );
+		const versions = new Set<string>();
+		const version = ( resource: string, v: number | 'previous' ) => {
+
+			const id = `${ resource }@${ v }`;
+			if ( ! versions.has( id ) ) {
+
+				versions.add( id );
+				const r = resources.get( resource )!;
+				const what = [ r.format ?? r.kind, r.type, r.samples > 1 ? `x${ r.samples }` : null, r.persistent && ! r.canvas ? 'persistent' : null, r.pingPong ? 'ping-pong' : null ].filter( Boolean ).join( ' ' );
+				lines.push( `\t${ q( id ) } [shape=ellipse, label=${ q( `${ resource } ${ v === 'previous' ? 'previous' : `v${ v }` }\n${ r.size }${ what ? ` ${ what }` : '' }` ) }${ r.canvas ? ', style=bold' : '' }];` );
+
+			}
+			return q( id );
+
+		};
+		for ( const p of d.passes ) {
+
+			const pass = q( `pass:${ p.name }` );
+			const label = `${ p.index }. ${ p.name } (${ p.kind })\n${ p.label }${ p.when ? `\nwhen ${ p.when }` : '' }`;
+			lines.push( `\t${ pass } [shape=box, label=${ q( label ) }${ p.culled ? ', style=dashed' : '' }];` );
+			for ( const r of p.reads ) lines.push( `\t${ version( r.resource, r.version ) } -> ${ pass }${ r.mode === 'samples' ? ' [style=bold' + ( r.optional ? ', color=gray40' : '' ) + ']' : r.optional ? ' [style=dashed]' : '' };` );
+			if ( p.depth && ! p.depth.write ) lines.push( `\t${ version( p.depth.resource, p.depth.version ) } -> ${ pass } [style=dotted];` );
+			for ( const w of p.writes ) lines.push( `\t${ pass } -> ${ version( w.resource, w.version ) }${ w.load === 'load' ? ' [label="load"]' : '' };` );
+			if ( p.depth?.write ) lines.push( `\t${ pass } -> ${ version( p.depth.resource, p.depth.version ) } [label="depth"];` );
+
+		}
+		for ( const c of d.copies ) lines.push( `\t${ q( `${ c.from }@${ resources.get( c.from )!.versions.length - 1 }` ) } -> ${ q( `${ c.to }@0` ) } [label="frame-end copy", style=dashed];` );
+		lines.push( '}' );
+		return lines.join( '\n' );
 
 	}
+}
+
+export interface PassDescription {
+	index: number; name: string; kind: PassKind; label: string;
+	// not live (nothing it writes is read), and whether it ran in the last frame's mask
+	culled: boolean; runs: boolean;
+	when: string | null; jittered: boolean; mrt: boolean;
+	reads: { resource: string; version: number | 'previous'; mode: string; optional: boolean }[];
+	writes: { resource: string; version: number; load: 'clear' | 'load'; blend: string | null }[];
+	depth: { resource: string; version: number; write: boolean; clear: boolean } | null;
+	target: string | null; size: string | null; actual: Size | null; scales: 'pixel' | 'fixed';
+	ops: OpsTable[ 'passes' ][ number ] | null;
+}
+
+export interface ResourceDescription {
+	name: string; kind: string; format: string | null; type: string | null; samples: number;
+	persistent: boolean; pingPong: boolean; imported: boolean; canvas: boolean;
+	// a history's validity (persistent and ping-pong resources), else null
+	historyValid: boolean | null;
+	size: string; actual: Size;
+	// the pass that writes each version (null: before the frame)
+	versions: ( string | null )[];
+	// the memory of its textures (multisampled samples, resolve, both ping-pong textures); 0 for
+	// what the graph does not own (the canvas, imports)
+	bytes: number;
+	debugView: boolean;
+}
+
+export interface GraphDescription {
+	ready: boolean;
+	// the graph's structure as a short key: scene samples, ops mode and a hash of its live passes
+	// (names, kinds, predicates, targets and size classes)
+	variant: string;
+	sceneSamples: number; opsMode: string; mask: number;
+	extents: Extents;
+	passes: PassDescription[];
+	resources: ResourceDescription[];
+	culled: string[];
+	copies: { from: string; to: string }[];
+	jitterSpan: [ string, string ] | null;
+	bytes: number;
+	rebuilds: number;
+}
+
+// three's format and type constants by name, for descriptions
+const FORMATS: Record<string, number> = {
+	RGBA: THREE.RGBAFormat, RGB: THREE.RGBFormat, RG: THREE.RGFormat, Red: THREE.RedFormat,
+	RGBAInteger: THREE.RGBAIntegerFormat, RGInteger: THREE.RGIntegerFormat, RedInteger: THREE.RedIntegerFormat,
+	Depth: THREE.DepthFormat, DepthStencil: THREE.DepthStencilFormat,
+};
+const TYPES: Record<string, number> = {
+	UnsignedByte: THREE.UnsignedByteType, Byte: THREE.ByteType, HalfFloat: THREE.HalfFloatType, Float: THREE.FloatType,
+	UnsignedInt: THREE.UnsignedIntType, Int: THREE.IntType, UnsignedShort: THREE.UnsignedShortType, Short: THREE.ShortType,
+};
+
+function constantName( table: Record<string, number>, value: string | number | undefined ): string | null {
+
+	if ( value === undefined ) return null;
+	if ( typeof value === 'string' ) return value;
+	for ( const key in table ) if ( table[ key ] === value ) return key;
+	return String( value );
+
+}
+
+// bytes per texel of a format and type (three's defaults: RGBA, unsigned bytes; float depth)
+function texelBytes( kind: string, format: string | number | undefined, type: string | number | undefined ): number {
+
+	const f = constantName( FORMATS, format ) ?? ( kind === 'depth' ? 'Depth' : 'RGBA' );
+	const t = constantName( TYPES, type ) ?? ( kind === 'depth' ? 'Float' : 'UnsignedByte' );
+	const channels = f.startsWith( 'RGBA' ) ? 4 : f.startsWith( 'RGB' ) ? 3 : f.startsWith( 'RG' ) ? 2 : 1;
+	const bytes = t === 'Float' || t === 'Int' || t === 'UnsignedInt' ? 4 : t === 'HalfFloat' || t === 'Short' || t === 'UnsignedShort' ? 2 : 1;
+	return f === 'DepthStencil' ? 4 : channels * bytes;
+
+}
+
+// a short stable hash (FNV-1a, 32 bits, hex)
+function fnv1a( text: string ): string {
+
+	let h = 0x811c9dc5;
+	for ( let i = 0; i < text.length; i ++ ) h = Math.imul( h ^ text.charCodeAt( i ), 0x01000193 );
+	return ( h >>> 0 ).toString( 16 ).padStart( 8, '0' );
 
 }

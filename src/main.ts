@@ -970,6 +970,32 @@ function steerRenderScale( rawDt: number ): void {
 
 }
 
+// The frame graph's state for the diagnostics: whether it is compiled and sized, its variant, its
+// passes (declared, culled, and run or skipped in the last frame), its graph-owned textures and
+// their memory, and its dev counters.
+function graphDiagnostics(): Record<string, unknown> {
+
+	const g = pipeline.graph;
+	const d = g.describe();
+	const run = d.passes.filter( ( p ) => p.runs ).length;
+	return {
+		ready: d.ready,
+		variant: d.variant,
+		passes: d.passes.length,
+		culled: d.culled,
+		targets: d.resources.filter( ( r ) => ! r.imported ).map( ( r ) => ( { name: r.name, w: r.actual.width, h: r.actual.height, format: r.format, type: r.type, samples: r.samples } ) ),
+		bytes: d.bytes,
+		rebuilds: d.rebuilds,
+		passesRun: run,
+		passesSkipped: d.passes.length - d.culled.length - run,
+		opsApplied: g.opsApplied,
+		opsExpected: g.opsExpected,
+		opsMismatchFrames: g.opsMismatchFrames,
+		sizeErrors: g.sizeErrors,
+	};
+
+}
+
 function diagnostics( now = false ): void {
 
 	if ( ! DEBUG || ( ! now && frame % 30 !== 1 ) ) return;
@@ -1009,16 +1035,11 @@ function diagnostics( now = false ): void {
 		wetness: + shared.wetness.value.toFixed( 3 ),
 		windSpeed: + wind.speed.toFixed( 3 ),
 		cameraMode: cameraSettings.mode,
-		// the scene's anti-aliasing, the pipelines created so far and the frame graph's dev
-		// counters (its description comes later), for the clip and first-use tools
+		// the scene's anti-aliasing, the pipelines created so far and the frame graph's state and
+		// dev counters, for the clip and first-use tools
 		aa: SCENE_SAMPLES === 1 ? 'off' : 'msaa',
 		pipelines: pipelineCount?.total ?? 0,
-		graph: {
-			opsApplied: pipeline.graph.opsApplied,
-			opsExpected: pipeline.graph.opsExpected,
-			opsMismatchFrames: pipeline.graph.opsMismatchFrames,
-			sizeErrors: pipeline.graph.sizeErrors,
-		},
+		graph: graphDiagnostics(),
 	};
 
 }
