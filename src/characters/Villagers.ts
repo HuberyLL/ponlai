@@ -4,6 +4,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { makeVertexColourCharacterMaterial, KIND } from './CharacterMaterial.ts';
 import { CharacterShadow } from './CharacterShadow.ts';
 import { pointedEars } from './Ears.ts';
+import { reproportion, PROPORTIONS, type Proportions } from './Proportions.ts';
 import type { Shared } from '../shared.ts';
 
 // Islanders assembled from modular low-poly parts (Ultimate Modular Characters by Quaternius,
@@ -75,8 +76,11 @@ function paintPart( mesh: THREE.SkinnedMesh, paint: PartSpec[ 'paint' ], hands?:
 
 }
 
-/** Assemble parts on the rig of the first part's file, with that file's animation clips. */
-export async function loadVillager( base: string, parts: PartSpec[], shared: Shared ): Promise<Villager> {
+/**
+ * Assemble parts on the rig of the first part's file, with that file's animation clips, and
+ * re-proportion the figure (Proportions.ts; the kit's own proportions by default).
+ */
+export async function loadVillager( base: string, parts: PartSpec[], shared: Shared, proportions: Proportions = PROPORTIONS.stock ): Promise<Villager> {
 
 	const loader = new GLTFLoader();
 	const files = new Map<string, GLTF>();
@@ -115,6 +119,7 @@ export async function loadVillager( base: string, parts: PartSpec[], shared: Sha
 	mesh.name = 'villager';
 	parent.add( mesh );
 	mesh.bind( template.skeleton, template.bindMatrix );
+	reproportion( mesh, rig.animations, proportions );
 	mesh.castShadow = false;
 	mesh.receiveShadow = true;
 	mesh.frustumCulled = false;
@@ -190,6 +195,36 @@ export class Villagers {
 		this.length = this.path.getLength();
 		this.group.add( walker.group );
 		walker.actions.Idle_Neutral.play();
+
+	}
+
+	/** Swap the walking figure (another build of it), keeping its place on the loop and its clips' phase. */
+	setWalker( next: Villager ): void {
+
+		const old = this.walker;
+		for ( const name in old.actions ) {
+
+			const from = old.actions[ name ], to = next.actions[ name ];
+			if ( ! to || ! from.isRunning() ) continue;
+			to.reset().play();
+			to.time = from.time;
+			to.setEffectiveWeight( from.getEffectiveWeight() );
+
+		}
+		next.group.position.copy( old.group.position );
+		next.group.rotation.copy( old.group.rotation );
+		this.group.remove( old.group );
+		this.group.add( next.group );
+		old.mixer.stopAllAction();
+		old.group.traverse( ( o ) => {
+
+			const mesh = o as THREE.SkinnedMesh;
+			if ( ! mesh.isSkinnedMesh ) return;
+			mesh.geometry.dispose();
+			( mesh.material as THREE.Material ).dispose();
+
+		} );
+		( this as { walker: Villager } ).walker = next;
 
 	}
 

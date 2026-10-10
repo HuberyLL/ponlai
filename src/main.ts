@@ -37,6 +37,7 @@ import { RefractedSun } from './lighting/RefractedSun.ts';
 import { islandSurfaceHeight, ISLAND_TOP } from './world/WorldShapes.ts';
 import { WALK_LOOP, walkLoopDistance } from './world/WalkLoop.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
+import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook, KIND } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
@@ -440,13 +441,17 @@ const umc = ( name: string ) => `/artifacts/assets/quaternius/ultimate-modular-c
 // an undyed linen shirt, muted warm brown trousers and dark leather shoes, all repainted in the
 // island's palette (sRGB, as they should read in sunlight). The kit's pockets, trims and two-tone
 // panels are painted over in one colour.
-const islander = await loadVillager( umc( 'Farmer' ), [
+// Its proportions (`islander` URL option, GUI Islander folder) are the medium build of
+// Proportions.ts by default: chunkier and stylised, as the people layer of the art asks; the kit's
+// own (`stock`) and the other builds stay selectable for comparison.
+const islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : 'medium' };
+const buildIslander = ( name: ProportionName ) => loadVillager( umc( 'Farmer' ), [
 	{ from: umc( 'Casual_2' ), part: 'Casual2_Head', paint: { Skin: [ '#e2a882', KIND.skin ], Skin_Darker: [ '#e2a882', KIND.skin ], Eyebrows: [ '#4a2f22', KIND.hair ], Hair: [ '#5a3a26', KIND.hair ], Eye: [ '#2a1d18', KIND.cloth ] } },
 	{ from: umc( 'Adventurer' ), part: 'Adventurer_Body', paint: { Skin: [ '#e2a882', KIND.skin ], Green: [ '#dccfae', KIND.cloth ], LightGreen: [ '#dccfae', KIND.cloth ] }, hands: [ '#e2a882', KIND.skin ] },
 	{ from: umc( 'Adventurer' ), part: 'Adventurer_Legs', paint: { Brown: [ '#634a36', KIND.cloth ], Brown2: [ '#634a36', KIND.cloth ] } },
 	{ from: umc( 'Farmer' ), part: 'Farmer_Feet', paint: { Brown: [ '#4a3626', KIND.leather ], Brown2: [ '#2e241c', KIND.leather ] } },
-], shared );
-const characters = new Villagers( islander, WALK_LOOP, islandSurfaceHeight, characterShadow );
+], shared, PROPORTIONS[ name ] );
+const characters = new Villagers( await buildIslander( islanderBuild.proportions ), WALK_LOOP, islandSurfaceHeight, characterShadow );
 scene.add( characters.group );
 mark( 'villagers' );
 
@@ -653,6 +658,7 @@ waveF.add( fft.params, 'windDirection', - 180, 180, 1 ).onFinishChange( rebuild 
 waveF.add( fft.params, 'amplitude', 0, 3, 0.01 ).onFinishChange( rebuild );
 waveF.add( fft.params, 'choppiness', 0, 1.5, 0.01 ).onFinishChange( rebuild );
 const islanderF = gui.addFolder( 'Islander' );
+islanderF.add( islanderBuild, 'proportions', PROPORTION_NAMES ).onChange( async ( name: ProportionName ) => characters.setWalker( await buildIslander( name ) ) );
 islanderF.add( characterLook.albedo, 'value', 0.05, 1, 0.01 ).name( 'palette exposure' );
 islanderF.add( characterLook.sunGain, 'value', 0, 2, 0.01 ).name( 'sun' );
 islanderF.add( characterLook.fillGain, 'value', 0, 10, 0.05 ).name( 'shade fill' );
