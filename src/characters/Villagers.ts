@@ -198,6 +198,36 @@ export class Villagers {
 
 	}
 
+	/** Swap the walking figure (another build of it), keeping its place on the loop and its clips' phase. */
+	setWalker( next: Villager ): void {
+
+		const old = this.walker;
+		for ( const name in old.actions ) {
+
+			const from = old.actions[ name ], to = next.actions[ name ];
+			if ( ! to || ! from.isRunning() ) continue;
+			to.reset().play();
+			to.time = from.time;
+			to.setEffectiveWeight( from.getEffectiveWeight() );
+
+		}
+		next.group.position.copy( old.group.position );
+		next.group.rotation.copy( old.group.rotation );
+		this.group.remove( old.group );
+		this.group.add( next.group );
+		old.mixer.stopAllAction();
+		old.group.traverse( ( o ) => {
+
+			const mesh = o as THREE.SkinnedMesh;
+			if ( ! mesh.isSkinnedMesh ) return;
+			mesh.geometry.dispose();
+			( mesh.material as THREE.Material ).dispose();
+
+		} );
+		( this as { walker: Villager } ).walker = next;
+
+	}
+
 	/** Distance along the loop at time t: walk 9 s, stand 4 s. */
 	private schedule( t: number ): { s: number; walking: boolean } {
 
