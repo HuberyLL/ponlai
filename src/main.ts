@@ -42,6 +42,7 @@ import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook, KIND } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
+import { SCENE_SAMPLES } from './post/SceneSamples.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
 import { installWindVariants } from './world/WindVariants.ts';
 
@@ -92,6 +93,8 @@ if ( ( renderer.backend as unknown as { isWebGPUBackend?: boolean } ).isWebGPUBa
 // three submits every pass on its own; the frame reaches the GPU in a few submits instead
 // (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
 const submitBatch = new SubmitBatch( ( renderer.backend as unknown as { device: ConstructorParameters<typeof SubmitBatch>[ 0 ] } ).device, { debug: DEBUG } );
+// every render and compute pipeline the renderer creates, counted for the diagnostics (debug only)
+const pipelineCount = DEBUG ? ( await import( './debug/PipelineCounter.ts' ) ).installPipelineCounter( renderer ) : null;
 
 // The scene renders at a pixel ratio set by the quality tier (see RenderScale.ts), at most the
 // display's and DPR_CAP; the canvas matches the display and the frame graph upscales to it.
@@ -1003,6 +1006,11 @@ function diagnostics(): void {
 		wetness: + shared.wetness.value.toFixed( 3 ),
 		windSpeed: + wind.speed.toFixed( 3 ),
 		cameraMode: cameraSettings.mode,
+		// the scene's anti-aliasing, the pipelines created so far and the frame graph (not yet
+		// introspected), for the clip and first-use tools
+		aa: SCENE_SAMPLES === 1 ? 'off' : 'msaa',
+		pipelines: pipelineCount?.total ?? 0,
+		graph: null,
 	};
 
 }
@@ -1115,5 +1123,5 @@ document.addEventListener( 'visibilitychange', () => {
 	}
 
 } );
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__SOOMI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, loop, pipelines: pipelineCount, flags: debugFlags,
 	quality, dynamicResolution, pacer, submitBatch, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
