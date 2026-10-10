@@ -234,7 +234,7 @@ export const checks = [
 
 	} ],
 
-	[ 'warm: a chain\'s nested passes compile a call depth down; what the walker cannot reach is primed once the extents are set', async () => {
+	[ 'warm: a chain\'s nested passes compile a call depth down; what the walker cannot reach is primed once the extents are set, if it keeps no state', async () => {
 
 		const r = mockRenderer();
 		const g = new FrameGraph( r, { sceneSamples: 1 } );
@@ -242,7 +242,8 @@ export const checks = [
 		let canvas = g.import( 'canvas', null, CANVAS );
 		const inner = new THREE.RenderTarget( 1, 1 );
 		const rtt = { isRTTNode: true, type: 'RTTNode', _quadMesh: quadOf( 'rtt' ), renderTarget: inner };
-		const stranger = { type: 'StrangeNode' };
+		// three's FSR1Node: out of the walker's reach, known to keep nothing between frames
+		const stranger = { type: 'FSR1Node' };
 		const chainQuad = quadOf( 'display', [ rtt ] );
 		g.addPass( 'display', 'quad', ( b ) => {
 
@@ -271,7 +272,32 @@ export const checks = [
 		g.setExtents( extents( 64, 32 ) );
 		await warming;
 		assert.equal( rendered, 1, 'the pass with a node the walker does not know is primed' );
-		assert.deepEqual( g.warmStats.primed, [ 'output (StrangeNode)' ] );
+		assert.deepEqual( g.warmStats.primed, [ 'output (FSR1Node)' ] );
+
+		// a node that may keep state of its own (a history) is primed only when the pass's owner
+		// resets what priming wrote
+		for ( const invalidate of [ false, true ] ) {
+
+			const r2 = mockRenderer();
+			const g2 = new FrameGraph( r2, { sceneSamples: 1 } );
+			let canvas2 = g2.import( 'canvas', null, CANVAS );
+			const quad = quadOf( 'history', [ { type: 'TRAANode' } ] );
+			let drawn = 0, reset = 0;
+			quad.render = function ( renderer ) { if ( renderer === r2 ) drawn ++; else THREE.QuadMesh.prototype.render.call( this, renderer ); };
+			g2.addPass( 'output', 'quad', ( b ) => {
+
+				canvas2 = b.write( canvas2 );
+				return { label: 'output', quad, ...( invalidate ? { invalidate: () => { reset ++; } } : {} ) };
+
+			} );
+			g2.compile();
+			g2.setExtents( extents( 64, 32 ) );
+			await g2.warm( {} );
+			assert.equal( drawn, invalidate ? 1 : 0, invalidate ? 'primed, its owner invalidating it' : 'a node that may keep state is not primed' );
+			assert.equal( reset, invalidate ? 1 : 0 );
+			if ( ! invalidate ) assert.match( g2.warmStats.skipped.join( ';' ), /output: not primed, it may keep state \(TRAANode\)/ );
+
+		}
 
 	} ],
 

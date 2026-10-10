@@ -148,6 +148,11 @@ interface Physical {
 
 const filterOf = ( f: ResourceDesc[ 'filter' ] ) => f === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
 
+// Nodes rendering in `updateBefore` that keep nothing from one frame to the next, so priming
+// (rendering a pass once at startup) leaves no stale state in them: FSR1Node (`post=three-fsr`),
+// and the bloom and rtt() passes the walker reaches anyway.
+const STATELESS_NODES = new Set( [ 'FSR1Node', 'BloomNode', 'RTTNode' ] );
+
 export class FrameGraph<F = unknown> implements LatentRegistry {
 
 	readonly renderer: THREE.WebGPURenderer;
@@ -938,7 +943,8 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 	 * kernels. A chain with a pass out of the compiler's reach is primed instead: rendered once at
 	 * the real extents (once they are set), whatever its `when`. Priming never leaves a persistent
 	 * resource written: a primed pass that writes one has its history reset (`resetHistory`) and
-	 * its owner's `invalidate` called, and is not primed when it has none. The graph's option
+	 * its owner's `invalidate` called, and is not primed when it has none; nor is one whose
+	 * unreached nodes may keep state of their own (only FSR1Node is known not to). The graph's option
 	 * `prime: false` (`fgPrime=0`) leaves such passes to their first use. A compile that fails is
 	 * reported (`warmStats.failed`, a warning) and left to the pass's first frame. Runs once; later
 	 * calls return the same promise. */
@@ -1155,6 +1161,16 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 			if ( persistent.length > 0 && ! def.invalidate ) {
 
 				stats.skipped.push( `${ decl.name }: not primed, it writes ${ persistent.map( ( res ) => res.name ).join( ', ' ) } (${ why.join( ', ' ) })` );
+				continue;
+
+			}
+			// What the walker could not reach may keep state of its own that the graph does not see
+			// (a node's history targets: TRAANode, AfterImageNode): prime only nodes known to keep
+			// none, or a pass whose owner resets what priming wrote (`invalidate`).
+			const unknown = why.filter( ( reason ) => ! STATELESS_NODES.has( reason.replace( / \(not set up\)$/, '' ) ) );
+			if ( unknown.length > 0 && ! def.invalidate ) {
+
+				stats.skipped.push( `${ decl.name }: not primed, it may keep state (${ unknown.join( ', ' ) })` );
 				continue;
 
 			}
