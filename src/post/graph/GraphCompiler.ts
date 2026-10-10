@@ -154,6 +154,15 @@ export function sizeClassKey( s: SizeClass ): string {
 
 }
 
+/** The key of a render target: its colour attachments in order and its depth attachment, by
+ * resource name. The compiler makes one target per key; FrameGraph.renderTarget makes the same
+ * target ahead of the passes that will draw into it. */
+export function targetKey( colors: readonly string[], depth: string | null ): string {
+
+	return `${ colors.join( '+' ) }|${ depth ?? '-' }`;
+
+}
+
 /** The pixel size of a class at the given extents, with the rounding the passes had before. */
 export function resolveSize( s: SizeClass, e: Extents ): Size {
 
@@ -580,7 +589,7 @@ export class CompiledGraph {
 			const depth = p.depth ? p.depth.resource : null;
 			if ( colors.length === 0 && depth === null ) continue;
 			const first = resources[ colors[ 0 ] ?? depth! ];
-			const key = `${ colors.map( ( c ) => resources[ c ].name ).join( '+' ) }|${ depth === null ? '-' : resources[ depth ].name }`;
+			const key = targetKey( colors.map( ( c ) => resources[ c ].name ), depth === null ? null : resources[ depth ].name );
 			let t = byKey.get( key );
 			if ( ! t ) {
 

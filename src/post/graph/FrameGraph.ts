@@ -1,9 +1,9 @@
 import * as THREE from 'three/webgpu';
 import { uniform } from 'three/tsl';
 import {
-	GraphDecl, GraphError, compileGraph, drawsOver, resolveSize, sizeClassKey, sizeScales,
+	GraphDecl, GraphError, compileGraph, drawsOver, resolveSize, sizeClassKey, sizeScales, targetKey,
 	type CompiledGraph, type Extents, type OpsTable, type PassBuilder, type PassFlags, type PassKind,
-	type ResourceDesc, type ResourceHandle, type Samples, type SizeClass, type TargetInfo,
+	type ResourceDecl, type ResourceDesc, type ResourceHandle, type Samples, type Size, type SizeClass, type TargetInfo,
 } from './GraphCompiler.ts';
 import { AttachmentOps } from './AttachmentOps.ts';
 
@@ -18,20 +18,30 @@ import { AttachmentOps } from './AttachmentOps.ts';
 // Textures exist from their declaration (TSL nodes bind them while the passes are built), at 1x1
 // until `setExtents` sizes them. Each distinct tuple of attachments a pass writes is one
 // THREE.RenderTarget whose textures are the resources' own; a depth resource always lives in a
-// render target (a DepthTexture outside one takes the renderer's sample count).
+// render target (a DepthTexture outside one takes the renderer's sample count). `renderTarget`
+// makes the target of a tuple ahead of the passes (code that still binds its targets by hand,
+// probes and warm-ups); the passes that later draw into the same tuple use that target. Every
+// target the graph makes follows its size class through `setExtents`, and passes the graph does
+// not own (three's rtt and bloom chains inside a chain pass) follow it through `onResize`.
 //
 // A texture may sit in several of those render targets (a resource written alone by one pass and
 // with a velocity attachment by another). In three r186 `RenderTarget.setSize` disposes the target,
 // which destroys every texture in it, and each target's first `updateRenderTarget` after that
 // recreates all its textures (its own record of the size is gone): a second target's first use in
-// a frame would wipe what the first had drawn into the shared texture. So after any resize every
-// graph target is initialised, in declaration order, before the next frame's first pass draws;
-// the recreations then happen while nothing holds content. A depth texture's size is set by the
-// graph itself, since three resizes it only through the one target that owns it.
+// a frame would wipe what the first had drawn into the shared texture. So after any resize the
+// targets that share a texture are initialised, in declaration order, before the next frame's
+// first pass draws; the recreations then happen while nothing holds content. So are the targets
+// no pass draws into (a frame-end copy's destination, a texture written by storage), whose first
+// use is not a draw. Any other target initialises itself when a pass first draws into it, as
+// before the graph: a pass that runs only now and then (the sea fog, the upscale) allocates
+// nothing until it does. A depth texture's size is set by the graph itself, since three resizes it
+// only through the one target that owns it.
 
 export type { SizeClass, ResourceHandle, ResourceDesc, PassKind } from './GraphCompiler.ts';
 
 type Uniform2 = THREE.UniformNode<'vec2', THREE.Vector2>;
+// a resize hook and the size it last had (null: not called yet)
+type ResizeHook = { size: SizeClass; hook: ( width: number, height: number ) => void; last: Size | null };
 
 /** What a pass's setup returns: its flags and its executor. */
 export interface PassDef<F> extends PassFlags {
@@ -54,6 +64,15 @@ export interface PassDef<F> extends PassFlags {
 }
 
 export interface CurrentPass { readonly name: string; readonly label: string; readonly size: SizeClass | null; readonly scales: 'pixel' | 'fixed' }
+
+/** What the owners of passes (the sea fog, the upscale) declare on the graph while it is built. */
+export interface GraphResources {
+	color( name: string, desc: ResourceDesc, persistent?: boolean ): ResourceHandle;
+	renderTarget( colors: readonly ResourceHandle[], depth?: ResourceHandle | null ): THREE.RenderTarget;
+	texture( h: ResourceHandle, parity?: 0 | 1 ): THREE.Texture;
+	extent( size: SizeClass ): Uniform2;
+	onResize( size: SizeClass, hook: ( width: number, height: number ) => void ): void;
+}
 
 export interface FrameGraphHooks<F> {
 	onPassBegin?( pass: CurrentPass, f: F ): void;
@@ -102,7 +121,11 @@ export class FrameGraph<F = unknown> {
 	currentPass: CurrentPass | null = null;
 	/** Dev counter: render pass descriptors whose store or resolve was rewritten in the last frame. */
 	opsApplied = 0;
-	/** Dev counter: executed passes whose target did not match its size class. */
+	/** The descriptors the last frame's ops table rewrites (`opsApplied` equals it while
+	 * AttachmentOps is installed and nothing bypasses it). */
+	opsExpected = 0;
+	/** Dev counter: targets found at a size other than their class's (an executed pass's, or any
+	 * graph target's in `validateSizes`). */
 	sizeErrors = 0;
 	/** Dev counter: frames whose rewritten descriptors (`opsApplied`) differed from the compiled
 	 * table's `rewrites` while AttachmentOps was installed (bypassed by a later wrapper, a target
@@ -115,6 +138,13 @@ export class FrameGraph<F = unknown> {
 	private compiled: CompiledGraph | null = null;
 	// per target key: its render target(s), one per ping-pong parity
 	private readonly targets = new Map<string, THREE.RenderTarget[]>();
+	// every render target the graph made, with the size class it follows
+	private readonly targetSizes = new Map<THREE.RenderTarget, SizeClass>();
+	// the targets of resources no live pass draws into (initialised after every resize)
+	private readonly soloTargets = new Set<THREE.RenderTarget>();
+	// passes the graph does not own, sized through onResize (`last`: the size each last had)
+	private readonly resizeHooks: ResizeHook[] = [];
+	private extentsSet = false;
 	private extents: Extents = { render: { width: 1, height: 1 }, canvas: { width: 1, height: 1 } };
 	private readonly extentNodes = new Map<string, { size: SizeClass; node: Uniform2 }>();
 	private saved: {
@@ -226,6 +256,7 @@ export class FrameGraph<F = unknown> {
 	previous( h: ResourceHandle ): ResourceHandle {
 
 		this.mutable( h.name );
+		if ( this.physical[ h.resource ]?.owners.some( Boolean ) ) throw new GraphError( `previous( '${ h.name }' ): a render target already holds it (declare previous() before renderTarget())` );
 		const prev = this.decl.previous( h );
 		const p = this.physical[ h.resource ];
 		if ( p.textures.length === 1 ) {
@@ -278,6 +309,77 @@ export class FrameGraph<F = unknown> {
 
 	}
 
+	/** Calls `hook` with a size class's pixel size whenever `setExtents` changes it (and once
+	 * extents are first set): for render targets the graph does not own, such as three's rtt and
+	 * bloom passes inside a chain, so they follow the graph's extents with its rounding. */
+	onResize( size: SizeClass, hook: ( width: number, height: number ) => void ): void {
+
+		const entry: ResizeHook = { size, hook, last: null };
+		this.resizeHooks.push( entry );
+		if ( this.extentsSet ) this.runHook( entry );
+
+	}
+
+	private runHook( entry: ResizeHook ): void {
+
+		const s = resolveSize( entry.size, this.extents );
+		if ( entry.last && entry.last.width === s.width && entry.last.height === s.height ) return;
+		entry.last = s;
+		entry.hook( s.width, s.height );
+
+	}
+
+	/** The render target that holds these attachments: colour resources in attachment order and
+	 * a depth resource, of one size class and sample count, none ping-pong or imported. It is the
+	 * target the passes drawing into the same attachments use; made now if no pass or earlier call
+	 * made it, for code that binds its targets by hand, probes and warm-ups. */
+	renderTarget( colors: readonly ResourceHandle[], depth: ResourceHandle | null = null ): THREE.RenderTarget {
+
+		const decls = colors.map( ( h ) => this.decl.get( h ) );
+		const depthDecl = depth ? this.decl.get( depth ) : null;
+		const all = depthDecl ? [ ...decls, depthDecl ] : decls;
+		const what = `renderTarget( ${ all.map( ( r ) => `'${ r.name }'` ).join( ', ' ) } )`;
+		if ( decls.length === 0 ) throw new GraphError( `${ what }: no colour attachment (three's render targets carry one)` );
+		if ( decls.some( ( r ) => r.kind !== 'color' ) || ( depthDecl && depthDecl.kind !== 'depth' ) ) throw new GraphError( `${ what }: colour resources, then a depth resource` );
+		if ( all.some( ( r ) => r.pingPong ) ) throw new GraphError( `${ what }: a ping-pong resource has a target per parity` );
+		const key = targetKey( decls.map( ( r ) => r.name ), depthDecl ? depthDecl.name : null );
+		const made = this.targets.get( key );
+		if ( made ) return made[ 0 ];
+		const size = all[ 0 ].desc.size, samples = this.samplesOfDecl( all[ 0 ] );
+		for ( const r of all ) {
+
+			if ( sizeClassKey( r.desc.size ) !== sizeClassKey( size ) ) throw new GraphError( `${ what }: attachments of different size classes` );
+			if ( this.samplesOfDecl( r ) !== samples ) throw new GraphError( `${ what }: attachments of different sample counts` );
+
+		}
+		const rt = this.makeTarget( decls.map( ( r ) => this.physical[ r.id ].textures[ 0 ] ), depthDecl ? this.physical[ depthDecl.id ].textures[ 0 ] as THREE.DepthTexture : null, samples );
+		this.targets.set( key, [ rt ] );
+		this.targetSizes.set( rt, size );
+		for ( const r of all ) this.physical[ r.id ].owners[ 0 ] ??= rt;
+		if ( this.sizeTarget( rt, size ) ) this.needsInit = true;
+		return rt;
+
+	}
+
+	/** The render target that holds a resource (the first that took it: a pass's, or one made by
+	 * `renderTarget`); the current or previous parity's for a ping-pong resource. */
+	target( h: ResourceHandle ): THREE.RenderTarget {
+
+		const p = this.physical[ h.resource ];
+		const parity = p && p.textures.length > 1 ? ( h.previous ? 1 - this.parityOf( h ) : this.parityOf( h ) ) : 0;
+		const rt = p?.owners[ parity ];
+		if ( ! rt ) throw new GraphError( `'${ h.name }' has no render target yet (compile the graph, or make one with renderTarget())` );
+		return rt;
+
+	}
+
+	private samplesOfDecl( r: ResourceDecl ): number {
+
+		const s = r.desc.samples ?? 1;
+		return s === 'scene' ? this.options.sceneSamples : s;
+
+	}
+
 	// ---- passes
 
 	/** Declares a pass (in execution order); `setup` declares its reads and writes and returns
@@ -305,7 +407,8 @@ export class FrameGraph<F = unknown> {
 
 		if ( this.compiled ) return this.compiled;
 		const compiled = compileGraph( this.decl, { sceneSamples: this.options.sceneSamples, legacyDiscard: this.options.legacyDiscard } );
-		for ( const t of compiled.targets ) if ( ! t.canvas ) this.targets.set( t.key, this.makeTargets( t ) );
+		// (a target made ahead by renderTarget() holds the same attachments, size class and samples)
+		for ( const t of compiled.targets ) if ( ! t.canvas && ! this.targets.has( t.key ) ) this.targets.set( t.key, this.makeTargets( t ) );
 		// a resource no live pass draws into still gets a render target of its own (a copy's
 		// destination, a texture written by storage): its textures need one to be allocated
 		// (a depth resource no live pass draws into needs none: nothing copies into depth)
@@ -319,6 +422,9 @@ export class FrameGraph<F = unknown> {
 				const solo = this.makeTarget( [ texture ], null, compiled.samplesOf( r ) );
 				p.owners[ parity ] = solo;
 				this.targets.set( `${ r.name }#solo${ parity }`, [ solo ] );
+				this.targetSizes.set( solo, r.desc.size );
+				this.soloTargets.add( solo );
+				this.needsInit = true;
 
 			} );
 
@@ -357,6 +463,7 @@ export class FrameGraph<F = unknown> {
 			const depth = t.depth === null ? null : this.physical[ t.depth ].textures[ 0 ] as THREE.DepthTexture;
 			const imported = t.colors.length === 1 && this.physical[ t.colors[ 0 ] ].imported ? this.physical[ t.colors[ 0 ] ].owners[ 0 ] : null;
 			const rt = imported ?? this.makeTarget( colors, depth, t.samples );
+			if ( ! imported ) this.targetSizes.set( rt, t.size );
 			for ( const id of t.depth === null ? t.colors : [ ...t.colors, t.depth ] ) {
 
 				const p = this.physical[ id ];
@@ -377,7 +484,19 @@ export class FrameGraph<F = unknown> {
 			render: { width: Math.max( extents.render.width, 1 ), height: Math.max( extents.render.height, 1 ) },
 			canvas: { width: Math.max( extents.canvas.width, extents.render.width, 1 ), height: Math.max( extents.canvas.height, extents.render.height, 1 ) },
 		};
+		this.extentsSet = true;
 		this.applyExtents();
+
+	}
+
+	// a target to its class's size at the current extents; true when it changed
+	private sizeTarget( rt: THREE.RenderTarget, size: SizeClass ): boolean {
+
+		const s = resolveSize( size, this.extents );
+		const width = Math.max( s.width, 1 ), height = Math.max( s.height, 1 );
+		if ( rt.width === width && rt.height === height ) return false;
+		rt.setSize( width, height );
+		return true;
 
 	}
 
@@ -389,25 +508,8 @@ export class FrameGraph<F = unknown> {
 			node.value.set( s.width, s.height );
 
 		}
-		if ( ! this.compiled ) return;
-		const compiled = this.compiled;
-		const sizeOfTarget = new Map<THREE.RenderTarget, SizeClass>();
-		for ( const t of compiled.targets ) for ( const rt of this.targets.get( t.key ) ?? [] ) sizeOfTarget.set( rt, t.size );
-		this.decl.resources.forEach( ( r, id ) => {
-
-			for ( const rt of this.physical[ id ].owners ) if ( rt && ! this.physical[ id ].imported && ! sizeOfTarget.has( rt ) ) sizeOfTarget.set( rt, r.desc.size );
-
-		} );
-		for ( const [ rt, size ] of sizeOfTarget ) {
-
-			if ( this.isImported( rt ) ) continue;
-			const s = resolveSize( size, this.extents );
-			const width = Math.max( s.width, 1 ), height = Math.max( s.height, 1 );
-			if ( rt.width === width && rt.height === height ) continue;
-			rt.setSize( width, height );
-			this.needsInit = true;
-
-		}
+		if ( this.extentsSet ) for ( const entry of this.resizeHooks ) this.runHook( entry );
+		for ( const [ rt, size ] of this.targetSizes ) if ( this.sizeTarget( rt, size ) ) this.needsInit = true;
 		// the depth textures' own size (three sets it only through the target that owns one) and the
 		// histories a resize emptied
 		this.decl.resources.forEach( ( r, id ) => {
@@ -436,23 +538,42 @@ export class FrameGraph<F = unknown> {
 
 	}
 
-	// After a resize: every graph target's textures are (re)created now, in declaration order,
-	// before any pass of the frame draws into one (see the note at the top).
+	// After a resize: the targets that share a texture with another, and those no pass draws into,
+	// have their textures (re)created now, in declaration order, before any pass of the frame
+	// draws (see the note at the top). The others initialise themselves on their next draw.
 	private initTargets(): void {
 
 		if ( ! this.needsInit ) return;
 		this.needsInit = false;
+		const attachments = ( rt: THREE.RenderTarget ) => rt.depthTexture ? [ ...rt.textures, rt.depthTexture ] : rt.textures;
+		const holders = new Map<THREE.Texture, number>();
+		for ( const rt of this.targetSizes.keys() ) for ( const texture of attachments( rt ) ) holders.set( texture, ( holders.get( texture ) ?? 0 ) + 1 );
 		for ( const rts of this.targets.values() ) for ( const rt of rts ) {
 
-			if ( ! this.isImported( rt ) ) this.renderer.initRenderTarget( rt );
+			if ( ! this.targetSizes.has( rt ) ) continue; // imported
+			if ( this.soloTargets.has( rt ) || attachments( rt ).some( ( texture ) => holders.get( texture )! > 1 ) ) this.renderer.initRenderTarget( rt );
 
 		}
 
 	}
 
-	private isImported( rt: THREE.RenderTarget ): boolean {
+	/** Dev check: every render target the graph made (and its depth texture) has its class's size
+	 * at the current extents, so nothing resized one behind the graph's back. Counted in
+	 * `sizeErrors`, with the first few reported. */
+	validateSizes(): number {
 
-		return this.physical.some( ( p ) => p.imported && p.owners.includes( rt ) );
+		let errors = 0;
+		for ( const [ rt, size ] of this.targetSizes ) {
+
+			const s = resolveSize( size, this.extents );
+			const width = Math.max( s.width, 1 ), height = Math.max( s.height, 1 );
+			const depth = rt.depthTexture?.image as { width: number; height: number } | undefined;
+			if ( rt.width === width && rt.height === height && ( ! depth || ( depth.width === width && depth.height === height ) ) ) continue;
+			errors ++;
+			if ( this.sizeErrors ++ < 8 ) console.error( `FrameGraph: the target of '${ rt.textures.map( ( t ) => t.name ).join( '+' ) }' is ${ rt.width }x${ rt.height }${ depth ? ` (depth ${ depth.width }x${ depth.height })` : '' }, its class ${ sizeClassKey( size ) } is ${ width }x${ height }` );
+
+		}
+		return errors;
 
 	}
 
@@ -551,11 +672,13 @@ export class FrameGraph<F = unknown> {
 		const mask = this.maskFor( f );
 		const ops = this.attachmentOps;
 		const table = ops.mode === 'off' ? null : compiled.ops( ops.mode, mask );
+		this.opsExpected = table ? table.rewrites : 0;
 		const running = compiled.running( mask );
 		const span = running.filter( ( i ) => this.decl.passes[ i ].jittered );
 		const written = new Set<number>();
 		for ( const i of running ) for ( const w of this.decl.passes[ i ].writes ) written.add( w.resource );
 		const first = span[ 0 ], last = span[ span.length - 1 ];
+		if ( this.options.dev ) this.validateSizes();
 		this.initTargets();
 		this.frameWritten = written;
 		ops.begin( table );

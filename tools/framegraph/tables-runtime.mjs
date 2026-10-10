@@ -115,7 +115,7 @@ export const checks = [
 
 	} ],
 
-	[ 'runtime: after a resize every target is initialised in order before a pass draws; depth is sized by the graph', () => {
+	[ 'runtime: after a resize the targets that share a texture, and the copy destination\'s, are initialised in order before a pass draws; depth is sized by the graph', () => {
 
 		const r = mockRenderer();
 		const g = new FrameGraph( r, { sceneSamples: 1 } );
@@ -164,8 +164,10 @@ export const checks = [
 		g.setExtents( extents( 64, 32 ) );
 		g.execute( {} );
 		const inits = r.log.filter( ( e ) => e[ 0 ] === 'init' ).map( ( e ) => e[ 1 ] );
-		assert.equal( inits.length, 4, 'opaque, overlay, surface and the copy destination\'s own target' );
-		assert.deepEqual( inits.slice( 0, 3 ), drawn.slice( 0, 3 ), 'in declaration order' );
+		// (the surface target shares nothing: it initialises itself when the pass draws into it)
+		assert.equal( inits.length, 3, 'opaque and overlay (they share sceneColor and the depth) and the copy destination\'s own target' );
+		assert.deepEqual( inits.slice( 0, 2 ), drawn.slice( 0, 2 ), 'in declaration order' );
+		assert.ok( ! inits.includes( drawn[ 2 ] ), 'a target that shares nothing is not initialised ahead' );
 		const [ opaqueRT, overlayRT ] = inits;
 		assert.equal( opaqueRT.textures[ 0 ], overlayRT.textures[ 0 ], 'the two targets share sceneColor' );
 		assert.equal( opaqueRT.depthTexture, overlayRT.depthTexture );
@@ -181,8 +183,8 @@ export const checks = [
 		const depthImage = opaqueRT.depthTexture.image;
 		assert.deepEqual( [ depthImage.width, depthImage.height ], [ 40, 20 ] );
 		assert.deepEqual( [ overlayRT.width, overlayRT.height, opaqueRT.width ], [ 40, 20, 40 ] );
-		assert.equal( r.log.filter( ( e ) => e[ 0 ] === 'init' ).length, 4 );
-		assert.ok( r.log.findIndex( ( e ) => e[ 0 ] === 'copy' ) > 3, 'initialised before the frame-end copy' );
+		assert.equal( r.log.filter( ( e ) => e[ 0 ] === 'init' ).length, 3 );
+		assert.ok( r.log.findIndex( ( e ) => e[ 0 ] === 'copy' ) > 2, 'initialised before the frame-end copy' );
 		// no resize: no initialisation
 		r.log.length = 0;
 		g.setExtents( extents( 40, 20 ) );
@@ -242,6 +244,82 @@ export const checks = [
 		} finally {
 
 			console.warn = warn;
+
+		}
+
+	} ],
+
+	[ 'runtime: renderTarget() makes a tuple\'s target ahead of the passes, which then draw into it', () => {
+
+		const r = mockRenderer();
+		const g = new FrameGraph( r, { sceneSamples: 4 } );
+		let color = g.color( 'sceneColor', { size: RENDER, samples: 'scene' } );
+		let depth = g.depth( 'sceneDepth', { size: RENDER, samples: 'scene' } );
+		let linear = g.color( 'linearDepth', { size: RENDER } );
+		const fog = g.color( 'fogMarch', { size: { of: 'render', divisor: 2 } } );
+		let canvas = g.import( 'canvas', null, CANVAS );
+		const sceneRT = g.renderTarget( [ color ], depth );
+		assert.equal( g.renderTarget( [ color ], depth ), sceneRT, 'one target per tuple' );
+		assert.equal( sceneRT.samples, 4, 'samples: scene' );
+		assert.equal( sceneRT.depthTexture, g.texture( depth ) );
+		assert.equal( g.target( color ), sceneRT );
+		assert.equal( g.target( depth ), sceneRT );
+		const fogRT = g.renderTarget( [ fog ] );
+		assert.equal( fogRT.depthBuffer, false );
+		assert.throws( () => g.renderTarget( [ color, fog ] ), /different size classes/ );
+		assert.throws( () => g.renderTarget( [ linear ], depth ), /different sample counts/ );
+		assert.throws( () => g.renderTarget( [], depth ), /no colour attachment/ );
+		assert.throws( () => g.previous( fog ), /a render target already holds it/ );
+		const drawn = [];
+		g.addPass( 'opaque', 'callback', ( b ) => ( color = b.write( color, { clear: true } ), depth = b.depth( depth, { write: true, clear: true } ), { label: 'o', run: () => drawn.push( r.getRenderTarget() ) } ) );
+		g.addPass( 'resolve', 'callback', ( b ) => ( b.read( depth, 'samples' ), linear = b.write( linear ), { label: 'r', run: () => drawn.push( r.getRenderTarget() ) } ) );
+		g.addPass( 'output', 'callback', ( b ) => ( b.read( color ), b.read( linear ), canvas = b.write( canvas ), { label: 'out', run: () => {} } ) );
+		g.compile();
+		g.setExtents( extents( 101, 51 ) );
+		g.execute( {} );
+		assert.equal( drawn[ 0 ], sceneRT, 'the pass draws into the target made ahead' );
+		assert.equal( g.target( linear ), drawn[ 1 ] );
+		assert.deepEqual( [ sceneRT.width, sceneRT.height, fogRT.width, fogRT.height ], [ 101, 51, 50, 25 ], 'every target the graph made follows its class' );
+		assert.deepEqual( [ g.texture( depth ).image.width, g.texture( depth ).image.height ], [ 101, 51 ] );
+		assert.equal( r.log.filter( ( e ) => e[ 0 ] === 'init' ).length, 0, 'nothing shared: every target initialises itself when drawn' );
+
+	} ],
+
+	[ 'runtime: resize hooks get their class\'s size with its rounding, once per change; validateSizes finds a target resized behind the graph', () => {
+
+		const r = mockRenderer();
+		const g = new FrameGraph( r, { sceneSamples: 1 } );
+		const a = g.color( 'a', { size: RENDER } );
+		const rt = g.renderTarget( [ a ] );
+		const calls = [];
+		g.onResize( RENDER, ( w, h ) => calls.push( [ 'render', w, h ] ) );
+		g.onResize( { of: 'render', scale: 0.5, min: 1 }, ( w, h ) => calls.push( [ 'half', w, h ] ) );
+		g.onResize( CANVAS, ( w, h ) => calls.push( [ 'canvas', w, h ] ) );
+		assert.deepEqual( calls, [], 'nothing before the extents are set' );
+		g.setExtents( { render: { width: 1673, height: 941 }, canvas: { width: 2560, height: 1440 } } );
+		assert.deepEqual( calls, [ [ 'render', 1673, 941 ], [ 'half', 836, 470 ], [ 'canvas', 2560, 1440 ] ] );
+		calls.length = 0;
+		g.setExtents( { render: { width: 1673, height: 941 }, canvas: { width: 2560, height: 1440 } } );
+		assert.deepEqual( calls, [], 'unchanged extents call no hook' );
+		g.setExtents( { render: { width: 1500, height: 844 }, canvas: { width: 2560, height: 1440 } } );
+		assert.deepEqual( calls, [ [ 'render', 1500, 844 ], [ 'half', 750, 422 ] ], 'a render change leaves the canvas class alone' );
+		const late = [];
+		g.onResize( RENDER, ( w, h ) => late.push( [ w, h ] ) );
+		assert.deepEqual( late, [ [ 1500, 844 ] ], 'a hook added after the extents runs at once' );
+		const e = g.extent( { of: 'render', divisor: 4 } );
+		assert.deepEqual( [ e.value.x, e.value.y ], [ 375, 211 ] );
+		const error = console.error;
+		console.error = () => {};
+		try {
+
+			assert.equal( g.validateSizes(), 0 );
+			rt.setSize( 10, 10 );
+			assert.equal( g.validateSizes(), 1 );
+			assert.equal( g.sizeErrors, 1 );
+
+		} finally {
+
+			console.error = error;
 
 		}
 

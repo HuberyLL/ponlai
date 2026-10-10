@@ -8,9 +8,10 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, float, vec2, vec3, vec4, ivec2, uv, abs, max, min, clamp, saturate, sqrt, select, exp2, texture, textureLoad,
-	screenCoordinate, uniform,
+	screenCoordinate,
 } from 'three/tsl';
 import { compileInto } from './Warm.ts';
+import type { GraphResources } from './graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -26,31 +27,25 @@ type V4 = THREE.Node<'vec4'>;
 // which the frame never uses, is dropped.
 export class FSR {
 
-	/** The upscaled image, before sharpening. */
-	readonly easuRT = new THREE.RenderTarget( 1, 1, { depthBuffer: false, type: THREE.HalfFloatType } );
+	/** The upscaled image, before sharpening (the canvas's size; the frame graph owns and sizes it). */
+	readonly easuRT: THREE.RenderTarget;
 	private readonly quad: THREE.QuadMesh;
-	private readonly inputSize = uniform( new THREE.Vector2( 1, 1 ) );
-	private readonly outputSize = uniform( new THREE.Vector2( 1, 1 ) );
+	// the render's size (the input's) and the canvas's (the frame graph's extents)
+	private readonly inputSize: THREE.UniformNode<'vec2', THREE.Vector2>;
+	private readonly outputSize: THREE.UniformNode<'vec2', THREE.Vector2>;
 
 	/** `input` holds display values at the render's size; `gather` reads it with textureGather
-	 * (it must then be filterable). */
-	constructor( input: THREE.Texture, gather: boolean ) {
+	 * (it must then be filterable). The EASU target is declared on `graph`. */
+	constructor( input: THREE.Texture, gather: boolean, graph: GraphResources ) {
 
-		this.easuRT.texture.name = 'FSR.easu';
+		this.easuRT = graph.renderTarget( [ graph.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) ] );
+		this.inputSize = graph.extent( { of: 'render' } );
+		this.outputSize = graph.extent( { of: 'canvas' } );
 		const material = new THREE.NodeMaterial();
 		material.name = 'FSR.EASU';
 		material.fragmentNode = this.easu( input, gather );
 		this.quad = new THREE.QuadMesh( material );
 		this.quad.name = 'FSR.EASU';
-
-	}
-
-	/** The canvas's size, and the render's (the input's). */
-	setSize( width: number, height: number, inputWidth: number, inputHeight: number ): void {
-
-		this.easuRT.setSize( width, height );
-		this.inputSize.value.set( inputWidth, inputHeight );
-		this.outputSize.value.set( width, height );
 
 	}
 
@@ -250,9 +245,9 @@ export class FSR {
 
 	}
 
+	// (the frame graph owns the EASU target)
 	dispose(): void {
 
-		this.easuRT.dispose();
 		( this.quad.material as THREE.Material ).dispose();
 
 	}

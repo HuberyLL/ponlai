@@ -12,6 +12,7 @@ import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
 import { sizeRtt } from './RenderScale.ts';
 import { SCENE_SAMPLES } from './SceneSamples.ts';
+import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
@@ -37,6 +38,20 @@ import type { Rain } from '../weather/Rain.ts';
 // the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling, then
 // contrast-adaptive sharpening) to the screen instead, and the grain is added there, at display
 // pixels.
+// The targets are the frame graph's (graph/FrameGraph.ts): each is declared with its format,
+// sample count and size class (the render, a share of it, the canvas or fixed), and the graph sizes
+// them all from `setSize`'s render and canvas sizes, the display chain's own rtt and bloom passes
+// through a resize hook.
+
+// The graph's dev checks (every target at its class's size): on the dev server and with `?debug`.
+const DEV = import.meta.env.DEV || new URLSearchParams( globalThis.location?.search ?? '' ).has( 'debug' );
+const RENDER: SizeClass = { of: 'render' };
+
+/** What a frame draws (`Pipeline.render`'s argument). */
+export interface PipelineFrame {
+	scene: THREE.Scene; waterScene: THREE.Scene; rainScene?: THREE.Scene; camera: THREE.Camera;
+	water: { prepare( sun: THREE.DirectionalLight ): void } | null; sun: THREE.DirectionalLight; time: number;
+}
 
 /** The frame graph's structural choices, fixed when the page loads (the quality tier sets them;
  * the defaults are today's high). `?post=legacy` restores the graph before they were introduced,
@@ -271,10 +286,15 @@ export class Pipeline {
 	// native and the meadow keeps most of it, without ringing.
 	readonly sharpness = uniform( 0.6 );
 
-	sceneRT: THREE.RenderTarget;
-	depthRT: THREE.RenderTarget;
-	opaqueRT: THREE.RenderTarget;
-	surfaceRT: THREE.RenderTarget;
+	/** The frame graph: it owns the targets below and sizes them. */
+	readonly graph: FrameGraph<PipelineFrame>;
+	/** The graph's textures that materials outside the pipeline read: the resolved opaque colour
+	 * and linear depth (the water, the spray, the rain) and the nearest surface's depth. */
+	readonly textures: { readonly opaqueColor: THREE.Texture; readonly linearDepth: THREE.Texture; readonly surfaceDepth: THREE.Texture };
+	private readonly resources: {
+		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
+		surfaceDepth: ResourceHandle; display: ResourceHandle; viewDistance: ResourceHandle | null;
+	};
 	readonly air: AerialPerspective;
 	readonly shafts = new LightShafts();
 	readonly options: Readonly<PostOptions>;
@@ -288,15 +308,14 @@ export class Pipeline {
 	private upscaledOutputThree: THREE.RenderPipeline;
 	private fsr: FSR;
 	// the view distance per pixel, for the depth of field (the dofDistance option)
-	private distanceRT: THREE.RenderTarget | null = null;
 	private distanceQuad: THREE.QuadMesh | null = null;
 	// set while the last pass into sceneRT is recorded (the discardScene option)
 	private discardSamples = false;
 	private warming: Promise<void> | null = null;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private display: THREE.RenderPipeline;
-	private displayRT: THREE.RenderTarget;
-	// passes sized with the scene's render, not the canvas
+	// the display chain's rtt() passes, sized with the scene's render (not the canvas) through the
+	// graph's resize hook
 	private passes: THREE.RTTNode[] = [];
 	private blooms: { node: RenderBloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
 	private u = {
@@ -324,16 +343,22 @@ export class Pipeline {
 		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
 		const O = this.options;
 		this.air = new AerialPerspective( O );
-		const depthTexture = new THREE.DepthTexture( 1, 1 );
-		depthTexture.type = THREE.FloatType;
-		this.sceneRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, samples: SCENE_SAMPLES, depthTexture } );
-		this.sceneRT.texture.name = 'sceneColor';
-		this.depthRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RGFormat, depthBuffer: false } );
-		this.depthRT.texture.name = 'linearDepth';
-		this.opaqueRT = new THREE.RenderTarget( 1, 1, { type: THREE.HalfFloatType, depthBuffer: false } );
-		this.opaqueRT.texture.name = 'opaqueColor';
-		this.surfaceRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RedFormat, depthBuffer: false } );
-		this.surfaceRT.texture.name = 'surfaceDepth';
+		// The scene's target: half-float colour and float depth at the scene's sample count, then
+		// the resolves the water and the post passes read (single-sampled).
+		const g = this.graph = new FrameGraph<PipelineFrame>( renderer, { sceneSamples: SCENE_SAMPLES, legacyDiscard: O.discardScene ? [ 'rain' ] : [], dev: DEV } );
+		const sceneColor = g.color( 'sceneColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, samples: 'scene' } );
+		const sceneDepth = g.depth( 'sceneDepth', { size: RENDER, samples: 'scene', type: THREE.FloatType } );
+		const linearDepth = g.color( 'linearDepth', { size: RENDER, format: THREE.RGFormat, type: THREE.FloatType } );
+		const opaqueColor = g.color( 'opaqueColor', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
+		const surfaceDepth = g.color( 'surfaceDepth', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } );
+		const display = g.color( 'display', { size: RENDER, format: THREE.RGBAFormat, type: THREE.FloatType } );
+		const viewDistance = O.dofDistance ? g.color( 'viewDistance', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } ) : null;
+		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, display, viewDistance };
+		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
+		// textures need them before the first frame)
+		g.renderTarget( [ sceneColor ], sceneDepth );
+		for ( const h of [ linearDepth, opaqueColor, surfaceDepth, display, ...( viewDistance ? [ viewDistance ] : [] ) ] ) g.renderTarget( [ h ] );
+		this.textures = { opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ) };
 
 		const u = this.u;
 		// Multisampled depth can only be loaded, a sample at a time. The sky stays far away (-1e5).
@@ -350,7 +375,7 @@ export class Pipeline {
 			return z;
 
 		};
-		const msDepth = texture( depthTexture );
+		const msDepth = texture( g.texture( sceneDepth ) );
 		const depthSample = ( coord: V2, i: number ) => textureLoad( msDepth, ivec2( coord ), int( i ) ) as unknown as F;
 		// Sample 0 for what reads the depth at a point (the water's traces, rain, spray, the haze and
 		// the blur), and the farthest of the samples for the water's view of what lies behind it.
@@ -370,17 +395,17 @@ export class Pipeline {
 		} )();
 		this.depthQuad = new THREE.QuadMesh( resolveMat );
 		const copyMat = new THREE.NodeMaterial();
-		copyMat.fragmentNode = textureLoad( texture( this.sceneRT.texture ), ivec2( screenCoordinate.xy ) );
+		copyMat.fragmentNode = textureLoad( texture( g.texture( sceneColor ) ), ivec2( screenCoordinate.xy ) );
 		this.copyQuad = new THREE.QuadMesh( copyMat );
 		const surfaceMat = new THREE.NodeMaterial();
 		surfaceMat.fragmentNode = Fn( () => vec4( viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ) ) )();
 		this.surfaceQuad = new THREE.QuadMesh( surfaceMat );
 
 		// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it
-		const sceneTex = texture( this.sceneRT.texture );
-		const surfaceDepth = this.surfaceRT.texture;
-		const composited = this.air.apply( sceneTex.rgb, surfaceDepth, sky, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
-			.add( this.shafts.build( surfaceDepth, sky ) );
+		const sceneTex = texture( g.texture( sceneColor ) );
+		const tSurfaceDepth = this.textures.surfaceDepth;
+		const composited = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
+			.add( this.shafts.build( tSurfaceDepth, sky ) );
 		// Rendered once, the composite feeds the sharp image and both blooms' high passes; as an
 		// expression each of them evaluated it again, the sea fog's march included. The high passes
 		// run at half resolution and sample it bilinearly, as they sampled the scene colour before.
@@ -395,7 +420,7 @@ export class Pipeline {
 		// every pixel of the sun's glitter path reaches the clamp, so a higher one let the path's
 		// bloom pile up into a bright column over the island. The sky keeps the higher clamp, so
 		// the sun's disc and a lightning channel (drawn without depth) keep their glow.
-		const tBloomD = texture( surfaceDepth );
+		const tBloomD = texture( tSurfaceDepth );
 		const makeBloom = () => {
 
 			const maxLum = uniform( 5 ), surfaceMaxLum = uniform( 5 );
@@ -428,7 +453,7 @@ export class Pipeline {
 		// the blur is mixed over the sharp image by the full-resolution coc
 		const sharp = convertToTexture( vec4( withBloom, 1 ) );
 		if ( ! hdrRT ) this.passes.push( sharp );
-		const tD = texture( surfaceDepth );
+		const tD = texture( tSurfaceDepth );
 		// The distance to the nearest surface, the water's included (view-space z: closer is larger).
 		const distanceAt = ( q: V2, z: F ) => {
 
@@ -447,10 +472,8 @@ export class Pipeline {
 		// Written once per pixel, in full float: the gather's taps then read it instead of each
 		// deriving it from the depth (half float tied distances, and the depth order below flipped).
 		let tDistance: THREE.TextureNode | null = null;
-		if ( O.dofDistance ) {
+		if ( viewDistance ) {
 
-			this.distanceRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, format: THREE.RedFormat, depthBuffer: false } );
-			this.distanceRT.texture.name = 'viewDistance';
 			const distanceMat = new THREE.NodeMaterial();
 			distanceMat.name = 'Post.ViewDistance';
 			distanceMat.fragmentNode = Fn( () => {
@@ -461,7 +484,7 @@ export class Pipeline {
 			} )();
 			this.distanceQuad = new THREE.QuadMesh( distanceMat );
 			this.distanceQuad.name = 'Post.ViewDistance';
-			tDistance = texture( this.distanceRT.texture );
+			tDistance = texture( g.texture( viewDistance ) );
 
 		}
 		// The circle of confusion (0..1 of the widest blur) and the distance. One function per pass:
@@ -570,7 +593,7 @@ export class Pipeline {
 		// half-resolution bloom chain, no second evaluation of the haze), and is added before the
 		// curve, whose shoulder keeps it soft.
 		const diffusionThreshold = uniform( 1 );
-		const tGlowD = texture( surfaceDepth );
+		const tGlowD = texture( tSurfaceDepth );
 		const diffusionNode = new RenderBloomNode( nodeObject( sharp ), 0, 0.8, 1 );
 		diffusionNode.setResolutionScale( 0.5 );
 		( diffusionNode as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input }: { input: THREE.Node<'vec4'> } ) => {
@@ -790,13 +813,12 @@ export class Pipeline {
 		// above for a second output (another shader or target format) set its rtt() passes up again,
 		// and their layout functions kept the first build's uniform bindings. Float, so the copy
 		// below hands the canvas exactly the values a direct draw would.
-		this.displayRT = new THREE.RenderTarget( 1, 1, { type: THREE.FloatType, depthBuffer: false } );
-		this.displayRT.texture.name = 'display';
 		this.display = new THREE.RenderPipeline( renderer, Fn( () => finish( grade( diffused() ), u.resolution, u.grainOn ) )() );
 		this.display.outputColorTransform = false;
 
 		// At the display's resolution it is copied to the canvas, grain and all.
-		this.output = new THREE.RenderPipeline( renderer, textureLoad( this.displayRT.texture, ivec2( screenCoordinate.xy ) ) );
+		const tDisplay = g.texture( display );
+		this.output = new THREE.RenderPipeline( renderer, textureLoad( tDisplay, ivec2( screenCoordinate.xy ) ) );
 		this.output.outputColorTransform = false;
 
 		// Below it, FSR 1 (AMD FidelityFX Super Resolution 1, FSR.ts) upscales the image (it expects
@@ -805,12 +827,21 @@ export class Pipeline {
 		// pass sharpens EASU's result itself; three's FSR1Node, kept for A/B, took a canvas-sized
 		// pass and target more.
 		const backend = renderer.backend as unknown as { hasFeature?( name: string ): boolean };
-		this.fsr = new FSR( this.displayRT.texture, backend.hasFeature?.( 'float32-filterable' ) === true );
+		this.fsr = new FSR( tDisplay, backend.hasFeature?.( 'float32-filterable' ) === true, g );
 		this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( this.fsr.rcas( this.sharpness ).toVar(), u.output, float( 1 ) ) )() );
 		this.upscaledOutput.outputColorTransform = false;
-		const upscaled = fsr1( texture( this.displayRT.texture ), this.sharpness );
+		const upscaled = fsr1( texture( tDisplay ), this.sharpness );
 		this.upscaledOutputThree = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), u.output, float( 1 ) ) )() );
 		this.upscaledOutputThree.outputColorTransform = false;
+		// The chain's own passes (its rtt() passes, the bloom and glow chains, the light shafts')
+		// follow the render's size, not the canvas, which is larger while the frame is upscaled.
+		g.onResize( RENDER, ( w, h ) => {
+
+			for ( const node of this.passes ) sizeRtt( node, w, h );
+			for ( const { node } of [ ...this.blooms, this.diffusion ] ) { node.renderWidth = w; node.renderHeight = h; }
+			this.shafts.setSize( w, h );
+
+		} );
 		if ( O.discardScene ) this.interceptSceneStore();
 		this.setToneMapping( this.settings.toneMapping );
 		// The sea fog's passes run only once fog sets in, perhaps minutes later (morning mist, the
@@ -845,21 +876,54 @@ export class Pipeline {
 		this.width = w; this.height = h;
 		this.outputWidth = Math.max( outputWidth, w ); this.outputHeight = Math.max( outputHeight, h );
 		this.u.output.value.set( this.outputWidth, this.outputHeight );
-		for ( const node of this.passes ) sizeRtt( node, w, h );
-		for ( const { node } of [ ...this.blooms, this.diffusion ] ) { node.renderWidth = w; node.renderHeight = h; }
-		this.shafts.setSize( w, h );
-		this.sceneRT.setSize( w, h );
-		this.depthRT.setSize( w, h );
-		this.opaqueRT.setSize( w, h );
-		this.surfaceRT.setSize( w, h );
-		this.displayRT.setSize( w, h );
-		this.distanceRT?.setSize( w, h );
-		this.air.setSize( w, h );
-		this.fsr.setSize( this.outputWidth, this.outputHeight, w, h );
 		this.u.resolution.value.set( w, h );
 		this.u.texel.value.set( 1 / w, 1 / h );
 		// the size rtt() gives the half-res blur
 		this.u.halfRes.value.set( Math.max( Math.floor( w * 0.5 ), 1 ), Math.max( Math.floor( h * 0.5 ), 1 ) );
+		// every target by its size class (the reduced fog's, the fixed bank map's, the upscale's at
+		// the canvas), and the chain's own passes through their resize hook
+		this.graph.setExtents( { render: { width: w, height: h }, canvas: { width: outputWidth, height: outputHeight } } );
+
+	}
+
+	/** The scene's multisampled colour and depth (the opaque scene, the water and the rain draw
+	 * into it). */
+	get sceneRT(): THREE.RenderTarget {
+
+		return this.graph.target( this.resources.sceneColor );
+
+	}
+
+	/** The opaque pass's linear view z: sample 0 (r) and the farthest sample (g). */
+	get depthRT(): THREE.RenderTarget {
+
+		return this.graph.target( this.resources.linearDepth );
+
+	}
+
+	/** The resolved opaque colour (what the water refracts and reflects). */
+	get opaqueRT(): THREE.RenderTarget {
+
+		return this.graph.target( this.resources.opaqueColor );
+
+	}
+
+	/** The nearest surface's linear view z, the sea's included. */
+	get surfaceRT(): THREE.RenderTarget {
+
+		return this.graph.target( this.resources.surfaceDepth );
+
+	}
+
+	private get displayRT(): THREE.RenderTarget {
+
+		return this.graph.target( this.resources.display );
+
+	}
+
+	private get distanceRT(): THREE.RenderTarget | null {
+
+		return this.resources.viewDistance ? this.graph.target( this.resources.viewDistance ) : null;
 
 	}
 
@@ -875,6 +939,7 @@ export class Pipeline {
 		const r = this.renderer;
 		const S = this.settings;
 		const u = this.u;
+		if ( DEV ) this.graph.validateSizes();
 
 		camera.updateMatrixWorld();
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
