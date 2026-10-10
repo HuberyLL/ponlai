@@ -21,10 +21,10 @@ type V4 = THREE.Node<'vec4'>;
 // FSR 1 for the frame graph's upscale, split differently from three's FSR1Node: EASU (edge-adaptive
 // upsampling) runs as its own pass (the graph's `easu`) into a canvas-sized texture the graph owns,
 // and RCAS (contrast-adaptive sharpening) is a function the canvas pass calls before it adds the
-// grain, so the canvas no longer takes a second full-size pass and target between the two. EASU fetches its 12-texel cross as four
-// 2x2 gathers per channel where the input is filterable (AMD's own layout), and with single texel
-// loads otherwise; either way the taps and the maths are three's, and only the alpha channel,
-// which the frame never uses, is dropped.
+// grain, so the canvas no longer takes a second full-size pass and target between the two. EASU
+// fetches its 12-texel cross as four 2x2 gathers per channel where the input is filterable (AMD's
+// own layout), and with single texel loads otherwise; either way the taps and the maths are
+// three's, and only the alpha channel, which the frame never uses, is dropped.
 export class FSR {
 
 	/** EASU's full-screen pass: the frame graph draws it into `output`. */
