@@ -43,6 +43,8 @@ import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook, KIND } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { SCENE_SAMPLES } from './post/SceneSamples.ts';
+import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
+import { debugViewChoices, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
 import { installWindVariants } from './world/WindVariants.ts';
 
@@ -358,6 +360,11 @@ rain = new Rain( { count: runtimeQuality.rainDrops } );
 // A strike's fill lights the ground they show in full; the sky they show and reflect takes it
 // damped (like the storm spray's), since the displayed deck brightens far less than the fill.
 rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).pow( 0.35 ) ) );
+// `fgview=<resource>[.<output>]` (debug builds): the frame graph's debug view shows one of its
+// resources on the canvas (src/post/graph/DebugView.ts): only then it appends its pass to the graph
+// before the pipeline compiles it.
+const fgview = DEBUG ? params.get( 'fgview' ) : null;
+if ( fgview && fgview !== 'off' ) installDebugView( fgview, { exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE } );
 const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ) );
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).
@@ -739,6 +746,26 @@ lookF.add( L, 'contrast', - 0.3, 0.5, 0.01 ).name( 'depth (contrast)' ).listen()
 lookF.add( L, 'vignette', 0, 0.6, 0.01 ).listen();
 lookF.add( L, 'sky', 0, 1, 0.01 ).name( 'on the sky' ).listen();
 lookF.add( L, 'overcast', 0, 1, 0.01 ).name( 'kept in bad weather' ).listen();
+if ( DEBUG ) {
+
+	// The frame graph's debug view (fgview): its choices from the graph's description. The graph
+	// compiles once, so a choice reloads the page with it.
+	const debugF = gui.addFolder( 'Debug' );
+	const view = { fgview: fgview ?? 'off' };
+	const choices = [ 'off', ...debugViewChoices( pipeline.graph.describe() ) ];
+	if ( ! choices.includes( view.fgview ) ) choices.push( view.fgview );
+	debugF.add( view, 'fgview', choices ).name( 'frame-graph view (reloads)' ).onFinishChange( ( value: string ) => {
+
+		const url = new URL( location.href );
+		if ( value === 'off' ) url.searchParams.delete( 'fgview' );
+		else url.searchParams.set( 'fgview', value );
+		url.searchParams.set( 'gui', '' );
+		location.assign( url );
+
+	} );
+	debugF.close();
+
+}
 
 // ------------------------------------------------------------------ loop
 

@@ -416,6 +416,7 @@ export class FrameGraph<F = unknown> {
 	compile(): CompiledGraph {
 
 		if ( this.compiled ) return this.compiled;
+		for ( const extend of FrameGraph.beforeCompile ) extend( this as FrameGraph<unknown> );
 		const compiled = compileGraph( this.decl, { sceneSamples: this.options.sceneSamples, legacyDiscard: this.options.legacyDiscard } );
 		// (a target made ahead by renderTarget() holds the same attachments, size class and samples)
 		for ( const t of compiled.targets ) if ( ! t.canvas && ! this.targets.has( t.key ) ) this.targets.set( t.key, this.makeTargets( t ) );
@@ -869,6 +870,10 @@ export class FrameGraph<F = unknown> {
 	}
 
 	// ---- introspection
+
+	/** Called by `compile()` before it compiles any graph, with the graph: what a debug build
+	 * appends to every graph (the debug view's pass, src/post/graph/DebugView.ts). */
+	static beforeCompile: ( ( graph: FrameGraph<unknown> ) => void )[] = [];
 
 	/** The graph as plain JSON: the passes in order (kind, label, `when`, reads and writes with
 	 * their versions, size class and size, the attachment ops of the last frame's mask), the

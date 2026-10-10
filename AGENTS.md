@@ -58,7 +58,12 @@ stone exposed.
   display, over the tier's; `frameRate=0` renders on every refresh, as the profiler's uncapped runs
   do), `submits=each` (three's own submit per pass, without the submit batching; at runtime
   `flags.batchSubmits`; its tracking wrappers stay installed, so compare against `main` for their
-  JS cost) and `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`).
+  JS cost), `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`) and
+  `fgview=<resource>[.<output>]` (debug builds: the frame graph's debug view draws one of its
+  resources over the canvas, shown by what it holds, e.g. `linearDepth`, `fogMarch.a`, `FSR.easu`;
+  outputs `r` / `g` / `b` / `a`, `previous`, a depth's `sample<n>`; `src/post/graph/DebugView.ts`;
+  also the GUI's Debug folder, which reloads; `s.pipeline.graph.describe()` and `dot()` list the
+  graph).
   Runtime switches for one-page A/Bs live in
   `src/debug/DebugFlags.ts`. `islander` picks the islanders' proportions (`medium`, the default, or
   `stock` (the kit's own), `subtle` and `strong` builds of `Proportions.ts`; also in
