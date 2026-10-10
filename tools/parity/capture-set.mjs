@@ -23,7 +23,8 @@
 //   minutes, whether the GPU was busy before the run, the captures and failures, the set); the
 //   default is the PARITY_RUNS environment variable. Without either nothing is logged, so a
 //   procedure that keeps a run log must pass one of them.
-// Options after `--` pass through to capture.mjs (e.g. `-- --wait-for "expr" --frames 4 --every 5`).
+// Options after `--` pass through to capture.mjs (e.g. `-- --wait-for "expr" --frames 4 --every 5`;
+// an `--eval` there runs after the view's own).
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
 // output; see tools/parity/README.md.
 import { spawn } from 'node:child_process';

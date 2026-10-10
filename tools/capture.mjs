@@ -8,6 +8,8 @@
 // --timeout (ms) bounds each wait for the page (its load, its first 150 frames, a screenshot);
 // raise it when other pages keep the GPU busy. The JSON holds the page's `window.__PONLAI_CROPS__`
 // (tools/parity/views.mjs) as `crops` when it is set.
+// --eval may be given more than once: each runs in the page in order, awaited (tools/parity's
+// capture-set passes the view's own first, then any given after its `--`).
 // A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
 // a running one, or --exclusive, takes it to itself, since its frame times are reported too.
 import { chromium } from 'playwright';
@@ -19,7 +21,7 @@ const opt = ( k, d ) => { const i = args.indexOf( '--' + k ); return i >= 0 ? ar
 const name = args[ 0 ] && ! args[ 0 ].startsWith( '--' ) ? args[ 0 ] : 'shot';
 const W = Number( opt( 'w', 1600 ) ), H = Number( opt( 'h', 900 ) );
 const query = opt( 'q', 'paused&t=12&dpr=1' );
-const evalJs = opt( 'eval', '' );
+const evals = args.flatMap( ( a, i ) => a === '--eval' && args[ i + 1 ] ? [ args[ i + 1 ] ] : [] );
 const wait = Number( opt( 'wait', 7000 ) );
 const url = `${ opt( 'url', 'http://127.0.0.1:5190/' ) }?${ query }`;
 const sampleCount = Number( opt( 'samples', 1 ) );
@@ -53,7 +55,7 @@ page.on( 'requestfailed', ( r ) => failures.push( `${ r.failure()?.errorText } $
 try {
 	await page.goto( url );
 	await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
-	if ( evalJs ) await page.evaluate( evalJs );
+	for ( const js of evals ) await page.evaluate( js );
 	await page.waitForTimeout( wait );
 	// An edit can trigger a Vite reload during the settling delay. Never accept a loading screen.
 	await page.waitForFunction( () => window.__THREE_GAME_DIAGNOSTICS__?.frame > 150 &&
