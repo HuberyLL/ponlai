@@ -4,7 +4,7 @@
 // dynamic scale bypassed), with crops of named subjects captured as they move.
 //
 //   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|gt-hi]
-//       [--view v] [--frames n] [--every k] [--crops a,b] [--full 0,30] [--q "extra&query"]
+//       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"]
 //       [--quality high] [--size 1728x1117@2] [--out dir] [--timeout ms] [--runs file.csv]
 //       [--task name] [--anchors-from clip.json] [--verbose]
 //
@@ -12,7 +12,7 @@
 // query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it), waits for
 // the scene as capture.mjs does, runs the view's eval (the crop anchors' setup included) and the
 // clip's, reads the crop anchors once at the base pose and then steps the clip. After each frame
-// (every k-th with --every; frame 0 always) each anchor's world point is projected with that
+// (every k-th with --every, and every frame of the --dense runs; frame 0 always) each anchor's world point is projected with that
 // frame's camera into a box of 192 CSS px (384 device px at a pixel ratio of 2, clamped into the
 // frame) and captured; an anchor behind the camera that frame is skipped. --full lists frames also
 // captured whole. --anchors-from takes the anchors' world points from an earlier clip.json
@@ -70,7 +70,7 @@ for ( let i = 0; i < args.length; i ++ ) {
 	} else positional.push( args[ i ] );
 
 }
-const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'every', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from' ];
+const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! KNOWN.includes( k ) );
 const clip = CLIPS[ options.clip ];
 if ( positional.length !== 1 || unknown.length || ! options.url || ! clip ) {
@@ -95,7 +95,11 @@ const NOMINAL_HIGH = Math.min( DSF, 1.5 ), GT_RATIO = 2 * NOMINAL_HIGH;
 const frames = Number( options.frames ?? clip.frames );
 const every = Math.max( 1, Number( options.every ?? 1 ) );
 const full = new Set( ( options.full ?? '' ).split( ',' ).filter( Boolean ).map( Number ) );
-const crops = options.crops ? options.crops.split( ',' ).filter( Boolean ) : view.crops ?? [];
+// runs of frames captured whole-clip dense under --every (the ground truth's gtDense, clips.mjs)
+const dense = ( options.dense ?? '' ).split( ',' ).filter( Boolean ).map( ( r ) => r.split( '-' ).map( Number ) );
+if ( dense.some( ( r ) => r.length !== 2 || r.some( ( x ) => ! Number.isInteger( x ) ) ) ) { console.error( `bad --dense ${ options.dense }` ); process.exit( 2 ); }
+// the clip's own crops (clips.mjs `crops`) over the view's
+const crops = options.crops ? options.crops.split( ',' ).filter( Boolean ) : clip.crops ?? view.crops ?? [];
 const timeout = Number( options.timeout ?? 240000 );
 const outDir = path.resolve( options.out ?? path.join( REPO, 'artifacts/clips', name ) );
 // the crop box in CSS px (384 device px at a ratio of 2, as the parity crops)
@@ -286,7 +290,7 @@ try {
 		boxes.push( record );
 
 	} );
-	const stepped = await page.evaluate( async ( { tracked, every, box, cssScale, fullFrames } ) => {
+	const stepped = await page.evaluate( async ( { tracked, every, dense, box, cssScale, fullFrames } ) => {
 
 		const s = window.__PONLAI__, clip = window.__PONLAI_CLIP__;
 		const V = s.camera.position.constructor;
@@ -306,7 +310,7 @@ try {
 			...( clip.scale ? { scale: clip.scale } : {} ),
 			onFrame: async ( i ) => {
 
-				if ( i % every !== 0 && ! fullFrames.includes( i ) ) return;
+				if ( i % every !== 0 && ! fullFrames.includes( i ) && ! dense.some( ( [ a, b ] ) => i >= a && i <= b ) ) return;
 				s.camera.updateMatrixWorld();
 				const out = {};
 				for ( const t of tracked ) {
@@ -327,12 +331,12 @@ try {
 		} );
 		return { ...result, pipelines: before === null ? null : s.pipelines.total - before, wallMs: performance.now() - t0, notes: window.__PONLAI_CLIP_NOTES__ ?? [] };
 
-	}, { tracked, every, box: BOX, cssScale, fullFrames: [ ...full ] } );
+	}, { tracked, every, dense, box: BOX, cssScale, fullFrames: [ ...full ] } );
 	const diagAfter = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	await writeFile( path.join( outDir, 'clip.json' ), JSON.stringify( {
 		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, view: viewName, aa, quality,
 		viewport: { width: W * cssScale, height: H * cssScale, deviceScaleFactor: ratio }, gtFallback, downsample: gt ? 2 : 1,
-		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, grain: { was: grain, captured: 0 }, scaleSchedule, frames, every, full: [ ...full ],
+		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, grain: { was: grain, captured: 0 }, scaleSchedule, frames, every, dense, full: [ ...full ],
 		browser: browser.version(), anchors, boxes, stepped, diagBefore, diagAfter, errors,
 		wallMinutes: ( Date.now() - started ) / 60000, gpuBusyBefore: busy,
 	}, null, 2 ) );

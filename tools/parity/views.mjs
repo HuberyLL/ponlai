@@ -24,7 +24,9 @@ import { fileURLToPath } from 'node:url';
 const PRE = `const s = window.__PONLAI__;
 const isl = () => { const i = s.scene.getObjectByName( 'island' ); i.geometry.computeBoundingBox(); const b = i.geometry.boundingBox;
 	return { cx: ( b.min.x + b.max.x ) / 2, cz: ( b.min.z + b.max.z ) / 2, rx: ( b.max.x - b.min.x ) / 2, rz: ( b.max.z - b.min.z ) / 2, top: b.max.y }; };
-const free = ( p, l, fov ) => { s.setCameraView( 'island' ); s.setCameraMode( 'free' ); s.camera.position.set( p[ 0 ], p[ 1 ], p[ 2 ] );
+// (older builds, such as the exp/taa preview, have no setCameraView or controls.settle: the views
+// fall back to what those builds have, so the experiment's images can be cut alike)
+const free = ( p, l, fov ) => { s.setCameraView?.( 'island' ); s.setCameraMode( 'free' ); s.camera.position.set( p[ 0 ], p[ 1 ], p[ 2 ] );
 	s.camera.lookAt( l[ 0 ], l[ 1 ], l[ 2 ] ); s.camera.fov = fov; s.camera.updateProjectionMatrix(); };
 const orbitAround = ( dirx, dirz ) => { const t = s.controls.target, p = s.camera.position; const r = Math.hypot( p.x - t.x, p.z - t.z ), len = Math.hypot( dirx, dirz ) || 1;
 	p.x = t.x + dirx / len * r; p.z = t.z + dirz / len * r; s.camera.lookAt( t ); s.controls.update(); };`;
@@ -193,6 +195,19 @@ const ANCHORS = {
 	// open night sky in the upper part of the frame
 	'stars': () => { if ( s.sky.sunDir.y > - 0.1 ) return null; for ( const [ x, y ] of [ [ 0.45, 0.6 ], [ - 0.45, 0.6 ], [ 0, 0.7 ], [ 0.6, 0.35 ], [ - 0.6, 0.35 ] ] ) {
 		const d = V( x, y, 0.5 ).unproject( s.camera ).sub( s.camera.position ).normalize(); if ( sky( d ) ) return s.camera.position.clone().addScaledVector( d, 5000 ); } return null; },
+	// open sky just above the sea horizon, where the stars scintillate (NightSky.ts: below about
+	// 11 degrees, most below 3): beside the camera's heading and clear of the moon, the box's
+	// lower edge above the horizon and sky along it
+	'stars-horizon': () => { if ( s.sky.sunDir.y > - 0.1 ) return null; const f = V( 0, 0, - 1 ).applyQuaternion( s.camera.quaternion ), a0 = Math.atan2( f.z, f.x );
+		const am = Math.atan2( s.sky.moonDir.z, s.sky.moonDir.x ), sc = screen(), c = s.camera.position;
+		const ray = ( x, y ) => V( x / sc.w * 2 - 1, 1 - y / sc.h * 2, 0.5 ).unproject( s.camera ).sub( c ).normalize();
+		for ( const da of [ 0.45, - 0.45, 0.3, - 0.3, 0.6, - 0.6 ] ) { const a = a0 + da; if ( Math.abs( Math.atan2( Math.sin( a - am ), Math.cos( a - am ) ) ) < 0.25 ) continue;
+			const h = project( horizonPoint( Math.cos( a ), Math.sin( a ) ) ); if ( ! h ) continue;
+			for ( const e of [ 0.07, 0.09, 0.11, 0.13 ] ) { const d = V( Math.cos( a ) * Math.cos( e ), Math.sin( e ), Math.sin( a ) * Math.cos( e ) ), p = c.clone().addScaledVector( d, 5000 ), px = project( p );
+				if ( ! px || ! inner( px ) || px[ 1 ] + CROP / 2 > h[ 1 ] - 4 ) continue;
+				const bottom = px[ 1 ] + CROP / 2 - 2;
+				if ( [ - 0.5, 0, 0.5 ].every( ( k ) => sky( ray( px[ 0 ] + k * CROP, bottom ) ) ) ) return p; } }
+		return null; },
 	// the moon's upper limb (drawn at twice its true radius); near the frame's edge its box is
 	// clamped into the image rather than dropped
 	'moon-limb': () => { const m = s.sky.moonDir.clone().normalize(); if ( m.y < 0 ) return null; const up = V( 0, 1, 0 ).addScaledVector( m, - m.y ).normalize();
@@ -270,7 +285,7 @@ export const VIEWS = {
 	'low-36': { group: 'taa', q: 'weather=fair&preset=noon&dist=36&polar=80&az=330', crops: [ 'rim-lip', 'cliff-edge-sea', 'meadow-band-40m', 'horizon-line', 'tree-crown' ] },
 	// the islander a few metres away (skinned motion, ears, hands)
 	'islander-close': { group: 'taa', q: 'weather=fair&preset=noon', eval: `${ ISLANDER }
-		s.controls.minDistance = 2; s.controls.target.copy( c ); s.camera.position.set( c.x + 3.2, c.y + 2.4, c.z + 3.6 ); s.camera.lookAt( c ); s.controls.settle();`,
+		s.controls.minDistance = 2; s.controls.target.copy( c ); s.camera.position.set( c.x + 3.2, c.y + 2.4, c.z + 3.6 ); s.camera.lookAt( c ); ( s.controls.settle ?? s.controls.update ).call( s.controls );`,
 	crops: [ 'islander-head', 'islander-hands', 'meadow-near' ] },
 	// 1.2 m over the densest flower drift (3 m cells of the flower instances), looking 35 degrees down
 	// and away from the island's centre
