@@ -12,6 +12,8 @@ import type { SDF, Rock } from './types.ts';
 // A box on the ground (m).
 export interface Bounds { x0: number; z0: number; x1: number; z1: number }
 
+const grow = ( b: Bounds, m: number ): Bounds => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
+
 export interface Footprint {
 	// the footprint's corners rounded, at 0.08 m over its window
 	fine: Field2D;
@@ -125,7 +127,7 @@ function softMax( vals: Float64Array, n: number, k: number ): number {
 }
 
 // The macro coast: a slow wobble of the wall around the footprint (m, + outward).
-function coastWobble( x: number, z: number ): number {
+export function coastWobble( x: number, z: number ): number {
 
 	const broad = noise3( x * 0.105 + 8.7, 4.2, z * 0.105 - 3.1 );
 	const shoulder = noise3( x * 0.22 - z * 0.07 - 4.6, 7.9, z * 0.21 + x * 0.04 );
@@ -142,11 +144,12 @@ export function islandSurfaceHeight( x: number, z: number ): number {
 }
 
 // The island block: the flat meadow plateau inside a weathered sea cliff (Cliff.ts). Everything
-// derives from the footprint, so a grown island gets the same kind of coast.
-export function makeIslandSDF( fp: Footprint ): SDF {
+// derives from the footprint, so a grown island gets the same kind of coast. `area` is the box the
+// SDF is evaluated in, grown by 25 m (by default the whole land's).
+export function makeIslandSDF( fp: Footprint, area: Bounds = grow( fp.bounds, 25 ) ): SDF {
 
 	const top = islandSurfaceHeight;
-	const wall = new CliffWall( ( x, z ) => fp.dist( x, z ), coastWobble, top, fp.bounds );
+	const wall = new CliffWall( ( x, z ) => fp.dist( x, z ), coastWobble, top, area );
 
 	const islandSDF: SDF = ( x, y, z ) => Math.max( wall.at( x, y, z ), ISLAND_BOTTOM - y );
 
