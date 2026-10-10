@@ -43,9 +43,13 @@ import type * as THREE from 'three/webgpu';
 //   2. a registered scene, quad or compute node (`object()`, optionally only into one target), or a
 //      name pattern on the compute node, quad or target (`pattern()`), else
 //   3. the pass it is nested in (an rtt() pass rendered from another pass's node graph), else
-//   4. the innermost wrapped method on the call stack (`scope()`), else
-//   5. a wrapped async method still running (`scope( ..., { async: true } )`: the sky's bakes run
+//   4. the frame graph's pass running (`graphPass()`, which the graph's pass hooks call with the
+//      pass's label), else
+//   5. the innermost wrapped method on the call stack (`scope()`), else
+//   6. a wrapped async method still running (`scope( ..., { async: true } )`: the sky's bakes run
 //      in microtasks after the frame's tick), else 'other'.
+// So the graph labels its own passes, and only what runs inside a chain pass with a group of its
+// own (the composite, the blooms and glows, the light shafts) is labelled by hand.
 // The page exposes `window.__PONLAI_PROFILE__` (see `api`), read by tools/profile-frame.mjs.
 // `?profile=frames` keeps the frame and tick timing but skips the GPU timestamps. Measure frame
 // rates that way: with timestamp queries on, Chrome ran the same frames up to a quarter faster
@@ -160,6 +164,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		private objects = new WeakMap<object, { label: string; target?: object }[]>();
 		private patterns: [ RegExp, string ][] = [];
 		private stack: string[] = [];
+		private graphLabel: string | null = null;
 		private asyncScopes = new Map<number, string>();
 		private asyncId = 0;
 		private frame: Frame | null = null;
@@ -253,6 +258,14 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 		}
 
+		/** Passes issued until the next call belong to `label` (the frame graph's pass running; null
+		 * when it ends), unless a target, object, pattern or parent pass labels them. */
+		graphPass( label: string | null ): void {
+
+			this.graphLabel = label;
+
+		}
+
 		/** Passes issued while `object[ method ]` runs belong to `label` (unless labelled otherwise).
 		 * An async method keeps its label for passes issued outside any tick until it settles. */
 		scope( object: unknown, method: string, label: string, { async = false }: { async?: boolean } = {} ): void {
@@ -298,6 +311,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			const names = this.names( drawn, target );
 			for ( const [ match, label ] of this.patterns ) if ( names.some( ( n ) => match.test( n ) ) ) return label;
 			if ( parent ) return parent.group;
+			if ( this.graphLabel !== null ) return this.graphLabel;
 			if ( this.stack.length ) return this.stack[ this.stack.length - 1 ];
 			if ( this.asyncScopes.size ) return [ ...this.asyncScopes.values() ].pop()!;
 			return 'other';
@@ -813,30 +827,19 @@ export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<stri
 	const h = handles as Record<string, Record<string, unknown>>;
 	const pipeline = h.pipeline;
 	const P = pipeline as Record<string, unknown> & { blooms: { node: unknown }[]; diffusion: { node: unknown }; passes: unknown[] };
-	// the frame graph
-	profiler.object( h.scene, 'opaque scene', P.sceneRT as object );
-	profiler.object( h.waterScene, 'water', P.sceneRT as object );
-	profiler.object( h.rainScene, 'rain draw', P.sceneRT as object );
-	for ( const quad of [ P.depthQuad, P.copyQuad, P.surfaceQuad ] ) profiler.object( quad as object, 'depth & copy resolves' );
-	// the frame graph's own rtt() passes first: a bloom's scan reaches the targets of the passes
-	// it reads, and the first label a target gets is kept
+	// the frame graph labels its passes itself (`graphPass`); inside its display chain, the passes
+	// with groups of their own: its rtt() passes first (a bloom's scan reaches the targets of the
+	// passes it reads, and the first label a target gets is kept)
 	profiler.scan( P.shafts, 'light shafts' );
 	profiler.scan( P.passes[ 0 ], 'composite (air, fog, veil)', 1 );
 	profiler.scan( P.passes[ 1 ], 'tilt-shift blur', 1 );
 	// the sharp image (the composite plus both blooms) is passes[ 2 ] when the composite renders
 	// once; label it before the look glow's scan reaches it
 	if ( P.passes[ 2 ] ) profiler.scan( P.passes[ 2 ], 'sharp (composite + blooms)', 1 );
-	// the sea fog's bank map, nearest depth and half-resolution march, and the blur's distances
-	profiler.pattern( /^Fog\./, 'composite (air, fog, veil)' );
-	profiler.pattern( /^Post\.ViewDistance/, 'tilt-shift blur' );
 	profiler.scan( P.blooms[ 0 ]?.node, 'bloom' );
 	profiler.scan( P.blooms[ 1 ]?.node, 'wide glow' );
 	profiler.scan( P.diffusion?.node, 'look glow' );
-	profiler.scan( P.display, 'grade & look' );
-	profiler.target( P.displayRT as object, 'grade & look' );
-	profiler.scan( P.output, 'output' );
-	profiler.scan( P.upscaledOutput, 'output & FSR' );
-	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes and the port's EASU (FSR.)
+	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes inside its chain (post=three-fsr)
 	// the sky's per-frame compute and its bakes
 	profiler.pattern( /^Clouds\.View/, 'clouds view march' );
 	profiler.pattern( /^Clouds\.Panorama/, 'clouds panorama' );
