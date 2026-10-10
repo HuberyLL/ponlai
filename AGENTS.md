@@ -62,7 +62,9 @@ stone exposed.
   Runtime switches for one-page A/Bs live in
   `src/debug/DebugFlags.ts`. `islander` picks the islanders' proportions (`medium`, the default, or
   `stock` (the kit's own), `subtle` and `strong` builds of `Proportions.ts`; also in
-  the GUI's Islander folder, which rebuilds the figure in place).
+  the GUI's Islander folder, which rebuilds the scene's walker in place). In game mode the
+  folder's proportion control is disabled: the game's islanders take their build from the URL
+  option as they load, so a change applies on the next load.
 - Quality knobs: one table, `QUALITY` in `src/Quality.ts`, per tier. Load knobs are compiled into
   materials or the frame graph and read once as those are built, so a change of tier reloads the
   page (the GUI's quality control does): `QualityProfile.water` (`Water.ts`: reflection rays and
@@ -149,6 +151,17 @@ stone exposed.
   <command ...>` wraps any other script, `status` names the holders and `gpu` shows the GPU's
   utilisation and the processes using it. The profiler also checks that the GPU is idle before it
   measures and marks its results contended otherwise.
+- Game URL options: `game` (the island as a game), `hour` (the start hour, default 8),
+  `dayLength` (real seconds per game day at 1x, default 1440: 24 minutes), `paused` (the game
+  starts paused; the scene runs again once the game does), `load` (resume the game saved in this
+  browser). The page's own `weather` option and auto weather work in the game as without it. The
+  game has no player interface: Space pauses only the game clock, the GUI's hour, clock pause and
+  time preset are off (the game's clock owns the time of day), and its Game folder
+  (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
+  (position, walking or standing, whether a thought is in flight) and sends it walking to the next
+  click on the island. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools`,
+  `setBrain( brain )` (kept across a load), `think( id )`, `walkTo( id, x, z )`, `focus( id )`,
+  `setSpeed`, `togglePause`, `save` and `load`.
 - Other tools: `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water
   and wave optics (each file names the server it expects); `tools/verify-scene.mjs` checks a
   production preview; `tools/benchmark-lighting.mjs` A/B-times two builds;
@@ -165,11 +178,16 @@ stone exposed.
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and
   `tools/build-milky-way.py` rebuild the night sky's data in `public/sky/` from the raw catalogue
   and map (each file says where to get them and how to run it).
-  `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs` and `verify-wind.mjs` are CPU-only
-  (plain `node`). GPU probes take the GPU lock; keep other pages that render the scene closed.
+  `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
+  (a few checks of the game's skeleton: the clock, the ground and a path, a body walking to a
+  point, a save round trip, a brain's late answer; its island is in `tools/game-fixture.mjs`) are
+  CPU-only (plain `node`). GPU probes take the GPU lock; keep
+  other pages that render the scene closed.
 
 ## Layout
 
+- `docs/game-design.md`: the game's design (what the game is and why), kept up to date as
+  decisions change; read it before gameplay work.
 - `src/Quality.ts`: the quality tiers, every knob of the frame's cost in one table (see
   Decisions); `src/QualityDetect.ts` chooses one for the GPU at startup.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics (the island camera in
@@ -277,6 +295,16 @@ stone exposed.
   everything is keyed by the rig's bone names, so any figure of the kit takes the same build, and
   per-frame skinning stays plain (bone matrices only). While the character art is settled, models
   load from the git-ignored `artifacts/assets/` (dev server only).
+- `src/game/`: the game behind `?game`, wired into `main.ts` by `Game.ts`: an engine skeleton with
+  no gameplay content. `sim/` is the headless simulation (no three.js or DOM; node runs it by
+  stripping types, so `import type` and erasable syntax only): a fixed tick of one game second
+  and its clock, a seeded generator kept in the state, a 0.5 m ground grid of walkable cells with
+  A* paths (`grid.ts`, `path.ts`), and the islanders' bodies (id, name, position, heading) with a
+  motor that walks a path to a point (`Sim.walkTo`). `sim/agent.ts` is the agent loop's frame: a
+  tool registry (name to a handler acting on a body; empty), the perception hook (a placeholder:
+  the time and the islander's own position) and the `Brain` interface. `view/` draws the
+  islanders (their figures, or a stand-in when a model is missing); `GameDebug.ts` is the debug
+  panel's Game folder.
 
 ## Decisions (keep to these)
 
@@ -661,6 +689,18 @@ stone exposed.
   kit's 5.5: a larger head, shorter legs, broader shoulders and hands), chosen by the user from
   four builds; the kit's own stays selectable for comparison.
 - Do not commit reference images, and do not ship third-party art without a licence.
+- The game lives behind `?game`; without it the page stays the art-review scene, unchanged. In the
+  game the simulation's clock decides the time of day and the page's sky follows it, while waves,
+  wind and rain keep real time; the weather is the page's own and nothing in the simulation
+  depends on it. The game is a skeleton: its tools, perception and gameplay are to be designed,
+  so none is built ahead of that design. Thinking is asynchronous to the world: `think( id )` asks
+  the brain (none by default, so the islanders stand idle) with the islander's perception, the
+  simulation never waits for the answer, the body goes on walking or standing meanwhile, and the
+  answer's tool calls run on the body when it arrives; one thought per islander may be in flight.
+  What starts a thought is not decided: nothing calls `think` but the console. Walking is the
+  body's motor, not a tool. The save is the state as JSON with a version number, in one slot. The
+  ground comes from the world generator's own exports: the bushes `buildFoliage` draws and the
+  shrubs and trees `pickPlantSites` placed, as obstacles.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
   copyright line, licence) and the licence text sits next to them (see `src/ocean/tidewater.LICENSE.txt`).
   Public-domain code (CC0, Unlicense) needs no notice; credit it in a comment instead. Techniques

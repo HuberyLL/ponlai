@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { pickFoliageSites, type FoliageSite } from './FoliageSites.ts';
 import { supportsMeadow } from './MeadowSurface.ts';
-import { puddleHollows, PUDDLE_FULL_LEVEL } from '../weather/PuddleHollows.ts';
+import { puddleGround } from '../weather/PuddleHollows.ts';
 import { VEGETATION_STRIDE as STRIDE, VEGETATION_SPACING } from './types.ts';
 
 // Where the island top's shrubs and small trees grow. Every rule reads the turf anchors and
@@ -41,8 +41,6 @@ const SHRUB_SIGHT_HEIGHT = 1;
 // One shrub group per this much meadow (m^2), their centres at least this far apart (m).
 const GROUP_AREA = 13;
 const GROUP_SPACING = 2.8;
-// The puddles never reach below this hollow value, whatever the ground's relief.
-const DRY_GROUND = PUDDLE_FULL_LEVEL - 0.035;
 
 interface Anchor { i: number; x: number; y: number; z: number; rim: number }
 
@@ -75,11 +73,11 @@ class AnchorGrid {
 // No standing water under the plant: its stem and the ring of ground it covers stay dry.
 function dryGround( x: number, z: number, r: number ): boolean {
 
-	if ( puddleHollows( x, z ) > DRY_GROUND ) return false;
+	if ( puddleGround( x, z ) ) return false;
 	for ( let k = 0; k < 6; k ++ ) {
 
 		const a = k / 6 * Math.PI * 2;
-		if ( puddleHollows( x + Math.cos( a ) * r * 0.6, z + Math.sin( a ) * r * 0.6 ) > DRY_GROUND ) return false;
+		if ( puddleGround( x + Math.cos( a ) * r * 0.6, z + Math.sin( a ) * r * 0.6 ) ) return false;
 
 	}
 	return true;

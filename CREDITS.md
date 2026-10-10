@@ -263,8 +263,9 @@ packages, into `dist/licenses/`.
   the pack's own `License.txt` calls it "Ultimate Modular Males")
 - Licence: [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/)
 - Files: parts of `Farmer.gltf` (its rig, clips and feet), `Adventurer.gltf` and `Casual_2.gltf`,
-  recoloured into the island's palette, given procedural pointed ears and merged into one skinned
-  mesh at load time. They are not in the repository yet: the dev server loads them
+  recoloured into the island's palette (the scene's islander and the game's islanders, their
+  colour variants in `src/characters/looks.ts`), given procedural pointed ears and merged into one
+  skinned mesh at load time. They are not in the repository yet: the dev server loads them
   from the git-ignored `artifacts/assets/` while the character art is settled.
 
 ### Cloud shape noise

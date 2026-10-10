@@ -6,10 +6,9 @@ import {
 import { LEAN_REF, rootPhase, setWindDisplacement, wave, windField, type WindState } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
 import { mulberry32 } from './noise.ts';
-import { pickFoliageSites } from './FoliageSites.ts';
+import { bushRooted, FOLIAGE_SEED, pickFoliageSites } from './FoliageSites.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
-import { supportsMeadow } from '../materials/Meadow.ts';
 import { SCENE_SAMPLES } from '../post/SceneSamples.ts';
 import type { Shared } from '../shared.ts';
 
@@ -390,7 +389,7 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture, legacy = fal
 
 export function buildFoliage( veg: Float32Array, shared: Shared ): THREE.InstancedMesh {
 
-	const rng = mulberry32( 7 );
+	const rng = mulberry32( FOLIAGE_SEED );
 	const sites = pickFoliageSites( veg, rng );
 	const map = leafTexture();
 	const geo = bushGeometry();
@@ -420,7 +419,7 @@ export function buildFoliage( veg: Float32Array, shared: Shared ): THREE.Instanc
 		m.compose( pos, q, scl );
 		col.copy( greens[ Math.floor( rng() * greens.length ) ] ).multiplyScalar( 0.85 + rng() * 0.35 );
 		// Keep proposal collisions and random draws stable, then omit bushes rooted on stone.
-		if ( ! supportsMeadow( s.y, s.ny ) ) return;
+		if ( ! bushRooted( s ) ) return;
 		visibility[ count ] = s.visibility;
 		roots.set( [ pos.x, pos.y, pos.z, 0 ], count * 4 );
 		mesh.setMatrixAt( count, m );
