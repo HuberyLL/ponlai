@@ -299,7 +299,7 @@ export const checks = [
 
 	} ],
 
-	[ 'temporal runtime: the jitter hooks frame the jittered passes that run; the opaque copy and the frame-end copy, their destinations initialised after resizes', () => {
+	[ 'temporal runtime: the jitter hooks frame the jittered passes that run, even when one throws; the opaque copy and the frame-end copy, their destinations initialised after resizes', () => {
 
 		const log = [];
 		const g = new FrameGraph( mockRenderer( log ), { sceneSamples: 1 } );
@@ -310,7 +310,13 @@ export const checks = [
 		const surfaceDepthPrev = g.color( 'surfaceDepthPrev', { size: RENDER, format: 'Red', type: 'Float' }, true );
 		let canvas = g.import( 'canvas', null, CANVAS );
 		const mrt = { name: 'sceneMRT' }, overlayMRT = { name: 'overlayMRT' };
-		const pass = ( name ) => ( f, graph ) => log.push( `${ name }${ graph.renderer.getMRT() ? ` (${ graph.renderer.getMRT().name })` : '' }` );
+		let failing = null;
+		const pass = ( name ) => ( f, graph ) => {
+
+			if ( failing === name ) throw new Error( `${ name } failed` );
+			log.push( `${ name }${ graph.renderer.getMRT() ? ` (${ graph.renderer.getMRT().name })` : '' }` );
+
+		};
 		let overlay = true;
 		g.addPass( 'opaque', 'callback', ( b ) => {
 
@@ -354,6 +360,13 @@ export const checks = [
 		g.execute( {} );
 		assert.deepEqual( log.filter( ( e ) => e.startsWith( 'init' ) ).sort(), [ 'init opaqueColor', 'init surfaceDepthPrev' ] );
 		assert.equal( g.historyValid( surfaceDepthPrev ), true );
+		// a pass that throws inside the span still takes the jitter off the camera (the next frame
+		// would take the shifted projection for the camera's own)
+		log.splice( 0 );
+		failing = 'water';
+		assert.throws( () => g.execute( {} ), /water failed/ );
+		assert.deepEqual( log.filter( ( e ) => e.startsWith( 'jitter' ) ), [ 'jitter on', 'jitter off' ] );
+		failing = null;
 
 	} ],
 

@@ -787,13 +787,16 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 		this.initTargets();
 		this.frameWritten = written;
 		ops.begin( table );
+		// whether the jitter is on the camera (a pass that throws inside the span must not leave it
+		// there: the next frame would take the shifted projection for the camera's own)
+		let jittering = false;
 		try {
 
 			for ( const index of running ) {
 
-				if ( index === first ) this.hooks.jitterBegin?.( f );
+				if ( index === first ) { this.hooks.jitterBegin?.( f ); jittering = true; }
 				this.runPass( index, f, table );
-				if ( index === last ) this.hooks.jitterEnd?.( f );
+				if ( index === last ) { jittering = false; this.hooks.jitterEnd?.( f ); }
 
 			}
 
@@ -804,6 +807,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 
 		} finally {
 
+			if ( jittering ) this.hooks.jitterEnd?.( f );
 			this.opsApplied = ops.applied;
 			// dev: every rewrite the table expects reached WebGPU (AttachmentOps must be installed
 			// after any wrapper of the device's createCommandEncoder that does not call through,
