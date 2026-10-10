@@ -177,7 +177,7 @@ stone exposed.
   flight in `FreeCameraControls.ts`).
   `window.__PONLAI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev
   server or with `?debug` (or `?profile`, which also loads the frame profiler in `src/debug/`).
-  `__SOOMI__.loop.step( { frames, dt, scale, camera, onFrame, clock } )` stops the live loop and
+  `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock } )` stops the live loop and
   steps the tick itself with fixed timestamps, the frame pacer and the dynamic scale bypassed and
   nothing taken from the wall clock (`loop.start()` resumes the live loop); the diagnostics add
   the scene's anti-aliasing (`aa`), the pipelines created so far (`pipelines`, counted by

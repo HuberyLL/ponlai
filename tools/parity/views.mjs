@@ -1,6 +1,6 @@
 // The parity views: name -> { q, eval, crops, group }. Every view is a paused frame at a fixed t;
 // `q` is added to the common query (capture-set.mjs), `eval` runs in the page once
-// window.__SOOMI__ exists (before capture.mjs's settling wait). Placements derive from the island
+// window.__PONLAI__ exists (before capture.mjs's settling wait). Placements derive from the island
 // mesh's bounds, the plant sites, the flower instances, the rim trails, the islander and the sun
 // and moon, so they follow any tile layout, as tools/profile-frame.mjs places its scenes.
 //
@@ -9,7 +9,7 @@
 //
 // Crop anchors: each view names the subjects worth a 1:1 look (`crops`). The page projects a world
 // point for each into a 384 px box of the captured image (device pixels) and exposes them as
-// `window.__SOOMI_CROPS__`, a getter evaluated when read, so it follows the camera the capture
+// `window.__PONLAI_CROPS__`, a getter evaluated when read, so it follows the camera the capture
 // shows; capture.mjs writes it into the capture's JSON (`crops`) and diff-set.py --crops-from cuts
 // those boxes. An anchor that is off screen or hidden behind the island is reported with
 // `missing` instead of a box. Reading the anchors does not change the scene.
@@ -21,7 +21,7 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const PRE = `const s = window.__SOOMI__;
+const PRE = `const s = window.__PONLAI__;
 const isl = () => { const i = s.scene.getObjectByName( 'island' ); i.geometry.computeBoundingBox(); const b = i.geometry.boundingBox;
 	return { cx: ( b.min.x + b.max.x ) / 2, cz: ( b.min.z + b.max.z ) / 2, rx: ( b.max.x - b.min.x ) / 2, rz: ( b.max.z - b.min.z ) / 2, top: b.max.y }; };
 const free = ( p, l, fov ) => { s.setCameraView( 'island' ); s.setCameraMode( 'free' ); s.camera.position.set( p[ 0 ], p[ 1 ], p[ 2 ] );
@@ -30,7 +30,7 @@ const orbitAround = ( dirx, dirz ) => { const t = s.controls.target, p = s.camer
 	p.x = t.x + dirx / len * r; p.z = t.z + dirz / len * r; s.camera.lookAt( t ); s.controls.update(); };`;
 
 // The crop anchors, installed after the view's own eval. Everything here runs only when
-// window.__SOOMI_CROPS__ is read: the island's height grid (the highest vertex per 0.5 m cell),
+// window.__PONLAI_CROPS__ is read: the island's height grid (the highest vertex per 0.5 m cell),
 // visibility by marching the grid from the camera, and the projection into device pixels.
 const CROPS = `
 const CROP = 384, CELL = 0.5;
@@ -204,7 +204,7 @@ const ANCHORS = {
 	'fog-cliff': () => { const g = heightGrid(); return pick( coast( g.top * 0.45 ).map( ( c ) => ( { p: c.p, score: dist( c.p ) } ) ) ); },
 };
 const anchors = NAMES;
-Object.defineProperty( window, '__SOOMI_CROPS__', { configurable: true, get: () => {
+Object.defineProperty( window, '__PONLAI_CROPS__', { configurable: true, get: () => {
 	s.camera.updateMatrixWorld();
 	const sc = screen(), out = {};
 	placed = [];

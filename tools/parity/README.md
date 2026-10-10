@@ -15,7 +15,7 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
 Capture a production build (`npm run build`, then `npx vite preview --host 127.0.0.1 --port <port>
 --strictPort`), each branch from its own worktree on its own port. Two things the captures need:
 
-1. `?debug` in the URL (capture-set.mjs adds it): `window.__SOOMI__` and the diagnostics exist only
+1. `?debug` in the URL (capture-set.mjs adds it): `window.__PONLAI__` and the diagnostics exist only
    on the dev server or with it.
 2. The islanders load from `/artifacts/assets/...`, which only the dev server serves. In a preview
    build the page waits at "Waking the villagers..." and the capture times out. Link the assets into
@@ -74,7 +74,7 @@ frozen, plus 5 more.
 
 ### Crop anchors
 
-Each view names the subjects worth a 1:1 look. When the page reads `window.__SOOMI_CROPS__` (a
+Each view names the subjects worth a 1:1 look. When the page reads `window.__PONLAI_CROPS__` (a
 getter the view's eval installs; it changes nothing in the scene) each anchor's world point is
 projected into a 384 px box of the captured image, in device pixels, and capture.mjs stores the
 result in the capture's JSON as `crops`: `{ name: { x, y, w, h, anchor, world, distance } }`, or
@@ -175,7 +175,7 @@ uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py 
     --test DIR --msaa DIR --gt DIR [--thresholds t.json] [--baseline metrics.json]
 ```
 
-- The page is stepped by `__SOOMI__.loop.step` (src/main.ts, debug builds only): the live loop
+- The page is stepped by `__PONLAI__.loop.step` (src/main.ts, debug builds only): the live loop
   stops and the tick runs `frames` times with a fixed dt, nothing from the wall clock, the frame
   pacer and the dynamic scale bypassed and the render scale given per frame. The clouds' trace phase
   and the sky's and refracted sun's wall-clock cadences restart with each call, so a clip does not

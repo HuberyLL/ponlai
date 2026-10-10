@@ -6,7 +6,7 @@
 // once it is truthy (e.g. a temporal resolve's convergence flag). --frames n captures n frames,
 // k rendered frames apart (default 1): <name>.png, then <name>.f1.png ... <name>.f<n-1>.png.
 // --timeout (ms) bounds each wait for the page (its load, its first 150 frames, a screenshot);
-// raise it when other pages keep the GPU busy. The JSON holds the page's `window.__SOOMI_CROPS__`
+// raise it when other pages keep the GPU busy. The JSON holds the page's `window.__PONLAI_CROPS__`
 // (tools/parity/views.mjs) as `crops` when it is set.
 // A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
 // a running one, or --exclusive, takes it to itself, since its frame times are reported too.
@@ -78,7 +78,7 @@ try {
 		frames.push( { file, frame } );
 	}
 	const diag = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
-	const crops = await page.evaluate( () => window.__SOOMI_CROPS__ ?? null );
+	const crops = await page.evaluate( () => window.__PONLAI_CROPS__ ?? null );
 	const gpu = await page.evaluate( async () => {
 		const adapter = await navigator.gpu.requestAdapter();
 		return adapter ? { vendor: adapter.info.vendor, architecture: adapter.info.architecture, device: adapter.info.device, description: adapter.info.description } : null;

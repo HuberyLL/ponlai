@@ -1,6 +1,6 @@
 // Stepped clips for the temporal anti-aliasing work: a parity view (tools/parity/views.mjs) set in
 // motion by a named clip (tools/parity/clips.mjs), rendered frame by frame with the page's
-// deterministic stepper (`__SOOMI__.loop.step`: fixed dt, no wall clock, the frame pacer and the
+// deterministic stepper (`__PONLAI__.loop.step`: fixed dt, no wall clock, the frame pacer and the
 // dynamic scale bypassed), with crops of named subjects captured as they move.
 //
 //   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|gt-hi]
@@ -210,7 +210,7 @@ try {
 	let page = await open( gt ? GT_RATIO : DSF, 1 );
 	if ( gt ) {
 
-		const canvas = await page.evaluate( () => [ window.__SOOMI__.renderer.domElement.width, window.__SOOMI__.renderer.domElement.height ] );
+		const canvas = await page.evaluate( () => [ window.__PONLAI__.renderer.domElement.width, window.__PONLAI__.renderer.domElement.height ] );
 		if ( canvas[ 0 ] !== Math.round( W * GT_RATIO ) ) {
 
 			console.log( `gt-hi: the canvas is ${ canvas.join( 'x' ) }, not ${ W * GT_RATIO } wide; falling back to twice the CSS size at a ratio of ${ NOMINAL_HIGH }` );
@@ -229,8 +229,8 @@ try {
 		p.on( 'console', ( m ) => { if ( options.verbose || m.type() === 'error' || m.type() === 'warning' ) errors.push( m.type() + ': ' + m.text() ); } );
 		p.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
 		await p.goto( url );
-		await p.waitForFunction( () => window.__SOOMI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
-		if ( ! ( await p.evaluate( () => typeof window.__SOOMI__.loop.step === 'function' ) ) ) throw new Error( 'this build has no __SOOMI__.loop.step' );
+		await p.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
+		if ( ! ( await p.evaluate( () => typeof window.__PONLAI__.loop.step === 'function' ) ) ) throw new Error( 'this build has no __PONLAI__.loop.step' );
 		await p.evaluate( viewEval( viewName, crops ) );
 		// settle as capture.mjs does: the first 150 frames and the loading screen gone
 		await p.waitForTimeout( 3000 );
@@ -244,20 +244,20 @@ try {
 	// no film grain in a metric capture; the GT keeps its own fixed ratio (no scale schedule)
 	const grain = await page.evaluate( ( gt ) => {
 
-		const s = window.__SOOMI__, settings = s.pipeline?.settings;
+		const s = window.__PONLAI__, settings = s.pipeline?.settings;
 		const before = settings && typeof settings.grain === 'number' ? settings.grain : null;
 		if ( before !== null ) settings.grain = 0;
-		if ( gt && window.__SOOMI_CLIP__.scale ) window.__SOOMI_CLIP__.scale = null;
+		if ( gt && window.__PONLAI_CLIP__.scale ) window.__PONLAI_CLIP__.scale = null;
 		return before;
 
 	}, gt );
-	if ( grain === null ) throw new Error( 'this build has no __SOOMI__.pipeline.settings.grain to turn off' );
+	if ( grain === null ) throw new Error( 'this build has no __PONLAI__.pipeline.settings.grain to turn off' );
 	const scaleSchedule = clip.scale ? ( gt ? 'ignored: the ground truth renders at its fixed ratio' : 'applied' ) : 'none';
 	const diagBefore = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	// the anchors' world points at the base pose, then their boxes per frame in CSS px
 	const anchors = options[ 'anchors-from' ] ? Object.fromEntries( Object.entries( JSON.parse( await readFile( options[ 'anchors-from' ], 'utf8' ) ).anchors ).filter( ( [ n ] ) => crops.includes( n ) ) ) : await page.evaluate( ( names ) => {
 
-		const all = window.__SOOMI_CROPS__ ?? {};
+		const all = window.__PONLAI_CROPS__ ?? {};
 		return Object.fromEntries( names.map( ( n ) => [ n, all[ n ] ?? { missing: 'no such anchor in this view' } ] ) );
 
 	}, crops );
@@ -272,7 +272,7 @@ try {
 		return gt ? encodePng( downsample2( decodePng( png ) ) ) : png;
 
 	};
-	await page.exposeFunction( '__soomiClipFrame', async ( i, frameBoxes, time, state ) => {
+	await page.exposeFunction( '__ponlaiClipFrame', async ( i, frameBoxes, time, state ) => {
 
 		const record = { i, time, ...state, boxes: {} };
 		for ( const [ n, b ] of Object.entries( frameBoxes ) ) {
@@ -288,7 +288,7 @@ try {
 	} );
 	const stepped = await page.evaluate( async ( { tracked, every, box, cssScale, fullFrames } ) => {
 
-		const s = window.__SOOMI__, clip = window.__SOOMI_CLIP__;
+		const s = window.__PONLAI__, clip = window.__PONLAI_CLIP__;
 		const V = s.camera.position.constructor;
 		const project = ( w ) => {
 
@@ -321,11 +321,11 @@ try {
 				// what the frame was drawn with, to tell a scene or camera difference from a GPU one
 				const hash = ( list ) => { let h = 2166136261; for ( const x of list ) { const b = new Float64Array( [ x ] ), u = new Uint32Array( b.buffer ); h = Math.imul( h ^ u[ 0 ], 16777619 ) >>> 0; h = Math.imul( h ^ u[ 1 ], 16777619 ) >>> 0; } return h.toString( 16 ); };
 				const state = { render: [ s.pipeline.width, s.pipeline.height ], view: hash( [ ...s.camera.matrixWorld.elements, ...s.camera.projectionMatrix.elements ] ), frame: s.renderer.info.frame };
-				await window.__soomiClipFrame( i, out, s.clockTime(), state );
+				await window.__ponlaiClipFrame( i, out, s.clockTime(), state );
 
 			},
 		} );
-		return { ...result, pipelines: before === null ? null : s.pipelines.total - before, wallMs: performance.now() - t0, notes: window.__SOOMI_CLIP_NOTES__ ?? [] };
+		return { ...result, pipelines: before === null ? null : s.pipelines.total - before, wallMs: performance.now() - t0, notes: window.__PONLAI_CLIP_NOTES__ ?? [] };
 
 	}, { tracked, every, box: BOX, cssScale, fullFrames: [ ...full ] } );
 	const diagAfter = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );

@@ -3,7 +3,7 @@
 // paused, its frame count, a camera path and, where it needs them, extra URL options, a render
 // scale schedule and a per-frame hook. tools/capture-clip.mjs loads the view as capture-set.mjs
 // does (paused at t=12), runs the view's eval, then steps the clip's frames with
-// `__SOOMI__.loop.step` (main.ts: fixed dt, no wall clock, the frame pacer and the dynamic scale
+// `__PONLAI__.loop.step` (main.ts: fixed dt, no wall clock, the frame pacer and the dynamic scale
 // bypassed) and captures crops and full frames as it goes.
 //
 // Camera paths are functions of the frame index applied to the view's own pose (the "base"), so
@@ -20,7 +20,7 @@
 //                            the walking islander's centre, followed as it moves)
 //   still                    the base pose every frame
 //
-// A render scale schedule is given as shares of the tier's nominal ratio (`__SOOMI__.nominalScale()`,
+// A render scale schedule is given as shares of the tier's nominal ratio (`__PONLAI__.nominalScale()`,
 // 1.5 on high at the default size), so it keeps its meaning at any --size; the page turns it into
 // the absolute ratios `loop.step` takes.
 //
@@ -29,7 +29,7 @@
 //
 //   node tools/parity/clips.mjs list            -> clip names, one per line
 //   node tools/parity/clips.mjs show <clip>     -> the clip's definition as JSON
-//   node tools/parity/clips.mjs eval <clip>     -> the page js that installs window.__SOOMI_CLIP__
+//   node tools/parity/clips.mjs eval <clip>     -> the page js that installs window.__PONLAI_CLIP__
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VIEWS } from './views.mjs';
@@ -42,7 +42,7 @@ const STRIKE_AT_30 = `if ( i === 30 ) { const f = new s.camera.position.construc
 // The sun-shadow clip wants the vegetation still, so only the shadows move: a wind freeze flag
 // does not exist yet (it arrives with the vegetation's motion vectors, mv-vegetation in M8); until
 // then the clip runs with the wind as it is and says so in its notes.
-const WIND_FREEZE = `if ( 'windFreeze' in s.flags ) s.flags.windFreeze = true; else window.__SOOMI_CLIP_NOTES__.push( 'flags.windFreeze does not exist yet (mv-vegetation, M8): the vegetation sways with the wind' );`;
+const WIND_FREEZE = `if ( 'windFreeze' in s.flags ) s.flags.windFreeze = true; else window.__PONLAI_CLIP_NOTES__.push( 'flags.windFreeze does not exist yet (mv-vegetation, M8): the vegetation sways with the wind' );`;
 
 export const CLIPS = {
 	// camera motion over a frozen scene
@@ -126,7 +126,7 @@ const PATH = {
 		return ( i ) => { const c = subjects[ subject ](); place( c.clone().add( offset.clone().applyAxisAngle( up, deg * rad * i ) ), c ); }; },
 };`;
 
-/** Page code that installs `window.__SOOMI_CLIP__` = { camera( i ), frames, clock, dt, scale } for
+/** Page code that installs `window.__PONLAI_CLIP__` = { camera( i ), frames, clock, dt, scale } for
  * the clip, from the camera's current pose (run it after the view's eval); `scale` holds absolute
  * render ratios, one per frame. */
 export function clipEval( name, { frames, dt = 1 / 60 } = {} ) {
@@ -134,15 +134,15 @@ export function clipEval( name, { frames, dt = 1 / 60 } = {} ) {
 	const clip = CLIPS[ name ];
 	if ( ! clip ) throw new Error( `unknown clip ${ name }` );
 	const [ kind, ...args ] = clip.path;
-	return `(async () => { const s = window.__SOOMI__; const dt = ${ dt };
-window.__SOOMI_CLIP_NOTES__ = [];
+	return `(async () => { const s = window.__PONLAI__; const dt = ${ dt };
+window.__PONLAI_CLIP_NOTES__ = [];
 ${ clip.setup ?? '' }
 ${ PATHS }
 const path = PATH[ ${ JSON.stringify( kind ) } ]( ...${ JSON.stringify( args ) } );
-window.__SOOMI_CLIP__ = { name: ${ JSON.stringify( name ) }, frames: ${ frames ?? clip.frames }, clock: ${ JSON.stringify( clip.clock ) }, dt,
+window.__PONLAI_CLIP__ = { name: ${ JSON.stringify( name ) }, frames: ${ frames ?? clip.frames }, clock: ${ JSON.stringify( clip.clock ) }, dt,
 	scale: ( ( shares ) => {
 		if ( ! shares ) return null;
-		if ( typeof s.nominalScale !== 'function' ) throw new Error( 'this build has no __SOOMI__.nominalScale for the scale schedule of the clip' );
+		if ( typeof s.nominalScale !== 'function' ) throw new Error( 'this build has no __PONLAI__.nominalScale for the scale schedule of the clip' );
 		const nominal = s.nominalScale();
 		return shares.map( ( k ) => k * nominal );
 	} )( ${ JSON.stringify( clipScales( clip ) ) } ),
