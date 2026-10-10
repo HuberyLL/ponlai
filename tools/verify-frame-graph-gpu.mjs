@@ -16,7 +16,8 @@
 //    without the velocity output), beside the same scene through `compileInto`, which must pass.
 //    The controls must fail where they are expected to.
 // 2. What the temporal frame graph rests on, in three r186 (bare page, patched renderer): blending
-//    per attachment comes only from the renderer's context MRT. Into a two-attachment target
+//    per attachment comes only from the renderer's context MRT, here Motion.ts's sceneMRT and
+//    overlayMRT, the passes' own. Into a two-attachment target
 //    (`sceneColor`, `velocity`, half float, as the graph names them), each read back:
 //    - the scene MRT's clear: the colour takes the renderer's clear colour, the velocity its own
 //      clear colour (0, 0, 1, 0);
@@ -358,15 +359,11 @@ async function probeTemporal() {
 		return rt;
 
 	};
-	// The scene MRT: the colour with the material's blending, the velocity overwritten (no blend mode)
-	// and cleared to ( 0, 0, 1, 0 ). The overlay MRT: the colour with the material's blending, the
-	// velocity's rgb kept (Zero / One) and its alpha the larger (One / One, Max).
-	const materialBlend = () => new THREE.BlendMode( THREE.MaterialBlending );
-	const sceneMRT = TSL.mrt( { sceneColor: TSL.output, velocity: TSL.vec4( 0, 0, 1, 0 ) } ).setBlendMode( 'sceneColor', materialBlend() ).setClearColor( 'velocity', new THREE.Color( 0, 0, 1 ), 0 );
-	const keepMax = new THREE.BlendMode( THREE.CustomBlending );
-	keepMax.blendSrc = THREE.ZeroFactor; keepMax.blendDst = THREE.OneFactor; keepMax.blendEquation = THREE.AddEquation;
-	keepMax.blendSrcAlpha = THREE.OneFactor; keepMax.blendDstAlpha = THREE.OneFactor; keepMax.blendEquationAlpha = THREE.MaxEquation;
-	const overlayMRT = TSL.mrt( { sceneColor: TSL.output, velocity: TSL.vec4( 0 ) } ).setBlendMode( 'sceneColor', materialBlend() ).setBlendMode( 'velocity', keepMax );
+	// Motion.ts's MRTs: the scene MRT draws the colour with the material's blending, overwrites the
+	// velocity (no blend mode) and clears it to ( 0, 0, 1, 0 ); the overlay MRT draws the colour with
+	// the material's blending and keeps the velocity's rgb (Zero / One), its alpha the larger (One /
+	// One, Max). Each material below gives its velocity through its own MRT node or outputStruct.
+	const { sceneMRT, overlayMRT } = await import( '/src/post/Motion.ts' );
 
 	// a material writing a colour and (through its mrtNode) a velocity; `blending` makes it transparent
 	const meshMaterial = ( colour, velocity, blending = null ) => {

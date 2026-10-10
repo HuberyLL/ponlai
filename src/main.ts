@@ -47,6 +47,8 @@ import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
 import { AA_GUI_MODES, AA_MODE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
+import { motionCheck, motionState, onTaaCut, taaCut } from './post/Motion.ts';
+import { jitter } from './post/Jitter.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
@@ -168,6 +170,21 @@ let manualSun = false;
 let paused = params.has( 'paused' );
 let simTime = Math.max( 0, numberParam( 't', 0 ) );
 const wind = new Wind( shared.wind, { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
+// Across a cut of the temporal modes' history (Motion.ts) the vegetation's wind has no motion either:
+// its previous state becomes the current one.
+if ( TEMPORAL ) onTaaCut( () => {
+
+	const current = shared.wind as unknown as Record<string, { value: number | THREE.Vector2 }>;
+	const previous = shared.wind.previous as unknown as Record<string, { value: number | THREE.Vector2 }>;
+	for ( const key in previous ) {
+
+		const from = current[ key ].value;
+		if ( typeof from === 'number' ) previous[ key ].value = from;
+		else ( previous[ key ].value as THREE.Vector2 ).copy( from );
+
+	}
+
+} );
 let rain: Rain | undefined;
 let skyElapsed = 0;
 let lastSkyTime = simTime;
@@ -1168,6 +1185,11 @@ function diagnostics( now = false ): void {
 // the loop then waits for every first-use pipeline (see "first-use pipelines").
 await Promise.all( [ warming, stormSea.registerLatent( overlayLatents ) ] );
 
+// The temporal modes' debug check (Motion.ts): the materials whose velocity is missing or partial,
+// for the movers' motion vectors still to come.
+const motionPasses = () => [ { pass: 'opaque', scene, keeps: false }, { pass: 'water', scene: waterScene, keeps: false }, { pass: 'overlay', scene: rainScene, keeps: true } ];
+if ( DEBUG && TEMPORAL ) console.info( 'motion check', motionCheck( motionPasses() ) );
+
 if ( profiler ) {
 
 	const { labelPonlaiPasses } = await import( './debug/FrameProfiler.ts' );
@@ -1390,4 +1412,4 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 };
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
-	quality, dynamicResolution, pacer, submitBatch, applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
+	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };

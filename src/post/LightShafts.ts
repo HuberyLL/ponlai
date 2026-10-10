@@ -181,7 +181,11 @@ export class LightShafts {
 
 	}
 
-	update( camera: THREE.PerspectiveCamera, haze: number, fogVisibility = 1 ): void {
+	/** The frame's camera, haze and the fog's transmittance toward the sun. `projection`: the camera's
+	 * projection without the temporal modes' jitter (Jitter.ts), which the sun's position on screen
+	 * leaves out: a jittered sun would shake the rays' origin by a fraction of a pixel each frame
+	 * (default: the camera's own, unjittered outside the graph's jittered span). */
+	update( camera: THREE.PerspectiveCamera, haze: number, fogVisibility = 1, projection: THREE.Matrix4 = camera.projectionMatrix ): void {
 
 		const key = this.sunDir.value;
 		this.projectionInverse.value.copy( camera.projectionMatrixInverse );
@@ -189,7 +193,7 @@ export class LightShafts {
 		this.haze.value = haze;
 		this.fogVisibility.value = fogVisibility;
 		this.lowSun.value = 1 - THREE.MathUtils.smoothstep( key.y, 0.05, 0.35 );
-		const c = this.clip.set( key.x, key.y, key.z, 0 ).applyMatrix4( camera.matrixWorldInverse ).applyMatrix4( camera.projectionMatrix );
+		const c = this.clip.set( key.x, key.y, key.z, 0 ).applyMatrix4( camera.matrixWorldInverse ).applyMatrix4( projection );
 		const forward = c.w > 1e-6;
 		const x = forward ? c.x / c.w : 0, y = forward ? c.y / c.w : 0;
 		this.sunUV.value.set( x * 0.5 + 0.5, 0.5 - y * 0.5 );

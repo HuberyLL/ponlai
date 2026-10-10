@@ -10,8 +10,9 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
-import { SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
-import { overlayMRT, sceneMRT } from './Motion.ts';
+import { AA_MODE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
+import { beginMotionFrame, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
+import { jitter } from './Jitter.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
@@ -965,6 +966,24 @@ export class Pipeline {
 
 		} );
 		this.declarePasses();
+		if ( TEMPORAL ) {
+
+			// The jitter shifts the camera's projection through the scene half (the graph's jittered
+			// span) and is undone after it; the post passes reconstruct positions with the inverse
+			// the frame was drawn with, set once the jitter is on (Jitter.ts).
+			jitter.mode = AA_MODE === 'taau' ? 'taau' : 'taa';
+			g.hooks.jitterBegin = ( f ) => {
+
+				jitter.begin( f.camera );
+				this.u.projInv.value.copy( f.camera.projectionMatrixInverse );
+
+			};
+			g.hooks.jitterEnd = ( f ) => jitter.end( f.camera );
+			// across a cut the nearest surface's history is no longer the frame before
+			const surfaceDepthPrev = this.resources.surfaceDepthPrev!;
+			onTaaCut( () => g.resetHistory( surfaceDepthPrev ) );
+
+		}
 		g.compile();
 		// The scene target's multisampled colour and depth are resolved, then never read: the
 		// graph's attachment ops discard them in the last pass that draws into them and drop a
@@ -1356,8 +1375,16 @@ export class Pipeline {
 		const u = this.u;
 		camera.updateMatrixWorld();
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
+		if ( TEMPORAL ) {
+
+			// this frame's jitter and motion, from the camera as it is (unjittered)
+			jitter.prepare( camera, this.width, this.height, this.outputWidth / this.width );
+			beginMotionFrame( camera );
+
+		}
 		this.air.update( camera );
-		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.haze.value, this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ) );
+		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.haze.value, this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ),
+			TEMPORAL ? jitter.uniforms.unjitteredProjection.value : camera.projectionMatrix );
 		this.updateDisplay( frame );
 		this.graph.execute( frame );
 
