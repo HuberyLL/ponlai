@@ -1,5 +1,5 @@
-// The island's sea cliff, derived from the footprint alone, so a larger or different tile layout
-// gets the same kind of coast with no hand-placed features.
+// The island's sea cliff, derived from the footprint alone, so the land gets the same kind of coast
+// whatever shape it grows to, with no hand-placed features.
 //
 // A natural cliff face is not a stack of blocks: it is what is left after the rock mass has shed
 // pieces of every size along its discontinuities. In bedded sedimentary rock these are a few sets
@@ -26,7 +26,7 @@
 // (gradient 1), so the dual-contouring surface nets keep facets flat and their edges crisp.
 // Every scar is seeded from a coast point hashed from its position in a world-anchored cell, and
 // each generation is placed on the surface the larger ones left, so an unchanged stretch of coast
-// keeps its scars when the layout grows elsewhere.
+// keeps its scars when the land grows elsewhere.
 
 import { hash3i, noise3, smax, smoothstep } from './noise.ts';
 
@@ -35,7 +35,7 @@ type Field = ( x: number, z: number ) => number;
 // ------------------------------------------------------------------ structure
 
 // The two joint sets' normals (azimuth, rad, from +x toward +z), 85 degrees apart. Both run
-// oblique to the tile edges, so no stretch of the tile coast lies along a set.
+// oblique to the world's axes, so no straight run of coast along an axis lies along a set.
 const SET_A = 0.47, SET_B = SET_A + 1.48;
 
 // Bedding partings at irregular heights: thicknesses 0.18 - 1.6 m, mostly thin, drawn once
@@ -213,8 +213,7 @@ function bounds( s: Scar ): boolean {
 interface Seed { x: number; z: number; key: number }
 
 // Coast points where the footprint edge crosses a fine grid anchored to the world, not to the
-// layout's bounds, so the same stretch of coast yields the same points when the island grows (its
-// half-step offset keeps the tile edges between its points).
+// land's bounds, so the same stretch of coast yields the same points when the island grows.
 function coastSeeds( dist: Field, area: { x0: number; z0: number; x1: number; z1: number } ): Seed[] {
 
 	const step = 0.2, seeds: Seed[] = [];
@@ -283,11 +282,11 @@ export class CliffWall {
 	private coef: number[] = []; // per listed scar and plane: n.x * x + n.z * z - c, n.y
 	private colTop = 0;
 
-	constructor( dist: Field, coast: Field, top: Field, layout: { x0: number; z0: number; x1: number; z1: number } ) {
+	constructor( dist: Field, coast: Field, top: Field, area: { x0: number; z0: number; x1: number; z1: number } ) {
 
 		this.dist = dist; this.coast = coast; this.top = top;
 		const wall = ( x: number, z: number ) => dist( x, z ) - coast( x, z );
-		const seeds = coastSeeds( dist, layout );
+		const seeds = coastSeeds( dist, area );
 
 		// Each generation is cut into the surface the larger ones left.
 		for ( let level = 0; level <= LEVELS.length; level ++ ) {

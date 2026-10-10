@@ -12,11 +12,12 @@ import { WORLD_GENERATOR_HASH } from 'virtual:world-generator';
 // texture.
 
 // The world cache's key (see WorldCache.ts): the hash of every source file the worker imports
-// (vite.config.ts's world generator plugin), the options, a format version, and the browser.
-const CACHE_FORMAT = 2;
+// (vite.config.ts's world generator plugin), the options (the land's seed and step always among
+// them), a format version, and the browser.
+const CACHE_FORMAT = 3;
 function worldCacheKey( options: WorldOptions ): string {
 
-	return JSON.stringify( [ CACHE_FORMAT, WORLD_GENERATOR_HASH, options, navigator.userAgent ] );
+	return JSON.stringify( [ CACHE_FORMAT, WORLD_GENERATOR_HASH, { worldSeed: 1, step: 0, ...options }, navigator.userAgent ] );
 
 }
 
@@ -58,8 +59,8 @@ export function shoreTextureFrom( shore: ShoreField ): { tex: THREE.DataTexture;
 }
 
 // The seabed's beds (seagrass cover, pale-sand share) on its own warped grid: texel ( i, j ) holds
-// vertex ( i, j ), so a lookup at the inverse warp of a point (see SEABED_WARP) interpolates what
-// the floor's mesh interpolates there.
+// vertex ( i, j ), so a lookup at the inverse warp of a point's offset from the grid's centre (see
+// SEABED_WARP) interpolates what the floor's mesh interpolates there.
 export function seabedBedTextureFrom( seabed: WorldData[ 'seabed' ] ): THREE.DataTexture {
 
 	const tex = new THREE.DataTexture( seabed.bed, seabed.res + 1, seabed.res + 1, THREE.RGFormat, THREE.FloatType );

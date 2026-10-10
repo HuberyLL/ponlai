@@ -6,6 +6,8 @@
 // import types with `import type` and use only erasable syntax (no enums, namespaces or
 // constructor parameter properties).
 
+import type { LandLattice } from '../../world/IslandGrowth.ts';
+
 export interface Vec2 { x: number; z: number }
 
 /** A cell of the simulation's ground grid: column i along +x, row j along +z. */
@@ -51,10 +53,11 @@ export interface SimState {
 
 /**
  * What the island looks like to the simulation, from the world generator's own exports (never
- * re-sampled here): the bushes FoliageSites' drawnFoliageSites returns, each an obstacle. The
- * island's outline comes from WorldShapes directly.
+ * re-sampled here): the grown land, whose outline WorldShapes' footprint gives, and the bushes
+ * FoliageSites' drawnFoliageSites returns, each an obstacle.
  */
 export interface IslandInput {
+	land: LandLattice;
 	bushes: readonly { x: number; z: number; r: number }[];
 }
 

@@ -1,28 +1,32 @@
-import { buildFootprint, islandSurfaceHeight, layoutBounds } from '../../world/WorldShapes.ts';
+import { buildFootprint, islandSurfaceHeight } from '../../world/WorldShapes.ts';
+import { GROWTH, type LandLattice } from '../../world/IslandGrowth.ts';
 import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 
-// The ground grid: 0.5 m cells over the layout's bounds. A cell is walkable on the island top,
-// clear of the cliff rim, and free of bushes. Everything here is derived: the
-// island from the world's own functions, its bushes from the world generator's input,
-// so a loaded game rebuilds the same grid.
+// The ground grid: 0.5 m cells over the land lattice's whole extent, anchored to the world, so a
+// grown island only opens cells and every index stays valid. A cell is walkable on the island top,
+// clear of the cliff rim, and free of bushes. Everything here is derived: the island from the
+// world's own functions on the land, its bushes from the world generator's input, so a loaded game
+// rebuilds the same grid.
 
 const CELL = 0.5;
+const SIDE = Math.round( 2 * GROWTH.half / CELL );
 /** keep this far inside the island's edge (m), so feet never hang over the rim */
 const RIM_MARGIN = 0.9;
 /** a bush blocks the cells within this fraction of its radius (and the cell under its centre) */
 const BLOCK_FRACTION = 0.6;
 
-// the island's top depends on the layout alone: computed once (the footprint takes a while, a
-// distance transform)
-let islandTop: Uint8Array | null = null;
+// the island's top depends on the land alone: computed once per land (the footprint takes a
+// while, a distance transform)
+let islandTop: { land: LandLattice; mask: Uint8Array } | null = null;
 
-function islandMask( cols: number, rows: number, x0: number, z0: number ): Uint8Array {
+function islandMask( land: LandLattice ): Uint8Array {
 
-	if ( islandTop ) return islandTop;
-	const fp = buildFootprint();
-	const base = new Uint8Array( cols * rows );
-	for ( let j = 0; j < rows; j ++ ) for ( let i = 0; i < cols; i ++ ) base[ j * cols + i ] = fp.dist( x0 + ( i + 0.5 ) * CELL, z0 + ( j + 0.5 ) * CELL ) < - RIM_MARGIN ? 1 : 0;
-	return islandTop = base;
+	if ( islandTop?.land === land ) return islandTop.mask;
+	const fp = buildFootprint( land );
+	const mask = new Uint8Array( SIDE * SIDE );
+	for ( let j = 0; j < SIDE; j ++ ) for ( let i = 0; i < SIDE; i ++ ) mask[ j * SIDE + i ] = fp.dist( - GROWTH.half + ( i + 0.5 ) * CELL, - GROWTH.half + ( j + 0.5 ) * CELL ) < - RIM_MARGIN ? 1 : 0;
+	islandTop = { land, mask };
+	return mask;
 
 }
 
@@ -53,14 +57,10 @@ export class Grid implements GridApi {
 
 	constructor( input: IslandInput ) {
 
-		// the layout's bounds in CELL steps
-		const b = layoutBounds();
-		this.x0 = b.x0;
-		this.z0 = b.z0;
-		this.cols = Math.round( ( b.x1 - b.x0 ) / CELL );
-		this.rows = Math.round( ( b.z1 - b.z0 ) / CELL );
+		this.x0 = this.z0 = - GROWTH.half;
+		this.cols = this.rows = SIDE;
 		const n = this.cols * this.rows;
-		this.open = islandMask( this.cols, this.rows, this.x0, this.z0 ).slice();
+		this.open = islandMask( input.land ).slice();
 		for ( const o of input.bushes ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
 		this.region = new Int32Array( n );
 		this.g = new Float64Array( n );

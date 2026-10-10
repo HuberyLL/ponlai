@@ -4,6 +4,7 @@ import type { DayCycle } from '../sky/DayCycle.ts';
 import type { CharacterShadow } from '../characters/CharacterShadow.ts';
 import type { Villager as Figure } from '../characters/Villagers.ts';
 import { drawnFoliageSites } from '../world/FoliageSites.ts';
+import type { LandLattice } from '../world/IslandGrowth.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
 import type { Sim } from './sim/Sim.ts';
 import type { Brain, ToolRegistry, ToolResult } from './sim/agent.ts';
@@ -27,7 +28,8 @@ export interface GameContext {
 	camera: THREE.PerspectiveCamera;
 	/** the canvas, for the debug panel's send-to-click */
 	canvas: HTMLCanvasElement;
-	/** turf anchors from the world generator (WorldData.vegetation) */
+	/** the grown land and the turf anchors from the world generator (WorldData) */
+	land: LandLattice;
 	vegetation: Float32Array;
 	dayCycle: DayCycle;
 	characterShadow: CharacterShadow;
@@ -41,11 +43,12 @@ const SAVE_KEY = 'ponlai.game';
 // a stalled frame (a background tab, a debugger stop) resumes without running hours at once
 const MAX_FRAME = 0.25;
 
-// The simulation's island from the world generator's own exports: the bushes buildFoliage draws,
-// so the game's obstacles are exactly what is drawn.
-function islandInput( vegetation: Float32Array ): IslandInput {
+// The simulation's island from the world generator's own exports: its land, and the bushes
+// buildFoliage draws, so the game's obstacles are exactly what is drawn.
+function islandInput( land: LandLattice, vegetation: Float32Array ): IslandInput {
 
 	return {
+		land,
 		bushes: drawnFoliageSites( vegetation ).map( ( s ) => ( { x: s.x, z: s.z, r: s.r } ) ),
 	};
 
@@ -79,7 +82,7 @@ export class Game {
 	private constructor( context: GameContext ) {
 
 		this.context = context;
-		this.input = islandInput( context.vegetation );
+		this.input = islandInput( context.land, context.vegetation );
 
 	}
 

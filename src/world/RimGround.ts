@@ -1,5 +1,5 @@
 import { Field2D } from './Field2D.ts';
-import { ISLAND_TOP, islandSurfaceHeight, layoutBounds } from './WorldShapes.ts';
+import { ISLAND_TOP, islandSurfaceHeight, type Bounds } from './WorldShapes.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { RimGroundField, RimSkirtData, SDF } from './types.ts';
 
@@ -9,11 +9,12 @@ export const RIM_MAX_DROP = 0.30;
 
 export interface RimGroundSample { distance: number; roofY: number; retreat: number; depth: number }
 
-// The top coast differs from the nominal tile footprint. Trace its actual solid just below
-// the roof so grass thinning, exposed root soil and stone shoulders share one boundary.
-export function buildRimGround( sdf: SDF ): RimGroundField {
+// The top coast differs from the land's footprint. Trace its actual solid just below the roof
+// (over the land's box `b` and 2 m round it) so grass thinning, exposed root soil and stone
+// shoulders share one boundary.
+export function buildRimGround( sdf: SDF, b: Bounds ): RimGroundField {
 
-	const b = layoutBounds(), pad = 2, cell = 0.10;
+	const pad = 2, cell = 0.10;
 	const coast = Field2D.covering( b.x0 - pad, b.x1 + pad, b.z0 - pad, b.z1 + pad, cell )
 		.fill( ( x, z ) => sdf( x, islandSurfaceHeight( x, z ) - 0.25, z ) ).signedDistance();
 	const data = new Float32Array( coast.nx * coast.nz * 4 );

@@ -33,7 +33,8 @@ import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
-import { islandSurfaceHeight } from './world/WorldShapes.ts';
+import { islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
+import { GROWTH, LandLattice } from './world/IslandGrowth.ts';
 import { WALK_LOOP, walkLoopDistance } from './world/WalkLoop.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
@@ -46,12 +47,21 @@ import { ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
 import type { Game } from './game/Game.ts';
 
 const params = new URLSearchParams( location.search );
+// The island: the land a world seed grows in `grow` steps after the starting island (IslandGrowth.ts;
+// the `seed` and `grow` URL options, 1 and 0 by default).
+const intParam = ( name: string, fallback: number ) => {
+
+	const value = Math.trunc( Number( params.get( name ) ?? fallback ) );
+	return Number.isFinite( value ) ? value : fallback;
+
+};
+const landOptions = { worldSeed: intParam( 'seed', 1 ), step: THREE.MathUtils.clamp( intParam( 'grow', 0 ), 0, GROWTH.maxSteps ) };
 // The world's generation needs nothing from the page, so its workers start first and run while
 // the renderer, sky, textures and frame graph are set up; its result is awaited below. The world
 // worker's last result comes from IndexedDB while the generator and its options are unchanged
 // (src/world/WorldCache.ts); ?worldCache=off generates it regardless, as on a first visit. A
 // browser without WebGPU stops at the renderer below, so it starts no workers.
-const worldJob: Promise<LoadedWorld> = 'gpu' in navigator ? loadWorld( {}, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } )
+const worldJob: Promise<LoadedWorld> = 'gpu' in navigator ? loadWorld( landOptions, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } )
 	: new Promise( () => undefined );
 worldJob.catch( () => undefined ); // reported where it is awaited, under the world section
 const ground = { soil: params.get( 'soil' ) !== '0' };
@@ -390,6 +400,9 @@ const t0 = performance.now();
 const worldCache = await worldJob;
 const data = worldCache.data;
 mark( 'world' );
+// The grown land.
+const land = LandLattice.fromBytes( data.land );
+const landBox = landBounds( land );
 const shore = shoreTextureFrom( data.shore );
 shared.shoreXform.value.copy( shore.xform );
 // The floor's height shares the shoreline field's bounds, and so its transform.
@@ -431,6 +444,7 @@ installVegetationPrepass( scene, [ grass, foliage, rimFoliage ] );
 // the camera grabs the island's ground and keeps its pivot over the island
 controls.setIsland( world.group.children.filter( ( object ): object is THREE.Mesh => ( object as THREE.Mesh ).isMesh && object.castShadow ) );
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
+rain.collision.setArea( landBox );
 rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt ] );
 mark( 'meshes' );
 setStatus( 'Waking the villagers…' );
@@ -453,7 +467,7 @@ if ( GAME ) {
 	// loaded only here, so the art-review page does not carry the game's code
 	const { Game } = await import( './game/Game.ts' );
 	game = await Game.start( {
-		params, scene, camera, canvas: renderer.domElement, vegetation: data.vegetation,
+		params, scene, camera, canvas: renderer.domElement, land, vegetation: data.vegetation,
 		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment,
 		// every islander in the scene islander's proportions (the `islander` URL option)
 		loadLook: ( look ) => {
@@ -480,7 +494,8 @@ const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
 } );
 water = new Water( {
 	fft, sky, shared, shore: shore.tex, seabedHeight: seabedField.tex, shoreWaves,
-	seabedLook: { beds: seabedBedTextureFrom( data.seabed ), res: data.seabed.res, size: data.seabed.size, variation: textures.normalsB }, refractedSun, sunShadow, storm: stormSea,
+	seabedLook: { beds: seabedBedTextureFrom( data.seabed ), res: data.seabed.res, size: data.seabed.size, centre: data.seabed.centre, variation: textures.normalsB },
+	land: landBox, refractedSun, sunShadow, storm: stormSea,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 } );
 applySkyFill();

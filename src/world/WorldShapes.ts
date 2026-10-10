@@ -1,85 +1,113 @@
 // The island's solid geometry as signed distance functions (metres, y up, sea level at 0).
 // Everything here runs in the mesh worker: the island block, the submerged
-// rocks, the seabed height and the shoreline distance at sea level.
+// rocks, the seabed height and the shoreline distance at sea level. The island's shape is the
+// grown land (IslandGrowth.ts).
 
 import { Field2D, roundCorners } from './Field2D.ts';
 import { noise3, fbm2, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
 import { CliffWall } from './Cliff.ts';
+import { GROWTH, type LandLattice } from './IslandGrowth.ts';
 import type { SDF, Rock } from './types.ts';
 
+// A box on the ground (m).
+export interface Bounds { x0: number; z0: number; x1: number; z1: number }
+
 export interface Footprint {
+	// the footprint's corners rounded, at 0.08 m over its window
 	fine: Field2D;
+	// the land lattice's own signed distance (0.25 m), over the whole lattice
 	coarse: Field2D;
+	// the land's box
+	bounds: Bounds;
 	dist( x: number, z: number ): number;
 }
 
 export type HeightFn = ( x: number, z: number ) => number;
 
-const TILE = 4;
 export const ISLAND_TOP = 3.1;
 export const ISLAND_BOTTOM = - 5.6;
 
-// the footprint, one character per 4 m tile (rows run +z, columns +x)
-const LAYOUT = [
-	'...XXXX',
-	'XXXXXXX',
-	'XXXXXX.',
-	'.XXXXX.',
-	'..XX...',
-];
+// ------------------------------------------------------------------ the land
 
-export function layoutBounds() {
+const LAND_CELLS = Math.round( 2 * GROWTH.half / GROWTH.cell );
+const landX = ( i: number ) => - GROWTH.half + ( i + 0.5 ) * GROWTH.cell;
 
-	const rows = LAYOUT.length, cols = LAYOUT[ 0 ].length;
-	return { x0: - cols * TILE / 2, z0: - rows * TILE / 2, x1: cols * TILE / 2, z1: rows * TILE / 2 };
+/** The land's box (m): the extent of its lattice cells. */
+export function landBounds( land: LandLattice ): Bounds {
+
+	const b = land.bounds();
+	return { x0: b.xMin, z0: b.zMin, x1: b.xMax, z1: b.zMax };
+
+}
+
+/** The centre of the land's area (m). */
+export function landCentroid( land: LandLattice ): { x: number; z: number } {
+
+	const w = land.cells();
+	let n = 0, sx = 0, sz = 0;
+	for ( let j = w.j0; j < w.j1; j ++ ) for ( let i = w.i0; i < w.i1; i ++ ) if ( land.has( i, j ) ) {
+
+		n ++; sx += landX( i ); sz += landX( j );
+
+	}
+	return { x: sx / n, z: sz / n };
+
+}
+
+/** The land's area (m^2). */
+export function landArea( land: LandLattice ): number {
+
+	const w = land.cells();
+	let n = 0;
+	for ( let j = w.j0; j < w.j1; j ++ ) for ( let i = w.i0; i < w.i1; i ++ ) if ( land.has( i, j ) ) n ++;
+	return n * GROWTH.cell * GROWTH.cell;
 
 }
 
 // ------------------------------------------------------------------ footprint
 
-// signed distance to the tile union, corners rounded; fine near the island, coarse far out
-export function buildFootprint(): Footprint {
+// The signed distance to the land's edge, its corners rounded: fine (0.08 m) over a window, by
+// default the land's box and 10 m round it, and the lattice's own distance beyond. The fine
+// field's mask is the lattice's distance, interpolated, below zero; its window snaps out to a
+// 2 m grid, so its cells lie on a lattice anchored to the world, whatever the window.
+export function buildFootprint( land: LandLattice, window?: Bounds ): Footprint {
 
-	const b = layoutBounds();
-	const tileInside = ( x: number, z: number ) => {
+	const bounds = landBounds( land );
+	const coarse = land.signedDistance( { i0: 0, j0: 0, i1: LAND_CELLS, j1: LAND_CELLS } );
+	// past the lattice's edge the distance keeps growing with the distance from that edge
+	const H = GROWTH.half;
+	const lattice = ( x: number, z: number ) => coarse.sample( x, z )
+		+ Math.hypot( Math.max( - H - x, 0, x - H ), Math.max( - H - z, 0, z - H ) );
 
-		const i = Math.floor( ( x - b.x0 ) / TILE ), j = Math.floor( ( z - b.z0 ) / TILE );
-		return j >= 0 && j < LAYOUT.length && i >= 0 && i < LAYOUT[ 0 ].length && LAYOUT[ j ][ i ] === 'X';
-
-	};
-
-	const pad = 10;
-	const fine = Field2D.covering( b.x0 - pad, b.x1 + pad, b.z0 - pad, b.z1 + pad, 0.08 )
-		.fill( ( x: number, z: number ) => tileInside( x, z ) ? - 1 : 1 )
+	const pad = 10, w = window ?? { x0: bounds.x0 - pad, z0: bounds.z0 - pad, x1: bounds.x1 + pad, z1: bounds.z1 + pad };
+	const snap = ( v: number, round: ( v: number ) => number ) => round( v / 2 ) * 2;
+	const fine = Field2D.covering( snap( w.x0, Math.floor ), snap( w.x1, Math.ceil ), snap( w.z0, Math.floor ), snap( w.z1, Math.ceil ), 0.08 )
+		.fill( ( x: number, z: number ) => lattice( x, z ) < 0 ? - 1 : 1 )
 		.signedDistance();
 	const rounded = roundCorners( fine, 0.9, 1.4 );
-
-	const R = 160;
-	const coarse = Field2D.covering( - R, R, - R, R, 0.5 )
-		.fill( ( x: number, z: number ) => tileInside( x, z ) ? - 1 : 1 )
-		.signedDistance();
 
 	return {
 		fine: rounded,
 		coarse,
+		bounds,
 		// signed horizontal distance to the island's edge (m)
 		dist( x: number, z: number ) {
 
-			return rounded.contains( x, z ) ? sampleFineOrCoarse( rounded, coarse, x, z ) : coarse.sample( x, z );
+			return rounded.contains( x, z ) ? sampleFineOrCoarse( rounded, lattice, x, z ) : lattice( x, z );
 
 		},
 	};
 
 }
 
-function sampleFineOrCoarse( fine: Field2D, coarse: Field2D, x: number, z: number ): number {
+function sampleFineOrCoarse( fine: Field2D, coarse: HeightFn, x: number, z: number ): number {
 
 	// blend toward the coarse field in the outer pad so the two never seam
 	const ex = Math.min( x - fine.x0, fine.x0 + fine.nx * fine.cell - x );
 	const ez = Math.min( z - fine.z0, fine.z0 + fine.nz * fine.cell - z );
 	const w = smoothstep( 0.5, 3.0, Math.min( ex, ez ) );
 	const f = fine.sample( x, z );
-	return w >= 1 ? f : f * w + coarse.sample( x, z ) * ( 1 - w );
+	return w >= 1 ? f : f * w + coarse( x, z ) * ( 1 - w );
 
 }
 
@@ -96,7 +124,7 @@ function softMax( vals: Float64Array, n: number, k: number ): number {
 
 }
 
-// The macro coast: a slow wobble of the wall around the tile footprint (m, + outward).
+// The macro coast: a slow wobble of the wall around the footprint (m, + outward).
 function coastWobble( x: number, z: number ): number {
 
 	const broad = noise3( x * 0.105 + 8.7, 4.2, z * 0.105 - 3.1 );
@@ -114,11 +142,11 @@ export function islandSurfaceHeight( x: number, z: number ): number {
 }
 
 // The island block: the flat meadow plateau inside a weathered sea cliff (Cliff.ts). Everything
-// derives from the footprint, so a grown layout gets the same kind of coast.
+// derives from the footprint, so a grown island gets the same kind of coast.
 export function makeIslandSDF( fp: Footprint ): SDF {
 
 	const top = islandSurfaceHeight;
-	const wall = new CliffWall( ( x, z ) => fp.dist( x, z ), coastWobble, top, layoutBounds() );
+	const wall = new CliffWall( ( x, z ) => fp.dist( x, z ), coastWobble, top, fp.bounds );
 
 	const islandSDF: SDF = ( x, y, z ) => Math.max( wall.at( x, y, z ), ISLAND_BOTTOM - y );
 
@@ -187,14 +215,15 @@ interface DebrisPatch {
 
 // Patchy hard bottom beside sandy sediment is inspired by USGS coastal seafloor observations:
 // https://pubs.usgs.gov/sir/2019/5073/ . This is an art-directed distribution, not sediment physics.
-function debrisPatches( fp: Footprint, rng: Rng ): DebrisPatch[] {
+// One patch per 8.3 m of coast, the last three elevenths of them farther out.
+function debrisPatches( fp: Footprint, rng: Rng, coast: number ): DebrisPatch[] {
 
 	const patches: DebrisPatch[] = [];
-	const b = layoutBounds();
+	const b = fp.bounds, count = Math.round( coast / 8.3 ), inner = Math.round( count * 8 / 11 );
 	let tries = 0;
-	while ( patches.length < 11 && tries ++ < 10000 ) {
+	while ( patches.length < count && tries ++ < count * 900 ) {
 
-		const outer = patches.length >= 8;
+		const outer = patches.length >= inner;
 		const pad = outer ? 25 : 10;
 		const x = b.x0 - pad + rng() * ( b.x1 - b.x0 + pad * 2 );
 		const z = b.z0 - pad + rng() * ( b.z1 - b.z0 + pad * 2 );
@@ -236,8 +265,8 @@ function rockExtent( r: Rock, ux: number, uz: number ): number {
 
 }
 
-// A safety cap; each pass sets its own count.
-const ROCK_LIMIT = 320;
+// A safety cap per metre of coast; each pass sets its own count.
+const ROCKS_PER_COAST = 3.5;
 
 // Eight horizontal directions for footprint and clearance probes around a stone.
 const RING = Array.from( { length: 8 }, ( _, i ) => [ Math.cos( i * Math.PI / 4 ), Math.sin( i * Math.PI / 4 ) ] );
@@ -278,8 +307,19 @@ function rockOutline( r: Rock ): number[] {
 // and its battered underwater toe happen to run, so a changed or grown coast moves them with it.
 export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF ): Rock[] {
 
+	// the coast's length, from the band of footprint cells just outside the edge: the counts
+	// follow it
+	const b = fp.bounds;
+	let coast = 0;
+	for ( let z = b.z0 - 2; z < b.z1 + 2; z += 0.25 ) for ( let x = b.x0 - 2; x < b.x1 + 2; x += 0.25 ) {
+
+		const d = fp.dist( x, z );
+		if ( d >= 0 && d < 1 ) coast += 0.0625;
+
+	}
+	const rockLimit = Math.round( coast * ROCKS_PER_COAST );
 	const rng = mulberry32( 9177 );
-	const patches = debrisPatches( fp, rng );
+	const patches = debrisPatches( fp, rng, coast );
 	const rocks: Rock[] = [];
 	// Builds a stone seated on the floor, or null where the water above it is too shallow.
 	const build = ( x: number, z: number, size: number, thickness: number, rot: number, variation: number ): Rock | null => {
@@ -382,7 +422,7 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF )
 	};
 	const place = ( x: number, z: number, size: number, thickness: number, rot: number ): boolean => {
 
-		if ( rocks.length >= ROCK_LIMIT ) return false;
+		if ( rocks.length >= rockLimit ) return false;
 		const d = fp.dist( x, z );
 		if ( d < Math.max( 0.36, size * 0.32 ) || d > 29 ) return false;
 		const r = build( x, z, size, thickness, rot, rng() );
@@ -401,7 +441,7 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF )
 			[ side * patch.major * 0.42, patch.minor * ( hash3i( patchIndex, 59, 113 ) < 0.5 ? - 0.58 : 0.58 ) ],
 		];
 		let placed = 0, tries = 0;
-		while ( placed < patch.count && rocks.length < ROCK_LIMIT && tries ++ < patch.count * 90 ) {
+		while ( placed < patch.count && rocks.length < rockLimit && tries ++ < patch.count * 90 ) {
 
 			const angle = rng() * Math.PI * 2;
 			// Square-root radius fills each patch's interior instead of tracing another ring.
@@ -450,15 +490,7 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF )
 	// field decides where the wall has shed, and the blocks thin out away from the foot.
 	{
 
-		const b = layoutBounds(), pad = 6;
-		// the coast's length, from the band of footprint cells just outside the edge
-		let coast = 0;
-		for ( let z = b.z0 - 2; z < b.z1 + 2; z += 0.25 ) for ( let x = b.x0 - 2; x < b.x1 + 2; x += 0.25 ) {
-
-			const d = fp.dist( x, z );
-			if ( d >= 0 && d < 1 ) coast += 0.0625;
-
-		}
+		const pad = 6;
 		// The blocks lie under the cliff's recent scars, where it has just shed them, and in runs
 		// where a world-space field says the wall sheds more.
 		const shed = ( x: number, z: number ) => Math.max( island?.shed?.( x, z ) ?? 0,
@@ -506,7 +538,7 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF )
 		// About one fallen block per 3.5 m of coast, gathered where the wall sheds.
 		const blockTarget = Math.round( coast / 3.5 );
 		let tries = 0;
-		while ( blocks.length < blockTarget && rocks.length < ROCK_LIMIT && tries ++ < blockTarget * 200 ) {
+		while ( blocks.length < blockTarget && rocks.length < rockLimit && tries ++ < blockTarget * 200 ) {
 
 			const x = b.x0 - pad + rng() * ( b.x1 - b.x0 + pad * 2 );
 			const z = b.z0 - pad + rng() * ( b.z1 - b.z0 + pad * 2 );
@@ -531,7 +563,7 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF )
 		// scattered mostly on their seaward side.
 		let cobbles = 0;
 		tries = 0;
-		while ( cobbles < blocks.length * 1.5 && rocks.length < ROCK_LIMIT && tries ++ < blocks.length * 160 ) {
+		while ( cobbles < blocks.length * 1.5 && rocks.length < rockLimit && tries ++ < blocks.length * 160 ) {
 
 			const [ bx, bz ] = blocks[ Math.floor( rng() * blocks.length ) ];
 			const size = 0.16 + Math.pow( rng(), 1.5 ) * 0.38, thickness = 0.38 + rng() * 0.40, rot = rng() * Math.PI;
@@ -559,10 +591,10 @@ export function makeRocks( fp: Footprint, seabedHeight: HeightFn, island?: SDF )
 	}
 
 	// Isolated fragments are sparse on the outer shelf, leaving broad sand corridors between
-	// the denser cliff debris and the few offshore patches.
+	// the denser cliff debris and the few offshore patches: one per 9 m of coast.
 	let isolated = 0, tries = 0;
-	const b = layoutBounds(), pad = 25;
-	while ( isolated < 10 && rocks.length < ROCK_LIMIT && tries ++ < 3000 ) {
+	const pad = 25, isolatedCount = Math.round( coast / 9.1 );
+	while ( isolated < isolatedCount && rocks.length < rockLimit && tries ++ < 300 * isolatedCount ) {
 
 		const x = b.x0 - pad + rng() * ( b.x1 - b.x0 + pad * 2 );
 		const z = b.z0 - pad + rng() * ( b.z1 - b.z0 + pad * 2 );
