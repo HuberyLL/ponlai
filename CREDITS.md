@@ -445,6 +445,15 @@ comment where it is used.
   `src/world/Foliage.ts` (`mainBend`), `Plants.ts` and `RimFoliage.ts`. Each plant answering the
   local wind like a spring at its own natural frequency: Santa Monica Studio's wind in *God of War*
   (Rupert Renard, *Wind Simulation in God of War*, GDC 2019), in `mainBend`.
+- The island's growth (`src/world/IslandGrowth.ts`): coastlines as the level sets of a fractal
+  surface, after Benoit B. Mandelbrot, *The Fractal Geometry of Nature* (1982); islands shaped
+  from noise, after Amit Patel, [*Making maps with noise*](https://www.redblobgames.com/maps/terrain-from-noise/)
+  (Red Blob Games); the relief's domain warp, after Inigo Quilez,
+  [*Domain warping*](https://iquilezles.org/articles/warp/); each new piece grown as invasion
+  percolation, after David Wilkinson and Jorge F. Willemsen, *Invasion percolation: a new form
+  of percolation theory* (Journal of Physics A 16, 1983), with the priority queue of Richard
+  Barnes, Clarence Lehman and David Mulla, *Priority-Flood: An optimal depression-filling and
+  watershed-labeling algorithm for digital elevation models* (Computers & Geosciences 62, 2014).
 - Gusts as a noise field scrolled with the wind, sweeping across the grass: Sucker Punch
   Productions' wind and grass in *Ghost of Tsushima* (Eric Wohllaib, *Procedural Grass in 'Ghost
   of Tsushima'*, GDC 2021: 2D Perlin noise scrolled in the wind's direction; Bill Rockenbeck,

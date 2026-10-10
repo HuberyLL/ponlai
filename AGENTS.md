@@ -173,7 +173,11 @@ stone exposed.
   `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   (a few checks of the game's skeleton: the clock, the ground and a path, a body walking to a
   point, a save round trip, a brain's late answer; its island is in `tools/game-fixture.mjs`) are
-  CPU-only (plain `node`). GPU probes take the GPU lock; keep
+  CPU-only (plain `node`), as is `tools/verify-growth-shape.mjs` (the island's growth over 32
+  seeds and 36 steps: the coast's solidity, elongation and share along the lattice axes, that a
+  grown land equals the same steps taken one at a time through a saved land, and the lattice's
+  margin; it writes a sheet of eight seeds to `artifacts/growth/shape-sheet-<label>.png`). GPU
+  probes take the GPU lock; keep
   other pages that render the scene closed.
 
 ## Layout
@@ -210,6 +214,15 @@ stone exposed.
   culls the tufts against the frustum (and the thin tufts past their fold) into an
   order-preserving list and each batch's indirect draw arguments, so off-screen tufts run no
   vertex work.
+- `src/world/IslandGrowth.ts` (worker-safe, not yet wired into the world): the land as a bit
+  lattice (0.25 m cells over +-96 m, `LandLattice`, saved with `toBytes`) grown one piece at a
+  time (`growLand`, `nextPiece`): a starting island of 400 m^2 flooded from the world's centre,
+  then per step a priority flood of about 180 m^2 over a fixed hidden relief from a coast site
+  near the island's middle and away from the last pieces, rounded, its lakes filled, old land
+  never removed. Exact arithmetic only (no library transcendentals), so a seed grows the same
+  island in every engine. The site is chosen over the whole island (its middle needs the whole
+  land's distance field); the flood and the rounding work in windows around the piece.
+  `GROWTH` holds every parameter, `maxSteps` (36) the growth horizon.
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation (sun, sky, water level).
 - `src/lighting/`: sun radiometry, soft solar shadows, the sun refracted below the water surface,
   the air/water optical interface, baked local sky occlusion, and the meadow's light through its
