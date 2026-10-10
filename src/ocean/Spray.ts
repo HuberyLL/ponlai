@@ -11,7 +11,6 @@ import {
 	positionGeometry, positionView, positionWorld, cameraPosition, cameraProjectionMatrix, screenSize, screenCoordinate,
 	textureLoad, texture, varyingProperty,
 } from 'three/tsl';
-import { compileDraws } from '../post/graph/Compile.ts';
 
 type F = THREE.Node<'float'>;
 type U = THREE.Node<'uint'>;
@@ -264,22 +263,15 @@ export class Spray {
 
 	}
 
-	/** Create the spray's pipelines before the first storm: its kernels (one step that moves
-	 * nothing, dt 0 and no breaking, then a clear) and its draw for `camera` into `target`, as
-	 * `scene` (which holds `mesh`) draws it. Only while no storm runs. */
-	warm( scene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
+	/** The spray's compute kernels (emission, the step and the clear), for the frame graph's
+	 * warm-up (StormSea.registerLatent). */
+	get kernels(): THREE.ComputeNode[] {
 
-		const gate = this.params.gate.value;
-		this.params.gate.value = 0;
-		this.dt.value = 0;
-		this.renderer.compute( [ this.emitKernel, this.updateKernel ] );
-		this.renderer.compute( this.clearKernel );
-		this.params.gate.value = gate;
-		return compileDraws( this.renderer, [ this.mesh ], scene, camera, target );
+		return [ this.emitKernel, this.updateKernel, this.clearKernel ];
 
 	}
 
-	/** Remove every particle (a new storm, or before a warm-up). */
+	/** Remove every particle (a new storm). */
 	clear(): void {
 
 		this.renderer.compute( this.clearKernel );

@@ -9,10 +9,10 @@
 import * as THREE from 'three/webgpu';
 import { attribute, cameraPosition, exp, float, length, max, min, mix, positionGeometry, smoothstep, step, uniform } from 'three/tsl';
 import { LightningStrike } from './LightningStrike.ts';
-import { compileDraws } from '../post/graph/Compile.ts';
 import { FLASH_SOURCES, SHELL_BOTTOM, SHELL_THICKNESS, type Clouds } from '../sky/Clouds.ts';
 import { SUN_ILLUMINANCE } from '../sky/Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
+import type { LatentRegistry } from '../post/graph/FrameGraph.ts';
 
 // Thunderstorm lightning, kilometres out over the sea. Most strikes stay inside the cloud and
 // light it from within (sheet lightning); the rest come down to the sea as a branching channel
@@ -105,8 +105,6 @@ export class Lightning {
 	private forced: ForcedStrike | null = null;
 	private readonly strikes = new Map<number, Strike>();
 	private readonly bolts: Bolt[] = [];
-	// Copies of the channels drawn only by `warm`'s compile, one per material side.
-	private readonly warmMeshes: THREE.Mesh[] = [];
 	// A source keeps its slot in Clouds.flash for the life of its strike.
 	private readonly slots: ( string | null )[] = new Array( FLASH_SOURCES ).fill( null );
 	private readonly pixelAngle = uniform( 0.001 );
@@ -428,33 +426,14 @@ export class Lightning {
 
 	}
 
-	/** Compile the channels' pipelines before the first bolt, for `camera` into the scene's
-	 * multisampled target (`Pipeline.sceneRT`), as `scene` (which holds `group`) draws them. It
-	 * also creates their vertex buffers, so a bolt's first frame uploads only its own tree. The
-	 * channels themselves are left alone, so a bolt may show while this runs. */
-	warm( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
+	/** Registers the channels with the frame graph's opaque pass (`group` is in the scene it
+	 * draws), so the graph's warm-up compiles them before the first bolt: both passes of each
+	 * transparent double-sided channel, through a copy of its material per side (Compile.ts), and
+	 * their vertex buffers, so a bolt's first frame uploads only its own tree. The channels
+	 * themselves are left alone, so a bolt may show while it runs. */
+	registerLatent( graph: LatentRegistry ): Promise<void> {
 
-		// A transparent double-sided material draws in two passes, its back faces and then its
-		// front faces, each with its own pipeline. compileAsync queues both passes but builds
-		// them after the material's side is restored, as one double-sided pipeline that no draw
-		// uses (three r186). So each channel's geometry is compiled with two copies of its
-		// material, one per side: they generate the same code and cache keys as the passes, so
-		// the draws find their node builds and pipelines ready. The copies are kept (never
-		// drawn) because disposing them would release those shared builds and pipelines.
-		if ( this.warmMeshes.length === 0 ) for ( const bolt of this.bolts ) {
-
-			for ( const side of [ THREE.BackSide, THREE.FrontSide ] ) {
-
-				const material = ( bolt.mesh.material as THREE.Material ).clone();
-				material.side = side;
-				const mesh = new THREE.Mesh( bolt.geometry, material );
-				mesh.castShadow = mesh.receiveShadow = false;
-				this.warmMeshes.push( mesh );
-
-			}
-
-		}
-		return compileDraws( renderer, this.warmMeshes, scene, camera, target );
+		return graph.latent( 'opaque', [ this.group ] );
 
 	}
 
@@ -466,7 +445,6 @@ export class Lightning {
 			( bolt.mesh.material as THREE.Material ).dispose();
 
 		}
-		for ( const mesh of this.warmMeshes ) ( mesh.material as THREE.Material ).dispose();
 
 	}
 

@@ -6,6 +6,7 @@ import {
 	type ResourceDecl, type ResourceDesc, type ResourceHandle, type Samples, type Size, type SizeClass, type TargetInfo,
 } from './GraphCompiler.ts';
 import { AttachmentOps } from './AttachmentOps.ts';
+import { compileBound, compileChain, compileLatent, compileQuad, sceneOf } from './Compile.ts';
 
 // The frame graph's runtime: it owns the graph's textures and render targets, their sizes and
 // lifetimes, and executes the compiled passes in order with three's own executors (a scene render,
@@ -53,6 +54,9 @@ export interface PassDef<F> extends PassFlags {
 	before?( f: F ): void;
 	// scene: objects drawn only later (weather, effects), for the warm-up
 	latent?(): THREE.Object3D[];
+	// after the warm-up primed the pass (see `warm`): forget what of its owner's the priming wrote,
+	// so the first real frame redoes it as on a cold load (the sea fog's bank map)
+	invalidate?(): void;
 	// quad: a full-screen material
 	quad?: THREE.QuadMesh;
 	// chain: a render pipeline (with the rtt and bloom passes its output node updates)
@@ -74,6 +78,12 @@ export interface GraphResources {
 	onResize( size: SizeClass, hook: ( width: number, height: number ) => void ): void;
 }
 
+/** How the owners of draws and kernels that run only at times (the rain, the bolts, the storm)
+ * register them for the graph's warm-up (`FrameGraph.latent`). */
+export interface LatentRegistry {
+	latent( pass: string, objects: readonly THREE.Object3D[], kernels?: readonly THREE.ComputeNode[] ): Promise<void>;
+}
+
 export interface FrameGraphHooks<F> {
 	onPassBegin?( pass: CurrentPass, f: F ): void;
 	onPassEnd?( pass: CurrentPass, f: F ): void;
@@ -89,6 +99,27 @@ export interface FrameGraphOptions {
 	legacyDiscard?: string[];
 	// dev checks: target sizes against their classes, attachment counts
 	dev?: boolean;
+	// the warm-up renders the passes it cannot compile (default true; `fgPrime=0` turns it off)
+	prime?: boolean;
+}
+
+/** What the warm-up did: the passes it compiled, the latent draws and kernels, the passes it
+ * primed (rendered once, since a pass it renders before itself was out of the compiler's reach)
+ * and those it left to their first use, and its wall time. */
+export interface WarmStats {
+	passes: number; latents: number; kernels: number;
+	primed: string[]; skipped: string[];
+	// compiles that failed (left to their pass's first frame)
+	failed: string[];
+	// from its start until the compiled pipelines exist, and the priming after (which waits for
+	// the real extents)
+	ms: number; primeMs: number;
+}
+
+// objects a scene pass draws only at times, and their owner's compute kernels (see `latent`)
+interface Latent {
+	index: number; objects: THREE.Object3D[]; kernels: THREE.ComputeNode[];
+	resolve?: () => void;
 }
 
 interface Physical {
@@ -112,7 +143,7 @@ interface Physical {
 
 const filterOf = ( f: ResourceDesc[ 'filter' ] ) => f === 'nearest' ? THREE.NearestFilter : THREE.LinearFilter;
 
-export class FrameGraph<F = unknown> {
+export class FrameGraph<F = unknown> implements LatentRegistry {
 
 	readonly renderer: THREE.WebGPURenderer;
 	readonly decl = new GraphDecl();
@@ -161,7 +192,7 @@ export class FrameGraph<F = unknown> {
 	constructor( renderer: THREE.WebGPURenderer, options: FrameGraphOptions ) {
 
 		this.renderer = renderer;
-		this.options = { legacyDiscard: [ 'rain' ], dev: false, ...options };
+		this.options = { legacyDiscard: [ 'rain' ], dev: false, prime: true, ...options };
 		this.attachmentOps = new AttachmentOps( renderer.backend, { dev: this.options.dev } );
 
 	}
@@ -851,10 +882,287 @@ export class FrameGraph<F = unknown> {
 
 	}
 
-	/** Compiles every pass's pipelines ahead of its first frame. Not yet (M4: fg-warm). */
-	warm(): Promise<void> {
+	// ---- warm-up: every pass's pipelines before its first frame
 
-		throw new GraphError( 'FrameGraph.warm: not yet' );
+	/** What the warm-up did (null until it starts; its times once it has finished). */
+	warmStats: WarmStats | null = null;
+	private warming: Promise<void> | null = null;
+	// the frame the scene passes compiled for (their scene and camera), and whether the warm-up
+	// started: latents registered after it compile at once
+	private warmFrame: F | undefined = undefined;
+	private warmStarted = false;
+	private readonly latents: Latent[] = [];
+
+	/** Registers objects the scene pass `pass` draws only at times (rain, a bolt, a storm's spray),
+	 * and the compute kernels their owner dispatches with them, for the warm-up to compile before
+	 * their first use, shown or not. An object compiles as part of the scene it is in (the pass's
+	 * own when it is in none). Registered once the warm-up has started, they compile at once.
+	 * Resolves when their pipelines exist (or their compile failed: see `warmStats.failed`). */
+	latent( pass: string, objects: readonly THREE.Object3D[], kernels: readonly THREE.ComputeNode[] = [] ): Promise<void> {
+
+		const index = this.decl.passes.findIndex( ( p ) => p.name === pass );
+		if ( index < 0 || this.decl.passes[ index ].kind !== 'scene' ) throw new GraphError( `latent( '${ pass }' ): the graph has no scene pass of that name` );
+		const latent: Latent = { index, objects: [ ...objects ], kernels: [ ...kernels ] };
+		if ( this.warmStarted ) return this.compileLatents( latent );
+		return new Promise<void>( ( resolve ) => this.latents.push( { ...latent, resolve } ) );
+
+	}
+
+	/** Compiles the pipelines of every compiled pass, those that run only at times included (fog,
+	 * rain, the view distance, either output), so that no frame builds one. Each pass compiles
+	 * under its own binding (`bind`: its target, MRT and depth flags), restored before anything
+	 * is awaited: a scene pass compiles its scene for its camera (from `f`, the frame it would
+	 * draw) and its latent objects; a quad its material; a chain its pipeline's material and the
+	 * passes three's nodes render before it (rtt(), bloom; see Compile.ts); a compute pass its
+	 * kernels. A chain with a pass out of the compiler's reach is primed instead: rendered once at
+	 * the real extents (once they are set), whatever its `when`. Priming never leaves a persistent
+	 * resource written: a primed pass that writes one has its history reset (`resetHistory`) and
+	 * its owner's `invalidate` called, and is not primed when it has none. The graph's option
+	 * `prime: false` (`fgPrime=0`) leaves such passes to their first use. A compile that fails is
+	 * reported (`warmStats.failed`, a warning) and left to the pass's first frame. Runs once; later
+	 * calls return the same promise. */
+	warm( f?: F ): Promise<void> {
+
+		this.warming ??= this.warmAll( f );
+		return this.warming;
+
+	}
+
+	private async warmAll( f: F | undefined ): Promise<void> {
+
+		const started = performance.now();
+		const compiled = this.compiled ?? this.compile();
+		if ( this.executing ) throw new GraphError( 'warm() inside execute()' );
+		this.warmFrame = f;
+		this.warmStarted = true;
+		const stats: WarmStats = this.warmStats = { passes: 0, latents: 0, kernels: 0, primed: [], skipped: [], failed: [], ms: 0, primeMs: 0 };
+		const pending: Promise<unknown>[] = [];
+		const unreached: { index: number; why: string[] }[] = [];
+		for ( const index of compiled.live ) {
+
+			const name = this.decl.passes[ index ].name;
+			this.bind( index );
+			try {
+
+				const why = this.warmPass( index, pending );
+				if ( why.length > 0 ) unreached.push( { index, why } );
+
+			} catch ( error ) {
+
+				this.warmFailed( name, error );
+
+			} finally {
+
+				this.unbind();
+
+			}
+
+		}
+		// the latents registered so far, each under its pass's binding
+		for ( const latent of this.latents.splice( 0 ) ) pending.push( this.compileLatents( latent ).then( latent.resolve ) );
+		await Promise.all( pending );
+		stats.ms = performance.now() - started;
+		if ( unreached.length > 0 ) {
+
+			const priming = performance.now();
+			await this.primePasses( unreached, f, stats );
+			stats.primeMs = performance.now() - priming;
+
+		}
+
+	}
+
+	// a pass's scene, camera or kernels: as declared, or of the warm-up's frame
+	private ofFrame<T>( value: T | ( ( f: F ) => T ) | undefined ): T | undefined {
+
+		if ( typeof value !== 'function' ) return value;
+		return this.warmFrame === undefined ? undefined : ( value as ( f: F ) => T )( this.warmFrame );
+
+	}
+
+	private warmFailed( what: string, error: unknown ): void {
+
+		this.warmStats?.failed.push( `${ what }: ${ String( ( error as Error )?.message ?? error ).split( '\n' )[ 0 ] }` );
+		console.warn( `FrameGraph.warm: '${ what }' did not compile ahead (it will on its first frame)`, error );
+
+	}
+
+	// a compile's promise, its failure reported instead of rejected
+	private warmPromise( what: string, promise: Promise<unknown> ): Promise<void> {
+
+		return promise.then( () => undefined, ( error ) => this.warmFailed( what, error ) );
+
+	}
+
+	// Compiles one pass under its binding (already bound); returns what of it the compiler could
+	// not reach (a chain to prime).
+	private warmPass( index: number, pending: Promise<unknown>[] ): string[] {
+
+		const decl = this.decl.passes[ index ];
+		const def = this.defs[ index ];
+		const stats = this.warmStats!;
+		const r = this.renderer;
+		switch ( decl.kind ) {
+
+			case 'scene': {
+
+				const scene = this.ofFrame( def.scene ), camera = this.ofFrame( def.camera );
+				if ( ! scene || ! camera ) {
+
+					stats.skipped.push( `${ decl.name }: no frame to take its scene from` );
+					return [];
+
+				}
+				pending.push( this.warmPromise( decl.name, compileBound( r, scene, camera ).done ) );
+				const latent = def.latent?.() ?? [];
+				if ( latent.length > 0 ) pending.push( this.warmPromise( `${ decl.name } (latent)`, this.compileObjects( latent, scene as THREE.Scene, camera ) ) );
+				stats.passes ++;
+				return [];
+
+			}
+			case 'quad': {
+
+				if ( ! def.quad ) break;
+				const c = compileQuad( r, def.quad );
+				pending.push( this.warmPromise( decl.name, c.done ) );
+				stats.passes ++;
+				return c.unreached;
+
+			}
+			case 'chain': {
+
+				if ( ! def.pipeline ) break;
+				const c = compileChain( r, def.pipeline );
+				pending.push( this.warmPromise( decl.name, c.done ) );
+				stats.passes ++;
+				return c.unreached;
+
+			}
+			case 'compute': {
+
+				const nodes = this.ofFrame( def.compute );
+				if ( ! nodes ) break;
+				pending.push( this.warmPromise( decl.name, r.compileComputeAsync( nodes ) ) );
+				stats.passes ++;
+				return [];
+
+			}
+
+		}
+		// a callback (or a pass whose executor is its own run()): nothing to compile
+		stats.skipped.push( `${ decl.name }: no draw or kernel to compile` );
+		return [];
+
+	}
+
+	// latent objects, as part of the scene each is in, else the pass's (already bound)
+	private compileObjects( objects: readonly THREE.Object3D[], scene: THREE.Scene, camera: THREE.Camera ): Promise<void> {
+
+		const groups = new Map<THREE.Scene, THREE.Object3D[]>();
+		for ( const object of objects ) {
+
+			const own = sceneOf( object ) ?? scene;
+			groups.set( own, [ ...( groups.get( own ) ?? [] ), object ] );
+
+		}
+		return Promise.all( [ ...groups ].map( ( [ s, list ] ) => compileLatent( this.renderer, list, s, camera ).done ) ).then( () => undefined );
+
+	}
+
+	// a registered latent under its pass's binding, with its owner's kernels
+	private compileLatents( latent: Latent ): Promise<void> {
+
+		const name = `${ this.decl.passes[ latent.index ].name } (latent)`;
+		const def = this.defs[ latent.index ];
+		const scene = this.ofFrame( def.scene ) as THREE.Scene | undefined, camera = this.ofFrame( def.camera );
+		const pending: Promise<void>[] = [];
+		if ( latent.objects.length > 0 ) {
+
+			if ( this.executing ) this.warmFailed( name, new GraphError( 'registered inside execute()' ) );
+			else if ( ! camera ) this.warmFailed( name, new GraphError( 'no frame to take the camera from (warm( f ))' ) );
+			else {
+
+				this.bind( latent.index );
+				try {
+
+					pending.push( this.warmPromise( name, this.compileObjects( latent.objects, scene ?? new THREE.Scene(), camera ) ) );
+
+				} catch ( error ) {
+
+					this.warmFailed( name, error );
+
+				} finally {
+
+					this.unbind();
+
+				}
+
+			}
+
+		}
+		if ( latent.kernels.length > 0 ) pending.push( this.warmPromise( `${ name } kernels`, this.renderer.compileComputeAsync( latent.kernels ) ) );
+		if ( this.warmStats ) {
+
+			this.warmStats.latents += latent.objects.length;
+			this.warmStats.kernels += latent.kernels.length;
+
+		}
+		return Promise.all( pending ).then( () => undefined );
+
+	}
+
+	// Renders the passes the compiler could not reach, once each, behind the loading screen at the
+	// real extents, and invalidates what persistent of theirs they wrote.
+	private async primePasses( list: { index: number; why: string[] }[], f: F | undefined, stats: WarmStats ): Promise<void> {
+
+		if ( this.options.prime === false ) {
+
+			for ( const { index, why } of list ) stats.skipped.push( `${ this.decl.passes[ index ].name }: not primed (fgPrime=0; ${ why.join( ', ' ) })` );
+			return;
+
+		}
+		// the real extents: at once when they are set, else when Pipeline.setSize first sets them
+		await new Promise<void>( ( resolve ) => this.onResize( { of: 'render' }, () => resolve() ) );
+		for ( const { index, why } of list ) {
+
+			const decl = this.decl.passes[ index ];
+			const def = this.defs[ index ];
+			// (the canvas holds the last frame only for the display, which redraws it every frame)
+			const persistent = [ ...decl.writes, ...( decl.depth?.write ? [ decl.depth ] : [] ) ]
+				.map( ( w ) => this.decl.resources[ w.resource ] ).filter( ( res ) => ( res.persistent || res.pingPong ) && ! res.canvas );
+			if ( persistent.length > 0 && ! def.invalidate ) {
+
+				stats.skipped.push( `${ decl.name }: not primed, it writes ${ persistent.map( ( res ) => res.name ).join( ', ' ) } (${ why.join( ', ' ) })` );
+				continue;
+
+			}
+			if ( decl.kind === 'scene' && f === undefined ) {
+
+				stats.skipped.push( `${ decl.name }: not primed, no frame (${ why.join( ', ' ) })` );
+				continue;
+
+			}
+			this.initTargets();
+			this.bind( index );
+			try {
+
+				this.executePass( decl.kind, def, f as F );
+
+			} catch ( error ) {
+
+				this.warmFailed( `${ decl.name } (priming)`, error );
+				continue;
+
+			} finally {
+
+				this.unbind();
+
+			}
+			for ( const res of persistent ) this.resetHistory( { resource: res.id, version: 0, name: res.name } );
+			def.invalidate?.();
+			stats.primed.push( `${ decl.name } (${ why.join( ', ' ) })` );
+
+		}
 
 	}
 

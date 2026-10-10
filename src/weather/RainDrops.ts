@@ -19,7 +19,6 @@ import {
 	length, normalize, cross, dot, smoothstep, clamp, exp, sin, sqrt, pow, mix,
 } from 'three/tsl';
 import type { RainCollision } from './RainCollision.ts';
-import { compileDraws } from '../post/graph/Compile.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -465,15 +464,6 @@ export class RainDrops {
 			material.needsUpdate = true;
 
 		} );
-
-	}
-
-	/** Compile the simulation (one workgroup, which the next update overwrites) and the draws
-	 * of `group` for `camera` into `target`, as `scene` draws them. */
-	warm( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
-
-		renderer.compute( this.compute, 64 );
-		return compileDraws( renderer, [ this.group ], scene, camera, target );
 
 	}
 
