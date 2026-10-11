@@ -139,8 +139,10 @@ export function createShoreShelterField( data: WorldData, direction: THREE.Vecto
 
 		if ( ! water[ k ] ) return 0;
 		// Recover distant wind sea before the finite field edge; clamp-to-edge samples
-		// must not carry an infinite, straight shadow strip across the offshore FFT.
-		const t = Math.max( 0, Math.min( 1, ( distances[ k ] - 18 ) / 18 ) );
+		// must not carry an infinite, straight shadow strip across the offshore FFT. The
+		// shore's distance is clamped to LAND_REACH (24 m, the chunks' shore tiles), so the
+		// recovery ends there.
+		const t = Math.max( 0, Math.min( 1, ( distances[ k ] - 12 ) / 12 ) );
 		const recovery = t * t * ( 3 - 2 * t );
 		const i = k % nx, j = Math.floor( k / nx );
 		const border = Math.min( ( i + 0.5 ) * info.cellX, ( nx - i - 0.5 ) * info.cellX,
