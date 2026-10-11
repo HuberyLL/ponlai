@@ -9,7 +9,11 @@
 //   key, the far floor), then every chunk, nearest the camera's pivot first. A chunk job looks the
 //   chunk up in the cache; the first one that misses asks for the land field (a few tenths of a
 //   second, once per land version), which the page hands to every worker, and the chunks that
-//   missed run again and are built. A reload that finds every chunk never builds the field.
+//   missed run again and are built. A land that missed the cache (a new land version: some chunk
+//   will miss too) asks for the field at once, before any chunk's lookup has come back. A reload
+//   that finds the land and every chunk never builds the field.
+//   (The field is cloned to every worker rather than each job sent its window: a window is 4 MB,
+//   so a load would copy several times the field's bytes on the main thread.)
 // - The merge runs once every chunk has arrived, in rows ( cj, then ci ), so the world is the same
 //   whatever order the workers finish in, and the same as the node tools' serial path
 //   (tools/world-node.mjs).
@@ -99,8 +103,8 @@ export function loadWorld( options: WorldOptions = {}, { cache = true, pivot, pr
 			for ( const slot of pool ) {
 
 				if ( slot.job || ! land ) continue;
-				// without the cache every chunk needs the field
-				if ( ! fieldAsked && ( needs.length > 0 || generator === null ) ) {
+				// without the cache every chunk needs the field, and a land that missed it is new
+				if ( ! fieldAsked && ( needs.length > 0 || landCache !== 'hit' ) ) {
 
 					fieldAsked = true;
 					send( slot, { kind: 'field', land: land.land.slice() } );

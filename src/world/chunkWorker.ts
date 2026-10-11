@@ -7,7 +7,8 @@
 //   any chunk arrives (ChunkMerge.ts `LandData`: the chunks, the steps each chunk's cache key
 //   names, the far floor, the floor's fields over the fields' bounds). Cached under its own key.
 // - `field`: the land field of a land version (Chunks.ts `landField`, the costliest part of the
-//   land: a few tenths of a second), once per version, and only when a chunk was not in the cache.
+//   land: a few tenths of a second), once per version, and only when the land or a chunk was not
+//   in the cache.
 //   The page hands it to every worker (`use`), which cut the chunks' windows from it.
 // - `chunk`: the chunk from the cache when it holds it, else built (when the worker has the field)
 //   and stored; without the field the worker answers `need` and the page sends the job again once
