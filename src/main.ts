@@ -50,6 +50,7 @@ import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
 import { restEpoch } from './post/TemporalRest.ts';
+import { sceneEvent } from './post/SceneEvents.ts';
 import { TemporalAA, type TemporalFrame } from './post/TemporalAA.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
@@ -215,6 +216,7 @@ function applySkyQuality( q: Readonly<QualityProfile> = quality ): void {
 	rain?.setQuality( q.rainDrops );
 	if ( runtime.refractedSun ) runtime.refractedSun.angleGate = THREE.MathUtils.degToRad( q.refractedSun.angleGate );
 	runtimeQuality = q;
+	sceneEvent( 'apply quality' );
 
 }
 let runtimeQuality: Readonly<QualityProfile> = quality;
@@ -331,13 +333,14 @@ function applySun(): Promise<void> {
 
 }
 
-const setHour = async ( hour: number ) => { dayCycle.setHour( hour ); await refreshEnvironment(); };
-const setPreset = async ( preset: DayPreset ) => { dayCycle.setPreset( preset ); await refreshEnvironment(); };
+const setHour = async ( hour: number ) => { dayCycle.setHour( hour ); sceneEvent( 'set hour' ); await refreshEnvironment(); };
+const setPreset = async ( preset: DayPreset ) => { dayCycle.setPreset( preset ); sceneEvent( 'set preset' ); await refreshEnvironment(); };
 const setWeather = async ( name: WeatherName, seconds = 20 ) => {
 
 	cloudOverride = null;
 	weather.auto = false;
 	weather.setWeather( name, seconds );
+	sceneEvent( seconds === 0 ? 'weather jump' : 'weather front' );
 	if ( seconds === 0 ) await refreshEnvironment();
 
 };
@@ -357,6 +360,7 @@ const establishScene = async ( options: { weather?: WeatherName; preset?: DayPre
 	else if ( options.hour !== undefined ) dayCycle.setHour( options.hour );
 	if ( options.time !== undefined ) simTime = options.time;
 	wind.reset( { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
+	sceneEvent( 'establish scene' );
 	await refreshEnvironment();
 
 };
@@ -602,6 +606,8 @@ console.info( worldCache.cache === 'hit' ? 'world from the cache' : 'world gener
 // ------------------------------------------------------------------ GUI
 
 const gui = new GUI( { title: 'Ponlai · lighting & water' } );
+// every control, in any folder, bubbles here
+gui.onChange( () => sceneEvent( 'gui' ) );
 if ( ! params.has( 'gui' ) ) gui.hide();
 const S = pipeline.settings;
 type CameraView = 'island' | 'horizon' | 'sky';
@@ -640,6 +646,7 @@ function setCameraMode( mode: string ): void {
 
 	}
 	cameraSettings.mode = mode;
+	sceneEvent( 'camera mode' );
 	controls.enabled = mode === 'orbit';
 	freeControls.enabled = mode === 'free';
 	// Sharp sky details are essential when inspecting stars and the lunar disk.
@@ -655,6 +662,7 @@ function setCameraView( view: CameraView ): void {
 	freeControls.clearInput();
 	settleOrbit();
 	reviewView.camera = view;
+	sceneEvent( 'view jump' );
 	if ( view === 'sky' ) {
 
 		camera.position.set( 0, 15, 0 );
@@ -1009,7 +1017,8 @@ function describeRenderScale(): void {
 
 }
 
-addEventListener( 'resize', resize );
+// a resize of the canvas cuts the history; resize() itself also serves render-scale changes, which do not
+addEventListener( 'resize', () => { sceneEvent( 'resize' ); resize(); } );
 resize();
 
 const clock = new THREE.Timer();
@@ -1024,9 +1033,10 @@ addEventListener( 'keydown', ( e ) => {
 		// the game pauses its own clock; the sea keeps moving
 		if ( game ) game.togglePause();
 		else { paused = ! paused; dayCycle.paused = paused; }
+		sceneEvent( 'key toggle' );
 
 	}
-	if ( e.code === 'KeyH' ) gui.show( gui._hidden );
+	if ( e.code === 'KeyH' ) { gui.show( gui._hidden ); sceneEvent( 'key toggle' ); }
 	if ( e.code === 'KeyR' || e.code === 'Digit1' ) setCameraView( 'island' );
 	if ( e.code === 'Digit2' ) setCameraView( 'horizon' );
 	if ( e.code === 'Digit3' ) setCameraView( 'sky' );
@@ -1317,6 +1327,7 @@ dynamicResolution?.begin();
 const animation = ( renderer as unknown as { _animation: { start(): void; stop(): void; setContext( context: unknown ): void } } )._animation;
 animation.setContext( pacer.context );
 renderer.setAnimationLoop( animationLoop );
+sceneEvent( 'loop start' );
 // High's first frames find its render scale behind the loading screen: from the nominal it jumps
 // to the scale the GPU's times call for within a second, out of sight (at most REVEAL_WAIT ms).
 // The game's islanders show before it lifts too: their figures arrive after the first frames once
@@ -1344,6 +1355,7 @@ const setTime = ( t: number ) => {
 	if ( ! Number.isFinite( t ) || t < 0 ) throw new RangeError( 'Scene time must be finite and non-negative' );
 	simTime = t;
 	wind.reset( { speed: sky.weather.windSpeed, heading: sky.weather.windDirection, time: t } );
+	sceneEvent( 'seek' );
 	return refreshEnvironment();
 
 };
@@ -1372,6 +1384,7 @@ const loop = {
 		hiddenStop = false;
 		if ( loop.running ) return;
 		loop.running = true;
+		sceneEvent( 'loop start' );
 		clock.reset();
 		animation.start();
 
@@ -1390,8 +1403,10 @@ document.addEventListener( 'visibilitychange', () => {
 		void loop.stop();
 		hiddenStop = true;
 
-	} else if ( hiddenStop ) {
+	} else {
 
+		sceneEvent( 'visible' );
+		if ( ! hiddenStop ) return;
 		loop.start();
 		// its first frames (cloud history, a whole bake) do not steer the scale
 		dynamicResolution?.begin();
@@ -1566,5 +1581,5 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { ren
 	taa: pipeline.temporal ? {
 		resolve: pipeline.temporal, settings: pipeline.temporal.settings, knobs: pipeline.temporal.knobs, rest: pipeline.temporal.rest, epoch: restEpoch,
 		get converged() { return pipeline.temporal!.converged; },
-		restart: () => { restEpoch.bump( 'restart' ); taaCut( 'restart' ); },
+		restart: () => sceneEvent( 'restart' ),
 	} : null };
