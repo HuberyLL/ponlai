@@ -18,8 +18,8 @@ import type { BuildingState, SimState, Vec2 } from './types.ts';
 // (BuildingState.worked); a new action interrupts it and the work done stays. When the work is
 // done the site is the finished building: its own options and what shows on it, and `build` is
 // gone. Its stage is a function of its progress alone (stageOf): planned (no work yet), being
-// built, built; perception shows it in words, as a person sees a site, not as a number
-// (siteShows). No materials yet (nothing on the island gives wood or stone): building costs time
+// built, built; perception shows how far along it is in whole percent (siteShows), a number like
+// every state that decides outcomes. No materials yet (nothing on the island gives wood or stone): building costs time
 // only. Cancelling a site is not designed yet.
 //
 // - chest: a wooden chest that holds CHEST_CAPACITY items. `put` and `take` ( { item, count } )
@@ -150,13 +150,11 @@ export function stageOf( b: BuildingState ): Stage {
 
 }
 
-/** How an unbuilt site looks to someone who sees it: the stage, and how far along in words. */
+/** How an unbuilt site looks to someone who sees it: how far along, in whole percent (0: marked
+ * out, not begun). A number, like every other state the islander perceives. */
 function siteShows( b: BuildingState ): Record<string, unknown> {
 
-	const progress = progressOf( b );
-	if ( progress === 0 ) return { construction: 'marked out, not begun' };
-	const done = progress < 0.125 ? 'just begun' : progress < 0.375 ? 'about a quarter done' : progress < 0.625 ? 'about half done' : progress < 0.875 ? 'about three quarters done' : 'nearly done';
-	return { construction: `being built, ${ done }` };
+	return { construction: Math.floor( progressOf( b ) * 100 ) };
 
 }
 

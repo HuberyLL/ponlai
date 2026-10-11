@@ -127,8 +127,8 @@ items with their own options, never a new action.
   interrupted and resumed; the work done stays. When the work is done the site is the finished
   building with its own options (the chest's put and take).
 - Every kind goes through the same stages, shaped by its footprint: planned (marked out), being
-  built, built. The site blocks walking from the moment it is placed. Perception shows the stage
-  in words ("being built, about half done"), as a person sees a site.
+  built, built. The site blocks walking from the moment it is placed. Perception shows how far
+  along it is as a number, like every state that decides outcomes.
 - No materials yet: building costs time only, until something on the island gives wood or stone.
 
 ### Items
