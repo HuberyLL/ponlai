@@ -94,13 +94,20 @@ Game:
   per game day at 1x, default 1440: 24 minutes), `paused` (the game starts paused; the scene runs
   again once the game does), `load` (resume the game saved in this browser). The page's own
   `weather` option and auto weather work in the game as without it.
-- The game has no player interface: Space pauses only the game clock, the GUI's hour, clock pause
-  and time preset are off (the game's clock owns the time of day), and its Game folder
-  (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
-  (position, walking or standing, whether a thought is in flight) and sends it walking to the next
-  click on the island. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools`,
-  `setBrain( brain )` (kept across a load), `think( id )`, `walkTo( id, x, z )`, `focus( id )`,
-  `setSpeed`, `togglePause`, `save` and `load`.
+- The player's interface is a prototype HUD (`src/game/Hud.ts`): a readout of the islander (day
+  and time, satiety and hydration, the bag, what they are doing, each unbuilt site's progress in
+  percent, the last words said and how the last action ended) and a "Place chest" button that arms placement: a ring on the turf
+  previews the spot (green, or red with the reason), a click places it, Escape cancels, and the
+  control is gone once the chest is placed (`src/game/Placement.ts`). Space pauses only the game
+  clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
+  day), and its Game folder (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
+  (position, the action under way, whether a thought is in flight) and sends it walking to the
+  next click on the island. The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
+  by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
+  actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
+  `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
+  `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setSpeed`, `togglePause`,
+  `save` and `load`.
 
 ## Captures
 
@@ -233,9 +240,11 @@ what these do not give (automation, A/B statistics, pass names).
   optics (each file names the server it expects); they take the GPU lock (shared).
   `tools/verify-scene.mjs` checks a production preview.
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
-  are CPU-only (plain `node`). `verify-game.mjs` runs a few checks of the game's skeleton: the
-  clock, the ground and a path, a body walking to a point, a save round trip, a brain's late
-  answer; its island is in `tools/game-fixture.mjs`.
+  are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
+  ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
+  first prototype's rules (needs, the bag, the palm, fishing, the chest placed as a blueprint and
+  built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action); its island is in
+  `tools/game-fixture.mjs`.
 - `tools/verify-growth-shape.mjs` (plain `node`) checks the island's growth over 32 seeds and 36
   steps: the coast's solidity, elongation and share along the lattice axes, that a grown land
   equals the same steps taken one at a time through a saved land, and the lattice's margin; it

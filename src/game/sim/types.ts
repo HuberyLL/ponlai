@@ -36,6 +36,59 @@ export interface Villager {
 	heading: number;
 	/** waypoints still ahead while walking; null while standing */
 	path: Vec2[] | null;
+	/** 0..100 each (needs.ts) */
+	needs: Needs;
+	/** what the islander carries (items.ts) */
+	bag: Items;
+	/** the action under way (actions.ts); null: nothing */
+	action: ActionState | null;
+	/** how the last action ended, for the next thought; null before the first */
+	last: ActionOutcome | null;
+	/** the last words said, and the tick they were said at */
+	said: { words: string; tick: number } | null;
+}
+
+export interface Needs { satiety: number; hydration: number }
+
+/** item kind to count; a kind is present only while its count is above zero */
+export type Items = Record<string, number>;
+
+/** A call of one of the five actions (actions.ts): its name and arguments, plain JSON. */
+export interface ActionCall { tool: string; args?: unknown }
+
+/** An action with duration, as the islander's state: walking (`go`, with Villager.path), `wait` and a timed `do`. */
+export interface ActionState {
+	call: ActionCall;
+	/** the tick it ends at; null for `go`, which ends on arrival */
+	until: number | null;
+}
+
+/** What an action did: its result, or why it could not. */
+export type ActionResult = { ok: true; value?: string } | { ok: false; reason: string };
+
+export interface ActionOutcome { call: ActionCall; result: ActionResult }
+
+/** A coconut palm (places.ts): where it stands, its coconuts and the regrowth of the next one. */
+export interface PalmState {
+	id: string;
+	x: number;
+	z: number;
+	coconuts: number;
+	/** game seconds grown toward the next coconut */
+	growth: number;
+}
+
+/** A building the player placed (buildings.ts): its kind, where it stands, the work done on it, what it holds. */
+export interface BuildingState {
+	/** its place's id: the kind's name and its count among that kind ever placed (chest1), never reused */
+	id: string;
+	kind: string;
+	x: number;
+	z: number;
+	/** game seconds of work done on it: built once this reaches its kind's work */
+	worked: number;
+	/** what it holds (the chest's store; empty for a kind that holds nothing) */
+	items: Items;
 }
 
 export interface SimState {
@@ -49,6 +102,11 @@ export interface SimState {
 	/** the seeded generator's state */
 	rng: number;
 	villagers: Villager[];
+	palms: PalmState[];
+	/** what the player placed, in the order placed */
+	buildings: BuildingState[];
+	/** how many of each building kind were ever placed: the count in their ids (buildings.ts) */
+	placed: Record<string, number>;
 }
 
 /**

@@ -6,7 +6,8 @@ import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 // grown island only opens cells and every index stays valid. A cell is walkable on the island top,
 // clear of the cliff rim, and free of bushes. Everything here is derived: the island from the
 // world's own functions on the land, its bushes from the world generator's input, so a loaded game
-// rebuilds the same grid.
+// rebuilds the same grid. The game's own obstacles (a palm, the chest) are added on top by
+// `obstruct`, from the simulation's state.
 
 const CELL = 0.5;
 const SIDE = Math.round( 2 * GROWTH.half / CELL );
@@ -37,12 +38,14 @@ export class Grid implements GridApi {
 	readonly rows: number;
 	readonly x0: number;
 	readonly z0: number;
-	/** 1 where walkable: on the island top, clear of the rim, no bush or plant */
+	/** 1 on the island top, clear of the rim, whatever grows there (shared: never written) */
+	readonly top: Uint8Array;
+	/** 1 where walkable: on the island top, clear of the rim, no bush, palm or building */
 	readonly open: Uint8Array;
 	/** connected walkable regions: a label per open cell, -1 elsewhere */
 	readonly region: Int32Array;
 	/** the largest region: the island's open ground, where the islanders live */
-	readonly main: number;
+	main: number;
 
 	// scratch for searches (path.ts), stamped by generation so nothing needs clearing
 	readonly g: Float64Array;
@@ -60,7 +63,8 @@ export class Grid implements GridApi {
 		this.x0 = this.z0 = - GROWTH.half;
 		this.cols = this.rows = SIDE;
 		const n = this.cols * this.rows;
-		this.open = islandMask( input.land ).slice();
+		this.top = islandMask( input.land );
+		this.open = this.top.slice();
 		for ( const o of input.bushes ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
 		this.region = new Int32Array( n );
 		this.g = new Float64Array( n );
@@ -191,6 +195,14 @@ export class Grid implements GridApi {
 	}
 
 	// ------------------------------------------------------------------ blocking
+
+	/** Block the cells within r of a point (and the one under it), then label the regions again. */
+	obstruct( x: number, z: number, r: number ): void {
+
+		this.block( x, z, r );
+		this.main = this.label();
+
+	}
 
 	private block( x: number, z: number, r: number ): void {
 

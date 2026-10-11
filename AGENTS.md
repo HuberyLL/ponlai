@@ -70,7 +70,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   dynamic resolution, the frame pacer, the submit batching, the sample count, pipeline warm-up.
 - `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
 - `src/game/`: the game behind `?game` (`Game.ts`): `sim/` is the headless simulation (no three.js
-  or DOM; node runs it by stripping types), `view/` draws the islanders.
+  or DOM; node runs it by stripping types), `view/` draws the islanders, the palm and the
+  chest, and `Hud.ts` / `Placement.ts` are the player's prototype HUD.
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout.
 - `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the world's chunk
   checks (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node
@@ -116,6 +117,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   measurements in relative terms.
 - Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, comments in
   English that explain why.
+- Game UI (anything the player sees in `?game`: HUD, menus, overlays, in-world labels, mockups of
+  them): design and build it with the `threejs-game-ui-designer` skill when the agent has it (the
+  threejs-* skill pack), so it reads as a game's interface rather than a product's.
 - Visual changes: compare captures against the previous capture (and crops, not only the whole
   frame); report measured differences. Where shapes differ (growth steps, seeds), judge the look by
   eye and region statistics (`tools/capture-growth.mjs`), not by pixel difference.
@@ -176,4 +180,5 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   and new queue operations must go through its rules, and one invalid command buffer loses its
   whole batch.
 - Timestamp queries (`trackTimestamp`) have one owner at a time (`DynamicResolution.ts`).
-- `Sky.ts` drives three's private `PMREMGenerator` steps: re-check them on a three upgrade.
+- `Sky.ts` drives three's private `PMREMGenerator` steps, and `SunShadow.compileCasters` mirrors
+  three's shadow-pass material: re-check them on a three upgrade.
