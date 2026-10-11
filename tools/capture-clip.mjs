@@ -3,9 +3,9 @@
 // deterministic stepper (`__PONLAI__.loop.step`: fixed dt, no wall clock, the frame pacer and the
 // dynamic scale bypassed), with crops of named subjects captured as they move.
 //
-//   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|gt-hi]
+//   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
 //       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"]
-//       [--quality high] [--size 1728x1117@2] [--out dir] [--timeout ms] [--runs file.csv]
+//       [--quality high] [--size 1728x1117@2] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
 //       [--task name] [--anchors-from clip.json] [--verbose]
 //
 // The page loads `U?debug&paused&t=12&quality=<q>&aa=<mode>[&<extra>]&<view's query>[&<clip's
@@ -23,6 +23,14 @@
 // full/<i>.png, and clip.json (the url, the clip, the boxes per frame, the page's diagnostics
 // before and after, the pipelines created while stepping, the scene time, the browser build, wall
 // time, console errors).
+//
+// --aa gt is the ground truth of the temporal modes (src/post/Antialiasing.ts, debug builds): the
+// temporal graph at the canvas's resolution, each captured frame held still after its tick until
+// the temporal rest has averaged `--gt-jitters` jittered renders of it with a box filter
+// (`loop.step`'s `converge`; 32 by default, 64 for a clip of one frame, the rest GT), without
+// sharpening or grain. Its crops are cut at the test's own size (no downsampling). It renders every
+// frame at the canvas's ratio: a clip's scale schedule applies to the test and MSAA sides only.
+// Ground-truth sets are shared per merge-base (`<parity root>/<sha>/gt/`).
 //
 // --aa gt-hi is the interim ground truth (plan section 3.3): MSAA on high at twice high's nominal
 // ratio for the --size given (nominal = min( ratio, 1.5 ), so 3 at the default @2 and 2 at @1),
@@ -70,7 +78,7 @@ for ( let i = 0; i < args.length; i ++ ) {
 	} else positional.push( args[ i ] );
 
 }
-const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from' ];
+const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! KNOWN.includes( k ) );
 const clip = CLIPS[ options.clip ];
 if ( positional.length !== 1 || unknown.length || ! options.url || ! clip ) {
@@ -82,6 +90,8 @@ if ( positional.length !== 1 || unknown.length || ! options.url || ! clip ) {
 const name = positional[ 0 ];
 const aa = options.aa ?? 'msaa';
 const gt = aa === 'gt-hi';
+// the temporal modes' ground truth: its jitters per frame (a clip of one frame is a rest GT)
+const gtRest = aa === 'gt';
 const quality = options.quality ?? 'high';
 if ( gt && quality !== 'high' ) { console.error( 'gt-hi exists for high only' ); process.exit( 2 ); }
 const viewName = options.view ?? clip.view;
@@ -93,6 +103,8 @@ const W = Number( size[ 1 ] ), H = Number( size[ 2 ] ), DSF = Number( size[ 3 ] 
 // high's nominal render ratio at this size (RenderScale.ts: the display's, up to 1.5), and gt-hi's
 const NOMINAL_HIGH = Math.min( DSF, 1.5 ), GT_RATIO = 2 * NOMINAL_HIGH;
 const frames = Number( options.frames ?? clip.frames );
+const gtJitters = gtRest ? Number( options[ 'gt-jitters' ] ?? ( frames <= 1 ? 64 : 32 ) ) : null;
+if ( gtRest && ! ( Number.isInteger( gtJitters ) && gtJitters > 0 ) ) { console.error( `bad --gt-jitters ${ options[ 'gt-jitters' ] }` ); process.exit( 2 ); }
 const every = Math.max( 1, Number( options.every ?? 1 ) );
 const full = new Set( ( options.full ?? '' ).split( ',' ).filter( Boolean ).map( Number ) );
 // runs of frames captured whole-clip dense under --every (the ground truth's gtDense, clips.mjs)
@@ -188,6 +200,7 @@ function downsample2( { width, height, data } ) {
 let query = `debug&paused&t=12&quality=${ quality }&aa=${ gt ? 'msaa' : aa }`;
 if ( aa === 'off' ) query += '&msaa=1';
 if ( gt ) query += `&dpr=${ GT_RATIO }`;
+if ( gtRest ) query += `&tier.taa.gtJitters=${ gtJitters }`;
 if ( options.q ) query += `&${ options.q }`;
 query += `&${ view.q }`;
 if ( clip.q ) query += `&${ clip.q }`;
@@ -252,11 +265,14 @@ try {
 		const before = settings && typeof settings.grain === 'number' ? settings.grain : null;
 		if ( before !== null ) settings.grain = 0;
 		if ( gt && window.__PONLAI_CLIP__.scale ) window.__PONLAI_CLIP__.scale = null;
+		// (a temporal page's rest starts over: what the evals changed need not be in its key)
+		s.taa?.epoch.bump( 'clip' );
 		return before;
 
-	}, gt );
+	}, gt || gtRest );
+	if ( gtRest && ! ( await page.evaluate( () => window.__THREE_GAME_DIAGNOSTICS__?.aa === 'gt' && window.__PONLAI__.taa ) ) ) throw new Error( 'this build has no aa=gt (or it fell back to another mode)' );
 	if ( grain === null ) throw new Error( 'this build has no __PONLAI__.pipeline.settings.grain to turn off' );
-	const scaleSchedule = clip.scale ? ( gt ? 'ignored: the ground truth renders at its fixed ratio' : 'applied' ) : 'none';
+	const scaleSchedule = clip.scale ? ( gt || gtRest ? 'ignored: the ground truth renders at its fixed ratio' : 'applied' ) : 'none';
 	const diagBefore = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	// the anchors' world points at the base pose, then their boxes per frame in CSS px
 	const anchors = options[ 'anchors-from' ] ? Object.fromEntries( Object.entries( JSON.parse( await readFile( options[ 'anchors-from' ], 'utf8' ) ).anchors ).filter( ( [ n ] ) => crops.includes( n ) ) ) : await page.evaluate( ( names ) => {
@@ -290,7 +306,7 @@ try {
 		boxes.push( record );
 
 	} );
-	const stepped = await page.evaluate( async ( { tracked, every, dense, box, cssScale, fullFrames } ) => {
+	const stepped = await page.evaluate( async ( { tracked, every, dense, box, cssScale, fullFrames, gtRest } ) => {
 
 		const s = window.__PONLAI__, clip = window.__PONLAI_CLIP__;
 		const V = s.camera.position.constructor;
@@ -305,12 +321,15 @@ try {
 		const b = box * cssScale;
 		const t0 = performance.now();
 		const before = s.pipelines?.total ?? null;
+		const captured = ( i ) => i % every === 0 || fullFrames.includes( i ) || dense.some( ( [ a, b ] ) => i >= a && i <= b );
 		const result = await s.loop.step( {
 			frames: clip.frames, dt: clip.dt, clock: clip.clock, camera: clip.camera,
 			...( clip.scale ? { scale: clip.scale } : {} ),
+			// the ground truth: each captured frame held still until the rest has converged on it
+			...( gtRest ? { converge: captured } : {} ),
 			onFrame: async ( i ) => {
 
-				if ( i % every !== 0 && ! fullFrames.includes( i ) && ! dense.some( ( [ a, b ] ) => i >= a && i <= b ) ) return;
+				if ( ! captured( i ) ) return;
 				s.camera.updateMatrixWorld();
 				const out = {};
 				for ( const t of tracked ) {
@@ -324,17 +343,18 @@ try {
 				}
 				// what the frame was drawn with, to tell a scene or camera difference from a GPU one
 				const hash = ( list ) => { let h = 2166136261; for ( const x of list ) { const b = new Float64Array( [ x ] ), u = new Uint32Array( b.buffer ); h = Math.imul( h ^ u[ 0 ], 16777619 ) >>> 0; h = Math.imul( h ^ u[ 1 ], 16777619 ) >>> 0; } return h.toString( 16 ); };
-				const state = { render: [ s.pipeline.width, s.pipeline.height ], view: hash( [ ...s.camera.matrixWorld.elements, ...s.camera.projectionMatrix.elements ] ), frame: s.renderer.info.frame };
+				const state = { render: [ s.pipeline.width, s.pipeline.height ], view: hash( [ ...s.camera.matrixWorld.elements, ...s.camera.projectionMatrix.elements ] ), frame: s.renderer.info.frame,
+					...( s.taa ? { taa: { converged: s.taa.converged, restFrames: s.taa.rest.frames, restTarget: s.taa.rest.target } } : {} ) };
 				await window.__ponlaiClipFrame( i, out, s.clockTime(), state );
 
 			},
 		} );
 		return { ...result, pipelines: before === null ? null : s.pipelines.total - before, wallMs: performance.now() - t0, notes: window.__PONLAI_CLIP_NOTES__ ?? [] };
 
-	}, { tracked, every, dense, box: BOX, cssScale, fullFrames: [ ...full ] } );
+	}, { tracked, every, dense, box: BOX, cssScale, fullFrames: [ ...full ], gtRest } );
 	const diagAfter = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	await writeFile( path.join( outDir, 'clip.json' ), JSON.stringify( {
-		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, view: viewName, aa, quality,
+		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),
 		viewport: { width: W * cssScale, height: H * cssScale, deviceScaleFactor: ratio }, gtFallback, downsample: gt ? 2 : 1,
 		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, grain: { was: grain, captured: 0 }, scaleSchedule, frames, every, dense, full: [ ...full ],
 		browser: browser.version(), anchors, boxes, stepped, diagBefore, diagAfter, errors,
