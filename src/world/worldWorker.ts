@@ -5,7 +5,7 @@
 
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRimTrails } from './RimTrails.ts';
-import { assembleRimGround, buildRimSkirt, coastPaths, mergeRimSkirts, ownTexels, rimBoxes, rimGroundTile } from './RimGround.ts';
+import { assembleRimGround, buildRimSkirt, coastChains, mergeRimSkirts, ownTexels, rimBoxes, rimGroundTile } from './RimGround.ts';
 import { pickBushes } from './FoliageSites.ts';
 import {
 	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF,
@@ -19,7 +19,7 @@ import { scatterTop } from './Anchors.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
 import { VEGETATION_STRIDE } from './types.ts';
 import { openWorldStore } from './WorldCache.ts';
-import type { SDF, MeshData, MeshKind, NamedMesh, Rock, WorldData, WorldOptions } from './types.ts';
+import type { SDF, MeshData, MeshKind, NamedMesh, Rock, RimStrand, WorldData, WorldOptions } from './types.ts';
 import type { Footprint } from './WorldShapes.ts';
 
 // The page's job (World.ts): the world's options and the cache key (null: no cache). The worker
@@ -385,10 +385,10 @@ function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 }
 
 // The rim, box by box of the world's RIM_BOX grid over the land: each box's share of the rim ground,
-// the turf skirt it owns and the bushes rooted in it, each a function of the box's own
-// surroundings (RimGround.ts, FoliageSites.ts), merged in box order, and the trails over the whole
-// coast. The boxes read one lattice of the rim's coast and one set of anchors, cut from what each
-// would compute over its own window.
+// the turf skirt it owns, the bushes and the trails rooted in it, each a function of the box's own
+// surroundings (RimGround.ts, FoliageSites.ts, RimTrails.ts), merged in box order. The boxes read
+// one lattice of the rim's coast and one set of anchors, cut from what each would compute over its
+// own window.
 function buildRim( sdf: SDF, fp: Footprint, vegetation: Float32Array, timings: Record<string, number> ) {
 
 	const mark = ( k: string, t: number ) => { timings[ k ] = Math.round( performance.now() - t ); };
@@ -405,7 +405,13 @@ function buildRim( sdf: SDF, fp: Footprint, vegetation: Float32Array, timings: R
 	const bushes = new Float32Array( owned.reduce( ( n, part ) => n + part.length, 0 ) );
 	owned.reduce( ( offset, part ) => { bushes.set( part, offset ); return offset + part.length; }, 0 );
 	// Bare runs between the trails are measured along the same traced coast.
-	const rimStrands = makeRimTrails( sdf, fp, vegetation, coastPaths( rimGround ) );
+	const rimStrands: RimStrand[] = [];
+	for ( const strands of makeRimTrails( sdf, fp, vegetation, coastChains( lattice.signs(), 1 ), bushes, boxes ) ) {
+
+		const offset = rimStrands.length;
+		for ( const strand of strands ) rimStrands.push( strand.parent === undefined ? strand : { ...strand, parent: strand.parent + offset } );
+
+	}
 	mark( 'rimFoliage', t );
 	return { rimGround, rimSkirt, bushes, rimStrands };
 

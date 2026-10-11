@@ -29,25 +29,6 @@ function strandNodes( strand: RimStrand ): StrandNode[] {
 
 }
 
-function closestBush( root: THREE.Vector3, foliage: THREE.InstancedMesh | undefined, fallback: THREE.Color ): { color: THREE.Color; scale: number; distance: number } {
-
-	const color = fallback.clone();
-	if ( ! foliage?.instanceColor ) return { color, scale: 0.75, distance: Infinity };
-	const matrix = new THREE.Matrix4(), position = new THREE.Vector3(), scale = new THREE.Vector3();
-	let closest = Infinity, index = - 1, leafScale = 0.75;
-	for ( let i = 0; i < foliage.count; i ++ ) {
-
-		foliage.getMatrixAt( i, matrix );
-		position.setFromMatrixPosition( matrix );
-		const distance = position.distanceToSquared( root );
-		if ( distance < closest ) { closest = distance; index = i; scale.setFromMatrixScale( matrix ); leafScale = Math.sqrt( scale.x * scale.z ); }
-
-	}
-	if ( index >= 0 ) foliage.getColorAt( index, color );
-	return { color, scale: index >= 0 ? leafScale : 0.75, distance: Math.sqrt( closest ) };
-
-}
-
 // The trails' sway at their tips (m) at a fair day's typical gust (see LEAN_REF): about 2 cm in a
 // fair gust, 8 - 10 cm in a gale's. Their nodes hang 0.11 m off the stone and their leaves a
 // little further, so they may be pressed toward the wall by at most PRESS (m).
@@ -131,7 +112,6 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 	const P: number[] = [], U: number[] = [], C: number[] = [], E: number[] = [], W: number[] = [], F: number[] = [], S: number[] = [], I: number[] = [];
 	const O: number[] = []; // the wall's outward normal where the vertex hangs, for the wind
 	const up = new THREE.Vector3( 0, 1, 0 );
-	const palette = [ [ 0.065, 0.16, 0.04 ], [ 0.095, 0.19, 0.048 ], [ 0.15, 0.205, 0.046 ], [ 0.04, 0.12, 0.043 ], [ 0.18, 0.22, 0.058 ] ];
 	const point = new THREE.Vector3(), outward = new THREE.Vector3(), tangent = new THREE.Vector3(), lateral = new THREE.Vector3();
 	const normal = new THREE.Vector3(), along = new THREE.Vector3(), width = new THREE.Vector3(), vertex = new THREE.Vector3(), radial = new THREE.Vector3();
 	let leafCount = 0, strandCount = 0, sprayCount = 0, rootClusterCount = 0, clumpCount = 0;
@@ -158,8 +138,9 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 		const length = nodes[ nodes.length - 1 ].distance;
 		// A fork moves with its parent: same phase, and its sway starts from the parent's at the joint.
 		const ownPhase = rng() * Math.PI * 2, phase = parent ? parent.phase : ownPhase;
-		const ownBush = closestBush( nodes[ 0 ].point, foliage, new THREE.Color( ...palette[ Math.floor( rng() * palette.length ) ] as [ number, number, number ] ) );
-		const bush = parent ? { color: parent.color, scale: parent.scale, distance: 0 } : ownBush;
+		// the leaves of the bush the worker found beside the root (RimTrails' `leaf`)
+		const [ r, g, b, scale, distance ] = strand.leaf ?? [ 0, 0, 0, 0.75, Infinity ];
+		const bush = parent ? { color: parent.color, scale: parent.scale, distance: 0 } : { color: new THREE.Color( r, g, b ), scale, distance };
 		const stemColor = new THREE.Color( 0.08, 0.057, 0.022 );
 		const w0 = parent ? parent.weights[ from ] : 0, p0 = parent ? parent.progress[ from ] : 0;
 		const sway = ( t: number ) => w0 + ( 1 - w0 ) * t * t * smoothstep( 0, 0.18, t );
@@ -269,8 +250,8 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 			clumpCount ++;
 
 		}
-		// Meadow-rooted trails borrow the nearest shrub's palette. A few low folded leaves on
-		// the existing root stem conceal an exposed attachment without adding a separate bush.
+		// Meadow-rooted trails borrow the nearest bush's palette. A few low folded leaves on the
+		// existing root stem conceal an exposed attachment where no bush stands close.
 		if ( ! fork && bush.distance > Math.max( 0.30, bush.scale * 0.88 ) ) {
 
 			const leaves = 3 + Math.floor( rng() * 3 );

@@ -492,42 +492,6 @@ export function topAt( sdf: SDF, x: number, z: number ): number | undefined {
 
 }
 
-// The coast iso-line of the root bed (marching squares, chained into loops), resampled every
-// `step` metres; `closed` where a loop meets itself rather than the field's border.
-export interface CoastPath { points: [ number, number ][]; closed: boolean }
-
-export function coastPaths( field: RimGroundField, step = 0.05 ): CoastPath[] {
-
-	const paths: CoastPath[] = [];
-	for ( const loop of coastLoops( field ) ) {
-
-		const points = resample( loop, step );
-		if ( points.length < 12 ) continue;
-		const [ fx, fz ] = points[ 0 ], [ lx, lz ] = points[ points.length - 1 ];
-		paths.push( { points, closed: Math.hypot( fx - lx, fz - lz ) < step * 2 } );
-
-	}
-	return paths;
-
-}
-
-function resample( line: [ number, number ][], step: number ): [ number, number ][] {
-
-	const out: [ number, number ][] = [];
-	let carry = 0;
-	for ( let i = 0; i + 1 < line.length; i ++ ) {
-
-		const [ ax, az ] = line[ i ], [ bx, bz ] = line[ i + 1 ];
-		const len = Math.hypot( bx - ax, bz - az );
-		let s = carry;
-		for ( ; s < len; s += step ) out.push( [ ax + ( bx - ax ) * s / len, az + ( bz - az ) * s / len ] );
-		carry = s - len;
-
-	}
-	return out;
-
-}
-
 // Cross-section of the skirt, outward offset from the traced coast (m) and its height
 // relative to the roof. The first ring is buried in the turf; the last is the ragged lower edge.
 export const SKIRT_RING = 7;
