@@ -150,7 +150,7 @@ function deepenSeabed( fp: Footprint, placementFloor: HeightFn ): HeightFn {
 }
 
 // The floor's highest level anywhere off the island. Benches top out here; stone crowns keep
-// their own, lower budget (-1.30 m, makeRocks), so nothing ever reaches the surface.
+// their own, lower budget (-1.30 m, Stones.ts), so nothing ever reaches the surface.
 export const SHELF_CEILING = - 1.6;
 
 // The cliff foot: a talus apron and, in places, shallow rock benches. Both are derived from the

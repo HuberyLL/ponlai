@@ -8,9 +8,9 @@ import { makeRimTrails } from './RimTrails.ts';
 import { assembleRimGround, buildRimSkirt, coastChains, mergeRimSkirts, ownTexels, rimBoxes, rimGroundTile } from './RimGround.ts';
 import { pickBushes } from './FoliageSites.ts';
 import {
-	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF,
-	ISLAND_TOP, ISLAND_BOTTOM,
+	buildFootprint, makeIslandSDF, cliffSharpCells, ISLAND_TOP, ISLAND_BOTTOM,
 } from './WorldShapes.ts';
+import { placeStones, makeRockSDF } from './Stones.ts';
 import { growLand } from './IslandGrowth.ts';
 import { Field2D } from './Field2D.ts';
 import { floorAt, seabedBeds, SHELF_CEILING } from './Bathymetry.ts';
@@ -243,7 +243,7 @@ function setup( options: WorldOptions, timings: Record<string, number> ) {
 	// Sampling the analytic floor alone can hide a small crown beneath the seabed mesh.
 	const renderedFloor = floorAt( fp );
 	const islandSDF = makeIslandSDF( fp );
-	const rocks = makeRocks( fp, renderedFloor, islandSDF );
+	const rocks = placeStones( fp, renderedFloor, islandSDF );
 	const rockSDFs = rocks.map( makeRockSDF );
 	t = performance.now();
 	const b = fp.bounds, pad = 2.6;
