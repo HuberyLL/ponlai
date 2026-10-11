@@ -169,8 +169,8 @@ URL options (`sun-shadow`: `dayLength=600`) or a per-frame hook (`lightning`: a 
 frame 30). `node tools/parity/clips.mjs list | show <clip>`.
 
 ```sh
-node tools/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt-hi]
-    [--view v] [--frames n] [--every k] [--crops a,b] [--full 0,30] [--q "extra"]
+node tools/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
+    [--view v] [--frames n] [--every k] [--crops a,b] [--full 0,30] [--q "extra"] [--gt-jitters n]
     [--anchors-from clip.json] [--out dir] [--runs runs.csv]
 uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py \
     --test DIR --msaa DIR --gt DIR [--thresholds t.json] [--baseline metrics.json]
@@ -190,6 +190,13 @@ uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py 
   their world points into a 192 CSS px box (384 device px at 2x). `--full` frames are captured whole.
   Output: `<crop>/<i>.png`, `full/<i>.png`, `clip.json` (boxes, the camera and render size per frame,
   diagnostics, pipelines created while stepping).
+- `--aa gt`: the temporal modes' ground truth (`aa=gt`, debug builds): the temporal graph at the
+  canvas's resolution, each captured frame held still after its tick (`loop.step`'s `converge`)
+  until the temporal rest has averaged `--gt-jitters` jittered renders of it with a box filter
+  (32 by default, 64 for a one-frame clip such as `rest`), unsharpened and without grain, cropped
+  at the test's own size. The scale schedule is ignored. Keep its sets per merge-base under
+  `<parity root>/<sha>/gt/`. Paused temporal captures (capture.mjs, capture-set.mjs) wait for the
+  rest to converge (`diag.taa.converged`).
 - `--aa gt-hi`: the interim ground truth, MSAA on high at twice high's nominal ratio for the size
   (3x at the default @2, where the nominal is 1.5) in a canvas that holds it, box-downsampled 2x2
   (288 px crops at the default size). It renders every frame at that ratio: a clip's scale schedule

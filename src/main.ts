@@ -49,6 +49,8 @@ import { AA_GUI_MODES, AA_MODE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
+import { restEpoch } from './post/TemporalRest.ts';
+import { TemporalAA, type TemporalFrame } from './post/TemporalAA.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
@@ -398,12 +400,17 @@ rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, s
 const fgview = DEBUG ? debugViewFromURL() : null;
 if ( fgview ) installDebugView( fgview, {
 	exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE,
+	// (the resolve exists while the pipeline compiles its graph, before `pipeline` is assigned)
+	temporal: () => TemporalAA.current,
 	motion: {
 		previousViewProjection: motionUniforms.previousViewProjection, projectionInverse: jitter.uniforms.unjitteredProjectionInverse,
 		jitterNdc: jitter.uniforms.ndc, opaqueBelow: ( MOTION_CLASS.opaque + MOTION_CLASS.vegetation ) / 2,
 	},
 } );
-const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ) );
+const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ), quality.taa );
+// The ground truth (aa=gt, debug builds) renders at the canvas's resolution (see resize) without
+// film grain: an image of the scene alone.
+if ( AA_MODE === 'gt' ) pipeline.settings.grain = 0;
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).
 if ( profiler ) {
@@ -453,7 +460,7 @@ const warming = Promise.all( [
 	// graph's warm-up starts, which compiles them with every pass (graph/FrameGraph.ts `warm`)
 	rain.registerLatent( overlayLatents ),
 	sky.lightning.registerLatent( pipeline.graph ),
-	pipeline.graph.warm( { scene, waterScene, rainScene, camera, water: null, sun, time: simTime } ),
+	pipeline.graph.warm( { scene, waterScene, rainScene, camera, water: null, sun, time: simTime } ).then( () => pipeline.temporal?.warm() ),
 ] );
 warming.catch( () => undefined ); // reported where it is awaited, before the loop
 
@@ -715,6 +722,27 @@ antialiasingF.add( { mode: AA_MODE }, 'mode', AA_GUI_MODES ).name( 'mode (reload
 	location.assign( url );
 
 } );
+// The temporal resolve's knobs (TemporalAA.ts), live: the tier's `taa` table is where they start. A
+// change restarts the rest of a paused scene (the rest's key holds them).
+if ( pipeline.temporal ) {
+
+	const T = pipeline.temporal.settings, K = pipeline.temporal.knobs;
+	antialiasingF.add( T, 'framesStill', 1, 32, 1 ).name( 'history frames, still' );
+	antialiasingF.add( T, 'framesMoving', 1, 32, 1 ).name( 'history frames, moving' );
+	antialiasingF.add( T, 'speedFull', 1, 64, 1 ).name( 'moving from (px/frame)' );
+	antialiasingF.add( T, 'gammaStill', 0.25, 3, 0.05 ).name( 'clip box, still (sd)' );
+	antialiasingF.add( T, 'gammaMove', 0.25, 3, 0.05 ).name( 'clip box, moving (sd)' );
+	antialiasingF.add( T, 'sigma', 0.2, 0.8, 0.01 ).name( 'filter sigma (px)' );
+	antialiasingF.add( T, 'sigmaRest', 0.2, 0.8, 0.01 ).name( 'filter sigma at rest (px)' );
+	antialiasingF.add( T.sharpness, 'taa', 0, 2, 0.05 ).name( 'taa sharpen softness' );
+	antialiasingF.add( T.sharpness.taau, '0', 0, 2, 0.05 ).name( 'taau softness at 1:1' );
+	antialiasingF.add( T.sharpness.taau, '1', 0, 2, 0.05 ).name( 'taau softness at 2:1' );
+	antialiasingF.add( T, 'skyPassThrough' ).name( 'sky without history' );
+	antialiasingF.add( K.dofCut, 'value', 0, 1, 0.05 ).name( 'history cut in DoF blur' );
+	antialiasingF.add( T, 'restSettle', 0, 32, 1 ).name( 'rest: settle frames' );
+	antialiasingF.add( T, 'restSequence', 0, 64, 1 ).name( 'rest: jitter frames' );
+
+}
 const groundF = gui.addFolder( 'Ground' );
 groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => {
 
@@ -860,7 +888,8 @@ if ( DEBUG ) {
 // High's render scale is dynamic (DynamicResolution.ts): it moves between the tier's nominal and
 // a floor by the GPU's frame time, and renders at the nominal while it is pinned (?dpr, full
 // resolution) or the scene is paused, so paused frames and captures render at the reference scale.
-const dynamicRule = 'dynamic' in quality.render ? quality.render.dynamic : null;
+// (the ground truth renders at the canvas's resolution: no dynamic scale)
+const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render.dynamic : null;
 const dynamicResolution = dynamicRule ? new DynamicResolution( dynamicRule ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
 // the same number of refreshes; `frameRate` overrides it (0 renders on every refresh: the profiler's
@@ -910,6 +939,8 @@ function resize(): void {
 
 	const w = innerWidth, h = innerHeight;
 	nominalScale = renderPixelRatio( w, h, quality.render, resolution.full, DPR_CAP );
+	// the ground truth renders at the canvas's ratio, every pixel of it
+	if ( AA_MODE === 'gt' ) nominalScale = outputPixelRatio( nominalScale );
 	dynamicResolution?.setMax( nominalScale );
 	renderer.setPixelRatio( outputPixelRatio( nominalScale ) );
 	renderer.setSize( w, h );
@@ -982,6 +1013,26 @@ addEventListener( 'keydown', ( e ) => {
 
 const frameTimes: number[] = [];
 let shadowElapsed = 0;
+// The temporal resolve's per-frame inputs (TemporalAA.ts): what besides the camera, the clock and the
+// sizes keys a paused scene's rest (a forced strike: a review sets one while paused, and the rest
+// starts over for it), whether the frame may rest (not while a sky bake is in flight or a sky
+// transition runs, unless `loop.step` holds the frame still: see `holding`), and its delta.
+let strikeKey = 'null', strikeVersion = 0;
+// set while `loop.step` holds a frame for the rest to converge (nothing advances, a transition included)
+let holding = false;
+function temporalFrame( dt: number ): TemporalFrame | undefined {
+
+	if ( ! pipeline.temporal ) return undefined;
+	const forced = JSON.stringify( ( sky.lightning as unknown as { forced: unknown } ).forced ?? null );
+	if ( forced !== strikeKey ) {
+
+		strikeKey = forced;
+		strikeVersion ++;
+
+	}
+	return { signature: [ strikeVersion ], stable: ! sky.busy && ( ! sky.transitioning || holding ), dt };
+
+}
 function tick( time: number ): void {
 
 	// the frame's own vblank time, not the moment the tick starts: the main thread reaches the tick a
@@ -1091,7 +1142,7 @@ function tick( time: number ): void {
 
 	// (the temporal modes draw the storm's spray with the rain, in the overlay pass)
 	const overlay = rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible );
-	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, camera, water: water!, sun, time: simTime } );
+	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt ) } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
 	frame ++;
@@ -1149,7 +1200,15 @@ function graphDiagnostics(): Record<string, unknown> {
 
 function diagnostics( now = false ): void {
 
-	if ( ! DEBUG || ( ! now && frame % 30 !== 1 ) ) return;
+	if ( ! DEBUG ) return;
+	const current = ( window as unknown as Record<string, Record<string, unknown> | undefined> ).__THREE_GAME_DIAGNOSTICS__;
+	if ( ! now && frame % 30 !== 1 ) {
+
+		// the temporal resolve's state on every frame: the capture tools wait for its rest
+		if ( current && pipeline.temporal ) current.taa = pipeline.temporal.diagnostics();
+		return;
+
+	}
 	const info = renderer.info;
 	( window as unknown as Record<string, unknown> ).__THREE_GAME_DIAGNOSTICS__ = {
 		frame,
@@ -1191,6 +1250,9 @@ function diagnostics( now = false ): void {
 		aa: AA_MODE,
 		pipelines: pipelineCount?.total ?? 0,
 		graph: graphDiagnostics(),
+		// the temporal resolve: its mode, the rest (converged, frames, target), the jitter, the history's
+		// resets, the input and output sizes and whether reactive inputs are read (TemporalAA.ts)
+		taa: pipeline.temporal?.diagnostics() ?? null,
 	};
 
 }
@@ -1332,6 +1394,11 @@ document.addEventListener( 'visibilitychange', () => {
 //   lightning strike's fill light), at most every 2 s of wall clock and landing whenever the GPU
 //   answers: stepped, every bake reads it back and the next frame waits for the value, so it
 //   lands on the frame after the bake however long the frames took.
+// - `converge( i )` (the temporal modes' ground truth, capture-clip.mjs --aa gt): after frame i's tick
+//   the scene is held still (the clock paused, nothing advancing with time: a delta of 0, the sky's
+//   transitions and wall-clock cadences included) and rendered again until the temporal rest has
+//   converged on it (TemporalRest.ts), so `onFrame( i )` sees frame i's scene averaged over the rest's
+//   jitters. The clock and the cadences continue afterwards as if the hold had not happened.
 interface StepOptions {
 	frames: number;
 	dt?: number;
@@ -1339,10 +1406,11 @@ interface StepOptions {
 	camera?: ( i: number ) => void;
 	onFrame?: ( i: number ) => Promise<void> | void;
 	clock?: 'paused' | 'running';
+	converge?: ( i: number ) => boolean;
 }
 const step = async ( options: StepOptions ): Promise<{ frames: number; t0: number; simTime: number; frameId: number }> => {
 
-	const { frames, dt = 1 / 60, scale, camera: moveCamera, onFrame, clock: clockMode } = options;
+	const { frames, dt = 1 / 60, scale, camera: moveCamera, onFrame, clock: clockMode, converge } = options;
 	if ( ! Number.isInteger( frames ) || frames < 0 ) throw new RangeError( 'frames must be a whole number, 0 or more' );
 	if ( ! Number.isFinite( dt ) || dt <= 0 ) throw new RangeError( 'dt must be finite and positive' );
 	const scales = scale === undefined ? [] : Array.isArray( scale ) ? scale : [ scale ];
@@ -1381,14 +1449,9 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 	const t0 = Math.round( performance.now() );
 	try {
 
-		for ( let i = 0; i < frames; i ++ ) {
+		// one tick of the loop at `time`, with the bookkeeping three's animation loop does around it
+		const tickAt = async ( time: number ): Promise<void> => {
 
-			if ( sky.busy && skyBake.slices.length === 0 ) await skyBake.pendingUpdate?.catch( () => {} );
-
-			// never above the canvas's ratio: the render would outgrow the canvas it is shown on
-			const ratio = scales.length ? scales[ Math.min( i, scales.length - 1 ) ] : nominalScale;
-			steppedScale = Math.min( ratio, renderer.getPixelRatio() );
-			moveCamera?.( i );
 			// every bake this frame reads its irradiance back (no wall-clock throttle)
 			skyBake.lastDiagnosticMs = - Infinity;
 			// three's Animation does this before each frame of its loop
@@ -1399,7 +1462,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 			inspector.begin();
 			// (the frame's size follows `steppedScale` from this tick's start: applyRenderScale)
 			applyRenderScale();
-			loopBody( t0 + i * dt * 1000 );
+			loopBody( time );
 			inspector.finish();
 			if ( skyBake.sliceTimer !== null ) {
 
@@ -1408,6 +1471,48 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 			}
 			await settleSkyReadback();
+
+		};
+		for ( let i = 0; i < frames; i ++ ) {
+
+			if ( sky.busy && skyBake.slices.length === 0 ) await skyBake.pendingUpdate?.catch( () => {} );
+
+			// never above the canvas's ratio: the render would outgrow the canvas it is shown on
+			const ratio = scales.length ? scales[ Math.min( i, scales.length - 1 ) ] : nominalScale;
+			steppedScale = Math.min( ratio, renderer.getPixelRatio() );
+			moveCamera?.( i );
+			await tickAt( t0 + i * dt * 1000 );
+			const temporal = pipeline.temporal;
+			if ( temporal && converge?.( i ) ) {
+
+				// hold the frame's scene still until the rest has converged on it
+				const was = { paused, day: dayCycle.paused, skyElapsed, shadowElapsed };
+				paused = true;
+				dayCycle.paused = true;
+				holding = true;
+				timer.getDelta = () => 0;
+				try {
+
+					for ( let k = 0; k < temporal.rest.target + 4 && ! temporal.converged; k ++ ) {
+
+						if ( sky.busy && skyBake.slices.length === 0 ) await skyBake.pendingUpdate?.catch( () => {} );
+						await tickAt( t0 + i * dt * 1000 );
+
+					}
+
+				} finally {
+
+					timer.getDelta = () => dt;
+					holding = false;
+					paused = was.paused;
+					dayCycle.paused = was.day;
+					skyElapsed = was.skyElapsed;
+					shadowElapsed = was.shadowElapsed;
+
+				}
+				if ( ! temporal.converged ) console.warn( `loop.step: frame ${ i } did not converge (the rest's ${ temporal.rest.frames } of ${ temporal.rest.target } frames)` );
+
+			}
 			await onFrame?.( i );
 
 		}
@@ -1426,4 +1531,11 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 };
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
-	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
+	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),
+	// the temporal resolve (TemporalAA.ts, TemporalRest.ts): its live settings and knobs, the rest, the
+	// epoch, and `restart()`, which starts the history and the rest over (a cut and an epoch bump)
+	taa: pipeline.temporal ? {
+		resolve: pipeline.temporal, settings: pipeline.temporal.settings, knobs: pipeline.temporal.knobs, rest: pipeline.temporal.rest, epoch: restEpoch,
+		get converged() { return pipeline.temporal!.converged; },
+		restart: () => { restEpoch.bump( 'restart' ); taaCut( 'restart' ); },
+	} : null };

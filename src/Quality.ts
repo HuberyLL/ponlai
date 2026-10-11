@@ -61,6 +61,9 @@ export interface TemporalSettings {
 	restSequence: number;
 	// the cheaper resolve (fewer taps, no reactive mask) for the lowest tier
 	lite: boolean;
+	// the ground truth's jitter count (`aa=gt`, debug builds: the rest's sequence at the canvas's
+	// resolution, box-filtered): 64 for a still image, 32 (`tier.taa.gtJitters=32`) per frame of a clip
+	gtJitters: number;
 }
 
 export interface QualityProfile {
@@ -108,6 +111,7 @@ const BILINEAR: SolarShadowTaps = { soft: false, blockerSamples: 0, filterSample
 const TAA: TemporalSettings = {
 	framesStill: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75, sigma: 0.42, sigmaRest: 0.30,
 	sharpness: { taa: 1.0, taau: [ 1.0, 0.5 ] }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
+	gtJitters: 64,
 };
 
 export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = {

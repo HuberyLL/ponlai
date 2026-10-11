@@ -13,6 +13,8 @@ import { FSR } from './FSR.ts';
 import { AA_MODE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { beginMotionFrame, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
 import { jitter } from './Jitter.ts';
+import { TemporalAA, type TemporalFrame, type TemporalMode } from './TemporalAA.ts';
+import { QUALITY, type TemporalSettings } from '../Quality.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
@@ -47,7 +49,17 @@ import type { Rain } from '../weather/Rain.ts';
 //     frame's history of the nearest surface)
 //   overlay ── the rain and the storm's spray (moved from the water's scene) over the scene, with
 //     Motion.ts's overlayMRT: the velocity under them kept
-// and the post passes follow as above.
+// and the post passes follow as above, but for the vignette and the grain, which the display pass
+// leaves to the canvas pass; then (TemporalAA.ts):
+//   TAA resolve ── taaHistory (ping-pong: the frames accumulated, at the canvas's size for TAAU)
+//   TAA rest ── taaRest (ping-pong), while a resting scene runs its jitter sequence, then copied
+//     into taaRestShown once complete (TemporalRest.ts)
+//   canvas pass: the history (or the rest's image) encoded, vignette, RCAS, grain and dither; TAA
+//     below the canvas encodes it at the render's size (taaDisplay), EASU, then RCAS and the grain
+// (`taaResolve=off`, debug builds: the jittered frame shown as it is, through the output passes
+// above, with the grade's vignette and grain: the placeholder before the resolve).
+// The rain veil's per-pixel reactive weight (veilReactive) is a resource of its own the resolve
+// reads, zero until the composite writes it.
 // Every pass runs at the scene's render size or a share of it. When the canvas is larger (a quality
 // preset below the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling,
 // then contrast-adaptive sharpening) to the screen instead, and the grain is added there, at
@@ -81,6 +93,9 @@ const DEV = import.meta.env.DEV || new URLSearchParams( globalThis.location?.sea
 // The graph's warm-up renders the passes it cannot compile once at startup (`fgPrime=0`: not, for
 // the check that priming changes no frame).
 const PRIME = new URLSearchParams( globalThis.location?.search ?? '' ).get( 'fgPrime' ) !== '0';
+// The temporal modes resolve their jittered frames (TemporalAA.ts); `taaResolve=off` (debug builds)
+// shows the jittered frame as it is, through the output passes, as before the resolve.
+const RESOLVE = TEMPORAL && ! ( DEV && new URLSearchParams( globalThis.location?.search ?? '' ).get( 'taaResolve' ) === 'off' );
 const RENDER: SizeClass = { of: 'render' };
 // half the render, at least a texel (the depth of field's blur)
 const HALF: SizeClass = { of: 'render', scale: 0.5, min: 1 };
@@ -94,6 +109,9 @@ const NO_WATER = new THREE.Scene();
 export interface PipelineFrame {
 	scene: THREE.Scene; waterScene: THREE.Scene; rainScene?: THREE.Scene; overlay?: boolean; camera: THREE.Camera;
 	water: { prepare( sun: THREE.DirectionalLight ): void } | null; sun: THREE.DirectionalLight; time: number;
+	// the temporal resolve's per-frame inputs from the page (the rest's signature and stability, the
+	// frame's delta)
+	temporal?: TemporalFrame;
 }
 
 /** The frame graph's structural choices, fixed when the page loads (the quality tier sets them;
@@ -350,7 +368,7 @@ export class Pipeline {
 	readonly textures: { readonly opaqueColor: THREE.Texture; readonly linearDepth: THREE.Texture; readonly surfaceDepth: THREE.Texture };
 	private readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
-		surfaceDepth: ResourceHandle; velocity: ResourceHandle | null; surfaceDepthPrev: ResourceHandle | null;
+		surfaceDepth: ResourceHandle; velocity: ResourceHandle | null; surfaceDepthPrev: ResourceHandle | null; veilReactive: ResourceHandle | null;
 		hdr: ResourceHandle | null; sharp: ResourceHandle; blur: ResourceHandle; display: ResourceHandle;
 		viewDistance: ResourceHandle | null;
 		easu: ResourceHandle | null; canvas: ResourceHandle;
@@ -358,12 +376,15 @@ export class Pipeline {
 	readonly air: AerialPerspective;
 	readonly shafts = new LightShafts();
 	readonly options: Readonly<PostOptions>;
+	/** The temporal modes' resolve (null under msaa and off, and with `taaResolve=off`). */
+	readonly temporal: TemporalAA | null = null;
 
 	private depthQuad: THREE.QuadMesh;
 	// (msaa and off: under the temporal modes the opaque copy is a texture copy)
 	private copyQuad: THREE.QuadMesh | null = null;
 	private surfaceQuad: THREE.QuadMesh;
-	private output: THREE.RenderPipeline;
+	// (msaa, off and the temporal placeholder: the resolve has a canvas pass of its own)
+	private output: THREE.RenderPipeline | null = null;
 	// FSR.ts's sharpening canvas pass after EASU (the fsrPort option), or three's FSR1Node (post=three-fsr)
 	private upscaledOutput: THREE.RenderPipeline | null = null;
 	private upscaledOutputThree: THREE.RenderPipeline | null = null;
@@ -401,7 +422,8 @@ export class Pipeline {
 	// the glow shows: `enabled`)
 	private diffusion!: { node: RenderBloomNode; threshold: THREE.UniformNode<'float', number>; output: ResourceHandle; enabled: boolean };
 
-	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL() ) {
+	/** `temporal`: the tier's resolve settings (Quality.ts `taa`), for the temporal modes. */
+	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings ) {
 
 		this.renderer = renderer;
 		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
@@ -421,6 +443,9 @@ export class Pipeline {
 		// (in the scene's target: its sample count, one under the temporal modes)
 		const velocity = TEMPORAL ? g.color( 'velocity', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, samples: 'scene' } ) : null;
 		const surfaceDepthPrev = TEMPORAL ? g.color( 'surfaceDepthPrev', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType }, true ) : null;
+		// the rain veil's reactive weight per pixel, for the resolve (persistent: zero until a pass
+		// writes it, so the resolve's binding never changes)
+		const veilReactive = RESOLVE ? g.color( 'veilReactive', { size: RENDER, format: THREE.RedFormat, type: THREE.HalfFloatType }, true ) : null;
 		// the composite, the sharp image and the depth of field's blur (half float, as three's rtt()
 		// made them)
 		const hdr = O.compositeOnce ? g.color( 'hdr', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
@@ -428,10 +453,10 @@ export class Pipeline {
 		const blur = g.color( 'blur', { size: HALF, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		const display = g.color( 'display', { size: RENDER, format: THREE.RGBAFormat, type: THREE.FloatType } );
 		const viewDistance = O.dofDistance ? g.color( 'viewDistance', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } ) : null;
-		// the upscale's EASU image (the canvas's size) and the canvas
-		const easu = O.fsrPort ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
+		// the upscale's EASU image (the canvas's size) and the canvas (the resolve has its own)
+		const easu = O.fsrPort && ! RESOLVE ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
-		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, surfaceDepthPrev, hdr, sharp, blur, display, viewDistance, easu, canvas };
+		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, hdr, sharp, blur, display, viewDistance, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( velocity ? [ sceneColor, velocity ] : [ sceneColor ], sceneDepth );
@@ -849,7 +874,15 @@ export class Pipeline {
 			return c;
 
 		} ).setLayout( { name: 'lookColour', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'onSurface', type: 'float' } ] } );
-		const grade = ( lin: V3 ): V3 => {
+		// the vignette's factor at the pixel being drawn into an image of `size` (the grade's; under the
+		// temporal resolve the canvas pass's, after the accumulation)
+		const vignetteAt = ( size: THREE.UniformNode<'vec2', THREE.Vector2> ) => {
+
+			const q = uv().sub( 0.5 ).mul( vec2( size.x.div( size.y ), 1 ) );
+			return mix( float( 1 ), smoothstep( 1.15, 0.3, length( q ) ), u.vignette );
+
+		};
+		const grade = ( lin: V3, vignette: boolean ): V3 => {
 
 			// (a uniform branch: the GUI switches the curve without rebuilding the pass. PBR Neutral
 			// is evaluated outside it, every frame: called inside the branch it rendered black, and
@@ -900,9 +933,8 @@ export class Pipeline {
 			c.mulAssign( mix( float( 1 ), select( peak.greaterThan( knee ), soft.div( peak ), float( 1 ) ), u.clipGuard.mul( float( 1 ).sub( hot ) ) ) );
 			// A display black lift softens dark colours without adding atmospheric scattering.
 			c.assign( c.add( vec3( 1 ).sub( c ).mul( u.lift ) ) );
-			// vignette
-			const q = uv().sub( 0.5 ).mul( vec2( renderSize.x.div( renderSize.y ), 1 ) );
-			c.mulAssign( mix( float( 1 ), smoothstep( 1.15, 0.3, length( q ) ), u.vignette ) );
+			// vignette (the resolve leaves it to the canvas pass, after the accumulation)
+			if ( vignette ) c.mulAssign( vignetteAt( renderSize ) );
 			const s = ( sRGBTransferOETF( clamp( c, 0, 1 ) ) as THREE.Node<'vec3'> ).toVar();
 			// gentle S-curve in display space
 			s.assign( mix( s, s.mul( s ).mul( float( 3 ).sub( s.mul( 2 ) ) ), u.contrast ) );
@@ -926,17 +958,23 @@ export class Pipeline {
 
 		// The graded image, at the render's size, always into one float target (the display pass),
 		// which the canvas pass copies or upscales: one build of the grade, whatever the output.
-		// Float, so the copy below hands the canvas exactly the values a direct draw would.
+		// Float, so the copy below hands the canvas exactly the values a direct draw would. The
+		// temporal resolve accumulates it before the vignette, grain and dither, which its canvas
+		// pass adds.
 		const displayMat = new THREE.NodeMaterial();
 		displayMat.name = 'Post.Display';
-		displayMat.fragmentNode = Fn( () => finish( grade( diffused() ), renderSize, u.grainOn ) )();
+		displayMat.fragmentNode = Fn( () => finish( grade( diffused(), ! RESOLVE ), renderSize, RESOLVE ? float( 0 ) : u.grainOn ) )();
 		this.displayQuad = new THREE.QuadMesh( displayMat );
 		this.displayQuad.name = 'Post.Display';
 
 		// At the display's resolution it is copied to the canvas, grain and all.
 		const tDisplay = g.texture( display );
-		this.output = new THREE.RenderPipeline( renderer, textureLoad( tDisplay, ivec2( screenCoordinate.xy ) ) );
-		this.output.outputColorTransform = false;
+		if ( ! RESOLVE ) {
+
+			this.output = new THREE.RenderPipeline( renderer, textureLoad( tDisplay, ivec2( screenCoordinate.xy ) ) );
+			this.output.outputColorTransform = false;
+
+		}
 
 		// Below it, FSR 1 (AMD FidelityFX Super Resolution 1, FSR.ts) upscales the image (it expects
 		// display values) before the grain, so the grain stays one display pixel fine and is not
@@ -950,7 +988,7 @@ export class Pipeline {
 			this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( fsr.rcas( this.sharpness ).toVar(), canvasSize, float( 1 ) ) )() );
 			this.upscaledOutput.outputColorTransform = false;
 
-		} else {
+		} else if ( ! RESOLVE ) {
 
 			const upscaled = fsr1( texture( tDisplay ), this.sharpness );
 			this.upscaledOutputThree = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), canvasSize, float( 1 ) ) )() );
@@ -964,6 +1002,22 @@ export class Pipeline {
 
 			for ( const { node } of [ ...this.blooms, this.diffusion ] ) { node.renderWidth = w; node.renderHeight = h; node.setSize(); }
 
+		} );
+		// the temporal resolve, its passes declared after the display pass
+		if ( RESOLVE ) ( this as { temporal: TemporalAA | null } ).temporal = new TemporalAA( g as unknown as FrameGraph<unknown>, renderer, {
+			mode: AA_MODE as TemporalMode, settings: temporal ?? QUALITY.high.taa,
+			contrast: u.contrast, vignette: vignetteAt, finish,
+			// the display pass's blur weight, inline (cocAt's layout function, called from the resolve's
+			// shaders, came out with another shader's uniform names)
+			dofBlur: () => ( q: V2 ) => {
+
+				const px = ivec2( clamp( q.mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
+				const dist = tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).toVar() : distanceAt( q, ( textureLoad( tD, px ) as unknown as F ).toVar() );
+				const far = mix( float( 1 ), float( 0.15 ), smoothstep( 1500, 15000, dist ) );
+				const coc = clamp( abs( dist.sub( u.focus ) ).sub( u.range ).div( u.focus.mul( 0.55 ) ), 0, 1 ).mul( far );
+				return smoothstep( 0, 0.35, coc ).mul( u.dof );
+
+			},
 		} );
 		this.declarePasses();
 		if ( TEMPORAL ) {
@@ -1014,8 +1068,8 @@ export class Pipeline {
 	private declarePasses(): void {
 
 		const g = this.graph;
-		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth } = this.resources;
-		if ( TEMPORAL ) [ sceneColor, surfaceDepth ] = this.declareTemporalScene();
+		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity } = this.resources;
+		if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity ] = this.declareTemporalScene();
 		else {
 
 			g.addPass( 'opaque', 'scene', ( b ) => {
@@ -1180,12 +1234,20 @@ export class Pipeline {
 			return { label: 'grade & look', quad: displayQuad };
 
 		} );
+		// the temporal resolve and its canvas pass (TemporalAA.ts)
+		if ( this.temporal ) {
+
+			const { surfaceDepthPrev, veilReactive } = this.resources;
+			this.temporal.declare( { display, velocity: velocity!, surfaceDepth, surfaceDepthPrev: surfaceDepthPrev!, veilReactive: veilReactive!, viewDistance, canvas } );
+			return;
+
+		}
 		// to the canvas: copied at the display's resolution, upscaled below it
 		g.addPass( 'output', 'chain', ( b ) => {
 
 			b.read( display );
 			canvas = b.write( canvas );
-			return { label: 'output', when: () => ! this.upscaling, whenLabel: '!upscaling', pipeline: this.output };
+			return { label: 'output', when: () => ! this.upscaling, whenLabel: '!upscaling', pipeline: this.output! };
 
 		} );
 		const fsr = this.fsr, upscaledOutput = this.upscaledOutput, upscaledOutputThree = this.upscaledOutputThree;
@@ -1225,8 +1287,8 @@ export class Pipeline {
 	// to the overlay are the graph's jittered span), the motion vectors written beside the colour.
 	// The opaque and water passes draw with the scene MRT (sceneMRT), the rain and the storm's spray
 	// in the overlay pass with the overlay MRT, which keeps the motion of the surfaces under them
-	// (Motion.ts). Returns the scene colour's and the nearest surface's last versions.
-	private declareTemporalScene(): [ ResourceHandle, ResourceHandle ] {
+	// (Motion.ts). Returns the scene colour's, the nearest surface's and the velocity's last versions.
+	private declareTemporalScene(): [ ResourceHandle, ResourceHandle, ResourceHandle ] {
 
 		const g = this.graph;
 		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth } = this.resources;
@@ -1285,7 +1347,7 @@ export class Pipeline {
 			b.read( linearDepth );
 			b.read( surfaceDepth );
 			sceneColor = b.write( sceneColor, { blend: 'material' } );
-			b.write( velocity, { blend: 'keep-max' } );
+			velocity = b.write( velocity, { blend: 'keep-max' } );
 			b.depth( sceneDepth, { write: false } );
 			return {
 				label: 'overlay', mrt: overlayMRT, jittered: true, when: ( f ) => f.overlay === true && f.rainScene !== undefined, whenLabel: 'rain || spray',
@@ -1295,7 +1357,7 @@ export class Pipeline {
 		} );
 		// the nearest surface's depth, kept for the next frame
 		g.copyToPersistent( surfaceDepth, this.resources.surfaceDepthPrev! );
-		return [ sceneColor, surfaceDepth ];
+		return [ sceneColor, surfaceDepth, velocity ];
 
 	}
 
@@ -1322,6 +1384,8 @@ export class Pipeline {
 	/** The scene's render size, and the canvas's when it is larger (the frame is then upscaled). */
 	setSize( w: number, h: number, outputWidth = w, outputHeight = h ): void {
 
+		// (a history whose size changes is carried over to the next resolve, before the graph resizes it)
+		this.temporal?.beforeResize( { render: { width: w, height: h }, canvas: { width: outputWidth, height: outputHeight } } );
 		this.width = w; this.height = h;
 		this.outputWidth = Math.max( outputWidth, w ); this.outputHeight = Math.max( outputHeight, h );
 		// every target by its size class (the reduced fog's, the fixed bank map's, the upscale's at
@@ -1384,9 +1448,18 @@ export class Pipeline {
 		u.projInv.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
 		if ( TEMPORAL ) {
 
-			// this frame's jitter and motion, from the camera as it is (unjittered)
+			// this frame's rest (which picks the rest's jitter), jitter and motion, from the camera as
+			// it is (unjittered)
+			this.temporal?.beginFrame( camera, this.width, this.height, this.outputWidth, this.outputHeight, frame.time, frame.temporal );
 			jitter.prepare( camera, this.width, this.height, this.outputWidth / this.width );
 			beginMotionFrame( camera );
+			if ( this.temporal ) {
+
+				// (after a cut or a resize the previous frame's nearest surface is gone)
+				this.temporal.setPreviousDepthValid( this.graph.historyValid( this.resources.surfaceDepthPrev! ) );
+				this.temporal.upscaling = this.upscaling;
+
+			}
 
 		}
 		this.air.update( camera );

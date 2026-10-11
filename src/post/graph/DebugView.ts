@@ -49,14 +49,29 @@ import { debugFlags } from '../../debug/DebugFlags.ts';
 //                   where the point is disoccluded or was off screen (the previous frame's nearest
 //                   surface there lay more than 2 % nearer or farther than the point did, the point
 //                   moved by the camera alone: for static geometry)
+// and, with the resolve (TemporalAA.ts), views of its decisions, each the resolve's own shader with
+// one of its values written instead of the colour (into `taaDebug`, at the history's size):
+//   weight        the history's share of the resolved pixel (black: this frame alone, white: all
+//                 history), grey
+//   disocclusion  red where the previous frame's nearest surface shows the point was hidden, green
+//                 where it was off screen, blue where the history was reset (a cut, a resize)
+//   clip          how far the history lay outside the neighbourhood's clip box (0 inside, white at
+//                 twice its width), grey
 
 export type DebugViewKind = 'hdr' | 'display' | 'depth' | 'viewZ' | 'velocity' | 'single' | 'history' | 'colour';
 
 export interface DebugViewRequest { resource: string; output: string | null }
 
+/** What the resolve's debug views ask of it (TemporalAA.ts `declareDebugView`). */
+export interface TemporalDebugSource {
+	declareDebugView( view: 'weight' | 'disocclusion' | 'clip', inputs: { display: ResourceHandle; velocity: ResourceHandle; surfaceDepth: ResourceHandle; surfaceDepthPrev: ResourceHandle; veilReactive: ResourceHandle } ): ResourceHandle;
+}
+
 export interface DebugViewOptions {
 	// the grade's exposure on scene radiance (the HDR view's)
 	exposure(): number;
+	// the temporal resolve, for its views (null without one); asked while the graph compiles
+	temporal?: () => TemporalDebugSource | null;
 	// the temporal modes' motion vectors (Motion.ts, Jitter.ts), for their views: the previous
 	// rendered frame's unjittered view-projection, the unjittered inverse projection, the jitter's
 	// NDC shift, and the velocity's b below which a surface is opaque (no class of its own)
@@ -110,8 +125,9 @@ function kindOf( r: ResourceDecl, output: string | null ): DebugViewKind {
 
 }
 
-// the temporal modes' views of the motion vectors (see the note at the top)
+// the temporal modes' views of the motion vectors, and of the resolve (see the note at the top)
 const MOTION_VIEWS = [ 'class', 'reactive', 'reproject', 'reproject.diff' ];
+const RESOLVE_VIEWS = [ 'weight', 'disocclusion', 'clip' ] as const;
 
 /** The choices the Debug folder offers for a graph: every resource but the canvas, plus the
  * channels worth a look of their own (a two-channel resource's second channel, an HDR colour's
@@ -119,6 +135,7 @@ const MOTION_VIEWS = [ 'class', 'reactive', 'reproject', 'reproject.diff' ];
 export function debugViewChoices( d: GraphDescription ): string[] {
 
 	const choices: string[] = d.resources.some( ( r ) => r.name === 'velocity' ) ? [ ...MOTION_VIEWS ] : [];
+	if ( d.resources.some( ( r ) => r.name === 'taaHistory' ) ) choices.push( ...RESOLVE_VIEWS );
 	for ( const r of d.resources ) {
 
 		if ( r.canvas ) continue;
@@ -160,6 +177,12 @@ function declareDebugView( graph: FrameGraph<unknown>, value: string, options: D
 
 		if ( ! options.motion ) throw new Error( 'no motion vectors were given to the debug view' );
 		declareMotionView( graph, value, options.motion );
+		return;
+
+	}
+	if ( ( RESOLVE_VIEWS as readonly string[] ).includes( value ) ) {
+
+		declareResolveView( graph, value as typeof RESOLVE_VIEWS[ number ], options );
 		return;
 
 	}
@@ -368,6 +391,44 @@ function declareMotionView( graph: FrameGraph<unknown>, value: string, motion: N
 
 			},
 		};
+
+	} );
+
+}
+
+// The resolve's views (`weight`, `disocclusion`, `clip`; see the note at the top): the resolve declares
+// a pass of its own shader writing that value into `taaDebug`, shown here stretched over the canvas.
+function declareResolveView( graph: FrameGraph<unknown>, value: typeof RESOLVE_VIEWS[ number ], options: DebugViewOptions ): void {
+
+	const decl = graph.decl;
+	const resolve = options.temporal?.() ?? null;
+	if ( ! resolve ) throw new Error( 'the graph has no temporal resolve (aa=taa, taau or gt)' );
+	const find = ( name: string ) => {
+
+		const r = decl.resources.find( ( x ) => x.name === name );
+		if ( ! r ) throw new Error( `the graph has no '${ name }'` );
+		return { resource: r.id, version: r.latest, name: r.name } as ResourceHandle;
+
+	};
+	const canvas = decl.resources.find( ( x ) => x.canvas );
+	if ( ! canvas ) throw new Error( 'the graph draws no canvas' );
+	const target = resolve.declareDebugView( value, {
+		display: find( 'display' ), velocity: find( 'velocity' ), surfaceDepth: find( 'surfaceDepth' ),
+		surfaceDepthPrev: find( 'surfaceDepthPrev' ), veilReactive: find( 'veilReactive' ),
+	} );
+	const r = decl.get( target );
+	const size = graph.extent( r.desc.size );
+	const canvasSize = graph.extent( { of: 'canvas' } );
+	const coord = ivec2( clamp( floor( screenCoordinate.xy.mul( size ).div( canvasSize ) ), vec2( 0 ), size.sub( 1 ) ) );
+	const shown = ( textureLoad( texture( graph.texture( target ) ), coord ) as unknown as THREE.Node<'vec4'> ).rgb;
+	const pipeline = new THREE.RenderPipeline( graph.renderer, vec4( clamp( shown, 0, 1 ), 1 ) );
+	pipeline.outputColorTransform = false;
+	decl.setDebugView( target );
+	graph.addPass( 'debugView', 'chain', ( b ) => {
+
+		b.read( target );
+		b.write( { resource: canvas.id, version: canvas.latest, name: canvas.name } );
+		return { label: 'debug view', pipeline };
 
 	} );
 
