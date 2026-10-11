@@ -51,6 +51,9 @@ import type { Shared } from '../shared.ts';
 // - The view camera's draws are culled per tuft on the GPU (GrassCull.ts); every other draw over
 //   the same geometry draws every tuft. Tufts bend with the wind field at their root and their
 //   normals turn with the bend, so a gust shows as a sheen (Wind.ts).
+// - Under the temporal modes a blade's previous position (motion vectors) is its bend under the
+//   previous frame's wind from the same rooted point, widened by this frame's offset: the culled
+//   list keeps each tuft's own slot, so the tuft is the same whichever instance draws it.
 
 interface TuftShape {
 	blades: number; segs: number;
@@ -333,7 +336,11 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 	const swayed = bend ? setWindDisplacement( mat, ( state ) => pixelWideBlade(
 		state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, bladePhase ).position, across, minWidth ), shared.wind )
 		: pixelWideBlade( rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) ), across, minWidth );
-	const rest = useRestPoseShadows( mat, rooted, swayed );
+	// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
+	// rooted point, widened by the offset the current pose took (the widening follows the camera,
+	// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
+	const previous = bend && TEMPORAL ? swayed.sub( bend.position ).add( bendBlade( shared.wind.previous, rooted, origin, tuft.w, t2, bladePhase ).position ) : undefined;
+	const rest = useRestPoseShadows( mat, rooted, swayed, undefined, previous );
 	// The rest of three's instancing: the normal and the instance colour, before the blade moves.
 	const placed = mat.positionNode!;
 	mat.positionNode = Fn( () => {

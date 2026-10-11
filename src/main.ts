@@ -183,19 +183,7 @@ let simTime = Math.max( 0, numberParam( 't', 0 ) );
 const wind = new Wind( shared.wind, { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
 // Across a cut of the temporal modes' history (Motion.ts) the vegetation's wind has no motion either:
 // its previous state becomes the current one.
-if ( TEMPORAL ) onTaaCut( () => {
-
-	const current = shared.wind as unknown as Record<string, { value: number | THREE.Vector2 }>;
-	const previous = shared.wind.previous as unknown as Record<string, { value: number | THREE.Vector2 }>;
-	for ( const key in previous ) {
-
-		const from = current[ key ].value;
-		if ( typeof from === 'number' ) previous[ key ].value = from;
-		else ( previous[ key ].value as THREE.Vector2 ).copy( from );
-
-	}
-
-} );
+if ( TEMPORAL ) onTaaCut( () => wind.cut() );
 let rain: Rain | undefined;
 let skyElapsed = 0;
 let lastSkyTime = simTime;

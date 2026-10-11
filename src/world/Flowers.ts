@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, normalViewGeometry, vec3, float, clamp, mix, max, pow, dot, step, smoothstep as smoothstepN } from 'three/tsl';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
-import { useRestPoseShadows } from './VegetationShadow.ts';
+import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { LEAN_REF, setWindDisplacement, windGust } from '../weather/Wind.ts';
 import { mainBend } from './Foliage.ts';
@@ -248,7 +248,7 @@ function flowerMaterial( shared: Shared, centre: number[], legacy = false ): THR
 		: setWindDisplacement( mat, ( state ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( LEAN_REF ), 1.2 ).position, shared.wind );
 	// Only the heads cast into the sun's map: stems and the rosette under the grass are thinner
 	// than a texel (see useRestPoseShadows), and the meadow's canopy shades the rosette instead.
-	const rest = useRestPoseShadows( mat, rooted, swayed, step( 0.5, part ) );
+	const rest = useRestPoseShadows( mat, rooted, swayed, step( 0.5, part ), previousSway( mat, shared.wind ) );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.6 ), float( 1 ), lift ).mul( attribute<'float'>( 'skyVisibility', 'float' ) );
 	// Lit as the other plants: the grass canopy shades what stands in it, and thin petals glow
