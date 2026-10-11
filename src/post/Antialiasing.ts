@@ -122,6 +122,14 @@ export const AA_PLAN: Readonly<AAPlan> = Object.freeze( aaPlan( AA_REQUESTED ) )
 /** The mode the page runs. */
 export const AA_MODE: AAMode = AA_PLAN.mode;
 export const TEMPORAL: boolean = AA_PLAN.temporal;
+/** Whether the temporal modes resolve their frames (TemporalAA.ts); `taaResolve=off` (debug builds)
+ * shows the jittered frame as it is. */
+export const RESOLVE: boolean = TEMPORAL && ! ( ( import.meta.env.DEV || params.has( 'debug' ) ) && params.get( 'taaResolve' ) === 'off' );
+/** Whether the rain's streaks and the storm's spray draw after the resolve, at the canvas's
+ * resolution and unjittered (post/AfterResolve.ts): under taa and taau. The ground truth keeps them
+ * before its resolve, so its box filter over the jitters is the supersampled image they are measured
+ * against. */
+export const AFTER_RESOLVE: boolean = RESOLVE && AA_MODE !== 'gt';
 export const SCENE_SAMPLES: SceneSampleCount = AA_PLAN.sceneSamples;
 // Whether the vegetation's cut-outs and thin blades use alpha to coverage: with 4 samples only
 // (one sample has no coverage to give, so the pipeline would ignore alpha and draw them solid).

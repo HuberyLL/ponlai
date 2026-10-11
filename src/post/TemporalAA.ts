@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, float, vec2, vec3, vec4, ivec2, texture, textureLoad, uniform, screenCoordinate, floor, exp, dot, max, min,
-	clamp, abs, sqrt, select, mix, smoothstep, length, round, sRGBTransferOETF, outputStruct, mrt,
+	clamp, abs, sqrt, select, mix, smoothstep, length, round, sRGBTransferOETF, sRGBTransferEOTF, outputStruct, mrt,
 } from 'three/tsl';
 import type { TemporalSettings } from '../Quality.ts';
 import { jitter } from './Jitter.ts';
@@ -49,8 +49,9 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   the jitter alone moves what the pixel shows and the clip box handles it).
 // - The history's weight is capped at a number of frames' worth: more still, fewer moving, scaled by
 //   the surface's class (the sea and the islanders keep less), by the reactive inputs (the velocity's
-//   alpha: a bolt, spray, rain; a strike's flash; the rain veil's per-pixel reactive `veilReactive`,
-//   after FSR 2's reactive and transparency-and-composition masks) and where the depth of field
+//   alpha: a bolt, and under the ground truth the rain and spray; a strike's flash; under the ground
+//   truth the rain veil's per-pixel reactive `veilReactive`; after FSR 2's reactive and
+//   transparency-and-composition masks) and where the depth of field
 //   blurs (its foreground blur spreads over background pixels whose motion it does not follow).
 // - TAAU resolves straight to the canvas's size and keeps that history across render-scale steps
 //   (read by uv); TAA resolves at the render's size and resamples its history once when that changes.
@@ -65,6 +66,13 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   (they were half the canvas pass's time at 3840x2160; the extra half-float write costs less
 //   than that). The rest's image and the ground truth (one tap) are encoded in the canvas pass.
 //   TAA below the canvas encodes at the render's size and upscales with EASU first.
+// - After the resolve (taa, taau: AfterResolve.ts) the rain's streaks and the storm's spray are
+//   drawn unjittered into an overlay at the canvas's size, between the resolve's passes and the
+//   canvas pass (`after`, with the pass that draws the change the rain veil and that overlay make
+//   to the graded colour), and the canvas pass adds that change (`layer`) after RCAS, before the
+//   grain: the pixels it changes are decoded
+//   to linear light (the S-curve by Newton's method, then the sRGB transfer), changed and encoded
+//   again; the vignette applies to the change as to the image. Nothing of it enters a history.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -96,11 +104,16 @@ export interface TemporalInputs {
 	// the nearest surface's view z, this frame's and the previous frame's
 	surfaceDepth: ResourceHandle;
 	surfaceDepthPrev: ResourceHandle;
-	// the rain veil's per-pixel reactive weight (the composite writes it: Pipeline.ts)
-	veilReactive: ResourceHandle;
+	// the rain veil's per-pixel reactive weight (the composite writes it: Pipeline.ts; none when the
+	// veil is drawn after the resolve)
+	veilReactive: ResourceHandle | null;
 	// the depth of field's distances, when the pipeline keeps them (read by `dofBlur`)
 	viewDistance: ResourceHandle | null;
 	canvas: ResourceHandle;
+	// after the resolve (AfterResolve.ts): declares the pass that draws the overlay, after the
+	// resolve's and before the canvas pass, and returns what the canvas passes read (`optional`:
+	// written by a pass that may not run)
+	after?: () => { optional: ResourceHandle[]; required: ResourceHandle[] };
 }
 
 export interface TemporalOptions {
@@ -114,6 +127,10 @@ export interface TemporalOptions {
 	finish: ( s: V3, size: Uniform2, on: F ) => V4;
 	// a fresh function (one per shader) giving the depth of field's blur weight at a render uv
 	dofBlur: () => ( q: V2 ) => F;
+	// a fresh node (one per shader): what the canvas pass adds to its image at its pixel, after the
+	// resolve (the change to the graded colour, in linear light under `linear`, without the vignette;
+	// alpha 1 where there is one, else 0)
+	layer?: () => V4;
 }
 
 /** Per-frame inputs from the page: what else keys the rest, and whether the page is stable. */
@@ -136,6 +153,23 @@ const toDisplay = Fn( ( [ c, k ]: [ V3, F ] ) => {
 	return mix( s, s.mul( s ).mul( float( 3 ).sub( s.mul( 2 ) ) ), k );
 
 } ).setLayout( { name: 'taaToDisplay', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'k', type: 'float' } ] } );
+
+// display values to linear: the S-curve undone by Newton's method (three steps from the value itself
+// meet it to well below a level for the grade's gentle contrasts), then the sRGB transfer
+const fromDisplay = Fn( ( [ s, k ]: [ V3, F ] ) => {
+
+	const y = clamp( s, 0, 1 ).toVar();
+	const x = y.toVar();
+	for ( let i = 0; i < 3; i ++ ) {
+
+		const f = x.add( k.mul( x.mul( x ).mul( float( 3 ).sub( x.mul( 2 ) ) ).sub( x ) ) ).sub( y );
+		const d = float( 1 ).add( k.mul( x.mul( 6 ).sub( x.mul( x ).mul( 6 ) ).sub( 1 ) ) );
+		x.assign( clamp( x.sub( f.div( d ) ), 0, 1 ) );
+
+	}
+	return sRGBTransferEOTF( x ) as V3;
+
+} ).setLayout( { name: 'taaFromDisplay', type: 'vec3', inputs: [ { name: 's', type: 'vec3' }, { name: 'k', type: 'float' } ] } );
 
 const toYCoCg = ( c: V3 ) => vec3( dot( c, vec3( 0.25, 0.5, 0.25 ) ), dot( c, vec3( 0.5, 0, - 0.5 ) ), dot( c, vec3( - 0.25, 0.5, - 0.25 ) ) );
 const fromYCoCg = ( c: V3 ) => vec3( c.x.add( c.y ).sub( c.z ), c.x.add( c.z ), c.x.sub( c.y ).sub( c.z ) );
@@ -296,7 +330,7 @@ export class TemporalAA {
 		const renderSize = g.extent( RENDER ), outputSize = g.extent( this.historyClass ), canvasSize = g.extent( CANVAS );
 		const textures = {
 			display: g.texture( display ), velocity: g.texture( velocity ), depth: g.texture( surfaceDepth ),
-			depthPrev: g.texture( surfaceDepthPrev ), veil: g.texture( veilReactive ),
+			depthPrev: g.texture( surfaceDepthPrev ), veil: veilReactive ? g.texture( veilReactive ) : null,
 		};
 		// Under `linear` the running resolve also writes its image encoded (the vignette, the sRGB
 		// transfer, the S-curve), so the canvas pass's RCAS reads encoded taps instead of encoding
@@ -325,7 +359,7 @@ export class TemporalAA {
 			b.readOptional( velocity );
 			b.read( surfaceDepth );
 			b.read( surfaceDepthPrev );
-			b.readOptional( veilReactive );
+			if ( veilReactive ) b.readOptional( veilReactive );
 			if ( viewDistance ) b.readOptional( viewDistance );
 			b.read( this.historyPrev );
 			history = b.write( history );
@@ -372,6 +406,26 @@ export class TemporalAA {
 
 		} );
 
+		// what is drawn after the resolve, and what the canvas passes then read
+		const afterReads = inputs.after?.() ?? { optional: [], required: [] };
+		const layer = O.layer;
+		// the layer's change to a canvas pixel's encoded colour `s`, whose vignette is `v`
+		const over = ( s: V3, v: F ): V3 => {
+
+			if ( ! layer ) return s;
+			const l = layer().toVar();
+			const out = s.toVar();
+			If( l.a.greaterThan( 0 ), () => {
+
+				out.assign( this.settings.linear
+					? toDisplay( fromDisplay( s, O.contrast ).add( l.rgb.mul( v ) ), O.contrast )
+					: s.add( l.rgb.mul( v ) ) );
+
+			} );
+			return out;
+
+		};
+
 		// What the canvas shows: the history this frame wrote (by its parity) or its encoded image, or
 		// the rest's image.
 		const sources = [ g.texture( history, 0 ), g.texture( history, 1 ), g.texture( this.restShown ) ];
@@ -390,13 +444,15 @@ export class TemporalAA {
 			const tap = ( dx: number, dy: number ) => vec4( isEncoded ? load( dx, dy ) : encode( load( dx, dy ), v ), 1 );
 			// (the ground truth is not sharpened)
 			const s = gt ? tap( 0, 0 ).rgb : rcas( tap, this.sharpness );
-			return O.finish( s.toVar(), canvasSize, float( 1 ) );
+			return O.finish( over( s.toVar(), v ), canvasSize, float( 1 ) );
 
 		} )();
 		const canvasPass = ( b: Parameters<Parameters<FrameGraph<unknown>[ 'addPass' ]>[ 2 ]>[ 0 ] ) => {
 
 			b.read( canvasImage ?? history );
 			b.readOptional( restShown );
+			for ( const h of afterReads.required ) b.read( h );
+			for ( const h of afterReads.optional ) b.readOptional( h );
 			canvas = b.write( canvas );
 
 		};
@@ -461,11 +517,13 @@ export class TemporalAA {
 			return { label: 'output & FSR', when: () => this.upscaling, whenLabel: 'upscaling', quad: fsr.quad };
 
 		} );
-		const upscaled = this.upscaledPipeline = new THREE.RenderPipeline( this.renderer, Fn( () => O.finish( fsr.rcas( this.sharpness ).toVar(), canvasSize, float( 1 ) ) )() );
+		const upscaled = this.upscaledPipeline = new THREE.RenderPipeline( this.renderer, Fn( () => O.finish( over( fsr.rcas( this.sharpness ).toVar(), O.vignette( canvasSize ) ), canvasSize, float( 1 ) ) )() );
 		upscaled.outputColorTransform = false;
 		g.addPass( 'taaUpscaledOutput', 'chain', ( b ) => {
 
 			b.readOptional( easuImage );
+			for ( const h of afterReads.required ) b.read( h );
+			for ( const h of afterReads.optional ) b.readOptional( h );
 			canvas = b.write( canvas );
 			return { label: 'output & FSR', when: () => this.upscaling, whenLabel: 'upscaling', pipeline: upscaled };
 
@@ -475,13 +533,13 @@ export class TemporalAA {
 
 	/** Debug builds (graph/DebugView.ts): a pass after the resolve that draws one of its debug
 	 * values (`view`) into a target of the history's size, and the target, for the view to show. */
-	declareDebugView( view: TemporalDebugView, inputs: { display: ResourceHandle; velocity: ResourceHandle; surfaceDepth: ResourceHandle; surfaceDepthPrev: ResourceHandle; veilReactive: ResourceHandle } ): ResourceHandle {
+	declareDebugView( view: TemporalDebugView, inputs: { display: ResourceHandle; velocity: ResourceHandle; surfaceDepth: ResourceHandle; surfaceDepthPrev: ResourceHandle; veilReactive: ResourceHandle | null } ): ResourceHandle {
 
 		const g = this.graph;
 		const renderSize = g.extent( RENDER ), outputSize = g.extent( this.historyClass );
 		const textures = {
 			display: g.texture( inputs.display ), velocity: g.texture( inputs.velocity ), depth: g.texture( inputs.surfaceDepth ),
-			depthPrev: g.texture( inputs.surfaceDepthPrev ), veil: g.texture( inputs.veilReactive ),
+			depthPrev: g.texture( inputs.surfaceDepthPrev ), veil: inputs.veilReactive ? g.texture( inputs.veilReactive ) : null,
 		};
 		let target = this.debugTarget ??= g.color( 'taaDebug', { size: this.historyClass, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		this.debugQuads = [ 0, 1 ].map( ( p ) => {
@@ -499,7 +557,7 @@ export class TemporalAA {
 			b.readOptional( inputs.velocity );
 			b.read( inputs.surfaceDepth );
 			b.read( inputs.surfaceDepthPrev );
-			b.readOptional( inputs.veilReactive );
+			if ( inputs.veilReactive ) b.readOptional( inputs.veilReactive );
 			b.read( this.historyPrev );
 			target = b.write( target );
 			// (the history's parity is the frame's, as for the resolve)
@@ -512,7 +570,7 @@ export class TemporalAA {
 	}
 
 	// The resolve's shader: the running resolve, the rest's, or one of its debug values.
-	private resolve( t: { display: THREE.Texture; velocity: THREE.Texture; depth: THREE.Texture; depthPrev: THREE.Texture; veil: THREE.Texture },
+	private resolve( t: { display: THREE.Texture; velocity: THREE.Texture; depth: THREE.Texture; depthPrev: THREE.Texture; veil: THREE.Texture | null },
 		history: THREE.TextureNode, kind: 'running' | 'rest' | TemporalDebugView, inputSize: Uniform2, outputSize: Uniform2, encoded = false ): V4 {
 
 		const O = this.options, S = this.settings, u = this.u, K = this.knobs;
@@ -702,8 +760,9 @@ export class TemporalAA {
 				clipped.assign( select( reach.greaterThan( 1 ), mean.add( v.div( reach ) ), histC ) );
 				// the weight the history may keep, in frames' worth: fewer while it moves, by class,
 				// less where it is reactive or the depth of field blurs
-				const reactive = lite ? reactiveUniforms.flash : max( velocity.w, max( reactiveUniforms.flash,
-					( textureLoad( t.veil, ivec2( clamp( floor( pIn ), vec2( 0 ), last ) ) ) as unknown as V4 ).r ) );
+				const veil = t.veil;
+				const reactive = lite ? reactiveUniforms.flash : max( velocity.w, veil ? max( reactiveUniforms.flash,
+					( textureLoad( veil, ivec2( clamp( floor( pIn ), vec2( 0 ), last ) ) ) as unknown as V4 ).r ) : reactiveUniforms.flash );
 				const dof = float( 1 ).sub( K.dofCut.mul( dofBlur( nearCell.add( 0.5 ).div( inputSize ) ) ) );
 				const frames = mix( u.framesStill, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( byClass( CLASS_SCALE ) )
 					.mul( clamp( float( 1 ).sub( reactive ), 0, 1 ) ).mul( dof );

@@ -258,6 +258,20 @@ export class AerialPerspective {
 
 	}
 
+	/** The view ray through screen uv `q` of the camera `update` last took, with the inverse
+	 * projection `projectionInverse`: in view space (`ray`, its z -1 deep, for a distance from a
+	 * view z) and its world direction. For the rain veil drawn after the temporal resolve
+	 * (Pipeline.ts), at the canvas's pixels and unjittered. */
+	viewRay( q: V2, projectionInverse: THREE.Node<'mat4'> ): { ray: V3; direction: V3 } {
+
+		const ndc = vec3( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1 );
+		const viewFar = projectionInverse.mul( vec4( ndc, 1 ) );
+		const ray = viewFar.xyz.div( viewFar.z.negate() ).toVar();
+		const direction = normalize( this.cameraWorld.mul( vec4( normalize( ray ), 0 ) ).xyz ).toVar();
+		return { ray, direction };
+
+	}
+
 	// The sea fog's optical depth and light along a ray (zero without fog).
 	private march( r: AirRay, sky: Sky ): { fogDepth: F; fogLight: V3 } {
 
@@ -331,10 +345,13 @@ export class AerialPerspective {
 	/** `depth` is the linear view z of the nearest surface, the sea's included. `veil` returns the
 	 * colour `background` seen through the rain along a view direction, in front of content at a
 	 * given distance, and the veil's opacity there in its alpha, which the result keeps (0 without
-	 * a veil). The bank map and the reduced march are declared on `graph`, which owns and sizes
+	 * a veil); it is also given the air's transmittance to that content (`background` is
+	 * `color` times it plus the air's light), and may return that in the alpha instead (the
+	 * composite's transfer after the resolve, Pipeline.ts, where the veil is laid later along
+	 * `viewRay`). The bank map and the reduced march are declared on `graph`, which owns and sizes
 	 * them; `passes` then adds the passes that draw them. Called once, as the frame graph is
 	 * built. */
-	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3 ) => V4 ): V4 {
+	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3, transmittance: F ) => V4 ): V4 {
 
 		const { bankSize, fogScale } = this.options;
 		this.resolution = graph.extent( { of: 'render' } );
@@ -354,7 +371,7 @@ export class AerialPerspective {
 			const transmittance = exp( total.negate() );
 			const light = hazeLight.mul( hazeDepth ).add( fogLight.mul( fogDepth ) ).div( max( total, 1e-6 ) );
 			const result = mix( light, color, transmittance );
-			return veil ? veil( r.direction, r.distance, result ) : vec4( result, 0 );
+			return veil ? veil( r.direction, r.distance, result, transmittance ) : vec4( result, 0 );
 
 		} )();
 
