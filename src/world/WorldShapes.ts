@@ -2,6 +2,11 @@
 // Everything here runs in the mesh worker: the island block and the land's distance (the sea floor
 // is Bathymetry.ts, the submerged stones Stones.ts). The island's shape is the grown
 // land (IslandGrowth.ts).
+//
+// Everything here is generic, so any land builds itself the same way: the footprint and the
+// cliffs derive from the land, the island's SDF and noise fields with fixed seeds (hashes of
+// position in world-anchored cells), never from coordinates placed by hand. Keep the flat central
+// plateau: natural contour, slope and weathering belong to the outer rim and the cliffs (Cliff.ts).
 
 import { Field2D, roundCorners } from './Field2D.ts';
 import { noise3, smoothstep } from './noise.ts';

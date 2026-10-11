@@ -122,7 +122,7 @@ const waterScene = new THREE.Scene();
 const rainScene = new THREE.Scene();
 
 // The far plane reaches past the horizon so the sea's skirt meets the sky (the resolved sky
-// depth, -1e5, stays beyond it).
+// depth, -1e5, and the passes' sky threshold, -9e4, stay beyond it).
 const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 60000 );
 // The views are framed on the land once the world has loaded (frameLand): the first island's
 // framing, moved to the land's centroid and scaled by its size. An explicit `dist` is in metres.

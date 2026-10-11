@@ -18,7 +18,9 @@ import { sampleMeadow, supportsMeadow } from '../materials/Meadow.ts';
 // flat umbel, a tall spike and a cupped buttercup), each a low rosette of leaves under the grass
 // with a thin stem that lifts a small head just above the sward. They grow in beds of 3-9 of one
 // species and colour, and the beds gather in drifts. Bed sites come from noise fields and a seeded
-// draw per planting anchor, so the meadow anywhere on a larger island flowers the same way.
+// draw per planting anchor, so the meadow anywhere on a larger island flowers the same way. Beds
+// keep off the islander's walking loop (WalkLoop.ts), spikes furthest (`clear` per species), and
+// the flowers bend with the plants' wind field (Wind.ts).
 
 // Every geometry is drawn with its head at REF_HEIGHT; the stem then stretches in the vertex stage
 // (`flowerColor.w`) to put the head where the plant's own sward ends, without squashing the head.

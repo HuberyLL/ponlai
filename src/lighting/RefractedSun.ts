@@ -12,6 +12,13 @@ type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
 type M4 = THREE.Node<'mat4'>;
 
+// The key light's shadow below the water: a map drawn along the sun refracted at the mean surface,
+// read by submerged receivers (and the sea floor's stones, which cast only here). It redraws when
+// the key light has turned by its angle gate (0.03 degrees on high; the quality tier sets it), and
+// exactly whenever the light is at rest (the same direction on two consecutive updates), so a
+// paused frame is the same however it was reached: after a paused seek it redraws on the second
+// update.
+
 const WATER_IOR = 1.333;
 // Turn of the key light below which a running clock keeps the drawn map (see RefractedSun.update).
 const ANGLE_GATE = THREE.MathUtils.degToRad( 0.03 );

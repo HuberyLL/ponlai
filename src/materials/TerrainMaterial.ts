@@ -24,6 +24,16 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // the water column, caustics, ambient) by a lighting model of its own, so the water shader only
 // has to add the view path.
 //
+// The cliff's stone is a scan, hex-tiled after Mikkelsen (HexTiling.ts) so it never repeats on a
+// lattice, with per-facet shade, paler recent scars, strata, parting seams, runoff streaks from the
+// lip and ledges, dry stone under overhangs, orange lichen near the lip, upper-cliff moss (its
+// upper 1.2 m only) and a black lichen spray zone that climbs with the coast's exposure. The layers
+// over the stone meet it by the scan's relief (moss, turf, soil and runoff fill its low points,
+// lichens take its raised grain first), each keeping its mask's mean cover; stacked layers (cliff
+// moss, root soil and turf) take adjacent ranges of the relief in stacking order, so each one's
+// visible cover matches the plain mix's. Turf stays on the meadow: never on ledges below the lip.
+// `?terrainHex=0` builds the plain triplanar variant; `userData.terrainVariant` swaps them.
+//
 // kind 'cliff'  : island block and submerged rocks (triplanar)
 // kind 'seabed' : sand, ripples, seagrass and rubble (planar)
 

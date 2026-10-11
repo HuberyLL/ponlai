@@ -18,6 +18,10 @@
 // grows the same island in every engine: directions come from polynomials (`turn`), angular gaps
 // are dot products, the exponential weights are ( 1 + x / 16 )^16, and the flood's ties break by
 // cell index.
+//
+// The land is a bit lattice (`LandLattice`, 0.25 m cells over +-96 m, saved with `toBytes`). The
+// site is chosen over the whole island (its middle needs the whole land's distance field); the
+// flood and the rounding work in windows around the piece. `GROWTH` holds every parameter.
 
 import { Field2D, roundCorners } from './Field2D.ts';
 import { fbm2, hash3i, mulberry32, smoothstep } from './noise.ts';

@@ -27,6 +27,18 @@ import { legacyWind, windVariants } from './WindVariants.ts';
 // - vegPrepassOpaque = false: the shaded draw keeps its coverage and alpha test after the
 //   prepass. The image is then the old one, but it saves far less.
 // URL options, read at load: vegPrepass=0, vegPrepass=coverage (vegPrepassOpaque = false).
+//
+// Rules for anything that touches it:
+// - At 4x the vegetation's coverage is decided by the prepass alone: the shaded draw is plain
+//   opaque geometry limited by equal depth to the prepass's samples.
+// - A depth copy follows its mesh's per-draw choices (blade count, `bladeGain`, the culled list),
+//   so the equal test holds for every batch; a per-object uniform (`onObjectUpdate`) reads the
+//   drawn object's own userData, so each copy carries the fields its shader reads.
+// - Keep `material.alphaTest` itself at its value (the shadow passes copy it) and leave it out of
+//   the shaded draw's shader build only.
+// - A new alpha-to-coverage vegetation group joins `installVegetationPrepass`'s list; anything
+//   that finds vegetation after the first frame reads `userData.vegetation` (this turns
+//   `alphaToCoverage` off). Each mesh's old-wind material (WindVariants.ts) gets a copy too.
 
 // Equal depth needs the prepass and the shaded draw to place every vertex bit for bit alike. The
 // two programs differ (the shaded one computes much more), and the shader compiler then reorders

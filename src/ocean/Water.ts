@@ -48,6 +48,21 @@ import { seabedAlbedo } from '../materials/SeabedLook.ts';
 // Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
 // the opaque surfaces, reading a copy of that pass's resolved colour and its linear depth.
 //
+// The shading is adapted from tidewater's physically based model and art-directed toward the
+// look in docs/art-direction.md: keep new water work stylised rather than strictly realistic.
+// The sea continues to the horizon (a skirt around the wave grid, SKIRT_RADIUS); the camera's far
+// plane and the sky-depth thresholds (-9e4; the resolved sky is -1e5) stay beyond it.
+//
+// Limits to keep in mind:
+// - The fragment stage already binds 16 sampled textures, the most WebGPU guarantees: a new texture
+//   fails pipeline creation unless another one goes (the sun's two shadow steps share one array
+//   texture for this reason, and the storm foam is a storage buffer). Data that changes over metres
+//   can be read in the vertex stage and passed on as a varying (the estimated sea floor's beds and
+//   sand), but the water uses 14 of the 16 inter-stage variables WebGPU guarantees.
+// - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
+//   placed off the island or above 3 m (REFLECTOR_HEIGHT; a palm, a boat, a hut, a mast) must grow
+//   that box, or the sea will not reflect it.
+//
 // Screen conventions (WebGPU): uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
 // Texture samples that need screen-space derivatives are taken first, while control flow is still
 // uniform; inside branches and loops the shading samples explicit levels or loads texels.

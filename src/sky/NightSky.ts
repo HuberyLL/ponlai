@@ -25,6 +25,13 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// The night sky: stars, Milky Way, airglow and moon. The stars and Milky Way are the real sky as
+// seen near 28 degrees south (the sun's authored path fixes the latitude, DayCycle.ts), turning
+// with the clock about the south celestial pole; procedural grain and faint stars only add detail
+// below the catalogue and the map. Stars are points with a natural spread of brightness, kept below
+// white except the brightest few; only those near the horizon scintillate. The night is
+// art-directed (docs/art-direction.md): colours stay as authored, no night-vision shift.
+
 // As wide as the displayed sun, as in reality; both are drawn at twice their true size.
 export const MOON_ANGULAR_RADIUS = SUN_DISPLAY_RADIUS;
 

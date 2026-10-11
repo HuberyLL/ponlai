@@ -18,7 +18,11 @@ import * as THREE from 'three/webgpu';
 //   the shin's axis in the kit, so leg and foot stay joined). Rotations are never touched.
 //
 // Everything is derived from the shared rig's bone names, so any figure assembled from the kit
-// takes the same proportions, and the ears (bound wholly to the head) grow with the head.
+// takes the same proportions, and the ears (bound wholly to the head) grow with the head. Per-frame
+// skinning stays plain (bone matrices only).
+//
+// The islanders use the medium build (about 4.7 heads tall, against the kit's 5.5), chosen by the
+// user from four builds; `stock` (the kit's own) stays selectable for comparison (`?islander`).
 
 export interface Proportions {
 	/** uniform scale of the head (and ears) about the top of the neck */

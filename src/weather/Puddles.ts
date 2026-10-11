@@ -4,6 +4,11 @@ import { Fn, If, Loop, PI, float, vec2, vec3, floor, fract, sin, dot, length, ma
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 
+// Standing water fills fixed hollows on level ground as the ground soaks, drowning the meadow
+// blades but for a few tips, and shrinks inside its own damp stain as it dries. Puddles mirror the
+// sky through an art-directed reflectance (stronger than water's 2 %, still following Fresnel), so
+// they read as water from above.
+
 /** Standing water on level ground: x = cover (0 to 1), y = depth (0 at the waterline, 1 where the
  * hollow is deep enough to hide the ground's relief), z = the soaked ground around each puddle.
  * Puddles fill the hollows of a fixed field as the ground soaks, grow while rain keeps it wet and

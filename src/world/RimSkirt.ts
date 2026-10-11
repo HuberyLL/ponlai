@@ -19,7 +19,7 @@ import type { RimSkirtData } from './types.ts';
 // box's border, so it follows any shape the rim takes and meets itself across boxes. Each
 // sample's blades draw from a stream of its own place, and the body's normals come with the rings,
 // so a piece builds alike whichever box traced it and neighbouring pieces meet without a seam. One
-// mesh, one draw.
+// mesh, one draw; it bends with the plants' wind field (Wind.ts).
 
 const SHADE = [ 0.86, 0.94, 1, 0.9, 0.7, 0.52, 0.4 ];
 

@@ -20,7 +20,19 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 // speeding up the game turns the sky with it. The weather is the page's own, as without ?game,
 // running on the day clock. Waves, wind and rain keep real time.
 //
-// URL options: hour (start hour, default 8), paused (start paused), load (resume the saved game).
+// URL options: hour (start hour, default 8), paused (start paused), load (resume the saved game),
+// dayLength (real seconds per game day at 1x); see docs/tools.md.
+//
+// Rules: without ?game the page stays the art-review scene, unchanged. The game is a skeleton: its
+// tools, perception and gameplay are to be designed (docs/game-design.md), so none is built ahead
+// of that design. Thinking is asynchronous to the world: `think( id )` asks the brain with the
+// islander's perception, the simulation never waits for the answer, the body goes on walking or
+// standing meanwhile, and the answer's tool calls run on the body when it arrives; one thought per
+// islander may be in flight. What starts a thought is not decided: nothing calls `think` but the
+// console. Walking is the body's motor, not a tool. The save is the state as JSON with a version
+// number, in one slot. The ground comes from the world generator's own exports: the land (its
+// walkable grid, sim/grid.ts, spans the land lattice's extent anchored to the world, so growth
+// only opens cells) and the bushes `buildFoliage` draws, as obstacles.
 
 export interface GameContext {
 	params: URLSearchParams;

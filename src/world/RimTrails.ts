@@ -7,14 +7,14 @@ import type { Bounds, Footprint } from './WorldShapes.ts';
 import { VEGETATION_STRIDE } from './types.ts';
 import type { RimStrand, SDF } from './types.ts';
 
-// The branches hanging over the upper rim (drawn by RimFoliage.ts). Rules: every strand is rooted
-// in the meadow at the rim, never on the cliff face. They grow in clumped patches of one to nine
-// strands with runs of bare stone between of 0.4-4 m, measured along the winding coast (a sparse
-// patch breaks any longer run; only a notch whose walls hold no lip runs longer, and is measured by
-// its mouth: a run bulging into the land, never a headland's, which bulges out to sea and holds
-// lips), with a long tail of strands that wander and fork down to 1.5-2.6 m, leaves shrinking
-// toward the tips, and a mounded leaf clump over each patch's lip. The lowest quarter of the cliff
-// above the sea stays bare.
+// The branches hanging over the upper rim (drawn by RimFoliage.ts). Rules (the look is in
+// docs/art-direction.md): every strand is rooted in the meadow at the rim, never on the cliff
+// face. They grow in clumped patches of one to nine strands with runs of bare stone between of
+// 0.4-4 m, measured along the winding coast (a sparse patch breaks any longer run; only a notch
+// whose walls hold no lip runs longer, and is measured by its mouth: a run bulging into the land,
+// never a headland's, which bulges out to sea and holds lips), with a long tail of strands that
+// wander and fork down to 1.5-2.6 m, leaves shrinking toward the tips, and a mounded leaf clump
+// over each patch's lip. The lowest quarter of the cliff above the sea stays bare.
 //
 // The trails are a box's own (a chunk's): patches root at rim anchors chosen by their own hash,
 // never by a running stream or the bushes' draws, and the three passes (vigorous patches, thin

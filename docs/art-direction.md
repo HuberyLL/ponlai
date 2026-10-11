@@ -1,0 +1,105 @@
+# Ponlai: art direction
+
+The look the user chose and what to avoid. It says what the scene must look like, not how the code
+gets there: each module's header comment holds its own rules and reasons. Change this file when an
+art decision changes; reference images stay out of the repository.
+
+## The look
+
+- A small stylised island in an open sea, a visual sample for a game. Stylised fantasy-realistic:
+  a physically based scene graded toward a painted game's colour, with warm golden light, softly
+  glowing highlights, airy lifted shadows, rich greens, deep teal water with a sparkling glare
+  toward the sun, chunky chiselled stone, a lush meadow with bushes and wildflowers, and irregular
+  hanging leaf clusters around the rim. Keep the lower cliff stone exposed.
+- The fantasy look is an art-directed layer over the physically based image (a soft glow round
+  the island's highlights, richer greens and teal water, golden highlights over cool teal shadows,
+  a shadow lift that keeps a shadow's saturation, a little depth), never baked into the lighting or
+  the tone curve. It never lays a veil over the scene nor a haze over backlit foliage; grey stone
+  and skin keep their colour; a dark meadow under a low sun stays green, not olive-grey.
+  `soft-fantasy` is the default, `rich-fantasy` a bolder step toward a painted scene, `realistic`
+  the plain image for comparison (`src/post/Pipeline.ts`).
+- The tone curve keeps the water clear (deep sea dark and saturated, the shallows' seabed and
+  caustics in full contrast) and a low sun's sky and sea in their hue rather than washed to cream;
+  the sun and its glints burn out. AgX was tried as the default and dropped: its toe greyed the
+  deep water and its shoulder flattened the shallows.
+- The water is adapted from a physically based model (tidewater) and art-directed toward this
+  look: keep new water work stylised rather than strictly realistic.
+
+## Three layers in one world
+
+- Nature (cliffs, sea, plants) is realistic.
+- Things people make (huts, boats, baskets, lanterns) are semi-realistic and handmade, a little
+  chunky and rounded in form but with real materials (wood grain, rope, fired clay), and bridge the
+  other two.
+- People are stylised, with simplified forms and blocks of colour.
+- All three share one lighting, one grade and one palette, so they read as one place (as in Alba,
+  Sky and Tchia).
+
+## The island
+
+- The island grows one piece of land at a time from a starting island at the world's centre
+  (docs/game-design.md, "How the island grows"): its coast always irregular and natural, never
+  drifting toward a square or a circle. Keep a flat central plateau. Natural contour, slope and
+  weathering variation belong to the outer rim and cliffs.
+- Offshore stones stay submerged and form patchy seabed detail: no exposed sea stacks or reefs;
+  nothing breaks the surface off the island.
+- The cliffs read as natural rock, never masonry: no level courses or evenly spaced joints, no
+  lumps of dissolved limestone. A weathered face that has shed blocks along its joints and beds,
+  breaks sharp above the waves and rounded only in the wave zone. No pocket reads as a black hole
+  or a pair of eyes in the shade. Under the meadow the wall weathers back to an upper slope rather
+  than jutting as a slab. No ledge follows the waterline. No waterfalls. Moss and greenery on the
+  wall stay in its upper 1.2 m; the lower cliff stays bare stone.
+- Plants and meadow cover are rooted on the island top, never on cliff faces. Branches root in the
+  meadow at the rim and hang over it in clumped patches with runs of bare stone between (only a
+  notch whose walls hold no lip runs bare longer), of uneven density and mixed lengths, under a
+  mounded leaf clump at the lip; the lowest quarter of the cliff above the sea stays bare. The
+  meadow's sod curls a little over the lip as a ragged turf skirt.
+- The meadow is a sward: dense lawn tufts of narrow blades and taller tussocks in clumps. Toward the
+  coast the tufts grow taller and lean out over the lip instead of thinning, and the lip alternates
+  between overgrown stretches and cut-open root soil.
+- Wildflowers are plants (daisy, umbel, spike, cup) with leaf rosettes, their heads just above the
+  sward, in beds of a few of one kind gathered in drifts, not coloured stars on the lawn.
+- The terrain plants only the meadow (grass, wildflowers), the rim bushes and the rim's hanging
+  growth. Plants that matter to play (coconut palms) are content placed in the world, not
+  terrain.
+- All vegetation moves in one wind: gusts visibly sweep the meadow and change as they go; still air
+  is the rest pose.
+
+## Sea, sky and weather
+
+- The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
+  rough sea with whitecaps, trailing foam and spray. The sea continues to the horizon.
+- One dominant key light, sun by day and moon by night. A low sun's light stays golden orange. The
+  sun and moon are drawn at twice their true size. The day cycle is authored, not astronomical.
+- Bad weather dims and desaturates the existing light; it never adds a grey screen veil, and it
+  stays dimmer and greyer than a clear day. Distant air leaves the island's foreground clear as
+  the view pulls back. Sea fog is a low layer that may surround the island, never a uniform tint.
+- Weather changes sweep the sky as a front from upwind.
+- Rain is light streaks and ripples on the water. Wetness darkens rock and plants within small
+  limits and glosses bare stone; water runs down the cliffs in sparse darker runnels; puddles fill
+  fixed hollows and read as water from above.
+- The tilt-shift blur belongs to the island's surroundings: the sky stays sharp (a blurred sky
+  reads as a low backdrop and turns stars into bokeh discs).
+
+## Night
+
+- The night is art-directed, not a simulation of the eye's night vision: colours stay as authored,
+  so a future fantasy palette (glowing plants, magic) keeps its saturation. The fantasy look fades
+  out with the night, which keeps its authored colours.
+- The island reads by moonlight and starlight; twilight is never darker than the night.
+- The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
+  spread of brightness, below white except the brightest few; only those near the horizon
+  scintillate.
+
+## Islanders
+
+- Simple low-poly figures with flat colours and simple faces, recoloured into the island's palette
+  and lit by the island's own light in soft cel steps; no outlines. Plants keep their realistic
+  shading.
+- A Hylian-like people (after The Legend of Zelda: Breath of the Wild): human in every way but for
+  long pointed ears that sweep back and a little up.
+- Plain dress while the basic look settles: undyed linen and calm earthy tones, leather shoes, no
+  hat.
+- The medium proportions of `src/characters/Proportions.ts` (about 4.7 heads tall, against the
+  kit's 5.5: a larger head, shorter legs, broader shoulders and hands), chosen by the user from four
+  builds; the kit's own stays selectable for comparison.

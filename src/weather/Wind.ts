@@ -2,6 +2,34 @@ import { DataTexture, LinearFilter, RGFormat, RepeatWrapping, UnsignedByteType, 
 import type { Node } from 'three/webgpu';
 import { Fn, dot, float, fract, normalize, sin, smoothstep, texture, uniform, vec2, vec4 } from 'three/tsl';
 
+// The weather's wind, integrated on the CPU, and the one wind field all vegetation moves in.
+//
+// `windField` (noise scrolled with the wind: Wohllaib, GDC 2021, its
+// strength varied by Perlin noise, Rockenbeck, GDC 2021; the map is ours):
+// a tileable gust map (two channels of periodic noise, ranked
+// to an even spread) scrolled with the wind's integrated along-wind travel, its gust fronts long
+// across the wind and finer eddies running faster inside them, so gusts visibly sweep the meadow
+// and change as they go. It gives a lean (tip offset over height) from the wind's pressure; still
+// air is the rest pose. Plants answer it in Crysis's layers (Sousa, GPU Gems 3 ch. 16): the whole
+// plant bends from its root with the field at the root, every vertex keeping its distance from it
+// (`mainBend`), and sways about the lean at its own rate (the rim bushes 0.9 Hz; a placed tree
+// about half that, as a guide); a placed plant's sprays and fronds swing on their own phase from
+// where they leave it, as the rim trails' strands do; leaf edges and tips flutter along their
+// normals, faster as the wind rises. Grass tufts bend with the field at
+// their root, flowers and the turf skirt follow the same field, and rim trails swing like
+// pendulums (RimFoliage.ts).
+//
+// Everything is a function of the wind's integrated clocks and travel (`clock`, `flutter`,
+// `gustScroll`, wrapped where every rate completes whole cycles), never time * a changing speed,
+// so a paused frame and a seek repeat exactly; shadows and the rain's collision map keep the rest
+// pose. For motion vectors (TAA) every displacement is a function of the wind's state alone, its
+// vertex inputs bound inside: each vegetation material records it with `setWindDisplacement`,
+// evaluated in the material's position stage (its rest inputs read `positionLocal` before three
+// assigns the swayed position) with `shared.wind` for the frame drawn or `shared.wind.previous`
+// (the last rendered frame's, equal to the current one while paused and after a seek, so a jump
+// leaves no motion); the grass's widening keeps the current camera's. Each mesh keeps the old
+// global-sine sway for A/Bs (WindVariants.ts).
+
 const BASE_SPEED = 3.8;
 const CLOUD_DRIFT = 0.21;
 const clamp = ( value: number, low: number, high: number ) => Math.max( low, Math.min( high, value ) );

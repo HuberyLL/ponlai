@@ -3,7 +3,8 @@
 // hash of the cell, and the plants grown on it draw from a random stream seeded by the cell
 // (`anchorStream`), so what grows at an anchor never depends on which other anchors were built
 // before it, or in which box. A box keeps the anchors whose jittered point lies in it, so boxes
-// that tile the plane build every anchor once.
+// that tile the plane build every anchor once, and a box plants exactly what the whole island
+// plants there (tools/world-local/meadow.mjs).
 import { hash3i, mulberry32, type Rng } from './noise.ts';
 import { VEGETATION_SPACING as CELL } from './types.ts';
 import type { Bounds } from './WorldShapes.ts';

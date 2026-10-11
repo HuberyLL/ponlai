@@ -30,6 +30,26 @@ import type { Shared } from '../shared.ts';
 // wind sways the tips. Anchors come from the world worker (x, y, z, normal, rim distance, kind and
 // local sky visibility); every choice below is a field or a seeded hash of the anchor, so the
 // meadow grows with the island's footprint and needs no placed features.
+//
+// Rules (the look is in docs/art-direction.md; the reasons are below, where each is built):
+// - A sward: dense lawn tufts of narrow blades, doubled where the growth field runs thick (the
+//   extras fold away beyond about 35 m and are not drawn past their fold, 42 m), and taller
+//   tussocks on a clump field. Toward the coast the tufts grow taller and lean out over the lip
+//   instead of thinning (RimGround). Tussocks keep off the islander's walking loop (WalkLoop.ts).
+// - Blades do not cast into the sun's shadow map (narrower than a texel, they flicker as the sun
+//   moves): the meadow shades itself and its turf through MeadowCanopy.
+// - On screen a blade stays at least two pixels wide (0.75 on the outer rim, where partly covered
+//   pixels show a pale fringe over the sea), its coverage lowered to match, so the meadow does not
+//   crawl as the camera moves; close up blades render unchanged. Single-sampled (`msaa=1`) the
+//   blades take an ordered 4x4 dither and stay one pixel wide (a blade dithered across two pixels
+//   reads as a dotted line).
+// - Beyond 40 and 70 m from a batch the lawn draws 12 and 8 of its 16 blades (tussocks in
+//   proportion; GrassQuality), and blades a few pixels wide widen and cover for the dropped ones
+//   (`bladeGain`), so density and brightness hold. The band follows the camera's position alone
+//   (no hysteresis), so a paused frame does not depend on the camera's path.
+// - The view camera's draws are culled per tuft on the GPU (GrassCull.ts); every other draw over
+//   the same geometry draws every tuft. Tufts bend with the wind field at their root and their
+//   normals turn with the bend, so a gust shows as a sheen (Wind.ts).
 
 interface TuftShape {
 	blades: number; segs: number;
