@@ -1,6 +1,7 @@
 import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
 import type { DayCycle } from '../sky/DayCycle.ts';
+import type { SceneEventReason } from '../post/SceneEvents.ts';
 import type { CharacterShadow } from '../characters/CharacterShadow.ts';
 import type { Villager as Figure } from '../characters/Villagers.ts';
 import { drawnFoliageSites } from '../world/FoliageSites.ts';
@@ -38,7 +39,10 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 // console may ask with `think`. Walking is the body's motor, reached by the `go` action (walkTo is
 // the debug panel's). The save is the state as JSON with a version number, in one slot. The ground
 // comes from the world generator's own exports: the bushes `buildFoliage` draws and the shrubs and
-// trees `pickPlantSites` placed, as obstacles.
+// trees `pickPlantSites` placed, as obstacles. What changes the drawn scene at once (a simulation
+// installed at start or load, the speed or the pause, a placed blueprint) tells the page through the
+// context's `sceneEvent` (post/SceneEvents.ts), so the temporal anti-aliasing cuts its history or
+// converges a paused frame again.
 
 export interface GameContext {
 	params: URLSearchParams;
@@ -58,6 +62,8 @@ export interface GameContext {
 	refreshEnvironment(): Promise<void>;
 	/** compile the pipelines these objects will draw with (the scene's pass, the sun's shadow map) off the frame */
 	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
+	/** a change of the scene for the temporal anti-aliasing (post/SceneEvents.ts: its table says which cut) */
+	sceneEvent( reason: SceneEventReason ): void;
 }
 
 // the one save slot
@@ -138,6 +144,7 @@ export class Game {
 		this.view?.dispose();
 		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, loadLook: c.loadLook } );
 		this.sim = sim;
+		c.sceneEvent( 'game begin' );
 		this.debug?.reset();
 		if ( this.hud ) this.hud.reset();
 		else this.hud = new GameHud( this, c );
@@ -191,12 +198,14 @@ export class Game {
 	togglePause(): void {
 
 		this.sim.speed = this.sim.speed === 0 ? this.resumeSpeed : 0;
+		this.context.sceneEvent( 'game speed' );
 
 	}
 
 	setSpeed( speed: Speed ): void {
 
 		this.sim.speed = speed;
+		this.context.sceneEvent( 'game speed' );
 
 	}
 
@@ -241,7 +250,9 @@ export class Game {
 	/** Place a building of a kind (sim/buildings.ts: 'chest') at a point of the ground (world metres): null when it stands there, else why not. */
 	placeBlueprint( kind: string, x: number, z: number ): string | null {
 
-		return this.sim.placeBlueprint( kind, x, z );
+		const refusal = this.sim.placeBlueprint( kind, x, z );
+		if ( refusal === null ) this.context.sceneEvent( 'game order' );
+		return refusal;
 
 	}
 

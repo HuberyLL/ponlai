@@ -548,7 +548,7 @@ if ( GAME ) {
 	const { Game } = await import( './game/Game.ts' );
 	game = await Game.start( {
 		params, scene, camera, canvas: renderer.domElement, vegetation: data.vegetation, plants: plantSites,
-		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment,
+		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment, sceneEvent,
 		// The game's props, for the scene's pass (a latent of the frame graph's opaque pass, under
 		// its target and MRT: the temporal modes' velocity output is part of its pipelines' keys) and
 		// then the sun's map (Game.render), one draw at a time and in the order a frame first draws
