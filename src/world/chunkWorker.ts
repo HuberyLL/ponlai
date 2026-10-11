@@ -12,6 +12,8 @@
 // - `chunk`: the chunk from the cache when it holds it, else built (when the worker has the field)
 //   and stored; without the field the worker answers `need` and the page sends the job again once
 //   it has the field. The cache (WorldCache.ts) is read and written here, off the main thread.
+// - `keep`: after a load, the keys of every record of its land version (the land's first): the
+//   cache keeps them and the version loaded before, and deletes the rest (WorldCache.ts `keep`).
 // - `close`: closes the worker once every write has reached the cache.
 //
 // `buildLand` is a plain function, so the node tools build the same land (tools/world-node.mjs).
@@ -88,6 +90,7 @@ export type ChunkJob =
 	| { kind: 'field'; land: Uint8Array }
 	| { kind: 'use'; land: Uint8Array; field: LandField }
 	| { kind: 'chunk'; ci: number; cj: number; version: number; key: string | null; contactOcclusion: boolean }
+	| { kind: 'keep'; keys: string[] }
 	| { kind: 'close' };
 
 // 'hit': read from the cache; 'miss': built and stored; 'error': built, the cache is unavailable;
@@ -119,11 +122,9 @@ function post( reply: ChunkReply ): void {
 
 }
 
-// Stores a value (cloned now, so its buffers may be transferred after) and keeps the write until
-// it lands.
-function keep( cache: ChunkStore, key: string, value: unknown ): void {
+// Holds a write to the cache until it lands, so `close` waits for it.
+function track( write: Promise<void> ): void {
 
-	const write = cache.write( key, value );
 	writes.add( write );
 	void write.then( () => writes.delete( write ) );
 
@@ -143,7 +144,7 @@ async function run( job: ChunkJob ): Promise<void> {
 			const hit = cache ? await cache.read<LandData>( job.key! ) : undefined;
 			if ( hit ) { post( { kind: 'land', data: hit, cache: 'hit' } ); break; }
 			const data = buildLand( job.seed, job.step );
-			if ( cache ) keep( cache, job.key!, data );
+			if ( cache ) track( cache.write( job.key!, data ) );
 			post( { kind: 'land', data, cache: cache ? 'miss' : job.key !== null ? 'error' : 'off' } );
 			break;
 
@@ -173,8 +174,16 @@ async function run( job: ChunkJob ): Promise<void> {
 			}
 			if ( ! land || ! field ) { post( { kind: 'need', ci: job.ci, cj: job.cj } ); break; }
 			const data = buildChunk( landWindow( field, job.ci, job.cj ), land, job.ci, job.cj, { version: job.version, contactOcclusion: job.contactOcclusion } );
-			if ( cache ) keep( cache, job.key!, data );
+			if ( cache ) track( cache.write( job.key!, data ) );
 			post( { kind: 'chunk', data, cache: cache ? 'miss' : job.key !== null ? 'error' : 'off', ms: performance.now() - t } );
+			break;
+
+		}
+
+		case 'keep': {
+
+			const cache = await store;
+			if ( cache ) track( cache.keep( job.keys ) );
 			break;
 
 		}

@@ -13,6 +13,17 @@
 // again). Every worker checks it on opening, in one transaction with the clearing, so the first
 // to open clears and the others find the new identity. Any failure (a private window, a full quota,
 // blocked site data) falls back to generating: the reader sees a miss, a failed write is dropped.
+//
+// Eviction: every land version a page loads adds its land and chunk records (some 35 chunks, tens
+// of MB), and a game that grows step by step would pile them up to gigabytes. After a load the page
+// sends one `keep` job with the keys of the version it loaded (WorldChunks.ts), and the store keeps
+// the records of the two most recently loaded versions only: the `meta` store's `recent` lists their
+// keys, newest first; `keep` puts this load's keys first, keeps the most recent other version (a
+// version is named by its first key, the land's) and deletes every record in neither, in one
+// transaction. Only keys are listed (a few hundred at most), never the records. The two versions are
+// the one shown and the one before it, so stepping back a step, or a reload, still hits (milestone
+// 8 makes them the current and the pending version). Another tab that loads at the same time can
+// have its records deleted: that costs it a miss on its next load, never a wrong world.
 
 const DB = 'ponlai-world-cache';
 // version 2: the chunk stores replace version 1's one-world store `worlds`
@@ -20,6 +31,10 @@ const VERSION = 2;
 const CHUNKS = 'chunks';
 const META = 'meta';
 const GENERATOR = 'generator';
+// the keys of the most recently loaded land versions, newest first
+const RECENT = 'recent';
+// how many land versions the cache keeps
+const VERSIONS = 2;
 
 function request<T>( r: IDBRequest<T> ): Promise<T> {
 
@@ -73,6 +88,9 @@ export interface ChunkStore {
 	// transferred right after. The promise settles once the store has written it (the worker must
 	// live until then), and never rejects.
 	write( key: string, value: unknown ): Promise<void>;
+	// records that a land version with the records `keys` (its land's first) was loaded, and deletes
+	// the records of every version but the VERSIONS most recently loaded. Never rejects.
+	keep( keys: string[] ): Promise<void>;
 	close(): void;
 }
 
@@ -129,6 +147,31 @@ export async function openChunkStore( generator: string ): Promise<ChunkStore | 
 
 				console.warn( 'world cache: storing failed', error );
 				return Promise.resolve();
+
+			}
+
+		},
+		async keep( keys ) {
+
+			try {
+
+				const tx = db.transaction( [ META, CHUNKS ], 'readwrite' );
+				const meta = tx.objectStore( META ), chunks = tx.objectStore( CHUNKS );
+				const recent = ( await request( meta.get( RECENT ) ) as string[][] | undefined ) ?? [];
+				// a reload of the newest version must not push the one before it out
+				const kept = [ keys, ...recent.filter( ( version ) => version[ 0 ] !== keys[ 0 ] ) ].slice( 0, VERSIONS );
+				meta.put( kept, RECENT );
+				const live = new Set( kept.flat() );
+				for ( const key of await request( chunks.getAllKeys() ) ) {
+
+					if ( ! live.has( key as string ) ) chunks.delete( key );
+
+				}
+				await done( tx );
+
+			} catch ( error ) {
+
+				console.warn( 'world cache: evicting failed', error );
 
 			}
 
