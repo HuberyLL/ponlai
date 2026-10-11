@@ -1,9 +1,9 @@
-import * as THREE from 'three/webgpu';
+import type * as THREE from 'three/webgpu';
 import type GUI from 'lil-gui';
 import type { Controller } from 'lil-gui';
 import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
-import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import type { Game } from './Game.ts';
+import { groundPoint, pointerRay } from './pick.ts';
 import { describeCall } from './sim/actions.ts';
 import type { EntityId, Speed } from './sim/types.ts';
 
@@ -35,8 +35,6 @@ export class GameDebug {
 	private downX = 0;
 	private downY = 0;
 	private down = false;
-	private readonly raycaster = new THREE.Raycaster();
-	private readonly ndc = new THREE.Vector2();
 
 	constructor( game: Game, gui: GUI, camera: THREE.PerspectiveCamera, canvas: HTMLCanvasElement ) {
 
@@ -125,26 +123,11 @@ export class GameDebug {
 
 		if ( ! this.armed || ! this.down || e.button !== 0 || Math.hypot( e.clientX - this.downX, e.clientY - this.downY ) >= CLICK_SLOP ) return;
 		this.down = false;
-		const r = this.canvas.getBoundingClientRect();
-		this.ndc.set( ( e.clientX - r.left ) / r.width * 2 - 1, - ( e.clientY - r.top ) / r.height * 2 + 1 );
-		this.raycaster.setFromCamera( this.ndc, this.camera );
-		const hit = this.groundPoint( this.raycaster.ray );
+		const hit = groundPoint( pointerRay( this.canvas, this.camera, e.clientX, e.clientY ), this.game.sim.grid );
 		if ( ! hit ) return;
 		this.say( this.game.walkTo( this.fields.islander, hit.x, hit.z ) ?? 'Walking' );
 		this.arm( false );
 
 	};
-
-	/** The ray on the turf: the island's top plane, then the ground height under it. */
-	private groundPoint( ray: THREE.Ray ): { x: number; z: number } | null {
-
-		const o = ray.origin, d = ray.direction;
-		if ( d.y > - 1e-4 ) return null;
-		const grid = this.game.sim.grid;
-		let t = ( ISLAND_TOP - o.y ) / d.y;
-		for ( let k = 0; k < 3; k ++ ) t = ( grid.height( o.x + d.x * t, o.z + d.z * t ) - o.y ) / d.y;
-		return t < 0 ? null : { x: o.x + d.x * t, z: o.z + d.z * t };
-
-	}
 
 }
