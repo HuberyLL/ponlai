@@ -2,7 +2,7 @@
 
   uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir>
       [--views a,b] [--out dir] [--max-px1 200] [--crops 3] [--crop 256]
-      [--aa-floor] [--md file.md] [--crops-from ref|test|<dir>|<file.json>]
+      [--aa-floor | --temporal [--flip]] [--md file.md] [--crops-from ref|test|<dir>|<file.json>]
 
 Per view (each <view>.png present in both): the max absolute channel difference, the mean absolute
 difference (over all channels), and how many pixels differ by more than 1, 2, 8 and 32 levels (a
@@ -24,6 +24,19 @@ must match it byte for byte. Comparing a set with itself (refDir = testDir) list
 Both sets must come from the same browser build (`browser` in each capture's JSON): a mismatch is
 reported as a warning, since no frame then matches byte for byte. --md writes the table as
 Markdown too.
+
+--temporal judges temporal AA captures (taa, taau) by the tolerance in tolerance.py instead: their
+paused frames are not byte-repeatable (the rest averages 40 frames and freezes the GPU's own render
+pass splits), so per-pixel differences up to a level are ignored and the share of pixels over it
+is bounded on the frame, in every 32 px window and on every named crop, with the windows' and
+crops' mean signed difference bounding coherent shifts under the level (thresholds and their
+calibration: tolerance.py). A failure counts only after one recapture: the view passes when any
+pairing of the two sides' captures (<view>.png, <view>.repeat.png) passes, and a failing view
+without a recapture on the test side says so. `use` is the largest measurement / threshold ratio of
+the best pairing (pass: <= 1). Comparing a set with itself (refDir = testDir) judges each view's
+A/A pair. The crops are those of --crops-from, else of the test side's JSON. --flip adds the mean
+NVIDIA FLIP of the frame, reported only (needs `--with flip-evaluator`). MSAA sets stay byte-exact
+(the default and --aa-floor).
 
 --crops-from cuts the named crop anchors (views.mjs; `crops` in each capture's JSON) from both
 frames: `ref` or `test` reads <view>.json on that side, a directory reads <view>.json there, and a
@@ -54,7 +67,13 @@ ap.add_argument("--views", default="")
 ap.add_argument("--aa-floor", action="store_true")
 ap.add_argument("--md", default=None)
 ap.add_argument("--crops-from", default=None)
+ap.add_argument("--temporal", action="store_true")
+ap.add_argument("--flip", action="store_true")
 a = ap.parse_args()
+if a.temporal and a.aa_floor:
+    ap.error("--temporal and --aa-floor are two different rules: pick one")
+if a.temporal:
+    import tolerance
 
 ref, test = Path(a.ref), Path(a.test)
 out = Path(a.out) if a.out else test / "diff"
@@ -174,6 +193,33 @@ def fmt(st):
     return f"max {st['max']}, {st['over']['1']} px>1, {st['over']['2']} px>2"
 
 
+def temporal(v):
+    """The tolerance on the best pairing of the two sides' captures (one recapture before a failure counts)."""
+    same = ref.resolve() == test.resolve()
+    sides = [("", ".repeat")] if same else [(s, t) for s in ("", ".repeat") for t in ("", ".repeat")]
+    crops = crops_for(v) if a.crops_from else (json.loads((test / f"{v}.json").read_text()).get("crops", {}) if (test / f"{v}.json").exists() else {})
+    best = None
+    for s, t in sides:
+        p, q = ref / f"{v}{s}.png", test / f"{v}{t}.png"
+        if not (p.exists() and q.exists()):
+            continue
+        if p.read_bytes() == q.read_bytes():
+            ok, use, why, m = True, 0.0, [], None
+        else:
+            m = tolerance.measure(load(p), load(q), crops)
+            ok, use, why = tolerance.judge(m)
+        e = {"pair": ("repeat" if s else "png") + " / " + ("repeat" if t else "png"), "files": [str(p), str(q)], "pass": ok, "use": use, "why": why, "measure": m}
+        if best is None or (ok, -use) > (best["pass"], -best["use"]):
+            best = e
+        if ok and use == 0:
+            break
+    if best is None:
+        return {"pass": False, "use": None, "why": ["no repeat capture" if same else "missing"], "pair": ""}
+    if not best["pass"] and not (test / f"{v}.repeat.png").exists():
+        best["why"].append("unconfirmed: recapture the view (or capture with --repeat) before counting it")
+    return best
+
+
 def browser(d, v):
     f = d / f"{v}.json"
     try:
@@ -191,6 +237,8 @@ if mixed:
 report, failed, rows = {}, False, []
 if a.aa_floor:
     print(f"{'view':24} {'ref A/A':28} {'test A/A':28} {'cross':28} pass")
+elif a.temporal:
+    print(f"{'view':24} {'pairing':15} {'max':>4} {'px>' + str(tolerance.TEMPORAL['level']):>8} {'use':>6}  verdict")
 else:
     print(f"{'view':24} {'ident':5} {'max':>4} {'mean':>8} " + " ".join(f"{'>' + str(l):>9}" for l in LEVELS) + "  pass")
 for v in views:
@@ -241,6 +289,17 @@ for v in views:
                     note += "; test repeats, the reference does not"
         r["cross"] = {k: cross[k] for k in ("max", "over") if k in cross} | {"identical": bool(cross.get("identical"))}
         r["note"] = note
+    elif a.temporal:
+        t = temporal(v)
+        ok = t["pass"]
+        if t.get("files") and t["files"] != [str(fa), str(fb)]:
+            # the diff images and crops show the pairing that was judged
+            A, B = load(t["files"][0]), load(t["files"][1])
+            D, M, r = stats(A, B)
+            r["identical"] = t["measure"] is None
+        r["temporal"] = t
+        if a.flip:
+            r["flip"] = tolerance.flip_mean(A, B)
     else:
         ok = r["over"]["1"] < a.max_px1 and r["over"]["2"] == 0 if a.max_px1 > 0 else ident
     r["pass"] = bool(ok)
@@ -254,6 +313,14 @@ for v in views:
     if a.aa_floor:
         rows.append((v, fmt(r["refAA"]), fmt(r["testAA"]), fmt(r["cross"]), ("ok" if ok else "FAIL") + f" ({r['note']})"))
         print(f"{v:24} {rows[-1][1]:28} {rows[-1][2]:28} {rows[-1][3]:28} {rows[-1][4]}")
+    elif a.temporal:
+        t, m = r["temporal"], r["temporal"].get("measure")
+        mx, off = (m["frame"]["max"], f"{m['frame']['off']:.4%}") if m else (0, f"{0:.4%}")
+        verdict = ("ok" if ok else "FAIL") + (f" ({'; '.join(t['why'])})" if t["why"] else "")
+        if a.flip and r.get("flip") is not None:
+            verdict += f" FLIP {r['flip']:.6f}"
+        rows.append((v, t["pair"], str(mx), off, f"{t['use']:.3f}" if t["use"] is not None else "", verdict))
+        print(f"{v:24} {t['pair']:15} {mx:4} {off:>8} {rows[-1][4]:>6}  {verdict}")
     else:
         rows.append((v, "yes" if ident else "no", str(r["max"]), f"{r['mean']:.4f}", " ".join(str(r["over"][str(l)]) for l in LEVELS), "ok" if ok else "FAIL"))
         print(f"{v:24} {('yes' if ident else 'no'):5} {r['max']:4} {r['mean']:8.4f} " + " ".join(f"{r['over'][str(l)]:9}" for l in LEVELS) + ("  ok" if ok else "  FAIL"))
@@ -262,7 +329,9 @@ for v in views:
             print(f"    {name:20} " + (f"missing ({c['missing']})" if "missing" in c else f"max {c['max']:3}  >1 {c['over']['1']:6}  >2 {c['over']['2']:6}  {c['file']}"))
 (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
 if a.md:
-    head = ("view", "ref A/A", "test A/A", "cross", "verdict") if a.aa_floor else ("view", "identical", "max", "mean", "px >1 >2 >8 >32", "pass")
+    head = ("view", "ref A/A", "test A/A", "cross", "verdict") if a.aa_floor else \
+        ("view", "pairing", "max", f"px >{tolerance.TEMPORAL['level']}", "use", "verdict") if a.temporal else \
+        ("view", "identical", "max", "mean", "px >1 >2 >8 >32", "pass")
     lines = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
     lines += ["| " + " | ".join(row) + " |" for row in rows]
     Path(a.md).write_text("\n".join(lines) + "\n")

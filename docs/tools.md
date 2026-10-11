@@ -146,10 +146,13 @@ captures (needs Pillow and NumPy).
 
 `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
 (`capture-set.mjs`) and diffs it against a reference set, byte for byte or within the reference's
-own repeatability (`diff-set.py --aa-floor`; see its README). `tools/capture-clip.mjs` captures a
-named clip (`tools/parity/clips.mjs`: a parity view set in motion, its camera path a function of
-the frame index) frame by frame with the page's stepper, as crops that follow their subjects, and
-`tools/clip-metrics.py` measures a clip against MSAA and a ground truth (`--aa gt-hi`: MSAA at
+own repeatability (`diff-set.py --aa-floor`; see its README). Temporal AA sets (taa, taau) are
+not byte-repeatable and are judged by a tolerance instead (`diff-set.py --temporal`: shares of
+pixels over a level on the frame, in local windows and on the crops, a bound on coherent sub-level
+shifts, and one recapture before a failure counts; thresholds in `tools/parity/tolerance.py`).
+`tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
+motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
+crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA and a ground truth (`--aa gt-hi`: MSAA at
 twice high's nominal ratio, downsampled) with gates from a thresholds file
 (`uv run --with numpy --with pillow`; both described in the README).
 
