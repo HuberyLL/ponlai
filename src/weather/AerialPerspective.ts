@@ -19,6 +19,20 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// Distant air and sea fog, composited once for the sharp image and both blooms (Pipeline.ts).
+// Rules: distant air fades in across a protected foreground (from 40 m, in full by 200 m, sooner in
+// thick air), so the island does not fog up as the view pulls back, and it scatters only the
+// sunlight the cloud shadows let through. Sea fog is a low height-fog layer that may surround the
+// island, never a uniform tint (docs/art-direction.md). Its bank noise is baked into a map around
+// the camera in the drifting frame, on a lattice fixed in that frame: while the fog's clock steps
+// forward frame by frame the map is re-baked after 0.2 s of fog time or 48 m of camera travel;
+// otherwise (paused, after any seek, and on the first frame after either) whenever its time or
+// centre differs, so a paused frame stays exact. The fog is marched at half the render's
+// resolution (a quarter on low) on the nearest surface depth and upsampled with Gaussian depth
+// weights; a pixel that none of its texels matches in depth marches its own fog at full
+// resolution. Haze and rain veil stay at full resolution. The reduced targets are sized by
+// `setSize` and the bank map is fixed, so they stay out of `Pipeline.passes`.
+
 // Distant air: two exponential height layers, a thin marine layer over the sea and a deeper aerosol
 // layer, in tidewater's proportions. The weather's haze is their combined extinction at sea level
 // (1/m), so the marine layer carries most of it close to the water and the aerosol the rest aloft.

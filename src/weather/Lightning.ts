@@ -24,7 +24,9 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 //
 // The storm is a function of the scene clock: time is cut into short slots, and a seeded hash
 // decides whether a strike begins in each and everything about it. A paused frame therefore
-// shows exactly the same strike every time, and `force` puts one in front of a review camera.
+// shows exactly the same strike every time, and `force` (`sky.lightning.force`) puts one in front
+// of a review camera. Its light inside the clouds stays out of the view's accumulated history, the
+// bake and the panorama (Clouds.ts).
 
 const SLOT = 0.5; // seconds
 const MEAN_INTERVAL = 3.5; // seconds between strikes in a full storm

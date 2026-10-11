@@ -12,6 +12,13 @@ type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
+// Rain: light streaks (GPU drops in nested camera volumes, RainDrops.ts; a distant veil of streaks
+// in the post pass) plus analytic ripples on the water normal. Drops are a stateless function of
+// the clock, the wind's integrated travel and the camera, so a paused frame repeats exactly; they
+// stop on the first surface in the collision map (RainCollision.ts, the island's rest pose) and
+// splash there (crown and droplets on land, rings on the sea). Out-of-focus drops follow the
+// tilt-shift blur. `warm()` precompiles its first-use pipelines at startup (post/Warm.ts).
+
 // The veil: shells around the viewer at these distances (metres), each carrying a sheet of
 // streaks. Mapped on the sphere about the rain's own direction, streaks converge on its
 // vanishing points as in perspective, and a shell shows only where the scene lies beyond it.
