@@ -17,7 +17,8 @@
 //       built from scratch in a fresh process, one chunk after another in reverse key order. The
 //       default builds the last step from scratch, --long every step.
 //   D2  thread counts: the last step's chunks built on pools of 1 and of 4 workers hash as on the
-//       main pool (the default every fourth chunk of the first seed, --long all, both seeds).
+//       main pool (the default the first seed's 15 costliest chunks by the main pool's time, the
+//       coastal ones, --long all, both seeds).
 //   D3  the land does not depend on the order its pieces are applied: a piece is the cells a growth
 //       step adds, immutable once placed (IslandGrowth.ts). Which piece comes next depends on the
 //       land before it, so the growth itself has one order; "piece order" here is the order a land
@@ -53,8 +54,8 @@
 //       window (`chunkBlock`) and shared out by chunk, equals its four chunks bit for bit in the
 //       rim ground, shore and walk texels, the anchors, the bushes and the trail patches.
 //   S6  stones: every stone is owned once, by the chunk its centre lies in; and every stone a chunk
-//       places round itself for the contact shade (`contactStones`) whose centre lies in a chunk is
-//       that chunk's own stone, bit for bit, so two chunks shade with the same stone.
+//       places round itself for the contact shade (`contactStones`) whose centre lies in another
+//       chunk is that chunk's own stone, bit for bit, so two chunks shade with the same stone.
 //   I1  no buried wall inland: where the land distance is below -3.5 m (inland, the island mesh's
 //       column range: no wall, only the meadow's top) the window's island SDF is solid from the
 //       lattice's bottom to 0.35 m below the meadow's top and clear 0.6 m above it, sampled every
@@ -84,6 +85,8 @@ import { ISLAND_BOTTOM, islandSurfaceHeight, makeIslandSDF } from '../src/world/
 import { SKIRT_INFO, SKIRT_RING } from '../src/world/RimGround.ts';
 import { TILE_SIDE } from '../src/world/SeabedTile.ts';
 import { openSeaBeds, openSeaHeight, FLOOR_STEP, SHELF_CEILING } from '../src/world/Bathymetry.ts';
+import { BUSH_STRIDE } from '../src/world/FoliageSites.ts';
+import { VEGETATION_STRIDE } from '../src/world/types.ts';
 import { hashBuffers, meshClosure, positionKey } from './world-node.mjs';
 
 // the island mesh's lattice (Chunks.ts)
@@ -102,7 +105,8 @@ if ( ! isMainThread ) {
 
 		if ( job.block ) {
 
-			parentPort.postMessage( { id: job.id, members: chunkBlock( job.window, job.ci, job.cj, 2 ) } );
+			const t = performance.now(), members = chunkBlock( job.window, job.ci, job.cj, 2 );
+			parentPort.postMessage( { id: job.id, members, ms: performance.now() - t } );
 			return;
 
 		}
@@ -274,14 +278,8 @@ async function main() {
 				return pool.run( job( ci, cj, keep ) ).then( ( reply ) => ( { key, ci, cj, ...reply } ) );
 
 			} ) ) } );
-			// D2: the last step's chunks (the default every fourth of the first seed's) on both pools
-			if ( pools.length && step === last && ( long || seed === seeds[ 0 ] ) ) {
-
-				const sample = keys.filter( ( _, n ) => long || n % 4 === 0 );
-				for ( const p of pools ) others.push( Promise.all( sample.map( ( key ) => p.run( job( ...parseChunkKey( key ), false ) ).then( ( r ) => [ key, r.hash ] ) ) )
-					.then( ( hashes ) => ( { seed, step, threads: p.size, hashes } ) ) );
-
-			}
+			// D2 builds more of the last step's chunks once the main pool's are in
+			if ( step === last ) steps[ step ].job = job;
 			// let the pool's replies in: a land field takes the main thread a moment
 			await new Promise( ( resolve ) => setImmediate( resolve ) );
 
@@ -302,6 +300,17 @@ async function main() {
 			for ( const c of s.chunks ) { built ++; for ( const [ k, v ] of Object.entries( c.timings ) ) timings[ k ] = ( timings[ k ] ?? 0 ) + v; }
 
 		}
+		const final = run.steps[ last ];
+		// D2: the last step's chunks on both pools (the default the first seed's 15 costliest by
+		// the main pool's time, the coastal ones, where most of the work and its order lie)
+		if ( pools.length && ( long || run.seed === seeds[ 0 ] ) ) {
+
+			const sample = long ? final.keys : [ ...final.chunks ].sort( ( a, b ) => b.timings.total - a.timings.total ).slice( 0, 15 ).map( ( c ) => c.key );
+			for ( const p of pools ) others.push( Promise.all( sample.map( ( key ) => p.run( final.job( ...parseChunkKey( key ), false ) ).then( ( r ) => [ key, r.hash ] ) ) )
+				.then( ( hashes ) => ( { seed: run.seed, step: last, threads: p.size, hashes } ) ) );
+
+		}
+		final.job = null;
 		console.log( `---- seed ${ run.seed }: ${ run.steps.map( ( s ) => s.keys.length ).join( ', ' ) } chunks at steps 0 - ${ last } (${ ( ( performance.now() - start ) / 1000 ).toFixed( 0 ) } s)` );
 		if ( ! dirtySet( run ) ) failed ++;
 		if ( bench ) costs( run );
@@ -925,7 +934,7 @@ function stoneOwners( ctx ) {
 
 	const map = chunkMap( ctx.chunks ), owner = new Map();
 	const at = ( r ) => `${ r.x },${ r.z }`;
-	let owned = 0, twice = 0, astray = 0, compared = 0, differ = 0, missing = 0, nowhere = 0;
+	let owned = 0, twice = 0, astray = 0, compared = 0, differ = 0, missing = 0, nowhere = 0, own = 0;
 	for ( const c of ctx.chunks ) for ( const r of c.rocks ) {
 
 		const b = chunkBox( c.ci, c.cj );
@@ -937,6 +946,8 @@ function stoneOwners( ctx ) {
 	}
 	for ( const c of ctx.chunks ) for ( const r of c.contact ) {
 
+		// the chunk's own stones are among those it places round itself: no other chunk to compare with
+		if ( Math.floor( r.x / S ) === c.ci && Math.floor( r.z / S ) === c.cj ) { own ++; continue; }
 		if ( ! map.has( `${ Math.floor( r.x / S ) },${ Math.floor( r.z / S ) }` ) ) { nowhere ++; continue; }
 		const o = owner.get( at( r ) );
 		compared ++;
@@ -946,7 +957,7 @@ function stoneOwners( ctx ) {
 	}
 	const ok = twice === 0 && astray === 0 && missing === 0 && differ === 0;
 	console.log( `${ ok ? 'ok  ' : 'FAIL' } S6 ${ ctx.label }: ${ owned } stones owned, ${ twice } twice, ${ astray } outside their chunk; ` +
-		`${ compared } contact copies held by chunks against their owners: ${ missing } unowned, ${ differ } differ (${ nowhere } more lie in no chunk)` );
+		`${ compared } contact copies of neighbours' stones held by chunks against their owners: ${ missing } unowned, ${ differ } differ (${ nowhere } more lie in no chunk, ${ own } are the chunk's own)` );
 	return ok;
 
 }
@@ -981,13 +992,12 @@ async function blockShare( ctx, pool ) {
 
 		const quad = [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ].map( ( [ di, dj ] ) => map.get( `${ c.ci + di },${ c.cj + dj }` ) );
 		if ( quad.some( ( q ) => ! q ) ) continue;
-		const items = quad.reduce( ( n, q ) => n + q.bushes.length / 15 + q.strands.length, 0 );
+		const items = quad.reduce( ( n, q ) => n + q.bushes.length / BUSH_STRIDE + q.strands.length, 0 );
 		if ( items > most ) { most = items; best = c; }
 
 	}
-	const t = performance.now();
-	const { members } = await pool.run( () => ( { block: true, window: landWindow( ctx.field, best.ci, best.cj, 2 ), ci: best.ci, cj: best.cj } ), true );
-	const blockMs = performance.now() - t;
+	// (the worker's own time: queueing behind the pool's other jobs left out)
+	const { members, ms: blockMs } = await pool.run( () => ( { block: true, window: landWindow( ctx.field, best.ci, best.cj, 2 ), ci: best.ci, cj: best.cj } ), true );
 	const strandText = ( list ) => JSON.stringify( list, ( _, v ) => ArrayBuffer.isView( v ) ? Array.from( f32bits( v ) ) : v );
 	const fields = [ 'rimGround', 'shore', 'walk', 'anchors', 'bushes', 'strands' ];
 	const differ = [], counts = { texels: 0, anchors: 0, bushes: 0, strands: 0 };
@@ -995,7 +1005,7 @@ async function blockShare( ctx, pool ) {
 
 		const c = map.get( m.key );
 		counts.texels += c.rimGround.length / 4 + c.shore.length + c.walk.length;
-		counts.anchors += c.anchors.length / 9; counts.bushes += c.bushes.length / 15; counts.strands += c.strands.length;
+		counts.anchors += c.anchors.length / VEGETATION_STRIDE; counts.bushes += c.bushes.length / BUSH_STRIDE; counts.strands += c.strands.length;
 		for ( const f of fields ) {
 
 			const same = f === 'strands' ? strandText( m.strands ) === strandText( c.strands ) : sameBits( m[ f ], c[ f ] );
