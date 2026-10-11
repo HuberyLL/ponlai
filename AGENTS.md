@@ -48,19 +48,18 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
 - `src/camera/`: the island camera (`IslandCameraControls.ts`, the ground it grabs in
   `IslandGround.ts`) and the free flight.
-- `src/world/`: the world generated from the grown land (`IslandGrowth.ts`: the land lattice
-  grown one piece at a time) in 16 m chunks, each from its window of the land field
-  (`Chunks.ts`; what the page derives from its meshes, so it never walks their vertices:
-  `ChunkDerived.ts`), on a pool of `chunkWorker.ts` workers run by `WorldChunks.ts`, one
-  IndexedDB record per chunk (`WorldCache.ts`, keyed by the generator's hash, options, browser,
-  chunk and the pieces in its window), merged into the page's world by `ChunkMerge.ts`; the
-  footprint, SDF shapes and surface nets (`WorldShapes.ts`), the cliffs (`Cliff.ts`), the
-  submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as tiles by
-  `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`, `RimSkirt.ts`), the
-  meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, culled by `GrassCull.ts`), flowers,
-  the rim bushes (`FoliageSites.ts`; `Foliage.ts`: what all vegetation materials share), the
-  islander's walking loop (`WalkLoop.ts`), the vegetation's depth prepass
-  (`VegetationPrepass.ts`).
+- `src/world/`: the world generated from the grown land (`IslandGrowth.ts`: the land lattice grown
+  one piece at a time) in 16 m chunks, each from its window of the land field (`Chunks.ts`; what the
+  page derives from its meshes, so it never walks their vertices: `ChunkDerived.ts`), on a pool of
+  `chunkWorker.ts` workers run by `WorldChunks.ts`, one IndexedDB record per chunk (`WorldCache.ts`,
+  keyed by the generator's hash, options, browser, chunk and the pieces in its window), merged by
+  `ChunkMerge.ts` and drawn by `World.ts` (the island a mesh per land chunk); the footprint, SDF
+  shapes and surface nets (`WorldShapes.ts`), the cliffs (`Cliff.ts`), the submerged stones
+  (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as tiles by `SeabedTile.ts`), the rim
+  (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`, `RimSkirt.ts`), the meadow's anchors
+  (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled by `GrassCull.ts`), flowers, the rim
+  bushes (`FoliageSites.ts`; `Foliage.ts`: what all vegetation materials share), the islander's
+  walking loop (`WalkLoop.ts`), the vegetation's depth prepass (`VegetationPrepass.ts`).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the air/water interface, sky occlusion, the meadow's canopy light.
 - `src/materials/`: procedural textures, the terrain (`TerrainMaterial.ts`), wet surfaces.
@@ -102,8 +101,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   nothing outside the dirty set changes. A chunk built alone, in a block or on any thread equals
   itself. Data on a chunk border must be bit-identical in both chunks: lattices are world-anchored,
   scars are cut in canonical order, curvature comes from the apron, and a chunk's own triangles
-  never go through `computeVertexNormals`. The page does not use the chunks yet: a growth step
-  regenerates the whole world.
+  never go through `computeVertexNormals`. The page draws the island a mesh per land chunk and
+  every other kind as one mesh or pool, concatenated in the chunks' order ( cj, ci ) whatever
+  order the workers finished in (`ChunkMerge.ts`, `World.ts`); a growth step still reloads the
+  world.
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High is the reference image; every default in the modules is high's. A load knob is read
   once when materials and the frame graph are built, so a change of tier reloads the page.
@@ -170,6 +171,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   pass. A kernel with `workgroupBarrier()` is dispatched by size, not by a thread count
   (`OceanFFT.ts`). A `Fn( ... ).setLayout( ... )` helper that reads uniforms can be emitted with
   another kernel's uniform names when two compute kernels that use it are built (r186).
+- The same triangles drawn in one draw or split over several (a mesh per chunk, or draw ranges)
+  shade about 1 % of their pixels a level or two apart: multisampled fragments and derivative
+  quads form within a draw. Byte comparisons hold between equal splits only (`World.ts`).
 - A storage buffer cannot grow in place (a larger array fails its `writeBuffer`). A new
   `StorageBufferAttribute` as each reading storage node's `value` takes new bind groups and no
   pipeline, compute or render: the shaders declare runtime-sized arrays (r186,

@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { isCameraInputTarget } from './FreeCameraControls.ts';
 import { IslandGround } from './IslandGround.ts';
+import type { GroundGrid } from '../world/ChunkDerived.ts';
 
 // The island's camera, in the manner of a management or island-building game (Islanders,
 // Dorfromantik; Anno, Frostpunk and Planet Zoo differ mostly in which button does what):
@@ -46,8 +47,8 @@ import { IslandGround } from './IslandGround.ts';
 //   newest sample, a 125 Hz mouse moved the view unevenly from one frame to the next.
 // - The limits constrain input only: the pivot within the land's box plus 12 m, the farthest zoom
 //   from its diagonal (about 190 m for the starting island), both recomputed when the land grows
-//   (`setIsland`), the camera 2 m above the ground (a height grid of the island's meshes,
-//   IslandGround.ts).
+//   (`setIsland`), the camera 2 m above the ground (a height grid of the island's meshes, merged
+//   from the grids the world's chunks come with: IslandGround.ts).
 // - At rest the update is three's OrbitControls' arithmetic to the bit, its constructor's update
 //   included, so paused frames do not depend on input history and match older captures.
 
@@ -220,11 +221,12 @@ export class IslandCameraControls {
 
 	}
 
-	/** Derives the ground the camera grabs from the island's meshes, and the pivot's bounds and
-	 * the farthest zoom from the land's box (WorldShapes.landBounds); again when the land grows. */
-	setIsland( meshes: readonly THREE.Mesh[], land: { x0: number; z0: number; x1: number; z1: number } ): void {
+	/** Takes the ground the camera grabs from the grids of the island's chunks (ChunkDerived.ts),
+	 * and the pivot's bounds and the farthest zoom from the land's box (WorldShapes.landBounds);
+	 * again when the land grows. */
+	setIsland( grids: readonly GroundGrid[], land: { x0: number; z0: number; x1: number; z1: number } ): void {
 
-		this.ground.build( meshes );
+		this.ground.fromGrids( grids );
 		const m = this.boundsMargin;
 		this.bounds.min.set( land.x0 - m, land.z0 - m );
 		this.bounds.max.set( land.x1 + m, land.z1 + m );
