@@ -245,6 +245,13 @@ export class Game {
 
 	}
 
+	/** Whether every islander shows on screen: the page keeps its loading screen until then. */
+	ready(): boolean {
+
+		return this.view?.ready ?? false;
+
+	}
+
 	/** The figures' shadow map follows this islander (null: the one nearest the view's middle). */
 	focus( villager: EntityId | null ): void {
 

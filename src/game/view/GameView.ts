@@ -113,6 +113,13 @@ export class GameView {
 
 	}
 
+	/** True once the view has drawn a frame and every islander shows something (its figure or a stand-in). */
+	get ready(): boolean {
+
+		return this.stamp > 0 && this.villagers.every( ( v ) => v.drawn );
+
+	}
+
 	/**
 	 * Per frame, after the simulation advanced: sync the islanders, animate their figures, draw their shadow.
 	 * gameDt: the whole ticks (game seconds) the simulation stepped this frame.
