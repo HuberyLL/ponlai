@@ -98,7 +98,7 @@ Game:
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
   actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
-  `'chest'`, one of each; returns why not, or null), `focus( id )`, `setSpeed`, `togglePause`,
+  `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setSpeed`, `togglePause`,
   `save` and `load`.
 
 ## Captures
@@ -222,7 +222,7 @@ what these do not give (automation, A/B statistics, pass names).
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
   first prototype's rules (needs, the bag, the palm, fishing, the chest placed as a blueprint and
-  built, the actions, the perception, the stand-in brain over a few game days, a save mid-action); its island is in
+  built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action); its island is in
   `tools/game-fixture.mjs`.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit

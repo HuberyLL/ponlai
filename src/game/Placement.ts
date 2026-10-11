@@ -3,7 +3,7 @@ import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
 import type { Game } from './Game.ts';
 import type { HudContext } from './Hud.ts';
 import { groundPoint, pointerRay } from './pick.ts';
-import { blueprintRefusal, buildingOf } from './sim/buildings.ts';
+import { blueprintRefusal } from './sim/buildings.ts';
 import type { Vec2 } from './sim/types.ts';
 import { PlacementPreview } from './view/PlacementPreview.ts';
 
@@ -74,7 +74,7 @@ export class ChestPlacement {
 	reset(): void {
 
 		this.arm( false );
-		this.box.style.display = buildingOf( this.game.sim.state, 'chest' ) ? 'none' : '';
+		this.box.style.display = this.game.sim.state.buildings.some( ( b ) => b.kind === 'chest' ) ? 'none' : '';
 
 	}
 

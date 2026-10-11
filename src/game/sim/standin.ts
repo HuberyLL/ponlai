@@ -10,11 +10,11 @@ import { BAG_CAPACITY } from './items.ts';
 // - hungry (satiety below HUNGRY): eat a carried fish; else take one at the chest; else fish
 //   at the shore (going there). The lower need comes first.
 // - then a construction site in sight (a place that shows its construction, buildings.ts): build
-//   it, going there first. Building runs until the site is done, an hour for the chest, which the
-//   needs' thresholds leave room for.
-// - otherwise keep one coconut and one fish in the bag; with a chest built, gather a second
-//   of each and carry it there until it holds STOCK of each (it sees what it holds only while
-//   standing at it, and remembers nothing); else wait a while.
+//   the first one listed (the first placed), going there first. Building runs until the site is
+//   done, an hour for a chest, which the needs' thresholds leave room for.
+// - otherwise keep one coconut and one fish in the bag; with a chest built (the first built one in
+//   sight, by kind), gather a second of each and carry it there until it holds STOCK of each (it
+//   sees what it holds only while standing at it, and remembers nothing); else wait a while.
 //
 // A full bag with nothing to drink or eat in it makes room by using what it holds most of.
 
@@ -56,24 +56,24 @@ export class StandInBrain implements Brain {
 		const coconutsOnPalm = number( sees( 'palm' )?.shows?.coconuts );
 		// a place under construction shows how far along it is; the chest counts once built
 		const site = p.seen.find( ( s ) => s.shows?.construction !== undefined );
-		const chest = sees( 'chest' )?.shows?.construction === undefined ? sees( 'chest' ) : undefined;
+		const chest = p.seen.find( ( s ) => s.kind === 'chest' && s.shows?.construction === undefined );
 		const stored = ( item: string ) => number( ( chest?.shows?.items as Record<string, unknown> | undefined )?.[ item ] );
 
 		// a full bag with nothing for the need: make room with what it holds most of
 		const makeRoom = (): ToolCall => {
 
 			const most = Object.keys( bag ).sort( ( a, b ) => carried( b ) - carried( a ) )[ 0 ];
-			return at( 'chest' ) ? doAt( 'put', most, 1 ) : use( most );
+			return chest && at( chest.place ) ? doAt( 'put', most, 1 ) : use( most );
 
 		};
 
 		const drink = (): ToolCall | null => {
 
 			if ( carried( 'coconut' ) > 0 ) return use( 'coconut' );
-			if ( at( 'chest' ) && stored( 'coconut' ) > 0 ) return full ? makeRoom() : doAt( 'take', 'coconut', 1 );
+			if ( chest && at( chest.place ) && stored( 'coconut' ) > 0 ) return full ? makeRoom() : doAt( 'take', 'coconut', 1 );
 			if ( full ) return makeRoom();
 			if ( coconutsOnPalm > 0 ) return at( 'palm' ) ? doAt( 'pick' ) : go( 'palm' );
-			if ( chest && ! at( 'chest' ) ) return go( 'chest' );
+			if ( chest && ! at( chest.place ) ) return go( chest.place );
 			if ( ! sees( 'palm' ) ) return go( 'palm' );
 			return null;
 
@@ -82,7 +82,7 @@ export class StandInBrain implements Brain {
 		const eat = (): ToolCall | null => {
 
 			if ( carried( 'fish' ) > 0 ) return use( 'fish' );
-			if ( at( 'chest' ) && stored( 'fish' ) > 0 ) return full ? makeRoom() : doAt( 'take', 'fish', 1 );
+			if ( chest && at( chest.place ) && stored( 'fish' ) > 0 ) return full ? makeRoom() : doAt( 'take', 'fish', 1 );
 			if ( full ) return makeRoom();
 			return at( 'shore' ) ? doAt( 'fish' ) : go( 'shore' );
 
@@ -120,7 +120,7 @@ export class StandInBrain implements Brain {
 
 		if ( chest ) {
 
-			if ( at( 'chest' ) ) {
+			if ( at( chest.place ) ) {
 
 				for ( const item of [ 'coconut', 'fish' ] ) if ( carried( item ) > 1 && stored( item ) < STOCK ) return doAt( 'put', item, carried( item ) - 1 );
 				for ( const item of [ 'coconut', 'fish' ] ) if ( stored( item ) < STOCK && carried( item ) < 2 ) {
@@ -138,7 +138,7 @@ export class StandInBrain implements Brain {
 				if ( call ) return call;
 
 			}
-			if ( carried( 'coconut' ) > 1 || carried( 'fish' ) > 1 ) return go( 'chest' );
+			if ( carried( 'coconut' ) > 1 || carried( 'fish' ) > 1 ) return go( chest.place );
 
 		}
 		return wait( IDLE_SECONDS );

@@ -78,7 +78,7 @@ export interface PalmState {
 
 /** A building the player placed (buildings.ts): its kind, where it stands, the work done on it, what it holds. */
 export interface BuildingState {
-	/** its place's id: the kind's name (one of each kind for now) */
+	/** its place's id: the kind's name and its count among that kind ever placed (chest1), never reused */
 	id: string;
 	kind: string;
 	x: number;
@@ -103,6 +103,8 @@ export interface SimState {
 	palms: PalmState[];
 	/** what the player placed, in the order placed */
 	buildings: BuildingState[];
+	/** how many of each building kind were ever placed: the count in their ids (buildings.ts) */
+	placed: Record<string, number>;
 }
 
 /**

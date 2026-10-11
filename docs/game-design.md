@@ -126,6 +126,11 @@ items with their own options, never a new action.
   construction site, a place whose only option is `build`. Building takes a while and can be
   interrupted and resumed; the work done stays. When the work is done the site is the finished
   building with its own options (the chest's put and take).
+- The player may place any number of a kind. Each building is a place with an id of its own,
+  its kind's name and a count (chest1, chest2), never reused, so the islanders and the saves name
+  it the same for good. Perception names each place by its id and kind.
+- Several islanders may build one site, each adding their work; when it is done, everyone on it
+  stops, the one who finished it and the others who find it finished.
 - Every kind goes through the same stages, shaped by its footprint: planned (marked out), being
   built, built. The site blocks walking from the moment it is placed. Perception shows how far
   along it is as a number, like every state that decides outcomes.

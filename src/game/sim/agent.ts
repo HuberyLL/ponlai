@@ -6,8 +6,8 @@ import type { ActionCall, ActionOutcome, ActionResult, Items, Villager } from '.
 // calls, which run on the islander's body. The tools are the five actions (actions.ts).
 //
 // Perception is what a person would perceive, never the world's state (docs/game-design.md,
-// "Perception"): the time; the places in sight (within SIGHT, no occlusion yet) and what shows on
-// them, with no positions or distances; the places stood at and their open `do` options; the body's
+// "Perception"): the time; the places in sight (within SIGHT, no occlusion yet), each by its id
+// and kind, and what shows on them, as numbers, with no positions or distances; the places stood at and their open `do` options; the body's
 // needs and bag as numbers and the action under way; and how the last action ended. Memory,
 // hearing the leader and what starts a thought are designed with the language model; until then
 // the simulation asks for a thought whenever an islander has nothing under way (Sim.ts).
@@ -26,9 +26,10 @@ export type ToolRegistry = Map<string, ToolHandler>;
 
 export type ToolCall = ActionCall;
 
-/** A place in sight, by its id, and what shows on it (coconuts on a palm; inside the chest, while at it). */
+/** A place in sight, by its id and kind, and what shows on it (coconuts on a palm; inside a chest, while at it). */
 export interface SeenPlace {
 	place: string;
+	kind: string;
 	shows?: Record<string, unknown>;
 }
 
@@ -66,7 +67,7 @@ export function perceive( sim: Sim, body: Villager ): Perception {
 
 		if ( place.distance( body.pos ) > SIGHT ) continue;
 		const shows = place.shows( here.includes( place ) );
-		seen.push( shows ? { place: place.id, shows } : { place: place.id } );
+		seen.push( shows ? { place: place.id, kind: place.kind, shows } : { place: place.id, kind: place.kind } );
 
 	}
 	const minutes = Math.floor( sim.hour() * 60 );

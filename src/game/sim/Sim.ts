@@ -25,7 +25,7 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // within the tick, so a game with it is deterministic for a seed; a slow one acts when it answers.
 
 /** the state's shape this build reads; a save of another is refused */
-export const SAVE_VERSION = 14;
+export const SAVE_VERSION = 15;
 const NAMES = [ 'Kai' ];
 
 export class Sim {
@@ -146,7 +146,7 @@ export class Sim {
 
 		const reason = blueprintRefusal( this, kind, { x, z } );
 		if ( reason ) return reason;
-		this.state.buildings.push( newBuilding( kind, x, z ) );
+		this.state.buildings.push( newBuilding( this.state, kind, x, z ) );
 		this.grid.obstruct( x, z, BUILDING_KINDS[ kind ].radius );
 		findWaysAgain( this );
 		return null;
@@ -225,7 +225,7 @@ export class Sim {
 export function newGame( input: IslandInput, options: { seed?: number; startHour?: number } = {} ): Sim {
 
 	const seed = ( options.seed ?? 1 ) >>> 0;
-	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], palms: [], buildings: [] }, input );
+	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], palms: [], buildings: [], placed: {} }, input );
 	const grid = sim.grid;
 	sim.state.palms = newPalms( sim );
 	obstructPlaces( sim );
