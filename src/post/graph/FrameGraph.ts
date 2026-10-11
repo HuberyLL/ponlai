@@ -48,7 +48,8 @@ import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, s
 // first frames (the warm-up runs before the world exists, the water's pass on an empty scene). It
 // compiles each pass under its own binding (target, MRT, depth flags), the passes three's nodes
 // render inside a pass (a bloom chain), and the objects and kernels owners register as run only at
-// times (`latent( pass, objects, kernels )`: the rain, the bolts, the storm's spray and foam). A new
+// times (`latent( pass, objects, kernels )`: the rain, the bolts, the storm's spray and foam, the game's
+// props and islanders). A new
 // pass, or a draw that first shows later, joins it the same way; `tools/verify-first-use.mjs`
 // counts the pipelines any step still creates. A miss is not harmless: a material built twice under
 // two keys can be emitted with the first build's uniform names in a layout function (r186), an

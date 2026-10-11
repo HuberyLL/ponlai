@@ -70,7 +70,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
 - `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
 - `src/game/`: the game behind `?game` (`Game.ts`): `sim/` is the headless simulation (no three.js
-  or DOM; node runs it by stripping types), `view/` draws the islanders.
+  or DOM; node runs it by stripping types), `view/` draws the islanders, the palm and the
+  chest, and `Hud.ts` / `Placement.ts` are the player's prototype HUD.
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout.
 
 ## Rules for every change
@@ -103,6 +104,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   measurements in relative terms.
 - Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, comments in
   English that explain why.
+- Game UI (anything the player sees in `?game`: HUD, menus, overlays, in-world labels, mockups of
+  them): design and build it with the `threejs-game-ui-designer` skill when the agent has it (the
+  threejs-* skill pack), so it reads as a game's interface rather than a product's.
 - Visual changes: compare captures against the previous capture (and crops, not only the whole
   frame); report measured differences.
 - Performance changes: `tools/profile-frame.mjs` on a production build under the GPU lock, before
@@ -159,8 +163,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   three r186 does not emit (`VegetationPrepass.ts`). A material that instances from storage
   buffers holds the placed position in a `toVar` (`GrassCull.ts`).
 - `renderer.compileAsync` alone does not compile what a render draws (target, MRT, side, call
-  depth): compile ahead through the frame graph's warm-up, a draw that shows only at times
-  registered as a latent of its pass (`FrameGraph.ts`, `graph/Compile.ts`).
+  depth, a render context shared by targets of the same attachments): compile ahead through the
+  frame graph's warm-up, a draw that shows only at times registered as a latent of its pass
+  (`FrameGraph.ts`, `graph/Compile.ts`; a shadow map's draws with `compileLatentInto`).
 - Under the temporal modes every scene material writes the velocity beside the colour: one with
   a fragmentNode writes both outputs, one whose positionNode animates supplies `positionPrevious`
   (`Motion.ts`).
@@ -169,6 +174,6 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   whole batch. `graph/AttachmentOps.ts` wraps the encoders too: a wrapper that hands out encoders
   of its own must be installed before it.
 - Timestamp queries (`trackTimestamp`) have one owner at a time (`DynamicResolution.ts`).
-- `Sky.ts` drives three's private `PMREMGenerator` steps, and `graph/ThreePatches.ts`,
-  `graph/AttachmentOps.ts` and `graph/Compile.ts` patch or stand in for r186 internals: re-check
-  them on a three upgrade.
+- `Sky.ts` drives three's private `PMREMGenerator` steps, `SunShadow.compileCasters` mirrors
+  three's shadow-pass material, and `graph/ThreePatches.ts`, `graph/AttachmentOps.ts` and
+  `graph/Compile.ts` patch or stand in for r186 internals: re-check them on a three upgrade.

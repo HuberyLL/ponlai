@@ -514,6 +514,8 @@ installVegetationPrepass( scene, [ grass, foliage, rimFoliage, plants ] );
 
 	}
 	sunShadow.setCasters( casters );
+	// the island's terrain is a closed solid: it casts its front faces (SunShadow)
+	sunShadow.castFrontFaces( world.group );
 
 }
 // the camera grabs the island's ground and keeps its pivot over the island
@@ -543,11 +545,31 @@ if ( GAME ) {
 	game = await Game.start( {
 		params, scene, camera, canvas: renderer.domElement, vegetation: data.vegetation, plants: plantSites,
 		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment,
-		// every islander in the scene islander's proportions (the `islander` URL option)
-		loadLook: ( look ) => {
+		// The game's props, for the scene's pass (a latent of the frame graph's opaque pass, under
+		// its target and MRT: the temporal modes' velocity output is part of its pipelines' keys) and
+		// then the sun's map (Game.render), one draw at a time and in the order a frame first draws
+		// them (the scene's pass, then the map's redraw): a prop's pass into the map shares its
+		// material's nodes, and compiled the other way round or side by side, the chest came out
+		// shaded differently from the chest drawn without them.
+		compileDraws: async ( objects ) => {
+
+			for ( const object of objects ) await pipeline.graph.latent( 'opaque', [ object ] );
+			const casters = sunShadow.compileCasters( renderer, objects );
+			if ( casters ) await casters;
+			else console.warn( 'The sun\'s shadow map is not built yet: the game\'s props compile their shadow pass when first drawn' );
+
+		},
+		// every islander in the scene islander's proportions (the `islander` URL option). A figure
+		// is handed over once its pipelines are built, off the frame (GameView "First draws"): it
+		// arrives after the game's first frame, and each load brings its own material, so the frame
+		// that first drew it built its skinned pipelines (the scene's pass, then the figures' map).
+		loadLook: async ( look ) => {
 
 			const dress = ISLANDER_LOOKS[ look % ISLANDER_LOOKS.length ];
-			return loadVillager( dress.base, dress.parts, shared, PROPORTIONS[ islanderBuild.proportions ] );
+			const figure = await loadVillager( dress.base, dress.parts, shared, PROPORTIONS[ islanderBuild.proportions ] );
+			await pipeline.graph.latent( 'opaque', [ figure.group ] );
+			await characterShadow.compile( renderer, scene, figure.group );
+			return figure;
 
 		},
 	} );
@@ -1297,11 +1319,13 @@ animation.setContext( pacer.context );
 renderer.setAnimationLoop( animationLoop );
 // High's first frames find its render scale behind the loading screen: from the nominal it jumps
 // to the scale the GPU's times call for within a second, out of sight (at most REVEAL_WAIT ms).
+// The game's islanders show before it lifts too: their figures arrive after the first frames once
+// their pipelines are compiled (GameView "First draws"), which on a cold shader cache took seconds.
 const REVEAL_WAIT = 3000;
 const revealAt = performance.now() + REVEAL_WAIT;
 const reveal = () => {
 
-	const waiting = ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
+	const waiting = ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || ( game !== null && ! game.ready() ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
 		! paused && ! resolution.full && performance.now() < revealAt;
 	if ( waiting ) setTimeout( reveal, 50 );
 	else {

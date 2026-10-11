@@ -1,7 +1,8 @@
 import * as THREE from 'three/webgpu';
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 
-// Ahead-of-time pipeline compiles (the frame graph's warm-up, FrameGraph.warm, and the sky's):
+// Ahead-of-time pipeline compiles (the frame graph's warm-up, FrameGraph.warm, the sky's and the
+// shadow maps', `compileLatentInto`):
 // every draw the frame will make, built and handed to WebGPU's async pipeline creation before the
 // frame that first shows it, so no frame stalls on a pipeline (a weather change, the first bolt, a
 // storm's spray, fog setting in, the upscale switching on).
@@ -182,6 +183,14 @@ export function compileInto( renderer: THREE.WebGPURenderer, object: THREE.Objec
 function compileTargeted( renderer: THREE.WebGPURenderer, object: THREE.Object3D, camera: THREE.Camera,
 	target: THREE.RenderTarget | null, scene: THREE.Scene | null, mrt: THREE.MRTNode | null, callDepth = 0 ): Compiled {
 
+	return withBinding( renderer, target, mrt, () => compileBound( renderer, object, camera, scene, callDepth ) );
+
+}
+
+// Runs `compile` with the renderer bound to `target` and `mrt`, the depth and stencil flags the
+// target's own, and restores the binding before it returns.
+function withBinding<T>( renderer: THREE.WebGPURenderer, target: THREE.RenderTarget | null, mrt: THREE.MRTNode | null, compile: () => T ): T {
+
 	const previous = renderer.getRenderTarget(), previousMrt = renderer.getMRT();
 	const { depth, stencil } = renderer;
 	renderer.setRenderTarget( target );
@@ -194,7 +203,7 @@ function compileTargeted( renderer: THREE.WebGPURenderer, object: THREE.Object3D
 	}
 	try {
 
-		return compileBound( renderer, object, camera, scene, callDepth );
+		return compile();
 
 	} finally {
 
@@ -309,6 +318,18 @@ export function compileLatent( renderer: THREE.WebGPURenderer, objects: readonly
 
 	}
 	return { states: boundCompileAvailable( renderer ) ? states : null, done: Promise.all( pending ).then( () => undefined ) };
+
+}
+
+/** `compileLatent` into a target outside the frame graph (null: the canvas), with no MRT: draws a
+ * renderer makes of its own, such as a shadow map's (`SunShadow.compileCasters`,
+ * `CharacterShadow.compile`). A draw in a frame-graph pass registers as a latent of that pass
+ * instead (`FrameGraph.latent`), which binds the pass's target and MRT. Resolves once the
+ * pipelines exist. */
+export function compileLatentInto( renderer: THREE.WebGPURenderer, objects: readonly THREE.Object3D[], scene: THREE.Scene, camera: THREE.Camera,
+	target: THREE.RenderTarget | null ): Promise<void> {
+
+	return withBinding( renderer, target, null, () => compileLatent( renderer, objects, scene, camera ) ).done;
 
 }
 

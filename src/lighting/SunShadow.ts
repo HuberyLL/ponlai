@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
-import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, select, mix } from 'three/tsl';
+import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, select, mix, positionLocal, modelWorldMatrixInverse } from 'three/tsl';
+import { compileLatentInto } from '../post/graph/Compile.ts';
 import { solarSteppedShadowVisibility, solarVolumeVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
 
 type F = THREE.Node<'float'>;
@@ -29,10 +30,30 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // filter (see its rules on sampler types and derivatives). The caster-depth grid
 // (`nearestCasterDepth`) lets a march through the water skip the 2x2 volume lookups where nothing
 // casts, never the surface filter's PCSS search.
+//
+// Closed solids (the island's terrain, `castFrontFaces`) cast their front faces into this map,
+// not the back faces three casts for a FrontSide material. At the cliff's creases, scar-notch
+// corners and sharp arrises a wall turned away from the sun has, as its only back-face occluder,
+// the crease's other side a few millimetres off, inside the bias: such pixels read lit and showed
+// as bright specks in the shade. Back faces also read every point inside the rock as lit, and
+// submerged receivers read this map at their refracted entry point on the surface (RefractedSun),
+// which for the sea floor and walls along the cliff's foot lies inside the rock: thin lines and
+// patches of sun showed there inside the island's shadow. The front faces put the occluder at the
+// solid's sunlit skin, a body's thickness away. Lit ground then receives its own depth: the
+// receiver-plane filter and the normal bias keep the turf itself clean, but grass blades and stems
+// a few centimetres over it caught the turf in their filter's taps and darkened. So the solids'
+// cast depth is pushed FRONT_PUSH away from the light (the map's own bias stays small, for the
+// vegetation's contact shadows); rock thinner than that along the light leaks again, so it stays
+// a few centimetres. Only this map changes: three's `shadowSide` is set for the draw and restored,
+// and the refracted map draws its casters with a material of its own.
 const STEP = THREE.MathUtils.degToRad( 0.2 );
+// how far closed solids' cast depth is pushed away from the light (m), see above
+const FRONT_PUSH = 0.03;
 // A larger turn in one frame is a cut (a new hour, preset or manual sun): redraw without history.
 const CUT = THREE.MathUtils.degToRad( 1 );
 const PREVIOUS = 0, CURRENT = 1;
+// the side three draws a caster's faces into a (non-VSM) map with: Renderer's _shadowSide (r186)
+const SHADOW_SIDE = { [ THREE.FrontSide ]: THREE.BackSide, [ THREE.BackSide ]: THREE.FrontSide, [ THREE.DoubleSide ]: THREE.DoubleSide };
 // A lighter filter for vegetation (grass blades and leaves, `markVegetation`), for the quality
 // tiers below high (setFilter): it fills much of the frame with small, overlapping receivers whose
 // own dapple hides a coarser penumbra. Not the default: fewer blocker taps re-roll the dapple's
@@ -93,6 +114,10 @@ export class SunShadow {
 	private readonly maps: THREE.RenderTarget;
 	private readonly depth: THREE.TextureNode;
 	private readonly casters = new THREE.Box3();
+	// materials of closed solids, cast by their front faces (see the header)
+	private readonly frontCasters = new Set<THREE.Material>();
+	// their cast depth, pushed FRONT_PUSH away from the light (world space, set at each draw)
+	private readonly frontPush = uniform( new THREE.Vector3() );
 	private readonly drawn = new THREE.Vector3();
 	private readonly bias: number;
 	private readonly floor: number;
@@ -222,6 +247,85 @@ export class SunShadow {
 
 	}
 
+	/**
+	 * Compile the pipelines `casters` draw with into this map, off the frame (graph/Compile.ts),
+	 * so that a caster first added mid-game (a game's prop) builds none in the frame that redraws
+	 * the map. Null until three has built the map and its node (with the first receiver compiled
+	 * or drawn). The casters need not be in the scene.
+	 *
+	 * three draws a caster into the map with the shadow node's material in its own's place
+	 * (scene.overrideMaterial), taking the caster's colour, depth and position nodes and side into
+	 * it per draw and restoring them after (Renderer.renderObject, r186). Each caster here compiles
+	 * with a pass material of its own that already holds what the draw takes into it, so the build
+	 * is the draw's whether it runs before that restore (the bound compile) or after it (three's
+	 * compileAsync, the fallback). This mirrors three's shadow material and its non-VSM side rule:
+	 * re-check it on a three upgrade.
+	 */
+	compileCasters( renderer: THREE.WebGPURenderer, casters: THREE.Object3D[] ): Promise<void> | null {
+
+		const node = this.sun.shadow.shadowNode as unknown as ShadowRenderer | undefined;
+		const map = node?.shadowMap;
+		if ( ! node || ! map ) return null;
+		const { _getShadowNodes: shadowNodes } = renderer as unknown as { _getShadowNodes( material: THREE.Material ): { colorNode: THREE.Node<'vec4'> | null; depthNode: THREE.Node<'float'> | null; positionNode: THREE.Node<'vec3'> | null } };
+		const meshes: THREE.Mesh[] = [];
+		for ( const root of casters ) root.traverse( ( object ) => {
+
+			if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) meshes.push( object as THREE.Mesh );
+
+		} );
+		// one caster at a time, as a frame draws them (see main.ts on the game's props)
+		const compile = ( mesh: THREE.Mesh ): Promise<void> => {
+
+			const material = mesh.material as THREE.NodeMaterial;
+			// three's shadow material (ShadowBaseNode), as the draw leaves it for this caster
+			const pass = new THREE.NodeMaterial();
+			( pass as unknown as { isShadowPassMaterial: boolean } ).isShadowPassMaterial = true;
+			pass.name = 'ShadowMaterial';
+			pass.blending = THREE.NoBlending;
+			pass.fog = false;
+			pass.colorNode = vec4( 0, 0, 0, 1 );
+			const nodes = shadowNodes.call( renderer, material );
+			if ( material.positionNode ) pass.positionNode = material.positionNode;
+			if ( nodes.colorNode ) pass.colorNode = nodes.colorNode;
+			if ( nodes.depthNode ) pass.depthNode = nodes.depthNode;
+			if ( nodes.positionNode ) pass.positionNode = nodes.positionNode;
+			pass.side = material.shadowSide ?? SHADOW_SIDE[ material.side ];
+			pass.alphaTest = material.alphaTest;
+			( pass as unknown as { alphaMap: unknown } ).alphaMap = ( material as unknown as { alphaMap: unknown } ).alphaMap;
+			pass.transparent = material.transparent;
+			const scene = new THREE.Scene();
+			scene.overrideMaterial = pass;
+			return compileLatentInto( renderer, [ mesh ], scene, this.sun.shadow.camera, map );
+
+		};
+		return meshes.reduce( ( done, mesh ) => done.then( () => compile( mesh ) ), Promise.resolve() );
+
+	}
+
+	/** Cast the front faces of every shadow-casting mesh under `root` into this map: for closed
+	 * solids only (see the header), never for open sheets or cards. Their materials' cast
+	 * position becomes the push away from this light, so no other light's shadow may draw them. */
+	castFrontFaces( root: THREE.Object3D ): void {
+
+		root.traverse( ( object ) => {
+
+			const mesh = object as THREE.Mesh;
+			if ( ! mesh.isMesh || ! mesh.castShadow ) return;
+			for ( const material of Array.isArray( mesh.material ) ? mesh.material : [ mesh.material ] ) {
+
+				if ( this.frontCasters.has( material ) ) continue;
+				this.frontCasters.add( material );
+				const node = material as THREE.NodeMaterial;
+				node.castShadowPositionNode = positionLocal.add( modelWorldMatrixInverse.mul( vec4( this.frontPush, 0 ) ).xyz );
+				node.needsUpdate = true;
+
+			}
+
+		} );
+		this.cut = true;
+
+	}
+
 	/** Redraw from scratch on the next update: casters changed or the light jumped. */
 	invalidate(): void {
 
@@ -297,9 +401,14 @@ export class SunShadow {
 		const shadow = this.sun.shadow, shadowCamera = shadow.camera;
 		this.drawn.copy( keyDir );
 		this.fit( renderer, keyDir );
+		// closed solids cast their front faces into this map alone (see the header)
+		const sides = new Map( [ ...this.frontCasters ].map( ( material ) => [ material, material.shadowSide ] ) );
+		for ( const material of this.frontCasters ) material.shadowSide = THREE.FrontSide;
+		this.frontPush.value.copy( keyDir ).normalize().multiplyScalar( - FRONT_PUSH );
 		// Draw now rather than inside the next scene render, so the copy below lands before any
 		// receiver reads the array. This is what ShadowNode.updateBefore would do with the flag.
 		node.updateShadow( { renderer, scene, camera } );
+		for ( const [ material, side ] of sides ) material.shadowSide = side;
 		shadow.needsUpdate = false;
 		if ( this.maps.width !== map.width || this.maps.height !== map.height ) this.maps.setSize( map.width, map.height, 2 );
 		renderer.copyTextureToTexture( map.depthTexture!, this.maps.depthTexture!, null, this.toCurrentLayer );

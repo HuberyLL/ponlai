@@ -1,12 +1,22 @@
+import { placesAt, placesOf } from './places.ts';
 import type { Sim } from './Sim.ts';
-import type { EntityId, Vec2, Villager } from './types.ts';
+import type { ActionCall, ActionOutcome, ActionResult, Items, Villager } from './types.ts';
 
-// The agent loop's frame, without content: a brain thinks from what an islander perceives and
-// answers with tool calls, which run on the islander's body. The tools and the perception are
-// still to be designed: the registry is empty and the perception is a placeholder.
+// The agent loop's frame: a brain thinks from what an islander perceives and answers with tool
+// calls, which run on the islander's body. The tools are the five actions (actions.ts).
+//
+// Perception is what a person would perceive, never the world's state (docs/game-design.md,
+// "Perception"): the time; the places in sight (within SIGHT, no occlusion yet), each by its id
+// and kind, and what shows on them, as numbers, with no positions or distances; the places stood at and their open `do` options; the body's
+// needs and bag as numbers and the action under way; and how the last action ended. Memory,
+// hearing the leader and what starts a thought are designed with the language model; until then
+// the simulation asks for a thought whenever an islander has nothing under way (Sim.ts).
+
+/** what an islander sees round them (m): the whole island today */
+export const SIGHT = 20;
 
 /** What a tool did: its result, or why it could not. */
-export type ToolResult = { ok: true; value?: unknown } | { ok: false; reason: string };
+export type ToolResult = ActionResult;
 
 /** A tool: acts on an islander's body (and through it on the world). */
 export type ToolHandler = ( body: Villager, args: unknown, sim: Sim ) => ToolResult;
@@ -14,13 +24,32 @@ export type ToolHandler = ( body: Villager, args: unknown, sim: Sim ) => ToolRes
 /** Tool name to handler (Sim.tools). */
 export type ToolRegistry = Map<string, ToolHandler>;
 
-export interface ToolCall { tool: string; args?: unknown }
+export type ToolCall = ActionCall;
 
-/** What an islander perceives: a placeholder until perception is designed. */
+/** A place in sight, by its id and kind, and what shows on it (coconuts on a palm; inside a chest, while at it). */
+export interface SeenPlace {
+	place: string;
+	kind: string;
+	shows?: Record<string, unknown>;
+}
+
+/** What an islander perceives. */
 export interface Perception {
-	/** the day counted from 1 */
-	time: { day: number; hour: number };
-	self: { id: EntityId; pos: Vec2 };
+	/** the day counted from 1, and the time of day to the minute */
+	time: { day: number; hour: number; minute: number };
+	seen: SeenPlace[];
+	/** the places stood at (usually one; none between places) and the `do` options each offers now */
+	atHand: { place: string; options: string[] }[];
+	body: {
+		/** 0..100, whole numbers */
+		satiety: number;
+		hydration: number;
+		bag: Items;
+		/** the action under way, or null */
+		doing: ActionCall | null;
+	};
+	/** how the last action ended; null before the first */
+	last: ActionOutcome | null;
 }
 
 /** What decides for the islanders (Sim.brain): tool calls now, or later through a Promise. */
@@ -28,10 +57,32 @@ export interface Brain {
 	think( perception: Perception ): ToolCall[] | Promise<ToolCall[]>;
 }
 
-/** The perception hook: what an islander perceives now. */
+/** The perception hook: what an islander perceives now (copies: the brain cannot touch the state). */
 export function perceive( sim: Sim, body: Villager ): Perception {
 
-	return { time: { day: sim.day() + 1, hour: sim.hour() }, self: { id: body.id, pos: { ...body.pos } } };
+	const places = placesOf( sim );
+	const here = placesAt( sim, body, places );
+	const seen: SeenPlace[] = [];
+	for ( const place of places ) {
+
+		if ( place.distance( body.pos ) > SIGHT ) continue;
+		const shows = place.shows( here.includes( place ) );
+		seen.push( shows ? { place: place.id, kind: place.kind, shows } : { place: place.id, kind: place.kind } );
+
+	}
+	const minutes = Math.floor( sim.hour() * 60 );
+	return structuredClone( {
+		time: { day: sim.day() + 1, hour: Math.floor( minutes / 60 ), minute: minutes % 60 },
+		seen,
+		atHand: here.map( ( p ) => ( { place: p.id, options: Object.keys( p.options ).filter( ( o ) => p.options[ o ].open( sim ) ) } ) ),
+		body: {
+			satiety: Math.round( body.needs.satiety ),
+			hydration: Math.round( body.needs.hydration ),
+			bag: body.bag,
+			doing: body.action?.call ?? null,
+		},
+		last: body.last,
+	} );
 
 }
 
