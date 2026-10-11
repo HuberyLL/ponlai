@@ -47,9 +47,11 @@ export interface SeabedBedField extends ShoreField {}
 // mound over the lip at the root of a patch, carried by the patch's first strand.
 export interface RimStrand { points: Float32Array; seed: number; lip: number; parent?: number; from?: number; clump?: Float32Array }
 
-// The turf skirt over the rim: SKIRT_RING cross-section points ( x, y, z ) per coast sample,
-// per sample ( outward x, z, presence, droop ), and ( first sample, count ) per traced loop.
-export interface RimSkirtData { points: Float32Array; info: Float32Array; loops: Int32Array }
+// The turf skirt over the rim: SKIRT_RING cross-section points ( x, y, z ) per coast sample and
+// their normals, per sample its place on the coast ( x, z ), the outward direction ( x, z ),
+// presence and droop (SKIRT_INFO), and ( first sample, count ) per piece: a stretch of the coast
+// inside one box, between the points where it crosses the box's border (or a whole loop).
+export interface RimSkirtData { points: Float32Array; normals: Float32Array; info: Float32Array; pieces: Int32Array }
 
 export interface WorldData {
 	// the grown land (LandLattice.toBytes)

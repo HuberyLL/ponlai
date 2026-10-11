@@ -74,9 +74,14 @@ export function seabedBedTextureFrom( beds: SeabedBedField ): THREE.DataTexture 
 
 }
 
+// The rim ground (RimGround.ts: the boxes' tiles the worker assembled) in half floats: filterable
+// everywhere and half the memory of floats as the land grows; its distance is clamped to 1.5 m, so
+// they keep it to a millimetre.
 function rimGroundTextureFrom( ground: RimGroundField ): { tex: THREE.DataTexture; xform: THREE.Vector4 } {
 
-	const tex = new THREE.DataTexture( ground.data, ground.nx, ground.nz, THREE.RGBAFormat, THREE.FloatType );
+	const half = new Uint16Array( ground.data.length );
+	for ( let k = 0; k < half.length; k ++ ) half[ k ] = THREE.DataUtils.toHalfFloat( ground.data[ k ] );
+	const tex = new THREE.DataTexture( half, ground.nx, ground.nz, THREE.RGBAFormat, THREE.HalfFloatType );
 	tex.minFilter = tex.magFilter = THREE.LinearFilter;
 	tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
 	tex.generateMipmaps = false;

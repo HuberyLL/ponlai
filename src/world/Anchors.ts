@@ -23,6 +23,13 @@ export function anchorCell( x: number, z: number ): [ number, number ] {
 export function anchorStream( x: number, z: number, salt: number ): Rng {
 
 	const [ i, j ] = anchorCell( x, z );
+	return cellStream( i, j, salt );
+
+}
+
+/** A random stream for an integer cell ( i, j ) of any world lattice, one per cell and salt. */
+export function cellStream( i: number, j: number, salt: number ): Rng {
+
 	return mulberry32( mix32( hash3i( i, j, salt ) * 4294967296 >>> 0 ) );
 
 }

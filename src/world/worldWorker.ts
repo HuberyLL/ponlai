@@ -5,7 +5,7 @@
 
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRimTrails } from './RimTrails.ts';
-import { buildRimGround, buildRimSkirt, coastPaths } from './RimGround.ts';
+import { assembleRimGround, buildRimSkirt, coastPaths, mergeRimSkirts, ownTexels, rimBoxes, rimGroundTile } from './RimGround.ts';
 import { pickBushes } from './FoliageSites.ts';
 import {
 	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF,
@@ -20,6 +20,7 @@ import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '.
 import { VEGETATION_STRIDE } from './types.ts';
 import { openWorldStore } from './WorldCache.ts';
 import type { SDF, MeshData, MeshKind, NamedMesh, Rock, WorldData, WorldOptions } from './types.ts';
+import type { Footprint } from './WorldShapes.ts';
 
 // The page's job (World.ts): the world's options and the cache key (null: no cache). The worker
 // answers with a WorldReply. It looks the world up in the cache (WorldCache.ts) first; otherwise
@@ -337,18 +338,7 @@ function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 	}
 	mark( 'vegetation', t );
 
-	t = performance.now();
-	const rimGround = buildRimGround( islandSDF, b );
-	// The turf skirt drapes over the coast this field traces.
-	const rimSkirt = buildRimSkirt( islandSDF, rimGround );
-	mark( 'rimGround', t );
-
-	t = performance.now();
-	// The rim bushes, from the anchors (all of which lie within 0.6 m of the land's box).
-	const [ bushes ] = pickBushes( vegetation, [ { x0: b.x0 - 1, z0: b.z0 - 1, x1: b.x1 + 1, z1: b.z1 + 1 } ] );
-	// Bare runs between the trails are measured along the same traced coast.
-	const rimStrands = makeRimTrails( islandSDF, fp, vegetation, coastPaths( rimGround ) );
-	mark( 'rimFoliage', t );
+	const { rimGround, rimSkirt, bushes, rimStrands } = buildRim( islandSDF, fp, vegetation, timings );
 
 	// --- sea floor: the near tiles, shaded by the island and its stones, and the far floor
 	t = performance.now();
@@ -394,6 +384,33 @@ function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 
 }
 
+// The rim, box by box of the world's RIM_BOX grid over the land: each box's share of the rim ground,
+// the turf skirt it owns and the bushes rooted in it, each a function of the box's own
+// surroundings (RimGround.ts, FoliageSites.ts), merged in box order, and the trails over the whole
+// coast. The boxes read one lattice of the rim's coast and one set of anchors, cut from what each
+// would compute over its own window.
+function buildRim( sdf: SDF, fp: Footprint, vegetation: Float32Array, timings: Record<string, number> ) {
+
+	const mark = ( k: string, t: number ) => { timings[ k ] = Math.round( performance.now() - t ); };
+	let t = performance.now();
+	const { boxes, lattice } = rimBoxes( sdf, fp.bounds );
+	const tiles = boxes.map( ( box ) => rimGroundTile( lattice, box ) );
+	const rimGround = assembleRimGround( tiles.map( ( tile, k ) => ownTexels( tile, boxes[ k ] ) ) );
+	// The turf skirt drapes over the coast the tiles trace.
+	const rimSkirt = mergeRimSkirts( tiles.map( ( tile, k ) => buildRimSkirt( sdf, tile, boxes[ k ] ) ) );
+	mark( 'rimGround', t );
+
+	t = performance.now();
+	const owned = pickBushes( vegetation, boxes );
+	const bushes = new Float32Array( owned.reduce( ( n, part ) => n + part.length, 0 ) );
+	owned.reduce( ( offset, part ) => { bushes.set( part, offset ); return offset + part.length; }, 0 );
+	// Bare runs between the trails are measured along the same traced coast.
+	const rimStrands = makeRimTrails( sdf, fp, vegetation, coastPaths( rimGround ) );
+	mark( 'rimFoliage', t );
+	return { rimGround, rimSkirt, bushes, rimStrands };
+
+}
+
 function transferMesh( m: MeshData, transfer: Transferable[] ): void {
 
 	transfer.push( m.positions.buffer, m.normals.buffer, m.ao.buffer, m.tint.buffer, m.curv.buffer, m.indices.buffer );
@@ -404,7 +421,8 @@ function transferMesh( m: MeshData, transfer: Transferable[] ): void {
 
 function transferRest( rest: RestPart, transfer: Transferable[] ): void {
 
-	transfer.push( rest.land.buffer, rest.vegetation.buffer, rest.bushes.buffer, rest.rimGround.data.buffer, rest.rimSkirt.points.buffer, rest.rimSkirt.info.buffer, rest.rimSkirt.loops.buffer );
+	transfer.push( rest.land.buffer, rest.vegetation.buffer, rest.bushes.buffer, rest.rimGround.data.buffer );
+	transfer.push( rest.rimSkirt.points.buffer, rest.rimSkirt.normals.buffer, rest.rimSkirt.info.buffer, rest.rimSkirt.pieces.buffer );
 	for ( const strand of rest.rimStrands ) transfer.push( strand.points.buffer, ...( strand.clump ? [ strand.clump.buffer ] : [] ) );
 	const { positions, normals, ao, bed, indices } = rest.seabed;
 	transfer.push( positions.buffer, normals.buffer, ao.buffer, bed.buffer, indices.buffer );
