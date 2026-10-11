@@ -18,7 +18,7 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 // needs and the places they act at, a brain in its slot thinks for them (the stand-in of plain
 // rules by default, sim/standin.ts) and GameView draws them into the scene. There is no player
 // interface yet: the debug panel's Game folder (GameDebug.ts) and the methods below, reached from
-// the console as window.__PONLAI__.game, drive it (placeStorehouse is the player's one act). The
+// the console as window.__PONLAI__.game, drive it (placeChest is the player's one act). The
 // simulation's clock sets the time of day; the page's sky follows it, so pausing or speeding up the
 // game turns the sky with it. The weather is the page's own, as without ?game, running on the day
 // clock. Waves, wind and rain keep real time.
@@ -216,10 +216,10 @@ export class Game {
 
 	}
 
-	/** Place the storehouse at a point of the ground (world metres), once: null when it stands there, else why not. */
-	placeStorehouse( x: number, z: number ): string | null {
+	/** Place the chest at a point of the ground (world metres), once: null when it stands there, else why not. */
+	placeChest( x: number, z: number ): string | null {
 
-		return this.sim.placeStorehouse( x, z );
+		return this.sim.placeChest( x, z );
 
 	}
 

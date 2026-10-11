@@ -4,7 +4,7 @@ import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 // The ground grid: 0.5 m cells over the layout's bounds. A cell is walkable on the island top,
 // clear of the cliff rim, and free of bushes, shrubs and trees. Everything here is derived: the
 // island from the world's own functions, its bushes and plants from the world generator's input,
-// so a loaded game rebuilds the same grid. The game's own obstacles (a palm, the storehouse) are
+// so a loaded game rebuilds the same grid. The game's own obstacles (a palm, the chest) are
 // added on top by `obstruct`, from the simulation's state.
 
 const CELL = 0.5;

@@ -6,7 +6,7 @@ import type { ActionResult, Items, Villager } from './types.ts';
 // action. Using is instant and spends the item.
 //
 // Rules: a bag holds a few items in all (BAG_CAPACITY), items of a kind stack, and a full bag
-// refuses more with a reason. A collection (a bag, the storehouse) is an item-to-count record that
+// refuses more with a reason. A collection (a bag, the chest) is an item-to-count record that
 // holds a kind only while its count is above zero, so its JSON says exactly what is there.
 
 /** items a bag holds in all */

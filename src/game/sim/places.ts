@@ -13,9 +13,10 @@ import type { ActionResult, PalmState, SimState, Vec2, Villager } from './types.
 // - palm: a coconut palm, placed by palmSite (the ground and a fixed-seed hash; one for now). It
 //   blocks its ground like a plant, holds up to PALM_COCONUTS and grows one back every
 //   PALM_REGROW_SECONDS while it has fewer. `pick` takes PICK_SECONDS and brings one coconut.
-// - storehouse: placed once by the player (Sim.placeStorehouse) on open main ground with a clear
-//   ring round it; it blocks its footprint and holds STOREHOUSE_CAPACITY items. `put` and `take`
-//   ( { item, count } ) are instant.
+// - chest: a wooden chest placed once by the player (Sim.placeChest) on open main ground with a
+//   clear ring round it (CLEAR_RING, as the palm's, so it can never cut the main ground in two);
+//   it blocks its footprint (CHEST_RADIUS, the model's half diagonal) and holds CHEST_CAPACITY
+//   items. `put` and `take` ( { item, count } ) are instant.
 //
 // Standing at a place means standing on one of its cells (`reaches`): walking to it (`go`) ends on
 // the nearest such cell. Reaches may overlap; a body then stands at both places, and `do` runs the
@@ -34,12 +35,14 @@ export const PALM_REGROW_SECONDS = 6 * 3600;
 export const PALM_GROUND = 0.4;
 /** standing within this distance (m) of the trunk is standing at the palm */
 const PALM_REACH = 1.25;
-/** the storehouse blocks a disc this wide (m, radius) */
-export const STOREHOUSE_RADIUS = 1.0;
+/** the chest blocks a disc this wide (m, radius): its 0.9 x 0.55 m lid's half diagonal */
+export const CHEST_RADIUS = 0.55;
 /** standing within this distance (m) of its middle is standing at it */
-const STOREHOUSE_REACH = STOREHOUSE_RADIUS + 0.9;
-export const STOREHOUSE_CAPACITY = 60;
-/** open ground the palm and the storehouse need round their own (m) */
+const CHEST_REACH = CHEST_RADIUS + 0.9;
+/** A chest holds five bags' worth: about four days of one islander's food and water (three
+ * coconuts and two fish a day, needs.ts), a store against a poor day's fishing, not a granary. */
+export const CHEST_CAPACITY = 20;
+/** open ground the palm and the chest need round their own (m) */
 const CLEAR_RING = 1.0;
 
 /** A `do` option's arguments (put and take name an item and a count). */
@@ -177,7 +180,7 @@ export function growPalms( state: SimState ): void {
 
 }
 
-// ------------------------------------------------------------------ storehouse
+// ------------------------------------------------------------------ chest
 
 /** The item and count a put or take names, or why they are not one. */
 function itemCount( args: DoArgs ): { item: string; n: number } | string {
@@ -189,18 +192,18 @@ function itemCount( args: DoArgs ): { item: string; n: number } | string {
 
 }
 
-function storehouse( sim: Sim ): Place[] {
+function chest( sim: Sim ): Place[] {
 
-	const store = sim.state.storehouse;
-	if ( ! store ) return [];
-	const grid = sim.grid, p = { x: store.x, z: store.z };
+	const box = sim.state.chest;
+	if ( ! box ) return [];
+	const grid = sim.grid, p = { x: box.x, z: box.z };
 	return [ {
-		id: 'storehouse',
-		reaches: ( k ) => k >= 0 && Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= STOREHOUSE_REACH,
-		near: () => cellsWithin( grid, p, STOREHOUSE_REACH ),
+		id: 'chest',
+		reaches: ( k ) => k >= 0 && Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= CHEST_REACH,
+		near: () => cellsWithin( grid, p, CHEST_REACH ),
 		distance: ( q ) => Math.hypot( q.x - p.x, q.z - p.z ),
 		// what is inside shows only to someone standing at it
-		shows: ( at ) => at ? { items: { ...store.items } } : null,
+		shows: ( at ) => at ? { items: { ...box.items } } : null,
 		options: {
 			put: {
 				open: () => true,
@@ -210,25 +213,25 @@ function storehouse( sim: Sim ): Place[] {
 					if ( typeof what === 'string' ) return { ok: false, reason: what };
 					const carried = count( body.bag, what.item );
 					if ( carried < what.n ) return { ok: false, reason: `the bag holds ${ carried } ${ what.item }` };
-					if ( total( store.items ) + what.n > STOREHOUSE_CAPACITY ) return { ok: false, reason: 'the storehouse is full' };
+					if ( total( box.items ) + what.n > CHEST_CAPACITY ) return { ok: false, reason: 'the chest is full' };
 					removeItems( body.bag, what.item, what.n );
-					addItems( store.items, what.item, what.n );
-					return { ok: true, value: `put ${ what.n } ${ what.item } in the storehouse` };
+					addItems( box.items, what.item, what.n );
+					return { ok: true, value: `put ${ what.n } ${ what.item } in the chest` };
 
 				},
 			},
 			take: {
-				open: () => total( store.items ) > 0,
+				open: () => total( box.items ) > 0,
 				start: ( _sim, body, args ) => {
 
 					const what = itemCount( args );
 					if ( typeof what === 'string' ) return { ok: false, reason: what };
-					const stored = count( store.items, what.item );
-					if ( stored < what.n ) return { ok: false, reason: `the storehouse holds ${ stored } ${ what.item }` };
+					const stored = count( box.items, what.item );
+					if ( stored < what.n ) return { ok: false, reason: `the chest holds ${ stored } ${ what.item }` };
 					if ( total( body.bag ) + what.n > BAG_CAPACITY ) return { ok: false, reason: 'the bag has no room for that' };
-					removeItems( store.items, what.item, what.n );
+					removeItems( box.items, what.item, what.n );
 					addItems( body.bag, what.item, what.n );
-					return { ok: true, value: `took ${ what.n } ${ what.item } from the storehouse` };
+					return { ok: true, value: `took ${ what.n } ${ what.item } from the chest` };
 
 				},
 			},
@@ -237,12 +240,12 @@ function storehouse( sim: Sim ): Place[] {
 
 }
 
-/** Why a storehouse cannot go at a point, or null when it can. */
-export function storehouseRefusal( sim: Sim, p: Vec2 ): string | null {
+/** Why a chest cannot go at a point, or null when it can. */
+export function chestRefusal( sim: Sim, p: Vec2 ): string | null {
 
-	if ( sim.state.storehouse ) return 'The storehouse is already placed';
-	if ( ! clearAround( sim.grid, p, STOREHOUSE_RADIUS + CLEAR_RING ) ) return 'Not enough open ground there';
-	const covered = cellsWithin( sim.grid, p, STOREHOUSE_RADIUS );
+	if ( sim.state.chest ) return 'The chest is already placed';
+	if ( ! clearAround( sim.grid, p, CHEST_RADIUS + CLEAR_RING ) ) return 'Not enough open ground there';
+	const covered = cellsWithin( sim.grid, p, CHEST_RADIUS );
 	if ( sim.state.villagers.some( ( v ) => covered.includes( sim.grid.indexAt( v.pos.x, v.pos.z ) ) ) ) return 'Someone stands there';
 	return null;
 
@@ -251,7 +254,7 @@ export function storehouseRefusal( sim: Sim, p: Vec2 ): string | null {
 // ------------------------------------------------------------------ the registry
 
 /** every kind of place; the order is the order of preference when places stood at offer the same option */
-const PLACE_KINDS: readonly PlaceKind[] = [ storehouse, palms, shore ];
+const PLACE_KINDS: readonly PlaceKind[] = [ chest, palms, shore ];
 
 /** The places on the island now. */
 export function placesOf( sim: Sim ): Place[] {
@@ -260,7 +263,7 @@ export function placesOf( sim: Sim ): Place[] {
 
 }
 
-/** The places a body stands at (several where their reaches overlap: by the palm and the storehouse). */
+/** The places a body stands at (several where their reaches overlap: by the palm and the chest). */
 export function placesAt( sim: Sim, body: Villager, places = placesOf( sim ) ): Place[] {
 
 	const k = sim.grid.indexAt( body.pos.x, body.pos.z );
@@ -272,7 +275,7 @@ export function placesAt( sim: Sim, body: Villager, places = placesOf( sim ) ): 
 export function obstructPlaces( sim: Sim ): void {
 
 	for ( const palm of sim.state.palms ) sim.grid.obstruct( palm.x, palm.z, PALM_GROUND );
-	const store = sim.state.storehouse;
-	if ( store ) sim.grid.obstruct( store.x, store.z, STOREHOUSE_RADIUS );
+	const box = sim.state.chest;
+	if ( box ) sim.grid.obstruct( box.x, box.z, CHEST_RADIUS );
 
 }

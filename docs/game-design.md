@@ -112,7 +112,7 @@ items with their own options, never a new action.
 - `go` names a place, never a point or a distance: finding the way and walking it is the body's
   job, not the mind's.
 - `do` runs one of the actions the islander's current place offers (fish at the shore, pick a
-  coconut under the palm, put in or take out at the storehouse). Fishing or picking is an option
+  coconut under the palm, put in or take out at the chest). Fishing or picking is an option
   of a place, not a verb of the islander.
 - `use` uses an item the islander carries (drink a coconut, eat a fish).
 - A new action replaces the one under way; stopping is not an action. `say` is the exception:
@@ -124,7 +124,7 @@ items with their own options, never a new action.
 
 - Each islander carries a small bag (a few items; items of a kind stack). What is picked or
   caught goes into the bag; a full bag refuses it.
-- The storehouse is a place that holds many more; the islander puts in and takes out there.
+- A chest is a place that holds more; the islander puts in and takes out there.
 
 ### Needs
 
@@ -156,7 +156,7 @@ thought are designed with the language model.
 
 - The first prototype: one islander on the small island, with food and water.
   - **Places**: the shore (fish: takes a while, a fish by chance), one coconut palm (pick a
-    coconut; it regrows them slowly), and the storehouse, which the player places by hand.
+    coconut; it regrows them slowly), and a chest the player places by hand.
   - **Items**: coconut (drink: hydration), fish (eat: satiety).
   - **Needs** fall to zero with no consequence yet.
   - **A stand-in brain** of plain rules thinks for the islander until the language model is

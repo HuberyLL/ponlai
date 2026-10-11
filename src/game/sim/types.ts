@@ -76,8 +76,8 @@ export interface PalmState {
 	growth: number;
 }
 
-/** The storehouse the player placed (places.ts). */
-export interface StorehouseState {
+/** The chest the player placed (places.ts). */
+export interface ChestState {
 	x: number;
 	z: number;
 	items: Items;
@@ -96,7 +96,7 @@ export interface SimState {
 	villagers: Villager[];
 	palms: PalmState[];
 	/** null until the player places it */
-	storehouse: StorehouseState | null;
+	chest: ChestState | null;
 }
 
 /**
