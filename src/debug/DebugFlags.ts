@@ -18,5 +18,8 @@
 // false: `flags.mv.camera = false` leaves the camera's motion out of every surface's velocity, as
 // MV-UNIT compares a source on against off. `camera` and `object` (an object's world matrix) are
 // read by Motion.ts; `skin`, `wind`, `sea` and `foam` by the movers that write those motions.
+//
+// `windFreeze = true` holds the vegetation's wind while the scene clock runs (Wind.ts): the plants
+// stand in one pose with no motion, for clips where only the shadows or the jitter should move.
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
