@@ -11,7 +11,7 @@ import type { Sim } from './sim/Sim.ts';
 import { actionTools } from './sim/actions.ts';
 import type { Brain, ToolRegistry, ToolResult } from './sim/agent.ts';
 import { StandInBrain } from './sim/standin.ts';
-import { GameView } from './view/GameView.ts';
+import { GameView, propSamples } from './view/GameView.ts';
 import { SECONDS_PER_GAME_DAY } from './sim/types.ts';
 import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 
@@ -55,6 +55,8 @@ export interface GameContext {
 	loadLook( look: number ): Promise<Figure>;
 	invalidateSunShadow(): void;
 	refreshEnvironment(): Promise<void>;
+	/** compile the pipelines these objects will draw with (the scene's pass, the sun's shadow map) off the frame */
+	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
 }
 
 // the one save slot
@@ -98,6 +100,9 @@ export class Game {
 	private brain: Brain | null = new StandInBrain();
 	private gameDt = 0;
 	private resumeSpeed: Speed = 1;
+	// frames rendered so far, and whether the props' pipelines are compiling (render)
+	private framesDrawn = 0;
+	private compiling = false;
 
 	private constructor( context: GameContext ) {
 
@@ -167,6 +172,16 @@ export class Game {
 	render( renderer: THREE.WebGPURenderer, sun: THREE.DirectionalLight, rawDt: number ): void {
 
 		this.view?.update( renderer, sun, rawDt, this.gameDt );
+		// Once a frame has drawn the scene, what can first show mid-game builds its pipelines, off
+		// the frame, rather than in the frame it appears in (GameView "First draws"). Not sooner:
+		// compiled during startup, the chest's main pass did not match the draw it was for (its
+		// pipeline was built again when it appeared), and the sun's map is built by the first frame.
+		if ( ! this.compiling && ++ this.framesDrawn > 1 ) {
+
+			this.compiling = true;
+			this.context.compileDraws( [ ...propSamples(), ...this.hud!.samples() ] ).catch( ( error: unknown ) => console.error( 'Could not compile the game\'s props', error ) );
+
+		}
 		this.hud?.update();
 		this.debug?.update();
 

@@ -1,3 +1,4 @@
+import type * as THREE from 'three/webgpu';
 import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
 import type { Game } from './Game.ts';
 import type { HudContext } from './Hud.ts';
@@ -59,6 +60,13 @@ export class ChestPlacement {
 		addEventListener( 'keydown', this.onKey );
 		this.arm( false );
 		this.reset();
+
+	}
+
+	/** What it draws, for the game to compile at start (GameView "First draws"). */
+	get samples(): THREE.Object3D[] {
+
+		return [ this.preview.mesh ];
 
 	}
 

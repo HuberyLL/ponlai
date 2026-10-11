@@ -30,6 +30,7 @@ import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
+import { compileDraws } from './post/Warm.ts';
 import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
@@ -464,6 +465,19 @@ if ( GAME ) {
 	game = await Game.start( {
 		params, scene, camera, canvas: renderer.domElement, vegetation: data.vegetation, plants: plantSites,
 		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment,
+		// The game's props, for the scene's multisampled target and then the sun's map (Game.render),
+		// one draw at a time and in the order a frame first draws them (the scene's pass, then the
+		// map's redraw): a prop's pass into the map shares its material's nodes, and compiled the
+		// other way round or side by side (compileAsync builds in steps between frames), the chest
+		// came out shaded differently from the chest drawn without them.
+		compileDraws: async ( objects ) => {
+
+			for ( const object of objects ) await compileDraws( renderer, [ object ], scene, camera, pipeline.sceneRT );
+			const casters = sunShadow.compileCasters( renderer, objects );
+			if ( casters ) await casters;
+			else console.warn( 'The sun\'s shadow map is not built yet: the game\'s props compile their shadow pass when first drawn' );
+
+		},
 		// every islander in the scene islander's proportions (the `islander` URL option)
 		loadLook: ( look ) => {
 
