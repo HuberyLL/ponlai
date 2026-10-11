@@ -4,7 +4,7 @@ import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.
 import { keepLegacyWind } from './WindVariants.ts';
 import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, LEAF_STEM, leafCastMask, markVegetation } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { useRestPoseShadows } from './VegetationShadow.ts';
+import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import { mulberry32, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
 import type { RimStrand } from './types.ts';
@@ -108,7 +108,7 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = fa
 	}
 	// The cloned bush material has shadow hooks for its own wind graph. Replace both
 	// hooks with this mesh's rest pose.
-	useRestPoseShadows( mat, positionLocal, swayed, leafCastMask() );
+	useRestPoseShadows( mat, positionLocal, swayed, leafCastMask(), previousSway( mat, shared.wind ) );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.72 ), float( 0.96 ), weight );
 	useLighting( mat, () => new VegetationLighting( float( 0.94 ), ( L, V, N ) => {

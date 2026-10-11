@@ -9,7 +9,7 @@ import { mulberry32 } from './noise.ts';
 import { ALPHA_TO_COVERAGE } from '../post/Antialiasing.ts';
 import { bushRooted, FOLIAGE_SEED, pickFoliageSites } from './FoliageSites.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { useRestPoseShadows } from './VegetationShadow.ts';
+import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import type { Shared } from '../shared.ts';
 
 // Individual folded leaves on short branching sprays. Three offset crowns keep bushes
@@ -387,7 +387,7 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture, legacy = fal
 		}, shared.wind );
 
 	}
-	useRestPoseShadows( mat, p, swayed, leafCastMask() );
+	useRestPoseShadows( mat, p, swayed, leafCastMask(), previousSway( mat, shared.wind ) );
 	// Each folded leaf keeps its own highlights and shading across the canopy.
 	mat.normalNode = normalViewGeometry;
 	// deep inside and underneath a bush the light is gone
