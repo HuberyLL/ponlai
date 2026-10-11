@@ -86,9 +86,13 @@ Game:
   per game day at 1x, default 1440: 24 minutes), `paused` (the game starts paused; the scene runs
   again once the game does), `load` (resume the game saved in this browser). The page's own
   `weather` option and auto weather work in the game as without it.
-- The game has no player interface yet: Space pauses only the game clock, the GUI's hour, clock
-  pause and time preset are off (the game's clock owns the time of day), and its Game folder
-  (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
+- The player's interface is a prototype HUD (`src/game/Hud.ts`): a readout of the islander (day
+  and time, satiety and hydration, the bag, what they are doing, the last words said and how the
+  last action ended) and a "Place chest" button that arms placement: a ring on the turf
+  previews the spot (green, or red with the reason), a click places it, Escape cancels, and the
+  control is gone once the chest stands (`src/game/Placement.ts`). Space pauses only the game
+  clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
+  day), and its Game folder (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
   (position, the action under way, whether a thought is in flight) and sends it walking to the
   next click on the island. The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five

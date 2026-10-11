@@ -61,7 +61,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   dynamic resolution, the frame pacer, the submit batching, the sample count, pipeline warm-up.
 - `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
 - `src/game/`: the game behind `?game` (`Game.ts`): `sim/` is the headless simulation (no three.js
-  or DOM; node runs it by stripping types), `view/` draws the islanders.
+  or DOM; node runs it by stripping types), `view/` draws the islanders, the palm and the
+  chest, and `Hud.ts` / `Placement.ts` are the player's prototype HUD.
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout.
 
 ## Rules for every change
