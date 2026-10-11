@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { Fn, uniform, vec2, vec4, float } from 'three/tsl';
 import { solarShadowVisibility } from '../lighting/SolarShadow.ts';
+import { compileDraws } from '../post/Warm.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -49,7 +50,11 @@ export class CharacterShadow {
 		this.depth = new THREE.DepthTexture( size, size, THREE.FloatType );
 		this.depth.compareFunction = THREE.LessEqualCompare;
 		this.depth.minFilter = this.depth.magFilter = THREE.LinearFilter;
-		this.target = new THREE.RenderTarget( size, size, { depthTexture: this.depth, depthBuffer: true } );
+		// The colour is never written. One channel keeps this map's render context its own: three
+		// shares one between targets of the same attachments (colour format, samples, depth flag)
+		// whatever their depth format, and `compile` builds with the context it collected in, so
+		// with the sun's map drawn in between it built a pipeline for that map's depth format.
+		this.target = new THREE.RenderTarget( size, size, { depthTexture: this.depth, depthBuffer: true, format: THREE.RedFormat } );
 		this.target.texture.name = 'characterShadowColor';
 		this.camera = new THREE.OrthographicCamera( - half, half, half, - half, 0, range );
 		this.camera.layers.set( CharacterShadow.LAYER );
@@ -77,6 +82,26 @@ export class CharacterShadow {
 			return island( own ).mul( solarShadowVisibility( depth, local, parameters ) );
 
 		} ) as unknown as Filter;
+
+	}
+
+	/** Compile the pipelines `object` draws into this map with, off the frame (a figure loaded
+	 * mid-game would build them in the frame that first draws the map with it). The pass material
+	 * takes no nodes from the figure's own, so only the scene's override is set while compileAsync
+	 * collects its draws (Warm.ts). */
+	compile( renderer: THREE.WebGPURenderer, scene: THREE.Scene, object: THREE.Object3D ): Promise<void> {
+
+		const override = scene.overrideMaterial;
+		scene.overrideMaterial = this.material;
+		try {
+
+			return compileDraws( renderer, [ object ], scene, this.camera, this.target );
+
+		} finally {
+
+			scene.overrideMaterial = override;
+
+		}
 
 	}
 

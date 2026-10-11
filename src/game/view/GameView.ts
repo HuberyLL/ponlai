@@ -32,7 +32,9 @@ import { VillagerView, disposeFigure } from './VillagerView.ts';
 // material and attributes, castShadow and receiveShadow), since that is what the pipelines are
 // keyed by, and shares the real thing's material where it can, so that the shaders are built too
 // (Props.ts buildingMaterial: every building and site shares one). The samples are never drawn and are kept for the page's life: disposing one would
-// release the pipelines it shares with the props drawn later.
+// release the pipelines it shares with the props drawn later. An islander's figure has no sample:
+// each load brings its own material, so `loadLook` hands a figure over only once its own draws
+// are compiled (main.ts), and a figure taken over on a load keeps the pipelines it drew with.
 
 export interface GameViewOptions {
 	sim: Sim;
@@ -108,6 +110,13 @@ export class GameView {
 		this.options = options;
 		this.group.name = 'game';
 		options.scene.add( this.group );
+
+	}
+
+	/** True once the view has drawn a frame and every islander shows something (its figure or a stand-in). */
+	get ready(): boolean {
+
+		return this.stamp > 0 && this.villagers.every( ( v ) => v.drawn );
 
 	}
 

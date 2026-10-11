@@ -149,8 +149,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - Programs that must produce bit-identical depth need `@invariant` on the clip position, which
   three r186 does not emit (`VegetationPrepass.ts`). A material that instances from storage
   buffers holds the placed position in a `toVar` (`GrassCull.ts`).
-- `renderer.compileAsync` reads the render target before its first await, and builds a
-  double-sided transparent material as one unused pipeline (`Warm.ts`).
+- `renderer.compileAsync` reads the render target before its first await, builds a
+  double-sided transparent material as one unused pipeline, and builds later with a render context
+  shared by every target of the same attachments whatever its depth format (`Warm.ts`).
 - `SubmitBatch.ts` wraps the device, queue and encoders and holds command buffers: raw WebGPU work
   and new queue operations must go through its rules, and one invalid command buffer loses its
   whole batch.
