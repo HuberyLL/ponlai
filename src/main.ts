@@ -992,6 +992,11 @@ resize();
 
 const clock = new THREE.Timer();
 clock.connect( document );
+// set by `loop.start()`: the next tick starts the clock over at its own timestamp. Timer.reset() takes
+// performance.now(), and the first animation frame's timestamp (its vblank) can be earlier than
+// that, which made the first delta negative (DayCycle.advance rejects it); the restarted loop's
+// first frame has a delta of 0 instead.
+let clockRestart = false;
 let frame = 0;
 addEventListener( 'keydown', ( e ) => {
 
@@ -1037,6 +1042,12 @@ function tick( time: number ): void {
 
 	// the frame's own vblank time, not the moment the tick starts: the main thread reaches the tick a
 	// few milliseconds into the frame, by a varying amount, which made the scene's steps uneven
+	if ( clockRestart ) {
+
+		clock.update( time );
+		clockRestart = false;
+
+	}
 	clock.update( time );
 	frameStats.record( time, pacer.interval, pacer.period );
 	const rawDt = clock.getDelta();
@@ -1343,7 +1354,7 @@ const loop = {
 		hiddenStop = false;
 		if ( loop.running ) return;
 		loop.running = true;
-		clock.reset();
+		clockRestart = true;
 		animation.start();
 
 	},

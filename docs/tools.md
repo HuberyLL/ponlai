@@ -71,6 +71,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `loop.step`'s `converge( i )`, where it returns true, holds the scene after frame i's tick and
   renders it until the rest has converged; `tools/capture-clip.mjs --aa gt [--gt-jitters n]` captures it that way,
   and so does a clip of one frame (`--clip rest`) under `aa=taa|taau` (their own rest sequence).
+  After `loop.step`, `loop.start()` resumes the clock with a first delta of 0.
 - `taaResolve=off` (debug builds): the temporal modes without their resolve, the jittered frame
   shown as it renders, through the output passes with the grade's vignette and grain.
 - `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB cache,
