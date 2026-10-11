@@ -50,11 +50,13 @@ export const SCENE_EVENTS = {
 	'gui': false,
 	// the page's keyboard toggles (Space: pause, H: the GUI)
 	'key toggle': false,
-	// the game (?game, Game.ts): a simulation installed (start, load), its speed or pause, and an
-	// order that changes what stands on the island (a placed blueprint)
+	// the game (?game, Game.ts): a simulation installed (start, load), its speed or pause, an order
+	// that changes what stands on the island (a placed blueprint), and an overlay the player's input
+	// moves (the placement ring following the pointer, Placement.ts)
 	'game begin': true,
 	'game speed': false,
 	'game order': false,
+	'game input': false,
 	// `__PONLAI__.taa.restart()`
 	'restart': true,
 } as const satisfies Record<string, boolean>;

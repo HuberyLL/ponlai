@@ -40,8 +40,8 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 // the debug panel's). The save is the state as JSON with a version number, in one slot. The ground
 // comes from the world generator's own exports: the bushes `buildFoliage` draws and the shrubs and
 // trees `pickPlantSites` placed, as obstacles. What changes the drawn scene at once (a simulation
-// installed at start or load, the speed or the pause, a placed blueprint) tells the page through the
-// context's `sceneEvent` (post/SceneEvents.ts), so the temporal anti-aliasing cuts its history or
+// installed at start or load, the speed or the pause, a placed blueprint, the placement ring the
+// pointer moves) tells the page through the context's `sceneEvent` (post/SceneEvents.ts), so the temporal anti-aliasing cuts its history or
 // converges a paused frame again.
 
 export interface GameContext {
