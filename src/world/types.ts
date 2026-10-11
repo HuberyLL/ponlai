@@ -62,6 +62,8 @@ export interface WorldData {
 	// Turf anchors: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
 	// (0 island), local sky visibility. Placement still uses the first eight.
 	vegetation: Float32Array;
+	// The rim bushes (FoliageSites' BUSH_STRIDE floats each).
+	bushes: Float32Array;
 	// Sparse trails that start in top shrubs and overhang the upper cliff.
 	rimStrands: RimStrand[];
 	rimGround: RimGroundField;

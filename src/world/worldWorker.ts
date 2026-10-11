@@ -6,6 +6,7 @@
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRimTrails } from './RimTrails.ts';
 import { buildRimGround, buildRimSkirt, coastPaths } from './RimGround.ts';
+import { pickBushes } from './FoliageSites.ts';
 import {
 	buildFootprint, makeIslandSDF, cliffSharpCells, makeRocks, makeRockSDF,
 	ISLAND_TOP, ISLAND_BOTTOM,
@@ -56,6 +57,7 @@ interface RestPart {
 	land: Uint8Array;
 	stones: Rock[];
 	vegetation: Float32Array;
+	bushes: Float32Array;
 	rimGround: WorldData[ 'rimGround' ];
 	rimSkirt: WorldData[ 'rimSkirt' ];
 	rimStrands: WorldData[ 'rimStrands' ];
@@ -342,6 +344,8 @@ function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 	mark( 'rimGround', t );
 
 	t = performance.now();
+	// The rim bushes, from the anchors (all of which lie within 0.6 m of the land's box).
+	const [ bushes ] = pickBushes( vegetation, [ { x0: b.x0 - 1, z0: b.z0 - 1, x1: b.x1 + 1, z1: b.z1 + 1 } ] );
 	// Bare runs between the trails are measured along the same traced coast.
 	const rimStrands = makeRimTrails( islandSDF, fp, vegetation, coastPaths( rimGround ) );
 	mark( 'rimFoliage', t );
@@ -383,7 +387,7 @@ function buildRest( ctx: Setup, timings: Record<string, number> ): RestPart {
 
 	const field = ( f: Field2D ) => ( { data: f.data, nx: f.nx, nz: f.nz, x0: f.x0, z0: f.z0, cell: f.cell } );
 	return {
-		land: land.toBytes(), stones: rocks, vegetation, rimGround, rimSkirt, rimStrands, seabed,
+		land: land.toBytes(), stones: rocks, vegetation, bushes, rimGround, rimSkirt, rimStrands, seabed,
 		shore: field( shore ), islandShore: field( islandShore ), seabedField: field( seabedField ),
 		seabedBeds: { data: bedData, nx: bx, nz: bz, x0: shore.x0, z0: shore.z0, cell: bedCell },
 	};
@@ -400,7 +404,7 @@ function transferMesh( m: MeshData, transfer: Transferable[] ): void {
 
 function transferRest( rest: RestPart, transfer: Transferable[] ): void {
 
-	transfer.push( rest.land.buffer, rest.vegetation.buffer, rest.rimGround.data.buffer, rest.rimSkirt.points.buffer, rest.rimSkirt.info.buffer, rest.rimSkirt.loops.buffer );
+	transfer.push( rest.land.buffer, rest.vegetation.buffer, rest.bushes.buffer, rest.rimGround.data.buffer, rest.rimSkirt.points.buffer, rest.rimSkirt.info.buffer, rest.rimSkirt.loops.buffer );
 	for ( const strand of rest.rimStrands ) transfer.push( strand.points.buffer, ...( strand.clump ? [ strand.clump.buffer ] : [] ) );
 	const { positions, normals, ao, bed, indices } = rest.seabed;
 	transfer.push( positions.buffer, normals.buffer, ao.buffer, bed.buffer, indices.buffer );
@@ -429,6 +433,7 @@ function assemble( island: MeshData, rocks: MeshData[], rest: RestPart, timings:
 		rocks: rest.stones,
 		seabed: rest.seabed,
 		vegetation: rest.vegetation,
+		bushes: rest.bushes,
 		rimStrands: rest.rimStrands,
 		rimGround: rest.rimGround,
 		rimSkirt: rest.rimSkirt,
