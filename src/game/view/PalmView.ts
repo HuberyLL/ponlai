@@ -3,7 +3,8 @@ import { attribute, float, positionGeometry, select, uniform, vec3 } from 'three
 import { shared } from '../../shared.ts';
 import { setWindDisplacement, wave } from '../../weather/Wind.ts';
 import { mainBend } from '../../world/Foliage.ts';
-import { useRestPoseShadows } from '../../world/VegetationShadow.ts';
+import { previousSway, useRestPoseShadows } from '../../world/VegetationShadow.ts';
+import { followWindMotionFlag } from '../../world/WindVariants.ts';
 import { PALM_COCONUTS } from '../sim/places.ts';
 import type { PalmState } from '../sim/types.ts';
 import { BALL, PropBuilder, at, hashAt, propMaterial } from './Props.ts';
@@ -19,9 +20,11 @@ import type { RGB } from './Props.ts';
 // It moves in the one wind (Wind.ts): the whole palm bends from its foot with the gust field at
 // its root, slowly, as the island's trees do (Foliage.ts mainBend), and each frond swings on its
 // own phase from the crown out. Its shadow keeps the rest pose, as the vegetation's does
-// (VegetationShadow.ts). The geometry is in world space (the mesh sits at the origin), as the
-// wind field is sampled at world positions. Its top stays below the island's tallest trees, inside
-// the sea's reflection box and the sun shadow's casters (Water.ts, SunShadow.ts).
+// (VegetationShadow.ts), and under the temporal modes it writes the wind's motion as they do (its
+// previous sway, class vegetation; `flags.mv.wind` turns it off, WindVariants.ts). The geometry
+// is in world space (the mesh sits at the origin), as the wind field is sampled at world
+// positions. Its top stays below the island's tallest trees, inside the sea's reflection box and
+// the sun shadow's casters (Water.ts, SunShadow.ts).
 //
 // Every palm draws with one material (`palmMaterial`), kept for the page's life: what differs
 // between palms (its root, its crown, its coconut count) reaches the shader as per-object uniforms
@@ -206,7 +209,8 @@ function palmMaterial(): THREE.MeshStandardNodeMaterial {
 		return bent.position.add( frond );
 
 	}, shared.wind );
-	useRestPoseShadows( m, rest, swayed );
+	useRestPoseShadows( m, rest, swayed, undefined, previousSway( m, shared.wind ) );
+	followWindMotionFlag( m );
 	return m;
 
 }
