@@ -63,7 +63,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`LightShafts.ts`), FSR 1, render scale and dynamic resolution, the frame pacer, the submit
   batching, the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
   temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal resolve
-  (`TemporalAA.ts`) and the image of a resting scene (`TemporalRest.ts`).
+  (`TemporalAA.ts`), the image of a resting scene (`TemporalRest.ts`) and the scene events that
+  restart it or cut the history (`SceneEvents.ts`).
 - `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
   TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
   `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches
@@ -168,7 +169,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`FrameGraph.ts`, `graph/Compile.ts`; a shadow map's draws with `compileLatentInto`).
 - Under the temporal modes every scene material writes the velocity beside the colour: one with
   a fragmentNode writes both outputs, one whose positionNode animates supplies `positionPrevious`
-  (`Motion.ts`).
+  (`Motion.ts`). A new site that changes the scene in a way its frames do not show (a seek, a jump,
+  a new scene, a control that retunes a paused frame) raises a scene event (`SceneEvents.ts`).
 - `SubmitBatch.ts` wraps the device, queue and encoders and holds command buffers: raw WebGPU work
   and new queue operations must go through its rules, and one invalid command buffer loses its
   whole batch. `graph/AttachmentOps.ts` wraps the encoders too: a wrapper that hands out encoders

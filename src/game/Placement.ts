@@ -16,7 +16,9 @@ import { PlacementPreview } from './view/PlacementPreview.ts';
 //
 // Rules: a press that moves CLICK_SLOP or more is the camera's drag, not a click, as for the debug
 // panel's send-to-click; the preview reads the same refusal the simulation applies
-// (buildings.ts blueprintRefusal), so green always means the click will place it.
+// (buildings.ts blueprintRefusal), so green always means the click will place it. A change of the
+// ring (moved, recoloured, shown or hidden) is a scene event ('game input'): on a paused page the
+// temporal anti-aliasing shows a converged image until told the scene changed.
 
 const HINT = 'Click the island to place it · Esc to cancel';
 
@@ -94,7 +96,7 @@ export class ChestPlacement {
 		if ( on ) this.showPreview();
 		else {
 
-			this.preview.show( null, false, this.game.sim.grid );
+			this.ring( null, false );
 			this.say( '' );
 
 		}
@@ -121,8 +123,14 @@ export class ChestPlacement {
 
 		const sim = this.game.sim, p = this.target();
 		const reason = p && blueprintRefusal( sim, 'chest', p );
-		this.preview.show( p, p !== null && reason === null, sim.grid );
+		this.ring( p, p !== null && reason === null );
 		this.say( reason || HINT, !! reason );
+
+	}
+
+	private ring( p: Vec2 | null, ok: boolean ): void {
+
+		if ( this.preview.show( p, ok, this.game.sim.grid ) ) this.context.sceneEvent( 'game input' );
 
 	}
 

@@ -81,6 +81,8 @@ export interface HudContext {
 	canvas: HTMLCanvasElement;
 	camera: THREE.Camera;
 	scene: THREE.Scene;
+	/** a change of the scene for the temporal anti-aliasing (GameContext.sceneEvent) */
+	sceneEvent( reason: 'game input' ): void;
 }
 
 export class GameHud {

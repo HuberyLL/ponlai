@@ -61,7 +61,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   sample, over the tier's `aa` knob; `taa` and `taau`, the temporal modes, from the URL only: one
   sample, jittered, with motion vectors, resolved against a history in `TemporalAA.ts`, at the
   render's size or upsampled to the canvas; a paused page shows the rest image, the jitter
-  sequence averaged, once it has converged, `TemporalRest.ts`) and its older alias `msaa` (`4`
+  sequence averaged, once it has converged, `TemporalRest.ts`; what changes the scene raises a
+  scene event, `SceneEvents.ts`, which restarts the rest and may cut the history: the diagnostics'
+  `taa.lastEvent`, and `__PONLAI__.taa.restart()` by hand) and its older alias `msaa` (`4`
   reads as `aa=msaa`, `1` and `2` as `aa=off`, since WebGPU multisamples with 1 or 4 samples
   only).
 - `aa=gt` (debug builds only; refused with a warning otherwise): the ground truth the temporal

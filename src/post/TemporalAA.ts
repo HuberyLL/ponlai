@@ -7,6 +7,7 @@ import type { TemporalSettings } from '../Quality.ts';
 import { jitter } from './Jitter.ts';
 import { motionState, motionUniforms, onTaaCut, reactiveUniforms } from './Motion.ts';
 import { TemporalRest, restEpoch } from './TemporalRest.ts';
+import { sceneEvents } from './SceneEvents.ts';
 import { FSR, rcas } from './FSR.ts';
 import { temporalSharpness } from './Antialiasing.ts';
 import type { FrameGraph, ResourceHandle, SizeClass } from './graph/FrameGraph.ts';
@@ -907,6 +908,8 @@ export class TemporalAA {
 			restIndex: this.rest.index,
 			restEpoch: restEpoch.value,
 			restReason: restEpoch.reason,
+			// the last scene event (SceneEvents.ts): its reason, whether it cut, the frame it followed
+			lastEvent: sceneEvents.last,
 			jitterIndex: jitter.k + 1,
 			jitterLength: jitter.restIndex !== null ? this.rest.sequence : jitter.length,
 			// the running history started over (cuts, resizes it could not be carried across), and the

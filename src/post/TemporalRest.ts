@@ -17,8 +17,8 @@
 // review sets while paused). The frame is not at rest while the page says it is unstable (a sky bake
 // in flight, a sky transition still running). Anything else that changes the image without changing
 // the key (a GUI control, a weather jump, a seek to the same time) bumps the epoch
-// (`restEpoch.bump( reason )`): the scene events (SceneEvents, taa-events) call it from every site
-// that changes the scene, and `__PONLAI__.taa.restart()` does by hand.
+// (`restEpoch.bump( reason )`): the scene events (SceneEvents.ts `sceneEvent`) call it from every
+// site that changes the scene, `__PONLAI__.taa.restart()` among them.
 
 /** The epoch of the scene's state: a bump restarts the rest (and nothing else). */
 export const restEpoch = {
