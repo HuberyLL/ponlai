@@ -334,7 +334,7 @@ function buildChest( sim ) {
 	assert.deepEqual( site, { id: 'chest', kind: 'chest', x: at.x, z: at.z, worked: 0, items: {} } );
 	assert.equal( stageOf( site ), 'planned' );
 	assert.ok( ! sim.grid.openAt( at.x, at.z ), 'the site blocks its ground from the start' );
-	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, { construction: 'marked out, not begun' }, 'a planned site shows as one' );
+	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, { construction: 0 }, 'a planned site shows as one, not begun' );
 	assert.equal( run( sim, { tool: 'go', args: { place: 'chest' } } ).ok, true );
 	assert.deepEqual( perceive( sim, v ).atHand.find( ( h ) => h.place === 'chest' ).options, [ 'build' ], 'an unbuilt site offers only build' );
 	v.bag = { fish: 1 };
@@ -349,7 +349,7 @@ function buildChest( sim ) {
 	assert.equal( sim.tools.get( 'wait' )( v, { seconds: 60 }, sim ).ok, true );
 	sim.step( 60 );
 	assert.equal( site.worked, part, 'the work done stays when the building stops' );
-	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, { construction: 'being built, about a quarter done' }, 'how far along, in words' );
+	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, { construction: Math.floor( part / CHEST_WORK * 100 ) }, 'how far along, in percent' );
 
 	// a save mid-build plays on as the original
 	assert.equal( sim.tools.get( 'do' )( v, { action: 'build' }, sim ).ok, true );
