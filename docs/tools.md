@@ -86,13 +86,15 @@ Game:
   per game day at 1x, default 1440: 24 minutes), `paused` (the game starts paused; the scene runs
   again once the game does), `load` (resume the game saved in this browser). The page's own
   `weather` option and auto weather work in the game as without it.
-- The game has no player interface: Space pauses only the game clock, the GUI's hour, clock pause
-  and time preset are off (the game's clock owns the time of day), and its Game folder
+- The game has no player interface yet: Space pauses only the game clock, the GUI's hour, clock
+  pause and time preset are off (the game's clock owns the time of day), and its Game folder
   (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
-  (position, walking or standing, whether a thought is in flight) and sends it walking to the next
-  click on the island. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools`,
-  `setBrain( brain )` (kept across a load), `think( id )`, `walkTo( id, x, z )`, `focus( id )`,
-  `setSpeed`, `togglePause`, `save` and `load`.
+  (position, the action under way, whether a thought is in flight) and sends it walking to the
+  next click on the island. The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
+  by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
+  actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
+  `think( id )`, `walkTo( id, x, z )`, `placeStorehouse( x, z )` (once; returns why not, or null),
+  `focus( id )`, `setSpeed`, `togglePause`, `save` and `load`.
 
 ## Captures
 
@@ -212,9 +214,11 @@ what these do not give (automation, A/B statistics, pass names).
   optics (each file names the server it expects); they take the GPU lock (shared).
   `tools/verify-scene.mjs` checks a production preview.
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
-  are CPU-only (plain `node`). `verify-game.mjs` runs a few checks of the game's skeleton: the
-  clock, the ground and a path, a body walking to a point, a save round trip, a brain's late
-  answer; its island is in `tools/game-fixture.mjs`.
+  are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
+  ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
+  first prototype's rules (needs, the bag, the palm, fishing, the storehouse, the actions, the
+  perception, the stand-in brain over a few game days, a save mid-action); its island is in
+  `tools/game-fixture.mjs`.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and

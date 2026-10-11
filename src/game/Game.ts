@@ -9,13 +9,14 @@ import { newGame, loadGame } from './sim/Sim.ts';
 import type { Sim } from './sim/Sim.ts';
 import { actionTools } from './sim/actions.ts';
 import type { Brain, ToolRegistry, ToolResult } from './sim/agent.ts';
+import { StandInBrain } from './sim/standin.ts';
 import { GameView } from './view/GameView.ts';
 import { SECONDS_PER_GAME_DAY } from './sim/types.ts';
 import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 
 // The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
-// needs and the places they act at, a brain in its slot may think for them (none by default: they
-// stand idle) and GameView draws them into the scene. There is no player
+// needs and the places they act at, a brain in its slot thinks for them (the stand-in of plain
+// rules by default, sim/standin.ts) and GameView draws them into the scene. There is no player
 // interface yet: the debug panel's Game folder (GameDebug.ts) and the methods below, reached from
 // the console as window.__PONLAI__.game, drive it (placeStorehouse is the player's one act). The
 // simulation's clock sets the time of day; the page's sky follows it, so pausing or speeding up the
@@ -91,7 +92,7 @@ export class Game {
 	/** the tools a brain acts through, by name (sim/agent.ts): the five actions, kept across a load */
 	readonly tools: ToolRegistry = actionTools();
 	// the brain in the islanders' slot, kept across a load (setBrain)
-	private brain: Brain | null = null;
+	private brain: Brain | null = new StandInBrain();
 	private gameDt = 0;
 	private resumeSpeed: Speed = 1;
 
