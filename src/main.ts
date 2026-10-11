@@ -50,7 +50,7 @@ import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
 import { restEpoch } from './post/TemporalRest.ts';
-import type { TemporalFrame } from './post/TemporalAA.ts';
+import { TemporalAA, type TemporalFrame } from './post/TemporalAA.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
@@ -400,6 +400,8 @@ rain.setLightNode( shared.skyIrradianceSource, shared.sunDir, shared.sunColor, s
 const fgview = DEBUG ? debugViewFromURL() : null;
 if ( fgview ) installDebugView( fgview, {
 	exposure: () => pipeline.settings.exposure / SCENE_RADIANCE_SCALE,
+	// (the resolve exists while the pipeline compiles its graph, before `pipeline` is assigned)
+	temporal: () => TemporalAA.current,
 	motion: {
 		previousViewProjection: motionUniforms.previousViewProjection, projectionInverse: jitter.uniforms.unjitteredProjectionInverse,
 		jitterNdc: jitter.uniforms.ndc, opaqueBelow: ( MOTION_CLASS.opaque + MOTION_CLASS.vegetation ) / 2,

@@ -117,6 +117,9 @@ export interface TemporalFrame {
 	dt?: number;
 }
 
+/** The debug views of the resolve (graph/DebugView.ts). */
+export type TemporalDebugView = 'weight' | 'disocclusion' | 'clip';
+
 // The S-curve undone (three Newton steps from s' itself) and the sRGB transfer: display values back
 // to linear. No uniform inside, so the layout function serves every shader.
 const toLinear = Fn( ( [ s, k ]: [ V3, F ] ) => {
@@ -160,6 +163,8 @@ interface Variants { pass: string; kind: 'quad' | 'chain'; quads: THREE.QuadMesh
 
 export class TemporalAA {
 
+	/** The page's resolve, once built (the debug view asks for it while the graph compiles). */
+	static current: TemporalAA | null = null;
 	readonly mode: TemporalMode;
 	/** The live settings (the GUI tunes them; the uniforms follow every frame). */
 	readonly settings: TemporalSettings;
@@ -205,6 +210,9 @@ export class TemporalAA {
 	private canvasPipelines: THREE.RenderPipeline[] = [];
 	private encodeQuads: THREE.QuadMesh[] = [];
 	private upscaledPipeline: THREE.RenderPipeline | null = null;
+	// the debug view's builds by parity (graph/DebugView.ts asks for one)
+	private debugQuads: THREE.QuadMesh[] = [];
+	private debugTarget: ResourceHandle | null = null;
 	private sharpnessFrom = 1;
 	private sharpnessTime = SHARPNESS_EASE;
 	private settingsKey = '';
@@ -266,6 +274,7 @@ export class TemporalAA {
 
 		} );
 		this.applySettings();
+		TemporalAA.current = this;
 
 	}
 
@@ -299,7 +308,7 @@ export class TemporalAA {
 			depthPrev: g.texture( surfaceDepthPrev ), veil: g.texture( veilReactive ),
 		};
 		// the resolve, built once per parity of the history it reads
-		const build = ( history: THREE.Texture, kind: 'running' | 'rest', name: string ) => {
+		const build = ( history: THREE.Texture, kind: 'running' | 'rest' | TemporalDebugView, name: string ) => {
 
 			const node = texture( history );
 			const material = new THREE.NodeMaterial();
@@ -461,9 +470,47 @@ export class TemporalAA {
 
 	}
 
-	// The resolve's shader: the running resolve or the rest's.
+	/** Debug builds (graph/DebugView.ts): a pass after the resolve that draws one of its debug
+	 * values (`view`) into a target of the history's size, and the target, for the view to show. */
+	declareDebugView( view: TemporalDebugView, inputs: { display: ResourceHandle; velocity: ResourceHandle; surfaceDepth: ResourceHandle; surfaceDepthPrev: ResourceHandle; veilReactive: ResourceHandle } ): ResourceHandle {
+
+		const g = this.graph;
+		const renderSize = g.extent( RENDER ), outputSize = g.extent( this.historyClass );
+		const textures = {
+			display: g.texture( inputs.display ), velocity: g.texture( inputs.velocity ), depth: g.texture( inputs.surfaceDepth ),
+			depthPrev: g.texture( inputs.surfaceDepthPrev ), veil: g.texture( inputs.veilReactive ),
+		};
+		let target = this.debugTarget ??= g.color( 'taaDebug', { size: this.historyClass, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
+		this.debugQuads = [ 0, 1 ].map( ( p ) => {
+
+			const material = new THREE.NodeMaterial();
+			material.name = 'TAA.Debug';
+			material.fragmentNode = this.resolve( textures, texture( g.texture( this.historyPrev, p as 0 | 1 ) ), view, renderSize, outputSize );
+			return new THREE.QuadMesh( material );
+
+		} );
+		const history = this.history;
+		g.addPass( 'taaDebug', 'quad', ( b ) => {
+
+			b.read( inputs.display );
+			b.readOptional( inputs.velocity );
+			b.read( inputs.surfaceDepth );
+			b.read( inputs.surfaceDepthPrev );
+			b.readOptional( inputs.veilReactive );
+			b.read( this.historyPrev );
+			target = b.write( target );
+			// (the history's parity is the frame's, as for the resolve)
+			return { label: 'debug view', quad: this.debugQuads[ 0 ], run: () => this.debugQuads[ g.parityOf( history ) ].render( this.renderer ) };
+
+		} );
+		this.variants.push( { pass: 'taaDebug', kind: 'quad', quads: this.debugQuads, pipelines: [] } );
+		return target;
+
+	}
+
+	// The resolve's shader: the running resolve, the rest's, or one of its debug values.
 	private resolve( t: { display: THREE.Texture; velocity: THREE.Texture; depth: THREE.Texture; depthPrev: THREE.Texture; veil: THREE.Texture },
-		history: THREE.TextureNode, kind: 'running' | 'rest', inputSize: Uniform2, outputSize: Uniform2 ): V4 {
+		history: THREE.TextureNode, kind: 'running' | 'rest' | TemporalDebugView, inputSize: Uniform2, outputSize: Uniform2 ): V4 {
 
 		const O = this.options, S = this.settings, u = this.u, K = this.knobs;
 		const rest = kind === 'rest';
@@ -660,10 +707,18 @@ export class TemporalAA {
 					.mul( clamp( float( 1 ).sub( reactive ), 0, 1 ) ).mul( dof );
 				const valid = inside.and( u.reset.lessThan( 0.5 ) ).and( disoccluded.lessThan( 0.5 ) ).and( passThrough.not() );
 				historyWeight.assign( select( valid, min( max( hist.a, 0 ), frames.mul( perFrame ) ), float( 0 ) ) );
+				If( inside.not().or( u.reset.greaterThan( 0.5 ) ), () => {
+
+					disoccluded.assign( select( u.reset.greaterThan( 0.5 ), float( 3 ), float( 2 ) ) );
+
+				} );
 
 			}
 			const total = historyWeight.add( currentWeight ).toVar();
 			const resolved = clipped.mul( historyWeight ).add( current.mul( currentWeight ) ).div( total );
+			if ( kind === 'weight' ) return vec4( vec3( historyWeight.div( total ) ), 1 );
+			if ( kind === 'disocclusion' ) return vec4( select( disoccluded.equal( 1 ), float( 1 ), float( 0 ) ), select( disoccluded.equal( 2 ), float( 1 ), float( 0 ) ), select( disoccluded.equal( 3 ), float( 1 ), float( 0 ) ), 1 );
+			if ( kind === 'clip' ) return vec4( vec3( clamp( reach.sub( 1 ), 0, 1 ) ), 1 );
 			return vec4( max( fromYCoCg( resolved ), vec3( 0 ) ), total );
 
 		} )() as V4;
@@ -867,7 +922,7 @@ export class TemporalAA {
 	dispose(): void {
 
 		this.carry.dispose();
-		for ( const quad of [ ...this.resolveQuads, ...this.restQuads, ...this.encodeQuads ] ) ( quad.material as THREE.Material ).dispose();
+		for ( const quad of [ ...this.resolveQuads, ...this.restQuads, ...this.encodeQuads, ...this.debugQuads ] ) ( quad.material as THREE.Material ).dispose();
 		for ( const pipeline of [ ...this.canvasPipelines, ...( this.upscaledPipeline ? [ this.upscaledPipeline ] : [] ) ] ) pipeline.dispose();
 		this.fsr?.dispose();
 
