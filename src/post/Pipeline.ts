@@ -82,10 +82,48 @@ import type { Rain } from '../weather/Rain.ts';
 // At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass and the bloom
 // chains' own passes, so one that first runs later (fog, the upscale, the look's glow) builds
 // nothing then.
-// Its attachment ops (graph/AttachmentOps.ts) are derived each frame from the passes that run:
-// the scene target's multisampled samples are discarded after the last pass that reads them, and
-// the water leaves its resolve to the rain when the rain follows. Every texture a pass binds must
-// be declared as its read, or the ops may discard what it samples.
+
+//
+// Rules (the look itself is in docs/art-direction.md):
+// - Sizes are owned by the graph (graph/FrameGraph.ts): it sizes every target by its size class
+//   from `setSize` (the render; a share of it: the sea fog's reduced targets, the blur's and the
+//   shafts' halves; the canvas: FSR's EASU target; fixed: the fog's bank map), and every pass reads
+//   its sizes from the graph's shared extent uniforms (`graph.extent( cls )`, `graph.texel( cls )`
+//   for one over it), never from a copy of its own. Declare a new target on the graph with its
+//   class, and new post work as a pass of its own drawing into it, not as an rtt() inside another
+//   pass's material (three sizes an rtt() to the canvas, not the render, and runs it out of the
+//   graph's sight). A target three makes itself (a bloom chain's) is imported into the graph and
+//   follows the render through `graph.onResize`.
+// - The graph's attachment ops are derived each frame from the passes that run and the reads they
+//   declare (graph/AttachmentOps.ts): with rain the water stores `sceneRT`'s samples and leaves the
+//   resolve to the rain, which then discards colour and depth; without it the water discards the
+//   multisampled colour and keeps the depth the surface resolve reads. So every texture a pass
+//   binds from the scene target (colour, multisampled depth) must be declared (`read`,
+//   `readOptional`): an undeclared read of a discarded attachment shows garbage, and one between
+//   the water and the rain sees the scene without the sea.
+// - `render` is `graph.execute`: the sea fog's bank, depth and march, the view distance and the
+//   output and FSR passes are graph passes too (the `post=` switches choose which are declared at
+//   load), so new frame work goes in as a pass, not as a call around the graph. A pass that
+//   declares no depth clears whatever depth its target holds outside the graph (the canvas's, and
+//   the targets three's nodes draw into inside a pass), as three's defaults do; declare the depth
+//   to keep it.
+// - The water cannot sample the target it draws into: it reads `opaqueRT` and `depthRT` (sample 0,
+//   and the farthest sample for what lies behind the sea at an edge pixel). Post passes read
+//   `surfaceRT`, the nearest surface's depth with the sea's included. Multisampled depth is read
+//   with `textureLoad`, one sample at a time (the sample index in its level argument);
+//   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
+// - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
+//   come in as uniforms.
+// - The tone curve and its grade come first; each curve carries its own grade. The night keeps
+//   PBR Neutral's look with its grade whichever curve is chosen, crossfading as the sun sets (from
+//   the horizon to about -3 degrees, so twilight is no darker than under PBR Neutral).
+// - The look is a layer after the curve and grade, never baked into the lighting or the curve;
+//   every parameter is in the GUI. It fades out with the night, its glow, golden highlights and
+//   lift follow the weather's direct sunlight, and only part of its colour holds under a closed
+//   sky, so bad weather stays dimmer and greyer than a clear day.
+// - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a
+//   blurred sky reads as a low backdrop and turns stars into bokeh discs. Rain drops follow its
+//   focus (Rain.ts).
 
 // The graph's dev checks (every target at its class's size, the attachment ops that reached
 // WebGPU): on the dev server and with `?debug`.

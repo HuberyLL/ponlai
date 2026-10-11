@@ -48,6 +48,14 @@ type V4 = THREE.Node<'vec4'>;
 // This project keeps its own weather on top: coverage and density sweep in as a front from
 // upwind, rain hangs in curtains under raining cloud, and high cirrus (Cirrus.ts) lies above.
 // Everything returns vec4( in-scattered radiance, transmittance ).
+//
+// Rules: the view accumulates over frames, and a scene at rest (paused clock, still camera)
+// settles its clouds once and keeps them, so a paused frame is exactly repeatable. The march
+// assumes a camera below the cloud base. On high the view's resolution is a share of the display
+// (0.58 of the render at high's nominal ratio), not of the render, so the dynamic render scale
+// neither softens the clouds again nor rebuilds the view's kernels. Lightning's light inside the
+// cloud stays out of the view's accumulated history, the bake and the panorama. The panorama and
+// the shadow map refresh in part each frame and whole on a jump and when a paused scene settles.
 
 export const EARTH_RADIUS = 6_360_000;
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;

@@ -24,7 +24,9 @@ import type { SDF, MeshData, MeshKind, NamedMesh, Rock, WorldData, WorldOptions 
 // results in the serial order, so the world is identical to the serial one, bit for bit, whatever
 // the number of threads. It stays idle meanwhile, since a nested worker only starts while its
 // parent's thread is free. Every part repeats the cheap shared setup (footprint, SDFs, stones,
-// contact solids) from the same seeds instead of receiving it.
+// contact solids) from the same seeds instead of receiving it. Generation stays deterministic
+// whatever the thread count: parts never share running counts, and the merge restores the
+// serial order.
 //
 // A message of bare WorldOptions (the node tools) builds the whole world here and posts the
 // WorldData synchronously; with `part` it builds one part.

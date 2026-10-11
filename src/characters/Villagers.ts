@@ -12,6 +12,10 @@ import type { Shared } from '../shared.ts';
 // one skeleton and its animation clips. The parts are repainted in the island's palette as
 // vertex colours and merged into one skinned mesh, lit by the island's character light. One
 // walks a loop through the meadow; the walk clip's rate follows its speed so feet do not slide.
+// Their dress stays plain while the basic look settles: undyed linen and calm earthy tones, leather
+// shoes, no hat (looks.ts). While the character art is settled the models load from the
+// git-ignored artifacts/assets/ (dev server only). A small moving sun-shadow map of the figures is
+// multiplied into the island's (CharacterShadow.ts).
 
 export type GroundFn = ( x: number, z: number ) => number;
 

@@ -22,6 +22,9 @@ type V3 = THREE.Node<'vec3'>;
 // (2013): water first fills the pores of a rough, porous surface (it darkens and loses a little
 // roughness), then a film of water covers it (water's own smooth specular and a flatter normal),
 // and finally standing water fills the hollows (see ../weather/Puddles.ts).
+// Rules: wetness darkens exposed rock and plants within small limits, glosses bare stone,
+// persists after rain and leaves the tidal band alone; dry weather renders exactly as without it.
+// Water runs down the cliffs in sparse darker runnels while they are wet.
 
 // Water's hemispherical reflectance for diffuse light (n = 1.33), and the internal reflectance of
 // the same interface seen from below: everything beyond the critical angle returns to the ground.

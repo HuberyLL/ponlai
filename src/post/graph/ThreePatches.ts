@@ -20,6 +20,10 @@ import { REVISION } from 'three/webgpu';
 // disposes the object (NodeManager.delete), when its shared context may hold another target's
 // textures, and a key read then would miss the build's cache entry (leaking it) or evict another
 // layout's. (A render object never changes its build: three makes a new one when its key changes.)
+//
+// `tools/verify-frame-graph-gpu.mjs` checks the patches (both orders of an MRT and a plain draw, a
+// swapped layout). They refuse another three revision with a warning, and `Antialiasing.ts` then
+// refuses the temporal modes, which need them: re-check them on a three upgrade.
 
 type Texture = { format: unknown; type: unknown; name: string };
 type RenderContext = { mrt?: { id: number } | null; textures: Texture[] | null };

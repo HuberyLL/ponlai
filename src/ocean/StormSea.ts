@@ -23,6 +23,10 @@ type IV2 = THREE.Node<'ivec2'>;
 
 // The storm sea's memory: persistent whitecap foam and the spray torn off breaking crests.
 //
+// The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
+// rough sea with whitecaps on folding crests, foam that trails behind them and fades, and spray.
+// Storm foam and spray are lit by the scene, never self-lit.
+//
 // Whitecaps are born where the sea's horizontal Jacobian nears a fold (Tessendorf's choppy-wave
 // criterion), but real foam outlives the crest that made it: it trails behind the breaker and
 // fades over seconds. After tidewater's OceanFFT, foam therefore integrates in time:

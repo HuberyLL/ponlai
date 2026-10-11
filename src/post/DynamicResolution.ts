@@ -37,6 +37,16 @@ import type * as THREE from 'three/webgpu';
 // The page renders at the tier's nominal scale whenever the scale is pinned (`?dpr`, the GUI's
 // full resolution) or the scene is paused, so paused frames and captures render at the reference
 // scale whatever scale the running page had reached.
+// The range runs from the display's ratio (up to 1.5) down to 0.6 in steps of 0.05 (Quality.ts).
+// The loading screen waits for the first decision (at most 3 s), so the first jump from the
+// nominal ratio happens behind it. A change only resizes the frame graph's targets: no pipeline is
+// built and no frame is dropped (the cloud view on high is sized from the display, so its kernels
+// never rebuild). Anything sized by the render must stay a render pass or be sized from something
+// fixed: a compute kernel dispatched by a target's size is rebuilt at every step.
+// `?gpuTimer=off` steers by the frame intervals. With `trackTimestamp` three resolves its queries
+// into one buffer and drops what it resolves while that is mapped; `GpuFrameTimer` and the frame
+// profiler each take over the pools' `resolveQueriesAsync`, so only one may own them: while the
+// profiler times passes it feeds this from its own readings.
 
 // The quantile of the window's GPU times it steers (QUANTILE), and the time (ms) left in the paced
 // interval for the main thread's share of the frame and the compositor: past the interval less

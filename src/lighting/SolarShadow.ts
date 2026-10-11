@@ -10,6 +10,12 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type B = THREE.Node<'bool'>;
 
+// The sun's soft shadow: PCSS for the solar disk, each 2x2 footprint read with one
+// `textureGather` and compared by hand. three picks one sampler type per depth texture per
+// material, so a material whose filter gathers a map reads that map only by gather and compares by
+// hand (`solarVolumeVisibility`); a comparison-sampler reference belongs in a material of its own.
+// Filters that take `dFdx` / `dFdy` stay out of `select()` / `If` branches (`installOpenShadow`).
+
 const BLOCKER_SAMPLES = 6, FILTER_SAMPLES = 8;
 
 // PCSS: Fernando, "Percentage-Closer Soft Shadows", SIGGRAPH 2005 sketches.

@@ -38,6 +38,25 @@ import { compileBound, compileChain, compileLatent, compileNodes, compileQuad, s
 // before the graph: a pass that runs only now and then (the sea fog, the upscale) allocates
 // nothing until it does. A depth texture's size is set by the graph itself, since three resizes it
 // only through the one target that owns it.
+//
+// A pass that declares no depth clears whatever depth its target holds outside the graph (the
+// canvas's, and the targets three's nodes draw into inside a pass), as three's defaults do; declare
+// the depth to keep it.
+//
+// The warm-up (`warm`, with Compile.ts) compiles every pass and the latents registered with it at
+// startup; the world, vegetation, water, character and shadow-map materials still build in their
+// first frames (the warm-up runs before the world exists, the water's pass on an empty scene). It
+// compiles each pass under its own binding (target, MRT, depth flags), the passes three's nodes
+// render inside a pass (a bloom chain), and the objects and kernels owners register as run only at
+// times (`latent( pass, objects, kernels )`: the rain, the bolts, the storm's spray and foam). A new
+// pass, or a draw that first shows later, joins it the same way; `tools/verify-first-use.mjs`
+// counts the pipelines any step still creates. A miss is not harmless: a material built twice under
+// two keys can be emitted with the first build's uniform names in a layout function (r186), an
+// invalid shader. Priming (rendering a pass once at startup) covers only what the walker cannot
+// reach (three's FSR1Node, `post=three-fsr`), never leaves a persistent resource written, skips a
+// node that may keep state of its own (a history) unless the pass's owner resets it (`invalidate`),
+// and is off with `fgPrime=0`, for the check that it changes no frame. A latent registered for a
+// pass the graph does not have is reported (`warmStats.failed`) and builds on first use.
 
 export type { SizeClass, ResourceHandle, ResourceDesc, PassKind } from './GraphCompiler.ts';
 

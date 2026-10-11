@@ -18,7 +18,8 @@ type Reflected = { directDiffuse: V3; directSpecular: V3; indirectDiffuse: V3; i
 // band, the shade is filled by the same sky and the sunlit meadow that light the island, and a
 // thin rim catches the sun along the silhouette. The light's colour, the sky's irradiance and
 // the shadow maps are the scene's own, so a figure sits in the island's light while its forms
-// stay simple and graphic.
+// stay simple and graphic. Flat colours and simple faces in the island's palette, soft cel steps,
+// no outlines; plants keep their realistic shading (docs/art-direction.md).
 //
 // Under the temporal modes the material writes the figure's motion vectors, its walk and its
 // skin kept apart (see "motion vectors" below).

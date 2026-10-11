@@ -9,6 +9,11 @@ export const RIM_MAX_DROP = 0.30;
 
 export interface RimGroundSample { distance: number; roofY: number; retreat: number; depth: number }
 
+// The rim field: the actual upper coast, the turf's retreat and the exposed root depth. By that
+// depth the lip alternates between overgrown stretches (turf down over the shoulder) and cut-open
+// root soil (TerrainMaterial), and the meadow's tufts grow taller and lean out over the lip toward
+// the coast instead of thinning (Grass.ts).
+
 // The top coast differs from the nominal tile footprint. Trace its actual solid just below
 // the roof so grass thinning, exposed root soil and stone shoulders share one boundary.
 export function buildRimGround( sdf: SDF ): RimGroundField {

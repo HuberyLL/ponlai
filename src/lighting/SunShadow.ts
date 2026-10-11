@@ -20,6 +20,15 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // penumbra there. Each redraw re-rolls every sub-texel caster (the projection's turn moves a
 // point 10 m from its centre by more than a texel), so a longer step also means fewer of those
 // fades. The blend is a function of the key direction alone, so a paused clock holds it exactly.
+//
+// The map is fitted to the island's casters; the sea floor's stones cast only into the refracted
+// map (RefractedSun.ts). Grass blades, stems, leaf stalks and twigs stay out of it (MeadowCanopy,
+// VegetationShadow.ts). Both stepped maps always share one filter mode, each with its own blocker
+// search, so the cross-fade stays continuous across a redraw; the mode is set per quality tier
+// (`setFilter`) before the materials build. Receivers read the maps through SolarShadow's gather
+// filter (see its rules on sampler types and derivatives). The caster-depth grid
+// (`nearestCasterDepth`) lets a march through the water skip the 2x2 volume lookups where nothing
+// casts, never the surface filter's PCSS search.
 const STEP = THREE.MathUtils.degToRad( 0.2 );
 // A larger turn in one frame is a cut (a new hour, preset or manual sun): redraw without history.
 const CUT = THREE.MathUtils.degToRad( 1 );

@@ -14,7 +14,8 @@ import type { RimSkirtData } from './types.ts';
 // The turf skirt: the meadow's sod curling a little over the rim, swept along the coast the
 // worker traced (RimGround.buildRimSkirt), with a thatch of short blades gathered in tufts on
 // its shoulder and face, and bundles of hanging grass and root hairs along its ragged lower edge.
-// One mesh, one draw.
+// One mesh, one draw. It follows the coast line traced from the rim field, never the tile edges,
+// so it takes any shape the rim takes, and it bends with the plants' wind field (Wind.ts).
 
 const SHADE = [ 0.86, 0.94, 1, 0.9, 0.7, 0.52, 0.4 ];
 

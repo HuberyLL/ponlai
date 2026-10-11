@@ -42,6 +42,15 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // per draw: an object drawn twice in a frame keeps its motion), the camera's from the previous
 // view-projection. A material can write a velocity of its own through `velocityOutput` (its MRT
 // node, merged over the context's), a fragmentNode material through `outputStruct`.
+// A material with a fragmentNode ignores the MRT: under the temporal modes it must write both
+// outputs (`outputStruct`), or its pipeline has an output too few; a material whose positionNode
+// animates without `positionPrevious` gets the camera's and the object's motion only. A material's
+// MRT node replaces its output when the pass has no MRT: set one only under the temporal modes
+// (`velocityOutput` returns null otherwise). Drawing a scene material into a second target layout or
+// MRT in one page builds it twice, which r186 may emit with the first build's uniform names in a
+// layout function (the sea's `sceneViewZ` then fails to compile): time the velocity's cost by
+// comparing pages (`--compare` of `aa=off` against a temporal mode), not by switching a page's
+// target.
 //
 // A cut (`taaCut`: a seek, a jump of the camera, a new scene) makes the previous frame the current
 // one for the camera, the objects and whatever else registers with `onTaaCut` (the wind's previous

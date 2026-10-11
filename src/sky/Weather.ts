@@ -1,3 +1,8 @@
+// Weather presets, their blending and the auto-weather chain. Bad weather dims and desaturates the
+// existing light; it never adds a grey screen veil (docs/art-direction.md). A weather change sweeps
+// the sky as a front from upwind, and the island's lighting follows the front's progress over the
+// island. No tier or knob alters the weather state (Quality.ts).
+
 export type WeatherName = 'clear' | 'fair' | 'cloudy' | 'overcast' | 'rain' | 'storm' | 'fog';
 
 export interface WeatherState {

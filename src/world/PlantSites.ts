@@ -9,6 +9,14 @@ import { VEGETATION_STRIDE as STRIDE, VEGETATION_SPACING } from './types.ts';
 // fields (rim distance, noise, the puddle hollows, the paths kept clear), never coordinates, so
 // a larger island of more tiles plants itself the same way: tree count follows the meadow's
 // area, shrubs gather in loose groups wherever the clump field rises.
+//
+// Shrubs grow up to about head height and small trees 2.5 - 3.5 m, on the plateau in loose groups:
+// one tree per about 120 m^2 of meadow, one group per about 13 m^2. They keep off the islander's
+// walk and out of the puddle hollows (PuddleHollows.ts repeats Puddles.ts's `puddleField` on the
+// CPU: change both together), and draw from their own random stream (the rim bushes' stream
+// places the rim bushes and trails). Plants.ts grows them. Around their stems the turf, grass and
+// flowers lose ambient light (baked on the CPU into the island's occlusion and the anchors' sky
+// visibility), so they stand in the meadow rather than on it.
 
 export type PlantKind = 'round' | 'broadleaf' | 'fern' | 'tree';
 

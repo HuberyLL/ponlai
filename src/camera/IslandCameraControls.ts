@@ -28,6 +28,27 @@ import { IslandGround } from './IslandGround.ts';
 // position it did and paused captures frame exactly as before. The pivot is clamped to the island's
 // bounds plus a margin (`setIsland`), the distance and tilt to their limits, and the camera kept
 // above the ground.
+//
+// Rules and their reasons:
+// - A press stays a click until it moves 3 px, so a left-click action can share the button.
+// - The zoom tilts the view toward the horizon by 12 degrees per e-fold of distance.
+// - A mouse wheel is told from a trackpad swipe by its deltas (macOS reports a notch in multiples
+//   of 4.000244140625 px, a trackpad whole pixels with `wheelDeltaY` three times `-deltaY`); the
+//   GUI's scroll setting overrides the guess. Panning at the window's edge is off by default: in a
+//   normal window the edge is where the pointer leaves.
+// - Only the wheel's zoom glides (80 ms), the keys ease in and out (100 ms) and a released drag
+//   glides on (220 ms). The orbit before damped every input (a 0.27 s time constant): in a steady
+//   drag the view trailed the hand by about a quarter of a second, which players read as dropped
+//   frames; now it trails by one input sample.
+// - Input is applied once, at the start of the tick that draws it (`advance( dt, time )`), never
+//   between frames. A drag is read one input sample interval (at most 8 ms) behind the frame's
+//   vblank, between the two pointer samples around that time (input resampling): read at its
+//   newest sample, a 125 Hz mouse moved the view unevenly from one frame to the next.
+// - The limits constrain input only: the pivot within the island's bounds plus 12 m, the farthest
+//   zoom from the island's diagonal (190 m for the first layout), the camera 2 m above the ground
+//   (a height grid of the island's meshes, IslandGround.ts).
+// - At rest the update is three's OrbitControls' arithmetic to the bit, its constructor's update
+//   included, so paused frames do not depend on input history and match older captures.
 
 type DragMode = 'pan' | 'rotate';
 

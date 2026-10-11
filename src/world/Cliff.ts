@@ -27,6 +27,24 @@
 // Every scar is seeded from a coast point hashed from its position in a world-anchored cell, and
 // each generation is placed on the surface the larger ones left, so an unchanged stretch of coast
 // keeps its scars when the layout grows elsewhere.
+//
+// Rules (the look is in docs/art-direction.md):
+// - Every property of a scar (rockfall scars, joint faces, pockets, steps in the lip, gullies, the
+//   notch) comes from its own position hash, never from a running count.
+// - Natural rock, never masonry: the two joint sets run oblique to the tile edges, no level courses
+//   or evenly spaced joints. Scar floors and roofs lie on a parting only some of the time; partings
+//   and soft beds open over a few metres and pinch out; under the meadow the wall weathers back to
+//   an upper slope rather than jutting as a slab.
+// - Pockets are much shallower than they are wide and tall, their roofs open outward, two never
+//   crowd each other at one height, and their occlusion is lifted a little, so none reads as a
+//   black hole or a pair of eyes in the shade.
+// - Above the waves breaks stay sharp (rims rounded by a few centimetres at most); only the wave
+//   zone rounds them. The notch comes and goes with the coast's exposure and its roof stays above
+//   the calm sea's crests; joint faces run on below the sea, so no ledge follows the waterline.
+// - The weathering relief fades out at the meadow, whose height stays `islandSurfaceHeight`. Steps
+//   where a block fell from the lip stop below the meadow's planting height (2.8 m) and carry no
+//   turf (TerrainMaterial keeps it off them). No waterfalls; moss and greenery on the wall stay in
+//   its upper 1.2 m (TerrainMaterial).
 
 import { hash3i, noise3, smax, smoothstep } from './noise.ts';
 

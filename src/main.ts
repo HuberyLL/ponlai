@@ -132,7 +132,7 @@ const waterScene = new THREE.Scene();
 const rainScene = new THREE.Scene();
 
 // The far plane reaches past the horizon so the sea's skirt meets the sky (the resolved sky
-// depth, -1e5, stays beyond it).
+// depth, -1e5, and the passes' sky threshold, -9e4, stay beyond it).
 const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 60000 );
 const target = new THREE.Vector3( 1.5, 0.5, 1.0 );
 const view = { distance: Number( params.get( 'dist' ) ?? 58 ), polar: Number( params.get( 'polar' ) ?? 50 ), azimuth: Number( params.get( 'az' ) ?? 318 ) };

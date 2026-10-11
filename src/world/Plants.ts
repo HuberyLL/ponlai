@@ -21,6 +21,10 @@ import type { Shared } from '../shared.ts';
 // amplitude in metres, wind phase, stem flag, bark flag ), plantShade ( ambient occlusion, direct
 // light ), and for the wind (see plantMaterial) plantRoot ( the plant's root in world space ) and
 // plantWind ( main bend, branch and leaf-edge amplitudes in metres, the plant's height ).
+//
+// The plants sway with the plants' wind field (Wind.ts), cast into the sun's map and stop the rain.
+// A limb casts whole or not at all: limbs that leave their parent 3 cm or more in radius cast;
+// thinner twigs, shrub stems and stalks (a few millimetres across, under a shadow texel) do not.
 
 const UP = new THREE.Vector3( 0, 1, 0 );
 // A texel inside the leaf body: bark and stalks take an opaque, constant colour from the map.

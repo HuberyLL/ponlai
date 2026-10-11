@@ -40,7 +40,8 @@ import type { OpsMode, OpsTable, PassOps } from './GraphCompiler.ts';
 // so such a wrapper must be installed before AttachmentOps: AttachmentOps then wraps the recording
 // encoder's `beginRenderPass`, and the recording keeps the rewritten descriptor. A wrapper
 // installed later is flagged (`overwrapped`), and the graph's dev check compares the rewrites that
-// reached the encoder with the table's. The copied descriptor leaves three's cached one as it was.
+// reached the encoder with the table's (frames that differ counted in `opsMismatchFrames`,
+// the diagnostics' `graph`). Re-check all of this on a three upgrade. The copied descriptor leaves three's cached one as it was.
 //
 // It acts only while the graph executes (`begin` / `end`) and only on the executing pass's own
 // target: a pass that renders other targets inside it (a shadow map, a bloom chain) is untouched.
