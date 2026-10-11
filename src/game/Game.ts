@@ -16,12 +16,12 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 
 // The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
 // needs and the places they act at, a brain in its slot thinks for them (the stand-in of plain
-// rules by default, sim/standin.ts) and GameView draws them into the scene. There is no player
-// interface yet: the debug panel's Game folder (GameDebug.ts) and the methods below, reached from
-// the console as window.__PONLAI__.game, drive it (placeChest is the player's one act). The
-// simulation's clock sets the time of day; the page's sky follows it, so pausing or speeding up the
-// game turns the sky with it. The weather is the page's own, as without ?game, running on the day
-// clock. Waves, wind and rain keep real time.
+// rules by default, sim/standin.ts) and GameView draws them, the palm and the chest into the scene.
+// There is no player interface yet: the debug panel's Game folder (GameDebug.ts) and the methods
+// below, reached from the console as window.__PONLAI__.game, drive it (placeChest is the player's
+// one act). The simulation's clock sets the time of day; the page's sky follows it, so pausing or
+// speeding up the game turns the sky with it. The weather is the page's own, as without ?game,
+// running on the day clock. Waves, wind and rain keep real time.
 //
 // URL options: hour (start hour, default 8), paused (start paused), load (resume the saved game),
 // dayLength (real seconds per game day at 1x); see docs/tools.md.
@@ -127,7 +127,7 @@ export class Game {
 		sim.tools = this.tools;
 		sim.brain = this.brain;
 		this.view?.dispose();
-		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, loadLook: c.loadLook } );
+		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, loadLook: c.loadLook } );
 		this.sim = sim;
 		this.debug?.reset();
 		// the simulation owns the time of day; the day clock only follows it

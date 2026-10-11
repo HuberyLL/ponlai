@@ -6,18 +6,25 @@ import { ISLAND_TOP } from '../../world/WorldShapes.ts';
 import { SPEED_FACTORS } from '../sim/types.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { Sim } from '../sim/Sim.ts';
+import { PalmView } from './PalmView.ts';
 import { standIn } from './StandIn.ts';
+import { ChestView } from './ChestView.ts';
 import { VillagerView, disposeFigure } from './VillagerView.ts';
 
-// The game drawn into the island scene: its islanders. Each frame it diffs the simulation's
-// islanders by id (create, update, remove) and keeps every view in place between frames, so a
-// steady scene allocates nothing.
+// The game drawn into the island scene: its islanders, its palms (PalmView) and the chest
+// once placed (ChestView). Each frame it diffs the simulation's islanders and palms by id
+// (create, update, remove) and keeps every view in place between frames, so a steady scene
+// allocates nothing. The palms and the chest cast into the sun's shadow map, which is redrawn
+// only as the sun turns (SunShadow.ts): whatever changes their shape (a chest set down, a
+// coconut picked or grown) asks for a redraw.
 
 export interface GameViewOptions {
 	sim: Sim;
 	scene: THREE.Scene;
 	camera: THREE.PerspectiveCamera;
 	characterShadow: CharacterShadow;
+	/** redraw the sun's shadow map: what casts into it changed */
+	invalidateSunShadow(): void;
 	/** a skinned islander figure for a look index (src/characters/looks.ts) */
 	loadLook( look: number ): Promise<Figure>;
 }
@@ -40,6 +47,8 @@ export class GameView {
 	private readonly group = new THREE.Group();
 	private readonly villagers: VillagerView[] = [];
 	private readonly byId = new Map<EntityId, VillagerView>();
+	private readonly palms = new Map<string, PalmView>();
+	private chest: ChestView | null = null;
 	private readonly shadowCentre = new THREE.Vector3();
 	private readonly scratch = new THREE.Vector3();
 	/** the islander the figures' shadow map follows (the debug panel's pick); null: the one nearest the view's middle */
@@ -93,6 +102,7 @@ export class GameView {
 		// the figures this view did not take over from the last one
 		if ( spares.size > 0 ) disposeSpares();
 		this.sweep( stamp );
+		if ( this.syncPlaces( stamp ) ) this.options.invalidateSunShadow();
 
 		// one figure at a time casts (the map is 2.5 m wide): the focused islander, else the one
 		// nearest the middle of the view
@@ -119,6 +129,54 @@ export class GameView {
 			console.error( `Could not load the figure for look ${ look }`, error );
 
 		} );
+
+	}
+
+	/** Draw the palms and the chest as the state holds them; true when what casts a shadow changed. */
+	private syncPlaces( stamp: number ): boolean {
+
+		const { sim } = this.options;
+		const state = sim.state, grid = sim.grid;
+		let changed = false;
+		for ( const palm of state.palms ) {
+
+			let view = this.palms.get( palm.id );
+			if ( ! view ) {
+
+				view = new PalmView( palm, grid.height( palm.x, palm.z ) );
+				this.palms.set( palm.id, view );
+				this.group.add( view.mesh );
+				changed = true;
+
+			}
+			view.stamp = stamp;
+			if ( view.update( palm ) ) changed = true;
+
+		}
+		for ( const [ id, view ] of this.palms ) {
+
+			if ( view.stamp === stamp ) continue;
+			view.dispose();
+			this.palms.delete( id );
+			changed = true;
+
+		}
+		const box = state.chest;
+		if ( this.chest && ( ! box || box.x !== this.chest.x || box.z !== this.chest.z ) ) {
+
+			this.chest.dispose();
+			this.chest = null;
+			changed = true;
+
+		}
+		if ( box && ! this.chest ) {
+
+			this.chest = new ChestView( box, grid.height( box.x, box.z ) );
+			this.group.add( this.chest.mesh );
+			changed = true;
+
+		}
+		return changed;
 
 	}
 
@@ -184,6 +242,10 @@ export class GameView {
 		for ( const v of this.villagers ) v.dispose();
 		this.villagers.length = 0;
 		this.byId.clear();
+		for ( const p of this.palms.values() ) p.dispose();
+		this.palms.clear();
+		this.chest?.dispose();
+		this.chest = null;
 		this.group.removeFromParent();
 
 	}
