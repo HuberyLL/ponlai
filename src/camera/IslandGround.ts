@@ -1,11 +1,14 @@
 import * as THREE from 'three/webgpu';
+import { GROUND_CELL as CELL, type GroundGrid } from '../world/ChunkDerived.ts';
 
 // The island's ground for the camera on the CPU: a coarse top-down height grid of the island's own
 // meshes (the highest vertex in each cell) over a flat sea, enough to find the point under the
 // cursor that a drag grabs or a zoom closes in on. It derives from the meshes alone, so any tile
-// layout works; plants are left out (a grab on a crown takes the ground under it).
+// layout works; plants are left out (a grab on a crown takes the ground under it). `build` walks
+// the meshes' vertices on a grid from their box's corner; `fromGrids` merges the grids the world's
+// workers made for the chunks' island meshes (ChunkDerived.ts) on the world's lattice instead,
+// which moves a cell by less than its width (tools/verify-chunk-derived.mjs).
 
-const CELL = 0.5;
 // the sea's height for the camera (the waves' few decimetres do not matter to a grab)
 const SEA = 0;
 
@@ -44,6 +47,42 @@ export class IslandGround {
 				const k = this.cell( _p.x, _p.z );
 				if ( k >= 0 && _p.y > this.heights[ k ] ) this.heights[ k ] = _p.y;
 				if ( _p.y > this.top ) this.top = _p.y;
+
+			}
+
+		}
+
+	}
+
+	/** Merges the chunks' ground grids (ChunkDerived.ts) by their highest point per cell. */
+	fromGrids( grids: readonly GroundGrid[] ): void {
+
+		this.bounds.makeEmpty();
+		let x1 = - Infinity, z1 = - Infinity;
+		this.x0 = this.z0 = Infinity;
+		for ( const grid of grids ) {
+
+			if ( grid.nx === 0 ) continue;
+			const b = grid.bounds;
+			this.bounds.expandByPoint( _p.set( b[ 0 ], b[ 1 ], b[ 2 ] ) ).expandByPoint( _p.set( b[ 3 ], b[ 4 ], b[ 5 ] ) );
+			this.x0 = Math.min( this.x0, grid.x0 );
+			this.z0 = Math.min( this.z0, grid.z0 );
+			x1 = Math.max( x1, grid.x0 + grid.nx * CELL );
+			z1 = Math.max( z1, grid.z0 + grid.nz * CELL );
+
+		}
+		if ( this.bounds.isEmpty() ) return;
+		this.nx = Math.round( ( x1 - this.x0 ) / CELL );
+		this.nz = Math.round( ( z1 - this.z0 ) / CELL );
+		this.heights = new Float32Array( this.nx * this.nz ).fill( - Infinity );
+		this.top = Math.max( SEA, this.bounds.max.y );
+		for ( const grid of grids ) {
+
+			const oi = Math.round( ( grid.x0 - this.x0 ) / CELL ), oj = Math.round( ( grid.z0 - this.z0 ) / CELL );
+			for ( let j = 0; j < grid.nz; j ++ ) for ( let i = 0; i < grid.nx; i ++ ) {
+
+				const k = ( oj + j ) * this.nx + oi + i;
+				this.heights[ k ] = Math.max( this.heights[ k ], grid.heights[ j * grid.nx + i ] );
 
 			}
 

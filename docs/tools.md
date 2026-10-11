@@ -288,6 +288,16 @@ what these do not give (automation, A/B statistics, pass names).
   breaks off more than 0.6 m of rock above y -1 where its reach ends it. The
   chunk checks prove seams and locality; this probe proves the chunked world keeps its numbers.
   The default run takes about a minute on 8 threads.
+- `tools/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]` (plain `node`; run it
+  after a change to `src/world/ChunkDerived.ts` or to the builders it stands in for) builds every
+  chunk of the grown land on a pool of worker threads and checks the chunks' derived products
+  against the page's builders run on their merged meshes (three's WebGPU build imported in node,
+  RefractedSun.ts compiled with TypeScript): SunShadow's caster columns folded from the chunks'
+  `casterColumns` hold every walked column and stay within one cell of it; RefractedSun's
+  subsets from the chunks' `refracted` are today's cut of the merged island, stones and floor,
+  triangle for triangle, and `setCasters( root, subsets )` draws them; `IslandGround.fromGrids`
+  of the chunks' `ground` has the walked grid's bounds and top and every height within one cell.
+  It prints each builder's time on the merged meshes against the merge's. About 15 s on 8 threads.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and

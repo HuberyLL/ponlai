@@ -35,6 +35,11 @@
 //   LAND_REACH on the window.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
 //   chunk's data and its hash repeat whatever order the chunks are built in.
+// - The page's derived products come with the chunk (ChunkDerived.ts): the island's caster columns
+//   and ground grid on world lattices (a cell on a border is filled by both chunks, merged by min
+//   and max), and the refracted map's triangle subsets of the island, the stones and the floor
+//   tile (owned with their triangles). tools/verify-chunk-derived.mjs checks that they merge to
+//   what SunShadow, RefractedSun and IslandGround build from the merged meshes.
 // - For the checks (tools/verify-world-chunks.mjs): `chunkIsland` and `chunkBlock` make a block of
 //   chunks in one pass from the block's own window, with the same stage functions as `buildChunk`,
 //   and share it out by chunk (S2, S5); `contactStones` gives the stones a chunk places round itself
@@ -73,7 +78,8 @@ import {
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRockSDF, placeStones } from './Stones.ts';
 import { floorAt, SHELF_CEILING } from './Bathymetry.ts';
-import { buildFloorTile, nearLandCells, underLand, FAR_HALF, SEABED_TILE, TILE_SIDE } from './SeabedTile.ts';
+import { buildFloorTile, nearLandCells, tileIndices, underLand, FAR_HALF, SEABED_TILE, TILE_SIDE } from './SeabedTile.ts';
+import { casterColumns, groundGrid, submergedIndex, SEA_LEVEL, type CasterColumns, type GroundGrid } from './ChunkDerived.ts';
 import { scatterTop } from './Anchors.ts';
 import { buildRimSkirt, coastChains, ownTexels, rimGroundTile, RimLattice, RIM_PAD } from './RimGround.ts';
 import { pickBushes, BUSH_SCALE, BUSH_STRIDE } from './FoliageSites.ts';
@@ -275,6 +281,14 @@ export interface ChunkData {
 	walk: Uint8Array;
 	// the box round everything that casts a shadow: x0, y0, z0, x1, y1, z1 (empty: +-Infinity)
 	casters: [ number, number, number, number, number, number ];
+	// What the page derives from the meshes above, so it never walks their vertices (ChunkDerived.ts):
+	// the island's caster columns for the sun's map (the skirt, trails and bushes are built on the
+	// page, which bins them itself), the triangles of the island, the stones and the floor tile
+	// (tileIndices) the refracted sun's map draws at `level` (null: all, or no mesh), and the
+	// island's ground grid for the camera. Empty grids where there is no island.
+	casterColumns: CasterColumns;
+	refracted: { level: number; island: Uint32Array | null; stones: Uint32Array | null; floor: Uint32Array | null };
+	ground: GroundGrid;
 	// of every buffer above, for the unchanged-chunk test
 	hash: string;
 	// ms per stage
@@ -422,13 +436,14 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	mark( 'rocks' );
 
 	// --- the sea floor's near tile, shaded by the island and the stones
-	let floor: ChunkFloor | null = null;
+	let floor: ChunkFloor | null = null, floorPositions: Float32Array | null = null;
 	if ( ! underLand( land, ci, cj ) ) {
 
 		const tile = buildFloorTile( ci, cj, fp, contactOcclusion ? [ islandSolid, ...rockBounds ] : [] );
 		const height = new Float32Array( TILE_SIDE * TILE_SIDE );
 		for ( let v = 0; v < height.length; v ++ ) height[ v ] = tile.positions[ v * 3 + 1 ];
 		floor = { height, normal: tile.normals, ao: tile.ao, bed: tile.bed };
+		floorPositions = tile.positions;
 
 	}
 	mark( 'floor' );
@@ -459,14 +474,25 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 
 	// --- the walk tile
 	const walk = walkTile( fp, box );
+	mark( 'walk' );
+
+	// --- what the page derives from the meshes (ChunkDerived.ts)
+	const islandPositions = islandMesh?.positions ?? new Float32Array( 0 );
+	const refracted = {
+		level: SEA_LEVEL,
+		island: islandMesh && submergedIndex( islandMesh.positions, islandMesh.indices ),
+		stones: submergedIndex( stones.mesh.positions, stones.mesh.indices ),
+		floor: floorPositions && submergedIndex( floorPositions, tileIndices() ),
+	};
 
 	const data: ChunkData = {
 		key: chunkKey( ci, cj ), ci, cj, land: version,
 		island: islandMesh, stones, floor, anchors, bushes, strands, skirt, rimGround, shore, walk,
 		casters: casterBox( islandMesh, stones.mesh, skirt, strands, bushes ),
+		casterColumns: casterColumns( islandPositions ), refracted, ground: groundGrid( islandPositions ),
 		hash: '', timings,
 	};
-	mark( 'walk' );
+	mark( 'derived' );
 	data.hash = hashChunk( data );
 	mark( 'hash' );
 	timings.total = Math.round( performance.now() - t0 );
