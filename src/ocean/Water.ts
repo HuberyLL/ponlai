@@ -78,7 +78,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // position reaches the fragment through Motion.ts's one varying; the reads are vertex-stage only.
 // The storm's foam rides the water's undisplaced grid (StormSea), so it moves as the surface does:
 // `flags.mv.sea = false` leaves out the waves' motion, the foam's with it (the sea has no foam
-// geometry of its own for `flags.mv.foam`).
+// geometry of its own for `flags.mv.foam`). The reactive weight marks the sun's glints: the glint's
+// luminance against a white diffuse surface under the same light, smoothstep( 2, 8, ratio ), so
+// that a sparkle is not smeared into the history.
 //
 // Screen conventions (WebGPU): uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
 // Texture samples that need screen-space derivatives are taken first, while control flow is still
@@ -1178,6 +1180,10 @@ export class Water {
 			// Backfacing facets are self-occluded: neither the air reflection nor underwater
 			// transmission emerges through their back side. Neighbor-wave transport is unresolved.
 			const col = water.mul( airFacing ).toVar();
+			// (temporal modes) the glints' reactive weight: their luminance against a white diffuse
+			// surface under the same sun and sky (the note at the top)
+			const reactive = TEMPORAL ? smoothstep( 2, 8, lum( sunSpec ).mul( airFacing )
+				.div( max( lum( shared.skyIrradianceSource.add( sunLight.mul( max( L.y, 0 ) ).div( PI ) ) ), 1e-6 ) ) ) : null;
 			// Whitecaps in a storm (Tessendorf's choppy-wave criterion: the horizontal Jacobian of the
 			// summed cascades nears a fold). StormSea integrates where the steepest crests break and
 			// the foam that trails behind a breaker and fades over seconds; this pixel's own fold
@@ -1259,12 +1265,18 @@ export class Water {
 			// soften the line where the surface cuts the rock (no hard seam); behind rock: the rock
 			const edge = select( skyBehind, float( 1 ), smoothstep( 0, 0.06, thick ) );
 			col.assign( mix( opaqueCol, col, edge ) );
-			return vec4( min( col, vec3( 30000 ) ), 1 );
+			return vec4( min( col, vec3( 30000 ) ), reactive ?? 1 );
 
 		} )();
 		// the temporal modes' second output, the velocity (Motion.ts): the camera's motion and the
-		// waves' (their previous position, above)
-		material.fragmentNode = outputStruct( material.fragmentNode, motionNode( 'water' ) );
+		// waves' (their previous position, above), and the glints' reactive weight (the shading's
+		// alpha under the temporal modes)
+		if ( TEMPORAL ) {
+
+			const shade = material.fragmentNode as V4;
+			material.fragmentNode = outputStruct( vec4( shade.xyz, 1 ), motionNode( 'water', shade.w ) );
+
+		}
 		material.userData.motion = 'animated';
 		material.side = THREE.DoubleSide;
 		return material;
