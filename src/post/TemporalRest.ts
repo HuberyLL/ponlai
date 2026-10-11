@@ -1,4 +1,4 @@
-// The temporal modes' rest convergence (Antialiasing.ts: aa=taa|taau). A running temporal
+// The temporal modes' rest convergence (Antialiasing.ts: aa=taa|taau|gt). A running temporal
 // resolve is a function of the frames before it, so a paused frame would depend on how the page got
 // there: the history's weights, the jitter's place in its sequence, the camera's last moves. A scene
 // at rest (a paused clock, a still camera, nothing else changing) therefore converges once, from
@@ -36,7 +36,7 @@ export const restEpoch = {
 export class TemporalRest {
 
 	/** Frames at rest before the sequence starts, and the sequence's length (0: no rest; the
-	 * settings' `restSettle` and `restSequence`). */
+	 * settings' `restSettle` and `restSequence`, or `gtJitters` for the ground truth). */
 	settle = 8;
 	sequence = 32;
 	/** Consecutive frames rendered with the same key, this one included, up to `target` (0 while the

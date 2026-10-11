@@ -13,7 +13,7 @@ import type { FrameGraph, ResourceHandle, SizeClass } from './graph/FrameGraph.t
 import { resolveSize, type Extents } from './graph/GraphCompiler.ts';
 import { compileChain, compileQuad } from './graph/Compile.ts';
 
-// The temporal modes' resolve (Antialiasing.ts: aa=taa|taau). The scene
+// The temporal modes' resolve (Antialiasing.ts: aa=taa|taau, and the ground truth aa=gt). The scene
 // renders single-sampled with its projection shifted by a sub-pixel jitter each frame (Jitter.ts),
 // writing motion vectors beside its colour (Motion.ts); the post chain grades that frame as it does
 // any other (order B: the resolve comes after the grade and the look, on the `display` image), and
@@ -53,7 +53,7 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   (read by uv); TAA resolves at the render's size and resamples its history once when that changes.
 // - Rest (TemporalRest.ts): a resting scene runs a fixed jitter sequence through the rest resolve
 //   (no clip, no cap, nothing reprojected, exact weights) into an image of its own, shown once it is
-//   complete.
+//   complete; the ground truth's rest is a box filter over 64 jitters at the canvas's resolution.
 // - The canvas pass encodes the resolved image, then adds what must not be accumulated: the
 //   vignette (in linear, as the grade did), RCAS sharpening (FSR.ts), the grain and the dither.
 //   TAA below the canvas encodes at the render's size and upscales with EASU first.
@@ -64,7 +64,7 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 type Uniform2 = THREE.UniformNode<'vec2', THREE.Vector2>;
 
-export type TemporalMode = 'taa' | 'taau';
+export type TemporalMode = 'taa' | 'taau' | 'gt';
 
 const RENDER: SizeClass = { of: 'render' };
 const CANVAS: SizeClass = { of: 'canvas' };
@@ -237,7 +237,8 @@ export class TemporalAA {
 		this.mode = options.mode;
 		this.settings = structuredClone( options.settings );
 		const g = graph;
-		// TAAU's history at the canvas's size, kept across render-scale steps; TAA's at the render's
+		// TAAU's history at the canvas's size, kept across render-scale steps; TAA's and the ground
+		// truth's at the render's (the ground truth renders at the canvas's resolution)
 		this.historyClass = this.mode === 'taau' ? CANVAS : RENDER;
 		const desc = { size: this.historyClass, format: THREE.RGBAFormat, type: THREE.HalfFloatType };
 		this.history = g.color( 'taaHistory', desc );
@@ -365,6 +366,7 @@ export class TemporalAA {
 		// What the canvas shows: the history this frame wrote (by its parity), or the rest's image.
 		const sources = [ g.texture( history, 0 ), g.texture( history, 1 ), g.texture( this.restShown ) ];
 		const sourceIndex = () => this.rest.converged ? 2 : g.parityOf( history );
+		const gt = this.mode === 'gt';
 		// the resolved image (linear) to display values, with the vignette (in linear, as the grade
 		// applied it); accumulated in display values (`linear` off), the vignette applies to those
 		const encode = ( c: V3, v: F ) => this.settings.linear ? toDisplay( c.mul( v ), O.contrast ) : c.mul( v );
@@ -375,7 +377,8 @@ export class TemporalAA {
 			const last = outputSize.sub( 1 ).toConst();
 			const v = O.vignette( canvasSize ).toConst();
 			const tap = ( dx: number, dy: number ) => vec4( encode( ( textureLoad( source, ivec2( clamp( p.add( vec2( dx, dy ) ), vec2( 0 ), last ) ) ) as unknown as V4 ).rgb, v ), 1 );
-			const s = rcas( tap, this.sharpness );
+			// (the ground truth is not sharpened)
+			const s = gt ? tap( 0, 0 ).rgb : rcas( tap, this.sharpness );
 			return O.finish( s.toVar(), canvasSize, float( 1 ) );
 
 		} )();
@@ -464,6 +467,7 @@ export class TemporalAA {
 
 		const O = this.options, S = this.settings, u = this.u, K = this.knobs;
 		const rest = kind === 'rest';
+		const box = rest && this.mode === 'gt';
 		const lite = S.lite;
 		const linear = S.linear;
 		const dofBlur = O.dofBlur();
@@ -498,13 +502,19 @@ export class TemporalAA {
 				// the sample's offset from this output pixel (output pixels): a surface's at its jittered
 				// position, the sky's at its pixel's centre (it does not jitter)
 				const d = cell.add( 0.5 ).add( select( sky, vec2( 0 ), j ) ).div( scale ).sub( q ).toVar();
-				const ws = exp( dot( d, d ).mul( kS ) );
+				const ws = box
+					? select( abs( d.x ).lessThanEqual( 0.5 ).and( abs( d.y ).lessThanEqual( 0.5 ) ), float( 1 ), float( 0 ) )
+					: exp( dot( d, d ).mul( kS ) );
 				sumS.addAssign( c.mul( ws ) );
 				wS.addAssign( ws );
-				const dIn = d.mul( scale );
-				const ww = exp( dot( dIn, dIn ).mul( - 0.5 / ( WIDE_SIGMA * WIDE_SIGMA ) ) );
-				sumW.addAssign( c.mul( ww ) );
-				wW.addAssign( ww );
+				if ( ! box ) {
+
+					const dIn = d.mul( scale );
+					const ww = exp( dot( dIn, dIn ).mul( - 0.5 / ( WIDE_SIGMA * WIDE_SIGMA ) ) );
+					sumW.addAssign( c.mul( ww ) );
+					wW.addAssign( ww );
+
+				}
 				m1.addAssign( c );
 				m2.addAssign( c.mul( c ) );
 				skies.addAssign( select( sky, float( 1 ), float( 0 ) ) );
@@ -523,11 +533,14 @@ export class TemporalAA {
 			}
 			const n = taps.length;
 			// the weight one frame brings on average: the Gaussian's integral over the samples' density
-			const perFrame = sigma.mul( sigma ).mul( 2 * Math.PI ).mul( scale.x.mul( scale.y ) ).toVar();
+			// (the box's area, for the ground truth)
+			const perFrame = ( box ? float( 1 ) : sigma.mul( sigma ).mul( 2 * Math.PI ) ).mul( scale.x.mul( scale.y ) ).toVar();
 			// this frame's estimate: the near samples, plus a little of the wide one
-			const wide = perFrame.mul( WIDE_SHARE );
-			const current = sumS.add( sumW.div( max( wW, 1e-6 ) ).mul( wide ) ).div( wS.add( wide ) ).toVar();
-			const currentWeight = wS.add( wide );
+			const wide = box ? float( 0 ) : perFrame.mul( WIDE_SHARE );
+			const current = vec3( 0 ).toVar();
+			if ( box ) current.assign( sumS.div( max( wS, 1e-6 ) ) );
+			else current.assign( sumS.add( sumW.div( max( wW, 1e-6 ) ).mul( wide ) ).div( wS.add( wide ) ) );
+			const currentWeight = box ? wS : wS.add( wide );
 			const allSky = skies.greaterThan( n - 0.5 ).toVar();
 			// A neighbourhood of sky alone, without a history: the frame's own sky at the output pixel,
 			// a Catmull-Rom of the input (16 loads, in display values, then to linear)
@@ -727,7 +740,7 @@ export class TemporalAA {
 		key.push( ...camera.matrixWorld.elements, ...camera.projectionMatrix.elements, time, renderWidth, renderHeight, outputWidth, outputHeight,
 			restEpoch.value, this.settingsVersion, ...( frame.signature ?? [] ) );
 		this.rest.settle = Math.max( 0, Math.round( this.settings.restSettle ) );
-		this.rest.sequence = Math.max( 0, Math.round( this.settings.restSequence ) );
+		this.rest.sequence = Math.max( 0, Math.round( this.mode === 'gt' ? this.settings.gtJitters : this.settings.restSequence ) );
 		this.rest.observe( key, frame.stable !== false );
 		jitter.restIndex = this.rest.index === null ? null : this.rest.index + 1;
 		// the sharpening, eased to its new value over SHARPNESS_EASE seconds after a scale change; at

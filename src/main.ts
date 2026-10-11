@@ -406,6 +406,9 @@ if ( fgview ) installDebugView( fgview, {
 	},
 } );
 const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ), quality.taa );
+// The ground truth (aa=gt, debug builds) renders at the canvas's resolution (see resize) without
+// film grain: an image of the scene alone.
+if ( AA_MODE === 'gt' ) pipeline.settings.grain = 0;
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).
 if ( profiler ) {
@@ -883,7 +886,8 @@ if ( DEBUG ) {
 // High's render scale is dynamic (DynamicResolution.ts): it moves between the tier's nominal and
 // a floor by the GPU's frame time, and renders at the nominal while it is pinned (?dpr, full
 // resolution) or the scene is paused, so paused frames and captures render at the reference scale.
-const dynamicRule = 'dynamic' in quality.render ? quality.render.dynamic : null;
+// (the ground truth renders at the canvas's resolution: no dynamic scale)
+const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render.dynamic : null;
 const dynamicResolution = dynamicRule ? new DynamicResolution( dynamicRule ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
 // the same number of refreshes; `frameRate` overrides it (0 renders on every refresh: the profiler's
@@ -933,6 +937,8 @@ function resize(): void {
 
 	const w = innerWidth, h = innerHeight;
 	nominalScale = renderPixelRatio( w, h, quality.render, resolution.full, DPR_CAP );
+	// the ground truth renders at the canvas's ratio, every pixel of it
+	if ( AA_MODE === 'gt' ) nominalScale = outputPixelRatio( nominalScale );
 	dynamicResolution?.setMax( nominalScale );
 	renderer.setPixelRatio( outputPixelRatio( nominalScale ) );
 	renderer.setSize( w, h );
@@ -1008,8 +1014,10 @@ let shadowElapsed = 0;
 // The temporal resolve's per-frame inputs (TemporalAA.ts): what besides the camera, the clock and the
 // sizes keys a paused scene's rest (a forced strike: a review sets one while paused, and the rest
 // starts over for it), whether the frame may rest (not while a sky bake is in flight or a sky
-// transition runs), and its delta.
+// transition runs, unless `loop.step` holds the frame still: see `holding`), and its delta.
 let strikeKey = 'null', strikeVersion = 0;
+// set while `loop.step` holds a frame for the rest to converge (nothing advances, a transition included)
+let holding = false;
 function temporalFrame( dt: number ): TemporalFrame | undefined {
 
 	if ( ! pipeline.temporal ) return undefined;
@@ -1020,7 +1028,7 @@ function temporalFrame( dt: number ): TemporalFrame | undefined {
 		strikeVersion ++;
 
 	}
-	return { signature: [ strikeVersion ], stable: ! sky.busy && ! sky.transitioning, dt };
+	return { signature: [ strikeVersion ], stable: ! sky.busy && ( ! sky.transitioning || holding ), dt };
 
 }
 function tick( time: number ): void {
@@ -1384,6 +1392,11 @@ document.addEventListener( 'visibilitychange', () => {
 //   lightning strike's fill light), at most every 2 s of wall clock and landing whenever the GPU
 //   answers: stepped, every bake reads it back and the next frame waits for the value, so it
 //   lands on the frame after the bake however long the frames took.
+// - `converge( i )` (the temporal modes' ground truth, capture-clip.mjs --aa gt): after frame i's tick
+//   the scene is held still (the clock paused, nothing advancing with time: a delta of 0, the sky's
+//   transitions and wall-clock cadences included) and rendered again until the temporal rest has
+//   converged on it (TemporalRest.ts), so `onFrame( i )` sees frame i's scene averaged over the rest's
+//   jitters. The clock and the cadences continue afterwards as if the hold had not happened.
 interface StepOptions {
 	frames: number;
 	dt?: number;
@@ -1391,10 +1404,11 @@ interface StepOptions {
 	camera?: ( i: number ) => void;
 	onFrame?: ( i: number ) => Promise<void> | void;
 	clock?: 'paused' | 'running';
+	converge?: ( i: number ) => boolean;
 }
 const step = async ( options: StepOptions ): Promise<{ frames: number; t0: number; simTime: number; frameId: number }> => {
 
-	const { frames, dt = 1 / 60, scale, camera: moveCamera, onFrame, clock: clockMode } = options;
+	const { frames, dt = 1 / 60, scale, camera: moveCamera, onFrame, clock: clockMode, converge } = options;
 	if ( ! Number.isInteger( frames ) || frames < 0 ) throw new RangeError( 'frames must be a whole number, 0 or more' );
 	if ( ! Number.isFinite( dt ) || dt <= 0 ) throw new RangeError( 'dt must be finite and positive' );
 	const scales = scale === undefined ? [] : Array.isArray( scale ) ? scale : [ scale ];
@@ -1433,14 +1447,9 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 	const t0 = Math.round( performance.now() );
 	try {
 
-		for ( let i = 0; i < frames; i ++ ) {
+		// one tick of the loop at `time`, with the bookkeeping three's animation loop does around it
+		const tickAt = async ( time: number ): Promise<void> => {
 
-			if ( sky.busy && skyBake.slices.length === 0 ) await skyBake.pendingUpdate?.catch( () => {} );
-
-			// never above the canvas's ratio: the render would outgrow the canvas it is shown on
-			const ratio = scales.length ? scales[ Math.min( i, scales.length - 1 ) ] : nominalScale;
-			steppedScale = Math.min( ratio, renderer.getPixelRatio() );
-			moveCamera?.( i );
 			// every bake this frame reads its irradiance back (no wall-clock throttle)
 			skyBake.lastDiagnosticMs = - Infinity;
 			// three's Animation does this before each frame of its loop
@@ -1451,7 +1460,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 			inspector.begin();
 			// (the frame's size follows `steppedScale` from this tick's start: applyRenderScale)
 			applyRenderScale();
-			loopBody( t0 + i * dt * 1000 );
+			loopBody( time );
 			inspector.finish();
 			if ( skyBake.sliceTimer !== null ) {
 
@@ -1460,6 +1469,48 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 			}
 			await settleSkyReadback();
+
+		};
+		for ( let i = 0; i < frames; i ++ ) {
+
+			if ( sky.busy && skyBake.slices.length === 0 ) await skyBake.pendingUpdate?.catch( () => {} );
+
+			// never above the canvas's ratio: the render would outgrow the canvas it is shown on
+			const ratio = scales.length ? scales[ Math.min( i, scales.length - 1 ) ] : nominalScale;
+			steppedScale = Math.min( ratio, renderer.getPixelRatio() );
+			moveCamera?.( i );
+			await tickAt( t0 + i * dt * 1000 );
+			const temporal = pipeline.temporal;
+			if ( temporal && converge?.( i ) ) {
+
+				// hold the frame's scene still until the rest has converged on it
+				const was = { paused, day: dayCycle.paused, skyElapsed, shadowElapsed };
+				paused = true;
+				dayCycle.paused = true;
+				holding = true;
+				timer.getDelta = () => 0;
+				try {
+
+					for ( let k = 0; k < temporal.rest.target + 4 && ! temporal.converged; k ++ ) {
+
+						if ( sky.busy && skyBake.slices.length === 0 ) await skyBake.pendingUpdate?.catch( () => {} );
+						await tickAt( t0 + i * dt * 1000 );
+
+					}
+
+				} finally {
+
+					timer.getDelta = () => dt;
+					holding = false;
+					paused = was.paused;
+					dayCycle.paused = was.day;
+					skyElapsed = was.skyElapsed;
+					shadowElapsed = was.shadowElapsed;
+
+				}
+				if ( ! temporal.converged ) console.warn( `loop.step: frame ${ i } did not converge (the rest's ${ temporal.rest.frames } of ${ temporal.rest.target } frames)` );
+
+			}
 			await onFrame?.( i );
 
 		}
