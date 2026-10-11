@@ -107,9 +107,9 @@ export function nearLandCells( land: LandLattice ): [ number, number ][] {
 
 }
 
-// Whether the land covers cell ( ci, cj ) and 2 m round it: its floor lies inside the island's
-// solid, never seen, and its neighbours' borders with it too.
-function underLand( land: LandLattice, ci: number, cj: number ): boolean {
+/** Whether the land covers cell ( ci, cj ) and 2 m round it: its floor lies inside the island's
+ * solid, never seen, and its neighbours' borders with it too. */
+export function underLand( land: LandLattice, ci: number, cj: number ): boolean {
 
 	const cell = GROWTH.cell, X0 = - GROWTH.half, S = SEABED_TILE, m = 2;
 	const i0 = Math.floor( ( ci * S - m - X0 ) / cell ), i1 = Math.ceil( ( ci * S + S + m - X0 ) / cell );

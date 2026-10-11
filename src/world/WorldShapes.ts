@@ -20,11 +20,12 @@ export interface Bounds { x0: number; z0: number; x1: number; z1: number }
 const grow = ( b: Bounds, m: number ): Bounds => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
 
 export interface Footprint {
-	// the footprint's corners rounded, at 0.08 m over its window
-	fine: Field2D;
-	// the land lattice's own signed distance (0.25 m), over the whole lattice
-	coarse: Field2D;
-	// the land's box
+	// the footprint's corners rounded, at 0.08 m over its window (the page's footprint; a chunk's,
+	// Chunks.ts, holds its window of the land field instead)
+	fine?: Field2D;
+	// the land lattice's own signed distance (0.25 m), over the whole lattice (likewise)
+	coarse?: Field2D;
+	// the land's box (a chunk's: its window)
 	bounds: Bounds;
 	dist( x: number, z: number ): number;
 }
