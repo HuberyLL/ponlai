@@ -423,7 +423,13 @@ warming.catch( () => undefined ); // reported where it is awaited, before the lo
 generating = true;
 setStatus( `Generating the island…${ worldProgress }` );
 const t0 = performance.now();
-const worldCache = await worldJob;
+// a failed world must not leave the loading screen saying it is still generating
+const worldCache = await worldJob.catch( ( error: unknown ) => {
+
+	setStatus( 'The island failed to generate (see the console).' );
+	throw error;
+
+} );
 generating = false;
 const data = worldCache.data;
 mark( 'world' );

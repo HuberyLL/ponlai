@@ -53,7 +53,15 @@ function open(): Promise<IDBDatabase> {
 		db.createObjectStore( META );
 
 	};
-	return request( r );
+	// a tab still holding the older version open would keep this one waiting (its workers too):
+	// generate instead
+	const opened = request( r );
+	return new Promise( ( resolve, reject ) => {
+
+		r.onblocked = () => reject( new Error( 'world cache blocked by another tab' ) );
+		opened.then( resolve, reject );
+
+	} );
 
 }
 

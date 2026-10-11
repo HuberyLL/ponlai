@@ -114,11 +114,12 @@ export function loadWorld( options: WorldOptions = {}, { cache = true, pivot, pr
 		};
 		const finish = () => {
 
-			settled = true;
 			mark( 'chunks' );
 			// the workers close once their writes have reached the cache
 			for ( const slot of pool ) slot.worker.postMessage( { kind: 'close' } satisfies ChunkJob );
+			// settled only once merged, so a merge that throws still rejects the load (`fail`)
 			const data = mergeChunks( land!, [ ...done.values() ] );
+			settled = true;
 			data.timings = { ...marks, build: Math.round( buildMs ), built, hits, merge: data.timings.merge, total: Math.round( performance.now() - t0 ) };
 			const records = done.size + 1, read = hits + ( landCache === 'hit' ? 1 : 0 );
 			resolve( {
@@ -179,7 +180,21 @@ export function loadWorld( options: WorldOptions = {}, { cache = true, pivot, pr
 		for ( let i = 0; i < threads; i ++ ) {
 
 			const slot: Slot = { worker: new Worker( new URL( './chunkWorker.ts', import.meta.url ), { type: 'module' } ), job: null };
-			slot.worker.onmessage = ( e: MessageEvent<ChunkReply> ) => receive( slot, e.data );
+			// a throw here (the merge, the land's bytes, the caller's pivot or progress) would end in
+			// the event loop and leave the load pending for ever: it rejects the load instead
+			slot.worker.onmessage = ( e: MessageEvent<ChunkReply> ) => {
+
+				try {
+
+					receive( slot, e.data );
+
+				} catch ( error ) {
+
+					fail( error );
+
+				}
+
+			};
 			slot.worker.onerror = ( e ) => fail( e );
 			slot.worker.onmessageerror = () => fail( new Error( 'A chunk worker\'s reply could not be read' ) );
 			slot.worker.postMessage( { kind: 'init', generator } satisfies ChunkJob );
