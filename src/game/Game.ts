@@ -7,31 +7,35 @@ import { drawnFoliageSites } from '../world/FoliageSites.ts';
 import type { PlantSite } from '../world/PlantSites.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
 import type { Sim } from './sim/Sim.ts';
+import { actionTools } from './sim/actions.ts';
 import type { Brain, ToolRegistry, ToolResult } from './sim/agent.ts';
 import { GameView } from './view/GameView.ts';
 import { SECONDS_PER_GAME_DAY } from './sim/types.ts';
 import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 
-// The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, a brain
-// in its slot may think for them (none by default: they stand idle) and GameView draws them into
-// the scene. There is no player interface: the debug panel's Game folder
-// (GameDebug.ts) and the methods below, reached from the console as window.__PONLAI__.game, drive
-// it. The simulation's clock sets the time of day; the page's sky follows it, so pausing or
-// speeding up the game turns the sky with it. The weather is the page's own, as without ?game,
-// running on the day clock. Waves, wind and rain keep real time.
+// The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
+// needs and the places they act at, a brain in its slot may think for them (none by default: they
+// stand idle) and GameView draws them into the scene. There is no player
+// interface yet: the debug panel's Game folder (GameDebug.ts) and the methods below, reached from
+// the console as window.__PONLAI__.game, drive it (placeStorehouse is the player's one act). The
+// simulation's clock sets the time of day; the page's sky follows it, so pausing or speeding up the
+// game turns the sky with it. The weather is the page's own, as without ?game, running on the day
+// clock. Waves, wind and rain keep real time.
 //
 // URL options: hour (start hour, default 8), paused (start paused), load (resume the saved game),
 // dayLength (real seconds per game day at 1x); see docs/tools.md.
 //
-// Rules: without ?game the page stays the art-review scene, unchanged. The game is a skeleton: its
-// tools, perception and gameplay are to be designed (docs/game-design.md), so none is built ahead
-// of that design. Thinking is asynchronous to the world: `think( id )` asks the brain with the
-// islander's perception, the simulation never waits for the answer, the body goes on walking or
-// standing meanwhile, and the answer's tool calls run on the body when it arrives; one thought per
-// islander may be in flight. What starts a thought is not decided: nothing calls `think` but the
-// console. Walking is the body's motor, not a tool. The save is the state as JSON with a version
-// number, in one slot. The ground comes from the world generator's own exports: the bushes
-// `buildFoliage` draws and the shrubs and trees `pickPlantSites` placed, as obstacles.
+// Rules: without ?game the page stays the art-review scene, unchanged. The game is the first
+// prototype of docs/game-design.md ("Next"): nothing is built ahead of that design. The brain's
+// tools are the five actions (sim/actions.ts). Thinking is asynchronous to the world: `think( id )`
+// asks the brain with the islander's perception, the simulation never waits for the answer, the
+// body goes on with what it is doing meanwhile, and the answer's tool calls run on the body when it
+// arrives; one thought per islander may be in flight. What starts a thought is not decided: until
+// it is, the simulation asks whenever an islander has nothing under way (sim/Sim.ts), and the
+// console may ask with `think`. Walking is the body's motor, reached by the `go` action (walkTo is
+// the debug panel's). The save is the state as JSON with a version number, in one slot. The ground
+// comes from the world generator's own exports: the bushes `buildFoliage` draws and the shrubs and
+// trees `pickPlantSites` placed, as obstacles.
 
 export interface GameContext {
 	params: URLSearchParams;
@@ -84,8 +88,8 @@ export class Game {
 	private readonly context: GameContext;
 	private readonly input: IslandInput;
 	private debug: { update(): void; reset(): void } | null = null;
-	/** the tools a brain acts through, by name (sim/agent.ts): empty, kept across a load */
-	readonly tools: ToolRegistry = new Map();
+	/** the tools a brain acts through, by name (sim/agent.ts): the five actions, kept across a load */
+	readonly tools: ToolRegistry = actionTools();
 	// the brain in the islanders' slot, kept across a load (setBrain)
 	private brain: Brain | null = null;
 	private gameDt = 0;
@@ -208,6 +212,13 @@ export class Game {
 	walkTo( villager: EntityId, x: number, z: number ): string | null {
 
 		return this.sim.walkTo( villager, { x, z } );
+
+	}
+
+	/** Place the storehouse at a point of the ground (world metres), once: null when it stands there, else why not. */
+	placeStorehouse( x: number, z: number ): string | null {
+
+		return this.sim.placeStorehouse( x, z );
 
 	}
 

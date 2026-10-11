@@ -1,10 +1,19 @@
-// A few checks of the game's skeleton, asserted: the clock and its ticks, the ground grid and a
-// path over it, a body that walks to a point and stops there, a save that loads back as it was,
-// and a brain whose late answer is applied while the world ran on. Pure CPU; Node 22.18+ strips the imported TypeScript.
+// Checks of the game's simulation, asserted: the clock and its ticks, the ground grid and a path
+// over it, a body that walks to a point and stops there, a save that loads back as it was, a brain
+// whose late answer is applied while the world ran on; then the first prototype's rules: needs that
+// fall and rise, the bag's capacity, the palm and its regrowth, fishing by the seeded generator,
+// the storehouse, actions that replace each other, a perception without positions, the stand-in
+// brain keeping the islander fed and watered for days, and a save taken mid-action.
+// Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
 import assert from 'node:assert/strict';
 import { newGame, loadGame } from '../src/game/sim/Sim.ts';
 import { findPath, goalAt, lineClear } from '../src/game/sim/path.ts';
+import { perceive } from '../src/game/sim/agent.ts';
+import { StandInBrain } from '../src/game/sim/standin.ts';
+import { BAG_CAPACITY, COCONUT_HYDRATION, FISH_SATIETY } from '../src/game/sim/items.ts';
+import { HYDRATION_PER_DAY, SATIETY_PER_DAY } from '../src/game/sim/needs.ts';
+import { FISH_SECONDS, PALM_COCONUTS, PALM_REGROW_SECONDS, PICK_SECONDS } from '../src/game/sim/places.ts';
 import { input } from './game-fixture.mjs';
 
 const HOUR = 3600;
@@ -106,7 +115,7 @@ function farthestOpen( grid, p ) {
 {
 
 	const sim = newGame( input, { seed: 4 } );
-	const v = sim.state.villagers[ 1 ];
+	const v = sim.state.villagers[ 0 ];
 	sim.walkTo( v.id, farthestOpen( sim.grid, v.pos ) );
 	sim.step( 20 );
 	sim.random();
@@ -128,37 +137,29 @@ function farthestOpen( grid, p ) {
 {
 
 	const sim = newGame( input );
-	const v = sim.state.villagers[ 2 ];
-	// a tool for this check only: the registry stays empty until the tools are designed
-	sim.tools.set( 'walk', ( body, to, s ) => {
-
-		const reason = s.walkTo( body.id, to );
-		return reason ? { ok: false, reason } : { ok: true };
-
-	} );
-	const far = farthestOpen( sim.grid, v.pos ), near = { ...sim.state.villagers[ 0 ].pos };
+	const v = sim.state.villagers[ 0 ];
+	const far = farthestOpen( sim.grid, v.pos );
 	let perceived = null;
+	assert.equal( sim.walkTo( v.id, far ), null );
 	sim.brain = { think: ( p ) => {
 
 		perceived = p;
-		return new Promise( ( resolve ) => setTimeout( () => resolve( [ { tool: 'walk', args: near }, { tool: 'fly' } ] ), 5 ) );
+		return new Promise( ( resolve ) => setTimeout( () => resolve( [ { tool: 'go', args: { place: 'palm' } }, { tool: 'fly' } ] ), 5 ) );
 
 	} };
-	assert.equal( sim.walkTo( v.id, far ), null );
 	const tick = sim.state.tick, start = { ...v.pos };
 	const thought = sim.think( v.id );
 	assert.ok( thought && sim.thinking( v.id ), 'a thought is in flight' );
-	assert.deepEqual( perceived.self, { id: v.id, pos: start }, 'the brain perceives the islander' );
+	assert.equal( perceived.body.hydration, 80, 'the brain perceives the islander' );
 	assert.equal( sim.think( v.id ), null, 'one thought at a time' );
 	sim.step( 120 );
 	assert.equal( sim.state.tick, tick + 120, 'the world runs on while the brain thinks' );
 	assert.ok( Math.hypot( v.pos.x - start.x, v.pos.z - start.z ) > 1, 'and the body keeps walking' );
 	const results = await thought;
 	assert.equal( sim.thinking( v.id ), false, 'the thought has landed' );
-	assert.deepEqual( results[ 0 ], { ok: true }, 'its tool call ran on the body' );
+	assert.equal( results[ 0 ].ok, true, 'its tool call ran on the body' );
 	assert.equal( results[ 1 ].ok, false, 'a tool that does not exist fails with a reason' );
-	const last = v.path[ v.path.length - 1 ];
-	assert.ok( Math.hypot( last.x - near.x, last.z - near.z ) < 1e-9, 'the body now walks where the answer said' );
+	assert.equal( v.action.call.args.place, 'palm', 'the body now goes where the answer said' );
 	sim.brain = null;
 	assert.equal( sim.think( v.id ), null, 'without a brain nothing thinks' );
 	console.log( 'brain: a late answer ran on the body while the world went on' );

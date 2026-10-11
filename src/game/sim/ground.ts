@@ -1,0 +1,117 @@
+import { hash3i } from '../../world/noise.ts';
+import type { Grid } from './grid.ts';
+import type { Vec2 } from './types.ts';
+
+// What the game reads off the island's ground for its places (places.ts): how far each cell lies
+// inside the island top's edge, the shore band along that edge, where a palm grows, and whether a
+// patch of ground is clear for something to stand on it. Everything derives from the grid (the
+// world's own island and obstacles) and fixed-seed hashes of world cells, never from coordinates
+// placed by hand, so a grown island gets the same rules on its new ground.
+
+/** the shore: walkable ground within this distance (m) of the island top's edge (two cells) */
+export const SHORE_BAND = 1.0;
+/** a palm stands this far inside the top's edge (m): near the shore, not on it */
+const PALM_BAND = { from: 2.5, to: 6 };
+const PALM_SEED = 4231;
+
+// per grid: the distance field and the shore's base cells (before the game's own obstacles)
+const edges = new WeakMap<Grid, Float32Array>();
+const shores = new WeakMap<Grid, Uint8Array>();
+
+/**
+ * Metres from each cell's centre to the nearest cell off the island top (a two-pass chamfer
+ * distance, steps of one cell and a diagonal): 0 off the top, one cell size on its outermost ring.
+ */
+export function edgeDistance( grid: Grid ): Float32Array {
+
+	let d = edges.get( grid );
+	if ( d ) return d;
+	const { cols, rows, top, size } = grid;
+	d = new Float32Array( cols * rows );
+	const diag = size * Math.SQRT2;
+	for ( let k = 0; k < d.length; k ++ ) d[ k ] = top[ k ] ? Infinity : 0;
+	// off the grid counts as off the top
+	const at = ( i: number, j: number ) => grid.inBounds( i, j ) ? d![ j * cols + i ] : 0;
+	for ( let j = 0; j < rows; j ++ ) for ( let i = 0; i < cols; i ++ ) {
+
+		const k = j * cols + i;
+		if ( d[ k ] === 0 ) continue;
+		d[ k ] = Math.min( d[ k ], at( i - 1, j ) + size, at( i, j - 1 ) + size, at( i - 1, j - 1 ) + diag, at( i + 1, j - 1 ) + diag );
+
+	}
+	for ( let j = rows - 1; j >= 0; j -- ) for ( let i = cols - 1; i >= 0; i -- ) {
+
+		const k = j * cols + i;
+		if ( d[ k ] === 0 ) continue;
+		d[ k ] = Math.min( d[ k ], at( i + 1, j ) + size, at( i, j + 1 ) + size, at( i + 1, j + 1 ) + diag, at( i - 1, j + 1 ) + diag );
+
+	}
+	edges.set( grid, d );
+	return d;
+
+}
+
+/** 1 for the island top's cells within SHORE_BAND of its edge, whatever stands on them. */
+export function shoreMask( grid: Grid ): Uint8Array {
+
+	let m = shores.get( grid );
+	if ( m ) return m;
+	const d = edgeDistance( grid );
+	m = new Uint8Array( d.length );
+	for ( let k = 0; k < d.length; k ++ ) m[ k ] = d[ k ] > 0 && d[ k ] <= SHORE_BAND + 1e-4 ? 1 : 0;
+	shores.set( grid, m );
+	return m;
+
+}
+
+/** The cell indices whose centres lie within r of a point (on the grid). */
+export function cellsWithin( grid: Grid, p: Vec2, r: number ): number[] {
+
+	const out: number[] = [];
+	const i0 = Math.floor( ( p.x - r - grid.x0 ) / grid.size ), i1 = Math.floor( ( p.x + r - grid.x0 ) / grid.size );
+	const j0 = Math.floor( ( p.z - r - grid.z0 ) / grid.size ), j1 = Math.floor( ( p.z + r - grid.z0 ) / grid.size );
+	for ( let j = j0; j <= j1; j ++ ) for ( let i = i0; i <= i1; i ++ ) {
+
+		if ( ! grid.inBounds( i, j ) ) continue;
+		const k = j * grid.cols + i;
+		if ( Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= r ) out.push( k );
+
+	}
+	return out;
+
+}
+
+/**
+ * Whether all the ground within r of a point is open main ground. Something blocking a disc with
+ * such a clear ring round it cannot cut the main ground in two: every way across goes round.
+ */
+export function clearAround( grid: Grid, p: Vec2, r: number ): boolean {
+
+	const k = grid.indexAt( p.x, p.z );
+	if ( k < 0 || grid.region[ k ] !== grid.main ) return false;
+	return cellsWithin( grid, p, r ).every( ( c ) => grid.region[ c ] === grid.main );
+
+}
+
+/**
+ * Where a palm grows: of the cells in the palm band whose ground is clear to `clear` metres, the
+ * one with the lowest fixed-seed hash of its world cell, so the choice depends on the ground
+ * alone (not on the scan order or the grid's origin). Null when no ground fits.
+ */
+export function palmSite( grid: Grid, clear: number ): Vec2 | null {
+
+	const d = edgeDistance( grid );
+	let best = - 1, bestHash = Infinity;
+	for ( let k = 0; k < d.length; k ++ ) {
+
+		if ( d[ k ] < PALM_BAND.from || d[ k ] > PALM_BAND.to || grid.region[ k ] !== grid.main ) continue;
+		const x = grid.centreX( k ), z = grid.centreZ( k );
+		const h = hash3i( Math.floor( x / grid.size ), Math.floor( z / grid.size ), PALM_SEED );
+		if ( h >= bestHash || ! clearAround( grid, { x, z }, clear ) ) continue;
+		best = k;
+		bestHash = h;
+
+	}
+	return best < 0 ? null : grid.centreOf( best );
+
+}

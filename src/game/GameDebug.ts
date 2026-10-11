@@ -4,12 +4,13 @@ import type { Controller } from 'lil-gui';
 import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
 import { ISLAND_TOP } from '../world/WorldShapes.ts';
 import type { Game } from './Game.ts';
+import { describeCall } from './sim/actions.ts';
 import type { EntityId, Speed } from './sim/types.ts';
 
 // The game's developer controls: a Game folder in the scene's lil-gui panel (H), not a player
 // interface. It sets the speed and pauses, saves and loads, shows one islander's body as the
-// simulation holds it (and whether a thought is in flight for it) and sends that body walking to
-// the next click on the island. Everything
+// simulation holds it (where it is, the action under way, whether a thought is in flight for it)
+// and sends that body walking to the next click on the island. Everything
 // goes through the Game's methods, which the console reaches as window.__PONLAI__.game.
 
 // ms between refreshes of the read-only fields
@@ -91,7 +92,7 @@ export class GameDebug {
 		f.speed = sim.speed;
 		const v = sim.state.villagers.find( ( o ) => o.id === f.islander );
 		f.position = v ? `${ v.pos.x.toFixed( 1 ) }, ${ v.pos.z.toFixed( 1 ) }` : '';
-		f.doing = v ? ( v.path ? 'walking' : 'standing' ) : '';
+		f.doing = v ? ( v.action ? describeCall( v.action.call ) : v.path ? 'walking' : 'standing' ) : '';
 		f.thinking = v ? sim.thinking( v.id ) : false;
 		for ( const c of this.folder.controllersRecursive() ) c.updateDisplay();
 
