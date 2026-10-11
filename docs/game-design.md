@@ -94,7 +94,56 @@ The player should want to rebuild after watching their islanders walk the long w
   islander keeps walking, working or idling, as people think while doing other things.
 - So orders are directions ("get the storehouse up today"), not moment-to-moment control, and
   islanders need quick reactions of their own between thoughts (fast and slow thinking, System 1
-  and System 2). How that split works is designed together with the islanders' tools.
+  and System 2). How that split works is designed together with the language model.
+
+## Actions and perception
+
+### Actions
+
+An islander acts through five primitive actions. They never change: new content adds places and
+items with their own options, never a new action.
+
+| Kind | Action | Its options come from |
+|---|---|---|
+| The body's own | `go( place )`, `say( words )`, `wait( time )` | fixed, available anywhere |
+| A place's | `do( action )` | the place the islander stands at |
+| An item's | `use( item )` | the item, carried in the bag |
+
+- `go` names a place, never a point or a distance: finding the way and walking it is the body's
+  job, not the mind's.
+- `do` runs one of the actions the islander's current place offers (fish at the shore, pick a
+  coconut under the palm, put in or take out at the storehouse). Fishing or picking is an option
+  of a place, not a verb of the islander.
+- `use` uses an item the islander carries (drink a coconut, eat a fish).
+- A new action replaces the one under way; stopping is not an action.
+- People (giving, following, talking among islanders) are decided when there is more than one
+  islander.
+
+### Items
+
+- Each islander carries a small bag (a few items; items of a kind stack). What is picked or
+  caught goes into the bag; a full bag refuses it.
+- The storehouse is a place that holds many more; the islander puts in and takes out there.
+
+### Needs
+
+Satiety and hydration, 0 to 100, fall with time and rise when the islander eats or drinks. They
+are rules and numbers, like everything that decides outcomes (capacities, counts, how long an
+action takes, the chance of a catch, walking speed). What the islander knows and believes is not:
+distances, routes, how far or hard something is.
+
+### Perception
+
+An islander perceives what a person would, not the world's state:
+
+- **seen**: the places and things in sight, and what shows on them (coconuts on the palm), with no
+  positions or distances;
+- **at hand**: the place they stand at, and so which `do` options are open;
+- **the body**: satiety, hydration and the bag's contents, as numbers;
+- **the time**: the day and the time of day.
+
+Memory (what they saw last, what happened when they acted), hearing the leader, and what starts a
+thought are designed with the language model.
 
 ## Not now
 
@@ -104,14 +153,19 @@ The player should want to rebuild after watching their islanders walk the long w
 
 ## Next
 
-- A small playable prototype to test whether talking to the islanders is fun: three islanders,
-  one small island, food and water, one storm, a few buildings to place, orders in natural
-  language. If ten minutes of it are fun, build on it; if not, change course while it is cheap.
-- Before it: the islanders' primitive actions and what they perceive.
+- The first prototype: one islander on the small island, with food and water.
+  - **Places**: the shore (fish: takes a while, a fish by chance), one coconut palm (pick a
+    coconut; it regrows them slowly), and the storehouse, which the player places by hand.
+  - **Items**: coconut (drink: hydration), fish (eat: satiety).
+  - **Needs** fall to zero with no consequence yet.
+  - **A stand-in brain** of plain rules thinks for the islander until the language model is
+    connected; no weather and no talking yet.
+- After it, the prototype that tests whether talking to the islanders is fun: three islanders,
+  food and water, one storm, a few buildings to place, orders in natural language. If ten minutes
+  of it are fun, build on it; if not, change course while it is cheap.
 
 ## Open questions
 
-- Which primitive actions the islanders have, and what they perceive.
 - How a storm is announced and how much warning the player gets.
 - The population steps at which the island grows, and how big each new piece is.
 - How a new islander arrives.
