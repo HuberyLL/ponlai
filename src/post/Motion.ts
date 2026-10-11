@@ -32,7 +32,9 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // shows. The previous position, in the material's local space:
 // - three's `positionPrevious` for a material without a positionNode: its geometry, or the
 //   skinned or instanced vertex of the frame before (three's skinning and instancing write it
-//   whenever the context MRT has a `velocity`);
+//   whenever the context MRT has a `velocity`). A skinned mesh in the attached bind mode gets its
+//   previous vertex in its CURRENT space, so its object's motion would count twice: its material
+//   rebases it (CharacterMaterial.ts, the islanders);
 // - a material whose positionNode animates (the wind's sway, the sea) assigns `positionPrevious`
 //   in its position stage and says so with `userData.previousPosition = true`;
 // - any other positionNode is taken as not moving: its displaced position now.
