@@ -90,15 +90,16 @@ Game:
   and time, satiety and hydration, the bag, what they are doing, the last words said and how the
   last action ended) and a "Place chest" button that arms placement: a ring on the turf
   previews the spot (green, or red with the reason), a click places it, Escape cancels, and the
-  control is gone once the chest stands (`src/game/Placement.ts`). Space pauses only the game
+  control is gone once the chest is placed (`src/game/Placement.ts`). Space pauses only the game
   clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
   day), and its Game folder (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
   (position, the action under way, whether a thought is in flight) and sends it walking to the
   next click on the island. The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
   actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
-  `think( id )`, `walkTo( id, x, z )`, `placeChest( x, z )` (once; returns why not, or null),
-  `focus( id )`, `setSpeed`, `togglePause`, `save` and `load`.
+  `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
+  `'chest'`, one of each; returns why not, or null), `focus( id )`, `setSpeed`, `togglePause`,
+  `save` and `load`.
 
 ## Captures
 
@@ -220,8 +221,8 @@ what these do not give (automation, A/B statistics, pass names).
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
-  first prototype's rules (needs, the bag, the palm, fishing, the chest, the actions, the
-  perception, the stand-in brain over a few game days, a save mid-action); its island is in
+  first prototype's rules (needs, the bag, the palm, fishing, the chest placed as a blueprint and
+  built, the actions, the perception, the stand-in brain over a few game days, a save mid-action); its island is in
   `tools/game-fixture.mjs`.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit

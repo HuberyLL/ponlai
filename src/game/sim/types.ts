@@ -76,10 +76,16 @@ export interface PalmState {
 	growth: number;
 }
 
-/** The chest the player placed (places.ts). */
-export interface ChestState {
+/** A building the player placed (buildings.ts): its kind, where it stands, the work done on it, what it holds. */
+export interface BuildingState {
+	/** its place's id: the kind's name (one of each kind for now) */
+	id: string;
+	kind: string;
 	x: number;
 	z: number;
+	/** game seconds of work done on it: built once this reaches its kind's work */
+	worked: number;
+	/** what it holds (the chest's store; empty for a kind that holds nothing) */
 	items: Items;
 }
 
@@ -95,8 +101,8 @@ export interface SimState {
 	rng: number;
 	villagers: Villager[];
 	palms: PalmState[];
-	/** null until the player places it */
-	chest: ChestState | null;
+	/** what the player placed, in the order placed */
+	buildings: BuildingState[];
 }
 
 /**

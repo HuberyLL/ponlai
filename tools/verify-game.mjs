@@ -2,8 +2,9 @@
 // over it, a body that walks to a point and stops there, a save that loads back as it was, a brain
 // whose late answer is applied while the world ran on; then the first prototype's rules: needs that
 // fall and rise, the bag's capacity, the palm and its regrowth, fishing by the seeded generator,
-// the chest, actions that replace each other, a perception without positions, the stand-in
-// brain keeping the islander fed and watered for days, and a save taken mid-action.
+// the chest placed as a blueprint and built, actions that replace each other, a perception
+// without positions, the stand-in brain building the chest and keeping the islander fed and
+// watered for days, and a save taken mid-action.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
 import assert from 'node:assert/strict';
@@ -14,6 +15,7 @@ import { StandInBrain } from '../src/game/sim/standin.ts';
 import { BAG_CAPACITY, COCONUT_HYDRATION, FISH_SATIETY } from '../src/game/sim/items.ts';
 import { HYDRATION_PER_DAY, SATIETY_PER_DAY } from '../src/game/sim/needs.ts';
 import { FISH_SECONDS, PALM_COCONUTS, PALM_REGROW_SECONDS, PICK_SECONDS } from '../src/game/sim/places.ts';
+import { CHEST_WORK, progressOf, stageOf } from '../src/game/sim/buildings.ts';
 import { input } from './game-fixture.mjs';
 
 const HOUR = 3600;
@@ -187,8 +189,18 @@ function placeChest( sim ) {
 	const cells = [];
 	for ( let k = 0; k < grid.open.length; k ++ ) if ( grid.region[ k ] === grid.main ) cells.push( k );
 	cells.sort( ( a, b ) => Math.hypot( grid.centreX( a ), grid.centreZ( a ) ) - Math.hypot( grid.centreX( b ), grid.centreZ( b ) ) || a - b );
-	for ( const k of cells ) if ( sim.placeChest( grid.centreX( k ), grid.centreZ( k ) ) === null ) return grid.centreOf( k );
+	for ( const k of cells ) if ( sim.placeBlueprint( 'chest', grid.centreX( k ), grid.centreZ( k ) ) === null ) return grid.centreOf( k );
 	throw new Error( 'no ground took the chest' );
+
+}
+
+/** the chest placed and built by the islander, who stands at it after */
+function buildChest( sim ) {
+
+	const at = placeChest( sim );
+	assert.equal( run( sim, { tool: 'go', args: { place: 'chest' } } ).ok, true );
+	assert.deepEqual( run( sim, { tool: 'do', args: { action: 'build' } } ), { ok: true, value: 'built the chest' } );
+	return at;
 
 }
 
@@ -283,13 +295,14 @@ function placeChest( sim ) {
 
 	const sim = newGame( input );
 	const v = sim.state.villagers[ 0 ], palm = sim.state.palms[ 0 ];
-	assert.equal( typeof sim.placeChest( 1e4, 0 ), 'string', 'not off the island' );
-	assert.equal( typeof sim.placeChest( palm.x, palm.z ), 'string', 'not on the palm' );
-	assert.equal( typeof sim.placeChest( v.pos.x, v.pos.z ), 'string', 'not on the islander' );
-	assert.equal( sim.state.chest, null );
-	const at = placeChest( sim );
+	assert.equal( typeof sim.placeBlueprint( 'chest', 1e4, 0 ), 'string', 'not off the island' );
+	assert.equal( typeof sim.placeBlueprint( 'chest', palm.x, palm.z ), 'string', 'not on the palm' );
+	assert.equal( typeof sim.placeBlueprint( 'chest', v.pos.x, v.pos.z ), 'string', 'not on the islander' );
+	assert.deepEqual( sim.state.buildings, [] );
+	assert.equal( typeof sim.placeBlueprint( 'tower', 0, 0 ), 'string', 'no such kind' );
+	const at = buildChest( sim );
 	assert.ok( ! sim.grid.openAt( at.x, at.z ), 'it blocks its ground' );
-	assert.equal( sim.placeChest( at.x, at.z ), 'The chest is already placed', 'placed once' );
+	assert.equal( sim.placeBlueprint( 'chest', at.x, at.z ), 'The chest is already placed', 'placed once' );
 	run( sim, { tool: 'go', args: { place: 'shore' } } );
 	assert.equal( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, undefined, 'its contents do not show from afar' );
 	assert.equal( run( sim, { tool: 'go', args: { place: 'chest' } } ).ok, true );
@@ -297,16 +310,71 @@ function placeChest( sim ) {
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'fish', count: 2 } } ).ok, true );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'fish', count: 1 } } ).ok, false, 'cannot put what the bag lacks' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'stone' } } ).ok, false, 'no such item' );
-	assert.deepEqual( sim.state.chest.items, { fish: 2 } );
+	assert.deepEqual( sim.state.buildings[ 0 ].items, { fish: 2 } );
 	assert.deepEqual( v.bag, { coconut: 1 } );
 	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, { items: { fish: 2 } }, 'its contents show while at it' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'take', item: 'fish', count: 3 } } ).ok, false, 'cannot take more than it holds' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'take', item: 'fish' } } ).ok, true, 'one by default' );
-	assert.deepEqual( sim.state.chest.items, { fish: 1 } );
+	assert.deepEqual( sim.state.buildings[ 0 ].items, { fish: 1 } );
 	assert.deepEqual( v.bag, { coconut: 1, fish: 1 } );
 	const json = sim.save();
 	assert.deepEqual( loadGame( json, input ).grid.open, sim.grid.open, 'a loaded game blocks the same ground' );
 	console.log( `chest: placed at ${ at.x }, ${ at.z }, refused elsewhere, put and take` );
+
+}
+
+// the chest as a blueprint: an unbuilt site with only `build`, built by work that survives an
+// interruption and a save, then the chest's own options
+{
+
+	const sim = newGame( input, { seed: 3 } );
+	const v = sim.state.villagers[ 0 ];
+	const at = placeChest( sim );
+	const site = sim.state.buildings[ 0 ];
+	assert.deepEqual( site, { id: 'chest', kind: 'chest', x: at.x, z: at.z, worked: 0, items: {} } );
+	assert.equal( stageOf( site ), 'planned' );
+	assert.ok( ! sim.grid.openAt( at.x, at.z ), 'the site blocks its ground from the start' );
+	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, { construction: 'marked out, not begun' }, 'a planned site shows as one' );
+	assert.equal( run( sim, { tool: 'go', args: { place: 'chest' } } ).ok, true );
+	assert.deepEqual( perceive( sim, v ).atHand.find( ( h ) => h.place === 'chest' ).options, [ 'build' ], 'an unbuilt site offers only build' );
+	v.bag = { fish: 1 };
+	assert.deepEqual( run( sim, { tool: 'do', args: { action: 'put', item: 'fish' } } ), { ok: false, reason: 'nothing here offers put' }, 'nothing goes in before it is built' );
+
+	// work for a while, then a new action interrupts: the work done stays
+	const part = 1000;
+	assert.equal( sim.tools.get( 'do' )( v, { action: 'build' }, sim ).ok, true );
+	sim.step( part );
+	assert.equal( site.worked, part, 'a second of work a tick' );
+	assert.equal( stageOf( site ), 'building' );
+	assert.equal( sim.tools.get( 'wait' )( v, { seconds: 60 }, sim ).ok, true );
+	sim.step( 60 );
+	assert.equal( site.worked, part, 'the work done stays when the building stops' );
+	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, { construction: 'being built, about a quarter done' }, 'how far along, in words' );
+
+	// a save mid-build plays on as the original
+	assert.equal( sim.tools.get( 'do' )( v, { action: 'build' }, sim ).ok, true );
+	sim.step( 30 );
+	const loaded = loadGame( sim.save(), input );
+	assert.equal( loaded.save(), sim.save() );
+	assert.deepEqual( loaded.grid.open, sim.grid.open, 'a loaded game blocks the site\'s ground' );
+	const tick = sim.state.tick;
+	for ( const game of [ sim, loaded ] ) {
+
+		const body = game.state.villagers[ 0 ];
+		while ( body.action ) game.step( 1 );
+		assert.deepEqual( body.last.result, { ok: true, value: 'built the chest' } );
+
+	}
+	assert.equal( loaded.save(), sim.save(), 'a game saved mid-build finishes it the same' );
+	assert.equal( part + 30 + sim.state.tick - tick, CHEST_WORK, 'building takes the kind\'s work in all' );
+	assert.equal( stageOf( site ), 'built' );
+	assert.equal( progressOf( site ), 1 );
+	assert.deepEqual( perceive( sim, v ).atHand.find( ( h ) => h.place === 'chest' ).options, [ 'put' ], 'the finished chest offers its own options' );
+	assert.equal( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows.construction, undefined, 'and shows no construction' );
+	assert.deepEqual( run( sim, { tool: 'do', args: { action: 'build' } } ), { ok: false, reason: 'nothing here offers build' }, 'build is gone' );
+	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'fish' } } ).ok, true );
+	assert.equal( run( sim, { tool: 'do', args: { action: 'take', item: 'fish' } } ).ok, true, 'put and take' );
+	console.log( `blueprint: planned, built in ${ CHEST_WORK } s of work across an interruption and a save, then a chest` );
 
 }
 
@@ -375,24 +443,26 @@ function placeChest( sim ) {
 		sim.brain = new StandInBrain();
 		if ( store ) placeChest( sim );
 		const v = sim.state.villagers[ 0 ];
-		let low = 100;
+		let low = 100, built = - 1;
 		for ( let t = 0; t < days * 24 * HOUR; t ++ ) {
 
 			sim.step( 1 );
+			if ( built < 0 && store && stageOf( sim.state.buildings[ 0 ] ) === 'built' ) built = sim.state.tick;
 			// from the first evening on: it starts at 80 with nothing in the bag
 			if ( t > 12 * HOUR ) low = Math.min( low, v.needs.satiety, v.needs.hydration );
 
 		}
-		return { sim, low };
+		return { sim, low, built };
 
 	};
 	const bare = play( 2, false ), stocked = play( 2, true );
 	assert.ok( bare.low > 45, `needs kept up without a chest (lowest ${ bare.low.toFixed( 1 ) })` );
 	assert.ok( stocked.low > 45, `needs kept up with a chest (lowest ${ stocked.low.toFixed( 1 ) })` );
-	const items = stocked.sim.state.chest.items;
+	assert.ok( stocked.built > 0 && stocked.built < 24 * HOUR, `it builds the placed chest on the first day (by ${ ( stocked.built / HOUR ).toFixed( 1 ) } h)` );
+	const items = stocked.sim.state.buildings[ 0 ].items;
 	assert.ok( ( items.coconut ?? 0 ) > 0 && ( items.fish ?? 0 ) > 0, 'and it stocks the chest a little' );
 	assert.equal( play( 2, true ).sim.save(), stocked.sim.save(), 'deterministic for a seed' );
-	console.log( `stand-in: ${ days } days, needs never below ${ Math.min( bare.low, stocked.low ).toFixed( 1 ) }; chest holds ${ JSON.stringify( items ) }` );
+	console.log( `stand-in: ${ days } days, needs never below ${ Math.min( bare.low, stocked.low ).toFixed( 1 ) }; chest built by ${ ( stocked.built / HOUR ).toFixed( 1 ) } h, holds ${ JSON.stringify( items ) }` );
 
 }
 

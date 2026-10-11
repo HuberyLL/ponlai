@@ -13,6 +13,8 @@ export const SHORE_BAND = 1.0;
 /** a palm stands this far inside the top's edge (m): near the shore, not on it */
 const PALM_BAND = { from: 2.5, to: 6 };
 const PALM_SEED = 4231;
+/** open ground a palm or a building needs round the ground it blocks (m), for clearAround */
+export const CLEAR_RING = 1.0;
 
 // per grid: the distance field and the shore's base cells (before the game's own obstacles)
 const edges = new WeakMap<Grid, Float32Array>();

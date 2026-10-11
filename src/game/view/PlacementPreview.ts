@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { uniform } from 'three/tsl';
-import { CHEST_RADIUS } from '../sim/places.ts';
+import { CHEST_RADIUS } from '../sim/buildings.ts';
 import type { GridApi, Vec2 } from '../sim/types.ts';
 
 // Where the chest would stand under the pointer while the player places it: a ring the size

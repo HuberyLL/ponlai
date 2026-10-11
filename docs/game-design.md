@@ -112,13 +112,24 @@ items with their own options, never a new action.
 - `go` names a place, never a point or a distance: finding the way and walking it is the body's
   job, not the mind's.
 - `do` runs one of the actions the islander's current place offers (fish at the shore, pick a
-  coconut under the palm, put in or take out at the chest). Fishing or picking is an option
+  coconut under the palm, put in or take out at the chest, build at a construction site). Fishing or picking is an option
   of a place, not a verb of the islander.
 - `use` uses an item the islander carries (drink a coconut, eat a fish).
 - A new action replaces the one under way; stopping is not an action. `say` is the exception:
   speech comes from the mind, like thinking, so the islander talks while the body goes on.
 - People (giving, following, talking among islanders) are decided when there is more than one
   islander.
+
+### Building
+
+- The player plans, the islanders build. A building the player places is a blueprint: a
+  construction site, a place whose only option is `build`. Building takes a while and can be
+  interrupted and resumed; the work done stays. When the work is done the site is the finished
+  building with its own options (the chest's put and take).
+- Every kind goes through the same stages, shaped by its footprint: planned (marked out), being
+  built, built. The site blocks walking from the moment it is placed. Perception shows the stage
+  in words ("being built, about half done"), as a person sees a site.
+- No materials yet: building costs time only, until something on the island gives wood or stone.
 
 ### Items
 

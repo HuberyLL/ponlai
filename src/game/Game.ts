@@ -19,7 +19,7 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 // needs and the places they act at, a brain in its slot thinks for them (the stand-in of plain
 // rules by default, sim/standin.ts) and GameView draws them, the palm and the chest into the scene.
 // The player's interface is a prototype HUD (Hud.ts): a readout of the islander and the player's
-// one act, setting the chest down (Placement.ts). The debug panel's Game folder (GameDebug.ts) and
+// one act, setting the chest down as a blueprint the islander then builds (Placement.ts). The debug panel's Game folder (GameDebug.ts) and
 // the methods below, reached from the console as window.__PONLAI__.game, drive the rest. The
 // simulation's clock sets the time of day; the page's sky follows it, so pausing or speeding up the
 // game turns the sky with it. The weather is the page's own, as without ?game, running on the day
@@ -222,10 +222,10 @@ export class Game {
 
 	}
 
-	/** Place the chest at a point of the ground (world metres), once: null when it stands there, else why not. */
-	placeChest( x: number, z: number ): string | null {
+	/** Place a building of a kind (sim/buildings.ts: 'chest') at a point of the ground (world metres): null when it stands there, else why not. */
+	placeBlueprint( kind: string, x: number, z: number ): string | null {
 
-		return this.sim.placeChest( x, z );
+		return this.sim.placeBlueprint( kind, x, z );
 
 	}
 

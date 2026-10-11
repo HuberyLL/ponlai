@@ -1,9 +1,9 @@
 import * as THREE from 'three/webgpu';
-import type { ChestState } from '../sim/types.ts';
+import type { BuildingState } from '../sim/types.ts';
 import { BOX, PropBuilder, at, hashAt, propMaterial } from './Props.ts';
 import type { RGB } from './Props.ts';
 
-// The chest (places.ts) once the player has set it down: a stand-in wooden chest built in code, in
+// The chest (sim/buildings.ts) once the player has set it down: a stand-in wooden chest built in code, in
 // the props' faceted style (Props.ts), as the art direction's things people make are, handmade and
 // a little chunky: a body of horizontal planks on two skids, darker corner posts, a lid of planks
 // with a rim, two dark bands over body and lid and a clasp at the front. About 0.9 x 0.55 m and
@@ -22,7 +22,7 @@ const SKID = 0.05; // the skids' height: the body stands on them
 const BODY = 0.4; // the body's height above the skids
 const LID = 0.15; // the lid's height
 
-function chestGeometry( chest: ChestState ): THREE.BufferGeometry {
+function chestGeometry( chest: BuildingState ): THREE.BufferGeometry {
 
 	const b = new PropBuilder();
 	const hash = ( k: number ) => hashAt( chest.x, chest.z, k );
@@ -83,7 +83,7 @@ export class ChestView {
 	readonly x: number;
 	readonly z: number;
 
-	constructor( chest: ChestState, ground: number ) {
+	constructor( chest: BuildingState, ground: number ) {
 
 		this.x = chest.x;
 		this.z = chest.z;
