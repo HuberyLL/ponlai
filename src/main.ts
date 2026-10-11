@@ -49,6 +49,8 @@ import { AA_GUI_MODES, AA_MODE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
+import { restEpoch } from './post/TemporalRest.ts';
+import type { TemporalFrame } from './post/TemporalAA.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
@@ -403,7 +405,7 @@ if ( fgview ) installDebugView( fgview, {
 		jitterNdc: jitter.uniforms.ndc, opaqueBelow: ( MOTION_CLASS.opaque + MOTION_CLASS.vegetation ) / 2,
 	},
 } );
-const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ) );
+const pipeline = new Pipeline( renderer, sky, rain, postOptionsFromURL( location.search, quality.post ), quality.taa );
 // The profiler labels each pass the graph runs by the pass's label (its groups), unless a
 // target or object it knows labels it otherwise (the passes inside the display chain).
 if ( profiler ) {
@@ -453,7 +455,7 @@ const warming = Promise.all( [
 	// graph's warm-up starts, which compiles them with every pass (graph/FrameGraph.ts `warm`)
 	rain.registerLatent( overlayLatents ),
 	sky.lightning.registerLatent( pipeline.graph ),
-	pipeline.graph.warm( { scene, waterScene, rainScene, camera, water: null, sun, time: simTime } ),
+	pipeline.graph.warm( { scene, waterScene, rainScene, camera, water: null, sun, time: simTime } ).then( () => pipeline.temporal?.warm() ),
 ] );
 warming.catch( () => undefined ); // reported where it is awaited, before the loop
 
@@ -715,6 +717,27 @@ antialiasingF.add( { mode: AA_MODE }, 'mode', AA_GUI_MODES ).name( 'mode (reload
 	location.assign( url );
 
 } );
+// The temporal resolve's knobs (TemporalAA.ts), live: the tier's `taa` table is where they start. A
+// change restarts the rest of a paused scene (the rest's key holds them).
+if ( pipeline.temporal ) {
+
+	const T = pipeline.temporal.settings, K = pipeline.temporal.knobs;
+	antialiasingF.add( T, 'framesStill', 1, 32, 1 ).name( 'history frames, still' );
+	antialiasingF.add( T, 'framesMoving', 1, 32, 1 ).name( 'history frames, moving' );
+	antialiasingF.add( T, 'speedFull', 1, 64, 1 ).name( 'moving from (px/frame)' );
+	antialiasingF.add( T, 'gammaStill', 0.25, 3, 0.05 ).name( 'clip box, still (sd)' );
+	antialiasingF.add( T, 'gammaMove', 0.25, 3, 0.05 ).name( 'clip box, moving (sd)' );
+	antialiasingF.add( T, 'sigma', 0.2, 0.8, 0.01 ).name( 'filter sigma (px)' );
+	antialiasingF.add( T, 'sigmaRest', 0.2, 0.8, 0.01 ).name( 'filter sigma at rest (px)' );
+	antialiasingF.add( T.sharpness, 'taa', 0, 2, 0.05 ).name( 'taa sharpen softness' );
+	antialiasingF.add( T.sharpness.taau, '0', 0, 2, 0.05 ).name( 'taau softness at 1:1' );
+	antialiasingF.add( T.sharpness.taau, '1', 0, 2, 0.05 ).name( 'taau softness at 2:1' );
+	antialiasingF.add( T, 'skyPassThrough' ).name( 'sky without history' );
+	antialiasingF.add( K.dofCut, 'value', 0, 1, 0.05 ).name( 'history cut in DoF blur' );
+	antialiasingF.add( T, 'restSettle', 0, 32, 1 ).name( 'rest: settle frames' );
+	antialiasingF.add( T, 'restSequence', 0, 64, 1 ).name( 'rest: jitter frames' );
+
+}
 const groundF = gui.addFolder( 'Ground' );
 groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean ) => {
 
@@ -982,6 +1005,24 @@ addEventListener( 'keydown', ( e ) => {
 
 const frameTimes: number[] = [];
 let shadowElapsed = 0;
+// The temporal resolve's per-frame inputs (TemporalAA.ts): what besides the camera, the clock and the
+// sizes keys a paused scene's rest (a forced strike: a review sets one while paused, and the rest
+// starts over for it), whether the frame may rest (not while a sky bake is in flight or a sky
+// transition runs), and its delta.
+let strikeKey = 'null', strikeVersion = 0;
+function temporalFrame( dt: number ): TemporalFrame | undefined {
+
+	if ( ! pipeline.temporal ) return undefined;
+	const forced = JSON.stringify( ( sky.lightning as unknown as { forced: unknown } ).forced ?? null );
+	if ( forced !== strikeKey ) {
+
+		strikeKey = forced;
+		strikeVersion ++;
+
+	}
+	return { signature: [ strikeVersion ], stable: ! sky.busy && ! sky.transitioning, dt };
+
+}
 function tick( time: number ): void {
 
 	// the frame's own vblank time, not the moment the tick starts: the main thread reaches the tick a
@@ -1091,7 +1132,7 @@ function tick( time: number ): void {
 
 	// (the temporal modes draw the storm's spray with the rain, in the overlay pass)
 	const overlay = rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible );
-	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, camera, water: water!, sun, time: simTime } );
+	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt ) } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
 	frame ++;
@@ -1149,7 +1190,15 @@ function graphDiagnostics(): Record<string, unknown> {
 
 function diagnostics( now = false ): void {
 
-	if ( ! DEBUG || ( ! now && frame % 30 !== 1 ) ) return;
+	if ( ! DEBUG ) return;
+	const current = ( window as unknown as Record<string, Record<string, unknown> | undefined> ).__THREE_GAME_DIAGNOSTICS__;
+	if ( ! now && frame % 30 !== 1 ) {
+
+		// the temporal resolve's state on every frame: the capture tools wait for its rest
+		if ( current && pipeline.temporal ) current.taa = pipeline.temporal.diagnostics();
+		return;
+
+	}
 	const info = renderer.info;
 	( window as unknown as Record<string, unknown> ).__THREE_GAME_DIAGNOSTICS__ = {
 		frame,
@@ -1191,6 +1240,9 @@ function diagnostics( now = false ): void {
 		aa: AA_MODE,
 		pipelines: pipelineCount?.total ?? 0,
 		graph: graphDiagnostics(),
+		// the temporal resolve: its mode, the rest (converged, frames, target), the jitter, the history's
+		// resets, the input and output sizes and whether reactive inputs are read (TemporalAA.ts)
+		taa: pipeline.temporal?.diagnostics() ?? null,
 	};
 
 }
@@ -1426,4 +1478,11 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 };
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
-	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ) };
+	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),
+	// the temporal resolve (TemporalAA.ts, TemporalRest.ts): its live settings and knobs, the rest, the
+	// epoch, and `restart()`, which starts the history and the rest over (a cut and an epoch bump)
+	taa: pipeline.temporal ? {
+		resolve: pipeline.temporal, settings: pipeline.temporal.settings, knobs: pipeline.temporal.knobs, rest: pipeline.temporal.rest, epoch: restEpoch,
+		get converged() { return pipeline.temporal!.converged; },
+		restart: () => { restEpoch.bump( 'restart' ); taaCut( 'restart' ); },
+	} : null };
