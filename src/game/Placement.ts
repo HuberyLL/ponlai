@@ -2,20 +2,20 @@ import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
 import type { Game } from './Game.ts';
 import type { HudContext } from './Hud.ts';
 import { groundPoint, pointerRay } from './pick.ts';
-import { chestRefusal } from './sim/places.ts';
+import { blueprintRefusal, buildingOf } from './sim/buildings.ts';
 import type { Vec2 } from './sim/types.ts';
 import { PlacementPreview } from './view/PlacementPreview.ts';
 
 // The player's first control: placing the chest by hand. A button arms placement; while armed,
 // a ring on the turf under the pointer shows where it would stand (PlacementPreview: green where
 // it can go, red where the simulation would refuse it, with the reason over the button), and a
-// click on the island places it through Game.placeChest. A refused click leaves placement
+// click on the island places it through Game.placeBlueprint. A refused click leaves placement
 // armed; Escape or the button again cancels. Once the chest stands (placed now or in a
 // loaded game) the control is gone.
 //
 // Rules: a press that moves CLICK_SLOP or more is the camera's drag, not a click, as for the debug
 // panel's send-to-click; the preview reads the same refusal the simulation applies
-// (places.ts chestRefusal), so green always means the click will place it.
+// (buildings.ts blueprintRefusal), so green always means the click will place it.
 
 const HINT = 'Click the island to place it · Esc to cancel';
 
@@ -66,7 +66,7 @@ export class ChestPlacement {
 	reset(): void {
 
 		this.arm( false );
-		this.box.style.display = this.game.sim.state.chest ? 'none' : '';
+		this.box.style.display = buildingOf( this.game.sim.state, 'chest' ) ? 'none' : '';
 
 	}
 
@@ -112,7 +112,7 @@ export class ChestPlacement {
 	private showPreview(): void {
 
 		const sim = this.game.sim, p = this.target();
-		const reason = p && chestRefusal( sim, p );
+		const reason = p && blueprintRefusal( sim, 'chest', p );
 		this.preview.show( p, p !== null && reason === null, sim.grid );
 		this.say( reason || HINT, !! reason );
 
@@ -120,7 +120,7 @@ export class ChestPlacement {
 
 	private place( p: Vec2 ): void {
 
-		const reason = this.game.placeChest( p.x, p.z );
+		const reason = this.game.placeBlueprint( 'chest', p.x, p.z );
 		if ( reason ) {
 
 			this.say( reason, true );

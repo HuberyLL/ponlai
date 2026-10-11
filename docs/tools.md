@@ -97,8 +97,9 @@ Game:
   next click on the island. The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
   actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
-  `think( id )`, `walkTo( id, x, z )`, `placeChest( x, z )` (once; returns why not, or null),
-  `focus( id )`, `setSpeed`, `togglePause`, `save` and `load`.
+  `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
+  `'chest'`, one of each; returns why not, or null), `focus( id )`, `setSpeed`, `togglePause`,
+  `save` and `load`.
 
 ## Captures
 

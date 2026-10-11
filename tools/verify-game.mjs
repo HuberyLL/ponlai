@@ -187,7 +187,7 @@ function placeChest( sim ) {
 	const cells = [];
 	for ( let k = 0; k < grid.open.length; k ++ ) if ( grid.region[ k ] === grid.main ) cells.push( k );
 	cells.sort( ( a, b ) => Math.hypot( grid.centreX( a ), grid.centreZ( a ) ) - Math.hypot( grid.centreX( b ), grid.centreZ( b ) ) || a - b );
-	for ( const k of cells ) if ( sim.placeChest( grid.centreX( k ), grid.centreZ( k ) ) === null ) return grid.centreOf( k );
+	for ( const k of cells ) if ( sim.placeBlueprint( 'chest', grid.centreX( k ), grid.centreZ( k ) ) === null ) return grid.centreOf( k );
 	throw new Error( 'no ground took the chest' );
 
 }
@@ -283,13 +283,14 @@ function placeChest( sim ) {
 
 	const sim = newGame( input );
 	const v = sim.state.villagers[ 0 ], palm = sim.state.palms[ 0 ];
-	assert.equal( typeof sim.placeChest( 1e4, 0 ), 'string', 'not off the island' );
-	assert.equal( typeof sim.placeChest( palm.x, palm.z ), 'string', 'not on the palm' );
-	assert.equal( typeof sim.placeChest( v.pos.x, v.pos.z ), 'string', 'not on the islander' );
-	assert.equal( sim.state.chest, null );
+	assert.equal( typeof sim.placeBlueprint( 'chest', 1e4, 0 ), 'string', 'not off the island' );
+	assert.equal( typeof sim.placeBlueprint( 'chest', palm.x, palm.z ), 'string', 'not on the palm' );
+	assert.equal( typeof sim.placeBlueprint( 'chest', v.pos.x, v.pos.z ), 'string', 'not on the islander' );
+	assert.deepEqual( sim.state.buildings, [] );
+	assert.equal( typeof sim.placeBlueprint( 'tower', 0, 0 ), 'string', 'no such kind' );
 	const at = placeChest( sim );
 	assert.ok( ! sim.grid.openAt( at.x, at.z ), 'it blocks its ground' );
-	assert.equal( sim.placeChest( at.x, at.z ), 'The chest is already placed', 'placed once' );
+	assert.equal( sim.placeBlueprint( 'chest', at.x, at.z ), 'The chest is already placed', 'placed once' );
 	run( sim, { tool: 'go', args: { place: 'shore' } } );
 	assert.equal( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, undefined, 'its contents do not show from afar' );
 	assert.equal( run( sim, { tool: 'go', args: { place: 'chest' } } ).ok, true );
@@ -297,12 +298,12 @@ function placeChest( sim ) {
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'fish', count: 2 } } ).ok, true );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'fish', count: 1 } } ).ok, false, 'cannot put what the bag lacks' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'stone' } } ).ok, false, 'no such item' );
-	assert.deepEqual( sim.state.chest.items, { fish: 2 } );
+	assert.deepEqual( sim.state.buildings[ 0 ].items, { fish: 2 } );
 	assert.deepEqual( v.bag, { coconut: 1 } );
 	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, { items: { fish: 2 } }, 'its contents show while at it' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'take', item: 'fish', count: 3 } } ).ok, false, 'cannot take more than it holds' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'take', item: 'fish' } } ).ok, true, 'one by default' );
-	assert.deepEqual( sim.state.chest.items, { fish: 1 } );
+	assert.deepEqual( sim.state.buildings[ 0 ].items, { fish: 1 } );
 	assert.deepEqual( v.bag, { coconut: 1, fish: 1 } );
 	const json = sim.save();
 	assert.deepEqual( loadGame( json, input ).grid.open, sim.grid.open, 'a loaded game blocks the same ground' );
@@ -389,7 +390,7 @@ function placeChest( sim ) {
 	const bare = play( 2, false ), stocked = play( 2, true );
 	assert.ok( bare.low > 45, `needs kept up without a chest (lowest ${ bare.low.toFixed( 1 ) })` );
 	assert.ok( stocked.low > 45, `needs kept up with a chest (lowest ${ stocked.low.toFixed( 1 ) })` );
-	const items = stocked.sim.state.chest.items;
+	const items = stocked.sim.state.buildings[ 0 ].items;
 	assert.ok( ( items.coconut ?? 0 ) > 0 && ( items.fish ?? 0 ) > 0, 'and it stocks the chest a little' );
 	assert.equal( play( 2, true ).sim.save(), stocked.sim.save(), 'deterministic for a seed' );
 	console.log( `stand-in: ${ days } days, needs never below ${ Math.min( bare.low, stocked.low ).toFixed( 1 ) }; chest holds ${ JSON.stringify( items ) }` );

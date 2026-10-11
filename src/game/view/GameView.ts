@@ -6,6 +6,7 @@ import { ISLAND_TOP } from '../../world/WorldShapes.ts';
 import { SPEED_FACTORS } from '../sim/types.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { Sim } from '../sim/Sim.ts';
+import { buildingOf } from '../sim/buildings.ts';
 import { PalmView } from './PalmView.ts';
 import { standIn } from './StandIn.ts';
 import { ChestView } from './ChestView.ts';
@@ -161,7 +162,7 @@ export class GameView {
 			changed = true;
 
 		}
-		const box = state.chest;
+		const box = buildingOf( state, 'chest' );
 		if ( this.chest && ( ! box || box.x !== this.chest.x || box.z !== this.chest.z ) ) {
 
 			this.chest.dispose();

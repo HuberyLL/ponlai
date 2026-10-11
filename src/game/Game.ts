@@ -222,10 +222,10 @@ export class Game {
 
 	}
 
-	/** Place the chest at a point of the ground (world metres), once: null when it stands there, else why not. */
-	placeChest( x: number, z: number ): string | null {
+	/** Place a building of a kind (sim/buildings.ts: 'chest') at a point of the ground (world metres): null when it stands there, else why not. */
+	placeBlueprint( kind: string, x: number, z: number ): string | null {
 
-		return this.sim.placeChest( x, z );
+		return this.sim.placeBlueprint( kind, x, z );
 
 	}
 
