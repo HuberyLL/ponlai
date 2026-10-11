@@ -91,10 +91,14 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   land on the page (the views, the camera's limits, the shore and rain fields, the reflection's
   box, the sea fog's clearing, the walking loop, the game's grid). Generation stays deterministic
   whatever the thread count.
-- The world is built in chunks (`Chunks.ts`): a chunk's content depends only on the land within
-  its 32 m window, bit for bit, so a new piece rebuilds only the chunks whose window meets the
-  piece grown by 2 m (`dirtyChunks`), and a chunk built alone, in a block or on any thread equals
-  itself (`tools/verify-world-chunks.mjs`). The page does not use the chunks yet: a growth step
+- The world is built in chunks (`Chunks.ts`): a chunk's content is a function of its window of the
+  land field (the chunk grown by 32 m); a new piece rebuilds the chunks whose window meets it
+  grown by 2 m (`dirtyChunks`). For most kinds the reach stays below 34 m; the stones, trails and
+  shore read farther in principle, and D4 / D5 (`tools/verify-world-chunks.mjs`) measure that
+  nothing outside the dirty set changes. A chunk built alone, in a block or on any thread equals
+  itself. Data on a chunk border must be bit-identical in both chunks: lattices are world-anchored,
+  scars are cut in canonical order, curvature comes from the apron, and a chunk's own triangles
+  never go through `computeVertexNormals`. The page does not use the chunks yet: a growth step
   regenerates the whole world.
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High is the reference image; every default in the modules is high's. A load knob is read

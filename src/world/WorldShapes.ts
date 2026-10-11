@@ -221,7 +221,8 @@ export function cliffSharpCells( fp: Footprint ): ( x: number, y: number, z: num
 // The island mesh's column range (SurfaceNets.ts `columnRange`): a column more than 3.5 m inside
 // the coast holds no wall (the cliff's scars and ledges stay within 3.4 m of it, cliffSharpCells),
 // only the meadow's top, so the mesh samples it from 0.35 m below that top to 0.6 m above.
-// tools/verify-world-chunks.mjs checks that every chunk comes out bit-identical with and without.
+// tools/verify-world-chunks.mjs --long checks that every chunk comes out bit-identical with and
+// without.
 export function islandColumnRange( fp: Footprint ): ( x: number, z: number ) => readonly [ number, number ] | null {
 
 	const range: [ number, number ] = [ 0, 0 ];

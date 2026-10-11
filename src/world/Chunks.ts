@@ -25,9 +25,12 @@
 //   anchor, skirt segments by their piece's start, texels (rim ground, shore, walk) by their centre;
 //   the floor tile's lattice points are shared on the borders, computed alike by both tiles.
 // - `dirtyChunks( before, after )`: the chunks whose window meets the land cells that changed,
-//   grown by 2 m (the corner rounding and the raster). Every other chunk keeps its data, bit for
-//   bit (tools/verify-world-chunks.mjs, D4): the content a chunk keeps reads the land within its
-//   window, and its distances there change only where land within LAND_REACH of them changed.
+//   grown by 2 m (the raster). The corner rounding (`roundCorners( 0.9, 1.4 )`) moves a field
+//   value by up to 4.6 m, so a value reads the land within min( |d|, LAND_REACH ) + 4.6 m (and the
+//   0.35 m lattice): more than those 2 m, covered by R's slack, since the kinds the chunks share
+//   read their window no farther than about 31 m from the chunk. Every other chunk keeps its data,
+//   bit for bit (tools/verify-world-chunks.mjs, D4 and D5): the content a chunk keeps reads the
+//   land within its window, and its distances there change only where land near them changed.
 //   The test is the changed cells, not the cells whose clamped distance differs: that would stack
 //   LAND_REACH on the window.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
@@ -42,13 +45,22 @@
 //   footprint and the island through the window's SDF, never `layoutBounds()`, a global count or
 //   the whole coast. A per-box function must not keep state across calls that changes its values
 //   (CliffWall's exposure did, Cliff.ts).
-// - Whatever reads far from the chunk must not reach anything the chunk keeps. The trails read the
-//   coast within TRAIL_REACH (21 m). The stones read the island and the floor up to STONES_READ
-//   (30.5 m) round the box they place (the chunk and CONTACT_STONES round it), so past the window
-//   too, and the cliff behind those reads another 25 m of land: in principle a piece more than 34 m
-//   away could still move a stone. Such reads stay deterministic (the window's edge continued), and
-//   D4 measures that no kept bit changes outside the dirty set (none in seeds 1 - 2 over 12 steps;
-//   the farthest changed chunk lay 26 m from the changed land).
+// - Whatever reads far from the chunk must not reach anything the chunk keeps. Four kinds read
+//   far in principle, beyond what the dirty rule's 34 m covers:
+//   - the stones read the island and the floor up to STONES_READ (30.5 m) round the box they place
+//     (the chunk and CONTACT_STONES round it), so past the window too, and the cliff behind those
+//     reads another 25 m of land: a piece more than 34 m away could still move a stone;
+//   - the contact stones (the chunk and CONTACT_STONES round it) shade the island and the floor
+//     the chunk keeps with what those stones read;
+//   - the trails read the coast within TRAIL_REACH (21 m) of their patches, and that coast is the
+//     rim's, whose lattice reads the wall and the land behind it;
+//   - the shore takes its distance over a sea-level section SHORE_PAD (26 m) round the chunk, to
+//     LAND_REACH (24 m) from its coast, and that coast is the wall's, which reads 25 m of land.
+//   Such reads stay deterministic (the window's edge continued). D4 measures that no kept bit
+//   changes outside the dirty set as the land grows (none in seeds 1 - 2 over 12 steps; the
+//   farthest changed chunk lay 26 m from the changed land), and D5 places land just beyond the
+//   bound on purpose (none changed). In the review's probes coastal land stopped mattering beyond
+//   about 18 m.
 // - ChunkData carries the same fields in every chunk (an empty mesh keeps all its attributes), and
 //   `hash` covers every buffer, so an unchanged chunk is recognised by its hash.
 

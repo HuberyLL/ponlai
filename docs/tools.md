@@ -245,10 +245,14 @@ what these do not give (automation, A/B statistics, pass names).
   grows each seed's land step by step and builds every chunk of every step (`src/world/Chunks.ts`)
   on a pool of worker threads (default min( 8, cores - 4 )). It checks that the chunks built
   incrementally equal a scratch build in a fresh process in reverse order (D1), on pools of 1 and
-  4 workers (D2), that the land does not depend on the order of its pieces (D3), and that only
-  chunks in `dirtyChunks` change between steps (D4); at steps 0 and the last, the seams: the
+  4 workers (D2, the 15 costliest chunks), that the land does not depend on the order of its
+  pieces (D3), that only chunks in `dirtyChunks` change between steps (D4, warning when a changed
+  chunk lies more than 30 m from the changed land), and that land placed just beyond the dirty
+  bound (34.6 - 44 m from a coastal chunk, on the coast and offshore) changes nothing (D5); at
+  steps 0 and the last, the seams: the
   island and stone meshes close up (S1), the island's shared vertices and a 2 x 2 block meshed
-  whole (S2), the floor tiles' shared points (S3), the turf skirt's border crossings (S4), a
+  whole (S2), the floor tiles' shared points, the floor at or below -1.6 m off the land and the
+  tiles' outer sides on the open sea's lattice (S3), the turf skirt's border crossings (S4), a
   2 x 2 block's rim ground, shore, walk texels, anchors, bushes and trails made in one pass (S5),
   the stones' owners and their copies in the neighbours' contact sets (S6), and no buried wall
   inland (I1). `--long` takes D1 at every step, D2 on all chunks of both seeds, the S checks at
@@ -266,7 +270,9 @@ what these do not give (automation, A/B statistics, pass names).
   trail patches (1 - 9 strands, no node below a quarter of its root's height, bare runs of median
   0.4 - 4 m and at most 4 m), bushes, strands and hanging length against M3 (10 %); the stones'
   overlaps, crowns and reach per island, and over seeds 1 - 6 at steps 0, 8, 16 their classes and
-  large sizes per 100 m of coast against today's (20 %) and their gathering below the scars. The
+  large sizes per 100 m of coast against today's (20 %) and their gathering below the scars; the
+  cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5 m, 3 m) and none
+  breaks off more than 0.6 m of rock above y -1 where its reach ends it. The
   chunk checks prove seams and locality; this probe proves the chunked world keeps its numbers.
   The default run takes about a minute on 8 threads.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
