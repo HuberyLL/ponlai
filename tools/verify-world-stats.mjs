@@ -32,6 +32,11 @@
 //           place each chunk's stones from its window exactly as `buildChunk` does (its footprint,
 //           local island solid and floor), with their classes; on the seeds and steps run, those
 //           are checked equal to the built chunks' stones.
+//   scars   on each seed and step run, every scar of the cliff, measured in the chunk that holds
+//           its anchor on that chunk's own wall (a CliffWall over its window): the rock it cuts lies
+//           within its reach of its anchor (tier A 4.5 m, tier B 3 m), so the clamp of its box
+//           trims nothing, and where it breaks off along the octagon round its anchor the rock its
+//           own planes would have cut beyond it above y -1 is at most 0.6 m thick (`chunkScars`).
 //
 // Every failed bound prints FAIL and sets the exit code; the run goes on to print every number.
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
@@ -40,7 +45,8 @@ import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
 import { growLand, LandLattice } from '../src/world/IslandGrowth.ts';
 import { buildChunk, chunkKeys, landField, landWindow, parseChunkKey, windowFootprint, R, S } from '../src/world/Chunks.ts';
-import { landArea, landBounds, makeIslandSDF } from '../src/world/WorldShapes.ts';
+import { coastWobble, islandSurfaceHeight, landArea, landBounds, makeIslandSDF, ISLAND_BOTTOM } from '../src/world/WorldShapes.ts';
+import { CliffWall } from '../src/world/Cliff.ts';
 import { floorAt } from '../src/world/Bathymetry.ts';
 import { placeStones, rockExtent, CELL, REACH } from '../src/world/Stones.ts';
 import { assembleRimGround, coastChains, rimBoxes, RIM_CELL } from '../src/world/RimGround.ts';
@@ -111,6 +117,132 @@ function chunkStones( window, ci, cj ) {
 
 }
 
+// ------------------------------------------------------------------ the scars of one chunk
+
+// How far a scar may cut from its anchor (m, in x or z; Cliff.ts REACH_A, REACH_B): the joint faces
+// and gullies (tier A), the smaller generations (tier B).
+const SCAR_REACH = ( s ) => s.level === 0 || s.kind === 'gully' ? 4.5 : 3.0;
+// The deepest rock the octagon may keep above y -1 (m): a scar that would cut further keeps a
+// step this thick at most where it breaks off. Over seeds 1 - 5 up to step 36 the deepest were
+// 0.3 - 0.45 m; two checked in captures (one a joint face broken off up to the lip) read as a
+// cross joint.
+const TRIM_ABOVE = 0.6;
+
+// The scar's polytope's box: its vertices, the triple plane intersections inside every plane.
+function polytopeBox( p, n ) {
+
+	let x0 = Infinity, x1 = - Infinity, z0 = Infinity, z1 = - Infinity;
+	for ( let a = 0; a < n; a ++ ) for ( let b = a + 1; b < n; b ++ ) for ( let c = b + 1; c < n; c ++ ) {
+
+		const [ ax, ay, az, ac ] = p.subarray( a * 4, a * 4 + 4 ), [ bx, by, bz, bc ] = p.subarray( b * 4, b * 4 + 4 ), [ cx, cy, cz, cc ] = p.subarray( c * 4, c * 4 + 4 );
+		const det = ax * ( by * cz - bz * cy ) - ay * ( bx * cz - bz * cx ) + az * ( bx * cy - by * cx );
+		if ( Math.abs( det ) < 1e-6 ) continue;
+		const x = ( ac * ( by * cz - bz * cy ) - ay * ( bc * cz - bz * cc ) + az * ( bc * cy - by * cc ) ) / det;
+		const y = ( ax * ( bc * cz - bz * cc ) - ac * ( bx * cz - bz * cx ) + az * ( bx * cc - bc * cx ) ) / det;
+		const z = ( ax * ( by * cc - bc * cy ) - ay * ( bx * cc - bc * cx ) + ac * ( bx * cy - by * cx ) ) / det;
+		let inside = true;
+		for ( let k = 0; k < n && inside; k ++ ) if ( p[ k * 4 ] * x + p[ k * 4 + 1 ] * y + p[ k * 4 + 2 ] * z - p[ k * 4 + 3 ] > 1e-6 ) inside = false;
+		if ( ! inside ) continue;
+		x0 = Math.min( x0, x ); x1 = Math.max( x1, x ); z0 = Math.min( z0, z ); z1 = Math.max( z1, z );
+
+	}
+	return { x0, x1, z0, z1 };
+
+}
+
+// How many of the scar's planes are its own: Cliff.ts `bounds()` appends the vertical end planes of
+// the octagon round the anchor last, each at the octagon's apothem from it.
+function ownPlanes( s ) {
+
+	const apothem = ( SCAR_REACH( s ) - 0.15 ) * Math.cos( Math.PI / 8 ), p = s.planes;
+	let n = s.n;
+	while ( n > 0 && p[ n * 4 - 3 ] === 0 && Math.abs( p[ n * 4 - 1 ] - p[ n * 4 - 4 ] * s.cx - p[ n * 4 - 2 ] * s.cz - apothem ) < 1e-9 ) n --;
+	return n;
+
+}
+
+// The column ( x, z )'s span inside the first n planes grown by e, below the meadow's top.
+function span( p, n, e, x, z ) {
+
+	let lo = ISLAND_BOTTOM, hi = islandSurfaceHeight( x, z ) + 0.6;
+	for ( let k = 0; k < n && lo <= hi; k ++ ) {
+
+		const ny = p[ k * 4 + 1 ], rest = p[ k * 4 + 3 ] + e - p[ k * 4 ] * x - p[ k * 4 + 2 ] * z;
+		if ( Math.abs( ny ) < 1e-9 ) { if ( rest < 0 ) hi = - Infinity; } else if ( ny > 0 ) hi = Math.min( hi, rest / ny ); else lo = Math.max( lo, rest / ny );
+
+	}
+	return [ lo, hi ];
+
+}
+
+// The scars the chunk's wall cuts (a CliffWall over its window, as its island SDF builds it) whose
+// anchor lies in the chunk, each measured once over the island, on the surface it was placed on:
+// tier A on the plain face, tier B on the face with tier A cut out (design section 15 d).
+//   reach  how far from its anchor (in x or z) the block as cut, end planes and all, takes rock: the
+//          reach clamp of the scar's box in `bounds()` must trim nothing (the octagon's corners lie
+//          0.15 m inside the reach by construction: this guards that construction, which is what
+//          bounds the wall's dependence on the land);
+//   trim   where the octagon broke a scar off, how thick the rock is that its own planes would have
+//          cut beyond the octagon (the least of its depth inside the rock and inside the block), the
+//          deepest above y -1 held to TRIM_ABOVE: what the bounded reach costs in the image.
+function chunkScars( window, ci, cj ) {
+
+	const box = { x0: ci * S, z0: cj * S, x1: ci * S + S, z1: cj * S + S };
+	const fp = windowFootprint( window ), dist = ( x, z ) => fp.dist( x, z );
+	const wall = new CliffWall( dist, coastWobble, islandSurfaceHeight, grow( box, R ) );
+	const far = { x0: 1e5, z0: 1e5, x1: 1e5 + 1, z1: 1e5 + 1 }; // no coast: no scars
+	const plain = new CliffWall( dist, coastWobble, islandSurfaceHeight, far );
+	const tierA = new CliffWall( dist, coastWobble, islandSurfaceHeight, far );
+	// `add` is private in Cliff.ts; the scars come in their canonical order already
+	for ( const s of wall.scars ) if ( SCAR_REACH( s ) === 4.5 ) tierA.add( s );
+	const largest = {}, beyond = [], trims = [];
+	let scars = 0, met = 0;
+	for ( const s of wall.scars ) {
+
+		if ( s.cx < box.x0 || s.cx >= box.x1 || s.cz < box.z0 || s.cz >= box.z1 ) continue;
+		scars ++;
+		const base = SCAR_REACH( s ) === 4.5 ? plain : tierA, p = s.planes, h = 0.1, kind = `${ s.kind }${ s.level }`;
+		const where = `a ${ s.kind } (level ${ s.level }) at ( ${ s.cx.toFixed( 2 ) }, ${ s.cz.toFixed( 2 ) } )`;
+		let b = polytopeBox( p, s.n ), reach = 0;
+		for ( let z = Math.floor( b.z0 / h ) * h; z <= b.z1; z += h ) for ( let x = Math.floor( b.x0 / h ) * h; x <= b.x1; x += h ) {
+
+			const r = Math.max( Math.abs( x - s.cx ), Math.abs( z - s.cz ) );
+			if ( r <= reach ) continue;
+			const [ lo, hi ] = span( p, s.n, 0.05, x, z );
+			for ( let y = lo; y <= hi; y += 0.05 ) if ( base.solid( x, y, z ) < 0 ) { reach = r; break; }
+
+		}
+		largest[ kind ] = Math.max( largest[ kind ] ?? 0, reach );
+		if ( reach > SCAR_REACH( s ) ) beyond.push( `${ where } cuts rock ${ reach.toFixed( 2 ) } m from its anchor, beyond its ${ SCAR_REACH( s ) } m reach` );
+
+		const own = ownPlanes( s );
+		if ( own === s.n ) continue;
+		b = polytopeBox( p, own );
+		let deep = 0, top = - Infinity;
+		for ( let z = Math.floor( b.z0 / h ) * h; z <= b.z1; z += h ) for ( let x = Math.floor( b.x0 / h ) * h; x <= b.x1; x += h ) {
+
+			let out = false;
+			for ( let k = own; k < s.n && ! out; k ++ ) out = p[ k * 4 ] * x + p[ k * 4 + 2 ] * z > p[ k * 4 + 3 ];
+			if ( ! out ) continue;
+			const [ lo, hi ] = span( p, own, 0, x, z );
+			for ( let y = Math.max( lo, - 1 ); y <= hi; y += 0.02 ) {
+
+				let block = - Infinity;
+				for ( let k = 0; k < own; k ++ ) block = Math.max( block, p[ k * 4 ] * x + p[ k * 4 + 1 ] * y + p[ k * 4 + 2 ] * z - p[ k * 4 + 3 ] );
+				const d = Math.min( - base.solid( x, y, z ), - block );
+				if ( d > deep ) { deep = d; top = y; }
+
+			}
+
+		}
+		met ++;
+		if ( deep > 0.01 ) trims.push( { kind, deep, where, top } );
+
+	}
+	return { scars, met, largest, beyond, trims };
+
+}
+
 // ------------------------------------------------------------------ the worker
 
 // A job: 'chunk' builds chunk ( ci, cj ) and replies with its owned items and its stones' share;
@@ -134,7 +266,7 @@ if ( ! isMainThread ) {
 				differs = Math.max( differs, r.seed === o.seed ? Math.max( ...[ 'x', 'z', 's', 'sy', 'y', 'floor', 'rot' ].map( ( f ) => Math.abs( r[ f ] - o[ f ] ) ) ) : Infinity );
 
 			} );
-			Object.assign( reply, { anchors: c.anchors, bushes: c.bushes, strands: c.strands, rimGround: c.rimGround, rocksDiffer: differs, ms: c.timings.total } );
+			Object.assign( reply, { scars: chunkScars( job.window, job.ci, job.cj ), anchors: c.anchors, bushes: c.bushes, strands: c.strands, rimGround: c.rimGround, rocksDiffer: differs, ms: c.timings.total } );
 
 		}
 		parentPort.postMessage( reply );
@@ -564,6 +696,24 @@ function checkStones( island, shares ) {
 
 }
 
+// The island's scars (each chunk's own, `chunkScars`): none cuts rock beyond its reach (the clamp
+// trims nothing), none breaks off more than TRIM_ABOVE of rock above y -1 at its octagon.
+function checkScars( island, shares ) {
+
+	const label = `scars seed ${ island.seed } grow ${ island.step }`, largest = {};
+	const beyond = shares.flatMap( ( s ) => s.beyond ), trims = shares.flatMap( ( s ) => s.trims ).sort( ( a, b ) => b.deep - a.deep );
+	for ( const s of shares ) for ( const [ k, v ] of Object.entries( s.largest ) ) largest[ k ] = Math.max( largest[ k ] ?? 0, v );
+	const scars = shares.reduce( ( a, s ) => a + s.scars, 0 ), met = shares.reduce( ( a, s ) => a + s.met, 0 );
+	const thick = trims.filter( ( t ) => t.deep > TRIM_ABOVE );
+	for ( const m of beyond.slice( 0, 5 ) ) console.log( `     ${ m }` );
+	for ( const t of thick.slice( 0, 5 ) ) console.log( `     ${ t.where } breaks off ${ t.deep.toFixed( 2 ) } m of rock above y -1 at its octagon (at y ${ t.top.toFixed( 2 ) })` );
+	judge( ! beyond.length, `${ label }: ${ scars } scars, ${ beyond.length } cut rock beyond their reach (tier A 4.5 m, tier B 3 m); largest per kind (m): ` +
+		Object.entries( largest ).sort().map( ( [ k, v ] ) => `${ k } ${ v.toFixed( 2 ) }` ).join( ', ' ) );
+	judge( ! thick.length, `${ label }: ${ met } scars meet their octagon, ${ trims.length } of them break off rock above y -1, ${ thick.length } more than ${ TRIM_ABOVE } m; deepest (m): ` +
+		( trims.slice( 0, 3 ).map( ( t ) => `${ t.kind } ${ t.deep.toFixed( 2 ) }` ).join( ', ' ) || 'none' ) );
+
+}
+
 // Over the density islands: each class, the large stones and the scars' gathering, per 100 m of
 // coast, against today's.
 function checkDensity( islands ) {
@@ -651,6 +801,7 @@ async function main() {
 		meadow( planting, island, chunks, meadowPooled );
 		rim( island, chunks, island.field, rimPooled );
 		checkStones( island, chunks.map( ( c ) => c.stones ) );
+		checkScars( island, chunks.map( ( c ) => c.scars ) );
 		island.field = null;
 
 	}
