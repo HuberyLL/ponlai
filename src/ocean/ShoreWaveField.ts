@@ -9,6 +9,102 @@ import type { WorldData, ShoreField } from '../world/types.ts';
 
 const MAX_RES = 256;
 
+// The shore's distance is clamped to LAND_REACH (the chunks' shore tiles), but the shelter's
+// recovery runs from 18 to 36 m. Beyond the clamp the distance to the coast is the clamp plus the
+// distance to the region under it (that region is the coast grown by the clamp), so the clamped
+// cells take the distance to an unclamped cell plus that cell's own distance, an upper bound
+// that is exact for a cell on the line to the coast: the least over the cells round the nearest. One exact Euclidean feature transform (Felzenszwalb and Huttenlocher, "Distance
+// Transforms of Sampled Functions", 2012), separable: columns, then rows.
+const SHORE_CLAMP = 24, REFINE = 2;
+function unclampShore( distances: Float32Array, nx: number, nz: number, cellX: number, cellZ: number ): void {
+
+	const count = nx * nz;
+	// per cell, the squared z distance to the nearest site in its column, and that site's row
+	const column = new Float64Array( count ).fill( Infinity ), row = new Int32Array( count ).fill( - 1 );
+	let sites = 0;
+	for ( let i = 0; i < nx; i ++ ) {
+
+		let last = - 1;
+		for ( let j = 0; j < nz; j ++ ) {
+
+			if ( distances[ j * nx + i ] < SHORE_CLAMP ) { last = j; sites ++; }
+			if ( last >= 0 ) { column[ j * nx + i ] = ( ( j - last ) * cellZ ) ** 2; row[ j * nx + i ] = last; }
+
+		}
+		last = - 1;
+		for ( let j = nz - 1; j >= 0; j -- ) {
+
+			if ( distances[ j * nx + i ] < SHORE_CLAMP ) last = j;
+			const d = last >= 0 ? ( ( last - j ) * cellZ ) ** 2 : Infinity;
+			if ( d < column[ j * nx + i ] ) { column[ j * nx + i ] = d; row[ j * nx + i ] = last; }
+
+		}
+
+	}
+	if ( sites === 0 || sites === count ) return;
+	// rows: the lower envelope of the parabolas ( x - x_q )^2 + column( q ) over the finite ones
+	const v = new Int32Array( nx ), z = new Float64Array( nx + 1 );
+	const out = distances.slice();
+	for ( let j = 0; j < nz; j ++ ) {
+
+		const o = j * nx;
+		let n = - 1;
+		for ( let q = 0; q < nx; q ++ ) {
+
+			const fq = column[ o + q ];
+			if ( fq === Infinity ) continue;
+			const xq = q * cellX;
+			let s = - Infinity;
+			while ( n >= 0 ) {
+
+				const xv = v[ n ] * cellX;
+				s = ( fq + xq * xq - column[ o + v[ n ] ] - xv * xv ) / ( 2 * ( xq - xv ) );
+				if ( s > z[ n ] ) break;
+				n --;
+
+			}
+			n ++;
+			v[ n ] = q; z[ n ] = n === 0 ? - Infinity : s; z[ n + 1 ] = Infinity;
+
+		}
+		if ( n < 0 ) continue;
+		let e = 0;
+		for ( let i = 0; i < nx; i ++ ) {
+
+			const k = j * nx + i;
+			while ( z[ e + 1 ] < i * cellX ) e ++;
+			if ( distances[ k ] < SHORE_CLAMP ) continue;
+			// the nearest site is close to the line to the coast, not on it: its neighbours may
+			// lie nearer that line, so the least bound round it is taken
+			const si = v[ e ], sj = row[ j * nx + si ];
+			const a0 = Math.max( 0, si - REFINE ), a1 = Math.min( nx - 1, si + REFINE );
+			const b0 = Math.max( 0, sj - REFINE ), b1 = Math.min( nz - 1, sj + REFINE );
+			let best = Infinity;
+			for ( let b = b0; b <= b1; b ++ ) {
+
+				const ez = ( j - b ) * cellZ;
+				for ( let a = a0; a <= a1; a ++ ) {
+
+					const d = distances[ b * nx + a ], ex = ( i - a ) * cellX;
+					if ( d < SHORE_CLAMP ) {
+
+						const bound = Math.sqrt( ex * ex + ez * ez ) + d;
+						if ( bound < best ) best = bound;
+
+					}
+
+				}
+
+			}
+			out[ k ] = best;
+
+		}
+
+	}
+	distances.set( out );
+
+}
+
 function sampleShore( field: ShoreField, x: number, z: number ): number {
 
 	const fx = Math.max( 0, Math.min( field.nx - 1, ( x - field.x0 ) / field.cell - 0.5 ) );
@@ -114,6 +210,7 @@ export function createShoreShelterField( data: WorldData, direction: THREE.Vecto
 		visible[ k ] = sum / 12;
 
 	}
+	unclampShore( distances, nx, nz, info.cellX, info.cellZ );
 	// Blur water neighbours only. This removes fan/grid steps at penumbra boundaries
 	// without bleeding a fully exposed wave through the solid island into a small inlet.
 	for ( let pass = 0; pass < 4; pass ++ ) {
@@ -139,10 +236,8 @@ export function createShoreShelterField( data: WorldData, direction: THREE.Vecto
 
 		if ( ! water[ k ] ) return 0;
 		// Recover distant wind sea before the finite field edge; clamp-to-edge samples
-		// must not carry an infinite, straight shadow strip across the offshore FFT. The
-		// shore's distance is clamped to LAND_REACH (24 m, the chunks' shore tiles), so the
-		// recovery ends there.
-		const t = Math.max( 0, Math.min( 1, ( distances[ k ] - 12 ) / 12 ) );
+		// must not carry an infinite, straight shadow strip across the offshore FFT.
+		const t = Math.max( 0, Math.min( 1, ( distances[ k ] - 18 ) / 18 ) );
 		const recovery = t * t * ( 3 - 2 * t );
 		const i = k % nx, j = Math.floor( k / nx );
 		const border = Math.min( ( i + 0.5 ) * info.cellX, ( nx - i - 0.5 ) * info.cellX,
