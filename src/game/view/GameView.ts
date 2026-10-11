@@ -6,7 +6,7 @@ import { ISLAND_TOP } from '../../world/WorldShapes.ts';
 import { SPEED_FACTORS } from '../sim/types.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { Sim } from '../sim/Sim.ts';
-import { buildingOf, stageOf } from '../sim/buildings.ts';
+import { buildingOf, newBuilding, stageOf } from '../sim/buildings.ts';
 import { PalmView } from './PalmView.ts';
 import { standIn } from './StandIn.ts';
 import { ChestView } from './ChestView.ts';
@@ -18,6 +18,18 @@ import { VillagerView, disposeFigure } from './VillagerView.ts';
 // allocates nothing. The palms and the chest cast into the sun's shadow map, which is redrawn
 // only as the sun turns (SunShadow.ts): whatever changes their shape (a chest set down, a
 // coconut picked or grown) asks for a redraw.
+//
+// First draws: a mesh whose material or vertex layout nothing on screen has drawn yet builds its
+// pipelines in the frame that first shows it, synchronously: the chest's model stalled the frame
+// it appeared in by about 0.7 s on a cold shader cache (its main pass and its shadow-map pass),
+// the placement ring by about 0.2 s. So everything that can first show mid-game has a sample in
+// `propSamples` (a building's model, each construction stage to come; the HUD adds its own,
+// GameHud.samples), and the game compiles their pipelines off the frame once its first frame has
+// drawn (Game.render, GameContext.compileDraws). A sample must be built as the real thing is (the same view class,
+// material and attributes, castShadow and receiveShadow), since that is what the pipelines are
+// keyed by, and shares the real thing's material where it can, so that the shaders are built too
+// (ChestView). The samples are never drawn and are kept for the page's life: disposing one would
+// release the pipelines it shares with the props drawn later.
 
 export interface GameViewOptions {
 	sim: Sim;
@@ -39,6 +51,16 @@ function disposeSpares(): void {
 
 	for ( const list of spares.values() ) for ( const f of list ) disposeFigure( f );
 	spares.clear();
+
+}
+
+let samples: THREE.Object3D[] | null = null;
+
+/** One of each model the game can first show mid-game (see "First draws" above), made once. */
+export function propSamples(): THREE.Object3D[] {
+
+	samples ??= [ new ChestView( newBuilding( 'chest', 0, 0 ), 0 ).mesh ];
+	return samples;
 
 }
 

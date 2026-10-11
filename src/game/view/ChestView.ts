@@ -76,6 +76,11 @@ function chestGeometry( chest: BuildingState ): THREE.BufferGeometry {
 
 }
 
+// One material for every chest, the sample the game compiles at start among them (GameView "First
+// draws"): a chest drawn later then finds its shaders built, not only its pipelines. It is never
+// disposed.
+let material: THREE.MeshStandardNodeMaterial | null = null;
+
 export class ChestView {
 
 	readonly mesh: THREE.Mesh;
@@ -87,7 +92,7 @@ export class ChestView {
 
 		this.x = chest.x;
 		this.z = chest.z;
-		this.mesh = new THREE.Mesh( chestGeometry( chest ), propMaterial( 'chest' ) );
+		this.mesh = new THREE.Mesh( chestGeometry( chest ), material ??= propMaterial( 'chest' ) );
 		this.mesh.name = 'chest';
 		this.mesh.position.set( chest.x, ground, chest.z );
 		// the front (+z) faces the island's middle
@@ -101,7 +106,6 @@ export class ChestView {
 
 		this.mesh.removeFromParent();
 		this.mesh.geometry.dispose();
-		( this.mesh.material as THREE.Material ).dispose();
 
 	}
 

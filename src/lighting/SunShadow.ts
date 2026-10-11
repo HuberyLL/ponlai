@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, select, mix } from 'three/tsl';
+import { compileDraws } from '../post/Warm.ts';
 import { solarSteppedShadowVisibility, solarVolumeVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
 
 type F = THREE.Node<'float'>;
@@ -33,6 +34,8 @@ const STEP = THREE.MathUtils.degToRad( 0.2 );
 // A larger turn in one frame is a cut (a new hour, preset or manual sun): redraw without history.
 const CUT = THREE.MathUtils.degToRad( 1 );
 const PREVIOUS = 0, CURRENT = 1;
+// the side three draws a caster's faces into a (non-VSM) map with: Renderer's _shadowSide (r186)
+const SHADOW_SIDE = { [ THREE.FrontSide ]: THREE.BackSide, [ THREE.BackSide ]: THREE.FrontSide, [ THREE.DoubleSide ]: THREE.DoubleSide };
 // A lighter filter for vegetation (grass blades and leaves, `markVegetation`), for the quality
 // tiers below high (setFilter): it fills much of the frame with small, overlapping receivers whose
 // own dapple hides a coarser penumbra. Not the default: fewer blocker taps re-roll the dapple's
@@ -219,6 +222,60 @@ export class SunShadow {
 		this.casters.min.y = Math.max( this.casters.min.y, this.floor );
 		this.columns = null;
 		this.cut = true;
+
+	}
+
+	/**
+	 * Compile the pipelines `casters` draw with into this map, off the frame (renderer.compileAsync),
+	 * so that a caster first added mid-game (a game's prop) builds none in the frame that redraws
+	 * the map. Null until three has built the map and its node (with the first receiver compiled
+	 * or drawn). The casters need not be in the scene.
+	 *
+	 * three draws a caster into the map with the shadow node's material in its own's place
+	 * (scene.overrideMaterial), taking the caster's colour, depth and position nodes and side into
+	 * it per draw and restoring them after (Renderer.renderObject, r186). compileAsync builds its
+	 * draws after that restore, so each caster here compiles with a pass material of its own that
+	 * already holds what the draw takes into it: the restore then leaves it as it was. This mirrors
+	 * three's shadow material and its non-VSM side rule: re-check it on a three upgrade.
+	 */
+	compileCasters( renderer: THREE.WebGPURenderer, casters: THREE.Object3D[] ): Promise<void> | null {
+
+		const node = this.sun.shadow.shadowNode as unknown as ShadowRenderer | undefined;
+		const map = node?.shadowMap;
+		if ( ! node || ! map ) return null;
+		const { _getShadowNodes: shadowNodes } = renderer as unknown as { _getShadowNodes( material: THREE.Material ): { colorNode: THREE.Node<'vec4'> | null; depthNode: THREE.Node<'float'> | null; positionNode: THREE.Node<'vec3'> | null } };
+		const meshes: THREE.Mesh[] = [];
+		for ( const root of casters ) root.traverse( ( object ) => {
+
+			if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) meshes.push( object as THREE.Mesh );
+
+		} );
+		// one caster at a time, as a frame draws them (see main.ts on the game's props)
+		const compile = ( mesh: THREE.Mesh ): Promise<void> => {
+
+			const material = mesh.material as THREE.NodeMaterial;
+			// three's shadow material (ShadowBaseNode), as the draw leaves it for this caster
+			const pass = new THREE.NodeMaterial();
+			( pass as unknown as { isShadowPassMaterial: boolean } ).isShadowPassMaterial = true;
+			pass.name = 'ShadowMaterial';
+			pass.blending = THREE.NoBlending;
+			pass.fog = false;
+			pass.colorNode = vec4( 0, 0, 0, 1 );
+			const nodes = shadowNodes.call( renderer, material );
+			if ( material.positionNode ) pass.positionNode = material.positionNode;
+			if ( nodes.colorNode ) pass.colorNode = nodes.colorNode;
+			if ( nodes.depthNode ) pass.depthNode = nodes.depthNode;
+			if ( nodes.positionNode ) pass.positionNode = nodes.positionNode;
+			pass.side = material.shadowSide ?? SHADOW_SIDE[ material.side ];
+			pass.alphaTest = material.alphaTest;
+			( pass as unknown as { alphaMap: unknown } ).alphaMap = ( material as unknown as { alphaMap: unknown } ).alphaMap;
+			pass.transparent = material.transparent;
+			const scene = new THREE.Scene();
+			scene.overrideMaterial = pass;
+			return compileDraws( renderer, [ mesh ], scene, this.sun.shadow.camera, map );
+
+		};
+		return meshes.reduce( ( done, mesh ) => done.then( () => compile( mesh ) ), Promise.resolve() );
 
 	}
 

@@ -155,4 +155,5 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   and new queue operations must go through its rules, and one invalid command buffer loses its
   whole batch.
 - Timestamp queries (`trackTimestamp`) have one owner at a time (`DynamicResolution.ts`).
-- `Sky.ts` drives three's private `PMREMGenerator` steps: re-check them on a three upgrade.
+- `Sky.ts` drives three's private `PMREMGenerator` steps, and `SunShadow.compileCasters` mirrors
+  three's shadow-pass material: re-check them on a three upgrade.

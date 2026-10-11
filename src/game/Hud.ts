@@ -131,6 +131,13 @@ export class GameHud {
 
 	}
 
+	/** What the HUD draws into the scene, for the game to compile at start (GameView "First draws"). */
+	samples(): THREE.Object3D[] {
+
+		return this.placement.samples;
+
+	}
+
 	/** A new simulation was installed (start, load). */
 	reset(): void {
 
