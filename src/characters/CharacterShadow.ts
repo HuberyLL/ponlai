@@ -60,6 +60,11 @@ export class CharacterShadow {
 		this.camera = new THREE.OrthographicCamera( - half, half, half, - half, 0, range );
 		this.camera.layers.set( CharacterShadow.LAYER );
 		this.material.colorWrite = false;
+		// No blending: three sets an override's `transparent` from each drawn material and can leave
+		// it null rather than false (Renderer.renderObject, r186), which reads as blended; a blended
+		// pipeline into this one-channel target reads an alpha its shader does not output, so
+		// WebGPU refuses it (this map's shader is built for its own target, graph/Compile.ts).
+		this.material.blending = THREE.NoBlending;
 		this.material.side = THREE.DoubleSide;
 		this.material.name = 'characterShadowDepth';
 
