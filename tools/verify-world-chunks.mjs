@@ -28,7 +28,13 @@
 //       recent headings a land also keeps do follow the order: no chunk reads them).
 //   D4  the dirty set: between consecutive steps every chunk whose hash changed (or that is new)
 //       is in `dirtyChunks`, and none outside it changed. Prints the chunks, how many are dirty,
-//       how many changed, and how far the farthest changed chunk lies from the changed land.
+//       how many changed, and how far the farthest changed chunk lies from the changed land; it
+//       warns (no failure) when that is more than 30 m, close to the rule's 34 m.
+//   D5  beyond the dirty bound: at the last step, for each coastal chunk and each axis direction,
+//       a 2 m disc of land on the coast and a 2.5 m disc 6 - 16 m offshore, placed so its nearest
+//       cell lies 34.6 - 44 m from the chunk: the chunk is not in `dirtyChunks`, and rebuilt from
+//       the new land field it hashes as before. Prints the discs, how many changed the chunk's
+//       window (the far reads had something to see) and how many changed the chunk.
 //   At the S steps (0 and the last; --long every fourth):
 //   S1  the welded union of the chunks' island and stone meshes is closed: no boundary edge, and
 //       at most 1.3 non-manifold edges per 1000 triangles (the ambiguous cells of surface nets).
@@ -278,7 +284,7 @@ async function main() {
 				return pool.run( job( ci, cj, keep ) ).then( ( reply ) => ( { key, ci, cj, ...reply } ) );
 
 			} ) ) } );
-			// D2 builds more of the last step's chunks once the main pool's are in
+			// D2 and D5 build more of the last step's chunks once the main pool's are in
 			if ( step === last ) steps[ step ].job = job;
 			// let the pool's replies in: a land field takes the main thread a moment
 			await new Promise( ( resolve ) => setImmediate( resolve ) );
@@ -289,7 +295,7 @@ async function main() {
 	}
 
 	let failed = 0;
-	const timings = {};
+	const timings = {}, beyondBound = [];
 	let built = 0;
 	for ( const run of runs ) {
 
@@ -311,6 +317,8 @@ async function main() {
 
 		}
 		final.job = null;
+		// D5 runs on the main pool alongside the checks below
+		if ( ! bench ) beyondBound.push( beyond( run, pool ) );
 		console.log( `---- seed ${ run.seed }: ${ run.steps.map( ( s ) => s.keys.length ).join( ', ' ) } chunks at steps 0 - ${ last } (${ ( ( performance.now() - start ) / 1000 ).toFixed( 0 ) } s)` );
 		if ( ! dirtySet( run ) ) failed ++;
 		if ( bench ) costs( run );
@@ -328,6 +336,7 @@ async function main() {
 		}
 
 	}
+	for ( const ok of await Promise.all( beyondBound ) ) if ( ! ok ) failed ++;
 	pool.close();
 	const per = Object.entries( timings ).map( ( [ k, v ] ) => `${ k } ${ ( v / built ).toFixed( 0 ) }` ).join( ', ' );
 	console.log( `     ${ built } chunks built on the pool, ms per chunk: ${ per }` );
@@ -482,6 +491,7 @@ function distanceTo( cells, ci, cj ) {
 }
 
 // D4: what changed between consecutive steps lies in the dirty set.
+const MARGIN = 30;
 function dirtySet( run ) {
 
 	let ok = true, sumDirty = 0, sumChanged = 0, farthest = 0;
@@ -511,6 +521,102 @@ function dirtySet( run ) {
 	console.log( `${ ok ? 'ok  ' : 'FAIL' } D4 seed ${ run.seed }: changed chunks lie in the dirty set; per step chunks / dirty / changed, farthest changed chunk from the changed land:` );
 	console.log( `       ${ lines.join( '; ' ) }` );
 	console.log( `       in all ${ sumDirty } dirty, ${ sumChanged } changed (${ ( 100 * sumChanged / sumDirty ).toFixed( 0 ) } %), the farthest ${ farthest.toFixed( 1 ) } m from the changed land` );
+	// the dirty rule's bound is 34 m: a change creeping towards it is worth a look before it fails
+	if ( farthest > MARGIN ) console.log( `warn D4 seed ${ run.seed }: a chunk ${ farthest.toFixed( 1 ) } m from the changed land changed, more than ${ MARGIN } m (the dirty bound is ${ R + 2 } m)` );
+	return ok;
+
+}
+
+// D5: land added just beyond the dirty bound changes nothing. At the last step, for each coastal
+// chunk (a point within 1 m of the coast in it) and each axis direction, two discs of land: one on
+// the coast (COAST_DISC, its centre just off the coast) and one offshore (SEA_DISC, its edge 6 -
+// 16 m out), each placed where its nearest cell lies BEYOND_NEAR - BEYOND_FAR from the chunk's
+// square, so `dirtyChunks` leaves the chunk out; it is rebuilt on the pool from the new land field
+// and must hash as before. D4 sees only what the growth happens to add; this places land where the
+// window's far reads (the stones, the trails, the shore) would show.
+const COAST_DISC = 2, SEA_DISC = 2.5, BEYOND_NEAR = 34.6, BEYOND_FAR = 44;
+async function beyond( run, pool ) {
+
+	const land = run.lands[ run.lands.length - 1 ], step = run.lands.length - 1, hashes = run.steps[ step ].hashes;
+	const field = landField( land ), fp = windowFootprint( field );
+	const N = Math.round( 2 * GROWTH.half / GROWTH.cell ), X0 = - GROWTH.half, cell = GROWTH.cell;
+	const coastal = chunkKeys( land ).filter( ( key ) => {
+
+		const [ ci, cj ] = parseChunkKey( key );
+		for ( let z = cj * S + 0.5; z < cj * S + S; z ++ ) for ( let x = ci * S + 0.5; x < ci * S + S; x ++ ) if ( Math.abs( fp.dist( x, z ) ) < 1 ) return true;
+		return false;
+
+	} );
+	// the disc's cells not yet land, and the nearest one's distance from the chunk's square (the
+	// larger of the gaps along x and z: the window is a square)
+	const disc = ( p, radius, b ) => {
+
+		const cells = [];
+		let near = Infinity;
+		for ( let j = Math.floor( ( p[ 1 ] - radius - X0 ) / cell ); j <= Math.ceil( ( p[ 1 ] + radius - X0 ) / cell ); j ++ ) {
+
+			for ( let i = Math.floor( ( p[ 0 ] - radius - X0 ) / cell ); i <= Math.ceil( ( p[ 0 ] + radius - X0 ) / cell ); i ++ ) {
+
+				const x = X0 + ( i + 0.5 ) * cell, z = X0 + ( j + 0.5 ) * cell;
+				if ( i < 0 || j < 0 || i >= N || j >= N || Math.hypot( x - p[ 0 ], z - p[ 1 ] ) > radius || land.has( i, j ) ) continue;
+				cells.push( j * N + i );
+				const gx = Math.max( b.x0 - x - cell / 2, 0, x - cell / 2 - b.x1 ), gz = Math.max( b.z0 - z - cell / 2, 0, z - cell / 2 - b.z1 );
+				near = Math.min( near, Math.max( gx, gz ) );
+
+			}
+
+		}
+		return { cells, near };
+
+	};
+	const placed = [];
+	let n = 0, windowSame = 0;
+	for ( const key of coastal ) {
+
+		const [ ci, cj ] = parseChunkKey( key ), b = chunkBox( ci, cj );
+		for ( const [ ax, sg ] of [ [ 0, - 1 ], [ 0, 1 ], [ 1, - 1 ], [ 1, 1 ] ] ) for ( const [ kind, radius, fits ] of [
+			[ 'coast', COAST_DISC, ( d ) => d > COAST_DISC - 1 && d < COAST_DISC - 0.3 ],
+			[ 'sea', SEA_DISC, ( d ) => d > SEA_DISC + 6 && d < SEA_DISC + 16 ],
+		] ) {
+
+			// the first centre out along the axis, then across the chunk's span and 16 m either side
+			let found = null;
+			for ( let t = BEYOND_NEAR + radius; t <= BEYOND_FAR + radius && ! found; t += 0.25 ) for ( let u = - S; u <= 2 * S && ! found; u += 0.25 ) {
+
+				const along = sg < 0 ? ( ax === 0 ? b.x0 : b.z0 ) - t : ( ax === 0 ? b.x1 : b.z1 ) + t;
+				const across = ( ax === 0 ? b.z0 : b.x0 ) + u;
+				const p = ax === 0 ? [ along, across ] : [ across, along ];
+				if ( ! fits( fp.dist( p[ 0 ], p[ 1 ] ) ) ) continue;
+				const d = disc( p, radius, b );
+				if ( d.cells.length && d.near >= BEYOND_NEAR && d.near <= BEYOND_FAR ) found = { p, ...d };
+
+			}
+			if ( ! found ) continue;
+			const after = LandLattice.fromBytes( land.toBytes() );
+			for ( const k of found.cells ) after.words[ k >>> 5 ] |= 1 << ( k & 31 );
+			const where = `( ${ key } ) ${ kind } disc ${ ax ? 'z' : 'x' }${ sg > 0 ? '+' : '-' } at ( ${ found.p[ 0 ].toFixed( 1 ) }, ${ found.p[ 1 ].toFixed( 1 ) } ), ${ found.near.toFixed( 1 ) } m out`;
+			if ( dirtyChunks( land, after ).includes( key ) ) { placed.push( { where, dirty: true } ); continue; }
+			const window = landWindow( landField( after ), ci, cj ), before = landWindow( field, ci, cj );
+			let differ = 0;
+			for ( let k = 0; k < window.data.length; k ++ ) if ( window.data[ k ] !== before.data[ k ] ) differ ++;
+			if ( ! differ ) windowSame ++;
+			const bytes = after.toBytes(), version = - ( run.seed * 10000 + ++ n );
+			placed.push( pool.run( () => ( { window, land: bytes, ci, cj, version, keep: false } ), true )
+				.then( ( r ) => ( { where, cells: found.cells.length, differ, same: r.hash === hashes.get( key ) } ) ) );
+			// let the pool's replies in between the land fields
+			await new Promise( ( resolve ) => setImmediate( resolve ) );
+
+		}
+
+	}
+	const results = await Promise.all( placed );
+	const dirty = results.filter( ( r ) => r.dirty ), changed = results.filter( ( r ) => ! r.dirty && ! r.same );
+	for ( const r of [ ...dirty, ...changed ].slice( 0, 6 ) ) console.log( `FAIL D5 seed ${ run.seed }: ${ r.where }: ${ r.dirty ? 'dirtyChunks lists the chunk' : `${ r.cells } cells, ${ r.differ } window cells differ, the chunk changed` }` );
+	const most = Math.max( 0, ...results.map( ( r ) => r.differ ?? 0 ) );
+	const ok = ! dirty.length && ! changed.length;
+	console.log( `${ ok ? 'ok  ' : 'FAIL' } D5 seed ${ run.seed } step ${ step }: ${ coastal.length } coastal chunks, ${ results.length } discs placed ${ BEYOND_NEAR } - ${ BEYOND_FAR } m out ` +
+		`(${ results.filter( ( r ) => r.where.includes( 'coast disc' ) ).length } on the coast, ${ results.filter( ( r ) => r.where.includes( 'sea disc' ) ).length } offshore): ` +
+		`${ dirty.length } in the dirty set, ${ results.length - dirty.length - windowSame } changed the chunk's window (up to ${ most } cells), ${ changed.length } chunks changed` );
 	return ok;
 
 }
