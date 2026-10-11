@@ -7,7 +7,7 @@ import { LAND_REACH, type Footprint, type HeightFn } from './WorldShapes.ts';
 // stretch of floor stays as it was wherever the land grows farther away. The footprint's fine field
 // covers the land and LAND_REACH + 4 m round it, so the page and a footprint built over another
 // window read the same distance but for its last bits, which follow the fine field's origin: the
-// floor's float32 vertices round them away (tools/world-local/seabed.mjs), while a cliff scar's
+// floor's float32 vertices round them away, while a cliff scar's
 // choice can still turn on them. The chunks (Chunks.ts) read one land field by world lattice index
 // instead, so every chunk reads the same bits at a point.
 

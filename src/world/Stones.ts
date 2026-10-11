@@ -30,7 +30,7 @@
 // stream, and the patches' main fragments fell under the blocks with no retry, so the large stones
 // were lost. Dropped stones are still never retried, so the shares below are set to keep each
 // class's stones per metre of coast, and the large stones near the coast, within a fifth of the
-// running stream's (tools/world-local/stones.mjs checks both).
+// running stream's (tools/verify-world-stats.mjs checks both).
 
 import { noise3, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
 import { LAND_REACH, type Bounds, type Footprint, type HeightFn } from './WorldShapes.ts';

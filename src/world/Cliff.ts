@@ -40,8 +40,8 @@
 //   (first tier) or 3 m (second tier) of its anchor, breaking off along vertical planes in its own
 //   frame where it would reach further; the scars are cut in order of level and seed key. So the
 //   wall at a point depends only on the land's distance field within 25 m of it, bit for bit
-//   (`CliffWall`'s `area` is the box it is evaluated in, grown by 25 m), which
-//   tools/world-local/cliff.mjs checks.
+//   (`CliffWall`'s `area` is the box it is evaluated in, grown by 25 m), which the chunk checks
+//   rely on (tools/verify-world-chunks.mjs: S2's block, D1, D4).
 // - Natural rock, never masonry: the two joint sets run oblique to the world's axes, no level
 //   courses or evenly spaced joints. Scar floors and roofs lie on a parting only some of the time;
 //   partings and soft beds open over a few metres and pinch out; under the meadow the wall weathers
