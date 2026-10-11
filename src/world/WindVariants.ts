@@ -13,6 +13,8 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // sway, VegetationShadow.ts); `debugFlags.mv.wind = false` swaps them to their build without it
 // (`userData.windMotion = false`): no wind motion in the velocity and no second sway in the
 // vertex stage, for MV-UNIT and for timing that sway with --toggle "s.flags.mv.wind = off".
+// A material drawn by meshes made later (the game's palm) follows the flag through
+// `followWindMotionFlag` instead.
 
 export interface WindVariants { shipped: THREE.Material; legacy: THREE.Material }
 
@@ -26,6 +28,26 @@ export function keepLegacyWind( mesh: THREE.Mesh, legacy: THREE.Material ): void
 export function windVariants( mesh: THREE.Object3D ): WindVariants | undefined {
 
 	return mesh.userData.windVariants as WindVariants | undefined;
+
+}
+
+// materials outside the registered meshes that follow `debugFlags.mv.wind` (followWindMotionFlag)
+const followers = new Set<THREE.Material>();
+
+function setWindMotion( m: THREE.Material, windStill: boolean ): void {
+
+	if ( m.userData.previousPosition !== true || ( m.userData.windMotion === false ) === windStill ) return;
+	m.userData.windMotion = ! windStill;
+	m.needsUpdate = true;
+
+}
+
+/** Let `material` (one with a previous position, VegetationShadow.ts) follow `debugFlags.mv.wind`
+ * as the registered meshes' shipped materials do, whenever its meshes are made. */
+export function followWindMotionFlag( material: THREE.Material ): void {
+
+	followers.add( material );
+	setWindMotion( material, debugFlags.mv.wind === false );
 
 }
 
@@ -46,14 +68,8 @@ export function installWindVariants( scene: THREE.Scene, roots: THREE.Object3D[]
 		if ( windStill !== still ) {
 
 			still = windStill;
-			for ( const mesh of meshes ) {
-
-				const m = windVariants( mesh )!.shipped;
-				if ( m.userData.previousPosition !== true || ( m.userData.windMotion === false ) === windStill ) continue;
-				m.userData.windMotion = ! windStill;
-				m.needsUpdate = true;
-
-			}
+			for ( const mesh of meshes ) setWindMotion( windVariants( mesh )!.shipped, windStill );
+			for ( const m of followers ) setWindMotion( m, windStill );
 
 		}
 		const legacy = legacyWind();
