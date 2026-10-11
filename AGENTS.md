@@ -79,7 +79,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   places are `Fn( ... ).setLayout( ... )`, so they compile to one shader function each.
 - Paused frames are exactly repeatable: everything animated is a function of the scene clock, the
   weather and integrated state (wind travel, fog time), never of the path taken to get there.
-  Captures and probes depend on it.
+  Captures and probes depend on it. Temporal AA modes are compared within a tolerance, not byte
+  for byte: the GPU splits render passes on its own, which moves a few samples, and the temporal
+  rest freezes that (`tools/parity/README.md`).
 - Everything generated for the island is generic, because the island must grow by more tiles: it
   derives from the footprint, the island's SDF and noise fields with fixed seeds (hashes of
   position, or random streams that draw a fixed count per anchor), never from coordinates placed

@@ -127,8 +127,8 @@ node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b
 
 ```sh
 uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [--views a,b]
-    [--max-px1 200] [--crops 3] [--crop 256] [--out dir] [--aa-floor] [--md table.md]
-    [--crops-from ref|test|<dir>|<file.json>]
+    [--max-px1 200] [--crops 3] [--crop 256] [--out dir] [--aa-floor | --temporal [--flip]]
+    [--md table.md] [--crops-from ref|test|<dir>|<file.json>]
 ```
 
 - Per view: byte-identical or not, max and mean absolute difference, pixels over 1, 2, 8 and 32
@@ -142,12 +142,43 @@ uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [-
   frame inside the reference's spread passes (the note says so). A view that repeats on the
   reference must repeat on the test side and match it byte for byte. Diffing a set against itself
   lists its A/A floor; `--md` writes the table.
+- `--temporal`: the rule for temporal AA captures (`aa=taa|taau`), whose paused frames are not
+  byte-repeatable (see Temporal tolerance below). MSAA sets keep the byte rules above.
 - Each capture's JSON records the browser build (`browser`); diff-set warns when the two sets come
   from different builds, since their frames never match byte for byte. Compare only sets captured
   with the same browser (Playwright's Chromium, or one `CHROME_PATH`).
 - `--crops-from`: per anchor, the difference counts and a `ref | test | diff x8` sheet
   (`<out>/<view>.<anchor>.png`), and per view `<view>.anchors.png`, the test frame at a quarter size
   with its anchor boxes.
+
+## Temporal tolerance (diff-set.py --temporal, tolerance.py)
+
+MSAA paused frames repeat byte for byte (or within their small A/A floor); temporal ones do not, and
+we chose not to make them: the GPU ends a render pass on its own (tile overflow, preemption) at
+points that vary from draw to draw, a split pass shades a few samples differently (mostly through
+fragment derivatives), and the temporal rest averages 40 such frames and freezes what they held.
+Under a busy GPU that reaches a few hundredths of a percent of the pixels, a few levels each (up to
+20 on dense vegetation). So temporal sets are compared the way engine screenshot tests compare
+frames (Unity's Graphics Test Framework, Unreal's screenshot tolerances):
+
+- a pixel is off when its largest channel difference exceeds a level; the share of off pixels is
+  bounded on the frame, in every 32 px window (stride 16: any square of 48 px lies whole in one)
+  and on every named crop, and the frame's mean difference is bounded (global and local error);
+- in every window, few pixels may differ by a lot (a missing or recoloured small object);
+- the mean signed difference of each channel is bounded in every window and crop, so a coherent
+  shift that stays under the level everywhere (a 1-level change over a region) still fails;
+- one recapture before a failure counts: a view passes when any pairing of the two sides'
+  captures (`<view>.png`, `<view>.repeat.png`) passes, and a failing view whose test side has no
+  recapture is marked unconfirmed. Capture temporal sets with `--repeat`.
+
+`use` in the table is the largest measurement / threshold ratio (pass: at most 1). The thresholds
+sit in one table, `TEMPORAL` in `tolerance.py`, with their calibration: they pass every A/A pair
+of the M7 build's taa, taau and msaa captures, quiet and with the GPU shared (the worst used under
+half the tolerance), and fail every synthetic regression cut into those frames (a 1-level change
+over a 48 px square, a recoloured flower patch, a quarter-pixel shift of a crop, a missing 6 px
+flower or the islander's head), each by 3.9 times the tolerance or more. `--flip` adds the mean
+NVIDIA FLIP of each frame (`--with flip-evaluator`), reported only: a frame's mean hides a missing
+flower entirely. Crops come from `--crops-from`, else from the test side's JSON.
 
 ## Reference sets
 

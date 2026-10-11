@@ -457,6 +457,12 @@ comment where it is used.
   history where nothing describes the motion (rain, spray, a lightning strike): AMD FidelityFX
   Super Resolution 2 (its documentation) and Unreal Engine's Temporal Super Resolution. All used
   as techniques only.
+- The tolerance that compares temporal AA captures (`tools/parity/tolerance.py`): a per-pixel
+  level with the share of pixels over it bounded on the frame and in local blocks, and a mean
+  error, after Unity's Graphics Test Framework (`ImageComparisonSettings`) and Unreal Engine's
+  automation screenshot comparison (`FAutomationScreenshotTolerance`); NVIDIA FLIP (Andersson et
+  al., *FLIP: A Difference Evaluator for Alternating Images*, HPG 2020) is reported through the
+  optional `flip-evaluator` package (BSD-3-Clause). Used as techniques only.
 - Gusts as a noise field scrolled with the wind, sweeping across the grass: Sucker Punch
   Productions' wind and grass in *Ghost of Tsushima* (Eric Wohllaib, *Procedural Grass in 'Ghost
   of Tsushima'*, GDC 2021: 2D Perlin noise scrolled in the wind's direction; Bill Rockenbeck,
