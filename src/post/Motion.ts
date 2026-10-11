@@ -54,8 +54,10 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //
 // A cut (`taaCut`: a seek, a jump of the camera, a new scene) makes the previous frame the current
 // one for the camera, the objects and whatever else registers with `onTaaCut` (the wind's previous
-// state, the histories), so nothing moves across it. The camera's own jumps are found here: in one
-// rendered frame more than 8 m, more than 30 degrees, or a field of view changed by more than 2 %.
+// state, the histories), so nothing moves across it. The page's sites ask for it through their scene
+// events (SceneEvents.ts, whose table says which cut). The camera's own jumps that no event covers
+// are found here: in one rendered frame more than 8 m, more than 30 degrees, or a field of view
+// changed by more than 2 %.
 
 /** The classes a surface writes in the velocity's b. */
 export const MOTION_CLASS = { opaque: 0, vegetation: 0.25, water: 0.5, character: 0.75, sky: 1 } as const;
