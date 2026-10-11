@@ -57,7 +57,7 @@ import type { Rain } from '../weather/Rain.ts';
 //   canvas pass: the history (or the rest's image) encoded, vignette, RCAS, grain and dither; TAA
 //     below the canvas encodes it at the render's size (taaDisplay), EASU, then RCAS and the grain
 // (`taaResolve=off`, debug builds: the jittered frame shown as it is, through the output passes
-// above, with the grade's vignette and grain: the placeholder before the resolve).
+// above, with the grade's vignette and grain, as before the resolve landed).
 // The rain veil's per-pixel reactive weight (veilReactive) is a resource of its own the resolve
 // reads, zero until the composite writes it.
 // Every pass runs at the scene's render size or a share of it. When the canvas is larger (a quality
@@ -421,7 +421,7 @@ export class Pipeline {
 	// (msaa and off: under the temporal modes the opaque copy is a texture copy)
 	private copyQuad: THREE.QuadMesh | null = null;
 	private surfaceQuad: THREE.QuadMesh;
-	// (msaa, off and the temporal placeholder: the resolve has a canvas pass of its own)
+	// (msaa, off and the temporal modes with `taaResolve=off`: the resolve has a canvas pass of its own)
 	private output: THREE.RenderPipeline | null = null;
 	// FSR.ts's sharpening canvas pass after EASU (the fsrPort option), or three's FSR1Node (post=three-fsr)
 	private upscaledOutput: THREE.RenderPipeline | null = null;

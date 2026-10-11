@@ -9,7 +9,7 @@ everyday commands; this file has the details. Each tool's own file says the rest
   `npm run preview` (port 5191, the production build).
 - `window.__PONLAI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the
   dev server or with `?debug` (or `?profile`, which also loads the frame profiler).
-  `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock } )` stops the live loop and
+  `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock, converge } )` stops the live loop and
   steps the tick itself with fixed timestamps, the frame pacer and the dynamic scale bypassed and
   nothing taken from the wall clock (`loop.start()` resumes the live loop); the diagnostics add
   the scene's anti-aliasing (`aa`), the pipelines created so far (`pipelines`, counted by
@@ -59,9 +59,19 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 
 - `aa` (the anti-aliasing mode, `src/post/Antialiasing.ts`: `msaa`, 4 samples, or `off`, one
   sample, over the tier's `aa` knob; `taa` and `taau`, the temporal modes, from the URL only: one
-  sample, jittered, with motion vectors, the frame shown as it renders until their resolve lands)
-  and its older alias `msaa` (`4` reads as `aa=msaa`, `1` and `2` as `aa=off`, since WebGPU
-  multisamples with 1 or 4 samples only).
+  sample, jittered, with motion vectors, resolved against a history in `TemporalAA.ts`, at the
+  render's size or upsampled to the canvas; a paused page shows the rest image, the jitter
+  sequence averaged, once it has converged, `TemporalRest.ts`) and its older alias `msaa` (`4`
+  reads as `aa=msaa`, `1` and `2` as `aa=off`, since WebGPU multisamples with 1 or 4 samples
+  only).
+- `aa=gt` (debug builds only; refused with a warning otherwise): the ground truth the temporal
+  modes are measured against: the temporal graph at the canvas's resolution, no dynamic scale,
+  whose rest averages `tier.taa.gtJitters` jittered frames (64 by default, 32 per frame of a
+  motion clip) with a box filter, without the sharpening or the grain (the dither kept).
+  `loop.step`'s `converge( i )`, where it returns true, holds the scene after frame i's tick and
+  renders it until the rest has converged; `tools/capture-clip.mjs --aa gt [--gt-jitters n]` captures it that way.
+- `taaResolve=off` (debug builds): the temporal modes without their resolve, the jittered frame
+  shown as it renders, through the output passes with the grade's vignette and grain.
 - `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB cache,
   as on a first visit).
 - `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
@@ -84,7 +94,11 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `fgview=<resource>[.<output>]` (debug builds: the frame graph's debug view draws one of its
   resources over the canvas, shown by what it holds, e.g. `linearDepth`, `fogMarch.a`, `FSR.easu`;
   outputs `r` / `g` / `b` / `a`, `previous`, a depth's `sample<n>`; under the temporal modes also
-  `class`, `reactive`, `reproject` and `reproject.diff`, views of the motion vectors;
+  `class`, `reactive`, `reproject` and `reproject.diff`, views of the motion vectors, and the
+  resolve's decisions: `weight` (the history's share of the resolved pixel, black: this frame
+  alone, white: all history), `disocclusion` (red where the point was hidden in the previous
+  frame, green where it was off screen, blue where the history was reset) and `clip` (how far the
+  history lay outside the neighbourhood's clip box, white at twice its width);
   `src/post/graph/DebugView.ts`; also the GUI's Debug folder, which reloads;
   `s.pipeline.graph.describe()` and `dot()` list the graph).
 - Under the temporal modes `flags.mv.camera` / `object` = false leave a source out of the motion
