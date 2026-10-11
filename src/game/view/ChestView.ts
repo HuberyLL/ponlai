@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import type { BuildingState } from '../sim/types.ts';
-import { BOX, PropBuilder, at, hashAt, propMaterial } from './Props.ts';
+import { BOX, PropBuilder, at, buildingMaterial, hashAt } from './Props.ts';
 import type { RGB } from './Props.ts';
 
 // The chest (sim/buildings.ts) once the player has set it down: a stand-in wooden chest built in code, in
@@ -9,7 +9,10 @@ import type { RGB } from './Props.ts';
 // with a rim, two dark bands over body and lid and a clasp at the front. About 0.9 x 0.55 m and
 // 0.6 m tall, so the disc it blocks (CHEST_RADIUS) is its lid's half diagonal: what is drawn is
 // what the islanders walk round. Its front faces the island's middle (the world origin), so a
-// loaded game draws it the same; its planks vary by a hash of where it stands.
+// loaded game draws it the same; its planks vary by a hash of where it stands. It shares one
+// material with every building and site (Props.ts buildingMaterial), the sample the game compiles
+// at start among them (GameView "First draws"): a chest drawn later finds its shaders built, not
+// only its pipelines.
 
 // linear albedo: weathered planks, darker posts and skids, dark bands
 const WOOD: RGB = [ 0.16, 0.09, 0.045 ];
@@ -76,11 +79,6 @@ function chestGeometry( chest: BuildingState ): THREE.BufferGeometry {
 
 }
 
-// One material for every chest, the sample the game compiles at start among them (GameView "First
-// draws"): a chest drawn later then finds its shaders built, not only its pipelines. It is never
-// disposed.
-let material: THREE.MeshStandardNodeMaterial | null = null;
-
 export class ChestView {
 
 	readonly mesh: THREE.Mesh;
@@ -92,7 +90,7 @@ export class ChestView {
 
 		this.x = chest.x;
 		this.z = chest.z;
-		this.mesh = new THREE.Mesh( chestGeometry( chest ), material ??= propMaterial( 'chest' ) );
+		this.mesh = new THREE.Mesh( chestGeometry( chest ), buildingMaterial() );
 		this.mesh.name = 'chest';
 		this.mesh.position.set( chest.x, ground, chest.z );
 		// the front (+z) faces the island's middle

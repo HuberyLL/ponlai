@@ -125,6 +125,18 @@ export function propMaterial( name: string, side: THREE.Side = THREE.FrontSide )
 
 }
 
+// One material for every building and its construction site (ChestView, SiteView), so whatever
+// first shows mid-game finds its shaders and pipelines built by the samples the game compiles at
+// start (GameView "First draws"). It is never disposed.
+let building: THREE.MeshStandardNodeMaterial | null = null;
+
+/** The surface the game's buildings and their sites share (propMaterial, front faces). */
+export function buildingMaterial(): THREE.MeshStandardNodeMaterial {
+
+	return building ??= propMaterial( 'building' );
+
+}
+
 /** A hash of a point (world metres, rounded to the centimetre) and a seed to 0..1: props take
  * their variation from where they stand, so a loaded game draws them the same. */
 export function hashAt( x: number, z: number, seed: number ): number {

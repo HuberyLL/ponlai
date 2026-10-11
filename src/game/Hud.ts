@@ -2,12 +2,14 @@ import type * as THREE from 'three/webgpu';
 import type { Game } from './Game.ts';
 import { ChestPlacement } from './Placement.ts';
 import { describeCall } from './sim/actions.ts';
+import { progressOf, stageOf } from './sim/buildings.ts';
 import { BAG_CAPACITY, total } from './sim/items.ts';
 import type { Villager } from './sim/types.ts';
 
 // The player's on-screen interface in ?game, a prototype HUD rather than the final UI: a small
 // readout of the islander (name, day and time, satiety and hydration as bars with numbers, the bag,
-// what they are doing, the last thing they said and how their last action ended) and the one
+// what they are doing, how far each unbuilt site has come in percent, the last thing they said and
+// how their last action ended) and the one
 // control the player has, placing the chest (Placement.ts). Plain DOM over the canvas in a
 // warm, quiet style that sits over the scene, not lil-gui (the debug panel stays the developer's).
 //
@@ -91,6 +93,7 @@ export class GameHud {
 	private readonly hydration: NeedRow;
 	private readonly bag: HTMLElement;
 	private readonly doing: HTMLElement;
+	private readonly site: HTMLElement;
 	private readonly said: HTMLElement;
 	private readonly last: HTMLElement;
 	private readonly placement: ChestPlacement;
@@ -125,6 +128,7 @@ export class GameHud {
 		};
 		this.bag = row( 'Bag' );
 		this.doing = row( 'Doing' );
+		this.site = row( 'Building' );
 		this.said = element( 'div', 'said', panel );
 		this.last = element( 'div', 'last', panel );
 		this.placement = new ChestPlacement( game, context, element( 'div', 'place', root ) );
@@ -160,6 +164,11 @@ export class GameHud {
 		this.need( this.hydration, v.needs.hydration );
 		text( this.bag, bagText( v ) );
 		text( this.doing, v.action ? describeCall( v.action.call ) : v.path ? 'walking' : sim.thinking( v.id ) ? 'thinking' : 'idle' );
+		// the unbuilt sites, in whole percent as perception has them
+		const sites = sim.state.buildings.filter( ( b ) => stageOf( b ) !== 'built' );
+		const row = this.site.parentElement!, display = sites.length > 0 ? '' : 'none';
+		if ( row.style.display !== display ) row.style.display = display;
+		text( this.site, sites.map( ( b ) => `${ b.id } ${ Math.floor( progressOf( b ) * 100 ) }%` ).join( ' · ' ) );
 		text( this.said, v.said ? `“${ v.said.words }”` : '' );
 		const last = v.last;
 		text( this.last, last ? `${ describeCall( last.call ) }: ${ last.result.ok ? last.result.value ?? 'done' : last.result.reason }` : '' );
