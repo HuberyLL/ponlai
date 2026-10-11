@@ -12,6 +12,10 @@
 // capture-set passes the view's own first, then any given after its `--`).
 // A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
 // a running one, or --exclusive, takes it to itself, since its frame times are reported too.
+// A paused page of the temporal modes (aa=taa|taau|gt) shows its rest image once that has
+// converged (src/post/TemporalRest.ts): after the evals the rest is started over (its epoch: what
+// they changed need not be in its key) and the capture waits for `diag.taa.converged` (not with
+// `tier.taa.restSequence=0`, where there is no rest).
 import { chromium } from 'playwright';
 import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -61,6 +65,14 @@ try {
 	await page.waitForFunction( () => window.__THREE_GAME_DIAGNOSTICS__?.frame > 150 &&
 		document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout } );
 	await page.waitForTimeout( 1100 );
+	// a paused temporal page: its rest, started over after the evals, converged
+	if ( new URLSearchParams( query ).has( 'paused' ) ) {
+		await page.evaluate( () => window.__PONLAI__?.taa?.epoch.bump( 'capture' ) );
+		await page.waitForFunction( () => {
+			const t = window.__THREE_GAME_DIAGNOSTICS__?.taa;
+			return ! t || t.restTarget === 0 || ( t.converged && t.restEpoch === window.__PONLAI__.taa.epoch.value );
+		}, null, { timeout, polling: 100 } );
+	}
 	if ( waitFor ) await page.waitForFunction( waitFor, null, { timeout: 60000, polling: 100 } );
 	const samples = [];
 	for ( let i = 0; i < sampleCount; i ++ ) {
