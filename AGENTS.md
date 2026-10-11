@@ -50,7 +50,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `IslandGround.ts`) and the free flight.
 - `src/world/`: the island generated in Web Workers (`worldWorker.ts`, cached by `WorldCache.ts`)
   from the grown land (`IslandGrowth.ts`: the land lattice grown one piece at a time): the
-  world built one 16 m chunk at a time from its window of the land field (`Chunks.ts`), the
+  world built one 16 m chunk at a time from its window of the land field (`Chunks.ts`; what the
+  page derives from its meshes, so it never walks their vertices: `ChunkDerived.ts`), the
   footprint, SDF shapes and surface nets (`WorldShapes.ts`), the cliffs (`Cliff.ts`), the
   submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as tiles by
   `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`, `RimSkirt.ts`), the
