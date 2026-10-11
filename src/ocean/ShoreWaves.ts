@@ -10,6 +10,7 @@ import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
 import type { WorldData } from '../world/types.ts';
 import { createShoreBoundaryField, createShoreShelterField } from './ShoreWaveField.ts';
+import { TEMPORAL } from '../post/Antialiasing.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -17,6 +18,12 @@ type V2 = THREE.Node<'vec2'>;
 // Tidewater's FFT supplies every incident wave. This rocky boundary is a Ponlai extension:
 // a weak mirrored response and whitewater use that wave's height and orbital velocity,
 // without adding the independent, single-period beach wave over the open sea.
+//
+// The surface field is baked once per change of the scene clock. Under the temporal modes
+// (Antialiasing.ts) it alternates between two targets, so the one baked before stays readable as
+// the field a step of the clock ago (`previousSurfaceAt`): the water's motion vectors take its
+// vertices' previous heights from it (Water.ts). `texture` and `previous` swap their targets at
+// each bake; whoever samples them follows.
 export class ShoreWaves {
 
 	readonly direction = uniform( new THREE.Vector2() );
@@ -25,9 +32,13 @@ export class ShoreWaves {
 	readonly shelter: THREE.TextureNode;
 	// RGBA: local reflected height, its x/z slopes, incident rock-contact energy.
 	readonly texture: THREE.TextureNode;
+	// The surface field as baked before the current one (temporal modes; otherwise the current one).
+	readonly previous: THREE.TextureNode;
 	// RGBA: horizontal particle velocity, contact energy, filtered incident height.
 	readonly motion: THREE.TextureNode;
 	readonly surfaceAt: ( p: V2, time: F ) => THREE.Node<'vec4'>;
+	/** The surface field at the clock's previous bake (see the note above). */
+	readonly previousSurfaceAt: ( p: V2 ) => THREE.Node<'vec4'>;
 	readonly sample: ( p: V2, time: F ) => THREE.Node<'vec4'>;
 	readonly incidentAt: ( p: V2 ) => THREE.Node<'vec4'>;
 	fieldRevision = 0;
@@ -35,6 +46,8 @@ export class ShoreWaves {
 	private revision = - 1;
 	private renderer: THREE.WebGPURenderer;
 	private targets: THREE.RenderTarget[];
+	// the surface field's targets: [ current, previous ] (one under MSAA)
+	private surfaces: THREE.RenderTarget[];
 	private quads: THREE.QuadMesh[];
 	private lastTime: number | undefined;
 	private lastReflection = - 1;
@@ -160,14 +173,17 @@ export class ShoreWaves {
 			return vec4( centre.x, dx, dz, centre.w );
 
 		};
-		this.targets = [ 'rockWaveSurface', 'rockWaveMotion' ].map( name => {
+		const field = ( name: string ) => {
 
 			const target = new THREE.RenderTarget( 512, 512, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false } );
 			target.texture.name = name;
 			return target;
 
-		} );
-		this.texture = texture( this.targets[ 0 ].texture );
+		};
+		this.targets = [ 'rockWaveSurface', 'rockWaveMotion' ].map( field );
+		this.surfaces = TEMPORAL ? [ this.targets[ 0 ], field( 'rockWaveSurfacePrevious' ) ] : [ this.targets[ 0 ] ];
+		this.texture = texture( this.surfaces[ 0 ].texture );
+		this.previous = texture( this.surfaces[ this.surfaces.length - 1 ].texture );
 		this.motion = texture( this.targets[ 1 ].texture );
 		this.quads = this.targets.map( ( _, i ) => {
 
@@ -183,6 +199,7 @@ export class ShoreWaves {
 
 		} );
 		this.surfaceAt = ( p, _time ) => this.texture.sample( toUV( p ) ).level( float( 0 ) );
+		this.previousSurfaceAt = ( p ) => this.previous.sample( toUV( p ) ).level( float( 0 ) );
 
 	}
 
@@ -209,9 +226,17 @@ export class ShoreWaves {
 		if ( time === undefined || ( time === this.lastTime && this.lastReflection === this.reflection.value &&
 			this.lastWeatherGain.equals( fft.weatherGain.value ) ) ) return;
 		const previousTarget = this.renderer.getRenderTarget();
+		// (temporal modes: the surface is baked into the target that held the field before last)
+		if ( this.surfaces.length > 1 ) {
+
+			this.surfaces.reverse();
+			this.texture.value = this.surfaces[ 0 ].texture;
+			this.previous.value = this.surfaces[ 1 ].texture;
+
+		}
 		for ( let i = 0; i < this.targets.length; i ++ ) {
 
-			this.renderer.setRenderTarget( this.targets[ i ] );
+			this.renderer.setRenderTarget( i === 0 ? this.surfaces[ 0 ] : this.targets[ i ] );
 			this.quads[ i ].render( this.renderer );
 
 		}
