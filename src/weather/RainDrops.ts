@@ -16,7 +16,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, instancedArray, instanceIndex, hash, uniform, varying, cameraPosition, positionGeometry, positionView,
 	screenCoordinate, texture, textureLoad, textureSize, uv, ivec2, vec2, vec3, vec4, float, floor, fract, select, min, max, abs,
-	length, normalize, cross, dot, smoothstep, clamp, exp, sin, sqrt, pow, mix,
+	length, normalize, cross, dot, smoothstep, clamp, exp, sin, sqrt, pow, mix, output,
 } from 'three/tsl';
 import type { RainCollision } from './RainCollision.ts';
 import { overlayVelocity, velocityOutput } from '../post/Motion.ts';
@@ -48,6 +48,12 @@ const SPRAY_LIFE = 0.26, SEA_SPRAY_LIFE = 0.16, RING_LIFE = 0.75;
 const SPRAY_SIZE = 0.18, RING_SIZE = 0.5; // m
 // Collision search: steps down the drop's path from the highest ground, then bisections.
 const STEPS = 20, BISECTIONS = 5;
+// Under the temporal modes, a drop's reactive weight per unit of its opacity (at most 1). A streak
+// is sub-pixel and faint (opacities of 0.1 - 0.3), so at 1 the resolve kept most of its history
+// there: the streaks lost a quarter of their energy against the ground truth in a storm and trailed
+// (ghosting about 15 x MSAA's). At 4 the streaks keep 0.83 - 0.87 of the ground truth's energy and
+// the trails halve (m8-mv-effects notes).
+const REACTIVE_GAIN = 4;
 
 /** Nested volumes of drops, each a window onto a field that repeats every `size` metres, so
  * moving a window never moves a drop: it only trades drops at its faces. Near the eye a dense
@@ -392,8 +398,10 @@ export class RainDrops {
 		material.forceSinglePass = true;
 		material.name = name;
 		// under the temporal modes the drops draw in the overlay pass, which keeps the velocity under
-		// them; only their reactive weight counts (Motion.ts)
-		material.mrtNode = velocityOutput( overlayVelocity( 0 ) );
+		// them; only their reactive weight counts (Motion.ts): their final opacity (`output`, set
+		// before the MRT's outputs are built) times REACTIVE_GAIN, which the overlay MRT's max keeps
+		// where drops overlap, so the resolve trusts its history less where a drop covers the pixel
+		material.mrtNode = velocityOutput( overlayVelocity( clamp( output.a.mul( REACTIVE_GAIN ), 0, 1 ) ) );
 		this.materials.push( material );
 		return material;
 

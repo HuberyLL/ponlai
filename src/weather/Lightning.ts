@@ -13,7 +13,7 @@ import { FLASH_SOURCES, SHELL_BOTTOM, SHELL_THICKNESS, type Clouds } from '../sk
 import { SUN_ILLUMINANCE } from '../sky/Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import type { LatentRegistry } from '../post/graph/FrameGraph.ts';
-import { velocityOutput } from '../post/Motion.ts';
+import { reactiveUniforms, velocityOutput } from '../post/Motion.ts';
 
 // Thunderstorm lightning, kilometres out over the sea. Most strikes stay inside the cloud and
 // light it from within (sheet lightning); the rest come down to the sea as a branching channel
@@ -28,6 +28,18 @@ import { velocityOutput } from '../post/Motion.ts';
 // shows exactly the same strike every time, and `force` (`sky.lightning.force`) puts one in front
 // of a review camera. Its light inside the clouds stays out of the view's accumulated history, the
 // bake and the panorama (Clouds.ts).
+//
+// Under the temporal modes (Antialiasing.ts) a strike reaches the resolve twice. The channel draws
+// in the opaque pass (the water's reflection reads the opaque copy) and overwrites the velocity
+// with no motion and a reactive weight of 1 (Motion.ts), in both of its per-side draws (a
+// transparent double-sided material: three draws the back faces, then the front, and the frame
+// graph's warm-up compiles a clone per side, which keeps the material's MRT node): the resolve takes
+// the channel from this frame alone. And the flash on the island, which changes the whole frame
+// from one rendered frame to the next, sets the global `reactiveUniforms.flash` from how much the
+// island's flash (`island`: the strikes' light as the fill weighs it, without its radiance scale)
+// changed since the previous update: smoothstep( 0.02, 0.2, |island - previous| ). It is a function
+// of the scene clock and the strikes like the rest, 0 on a paused frame after the first, and up only
+// for the frames a strike flickers.
 
 const SLOT = 0.5; // seconds
 const MEAN_INTERVAL = 3.5; // seconds between strikes in a full storm
@@ -42,6 +54,9 @@ const FLASH_RADIANCE = 0.6;
 const CHANNEL_AIR = 16000;
 // A channel is at least this many pixels wide, its light spread over the width (no dashes).
 const MIN_PIXELS = 1.6;
+// The change of the island's flash from one update to the next over which the resolve's history
+// weight falls from all to none (`reactiveUniforms.flash`).
+const FLASH_REACTIVE = [ 0.02, 0.2 ];
 
 export type StrikeKind = 'bolt' | 'sheet';
 
@@ -105,6 +120,11 @@ export class Lightning {
 	/** The flash's share of the island's sky light this frame: radiance (scene units) of the lit
 	 * cloud deck as seen from the island, 0 between strikes. */
 	fill = 0;
+	/** The strikes' light on the island this frame, as `fill` weighs it without its radiance (a
+	 * strike of power 1 three kilometres off with a 2.5 km reach: 0.5); `reactiveUniforms.flash`
+	 * follows its change. */
+	island = 0;
+	private islandBefore: number | null = null;
 	private forced: ForcedStrike | null = null;
 	private readonly strikes = new Map<number, Strike>();
 	private readonly bolts: Bolt[] = [];
@@ -176,6 +196,10 @@ export class Lightning {
 		for ( const [ id, strike ] of this.strikes ) if ( id >= 0 && ( strike.start > time + SLOT || strike.start + strike.duration < time - SLOT ) ) this.strikes.delete( id );
 		this.light( active, clouds, camera.position );
 		this.draw( active );
+		// the flash's change since the last update, for the temporal resolve (none on the first)
+		const change = Math.abs( this.island - ( this.islandBefore ?? this.island ) );
+		reactiveUniforms.flash.value = THREE.MathUtils.smoothstep( change, FLASH_REACTIVE[ 0 ], FLASH_REACTIVE[ 1 ] );
+		this.islandBefore = this.island;
 
 	}
 
@@ -276,7 +300,7 @@ export class Lightning {
 	private light( active: { strike: Strike; age: number }[], clouds: Clouds, viewer: THREE.Vector3 ): void {
 
 		const lit = new Map<string, { position: THREE.Vector3; reach: number; color: THREE.Color }>();
-		let fill = 0;
+		let fill = 0, island = 0;
 		for ( const { strike, age } of active ) {
 
 			strike.sources.forEach( ( source, k ) => {
@@ -289,11 +313,13 @@ export class Lightning {
 				// dimmer the farther off it is.
 				const distance = Math.hypot( position.x - viewer.x, position.z - viewer.z );
 				fill += level * this.radiance * FLASH_RADIANCE * 0.06 * source.reach / 2500 / ( 1 + ( distance / 3000 ) ** 2 );
+				island += level * source.reach / 2500 / ( 1 + ( distance / 3000 ) ** 2 );
 
 			} );
 
 		}
 		this.fill = fill;
+		this.island = island;
 		// Keep each source in its slot; a new one takes a free slot, and when more than four are
 		// alight the dimmest go without.
 		for ( let i = 0; i < FLASH_SOURCES; i ++ ) if ( this.slots[ i ] !== null && ! lit.has( this.slots[ i ]! ) ) this.slots[ i ] = null;

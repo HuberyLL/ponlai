@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, texture, textureLoad, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, log2, luminance, neutralToneMapping, agxToneMapping,
-	sRGBTransferOETF, fract, select, exp, nodeObject, atan, mod, pow,
+	sRGBTransferOETF, fract, select, exp, nodeObject, atan, mod, pow, mrt, outputStruct,
 } from 'three/tsl';
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
@@ -62,8 +62,11 @@ import type { Rain } from '../weather/Rain.ts';
 //     below the canvas encodes it at the render's size (taaDisplay), EASU, then RCAS and the grain
 // (`taaResolve=off`, debug builds: the jittered frame shown as it is, through the output passes
 // above, with the grade's vignette and grain, as before the resolve landed).
-// The rain veil's per-pixel reactive weight (veilReactive) is a resource of its own the resolve
-// reads, zero until the composite writes it.
+// The rain veil's per-pixel reactive weight (veilReactive, R16F at the render's size) is a resource
+// of its own the resolve reads: under the resolve the composite pass writes it as a second target
+// beside hdr, the veil's opacity at the pixel (Rain.veil) x 1.5, at most 0.6, so the resolve trusts
+// its history less only where the veil is dense, and the meadow beside it keeps its history. (The
+// legacy inline composite, `post=` without compositeOnce, leaves it at zero.)
 // Every pass runs at the scene's render size or a share of it. When the canvas is larger (a quality
 // preset below the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling,
 // then contrast-adaptive sharpening) to the screen instead, and the grain is added there, at
@@ -138,6 +141,9 @@ const PRIME = new URLSearchParams( globalThis.location?.search ?? '' ).get( 'fgP
 // The temporal modes resolve their jittered frames (TemporalAA.ts); `taaResolve=off` (debug builds)
 // shows the jittered frame as it is, through the output passes, as before the resolve.
 const RESOLVE = TEMPORAL && ! ( DEV && new URLSearchParams( globalThis.location?.search ?? '' ).get( 'taaResolve' ) === 'off' );
+// The rain veil's reactive weight: its opacity at the pixel times `gain`, at most `max` (a dense veil
+// lowers the history's weight there to 40 % of its frames; a single faint streak barely moves it).
+const VEIL_REACTIVE = { gain: 1.5, max: 0.6 };
 const RENDER: SizeClass = { of: 'render' };
 // half the render, at least a texel (the depth of field's blur)
 const HALF: SizeClass = { of: 'render', scale: 0.5, min: 1 };
@@ -485,8 +491,8 @@ export class Pipeline {
 		// (in the scene's target: its sample count, one under the temporal modes)
 		const velocity = TEMPORAL ? g.color( 'velocity', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, samples: 'scene' } ) : null;
 		const surfaceDepthPrev = TEMPORAL ? g.color( 'surfaceDepthPrev', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType }, true ) : null;
-		// the rain veil's reactive weight per pixel, for the resolve (persistent: zero until a pass
-		// writes it, so the resolve's binding never changes)
+		// the rain veil's reactive weight per pixel, for the resolve, written by the composite
+		// (persistent: zero until it is written, so the resolve's binding never changes)
 		const veilReactive = RESOLVE ? g.color( 'veilReactive', { size: RENDER, format: THREE.RedFormat, type: THREE.HalfFloatType }, true ) : null;
 		// the composite, the sharp image and the depth of field's blur (half float, as three's rtt()
 		// made them)
@@ -558,8 +564,9 @@ export class Pipeline {
 		// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it
 		const sceneTex = texture( g.texture( sceneColor ) );
 		const tSurfaceDepth = this.textures.surfaceDepth;
-		const composited = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined )
-			.add( this.shafts.build( tSurfaceDepth, sky, g ) );
+		// (the air's alpha: the rain veil's opacity, for the resolve's veilReactive)
+		const aired = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rain ? ( d, distance, background ) => rain.veil( d, distance, background ) : undefined );
+		const composited = aired.rgb.add( this.shafts.build( tSurfaceDepth, sky, g ) );
 		// Rendered once (the composite pass, into hdr), the composite feeds the sharp image and both
 		// blooms' high passes; as an expression each of them evaluated it again, the sea fog's march
 		// included. The high passes run at half resolution and sample it bilinearly, as they sampled
@@ -569,7 +576,10 @@ export class Pipeline {
 
 			const compositeMat = new THREE.NodeMaterial();
 			compositeMat.name = 'Post.Composite';
-			compositeMat.fragmentNode = vec4( composited, 1 );
+			// (under the resolve also the veil's reactive weight, the second target: VEIL_REACTIVE)
+			compositeMat.fragmentNode = veilReactive
+				? outputStruct( vec4( composited, 1 ), vec4( min( aired.a.mul( VEIL_REACTIVE.gain ), VEIL_REACTIVE.max ) ) )
+				: vec4( composited, 1 );
 			this.compositeQuad = new THREE.QuadMesh( compositeMat );
 			this.compositeQuad.name = 'Post.Composite';
 			// (with the uv rtt() gave its texture: a texture() without one transforms it)
@@ -1181,7 +1191,7 @@ export class Pipeline {
 		const fogReads = this.air.passes( g, surfaceDepth );
 		// the depth of field's distances (without the depth of field its blur is mixed in at weight
 		// 0, so stale distances never show)
-		let { hdr, sharp, blur, viewDistance, display, easu, canvas } = this.resources;
+		let { hdr, sharp, blur, viewDistance, display, easu, canvas, veilReactive } = this.resources;
 		const distanceQuad = this.distanceQuad;
 		if ( viewDistance && distanceQuad ) g.addPass( 'viewDistance', 'quad', ( b ) => {
 
@@ -1208,7 +1218,10 @@ export class Pipeline {
 
 			compositeReads( b );
 			hdr = b.write( hdr! );
-			return { label: 'composite (air, fog, veil)', quad: compositeQuad };
+			// (the attachments in this order: the struct's; the MRT only declares both to the graph,
+			// unblended, as the resolve's does)
+			if ( veilReactive ) veilReactive = b.write( veilReactive );
+			return { label: 'composite (air, fog, veil)', quad: compositeQuad, mrt: veilReactive ? mrt( {} ) : null };
 
 		} );
 		// the blooms (three's bloom chains, each a pass): from hdr, or the composite inline; their high
@@ -1283,7 +1296,7 @@ export class Pipeline {
 		// the temporal resolve and its canvas pass (TemporalAA.ts)
 		if ( this.temporal ) {
 
-			const { surfaceDepthPrev, veilReactive } = this.resources;
+			const { surfaceDepthPrev } = this.resources;
 			this.temporal.declare( { display, velocity: velocity!, surfaceDepth, surfaceDepthPrev: surfaceDepthPrev!, veilReactive: veilReactive!, viewDistance, canvas } );
 			return;
 

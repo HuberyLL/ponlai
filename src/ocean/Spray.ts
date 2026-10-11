@@ -27,7 +27,9 @@ type V3 = THREE.Node<'vec3'>;
 // repeatable. Each step every idle emitter picks a random cell of the foam field and bursts with
 // a probability that grows with the fresh breaking there (Poisson in time).
 //
-// Rendering (camera-facing sprites, premultiplied alpha, in the water target after the sea):
+// Rendering (camera-facing sprites, premultiplied alpha, in the water target after the sea; under
+// the temporal modes in the overlay pass over the finished scene, Pipeline.ts, its coverage the
+// reactive weight: Motion.ts):
 //  * drops and ligaments are clear water: a sub-pixel drop is drawn as a motion streak whose
 //    opacity conserves its cross-section, so its visual weight is the amount of water; they
 //    show the sky they refract and light up when backlit (forward lobe)
@@ -69,6 +71,9 @@ const BURST = [
 ];
 const GROUP = BURST.length;
 const GROUP_BUSY = 3.5; // s: longer than any life in a burst
+// Under the temporal modes, the reactive weight per unit of coverage (at most 1), as the rain's
+// drops (RainDrops.ts): at 1 the faint drops and mist kept most of their history and trailed.
+const REACTIVE_GAIN = 4;
 
 // PCG hash of a uint to [0, 1)
 const hashU = Fn( ( [ seed ]: [ U ] ) => {
@@ -458,8 +463,12 @@ export class Spray {
 			return vec4( vCol.rgb.mul( shade ).add( vFwd.mul( glow ) ).mul( alpha ), alpha );
 
 		} )();
-		// under the temporal modes it draws in the overlay pass, whose velocity it keeps (Motion.ts)
-		material.fragmentNode = outputStruct( material.fragmentNode, overlayVelocity( 0 ) );
+		// under the temporal modes it draws in the overlay pass, whose velocity it keeps (Motion.ts),
+		// with its coverage times REACTIVE_GAIN as the reactive weight (the overlay MRT keeps the
+		// larger where particles overlap): the resolve trusts its history less where spray covers
+		// the pixel
+		const shaded = material.fragmentNode as THREE.Node<'vec4'>;
+		material.fragmentNode = outputStruct( shaded, overlayVelocity( shaded.a.mul( REACTIVE_GAIN ).min( 1 ) ) );
 
 		const mesh = new THREE.Mesh( geometry, material );
 		( mesh as unknown as { count: number } ).count = this.count;

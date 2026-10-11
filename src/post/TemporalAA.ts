@@ -96,7 +96,7 @@ export interface TemporalInputs {
 	// the nearest surface's view z, this frame's and the previous frame's
 	surfaceDepth: ResourceHandle;
 	surfaceDepthPrev: ResourceHandle;
-	// the rain veil's per-pixel reactive weight (zero until something writes it)
+	// the rain veil's per-pixel reactive weight (the composite writes it: Pipeline.ts)
 	veilReactive: ResourceHandle;
 	// the depth of field's distances, when the pipeline keeps them (read by `dofBlur`)
 	viewDistance: ResourceHandle | null;

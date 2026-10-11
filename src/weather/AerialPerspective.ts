@@ -18,6 +18,7 @@ import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from '../p
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
+type V4 = THREE.Node<'vec4'>;
 
 // Distant air and sea fog, composited once for the sharp image and both blooms (Pipeline.ts).
 // Rules: distant air fades in across a protected foreground (from 40 m, in full by 200 m, sooner in
@@ -329,10 +330,11 @@ export class AerialPerspective {
 
 	/** `depth` is the linear view z of the nearest surface, the sea's included. `veil` returns the
 	 * colour `background` seen through the rain along a view direction, in front of content at a
-	 * given distance. The bank map and the reduced march are declared on `graph`, which owns and
-	 * sizes them; `passes` then adds the passes that draw them. Called once, as the frame graph is
+	 * given distance, and the veil's opacity there in its alpha, which the result keeps (0 without
+	 * a veil). The bank map and the reduced march are declared on `graph`, which owns and sizes
+	 * them; `passes` then adds the passes that draw them. Called once, as the frame graph is
 	 * built. */
-	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3 ) => V3 ): V3 {
+	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3 ) => V4 ): V4 {
 
 		const { bankSize, fogScale } = this.options;
 		this.resolution = graph.extent( { of: 'render' } );
@@ -352,7 +354,7 @@ export class AerialPerspective {
 			const transmittance = exp( total.negate() );
 			const light = hazeLight.mul( hazeDepth ).add( fogLight.mul( fogDepth ) ).div( max( total, 1e-6 ) );
 			const result = mix( light, color, transmittance );
-			return veil ? veil( r.direction, r.distance, result ) : result;
+			return veil ? veil( r.direction, r.distance, result ) : vec4( result, 0 );
 
 		} )();
 
