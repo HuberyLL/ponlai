@@ -32,6 +32,11 @@
 // frame at the canvas's ratio: a clip's scale schedule applies to the test and MSAA sides only.
 // Ground-truth sets are shared per merge-base (`<parity root>/<sha>/gt/`).
 //
+// A clip of one frame (`--clip rest`) is the image at rest: under the other temporal modes (taa,
+// taau) it is held still too until the rest has converged on it (`converge`, the tier's own rest
+// sequence), as capture.mjs waits for `diag.taa.converged` on a paused page. MSAA and off have no
+// rest and capture the frame as stepped.
+//
 // --aa gt-hi is the interim ground truth (plan section 3.3): MSAA on high at twice high's nominal
 // ratio for the --size given (nominal = min( ratio, 1.5 ), so 3 at the default @2 and 2 at @1),
 // box-downsampled 2x2. The page runs at that device pixel ratio with the same `dpr` (the canvas
@@ -325,8 +330,9 @@ try {
 		const result = await s.loop.step( {
 			frames: clip.frames, dt: clip.dt, clock: clip.clock, camera: clip.camera,
 			...( clip.scale ? { scale: clip.scale } : {} ),
-			// the ground truth: each captured frame held still until the rest has converged on it
-			...( gtRest ? { converge: captured } : {} ),
+			// the ground truth: each captured frame held still until the rest has converged on it; a
+			// clip of one frame is a rest image, so the other temporal modes wait for their rest too
+			...( gtRest || ( s.taa && clip.frames <= 1 ) ? { converge: captured } : {} ),
 			onFrame: async ( i ) => {
 
 				if ( ! captured( i ) ) return;
