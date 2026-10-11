@@ -5,7 +5,7 @@ import { dayOf, hourOf } from './clock.ts';
 import { Grid } from './grid.ts';
 import { fallNeeds, START_NEEDS } from './needs.ts';
 import { findPath, goalAt } from './path.ts';
-import { growPalms, newPalms, obstructPlaces, STOREHOUSE_RADIUS, storehouseRefusal } from './places.ts';
+import { growPalms, newPalms, obstructPlaces, CHEST_RADIUS, chestRefusal } from './places.ts';
 import { random } from './rng.ts';
 import { SECONDS_PER_GAME_DAY, SPEED_FACTORS, WALK_SPEED } from './types.ts';
 import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './types.ts';
@@ -14,7 +14,7 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // a save is the state itself. One seeded generator (SimState.rng) is its only source of chance.
 // The islanders are bodies on the ground grid with needs that fall (needs.ts), a bag (items.ts) and
 // an action under way (actions.ts); the places they act at (places.ts) keep their own state here
-// too (the palms' coconuts, the storehouse). A brain may think for them (agent.ts) beside the
+// too (the palms' coconuts, the chest). A brain may think for them (agent.ts) beside the
 // world, never holding up a tick. The weather is the page's own: nothing in the simulation depends
 // on it.
 //
@@ -24,7 +24,7 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // within the tick, so a game with it is deterministic for a seed; a slow one acts when it answers.
 
 /** the state's shape this build reads; a save of another is refused */
-export const SAVE_VERSION = 11;
+export const SAVE_VERSION = 12;
 const NAMES = [ 'Kai' ];
 
 export class Sim {
@@ -139,14 +139,14 @@ export class Sim {
 
 	// ------------------------------------------------------------------ the player
 
-	/** Place the storehouse at a point of the ground (world metres), once: null when it stands
+	/** Place the chest at a point of the ground (world metres), once: null when it stands
 	 * there, else why not (it needs open main ground with a clear ring round it). */
-	placeStorehouse( x: number, z: number ): string | null {
+	placeChest( x: number, z: number ): string | null {
 
-		const reason = storehouseRefusal( this, { x, z } );
+		const reason = chestRefusal( this, { x, z } );
 		if ( reason ) return reason;
-		this.state.storehouse = { x, z, items: {} };
-		this.grid.obstruct( x, z, STOREHOUSE_RADIUS );
+		this.state.chest = { x, z, items: {} };
+		this.grid.obstruct( x, z, CHEST_RADIUS );
 		findWaysAgain( this );
 		return null;
 
@@ -224,7 +224,7 @@ export class Sim {
 export function newGame( input: IslandInput, options: { seed?: number; startHour?: number } = {} ): Sim {
 
 	const seed = ( options.seed ?? 1 ) >>> 0;
-	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], palms: [], storehouse: null }, input );
+	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], palms: [], chest: null }, input );
 	const grid = sim.grid;
 	sim.state.palms = newPalms( sim );
 	obstructPlaces( sim );

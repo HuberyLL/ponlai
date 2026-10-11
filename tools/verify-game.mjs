@@ -2,7 +2,7 @@
 // over it, a body that walks to a point and stops there, a save that loads back as it was, a brain
 // whose late answer is applied while the world ran on; then the first prototype's rules: needs that
 // fall and rise, the bag's capacity, the palm and its regrowth, fishing by the seeded generator,
-// the storehouse, actions that replace each other, a perception without positions, the stand-in
+// the chest, actions that replace each other, a perception without positions, the stand-in
 // brain keeping the islander fed and watered for days, and a save taken mid-action.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
@@ -180,15 +180,15 @@ function run( sim, call, limit = 86400 ) {
 
 }
 
-/** the storehouse placed at the first open ground that takes it, outward from the island's middle */
-function placeStorehouse( sim ) {
+/** the chest placed at the first open ground that takes it, outward from the island's middle */
+function placeChest( sim ) {
 
 	const grid = sim.grid;
 	const cells = [];
 	for ( let k = 0; k < grid.open.length; k ++ ) if ( grid.region[ k ] === grid.main ) cells.push( k );
 	cells.sort( ( a, b ) => Math.hypot( grid.centreX( a ), grid.centreZ( a ) ) - Math.hypot( grid.centreX( b ), grid.centreZ( b ) ) || a - b );
-	for ( const k of cells ) if ( sim.placeStorehouse( grid.centreX( k ), grid.centreZ( k ) ) === null ) return grid.centreOf( k );
-	throw new Error( 'no ground took the storehouse' );
+	for ( const k of cells ) if ( sim.placeChest( grid.centreX( k ), grid.centreZ( k ) ) === null ) return grid.centreOf( k );
+	throw new Error( 'no ground took the chest' );
 
 }
 
@@ -278,35 +278,35 @@ function placeStorehouse( sim ) {
 
 }
 
-// the storehouse: placed once on open ground, put and take
+// the chest: placed once on open ground, put and take
 {
 
 	const sim = newGame( input );
 	const v = sim.state.villagers[ 0 ], palm = sim.state.palms[ 0 ];
-	assert.equal( typeof sim.placeStorehouse( 1e4, 0 ), 'string', 'not off the island' );
-	assert.equal( typeof sim.placeStorehouse( palm.x, palm.z ), 'string', 'not on the palm' );
-	assert.equal( typeof sim.placeStorehouse( v.pos.x, v.pos.z ), 'string', 'not on the islander' );
-	assert.equal( sim.state.storehouse, null );
-	const at = placeStorehouse( sim );
+	assert.equal( typeof sim.placeChest( 1e4, 0 ), 'string', 'not off the island' );
+	assert.equal( typeof sim.placeChest( palm.x, palm.z ), 'string', 'not on the palm' );
+	assert.equal( typeof sim.placeChest( v.pos.x, v.pos.z ), 'string', 'not on the islander' );
+	assert.equal( sim.state.chest, null );
+	const at = placeChest( sim );
 	assert.ok( ! sim.grid.openAt( at.x, at.z ), 'it blocks its ground' );
-	assert.equal( sim.placeStorehouse( at.x, at.z ), 'The storehouse is already placed', 'placed once' );
+	assert.equal( sim.placeChest( at.x, at.z ), 'The chest is already placed', 'placed once' );
 	run( sim, { tool: 'go', args: { place: 'shore' } } );
-	assert.equal( perceive( sim, v ).seen.find( ( s ) => s.place === 'storehouse' ).shows, undefined, 'its contents do not show from afar' );
-	assert.equal( run( sim, { tool: 'go', args: { place: 'storehouse' } } ).ok, true );
+	assert.equal( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, undefined, 'its contents do not show from afar' );
+	assert.equal( run( sim, { tool: 'go', args: { place: 'chest' } } ).ok, true );
 	v.bag = { fish: 2, coconut: 1 };
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'fish', count: 2 } } ).ok, true );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'fish', count: 1 } } ).ok, false, 'cannot put what the bag lacks' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'put', item: 'stone' } } ).ok, false, 'no such item' );
-	assert.deepEqual( sim.state.storehouse.items, { fish: 2 } );
+	assert.deepEqual( sim.state.chest.items, { fish: 2 } );
 	assert.deepEqual( v.bag, { coconut: 1 } );
-	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'storehouse' ).shows, { items: { fish: 2 } }, 'its contents show while at it' );
+	assert.deepEqual( perceive( sim, v ).seen.find( ( s ) => s.place === 'chest' ).shows, { items: { fish: 2 } }, 'its contents show while at it' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'take', item: 'fish', count: 3 } } ).ok, false, 'cannot take more than it holds' );
 	assert.equal( run( sim, { tool: 'do', args: { action: 'take', item: 'fish' } } ).ok, true, 'one by default' );
-	assert.deepEqual( sim.state.storehouse.items, { fish: 1 } );
+	assert.deepEqual( sim.state.chest.items, { fish: 1 } );
 	assert.deepEqual( v.bag, { coconut: 1, fish: 1 } );
 	const json = sim.save();
 	assert.deepEqual( loadGame( json, input ).grid.open, sim.grid.open, 'a loaded game blocks the same ground' );
-	console.log( `storehouse: placed at ${ at.x }, ${ at.z }, refused elsewhere, put and take` );
+	console.log( `chest: placed at ${ at.x }, ${ at.z }, refused elsewhere, put and take` );
 
 }
 
@@ -338,8 +338,8 @@ function placeStorehouse( sim ) {
 
 	const sim = newGame( input );
 	const v = sim.state.villagers[ 0 ];
-	placeStorehouse( sim );
-	run( sim, { tool: 'go', args: { place: 'storehouse' } } );
+	placeChest( sim );
+	run( sim, { tool: 'go', args: { place: 'chest' } } );
 	const p = perceive( sim, v );
 	const banned = new Set( [ 'x', 'z', 'pos', 'prev', 'path', 'heading', 'distance', 'cells' ] );
 	const walk = ( o, at ) => {
@@ -357,7 +357,7 @@ function placeStorehouse( sim ) {
 	const numbers = JSON.stringify( p ).match( /-?\d+(\.\d+)?/g ).map( Number );
 	assert.ok( numbers.every( ( n ) => Number.isInteger( n ) ), 'every number in it is a count, a need or the time' );
 	assert.deepEqual( Object.keys( p ).sort(), [ 'atHand', 'body', 'last', 'seen', 'time' ] );
-	assert.deepEqual( p.seen.map( ( s ) => s.place ).sort(), [ 'palm', 'shore', 'storehouse' ], 'the whole small island is in sight' );
+	assert.deepEqual( p.seen.map( ( s ) => s.place ).sort(), [ 'chest', 'palm', 'shore' ], 'the whole small island is in sight' );
 	assert.equal( p.time.day, 1 );
 	p.body.bag.coconut = 99;
 	assert.deepEqual( v.bag, {}, 'the perception is a copy' );
@@ -373,7 +373,7 @@ function placeStorehouse( sim ) {
 
 		const sim = newGame( input, { seed } );
 		sim.brain = new StandInBrain();
-		if ( store ) placeStorehouse( sim );
+		if ( store ) placeChest( sim );
 		const v = sim.state.villagers[ 0 ];
 		let low = 100;
 		for ( let t = 0; t < days * 24 * HOUR; t ++ ) {
@@ -387,12 +387,12 @@ function placeStorehouse( sim ) {
 
 	};
 	const bare = play( 2, false ), stocked = play( 2, true );
-	assert.ok( bare.low > 45, `needs kept up without a storehouse (lowest ${ bare.low.toFixed( 1 ) })` );
-	assert.ok( stocked.low > 45, `needs kept up with a storehouse (lowest ${ stocked.low.toFixed( 1 ) })` );
-	const items = stocked.sim.state.storehouse.items;
-	assert.ok( ( items.coconut ?? 0 ) > 0 && ( items.fish ?? 0 ) > 0, 'and it stocks the storehouse a little' );
+	assert.ok( bare.low > 45, `needs kept up without a chest (lowest ${ bare.low.toFixed( 1 ) })` );
+	assert.ok( stocked.low > 45, `needs kept up with a chest (lowest ${ stocked.low.toFixed( 1 ) })` );
+	const items = stocked.sim.state.chest.items;
+	assert.ok( ( items.coconut ?? 0 ) > 0 && ( items.fish ?? 0 ) > 0, 'and it stocks the chest a little' );
 	assert.equal( play( 2, true ).sim.save(), stocked.sim.save(), 'deterministic for a seed' );
-	console.log( `stand-in: ${ days } days, needs never below ${ Math.min( bare.low, stocked.low ).toFixed( 1 ) }; storehouse holds ${ JSON.stringify( items ) }` );
+	console.log( `stand-in: ${ days } days, needs never below ${ Math.min( bare.low, stocked.low ).toFixed( 1 ) }; chest holds ${ JSON.stringify( items ) }` );
 
 }
 

@@ -5,6 +5,7 @@ import type { CharacterShadow } from '../characters/CharacterShadow.ts';
 import type { Villager as Figure } from '../characters/Villagers.ts';
 import { drawnFoliageSites } from '../world/FoliageSites.ts';
 import type { PlantSite } from '../world/PlantSites.ts';
+import { GameHud } from './Hud.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
 import type { Sim } from './sim/Sim.ts';
 import { actionTools } from './sim/actions.ts';
@@ -16,9 +17,10 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 
 // The island as a game (?game): the simulation (src/game/sim) runs the islanders' bodies, their
 // needs and the places they act at, a brain in its slot thinks for them (the stand-in of plain
-// rules by default, sim/standin.ts) and GameView draws them into the scene. There is no player
-// interface yet: the debug panel's Game folder (GameDebug.ts) and the methods below, reached from
-// the console as window.__PONLAI__.game, drive it (placeStorehouse is the player's one act). The
+// rules by default, sim/standin.ts) and GameView draws them, the palm and the chest into the scene.
+// The player's interface is a prototype HUD (Hud.ts): a readout of the islander and the player's
+// one act, setting the chest down (Placement.ts). The debug panel's Game folder (GameDebug.ts) and
+// the methods below, reached from the console as window.__PONLAI__.game, drive the rest. The
 // simulation's clock sets the time of day; the page's sky follows it, so pausing or speeding up the
 // game turns the sky with it. The weather is the page's own, as without ?game, running on the day
 // clock. Waves, wind and rain keep real time.
@@ -89,6 +91,7 @@ export class Game {
 	private readonly context: GameContext;
 	private readonly input: IslandInput;
 	private debug: { update(): void; reset(): void } | null = null;
+	private hud: GameHud | null = null;
 	/** the tools a brain acts through, by name (sim/agent.ts): the five actions, kept across a load */
 	readonly tools: ToolRegistry = actionTools();
 	// the brain in the islanders' slot, kept across a load (setBrain)
@@ -127,9 +130,11 @@ export class Game {
 		sim.tools = this.tools;
 		sim.brain = this.brain;
 		this.view?.dispose();
-		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, loadLook: c.loadLook } );
+		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, loadLook: c.loadLook } );
 		this.sim = sim;
 		this.debug?.reset();
+		if ( this.hud ) this.hud.reset();
+		else this.hud = new GameHud( this, c );
 		// the simulation owns the time of day; the day clock only follows it
 		c.dayCycle.paused = false;
 		const before = c.dayCycle.hour;
@@ -158,10 +163,11 @@ export class Game {
 
 	}
 
-	/** After the scene's own updates: the islanders, their shadow and the debug panel. */
+	/** After the scene's own updates: the islanders, their shadow, the HUD and the debug panel. */
 	render( renderer: THREE.WebGPURenderer, sun: THREE.DirectionalLight, rawDt: number ): void {
 
 		this.view?.update( renderer, sun, rawDt, this.gameDt );
+		this.hud?.update();
 		this.debug?.update();
 
 	}
@@ -216,10 +222,10 @@ export class Game {
 
 	}
 
-	/** Place the storehouse at a point of the ground (world metres), once: null when it stands there, else why not. */
-	placeStorehouse( x: number, z: number ): string | null {
+	/** Place the chest at a point of the ground (world metres), once: null when it stands there, else why not. */
+	placeChest( x: number, z: number ): string | null {
 
-		return this.sim.placeStorehouse( x, z );
+		return this.sim.placeChest( x, z );
 
 	}
 

@@ -5,11 +5,11 @@ import { BAG_CAPACITY } from './items.ts';
 // connected (docs/game-design.md, "Next"). It reads only the Perception and answers with the five
 // actions, one call a thought, as a person would act on what they see and carry:
 //
-// - thirsty (hydration below THIRSTY): drink a carried coconut; else take one at the storehouse;
-//   else pick one at the palm (going there); else look in the storehouse; else wait for regrowth.
-// - hungry (satiety below HUNGRY): eat a carried fish; else take one at the storehouse; else fish
+// - thirsty (hydration below THIRSTY): drink a carried coconut; else take one at the chest;
+//   else pick one at the palm (going there); else look in the chest; else wait for regrowth.
+// - hungry (satiety below HUNGRY): eat a carried fish; else take one at the chest; else fish
 //   at the shore (going there). The lower need comes first.
-// - otherwise keep one coconut and one fish in the bag; with a storehouse placed, gather a second
+// - otherwise keep one coconut and one fish in the bag; with a chest placed, gather a second
 //   of each and carry it there until it holds STOCK of each (it sees what it holds only while
 //   standing at it, and remembers nothing); else wait a while.
 //
@@ -17,7 +17,7 @@ import { BAG_CAPACITY } from './items.ts';
 
 const THIRSTY = 60;
 const HUNGRY = 60;
-/** what the islander stocks the storehouse up to, of each kind */
+/** what the islander stocks the chest up to, of each kind */
 const STOCK = 4;
 /** the wait when there is nothing to do (game seconds) */
 const IDLE_SECONDS = 30 * 60;
@@ -51,24 +51,24 @@ export class StandInBrain implements Brain {
 		const at = ( id: string ) => p.atHand.some( ( h ) => h.place === id );
 		const sees = ( id: string ) => p.seen.find( ( s ) => s.place === id );
 		const coconutsOnPalm = number( sees( 'palm' )?.shows?.coconuts );
-		const storehouse = sees( 'storehouse' );
-		const stored = ( item: string ) => number( ( storehouse?.shows?.items as Record<string, unknown> | undefined )?.[ item ] );
+		const chest = sees( 'chest' );
+		const stored = ( item: string ) => number( ( chest?.shows?.items as Record<string, unknown> | undefined )?.[ item ] );
 
 		// a full bag with nothing for the need: make room with what it holds most of
 		const makeRoom = (): ToolCall => {
 
 			const most = Object.keys( bag ).sort( ( a, b ) => carried( b ) - carried( a ) )[ 0 ];
-			return at( 'storehouse' ) ? doAt( 'put', most, 1 ) : use( most );
+			return at( 'chest' ) ? doAt( 'put', most, 1 ) : use( most );
 
 		};
 
 		const drink = (): ToolCall | null => {
 
 			if ( carried( 'coconut' ) > 0 ) return use( 'coconut' );
-			if ( at( 'storehouse' ) && stored( 'coconut' ) > 0 ) return full ? makeRoom() : doAt( 'take', 'coconut', 1 );
+			if ( at( 'chest' ) && stored( 'coconut' ) > 0 ) return full ? makeRoom() : doAt( 'take', 'coconut', 1 );
 			if ( full ) return makeRoom();
 			if ( coconutsOnPalm > 0 ) return at( 'palm' ) ? doAt( 'pick' ) : go( 'palm' );
-			if ( storehouse && ! at( 'storehouse' ) ) return go( 'storehouse' );
+			if ( chest && ! at( 'chest' ) ) return go( 'chest' );
 			if ( ! sees( 'palm' ) ) return go( 'palm' );
 			return null;
 
@@ -77,7 +77,7 @@ export class StandInBrain implements Brain {
 		const eat = (): ToolCall | null => {
 
 			if ( carried( 'fish' ) > 0 ) return use( 'fish' );
-			if ( at( 'storehouse' ) && stored( 'fish' ) > 0 ) return full ? makeRoom() : doAt( 'take', 'fish', 1 );
+			if ( at( 'chest' ) && stored( 'fish' ) > 0 ) return full ? makeRoom() : doAt( 'take', 'fish', 1 );
 			if ( full ) return makeRoom();
 			return at( 'shore' ) ? doAt( 'fish' ) : go( 'shore' );
 
@@ -111,9 +111,9 @@ export class StandInBrain implements Brain {
 
 		}
 
-		if ( storehouse ) {
+		if ( chest ) {
 
-			if ( at( 'storehouse' ) ) {
+			if ( at( 'chest' ) ) {
 
 				for ( const item of [ 'coconut', 'fish' ] ) if ( carried( item ) > 1 && stored( item ) < STOCK ) return doAt( 'put', item, carried( item ) - 1 );
 				for ( const item of [ 'coconut', 'fish' ] ) if ( stored( item ) < STOCK && carried( item ) < 2 ) {
@@ -131,7 +131,7 @@ export class StandInBrain implements Brain {
 				if ( call ) return call;
 
 			}
-			if ( carried( 'coconut' ) > 1 || carried( 'fish' ) > 1 ) return go( 'storehouse' );
+			if ( carried( 'coconut' ) > 1 || carried( 'fish' ) > 1 ) return go( 'chest' );
 
 		}
 		return wait( IDLE_SECONDS );
