@@ -16,6 +16,23 @@ import {
 // Two dispatches: the first counts each workgroup's visible tufts, the second sums the counts of
 // the batch's earlier workgroups, scans its own and scatters. Each batch is padded to whole
 // workgroups, so no workgroup spans two batches.
+//
+// Rules:
+// - Each tuft's sphere is padded for the widening's 15 half widths, the sway and standing water's
+//   sink, and by twice its origin's offset from the sphere's centre, since the wind's bend turns
+//   every vertex about that origin.
+// - The dispatch is skipped while the view and the blade selection are unchanged.
+// - Without the prepass, or with coverage kept in its shaded draw, the image is that of a draw of
+//   every tuft to the byte; behind the prepass's opaque shaded draw a few isolated meadow pixels
+//   differ from it (the set depends on the drawn instance list).
+// - Indirect arguments are set on a batch's geometry for its own draw only: other draws over the
+//   same geometry (the rain's collision proxies, orthographic cameras) draw every tuft.
+//   `flags.grassCull = false` draws every tuft through the same storage path.
+// - A material that applies instancing itself from storage buffers must hold the placed position
+//   in a variable (`toVar`), as three's instancing assigns it to `positionLocal`: an inline
+//   expression rounds differently and flips a few hundred edge samples. `instanceColor` multiplies
+//   the diffuse colour whenever the object has a truthy `instanceColor`: assign it in the vertex
+//   stage.
 
 type UintMax = ( a: THREE.Node<'uint'>, b: THREE.Node<'uint'> ) => THREE.Node<'uint'>;
 

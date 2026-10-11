@@ -14,6 +14,23 @@ import type { Shared } from '../shared.ts';
 
 // Individual folded leaves on short branching sprays. Three offset crowns keep bushes
 // irregular; real leaf normals separate sunlit faces from their shaded neighbours.
+//
+// This module also holds what every vegetation material shares:
+// - Shadow passes keep `alphaTest` and `alphaMap` but not `map`, so alpha-tested foliage sets both:
+//   the leaf `map` is opaque and the silhouette lives in `alphaMap` alone, whose mips are built on
+//   the CPU to keep the leaf's coverage at the cutoff (box-filtered mips fill the card). Alpha to
+//   coverage turns alpha short of cutoff + `fwidth` into partial coverage, so leaf interiors stay
+//   at 1 rather than scaled down.
+// - `ALPHA_TO_COVERAGE` picks the coverage path by the scene's samples; single-sampled, leaves take
+//   a plain alpha test and blades a dither. To find vegetation materials read
+//   `userData.vegetation` (`markVegetation`), never `alphaToCoverage`: it is off without
+//   multisampling, and the depth prepass (VegetationPrepass.ts) turns it off on the shaded draws.
+//   The terrain's meadow detail is flagged `userData.meadowDetail` instead, so it never takes the
+//   vegetation's shadow filter.
+// - Vegetation draws before the terrain (`renderOrder = -1`), so the turf under it fails the depth
+//   test.
+// - Twigs, stems and leaf stalks (a few millimetres across) stay out of the sun's shadow map
+//   (`LEAF_STEM`, VegetationShadow.ts).
 
 // The leaf as a transparent silhouette; the colour map and the coverage map are both made
 // from it, so they always agree.

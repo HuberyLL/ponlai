@@ -1,6 +1,12 @@
 import { fbm2, noise3, smoothstep, smax } from './noise.ts';
 import type { Footprint, HeightFn } from './WorldShapes.ts';
 
+// The sea floor around the island: the shelf's width and depth, the talus at the cliff foot, its
+// shallow benches and the seagrass and sand baked per vertex all follow the footprint's distance,
+// the island's SDF and world-space noise, so a grown coast shapes itself the same way and nothing
+// tiles. The floor off the island stays below SHELF_CEILING (-1.6 m) and every stone crown below
+// -1.30 m (WorldShapes.makeRocks), so nothing breaks the surface.
+
 // Deepen the shelf into a basin before stones are placed. The floor belongs to the water
 // column, so individual pebbles do not raise broad mounds beneath themselves.
 export function deepenSeabed( footprint: Footprint, placementFloor: HeightFn ): HeightFn {
