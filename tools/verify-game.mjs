@@ -326,9 +326,10 @@ function placeStorehouse( sim ) {
 	assert.equal( v.path, null, 'a new action replaces the walk' );
 	assert.equal( v.action.call.tool, 'wait' );
 	assert.equal( tools.get( 'say' )( v, { words: 'Hello' }, sim ).ok, true );
-	assert.equal( v.action, null, 'and the wait' );
+	assert.equal( v.action.call.tool, 'wait', 'saying goes alongside the action under way' );
+	assert.equal( v.last.result.ok, false, 'and leaves the last outcome as it was' );
 	assert.deepEqual( v.said, { words: 'Hello', tick: sim.state.tick } );
-	console.log( 'actions: five, a new one replaces the one under way' );
+	console.log( 'actions: five, a new one replaces the one under way, saying goes alongside' );
 
 }
 
