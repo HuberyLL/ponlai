@@ -6,11 +6,12 @@
     uv run ... tools/clip-metrics.py --calibrate masks.json [--size 288] DIR [DIR ...] [--overlays DIR]
 
 Each DIR is a tools/capture-clip.mjs output folder (clip.json and <crop>/<i>.png) of the same clip:
-the mode under test, MSAA (today's image) and the ground truth (`--aa gt-hi` until `aa=gt` exists).
-A test or MSAA crop larger than the GT's (the default 384 px against gt-hi's 288 px) is
-area-resampled to the GT's size first (PIL's box filter), so every metric is taken at the GT's
-resolution. Luma L is Rec. 709 luma of the 8-bit sRGB-encoded values (0-255 levels): differences
-in levels are what the eye and the PNGs see.
+the mode under test, MSAA (today's image) and the ground truth (`--aa gt`, at the canvas's
+resolution: its crops are the test's size; the interim `--aa gt-hi` is kept for cross-checks).
+A test or MSAA crop larger than the GT's (384 px against gt-hi's 288 px) is area-resampled to
+the GT's size first (PIL's box filter), so every metric is taken at the GT's resolution. Luma L
+is Rec. 709 luma of the 8-bit sRGB-encoded values (0-255 levels): differences in levels are what
+the eye and the PNGs see.
 
 Frames: metrics against the GT use the frames present on all three sides (the GT may be sampled:
 every 4th frame of a long clip plus dense runs, tools/parity/clips.mjs gtSampling). Metrics of a
@@ -72,17 +73,20 @@ Metrics (per crop, for the test and for MSAA; "ratio" is test / MSAA):
           every side, so the crop's sea, sky and stone do not move them): mean L, mean saturation,
           green share, local standard deviation of L (5 x 5, texture) and blade coverage (the
           calibrated classifier: green's lead over red and blue as a share of green,
-          (G - max(R, B)) / G, above the view's `rel`, and L above `floor`), each / the GT's; none
-          with fewer than 400 region pixels in a frame. meadowShare is the region's share of the
-          crop. The classifier reads chromaticity, not brightness, so a darker meadow of the same
+          (G - max(R, B)) / G, above the view's `rel`, and L above `floor`), each / the GT's, and
+          the mean linear luminance (lumaLin) and linear chroma (chroma: the length of YCoCg's
+          Co, Cg) with the sRGB transfer and the default look's display S-curve undone (D4's
+          measures); none with fewer than 400 region pixels in a frame. meadowShare is the
+          region's share of the crop. The classifier reads chromaticity, not brightness, so a darker meadow of the same
           blades keeps its coverage: luma and coverage are separate gates.
   twigs   for twig crops: the twig mask (a dark-detail black top-hat of L over `window` px above
           `tophat` levels): its mean depth (contrast) and its count of connected pieces of at least
           `minArea` px (components), each / the GT's.
-  stars   for star crops: points (local maxima at least the calibrated `excess` over the median)
-          / the GT's count, their mean excess / the GT's, the mean excess of the ten brightest
-          (peak) / the GT's, and twinkle: on a still camera (the clip's path), the standard
-          deviation over the clip of each star's excess (its 3 x 3 maximum), the stars found in the
+  stars   for star crops: visible stars (local maxima at least the mask's `visible` level, 12,
+          over a 7 x 7 median: below it MSAA's sharpened cloud texture counts) / the GT's count,
+          their mean excess / the GT's, the mean excess of the ten brightest (peak) / the GT's,
+          and twinkle (stars at the calibrated `excess`): on a still camera (the clip's path), the
+          standard deviation over the clip of each star's excess (its 3 x 3 maximum), the stars found in the
           mean frame, mean over the stars (levels; own frames): the horizon's scintillation. None
           under a moving camera, where a sub-pixel star's brightness follows its pixel phase.
   glints  for sea-glint crops: the share of pixels at or above the calibrated level (the MSAA
@@ -95,9 +99,12 @@ Metrics (per crop, for the test and for MSAA; "ratio" is test / MSAA):
   edgeW   edge width (crops named cliff-edge, horizon, islander or moon): the median 10-90 % rise
           distance in GT pixels of the clip's L across the GT's strongest edges, sampled along the
           GT's gradient normals (non-maximum suppressed, Sobel above 24, rises of at least 12
-          levels), mean over frames. Gated as a difference to MSAA (px).
-  shift   the global image shift against the GT (phase correlation, sub-pixel), its length in GT
-          pixels, mean over frames: a jitter or reprojection offset left in the output.
+          levels), mean over frames. edgeWgt: edgeW minus the GT's own width across the same
+          edges (0 = as soft as the GT). Gated as differences to MSAA (px).
+  shift   the global image shift against the GT (phase correlation refined on a 100x upsampled
+          correlation surface, gain 0.99 on known shifts), its length in GT pixels, mean over
+          frames: a jitter or reprojection offset left in the output; shiftX and shiftY its signed
+          components (x right, y down).
 
 Crops: every crop folder of the GT, or those named by --crops. The "full" folder (whole frames,
 capture-clip.mjs --full) is measured only when --crops names it.
@@ -129,8 +136,10 @@ entry --key of a baseline.mjs metrics.json (its "entries"). Forms against MSAA:
               whose image does not repeat between two loads, so the gate's precision is out of
               reach). Elsewhere the rule gives no verdict.
   difference  for the signed, integer and absolute-difference metrics: fringe and dMSAA (levels),
-              edgeW (px), holes (pixels), L and Rec (frames):
-                "diff": [lo, hi]  PASS if lo <= test - b <= hi
+              edgeW, edgeWgt, shiftX and shiftY (px), holes (pixels), L and Rec (frames):
+                "diff": [lo, hi]  PASS if lo <= test - b <= hi; with "floor": f the baseline is
+                              max( b, f ) (edgeWgt with floor 0: as wide as the wider of MSAA's
+                              and the GT's edge)
 
 Rules in `gt` (left out with --no-gt-gates: a GT that is not the side's own, such as high's GT
 for medium and low) read the test's value against the GT directly (its metrics are already ratios to the
@@ -169,8 +178,10 @@ DEFAULT_MASKS = {
 	'meadow': { 'rel': 0.2, 'floor': 20 },
 	# twigs: black top-hat of L over `window` px deeper than `tophat` levels, pieces of minArea px
 	'twig': { 'window': 9, 'tophat': 12, 'minArea': 6 },
-	# stars: local maxima at least `excess` levels over the crop's median
-	'stars': { 'excess': 12 },
+	# stars: local maxima at least `excess` levels over the local sky (the twinkle's star finder);
+	# the count, excess and peak read the visible stars, at least `visible` levels over it: under
+	# MSAA's sharpening the cloud texture's maxima reach 8-11 levels and counted as stars
+	'stars': { 'excess': 12, 'visible': 12 },
 	# glints: L at or above `level` (calibrated as the MSAA crop's `percentile`)
 	'glints': { 'percentile': 99.9, 'level': 235 },
 	# holes: no channel above `level`
@@ -339,6 +350,24 @@ def meadow_region( gt_rgb, m ):
 	return dilate( blade_mask( gt_rgb, m ), r ) & ~dilate( blue_mask( gt_rgb ), 2 )
 
 
+# the display S-curve's contrast of the default look (Pipeline.ts, neutral-hue by day), undone with
+# the sRGB transfer for the meadow's linear statistics (D4: linear luminance and chroma)
+LOOK_CONTRAST = 0.04
+
+
+def to_linear( rgb ):
+
+	"""Linear light of 8-bit display values: the sRGB transfer and the look's S-curve
+	( s = x + c ( x^2 ( 3 - 2x ) - x ) ) undone (Newton from x = s)."""
+	s = rgb / 255.0
+	x = s.copy()
+	for _ in range( 6 ):
+		f = x + LOOK_CONTRAST * ( x * x * ( 3 - 2 * x ) - x ) - s
+		d = 1 + LOOK_CONTRAST * ( 6 * x - 6 * x * x - 1 )
+		x = np.clip( x - f / d, 0, 1 )
+	return np.where( x <= 0.04045, x / 12.92, ( ( x + 0.055 ) / 1.055 ) ** 2.4 )
+
+
 def blade_mask( rgb, m ):
 
 	g = m[ 'meadow' ]
@@ -364,36 +393,50 @@ def twigs( lum, m ):
 def star_points( lum, m ):
 
 	# excess over the local sky (a 7 x 7 median), so a gradient or cirrus behind the stars does not
-	# hide the faint ones or count as stars
+	# hide the faint ones or count as stars; visible stars only (the mask's `visible` level)
 	bg = ndi.median_filter( lum, size=7 )
 	peak = ndi.maximum_filter( lum, size=3 )
-	points = ( lum == peak ) & ( lum >= bg + m[ 'stars' ][ 'excess' ] )
+	points = ( lum == peak ) & ( lum >= bg + m[ 'stars' ][ 'visible' ] )
 	return np.sort( ( lum - bg )[ points ] )[ ::-1 ]
+
+
+SHIFT_UPSAMPLE = 100
 
 
 def phase_shift( a, b ):
 
-	"""Sub-pixel shift of b against a by phase correlation (parabolic peak refinement)."""
-	wy = np.hanning( a.shape[ 0 ] )[ :, None ] * np.hanning( a.shape[ 1 ] )[ None, : ]
+	"""Sub-pixel shift ( dx, dy ) of b against a by phase correlation, refined on the correlation
+	surface upsampled by SHIFT_UPSAMPLE around its integer peak (a matrix-multiply DFT, as in
+	Guizar-Sicairos, Thurman and Fienup, "Efficient subpixel image registration algorithms", 2008).
+	A parabola through the peak's neighbours read about half the true shift on the whitened
+	correlation's narrow peak (0.0077 px measured as 0.004), so bounds in px meant twice that."""
+	h, w = a.shape
+	wy = np.hanning( h )[ :, None ] * np.hanning( w )[ None, : ]
 	fa = np.fft.fft2( ( a - a.mean() ) * wy )
 	fb = np.fft.fft2( ( b - b.mean() ) * wy )
-	r = fa * np.conj( fb )
+	r = fb * np.conj( fa )
 	r /= np.abs( r ) + 1e-12
 	c = np.real( np.fft.ifft2( r ) )
 	y, x = np.unravel_index( np.argmax( c ), c.shape )
+	y0 = y - h if y > h / 2 else y
+	x0 = x - w if x > w / 2 else x
+	# the correlation at y0 + t, x0 + t for t in [ -1.5, 1.5 ] px in steps of 1 / SHIFT_UPSAMPLE
+	t = np.arange( - 1.5, 1.5 + 1e-9, 1.0 / SHIFT_UPSAMPLE )
+	ky, kx = np.fft.fftfreq( h ) * h, np.fft.fftfreq( w ) * w
+	ey = np.exp( 2j * np.pi * np.outer( y0 + t, ky ) / h )
+	ex = np.exp( 2j * np.pi * np.outer( kx, x0 + t ) / w )
+	up = np.real( ey @ r @ ex )
+	j, i = np.unravel_index( np.argmax( up ), up.shape )
+	# a parabola through the upsampled peak's neighbours: the surface is smooth at this step
 
 	def refine( cm, c0, cp ):
 		den = cm - 2 * c0 + cp
 		return 0.0 if abs( den ) < 1e-12 else 0.5 * ( cm - cp ) / den
 
-	h, w = c.shape
-	dy = y + refine( c[ ( y - 1 ) % h, x ], c[ y, x ], c[ ( y + 1 ) % h, x ] )
-	dx = x + refine( c[ y, ( x - 1 ) % w ], c[ y, x ], c[ y, ( x + 1 ) % w ] )
-	if dy > h / 2:
-		dy -= h
-	if dx > w / 2:
-		dx -= w
-	return float( np.hypot( dx, dy ) )
+	n = len( t ) - 1
+	fj = refine( up[ j - 1, i ], up[ j, i ], up[ j + 1, i ] ) if 0 < j < n else 0.0
+	fi = refine( up[ j, i - 1 ], up[ j, i ], up[ j, i + 1 ] ) if 0 < i < n else 0.0
+	return float( x0 + t[ i ] + fi / SHIFT_UPSAMPLE ), float( y0 + t[ j ] + fj / SHIFT_UPSAMPLE )
 
 
 def edge_width( lum, ref, rng=4.0, step=0.25, max_edges=1500 ):
@@ -627,10 +670,14 @@ def measure( clip_frames, gt_frames, crop, m, use_flip ):
 			lum = luma( rgb )
 			_, s, _ = hsv( rgb )
 			local = np.sqrt( np.maximum( ndi.uniform_filter( lum * lum, 5 ) - ndi.uniform_filter( lum, 5 ) ** 2, 0 ) )
-			return np.array( [ lum[ region ].mean(), s[ region ].mean(), green_mask( rgb )[ region ].mean(), local[ region ].mean(), blade_mask( rgb, m )[ region ].mean() ] )
+			lin = to_linear( rgb )
+			co = ( lin[ ..., 0 ] - lin[ ..., 2 ] ) / 2
+			cg = ( 2 * lin[ ..., 1 ] - lin[ ..., 0 ] - lin[ ..., 2 ] ) / 4
+			return np.array( [ lum[ region ].mean(), s[ region ].mean(), green_mask( rgb )[ region ].mean(), local[ region ].mean(), blade_mask( rgb, m )[ region ].mean(),
+				luma( lin )[ region ].mean(), np.hypot( co, cg )[ region ].mean() ] )
 		regions = { i: meadow_region( gt_frames[ i ], m ) for i in idx }
 		share = float( np.mean( [ r.mean() for r in regions.values() ] ) )
-		keys = [ 'luma', 'saturation', 'green', 'texture', 'coverage' ]
+		keys = [ 'luma', 'saturation', 'green', 'texture', 'coverage', 'lumaLin', 'chroma' ]
 		if min( int( r.sum() ) for r in regions.values() ) >= MIN_MEADOW_PX:
 			a = np.mean( [ stats( clip_frames[ i ], regions[ i ] ) for i in idx ], axis=0 )
 			g = np.mean( [ stats( gt_frames[ i ], regions[ i ] ) for i in idx ], axis=0 )
@@ -662,9 +709,16 @@ def measure( clip_frames, gt_frames, crop, m, use_flip ):
 		out[ 'streaks' ] = { 'energy': safe_ratio( float( np.mean( [ en( L[ i ] ) for i in idx ] ) ), float( np.mean( [ en( Lg[ i ] ) for i in idx ] ) ) ) }
 	if is_edge_crop( crop ):
 		out[ 'edgeW' ] = mean_or_none( edge_width( L[ i ], Lg[ i ] ) for i in idx )
-	shifts = [ phase_shift( Lg[ i ], L[ i ] ) for i in idx ]
+		own = mean_or_none( edge_width( Lg[ i ], Lg[ i ] ) for i in idx )
+		out[ 'edgeWgt' ] = out[ 'edgeW' ] - own if out[ 'edgeW' ] is not None and own is not None else None
+	vec = [ phase_shift( Lg[ i ], L[ i ] ) for i in idx ]
+	shifts = [ float( np.hypot( dx, dy ) ) for dx, dy in vec ]
 	series[ 'shift' ] = shifts
 	out[ 'shift' ] = float( np.mean( shifts ) )
+	# the signed offset (x right, y down, GT px): a jitter bias moves every crop the same way, an
+	# upscaler's content-dependent offset does not
+	out[ 'shiftX' ] = float( np.mean( [ v[ 0 ] for v in vec ] ) )
+	out[ 'shiftY' ] = float( np.mean( [ v[ 1 ] for v in vec ] ) )
 	return out, series
 
 
@@ -694,7 +748,7 @@ def unflatten( d ):
 # ------------------------------------------------------------------ gates
 
 # metrics gated by their difference to the baseline, never by a ratio (see the docstring)
-DIFF_METRICS = { 'fringe', 'L', 'Rec', 'edgeW', 'holes', 'dMSAA' }
+DIFF_METRICS = { 'fringe', 'L', 'Rec', 'edgeW', 'edgeWgt', 'holes', 'dMSAA', 'shiftX', 'shiftY' }
 RATIO_KEYS = { 'max', 'min', 'band' }
 # descriptive keys a rule may carry (thresholds.json): the GT rules' provenance (`gtSource`,
 # `provisional`), the gate it implements (`id`, `section`), the side it is judged against
@@ -751,6 +805,10 @@ def verdict( rule, test, base ):
 	eps = 1e-12
 	if 'diff' in rule:
 		lo, hi = rule[ 'diff' ]
+		# a floor raises the baseline: edgeWgt's 0 is the GT's own width, so an edge may be as wide
+		# as the wider of MSAA's and the GT's
+		if 'floor' in rule:
+			base = max( base, float( rule[ 'floor' ] ) )
 		return 'PASS' if lo - eps <= test - base <= hi + eps else 'FAIL'
 	floor = float( rule.get( 'floor', 0.0 ) )
 	if 'max' in rule and test > max( rule[ 'max' ] * base, floor ) + eps:
@@ -931,7 +989,7 @@ def main():
 	ap.add_argument( '--no-gt-gates', action='store_true' )
 	ap.add_argument( '--calibrate' )
 	ap.add_argument( '--overlays' )
-	ap.add_argument( '--size', help='--calibrate: the GT crop size the metrics run at, WxH or one number (288 at the default size)' )
+	ap.add_argument( '--size', help='--calibrate: the GT crop size the metrics run at, WxH or one number (none for aa=gt, whose crops are the test\'s; 288 for gt-hi)' )
 	ap.add_argument( 'sources', nargs='*' )
 	a = ap.parse_args()
 	if a.calibrate:
