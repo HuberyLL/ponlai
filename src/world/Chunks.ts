@@ -2,8 +2,9 @@
 // land, callable from a worker or from plain node (no `self`, no three, no DOM).
 //
 // - The grid: chunk ( ci, cj ) is the square [ S ci, S ci + S ) x [ S cj, S cj + S ) on the world's
-//   axes, S = 16 m. A chunk exists when land lies within CHUNK_REACH (26 m) of it (`chunkKeys`):
-//   farther out the floor is the open sea's and nothing else is there.
+//   axes, S = 16 m (the sea floor's tile, SEABED_TILE). A chunk exists when land lies within
+//   TILE_REACH (26 m, SeabedTile.ts) of it (`chunkKeys`): farther out the floor is the open sea's
+//   and nothing else is there.
 // - The land field (`landField`): the footprint's pipeline (the land lattice's signed distance
 //   interpolated into a 0.08 m mask, its exact distance transform, corners rounded by a close and
 //   an open, clamped to +-LAND_REACH), once per land version over the land's box and R + 2 m round
@@ -60,22 +61,20 @@ import {
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRockSDF, placeStones } from './Stones.ts';
 import { floorAt, SHELF_CEILING } from './Bathymetry.ts';
-import { buildFloorTile, nearLandCells, underLand, FAR_HALF, TILE_SIDE } from './SeabedTile.ts';
+import { buildFloorTile, nearLandCells, underLand, FAR_HALF, SEABED_TILE, TILE_SIDE } from './SeabedTile.ts';
 import { scatterTop } from './Anchors.ts';
 import { buildRimSkirt, coastChains, ownTexels, rimGroundTile, RimLattice, RIM_PAD } from './RimGround.ts';
-import { pickBushes } from './FoliageSites.ts';
+import { pickBushes, BUSH_SCALE, BUSH_STRIDE } from './FoliageSites.ts';
 import { makeRimTrails, TRAIL_BUSH_REACH, TRAIL_REACH } from './RimTrails.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
 import { VEGETATION_STRIDE, type MeshData, type RimSkirtData, type RimStrand, type Rock, type SDF } from './types.ts';
 
 // ------------------------------------------------------------------ the grid
 
-/** A chunk's side (m). */
-export const S = 16;
+/** A chunk's side (m): the sea floor's tile, so a chunk holds one tile. */
+export const S = SEABED_TILE;
 /** How far round a chunk its job reads the land (m): its window is the chunk and R round it. */
 export const R = 32;
-/** A chunk exists when land lies within this of it (m): LAND_REACH, and 2 m for the rounded corners. */
-export const CHUNK_REACH = LAND_REACH + 2;
 /** The land field's cell (m), exact in binary multiples: S / LAND_CELL = 200 cells. */
 export const LAND_CELL = 0.08;
 // the island mesh's lattice (SurfaceNets.ts chunk mode): world-anchored, exact in binary
@@ -109,7 +108,7 @@ export function parseChunkKey( key: string ): [ number, number ] {
 /** Chunk ( ci, cj )'s square (m). */
 export const chunkBox = ( ci: number, cj: number ): Bounds => ( { x0: ci * S, z0: cj * S, x1: ci * S + S, z1: cj * S + S } );
 
-/** The keys of the chunks with land within CHUNK_REACH, in rows ( cj, then ci ). */
+/** The keys of the chunks with land within TILE_REACH (SeabedTile.ts), in rows ( cj, then ci ). */
 export function chunkKeys( land: LandLattice ): string[] {
 
 	return nearLandCells( land ).map( ( [ ci, cj ] ) => chunkKey( ci, cj ) );
@@ -585,9 +584,9 @@ function casterBox( island: MeshData | null, stones: MeshData, skirt: RimSkirtDa
 	points( skirt.points );
 	for ( const s of strands ) points( s.points, 6 );
 	// a bush: its anchor and its largest scale round it
-	for ( let k = 0; k < bushes.length; k += 15 ) {
+	for ( let k = 0; k < bushes.length; k += BUSH_STRIDE ) {
 
-		const r = Math.max( bushes[ k + 8 ], bushes[ k + 9 ], bushes[ k + 10 ] );
+		const r = Math.max( bushes[ k + BUSH_SCALE ], bushes[ k + BUSH_SCALE + 1 ], bushes[ k + BUSH_SCALE + 2 ] );
 		for ( let a = 0; a < 3; a ++ ) {
 
 			b[ a ] = Math.min( b[ a ], bushes[ k + a ] - r );

@@ -13,9 +13,10 @@ import { contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclu
 export const SEABED_TILE = 16;
 // vertices along a tile's side
 export const TILE_SIDE = SEABED_TILE / FLOOR_STEP + 1;
-// A cell gets a tile when land lies this close to it (m): LAND_REACH, and 2 m for the footprint's
-// rounded corners and raster. Farther out the floor is the open sea's, which the far floor draws.
-const TILE_REACH = LAND_REACH + 2;
+// A cell gets a tile (and a chunk exists, Chunks.ts) when land lies this close to it (m):
+// LAND_REACH, and 2 m for the footprint's rounded corners and raster. Farther out the floor is the
+// open sea's, which the far floor draws.
+export const TILE_REACH = LAND_REACH + 2;
 // The far floor covers the land lattice and 128 m round it: this far from the world's centre (m).
 export const FAR_HALF = GROWTH.half + 128;
 
