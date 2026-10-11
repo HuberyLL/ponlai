@@ -7,10 +7,11 @@
 // own there too. A chunk is stored as the worker posts it (structured clone keeps every typed array
 // bit for bit), before the page merges anything.
 //
-// One generator is kept: the `meta` store holds the hash of the generator that wrote the chunks,
-// and opening the cache with another hash clears them (a changed generator would never read them
+// One generator is kept: the `meta` store holds the identity of the generator that wrote the
+// chunks (its hash and the browser, both of which the keys name), and opening the cache with
+// another identity clears them (a changed generator, or a browser update, would never read them
 // again). Every worker checks it on opening, in one transaction with the clearing, so the first
-// to open clears and the others find the new hash. Any failure (a private window, a full quota,
+// to open clears and the others find the new identity. Any failure (a private window, a full quota,
 // blocked site data) falls back to generating: the reader sees a miss, a failed write is dropped.
 
 const DB = 'ponlai-world-cache';
@@ -86,11 +87,11 @@ export async function openChunkStore( generator: string ): Promise<ChunkStore | 
 		// another page that opens a newer version must not wait for this one
 		db.onversionchange = () => db.close();
 		const tx = db.transaction( [ META, CHUNKS ], 'readwrite' );
-		const meta = tx.objectStore( META );
-		if ( await request( meta.get( GENERATOR ) ) !== generator ) {
+		const meta = tx.objectStore( META ), identity = generator + '\n' + navigator.userAgent;
+		if ( await request( meta.get( GENERATOR ) ) !== identity ) {
 
 			tx.objectStore( CHUNKS ).clear();
-			meta.put( generator, GENERATOR );
+			meta.put( identity, GENERATOR );
 
 		}
 		await done( tx );
