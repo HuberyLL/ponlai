@@ -6,7 +6,7 @@
 // mode.
 //
 //   node tools/parity/baseline.mjs --url U --sha SHA [--root DIR] [--label baseline] [--aa msaa]
-//       [--tiers high,medium,low] [--only rest|clips] [--views a,b] [--clips a,b] [--gt | --no-gt]
+//       [--tiers high,medium,low] [--only rest|clips] [--views a,b] [--clips a,b] [--gt | --no-gt] [--gt-aa gt|gt-hi]
 //       [--jobs 2] [--capture-only | --metrics-only] [--thresholds thresholds.json] [--runs runs.csv] [--task name]
 //       [--skip-existing] [--size 1728x1117@2] [--q "extra&query"] [--verbose]
 //
@@ -18,18 +18,22 @@
 // Layout under <root>/<sha>/:
 //   <label>/<tier>/rest/<view>/           a capture-clip folder (crops, clip.json, metrics/)
 //   <label>/<tier>/clip/<clip>[@<view>]/  the same for a clip (on another view than its own: @view)
-//   gt/high/...                           the ground truth (`--aa gt-hi`, high only), shared by every
-//                                         label; clips of more than 60 frames every 4th frame plus
-//                                         their dense runs (clips.mjs gtSampling)
+//   gt/<tier>/...                         the ground truth (`--aa gt`: 64 jittered renders at rest, 32
+//                                         per clip frame), shared by every label; clips of more than 60
+//                                         frames every 4th frame plus their dense runs (clips.mjs
+//                                         gtSampling)
+//   gt-hi/high/...                        the interim ground truth (`--gt-aa gt-hi`, high only): kept
+//                                         for cross-checks against aa=gt
 //   <label>/metrics.json                  every entry's metrics; for the label `baseline` (MSAA) this
 //                                         is the baseline the gates multiply
 //
 // `--label x --aa taau` captures the same entries for another mode and measures them against the
 // baseline's MSAA captures and the shared ground truth (with --thresholds: gate verdicts). The
 // ground truth and other labels take the baseline's anchors (`--anchors-from`), so every side
-// frames the same subjects. Medium and low have no ground truth of their own until aa=gt (M8):
-// their metrics take high's ground truth of the same view as the reference, which cancels in every
-// ratio to MSAA; their GT-relative values mean nothing and no gate reads them.
+// frames the same subjects. aa=gt renders every tier (at the canvas's resolution, the tier's own
+// content), so each tier is measured against its own ground truth. Where a tier has none (gt-hi
+// exists for high only) its metrics take high's ground truth of the same view, which cancels in
+// every ratio to MSAA; their GT-relative values mean nothing and no gate reads them.
 //
 // Clips and rest frames are deterministic (the page's stepper), so captures take the GPU lock shared
 // (capture-clip.mjs takes it). Wall times go to --runs (or PARITY_RUNS) and into metrics.json.
@@ -72,7 +76,10 @@ export const PLAN = {
 // ------------------------------------------------------------------ options
 
 const FLAGS = new Set( [ 'gt', 'no-gt', 'metrics-only', 'capture-only', 'skip-existing', 'verbose' ] );
-const KNOWN = [ 'url', 'sha', 'root', 'label', 'aa', 'tiers', 'only', 'views', 'clips', 'jobs', 'thresholds', 'runs', 'task', 'size', 'q', ...FLAGS ];
+const KNOWN = [ 'url', 'sha', 'root', 'label', 'aa', 'tiers', 'only', 'views', 'clips', 'jobs', 'thresholds', 'runs', 'task', 'size', 'q', 'gt-aa', ...FLAGS ];
+
+// the ground truth's folder under <root>/<sha>/ for each GT mode
+const GT_LABEL = { gt: 'gt', 'gt-hi': 'gt-hi' };
 
 function parse( argv ) {
 
@@ -178,11 +185,12 @@ async function capture( o, list, root ) {
 	const gtJobs = [];
 	if ( o.gt ) for ( const e of list ) {
 
-		if ( e.tier !== 'high' ) continue;
-		const dir = entryDir( root, 'gt', e );
+		// gt-hi exists for high only; aa=gt renders every tier
+		if ( o[ 'gt-aa' ] === 'gt-hi' && e.tier !== 'high' ) continue;
+		const side = GT_LABEL[ o[ 'gt-aa' ] ], dir = entryDir( root, side, e );
 		const s = gtSampling( CLIPS[ e.clip ] );
-		gtJobs.push( { e, side: 'gt', dir, args: [ path.join( TOOLS, 'capture-clip.mjs' ), `gt-${ e.name }`, ...common, '--clip', e.clip, '--view', e.view,
-			'--quality', 'high', '--aa', 'gt-hi', '--out', dir, '--every', String( s.every ),
+		gtJobs.push( { e, side, dir, args: [ path.join( TOOLS, 'capture-clip.mjs' ), `${ side }-${ e.tier }-${ e.name }`, ...common, '--clip', e.clip, '--view', e.view,
+			'--quality', e.tier, '--aa', o[ 'gt-aa' ], '--out', dir, '--every', String( s.every ),
 			...( s.dense.length ? [ '--dense', s.dense.map( ( r ) => r.join( '-' ) ).join( ',' ) ] : [] ),
 			...( e.full ? [ '--full', '0' ] : [] ), '--anchors-from', path.join( entryDir( root, 'baseline', e ), 'clip.json' ) ],
 		needs: path.join( entryDir( root, 'baseline', e ), 'clip.json' ) } );
@@ -235,7 +243,9 @@ async function metrics( o, list, root ) {
 	await pool( list, Math.min( Number( o.jobs ?? 2 ) * 2, Math.max( 1, os.cpus().length >> 1 ) ), async ( e ) => {
 
 		const test = entryDir( root, label, e ), msaa = entryDir( root, 'baseline', e );
-		const gt = entryDir( root, 'gt', { ...e, tier: 'high' } );
+		// the tier's own ground truth, else high's (which then cancels in every ratio to MSAA)
+		const ownGt = existsSync( path.join( entryDir( root, GT_LABEL[ o[ 'gt-aa' ] ], e ), 'clip.json' ) );
+		const gt = entryDir( root, GT_LABEL[ o[ 'gt-aa' ] ], ownGt ? e : { ...e, tier: 'high' } );
 		if ( ! existsSync( path.join( test, 'clip.json' ) ) || ! existsSync( path.join( msaa, 'clip.json' ) ) || ! existsSync( path.join( gt, 'clip.json' ) ) ) {
 
 			out.failures.push( `${ e.key }: missing captures` );
@@ -246,17 +256,22 @@ async function metrics( o, list, root ) {
 			...( e.full ? [ '--crops', [ ...cropNames( gt ), 'full' ].join( ',' ) ] : [] ),
 			...( label !== 'baseline' && existsSync( baselineFile ) ? [ '--baseline', baselineFile ] : [] ),
 			...( o.thresholds ? [ '--thresholds', o.thresholds ] : [] ),
-			// high's GT stands in for the lower tiers' (it cancels in every ratio to MSAA), so no GT gate reads it
-			...( e.tier !== 'high' ? [ '--no-gt-gates' ] : [] ) ];
+			// high's GT standing in for a lower tier's cancels in every ratio to MSAA, so no GT gate reads it
+			...( ownGt ? [] : [ '--no-gt-gates' ] ) ];
 		const t0 = Date.now();
 		const r = await run( 'uv', args, { log: path.join( test, 'metrics.log' ) } );
 		const file = path.join( test, 'metrics', 'metrics.json' );
 		if ( ! existsSync( file ) ) { out.failures.push( `${ e.key }: clip-metrics failed (${ r.out.trim().split( '\n' ).pop() })` ); return; }
 		const m = JSON.parse( await readFile( file, 'utf8' ) );
 		// the console gate (IQ-console): errors, page errors and WebGPU validation messages in the capture
-		const logged = JSON.parse( await readFile( path.join( test, 'clip.json' ), 'utf8' ) ).errors ?? [];
+		const testClip = JSON.parse( await readFile( path.join( test, 'clip.json' ), 'utf8' ) );
+		const logged = testClip.errors ?? [];
 		const consoleErrors = logged.filter( ( l ) => /^(error|pageerror):/.test( l ) || /validation|GPUValidationError/i.test( l ) );
-		out.entries[ e.key ] = { tier: e.tier, kind: e.kind, clip: e.clip, view: e.view, metric: m.metric, gates: m.gates ?? null, console: consoleErrors,
+		// upscaled: the render is smaller than the canvas (FSR 1, EASU or TAAU bring it up), which
+		// sets the alignment bound (aggregates)
+		const vp = testClip.viewport, render = testClip.boxes?.[ 0 ]?.render;
+		const upscaled = vp && render ? render[ 0 ] < Math.round( vp.width * vp.deviceScaleFactor ) : null;
+		out.entries[ e.key ] = { tier: e.tier, kind: e.kind, clip: e.clip, view: e.view, metric: m.metric, gates: m.gates ?? null, console: consoleErrors, upscaled,
 			crops: Object.fromEntries( Object.entries( m.crops ).map( ( [ c, v ] ) => [ c, v.missing ? v : { frames: v.frames, gtFrames: v.gtFrames, size: v.size, test: v.test, msaa: v.msaa, verdict: v.verdict } ] ) ) };
 		console.log( `metrics ${ e.key } ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 0 ) } s${ m.gates ? ` (${ m.gates.failed } gates failed)` : '' }` );
 
@@ -277,11 +292,41 @@ function cropNames( dir ) {
 }
 
 
-/** Aggregate gates over entries (thresholds.json `aggregates`): a share of views passing a ratio. */
+/** Aggregate gates over entries (thresholds.json `aggregates`): a share of views passing a ratio,
+ * or (`medianVector`) the length of the median signed shift (per component) over every named crop
+ * of the entries against a bound, `maxNative` when no entry is upscaled, else `max`: a jitter or
+ * reprojection bias moves every crop the same way, while an upscaler's content-dependent offsets
+ * (up to half a pixel on single crops of the lower tiers) do not move the median. */
 function aggregates( thresholds, result ) {
 
 	const out = [];
 	for ( const g of thresholds?.aggregates ?? [] ) {
+
+		if ( g.type === 'medianVector' ) {
+
+			const xs = [], ys = [];
+			let upscaled = false;
+			for ( const [ key, e ] of Object.entries( result.entries ) ) {
+
+				if ( ! key.startsWith( g.prefix ) ) continue;
+				if ( e.upscaled !== false ) upscaled = true;
+				for ( const [ crop, c ] of Object.entries( e.crops ) ) {
+
+					if ( crop === 'full' || c.missing ) continue;
+					const x = c.test?.[ g.metric + 'X' ], y = c.test?.[ g.metric + 'Y' ];
+					if ( typeof x === 'number' && typeof y === 'number' ) { xs.push( x ); ys.push( y ); }
+
+				}
+
+			}
+			const median = ( a ) => { const b = a.slice().sort( ( p, q ) => p - q ), h = b.length >> 1; return b.length % 2 ? b[ h ] : ( b[ h - 1 ] + b[ h ] ) / 2; };
+			const worst = xs.length ? Math.hypot( median( xs ), median( ys ) ) : 0;
+			if ( ! xs.length ) continue;
+			const bound = upscaled ? g.max : g.maxNative;
+			out.push( { gate: g.gate, prefix: g.prefix, views: xs.length, passing: null, worst, bound, upscaled, verdict: worst <= bound + 1e-12 ? 'PASS' : 'FAIL' } );
+			continue;
+
+		}
 
 		const rows = [];
 		for ( const [ key, e ] of Object.entries( result.entries ) ) {
@@ -312,7 +357,7 @@ async function logRun( o, started, captures, failed, out, what, contended ) {
 	const runs = o.runs ?? process.env.PARITY_RUNS;
 	if ( ! runs ) return;
 	const header = 'date,task,procedure,sha,wall_min,contended,captures,failed,out\n';
-	const line = [ new Date( started ).toISOString(), o.task ?? '', `baseline ${ what } ${ o.label } ${ o.aa } ${ ( o.tiers ?? 'high,medium,low' ).replace( /,/g, '+' ) }${ o.only ? ' ' + o.only : '' }${ o.views ? ' views=' + o.views.replace( /,/g, ' ' ) : '' }${ o.clips ? ' clips=' + o.clips.replace( /,/g, ' ' ) : '' }`, o.sha,
+	const line = [ new Date( started ).toISOString(), o.task ?? '', `baseline ${ what } ${ o.label } ${ o.aa }${ o.gt && what !== 'metrics' ? ' +' + o[ 'gt-aa' ] : '' } ${ ( o.tiers ?? 'high,medium,low' ).replace( /,/g, '+' ) }${ o.only ? ' ' + o.only : '' }${ o.views ? ' views=' + o.views.replace( /,/g, ' ' ) : '' }${ o.clips ? ' clips=' + o.clips.replace( /,/g, ' ' ) : '' }`, o.sha,
 		( ( Date.now() - started ) / 60000 ).toFixed( 2 ), contended, String( captures ), String( failed ), out ].join( ',' ) + '\n';
 	await mkdir( path.dirname( path.resolve( runs ) ), { recursive: true } );
 	await appendFile( runs, existsSync( runs ) ? line : header + line );
@@ -331,6 +376,8 @@ async function main() {
 	o.label ??= 'baseline';
 	o.aa ??= 'msaa';
 	if ( o.label === 'baseline' && o.aa !== 'msaa' ) throw new Error( 'the baseline is MSAA: give another --label for --aa ' + o.aa );
+	o[ 'gt-aa' ] ??= 'gt';
+	if ( ! GT_LABEL[ o[ 'gt-aa' ] ] ) throw new Error( `--gt-aa is gt or gt-hi, not ${ o[ 'gt-aa' ] }` );
 	if ( o[ 'no-gt' ] ) o.gt = false;
 	else if ( o.gt === undefined ) o.gt = o.label === 'baseline';
 	const root = path.resolve( o.root ?? path.join( TOOLS, '..', 'artifacts', 'parity' ), o.sha );
@@ -386,7 +433,8 @@ async function main() {
 	for ( const f of [ ...result.wall.failedCaptures.map( ( c ) => `capture failed: ${ c }` ), ...result.failures ] ) console.log( '  ' + f );
 	const noisy = Object.entries( result.entries ).filter( ( [ , e ] ) => e.console?.length );
 	if ( noisy.length ) console.log( `  console errors in ${ noisy.length } entries: ${ noisy.map( ( [ k, e ] ) => `${ k } (${ e.console.length })` ).join( ', ' ) }` );
-	for ( const a of result.aggregates ) console.log( `  aggregate ${ a.gate }: ${ a.verdict } (${ a.passing }/${ a.views }, worst ${ a.worst.toFixed( 3 ) })` );
+	for ( const a of result.aggregates ) console.log( a.bound === undefined ? `  aggregate ${ a.gate }: ${ a.verdict } (${ a.passing }/${ a.views }, worst ${ a.worst.toFixed( 3 ) })`
+		: `  aggregate ${ a.gate } ${ a.prefix }: ${ a.verdict } (median offset ${ a.worst.toFixed( 4 ) } px over ${ a.views } crops, bound ${ a.bound }${ a.upscaled ? ', upscaled' : ', native' })` );
 	await logRun( o, started, captured.length, result.wall.failedCaptures.length + result.failures.length, path.join( root, o.label ), o[ 'metrics-only' ] ? 'metrics' : 'capture+metrics', contended );
 	if ( result.wall.failedCaptures.length || result.failures.length ) process.exitCode = 1;
 

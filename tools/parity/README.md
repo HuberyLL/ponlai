@@ -225,19 +225,29 @@ uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py 
   canvas's resolution, each captured frame held still after its tick (`loop.step`'s `converge`)
   until the temporal rest has averaged `--gt-jitters` jittered renders of it with a box filter
   (32 by default, 64 for a one-frame clip such as `rest`), unsharpened and without grain, cropped
-  at the test's own size. The scale schedule is ignored. Keep its sets per merge-base under
-  `<parity root>/<sha>/gt/`. Paused temporal captures (capture.mjs, capture-set.mjs) wait for the
+  at the test's own size. The scale schedule is ignored. It renders every tier (the tier's own
+  content at the canvas's resolution), so each tier has its own ground truth. Keep its sets per
+  merge-base under `<parity root>/<sha>/gt/<tier>/`. Paused temporal captures (capture.mjs, capture-set.mjs) wait for the
   rest to converge (`diag.taa.converged`).
 - `--aa gt-hi`: the interim ground truth, MSAA on high at twice high's nominal ratio for the size
   (3x at the default @2, where the nominal is 1.5) in a canvas that holds it, box-downsampled 2x2
   (288 px crops at the default size). It renders every frame at that ratio: a clip's scale schedule
   applies to the test and MSAA sides only. Its pixel-width vegetation rules are in render pixels,
-  so its meadow is finer than any real render: judge vegetation look against MSAA.
+  so its meadow is finer than any real render: judge vegetation look against MSAA. Kept for
+  cross-checks against aa=gt (`<sha>/gt-hi/high/`); the gates read aa=gt. aa=gt's blades are
+  finer than MSAA's too (one sample: at least 1 canvas px, MSAA's 2 render px), so vegetation
+  look is judged against MSAA there as well.
+- `parity/baseline.mjs`: the MSAA baseline of a merge-base and its ground truth (the plan in its
+  header): `--gt` captures the ground truth with the baseline's anchors, `--gt-aa gt` (default,
+  every tier) or `gt-hi` (high only); metrics read the entry's own tier's GT, else high's with the
+  GT gates off. `--thresholds` adds the gate verdicts and the aggregates (the overall fidelity's
+  share of views; the alignment's median signed offset per tier).
 - `clip-metrics.py`: per crop, the test's and MSAA's metrics against the GT (definitions in its
   docstring), their ratio, and PASS / FAIL against a thresholds file of gates on a baseline (MSAA
   measured here, or an earlier metrics.json): ratios with an absolute floor for magnitudes (a
-  paused clip's MSAA flicker is exactly 0), differences for the signed fringe and the lag. Whole
-  frames (`full/`) are measured only when `--crops` names them.
+  paused clip's MSAA flicker is exactly 0), differences for the signed fringe, the lag and the
+  edge width (`edgeWgt`, against the wider of MSAA's and the GT's edge). Whole frames (`full/`)
+  are measured only when `--crops` names them.
 - Repeatability: pan-slow on meadow-close repeats byte for byte between fresh loads. Vegetation
   crops elsewhere can differ in single frames: with the vegetation depth prepass on, a few samples
   pass its equal depth test differently from frame to frame (blobs of a few to 150 px on leaves
