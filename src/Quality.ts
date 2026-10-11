@@ -14,6 +14,25 @@
 //   once while they are built, so they change only with a reload;
 // - runtime: setters the page applies through `applySkyQuality` (main.ts) at load; a debug page can
 //   override them there (`s.applyQuality( { ... } )`) to time one at a time.
+// Load knobs reach their modules as `water` (Water.ts), `grass` (`setGrassQuality`), `shadow`
+// (`SunShadow.setFilter`), `rainShading` (`setRainShading`), `post` (`PostOptions` for
+// `new Pipeline`), `environmentSource` (`Sky.setEnvironmentSource`, before the first bake),
+// `frameRate` (FramePacer) and `render` (RenderScale.ts). Runtime ones: the cloud view
+// (`Sky.setCloudView`), the clouds' `setDome`, `setMarch` and `setShadowRefresh`,
+// `Sky.setEnvironmentCadence`, the sky bake interval, the refracted sun's interval and
+// `angleGate`, and the rain's drop count. Every default in the modules themselves is high's.
+// `?tier.<knob>=<value>` overrides one knob for an A/B.
+//
+// Medium and low trade a little of high's image for time, each knob judged in captures: one
+// screen-space reflection ray (its 14 steps grow by 1.51, so it reaches as far as high's), fewer
+// refraction and water-column samples, a lighter sun-shadow filter (bilinear on vegetation, and on
+// everything on low), fewer lawn blades with the canopy light per vertex, fewer sea-fog steps and
+// depth-of-field taps, a cheaper cloud march and panorama refresh, slower sky bakes with the
+// environment's PMREM on every second one from a 256-wide source, a coarser refracted-sun gate and
+// fewer rain drops; low also marches the sea fog at a quarter resolution and draws fewer veil
+// shells and ripple layers. Low keeps both bloom chains and the full storm foam: one merged chain
+// veiled a golden-hour island in glow, and the merged foam turned the crests' streaks into
+// scattered lace.
 //
 // This module imports types only, so the CPU-only tools can read the table under plain node.
 import type { WaterQuality } from './ocean/Water.ts';

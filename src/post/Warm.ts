@@ -3,7 +3,13 @@ import * as THREE from 'three/webgpu';
 // Ahead-of-time pipeline compiles for draws that would otherwise build their pipelines in the
 // frame that first shows them (a weather change, the first bolt, a storm's spray, fog setting in).
 // The rain, the spray, the lightning, the sky and the frame graph use them in their warm() hooks,
-// which startup calls (main.ts).
+// which startup calls (main.ts), so a weather change or the first bolt builds none.
+//
+// `renderer.compileAsync` collects its draws and reads the render target synchronously, before its
+// first await: set the target, call it, restore the target at once, then await (`compileDraws`).
+// It builds a transparent double-sided material's two passes after restoring its side, as one
+// unused double-sided pipeline (r186): compile a copy of the material per side and keep the copies
+// (disposing them releases the shared pipelines; see `Lightning.warm`).
 
 /** `renderer.compileAsync( object, camera, scene )` for draws into `target` (null: the canvas),
  * leaving the renderer's own target as it was. three r186's compileAsync describes the target's

@@ -15,6 +15,14 @@
 // rendered or skipped. The divisor is the whole number of refreshes nearest the target interval, never more
 // than a quarter above it (so 144 Hz holds 72 fps and 90 Hz renders every refresh); at 60 Hz or a
 // target of 0 every callback renders, as without the pacer.
+//
+// High and medium hold 60 (Quality.ts `frameRate`). Low renders on every refresh (`frameRate: 0`):
+// its light frames, held to 60 Hz, finished right at the compositor's deadline and were shown one
+// and three refreshes apart in turn. The scene's clock steps by the frames' vblank times (rAF's
+// timestamp), not by when the tick starts (a few milliseconds into the frame, by a varying
+// amount), and the camera applies its input once per rendered frame (IslandCameraControls'
+// `advance`): three's OrbitControls damped on every event, so a frame took one to three damping
+// steps by chance. A hidden page renders nothing (main.ts stops the loop).
 
 // callbacks in the window the refresh period is taken from, and its quantile (low, as a callback
 // delayed by the main thread or a skipped vblank only lengthens an interval)
