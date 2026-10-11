@@ -25,7 +25,9 @@
 //   anchor, skirt segments by their piece's start, texels (rim ground, shore, walk) by their centre;
 //   the floor tile's lattice points are shared on the borders, computed alike by both tiles.
 // - `dirtyChunks( before, after )`: the chunks whose window meets the land cells that changed,
-//   grown by 2 m (the raster). The corner rounding (`roundCorners( 0.9, 1.4 )`) moves a field
+//   grown by 2 m (the raster): `windowCells`, the one range of land cells a chunk reads, which the
+//   cache key's growth steps test too (chunkWorker.ts), so a chunk whose key stays is a chunk this
+//   rule keeps. The corner rounding (`roundCorners( 0.9, 1.4 )`) moves a field
 //   value by up to 4.6 m, so a value reads the land within min( |d|, LAND_REACH ) + 4.6 m (and the
 //   0.35 m lattice): more than those 2 m, covered by R's slack, since the kinds the chunks share
 //   read their window no farther than about 31 m from the chunk. Every other chunk keeps its data,
@@ -76,7 +78,7 @@
 //   `hash` covers every buffer, so an unchanged chunk is recognised by its hash.
 
 import { Field2D, roundCorners } from './Field2D.ts';
-import { GROWTH, type LandLattice } from './IslandGrowth.ts';
+import { GROWTH, type LandLattice, type Window } from './IslandGrowth.ts';
 import {
 	cliffSharpCells, islandColumnRange, landBounds, makeIslandSDF, solidSide, ISLAND_BOTTOM, ISLAND_TOP, LAND_REACH,
 	type Bounds, type Footprint,
@@ -142,31 +144,71 @@ export function chunkKeys( land: LandLattice ): string[] {
 
 }
 
-/** The keys of the chunks that exist on `after` and whose window meets a land cell that differs
- * between the two lands, grown by 2 m, in rows. */
-export function dirtyChunks( before: LandLattice, after: LandLattice ): string[] {
+/** The land lattice's cells (IslandGrowth.ts) whose square, grown by 2 m (the raster), meets
+ * chunk ( ci, cj )'s window [ S c - R, S c + S + R ): what the chunk reads of the land. The dirty
+ * rule and the cache key's growth steps (chunkWorker.ts) both test this one range. */
+export function windowCells( ci: number, cj: number ): Window {
 
+	// cell i's grown square [ X0 + i cell - 2, X0 + ( i + 1 ) cell + 2 ) meets the window when
+	// q <= i < p (every term a multiple of the cell, so exact)
 	const N = Math.round( 2 * GROWTH.half / GROWTH.cell ), X0 = - GROWTH.half, cell = GROWTH.cell, grown = 2;
-	const dirty = new Set<string>();
-	for ( let w = 0; w < after.words.length; w ++ ) for ( let v = ( after.words[ w ] ^ before.words[ w ] ) >>> 0; v !== 0; v &= v - 1 ) {
+	const q = ( c: number ) => Math.max( 0, ( c * S - R - grown - X0 ) / cell );
+	const p = ( c: number ) => Math.min( N, ( c * S + S + R + grown - X0 ) / cell );
+	return { i0: q( ci ), j0: q( cj ), i1: p( ci ), j1: p( cj ) };
 
-		const k = w * 32 + 31 - Math.clz32( v & - v ), i = k % N, j = ( k - i ) / N;
-		const x0 = X0 + i * cell - grown, x1 = X0 + ( i + 1 ) * cell + grown;
-		const z0 = X0 + j * cell - grown, z1 = X0 + ( j + 1 ) * cell + grown;
-		// the windows [ S c - R, S c + S + R ) that meet [ x0, x1 )
-		for ( let cj = Math.floor( ( z0 - S - R ) / S ); cj <= Math.ceil( ( z1 + R ) / S ); cj ++ ) {
+}
 
-			if ( cj * S - R >= z1 || cj * S + S + R <= z0 ) continue;
-			for ( let ci = Math.floor( ( x0 - S - R ) / S ); ci <= Math.ceil( ( x1 + R ) / S ); ci ++ ) {
+/** Which cells of a bit set over a window of the land lattice are set (the bits row by row over the
+ * window, as LandLattice's words over the whole lattice and a piece's over its own), counted by
+ * window in O( 1 ): a summed-area table. */
+export class CellCount {
 
-				if ( ci * S - R < x1 && ci * S + S + R > x0 ) dirty.add( chunkKey( ci, cj ) );
+	private readonly w: Window;
+	private readonly nx: number;
+	private readonly sum: Int32Array;
+
+	constructor( w: Window, bits: Uint32Array ) {
+
+		// (a piece that added no cell has an empty window)
+		const nx = Math.max( 0, w.i1 - w.i0 ), nz = Math.max( 0, w.j1 - w.j0 ), sum = new Int32Array( ( nx + 1 ) * ( nz + 1 ) );
+		this.w = w; this.nx = nx; this.sum = sum;
+		for ( let j = 0; j < nz; j ++ ) {
+
+			let row = 0;
+			for ( let i = 0; i < nx; i ++ ) {
+
+				const b = j * nx + i;
+				row += ( bits[ b >>> 5 ] >>> ( b & 31 ) ) & 1;
+				sum[ ( j + 1 ) * ( nx + 1 ) + i + 1 ] = sum[ j * ( nx + 1 ) + i + 1 ] + row;
 
 			}
 
 		}
 
 	}
-	return chunkKeys( after ).filter( ( key ) => dirty.has( key ) );
+
+	/** Whether any cell of `q` is set. */
+	any( q: Window ): boolean {
+
+		const { w, nx } = this;
+		const i0 = Math.max( q.i0, w.i0 ) - w.i0, i1 = Math.min( q.i1, w.i1 ) - w.i0;
+		const j0 = Math.max( q.j0, w.j0 ) - w.j0, j1 = Math.min( q.j1, w.j1 ) - w.j0;
+		if ( i0 >= i1 || j0 >= j1 ) return false;
+		const at = ( i: number, j: number ) => this.sum[ j * ( nx + 1 ) + i ];
+		return at( i1, j1 ) - at( i0, j1 ) - at( i1, j0 ) + at( i0, j0 ) > 0;
+
+	}
+
+}
+
+/** The keys of the chunks that exist on `after` and whose window meets a land cell that differs
+ * between the two lands, grown by 2 m (`windowCells`), in rows. */
+export function dirtyChunks( before: LandLattice, after: LandLattice ): string[] {
+
+	const N = Math.round( 2 * GROWTH.half / GROWTH.cell ), changed = new Uint32Array( after.words.length );
+	for ( let w = 0; w < changed.length; w ++ ) changed[ w ] = after.words[ w ] ^ before.words[ w ];
+	const cells = new CellCount( { i0: 0, j0: 0, i1: N, j1: N }, changed );
+	return chunkKeys( after ).filter( ( key ) => cells.any( windowCells( ...parseChunkKey( key ) ) ) );
 
 }
 

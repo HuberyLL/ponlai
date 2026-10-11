@@ -20,8 +20,8 @@
 // view of a module-level or cached array (a table, a lattice kept for the next job, the field), only
 // what the job built or read from the cache for it.
 
-import { buildChunk, landField, landWindow, R, S, type ChunkData, type LandField } from './Chunks.ts';
-import { growLand, GROWTH, LandLattice, type Piece } from './IslandGrowth.ts';
+import { buildChunk, landField, landWindow, windowCells, CellCount, S, type ChunkData, type LandField } from './Chunks.ts';
+import { growLand, LandLattice, type Piece } from './IslandGrowth.ts';
 import { buildFarFloor, nearLandCells, underLand } from './SeabedTile.ts';
 import { openSeaBeds, openSeaHeight, SHELF_CEILING } from './Bathymetry.ts';
 import { fieldBounds, BED_CELL, FLOOR_CELL, type LandData } from './ChunkMerge.ts';
@@ -33,7 +33,7 @@ export function buildLand( seed: number, step: number ): LandData {
 	const { land, pieces } = growLand( seed, step );
 	const near = nearLandCells( land );
 	const chunks = new Int32Array( near.flat() );
-	const steps = near.map( ( [ ci, cj ] ) => stepsInWindow( pieces, ci, cj ) );
+	const steps = windowSteps( pieces, near );
 	const bounds = fieldBounds( land );
 	const w = bounds.x1 - bounds.x0, h = bounds.z1 - bounds.z0;
 	const fx = w / FLOOR_CELL, fz = h / FLOOR_CELL, bx = w / BED_CELL, bz = h / BED_CELL;
@@ -68,15 +68,19 @@ export function buildLand( seed: number, step: number ): LandData {
 
 }
 
-// The growth steps whose pieces may lie in chunk ( ci, cj )'s window (the chunk and R round it),
-// grown by 2 m as Chunks.ts `dirtyChunks` grows the changed cells: the land a chunk reads is the
-// union of those pieces, so with the seed they name it in the chunk's cache key.
-function stepsInWindow( pieces: Piece[], ci: number, cj: number ): number[] {
+// Per chunk ( ci, cj ), the growth steps whose pieces hold a cell that Chunks.ts `dirtyChunks`
+// would count for it (`windowCells`: grown by 2 m, meeting its window): the land a chunk reads is
+// the union of those pieces' cells there, so with the seed they name it in the chunk's cache key.
+// A piece's cells, not its box: a piece that grows past a chunk's corner leaves it reused.
+function windowSteps( pieces: Piece[], near: [ number, number ][] ): number[][] {
 
-	const X0 = - GROWTH.half, cell = GROWTH.cell, m = R + 2;
-	const x0 = ci * S - m, x1 = ci * S + S + m, z0 = cj * S - m, z1 = cj * S + S + m;
-	return pieces.filter( ( { window: w } ) => w.i1 > w.i0 && w.j1 > w.j0
-		&& X0 + w.i0 * cell < x1 && X0 + w.i1 * cell > x0 && X0 + w.j0 * cell < z1 && X0 + w.j1 * cell > z0 ).map( ( p ) => p.step );
+	const cells = pieces.map( ( p ) => new CellCount( p.window, p.bits ) );
+	return near.map( ( [ ci, cj ] ) => {
+
+		const w = windowCells( ci, cj );
+		return pieces.filter( ( _, k ) => cells[ k ].any( w ) ).map( ( p ) => p.step );
+
+	} );
 
 }
 

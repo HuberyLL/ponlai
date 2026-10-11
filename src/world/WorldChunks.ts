@@ -15,8 +15,9 @@
 //   (tools/world-node.mjs).
 // - Cache keys: a format version, the generator's hash (tools/vite-world-generator.mjs: every
 //   source the worker imports), the options, the browser, the chunk and the growth steps whose
-//   pieces lie in its window (chunkWorker.ts), so a land grown by a piece finds every chunk the
-//   piece left alone. `worldCache=off` (main.ts) builds every chunk and stores none.
+//   pieces hold cells the chunk reads (chunkWorker.ts, by Chunks.ts `windowCells`), so a land
+//   grown by a piece finds every chunk the dirty rule keeps. `worldCache=off` (main.ts) builds
+//   every chunk and stores none.
 
 import { WORLD_GENERATOR_HASH } from 'virtual:world-generator';
 import { mergeChunks, type LandData } from './ChunkMerge.ts';
