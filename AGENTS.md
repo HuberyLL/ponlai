@@ -93,6 +93,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   measurements in relative terms.
 - Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, comments in
   English that explain why.
+- Game UI (anything the player sees in `?game`: HUD, menus, overlays, in-world labels, mockups of
+  them): design and build it with the `threejs-game-ui-designer` skill when the agent has it (the
+  threejs-* skill pack), so it reads as a game's interface rather than a product's.
 - Visual changes: compare captures against the previous capture (and crops, not only the whole
   frame); report measured differences.
 - Performance changes: `tools/profile-frame.mjs` on a production build under the GPU lock, before
