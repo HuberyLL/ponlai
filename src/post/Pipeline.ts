@@ -52,11 +52,13 @@ import type { Rain } from '../weather/Rain.ts';
 // and the post passes follow as above, but for the vignette and the grain, which the display pass
 // leaves to the canvas pass, and (accumulating in linear light, Quality.ts `taa.linear`) for the
 // S-curve and the sRGB transfer: displayRT holds the graded colour in linear light (half float),
-// which the resolve averages as it is and its canvas pass encodes; then (TemporalAA.ts):
+// which the resolve averages as it is and encodes once for its canvas pass; then (TemporalAA.ts):
 //   TAA resolve ── taaHistory (ping-pong: the frames accumulated, at the canvas's size for TAAU)
+//     and taaEncoded (the same image encoded with the vignette, under `taa.linear`; not for aa=gt)
 //   TAA rest ── taaRest (ping-pong), while a resting scene runs its jitter sequence, then copied
 //     into taaRestShown once complete (TemporalRest.ts)
-//   canvas pass: the history (or the rest's image) encoded, vignette, RCAS, grain and dither; TAA
+//   canvas pass: taaEncoded (or the history or the rest's image, encoded there with the vignette),
+//     RCAS, grain and dither; TAA
 //     below the canvas encodes it at the render's size (taaDisplay), EASU, then RCAS and the grain
 // (`taaResolve=off`, debug builds: the jittered frame shown as it is, through the output passes
 // above, with the grade's vignette and grain, as before the resolve landed).

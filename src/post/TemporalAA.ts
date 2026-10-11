@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, float, vec2, vec3, vec4, ivec2, texture, textureLoad, uniform, screenCoordinate, floor, exp, dot, max, min,
-	clamp, abs, sqrt, select, mix, smoothstep, length, round, sRGBTransferOETF,
+	clamp, abs, sqrt, select, mix, smoothstep, length, round, sRGBTransferOETF, outputStruct, mrt,
 } from 'three/tsl';
 import type { TemporalSettings } from '../Quality.ts';
 import { jitter } from './Jitter.ts';
@@ -57,8 +57,12 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   (no clip, no cap, nothing reprojected, exact weights) into an image of its own, shown once it is
 //   complete; the ground truth's rest is a box filter over 64 jitters (centred on their mean:
 //   Jitter.ts) at the canvas's resolution.
-// - The canvas pass encodes the resolved image, then adds what must not be accumulated: the
-//   vignette (in linear, as the grade did), RCAS sharpening (FSR.ts), the grain and the dither.
+// - The canvas pass sharpens the encoded image and adds what must not be accumulated: the vignette
+//   (in linear, before the encoding, as the grade did), RCAS sharpening (FSR.ts), the grain and the
+//   dither. Under `linear` the running resolve writes its image encoded as a second target
+//   (`taaEncoded`, the vignette at each pixel), so RCAS's five taps are not encoded one by one
+//   (they were half the canvas pass's time at 3840x2160; the extra half-float write costs less
+//   than that). The rest's image and the ground truth (one tap) are encoded in the canvas pass.
 //   TAA below the canvas encodes at the render's size and upscales with EASU first.
 
 type F = THREE.Node<'float'>;
@@ -293,13 +297,18 @@ export class TemporalAA {
 			display: g.texture( display ), velocity: g.texture( velocity ), depth: g.texture( surfaceDepth ),
 			depthPrev: g.texture( surfaceDepthPrev ), veil: g.texture( veilReactive ),
 		};
+		// Under `linear` the running resolve also writes its image encoded (the vignette, the sRGB
+		// transfer, the S-curve), so the canvas pass's RCAS reads encoded taps instead of encoding
+		// five a pixel. The ground truth is not sharpened (one encode a pixel already).
+		const gt = this.mode === 'gt';
+		let canvasImage = this.settings.linear && ! gt ? g.color( 'taaEncoded', { size: this.historyClass, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		// the resolve, built once per parity of the history it reads
 		const build = ( history: THREE.Texture, kind: 'running' | 'rest' | TemporalDebugView, name: string ) => {
 
 			const node = texture( history );
 			const material = new THREE.NodeMaterial();
 			material.name = name;
-			material.fragmentNode = this.resolve( textures, node, kind, renderSize, outputSize );
+			material.fragmentNode = this.resolve( textures, node, kind, renderSize, outputSize, kind === 'running' && canvasImage !== null );
 			const quad = new THREE.QuadMesh( material );
 			quad.name = name;
 			return { quad, node };
@@ -319,7 +328,11 @@ export class TemporalAA {
 			if ( viewDistance ) b.readOptional( viewDistance );
 			b.read( this.historyPrev );
 			history = b.write( history );
-			return { label: 'TAA resolve', quad: this.resolveQuads[ 0 ], run: () => this.runResolve() };
+			// (the attachments in this order: the struct's)
+			if ( canvasImage ) canvasImage = b.write( canvasImage );
+			// (its material writes both through an output struct, which ignores the MRT: the MRT only
+			// declares the two attachments to the graph, and leaves them unblended)
+			return { label: 'TAA resolve', quad: this.resolveQuads[ 0 ], mrt: canvasImage ? mrt( {} ) : null, run: () => this.runResolve() };
 
 		} );
 		this.variants.push( { pass: 'taaResolve', kind: 'quad', quads: this.resolveQuads, pipelines: [] } );
@@ -358,20 +371,22 @@ export class TemporalAA {
 
 		} );
 
-		// What the canvas shows: the history this frame wrote (by its parity), or the rest's image.
+		// What the canvas shows: the history this frame wrote (by its parity) or its encoded image, or
+		// the rest's image.
 		const sources = [ g.texture( history, 0 ), g.texture( history, 1 ), g.texture( this.restShown ) ];
 		const sourceIndex = () => this.rest.converged ? 2 : g.parityOf( history );
-		const gt = this.mode === 'gt';
 		// the resolved image (linear) to display values, with the vignette (in linear, as the grade
 		// applied it); accumulated in display values (`linear` off), the vignette applies to those
 		const encode = ( c: V3, v: F ) => this.settings.linear ? toDisplay( c.mul( v ), O.contrast ) : c.mul( v );
-		// one canvas pixel: the image encoded (with the vignette at that pixel), sharpened by RCAS
-		const canvasNode = ( source: THREE.Texture ) => Fn( () => {
+		// one canvas pixel: the image encoded (with the vignette at that pixel), sharpened by RCAS; the
+		// resolve's encoded image as it is (its taps carry the vignette at their own pixels)
+		const canvasNode = ( source: THREE.Texture, isEncoded: boolean ) => Fn( () => {
 
 			const p = screenCoordinate.xy.floor().toConst();
 			const last = outputSize.sub( 1 ).toConst();
 			const v = O.vignette( canvasSize ).toConst();
-			const tap = ( dx: number, dy: number ) => vec4( encode( ( textureLoad( source, ivec2( clamp( p.add( vec2( dx, dy ) ), vec2( 0 ), last ) ) ) as unknown as V4 ).rgb, v ), 1 );
+			const load = ( dx: number, dy: number ) => ( textureLoad( source, ivec2( clamp( p.add( vec2( dx, dy ) ), vec2( 0 ), last ) ) ) as unknown as V4 ).rgb;
+			const tap = ( dx: number, dy: number ) => vec4( isEncoded ? load( dx, dy ) : encode( load( dx, dy ), v ), 1 );
 			// (the ground truth is not sharpened)
 			const s = gt ? tap( 0, 0 ).rgb : rcas( tap, this.sharpness );
 			return O.finish( s.toVar(), canvasSize, float( 1 ) );
@@ -379,14 +394,15 @@ export class TemporalAA {
 		} )();
 		const canvasPass = ( b: Parameters<Parameters<FrameGraph<unknown>[ 'addPass' ]>[ 2 ]>[ 0 ] ) => {
 
-			b.read( history );
+			b.read( canvasImage ?? history );
 			b.readOptional( restShown );
 			canvas = b.write( canvas );
 
 		};
-		this.canvasPipelines = sources.map( ( source ) => {
+		this.canvasPipelines = sources.map( ( source, i ) => {
 
-			const pipeline = new THREE.RenderPipeline( this.renderer, canvasNode( source ) );
+			const shown = i < 2 && canvasImage !== null;
+			const pipeline = new THREE.RenderPipeline( this.renderer, canvasNode( shown ? g.texture( canvasImage! ) : source, shown ) );
 			pipeline.outputColorTransform = false;
 			return pipeline;
 
@@ -496,7 +512,7 @@ export class TemporalAA {
 
 	// The resolve's shader: the running resolve, the rest's, or one of its debug values.
 	private resolve( t: { display: THREE.Texture; velocity: THREE.Texture; depth: THREE.Texture; depthPrev: THREE.Texture; veil: THREE.Texture },
-		history: THREE.TextureNode, kind: 'running' | 'rest' | TemporalDebugView, inputSize: Uniform2, outputSize: Uniform2 ): V4 {
+		history: THREE.TextureNode, kind: 'running' | 'rest' | TemporalDebugView, inputSize: Uniform2, outputSize: Uniform2, encoded = false ): V4 {
 
 		const O = this.options, S = this.settings, u = this.u, K = this.knobs;
 		const rest = kind === 'rest';
@@ -504,7 +520,7 @@ export class TemporalAA {
 		const lite = S.lite;
 		const linear = S.linear;
 		const dofBlur = O.dofBlur();
-		return Fn( () => {
+		const out = Fn( () => {
 
 			const q = screenCoordinate.xy; // output pixel centres, at .5
 			// input pixels per output pixel
@@ -707,6 +723,8 @@ export class TemporalAA {
 			return vec4( max( fromYCoCg( resolved ), vec3( 0 ) ), total );
 
 		} )() as V4;
+		// (and the image encoded for the canvas pass, with the vignette at this pixel)
+		return encoded ? outputStruct( out, vec4( toDisplay( out.rgb.mul( O.vignette( outputSize ) ), O.contrast ), 1 ) ) as unknown as V4 : out;
 
 	}
 
