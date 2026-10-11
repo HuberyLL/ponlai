@@ -105,6 +105,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   every other kind as one mesh or pool, concatenated in the chunks' order ( cj, ci ) whatever
   order the workers finished in (`ChunkMerge.ts`, `World.ts`); a growth step still reloads the
   world.
+- A chunk change never builds a pipeline: chunk meshes share their kind's material and attribute
+  set, merged kinds take new attributes on their existing geometry, the meadow's pool is
+  rewritten in place within its capacity (`GrassCull.ts`), and a pending version's buffers are
+  uploaded in the frames before the swap.
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High is the reference image; every default in the modules is high's. A load knob is read
   once when materials and the frame graph are built, so a change of tier reloads the page.

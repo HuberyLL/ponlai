@@ -402,7 +402,10 @@ function tuftMesh( source: THREE.BufferGeometry, material: THREE.Material, cull:
 //   make the count depend on where the camera came from. A camera crossing an edge steps once,
 //   between two counts that hide the same share of the ground.
 // The box spans every tuft of a batch, so its nearest tuft sets the band for all of them: a
-// larger island keeps more of its meadow in the nearer bands and saves less.
+// larger island keeps more of its meadow in the nearer bands and saves less. A batch is one per
+// kind, holding every chunk's tufts in the chunks' order (GrassCull's pool), not one per chunk:
+// that would add draws (and prepass draws) per meadow chunk; a band per chunk chosen in the cull
+// pass is the step that would save more.
 // Other cameras (the rain's collision bake looks straight down, orthographic) see every tuft
 // with all its blades, as before.
 // The view camera's draws are then culled per tuft on the GPU (`GrassCull`): one compute pass
