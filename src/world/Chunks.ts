@@ -33,6 +33,9 @@
 //   land within its window, and its distances there change only where land near them changed.
 //   The test is the changed cells, not the cells whose clamped distance differs: that would stack
 //   LAND_REACH on the window.
+// - Samplers that need only the island's side (the shore's sea-level section, the rim lattice)
+//   take it from the footprint away from the coast (WorldShapes `solidSide`, exact there) and
+//   sample the SDF only near it: the bits are the same, at a fraction of the cost.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
 //   chunk's data and its hash repeat whatever order the chunks are built in.
 // - The page's derived products come with the chunk (ChunkDerived.ts): the island's caster columns
@@ -72,7 +75,7 @@
 import { Field2D, roundCorners } from './Field2D.ts';
 import { GROWTH, type LandLattice } from './IslandGrowth.ts';
 import {
-	cliffSharpCells, islandColumnRange, landBounds, makeIslandSDF, ISLAND_BOTTOM, ISLAND_TOP, LAND_REACH,
+	cliffSharpCells, islandColumnRange, landBounds, makeIslandSDF, solidSide, ISLAND_BOTTOM, ISLAND_TOP, LAND_REACH,
 	type Bounds, type Footprint,
 } from './WorldShapes.ts';
 import { surfaceNets } from './SurfaceNets.ts';
@@ -374,10 +377,10 @@ export function chunkBlock( window: LandField, ci: number, cj: number, span: num
 	const members = [];
 	for ( let j = cj; j < cj + span; j ++ ) for ( let i = ci; i < ci + span; i ++ ) members.push( { key: chunkKey( i, j ), box: chunkBox( i, j ), island: landIn( window, grow( chunkBox( i, j ), ISLAND_NEAR ) ) } );
 	const reach = members.some( ( m ) => m.island ) ? scatterAnchors( ctx, grow( block, TRAIL_REACH ), block ) : new Float32Array( 0 );
-	const tile = rimGroundTile( new RimLattice( ctx.sdf, grow( block, RIM_PAD ) ), block );
+	const tile = rimGroundTile( new RimLattice( ctx.sdf, grow( block, RIM_PAD ), ctx.fp ), block );
 	const bushes = pickBushes( reach, members.map( ( m ) => m.box ) );
 	const strands = rimTrails( ctx, reach, block, members.map( ( m ) => m.box ) );
-	const shore = shoreTile( ctx.sdf, block ), walk = walkTile( ctx.fp, block );
+	const shore = shoreTile( ctx.sdf, ctx.fp, block ), walk = walkTile( ctx.fp, block );
 	// a member's square of a block raster of n texels per chunk
 	const slice = <T extends Float32Array | Uint8Array>( raster: T, n: number, m: { box: Bounds } ): T => {
 
@@ -456,7 +459,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	mark( 'anchors' );
 
 	// --- the rim: ground tile, turf skirt, bushes, trails
-	const tile = rimGroundTile( new RimLattice( sdf, grow( box, RIM_PAD ) ), box );
+	const tile = rimGroundTile( new RimLattice( sdf, grow( box, RIM_PAD ), fp ), box );
 	const rimGround = ownTexels( tile, box ).data;
 	const skirt = buildRimSkirt( sdf, tile, box );
 	mark( 'rim' );
@@ -469,7 +472,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	mark( 'trails' );
 
 	// --- the shore: the sea-level section's distance over the chunk, from the section round it
-	const shore = shoreTile( sdf, box );
+	const shore = shoreTile( sdf, fp, box );
 	mark( 'shore' );
 
 	// --- the walk tile
@@ -537,7 +540,7 @@ function anchorsIn( reach: Float32Array, box: Bounds ): Float32Array {
 // and TRAIL_REACH round it and the bushes within TRAIL_BUSH_REACH.
 function rimTrails( ctx: Setup, reach: Float32Array, box: Bounds, boxes: Bounds[] ): RimStrand[][] {
 
-	const coast = coastChains( new RimLattice( ctx.sdf, grow( box, TRAIL_REACH ) ).signs(), 1 );
+	const coast = coastChains( new RimLattice( ctx.sdf, grow( box, TRAIL_REACH ), ctx.fp ).signs(), 1 );
 	const nearBushes = pickBushes( reach, [ grow( box, TRAIL_BUSH_REACH ) ] )[ 0 ];
 	return makeRimTrails( ctx.sdf, ctx.fp, reach, coast, nearBushes, boxes );
 
@@ -557,8 +560,10 @@ function walkTile( fp: Footprint, box: Bounds ): Uint8Array {
 }
 
 // The sea-level section's signed distance over a square box's texels (SHORE_CELL), from the
-// section over the box and SHORE_PAD round it, clamped to +-LAND_REACH.
-function shoreTile( sdf: SDF, box: Bounds ): Float32Array {
+// section over the box and SHORE_PAD round it, clamped to +-LAND_REACH. The transform reads only
+// the section's sign, which the footprint gives away from the coast (`solidSide`): the island's
+// SDF is sampled only in that band, about a tenth of the section.
+function shoreTile( sdf: SDF, fp: Footprint, box: Bounds ): Float32Array {
 
 	const n = Math.round( ( box.x1 - box.x0 ) / SHORE_CELL ), pad = Math.round( SHORE_PAD / SHORE_CELL ), m = n + 2 * pad;
 	const i0 = Math.round( box.x0 / SHORE_CELL ) - pad, j0 = Math.round( box.z0 / SHORE_CELL ) - pad;
@@ -566,7 +571,12 @@ function shoreTile( sdf: SDF, box: Bounds ): Float32Array {
 	for ( let j = 0; j < m; j ++ ) {
 
 		const z = ( j0 + j + 0.5 ) * SHORE_CELL;
-		for ( let i = 0; i < m; i ++ ) section.data[ j * m + i ] = sdf( ( i0 + i + 0.5 ) * SHORE_CELL, 0, z );
+		for ( let i = 0; i < m; i ++ ) {
+
+			const x = ( i0 + i + 0.5 ) * SHORE_CELL, side = solidSide( fp, x, z );
+			section.data[ j * m + i ] = side !== 0 ? side : sdf( x, 0, z );
+
+		}
 
 	}
 	const distance = section.signedDistance().data, out = new Float32Array( n * n );
