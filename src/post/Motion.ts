@@ -73,7 +73,7 @@ export const motionUniforms = {
 };
 
 /** Reactive weights that are not per pixel: `flash`, a lightning strike's light over the whole frame
- * (the resolve trusts its history less while it is up). */
+ * (the resolve trusts its history less while it changes; set by Lightning.update). */
 export const reactiveUniforms = { flash: uniform( 0 ) };
 
 // ---- the frame's state
