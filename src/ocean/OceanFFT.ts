@@ -38,6 +38,12 @@ import { createWaveSpectrum, type SwellParams } from './OceanSpectrum.ts';
 // Derivatives and slope moments use the same filtering kernel; their mip chains retain
 // unresolved slope variance.
 // Sample a cascade at its undisplaced world xz / size.
+//
+// Weather only scales the cascades' amplitude (`weatherGain`); it never rebuilds the wave spectrum.
+// A kernel that uses `workgroupBarrier()` is dispatched by size (`computeKernel( [ n ] )` with
+// `dispatchSize` set), not by a thread count, which makes three insert an early-return bounds
+// check ahead of the barriers. A multiple-render-target pass writing the four fields measured
+// slower than four single-target passes (sky-bake frames blocked in JS), so they stay separate.
 
 const FFT_N = 256;
 const LOG2N = 8;
