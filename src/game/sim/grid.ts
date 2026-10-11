@@ -4,7 +4,8 @@ import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 // The ground grid: 0.5 m cells over the layout's bounds. A cell is walkable on the island top,
 // clear of the cliff rim, and free of bushes, shrubs and trees. Everything here is derived: the
 // island from the world's own functions, its bushes and plants from the world generator's input,
-// so a loaded game rebuilds the same grid.
+// so a loaded game rebuilds the same grid. The game's own obstacles (a palm, the storehouse) are
+// added on top by `obstruct`, from the simulation's state.
 
 const CELL = 0.5;
 /** keep this far inside the island's edge (m), so feet never hang over the rim */
@@ -33,12 +34,14 @@ export class Grid implements GridApi {
 	readonly rows: number;
 	readonly x0: number;
 	readonly z0: number;
+	/** 1 on the island top, clear of the rim, whatever grows there (shared: never written) */
+	readonly top: Uint8Array;
 	/** 1 where walkable: on the island top, clear of the rim, no bush or plant */
 	readonly open: Uint8Array;
 	/** connected walkable regions: a label per open cell, -1 elsewhere */
 	readonly region: Int32Array;
 	/** the largest region: the island's open ground, where the islanders live */
-	readonly main: number;
+	main: number;
 
 	// scratch for searches (path.ts), stamped by generation so nothing needs clearing
 	readonly g: Float64Array;
@@ -60,7 +63,8 @@ export class Grid implements GridApi {
 		this.cols = Math.round( ( b.x1 - b.x0 ) / CELL );
 		this.rows = Math.round( ( b.z1 - b.z0 ) / CELL );
 		const n = this.cols * this.rows;
-		this.open = islandMask( this.cols, this.rows, this.x0, this.z0 ).slice();
+		this.top = islandMask( this.cols, this.rows, this.x0, this.z0 );
+		this.open = this.top.slice();
 		for ( const o of [ ...input.bushes, ...input.plants ] ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
 		this.region = new Int32Array( n );
 		this.g = new Float64Array( n );
@@ -191,6 +195,14 @@ export class Grid implements GridApi {
 	}
 
 	// ------------------------------------------------------------------ blocking
+
+	/** Block the cells within r of a point (and the one under it), then label the regions again. */
+	obstruct( x: number, z: number, r: number ): void {
+
+		this.block( x, z, r );
+		this.main = this.label();
+
+	}
 
 	private block( x: number, z: number, r: number ): void {
 
