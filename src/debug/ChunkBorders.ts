@@ -1,5 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { islandSurfaceHeight, ISLAND_TOP } from '../world/WorldShapes.ts';
+import { S } from '../world/Chunks.ts';
 import type { ShoreField, WorldData } from '../world/types.ts';
 
 // A debug view of the world's chunks (src/world/Chunks.ts): every chunk's square drawn on the ground
@@ -22,7 +23,7 @@ function sample( f: ShoreField, x: number, z: number ): number {
 }
 
 /** Lines along the borders of the world's chunks ( `data.chunks` ), `side` metres each. */
-export function buildChunkBorders( data: WorldData, side = 16 ): THREE.LineSegments {
+export function buildChunkBorders( data: WorldData, side = S ): THREE.LineSegments {
 
 	// the ground under a point: the meadow's top inside the coast, the floor outside, none on the cliff
 	const ground = ( x: number, z: number ) => {
