@@ -40,8 +40,9 @@
 //   (first tier) or 3 m (second tier) of its anchor, breaking off along vertical planes in its own
 //   frame where it would reach further; the scars are cut in order of level and seed key. So the
 //   wall at a point depends only on the land's distance field within 25 m of it, bit for bit
-//   (`CliffWall`'s `area` is the box it is evaluated in, grown by 25 m), which
-//   tools/world-local/cliff.mjs checks.
+//   (`CliffWall`'s `area` is the box it is evaluated in, grown by 25 m), which the chunk checks
+//   rely on (tools/verify-world-chunks.mjs: S2's block, D1, D4); tools/verify-world-stats.mjs
+//   checks that the reach clamp trims nothing and what the octagon breaks off.
 // - Natural rock, never masonry: the two joint sets run oblique to the world's axes, no level
 //   courses or evenly spaced joints. Scar floors and roofs lie on a parting only some of the time;
 //   partings and soft beds open over a few metres and pinch out; under the meadow the wall weathers
@@ -1104,10 +1105,20 @@ export class CliffWall {
 
 	}
 
-	// the wave exposure of the column last evaluated (0 .. 1)
+	// The wave exposure of the column last evaluated (0 .. 1). `exposure` is computed only within
+	// 3 m of the coast and elsewhere still holds that of the last column there, so it depends on the
+	// order of the calls; the page's single island mesh keeps it until it is meshed per chunk (the
+	// spray zone it drives reaches 1.6 m above the water, and the columns it misses are the
+	// meadow's top). `columnExposure` is the column's own wherever it lies.
 	get exposure(): number {
 
 		return this.expo;
+
+	}
+
+	get columnExposure(): number {
+
+		return this.s < - 3 || this.s > 3 ? exposureAt( this.dist, this.cx, this.cz ) : this.expo;
 
 	}
 

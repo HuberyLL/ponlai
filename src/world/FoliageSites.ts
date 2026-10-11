@@ -14,6 +14,8 @@ import type { Bounds } from './WorldShapes.ts';
 // anchor's sky visibility. buildFoliage draws exactly these, and the rim trails and the game's
 // ground read them.
 export const BUSH_STRIDE = 15;
+// the offset of a bush's scale ( x, y, z ) in its floats
+export const BUSH_SCALE = 8;
 
 // The bushes' greens (linear RGB); a trail with no bush near takes one too.
 export const BUSH_GREENS: readonly [ number, number, number ][] = [ [ 0.065, 0.16, 0.04 ], [ 0.095, 0.19, 0.048 ], [ 0.15, 0.205, 0.046 ], [ 0.04, 0.12, 0.043 ], [ 0.18, 0.22, 0.058 ] ];

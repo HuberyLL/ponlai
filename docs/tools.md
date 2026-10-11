@@ -240,10 +240,41 @@ what these do not give (automation, A/B statistics, pass names).
   steps: the coast's solidity, elongation and share along the lattice axes, that a grown land
   equals the same steps taken one at a time through a saved land, and the lattice's margin; it
   writes a sheet of eight seeds to `artifacts/growth/shape-sheet-<label>.png`.
-- `tools/verify-world-local.mjs` (plain `node`) builds each generator case in `tools/world-local/`
-  (cliff, meadow, rim, seabed, stones) over a box whole and as 2 x 2 sub-boxes and compares them
-  bit for bit, so a chunk will build its part of the world alone; helpers in
-  `tools/world-node.mjs`, the case format in the runner's header.
+- `tools/verify-world-chunks.mjs [--seeds 1,2] [--steps 12] [--threads n] [--long] [--bench]
+  [--sheets dir]` (plain `node`; run it before captures after any change to the world's generator)
+  grows each seed's land step by step and builds every chunk of every step (`src/world/Chunks.ts`)
+  on a pool of worker threads (default min( 8, cores - 4 )). It checks that the chunks built
+  incrementally equal a scratch build in a fresh process in reverse order (D1), on pools of 1 and
+  4 workers (D2, the 15 costliest chunks), that the land does not depend on the order of its
+  pieces (D3), that only chunks in `dirtyChunks` change between steps (D4, warning when a changed
+  chunk lies more than 30 m from the changed land), and that land placed just beyond the dirty
+  bound (34.6 - 44 m from a coastal chunk, on the coast and offshore) changes nothing (D5); at
+  steps 0 and the last, the seams: the
+  island and stone meshes close up (S1), the island's shared vertices and a 2 x 2 block meshed
+  whole (S2), the floor tiles' shared points, the floor at or below -1.6 m off the land and the
+  tiles' outer sides on the open sea's lattice (S3), the turf skirt's border crossings (S4), a
+  2 x 2 block's rim ground, shore, walk texels, anchors, bushes and trails made in one pass (S5),
+  the stones' owners and their copies in the neighbours' contact sets (S6), and no buried wall
+  inland (I1). `--long` takes D1 at every step, D2 on all chunks of both seeds, the S checks at
+  every fourth step and the island's inland column range against whole columns. `--bench` keeps
+  only D4 and prints per growth piece the land field's time, the chunks rebuilt and changed,
+  their CPU time and bytes. Every run writes a chunk sheet per seed (each step's land, new piece,
+  16 m grid, dirty chunks outlined, changed chunks tinted) to `--sheets` (default
+  `artifacts/captures/world-chunks/`). The checks' definitions are in the script's header. The
+  pool's 1219 chunk builds dominate the time: the default run took 6 minutes and `--long` 14 on
+  8 threads of a machine busy with other work, `--bench` 4.
+- `tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]` (plain `node`) builds
+  every chunk of whole islands on a pool of worker threads (`buildChunk`, contact shade off) and
+  checks the statistics of the union of what they own, with the bounds the look was tuned on: the
+  meadow's anchors, tufts and flowers per m^2 against M2 (grown islands summed, 5 %); the rim's
+  trail patches (1 - 9 strands, no node below a quarter of its root's height, bare runs of median
+  0.4 - 4 m and at most 4 m), bushes, strands and hanging length against M3 (10 %); the stones'
+  overlaps, crowns and reach per island, and over seeds 1 - 6 at steps 0, 8, 16 their classes and
+  large sizes per 100 m of coast against today's (20 %) and their gathering below the scars; the
+  cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5 m, 3 m) and none
+  breaks off more than 0.6 m of rock above y -1 where its reach ends it. The
+  chunk checks prove seams and locality; this probe proves the chunked world keeps its numbers.
+  The default run takes about a minute on 8 threads.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and

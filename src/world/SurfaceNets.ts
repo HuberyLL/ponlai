@@ -1,10 +1,48 @@
 // Naive surface nets: one vertex per sign-changing voxel (mean of its edge crossings), one quad
 // per sign-changing grid edge. Normals come from the SDF gradient (not the faceted mesh), a cheap
 // SDF ambient occlusion is baked per vertex, plus an optional per-vertex value from `sdf.tint`,
-// four from `sdf.detail` and three from `sdf.detail2`, and the mesh's mean curvature (convex arrises > 0, hollows < 0).
+// four from `sdf.detail` and three from `sdf.detail2`, and the mesh's mean curvature (convex
+// arrises > 0, hollows < 0).
 //
-// surfaceNets( sdf, { min: [x,y,z], max: [x,y,z], voxel, ao } )
-//   -> { positions, normals, ao, tint, curv: Float32Array, indices: Uint32Array }
+// surfaceNets( sdf, { min: [x,y,z], max: [x,y,z], voxel, ao, ... } )
+//   -> { positions, normals, ao, tint, curv, detail?, detail2?: Float32Array, indices: Uint32Array }
+//
+// Chunk mode (`own`): the island is meshed per 16 m chunk, and two neighbouring chunks must meet
+// with no crack and no shading seam (chunk design, sections 3.3 and 5.3).
+// - The lattice is world-anchored: point ( i, j, k ) lies at ( i voxel, min.y + j voxel, k voxel ),
+//   with a voxel exact in binary (0.125 m), so every chunk evaluates the same floats at a shared
+//   point. Only min.y and max.y are read then; the island passes ISLAND_BOTTOM + 0.5 (-5.1), which
+//   leaves out the bottom face nobody sees: the walls end open below the sea floor.
+// - `own: [ i0, k0, i1, k1 ]` are the owned lattice columns, half-open ( i0 <= i < i1, likewise k ).
+//   A quad belongs to the chunk owning the lower lattice endpoint of its sign-changing edge (the
+//   edge's base point; every edge runs in +x, +y or +z), so each quad has exactly one owner.
+// - The call samples the columns [ i0 - apron, i1 + apron ] and builds the complete mesh there.
+//   An owned quad uses cells down to i0 - 1; mean curvature reads a vertex's 1-ring and, through
+//   the smoothing pass, its neighbours' 1-rings: cells down to i0 - 3, whose low quads are built
+//   from lattice point i0 - 2. So `apron` is 3 at least (2 would do on the high side; one number
+//   keeps the window symmetric).
+// - Positions, normals, AO, tint and detail are functions of the world position (positions from the
+//   global lattice index, the rest from the SDF, which must not depend on the window near the
+//   chunk): identical in every chunk. Curvature sums floats over triangles: the triangles are
+//   visited in lattice order ( k, j, i, then the x, y, z edge ) in every window, which keeps the
+//   relative order of any two triangles, so the sums match bit for bit too.
+// - The result keeps the owned quads (triangles in lattice order) and the vertices they use (in
+//   cell order). A vertex on a border is emitted by every chunk whose quads use it, bit-identical.
+// - Apron vertices that no owned quad uses get positions and normals (curvature reads them) but
+//   no AO, tint or detail: the AO probes are most of a vertex's cost.
+// - Every chunk mesh carries the same attributes, even an empty one: `detail` and `detail2` are
+//   always present (zero when the SDF has none), so no chunk asks for another pipeline variant.
+//
+// `columnRange( x, z )` (any call; the island's rule is `islandColumnRange` in WorldShapes.ts): a
+// column for which it returns [ lo, hi ] samples the field only on the lattice points from just
+// below lo to just above hi and fills the rest with a constant of the right sign: inside below,
+// outside above. The caller promises that the field has no sign change outside that range, in this
+// column or within a voxel of it, so the mesh is the same (tools/verify-world-chunks.mjs compares
+// every chunk with and without). It saves about a tenth of an inland chunk's time, not the nine
+// tenths the design estimated: far from the coast the wall's SDF already costs little per sample
+// (CliffWall's column cache), and the vertices' normals and AO dominate.
+//
+// The call without `own` (the page's single island mesh) is unchanged: its lattice starts at min.
 
 import type { SDF, MeshData } from './types.ts';
 
@@ -27,7 +65,19 @@ export interface NetsOptions {
 	// Cells for which this returns true (asked with the cell's mean crossing) place their vertex
 	// by dual contouring instead: it then sits on the shape's sharp edges and corners.
 	sharpen?: ( x: number, y: number, z: number ) => boolean;
+	// Chunk mode: the owned lattice columns [ i0, k0, i1, k1 ] (half-open) of the world-anchored
+	// lattice; min and max then give only the y range (see the header).
+	own?: readonly [ number, number, number, number ];
+	// lattice columns sampled around the owned ones in chunk mode (3 at least)
+	apron?: number;
+	// A column ( x, z ) for which this returns [ lo, hi ] samples only that y range (see the
+	// header). The returned array is read at once, so it may be reused between calls.
+	columnRange?: ( x: number, z: number ) => readonly [ number, number ] | null;
 }
+
+// The value written for a column's lattice points outside its sampled range: only its sign is
+// meant to be read (a mesh that used it in a crossing would show a step a metre deep).
+const COLUMN_FILL = 1;
 
 // Dual contouring's vertex (after Ju et al., "Dual Contouring of Hermite Data", SIGGRAPH 2002):
 // the point nearest to the tangent planes at the cell's edge crossings, pulled weakly toward
@@ -68,11 +118,25 @@ function placeSharp( n: number, px: Float64Array, py: Float64Array, pz: Float64A
 
 }
 
-export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf, contactVisibility, normalStep = voxel * 0.5, sharpen }: NetsOptions ): MeshData {
+export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf, contactVisibility, normalStep = voxel * 0.5, sharpen, own, apron = 3, columnRange }: NetsOptions ): MeshData {
 
-	const nx = Math.ceil( ( max[ 0 ] - min[ 0 ] ) / voxel );
+	// This call's lattice point ( i, j, k ) lies at ( ox + ( io + i ) voxel, min.y + j voxel,
+	// oz + ( ko + k ) voxel ): at min without `own` (io = ko = 0 adds exactly nothing, so that
+	// mesh keeps its floats), on the world-anchored lattice with it.
+	let ox = min[ 0 ], oz = min[ 2 ], io = 0, ko = 0, nx: number, nz: number;
+	if ( own ) {
+
+		ox = 0; oz = 0;
+		io = own[ 0 ] - apron; ko = own[ 1 ] - apron;
+		nx = own[ 2 ] - own[ 0 ] + 2 * apron; nz = own[ 3 ] - own[ 1 ] + 2 * apron;
+
+	} else {
+
+		nx = Math.ceil( ( max[ 0 ] - min[ 0 ] ) / voxel );
+		nz = Math.ceil( ( max[ 2 ] - min[ 2 ] ) / voxel );
+
+	}
 	const ny = Math.ceil( ( max[ 1 ] - min[ 1 ] ) / voxel );
-	const nz = Math.ceil( ( max[ 2 ] - min[ 2 ] ) / voxel );
 	const sx = nx + 1, sy = ny + 1, sz = nz + 1;
 	const sxy = sx * sy;
 
@@ -80,11 +144,23 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 	const field = new Float32Array( sx * sy * sz );
 	for ( let k = 0; k < sz; k ++ ) {
 
-		const z = min[ 2 ] + k * voxel;
+		const z = oz + ( ko + k ) * voxel;
 		for ( let i = 0; i < sx; i ++ ) {
 
-			const x = min[ 0 ] + i * voxel;
-			for ( let j = 0, p = k * sxy + i; j < sy; j ++, p += sx ) field[ p ] = sdf( x, min[ 1 ] + j * voxel, z );
+			const x = ox + ( io + i ) * voxel;
+			let j0 = 0, j1 = ny;
+			const range = columnRange?.( x, z );
+			if ( range ) {
+
+				j0 = Math.min( Math.max( Math.floor( ( range[ 0 ] - min[ 1 ] ) / voxel ), 0 ), sy );
+				j1 = Math.min( Math.ceil( ( range[ 1 ] - min[ 1 ] ) / voxel ), ny );
+
+			}
+			for ( let j = 0, p = k * sxy + i; j < sy; j ++, p += sx ) {
+
+				field[ p ] = j < j0 ? - COLUMN_FILL : j > j1 ? COLUMN_FILL : sdf( x, min[ 1 ] + j * voxel, z );
+
+			}
 
 		}
 
@@ -131,7 +207,7 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 		}
 
 		let vx = ax / n, vy = ay / n, vz = az / n;
-		const wx = min[ 0 ] + ( i + vx ) * voxel, wy = min[ 1 ] + ( j + vy ) * voxel, wz = min[ 2 ] + ( k + vz ) * voxel;
+		const wx = ox + ( io + i + vx ) * voxel, wy = min[ 1 ] + ( j + vy ) * voxel, wz = oz + ( ko + k + vz ) * voxel;
 		if ( sharpen && sharpen( wx, wy, wz ) ) {
 
 			// tangent planes at the crossings, from the field's gradient (tetrahedral differences)
@@ -140,7 +216,7 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 				let slot = planes.get( edgeOf[ c ] );
 				if ( slot === undefined ) {
 
-					const x = min[ 0 ] + ( i + qx[ c ] ) * voxel, y = min[ 1 ] + ( j + qy[ c ] ) * voxel, z = min[ 2 ] + ( k + qz[ c ] ) * voxel;
+					const x = ox + ( io + i + qx[ c ] ) * voxel, y = min[ 1 ] + ( j + qy[ c ] ) * voxel, z = oz + ( ko + k + qz[ c ] ) * voxel;
 					const f0 = sdf( x + h, y - h, z - h ), f1 = sdf( x - h, y - h, z + h ), f2 = sdf( x - h, y + h, z - h ), f3 = sdf( x + h, y + h, z + h );
 					const gx = f0 - f1 - f2 + f3, gy = - f0 - f1 + f2 + f3, gz = - f0 + f1 - f2 + f3;
 					const l = Math.hypot( gx, gy, gz ) || 1;
@@ -159,7 +235,7 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 		}
 
 		cellVert[ ( k * ny + j ) * nx + i ] = pos.length / 3;
-		pos.push( min[ 0 ] + ( i + vx ) * voxel, min[ 1 ] + ( j + vy ) * voxel, min[ 2 ] + ( k + vz ) * voxel );
+		pos.push( ox + ( io + i + vx ) * voxel, min[ 1 ] + ( j + vy ) * voxel, oz + ( ko + k + vz ) * voxel );
 
 	}
 
@@ -188,10 +264,14 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 
 	};
 
+	// In chunk mode `idx` is the complete apron mesh (curvature reads it) and `ownIdx` the owned
+	// quads' triangles, both in lattice order.
+	const ownIdx: number[] = [];
 	for ( let k = 0; k < sz; k ++ ) for ( let j = 0; j < sy; j ++ ) for ( let i = 0; i < sx; i ++ ) {
 
 		const p = k * sxy + j * sx + i;
 		const inside = field[ p ] < 0;
+		const first = idx.length;
 		// +x edge: cells around it in the y-z plane
 		if ( i < nx && j > 0 && k > 0 && j < sy - 1 && k < sz - 1 && inside !== ( field[ p + 1 ] < 0 ) ) {
 
@@ -211,15 +291,34 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 
 		}
 
+		// the three edges start at this point: its column owns their quads
+		if ( own && io + i >= own[ 0 ] && io + i < own[ 2 ] && ko + k >= own[ 1 ] && ko + k < own[ 3 ] ) {
+
+			for ( let t = first; t < idx.length; t ++ ) ownIdx.push( idx[ t ] );
+
+		}
+
 	}
 
 	const positions = new Float32Array( pos );
 	const vCount = positions.length / 3;
+	const indices = new Uint32Array( idx );
+	// chunk mode: each vertex's index in the result (in cell order), - 1 if no owned quad uses it
+	let remap: Int32Array | undefined, outCount = vCount;
+	if ( own ) {
+
+		remap = new Int32Array( vCount ).fill( - 1 );
+		for ( const v of ownIdx ) remap[ v ] = 0;
+		outCount = 0;
+		for ( let v = 0; v < vCount; v ++ ) if ( remap[ v ] === 0 ) remap[ v ] = outCount ++; else remap[ v ] = - 1;
+
+	}
+
 	const normals = new Float32Array( vCount * 3 );
-	const occl = new Float32Array( vCount );
-	const tint = new Float32Array( vCount ).fill( 0.5 );
-	const detail = sdf.detail ? new Float32Array( vCount * 4 ) : undefined;
-	const detail2 = sdf.detail2 ? new Float32Array( vCount * 3 ) : undefined;
+	const occl = new Float32Array( outCount );
+	const tint = new Float32Array( outCount ).fill( 0.5 );
+	const detail = sdf.detail || own ? new Float32Array( outCount * 4 ) : undefined;
+	const detail2 = sdf.detail2 || own ? new Float32Array( outCount * 3 ) : undefined;
 	const e = normalStep;
 	for ( let v = 0; v < vCount; v ++ ) {
 
@@ -230,6 +329,10 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 		const l = Math.hypot( gx, gy, gz ) || 1;
 		gx /= l; gy /= l; gz /= l;
 		normals[ v * 3 ] = gx; normals[ v * 3 + 1 ] = gy; normals[ v * 3 + 2 ] = gz;
+
+		// an apron vertex only lends its position and normal to the curvature
+		const o = remap ? remap[ v ] : v;
+		if ( o < 0 ) continue;
 
 		if ( ao ) {
 
@@ -245,21 +348,40 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 
 			}
 
-			occl[ v ] = Math.min( Math.max( 1 - occ * 0.42, 0 ), 1 );
+			occl[ o ] = Math.min( Math.max( 1 - occ * 0.42, 0 ), 1 );
 			// Keep the stronger result rather than multiplying overlapping estimates of the
 			// same contact. Both feed material AO, so direct sunlight remains unaffected.
-			occl[ v ] = Math.min( occl[ v ], visible );
+			occl[ o ] = Math.min( occl[ o ], visible );
 
-		} else occl[ v ] = 1;
+		} else occl[ o ] = 1;
 
-		if ( sdf.tint ) tint[ v ] = sdf.tint( x - gx * voxel * 0.5, y - gy * voxel * 0.5, z - gz * voxel * 0.5 );
-		if ( detail ) sdf.detail!( x, y, z, detail, v * 4 );
-		if ( detail2 ) sdf.detail2!( x, y, z, detail2, v * 3 );
+		if ( sdf.tint ) tint[ o ] = sdf.tint( x - gx * voxel * 0.5, y - gy * voxel * 0.5, z - gz * voxel * 0.5 );
+		if ( sdf.detail ) sdf.detail( x, y, z, detail!, o * 4 );
+		if ( sdf.detail2 ) sdf.detail2( x, y, z, detail2!, o * 3 );
 
 	}
 
-	const indices = new Uint32Array( idx );
-	return { positions, normals, ao: occl, tint, curv: meanCurvature( positions, normals, indices ), detail, detail2, indices };
+	const curv = meanCurvature( positions, normals, indices );
+	if ( ! remap ) return { positions, normals, ao: occl, tint, curv, detail, detail2, indices };
+
+	const keptPositions = new Float32Array( outCount * 3 ), keptNormals = new Float32Array( outCount * 3 );
+	const keptCurv = new Float32Array( outCount );
+	for ( let v = 0; v < vCount; v ++ ) {
+
+		const o = remap[ v ];
+		if ( o < 0 ) continue;
+		for ( let c = 0; c < 3; c ++ ) {
+
+			keptPositions[ o * 3 + c ] = positions[ v * 3 + c ];
+			keptNormals[ o * 3 + c ] = normals[ v * 3 + c ];
+
+		}
+		keptCurv[ o ] = curv[ v ];
+
+	}
+	const keptIndices = new Uint32Array( ownIdx.length );
+	for ( let t = 0; t < ownIdx.length; t ++ ) keptIndices[ t ] = remap[ ownIdx[ t ] ];
+	return { positions: keptPositions, normals: keptNormals, ao: occl, tint, curv: keptCurv, detail, detail2, indices: keptIndices };
 
 }
 

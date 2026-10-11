@@ -5,10 +5,11 @@ import { LAND_REACH, type Footprint, type HeightFn } from './WorldShapes.ts';
 // WorldShapes.ts) and world-space noise, and gives way to the open sea along an irregular edge.
 // Everything here is a function of world position and the land within LAND_REACH of it, so a
 // stretch of floor stays as it was wherever the land grows farther away. The footprint's fine field
-// covers the land and LAND_REACH + 4 m round it, so the page and a chunk built over its own window
-// read the same distance but for its last bits, which follow the fine field's origin: the floor's
-// float32 vertices round them away (tools/world-local/seabed.mjs), while a cliff scar's choice can
-// still turn on them, so the wall is not yet chunk-exact.
+// covers the land and LAND_REACH + 4 m round it, so the page and a footprint built over another
+// window read the same distance but for its last bits, which follow the fine field's origin: the
+// floor's float32 vertices round them away, while a cliff scar's
+// choice can still turn on them. The chunks (Chunks.ts) read one land field by world lattice index
+// instead, so every chunk reads the same bits at a point.
 
 // ------------------------------------------------------------------ the open sea
 

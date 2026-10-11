@@ -13,9 +13,10 @@ import { contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclu
 export const SEABED_TILE = 16;
 // vertices along a tile's side
 export const TILE_SIDE = SEABED_TILE / FLOOR_STEP + 1;
-// A cell gets a tile when land lies this close to it (m): LAND_REACH, and 2 m for the footprint's
-// rounded corners and raster. Farther out the floor is the open sea's, which the far floor draws.
-const TILE_REACH = LAND_REACH + 2;
+// A cell gets a tile (and a chunk exists, Chunks.ts) when land lies this close to it (m):
+// LAND_REACH, and 2 m for the footprint's rounded corners and raster. Farther out the floor is the
+// open sea's, which the far floor draws.
+export const TILE_REACH = LAND_REACH + 2;
 // The far floor covers the land lattice and 128 m round it: this far from the world's centre (m).
 export const FAR_HALF = GROWTH.half + 128;
 
@@ -107,9 +108,9 @@ export function nearLandCells( land: LandLattice ): [ number, number ][] {
 
 }
 
-// Whether the land covers cell ( ci, cj ) and 2 m round it: its floor lies inside the island's
-// solid, never seen, and its neighbours' borders with it too.
-function underLand( land: LandLattice, ci: number, cj: number ): boolean {
+/** Whether the land covers cell ( ci, cj ) and 2 m round it: its floor lies inside the island's
+ * solid, never seen, and its neighbours' borders with it too. */
+export function underLand( land: LandLattice, ci: number, cj: number ): boolean {
 
 	const cell = GROWTH.cell, X0 = - GROWTH.half, S = SEABED_TILE, m = 2;
 	const i0 = Math.floor( ( ci * S - m - X0 ) / cell ), i1 = Math.ceil( ( ci * S + S + m - X0 ) / cell );

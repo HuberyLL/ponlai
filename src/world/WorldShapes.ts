@@ -20,11 +20,12 @@ export interface Bounds { x0: number; z0: number; x1: number; z1: number }
 const grow = ( b: Bounds, m: number ): Bounds => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
 
 export interface Footprint {
-	// the footprint's corners rounded, at 0.08 m over its window
-	fine: Field2D;
-	// the land lattice's own signed distance (0.25 m), over the whole lattice
-	coarse: Field2D;
-	// the land's box
+	// the footprint's corners rounded, at 0.08 m over its window (the page's footprint; a chunk's,
+	// Chunks.ts, holds its window of the land field instead)
+	fine?: Field2D;
+	// the land lattice's own signed distance (0.25 m), over the whole lattice (likewise)
+	coarse?: Field2D;
+	// the land's box (a chunk's: its window)
 	bounds: Bounds;
 	dist( x: number, z: number ): number;
 }
@@ -149,8 +150,11 @@ export function islandSurfaceHeight( x: number, z: number ): number {
 
 // The island block: the flat meadow plateau inside a weathered sea cliff (Cliff.ts). Everything
 // derives from the footprint, so a grown island gets the same kind of coast. `area` is the box the
-// SDF is evaluated in, grown by 25 m (by default the whole land's).
-export function makeIslandSDF( fp: Footprint, area: Bounds = grow( fp.bounds, 25 ) ): SDF {
+// SDF is evaluated in, grown by 25 m (by default the whole land's). `local` makes every value a
+// function of the point alone, as chunk meshes need (their neighbours evaluate the same points in
+// another order); without it the meadow's top keeps the order-dependent exposure of the page's
+// single island mesh (CliffWall.exposure), so that mesh stays as it was until it is chunked.
+export function makeIslandSDF( fp: Footprint, area: Bounds = grow( fp.bounds, 25 ), { local = false } = {} ): SDF {
 
 	const top = islandSurfaceHeight;
 	const wall = new CliffWall( ( x, z ) => fp.dist( x, z ), coastWobble, top, area );
@@ -191,7 +195,7 @@ export function makeIslandSDF( fp: Footprint, area: Bounds = grow( fp.bounds, 25
 		}
 		wall.at( x, y, z, true );
 		out[ o ] = shelter;
-		out[ o + 1 ] = wall.exposure;
+		out[ o + 1 ] = local ? wall.columnExposure : wall.exposure;
 		out[ o + 2 ] = wall.owner >= 0 && wall.scars[ wall.owner ].kind === 'pocket' ? 1 : 0;
 
 	};
@@ -209,6 +213,25 @@ export function cliffSharpCells( fp: Footprint ): ( x: number, y: number, z: num
 		if ( y < - 1.8 ) return false;
 		const d = fp.dist( x, z );
 		return d > - 3.4 && d < 3.2 && ( d > - 1.4 || y < islandSurfaceHeight( x, z ) - 0.08 );
+
+	};
+
+}
+
+// The island mesh's column range (SurfaceNets.ts `columnRange`): a column more than 3.5 m inside
+// the coast holds no wall (the cliff's scars and ledges stay within 3.4 m of it, cliffSharpCells),
+// only the meadow's top, so the mesh samples it from 0.35 m below that top to 0.6 m above.
+// tools/verify-world-chunks.mjs --long checks that every chunk comes out bit-identical with and
+// without.
+export function islandColumnRange( fp: Footprint ): ( x: number, z: number ) => readonly [ number, number ] | null {
+
+	const range: [ number, number ] = [ 0, 0 ];
+	return ( x, z ) => {
+
+		if ( fp.dist( x, z ) >= - 3.5 ) return null;
+		const top = islandSurfaceHeight( x, z );
+		range[ 0 ] = top - 0.35; range[ 1 ] = top + 0.6;
+		return range;
 
 	};
 

@@ -32,7 +32,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   run as pending.
 - `tools/verify-*.mjs` are regression probes (GPU ones take the lock; `verify-day-cycle`,
   `verify-weather-state`, `verify-wind`, `verify-game`, `verify-growth-shape`,
-  `verify-world-local` are plain `node`): see `docs/tools.md`.
+  `verify-world-chunks`, `verify-world-stats` are plain `node`): see `docs/tools.md`.
+- After any change to the world's generator, run `node tools/verify-world-chunks.mjs` before
+  captures.
 - `node tools/capture-growth.mjs --base url [--cand url]` captures two pages side by side over
   seeds, growth steps and six views, with region statistics (`docs/tools.md`).
 
@@ -48,6 +50,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `IslandGround.ts`) and the free flight.
 - `src/world/`: the island generated in Web Workers (`worldWorker.ts`, cached by `WorldCache.ts`)
   from the grown land (`IslandGrowth.ts`: the land lattice grown one piece at a time): the
+  world built one 16 m chunk at a time from its window of the land field (`Chunks.ts`), the
   footprint, SDF shapes and surface nets (`WorldShapes.ts`), the cliffs (`Cliff.ts`), the
   submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as tiles by
   `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`, `RimSkirt.ts`), the
@@ -69,8 +72,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/game/`: the game behind `?game` (`Game.ts`): `sim/` is the headless simulation (no three.js
   or DOM; node runs it by stripping types), `view/` draws the islanders.
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout.
-- `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); `world-local/` holds
-  the locality cases `verify-world-local.mjs` runs, on the node helpers in `world-node.mjs`.
+- `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the world's chunk
+  checks (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node
+  helpers in `world-node.mjs`.
 
 ## Rules for every change
 
@@ -87,11 +91,15 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   land on the page (the views, the camera's limits, the shore and rain fields, the reflection's
   box, the sea fog's clearing, the walking loop, the game's grid). Generation stays deterministic
   whatever the thread count.
-- The world will be built in chunks: what a generator makes in a box depends only on the land
-  within a fixed distance of it, bit for bit, so a box builds exactly what the whole island builds
-  there (`tools/verify-world-local.mjs`). The meadow, rim, sea floor and stones are local now; the
-  cliff is, given the same land distance, which a chunk's footprint still reads with other last
-  bits (`Bathymetry.ts`). Until the chunks come, a growth step regenerates the whole world.
+- The world is built in chunks (`Chunks.ts`): a chunk's content is a function of its window of the
+  land field (the chunk grown by 32 m); a new piece rebuilds the chunks whose window meets it
+  grown by 2 m (`dirtyChunks`). For most kinds the reach stays below 34 m; the stones, trails and
+  shore read farther in principle, and D4 / D5 (`tools/verify-world-chunks.mjs`) measure that
+  nothing outside the dirty set changes. A chunk built alone, in a block or on any thread equals
+  itself. Data on a chunk border must be bit-identical in both chunks: lattices are world-anchored,
+  scars are cut in canonical order, curvature comes from the apron, and a chunk's own triangles
+  never go through `computeVertexNormals`. The page does not use the chunks yet: a growth step
+  regenerates the whole world.
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High is the reference image; every default in the modules is high's. A load knob is read
   once when materials and the frame graph are built, so a change of tier reloads the page.
