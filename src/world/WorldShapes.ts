@@ -1,6 +1,17 @@
 // The island's solid geometry as signed distance functions (metres, y up, sea level at 0).
 // Everything here runs in the mesh worker: the island block, the submerged
 // rocks, the seabed height and the shoreline distance at sea level.
+//
+// The island must be able to grow by more tiles, so everything here is generic: the footprint, the
+// cliffs, the shelf and its stones derive from the tile layout, the island's SDF and noise fields
+// with fixed seeds (hashes of position, or random streams that draw a fixed count per anchor),
+// never from coordinates placed by hand, and counts follow the measured coast length or area.
+// Keep the tile layout and the flat central plateau: natural contour, slope and weathering belong
+// to the outer rim and the cliffs (Cliff.ts). Offshore stones stay submerged as patchy seabed
+// detail, every crown below -1.30 m (makeRocks): no exposed sea stacks or reefs. Fallen blocks
+// gather below the cliff's recent scars and are walked out from the coast until their traced
+// outline clears the island's solid, so they rest against the underwater toe wherever it runs;
+// other stones keep a wider berth.
 
 import { Field2D, roundCorners } from './Field2D.ts';
 import { noise3, fbm2, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';

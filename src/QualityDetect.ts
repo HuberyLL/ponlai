@@ -7,7 +7,8 @@ import { renderPixelRatio } from './post/RenderScale.ts';
 // interval with headroom. The choice is remembered (localStorage), with the GPU adapter it was made
 // on; it is measured again only on request (the GUI's re-detect, `?autoQuality=detect`) or when the
 // adapter changes. A choice below high reloads the page into that tier (the tiers differ in their
-// materials and frame graph).
+// materials and frame graph). The GUI's Performance folder shows how the tier was chosen and the
+// numbers behind it.
 //
 // It never switches tier while the scene is paused, under `?quality`, or in an automated browser
 // (captures, profiles and probes keep the default unless they ask: `autoQuality=detect`), so their

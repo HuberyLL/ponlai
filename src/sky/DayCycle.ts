@@ -1,5 +1,21 @@
 import { Matrix3, Vector3 } from 'three/webgpu';
 
+// The day cycle: authored, not astronomical. One dominant key light (the sun by day, the moon by
+// night) drives terrain, characters, water, caustics and every shadow map; a sun/moon handoff
+// passes through zero direct light: the sun's key fades as its drawn disk sinks below the horizon,
+// and only then turns toward the moon (HANDOFF_TOP). The sun and moon are drawn at twice
+// their true size (equal to each other); shadows and glints use the true sun. A low sun's key stays
+// golden orange: the optical depth that sets its hue is capped, while its brightness still follows
+// the full extinction (Sky.ts `capSunHue`). The sky, sun, moon, stars, key light and grade follow
+// the clock every frame.
+//
+// The exposure only rises from afternoon into night and holds from the end of the blue hour (about
+// -7 degrees) on, higher than the night sky was tuned for, so the island reads by moonlight and
+// starlight. The night ambient rises as the sun's skylight fades after sunset, so twilight is never
+// darker than the night; the night sky's own light (stars, airglow, moon disk, the sky's night
+// floor, clouds) scales back to keep its tuned look in deep night (Sky.track). The night is
+// art-directed, not a simulation of the eye's night vision (docs/art-direction.md).
+
 export const DAY_PRESETS = {
 	'dawn': 5.35,
 	'sunrise': 6.15,

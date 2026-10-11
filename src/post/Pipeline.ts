@@ -37,6 +37,30 @@ import type { Rain } from '../weather/Rain.ts';
 // the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling, then
 // contrast-adaptive sharpening) to the screen instead, and the grain is added there, at display
 // pixels.
+//
+// Rules (the look itself is in docs/art-direction.md):
+// - Passes in `this.passes` are resized to the render by `sizeRtt`. The sea fog's reduced targets
+//   are sized by `AerialPerspective.setSize` and its bank map has a fixed size: keep new reduced or
+//   fixed passes out of that list. The last pass into `sceneRT` (the rain) discards its samples
+//   through a hook on the backend's command encoder (three r186 opens one encoder per render
+//   pass); a pass added after it that reads `sceneRT`'s samples or depth must move the discard.
+// - The water cannot sample the target it draws into: it reads `opaqueRT` and `depthRT` (sample 0,
+//   and the farthest sample for what lies behind the sea at an edge pixel). Post passes read
+//   `surfaceRT`, the nearest surface's depth with the sea's included. Multisampled depth is read
+//   with `textureLoad`, one sample at a time (the sample index in its level argument);
+//   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
+// - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
+//   come in as uniforms.
+// - The tone curve and its grade come first; each curve carries its own grade. The night keeps
+//   PBR Neutral's look with its grade whichever curve is chosen, crossfading as the sun sets (from
+//   the horizon to about -3 degrees, so twilight is no darker than under PBR Neutral).
+// - The look is a layer after the curve and grade, never baked into the lighting or the curve;
+//   every parameter is in the GUI. It fades out with the night, its glow, golden highlights and
+//   lift follow the weather's direct sunlight, and only part of its colour holds under a closed
+//   sky, so bad weather stays dimmer and greyer than a clear day.
+// - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a
+//   blurred sky reads as a low backdrop and turns stars into bokeh discs. Rain drops follow its
+//   focus (Rain.ts).
 
 /** The frame graph's structural choices, fixed when the page loads (the quality tier sets them;
  * the defaults are today's high). `?post=legacy` restores the graph before they were introduced,

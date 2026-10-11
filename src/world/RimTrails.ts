@@ -6,6 +6,14 @@ import type { Footprint } from './WorldShapes.ts';
 import { VEGETATION_STRIDE } from './types.ts';
 import type { RimStrand, SDF } from './types.ts';
 
+// The branches hanging over the upper rim (drawn by RimFoliage.ts). Rules (the look is in
+// docs/art-direction.md): every strand is rooted in the meadow or a top shrub, never on the cliff
+// face. They grow in clumped patches of one to nine strands with runs of bare stone between of
+// 0.4-4 m, measured along the winding coast (a sparse patch breaks any longer run), with a long
+// tail of strands that wander and fork down to 1.5-2.6 m, leaves shrinking toward the tips, and a
+// mounded leaf clump over each patch's lip. The lowest quarter of the cliff above the sea stays
+// bare. The rim bushes' random stream (FoliageSites) also places these trails.
+
 type Point = [ number, number, number ];
 
 function normalAt( sdf: SDF, x: number, y: number, z: number ): Point {

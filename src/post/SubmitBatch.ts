@@ -54,6 +54,13 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // path), at runtime, for an A/B in one page; the URL option `submits=each` sets it at load, and
 // `submitBatch=hold,wait,idle` overrides the policy below (for display A/Bs). Either way the
 // tracking wrappers stay installed, so their JS cost shows only against a build without them.
+//
+// For other code: the wrappers on the device's, queue's and encoders' methods are installed when
+// this module loads, before the renderer. Raw WebGPU work outside three goes through them; a new
+// kind of queue operation that must not overtake held command buffers needs a flush here, and a
+// buffer a new encoder method reads must join the tracking, or a write may overtake a held command
+// buffer that reads it. A profiler or tool that times the queue's calls wraps the natives under
+// the batching (`QUEUE_NATIVES` on the queue), not `queue.submit`, or it times them twice.
 
 // command buffers held at most, the longest the oldest one waits (ms of the main thread's time,
 // checked as three submits and writes), and the pause after which a command buffer goes at once

@@ -26,6 +26,18 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
+// The sky: atmosphere, clouds, night sky and the baked environment. One cloud field feeds the
+// visible sky, water reflections, environment lighting and cloud shadows.
+//
+// Only the reflection panorama, environment and irradiance cross-fade between bakes. A periodic
+// bake on a running clock spreads over frames: its panoramas and irradiance in the frame that asks
+// for it, then the environment's PMREM conversion and GGX filters at most four render passes a
+// frame, published (with the same products as a whole bake) a few frames later. Explicit bakes
+// (presets, seeks, weather jumps, the first bake) and any bake while the scene clock is paused run
+// whole, so paused frames stay exact. The spread drives three's `PMREMGenerator` private steps
+// (`_setSizeFromTexture`, `_init`, `_textureToCubeUV`, `_applyGGXFilter`, `_setViewport`): re-check
+// them on a three upgrade; without them it falls back to `fromEquirectangular`.
+
 // Baked products. Directions, colours, the grade and the clouds themselves are evaluated every
 // frame; only these slower reflection, environment and irradiance products cross-fade. The
 // environment's two atlases are kept apart (Sky.environments), so a tier may refresh it on only
