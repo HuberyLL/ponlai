@@ -436,6 +436,8 @@ installVegetationPrepass( scene, [ grass, foliage, rimFoliage, plants ] );
 
 	}
 	sunShadow.setCasters( casters );
+	// the island's terrain is a closed solid: it casts its front faces (SunShadow)
+	sunShadow.castFrontFaces( world.group );
 
 }
 // the camera grabs the island's ground and keeps its pivot over the island
