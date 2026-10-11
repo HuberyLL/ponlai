@@ -170,6 +170,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   pass. A kernel with `workgroupBarrier()` is dispatched by size, not by a thread count
   (`OceanFFT.ts`). A `Fn( ... ).setLayout( ... )` helper that reads uniforms can be emitted with
   another kernel's uniform names when two compute kernels that use it are built (r186).
+- A storage buffer cannot grow in place (a larger array fails its `writeBuffer`). A new
+  `StorageBufferAttribute` as each reading storage node's `value` takes new bind groups and no
+  pipeline, compute or render: the shaders declare runtime-sized arrays (r186,
+  `tools/verify-storage-realloc.mjs`).
 - A 16-bit index is copied into a new 32-bit array when its GPU buffer is created, and the copy is
   uploaded from then on (r186): an index rewritten in place must be a `Uint32Array`. Leave
   attributes that change once per event at static usage with update ranges: `DynamicDrawUsage`
