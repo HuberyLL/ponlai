@@ -22,6 +22,14 @@ import type { RGB } from './Props.ts';
 // (VegetationShadow.ts). The geometry is in world space (the mesh sits at the origin), as the
 // wind field is sampled at world positions. Its top stays below the island's tallest trees, inside
 // the sea's reflection box and the sun shadow's casters (Water.ts, SunShadow.ts).
+//
+// Every palm draws with one material (`palmMaterial`), kept for the page's life: what differs
+// between palms (its root, its crown, its coconut count) reaches the shader as per-object uniforms
+// rather than as constants. With a material of its own, a loaded game's palm built its shaders and
+// its two pipelines (the scene's pass and the sun's map) in the frame it first drew, as the old
+// view's palm had released them: about 20 ms of script, and a frame of about 0.35 s on a cold shader
+// cache. The game compiles a sample palm with the props at start and keeps it (GameView "First
+// draws"), so no palm builds a pipeline in a frame.
 
 const TRUNK_HEIGHT = 2.9;
 const TRUNK_SEGMENTS = 9;
@@ -166,39 +174,57 @@ function palmGeometry( palm: PalmState, ground: number ): PalmShape {
 
 }
 
+/** What differs between palms, read by the shared material per draw (`palmMaterial`). */
+interface PalmPlace { root: THREE.Vector3; crown: THREE.Vector3; coconuts: number }
+
+let material: THREE.MeshStandardNodeMaterial | null = null;
+
+/** The one material every palm draws with (see the header): its root, crown and coconut count
+ * are per-object uniforms, read from the mesh's `userData.palm` (PalmPlace) as it draws. */
+function palmMaterial(): THREE.MeshStandardNodeMaterial {
+
+	if ( material ) return material;
+	const m = material = propMaterial( 'palm', THREE.DoubleSide );
+	const place = ( object: THREE.Object3D | null ) => object!.userData.palm as PalmPlace;
+	const root = uniform( new THREE.Vector3() ).onObjectUpdate( ( { object } ) => place( object ).root );
+	const crown = uniform( new THREE.Vector3() ).onObjectUpdate( ( { object } ) => place( object ).crown );
+	const coconuts = uniform( 0 ).onObjectUpdate( ( { object } ) => place( object ).coconuts );
+	const sway = attribute<'vec4'>( 'palmSway', 'vec4' );
+	// coconuts past the palm's count collapse onto the crown (zero-area triangles)
+	const rest = select( sway.w.lessThan( coconuts ), positionGeometry, crown ).toVar();
+	const swayed = setWindDisplacement( m, ( wind ) => {
+
+		// the whole palm bends slowly from its foot (half a shrub's rate)
+		const bent = mainBend( wind, rest, root, sway.x, 0.9, float( 1 ) );
+		const field = bent.field;
+		const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
+		const lively = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) );
+		// each frond swings and lifts on its own phase, its tip the most
+		const swing = wave( wind.flutter, 0.7, sway.z ).mul( 0.6 ).add( wave( wind.flutter, 1.13, sway.z.mul( 1.9 ) ).mul( 0.4 ) );
+		const toss = wave( wind.flutter, 0.53, sway.z.mul( 2.3 ) ).mul( 0.5 ).add( 0.35 );
+		const frond = vec3( 0, swing.mul( 0.8 ), 0 ).add( along.mul( toss ) ).add( across.mul( swing.mul( 0.5 ) ) ).mul( sway.y.mul( lively ) );
+		return bent.position.add( frond );
+
+	}, shared.wind );
+	useRestPoseShadows( m, rest, swayed );
+	return m;
+
+}
+
 export class PalmView {
 
 	readonly id: string;
 	readonly mesh: THREE.Mesh;
 	stamp = 0;
-	private readonly coconuts = uniform( 0 );
-	private readonly material: THREE.MeshStandardNodeMaterial;
+	private readonly place: PalmPlace;
 
 	constructor( palm: PalmState, ground: number ) {
 
 		this.id = palm.id;
 		const { geometry, crown } = palmGeometry( palm, ground );
-		const material = this.material = propMaterial( 'palm', THREE.DoubleSide );
-		const root = vec3( palm.x, ground, palm.z );
-		const sway = attribute<'vec4'>( 'palmSway', 'vec4' );
-		// coconuts past the palm's count collapse onto the crown (zero-area triangles)
-		const rest = select( sway.w.lessThan( this.coconuts ), positionGeometry, vec3( crown.x, crown.y, crown.z ) ).toVar();
-		const swayed = setWindDisplacement( material, ( wind ) => {
-
-			// the whole palm bends slowly from its foot (half a shrub's rate)
-			const bent = mainBend( wind, rest, root, sway.x, 0.9, float( 1 ) );
-			const field = bent.field;
-			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
-			const lively = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) );
-			// each frond swings and lifts on its own phase, its tip the most
-			const swing = wave( wind.flutter, 0.7, sway.z ).mul( 0.6 ).add( wave( wind.flutter, 1.13, sway.z.mul( 1.9 ) ).mul( 0.4 ) );
-			const toss = wave( wind.flutter, 0.53, sway.z.mul( 2.3 ) ).mul( 0.5 ).add( 0.35 );
-			const frond = vec3( 0, swing.mul( 0.8 ), 0 ).add( along.mul( toss ) ).add( across.mul( swing.mul( 0.5 ) ) ).mul( sway.y.mul( lively ) );
-			return bent.position.add( frond );
-
-		}, shared.wind );
-		useRestPoseShadows( material, rest, swayed );
-		this.mesh = new THREE.Mesh( geometry, material );
+		this.place = { root: new THREE.Vector3( palm.x, ground, palm.z ), crown, coconuts: - 1 };
+		this.mesh = new THREE.Mesh( geometry, palmMaterial() );
+		this.mesh.userData.palm = this.place;
 		this.mesh.name = `palm:${ palm.id }`;
 		this.mesh.castShadow = true;
 		this.mesh.receiveShadow = true;
@@ -210,8 +236,8 @@ export class PalmView {
 	update( palm: Readonly<PalmState> ): boolean {
 
 		const n = Math.min( palm.coconuts, PALM_COCONUTS );
-		if ( this.coconuts.value === n ) return false;
-		this.coconuts.value = n;
+		if ( this.place.coconuts === n ) return false;
+		this.place.coconuts = n;
 		return true;
 
 	}
@@ -220,7 +246,6 @@ export class PalmView {
 
 		this.mesh.removeFromParent();
 		this.mesh.geometry.dispose();
-		this.material.dispose();
 
 	}
 
