@@ -50,11 +50,15 @@ import type { Rain } from '../weather/Rain.ts';
 //   overlay ── the rain and the storm's spray (moved from the water's scene) over the scene, with
 //     Motion.ts's overlayMRT: the velocity under them kept
 // and the post passes follow as above, but for the vignette and the grain, which the display pass
-// leaves to the canvas pass; then (TemporalAA.ts):
+// leaves to the canvas pass, and (accumulating in linear light, Quality.ts `taa.linear`) for the
+// S-curve and the sRGB transfer: displayRT holds the graded colour in linear light (half float),
+// which the resolve averages as it is and encodes once for its canvas pass; then (TemporalAA.ts):
 //   TAA resolve ── taaHistory (ping-pong: the frames accumulated, at the canvas's size for TAAU)
+//     and taaEncoded (the same image encoded with the vignette, under `taa.linear`; not for aa=gt)
 //   TAA rest ── taaRest (ping-pong), while a resting scene runs its jitter sequence, then copied
 //     into taaRestShown once complete (TemporalRest.ts)
-//   canvas pass: the history (or the rest's image) encoded, vignette, RCAS, grain and dither; TAA
+//   canvas pass: taaEncoded (or the history or the rest's image, encoded there with the vignette),
+//     RCAS, grain and dither; TAA
 //     below the canvas encodes it at the render's size (taaDisplay), EASU, then RCAS and the grain
 // (`taaResolve=off`, debug builds: the jittered frame shown as it is, through the output passes
 // above, with the grade's vignette and grain, as before the resolve landed).
@@ -489,7 +493,9 @@ export class Pipeline {
 		const hdr = O.compositeOnce ? g.color( 'hdr', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const sharp = g.color( 'sharp', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		const blur = g.color( 'blur', { size: HALF, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
-		const display = g.color( 'display', { size: RENDER, format: THREE.RGBAFormat, type: THREE.FloatType } );
+		// (linear light under the temporal resolve: no per-tap decode in the resolve, half the bytes)
+		const LINEAR_DISPLAY = RESOLVE && ( temporal ?? QUALITY.high.taa ).linear;
+		const display = g.color( 'display', { size: RENDER, format: THREE.RGBAFormat, type: LINEAR_DISPLAY ? THREE.HalfFloatType : THREE.FloatType } );
 		const viewDistance = O.dofDistance ? g.color( 'viewDistance', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } ) : null;
 		// the upscale's EASU image (the canvas's size) and the canvas (the resolve has its own)
 		const easu = O.fsrPort && ! RESOLVE ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
@@ -920,7 +926,8 @@ export class Pipeline {
 			return mix( float( 1 ), smoothstep( 1.15, 0.3, length( q ) ), u.vignette );
 
 		};
-		const grade = ( lin: V3, vignette: boolean ): V3 => {
+		// (`encode` false: the graded colour in linear light, before the sRGB transfer and the S-curve)
+		const grade = ( lin: V3, vignette: boolean, encode: boolean ): V3 => {
 
 			// (a uniform branch: the GUI switches the curve without rebuilding the pass. PBR Neutral
 			// is evaluated outside it, every frame: called inside the branch it rendered black, and
@@ -973,6 +980,7 @@ export class Pipeline {
 			c.assign( c.add( vec3( 1 ).sub( c ).mul( u.lift ) ) );
 			// vignette (the resolve leaves it to the canvas pass, after the accumulation)
 			if ( vignette ) c.mulAssign( vignetteAt( renderSize ) );
+			if ( ! encode ) return clamp( c, 0, 1 );
 			const s = ( sRGBTransferOETF( clamp( c, 0, 1 ) ) as THREE.Node<'vec3'> ).toVar();
 			// gentle S-curve in display space
 			s.assign( mix( s, s.mul( s ).mul( float( 3 ).sub( s.mul( 2 ) ) ), u.contrast ) );
@@ -1001,7 +1009,7 @@ export class Pipeline {
 		// pass adds.
 		const displayMat = new THREE.NodeMaterial();
 		displayMat.name = 'Post.Display';
-		displayMat.fragmentNode = Fn( () => finish( grade( diffused(), ! RESOLVE ), renderSize, RESOLVE ? float( 0 ) : u.grainOn ) )();
+		displayMat.fragmentNode = Fn( () => finish( grade( diffused(), ! RESOLVE, ! LINEAR_DISPLAY ), renderSize, RESOLVE ? float( 0 ) : u.grainOn ) )();
 		this.displayQuad = new THREE.QuadMesh( displayMat );
 		this.displayQuad.name = 'Post.Display';
 

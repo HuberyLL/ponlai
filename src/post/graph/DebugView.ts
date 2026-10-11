@@ -21,6 +21,8 @@ import { debugFlags } from '../../debug/DebugFlags.ts';
 //   hdr       scene radiance (the scene colour, the opaque copy, the fog's in-scatter): the
 //             grade's exposure and PBR Neutral's curve, then the sRGB encoding
 //   display   display values (the graded image, the upscale's EASU image): as they are
+//   linear    the graded image in linear light (`display` under the temporal resolve, half float:
+//             Pipeline.ts): the sRGB encoding, without the S-curve
 //   depth     a depth buffer, its sample 0 when multisampled (`.sample<n>` picks another): turned
 //             into view z with the frame's camera, then
 //   viewZ     a linear view z or distance (`linearDepth`, `surfaceDepth`, the fog's nearest depth,
@@ -40,7 +42,8 @@ import { debugFlags } from '../../debug/DebugFlags.ts';
 //   class           the velocity's b, a colour per class (Motion.ts MOTION_CLASS): opaque grey,
 //                   vegetation green, water blue, character orange, sky pale blue
 //   reactive        the velocity's a, grey
-//   reproject       the previous frame's `display` moved along this frame's motion vectors
+//   reproject       the previous frame's `display` (in linear light under the resolve) moved along
+//                   this frame's motion vectors
 //                   (Catmull-Rom, no clip, no blend): over a moving camera it should match the frame
 //                   (the motion vectors' unit checks, MV-UNIT); the view keeps a copy of `display`
 //                   (`displayPrev`, made at the frame's end) for it
@@ -58,7 +61,7 @@ import { debugFlags } from '../../debug/DebugFlags.ts';
 //   clip          how far the history lay outside the neighbourhood's clip box (0 inside, white at
 //                 twice its width), grey
 
-export type DebugViewKind = 'hdr' | 'display' | 'depth' | 'viewZ' | 'velocity' | 'single' | 'history' | 'colour';
+export type DebugViewKind = 'hdr' | 'display' | 'linear' | 'depth' | 'viewZ' | 'velocity' | 'single' | 'history' | 'colour';
 
 export interface DebugViewRequest { resource: string; output: string | null }
 
@@ -116,7 +119,7 @@ function kindOf( r: ResourceDecl, output: string | null ): DebugViewKind {
 	if ( output && CHANNELS.includes( output ) ) return viewZ ? 'viewZ' : 'single';
 	if ( r.kind === 'depth' ) return 'depth';
 	if ( /velocity/i.test( r.name ) ) return 'velocity';
-	if ( DISPLAY_REFERRED.has( r.name ) ) return 'display';
+	if ( DISPLAY_REFERRED.has( r.name ) ) return r.name === 'display' && r.desc.type === THREE.HalfFloatType ? 'linear' : 'display';
 	if ( viewZ ) return 'viewZ';
 	if ( r.desc.format === THREE.RedFormat ) return 'single';
 	if ( r.persistent || r.pingPong ) return 'history';
@@ -236,6 +239,7 @@ function declareDebugView( graph: FrameGraph<unknown>, value: string, options: D
 			case 'viewZ': return vec3( logDepth( c ) );
 			case 'single': return vec3( clamp( c, 0, 1 ) );
 			case 'display': return t.rgb;
+			case 'linear': return sRGBTransferOETF( clamp( t.rgb, 0, 1 ) );
 			case 'hdr': return sRGBTransferOETF( clamp( neutralToneMapping( t.rgb, exposure ) as THREE.Node<'vec3'>, 0, 1 ) );
 			case 'velocity': {
 
