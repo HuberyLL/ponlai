@@ -41,7 +41,10 @@
 //       holding the most triangles, meshed in one call from its own window on the same lattice
 //       (`chunkIsland`), has exactly the vertices (all attributes) and triangles of its four chunks.
 //   S3  floor seams: the lattice points two (or four) neighbouring floor tiles both compute (their
-//       common border rows, corners) are bit-identical in height, normal, ao and bed.
+//       common border rows, corners) are bit-identical in height, normal, ao and bed. Every floor
+//       point off the land (land distance > 0) lies at or below -1.6 m, and every tile side with no
+//       chunk beyond it, where the far floor meets the tile, is the open sea's lattice bit for bit
+//       (openSeaHeight, the far floor's normals, openSeaBeds, ao 1).
 //   S4  skirt seams: every piece of the turf skirt that ends on a chunk border meets exactly one
 //       piece that starts there in a neighbouring chunk, with the same crossing sample (ring
 //       points, normals, coast data) to 1e-5 (the count of bit-identical ones is printed); no piece
@@ -80,6 +83,7 @@ import {
 import { ISLAND_BOTTOM, islandSurfaceHeight, makeIslandSDF } from '../src/world/WorldShapes.ts';
 import { SKIRT_INFO, SKIRT_RING } from '../src/world/RimGround.ts';
 import { TILE_SIDE } from '../src/world/SeabedTile.ts';
+import { openSeaBeds, openSeaHeight, FLOOR_STEP, SHELF_CEILING } from '../src/world/Bathymetry.ts';
 import { hashBuffers, meshClosure, positionKey } from './world-node.mjs';
 
 // the island mesh's lattice (Chunks.ts)
@@ -807,7 +811,52 @@ function floorSeams( ctx ) {
 
 	}
 	console.log( `${ differ ? 'FAIL' : 'ok  ' } S3 ${ ctx.label }: ${ tiles } floor tiles, ${ shared } shared lattice points compared in height, normal, ao and bed: ${ differ } differ` );
-	return differ === 0;
+
+	// Off the land the floor stays at or below the shelf's ceiling (Bathymetry.ts SHELF_CEILING), and
+	// a tile side with no tile beyond it meets the far floor there: it must lie on the open sea's
+	// lattice, bit for bit (the far floor's heights, its normals by the same differences, its beds,
+	// unshaded), or the seam between the near tiles and the far floor cracks.
+	const fp = windowFootprint( ctx.field ), h = openSeaHeight;
+	const open = new Float32Array( 7 ), tile = new Float32Array( 7 );
+	let points = 0, high = 0, highest = - Infinity, border = 0, off = 0, sides = 0;
+	for ( const a of ctx.chunks ) {
+
+		if ( ! a.floor ) continue;
+		const { height, normal, ao, bed } = a.floor;
+		for ( let v = 0; v < N * N; v ++ ) {
+
+			const x = a.ci * S + ( v % N ) * FLOOR_STEP, z = a.cj * S + Math.floor( v / N ) * FLOOR_STEP;
+			if ( fp.dist( x, z ) <= 0 ) continue;
+			points ++;
+			highest = Math.max( highest, height[ v ] );
+			if ( height[ v ] > SHELF_CEILING && ++ high <= 3 ) console.log( `FAIL S3 ${ ctx.label }: floor tile ( ${ a.key } ) rises to ${ height[ v ] } m off the land at ( ${ x }, ${ z } )` );
+
+		}
+		for ( const [ di, dj ] of [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ] ) {
+
+			// a neighbouring chunk (with a tile, or under the land) is no border with the far floor
+			if ( map.has( `${ a.ci + di },${ a.cj + dj }` ) ) continue;
+			sides ++;
+			for ( let k = 0; k < N; k ++ ) {
+
+				const i = di === - 1 ? 0 : di === 1 ? N - 1 : k, j = dj === - 1 ? 0 : dj === 1 ? N - 1 : k, v = j * N + i;
+				const x = a.ci * S + i * FLOOR_STEP, z = a.cj * S + j * FLOOR_STEP;
+				// as SeabedTile.ts buildFarFloor makes a node, in float32
+				const nx = ( h( x - FLOOR_STEP, z ) - h( x + FLOOR_STEP, z ) ) / ( 2 * FLOOR_STEP ), nz = ( h( x, z - FLOOR_STEP ) - h( x, z + FLOOR_STEP ) ) / ( 2 * FLOOR_STEP );
+				const l = Math.hypot( nx, 1, nz );
+				open.set( [ h( x, z ), nx / l, 1 / l, nz / l, ...openSeaBeds( x, z ), 1 ] );
+				tile.set( [ height[ v ], ...normal.subarray( v * 3, v * 3 + 3 ), ...bed.subarray( v * 2, v * 2 + 2 ), ao[ v ] ] );
+				border ++;
+				if ( ! sameBits( open, tile ) && ++ off <= 3 ) console.log( `FAIL S3 ${ ctx.label }: floor tile ( ${ a.key } ) leaves the open sea's lattice at its outer border ( ${ x }, ${ z } ): ${ [ ...tile ].join( ', ' ) } against ${ [ ...open ].join( ', ' ) }` );
+
+			}
+
+		}
+
+	}
+	console.log( `${ high ? 'FAIL' : 'ok  ' } S3 ${ ctx.label }: ${ points } floor points off the land (land distance > 0), the highest at ${ highest.toFixed( 3 ) } m: ${ high } above ${ SHELF_CEILING } m` );
+	console.log( `${ off ? 'FAIL' : 'ok  ' } S3 ${ ctx.label }: ${ sides } tile sides with no chunk beyond, ${ border } points compared with the open sea's lattice in height, normal, bed and ao (1): ${ off } differ` );
+	return differ === 0 && high === 0 && off === 0;
 
 }
 
