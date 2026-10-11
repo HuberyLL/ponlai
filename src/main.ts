@@ -18,6 +18,7 @@ import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
 import { buildWorldMeshes, shoreTextureFrom, seabedBedTextureFrom } from './world/World.ts';
 import { loadWorld, type LoadedWorld } from './world/WorldChunks.ts';
+import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { buildGrass, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
@@ -444,6 +445,15 @@ const walk = walkLoop( land );
 const walkDistance = walkLoopDistance( walk );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );
+// The chunks' borders (GUI Ground folder, ?chunkBorders), built on first show.
+const chunkView = { borders: params.has( 'chunkBorders' ), lines: null as THREE.LineSegments | null };
+const showChunkBorders = ( on: boolean ) => {
+
+	if ( on && ! chunkView.lines ) scene.add( chunkView.lines = buildChunkBorders( data ) );
+	if ( chunkView.lines ) chunkView.lines.visible = on;
+
+};
+showChunkBorders( chunkView.borders );
 const refractedSun = new RefractedSun( renderer, shared );
 runtime.refractedSun = refractedSun;
 refractedSun.angleGate = THREE.MathUtils.degToRad( runtimeQuality.refractedSun.angleGate );
@@ -710,6 +720,7 @@ groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean 
 } );
 groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' ).onChange( invalidateSunShadow );
 groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' ).onChange( invalidateSunShadow );
+groundF.add( chunkView, 'borders' ).name( 'chunk borders' ).onChange( showChunkBorders );
 const sunF = gui.addFolder( 'Sun' );
 const cloudF = gui.addFolder( 'Sky & clouds' );
 cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover override' ).onFinishChange( ( value: number ) => { cloudOverride = value; void refreshEnvironment(); } );

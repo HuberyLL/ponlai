@@ -79,6 +79,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   JS cost) and `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`).
 - `vegPrepass=0` (the single coverage pass), `vegPrepass=coverage` (the prepass with coverage kept
   in the shaded draw), `windLegacy` (the old global-sine sway).
+- `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
+  GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
 - `islander` picks the islanders' proportions (`medium`, the default, or `stock` (the kit's own),
   `subtle` and `strong` builds of `Proportions.ts`); also in the GUI's Islander folder, which
   rebuilds the scene's walker in place. In game mode the folder's proportion control is disabled:
