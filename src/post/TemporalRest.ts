@@ -4,8 +4,8 @@
 // at rest (a paused clock, a still camera, nothing else changing) therefore converges once, from
 // scratch, the way the clouds settle (Clouds.ts): after `settle` frames at rest, for everything that
 // settles on its own (the clouds' view, the refracted sun's map, a bake landing) to be done, a fixed
-// sequence of `sequence` jitters (Halton indices 1..N, Jitter.ts `restIndex`; the vegetation's
-// dither takes N mod 16) is averaged with exact weights into an image of its own (TemporalAA.ts: the
+// sequence of `sequence` jitters (Halton indices 1..N centred on their mean, Jitter.ts `restIndex`;
+// the vegetation's dither takes N mod 16) is averaged with exact weights into an image of its own (TemporalAA.ts: the
 // rest resolve, no clip, no cap, nothing reprojected), shown from the sequence's last frame on and
 // held while the rest lasts. The running history keeps updating underneath, so the frame after the
 // rest ends continues from it. What the image shows then depends only on the scene: a paused frame
