@@ -20,7 +20,8 @@ type V4 = THREE.Node<'vec4'>;
 // FSR 1 for the frame graph's upscale, split differently from three's FSR1Node: EASU (edge-adaptive
 // upsampling) runs as its own pass (the graph's `easu`) into a canvas-sized texture the graph owns,
 // and RCAS (contrast-adaptive sharpening) is a function the canvas pass calls before it adds the
-// grain, so the canvas no longer takes a second full-size pass and target between the two. EASU
+// grain, so the canvas no longer takes a second full-size pass and target between the two (the
+// temporal modes' canvas pass calls the same `rcas` on the resolved image). EASU
 // fetches its 12-texel cross as four 2x2 gathers per channel where the input is filterable (AMD's
 // own layout), and with single texel loads otherwise; either way the taps and the maths are
 // three's, and only the alpha channel, which the frame never uses, is dropped.
@@ -207,23 +208,7 @@ export class FSR {
 			// (the cross clamped at the frame's edge, as EASU's taps are)
 			const p = screenCoordinate.xy.floor().toConst();
 			const last = this.outputSize.sub( 1 ).toConst();
-			const tap = ( dx: number, dy: number ) => textureLoad( easu, ivec2( clamp( p.add( vec2( dx, dy ) ), vec2( 0 ), last ) ) ) as unknown as V4;
-			const e = tap( 0, 0 );
-			const b = tap( 0, - 1 );
-			const d = tap( - 1, 0 );
-			const f = tap( 1, 0 );
-			const h = tap( 0, 1 );
-			const con = exp2( sharpness.negate() ).toConst();
-			// the ring's minimum and maximum, and the lobe weight the local contrast can take
-			const mn4 = min( min( b.rgb, d.rgb ), min( f.rgb, h.rgb ) ).toConst();
-			const mx4 = max( max( b.rgb, d.rgb ), max( f.rgb, h.rgb ) ).toConst();
-			const RCAS_LIMIT = float( 0.25 - 1.0 / 16.0 ).toConst();
-			const hitMin = min( mn4, e.rgb ).div( mx4.mul( 4.0 ) ).toConst();
-			const hitMax = vec3( 1.0 ).sub( max( mx4, e.rgb ) ).div( mn4.mul( 4.0 ).sub( 4.0 ) ).toConst();
-			const lobeRGB = max( hitMin.negate(), hitMax ).toConst();
-			const lobe = max( RCAS_LIMIT.negate(), min( max( lobeRGB.r, max( lobeRGB.g, lobeRGB.b ) ), float( 0.0 ) ) ).mul( con ).toConst();
-			// the cross and the centre, blended
-			return b.rgb.add( d.rgb ).add( f.rgb ).add( h.rgb ).mul( lobe ).add( e.rgb ).div( lobe.mul( 4.0 ).add( 1.0 ) );
+			return rcas( ( dx, dy ) => textureLoad( easu, ivec2( clamp( p.add( vec2( dx, dy ) ), vec2( 0 ), last ) ) ) as unknown as V4, sharpness );
 
 		} )() as V3;
 
@@ -235,5 +220,30 @@ export class FSR {
 		( this.quad.material as THREE.Material ).dispose();
 
 	}
+
+}
+
+/** RCAS (contrast-adaptive sharpening) at the pixel being drawn, from `tap( dx, dy )`: the input
+ * (display values, rgb) at that offset in pixels, clamped at the frame's edge by the caller. The
+ * upscale's canvas pass runs it on EASU's image, the temporal modes' canvas pass on the resolved
+ * one. `sharpness` in stops: 0 the strongest, 2 none. Call it inside a `Fn`. */
+export function rcas( tap: ( dx: number, dy: number ) => V4, sharpness: F ): V3 {
+
+	const e = tap( 0, 0 );
+	const b = tap( 0, - 1 );
+	const d = tap( - 1, 0 );
+	const f = tap( 1, 0 );
+	const h = tap( 0, 1 );
+	const con = exp2( sharpness.negate() ).toConst();
+	// the ring's minimum and maximum, and the lobe weight the local contrast can take
+	const mn4 = min( min( b.rgb, d.rgb ), min( f.rgb, h.rgb ) ).toConst();
+	const mx4 = max( max( b.rgb, d.rgb ), max( f.rgb, h.rgb ) ).toConst();
+	const RCAS_LIMIT = float( 0.25 - 1.0 / 16.0 ).toConst();
+	const hitMin = min( mn4, e.rgb ).div( mx4.mul( 4.0 ) ).toConst();
+	const hitMax = vec3( 1.0 ).sub( max( mx4, e.rgb ) ).div( mn4.mul( 4.0 ).sub( 4.0 ) ).toConst();
+	const lobeRGB = max( hitMin.negate(), hitMax ).toConst();
+	const lobe = max( RCAS_LIMIT.negate(), min( max( lobeRGB.r, max( lobeRGB.g, lobeRGB.b ) ), float( 0.0 ) ) ).mul( con ).toConst();
+	// the cross and the centre, blended
+	return b.rgb.add( d.rgb ).add( f.rgb ).add( h.rgb ).mul( lobe ).add( e.rgb ).div( lobe.mul( 4.0 ).add( 1.0 ) );
 
 }
