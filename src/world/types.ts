@@ -1,5 +1,7 @@
 // Data shared between the world's workers (chunkWorker.ts) and the main thread.
 
+import type { CasterColumns, GroundGrid, SubmergedSubset } from './ChunkDerived.ts';
+
 // a signed distance function (m), optionally with per-point values baked onto the mesh: one
 // float (`tint`), four more (`detail`, written to out[ o .. o + 3 ]) and three more (`detail2`)
 export interface SDF {
@@ -22,10 +24,6 @@ export interface MeshData {
 	detail2?: Float32Array;
 	indices: Uint32Array;
 }
-
-export type MeshKind = 'cliff' | 'rock';
-
-export interface NamedMesh extends MeshData { name: string; kind: MeshKind }
 
 export interface Rock { x: number; z: number; s: number; sy: number; y: number; floor: number; rot: number; seed: number }
 
@@ -60,17 +58,34 @@ export interface RimStrand {
 // inside one box, between the points where it crosses the box's border (or a whole loop).
 export interface RimSkirtData { points: Float32Array; normals: Float32Array; info: Float32Array; pieces: Int32Array }
 
+// A land chunk's part of the island's surface (Chunks.ts: its owned quads, in world space) and what
+// its job derived from it for the page (ChunkDerived.ts): the sun's caster columns, the camera's
+// ground grid and the triangles the refracted sun's map draws.
+export interface IslandChunk {
+	ci: number; cj: number;
+	mesh: MeshData;
+	columns: CasterColumns;
+	ground: GroundGrid;
+	refracted: SubmergedSubset;
+}
+
 // One land version's world, merged from its chunks (ChunkMerge.ts).
 export interface WorldData {
 	// the grown land (LandLattice.toBytes)
 	land: Uint8Array;
 	// ci, cj per chunk (Chunks.ts), in the merge's order: rows ( cj, then ci )
 	chunks: Int32Array;
-	meshes: NamedMesh[];
+	// The island's surface, a part per land chunk (with at least one triangle), in that order.
+	islands: IslandChunk[];
+	// The stones (their meshes concatenated in that order) and their placements.
+	stones: MeshData;
 	rocks: Rock[];
 	// The sea floor as one mesh: its near tiles, then the far floor (SeabedTile.ts). ao: contact
 	// visibility of the island and stones; bed: seagrass cover and pale-sand share (seabedBeds).
 	seabed: { positions: Float32Array; normals: Float32Array; ao: Float32Array; bed: Float32Array; indices: Uint32Array };
+	// The triangles of the stones and the sea floor the refracted sun's map draws at `level`
+	// (ChunkDerived.ts `submergedIndex`; null: all), the chunks' subsets joined.
+	refracted: { level: number; stones: Uint32Array | null; seabed: Uint32Array | null };
 	// Turf anchors: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
 	// (0 island), local sky visibility. Placement still uses the first eight.
 	vegetation: Float32Array;

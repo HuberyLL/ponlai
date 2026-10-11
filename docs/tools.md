@@ -290,14 +290,21 @@ what these do not give (automation, A/B statistics, pass names).
   The default run takes about a minute on 8 threads.
 - `tools/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]` (plain `node`; run it
   after a change to `src/world/ChunkDerived.ts` or to the builders it stands in for) builds every
-  chunk of the grown land on a pool of worker threads and checks the chunks' derived products
-  against the page's builders run on their merged meshes (three's WebGPU build imported in node,
-  RefractedSun.ts compiled with TypeScript): SunShadow's caster columns folded from the chunks'
-  `casterColumns` hold every walked column and stay within one cell of it; RefractedSun's
-  subsets from the chunks' `refracted` are today's cut of the merged island, stones and floor,
-  triangle for triangle, and `setCasters( root, subsets )` draws them; `IslandGround.fromGrids`
-  of the chunks' `ground` has the walked grid's bounds and top and every height within one cell.
-  It prints each builder's time on the merged meshes against the merge's. About 15 s on 8 threads.
+  chunk of the grown land on a pool of worker threads and checks the chunks' derived products,
+  which the page uses, against the builders it ran before on the merged meshes (three's WebGPU
+  build imported in node, RefractedSun.ts compiled with TypeScript): SunShadow's caster columns
+  folded from the chunks' `casterColumns` hold every walked column and stay within one cell of it;
+  RefractedSun's subsets from the chunks' `refracted` are today's cut of the merged island, stones
+  and floor, triangle for triangle, and `setCasters( root, subsets )` draws them;
+  `IslandGround.fromGrids` of the chunks' `ground` has the walked grid's bounds and top and every
+  height within one cell. It prints each builder's time on the merged meshes against the merge's.
+  About 15 s on 8 threads.
+- `tools/verify-storage-realloc.mjs` (GPU, headless, shared lock; it serves its own page from a
+  Vite server over the repository) checks what three's WebGPU backend does with storage buffers,
+  for pools that outgrow their capacity (the meadow's, `GrassCull.ts`): rewritten in place and
+  replaced by larger ones (a storage node's new `value`), under a compute kernel and an instanced
+  draw, counting the pipelines, shader modules and bind groups the device creates and checking
+  the results. Run it again after a three upgrade.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and

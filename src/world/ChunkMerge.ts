@@ -5,9 +5,12 @@
 // - Everything is concatenated in rows of chunks ( cj, then ci ), each chunk's owned items in its
 //   own order (Chunks.ts), so the merged arrays, the meadow's pools and a paused frame are the
 //   same whatever order the workers finished in.
-// - The island and the stones are one mesh each, as before chunks: the chunks' owned quads
-//   concatenated (a vertex on a border appears once per chunk that uses it, bit-identical, so the
-//   seams shade alike). The sea floor is the chunks' near tiles in that order, then the far floor.
+// - The island stays a part per land chunk, with what its job derived from it (ChunkDerived.ts),
+//   for the page to draw a mesh per chunk (World.ts). The stones are one mesh, the chunks' meshes
+//   concatenated, and the sea floor one mesh of the chunks' near tiles in that order, then the far
+//   floor. The refracted sun's triangle subsets of those two are the chunks' subsets joined in the
+//   same order (the far floor cut here, by the same rule), so the page cuts none of the world's
+//   meshes itself.
 // - The world fields cover the land's box and 32 m round it, out to the world's 32 m grid
 //   (`fieldBounds`), which holds every chunk; each chunk's texels are copied into its square:
 //   the shore's distance (0.125 m; +LAND_REACH where no chunk is, as the chunks clamp it), the
@@ -28,7 +31,8 @@ import { LandLattice } from './IslandGrowth.ts';
 import { tileIndices, SEABED_TILE, TILE_SIDE, type FarFloor } from './SeabedTile.ts';
 import { gridBoxes, mergeRimSkirts, RIM_BOX, RIM_CELL, RIM_PAD, RIM_REACH } from './RimGround.ts';
 import { landBounds, ISLAND_TOP, LAND_REACH, type Bounds } from './WorldShapes.ts';
-import type { MeshData, RimStrand, Rock, WorldData } from './types.ts';
+import { submergedIndex, SEA_LEVEL } from './ChunkDerived.ts';
+import type { IslandChunk, MeshData, RimStrand, Rock, WorldData } from './types.ts';
 
 // The world fields' cells (m): the shore's distance, the floor's height and the floor's beds.
 export const SHORE_CELL = 0.125, FLOOR_CELL = 0.25, BED_CELL = 0.5;
@@ -84,10 +88,22 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 	const width = bounds.x1 - bounds.x0, depth = bounds.z1 - bounds.z0;
 
 	// --- meshes
-	const island = mergeMeshes( chunks.flatMap( ( c ) => c.island ? [ c.island ] : [] ) );
+	const islands: IslandChunk[] = chunks.flatMap( ( c ) => c.island && c.island.indices.length > 0 ? [ {
+		ci: c.ci, cj: c.cj, mesh: c.island, columns: c.casterColumns, ground: c.ground,
+		refracted: { level: c.refracted.level, index: c.refracted.island },
+	} ] : [] );
 	const rocks: Rock[] = chunks.flatMap( ( c ) => c.stones.rocks );
 	const stones = mergeMeshes( chunks.map( ( c ) => c.stones.mesh ) );
 	const seabed = mergeFloor( chunks, land.far );
+	const tiles = chunks.filter( ( c ) => c.floor ), tileIndex = tileIndices();
+	const refracted = {
+		level: chunks[ 0 ]?.refracted.level ?? SEA_LEVEL,
+		stones: joinSubsets( chunks.map( ( c ): Subset => [ c.refracted.stones, c.stones.mesh.indices, c.stones.mesh.positions.length / 3 ] ) ),
+		seabed: joinSubsets( [
+			...tiles.map( ( c ): Subset => [ c.refracted.floor, tileIndex, TILE_SIDE * TILE_SIDE ] ),
+			[ submergedIndex( land.far.positions, land.far.indices ), land.far.indices, land.far.positions.length / 3 ],
+		] ),
+	};
 
 	// --- owned items
 	const concat = ( parts: Float32Array[] ) => {
@@ -131,8 +147,7 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 	chunks.forEach( ( c, k ) => { chunkList[ k * 2 ] = c.ci; chunkList[ k * 2 + 1 ] = c.cj; } );
 	return {
 		land: land.land, chunks: chunkList,
-		meshes: [ { name: 'island', kind: 'cliff', ...island }, { name: 'rocks', kind: 'rock', ...stones } ],
-		rocks, seabed,
+		islands, stones, rocks, seabed, refracted,
 		vegetation: concat( chunks.map( ( c ) => c.anchors ) ),
 		bushes: concat( chunks.map( ( c ) => c.bushes ) ),
 		rimStrands, rimGround,
@@ -183,17 +198,36 @@ function fromTile( out: Float32Array, nx: number, tile: Float32Array, channels: 
 
 }
 
-// Meshes concatenated in order, one index space; `detail` and `detail2` when the first has them
-// (every island chunk carries both, Chunks.ts).
+// A part's refracted subset (null: every triangle), its whole index and its vertex count.
+type Subset = [ Uint32Array | null, Uint32Array, number ];
+
+// The subsets of meshes concatenated in order (as `mergeMeshes`, `mergeFloor`), in their one index
+// space: the triangles a cut of the whole would keep, in its order; null when that is every one.
+function joinSubsets( parts: Subset[] ): Uint32Array | null {
+
+	let total = 0, kept = 0;
+	for ( const [ subset, index ] of parts ) { total += index.length; kept += ( subset ?? index ).length; }
+	if ( kept === total ) return null;
+	const out = new Uint32Array( kept );
+	let offset = 0, k = 0;
+	for ( const [ subset, index, vertices ] of parts ) {
+
+		for ( const v of subset ?? index ) out[ k ++ ] = v + offset;
+		offset += vertices;
+
+	}
+	return out;
+
+}
+
+// Meshes concatenated in order, one index space (the stones: they carry no cliff detail).
 function mergeMeshes( parts: MeshData[] ): MeshData {
 
 	let nv = 0, ni = 0;
 	for ( const p of parts ) { nv += p.positions.length / 3; ni += p.indices.length; }
-	const detail = parts[ 0 ]?.detail !== undefined;
 	const out: MeshData = {
 		positions: new Float32Array( nv * 3 ), normals: new Float32Array( nv * 3 ), ao: new Float32Array( nv ),
 		tint: new Float32Array( nv ), curv: new Float32Array( nv ), indices: new Uint32Array( ni ),
-		...( detail ? { detail: new Float32Array( nv * 4 ), detail2: new Float32Array( nv * 3 ) } : {} ),
 	};
 	let ov = 0, oi = 0;
 	for ( const p of parts ) {
@@ -203,7 +237,6 @@ function mergeMeshes( parts: MeshData[] ): MeshData {
 		out.ao.set( p.ao, ov );
 		out.tint.set( p.tint, ov );
 		out.curv.set( p.curv, ov );
-		if ( detail ) { out.detail!.set( p.detail!, ov * 4 ); out.detail2!.set( p.detail2!, ov * 3 ); }
 		for ( let k = 0; k < p.indices.length; k ++ ) out.indices[ oi + k ] = p.indices[ k ] + ov;
 		ov += p.positions.length / 3;
 		oi += p.indices.length;

@@ -14,9 +14,10 @@
 // The framing follows the land in the page (`window.__PONLAI__.land`): the overview and top-down
 // orbit the page's own pivot (`land.target`) at distances scaled by the land's equivalent radius
 // against the first island's (`land.scale`), as the page frames its island view; the close views
-// find the meadow's lip on the camera's ground grid, walking out from the land's centroid along the
-// overview's azimuth, and look at it from the sea (cliff, rim), from inside it back across the
-// meadow, or down onto the shelf beyond it. A page without `land` gets today's framing.
+// find the meadow's lip on a height grid of the island's meshes (`islandHeights`), walking out from
+// the land's centroid along the overview's azimuth, and look at it from the sea (cliff, rim), from
+// inside it back across the meadow, or down onto the shelf beyond it. A page without `land` gets
+// today's framing.
 //
 // Writes artifacts/captures/growth/<label>/index.html (and stats.json). Each pair's crops (the whole
 // frame, its centre and its upper and lower bands) are measured with compare-captures.py's
@@ -57,6 +58,45 @@ for ( const v of views ) if ( ! VIEWS[ v ] ) throw new Error( `unknown view ${ v
 // Runs in the page (as `--eval`): places the camera for one view.
 function placeCamera( s, view ) {
 
+	// The island's height at ( x, z ) as the camera's ground grid was built before it was merged
+	// from the chunks' grids (IslandGround.build): the highest vertex of the island's meshes in each
+	// 0.5 m cell from their box's corner, the sea (0) elsewhere. Built here from the meshes rather
+	// than read from the page's camera, whose grid now lies on the world's lattice and differs by up
+	// to a cell: two pages that draw the same island, merged or per chunk, frame alike.
+	const islandHeights = ( scene ) => {
+
+		const CELL = 0.5, parts = [];
+		scene.getObjectByName( 'island' ).traverse( ( o ) => { if ( o.isMesh ) parts.push( o.geometry.getAttribute( 'position' ).array ); } );
+		let x0 = Infinity, z0 = Infinity, x1 = - Infinity, z1 = - Infinity;
+		for ( const p of parts ) for ( let v = 0; v < p.length; v += 3 ) {
+
+			x0 = Math.min( x0, p[ v ] ); x1 = Math.max( x1, p[ v ] );
+			z0 = Math.min( z0, p[ v + 2 ] ); z1 = Math.max( z1, p[ v + 2 ] );
+
+		}
+		const nx = Math.ceil( ( x1 - x0 ) / CELL ) + 1, nz = Math.ceil( ( z1 - z0 ) / CELL ) + 1;
+		const heights = new Float32Array( nx * nz ).fill( - Infinity );
+		const cell = ( x, z ) => {
+
+			const i = Math.floor( ( x - x0 ) / CELL ), j = Math.floor( ( z - z0 ) / CELL );
+			return i >= 0 && i < nx && j >= 0 && j < nz ? j * nx + i : - 1;
+
+		};
+		for ( const p of parts ) for ( let v = 0; v < p.length; v += 3 ) {
+
+			const k = cell( p[ v ], p[ v + 2 ] );
+			if ( k >= 0 && p[ v + 1 ] > heights[ k ] ) heights[ k ] = p[ v + 1 ];
+
+		}
+		return ( x, z ) => {
+
+			const k = cell( x, z );
+			return k >= 0 ? Math.max( heights[ k ], 0 ) : 0;
+
+		};
+
+	};
+
 	const DEG = Math.PI / 180;
 	// the page's own island view on this land: its pivot, and the ratio of the land's equivalent
 	// radius to the first island's; without `land`, today's tile island framed about ( 1.5, 0.5, 1 )
@@ -93,8 +133,8 @@ function placeCamera( s, view ) {
 	if ( view === 'v1' ) return orbit( 58 * k, 50, az );
 	if ( view === 'v2' ) return orbit( 75 * k, 8, az );
 
-	// walk out from the centroid on the camera's ground grid: onto the meadow, then to its lip
-	const g = s.controls.ground, d = { x: Math.sin( az * DEG ), z: Math.cos( az * DEG ) };
+	// walk out from the centroid on the island's heights: onto the meadow, then to its lip
+	const g = { heightAt: islandHeights( s.scene ) }, d = { x: Math.sin( az * DEG ), z: Math.cos( az * DEG ) };
 	const at = ( r ) => ( { x: c.x + d.x * r, z: c.z + d.z * r } );
 	const high = ( r ) => { const p = at( r ); return g.heightAt( p.x, p.z ) > 2; };
 	let r = 0;

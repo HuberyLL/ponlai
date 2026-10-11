@@ -66,8 +66,23 @@ if ( process.argv.includes( '--world' ) ) {
 	const before = generate( false ), after = generate( true );
 	assert.equal( 'stacks' in after.data, false, 'The current scene has no exposed stack API.' );
 	assert.equal( 'stacks' in before.data, false );
-	assert.ok( after.data.meshes.every( mesh => mesh.kind !== 'stack' && ! mesh.name.startsWith( 'stack' ) ) );
-	const rocksMesh = after.data.meshes.find( mesh => mesh.name === 'rocks' );
+	// the island's parts (a mesh per land chunk) taken together, and the stones
+	const meshesOf = ( data ) => {
+
+		const parts = data.islands.map( ( part ) => part.mesh );
+		const join = ( key ) => {
+
+			const out = new parts[ 0 ][ key ].constructor( parts.reduce( ( n, p ) => n + p[ key ].length, 0 ) );
+			parts.reduce( ( offset, p ) => { out.set( p[ key ], offset ); return offset + p[ key ].length; }, 0 );
+			return out;
+
+		};
+		const island = Object.fromEntries( [ 'positions', 'normals', 'indices', 'tint', 'curv', 'ao' ].map( ( key ) => [ key, join( key ) ] ) );
+		return [ { name: 'island', ...island }, { name: 'rocks', ...data.stones } ];
+
+	};
+	const afterMeshes = meshesOf( after.data ), beforeMeshes = meshesOf( before.data );
+	const rocksMesh = after.data.stones;
 	assert.ok( rocksMesh && rocksMesh.positions.length > 0 );
 	let maximumRockY = - Infinity;
 	for ( let k = 1; k < rocksMesh.positions.length; k += 3 ) maximumRockY = Math.max( maximumRockY, rocksMesh.positions[ k ] );
@@ -89,9 +104,9 @@ if ( process.argv.includes( '--world' ) ) {
 	const finiteVisibility = ( values ) => assert.ok( values.every( ( value ) => Number.isFinite( value ) && value >= 0 && value <= 1 ) );
 	finiteVisibility( after.data.seabed.ao );
 	const changes = [];
-	for ( let m = 0; m < after.data.meshes.length; m ++ ) {
+	for ( let m = 0; m < afterMeshes.length; m ++ ) {
 
-		const a = after.data.meshes[ m ], b = before.data.meshes[ m ];
+		const a = afterMeshes[ m ], b = beforeMeshes[ m ];
 		for ( const key of [ 'positions', 'normals', 'indices', 'tint', 'curv' ] ) assert.deepEqual( a[ key ], b[ key ] );
 		finiteVisibility( a.ao );
 		let changed = 0, visibleChanged = 0, visible = 0, sumChange = 0;

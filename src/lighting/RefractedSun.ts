@@ -137,7 +137,9 @@ function fitCamera( camera: THREE.OrthographicCamera, bounds: THREE.Box3, direct
 }
 
 interface RefractedSunOptions { mapSize?: number; contactBias?: number }
-interface Caster { source: THREE.Mesh; proxy: THREE.Mesh; floor: boolean; subset?: SubmergedSubset }
+// `empty`: its subset holds no triangle (a part of the island wholly above the water), so its proxy
+// is not drawn: WebGPU warns about a draw of no indices.
+interface Caster { source: THREE.Mesh; proxy: THREE.Mesh; floor: boolean; subset?: SubmergedSubset; empty?: boolean }
 
 // The source's triangles that reach below `level` in world space, sharing its attributes; null
 // when every triangle does (the proxy then draws the source geometry itself).
@@ -388,13 +390,15 @@ export class RefractedSun {
 
 		for ( const subset of this.subsets ) disposeSubset( subset );
 		this.subsets.length = 0;
-		for ( const { source, proxy, subset: given } of this.casters ) {
+		for ( const caster of this.casters ) {
 
+			const { source, proxy, subset: given } = caster;
 			source.updateWorldMatrix( true, false );
 			const subset = debugFlags.refractedSunSubset === false ? null
 				: given && Math.abs( level - given.level ) <= LEVEL_MARGIN * 0.5 ? givenTriangles( source, given.index )
 					: submergedTriangles( source, level + LEVEL_MARGIN );
 			proxy.geometry = subset ?? source.geometry;
+			caster.empty = subset !== null && subset.getIndex()!.count === 0;
 			if ( subset ) this.subsets.push( subset );
 
 		}
@@ -420,12 +424,13 @@ export class RefractedSun {
 		if ( ! ( Math.abs( level - this.subsetLevel ) <= LEVEL_MARGIN * 0.5 ) ) this.cutSubsets( level );
 		const localBounds = new THREE.Box3();
 		let floorY = Infinity;
-		for ( const { source, proxy, floor } of this.casters ) {
+		for ( const { source, proxy, floor, empty } of this.casters ) {
 
 			source.updateWorldMatrix( true, false );
 			proxy.matrix.copy( source.matrixWorld );
 			proxy.matrixWorldNeedsUpdate = true;
-			proxy.visible = source.visible;
+			// (its source still fits the map: the fit is that of the whole caster set)
+			proxy.visible = source.visible && ! empty;
 			if ( ! source.visible ) continue;
 			if ( ! source.geometry.boundingBox ) source.geometry.computeBoundingBox();
 			const bounds = source.geometry.boundingBox!.clone().applyMatrix4( source.matrixWorld );

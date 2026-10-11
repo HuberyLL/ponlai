@@ -463,7 +463,8 @@ showChunkBorders( chunkView.borders );
 const refractedSun = new RefractedSun( renderer, shared );
 runtime.refractedSun = refractedSun;
 refractedSun.angleGate = THREE.MathUtils.degToRad( runtimeQuality.refractedSun.angleGate );
-refractedSun.setCasters( world.group );
+// the stones', floor's and island parts' triangles under the water come with the chunks (World.ts)
+refractedSun.setCasters( world.group, world.subsets );
 refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
 const foliage = buildFoliage( data.bushes, shared );
@@ -486,13 +487,14 @@ const sunCasters = new THREE.Box3();
 		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) sunCasters.expandByObject( object ); } );
 
 	}
-	sunShadow.setCasters( sunCasters );
+	// (the island parts' caster columns come with the chunks, World.ts)
+	sunShadow.setCasters( sunCasters, world.columns );
 	// the island's terrain is a closed solid: it casts its front faces (SunShadow)
 	sunShadow.castFrontFaces( world.group );
 
 }
-// the camera grabs the island's ground and keeps its pivot over the land
-controls.setIsland( world.group.children.filter( ( object ): object is THREE.Mesh => ( object as THREE.Mesh ).isMesh && object.castShadow ), landBox );
+// the camera grabs the island's ground (the chunks' grids, World.ts) and keeps its pivot over the land
+controls.setIsland( world.grounds, landBox );
 frameLand();
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
 rain.collision.setArea( landBox );

@@ -34,7 +34,8 @@ try {
 				const a = o.geometry.getAttribute( key );
 				if ( a && ! a.array.every( Number.isFinite ) ) bad.push( `${ o.name }:${ key }` );
 			}
-			if ( o.parent?.name === 'world' ) world.push( { name: o.name, vertices: o.geometry.getAttribute( 'position' ).count, maxY: o.geometry.boundingBox?.max.y, meadowDetail: o.material.userData.meadowDetail } );
+			// the stones and the floor, and the island's parts (a mesh per land chunk, under 'island')
+			if ( o.parent?.name === 'world' || o.parent?.name === 'island' ) world.push( { name: o.name, vertices: o.geometry.getAttribute( 'position' ).count, maxY: o.geometry.boundingBox?.max.y, meadowDetail: o.material.userData.meadowDetail } );
 		} );
 		return { bad, world, diag: window.__THREE_GAME_DIAGNOSTICS__, t: s.shared.time.value };
 	} );
@@ -43,7 +44,8 @@ try {
 	const rocks = inspect.world.find( ( m ) => m.name === 'rocks' );
 	assert.ok( rocks && rocks.vertices > 0 && rocks.maxY <= - 1.15 );
 	assert.equal( rocks.meadowDetail, false );
-	assert.equal( inspect.world.find( ( m ) => m.name === 'island' )?.meadowDetail, true );
+	const island = inspect.world.filter( ( m ) => m.name.startsWith( 'island ' ) );
+	assert.ok( island.length > 0 && island.every( ( m ) => m.meadowDetail === true ) );
 	assert.equal( inspect.t, 12 );
 	checks.push( 'Finite geometry, no exposed offshore rocks, bare submerged stone, frozen time t=12, WebGPU rendered' );
 	await page.screenshot( { path: `${ out }/overview.png` } );

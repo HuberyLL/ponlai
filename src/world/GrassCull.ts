@@ -17,6 +17,15 @@ import {
 // the batch's earlier workgroups, scans its own and scatters. Each batch is padded to whole
 // workgroups, so no workgroup spans two batches.
 //
+// The meadow is one pool (chunk design, section 8): a batch per kind (lawn, tussocks, the thin
+// extra tufts) holds every chunk's tufts in the chunks' order ( cj, ci ), as the anchors come
+// (ChunkMerge.ts), each drawn in one draw. The buffers hold a capacity, the next power of two of
+// the slots the batches fill, so a grown island's meadow can be written into them in place (a
+// rewrite calls `invalidate`); the dispatches cover the filled workgroups, and the slots past them
+// are never visible. Outgrowing the capacity takes new buffers, set as the storage nodes' `value`:
+// new bind groups, no pipeline (AGENTS.md, tools/verify-storage-realloc.mjs). The kernels take the
+// batches' bounds as constants: contents that move them need those as uniforms first.
+//
 // Rules:
 // - Each tuft's sphere is padded for the widening's 15 half widths, the sway and standing water's
 //   sink, and by twice its origin's offset from the sphere's centre, since the wind's bend turns
@@ -74,7 +83,9 @@ const _frustum = new THREE.Frustum(), _projScreen = new THREE.Matrix4(), _viewIn
 
 export class GrassCull {
 
+	/** The buffers' slots: the capacity, a power of two. */
 	readonly slots: number;
+	/** The workgroups dispatched: those the batches fill. */
 	readonly groups: number;
 	readonly ranges: CullRange[] = [];
 	readonly matrices: THREE.StorageBufferAttribute;
@@ -101,8 +112,8 @@ export class GrassCull {
 			slot += groups * GROUP;
 
 		}
-		this.slots = Math.max( slot, GROUP );
-		this.groups = this.slots / GROUP;
+		this.groups = Math.max( slot, GROUP ) / GROUP;
+		this.slots = 2 ** Math.ceil( Math.log2( this.groups ) ) * GROUP;
 		const n = this.slots;
 		const matrices = new Float32Array( n * 16 ), colors = new Float32Array( n * 4 ), ground = new Float32Array( n * 12 );
 		const origins = new Float32Array( n * 4 ), spheres = new Float32Array( n * 4 ).fill( - 1 ), visible = new Uint32Array( n );
@@ -159,7 +170,7 @@ export class GrassCull {
 		this.origins = new THREE.StorageBufferAttribute( origins, 4 );
 		this.spheres = new THREE.StorageBufferAttribute( spheres, 4 );
 		this.visible = new THREE.StorageBufferAttribute( visible, 1 );
-		this.counts = new THREE.StorageBufferAttribute( new Uint32Array( this.groups ), 1 );
+		this.counts = new THREE.StorageBufferAttribute( new Uint32Array( n / GROUP ), 1 );
 		this.indirect = new THREE.IndirectStorageBufferAttribute( args, 1 );
 		this.kernels = this.buildKernels();
 
@@ -172,7 +183,7 @@ export class GrassCull {
 		const origins = storage( this.origins, 'vec4', n ).toReadOnly();
 		const ground = storage( this.ground, 'vec4', n * 3 ).toReadOnly();
 		const visible = storage( this.visible, 'uint', n );
-		const counts = storage( this.counts, 'uint', this.groups );
+		const counts = storage( this.counts, 'uint', n / GROUP );
 		const args = storage( this.indirect, 'uint', this.ranges.length * 5 );
 		const planes = this.planes, cameraPosition = this.cameraPosition, thinFar = this.thinFar;
 		const ranges = this.ranges.filter( ( r ) => r.count > 0 );

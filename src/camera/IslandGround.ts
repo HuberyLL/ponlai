@@ -4,10 +4,11 @@ import { GROUND_CELL as CELL, type GroundGrid } from '../world/ChunkDerived.ts';
 // The island's ground for the camera on the CPU: a coarse top-down height grid of the island's own
 // meshes (the highest vertex in each cell) over a flat sea, enough to find the point under the
 // cursor that a drag grabs or a zoom closes in on. It derives from the meshes alone, so any tile
-// layout works; plants are left out (a grab on a crown takes the ground under it). `build` walks
-// the meshes' vertices on a grid from their box's corner; `fromGrids` merges the grids the world's
-// workers made for the chunks' island meshes (ChunkDerived.ts) on the world's lattice instead,
-// which moves a cell by less than its width (tools/verify-chunk-derived.mjs).
+// layout works; plants are left out (a grab on a crown takes the ground under it). The page takes
+// `fromGrids`: it merges the grids the world's workers made for the chunks' island meshes
+// (ChunkDerived.ts) on the world's lattice, so the main thread walks none of their vertices.
+// `build` walks the meshes' vertices on a grid from their box's corner, as the page did before;
+// tools/verify-chunk-derived.mjs checks that the two differ by less than a cell.
 
 // the sea's height for the camera (the waves' few decimetres do not matter to a grab)
 const SEA = 0;
