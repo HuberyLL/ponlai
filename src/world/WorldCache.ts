@@ -1,47 +1,24 @@
-// A cache of the generated world in IndexedDB, so a repeat visit skips generating it. The world
-// worker reads and writes it (worldWorker.ts), off the main thread. The key (World.ts's
-// worldCacheKey) changes whenever the generator could build something different: the hash of
-// every source file the worker imports (this one included), its options, a format version, and
-// the browser (its Math functions could differ between engines). One world is kept: storing a
-// new one drops the others. The world is stored as the worker posts it (structured clone keeps
-// every typed array bit for bit), before the page bakes anything into it. Any failure of the
-// store (a private window, a full quota, blocked site data) falls back to generating.
-// Chrome refuses a single value over about 133 MB, and a grown island's world passes that from
-// about 20 steps, so the world is stored in parts: its typed arrays packed into records of about
-// PART_BYTES each (keyed [ key, i ]), and under the key itself the rest, each array replaced by
-// its index.
+// A cache of the world's chunks in IndexedDB, so a repeat visit, or a land that grew by a piece,
+// skips generating every chunk the change left as it was. The chunk workers read and write it
+// (chunkWorker.ts), never the main thread. One record per chunk in the object store `chunks`,
+// under the key WorldChunks.ts makes: a format version, the generator's hash, the options, the
+// browser (its Math functions could differ between engines), the chunk and the growth steps whose
+// pieces lie in its window (so the land it reads). The land of a seed and step has a record of its
+// own there too. A chunk is stored as the worker posts it (structured clone keeps every typed array
+// bit for bit), before the page merges anything.
+//
+// One generator is kept: the `meta` store holds the hash of the generator that wrote the chunks,
+// and opening the cache with another hash clears them (a changed generator would never read them
+// again). Every worker checks it on opening, in one transaction with the clearing, so the first
+// to open clears and the others find the new hash. Any failure (a private window, a full quota,
+// blocked site data) falls back to generating: the reader sees a miss, a failed write is dropped.
 
 const DB = 'ponlai-world-cache';
-const STORE = 'worlds';
-const PART_BYTES = 64 << 20;
-
-interface Head { value: unknown; parts: number }
-
-// marks an array's place in the head
-const ARRAY = '$array';
-
-// The value with its typed arrays replaced by { $array: index } into `arrays`.
-function strip( value: unknown, arrays: ArrayBufferView[] ): unknown {
-
-	if ( ArrayBuffer.isView( value ) ) return { [ ARRAY ]: arrays.push( value ) - 1 };
-	if ( Array.isArray( value ) ) return value.map( ( v ) => strip( v, arrays ) );
-	if ( value && typeof value === 'object' ) return Object.fromEntries( Object.entries( value ).map( ( [ k, v ] ) => [ k, strip( v, arrays ) ] ) );
-	return value;
-
-}
-
-function restore( value: unknown, arrays: ArrayBufferView[] ): unknown {
-
-	if ( Array.isArray( value ) ) return value.map( ( v ) => restore( v, arrays ) );
-	if ( value && typeof value === 'object' ) {
-
-		if ( ARRAY in value ) return arrays[ ( value as Record<string, number> )[ ARRAY ] ];
-		return Object.fromEntries( Object.entries( value ).map( ( [ k, v ] ) => [ k, restore( v, arrays ) ] ) );
-
-	}
-	return value;
-
-}
+// version 2: the chunk stores replace version 1's one-world store `worlds`
+const VERSION = 2;
+const CHUNKS = 'chunks';
+const META = 'meta';
+const GENERATOR = 'generator';
 
 function request<T>( r: IDBRequest<T> ): Promise<T> {
 
@@ -54,32 +31,61 @@ function request<T>( r: IDBRequest<T> ): Promise<T> {
 
 }
 
+function done( tx: IDBTransaction ): Promise<void> {
+
+	return new Promise( ( resolve, reject ) => {
+
+		tx.oncomplete = () => resolve();
+		tx.onerror = tx.onabort = () => reject( tx.error );
+
+	} );
+
+}
+
 function open(): Promise<IDBDatabase> {
 
-	const r = indexedDB.open( DB, 1 );
-	r.onupgradeneeded = () => { r.result.createObjectStore( STORE ); };
+	const r = indexedDB.open( DB, VERSION );
+	r.onupgradeneeded = () => {
+
+		const db = r.result;
+		for ( const name of [ ...db.objectStoreNames ] ) db.deleteObjectStore( name );
+		db.createObjectStore( CHUNKS );
+		db.createObjectStore( META );
+
+	};
 	return request( r );
 
 }
 
-export interface WorldStore<T> {
-	// the cached world for the key, or undefined
-	read(): Promise<T | undefined>;
-	// stores the world under the key in place of any other; it is cloned before this returns, so
-	// its buffers may be transferred right after. The promise settles once the store has written
-	// it (the worker must live until then).
-	write( data: T ): Promise<void>;
-	// closes the store without writing
+export interface ChunkStore {
+	// the record under `key`, or undefined
+	read<T>( key: string ): Promise<T | undefined>;
+	// stores `value` under `key`; it is cloned before this returns, so its buffers may be
+	// transferred right after. The promise settles once the store has written it (the worker must
+	// live until then), and never rejects.
+	write( key: string, value: unknown ): Promise<void>;
 	close(): void;
 }
 
-/** The cache's entry for `key`, or null when IndexedDB is unavailable. */
-export async function openWorldStore<T>( key: string ): Promise<WorldStore<T> | null> {
+/** The chunk cache of the generator `generator` (its records of any other generator cleared), or
+ * null when IndexedDB is unavailable. */
+export async function openChunkStore( generator: string ): Promise<ChunkStore | null> {
 
 	let db: IDBDatabase;
 	try {
 
 		db = await open();
+		// another page that opens a newer version must not wait for this one
+		db.onversionchange = () => db.close();
+		const tx = db.transaction( [ META, CHUNKS ], 'readwrite' );
+		const meta = tx.objectStore( META );
+		if ( await request( meta.get( GENERATOR ) ) !== generator ) {
+
+			tx.objectStore( CHUNKS ).clear();
+			meta.put( generator, GENERATOR );
+
+		}
+		await done( tx );
 
 	} catch ( error ) {
 
@@ -88,15 +94,11 @@ export async function openWorldStore<T>( key: string ): Promise<WorldStore<T> | 
 
 	}
 	return {
-		async read() {
+		async read<T>( key: string ) {
 
 			try {
 
-				const store = db.transaction( STORE, 'readonly' ).objectStore( STORE );
-				const head = await request( store.get( key ) ) as Head | undefined;
-				if ( ! head ) return undefined;
-				const parts = await Promise.all( Array.from( { length: head.parts }, ( _, i ) => request( store.get( [ key, i ] ) ) as Promise<ArrayBufferView[]> ) );
-				return restore( head.value, parts.flat() ) as T;
+				return await request( db.transaction( CHUNKS, 'readonly' ).objectStore( CHUNKS ).get( key ) ) as T | undefined;
 
 			} catch ( error ) {
 
@@ -106,42 +108,17 @@ export async function openWorldStore<T>( key: string ): Promise<WorldStore<T> | 
 			}
 
 		},
-		write( data ) {
+		write( key, value ) {
 
 			try {
 
-				const tx = db.transaction( STORE, 'readwrite' );
-				const store = tx.objectStore( STORE );
-				store.clear();
-				const arrays: ArrayBufferView[] = [];
-				const value = strip( data, arrays );
-				let part: ArrayBufferView[] = [], bytes = 0, parts = 0;
-				for ( const array of arrays ) {
-
-					if ( bytes > 0 && bytes + array.byteLength > PART_BYTES ) {
-
-						store.put( part, [ key, parts ++ ] );
-						part = [];
-						bytes = 0;
-
-					}
-					part.push( array );
-					bytes += array.byteLength;
-
-				}
-				if ( part.length > 0 ) store.put( part, [ key, parts ++ ] );
-				store.put( { value, parts } satisfies Head, key );
-				return new Promise( ( resolve ) => {
-
-					tx.oncomplete = () => { db.close(); resolve(); };
-					tx.onerror = tx.onabort = () => { console.warn( 'world cache: storing failed', tx.error ); db.close(); resolve(); };
-
-				} );
+				const tx = db.transaction( CHUNKS, 'readwrite' );
+				tx.objectStore( CHUNKS ).put( value, key );
+				return done( tx ).catch( ( error ) => console.warn( 'world cache: storing failed', error ) );
 
 			} catch ( error ) {
 
 				console.warn( 'world cache: storing failed', error );
-				db.close();
 				return Promise.resolve();
 
 			}

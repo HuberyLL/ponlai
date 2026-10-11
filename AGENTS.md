@@ -48,9 +48,11 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
 - `src/camera/`: the island camera (`IslandCameraControls.ts`, the ground it grabs in
   `IslandGround.ts`) and the free flight.
-- `src/world/`: the island generated in Web Workers (`worldWorker.ts`, cached by `WorldCache.ts`)
-  from the grown land (`IslandGrowth.ts`: the land lattice grown one piece at a time): the
-  world built one 16 m chunk at a time from its window of the land field (`Chunks.ts`), the
+- `src/world/`: the world generated from the grown land (`IslandGrowth.ts`: the land lattice
+  grown one piece at a time) in 16 m chunks, each from its window of the land field
+  (`Chunks.ts`), on a pool of `chunkWorker.ts` workers run by `WorldChunks.ts`, one IndexedDB
+  record per chunk (`WorldCache.ts`, keyed by the generator's hash, options, browser, chunk and
+  the pieces in its window), merged into the page's world by `ChunkMerge.ts`; the
   footprint, SDF shapes and surface nets (`WorldShapes.ts`), the cliffs (`Cliff.ts`), the
   submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as tiles by
   `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`, `RimSkirt.ts`), the

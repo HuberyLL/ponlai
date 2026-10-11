@@ -1,13 +1,14 @@
 // Vite plugin: `virtual:world-generator` exports WORLD_GENERATOR_HASH, a hash of every source file
-// the world worker imports, so a cached world (src/world/WorldCache.ts) is used only while the
-// generator would build the same one. The files are found by following the worker's relative
+// the chunk worker imports (src/world/chunkWorker.ts: the chunks, the land and what the merge
+// shares with them), so a cached chunk (src/world/WorldCache.ts) is used only while the generator
+// would build the same one. The files are found by following the worker's relative
 // imports; it imports no packages, and a bare import fails the build (hash that package's version
 // too), so a new dependency cannot slip past the hash.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
-const WORKER = 'src/world/worldWorker.ts';
+const WORKER = 'src/world/chunkWorker.ts';
 const MODULE = 'virtual:world-generator';
 const RESOLVED = '\0' + MODULE;
 

@@ -16,7 +16,8 @@ import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
-import { loadWorld, buildWorldMeshes, shoreTextureFrom, seabedBedTextureFrom, type LoadedWorld } from './world/World.ts';
+import { buildWorldMeshes, shoreTextureFrom, seabedBedTextureFrom } from './world/World.ts';
+import { loadWorld, type LoadedWorld } from './world/WorldChunks.ts';
 import { buildGrass, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
@@ -58,13 +59,36 @@ const intParam = ( name: string, fallback: number ) => {
 
 };
 const landOptions = { worldSeed: intParam( 'seed', 1 ), step: THREE.MathUtils.clamp( intParam( 'grow', 0 ), 0, GROWTH.maxSteps ) };
+// The framing a land sets: the first island's (the tile layout's 384 m^2 round ( 1/3, -1 ), which
+// the views were placed for) moved to the land's centroid and scaled by the ratio of their
+// equivalent radii (a disc's of the same area).
+const FIRST_ISLAND = { x: 1 / 3, z: - 1, radius: Math.sqrt( 384 / Math.PI ) };
+const landFraming = ( land: LandLattice ) => {
+
+	const centroid = landCentroid( land ), scale = Math.sqrt( landArea( land ) / Math.PI ) / FIRST_ISLAND.radius;
+	/** The first island's point ( x, y, z ) on this land. */
+	const onLand = ( x: number, y: number, z: number ) => new THREE.Vector3( centroid.x + ( x - FIRST_ISLAND.x ) * scale, y, centroid.z + ( z - FIRST_ISLAND.z ) * scale );
+	return { centroid, scale, onLand, pivot: onLand( 1.5, 0.5, 1 ) };
+
+};
 // The world's generation needs nothing from the page, so its workers start first and run while
-// the renderer, sky, textures and frame graph are set up; its result is awaited below. The world
-// worker's last result comes from IndexedDB while the generator and its options are unchanged
-// (src/world/WorldCache.ts); ?worldCache=off generates it regardless, as on a first visit. A
-// browser without WebGPU stops at the renderer below, so it starts no workers.
-const worldJob: Promise<LoadedWorld> = 'gpu' in navigator ? loadWorld( landOptions, { cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ) } )
-	: new Promise( () => undefined );
+// the renderer, sky, textures and frame graph are set up; its result is awaited below. It comes in
+// chunks (src/world/WorldChunks.ts), nearest the camera's pivot first, each from the browser's
+// IndexedDB cache while the generator, its options and the land in the chunk's reach are unchanged
+// (src/world/WorldCache.ts); ?worldCache=off generates every chunk regardless, as on a first
+// visit. A browser without WebGPU stops at the renderer below, so it starts no workers.
+// the chunks' progress, shown once the loading screen reaches the island
+let worldProgress = '', generating = false;
+const worldJob: Promise<LoadedWorld> = 'gpu' in navigator ? loadWorld( landOptions, {
+	cache: ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' ),
+	pivot: ( land ) => landFraming( land ).pivot,
+	progress: ( done, total ) => {
+
+		worldProgress = ` ${ done } / ${ total }`;
+		if ( generating ) setStatus( `Generating the island…${ worldProgress }` );
+
+	},
+} ) : new Promise( () => undefined );
 worldJob.catch( () => undefined ); // reported where it is awaited, under the world section
 const ground = { soil: params.get( 'soil' ) !== '0' };
 soilUniforms.strength.value = ground.soil ? 1 : 0;
@@ -395,20 +419,17 @@ warming.catch( () => undefined ); // reported where it is awaited, before the lo
 
 // ------------------------------------------------------------------ world
 
-setStatus( 'Generating the island…' );
+generating = true;
+setStatus( `Generating the island…${ worldProgress }` );
 const t0 = performance.now();
 const worldCache = await worldJob;
+generating = false;
 const data = worldCache.data;
 mark( 'world' );
-// The grown land, and the framing it sets: the first island's (the tile layout's 384 m^2 round
-// ( 1/3, -1 ), which the views were placed for) moved to the land's centroid and scaled by the
-// ratio of their equivalent radii (a disc's of the same area).
+// The grown land, and the framing it sets.
 const land = LandLattice.fromBytes( data.land );
-const landBox = landBounds( land ), centroid = landCentroid( land );
-const FIRST_ISLAND = { x: 1 / 3, z: - 1, radius: Math.sqrt( 384 / Math.PI ) };
-const landScale = Math.sqrt( landArea( land ) / Math.PI ) / FIRST_ISLAND.radius;
-/** The first island's point ( x, y, z ) on this land. */
-const onLand = ( x: number, y: number, z: number ) => new THREE.Vector3( centroid.x + ( x - FIRST_ISLAND.x ) * landScale, y, centroid.z + ( z - FIRST_ISLAND.z ) * landScale );
+const landBox = landBounds( land );
+const { centroid, scale: landScale, onLand } = landFraming( land );
 target.copy( onLand( 1.5, 0.5, 1 ) );
 // the sea fog thins over the island and in its lee
 const fogClearing = onLand( 0, 0, 0 );
@@ -536,7 +557,7 @@ water = new Water( {
 applySkyFill();
 waterScene.add( water.mesh, stormSea.spray.mesh );
 
-console.info( worldCache.cache === 'hit' ? 'world from the cache' : 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
+console.info( `world: ${ worldCache.hits } of ${ worldCache.chunks + 1 } records from the cache (${ worldCache.cache })`, data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
 // ------------------------------------------------------------------ GUI
 
@@ -1087,7 +1108,7 @@ function diagnostics(): void {
 		rimStrands: data.rimStrands.length,
 		rimBushes: foliage.count,
 		timings: data.timings,
-		worldCache: worldCache.cache === 'off' ? 'off' : { cache: worldCache.cache, ms: + worldCache.ms.toFixed( 1 ) },
+		worldCache: worldCache.cache === 'off' ? 'off' : { cache: worldCache.cache, hits: worldCache.hits, chunks: worldCache.chunks, ms: + worldCache.ms.toFixed( 1 ) },
 		backend: 'webgpu',
 		hour: + dayCycle.hour.toFixed( 4 ),
 		clockPaused: dayCycle.paused,

@@ -42,7 +42,7 @@
 // tenths the design estimated: far from the coast the wall's SDF already costs little per sample
 // (CliffWall's column cache), and the vertices' normals and AO dominate.
 //
-// The call without `own` (the page's single island mesh) is unchanged: its lattice starts at min.
+// The call without `own` (each stone's own mesh) is unchanged: its lattice starts at min.
 
 import type { SDF, MeshData } from './types.ts';
 

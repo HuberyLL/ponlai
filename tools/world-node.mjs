@@ -1,37 +1,35 @@
 // Helpers for running the world generators in plain node (CPU only, with TypeScript stripping):
-// the worker shim, hashes of generated buffers and the weld that tells whether meshes close up
-// (tools/verify-world-chunks.mjs).
-import assert from 'node:assert/strict';
+// the page's world built serially, hashes of generated buffers and the weld that tells whether
+// meshes close up (tools/verify-world-chunks.mjs).
 import { createHash } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
+import { buildLand } from '../src/world/chunkWorker.ts';
+import { mergeChunks } from '../src/world/ChunkMerge.ts';
+import { buildChunk, landField, landWindow } from '../src/world/Chunks.ts';
+import { LandLattice } from '../src/world/IslandGrowth.ts';
 
-// worldWorker.ts is written for a Web Worker: it sets `self.onmessage` and answers with
-// `self.postMessage`. Install a `self` that keeps the reply and import the worker, once per process
-// (the import is cached, so a second `self` would never get an `onmessage`); every caller shares the
-// returned function, which runs one job synchronously (a plain WorldOptions message replies before
-// returning).
-let worldWorker;
-export function loadWorldWorker() {
+// The page's world (src/world/WorldChunks.ts) without its workers and cache: the land, its field
+// and every chunk built here one after another, then merged as the page merges them. The result
+// is the page's WorldData bit for bit (each chunk is a function of its window, the merge of the
+// chunks' order), with the stages' times summed over the chunks.
+export function generateWorld( { worldSeed = 1, step = 0, contactOcclusion = true } = {} ) {
 
-	worldWorker ??= ( async () => {
+	const t0 = performance.now();
+	const land = buildLand( worldSeed, step );
+	const lattice = LandLattice.fromBytes( land.land );
+	const field = landField( lattice );
+	const chunks = [], timings = {};
+	for ( let k = 0; k < land.chunks.length; k += 2 ) {
 
-		let reply;
-		globalThis.self = { postMessage( data, { transfer } ) {
+		const ci = land.chunks[ k ], cj = land.chunks[ k + 1 ];
+		const chunk = buildChunk( landWindow( field, ci, cj ), lattice, ci, cj, { version: step, contactOcclusion } );
+		for ( const [ stage, ms ] of Object.entries( chunk.timings ) ) timings[ stage ] = ( timings[ stage ] ?? 0 ) + ms;
+		chunks.push( chunk );
 
-			assert.equal( new Set( transfer ).size, transfer.length, 'Every worker buffer must be transferred only once.' );
-			reply = data;
-
-		} };
-		await import( '../src/world/worldWorker.ts' );
-		return ( options = {} ) => {
-
-			reply = undefined;
-			self.onmessage( { data: options } );
-			return reply;
-
-		};
-
-	} )();
-	return worldWorker;
+	}
+	const world = mergeChunks( land, chunks );
+	world.timings = { ...timings, merge: world.timings.merge, total: Math.round( performance.now() - t0 ) };
+	return world;
 
 }
 
