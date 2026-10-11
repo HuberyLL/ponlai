@@ -138,8 +138,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
   (`renderOrder = -1`). See `Foliage.ts`.
 - The water samples neither the target it draws into nor more textures: it already binds 16
-  sampled textures and 14 of 16 varyings, 15 under the temporal modes (`Water.ts`). It reflects only what lies inside
-  `Water.reflectionBounds`: anything opaque off the island or above the trees must grow that box.
+  sampled textures and 14 of 16 varyings, 15 under the temporal modes (`Water.ts`). It reflects
+  only what lies inside `Water.reflectionBounds`: anything opaque off the island or above the
+  trees must grow that box.
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an
   rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).
