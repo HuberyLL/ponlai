@@ -25,7 +25,7 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // within the tick, so a game with it is deterministic for a seed; a slow one acts when it answers.
 
 /** the state's shape this build reads; a save of another is refused */
-export const SAVE_VERSION = 13;
+export const SAVE_VERSION = 14;
 const NAMES = [ 'Kai' ];
 
 export class Sim {

@@ -4,22 +4,41 @@ import type { DoArgs, Place, PlaceOption } from './places.ts';
 import type { Sim } from './Sim.ts';
 import type { BuildingState, SimState, Vec2 } from './types.ts';
 
-// The buildings the player places: registered kinds, each a footprint and the options the
-// finished place offers. Placing is generic (Sim.placeBlueprint, refused by blueprintRefusal):
-// a building needs open main ground with a clear ring round its footprint (CLEAR_RING, as the
-// palm's, so it can never cut the main ground in two), no body standing on it, and none of its kind
-// placed yet (one of each kind for now, so its id is the kind's name). It blocks its footprint from
-// the moment it is placed. A new kind is one more entry in BUILDING_KINDS.
+// The buildings the player places: registered kinds, each a footprint, the work it takes and the
+// options the finished place offers. Placing is generic (Sim.placeBlueprint, refused by
+// blueprintRefusal): a building needs open main ground with a clear ring round its footprint
+// (CLEAR_RING, as the palm's, so it can never cut the main ground in two), no body standing on it,
+// and none of its kind placed yet (one of each kind for now, so its id is the kind's name). A new
+// kind is one more entry in BUILDING_KINDS.
+//
+// The player plans, the islanders build (docs/game-design.md, "Building"). A placed building is a
+// blueprint: a construction site, the place with its id, which blocks its footprint from the
+// moment it is placed (the islander works beside it, within REACH) and whose only option is
+// `build`. `do( 'build' )` works on it for the work still left, a game second of work a tick
+// (BuildingState.worked); a new action interrupts it and the work done stays. When the work is
+// done the site is the finished building: its own options and what shows on it, and `build` is
+// gone. Its stage is a function of its progress alone (stageOf): planned (no work yet), being
+// built, built; perception shows it in words, as a person sees a site, not as a number
+// (siteShows). No materials yet (nothing on the island gives wood or stone): building costs time
+// only. Cancelling a site is not designed yet.
 //
 // - chest: a wooden chest that holds CHEST_CAPACITY items. `put` and `take` ( { item, count } )
-//   are instant; what is inside shows only to someone standing at it.
+//   are instant; what is inside shows only to someone standing at it. CHEST_WORK is about a game
+//   hour: a few planks and a lid knocked together by one person, which at the game's day (24 real
+//   minutes at 1x) is a minute to watch the site rise, and costs the islander about 4 of
+//   hydration and 3 of satiety (needs.ts), so building it never crowds out drinking and eating.
 
 /** standing within this distance (m) of a building's footprint is standing at it */
 const REACH = 0.9;
 
+/** a building's stage, from its progress */
+export type Stage = 'planned' | 'building' | 'built';
+
 export interface BuildingKind {
 	/** the disc it blocks (m, radius) */
 	radius: number;
+	/** the work it takes, game seconds of one islander's building */
+	work: number;
 	/** what shows on the finished building, to someone who sees it or stands at it */
 	shows( building: BuildingState, at: boolean ): Record<string, unknown> | null;
 	/** the options the finished building offers */
@@ -33,6 +52,8 @@ export const CHEST_RADIUS = 0.55;
 /** A chest holds five bags' worth: about four days of one islander's food and water (three
  * coconuts and two fish a day, needs.ts), a store against a poor day's fishing, not a granary. */
 export const CHEST_CAPACITY = 20;
+/** the chest's work (game seconds): see the header */
+export const CHEST_WORK = 3600;
 
 /** The item and count a put or take names, or why they are not one. */
 function itemCount( args: DoArgs ): { item: string; n: number } | string {
@@ -46,6 +67,7 @@ function itemCount( args: DoArgs ): { item: string; n: number } | string {
 
 const chest: BuildingKind = {
 	radius: CHEST_RADIUS,
+	work: CHEST_WORK,
 	shows: ( box, at ) => at ? { items: { ...box.items } } : null,
 	options: ( box ) => ( {
 		put: {
@@ -109,21 +131,62 @@ export function blueprintRefusal( sim: Sim, kind: string, p: Vec2 ): string | nu
 /** A new building's state at a point (its kind's name as its id). */
 export function newBuilding( kind: string, x: number, z: number ): BuildingState {
 
-	return { id: kind, kind, x, z, items: {} };
+	return { id: kind, kind, x, z, worked: 0, items: {} };
+
+}
+
+/** How far a building has come, 0 (planned) to 1 (built). */
+export function progressOf( b: BuildingState ): number {
+
+	return Math.min( 1, b.worked / BUILDING_KINDS[ b.kind ].work );
+
+}
+
+/** A building's stage, from its progress. */
+export function stageOf( b: BuildingState ): Stage {
+
+	const progress = progressOf( b );
+	return progress >= 1 ? 'built' : progress > 0 ? 'building' : 'planned';
+
+}
+
+/** How an unbuilt site looks to someone who sees it: the stage, and how far along in words. */
+function siteShows( b: BuildingState ): Record<string, unknown> {
+
+	const progress = progressOf( b );
+	if ( progress === 0 ) return { construction: 'marked out, not begun' };
+	const done = progress < 0.125 ? 'just begun' : progress < 0.375 ? 'about a quarter done' : progress < 0.625 ? 'about half done' : progress < 0.875 ? 'about three quarters done' : 'nearly done';
+	return { construction: `being built, ${ done }` };
+
+}
+
+/** The site's one option: work on it until it is built. */
+function buildOption( b: BuildingState, kind: BuildingKind ): PlaceOption {
+
+	return {
+		open: () => true,
+		start: () => ( { ok: true, seconds: kind.work - b.worked } ),
+		during: () => {
+
+			b.worked ++;
+			return b.worked >= kind.work ? { ok: true, value: `built the ${ b.kind }` } : null;
+
+		},
+	};
 
 }
 
 function buildingPlace( sim: Sim, b: BuildingState ): Place {
 
 	const grid = sim.grid, kind = BUILDING_KINDS[ b.kind ], p = { x: b.x, z: b.z };
-	const reach = kind.radius + REACH;
+	const reach = kind.radius + REACH, built = stageOf( b ) === 'built';
 	return {
 		id: b.id,
 		reaches: ( k ) => k >= 0 && Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= reach,
 		near: () => cellsWithin( grid, p, reach ),
 		distance: ( q ) => Math.hypot( q.x - p.x, q.z - p.z ),
-		shows: ( at ) => kind.shows( b, at ),
-		options: kind.options( b ),
+		shows: ( at ) => built ? kind.shows( b, at ) : siteShows( b ),
+		options: built ? kind.options( b ) : { build: buildOption( b, kind ) },
 	};
 
 }

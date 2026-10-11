@@ -6,7 +6,7 @@ import { ISLAND_TOP } from '../../world/WorldShapes.ts';
 import { SPEED_FACTORS } from '../sim/types.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { Sim } from '../sim/Sim.ts';
-import { buildingOf } from '../sim/buildings.ts';
+import { buildingOf, stageOf } from '../sim/buildings.ts';
 import { PalmView } from './PalmView.ts';
 import { standIn } from './StandIn.ts';
 import { ChestView } from './ChestView.ts';
@@ -162,7 +162,9 @@ export class GameView {
 			changed = true;
 
 		}
-		const box = buildingOf( state, 'chest' );
+		// the chest's model once it is built (its construction stages are not drawn yet)
+		const site = buildingOf( state, 'chest' );
+		const box = site && stageOf( site ) === 'built' ? site : null;
 		if ( this.chest && ( ! box || box.x !== this.chest.x || box.z !== this.chest.z ) ) {
 
 			this.chest.dispose();

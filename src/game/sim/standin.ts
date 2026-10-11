@@ -9,7 +9,10 @@ import { BAG_CAPACITY } from './items.ts';
 //   else pick one at the palm (going there); else look in the chest; else wait for regrowth.
 // - hungry (satiety below HUNGRY): eat a carried fish; else take one at the chest; else fish
 //   at the shore (going there). The lower need comes first.
-// - otherwise keep one coconut and one fish in the bag; with a chest placed, gather a second
+// - then a construction site in sight (a place that shows its construction, buildings.ts): build
+//   it, going there first. Building runs until the site is done, an hour for the chest, which the
+//   needs' thresholds leave room for.
+// - otherwise keep one coconut and one fish in the bag; with a chest built, gather a second
 //   of each and carry it there until it holds STOCK of each (it sees what it holds only while
 //   standing at it, and remembers nothing); else wait a while.
 //
@@ -51,7 +54,9 @@ export class StandInBrain implements Brain {
 		const at = ( id: string ) => p.atHand.some( ( h ) => h.place === id );
 		const sees = ( id: string ) => p.seen.find( ( s ) => s.place === id );
 		const coconutsOnPalm = number( sees( 'palm' )?.shows?.coconuts );
-		const chest = sees( 'chest' );
+		// a place under construction shows how far along it is; the chest counts once built
+		const site = p.seen.find( ( s ) => s.shows?.construction !== undefined );
+		const chest = sees( 'chest' )?.shows?.construction === undefined ? sees( 'chest' ) : undefined;
 		const stored = ( item: string ) => number( ( chest?.shows?.items as Record<string, unknown> | undefined )?.[ item ] );
 
 		// a full bag with nothing for the need: make room with what it holds most of
@@ -93,6 +98,8 @@ export class StandInBrain implements Brain {
 			if ( call ) return call;
 
 		}
+
+		if ( site ) return at( site.place ) ? doAt( 'build' ) : go( site.place );
 
 		// gather one of a kind: a coconut from the palm, a fish at the shore
 		const gather = ( item: string ): ToolCall | null => {

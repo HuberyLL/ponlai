@@ -1,6 +1,7 @@
 import { buildings, obstructBuildings } from './buildings.ts';
 import { CLEAR_RING, cellsWithin, palmSite, shoreMask } from './ground.ts';
 import { BAG_CAPACITY, intoBag, total } from './items.ts';
+import type { Grid } from './grid.ts';
 import type { Sim } from './Sim.ts';
 import type { ActionResult, PalmState, SimState, Vec2, Villager } from './types.ts';
 
@@ -44,6 +45,9 @@ export interface PlaceOption {
 	/** whether the place offers it now, from the place's own state (listed at hand) */
 	open( sim: Sim ): boolean;
 	start( sim: Sim, body: Villager, args: DoArgs ): Start;
+	/** each tick a timed option runs (its first one after it began): a result ends it there, early */
+	during?( sim: Sim, body: Villager, args: DoArgs ): ActionResult | null;
+	/** when a timed option's seconds are up */
 	finish?( sim: Sim, body: Villager, args: DoArgs ): ActionResult;
 }
 
@@ -64,11 +68,21 @@ type PlaceKind = ( sim: Sim ) => Place[];
 
 // ------------------------------------------------------------------ shore
 
+// per grid: the shore's cells (the places are built anew each time they are looked up, every tick
+// of a timed `do`)
+const shoreCells = new WeakMap<Grid, number[]>();
+
 function shore( sim: Sim ): Place[] {
 
 	const grid = sim.grid, mask = shoreMask( grid );
-	const cells: number[] = [];
-	for ( let k = 0; k < mask.length; k ++ ) if ( mask[ k ] ) cells.push( k );
+	let cells = shoreCells.get( grid );
+	if ( ! cells ) {
+
+		cells = [];
+		for ( let k = 0; k < mask.length; k ++ ) if ( mask[ k ] ) cells.push( k );
+		shoreCells.set( grid, cells );
+
+	}
 	return [ {
 		id: 'shore',
 		reaches: ( k ) => k >= 0 && mask[ k ] === 1,

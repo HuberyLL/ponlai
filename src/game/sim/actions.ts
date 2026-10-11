@@ -18,10 +18,12 @@ import type { ActionCall, ActionResult, Villager } from './types.ts';
 //
 // Rules: a new action replaces the one under way (a refused one replaces nothing); stopping is not
 // an action. Saying is the exception: speech comes from the mind, not the body, so it neither
-// replaces the action under way nor takes the place of its outcome in Villager.last. An action with duration (walking, waiting, fishing, picking) is Villager.action and
+// replaces the action under way nor takes the place of its outcome in Villager.last. An action with duration (walking, waiting, fishing, picking, building) is Villager.action and
 // advances per tick (`advanceAction`); it ends with an outcome in Villager.last, which the next
 // thought perceives. An instant one (use, put, take, a refusal) leaves its outcome there at
-// once. A tool's own result says whether the action began (or what it did, when instant).
+// once. A tool's own result says whether the action began (or what it did, when instant). A timed
+// `do` runs its option's `during` every tick it lasts (building adds its work there and ends when
+// the work is done), then its `finish` when its time is up.
 
 /** How a call begins: refused, done, or under way (its outcome comes when it ends). */
 const UNDER_WAY: ActionResult = { ok: true, value: 'under way' };
@@ -164,15 +166,17 @@ export function advanceAction( sim: Sim, body: Villager ): void {
 		return;
 
 	}
-	if ( action.until === null || sim.state.tick < action.until ) return;
 	if ( call.tool === 'do' ) {
 
 		const args = call.args as DoArgs;
 		const option = placesOf( sim ).find( ( p ) => p.id === args.place )?.options[ args.action ];
-		end( body, call, option?.finish ? option.finish( sim, body, args ) : { ok: false, reason: 'the place is gone' } );
+		const done = option?.during?.( sim, body, args );
+		if ( done ) end( body, call, done );
+		else if ( action.until !== null && sim.state.tick >= action.until ) end( body, call, option?.finish ? option.finish( sim, body, args ) : { ok: false, reason: 'the place is gone' } );
 		return;
 
 	}
+	if ( action.until === null || sim.state.tick < action.until ) return;
 	end( body, call, { ok: true, value: 'waited' } );
 
 }
