@@ -2,6 +2,8 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, uniform, storage, workgroupArray, workgroupBarrier, workgroupId, localId, uint, select, length, dot, min, max,
 } from 'three/tsl';
+import { TEMPORAL } from '../post/Antialiasing.ts';
+import { jitter } from '../post/Jitter.ts';
 
 // GPU-driven culling for the meadow's tufts. Every tuft of every batch lives in one set of storage
 // buffers (instance transform, colour, the ground inputs, the planting anchor and a bounding
@@ -54,6 +56,32 @@ export interface CullRange {
 
 const _box = new THREE.Box3(), _corner = new THREE.Vector3(), _world = new THREE.Box3(), _sphere = new THREE.Sphere();
 const _frustum = new THREE.Frustum(), _projScreen = new THREE.Matrix4(), _viewInverse = new THREE.Matrix4(), _camera = new THREE.Vector3();
+const _padded = new THREE.Matrix4(), _size = new THREE.Vector2();
+
+// Under the temporal modes the view camera draws the meadow with its projection jittered by up to
+// half a render pixel (Jitter.ts), a different one every frame. Keyed and culled by it, the cull
+// would dispatch every frame of a still view. It takes the unjittered projection instead, widened
+// by one render pixel on each side: the jittered frustum lies inside it whatever the offset. Any
+// other camera keeps its own projection. Null when `camera` is not the jittered view camera.
+function unjitteredPadded( renderer: THREE.Renderer, camera: THREE.Camera ): THREE.Matrix4 | null {
+
+	const q = jitter.uniforms.unjitteredProjection.value.elements, p = camera.projectionMatrix.elements;
+	const d = jitter.uniforms.ndc.value;
+	// The jitter adds a multiple of the projection's last row to its first two (`Jitter.begin`): for
+	// a perspective camera only elements 8 and 9 move, by the offset in NDC.
+	for ( let i = 0; i < 16; i ++ ) if ( i !== 8 && i !== 9 && p[ i ] !== q[ i ] ) return null;
+	if ( Math.abs( p[ 8 ] - q[ 8 ] ) > Math.abs( d.x ) + 1e-9 || Math.abs( p[ 9 ] - q[ 9 ] ) > Math.abs( d.y ) + 1e-9 ) return null;
+	const target = renderer.getRenderTarget();
+	if ( target ) _size.set( target.width, target.height );
+	else renderer.getDrawingBufferSize( _size );
+	// Scaling the clip x (y) row by w / ( w + 2 ) moves the frustum's sides out by a pixel (2 / w in NDC).
+	const sx = _size.x / ( _size.x + 2 ), sy = _size.y / ( _size.y + 2 );
+	const e = _padded.copy( jitter.uniforms.unjitteredProjection.value ).elements;
+	for ( const i of [ 0, 4, 8, 12 ] ) e[ i ] *= sx;
+	for ( const i of [ 1, 5, 9, 13 ] ) e[ i ] *= sy;
+	return _padded;
+
+}
 
 export class GrassCull {
 
@@ -72,6 +100,8 @@ export class GrassCull {
 	private readonly cameraPosition = uniform( new THREE.Vector3() );
 	private readonly kernels: THREE.ComputeNode[];
 	private readonly lastKey = new Float64Array( 16 + 3 + 8 ).fill( NaN );
+	/** Debug diagnostics: views culled (dispatches) and updates skipped as unchanged, since load. */
+	readonly stats = { dispatches: 0, skipped: 0 };
 
 	constructor( batches: CullBatchInput[], private readonly thinFar: THREE.UniformNode<'float', number> ) {
 
@@ -280,7 +310,8 @@ export class GrassCull {
 	update( renderer: THREE.Renderer, camera: THREE.Camera ): void {
 
 		const key = this.lastKey;
-		const e = camera.matrixWorld.elements, p = camera.projectionMatrix.elements;
+		const projection = ( TEMPORAL ? unjitteredPadded( renderer, camera ) : null ) ?? camera.projectionMatrix;
+		const e = camera.matrixWorld.elements, p = projection.elements;
 		let same = true;
 		const check = ( i: number, v: number ) => {
 
@@ -297,8 +328,14 @@ export class GrassCull {
 		check( 19, p[ 9 ] ); check( 20, p[ 10 ] ); check( 21, p[ 14 ] );
 		check( 22, this.thinFar.value );
 		this.ranges.forEach( ( r, k ) => check( 23 + k, r.indexCount.value ) );
-		if ( same ) return;
-		_projScreen.multiplyMatrices( camera.projectionMatrix, _viewInverse.copy( camera.matrixWorld ).invert() );
+		if ( same ) {
+
+			this.stats.skipped ++;
+			return;
+
+		}
+		this.stats.dispatches ++;
+		_projScreen.multiplyMatrices( projection, _viewInverse.copy( camera.matrixWorld ).invert() );
 		_frustum.setFromProjectionMatrix( _projScreen, camera.coordinateSystem, camera.reversedDepth );
 		// left, right, bottom, top, near: the meadow never reaches the far plane
 		for ( let k = 0; k < 4; k ++ ) this.writePlane( k, _frustum.planes[ k ] );
