@@ -438,18 +438,18 @@ const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
 scene.add( grass, foliage, flowers, rimFoliage, turfSkirt );
 installWindVariants( scene, [ grass, foliage, flowers, rimFoliage, turfSkirt ] );
 installVegetationPrepass( scene, [ grass, foliage, rimFoliage ] );
+// Everything that casts into the sun's map: the figures cast through their own map, and the sea
+// floor's stones only into the refracted one. The game's props grow it (holdOpaque below).
+const sunCasters = new THREE.Box3();
 {
 
-	// Everything that casts into the sun's map: the figures cast through their own map, and the
-	// sea floor's stones only into the refracted one.
-	const casters = new THREE.Box3();
 	for ( const root of [ world.group, foliage, flowers, rimFoliage, turfSkirt ] ) {
 
 		root.updateWorldMatrix( true, true );
-		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) casters.expandByObject( object ); } );
+		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) sunCasters.expandByObject( object ); } );
 
 	}
-	sunShadow.setCasters( casters );
+	sunShadow.setCasters( sunCasters );
 	// the island's terrain is a closed solid: it casts its front faces (SunShadow)
 	sunShadow.castFrontFaces( world.group );
 
@@ -483,6 +483,14 @@ if ( GAME ) {
 	game = await Game.start( {
 		params, scene, camera, canvas: renderer.domElement, land, bushes: data.bushes,
 		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment,
+		// A prop can rise above all the island grows (the palm's crown): the sun's map fits its
+		// casters and the sea's reflection marches its box, so both grow to hold it.
+		holdOpaque: ( box ) => {
+
+			if ( ! sunCasters.containsBox( box ) ) sunShadow.setCasters( sunCasters.union( box ) );
+			water?.reflectionBounds.union( box );
+
+		},
 		// The game's props, for the scene's multisampled target and then the sun's map (Game.render),
 		// one draw at a time and in the order a frame first draws them (the scene's pass, then the
 		// map's redraw): a prop's pass into the map shares its material's nodes, and compiled the

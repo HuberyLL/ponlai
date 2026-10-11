@@ -13,7 +13,7 @@ import type { ActionResult, PalmState, SimState, Vec2, Villager } from './types.
 // - shore: the island's edge band of walkable ground (ground.ts SHORE_BAND), one place all round.
 //   `fish` takes FISH_SECONDS and brings a fish by chance (the seeded generator, at its end).
 // - palm: a coconut palm, placed by palmSite (the ground and a fixed-seed hash; one for now). It
-//   blocks its ground like a plant, holds up to PALM_COCONUTS and grows one back every
+//   blocks its ground like a bush, holds up to PALM_COCONUTS and grows one back every
 //   PALM_REGROW_SECONDS while it has fewer. `pick` takes PICK_SECONDS and brings one coconut.
 // - buildings: what the player places (buildings.ts: chests), each a place by its id (chest1).
 //

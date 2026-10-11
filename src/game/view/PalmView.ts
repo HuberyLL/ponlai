@@ -17,11 +17,12 @@ import type { RGB } from './Props.ts';
 // collapsed onto the crown in the vertex stage, so picking one changes a uniform, not the mesh.
 //
 // It moves in the one wind (Wind.ts): the whole palm bends from its foot with the gust field at
-// its root, slowly, as the island's trees do (Foliage.ts mainBend), and each frond swings on its
+// its root, at half a shrub's rate (Foliage.ts mainBend, `slow`), and each frond swings on its
 // own phase from the crown out. Its shadow keeps the rest pose, as the vegetation's does
 // (VegetationShadow.ts). The geometry is in world space (the mesh sits at the origin), as the
-// wind field is sampled at world positions. Its top stays below the island's tallest trees, inside
-// the sea's reflection box and the sun shadow's casters (Water.ts, SunShadow.ts).
+// wind field is sampled at world positions. Its crown rises above everything the island grows, so
+// GameView grows the sea's reflection box and the sun shadow's casters to hold it (Water.ts,
+// SunShadow.ts).
 
 const TRUNK_HEIGHT = 2.9;
 const TRUNK_SEGMENTS = 9;

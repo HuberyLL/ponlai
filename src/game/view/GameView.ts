@@ -20,7 +20,9 @@ import { VillagerView, disposeFigure } from './VillagerView.ts';
 // and buildings by id (create, update, remove) and keeps every view in place between frames, so a
 // steady scene allocates nothing. The palms and the buildings cast into the sun's shadow map, which
 // is redrawn only as the sun turns (SunShadow.ts): whatever changes their shape (a site set down
-// or grown by a piece, a building finished, a coconut picked or grown) asks for a redraw.
+// or grown by a piece, a building finished, a coconut picked or grown) asks for a redraw. A palm's
+// crown rises above everything the island grows, so each prop's box (with room for its sway) grows
+// the sun map's casters and the sea's reflection box (GameViewOptions.holdOpaque).
 //
 // First draws: a mesh whose material or vertex layout nothing on screen has drawn yet builds its
 // pipelines in the frame that first shows it, synchronously: the chest's model stalled the frame
@@ -41,6 +43,8 @@ export interface GameViewOptions {
 	characterShadow: CharacterShadow;
 	/** redraw the sun's shadow map: what casts into it changed */
 	invalidateSunShadow(): void;
+	/** grow the sun's shadow casters and the sea's reflection box to hold a prop's box (GameContext) */
+	holdOpaque( box: THREE.Box3 ): void;
 	/** a skinned islander figure for a look index (src/characters/looks.ts) */
 	loadLook( look: number ): Promise<Figure>;
 }
@@ -75,6 +79,9 @@ export function propSamples(): THREE.Object3D[] {
 	return samples;
 
 }
+
+// room round a prop's rest pose for its sway: a gale lays the palm's crown over by a few decimetres
+const PROP_SWAY = 0.6;
 
 /** A built building's model. */
 interface BuildingModel { readonly mesh: THREE.Mesh; dispose(): void }
@@ -178,6 +185,15 @@ export class GameView {
 
 	}
 
+	// A prop into the scene, and its box, with room for its sway, into the sun's casters and the
+	// sea's reflection box: a palm's crown rises above everything the island grows.
+	private add( mesh: THREE.Mesh ): void {
+
+		this.group.add( mesh );
+		this.options.holdOpaque( new THREE.Box3().setFromObject( mesh ).expandByScalar( PROP_SWAY ) );
+
+	}
+
 	/** Draw the palms and the buildings as the state holds them; true when what casts a shadow changed. */
 	private syncPlaces( stamp: number ): boolean {
 
@@ -191,7 +207,7 @@ export class GameView {
 
 				view = new PalmView( palm, grid.height( palm.x, palm.z ) );
 				this.palms.set( palm.id, view );
-				this.group.add( view.mesh );
+				this.add( view.mesh );
 				changed = true;
 
 			}
@@ -226,13 +242,13 @@ export class GameView {
 				draw.site?.dispose();
 				draw.site = null;
 				draw.model = MODELS[ b.kind ]( b, ground );
-				this.group.add( draw.model.mesh );
+				this.add( draw.model.mesh );
 				changed = true;
 
 			} else if ( ! draw.site ) {
 
 				draw.site = new SiteView( b, ground );
-				this.group.add( draw.site.mesh );
+				this.add( draw.site.mesh );
 				changed = true;
 
 			} else if ( draw.site.update( b ) ) changed = true;

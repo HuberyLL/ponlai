@@ -54,6 +54,8 @@ export interface GameContext {
 	characterShadow: CharacterShadow;
 	loadLook( look: number ): Promise<Figure>;
 	invalidateSunShadow(): void;
+	/** an opaque prop the game draws spans this box: the sun's shadow casters and the sea's reflection box grow to hold it */
+	holdOpaque( box: THREE.Box3 ): void;
 	refreshEnvironment(): Promise<void>;
 	/** compile the pipelines these objects will draw with (the scene's pass, the sun's shadow map) off the frame */
 	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
@@ -135,7 +137,7 @@ export class Game {
 		sim.tools = this.tools;
 		sim.brain = this.brain;
 		this.view?.dispose();
-		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, loadLook: c.loadLook } );
+		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook } );
 		this.sim = sim;
 		this.debug?.reset();
 		if ( this.hud ) this.hud.reset();
