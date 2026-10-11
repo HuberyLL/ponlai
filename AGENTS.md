@@ -138,6 +138,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
   Keep filters that take `dFdx` / `dFdy` out of `select()` / `If` branches (`SolarShadow.ts`).
 - Nested loops: pass both ranges to one `Loop()` call so the counters get distinct names.
+- TSL may compile a `select()` of large operands into branches: a node first built inside one is
+  declared in that branch only, and the shader silently draws nothing. Select between values
+  built before it (`.toVar()`), or blend with 0/1 weights (`Water.ts`).
 - A `DepthTexture` without a `RenderTarget` takes the renderer's sample count, so it is declared
   multisampled and cannot be sampled with a comparison; give it a render target.
 - three picks one sampler type per depth texture per material: a material that gathers a shadow
