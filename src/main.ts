@@ -480,11 +480,17 @@ if ( GAME ) {
 			else console.warn( 'The sun\'s shadow map is not built yet: the game\'s props compile their shadow pass when first drawn' );
 
 		},
-		// every islander in the scene islander's proportions (the `islander` URL option)
-		loadLook: ( look ) => {
+		// every islander in the scene islander's proportions (the `islander` URL option). A figure
+		// is handed over once its pipelines are built, off the frame (GameView "First draws"): it
+		// arrives after the game's first frame, and each load brings its own material, so the frame
+		// that first drew it built its skinned pipelines (the scene's pass, then the figures' map).
+		loadLook: async ( look ) => {
 
 			const dress = ISLANDER_LOOKS[ look % ISLANDER_LOOKS.length ];
-			return loadVillager( dress.base, dress.parts, shared, PROPORTIONS[ islanderBuild.proportions ] );
+			const figure = await loadVillager( dress.base, dress.parts, shared, PROPORTIONS[ islanderBuild.proportions ] );
+			await compileDraws( renderer, [ figure.group ], scene, camera, pipeline.sceneRT );
+			await characterShadow.compile( renderer, scene, figure.group );
+			return figure;
 
 		},
 	} );

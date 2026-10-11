@@ -52,6 +52,7 @@ export interface GameContext {
 	plants: readonly PlantSite[];
 	dayCycle: DayCycle;
 	characterShadow: CharacterShadow;
+	/** a skinned islander figure for a look index, its pipelines compiled (GameView "First draws") */
 	loadLook( look: number ): Promise<Figure>;
 	invalidateSunShadow(): void;
 	refreshEnvironment(): Promise<void>;
