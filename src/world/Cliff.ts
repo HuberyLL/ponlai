@@ -1105,18 +1105,10 @@ export class CliffWall {
 
 	}
 
-	// The wave exposure of the column last evaluated (0 .. 1). `exposure` is computed only within
-	// 3 m of the coast and elsewhere still holds that of the last column there, so it depends on the
-	// order of the calls; the page's single island mesh keeps it until it is meshed per chunk (the
-	// spray zone it drives reaches 1.6 m above the water, and the columns it misses are the
-	// meadow's top). `columnExposure` is the column's own wherever it lies.
+	// The wave exposure of the column last evaluated (0 .. 1): the column's own wherever it lies, so
+	// a function of the point alone, as chunks need (their neighbours evaluate the same points in
+	// another order). Within 3 m of the coast `column` already holds it.
 	get exposure(): number {
-
-		return this.expo;
-
-	}
-
-	get columnExposure(): number {
 
 		return this.s < - 3 || this.s > 3 ? exposureAt( this.dist, this.cx, this.cz ) : this.expo;
 
