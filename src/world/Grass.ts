@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, dot, pow, clamp, fract, sin, select, normalize,
 	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, screenCoordinate, ivec2, varying, varyingProperty, uniform,
-	smoothstep as smoothstepN, storage, instanceIndex, normalLocal, transformNormal, instanceColor,
+	smoothstep as smoothstepN, storage, instanceIndex, normalLocal, transformNormal, instanceColor, int,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
@@ -18,6 +18,8 @@ import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { ALPHA_TO_COVERAGE, markVegetation } from './Foliage.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { TEMPORAL } from '../post/Antialiasing.ts';
+import { jitter } from '../post/Jitter.ts';
 import { GrassCull, cullInputs, type CullRange } from './GrassCull.ts';
 import type { Shared } from '../shared.ts';
 
@@ -60,8 +62,11 @@ export interface GrassQuality {
 	/** Light through the canopy per vertex instead of per pixel: the dapple inside a blade is
 	 * lost close up, so it suits the lower tiers only. */
 	canopyPerVertex: boolean;
+	/** The least width of a blade on screen (render pixels, see `pixelWideBlade`) under the
+	 * temporal modes; 4x multisampling keeps 2 and one sample outside them 1. */
+	minWidth: number;
 }
-const grassQuality: GrassQuality = { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false };
+const grassQuality: GrassQuality = { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 };
 
 export function setGrassQuality( quality: Partial<GrassQuality> ): void {
 
@@ -137,7 +142,10 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 // widths left more of it, wider ones soften the blades further for little gain. Without
 // multisampling the coverage is dithered instead (`coverageDither`), and a blade dithered at half
 // its pixels across two reads as a dotted line, sharpened further by the upscale: one pixel keeps
-// such blades solid, with the meadow's brightness as at two.
+// such blades solid, with the meadow's brightness as at two. Under the temporal modes the dither
+// turns from frame to frame and the resolve averages it, so a blade keeps its two pixels there
+// (`GrassQuality.minWidth`, set by `buildGrass`), as at 4x: one pixel darkened the meadow and lost
+// the flower heads between the blades.
 const grassUniforms = {
 	minWidth: uniform( ALPHA_TO_COVERAGE ? 2 : 1 ), // render-target pixels
 	rimMinWidth: uniform( 0.75 ), // on the outer rim, see `rimEdge` in buildGrass
@@ -196,12 +204,19 @@ function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F ): V3 {
 // pixel, so overlapping blades share their covered pixels rather than adding up: the soil and
 // the flowers keep showing through a stack of widened blades as they do at 4x. A hash per blade
 // (alphaHash) drew independent pixels for each and closed the meadow over them.
+// Under the temporal modes the threshold steps through the pattern from frame to frame, the
+// pixel's Bayer value plus 5 times the jitter's dither index (Jitter.ts), mod 16: over 16 frames
+// every pixel takes every threshold once (5 is coprime to 16), so the resolve sees each blade's
+// coverage rather than a fixed pattern of its pixels, while the blades over a pixel still share
+// one threshold in each frame. A scene at rest takes the rest sequence's indices, so a paused
+// frame does not depend on the frames before it.
 const coverageDither = Fn( () => {
 
 	const p = ivec2( screenCoordinate.xy );
 	const x = p.x.bitAnd( 3 ), y = p.y.bitAnd( 3 );
 	const d = x.bitXor( y );
-	const index = d.bitAnd( 1 ).shiftLeft( 3 ).bitOr( y.bitAnd( 1 ).shiftLeft( 2 ) ).bitOr( d.bitAnd( 2 ) ).bitOr( y.shiftRight( 1 ) );
+	const bayer = d.bitAnd( 1 ).shiftLeft( 3 ).bitOr( y.bitAnd( 1 ).shiftLeft( 2 ) ).bitOr( d.bitAnd( 2 ) ).bitOr( y.shiftRight( 1 ) );
+	const index = TEMPORAL ? bayer.add( int( jitter.uniforms.ditherIndex ).mul( 5 ) ).bitAnd( 15 ) : bayer;
 	return float( index ).add( 0.5 ).div( 16 );
 
 } );
@@ -458,6 +473,9 @@ function batchOf( source: THREE.BufferGeometry, shape: TuftShape, material: THRE
  * islander's loop) keeps tussocks off the path. */
 export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): THREE.Group {
 
+	// (the tier's least blade width applies under the temporal modes only: 4x and one sample keep
+	// theirs, see `grassUniforms`)
+	if ( TEMPORAL ) grassUniforms.minWidth.value = grassQuality.minWidth;
 	const n = veg.length / STRIDE;
 	const lawn: Tuft[] = [], tussocks: Tuft[] = [], lawnThin: Tuft[] = [];
 	// The lawn's own draws keep their old order; everything added since draws from a second
