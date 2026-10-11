@@ -24,8 +24,15 @@
 // the running stream packed blocks along the toe). Between groups a stone yields only to a larger
 // one it overlaps (of two the same size, the one of an earlier class, then of a higher group hash),
 // judged against the other groups' own lists. Own lists never read other groups, so a drop cannot
-// cascade, and the stones in a box depend only on the land, floor and island within STONES_READ of
-// it: a chunk builds its own stones alone.
+// cascade, and a group reads nothing beyond its reach but its probes, so every chain behind a stone
+// is bounded: the stones in a box depend only on the land, floor and island within STONES_READ
+// (19.5 m) of it, by construction (the derivation is at STONES_READ), and a chunk builds its own
+// stones alone, inside its window (Chunks.ts).
+//
+// Judging the outranking on what each try or stone makes alone (the chunk design's proposals)
+// rather than on the other groups' lists dropped 32 % of the fallen blocks and 23 % of the near
+// patches' stones: a cell's tries that its own list turns down still outranked. Bounding the
+// fallen-block cells' reach (3.5 m, which trims almost no block) bounds their lists instead.
 //
 // This replaced 2 m fallen-block cells of one block each and priority by class: neighbouring blocks
 // then dropped each other as a thinning does, packing about two thirds as densely as the running
@@ -50,40 +57,45 @@ interface StoneClass {
 	cell: number; jitter: number;
 	// the farthest a group's stone lies from its cell (m), enforced as the group builds
 	reach: number;
-	// the farthest apart two stones of one group lie (m)
-	extent: number;
 }
 
-// Fallen blocks are tried all over their cell and walked out from it, so their stones span the cell
-// and twice the reach (the largest gap measured on seeds 1 - 6 up to step 36 was 5.0 m). A patch's
-// stones lie within its ellipse, at most 1.025 times its major half axis from its point, which a
-// near patch keeps 1.05 m inside its cell.
+// Fallen blocks are tried all over their cell and walked out from it: their reach bounds the chain
+// behind a stone (STONES_READ), and trims under 1 % of the blocks (on seeds 1 - 6 at steps 0, 8, 16
+// the farthest beyond the cell were 5.0 m). A patch's stones lie within its ellipse, at most 1.025
+// times its major half axis from its point, which a near patch keeps 1.05 m inside its cell.
 const CLASSES: StoneClass[] = [
-	{ cell: 6, jitter: 1, reach: 6, extent: 2 * 6 + 6 * Math.SQRT2 },
-	{ cell: 7, jitter: 0.7, reach: 4.5, extent: 2 * 1.025 * majorAxis( false, 1 ) },
-	{ cell: 20, jitter: 1, reach: 6, extent: 2 * 1.025 * majorAxis( true, 1 ) },
-	{ cell: 9, jitter: 1, reach: 0, extent: 0 },
+	{ cell: 6, jitter: 1, reach: 3.5 },
+	{ cell: 7, jitter: 0.7, reach: 4.5 },
+	{ cell: 20, jitter: 1, reach: 6 },
+	{ cell: 9, jitter: 1, reach: 0 },
 ];
 
 /** Each class's cell side and reach (m), fallen blocks to isolated stones, for the checks. */
 export const CELL = CLASSES.map( ( c ) => c.cell ), REACH = CLASSES.map( ( c ) => c.reach );
 
-// Two stones farther apart than this never overlap: a stone's extent is at most 1.22 times its
-// size, and the largest are 2.35 m.
-const OVERLAP = 6;
+// A stone's extent is at most EXTENT times its size (`rockExtent`: 0.94 times its longest axis),
+// so two stones farther apart than OVERLAP never overlap (the largest are 2.35 m).
+const EXTENT = 0.94 * 1.30, OVERLAP = 6;
 
-// How far round its centre a stone's own tests read the floor and the island (m): its widest
-// clearance ring is 1.15 times its extent plus 0.1, 3.4 m for the largest.
-const PROBE = 4;
+// the largest fallen block (m)
+const BLOCK_MAX = 1.7;
 
 /**
- * How far beyond a box the stones placed in it read the land, the floor and the island (m): a group
- * that may outrank a stone in the box has a stone within OVERLAP of it, and its whole own list is
- * built, each stone probing up to PROBE round it. A chunk's footprint, whose distance field blends
- * over 3 m, needs its fine window 3.5 m wider still (`buildFootprint( land, grow( box,
- * STONES_READ + 3.5 ) )` builds a box's stones exactly as the whole land does).
+ * How far beyond a box (m, along x or z) the window's land, floor and island can change the stones
+ * placed in it, by construction. A stone is decided by its group's own list and by the other
+ * groups' lists that hold a larger stone overlapping it (`outranked`). A list depends on every
+ * stone its group tries, and a group reads nothing beyond its reach (`within`, tested before any
+ * read) but the probes round each spot it tries: a fallen block's outline, 1.45 times its size; a
+ * patch stone's ring of island probes, 1.15 times its extent and 0.1 m (the floor under a stone lies
+ * within those). So the longest chain runs from the stone to a fallen block overlapping it (no
+ * smaller than the stone, so at most twice a block's extent away), across that block's cell and
+ * twice its reach, to the outline of a block tried at the far side: 19.5 m.
+ * Shorter: a patch's list behind a patch stone overlapping the stone, at most 5.6 + 13.7 m (its
+ * point 1.025 major axes from it, the patch's spots as far again and their probes); a stone's own
+ * list, 15.5 (fallen blocks), 12.6 (near patches), 13.7 (outer), 8.1 (isolated: the outer patches'
+ * points round it). The chunks place the stones round them with it (Chunks.ts), inside their window.
  */
-export const STONES_READ = OVERLAP + Math.max( ...CLASSES.map( ( c ) => c.extent ) ) + PROBE;
+export const STONES_READ = 2 * 0.98 * EXTENT * BLOCK_MAX + CLASSES[ A ].cell + 2 * CLASSES[ A ].reach + 1.45 * BLOCK_MAX;
 
 // Fallen blocks: a 6 m cell near the coast tries BLOCK_TRIES points in it, each taking a block
 // where its draw falls below the wall's shed there times K_A and the block clears the group's own
@@ -458,7 +470,7 @@ export function placeStones( fp: Footprint, floor: HeightFn, island: SDF, own: B
 		if ( d < 0 || d > 3 || u >= shed( x, z ) * K_A ) return;
 		const [ nx, nz ] = normal( x, z );
 		if ( nx === 0 && nz === 0 ) return;
-		const size = 0.6 + Math.pow( rng(), 1.3 ) * 1.1;
+		const size = 0.6 + Math.pow( rng(), 1.3 ) * ( BLOCK_MAX - 0.6 );
 		const thickness = rng() < 0.2 ? 0.30 + rng() * 0.09 : 0.58 + rng() * 0.30;
 		// long axes lie roughly along the wall they fell from, with some tumbled
 		const rot = rng() < 0.7 ? Math.atan2( - nx, nz ) + ( rng() - 0.5 ) * 1.0 : rng() * Math.PI;
