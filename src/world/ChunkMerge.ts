@@ -11,16 +11,22 @@
 // - The world fields cover the land's box and 32 m round it, out to the world's 32 m grid
 //   (`fieldBounds`), which holds every chunk; each chunk's texels are copied into its square:
 //   the shore's distance (0.125 m; +LAND_REACH where no chunk is, as the chunks clamp it), the
-//   rim ground (0.1 m; the open sea's values where no chunk is, as RimGround's assembly), the
-//   floor's height (0.25 m) and its beds (0.5 m). The last two are interpolated from the chunk's
+//   floor's height (0.25 m) and its beds (0.5 m).
+// - The rim ground (0.1 m) is read only on the land and its cliff (the meadow's tufts, the cliff
+//   material), so it keeps its own, smaller bounds: the RIM_BOX boxes that meet the land's box and
+//   RIM_PAD (`rimBounds`, the extent RimGround's assembly covered before chunks), copied from the
+//   chunks inside them (the open sea's values where no chunk is). Over the fields' bounds it held
+//   3-8x the texels. Its CPU field stays Float32 although the texture is half float (World.ts):
+//   the tufts read it on the CPU, and packing it would move their placement by ~1e-3 m; the
+//   texture halves only the GPU's copy. The last two are interpolated from the chunk's
 //   floor tile at the texels' centres on the meshes' diagonal, as Bathymetry's `floorAt` reads
 //   the rendered floor; elsewhere they are what the land job put there (chunkWorker.ts
 //   `buildLand`: the open sea's, or the shelf's ceiling under the land).
 
 import type { ChunkData } from './Chunks.ts';
-import type { LandLattice } from './IslandGrowth.ts';
+import { LandLattice } from './IslandGrowth.ts';
 import { tileIndices, SEABED_TILE, TILE_SIDE, type FarFloor } from './SeabedTile.ts';
-import { mergeRimSkirts, RIM_CELL, RIM_REACH } from './RimGround.ts';
+import { gridBoxes, mergeRimSkirts, RIM_BOX, RIM_CELL, RIM_PAD, RIM_REACH } from './RimGround.ts';
 import { landBounds, ISLAND_TOP, LAND_REACH, type Bounds } from './WorldShapes.ts';
 import type { MeshData, RimStrand, Rock, WorldData } from './types.ts';
 
@@ -57,6 +63,18 @@ export function fieldBounds( land: LandLattice ): Bounds {
 
 }
 
+/** The rim ground's bounds: the extent of the RIM_BOX boxes that meet the land's box grown by
+ * RIM_PAD. RIM_BOX is the chunks' side, so a chunk lies either inside or outside. */
+export function rimBounds( land: LandLattice ): Bounds {
+
+	const b = landBounds( land ), boxes = gridBoxes( { x0: b.x0 - RIM_PAD, z0: b.z0 - RIM_PAD, x1: b.x1 + RIM_PAD, z1: b.z1 + RIM_PAD }, RIM_BOX );
+	return {
+		x0: Math.min( ...boxes.map( ( r ) => r.x0 ) ), z0: Math.min( ...boxes.map( ( r ) => r.z0 ) ),
+		x1: Math.max( ...boxes.map( ( r ) => r.x1 ) ), z1: Math.max( ...boxes.map( ( r ) => r.z1 ) ),
+	};
+
+}
+
 /** The WorldData of a land version from all its chunks (in any order). */
 export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): WorldData {
 
@@ -89,7 +107,8 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 
 	// --- the world fields
 	const shore = { data: new Float32Array( width / SHORE_CELL * depth / SHORE_CELL ).fill( LAND_REACH ), nx: width / SHORE_CELL, nz: depth / SHORE_CELL, x0: bounds.x0, z0: bounds.z0, cell: SHORE_CELL };
-	const rx = Math.round( width / RIM_CELL ), rz = Math.round( depth / RIM_CELL ), ri0 = Math.round( bounds.x0 / RIM_CELL ), rj0 = Math.round( bounds.z0 / RIM_CELL );
+	const rim = rimBounds( LandLattice.fromBytes( land.land ) );
+	const rx = Math.round( ( rim.x1 - rim.x0 ) / RIM_CELL ), rz = Math.round( ( rim.z1 - rim.z0 ) / RIM_CELL ), ri0 = Math.round( rim.x0 / RIM_CELL ), rj0 = Math.round( rim.z0 / RIM_CELL );
 	const rimGround = { data: new Float32Array( rx * rz * 4 ), nx: rx, nz: rz, x0: ri0 * RIM_CELL, z0: rj0 * RIM_CELL, cell: RIM_CELL };
 	for ( let k = 0; k < rx * rz; k ++ ) { rimGround.data[ k * 4 ] = RIM_REACH; rimGround.data[ k * 4 + 1 ] = ISLAND_TOP; }
 	const seabedField = { data: land.floor.slice(), nx: width / FLOOR_CELL, nz: depth / FLOOR_CELL, x0: bounds.x0, z0: bounds.z0, cell: FLOOR_CELL };
@@ -98,7 +117,7 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 
 		const x0 = c.ci * SEABED_TILE, z0 = c.cj * SEABED_TILE;
 		copyTile( shore.data, shore.nx, c.shore, SEABED_TILE / SHORE_CELL, ( x0 - bounds.x0 ) / SHORE_CELL, ( z0 - bounds.z0 ) / SHORE_CELL, 1 );
-		copyTile( rimGround.data, rx, c.rimGround, Math.round( SEABED_TILE / RIM_CELL ), Math.round( x0 / RIM_CELL ) - ri0, Math.round( z0 / RIM_CELL ) - rj0, 4 );
+		if ( x0 >= rim.x0 && x0 < rim.x1 && z0 >= rim.z0 && z0 < rim.z1 ) copyTile( rimGround.data, rx, c.rimGround, Math.round( SEABED_TILE / RIM_CELL ), Math.round( x0 / RIM_CELL ) - ri0, Math.round( z0 / RIM_CELL ) - rj0, 4 );
 		if ( c.floor ) {
 
 			fromTile( seabedField.data, seabedField.nx, c.floor.height, 1, FLOOR_CELL, ( x0 - bounds.x0 ) / FLOOR_CELL, ( z0 - bounds.z0 ) / FLOOR_CELL );
