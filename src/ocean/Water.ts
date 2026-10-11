@@ -10,7 +10,7 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld,
+	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld, positionPrevious,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
 	sin, abs, sign, floor, fract, fwidth, reflect, select, dFdx, dFdy,
@@ -35,7 +35,8 @@ import { TREE_HEIGHT } from '../world/PlantSites.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { SEABED_WARP } from '../world/types.ts';
 import { seabedAlbedo } from '../materials/SeabedLook.ts';
-import { motionNode, outputStruct } from '../post/Motion.ts';
+import { motionNode, motionState, motionUniforms, outputStruct } from '../post/Motion.ts';
+import { TEMPORAL } from '../post/Antialiasing.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
 // (above-water branch):
@@ -66,6 +67,18 @@ import { motionNode, outputStruct } from '../post/Motion.ts';
 // - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
 //   built off the island or above the trees (a boat, a hut, a mast) must grow that box, or the sea
 //   will not reflect it.
+//
+// Motion vectors (the temporal modes, Motion.ts): the sea writes its velocity with its colour (class
+// water). Each vertex is moved back to where it was a step of the scene clock ago (`step`: the
+// clock's advance since the rendered frame before, 0 across a cut, a seek or a pause): its cascades'
+// displacement less their rate of change times the step (OceanFFT's orbital velocity, horizontally
+// scaled by the choppiness), weighted by the fine cascade's fade and the skirt's flattening as seen
+// from the previous camera, plus the rocky shore's reflected wave from its previous bake
+// (ShoreWaves). The skirt beyond 1500 m carries no waves: camera motion only there. That previous
+// position reaches the fragment through Motion.ts's one varying; the reads are vertex-stage only.
+// The storm's foam rides the water's undisplaced grid (StormSea), so it moves as the surface does:
+// `flags.mv.sea = false` leaves out the waves' motion, the foam's with it (the sea has no foam
+// geometry of its own for `flags.mv.foam`).
 //
 // Screen conventions (WebGPU): uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
 // Texture samples that need screen-space derivatives are taken first, while control flow is still
@@ -145,6 +158,10 @@ const sparkles = Fn( ( [ p, t ]: [ V2, F ] ) => {
 
 // The sea continues to this distance (metres), well past the horizon for any review camera.
 const SKIRT_RADIUS = 40000;
+
+// The longest step of the scene clock between two rendered frames that is still motion; a longer
+// one (or a step back) is a seek, which has none (as StormSea's live step).
+const MAX_MOTION_STEP = 0.25;
 
 // Metres per repeat of the glitter lobe's patches.
 const GLITTER_TILE = 8.8;
@@ -360,6 +377,12 @@ export class Water {
 	private reflectorMax = uniform( new THREE.Vector3() );
 	private inputs: WaterInputs;
 	private materials = new Map<number, THREE.NodeMaterial>();
+	// The temporal modes' motion: the scene clock's step since the rendered frame before (s), 0
+	// across a cut or a seek; and 0 to leave the waves' own motion out (flags.mv.sea = false).
+	private step = uniform( 0 );
+	private ownMotion = uniform( 1 );
+	private shoreHistory = uniform( 0 ); // 1 while the shore's previous bake is a step ago
+	private clock = { frame: - 1, time: 0 };
 	private boundsChecked = false;
 
 	constructor( inputs: WaterInputs ) {
@@ -471,6 +494,36 @@ export class Water {
 		const displaced = vec3( xz.x.add( d.x ), shared.waterLevel.add( d.y )
 			.add( shoreWaves.surfaceAt( xz.add( d.xz ), shared.time ).x ), xz.y.add( d.z ) ).toVar();
 		material.positionNode = displaced;
+		if ( TEMPORAL ) {
+
+			// (motion vectors: the note at the top) the vertex a step of the clock ago, seen from the
+			// previous camera's level of detail
+			const previousFar = length( xz.sub( motionUniforms.previousCameraPosition.xz ) );
+			const previousWeights = vec3( windDamp, mediumDamp, float( 1 ).sub( smoothstep( 60, 140, previousFar ) ) ).mul( coastDamp );
+			const previousGeometric = float( 1 ).sub( smoothstep( 600, 1500, previousFar ) );
+			const back = ( c: number, now: V3 ) => {
+
+				const v = texture( fft.velocityTextures[ c ], xz.div( c === 0 ? sizes.x : c === 1 ? sizes.y : sizes.z ) ).level( float( 0 ) ).xyz; // Ux, Uz, Vy
+				return now.sub( vec3( v.x.mul( fft.chop ), v.z, v.y.mul( fft.chop ) ).mul( this.step ) );
+
+			};
+			const dp = back( 0, largeDisp ).mul( previousWeights.x ).add( back( 1, mediumDisp ).mul( previousWeights.y ) )
+				.add( back( 2, fineDisp ).mul( previousWeights.z ) ).mul( previousGeometric ).toVar();
+			const shoreAt = xz.add( dp.xz );
+			// (paused or across a cut the field baked before is not the previous frame's)
+			const shorePrevious = mix( shoreWaves.surfaceAt( shoreAt, shared.time ).x, shoreWaves.previousSurfaceAt( shoreAt ).x, this.shoreHistory );
+			const previous = vec3( xz.x.add( dp.x ), shared.waterLevel.add( dp.y ).add( shorePrevious ), xz.y.add( dp.z ) );
+			// Weights of exactly 0 or 1, not select(): TSL turns a select of large operands into
+			// branches, and `displaced`, first built inside one, was then declared in it only.
+			material.positionNode = Fn( () => {
+
+				positionPrevious.assign( mix( displaced, previous, this.ownMotion ) );
+				return displaced;
+
+			} )();
+			material.userData.previousPosition = true;
+
+		}
 		const vLag = varying( xz ), vDamp = varying( coastDamp ), vFineWeight = varying( fineWeight );
 		// The shoreline distance and the floor's height for the refraction's world-space estimate of
 		// the floor, sampled down this vertex's refracted ray as a level sea bends it, at fixed drops
@@ -1209,8 +1262,8 @@ export class Water {
 			return vec4( min( col, vec3( 30000 ) ), 1 );
 
 		} )();
-		// the temporal modes' second output, the velocity (Motion.ts): the camera's and the sea
-		// object's motion for now, its waves' own still to come (their previous position)
+		// the temporal modes' second output, the velocity (Motion.ts): the camera's motion and the
+		// waves' (their previous position, above)
 		material.fragmentNode = outputStruct( material.fragmentNode, motionNode( 'water' ) );
 		material.userData.motion = 'animated';
 		material.side = THREE.DoubleSide;
@@ -1222,6 +1275,18 @@ export class Water {
 	prepare( sun: THREE.DirectionalLight ): void {
 
 		const u = this.uniforms;
+		// the temporal modes' step of the clock, once per rendered frame (after Motion.ts began it)
+		if ( TEMPORAL && this.clock.frame !== motionState.frame ) {
+
+			const time = this.inputs.shared.time.value, step = time - this.clock.time;
+			const continuous = this.clock.frame === motionState.frame - 1 && ! motionState.cut && step >= 0 && step <= MAX_MOTION_STEP;
+			this.step.value = continuous ? step : 0;
+			this.shoreHistory.value = this.step.value > 0 ? 1 : 0;
+			this.ownMotion.value = debugFlags.mv.sea === false ? 0 : 1;
+			this.clock.frame = motionState.frame;
+			this.clock.time = time;
+
+		}
 		this.reflectorMin.value.copy( this.reflectionBounds.min );
 		this.reflectorMax.value.copy( this.reflectionBounds.max );
 		// debugFlags.ssrCull / ssrClip = false bring back the march without the box, for A/B timing
