@@ -87,8 +87,8 @@ Game:
   again once the game does), `load` (resume the game saved in this browser). The page's own
   `weather` option and auto weather work in the game as without it.
 - The player's interface is a prototype HUD (`src/game/Hud.ts`): a readout of the islander (day
-  and time, satiety and hydration, the bag, what they are doing, the last words said and how the
-  last action ended) and a "Place chest" button that arms placement: a ring on the turf
+  and time, satiety and hydration, the bag, what they are doing, each unbuilt site's progress in
+  percent, the last words said and how the last action ended) and a "Place chest" button that arms placement: a ring on the turf
   previews the spot (green, or red with the reason), a click places it, Escape cancels, and the
   control is gone once the chest is placed (`src/game/Placement.ts`). Space pauses only the game
   clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
