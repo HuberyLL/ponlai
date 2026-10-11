@@ -10,15 +10,17 @@ import type { ActionCall, ActionResult, Villager } from './types.ts';
 // The five actions an islander acts through, registered as the brain's tools (Sim.tools):
 //
 //   go( { place } )      walk to a place, named by its id, never a point (the body finds the way)
-//   say( { words } )     say something (kept in Villager.said; nobody hears it yet)
+//   say( { words } )     say something (kept in Villager.said; nobody hears it yet), alongside
+//                        whatever the body is doing
 //   wait( { seconds } )  stand for a while
 //   do( { action, ... } ) run an option of a place the islander stands at (places.ts)
 //   use( { item, use? } ) run a use of a carried item (items.ts); the first unless one is named
 //
 // Rules: a new action replaces the one under way (a refused one replaces nothing); stopping is not
-// an action. An action with duration (walking, waiting, fishing, picking) is Villager.action and
+// an action. Saying is the exception: speech comes from the mind, not the body, so it neither
+// replaces the action under way nor takes the place of its outcome in Villager.last. An action with duration (walking, waiting, fishing, picking) is Villager.action and
 // advances per tick (`advanceAction`); it ends with an outcome in Villager.last, which the next
-// thought perceives. An instant one (say, use, put, take, a refusal) leaves its outcome there at
+// thought perceives. An instant one (use, put, take, a refusal) leaves its outcome there at
 // once. A tool's own result says whether the action began (or what it did, when instant).
 
 /** How a call begins: refused, done, or under way (its outcome comes when it ends). */
@@ -87,11 +89,9 @@ const go: ToolHandler = ( body, args, sim ) => {
 const say: ToolHandler = ( body, args, sim ) => {
 
 	const words = record( args ).words;
-	const call = { tool: 'say', args: { words } };
-	if ( typeof words !== 'string' || words.trim() === '' ) return refuse( body, call, 'nothing to say' );
-	replace( body );
+	if ( typeof words !== 'string' || words.trim() === '' ) return { ok: false, reason: 'nothing to say' };
 	body.said = { words, tick: sim.state.tick };
-	return end( body, call, { ok: true, value: 'said it' } );
+	return { ok: true, value: 'said it' };
 
 };
 

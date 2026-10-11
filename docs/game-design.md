@@ -115,7 +115,8 @@ items with their own options, never a new action.
   coconut under the palm, put in or take out at the storehouse). Fishing or picking is an option
   of a place, not a verb of the islander.
 - `use` uses an item the islander carries (drink a coconut, eat a fish).
-- A new action replaces the one under way; stopping is not an action.
+- A new action replaces the one under way; stopping is not an action. `say` is the exception:
+  speech comes from the mind, like thinking, so the islander talks while the body goes on.
 - People (giving, following, talking among islanders) are decided when there is more than one
   islander.
 
