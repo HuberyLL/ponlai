@@ -12,9 +12,19 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // Frame k of the running sequence takes Halton index (k mod L) + 1, the offset (h2 - 0.5, h3 - 0.5)
 // in render pixels. TAA keeps L = 16; TAAU, whose output pixels are smaller than the render's,
 // needs about eight samples per output pixel, so L = clamp( ceil( 8 r^2 ), 16, 64 ) for an output
-// r times the render per axis. A scene at rest runs its own sequence of REST_SEQUENCE indices
-// (1..32: `restIndex`, set by the rest convergence), so a paused frame is the same however it was
-// reached.
+// r times the render per axis. A scene at rest runs its own sequence (`restIndex` 1..`restLength`,
+// set by the rest convergence: REST_SEQUENCE for the temporal modes, the ground truth's 64), so a
+// paused frame is the same however it was reached.
+//
+// The rest's offsets are centred on their sequence's mean, (h2 - m2, h3 - m3) with m the mean of
+// the sequence's Halton values: a prefix of Halton is not centred on the pixel (indices 1..32 average
+// ( -0.015, -0.019 ) px from 0.5, 1..64 ( -0.008, -0.015 )), and the ground truth's box filter
+// averages its samples with equal weights, so its image moved by that mean against the scene (a
+// shift every temporal mode was then measured with against it). The temporal modes' rest weights
+// its samples by their distance from their output pixel, which already cancels most of the mean
+// (centring moves its image by under 0.01 px), but takes the same centring so both average about
+// the pixel's centre. The running sequence keeps the plain offsets: its resolve weights samples the
+// same way, and its history is no average of whole sequences.
 //
 // The offset moves the sampled point, x right and y down in render pixels: each render pixel shows
 // the scene at its centre plus `px`. The projection is shifted the other way in NDC (by `ndc`),
@@ -38,7 +48,30 @@ export function halton( index: number, base: number ): number {
 
 }
 
-/** The rest sequence's length (its indices are 1..REST_SEQUENCE). */
+const means = new Map<number, THREE.Vector2>();
+
+/** The mean of Halton ( 2, 3 ) over indices 1..n: where a sequence of n offsets is centred. */
+export function haltonMean( n: number ): THREE.Vector2 {
+
+	let m = means.get( n );
+	if ( m === undefined ) {
+
+		m = new THREE.Vector2();
+		for ( let i = 1; i <= n; i ++ ) {
+
+			m.x += halton( i, 2 );
+			m.y += halton( i, 3 );
+
+		}
+		m.divideScalar( Math.max( n, 1 ) );
+		means.set( n, m );
+
+	}
+	return m;
+
+}
+
+/** The temporal modes' rest sequence length (its indices are 1..REST_SEQUENCE). */
 export const REST_SEQUENCE = 32;
 
 /** The running sequence's length: 16 for TAA, more for TAAU's smaller output pixels (`ratio`: the
@@ -59,8 +92,10 @@ export class Jitter {
 	length = 16;
 	/** Rendered frames so far (the running sequence's clock: frames the pacer skips do not count). */
 	frame = 0;
-	/** 1..REST_SEQUENCE while a scene at rest runs the rest sequence (TemporalRest), else null. */
+	/** 1..restLength while a scene at rest runs the rest sequence (TemporalRest), else null, and the
+	 * rest sequence's length (its offsets are centred on its mean). */
 	restIndex: number | null = null;
+	restLength = REST_SEQUENCE;
 	readonly uniforms = {
 		// k mod 16, for the vegetation's per-frame dither (a threshold of the pixel's 4x4 Bayer value
 		// plus 5 k, mod 16)
@@ -88,7 +123,12 @@ export class Jitter {
 		this.k = this.restIndex !== null ? this.restIndex - 1 : this.frame % this.length;
 		this.frame ++;
 		if ( debugFlags.jitter === false ) this.px.set( 0, 0 );
-		else this.px.set( halton( this.k + 1, 2 ) - 0.5, halton( this.k + 1, 3 ) - 0.5 );
+		else if ( this.restIndex !== null ) {
+
+			const m = haltonMean( this.restLength );
+			this.px.set( halton( this.k + 1, 2 ) - m.x, halton( this.k + 1, 3 ) - m.y );
+
+		} else this.px.set( halton( this.k + 1, 2 ) - 0.5, halton( this.k + 1, 3 ) - 0.5 );
 		const u = this.uniforms;
 		u.ditherIndex.value = this.k % 16;
 		u.px.value.copy( this.px );

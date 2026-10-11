@@ -53,7 +53,8 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   (read by uv); TAA resolves at the render's size and resamples its history once when that changes.
 // - Rest (TemporalRest.ts): a resting scene runs a fixed jitter sequence through the rest resolve
 //   (no clip, no cap, nothing reprojected, exact weights) into an image of its own, shown once it is
-//   complete; the ground truth's rest is a box filter over 64 jitters at the canvas's resolution.
+//   complete; the ground truth's rest is a box filter over 64 jitters (centred on their mean:
+//   Jitter.ts) at the canvas's resolution.
 // - The canvas pass encodes the resolved image, then adds what must not be accumulated: the
 //   vignette (in linear, as the grade did), RCAS sharpening (FSR.ts), the grain and the dither.
 //   TAA below the canvas encodes at the render's size and upscales with EASU first.
@@ -798,6 +799,7 @@ export class TemporalAA {
 		this.rest.sequence = Math.max( 0, Math.round( this.mode === 'gt' ? this.settings.gtJitters : this.settings.restSequence ) );
 		this.rest.observe( key, frame.stable !== false );
 		jitter.restIndex = this.rest.index === null ? null : this.rest.index + 1;
+		jitter.restLength = this.rest.sequence;
 		// the sharpening, eased to its new value over SHARPNESS_EASE seconds after a scale change; at
 		// rest it is the new value at once, so the rest's image does not depend on the frames' deltas
 		const target = temporalSharpness( this.settings, this.mode, outputWidth / Math.max( renderWidth, 1 ) );
