@@ -15,6 +15,10 @@
 // - `close`: closes the worker once every write has reached the cache.
 //
 // `buildLand` is a plain function, so the node tools build the same land (tools/world-node.mjs).
+//
+// A reply transfers every buffer under it (`post`), which detaches them here: a reply never holds a
+// view of a module-level or cached array (a table, a lattice kept for the next job, the field), only
+// what the job built or read from the cache for it.
 
 import { buildChunk, landField, landWindow, R, S, type ChunkData, type LandField } from './Chunks.ts';
 import { growLand, GROWTH, LandLattice, type Piece } from './IslandGrowth.ts';
