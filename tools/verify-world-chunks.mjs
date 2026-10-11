@@ -1,20 +1,23 @@
 // Chunk checks for the world generator (plain node, CPU only):
-//   node tools/verify-world-chunks.mjs [--seeds 1,2] [--steps 12] [--threads n] [--long]
+//   node tools/verify-world-chunks.mjs [--seeds 1,2] [--steps 12] [--threads n] [--long] [--bench]
+//                                      [--sheets dir]
+// Run it before captures after any change to the world's generator.
 //
 // The world is generated per chunk (src/world/Chunks.ts): S = 16 m squares on the world grid, each
 // from its window (the chunk grown by R = 32 m) of the land field alone. For every seed the runner
 // grows the land step by step (0 .. --steps), builds every chunk of every step on a pool of worker
 // threads (`buildChunk`, each job handed its window as the page's workers will be), and runs the
-// checks below on the hashes and, at the S steps, on the chunks' meshes. A check prints `ok` /
+// checks below on the hashes and, at the S steps, on what the chunks hold. A check prints `ok` /
 // `FAIL` lines and returns whether it passed; any failure sets the exit code. The default run builds
 // 1219 chunks (seeds 1 - 2, steps 0 - 12; about half a second each on one thread, a coastal chunk up
-// to two) and took 230 s on 8 threads of a machine busy with other work; `--long` adds what the
-// default leaves out (marked below) and took 16 minutes there.
+// to two); `--long` adds what the default leaves out (marked below). docs/tools.md has the times.
 //
 //   D1  incremental equals scratch: step n's chunks built incrementally (every chunk of step 0,
 //       then at each step only `dirtyChunks` from the step before, the others kept) hash as step n
 //       built from scratch in a fresh process, one chunk after another in reverse key order. The
 //       default builds the last step from scratch, --long every step.
+//   D2  thread counts: the last step's chunks built on pools of 1 and of 4 workers hash as on the
+//       main pool (the default every fourth chunk of the first seed, --long all, both seeds).
 //   D3  the land does not depend on the order its pieces are applied: a piece is the cells a growth
 //       step adds, immutable once placed (IslandGrowth.ts). Which piece comes next depends on the
 //       land before it, so the growth itself has one order; "piece order" here is the order a land
@@ -25,56 +28,156 @@
 //   D4  the dirty set: between consecutive steps every chunk whose hash changed (or that is new)
 //       is in `dirtyChunks`, and none outside it changed. Prints the chunks, how many are dirty,
 //       how many changed, and how far the farthest changed chunk lies from the changed land.
-//   S1  at the S steps (0 and the last; --long every fourth): the welded union of the chunks'
-//       island and stone meshes is closed: no boundary edge, and at most 1.3 non-manifold edges per
-//       1000 triangles (the ambiguous cells of surface nets). The page's single island mesh has
-//       0.65 - 0.88 per 1000 on seeds 1 - 2 at steps 0 and 12 once its bottom face is left out:
-//       x 1.5. The chunks leave the bottom face out by design (SurfaceNets.ts: never seen below the
-//       sea floor), so the walls end open at the lattice's bottom row: a boundary edge with both ends
-//       in that row (y < -5.1 + one voxel) is counted as the open foot instead.
-//   S2  at the S steps: seams. Every island vertex two chunks share (the same position bits)
-//       carries the same bits in every attribute in both, contact shade included; and the 2 x 2
-//       block of chunks holding the most triangles, meshed in one call from its own window on the
-//       same lattice (`chunkIsland`), has exactly the vertices (all attributes) and triangles of
-//       its four chunks.
-//   columns  (--long, at the S steps) every chunk with inland columns meshed with the inland column
-//       range (WorldShapes.islandColumnRange) is byte-identical to the chunk meshed with whole
-//       columns.
+//   At the S steps (0 and the last; --long every fourth):
+//   S1  the welded union of the chunks' island and stone meshes is closed: no boundary edge, and
+//       at most 1.3 non-manifold edges per 1000 triangles (the ambiguous cells of surface nets).
+//       The page's single island mesh has 0.65 - 0.88 per 1000 on seeds 1 - 2 at steps 0 and 12
+//       once its bottom face is left out: x 1.5. The chunks leave the bottom face out by design
+//       (SurfaceNets.ts: never seen below the sea floor), so the walls end open at the lattice's
+//       bottom row: a boundary edge with both ends in that row (y < -5.1 + one voxel) is counted
+//       as the open foot instead.
+//   S2  island seams. Every island vertex two chunks share (the same position bits) carries the
+//       same bits in every attribute in both, contact shade included; and the 2 x 2 block of chunks
+//       holding the most triangles, meshed in one call from its own window on the same lattice
+//       (`chunkIsland`), has exactly the vertices (all attributes) and triangles of its four chunks.
+//   S3  floor seams: the lattice points two (or four) neighbouring floor tiles both compute (their
+//       common border rows, corners) are bit-identical in height, normal, ao and bed.
+//   S4  skirt seams: every piece of the turf skirt that ends on a chunk border meets exactly one
+//       piece that starts there in a neighbouring chunk, with the same crossing sample (ring
+//       points, normals, coast data) to 1e-5 (the count of bit-identical ones is printed); no piece
+//       ends inside its chunk.
+//   S5  shared-out content: the 2 x 2 block with the most rim items, made in one pass from its own
+//       window (`chunkBlock`) and shared out by chunk, equals its four chunks bit for bit in the
+//       rim ground, shore and walk texels, the anchors, the bushes and the trail patches.
+//   S6  stones: every stone is owned once, by the chunk its centre lies in; and every stone a chunk
+//       places round itself for the contact shade (`contactStones`) whose centre lies in a chunk is
+//       that chunk's own stone, bit for bit, so two chunks shade with the same stone.
+//   I1  no buried wall inland: where the land distance is below -3.5 m (inland, the island mesh's
+//       column range: no wall, only the meadow's top) the window's island SDF is solid from the
+//       lattice's bottom to 0.35 m below the meadow's top and clear 0.6 m above it, sampled every
+//       0.5 m across and 0.25 m down; and no inland island vertex lies below that. A wall left
+//       standing inside land that grew over the old coast would show as an open sample.
+//   columns  (--long) every chunk with inland columns meshed with the inland column range
+//       (WorldShapes.islandColumnRange) is byte-identical to the chunk meshed with whole columns.
+//
+// `--bench` skips D1 - D3 and the S checks and prints per growth piece the land field's time, the
+// chunks `dirtyChunks` rebuilds, how many come out changed, their CPU time (summed over the jobs,
+// on a loaded pool more than alone) and their bytes. Every run writes the chunk sheet, one PNG per
+// seed (`sheet`), to --sheets (default artifacts/captures/world-chunks/).
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { spawn } from 'node:child_process';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { performance } from 'node:perf_hooks';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { crc32, deflateSync } from 'node:zlib';
 import { LandLattice, nextPiece, GROWTH } from '../src/world/IslandGrowth.ts';
 import {
-	buildChunk, chunkIsland, chunkKeys, dirtyChunks, landField, landWindow, parseChunkKey, S,
+	buildChunk, chunkBlock, chunkBox, chunkIsland, chunkKeys, contactStones, dirtyChunks, landField, landWindow,
+	parseChunkKey, windowFootprint, R, S,
 } from '../src/world/Chunks.ts';
-import { ISLAND_BOTTOM } from '../src/world/WorldShapes.ts';
+import { ISLAND_BOTTOM, islandSurfaceHeight, makeIslandSDF } from '../src/world/WorldShapes.ts';
+import { SKIRT_INFO, SKIRT_RING } from '../src/world/RimGround.ts';
+import { TILE_SIDE } from '../src/world/SeabedTile.ts';
 import { hashBuffers, meshClosure, positionKey } from './world-node.mjs';
+
+// the island mesh's lattice (Chunks.ts)
+const VOXEL = 0.125, Y0 = ISLAND_BOTTOM + 0.5;
 
 // ------------------------------------------------------------------ the worker
 
-// A job: one chunk from its window and the land; the reply carries its hash and timings, and its
-// meshes when the S checks need them.
+// A job: one chunk from its window and the land; the reply carries its hash, timings and size, and
+// at the S steps what the seam checks compare (its meshes, floor tile, skirt, rasters, items, the
+// stones it places round it, the inland columns). A `block` job makes a 2 x 2 block's share-out
+// instead (S5), an `islandBlock` job its island mesh (S2).
 if ( ! isMainThread ) {
 
 	let land = null, version = - 1;
 	parentPort.on( 'message', ( job ) => {
 
+		if ( job.block ) {
+
+			parentPort.postMessage( { id: job.id, members: chunkBlock( job.window, job.ci, job.cj, 2 ) } );
+			return;
+
+		}
+		if ( job.islandBlock ) {
+
+			const t = performance.now(), island = chunkIsland( job.window, job.ci, job.cj, 2 );
+			parentPort.postMessage( { id: job.id, island, ms: performance.now() - t } );
+			return;
+
+		}
 		if ( job.version !== version ) { land = LandLattice.fromBytes( job.land ); version = job.version; }
 		const c = buildChunk( job.window, land, job.ci, job.cj, { version: job.version } );
-		const reply = { id: job.id, hash: c.hash, timings: c.timings };
+		const { key, land: v, hash, timings, ...content } = c;
+		const reply = { id: job.id, hash: c.hash, timings: c.timings, bytes: bytesOf( content ) };
 		const transfer = [];
 		if ( job.keep ) {
 
 			reply.island = c.island;
 			reply.stones = c.stones.mesh;
 			for ( const m of [ c.island, c.stones.mesh ] ) if ( m ) for ( const a of Object.values( m ) ) if ( ! transfer.includes( a.buffer ) ) transfer.push( a.buffer );
+			Object.assign( reply, {
+				floor: c.floor, skirt: c.skirt, rimGround: c.rimGround, shore: c.shore, walk: c.walk,
+				anchors: c.anchors, bushes: c.bushes, strands: c.strands, rocks: c.stones.rocks,
+				contact: contactStones( job.window, job.ci, job.cj ),
+				inland: inlandColumns( job.window, job.ci, job.cj, c.island ),
+			} );
 
 		}
 		parentPort.postMessage( reply, transfer );
 
 	} );
+
+}
+
+// The bytes a chunk's content takes packed: its buffers, and 4 bytes per plain number.
+function bytesOf( v ) {
+
+	if ( v === null || v === undefined ) return 0;
+	if ( typeof v === 'number' ) return 4;
+	if ( ArrayBuffer.isView( v ) ) return v.byteLength;
+	if ( typeof v === 'object' ) return Object.values( v ).reduce( ( sum, item ) => sum + bytesOf( item ), 0 );
+	return 0;
+
+}
+
+// I1's sampling, in the job: the chunk's inland columns (land distance below INLAND, the island
+// mesh's column range) on a COLUMN grid, the window's island SDF solid at every LAYER from the
+// lattice's bottom to 0.35 m below the meadow's top and clear 0.6 m above it; and no island vertex
+// inland (a voxel farther in) below that floor. Returns the counts and the first few failures.
+const INLAND = - 3.5, COLUMN = 0.5, LAYER = 0.25;
+function inlandColumns( window, ci, cj, island ) {
+
+	const fp = windowFootprint( window ), box = chunkBox( ci, cj );
+	const sdf = makeIslandSDF( fp, { x0: box.x0 - R, z0: box.z0 - R, x1: box.x1 + R, z1: box.z1 + R }, { local: true } );
+	let columns = 0, samples = 0, vertices = 0;
+	const bad = [];
+	for ( let z = box.z0 + COLUMN / 2; z < box.z1; z += COLUMN ) for ( let x = box.x0 + COLUMN / 2; x < box.x1; x += COLUMN ) {
+
+		if ( fp.dist( x, z ) >= INLAND ) continue;
+		columns ++;
+		const top = islandSurfaceHeight( x, z );
+		for ( let y = Y0; y <= top - 0.35; y += LAYER ) {
+
+			samples ++;
+			if ( sdf( x, y, z ) >= 0 ) { bad.push( `open at ( ${ x }, ${ y.toFixed( 2 ) }, ${ z } )` ); break; }
+
+		}
+		if ( sdf( x, top + 0.6, z ) <= 0 ) bad.push( `solid above the top at ( ${ x }, ${ z } )` );
+
+	}
+	if ( island ) for ( let v = 0; v < island.positions.length; v += 3 ) {
+
+		const x = island.positions[ v ], y = island.positions[ v + 1 ], z = island.positions[ v + 2 ];
+		if ( fp.dist( x, z ) >= INLAND - VOXEL ) continue;
+		vertices ++;
+		if ( y < islandSurfaceHeight( x, z ) - 0.35 ) bad.push( `a vertex below the top at ( ${ x.toFixed( 2 ) }, ${ y.toFixed( 2 ) }, ${ z.toFixed( 2 ) } )` );
+
+	}
+	return { columns, samples, vertices, failures: bad.length, bad: bad.slice( 0, 3 ) };
 
 }
 
@@ -133,18 +236,21 @@ if ( isMainThread && process.argv.includes( '--scratch' ) ) {
 async function main() {
 
 	const start = performance.now();
-	const long = process.argv.includes( '--long' );
+	const long = process.argv.includes( '--long' ), bench = process.argv.includes( '--bench' );
 	const seeds = argument( '--seeds', '1,2' ).split( ',' ).map( Number );
 	const last = Number( argument( '--steps', '12' ) );
 	const threads = Number( argument( '--threads', String( Math.max( 1, Math.min( 8, availableParallelism() - 4 ) ) ) ) );
-	const sSteps = long ? [ ...new Set( [ ...Array.from( { length: Math.floor( last / 4 ) + 1 }, ( _, k ) => k * 4 ), last ] ) ] : [ ...new Set( [ 0, last ] ) ];
+	const sSteps = bench ? [] : long ? [ ...new Set( [ ...Array.from( { length: Math.floor( last / 4 ) + 1 }, ( _, k ) => k * 4 ), last ] ) ] : [ ...new Set( [ 0, last ] ) ];
 	const scratchSteps = long ? Array.from( { length: last + 1 }, ( _, k ) => k ) : [ last ];
-	console.log( `seeds ${ seeds.join( ', ' ) }, steps 0 - ${ last }, ${ threads } threads${ long ? ', long' : '' }` );
+	console.log( `seeds ${ seeds.join( ', ' ) }, steps 0 - ${ last }, ${ threads } threads${ long ? ', long' : '' }${ bench ? ', bench (D4 and the per-piece costs only)' : '' }` );
 
 	// D1's fresh processes, one per seed, run alongside the pool
-	const scratch = seeds.map( ( seed ) => runScratch( seed, scratchSteps ) );
+	const scratch = bench ? [] : seeds.map( ( seed ) => runScratch( seed, scratchSteps ) );
 
 	const pool = new Pool( threads );
+	// D2's pools of 1 and 4 workers (their own threads, alongside the main pool)
+	const pools = bench ? [] : [ new Pool( 1 ), new Pool( 4 ) ];
+	const others = [];
 	const runs = [];
 	for ( const seed of seeds ) {
 
@@ -152,16 +258,26 @@ async function main() {
 		const steps = [];
 		for ( let step = 0; step <= last; step ++ ) {
 
+			const t = performance.now();
 			const land = lands[ step ], field = landField( land ), keys = chunkKeys( land ), keep = sSteps.includes( step );
+			const fieldMs = performance.now() - t;
 			const bytes = land.toBytes();
 			const version = seed * 1000 + step;
-			steps.push( { step, land, keys, field: keep ? field : null, chunks: Promise.all( keys.map( ( key ) => {
+			const job = ( ci, cj, keep ) => () => ( { window: landWindow( field, ci, cj ), land: bytes, ci, cj, version, keep } );
+			steps.push( { step, land, keys, fieldMs, field: keep ? field : null, chunks: Promise.all( keys.map( ( key ) => {
 
 				const [ ci, cj ] = parseChunkKey( key );
-				return pool.run( () => ( { window: landWindow( field, ci, cj ), land: bytes, ci, cj, version, keep } ) )
-					.then( ( reply ) => ( { key, ci, cj, ...reply } ) );
+				return pool.run( job( ci, cj, keep ) ).then( ( reply ) => ( { key, ci, cj, ...reply } ) );
 
 			} ) ) } );
+			// D2: the last step's chunks (the default every fourth of the first seed's) on both pools
+			if ( pools.length && step === last && ( long || seed === seeds[ 0 ] ) ) {
+
+				const sample = keys.filter( ( _, n ) => long || n % 4 === 0 );
+				for ( const p of pools ) others.push( Promise.all( sample.map( ( key ) => p.run( job( ...parseChunkKey( key ), false ) ).then( ( r ) => [ key, r.hash ] ) ) )
+					.then( ( hashes ) => ( { seed, step, threads: p.size, hashes } ) ) );
+
+			}
 			// let the pool's replies in: a land field takes the main thread a moment
 			await new Promise( ( resolve ) => setImmediate( resolve ) );
 
@@ -184,12 +300,17 @@ async function main() {
 		}
 		console.log( `---- seed ${ run.seed }: ${ run.steps.map( ( s ) => s.keys.length ).join( ', ' ) } chunks at steps 0 - ${ last } (${ ( ( performance.now() - start ) / 1000 ).toFixed( 0 ) } s)` );
 		if ( ! dirtySet( run ) ) failed ++;
+		if ( bench ) costs( run );
+		sheet( run );
+		if ( bench ) continue;
 		if ( ! pieceOrder( run ) ) failed ++;
 		for ( const s of run.steps ) if ( sSteps.includes( s.step ) ) {
 
 			const ctx = { label: `seed ${ run.seed } step ${ s.step }`, field: s.field, chunks: s.chunks };
-			for ( const check of long ? [ closed, seams, columns ] : [ closed, seams ] ) if ( ! check( ctx ) ) failed ++;
+			for ( const check of [ closed, seams, floorSeams, skirtSeams, blockShare, stoneOwners, inland, ...( long ? [ columns ] : [] ) ] ) if ( ! await check( ctx, pool ) ) failed ++;
 			s.field = null;
+			// the meshes and rasters are not needed past this step
+			for ( const c of s.chunks ) for ( const k of [ 'island', 'stones', 'floor', 'skirt', 'rimGround', 'shore', 'walk', 'anchors', 'bushes', 'strands', 'contact' ] ) delete c[ k ];
 
 		}
 
@@ -198,7 +319,13 @@ async function main() {
 	const per = Object.entries( timings ).map( ( [ k, v ] ) => `${ k } ${ ( v / built ).toFixed( 0 ) }` ).join( ', ' );
 	console.log( `     ${ built } chunks built on the pool, ms per chunk: ${ per }` );
 
-	for ( const [ n, run ] of runs.entries() ) if ( ! incremental( run, await scratch[ n ] ) ) failed ++;
+	if ( ! bench ) {
+
+		if ( ! threadCounts( runs, await Promise.all( others ) ) ) failed ++;
+		for ( const p of pools ) p.close();
+		for ( const [ n, run ] of runs.entries() ) if ( ! incremental( run, await scratch[ n ] ) ) failed ++;
+
+	}
 
 	console.log( `     done in ${ ( ( performance.now() - start ) / 1000 ).toFixed( 0 ) } s` );
 	if ( failed ) {
@@ -207,27 +334,32 @@ async function main() {
 		process.exit( 1 );
 
 	}
-	console.log( 'All chunk checks passed.' );
+	console.log( bench ? 'D4 passed.' : 'All chunk checks passed.' );
 
 }
 
-// A pool of worker threads, each building one chunk at a time. `run( make )` queues a job; `make`
-// builds its message when a worker takes it (a window is 4 MB: they are cut only then).
+// A pool of worker threads. `run( make, first )` queues a job (`first`: ahead of the others, for a
+// check waiting on it); `make` builds its message when a worker takes it (a window is 4 MB: they
+// are cut only then). Each worker holds up to DEPTH jobs, so it keeps working while the main
+// thread is busy with a check and cannot hand it the next one.
+const DEPTH = 2;
 class Pool {
 
 	constructor( n ) {
 
+		this.size = n;
 		this.queue = [];
 		this.waiting = new Map();
 		this.id = 0;
-		this.idle = Array.from( { length: n }, () => {
+		this.workers = Array.from( { length: n }, () => {
 
 			const worker = new Worker( fileURLToPath( import.meta.url ) );
+			worker.jobs = 0;
 			worker.on( 'message', ( reply ) => {
 
 				const resolve = this.waiting.get( reply.id );
 				this.waiting.delete( reply.id );
-				this.idle.push( worker );
+				worker.jobs --;
 				this.next();
 				resolve( reply );
 
@@ -239,11 +371,11 @@ class Pool {
 
 	}
 
-	run( make ) {
+	run( make, first = false ) {
 
 		return new Promise( ( resolve ) => {
 
-			this.queue.push( { make, resolve } );
+			this.queue[ first ? 'unshift' : 'push' ]( { make, resolve } );
 			this.next();
 
 		} );
@@ -252,11 +384,15 @@ class Pool {
 
 	next() {
 
-		while ( this.idle.length && this.queue.length ) {
+		while ( this.queue.length ) {
 
-			const worker = this.idle.pop(), { make, resolve } = this.queue.shift(), id = this.id ++;
+			// the least loaded worker
+			const worker = this.workers.reduce( ( a, b ) => b.jobs < a.jobs ? b : a );
+			if ( worker.jobs >= DEPTH ) return;
+			const { make, resolve } = this.queue.shift(), id = this.id ++;
 			const job = { id, ...make() };
 			this.waiting.set( id, resolve );
+			worker.jobs ++;
 			worker.postMessage( job, [ job.window.data.buffer ] );
 
 		}
@@ -265,7 +401,8 @@ class Pool {
 
 	close() {
 
-		for ( const worker of this.idle ) worker.terminate();
+		// every job is answered by now
+		for ( const worker of this.workers ) worker.terminate();
 
 	}
 
@@ -433,8 +570,6 @@ function incremental( run, scratch ) {
 
 }
 
-// the island mesh's lattice (Chunks.ts)
-const VOXEL = 0.125, Y0 = ISLAND_BOTTOM + 0.5;
 const NON_MANIFOLD_PER_1000 = 1.3;
 
 // S1: the welded chunks close up.
@@ -501,7 +636,7 @@ function sameVertex( ma, va, mb, vb ) {
 }
 
 // S2: chunks agree on their shared vertices, and a 2 x 2 block meshed whole equals its chunks.
-function seams( ctx ) {
+async function seams( ctx, pool ) {
 
 	let ok = true;
 	const chunks = ctx.chunks.filter( ( c ) => c.island );
@@ -551,9 +686,7 @@ function seams( ctx ) {
 		if ( tris > most ) { most = tris; best = { ci: c.ci, cj: c.cj, members: quad.filter( ( m ) => m !== undefined ) }; }
 
 	}
-	const t = performance.now();
-	const block = chunkIsland( landWindow( ctx.field, best.ci, best.cj, 2 ), best.ci, best.cj, 2 );
-	const netsMs = performance.now() - t;
+	const { island: block, ms: netsMs } = await pool.run( () => ( { islandBlock: true, window: landWindow( ctx.field, best.ci, best.cj, 2 ), ci: best.ci, cj: best.cj } ), true );
 	const blockMap = byPosition( block );
 	let compared = 0, missing = 0, wrong = 0;
 	const wrongBy = {};
@@ -618,6 +751,316 @@ function columns( ctx ) {
 	}
 	console.log( `${ ok ? 'ok  ' : 'FAIL' } columns ${ ctx.label }: ${ inlandChunks } island chunks identical with whole columns` );
 	return ok;
+
+}
+
+// D2: the chunks the pools of 1 and 4 workers built hash as the main pool's.
+function threadCounts( runs, results ) {
+
+	let ok = true;
+	for ( const { seed, step, threads, hashes } of results ) {
+
+		const main = runs.find( ( r ) => r.seed === seed ).steps[ step ].hashes;
+		const differ = hashes.filter( ( [ key, hash ] ) => main.get( key ) !== hash ).map( ( [ key ] ) => key );
+		if ( differ.length ) ok = false;
+		console.log( `${ differ.length ? 'FAIL' : 'ok  ' } D2 seed ${ seed } step ${ step }: a pool of ${ threads } worker${ threads > 1 ? 's' : '' } built ${ hashes.length } chunks, ` +
+			`${ differ.length } differ from the main pool's${ differ.length ? `: ${ differ.slice( 0, 6 ).join( '; ' ) }` : '' }` );
+
+	}
+	return ok;
+
+}
+
+const chunkMap = ( chunks ) => new Map( chunks.map( ( c ) => [ c.key, c ] ) );
+const f32bits = ( a ) => new Uint32Array( a.buffer, a.byteOffset, a.length );
+const sameBits = ( a, b ) => a.length === b.length && Buffer.compare( Buffer.from( a.buffer, a.byteOffset, a.byteLength ), Buffer.from( b.buffer, b.byteOffset, b.byteLength ) ) === 0;
+
+// S3: the floor tiles' border lattice points, which two (or four) tiles both compute.
+function floorSeams( ctx ) {
+
+	const N = TILE_SIDE, map = chunkMap( ctx.chunks );
+	const bits = ( f, v ) => [ ...f32bits( f.height ).subarray( v, v + 1 ), ...f32bits( f.normal ).subarray( v * 3, v * 3 + 3 ), ...f32bits( f.ao ).subarray( v, v + 1 ), ...f32bits( f.bed ).subarray( v * 2, v * 2 + 2 ) ].join( ',' );
+	let shared = 0, differ = 0, tiles = 0;
+	for ( const a of ctx.chunks ) {
+
+		if ( ! a.floor ) continue;
+		tiles ++;
+		// the neighbour's offset, then the pairs of point indices on the common border
+		const pairs = [
+			[ 1, 0, Array.from( { length: N }, ( _, k ) => [ k * N + N - 1, k * N ] ) ],
+			[ 0, 1, Array.from( { length: N }, ( _, k ) => [ ( N - 1 ) * N + k, k ] ) ],
+			[ 1, 1, [ [ N * N - 1, 0 ] ] ],
+			[ 1, - 1, [ [ N - 1, ( N - 1 ) * N ] ] ],
+		];
+		for ( const [ di, dj, list ] of pairs ) {
+
+			const b = map.get( `${ a.ci + di },${ a.cj + dj }` );
+			if ( ! b?.floor ) continue;
+			for ( const [ va, vb ] of list ) {
+
+				shared ++;
+				if ( bits( a.floor, va ) !== bits( b.floor, vb ) && ++ differ <= 3 ) console.log( `FAIL S3 ${ ctx.label }: floor tiles ( ${ a.key } ) and ( ${ b.key } ) differ at a shared point` );
+
+			}
+
+		}
+
+	}
+	console.log( `${ differ ? 'FAIL' : 'ok  ' } S3 ${ ctx.label }: ${ tiles } floor tiles, ${ shared } shared lattice points compared in height, normal, ao and bed: ${ differ } differ` );
+	return differ === 0;
+
+}
+
+// S4: the turf skirt's pieces that cross a chunk border meet a piece of the neighbour there, with
+// the same crossing sample (ring points, normals, coast data).
+const RING = 1e-5;
+function skirtSeams( ctx ) {
+
+	const map = chunkMap( ctx.chunks );
+	const endsOf = ( c ) => {
+
+		const { points, normals, info, pieces } = c.skirt, ends = [];
+		const sample = ( q, start ) => ( {
+			key: c.key, start, x: info[ q * SKIRT_INFO ], z: info[ q * SKIRT_INFO + 1 ],
+			data: [ ...points.subarray( q * SKIRT_RING * 3, ( q + 1 ) * SKIRT_RING * 3 ), ...normals.subarray( q * SKIRT_RING * 3, ( q + 1 ) * SKIRT_RING * 3 ), ...info.subarray( q * SKIRT_INFO, ( q + 1 ) * SKIRT_INFO ) ],
+		} );
+		for ( let k = 0; k < pieces.length; k += 2 ) {
+
+			const a = sample( pieces[ k ], true ), b = sample( pieces[ k ] + pieces[ k + 1 ] - 1, false );
+			// a loop inside the chunk ends where it starts
+			if ( a.x !== b.x || a.z !== b.z ) ends.push( a, b );
+
+		}
+		return ends;
+
+	};
+	const ends = new Map( ctx.chunks.map( ( c ) => [ c.key, endsOf( c ) ] ) );
+	let crossings = 0, identical = 0, worst = 0, failures = 0;
+	const fail = ( text ) => { if ( ++ failures <= 3 ) console.log( `FAIL S4 ${ ctx.label }: ${ text }` ); };
+	for ( const c of ctx.chunks ) for ( const e of ends.get( c.key ) ) {
+
+		const b = chunkBox( c.ci, c.cj ), on = ( v, line ) => Math.abs( v - line ) < 1e-9;
+		if ( ! ( on( e.x, b.x0 ) || on( e.x, b.x1 ) || on( e.z, b.z0 ) || on( e.z, b.z1 ) ) ) { fail( `chunk ( ${ c.key } ): a skirt piece ends inside it at ( ${ e.x }, ${ e.z } )` ); continue; }
+		// a start meets an end: count each crossing once, at its start
+		if ( ! e.start ) continue;
+		const found = [];
+		for ( let dj = - 1; dj <= 1; dj ++ ) for ( let di = - 1; di <= 1; di ++ ) {
+
+			if ( ! di && ! dj ) continue;
+			const n = map.get( `${ c.ci + di },${ c.cj + dj }` );
+			if ( n ) for ( const o of ends.get( n.key ) ) if ( ! o.start && Math.abs( o.x - e.x ) <= RING && Math.abs( o.z - e.z ) <= RING ) found.push( o );
+
+		}
+		if ( found.length !== 1 ) { fail( `chunk ( ${ c.key } ): a skirt piece starting at ( ${ e.x }, ${ e.z } ) meets ${ found.length } pieces across the border` ); continue; }
+		crossings ++;
+		let d = 0;
+		for ( let k = 0; k < e.data.length; k ++ ) d = Math.max( d, Math.abs( e.data[ k ] - found[ 0 ].data[ k ] ) );
+		worst = Math.max( worst, d );
+		if ( d === 0 ) identical ++;
+		else if ( d > RING ) fail( `chunks ( ${ c.key } ) and ( ${ found[ 0 ].key } ): the crossing at ( ${ e.x }, ${ e.z } ) differs by ${ d }` );
+
+	}
+	// every end was paired: as many ends as starts were matched
+	const unpaired = ctx.chunks.reduce( ( n, c ) => n + ends.get( c.key ).filter( ( e ) => ! e.start ).length, 0 ) - crossings;
+	if ( unpaired && ! failures ) fail( `${ unpaired } skirt pieces end on a border where none starts` );
+	console.log( `${ failures ? 'FAIL' : 'ok  ' } S4 ${ ctx.label }: ${ crossings } skirt crossings of chunk borders, each one piece ending where one starts across it; ` +
+		`${ identical } bit-identical, the largest difference ${ worst.toExponential( 1 ) } (at most ${ RING })` );
+	return failures === 0;
+
+}
+
+// S6: every stone is owned by the one chunk its centre lies in, and the stones a chunk places
+// round itself for the contact shade are, bit for bit, the stones their own chunks keep.
+const ROCK = [ 'x', 'z', 's', 'sy', 'y', 'floor', 'rot', 'seed' ];
+function stoneOwners( ctx ) {
+
+	const map = chunkMap( ctx.chunks ), owner = new Map();
+	const at = ( r ) => `${ r.x },${ r.z }`;
+	let owned = 0, twice = 0, astray = 0, compared = 0, differ = 0, missing = 0, nowhere = 0;
+	for ( const c of ctx.chunks ) for ( const r of c.rocks ) {
+
+		const b = chunkBox( c.ci, c.cj );
+		owned ++;
+		if ( r.x < b.x0 || r.x >= b.x1 || r.z < b.z0 || r.z >= b.z1 ) astray ++;
+		if ( owner.has( at( r ) ) ) twice ++;
+		owner.set( at( r ), r );
+
+	}
+	for ( const c of ctx.chunks ) for ( const r of c.contact ) {
+
+		if ( ! map.has( `${ Math.floor( r.x / S ) },${ Math.floor( r.z / S ) }` ) ) { nowhere ++; continue; }
+		const o = owner.get( at( r ) );
+		compared ++;
+		if ( ! o ) missing ++;
+		else if ( ! ROCK.every( ( k ) => Object.is( o[ k ], r[ k ] ) ) ) differ ++;
+
+	}
+	const ok = twice === 0 && astray === 0 && missing === 0 && differ === 0;
+	console.log( `${ ok ? 'ok  ' : 'FAIL' } S6 ${ ctx.label }: ${ owned } stones owned, ${ twice } twice, ${ astray } outside their chunk; ` +
+		`${ compared } contact copies held by chunks against their owners: ${ missing } unowned, ${ differ } differ (${ nowhere } more lie in no chunk)` );
+	return ok;
+
+}
+
+// I1: no buried wall inland (inlandColumns, in the job).
+function inland( ctx ) {
+
+	let columns = 0, samples = 0, vertices = 0, failures = 0;
+	const bad = [];
+	for ( const c of ctx.chunks ) {
+
+		const r = c.inland;
+		columns += r.columns; samples += r.samples; vertices += r.vertices; failures += r.failures;
+		for ( const b of r.bad ) if ( bad.length < 3 ) bad.push( `chunk ( ${ c.key } ): ${ b }` );
+
+	}
+	for ( const b of bad ) console.log( `FAIL I1 ${ ctx.label }: ${ b }` );
+	console.log( `${ failures ? 'FAIL' : 'ok  ' } I1 ${ ctx.label }: ${ columns } inland columns (land distance < ${ INLAND } m, every ${ COLUMN } m) solid from the lattice's bottom to 0.35 m below the top ` +
+		`(${ samples } samples every ${ LAYER } m) and clear 0.6 m above it, ${ vertices } inland island vertices none below that: ${ failures } failures` );
+	return failures === 0;
+
+}
+
+// S5: the 2 x 2 block with the most rim items (bushes and trail patches), made in one pass from its
+// own window (`chunkBlock`), shares out exactly its four chunks' rim ground, shore and walk texels,
+// anchors, bushes and trail patches.
+async function blockShare( ctx, pool ) {
+
+	const map = chunkMap( ctx.chunks );
+	let best = null, most = - 1;
+	for ( const c of ctx.chunks ) {
+
+		const quad = [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ].map( ( [ di, dj ] ) => map.get( `${ c.ci + di },${ c.cj + dj }` ) );
+		if ( quad.some( ( q ) => ! q ) ) continue;
+		const items = quad.reduce( ( n, q ) => n + q.bushes.length / 15 + q.strands.length, 0 );
+		if ( items > most ) { most = items; best = c; }
+
+	}
+	const t = performance.now();
+	const { members } = await pool.run( () => ( { block: true, window: landWindow( ctx.field, best.ci, best.cj, 2 ), ci: best.ci, cj: best.cj } ), true );
+	const blockMs = performance.now() - t;
+	const strandText = ( list ) => JSON.stringify( list, ( _, v ) => ArrayBuffer.isView( v ) ? Array.from( f32bits( v ) ) : v );
+	const fields = [ 'rimGround', 'shore', 'walk', 'anchors', 'bushes', 'strands' ];
+	const differ = [], counts = { texels: 0, anchors: 0, bushes: 0, strands: 0 };
+	for ( const m of members ) {
+
+		const c = map.get( m.key );
+		counts.texels += c.rimGround.length / 4 + c.shore.length + c.walk.length;
+		counts.anchors += c.anchors.length / 9; counts.bushes += c.bushes.length / 15; counts.strands += c.strands.length;
+		for ( const f of fields ) {
+
+			const same = f === 'strands' ? strandText( m.strands ) === strandText( c.strands ) : sameBits( m[ f ], c[ f ] );
+			if ( ! same ) differ.push( `${ f } of ( ${ m.key } )` );
+
+		}
+
+	}
+	const ok = differ.length === 0;
+	console.log( `${ ok ? 'ok  ' : 'FAIL' } S5 ${ ctx.label }: block ( ${ best.ci }, ${ best.cj } ) - ( ${ best.ci + 1 }, ${ best.cj + 1 } ) in one pass (${ ms( blockMs ) }) against its chunks: ` +
+		`${ counts.texels } texels (rim ground, shore, walk), ${ counts.anchors } anchors, ${ counts.bushes } bushes, ${ counts.strands } trail patches: ` +
+		`${ ok ? 'all equal, bit for bit' : `differ in ${ differ.join( ', ' ) }` }` );
+	return ok;
+
+}
+
+// --bench: what each growth piece costs: the land field (main thread), the chunks `dirtyChunks`
+// rebuilds (CPU time summed over their jobs, how many come out changed) and their bytes.
+function costs( run ) {
+
+	const lines = [];
+	let cpu = 0, rebuilt = 0, changedAll = 0, bytesAll = 0;
+	for ( let n = 0; n < run.steps.length; n ++ ) {
+
+		const s = run.steps[ n ], before = run.steps[ n - 1 ];
+		const keys = n ? dirtyChunks( before.land, s.land ) : s.keys;
+		const byKey = chunkMap( s.chunks );
+		const ms = keys.reduce( ( sum, key ) => sum + byKey.get( key ).timings.total, 0 );
+		const bytes = keys.reduce( ( sum, key ) => sum + byKey.get( key ).bytes, 0 );
+		const changed = n ? keys.filter( ( key ) => before.hashes.get( key ) !== s.hashes.get( key ) ).length : keys.length;
+		if ( n ) { cpu += ms; rebuilt += keys.length; changedAll += changed; bytesAll += bytes; }
+		lines.push( `       ${ n ? `piece ${ n }` : 'start  ' }: land field ${ s.fieldMs.toFixed( 0 ) } ms, ${ keys.length } chunks rebuilt, ${ changed } changed, ` +
+			`CPU ${ ( ms / 1000 ).toFixed( 1 ) } s (${ ( ms / keys.length ).toFixed( 0 ) } ms per chunk), ${ ( bytes / 1048576 ).toFixed( 1 ) } MB` );
+
+	}
+	const pieces = run.steps.length - 1;
+	console.log( `     bench seed ${ run.seed }: per growth piece (CPU time summed over the chunks' jobs on the pool):` );
+	console.log( lines.join( '\n' ) );
+	console.log( `       mean per piece: ${ ( rebuilt / pieces ).toFixed( 1 ) } chunks rebuilt, ${ ( changedAll / pieces ).toFixed( 1 ) } changed, CPU ${ ( cpu / pieces / 1000 ).toFixed( 1 ) } s, ${ ( bytesAll / pieces / 1048576 ).toFixed( 1 ) } MB` );
+
+}
+
+// ------------------------------------------------------------------ the chunk sheet
+
+// One PNG per seed, a panel per step left to right, then down: the sea, the chunks (lighter), the
+// land, the step's new piece (orange), the 16 m grid, the dirty chunks outlined (yellow) and the
+// chunks that changed tinted red. Written to --sheets (default artifacts/captures/world-chunks/).
+const PX = 3, GAP = 12, COLUMNS = 4;
+function sheet( run ) {
+
+	const lastKeys = run.steps[ run.steps.length - 1 ].keys.map( parseChunkKey );
+	const ci0 = Math.min( ...lastKeys.map( ( k ) => k[ 0 ] ) ), ci1 = Math.max( ...lastKeys.map( ( k ) => k[ 0 ] ) ) + 1;
+	const cj0 = Math.min( ...lastKeys.map( ( k ) => k[ 1 ] ) ), cj1 = Math.max( ...lastKeys.map( ( k ) => k[ 1 ] ) ) + 1;
+	const pw = ( ci1 - ci0 ) * S * PX, ph = ( cj1 - cj0 ) * S * PX;
+	const rows = Math.ceil( run.steps.length / COLUMNS );
+	const W = COLUMNS * pw + ( COLUMNS + 1 ) * GAP, H = rows * ph + ( rows + 1 ) * GAP;
+	const image = new Uint8Array( W * H * 3 ).fill( 24 );
+	const N = Math.round( 2 * GROWTH.half / GROWTH.cell );
+	const bit = ( land, x, z ) => {
+
+		const i = Math.floor( ( x + GROWTH.half ) / GROWTH.cell ), j = Math.floor( ( z + GROWTH.half ) / GROWTH.cell );
+		if ( i < 0 || j < 0 || i >= N || j >= N ) return 0;
+		const k = j * N + i;
+		return ( land.words[ k >>> 5 ] >>> ( k & 31 ) ) & 1;
+
+	};
+	run.steps.forEach( ( s, n ) => {
+
+		const before = run.steps[ n - 1 ];
+		const keys = new Set( s.keys ), dirty = new Set( n ? dirtyChunks( before.land, s.land ) : [] );
+		const changed = new Set( n ? s.keys.filter( ( key ) => before.hashes.get( key ) !== s.hashes.get( key ) ) : [] );
+		const ox = GAP + ( n % COLUMNS ) * ( pw + GAP ), oy = GAP + Math.floor( n / COLUMNS ) * ( ph + GAP );
+		for ( let py = 0; py < ph; py ++ ) for ( let px = 0; px < pw; px ++ ) {
+
+			const x = ci0 * S + ( px + 0.5 ) / PX, z = cj0 * S + ( py + 0.5 ) / PX;
+			const ci = Math.floor( x / S ), cj = Math.floor( z / S ), key = `${ ci },${ cj }`;
+			let c = keys.has( key ) ? [ 38, 78, 100 ] : [ 22, 46, 62 ];
+			if ( bit( s.land, x, z ) ) c = n && ! bit( before.land, x, z ) ? [ 240, 150, 40 ] : [ 140, 170, 100 ];
+			if ( changed.has( key ) ) c = [ c[ 0 ] * 0.6 + 200 * 0.4, c[ 1 ] * 0.6 + 40 * 0.4, c[ 2 ] * 0.6 + 40 * 0.4 ];
+			const lx = px % ( S * PX ), ly = py % ( S * PX );
+			if ( lx === 0 || ly === 0 ) c = [ 12, 24, 32 ];
+			if ( dirty.has( key ) && ( lx < 2 || ly < 2 || lx >= S * PX - 2 || ly >= S * PX - 2 ) ) c = [ 250, 220, 60 ];
+			image.set( c.map( Math.round ), ( ( oy + py ) * W + ox + px ) * 3 );
+
+		}
+
+	} );
+	const dir = argument( '--sheets', fileURLToPath( new URL( '../artifacts/captures/world-chunks/', import.meta.url ) ) );
+	mkdirSync( dir, { recursive: true } );
+	const path = join( dir, `chunks-seed${ run.seed }.png` );
+	writeFileSync( path, png( image, W, H ) );
+	console.log( `     sheet ${ path } (${ W } x ${ H }, steps 0 - ${ run.steps.length - 1 })` );
+
+}
+
+// An 8-bit RGB PNG.
+function png( rgb, w, h ) {
+
+	const raw = Buffer.alloc( ( w * 3 + 1 ) * h );
+	for ( let y = 0; y < h; y ++ ) Buffer.from( rgb.buffer, y * w * 3, w * 3 ).copy( raw, y * ( w * 3 + 1 ) + 1 );
+	const chunk = ( type, data ) => {
+
+		const out = Buffer.alloc( data.length + 12 );
+		out.writeUInt32BE( data.length, 0 );
+		out.write( type, 4, 'latin1' );
+		data.copy( out, 8 );
+		out.writeUInt32BE( crc32( out.subarray( 4, 8 + data.length ) ), 8 + data.length );
+		return out;
+
+	};
+	const header = Buffer.alloc( 13 );
+	header.writeUInt32BE( w, 0 ); header.writeUInt32BE( h, 4 );
+	header[ 8 ] = 8; header[ 9 ] = 2;
+	return Buffer.concat( [ Buffer.from( [ 137, 80, 78, 71, 13, 10, 26, 10 ] ), chunk( 'IHDR', header ), chunk( 'IDAT', deflateSync( raw ) ), chunk( 'IEND', Buffer.alloc( 0 ) ) ] );
 
 }
 

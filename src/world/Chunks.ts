@@ -31,6 +31,10 @@
 //   LAND_REACH on the window.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
 //   chunk's data and its hash repeat whatever order the chunks are built in.
+// - For the checks (tools/verify-world-chunks.mjs): `chunkIsland` and `chunkBlock` make a block of
+//   chunks in one pass from the block's own window, with the same stage functions as `buildChunk`,
+//   and share it out by chunk (S2, S5); `contactStones` gives the stones a chunk places round itself
+//   for the contact shade (S6). A new kind of content gets its stage function, used by both.
 //
 // Rules for changing what a chunk builds:
 // - Everything a chunk emits is a function of its window: read the land through the window's
@@ -326,6 +330,50 @@ export function chunkIsland( window: LandField, ci: number, cj: number, span = 1
 
 }
 
+/** The stones chunk ( ci, cj )'s job places round it for the contact shade (CONTACT_STONES), its
+ * own among them: two chunks must place a stone they both see alike (the checks compare them). */
+export function contactStones( window: LandField, ci: number, cj: number ): Rock[] {
+
+	return setup( window, ci, cj, 1, false ).near;
+
+}
+
+/** What each chunk of the span x span block from ( ci, cj ) owns of the rim ground, the shore, the
+ * walk tile, the anchors, the bushes and the trail patches, made in one pass over the block's
+ * window (`landWindow( field, ci, cj, span )`) and its texels and items shared out by chunk: the
+ * checks compare it with the chunks' own (each chunk reads its own, smaller window). Members in
+ * rows ( cj, then ci ). */
+export function chunkBlock( window: LandField, ci: number, cj: number, span: number ) {
+
+	const ctx = setup( window, ci, cj, span, true ), block = ctx.box;
+	const members = [];
+	for ( let j = cj; j < cj + span; j ++ ) for ( let i = ci; i < ci + span; i ++ ) members.push( { key: chunkKey( i, j ), box: chunkBox( i, j ), island: landIn( window, grow( chunkBox( i, j ), ISLAND_NEAR ) ) } );
+	const reach = members.some( ( m ) => m.island ) ? scatterAnchors( ctx, grow( block, TRAIL_REACH ), block ) : new Float32Array( 0 );
+	const tile = rimGroundTile( new RimLattice( ctx.sdf, grow( block, RIM_PAD ) ), block );
+	const bushes = pickBushes( reach, members.map( ( m ) => m.box ) );
+	const strands = rimTrails( ctx, reach, block, members.map( ( m ) => m.box ) );
+	const shore = shoreTile( ctx.sdf, block ), walk = walkTile( ctx.fp, block );
+	// a member's square of a block raster of n texels per chunk
+	const slice = <T extends Float32Array | Uint8Array>( raster: T, n: number, m: { box: Bounds } ): T => {
+
+		const side = n * span, out = new ( raster.constructor as { new( n: number ): T } )( n * n );
+		const oi = Math.round( ( m.box.x0 - block.x0 ) / S ) * n, oj = Math.round( ( m.box.z0 - block.z0 ) / S ) * n;
+		for ( let j = 0; j < n; j ++ ) out.set( raster.subarray( ( oj + j ) * side + oi, ( oj + j ) * side + oi + n ), j * n );
+		return out;
+
+	};
+	return members.map( ( m, n ) => ( {
+		key: m.key,
+		rimGround: ownTexels( tile, m.box ).data,
+		shore: slice( shore, Math.round( S / SHORE_CELL ), m ),
+		walk: slice( walk, Math.round( S / WALK_CELL ), m ),
+		anchors: m.island ? anchorsIn( reach, m.box ) : new Float32Array( 0 ),
+		bushes: m.island ? bushes[ n ] : new Float32Array( 0 ),
+		strands: m.island ? strands[ n ] : [],
+	} ) );
+
+}
+
 /** Everything chunk ( ci, cj ) owns, from its window of the land field (`landWindow`) and the land
  * (read only round the chunk, for the floor tile's cover test). */
 export function buildChunk( window: LandField, land: LandLattice, ci: number, cj: number, options: ChunkOptions = {} ): ChunkData {
@@ -376,30 +424,9 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 
 	// --- turf anchors over the trails' reach (the bushes' and the trails' candidates), the chunk's
 	// own with their sky visibility
-	let anchors = new Float32Array( 0 ), bushes: Float32Array = new Float32Array( 0 ), strands: RimStrand[] = [];
-	let reach = new Float32Array( 0 );
-	if ( island ) {
-
-		const raw: number[] = [];
-		scatterTop( sdf, grow( box, TRAIL_REACH ), ISLAND_TOP, ( x, z ) => fp.dist( x, z ), raw );
-		reach = new Float32Array( raw.length / 8 * VEGETATION_STRIDE );
-		const visibility = contacts();
-		const own: number[] = [];
-		for ( let a = 0; a < raw.length / 8; a ++ ) {
-
-			const k = a * 8, dst = a * VEGETATION_STRIDE;
-			for ( let j = 0; j < 8; j ++ ) reach[ dst + j ] = raw[ k + j ];
-			const x = raw[ k ], z = raw[ k + 2 ];
-			// (only the chunk's own anchors need it: a bush takes its anchor's)
-			const mine = x >= box.x0 && x < box.x1 && z >= box.z0 && z < box.z1;
-			reach[ dst + 8 ] = mine ? visibility?.( x, raw[ k + 1 ], z, raw[ k + 3 ], raw[ k + 4 ], raw[ k + 5 ] ) ?? 1 : 1;
-			if ( mine ) own.push( a );
-
-		}
-		anchors = new Float32Array( own.length * VEGETATION_STRIDE );
-		own.forEach( ( a, n ) => anchors.set( reach.subarray( a * VEGETATION_STRIDE, ( a + 1 ) * VEGETATION_STRIDE ), n * VEGETATION_STRIDE ) );
-
-	}
+	let anchors: Float32Array = new Float32Array( 0 ), bushes: Float32Array = new Float32Array( 0 ), strands: RimStrand[] = [];
+	const reach = island ? scatterAnchors( ctx, grow( box, TRAIL_REACH ), box ) : new Float32Array( 0 );
+	if ( island ) anchors = anchorsIn( reach, box );
 	mark( 'anchors' );
 
 	// --- the rim: ground tile, turf skirt, bushes, trails
@@ -410,9 +437,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	if ( island ) {
 
 		bushes = pickBushes( reach, [ box ] )[ 0 ];
-		const coast = coastChains( new RimLattice( sdf, grow( box, TRAIL_REACH ) ).signs(), 1 );
-		const nearBushes = pickBushes( reach, [ grow( box, TRAIL_BUSH_REACH ) ] )[ 0 ];
-		strands = makeRimTrails( sdf, fp, reach, coast, nearBushes, [ box ] )[ 0 ];
+		strands = rimTrails( ctx, reach, box, [ box ] )[ 0 ];
 
 	}
 	mark( 'trails' );
@@ -422,12 +447,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	mark( 'shore' );
 
 	// --- the walk tile
-	const wn = S / WALK_CELL, walk = new Uint8Array( wn * wn );
-	for ( let j = 0; j < wn; j ++ ) for ( let i = 0; i < wn; i ++ ) {
-
-		walk[ j * wn + i ] = fp.dist( box.x0 + ( i + 0.5 ) * WALK_CELL, box.z0 + ( j + 0.5 ) * WALK_CELL ) < - WALK_MARGIN ? 1 : 0;
-
-	}
+	const walk = walkTile( fp, box );
 
 	const data: ChunkData = {
 		key: chunkKey( ci, cj ), ci, cj, land: version,
@@ -443,11 +463,67 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 
 }
 
-// The sea-level section's signed distance over the chunk's texels (SHORE_CELL), from the section
-// over the chunk and SHORE_PAD round it, clamped to +-LAND_REACH.
+// The turf anchors over `area`, VEGETATION_STRIDE each (the bushes' and the trails' candidates):
+// those in `own` with their sky visibility (a bush takes its anchor's; the trails do not read it).
+function scatterAnchors( ctx: Setup, area: Bounds, own: Bounds ): Float32Array {
+
+	const raw: number[] = [];
+	scatterTop( ctx.sdf, area, ISLAND_TOP, ( x, z ) => ctx.fp.dist( x, z ), raw );
+	const reach = new Float32Array( raw.length / 8 * VEGETATION_STRIDE );
+	const visibility = ctx.contacts();
+	for ( let a = 0; a < raw.length / 8; a ++ ) {
+
+		const k = a * 8, dst = a * VEGETATION_STRIDE;
+		for ( let j = 0; j < 8; j ++ ) reach[ dst + j ] = raw[ k + j ];
+		const x = raw[ k ], z = raw[ k + 2 ];
+		reach[ dst + 8 ] = inBox( x, z, own ) ? visibility?.( x, raw[ k + 1 ], z, raw[ k + 3 ], raw[ k + 4 ], raw[ k + 5 ] ) ?? 1 : 1;
+
+	}
+	return reach;
+
+}
+
+const inBox = ( x: number, z: number, b: Bounds ) => x >= b.x0 && x < b.x1 && z >= b.z0 && z < b.z1;
+
+// The anchors of `reach` whose points lie in `box`, in order.
+function anchorsIn( reach: Float32Array, box: Bounds ): Float32Array {
+
+	const own: number[] = [];
+	for ( let k = 0; k < reach.length; k += VEGETATION_STRIDE ) if ( inBox( reach[ k ], reach[ k + 2 ], box ) ) own.push( k );
+	const anchors = new Float32Array( own.length * VEGETATION_STRIDE );
+	own.forEach( ( k, n ) => anchors.set( reach.subarray( k, k + VEGETATION_STRIDE ), n * VEGETATION_STRIDE ) );
+	return anchors;
+
+}
+
+// The trail patches whose lips lie in each of `boxes` (inside `box`), from the coast over `box`
+// and TRAIL_REACH round it and the bushes within TRAIL_BUSH_REACH.
+function rimTrails( ctx: Setup, reach: Float32Array, box: Bounds, boxes: Bounds[] ): RimStrand[][] {
+
+	const coast = coastChains( new RimLattice( ctx.sdf, grow( box, TRAIL_REACH ) ).signs(), 1 );
+	const nearBushes = pickBushes( reach, [ grow( box, TRAIL_BUSH_REACH ) ] )[ 0 ];
+	return makeRimTrails( ctx.sdf, ctx.fp, reach, coast, nearBushes, boxes );
+
+}
+
+// The walk tile over a square box: WALK_CELL cells, 1 on the island top clear of the rim.
+function walkTile( fp: Footprint, box: Bounds ): Uint8Array {
+
+	const wn = Math.round( ( box.x1 - box.x0 ) / WALK_CELL ), walk = new Uint8Array( wn * wn );
+	for ( let j = 0; j < wn; j ++ ) for ( let i = 0; i < wn; i ++ ) {
+
+		walk[ j * wn + i ] = fp.dist( box.x0 + ( i + 0.5 ) * WALK_CELL, box.z0 + ( j + 0.5 ) * WALK_CELL ) < - WALK_MARGIN ? 1 : 0;
+
+	}
+	return walk;
+
+}
+
+// The sea-level section's signed distance over a square box's texels (SHORE_CELL), from the
+// section over the box and SHORE_PAD round it, clamped to +-LAND_REACH.
 function shoreTile( sdf: SDF, box: Bounds ): Float32Array {
 
-	const n = Math.round( S / SHORE_CELL ), pad = Math.round( SHORE_PAD / SHORE_CELL ), m = n + 2 * pad;
+	const n = Math.round( ( box.x1 - box.x0 ) / SHORE_CELL ), pad = Math.round( SHORE_PAD / SHORE_CELL ), m = n + 2 * pad;
 	const i0 = Math.round( box.x0 / SHORE_CELL ) - pad, j0 = Math.round( box.z0 / SHORE_CELL ) - pad;
 	const section = new Field2D( i0 * SHORE_CELL, j0 * SHORE_CELL, m, m, SHORE_CELL );
 	for ( let j = 0; j < m; j ++ ) {
