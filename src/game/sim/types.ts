@@ -53,8 +53,8 @@ export interface SimState {
 
 /**
  * What the island looks like to the simulation, from the world generator's own exports (never
- * re-sampled here): the grown land, whose outline WorldShapes' footprint gives, and the bushes
- * FoliageSites' drawnFoliageSites returns, each an obstacle.
+ * re-sampled here): the grown land, whose outline WorldShapes' footprint gives, and the rim bushes
+ * it placed (WorldData.bushes), each an obstacle.
  */
 export interface IslandInput {
 	land: LandLattice;

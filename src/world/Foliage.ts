@@ -6,7 +6,7 @@ import {
 import { LEAN_REF, rootPhase, setWindDisplacement, wave, windField, type WindState } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
 import { mulberry32 } from './noise.ts';
-import { bushRooted, FOLIAGE_SEED, pickFoliageSites } from './FoliageSites.ts';
+import { BUSH_STRIDE } from './FoliageSites.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
 import { SCENE_SAMPLES } from '../post/SceneSamples.ts';
@@ -385,47 +385,41 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture, legacy = fal
 
 }
 
-export function buildFoliage( veg: Float32Array, shared: Shared ): THREE.InstancedMesh {
+/** The rim bushes the world generator placed (FoliageSites' BUSH_STRIDE floats each), one instance each. */
+export function buildFoliage( bushes: Float32Array, shared: Shared ): THREE.InstancedMesh {
 
-	const rng = mulberry32( FOLIAGE_SEED );
-	const sites = pickFoliageSites( veg, rng );
+	const count = bushes.length / BUSH_STRIDE;
 	const map = leafTexture();
 	const geo = bushGeometry();
-	const visibility = new Float32Array( sites.length );
+	const visibility = new Float32Array( count );
 	geo.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( visibility, 1 ) );
 	// each bush's root in world space, where it leans from and reads the gust field
-	const roots = new Float32Array( sites.length * 4 );
+	const roots = new Float32Array( count * 4 );
 	geo.setAttribute( 'bushRoot', new THREE.InstancedBufferAttribute( roots, 4 ) );
 	const mat = foliageMaterial( shared, map );
-	const mesh = new THREE.InstancedMesh( geo, mat, sites.length );
+	const mesh = new THREE.InstancedMesh( geo, mat, count );
 	keepLegacyWind( mesh, foliageMaterial( shared, map, true, mat.alphaMap! ) );
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
 	const col = new THREE.Color();
-	const greens = [ [ 0.065, 0.16, 0.04 ], [ 0.095, 0.19, 0.048 ], [ 0.15, 0.205, 0.046 ], [ 0.04, 0.12, 0.043 ], [ 0.18, 0.22, 0.058 ] ].map( ( [ r, gr, b ] ) => new THREE.Color( r, gr, b ) );
 
-	let count = 0;
-	sites.forEach( ( s ) => {
+	for ( let i = 0; i < count; i ++ ) {
 
+		const [ x, y, z, r, nx, ny, nz, yaw, sx, sy, sz, cr, cg, cb, sky ] = bushes.subarray( i * BUSH_STRIDE, ( i + 1 ) * BUSH_STRIDE );
 		// lean with the ground: bushes on the rim tip out over the edge
-		dir.set( s.nx, s.ny, s.nz ).lerp( up, 0.4 ).normalize();
+		dir.set( nx, ny, nz ).lerp( up, 0.4 ).normalize();
 		q.setFromUnitVectors( up, dir );
-		qy.setFromAxisAngle( up, rng() * Math.PI * 2 );
+		qy.setFromAxisAngle( up, yaw );
 		q.multiply( qy );
-		pos.set( s.x, s.y - 0.08 * s.r, s.z );
-		scl.set( s.r * ( 0.9 + rng() * 0.25 ), s.r * ( 1.1 + rng() * 0.4 ), s.r * ( 0.9 + rng() * 0.25 ) );
-		m.compose( pos, q, scl );
-		col.copy( greens[ Math.floor( rng() * greens.length ) ] ).multiplyScalar( 0.85 + rng() * 0.35 );
-		// Keep proposal collisions and random draws stable, then omit bushes rooted on stone.
-		if ( ! bushRooted( s ) ) return;
-		visibility[ count ] = s.visibility;
-		roots.set( [ pos.x, pos.y, pos.z, 0 ], count * 4 );
-		mesh.setMatrixAt( count, m );
-		mesh.setColorAt( count ++, col );
+		pos.set( x, y - 0.08 * r, z );
+		m.compose( pos, q, scl.set( sx, sy, sz ) );
+		visibility[ i ] = sky;
+		roots.set( [ pos.x, pos.y, pos.z, 0 ], i * 4 );
+		mesh.setMatrixAt( i, m );
+		mesh.setColorAt( i, col.setRGB( cr, cg, cb ) );
 
-	} );
+	}
 
-	mesh.count = count;
 	mesh.instanceMatrix.needsUpdate = true;
 	if ( mesh.instanceColor ) mesh.instanceColor.needsUpdate = true;
 	mesh.frustumCulled = false;

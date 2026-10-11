@@ -43,13 +43,22 @@ export interface SeabedBedField extends ShoreField {}
 
 // A top-rooted branch centreline: x, y, z and the outward surface normal per node. `lip` is the
 // node where it crosses the edge. A fork starts on node `from` of strand `parent` (an index into
-// the same list) instead of in the turf. `clump`: leaf anchors ( x, y, z, normal ) of the leafy
-// mound over the lip at the root of a patch, carried by the patch's first strand.
-export interface RimStrand { points: Float32Array; seed: number; lip: number; parent?: number; from?: number; clump?: Float32Array }
+// the same list) instead of in the turf, and takes its parent's leaves. `clump`: leaf anchors
+// ( x, y, z, normal ) of the leafy mound over the lip at the root of a patch, carried by the
+// patch's first strand. `leaf` (a strand rooted in the turf): its leaves' colour ( r, g, b ) and
+// scale, from the nearest rim bush within 3 m, and that bush's distance (Infinity: none).
+// `anchor` (a strand rooted in the turf): the anchor cell ( i, j ) of the lip its patch grows at,
+// which names the patch even where the cliff left it no leaf mound.
+export interface RimStrand {
+	points: Float32Array; seed: number; lip: number; parent?: number; from?: number; clump?: Float32Array;
+	leaf?: [ number, number, number, number, number ]; anchor?: [ number, number ];
+}
 
-// The turf skirt over the rim: SKIRT_RING cross-section points ( x, y, z ) per coast sample,
-// per sample ( outward x, z, presence, droop ), and ( first sample, count ) per traced loop.
-export interface RimSkirtData { points: Float32Array; info: Float32Array; loops: Int32Array }
+// The turf skirt over the rim: SKIRT_RING cross-section points ( x, y, z ) per coast sample and
+// their normals, per sample its place on the coast ( x, z ), the outward direction ( x, z ),
+// presence and droop (SKIRT_INFO), and ( first sample, count ) per piece: a stretch of the coast
+// inside one box, between the points where it crosses the box's border (or a whole loop).
+export interface RimSkirtData { points: Float32Array; normals: Float32Array; info: Float32Array; pieces: Int32Array }
 
 export interface WorldData {
 	// the grown land (LandLattice.toBytes)
@@ -62,7 +71,9 @@ export interface WorldData {
 	// Turf anchors: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
 	// (0 island), local sky visibility. Placement still uses the first eight.
 	vegetation: Float32Array;
-	// Sparse trails that start in top shrubs and overhang the upper cliff.
+	// The rim bushes (FoliageSites' BUSH_STRIDE floats each).
+	bushes: Float32Array;
+	// Sparse trails that start in the meadow at the rim and overhang the upper cliff.
 	rimStrands: RimStrand[];
 	rimGround: RimGroundField;
 	rimSkirt: RimSkirtData;

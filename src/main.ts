@@ -428,7 +428,7 @@ refractedSun.angleGate = THREE.MathUtils.degToRad( runtimeQuality.refractedSun.a
 refractedSun.setCasters( world.group );
 refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
-const foliage = buildFoliage( data.vegetation, shared );
+const foliage = buildFoliage( data.bushes, shared );
 setGrassQuality( quality.grass );
 const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance ), shared );
 const flowers = buildFlowers( plantFlowers( data.vegetation, walkDistance ), shared );
@@ -478,7 +478,7 @@ if ( GAME ) {
 	// loaded only here, so the art-review page does not carry the game's code
 	const { Game } = await import( './game/Game.ts' );
 	game = await Game.start( {
-		params, scene, camera, canvas: renderer.domElement, land, vegetation: data.vegetation,
+		params, scene, camera, canvas: renderer.domElement, land, bushes: data.bushes,
 		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment,
 		// every islander in the scene islander's proportions (the `islander` URL option)
 		loadLook: ( look ) => {
@@ -1061,6 +1061,7 @@ function diagnostics(): void {
 		canvasDpr: renderer.getPixelRatio(),
 		worldTriangles: world.triangles,
 		rimStrands: data.rimStrands.length,
+		rimBushes: foliage.count,
 		timings: data.timings,
 		worldCache: worldCache.cache === 'off' ? 'off' : { cache: worldCache.cache, ms: + worldCache.ms.toFixed( 1 ) },
 		backend: 'webgpu',
