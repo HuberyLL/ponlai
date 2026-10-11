@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, uniform, vec2, vec3, float, floor, fract, sin, cos, dot, cross, normalize, length,
+	Fn, If, Loop, uniform, vec2, vec3, vec4, float, floor, fract, sin, cos, dot, cross, normalize, length,
 	abs, max, clamp, mix, smoothstep, exp, select, acos, atan,
 } from 'three/tsl';
 import { RainCollision } from './RainCollision.ts';
@@ -12,6 +12,7 @@ export { RAIN_MAX_DROPS } from './RainDrops.ts';
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
+type V4 = THREE.Node<'vec4'>;
 
 // Rain: light streaks (GPU drops in nested camera volumes, RainDrops.ts; a distant veil of streaks
 // in the post pass) plus analytic ripples on the water normal. Drops are a stateless function of
@@ -21,6 +22,11 @@ type V3 = THREE.Node<'vec3'>;
 // tilt-shift blur. `registerLatent` registers its draws and kernels with the frame graph's `rain`
 // pass, whose warm-up (post/graph/FrameGraph.ts) compiles them at startup, so a weather change
 // builds no pipeline.
+// Under the temporal modes (Antialiasing.ts) the drops and splashes draw in the overlay pass, which
+// keeps the motion of the surface behind them and takes their opacity as the reactive weight
+// (RainDrops.ts, Motion.ts), and the veil returns its opacity beside its colour, which the
+// composite writes as the resolve's per-pixel `veilReactive` (Pipeline.ts): the resolve trusts its
+// history less where rain covers the pixel, and nowhere else.
 
 // The veil: shells around the viewer at these distances (metres), each carrying a sheet of
 // streaks. Mapped on the sphere about the rain's own direction, streaks converge on its
@@ -173,13 +179,15 @@ export class Rain {
 	}
 
 	/** The `background` radiance along a view direction seen through the falling rain, for scene
-	 * content at `distance` metres (very large for the sky). Thin drops are widened to a pixel at
-	 * reduced coverage; each covers the background with the light it takes from around it, so
-	 * the veil only lightens what is darker than the rain and dims what is brighter. */
-	veil( direction: V3, distance: F, background: V3 ): V3 {
+	 * content at `distance` metres (very large for the sky), and in its alpha the veil's opacity
+	 * there (0 without rain), which the composite hands to the temporal resolve as its per-pixel
+	 * reactive weight (Pipeline.ts `veilReactive`). Thin drops are widened to a pixel at reduced
+	 * coverage; each covers the background with the light it takes from around it, so the veil
+	 * only lightens what is darker than the rain and dims what is brighter. */
+	veil( direction: V3, distance: F, background: V3 ): V4 {
 
 		const u = this.uniforms;
-		const output = background.toVar();
+		const output = vec4( background, 0 ).toVar();
 		const result = float( 0 ).toVar();
 		If( u.rain.greaterThan( 0.001 ), () => {
 
@@ -219,9 +227,9 @@ export class Rain {
 				result.addAssign( select( present, profile.mul( streak ).mul( shown ), float( 0 ) ) );
 
 			}
-			const coverage = clamp( result.mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ), 0, 1 );
+			const coverage = clamp( result.mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ), 0, 1 ).toVar();
 			const drop = lightRain( direction, this.light, float( 0 ) );
-			output.assign( mix( background, drop, coverage ) );
+			output.assign( vec4( mix( background, drop, coverage ), coverage ) );
 
 		} );
 		return output;
