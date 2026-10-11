@@ -88,7 +88,7 @@ const SIZES = [
 function chunkStones( window, ci, cj ) {
 
 	const box = { x0: ci * S, z0: cj * S, x1: ci * S + S, z1: cj * S + S };
-	const fp = windowFootprint( window ), island = makeIslandSDF( fp, grow( box, R ), { local: true } );
+	const fp = windowFootprint( window ), island = makeIslandSDF( fp, grow( box, R ) );
 	const cells = [], rocks = placeStones( fp, floorAt( fp ), island, box, cells );
 	const sizes = SIZES.map( () => 0 );
 	let nearScar = 0, nearOther = 0;
@@ -612,7 +612,7 @@ function rim( island, chunks, field, pooled ) {
 	// the coast every chunk's trails see, on one lattice: the land field's footprint and the island
 	// solid the chunks evaluate (local: every value a function of the point)
 	const fp = windowFootprint( field ), b = grow( landBounds( land ), 4 );
-	const { lattice } = rimBoxes( makeIslandSDF( fp, grow( b, R ), { local: true } ), b );
+	const { lattice } = rimBoxes( makeIslandSDF( fp, grow( b, R ) ), b );
 	const st = trailStats( strands, coastChains( lattice.signs(), 1 ), fp );
 	const label = `rim seed ${ seed } grow ${ step }`;
 	judge( st.sizes.every( ( n ) => n >= 1 && n <= 9 ), `${ label }: ${ st.patches } trail patches of ${ Math.min( ...st.sizes ) } - ${ Math.max( ...st.sizes ) } strands (1 - 9)` );

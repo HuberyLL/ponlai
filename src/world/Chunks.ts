@@ -18,7 +18,7 @@
 //   Field2D lookup computes from its own origin and differs in the last bits). Beyond the window it
 //   continues the window's edge: only the stones' outermost probes read that far (rules below).
 // - `buildChunk( window, land, ci, cj )` makes everything the chunk owns (section 3.3) from the
-//   window alone: the island SDF over the window (`makeIslandSDF( ..., { local: true } )`, every
+//   window alone: the island SDF over the window (`makeIslandSDF( ... )`, every
 //   value a function of the point), its stones, the contact solids, and from those each kind of
 //   content below. Ownership: island quads by their edge's base lattice column (SurfaceNets.ts),
 //   stones by their centre, anchors by their jittered point, bushes and trail patches by their
@@ -309,7 +309,7 @@ function setup( window: LandField, ci: number, cj: number, span: number, contact
 
 	const box = { x0: ci * S, z0: cj * S, x1: ( ci + span ) * S, z1: ( cj + span ) * S }, area = grow( box, R );
 	const fp = windowFootprint( window );
-	const sdf = makeIslandSDF( fp, area, { local: true } );
+	const sdf = makeIslandSDF( fp, area );
 	const renderedFloor = floorAt( fp );
 	const near = placeStones( fp, renderedFloor, sdf, grow( box, CONTACT_STONES ) );
 	const nearSDFs = near.map( makeRockSDF );
@@ -339,7 +339,7 @@ function islandNets( ctx: Setup, ci: number, cj: number, span: number, columns =
 	return surfaceNets( sdf, {
 		min: [ 0, Y0, 0 ], max: [ 0, Y1, 0 ], voxel: VOXEL,
 		own: [ ci * CELLS, cj * CELLS, ( ci + span ) * CELLS, ( cj + span ) * CELLS ],
-		// as the page's island mesh (worldWorker.ts buildIsland)
+		// as the page's island mesh (chunkWorker.ts)
 		normalStep: VOXEL * 0.15, sharpen: cliffSharpCells( fp ), columnRange: columns ? islandColumnRange( fp ) : undefined,
 		aoSdf, contactVisibility: contacts( sdf ),
 	} );
@@ -419,7 +419,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	const islandMesh = island ? islandNets( ctx, ci, cj, 1 ) : null;
 	mark( 'island' );
 
-	// --- the owned stones, each meshed on its own (as worldWorker.ts buildRocks)
+	// --- the owned stones, each meshed on its own (as chunkWorker.ts meshes them)
 	const rocks: Rock[] = [], rockMeshes: MeshData[] = [];
 	near.forEach( ( r, i ) => {
 

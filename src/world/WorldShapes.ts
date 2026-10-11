@@ -152,9 +152,8 @@ export function islandSurfaceHeight( x: number, z: number ): number {
 // derives from the footprint, so a grown island gets the same kind of coast. `area` is the box the
 // SDF is evaluated in, grown by 25 m (by default the whole land's). Every value is a function of
 // the point alone, as chunk meshes need (their neighbours evaluate the same points in another
-// order). The third argument is ignored: Chunks.ts still passes the `local` switch the page's
-// single island mesh once needed (CliffWall's exposure then depended on the order of the calls).
-export function makeIslandSDF( fp: Footprint, area: Bounds = grow( fp.bounds, 25 ), _legacy: { local?: boolean } = {} ): SDF {
+// order).
+export function makeIslandSDF( fp: Footprint, area: Bounds = grow( fp.bounds, 25 ) ): SDF {
 
 	const top = islandSurfaceHeight;
 	const wall = new CliffWall( ( x, z ) => fp.dist( x, z ), coastWobble, top, area );

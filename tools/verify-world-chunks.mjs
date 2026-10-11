@@ -166,7 +166,7 @@ const INLAND = - 3.5, COLUMN = 0.5, LAYER = 0.25;
 function inlandColumns( window, ci, cj, island ) {
 
 	const fp = windowFootprint( window ), box = chunkBox( ci, cj );
-	const sdf = makeIslandSDF( fp, { x0: box.x0 - R, z0: box.z0 - R, x1: box.x1 + R, z1: box.z1 + R }, { local: true } );
+	const sdf = makeIslandSDF( fp, { x0: box.x0 - R, z0: box.z0 - R, x1: box.x1 + R, z1: box.z1 + R } );
 	let columns = 0, samples = 0, vertices = 0;
 	const bad = [];
 	for ( let z = box.z0 + COLUMN / 2; z < box.z1; z += COLUMN ) for ( let x = box.x0 + COLUMN / 2; x < box.x1; x += COLUMN ) {
