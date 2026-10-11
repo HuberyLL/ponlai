@@ -150,11 +150,11 @@ export function islandSurfaceHeight( x: number, z: number ): number {
 
 // The island block: the flat meadow plateau inside a weathered sea cliff (Cliff.ts). Everything
 // derives from the footprint, so a grown island gets the same kind of coast. `area` is the box the
-// SDF is evaluated in, grown by 25 m (by default the whole land's). `local` makes every value a
-// function of the point alone, as chunk meshes need (their neighbours evaluate the same points in
-// another order); without it the meadow's top keeps the order-dependent exposure of the page's
-// single island mesh (CliffWall.exposure), so that mesh stays as it was until it is chunked.
-export function makeIslandSDF( fp: Footprint, area: Bounds = grow( fp.bounds, 25 ), { local = false } = {} ): SDF {
+// SDF is evaluated in, grown by 25 m (by default the whole land's). Every value is a function of
+// the point alone, as chunk meshes need (their neighbours evaluate the same points in another
+// order). The third argument is ignored: Chunks.ts still passes the `local` switch the page's
+// single island mesh once needed (CliffWall's exposure then depended on the order of the calls).
+export function makeIslandSDF( fp: Footprint, area: Bounds = grow( fp.bounds, 25 ), _legacy: { local?: boolean } = {} ): SDF {
 
 	const top = islandSurfaceHeight;
 	const wall = new CliffWall( ( x, z ) => fp.dist( x, z ), coastWobble, top, area );
@@ -195,7 +195,7 @@ export function makeIslandSDF( fp: Footprint, area: Bounds = grow( fp.bounds, 25
 		}
 		wall.at( x, y, z, true );
 		out[ o ] = shelter;
-		out[ o + 1 ] = local ? wall.columnExposure : wall.exposure;
+		out[ o + 1 ] = wall.exposure;
 		out[ o + 2 ] = wall.owner >= 0 && wall.scars[ wall.owner ].kind === 'pocket' ? 1 : 0;
 
 	};

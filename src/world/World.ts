@@ -4,47 +4,9 @@ import type { DetailTextures } from '../materials/ProceduralTextures.ts';
 import type { Caustics } from '../ocean/Caustics.ts';
 import type { Shared } from '../shared.ts';
 import { ISLAND_TOP } from './WorldShapes.ts';
-import type { WorldData, WorldOptions, ShoreField, RimGroundField, SeabedBedField } from './types.ts';
-import type { PageJob, WorldReply } from './worldWorker.ts';
-import { WORLD_GENERATOR_HASH } from 'virtual:world-generator';
+import type { WorldData, ShoreField, RimGroundField, SeabedBedField } from './types.ts';
 
-// Generates the world in a worker and turns the result into meshes and the shared shoreline
-// texture.
-
-// The world cache's key (see WorldCache.ts): the hash of every source file the worker imports
-// (vite.config.ts's world generator plugin), the options (the land's seed and step always among
-// them), a format version, and the browser.
-const CACHE_FORMAT = 3;
-function worldCacheKey( options: WorldOptions ): string {
-
-	return JSON.stringify( [ CACHE_FORMAT, WORLD_GENERATOR_HASH, { worldSeed: 1, step: 0, ...options }, navigator.userAgent ] );
-
-}
-
-export interface LoadedWorld {
-	data: WorldData;
-	cache: WorldReply[ 'cache' ];
-	// time spent reading the cache (a hit) or handing the world to it (a miss)
-	ms: number;
-}
-
-// The world, from the cache when it holds one for these options and this generator, else
-// generated (then stored). The worker shares the generation with copies of itself (see
-// worldWorker.ts); the world it returns is the same as a single thread's, bit for bit.
-export function loadWorld( options: WorldOptions = {}, { cache = true } = {} ): Promise<LoadedWorld> {
-
-	return new Promise( ( resolve, reject ) => {
-
-		const worker = new Worker( new URL( './worldWorker.ts', import.meta.url ), { type: 'module' } );
-		// The worker closes itself once it has stored the world in the cache.
-		worker.onmessage = ( e: MessageEvent<WorldReply> ) => resolve( { data: e.data.world, cache: e.data.cache, ms: e.data.cacheMs } );
-		worker.onerror = ( e ) => { worker.terminate(); reject( e ); };
-		worker.onmessageerror = () => { worker.terminate(); reject( new Error( 'The world worker\'s reply could not be read' ) ); };
-		worker.postMessage( { options, cacheKey: cache ? worldCacheKey( options ) : null } satisfies PageJob );
-
-	} );
-
-}
+// Turns the merged world (WorldChunks.ts) into meshes and the textures of its fields.
 
 export function shoreTextureFrom( shore: ShoreField ): { tex: THREE.DataTexture; xform: THREE.Vector4 } {
 
@@ -74,7 +36,7 @@ export function seabedBedTextureFrom( beds: SeabedBedField ): THREE.DataTexture 
 
 }
 
-// The rim ground (RimGround.ts: the boxes' tiles the worker assembled) in half floats: filterable
+// The rim ground (RimGround.ts: the chunks' tiles, assembled by ChunkMerge.ts) in half floats: filterable
 // everywhere and half the memory of floats as the land grows; its distance is clamped to 1.5 m, so
 // they keep it to a millimetre.
 function rimGroundTextureFrom( ground: RimGroundField ): { tex: THREE.DataTexture; xform: THREE.Vector4 } {

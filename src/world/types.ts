@@ -1,4 +1,4 @@
-// Data shared between the world worker and the main thread.
+// Data shared between the world's workers (chunkWorker.ts) and the main thread.
 
 // a signed distance function (m), optionally with per-point values baked onto the mesh: one
 // float (`tint`), four more (`detail`, written to out[ o .. o + 3 ]) and three more (`detail2`)
@@ -60,9 +60,12 @@ export interface RimStrand {
 // inside one box, between the points where it crosses the box's border (or a whole loop).
 export interface RimSkirtData { points: Float32Array; normals: Float32Array; info: Float32Array; pieces: Int32Array }
 
+// One land version's world, merged from its chunks (ChunkMerge.ts).
 export interface WorldData {
 	// the grown land (LandLattice.toBytes)
 	land: Uint8Array;
+	// ci, cj per chunk (Chunks.ts), in the merge's order: rows ( cj, then ci )
+	chunks: Int32Array;
 	meshes: NamedMesh[];
 	rocks: Rock[];
 	// The sea floor as one mesh: its near tiles, then the far floor (SeabedTile.ts). ao: contact
@@ -77,9 +80,9 @@ export interface WorldData {
 	rimStrands: RimStrand[];
 	rimGround: RimGroundField;
 	rimSkirt: RimSkirtData;
+	// The sea-level section's signed distance (m, clamped to +-LAND_REACH) over the land's box and
+	// 32 m round it, out to the world's 32 m grid (ChunkMerge.ts fieldBounds).
 	shore: ShoreField;
-	// Half-resolution island distance field for the local breaking-surf pass.
-	islandShore: ShoreField;
 	// The rendered floor's height (m) over the shoreline field's bounds, at half its resolution.
 	seabedField: ShoreField;
 	// The floor's beds over the same bounds at 0.5 m.
@@ -91,8 +94,6 @@ export interface WorldOptions {
 	// the land: the world's seed and the growth steps taken (IslandGrowth.ts's growLand)
 	worldSeed?: number;
 	step?: number;
-	islandVoxel?: number;
-	shoreCell?: number;
 	// Disable only the cross-object contact bake for CPU comparison; geometry stays identical.
 	contactOcclusion?: boolean;
 }

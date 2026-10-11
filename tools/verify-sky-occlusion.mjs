@@ -1,11 +1,12 @@
 // Run with a Node version supporting TypeScript stripping: node tools/verify-sky-occlusion.mjs.
-// --world also generates the full scene twice and checks geometry/placement invariance.
+// --world also generates the page's world twice (from its chunks, tools/world-node.mjs), with and
+// without the contact shade, and checks geometry/placement invariance.
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { boundedSceneField, localSkyVisibility, contactVisibilitySampler } from '../src/lighting/SkyOcclusion.ts';
 import { surfaceNets } from '../src/world/SurfaceNets.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
-import { loadWorldWorker } from './world-node.mjs';
+import { generateWorld } from './world-node.mjs';
 
 const plane = ( x, y, z ) => y;
 const sphere = ( x, y, z ) => Math.hypot( x, y - 0.8, z ) - 0.35;
@@ -55,11 +56,10 @@ console.log( JSON.stringify( { isolated: 1, neighbouring: neighbouring( 0, 0, 0,
 
 if ( process.argv.includes( '--world' ) ) {
 
-	const runWorker = await loadWorldWorker();
 	const generate = ( contactOcclusion ) => {
 
 		const start = performance.now();
-		const data = runWorker( { contactOcclusion } );
+		const data = generateWorld( { contactOcclusion } );
 		return { data, elapsedMs: performance.now() - start };
 
 	};
@@ -78,7 +78,6 @@ if ( process.argv.includes( '--world' ) ) {
 	assert.ok( after.data.rimGround.data.length > 0, 'The meadow transition field must be transferred.' );
 	assert.deepEqual( after.data.rimGround, before.data.rimGround );
 	assert.deepEqual( after.data.shore, before.data.shore );
-	assert.deepEqual( after.data.islandShore, before.data.islandShore );
 	assert.deepEqual( after.data.seabed.positions, before.data.seabed.positions );
 	assert.equal( after.data.vegetation.length, before.data.vegetation.length );
 	for ( let k = 0; k < after.data.vegetation.length; k += VEGETATION_STRIDE ) {

@@ -32,8 +32,8 @@ View and capture:
 The island:
 
 - `seed` (the world's seed, 1 by default: Ponlai's island) and `grow` (growth steps after the
-  starting island, 0 by default, up to `GROWTH.maxSteps`). The page generates its whole world from
-  that land and frames its views on it; debug pages expose `window.__PONLAI__.land` (`seed`,
+  starting island, 0 by default, up to `GROWTH.maxSteps`). The page generates its world from that
+  land in 16 m chunks and frames its views on it; debug pages expose `window.__PONLAI__.land` (`seed`,
   `step`, `bounds`, `centroid`, the views' `scale` against the first island and the default pivot
   `target`) for the tools to frame by.
 
@@ -60,8 +60,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 
 - `msaa` (the scene's sample count, `src/post/SceneSamples.ts`: 4, the default, or 1 for none;
   `2` reads as 1, since WebGPU multisamples with 1 or 4 samples only).
-- `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB cache,
-  as on a first visit).
+- `worldCache=off` (generate every chunk of the island instead of loading it from the browser's
+  IndexedDB cache, as on a first visit; `src/world/WorldChunks.ts`). The cache keeps one record per
+  chunk, so a land grown by a piece reloads the chunks the piece did not reach; the diagnostics'
+  `worldCache` counts the records read (`hits`, of the chunks and the land).
 - `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
   page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
   as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
@@ -77,6 +79,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   JS cost) and `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`).
 - `vegPrepass=0` (the single coverage pass), `vegPrepass=coverage` (the prepass with coverage kept
   in the shaded draw), `windLegacy` (the old global-sine sway).
+- `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
+  GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
 - `islander` picks the islanders' proportions (`medium`, the default, or `stock` (the kit's own),
   `subtle` and `strong` builds of `Proportions.ts`); also in the GUI's Islander folder, which
   rebuilds the scene's walker in place. In game mode the folder's proportion control is disabled:
@@ -170,8 +174,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their cause, and the
   startup.
 - It loads each variant once and switches scenes at runtime (`--mode reload` reloads per scene,
-  the original method); every page keeps the generated island in IndexedDB (in the tool's own
-  Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
+  the original method); every page keeps the generated island's chunks in IndexedDB (in the
+  tool's own Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
   `worldCache=off`).
 - `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
   other page stopped, and reports deltas with their 95 % interval. `--toggle "js"` A/Bs inside one
