@@ -59,8 +59,10 @@ export default defineConfig( {
 	plugins: [ licences(), worldGeneratorHash() ],
 	server: {
 		// Worktrees for parallel branches live under .claude/. A build or checkout there writes an
-		// index.html inside this root, which would make the dev server reload every open page.
-		watch: { ignored: [ '**/.claude/**' ] },
+		// index.html inside this root, which would make the dev server reload every open page. The
+		// glob is anchored to this config's own .claude/: a relative '**/.claude/**' also matched
+		// every file of a dev server started inside a worktree, which then served stale modules.
+		watch: { ignored: [ decodeURIComponent( new URL( './.claude/', import.meta.url ).pathname ) + '**' ] },
 	},
 	build: {
 		target: 'es2022',

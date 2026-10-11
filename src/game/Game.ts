@@ -52,6 +52,7 @@ export interface GameContext {
 	bushes: Float32Array;
 	dayCycle: DayCycle;
 	characterShadow: CharacterShadow;
+	/** a skinned islander figure for a look index, its pipelines compiled (GameView "First draws") */
 	loadLook( look: number ): Promise<Figure>;
 	invalidateSunShadow(): void;
 	/** an opaque prop the game draws spans this box: the sun's shadow casters and the sea's reflection box grow to hold it */
@@ -243,6 +244,13 @@ export class Game {
 	placeBlueprint( kind: string, x: number, z: number ): string | null {
 
 		return this.sim.placeBlueprint( kind, x, z );
+
+	}
+
+	/** Whether every islander shows on screen: the page keeps its loading screen until then. */
+	ready(): boolean {
+
+		return this.view?.ready ?? false;
 
 	}
 

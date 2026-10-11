@@ -28,13 +28,16 @@ import { VillagerView, disposeFigure } from './VillagerView.ts';
 // pipelines in the frame that first shows it, synchronously: the chest's model stalled the frame
 // it appeared in by about 0.7 s on a cold shader cache (its main pass and its shadow-map pass),
 // the placement ring by about 0.2 s. So everything that can first show mid-game has a sample in
-// `propSamples` (each kind's model and its construction site; the HUD adds its own,
+// `propSamples` (a palm, each kind's model and its construction site; the HUD adds its own,
 // GameHud.samples), and the game compiles their pipelines off the frame once its first frame has
 // drawn (Game.render, GameContext.compileDraws). A sample must be built as the real thing is (the same view class,
 // material and attributes, castShadow and receiveShadow), since that is what the pipelines are
 // keyed by, and shares the real thing's material where it can, so that the shaders are built too
-// (Props.ts buildingMaterial: every building and site shares one). The samples are never drawn and are kept for the page's life: disposing one would
-// release the pipelines it shares with the props drawn later.
+// (Props.ts buildingMaterial: every building and site shares one; every palm shares PalmView's,
+// so a load, which draws the old view's palm anew, builds nothing). The samples are never drawn and are kept for the page's life: disposing one would
+// release the pipelines it shares with the props drawn later. An islander's figure has no sample:
+// each load brings its own material, so `loadLook` hands a figure over only once its own draws
+// are compiled (main.ts), and a figure taken over on a load keeps the pipelines it drew with.
 
 export interface GameViewOptions {
 	sim: Sim;
@@ -67,7 +70,8 @@ let samples: THREE.Object3D[] | null = null;
 export function propSamples(): THREE.Object3D[] {
 
 	if ( samples ) return samples;
-	samples = [];
+	// a palm: every palm shares its material (PalmView), so a loaded game's palm finds it built
+	samples = [ new PalmView( { id: 'palm', x: 0, z: 0, coconuts: 0, growth: 0 }, 0 ).mesh ];
 	for ( const kind of Object.keys( MODELS ) ) {
 
 		const sample = ( worked: number ): BuildingState => ( { id: kind, kind, x: 0, z: 0, worked, items: {} } );
@@ -115,6 +119,13 @@ export class GameView {
 		this.options = options;
 		this.group.name = 'game';
 		options.scene.add( this.group );
+
+	}
+
+	/** True once the view has drawn a frame and every islander shows something (its figure or a stand-in). */
+	get ready(): boolean {
+
+		return this.stamp > 0 && this.villagers.every( ( v ) => v.drawn );
 
 	}
 

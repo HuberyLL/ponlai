@@ -9,7 +9,12 @@ import * as THREE from 'three/webgpu';
 // first await: set the target, call it, restore the target at once, then await (`compileDraws`).
 // It builds a transparent double-sided material's two passes after restoring its side, as one
 // unused double-sided pipeline (r186): compile a copy of the material per side and keep the copies
-// (disposing them releases the shared pipelines; see `Lightning.warm`).
+// (disposing them releases the shared pipelines; see `Lightning.warm`). It builds after its awaits
+// with the render context it collected in, which three shares between all targets of one
+// attachment state (colour count, format and type, samples, depth and stencil flags) and points
+// at whichever of them drew last: a target compiled for must not share it with another of a
+// different depth format, or a frame drawing that one in between builds the wrong pipeline
+// (`CharacterShadow`).
 
 /** `renderer.compileAsync( object, camera, scene )` for draws into `target` (null: the canvas),
  * leaving the renderer's own target as it was. three r186's compileAsync describes the target's
