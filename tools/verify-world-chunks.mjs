@@ -62,6 +62,11 @@
 //   S6  stones: every stone is owned once, by the chunk its centre lies in; and every stone a chunk
 //       places round itself for the contact shade (`contactStones`) whose centre lies in another
 //       chunk is that chunk's own stone, bit for bit, so two chunks shade with the same stone.
+//   S7  rim tiles: a chunk without island carries no rim ground tile (Chunks.ts; ChunkMerge.ts
+//       fills its square with the open sea's constant), no skirt and no anchors, and no island
+//       vertex or anchor of any chunk lies within 0.5 m of its square: the merged field's readers
+//       (the cliff material's linear lookups on the island, the meadow's tufts at the anchors)
+//       never reach those texels. Prints the nearest such point.
 //   I1  no buried wall inland: where the land distance is below -3.5 m (inland, the island mesh's
 //       column range: no wall, only the meadow's top) the window's island SDF is solid from the
 //       lattice's bottom to 0.35 m below the meadow's top and clear 0.6 m above it, sampled every
@@ -328,7 +333,7 @@ async function main() {
 		for ( const s of run.steps ) if ( sSteps.includes( s.step ) ) {
 
 			const ctx = { label: `seed ${ run.seed } step ${ s.step }`, field: s.field, chunks: s.chunks };
-			for ( const check of [ closed, seams, floorSeams, skirtSeams, blockShare, stoneOwners, inland, ...( long ? [ columns ] : [] ) ] ) if ( ! await check( ctx, pool ) ) failed ++;
+			for ( const check of [ closed, seams, floorSeams, skirtSeams, blockShare, stoneOwners, rimTiles, inland, ...( long ? [ columns ] : [] ) ] ) if ( ! await check( ctx, pool ) ) failed ++;
 			s.field = null;
 			// the meshes and rasters are not needed past this step
 			for ( const c of s.chunks ) for ( const k of [ 'island', 'stones', 'floor', 'skirt', 'rimGround', 'shore', 'walk', 'anchors', 'bushes', 'strands', 'contact' ] ) delete c[ k ];
@@ -1064,6 +1069,36 @@ function stoneOwners( ctx ) {
 	const ok = twice === 0 && astray === 0 && missing === 0 && differ === 0;
 	console.log( `${ ok ? 'ok  ' : 'FAIL' } S6 ${ ctx.label }: ${ owned } stones owned, ${ twice } twice, ${ astray } outside their chunk; ` +
 		`${ compared } contact copies of neighbours' stones held by chunks against their owners: ${ missing } unowned, ${ differ } differ (${ nowhere } more lie in no chunk, ${ own } are the chunk's own)` );
+	return ok;
+
+}
+
+// S7: chunks without island carry no rim tile, and nothing that reads the merged rim field lies
+// near their squares.
+function rimTiles( ctx ) {
+
+	const bare = ctx.chunks.filter( ( c ) => c.rimGround.length === 0 ).map( ( c ) => chunkBox( c.ci, c.cj ) );
+	let wrong = 0, nearest = Infinity, points = 0;
+	for ( const c of ctx.chunks ) if ( c.rimGround.length === 0 && ( c.island || c.anchors.length > 0 || c.skirt.points.length > 0 ) ) wrong ++;
+	const visit = ( near, x, z ) => {
+
+		points ++;
+		for ( const b of near ) nearest = Math.min( nearest, Math.hypot( Math.max( b.x0 - x, 0, x - b.x1 ), Math.max( b.z0 - z, 0, z - b.z1 ) ) );
+
+	};
+	for ( const c of ctx.chunks ) {
+
+		// (a chunk's points lie within a voxel of its square: only the bare squares beside it matter)
+		const own = chunkBox( c.ci, c.cj ), near = bare.filter( ( b ) => b.x0 <= own.x1 + 1 && b.x1 >= own.x0 - 1 && b.z0 <= own.z1 + 1 && b.z1 >= own.z0 - 1 );
+		if ( near.length === 0 ) continue;
+		const p = c.island?.positions ?? [];
+		for ( let k = 0; k < p.length; k += 3 ) visit( near, p[ k ], p[ k + 2 ] );
+		for ( let k = 0; k < c.anchors.length; k += VEGETATION_STRIDE ) visit( near, c.anchors[ k ], c.anchors[ k + 2 ] );
+
+	}
+	const ok = wrong === 0 && nearest > 0.5;
+	console.log( `${ ok ? 'ok  ' : 'FAIL' } S7 ${ ctx.label }: ${ bare.length } chunks without a rim tile (${ wrong } with island, anchors or skirt); ` +
+		`the nearest of ${ points } island vertices and anchors beside them lies ${ nearest.toFixed( 2 ) } m from their squares` );
 	return ok;
 
 }

@@ -36,6 +36,9 @@
 // - Samplers that need only the island's side (the shore's sea-level section, the rim lattice)
 //   take it from the footprint away from the coast (WorldShapes `solidSide`, exact there) and
 //   sample the SDF only near it: the bits are the same, at a fraction of the cost.
+// - A chunk without island (no land within ISLAND_NEAR) has no island, anchors, bushes, trails or
+//   skirt, and carries no rim ground tile (ChunkMerge.ts fills its square): three quarters of a
+//   sea chunk's bytes went to a tile nothing reads.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
 //   chunk's data and its hash repeat whatever order the chunks are built in.
 // - The page's derived products come with the chunk (ChunkDerived.ts): the island's caster columns
@@ -114,6 +117,9 @@ const SHORE_CELL = 0.125, SHORE_PAD = 26;
 const WALK_CELL = 0.5, WALK_MARGIN = 0.9;
 
 const grow = ( b: Bounds, m: number ): Bounds => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
+// the skirt of a chunk without island, as buildRimSkirt returns it with no coast (new each time: a
+// chunk's buffers are transferred)
+const emptySkirt = (): RimSkirtData => ( { points: new Float32Array( 0 ), normals: new Float32Array( 0 ), info: new Float32Array( 0 ), pieces: new Int32Array( 0 ) } );
 
 /** The key of chunk ( ci, cj ). */
 export const chunkKey = ( ci: number, cj: number ): string => `${ ci },${ cj }`;
@@ -276,7 +282,7 @@ export interface ChunkData {
 	strands: RimStrand[];
 	// the turf skirt's owned pieces, each with its crossing samples
 	skirt: RimSkirtData;
-	// the rim ground's owned texels: 160 x 160, RGBA (RimGround.ts)
+	// the rim ground's owned texels: 160 x 160, RGBA (RimGround.ts); empty without island
 	rimGround: Float32Array;
 	// the sea-level section's signed distance (m, clamped to +-LAND_REACH): 128 x 128 texels of 0.125 m
 	shore: Float32Array;
@@ -392,7 +398,7 @@ export function chunkBlock( window: LandField, ci: number, cj: number, span: num
 	};
 	return members.map( ( m, n ) => ( {
 		key: m.key,
-		rimGround: ownTexels( tile, m.box ).data,
+		rimGround: m.island ? ownTexels( tile, m.box ).data : new Float32Array( 0 ),
 		shore: slice( shore, Math.round( S / SHORE_CELL ), m ),
 		walk: slice( walk, Math.round( S / WALK_CELL ), m ),
 		anchors: m.island ? anchorsIn( reach, m.box ) : new Float32Array( 0 ),
@@ -458,10 +464,19 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	if ( island ) anchors = anchorsIn( reach, box );
 	mark( 'anchors' );
 
-	// --- the rim: ground tile, turf skirt, bushes, trails
-	const tile = rimGroundTile( new RimLattice( sdf, grow( box, RIM_PAD ), fp ), box );
-	const rimGround = ownTexels( tile, box ).data;
-	const skirt = buildRimSkirt( sdf, tile, box );
+	// --- the rim: ground tile, turf skirt, bushes, trails. Without island the tile's lattice lies
+	// wholly outside the solid (its texels reach RIM_PAD from the chunk, the land lies ISLAND_NEAR
+	// away and the wall within 2 m of it), so the skirt is empty and the tile is the open sea's
+	// distance under noise only the cliff and the meadow read: the chunk carries no tile
+	// (ChunkMerge.ts fills its square).
+	let rimGround: Float32Array = new Float32Array( 0 ), skirt = emptySkirt();
+	if ( island ) {
+
+		const tile = rimGroundTile( new RimLattice( sdf, grow( box, RIM_PAD ), fp ), box );
+		rimGround = ownTexels( tile, box ).data;
+		skirt = buildRimSkirt( sdf, tile, box );
+
+	}
 	mark( 'rim' );
 	if ( island ) {
 

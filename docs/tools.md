@@ -267,8 +267,8 @@ what these do not give (automation, A/B statistics, pass names).
   whole (S2), the floor tiles' shared points, the floor at or below -1.6 m off the land and the
   tiles' outer sides on the open sea's lattice (S3), the turf skirt's border crossings (S4), a
   2 x 2 block's rim ground, shore, walk texels, anchors, bushes and trails made in one pass (S5),
-  the stones' owners and their copies in the neighbours' contact sets (S6), and no buried wall
-  inland (I1). `--long` takes D1 at every step, D2 on all chunks of both seeds, the S checks at
+  the stones' owners and their copies in the neighbours' contact sets (S6), no island vertex or
+  anchor near a chunk that carries no rim ground tile (S7), and no buried wall inland (I1). `--long` takes D1 at every step, D2 on all chunks of both seeds, the S checks at
   every fourth step and the island's inland column range against whole columns. `--bench` keeps
   only D4 and prints per growth piece the land field's time, the chunks rebuilt and changed,
   their CPU time and bytes. Every run writes a chunk sheet per seed (each step's land, new piece,

@@ -382,9 +382,9 @@ function meadow( planting, island, chunks, pooled ) {
 
 	const { seed, step, land } = island;
 	const anchors = concat( chunks.map( ( c ) => c.anchors ) );
-	// the chunks' rim ground texels (160 x 160 over each chunk), assembled
+	// the chunks' rim ground texels (160 x 160 over each chunk with island), assembled
 	const n = Math.round( S / RIM_CELL );
-	const rimGround = assembleRimGround( chunks.map( ( c ) => ( { data: c.rimGround, nx: n, nz: n, x0: c.ci * S, z0: c.cj * S, cell: RIM_CELL } ) ) );
+	const rimGround = assembleRimGround( chunks.filter( ( c ) => c.rimGround.length > 0 ).map( ( c ) => ( { data: c.rimGround, nx: n, nz: n, x0: c.ci * S, z0: c.cj * S, cell: RIM_CELL } ) ) );
 	const walkDistance = planting.walkLoopDistance( planting.walkLoop( land ) );
 	const tufts = planting.plantGrass( anchors, rimGround, walkDistance ), flowers = planting.plantFlowers( anchors, walkDistance );
 	const counts = { anchors: anchors.length / VEGETATION_STRIDE, lawn: tufts.lawn.length, tussocks: tufts.tussocks.length, thin: tufts.lawnThin.length, flowers: flowers.flat().length };

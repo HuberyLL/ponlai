@@ -18,8 +18,11 @@
 // - The rim ground (0.1 m) is read only on the land and its cliff (the meadow's tufts, the cliff
 //   material), so it keeps its own, smaller bounds: the RIM_BOX boxes that meet the land's box and
 //   RIM_PAD (`rimBounds`, the extent RimGround's assembly covered before chunks), copied from the
-//   chunks inside them (the open sea's values where no chunk is). Over the fields' bounds it held
-//   3-8x the texels. Its CPU field stays Float32 although the texture is half float (World.ts):
+//   chunks inside them that have island; elsewhere (no chunk, or a chunk without island, which
+//   carries no tile: Chunks.ts) it holds the open sea's constant ( RIM_REACH, ISLAND_TOP, 0, 0 ).
+//   Those squares lie more than 2 m from any island surface and meadow anchor, and the texture is
+//   filtered linearly without mips, so nothing reads them. Over the fields' bounds it held 3-8x
+//   the texels. Its CPU field stays Float32 although the texture is half float (World.ts):
 //   the tufts read it on the CPU, and packing it would move their placement by ~1e-3 m; the
 //   texture halves only the GPU's copy. The last two are interpolated from the chunk's
 //   floor tile at the texels' centres on the meshes' diagonal, as Bathymetry's `floorAt` reads
@@ -133,7 +136,7 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 
 		const x0 = c.ci * SEABED_TILE, z0 = c.cj * SEABED_TILE;
 		copyTile( shore.data, shore.nx, c.shore, SEABED_TILE / SHORE_CELL, ( x0 - bounds.x0 ) / SHORE_CELL, ( z0 - bounds.z0 ) / SHORE_CELL, 1 );
-		if ( x0 >= rim.x0 && x0 < rim.x1 && z0 >= rim.z0 && z0 < rim.z1 ) copyTile( rimGround.data, rx, c.rimGround, Math.round( SEABED_TILE / RIM_CELL ), Math.round( x0 / RIM_CELL ) - ri0, Math.round( z0 / RIM_CELL ) - rj0, 4 );
+		if ( c.rimGround.length > 0 && x0 >= rim.x0 && x0 < rim.x1 && z0 >= rim.z0 && z0 < rim.z1 ) copyTile( rimGround.data, rx, c.rimGround, Math.round( SEABED_TILE / RIM_CELL ), Math.round( x0 / RIM_CELL ) - ri0, Math.round( z0 / RIM_CELL ) - rj0, 4 );
 		if ( c.floor ) {
 
 			fromTile( seabedField.data, seabedField.nx, c.floor.height, 1, FLOOR_CELL, ( x0 - bounds.x0 ) / FLOOR_CELL, ( z0 - bounds.z0 ) / FLOOR_CELL );
