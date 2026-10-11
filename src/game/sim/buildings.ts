@@ -7,17 +7,21 @@ import type { BuildingState, SimState, Vec2 } from './types.ts';
 // The buildings the player places: registered kinds, each a footprint, the work it takes and the
 // options the finished place offers. Placing is generic (Sim.placeBlueprint, refused by
 // blueprintRefusal): a building needs open main ground with a clear ring round its footprint
-// (CLEAR_RING, as the palm's, so it can never cut the main ground in two), no body standing on it,
-// and none of its kind placed yet (one of each kind for now, so its id is the kind's name). A new
-// kind is one more entry in BUILDING_KINDS.
+// (CLEAR_RING, as the palm's, so it can never cut the main ground in two) and no body standing on
+// it; any number of a kind may stand. Each building's id is its kind's name and a count of that
+// kind ever placed (SimState.placed): chest1, chest2. An id is never reused, so it stays the same
+// across saves and the brain names the place by it (`go`, `do`). A new kind is one more entry in
+// BUILDING_KINDS.
 //
 // The player plans, the islanders build (docs/game-design.md, "Building"). A placed building is a
 // blueprint: a construction site, the place with its id, which blocks its footprint from the
 // moment it is placed (the islander works beside it, within REACH) and whose only option is
 // `build`. `do( 'build' )` works on it for the work still left, a game second of work a tick
-// (BuildingState.worked); a new action interrupts it and the work done stays. When the work is
-// done the site is the finished building: its own options and what shows on it, and `build` is
-// gone. Its stage is a function of its progress alone (stageOf): planned (no work yet), being
+// (BuildingState.worked); a new action interrupts it and the work done stays. Several islanders
+// may build one site, each adding their work. When the work is done the site is the finished
+// building: its own options and what shows on it. `build` stays on it closed (not offered, refused
+// when called), so whoever else was building it ends at once on their next tick, with the
+// building done as their outcome, instead of standing out the time they had planned. Its stage is a function of its progress alone (stageOf): planned (no work yet), being
 // built, built; perception shows how far along it is in whole percent (siteShows), a number like
 // every state that decides outcomes. No materials yet (nothing on the island gives wood or stone): building costs time
 // only. Cancelling a site is not designed yet.
@@ -119,7 +123,6 @@ export function buildingOf( state: SimState, id: string ): BuildingState | undef
 export function blueprintRefusal( sim: Sim, kind: string, p: Vec2 ): string | null {
 
 	if ( ! Object.hasOwn( BUILDING_KINDS, kind ) ) return `There is no building called ${ kind }`;
-	if ( buildingOf( sim.state, kind ) ) return `The ${ kind } is already placed`;
 	const r = BUILDING_KINDS[ kind ].radius;
 	if ( ! clearAround( sim.grid, p, r + CLEAR_RING ) ) return 'Not enough open ground there';
 	const covered = cellsWithin( sim.grid, p, r );
@@ -128,10 +131,12 @@ export function blueprintRefusal( sim: Sim, kind: string, p: Vec2 ): string | nu
 
 }
 
-/** A new building's state at a point (its kind's name as its id). */
-export function newBuilding( kind: string, x: number, z: number ): BuildingState {
+/** A new building's state at a point, its id the next of its kind (counted in state.placed). */
+export function newBuilding( state: SimState, kind: string, x: number, z: number ): BuildingState {
 
-	return { id: kind, kind, x, z, worked: 0, items: {} };
+	const n = ( state.placed[ kind ] ?? 0 ) + 1;
+	state.placed[ kind ] = n;
+	return { id: `${ kind }${ n }`, kind, x, z, worked: 0, items: {} };
 
 }
 
@@ -158,16 +163,18 @@ function siteShows( b: BuildingState ): Record<string, unknown> {
 
 }
 
-/** The site's one option: work on it until it is built. */
+/** The site's one option: work on it until it is built. Closed once built: a builder still on
+ * it (someone else finished it) ends at its next tick. */
 function buildOption( b: BuildingState, kind: BuildingKind ): PlaceOption {
 
 	return {
-		open: () => true,
-		start: () => ( { ok: true, seconds: kind.work - b.worked } ),
+		open: () => b.worked < kind.work,
+		start: () => b.worked < kind.work ? { ok: true, seconds: kind.work - b.worked } : { ok: false, reason: `${ b.id } is built` },
 		during: () => {
 
+			if ( b.worked >= kind.work ) return { ok: true, value: `${ b.id } is built` };
 			b.worked ++;
-			return b.worked >= kind.work ? { ok: true, value: `built the ${ b.kind }` } : null;
+			return b.worked >= kind.work ? { ok: true, value: `built ${ b.id }` } : null;
 
 		},
 	};
@@ -180,11 +187,12 @@ function buildingPlace( sim: Sim, b: BuildingState ): Place {
 	const reach = kind.radius + REACH, built = stageOf( b ) === 'built';
 	return {
 		id: b.id,
+		kind: b.kind,
 		reaches: ( k ) => k >= 0 && Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= reach,
 		near: () => cellsWithin( grid, p, reach ),
 		distance: ( q ) => Math.hypot( q.x - p.x, q.z - p.z ),
 		shows: ( at ) => built ? kind.shows( b, at ) : siteShows( b ),
-		options: built ? kind.options( b ) : { build: buildOption( b, kind ) },
+		options: built ? { ...kind.options( b ), build: buildOption( b, kind ) } : { build: buildOption( b, kind ) },
 	};
 
 }

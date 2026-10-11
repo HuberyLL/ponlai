@@ -6,7 +6,7 @@ import { ISLAND_TOP } from '../../world/WorldShapes.ts';
 import { SPEED_FACTORS } from '../sim/types.ts';
 import type { EntityId } from '../sim/types.ts';
 import type { Sim } from '../sim/Sim.ts';
-import { buildingOf, newBuilding, stageOf } from '../sim/buildings.ts';
+import { stageOf } from '../sim/buildings.ts';
 import { PalmView } from './PalmView.ts';
 import { standIn } from './StandIn.ts';
 import { ChestView } from './ChestView.ts';
@@ -59,7 +59,7 @@ let samples: THREE.Object3D[] | null = null;
 /** One of each model the game can first show mid-game (see "First draws" above), made once. */
 export function propSamples(): THREE.Object3D[] {
 
-	samples ??= [ new ChestView( newBuilding( 'chest', 0, 0 ), 0 ).mesh ];
+	samples ??= [ new ChestView( { id: 'chest', kind: 'chest', x: 0, z: 0, worked: 0, items: {} }, 0 ).mesh ];
 	return samples;
 
 }
@@ -184,8 +184,8 @@ export class GameView {
 			changed = true;
 
 		}
-		// the chest's model once it is built (its construction stages are not drawn yet)
-		const site = buildingOf( state, 'chest' );
+		// the first chest's model once it is built (its construction stages are not drawn yet)
+		const site = state.buildings.find( ( b ) => b.kind === 'chest' );
 		const box = site && stageOf( site ) === 'built' ? site : null;
 		if ( this.chest && ( ! box || box.x !== this.chest.x || box.z !== this.chest.z ) ) {
 

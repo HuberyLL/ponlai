@@ -15,7 +15,10 @@ import type { ActionResult, PalmState, SimState, Vec2, Villager } from './types.
 // - palm: a coconut palm, placed by palmSite (the ground and a fixed-seed hash; one for now). It
 //   blocks its ground like a plant, holds up to PALM_COCONUTS and grows one back every
 //   PALM_REGROW_SECONDS while it has fewer. `pick` takes PICK_SECONDS and brings one coconut.
-// - buildings: what the player places (buildings.ts: the chest), each a place by its id.
+// - buildings: what the player places (buildings.ts: chests), each a place by its id (chest1).
+//
+// Every place has an id, which the brain names it by, and a kind (shore, palm, chest), which
+// perception shows beside the id so that several of a kind read as such.
 //
 // Standing at a place means standing on one of its cells (`reaches`): walking to it (`go`) ends on
 // the nearest such cell. Reaches may overlap; a body then stands at both places, and `do` runs the
@@ -53,6 +56,8 @@ export interface PlaceOption {
 
 export interface Place {
 	id: string;
+	/** what kind of place it is: 'shore', 'palm', or a building's kind */
+	kind: string;
 	/** whether standing on cell k is standing at the place */
 	reaches( k: number ): boolean;
 	/** the cells near it to test with `reaches` (all of them for the shore) */
@@ -85,6 +90,7 @@ function shore( sim: Sim ): Place[] {
 	}
 	return [ {
 		id: 'shore',
+		kind: 'shore',
 		reaches: ( k ) => k >= 0 && mask[ k ] === 1,
 		near: () => cells,
 		distance: ( p ) => {
@@ -120,6 +126,7 @@ function palmPlace( sim: Sim, palm: PalmState ): Place {
 	const reaches = ( k: number ) => k >= 0 && Math.hypot( grid.centreX( k ) - p.x, grid.centreZ( k ) - p.z ) <= PALM_REACH;
 	return {
 		id: palm.id,
+		kind: 'palm',
 		reaches,
 		near: () => cellsWithin( grid, p, PALM_REACH ),
 		distance: ( q ) => Math.hypot( q.x - p.x, q.z - p.z ),

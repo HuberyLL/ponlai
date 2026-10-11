@@ -129,7 +129,9 @@ const doAction: ToolHandler = ( body, args, sim ) => {
 	const a = record( args );
 	const action = String( a.action );
 	const here = placesAt( sim, body );
-	const place = here.find( ( p ) => Object.hasOwn( p.options, action ) );
+	// a place that offers it now first: a built site keeps `build` closed (buildings.ts)
+	const offers = ( p: Place ) => Object.hasOwn( p.options, action );
+	const place = here.find( ( p ) => offers( p ) && p.options[ action ].open( sim ) ) ?? here.find( offers );
 	const doArgs: DoArgs = { ...a, action, place: place?.id ?? '' };
 	const call = { tool: 'do', args: doArgs };
 	if ( here.length === 0 ) return refuse( body, call, 'not at any place' );
