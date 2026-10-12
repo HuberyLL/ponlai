@@ -66,6 +66,13 @@
 //   Comparing grabs could not help: the loop's start restarts the rest, so each grab was a new rest
 //   (about 40 frames) that only sampled the frame noise again (3 views x 2 loads: 0-52 pixels apart,
 //   once 37 k; 3-13 s per capture). capture.mjs restarts the rest after the evals and waits for it.
+// - "The loading screen gone" is its computed opacity at 0, not its `done` class: the class only
+//   starts its fade (index.html: 0.8 s after a 0.2 s delay), and a shot during the fade carries
+//   the screen over the whole frame. A temporal rest converges about 40 frames after the evals, so
+//   rests were shot through the fade's last percent: up to 2.2 % of the screen's gradient blended
+//   in, 0.3-1.9 levels darker over 3-7.7 M px, most on bright surfaces (taa A/A up to 268 against
+//   0.13 for the earlier fixed 150 frames). The
+//   wait holds on every build, older ones included, and costs at most the fade's remaining second.
 // - A running (not paused) capture, or one given --ready-frames n, waits for that fixed count of
 //   rendered frames instead (READY_FRAMES, 60, for a running one). `wait` and `settle` (ms) add
 //   fixed delays before and after the floor. Later the page's own settled signal joins the stable
@@ -249,14 +256,20 @@ export async function launchCapture( { viewport, deviceScaleFactor = 1 } ) {
 }
 
 /** Waits until the page is ready to capture after the evals: `frames` frames rendered since this
- * call and the loading screen gone, with the optional fixed delays `wait` (before) and `settle`
- * (after), in ms. Call it right after the evals. */
+ * call and the loading screen gone (absent, or its computed opacity 0: its fade-out finished; see
+ * the header), with the optional fixed delays `wait` (before) and `settle` (after), in ms. Call it
+ * right after the evals. */
 export async function waitForScene( page, { frames = READY_FRAMES, wait = 0, settle = 0, timeout = 60000 } = {} ) {
 
 	const from = await page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
 	if ( wait > 0 ) await page.waitForTimeout( wait );
-	await page.waitForFunction( ( f ) => ( window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 ) >= f &&
-		document.getElementById( 'loading' )?.classList.contains( 'done' ), from + frames, { timeout, polling: 'raf' } );
+	await page.waitForFunction( ( f ) => {
+
+		if ( ( window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 ) < f ) return false;
+		const loading = document.getElementById( 'loading' );
+		return ! loading || getComputedStyle( loading ).opacity === '0';
+
+	}, from + frames, { timeout, polling: 'raf' } );
 	if ( settle > 0 ) await page.waitForTimeout( settle );
 
 }

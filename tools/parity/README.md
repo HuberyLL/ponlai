@@ -43,7 +43,8 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   sessionStorage are cleared before every page. The browser build is in the path (Playwright's
   `chromium-<revision>`, or a `CHROME_PATH` browser's `--version`); `PONLAI_CAPTURE_PROFILES`
   moves the root. The slots are independent of the GPU lock.
-- Readiness by stability (MSAA and off): after the view's eval and the loading screen gone (plus
+- Readiness by stability (MSAA and off): after the view's eval and the loading screen gone (its
+  computed opacity 0, the fade-out finished, not only its `done` class; plus
   `--stable-min` rendered frames, 1 by default), the image is grabbed every 2 frames
   (`--stable-every`; the loop stopped and the GPU queue drained for each grab) and the view is shot
   once 1 comparison (`--stable-repeats`) found no pixel changed. A paused page still flickers
@@ -67,6 +68,9 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   rest while a bake or transition runs), stops the loop on the held rest and shoots it
   (`ready.status` `converged`, `ready.framesWaited`); the `--stable-*` options do not apply.
   Comparing grabs restarted the rest at each loop start and only sampled the frame noise again.
+  The rest is restarted only once the loading screen's fade has finished: a rest converged during
+  the fade was shot with up to 2 % of the screen blended over the frame (0.3-1.9 levels darker
+  over millions of pixels, A/A up to 268 under taa).
   Rests are not byte-repeatable: temporal sets are judged with `diff-set.py --temporal`.
 - The loop stops before the shot (`__PONLAI__.loop.stop()`: no new frames, the GPU queue drained):
   a headless page queues seconds of frames ahead of the GPU, and a running page's screenshot
