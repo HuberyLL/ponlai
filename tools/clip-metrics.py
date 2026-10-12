@@ -2,7 +2,7 @@
 
     uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/clip-metrics.py \
         --test DIR --msaa DIR --gt DIR [--crops a,b] [--thresholds thresholds.json] \
-        [--baseline metrics.json [--key tier/kind/name]] [--out DIR] [--no-flip] [--no-gt-gates]
+        [--baseline metrics.json [--key tier/kind/name]] [--out DIR] [--no-flip] [--no-gt-gates] [--workers N]
     uv run ... tools/clip-metrics.py --calibrate masks.json [--size 288] DIR [DIR ...] [--overlays DIR]
 
 Each DIR is a tools/capture-clip.mjs output folder (clip.json and <crop>/<i>.png) of the same clip:
@@ -151,14 +151,25 @@ named "gt:<metric>".
 
 Without thresholds the table is informational.
 
+Speed: the frames are measured in worker processes, one frame index of a crop per job (its test,
+MSAA and GT frames: the GT's masks, filters and spectrum are taken once for both sides), and the
+per-frame values are combined in frame order in the main process, which also takes the metrics
+that pair frames from the frames' luma. Every number is the same expression on the same pixels as
+in one loop, so the output does not depend on the worker count (byte-identical metrics.json).
+Workers: --workers N, else the environment's CLIP_METRICS_WORKERS, else a quarter of the CPUs
+within 1 to 4 (the CPU is shared with captures, and baseline.mjs runs several metric runs at once);
+1 measures in the main process.
+
 Outputs: <out>/metrics.json (per crop: test, msaa, ratio, per-frame series and verdicts; `gates`:
 the failed count by kind) and <out>/metrics.md (a table), out defaulting to <test>/metrics.
 """
 import argparse
 import copy
 import json
+import multiprocessing
 import os
 import sys
+from concurrent.futures import ProcessPoolExecutor
 
 import numpy as np
 from PIL import Image
@@ -200,12 +211,17 @@ def frames_of( folder, crop ):
 	return { int( f[ :-4 ] ): os.path.join( d, f ) for f in os.listdir( d ) if f.endswith( '.png' ) and f[ :-4 ].isdigit() }
 
 
-def load( path, size=None ):
+def load_u8( path, size=None ):
 
 	im = Image.open( path ).convert( 'RGB' )
 	if size is not None and im.size != size:
 		im = im.resize( size, Image.BOX )
-	return np.asarray( im, dtype=np.float64 )
+	return np.asarray( im )
+
+
+def load( path, size=None ):
+
+	return np.asarray( load_u8( path, size ), dtype=np.float64 )
 
 
 def luma( rgb ):
@@ -222,12 +238,13 @@ def chroma( rgb ):
 
 def hsv( rgb ):
 
-	x = rgb / 255.0
-	mx, mn = x.max( -1 ), x.min( -1 )
+	# per channel, and the max and min of three elementwise: the same values as ( rgb / 255 ).max( -1 ),
+	# which reduces over a 3-long axis several times slower
+	r, g, b = rgb[ ..., 0 ] / 255.0, rgb[ ..., 1 ] / 255.0, rgb[ ..., 2 ] / 255.0
+	mx, mn = np.maximum( np.maximum( r, g ), b ), np.minimum( np.minimum( r, g ), b )
 	d = mx - mn
 	h = np.zeros_like( mx )
 	safe = np.where( d > 1e-9, d, 1.0 )
-	r, g, b = x[ ..., 0 ], x[ ..., 1 ], x[ ..., 2 ]
 	h = np.where( mx == r, ( ( g - b ) / safe ) % 6, h )
 	h = np.where( mx == g, ( b - r ) / safe + 2, h )
 	h = np.where( mx == b, ( r - g ) / safe + 4, h )
@@ -244,21 +261,23 @@ def sobel( lum ):
 	return np.hypot( gx, gy ) / 4.0
 
 
-def green_mask( rgb ):
+def green_mask( rgb, hsv3=None ):
 
-	h, s, v = hsv( rgb )
+	h, s, v = hsv3 or hsv( rgb )
 	return ( h >= 60 ) & ( h <= 170 ) & ( s > 0.2 ) & ( v > 0.08 )
 
 
-def blue_mask( rgb ):
+def blue_mask( rgb, hsv3=None ):
 
-	h, s, v = hsv( rgb )
+	h, s, v = hsv3 or hsv( rgb )
 	return ( h >= 180 ) & ( h <= 250 ) & ( s > 0.15 )
 
 
 def dilate( mask, r ):
 
-	return ndi.binary_dilation( mask, structure=np.ones( ( 2 * r + 1, 2 * r + 1 ), dtype=bool ) )
+	# binary dilation by a ( 2r + 1 )^2 square, as a separable maximum: the edge padding repeats a
+	# pixel already in the window, so it is the dilation with nothing outside the image, exactly
+	return ndi.maximum_filter( mask, size=2 * r + 1, mode='nearest' )
 
 
 def merge( a, b ):
@@ -281,10 +300,10 @@ def masks_for( cfg, view, crop ):
 
 # ------------------------------------------------------------------ masks
 
-def flower_mask( rgb, m ):
+def flower_mask( rgb, m, hsv3=None ):
 
 	f = m[ 'flower' ]
-	h, s, v = hsv( rgb )
+	h, s, v = hsv3 or hsv( rgb )
 	lum = luma( rgb )
 	lo, hi = f[ 'greenHue' ]
 	band = ( h >= lo ) & ( h <= hi )
@@ -298,7 +317,7 @@ def flower_mask( rgb, m ):
 	return ( ~band | ( s < f[ 'greenSat' ] ) ) & ( d > f[ 'chroma' ] ) & ( ( lum > f[ 'brightLuma' ] ) | ( ( s > f[ 'minSat' ] ) & ( v > f[ 'minValue' ] ) ) )
 
 
-def flower_heads( rgb, m, away=None ):
+def flower_heads( rgb, m, away=None, hsv3=None ):
 
 	"""Flower heads: (count, contrast). `away` masks out what is not meadow (the GT frame's sea and
 	sky, dilated): the same pixels on every side. A component of up to maxArea is one head; a larger
@@ -307,7 +326,7 @@ def flower_heads( rgb, m, away=None ):
 	1.5 px from its border, a plateau one peak), at least one; anything larger is a region, not
 	flowers. A head that breaks into fragments counts as more: the gates read a loss only."""
 	f = m[ 'flower' ]
-	mask = flower_mask( rgb, m )
+	mask = flower_mask( rgb, m, hsv3 )
 	if away is not None:
 		mask &= ~away
 	scale = ( rgb.shape[ 0 ] * rgb.shape[ 1 ] ) / ( 384 * 384 )
@@ -326,9 +345,13 @@ def flower_heads( rgb, m, away=None ):
 	if inside.any():
 		dt = ndi.distance_transform_edt( inside )
 		peaks, _ = ndi.label( ( dt == ndi.maximum_filter( dt, size=5 ) ) & ( dt >= 1.5 ) & inside, structure=np.ones( ( 3, 3 ) ) )
-		for k in np.nonzero( merged )[ 0 ]:
-			ids = np.unique( peaks[ labels == k ] )
-			count += max( 1, int( ( ids > 0 ).sum() ) )
+		# the distinct peaks of each cluster (a peak touching two counts in both), from the pairs
+		# ( component, peak ) present: one pass over the pixels instead of one per cluster
+		sel = peaks > 0
+		span = int( peaks.max() ) + 1
+		pairs = np.unique( labels[ sel ].astype( np.int64 ) * span + peaks[ sel ] )
+		per = np.bincount( pairs // span, minlength=n + 1 )
+		count += int( np.maximum( per[ merged ], 1 ).sum() )
 	if not count:
 		return 0, 0.0
 	lum = luma( rgb )
@@ -343,14 +366,14 @@ MERGED = 8
 MIN_MEADOW_PX = 400
 
 
-def meadow_region( gt_rgb, m ):
+def meadow_region( gt_rgb, m, away=None ):
 
 	"""The meadow of a GT frame: its blades dilated over the soil between them (4 px at the GT's
 	288 px crop), less its sea and sky (dilated 2 px). Every side's meadow statistics are taken over
 	this one mask, so a crop's sea, sky and bare stone do not move them and a test / MSAA ratio
 	compares the same pixels."""
 	r = max( 2, int( round( 4 * gt_rgb.shape[ 1 ] / 288 ) ) )
-	return dilate( blade_mask( gt_rgb, m ), r ) & ~dilate( blue_mask( gt_rgb ), 2 )
+	return dilate( blade_mask( gt_rgb, m ), r ) & ~( dilate( blue_mask( gt_rgb ), 2 ) if away is None else away )
 
 
 # the display S-curve's contrast of the default look (Pipeline.ts, neutral-hue by day), undone with
@@ -369,6 +392,11 @@ def to_linear( rgb ):
 		d = 1 + LOOK_CONTRAST * ( 6 * x - 6 * x * x - 1 )
 		x = np.clip( x - f / d, 0, 1 )
 	return np.where( x <= 0.04045, x / 12.92, ( ( x + 0.055 ) / 1.055 ) ** 2.4 )
+
+
+# to_linear() of the 256 levels: the frames hold 8-bit values, so a lookup gives the same numbers
+# (checked element for element, at every offset of numpy's vector loops)
+LINEAR_LUT = to_linear( np.arange( 256, dtype=np.float64 ) )
 
 
 def blade_mask( rgb, m ):
@@ -393,11 +421,12 @@ def twigs( lum, m ):
 	return float( depth[ mask ].mean() ) if mask.any() else 0.0, int( ( sizes >= m[ 'twig' ][ 'minArea' ] ).sum() )
 
 
-def star_points( lum, m ):
+def star_points( lum, m, bg=None ):
 
-	# excess over the local sky (a 7 x 7 median), so a gradient or cirrus behind the stars does not
-	# hide the faint ones or count as stars; visible stars only (the mask's `visible` level)
-	bg = ndi.median_filter( lum, size=7 )
+	# excess over the local sky (a 7 x 7 median, `bg` when given), so a gradient or cirrus behind
+	# the stars does not hide the faint ones or count as stars; visible stars only (the mask's
+	# `visible` level)
+	bg = ndi.median_filter( lum, size=7 ) if bg is None else bg
 	peak = ndi.maximum_filter( lum, size=3 )
 	points = ( lum == peak ) & ( lum >= bg + m[ 'stars' ][ 'visible' ] )
 	return np.sort( ( lum - bg )[ points ] )[ ::-1 ]
@@ -406,7 +435,15 @@ def star_points( lum, m ):
 SHIFT_UPSAMPLE = 100
 
 
-def phase_shift( a, b ):
+def phase_ref( a ):
+
+	"""The window and the reference's windowed spectrum (phase_shift()), taken once per GT frame."""
+	h, w = a.shape
+	wy = np.hanning( h )[ :, None ] * np.hanning( w )[ None, : ]
+	return wy, np.fft.fft2( ( a - a.mean() ) * wy )
+
+
+def phase_shift( a, b, ref=None ):
 
 	"""Sub-pixel shift ( dx, dy ) of b against a by phase correlation, refined on the correlation
 	surface upsampled by SHIFT_UPSAMPLE around its integer peak (a matrix-multiply DFT, as in
@@ -414,8 +451,7 @@ def phase_shift( a, b ):
 	A parabola through the peak's neighbours read about half the true shift on the whitened
 	correlation's narrow peak (0.0077 px measured as 0.004), so bounds in px meant twice that."""
 	h, w = a.shape
-	wy = np.hanning( h )[ :, None ] * np.hanning( w )[ None, : ]
-	fa = np.fft.fft2( ( a - a.mean() ) * wy )
+	wy, fa = ref or phase_ref( a )
 	fb = np.fft.fft2( ( b - b.mean() ) * wy )
 	r = fb * np.conj( fa )
 	r /= np.abs( r ) + 1e-12
@@ -515,22 +551,181 @@ def mean_or_none( xs ):
 
 # ------------------------------------------------------------------ measuring
 
+# The work is split in two (the header's "Speed"): frame_job() reads one frame index of a crop (the
+# test's, MSAA's and, where it has one, the GT's frame) and takes every per-frame value, in a worker
+# process; measure() and own_metrics() then combine them, and the metrics that pair frames (F, Fhp,
+# TI, G, Rec, the twinkle) are taken from the frames' luma, in the main process. Every value is the
+# same expression on the same pixels as when one loop took them all, and the per-frame values are
+# combined in frame order, so the results do not depend on the worker count.
+
 def is_vegetation( crop ):
 
 	return any( k in crop for k in ( 'meadow', 'flower', 'rim', 'tree', 'twig' ) )
 
 
-def own_metrics( frames, crop, m, hashes, clock, path=None ):
+def is_flower_crop( crop ):
 
-	"""Metrics of a side's own frames (every frame it captured), no GT."""
-	idx = sorted( frames )
-	L = { i: luma( frames[ i ] ) for i in idx }
+	return 'flower' in crop or 'meadow' in crop
+
+
+def meadow_stats( rgb, region, m, u8, hsv3 ):
+
+	"""The meadow statistics of one frame over the GT frame's meadow region (measure()); u8 the
+	frame's 8-bit values (the linear values by lookup) and hsv3 its hsv()."""
+	lum = luma( rgb )
+	_, s, _ = hsv3
+	local = np.sqrt( np.maximum( ndi.uniform_filter( lum * lum, 5 ) - ndi.uniform_filter( lum, 5 ) ** 2, 0 ) )
+	lin = LINEAR_LUT[ u8 ]
+	co = ( lin[ ..., 0 ] - lin[ ..., 2 ] ) / 2
+	cg = ( 2 * lin[ ..., 1 ] - lin[ ..., 0 ] - lin[ ..., 2 ] ) / 4
+	return np.array( [ lum[ region ].mean(), s[ region ].mean(), green_mask( rgb, hsv3 )[ region ].mean(), local[ region ].mean(), blade_mask( rgb, m )[ region ].mean(),
+		luma( lin )[ region ].mean(), np.hypot( co, cg )[ region ].mean() ] )
+
+
+def gt_frame( G, u8, crop, m ):
+
+	"""What the metrics read of one GT frame: the masks the sides are measured over (kept here, in
+	the worker) and the GT's own values (`own`, returned). Taken once for both sides."""
+	Lg = luma( G )
+	sob = sobel( Lg )
+	hsv3 = hsv( G )
+	green = green_mask( G, hsv3 )
+	own = { 'mean': Lg.mean(), 'sharp': float( sob.mean() ), 'green': float( green.mean() ) }
+	ctx = { 'G': G, 'Lg': Lg, 'own': own, 'phase': phase_ref( Lg ) }
+	# ringing: the GT's edges and its own 3 x 3 range
+	edges = sob > 32
+	if edges.any():
+		ctx[ 'edges' ] = edges
+		ctx[ 'hi' ] = ndi.maximum_filter( Lg, size=3 )
+		ctx[ 'lo' ] = ndi.minimum_filter( Lg, size=3 )
+	# the sea and sky dilated 2 px: the fringe's band (where it meets the dilated green) and what the
+	# flower heads and the meadow statistics leave out
+	away = dilate( blue_mask( G, hsv3 ), 2 )
+	band = dilate( green, 2 ) & away
+	if band.sum() >= 20:
+		ctx[ 'band' ] = band
+		own[ 'bandMean' ] = Lg[ band ].mean()
+	if is_flower_crop( crop ):
+		ctx[ 'away' ] = away
+		own[ 'heads' ] = flower_heads( G, m, away, hsv3 )
+		region = meadow_region( G, m, away )
+		ctx[ 'region' ] = region
+		own[ 'regionMean' ] = region.mean()
+		own[ 'regionSum' ] = int( region.sum() )
+		# a frame below the floor drops the meadow statistics of the whole crop (measure())
+		if own[ 'regionSum' ] >= MIN_MEADOW_PX:
+			own[ 'stats' ] = meadow_stats( G, region, m, u8, hsv3 )
+	if 'twig' in crop:
+		own[ 'twigs' ] = twigs( Lg, m )
+	if 'star' in crop:
+		own[ 'stars' ] = star_points( Lg, m )
+	if 'glint' in crop:
+		level = m[ 'glints' ][ 'level' ]
+		own[ 'glintShare' ] = float( ( Lg >= level ).mean() )
+		own[ 'glintEnergy' ] = float( np.maximum( Lg - level, 0 ).sum() )
+	if 'rain' in crop:
+		own[ 'streaks' ] = float( np.maximum( Lg - ndi.uniform_filter( Lg, 5 ), 0 ).mean() )
+	if is_edge_crop( crop ):
+		own[ 'edgeW' ] = edge_width( Lg, Lg )
+	return ctx
+
+
+def side_vs_gt( X, u8, Lx, sharp, gt, crop, m, use_flip, bg=None ):
+
+	"""One side's frame against the GT frame (measure()'s per-frame values); bg the 7 x 7 median of
+	Lx in star crops, when side_own() took it."""
+	G, Lg, g = gt[ 'G' ], gt[ 'Lg' ], gt[ 'own' ]
+	hsv3 = hsv( X )
+	v = { 'mean': Lx.mean(), 'S': safe_ratio( sharp, g[ 'sharp' ] ) }
+	if use_flip:
+		if 'G32' not in gt:
+			gt[ 'G32' ] = ( G / 255.0 ).astype( np.float32 )
+		_, mean, _ = flip.evaluate( gt[ 'G32' ], ( X / 255.0 ).astype( np.float32 ), 'LDR' )
+		v[ 'FLIP' ] = float( mean )
+	else:
+		v[ 'MAE' ] = float( np.abs( X - G ).mean() )
+	if 'edges' in gt:
+		over = np.maximum( Lx - gt[ 'hi' ], 0 ) + np.maximum( gt[ 'lo' ] - Lx, 0 )
+		v[ 'R' ] = float( over[ gt[ 'edges' ] ].mean() )
+	v[ 'W' ] = safe_ratio( float( green_mask( X, hsv3 ).mean() ), g[ 'green' ] )
+	if 'band' in gt:
+		v[ 'fringe' ] = float( Lx[ gt[ 'band' ] ].mean() - g[ 'bandMean' ] )
+	if is_flower_crop( crop ):
+		v[ 'heads' ] = flower_heads( X, m, gt[ 'away' ], hsv3 )
+		if 'stats' in g:
+			v[ 'stats' ] = meadow_stats( X, gt[ 'region' ], m, u8, hsv3 )
+	if 'twig' in crop:
+		v[ 'twigs' ] = twigs( Lx, m )
+	if 'star' in crop:
+		v[ 'stars' ] = star_points( Lx, m, bg )
+	if 'glint' in crop:
+		level = m[ 'glints' ][ 'level' ]
+		v[ 'glintShare' ] = float( ( Lx >= level ).mean() )
+		v[ 'glintEnergy' ] = float( np.maximum( Lx - level, 0 ).sum() )
+	if 'rain' in crop:
+		v[ 'streaks' ] = float( np.maximum( Lx - ndi.uniform_filter( Lx, 5 ), 0 ).mean() )
+	if is_edge_crop( crop ):
+		v[ 'edgeW' ] = edge_width( Lx, Lg )
+	v[ 'shift' ] = phase_shift( Lg, Lx, gt[ 'phase' ] )
+	return v
+
+
+def side_own( X, Lx, crop, m, twinkle ):
+
+	"""One side's own per-frame values (own_metrics()); with the twinkle, the frame's 7 x 7 median
+	under `bg` (star_points() reads it too; not returned)."""
+	v = { 'sharp': float( sobel( Lx ).mean() ) }
+	if is_vegetation( crop ):
+		# the max of three elementwise: the same as X.max( -1 ), faster
+		v[ 'holes' ] = int( ( np.maximum( np.maximum( X[ ..., 0 ], X[ ..., 1 ] ), X[ ..., 2 ] ) <= m[ 'holes' ][ 'level' ] ).sum() )
+	if 'glint' in crop:
+		v[ 'glintCount' ] = float( ( Lx >= m[ 'glints' ][ 'level' ] ).sum() )
+	if twinkle:
+		# each pixel's excess over the local sky, its 3 x 3 maximum: read at the stars of the mean frame
+		v[ 'bg' ] = ndi.median_filter( Lx, size=7 )
+		v[ 'excess' ] = ndi.maximum_filter( Lx - v[ 'bg' ], size=3 )
+	return v
+
+
+def frame_job( job ):
+
+	"""Every per-frame value of one frame index of a crop: the sides' own, and with a GT frame, the
+	GT's and each side's against it. Returns them with the frames' 8-bit pixels (the main process
+	takes the metrics that pair frames from their luma)."""
+	crop, m, size, use_flip, twinkle = job[ 'crop' ], job[ 'm' ], job[ 'size' ], job[ 'flip' ], job[ 'twinkle' ]
+	out = { 'rgb': {}, 'own': {}, 'vs': {} }
+	frames = {}
+	for side in ( 'test', 'msaa' ):
+		if job[ side ] is not None:
+			out[ 'rgb' ][ side ] = load_u8( job[ side ], size )
+			frames[ side ] = np.asarray( out[ 'rgb' ][ side ], dtype=np.float64 )
+	lumas = { side: luma( X ) for side, X in frames.items() }
+	for side, X in frames.items():
+		out[ 'own' ][ side ] = side_own( X, lumas[ side ], crop, m, twinkle )
+	bgs = { side: out[ 'own' ][ side ].pop( 'bg', None ) for side in frames }
+	if 'msaa' in frames:
+		out[ 'dMSAA' ] = float( np.abs( lumas[ 'test' ] - lumas[ 'msaa' ] ).mean() )
+	if job[ 'gt' ] is not None:
+		u8 = load_u8( job[ 'gt' ] )
+		out[ 'rgb' ][ 'gt' ] = u8
+		gt = gt_frame( np.asarray( u8, dtype=np.float64 ), u8, crop, m )
+		out[ 'gt' ] = gt[ 'own' ]
+		for side, X in frames.items():
+			out[ 'vs' ][ side ] = side_vs_gt( X, out[ 'rgb' ][ side ], lumas[ side ], out[ 'own' ][ side ][ 'sharp' ], gt, crop, m, use_flip, bgs[ side ] )
+	return out
+
+
+def own_metrics( L, own, crop, m, hashes, clock, path=None ):
+
+	"""Metrics of a side's own frames (every frame it captured), no GT: L its luma and own its
+	per-frame values (side_own()), by frame index."""
+	idx = sorted( L )
 	out = {}
 	pairs = [ ( a, b ) for a, b in zip( idx, idx[ 1: ] ) if b == a + 1 ]
 	out[ 'F' ] = float( np.mean( [ np.abs( L[ b ] - L[ a ] ).mean() for a, b in pairs ] ) ) if pairs else None
 	trip = [ i for i in idx if i - 2 in L and i + 2 in L ]
 	out[ 'Fhp' ] = float( np.mean( [ np.abs( L[ i ] - ( L[ i - 2 ] + L[ i + 2 ] ) / 2 ).mean() for i in trip ] ) ) if trip else None
-	sharp = { i: float( sobel( L[ i ] ).mean() ) for i in idx }
+	sharp = { i: own[ i ][ 'sharp' ] for i in idx }
 	steps = [ abs( sharp[ b ] - sharp[ a ] ) for a, b in pairs ]
 	out[ 'Vown' ] = float( max( steps ) / np.mean( list( sharp.values() ) ) ) if steps and np.mean( list( sharp.values() ) ) > 1e-9 else None
 	# recovery after the camera stops (paused clips)
@@ -548,8 +743,7 @@ def own_metrics( frames, crop, m, hashes, clock, path=None ):
 			bad = [ i for i in after if np.abs( L[ i ] - last ).mean() > 1.0 ]
 			out[ 'Rec' ] = ( bad[ -1 ] + 1 - stop ) if bad else 0
 	if is_vegetation( crop ):
-		lvl = m[ 'holes' ][ 'level' ]
-		out[ 'holes' ] = float( np.mean( [ int( ( frames[ i ].max( -1 ) <= lvl ).sum() ) for i in idx ] ) )
+		out[ 'holes' ] = float( np.mean( [ own[ i ][ 'holes' ] for i in idx ] ) )
 	if 'star' in crop:
 		# scintillation: on a still camera (the clip's path), the stars found in the mean frame, each
 		# one's excess over the local sky (its 3 x 3 maximum, so a sub-pixel offset does not count)
@@ -560,44 +754,36 @@ def own_metrics( frames, crop, m, hashes, clock, path=None ):
 			mean = np.mean( [ L[ i ] for i in idx ], axis=0 )
 			pts = ( mean == ndi.maximum_filter( mean, size=3 ) ) & ( mean >= ndi.median_filter( mean, size=7 ) + m[ 'stars' ][ 'excess' ] )
 			if pts.any():
-				ex = np.array( [ ndi.maximum_filter( L[ i ] - ndi.median_filter( L[ i ], size=7 ), size=3 )[ pts ] for i in idx ] )
+				ex = np.array( [ own[ i ][ 'excess' ][ pts ] for i in idx ] )
 				out[ 'stars.twinkle' ] = float( ex.std( axis=0 ).mean() )
 	if 'glint' in crop:
-		level = m[ 'glints' ][ 'level' ]
-		counts = { i: float( ( L[ i ] >= level ).sum() ) for i in idx }
+		counts = { i: own[ i ][ 'glintCount' ] for i in idx }
 		mean = np.mean( list( counts.values() ) )
 		out[ 'glints.sparkle' ] = float( np.mean( [ abs( counts[ b ] - counts[ a ] ) for a, b in pairs ] ) / mean ) if pairs and mean > 0 else None
 	return out
 
 
-def measure( clip_frames, gt_frames, crop, m, use_flip ):
+def measure( L, Lg, vs, gt, crop, use_flip ):
 
-	"""Metrics of one side's frames (dict i -> rgb) against the GT's, at the GT's frames."""
-	idx = sorted( gt_frames )
-	L = { i: luma( clip_frames[ i ] ) for i in idx }
-	Lg = { i: luma( gt_frames[ i ] ) for i in idx }
+	"""Metrics of one side's frames against the GT's, at the GT's frames: L and Lg the luma, vs the
+	side's per-frame values against the GT (side_vs_gt()) and gt the GT's own (gt_frame()), by GT
+	frame index."""
+	idx = sorted( Lg )
 	out, series = {}, {}
-	out[ 'B' ] = safe_ratio( float( np.mean( [ L[ i ].mean() for i in idx ] ) ), float( np.mean( [ Lg[ i ].mean() for i in idx ] ) ) )
+	out[ 'B' ] = safe_ratio( float( np.mean( [ vs[ i ][ 'mean' ] for i in idx ] ) ), float( np.mean( [ gt[ i ][ 'mean' ] for i in idx ] ) ) )
 	# temporal metrics against the GT use consecutive GT frames only (its dense runs): a change over
 	# four frames hides a shimmer of a shorter period and aliases a jitter sequence to one phase
 	pairs = [ ( a, b ) for a, b in zip( idx, idx[ 1: ] ) if b == a + 1 ]
 	out[ 'TI' ] = float( np.mean( [ np.abs( ( L[ b ] - L[ a ] ) - ( Lg[ b ] - Lg[ a ] ) ).mean() for a, b in pairs ] ) ) if pairs else None
-	sharp = { i: safe_ratio( float( sobel( L[ i ] ).mean() ), float( sobel( Lg[ i ] ).mean() ) ) for i in idx }
+	sharp = { i: vs[ i ][ 'S' ] for i in idx }
 	series[ 'S' ] = [ sharp[ i ] for i in idx ]
 	out[ 'S' ] = mean_or_none( sharp.values() )
 	steps = [ abs( sharp[ b ] - sharp[ a ] ) for a, b in pairs if sharp[ a ] is not None and sharp[ b ] is not None ]
 	out[ 'V' ] = float( max( steps ) ) if steps else None
-	if use_flip:
-		errs = []
-		for i in idx:
-			_, mean, _ = flip.evaluate( ( gt_frames[ i ] / 255.0 ).astype( np.float32 ), ( clip_frames[ i ] / 255.0 ).astype( np.float32 ), 'LDR' )
-			errs.append( float( mean ) )
-		series[ 'FLIP' ] = errs
-		out[ 'FLIP' ] = float( np.mean( errs ) )
-	else:
-		errs = [ float( np.abs( clip_frames[ i ] - gt_frames[ i ] ).mean() ) for i in idx ]
-		series[ 'MAE' ] = errs
-		out[ 'MAE' ] = float( np.mean( errs ) )
+	name = 'FLIP' if use_flip else 'MAE'
+	errs = [ vs[ i ][ name ] for i in idx ]
+	series[ name ] = errs
+	out[ name ] = float( np.mean( errs ) )
 	# ghosting over moving content (two GT frames back)
 	ghost, moving = 0, 0
 	for t in idx:
@@ -616,8 +802,8 @@ def measure( clip_frames, gt_frames, crop, m, use_flip ):
 		if len( cur ) > len( run ):
 			run = cur
 	if len( run ) > 6:
-		mt = np.diff( [ L[ i ].mean() for i in run ] )
-		mg = np.diff( [ Lg[ i ].mean() for i in run ] )
+		mt = np.diff( [ vs[ i ][ 'mean' ] for i in run ] )
+		mg = np.diff( [ gt[ i ][ 'mean' ] for i in run ] )
 		if np.abs( mg ).max() > 0.05:
 			best, lag = - np.inf, 0
 			for s in range( 0, 5 ):
@@ -631,90 +817,61 @@ def measure( clip_frames, gt_frames, crop, m, use_flip ):
 		out[ 'L' ] = None
 	# a flash: the largest rise of the mean over its median
 	if len( idx ) > 6:
-		mt = np.array( [ L[ i ].mean() for i in idx ] )
-		mg = np.array( [ Lg[ i ].mean() for i in idx ] )
+		mt = np.array( [ vs[ i ][ 'mean' ] for i in idx ] )
+		mg = np.array( [ gt[ i ][ 'mean' ] for i in idx ] )
 		rise_g = float( mg.max() - np.median( mg ) )
 		out[ 'peak' ] = float( mt.max() - np.median( mt ) ) / rise_g if rise_g > 2 else None
 	# ringing over the GT's edges
-	ring = []
-	for i in idx:
-		edges = sobel( Lg[ i ] ) > 32
-		if not edges.any():
-			continue
-		hi = ndi.maximum_filter( Lg[ i ], size=3 )
-		lo = ndi.minimum_filter( Lg[ i ], size=3 )
-		over = np.maximum( L[ i ] - hi, 0 ) + np.maximum( lo - L[ i ], 0 )
-		ring.append( float( over[ edges ].mean() ) )
+	ring = [ vs[ i ][ 'R' ] for i in idx if 'R' in vs[ i ] ]
 	out[ 'R' ] = float( np.mean( ring ) ) if ring else None
 	# vegetation coverage and the fringe against sea or sky
-	out[ 'W' ] = mean_or_none( safe_ratio( float( green_mask( clip_frames[ i ] ).mean() ), float( green_mask( gt_frames[ i ] ).mean() ) ) for i in idx )
-	fr = []
-	for i in idx:
-		g, b = green_mask( gt_frames[ i ] ), blue_mask( gt_frames[ i ] )
-		band = dilate( g, 2 ) & dilate( b, 2 )
-		if band.sum() >= 20:
-			fr.append( float( L[ i ][ band ].mean() - Lg[ i ][ band ].mean() ) )
+	out[ 'W' ] = mean_or_none( vs[ i ][ 'W' ] for i in idx )
+	fr = [ vs[ i ][ 'fringe' ] for i in idx if 'fringe' in vs[ i ] ]
 	out[ 'fringe' ] = float( np.mean( fr ) ) if fr else None
 	# flowers
-	if 'flower' in crop or 'meadow' in crop:
+	if is_flower_crop( crop ):
 		nf, cf, counts = [], [], []
 		for i in idx:
-			away = dilate( blue_mask( gt_frames[ i ] ), 2 )
-			n, c = flower_heads( clip_frames[ i ], m, away )
-			ng, cg = flower_heads( gt_frames[ i ], m, away )
+			n, c = vs[ i ][ 'heads' ]
+			ng, cg = gt[ i ][ 'heads' ]
 			nf.append( safe_ratio( float( n ), float( ng ) ) )
 			cf.append( safe_ratio( c, cg ) )
 			counts.append( n )
 		out[ 'N_f' ] = mean_or_none( nf )
 		out[ 'C_f' ] = mean_or_none( cf )
 		out[ 'flowers.count' ] = float( np.mean( counts ) )
-
-		def stats( rgb, region ):
-			lum = luma( rgb )
-			_, s, _ = hsv( rgb )
-			local = np.sqrt( np.maximum( ndi.uniform_filter( lum * lum, 5 ) - ndi.uniform_filter( lum, 5 ) ** 2, 0 ) )
-			lin = to_linear( rgb )
-			co = ( lin[ ..., 0 ] - lin[ ..., 2 ] ) / 2
-			cg = ( 2 * lin[ ..., 1 ] - lin[ ..., 0 ] - lin[ ..., 2 ] ) / 4
-			return np.array( [ lum[ region ].mean(), s[ region ].mean(), green_mask( rgb )[ region ].mean(), local[ region ].mean(), blade_mask( rgb, m )[ region ].mean(),
-				luma( lin )[ region ].mean(), np.hypot( co, cg )[ region ].mean() ] )
-		regions = { i: meadow_region( gt_frames[ i ], m ) for i in idx }
-		share = float( np.mean( [ r.mean() for r in regions.values() ] ) )
+		share = float( np.mean( [ gt[ i ][ 'regionMean' ] for i in idx ] ) )
 		keys = [ 'luma', 'saturation', 'green', 'texture', 'coverage', 'lumaLin', 'chroma' ]
-		if min( int( r.sum() ) for r in regions.values() ) >= MIN_MEADOW_PX:
-			a = np.mean( [ stats( clip_frames[ i ], regions[ i ] ) for i in idx ], axis=0 )
-			g = np.mean( [ stats( gt_frames[ i ], regions[ i ] ) for i in idx ], axis=0 )
+		if min( gt[ i ][ 'regionSum' ] for i in idx ) >= MIN_MEADOW_PX:
+			a = np.mean( [ vs[ i ][ 'stats' ] for i in idx ], axis=0 )
+			g = np.mean( [ gt[ i ][ 'stats' ] for i in idx ], axis=0 )
 			out[ 'meadow' ] = { k: safe_ratio( float( x ), float( y ) ) for k, x, y in zip( keys, a, g ) }
 		else:
 			out[ 'meadow' ] = { k: None for k in keys }
 		# the share of the crop the statistics cover (the same on every side: not a ratio to gate)
 		out[ 'meadowShare' ] = share
 	if 'twig' in crop:
-		tw = [ twigs( L[ i ], m ) for i in idx ]
-		tg = [ twigs( Lg[ i ], m ) for i in idx ]
+		tw = [ vs[ i ][ 'twigs' ] for i in idx ]
+		tg = [ gt[ i ][ 'twigs' ] for i in idx ]
 		out[ 'twigs' ] = { 'contrast': safe_ratio( float( np.mean( [ t[ 0 ] for t in tw ] ) ), float( np.mean( [ t[ 0 ] for t in tg ] ) ) ),
 			'components': safe_ratio( float( np.mean( [ t[ 1 ] for t in tw ] ) ), float( np.mean( [ t[ 1 ] for t in tg ] ) ) ) }
 	if 'star' in crop:
-		pts = [ star_points( L[ i ], m ) for i in idx ]
-		gpts = [ star_points( Lg[ i ], m ) for i in idx ]
+		pts = [ vs[ i ][ 'stars' ] for i in idx ]
+		gpts = [ gt[ i ][ 'stars' ] for i in idx ]
 		mean_ex = lambda ps: float( np.mean( [ p.mean() if len( p ) else 0.0 for p in ps ] ) )
 		peak_ex = lambda ps: float( np.mean( [ p[ :10 ].mean() if len( p ) else 0.0 for p in ps ] ) )
 		out[ 'stars' ] = { 'count': safe_ratio( float( np.mean( [ len( p ) for p in pts ] ) ), float( np.mean( [ len( p ) for p in gpts ] ) ) ),
 			'excess': safe_ratio( mean_ex( pts ), mean_ex( gpts ) ), 'peak': safe_ratio( peak_ex( pts ), peak_ex( gpts ) ) }
 	if 'glint' in crop:
-		level = m[ 'glints' ][ 'level' ]
-		share = lambda lum: float( ( lum >= level ).mean() )
-		energy = lambda lum: float( np.maximum( lum - level, 0 ).sum() )
-		out[ 'glints' ] = { 'share': safe_ratio( float( np.mean( [ share( L[ i ] ) for i in idx ] ) ), float( np.mean( [ share( Lg[ i ] ) for i in idx ] ) ) ),
-			'energy': safe_ratio( float( np.mean( [ energy( L[ i ] ) for i in idx ] ) ), float( np.mean( [ energy( Lg[ i ] ) for i in idx ] ) ) ) }
+		out[ 'glints' ] = { 'share': safe_ratio( float( np.mean( [ vs[ i ][ 'glintShare' ] for i in idx ] ) ), float( np.mean( [ gt[ i ][ 'glintShare' ] for i in idx ] ) ) ),
+			'energy': safe_ratio( float( np.mean( [ vs[ i ][ 'glintEnergy' ] for i in idx ] ) ), float( np.mean( [ gt[ i ][ 'glintEnergy' ] for i in idx ] ) ) ) }
 	if 'rain' in crop:
-		en = lambda lum: float( np.maximum( lum - ndi.uniform_filter( lum, 5 ), 0 ).mean() )
-		out[ 'streaks' ] = { 'energy': safe_ratio( float( np.mean( [ en( L[ i ] ) for i in idx ] ) ), float( np.mean( [ en( Lg[ i ] ) for i in idx ] ) ) ) }
+		out[ 'streaks' ] = { 'energy': safe_ratio( float( np.mean( [ vs[ i ][ 'streaks' ] for i in idx ] ) ), float( np.mean( [ gt[ i ][ 'streaks' ] for i in idx ] ) ) ) }
 	if is_edge_crop( crop ):
-		out[ 'edgeW' ] = mean_or_none( edge_width( L[ i ], Lg[ i ] ) for i in idx )
-		own = mean_or_none( edge_width( Lg[ i ], Lg[ i ] ) for i in idx )
+		out[ 'edgeW' ] = mean_or_none( vs[ i ][ 'edgeW' ] for i in idx )
+		own = mean_or_none( gt[ i ][ 'edgeW' ] for i in idx )
 		out[ 'edgeWgt' ] = out[ 'edgeW' ] - own if out[ 'edgeW' ] is not None and own is not None else None
-	vec = [ phase_shift( Lg[ i ], L[ i ] ) for i in idx ]
+	vec = [ vs[ i ][ 'shift' ] for i in idx ]
 	shifts = [ float( np.hypot( dx, dy ) ) for dx, dy in vec ]
 	series[ 'shift' ] = shifts
 	out[ 'shift' ] = float( np.mean( shifts ) )
@@ -980,6 +1137,16 @@ def calibrate( sources, overlays=None, size=None ):
 
 # ------------------------------------------------------------------ main
 
+def default_workers():
+
+	"""Worker processes by default: CLIP_METRICS_WORKERS, else a quarter of the CPUs, 1 to 4 (the
+	CPU is shared with captures, world generation and other metric runs: baseline.mjs runs several)."""
+	env = os.environ.get( 'CLIP_METRICS_WORKERS' )
+	if env:
+		return max( 1, int( env ) )
+	return max( 1, min( 4, ( os.cpu_count() or 1 ) // 4 ) )
+
+
 def main():
 
 	ap = argparse.ArgumentParser( description=__doc__.split( '\n' )[ 0 ] )
@@ -996,6 +1163,7 @@ def main():
 	ap.add_argument( '--calibrate' )
 	ap.add_argument( '--overlays' )
 	ap.add_argument( '--size', help='--calibrate: the GT crop size the metrics run at, WxH or one number (none for aa=gt, whose crops are the test\'s; 288 for gt-hi)' )
+	ap.add_argument( '--workers', type=int, help='worker processes measuring frames (default: CLIP_METRICS_WORKERS, else a quarter of the CPUs, 1 to 4)' )
 	ap.add_argument( 'sources', nargs='*' )
 	a = ap.parse_args()
 	if a.calibrate:
@@ -1040,28 +1208,50 @@ def main():
 	result = { 'clip': sorted( names ), 'view': view, 'key': a.key, 'metric': 'FLIP' if use_flip else 'MAE', 'test': a.test, 'msaa': a.msaa, 'gt': a.gt,
 		'baseline': a.baseline, 'thresholds': a.thresholds, 'crops': {} }
 	failed = { }
+	# every crop's frames are measured by frame_job() in a pool of worker processes (the header's
+	# "Speed"), then combined crop by crop in the order the frames were given
+	same = os.path.realpath( a.test ) == os.path.realpath( a.msaa )
+	plans = []
 	for crop in crops:
 		ft, fm, fg = frames_of( a.test, crop ), frames_of( a.msaa, crop ), frames_of( a.gt, crop )
 		idx = sorted( set( ft ) & set( fm ) & set( fg ) )
 		if not idx:
-			result[ 'crops' ][ crop ] = { 'missing': 'no frame in all three folders' }
+			plans.append( { 'crop': crop } )
 			continue
 		m = masks_for( mask_cfg, view, crop )
-		gt = { i: load( fg[ i ] ) for i in idx }
-		size = ( gt[ idx[ 0 ] ].shape[ 1 ], gt[ idx[ 0 ] ].shape[ 0 ] )
+		# the GT frame's size, which every metric runs at
+		size = Image.open( fg[ idx[ 0 ] ] ).size
 		own_idx = sorted( set( ft ) & set( fm ) )
-		test_all = { i: load( ft[ i ], size ) for i in own_idx }
-		same = os.path.realpath( a.test ) == os.path.realpath( a.msaa )
-		msaa_all = test_all if same else { i: load( fm[ i ], size ) for i in own_idx }
-		mt, st = measure( { i: test_all[ i ] for i in idx }, gt, crop, m, use_flip )
+		twinkle = 'star' in crop and bool( cam_path ) and cam_path[ 0 ] == 'still' and len( own_idx ) > 2
+		gidx = set( idx )
+		jobs = [ { 'crop': crop, 'm': m, 'size': size, 'flip': use_flip, 'twinkle': twinkle, 'test': ft[ i ], 'msaa': None if same else fm[ i ],
+			'gt': fg[ i ] if i in gidx else None } for i in own_idx ]
+		plans.append( { 'crop': crop, 'idx': idx, 'own_idx': own_idx, 'm': m, 'size': size, 'jobs': jobs } )
+	jobs = [ j for p in plans for j in p.get( 'jobs', [] ) ]
+	workers = max( 1, min( a.workers if a.workers is not None else default_workers(), len( jobs ) ) )
+	pool = ProcessPoolExecutor( max_workers=workers, mp_context=multiprocessing.get_context( 'spawn' ) ) if workers > 1 else None
+	results = pool.map( frame_job, jobs ) if pool else map( frame_job, jobs )
+	for plan in plans:
+		crop = plan[ 'crop' ]
+		if 'jobs' not in plan:
+			result[ 'crops' ][ crop ] = { 'missing': 'no frame in all three folders' }
+			continue
+		idx, own_idx, m, size = plan[ 'idx' ], plan[ 'own_idx' ], plan[ 'm' ], plan[ 'size' ]
+		recs = { i: next( results ) for i in own_idx }
+		lumas = lambda side, frames: { i: luma( np.asarray( recs[ i ][ 'rgb' ][ side ], dtype=np.float64 ) ) for i in frames }
+		Lt, Lg = lumas( 'test', own_idx ), lumas( 'gt', idx )
+		gt = { i: recs[ i ][ 'gt' ] for i in idx }
+		side_of = lambda side, key, frames: { i: recs[ i ][ key ][ side ] for i in frames }
+		mt, st = measure( { i: Lt[ i ] for i in idx }, Lg, side_of( 'test', 'vs', idx ), gt, crop, use_flip )
 		# merged, not updated: own_metrics adds to nested groups (stars, glints) that measure() fills
-		mt = merge( mt, unflatten( own_metrics( test_all, crop, m, hashes( 'test' ), clock, cam_path ) ) )
+		mt = merge( mt, unflatten( own_metrics( Lt, side_of( 'test', 'own', own_idx ), crop, m, hashes( 'test' ), clock, cam_path ) ) )
 		if same:
 			mm, sm = copy.deepcopy( mt ), copy.deepcopy( st )
 		else:
-			mm, sm = measure( { i: msaa_all[ i ] for i in idx }, gt, crop, m, use_flip )
-			mm = merge( mm, unflatten( own_metrics( msaa_all, crop, m, hashes( 'msaa' ), clock, cam_path ) ) )
-		mt[ 'dMSAA' ] = 0.0 if same else float( np.mean( [ np.abs( luma( test_all[ i ] ) - luma( msaa_all[ i ] ) ).mean() for i in own_idx ] ) )
+			Lm = lumas( 'msaa', own_idx )
+			mm, sm = measure( { i: Lm[ i ] for i in idx }, Lg, side_of( 'msaa', 'vs', idx ), gt, crop, use_flip )
+			mm = merge( mm, unflatten( own_metrics( Lm, side_of( 'msaa', 'own', own_idx ), crop, m, hashes( 'msaa' ), clock, cam_path ) ) )
+		mt[ 'dMSAA' ] = 0.0 if same else float( np.mean( [ recs[ i ][ 'dMSAA' ] for i in own_idx ] ) )
 		mm[ 'dMSAA' ] = 0.0
 		ft_, fm_ = flatten( mt ), flatten( mm )
 		if baseline and crop in baseline.get( 'crops', {} ) and 'msaa' in baseline[ 'crops' ][ crop ]:
@@ -1070,7 +1260,7 @@ def main():
 			base = fm_
 		# the GT's own frame-to-frame change, over its consecutive frames (its dense runs)
 		gpairs = [ ( p, q ) for p, q in zip( idx, idx[ 1: ] ) if q == p + 1 ]
-		gown = { 'F': float( np.mean( [ np.abs( luma( gt[ q ] ) - luma( gt[ p ] ) ).mean() for p, q in gpairs ] ) ) if gpairs else None }
+		gown = { 'F': float( np.mean( [ np.abs( Lg[ q ] - Lg[ p ] ).mean() for p, q in gpairs ] ) ) if gpairs else None }
 		entry = { 'frames': len( own_idx ), 'gtFrames': len( idx ), 'size': list( size ), 'test': mt, 'msaa': mm, 'gtOwn': gown,
 			'ratio': { k: safe_ratio( v, fm_.get( k ) ) for k, v in ft_.items() if isinstance( v, ( int, float ) ) },
 			'series': { 'test': st, 'msaa': sm } }
@@ -1091,6 +1281,8 @@ def main():
 						failed.setdefault( 'gt:' + rg.get( 'kind', 'gate' ), [] ).append( f'{ crop }/{ k }' )
 			entry[ 'verdict' ] = v
 		result[ 'crops' ][ crop ] = entry
+	if pool:
+		pool.shutdown()
 	if rules or gt_rules:
 		result[ 'gates' ] = { 'failed': sum( len( x ) for x in failed.values() ), 'byKind': failed }
 	out = a.out or os.path.join( a.test, 'metrics' )
