@@ -317,6 +317,15 @@ export class TemporalAA {
 
 	}
 
+	/** Whether the rest holds an image an earlier frame completed: what is drawn after the resolve
+	 * is then kept from that frame (Pipeline.ts `afterHeld`), whose jitter is the rest sequence's
+	 * last, rather than drawn again over this frame's running jitter. */
+	get holding(): boolean {
+
+		return this.rest.converged && ! this.rest.completing;
+
+	}
+
 	// ---- the passes
 
 	/** Declares the passes after `display`: the resolve, the rest and its hand-over, and the canvas
