@@ -9,7 +9,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, uniform, texture, textureLoad, uv, ivec2, vec2, vec3, vec4, float, max, min, clamp, length,
-	normalize, exp, pow, mix, dot, abs, select, smoothstep, luminance, mx_noise_float, screenCoordinate,
+	normalize, exp, pow, mix, dot, abs, select, smoothstep, luminance, mx_noise_float, screenCoordinate, varying,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -261,14 +261,16 @@ export class AerialPerspective {
 	/** The view ray through screen uv `q` of the camera `update` last took, with the inverse
 	 * projection `projectionInverse`: in view space (`ray`, its z -1 deep, for a distance from a
 	 * view z) and its world direction. For the rain veil drawn after the temporal resolve
-	 * (Pipeline.ts), at the canvas's pixels and unjittered. */
+	 * (Pipeline.ts), at the canvas's pixels and unjittered, in a full-screen pass: both are linear
+	 * across the screen before the direction is normalised, so they are interpolated from the
+	 * vertices. */
 	viewRay( q: V2, projectionInverse: THREE.Node<'mat4'> ): { ray: V3; direction: V3 } {
 
 		const ndc = vec3( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1 );
 		const viewFar = projectionInverse.mul( vec4( ndc, 1 ) );
-		const ray = viewFar.xyz.div( viewFar.z.negate() ).toVar();
-		const direction = normalize( this.cameraWorld.mul( vec4( normalize( ray ), 0 ) ).xyz ).toVar();
-		return { ray, direction };
+		const ray = viewFar.xyz.div( viewFar.z.negate() );
+		const direction = normalize( varying( this.cameraWorld.mul( vec4( ray, 0 ) ).xyz ) ).toVar();
+		return { ray: varying( ray ).toVar(), direction };
 
 	}
 
@@ -347,8 +349,7 @@ export class AerialPerspective {
 	 * given distance, and the veil's opacity there in its alpha, which the result keeps (0 without
 	 * a veil); it is also given the air's transmittance to that content (`background` is
 	 * `color` times it plus the air's light), and may return that in the alpha instead (the
-	 * composite's transfer after the resolve, Pipeline.ts, where the veil is laid later along
-	 * `viewRay`). The bank map and the reduced march are declared on `graph`, which owns and sizes
+	 * composite after the resolve, Pipeline.ts, where the veil is laid later along `viewRay`). The bank map and the reduced march are declared on `graph`, which owns and sizes
 	 * them; `passes` then adds the passes that draw them. Called once, as the frame graph is
 	 * built. */
 	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3, transmittance: F ) => V4 ): V4 {

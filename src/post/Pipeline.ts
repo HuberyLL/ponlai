@@ -12,7 +12,7 @@ import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
 import { AA_MODE, AFTER_RESOLVE, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { beginMotionFrame, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
-import { RAIN_OVERLAY, afterFocus, afterMRT, afterTexels } from './AfterResolve.ts';
+import { RAIN_OVERLAY, afterFocus, afterMRT } from './AfterResolve.ts';
 import { jitter } from './Jitter.ts';
 import { TemporalAA, type TemporalFrame, type TemporalMode } from './TemporalAA.ts';
 import { QUALITY, type TemporalSettings } from '../Quality.ts';
@@ -63,7 +63,7 @@ import type { Rain } from '../weather/Rain.ts';
 //     and the storm's spray, unjittered, at the canvas's size (premultiplied radiance, coverage), while
 //     either shows
 //   rain layer ── rainLayer: the change the rain veil and the overlay make to the graded image, at
-//     the canvas's size (the overlay through the composite's transfer), while it rains
+//     the canvas's size (the overlay through the composite at the pixel), while it rains
 //   canvas pass: taaEncoded (or the history or the rest's image, encoded there with the vignette),
 //     RCAS, the rain layer added, grain and dither; TAA below the canvas encodes it at the render's
 //     size (taaDisplay), EASU, then RCAS, the rain layer and the grain
@@ -75,10 +75,10 @@ import type { Rain } from '../weather/Rain.ts';
 // its history less only where the veil is dense, and the meadow beside it keeps its history. (The
 // legacy inline composite, `post=` without compositeOnce, leaves it at zero.) Under taa and taau the
 // veil is drawn after the resolve instead (AfterResolve.ts) and the composite writes, in place of
-// veilReactive, its transfer (rainTransfer, RGBA16F at the render's size): the composite is affine
-// in the scene colour at a pixel, hdr = A scene + B, and rgb holds B, a holds A (the air's
-// transmittance, which it hands over), so the streaks drawn after the resolve take the air, fog
-// and shafts of what lies behind them as they did drawn before the composite.
+// veilReactive, the air's transmittance (rainAir, R16F at the render's size), which it hands over:
+// the composite is affine in the scene colour at a pixel, hdr = A scene + B, so the streaks drawn
+// after the resolve take the air, fog and shafts of what lies behind them as they did drawn before
+// the composite.
 // Every pass runs at the scene's render size or a share of it. When the canvas is larger (a quality
 // preset below the display's resolution), displayRT goes through FSR 1 (edge-adaptive upsampling,
 // then contrast-adaptive sharpening) to the screen instead, and the grain is added there, at
@@ -435,7 +435,7 @@ export class Pipeline {
 	private readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
 		surfaceDepth: ResourceHandle; velocity: ResourceHandle | null; surfaceDepthPrev: ResourceHandle | null; veilReactive: ResourceHandle | null;
-		rainTransfer: ResourceHandle | null; rainOverlay: ResourceHandle | null; rainLayer: ResourceHandle | null;
+		rainAir: ResourceHandle | null; rainOverlay: ResourceHandle | null; rainLayer: ResourceHandle | null;
 		hdr: ResourceHandle | null; sharp: ResourceHandle; blur: ResourceHandle; display: ResourceHandle;
 		viewDistance: ResourceHandle | null;
 		easu: ResourceHandle | null; canvas: ResourceHandle;
@@ -520,10 +520,11 @@ export class Pipeline {
 		// the rain veil's reactive weight per pixel, for the resolve, written by the composite
 		// (persistent: zero until it is written, so the resolve's binding never changes)
 		const veilReactive = RESOLVE && ! AFTER_RESOLVE ? g.color( 'veilReactive', { size: RENDER, format: THREE.RedFormat, type: THREE.HalfFloatType }, true ) : null;
-		// After the resolve (AfterResolve.ts): the composite's transfer at each pixel (rgb: what it adds,
-		// a: what it keeps of the scene colour), for the streaks drawn later, and the streaks and spray
-		// themselves, drawn at the canvas's size (premultiplied scene radiance, coverage).
-		const rainTransfer = AFTER_RESOLVE && O.compositeOnce ? g.color( 'rainTransfer', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
+		// After the resolve (AfterResolve.ts): the air's transmittance at each pixel, which the
+		// composite writes in place of veilReactive (the same cost: rainy or fair, nothing more), for the
+		// streaks drawn later; and the streaks and spray themselves, drawn at the canvas's size
+		// (premultiplied scene radiance, coverage).
+		const rainAir = AFTER_RESOLVE && O.compositeOnce ? g.color( 'rainAir', { size: RENDER, format: THREE.RedFormat, type: THREE.HalfFloatType } ) : null;
 		const rainOverlay = AFTER_RESOLVE ? g.color( RAIN_OVERLAY, { size: CANVAS, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		// (and the change all the rain makes to the graded image, which the canvas pass adds)
 		const rainLayer = AFTER_RESOLVE ? g.color( 'rainLayer', { size: CANVAS, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
@@ -539,7 +540,7 @@ export class Pipeline {
 		// the upscale's EASU image (the canvas's size) and the canvas (the resolve has its own)
 		const easu = O.fsrPort && ! RESOLVE ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
-		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainTransfer, rainOverlay, rainLayer, hdr, sharp, blur, display, viewDistance, easu, canvas };
+		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, hdr, sharp, blur, display, viewDistance, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( velocity ? [ sceneColor, velocity ] : [ sceneColor ], sceneDepth );
@@ -598,9 +599,9 @@ export class Pipeline {
 		const sceneTex = texture( g.texture( sceneColor ) );
 		const tSurfaceDepth = this.textures.surfaceDepth;
 		// (the air's alpha: the rain veil's opacity, for the resolve's veilReactive; after the resolve,
-		// where the veil is drawn, the air's transmittance, for the transfer)
+		// where the veil is drawn, the air's transmittance)
 		const veil = rain && ! AFTER_RESOLVE ? ( d: V3, distance: F, background: V3 ) => rain.veil( d, distance, background ) : undefined;
-		const aired = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rainTransfer ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil );
+		const aired = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil );
 		const shafts = this.shafts.build( tSurfaceDepth, sky, g );
 		const composited = aired.rgb.add( shafts );
 		// Rendered once (the composite pass, into hdr), the composite feeds the sharp image and both
@@ -616,11 +617,11 @@ export class Pipeline {
 			compositeMat.fragmentNode = veilReactive
 				? outputStruct( vec4( composited, 1 ), vec4( min( aired.a.mul( VEIL_REACTIVE.gain ), VEIL_REACTIVE.max ) ) )
 				: vec4( composited, 1 );
-			// After the resolve its transfer instead, the second target: the composite is affine in the
-			// scene colour at a pixel, hdr = A scene + B (A the air's transmittance, B the light the air,
-			// fog and shafts add), so a streak drawn after the resolve takes the air of what lies behind
-			// it as it would have here (AfterResolve.ts).
-			if ( rainTransfer ) compositeMat.fragmentNode = outputStruct( vec4( composited, 1 ), vec4( composited.sub( sceneTex.rgb.mul( aired.a ) ), aired.a ) );
+			// After the resolve the air's transmittance instead, the second target: the composite is
+			// affine in the scene colour at a pixel, hdr = A scene + B (A the transmittance, B the light
+			// the air, fog and shafts add), so a streak drawn after the resolve takes the air of what
+			// lies behind it as it would have here (AfterResolve.ts).
+			if ( rainAir ) compositeMat.fragmentNode = outputStruct( vec4( composited, 1 ), vec4( aired.a ) );
 			this.compositeQuad = new THREE.QuadMesh( compositeMat );
 			this.compositeQuad.name = 'Post.Composite';
 			// (with the uv rtt() gave its texture: a texture() without one transforms it)
@@ -787,10 +788,11 @@ export class Pipeline {
 		// blurred themselves keep their bilinear weight, so a soft bush in front of a softer sea
 		// stays soft at its edge instead of snapping to the half-res grid. The mix factor comes from
 		// the full-resolution coc for the same reason.
-		const dofMix = Fn( () => {
+		// (at the pixel drawn, or at render uv `q`: the rain's layer, AfterResolve.ts)
+		const dofMixAt = ( q?: V2 ) => Fn( () => {
 
-			const c = makeCocAt()( uv() ).x.toVar();
-			const hp = uv().mul( halfSize ).sub( 0.5 ).toVar();
+			const c = makeCocAt()( q ?? uv() ).x.toVar();
+			const hp = ( q ?? uv() ).mul( halfSize ).sub( 0.5 ).toVar();
 			const base = hp.floor().toVar();
 			const f = hp.sub( base ).toVar();
 			const acc = vec3( 0 ).toVar(), wsum = float( 0 ).toVar();
@@ -805,10 +807,10 @@ export class Pipeline {
 			}
 			// (the plain bilinear blur keeps the half-res pass in the graph; it only shows where
 			// every weight vanished, which they cannot)
-			const blurred = select( wsum.greaterThan( 0 ), acc.div( max( wsum, 1e-6 ) ), tBlur.rgb );
-			return mix( tSharp.rgb, blurred, smoothstep( 0, 0.35, c ).mul( u.dof ) );
+			const blurred = select( wsum.greaterThan( 0 ), acc.div( max( wsum, 1e-6 ) ), ( q ? tBlur.sample( q ) : tBlur ).rgb );
+			return mix( ( q ? tSharp.sample( q ) : tSharp ).rgb, blurred, smoothstep( 0, 0.35, c ).mul( u.dof ) );
 
-		} );
+		} )();
 
 		// ---- the look's diffusion glow, after Michael Orton's slide sandwiches (a sharp exposure
 		// over an overexposed, defocused copy of the same view): the light parts of the image
@@ -855,10 +857,11 @@ export class Pipeline {
 		// the foliage. (The light it spreads from is the glow
 		// over its strength and the chain's five mip weights, which sum to 3 at any radius.)
 		// (glowOn is 0 while the chain is skipped: its texture holds the last glow.)
-		const diffused = () => {
+		// (the grade's input: at the pixel drawn, or at render uv `q`)
+		const diffused = ( q?: V2 ) => {
 
-			const c = dofMix().toVar();
-			const glow = tDiffusion.rgb.toVar();
+			const c = dofMixAt( q ).toVar();
+			const glow = ( q ? tDiffusion.sample( q ) : tDiffusion ).rgb.toVar();
 			const l = luminance( c );
 			const lit = smoothstep( 0.03, 0.4, l.mul( u.curveExposure ) );
 			const source = luminance( glow ).div( max( diffusionNode.strength.mul( 3 ), 1e-6 ) );
@@ -1103,37 +1106,40 @@ export class Pipeline {
 
 		} );
 		// What the rain's layer pass draws at the canvas's size, for the canvas pass to add to the
-		// resolved image after the resolve (AfterResolve.ts): the change
-		// the rain makes to the graded colour at the pixel (without the vignette, the canvas pass's; in
-		// linear light under `linear`), and in alpha 1 where it makes one. The rain is laid over the
-		// sharp image (the composite and the blooms) at the four render texels around the point the
-		// pixel shows (weighted bilinearly, as the materials tested the depth), in scene radiance as it
-		// was before the grade, and both are graded: the change is the difference. Blended after the
-		// grade instead, faint rain over the dark sea and meadow, in the curve's toe, came out brighter
-		// than over the same pixels before it.
-		// - The veil at the canvas pixel's unjittered ray, in front of what lies at those texels (their
-		//   distances weighted bilinearly), as the composite laid it over the air (Rain.veil; the
-		//   shafts the composite added over it now lie under it).
-		// - Then the overlay of streaks, splashes and spray through the composite's transfer there.
+		// resolved image after the resolve (AfterResolve.ts): the change the rain makes to the graded
+		// colour at the pixel (without the vignette, the canvas pass's; in linear light under
+		// `linear`), and in alpha 1 where it makes one. The rain is laid over the grade's input at the
+		// render texel nearest the point the pixel shows (the display pass's own: the sharp image, its
+		// depth of field and the look's glow, evaluated again there), in scene radiance as it was
+		// before the grade, and that is graded: the change is the difference from what the display
+		// pass graded at the texel. (Without `linear` the display holds encoded values: both are
+		// graded here.) Blended after the grade instead, faint rain over the dark sea and meadow, in
+		// the curve's toe, came out brighter than over the same pixels before it.
+		// - The veil at the canvas pixel's unjittered ray, in front of what lies at that texel, as the
+		//   composite laid it over the air (Rain.veil; the shafts the composite added over it now lie
+		//   under it).
+		// - Then the overlay of streaks, splashes and spray through the composite at that texel, which
+		//   is A scene + B: A the air's transmittance (rainAir), B the grade's input less A scene.
 		// Nothing while it is dry and the after pass did not draw (the overlay then holds an earlier
 		// frame's: `afterOn`).
 		const tAfterDepth = texture( tSurfaceDepth );
-		const tAfterSharp = texture( g.texture( sharp ) );
+		const tAfterAir = rainAir ? texture( g.texture( rainAir ) ) : null;
+		const tAfterDisplay = texture( tDisplay );
 		const layerNode = rainOverlay ? Fn( () => {
 
 			const out = vec4( 0 ).toVar();
-			const taps = afterTexels( renderSize, canvasSize );
-			// what covers the pixel: the veil (along the pixel's unjittered ray, in front of the texels'
-			// distances weighted bilinearly) and the overlay, while either shows
+			// the render texel nearest the point the pixel shows (its centre scaled to the render, less
+			// this frame's jitter)
+			const texel = ivec2( clamp( screenCoordinate.xy.mul( renderSize.div( canvasSize ) ).sub( jitter.uniforms.px ).sub( 0.5 ).round(), vec2( 0 ), renderSize.sub( 1 ) ) ).toVar();
+			// what covers the pixel: the veil (at the pixel's unjittered ray, in front of what lies at the
+			// texel) and the overlay, while either shows
 			const veil = vec4( 0 ).toVar();
 			if ( rain ) If( rain.uniforms.rain.greaterThan( 0.001 ), () => {
 
-				const { ray, direction } = this.air.viewRay( uv(), jitter.uniforms.unjitteredProjectionInverse );
-				const reach = length( ray );
-				let distance: F = float( 0 );
 				// (the sky's -1e5 and anything past the farthest shell alike: they all lie beyond it)
-				for ( const { texel, weight } of taps ) distance = distance.add( min( ( textureLoad( tAfterDepth, texel ) as unknown as F ).negate().mul( reach ), 1000 ).mul( weight ) ) as F;
-				veil.assign( rain.veil( direction, distance, vec3( 0 ) ) );
+				const { ray, direction } = this.air.viewRay( uv(), jitter.uniforms.unjitteredProjectionInverse );
+				const distance = min( ( textureLoad( tAfterDepth, texel ) as unknown as F ).negate().mul( length( ray ) ), 1000 );
+				veil.a.assign( rain.veilCoverage( direction, distance ) );
 
 			} );
 			const o = vec4( 0 ).toVar();
@@ -1145,26 +1151,29 @@ export class Pipeline {
 			// (below a 256th the change shows in no level)
 			If( max( veil.a, o.a ).greaterThan( 1 / 256 ), () => {
 
-				let background: THREE.Node<'vec3'> = vec3( 0 );
-				// (the legacy inline composite writes no transfer: the streaks then take no air)
-				let transfer: THREE.Node<'vec4'> = rainTransfer ? vec4( 0 ) : vec4( 0, 0, 0, 1 );
-				const tTransfer = rainTransfer ? texture( g.texture( rainTransfer ) ) : null;
-				for ( const { texel, weight } of taps ) {
+				if ( rain ) veil.rgb.assign( rain.veilLight( this.air.viewRay( uv(), jitter.uniforms.unjitteredProjectionInverse ).direction ).mul( veil.a ) );
+				const before = diffused( vec2( texel ).add( 0.5 ).div( renderSize ) ).toVar();
+				// the veil over the grade's input
+				const after = before.mul( float( 1 ).sub( veil.a ) ).add( veil.rgb ).toVar();
+				If( o.a.greaterThan( 1 / 1024 ), () => {
 
-					background = background.add( ( textureLoad( tAfterSharp, texel ) as unknown as THREE.Node<'vec4'> ).rgb.mul( weight ) );
-					if ( tTransfer ) transfer = transfer.add( ( textureLoad( tTransfer, texel ) as unknown as THREE.Node<'vec4'> ).mul( weight ) );
+					// then the overlay's radiance (premultiplied) through the composite (the legacy
+					// inline composite writes no transmittance: the streaks then take no air)
+					const a = min( o.a, 1 ).toVar();
+					if ( tAfterAir ) {
 
-				}
-				const before = background.toVar();
-				const t = transfer.toVar();
-				const a = min( o.a, 1 ).toVar();
-				// the veil, then the overlay's radiance through the transfer (premultiplied), over the
-				// sharp image
-				const after = before.mul( float( 1 ).sub( veil.a ) ).add( veil.rgb ).mul( float( 1 ).sub( a ) ).add( o.rgb.mul( t.a ).add( t.rgb.mul( a ) ) );
+						const keep = ( textureLoad( tAfterAir, texel ) as unknown as F ).toVar();
+						const scene = ( textureLoad( sceneTex, texel ) as unknown as THREE.Node<'vec4'> ).rgb;
+						after.assign( after.mul( float( 1 ).sub( a ) ).add( o.rgb.mul( keep ) ).add( before.sub( scene.mul( keep ) ).mul( a ) ) );
+
+					} else after.assign( after.mul( float( 1 ).sub( a ) ).add( o.rgb ) );
+
+				} );
 				const look = makeLookColour();
 				// (the change at the rain's own coverage of a sample, AFTER_COVERAGE, spread over the pixel)
 				const full = max( before.add( after.sub( before ).div( AFTER_COVERAGE ) ), vec3( 0 ) );
-				out.assign( vec4( grade( full, false, ! LINEAR_DISPLAY, look ).sub( grade( before, false, ! LINEAR_DISPLAY, look ) ).mul( AFTER_COVERAGE ), 1 ) );
+				const graded = LINEAR_DISPLAY ? ( textureLoad( tAfterDisplay, texel ) as unknown as THREE.Node<'vec4'> ).rgb : grade( before, false, ! LINEAR_DISPLAY, look );
+				out.assign( vec4( grade( full, false, ! LINEAR_DISPLAY, look ).sub( graded ).mul( AFTER_COVERAGE ), 1 ) );
 
 			} );
 			return out;
@@ -1184,7 +1193,18 @@ export class Pipeline {
 			mode: AA_MODE as TemporalMode, settings: temporal ?? QUALITY.high.taa,
 			contrast: u.contrast, vignette: vignetteAt, finish,
 			// (the rain's layer, drawn by a pass of its own: in the canvas pass it held too many registers)
-			layer: rainLayer ? () => ( textureLoad( texture( g.texture( rainLayer ) ), ivec2( screenCoordinate.xy ) ) as unknown as THREE.Node<'vec4'> ).mul( u.layerOn ) : undefined,
+			// (read only while the pass runs: in fair weather the canvas pass reads nothing more)
+			layer: rainLayer ? () => Fn( () => {
+
+				const l = vec4( 0 ).toVar();
+				If( u.layerOn.greaterThan( 0 ), () => {
+
+					l.assign( textureLoad( texture( g.texture( rainLayer ) ), ivec2( screenCoordinate.xy ) ) );
+
+				} );
+				return l;
+
+			} )() as unknown as THREE.Node<'vec4'> : undefined,
 			// the display pass's blur weight, inline (cocAt's layout function, called from the resolve's
 			// shaders, came out with another shader's uniform names)
 			dofBlur: () => ( q: V2 ) => {
@@ -1313,7 +1333,7 @@ export class Pipeline {
 		const fogReads = this.air.passes( g, surfaceDepth );
 		// the depth of field's distances (without the depth of field its blur is mixed in at weight
 		// 0, so stale distances never show)
-		let { hdr, sharp, blur, viewDistance, display, easu, canvas, veilReactive, rainTransfer } = this.resources;
+		let { hdr, sharp, blur, viewDistance, display, easu, canvas, veilReactive, rainAir } = this.resources;
 		const distanceQuad = this.distanceQuad;
 		if ( viewDistance && distanceQuad ) g.addPass( 'viewDistance', 'quad', ( b ) => {
 
@@ -1343,8 +1363,8 @@ export class Pipeline {
 			// (the attachments in this order: the struct's; the MRT only declares both to the graph,
 			// unblended, as the resolve's does)
 			if ( veilReactive ) veilReactive = b.write( veilReactive );
-			if ( rainTransfer ) rainTransfer = b.write( rainTransfer );
-			return { label: 'composite (air, fog, veil)', quad: compositeQuad, mrt: veilReactive || rainTransfer ? mrt( {} ) : null };
+			if ( rainAir ) rainAir = b.write( rainAir );
+			return { label: 'composite (air, fog, veil)', quad: compositeQuad, mrt: veilReactive || rainAir ? mrt( {} ) : null };
 
 		} );
 		// the blooms (three's bloom chains, each a pass): from hdr, or the composite inline; their high
@@ -1423,7 +1443,7 @@ export class Pipeline {
 			let rainOverlay = this.resources.rainOverlay;
 			// After the resolve (AfterResolve.ts): the rain's streaks and the storm's spray, unjittered,
 			// into the overlay at the canvas's size, which the canvas pass lays over the resolved image
-			// (with the composite's transfer, and the nearest surface for the grade's sky test).
+			// (with the composite at the pixel, and the nearest surface for the grade's sky test).
 			const after = rainOverlay ? () => {
 
 				g.addPass( 'rainAfter', 'scene', ( b ) => {
@@ -1443,8 +1463,20 @@ export class Pipeline {
 				g.addPass( 'rainLayer', 'quad', ( b ) => {
 
 					b.read( surfaceDepth );
+					// (the grade's input: the sharp image, the depth of field's blur and distances, the
+					// look's glow; and what the display pass graded)
 					b.read( sharp );
-					if ( rainTransfer ) b.read( rainTransfer );
+					b.read( blur );
+					if ( viewDistance ) b.readOptional( viewDistance );
+					b.readOptional( glow );
+					b.read( display );
+					if ( rainAir ) {
+
+						b.read( rainAir );
+						// (after the overlay pass, which does not run after the resolve)
+						b.readOptional( sceneColor );
+
+					}
 					b.readOptional( rainOverlay! );
 					rainLayer = b.write( rainLayer );
 					return { label: 'rain layer', when: ( f ) => this.layerRuns( f ), whenLabel: 'rain || spray', quad: layerQuad };

@@ -490,7 +490,7 @@ export class RainDrops {
 	 * surface's view z, the sea's included); streaks keep the depth test. After the resolve there is
 	 * no depth to test: the streaks test the nearest surface (the sea's included) and the splashes
 	 * as here, at the four render texels around their pixel, faded by the depth of field's weight
-	 * there (AfterResolve.ts). */
+	 * around each vertex (AfterResolve.ts). */
 	bindOpaqueDepth( linearDepth: THREE.Texture, surfaceDepth: THREE.Texture ): void {
 
 		const depth = texture( linearDepth ), surface = texture( surfaceDepth );

@@ -195,8 +195,30 @@ export class Rain {
 	 * only lightens what is darker than the rain and dims what is brighter. */
 	veil( direction: V3, distance: F, background: V3 ): V4 {
 
-		const u = this.uniforms;
+		const coverage = this.veilCoverage( direction, distance );
 		const output = vec4( background, 0 ).toVar();
+		If( this.uniforms.rain.greaterThan( 0.001 ), () => {
+
+			output.assign( vec4( mix( background, this.veilLight( direction ), coverage ), coverage ) );
+
+		} );
+		return output;
+
+	}
+
+	/** The light a veil's streak sends along a view direction (its colour where it covers it). */
+	veilLight( direction: V3 ): V3 {
+
+		return lightRain( direction, this.light, float( 0 ) );
+
+	}
+
+	/** The veil's coverage along a view direction in front of content at `distance` (see `veil`):
+	 * 0 without rain. */
+	veilCoverage( direction: V3, distance: F ): F {
+
+		const u = this.uniforms;
+		const coverage = float( 0 ).toVar();
 		const result = float( 0 ).toVar();
 		If( u.rain.greaterThan( 0.001 ), () => {
 
@@ -223,27 +245,32 @@ export class Rain {
 				const row = floor( fall.div( STREAK_LENGTH * 2.6 ) ).toVar();
 				const along = fract( fall.div( STREAK_LENGTH * 2.6 ) ).mul( 2.6 ).toVar();
 				const present = rainHash( vec2( cell.add( row.mul( 0.618 ) ), row.add( index * 3.7 ) ) ).lessThan( amount.mul( 0.8 ) );
-				const centre = rainHash( seed.add( row ) ).mul( 0.6 ).add( 0.2 );
-				// Angular half-width of the streak, at least half a pixel; energy kept by the ratio. After
-				// the resolve (one sample a canvas pixel, nothing averaging it) at least 0.8 of a canvas
-				// pixel: a streak half a pixel wide stepped and broke along its length.
-				const drop = DROP_WIDTH / radius;
-				const halfWidth = ( AFTER_RESOLVE ? max( float( drop ), this.dropPixelAngle.mul( 0.8 ) ) : max( float( drop ), this.pixelAngle.mul( 0.5 ) ) ).toVar();
-				const across = abs( fract( column ).sub( centre ) ).mul( 2 * Math.PI / columns ).mul( sin( polar ) );
-				const profile = float( 1 ).sub( smoothstep( halfWidth.mul( 0.4 ), halfWidth, across ) ).mul( float( drop ).div( halfWidth ) );
-				// Each drop has its own brightness: some catch the light, most are faint.
-				const glint = rainHash( seed.add( row.mul( 1.31 ) ).add( 5.1 ) ).pow( 2 ).mul( 1.6 ).add( 0.25 );
-				const streak = smoothstep( 0, 0.15, along ).mul( float( 1 ).sub( smoothstep( 0.6, 1, along ) ) ).mul( glint );
 				const shown = smoothstep( radius * 0.9, radius * 1.1, distance );
-				result.addAssign( select( present, profile.mul( streak ).mul( shown ), float( 0 ) ) );
+				// (after the resolve, at every canvas pixel, the rest only where a streak may show: past
+				// its shell, present and along its length; before it, as it always was)
+				const add = ( work: () => void ) => AFTER_RESOLVE ? If( present.and( along.lessThan( 1 ) ).and( shown.greaterThan( 0 ) ), work ) : work();
+				add( () => {
+
+					const centre = rainHash( seed.add( row ) ).mul( 0.6 ).add( 0.2 );
+					// Angular half-width of the streak, at least half a pixel; energy kept by the ratio. After
+					// the resolve (one sample a canvas pixel, nothing averaging it) at least 0.8 of a canvas
+					// pixel: a streak half a pixel wide stepped and broke along its length.
+					const drop = DROP_WIDTH / radius;
+					const halfWidth = ( AFTER_RESOLVE ? max( float( drop ), this.dropPixelAngle.mul( 0.8 ) ) : max( float( drop ), this.pixelAngle.mul( 0.5 ) ) ).toVar();
+					const across = abs( fract( column ).sub( centre ) ).mul( 2 * Math.PI / columns ).mul( sin( polar ) );
+					const profile = float( 1 ).sub( smoothstep( halfWidth.mul( 0.4 ), halfWidth, across ) ).mul( float( drop ).div( halfWidth ) );
+					// Each drop has its own brightness: some catch the light, most are faint.
+					const glint = rainHash( seed.add( row.mul( 1.31 ) ).add( 5.1 ) ).pow( 2 ).mul( 1.6 ).add( 0.25 );
+					const streak = smoothstep( 0, 0.15, along ).mul( float( 1 ).sub( smoothstep( 0.6, 1, along ) ) ).mul( glint );
+					result.addAssign( AFTER_RESOLVE ? profile.mul( streak ).mul( shown ) : select( present, profile.mul( streak ).mul( shown ), float( 0 ) ) );
+
+				} );
 
 			}
-			const coverage = clamp( result.mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ), 0, 1 ).toVar();
-			const drop = lightRain( direction, this.light, float( 0 ) );
-			output.assign( vec4( mix( background, drop, coverage ), coverage ) );
+			coverage.assign( clamp( result.mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ), 0, 1 ) );
 
 		} );
-		return output;
+		return coverage;
 
 	}
 
