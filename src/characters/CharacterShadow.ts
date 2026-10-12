@@ -63,7 +63,8 @@ export class CharacterShadow {
 		// No blending: three sets an override's `transparent` from each drawn material and can leave
 		// it null rather than false (Renderer.renderObject, r186), which reads as blended; a blended
 		// pipeline into this one-channel target reads an alpha its shader does not output, so
-		// WebGPU refuses it (this map's shader is built for its own target, graph/Compile.ts).
+		// WebGPU refuses it and every draw of the map uses an invalid pipeline (this map's shader is
+		// built for its own target, graph/Compile.ts).
 		this.material.blending = THREE.NoBlending;
 		this.material.side = THREE.DoubleSide;
 		this.material.name = 'characterShadowDepth';
