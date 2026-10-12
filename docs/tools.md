@@ -196,6 +196,11 @@ otherwise capture it and say why (missing, tools or browser
 changed, a capture left unfinished). `capture-set.mjs <testUrl> <testDir> --check
 <root>/<sha>/<set> [--ref-url U]` captures only the test side and diffs it against the stored
 reference. Layout, manifest and rules: the README's Reference store.
+For tuning, `capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--variant
+"[label::]js"]... --store <root>/<sha> [--ref-url U]` loads one page per view, shoots the base and
+then each variant (js run in the page, ready again, shot: crops only, `--full` for whole frames)
+and measures the crops against the store's MSAA and ground-truth rest entries of that commit
+(clip-metrics.py), a short table per variant. It is not a gate; details in the README's Quick mode.
 
 ## GPU lock
 
