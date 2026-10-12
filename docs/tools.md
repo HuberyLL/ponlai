@@ -100,6 +100,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter path).
 - `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then steers by the
   frame intervals).
+- `drsStore=on|off` (whether high starts from the render scale it last held, kept in localStorage
+  per tier, AA mode, frame rate, canvas size and GPU, and saves the scale it holds: on by default,
+  off in an automated browser so a profile or capture does not start where the last run ended;
+  `on` tests a returning load there, `off` neither restores nor saves anywhere).
 - `frameRate` (the frame rate the loop holds on a faster display, over the tier's; `frameRate=0`
   renders on every refresh, as the profiler's uncapped runs do).
 - `submits=each` (three's own submit per pass, without the submit batching; at runtime
@@ -286,7 +290,12 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
   leave out) and tabulates every scene at every scale. Every report gives the render scale the
   measured frames were drawn at (its median, range and changes: high's moves); `--scale-settle s`
-  waits after each scene's warm-up until that scale has held for s seconds.
+  waits after each scene's warm-up until that scale has held for s seconds. With GPU timestamps on,
+  high's reports add `gpuPixel`: the part of the GPU time in passes that follow the render's pixel
+  count (the dynamic resolution's split), for fitting its cost model at fixed scales.
+- `--compare` and `--accept` load their pages with `drsStore=off`, so neither side of an A/B (two
+  AA modes, two builds) starts from a dynamic scale the other or an earlier run settled at;
+  `--drs-store` loads them with `drsStore=on` instead (a returning load).
 - `--eval` runs in the page with `s` = `window.__PONLAI__` (an ablation, e.g.
   `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a summary.
 

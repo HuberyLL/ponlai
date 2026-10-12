@@ -204,7 +204,8 @@ export class RefractedSun {
 	private subsetLevel = NaN;
 	private readonly subsets: THREE.BufferGeometry[] = [];
 	private dirty = true;
-	/** Maps drawn since the page loaded (the settled signal's signature: post/Settled.ts). */
+	/** Maps drawn since the page loaded (the settled signal's signature, post/Settled.ts; the dynamic
+	 * resolution leaves frames with periodic work out of its quantiles). */
 	draws = 0;
 	// Turn of the key light (radians) below which a moving light keeps the drawn map: a quality
 	// tier's knob. A light at rest is always drawn exactly.

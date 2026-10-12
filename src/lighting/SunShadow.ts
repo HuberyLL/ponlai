@@ -130,7 +130,8 @@ export class SunShadow {
 	private vegetationTaps: Readonly<SolarShadowTaps> = SHADOW_FILTER_PATH.vegetation ? VEGETATION_TAPS : SOLAR_SHADOW_TAPS;
 	private hasPrevious = false;
 	private cut = true;
-	/** Maps drawn since the page loaded (the settled signal's signature: post/Settled.ts). */
+	/** Maps drawn since the page loaded (the settled signal's signature, post/Settled.ts; the dynamic
+	 * resolution leaves frames with periodic work out of its quantiles). */
 	draws = 0;
 	private readonly previousCoordinate = new THREE.Matrix4();
 	private readonly currentCoordinate = new THREE.Matrix4();

@@ -55,6 +55,13 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   blurs (its foreground blur spreads over background pixels whose motion it does not follow).
 // - TAAU resolves straight to the canvas's size and keeps that history across render-scale steps
 //   (read by uv); TAA resolves at the render's size and resamples its history once when that changes.
+//   The history's weight is counted in render samples, so after a step up (more samples a pixel)
+//   the same history would count as fewer frames' worth and the new, sharper frame would take a
+//   larger share at once: the first frame showed most of the step (on the sea, whose class keeps
+//   fewest frames, a sharpness step 0.3x MSAA+FSR's, over the plan's 0.25x). For the frame after a
+//   step up the history's weight is scaled by the new density over the old (`historyGain`), so it
+//   keeps its frames' worth and the step spreads over the frames as a step down's does (whose
+//   history the cap already holds at its frames' worth).
 // - Rest (TemporalRest.ts): a resting scene runs a fixed jitter sequence through the rest resolve
 //   (no clip, no cap, nothing reprojected, exact weights) into an image of its own, shown once it is
 //   complete; the ground truth's rest is a box filter over 64 jitters (centred on their mean:
@@ -240,6 +247,8 @@ export class TemporalAA {
 	private debugTarget: ResourceHandle | null = null;
 	private sharpnessFrom = 1;
 	private sharpnessTime = SHARPNESS_EASE;
+	// render pixels per output pixel in the last frame (TAAU's history gain)
+	private lastDensity = NaN;
 	private settingsKey = '';
 	private settingsVersion = 0;
 	private readonly lastCameraWorld = new THREE.Matrix4();
@@ -252,6 +261,9 @@ export class TemporalAA {
 		historySize: uniform( new THREE.Vector2( 1, 1 ) ),
 		reset: uniform( 1 ),
 		previousDepthValid: uniform( 0 ),
+		// TAAU, the frame after a step up of the render scale: the history's weight times the new
+		// render density over the old (1 otherwise)
+		historyGain: uniform( 1 ),
 		framesStill: uniform( 12 ), framesMoving: uniform( 5 ), speedFull: uniform( 16 ),
 		gammaStill: uniform( 1.25 ), gammaMove: uniform( 0.75 ), sigma: uniform( 0.42 ), sigmaRest: uniform( 0.3 ),
 		skyPassThrough: uniform( 1 ),
@@ -776,7 +788,7 @@ export class TemporalAA {
 				const frames = mix( u.framesStill, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( byClass( CLASS_SCALE ) )
 					.mul( clamp( float( 1 ).sub( reactive ), 0, 1 ) ).mul( dof );
 				const valid = inside.and( u.reset.lessThan( 0.5 ) ).and( disoccluded.lessThan( 0.5 ) ).and( passThrough.not() );
-				historyWeight.assign( select( valid, min( max( hist.a, 0 ), frames.mul( perFrame ) ), float( 0 ) ) );
+				historyWeight.assign( select( valid, min( max( hist.a, 0 ).mul( u.historyGain ), frames.mul( perFrame ) ), float( 0 ) ) );
 				If( inside.not().or( u.reset.greaterThan( 0.5 ) ), () => {
 
 					disoccluded.assign( select( u.reset.greaterThan( 0.5 ), float( 3 ), float( 2 ) ) );
@@ -879,6 +891,10 @@ export class TemporalAA {
 
 		}
 		const resting = this.rest.index !== null || this.rest.converged;
+		// after a step up of the render scale, the history keeps its frames' worth (see the header)
+		const density = renderWidth * renderHeight / Math.max( outputWidth * outputHeight, 1 );
+		this.u.historyGain.value = this.mode === 'taau' && density > this.lastDensity ? density / this.lastDensity : 1;
+		this.lastDensity = density;
 		this.sharpnessTime = resting ? SHARPNESS_EASE : Math.min( this.sharpnessTime + Math.max( frame.dt ?? 0, 0 ), SHARPNESS_EASE );
 		const k = this.sharpnessTime / SHARPNESS_EASE;
 		this.sharpness.value = k >= 1 ? this.sharpnessTarget : this.sharpnessFrom + ( this.sharpnessTarget - this.sharpnessFrom ) * k;

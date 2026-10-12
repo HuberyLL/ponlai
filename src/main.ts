@@ -29,7 +29,7 @@ import { pickPlantSites, bakeGroundContact, bakeAnchorContact } from './world/Pl
 import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
-import { DynamicResolution, GpuFrameTimer } from './post/DynamicResolution.ts';
+import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
 import { installCacheKeyPatches } from './post/graph/ThreePatches.ts';
@@ -919,33 +919,49 @@ if ( DEBUG ) {
 // resolution) or the scene is paused, so paused frames and captures render at the reference scale.
 // (the ground truth renders at the canvas's resolution: no dynamic scale)
 const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render.dynamic : null;
-const dynamicResolution = dynamicRule ? new DynamicResolution( dynamicRule ) : null;
+// Under TAAU the floor rises so the canvas is at most TAAU_MAX_UPSCALE times the render per axis
+// (DynamicResolution.ts); MSAA's FSR 1 path keeps the tier's floor.
+const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRule, maxUpscale: AA_MODE === 'taau' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
 // the same number of refreshes; `frameRate` overrides it (0 renders on every refresh: the profiler's
 // uncapped runs, where the animation frames' intervals measure the work, not a display).
 const pacer = new FramePacer( params.has( 'frameRate' ) ? Number( params.get( 'frameRate' ) ) : quality.frameRate );
-// the render scale each frame was drawn at (by three's frame id), for the GPU times read back later
-const frameScales = new Map<number, number>();
+// the render scale each frame was drawn at and its periodic work (by three's frame id), for the
+// GPU times read back later
+const frameScales = new Map<number, { scale: number; heavy: number }>();
 let gpuTimer: GpuFrameTimer | null = null;
 // A load that measures the GPU for its tier (QualityDetect.ts), set up below once the timer is known.
 let detector: QualityDetector | null = null;
+// which passes follow the render's pixel count: the GPU time's split into a fixed part and one
+// that follows the scale
+const passScaling = dynamicResolution && gpuTiming ? PassScaling.install( renderer ) : null;
+if ( passScaling ) passScaling.graph = pipeline.graph;
 if ( dynamicResolution ) {
 
-	const sample = ( frame: number, ms: number ) => {
+	const sample = ( frame: number, ms: number, pixel: number ) => {
 
 		detector?.gpu( frame, ms );
-		const scale = frameScales.get( frame );
-		if ( scale !== undefined ) dynamicResolution.sample( ms, scale );
+		const drawn = frameScales.get( frame );
+		if ( drawn !== undefined ) dynamicResolution.sample( ms, drawn.scale, { pixel, heavy: drawn.heavy } );
 
 	};
 	// the frame profiler owns the timestamp queries while it times passes
-	if ( profiler?.timestamps ) profiler.onRecord = ( record ) => { if ( record.missing === 0 && record.passes > 0 ) sample( record.id, record.gpu ); };
-	else {
+	if ( profiler?.timestamps ) {
 
-		gpuTimer = GpuFrameTimer.create( renderer );
+		if ( passScaling ) profiler.pixelPass = ( uid ) => passScaling.take( uid );
+		profiler.onRecord = ( record ) => { if ( record.missing === 0 && record.passes > 0 ) sample( record.id, record.gpu, record.pixel ); };
+
+	} else if ( passScaling ) {
+
+		gpuTimer = GpuFrameTimer.create( renderer, passScaling );
 		if ( gpuTimer ) gpuTimer.onFrame = sample;
 
 	}
+	if ( DEBUG ) dynamicResolution.onWarning = ( message ) => console.warn( message );
+	// Under sustained contention (another page or app drawing, the frames still late at the quality
+	// floor) the scale holds at the quality floor at 60 fps. Falling back to 40 fps there is not
+	// chosen yet: it would hook in here, through `dynamicResolution.onSustainedContention`, and
+	// stays off.
 
 }
 
@@ -961,6 +977,13 @@ if ( qualityChoice.source === 'detect' ) {
 }
 
 const canvasSize = new THREE.Vector2();
+// High remembers the scale it held (DynamicResolution.ts), except in an automated browser: a
+// profile or capture would start where the last run on the same origin ended, so its start-up and
+// first decision would depend on run history (QualityDetect.ts skips them for the same reason).
+// `drsStore=on` turns it on there (a returning load's test), `off` turns it off anywhere (neither
+// restored nor saved: an A/B between modes or builds starts both sides from the nominal scale).
+const drsStoreParam = params.get( 'drsStore' );
+const scaleMemory = drsStoreParam === 'on' || ( drsStoreParam !== 'off' && ! navigator.webdriver );
 let nominalScale = 1, renderScale = 1;
 // the render scale `loop.step` holds for the frame it draws (debug only; null otherwise)
 let steppedScale: number | null = null;
@@ -972,10 +995,12 @@ function resize(): void {
 	if ( AA_MODE === 'gt' ) nominalScale = outputPixelRatio( nominalScale );
 	dynamicResolution?.setMax( nominalScale );
 	renderer.setPixelRatio( outputPixelRatio( nominalScale ) );
+	dynamicResolution?.setCanvasRatio( renderer.getPixelRatio() );
 	renderer.setSize( w, h );
 	camera.aspect = w / h;
 	camera.updateProjectionMatrix();
 	applyRenderScale( true );
+	if ( scaleMemory ) dynamicResolution?.setStoreKey( renderScaleKey( renderer, qualityTier, AA_MODE, pacer.target, canvasSize.x, canvasSize.y, gpuTimer !== null || profiler?.timestamps === true ? 'gpu' : 'frames' ) );
 
 }
 
@@ -1001,6 +1026,7 @@ function applyRenderScale( force = false ): void {
 	const rw = ratio === renderer.getPixelRatio() ? canvasSize.x : Math.floor( w * ratio );
 	const rh = ratio === renderer.getPixelRatio() ? canvasSize.y : Math.floor( h * ratio );
 	pipeline.setSize( rw, rh, canvasSize.x, canvasSize.y );
+	passScaling?.setSize( rw, rh );
 	resolution.render = `${ rw }x${ rh } → ${ canvasSize.x }x${ canvasSize.y }` + ( pipeline.upscaling ? ` (${ Math.round( rw / canvasSize.x * 100 ) } %, FSR)` : '' );
 	describeRenderScale();
 
@@ -1019,6 +1045,15 @@ function describeRenderScale(): void {
 // a resize of the canvas cuts the history; resize() itself also serves render-scale changes, which do not
 addEventListener( 'resize', () => { sceneEvent( 'resize' ); resize(); } );
 resize();
+// High starts from the scale it last held on this display, tier and frame rate (remembered in the
+// browser, unless `scaleMemory` is off), and settles from there once its first frames are in; a
+// load that measures the GPU for its tier measures at the nominal scale.
+if ( dynamicResolution && ! detector ) {
+
+	dynamicResolution.restore();
+	applyRenderScale();
+
+}
 
 const clock = new THREE.Timer();
 clock.connect( document );
@@ -1213,6 +1248,26 @@ function tick( time: number ): void {
 
 }
 
+// The periodic work in this frame (PeriodicWork bits): its frames stay out of the dynamic scale's
+// quantiles. A periodic sky bake runs its slices in the ticks while the sky is busy, from the one
+// that starts it to the one that publishes it.
+let skyWasBusy = false;
+const periodicCounts = { sunShadow: 0, refractedSun: 0, fogBank: 0 };
+function periodicWork(): number {
+
+	let heavy = 0;
+	if ( sky.busy || skyWasBusy ) heavy |= PeriodicWork.skyBake;
+	skyWasBusy = sky.busy;
+	if ( sunShadow.draws !== periodicCounts.sunShadow ) heavy |= PeriodicWork.sunShadow;
+	if ( refractedSun.draws !== periodicCounts.refractedSun ) heavy |= PeriodicWork.refractedSun;
+	if ( pipeline.air.bankBakes !== periodicCounts.fogBank ) heavy |= PeriodicWork.fogBank;
+	periodicCounts.sunShadow = sunShadow.draws;
+	periodicCounts.refractedSun = refractedSun.draws;
+	periodicCounts.fogBank = pipeline.air.bankBakes;
+	return heavy;
+
+}
+
 // After the frame's passes: read the GPU times back and move the dynamic scale (it applies from the
 // next frame on). Paused or pinned, the window keeps no samples and the scale holds.
 function steerRenderScale( rawDt: number ): void {
@@ -1221,7 +1276,7 @@ function steerRenderScale( rawDt: number ): void {
 	// the GPU's budget follows the paced frame interval (a 60 Hz frame unpaced)
 	dynamicResolution.setFrameInterval( pacer.target > 0 ? pacer.interval : 1000 / 60 );
 	const steering = steppedScale === null && ! paused && ! resolution.full && renderScale === dynamicResolution.scale;
-	frameScales.set( renderer.info.frame, steering ? renderScale : NaN );
+	frameScales.set( renderer.info.frame, { scale: steering ? renderScale : NaN, heavy: periodicWork() } );
 	if ( frameScales.size > 240 ) frameScales.delete( frameScales.keys().next().value! );
 	gpuTimer?.resolve();
 	if ( steering ) {
