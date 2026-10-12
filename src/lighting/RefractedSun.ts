@@ -204,6 +204,8 @@ export class RefractedSun {
 	private subsetLevel = NaN;
 	private readonly subsets: THREE.BufferGeometry[] = [];
 	private dirty = true;
+	/** Maps drawn since the page loaded (the settled signal's signature: post/Settled.ts). */
+	draws = 0;
 	// Turn of the key light (radians) below which a moving light keeps the drawn map: a quality
 	// tier's knob. A light at rest is always drawn exactly.
 	angleGate = ANGLE_GATE;
@@ -346,6 +348,14 @@ export class RefractedSun {
 
 	invalidate(): void { this.dirty = true; }
 
+	/** Whether the drawn map is not the current light's (or level's): the next update due redraws
+	 * it (the settled signal waits for that: post/Settled.ts). */
+	get pending(): boolean {
+
+		return this.dirty || this.lastLevel !== this.shared.waterLevel.value || ! this.lastSun.equals( this.shared.sunDir.value );
+
+	}
+
 	// A static map gets no second frame to recover from a not-yet-ready first-use pipeline.
 	// Call during scene setup, before the application starts its animation loop. Compile with
 	// this exact target/depth format, then redraw after all caster pipelines are available.
@@ -442,6 +452,7 @@ export class RefractedSun {
 		this.lastSun.copy( sun );
 		this.lastLevel = level;
 		this.dirty = false;
+		this.draws ++;
 		return true;
 
 	}

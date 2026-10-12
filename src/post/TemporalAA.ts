@@ -6,7 +6,7 @@ import {
 import type { TemporalSettings } from '../Quality.ts';
 import { jitter } from './Jitter.ts';
 import { motionState, motionUniforms, onTaaCut, reactiveUniforms } from './Motion.ts';
-import { TemporalRest, restEpoch } from './TemporalRest.ts';
+import { TemporalRest, restEpoch, restKey } from './TemporalRest.ts';
 import { sceneEvents } from './SceneEvents.ts';
 import { FSR, rcas } from './FSR.ts';
 import { temporalSharpness } from './Antialiasing.ts';
@@ -862,10 +862,7 @@ export class TemporalAA {
 
 		this.applySettings();
 		// the rest: what the frame draws from, unjittered
-		const key = this.key;
-		key.length = 0;
-		key.push( ...camera.matrixWorld.elements, ...camera.projectionMatrix.elements, time, renderWidth, renderHeight, outputWidth, outputHeight,
-			restEpoch.value, this.settingsVersion, ...( frame.signature ?? [] ) );
+		const key = restKey( this.key, camera, renderWidth, renderHeight, outputWidth, outputHeight, time, [ this.settingsVersion, ...( frame.signature ?? [] ) ] );
 		this.rest.settle = Math.max( 0, Math.round( this.settings.restSettle ) );
 		this.rest.sequence = Math.max( 0, Math.round( this.mode === 'gt' ? this.settings.gtJitters : this.settings.restSequence ) );
 		this.rest.observe( key, frame.stable !== false );

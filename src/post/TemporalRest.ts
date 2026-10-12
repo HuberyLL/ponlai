@@ -19,6 +19,22 @@
 // the key (a GUI control, a weather jump, a seek to the same time) bumps the epoch
 // (`restEpoch.bump( reason )`): the scene events (SceneEvents.ts `sceneEvent`) call it from every
 // site that changes the scene, `__PONLAI__.taa.restart()` among them.
+//
+// The key is built by `restKey`, which the page's settled signal (Settled.ts) shares under every
+// anti-aliasing mode, MSAA included.
+
+/** Fills `key` with what a frame draws from: the camera's unjittered view and projection, the
+ * scene clock, the render's and the output's sizes, the epoch, then `extra` (the caller's own
+ * signature). */
+export function restKey( key: number[], camera: { matrixWorld: { elements: readonly number[] }; projectionMatrix: { elements: readonly number[] } },
+	renderWidth: number, renderHeight: number, outputWidth: number, outputHeight: number, time: number, extra: readonly number[] ): number[] {
+
+	key.length = 0;
+	key.push( ...camera.matrixWorld.elements, ...camera.projectionMatrix.elements, time, renderWidth, renderHeight, outputWidth, outputHeight,
+		restEpoch.value, ...extra );
+	return key;
+
+}
 
 /** The epoch of the scene's state: a bump restarts the rest (and nothing else). */
 export const restEpoch = {

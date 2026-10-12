@@ -52,6 +52,7 @@ import { jitter } from './post/Jitter.ts';
 import { restEpoch } from './post/TemporalRest.ts';
 import { sceneEvent } from './post/SceneEvents.ts';
 import { TemporalAA, type TemporalFrame } from './post/TemporalAA.ts';
+import { watchPipelines, type SettleFrame } from './post/Settled.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
@@ -112,6 +113,8 @@ if ( ! installCacheKeyPatches( renderer ) && TEMPORAL ) {
 // three submits every pass on its own; the frame reaches the GPU in a few submits instead
 // (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
 const submitBatch = new SubmitBatch( ( renderer.backend as unknown as { device: ConstructorParameters<typeof SubmitBatch>[ 0 ] } ).device, { debug: DEBUG } );
+// the settled signal counts the async pipeline compiles in flight (post/Settled.ts; debug only)
+if ( DEBUG ) watchPipelines( ( renderer.backend as unknown as { device: unknown } ).device );
 // every render and compute pipeline the renderer creates, counted for the diagnostics (debug only)
 const pipelineCount = DEBUG ? ( await import( './debug/PipelineCounter.ts' ) ).installPipelineCounter( renderer ) : null;
 
@@ -1048,9 +1051,8 @@ let shadowElapsed = 0;
 let strikeKey = 'null', strikeVersion = 0;
 // set while `loop.step` holds a frame for the rest to converge (nothing advances, a transition included)
 let holding = false;
-function temporalFrame( dt: number ): TemporalFrame | undefined {
+function strikeSignature(): number {
 
-	if ( ! pipeline.temporal ) return undefined;
 	const forced = JSON.stringify( ( sky.lightning as unknown as { forced: unknown } ).forced ?? null );
 	if ( forced !== strikeKey ) {
 
@@ -1058,7 +1060,29 @@ function temporalFrame( dt: number ): TemporalFrame | undefined {
 		strikeVersion ++;
 
 	}
-	return { signature: [ strikeVersion ], stable: ! sky.busy && ( ! sky.transitioning || holding ), dt };
+	return strikeVersion;
+
+}
+const restStable = () => ! sky.busy && ( ! sky.transitioning || holding );
+function temporalFrame( dt: number ): TemporalFrame | undefined {
+
+	if ( ! pipeline.temporal ) return undefined;
+	return { signature: [ strikeSignature() ], stable: restStable(), dt };
+
+}
+// The settled signal's inputs (post/Settled.ts; debug builds): the rest's, the sun maps' redraw
+// counts, and what will still change the frame without changing the key.
+let revealed = false;
+function settleFrame( bakeDue: boolean ): SettleFrame | undefined {
+
+	if ( ! DEBUG ) return undefined;
+	const pending: string[] = [];
+	if ( bakeDue ) pending.push( 'sky bake due' );
+	if ( refractedSun.pending ) pending.push( 'refracted sun' );
+	if ( sunShadow.pending ) pending.push( 'sun shadow' );
+	// the loading screen covers the canvas until its fade (index.html) has ended
+	if ( ! revealed ) revealed = loading === null || ( loading.classList.contains( 'done' ) && getComputedStyle( loading ).opacity === '0' );
+	return { signature: [ strikeSignature(), sunShadow.draws, refractedSun.draws ], stable: restStable(), pending, shown: revealed };
 
 }
 function tick( time: number ): void {
@@ -1156,6 +1180,8 @@ function tick( time: number ): void {
 		void sky.update( skyInterval ).catch( ( error: unknown ) => console.error( error ) );
 
 	}
+	// a periodic bake waits for its interval (the settled signal waits for it too)
+	const bakeDue = ! sky.busy && ( simTime !== lastSkyTime || weatherSignature !== lastWeatherSignature || ( ! manualSun && dayCycle.hour !== lastSkyHour ) );
 	// The sun's map steps with the key light and cross-fades between steps, so its shadows move
 	// smoothly without re-rasterising sub-texel casters every frame. The underwater map keeps the
 	// quality cadence.
@@ -1179,7 +1205,7 @@ function tick( time: number ): void {
 	// it with the streaks after the resolve)
 	const overlay = ! AFTER_RESOLVE && ( rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible ) );
 	const after = AFTER_RESOLVE && ( rain!.mesh.visible || stormSea.spray.mesh.visible );
-	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt ) } );
+	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt ), settle: settleFrame( bakeDue ) } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
 	frame ++;
@@ -1241,8 +1267,10 @@ function diagnostics( now = false ): void {
 	const current = ( window as unknown as Record<string, Record<string, unknown> | undefined> ).__THREE_GAME_DIAGNOSTICS__;
 	if ( ! now && frame % 30 !== 1 ) {
 
-		// the temporal resolve's state on every frame: the capture tools wait for its rest
+		// the temporal resolve's state and the settled signal on every frame: the capture tools wait
+		// for them
 		if ( current && pipeline.temporal ) current.taa = pipeline.temporal.diagnostics();
+		if ( current ) Object.assign( current, { settled: pipeline.settled.value, settle: pipeline.settled.diagnostics() } );
 		return;
 
 	}
@@ -1290,6 +1318,9 @@ function diagnostics( now = false ): void {
 		// the temporal resolve: its mode, the rest (converged, frames, target), the jitter, the history's
 		// resets, the input and output sizes and whether reactive inputs are read (TemporalAA.ts)
 		taa: pipeline.temporal?.diagnostics() ?? null,
+		// whether the paused page will draw the same frame from now on, and why not (post/Settled.ts)
+		settled: pipeline.settled.value,
+		settle: pipeline.settled.diagnostics(),
 	};
 
 }
