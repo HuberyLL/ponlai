@@ -414,6 +414,12 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
   long its frames took either. Clips take the GPU lock shared.
 - Film grain is set to 0 on every side (it is re-seeded each frame and would add noise to the
   temporal metrics); `clip.json` records it.
+- A paused one-frame clip without a temporal rest (`rest` under msaa, off, gt-hi) is stepped again
+  and shot whole until two shots agree within the readiness tolerance (at most 6 shots, else the
+  clip fails and writes nothing): a single stepped frame can be the GPU's alternative image (task O;
+  most often while other browsers render), which the readiness check before it cannot see. `clip.json` records the
+  shots (`recheck`); `--test-fault` draws the first one with film grain to test it. Header of
+  `capture-clip.mjs`.
 - Crops: the view's anchors, or the clip's own (`night-still`: the horizon's stars, no crop of the
   view's rest image), or `--crops`, are read once at the base pose, and each frame projects
   their world points into a 192 CSS px box (384 device px at 2x). `--full` frames are captured whole.
