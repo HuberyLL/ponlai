@@ -14,7 +14,8 @@
 // 3456x2234), runs the view's eval and writes `<outDir>/<view>.png`, its diagnostics and crop
 // anchors `<view>.json` and capture.mjs's output `<view>.log`.
 // --repeat captures each view twice, from fresh page loads (`<view>.png`, `<view>.repeat.png`), and
-//   reports whether the two are byte-identical (exit 1 if any differ). The repeats run after all
+//   reports whether the two hold identical pixels (decoded: the PNG bytes depend on the encoder;
+//   exit 1 if any differ). The repeats run after all
 //   the first captures. Measure an A/A floor with --jobs 1: concurrent pages may change which views
 //   repeat.
 // --reference makes the set a stored reference of a commit (reference.mjs; layout and manifest in
@@ -60,6 +61,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { VIEWS, viewNames, viewEval } from './views.mjs';
 import { gpuUtilisation } from '../gpu-lock.mjs';
+import { samePixels } from '../capture-browser.mjs';
 import { ensureReference, setKey, resolveRefDir, checkServed } from './reference.mjs';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../..' );
@@ -192,7 +194,7 @@ async function captureList( url, dir, list ) {
 
 }
 
-/** Byte comparison of each view's two captures: { view: true | false | null (no pair) }. */
+/** Pixel comparison of each view's two captures (decoded PNGs): { view: true | false | null (no pair) }. */
 async function repeatability( dir, list, quiet ) {
 
 	const out = {};
@@ -200,7 +202,7 @@ async function repeatability( dir, list, quiet ) {
 	for ( const v of list ) {
 
 		const a = path.join( dir, `${ v }.png` ), b = path.join( dir, `${ v }.repeat.png` );
-		out[ v ] = existsSync( a ) && existsSync( b ) ? ( await readFile( a ) ).equals( await readFile( b ) ) : null;
+		out[ v ] = existsSync( a ) && existsSync( b ) ? samePixels( await readFile( a ), await readFile( b ) ) : null;
 		if ( ! quiet ) console.log( `${ v } ${ out[ v ] ? 'identical' : 'DIFFERS' }` );
 
 	}

@@ -15,7 +15,8 @@
 // comparison its pixel counts; --stable-trace adds each grab's PNG hash). --ready-frames n waits for
 // n rendered frames instead, as a running (not paused) capture does (60). --wait and --settle (ms)
 // add fixed delays before and after the floor. The frame loop is stopped (the GPU queue drained)
-// for the shot.
+// for the shot, which is the compositor's image PNG-encoded for speed (the pixels of Playwright's
+// screenshot, not its bytes: compare captures by decoded pixels; tools/capture-browser.mjs).
 // --wait-for polls the expression in the page (up to 60 s) once it is up (before the stability wait) and captures once it
 // is truthy (e.g. a temporal resolve's convergence flag). --frames n captures n frames, k rendered
 // frames apart (default 1): <name>.png, then <name>.f1.png ... <name>.f<n-1>.png; the loop runs
@@ -34,7 +35,7 @@
 // apply; `ready.status` is `converged`). With `tier.taa.restSequence=0` there is no rest: the page
 // is compared for stability like an MSAA one.
 import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
-import { launchCapture, waitForScene, waitForStable, stableOptions, stopLoop, startLoop, READY_FRAMES } from './capture-browser.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, stopLoop, startLoop, pngShooter, READY_FRAMES } from './capture-browser.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const args = process.argv.slice( 2 );
@@ -52,8 +53,6 @@ const url = `${ opt( 'url', 'http://127.0.0.1:5190/' ) }?${ query }`;
 const sampleCount = Number( opt( 'samples', 1 ) );
 const waitFor = opt( 'wait-for', '' );
 const timeout = Number( opt( 'timeout', 60000 ) );
-// Playwright's own screenshot timeout (30 s) unless --timeout is given
-const shotTimeout = args.includes( '--timeout' ) ? timeout : undefined;
 const frameCount = Math.max( 1, Number( opt( 'frames', 1 ) ) );
 const frameEvery = Math.max( 1, Number( opt( 'every', 1 ) ) );
 
@@ -98,6 +97,8 @@ try {
 	// the renderer's frame counter (three's animation loop: rendered frames only)
 	const renderedFrame = () => page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
 	const frames = [];
+	// the shot: the compositor's image, PNG encoded for speed (tools/capture-browser.mjs, "The shot")
+	const shooter = await pngShooter( page, { timeout } );
 	for ( let i = 0; i < frameCount; i ++ ) {
 		if ( i > 0 ) {
 			await startLoop( page );
@@ -108,9 +109,11 @@ try {
 		await stopLoop( page );
 		const frame = await renderedFrame();
 		const file = i === 0 ? out : `artifacts/captures/${ name }.f${ i }.png`;
-		await page.screenshot( { path: file, timeout: shotTimeout } );
+		await writeFile( file, await shooter.shoot() );
 		frames.push( { file, frame } );
 	}
+	// (the device metrics back before the crop anchors read the page's ratio)
+	await shooter.close();
 	const diag = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	const crops = await page.evaluate( () => window.__PONLAI_CROPS__ ?? null );
 	const gpu = await page.evaluate( async () => {
