@@ -224,10 +224,11 @@ function installRelease() {
 }
 
 /** Launches the capture browser in the lowest free profile slot, with one page of the given
- * viewport and device scale factor. Returns { context, page, version, slot, profile, close }:
+ * viewport and device scale factor, and `args` as its switches (LAUNCH_ARGS; verify-first-use
+ * passes its own, vsync on). Returns { context, page, version, slot, profile, close }:
  * `version` as Playwright's browser.version() reports it (the parity tools compare it between
  * sets), `close()` closes the browser and frees the slot. */
-export async function launchCapture( { viewport, deviceScaleFactor = 1 } ) {
+export async function launchCapture( { viewport, deviceScaleFactor = 1, args = LAUNCH_ARGS } ) {
 
 	const dir = path.join( profileRoot(), browserBuild() );
 	mkdirSync( dir, { recursive: true } );
@@ -244,7 +245,7 @@ export async function launchCapture( { viewport, deviceScaleFactor = 1 } ) {
 		context = await chromium.launchPersistentContext( profile, {
 			headless: true,
 			...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),
-			args: LAUNCH_ARGS, viewport, deviceScaleFactor,
+			args, viewport, deviceScaleFactor,
 		} );
 
 	} catch ( error ) {
