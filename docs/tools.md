@@ -16,6 +16,19 @@ everyday commands; this file has the details. Each tool's own file says the rest
   `src/debug/PipelineCounter.ts`) and `graph` (the frame graph's dev counters: the attachment
   ops it rewrote and expected in the last frame, the frames they differed, targets found at a
   size other than their class's).
+- `__THREE_GAME_DIAGNOSTICS__.settled` (updated every frame, every anti-aliasing mode): true once
+  the paused page will draw the same frame from now on, so a capture can wait for it instead of a
+  fixed time or frame count (`src/post/Settled.ts`). It reuses the temporal rest's key (camera,
+  scene clock, render and output sizes, epoch: `TemporalRest.ts`) and holds once that key, the
+  sun maps' redraw counts and a forced strike have stayed the same for the tier's `restSettle`
+  frames (8) while no sky bake or transition is in flight, nothing is pending (a periodic bake
+  due, the refracted sun's map behind its light, a queued sun shadow redraw, an async pipeline
+  compile) and the loading screen has faded out; under taa / taau / gt the temporal rest must also
+  have converged on quiet frames only. Any change of the key (a camera move, a resize, a seek,
+  `establishScene`, any scene event, which now bumps the epoch under MSAA too) turns it false.
+  `settle` says why not: `frames` of `need`, `stable`, `shown`, `pending` (names), `since` (the
+  frame it turned true), and under the temporal modes `stale` (the rest converged over a refresh:
+  bump the epoch, `__PONLAI__.taa.epoch.bump()`, and wait again).
 - Keys: H toggles the GUI, Space pauses, R or 1/2/3 jump to the island, horizon and sky views, F
   toggles a corner readout of the frame cadence.
 - The island camera (`src/camera/IslandCameraControls.ts`): a left drag grabs the ground, a right
@@ -34,7 +47,8 @@ View and capture:
 
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `dist`, `polar`, `az` (the
   camera), `gui`, `camera` (`orbit`, the default: the island camera; or `free`: fly with the
-  mouse, WASD, Q/E and Shift).
+  mouse, WASD, Q/E and Shift). A paused page lifts its loading screen at once, without the fade,
+  so a capture of a paused frame never catches the screen over it.
 
 Sky and weather:
 
@@ -153,6 +167,23 @@ Game:
 (git-ignored) and prints frame diagnostics. It needs Playwright's Chromium once
 (`npx playwright install chromium`), or `CHROME_PATH` set to a WebGPU-capable Chrome.
 
+Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser runs in a
+persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
+(one browser per slot, each with its own lock; `PONLAI_CAPTURE_PROFILES` moves them; safe to
+delete), so the world cache and the GPU shader cache hit from the second capture on. A paused
+capture is shot once its image stops changing: grabbed every 2 frames from the frame after the
+evals, shot when a comparison found no pixel changed (after 40 frames, at most 5000
+changed pixels count as unchanged; after 120 the view is shot anyway, marked `capped`). A paused
+temporal page (taa, taau, gt) is not compared: it is shot once its rest has converged
+(`TemporalRest.ts`), and the `--stable-*` options do not apply to it. Every capture waits for the
+loading screen's fade-out to finish (its computed opacity 0), not only for its `done` class: a
+shot during the fade has the screen blended over the whole frame.
+Replayed over per-frame traces of the 24 parity views, these defaults shot no load early and every
+one on its settled frame. The capture's JSON records it as `ready` (`--stable-*` options in `tools/capture.mjs`, the rule and its
+evidence in `tools/capture-browser.mjs`). `--ready-frames n` waits for a fixed count instead, as a
+running capture does (60); `--wait` / `--settle` ms add fixed delays. The frame loop is stopped
+and the GPU queue drained before the shot. A paused capture takes about 5-7 s alone.
+
 Check visual changes with captures, compared against the previous capture (and crops, not only
 the whole frame); report measured differences. `tools/compare-captures.py` measures two overview
 captures (needs Pillow and NumPy).
@@ -167,17 +198,43 @@ shifts, and one recapture before a failure counts; thresholds in `tools/parity/t
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
 crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA and a ground truth (`--aa gt-hi`: MSAA at
 twice high's nominal ratio, downsampled) with gates from a thresholds file
-(`uv run --with numpy --with pillow`; both described in the README).
+(`uv run --with numpy --with pillow`, clip-metrics.py also `--with scipy`; both described in the
+README). clip-metrics.py measures the
+frames in worker processes: `--workers N` or `CLIP_METRICS_WORKERS`, by default a quarter of the
+CPUs within 1 to 4; the output does not depend on the count.
+References are stored per commit and shared (`tools/parity/reference.mjs`): `capture-set.mjs
+--reference <root>/<sha>/<set>` and the baseline's and ground truth's entries of
+`tools/parity/baseline.mjs` reuse a stored reference whose manifest (`complete.json`, written
+last) matches the capture tools' version, the browser build and the options, wait for another live
+process that is capturing it (freeing the GPU slot of a `run --shared` wrapper meanwhile), and
+otherwise capture it and say why (missing, tools or browser
+changed, a capture left unfinished). `capture-set.mjs <testUrl> <testDir> --check
+<root>/<sha>/<set> [--ref-url U]` captures only the test side and diffs it against the stored
+reference. Layout, manifest and rules: the README's Reference store.
 
 ## GPU lock
 
 Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
 machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running captures)
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
-do not depend on the load. `node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>`
-wraps any other script, `status` names the holders and `gpu` shows the GPU's utilisation and the
-processes using it. The profiler also checks that the GPU is idle before it measures and marks its
-results contended otherwise. Keep other pages that render the scene closed.
+do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 3) and the
+rest queue first in, first out: captures are GPU-bound, so past 2-3 pages at once only each page's
+latency grows. A slot is held per browser (capture.mjs and capture-clip.mjs take one each), so
+capture-set `--jobs n` and baseline.mjs interleave with other sets capture by capture; under a
+`run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
+from then on, so a wrapped orchestrator never holds a slot its own captures wait for. An exclusive
+request waits for the slots in use, blocks new ones, and the queue resumes after it. A killed
+holder's slot frees itself at the next look. Background work (tool proofs, reference rounds) runs
+with `PONLAI_GPU_PRIORITY=low` (inherited by every child, so set it on the outer command): a free
+slot goes to the oldest normal request first and to a low one only when no normal request waits, so
+low work fills the slots nobody else wants without fixed shares; holders are never preempted and
+exclusive requests ignore the class. A low request ranks as a normal one from its original place
+after `PONLAI_GPU_LOW_MAX_WAIT` seconds (default 600, so it never waits for ever; the reason is in
+the module's header).
+`node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
+`status` names the holders (shared: their slots, classes and the queue in turn) and `gpu` shows
+the GPU's utilisation and the processes using it. The profiler also checks that the GPU is idle before it
+measures and marks its results contended otherwise. Keep other pages that render the scene closed.
 
 ## Display gate
 

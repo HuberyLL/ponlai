@@ -51,34 +51,53 @@ TEMPORAL = {
 }
 
 
-def _windows(X, w):
-	"""Sums of X (H x W [x C]) over w x w windows at a stride of w / 2 (an integral image)."""
-	s = w // 2
-	I = np.zeros((X.shape[0] + 1, X.shape[1] + 1) + X.shape[2:], dtype=np.int64)
-	I[1:, 1:] = X.cumsum(0, dtype=np.int64).cumsum(1)
+def window_sums(X, w, s):
+	"""Sums of X (H x W [x C]) over w x w windows whose corners lie on a grid of stride s: returns the
+	sums (rows x cols [x C], int64) and the windows' top and left edges. A window that would cross the
+	frame's far edge is clipped to it (only when the frame is smaller than a window).
+
+	Exact integer sums at the cost of one pass over X: every window edge along an axis is a multiple
+	of g, the greatest common divisor of those edges (s when w = 2 s), so X is summed in blocks of
+	gy x gx and the integral image is built on the block grid only, not on every pixel."""
 	ys = np.arange(0, max(1, X.shape[0] - w + 1), s)
 	xs = np.arange(0, max(1, X.shape[1] - w + 1), s)
-	y0, x0 = ys[:, None], xs[None, :]
-	y1, x1 = np.minimum(y0 + w, X.shape[0]), np.minimum(x0 + w, X.shape[1])
-	return I[y1, x1] - I[y0, x1] - I[y1, x0] + I[y0, x0], ys, xs
+	y1, x1 = np.minimum(ys + w, X.shape[0]), np.minimum(xs + w, X.shape[1])
+	gy, gx = int(np.gcd.reduce(np.concatenate((ys, y1)))), int(np.gcd.reduce(np.concatenate((xs, x1))))
+	ny, nx = int(y1[-1]) // gy, int(x1[-1]) // gx
+	C = X.shape[2:]
+	B = X[:ny * gy].reshape((ny, gy, X.shape[1]) + C).sum(1, dtype=np.int64)
+	B = B[:, :nx * gx].reshape((ny, nx, gx) + C).sum(2)
+	I = np.zeros((ny + 1, nx + 1) + C, dtype=np.int64)
+	I[1:, 1:] = B.cumsum(0).cumsum(1)
+	j0, j1, i0, i1 = (ys // gy)[:, None], (y1 // gy)[:, None], (xs // gx)[None, :], (x1 // gx)[None, :]
+	return I[j1, i1] - I[j0, i1] - I[j1, i0] + I[j0, i0], ys, xs
 
 
-def _region(S, M, T):
+def _windows(X, w):
+	"""Sums of X over w x w windows at a stride of w / 2."""
+	return window_sums(X, w, w // 2)
+
+
+def _region(S, M, T, absS=None):
+	# every float here is an exact integer sum divided once, so it does not depend on the order of
+	# summation: the same value as the arrays' own mean()
 	n = M.size
+	absS = np.abs(S) if absS is None else absS
 	return {
-		"off": float((M > T["level"]).sum() / n),
-		"big": int((M > T["big"]).sum()),
-		"mean": float(np.abs(S).mean()),
-		"bias": float(np.abs(S.reshape(-1, 3).mean(0)).max()),
+		"off": float(np.count_nonzero(M > T["level"]) / n),
+		"big": int(np.count_nonzero(M > T["big"])),
+		"mean": float(int(absS.sum(dtype=np.int64)) / absS.size),
+		"bias": float(np.abs(np.array([S[..., k].sum(dtype=np.int64) for k in range(3)]) / n).max()),
 		"max": int(M.max()),
 	}
 
 
 def measure(A, B, crops=None, T=TEMPORAL):
-	"""The rule's measurements for frames A (reference) and B (test), int16 H x W x 3."""
-	S = (B - A).astype(np.int16)
-	M = np.abs(S).max(axis=2)
-	r = {"frame": _region(S, M, T)}
+	"""The rule's measurements for frames A (reference) and B (test), H x W x 3 (uint8 or int16)."""
+	S = np.subtract(B, A, dtype=np.int16)
+	absS = np.abs(S)
+	M = np.maximum(np.maximum(absS[..., 0], absS[..., 1]), absS[..., 2])
+	r = {"frame": _region(S, M, T, absS)}
 	w = T["window"]
 	off, ys, xs = _windows((M > T["level"]).astype(np.uint8), w)
 	big, _, _ = _windows((M > T["big"]).astype(np.uint8), w)
