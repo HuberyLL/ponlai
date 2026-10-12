@@ -24,13 +24,30 @@
 // joins without a ticket, a slot or the limit, and is not counted: its `run --shared` wrappers are
 // members for a whole set, so counting them would starve the queue.
 //
+// Shared requests have a class: normal, or low with PONLAI_GPU_PRIORITY=low (inherited by every
+// child through the environment, so `PONLAI_GPU_PRIORITY=low node tools/gpu-lock.mjs run --shared --
+// <set>` makes all its captures low). Background work (tool proofs, reference rounds) runs low so
+// that a session's interactive work does not queue behind it, without fixed shares: a free slot goes
+// to the oldest normal request first and to a low one only when no normal request waits, so low work
+// still fills every slot nobody else wants; low requests are first in, first out among themselves.
+// A holder is never preempted, and exclusive requests ignore the class. Nothing low waits for ever:
+// PONLAI_GPU_LOW_MAX_WAIT seconds (default 600) after a low request queued, it ranks as a normal one
+// from its original place (its ticket carries that time, so every requester agrees). The default
+// comes from the aa session's run log over 2026-10-10..12: its bursts of back-to-back runs lasted
+// 6 / 17 / 42 min (median / p75 / p90, old tools under contention, a few times slower than now) with
+// median gaps of 5 min for analysis. Ten minutes lets a typical burst finish untouched, so low work
+// runs in the gaps, and caps a low request's wait during the long calibration stretches (up to
+// 2.5 h) at the cost to normal work of one capture per waiting low request per 10 min. An older copy
+// of this file queues first in, first out and knows no class; its tickets split the ranking (see
+// queueOrder) so that it and the two classes never wait for each other.
+//
 //   import { withGpuLock, acquireGpuLock } from './gpu-lock.mjs';
 //   await withGpuLock( 'profile island', async () => { ... } );           // held while fn runs
 //   await acquireGpuLock( 'capture overview' );                           // held until this process exits
 //   await acquireGpuLock( 'verify-sky', { shared: true } );               // shared with other probes
 //
 //   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
-//   node tools/gpu-lock.mjs status                 (the owner, the slots' holders, the queue, the waiters)
+//   node tools/gpu-lock.mjs status                 (the owner, the holders, the queue in turn, the waiters)
 //   node tools/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
 //
 // A command started through `run` inherits the lock (PONLAI_GPU_LOCK_HELD, PONLAI_GPU_LOCK_MODE), and
@@ -77,6 +94,12 @@ const MUTEX = `${ LOCK_DIR }.mutex`;
 const POLL_MS = 500;
 /** How many shared holders may render at once (each requester reads its own environment). */
 export const SLOTS = Math.max( 1, Math.floor( Number( process.env.PONLAI_GPU_SLOTS ) ) || 3 );
+/** This process's class for shared requests: 'low' (PONLAI_GPU_PRIORITY=low) yields free slots to
+ * normal requests; anything else is 'normal'. Children inherit it through the environment. */
+export const PRIORITY = process.env.PONLAI_GPU_PRIORITY === 'low' ? 'low' : 'normal';
+/** The longest a low request yields, in seconds (PONLAI_GPU_LOW_MAX_WAIT, default 600: see the
+ * header); past it the request queues as a normal one from its original place. */
+export const LOW_MAX_WAIT = ( ( v ) => Number.isFinite( v ) && v >= 0 ? v : 600 )( Number( process.env.PONLAI_GPU_LOW_MAX_WAIT ?? NaN ) );
 
 let depth = 0; // re-entrant within this process
 let heldMode = null; // 'exclusive' | 'shared' while this process holds the lock itself
@@ -191,16 +214,41 @@ function queued() {
 
 }
 
-// a place in the queue; call inside the mutex
+// a place in the queue (the ticket); call inside the mutex. A low ticket carries the time it stops
+// yielding, so every requester ranks it alike whatever its own environment says.
 function enqueue( label ) {
 
 	const seq = ( Number( readJson( SEQ ) ) || 0 ) + 1;
 	writeJson( SEQ, seq );
 	mkdirSync( QUEUE, { recursive: true } );
-	writeJson( path.join( QUEUE, `${ process.pid }.json` ), { pid: process.pid, label, seq, start: new Date().toISOString() } );
-	return seq;
+	const now = Date.now();
+	const ticket = { pid: process.pid, label, seq, start: new Date( now ).toISOString(), priority: PRIORITY };
+	if ( PRIORITY === 'low' ) ticket.promoteAt = new Date( now + LOW_MAX_WAIT * 1000 ).toISOString();
+	writeJson( path.join( QUEUE, `${ process.pid }.json` ), ticket );
+	return ticket;
 
 }
+
+// The waiting tickets in the order they get free slots: normal tickets first in, first out, then
+// low ones first in, first out; a low ticket past its promoteAt ranks as a normal one from its
+// original place. A ticket from an older copy of this file (no priority) waits for every earlier
+// ticket, low ones too, so it is a barrier: everything taken before it ranks before it, everything
+// after it ranks after it, and the classes order each stretch between barriers. Ranking a later
+// normal ticket before an earlier low one across a barrier would make the three wait for each other.
+function queueOrder( tickets, now = Date.now() ) {
+
+	const barriers = tickets.filter( ( t ) => t.priority === undefined ).map( ( t ) => t.seq );
+	const key = ( t ) => [
+		barriers.filter( ( seq ) => seq < t.seq ).length,
+		t.priority === undefined ? 2 : t.priority === 'low' && now < Date.parse( t.promoteAt ) ? 1 : 0,
+		t.seq
+	];
+	return tickets.map( ( t ) => ( { t, k: key( t ) } ) )
+		.sort( ( a, b ) => a.k[ 0 ] - b.k[ 0 ] || a.k[ 1 ] - b.k[ 1 ] || a.k[ 2 ] - b.k[ 2 ] ).map( ( { t } ) => t );
+
+}
+// how many waiting tickets get a slot before this one
+const ticketsAhead = ( ticket ) => queueOrder( [ ...queued().filter( ( t ) => t.pid !== ticket.pid ), ticket ] ).indexOf( ticket );
 
 // this process's parent's parent and so on (0 when it cannot be read)
 function parentOf( pid ) {
@@ -247,7 +295,7 @@ function takeOverSlot( ancestor, label ) {
 	const file = path.join( MEMBERS, `${ ancestor.pid }.json` );
 	const held = readJson( file );
 	if ( ! held || ! alive( ancestor.pid ) || readJson( OWNER )?.mode !== 'shared' ) return false;
-	writeJson( path.join( MEMBERS, `${ process.pid }.json` ), { pid: process.pid, label, start: new Date().toISOString(), slot: held.slot, from: ancestor.pid } );
+	writeJson( path.join( MEMBERS, `${ process.pid }.json` ), { pid: process.pid, label, start: new Date().toISOString(), slot: held.slot, priority: PRIORITY, from: ancestor.pid } );
 	rmSync( file, { force: true } );
 	repairShared();
 	return true;
@@ -367,9 +415,10 @@ function tryAcquireExclusive( label ) {
 
 }
 
-// Joins the shared lock when a slot is free and no earlier ticket is waiting for it. Call inside
-// the mutex (exclusive requests do not take it, so the lock may change under us: mkdir decides).
-function joinShared( label, seq ) {
+// Joins the shared lock when a slot is free and fewer tickets that rank before this one (queueOrder)
+// wait than there are free slots. Call inside the mutex (exclusive requests do not take it, so the
+// lock may change under us: mkdir decides).
+function joinShared( label, ticket ) {
 
 	// a waiting exclusive holder goes first
 	if ( exclusiveWaiters().length ) return false;
@@ -399,11 +448,11 @@ function joinShared( label, seq ) {
 	// holders that joined through an older copy of this file have no slot and are not counted
 	const members = readJson( OWNER ) ? sharedMembers().filter( ( m ) => m.slot !== undefined ) : [];
 	const free = SLOTS - members.length;
-	if ( free <= 0 || queued().filter( ( t ) => t.seq < seq ).length >= free ) return false;
+	if ( free <= 0 || ticketsAhead( ticket ) >= free ) return false;
 	const taken = new Set( members.map( ( m ) => m.slot ) );
 	let slot = 0;
 	while ( taken.has( slot ) ) slot ++;
-	const me = { pid: process.pid, label, start: new Date().toISOString(), slot };
+	const me = { pid: process.pid, label, start: new Date().toISOString(), slot, priority: PRIORITY };
 	try {
 
 		mkdirSync( LOCK_DIR );
@@ -498,19 +547,19 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 	let told = 0;
 	const waitFile = path.join( WAITING, `${ process.pid }.json` );
 	const ticket = path.join( QUEUE, `${ process.pid }.json` );
-	let seq = 0;
-	if ( shared ) seq = await withMutex( () => enqueue( label ) );
+	let mine = null;
+	if ( shared ) mine = await withMutex( () => enqueue( label ) );
 	else {
 
 		mkdirSync( WAITING, { recursive: true } );
-		writeJson( waitFile, { pid: process.pid, label, start: new Date().toISOString() } );
+		writeJson( waitFile, { pid: process.pid, label, start: new Date().toISOString(), priority: PRIORITY } );
 
 	}
 	try {
 
 		for ( ;; ) {
 
-			const got = shared ? await withMutex( () => joinShared( label, seq ) ) : tryAcquireExclusive( label );
+			const got = shared ? await withMutex( () => joinShared( label, mine ) ) : tryAcquireExclusive( label );
 			if ( got === true ) break;
 			// a shared lock whose named owner died while others hold it: hand it on
 			if ( got === 'shared' ) await withMutex( repairShared );
@@ -525,16 +574,17 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 
 				const owner = lockOwner();
 				const waiters = shared ? exclusiveWaiters() : [];
-				const ahead = shared ? queued().filter( ( t ) => t.seq < seq ).length : 0;
+				const ahead = shared ? ticketsAhead( mine ) : 0;
+				const yielding = shared && mine.priority === 'low' && Date.now() < Date.parse( mine.promoteAt ) ? ` (low priority: normal requests first until ${ mine.promoteAt })` : '';
 				if ( waiters.length ) console.error( `[gpu-lock] waiting: "${ waiters[ 0 ].label }" (pid ${ waiters[ 0 ].pid }) wants the GPU to itself first` );
 				else if ( owner?.mode === 'shared' && shared ) {
 
 					const slotted = owner.members.filter( ( m ) => m.slot !== undefined );
-					console.error( `[gpu-lock] waiting for a GPU slot: ${ slotted.length } of ${ SLOTS } in use (${ slotted.map( ( m ) => `"${ m.label }"` ).join( ', ' ) })${ ahead ? `, ${ ahead } ahead in the queue` : '' }` );
+					console.error( `[gpu-lock] waiting for a GPU slot: ${ slotted.length } of ${ SLOTS } in use (${ slotted.map( ( m ) => `"${ m.label }"` ).join( ', ' ) })${ ahead ? `, ${ ahead } ahead in the queue` : '' }${ yielding }` );
 
 				}
 				else if ( owner ) console.error( `[gpu-lock] waiting for "${ owner.label }" (pid ${ owner.pid }, since ${ owner.start }${ owner.members?.length > 1 ? `, ${ owner.members.length } shared holders` : '' })` );
-				else if ( ahead ) console.error( `[gpu-lock] waiting: ${ ahead } ahead in the queue` );
+				else if ( ahead ) console.error( `[gpu-lock] waiting: ${ ahead } ahead in the queue${ yielding }` );
 				told = waited || 1;
 
 			}
@@ -709,7 +759,10 @@ async function main( argv ) {
 
 		const owner = lockOwner();
 		const waiting = exclusiveWaiters().map( ( { file, ...w } ) => w );
-		const queue = queued();
+		// the queue in the order it gets slots, low tickets past their bound marked promoted
+		const now = Date.now();
+		const queue = queueOrder( queued(), now )
+			.map( ( t ) => t.priority === 'low' && now >= Date.parse( t.promoteAt ) ? { ...t, promoted: true } : t );
 		const extra = { ...( waiting.length ? { waiting } : {} ), ...( queue.length ? { queue } : {} ) };
 		if ( owner?.mode === 'shared' ) {
 
@@ -717,7 +770,7 @@ async function main( argv ) {
 			const holders = members.filter( ( m ) => m.slot !== undefined ), unslotted = members.filter( ( m ) => m.slot === undefined );
 			console.log( JSON.stringify( { ...rest, alive: alive( owner.pid ), dir: LOCK_DIR, slots: { limit: SLOTS, used: holders.length, holders, ...( unslotted.length ? { unslotted } : {} ) }, ...extra } ) );
 
-		} else console.log( owner ? JSON.stringify( { ...owner, alive: owner.pid ? alive( owner.pid ) : null, dir: LOCK_DIR, ...extra } ) : `free (${ LOCK_DIR }, ${ SLOTS } shared slots)${ Object.keys( extra ).length ? ` ${ JSON.stringify( extra ) }` : '' }` );
+		} else console.log( owner ? JSON.stringify( { ...owner, alive: owner.pid ? alive( owner.pid ) : null, dir: LOCK_DIR, ...extra } ) : `free (${ LOCK_DIR }, ${ SLOTS } shared slots, this shell's class ${ PRIORITY })${ Object.keys( extra ).length ? ` ${ JSON.stringify( extra ) }` : '' }` );
 		return 0;
 
 	}
