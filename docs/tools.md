@@ -86,9 +86,10 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter path).
 - `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then steers by the
   frame intervals).
-- `renderScaleMemory=on|off` (whether high starts from the render scale it last held, kept in
-  localStorage: on by default, off in an automated browser so a profile or capture does not start
-  where the last run ended; `on` tests a returning load there).
+- `drsStore=on|off` (whether high starts from the render scale it last held, kept in localStorage
+  per tier, AA mode, frame rate, canvas size and GPU, and saves the scale it holds: on by default,
+  off in an automated browser so a profile or capture does not start where the last run ended;
+  `on` tests a returning load there, `off` neither restores nor saves anywhere).
 - `frameRate` (the frame rate the loop holds on a faster display, over the tier's; `frameRate=0`
   renders on every refresh, as the profiler's uncapped runs do).
 - `submits=each` (three's own submit per pass, without the submit batching; at runtime

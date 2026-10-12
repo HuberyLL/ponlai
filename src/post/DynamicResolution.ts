@@ -80,11 +80,14 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 // - Until its first decision (`settling`) it waits for SETTLE_FRAMES clean frames and then takes
 //   the largest scale their median predicts fits, up or down, with room for the first frames
 //   running lighter than the scene will (SETTLE_LIGHT). It starts from the scale it last held
-//   on this display (`restore`: localStorage, keyed by tier, frame rate, canvas size, GPU and
-//   whether GPU times or frame intervals steer it), so a returning player's first frames are near
+//   on this display (`restore`: localStorage, keyed by tier, AA mode, frame rate, canvas size, GPU
+//   and whether GPU times or frame intervals steer it), so a returning player's first frames are near
 //   it and the page keeps its loading screen up over the first jump only. A scale is remembered
 //   once it has held STORE_AFTER seconds at the current key (main.ts leaves the memory off in an
-//   automated browser, so a measurement does not start where the last one ended).
+//   automated browser, so a measurement does not start where the last one ended; `drsStore=off`
+//   turns it off anywhere, `on` on there). The key holds the AA mode: a TAAU frame (one sample
+//   per pixel, the resolve at the canvas's size) costs less per render pixel than a 4x MSAA one,
+//   so the two settle at different scales.
 // The page renders at the tier's nominal scale whenever the scale is pinned (`?dpr`, the GUI's
 // full resolution) or the scene is paused, so paused frames and captures render at the reference
 // scale whatever scale the running page had reached.
@@ -327,8 +330,8 @@ export class DynamicResolution {
 
 	}
 
-	/** The key the scales it holds are remembered under (`renderScaleKey`: tier, frame rate, canvas
-	 * size, GPU and steering), or null to remember nothing; set again whenever the canvas changes
+	/** The key the scales it holds are remembered under (`renderScaleKey`: tier, AA mode, frame
+	 * rate, canvas size, GPU and steering), or null to remember nothing; set again whenever the canvas changes
 	 * size. A new key gets its entry once the scale has held STORE_AFTER seconds under it. */
 	setStoreKey( key: string | null, now = performance.now() / 1000 ): void {
 
@@ -845,9 +848,11 @@ function writeStore( key: string, scale: number ): void {
 
 }
 
-/** The key a scale is remembered under: the tier, its frame rate, the canvas's size, the GPU and what
- * steers it ('gpu' times or frame intervals: the fallback's scales are not the GPU rule's). */
-export function renderScaleKey( renderer: THREE.WebGPURenderer, tier: string, frameRate: number, canvasWidth: number, canvasHeight: number, steering: 'gpu' | 'frames' ): string {
+/** The key a scale is remembered under: the tier, the antialiasing mode (a TAAU frame's render costs
+ * less than a 4x MSAA one's, so the two settle at different scales), its frame rate, the canvas's
+ * size, the GPU and what steers it ('gpu' times or frame intervals: the fallback's scales are not
+ * the GPU rule's). */
+export function renderScaleKey( renderer: THREE.WebGPURenderer, tier: string, aa: string, frameRate: number, canvasWidth: number, canvasHeight: number, steering: 'gpu' | 'frames' ): string {
 
 	let gpu = '';
 	try {
@@ -860,7 +865,7 @@ export function renderScaleKey( renderer: THREE.WebGPURenderer, tier: string, fr
 		// no adapter info: the key still holds the canvas and tier
 
 	}
-	return `${ tier }|${ frameRate }|${ canvasWidth }x${ canvasHeight }|${ gpu }` + ( steering === 'gpu' ? '' : '|frames' );
+	return `${ tier }|${ aa }|${ frameRate }|${ canvasWidth }x${ canvasHeight }|${ gpu }` + ( steering === 'gpu' ? '' : '|frames' );
 
 }
 

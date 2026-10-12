@@ -975,9 +975,10 @@ const canvasSize = new THREE.Vector2();
 // High remembers the scale it held (DynamicResolution.ts), except in an automated browser: a
 // profile or capture would start where the last run on the same origin ended, so its start-up and
 // first decision would depend on run history (QualityDetect.ts skips them for the same reason).
-// `renderScaleMemory=on` turns it on there (a returning load's test), `off` turns it off anywhere.
-const scaleMemoryParam = params.get( 'renderScaleMemory' );
-const scaleMemory = scaleMemoryParam === 'on' || ( scaleMemoryParam !== 'off' && ! navigator.webdriver );
+// `drsStore=on` turns it on there (a returning load's test), `off` turns it off anywhere (neither
+// restored nor saved: an A/B between modes or builds starts both sides from the nominal scale).
+const drsStoreParam = params.get( 'drsStore' );
+const scaleMemory = drsStoreParam === 'on' || ( drsStoreParam !== 'off' && ! navigator.webdriver );
 let nominalScale = 1, renderScale = 1;
 // the render scale `loop.step` holds for the frame it draws (debug only; null otherwise)
 let steppedScale: number | null = null;
@@ -994,7 +995,7 @@ function resize(): void {
 	camera.aspect = w / h;
 	camera.updateProjectionMatrix();
 	applyRenderScale( true );
-	if ( scaleMemory ) dynamicResolution?.setStoreKey( renderScaleKey( renderer, qualityTier, pacer.target, canvasSize.x, canvasSize.y, gpuTimer !== null || profiler?.timestamps === true ? 'gpu' : 'frames' ) );
+	if ( scaleMemory ) dynamicResolution?.setStoreKey( renderScaleKey( renderer, qualityTier, AA_MODE, pacer.target, canvasSize.x, canvasSize.y, gpuTimer !== null || profiler?.timestamps === true ? 'gpu' : 'frames' ) );
 
 }
 
