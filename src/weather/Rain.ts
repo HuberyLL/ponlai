@@ -220,54 +220,62 @@ export class Rain {
 		const u = this.uniforms;
 		const coverage = float( 0 ).toVar();
 		const result = float( 0 ).toVar();
+		const shells = VEIL_SETS[ rainShading.veilShells ];
+		// (after the resolve, at every canvas pixel, nothing for what lies before the nearest shell, and
+		// a shell only past it; before it, as it always was)
+		const past = ( radius: number, work: () => void ) => AFTER_RESOLVE ? If( distance.greaterThan( radius * 0.9 ), work ) : work();
 		If( u.rain.greaterThan( 0.001 ), () => {
 
-			// Axis toward where the rain comes from, tilted by the wind; a frame around it.
-			const source = normalize( vec3( u.wind.x.mul( - DRIFT ), FALL_SPEED, u.wind.y.mul( - DRIFT ) ) ).toVar();
-			const side = normalize( cross( source, vec3( 0, 0, 1 ) ) ).toVar();
-			const other = cross( source, side ).toVar();
-			const cosine = clamp( dot( direction, source ), - 1, 1 ).toVar();
-			const polar = acos( cosine ).toVar(); // 0 toward the source, pi along the fall
-			const azimuth = atan( dot( direction, other ), dot( direction, side ) ).div( 2 * Math.PI ).add( 0.5 ).toVar();
-			// Columns crowd toward both vanishing points; fade them out before they alias.
-			const away = smoothstep( 0.12, 0.45, abs( sin( polar ) ) ).toVar();
-			const amount = clamp( u.rain, 0, 1 ).toVar();
-			for ( const radius of VEIL_SETS[ rainShading.veilShells ] ) {
+			past( Math.min( ...shells ), () => {
 
-				// Each shell keeps its own pattern whichever set it is drawn in.
-				const index = VEIL_SHELLS.indexOf( radius );
-				const columns = Math.round( 2 * Math.PI * radius / STREAK_SPACING );
-				const column = azimuth.mul( columns ).toVar();
-				const cell = floor( column ).toVar();
-				const seed = vec2( cell, index * 17.13 ).toVar();
-				// Arc length along the fall, scrolling at the fall speed with a per-column offset.
-				const fall = polar.mul( radius ).sub( u.time.mul( FALL_SPEED * ( 0.9 + 0.04 * index ) ) ).sub( rainHash( seed ).mul( 37 ) ).toVar();
-				const row = floor( fall.div( STREAK_LENGTH * 2.6 ) ).toVar();
-				const along = fract( fall.div( STREAK_LENGTH * 2.6 ) ).mul( 2.6 ).toVar();
-				const present = rainHash( vec2( cell.add( row.mul( 0.618 ) ), row.add( index * 3.7 ) ) ).lessThan( amount.mul( 0.8 ) );
-				const shown = smoothstep( radius * 0.9, radius * 1.1, distance );
-				// (after the resolve, at every canvas pixel, the rest only where a streak may show: past
-				// its shell, present and along its length; before it, as it always was)
-				const add = ( work: () => void ) => AFTER_RESOLVE ? If( present.and( along.lessThan( 1 ) ).and( shown.greaterThan( 0 ) ), work ) : work();
-				add( () => {
+				// Axis toward where the rain comes from, tilted by the wind; a frame around it.
+				const source = normalize( vec3( u.wind.x.mul( - DRIFT ), FALL_SPEED, u.wind.y.mul( - DRIFT ) ) ).toVar();
+				const side = normalize( cross( source, vec3( 0, 0, 1 ) ) ).toVar();
+				const other = cross( source, side ).toVar();
+				const cosine = clamp( dot( direction, source ), - 1, 1 ).toVar();
+				const polar = acos( cosine ).toVar(); // 0 toward the source, pi along the fall
+				const azimuth = atan( dot( direction, other ), dot( direction, side ) ).div( 2 * Math.PI ).add( 0.5 ).toVar();
+				// Columns crowd toward both vanishing points; fade them out before they alias.
+				const away = smoothstep( 0.12, 0.45, abs( sin( polar ) ) ).toVar();
+				const amount = clamp( u.rain, 0, 1 ).toVar();
+				for ( const radius of shells ) past( radius, () => {
 
-					const centre = rainHash( seed.add( row ) ).mul( 0.6 ).add( 0.2 );
-					// Angular half-width of the streak, at least half a pixel; energy kept by the ratio. After
-					// the resolve (one sample a canvas pixel, nothing averaging it) at least 0.8 of a canvas
-					// pixel: a streak half a pixel wide stepped and broke along its length.
-					const drop = DROP_WIDTH / radius;
-					const halfWidth = ( AFTER_RESOLVE ? max( float( drop ), this.dropPixelAngle.mul( 0.8 ) ) : max( float( drop ), this.pixelAngle.mul( 0.5 ) ) ).toVar();
-					const across = abs( fract( column ).sub( centre ) ).mul( 2 * Math.PI / columns ).mul( sin( polar ) );
-					const profile = float( 1 ).sub( smoothstep( halfWidth.mul( 0.4 ), halfWidth, across ) ).mul( float( drop ).div( halfWidth ) );
-					// Each drop has its own brightness: some catch the light, most are faint.
-					const glint = rainHash( seed.add( row.mul( 1.31 ) ).add( 5.1 ) ).pow( 2 ).mul( 1.6 ).add( 0.25 );
-					const streak = smoothstep( 0, 0.15, along ).mul( float( 1 ).sub( smoothstep( 0.6, 1, along ) ) ).mul( glint );
-					result.addAssign( AFTER_RESOLVE ? profile.mul( streak ).mul( shown ) : select( present, profile.mul( streak ).mul( shown ), float( 0 ) ) );
+					// Each shell keeps its own pattern whichever set it is drawn in.
+					const index = VEIL_SHELLS.indexOf( radius );
+					const columns = Math.round( 2 * Math.PI * radius / STREAK_SPACING );
+					const column = azimuth.mul( columns ).toVar();
+					const cell = floor( column ).toVar();
+					const seed = vec2( cell, index * 17.13 ).toVar();
+					// Arc length along the fall, scrolling at the fall speed with a per-column offset.
+					const fall = polar.mul( radius ).sub( u.time.mul( FALL_SPEED * ( 0.9 + 0.04 * index ) ) ).sub( rainHash( seed ).mul( 37 ) ).toVar();
+					const row = floor( fall.div( STREAK_LENGTH * 2.6 ) ).toVar();
+					const along = fract( fall.div( STREAK_LENGTH * 2.6 ) ).mul( 2.6 ).toVar();
+					const present = rainHash( vec2( cell.add( row.mul( 0.618 ) ), row.add( index * 3.7 ) ) ).lessThan( amount.mul( 0.8 ) );
+					const shown = smoothstep( radius * 0.9, radius * 1.1, distance );
+					// (after the resolve, at every canvas pixel, the rest only where a streak may show: past
+					// its shell, present and along its length; before it, as it always was)
+					const add = ( work: () => void ) => AFTER_RESOLVE ? If( present.and( along.lessThan( 1 ) ).and( shown.greaterThan( 0 ) ), work ) : work();
+					add( () => {
+
+						const centre = rainHash( seed.add( row ) ).mul( 0.6 ).add( 0.2 );
+						// Angular half-width of the streak, at least half a pixel; energy kept by the ratio. After
+						// the resolve (one sample a canvas pixel, nothing averaging it) at least 0.8 of a canvas
+						// pixel: a streak half a pixel wide stepped and broke along its length.
+						const drop = DROP_WIDTH / radius;
+						const halfWidth = ( AFTER_RESOLVE ? max( float( drop ), this.dropPixelAngle.mul( 0.8 ) ) : max( float( drop ), this.pixelAngle.mul( 0.5 ) ) ).toVar();
+						const across = abs( fract( column ).sub( centre ) ).mul( 2 * Math.PI / columns ).mul( sin( polar ) );
+						const profile = float( 1 ).sub( smoothstep( halfWidth.mul( 0.4 ), halfWidth, across ) ).mul( float( drop ).div( halfWidth ) );
+						// Each drop has its own brightness: some catch the light, most are faint.
+						const glint = rainHash( seed.add( row.mul( 1.31 ) ).add( 5.1 ) ).pow( 2 ).mul( 1.6 ).add( 0.25 );
+						const streak = smoothstep( 0, 0.15, along ).mul( float( 1 ).sub( smoothstep( 0.6, 1, along ) ) ).mul( glint );
+						result.addAssign( AFTER_RESOLVE ? profile.mul( streak ).mul( shown ) : select( present, profile.mul( streak ).mul( shown ), float( 0 ) ) );
+
+					} );
 
 				} );
+				coverage.assign( clamp( result.mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ), 0, 1 ) );
 
-			}
-			coverage.assign( clamp( result.mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ), 0, 1 ) );
+			} );
 
 		} );
 		return coverage;
