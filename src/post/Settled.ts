@@ -31,7 +31,9 @@ import { TemporalRest, restKey } from './TemporalRest.ts';
 // the epoch (`__PONLAI__.taa.epoch.bump()`; the capture tools bump it before they wait anyway).
 // With `restSequence` 0 (no rest) the temporal modes never settle.
 // Whatever the mode, the page also waits for what covers the canvas without changing its frames
-// (`shown`: the loading screen until its fade has ended).
+// (`shown`: the loading screen until its fade has ended; a paused page lifts it at once, main.ts).
+// A converged rest alone is not enough for a shot: rests that converged about 40 frames after a
+// view's eval were shot through the fade's last percent, and only this flag told them apart.
 //
 // It turns false on the frame anything it watches changes: a camera move, a resize or a render
 // scale change, a seek or any scene event (each bumps the epoch: SceneEvents.ts), `establishScene`

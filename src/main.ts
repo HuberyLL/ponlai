@@ -1372,6 +1372,12 @@ const reveal = () => {
 	if ( waiting ) setTimeout( reveal, 50 );
 	else {
 
+		// A paused page lifts the loading screen at once, without its fade (index.html): the frame
+		// holds still, and the captures and reviews of paused frames shoot it as soon as it is
+		// ready, which for a temporal rest is about 40 frames after a view's eval, well inside the
+		// second the fade takes. A rest shot so showed up to 2 % of the loading screen's colour over
+		// the whole image (a converged rest is the canvas alone: TemporalRest.ts).
+		if ( paused && loading ) loading.style.transition = 'none';
 		loading?.classList.add( 'done' );
 		// the counts start where the scene shows
 		frameStats.reset();

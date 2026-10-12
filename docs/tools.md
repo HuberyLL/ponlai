@@ -47,7 +47,8 @@ View and capture:
 
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `dist`, `polar`, `az` (the
   camera), `gui`, `camera` (`orbit`, the default: the island camera; or `free`: fly with the
-  mouse, WASD, Q/E and Shift).
+  mouse, WASD, Q/E and Shift). A paused page lifts its loading screen at once, without the fade,
+  so a capture of a paused frame never catches the screen over it.
 
 Sky and weather:
 

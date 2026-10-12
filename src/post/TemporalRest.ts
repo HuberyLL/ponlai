@@ -11,6 +11,14 @@
 // rest ends continues from it. What the image shows then depends only on the scene: a paused frame
 // repeats exactly, however it was reached.
 //
+// The rest is the canvas's image: what the page lays over the canvas is not in it. A rest shot while
+// the loading screen still faded out (index.html) carried up to 2 % of that screen's colour over the
+// whole frame and read as a darker rest; a paused page now lifts the loading screen at once
+// (main.ts `reveal`), and the page's settled signal waits for it in any case (Settled.ts `shown`).
+// The settle frames do cover the scene: rests started one frame after a view's eval and 300 frames
+// later were byte-identical once nothing lay over them (no sun map redraw, bake or pending refresh
+// fell inside either rest).
+//
 // The rest is tested every frame on a key of what the frame draws from: the camera's unjittered view
 // and projection, the scene clock, the render's and the output's sizes, the epoch, the resolve's live
 // settings and the page's own signature of the rest (main.ts: a forced lightning strike, which a
