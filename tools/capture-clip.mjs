@@ -6,12 +6,14 @@
 //   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
 //       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"]
 //       [--quality high] [--size 1728x1117@2] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
-//       [--task name] [--anchors-from clip.json] [--verbose]
+//       [--task name] [--anchors-from clip.json] [--ready-frames 40] [--wait ms] [--settle ms] [--verbose]
 //
 // The page loads `U?debug&paused&t=12&quality=<q>&aa=<mode>[&<extra>]&<view's query>[&<clip's
-// query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it), waits for
-// the scene as capture.mjs does, runs the view's eval (the crop anchors' setup included) and the
-// clip's, reads the crop anchors once at the base pose and then steps the clip. After each frame
+// query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it) in a
+// persistent profile slot, runs the view's eval (the crop anchors' setup included), waits for the
+// scene as capture.mjs does (tools/capture-browser.mjs: --ready-frames rendered frames after the
+// eval and the loading screen gone, with --wait / --settle ms of fixed delay around them when
+// given; the stepper then stops the loop and drains the GPU queue), runs the clip's eval, reads the crop anchors once at the base pose and then steps the clip. After each frame
 // (every k-th with --every, and every frame of the --dense runs; frame 0 always) each anchor's world point is projected with that
 // frame's camera into a box of 192 CSS px (384 device px at a pixel ratio of 2, clamped into the
 // frame) and captured; an anchor behind the camera that frame is skipped. --full lists frames also
@@ -59,7 +61,6 @@
 // Stepped clips are deterministic (no wall clock), so the tool takes the GPU lock shared.
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build
 // (tools/parity/README.md).
-import { chromium } from 'playwright';
 import { mkdir, readFile, writeFile, appendFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
@@ -68,6 +69,7 @@ import { fileURLToPath } from 'node:url';
 import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from './gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { CLIPS, clipEval } from './parity/clips.mjs';
+import { launchCapture, waitForScene } from './capture-browser.mjs';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const args = process.argv.slice( 2 );
@@ -83,7 +85,7 @@ for ( let i = 0; i < args.length; i ++ ) {
 	} else positional.push( args[ i ] );
 
 }
-const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters' ];
+const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters', 'ready-frames', 'wait', 'settle' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! KNOWN.includes( k ) );
 const clip = CLIPS[ options.clip ];
 if ( positional.length !== 1 || unknown.length || ! options.url || ! clip ) {
@@ -217,11 +219,8 @@ await mkdir( outDir, { recursive: true } );
 const busy = await gpuUtilisation();
 const started = Date.now();
 await acquireGpuLock( `capture-clip ${ name }`, { shared: true } );
-const browser = await chromium.launch( {
-	headless: true,
-	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),
-	args: [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--disable-gpu-vsync', '--disable-frame-rate-limit' ],
-} );
+// the browser in its profile slot (one page; gt-hi's fallback relaunches it at another ratio)
+let session = null;
 const errors = [];
 let exitCode = 0;
 try {
@@ -236,7 +235,8 @@ try {
 		if ( canvas[ 0 ] !== Math.round( W * GT_RATIO ) ) {
 
 			console.log( `gt-hi: the canvas is ${ canvas.join( 'x' ) }, not ${ W * GT_RATIO } wide; falling back to twice the CSS size at a ratio of ${ NOMINAL_HIGH }` );
-			await page.close();
+			await session.close();
+			session = null;
 			gtFallback = true;
 			page = await open( NOMINAL_HIGH, 2 );
 
@@ -247,17 +247,16 @@ try {
 
 	async function open( deviceScaleFactor, cssScale ) {
 
-		const p = await browser.newPage( { viewport: { width: W * cssScale, height: H * cssScale }, deviceScaleFactor } );
+		session = await launchCapture( { viewport: { width: W * cssScale, height: H * cssScale }, deviceScaleFactor } );
+		const p = session.page;
 		p.on( 'console', ( m ) => { if ( options.verbose || m.type() === 'error' || m.type() === 'warning' ) errors.push( m.type() + ': ' + m.text() ); } );
 		p.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
 		await p.goto( url );
 		await p.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
 		if ( ! ( await p.evaluate( () => typeof window.__PONLAI__.loop.step === 'function' ) ) ) throw new Error( 'this build has no __PONLAI__.loop.step' );
 		await p.evaluate( viewEval( viewName, crops ) );
-		// settle as capture.mjs does: the first 150 frames and the loading screen gone
-		await p.waitForTimeout( 3000 );
-		await p.waitForFunction( () => window.__THREE_GAME_DIAGNOSTICS__?.frame > 150 && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout } );
-		await p.waitForTimeout( 1100 );
+		// ready as capture.mjs is: frames rendered after the eval, the loading screen gone
+		await waitForScene( p, { frames: Number( options[ 'ready-frames' ] ?? 40 ), wait: Number( options.wait ?? 0 ), settle: Number( options.settle ?? 0 ), timeout } );
 		return p;
 
 	}
@@ -363,7 +362,7 @@ try {
 		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),
 		viewport: { width: W * cssScale, height: H * cssScale, deviceScaleFactor: ratio }, gtFallback, downsample: gt ? 2 : 1,
 		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, grain: { was: grain, captured: 0 }, scaleSchedule, frames, every, dense, full: [ ...full ],
-		browser: browser.version(), anchors, boxes, stepped, diagBefore, diagAfter, errors,
+		browser: session.version, slot: session.slot, anchors, boxes, stepped, diagBefore, diagAfter, errors,
 		wallMinutes: ( Date.now() - started ) / 60000, gpuBusyBefore: busy,
 	}, null, 2 ) );
 	console.log( `${ outDir }: ${ boxes.length } frames captured of ${ frames }, ${ tracked.length } crops, pipelines while stepping ${ stepped.pipelines }, ${ ( stepped.wallMs / 1000 ).toFixed( 1 ) } s` );
@@ -379,7 +378,7 @@ try {
 
 } finally {
 
-	await browser.close();
+	await session?.close();
 	releaseGpuLock();
 
 }
