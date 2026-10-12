@@ -28,6 +28,29 @@ Capture a production build (`npm run build`, then `npx vite preview --host 127.0
 Paused captures take the GPU lock shared (`tools/gpu-lock.mjs`): their pixels do not depend on what
 else renders, so they run beside other paused captures and probes, and wait for timing runs.
 
+## Fast mode (tools/capture-browser.mjs)
+
+capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
+
+- Profile slots: each capture runs in a persistent profile, `artifacts/.capture-profiles/<browser
+  build>/<n>` of the main checkout, taking the lowest free slot (a `<n>.lock` directory naming its
+  pid; stale once that process is gone), so `--jobs 4` uses slots 0-3. The world cache
+  (IndexedDB, keyed on the generator's sources and the browser; one entry per preview port) and
+  the GPU shader cache then hit from the second load: the island is not generated again (3 s
+  alone, about a minute under a busy CPU). A hit is byte-identical to a miss. localStorage and
+  sessionStorage are cleared before every page. The browser build is in the path (Playwright's
+  `chromium-<revision>`, or a `CHROME_PATH` browser's `--version`); `PONLAI_CAPTURE_PROFILES`
+  moves the root. The slots are independent of the GPU lock.
+- Readiness: after the view's eval, 40 rendered frames (`--ready-frames n`) and the loading screen
+  gone, instead of the old 7 s + frame > 150 + 1.1 s. 40 frames reproduced the old tool's frames on
+  the views tested; 5 did not.
+  `--wait ms` and `--settle ms` add fixed delays before and after the frame count, for a view that
+  settles later (a bake landing late on a busy GPU). Temporal pages still wait for
+  `diag.taa.converged` after that.
+- The loop stops before the shot (`__PONLAI__.loop.stop()`: no new frames, the GPU queue drained):
+  a headless page queues seconds of frames ahead of the GPU, and a running page's screenshot
+  waits for them. The frame shot is the same; the shot takes about 1 s instead of 4-11 s.
+
 ## Views (views.mjs)
 
 All paused at `t=12`, at the tier's own pixel ratio (no `dpr`): on high, 1728x1117 CSS at DPR 2
@@ -115,13 +138,15 @@ node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b
   captures, so a view's two loads never run side by side. Take an A/A floor with `--jobs 1`:
   concurrent pages may change which views repeat.
 - `--aa` adds `aa=<mode>` only when given. `--q` adds options to every view (e.g. `msaa=1`).
-- `--jobs n` runs n captures at once (2 is fine; each takes about 20-30 s).
+- `--jobs n` runs n captures at once, each in its own profile slot (a paused capture takes about
+  5-7 s alone; captures are GPU-bound: 3 at once gives the most captures per minute, more only adds latency).
 - `--runs` (or `PARITY_RUNS`) appends a line per run to a CSV: date, task, procedure, sha, wall
   minutes, whether the GPU was busy before the run, captures, failures and the set. Without either
   nothing is logged: a procedure that keeps a run log passes one of them on every run.
-- After `--`, options for capture.mjs: `--wait-for "expr"` (polled up to 60 s after the settling
-  wait), `--frames n --every k` (n captures k rendered frames apart: `<view>.png`,
-  `<view>.f1.png` ...).
+- After `--`, options for capture.mjs: `--wait-for "expr"` (polled up to 60 s once the page is
+  ready), `--frames n --every k` (n captures k rendered frames apart: `<view>.png`,
+  `<view>.f1.png` ...; the loop runs between them and stops for each shot), `--ready-frames n`,
+  `--wait ms`, `--settle ms` (fast mode above).
 
 ## diff-set.py
 
