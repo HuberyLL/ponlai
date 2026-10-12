@@ -326,7 +326,10 @@ what these do not give (automation, A/B statistics, pass names).
 - `tools/verify-framegraph.mjs` checks the frame graph's compiler and runtime on the CPU (plain
   `node`); `tools/verify-frame-graph-gpu.mjs` checks three's cache-key patches and the motion
   vectors' blends on the GPU; `tools/verify-first-use.mjs` counts the pipelines any step still
-  creates after the warm-up.
+  creates after the warm-up. It loads in a capture profile slot (as the captures' fast mode does),
+  so the island comes from the world cache; the browser's shader cache in the slot does not change
+  the counts (they are the page's requests to WebGPU, cached or not), and `--fresh` runs in a
+  throwaway profile as before. Its steps' waits are part of what it measures and stay fixed.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and
