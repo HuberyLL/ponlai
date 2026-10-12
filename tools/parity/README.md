@@ -260,6 +260,8 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   baseline/<tier>/clip/<clip>[@<view>]/   complete.json (and .capturing/ while being captured)
   gt/<tier>/..., gt-hi/high/...    the ground truth's entries, the same way
   <label>/...                      a test side's entries (baseline.mjs --label): not references
+  carry/<A>/                       the carry-over checks from commit A: verdict.json, the paused
+                                   set's diff, the spot checks' captures (Carry-over below)
   .replaced/<path with ~>@<time>/  a reference replaced by a fresh capture (safe to delete)
   .<name>.mutex                    beside a reference for a few milliseconds while a process
                                    inspects it and takes its claim
@@ -342,6 +344,53 @@ where the fixed waits left a few views 1-3 levels apart on a few pixels of veget
 sets never do. Still compare with `--aa-floor` (or `--temporal`) on sets captured with `--repeat`:
 a view that differs once is judged against its own A/A. `coverage.views.<view>.identical` records
 each stored A/A.
+
+### Carry-over (carry.mjs)
+
+A new merge-base B whose diff from an earlier commit A cannot have changed A's baseline and ground
+truth takes them over instead of capturing them again (most of a reference round: the gates' clips
+and 64 jittered renders per rest view):
+
+```sh
+node tools/parity/baseline.mjs --url <preview of B> --sha B ... --carry-from A [--carry-url <preview of A>] [--carry-recheck]
+node tools/parity/carry.mjs check --from A --to B [--url <preview of B>] [--carry-url U] [--root DIR]
+    [--tiers high] [--views a,b] [--clips a,b] [--only rest|clips] [--all] [--recheck]
+```
+
+The conditions, cheapest first (a baseline run stops at the first that fails; `check --all`
+evaluates every one and carries nothing):
+
+| condition | how it is ruled out | gates |
+|---|---|---|
+| `sameBuild` | `git diff A B` touches nothing the build reads (`BUILD_INPUTS`): the same build, so everything carries with no further check | all |
+| key | A's entry manifest has exactly the key B asks for: tool hash, browser build, tier, aa, size, query, clip, view, sampling, anchors | each entry |
+| `motionWatch` | the diff touches none of `src/main.ts`, `src/weather/`, `src/characters/`, `src/ocean/`, `src/game/view/`, `package.json`, `package-lock.json` (motion a paused frame cannot show; the stepper) | all |
+| `paused-<tier>` | B's paused set matches A's: `S1` on high (the 17 parity views plus every view an entry is on), `S2/<tier>` below (those views); diff-set `--aa-floor` where both hold repeats, else pixel identity. Captured or extended through the store; A's from `--carry-url` when its store lacks it | all |
+| `spot` | the first 16 frames of `pan-slow` and `islander-walk` under MSAA captured on B with A's anchors, pixel-equal to A's stored baseline entries (a differing clip is captured once more: a whole-frame outlier under a shared GPU does not repeat) | clips |
+| `gtWatch` | the diff touches none of `src/post/` `TemporalAA`, `TemporalRest`, `Jitter`, `Antialiasing`, `Motion`, `Pipeline`, `AfterResolve`, `SceneEvents` (`.ts`), nor the dependencies | aa=gt |
+| `gtSpot` | one rest ground truth (the first of island-fair-noon, meadow-close, meadow-24, flowers-close, rim-sea that A holds) captured on B within the ground truth's noise of A's: per image max 8 levels and at most 0.05 % of pixels over 2 | aa=gt |
+
+GT-HI, the lower tiers' clips and the test labels never carry. The metrics are recomputed by every
+baseline run, so a change to `clip-metrics.py` or the thresholds invalidates no capture.
+
+A carried entry is a real directory at B's path holding clones of A's files (copy-on-write on APFS,
+a plain copy elsewhere; never hard links: a later write would change both) with its own manifest:
+A's key, so later requests on B reuse it, and
+
+```json
+"carriedFrom": { "sha": "<A>", "path": "baseline/high/rest/meadow-close", "origin": "<the commit that captured it>",
+                 "at": "...", "verdict": "<B>/carry/<A>/verdict.json" }
+```
+
+(its round also names `carriedFrom`; `reference.mjs status` shows `carried from`). The checks'
+captures, diffs and the verdict stay under `<root>/<B>/carry/<A>/`; the spot checks' results are
+reused by later runs with the same inputs (the clip tools, the browser, A's entries' last capture).
+An entry that may not carry is captured as without the option, and the log names the condition
+that failed (`baseline high/clip/pan-slow: not carried (spot: ...)`).
+
+What the rule cannot see: a change that alters motion only, outside the watch list, in a view or
+clip the spot check does not cover; a temporal-only change visible in the ground truth of views
+other than the one spot-checked; and the lower tiers' ground truth (checked on high only).
 
 ## Clips (clips.mjs, capture-clip.mjs, clip-metrics.py)
 

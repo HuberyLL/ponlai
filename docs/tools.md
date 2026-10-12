@@ -193,6 +193,13 @@ otherwise capture it and say why (missing, tools or browser
 changed, a capture left unfinished). `capture-set.mjs <testUrl> <testDir> --check
 <root>/<sha>/<set> [--ref-url U]` captures only the test side and diffs it against the stored
 reference. Layout, manifest and rules: the README's Reference store.
+`baseline.mjs ... --carry-from A` takes the baseline's and the ground truth's entries over from an
+earlier commit A instead of capturing them, when `tools/parity/carry.mjs` finds nothing between the
+two that could change them (same build inputs; otherwise the diff against two watch lists, the
+paused set S1 matching A's, the first 16 frames of two clips and one rest ground truth captured
+again and compared); an entry that may not carry is captured and the log says why.
+`node tools/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
+Rules and proof: the README's Carry-over.
 
 ## GPU lock
 
