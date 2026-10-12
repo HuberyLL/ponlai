@@ -289,15 +289,19 @@ try {
 		const t0 = performance.now();
 		const before = s.pipelines?.total ?? null;
 		const captured = ( i ) => i % every === 0 || fullFrames.includes( i ) || dense.some( ( [ a, b ] ) => i >= a && i <= b );
+		// the clip's lead frames step before its frame 0, at frame 0's pose and scale, uncaptured
+		// (clips.mjs); the frames are numbered from the clip's frame 0
+		const lead = clip.lead ?? 0;
 		const result = await s.loop.step( {
-			frames: clip.frames, dt: clip.dt, clock: clip.clock, camera: clip.camera,
-			...( clip.scale ? { scale: clip.scale } : {} ),
+			frames: lead + clip.frames, dt: clip.dt, clock: clip.clock, camera: ( k ) => clip.camera( Math.max( k - lead, 0 ) ),
+			...( clip.scale ? { scale: [ ...Array( lead ).fill( clip.scale[ 0 ] ), ...clip.scale ] } : {} ),
 			// the ground truth: each captured frame held still until the rest has converged on it; a
 			// clip of one frame is a rest image, so the other temporal modes wait for their rest too
-			...( gtRest || ( s.taa && clip.frames <= 1 ) ? { converge: captured } : {} ),
-			onFrame: async ( i ) => {
+			...( gtRest || ( s.taa && clip.frames <= 1 ) ? { converge: ( k ) => k >= lead && captured( k - lead ) } : {} ),
+			onFrame: async ( k ) => {
 
-				if ( ! captured( i ) ) return;
+				const i = k - lead;
+				if ( i < 0 || ! captured( i ) ) return;
 				s.camera.updateMatrixWorld();
 				const out = {};
 				for ( const t of tracked ) {
