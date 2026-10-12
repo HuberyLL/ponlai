@@ -808,8 +808,9 @@ export class Pipeline {
 
 			}
 			// (the plain bilinear blur keeps the half-res pass in the graph; it only shows where
-			// every weight vanished, which they cannot)
-			const blurred = select( wsum.greaterThan( 0 ), acc.div( max( wsum, 1e-6 ) ), ( q ? tBlur.sample( q ) : tBlur ).rgb );
+			// every weight vanished, which they cannot. The select compiles to a per-pixel branch, where
+			// an implicit-lod sample is undefined: level 0, the blur target's only level, is the same.)
+			const blurred = select( wsum.greaterThan( 0 ), acc.div( max( wsum, 1e-6 ) ), ( q ? tBlur.sample( q ) : tBlur ).level( float( 0 ) ).rgb );
 			return mix( ( q ? tSharp.sample( q ) : tSharp ).rgb, blurred, smoothstep( 0, 0.35, c ).mul( u.dof ) );
 
 		} )();
