@@ -21,11 +21,12 @@
 //   (the remembered quality tier, a saved game) are cleared before every page's scripts run.
 //
 // Readiness by stability. A paused page is ready when its image stops changing, however many
-// frames that takes: after the evals, `min` frames (10) and the loading screen gone (waitForScene),
-// the capture stops the loop, grabs the image, and then repeatedly runs `every` frames (2), stops
-// and grabs again (waitForStable). It shoots once `repeats` comparisons (2) in a row found the image
-// unchanged, on the frame grabbed last ("exact"). A paused page still differs from frame to frame
-// on a few views (single frames that leave the settled image and come back to it, from a few
+// frames that takes: after the evals, `min` frames (none by default) and the loading screen gone
+// (waitForScene), the capture stops the loop, grabs the image, and then repeatedly runs `every`
+// frames (2), stops and grabs again (waitForStable). It shoots once `repeats` comparisons (1) in a
+// row found the image unchanged, on the frame grabbed last ("exact"); a temporal page asks for 2
+// (STABLE_TEMPORAL). A paused page still differs from frame to frame on a few views (single
+// frames that leave the settled image and come back to it, from a few
 // pixels to 0.9 M; task D3 looks for the source), so after `patience` frames (40) a comparison
 // within the tolerance also counts ("tolerance": at most 5000 pixels differ at all); a page still
 // changing after `cap` frames (120) is shot anyway and marked "capped". The capture's JSON keeps
@@ -36,12 +37,19 @@
 //   not levels: a settling flowers-close differed by 1 level over 5.1 M pixels. The smallest
 //   settling step seen was 45 k pixels, the noise between consecutive frames 1 pixel to 0.9 M, so
 //   5000 accepts much of the noise and no settling step.
+// - The defaults (floor 0, every 2, one comparison) come from the offline replay over those traces
+//   (floors 0-10 x every 1-4, one comparison, task S2): one equal pair already means the settled
+//   image, so no floor is needed: every row shot 0 loads early, and floor 0 with every 2 put 48/48
+//   on the settled frame (47 exact, 1 tolerance), mean 8.6 frames, about 2.5 s of grabbing (a
+//   floor of 1-3 frames was as clean and up to 0.4 s cheaper: early grabs of a settling page differ
+//   and cost a decode).
 // - Measured: traces of the 24 parity views, two loads
 //   each, every frame grabbed for 150 frames, showed every page on its settled image within 1-11
 //   frames and changing afterwards only by the single-frame noise. On the GPU, two sets of the 24
-//   views with --repeat (96 loads) were all shot exact, 4-32 frames after the floor (median 4,
-//   about 1.4 s of grabbing), every one on the frame most loads of the earlier tools agreed on: no
-//   A/A difference, where the fixed waits left 15-17 % of loads off it.
+//   views with --repeat (96 loads, then with floor 10 and two comparisons) were all shot exact, 4-32
+//   frames after the floor (median 4, about 1.4 s of grabbing), every one on the frame most loads
+//   of the earlier tools agreed on: no A/A difference, where the fixed waits left 15-17 % of loads
+//   off it.
 // - The grab is the compositor's image through CDP (`Page.captureScreenshot`, PNG optimised for
 //   speed, at the page's pixel ratio): about 0.27 s at 3456x2234, its pixels equal to Playwright's
 //   screenshot's (which spends 1.3 s on its PNG), and taking it does not change the next shot.
@@ -54,7 +62,8 @@
 //   are between converged rests: the loop's start restarts the rest, so each grab waits for it to
 //   converge again (about 40 frames for taa and taau). Two rests of a settled page are often equal
 //   and otherwise differ by a few pixels (3 views, 2 loads each: 0-52 pixels, once 37 k), so the
-//   tolerance counts at once and the cap is 400 frames, about 10 rests (STABLE_TEMPORAL), a
+//   tolerance counts at once, two comparisons in a row are asked for (the temporal settings are
+//   reviewed separately) and the cap is 400 frames, about 10 rests (STABLE_TEMPORAL), a
 //   temporal capture's stability taking 3-13 s. capture.mjs waits for the first rest itself (after
 //   restarting it for the evals); otherwise the first grab waits for one.
 // - A running (not paused) capture, or one given --ready-frames n, waits for that fixed count of
@@ -84,11 +93,11 @@ export const READY_FRAMES = 60;
 /** Readiness by stability's defaults (see the header): the floor before the first grab, frames
  * between grabs, comparisons in a row, the tolerance ({ level, pixels } or null), the frames before
  * the tolerance is accepted, the cap. */
-export const STABLE = { min: 10, every: 2, repeats: 2, tolerance: { level: 0, pixels: 5000 }, patience: 40, cap: 120 };
-/** A temporal page's own patience and cap (each comparison also waits for its rest to converge
- * again, about 40 frames for taa/taau): its rests are never byte-repeatable, so the tolerance
- * counts at once, and the cap allows about 10 rests. */
-export const STABLE_TEMPORAL = { patience: 0, cap: 400 };
+export const STABLE = { min: 0, every: 2, repeats: 1, tolerance: { level: 0, pixels: 5000 }, patience: 40, cap: 120 };
+/** A temporal page's own comparisons in a row, patience and cap (each comparison also waits for its
+ * rest to converge again, about 40 frames for taa/taau): its rests are never byte-repeatable, so
+ * the tolerance counts at once, and the cap allows about 10 rests. */
+export const STABLE_TEMPORAL = { repeats: 2, patience: 0, cap: 400 };
 
 export const LAUNCH_ARGS = [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--disable-gpu-vsync', '--disable-frame-rate-limit' ];
 
@@ -282,8 +291,9 @@ export function stableOptions( opt ) {
 
 	};
 	return {
-		min: num( 'stable-min', STABLE.min ), every: Math.max( 1, num( 'stable-every', STABLE.every ) ), repeats: Math.max( 1, num( 'stable-repeats', STABLE.repeats ) ),
-		// (patience and cap left undefined when not given: a temporal page has its own defaults)
+		min: num( 'stable-min', STABLE.min ), every: Math.max( 1, num( 'stable-every', STABLE.every ) ),
+		// (repeats, patience and cap left undefined when not given: a temporal page has its own defaults)
+		repeats: opt( 'stable-repeats' ) === undefined ? undefined : Math.max( 1, num( 'stable-repeats' ) ),
 		tolerance: parseTolerance( opt( 'stable-tolerance' ) ), patience: num( 'stable-patience', undefined ), cap: num( 'stable-cap', undefined ),
 		trace: opt( 'stable-trace' ) !== undefined,
 	};
@@ -365,7 +375,7 @@ export function compareFrames( a, b, level = 0 ) {
  * the record a capture's JSON keeps; the loop is stopped on return, on the frame compared last.
  * Call it once the page is up (waitForScene with the floor's frames) and, in the temporal modes,
  * once its rest has converged. */
-export async function waitForStable( page, { every = STABLE.every, repeats = STABLE.repeats, tolerance = STABLE.tolerance, patience, cap,
+export async function waitForStable( page, { every = STABLE.every, repeats, tolerance = STABLE.tolerance, patience, cap,
 	trace = false, timeout = 60000 } = {} ) {
 
 	// a paused page of the temporal modes shows its rest image: compare converged rests
@@ -375,6 +385,7 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 		return !! ( t && t.restTarget > 0 && window.__PONLAI__.taa );
 
 	} );
+	repeats ??= temporal ? STABLE_TEMPORAL.repeats : STABLE.repeats;
 	patience ??= temporal ? STABLE_TEMPORAL.patience : STABLE.patience;
 	cap ??= temporal ? STABLE_TEMPORAL.cap : STABLE.cap;
 	const cdp = await page.context().newCDPSession( page );

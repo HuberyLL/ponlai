@@ -1,7 +1,7 @@
 // Full-resolution captures of the running dev server (or a preview build) for visual review.
 //   node tools/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval "js"] [--verbose] [--exclusive]
 //                          [--wait-for "js expression"] [--frames n --every k] [--timeout 60000]
-//                          [--stable-min 10] [--stable-every 2] [--stable-repeats 2] [--stable-tolerance 0:5000|exact]
+//                          [--stable-min 0] [--stable-every 2] [--stable-repeats 1] [--stable-tolerance 0:5000|exact]
 //                          [--stable-patience 40] [--stable-cap 120] [--stable-trace] [--ready-frames n] [--wait ms] [--settle ms]
 // Writes artifacts/captures/<name>.png and prints the page's console errors and diagnostics.
 // The browser runs in a persistent profile slot and a paused capture is taken once its image has

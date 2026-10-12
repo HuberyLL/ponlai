@@ -153,11 +153,12 @@ Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser
 persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
 (one browser per slot, each with its own lock; `PONLAI_CAPTURE_PROFILES` moves them; safe to
 delete), so the world cache and the GPU shader cache hit from the second capture on. A paused
-capture is shot once its image stops changing: grabbed every 2 frames after the evals and a floor
-of 10, shot when 2 comparisons in a row found no pixel changed (after 40 frames, at most 5000
+capture is shot once its image stops changing: grabbed every 2 frames after the evals (no floor
+by default), shot when a comparison found no pixel changed (after 40 frames, at most 5000
 changed pixels count as unchanged; after 120 the view is shot anyway, marked `capped`; a temporal
-page compares converged rests, with the tolerance at once and a cap of 400 frames); the
-capture's JSON records it as `ready` (`--stable-*` options in `tools/capture.mjs`, the rule and its
+page compares converged rests, two in a row, with the tolerance at once and a cap of 400 frames).
+Replayed over per-frame traces of the 24 parity views, these defaults shot no load early and every
+one on its settled frame. The capture's JSON records it as `ready` (`--stable-*` options in `tools/capture.mjs`, the rule and its
 evidence in `tools/capture-browser.mjs`). `--ready-frames n` waits for a fixed count instead, as a
 running capture does (60); `--wait` / `--settle` ms add fixed delays. The frame loop is stopped
 and the GPU queue drained before the shot. A paused capture takes about 5-7 s alone.
