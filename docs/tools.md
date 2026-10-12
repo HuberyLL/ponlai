@@ -180,6 +180,15 @@ twice high's nominal ratio, downsampled) with gates from a thresholds file
 README). clip-metrics.py measures the
 frames in worker processes: `--workers N` or `CLIP_METRICS_WORKERS`, by default a quarter of the
 CPUs within 1 to 4; the output does not depend on the count.
+References are stored per commit and shared (`tools/parity/reference.mjs`): `capture-set.mjs
+--reference <root>/<sha>/<set>` and the baseline's and ground truth's entries of
+`tools/parity/baseline.mjs` reuse a stored reference whose manifest (`complete.json`, written
+last) matches the capture tools' version, the browser build and the options, wait for another live
+process that is capturing it (freeing the GPU slot of a `run --shared` wrapper meanwhile), and
+otherwise capture it and say why (missing, tools or browser
+changed, a capture left unfinished). `capture-set.mjs <testUrl> <testDir> --check
+<root>/<sha>/<set> [--ref-url U]` captures only the test side and diffs it against the stored
+reference. Layout, manifest and rules: the README's Reference store.
 
 ## GPU lock
 

@@ -59,7 +59,9 @@
 // orchestrator from then on and holds nothing, and its other children queue like anyone else. So
 // an orchestrator never holds a slot its children wait for (with 3 slots, three wrapped sets would
 // otherwise hold all three while their captures wait), and an exclusive waiter gets in between the
-// captures of a set rather than after the whole set. PONLAI_GPU_LOCK_DIR moves the lock.
+// captures of a set rather than after the whole set. A descendant about to wait for something else
+// (yieldAncestorSlot: a reference another process is capturing) frees that slot the same way.
+// PONLAI_GPU_LOCK_DIR moves the lock.
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
@@ -621,6 +623,24 @@ export async function withGpuLock( label, fn, options = {} ) {
 		else depth = Math.max( depth - 1, 0 );
 
 	}
+
+}
+
+/** Frees the shared slot that a `run --shared` above this process still holds, when this process
+ * is about to wait for something other than the GPU (a reference another process is capturing:
+ * tools/parity/reference.mjs). The slot is taken over and left at once, so the orchestrators above
+ * hold nothing; the captures this process starts later queue like anyone else's. Returns whether
+ * a slot was freed (false: no shared holder above, or its slot already taken over). */
+export async function yieldAncestorSlot( label = path.basename( process.argv[ 1 ] ?? 'node' ) ) {
+
+	if ( depth > 0 ) return false;
+	const ancestor = holdingAncestor();
+	if ( ancestor?.mode !== 'shared' ) return false;
+	if ( ! await withMutex( () => takeOverSlot( ancestor, label ) ) ) return false;
+	heldMode = 'shared';
+	depth = 1;
+	releaseGpuLock();
+	return true;
 
 }
 
