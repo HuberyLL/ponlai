@@ -1,7 +1,9 @@
 // The page: renderer, camera, sun, GUI, frame loop and diagnostics. On the dev server and with
 // ?debug (or ?profile) it hands the scene to the capture and profiling tools as
 // `window.__PONLAI__`; among its handles `establishScene( query )` jumps to a whole scene as a fresh
-// load of `?<query>` draws it (its contract is written where it is defined, after the frame loop),
+// load of `?<query>` draws it (its contract is written where it is defined, after the frame loop;
+// `sceneJump`, the contract's version, tells a capture tool that this page has it: builds without
+// it have only the options form, so the tools load a page per view there),
 // `loop.stop()` / `loop.start()` hold and resume the frame loop and `loop.step` steps the tick with
 // fixed timestamps.
 import * as THREE from 'three/webgpu';
@@ -1404,6 +1406,9 @@ const setTime = ( t: number ) => {
 // clock.)
 // The options form `{ weather?, preset?, hour?, time? }` (tools/profile-frame.mjs) sets what it
 // names, keeps the rest and the camera, and clears the leftovers all the same.
+// `__PONLAI__.sceneJump` (1) marks a page that keeps this contract: tools/parity/capture-set.mjs
+// captures a set in one page only where it is set (older builds' establishScene takes only the
+// options form and leaves state behind). Raise it if the contract changes in a way callers see.
 const SCENE_OPTIONS = [ 'weather', 'preset', 'hour', 'moon', 't', 'dist', 'polar', 'az', 'camera', 'clouds', 'dayLength', 'paused', 'clock' ];
 const establishScene = async ( scene: string | URLSearchParams | { weather?: WeatherName; preset?: DayPreset; hour?: number; time?: number } ): Promise<void> => {
 
@@ -1679,7 +1684,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),
 	// the temporal resolve (TemporalAA.ts, TemporalRest.ts): its live settings and knobs, the rest, the
 	// epoch, and `restart()`, which starts the history and the rest over (a cut and an epoch bump)
