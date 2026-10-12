@@ -908,6 +908,9 @@ export function renderScaleKey( renderer: THREE.WebGPURenderer, tier: string, aa
 
 // ------------------------------------------------------------------ which passes follow the pixels
 
+// the passes whose class is kept until their timestamps are read (several seconds of frames)
+const PASSES_KEPT = 1 << 16;
+
 /** Sorts the renderer's passes, as they begin, into those whose cost follows the render's pixel
  * count and the rest. Inside a frame graph pass, a render into a target of the pass's own size class
  * takes the graph's word (`currentPass.scales`: a render-class pass follows it; a canvas-class one,
@@ -972,8 +975,11 @@ export class PassScaling {
 	private note( uid: string, pixel: boolean ): void {
 
 		this.pixel.set( uid, pixel );
-		// uids whose timestamps never arrive (lost read-backs) must not pile up
-		if ( this.pixel.size > 4096 ) this.pixel.delete( this.pixel.keys().next().value! );
+		// Uids whose timestamps never arrive (lost read-backs) must not pile up, but the ones still
+		// to be read must stay: a frame has about a hundred passes and computes (the sky's bake
+		// slices among them), and the frame profiler's read-backs ran about forty frames behind under
+		// load, so 4096 entries were evicted before they were read (every pass then counted as fixed)
+		if ( this.pixel.size > PASSES_KEPT ) this.pixel.delete( this.pixel.keys().next().value! );
 
 	}
 
