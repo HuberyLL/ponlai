@@ -172,6 +172,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   depth, a render context shared by targets of the same attachments): compile ahead through the
   frame graph's warm-up, a draw that shows only at times registered as a latent of its pass
   (`FrameGraph.ts`, `graph/Compile.ts`; a shadow map's draws with `compileLatentInto`).
+- A fragmentNode that writes several attachments must be the `outputStruct( ... )` itself: one
+  returned from inside an `Fn` is emitted with a single output (`struct member m0 not found`).
+  Build the members in one `Fn` and return them as a matrix's columns (`TemporalAA.ts`
+  `neighbourhood`).
 - Under the temporal modes every scene material writes the velocity beside the colour: one with
   a fragmentNode writes both outputs, one whose positionNode animates supplies `positionPrevious`
   (`Motion.ts`). A new site that changes the scene in a way its frames do not show (a seek, a jump,
