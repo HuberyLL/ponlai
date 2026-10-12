@@ -6,14 +6,15 @@
 //   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
 //       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"]
 //       [--quality high] [--size 1728x1117@2] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
-//       [--task name] [--anchors-from clip.json] [--ready-frames 60] [--wait ms] [--settle ms] [--verbose]
+//       [--task name] [--anchors-from clip.json] [--stable-* (capture.mjs)] [--ready-frames n] [--wait ms] [--settle ms] [--verbose]
 //
 // The page loads `U?debug&paused&t=12&quality=<q>&aa=<mode>[&<extra>]&<view's query>[&<clip's
 // query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it) in a
 // persistent profile slot, runs the view's eval (the crop anchors' setup included), waits for the
-// scene as capture.mjs does (tools/capture-browser.mjs: --ready-frames rendered frames after the
-// eval and the loading screen gone, with --wait / --settle ms of fixed delay around them when
-// given; the stepper then stops the loop and drains the GPU queue), runs the clip's eval, reads the crop anchors once at the base pose and then steps the clip. After each frame
+// scene as capture.mjs does (tools/capture-browser.mjs: the image stopped changing, with the same
+// --stable-* options, or --ready-frames' fixed count; --wait / --settle ms of fixed delay around the
+// floor when given; the readiness record goes into clip.json as `ready`; the loop is left stopped,
+// as the stepper wants it), runs the clip's eval, reads the crop anchors once at the base pose and then steps the clip. After each frame
 // (every k-th with --every, and every frame of the --dense runs; frame 0 always) each anchor's world point is projected with that
 // frame's camera into a box of 192 CSS px (384 device px at a pixel ratio of 2, clamped into the
 // frame) and captured; an anchor behind the camera that frame is skipped. --full lists frames also
@@ -69,11 +70,11 @@ import { fileURLToPath } from 'node:url';
 import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from './gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { CLIPS, clipEval } from './parity/clips.mjs';
-import { launchCapture, waitForScene, READY_FRAMES } from './capture-browser.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng } from './capture-browser.mjs';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const args = process.argv.slice( 2 );
-const FLAGS = new Set( [ 'verbose' ] );
+const FLAGS = new Set( [ 'verbose', 'stable-trace' ] );
 const options = {}, positional = [];
 for ( let i = 0; i < args.length; i ++ ) {
 
@@ -85,7 +86,8 @@ for ( let i = 0; i < args.length; i ++ ) {
 	} else positional.push( args[ i ] );
 
 }
-const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters', 'ready-frames', 'wait', 'settle' ];
+const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters', 'ready-frames', 'wait', 'settle',
+	'stable-min', 'stable-every', 'stable-repeats', 'stable-tolerance', 'stable-patience', 'stable-cap', 'stable-trace' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! KNOWN.includes( k ) );
 const clip = CLIPS[ options.clip ];
 if ( positional.length !== 1 || unknown.length || ! options.url || ! clip ) {
@@ -125,50 +127,6 @@ const outDir = path.resolve( options.out ?? path.join( REPO, 'artifacts/clips', 
 const BOX = 192;
 
 // ------------------------------------------------------------------ PNG (8-bit, non-interlaced)
-
-function decodePng( buffer ) {
-
-	let pos = 8, width = 0, height = 0, colorType = 0, depth = 0;
-	const idat = [];
-	while ( pos < buffer.length ) {
-
-		const length = buffer.readUInt32BE( pos ), type = buffer.toString( 'latin1', pos + 4, pos + 8 );
-		const data = buffer.subarray( pos + 8, pos + 8 + length );
-		if ( type === 'IHDR' ) {
-
-			width = data.readUInt32BE( 0 ); height = data.readUInt32BE( 4 ); depth = data[ 8 ]; colorType = data[ 9 ];
-			if ( depth !== 8 || data[ 12 ] !== 0 || ( colorType !== 2 && colorType !== 6 ) ) throw new Error( `unsupported PNG (depth ${ depth }, colour type ${ colorType }, interlace ${ data[ 12 ] })` );
-
-		} else if ( type === 'IDAT' ) idat.push( data );
-		else if ( type === 'IEND' ) break;
-		pos += 12 + length;
-
-	}
-	const channels = colorType === 6 ? 4 : 3, stride = width * channels;
-	const raw = zlib.inflateSync( Buffer.concat( idat ) );
-	const out = new Uint8Array( width * height * 3 );
-	const prev = new Uint8Array( stride ), line = new Uint8Array( stride );
-	for ( let y = 0; y < height; y ++ ) {
-
-		const filter = raw[ y * ( stride + 1 ) ], src = raw.subarray( y * ( stride + 1 ) + 1, ( y + 1 ) * ( stride + 1 ) );
-		for ( let x = 0; x < stride; x ++ ) {
-
-			const a = x >= channels ? line[ x - channels ] : 0, b = prev[ x ], c = x >= channels ? prev[ x - channels ] : 0;
-			let v = src[ x ];
-			if ( filter === 1 ) v += a;
-			else if ( filter === 2 ) v += b;
-			else if ( filter === 3 ) v += ( a + b ) >> 1;
-			else if ( filter === 4 ) { const p = a + b - c, pa = Math.abs( p - a ), pb = Math.abs( p - b ), pc = Math.abs( p - c ); v += pa <= pb && pa <= pc ? a : pb <= pc ? b : c; }
-			line[ x ] = v & 255;
-
-		}
-		for ( let x = 0; x < width; x ++ ) for ( let k = 0; k < 3; k ++ ) out[ ( y * width + x ) * 3 + k ] = line[ x * channels + k ];
-		prev.set( line );
-
-	}
-	return { width, height, data: out };
-
-}
 
 const CRC = new Int32Array( 256 ).map( ( _, n ) => { let c = n; for ( let k = 0; k < 8; k ++ ) c = c & 1 ? 0xedb88320 ^ ( c >>> 1 ) : c >>> 1; return c; } );
 const crc32 = ( buf ) => { let c = - 1; for ( const b of buf ) c = CRC[ ( c ^ b ) & 255 ] ^ ( c >>> 8 ); return ( c ^ - 1 ) >>> 0; };
@@ -213,6 +171,7 @@ query += `&${ view.q }`;
 if ( clip.q ) query += `&${ clip.q }`;
 let base = options.url;
 if ( ! base.endsWith( '/' ) && ! base.includes( '?' ) ) base += '/';
+const stable = stableOptions( ( k ) => options[ k ] === true ? '' : options[ k ] );
 const url = `${ base }?${ query }`;
 
 await mkdir( outDir, { recursive: true } );
@@ -220,7 +179,7 @@ const busy = await gpuUtilisation();
 const started = Date.now();
 await acquireGpuLock( `capture-clip ${ name }`, { shared: true } );
 // the browser in its profile slot (one page; gt-hi's fallback relaunches it at another ratio)
-let session = null;
+let session = null, ready = null;
 const errors = [];
 let exitCode = 0;
 try {
@@ -255,8 +214,12 @@ try {
 		await p.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
 		if ( ! ( await p.evaluate( () => typeof window.__PONLAI__.loop.step === 'function' ) ) ) throw new Error( 'this build has no __PONLAI__.loop.step' );
 		await p.evaluate( viewEval( viewName, crops ) );
-		// ready as capture.mjs is: frames rendered after the eval, the loading screen gone
-		await waitForScene( p, { frames: Number( options[ 'ready-frames' ] ?? READY_FRAMES ), wait: Number( options.wait ?? 0 ), settle: Number( options.settle ?? 0 ), timeout } );
+		// ready as capture.mjs is: the image stopped changing after the floor's frames and the loading
+		// screen gone (or --ready-frames' fixed count)
+		const fixed = options[ 'ready-frames' ] !== undefined ? Number( options[ 'ready-frames' ] ) : null;
+		await waitForScene( p, { frames: fixed ?? stable.min, wait: Number( options.wait ?? 0 ), settle: Number( options.settle ?? 0 ), timeout } );
+		ready = fixed === null ? await waitForStable( p, { ...stable, timeout } ) : { rule: 'frames', frames: fixed };
+		if ( ready.status === 'capped' ) console.log( `unstable: still changing after ${ ready.framesWaited } frames (max ${ ready.maxSeen } levels), stepped at the cap` );
 		return p;
 
 	}
@@ -362,7 +325,7 @@ try {
 		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),
 		viewport: { width: W * cssScale, height: H * cssScale, deviceScaleFactor: ratio }, gtFallback, downsample: gt ? 2 : 1,
 		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, grain: { was: grain, captured: 0 }, scaleSchedule, frames, every, dense, full: [ ...full ],
-		browser: session.version, slot: session.slot, anchors, boxes, stepped, diagBefore, diagAfter, errors,
+		browser: session.version, slot: session.slot, ready, anchors, boxes, stepped, diagBefore, diagAfter, errors,
 		wallMinutes: ( Date.now() - started ) / 60000, gpuBusyBefore: busy,
 	}, null, 2 ) );
 	console.log( `${ outDir }: ${ boxes.length } frames captured of ${ frames }, ${ tracked.length } crops, pipelines while stepping ${ stepped.pipelines }, ${ ( stepped.wallMs / 1000 ).toFixed( 1 ) } s` );
