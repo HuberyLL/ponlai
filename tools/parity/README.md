@@ -245,7 +245,7 @@ node tools/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|
     [--view v] [--frames n] [--every k] [--crops a,b] [--full 0,30] [--q "extra"] [--gt-jitters n]
     [--anchors-from clip.json] [--out dir] [--runs runs.csv]
 uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py \
-    --test DIR --msaa DIR --gt DIR [--thresholds t.json] [--baseline metrics.json]
+    --test DIR --msaa DIR --gt DIR [--thresholds t.json] [--baseline metrics.json] [--workers N]
 ```
 
 - The page is stepped by `__PONLAI__.loop.step` (src/main.ts, debug builds only): the live loop
@@ -288,7 +288,9 @@ uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py 
   measured here, or an earlier metrics.json): ratios with an absolute floor for magnitudes (a
   paused clip's MSAA flicker is exactly 0), differences for the signed fringe, the lag and the
   edge width (`edgeWgt`, against the wider of MSAA's and the GT's edge). Whole frames (`full/`)
-  are measured only when `--crops` names them.
+  are measured only when `--crops` names them. The frames are measured in worker processes
+  (`--workers N`, `CLIP_METRICS_WORKERS`, by default a quarter of the CPUs within 1 to 4; results
+  identical whatever the count): baseline.mjs runs several metric runs at once on top of that.
 - Repeatability: pan-slow on meadow-close repeats byte for byte between fresh loads. Vegetation
   crops elsewhere can differ in single frames: with the vegetation depth prepass on, a few samples
   pass its equal depth test differently from frame to frame (blobs of a few to 150 px on leaves
