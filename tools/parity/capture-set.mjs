@@ -18,7 +18,9 @@
 //   mode's view (aa=taa|taau, and the ground truth aa=gt: 64 jitters at the canvas's resolution) is
 //   captured once its paused rest has converged (capture.mjs waits for `diag.taa.converged`). Keep a
 //   ground-truth set per merge-base, shared by every task on it: `<parity root>/<sha>/gt/`.
-// --jobs runs that many captures at once (default 1; 2 is fine; keep it modest). --retries (default
+// --jobs runs that many captures at once (default 1), each in its own profile slot
+//   (tools/capture-browser.mjs); captures are GPU-bound: 3 at once is the most
+//   throughput, more only adds latency. --retries (default
 //   1) captures a view again from a fresh page when capture.mjs fails (a load that timed out while
 //   other pages kept the GPU busy); the log keeps the last attempt. --timeout (ms, default 240000)
 //   bounds capture.mjs's waits for the page.

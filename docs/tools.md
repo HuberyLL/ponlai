@@ -149,6 +149,14 @@ Game:
 (git-ignored) and prints frame diagnostics. It needs Playwright's Chromium once
 (`npx playwright install chromium`), or `CHROME_PATH` set to a WebGPU-capable Chrome.
 
+Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser runs in a
+persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
+(one browser per slot, each with its own lock; `PONLAI_CAPTURE_PROFILES` moves them; safe to
+delete), so the world cache and the GPU shader cache hit from the second capture on; the shot is
+taken 40 rendered frames after the evals (`--ready-frames n`; `--wait` / `--settle` ms add fixed
+delays for a view that needs longer), with the frame loop stopped and the GPU queue drained first.
+A paused capture takes about 5-7 s alone.
+
 Check visual changes with captures, compared against the previous capture (and crops, not only
 the whole frame); report measured differences. `tools/compare-captures.py` measures two overview
 captures (needs Pillow and NumPy).
