@@ -145,7 +145,14 @@ the boxes placed before it.
 node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
     [--quality high] [--aa mode] [--q "extra&query"] [--jobs 1] [--retries 1] [--size 1728x1117@2]
     [--runs runs.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
+node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
+node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url <refUrl>]
+    [--diff "diff-set.py options"] [--recapture-reference] [same options]
 ```
+
+- `--reference` and `--check` use the reference store (Reference store below): a check captures
+  the test side only and diffs it against the stored reference of the base commit, which it
+  reuses, waits for, or (with `--ref-url`) captures.
 
 - Each view loads `?debug&paused&t=12&quality=<tier>[&aa=<mode>][&<extra>]&<view query>` and is
   written as `<view>.png`, `<view>.json` (diagnostics, crop anchors) and `<view>.log`.
@@ -224,15 +231,106 @@ flower or the islander's head), each by 3.9 times the tolerance or more. `--flip
 NVIDIA FLIP of each frame (`--with flip-evaluator`), reported only: a frame's mean hides a missing
 flower entirely. Crops come from `--crops-from`, else from the test side's JSON.
 
-## Reference sets
+## Reference store (reference.mjs)
 
-Keep references per merge-base, captured from a detached worktree of that commit:
-`<root>/<sha>/S1` (the 17 views with `--repeat`), `S2` (`--quality medium|low` on six views),
-`S3` (single-sampled, `dpr=1`, the vegetation prepass off and the `post=` switches), with
-`aa-floor.md` listing each view's repeatability. A few views do not repeat byte for byte between
-two page loads (1-3 levels on a few pixels of vegetation, rarely more), and which views they are
-changes from run to run: compare with `--aa-floor` on sets captured with `--repeat`, and treat a
-byte-identical result on a view as luck, not a property of the view, unless it holds across runs.
+References are kept per commit and shared by every task and process that checks against it, so a
+reference is captured once per commit, capture-tool version and browser build. `capture-set.mjs
+--reference` / `--check` keep capture sets there, `baseline.mjs` its `baseline` and ground-truth
+entries. A task that runs the usual command gets reuse and waiting by itself.
+
+### Layout
+
+```
+<root>/<sha>/                      the full sha (a short one in a path is rewritten to it)
+  S1/                              a capture set: <view>.png, <view>.repeat.png, .json, .log
+    complete.json                  its manifest, written last
+    .capturing/owner.json          while a process captures or extends it
+  S2/medium/, S2/low/, S3/msaa1/   further sets, each with its own manifest
+  FAST3/                           created only when no other set of the commit covers it
+  baseline/<tier>/rest/<view>/     baseline.mjs entries (capture-clip folders), each with its own
+  baseline/<tier>/clip/<clip>[@<view>]/   complete.json (and .capturing/ while being captured)
+  gt/<tier>/..., gt-hi/high/...    the ground truth's entries, the same way
+  <label>/...                      a test side's entries (baseline.mjs --label): not references
+  .replaced/<path with ~>@<time>/  a reference replaced by a fresh capture (safe to delete)
+  .<name>.mutex                    beside a reference for a few milliseconds while a process
+                                   inspects it and takes its claim
+```
+
+### The manifest (`complete.json`)
+
+```json
+{
+  "format": 1, "kind": "set" | "clip", "sha": "<40 hex>", "path": "S1",
+  "key": { "kind": "set", "tool": "<16 hex>", "browser": { "executable": "playwright chromium", "version": "153.0.8010.12" },
+           "quality": "high", "aa": null, "q": null, "size": "1728x1117@2", "capture": [] },
+  "toolFiles": { "capture.mjs": "<12 hex>", "capture-browser.mjs": "...", "parity/capture-set.mjs": "...", "parity/views.mjs": "..." },
+  "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true } } },
+  "url": "<the preview it was captured from>",
+  "rounds": [ { "pid": 0, "label": "...", "started": "...", "finished": "...", "minutes": 2.1,
+                "captured": "3 views + 3 repeats", "reason": "no reference yet", "failed": 0 } ]
+}
+```
+
+- `key`: what the pixels depend on. `tool` hashes the capture tools' sources: for sets
+  `capture.mjs`, `capture-browser.mjs`, `parity/capture-set.mjs`, `parity/views.mjs`; for clip
+  entries `capture-clip.mjs`, `capture-browser.mjs`, `parity/views.mjs`, `parity/clips.mjs`
+  (`TOOL_FILES` in reference.mjs: every file of that kind's capture path, the shared browser,
+  readiness and grab included; a change to the clip tools leaves sets valid and the other way
+  round); `toolFiles` keeps each
+  file's hash so a forced recapture names the files that changed. `browser`: CHROME_PATH or
+  Playwright's Chromium, and its version. Then the options: a set's tier, aa, size, extra query
+  and capture.mjs options; a clip entry's `tier`, `aa`, `size`, `q`, `clip`, `view`, `full`,
+  `every`, `dense` and `anchors` (the hash of the anchors it took with `--anchors-from`, null for
+  its own), so a ground truth follows a recaptured baseline.
+- `coverage`: what the directory holds, apart from the key. A set lists its views, each with
+  `repeat` (the second fresh-load capture exists) and `identical` (the two are byte-identical: the
+  view's A/A this time); a clip entry is `{ "captured": true }`. The manifest vouches only for what
+  it lists: a set whose views partly failed lists the others, and the next request captures the
+  rest.
+- `rounds`: each capture or extension, with its reason.
+
+### What a request does
+
+1. The directory's manifest has the same key and covers the request: reused. For a set, another
+   set of the same commit with the same key that covers it serves too (S1 serves FAST3).
+2. A live process holds the claim (`.capturing/owner.json`: pid, host, start, key and what it will
+   cover), on this directory or on a set that will cover the request: wait (poll every 5 s, a
+   line a minute), then reuse.
+3. Otherwise capture (only with a URL of the commit: `--reference`'s own, `--check`'s `--ref-url`,
+   the baseline run's `--url` or another label's `--ref-url`), saying why:
+   - same key, less coverage (a view, a repeat): `not captured yet: ...`, the set is extended in
+     place and the manifest rewritten with the union;
+   - another key: the capture tools changed (and which files), the browser build changed, or an
+     option differs; the old directory moves to `.replaced/`;
+   - a claim whose process is gone (killed, crashed): `the capture by pid N did not finish`, the
+     partial captures are discarded (kept when a manifest already vouched for them and the claim
+     only extended it);
+   - no manifest at all (captured before the store, or by hand): moved to `.replaced/`;
+   - `--recapture-reference` (a reference suspected bad): forced.
+   Without a URL the tool stops and says what it would need (`--skip-existing` in baseline.mjs takes
+   a reference without a manifest, or of another key, as it is).
+
+The claim is taken under a short mutex, so of several processes that find the same reference
+missing exactly one captures it. A claim names a pid on this host: a process that is gone (or a
+zombie) leaves a stale claim, which the next request takes over; when `ps` cannot answer in time
+(a loaded machine) the process counts as alive, since taking over a live capture would put two
+writers in one directory. A process releases and records only a claim that is still its own. Before capturing, the tool checks
+which worktree serves the reference URL's port (`lsof`): it refuses a server whose commit differs
+from the reference's in what the build reads (`src/`, `index.html`, `public/`, `vite.config.ts`,
+`package.json`, `package-lock.json`, `tsconfig.json`; a branch that changed only tools or docs
+serves the same build) or that has uncommitted changes there, and warns when `dist/` is older than
+the last commit of those inputs. `node
+tools/parity/reference.mjs status <root>/<sha>` lists every manifest and claim under a commit,
+and whether its tool hash is current.
+
+A recapture of a reference is forced when the browser build or the capture tools change (one
+reference round after a tool change lands), when a check needs repeats or views the stored set
+lacks (only those are captured), and on request. Repeatability: with readiness by stability (Fast
+mode above) MSAA views repeat byte for byte between page loads (24 of 24 in the base references),
+where the fixed waits left a few views 1-3 levels apart on a few pixels of vegetation; temporal
+sets never do. Still compare with `--aa-floor` (or `--temporal`) on sets captured with `--repeat`:
+a view that differs once is judged against its own A/A. `coverage.views.<view>.identical` records
+each stored A/A.
 
 ## Clips (clips.mjs, capture-clip.mjs, clip-metrics.py)
 
@@ -285,7 +383,12 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
   header): `--gt` captures the ground truth with the baseline's anchors, `--gt-aa gt` (default,
   every tier) or `gt-hi` (high only); metrics read the entry's own tier's GT, else high's with the
   GT gates off. `--thresholds` adds the gate verdicts and the aggregates (the overall fidelity's
-  share of views; the alignment's median signed offset per tier).
+  share of views; the alignment's median signed offset per tier). The `baseline` and ground-truth
+  entries are references in the store (Reference store above), captured only from the commit's
+  own preview: the baseline run's `--url`, or `--ref-url` in another label's run (which then also
+  captures the ground truth); without it a missing or stale reference is reported and its entries
+  skipped. `--clips` may name a clip that is not a gate's (a task's own, such as `drs-steps`), whose
+  baseline and ground truth are then kept the same way.
 - `clip-metrics.py`: per crop, the test's and MSAA's metrics against the GT (definitions in its
   docstring), their ratio, and PASS / FAIL against a thresholds file of gates on a baseline (MSAA
   measured here, or an earlier metrics.json): ratios with an absolute floor for magnitudes (a
