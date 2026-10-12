@@ -202,6 +202,14 @@ then each variant (js run in the page, ready again, shot: crops only, `--full` f
 and measures the crops against the store's MSAA and ground-truth rest entries of that commit
 (clip-metrics.py), a short table per variant. It is not a gate; details in the README's Quick mode.
 
+`baseline.mjs ... --carry-from A` takes the baseline's and the ground truth's entries over from an
+earlier commit A instead of capturing them, when `tools/parity/carry.mjs` finds nothing between the
+two that could change them (same build inputs; otherwise the diff against two watch lists, the
+paused set S1 matching A's (and A's stored rest frames matching A's own S1), the first 16 frames of two clips and one rest ground truth captured
+again and compared); an entry that may not carry is captured and the log says why.
+`node tools/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
+Rules and proof: the README's Carry-over.
+
 ## GPU lock
 
 Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
