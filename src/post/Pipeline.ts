@@ -63,7 +63,9 @@ import type { Rain } from '../weather/Rain.ts';
 //     and the storm's spray, unjittered, at the canvas's size (premultiplied radiance, coverage), while
 //     either shows
 //   rain layer ── rainLayer: the change the rain veil and the overlay make to the graded image, at
-//     the canvas's size (the overlay through the composite at the pixel), while it rains
+//     the canvas's size (the overlay through the composite at the pixel), while it rains (neither
+//     rain pass runs while the rest holds its image: the frame that completed it drew them,
+//     `afterHeld`)
 //   canvas pass: taaEncoded (or the history or the rest's image, encoded there with the vignette),
 //     RCAS, the rain layer added, grain and dither; TAA below the canvas encodes it at the render's
 //     size (taaDisplay), EASU, then RCAS, the rain layer and the grain
@@ -1451,7 +1453,7 @@ export class Pipeline {
 					b.read( surfaceDepth );
 					rainOverlay = b.write( rainOverlay!, { clear: true } );
 					return {
-						label: 'rain after resolve', mrt: afterMRT, when: ( f ) => f.afterScene !== undefined, whenLabel: 'streaks || spray',
+						label: 'rain after resolve', mrt: afterMRT, when: ( f ) => f.afterScene !== undefined && ! this.afterHeld(), whenLabel: 'streaks || spray, not held',
 						scene: ( f ) => f.afterScene!, camera: ( f ) => f.camera,
 					};
 
@@ -1479,7 +1481,7 @@ export class Pipeline {
 					}
 					b.readOptional( rainOverlay! );
 					rainLayer = b.write( rainLayer );
-					return { label: 'rain layer', when: ( f ) => this.layerRuns( f ), whenLabel: 'rain || spray', quad: layerQuad };
+					return { label: 'rain layer', when: ( f ) => this.layerRuns( f ) && ! this.afterHeld(), whenLabel: 'rain || spray, not held', quad: layerQuad };
 
 				} );
 				return { optional: [ rainLayer ], required: [] };
@@ -1678,11 +1680,25 @@ export class Pipeline {
 
 	}
 
-	// whether the rain's layer pass runs this frame (AfterResolve.ts): while it rains (the veil) or
-	// the after pass draws
+	// whether the rain's layer shows this frame (AfterResolve.ts): while it rains (the veil) or the
+	// after pass draws (its pass then runs, unless the rest holds it)
 	private layerRuns( f: PipelineFrame ): boolean {
 
 		return f.afterScene !== undefined || ( this.rain?.uniforms.rain.value ?? 0 ) > 0.001;
+
+	}
+
+	// Whether the rain's after pass and layer pass keep what the frame that completed the rest drew
+	// (TemporalAA.ts `holding`): both draw over this frame's jittered surface depth and grade input,
+	// at its jitter, and once the rest has converged the jitter runs on through the running sequence
+	// (Jitter.ts), whose place depends on the frames rendered since the page loaded. Drawn again,
+	// a paused frame's rain then depended on how it was reached (and only the rain did: the resolved
+	// image is the rest's). The frame that completes the rest draws at the rest sequence's last
+	// jitter, and nothing it draws from changes while the rest holds (the rest's key), so its
+	// overlay and layer stand for every frame after it; the canvas pass reads them as they are.
+	private afterHeld(): boolean {
+
+		return this.temporal?.holding === true;
 
 	}
 

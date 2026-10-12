@@ -67,6 +67,11 @@ import { jitter } from './Jitter.ts';
 //   ground truth's. (In the canvas pass itself the rain's work held so many registers that the
 //   whole pass slowed.) The depth of field's blur, bloom and the look's glow of the rain are left
 //   out.
+// - At rest (TemporalRest.ts): the passes draw over the frame's own jitter and jittered depth, and
+//   once the rest has converged the jitter runs on through the running sequence, whose place
+//   depends on the frames rendered. So while the rest holds its image neither pass runs: the
+//   overlay and the layer the completing frame drew (at the rest sequence's last jitter) stay, and a
+//   paused frame's rain repeats however it was reached (Pipeline.ts `afterHeld`).
 // - Nothing of the rain stays before the resolve: the overlay pass does not run, no rain or spray
 //   writes a velocity or a reactive weight, and there is no `veilReactive`. The splashes stayed there
 //   at first, on the surfaces they lie on, with their reactive weight: a glint of a few frames, they
