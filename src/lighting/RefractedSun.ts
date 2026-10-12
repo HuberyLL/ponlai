@@ -204,6 +204,8 @@ export class RefractedSun {
 	private subsetLevel = NaN;
 	private readonly subsets: THREE.BufferGeometry[] = [];
 	private dirty = true;
+	/** Redraws so far (the dynamic resolution leaves frames with periodic work out of its quantiles). */
+	redraws = 0;
 	// Turn of the key light (radians) below which a moving light keeps the drawn map: a quality
 	// tier's knob. A light at rest is always drawn exactly.
 	angleGate = ANGLE_GATE;
@@ -442,6 +444,7 @@ export class RefractedSun {
 		this.lastSun.copy( sun );
 		this.lastLevel = level;
 		this.dirty = false;
+		this.redraws ++;
 		return true;
 
 	}

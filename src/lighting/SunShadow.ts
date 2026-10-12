@@ -124,6 +124,8 @@ export class SunShadow {
 	private readonly margin: number;
 	// the light's turn between redraws (radians)
 	step = STEP;
+	/** Redraws so far (the dynamic resolution leaves frames with periodic work out of its quantiles). */
+	redraws = 0;
 	// The filter for ordinary receivers and for vegetation (`userData.vegetation`). They compile into
 	// each receiver's material, so set them (setFilter) before the first receiver is built.
 	private taps: Readonly<SolarShadowTaps> = SOLAR_SHADOW_TAPS;
@@ -399,6 +401,7 @@ export class SunShadow {
 	private draw( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, node: ShadowRenderer, map: THREE.RenderTarget, keyDir: THREE.Vector3 ): void {
 
 		const shadow = this.sun.shadow, shadowCamera = shadow.camera;
+		this.redraws ++;
 		this.drawn.copy( keyDir );
 		this.fit( renderer, keyDir );
 		// closed solids cast their front faces into this map alone (see the header)
