@@ -14,16 +14,25 @@
 // Other stones keep a wider berth of the island than the fallen blocks, and every crown stays
 // below -1.30 m, so nothing breaks the surface.
 //
-// A cell holds at most one group. Its candidate point, its acceptance and every stone it makes draw
-// from the cell's own random stream (`mulberry32( hash3i( class, ci, cj ) )`, mixed), and a stone's
-// seed (its shape and tint) is a hash of its group and its index there, so nothing depends on a
-// running count, a cap or what was placed elsewhere. Each group builds its own list against the
-// land, the floor and the island alone, in sequence, each stone tested against the stones before it
-// (a fallen-block cell tries points all over it, as the running stream packed blocks along the toe).
-// Between groups a stone yields only to a larger one it overlaps (of two the same size, the one of
-// an earlier class, then of a higher group hash), judged against the other groups' own lists. Own
-// lists never read other groups, so a drop cannot cascade, and the stones in a box depend only on
-// the land, floor and island within STONES_READ of it: a chunk builds its own stones alone.
+// A cell holds at most one group. Its candidate point and its acceptance draw from the cell's own
+// random stream (`mulberry32( hash3i( class, ci, cj ) )`, mixed), each fallen-block try and each
+// stone of a patch from its own (`stream`, from its group and its index there), and a stone's seed
+// (its shape and tint) is a hash of its group and its index there, so nothing depends on a running
+// count, a cap or what was placed elsewhere, and a try that the land changes re-rolls no other.
+// Each group builds its own list against the land, the floor and the island alone, in sequence,
+// each stone tested against the stones before it (a fallen-block cell tries points all over it, as
+// the running stream packed blocks along the toe). Between groups a stone yields only to a larger
+// one it overlaps (of two the same size, the one of an earlier class, then of a higher group hash),
+// judged against the other groups' own lists. Own lists never read other groups, so a drop cannot
+// cascade, and a group reads nothing beyond its reach but its probes, so every chain behind a stone
+// is bounded: the stones in a box depend only on the land, floor and island within STONES_READ
+// (19.5 m) of it, by construction (the derivation is at STONES_READ), and a chunk builds its own
+// stones alone, inside its window (Chunks.ts).
+//
+// Judging the outranking on what each try or stone makes alone (the chunk design's proposals)
+// rather than on the other groups' lists dropped 32 % of the fallen blocks and 23 % of the near
+// patches' stones: a cell's tries that its own list turns down still outranked. Bounding the
+// fallen-block cells' reach (3.5 m, which trims almost no block) bounds their lists instead.
 //
 // This replaced 2 m fallen-block cells of one block each and priority by class: neighbouring blocks
 // then dropped each other as a thinning does, packing about two thirds as densely as the running
@@ -48,40 +57,45 @@ interface StoneClass {
 	cell: number; jitter: number;
 	// the farthest a group's stone lies from its cell (m), enforced as the group builds
 	reach: number;
-	// the farthest apart two stones of one group lie (m)
-	extent: number;
 }
 
-// Fallen blocks are tried all over their cell and walked out from it, so their stones span the cell
-// and twice the reach (the largest gap measured on seeds 1 - 6 up to step 36 was 5.0 m). A patch's
-// stones lie within its ellipse, at most 1.025 times its major half axis from its point, which a
-// near patch keeps 1.05 m inside its cell.
+// Fallen blocks are tried all over their cell and walked out from it: their reach bounds the chain
+// behind a stone (STONES_READ), and trims under 1 % of the blocks (on seeds 1 - 6 at steps 0, 8, 16
+// the farthest beyond the cell were 5.0 m). A patch's stones lie within its ellipse, at most 1.025
+// times its major half axis from its point, which a near patch keeps 1.05 m inside its cell.
 const CLASSES: StoneClass[] = [
-	{ cell: 6, jitter: 1, reach: 6, extent: 2 * 6 + 6 * Math.SQRT2 },
-	{ cell: 7, jitter: 0.7, reach: 4.5, extent: 2 * 1.025 * majorAxis( false, 1 ) },
-	{ cell: 20, jitter: 1, reach: 6, extent: 2 * 1.025 * majorAxis( true, 1 ) },
-	{ cell: 9, jitter: 1, reach: 0, extent: 0 },
+	{ cell: 6, jitter: 1, reach: 3.5 },
+	{ cell: 7, jitter: 0.7, reach: 4.5 },
+	{ cell: 20, jitter: 1, reach: 6 },
+	{ cell: 9, jitter: 1, reach: 0 },
 ];
 
 /** Each class's cell side and reach (m), fallen blocks to isolated stones, for the checks. */
 export const CELL = CLASSES.map( ( c ) => c.cell ), REACH = CLASSES.map( ( c ) => c.reach );
 
-// Two stones farther apart than this never overlap: a stone's extent is at most 1.22 times its
-// size, and the largest are 2.35 m.
-const OVERLAP = 6;
+// A stone's extent is at most EXTENT times its size (`rockExtent`: 0.94 times its longest axis),
+// so two stones farther apart than OVERLAP never overlap (the largest are 2.35 m).
+const EXTENT = 0.94 * 1.30, OVERLAP = 6;
 
-// How far round its centre a stone's own tests read the floor and the island (m): its widest
-// clearance ring is 1.15 times its extent plus 0.1, 3.4 m for the largest.
-const PROBE = 4;
+// the largest fallen block (m)
+const BLOCK_MAX = 1.7;
 
 /**
- * How far beyond a box the stones placed in it read the land, the floor and the island (m): a group
- * that may outrank a stone in the box has a stone within OVERLAP of it, and its whole own list is
- * built, each stone probing up to PROBE round it. A chunk's footprint, whose distance field blends
- * over 3 m, needs its fine window 3.5 m wider still (`buildFootprint( land, grow( box,
- * STONES_READ + 3.5 ) )` builds a box's stones exactly as the whole land does).
+ * How far beyond a box (m, along x or z) the window's land, floor and island can change the stones
+ * placed in it, by construction. A stone is decided by its group's own list and by the other
+ * groups' lists that hold a larger stone overlapping it (`outranked`). A list depends on every
+ * stone its group tries, and a group reads nothing beyond its reach (`within`, tested before any
+ * read) but the probes round each spot it tries: a fallen block's outline, 1.45 times its size; a
+ * patch stone's ring of island probes, 1.15 times its extent and 0.1 m (the floor under a stone lies
+ * within those). So the longest chain runs from the stone to a fallen block overlapping it (no
+ * smaller than the stone, so at most twice a block's extent away), across that block's cell and
+ * twice its reach, to the outline of a block tried at the far side: 19.5 m.
+ * Shorter: a patch's list behind a patch stone overlapping the stone, at most 5.6 + 13.7 m (its
+ * point 1.025 major axes from it, the patch's spots as far again and their probes); a stone's own
+ * list, 15.5 (fallen blocks), 12.6 (near patches), 13.7 (outer), 8.1 (isolated: the outer patches'
+ * points round it). The chunks place the stones round them with it (Chunks.ts), inside their window.
  */
-export const STONES_READ = OVERLAP + Math.max( ...CLASSES.map( ( c ) => c.extent ) ) + PROBE;
+export const STONES_READ = 2 * 0.98 * EXTENT * BLOCK_MAX + CLASSES[ A ].cell + 2 * CLASSES[ A ].reach + 1.45 * BLOCK_MAX;
 
 // Fallen blocks: a 6 m cell near the coast tries BLOCK_TRIES points in it, each taking a block
 // where its draw falls below the wall's shed there times K_A and the block clears the group's own
@@ -239,7 +253,6 @@ interface Group {
 	cls: number; ci: number; cj: number;
 	// the group's hash: its priority within the class, and (as an integer) its identity
 	priority: number; key: number;
-	rng: Rng;
 	// its candidate point (a fallen-block cell's centre)
 	x: number; z: number;
 	// a patch's orientation, half axes (m) and stone count
@@ -258,7 +271,13 @@ function mix32( h: number ): number {
 
 }
 
-// A stone's seed from its group and its index in the group's own list: positive, below 2^30.
+// The random stream of a group's try (fallen blocks) or stone (patches, isolated stones), from the
+// group and its index there: what one try draws, or how many draws its land tests took, never moves
+// another's.
+const stream = ( g: Group, k: number ): Rng => mulberry32( mix32( hash3i( g.key, k, 7307 ) * 4294967296 | 0 ) );
+
+// A stone's seed from its group and its index there (a fallen-block try t's block 4 t, its cobbles
+// 4 t + 1 .. 3; a patch's k-th stone k): positive, below 2^30.
 const stoneSeed = ( g: Group, k: number ) => 1 + Math.floor( hash3i( g.key, k, 6007 ) * 0x3ffffffe );
 
 const grow = ( b: Bounds, m: number ): Bounds => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
@@ -392,13 +411,13 @@ export function placeStones( fp: Footprint, floor: HeightFn, island: SDF, own: B
 	};
 	const clearOf = ( list: Rock[], r: Rock ) => ! list.some( ( other ) => overlaps( r, other ) );
 	// Adds a stone to a group's list where the floor, the island and the list leave it room.
-	const place = ( g: Group, list: Rock[], x: number, z: number, size: number, thickness: number, rot: number ): boolean => {
+	const place = ( g: Group, list: Rock[], seed: number, x: number, z: number, size: number, thickness: number, rot: number, rng: Rng ): boolean => {
 
 		if ( ! within( g, x, z ) ) return false;
 		// (an outer patch's stones lie within its ellipse, a few metres past the patch's centre)
 		const d = dist( x, z );
 		if ( d < Math.max( 0.36, size * 0.32 ) ) return false;
-		const r = build( stoneSeed( g, list.length ), x, z, size, thickness, rot, g.rng() );
+		const r = build( seed, x, z, size, thickness, rot, rng() );
 		if ( ! r || ! clearOf( list, r ) || ( d < 6 && ! wideOfIsland( r ) ) ) return false;
 		list.push( r );
 		return true;
@@ -440,19 +459,24 @@ export function placeStones( fp: Footprint, floor: HeightFn, island: SDF, own: B
 
 	// ---- each class's own list
 
-	// Rockfall at the cliff foot: a block broken off the wall at a coast point ( x, z ) d metres
-	// out, resting against the toe or rolled on down the talus, and cobbles spalled from it, half
-	// lodged against the toe beside it, the rest scattered mostly on its seaward side.
-	const fallenBlock = ( g: Group, list: Rock[], x: number, z: number, d: number, nx: number, nz: number ) => {
+	// A fallen-block try: a block broken off the wall at a coast point d metres in from the try's
+	// point ( x, z ), resting against the toe or rolled on down the talus, kept where it clears the
+	// group's list, and cobbles spalled from it, half lodged against the toe beside it, the rest
+	// scattered mostly on its seaward side. Every draw is the try's own.
+	const fall = ( g: Group, t: number, list: Rock[] ) => {
 
-		const { rng } = g;
-		const size = 0.6 + Math.pow( rng(), 1.3 ) * 1.1;
+		const rng = stream( g, t ), { cell } = CLASSES[ A ];
+		const x = ( g.ci + rng() ) * cell, z = ( g.cj + rng() ) * cell, u = rng(), d = dist( x, z );
+		if ( d < 0 || d > 3 || u >= shed( x, z ) * K_A ) return;
+		const [ nx, nz ] = normal( x, z );
+		if ( nx === 0 && nz === 0 ) return;
+		const size = 0.6 + Math.pow( rng(), 1.3 ) * ( BLOCK_MAX - 0.6 );
 		const thickness = rng() < 0.2 ? 0.30 + rng() * 0.09 : 0.58 + rng() * 0.30;
 		// long axes lie roughly along the wall they fell from, with some tumbled
 		const rot = rng() < 0.7 ? Math.atan2( - nx, nz ) + ( rng() - 0.5 ) * 1.0 : rng() * Math.PI;
 		// Most blocks come to rest against the toe; a few roll on down the talus.
 		let roll = Math.pow( rng(), 2.5 ) * 2.5;
-		const variation = rng(), seed = stoneSeed( g, list.length );
+		const variation = rng(), seed = stoneSeed( g, 4 * t );
 		let block = atToe( g, seed, x - nx * d, z - nz * d, nx, nz, size, thickness, rot, variation );
 		if ( ! block ) return;
 		if ( roll > 0.05 ) {
@@ -479,10 +503,11 @@ export function placeStones( fp: Footprint, floor: HeightFn, island: SDF, own: B
 		for ( let k = 0; k < 3; k ++ ) {
 
 			const size = 0.16 + Math.pow( rng(), 1.5 ) * 0.38, thickness = 0.38 + rng() * 0.40, rot = rng() * Math.PI;
+			const seed = stoneSeed( g, 4 * t + 1 + k );
 			if ( rng() < 0.5 ) {
 
 				const along = ( rng() - 0.5 ) * 5;
-				const rock = atToe( g, stoneSeed( g, list.length ), bx - bnx * bd - bnz * along, bz - bnz * bd + bnx * along, bnx, bnz, size, thickness, rot, rng() );
+				const rock = atToe( g, seed, bx - bnx * bd - bnz * along, bz - bnz * bd + bnx * along, bnx, bnz, size, thickness, rot, rng() );
 				if ( rock && clearOf( list, rock ) ) list.push( rock );
 				continue;
 
@@ -490,80 +515,81 @@ export function placeStones( fp: Footprint, floor: HeightFn, island: SDF, own: B
 			const a = rng() * Math.PI * 2, rr = 0.8 + rng() * 2.2;
 			const x = bx + Math.cos( a ) * rr, z = bz + Math.sin( a ) * rr;
 			if ( ! within( g, x, z ) || dist( x, z ) < bd - 0.4 ) continue;
-			place( g, list, x, z, size, thickness, rot );
+			place( g, list, seed, x, z, size, thickness, rot, rng );
 
 		}
 
 	};
-	// A cell's fallen blocks, tried in sequence at points all over it: each lands where the wall
-	// sheds and clears the blocks and cobbles before it, as a running stream packs them.
+	// A cell's fallen blocks, its tries in sequence at points all over it: each lands where the wall
+	// sheds and clears the blocks and cobbles before it, as a running stream packs them along the
+	// toe.
 	const fallenBlocks = ( g: Group, list: Rock[] ) => {
 
-		const { rng } = g, { cell } = CLASSES[ A ];
-		for ( let t = 0; t < BLOCK_TRIES; t ++ ) {
-
-			const x = ( g.ci + rng() ) * cell, z = ( g.cj + rng() ) * cell, u = rng(), d = dist( x, z );
-			if ( d < 0 || d > 3 || u >= shed( x, z ) * K_A ) continue;
-			const [ nx, nz ] = normal( x, z );
-			if ( nx !== 0 || nz !== 0 ) fallenBlock( g, list, x, z, d, nx, nz );
-
-		}
+		for ( let t = 0; t < BLOCK_TRIES; t ++ ) fall( g, t, list );
 
 	};
 
 	// Patchy hard bottom beside sandy sediment is inspired by USGS coastal seafloor observations:
 	// https://pubs.usgs.gov/sir/2019/5073/ . This is an art-directed distribution, not sediment
 	// physics. A patch is a large main fragment, a few medium ones and gravel, the gravel mostly in
-	// one-sided child patches.
+	// one-sided child patches. Each stone tries spots from its own stream until one leaves it room.
 	const patch = ( g: Group, list: Rock[] ) => {
 
-		const { rng } = g, outer = g.cls === C;
+		const outer = g.cls === C, mediums = outer ? 3 : 5;
 		const c = Math.cos( g.rot ), s = Math.sin( g.rot );
 		const side = hash3i( g.key, 331, 7 ) < 0.5 ? - 1 : 1;
 		const child = [
 			[ side * g.major * 0.68, g.minor * ( hash3i( g.key, 11, 83 ) - 0.5 ) * 0.60 ],
 			[ side * g.major * 0.42, g.minor * ( hash3i( g.key, 59, 113 ) < 0.5 ? - 0.58 : 0.58 ) ],
 		];
-		let placed = 0, tries = 0;
-		while ( placed < g.count && tries ++ < g.count * 90 ) {
+		// the patch's 90 tries a stone, spent by its stones in turn
+		let left = g.count * 90;
+		for ( let k = 0; k < g.count; k ++ ) {
 
-			const angle = rng() * Math.PI * 2;
-			// Square-root radius fills each patch's interior instead of tracing another ring.
-			const radius = Math.sqrt( rng() ) * ( placed === 0 ? 0.28 : 1 );
-			let u = Math.cos( angle ) * radius * g.major, v = Math.sin( angle ) * radius * g.minor;
-			if ( placed >= ( outer ? 3 : 5 ) && hash3i( g.key, tries, 173 ) < 0.93 ) {
+			const rng = stream( g, k ), seed = stoneSeed( g, k );
+			let placed = false;
+			while ( ! placed && left -- > 0 ) {
 
-				// One-sided child patches leave an exposed main face instead of arranging gravel
-				// into a decorative halo around the main fragment's non-overlap boundary.
-				const branch = hash3i( g.key, tries, 239 ) < 0.68 ? 0 : 1;
-				u = child[ branch ][ 0 ] + Math.cos( angle ) * radius * g.major * ( branch === 0 ? 0.34 : 0.28 );
-				v = child[ branch ][ 1 ] + Math.sin( angle ) * radius * g.minor * ( branch === 0 ? 0.36 : 0.30 );
-				if ( u * u / ( g.major * g.major ) + v * v / ( g.minor * g.minor ) > 1.05 ) continue;
+				const angle = rng() * Math.PI * 2;
+				// Square-root radius fills each patch's interior instead of tracing another ring.
+				const radius = Math.sqrt( rng() ) * ( k === 0 ? 0.28 : 1 );
+				let u = Math.cos( angle ) * radius * g.major, v = Math.sin( angle ) * radius * g.minor;
+				if ( k >= mediums && rng() < 0.93 ) {
+
+					// One-sided child patches leave an exposed main face instead of arranging gravel
+					// into a decorative halo around the main fragment's non-overlap boundary.
+					const branch = rng() < 0.68 ? 0 : 1;
+					u = child[ branch ][ 0 ] + Math.cos( angle ) * radius * g.major * ( branch === 0 ? 0.34 : 0.28 );
+					v = child[ branch ][ 1 ] + Math.sin( angle ) * radius * g.minor * ( branch === 0 ? 0.36 : 0.30 );
+					if ( u * u / ( g.major * g.major ) + v * v / ( g.minor * g.minor ) > 1.05 ) continue;
+
+				}
+				const x = g.x + c * u - s * v, z = g.z + s * u + c * v;
+				let size: number, thickness: number;
+				if ( k === 0 ) {
+
+					size = ( outer ? 1.10 : 1.35 ) + rng() * 1.0;
+					const mix = rng(), variation = rng();
+					// near patches are blocks or slabs in equal shares, outer ones mostly slabs
+					const block = outer ? mix >= 0.56 : mix < 0.5;
+					thickness = block ? 0.65 + variation * 0.20 : 0.23 + variation * 0.15;
+
+				} else if ( k < mediums ) {
+
+					size = 0.44 + rng() * 0.74;
+					thickness = 0.36 + rng() * 0.41;
+
+				} else {
+
+					size = 0.13 + Math.pow( rng(), 1.3 ) * 0.32;
+					thickness = 0.34 + rng() * 0.38;
+
+				}
+				const rot = rng() < 0.65 ? g.rot + ( rng() - 0.5 ) * 1.6 : rng() * Math.PI;
+				placed = place( g, list, seed, x, z, size, thickness, rot, rng );
 
 			}
-			const x = g.x + c * u - s * v, z = g.z + s * u + c * v;
-			let size: number, thickness: number;
-			if ( placed === 0 ) {
-
-				size = ( outer ? 1.10 : 1.35 ) + rng() * 1.0;
-				const mix = rng(), variation = rng();
-				// near patches are blocks or slabs in equal shares, outer ones mostly slabs
-				const block = outer ? mix >= 0.56 : mix < 0.5;
-				thickness = block ? 0.65 + variation * 0.20 : 0.23 + variation * 0.15;
-
-			} else if ( placed < ( outer ? 3 : 5 ) ) {
-
-				size = 0.44 + rng() * 0.74;
-				thickness = 0.36 + rng() * 0.41;
-
-			} else {
-
-				size = 0.13 + Math.pow( rng(), 1.3 ) * 0.32;
-				thickness = 0.34 + rng() * 0.38;
-
-			}
-			const rot = rng() < 0.65 ? g.rot + ( rng() - 0.5 ) * 1.6 : rng() * Math.PI;
-			if ( place( g, list, x, z, size, thickness, rot ) ) placed ++;
+			if ( ! placed ) break;
 
 		}
 
@@ -573,8 +599,8 @@ export function placeStones( fp: Footprint, floor: HeightFn, island: SDF, own: B
 	// denser cliff debris and the few offshore patches.
 	const isolated = ( g: Group, list: Rock[] ) => {
 
-		const { rng } = g;
-		place( g, list, g.x, g.z, 0.19 + rng() * 0.50, 0.30 + rng() * 0.45, rng() * Math.PI );
+		const rng = stream( g, 0 );
+		place( g, list, stoneSeed( g, 0 ), g.x, g.z, 0.19 + rng() * 0.50, 0.30 + rng() * 0.45, rng() * Math.PI, rng );
 
 	};
 
@@ -626,7 +652,7 @@ export function placeStones( fp: Footprint, floor: HeightFn, island: SDF, own: B
 		g = null;
 		if ( ok ) {
 
-			g = { cls, ci, cj, priority, key, rng, x, z, rot: 0, major: 0, minor: 0, count: 0 };
+			g = { cls, ci, cj, priority, key, x, z, rot: 0, major: 0, minor: 0, count: 0 };
 			if ( cls === B || cls === C ) {
 
 				const outer = cls === C;

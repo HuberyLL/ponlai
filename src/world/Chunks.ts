@@ -16,7 +16,8 @@
 //   1000 x 1000 cells. Its footprint (`windowFootprint`) samples the window by world lattice index,
 //   so two chunks reading the same point get the same bits whatever their windows' origins (a
 //   Field2D lookup computes from its own origin and differs in the last bits). Beyond the window it
-//   continues the window's edge: only the stones' outermost probes read that far (rules below).
+//   continues the window's edge: only the stones' search for the groups that might outrank a stone
+//   reads that far, and nothing it finds there reaches a stone (rules below).
 // - `buildChunk( window, land, ci, cj )` makes everything the chunk owns (section 3.3) from the
 //   window alone: the island SDF over the window (`makeIslandSDF( ... )`, every
 //   value a function of the point), its stones, the contact solids, and from those each kind of
@@ -60,9 +61,14 @@
 //   (CliffWall's exposure did, Cliff.ts).
 // - Whatever reads far from the chunk must not reach anything the chunk keeps. Four kinds read
 //   far in principle, beyond what the dirty rule's 34 m covers:
-//   - the stones read the island and the floor up to STONES_READ (30.5 m) round the box they place
-//     (the chunk and CONTACT_STONES round it), so past the window too, and the cliff behind those
-//     reads another 25 m of land: a piece more than 34 m away could still move a stone;
+//   - the stones round the chunk (the chunk and CONTACT_STONES round it) are decided by the
+//     window's footprint, floor and island within STONES_READ (19.5 m) of that box, by
+//     construction (Stones.ts: every chain behind a stone is bounded), so within 31.5 m of the
+//     chunk, inside the window and the dirty rule's 34 m. What those values read reaches farther:
+//     the cliff at a point reads 25 m of the land field (its scars are seeded within the window, so
+//     near the window's edge the island can lack one the whole land has; the stones' tests see only
+//     its first tier, about 20 m of land) and the floor's distance up to 29 m of land, so a piece
+//     more than 34 m away could still move a stone round the chunk;
 //   - the contact stones (the chunk and CONTACT_STONES round it) shade the island and the floor
 //     the chunk keeps with what those stones read;
 //   - the trails read the coast within TRAIL_REACH (21 m) of their patches, and that coast is the
