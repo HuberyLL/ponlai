@@ -43,12 +43,13 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   sessionStorage are cleared before every page. The browser build is in the path (Playwright's
   `chromium-<revision>`, or a `CHROME_PATH` browser's `--version`); `PONLAI_CAPTURE_PROFILES`
   moves the root. The slots are independent of the GPU lock.
-- Readiness by stability: after the view's eval, 10 rendered frames (`--stable-min`) and the
-  loading screen gone, the image is grabbed every 2 frames (`--stable-every`; the loop stopped and
-  the GPU queue drained for each grab) and the view is shot once 2 comparisons in a row
-  (`--stable-repeats`) found no pixel changed. A paused page still flickers on some views (single
-  frames that leave the settled image and come back to it); since that noise never repeats, two
-  equal grabs are the settled image. After 40 frames (`--stable-patience`) a comparison with at most
+- Readiness by stability (MSAA and off): after the view's eval and the loading screen gone (its
+  computed opacity 0, the fade-out finished, not only its `done` class; plus
+  `--stable-min` rendered frames, 1 by default), the image is grabbed every 2 frames
+  (`--stable-every`; the loop stopped and the GPU queue drained for each grab) and the view is shot
+  once 1 comparison (`--stable-repeats`) found no pixel changed. A paused page still flickers
+  on some views (single frames that leave the settled image and come back to it); since that noise
+  never repeats, two equal grabs are the settled image. After 40 frames (`--stable-patience`) a comparison with at most
   5000 pixels changed (`--stable-tolerance 0:5000`, `<level>:<pixels>`: pixels differing by more
   than level; `exact` turns it off) counts too; after 120 frames (`--stable-cap`) the view is shot
   anyway and marked `capped`. Each capture's JSON records it as `ready` (status `exact`,
@@ -56,13 +57,21 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   its pixel counts; `--stable-trace` adds each grab's hash). On the 24 views (two sets with
   `--repeat`, `--jobs 2`) every load was shot exact, 4-32 frames after the floor (median 4), on the
   frame most loads of the earlier tools agreed on: no A/A difference, where their fixed waits left
-  15-17 % of loads off that frame. The grab is a CDP screenshot (PNG optimised for speed) at
+  15-17 % of loads off that frame (those runs used a floor of 10 and 2 comparisons; replayed over
+  per-frame traces of the 24 views, a floor of 1 frame and 1 comparison shot no load early and all 48 on
+  the settled frame, at fewer frames). The grab is a CDP screenshot (PNG optimised for speed) at
   the page's ratio, about 0.27 s at 3456x2234, its pixels those of the shot.
   `--ready-frames n` brings the fixed count back (a running capture uses 60); `--wait ms` and
-  `--settle ms` add fixed delays before and after the floor. Temporal pages wait for
-  `diag.taa.converged` first and then compare converged rests (each loop start restarts the rest,
-  so a comparison takes about 40 frames); rests are not byte-repeatable, so for them the tolerance
-  counts at once and the cap is 400 frames (`ready.temporal`).
+  `--settle ms` add fixed delays before and after the floor.
+- Temporal pages (taa, taau, gt) are not compared: the rest is restarted after the eval, the tool
+  waits for `diag.taa.converged` (8 settle frames and the 32-jitter sequence, about 40 frames; no
+  rest while a bake or transition runs), stops the loop on the held rest and shoots it
+  (`ready.status` `converged`, `ready.framesWaited`); the `--stable-*` options do not apply.
+  Comparing grabs restarted the rest at each loop start and only sampled the frame noise again.
+  The rest is restarted only once the loading screen's fade has finished: a rest converged during
+  the fade was shot with up to 2 % of the screen blended over the frame (0.3-1.9 levels darker
+  over millions of pixels, A/A up to 268 under taa).
+  Rests are not byte-repeatable: temporal sets are judged with `diff-set.py --temporal`.
 - The loop stops before the shot (`__PONLAI__.loop.stop()`: no new frames, the GPU queue drained):
   a headless page queues seconds of frames ahead of the GPU, and a running page's screenshot
   waits for them. The frame shot is the same; the shot takes about 1 s instead of 4-11 s.

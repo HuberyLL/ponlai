@@ -20,28 +20,35 @@
 //   revalidates (Vite's dev and preview servers send `no-cache`). localStorage and sessionStorage
 //   (the remembered quality tier, a saved game) are cleared before every page's scripts run.
 //
-// Readiness by stability. A paused page is ready when its image stops changing, however many
-// frames that takes: after the evals, `min` frames (10) and the loading screen gone (waitForScene),
-// the capture stops the loop, grabs the image, and then repeatedly runs `every` frames (2), stops
-// and grabs again (waitForStable). It shoots once `repeats` comparisons (2) in a row found the image
-// unchanged, on the frame grabbed last ("exact"). A paused page still differs from frame to frame
-// on a few views (single frames that leave the settled image and come back to it, from a few
-// pixels to 0.9 M; task D3 looks for the source), so after `patience` frames (40) a comparison
-// within the tolerance also counts ("tolerance": at most 5000 pixels differ at all); a page still
-// changing after `cap` frames (120) is shot anyway and marked "capped". The capture's JSON keeps
-// the record (`ready`: status, frames waited, comparisons, the largest difference seen, per
-// comparison its pixel counts).
+// Readiness by stability. A paused page (MSAA or off; the temporal modes wait for their rest, below)
+// is ready when its image stops changing, however many frames that takes: after the evals, `min`
+// frames (1) and the loading screen gone (waitForScene), the capture stops the loop, grabs the
+// image, and then repeatedly runs `every` frames (2), stops and grabs again (waitForStable). It
+// shoots once `repeats` comparisons (1) in a row found the image unchanged, on the frame grabbed
+// last ("exact"). A paused page still differs from frame to frame on a few views (single frames
+// that leave the settled image and come back to it, from a few pixels to 0.9 M; task D3 looks for
+// the source), so after `patience` frames (40) a comparison within the tolerance also counts
+// ("tolerance": at most 5000 pixels differ at all); a page still changing after `cap` frames (120)
+// is shot anyway and marked "capped". The capture's JSON keeps the record (`ready`: status, frames
+// waited, comparisons, the largest difference seen, per comparison its pixel counts).
 // - Change is any pixel by default because the frame noise never repeats: two equal grabs are the
 //   settled image, the frame most loads agree on. The tolerance counts pixels that differ at all,
 //   not levels: a settling flowers-close differed by 1 level over 5.1 M pixels. The smallest
 //   settling step seen was 45 k pixels, the noise between consecutive frames 1 pixel to 0.9 M, so
 //   5000 accepts much of the noise and no settling step.
+// - The defaults (floor 1, every 2, one comparison) come from the offline replay over those traces
+//   (floors 0-10 x every 1-4, one comparison, task S2): one equal pair already means the settled
+//   image, so the floor only skips grabs that would differ anyway: every row shot 0 loads early,
+//   and floor 1 with every 2 put 48/48 on the settled frame, all exact, mean 8.0 frames, about 2.1 s
+//   of grabbing, at most 7.8 s (floor 0: 47 exact and 1 by tolerance, 2.5 s, at most 12.3 s, since
+//   the earliest grabs of a settling page differ and each costs a decode and a cycle).
 // - Measured: traces of the 24 parity views, two loads
 //   each, every frame grabbed for 150 frames, showed every page on its settled image within 1-11
 //   frames and changing afterwards only by the single-frame noise. On the GPU, two sets of the 24
-//   views with --repeat (96 loads) were all shot exact, 4-32 frames after the floor (median 4,
-//   about 1.4 s of grabbing), every one on the frame most loads of the earlier tools agreed on: no
-//   A/A difference, where the fixed waits left 15-17 % of loads off it.
+//   views with --repeat (96 loads, then with floor 10 and two comparisons) were all shot exact, 4-32
+//   frames after the floor (median 4, about 1.4 s of grabbing), every one on the frame most loads
+//   of the earlier tools agreed on: no A/A difference, where the fixed waits left 15-17 % of loads
+//   off it.
 // - The grab is the compositor's image through CDP (`Page.captureScreenshot`, PNG optimised for
 //   speed, at the page's pixel ratio): about 0.27 s at 3456x2234, its pixels equal to Playwright's
 //   screenshot's (which spends 1.3 s on its PNG), and taking it does not change the next shot.
@@ -50,13 +57,22 @@
 //   its drawing buffer.
 // - Stopping the loop for each grab also waits for a sky bake in flight and drains the GPU queue,
 //   so work landing late on a busy GPU is in the next grab rather than frames later.
-// - A paused page of the temporal modes (taa, taau, gt) shows its rest image, so its comparisons
-//   are between converged rests: the loop's start restarts the rest, so each grab waits for it to
-//   converge again (about 40 frames for taa and taau). Two rests of a settled page are often equal
-//   and otherwise differ by a few pixels (3 views, 2 loads each: 0-52 pixels, once 37 k), so the
-//   tolerance counts at once and the cap is 400 frames, about 10 rests (STABLE_TEMPORAL), a
-//   temporal capture's stability taking 3-13 s. capture.mjs waits for the first rest itself (after
-//   restarting it for the evals); otherwise the first grab waits for one.
+// - A paused page of the temporal modes (taa, taau, gt) is ready once its rest has converged
+//   (src/post/TemporalRest.ts: a fixed jitter sequence averaged with exact weights after 8 settle
+//   frames, none while a bake or transition runs, then held), so it is not compared at all: the
+//   loop is stopped on the held rest and shot ("converged"), the way engines test a temporal
+//   image (a deterministic convergence, then a tolerance in the comparison: diff-set --temporal).
+//   The stability options do not apply to it (the floor's frames pass inside the rest anyway).
+//   Comparing grabs could not help: the loop's start restarts the rest, so each grab was a new rest
+//   (about 40 frames) that only sampled the frame noise again (3 views x 2 loads: 0-52 pixels apart,
+//   once 37 k; 3-13 s per capture). capture.mjs restarts the rest after the evals and waits for it.
+// - "The loading screen gone" is its computed opacity at 0, not its `done` class: the class only
+//   starts its fade (index.html: 0.8 s after a 0.2 s delay), and a shot during the fade carries
+//   the screen over the whole frame. A temporal rest converges about 40 frames after the evals, so
+//   rests were shot through the fade's last percent: up to 2.2 % of the screen's gradient blended
+//   in, 0.3-1.9 levels darker over 3-7.7 M px, most on bright surfaces (taa A/A up to 268 against
+//   0.13 for the earlier fixed 150 frames). The
+//   wait holds on every build, older ones included, and costs at most the fade's remaining second.
 // - A running (not paused) capture, or one given --ready-frames n, waits for that fixed count of
 //   rendered frames instead (READY_FRAMES, 60, for a running one). `wait` and `settle` (ms) add
 //   fixed delays before and after the floor. Later the page's own settled signal joins the stable
@@ -84,12 +100,7 @@ export const READY_FRAMES = 60;
 /** Readiness by stability's defaults (see the header): the floor before the first grab, frames
  * between grabs, comparisons in a row, the tolerance ({ level, pixels } or null), the frames before
  * the tolerance is accepted, the cap. */
-export const STABLE = { min: 10, every: 2, repeats: 2, tolerance: { level: 0, pixels: 5000 }, patience: 40, cap: 120 };
-/** A temporal page's own patience and cap (each comparison also waits for its rest to converge
- * again, about 40 frames for taa/taau): its rests are never byte-repeatable, so the tolerance
- * counts at once, and the cap allows about 10 rests. */
-export const STABLE_TEMPORAL = { patience: 0, cap: 400 };
-
+export const STABLE = { min: 1, every: 2, repeats: 1, tolerance: { level: 0, pixels: 5000 }, patience: 40, cap: 120 };
 export const LAUNCH_ARGS = [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--disable-gpu-vsync', '--disable-frame-rate-limit' ];
 
 function profileRoot() {
@@ -245,14 +256,20 @@ export async function launchCapture( { viewport, deviceScaleFactor = 1 } ) {
 }
 
 /** Waits until the page is ready to capture after the evals: `frames` frames rendered since this
- * call and the loading screen gone, with the optional fixed delays `wait` (before) and `settle`
- * (after), in ms. Call it right after the evals. */
+ * call and the loading screen gone (absent, or its computed opacity 0: its fade-out finished; see
+ * the header), with the optional fixed delays `wait` (before) and `settle` (after), in ms. Call it
+ * right after the evals. */
 export async function waitForScene( page, { frames = READY_FRAMES, wait = 0, settle = 0, timeout = 60000 } = {} ) {
 
 	const from = await page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
 	if ( wait > 0 ) await page.waitForTimeout( wait );
-	await page.waitForFunction( ( f ) => ( window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 ) >= f &&
-		document.getElementById( 'loading' )?.classList.contains( 'done' ), from + frames, { timeout, polling: 'raf' } );
+	await page.waitForFunction( ( f ) => {
+
+		if ( ( window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 ) < f ) return false;
+		const loading = document.getElementById( 'loading' );
+		return ! loading || getComputedStyle( loading ).opacity === '0';
+
+	}, from + frames, { timeout, polling: 'raf' } );
 	if ( settle > 0 ) await page.waitForTimeout( settle );
 
 }
@@ -282,9 +299,9 @@ export function stableOptions( opt ) {
 
 	};
 	return {
-		min: num( 'stable-min', STABLE.min ), every: Math.max( 1, num( 'stable-every', STABLE.every ) ), repeats: Math.max( 1, num( 'stable-repeats', STABLE.repeats ) ),
-		// (patience and cap left undefined when not given: a temporal page has its own defaults)
-		tolerance: parseTolerance( opt( 'stable-tolerance' ) ), patience: num( 'stable-patience', undefined ), cap: num( 'stable-cap', undefined ),
+		min: num( 'stable-min', STABLE.min ), every: Math.max( 1, num( 'stable-every', STABLE.every ) ),
+		repeats: Math.max( 1, num( 'stable-repeats', STABLE.repeats ) ),
+		tolerance: parseTolerance( opt( 'stable-tolerance' ) ), patience: num( 'stable-patience', STABLE.patience ), cap: num( 'stable-cap', STABLE.cap ),
 		trace: opt( 'stable-trace' ) !== undefined,
 	};
 
@@ -363,20 +380,19 @@ export function compareFrames( a, b, level = 0 ) {
 
 /** Waits until the rendered image stops changing (see Readiness by stability above) and returns
  * the record a capture's JSON keeps; the loop is stopped on return, on the frame compared last.
- * Call it once the page is up (waitForScene with the floor's frames) and, in the temporal modes,
- * once its rest has converged. */
-export async function waitForStable( page, { every = STABLE.every, repeats = STABLE.repeats, tolerance = STABLE.tolerance, patience, cap,
-	trace = false, timeout = 60000 } = {} ) {
+ * A paused page of the temporal modes waits for its converged rest instead (waitForRest).
+ * Call it once the page is up (waitForScene with the floor's frames). */
+export async function waitForStable( page, { every = STABLE.every, repeats = STABLE.repeats, tolerance = STABLE.tolerance,
+	patience = STABLE.patience, cap = STABLE.cap, trace = false, timeout = 60000 } = {} ) {
 
-	// a paused page of the temporal modes shows its rest image: compare converged rests
+	// a paused page of the temporal modes shows its rest image once converged: no comparisons
 	const temporal = await page.evaluate( () => {
 
 		const t = window.__THREE_GAME_DIAGNOSTICS__?.taa;
 		return !! ( t && t.restTarget > 0 && window.__PONLAI__.taa );
 
 	} );
-	patience ??= temporal ? STABLE_TEMPORAL.patience : STABLE.patience;
-	cap ??= temporal ? STABLE_TEMPORAL.cap : STABLE.cap;
+	if ( temporal ) return waitForRest( page, { timeout } );
 	const cdp = await page.context().newCDPSession( page );
 	// the viewport at the device's pixel ratio, as Playwright's own screenshot asks for it
 	// (a CDP session of its own has no device metrics override: its scale 1 is CSS pixels, so the
@@ -409,25 +425,18 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 		return shot.pixels;
 
 	};
-	// the loop runs `every` frames (and, for a temporal page, until its rest has converged again: the
-	// loop's start restarts it), then stops with the GPU queue drained; returns the frame count
-	const advance = ( every ) => page.evaluate( async ( { every, temporal, timeout } ) => {
+	// the loop runs `every` frames, then stops with the GPU queue drained; returns the frame count
+	const advance = ( every ) => page.evaluate( async ( { every, timeout } ) => {
 
 		const s = window.__PONLAI__, frameNow = () => s.renderer.info.frame;
-		const converged = () => {
-
-			const t = window.__THREE_GAME_DIAGNOSTICS__?.taa;
-			return ! t || t.restTarget === 0 || ( t.converged && t.restEpoch === s.taa.epoch.value );
-
-		};
 		const target = frameNow() + every, deadline = performance.now() + timeout;
 		s.loop.start();
 		await new Promise( ( resolve, reject ) => {
 
 			const tick = () => {
 
-				if ( frameNow() >= target && ( ! temporal || converged() ) ) resolve();
-				else if ( performance.now() > deadline ) reject( new Error( `waitForStable: no frame ${ target }${ temporal ? ' and converged rest' : '' } within ${ timeout } ms (at ${ frameNow() })` ) );
+				if ( frameNow() >= target ) resolve();
+				else if ( performance.now() > deadline ) reject( new Error( `waitForStable: no frame ${ target } within ${ timeout } ms (at ${ frameNow() })` ) );
 				else requestAnimationFrame( tick );
 
 			};
@@ -437,19 +446,17 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 		await s.loop.stop();
 		return frameNow();
 
-	}, { every, temporal, timeout } );
+	}, { every, timeout } );
 	try {
 
 		const start = performance.now();
-		// (a temporal page's first grab is a converged rest too, whether or not the caller waited for one)
-		const first = await page.evaluate( async ( temporal ) => {
+		const first = await page.evaluate( async () => {
 
-			const s = window.__PONLAI__, t = window.__THREE_GAME_DIAGNOSTICS__?.taa;
-			if ( temporal && ! ( t.converged && t.restEpoch === s.taa.epoch.value ) ) return null;
+			const s = window.__PONLAI__;
 			await s.loop.stop();
 			return s.renderer.info.frame;
 
-		}, temporal ) ?? await advance( 0 );
+		} );
 		let previous = await grab();
 		const history = [];
 		let inExact = 0, inTolerance = 0, status = null, maxSeen = 0, waited = 0;
@@ -483,7 +490,7 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 		}
 		const n = history.length;
 		return {
-			rule: 'stable', status, every, repeats, tolerance, patience, cap, temporal,
+			rule: 'stable', status, every, repeats, tolerance, patience, cap,
 			framesWaited: waited, comparisons: n, maxSeen, wallMs: Math.round( performance.now() - start ),
 			ms: { cycle: + ( ms.cycle / n ).toFixed( 1 ), grab: + ( ms.grab / ( n + 1 ) ).toFixed( 1 ), decode: decodes ? + ( ms.decode / decodes ).toFixed( 1 ) : 0, compare: + ( ms.compare / n ).toFixed( 1 ) },
 			// per comparison: [ frames waited, largest channel difference, pixels differing by more than 0, 1, 2, 4, 8, 16, 32 levels
@@ -496,6 +503,39 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 		await cdp.detach().catch( () => {} );
 
 	}
+
+}
+
+/** A paused temporal page's readiness (see the header): its rest converged under the current epoch,
+ * then the loop stopped (the GPU queue drained) with the rest's image held. Returns the record a
+ * capture's JSON keeps: frames rendered while waiting (0 when the caller already waited), the
+ * rest's epoch, restarts and completed rests, wall ms. */
+export async function waitForRest( page, { timeout = 60000 } = {} ) {
+
+	const start = performance.now();
+	const record = await page.evaluate( async ( timeout ) => {
+
+		const s = window.__PONLAI__, diag = () => window.__THREE_GAME_DIAGNOSTICS__.taa;
+		const converged = () => diag().converged && diag().restEpoch === s.taa.epoch.value;
+		const from = s.renderer.info.frame, deadline = performance.now() + timeout;
+		await new Promise( ( resolve, reject ) => {
+
+			const tick = () => {
+
+				if ( converged() ) resolve();
+				else if ( performance.now() > deadline ) reject( new Error( `waitForRest: no converged rest within ${ timeout } ms (rest ${ diag().restFrames } of ${ diag().restTarget } frames, epoch ${ diag().restEpoch })` ) );
+				else requestAnimationFrame( tick );
+
+			};
+			tick();
+
+		} );
+		await s.loop.stop();
+		return { framesWaited: s.renderer.info.frame - from, restEpoch: s.taa.epoch.value, restTarget: diag().restTarget,
+			restCompleted: s.taa.rest.completed, restRestarts: s.taa.rest.restarts };
+
+	}, timeout );
+	return { rule: 'rest', status: 'converged', temporal: true, ...record, wallMs: Math.round( performance.now() - start ) };
 
 }
 
