@@ -1,5 +1,5 @@
 import { Field2D } from './Field2D.ts';
-import { ISLAND_TOP, islandSurfaceHeight, type Bounds } from './WorldShapes.ts';
+import { ISLAND_TOP, islandSurfaceHeight, solidSide, type Bounds, type Footprint } from './WorldShapes.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { RimGroundField, RimSkirtData, SDF, ShoreField } from './types.ts';
 
@@ -73,7 +73,10 @@ export class RimLattice {
 	// 1 where the texel's centre lies in the solid
 	readonly inside: Uint8Array;
 
-	constructor( sdf: SDF, box: Bounds ) {
+	// With the island's footprint `fp` (the one `sdf` was made from), texels farther from its coast
+	// than WorldShapes' `solidSide` band take their side from it, bit for bit what the SDF gives:
+	// most of a lattice lies there, and the wall is the costly part of the SDF.
+	constructor( sdf: SDF, box: Bounds, fp?: Footprint ) {
 
 		const [ i0, i1 ] = texelRange( box.x0, box.x1 ), [ j0, j1 ] = texelRange( box.z0, box.z1 );
 		this.i0 = i0; this.j0 = j0; this.nx = i1 - i0; this.nz = j1 - j0;
@@ -81,7 +84,8 @@ export class RimLattice {
 		for ( let j = 0; j < this.nz; j ++ ) for ( let i = 0; i < this.nx; i ++ ) {
 
 			const x = ( i0 + i + 0.5 ) * RIM_CELL, z = ( j0 + j + 0.5 ) * RIM_CELL;
-			this.inside[ j * this.nx + i ] = sdf( x, islandSurfaceHeight( x, z ) - 0.25, z ) < 0 ? 1 : 0;
+			const side = fp ? solidSide( fp, x, z ) : 0;
+			this.inside[ j * this.nx + i ] = ( side !== 0 ? side : sdf( x, islandSurfaceHeight( x, z ) - 0.25, z ) ) < 0 ? 1 : 0;
 
 		}
 

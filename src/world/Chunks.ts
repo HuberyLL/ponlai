@@ -25,7 +25,9 @@
 //   anchor, skirt segments by their piece's start, texels (rim ground, shore, walk) by their centre;
 //   the floor tile's lattice points are shared on the borders, computed alike by both tiles.
 // - `dirtyChunks( before, after )`: the chunks whose window meets the land cells that changed,
-//   grown by 2 m (the raster). The corner rounding (`roundCorners( 0.9, 1.4 )`) moves a field
+//   grown by 2 m (the raster): `windowCells`, the one range of land cells a chunk reads, which the
+//   cache key's growth steps test too (chunkWorker.ts), so a chunk whose key stays is a chunk this
+//   rule keeps. The corner rounding (`roundCorners( 0.9, 1.4 )`) moves a field
 //   value by up to 4.6 m, so a value reads the land within min( |d|, LAND_REACH ) + 4.6 m (and the
 //   0.35 m lattice): more than those 2 m, covered by R's slack, since the kinds the chunks share
 //   read their window no farther than about 31 m from the chunk. Every other chunk keeps its data,
@@ -33,6 +35,12 @@
 //   land within its window, and its distances there change only where land near them changed.
 //   The test is the changed cells, not the cells whose clamped distance differs: that would stack
 //   LAND_REACH on the window.
+// - Samplers that need only the island's side (the shore's sea-level section, the rim lattice)
+//   take it from the footprint away from the coast (WorldShapes `solidSide`, exact there) and
+//   sample the SDF only near it: the bits are the same, at a fraction of the cost.
+// - A chunk without island (no land within ISLAND_NEAR) has no island, anchors, bushes, trails or
+//   skirt, and carries no rim ground tile (ChunkMerge.ts fills its square): three quarters of a
+//   sea chunk's bytes went to a tile nothing reads.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
 //   chunk's data and its hash repeat whatever order the chunks are built in.
 // - The page's derived products come with the chunk (ChunkDerived.ts): the island's caster columns
@@ -70,9 +78,9 @@
 //   `hash` covers every buffer, so an unchanged chunk is recognised by its hash.
 
 import { Field2D, roundCorners } from './Field2D.ts';
-import { GROWTH, type LandLattice } from './IslandGrowth.ts';
+import { GROWTH, type LandLattice, type Window } from './IslandGrowth.ts';
 import {
-	cliffSharpCells, islandColumnRange, landBounds, makeIslandSDF, ISLAND_BOTTOM, ISLAND_TOP, LAND_REACH,
+	cliffSharpCells, islandColumnRange, landBounds, makeIslandSDF, solidSide, ISLAND_BOTTOM, ISLAND_TOP, LAND_REACH,
 	type Bounds, type Footprint,
 } from './WorldShapes.ts';
 import { surfaceNets } from './SurfaceNets.ts';
@@ -111,6 +119,9 @@ const SHORE_CELL = 0.125, SHORE_PAD = 26;
 const WALK_CELL = 0.5, WALK_MARGIN = 0.9;
 
 const grow = ( b: Bounds, m: number ): Bounds => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
+// the skirt of a chunk without island, as buildRimSkirt returns it with no coast (new each time: a
+// chunk's buffers are transferred)
+const emptySkirt = (): RimSkirtData => ( { points: new Float32Array( 0 ), normals: new Float32Array( 0 ), info: new Float32Array( 0 ), pieces: new Int32Array( 0 ) } );
 
 /** The key of chunk ( ci, cj ). */
 export const chunkKey = ( ci: number, cj: number ): string => `${ ci },${ cj }`;
@@ -133,31 +144,71 @@ export function chunkKeys( land: LandLattice ): string[] {
 
 }
 
-/** The keys of the chunks that exist on `after` and whose window meets a land cell that differs
- * between the two lands, grown by 2 m, in rows. */
-export function dirtyChunks( before: LandLattice, after: LandLattice ): string[] {
+/** The land lattice's cells (IslandGrowth.ts) whose square, grown by 2 m (the raster), meets
+ * chunk ( ci, cj )'s window [ S c - R, S c + S + R ): what the chunk reads of the land. The dirty
+ * rule and the cache key's growth steps (chunkWorker.ts) both test this one range. */
+export function windowCells( ci: number, cj: number ): Window {
 
+	// cell i's grown square [ X0 + i cell - 2, X0 + ( i + 1 ) cell + 2 ) meets the window when
+	// q <= i < p (every term a multiple of the cell, so exact)
 	const N = Math.round( 2 * GROWTH.half / GROWTH.cell ), X0 = - GROWTH.half, cell = GROWTH.cell, grown = 2;
-	const dirty = new Set<string>();
-	for ( let w = 0; w < after.words.length; w ++ ) for ( let v = ( after.words[ w ] ^ before.words[ w ] ) >>> 0; v !== 0; v &= v - 1 ) {
+	const q = ( c: number ) => Math.max( 0, ( c * S - R - grown - X0 ) / cell );
+	const p = ( c: number ) => Math.min( N, ( c * S + S + R + grown - X0 ) / cell );
+	return { i0: q( ci ), j0: q( cj ), i1: p( ci ), j1: p( cj ) };
 
-		const k = w * 32 + 31 - Math.clz32( v & - v ), i = k % N, j = ( k - i ) / N;
-		const x0 = X0 + i * cell - grown, x1 = X0 + ( i + 1 ) * cell + grown;
-		const z0 = X0 + j * cell - grown, z1 = X0 + ( j + 1 ) * cell + grown;
-		// the windows [ S c - R, S c + S + R ) that meet [ x0, x1 )
-		for ( let cj = Math.floor( ( z0 - S - R ) / S ); cj <= Math.ceil( ( z1 + R ) / S ); cj ++ ) {
+}
 
-			if ( cj * S - R >= z1 || cj * S + S + R <= z0 ) continue;
-			for ( let ci = Math.floor( ( x0 - S - R ) / S ); ci <= Math.ceil( ( x1 + R ) / S ); ci ++ ) {
+/** Which cells of a bit set over a window of the land lattice are set (the bits row by row over the
+ * window, as LandLattice's words over the whole lattice and a piece's over its own), counted by
+ * window in O( 1 ): a summed-area table. */
+export class CellCount {
 
-				if ( ci * S - R < x1 && ci * S + S + R > x0 ) dirty.add( chunkKey( ci, cj ) );
+	private readonly w: Window;
+	private readonly nx: number;
+	private readonly sum: Int32Array;
+
+	constructor( w: Window, bits: Uint32Array ) {
+
+		// (a piece that added no cell has an empty window)
+		const nx = Math.max( 0, w.i1 - w.i0 ), nz = Math.max( 0, w.j1 - w.j0 ), sum = new Int32Array( ( nx + 1 ) * ( nz + 1 ) );
+		this.w = w; this.nx = nx; this.sum = sum;
+		for ( let j = 0; j < nz; j ++ ) {
+
+			let row = 0;
+			for ( let i = 0; i < nx; i ++ ) {
+
+				const b = j * nx + i;
+				row += ( bits[ b >>> 5 ] >>> ( b & 31 ) ) & 1;
+				sum[ ( j + 1 ) * ( nx + 1 ) + i + 1 ] = sum[ j * ( nx + 1 ) + i + 1 ] + row;
 
 			}
 
 		}
 
 	}
-	return chunkKeys( after ).filter( ( key ) => dirty.has( key ) );
+
+	/** Whether any cell of `q` is set. */
+	any( q: Window ): boolean {
+
+		const { w, nx } = this;
+		const i0 = Math.max( q.i0, w.i0 ) - w.i0, i1 = Math.min( q.i1, w.i1 ) - w.i0;
+		const j0 = Math.max( q.j0, w.j0 ) - w.j0, j1 = Math.min( q.j1, w.j1 ) - w.j0;
+		if ( i0 >= i1 || j0 >= j1 ) return false;
+		const at = ( i: number, j: number ) => this.sum[ j * ( nx + 1 ) + i ];
+		return at( i1, j1 ) - at( i0, j1 ) - at( i1, j0 ) + at( i0, j0 ) > 0;
+
+	}
+
+}
+
+/** The keys of the chunks that exist on `after` and whose window meets a land cell that differs
+ * between the two lands, grown by 2 m (`windowCells`), in rows. */
+export function dirtyChunks( before: LandLattice, after: LandLattice ): string[] {
+
+	const N = Math.round( 2 * GROWTH.half / GROWTH.cell ), changed = new Uint32Array( after.words.length );
+	for ( let w = 0; w < changed.length; w ++ ) changed[ w ] = after.words[ w ] ^ before.words[ w ];
+	const cells = new CellCount( { i0: 0, j0: 0, i1: N, j1: N }, changed );
+	return chunkKeys( after ).filter( ( key ) => cells.any( windowCells( ...parseChunkKey( key ) ) ) );
 
 }
 
@@ -273,7 +324,7 @@ export interface ChunkData {
 	strands: RimStrand[];
 	// the turf skirt's owned pieces, each with its crossing samples
 	skirt: RimSkirtData;
-	// the rim ground's owned texels: 160 x 160, RGBA (RimGround.ts)
+	// the rim ground's owned texels: 160 x 160, RGBA (RimGround.ts); empty without island
 	rimGround: Float32Array;
 	// the sea-level section's signed distance (m, clamped to +-LAND_REACH): 128 x 128 texels of 0.125 m
 	shore: Float32Array;
@@ -374,10 +425,10 @@ export function chunkBlock( window: LandField, ci: number, cj: number, span: num
 	const members = [];
 	for ( let j = cj; j < cj + span; j ++ ) for ( let i = ci; i < ci + span; i ++ ) members.push( { key: chunkKey( i, j ), box: chunkBox( i, j ), island: landIn( window, grow( chunkBox( i, j ), ISLAND_NEAR ) ) } );
 	const reach = members.some( ( m ) => m.island ) ? scatterAnchors( ctx, grow( block, TRAIL_REACH ), block ) : new Float32Array( 0 );
-	const tile = rimGroundTile( new RimLattice( ctx.sdf, grow( block, RIM_PAD ) ), block );
+	const tile = rimGroundTile( new RimLattice( ctx.sdf, grow( block, RIM_PAD ), ctx.fp ), block );
 	const bushes = pickBushes( reach, members.map( ( m ) => m.box ) );
 	const strands = rimTrails( ctx, reach, block, members.map( ( m ) => m.box ) );
-	const shore = shoreTile( ctx.sdf, block ), walk = walkTile( ctx.fp, block );
+	const shore = shoreTile( ctx.sdf, ctx.fp, block ), walk = walkTile( ctx.fp, block );
 	// a member's square of a block raster of n texels per chunk
 	const slice = <T extends Float32Array | Uint8Array>( raster: T, n: number, m: { box: Bounds } ): T => {
 
@@ -389,7 +440,7 @@ export function chunkBlock( window: LandField, ci: number, cj: number, span: num
 	};
 	return members.map( ( m, n ) => ( {
 		key: m.key,
-		rimGround: ownTexels( tile, m.box ).data,
+		rimGround: m.island ? ownTexels( tile, m.box ).data : new Float32Array( 0 ),
 		shore: slice( shore, Math.round( S / SHORE_CELL ), m ),
 		walk: slice( walk, Math.round( S / WALK_CELL ), m ),
 		anchors: m.island ? anchorsIn( reach, m.box ) : new Float32Array( 0 ),
@@ -455,10 +506,19 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	if ( island ) anchors = anchorsIn( reach, box );
 	mark( 'anchors' );
 
-	// --- the rim: ground tile, turf skirt, bushes, trails
-	const tile = rimGroundTile( new RimLattice( sdf, grow( box, RIM_PAD ) ), box );
-	const rimGround = ownTexels( tile, box ).data;
-	const skirt = buildRimSkirt( sdf, tile, box );
+	// --- the rim: ground tile, turf skirt, bushes, trails. Without island the tile's lattice lies
+	// wholly outside the solid (its texels reach RIM_PAD from the chunk, the land lies ISLAND_NEAR
+	// away and the wall within 2 m of it), so the skirt is empty and the tile is the open sea's
+	// distance under noise only the cliff and the meadow read: the chunk carries no tile
+	// (ChunkMerge.ts fills its square).
+	let rimGround: Float32Array = new Float32Array( 0 ), skirt = emptySkirt();
+	if ( island ) {
+
+		const tile = rimGroundTile( new RimLattice( sdf, grow( box, RIM_PAD ), fp ), box );
+		rimGround = ownTexels( tile, box ).data;
+		skirt = buildRimSkirt( sdf, tile, box );
+
+	}
 	mark( 'rim' );
 	if ( island ) {
 
@@ -469,7 +529,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	mark( 'trails' );
 
 	// --- the shore: the sea-level section's distance over the chunk, from the section round it
-	const shore = shoreTile( sdf, box );
+	const shore = shoreTile( sdf, fp, box );
 	mark( 'shore' );
 
 	// --- the walk tile
@@ -537,7 +597,7 @@ function anchorsIn( reach: Float32Array, box: Bounds ): Float32Array {
 // and TRAIL_REACH round it and the bushes within TRAIL_BUSH_REACH.
 function rimTrails( ctx: Setup, reach: Float32Array, box: Bounds, boxes: Bounds[] ): RimStrand[][] {
 
-	const coast = coastChains( new RimLattice( ctx.sdf, grow( box, TRAIL_REACH ) ).signs(), 1 );
+	const coast = coastChains( new RimLattice( ctx.sdf, grow( box, TRAIL_REACH ), ctx.fp ).signs(), 1 );
 	const nearBushes = pickBushes( reach, [ grow( box, TRAIL_BUSH_REACH ) ] )[ 0 ];
 	return makeRimTrails( ctx.sdf, ctx.fp, reach, coast, nearBushes, boxes );
 
@@ -557,8 +617,10 @@ function walkTile( fp: Footprint, box: Bounds ): Uint8Array {
 }
 
 // The sea-level section's signed distance over a square box's texels (SHORE_CELL), from the
-// section over the box and SHORE_PAD round it, clamped to +-LAND_REACH.
-function shoreTile( sdf: SDF, box: Bounds ): Float32Array {
+// section over the box and SHORE_PAD round it, clamped to +-LAND_REACH. The transform reads only
+// the section's sign, which the footprint gives away from the coast (`solidSide`): the island's
+// SDF is sampled only in that band, about a tenth of the section.
+function shoreTile( sdf: SDF, fp: Footprint, box: Bounds ): Float32Array {
 
 	const n = Math.round( ( box.x1 - box.x0 ) / SHORE_CELL ), pad = Math.round( SHORE_PAD / SHORE_CELL ), m = n + 2 * pad;
 	const i0 = Math.round( box.x0 / SHORE_CELL ) - pad, j0 = Math.round( box.z0 / SHORE_CELL ) - pad;
@@ -566,7 +628,12 @@ function shoreTile( sdf: SDF, box: Bounds ): Float32Array {
 	for ( let j = 0; j < m; j ++ ) {
 
 		const z = ( j0 + j + 0.5 ) * SHORE_CELL;
-		for ( let i = 0; i < m; i ++ ) section.data[ j * m + i ] = sdf( ( i0 + i + 0.5 ) * SHORE_CELL, 0, z );
+		for ( let i = 0; i < m; i ++ ) {
+
+			const x = ( i0 + i + 0.5 ) * SHORE_CELL, side = solidSide( fp, x, z );
+			section.data[ j * m + i ] = side !== 0 ? side : sdf( x, 0, z );
+
+		}
 
 	}
 	const distance = section.signedDistance().data, out = new Float32Array( n * n );

@@ -202,6 +202,24 @@ export function makeIslandSDF( fp: Footprint, area: Bounds = grow( fp.bounds, 25
 
 }
 
+// Beyond this distance from the footprint's coast (m) the island's solid is known from the
+// footprint alone: CliffWall's column is plain where its offset s = d - coastWobble lies beyond
+// +-3 m (no scar, notch or relief, Cliff.ts `column` and `at`), the solid there is max( s, y - top )
+// and the wobble stays under 0.52 m, so its sign is d's at every height between ISLAND_BOTTOM and
+// the meadow's surface (`islandSurfaceHeight`, at least 2.94 m).
+const SOLID_BAND = 3.6;
+
+/** The island solid's side at ( x, z ) for any height between ISLAND_BOTTOM and the meadow's
+ * surface, from the footprint alone: -1 inside, 1 outside, 0 within SOLID_BAND of the coast (the
+ * island's SDF must be sampled there). Exactly the sign of `makeIslandSDF( fp, ... )` where not 0,
+ * so a sampler that needs only the sign skips the wall wherever this answers. */
+export function solidSide( fp: Footprint, x: number, z: number ): number {
+
+	const d = fp.dist( x, z );
+	return d < - SOLID_BAND ? - 1 : d > SOLID_BAND ? 1 : 0;
+
+}
+
 // The mesh cells that should keep the cliff's edges sharp (dual contouring): the wall and its
 // lip down to below the reach of clear water; the flat meadow and the deep toe keep the plain
 // surface-nets vertex, which needs no extra field samples.

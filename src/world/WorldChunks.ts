@@ -9,14 +9,19 @@
 //   key, the far floor), then every chunk, nearest the camera's pivot first. A chunk job looks the
 //   chunk up in the cache; the first one that misses asks for the land field (a few tenths of a
 //   second, once per land version), which the page hands to every worker, and the chunks that
-//   missed run again and are built. A reload that finds every chunk never builds the field.
+//   missed run again and are built. A land that missed the cache (a new land version: some chunk
+//   will miss too) asks for the field at once, before any chunk's lookup has come back. A reload
+//   that finds the land and every chunk never builds the field.
+//   (The field is cloned to every worker rather than each job sent its window: a window is 4 MB,
+//   so a load would copy several times the field's bytes on the main thread.)
 // - The merge runs once every chunk has arrived, in rows ( cj, then ci ), so the world is the same
 //   whatever order the workers finish in, and the same as the node tools' serial path
 //   (tools/world-node.mjs).
 // - Cache keys: a format version, the generator's hash (tools/vite-world-generator.mjs: every
 //   source the worker imports), the options, the browser, the chunk and the growth steps whose
-//   pieces lie in its window (chunkWorker.ts), so a land grown by a piece finds every chunk the
-//   piece left alone. `worldCache=off` (main.ts) builds every chunk and stores none.
+//   pieces hold cells the chunk reads (chunkWorker.ts, by Chunks.ts `windowCells`), so a land
+//   grown by a piece finds every chunk the dirty rule keeps. `worldCache=off` (main.ts) builds
+//   every chunk and stores none.
 // - Eviction: once every chunk has arrived, one worker gets a `keep` job with this load's keys (the
 //   land's first), and the cache keeps only the records of this land version and the one loaded
 //   before it (WorldCache.ts). A game's growth thus holds two versions on disk, not every one.
@@ -101,8 +106,8 @@ export function loadWorld( options: WorldOptions = {}, { cache = true, pivot, pr
 			for ( const slot of pool ) {
 
 				if ( slot.job || ! land ) continue;
-				// without the cache every chunk needs the field
-				if ( ! fieldAsked && ( needs.length > 0 || generator === null ) ) {
+				// without the cache every chunk needs the field, and a land that missed it is new
+				if ( ! fieldAsked && ( needs.length > 0 || landCache !== 'hit' ) ) {
 
 					fieldAsked = true;
 					send( slot, { kind: 'field', land: land.land.slice() } );
