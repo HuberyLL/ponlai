@@ -130,6 +130,8 @@ export class SunShadow {
 	private vegetationTaps: Readonly<SolarShadowTaps> = SHADOW_FILTER_PATH.vegetation ? VEGETATION_TAPS : SOLAR_SHADOW_TAPS;
 	private hasPrevious = false;
 	private cut = true;
+	/** Maps drawn since the page loaded (the settled signal's signature: post/Settled.ts). */
+	draws = 0;
 	private readonly previousCoordinate = new THREE.Matrix4();
 	private readonly currentCoordinate = new THREE.Matrix4();
 	private readonly corner = new THREE.Vector3();
@@ -333,6 +335,14 @@ export class SunShadow {
 
 	}
 
+	/** Whether the next update redraws the map or projects the caster grid without the light
+	 * having moved (an invalidation, a new receiver): the settled signal waits for it. */
+	get pending(): boolean {
+
+		return this.cut || this.gridDirty;
+
+	}
+
 	/** Once per frame, after the light has moved and before anything renders with the map. */
 	update( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, keyDir: THREE.Vector3 ): void {
 
@@ -399,6 +409,7 @@ export class SunShadow {
 	private draw( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, node: ShadowRenderer, map: THREE.RenderTarget, keyDir: THREE.Vector3 ): void {
 
 		const shadow = this.sun.shadow, shadowCamera = shadow.camera;
+		this.draws ++;
 		this.drawn.copy( keyDir );
 		this.fit( renderer, keyDir );
 		// closed solids cast their front faces into this map alone (see the header)

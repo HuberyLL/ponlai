@@ -26,7 +26,55 @@ Capture a production build (`npm run build`, then `npx vite preview --host 127.0
    ```
 
 Paused captures take the GPU lock shared (`tools/gpu-lock.mjs`): their pixels do not depend on what
-else renders, so they run beside other paused captures and probes, and wait for timing runs.
+else renders, so they run beside other paused captures and probes, and wait for timing runs. Each
+capture holds one of the lock's shared slots (default 3, queued first in, first out), so `--jobs`
+above the free slots only queues.
+
+## Fast mode (tools/capture-browser.mjs)
+
+capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
+
+- Profile slots: each capture runs in a persistent profile, `artifacts/.capture-profiles/<browser
+  build>/<n>` of the main checkout, taking the lowest free slot (a `<n>.lock` directory naming its
+  pid; stale once that process is gone), so `--jobs 4` uses slots 0-3. The world cache
+  (IndexedDB, keyed on the generator's sources and the browser; one entry per preview port) and
+  the GPU shader cache then hit from the second load: the island is not generated again (3 s
+  alone, about a minute under a busy CPU). A hit is byte-identical to a miss. localStorage and
+  sessionStorage are cleared before every page. The browser build is in the path (Playwright's
+  `chromium-<revision>`, or a `CHROME_PATH` browser's `--version`); `PONLAI_CAPTURE_PROFILES`
+  moves the root. The slots are independent of the GPU lock.
+- Readiness by stability (MSAA and off): after the view's eval and the loading screen gone (its
+  computed opacity 0, the fade-out finished, not only its `done` class; plus
+  `--stable-min` rendered frames, 1 by default), the image is grabbed every 2 frames
+  (`--stable-every`; the loop stopped and the GPU queue drained for each grab) and the view is shot
+  once 1 comparison (`--stable-repeats`) found no pixel changed. A paused page still flickers
+  on some views (single frames that leave the settled image and come back to it); since that noise
+  never repeats, two equal grabs are the settled image. After 40 frames (`--stable-patience`) a comparison with at most
+  5000 pixels changed (`--stable-tolerance 0:5000`, `<level>:<pixels>`: pixels differing by more
+  than level; `exact` turns it off) counts too; after 120 frames (`--stable-cap`) the view is shot
+  anyway and marked `capped`. Each capture's JSON records it as `ready` (status `exact`,
+  `tolerance` or `capped`, frames waited, comparisons, the largest difference seen, per comparison
+  its pixel counts; `--stable-trace` adds each grab's hash). On the 24 views (two sets with
+  `--repeat`, `--jobs 2`) every load was shot exact, 4-32 frames after the floor (median 4), on the
+  frame most loads of the earlier tools agreed on: no A/A difference, where their fixed waits left
+  15-17 % of loads off that frame (those runs used a floor of 10 and 2 comparisons; replayed over
+  per-frame traces of the 24 views, a floor of 1 frame and 1 comparison shot no load early and all 48 on
+  the settled frame, at fewer frames). The grab is a CDP screenshot (PNG optimised for speed) at
+  the page's ratio, about 0.27 s at 3456x2234, its pixels those of the shot.
+  `--ready-frames n` brings the fixed count back (a running capture uses 60); `--wait ms` and
+  `--settle ms` add fixed delays before and after the floor.
+- Temporal pages (taa, taau, gt) are not compared: the rest is restarted after the eval, the tool
+  waits for `diag.taa.converged` (8 settle frames and the 32-jitter sequence, about 40 frames; no
+  rest while a bake or transition runs), stops the loop on the held rest and shoots it
+  (`ready.status` `converged`, `ready.framesWaited`); the `--stable-*` options do not apply.
+  Comparing grabs restarted the rest at each loop start and only sampled the frame noise again.
+  The rest is restarted only once the loading screen's fade has finished: a rest converged during
+  the fade was shot with up to 2 % of the screen blended over the frame (0.3-1.9 levels darker
+  over millions of pixels, A/A up to 268 under taa).
+  Rests are not byte-repeatable: temporal sets are judged with `diff-set.py --temporal`.
+- The loop stops before the shot (`__PONLAI__.loop.stop()`: no new frames, the GPU queue drained):
+  a headless page queues seconds of frames ahead of the GPU, and a running page's screenshot
+  waits for them. The frame shot is the same; the shot takes about 1 s instead of 4-11 s.
 
 ## Views (views.mjs)
 
@@ -106,7 +154,14 @@ the boxes placed before it.
 node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
     [--quality high] [--aa mode] [--q "extra&query"] [--jobs 1] [--retries 1] [--size 1728x1117@2]
     [--runs runs.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
+node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
+node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url <refUrl>]
+    [--diff "diff-set.py options"] [--recapture-reference] [same options]
 ```
+
+- `--reference` and `--check` use the reference store (Reference store below): a check captures
+  the test side only and diffs it against the stored reference of the base commit, which it
+  reuses, waits for, or (with `--ref-url`) captures.
 
 - Each view loads `?debug&paused&t=12&quality=<tier>[&aa=<mode>][&<extra>]&<view query>` and is
   written as `<view>.png`, `<view>.json` (diagnostics, crop anchors) and `<view>.log`.
@@ -115,20 +170,22 @@ node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b
   captures, so a view's two loads never run side by side. Take an A/A floor with `--jobs 1`:
   concurrent pages may change which views repeat.
 - `--aa` adds `aa=<mode>` only when given. `--q` adds options to every view (e.g. `msaa=1`).
-- `--jobs n` runs n captures at once (2 is fine; each takes about 20-30 s).
+- `--jobs n` runs n captures at once, each in its own profile slot (a paused capture takes about
+  5-7 s alone; captures are GPU-bound: 3 at once gives the most captures per minute, more only adds latency).
 - `--runs` (or `PARITY_RUNS`) appends a line per run to a CSV: date, task, procedure, sha, wall
   minutes, whether the GPU was busy before the run, captures, failures and the set. Without either
   nothing is logged: a procedure that keeps a run log passes one of them on every run.
-- After `--`, options for capture.mjs: `--wait-for "expr"` (polled up to 60 s after the settling
-  wait), `--frames n --every k` (n captures k rendered frames apart: `<view>.png`,
-  `<view>.f1.png` ...).
+- After `--`, options for capture.mjs: `--wait-for "expr"` (polled up to 60 s once the page is
+  ready), `--frames n --every k` (n captures k rendered frames apart: `<view>.png`,
+  `<view>.f1.png` ...; the loop runs between them and stops for each shot), the `--stable-*`
+  options, `--ready-frames n`, `--wait ms`, `--settle ms` (fast mode above).
 
 ## diff-set.py
 
 ```sh
 uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [--views a,b]
     [--max-px1 200] [--crops 3] [--crop 256] [--out dir] [--aa-floor | --temporal [--flip]]
-    [--md table.md] [--crops-from ref|test|<dir>|<file.json>]
+    [--md table.md] [--crops-from ref|test|<dir>|<file.json>] [--jobs 4]
 ```
 
 - Per view: byte-identical or not, max and mean absolute difference, pixels over 1, 2, 8 and 32
@@ -150,6 +207,9 @@ uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [-
 - `--crops-from`: per anchor, the difference counts and a `ref | test | diff x8` sheet
   (`<out>/<view>.<anchor>.png`), and per view `<view>.anchors.png`, the test frame at a quarter size
   with its anchor boxes.
+- `--jobs n`: views compared at once, in threads (default 4, or half the cores on a CPU with fewer
+  than 8, since captures share the CPU; `--jobs 1` for one at a time). The output does not depend on
+  it: the table prints in view order and every number is an exact integer sum divided once.
 
 ## Temporal tolerance (diff-set.py --temporal, tolerance.py)
 
@@ -180,15 +240,108 @@ flower or the islander's head), each by 3.9 times the tolerance or more. `--flip
 NVIDIA FLIP of each frame (`--with flip-evaluator`), reported only: a frame's mean hides a missing
 flower entirely. Crops come from `--crops-from`, else from the test side's JSON.
 
-## Reference sets
+## Reference store (reference.mjs)
 
-Keep references per merge-base, captured from a detached worktree of that commit:
-`<root>/<sha>/S1` (the 17 views with `--repeat`), `S2` (`--quality medium|low` on six views),
-`S3` (single-sampled, `dpr=1`, the vegetation prepass off and the `post=` switches), with
-`aa-floor.md` listing each view's repeatability. A few views do not repeat byte for byte between
-two page loads (1-3 levels on a few pixels of vegetation, rarely more), and which views they are
-changes from run to run: compare with `--aa-floor` on sets captured with `--repeat`, and treat a
-byte-identical result on a view as luck, not a property of the view, unless it holds across runs.
+References are kept per commit and shared by every task and process that checks against it, so a
+reference is captured once per commit, capture-tool version and browser build. `capture-set.mjs
+--reference` / `--check` keep capture sets there, `baseline.mjs` its `baseline` and ground-truth
+entries. A task that runs the usual command gets reuse and waiting by itself.
+
+### Layout
+
+```
+<root>/<sha>/                      the full sha (a short one in a path is rewritten to it)
+  S1/                              a capture set: <view>.png, <view>.repeat.png, .json, .log
+    complete.json                  its manifest, written last
+    .capturing/owner.json          while a process captures or extends it
+  S2/medium/, S2/low/, S3/msaa1/   further sets, each with its own manifest
+  FAST3/                           created only when no other set of the commit covers it
+  baseline/<tier>/rest/<view>/     baseline.mjs entries (capture-clip folders), each with its own
+  baseline/<tier>/clip/<clip>[@<view>]/   complete.json (and .capturing/ while being captured)
+  gt/<tier>/..., gt-hi/high/...    the ground truth's entries, the same way
+  <label>/...                      a test side's entries (baseline.mjs --label): not references
+  .replaced/<path with ~>@<time>/  a reference replaced by a fresh capture (safe to delete)
+  .<name>.mutex                    beside a reference for a few milliseconds while a process
+                                   inspects it and takes its claim
+```
+
+### The manifest (`complete.json`)
+
+```json
+{
+  "format": 1, "kind": "set" | "clip", "sha": "<40 hex>", "path": "S1",
+  "key": { "kind": "set", "tool": "<16 hex>", "browser": { "executable": "playwright chromium", "version": "153.0.8010.12" },
+           "quality": "high", "aa": null, "q": null, "size": "1728x1117@2", "capture": [] },
+  "toolFiles": { "capture.mjs": "<12 hex>", "capture-browser.mjs": "...", "parity/capture-set.mjs": "...", "parity/views.mjs": "..." },
+  "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true } } },
+  "url": "<the preview it was captured from>",
+  "rounds": [ { "pid": 0, "label": "...", "started": "...", "finished": "...", "minutes": 2.1,
+                "captured": "3 views + 3 repeats", "reason": "no reference yet", "failed": 0 } ]
+}
+```
+
+- `key`: what the pixels depend on. `tool` hashes the capture tools' sources: for sets
+  `capture.mjs`, `capture-browser.mjs`, `parity/capture-set.mjs`, `parity/views.mjs`; for clip
+  entries `capture-clip.mjs`, `capture-browser.mjs`, `parity/views.mjs`, `parity/clips.mjs`
+  (`TOOL_FILES` in reference.mjs: every file of that kind's capture path, the shared browser,
+  readiness and grab included; a change to the clip tools leaves sets valid and the other way
+  round); `toolFiles` keeps each
+  file's hash so a forced recapture names the files that changed. `browser`: CHROME_PATH or
+  Playwright's Chromium, and its version. Then the options: a set's tier, aa, size, extra query
+  and capture.mjs options; a clip entry's `tier`, `aa`, `size`, `q`, `clip`, `view`, `full`,
+  `every`, `dense` and `anchors` (the hash of the anchors it took with `--anchors-from`, null for
+  its own), so a ground truth follows a recaptured baseline.
+- `coverage`: what the directory holds, apart from the key. A set lists its views, each with
+  `repeat` (the second fresh-load capture exists) and `identical` (the two are byte-identical: the
+  view's A/A this time); a clip entry is `{ "captured": true }`. The manifest vouches only for what
+  it lists: a set whose views partly failed lists the others, and the next request captures the
+  rest.
+- `rounds`: each capture or extension, with its reason.
+
+### What a request does
+
+1. The directory's manifest has the same key and covers the request: reused. For a set, another
+   set of the same commit with the same key that covers it serves too (S1 serves FAST3).
+2. A live process holds the claim (`.capturing/owner.json`: pid, host, start, key and what it will
+   cover), on this directory or on a set that will cover the request: wait (poll every 5 s, a
+   line a minute), then reuse. A `--reference` or baseline run under `gpu-lock.mjs run --shared`
+   first frees the slot its wrapper still holds (the wait needs no GPU; a `--check` keeps it for
+   its test side, captured meanwhile).
+3. Otherwise capture (only with a URL of the commit: `--reference`'s own, `--check`'s `--ref-url`,
+   the baseline run's `--url` or another label's `--ref-url`), saying why:
+   - same key, less coverage (a view, a repeat): `not captured yet: ...`, the set is extended in
+     place and the manifest rewritten with the union;
+   - another key: the capture tools changed (and which files), the browser build changed, or an
+     option differs; the old directory moves to `.replaced/`;
+   - a claim whose process is gone (killed, crashed): `the capture by pid N did not finish`, the
+     partial captures are discarded (kept when a manifest already vouched for them and the claim
+     only extended it);
+   - no manifest at all (captured before the store, or by hand): moved to `.replaced/`;
+   - `--recapture-reference` (a reference suspected bad): forced.
+   Without a URL the tool stops and says what it would need (`--skip-existing` in baseline.mjs takes
+   a reference without a manifest, or of another key, as it is).
+
+The claim is taken under a short mutex, so of several processes that find the same reference
+missing exactly one captures it. A claim names a pid on this host: a process that is gone (or a
+zombie) leaves a stale claim, which the next request takes over; when `ps` cannot answer in time
+(a loaded machine) the process counts as alive, since taking over a live capture would put two
+writers in one directory. A process releases and records only a claim that is still its own. Before capturing, the tool checks
+which worktree serves the reference URL's port (`lsof`): it refuses a server whose commit differs
+from the reference's in what the build reads (`src/`, `index.html`, `public/`, `vite.config.ts`,
+`package.json`, `package-lock.json`, `tsconfig.json`; a branch that changed only tools or docs
+serves the same build) or that has uncommitted changes there, and warns when `dist/` is older than
+the last commit of those inputs. `node
+tools/parity/reference.mjs status <root>/<sha>` lists every manifest and claim under a commit,
+and whether its tool hash is current.
+
+A recapture of a reference is forced when the browser build or the capture tools change (one
+reference round after a tool change lands), when a check needs repeats or views the stored set
+lacks (only those are captured), and on request. Repeatability: with readiness by stability (Fast
+mode above) MSAA views repeat byte for byte between page loads (24 of 24 in the base references),
+where the fixed waits left a few views 1-3 levels apart on a few pixels of vegetation; temporal
+sets never do. Still compare with `--aa-floor` (or `--temporal`) on sets captured with `--repeat`:
+a view that differs once is judged against its own A/A. `coverage.views.<view>.identical` records
+each stored A/A.
 
 ## Clips (clips.mjs, capture-clip.mjs, clip-metrics.py)
 
@@ -203,8 +356,8 @@ frame 30). `node tools/parity/clips.mjs list | show <clip>`.
 node tools/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
     [--view v] [--frames n] [--every k] [--crops a,b] [--full 0,30] [--q "extra"] [--gt-jitters n]
     [--anchors-from clip.json] [--out dir] [--runs runs.csv]
-uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py \
-    --test DIR --msaa DIR --gt DIR [--thresholds t.json] [--baseline metrics.json]
+uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/clip-metrics.py \
+    --test DIR --msaa DIR --gt DIR [--thresholds t.json] [--baseline metrics.json] [--workers N]
 ```
 
 - The page is stepped by `__PONLAI__.loop.step` (src/main.ts, debug builds only): the live loop
@@ -241,13 +394,20 @@ uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py 
   header): `--gt` captures the ground truth with the baseline's anchors, `--gt-aa gt` (default,
   every tier) or `gt-hi` (high only); metrics read the entry's own tier's GT, else high's with the
   GT gates off. `--thresholds` adds the gate verdicts and the aggregates (the overall fidelity's
-  share of views; the alignment's median signed offset per tier).
+  share of views; the alignment's median signed offset per tier). The `baseline` and ground-truth
+  entries are references in the store (Reference store above), captured only from the commit's
+  own preview: the baseline run's `--url`, or `--ref-url` in another label's run (which then also
+  captures the ground truth); without it a missing or stale reference is reported and its entries
+  skipped. `--clips` may name a clip that is not a gate's (a task's own, such as `drs-steps`), whose
+  baseline and ground truth are then kept the same way.
 - `clip-metrics.py`: per crop, the test's and MSAA's metrics against the GT (definitions in its
   docstring), their ratio, and PASS / FAIL against a thresholds file of gates on a baseline (MSAA
   measured here, or an earlier metrics.json): ratios with an absolute floor for magnitudes (a
   paused clip's MSAA flicker is exactly 0), differences for the signed fringe, the lag and the
   edge width (`edgeWgt`, against the wider of MSAA's and the GT's edge). Whole frames (`full/`)
-  are measured only when `--crops` names them.
+  are measured only when `--crops` names them. The frames are measured in worker processes
+  (`--workers N`, `CLIP_METRICS_WORKERS`, by default a quarter of the CPUs within 1 to 4; results
+  identical whatever the count): baseline.mjs runs several metric runs at once on top of that.
 - Repeatability: pan-slow on meadow-close repeats byte for byte between fresh loads. Vegetation
   crops elsewhere can differ in single frames: with the vegetation depth prepass on, a few samples
   pass its equal depth test differently from frame to frame (blobs of a few to 150 px on leaves

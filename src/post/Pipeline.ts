@@ -15,6 +15,7 @@ import { beginMotionFrame, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
 import { RAIN_OVERLAY, afterFocus, afterMRT } from './AfterResolve.ts';
 import { jitter } from './Jitter.ts';
 import { TemporalAA, type TemporalFrame, type TemporalMode } from './TemporalAA.ts';
+import { Settled, type SettleFrame } from './Settled.ts';
 import { QUALITY, type TemporalSettings } from '../Quality.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
@@ -180,6 +181,8 @@ export interface PipelineFrame {
 	// the temporal resolve's per-frame inputs from the page (the rest's signature and stability, the
 	// frame's delta)
 	temporal?: TemporalFrame;
+	// the settled signal's per-frame inputs (Settled.ts; debug builds): left out, it is not observed
+	settle?: SettleFrame;
 }
 
 /** The frame graph's structural choices, fixed when the page loads (the quality tier sets them;
@@ -447,6 +450,8 @@ export class Pipeline {
 	readonly options: Readonly<PostOptions>;
 	/** The temporal modes' resolve (null under msaa and off, and with `taaResolve=off`). */
 	readonly temporal: TemporalAA | null = null;
+	/** Whether the paused page will draw the same frame from now on (Settled.ts). */
+	readonly settled = new Settled();
 
 	private depthQuad: THREE.QuadMesh;
 	// (msaa and off: under the temporal modes the opaque copy is a texture copy)
@@ -503,6 +508,7 @@ export class Pipeline {
 		this.renderer = renderer;
 		this.rain = rain;
 		this.options = { ...DEFAULT_POST_OPTIONS, ...options };
+		this.settled.settle = ( temporal ?? QUALITY.high.taa ).restSettle;
 		const O = this.options;
 		this.air = new AerialPerspective( O );
 		// The scene's target: half-float colour and float depth at the scene's sample count, then
@@ -808,8 +814,9 @@ export class Pipeline {
 
 			}
 			// (the plain bilinear blur keeps the half-res pass in the graph; it only shows where
-			// every weight vanished, which they cannot)
-			const blurred = select( wsum.greaterThan( 0 ), acc.div( max( wsum, 1e-6 ) ), ( q ? tBlur.sample( q ) : tBlur ).rgb );
+			// every weight vanished, which they cannot. The select compiles to a per-pixel branch, where
+			// an implicit-lod sample is undefined: level 0, the blur target's only level, is the same.)
+			const blurred = select( wsum.greaterThan( 0 ), acc.div( max( wsum, 1e-6 ) ), ( q ? tBlur.sample( q ) : tBlur ).level( float( 0 ) ).rgb );
 			return mix( ( q ? tSharp.sample( q ) : tSharp ).rgb, blurred, smoothstep( 0, 0.35, c ).mul( u.dof ) );
 
 		} )();
@@ -1733,6 +1740,7 @@ export class Pipeline {
 			}
 
 		}
+		if ( frame.settle ) this.settled.observe( camera, this.width, this.height, this.outputWidth, this.outputHeight, frame.time, frame.settle, this.temporal?.rest ?? null );
 		this.air.update( camera );
 		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.haze.value, this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ),
 			TEMPORAL ? jitter.uniforms.unjitteredProjection.value : camera.projectionMatrix );
