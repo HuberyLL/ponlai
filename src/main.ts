@@ -29,7 +29,7 @@ import { pickPlantSites, bakeGroundContact, bakeAnchorContact } from './world/Pl
 import { buildPlants } from './world/Plants.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
-import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, renderScaleKey } from './post/DynamicResolution.ts';
+import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
 import { installCacheKeyPatches } from './post/graph/ThreePatches.ts';
@@ -916,7 +916,9 @@ if ( DEBUG ) {
 // resolution) or the scene is paused, so paused frames and captures render at the reference scale.
 // (the ground truth renders at the canvas's resolution: no dynamic scale)
 const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render.dynamic : null;
-const dynamicResolution = dynamicRule ? new DynamicResolution( dynamicRule ) : null;
+// Under TAAU the floor rises so the canvas is at most TAAU_MAX_UPSCALE times the render per axis
+// (DynamicResolution.ts); MSAA's FSR 1 path keeps the tier's floor.
+const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRule, maxUpscale: AA_MODE === 'taau' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
 // the same number of refreshes; `frameRate` overrides it (0 renders on every refresh: the profiler's
 // uncapped runs, where the animation frames' intervals measure the work, not a display).

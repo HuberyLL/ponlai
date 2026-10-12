@@ -88,10 +88,19 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 //   turns it off anywhere, `on` on there). The key holds the AA mode: a TAAU frame (one sample
 //   per pixel, the resolve at the canvas's size) costs less per render pixel than a 4x MSAA one,
 //   so the two settle at different scales.
+// - TAAU (aa=taau) upscales in its resolve, which accumulates jittered renders into a history at
+//   the canvas's size: a change of scale resizes only the render-class targets (no pipeline, no
+//   graph rebuild, the history kept and read by uv; the jitter sequence's length follows the new
+//   ratio while its frame count runs on; RCAS's sharpness eases to the new ratio's over a quarter
+//   second: TemporalAA.ts, Jitter.ts). Its floor rises so the canvas is at most TAAU_MAX_UPSCALE
+//   times the render per axis (`maxUpscale`): below that a moving image has too few samples per
+//   output pixel. The quality floor is then the floor, and nothing goes below it. MSAA (FSR 1)
+//   keeps the tier's floor, the quality floor and the steps below it.
 // The page renders at the tier's nominal scale whenever the scale is pinned (`?dpr`, the GUI's
 // full resolution) or the scene is paused, so paused frames and captures render at the reference
 // scale whatever scale the running page had reached.
-// The range runs from the display's ratio (up to 1.5) down to 0.6 in steps of 0.05 (Quality.ts).
+// The range runs from the display's ratio (up to 1.5) down to 0.6 in steps of 0.05 (Quality.ts;
+// under TAAU down to 0.8 on a 2x display).
 // The loading screen waits for the first decision (at most 3 s), so the first jump from the
 // nominal ratio happens behind it. A change only resizes the frame graph's targets: no pipeline is
 // built and no frame is dropped (the cloud view on high is sized from the display, so its kernels
@@ -169,7 +178,19 @@ export interface DynamicResolutionOptions {
 	max: number; // the largest scale (the tier's nominal: the display's ratio, up to its cap)
 	floor: number;
 	step: number;
+	// the most the canvas may be upscaled from the render, per axis (Infinity: no bound; TAAU's
+	// TAAU_MAX_UPSCALE): raises the floor to the canvas's ratio over it
+	maxUpscale?: number;
 }
+
+/** TAAU's bound on the upscale (canvas over render, per axis): the floor rises to the canvas's ratio
+ * over it (0.8 on a 2x display, where the floor is otherwise 0.6). TAAU reconstructs the canvas from
+ * jittered renders, about eight samples per output pixel over its sequence (Jitter.ts: L = 8 r^2,
+ * up to 64), so far below the canvas a moving image has too few samples per pixel to hold its detail
+ * (FSR 2 and DLSS stop at 3x, their Ultra Performance mode, and recommend 2x at most for quality);
+ * 2.5 is the plan's choice (decision D8). MSAA's FSR 1 path keeps the tier's floor and the quality
+ * floor below. */
+export const TAAU_MAX_UPSCALE = 2.5;
 
 /** One frame's GPU time (ms) and how it was drawn. */
 export interface FrameSampleOptions {
@@ -208,9 +229,10 @@ export class DynamicResolution {
 	/** The scale it goes below only while frames are really late and steps down save time. */
 	qualityFloor: number;
 	readonly step: number;
-	// the tier's own range
+	// the tier's own range, and the upscale bound
 	private readonly limit: number;
 	private readonly limitFloor: number;
+	private readonly maxUpscale: number;
 	/** The scale the scene renders at while the resolution is dynamic. */
 	scale: number;
 	/** Changes so far, newest last. */
@@ -277,11 +299,12 @@ export class DynamicResolution {
 	private readonly frameBars = new Map<number, { until: number; seconds: number }>();
 	private warned = false;
 
-	constructor( { max, floor, step }: DynamicResolutionOptions ) {
+	constructor( { max, floor, step, maxUpscale = Infinity }: DynamicResolutionOptions ) {
 
-		if ( ! ( floor > 0 && floor <= max && step > 0 ) ) throw new RangeError( 'Dynamic resolution needs 0 < floor <= max and a positive step' );
+		if ( ! ( floor > 0 && floor <= max && step > 0 && maxUpscale >= 1 ) ) throw new RangeError( 'Dynamic resolution needs 0 < floor <= max, a positive step and an upscale bound of at least 1' );
 		this.max = this.limit = max;
 		this.floor = this.limitFloor = floor;
+		this.maxUpscale = maxUpscale;
 		this.qualityFloor = floor;
 		this.step = step;
 		this.scale = max;
@@ -295,21 +318,35 @@ export class DynamicResolution {
 		const max = Math.min( nominal, this.limit );
 		if ( max === this.max ) return;
 		this.max = max;
-		this.floor = Math.min( this.limitFloor, max );
+		this.floor = this.boundedFloor();
 		this.qualityFloor = Math.min( Math.max( this.qualityFloor, this.floor ), max );
 		this.change( Math.min( this.scale, max ), performance.now() / 1000, 'max' );
 
 	}
 
-	/** The canvas's pixel ratio (the display's, up to its cap): the quality floor follows it. */
+	/** The canvas's pixel ratio (the display's, up to its cap): the quality floor follows it, and so
+	 * does the floor under an upscale bound. */
 	setCanvasRatio( ratio: number ): void {
 
 		if ( ! ( ratio > 0 ) ) return;
 		this.canvasRatio = ratio;
+		this.floor = this.boundedFloor();
 		// the lowest level at or above the share
 		let floor = this.max;
 		for ( const s of this.steps ) if ( s >= QUALITY_FLOOR * ratio - 1e-6 ) floor = s;
-		this.qualityFloor = floor;
+		this.qualityFloor = Math.max( floor, this.floor );
+		if ( this.scale < this.floor - 1e-6 ) this.change( this.floor, performance.now() / 1000, 'floor' );
+
+	}
+
+	// The tier's floor, raised to the lowest level at or above the canvas's ratio over the upscale
+	// bound (the levels run down from the maximum in steps), never above the maximum.
+	private boundedFloor(): number {
+
+		const least = this.canvasRatio > 0 ? this.canvasRatio / this.maxUpscale : 0;
+		if ( least <= this.limitFloor ) return Math.min( this.limitFloor, this.max );
+		const n = Math.floor( ( this.max - least ) / this.step + 1e-6 );
+		return Math.min( Math.max( this.round( this.max - n * this.step ), this.limitFloor ), this.max );
 
 	}
 
