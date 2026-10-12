@@ -18,7 +18,8 @@ type M4 = THREE.Node<'mat4'>;
 // exactly whenever the light is at rest (the same direction on two consecutive updates), so a
 // paused frame is the same however it was reached: after a paused seek it redraws on the second
 // update. The map grows once from its constructed size to 2048 when a light's fit needs it; a scene
-// jump (`reset`) returns it to the constructed size, as a new page would fit that light.
+// jump (`reset`, then `update` at once) returns it to the constructed size and draws it, as a new
+// page fits and draws that light before its first frame.
 
 const WATER_IOR = 1.333;
 // Turn of the key light below which a running clock keeps the drawn map (see RefractedSun.update).
@@ -350,7 +351,8 @@ export class RefractedSun {
 
 	invalidate(): void { this.dirty = true; }
 
-	/** The map as constructed, redrawn at the next update (a scene jump, main.ts `establishScene`):
+	/** The map as constructed, redrawn at the next update (a scene jump, main.ts `establishScene`,
+	 * which calls `update` right after, as `prepare` draws a new page's map before its first frame):
 	 * a map grown to 2048 for one light keeps that size, so a light that a new page fits at the
 	 * constructed size would be drawn at another resolution. */
 	reset(): void {

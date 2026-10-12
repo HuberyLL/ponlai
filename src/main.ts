@@ -1390,9 +1390,10 @@ const setTime = ( t: number ) => {
 //   places it), the controls' limits and depth of field restored, in the query's camera mode.
 // - What the scenes before left behind is cleared: the sky bakes as the page's first bake (Sky.reset:
 //   both endpoints and atlases, the clouds as before the first frame), the lightning forgets its
-//   strikes, the storm sea its foam window, the islander its clips, the refracted sun its map's
-//   size, the fog its bank; the sun's map redraws from scratch and the temporal modes cut their
-//   history ('establish scene').
+//   strikes, the storm sea its foam window, the islander its clips, the refracted sun its map
+//   (back to its size and redrawn at once after the bake, as the load's `prepare` draws it), the
+//   fog its bank; the sun's map redraws from scratch and the temporal modes cut their history
+//   ('establish scene').
 // - Load-time options the query names (quality, aa, dpr, the debug switches: read once when
 //   materials and the frame graph are built) must equal the page's own, or it throws: reload
 //   instead. Those it leaves out are the page's. GUI edits and console changes are not undone.
@@ -1449,13 +1450,18 @@ const establishScene = async ( scene: string | URLSearchParams | { weather?: Wea
 	sky.lightning.reset();
 	stormSea.reset();
 	characters?.reset();
-	refractedSun.reset();
 	pipeline.air.invalidate();
 	shadowElapsed = 0;
 	sceneEvent( 'establish scene' );
 	manualSun = false;
 	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment( true ) );
 	await sunUpdates;
+	// The underwater map at its constructed size, drawn now for the jump's light (published by the
+	// bake), as the load's `prepare` draws it before the first frame. Left to the loop's cadence
+	// (wall time) a capture ready within a few frames shot the cleared map: the sea without its
+	// refracted sun.
+	refractedSun.reset();
+	refractedSun.update();
 
 };
 // set while the loop stands still because the page is hidden (see below)
