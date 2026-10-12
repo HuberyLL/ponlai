@@ -36,6 +36,8 @@
 // captured from the reference's own preview only: `--url` for the baseline's run, `--ref-url` for
 // another label's (a test build's run), whose missing references are otherwise reported and their
 // entries skipped. With --ref-url another label's run also captures the ground truth (as --gt).
+// --capture-only without --url only reuses or waits for the reference entries (missing ones are
+// reported): capture-set.mjs --quick checks its references that way.
 // --skip-existing accepts an entry without a manifest or of another key as it is (references
 // captured before the store) and skips the side under test where its clip.json exists;
 // --recapture-reference captures the reference entries afresh. --clips may also name a clip that
@@ -443,7 +445,8 @@ async function logRun( o, started, captures, failed, out, what, contended ) {
 async function main() {
 
 	const o = parse( process.argv.slice( 2 ) );
-	if ( ! o.sha || ( ! o.url && ! o[ 'metrics-only' ] ) ) {
+	// (--capture-only without --url only reuses or waits for the reference entries: capture-set --quick)
+	if ( ! o.sha || ( ! o.url && ! o[ 'metrics-only' ] && ! o[ 'capture-only' ] ) ) {
 
 		console.error( 'usage: baseline.mjs --url U --sha SHA [options] (see the file header)' );
 		process.exit( 2 );

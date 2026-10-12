@@ -7,6 +7,8 @@
 //   node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
 //   node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url U]
 //       [--diff "diff-set.py options"] [--recapture-reference] [same options]
+//   node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
+//       [--variant "[label::]js"]... [--store <root>/<sha>] [--ref-url R] [--quality, --aa, --q, --size]
 //
 // Every view loads `<baseUrl>?debug&paused&t=12&quality=<q>[&aa=<mode>][&<extra>]&<view's query>`
 // (the order matters: the page reads the first of a repeated option) at the given CSS size and
@@ -49,6 +51,10 @@
 //   default is the PARITY_RUNS environment variable. Without either nothing is logged, so a
 //   procedure that keeps a run log must pass one of them. A reference gets its own line
 //   (`<procedure> ref reused|waited|captured|extended`, its sha, the captures this run made).
+// --quick is the tuning mode, not a gate (quick.mjs, whose header has the rest): one page per view,
+//   the base and then each --variant's js on that page, each shot once ready (crops through the
+//   screenshot's clip), measured against the store's MSAA and ground-truth rest entries of the
+//   commit (--store) on those crops; a short table per variant.
 // Options after `--` pass through to capture.mjs (e.g. `-- --wait-for "expr" --frames 4 --every 5`;
 // an `--eval` there runs after the view's own).
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
@@ -63,6 +69,13 @@ import { gpuUtilisation } from '../gpu-lock.mjs';
 import { ensureReference, setKey, resolveRefDir, checkServed } from './reference.mjs';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../..' );
+// --quick: knob variants on a few views, against the stored references (quick.mjs)
+if ( process.argv.includes( '--quick' ) ) {
+
+	const { main } = await import( './quick.mjs' );
+	process.exit( await main( process.argv.slice( 2 ) ).catch( ( error ) => { console.error( error.message ?? error ); return 2; } ) );
+
+}
 const argv = process.argv.slice( 2 );
 const dash = argv.indexOf( '--' );
 const passThrough = dash >= 0 ? argv.slice( dash + 1 ) : [];

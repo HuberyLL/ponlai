@@ -180,6 +180,43 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   `<view>.f1.png` ...; the loop runs between them and stops for each shot), the `--stable-*`
   options, `--ready-frames n`, `--wait ms`, `--settle ms` (fast mode above).
 
+### Quick mode (--quick, quick.mjs)
+
+For tuning, not a gate (the gates still run full sets): knob variants on a few views and crops,
+each measured against the stored references of a commit.
+
+```sh
+node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
+    [--variant "[label::]js"]... [--quality high] [--aa mode] [--q "extra"] [--size 1728x1117@2]
+    [--store <root>/<sha>] [--ref-url <refUrl>] [--runs runs.csv] [--task name]
+```
+
+- One page per view (loaded as capture-set loads it, film grain 0 as in capture-clip). The base is
+  shot once ready, then each `--variant` in order on the same page: its js runs (`s` is
+  `window.__PONLAI__`), the loop starts again, the temporal rest restarts (an epoch bump), the
+  page is ready again as capture.mjs makes it (stability for MSAA, the converged rest for taa,
+  taau and gt), shot. No repeat.
+- Variants accumulate on the one page: each sets every knob it tunes to an absolute value
+  (`sigma04::s.taa.settings.sigmaRest = 0.4`, then `sharp::s.taa.settings.sigmaRest = 0.3; ...`).
+  Only runtime knobs work (`s.taa.settings.*`, uniforms, `s.applyQuality( { ... } )`); load-time
+  ones (tier, aa, size, the S3 switches) need another run with `--q`.
+- Crops are shot through the screenshot's clip (only their pixels are encoded), 192 CSS px about
+  the anchor as capture-clip cuts them, from the anchors of the store's MSAA rest entry, so they
+  match the references' boxes. `--full` adds the whole frame as a set's `<view>.png`.
+- `--store <root>/<sha>`: the MSAA rest entries (`baseline/<tier>/rest/<view>`) and the ground
+  truth's (`gt/<tier>/rest/<view>`) through baseline.mjs `--capture-only --only rest --gt`: reused,
+  waited for, captured from `--ref-url` when missing, or reported (that view is shot without
+  metrics). Each variant's view folder is a capture-clip folder of the clip `rest`, measured by
+  clip-metrics.py against them.
+- Output: `<outDir>/<variant>/<view>/<crop>/0.png` and `clip.json`, `metrics/`; with `--full`
+  `<outDir>/<variant>/<view>.png`; `quick.md` (per variant and crop: FLIP against the GT, its change
+  from the base, MSAA's FLIP, S, B, dMSAA) and `quick.json` (readiness, timings, metrics).
+- Proof: variants live in one page equal fresh loads
+  with the knob in the URL: MSAA byte-identical (`diff-set --aa-floor`), taau within `--temporal`
+  (at most 3 levels on a few pixels, as its own A/A). A variant costs its readiness and its crops,
+  about 1-3 s, against about 12 s for a fresh load (3 views, base and 2 variants: 43 s against
+  108 s under MSAA, 68 s against 114 s under taau, references reused and metrics included).
+
 ## diff-set.py
 
 ```sh
