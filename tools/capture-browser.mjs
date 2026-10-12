@@ -37,12 +37,12 @@
 //   not levels: a settling flowers-close differed by 1 level over 5.1 M pixels. The smallest
 //   settling step seen was 45 k pixels, the noise between consecutive frames 1 pixel to 0.9 M, so
 //   5000 accepts much of the noise and no settling step.
-// - The defaults (floor 0, every 2, one comparison) come from the offline replay over those traces
+// - The defaults (floor 1, every 2, one comparison) come from the offline replay over those traces
 //   (floors 0-10 x every 1-4, one comparison, task S2): one equal pair already means the settled
-//   image, so no floor is needed: every row shot 0 loads early, and floor 0 with every 2 put 48/48
-//   on the settled frame (47 exact, 1 tolerance), mean 8.6 frames, about 2.5 s of grabbing (a
-//   floor of 1-3 frames was as clean and up to 0.4 s cheaper: early grabs of a settling page differ
-//   and cost a decode).
+//   image, so the floor only skips grabs that would differ anyway: every row shot 0 loads early,
+//   and floor 1 with every 2 put 48/48 on the settled frame, all exact, mean 8.0 frames, about 2.1 s
+//   of grabbing, at most 7.8 s (floor 0: 47 exact and 1 by tolerance, 2.5 s, at most 12.3 s, since
+//   the earliest grabs of a settling page differ and each costs a decode and a cycle).
 // - Measured: traces of the 24 parity views, two loads
 //   each, every frame grabbed for 150 frames, showed every page on its settled image within 1-11
 //   frames and changing afterwards only by the single-frame noise. On the GPU, two sets of the 24
@@ -93,7 +93,7 @@ export const READY_FRAMES = 60;
 /** Readiness by stability's defaults (see the header): the floor before the first grab, frames
  * between grabs, comparisons in a row, the tolerance ({ level, pixels } or null), the frames before
  * the tolerance is accepted, the cap. */
-export const STABLE = { min: 0, every: 2, repeats: 1, tolerance: { level: 0, pixels: 5000 }, patience: 40, cap: 120 };
+export const STABLE = { min: 1, every: 2, repeats: 1, tolerance: { level: 0, pixels: 5000 }, patience: 40, cap: 120 };
 /** A temporal page's own comparisons in a row, patience and cap (each comparison also waits for its
  * rest to converge again, about 40 frames for taa/taau): its rests are never byte-repeatable, so
  * the tolerance counts at once, and the cap allows about 10 rests. */

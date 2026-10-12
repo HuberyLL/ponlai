@@ -57,7 +57,7 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   `--repeat`, `--jobs 2`) every load was shot exact, 4-32 frames after the floor (median 4), on the
   frame most loads of the earlier tools agreed on: no A/A difference, where their fixed waits left
   15-17 % of loads off that frame (those runs used a floor of 10 and 2 comparisons; replayed over
-  per-frame traces of the 24 views, a floor of 0 and 1 comparison shot no load early and all 48 on
+  per-frame traces of the 24 views, a floor of 1 frame and 1 comparison shot no load early and all 48 on
   the settled frame, at fewer frames). The grab is a CDP screenshot (PNG optimised for speed) at
   the page's ratio, about 0.27 s at 3456x2234, its pixels those of the shot.
   `--ready-frames n` brings the fixed count back (a running capture uses 60); `--wait ms` and
