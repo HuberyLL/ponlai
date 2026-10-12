@@ -16,6 +16,10 @@ everyday commands; this file has the details. Each tool's own file says the rest
   `src/debug/PipelineCounter.ts`) and `graph` (the frame graph's dev counters: the attachment
   ops it rewrote and expected in the last frame, the frames they differed, targets found at a
   size other than their class's).
+  `__PONLAI__.establishScene( query )` jumps to a whole scene in place, as a fresh load of
+  `?<query>` would draw it (weather, day clock, moon, scene clock, camera; the leftovers of the
+  scenes before cleared; load-time options must match the page's): one page can capture a whole
+  set (contract in `src/main.ts`, check in `tools/verify-scene-jump.mjs`).
 - Keys: H toggles the GUI, Space pauses, R or 1/2/3 jump to the island, horizon and sky views, F
   toggles a corner readout of the frame cadence.
 - The island camera (`src/camera/IslandCameraControls.ts`): a left drag grabs the ground, a right
@@ -270,7 +274,9 @@ what these do not give (automation, A/B statistics, pass names).
 
 - `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water and wave
   optics (each file names the server it expects); they take the GPU lock (shared).
-  `tools/verify-scene.mjs` checks a production preview.
+  `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
+  parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`
+  (`tools/parity/README.md`, One page, many views).
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
