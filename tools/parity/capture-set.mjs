@@ -1,25 +1,36 @@
-// Paused parity captures of a fixed set of views (views.mjs), each through tools/capture.mjs (and
-// its shared GPU lock: a paused frame's pixels do not depend on what else renders).
+// Paused parity captures of a fixed set of views (views.mjs), through tools/capture.mjs's worker:
+// one page per set (one per worker with --jobs), the views reached in place by the exact scene jump.
 //
 //   node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
 //       [--quality high] [--aa mode] [--q "extra&query"] [--jobs 1] [--retries 1] [--size 1728x1117@2]
-//       [--runs file.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
+//       [--page-per-view] [--runs file.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
 //   node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
 //   node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url U]
 //       [--diff "diff-set.py options"] [--recapture-reference] [same options]
 //   node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
 //       [--variant "[label::]js"]... [--store <root>/<sha>] [--ref-url R] [--quality, --aa, --q, --size]
 //
-// Every view loads `<baseUrl>?debug&paused&t=12&quality=<q>[&aa=<mode>][&<extra>]&<view's query>`
-// (the order matters: the page reads the first of a repeated option) at the given CSS size and
+// Every view is the frame of `<baseUrl>?debug&paused&t=12&quality=<q>[&aa=<mode>][&<extra>]&<view's
+// query>` (the order matters: the page reads the first of a repeated option) at the given CSS size and
 // device pixel ratio (1728x1117 at 2 by default: high renders 2592x1675 and FSR 1 brings it to
-// 3456x2234), runs the view's eval and writes `<outDir>/<view>.png`, its diagnostics and crop
+// 3456x2234), after the view's eval; it is written as `<outDir>/<view>.png`, its diagnostics and crop
 // anchors `<view>.json` and capture.mjs's output `<view>.log`.
-// --repeat captures each view twice, from fresh page loads (`<view>.png`, `<view>.repeat.png`), and
-//   reports whether the two hold identical pixels (decoded: the PNG bytes depend on the encoder;
-//   exit 1 if any differ). The repeats run after all
-//   the first captures. Measure an A/A floor with --jobs 1: concurrent pages may change which views
-//   repeat.
+// One page per set (plan item #9): only load-time options (quality, aa, size and dpr, the debug
+//   switches in --q) need a new page, and every view of a set shares them, so each worker opens one
+//   page (capture.mjs --worker), loads the first view it is given and reaches each later one by
+//   `__PONLAI__.establishScene( <the view's query> )` (src/main.ts: the frame then equals a fresh
+//   load's, byte for byte wherever the fresh load repeats), then the view's eval and the usual
+//   readiness and shot. A view's JSON says how it was reached (`page`: visit, load or jump, the view
+//   before, the page's memory). The views are handed out one at a time from one queue, so --jobs
+//   balances itself. Builds whose page does not mark the exact jump (`__PONLAI__.sceneJump`; older
+//   commits) get a page per view, as before, said once; --page-per-view forces that.
+// --repeat captures each view twice (`<view>.png`, `<view>.repeat.png`) and reports whether the two
+//   hold identical pixels (decoded: the PNG bytes depend on the encoder; exit 1 if any differ). The
+//   repeats run after all the first captures, on other pages (a page serves first captures or
+//   repeats, never both) and in reverse order, so a view's repeat is reached from another scene than
+//   its first capture (the view loaded fresh in one pass is jumped to in the other): an A/A that also
+//   shows anything a jump left behind. Measure an A/A floor with --jobs 1: concurrent pages may
+//   change which views repeat.
 // --reference makes the set a stored reference of a commit (reference.mjs; layout and manifest in
 //   tools/parity/README.md): if the directory's `complete.json` matches (tool version, browser
 //   build, tier, aa, size, extra query, capture.mjs options) and covers the views (and repeats) the
@@ -41,12 +52,14 @@
 //   mode's view (aa=taa|taau, and the ground truth aa=gt: 64 jitters at the canvas's resolution) is
 //   captured once its paused rest has converged (capture.mjs waits for `diag.taa.converged`). Keep a
 //   ground-truth set per merge-base, shared by every task on it: `<parity root>/<sha>/gt/`.
-// --jobs runs that many captures at once (default 1), each in its own profile slot
-//   (tools/capture-browser.mjs); captures are GPU-bound: 3 at once is the most
-//   throughput, more only adds latency. --retries (default
-//   1) captures a view again from a fresh page when capture.mjs fails (a load that timed out while
-//   other pages kept the GPU busy); the log keeps the last attempt. --timeout (ms, default 240000)
-//   bounds capture.mjs's waits for the page.
+// --jobs runs that many pages at once (default 1), each in its own profile slot
+//   (tools/capture-browser.mjs); captures are GPU-bound: 3 at once is the most throughput, more only
+//   adds latency. Each view holds a GPU lock slot from its load or jump to its shot (capture.mjs).
+//   --retries (default 1) captures a failed view again on a fresh page (a load that timed out while
+//   other pages kept the GPU busy, a page error, a crash): a failure ends its page, and the views
+//   still to come go on in a fresh one, so a crash or a stuck page (no answer within three times
+//   --timeout plus two minutes: killed) does not lose the set; the view's log keeps the last
+//   attempt. --timeout (ms, default 240000) bounds capture.mjs's waits for the page.
 // --runs appends a line to a CSV log of verification runs (date, task, procedure, sha, wall time in
 //   minutes, whether the GPU was busy before the run, the captures and failures, the set); the
 //   default is the PARITY_RUNS environment variable. Without either nothing is logged, so a
@@ -61,7 +74,7 @@
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
 // output; see tools/parity/README.md.
 import { spawn } from 'node:child_process';
-import { appendFile, mkdir, readdir, rename, readFile, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -82,7 +95,7 @@ const argv = process.argv.slice( 2 );
 const dash = argv.indexOf( '--' );
 const passThrough = dash >= 0 ? argv.slice( dash + 1 ) : [];
 const args = dash >= 0 ? argv.slice( 0, dash ) : argv;
-const flags = new Set( [ 'repeat', 'recapture-reference' ] );
+const flags = new Set( [ 'repeat', 'recapture-reference', 'page-per-view' ] );
 const options = {}, positional = [];
 for ( let i = 0; i < args.length; i ++ ) {
 
@@ -96,7 +109,7 @@ for ( let i = 0; i < args.length; i ++ ) {
 
 }
 const known = [ 'repeat', 'quality', 'aa', 'q', 'views', 'jobs', 'retries', 'timeout', 'size', 'runs', 'task', 'procedure', 'sha',
-	'reference', 'check', 'ref-url', 'diff', 'recapture-reference' ];
+	'reference', 'check', 'ref-url', 'diff', 'recapture-reference', 'page-per-view' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! known.includes( k ) );
 const mode = options.reference ? 'reference' : options.check ? 'check' : 'plain';
 const positionals = mode === 'reference' ? 1 : 2;
@@ -131,7 +144,6 @@ const jobs = Math.max( 1, Number( options.jobs ?? 1 ) );
 const retries = Math.max( 0, Number( options.retries ?? 1 ) );
 // capture.mjs's waits for the page: generous, since other agents' pages may share the GPU
 const timeout = Number( options.timeout ?? 240000 );
-const captures = path.join( REPO, 'artifacts/captures' );
 const procedure = options.procedure ?? `capture-set${ options.repeat ? ' --repeat' : '' }`;
 
 function run( cmd, argList, log ) {
@@ -148,59 +160,116 @@ function run( cmd, argList, log ) {
 
 }
 
-let sets = 0;
-/** Captures [ view, suffix ] pairs from `url` into `dir`; resolves to the pairs that succeeded. */
+let jumpless = false;
+/** Captures [ view, suffix ] pairs from `url` into `dir`; resolves to the pairs that succeeded.
+ * One page per worker (capture.mjs --worker, see the header): a page serves first captures or
+ * repeats, never both, so a view's repeat comes from another page load than its first capture. */
 async function captureList( url, dir, list ) {
 
 	await mkdir( dir, { recursive: true } );
-	const tag = `parity-${ process.pid }-${ ++ sets }`;
-	const shootOnce = async ( view, suffix ) => {
+	// every first capture before every repeat, the repeats in reverse order (see the header)
+	const queue = [ ...list.filter( ( [ , s ] ) => ! s ), ...list.filter( ( [ , s ] ) => s ).reverse() ]
+		.map( ( [ view, suffix ] ) => ( { view, suffix, key: `${ view }${ suffix }`, attempts: 0 } ) );
+	const done = [];
+	const fail = ( item, why ) => {
 
-		const name = `${ tag }-${ view }${ suffix }`;
-		const q = `${ common }&${ VIEWS[ view ].q }`;
-		const { code } = await run( process.execPath, [ 'tools/capture.mjs', name, '--url', url, '--q', q, '--w', W, '--h', H, '--scale', scale,
-			'--eval', viewEval( view ), '--timeout', String( timeout ), ...passThrough ], path.join( dir, `${ view }${ suffix }.log` ) );
-		// <name>.png, <name>.json and any further frames (<name>.f<i>.png)
-		for ( const file of await readdir( captures ) ) {
+		item.attempts ++;
+		if ( item.attempts <= retries ) {
 
-			if ( file === `${ name }.png` || file === `${ name }.json` || ( file.startsWith( `${ name }.f` ) && file.endsWith( '.png' ) ) ) {
+			// first in line, so a fresh page loads it
+			queue.unshift( item );
+			console.log( `${ item.key } ${ why }: retrying on a fresh page` );
 
-				await rename( path.join( captures, file ), path.join( dir, `${ view }${ suffix }${ file.slice( name.length ) }` ) );
+		} else console.log( `${ item.key } rc=1 FAILED (${ why })` );
+
+	};
+	// a page: one capture.mjs worker, serving items of one kind (first or repeat) until none is left
+	const runPage = ( repeat ) => new Promise( ( resolve ) => {
+
+		const child = spawn( process.execPath, [ 'tools/capture.mjs', '--worker', '--url', url, '--w', W, '--h', H, '--scale', scale,
+			'--timeout', String( timeout ), ...( options[ 'page-per-view' ] ? [ '--page-per-view' ] : [] ), ...passThrough ],
+		{ cwd: REPO, stdio: [ 'ignore', 'pipe', 'pipe', 'ipc' ] } );
+		let output = [], current = null, timer = null, killer = null, writing = Promise.resolve();
+		child.stdout.on( 'data', ( d ) => output.push( d ) );
+		child.stderr.on( 'data', ( d ) => output.push( d ) );
+		child.on( 'error', ( error ) => output.push( Buffer.from( `capture.mjs: ${ error.message }\n` ) ) );
+		// (the page's close waits for the logs: the set's results are read once every page is done)
+		const flushLog = ( item, text ) => {
+
+			const log = Buffer.concat( [ ...output, Buffer.from( text + '\n' ) ] );
+			output = [];
+			writing = writing.then( () => writeFile( path.join( dir, `${ item.key }.log` ), log ) );
+
+		};
+		child.on( 'message', ( m ) => {
+
+			if ( m.type === 'next' ) {
+
+				const i = queue.findIndex( ( item ) => !! item.suffix === repeat );
+				current = i >= 0 ? queue.splice( i, 1 )[ 0 ] : null;
+				if ( ! current ) { child.send( { type: 'done' }, () => {} ); return; }
+				const item = current;
+				// (a page that died meanwhile never got it: back in line, no attempt counted)
+				child.send( { type: 'view', view: { key: item.key, query: `${ common }&${ VIEWS[ item.view ].q }`, evals: [ viewEval( item.view ) ], out: path.join( dir, item.key ) } },
+					( error ) => { if ( error && current === item ) { current = null; queue.unshift( item ); } } );
+				// a page that stopped answering (capture.mjs gives up on a view after 3 x timeout + 1 min)
+				timer = setTimeout( () => {
+
+					console.log( `${ current?.key } no answer from its page: killing it` );
+					child.kill( 'SIGTERM' );
+					killer = setTimeout( () => child.kill( 'SIGKILL' ), 15000 );
+
+				}, timeout * 3 + 120000 );
+
+			} else if ( m.type === 'page' ) {
+
+				if ( ! m.jump && ! jumpless ) {
+
+					jumpless = true;
+					console.log( `this build has no exact scene jump (__PONLAI__.sceneJump ${ m.marker ?? 'missing' }): a page per view` );
+
+				}
+
+			} else if ( m.type === 'shot' ) {
+
+				clearTimeout( timer );
+				const item = current;
+				current = null;
+				flushLog( item, m.log );
+				if ( m.ok ) {
+
+					done.push( [ item.view, item.suffix ] );
+					console.log( `${ item.key } rc=0 ${ m.mode }${ m.from ? ` from ${ m.from }` : '' } ${ m.seconds.toFixed( 1 ) } s${ m.lockSeconds >= 0.5 ? ` (+${ m.lockSeconds.toFixed( 1 ) } s waiting for the GPU lock)` : '' }` );
+
+				} else fail( item, 'failed' );
 
 			}
 
-		}
-		const ok = code === 0 && existsSync( path.join( dir, `${ view }${ suffix }.png` ) );
-		console.log( `${ view }${ suffix } rc=${ code }${ ok ? '' : ' FAILED' }` );
-		return ok;
+		} );
+		child.on( 'close', async ( code, signal ) => {
 
-	};
-	// a load can time out while other pages keep the GPU busy: try again with a fresh page
-	const shoot = async ( view, suffix ) => {
+			clearTimeout( timer );
+			clearTimeout( killer );
+			if ( current ) {
 
-		for ( let attempt = 0; ; attempt ++ ) {
+				// the page died with a view in hand: that view's attempt failed, the rest go on elsewhere
+				const item = current;
+				current = null;
+				flushLog( item, `the page was lost (exit ${ code ?? signal })` );
+				fail( item, `page lost (exit ${ code ?? signal })` );
 
-			const ok = await shootOnce( view, suffix );
-			if ( ok || attempt >= retries ) return ok;
-			console.log( `${ view }${ suffix } retrying` );
+			}
+			await writing;
+			resolve();
 
-		}
+		} );
 
-	};
-	// every plain capture first, then every repeat: with --jobs above 1 a view's two loads then never
-	// run side by side, so its A/A pair is taken under the same kind of load as a test run's capture
-	const queue = [ ...list.filter( ( [ , s ] ) => ! s ), ...list.filter( ( [ , s ] ) => s ) ];
-	const done = [];
+	} );
 	// (never more workers than views, so a view's repeat cannot start beside its first capture)
 	const distinct = new Set( list.map( ( [ v ] ) => v ) ).size;
 	await Promise.all( Array.from( { length: Math.min( jobs, distinct ) }, async () => {
 
-		while ( queue.length ) {
-
-			const [ v, s ] = queue.shift();
-			if ( await shoot( v, s ) ) done.push( [ v, s ] );
-
-		}
+		while ( queue.length ) await runPage( !! queue[ 0 ].suffix );
 
 	} ) );
 	return done;

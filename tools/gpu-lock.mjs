@@ -7,8 +7,9 @@
 //   - shared (deterministic captures and probes): up to PONLAI_GPU_SLOTS holders together (default
 //     3), none while an exclusive holder runs. Captures are GPU-bound: past 2-3 pages at once the
 //     throughput stays flat and only each page's latency grows (and its loads time out), so the
-//     rest queue first in, first out. A slot is held per browser (capture.mjs and capture-clip.mjs
-//     take one around theirs), not per set, so a long set and a one-view probe interleave. An
+//     rest queue first in, first out. A slot is held per capture (capture.mjs from a view's load or
+//     scene jump to its shot, capture-clip.mjs around its clip), not per set or page, so a long set
+//     and a one-view probe interleave. An
 //     exclusive waiter blocks new shared holders and waits for the current ones to drain, so a
 //     stream of probes cannot starve a profile; the queue keeps its order behind it.
 //
