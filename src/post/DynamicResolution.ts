@@ -1,4 +1,5 @@
 import type * as THREE from 'three/webgpu';
+import type { FrameGraph } from './graph/FrameGraph.ts';
 
 // Dynamic resolution (high tier): the scene's render scale moves between the tier's maximum and a
 // floor so that the GPU's frame time stays inside the paced frame (a 60 Hz frame, `FramePacer.ts`),
@@ -7,9 +8,10 @@ import type * as THREE from 'three/webgpu';
 // Its interface to the frame graph is one number per frame: `scale`, the render's pixel ratio,
 // read after `update()` and applied to the next frame (main.ts sizes the frame graph's targets
 // from it and upscales the render to the canvas). In return it takes, per frame, the GPU's busy
-// time, the part of it in passes whose targets are sized from the render (`PassScaling` sorts them
-// by size, so an upscaler's canvas-sized passes count as fixed whatever upscaler it is) and tags for
-// periodic work. Nothing else about the frame graph is assumed.
+// time, the part of it in passes whose cost follows the render's pixel count (`PassScaling`: the
+// frame graph's class of each pass, `currentPass.scales`, so an upscaler's canvas-class passes, FSR 1's
+// or the TAAU resolve's, count as fixed whatever upscaler it is; by the target's size outside it)
+// and tags for periodic work. Nothing else about the frame graph is assumed.
 //
 // - The GPU time comes from timestamp queries (`GpuFrameTimer`, or the frame profiler's own when it
 //   runs), as the time the GPU was busy with each frame: every pass charged from the previous
@@ -864,13 +866,20 @@ export function renderScaleKey( renderer: THREE.WebGPURenderer, tier: string, fr
 
 // ------------------------------------------------------------------ which passes follow the pixels
 
-/** Sorts the renderer's passes, as they begin, into those whose target follows the render's pixel
- * count (sized from it, at the render's size or a power-of-two fraction: the scene, its resolves and
- * copies, the post chain, bloom's mips) and the rest (the canvas, canvas-sized upscale, shadow maps,
- * the FFT's and the sky's fixed targets, every compute pass: the cloud view's dispatch follows the
- * display). Reads three's inspector hooks, wrapping whichever inspector the renderer has. */
+/** Sorts the renderer's passes, as they begin, into those whose cost follows the render's pixel
+ * count and the rest. Inside a frame graph pass, a render into a target of the pass's own size class
+ * takes the graph's word (`currentPass.scales`: a render-class pass follows it; a canvas-class one,
+ * such as the TAAU resolve, the upscale and the output, does not, even when the canvas and the render
+ * are the same size); any other render (a shadow map redrawn inside the scene pass, a chain's
+ * reduced mips, work outside the graph) is sorted by its target's size: at the render's size or a
+ * power-of-two fraction of it (the scene, its resolves and copies, the post chain, bloom's mips) it
+ * follows, otherwise (the canvas, shadow maps, the FFT's and the sky's fixed targets) it does not.
+ * Every compute pass is fixed (the cloud view's dispatch follows the display). Reads three's
+ * inspector hooks, wrapping whichever inspector the renderer has. */
 export class PassScaling {
 
+	/** The frame graph whose passes it asks first (main.ts sets it once the pipeline is built). */
+	graph: Pick<FrameGraph<unknown>, 'currentPass' | 'extent'> | null = null;
 	private readonly pixel = new Map<string, boolean>();
 	private width = 0;
 	private height = 0;
@@ -882,7 +891,7 @@ export class PassScaling {
 		const beginRender = inspector.beginRender.bind( inspector ), beginCompute = inspector.beginCompute.bind( inspector );
 		inspector.beginRender = ( uid, scene, camera, target ) => {
 
-			this.note( uid, target !== null && this.follows( target.width, target.height ) );
+			this.note( uid, target !== null && this.classify( target.width, target.height ) );
 			beginRender( uid, scene, camera, target );
 
 		};
@@ -923,6 +932,20 @@ export class PassScaling {
 		this.pixel.set( uid, pixel );
 		// uids whose timestamps never arrive (lost read-backs) must not pile up
 		if ( this.pixel.size > 4096 ) this.pixel.delete( this.pixel.keys().next().value! );
+
+	}
+
+	// The graph's class for a render into a target of its pass's size, else the target's size.
+	private classify( w: number, h: number ): boolean {
+
+		const pass = this.graph?.currentPass;
+		if ( pass?.size ) {
+
+			const e = this.graph!.extent( pass.size ).value;
+			if ( e.x === w && e.y === h ) return pass.scales === 'pixel';
+
+		}
+		return this.follows( w, h );
 
 	}
 

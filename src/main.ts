@@ -930,6 +930,7 @@ let detector: QualityDetector | null = null;
 // which passes follow the render's pixel count: the GPU time's split into a fixed part and one
 // that follows the scale
 const passScaling = dynamicResolution && gpuTiming ? PassScaling.install( renderer ) : null;
+if ( passScaling ) passScaling.graph = pipeline.graph;
 if ( dynamicResolution ) {
 
 	const sample = ( frame: number, ms: number, pixel: number ) => {
