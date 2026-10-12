@@ -21,7 +21,8 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // unless set), whatever a material's own MRT node says, which changes its shader's outputs only.
 // The scene MRT draws the colour with each material's own blending and overwrites the velocity, so
 // whatever is drawn last at a pixel, transparent or not, leaves its motion there. The overlay MRT,
-// for what the overlay pass draws over the finished scene (the rain and the storm's spray), blends
+// for what the overlay pass draws over the finished scene (under the ground truth the rain and the
+// storm's spray, which taa and taau draw after the resolve: AfterResolve.ts), blends
 // the colour as the material says and keeps the velocity's rgb (Zero / One), while its alpha, the
 // reactive weight, takes the larger of the two (One / One, Max): a streak keeps the motion of the
 // surface behind it. tools/verify-frame-graph-gpu.mjs checks both blends on the GPU.

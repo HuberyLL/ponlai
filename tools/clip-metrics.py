@@ -124,7 +124,10 @@ with --baseline, the "msaa" values of an earlier metrics.json: a clip's own (its
 entry --key of a baseline.mjs metrics.json (its "entries"). Forms against MSAA:
 
   ratio       for magnitudes and the ratios to the GT:
-                "max": r      PASS if test <= max( r x b, floor )
+                "max": r      PASS if test <= max( r x b, floor ), or with "gtPlus": d, if
+                              test <= the GT's own value + d (F only: the GT's frame-to-frame change
+                              over its consecutive frames; a gate the truth itself cannot meet, such
+                              as rain that moves every frame, then passes within d of it)
                 "min": r      PASS if test >= r x b
                 "band": [lo, hi]  PASS if lo <= test / b <= hi; with |b| <= floor (b about 0, where
                               a ratio means nothing) PASS if |test| <= floor
@@ -750,6 +753,8 @@ def unflatten( d ):
 # metrics gated by their difference to the baseline, never by a ratio (see the docstring)
 DIFF_METRICS = { 'fringe', 'L', 'Rec', 'edgeW', 'edgeWgt', 'holes', 'dMSAA', 'shiftX', 'shiftY' }
 RATIO_KEYS = { 'max', 'min', 'band' }
+# options of a ratio gate (see the docstring): an allowance over the GT's own value
+OPTION_KEYS = { 'gtPlus' }
 # descriptive keys a rule may carry (thresholds.json): the GT rules' provenance (`gtSource`,
 # `provisional`), the gate it implements (`id`, `section`), the side it is judged against
 # (`judge`) and a decision it waits for (`pending`)
@@ -770,7 +775,7 @@ def check_thresholds( rules, gt=False ):
 			raise SystemExit( f'thresholds: { key } is a signed or integer metric: gate it with "diff": [lo, hi], not { sorted( keys & RATIO_KEYS ) }' )
 		if 'diff' in rule and ( keys & RATIO_KEYS or gt ):
 			raise SystemExit( f'thresholds: { key } mixes "diff" with ratio gates, or is a GT rule with "diff"' )
-		unknown = keys - RATIO_KEYS - CONDITION_KEYS - { 'diff' }
+		unknown = keys - RATIO_KEYS - CONDITION_KEYS - OPTION_KEYS - { 'diff' }
 		if unknown:
 			raise SystemExit( f'thresholds: { key } has unknown keys { sorted( unknown ) }' )
 
@@ -798,7 +803,7 @@ def applies( rule, tier, base, key=None ):
 	return True
 
 
-def verdict( rule, test, base ):
+def verdict( rule, test, base, gt_value=None ):
 
 	if rule is None or test is None or base is None:
 		return None
@@ -811,7 +816,8 @@ def verdict( rule, test, base ):
 			base = max( base, float( rule[ 'floor' ] ) )
 		return 'PASS' if lo - eps <= test - base <= hi + eps else 'FAIL'
 	floor = float( rule.get( 'floor', 0.0 ) )
-	if 'max' in rule and test > max( rule[ 'max' ] * base, floor ) + eps:
+	plus = rule[ 'gtPlus' ] + gt_value if 'gtPlus' in rule and gt_value is not None else float( '-inf' )
+	if 'max' in rule and test > max( rule[ 'max' ] * base, floor, plus ) + eps:
 		return 'FAIL'
 	if 'min' in rule and test < rule[ 'min' ] * base - eps:
 		return 'FAIL'
@@ -1062,14 +1068,17 @@ def main():
 			base = flatten( baseline[ 'crops' ][ crop ][ 'msaa' ] )
 		else:
 			base = fm_
-		entry = { 'frames': len( own_idx ), 'gtFrames': len( idx ), 'size': list( size ), 'test': mt, 'msaa': mm,
+		# the GT's own frame-to-frame change, over its consecutive frames (its dense runs)
+		gpairs = [ ( p, q ) for p, q in zip( idx, idx[ 1: ] ) if q == p + 1 ]
+		gown = { 'F': float( np.mean( [ np.abs( luma( gt[ q ] ) - luma( gt[ p ] ) ).mean() for p, q in gpairs ] ) ) if gpairs else None }
+		entry = { 'frames': len( own_idx ), 'gtFrames': len( idx ), 'size': list( size ), 'test': mt, 'msaa': mm, 'gtOwn': gown,
 			'ratio': { k: safe_ratio( v, fm_.get( k ) ) for k, v in ft_.items() if isinstance( v, ( int, float ) ) },
 			'series': { 'test': st, 'msaa': sm } }
 		if rules or gt_rules:
 			v = {}
 			for k, x in ft_.items():
 				r = find_rule( rules, scopes, crop, k )
-				res = verdict( r, x, base.get( k ) ) if applies( r, tier, base, a.key ) else None
+				res = verdict( r, x, base.get( k ), gown.get( k ) ) if applies( r, tier, base, a.key ) else None
 				if res:
 					v[ k ] = res
 					if res == 'FAIL':
@@ -1095,7 +1104,8 @@ def main():
 		if 'missing' in e:
 			lines += [ '', e[ 'missing' ], '' ]
 			continue
-		lines += [ '', f'{ e[ "frames" ] } frames ({ e[ "gtFrames" ] } with the GT) at { e[ "size" ][ 0 ] }x{ e[ "size" ][ 1 ] }', '', '| metric | test | MSAA | test / MSAA | gate | GT gate |', '|---|---|---|---|---|---|' ]
+		gf = e.get( 'gtOwn', {} ).get( 'F' )
+		lines += [ '', f'{ e[ "frames" ] } frames ({ e[ "gtFrames" ] } with the GT) at { e[ "size" ][ 0 ] }x{ e[ "size" ][ 1 ] }' + ( f'; the GT\'s own F { gf:.4g}' if gf is not None else '' ), '', '| metric | test | MSAA | test / MSAA | gate | GT gate |', '|---|---|---|---|---|---|' ]
 		ft_, fm_ = flatten( e[ 'test' ] ), flatten( e[ 'msaa' ] )
 		for k in ft_:
 			v = e.get( 'verdict', {} )

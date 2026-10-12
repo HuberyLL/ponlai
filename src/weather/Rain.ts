@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { RainCollision } from './RainCollision.ts';
 import { DRIFT, MEAN_FALL, RainDrops, lightRain, type RainLight } from './RainDrops.ts';
+import { AFTER_RESOLVE } from '../post/Antialiasing.ts';
 import type { LatentRegistry } from '../post/graph/FrameGraph.ts';
 
 export { RAIN_MAX_DROPS } from './RainDrops.ts';
@@ -22,11 +23,14 @@ type V4 = THREE.Node<'vec4'>;
 // tilt-shift blur. `registerLatent` registers its draws and kernels with the frame graph's `rain`
 // pass, whose warm-up (post/graph/FrameGraph.ts) compiles them at startup, so a weather change
 // builds no pipeline.
-// Under the temporal modes (Antialiasing.ts) the drops and splashes draw in the overlay pass, which
-// keeps the motion of the surface behind them and takes their opacity as the reactive weight
-// (RainDrops.ts, Motion.ts), and the veil returns its opacity beside its colour, which the
-// composite writes as the resolve's per-pixel `veilReactive` (Pipeline.ts): the resolve trusts its
-// history less where rain covers the pixel, and nowhere else.
+// Under taa and taau (Antialiasing.ts AFTER_RESOLVE) the drops, their splashes and the veil draw
+// after the temporal resolve, at the canvas's resolution and unjittered (`afterGroup`, and the veil
+// in the canvas pass: post/AfterResolve.ts), and their widths follow the canvas's pixel
+// (`dropPixelAngle`). The ground truth (aa=gt) keeps them before its resolve: the drops in the
+// overlay pass, which keeps the motion of the surface behind them and takes their opacity as the
+// reactive weight (RainDrops.ts, Motion.ts), and the veil in the composite, which writes its
+// opacity as the resolve's per-pixel `veilReactive` (Pipeline.ts), at the render's pixel
+// (`pixelAngle`, which is the canvas's there).
 
 // The veil: shells around the viewer at these distances (metres), each carrying a sheet of
 // streaks. Mapped on the sphere about the rain's own direction, streaks converge on its
@@ -125,22 +129,27 @@ export class Rain {
 		light: uniform( new THREE.Color( 0, 0, 0 ) ), // linear scene radiance, supplied by the shared sky/key
 		waterLevel: uniform( 0 ),
 	};
-	// Angle subtended by one pixel, for the veil's and the drops' energy-preserving widths.
+	// Angle subtended by one pixel, for the veil's and the drops' energy-preserving widths: the
+	// render's pixel for the veil, the pixel the streaks are drawn at for the drops.
 	readonly pixelAngle = uniform( 0.001 );
+	readonly dropPixelAngle = uniform( 0.001 );
 	readonly collision = new RainCollision();
 	readonly drops: RainDrops;
-	/** The drops' streak draw; `group` holds it with the splashes. */
+	/** The drops' streak draw; `group` holds it with the splashes (after the resolve, `afterGroup`
+	 * holds it alone). */
 	readonly mesh: THREE.Mesh;
 	readonly group: THREE.Group;
+	readonly afterGroup: THREE.Group | null;
 	private light: RainLight;
 
 	constructor( { count = 32768, seed = 8371 }: RainOptions = {} ) {
 
 		if ( ! Number.isFinite( count ) || count < 0 ) throw new RangeError( 'Rain count must be finite and non-negative' );
 		if ( ! Number.isFinite( seed ) ) throw new RangeError( 'Rain seed must be finite' );
-		this.drops = new RainDrops( { collision: this.collision, amount: this.uniforms.rain, wind: this.uniforms.wind, pixelAngle: this.pixelAngle, seed } );
+		this.drops = new RainDrops( { collision: this.collision, amount: this.uniforms.rain, wind: this.uniforms.wind, pixelAngle: this.dropPixelAngle, seed } );
 		this.mesh = this.drops.streaks;
 		this.group = this.drops.group;
+		this.afterGroup = this.drops.afterGroup;
 		this.group.visible = false;
 		this.setQuality( count );
 		this.light = { sky: this.uniforms.light.rgb, skySeen: this.uniforms.light.rgb, keyDirection: vec3( 0, 1, 0 ), key: vec3( 0 ) };
@@ -186,8 +195,30 @@ export class Rain {
 	 * only lightens what is darker than the rain and dims what is brighter. */
 	veil( direction: V3, distance: F, background: V3 ): V4 {
 
-		const u = this.uniforms;
+		const coverage = this.veilCoverage( direction, distance );
 		const output = vec4( background, 0 ).toVar();
+		If( this.uniforms.rain.greaterThan( 0.001 ), () => {
+
+			output.assign( vec4( mix( background, this.veilLight( direction ), coverage ), coverage ) );
+
+		} );
+		return output;
+
+	}
+
+	/** The light a veil's streak sends along a view direction (its colour where it covers it). */
+	veilLight( direction: V3 ): V3 {
+
+		return lightRain( direction, this.light, float( 0 ) );
+
+	}
+
+	/** The veil's coverage along a view direction in front of content at `distance` (see `veil`):
+	 * 0 without rain. */
+	veilCoverage( direction: V3, distance: F ): F {
+
+		const u = this.uniforms;
+		const coverage = float( 0 ).toVar();
 		const result = float( 0 ).toVar();
 		If( u.rain.greaterThan( 0.001 ), () => {
 
@@ -214,25 +245,32 @@ export class Rain {
 				const row = floor( fall.div( STREAK_LENGTH * 2.6 ) ).toVar();
 				const along = fract( fall.div( STREAK_LENGTH * 2.6 ) ).mul( 2.6 ).toVar();
 				const present = rainHash( vec2( cell.add( row.mul( 0.618 ) ), row.add( index * 3.7 ) ) ).lessThan( amount.mul( 0.8 ) );
-				const centre = rainHash( seed.add( row ) ).mul( 0.6 ).add( 0.2 );
-				// Angular half-width of the streak, at least half a pixel; energy kept by the ratio.
-				const drop = DROP_WIDTH / radius;
-				const halfWidth = max( float( drop ), this.pixelAngle.mul( 0.5 ) ).toVar();
-				const across = abs( fract( column ).sub( centre ) ).mul( 2 * Math.PI / columns ).mul( sin( polar ) );
-				const profile = float( 1 ).sub( smoothstep( halfWidth.mul( 0.4 ), halfWidth, across ) ).mul( float( drop ).div( halfWidth ) );
-				// Each drop has its own brightness: some catch the light, most are faint.
-				const glint = rainHash( seed.add( row.mul( 1.31 ) ).add( 5.1 ) ).pow( 2 ).mul( 1.6 ).add( 0.25 );
-				const streak = smoothstep( 0, 0.15, along ).mul( float( 1 ).sub( smoothstep( 0.6, 1, along ) ) ).mul( glint );
 				const shown = smoothstep( radius * 0.9, radius * 1.1, distance );
-				result.addAssign( select( present, profile.mul( streak ).mul( shown ), float( 0 ) ) );
+				// (after the resolve, at every canvas pixel, the rest only where a streak may show: past
+				// its shell, present and along its length; before it, as it always was)
+				const add = ( work: () => void ) => AFTER_RESOLVE ? If( present.and( along.lessThan( 1 ) ).and( shown.greaterThan( 0 ) ), work ) : work();
+				add( () => {
+
+					const centre = rainHash( seed.add( row ) ).mul( 0.6 ).add( 0.2 );
+					// Angular half-width of the streak, at least half a pixel; energy kept by the ratio. After
+					// the resolve (one sample a canvas pixel, nothing averaging it) at least 0.8 of a canvas
+					// pixel: a streak half a pixel wide stepped and broke along its length.
+					const drop = DROP_WIDTH / radius;
+					const halfWidth = ( AFTER_RESOLVE ? max( float( drop ), this.dropPixelAngle.mul( 0.8 ) ) : max( float( drop ), this.pixelAngle.mul( 0.5 ) ) ).toVar();
+					const across = abs( fract( column ).sub( centre ) ).mul( 2 * Math.PI / columns ).mul( sin( polar ) );
+					const profile = float( 1 ).sub( smoothstep( halfWidth.mul( 0.4 ), halfWidth, across ) ).mul( float( drop ).div( halfWidth ) );
+					// Each drop has its own brightness: some catch the light, most are faint.
+					const glint = rainHash( seed.add( row.mul( 1.31 ) ).add( 5.1 ) ).pow( 2 ).mul( 1.6 ).add( 0.25 );
+					const streak = smoothstep( 0, 0.15, along ).mul( float( 1 ).sub( smoothstep( 0.6, 1, along ) ) ).mul( glint );
+					result.addAssign( AFTER_RESOLVE ? profile.mul( streak ).mul( shown ) : select( present, profile.mul( streak ).mul( shown ), float( 0 ) ) );
+
+				} );
 
 			}
-			const coverage = clamp( result.mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ), 0, 1 ).toVar();
-			const drop = lightRain( direction, this.light, float( 0 ) );
-			output.assign( vec4( mix( background, drop, coverage ), coverage ) );
+			coverage.assign( clamp( result.mul( away ).mul( amount.mul( 0.5 ).add( 0.5 ) ), 0, 1 ) );
 
 		} );
-		return output;
+		return coverage;
 
 	}
 
@@ -256,13 +294,17 @@ export class Rain {
 	}
 
 	/** Advance the drops to `time` for this camera and run their simulation. `displacement`
-	 * is the wind's integrated travel (m), which carries the drops. */
-	update( renderer: THREE.WebGPURenderer, camera: THREE.Camera, time: number, displacement: THREE.Vector2, viewportHeight = 0 ): void {
+	 * is the wind's integrated travel (m), which carries the drops. `viewportHeight` is the
+	 * render's height, `dropHeight` the height the streaks are drawn at (the canvas's after the
+	 * resolve). */
+	update( renderer: THREE.WebGPURenderer, camera: THREE.Camera, time: number, displacement: THREE.Vector2, viewportHeight = 0, dropHeight = viewportHeight ): void {
 
 		if ( ! Number.isFinite( time ) ) throw new RangeError( 'Rain time must be finite' );
 		this.uniforms.time.value = time;
 		const fov = ( camera as THREE.PerspectiveCamera ).fov;
-		if ( fov && viewportHeight > 0 ) this.pixelAngle.value = 2 * Math.tan( fov * Math.PI / 360 ) / viewportHeight;
+		const angle = ( height: number ) => 2 * Math.tan( fov * Math.PI / 360 ) / height;
+		if ( fov && viewportHeight > 0 ) this.pixelAngle.value = angle( viewportHeight );
+		if ( fov && dropHeight > 0 ) this.dropPixelAngle.value = angle( dropHeight );
 		this.collision.waterLevel.value = this.uniforms.waterLevel.value;
 		const visible = this.drops.count > 0 && this.uniforms.rain.value > 0.0001;
 		this.group.visible = this.mesh.visible = visible;
@@ -273,12 +315,13 @@ export class Rain {
 	}
 
 	/** Registers the drops and splashes with the frame graph's rain pass, and their simulation
-	 * kernel, so the graph's warm-up compiles them before the first rain. Call it after
-	 * `bindOpaqueDepth` and `setLightNode`, which change the materials, with `group` in the rain's
-	 * scene. */
+	 * kernel, so the graph's warm-up compiles them before the first rain (after the resolve, the
+	 * streaks with the after pass, `rainAfter`). Call it after `bindOpaqueDepth` and `setLightNode`,
+	 * which change the materials, with `group` in the rain's scene. */
 	registerLatent( graph: LatentRegistry ): Promise<void> {
 
-		return graph.latent( 'rain', [ this.group ], [ this.drops.compute ] );
+		const rain = graph.latent( 'rain', [ this.group ], [ this.drops.compute ] );
+		return this.afterGroup ? Promise.all( [ rain, graph.latent( 'rainAfter', [ this.afterGroup ] ) ] ).then( () => undefined ) : rain;
 
 	}
 

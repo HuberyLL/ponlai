@@ -45,7 +45,7 @@ import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
-import { AA_GUI_MODES, AA_MODE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
+import { AA_GUI_MODES, AA_MODE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
@@ -131,6 +131,9 @@ document.getElementById( 'app' )!.appendChild( renderer.domElement );
 const scene = new THREE.Scene();
 const waterScene = new THREE.Scene();
 const rainScene = new THREE.Scene();
+// under taa and taau, what draws after the resolve: the rain's streaks and the storm's spray
+// (post/AfterResolve.ts)
+const afterScene = new THREE.Scene();
 
 // The far plane reaches past the horizon so the sea's skirt meets the sky (the resolved sky
 // depth, -1e5, and the passes' sky threshold, -9e4, stay beyond it).
@@ -428,10 +431,14 @@ const requestedLook = params.get( 'look' ) as LookName | null;
 pipeline.setLook( requestedLook && LOOKS.includes( requestedLook ) ? requestedLook : DEFAULT_LOOK );
 rain.bindOpaqueDepth( pipeline.depthRT.texture, pipeline.surfaceRT.texture );
 rainScene.add( rain.group );
-// Under the temporal modes the rain and the storm's spray draw in the overlay pass (rainScene,
-// Pipeline.ts), which keeps the motion vectors of the surfaces under them: their owners register
-// their latent draws for it.
-const overlayLatents: LatentRegistry = TEMPORAL ? { latent: ( _pass, objects, kernels ) => pipeline.graph.latent( 'overlay', objects, kernels ) } : pipeline.graph;
+if ( rain.afterGroup ) afterScene.add( rain.afterGroup );
+// Under the ground truth the rain and the storm's spray draw in the overlay pass (rainScene,
+// Pipeline.ts), which keeps the motion vectors of the surfaces under them; under taa and taau they
+// draw after the resolve (afterScene, the `rainAfter` pass). Their owners register their latent
+// draws for those passes.
+const overlayLatents: LatentRegistry = TEMPORAL
+	? { latent: ( pass, objects, kernels ) => pipeline.graph.latent( pass === 'rainAfter' || ( pass === 'water' && AFTER_RESOLVE ) ? 'rainAfter' : 'overlay', objects, kernels ) }
+	: pipeline.graph;
 
 // ------------------------------------------------------------------ first-use pipelines
 
@@ -452,7 +459,7 @@ const warming = Promise.all( [
 	// graph's warm-up starts, which compiles them with every pass (graph/FrameGraph.ts `warm`)
 	rain.registerLatent( overlayLatents ),
 	sky.lightning.registerLatent( pipeline.graph ),
-	pipeline.graph.warm( { scene, waterScene, rainScene, camera, water: null, sun, time: simTime } ).then( () => pipeline.temporal?.warm() ),
+	pipeline.graph.warm( { scene, waterScene, rainScene, afterScene: AFTER_RESOLVE ? afterScene : undefined, camera, water: null, sun, time: simTime } ).then( () => pipeline.temporal?.warm() ),
 ] );
 warming.catch( () => undefined ); // reported where it is awaited, before the loop
 
@@ -578,7 +585,8 @@ mark( 'villagers' );
 const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
 	sunDir: shared.sunDir, sunColor: shared.sunColor,
 	sky: shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).sqrt() ),
-	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: pipeline.depthRT.texture,
+	// (after the resolve the spray tests the nearest surface, the sea's included: it has no depth buffer)
+	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: AFTER_RESOLVE ? pipeline.surfaceRT.texture : pipeline.depthRT.texture,
 } );
 water = new Water( {
 	fft, sky, shared, shore: shore.tex, seabedHeight: seabedField.tex, shoreWaves,
@@ -587,7 +595,7 @@ water = new Water( {
 } );
 applySkyFill();
 waterScene.add( water.mesh );
-( TEMPORAL ? rainScene : waterScene ).add( stormSea.spray.mesh );
+( AFTER_RESOLVE ? afterScene : TEMPORAL ? rainScene : waterScene ).add( stormSea.spray.mesh );
 
 console.info( worldCache.cache === 'hit' ? 'world from the cache' : 'world generated', data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
@@ -1118,7 +1126,7 @@ function tick( time: number ): void {
 	rain!.uniforms.rain.value = shared.rain.value;
 	rain!.uniforms.wind.value.copy( shared.wind.velocity.value );
 	rain!.uniforms.waterLevel.value = shared.waterLevel.value;
-	rain!.update( renderer, camera, simTime, shared.wind.displacement.value, pipeline.height );
+	rain!.update( renderer, camera, simTime, shared.wind.displacement.value, pipeline.height, AFTER_RESOLVE ? pipeline.outputHeight : pipeline.height );
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		const state = sky.grade;
@@ -1163,11 +1171,15 @@ function tick( time: number ): void {
 	characters?.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	game?.render( renderer, sun, paused ? 0 : rawDt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
-	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * pipeline.height / 900, S.dof );
+	// (the drops blur by the depth of field in the pixels they are drawn at: the canvas's after the
+	// resolve)
+	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * ( AFTER_RESOLVE ? pipeline.outputHeight : pipeline.height ) / 900, S.dof );
 
-	// (the temporal modes draw the storm's spray with the rain, in the overlay pass)
-	const overlay = rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible );
-	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt ) } );
+	// (the ground truth draws the storm's spray with the rain, in the overlay pass; taa and taau draw
+	// it with the streaks after the resolve)
+	const overlay = ! AFTER_RESOLVE && ( rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible ) );
+	const after = AFTER_RESOLVE && ( rain!.mesh.visible || stormSea.spray.mesh.visible );
+	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt ) } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
 	frame ++;

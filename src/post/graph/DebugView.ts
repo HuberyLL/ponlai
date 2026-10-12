@@ -67,7 +67,7 @@ export interface DebugViewRequest { resource: string; output: string | null }
 
 /** What the resolve's debug views ask of it (TemporalAA.ts `declareDebugView`). */
 export interface TemporalDebugSource {
-	declareDebugView( view: 'weight' | 'disocclusion' | 'clip', inputs: { display: ResourceHandle; velocity: ResourceHandle; surfaceDepth: ResourceHandle; surfaceDepthPrev: ResourceHandle; veilReactive: ResourceHandle } ): ResourceHandle;
+	declareDebugView( view: 'weight' | 'disocclusion' | 'clip', inputs: { display: ResourceHandle; velocity: ResourceHandle; surfaceDepth: ResourceHandle; surfaceDepthPrev: ResourceHandle; veilReactive: ResourceHandle | null } ): ResourceHandle;
 }
 
 export interface DebugViewOptions {
@@ -418,7 +418,8 @@ function declareResolveView( graph: FrameGraph<unknown>, value: typeof RESOLVE_V
 	if ( ! canvas ) throw new Error( 'the graph draws no canvas' );
 	const target = resolve.declareDebugView( value, {
 		display: find( 'display' ), velocity: find( 'velocity' ), surfaceDepth: find( 'surfaceDepth' ),
-		surfaceDepthPrev: find( 'surfaceDepthPrev' ), veilReactive: find( 'veilReactive' ),
+		// (no veil's reactive weight when the veil is drawn after the resolve)
+		surfaceDepthPrev: find( 'surfaceDepthPrev' ), veilReactive: decl.resources.some( ( x ) => x.name === 'veilReactive' ) ? find( 'veilReactive' ) : null,
 	} );
 	const r = decl.get( target );
 	const size = graph.extent( r.desc.size );
