@@ -247,7 +247,7 @@ frame 30). `node tools/parity/clips.mjs list | show <clip>`.
 node tools/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
     [--view v] [--frames n] [--every k] [--crops a,b] [--full 0,30] [--q "extra"] [--gt-jitters n]
     [--anchors-from clip.json] [--out dir] [--runs runs.csv]
-uv run --with numpy --with pillow [--with flip-evaluator] tools/clip-metrics.py \
+uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/clip-metrics.py \
     --test DIR --msaa DIR --gt DIR [--thresholds t.json] [--baseline metrics.json] [--workers N]
 ```
 

@@ -176,7 +176,8 @@ shifts, and one recapture before a failure counts; thresholds in `tools/parity/t
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
 crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA and a ground truth (`--aa gt-hi`: MSAA at
 twice high's nominal ratio, downsampled) with gates from a thresholds file
-(`uv run --with numpy --with pillow`; both described in the README). clip-metrics.py measures the
+(`uv run --with numpy --with pillow`, clip-metrics.py also `--with scipy`; both described in the
+README). clip-metrics.py measures the
 frames in worker processes: `--workers N` or `CLIP_METRICS_WORKERS`, by default a quarter of the
 CPUs within 1 to 4; the output does not depend on the count.
 
