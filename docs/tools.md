@@ -178,10 +178,18 @@ twice high's nominal ratio, downsampled) with gates from a thresholds file
 Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
 machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running captures)
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
-do not depend on the load. `node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>`
-wraps any other script, `status` names the holders and `gpu` shows the GPU's utilisation and the
-processes using it. The profiler also checks that the GPU is idle before it measures and marks its
-results contended otherwise. Keep other pages that render the scene closed.
+do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 3) and the
+rest queue first in, first out: captures are GPU-bound, so past 2-3 pages at once only each page's
+latency grows. A slot is held per browser (capture.mjs and capture-clip.mjs take one each), so
+capture-set `--jobs n` and baseline.mjs interleave with other sets capture by capture; under a
+`run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
+from then on, so a wrapped orchestrator never holds a slot its own captures wait for. An exclusive
+request waits for the slots in use, blocks new ones, and the queue resumes after it. A killed
+holder's slot frees itself at the next look.
+`node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
+`status` names the holders (shared: their slots and the queue) and `gpu` shows the GPU's
+utilisation and the processes using it. The profiler also checks that the GPU is idle before it
+measures and marks its results contended otherwise. Keep other pages that render the scene closed.
 
 ## Display gate
 

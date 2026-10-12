@@ -26,7 +26,9 @@ Capture a production build (`npm run build`, then `npx vite preview --host 127.0
    ```
 
 Paused captures take the GPU lock shared (`tools/gpu-lock.mjs`): their pixels do not depend on what
-else renders, so they run beside other paused captures and probes, and wait for timing runs.
+else renders, so they run beside other paused captures and probes, and wait for timing runs. Each
+capture holds one of the lock's shared slots (default 3, queued first in, first out), so `--jobs`
+above the free slots only queues.
 
 ## Fast mode (tools/capture-browser.mjs)
 

@@ -4,17 +4,25 @@
 // Pixels are not: a paused capture or a probe renders the same image however busy the GPU is.
 // So the lock has two modes:
 //   - exclusive (the default, every timing run): one holder, nothing else rendering;
-//   - shared (deterministic captures and probes): any number of holders together, none while an
-//     exclusive holder runs. An exclusive waiter blocks new shared holders and waits for the
-//     current ones to drain, so a stream of probes cannot starve a profile.
+//   - shared (deterministic captures and probes): up to PONLAI_GPU_SLOTS holders together (default
+//     3), none while an exclusive holder runs. Captures are GPU-bound: past 2-3 pages at once the
+//     throughput stays flat and only each page's latency grows (and its loads time out), so the
+//     rest queue first in, first out. A slot is held per browser (capture.mjs and capture-clip.mjs
+//     take one around theirs), not per set, so a long set and a one-view probe interleave. An
+//     exclusive waiter blocks new shared holders and waits for the current ones to drain, so a
+//     stream of probes cannot starve a profile; the queue keeps its order behind it.
 //
 // The lock is a directory (mkdir is atomic) under the user's temporary folder holding owner.json
 // (pid, label, start time, mode); a lock whose process is gone is stale and taken over. Shared
-// holders list themselves in its `shared/` folder and owner.json names one of them, handed on to
-// another when it leaves, so a tool that knows only the exclusive protocol (an older copy of this
-// file) still sees one live owner and waits. Exclusive waiters announce themselves in
-// `ponlai-gpu.lock.waiting/`; joining and leaving the shared lock is serialised by the
-// `ponlai-gpu.lock.mutex` directory.
+// holders list themselves in its `shared/` folder (one file per slot, with its index) and owner.json
+// names one of them, handed on to another when it leaves, so a tool that knows only the exclusive
+// protocol (an older copy of this file) still sees one live owner and waits. Shared requests wait
+// in `ponlai-gpu.lock.queue/` (tickets numbered from `ponlai-gpu.lock.seq`), exclusive waiters
+// announce themselves in `ponlai-gpu.lock.waiting/`; joining and leaving the shared lock is
+// serialised by the `ponlai-gpu.lock.mutex` directory. A holder, ticket or waiter whose process is
+// gone (killed) is dropped at the next look, so its slot frees itself. An older copy of this file
+// joins without a ticket, a slot or the limit, and is not counted: its `run --shared` wrappers are
+// members for a whole set, so counting them would starve the queue.
 //
 //   import { withGpuLock, acquireGpuLock } from './gpu-lock.mjs';
 //   await withGpuLock( 'profile island', async () => { ... } );           // held while fn runs
@@ -22,13 +30,19 @@
 //   await acquireGpuLock( 'verify-sky', { shared: true } );               // shared with other probes
 //
 //   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
-//   node tools/gpu-lock.mjs status
+//   node tools/gpu-lock.mjs status                 (the owner, the slots' holders, the queue, the waiters)
 //   node tools/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
 //
 // A command started through `run` inherits the lock (PONLAI_GPU_LOCK_HELD, PONLAI_GPU_LOCK_MODE), and
 // so does any process below a holder in the process tree, through any wrappers, so a wrapped tool
 // that takes the lock itself does not wait for its own ancestor (a timing tool under a shared parent
-// says so: its numbers may share the GPU). PONLAI_GPU_LOCK_DIR moves the lock.
+// says so: its numbers may share the GPU). Below an exclusive holder everything is re-entrant. Below
+// a shared holder, the first descendant that asks for a shared slot takes its ancestor's slot over:
+// the ancestor (a `run --shared` around capture-set or baseline.mjs, an inner `run` per shot) is an
+// orchestrator from then on and holds nothing, and its other children queue like anyone else. So
+// an orchestrator never holds a slot its children wait for (with 3 slots, three wrapped sets would
+// otherwise hold all three while their captures wait), and an exclusive waiter gets in between the
+// captures of a set rather than after the whole set. PONLAI_GPU_LOCK_DIR moves the lock.
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
@@ -57,8 +71,12 @@ export const LOCK_DIR = path.join( process.env.PONLAI_GPU_LOCK_DIR || tempRoot()
 const OWNER = path.join( LOCK_DIR, 'owner.json' );
 const MEMBERS = path.join( LOCK_DIR, 'shared' );
 const WAITING = `${ LOCK_DIR }.waiting`;
+const QUEUE = `${ LOCK_DIR }.queue`;
+const SEQ = `${ LOCK_DIR }.seq`;
 const MUTEX = `${ LOCK_DIR }.mutex`;
 const POLL_MS = 500;
+/** How many shared holders may render at once (each requester reads its own environment). */
+export const SLOTS = Math.max( 1, Math.floor( Number( process.env.PONLAI_GPU_SLOTS ) ) || 3 );
 
 let depth = 0; // re-entrant within this process
 let heldMode = null; // 'exclusive' | 'shared' while this process holds the lock itself
@@ -160,6 +178,30 @@ function exclusiveWaiters() {
 
 }
 
+/** Shared requests waiting for a slot, first in first (tickets of dead processes are removed). */
+function queued() {
+
+	return listJson( QUEUE ).filter( ( t ) => {
+
+		if ( alive( t.pid ) ) return true;
+		rmSync( t.file, { force: true } );
+		return false;
+
+	} ).sort( ( a, b ) => a.seq - b.seq ).map( ( { file, ...t } ) => t );
+
+}
+
+// a place in the queue; call inside the mutex
+function enqueue( label ) {
+
+	const seq = ( Number( readJson( SEQ ) ) || 0 ) + 1;
+	writeJson( SEQ, seq );
+	mkdirSync( QUEUE, { recursive: true } );
+	writeJson( path.join( QUEUE, `${ process.pid }.json` ), { pid: process.pid, label, seq, start: new Date().toISOString() } );
+	return seq;
+
+}
+
 // this process's parent's parent and so on (0 when it cannot be read)
 function parentOf( pid ) {
 
@@ -175,24 +217,40 @@ function parentOf( pid ) {
 
 }
 
-function inherited() {
+// The holder above this process in the process tree, { pid, mode }, or null.
+function holdingAncestor() {
 
 	const owner = lockOwner();
-	if ( ! owner ) return false;
-	const holders = new Set( [ owner.pid, ...( owner.members ?? [] ).map( ( m ) => m.pid ) ] );
+	if ( ! owner ) return null;
+	const mode = owner.mode === 'shared' ? 'shared' : 'exclusive';
+	const holders = new Set( mode === 'shared' ? owner.members.map( ( m ) => m.pid ) : [ owner.pid ] );
 	const held = Number( process.env.PONLAI_GPU_LOCK_HELD );
-	if ( held > 0 && holders.has( held ) && alive( held ) ) return true;
+	if ( held > 0 && holders.has( held ) && alive( held ) ) return { pid: held, mode };
 	// A holder further up the process tree. The environment names only the nearest `run`, and a
 	// wrapper in between need not be a member: a tool that runs each shot through its own `run`
-	// (capture-growth.mjs) under an outer `run` names that inner, re-entrant `run`. Its child would
-	// then wait for a slot of its own, which an exclusive waiter blocks while the holder waits for
-	// the child: a deadlock.
+	// (capture-growth.mjs) under an outer `run` names that inner `run`. Its child would then wait
+	// for a slot of its own, which an exclusive waiter blocks while the holder waits for the child:
+	// a deadlock.
 	for ( let pid = process.ppid, hops = 0; pid > 1 && hops < 32; pid = parentOf( pid ), hops ++ ) {
 
-		if ( holders.has( pid ) ) return true;
+		if ( holders.has( pid ) ) return { pid, mode };
 
 	}
-	return false;
+	return null;
+
+}
+
+// Takes the slot of a shared holder above this process over (see the header); false when that
+// holder has left or handed its slot on meanwhile. Call inside the mutex.
+function takeOverSlot( ancestor, label ) {
+
+	const file = path.join( MEMBERS, `${ ancestor.pid }.json` );
+	const held = readJson( file );
+	if ( ! held || ! alive( ancestor.pid ) || readJson( OWNER )?.mode !== 'shared' ) return false;
+	writeJson( path.join( MEMBERS, `${ process.pid }.json` ), { pid: process.pid, label, start: new Date().toISOString(), slot: held.slot, from: ancestor.pid } );
+	rmSync( file, { force: true } );
+	repairShared();
+	return true;
 
 }
 
@@ -283,7 +341,7 @@ function repairShared() {
 		return;
 
 	}
-	if ( ! members.some( ( m ) => m.pid === owner.pid ) ) writeJson( OWNER, { ...owner, pid: members[ 0 ].pid, label: `shared: ${ members[ 0 ].label }` } );
+	if ( ! members.some( ( m ) => m.pid === owner.pid ) ) writeJson( OWNER, { pid: members[ 0 ].pid, label: `shared: ${ members[ 0 ].label }`, start: owner.start, mode: 'shared' } );
 
 }
 
@@ -309,11 +367,43 @@ function tryAcquireExclusive( label ) {
 
 }
 
-function joinShared( label ) {
+// Joins the shared lock when a slot is free and no earlier ticket is waiting for it. Call inside
+// the mutex (exclusive requests do not take it, so the lock may change under us: mkdir decides).
+function joinShared( label, seq ) {
 
 	// a waiting exclusive holder goes first
 	if ( exclusiveWaiters().length ) return false;
-	const me = { pid: process.pid, label, start: new Date().toISOString() };
+	const owner = readJson( OWNER );
+	if ( owner ) {
+
+		if ( owner.mode !== 'shared' ) {
+
+			if ( ! alive( owner.pid ) ) removeStale( owner );
+			return false;
+
+		}
+		repairShared(); // it may empty and go
+
+	} else {
+
+		// being written, or lost
+		const info = lockOwner();
+		if ( info ) {
+
+			if ( info.unknown && info.ageMs > 10000 ) removeStale( null );
+			return false;
+
+		}
+
+	}
+	// holders that joined through an older copy of this file have no slot and are not counted
+	const members = readJson( OWNER ) ? sharedMembers().filter( ( m ) => m.slot !== undefined ) : [];
+	const free = SLOTS - members.length;
+	if ( free <= 0 || queued().filter( ( t ) => t.seq < seq ).length >= free ) return false;
+	const taken = new Set( members.map( ( m ) => m.slot ) );
+	let slot = 0;
+	while ( taken.has( slot ) ) slot ++;
+	const me = { pid: process.pid, label, start: new Date().toISOString(), slot };
 	try {
 
 		mkdirSync( LOCK_DIR );
@@ -321,31 +411,14 @@ function joinShared( label ) {
 	} catch ( error ) {
 
 		if ( error.code !== 'EEXIST' ) throw error;
-		const owner = readJson( OWNER );
-		if ( ! owner ) {
-
-			// being written, or lost
-			const info = lockOwner();
-			if ( info?.unknown && info.ageMs > 10000 ) removeStale( null );
-			return false;
-
-		}
-		if ( owner.mode !== 'shared' ) {
-
-			if ( ! alive( owner.pid ) ) removeStale( owner );
-			return false;
-
-		}
-		repairShared();
-		if ( ! readJson( OWNER ) ) return false; // it emptied: try again
-		mkdirSync( MEMBERS, { recursive: true } );
-		writeJson( path.join( MEMBERS, `${ process.pid }.json` ), me );
-		return true;
+		// an exclusive holder came first (or is writing its owner.json)
+		if ( readJson( OWNER )?.mode !== 'shared' ) return false;
 
 	}
 	mkdirSync( MEMBERS, { recursive: true } );
 	writeJson( path.join( MEMBERS, `${ process.pid }.json` ), me );
-	writeJson( OWNER, { ...me, label: `shared: ${ label }`, mode: 'shared' } );
+	if ( ! readJson( OWNER ) ) writeJson( OWNER, { pid: me.pid, label: `shared: ${ label }`, start: me.start, mode: 'shared' } );
+	rmSync( path.join( QUEUE, `${ process.pid }.json` ), { force: true } );
 	return true;
 
 }
@@ -366,6 +439,7 @@ export function releaseGpuLock() {
 
 	depth = 0;
 	rmSync( path.join( WAITING, `${ process.pid }.json` ), { force: true } );
+	rmSync( path.join( QUEUE, `${ process.pid }.json` ), { force: true } );
 	if ( heldMode === 'shared' ) {
 
 		heldMode = null;
@@ -402,9 +476,10 @@ function installRelease() {
  * on what else runs on the GPU (paused captures, pixel probes). Returns the wait in milliseconds. */
 export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?? 'node' ), { timeout = 0, quiet = false, shared = false } = {} ) {
 
-	if ( depth > 0 || inherited() ) {
+	const ancestor = depth > 0 ? null : holdingAncestor();
+	if ( depth > 0 || ( ancestor && ! ( shared && ancestor.mode === 'shared' ) ) ) {
 
-		const parentMode = depth > 0 ? heldMode : process.env.PONLAI_GPU_LOCK_MODE;
+		const parentMode = depth > 0 ? heldMode : ancestor.mode;
 		if ( ! shared && parentMode === 'shared' && ! quiet ) console.error( `[gpu-lock] "${ label }" wants the GPU to itself but runs under a shared lock: other probes may render meanwhile` );
 		depth ++;
 		return 0;
@@ -412,9 +487,20 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 	}
 	installRelease();
 	const started = Date.now();
+	// a shared request below a shared holder takes that holder's slot over (see the header)
+	if ( ancestor && await withMutex( () => takeOverSlot( ancestor, label ) ) ) {
+
+		depth = 1;
+		heldMode = 'shared';
+		return 0;
+
+	}
 	let told = 0;
 	const waitFile = path.join( WAITING, `${ process.pid }.json` );
-	if ( ! shared ) {
+	const ticket = path.join( QUEUE, `${ process.pid }.json` );
+	let seq = 0;
+	if ( shared ) seq = await withMutex( () => enqueue( label ) );
+	else {
 
 		mkdirSync( WAITING, { recursive: true } );
 		writeJson( waitFile, { pid: process.pid, label, start: new Date().toISOString() } );
@@ -424,7 +510,7 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 
 		for ( ;; ) {
 
-			const got = shared ? await withMutex( () => joinShared( label ) ) : tryAcquireExclusive( label );
+			const got = shared ? await withMutex( () => joinShared( label, seq ) ) : tryAcquireExclusive( label );
 			if ( got === true ) break;
 			// a shared lock whose named owner died while others hold it: hand it on
 			if ( got === 'shared' ) await withMutex( repairShared );
@@ -439,8 +525,16 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 
 				const owner = lockOwner();
 				const waiters = shared ? exclusiveWaiters() : [];
-				if ( owner ) console.error( `[gpu-lock] waiting for "${ owner.label }" (pid ${ owner.pid }, since ${ owner.start }${ owner.members?.length > 1 ? `, ${ owner.members.length } shared holders` : '' })` );
-				else if ( waiters.length ) console.error( `[gpu-lock] waiting: "${ waiters[ 0 ].label }" (pid ${ waiters[ 0 ].pid }) wants the GPU to itself first` );
+				const ahead = shared ? queued().filter( ( t ) => t.seq < seq ).length : 0;
+				if ( waiters.length ) console.error( `[gpu-lock] waiting: "${ waiters[ 0 ].label }" (pid ${ waiters[ 0 ].pid }) wants the GPU to itself first` );
+				else if ( owner?.mode === 'shared' && shared ) {
+
+					const slotted = owner.members.filter( ( m ) => m.slot !== undefined );
+					console.error( `[gpu-lock] waiting for a GPU slot: ${ slotted.length } of ${ SLOTS } in use (${ slotted.map( ( m ) => `"${ m.label }"` ).join( ', ' ) })${ ahead ? `, ${ ahead } ahead in the queue` : '' }` );
+
+				}
+				else if ( owner ) console.error( `[gpu-lock] waiting for "${ owner.label }" (pid ${ owner.pid }, since ${ owner.start }${ owner.members?.length > 1 ? `, ${ owner.members.length } shared holders` : '' })` );
+				else if ( ahead ) console.error( `[gpu-lock] waiting: ${ ahead } ahead in the queue` );
 				told = waited || 1;
 
 			}
@@ -451,6 +545,7 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 	} finally {
 
 		rmSync( waitFile, { force: true } );
+		rmSync( ticket, { force: true } );
 
 	}
 	depth = 1;
@@ -462,16 +557,18 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 /** Runs `fn` while holding the lock (`options` as for acquireGpuLock). */
 export async function withGpuLock( label, fn, options = {} ) {
 
-	const reentrant = depth > 0 || inherited();
+	const outer = depth === 0;
 	await acquireGpuLock( label, options );
+	// held by this call itself, not inherited from this process or an ancestor
+	const own = outer && heldMode !== null;
 	try {
 
 		return await fn();
 
 	} finally {
 
-		if ( reentrant ) depth = Math.max( depth - 1, 0 );
-		else releaseGpuLock();
+		if ( own ) releaseGpuLock();
+		else depth = Math.max( depth - 1, 0 );
 
 	}
 
@@ -612,7 +709,15 @@ async function main( argv ) {
 
 		const owner = lockOwner();
 		const waiting = exclusiveWaiters().map( ( { file, ...w } ) => w );
-		console.log( owner ? JSON.stringify( { ...owner, alive: owner.pid ? alive( owner.pid ) : null, dir: LOCK_DIR, ...( waiting.length ? { waiting } : {} ) } ) : `free (${ LOCK_DIR })${ waiting.length ? ` ${ JSON.stringify( { waiting } ) }` : '' }` );
+		const queue = queued();
+		const extra = { ...( waiting.length ? { waiting } : {} ), ...( queue.length ? { queue } : {} ) };
+		if ( owner?.mode === 'shared' ) {
+
+			const { members, ...rest } = owner;
+			const holders = members.filter( ( m ) => m.slot !== undefined ), unslotted = members.filter( ( m ) => m.slot === undefined );
+			console.log( JSON.stringify( { ...rest, alive: alive( owner.pid ), dir: LOCK_DIR, slots: { limit: SLOTS, used: holders.length, holders, ...( unslotted.length ? { unslotted } : {} ) }, ...extra } ) );
+
+		} else console.log( owner ? JSON.stringify( { ...owner, alive: owner.pid ? alive( owner.pid ) : null, dir: LOCK_DIR, ...extra } ) : `free (${ LOCK_DIR }, ${ SLOTS } shared slots)${ Object.keys( extra ).length ? ` ${ JSON.stringify( extra ) }` : '' }` );
 		return 0;
 
 	}
