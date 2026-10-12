@@ -55,6 +55,16 @@
 //   Equal PNG bytes are equal pixels; only a changed frame is decoded (about 0.12 s). Reading the
 //   canvas in the page (drawImage) gives a blank image once the frame is presented: WebGPU drops
 //   its drawing buffer.
+// - The grab's CDP session drops the page's device metrics: a clipped `Page.captureScreenshot`
+//   emulates the clip on its own session and then restores that session's emulation, which is
+//   none, so Playwright's override (its deviceScaleFactor) is gone and `window.devicePixelRatio`
+//   reads 1. The frames drawn stay the same (the page follows the ratio only on a resize, and
+//   none fires), but anything reading the ratio afterwards is wrong, such as views.mjs's crop
+//   anchors in capture-clip. So waitForStable ends with a Playwright screenshot of one pixel
+//   (whose own clip emulation is restored to Playwright's metrics) and waits until the page reads
+//   the ratio it had before the grabs: about 35 ms per capture. Sending the same metrics again
+//   (`setViewportSize` with the same size) does nothing, since Chrome sees no change on
+//   Playwright's session; a grab without a clip keeps the metrics but is taken at CSS pixels.
 // - Stopping the loop for each grab also waits for a sky bake in flight and drains the GPU queue,
 //   so work landing late on a busy GPU is in the next grab rather than frames later.
 // - A paused page of the temporal modes (taa, taau, gt) is ready once its rest has converged
@@ -501,6 +511,10 @@ export async function waitForStable( page, { every = STABLE.every, repeats = STA
 	} finally {
 
 		await cdp.detach().catch( () => {} );
+		// the grabs dropped Playwright's device metrics (see the header): a screenshot of one pixel
+		// through Playwright's own session applies them again, before anything reads the page
+		await page.screenshot( { clip: { x: 0, y: 0, width: 1, height: 1 }, timeout } );
+		await page.waitForFunction( ( ratio ) => devicePixelRatio === ratio, clip.scale, { timeout } );
 
 	}
 
