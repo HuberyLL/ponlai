@@ -97,8 +97,9 @@ export class Jitter {
 	restIndex: number | null = null;
 	restLength = REST_SEQUENCE;
 	readonly uniforms = {
-		// k mod 16, for the vegetation's per-frame dither (a threshold of the pixel's 4x4 Bayer value
-		// plus 5 k, mod 16)
+		// the vegetation's per-frame dither index (a threshold of the pixel's 4x4 Bayer value plus 5
+		// times it, mod 16; `coverageDither` in world/Foliage.ts): the rendered frame mod 16 in the
+		// running sequence, k mod 16 at rest (see `prepare`)
 		ditherIndex: uniform( 0 ),
 		// the offset in render pixels (`px`)
 		px: uniform( new THREE.Vector2() ),
@@ -121,6 +122,11 @@ export class Jitter {
 
 		this.length = sequenceLength( this.mode, ratio );
 		this.k = this.restIndex !== null ? this.restIndex - 1 : this.frame % this.length;
+		// The dither's index runs on its own 16-frame cycle in the running sequence, so any 16
+		// consecutive frames give each pixel every threshold once whatever L is (with k mod 16, TAAU's
+		// L = 18 at a ratio of 1.5 repeated two thresholds and skipped two in each 16 frames across its
+		// wrap); at rest it follows the rest index, so a paused frame stays path independent.
+		const dither = this.restIndex !== null ? this.k : this.frame;
 		this.frame ++;
 		if ( debugFlags.jitter === false ) this.px.set( 0, 0 );
 		else if ( this.restIndex !== null ) {
@@ -130,7 +136,7 @@ export class Jitter {
 
 		} else this.px.set( halton( this.k + 1, 2 ) - 0.5, halton( this.k + 1, 3 ) - 0.5 );
 		const u = this.uniforms;
-		u.ditherIndex.value = this.k % 16;
+		u.ditherIndex.value = dither % 16;
 		u.px.value.copy( this.px );
 		u.ndc.value.set( 2 * this.px.x / Math.max( width, 1 ), - 2 * this.px.y / Math.max( height, 1 ) );
 		this.projection.copy( camera.projectionMatrix );
