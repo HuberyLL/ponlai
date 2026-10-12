@@ -44,11 +44,12 @@ import { jitter } from './Jitter.ts';
 //   scene before the composite.
 // - The veil (Rain.veil): evaluated at the canvas pixel's unjittered ray (interpolated from the
 //   pass's vertices), in front of what lies at the render texel nearest the point it shows, as the
-//   composite laid it over the air (the shafts the composite added over it now lie under it); the
-//   rest of a shell's work only where a streak may show. Evaluated in the composite instead, along
-//   the render texels' unjittered rays and read bilinearly, it cost as much at equal sizes and,
-//   below the canvas, lost its faint streaks against the ground truth (ghosting 1.5 x MSAA's, from
-//   0.2 x).
+//   composite laid it over the air (the shafts the composite added over it now lie under it); a
+//   shell's work only past it (none at all for what lies before the nearest shell, as the near
+//   meadow does), and the rest of it only where a streak may show. Evaluated in the composite
+//   instead, along the render texels' unjittered rays and read bilinearly, it cost as much at equal
+//   sizes and, below the canvas, lost its faint streaks against the ground truth (ghosting 1.5 x
+//   MSAA's, from 0.2 x).
 // - Grade: while it rains or the overlay holds something, the canvas pass adds the change the rain
 //   makes to the graded colour after RCAS and before the grain (TemporalAA.ts `layer`). At the
 //   render texel nearest the point the pixel shows, the display pass's grade input (the sharp image,
