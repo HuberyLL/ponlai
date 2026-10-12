@@ -155,8 +155,9 @@ persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of th
 delete), so the world cache and the GPU shader cache hit from the second capture on. A paused
 capture is shot once its image stops changing: grabbed every 2 frames from the frame after the
 evals, shot when a comparison found no pixel changed (after 40 frames, at most 5000
-changed pixels count as unchanged; after 120 the view is shot anyway, marked `capped`; a temporal
-page compares converged rests, two in a row, with the tolerance at once and a cap of 400 frames).
+changed pixels count as unchanged; after 120 the view is shot anyway, marked `capped`). A paused
+temporal page (taa, taau, gt) is not compared: it is shot once its rest has converged
+(`TemporalRest.ts`), and the `--stable-*` options do not apply to it.
 Replayed over per-frame traces of the 24 parity views, these defaults shot no load early and every
 one on its settled frame. The capture's JSON records it as `ready` (`--stable-*` options in `tools/capture.mjs`, the rule and its
 evidence in `tools/capture-browser.mjs`). `--ready-frames n` waits for a fixed count instead, as a

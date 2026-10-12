@@ -12,8 +12,8 @@
 // query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it) in a
 // persistent profile slot, runs the view's eval (the crop anchors' setup included), waits for the
 // scene as capture.mjs does (tools/capture-browser.mjs: the image stopped changing, with the same
-// --stable-* options, or --ready-frames' fixed count; --wait / --settle ms of fixed delay around the
-// floor when given; the readiness record goes into clip.json as `ready`; the loop is left stopped,
+// --stable-* options, or under taa / taau / gt the rest converged, or --ready-frames' fixed count;
+// --wait / --settle ms of fixed delay around the floor when given; the readiness record goes into clip.json as `ready`; the loop is left stopped,
 // as the stepper wants it), runs the clip's eval, reads the crop anchors once at the base pose and then steps the clip. After each frame
 // (every k-th with --every, and every frame of the --dense runs; frame 0 always) each anchor's world point is projected with that
 // frame's camera into a box of 192 CSS px (384 device px at a pixel ratio of 2, clamped into the
@@ -214,8 +214,8 @@ try {
 		await p.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
 		if ( ! ( await p.evaluate( () => typeof window.__PONLAI__.loop.step === 'function' ) ) ) throw new Error( 'this build has no __PONLAI__.loop.step' );
 		await p.evaluate( viewEval( viewName, crops ) );
-		// ready as capture.mjs is: the image stopped changing after the floor's frames and the loading
-		// screen gone (or --ready-frames' fixed count)
+		// ready as capture.mjs is: the image stopped changing (a temporal page: its rest converged)
+		// after the floor's frames and the loading screen gone (or --ready-frames' fixed count)
 		const fixed = options[ 'ready-frames' ] !== undefined ? Number( options[ 'ready-frames' ] ) : null;
 		await waitForScene( p, { frames: fixed ?? stable.min, wait: Number( options.wait ?? 0 ), settle: Number( options.settle ?? 0 ), timeout } );
 		ready = fixed === null ? await waitForStable( p, { ...stable, timeout } ) : { rule: 'frames', frames: fixed };

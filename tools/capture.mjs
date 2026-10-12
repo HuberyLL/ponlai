@@ -4,8 +4,8 @@
 //                          [--stable-min 1] [--stable-every 2] [--stable-repeats 1] [--stable-tolerance 0:5000|exact]
 //                          [--stable-patience 40] [--stable-cap 120] [--stable-trace] [--ready-frames n] [--wait ms] [--settle ms]
 // Writes artifacts/captures/<name>.png and prints the page's console errors and diagnostics.
-// The browser runs in a persistent profile slot and a paused capture is taken once its image has
-// stopped changing (tools/capture-browser.mjs, "readiness by stability"): after the evals, the
+// The browser runs in a persistent profile slot and a paused capture (MSAA or off) is taken once its
+// image has stopped changing (tools/capture-browser.mjs, "readiness by stability"): after the evals, the
 // floor's frames (--stable-min) and the loading screen gone, the image is grabbed every
 // --stable-every frames, with the loop stopped for each grab, and shot once --stable-repeats
 // comparisons in a row found it unchanged; after --stable-patience frames a comparison with at most
@@ -29,8 +29,10 @@
 // a running one, or --exclusive, takes it to itself, since its frame times are reported too.
 // A paused page of the temporal modes (aa=taa|taau|gt) shows its rest image once that has
 // converged (src/post/TemporalRest.ts): once up the rest is started over (its epoch: what the
-// evals changed need not be in its key) and the capture waits for `diag.taa.converged` (not with
-// `tier.taa.restSequence=0`, where there is no rest), then for stability.
+// evals changed need not be in its key) and the capture waits for `diag.taa.converged`, stops the
+// loop on the held rest and shoots it, with no image comparison (the --stable-* options do not
+// apply; `ready.status` is `converged`). With `tier.taa.restSequence=0` there is no rest: the page
+// is compared for stability like an MSAA one.
 import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, waitForScene, waitForStable, stableOptions, stopLoop, startLoop, READY_FRAMES } from './capture-browser.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
@@ -83,7 +85,8 @@ try {
 		}, null, { timeout, polling: 100 } );
 	}
 	if ( waitFor ) await page.waitForFunction( waitFor, null, { timeout: 60000, polling: 100 } );
-	// ready: the image stopped changing (or the fixed count above); the loop is stopped
+	// ready: the image stopped changing, or a temporal page's rest converged (or the fixed count
+	// above); the loop is stopped
 	const ready = readyFrames === null ? await waitForStable( page, { ...stable, timeout } ) : { rule: 'frames', frames: readyFrames };
 	if ( ready.status === 'capped' ) console.log( `unstable: still changing after ${ ready.framesWaited } frames (max ${ ready.maxSeen } levels), captured at the cap` );
 	const samples = [];
