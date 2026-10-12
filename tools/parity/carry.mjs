@@ -21,7 +21,10 @@
 //      is captured once more, since a whole-frame outlier under a shared GPU never repeats);
 //   4. the paused scene: B's paused set (S1 on high: the 17 parity views plus every view an entry
 //      to carry is on; S2/<tier> on medium and low: those views) matches A's with diff-set.py
-//      (`--aa-floor` where both sides hold repeats, else pixel identity);
+//      (`--aa-floor` where both sides hold repeats, else pixel identity); and since that vouches for
+//      A's set, not A's entries, a rest baseline entry with a whole frame carries only when that
+//      frame matches A's own paused frame of its view (`stored`, files only: a capture that went
+//      wrong at A would otherwise carry on into every later sha);
 //   5. the ground truth's own path (aa=gt only): a watch list (WATCH.gt) on the diff, plus one rest
 //      ground truth (the first of SPOT.gtViews A holds) captured on B and compared with A's within
 //      the ground truth's noise (GT_TOLERANCE): a temporal-only change outside the watch list (a
@@ -64,6 +67,9 @@ export const SPOT = { clips: [ 'pan-slow', 'islander-walk' ], frames: 16, gtView
 // the ground truth's noise between two captures (m9-veg: crops 1-2 levels, max 4; whole frames max
 // 7 on a few pixels): per image, the largest channel difference and the share of pixels over 2 levels
 export const GT_TOLERANCE = { max: 8, over2Share: 0.0005 };
+// a rest entry's whole frame against the paused set's frame of its view (capture-clip's readback
+// against capture-set's screenshot: 1 level on most pixels when both are good)
+export const STORED_TOLERANCE = { max: 2 };
 // the paused sets are taken at the gates' size and query only (another size would be another set)
 const SIZE = '1728x1117@2';
 const pausedSet = ( tier ) => tier === 'high' ? 'S1' : path.join( 'S2', tier );
@@ -264,6 +270,25 @@ export async function planCarry( options ) {
 
 	}
 
+	// --- A's stored rest captures against A's own paused set (no capture: files only). The paused
+	// check vouches for A's set, not for A's entries: a rest capture that went wrong at A (the F6
+	// proof stored one 132 levels off A's own paused frame of that view) would carry on into every
+	// later sha. A rest entry with a whole frame carries only when that frame is A's paused frame of
+	// its view within STORED_TOLERANCE (two capture paths, so not byte-equal: 1 level on most pixels).
+	// Entries without a whole frame (the TAA rest views, the lower tiers) cannot be checked so.
+	const stored = v.stored = {};
+	if ( ! blocked && ! sameBuild ) for ( const t of candidates ) {
+
+		if ( t.side !== 'baseline' || t.e.kind !== 'rest' ) continue;
+		const full = path.join( entryDir( dirA, t.side, t.e ), 'full', '0.png' ), frame = path.join( dirA, pausedSet( t.e.tier ), `${ t.e.view }.png` );
+		if ( ! existsSync( full ) || ! existsSync( frame ) ) { stored[ t.e.key ] = { ok: true, checked: false, why: ! existsSync( full ) ? 'no whole frame' : `${ short( from ) }'s ${ pausedSet( t.e.tier ) } lacks ${ t.e.view }` }; continue; }
+		const c = comparePng( full, frame );
+		stored[ t.e.key ] = { ok: c.max <= STORED_TOLERANCE.max, checked: true, max: c.max, over2: c.over2 };
+		if ( ! stored[ t.e.key ].ok ) say( `stored: ${ short( from ) }'s baseline ${ t.e.key } is off its own ${ pausedSet( t.e.tier ) } frame (max ${ c.max }, ${ c.over2 } px over 2 levels): recaptured, not carried` );
+
+	}
+	if ( Object.keys( stored ).length ) save();
+
 	// --- the motion spot check (only for clips to carry; high only)
 	// (A's entries by their last capture: a recaptured one is checked again)
 	const lastRound = ( dir ) => readJson( path.join( dir, 'complete.json' ) )?.rounds?.at( - 1 )?.finished ?? null;
@@ -418,6 +443,8 @@ export async function planCarry( options ) {
 		}
 		if ( e.kind === 'clip' && e.tier !== 'high' ) return no( 'the spot check covers high\'s clips only' );
 		if ( ! cond[ `paused-${ e.tier }` ].views.includes( e.view ) ) return no( `${ e.view } is not in the paused set checked` );
+		const s = side === 'baseline' ? stored[ e.key ] : null;
+		if ( s && ! s.ok ) return no( `stored: ${ short( from ) }'s entry is off its own ${ pausedSet( e.tier ) } frame of ${ e.view } (max ${ s.max }, bound ${ STORED_TOLERANCE.max })` );
 		return { ok: true };
 
 	}

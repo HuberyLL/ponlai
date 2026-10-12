@@ -366,6 +366,7 @@ evaluates every one and carries nothing):
 | key | A's entry manifest has exactly the key B asks for: tool hash, browser build, tier, aa, size, query, clip, view, sampling, anchors | each entry |
 | `motionWatch` | the diff touches none of `src/main.ts`, `src/weather/`, `src/characters/`, `src/ocean/`, `src/game/view/`, `package.json`, `package-lock.json` (motion a paused frame cannot show; the stepper) | all |
 | `paused-<tier>` | B's paused set matches A's: `S1` on high (the 17 parity views plus every view an entry is on), `S2/<tier>` below (those views); diff-set `--aa-floor` where both hold repeats, else pixel identity. Captured or extended through the store; A's from `--carry-url` when its store lacks it | all |
+| `stored` | A's rest baseline entry's whole frame matches A's own paused-set frame of that view within 2 levels (files only): the paused check vouches for A's set, not its entries, and a capture that went wrong at A would otherwise carry on. Entries without a whole frame (the TAA rest views, the lower tiers) are not checked | rest entries with a whole frame |
 | `spot` | the first 16 frames of `pan-slow` and `islander-walk` under MSAA captured on B with A's anchors, pixel-equal to A's stored baseline entries (a differing clip is captured once more: a whole-frame outlier under a shared GPU does not repeat) | clips |
 | `gtWatch` | the diff touches none of `src/post/` `TemporalAA`, `TemporalRest`, `Jitter`, `Antialiasing`, `Motion`, `Pipeline`, `AfterResolve`, `SceneEvents` (`.ts`), nor the dependencies | aa=gt |
 | `gtSpot` | one rest ground truth (the first of island-fair-noon, meadow-close, meadow-24, flowers-close, rim-sea that A holds) captured on B within the ground truth's noise of A's: per image max 8 levels and at most 0.05 % of pixels over 2 | aa=gt |
@@ -390,7 +391,8 @@ that failed (`baseline high/clip/pan-slow: not carried (spot: ...)`).
 
 What the rule cannot see: a change that alters motion only, outside the watch list, in a view or
 clip the spot check does not cover; a temporal-only change visible in the ground truth of views
-other than the one spot-checked; and the lower tiers' ground truth (checked on high only).
+other than the one spot-checked; the lower tiers' ground truth (checked on high only); and a rest baseline entry without a whole frame
+that was captured wrong at A (only whole frames are checked against A's paused set).
 
 ## Clips (clips.mjs, capture-clip.mjs, clip-metrics.py)
 
