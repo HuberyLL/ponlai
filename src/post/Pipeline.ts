@@ -56,6 +56,8 @@ import type { Rain } from '../weather/Rain.ts';
 // leaves to the canvas pass, and (accumulating in linear light, Quality.ts `taa.linear`) for the
 // S-curve and the sRGB transfer: displayRT holds the graded colour in linear light (half float),
 // which the resolve averages as it is and encodes once for its canvas pass; then (TemporalAA.ts):
+//   TAA neighbourhood (TAAU) ── taaStats, taaClip, taaNearest: each input pixel's 3x3 clip box,
+//     history weight and nearest motion and depth, at the render's size
 //   TAA resolve ── taaHistory (ping-pong: the frames accumulated, at the canvas's size for TAAU)
 //     and taaEncoded (the same image encoded with the vignette, under `taa.linear`; not for aa=gt)
 //   TAA rest ── taaRest (ping-pong), while a resting scene runs its jitter sequence, then copied
