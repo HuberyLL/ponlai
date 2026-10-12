@@ -190,10 +190,16 @@ capture-set `--jobs n` and baseline.mjs interleave with other sets capture by ca
 `run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
 from then on, so a wrapped orchestrator never holds a slot its own captures wait for. An exclusive
 request waits for the slots in use, blocks new ones, and the queue resumes after it. A killed
-holder's slot frees itself at the next look.
+holder's slot frees itself at the next look. Background work (tool proofs, reference rounds) runs
+with `PONLAI_GPU_PRIORITY=low` (inherited by every child, so set it on the outer command): a free
+slot goes to the oldest normal request first and to a low one only when no normal request waits, so
+low work fills the slots nobody else wants without fixed shares; holders are never preempted and
+exclusive requests ignore the class. A low request ranks as a normal one from its original place
+after `PONLAI_GPU_LOW_MAX_WAIT` seconds (default 600, so it never waits for ever; the reason is in
+the module's header).
 `node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
-`status` names the holders (shared: their slots and the queue) and `gpu` shows the GPU's
-utilisation and the processes using it. The profiler also checks that the GPU is idle before it
+`status` names the holders (shared: their slots, classes and the queue in turn) and `gpu` shows
+the GPU's utilisation and the processes using it. The profiler also checks that the GPU is idle before it
 measures and marks its results contended otherwise. Keep other pages that render the scene closed.
 
 ## Display gate
