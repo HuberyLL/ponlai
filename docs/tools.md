@@ -233,7 +233,12 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
   leave out) and tabulates every scene at every scale. Every report gives the render scale the
   measured frames were drawn at (its median, range and changes: high's moves); `--scale-settle s`
-  waits after each scene's warm-up until that scale has held for s seconds.
+  waits after each scene's warm-up until that scale has held for s seconds. With GPU timestamps on,
+  high's reports add `gpuPixel`: the part of the GPU time in passes that follow the render's pixel
+  count (the dynamic resolution's split), for fitting its cost model at fixed scales.
+- `--compare` and `--accept` load their pages with `drsStore=off`, so neither side of an A/B (two
+  AA modes, two builds) starts from a dynamic scale the other or an earlier run settled at;
+  `--drs-store` loads them with `drsStore=on` instead (a returning load).
 - `--eval` runs in the page with `s` = `window.__PONLAI__` (an ablation, e.g.
   `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a summary.
 
