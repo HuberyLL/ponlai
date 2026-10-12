@@ -28,9 +28,11 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 //   follow the pixel count either: their vertex work (the meadow's blades, the terrain, the sea's
 //   grid) is the same at any scale. Timed at fixed scales they cost a share of their time at
 //   scale 1 plus the rest in proportion to the pixel count (s^2): the share, `nonScaling`, was
-//   0.4 - 0.5 over the island and the horizon between scales 0.8 and 1.5. It starts there and is
-//   measured again at every change of scale (the render-sized passes' median just before and just
-//   after), the median of the last SHARE_KEEP measurements.
+//   0.4 - 0.5 over the island and the horizon between scales 0.8 and 1.5, under MSAA and TAAU alike
+//   (TAAU: 0.39 - 0.48 on fair, horizon, storm and close, its fixed part, the resolve among it,
+//   flat across the scales). It starts there and is measured again at every change of scale (the
+//   render-sized passes' median just before and just after), the median of the last SHARE_KEEP
+//   measurements.
 // - Every sample keeps the scale it was drawn at, so frames at any scale predict the cost at any
 //   other: fixed + render-sized x g(s') / g(s), g(s) = k + (1 - k) s^2. Decisions read a quantile
 //   of those predictions.
