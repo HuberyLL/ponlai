@@ -16,7 +16,8 @@ import { restEpoch } from './TemporalRest.ts';
 // Generic sites only (main.ts's setters and handlers, the game's context hook), never the camera
 // controls' internals: a teleport of the camera that no event covers (a direct assignment from the
 // console, a control's own jump) is caught by Motion.ts's camera-delta detector (more than 8 m,
-// 30 degrees or 2 % of field of view in one rendered frame). Under MSAA nothing listens: no-op.
+// 30 degrees or 2 % of field of view in one rendered frame). Under MSAA only the epoch bumps: the
+// page's settled signal (Settled.ts) reads it in every mode; nothing else listens.
 //
 // The diagnostics' `taa.lastEvent` (TemporalAA.ts) holds the last event: its reason, whether it cut,
 // and the rendered frame it followed (`frame`: the motion's frame count when it was raised; it
@@ -73,9 +74,9 @@ export const sceneEvents = {
  * history where the table says so. */
 export function sceneEvent( reason: SceneEventReason ): void {
 
+	restEpoch.bump( reason );
 	if ( ! TEMPORAL ) return;
 	const cut = SCENE_EVENTS[ reason ];
-	restEpoch.bump( reason );
 	if ( cut ) taaCut( reason );
 	sceneEvents.last = { reason, cut, frame: motionState.frame };
 	sceneEvents.count ++;

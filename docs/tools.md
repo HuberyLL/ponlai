@@ -16,6 +16,19 @@ everyday commands; this file has the details. Each tool's own file says the rest
   `src/debug/PipelineCounter.ts`) and `graph` (the frame graph's dev counters: the attachment
   ops it rewrote and expected in the last frame, the frames they differed, targets found at a
   size other than their class's).
+- `__THREE_GAME_DIAGNOSTICS__.settled` (updated every frame, every anti-aliasing mode): true once
+  the paused page will draw the same frame from now on, so a capture can wait for it instead of a
+  fixed time or frame count (`src/post/Settled.ts`). It reuses the temporal rest's key (camera,
+  scene clock, render and output sizes, epoch: `TemporalRest.ts`) and holds once that key, the
+  sun maps' redraw counts and a forced strike have stayed the same for the tier's `restSettle`
+  frames (8) while no sky bake or transition is in flight, nothing is pending (a periodic bake
+  due, the refracted sun's map behind its light, a queued sun shadow redraw, an async pipeline
+  compile) and the loading screen has faded out; under taa / taau / gt the temporal rest must also
+  have converged on quiet frames only. Any change of the key (a camera move, a resize, a seek,
+  `establishScene`, any scene event, which now bumps the epoch under MSAA too) turns it false.
+  `settle` says why not: `frames` of `need`, `stable`, `shown`, `pending` (names), `since` (the
+  frame it turned true), and under the temporal modes `stale` (the rest converged over a refresh:
+  bump the epoch, `__PONLAI__.taa.epoch.bump()`, and wait again).
 - Keys: H toggles the GUI, Space pauses, R or 1/2/3 jump to the island, horizon and sky views, F
   toggles a corner readout of the frame cadence.
 - The island camera (`src/camera/IslandCameraControls.ts`): a left drag grabs the ground, a right
@@ -34,7 +47,8 @@ View and capture:
 
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `dist`, `polar`, `az` (the
   camera), `gui`, `camera` (`orbit`, the default: the island camera; or `free`: fly with the
-  mouse, WASD, Q/E and Shift).
+  mouse, WASD, Q/E and Shift). A paused page lifts its loading screen at once, without the fade,
+  so a capture of a paused frame never catches the screen over it.
 
 Sky and weather:
 

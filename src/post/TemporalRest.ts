@@ -11,6 +11,14 @@
 // rest ends continues from it. What the image shows then depends only on the scene: a paused frame
 // repeats exactly, however it was reached.
 //
+// The rest is the canvas's image: what the page lays over the canvas is not in it. A rest shot while
+// the loading screen still faded out (index.html) carried up to 2 % of that screen's colour over the
+// whole frame and read as a darker rest; a paused page now lifts the loading screen at once
+// (main.ts `reveal`), and the page's settled signal waits for it in any case (Settled.ts `shown`).
+// The settle frames do cover the scene: rests started one frame after a view's eval and 300 frames
+// later were byte-identical once nothing lay over them (no sun map redraw, bake or pending refresh
+// fell inside either rest).
+//
 // The rest is tested every frame on a key of what the frame draws from: the camera's unjittered view
 // and projection, the scene clock, the render's and the output's sizes, the epoch, the resolve's live
 // settings and the page's own signature of the rest (main.ts: a forced lightning strike, which a
@@ -19,6 +27,22 @@
 // the key (a GUI control, a weather jump, a seek to the same time) bumps the epoch
 // (`restEpoch.bump( reason )`): the scene events (SceneEvents.ts `sceneEvent`) call it from every
 // site that changes the scene, `__PONLAI__.taa.restart()` among them.
+//
+// The key is built by `restKey`, which the page's settled signal (Settled.ts) shares under every
+// anti-aliasing mode, MSAA included.
+
+/** Fills `key` with what a frame draws from: the camera's unjittered view and projection, the
+ * scene clock, the render's and the output's sizes, the epoch, then `extra` (the caller's own
+ * signature). */
+export function restKey( key: number[], camera: { matrixWorld: { elements: readonly number[] }; projectionMatrix: { elements: readonly number[] } },
+	renderWidth: number, renderHeight: number, outputWidth: number, outputHeight: number, time: number, extra: readonly number[] ): number[] {
+
+	key.length = 0;
+	key.push( ...camera.matrixWorld.elements, ...camera.projectionMatrix.elements, time, renderWidth, renderHeight, outputWidth, outputHeight,
+		restEpoch.value, ...extra );
+	return key;
+
+}
 
 /** The epoch of the scene's state: a bump restarts the rest (and nothing else). */
 export const restEpoch = {
