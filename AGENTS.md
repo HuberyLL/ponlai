@@ -26,7 +26,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   GPU time, the 60 fps acceptance); its options and modes are in `docs/tools.md`.
 - Everything that renders the scene in a browser takes the GPU lock:
   `node tools/gpu-lock.mjs run [--shared] -- <command>` (`status`, `gpu`). Timing runs hold it
-  alone; paused captures and verify probes share it.
+  alone; paused captures and verify probes share it, one slot per browser (3 by default, FIFO).
 - Headed browser runs take over the user's screen: they run only while
   `node tools/display-gate.mjs status` allows them; otherwise run headless and record the headed
   run as pending.
