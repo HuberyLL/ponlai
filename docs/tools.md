@@ -63,7 +63,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `worldCache=off` (generate every chunk of the island instead of loading it from the browser's
   IndexedDB cache, as on a first visit; `src/world/WorldChunks.ts`). The cache keeps one record per
   chunk, so a land grown by a piece reloads the chunks the piece did not reach; the diagnostics'
-  `worldCache` counts the records read (`hits`, of the chunks and the land).
+  `worldCache` counts the records read (`hits`, of the chunks and the land). It keeps the records
+  of the two land versions loaded last (a seed and `grow` step each) and deletes the rest after a
+  load, so going back to an older step rebuilds the chunks it does not share with them.
 - `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
   page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
   as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).

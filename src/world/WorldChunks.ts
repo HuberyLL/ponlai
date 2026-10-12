@@ -17,6 +17,9 @@
 //   source the worker imports), the options, the browser, the chunk and the growth steps whose
 //   pieces lie in its window (chunkWorker.ts), so a land grown by a piece finds every chunk the
 //   piece left alone. `worldCache=off` (main.ts) builds every chunk and stores none.
+// - Eviction: once every chunk has arrived, one worker gets a `keep` job with this load's keys (the
+//   land's first), and the cache keeps only the records of this land version and the one loaded
+//   before it (WorldCache.ts). A game's growth thus holds two versions on disk, not every one.
 
 import { WORLD_GENERATOR_HASH } from 'virtual:world-generator';
 import { mergeChunks, type LandData } from './ChunkMerge.ts';
@@ -116,6 +119,14 @@ export function loadWorld( options: WorldOptions = {}, { cache = true, pivot, pr
 		const finish = () => {
 
 			mark( 'chunks' );
+			// the cache keeps this version's records and the last version's, and deletes the rest;
+			// sent before `close`, which waits for it
+			if ( generator !== null ) {
+
+				const keys = [ key( 'land', step )!, ...[ ...chunks.values() ].map( ( c ) => key( c.ci, c.cj, c.steps )! ) ];
+				pool[ 0 ].worker.postMessage( { kind: 'keep', keys } satisfies ChunkJob );
+
+			}
 			// the workers close once their writes have reached the cache
 			for ( const slot of pool ) slot.worker.postMessage( { kind: 'close' } satisfies ChunkJob );
 			// settled only once merged, so a merge that throws still rejects the load (`fail`)
