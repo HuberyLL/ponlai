@@ -17,7 +17,8 @@ type M4 = THREE.Node<'mat4'>;
 // the key light has turned by its angle gate (0.03 degrees on high; the quality tier sets it), and
 // exactly whenever the light is at rest (the same direction on two consecutive updates), so a
 // paused frame is the same however it was reached: after a paused seek it redraws on the second
-// update.
+// update. The map grows once from its constructed size to 2048 when a light's fit needs it; a scene
+// jump (`reset`) returns it to the constructed size, as a new page would fit that light.
 
 const WATER_IOR = 1.333;
 // Turn of the key light below which a running clock keeps the drawn map (see RefractedSun.update).
@@ -204,6 +205,8 @@ export class RefractedSun {
 	private subsetLevel = NaN;
 	private readonly subsets: THREE.BufferGeometry[] = [];
 	private dirty = true;
+	// the map's size as constructed (it may grow once to 2048: see update)
+	private readonly initialSize: number;
 	// Turn of the key light (radians) below which a moving light keeps the drawn map: a quality
 	// tier's knob. A light at rest is always drawn exactly.
 	angleGate = ANGLE_GATE;
@@ -211,6 +214,7 @@ export class RefractedSun {
 	constructor( private readonly renderer: THREE.WebGPURenderer, private readonly shared: Pick<Shared, 'waterLevel' | 'sunDir'>, { mapSize = 1024, contactBias = 0.02 }: RefractedSunOptions = {} ) {
 
 		const size = Math.min( 2048, Math.max( 256, mapSize ) );
+		this.initialSize = size;
 		this.target = makeDepthTarget( size );
 		this.mapResolution.value.set( size, size );
 		this.mapSize = this.mapResolution;
@@ -346,6 +350,23 @@ export class RefractedSun {
 
 	invalidate(): void { this.dirty = true; }
 
+	/** The map as constructed, redrawn at the next update (a scene jump, main.ts `establishScene`):
+	 * a map grown to 2048 for one light keeps that size, so a light that a new page fits at the
+	 * constructed size would be drawn at another resolution. */
+	reset(): void {
+
+		if ( this.target.width !== this.initialSize ) {
+
+			this.target.setSize( this.initialSize, this.initialSize );
+			this.mapResolution.value.set( this.initialSize, this.initialSize );
+
+		}
+		this.lastSun.set( NaN, NaN, NaN );
+		this.seenSun.set( NaN, NaN, NaN );
+		this.dirty = true;
+
+	}
+
 	// A static map gets no second frame to recover from a not-yet-ready first-use pipeline.
 	// Call during scene setup, before the application starts its animation loop. Compile with
 	// this exact target/depth format, then redraw after all caster pipelines are available.
@@ -424,7 +445,7 @@ export class RefractedSun {
 		this.worldSpan.value.set( this.camera.right - this.camera.left, this.camera.top - this.camera.bottom );
 		this.depthRange.value = this.camera.far - this.camera.near;
 		// Keep local contact detail without unbounded GPU allocations. The static map can
-		// grow once to 2048; sun movement never shrinks/reallocates it afterward.
+		// grow once to 2048; sun movement never shrinks/reallocates it afterward (a scene jump does: reset).
 		if ( Math.max( this.worldSpan.value.x, this.worldSpan.value.y ) / this.target.width > 0.08 && this.target.width < 2048 ) {
 
 			this.target.setSize( 2048, 2048 );
