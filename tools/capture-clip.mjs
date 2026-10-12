@@ -7,6 +7,7 @@
 //       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"]
 //       [--quality high] [--size 1728x1117@2] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
 //       [--task name] [--anchors-from clip.json] [--stable-* (capture.mjs)] [--ready-frames n] [--wait ms] [--settle ms] [--verbose]
+//       [--test-fault]
 //
 // The page loads `U?debug&paused&t=12&quality=<q>&aa=<mode>[&<extra>]&<view's query>[&<clip's
 // query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it) in a
@@ -30,7 +31,7 @@
 // Output, under artifacts/clips/<name>/ (or --out): <crop>/<i>.png per crop and frame,
 // full/<i>.png, and clip.json (the url, the clip, the boxes per frame, the page's diagnostics
 // before and after, the pipelines created while stepping, the scene time, the browser build, wall
-// time, console errors).
+// time, console errors, the rest's second shot).
 //
 // --aa gt is the ground truth of the temporal modes (src/post/Antialiasing.ts, debug builds): the
 // temporal graph at the canvas's resolution, each captured frame held still after its tick until
@@ -43,7 +44,29 @@
 // A clip of one frame (`--clip rest`) is the image at rest: under the other temporal modes (taa,
 // taau) it is held still too until the rest has converged on it (`converge`, the tier's own rest
 // sequence), as capture.mjs waits for `diag.taa.converged` on a paused page. MSAA and off have no
-// rest and capture the frame as stepped.
+// rest and capture the frame as stepped, shot twice (below).
+//
+// The rest shot twice. The readiness check vouches for the frames it compared, not for the frame the
+// clip then steps: the clip's eval and grain 0 come after it, so the stepped frame is a new render,
+// and a single frame can come out as a discrete alternative image (measured:
+// 0.3-1 M px of scattered vegetation pixels off by up to 190 levels, mean about 0, the same
+// image each time; task clip-single-frame: about 1.5 % of the frames stepped in the first seconds
+// after the readiness, alone or not, and 2 of 24 rest clips stored it while other browsers
+// rendered; a stored rest reference once was such a frame). So a paused one-frame clip without a
+// temporal rest (MSAA, off, gt-hi) is stepped again with the same state and shot whole each time
+// until two shots agree within the readiness tolerance (--stable-tolerance: by default at most 5000
+// pixels differ at all; `exact` asks for equal pixels), at most RECHECK_SHOTS shots, else the clip
+// fails and nothing is written. The crops are those of an agreeing shot (the first one's, or shot
+// again on the later frame when the first was the odd one). A fifth to two fifths of a settled
+// page's stepped frames differ from its settled frame by a few to about 2000 pixels (task D3's
+// speckle), which the tolerance accepts; the alternative image (0.87 M px on island-fair-noon) is far
+// outside it. clip.json records it (`recheck`). Cost: one more stepped frame and one whole-frame
+// grab when the first two agree, about 0.3 s alone and 0.9 s on a shared GPU (plus the whole-frame
+// shot itself when --full does not ask for it). Motion clips and the temporal rests are not shot twice: a moving
+// frame cannot be rendered again without replaying its state, and a temporal rest averages 32-64
+// renders, so one odd render is a 1/32 share there, inside the temporal comparisons' tolerance.
+// `--test-fault` checks the check: the first stepped frame is drawn with film grain 0.1 (a mean-zero
+// speckle over the whole frame) and grain goes back to 0 for the next.
 //
 // --aa gt-hi is the interim ground truth (plan section 3.3): MSAA on high at twice high's nominal
 // ratio for the --size given (nominal = min( ratio, 1.5 ), so 3 at the default @2 and 2 at @1),
@@ -75,11 +98,11 @@ import { fileURLToPath } from 'node:url';
 import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from './gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { CLIPS, clipEval } from './parity/clips.mjs';
-import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, pngShooter } from './capture-browser.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, compareFrames, pngShooter } from './capture-browser.mjs';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const args = process.argv.slice( 2 );
-const FLAGS = new Set( [ 'verbose', 'stable-trace' ] );
+const FLAGS = new Set( [ 'verbose', 'stable-trace', 'test-fault' ] );
 const options = {}, positional = [];
 for ( let i = 0; i < args.length; i ++ ) {
 
@@ -92,7 +115,7 @@ for ( let i = 0; i < args.length; i ++ ) {
 
 }
 const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters', 'ready-frames', 'wait', 'settle',
-	'stable-min', 'stable-every', 'stable-repeats', 'stable-tolerance', 'stable-patience', 'stable-cap', 'stable-trace' ];
+	'stable-min', 'stable-every', 'stable-repeats', 'stable-tolerance', 'stable-patience', 'stable-cap', 'stable-trace', 'test-fault' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! KNOWN.includes( k ) );
 const clip = CLIPS[ options.clip ];
 if ( positional.length !== 1 || unknown.length || ! options.url || ! clip ) {
@@ -130,6 +153,8 @@ const timeout = Number( options.timeout ?? 240000 );
 const outDir = path.resolve( options.out ?? path.join( REPO, 'artifacts/clips', name ) );
 // the crop box in CSS px (384 device px at a ratio of 2, as the parity crops)
 const BOX = 192;
+// a paused one-frame clip's shots before it fails for want of two that agree (see the header)
+const RECHECK_SHOTS = 6;
 
 // ------------------------------------------------------------------ PNG (8-bit, non-interlaced)
 
@@ -267,21 +292,34 @@ try {
 		return gt ? encodePng( downsample2( decodePng( png ) ) ) : png;
 
 	};
+	const shootCrops = async ( frameBoxes ) => {
+
+		const out = {};
+		for ( const [ n, b ] of Object.entries( frameBoxes ) ) if ( ! b.missing ) out[ n ] = await shoot( { x: b.x, y: b.y, width: b.w, height: b.h } );
+		return out;
+
+	};
+	// a paused frame without a temporal rest is shot whole until two shots agree (see the header):
+	// its shots stay in memory until then, each { raw (the whole frame as grabbed), crops, frame }
+	const recheck = frames === 1 && clip.clock === 'paused' && ! gtRest && ! ( await page.evaluate( () => !! window.__PONLAI__.taa ) );
+	const fault = options[ 'test-fault' ] === true;
+	if ( fault && ! recheck ) throw new Error( '--test-fault tests the rest\'s second shot: a paused one-frame clip under msaa, off or gt-hi' );
+	const restShots = [];
 	await page.exposeFunction( '__ponlaiClipFrame', async ( i, frameBoxes, time, state ) => {
 
-		const record = { i, time, ...state, boxes: {} };
-		for ( const [ n, b ] of Object.entries( frameBoxes ) ) {
+		boxes.push( { i, time, ...state, boxes: { ...frameBoxes } } );
+		const crops = await shootCrops( frameBoxes );
+		if ( recheck ) {
 
-			record.boxes[ n ] = b;
-			if ( b.missing ) continue;
-			await writeFile( path.join( outDir, n, `${ i }.png` ), await shoot( { x: b.x, y: b.y, width: b.w, height: b.h } ) );
+			restShots.push( { raw: await shooter.shoot( null ), crops, frame: state.frame } );
+			return;
 
 		}
+		for ( const [ n, png ] of Object.entries( crops ) ) await writeFile( path.join( outDir, n, `${ i }.png` ), png );
 		if ( full.has( i ) ) await writeFile( path.join( outDir, 'full', `${ i }.png` ), await shoot( null ) );
-		boxes.push( record );
 
 	} );
-	const stepped = await page.evaluate( async ( { tracked, every, dense, box, cssScale, fullFrames, gtRest } ) => {
+	const stepped = await page.evaluate( async ( { tracked, every, dense, box, cssScale, fullFrames, gtRest, fault } ) => {
 
 		const s = window.__PONLAI__, clip = window.__PONLAI_CLIP__;
 		const V = s.camera.position.constructor;
@@ -297,6 +335,8 @@ try {
 		const t0 = performance.now();
 		const before = s.pipelines?.total ?? null;
 		const captured = ( i ) => i % every === 0 || fullFrames.includes( i ) || dense.some( ( [ a, b ] ) => i >= a && i <= b );
+		// --test-fault: the first frame drawn with a speckle of film grain, taken out after its shots
+		if ( fault ) s.pipeline.settings.grain = 0.1;
 		const result = await s.loop.step( {
 			frames: clip.frames, dt: clip.dt, clock: clip.clock, camera: clip.camera,
 			...( clip.scale ? { scale: clip.scale } : {} ),
@@ -322,19 +362,73 @@ try {
 				const state = { render: [ s.pipeline.width, s.pipeline.height ], view: hash( [ ...s.camera.matrixWorld.elements, ...s.camera.projectionMatrix.elements ] ), frame: s.renderer.info.frame,
 					...( s.taa ? { taa: { converged: s.taa.converged, restFrames: s.taa.rest.frames, restTarget: s.taa.rest.target } } : {} ) };
 				await window.__ponlaiClipFrame( i, out, s.clockTime(), state );
+				if ( fault ) s.pipeline.settings.grain = 0;
 
 			},
 		} );
 		return { ...result, pipelines: before === null ? null : s.pipelines.total - before, wallMs: performance.now() - t0, notes: window.__PONLAI_CLIP_NOTES__ ?? [] };
 
-	}, { tracked, every, dense, box: BOX, cssScale, fullFrames: [ ...full ], gtRest } );
+	}, { tracked, every, dense, box: BOX, cssScale, fullFrames: [ ...full ], gtRest, fault } );
+	// the rest's second shot: the frame stepped again with the same state and shot whole until a shot
+	// agrees with an earlier one; then that pair's crops (and whole frame) are written
+	let recheckRecord = null;
+	if ( recheck ) {
+
+		const t = performance.now();
+		const tolerance = stable.tolerance;
+		const history = [];
+		let accepted = null;
+		// [ shot, earlier shot, largest channel difference, pixels differing at all ]
+		const agree = ( j, shot ) => {
+
+			const a = restShots[ j ].raw, b = shot.raw;
+			let c = { max: 0, over: [ 0 ], overLevel: 0 };
+			if ( ! a.equals( b ) ) c = compareFrames( decodePng( a ), decodePng( b ), tolerance ? tolerance.level : 0 );
+			history.push( [ restShots.length, j, c.max, c.over[ 0 ] ] );
+			return c.max === 0 || ( tolerance !== null && c.overLevel <= tolerance.pixels );
+
+		};
+		await page.exposeFunction( '__ponlaiClipAgain', async ( frame ) => {
+
+			const shot = { raw: await shooter.shoot( null ), crops: null, frame };
+			for ( let j = 0; j < restShots.length && ! accepted; j ++ ) {
+
+				if ( ! agree( j, shot ) ) continue;
+				// the earlier shot's crops, or this frame's (it agrees with a shot taken without crops)
+				accepted = restShots[ j ].crops ? restShots[ j ] : shot;
+				accepted.crops ??= await shootCrops( boxes[ 0 ].boxes );
+
+			}
+			restShots.push( shot );
+
+		} );
+		while ( ! accepted && restShots.length < RECHECK_SHOTS ) {
+
+			await page.evaluate( async () => {
+
+				const s = window.__PONLAI__, clip = window.__PONLAI_CLIP__;
+				await s.loop.step( { frames: 1, dt: clip.dt, clock: clip.clock, camera: clip.camera, ...( clip.scale ? { scale: clip.scale } : {} ),
+					onFrame: () => window.__ponlaiClipAgain( s.renderer.info.frame ) } );
+
+			} );
+
+		}
+		recheckRecord = { status: accepted ? 'agreed' : 'failed', shots: restShots.length, accepted: accepted ? restShots.indexOf( accepted ) : null, tolerance,
+			history, ms: Math.round( performance.now() - t ) };
+		if ( ! accepted ) throw new Error( `rest: no two of ${ restShots.length } shots agree within the tolerance (${ JSON.stringify( history ) }); nothing written` );
+		boxes[ 0 ].frame = accepted.frame;
+		for ( const [ n, png ] of Object.entries( accepted.crops ) ) await writeFile( path.join( outDir, n, '0.png' ), png );
+		if ( full.has( 0 ) ) await writeFile( path.join( outDir, 'full', '0.png' ), gt ? encodePng( downsample2( decodePng( accepted.raw ) ) ) : accepted.raw );
+		if ( accepted !== restShots[ 0 ] || restShots.length > 2 ) console.log( `rest: shot ${ restShots.length } times, kept shot ${ recheckRecord.accepted } (${ history.map( ( h ) => `${ h[ 0 ] } vs ${ h[ 1 ] }: ${ h[ 3 ] } px, max ${ h[ 2 ] }` ).join( '; ' ) })` );
+
+	}
 	await shooter.close();
 	const diagAfter = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	await writeFile( path.join( outDir, 'clip.json' ), JSON.stringify( {
 		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),
 		viewport: { width: W * cssScale, height: H * cssScale, deviceScaleFactor: ratio }, gtFallback, downsample: gt ? 2 : 1,
 		cropPx: gt ? BOX * cssScale * ratio / 2 : BOX * ratio, grain: { was: grain, captured: 0 }, scaleSchedule, frames, every, dense, full: [ ...full ],
-		browser: session.version, slot: session.slot, ready, anchors, boxes, stepped, diagBefore, diagAfter, errors,
+		browser: session.version, slot: session.slot, ready, ...( recheckRecord ? { recheck: recheckRecord } : {} ), anchors, boxes, stepped, diagBefore, diagAfter, errors,
 		wallMinutes: ( Date.now() - started ) / 60000, gpuBusyBefore: busy,
 	}, null, 2 ) );
 	console.log( `${ outDir }: ${ boxes.length } frames captured of ${ frames }, ${ tracked.length } crops, pipelines while stepping ${ stepped.pipelines }, ${ ( stepped.wallMs / 1000 ).toFixed( 1 ) } s` );
