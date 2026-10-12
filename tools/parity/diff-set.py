@@ -3,6 +3,7 @@
   uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir>
       [--views a,b] [--out dir] [--max-px1 200] [--crops 3] [--crop 256]
       [--aa-floor | --temporal [--flip]] [--md file.md] [--crops-from ref|test|<dir>|<file.json>]
+      [--jobs 4]
 
 Per view (each <view>.png present in both): the max absolute channel difference, the mean absolute
 difference (over all channels), and how many pixels differ by more than 1, 2, 8 and 32 levels (a
@@ -47,14 +48,26 @@ quarter size).
 
 Writes <out>/report.json (default <out>: <testDir>/diff) and prints a table; exit code 1 if any
 view fails (or is missing).
+
+Speed: views are compared in parallel threads (numpy and Pillow's PNG codec release the GIL), --jobs
+of them at once: by default 4, or half the CPU's cores when it has fewer than 8, since captures and
+world generation share the CPU (--jobs 1 runs them one after the other). Each view decodes each of
+its PNGs once and keeps them as uint8; the output is the same as one view at a time, printed in view
+order. Window sums are exact integer sums on a coarse integral image (tolerance.window_sums), and
+every mean is an exact integer sum divided once, so no number depends on the order of summation.
 """
 import argparse
 import json
+import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
+
+import tolerance
 
 ap = argparse.ArgumentParser()
 ap.add_argument("ref")
@@ -69,57 +82,79 @@ ap.add_argument("--md", default=None)
 ap.add_argument("--crops-from", default=None)
 ap.add_argument("--temporal", action="store_true")
 ap.add_argument("--flip", action="store_true")
+ap.add_argument("--jobs", type=int, default=min(4, max(1, (os.cpu_count() or 2) // 2)))
 a = ap.parse_args()
 if a.temporal and a.aa_floor:
     ap.error("--temporal and --aa-floor are two different rules: pick one")
-if a.temporal:
-    import tolerance
 
 ref, test = Path(a.ref), Path(a.test)
 out = Path(a.out) if a.out else test / "diff"
 out.mkdir(parents=True, exist_ok=True)
 views = a.views.split(",") if a.views else sorted(p.stem for p in ref.glob("*.png") if "." not in p.stem)
 LEVELS = (1, 2, 8, 32)
+# the difference amplified x8 and clipped, as a lookup on uint8 differences
+X8 = np.minimum(np.arange(256) * 8, 255).astype(np.uint8)
 
 
-def load(f):
-    return np.asarray(Image.open(f).convert("RGB"), dtype=np.int16)
+class Files:
+    """One view's PNGs, each read and decoded once (uint8 H x W x 3)."""
+
+    def __init__(self):
+        self.raw, self.img = {}, {}
+
+    def bytes(self, f):
+        k = str(f)
+        if k not in self.raw:
+            self.raw[k] = Path(f).read_bytes()
+        return self.raw[k]
+
+    def load(self, f):
+        k = str(f)
+        if k not in self.img:
+            self.img[k] = np.asarray(Image.open(BytesIO(self.bytes(f))).convert("RGB"))
+        return self.img[k]
+
+    def same(self, p, q):
+        return self.bytes(p) == self.bytes(q)
 
 
 def stats(A, B):
-    D = np.abs(A - B)
-    M = D.max(axis=2)
+    """|A - B| (uint8, per channel), its per-pixel max over the channels, and the numbers."""
+    D = np.maximum(A, B)
+    D -= np.minimum(A, B)
+    M = np.maximum(np.maximum(D[..., 0], D[..., 1]), D[..., 2])
+    # the mean: an exact integer sum over one division (what D.mean() returns, whatever the order);
+    # a row of a frame sums to under 2^32
+    total = int(D.reshape(D.shape[0], -1).sum(1, dtype=np.uint32).sum(dtype=np.int64))
     return D, M, {
         "max": int(M.max()),
-        "mean": round(float(D.mean()), 5),
-        "over": {str(l): int((M > l).sum()) for l in LEVELS},
+        "mean": round(float(total / D.size), 5),
+        "over": {str(l): int(np.count_nonzero(M > l)) for l in LEVELS},
         "pixels": int(M.size),
     }
 
 
 def sheet(A, B, D, box, title):
     x, y, w, h = box
-    tiles = (A[y:y + h, x:x + w], B[y:y + h, x:x + w], np.clip(D[y:y + h, x:x + w] * 8, 0, 255))
+    tiles = (A[y:y + h, x:x + w], B[y:y + h, x:x + w], X8[D[y:y + h, x:x + w]])
     im = Image.new("RGB", (w * 3 + 8, h + 18), "#202020")
     for j, t in enumerate(tiles):
-        im.paste(Image.fromarray(t.astype(np.uint8)), (j * (w + 4), 18))
+        im.paste(Image.fromarray(t), (j * (w + 4), 18))
     ImageDraw.Draw(im).text((4, 3), title, fill="white")
     return im
 
 
 def worst_windows(v, A, B, D, M, r):
-    # worst windows: sum of the difference over crop-sized windows on a half-crop grid
-    c, h, w = a.crop, M.shape[0], M.shape[1]
-    step = c // 2
-    S = np.cumsum(np.cumsum(np.pad(M.astype(np.int64), ((1, 0), (1, 0))), 0), 1)
-    cands = []
-    for y in range(0, max(1, h - c + 1), step):
-        for x in range(0, max(1, w - c + 1), step):
-            y1, x1 = min(y + c, h), min(x + c, w)
-            cands.append((int(S[y1, x1] - S[y, x1] - S[y1, x] + S[y, x]), x, y))
-    cands.sort(reverse=True)
+    # worst windows: sum of the difference over crop-sized windows on a half-crop grid, the largest
+    # first (ties: the larger x, then the larger y), picked greedily without overlap
+    c = a.crop
+    S, ys, xs = tolerance.window_sums(M, c, c // 2)
+    yy, xx = np.meshgrid(ys, xs, indexing="ij")
+    S, xx, yy = S.ravel(), xx.ravel(), yy.ravel()
+    order = np.lexsort((yy, xx, S))[::-1]
     picked = []
-    for s, x, y in cands:
+    for k in order:
+        s, x, y = int(S[k]), int(xx[k]), int(yy[k])
         if s == 0 or len(picked) >= a.crops:
             break
         if all(abs(x - px) >= c or abs(y - py) >= c for _, px, py in picked):
@@ -163,7 +198,7 @@ def named_crops(v, A, B, D, r):
         boxes.append((name, x, y, w, h))
     # where the anchors fall: the test frame at a quarter size
     k = 4
-    im = Image.fromarray(B.astype(np.uint8)).resize((B.shape[1] // k, B.shape[0] // k), Image.BOX)
+    im = Image.fromarray(B).resize((B.shape[1] // k, B.shape[0] // k), Image.BOX)
     dr = ImageDraw.Draw(im)
     for name, x, y, w, h in boxes:
         dr.rectangle((x // k, y // k, (x + w) // k, (y + h) // k), outline="#ff3080", width=2)
@@ -174,13 +209,13 @@ def named_crops(v, A, B, D, r):
     im.save(out / f"{v}.anchors.png")
 
 
-def aa_pair(d, v):
+def aa_pair(fs, d, v):
     fa, fb = d / f"{v}.png", d / f"{v}.repeat.png"
     if not fa.exists() or not fb.exists():
         return None
-    if fa.read_bytes() == fb.read_bytes():
+    if fs.same(fa, fb):
         return {"identical": True, "max": 0, "over": {str(l): 0 for l in LEVELS}}
-    _, _, st = stats(load(fa), load(fb))
+    _, _, st = stats(fs.load(fa), fs.load(fb))
     st["identical"] = False
     return st
 
@@ -193,7 +228,7 @@ def fmt(st):
     return f"max {st['max']}, {st['over']['1']} px>1, {st['over']['2']} px>2"
 
 
-def temporal(v):
+def temporal(fs, v):
     """The tolerance on the best pairing of the two sides' captures (one recapture before a failure counts)."""
     same = ref.resolve() == test.resolve()
     sides = [("", ".repeat")] if same else [(s, t) for s in ("", ".repeat") for t in ("", ".repeat")]
@@ -203,10 +238,10 @@ def temporal(v):
         p, q = ref / f"{v}{s}.png", test / f"{v}{t}.png"
         if not (p.exists() and q.exists()):
             continue
-        if p.read_bytes() == q.read_bytes():
+        if fs.same(p, q):
             ok, use, why, m = True, 0.0, [], None
         else:
-            m = tolerance.measure(load(p), load(q), crops)
+            m = tolerance.measure(fs.load(p), fs.load(q), crops)
             ok, use, why = tolerance.judge(m)
         e = {"pair": ("repeat" if s else "png") + " / " + ("repeat" if t else "png"), "files": [str(p), str(q)], "pass": ok, "use": use, "why": why, "measure": m}
         if best is None or (ok, -use) > (best["pass"], -best["use"]):
@@ -228,51 +263,32 @@ def browser(d, v):
         return None
 
 
-# frames from two browser builds never match byte for byte: say so before the table
-seen = {(browser(ref, v), browser(test, v)) for v in views}
-mixed = sorted({f"{r} vs {t}" for r, t in seen if r and t and r != t})
-if mixed:
-    print("WARNING: the sets come from different browser builds (" + "; ".join(mixed) + ")")
-
-report, failed, rows = {}, False, []
-if a.aa_floor:
-    print(f"{'view':24} {'ref A/A':28} {'test A/A':28} {'cross':28} pass")
-elif a.temporal:
-    print(f"{'view':24} {'pairing':15} {'max':>4} {'px>' + str(tolerance.TEMPORAL['level']):>8} {'use':>6}  verdict")
-else:
-    print(f"{'view':24} {'ident':5} {'max':>4} {'mean':>8} " + " ".join(f"{'>' + str(l):>9}" for l in LEVELS) + "  pass")
-for v in views:
+def compare(v):
+    """One view: (printed lines, report entry, table row, passed)."""
     fa, fb = ref / f"{v}.png", test / f"{v}.png"
     if not fb.exists() or not fa.exists():
-        print(f"{v:24} missing")
-        report[v] = {"missing": True}
-        rows.append((v, "missing", "", "", "FAIL"))
-        failed = True
-        continue
-    ident = fa.read_bytes() == fb.read_bytes()
-    A, B = load(fa), load(fb)
+        return [f"{v:24} missing"], {"missing": True}, (v, "missing", "", "", "FAIL"), False
+    fs = Files()
+    ident = fs.same(fa, fb)
+    A, B = fs.load(fa), fs.load(fb)
     if A.shape != B.shape:
-        print(f"{v:24} size {A.shape} vs {B.shape}")
-        report[v] = {"sizeMismatch": [A.shape, B.shape]}
-        rows.append((v, "size mismatch", "", "", "FAIL"))
-        failed = True
-        continue
+        return [f"{v:24} size {A.shape} vs {B.shape}"], {"sizeMismatch": [A.shape, B.shape]}, (v, "size mismatch", "", "", "FAIL"), False
     D, M, r = stats(A, B)
     r["identical"] = ident
     if a.aa_floor:
-        ra, ta = aa_pair(ref, v), aa_pair(test, v)
+        ra, ta = aa_pair(fs, ref, v), aa_pair(fs, test, v)
         r["refAA"], r["testAA"] = ra, ta
         # the cross difference: the closest of the four pairings of the two sides' captures
         cross = r
         pairs = [(ref / f"{v}{s}.png", test / f"{v}{t}.png") for s in ("", ".repeat") for t in ("", ".repeat")]
-        if any(p.exists() and q.exists() and p.read_bytes() == q.read_bytes() for p, q in pairs):
+        if any(p.exists() and q.exists() and fs.same(p, q) for p, q in pairs):
             cross, note = {"identical": True, "max": 0, "over": {str(l): 0 for l in LEVELS}}, "identical"
         elif ra is None or ta is None:
             note, ok = "a side has no repeat capture", False
         else:
             for p, q in pairs[1:]:
                 if p.exists() and q.exists():
-                    _, _, st = stats(load(p), load(q))
+                    _, _, st = stats(fs.load(p), fs.load(q))
                     if (st["max"], st["over"]["1"]) < (cross["max"], cross["over"]["1"]):
                         cross = st
         if cross.get("identical"):
@@ -290,11 +306,11 @@ for v in views:
         r["cross"] = {k: cross[k] for k in ("max", "over") if k in cross} | {"identical": bool(cross.get("identical"))}
         r["note"] = note
     elif a.temporal:
-        t = temporal(v)
+        t = temporal(fs, v)
         ok = t["pass"]
         if t.get("files") and t["files"] != [str(fa), str(fb)]:
             # the diff images and crops show the pairing that was judged
-            A, B = load(t["files"][0]), load(t["files"][1])
+            A, B = fs.load(t["files"][0]), fs.load(t["files"][1])
             D, M, r = stats(A, B)
             r["identical"] = t["measure"] is None
         r["temporal"] = t
@@ -303,30 +319,51 @@ for v in views:
     else:
         ok = r["over"]["1"] < a.max_px1 and r["over"]["2"] == 0 if a.max_px1 > 0 else ident
     r["pass"] = bool(ok)
-    failed |= not ok
     if r["max"] > 0:
-        Image.fromarray(np.clip(M * 8, 0, 255).astype(np.uint8)).save(out / f"{v}.diff.png")
+        Image.fromarray(X8[M]).save(out / f"{v}.diff.png")
         worst_windows(v, A, B, D, M, r)
     if a.crops_from:
         named_crops(v, A, B, D, r)
-    report[v] = r
     if a.aa_floor:
-        rows.append((v, fmt(r["refAA"]), fmt(r["testAA"]), fmt(r["cross"]), ("ok" if ok else "FAIL") + f" ({r['note']})"))
-        print(f"{v:24} {rows[-1][1]:28} {rows[-1][2]:28} {rows[-1][3]:28} {rows[-1][4]}")
+        row = (v, fmt(r["refAA"]), fmt(r["testAA"]), fmt(r["cross"]), ("ok" if ok else "FAIL") + f" ({r['note']})")
+        lines = [f"{v:24} {row[1]:28} {row[2]:28} {row[3]:28} {row[4]}"]
     elif a.temporal:
         t, m = r["temporal"], r["temporal"].get("measure")
         mx, off = (m["frame"]["max"], f"{m['frame']['off']:.4%}") if m else (0, f"{0:.4%}")
         verdict = ("ok" if ok else "FAIL") + (f" ({'; '.join(t['why'])})" if t["why"] else "")
         if a.flip and r.get("flip") is not None:
             verdict += f" FLIP {r['flip']:.6f}"
-        rows.append((v, t["pair"], str(mx), off, f"{t['use']:.3f}" if t["use"] is not None else "", verdict))
-        print(f"{v:24} {t['pair']:15} {mx:4} {off:>8} {rows[-1][4]:>6}  {verdict}")
+        row = (v, t["pair"], str(mx), off, f"{t['use']:.3f}" if t["use"] is not None else "", verdict)
+        lines = [f"{v:24} {t['pair']:15} {mx:4} {off:>8} {row[4]:>6}  {verdict}"]
     else:
-        rows.append((v, "yes" if ident else "no", str(r["max"]), f"{r['mean']:.4f}", " ".join(str(r["over"][str(l)]) for l in LEVELS), "ok" if ok else "FAIL"))
-        print(f"{v:24} {('yes' if ident else 'no'):5} {r['max']:4} {r['mean']:8.4f} " + " ".join(f"{r['over'][str(l)]:9}" for l in LEVELS) + ("  ok" if ok else "  FAIL"))
+        row = (v, "yes" if ident else "no", str(r["max"]), f"{r['mean']:.4f}", " ".join(str(r["over"][str(l)]) for l in LEVELS), "ok" if ok else "FAIL")
+        lines = [f"{v:24} {('yes' if ident else 'no'):5} {r['max']:4} {r['mean']:8.4f} " + " ".join(f"{r['over'][str(l)]:9}" for l in LEVELS) + ("  ok" if ok else "  FAIL")]
     if a.crops_from:
         for name, c in r["anchors"].items():
-            print(f"    {name:20} " + (f"missing ({c['missing']})" if "missing" in c else f"max {c['max']:3}  >1 {c['over']['1']:6}  >2 {c['over']['2']:6}  {c['file']}"))
+            lines.append(f"    {name:20} " + (f"missing ({c['missing']})" if "missing" in c else f"max {c['max']:3}  >1 {c['over']['1']:6}  >2 {c['over']['2']:6}  {c['file']}"))
+    return lines, r, row, bool(ok)
+
+
+# frames from two browser builds never match byte for byte: say so before the table
+seen = {(browser(ref, v), browser(test, v)) for v in views}
+mixed = sorted({f"{r} vs {t}" for r, t in seen if r and t and r != t})
+if mixed:
+    print("WARNING: the sets come from different browser builds (" + "; ".join(mixed) + ")")
+
+report, failed, rows = {}, False, []
+if a.aa_floor:
+    print(f"{'view':24} {'ref A/A':28} {'test A/A':28} {'cross':28} pass")
+elif a.temporal:
+    print(f"{'view':24} {'pairing':15} {'max':>4} {'px>' + str(tolerance.TEMPORAL['level']):>8} {'use':>6}  verdict")
+else:
+    print(f"{'view':24} {'ident':5} {'max':>4} {'mean':>8} " + " ".join(f"{'>' + str(l):>9}" for l in LEVELS) + "  pass")
+sys.stdout.flush()
+with ThreadPoolExecutor(max_workers=max(1, a.jobs)) as pool:
+    # map() yields in view order: the table prints as the views finish, in order
+    for v, (lines, r, row, ok) in zip(views, pool.map(compare, views)):
+        print("\n".join(lines), flush=True)
+        report[v], failed = r, failed or not ok
+        rows.append(row)
 (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
 if a.md:
     head = ("view", "ref A/A", "test A/A", "cross", "verdict") if a.aa_floor else \

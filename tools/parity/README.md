@@ -169,7 +169,7 @@ node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b
 ```sh
 uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [--views a,b]
     [--max-px1 200] [--crops 3] [--crop 256] [--out dir] [--aa-floor | --temporal [--flip]]
-    [--md table.md] [--crops-from ref|test|<dir>|<file.json>]
+    [--md table.md] [--crops-from ref|test|<dir>|<file.json>] [--jobs 4]
 ```
 
 - Per view: byte-identical or not, max and mean absolute difference, pixels over 1, 2, 8 and 32
@@ -191,6 +191,9 @@ uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [-
 - `--crops-from`: per anchor, the difference counts and a `ref | test | diff x8` sheet
   (`<out>/<view>.<anchor>.png`), and per view `<view>.anchors.png`, the test frame at a quarter size
   with its anchor boxes.
+- `--jobs n`: views compared at once, in threads (default 4, or half the cores on a CPU with fewer
+  than 8, since captures share the CPU; `--jobs 1` for one at a time). The output does not depend on
+  it: the table prints in view order and every number is an exact integer sum divided once.
 
 ## Temporal tolerance (diff-set.py --temporal, tolerance.py)
 
