@@ -20,10 +20,14 @@
 //   revalidates (Vite's dev and preview servers send `no-cache`). localStorage and sessionStorage
 //   (the remembered quality tier, a saved game) are cleared before every page's scripts run.
 //
-// Readiness. After the page is up and the evals have run, the capture waits for `frames` (40)
-// frames rendered after the evals (the renderer's frame counter) and the loading screen gone,
-// instead of the old fixed 7 s, frame > 150 and 1.1 s more: 40 frames reproduced the old tool's
-// images on every view measured (30 did, 5 did not: weather and night views had not settled).
+// Readiness. After the page is up and the evals have run, the capture waits for `frames`
+// (READY_FRAMES, 60) frames rendered after the evals (the renderer's frame counter) and the loading
+// screen gone, instead of the old fixed 7 s, frame > 150 and 1.1 s more. 30 frames left weather and
+// night views unsettled; 40 reproduced the old tool's frames except on flowers-close, whose whole
+// frame was still about 2 levels darker after 40 frames on 5 of 22 loads and never after 50 (0 of
+// 14 loads, the shifted ones included), so 60 keeps a margin. More frames do not make the sparse
+// A/A noise of some views rarer (a few pixels of vegetation or sea, at any frame count, as with
+// the old tool).
 // `wait` and `settle` (ms) bring the fixed delays back, before and after the frame count, for a
 // view that needs longer (a bake landing late under a busy GPU). Later the page's own settled
 // signal replaces the count.
@@ -41,6 +45,9 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
+
+/** The rendered frames a capture waits for after the evals (see Readiness above). */
+export const READY_FRAMES = 60;
 
 export const LAUNCH_ARGS = [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu', '--disable-gpu-vsync', '--disable-frame-rate-limit' ];
 
@@ -199,7 +206,7 @@ export async function launchCapture( { viewport, deviceScaleFactor = 1 } ) {
 /** Waits until the page is ready to capture after the evals: `frames` frames rendered since this
  * call and the loading screen gone, with the optional fixed delays `wait` (before) and `settle`
  * (after), in ms. Call it right after the evals. */
-export async function waitForScene( page, { frames = 40, wait = 0, settle = 0, timeout = 60000 } = {} ) {
+export async function waitForScene( page, { frames = READY_FRAMES, wait = 0, settle = 0, timeout = 60000 } = {} ) {
 
 	const from = await page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
 	if ( wait > 0 ) await page.waitForTimeout( wait );

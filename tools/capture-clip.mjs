@@ -6,7 +6,7 @@
 //   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
 //       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"]
 //       [--quality high] [--size 1728x1117@2] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
-//       [--task name] [--anchors-from clip.json] [--ready-frames 40] [--wait ms] [--settle ms] [--verbose]
+//       [--task name] [--anchors-from clip.json] [--ready-frames 60] [--wait ms] [--settle ms] [--verbose]
 //
 // The page loads `U?debug&paused&t=12&quality=<q>&aa=<mode>[&<extra>]&<view's query>[&<clip's
 // query>]` (`aa=off` adds `msaa=1`; `aa` reaches builds that read it, others ignore it) in a
@@ -69,7 +69,7 @@ import { fileURLToPath } from 'node:url';
 import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from './gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { CLIPS, clipEval } from './parity/clips.mjs';
-import { launchCapture, waitForScene } from './capture-browser.mjs';
+import { launchCapture, waitForScene, READY_FRAMES } from './capture-browser.mjs';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const args = process.argv.slice( 2 );
@@ -256,7 +256,7 @@ try {
 		if ( ! ( await p.evaluate( () => typeof window.__PONLAI__.loop.step === 'function' ) ) ) throw new Error( 'this build has no __PONLAI__.loop.step' );
 		await p.evaluate( viewEval( viewName, crops ) );
 		// ready as capture.mjs is: frames rendered after the eval, the loading screen gone
-		await waitForScene( p, { frames: Number( options[ 'ready-frames' ] ?? 40 ), wait: Number( options.wait ?? 0 ), settle: Number( options.settle ?? 0 ), timeout } );
+		await waitForScene( p, { frames: Number( options[ 'ready-frames' ] ?? READY_FRAMES ), wait: Number( options.wait ?? 0 ), settle: Number( options.settle ?? 0 ), timeout } );
 		return p;
 
 	}

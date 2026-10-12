@@ -1,10 +1,10 @@
 // Full-resolution captures of the running dev server (or a preview build) for visual review.
 //   node tools/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval "js"] [--verbose] [--exclusive]
 //                          [--wait-for "js expression"] [--frames n --every k] [--timeout 60000]
-//                          [--ready-frames 40] [--wait ms] [--settle ms]
+//                          [--ready-frames 60] [--wait ms] [--settle ms]
 // Writes artifacts/captures/<name>.png and prints the page's console errors and diagnostics.
 // The browser runs in a persistent profile slot and the capture is taken once the page is ready
-// (tools/capture-browser.mjs, "fast mode"): after the evals it waits for --ready-frames (40) rendered
+// (tools/capture-browser.mjs, "fast mode"): after the evals it waits for --ready-frames (60) rendered
 // frames and the loading screen gone, then stops the frame loop (the GPU queue drained) and takes
 // the shot. --wait and --settle (ms) add the old fixed delays, before and after that frame count,
 // for a view that needs longer.
@@ -24,7 +24,7 @@
 // evals changed need not be in its key) and the capture waits for `diag.taa.converged` (not with
 // `tier.taa.restSequence=0`, where there is no rest).
 import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
-import { launchCapture, waitForScene, stopLoop, startLoop } from './capture-browser.mjs';
+import { launchCapture, waitForScene, stopLoop, startLoop, READY_FRAMES } from './capture-browser.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const args = process.argv.slice( 2 );
@@ -34,7 +34,7 @@ const W = Number( opt( 'w', 1600 ) ), H = Number( opt( 'h', 900 ) );
 const query = opt( 'q', 'paused&t=12&dpr=1' );
 const evals = args.flatMap( ( a, i ) => a === '--eval' && args[ i + 1 ] ? [ args[ i + 1 ] ] : [] );
 const wait = Number( opt( 'wait', 0 ) ), settle = Number( opt( 'settle', 0 ) );
-const readyFrames = Number( opt( 'ready-frames', 40 ) );
+const readyFrames = Number( opt( 'ready-frames', READY_FRAMES ) );
 const url = `${ opt( 'url', 'http://127.0.0.1:5190/' ) }?${ query }`;
 const sampleCount = Number( opt( 'samples', 1 ) );
 const waitFor = opt( 'wait-for', '' );

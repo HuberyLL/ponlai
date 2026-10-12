@@ -43,9 +43,10 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   sessionStorage are cleared before every page. The browser build is in the path (Playwright's
   `chromium-<revision>`, or a `CHROME_PATH` browser's `--version`); `PONLAI_CAPTURE_PROFILES`
   moves the root. The slots are independent of the GPU lock.
-- Readiness: after the view's eval, 40 rendered frames (`--ready-frames n`) and the loading screen
-  gone, instead of the old 7 s + frame > 150 + 1.1 s. 40 frames reproduced the old tool's frames on
-  the views tested; 5 did not.
+- Readiness: after the view's eval, 60 rendered frames (`--ready-frames n`) and the loading screen
+  gone, instead of the old 7 s + frame > 150 + 1.1 s. At 40 frames flowers-close was sometimes still
+  settling (its whole frame about 2 levels darker on 5 of 22 loads, never after 50 frames); 60
+  keeps a margin. More frames do not make the sparse A/A noise below rarer.
   `--wait ms` and `--settle ms` add fixed delays before and after the frame count, for a view that
   settles later (a bake landing late on a busy GPU). Temporal pages still wait for
   `diag.taa.converged` after that.
