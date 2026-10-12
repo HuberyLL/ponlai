@@ -1,8 +1,8 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, texture, textureLoad, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
-	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, log2, luminance, neutralToneMapping, agxToneMapping,
-	sRGBTransferOETF, fract, select, exp, nodeObject, atan, mod, pow, mrt, outputStruct,
+	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, log2, exp2, floor, luminance, neutralToneMapping, agxToneMapping,
+	sRGBTransferOETF, fract, select, exp, nodeObject, atan, mod, pow, mrt, outputStruct, mat4,
 } from 'three/tsl';
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
@@ -65,10 +65,15 @@ import type { Rain } from '../weather/Rain.ts';
 //   rain after resolve (taa, taau: AfterResolve.ts) ── rainOverlay: the rain's streaks and splashes
 //     and the storm's spray, unjittered, at the canvas's size (premultiplied radiance, coverage), while
 //     either shows
+//   rain input ── rainInput, rainBehind: the grade's input at each render texel and the air there
+//     (its transmittance, and the light it adds), at the render's size, while it rains
+//   rain grade ── rainGrade: the grade as a table, for the canvas pass of a running frame, while it
+//     rains
 //   rain layer ── rainLayer: the change the rain veil and the overlay make to the graded image, at
-//     the canvas's size (the overlay through the composite at the pixel), while it rains (neither
-//     rain pass runs while the rest holds its image: the frame that completed it drew them,
-//     `afterHeld`)
+//     the canvas's size (the overlay through the composite at the pixel), drawn here only by the
+//     frame that completes the rest and for TAA's upscaled canvas pass; a running frame's canvas
+//     pass draws it itself (neither rain pass runs while the rest holds its image: the frame that
+//     completed it drew them, `afterHeld`)
 //   canvas pass: taaEncoded (or the history or the rest's image, encoded there with the vignette),
 //     RCAS, the rain layer added, grain and dither; TAA below the canvas encodes it at the render's
 //     size (taaDisplay), EASU, then RCAS, the rain layer and the grain
@@ -165,6 +170,9 @@ const VEIL_REACTIVE = { gain: 1.5, max: 0.6 };
 // coverage spread before the grade. Thin streaks drawn at their least width cover about two thirds
 // of the pixels their prefiltered quads touch (RainDrops.ts).
 const AFTER_COVERAGE = 0.65;
+// The rain layer's grade table (`gradeTable`): colours per channel, and the range they span (stops of
+// the scene colour times the exposure, display white at 0).
+const GRADE_TABLE = { size: 64, low: - 14, high: 7 };
 const RENDER: SizeClass = { of: 'render' };
 // half the render, at least a texel (the depth of field's blur)
 const HALF: SizeClass = { of: 'render', scale: 0.5, min: 1 };
@@ -442,7 +450,7 @@ export class Pipeline {
 	private readonly resources: {
 		sceneColor: ResourceHandle; sceneDepth: ResourceHandle; linearDepth: ResourceHandle; opaqueColor: ResourceHandle;
 		surfaceDepth: ResourceHandle; velocity: ResourceHandle | null; surfaceDepthPrev: ResourceHandle | null; veilReactive: ResourceHandle | null;
-		rainAir: ResourceHandle | null; rainOverlay: ResourceHandle | null; rainLayer: ResourceHandle | null;
+		rainAir: ResourceHandle | null; rainOverlay: ResourceHandle | null; rainLayer: ResourceHandle | null; rainInput: ResourceHandle | null; rainBehind: ResourceHandle | null; rainGrade: ResourceHandle | null;
 		hdr: ResourceHandle | null; sharp: ResourceHandle; blur: ResourceHandle; display: ResourceHandle;
 		viewDistance: ResourceHandle | null;
 		easu: ResourceHandle | null; canvas: ResourceHandle;
@@ -472,6 +480,8 @@ export class Pipeline {
 	private compositeQuad: THREE.QuadMesh | null = null;
 	// after the resolve, the rain's layer over the graded image (AfterResolve.ts), and the rain
 	private layerQuad: THREE.QuadMesh | null = null;
+	private rainInputQuad: THREE.QuadMesh | null = null;
+	private rainGradeQuad: THREE.QuadMesh | null = null;
 	private readonly rain: Rain | undefined;
 	// the composite and the blooms (the sharp image), its depth of field's half-resolution blur
 	private sharpQuad: THREE.QuadMesh;
@@ -536,8 +546,14 @@ export class Pipeline {
 		// (premultiplied scene radiance, coverage).
 		const rainAir = AFTER_RESOLVE && O.compositeOnce ? g.color( 'rainAir', { size: RENDER, format: THREE.RedFormat, type: THREE.HalfFloatType } ) : null;
 		const rainOverlay = AFTER_RESOLVE ? g.color( RAIN_OVERLAY, { size: CANVAS, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
-		// (and the change all the rain makes to the graded image, which the canvas pass adds)
+		// (and the change all the rain makes to the graded image, which the canvas pass adds, and what
+		// it reads at a render texel: the grade's input and the air's transmittance, and the light the
+		// air adds)
 		const rainLayer = AFTER_RESOLVE ? g.color( 'rainLayer', { size: CANVAS, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
+		const rainInput = AFTER_RESOLVE ? g.color( 'rainInput', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
+		const rainBehind = rainInput && rainAir ? g.color( 'rainBehind', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
+		// (the grade as a table, for the canvas pass that draws the layer)
+		const rainGrade = AFTER_RESOLVE ? g.color( 'rainGrade', { size: { of: 'fixed', width: GRADE_TABLE.size ** 2, height: 2 * GRADE_TABLE.size }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		// the composite, the sharp image and the depth of field's blur (half float, as three's rtt()
 		// made them)
 		const hdr = O.compositeOnce ? g.color( 'hdr', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
@@ -550,7 +566,7 @@ export class Pipeline {
 		// the upscale's EASU image (the canvas's size) and the canvas (the resolve has its own)
 		const easu = O.fsrPort && ! RESOLVE ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
-		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, hdr, sharp, blur, display, viewDistance, easu, canvas };
+		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, blur, display, viewDistance, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( velocity ? [ sceneColor, velocity ] : [ sceneColor ], sceneDepth );
@@ -994,7 +1010,9 @@ export class Pipeline {
 
 		};
 		// (`encode` false: the graded colour in linear light, before the sRGB transfer and the S-curve)
-		const grade = ( lin: V3, vignette: boolean, encode: boolean, look = lookColour ): V3 => {
+		// (`surface`: whether a surface lies at the pixel, 1 or 0, in place of the nearest surface's depth
+		// there: the rain's grade table, AfterResolve.ts)
+		const grade = ( lin: V3, vignette: boolean, encode: boolean, look = lookColour, surface?: F ): V3 => {
 
 			// (a uniform branch: the GUI switches the curve without rebuilding the pass. PBR Neutral
 			// is evaluated outside it, every frame: called inside the branch it rendered black, and
@@ -1030,7 +1048,7 @@ export class Pipeline {
 			const satAmt = u.saturation.add( u.vibrance.mul( float( 1 ).sub( smoothstep( 0, 0.35, chroma.div( max( l2, 1e-3 ) ).mul( 0.5 ) ) ) ) ).add( u.highlightSat.mul( smoothstep( 0.6, 0.9, l2 ) ).mul( float( 1 ).sub( hot ) ) );
 			c.assign( max( mix( vec3( l2 ), c, satAmt ), vec3( 0 ) ) );
 			// The look (a uniform branch: 'realistic' skips it and keeps the grade above exactly).
-			const onSurface = select( ( textureLoad( tD, ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) ) ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) ).toVar();
+			const onSurface = surface ?? select( ( textureLoad( tD, ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) ) ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) ).toVar();
 			If( u.lookOn.greaterThan( 0.5 ), () => {
 
 				c.assign( look( c, onSurface ) );
@@ -1134,9 +1152,76 @@ export class Pipeline {
 		// Nothing while it is dry and the after pass did not draw (the overlay then holds an earlier
 		// frame's: `afterOn`).
 		const tAfterDepth = texture( tSurfaceDepth );
-		const tAfterAir = rainAir ? texture( g.texture( rainAir ) ) : null;
 		const tAfterDisplay = texture( tDisplay );
-		const layerNode = rainOverlay ? Fn( () => {
+		// What the layer reads at a render texel, drawn by a pass of its own at the render's size while
+		// it runs (`rainInput`): the grade's input there (as the display pass has it: `diffused`) and
+		// the air's transmittance (A), in `rainInput`; and the light the air, fog and shafts add (B,
+		// the grade's input less A times the scene), in `rainBehind`. Evaluated per canvas pixel instead
+		// (six or more of them read each texel), they took a fifth of the layer's time.
+		const tRainInput = rainInput ? texture( g.texture( rainInput ) ) : null;
+		const tRainBehind = rainBehind ? texture( g.texture( rainBehind ) ) : null;
+		// (one body for both attachments: an output struct is the material's own node, so the two are
+		// a matrix's columns)
+		const inputs = rainInput ? Fn( () => {
+
+			const texel = ivec2( screenCoordinate.xy ).toVar();
+			const before = diffused( vec2( texel ).add( 0.5 ).div( renderSize ) ).toVar();
+			if ( ! rainAir ) return mat4( vec4( before, 1 ), vec4( 0 ), vec4( 0 ), vec4( 0 ) );
+			const keep = ( textureLoad( texture( g.texture( rainAir ) ), texel ) as unknown as F ).toVar();
+			const scene = ( textureLoad( sceneTex, texel ) as unknown as THREE.Node<'vec4'> ).rgb;
+			return mat4( vec4( before, keep ), vec4( before.sub( scene.mul( keep ) ), 1 ), vec4( 0 ), vec4( 0 ) );
+
+		} )() as unknown as { element( i: number ): THREE.Node<'vec4'> } : null;
+		const inputNode = inputs ? ( rainAir ? outputStruct( inputs.element( 0 ), inputs.element( 1 ) ) : inputs.element( 0 ) ) as unknown as THREE.Node<'vec4'> : null;
+		if ( inputNode ) {
+
+			const inputMat = new THREE.NodeMaterial();
+			inputMat.name = 'Post.RainInput';
+			inputMat.fragmentNode = inputNode;
+			this.rainInputQuad = new THREE.QuadMesh( inputMat );
+			this.rainInputQuad.name = 'Post.RainInput';
+
+		}
+		// The grade as a table, for the canvas pass of a running frame (`layerAt( true )`): the grade of
+		// GRADE_TABLE.size^3 colours, logarithmically spaced per channel (the scene colour times the
+		// exposure from 2^low to 2^high: below, within a fifth of a level of black; above, burnt to
+		// white), for a surface and for the sky, baked by a pass of its own while the layer runs
+		// (`rainGrade`) and read trilinearly (two bilinear taps). The change is the difference of two
+		// readings (with the rain and without), so the table's error cancels to first order; graded in
+		// full at every canvas pixel, the grade took a third of the layer's time. The frame that
+		// completes the rest grades in full (its layer stands for every paused frame).
+		const T = GRADE_TABLE;
+		const gradeTableNode = rainGrade ? Fn( () => {
+
+			const p = floor( screenCoordinate.xy ).toVar();
+			const b = floor( p.x.div( T.size ) ), surface = floor( p.y.div( T.size ) );
+			const index = vec3( p.x.sub( b.mul( T.size ) ), p.y.sub( surface.mul( T.size ) ), b );
+			const lin = exp2( index.div( T.size - 1 ).mul( T.high - T.low ).add( T.low ) ).div( u.exposure );
+			return vec4( grade( lin, false, ! LINEAR_DISPLAY, makeLookColour(), surface ), 1 );
+
+		} )() as unknown as THREE.Node<'vec4'> : null;
+		if ( gradeTableNode ) {
+
+			const gradeMat = new THREE.NodeMaterial();
+			gradeMat.name = 'Post.RainGrade';
+			gradeMat.fragmentNode = gradeTableNode;
+			this.rainGradeQuad = new THREE.QuadMesh( gradeMat );
+			this.rainGradeQuad.name = 'Post.RainGrade';
+
+		}
+		const gradeTable = ( lin: V3, surface: F ): V3 => {
+
+			const table = g.texture( rainGrade! );
+			const c = clamp( log2( max( lin.mul( u.exposure ), vec3( 2 ** T.low ) ) ).sub( T.low ).div( T.high - T.low ), 0, 1 ).mul( T.size - 1 ).toVar();
+			const b0 = floor( c.z ).toVar();
+			const v = c.y.add( 0.5 ).add( surface.mul( T.size ) ).div( 2 * T.size ).toVar();
+			const slice = ( b: F ) => ( texture( table, vec2( c.x.add( 0.5 ).add( b.mul( T.size ) ).div( T.size * T.size ), v ) ).level( float( 0 ) ) as unknown as THREE.Node<'vec4'> ).rgb;
+			return mix( slice( b0 ), slice( min( b0.add( 1 ), T.size - 1 ) ), c.z.sub( b0 ) );
+
+		};
+		// (a fresh node per shader: the look's layout function keeps one shader's uniform names; `table`:
+		// graded by the table)
+		const layerAt = ( table = false ) => Fn( () => {
 
 			const out = vec4( 0 ).toVar();
 			// the render texel nearest the point the pixel shows (its centre scaled to the render, less
@@ -1156,45 +1241,52 @@ export class Pipeline {
 			const o = vec4( 0 ).toVar();
 			If( u.afterOn.greaterThan( 0 ), () => {
 
-				o.assign( textureLoad( texture( g.texture( rainOverlay ) ), ivec2( screenCoordinate.xy ) ) );
+				o.assign( textureLoad( texture( g.texture( rainOverlay! ) ), ivec2( screenCoordinate.xy ) ) );
 
 			} );
 			// (below a 256th the change shows in no level)
 			If( max( veil.a, o.a ).greaterThan( 1 / 256 ), () => {
 
 				if ( rain ) veil.rgb.assign( rain.veilLight( this.air.viewRay( uv(), jitter.uniforms.unjitteredProjectionInverse ).direction ).mul( veil.a ) );
-				const before = diffused( vec2( texel ).add( 0.5 ).div( renderSize ) ).toVar();
+				const input = ( textureLoad( tRainInput!, texel ) as unknown as THREE.Node<'vec4'> ).toVar();
+				const before = input.rgb;
 				// the veil over the grade's input
 				const after = before.mul( float( 1 ).sub( veil.a ) ).add( veil.rgb ).toVar();
 				If( o.a.greaterThan( 1 / 1024 ), () => {
 
-					// then the overlay's radiance (premultiplied) through the composite (the legacy
-					// inline composite writes no transmittance: the streaks then take no air)
+					// then the overlay's radiance (premultiplied) through the composite, A scene + B (the
+					// legacy inline composite writes no transmittance: the streaks then take no air)
 					const a = min( o.a, 1 ).toVar();
-					if ( tAfterAir ) {
-
-						const keep = ( textureLoad( tAfterAir, texel ) as unknown as F ).toVar();
-						const scene = ( textureLoad( sceneTex, texel ) as unknown as THREE.Node<'vec4'> ).rgb;
-						after.assign( after.mul( float( 1 ).sub( a ) ).add( o.rgb.mul( keep ) ).add( before.sub( scene.mul( keep ) ).mul( a ) ) );
-
-					} else after.assign( after.mul( float( 1 ).sub( a ) ).add( o.rgb ) );
+					if ( tRainBehind ) after.assign( after.mul( float( 1 ).sub( a ) ).add( o.rgb.mul( input.a ) ).add( ( textureLoad( tRainBehind, texel ) as unknown as THREE.Node<'vec4'> ).rgb.mul( a ) ) );
+					else after.assign( after.mul( float( 1 ).sub( a ) ).add( o.rgb ) );
 
 				} );
-				const look = makeLookColour();
 				// (the change at the rain's own coverage of a sample, AFTER_COVERAGE, spread over the pixel)
 				const full = max( before.add( after.sub( before ).div( AFTER_COVERAGE ) ), vec3( 0 ) );
-				const graded = LINEAR_DISPLAY ? ( textureLoad( tAfterDisplay, texel ) as unknown as THREE.Node<'vec4'> ).rgb : grade( before, false, ! LINEAR_DISPLAY, look );
-				out.assign( vec4( grade( full, false, ! LINEAR_DISPLAY, look ).sub( graded ).mul( AFTER_COVERAGE ), 1 ) );
+				if ( table ) {
+
+					// (the surfaces the full grade sees: the display pass's at the texel, the pixel's own)
+					const surfaceAt = ( px: THREE.Node<'ivec2'> ) => select( ( textureLoad( tAfterDepth, px ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) );
+					const pixel = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
+					out.assign( vec4( gradeTable( full, surfaceAt( pixel ) ).sub( gradeTable( before, surfaceAt( texel ) ) ).mul( AFTER_COVERAGE ), 1 ) );
+
+				} else {
+
+					const look = makeLookColour();
+					const graded = LINEAR_DISPLAY ? ( textureLoad( tAfterDisplay, texel ) as unknown as THREE.Node<'vec4'> ).rgb : grade( before, false, ! LINEAR_DISPLAY, look );
+					out.assign( vec4( grade( full, false, ! LINEAR_DISPLAY, look ).sub( graded ).mul( AFTER_COVERAGE ), 1 ) );
+
+				}
 
 			} );
 			return out;
 
-		} )() as unknown as THREE.Node<'vec4'> : null;
-		if ( layerNode ) {
+		} )() as unknown as THREE.Node<'vec4'>;
+		if ( rainOverlay ) {
 
 			const layerMat = new THREE.NodeMaterial();
 			layerMat.name = 'Post.RainLayer';
-			layerMat.fragmentNode = layerNode;
+			layerMat.fragmentNode = layerAt();
 			this.layerQuad = new THREE.QuadMesh( layerMat );
 			this.layerQuad.name = 'Post.RainLayer';
 
@@ -1216,6 +1308,8 @@ export class Pipeline {
 				return l;
 
 			} )() as unknown as THREE.Node<'vec4'> : undefined,
+			// (and the layer itself, for the canvas pass of a running frame while it shows)
+			layerInline: rainLayer ? { node: () => layerAt( true ), on: () => this.u.layerOn.value > 0 } : undefined,
 			// the display pass's blur weight, inline (cocAt's layout function, called from the resolve's
 			// shaders, came out with another shader's uniform names)
 			dofBlur: () => ( q: V2 ) => {
@@ -1467,20 +1561,18 @@ export class Pipeline {
 					};
 
 				} );
-				// the change the rain makes to the graded image (`layerNode`), while it rains or the
-				// overlay holds something
-				let rainLayer = this.resources.rainLayer!;
-				const layerQuad = this.layerQuad!;
-				g.addPass( 'rainLayer', 'quad', ( b ) => {
+				// what the layer reads at a render texel (`rainInput`, `rainBehind`), while it runs
+				let rainInput = this.resources.rainInput!, rainBehind = this.resources.rainBehind;
+				const inputQuad = this.rainInputQuad!;
+				g.addPass( 'rainInput', 'quad', ( b ) => {
 
-					b.read( surfaceDepth );
 					// (the grade's input: the sharp image, the depth of field's blur and distances, the
-					// look's glow; and what the display pass graded)
+					// look's glow)
 					b.read( sharp );
 					b.read( blur );
+					b.read( surfaceDepth );
 					if ( viewDistance ) b.readOptional( viewDistance );
 					b.readOptional( glow );
-					b.read( display );
 					if ( rainAir ) {
 
 						b.read( rainAir );
@@ -1488,12 +1580,41 @@ export class Pipeline {
 						b.readOptional( sceneColor );
 
 					}
-					b.readOptional( rainOverlay! );
-					rainLayer = b.write( rainLayer );
-					return { label: 'rain layer', when: ( f ) => this.layerRuns( f ) && ! this.afterHeld(), whenLabel: 'rain || spray, not held', quad: layerQuad };
+					// (the attachments in the struct's order; the MRT only declares them)
+					rainInput = b.write( rainInput );
+					if ( rainBehind ) rainBehind = b.write( rainBehind );
+					return { label: 'rain layer', when: ( f ) => this.layerRuns( f ) && ! this.afterHeld(), whenLabel: 'rain || spray, not held', quad: inputQuad, mrt: rainBehind ? mrt( {} ) : null };
 
 				} );
-				return { optional: [ rainLayer ], required: [] };
+				// the grade's table, for the canvas pass that draws the layer
+				let rainGrade = this.resources.rainGrade!;
+				const gradeQuad = this.rainGradeQuad!;
+				const temporal = this.temporal!;
+				g.addPass( 'rainGrade', 'quad', ( b ) => {
+
+					rainGrade = b.write( rainGrade );
+					return { label: 'rain layer', when: () => temporal.drawsLayer, whenLabel: 'layer in the canvas pass', quad: gradeQuad };
+
+				} );
+				// The change the rain makes to the graded image (`layerAt`), while it rains or the
+				// overlay holds something: drawn here into `rainLayer` for the frame that completes the
+				// rest (held after it) and for TAA's upscaled canvas pass, and by the canvas pass itself
+				// in every other frame (TemporalAA.ts `layerInline`; one canvas-size target less to
+				// write and read).
+				let rainLayer = this.resources.rainLayer!;
+				const layerQuad = this.layerQuad!;
+				g.addPass( 'rainLayer', 'quad', ( b ) => {
+
+					b.read( surfaceDepth );
+					b.read( display );
+					b.readOptional( rainInput );
+					if ( rainBehind ) b.readOptional( rainBehind );
+					b.readOptional( rainOverlay! );
+					rainLayer = b.write( rainLayer );
+					return { label: 'rain layer', when: ( f ) => this.layerRuns( f ) && ! this.afterHeld() && ! temporal.drawsLayer, whenLabel: 'rain || spray, not held, not inline', quad: layerQuad };
+
+				} );
+				return { optional: [ rainLayer, rainOverlay!, rainInput, ...( rainBehind ? [ rainBehind ] : [] ), rainGrade ], required: [ surfaceDepth, display ] };
 
 			} : undefined;
 			this.temporal.declare( { display, velocity: velocity!, surfaceDepth, surfaceDepthPrev: surfaceDepthPrev!, veilReactive, viewDistance, canvas, after } );

@@ -87,11 +87,15 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   TAA below the canvas encodes at the render's size and upscales with EASU first.
 // - After the resolve (taa, taau: AfterResolve.ts) the rain's streaks and the storm's spray are
 //   drawn unjittered into an overlay at the canvas's size, between the resolve's passes and the
-//   canvas pass (`after`, with the pass that draws the change the rain veil and that overlay make
-//   to the graded colour), and the canvas pass adds that change (`layer`) after RCAS, before the
-//   grain: the pixels it changes are decoded
+//   canvas pass (`after`), and the canvas pass adds the change the rain veil and that overlay make
+//   to the graded colour (`layer`) after RCAS, before the grain: the pixels it changes are decoded
 //   to linear light (the S-curve by Newton's method, then the sRGB transfer), changed and encoded
-//   again; the vignette applies to the change as to the image. Nothing of it enters a history.
+//   again; the vignette applies to the change as to the image. Nothing of it enters a history. A
+//   running frame's canvas pass draws the change itself (`layerInline`: a build of its own, used
+//   only while the layer shows, so in fair weather the pass holds none of its registers); the
+//   frame that completes the rest has a pass draw it into a target (`after`), which the canvas
+//   pass reads as it is while the rest holds (`drawsLayer`), as does TAA's upscaled canvas pass.
+//   Drawn by its own pass every frame, the change cost a canvas-size target written and read.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -155,6 +159,9 @@ export interface TemporalOptions {
 	// resolve (the change to the graded colour, in linear light under `linear`, without the vignette;
 	// alpha 1 where there is one, else 0)
 	layer?: () => V4;
+	// the layer itself (a fresh node per shader), which the canvas pass of a running frame draws while
+	// `on` (it rains, or the after pass drew), instead of reading it from a pass of its own
+	layerInline?: { node: () => V4; on: () => boolean };
 }
 
 // The textures the resolve reads, and under TAAU the neighbourhood pass's targets.
@@ -266,6 +273,8 @@ export class TemporalAA {
 	private nearHandles: ResourceHandle[] | null = null;
 	private restQuads: THREE.QuadMesh[] = [];
 	private canvasPipelines: THREE.RenderPipeline[] = [];
+	// the canvas pass of a running frame that draws the rain's layer itself, by the history's parity
+	private inlinePipelines: THREE.RenderPipeline[] = [];
 	private encodeQuads: THREE.QuadMesh[] = [];
 	private upscaledPipeline: THREE.RenderPipeline | null = null;
 	// the debug view's builds by parity (graph/DebugView.ts asks for one)
@@ -361,6 +370,16 @@ export class TemporalAA {
 	get holding(): boolean {
 
 		return this.rest.converged && ! this.rest.completing;
+
+	}
+
+	/** Whether the canvas pass draws the rain's layer itself this frame (`layerInline`): a running
+	 * frame's, while the layer shows. The frame that completes the rest draws it into its target,
+	 * which the frames after it read as it is (Pipeline.ts `afterHeld`), as does TAA's upscaled canvas
+	 * pass. */
+	get drawsLayer(): boolean {
+
+		return this.options.layerInline?.on() === true && ! this.rest.converged && ! ( this.mode === 'taa' && this.upscaling );
 
 	}
 
@@ -483,11 +502,12 @@ export class TemporalAA {
 		// what is drawn after the resolve, and what the canvas passes then read
 		const afterReads = inputs.after?.() ?? { optional: [], required: [] };
 		const layer = O.layer;
-		// the layer's change to a canvas pixel's encoded colour `s`, whose vignette is `v`
-		const over = ( s: V3, v: F ): V3 => {
+		// the layer's change to a canvas pixel's encoded colour `s`, whose vignette is `v` (`inline`: the
+		// layer drawn here)
+		const over = ( s: V3, v: F, inline = false ): V3 => {
 
 			if ( ! layer ) return s;
-			const l = layer().toVar();
+			const l = ( inline ? O.layerInline!.node() : layer() ).toVar();
 			const out = s.toVar();
 			If( l.a.greaterThan( 0 ), () => {
 
@@ -509,7 +529,7 @@ export class TemporalAA {
 		const encode = ( c: V3, v: F ) => this.settings.linear ? toDisplay( c.mul( v ), O.contrast ) : c.mul( v );
 		// one canvas pixel: the image encoded (with the vignette at that pixel), sharpened by RCAS; the
 		// resolve's encoded image as it is (its taps carry the vignette at their own pixels)
-		const canvasNode = ( source: THREE.Texture, isEncoded: boolean ) => Fn( () => {
+		const canvasNode = ( source: THREE.Texture, isEncoded: boolean, inline = false ) => Fn( () => {
 
 			const p = screenCoordinate.xy.floor().toConst();
 			const last = outputSize.sub( 1 ).toConst();
@@ -518,7 +538,7 @@ export class TemporalAA {
 			const tap = ( dx: number, dy: number ) => vec4( isEncoded ? load( dx, dy ) : encode( load( dx, dy ), v ), 1 );
 			// (the ground truth is not sharpened)
 			const s = gt ? tap( 0, 0 ).rgb : rcas( tap, this.sharpness );
-			return O.finish( over( s.toVar(), v ), canvasSize, float( 1 ) );
+			return O.finish( over( s.toVar(), v, inline ), canvasSize, float( 1 ) );
 
 		} )();
 		const canvasPass = ( b: Parameters<Parameters<FrameGraph<unknown>[ 'addPass' ]>[ 2 ]>[ 0 ] ) => {
@@ -530,14 +550,17 @@ export class TemporalAA {
 			canvas = b.write( canvas );
 
 		};
-		this.canvasPipelines = sources.map( ( source, i ) => {
+		const canvasPipeline = ( source: THREE.Texture, i: number, inline: boolean ) => {
 
 			const shown = i < 2 && canvasImage !== null;
-			const pipeline = new THREE.RenderPipeline( this.renderer, canvasNode( shown ? g.texture( canvasImage! ) : source, shown ) );
+			const pipeline = new THREE.RenderPipeline( this.renderer, canvasNode( shown ? g.texture( canvasImage! ) : source, shown, inline ) );
 			pipeline.outputColorTransform = false;
 			return pipeline;
 
-		} );
+		};
+		this.canvasPipelines = sources.map( ( source, i ) => canvasPipeline( source, i, false ) );
+		// (a running frame's: the history this frame wrote)
+		this.inlinePipelines = layer && O.layerInline ? sources.slice( 0, 2 ).map( ( source, i ) => canvasPipeline( source, i, true ) ) : [];
 		const taa = this.mode === 'taa';
 		g.addPass( 'taaOutput', 'chain', ( b ) => {
 
@@ -545,11 +568,11 @@ export class TemporalAA {
 			return {
 				label: 'output', pipeline: this.canvasPipelines[ 0 ],
 				...( taa ? { when: () => ! this.upscaling, whenLabel: '!upscaling' } : {} ),
-				run: () => this.canvasPipelines[ sourceIndex() ].render(),
+				run: () => ( this.drawsLayer ? this.inlinePipelines : this.canvasPipelines )[ sourceIndex() ].render(),
 			};
 
 		} );
-		this.variants.push( { pass: 'taaOutput', kind: 'chain', quads: [], pipelines: this.canvasPipelines } );
+		this.variants.push( { pass: 'taaOutput', kind: 'chain', quads: [], pipelines: [ ...this.canvasPipelines, ...this.inlinePipelines ] } );
 		if ( ! taa ) return;
 
 		// TAA below the canvas: the resolved image encoded at the render's size (the vignette in
@@ -1161,7 +1184,7 @@ export class TemporalAA {
 
 		this.carry.dispose();
 		for ( const quad of [ ...this.resolveQuads, ...this.restQuads, ...this.encodeQuads, ...this.debugQuads, ...( this.neighbourhoodQuad ? [ this.neighbourhoodQuad ] : [] ) ] ) ( quad.material as THREE.Material ).dispose();
-		for ( const pipeline of [ ...this.canvasPipelines, ...( this.upscaledPipeline ? [ this.upscaledPipeline ] : [] ) ] ) pipeline.dispose();
+		for ( const pipeline of [ ...this.canvasPipelines, ...this.inlinePipelines, ...( this.upscaledPipeline ? [ this.upscaledPipeline ] : [] ) ] ) pipeline.dispose();
 		this.fsr?.dispose();
 
 	}
