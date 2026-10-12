@@ -8,7 +8,7 @@
 //   node tools/parity/baseline.mjs --url U --sha SHA [--root DIR] [--label baseline] [--aa msaa]
 //       [--tiers high,medium,low] [--only rest|clips] [--views a,b] [--clips a,b] [--gt | --no-gt] [--gt-aa gt|gt-hi]
 //       [--jobs 2] [--capture-only | --metrics-only] [--thresholds thresholds.json] [--runs runs.csv] [--task name]
-//       [--skip-existing] [--size 1728x1117@2] [--q "extra&query"] [--verbose]
+//       [--ref-url R] [--recapture-reference] [--skip-existing] [--size 1728x1117@2] [--q "extra&query"] [--verbose]
 //
 // The plan (PLAN below): on high the 24 parity and TAA views at rest (the 17 parity views also as
 // whole frames, for the overall fidelity gate) and the gates' clips; on medium and low six views at
@@ -27,6 +27,20 @@
 //   <label>/metrics.json                  every entry's metrics; for the label `baseline` (MSAA) this
 //                                         is the baseline the gates multiply
 //
+// The baseline's and the ground truth's entries are references of the merge-base, kept by the
+// reference store (reference.mjs, layout in tools/parity/README.md): each entry has its own
+// manifest (`complete.json`: the clip tools' version, the browser build, tier, aa, size, extra
+// query, clip, view, frame sampling and the anchors it took), so an entry is reused when it
+// matches, waited for when another live process is capturing it, and otherwise captured (saying
+// why: missing, the tools or the browser changed, a capture that did not finish). They are
+// captured from the reference's own preview only: `--url` for the baseline's run, `--ref-url` for
+// another label's (a test build's run), whose missing references are otherwise reported and their
+// entries skipped. With --ref-url another label's run also captures the ground truth (as --gt).
+// --skip-existing accepts an entry without a manifest or of another key as it is (references
+// captured before the store) and skips the side under test where its clip.json exists;
+// --recapture-reference captures the reference entries afresh. --clips may also name a clip that
+// is not a gate's (`--clips drs-steps`): its baseline and ground truth are kept the same way.
+//
 // `--label x --aa taau` captures the same entries for another mode and measures them against the
 // baseline's MSAA captures and the shared ground truth (with --thresholds: gate verdicts). The
 // ground truth and other labels take the baseline's anchors (`--anchors-from`), so every side
@@ -38,7 +52,7 @@
 // Clips and rest frames are deterministic (the page's stepper), so captures take the GPU lock shared
 // (capture-clip.mjs takes it). Wall times go to --runs (or PARITY_RUNS) and into metrics.json.
 // Python metrics run through `uv run --with numpy --with pillow --with scipy --with flip-evaluator`.
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile, appendFile, rm } from 'node:fs/promises';
 import path from 'node:path';
@@ -47,6 +61,7 @@ import { fileURLToPath } from 'node:url';
 import { VIEWS, viewNames } from './views.mjs';
 import { CLIPS, gtSampling } from './clips.mjs';
 import { sampleGpuUtilisation } from '../gpu-lock.mjs';
+import { ensureReference, clipKey, anchorsHash, checkServed } from './reference.mjs';
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
 const TOOLS = path.resolve( HERE, '..' );
@@ -75,8 +90,8 @@ export const PLAN = {
 
 // ------------------------------------------------------------------ options
 
-const FLAGS = new Set( [ 'gt', 'no-gt', 'metrics-only', 'capture-only', 'skip-existing', 'verbose' ] );
-const KNOWN = [ 'url', 'sha', 'root', 'label', 'aa', 'tiers', 'only', 'views', 'clips', 'jobs', 'thresholds', 'runs', 'task', 'size', 'q', 'gt-aa', ...FLAGS ];
+const FLAGS = new Set( [ 'gt', 'no-gt', 'metrics-only', 'capture-only', 'skip-existing', 'recapture-reference', 'verbose' ] );
+const KNOWN = [ 'url', 'ref-url', 'sha', 'root', 'label', 'aa', 'tiers', 'only', 'views', 'clips', 'jobs', 'thresholds', 'runs', 'task', 'size', 'q', 'gt-aa', ...FLAGS ];
 
 // the ground truth's folder under <root>/<sha>/ for each GT mode
 const GT_LABEL = { gt: 'gt', 'gt-hi': 'gt-hi' };
@@ -117,6 +132,16 @@ export function entries( o ) {
 
 			const name = view ? `${ clip }@${ view }` : clip;
 			if ( clips && ! clips.has( name ) && ! clips.has( clip ) ) continue;
+			out.push( { tier, kind: 'clip', name, clip, view: view ?? CLIPS[ clip ].view, full: false, key: `${ tier }/clip/${ name }` } );
+
+		}
+		// clips named with --clips beyond the gates' (a task's own clip, such as drs-steps): its
+		// baseline and ground truth are references of the merge-base like the gates'
+		if ( o.only !== 'rest' && clips ) for ( const name of clips ) {
+
+			if ( out.some( ( e ) => e.tier === tier && e.kind === 'clip' && ( e.name === name || e.clip === name ) ) ) continue;
+			const [ clip, view ] = name.split( '@' );
+			if ( ! CLIPS[ clip ] ) throw new Error( `unknown clip ${ clip }` );
 			out.push( { tier, kind: 'clip', name, clip, view: view ?? CLIPS[ clip ].view, full: false, key: `${ tier }/clip/${ name }` } );
 
 		}
@@ -163,37 +188,44 @@ async function pool( jobs, n, fn ) {
 
 // ------------------------------------------------------------------ capture
 
+// reference entries the run could not use (stale, missing, failed): metrics skip them
+const unusable = new Map();
+
 async function capture( o, list, root ) {
 
 	const label = o.label, aa = o.aa;
-	const common = [ '--url', o.url, ...( o.size ? [ '--size', o.size ] : [] ), ...( o.q ? [ '--q', o.q ] : [] ),
+	const size = o.size ?? '1728x1117@2';
+	const common = [ ...( o.size ? [ '--size', o.size ] : [] ), ...( o.q ? [ '--q', o.q ] : [] ),
 		...( o.runs ? [ '--runs', o.runs ] : [] ), ...( o.task ? [ '--task', o.task ] : [] ) ];
-	// the side under test, then (on high) the ground truth with the same anchors
-	const jobs = [];
+	// where the reference sides (the MSAA baseline, the ground truth) are captured from: they are
+	// the merge-base's, so the baseline's own run's URL or --ref-url, never a test build's
+	const refUrl = o[ 'ref-url' ] ?? ( label === 'baseline' ? o.url : null );
+	let served = null;
+	const checkRefServed = () => { served ??= checkServed( refUrl, o.sha ); };
+	const clipArgs = ( url, side, e, mode, dir, extra ) => [ path.join( TOOLS, 'capture-clip.mjs' ), `${ side }-${ e.tier }-${ e.name }`, '--url', url, ...common,
+		'--clip', e.clip, '--view', e.view, '--quality', e.tier, '--aa', mode, '--out', dir, ...( e.full ? [ '--full', '0' ] : [] ), ...extra ];
+	// every entry's baseline (the side itself for the baseline's run, else the anchors and the
+	// metrics' MSAA), the side under test for other labels, and (with --gt) the ground truth with
+	// the baseline's anchors
+	const jobs = [], gtJobs = [];
 	for ( const e of list ) {
 
-		const dir = entryDir( root, label, e );
-		// anchors: the baseline's (high's for the lower tiers) unless this is the baseline's own high run
-		const anchorTier = e.tier === 'high' ? e : { ...e, tier: 'high' };
-		const anchors = path.join( entryDir( root, 'baseline', anchorTier ), 'clip.json' );
-		const ownAnchors = label === 'baseline' && e.tier === 'high';
-		jobs.push( { e, side: label, dir, args: [ path.join( TOOLS, 'capture-clip.mjs' ), `${ label }-${ e.tier }-${ e.name }`, ...common, '--clip', e.clip, '--view', e.view,
-			'--quality', e.tier, '--aa', aa, '--out', dir, ...( e.full ? [ '--full', '0' ] : [] ),
-			...( ownAnchors ? [] : [ '--anchors-from', anchors ] ) ], needs: ownAnchors ? null : anchors } );
+		// anchors: the baseline's high entry, except for the baseline's own high entry
+		const highAnchors = path.join( entryDir( root, 'baseline', e.tier === 'high' ? e : { ...e, tier: 'high' } ), 'clip.json' );
+		const ownAnchors = e.tier === 'high';
+		jobs.push( { e, side: 'baseline', store: true, mode: 'msaa', dir: entryDir( root, 'baseline', e ), needs: ownAnchors ? null : highAnchors, sampling: { every: 1, dense: [] } } );
+		if ( label !== 'baseline' ) jobs.push( { e, side: label, mode: aa, dir: entryDir( root, label, e ), needs: highAnchors } );
 
 	}
-	const gtJobs = [];
-	if ( o.gt ) for ( const e of list ) {
+	// the ground truth: captured with --gt (from the reference's URL); else only waited for or reused
+	// when the metrics will read it
+	if ( o.gt || ( ! o[ 'no-gt' ] && ! o[ 'capture-only' ] ) ) for ( const e of list ) {
 
 		// gt-hi exists for high only; aa=gt renders every tier
 		if ( o[ 'gt-aa' ] === 'gt-hi' && e.tier !== 'high' ) continue;
-		const side = GT_LABEL[ o[ 'gt-aa' ] ], dir = entryDir( root, side, e );
-		const s = gtSampling( CLIPS[ e.clip ] );
-		gtJobs.push( { e, side, dir, args: [ path.join( TOOLS, 'capture-clip.mjs' ), `${ side }-${ e.tier }-${ e.name }`, ...common, '--clip', e.clip, '--view', e.view,
-			'--quality', e.tier, '--aa', o[ 'gt-aa' ], '--out', dir, '--every', String( s.every ),
-			...( s.dense.length ? [ '--dense', s.dense.map( ( r ) => r.join( '-' ) ).join( ',' ) ] : [] ),
-			...( e.full ? [ '--full', '0' ] : [] ), '--anchors-from', path.join( entryDir( root, 'baseline', e ), 'clip.json' ) ],
-		needs: path.join( entryDir( root, 'baseline', e ), 'clip.json' ) } );
+		const side = GT_LABEL[ o[ 'gt-aa' ] ];
+		gtJobs.push( { e, side, store: true, capture: !! o.gt, mode: o[ 'gt-aa' ], dir: entryDir( root, side, e ), needs: path.join( entryDir( root, 'baseline', e ), 'clip.json' ),
+			sampling: gtSampling( CLIPS[ e.clip ] ) } );
 
 	}
 	const done = [];
@@ -207,25 +239,67 @@ async function capture( o, list, root ) {
 		writers.set( path.join( j.dir, 'clip.json' ), { promise, resolve } );
 
 	}
+	const report = ( j, code, t0, out, extra = '' ) => {
+
+		// on a failure the first line naming an error (the last line is often only node's version,
+		// and a thrown error's dump ends in `name: 'Error'`), else the first line
+		const lines = ( out ?? '' ).trim().split( '\n' ).filter( ( l ) => l.trim() );
+		const line = code ? ( lines.find( ( l ) => /Error:|ERR_|error:|failed/i.test( l ) ) ?? lines[ 0 ] ?? '' ) : '';
+		console.log( `${ code ? 'FAIL' : 'ok  ' } ${ j.side } ${ j.e.key } ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 0 ) } s${ extra }${ code ? ': ' + line + ' (' + path.join( j.dir, 'capture.log' ) + ')' : '' }` );
+
+	};
 	const one = async ( j ) => {
 
 		const finish = ( r ) => { done.push( r ); writers.get( path.join( j.dir, 'clip.json' ) ).resolve(); };
-		if ( o[ 'skip-existing' ] && existsSync( path.join( j.dir, 'clip.json' ) ) ) { finish( { ...j, code: 0, skipped: true } ); return; }
 		if ( j.needs && writers.has( j.needs ) ) await writers.get( j.needs ).promise;
-		if ( j.needs && ! existsSync( j.needs ) ) { console.log( `skip ${ j.side } ${ j.e.key }: no baseline anchors (${ j.needs })` ); finish( { ...j, code: 2 } ); return; }
+		if ( j.needs && ( ! existsSync( j.needs ) || unusable.has( path.dirname( j.needs ) ) ) ) {
+
+			console.log( `skip ${ j.side } ${ j.e.key }: no baseline anchors (${ j.needs }${ unusable.has( path.dirname( j.needs ) ) ? ': ' + unusable.get( path.dirname( j.needs ) ) : '' })` );
+			if ( j.store ) unusable.set( j.dir, 'no baseline anchors' );
+			finish( { ...j, code: 2 } );
+			return;
+
+		}
+		const t0 = Date.now();
+		if ( j.store ) {
+
+			// a reference entry (reference.mjs): reused, waited for, or captured from the reference's URL
+			const extra = [ ...( j.sampling.every > 1 ? [ '--every', String( j.sampling.every ) ] : [] ),
+				...( j.sampling.dense.length ? [ '--dense', j.sampling.dense.map( ( r ) => r.join( '-' ) ).join( ',' ) ] : [] ),
+				...( j.needs ? [ '--anchors-from', j.needs ] : [] ) ];
+			const { key, files } = await clipKey( { tier: j.e.tier, aa: j.mode, size, q: o.q ?? null, clip: j.e.clip, view: j.e.view, full: j.e.full,
+				every: j.sampling.every, dense: j.sampling.dense, anchors: j.needs ? anchorsHash( j.needs ) : null } );
+			let out = '';
+			const r = await ensureReference( {
+				dir: j.dir, kind: 'clip', key, files, url: j.capture === false ? null : refUrl, acceptStale: o[ 'skip-existing' ], force: o[ 'recapture-reference' ],
+				label: `baseline ${ o.task ?? '' } ${ j.side } ${ j.e.key }`,
+				capture: async ( todo, dir ) => {
+
+					checkRefServed();
+					const c = await run( process.execPath, clipArgs( refUrl, j.side, j.e, j.mode, dir, extra ), { log: path.join( dir, 'capture.log' ), verbose: o.verbose } );
+					out = c.out;
+					return { coverage: c.code === 0 && existsSync( path.join( dir, 'clip.json' ) ) ? { captured: true } : null, failed: c.code ? 1 : 0 };
+
+				},
+			} );
+			const ok = [ 'reused', 'waited', 'captured' ].includes( r.status );
+			if ( ! ok ) unusable.set( j.dir, r.reason ?? r.status );
+			if ( r.status === 'unavailable' ) console.log( `skip ${ j.side } ${ j.e.key }: the reference must be captured (${ r.reason })${ refUrl ? '' : `: pass --ref-url <a preview of ${ o.sha.slice( 0, 12 ) }>${ j.capture === false ? ' and --gt' : '' }` }` );
+			else report( j, ok ? 0 : 1, t0, out || r.error, ` (reference ${ r.status }${ r.stale ? ', stale: ' + r.stale : '' })` );
+			finish( { ...j, code: ok ? 0 : r.status === 'unavailable' ? 2 : 1, reference: r.status } );
+			return;
+
+		}
+		if ( o[ 'skip-existing' ] && existsSync( path.join( j.dir, 'clip.json' ) ) ) { finish( { ...j, code: 0, skipped: true } ); return; }
 		await rm( j.dir, { recursive: true, force: true } );
 		await mkdir( j.dir, { recursive: true } );
-		const t0 = Date.now();
-		const r = await run( process.execPath, j.args, { log: path.join( j.dir, 'capture.log' ), verbose: o.verbose } );
-		// on a failure the first line naming an error (the last line is often only node's version,
-		// and a thrown error's dump ends in `name: 'Error'`), else the first line
-		const lines = r.out.trim().split( '\n' ).filter( ( l ) => l.trim() );
-		const line = r.code ? ( lines.find( ( l ) => /Error:|ERR_|error:|failed/i.test( l ) ) ?? lines[ 0 ] ?? '' ) : '';
-		console.log( `${ r.code ? 'FAIL' : 'ok  ' } ${ j.side } ${ j.e.key } ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 0 ) } s${ r.code ? ': ' + line + ' (' + path.join( j.dir, 'capture.log' ) + ')' : '' }` );
+		const r = await run( process.execPath, clipArgs( o.url, j.side, j.e, j.mode, j.dir, [ '--anchors-from', j.needs ] ), { log: path.join( j.dir, 'capture.log' ), verbose: o.verbose } );
+		report( j, r.code, t0, r.out );
 		finish( { ...j, code: r.code } );
 
 	};
-	// the side's own captures first (the GT needs the baseline's anchors), high before the lower tiers
+	// the baseline and the side's own captures first (the GT needs the baseline's anchors), high
+	// before the lower tiers
 	const order = ( a, b ) => ( a.e.tier === 'high' ? 0 : 1 ) - ( b.e.tier === 'high' ? 0 : 1 );
 	await pool( jobs.sort( order ), Number( o.jobs ?? 2 ), one );
 	await pool( gtJobs, Number( o.jobs ?? 2 ), one );
@@ -246,6 +320,8 @@ async function metrics( o, list, root ) {
 		// the tier's own ground truth, else high's (which then cancels in every ratio to MSAA)
 		const ownGt = existsSync( path.join( entryDir( root, GT_LABEL[ o[ 'gt-aa' ] ], e ), 'clip.json' ) );
 		const gt = entryDir( root, GT_LABEL[ o[ 'gt-aa' ] ], ownGt ? e : { ...e, tier: 'high' } );
+		const bad = [ msaa, gt ].find( ( d ) => unusable.has( d ) );
+		if ( bad ) { out.failures.push( `${ e.key }: reference ${ path.relative( root, bad ) } unusable (${ unusable.get( bad ) })` ); return; }
 		if ( ! existsSync( path.join( test, 'clip.json' ) ) || ! existsSync( path.join( msaa, 'clip.json' ) ) || ! existsSync( path.join( gt, 'clip.json' ) ) ) {
 
 			out.failures.push( `${ e.key }: missing captures` );
@@ -379,7 +455,9 @@ async function main() {
 	o[ 'gt-aa' ] ??= 'gt';
 	if ( ! GT_LABEL[ o[ 'gt-aa' ] ] ) throw new Error( `--gt-aa is gt or gt-hi, not ${ o[ 'gt-aa' ] }` );
 	if ( o[ 'no-gt' ] ) o.gt = false;
-	else if ( o.gt === undefined ) o.gt = o.label === 'baseline';
+	else if ( o.gt === undefined ) o.gt = o.label === 'baseline' || !! o[ 'ref-url' ];
+	// the full sha, so every task meets in one directory whichever form it was given
+	try { o.sha = execFileSync( 'git', [ 'rev-parse', '--verify', '--quiet', `${ o.sha }^{commit}` ], { cwd: TOOLS, encoding: 'utf8' } ).trim() || o.sha; } catch { /* not a commit here: kept as given */ }
 	const root = path.resolve( o.root ?? path.join( TOOLS, '..', 'artifacts', 'parity' ), o.sha );
 	const list = entries( o );
 	if ( ! list.length ) throw new Error( 'nothing to do: no entry matches --tiers, --views, --clips and --only' );
