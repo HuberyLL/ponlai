@@ -11,7 +11,10 @@
 //   second, once per land version), which the page hands to every worker, and the chunks that
 //   missed run again and are built. A land that missed the cache (a new land version: some chunk
 //   will miss too) asks for the field at once, before any chunk's lookup has come back. A reload
-//   that finds the land and every chunk never builds the field.
+//   that finds the land and every chunk never builds the field. A lookup of a key the cache did not
+//   hold when the worker opened it misses without asking IndexedDB (WorldCache.ts), so a chunk run
+//   again after the field never waits for the other workers' writes, and a cold load costs what
+//   one with `worldCache=off` does.
 //   (The field is cloned to every worker rather than each job sent its window: a window is 4 MB,
 //   so a load would copy several times the field's bytes on the main thread.)
 // - The merge runs once every chunk has arrived, in rows ( cj, then ci ), so the world is the same
