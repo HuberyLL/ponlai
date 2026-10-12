@@ -25,9 +25,10 @@
 //   node tools/gpu-lock.mjs status
 //   node tools/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
 //
-// A command started through `run` inherits the lock (PONLAI_GPU_LOCK_HELD, PONLAI_GPU_LOCK_MODE), so
-// a wrapped tool that takes the lock itself does not wait for its own parent (a timing tool under a
-// shared parent says so: its numbers may share the GPU). PONLAI_GPU_LOCK_DIR moves the lock.
+// A command started through `run` inherits the lock (PONLAI_GPU_LOCK_HELD, PONLAI_GPU_LOCK_MODE), and
+// so does any process below a holder in the process tree, through any wrappers, so a wrapped tool
+// that takes the lock itself does not wait for its own ancestor (a timing tool under a shared parent
+// says so: its numbers may share the GPU). PONLAI_GPU_LOCK_DIR moves the lock.
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, statSync } from 'node:fs';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
@@ -159,12 +160,39 @@ function exclusiveWaiters() {
 
 }
 
+// this process's parent's parent and so on (0 when it cannot be read)
+function parentOf( pid ) {
+
+	try {
+
+		return Number( execFileSync( 'ps', [ '-o', 'ppid=', '-p', String( pid ) ], { encoding: 'utf8', timeout: 2000 } ).trim() ) || 0;
+
+	} catch {
+
+		return 0;
+
+	}
+
+}
+
 function inherited() {
 
-	const held = Number( process.env.PONLAI_GPU_LOCK_HELD );
-	if ( ! ( held > 0 ) || ! alive( held ) ) return false;
 	const owner = lockOwner();
-	return Boolean( owner && ( owner.pid === held || owner.members?.some( ( m ) => m.pid === held ) ) );
+	if ( ! owner ) return false;
+	const holders = new Set( [ owner.pid, ...( owner.members ?? [] ).map( ( m ) => m.pid ) ] );
+	const held = Number( process.env.PONLAI_GPU_LOCK_HELD );
+	if ( held > 0 && holders.has( held ) && alive( held ) ) return true;
+	// A holder further up the process tree. The environment names only the nearest `run`, and a
+	// wrapper in between need not be a member: a tool that runs each shot through its own `run`
+	// (capture-growth.mjs) under an outer `run` names that inner, re-entrant `run`. Its child would
+	// then wait for a slot of its own, which an exclusive waiter blocks while the holder waits for
+	// the child: a deadlock.
+	for ( let pid = process.ppid, hops = 0; pid > 1 && hops < 32; pid = parentOf( pid ), hops ++ ) {
+
+		if ( holders.has( pid ) ) return true;
+
+	}
+	return false;
 
 }
 
