@@ -14,6 +14,16 @@
 // to open clears and the others find the new identity. Any failure (a private window, a full quota,
 // blocked site data) falls back to generating: the reader sees a miss, a failed write is dropped.
 //
+// Reads: the same transaction lists the store's keys, and a read of a key not in that list misses
+// at once, without a request. A request would wait: IndexedDB starts a transaction only after every
+// overlapping read-write transaction created before it, from any connection, has finished, and a
+// chunk's write (0.5-2.5 MB) takes up to seconds to land. On a cold load the chunks are looked up
+// while the land field is built and again once it has come (WorldChunks.ts), and those second
+// lookups queued behind the other workers' writes: the pool all but serialised on the store, and the
+// load took three to four times as long as one without the cache. A key written after the listing
+// (another tab) reads as a miss and is built again; one deleted since (eviction) reads undefined, a
+// miss too. Writes keep the default durability: 'relaxed' measured no faster here.
+//
 // Eviction: every land version a page loads adds its land and chunk records (some 35 chunks, tens
 // of MB), and a game that grows step by step would pile them up to gigabytes. After a load the page
 // sends one `keep` job with the keys of the version it loaded (WorldChunks.ts), and the store keeps
@@ -82,7 +92,8 @@ function open(): Promise<IDBDatabase> {
 }
 
 export interface ChunkStore {
-	// the record under `key`, or undefined
+	// the record under `key`, or undefined; undefined at once for a key the store did not hold when
+	// it was opened
 	read<T>( key: string ): Promise<T | undefined>;
 	// stores `value` under `key`; it is cloned before this returns, so its buffers may be
 	// transferred right after. The promise settles once the store has written it (the worker must
@@ -99,17 +110,24 @@ export interface ChunkStore {
 export async function openChunkStore( generator: string ): Promise<ChunkStore | null> {
 
 	let db: IDBDatabase;
+	// the keys the store held on opening: a read of any other key misses without a request
+	let present: Set<IDBValidKey>;
 	try {
 
 		db = await open();
 		// another page that opens a newer version must not wait for this one
 		db.onversionchange = () => db.close();
 		const tx = db.transaction( [ META, CHUNKS ], 'readwrite' );
-		const meta = tx.objectStore( META ), identity = generator + '\n' + navigator.userAgent;
+		const meta = tx.objectStore( META ), chunks = tx.objectStore( CHUNKS ), identity = generator + '\n' + navigator.userAgent;
 		if ( await request( meta.get( GENERATOR ) ) !== identity ) {
 
-			tx.objectStore( CHUNKS ).clear();
+			chunks.clear();
 			meta.put( identity, GENERATOR );
+			present = new Set();
+
+		} else {
+
+			present = new Set( await request( chunks.getAllKeys() ) );
 
 		}
 		await done( tx );
@@ -123,6 +141,8 @@ export async function openChunkStore( generator: string ): Promise<ChunkStore | 
 	return {
 		async read<T>( key: string ) {
 
+			// a request would wait for every write queued before it, of any worker
+			if ( ! present.has( key ) ) return undefined;
 			try {
 
 				return await request( db.transaction( CHUNKS, 'readonly' ).objectStore( CHUNKS ).get( key ) ) as T | undefined;
