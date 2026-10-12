@@ -164,17 +164,20 @@ Replayed over per-frame traces of the 24 parity views, these defaults shot no lo
 one on its settled frame. The capture's JSON records it as `ready` (`--stable-*` options in `tools/capture.mjs`, the rule and its
 evidence in `tools/capture-browser.mjs`). `--ready-frames n` waits for a fixed count instead, as a
 running capture does (60); `--wait` / `--settle` ms add fixed delays. The frame loop is stopped
-and the GPU queue drained before the shot. A paused capture takes about 5-7 s alone.
+and the GPU queue drained before the shot. The shot is the compositor's image through CDP with
+Chrome's fast PNG encoder (0.26 s instead of 1.3 s at 3456x2234): the pixels of Playwright's
+screenshot, not its bytes, so the tools compare captures by decoded pixels. A paused capture takes
+about 5-7 s alone.
 
 Check visual changes with captures, compared against the previous capture (and crops, not only
 the whole frame); report measured differences. `tools/compare-captures.py` measures two overview
 captures (needs Pillow and NumPy).
 
 `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
-(`capture-set.mjs`) and diffs it against a reference set, byte for byte or within the reference's
-own repeatability (`diff-set.py --aa-floor`; see its README). Temporal AA sets (taa, taau) are
-not byte-repeatable and are judged by a tolerance instead (`diff-set.py --temporal`: shares of
-pixels over a level on the frame, in local windows and on the crops, a bound on coherent sub-level
+(`capture-set.mjs`) and diffs it against a reference set, pixel for pixel or within the reference's
+own repeatability (`diff-set.py --aa-floor`; see its README). Temporal AA sets (taa, taau) do
+not repeat pixel for pixel and are judged by a tolerance instead (`diff-set.py --temporal`: shares
+of pixels over a level on the frame, in local windows and on the crops, a bound on coherent sub-level
 shifts, and one recapture before a failure counts; thresholds in `tools/parity/tolerance.py`).
 `tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as

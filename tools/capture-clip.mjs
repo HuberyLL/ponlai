@@ -22,6 +22,11 @@
 // instead (the anchors pick their points by device pixels, so a GT run at another pixel ratio
 // could pick others: pass the test run's to frame the same subjects).
 //
+// The crops and full frames are the compositor's image PNG-encoded for speed
+// (tools/capture-browser.mjs, "The shot": Playwright's screenshot's pixels, not its bytes; compare
+// them decoded). The shots drop the page's device metrics until the clip has been stepped: the
+// page reads its ratio only on a resize, and none fires, so the frames are the same.
+//
 // Output, under artifacts/clips/<name>/ (or --out): <crop>/<i>.png per crop and frame,
 // full/<i>.png, and clip.json (the url, the clip, the boxes per frame, the page's diagnostics
 // before and after, the pipelines created while stepping, the scene time, the browser build, wall
@@ -70,7 +75,7 @@ import { fileURLToPath } from 'node:url';
 import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from './gpu-lock.mjs';
 import { VIEWS, viewEval } from './parity/views.mjs';
 import { CLIPS, clipEval } from './parity/clips.mjs';
-import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng } from './capture-browser.mjs';
+import { launchCapture, waitForScene, waitForStable, stableOptions, decodePng, pngShooter } from './capture-browser.mjs';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const args = process.argv.slice( 2 );
@@ -253,9 +258,12 @@ try {
 	if ( full.size ) await mkdir( path.join( outDir, 'full' ), { recursive: true } );
 
 	const boxes = [];
+	// the compositor's image, PNG encoded for speed (tools/capture-browser.mjs, "The shot"); the
+	// device metrics come back once the clip is stepped (nothing reads the ratio while stepping)
+	const shooter = await pngShooter( page, { timeout } );
 	const shoot = async ( clipRect ) => {
 
-		const png = await page.screenshot( { type: 'png', timeout, ...( clipRect ? { clip: clipRect } : {} ) } );
+		const png = await shooter.shoot( clipRect );
 		return gt ? encodePng( downsample2( decodePng( png ) ) ) : png;
 
 	};
@@ -320,6 +328,7 @@ try {
 		return { ...result, pipelines: before === null ? null : s.pipelines.total - before, wallMs: performance.now() - t0, notes: window.__PONLAI_CLIP_NOTES__ ?? [] };
 
 	}, { tracked, every, dense, box: BOX, cssScale, fullFrames: [ ...full ], gtRest } );
+	await shooter.close();
 	const diagAfter = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	await writeFile( path.join( outDir, 'clip.json' ), JSON.stringify( {
 		name, url, clip: options.clip, clipDef: { ...clip, at: undefined, setup: undefined }, view: viewName, aa, quality, ...( gtRest ? { gtJitters } : {} ),
