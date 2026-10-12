@@ -184,7 +184,8 @@ References are stored per commit and shared (`tools/parity/reference.mjs`): `cap
 --reference <root>/<sha>/<set>` and the baseline's and ground truth's entries of
 `tools/parity/baseline.mjs` reuse a stored reference whose manifest (`complete.json`, written
 last) matches the capture tools' version, the browser build and the options, wait for another live
-process that is capturing it, and otherwise capture it and say why (missing, tools or browser
+process that is capturing it (freeing the GPU slot of a `run --shared` wrapper meanwhile), and
+otherwise capture it and say why (missing, tools or browser
 changed, a capture left unfinished). `capture-set.mjs <testUrl> <testDir> --check
 <root>/<sha>/<set> [--ref-url U]` captures only the test side and diffs it against the stored
 reference. Layout, manifest and rules: the README's Reference store.

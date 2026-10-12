@@ -19,8 +19,10 @@
 // Who captures: a process that finds nothing usable takes the claim, `<dir>/.capturing/owner.json`
 // (pid, host, start, key, what it will cover), under a short mutex (`.<name>.mutex` beside the
 // directory); a process that finds a live claim waits (polling every 5 s, a line a minute) and then
-// uses the result; a claim whose process is gone is stale and taken over (the partial captures
-// are discarded, or kept when a manifest already vouches for them and the claim only extended it).
+// uses the result, first freeing the GPU slot a `gpu-lock.mjs run --shared` wrapper above it holds
+// (yieldAncestorSlot: an idle wait must not keep one of the 3 slots); a claim whose process is
+// gone is stale and taken over (the partial captures are discarded, or kept when a manifest already
+// vouches for them and the claim only extended it).
 // So two tasks that need the same reference at once capture it once.
 //
 //   import { ensureReference, setKey, clipKey } from './reference.mjs';
@@ -34,6 +36,7 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, s
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { yieldAncestorSlot } from '../gpu-lock.mjs';
 
 const TOOLS = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '..' );
 const REPO = path.resolve( TOOLS, '..' );
@@ -416,6 +419,8 @@ function siblingSets( shaDir, self ) {
  *   force,               capture afresh whatever is stored (a reference suspected bad)
  *   siblings,            a set may be served by another set of the commit that covers it
  *   dryRun,              only say what would happen
+ *   yieldGpu,            false keeps a wrapper's GPU slot while waiting (other work of this
+ *                        process, a check's test side, takes it over), default true
  *   label, log
  * }
  * Resolves to { status: 'reused'|'waited'|'captured'|'extended'|'unavailable'|'failed', dir,
@@ -477,7 +482,13 @@ export async function ensureReference( spec ) {
 		if ( busy ) {
 
 			if ( spec.dryRun ) return result( 'wait', { claim: busy.claim } );
-			if ( ! waitedSince ) waitedSince = Date.now();
+			if ( ! waitedSince ) {
+
+				waitedSince = Date.now();
+				// a `run --shared` around this process would hold a GPU slot idle for the whole wait
+				if ( spec.yieldGpu !== false && await yieldAncestorSlot( spec.label ) ) log( `reference ${ name }: freed the GPU slot of the wrapper above while waiting` );
+
+			}
 			if ( Date.now() - announced >= ANNOUNCE_MS ) {
 
 				announced = Date.now();

@@ -20,7 +20,8 @@
 // --reference makes the set a stored reference of a commit (reference.mjs; layout and manifest in
 //   tools/parity/README.md): if the directory's `complete.json` matches (tool version, browser
 //   build, tier, aa, size, extra query, capture.mjs options) and covers the views (and repeats) the
-//   set is reused; if another live process is capturing it this one waits and reuses it; else it
+//   set is reused; if another live process is capturing it this one waits and reuses it (freeing
+//   the GPU slot of a `gpu-lock.mjs run --shared` wrapper meanwhile); else it
 //   captures what is missing (extending a set of the same key, or afresh, saying why) and writes
 //   the manifest last. The URL must serve that commit: the tool checks which worktree serves the
 //   port and refuses another commit or uncommitted changes. Repeats that differ are recorded in
@@ -230,6 +231,8 @@ async function reference( url, { dryRun = false } = {} ) {
 	const { key, files } = await setKey( { quality, aa: options.aa, q: options.q, size: sizeText, capture: passThrough } );
 	return ensureReference( {
 		dir, kind: 'set', key, files, want: { views, repeat: !! options.repeat }, url, siblings: true, dryRun,
+		// (a check's test side, captured meanwhile, takes the wrapper's slot over itself)
+		yieldGpu: mode === 'reference',
 		force: options[ 'recapture-reference' ], label: `capture-set ${ options.task ?? '' } ${ procedure }`.trim(),
 		capture: async ( todo, into ) => {
 

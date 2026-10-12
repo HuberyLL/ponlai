@@ -295,7 +295,9 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
    set of the same commit with the same key that covers it serves too (S1 serves FAST3).
 2. A live process holds the claim (`.capturing/owner.json`: pid, host, start, key and what it will
    cover), on this directory or on a set that will cover the request: wait (poll every 5 s, a
-   line a minute), then reuse.
+   line a minute), then reuse. A `--reference` or baseline run under `gpu-lock.mjs run --shared`
+   first frees the slot its wrapper still holds (the wait needs no GPU; a `--check` keeps it for
+   its test side, captured meanwhile).
 3. Otherwise capture (only with a URL of the commit: `--reference`'s own, `--check`'s `--ref-url`,
    the baseline run's `--url` or another label's `--ref-url`), saying why:
    - same key, less coverage (a view, a repeat): `not captured yet: ...`, the set is extended in
