@@ -43,13 +43,26 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   sessionStorage are cleared before every page. The browser build is in the path (Playwright's
   `chromium-<revision>`, or a `CHROME_PATH` browser's `--version`); `PONLAI_CAPTURE_PROFILES`
   moves the root. The slots are independent of the GPU lock.
-- Readiness: after the view's eval, 60 rendered frames (`--ready-frames n`) and the loading screen
-  gone, instead of the old 7 s + frame > 150 + 1.1 s. At 40 frames flowers-close was sometimes still
-  settling (its whole frame about 2 levels darker on 5 of 22 loads, never after 50 frames); 60
-  keeps a margin. More frames do not make the sparse A/A noise below rarer.
-  `--wait ms` and `--settle ms` add fixed delays before and after the frame count, for a view that
-  settles later (a bake landing late on a busy GPU). Temporal pages still wait for
-  `diag.taa.converged` after that.
+- Readiness by stability: after the view's eval, 10 rendered frames (`--stable-min`) and the
+  loading screen gone, the image is grabbed every 2 frames (`--stable-every`; the loop stopped and
+  the GPU queue drained for each grab) and the view is shot once 2 comparisons in a row
+  (`--stable-repeats`) found no pixel changed. A paused page still flickers on some views (single
+  frames that leave the settled image and come back to it); since that noise never repeats, two
+  equal grabs are the settled image. After 40 frames (`--stable-patience`) a comparison with at most
+  5000 pixels changed (`--stable-tolerance 0:5000`, `<level>:<pixels>`: pixels differing by more
+  than level; `exact` turns it off) counts too; after 120 frames (`--stable-cap`) the view is shot
+  anyway and marked `capped`. Each capture's JSON records it as `ready` (status `exact`,
+  `tolerance` or `capped`, frames waited, comparisons, the largest difference seen, per comparison
+  its pixel counts; `--stable-trace` adds each grab's hash). On the 24 views (two sets with
+  `--repeat`, `--jobs 2`) every load was shot exact, 4-32 frames after the floor (median 4), on the
+  frame most loads of the earlier tools agreed on: no A/A difference, where their fixed waits left
+  15-17 % of loads off that frame. The grab is a CDP screenshot (PNG optimised for speed) at
+  the page's ratio, about 0.27 s at 3456x2234, its pixels those of the shot.
+  `--ready-frames n` brings the fixed count back (a running capture uses 60); `--wait ms` and
+  `--settle ms` add fixed delays before and after the floor. Temporal pages wait for
+  `diag.taa.converged` first and then compare converged rests (each loop start restarts the rest,
+  so a comparison takes about 40 frames); rests are not byte-repeatable, so for them the tolerance
+  counts at once and the cap is 400 frames (`ready.temporal`).
 - The loop stops before the shot (`__PONLAI__.loop.stop()`: no new frames, the GPU queue drained):
   a headless page queues seconds of frames ahead of the GPU, and a running page's screenshot
   waits for them. The frame shot is the same; the shot takes about 1 s instead of 4-11 s.
@@ -148,8 +161,8 @@ node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b
   nothing is logged: a procedure that keeps a run log passes one of them on every run.
 - After `--`, options for capture.mjs: `--wait-for "expr"` (polled up to 60 s once the page is
   ready), `--frames n --every k` (n captures k rendered frames apart: `<view>.png`,
-  `<view>.f1.png` ...; the loop runs between them and stops for each shot), `--ready-frames n`,
-  `--wait ms`, `--settle ms` (fast mode above).
+  `<view>.f1.png` ...; the loop runs between them and stops for each shot), the `--stable-*`
+  options, `--ready-frames n`, `--wait ms`, `--settle ms` (fast mode above).
 
 ## diff-set.py
 
