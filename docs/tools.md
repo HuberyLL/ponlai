@@ -273,7 +273,8 @@ from `P`); `--init js` hooks the page before its scripts run. A production previ
 
 - diagnostics and load timings: `--eval "D.timings" --eval "D.worldCache"`;
 - a uniform or a setting: `--eval "P.shared.wetness.value"`, `--eval "P.camera.position"`;
-- the pipelines an action creates: `--until "D.settled" --eval "P.pipelines.total"
+- the pipelines an action creates, on a paused page (`D.settled` never turns true on a running
+  one): `--q "debug&paused" --until "D.settled" --eval "P.pipelines.total"
   --eval "P.setWeather( 'storm', 0 )" --frames 120 --eval "P.pipelines.total"`;
 - the game: `--q "debug&game" --eval "P.game.sim.state.villagers[ 0 ]"`;
 - frame time: `--exclusive --q "debug" --frames 300 --eval "D.frameMs"` (profile-frame for A/B).
