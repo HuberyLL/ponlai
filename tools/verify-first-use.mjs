@@ -47,6 +47,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { launchCapture } from './capture-browser.mjs';
+import { installScript } from './pipeline-trace.mjs';
 
 const args = process.argv.slice( 2 );
 const opt = ( name, fallback = null ) => {
@@ -73,22 +74,11 @@ const STRICT = args.includes( '--strict' );
 const FRESH = args.includes( '--fresh' );
 const VIEWPORT = { width: 1280, height: 800 };
 
-// Counts every pipeline the page asks WebGPU for, with its label and the frame it came in.
-const COUNTER = `( () => {
-	const log = [];
-	window.__fuPipelines = log;
-	const proto = globalThis.GPUDevice && GPUDevice.prototype;
-	if ( ! proto ) return;
-	for ( const [ method, kind ] of [ [ 'createRenderPipeline', 'render' ], [ 'createRenderPipelineAsync', 'render' ], [ 'createComputePipeline', 'compute' ], [ 'createComputePipelineAsync', 'compute' ] ] ) {
-		const original = proto[ method ];
-		if ( typeof original !== 'function' ) continue;
-		proto[ method ] = function ( descriptor ) {
-			const s = window.__PONLAI__;
-			log.push( { kind, async: method.endsWith( 'Async' ), label: descriptor?.label ?? '', at: performance.now(), frame: s?.renderer?.info?.frame ?? -1 } );
-			return original.apply( this, arguments );
-		};
-	}
-} )();`;
+// Counts every pipeline the page asks WebGPU for, from its first one: the shared tracer
+// (tools/pipeline-trace.mjs, probes' `pipelines`) installed before the page runs, on GPUDevice's
+// prototype, so each is listed with its label and frame, and with its material, object, target and
+// the app's stack once `__PONLAI__` exists.
+const COUNTER = installScript( { early: true } );
 
 function pageUrl( quality, aa ) {
 
@@ -196,7 +186,7 @@ async function runOne( quality, aa ) {
 		const warm = ms( t0 );
 		result.load = await page.evaluate( () => {
 
-			const log = window.__fuPipelines;
+			const log = window.__pipelineTrace.log;
 			const firstFrame = Math.min( ...log.filter( ( p ) => p.frame > 0 ).map( ( p ) => p.frame ) );
 			const d = window.__THREE_GAME_DIAGNOSTICS__ ?? {};
 			return {
@@ -284,7 +274,7 @@ async function converged( page ) {
 async function measure( page, step ) {
 
 	const before = await page.evaluate( () => ( {
-		count: window.__fuPipelines.length,
+		count: window.__pipelineTrace.mark(),
 		rebuilds: window.__THREE_GAME_DIAGNOSTICS__?.graph?.rebuilds ?? null,
 		resets: window.__THREE_GAME_DIAGNOSTICS__?.taa?.historyResets ?? null,
 	} ) );
@@ -295,7 +285,7 @@ async function measure( page, step ) {
 	// (the diagnostics refresh every 30 frames)
 	await frames( page, 31 );
 	const after = await page.evaluate( ( from ) => ( {
-		pipelines: window.__fuPipelines.slice( from ),
+		pipelines: window.__pipelineTrace.since( from ),
 		rebuilds: window.__THREE_GAME_DIAGNOSTICS__?.graph?.rebuilds ?? null,
 		resets: window.__THREE_GAME_DIAGNOSTICS__?.taa?.historyResets ?? null,
 	} ), before.count );

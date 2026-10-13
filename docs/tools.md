@@ -224,10 +224,16 @@ Game:
 
 ## Captures
 
-`node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval "js"]
+`node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval js|@file]...
 [--verbose]` takes a screenshot of the running dev server into `artifacts/captures/`
 (git-ignored) and prints frame diagnostics. It needs Playwright's Chromium once
 (`npx playwright install chromium`), or `CHROME_PATH` set to a WebGPU-capable Chrome.
+
+`--eval` takes the same forms and scope as the probe's (`tools/page-eval.mjs`, shared by both: an
+expression, a function or statements with a `return`, `await`, `@file`; `P`, `D`, `frames( n )`,
+`sleep( ms )`, `until( fn, timeoutMs )`): wait in an eval with `await until( () => D.settled )`,
+not a polling loop. Each eval's value lands in the capture's JSON as `evals: [ { eval, value } |
+{ eval, error } ]`; an eval that throws fails the capture (exit 1), which is still shot.
 
 Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser runs in a
 persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
@@ -311,6 +317,10 @@ twice high's nominal ratio, downsampled) with gates from a thresholds file
 README). clip-metrics.py measures the
 frames in worker processes: `--workers N` or `CLIP_METRICS_WORKERS`, by default a quarter of the
 CPUs within 1 to 4; the output does not depend on the count.
+Without `--gt` it takes each side's own metrics only; `--crops boxes.json` cuts crops from whole
+frames (`{ view: { crop: [ x0, y0, x1, y1 ] } }`), and `--split-redraws` also reports each crop's
+Fhp near the shadow map redraws the clip's notes mark and between them (the shadow-shimmer study:
+use it instead of a script of one's own).
 References are stored per commit and shared (`tools/parity/reference.mjs`): `capture-set.mjs
 --reference <root>/<sha>/<set>` and the baseline's and ground truth's entries of
 `tools/parity/baseline.mjs` reuse a stored reference whose manifest (`complete.json`, written
@@ -336,6 +346,16 @@ again and compared); an entry that may not carry is captured and the log says wh
 `node tools/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
 Rules and proof: the README's Carry-over.
 
+`uv run tools/parity/gates.py <root>/<sha>/<label>/metrics.json --thresholds T [--policy P]
+[--normal] [--md f] [--json f] [--title t]` turns a label's metrics (baseline.mjs with
+--thresholds) into gate verdicts per gate id: PASS and FAIL counts and every failing item, exit 0
+only when every judged gate passes. A task's decisions on top of clip-metrics' verdicts (a gate
+judged against the ground truth instead of MSAA, a gate left informational) are rules of its policy
+file, matched by gate id, entry, view, clip, crop and metric with globs, never code in the tool;
+`--normal` counts the special weathers (views.mjs's `special` group) apart. The policy's format is
+in the tool's header. `--views normal` / `--clips normal` (and `special`) select the normal
+weathers in baseline.mjs and the capture tools.
+
 ## Probes
 
 `node tools/probe.mjs [url] [--q query] [--query q]... --eval js [--until js] [--frames n]`
@@ -344,8 +364,8 @@ scene in the capture tools' browser (headless, a warm profile slot; `--fresh` fo
 holds a shared GPU slot from the load to the end (`--exclusive` for frame times), runs the steps in
 the order given and prints JSON (per query: load or jump, the time until up, each step's value,
 console errors and failed requests). Each `--query` after the first is reached in the same page by
-the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n )`, `sleep( ms )`
-and `until( fn )` (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
+the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n )`, `sleep( ms )`,
+`until( fn )` and `pipelines` (`mark()`, `since( mark )`: which pipelines an action built), with the same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
 from `P`); `--init js` hooks the page before its scripts run. A production preview needs
 `debug` in the query. Common questions:
 `--load` loads every query after the first in a page of its own instead of jumping to it: the
@@ -357,6 +377,12 @@ freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
 - the pipelines an action creates, on a paused page (`D.settled` never turns true on a running
   one): `--q "debug&paused" --until "D.settled" --eval "P.pipelines.total"
   --eval "P.setWeather( 'storm', 0 )" --frames 120 --eval "P.pipelines.total"`;
+- which pipelines an action built and for what: `--eval "window.m = pipelines.mark()"
+  --eval "P.setWeather( 'storm', 0 )" --frames 120 --eval "pipelines.since( window.m )"`. Each
+  entry has its kind, label, material and object (name and type), target (texture names or
+  `canvas`, attachments, depth, sample count), frame and the first 6 app frames of its stack
+  (`tools/pipeline-trace.mjs`, shared with verify-first-use; installed at the first `mark()`, so
+  earlier pipelines are not listed, nor wrappers of one's own needed);
 - the game: `--q "debug&game" --eval "P.game.sim.state.villagers[ 0 ]"`;
 - frame time: `--exclusive --q "debug" --frames 300 --eval "D.frameMs"` (profile-frame for A/B).
 
@@ -557,7 +583,8 @@ take over the screen of whoever is using the machine, so they run only while the
 `node tools/display-gate.mjs allow [hours]` (and `deny`, `status`) keeps the permission in a file
 under the user's home, `profile-frame --display` refuses without it, and scripts that open a headed
 window call `requireDisplayAllowed` from the same module. Everything else runs headless; a headed
-run that is not allowed now is recorded as pending and run later in one batch.
+run that is not allowed now is recorded as pending and run later in one batch. Before the window
+opens, the tool posts a desktop notification (`announceHeadedRun`) and waits 10 s.
 
 The gate is a switch, not a reason to go headed. A run is headed only for what a screen alone
 shows (Frame profiler, `--display`): pacing and cadence, late frames, the frame pacer's rate, the
@@ -579,15 +606,19 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   in headless Chrome (`CHROME_PATH`, else the system Chrome) with the frame rate uncapped, or at
   60 Hz with `--vsync` (the intervals a player sees; uncapped, a GPU-bound scene's p95 is mostly
   pacing noise).
-- It plays a matrix of named scenes (`--list`: fair, golden, horizon, sky, overcast, rain, storm,
-  fog, night, close over the meadow, a weather front), each with the clock running, fixed weather
+- It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
+  `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-rain`, `island-storm`,
+  `horizon-storm`, `island-fog-dawn`, `island-night-clear`, `meadow-close` (over the meadow),
+  `weather-change` (a front sweeping in); `--scenes` takes these ids), each with the clock running, fixed weather
   and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md): frame interval
   median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their cause, and the
   startup.
 - It loads each variant once and switches scenes at runtime (`--mode reload` reloads per scene,
   the original method); every page keeps the generated island's chunks in IndexedDB (in the
   tool's own Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
-  `worldCache=off`).
+  `worldCache=off`). A profile that another Chrome holds (another run's) is not launched on: the
+  run takes a temporary one, with cold caches. (Launched on, a headed Chrome holding it opened a
+  blank window of its own, in front of that run's page.)
 - It holds the GPU lock exclusively only for what it measures, and no browser while it queues: a
   build the profile has not loaded yet (a new bundle, port or browser version) is first loaded once
   in a browser opened inside a shared slot and closed before the slot is released (the preload;
@@ -598,11 +629,17 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   for the first load's, and the pages stop before the lock is released (the GPU name, the files
   and the browser's close come after it). `wallSeconds` in profile.json is the time under the exclusive lock;
   `lockWaitSeconds`, `totalSeconds` and `preload` sit beside it.
+- In full-screen `--display` the idle checks run with the run's window up (the opening one on its
+  blank page) and sum the GPU time of the clients other than the run's Chrome and WindowServer:
+  full screen hides the other windows and they stop drawing, so the GPU's utilisation before the
+  window opened counted a load the run never meets and refused runs for nothing. With `--window`
+  the check stays the utilisation's: the other windows stay on screen and their load is real.
 - When its opening idle check still finds another client keeping the GPU busy after
   `--idle-wait` seconds (20; 60 with `--mode reload`), it names the client, measures nothing and
   exits with 3, releasing the lock: a contended run's numbers prove nothing. Stop the client and
   run again, or pass `--contended` to measure anyway (results marked contended, as before). A
-  later page load that finds the GPU busy still marks its results contended.
+  later page load that finds the GPU busy still marks its results contended. Every summary.md
+  marks such a scene `(contended)` in its table, a compare's as a single profile's.
 - A run with several scenes holds the exclusive lock one scene at a time (every mode: profile,
   compare, toggle, accept, reload): before a scene's warm-up it asks for the lock, after its last
   slice its pages stop and drain. The pages and the browser stay open, their loops stopped, so
@@ -614,12 +651,20 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   run stops with the finished scenes written and exits 3, unless `--contended` (that scene marked
   contended). The first scene's hold covers the page loads. `wallSeconds` counts only the time
   held; `meta.holds` lists each scene the lock came back for (its wait and the GPU idle with this
-  run's pages stopped), also under "Lock" in summary.md.
+  run's pages stopped), also under "Lock" in summary.md. The run's last lines give the time held
+  and, apart, the time in all without the waits for the lock (before the run, for the preload's
+  slot and between scenes).
 - A scene that shows no progress for `--hang` seconds (180) is recorded as hung (profile.json
-  `meta.hung`, a section of summary.md): the browser is closed and opened again and the run goes
-  on with the scenes not finished yet; a second hang stops the run, with the finished scenes
-  written as usual. Each scene's results are also appended to `scenes.jsonl` in the output folder
-  as it finishes, so a run that dies otherwise still leaves what it measured.
+  `meta.hung`, a section of summary.md), with the step it was at (a compare's load, warm-up,
+  slice, trace end or results; at a scene's start, the halt, the cover, the lock's wait or its
+  idle check) and what each page still did (answering, visible, its animation
+  and scene frames over a second). A scene whose browser or page closes or crashes under it (a
+  headed window closed, Chrome gone) is recorded as lost the same way. Either way the browser is
+  closed (killed when it is still open after 30 s, so it neither runs on nor holds the profile)
+  and opened again, and the run goes on with the scenes not finished yet; the runner given up
+  takes no lock and counts as no progress. A second hung or lost scene stops the run, with the
+  finished scenes written as usual. Each scene's results are also appended to `scenes.jsonl` in
+  the output folder as it finishes, so a run that dies otherwise still leaves what it measured.
 - Each page's `clockPaused` and `scalePinned` (diagnostics) are read at its load as its baseline
   (`?dpr` pins legitimately) and again after every slice or measured window. A change (a key or
   click reached the page: a Space pauses it, and a paused page renders at its nominal scale and
@@ -663,10 +708,16 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   its own listeners (the tool sends none); pointer and wheel stay open for the drags. A window covers the screen
   while it runs: keep the runs short and other animated windows closed. It needs the display gate.
   `--display --compare urlA urlB` interleaves A and B in the same slices as the headless compare
-  (the running page brought to the front, the drags restarted in each slice), so the drift between
-  separate headed runs (a millisecond or two) cancels; its summary adds the share of late frames
-  (presented intervals longer than the pace each frame was rendered at, the frame pacer's divisor
-  then) per slice, as a delta with its interval, each page's frames over 25 ms, its effective rate
+  (the running page brought to the front; the drags run in the measured slices only, each page's
+  on from where its last slice left them, so A's and B's k-th slices see the same motion from the
+  same view; the screen changes to the other page's view at every switch, but never back to the
+  scene before: a page switches scene stopped and out of sight and comes to the front with the
+  new scene drawn; the surface Chrome kept from its last time in front is a cover, raised before
+  the page left the front for the last time in the scene and dropped once the new scene is on
+  screen, so a switch shows the loading screen's colour for a frame or two, and a scene other than
+  the run's last shows it once where the page that ends its slices first leaves), so the drift between separate headed runs (a millisecond or two) cancels;
+  its summary adds the share of late frames (presented intervals longer than the pace each frame
+  was rendered at, the frame pacer's divisor then) per slice, as a delta with its interval, each page's frames over 25 ms, its effective rate
   (rendered frames per second) and its share of frames at the pacer's fallback rate. One trace
   spans a scene's slices of both pages, split by a performance mark per slice (ended early at each
   adaptive stop check); a trace per slice nearly doubled the time a slice took beyond its settle
@@ -683,7 +734,10 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
   leave out) and tabulates every scene at every scale. Every report gives the render scale the
   measured frames were drawn at (its median, range and changes: high's moves); `--scale-settle s`
-  waits after each scene's warm-up until that scale has held for s seconds. With GPU timestamps on,
+  waits after each scene's warm-up until that scale has held for s seconds (in `--compare` each
+  page after its own warm-up; without it the run's first slices catch high's scale still stepping
+  down from its nominal). `--display --compare` settles 2 s by default (`--scale-settle 0` turns it
+  off); every other run 0. With GPU timestamps on,
   high's reports add `gpuPixel`: the part of the GPU time in passes that follow the render's pixel
   count (the dynamic resolution's split), for fitting its cost model at fixed scales.
 - `--compare` and `--accept` load their pages with `drsStore=off`, so neither side of an A/B (two
@@ -767,7 +821,10 @@ what these do not give (automation, A/B statistics, pass names).
   parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
   ready by capture.mjs's stability rule (`tools/parity/README.md`, One page, many views);
   `--check <root>/<sha>/<set>` runs the whole check (the stored set of fresh loads, a page per
-  view, both jump orders at once, the diff) in one command.
+  view, both jump orders at once, the diff) in one command. `--view "name:query[::js]"`
+  (repeatable) adds ad-hoc views with capture-set's syntax (`like=<view>` included), so a jump
+  into a new scene option is checked as `--views island-fair-noon --view near:dist=40`; their fresh
+  loads are stored with their definitions' hashes, so a changed query captures a new reference.
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the

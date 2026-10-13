@@ -1,7 +1,7 @@
 // Paused parity captures of a fixed set of views (views.mjs), through tools/capture.mjs's worker:
 // one page per set (one per worker with --jobs), the views reached in place by the exact scene jump.
 //
-//   node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--view "name:query[::js]"]...
+//   node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--view "name:query[::js]"]...
 //       [--views-file f.json] [--sweep "key=a,b,c"]... [--repeat]
 //       [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
 //       [--page-per-view] [--runs file.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]

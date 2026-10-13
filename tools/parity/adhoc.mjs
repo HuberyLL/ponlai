@@ -12,7 +12,7 @@
 //                               combination), named `<view>--<key>-<value>` (`<key>-<value>` alone
 //                               when only sweeps are given; a dot in a value becomes `_`)
 //
-// --views (names, or the groups parity|taa|all) still selects views.mjs views, alone or beside these;
+// --views (names, or the groups parity|taa|all|normal|special, mixed freely) still selects views.mjs views, alone or beside these;
 // with no --views and some ad-hoc view or sweep, the set is just those (not the parity group).
 //
 // The query: an ad-hoc view's own options win over the set's (`t=12`, --quality, --aa, --q), so it
@@ -31,7 +31,7 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VIEWS, viewNames, viewEval } from './views.mjs';
+import { VIEWS, viewNames, viewEval, expandViews } from './views.mjs';
 
 const REPO = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../..' );
 const NAME = /^[A-Za-z0-9_-]+$/;
@@ -85,8 +85,7 @@ export function selectViews( o ) {
 	const given = [];
 	if ( o.views ) {
 
-		if ( [ 'parity', 'taa', 'all' ].includes( o.views ) ) given.push( ...viewNames( o.views ) );
-		else for ( const v of o.views.split( ',' ).filter( Boolean ) ) {
+		for ( const v of expandViews( o.views ) ) {
 
 			if ( ! VIEWS[ v ] ) throw new Error( `unknown view ${ v }` );
 			given.push( v );

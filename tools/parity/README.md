@@ -13,6 +13,8 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
   (see One page, many views below).
 - `clips.mjs`, `../capture-clip.mjs`, `../clip-metrics.py`: stepped clips (a view set in motion),
   their capture and their metrics against MSAA and a ground truth (see Clips below).
+- `gates.py`: a baseline.mjs label's gate verdicts per gate id, a task's decisions applied from a
+  policy file (its header has the format; `docs/tools.md`, Captures).
 
 ## Serving a build for captures
 
@@ -126,7 +128,13 @@ frozen, plus 5 more.
 | rim-sea | weather=fair&preset=noon | 25 m out, 4 m up, facing the densest stretch of rim trails |
 | cliff-sea-golden | weather=clear&preset=golden-hour | from the sea, 3 m up, the island against the low sun |
 
-`node tools/parity/views.mjs list [parity|taa|all]`, `query <view>`, `eval <view>`, `crops <view>`.
+Across both, `special` (island-storm, horizon-storm, island-fog-dawn, weather-change: the views
+marked `special: true`) holds the special weathers and `normal` the other 20 views: normal weather
+is tuned and accepted first, so `--views normal` runs it alone (baseline.mjs's `--clips normal`
+does the same for clips: a clip is in its view's group). Every tool that takes `--views` takes
+names and groups mixed (`normal,flowers-close`).
+
+`node tools/parity/views.mjs list [parity|taa|all|normal|special]`, `query <view>`, `eval <view>`, `crops <view>`.
 
 ### Crop anchors
 
@@ -159,7 +167,7 @@ the boxes placed before it.
 ## capture-set.mjs
 
 ```sh
-node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
+node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--repeat]
     [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
     [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
     [--runs runs.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
@@ -594,14 +602,15 @@ shares of the tier's nominal ratio: 0.8, 0.6, 0.8, which is 1.2, 0.9, 1.2 on hig
 URL options (`sun-shadow`: `dayLength=600`) or a per-frame hook (`lightning`: a strike forced at
 frame 30), and lead frames stepped before frame 0 and not captured (`drs-steps`: 32 at its first
 scale, so a temporal mode's history, cut when the stepper starts, has converged before the scale
-steps it measures). `node tools/parity/clips.mjs list | show <clip>`.
+steps it measures). `node tools/parity/clips.mjs list [all|normal|special] | show <clip>`.
 
 ```sh
 node tools/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
     [--view v] [--frames n] [--every k] [--crops a,b] [--full 0,30] [--q "extra"] [--gt-jitters n]
     [--anchors-from clip.json] [--out dir] [--runs runs.csv]
 uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/clip-metrics.py \
-    --test DIR --msaa DIR --gt DIR [--thresholds t.json] [--baseline metrics.json] [--workers N]
+    --test DIR --msaa DIR [--gt DIR] [--crops a,b | boxes.json] [--split-redraws] [--thresholds t.json]
+    [--baseline metrics.json] [--workers N]
 ```
 
 - The page is stepped by `__PONLAI__.loop.step` (src/main.ts, debug builds only): the live loop
@@ -655,7 +664,9 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
   measured here, or an earlier metrics.json): ratios with an absolute floor for magnitudes (a
   paused clip's MSAA flicker is exactly 0), differences for the signed fringe, the lag and the
   edge width (`edgeWgt`, against the wider of MSAA's and the GT's edge). Whole frames (`full/`)
-  are measured only when `--crops` names them. The frames are measured in worker processes
+  are measured only when `--crops` names them, or cut into boxes by `--crops boxes.json`. Without
+  `--gt` only the sides' own metrics; `--split-redraws` splits Fhp near and between the shadow map
+  redraws that the clip's notes mark. The frames are measured in worker processes
   (`--workers N`, `CLIP_METRICS_WORKERS`, by default a quarter of the CPUs within 1 to 4; results
   identical whatever the count): baseline.mjs runs several metric runs at once on top of that.
 - Repeatability: pan-slow on meadow-close repeats pixel for pixel between fresh loads. Vegetation
