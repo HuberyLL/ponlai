@@ -5,9 +5,23 @@
 //   node tools/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--views parity|taa|all|a,b,c]
 //       [--order list|reverse] [--from <view or query>]... [--between <view or query>]...
 //       [--suffix .repeat] [--quality high]
-//       [--aa mode] [--q "extra&query"] [--size 1728x1117@2] [--frames 40] [--profile dir]
-//       [--timeout 240000]
+//       [--aa mode] [--q "extra&query"] [--size 1728x1117@2] [--frames n] [--stable-* (as capture.mjs)]
+//       [--profile dir] [--timeout 240000]
+//   node tools/verify-scene-jump.mjs <baseUrl> <outDir> --check <root>/<sha>/<set> [same options]
 //
+// --check runs the whole check in one command: the fresh side, the jump side in both orders into
+// <outDir>, then diff-set.py (`--aa-floor`, `--temporal` for aa=taa|taau|gt; its table also in
+// <outDir>/diff.txt; its exit code is the check's). The fresh side is the reference store's set of
+// the commit (tools/parity/reference.mjs, through capture-set.mjs `--reference --repeat
+// --page-per-view` with the same views and options, so it is keyed like every capture-set set): a
+// fresh page per view, so the jump is compared with fresh loads, never with itself (the key's
+// `pages: 'view'`; a set reached by jumps is refused). A stored set of the commit is reused, else
+// capture-set captures it, still parallel (default --jobs). The URL must serve that commit
+// (capture-set checks it). The two jump orders (the list, and the reverse with
+// `--suffix .repeat`) are independent pages, so they run at once, as two child processes of this
+// tool, each with its own browser profile (`<profile>` and `<profile>-reverse`) and its own leased
+// slot. A full 24-view check used to run as four commands through one page at a time, the fresh
+// loads alone two thirds of it; `--fresh` still captures fresh loads into <outDir> by hand.
 // --fresh: one fresh page load per view (a new page in the same browser), as capture-set loads it.
 // Otherwise one page for the whole list: it loads the first scene (the first `--from`, else the
 // first view), then visits each `--from` scene in turn without capturing it (a view's name, or a
@@ -17,22 +31,33 @@
 // a frame rendered at the jump's camera, the view's eval, readiness, the shot.
 // --legacy jumps the way builds before the exact jump could: establishScene's options (weather,
 // preset or hour, time) and the camera reset to the island view (capture-tooling plan 3.2).
-// Readiness is capture fast mode as it stood at the jump's commit: `--frames` rendered frames after
-// the evals and the loading screen gone (its fade finished), a temporal page's rest restarted
-// and converged, then the loop stopped (its last frame on the canvas) before the screenshot; the
-// next jump starts it again. A persistent browser profile (`--profile`, one browser at a time)
-// keeps the world cache and the shader cache across runs. Where tools/capture-browser.mjs exists
-// (readiness by stability, profile slots), the jump's proof shot both sides with it instead; this
-// probe should move onto it with the capture tools' one page per set.
+// Readiness is capture.mjs's by default (tools/capture-browser.mjs, "Readiness by stability"):
+// after the evals the floor's frames and the loading screen gone (waitForScene), a temporal page's
+// rest restarted and converged, then the image grabbed with the loop stopped until two grabs agree
+// (waitForStable, the `--stable-*` options as capture.mjs's; a temporal page is shot on its held
+// rest). A page still changing at the cap is shot anyway and printed as unstable. The loop stays
+// stopped for the screenshot (its last frame on the canvas); the next jump starts it again. A fixed
+// wait settled pages off their settled image under GPU load, so the views wandered between loads.
+// `--frames n` keeps the old fixed rule: n rendered frames after the evals, then the rest and the
+// stop. A persistent browser profile (`--profile`, one browser at a time) keeps the world cache and
+// the shader cache across runs.
 // Writes `<outDir>/<view><suffix>.png` and `.json` (the page's diagnostics, the crop anchors, the
-// scene it was reached from). Compare two sets with diff-set.py: the fresh set taken twice
-// (`--suffix .repeat`) as the reference, and a jump set in two orders (list, then reverse with
+// scene it was reached from, `ready`: the readiness record, as capture.mjs's). Compare two sets
+// with diff-set.py: the fresh set taken twice (`--suffix .repeat`) as the reference, and a jump set in two orders (list, then reverse with
 // `--suffix .repeat`) as the test, `--aa-floor` for MSAA, `--temporal` for taa and taau.
-// The page renders paused, so the GPU lock is taken shared.
+// The page renders paused, so the GPU lock is taken shared, and leased per view as capture.mjs's
+// worker leases it (gpu-lock.mjs `leaseGpuLock`, 20 s): kept from one view to the next while nobody
+// waits, given up at a view boundary for a waiter ranked before it after 20 s of holding. The page
+// stays open across a yield with its loop stopped (every view ends with the shot's stopped loop),
+// and the next jump starts it again under the slot. It used to hold one slot for the whole run.
+// The closing line gives the run's time and how much of it went to waiting for the lock.
 import { chromium } from 'playwright';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { spawn } from 'node:child_process';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
-import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
+import { fileURLToPath } from 'node:url';
+import { leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
+import { waitForScene, waitForStable, stableOptions, stopLoop } from './capture-browser.mjs';
 import { VIEWS, viewNames, viewEval } from './parity/views.mjs';
 
 const argv = process.argv.slice( 2 );
@@ -48,7 +73,8 @@ for ( let i = 0; i < argv.length; i ++ ) {
 	else options[ k ] = argv[ ++ i ];
 
 }
-const known = [ 'fresh', 'legacy', 'views', 'order', 'suffix', 'quality', 'aa', 'q', 'size', 'frames', 'profile', 'timeout' ];
+const known = [ 'fresh', 'legacy', 'check', 'views', 'order', 'suffix', 'quality', 'aa', 'q', 'size', 'frames', 'profile', 'timeout',
+	'stable-min', 'stable-every', 'stable-repeats', 'stable-tolerance', 'stable-patience', 'stable-cap' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! known.includes( k ) );
 if ( positional.length !== 2 || unknown.length ) {
 
@@ -69,6 +95,7 @@ const views = ( () => {
 	return list;
 
 } )();
+const listed = [ ...views ];
 if ( options.order === 'reverse' ) views.reverse();
 const size = ( options.size ?? '1728x1117@2' ).match( /^(\d+)x(\d+)(?:@([\d.]+))?$/ );
 if ( ! size ) { console.error( `bad --size ${ options.size }` ); process.exit( 2 ); }
@@ -77,7 +104,8 @@ let common = `debug&paused&t=12&quality=${ options.quality ?? 'high' }`;
 if ( options.aa ) common += `&aa=${ options.aa }`;
 if ( options.q ) common += `&${ options.q }`;
 const suffix = options.suffix ?? '';
-const frames = Number( options.frames ?? 40 );
+const frames = options.frames === undefined ? null : Number( options.frames );
+const stable = stableOptions( ( k ) => options[ k ] );
 const timeout = Number( options.timeout ?? 240000 );
 const profile = path.resolve( options.profile ?? 'artifacts/.capture-profiles/scene-jump' );
 // a view's scene: its full query and eval; a raw query (a `--from` scene) has no eval
@@ -85,9 +113,13 @@ const profile = path.resolve( options.profile ?? 'artifacts/.capture-profiles/sc
 const merged = ( q ) => { const p = new URLSearchParams( common ); for ( const [ k, value ] of new URLSearchParams( q ) ) p.set( k, value ); return p.toString(); };
 const scene = ( v ) => VIEWS[ v ] ? { name: v, q: `${ common }&${ VIEWS[ v ].q }`, eval: viewEval( v ) } : { name: v, q: merged( v ), eval: null };
 
+// the slot lease from view to view, in ms (capture.mjs's --lease: see the header)
+const LEASE = 20000;
+
+if ( options.check ) process.exit( await check() );
+
 await mkdir( outDir, { recursive: true } );
 await mkdir( profile, { recursive: true } );
-await acquireGpuLock( `verify-scene-jump ${ path.basename( outDir ) }`, { shared: true } );
 const context = await chromium.launchPersistentContext( profile, {
 	headless: true,
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),
@@ -95,8 +127,18 @@ const context = await chromium.launchPersistentContext( profile, {
 	viewport: { width: W, height: H }, deviceScaleFactor: scale,
 } );
 const browser = context.browser()?.version() ?? null;
-let failed = 0;
+let failed = 0, lockWaited = 0;
 const started = Date.now();
+
+// the GPU slot before a view's work: kept from the view before while the lease allows, else
+// queued for (the loop is stopped meanwhile: every view ends with its shot's stopped loop)
+async function slot( v ) {
+
+	const { waitMs } = await leaseGpuLock( `verify-scene-jump ${ v }${ suffix }`, { shared: true, budget: LEASE } );
+	lockWaited += waitMs;
+	return waitMs;
+
+}
 
 async function open( q ) {
 
@@ -110,19 +152,14 @@ async function open( q ) {
 
 }
 
-// the view's evals run, then `frames` rendered frames, the rest (temporal), the loop stopped
+// the view's evals run, then readiness as capture.mjs's by default (tools/capture-browser.mjs): the
+// floor's frames and the loading screen gone, a temporal page's rest restarted and converged, then
+// the image stable (or the rest held) with the loop stopped; `--frames n` waits that fixed count
+// instead. Returns the record the shot's JSON keeps as `ready`.
 async function settle( page, js ) {
 
 	if ( js ) await page.evaluate( js );
-	const evalFrame = await page.evaluate( () => window.__PONLAI__.renderer.info.frame );
-	// the loading screen gone: its computed opacity 0 (its `done` class only starts a 1 s fade, and a
-	// shot during the fade carries the screen over the frame)
-	await page.waitForFunction( ( f ) => {
-
-		const loading = document.getElementById( 'loading' );
-		return window.__PONLAI__.renderer.info.frame >= f && ( ! loading || getComputedStyle( loading ).opacity === '0' );
-
-	}, evalFrame + frames, { timeout, polling: 'raf' } );
+	await waitForScene( page, { frames: frames ?? stable.min, timeout } );
 	await page.evaluate( () => window.__PONLAI__.taa?.epoch.bump( 'capture' ) );
 	await page.waitForFunction( () => {
 
@@ -130,17 +167,24 @@ async function settle( page, js ) {
 		return ! t || t.restTarget === 0 || ( t.converged && t.restEpoch === window.__PONLAI__.taa.epoch.value );
 
 	}, null, { timeout, polling: 100 } );
-	await page.evaluate( () => window.__PONLAI__.loop.stop() );
+	if ( frames !== null ) {
+
+		await stopLoop( page );
+		return { rule: 'frames', frames };
+
+	}
+	return waitForStable( page, { ...stable, timeout } );
 
 }
 
-async function shoot( page, view, extra ) {
+async function shoot( page, view, ready, extra ) {
 
+	if ( ready.status === 'capped' ) console.log( `${ view }${ suffix } unstable: still changing after ${ ready.framesWaited } frames (max ${ ready.maxSeen } levels), captured at the cap` );
 	const file = path.join( outDir, `${ view }${ suffix }.png` );
 	await page.screenshot( { path: file, timeout } );
 	const diag = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	const crops = await page.evaluate( () => window.__PONLAI_CROPS__ ?? null );
-	await writeFile( path.join( outDir, `${ view }${ suffix }.json` ), JSON.stringify( { browser, viewport: { width: W, height: H }, ...extra, diag, ...( crops ? { crops } : {} ) }, null, 1 ) );
+	await writeFile( path.join( outDir, `${ view }${ suffix }.json` ), JSON.stringify( { browser, viewport: { width: W, height: H }, ...extra, ready, diag, ...( crops ? { crops } : {} ) }, null, 1 ) );
 
 }
 
@@ -151,13 +195,14 @@ try {
 		for ( const v of views ) {
 
 			const s = scene( v );
+			await slot( v );
 			const t0 = Date.now();
 			const { page, errors } = await open( s.q );
 			try {
 
-				await settle( page, s.eval );
-				await shoot( page, v, { mode: 'fresh', query: s.q, errors } );
-				console.log( `${ v }${ suffix } fresh ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) } s${ errors.length ? ' ERRORS ' + errors.slice( 0, 3 ).join( ' | ' ) : '' }` );
+				const ready = await settle( page, s.eval );
+				await shoot( page, v, ready, { mode: 'fresh', query: s.q, errors } );
+				console.log( `${ v }${ suffix } fresh ${ ready.status ?? ready.rule } ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) } s${ errors.length ? ' ERRORS ' + errors.slice( 0, 3 ).join( ' | ' ) : '' }` );
 				if ( errors.length ) failed ++;
 
 			} finally {
@@ -172,6 +217,7 @@ try {
 
 		const visits = [ ...from.map( ( v ) => ( { v, capture: false } ) ),
 			...views.flatMap( ( v ) => [ ...between.map( ( b ) => ( { v: b, capture: false } ) ), { v, capture: true } ] ) ];
+		await slot( visits[ 0 ].v );
 		const t0 = Date.now();
 		const { page, errors } = await open( scene( visits[ 0 ].v ).q );
 		console.log( `loaded ${ visits[ 0 ].v } in ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) } s` );
@@ -180,6 +226,7 @@ try {
 
 			const { v, capture } = visits[ i ];
 			const s = scene( v );
+			if ( i > 0 ) await slot( v );
 			const t1 = Date.now();
 			if ( i > 0 ) {
 
@@ -204,9 +251,9 @@ try {
 				await page.waitForFunction( ( f ) => window.__PONLAI__.renderer.info.frame > f, jumped, { timeout, polling: 'raf' } );
 
 			}
-			await settle( page, s.eval );
-			if ( capture ) await shoot( page, v, { mode: i > 0 ? 'jump' : 'load', query: s.q, from: previous, errors: errors.splice( 0 ) } );
-			console.log( `${ v }${ capture ? suffix : ' (not captured)' } ${ i > 0 ? `jump from ${ previous }` : 'load' } ${ ( ( Date.now() - t1 ) / 1000 ).toFixed( 1 ) } s` );
+			const ready = await settle( page, s.eval );
+			if ( capture ) await shoot( page, v, ready, { mode: i > 0 ? 'jump' : 'load', query: s.q, from: previous, errors: errors.splice( 0 ) } );
+			console.log( `${ v }${ capture ? suffix : ' (not captured)' } ${ ready.status ?? ready.rule } ${ i > 0 ? `jump from ${ previous }` : 'load' } ${ ( ( Date.now() - t1 ) / 1000 ).toFixed( 1 ) } s` );
 			previous = v;
 
 		}
@@ -221,5 +268,92 @@ try {
 	releaseGpuLock();
 
 }
-console.log( `${ views.length } views in ${ ( ( Date.now() - started ) / 1000 ).toFixed( 1 ) } s${ failed ? `, ${ failed } with page errors` : '' }` );
+console.log( `${ views.length } views in ${ ( ( Date.now() - started ) / 1000 ).toFixed( 1 ) } s (${ ( lockWaited / 1000 ).toFixed( 1 ) } s of it waiting for the GPU lock)${ failed ? `, ${ failed } with page errors` : '' }` );
 if ( failed ) process.exitCode = 1;
+
+// --check: the whole check in one command (see the header). The fresh side is the commit's stored
+// set (capture-set.mjs --reference --repeat --page-per-view: reused, or captured in parallel), the two
+// jump orders run at once as two child processes of this tool (one page and one leased slot each,
+// their own browser profiles), then diff-set.py. Resolves to the exit code.
+async function check() {
+
+	const here = fileURLToPath( import.meta.url );
+	const repo = path.resolve( path.dirname( here ), '..' );
+	const t0 = Date.now();
+	const minutes = () => ( ( Date.now() - t0 ) / 60000 ).toFixed( 1 );
+	const stableArgs = Object.keys( options ).filter( ( k ) => k.startsWith( 'stable-' ) ).flatMap( ( k ) => [ `--${ k }`, options[ k ] ] );
+	const common = [ '--views', listed.join( ',' ), ...[ 'quality', 'aa', 'q', 'size', 'timeout' ].flatMap( ( k ) => options[ k ] === undefined ? [] : [ `--${ k }`, options[ k ] ] ) ];
+	const run = ( label, argList, log ) => new Promise( ( resolve ) => {
+
+		const child = spawn( process.execPath, argList, { cwd: repo, stdio: [ 'ignore', 'pipe', 'pipe' ] } );
+		const chunks = [];
+		let rest = '';
+		const line = ( d ) => {
+
+			chunks.push( d );
+			const text = rest + d.toString();
+			const lines = text.split( '\n' );
+			rest = lines.pop();
+			for ( const l of lines ) console.log( `[${ label }] ${ l }` );
+
+		};
+		child.stdout.on( 'data', line );
+		child.stderr.on( 'data', line );
+		child.on( 'close', async ( code ) => {
+
+			if ( rest ) console.log( `[${ label }] ${ rest }` );
+			if ( log ) await writeFile( log, Buffer.concat( chunks ) );
+			resolve( { code: code ?? 1, out: Buffer.concat( chunks ).toString() } );
+
+		} );
+
+	} );
+
+	// the fresh side: the stored set of this commit, a fresh page per view, captured when there is none
+	const ref = await run( 'ref', [ path.join( repo, 'tools/parity/capture-set.mjs' ), base, '--reference', path.resolve( options.check ), '--repeat',
+		'--page-per-view', '--procedure', 'verify-scene-jump ref', ...common, ...( stableArgs.length ? [ '--', ...stableArgs ] : [] ) ] );
+	if ( ref.code !== 0 ) { console.error( `reference ${ options.check } failed (exit ${ ref.code })` ); return 2; }
+	// the set that served it (another set of the commit with the same key may): capture-set's last
+	// `reference <sha>/<set>: <status>` line, relative to the store's root
+	const served = [ ...ref.out.matchAll( /^reference (\S+): (?:reused|waited|captured|extended)/gm ) ].pop()?.[ 1 ];
+	const refDir = served ? path.join( path.dirname( path.dirname( path.resolve( options.check ) ) ), served ) : path.resolve( options.check );
+	// a set reached by jumps would compare the jump with itself
+	let manifest = null;
+	try { manifest = JSON.parse( await readFile( path.join( refDir, 'complete.json' ), 'utf8' ) ); } catch { /* reported below */ }
+	if ( manifest?.key?.pages !== 'view' ) {
+
+		console.error( `reference ${ refDir }: its views were not each reached by a fresh load (key pages ${ JSON.stringify( manifest?.key?.pages ?? null ) }): not a fresh side` );
+		return 2;
+
+	}
+	console.log( `fresh side: ${ refDir } (${ minutes() } min)` );
+
+	// the jump side: both orders at once
+	await mkdir( outDir, { recursive: true } );
+	const own = [ ...[ 'legacy' ].filter( ( k ) => options[ k ] ).map( ( k ) => `--${ k }` ), ...from.flatMap( ( v ) => [ '--from', v ] ),
+		...between.flatMap( ( v ) => [ '--between', v ] ), ...( frames !== null ? [ '--frames', String( frames ) ] : [] ), ...stableArgs ];
+	const jumps = await Promise.all( [
+		run( 'list', [ here, base, outDir, ...common, ...own, '--profile', profile ] ),
+		run( 'reverse', [ here, base, outDir, ...common, ...own, '--order', 'reverse', '--suffix', '.repeat', '--profile', `${ profile }-reverse` ] ),
+	] );
+	console.log( `jump side: ${ outDir } (${ minutes() } min)` );
+
+	// diff-set.py, its table also in <outDir>/diff.txt (not `python -I`: it imports tolerance.py beside it)
+	const temporal = [ 'taa', 'taau', 'gt' ].includes( options.aa );
+	const diffArgs = temporal ? [ '--temporal' ] : [ '--aa-floor' ];
+	const diff = await new Promise( ( resolve ) => {
+
+		const child = spawn( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( repo, 'tools/parity/diff-set.py' ),
+			refDir, outDir, '--views', listed.join( ',' ), '--out', path.join( outDir, 'diff' ), ...diffArgs ], { cwd: repo, stdio: [ 'ignore', 'pipe', 'pipe' ] } );
+		const chunks = [];
+		child.stdout.on( 'data', ( d ) => chunks.push( d ) );
+		child.stderr.on( 'data', ( d ) => chunks.push( d ) );
+		child.on( 'close', async ( code ) => { await writeFile( path.join( outDir, 'diff.txt' ), Buffer.concat( chunks ) ); resolve( { code: code ?? 1, out: Buffer.concat( chunks ).toString() } ); } );
+
+	} );
+	process.stdout.write( diff.out );
+	const jumpFailed = jumps.filter( ( j ) => j.code !== 0 ).length;
+	console.log( `check ${ diff.code === 0 && ! jumpFailed ? 'PASS' : 'FAIL' } against ${ refDir } (diff-set ${ diffArgs.join( ' ' ) }), ${ minutes() } min${ jumpFailed ? `; ${ jumpFailed } jump pages failed` : '' }` );
+	return jumpFailed ? 1 : diff.code;
+
+}
