@@ -304,8 +304,8 @@ scene in the capture tools' browser (headless, a warm profile slot; `--fresh` fo
 holds a shared GPU slot from the load to the end (`--exclusive` for frame times), runs the steps in
 the order given and prints JSON (per query: load or jump, the time until up, each step's value,
 console errors and failed requests). Each `--query` after the first is reached in the same page by
-the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n )`, `sleep( ms )`
-and `until( fn )`, with the same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
+the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n )`, `sleep( ms )`,
+`until( fn )` and `pipelines` (`mark()`, `since( mark )`: which pipelines an action built), with the same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
 from `P`); `--init js` hooks the page before its scripts run. A production preview needs
 `debug` in the query. Common questions:
 `--load` loads every query after the first in a page of its own instead of jumping to it: the
@@ -317,6 +317,12 @@ freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
 - the pipelines an action creates, on a paused page (`D.settled` never turns true on a running
   one): `--q "debug&paused" --until "D.settled" --eval "P.pipelines.total"
   --eval "P.setWeather( 'storm', 0 )" --frames 120 --eval "P.pipelines.total"`;
+- which pipelines an action built and for what: `--eval "window.m = pipelines.mark()"
+  --eval "P.setWeather( 'storm', 0 )" --frames 120 --eval "pipelines.since( window.m )"`. Each
+  entry has its kind, label, material and object (name and type), target (texture names or
+  `canvas`, attachments, depth, sample count), frame and the first 6 app frames of its stack
+  (`tools/pipeline-trace.mjs`, shared with verify-first-use; installed at the first `mark()`, so
+  earlier pipelines are not listed, nor wrappers of one's own needed);
 - the game: `--q "debug&game" --eval "P.game.sim.state.villagers[ 0 ]"`;
 - frame time: `--exclusive --q "debug" --frames 300 --eval "D.frameMs"` (profile-frame for A/B).
 
