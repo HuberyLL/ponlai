@@ -345,7 +345,8 @@ run that is not allowed now is recorded as pending and run later in one batch.
 
 ```
 node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
-  [--timestamps on|off|both] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
+  [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
+  [--idle-wait s] [--contended]
   [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]
 ```
 
@@ -370,6 +371,11 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   and the pages stop before the lock is released (the GPU name, the files and the browser's close
   come after it). `wallSeconds` in profile.json is the time under the exclusive lock;
   `lockWaitSeconds`, `totalSeconds` and `preload` sit beside it.
+- When its opening idle check still finds another client keeping the GPU busy after
+  `--idle-wait` seconds (20; 60 with `--mode reload`), it names the client, measures nothing and
+  exits with 3, releasing the lock: a contended run's numbers prove nothing. Stop the client and
+  run again, or pass `--contended` to measure anyway (results marked contended, as before). A
+  later page load that finds the GPU busy still marks its results contended.
 - `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
   other page stopped, and reports deltas with their 95 % interval, each page's render scale per
   scene (high's dynamic scale may settle higher on one side: compare the deltas with that in mind),
@@ -377,11 +383,14 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   page by applying the expression (with `s` = `window.__PONLAI__` and `on` false for A, true for
   B) every few frames, for example `--toggle "s.flags.myChange = on"` with a flag an optimisation
   reads from `src/debug/DebugFlags.ts`. Both give B/A as a ratio beside the delta.
-- `--accept` (vsync, timestamps both) judges the 60 fps criterion per scene: frame interval median
-  and p95 within 0.5 ms of 16.7 (`--target`) and no frame over 25 ms in the 7 s measured, from the
-  run without timestamps, with the p99, the maximum and the GPU busy time reported beside it. A
-  contended scene that fails is INCONCLUSIVE unless its GPU busy median is over the target;
-  `--strict` exits with 1 on a FAIL.
+- `--accept` (vsync) judges the 60 fps criterion per scene: frame interval median and p95 within
+  0.5 ms of 16.7 (`--target`) and no frame over 25 ms in the 7 s measured, from the run without
+  timestamps, with the p99, the maximum and the GPU busy time reported beside it. A contended
+  scene that fails is INCONCLUSIVE unless its GPU busy median is over the target; `--strict` exits
+  with 1 on a FAIL. Its timestamps default to `auto`: every scene without them, then only the
+  scenes that did not pass again with them, for the GPU busy time and the passes that explain the
+  failure (no verdict on an idle GPU depends on them). A scene that passed then reports no GPU
+  times; `--timestamps both` measures every scene twice, as before, for its headroom.
 - Headless 60 Hz shows whether the GPU holds 60 fps, not how a faster display paces the frames
   (every scene once passed it while a 120 Hz display showed uneven cadence and a restless dynamic
   scale under a player's drags). `--display` measures that: headed system Chrome full screen
