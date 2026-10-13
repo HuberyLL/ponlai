@@ -29,8 +29,8 @@
 // builds once per worktree: a successful build writes the sha into dist/.serve-sha, and a call that
 // finds it skips the build. The vite job runs in the worktree, with its log in the calling checkout's
 // artifacts/jobs/ (serve-<mode>-sha-<12 hex>-<port>.log), so `clean` cannot delete it.
-// `clean` stops the jobs running in each sha-* worktree (job.mjs stop --cwd), removes the
-// worktrees (git worktree remove --force: node_modules and dist are untracked; the links are
+// `clean` skips, and names, a sha-* worktree with a live job (job.mjs list --cwd), since a server
+// another session started may still be in use; it removes the other (git worktree remove --force: node_modules and dist are untracked; the links are
 // removed, not followed) and runs git worktree prune.
 
 import './qos.mjs';
@@ -115,7 +115,14 @@ if ( mode === 'clean' ) {
 		.filter( ( p ) => dirname( p ) === shaRoot && /^sha-[0-9a-f]+$/.test( p.slice( shaRoot.length + 1 ) ) );
 	for ( const t of trees ) {
 
-		spawnSync( 'node', [ jobTool, 'stop', '--cwd', t ], { stdio: 'inherit' } );
+		const live = spawnSync( 'node', [ jobTool, 'list', '--cwd', t, '--lines', '0' ], { encoding: 'utf8' } ).stdout;
+		if ( ! live.startsWith( 'no running jobs' ) ) {
+
+			console.log( `skipped ${ t }: a job runs there (node tools/job.mjs list --cwd ${ t })` );
+			continue;
+
+		}
+
 		git( [ 'worktree', 'remove', '--force', t ], caller );
 		console.log( `removed ${ t }` );
 
