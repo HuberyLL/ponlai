@@ -309,7 +309,10 @@ console errors and failed requests). Each `--query` after the first is reached i
 the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n )`, `sleep( ms )`,
 `until( fn )` and `pipelines` (`mark()`, `since( mark )`: which pipelines an action built), with the same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
 from `P`); `--init js` hooks the page before its scripts run. A production preview needs
-`debug` in the query. Common questions:
+`debug` in the query. A long eval that waits on CPU work (worker generation, a grown page) stops
+the loop (`await P.loop.stop()`) and waits with `until` or `sleep`: while the loop stands the probe
+gives its shared slot up to a request ranked before it and takes it back before the helper resolves
+(each give-up on stderr, the step's `gaveUpMs`). Common questions:
 `--load` loads every query after the first in a page of its own instead of jumping to it: the
 scene-jump contract covers the image, not the world's generation path, so use it to compare two
 freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
