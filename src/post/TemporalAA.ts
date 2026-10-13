@@ -109,10 +109,10 @@ const RENDER: SizeClass = { of: 'render' };
 const CANVAS: SizeClass = { of: 'canvas' };
 // view z beyond which a pixel is sky (the resolved sky is -1e5)
 const SKY_Z = - 9e4;
-// per class (Motion.ts MOTION_CLASS: opaque, vegetation, water, character, sky): the share of the
-// history's frames it keeps, and what it adds to the clip box's width in standard deviations
-const CLASS_SCALE = [ 1, 1, 0.4, 0.8, 0 ];
-const CLASS_GAMMA = [ 0, 0.25, 0, - 0.25, 0 ];
+// the surface classes (Motion.ts MOTION_CLASS: opaque, vegetation, water, character, sky), each with
+// its share of the history's frames and its clip box's extra width (TemporalSettings classFrames,
+// classGamma)
+const CLASSES = 5;
 // the wide Gaussian's sigma (input pixels) and its share of a frame's weight
 const WIDE_SIGMA = 0.6, WIDE_SHARE = 0.05;
 // the sharpening's easing after a change of render scale (seconds)
@@ -301,6 +301,7 @@ export class TemporalAA {
 		historyGain: uniform( 1 ),
 		framesStill: uniform( 12 ), framesMoving: uniform( 5 ), speedFull: uniform( 16 ),
 		gammaStill: uniform( 1.25 ), gammaMove: uniform( 0.75 ), sigma: uniform( 0.42 ), sigmaRest: uniform( 0.3 ),
+		classFrames: Array.from( { length: CLASSES }, () => uniform( 1 ) ), classGamma: Array.from( { length: CLASSES }, () => uniform( 0 ) ),
 		skyPassThrough: uniform( 1 ),
 		// the camera's world matrix this frame and the previous rendered frame's, with its unjittered
 		// inverse projection (the disocclusion test and the sky's rotation)
@@ -918,20 +919,20 @@ export class TemporalAA {
 		const u = this.u, K = this.knobs;
 		// the surface's class (the velocity's b: 0, 0.25 ... 1)
 		const cls = round( clamp( velocity.z, 0, 1 ).mul( 4 ) ).toVar();
-		const byClass = ( values: number[] ) => {
+		const byClass = ( values: THREE.UniformNode<'float', number>[] ) => {
 
-			let v: F = float( values[ 4 ] );
-			for ( let i = 3; i >= 0; i -- ) v = select( cls.lessThan( i + 0.5 ), float( values[ i ] ), v );
+			let v: F = values[ CLASSES - 1 ];
+			for ( let i = CLASSES - 2; i >= 0; i -- ) v = select( cls.lessThan( i + 0.5 ), values[ i ], v );
 			return v;
 
 		};
 		const speed = length( velocity.xy.mul( 0.5 ).mul( outputSize ) ).toVar();
 		const mean = m1.div( n ).toVar();
 		const sd = sqrt( max( m2.div( n ).sub( mean.mul( mean ) ), vec3( 0 ) ) );
-		const gamma = mix( u.gammaStill, u.gammaMove, smoothstep( 0, 2, speed ) ).add( byClass( CLASS_GAMMA ) );
+		const gamma = mix( u.gammaStill, u.gammaMove, smoothstep( 0, 2, speed ) ).add( byClass( u.classGamma ) );
 		const extent = sd.mul( max( gamma, 0.05 ) ).add( 1e-5 ).toVar();
 		const dof = float( 1 ).sub( K.dofCut.mul( dofBlur( nearCell.add( 0.5 ).div( inputSize ) ) ) );
-		const frames = mix( u.framesStill, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( byClass( CLASS_SCALE ) )
+		const frames = mix( u.framesStill, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( byClass( u.classFrames ) )
 			.mul( clamp( float( 1 ).sub( reactive ), 0, 1 ) ).mul( dof );
 		return { mean, extent, frames };
 
@@ -1110,6 +1111,14 @@ export class TemporalAA {
 		u.framesStill.value = S.framesStill; u.framesMoving.value = S.framesMoving; u.speedFull.value = S.speedFull;
 		u.gammaStill.value = S.gammaStill; u.gammaMove.value = S.gammaMove; u.sigma.value = S.sigma; u.sigmaRest.value = S.sigmaRest;
 		u.skyPassThrough.value = S.skyPassThrough ? 1 : 0;
+		for ( let i = 0; i < CLASSES; i ++ ) {
+
+			u.classFrames[ i ].value = S.classFrames[ i ] ?? 1;
+			u.classGamma[ i ].value = S.classGamma[ i ] ?? 0;
+
+		}
+		const glint = S.glintReactive;
+		reactiveUniforms.glintFrom.value = glint.from; reactiveUniforms.glintTo.value = glint.to; reactiveUniforms.glintMax.value = glint.max;
 
 	}
 

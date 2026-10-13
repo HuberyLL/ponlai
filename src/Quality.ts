@@ -67,6 +67,13 @@ export interface TemporalSettings {
 	// still and moving
 	gammaStill: number;
 	gammaMove: number;
+	// per surface class (Motion.ts MOTION_CLASS: opaque, vegetation, water, character, sky): the share
+	// of the history's frames it keeps, and what it adds to the clip box's width
+	classFrames: number[];
+	classGamma: number[];
+	// the sea's glints' reactive weight (Water.ts): from 0 at `from` to `max` at `to` times the
+	// luminance of a white diffuse surface under the same light
+	glintReactive: { from: number; to: number; max: number };
 	// the reconstruction filter's Gaussian width (input pixels), running and while the scene rests
 	sigma: number;
 	sigmaRest: number;
@@ -130,7 +137,9 @@ export interface QualityProfile {
 const PCSS_HIGH: SolarShadowTaps = { soft: true, blockerSamples: 6, filterSamples: 8 };
 const BILINEAR: SolarShadowTaps = { soft: false, blockerSamples: 0, filterSamples: 0 };
 const TAA: TemporalSettings = {
-	framesStill: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75, sigma: 0.42, sigmaRest: 0.30,
+	framesStill: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
+	classFrames: [ 1, 1, 0.4, 0.8, 0 ], classGamma: [ 0, 0.25, 0, - 0.25, 0 ], glintReactive: { from: 2, to: 8, max: 1 },
+	sigma: 0.42, sigmaRest: 0.30,
 	sharpness: { taa: 1.0, taau: [ 1.0, 0.5 ] }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
 	gtJitters: 64,
 };

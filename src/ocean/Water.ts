@@ -35,7 +35,7 @@ import { TREE_HEIGHT } from '../world/PlantSites.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { SEABED_WARP } from '../world/types.ts';
 import { seabedAlbedo } from '../materials/SeabedLook.ts';
-import { motionNode, motionState, motionUniforms, outputStruct } from '../post/Motion.ts';
+import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 
 // The sea surface: an FFT-displaced grid with custom shading after tidewater's WaterMaterial
@@ -79,8 +79,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 // The storm's foam rides the water's undisplaced grid (StormSea), so it moves as the surface does:
 // `flags.mv.sea = false` leaves out the waves' motion, the foam's with it (the sea has no foam
 // geometry of its own for `flags.mv.foam`). The reactive weight marks the sun's glints: the glint's
-// luminance against a white diffuse surface under the same light, smoothstep( 2, 8, ratio ), so
-// that a sparkle is not smeared into the history.
+// luminance against a white diffuse surface under the same light, smoothstep( 2, 8, ratio ) by
+// default (the resolve's settings, Motion.ts reactiveUniforms), so that a sparkle is not smeared
+// into the history.
 //
 // Screen conventions (WebGPU): uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
 // Texture samples that need screen-space derivatives are taken first, while control flow is still
@@ -1182,8 +1183,8 @@ export class Water {
 			const col = water.mul( airFacing ).toVar();
 			// (temporal modes) the glints' reactive weight: their luminance against a white diffuse
 			// surface under the same sun and sky (the note at the top)
-			const reactive = TEMPORAL ? smoothstep( 2, 8, lum( sunSpec ).mul( airFacing )
-				.div( max( lum( shared.skyIrradianceSource.add( sunLight.mul( max( L.y, 0 ) ).div( PI ) ) ), 1e-6 ) ) ) : null;
+			const reactive = TEMPORAL ? smoothstep( reactiveUniforms.glintFrom, reactiveUniforms.glintTo, lum( sunSpec ).mul( airFacing )
+				.div( max( lum( shared.skyIrradianceSource.add( sunLight.mul( max( L.y, 0 ) ).div( PI ) ) ), 1e-6 ) ) ).mul( reactiveUniforms.glintMax ) : null;
 			// Whitecaps in a storm (Tessendorf's choppy-wave criterion: the horizontal Jacobian of the
 			// summed cascades nears a fold). StormSea integrates where the steepest crests break and
 			// the foam that trails behind a breaker and fades over seconds; this pixel's own fold
