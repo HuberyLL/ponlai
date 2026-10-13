@@ -32,8 +32,6 @@ import { chooseQuality, type QualityChoice } from '../QualityDetect.ts';
 
 export const AA_MODES = [ 'msaa', 'taa', 'taau', 'off', 'gt' ] as const;
 export type AAMode = typeof AA_MODES[ number ];
-// the modes the GUI offers
-export const AA_GUI_MODES: readonly AAMode[] = [ 'msaa', 'off' ];
 /** Where the page's mode came from: the URL (`aa` or its `msaa` alias), the tier's knob, or neither. */
 export type AASource = 'url' | 'tier' | 'default';
 export type SceneSampleCount = 1 | 4;
