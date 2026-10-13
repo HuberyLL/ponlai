@@ -278,7 +278,7 @@ async function captureGroup( url, dir, list ) {
 				if ( m.ok ) {
 
 					done.push( [ item.view, item.suffix ] );
-					console.log( `${ item.key } rc=0 ${ m.mode }${ m.from ? ` from ${ m.from }` : '' } ${ m.seconds.toFixed( 1 ) } s${ m.lockSeconds >= 0.5 ? ` (+${ m.lockSeconds.toFixed( 1 ) } s waiting for the GPU lock)` : '' }` );
+					console.log( `${ item.key } rc=0 ${ m.mode }${ m.from ? ` from ${ m.from }` : '' } ${ m.seconds.toFixed( 1 ) } s${ m.worldSeconds >= 0.5 ? ` (+${ m.worldSeconds.toFixed( 1 ) } s loading its world)` : '' }${ m.lockSeconds >= 0.5 ? ` (+${ m.lockSeconds.toFixed( 1 ) } s waiting for the GPU lock)` : '' }` );
 
 				} else fail( item, 'failed' );
 
