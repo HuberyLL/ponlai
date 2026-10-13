@@ -54,6 +54,8 @@
 // - A view that fails (a timeout, a page or console error, a crash, no answer within the view's
 //   deadline: three times --timeout plus a minute) ends the worker: the page is not trusted after
 //   it. capture-set retries that view (--retries) and the views still to come on a fresh page.
+//   The worker tells capture-set when the view holds its GPU slot (`locked`): capture-set's own
+//   watchdog for a silent page counts from there, so a long wait for the lock is not a hang.
 // - Each view's files go straight to the path capture-set names (`<out>.png`, `.json`, `.f<i>.png`);
 //   the JSON adds `page`: the visit's index on the page, `load` or `jump`, the view before, the wait
 //   for the GPU lock and the time from then to the written shot (ms), and the page's memory then (JS heap, DOM nodes, listeners, renderer.info's geometries and textures).
@@ -298,6 +300,8 @@ if ( ! worker ) {
 			const url = `${ baseUrl }?${ query }`;
 			const started = Date.now();
 			const lockMs = await acquireGpuLock( `capture ${ key }`, { shared: sharedFor( query ) } );
+			// capture-set's watchdog counts from here, not from the view's hand-out
+			await send( { type: 'locked', key } );
 			let result;
 			try {
 

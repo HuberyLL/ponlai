@@ -58,7 +58,7 @@
 //   --retries (default 1) captures a failed view again on a fresh page (a load that timed out while
 //   other pages kept the GPU busy, a page error, a crash): a failure ends its page, and the views
 //   still to come go on in a fresh one, so a crash or a stuck page (no answer within three times
-//   --timeout plus two minutes: killed) does not lose the set; the view's log keeps the last
+//   --timeout plus two minutes once the view holds its GPU slot: killed) does not lose the set; the view's log keeps the last
 //   attempt. --timeout (ms, default 240000) bounds capture.mjs's waits for the page.
 // --runs appends a line to a CSV log of verification runs (date, task, procedure, sha, wall time in
 //   minutes, whether the GPU was busy before the run, the captures and failures, the set); the
@@ -212,7 +212,12 @@ async function captureList( url, dir, list ) {
 				// (a page that died meanwhile never got it: back in line, no attempt counted)
 				child.send( { type: 'view', view: { key: item.key, query: `${ common }&${ VIEWS[ item.view ].q }`, evals: [ viewEval( item.view ) ], out: path.join( dir, item.key ) } },
 					( error ) => { if ( error && current === item ) { current = null; queue.unshift( item ); } } );
-				// a page that stopped answering (capture.mjs gives up on a view after 3 x timeout + 1 min)
+
+			} else if ( m.type === 'locked' ) {
+
+				// a page that stopped answering (capture.mjs gives up on a view after 3 x timeout + 1 min),
+				// counted from the view's GPU slot: the wait for the lock is not silence (exclusive timing
+				// runs and normal-priority work may hold it far longer than any timeout)
 				timer = setTimeout( () => {
 
 					console.log( `${ current?.key } no answer from its page: killing it` );
