@@ -527,6 +527,11 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   for the first load's, and the pages stop before the lock is released (the GPU name, the files
   and the browser's close come after it). `wallSeconds` in profile.json is the time under the exclusive lock;
   `lockWaitSeconds`, `totalSeconds` and `preload` sit beside it.
+- In full-screen `--display` the idle checks run with the run's window up (the opening one on its
+  blank page) and sum the GPU time of the clients other than the run's Chrome and WindowServer:
+  full screen hides the other windows and they stop drawing, so the GPU's utilisation before the
+  window opened counted a load the run never meets and refused runs for nothing. With `--window`
+  the check stays the utilisation's: the other windows stay on screen and their load is real.
 - When its opening idle check still finds another client keeping the GPU busy after
   `--idle-wait` seconds (20; 60 with `--mode reload`), it names the client, measures nothing and
   exits with 3, releasing the lock: a contended run's numbers prove nothing. Stop the client and

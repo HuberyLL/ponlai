@@ -2,8 +2,9 @@
 // headless Chrome with an uncapped frame rate (or at 60 Hz with `--vsync`), and reports the frame
 // interval, the GPU time per pass (timestamp queries, labelled by `src/debug/FrameProfiler.ts`
 // through `?profile`), the tick's JS time, hitches with their cause, and the startup. Runs under the machine-wide GPU lock (held
-// exclusively) and first checks that nothing else keeps the GPU busy: when something still does
-// after `--idle-wait` seconds (20, 60 in reload mode), it measures nothing and exits with 3 (a
+// exclusively) and first checks that nothing else keeps the GPU busy (full-screen `--display`: once
+// its window is up, by the GPU time of the clients other than its Chrome and WindowServer; see
+// idleCheck): when something still does after `--idle-wait` seconds (20, 60 in reload mode), it measures nothing and exits with 3 (a
 // contended run's frame rates and verdicts prove nothing, and it held the lock for minutes);
 // `--contended` measures anyway and marks the results contended.
 //
@@ -144,7 +145,9 @@
 //   showed a sixth of the frames 8.3 ms apart and a third of the intervals changing cadence (before
 //   the frame pacer): the headless run does not stand in for a faster display. A window appears on
 //   the screen for the run; keep other pages and animated windows closed (the window server itself
-//   took 15-30 % of the GPU's time during these runs). `--window WxH` opens a normal window of that
+//   took 15-30 % of the GPU's time during these runs). Full screen hides the other windows, and they
+//   stop drawing: so its idle checks run with the window up and count the other clients only (see
+//   idleCheck). `--window WxH` opens a normal window of that
 //   outer size instead (a player's, with its tab strip and toolbar): the other windows stay on
 //   screen, and a page drawing in one of them (an app's hidden browser pane kept rendering a second
 //   Ponlai page) shares the GPU and lowers high's scale. Full screen covers them, and they drew less:
@@ -204,7 +207,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { withGpuLock, leaseGpuLock, waitForIdleGpu, sampleGpuUtilisation } from './gpu-lock.mjs';
+import { withGpuLock, leaseGpuLock, waitForIdleGpu, gpuClients, sampleGpuUtilisation } from './gpu-lock.mjs';
 import { requireDisplayAllowed } from './display-gate.mjs';
 
 // ------------------------------------------------------------------ options
@@ -613,6 +616,8 @@ function delta( a, b ) {
 // ------------------------------------------------------------------ the page
 
 const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
+// an idle check's figure, as the log and summary give it (see idleCheck)
+const idleText = ( idle ) => idle?.by === 'clients' ? `other GPU clients ${ idle.idle?.mean ?? '?' } % (this run's Chrome and WindowServer left out)` : `GPU idle ${ idle?.idle?.mean ?? '?' } %`;
 
 // The run's own idle check (main), taken with the browser already open on a blank page just before
 // the first load: it stands for that load's check instead of sampling the same idle GPU again.
@@ -621,7 +626,79 @@ function loadIdle( log ) {
 
 	const idle = startIdle;
 	startIdle = null;
-	return idle ?? waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+	return idle ?? idleCheck( { seconds: 2, wait: idleWaitLoad, log } );
+
+}
+
+// The idle checks (the opening one, a load's, a scene's hold taken again) in full-screen display
+// mode judge the GPU's clients, not its utilisation. Measured during a full-screen run (T25):
+// before the kiosk window opened, WindowServer took 16-20 % of the GPU's time, the Claude app's
+// helper 8-16 % and another Chrome 5-11 %; with the window up, the profiled Chrome took 80-90 %,
+// WindowServer 2-10 %, and the others fell below 0.5 %, coming back as soon as the run ended. Full
+// screen removes the load the utilisation counted, so judged by it the opening check refused runs
+// (exit 3) or forced --contended for nothing. So with the kiosk window up (the check runs after the
+// browser opens, on its blank page or with the pages stopped), the check sums the GPU time of the
+// clients other than this run's Chrome (the browser's pid and its descendants, the GPU process
+// among them) and WindowServer, whose remaining share presents this run's window, as a player's
+// display does: part of what --display measures, not contention. With `--window WxH` the other
+// windows stay on screen and their load is real: the utilisation check stays, as headless.
+const FULL_SCREEN = DISPLAY && ! WINDOW;
+// the run's Chrome (its browser process, set by main when it opens), whose clients the check leaves out
+let runChromePid = null;
+function idleCheck( { seconds = 2, wait, log = console.error } ) {
+
+	if ( FULL_SCREEN && runChromePid ) return waitForIdleClients( { seconds, wait, log } );
+	return waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds, wait, log } );
+
+}
+// the pids of a process and its descendants
+function processTree( root ) {
+
+	const children = new Map();
+	for ( const line of execFileSync( 'ps', [ '-A', '-o', 'pid=,ppid=' ], { encoding: 'utf8', timeout: 5000 } ).split( '\n' ) ) {
+
+		const [ pid, ppid ] = line.trim().split( /\s+/ ).map( Number );
+		if ( ! pid ) continue;
+		if ( ! children.has( ppid ) ) children.set( ppid, [] );
+		children.get( ppid ).push( pid );
+
+	}
+	const tree = new Set( [ root ] );
+	for ( const pid of tree ) for ( const child of children.get( pid ) ?? [] ) tree.add( child );
+	return tree;
+
+}
+// As waitForIdleGpu (gpu-lock.mjs), but by the GPU time of the clients other than the run's Chrome
+// and WindowServer (gpuClients: each process's share of the GPU's time over `seconds`): their sum
+// stands for the utilisation, against the same --idle-threshold. Same result, plus `by: 'clients'`
+// and the clients left out (`excluded`).
+async function waitForIdleClients( { seconds, wait, log } ) {
+
+	const started = Date.now();
+	const history = [];
+	for ( ;; ) {
+
+		const all = await gpuClients( seconds );
+		if ( all === null ) return waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds, wait, log } );
+		const own = processTree( runChromePid );
+		const pidOf = ( c ) => Number( c.name.match( /\(pid (\d+)\)$/ )?.[ 1 ] );
+		const mine = ( c ) => own.has( pidOf( c ) ) || /^WindowServer\b/.test( c.name );
+		const clients = all.filter( ( c ) => ! mine( c ) ), excluded = all.filter( mine );
+		const sum = r2( clients.reduce( ( a, c ) => a + c.percent, 0 ) );
+		const sample = { mean: sum, max: sum, samples: 1 };
+		history.push( sample );
+		const result = { idle: sample, contended: false, waitedMs: Date.now() - started, samples: history, clients, excluded, by: 'clients' };
+		if ( sum <= IDLE_THRESHOLD ) return result;
+		const who = `: ${ clients.map( ( c ) => `${ c.name } ${ c.percent } %` ).join( ', ' ) }`;
+		if ( result.waitedMs > wait * 1000 ) {
+
+			log( `[profile] the GPU's other clients still take ${ sum } % after ${ Math.round( result.waitedMs / 1000 ) } s${ who }: contended` );
+			return { ...result, contended: true };
+
+		}
+		if ( history.length === 1 ) log( `[profile] the GPU's other clients take ${ sum } %${ who } (this run's Chrome and WindowServer left out); waiting up to ${ wait } s` );
+
+	}
 
 }
 
@@ -845,10 +922,10 @@ async function holdScene( scene, log, forLoad = false ) {
 	releasedMs += away;
 	// with --contended, once a check found the GPU busy the later ones do not wait it out again (as
 	// the loads': it would cost IDLE_WAIT per scene under the lock and change nothing)
-	const idle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad === 0 ? 0 : IDLE_WAIT, log } );
+	const idle = await idleCheck( { seconds: 2, wait: idleWaitLoad === 0 ? 0 : IDLE_WAIT, log } );
 	if ( idle.contended ) idleWaitLoad = 0;
 	holds.push( { scene, at: r2( ( asked - holdStart ) / 1000 ), waitSeconds: r2( away / 1000 ), checkSeconds: r2( ( Date.now() - asked - away ) / 1000 ), idle: idle.idle?.mean ?? null, contended: idle.contended } );
-	log( `${ scene }: the lock went to others' work for ${ ( away / 1000 ).toFixed( 1 ) } s; held again, GPU idle ${ idle.idle?.mean ?? '?' } % with this run's pages stopped (checked in ${ ( ( Date.now() - asked - away ) / 1000 ).toFixed( 1 ) } s)${ idle.contended ? ', CONTENDED' : '' }` );
+	log( `${ scene }: the lock went to others' work for ${ ( away / 1000 ).toFixed( 1 ) } s; held again, ${ idleText( idle ) } with this run's pages stopped (checked in ${ ( ( Date.now() - asked - away ) / 1000 ).toFixed( 1 ) } s)${ idle.contended ? ', CONTENDED' : '' }` );
 	if ( idle.contended && ! CONTENDED_OK ) {
 
 		lockStop = { scene, idle };
@@ -2680,6 +2757,7 @@ async function main() {
 
 		browser = await open( errors );
 		( { page, context } = browser );
+		runChromePid = browser.pid;
 		if ( browser.temporary ) temporaries.push( browser.dir );
 
 	};
@@ -2714,7 +2792,10 @@ async function main() {
 			freshHold = true;
 			waitedMs = started - requested;
 			if ( waitedMs > 1000 ) console.error( `[profile] GPU lock acquired after ${ ( waitedMs / 1000 ).toFixed( 0 ) } s` );
-			const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, wait: IDLE_WAIT } );
+			// the opening check: before the browser opens, or in full-screen display mode once its
+			// window is up, on its blank page (see idleCheck: full screen removes the other windows' load)
+			const opening = () => idleCheck( { seconds: 3, wait: IDLE_WAIT } );
+			const gpuIdle = FULL_SCREEN ? ( await openRun(), await opening() ) : await opening();
 			// another client keeps the GPU busy: a run measured now is marked contended and its
 			// verdicts are inconclusive, so it stops here (releasing the lock) unless asked to go on
 			if ( gpuIdle.contended && ! CONTENDED_OK ) {
@@ -2727,8 +2808,8 @@ async function main() {
 			startIdle = gpuIdle;
 			// the browser opens now (its blank page draws nothing: the idle check stands for the first
 			// load's, as before)
-			await openRun();
-			console.error( `[profile] GPU idle ${ gpuIdle.idle?.mean ?? '?' } % (max ${ gpuIdle.idle?.max ?? '?' } %)${ gpuIdle.contended ? ', CONTENDED' : '' }; Chrome: ${ executablePath ?? 'Playwright Chromium' }; mode ${ TOGGLE ? 'toggle' : MODE }${ VSYNC ? ', vsync' : ', uncapped' }${ ACCEPT ? `, accept at ${ TARGET } ms` : '' }` );
+			if ( ! FULL_SCREEN ) await openRun();
+			console.error( `[profile] ${ idleText( gpuIdle ) } (max ${ gpuIdle.idle?.max ?? '?' } %)${ gpuIdle.contended ? ', CONTENDED' : '' }; Chrome: ${ executablePath ?? 'Playwright Chromium' }; mode ${ TOGGLE ? 'toggle' : MODE }${ VSYNC ? ', vsync' : ', uncapped' }${ ACCEPT ? `, accept at ${ TARGET } ms` : '' }` );
 			// a run that stops making progress outside a scene (a scene's hang is `guarded`'s) fails
 			// rather than holding the lock
 			progress();
@@ -2905,7 +2986,7 @@ async function main() {
 		if ( refused ) {
 
 			const busy = refused.clients?.length ? `: ${ refused.clients.map( ( c ) => `${ c.name } ${ c.percent } %` ).join( ', ' ) }` : '';
-			console.error( `[profile] CONTENDED: the GPU was still ${ refused.idle?.mean } % busy outside the lock after ${ Math.round( refused.waitedMs / 1000 ) } s${ busy }. ` +
+			console.error( `[profile] CONTENDED: ${ refused.by === 'clients' ? 'the GPU\'s other clients (this run\'s Chrome and WindowServer left out) still took' : 'the GPU was still' } ${ refused.idle?.mean } % ${ refused.by === 'clients' ? 'of its time' : 'busy outside the lock' } after ${ Math.round( refused.waitedMs / 1000 ) } s${ busy }. ` +
 				`Nothing was measured (exit ${ EXIT_CONTENDED }): stop that client and run again, wait longer with --idle-wait s, or measure anyway with --contended (results marked contended).` );
 			process.exitCode = EXIT_CONTENDED;
 			return;
@@ -2924,7 +3005,7 @@ async function main() {
 		if ( errors.length ) console.error( errors.slice( 0, 10 ).join( '\n' ) );
 		if ( lockStop ) {
 
-			console.error( `[profile] CONTENDED at ${ lockStop.scene }: the GPU was still ${ lockStop.idle.idle?.mean } % busy after the lock came back. The run stopped there with the finished scenes written (exit ${ EXIT_CONTENDED }); --contended measures anyway.` );
+			console.error( `[profile] CONTENDED at ${ lockStop.scene }: ${ lockStop.idle.by === 'clients' ? 'the GPU\'s other clients still took' : 'the GPU was still' } ${ lockStop.idle.idle?.mean } % ${ lockStop.idle.by === 'clients' ? 'of its time' : 'busy' } after the lock came back. The run stopped there with the finished scenes written (exit ${ EXIT_CONTENDED }); --contended measures anyway.` );
 			process.exitCode = EXIT_CONTENDED;
 
 		}
