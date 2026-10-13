@@ -134,9 +134,12 @@
 //   the app with that pane took a tenth of the GPU beside a window, a hundredth behind full screen.
 //   With `--compare` (page mode) the two pages run in the same interleaved slices as headless, so
 //   the drift between separate headed runs (1-2 ms) cancels: the running page is brought to the
-//   front (a background tab gets no animation frames), each slice has its own trace and restarts
-//   the drags through its settle and slice, and the summary adds the share of late frames
-//   (presented intervals longer than the frame pacer's pace) as a delta over the slices.
+//   front (a background tab gets no animation frames), each slice restarts the drags through its
+//   settle and slice, and the summary adds the share of late frames (presented intervals longer
+//   than the frame pacer's pace) as a delta over the slices. One trace spans a scene's slices of
+//   both pages (Chrome traces one session at a time, every page in it), ended early only where an
+//   adaptive stop checks the figures so far; a mark per slice splits it (see startTrace). The run
+//   log gives each scene's time over its settles and slices.
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
 // numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
@@ -1146,18 +1149,46 @@ async function measure( page, scene ) {
 // ------------------------------------------------------------------ display mode
 
 // The real display (--display): the frames the compositor presented, from a trace of Chrome's
-// frame pipeline (each PipelineReporter frame the page's renderer presented, at its presentation
+// frame pipeline (each PipelineReporter frame a page's renderer presented, at its presentation
 // time), and an in-page sampler of every animation frame (its vblank time, whether the scene
 // rendered in it, the camera's heading), started for one measuring window.
-async function startDisplay( page ) {
+//
+// Chrome runs one trace at a time, and a trace started from one page holds every page's
+// renderer: one trace spans a scene's slices of both pages of a compare (ended early only where
+// an adaptive stop needs the figures so far), and each slice's sampler places a performance mark
+// of its own in it. The mark maps the page's clock to the trace's and names the slice's renderer
+// (its pid), so the trace is split by the slices' windows (t0, t1) afterwards. A trace started and
+// ended in every slice nearly doubled the time a slice took beyond its settle and window.
+async function startTrace( page ) {
 
 	const cdp = await page.context().newCDPSession( page );
 	const events = [];
-	cdp.on( 'Tracing.dataCollected', ( e ) => { for ( const x of e.value ) if ( x.name === 'PipelineReporter' || x.name === 'ponlai-display-sync' ) events.push( x ); } );
+	cdp.on( 'Tracing.dataCollected', ( e ) => { for ( const x of e.value ) if ( x.name === 'PipelineReporter' || x.name.startsWith( 'ponlai-display-sync' ) ) events.push( x ); } );
 	const done = new Promise( ( resolve ) => cdp.once( 'Tracing.tracingComplete', resolve ) );
 	await cdp.send( 'Tracing.start', { traceConfig: { includedCategories: [ 'cc', 'benchmark', 'disabled-by-default-devtools.timeline.frame', 'blink.user_timing' ] } } );
-	// the trace's clock against the page's: a mark seen by both
-	const sync = await page.evaluate( () => {
+	return {
+		// the trace's events, once it has ended
+		async end() {
+
+			await cdp.send( 'Tracing.end' );
+			const complete = await done;
+			await cdp.detach();
+			if ( complete?.dataLossOccurred ) console.error( '[profile] the display trace lost data (its buffer filled): the presented figures miss frames' );
+			return events;
+
+		},
+	};
+
+}
+
+let displaySlice = 0;
+
+// One slice's sampler on `page` (inside a running trace); its stop returns what displayStats needs
+// besides the trace
+async function startSamples( page ) {
+
+	const mark = `ponlai-display-sync-${ displaySlice ++ }`;
+	const sync = await page.evaluate( ( mark ) => {
 
 		const s = window.__PONLAI__;
 		const dir = s.camera.getWorldDirection( s.camera.position.clone() );
@@ -1174,19 +1205,17 @@ async function startDisplay( page ) {
 
 		};
 		requestAnimationFrame( step );
-		performance.mark( 'ponlai-display-sync' );
+		// the trace's clock against the page's: a mark seen by both
+		performance.mark( mark );
 		return performance.now();
 
-	} );
+	}, mark );
 	return {
-		async stop( t0, t1 ) {
+		async stop() {
 
 			const samples = await page.evaluate( () => window.__displayStop() );
 			const pacing = await page.evaluate( () => window.__THREE_GAME_DIAGNOSTICS__?.pacing ?? null );
-			await cdp.send( 'Tracing.end' );
-			await done;
-			await cdp.detach();
-			return displayStats( events, sync, samples, pacing, t0, t1 );
+			return { mark, sync, samples, pacing };
 
 		},
 	};
@@ -1290,7 +1319,7 @@ function cadence( intervals, refresh ) {
 
 }
 
-function displayStats( events, sync, samples, pacing, t0, t1 ) {
+function displayStats( events, { mark: name, sync, samples, pacing }, t0, t1 ) {
 
 	// the refresh period: the pacer's measure, else the median of the shortest vblank intervals
 	const vblanks = samples.slice( 1 ).map( ( k, i ) => k[ 0 ] - samples[ i ][ 0 ] ).filter( ( x ) => x > 2 && x < 50 );
@@ -1318,9 +1347,9 @@ function displayStats( events, sync, samples, pacing, t0, t1 ) {
 		changes.push( Math.abs( b - a ) / ( ( Math.abs( a ) + Math.abs( b ) ) / 2 ) );
 
 	}
-	// presented frames: the renderer's (the process with most main-thread frames) presented ones,
-	// at their presentation, within the window (by the sync mark)
-	const mark = events.find( ( e ) => e.name === 'ponlai-display-sync' );
+	// presented frames: the slice's renderer's (the process of its mark) presented ones, at their
+	// presentation, within the window (by the mark)
+	const mark = events.find( ( e ) => e.name === name );
 	const offset = mark ? mark.ts / 1000 - sync : NaN;
 	const begins = new Map(), frames = [];
 	for ( const e of events ) {
@@ -1337,9 +1366,7 @@ function displayStats( events, sync, samples, pacing, t0, t1 ) {
 		}
 
 	}
-	const byPid = {};
-	for ( const f of frames ) if ( f.fr.has_main_animation ) byPid[ f.pid ] = ( byPid[ f.pid ] ?? 0 ) + 1;
-	const pid = Number( Object.entries( byPid ).sort( ( a, b ) => b[ 1 ] - a[ 1 ] )[ 0 ]?.[ 0 ] );
+	const pid = mark?.pid;
 	const shown = [ ...new Set( frames.filter( ( f ) => f.pid === pid && f.fr.has_main_animation && /PRESENTED/.test( f.fr.state ?? '' ) && f.end >= t0 && f.end < t1 )
 		.map( ( f ) => Math.round( f.end * 10 ) / 10 ) ) ].sort( ( a, b ) => a - b );
 	const presentedIntervals = shown.slice( 1 ).map( ( t, i ) => t - shown[ i ] ).filter( ( x ) => x > 1 );
@@ -1501,7 +1528,8 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 		const { switchMs, t } = await prepare( page, scene, evalJs, true );
 		const compile = ( await warm( frames, [ t ], WARMUP ) )[ 0 ];
 		if ( SCALE_SETTLE > 0 ) compile.scaleSettle = await settleScale( page );
-		const display = DISPLAY ? await startDisplay( page ) : null;
+		const trace = DISPLAY ? await startTrace( page ) : null;
+		const sampler = DISPLAY ? await startSamples( page ) : null;
 		const t0 = await page.evaluate( ( { change } ) => {
 
 			if ( change ) window.__PONLAI__.setWeather( change.weather, change.seconds );
@@ -1510,7 +1538,8 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 		}, { change: def.change ?? null } );
 		const [ utilisation ] = await Promise.all( [ sampleGpuUtilisation( Math.max( SECONDS - 0.5, 0.5 ) ), MOTION === 'user' ? driveUser( page, SECONDS ) : sleep( SECONDS * 1000 ) ] );
 		const t1 = await frames.now();
-		const displayed = display ? await display.stop( t0, t1 ) : undefined;
+		const sampled = sampler ? await sampler.stop() : null;
+		const displayed = trace ? displayStats( await trace.end(), sampled, t0, t1 ) : undefined;
 		if ( SHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
 		const sw = { ms: r2( switchMs ), ...compile };
 		log( `${ scene.padEnd( 20 ) } switched in ${ Math.round( switchMs ) } ms, warmed ${ compile.seconds } s (${ compile.pipelines } pipelines, ${ compile.pipelineMs } ms JS, last ${ compile.lastCompileMs } ms after the switch)${ compile.scaleSettle ? `, scale settled at ${ compile.scaleSettle.scale } after ${ compile.scaleSettle.seconds } s more` : '' }` );
@@ -1694,15 +1723,34 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 
 		}
 		if ( k === 0 ) switches[ scene ] = compile;
+		// the display's trace runs from the scene's first slice (both pages) until the figures are
+		// needed: at an adaptive stop's check, else after the scene's last slice
+		let trace = null, measured = 0;
+		const slicesFrom = Date.now();
+		const traced = [];
+		const endTrace = async () => {
+
+			if ( ! trace ) return;
+			const events = await trace.end();
+			trace = null;
+			for ( const w of traced.splice( 0 ) ) {
+
+				w.display = displayStats( events, w.sampled, w.t0, w.t1 );
+				delete w.sampled;
+
+			}
+
+		};
 		let stop = null;
 		for ( let i = 0; i < SLICES && ! stop; i ++ ) {
 
 			const v = 1 - ORDER[ i % ORDER.length ];
 			const switched = active !== v;
 			if ( switched ) await run( v, scene, i );
-			// on the display: the compositor's trace for the slice, and the camera dragged through
+			// on the display: the slice's sampler in the scene's trace, and the camera dragged through
 			// the settle and the slice (each slice starts the same drags, so both pages see them)
-			const display = DISPLAY ? await startDisplay( pages[ v ] ) : null;
+			if ( DISPLAY && ! trace ) trace = await startTrace( pages[ v ] );
+			const sampler = DISPLAY ? await startSamples( pages[ v ] ) : null;
 			const motion = MOTION === 'user' ? driveUser( pages[ v ], ( switched ? SETTLE : 0 ) + SLICE ) : null;
 			// (a hang closes the browser under the drags: their failure is the hang's)
 			motion?.catch( () => {} );
@@ -1712,13 +1760,25 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			await sleep( SLICE * 1000 );
 			const t1 = await frames[ v ].now();
 			await motion;
-			windows[ v ].push( { scene, slice: i, t0, t1, display: display ? await display.stop( t0, t1 ) : undefined } );
+			const w = { scene, slice: i, t0, t1 };
+			if ( sampler ) traced.push( Object.assign( w, { sampled: await sampler.stop() } ) );
+			windows[ v ].push( w );
+			measured += ( switched ? SETTLE : 0 ) + SLICE;
 			progress();
 			if ( i + 1 === SLICES ) stop = { slices: i + 1, reason: 'max' };
-			else if ( ( i + 1 ) % 4 === 0 && i + 1 >= MIN_SLICES ) stop = await stopCheck( scene, timestamps, windows, frames, i + 1 );
+			else if ( ( i + 1 ) % 4 === 0 && i + 1 >= MIN_SLICES ) {
+
+				await endTrace();
+				stop = await stopCheck( scene, timestamps, windows, frames, i + 1 );
+
+			}
 
 		}
-		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ stopText( stop ) }` );
+		await endTrace();
+		// the time the slices took beyond their settles and measuring windows (switching pages,
+		// the display's samplers and traces)
+		stop.overhead = r2( ( Date.now() - slicesFrom ) / 1000 - measured );
+		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ stopText( stop ) }, ${ stop.overhead } s over the settles and slices` );
 		if ( k < REPEAT - 1 ) continue;
 		// the scene's last repetition is done: its results, once both pages' frames are in
 		const scaleLogs = SCALE_LOG ? [ await scaleChanges( pages[ 0 ] ), await scaleChanges( pages[ 1 ] ) ] : null;

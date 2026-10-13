@@ -493,7 +493,9 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   (the running page brought to the front, the drags restarted in each slice), so the drift between
   separate headed runs (a millisecond or two) cancels; its summary adds the share of late frames
   (presented intervals longer than the frame pacer's pace) per slice, as a delta with its interval, and each page's
-  frames over 25 ms.
+  frames over 25 ms. One trace spans a scene's slices of both pages, split by a performance mark
+  per slice (ended early at each adaptive stop check); a trace per slice nearly doubled the time a
+  slice took beyond its settle and window.
 - Adaptive slices: in `--compare`, `--slices` is the most a scene takes. From `--min-slices` on
   (4 with `--display`; headless it defaults to `--slices`, which turns it off), at the end of each
   balanced block of four slices (B A A B, then A B B A) a scene stops once its leading delta's 95 %
