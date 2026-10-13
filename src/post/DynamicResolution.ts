@@ -70,7 +70,10 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 //   to 1.25 just under the bar then failed as badly). The same view does not try the same step
 //   again, while a view that has turned lighter since (the camera off the horizon, the rain gone)
 //   steps up as soon as its frames show room for that error too: an outright bar held a light view
-//   at the heavy one's scale for up to BAR seconds.
+//   at the heavy one's scale for up to BAR seconds. Leaving it, the step goes back to the scale it
+//   left if it must, below the quality floor too and without the judged steps there: that scale
+//   held. (Stopped at the quality floor, a failed step from 0.65 to 0.95 held 0.8 with twice the
+//   late frames of 0.65.)
 // - Without GPU times (no timestamp queries, `gpuTimer=off`) the frame intervals steer it, one step
 //   at a time: down while more than MISS_SHARE of a window's frames missed their vblank, up after
 //   UP_AFTER seconds without a miss. Every step down bars the scale it left from a step back up
@@ -523,7 +526,11 @@ export class DynamicResolution {
 		// Frames that take the whole interval, periodic work included: no waiting for the window. It
 		// stops at the quality floor: a dozen frames do not show late frames persisting.
 		const last = current.slice( - EMERGENCY_FRAMES );
-		const urgent = Math.max( lowest, Math.min( this.qualityFloor, this.scale ) );
+		// a step up it has to take back may return to the scale it left, below the quality floor too
+		// (that scale held: no judged step is needed to go back there)
+		const back = this.lastWhy === 'up' && since < PROBE ? this.changes[ this.changes.length - 1 ]?.from ?? NaN : NaN;
+		const stop = Math.max( lowest, Math.min( this.qualityFloor, this.scale ) );
+		const urgent = Number.isFinite( back ) ? Math.min( stop, back ) : stop;
 		if ( this.scale > urgent && since >= EMERGENCY_HOLD && last.length === EMERGENCY_FRAMES && quantile( last.map( ( x ) => x.total ), 0.5 ) > this.interval ) {
 
 			const s = this.largestFitting( last, target, 0.5, urgent, this.scale );
@@ -538,8 +545,9 @@ export class DynamicResolution {
 			const high = this.level( recent, window, this.scale );
 			if ( high > this.interval - DOWN_HEADROOM ) {
 
-				if ( this.scale <= lowest ) return false;
-				const s = this.largestFitting( recent, target, QUANTILE, lowest, this.scale, undefined, window );
+				const least = Number.isFinite( back ) ? Math.min( lowest, back ) : lowest;
+				if ( this.scale <= least ) return false;
+				const s = this.largestFitting( recent, target, QUANTILE, least, this.scale, undefined, window );
 				// a step that saves too little: the view is bound by its fixed work
 				this.fixedBound = high - this.level( recent, window, s ) < MIN_SAVING;
 				return this.fixedBound ? false : this.down( s, now, 'down', recent );
@@ -648,7 +656,9 @@ export class DynamicResolution {
 		// the render-sized passes' saving: the fixed ones (the cloud view above all) change with the
 		// view, so a step taken as the camera turns would be judged by the turn
 		const saving = ( s: number ) => response ? response.beforePixel * ( 1 - this.growth( s ) / this.growth( from ) ) : NaN;
-		if ( scale < this.qualityFloor - 1e-6 ) {
+		const up = this.lastWhy === 'up' && now - this.lastChange < PROBE ? this.changes[ this.changes.length - 1 ] : undefined;
+		const returning = up?.from !== undefined && scale >= up.from - 1e-6;
+		if ( scale < this.qualityFloor - 1e-6 && ! returning ) {
 
 			// Below the quality floor every step is judged, one at a time: it goes to the nearest level
 			// below that is predicted to save enough to judge (often two or three levels: one saves too
@@ -675,7 +685,11 @@ export class DynamicResolution {
 			this.bar = { scale: from, from: Math.min( up?.from ?? from, from ), until: now + BAR, error: Math.max( error, BAR_MARGIN ) };
 
 		}
-		return this.to( scale, now, why, frames, saving( scale ) );
+		const changed = this.to( scale, now, why, frames, saving( scale ) );
+		// returning below the quality floor: that scale was reached by steps judged there, or held
+		// (a step too small to judge leaves it so, rather than stuck there unable to step lower)
+		if ( changed && returning && scale < this.qualityFloor - 1e-6 && this.lastStepSaved === null ) this.lastStepSaved = true;
+		return changed;
 
 	}
 
