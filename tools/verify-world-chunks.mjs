@@ -35,6 +35,17 @@
 //       cell lies 34.6 - 44 m from the chunk: the chunk is not in `dirtyChunks`, and rebuilt from
 //       the new land field it hashes as before. Prints the discs, how many changed the chunk's
 //       window (the far reads had something to see) and how many changed the chunk.
+//   R1  the shoal (src/world/SeabedRise.ts): between consecutive steps, the shown tiles the next
+//       version moves (SeabedTile.ts `pendingFloors`), risen at R = 0, 0.25, 0.5, 0.75 and 1
+//       (`riseTile`): at R = 0 every point is the shown tile's bit for bit; at R = 1 every point is
+//       the next version's tile (or the floor under the new land) within 1e-5 in height, normal and
+//       bed, but for the sides along cells the next version adds, straightened between the far
+//       floor's nodes (counted, with their largest step at the swap); at every R those side points
+//       lie on the far floor's edge between its risen nodes within 1e-5 (no crack), no point off the
+//       next land rises above -1.6 m, and none off the shown land breaks the surface (0 m). Prints
+//       the tiles, the far floor's nodes that rise, how far an added cell's tile lies from its
+//       nodes' triangles, the largest rise and the shoal: the R = 1 heights over the land the piece
+//       adds (p10 / p50 / p90, the highest).
 //   At the S steps (0 and the last; --long every fourth):
 //   S1  the welded union of the chunks' island and stone meshes is closed: no boundary edge, and
 //       at most 1.3 non-manifold edges per 1000 triangles (the ambiguous cells of surface nets).
@@ -97,8 +108,8 @@ import {
 } from '../src/world/Chunks.ts';
 import { ISLAND_BOTTOM, islandSurfaceHeight, makeIslandSDF } from '../src/world/WorldShapes.ts';
 import { SKIRT_INFO, SKIRT_RING } from '../src/world/RimGround.ts';
-import { TILE_SIDE } from '../src/world/SeabedTile.ts';
-import { openSeaBeds, openSeaHeight, FLOOR_STEP, SHELF_CEILING } from '../src/world/Bathymetry.ts';
+import { pendingFloors, riseTile, TILE_SIDE } from '../src/world/SeabedTile.ts';
+import { openSeaBeds, openSeaHeight, FLOOR_STEP, OPEN_LATTICE, SHELF_CEILING } from '../src/world/Bathymetry.ts';
 import { BUSH_STRIDE } from '../src/world/FoliageSites.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
 import { hashBuffers, meshClosure, positionKey } from './world-node.mjs';
@@ -137,6 +148,10 @@ if ( ! isMainThread ) {
 		const { key, land: v, hash, timings, ...content } = c;
 		const reply = { id: job.id, hash: c.hash, timings: c.timings, bytes: bytesOf( content ) };
 		const transfer = [];
+		// R1 reads every step's floor tiles (and those under the land)
+		const shape = ( f ) => f && { height: f.height, normal: f.normal, bed: f.bed };
+		reply.rise = { floor: shape( c.floor ), floorUnder: shape( c.floorUnder ) };
+		for ( const f of [ c.floor, c.floorUnder ] ) if ( f ) for ( const b of [ f.height, f.normal, f.bed ] ) transfer.push( b.buffer );
 		if ( job.keep ) {
 
 			reply.island = c.island;
@@ -333,6 +348,7 @@ async function main() {
 		if ( ! bench ) beyondBound.push( beyond( run, pool ) );
 		console.log( `---- seed ${ run.seed }: ${ run.steps.map( ( s ) => s.keys.length ).join( ', ' ) } chunks at steps 0 - ${ last } (${ ( ( performance.now() - start ) / 1000 ).toFixed( 0 ) } s)` );
 		if ( ! dirtySet( run ) ) failed ++;
+		if ( ! bench && ! shoal( run ) ) failed ++;
 		if ( bench ) costs( run );
 		sheet( run );
 		if ( bench ) continue;
@@ -537,6 +553,139 @@ function dirtySet( run ) {
 	// the dirty rule's bound is 34 m: a change creeping towards it is worth a look before it fails
 	if ( farthest > MARGIN ) console.log( `warn D4 seed ${ run.seed }: a chunk ${ farthest.toFixed( 1 ) } m from the changed land changed, more than ${ MARGIN } m (the dirty bound is ${ R + 2 } m)` );
 	return ok;
+
+}
+
+// R1: the shoal, between every pair of consecutive steps (see the header).
+const RISE_R = [ 0, 0.25, 0.5, 0.75, 1 ], RISE_EPS = 1e-5, NODE = OPEN_LATTICE / FLOOR_STEP;
+function shoal( run ) {
+
+	const N = TILE_SIDE, n2 = N * N;
+	const positions = new Float32Array( n2 * 3 ), normals = new Float32Array( n2 * 3 ), beds = new Float32Array( n2 * 2 );
+	let tiles = 0, rise = 0, straight = 0, straightGap = 0, zeroOff = 0, oneOff = 0, oneMax = 0, ceiling = 0, highest = - Infinity, under = 0;
+	let seam = 0, seamMax = 0, seamPoints = 0, nodes = 0, bornCells = 0, bornGap = 0;
+	const shoalAll = [], lines = [];
+	const floors = ( s ) => s.chunks.map( ( c ) => ( { key: c.key, ci: c.ci, cj: c.cj, floor: c.rise.floor, floorUnder: c.rise.floorUnder } ) );
+	const mixed = ( a, b, r ) => r === 0 ? a : r === 1 ? b : ( 1 - r ) * a + r * b;
+	for ( let n = 1; n < run.steps.length; n ++ ) {
+
+		const before = run.steps[ n - 1 ], after = run.steps[ n ];
+		const steps = pendingFloors( floors( before ), floors( after ) );
+		let next = steps.next();
+		while ( ! next.done ) next = steps.next();
+		const { tiles: pending, nodes: born } = next.value;
+		const nextOf = new Map( after.chunks.map( ( c ) => [ c.key, c.rise.floor ?? c.rise.floorUnder ] ) );
+		const shownKeys = new Set( before.keys );
+		const fpBefore = windowFootprint( landField( before.land ) ), fpAfter = windowFootprint( landField( after.land ) );
+		const nodeAt = new Map( born.map( ( b ) => [ `${ b.x },${ b.z }`, b ] ) );
+		const heights = [];
+		let stepRise = 0;
+		nodes += born.length;
+		for ( const t of pending ) {
+
+			tiles ++;
+			stepRise = Math.max( stepRise, t.rise );
+			const key = `${ t.ci },${ t.cj }`, want = nextOf.get( key );
+			if ( ! after.chunks.find( ( c ) => c.key === key ).rise.floor ) under ++;
+			// the sides along cells the next version adds
+			const sides = [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ].filter( ( [ di, dj ] ) => after.keys.includes( `${ t.ci + di },${ t.cj + dj }` ) && ! shownKeys.has( `${ t.ci + di },${ t.cj + dj }` ) );
+			for ( const r of RISE_R ) {
+
+				riseTile( t.from, t.to, r, positions, normals, beds, 0 );
+				for ( let v = 0; v < n2; v ++ ) {
+
+					const x = t.ci * S + ( v % N ) * FLOOR_STEP, z = t.cj * S + Math.floor( v / N ) * FLOOR_STEP, y = positions[ v * 3 + 1 ];
+					const got = [ y, ...normals.subarray( v * 3, v * 3 + 3 ), ...beds.subarray( v * 2, v * 2 + 2 ) ];
+					if ( r === 0 ) {
+
+						const at = new Float32Array( [ t.from.height[ v ], ...t.from.normal.subarray( v * 3, v * 3 + 3 ), ...t.from.bed.subarray( v * 2, v * 2 + 2 ) ] );
+						if ( ! sameBits( new Float32Array( got ), at ) && ++ zeroOff <= 3 ) console.log( `FAIL R1 seed ${ run.seed } step ${ n }: tile ( ${ key } ) at R = 0 differs from the shown tile at ( ${ x }, ${ z } )` );
+
+					}
+					if ( r === 1 ) {
+
+						const at = [ want.height[ v ], ...want.normal.subarray( v * 3, v * 3 + 3 ), ...want.bed.subarray( v * 2, v * 2 + 2 ) ];
+						const gap = Math.max( ...got.map( ( g, k ) => Math.abs( g - at[ k ] ) ) );
+						if ( t.to.height[ v ] !== want.height[ v ] || t.to.bed[ v * 2 ] !== want.bed[ v * 2 ] || t.to.normal[ v * 3 + 1 ] !== want.normal[ v * 3 + 1 ] ) {
+
+							straight ++;
+							straightGap = Math.max( straightGap, Math.abs( y - at[ 0 ] ) );
+
+						} else {
+
+							oneMax = Math.max( oneMax, gap );
+							if ( gap > RISE_EPS && ++ oneOff <= 3 ) console.log( `FAIL R1 seed ${ run.seed } step ${ n }: tile ( ${ key } ) at R = 1 is ${ gap } from the next version's at ( ${ x }, ${ z } )` );
+
+						}
+						if ( after.land.inside( x, z ) && ! before.land.inside( x, z ) ) heights.push( y );
+
+					}
+					if ( fpAfter.dist( x, z ) > 0 && y > SHELF_CEILING && ++ ceiling <= 3 ) console.log( `FAIL R1 seed ${ run.seed } step ${ n }: tile ( ${ key } ) at R = ${ r } rises to ${ y } m off the next land at ( ${ x }, ${ z } )` );
+					if ( fpBefore.dist( x, z ) > 0 ) highest = Math.max( highest, y );
+
+				}
+				// the seam with the far floor: a side along an added cell lies on the straight line
+				// between the far floor's nodes, risen alike
+				for ( const [ di, dj ] of sides ) for ( let k = 0; k < N; k ++ ) {
+
+					const i = di === - 1 ? 0 : di === 1 ? N - 1 : k, j = dj === - 1 ? 0 : dj === 1 ? N - 1 : k, v = j * N + i;
+					const k0 = k - k % NODE, f = ( k % NODE ) / NODE, k1 = Math.min( N - 1, k0 + NODE );
+					const node = ( kk ) => {
+
+						const ii = di === - 1 ? 0 : di === 1 ? N - 1 : kk, jj = dj === - 1 ? 0 : dj === 1 ? N - 1 : kk, vv = jj * N + ii;
+						const b = nodeAt.get( `${ t.ci * S + ii * FLOOR_STEP },${ t.cj * S + jj * FLOOR_STEP }` );
+						return Math.fround( mixed( t.from.height[ vv ], b ? b.height : t.from.height[ vv ], r ) );
+
+					};
+					const line = ( 1 - f ) * node( k0 ) + f * node( k1 ), gap = Math.abs( positions[ v * 3 + 1 ] - line );
+					seamPoints ++;
+					seamMax = Math.max( seamMax, gap );
+					if ( gap > RISE_EPS && ++ seam <= 3 ) console.log( `FAIL R1 seed ${ run.seed } step ${ n }: tile ( ${ key } ) at R = ${ r } leaves the far floor's edge by ${ gap } m at its side point ${ k }` );
+
+				}
+
+			}
+
+		}
+		// the cells the next version adds: their floor between the far floor's nodes, from the nodes'
+		// triangles to the next tile at the swap; nodes off the next land stay below the ceiling
+		for ( const c of after.chunks ) {
+
+			if ( ! c.rise.floor || shownKeys.has( c.key ) ) continue;
+			bornCells ++;
+			const h = c.rise.floor.height;
+			for ( let v = 0; v < n2; v ++ ) {
+
+				const i = v % N, j = Math.floor( v / N ), i0 = i - i % NODE, j0 = j - j % NODE, u = ( i % NODE ) / NODE, w = ( j % NODE ) / NODE;
+				const at = ( a, b ) => h[ Math.min( N - 1, b ) * N + Math.min( N - 1, a ) ];
+				const tri = u + w <= 1 ? at( i0, j0 ) + ( at( i0 + NODE, j0 ) - at( i0, j0 ) ) * u + ( at( i0, j0 + NODE ) - at( i0, j0 ) ) * w
+					: at( i0 + NODE, j0 + NODE ) + ( at( i0, j0 + NODE ) - at( i0 + NODE, j0 + NODE ) ) * ( 1 - u ) + ( at( i0 + NODE, j0 ) - at( i0 + NODE, j0 + NODE ) ) * ( 1 - w );
+				bornGap = Math.max( bornGap, Math.abs( tri - h[ v ] ) );
+
+			}
+
+		}
+		for ( const b of born ) if ( fpAfter.dist( b.x, b.z ) > 0 && b.height > SHELF_CEILING && ++ ceiling <= 3 ) console.log( `FAIL R1 seed ${ run.seed } step ${ n }: the far floor's node ( ${ b.x }, ${ b.z } ) rises to ${ b.height } m` );
+		rise = Math.max( rise, stepRise );
+		heights.sort( ( a, b ) => a - b );
+		shoalAll.push( ...heights );
+		const q = ( p ) => heights.length ? heights[ Math.min( heights.length - 1, Math.floor( heights.length * p ) ) ].toFixed( 2 ) : '-';
+		lines.push( `${ n }: ${ pending.length } tiles, ${ born.length } nodes, rise ${ stepRise.toFixed( 2 ) } m, shoal ${ q( 0.1 ) } / ${ q( 0.5 ) } / ${ q( 0.9 ) }, top ${ heights.length ? heights[ heights.length - 1 ].toFixed( 2 ) : '-' }` );
+		// the shown step's floors are not needed past this pair
+		for ( const c of before.chunks ) delete c.rise;
+
+	}
+	for ( const c of run.steps[ run.steps.length - 1 ].chunks ) delete c.rise;
+	shoalAll.sort( ( a, b ) => a - b );
+	const q = ( p ) => shoalAll.length ? shoalAll[ Math.min( shoalAll.length - 1, Math.floor( shoalAll.length * p ) ) ].toFixed( 2 ) : '-';
+	const broke = highest >= 0;
+	console.log( `${ zeroOff ? 'FAIL' : 'ok  ' } R1 seed ${ run.seed }: ${ tiles } pending tiles (${ under } of them under the next land) at R = 0 equal the shown tiles: ${ zeroOff } points differ` );
+	console.log( `${ oneOff ? 'FAIL' : 'ok  ' } R1 seed ${ run.seed }: at R = 1 the points are the next version's within ${ RISE_EPS } (largest gap ${ oneMax.toExponential( 2 ) }): ${ oneOff } beyond; ${ straight } points of sides along added cells straightened, the largest step at the swap ${ straightGap.toFixed( 3 ) } m` );
+	console.log( `${ seam ? 'FAIL' : 'ok  ' } R1 seed ${ run.seed }: ${ seamPoints } side points along added cells on the far floor's edge at every R within ${ RISE_EPS } (largest ${ seamMax.toExponential( 2 ) }); ${ nodes } far floor nodes rise on ${ bornCells } added cells, the next tile ${ bornGap.toFixed( 3 ) } m at most from their triangles` );
+	console.log( `${ ceiling || broke ? 'FAIL' : 'ok  ' } R1 seed ${ run.seed }: at R = ${ RISE_R.join( ', ' ) } ${ ceiling } points off the next land above ${ SHELF_CEILING } m; the highest off the shown land ${ highest.toFixed( 3 ) } m (the surface: 0)` );
+	console.log( `       largest rise ${ rise.toFixed( 2 ) } m; the shoal over the added land at R = 1, p10 / p50 / p90 ${ q( 0.1 ) } / ${ q( 0.5 ) } / ${ q( 0.9 ) } m, the highest ${ shoalAll.length ? shoalAll[ shoalAll.length - 1 ].toFixed( 2 ) : '-' } m (${ shoalAll.length } points); per step:` );
+	console.log( `       ${ lines.join( '; ' ) }` );
+	return zeroOff === 0 && oneOff === 0 && seam === 0 && ceiling === 0 && ! broke;
 
 }
 

@@ -4,6 +4,8 @@
 // alone: its lattice is anchored to the world, its normals are differences of the floor function
 // rather than of its own triangles, so two tiles compute their shared border vertices alike, bit
 // for bit, and a tile stays as it was wherever the land changes farther away.
+// The shoal's pure part lives here too (`pendingFloors`, `riseTile`: SeabedRise.ts draws it, and
+// tools/verify-world-chunks.mjs R1 checks it in node).
 
 import { FLOOR_STEP, OPEN_LATTICE, openSeaBeds, openSeaHeight, seabedBeds, seabedFloor } from './Bathymetry.ts';
 import { LAND_REACH, type Footprint } from './WorldShapes.ts';
@@ -19,6 +21,10 @@ export const TILE_SIDE = SEABED_TILE / FLOOR_STEP + 1;
 export const TILE_REACH = LAND_REACH + 2;
 // The far floor covers the land lattice and 128 m round it: this far from the world's centre (m).
 export const FAR_HALF = GROWTH.half + 128;
+
+/** A floor tile's shape and beds, TILE_SIDE x TILE_SIDE points row by row: heights, normals (3 per
+ * point) and beds (2 per point). */
+export interface FloorShape { height: Float32Array; normal: Float32Array; bed: Float32Array }
 
 export interface FloorTile {
 	ci: number; cj: number;
@@ -188,5 +194,171 @@ export function tileIndices(): Uint32Array {
 
 	}
 	return idx;
+
+}
+
+// ------------------------------------------------------------------ the shoal
+
+// A tile of the shown land rises toward the next version's tile as the next piece nears
+// (SeabedRise.ts). A cell the next version gives a tile and the shown one draws as the far floor
+// (a cell the new land brings within TILE_REACH: a "born" cell) rises with the far floor's own
+// nodes, on its 4 m lattice, toward the next tile's values there (`BornNode`); along a side a
+// pending tile shares with a born cell, the far floor's edge runs straight between those nodes, so
+// the tile's points there rise toward the straight line between the next tile's values at the
+// nodes instead of toward the next tile's own (`pendingFloors`), and the two never part. At the
+// swap those points, and the born cells' floor between the nodes, take the next tile's detail.
+
+/** What the shoal reads of a chunk (Chunks.ts ChunkData). */
+export interface FloorChunk { key: string; ci: number; cj: number; floor: FloorShape | null; floorUnder: FloorShape | null }
+
+/** A tile of the shown version that rises: its first point in the merged floor (`v0`: the shown
+ * tiles' order), its shown shape and the shape it rises to (the next version's tile, its sides
+ * along born cells straightened between the far floor's nodes), the lattice rows [ row0, row1 )
+ * where anything moves, its largest change of height (m), and how many points were straightened. */
+export interface PendingFloor { ci: number; cj: number; v0: number; from: FloorShape; to: FloorShape; row0: number; row1: number; rise: number; straightened: number }
+
+/** A node of the far floor's lattice on a born cell: its position and the next tile's height,
+ * normal and beds there. */
+export interface BornNode { x: number; z: number; height: number; normal: [ number, number, number ]; bed: [ number, number ] }
+
+// Whether two arrays hold the same bits.
+function sameBits( a: Float32Array, b: Float32Array ): boolean {
+
+	const x = new Uint32Array( a.buffer, a.byteOffset, a.length ), y = new Uint32Array( b.buffer, b.byteOffset, b.length );
+	for ( let k = 0; k < x.length; k ++ ) if ( x[ k ] !== y[ k ] ) return false;
+	return true;
+
+}
+
+// the tile's lattice points per open sea lattice cell
+const PER_NODE = OPEN_LATTICE / FLOOR_STEP;
+
+// `shape`'s points along side ( di, dj ) of the tile (one of the four), straightened between the
+// open sea lattice's nodes: heights and beds linear, normals linear and normalised. Returns how many
+// points changed.
+function straighten( shape: FloorShape, di: number, dj: number ): number {
+
+	const n = TILE_SIDE;
+	let changed = 0;
+	const at = ( k: number ) => {
+
+		const i = di === - 1 ? 0 : di === 1 ? n - 1 : k, j = dj === - 1 ? 0 : dj === 1 ? n - 1 : k;
+		return j * n + i;
+
+	};
+	for ( let k = 0; k < n; k ++ ) {
+
+		const f = ( k % PER_NODE ) / PER_NODE;
+		if ( f === 0 ) continue;
+		const v = at( k ), a = at( k - k % PER_NODE ), b = at( k - k % PER_NODE + PER_NODE );
+		const lerp = ( arr: Float32Array, c: number, o: number ) => ( 1 - f ) * arr[ a * c + o ] + f * arr[ b * c + o ];
+		shape.height[ v ] = lerp( shape.height, 1, 0 );
+		shape.bed[ v * 2 ] = lerp( shape.bed, 2, 0 );
+		shape.bed[ v * 2 + 1 ] = lerp( shape.bed, 2, 1 );
+		const nx = lerp( shape.normal, 3, 0 ), ny = lerp( shape.normal, 3, 1 ), nz = lerp( shape.normal, 3, 2 ), l = Math.hypot( nx, ny, nz );
+		shape.normal[ v * 3 ] = nx / l; shape.normal[ v * 3 + 1 ] = ny / l; shape.normal[ v * 3 + 2 ] = nz / l;
+		changed ++;
+
+	}
+	return changed;
+
+}
+
+/**
+ * What a growth step moves of the shown floor, a tile a step: the tiles of `shown` (a version's
+ * chunks in their order, the merged floor's) whose floor differs from the next version's chunk's
+ * (its tile, or its `floorUnder` where the new land covers the cell), and the far floor's nodes on
+ * the born cells (the chunks of `next` that `shown` lacks: chunks exist on the cells with land
+ * within TILE_REACH, `nearLandCells`), each once.
+ */
+export function* pendingFloors( shown: readonly FloorChunk[], next: readonly FloorChunk[] ): Generator<void, { tiles: PendingFloor[]; nodes: BornNode[] }> {
+
+	const key = ( ci: number, cj: number ) => `${ ci },${ cj }`;
+	const before = new Set( shown.map( ( c ) => c.key ) );
+	const born = new Map( next.filter( ( c ) => c.floor && ! before.has( c.key ) ).map( ( c ) => [ c.key, c.floor! ] ) );
+	const after = new Map( next.map( ( c ) => [ c.key, c ] ) );
+	const n = TILE_SIDE, tiles: PendingFloor[] = [];
+	let slot = 0;
+	for ( const c of shown ) {
+
+		if ( ! c.floor ) continue;
+		const v0 = slot ++ * n * n, other = after.get( c.key );
+		const from = c.floor, next = other && other !== c ? other.floor ?? other.floorUnder : null;
+		if ( ! next || ( sameBits( from.height, next.height ) && sameBits( from.normal, next.normal ) && sameBits( from.bed, next.bed ) ) ) continue;
+		let to: FloorShape = { height: next.height, normal: next.normal, bed: next.bed }, straightened = 0;
+		for ( const [ di, dj ] of [ [ - 1, 0 ], [ 1, 0 ], [ 0, - 1 ], [ 0, 1 ] ] ) {
+
+			if ( ! born.has( key( c.ci + di, c.cj + dj ) ) ) continue;
+			if ( to.height === next.height ) to = { height: next.height.slice(), normal: next.normal.slice(), bed: next.bed.slice() };
+			straightened += straighten( to, di, dj );
+
+		}
+		let row0 = n, row1 = 0, rise = 0;
+		for ( let v = 0; v < n * n; v ++ ) {
+
+			const moves = from.height[ v ] !== to.height[ v ] || from.bed[ v * 2 ] !== to.bed[ v * 2 ] || from.bed[ v * 2 + 1 ] !== to.bed[ v * 2 + 1 ]
+				|| from.normal[ v * 3 ] !== to.normal[ v * 3 ] || from.normal[ v * 3 + 1 ] !== to.normal[ v * 3 + 1 ] || from.normal[ v * 3 + 2 ] !== to.normal[ v * 3 + 2 ];
+			if ( ! moves ) continue;
+			const row = Math.floor( v / n );
+			row0 = Math.min( row0, row ); row1 = Math.max( row1, row + 1 );
+			rise = Math.max( rise, Math.abs( to.height[ v ] - from.height[ v ] ) );
+
+		}
+		if ( row1 > row0 ) tiles.push( { ci: c.ci, cj: c.cj, v0, from: { height: from.height, normal: from.normal, bed: from.bed }, to, row0, row1, rise, straightened } );
+		yield;
+
+	}
+	const nodes = new Map<string, BornNode>();
+	for ( const [ k, floor ] of born ) {
+
+		const c = after.get( k )!;
+		for ( let j = 0; j < n; j += PER_NODE ) for ( let i = 0; i < n; i += PER_NODE ) {
+
+			const x = c.ci * SEABED_TILE + i * FLOOR_STEP, z = c.cj * SEABED_TILE + j * FLOOR_STEP, v = j * n + i;
+			nodes.set( `${ x },${ z }`, { x, z, height: floor.height[ v ], normal: [ floor.normal[ v * 3 ], floor.normal[ v * 3 + 1 ], floor.normal[ v * 3 + 2 ] ], bed: [ floor.bed[ v * 2 ], floor.bed[ v * 2 + 1 ] ] } );
+
+		}
+		yield;
+
+	}
+	return { tiles, nodes: [ ...nodes.values() ] };
+
+}
+
+/** `a` and `b` mixed by weight w: `a` at 0 and `b` at 1, bit for bit. */
+export function mix( a: number, b: number, w: number ): number {
+
+	return w === 0 ? a : w === 1 ? b : ( 1 - w ) * a + w * b;
+
+}
+
+/**
+ * Tile `from` risen toward `to` by `r` (0 .. 1): the heights and beds mixed, the normals mixed and
+ * normalised. Writes the heights into `positions`' y, the normals and the beds from point `v0` on
+ * (the merged floor's layout).
+ */
+export function riseTile( from: FloorShape, to: FloorShape, r: number, positions: Float32Array, normals: Float32Array, beds: Float32Array, v0: number ): void {
+
+	const count = from.height.length;
+	for ( let v = 0; v < count; v ++ ) {
+
+		const o = ( v0 + v ) * 3;
+		positions[ o + 1 ] = mix( from.height[ v ], to.height[ v ], r );
+		beds[ ( v0 + v ) * 2 ] = mix( from.bed[ v * 2 ], to.bed[ v * 2 ], r );
+		beds[ ( v0 + v ) * 2 + 1 ] = mix( from.bed[ v * 2 + 1 ], to.bed[ v * 2 + 1 ], r );
+		if ( r === 0 || r === 1 ) {
+
+			const n = r === 0 ? from.normal : to.normal;
+			normals[ o ] = n[ v * 3 ]; normals[ o + 1 ] = n[ v * 3 + 1 ]; normals[ o + 2 ] = n[ v * 3 + 2 ];
+			continue;
+
+		}
+		const nx = mix( from.normal[ v * 3 ], to.normal[ v * 3 ], r );
+		const ny = mix( from.normal[ v * 3 + 1 ], to.normal[ v * 3 + 1 ], r );
+		const nz = mix( from.normal[ v * 3 + 2 ], to.normal[ v * 3 + 2 ], r );
+		const l = Math.hypot( nx, ny, nz );
+		normals[ o ] = nx / l; normals[ o + 1 ] = ny / l; normals[ o + 2 ] = nz / l;
+
+	}
 
 }
