@@ -49,7 +49,7 @@ const REPO = path.resolve( TOOLS, '..' );
 // a change to one kind's files leaves the other kind's references valid. Add a file here when a
 // capture starts reading it; the lock (gpu-lock.mjs) and this store decide no pixels.
 export const TOOL_FILES = {
-	set: [ 'capture.mjs', 'capture-browser.mjs', 'parity/capture-set.mjs', 'parity/views.mjs' ],
+	set: [ 'capture.mjs', 'capture-browser.mjs', 'parity/capture-set.mjs', 'parity/views.mjs', 'parity/adhoc.mjs' ],
 	clip: [ 'capture-clip.mjs', 'capture-browser.mjs', 'parity/views.mjs', 'parity/clips.mjs' ],
 };
 

@@ -6,6 +6,7 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
 
 - `views.mjs`: the views (camera, weather, time) and their crop anchors.
 - `capture-set.mjs`: captures a set through `tools/capture.mjs`.
+- `adhoc.mjs`: ad-hoc views for capture-set (command line, JSON file, sweeps).
 - `diff-set.py`: compares two sets.
 - `../verify-scene-jump.mjs`: the views reached by scene jumps in one page, against fresh loads
   (see One page, many views below).
@@ -162,6 +163,7 @@ the boxes placed before it.
 
 ```sh
 node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
+    [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
     [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
     [--runs runs.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
 node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
@@ -199,6 +201,24 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   views at `--jobs 1` and `4` decoded to the same pixels); a view that differs only by sparse
   single-frame speckle on the vegetation while other browsers render is GPU noise: shoot it again.
 - `--aa` adds `aa=<mode>` only when given. `--q` adds options to every view (e.g. `msaa=1`).
+- Ad-hoc views (`adhoc.mjs`) go through the same path, instead of a script looping capture.mjs:
+  - `--view "name:query[::js]"` (repeatable): the view's query and optional eval (`s` is
+    `window.__PONLAI__`; views.mjs's helpers `isl()`, `free()`, `orbitAround()` exist).
+    `like=<view>` in the query starts from a views.mjs view: its query, eval and crops, the
+    ad-hoc options winning.
+  - `--views-file f.json`: `[ { "name", "q", "eval"?, "crops"?, "like"? } ]` or `{ "<name>": { ... } }`.
+  - `--sweep "key=a,b,c"` (repeatable): each selected view once per value, every combination of
+    several sweeps, named `<view>--<key>-<value>` (`<key>-<value>` with no views given).
+    `--views island-fair-noon,meadow-close --sweep weather=fair,rain --sweep hour=7,12,17` makes 12.
+  - With `--views` too, both sets; with only ad-hoc views or sweeps, not the parity group.
+  - An ad-hoc view's own options win over the set's (`t=12`, the tier, aa, `--q`); views.mjs views
+    keep the set's first, unchanged. Views whose load-time options differ (anything outside
+    `SCENE_OPTIONS` in `src/main.ts`: tier, aa, `game`, `seed`, debug switches) cannot share a page:
+    they are captured in groups, a group's pages after the last group's.
+  - Names: letters, digits, `-`, `_`, none of views.mjs's. `<outDir>/views.json` records the ad-hoc
+    views (their query, eval, crops and full query). In the reference store each ad-hoc view's
+    coverage holds its definition's hash (`def`): a stored view of that name with another
+    definition is captured again and replaces the entry, never served for it.
 - `--jobs n` runs n pages at once, each in its own profile slot, the views handed out one at a time
   from one queue (captures are GPU-bound: 3 at once gives the most captures per minute, more only
   adds latency, and each extra page costs a load that a small set does not earn back). Default: one
@@ -219,6 +239,7 @@ each measured against the stored references of a commit.
 
 ```sh
 node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
+    [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
     [--variant "[label::]js"]... [--quality high] [--aa mode] [--q "extra"] [--size 1728x1117@2]
     [--store <root>/<sha>] [--ref-url <refUrl>] [--runs runs.csv] [--task name]
 ```
@@ -228,6 +249,9 @@ node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,
   `window.__PONLAI__`), the loop starts again, the temporal rest restarts (an epoch bump), the
   page is ready again as capture.mjs makes it (stability for MSAA, the converged rest for taa,
   taau and gt), shot. No repeat.
+- Ad-hoc views (`--view`, `--views-file`, `--sweep`, as in capture-set) load with the query
+  capture-set gives them; the store keeps rest entries of views.mjs's views only, so they are shot
+  without metrics.
 - Variants accumulate on the one page: each sets every knob it tunes to an absolute value
   (`sigma04::s.taa.settings.sigmaRest = 0.4`, then `sharp::s.taa.settings.sigmaRest = 0.3; ...`).
   Only runtime knobs work (`s.taa.settings.*`, uniforms, `s.applyQuality( { ... } )`); load-time
@@ -343,8 +367,9 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   "format": 1, "kind": "set" | "clip", "sha": "<40 hex>", "path": "S1",
   "key": { "kind": "set", "tool": "<16 hex>", "browser": { "executable": "playwright chromium", "version": "153.0.8010.12" },
            "quality": "high", "aa": null, "q": null, "size": "1728x1117@2", "capture": [] },
-  "toolFiles": { "capture.mjs": "<12 hex>", "capture-browser.mjs": "...", "parity/capture-set.mjs": "...", "parity/views.mjs": "..." },
-  "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true } } },
+  "toolFiles": { "capture.mjs": "<12 hex>", "capture-browser.mjs": "...", "parity/capture-set.mjs": "...", "parity/views.mjs": "...", "parity/adhoc.mjs": "..." },
+  "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true },
+                           "my-adhoc": { "captured": true, "def": "<16 hex>" } } },
   "url": "<the preview it was captured from>",
   "rounds": [ { "pid": 0, "label": "...", "started": "...", "finished": "...", "minutes": 2.1,
                 "captured": "3 views + 3 repeats", "reason": "no reference yet", "failed": 0 } ]
@@ -352,7 +377,8 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
 ```
 
 - `key`: what the pixels depend on. `tool` hashes the capture tools' sources: for sets
-  `capture.mjs`, `capture-browser.mjs`, `parity/capture-set.mjs`, `parity/views.mjs`; for clip
+  `capture.mjs`, `capture-browser.mjs`, `parity/capture-set.mjs`, `parity/views.mjs`,
+  `parity/adhoc.mjs`; for clip
   entries `capture-clip.mjs`, `capture-browser.mjs`, `parity/views.mjs`, `parity/clips.mjs`
   (`TOOL_FILES` in reference.mjs: every file of that kind's capture path, the shared browser,
   readiness and grab included; a change to the clip tools leaves sets valid and the other way
@@ -364,7 +390,8 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   its own), so a ground truth follows a recaptured baseline.
 - `coverage`: what the directory holds, apart from the key. A set lists its views, each with
   `repeat` (the second fresh-load capture exists) and `identical` (the two hold identical pixels:
-  the view's A/A this time); a clip entry is `{ "captured": true }`. The manifest vouches only for what
+  the view's A/A this time), and an ad-hoc view `def`, its definition's hash; a clip entry is
+  `{ "captured": true }`. The manifest vouches only for what
   it lists: a set whose views partly failed lists the others, and the next request captures the
   rest.
 - `rounds`: each capture or extension, with its reason.
