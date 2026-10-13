@@ -323,8 +323,9 @@ and built; alike on a quiet machine). `tools/qos.mjs` starts the tools with the 
 (`taskpolicy -a`) instead, which children do not inherit, so each process gets it on its own:
 - every tool that imports `gpu-lock.mjs` or `capture-browser.mjs` (the captures, capture-set and its
   workers, baseline, reference, carry, profile-frame, the verify probes) re-executes itself under it
-  in place as it starts, and `gpu-lock.mjs run` starts its command with it;
-- `clip-metrics.py` (and its worker processes) and `diff-set.py` (and its threads) raise themselves;
+  in place as it starts, and `gpu-lock.mjs run` and `job.mjs` start their commands with it;
+- `clip-metrics.py` (and its worker processes), `diff-set.py` and `img.py` (and their threads) raise
+  themselves;
 - `npm run build` and `npm run typecheck` start tsc and vite through `node tools/qos.mjs <command>`,
   which runs any command so (a one-off script: `node tools/qos.mjs python3 my-script.py`).
 Chrome's own helper processes (GPU, renderers, workers) set their QoS themselves and were never held

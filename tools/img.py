@@ -51,6 +51,21 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+# The application scheduling policy on macOS (tools/qos.mjs says why), as in diff-set.py: the
+# process re-executes itself in place under taskpolicy -a, and its pool threads ask for the
+# user-initiated QoS.
+QOS = sys.platform == "darwin" and os.environ.get("PONLAI_QOS") != "off"
+if QOS and os.environ.get("PONLAI_QOS") != str(os.getpid()):
+    os.environ["PONLAI_QOS"] = str(os.getpid())
+    os.execv("/usr/sbin/taskpolicy", ["/usr/sbin/taskpolicy", "-a", sys.executable, *sys.orig_argv[1:]])
+
+
+def raise_thread():
+    if QOS:
+        import ctypes
+        ctypes.CDLL(None).pthread_set_qos_class_self_np(0x19, 0)  # QOS_CLASS_USER_INITIATED
+
+
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -158,7 +173,7 @@ def cmd_diff(a):
     if a.heat and len(pairs) > 1 and Path(a.heat).suffix.lower() == ".png":
         sys.exit("diff: --heat takes a directory when there are several pairs")
     levels = tuple(ints(a.thr))
-    with ThreadPoolExecutor(max_workers=max(1, a.jobs)) as pool:
+    with ThreadPoolExecutor(max_workers=max(1, a.jobs), initializer=raise_thread) as pool:
         results = [r for rows in pool.map(lambda p: diff_pair(*p, a, levels), pairs) for r in rows]
     if a.json:
         print(json.dumps({"pairs": results, "missing": missing}, indent=2))

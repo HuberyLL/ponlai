@@ -31,6 +31,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - Processes an agent starts run at a starved QoS on a busy Mac: the tools raise themselves to the
   application policy (`tools/qos.mjs`); a new CPU-heavy tool imports it first, and a one-off script
   runs through `node tools/qos.mjs <command>` (`docs/tools.md`, Process priority).
+- A command that may run for minutes (a capture set, a profile, references) runs under
+  `node tools/job.mjs start --log <file> -- <command>` and is waited on with
+  `node tools/job.mjs wait <file>` (at most 4 minutes per call; it shows the job's place in the GPU
+  queue), not with sleep loops of one's own (`docs/tools.md`, Long jobs).
 - Headed browser runs take over the user's screen: they run only while
   `node tools/display-gate.mjs status` allows them; otherwise run headless and record the headed
   run as pending.

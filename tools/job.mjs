@@ -34,6 +34,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { lockState } from './gpu-lock.mjs';
+import { appPolicy } from './qos.mjs';
 
 const MAX_WAIT = 240;
 const STILL_RUNNING = 124;
@@ -72,7 +73,8 @@ async function run( log, cmd ) {
 	writeFileSync( log, `[job] start ${ new Date( start ).toISOString() } pid ${ process.pid }: ${ cmd.join( ' ' ) }\n` );
 	const fd = openSync( log, 'a' );
 	const shell = cmd.length === 1;
-	const child = spawn( shell ? '/bin/sh' : cmd[ 0 ], shell ? [ '-c', cmd[ 0 ] ] : cmd.slice( 1 ), { stdio: [ 'ignore', fd, fd ] } );
+	// the command runs at the application policy too: children do not inherit it (tools/qos.mjs)
+	const child = spawn( ...appPolicy( shell ? '/bin/sh' : cmd[ 0 ], shell ? [ '-c', cmd[ 0 ] ] : cmd.slice( 1 ) ), { stdio: [ 'ignore', fd, fd ] } );
 	for ( const signal of [ 'SIGINT', 'SIGTERM', 'SIGHUP' ] ) process.on( signal, () => child.kill( signal ) );
 	const code = await new Promise( ( resolve ) => {
 
