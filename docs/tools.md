@@ -296,7 +296,9 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
   `worldCache=off`).
 - `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
-  other page stopped, and reports deltas with their 95 % interval. `--toggle "js"` A/Bs inside one
+  other page stopped, and reports deltas with their 95 % interval, each page's render scale per
+  scene (high's dynamic scale may settle higher on one side: compare the deltas with that in mind),
+  and errors named by their page (`pageerror (page B): ...`). `--toggle "js"` A/Bs inside one
   page by applying the expression (with `s` = `window.__PONLAI__` and `on` false for A, true for
   B) every few frames, for example `--toggle "s.flags.myChange = on"` with a flag an optimisation
   reads from `src/debug/DebugFlags.ts`. Both give B/A as a ratio beside the delta.
@@ -316,6 +318,11 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   presented (from a trace of Chrome's frame pipeline), the share of intervals that change cadence,
   and how much the camera's turning speed changes from frame to frame. A window covers the screen
   while it runs: keep the runs short and other animated windows closed. It needs the display gate.
+  `--display --compare urlA urlB` interleaves A and B in the same slices as the headless compare
+  (the running page brought to the front, the drags restarted in each slice), so the drift between
+  separate headed runs (a millisecond or two) cancels; its summary adds the share of late frames
+  (presented intervals longer than the frame pacer's pace) per slice, as a delta with its interval, and each page's
+  frames over 25 ms.
 - `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
   leave out) and tabulates every scene at every scale. Every report gives the render scale the
   measured frames were drawn at (its median, range and changes: high's moves); `--scale-settle s`

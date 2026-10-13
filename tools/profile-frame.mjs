@@ -12,7 +12,7 @@
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
 //        [--scale-settle s] [--drs-store] [--display [--motion user | orbit | none]]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
-//        [--slices 8] [--slice 1.5] [--settle 1]                 (two pages, alternating slices)
+//        [--slices 8] [--slice 1.5] [--settle 1] [--display]       (two pages, alternating slices)
 //   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
 //   node tools/profile-frame.mjs --report <dir>/profile.json     (re-renders its summary.md)
 //   node tools/profile-frame.mjs --list
@@ -36,7 +36,9 @@
 //   in alternating slices (`--slices` 8 in the order B A A B A B B A, `--slice` 1.5 s each) under
 //   the same conditions. One page runs at a time: the other is stopped (no animation frame, no GPU
 //   work; its queued frames and any sky bake drained before the other starts; its camera and
-//   clock wait), since Chrome let one page's frames starve the other's queue. Deltas are reported with a 95 % interval from the slices' spread.
+//   clock wait), since Chrome let one page's frames starve the other's queue. Deltas are reported with a 95 % interval from the slices' spread,
+//   beside each page's render scale per scene (high's dynamic scale can settle higher on one side,
+//   which the load-time render in the header does not show). Page errors name their page (A or B).
 // - toggle (`--toggle "js"`): A/B inside one page. The expression runs with `s` = window.__PONLAI__
 //   and `on` (false for A, true for B), and is applied every `--block` frames in an A B B A B A A B
 //   pattern after both states were warmed: for example --toggle "s.water.mesh.visible = !on", or
@@ -90,6 +92,11 @@
 //   screen, and a page drawing in one of them (an app's hidden browser pane kept rendering a second
 //   Ponlai page) shares the GPU and lowers high's scale. Full screen covers them, and they drew less:
 //   the app with that pane took a tenth of the GPU beside a window, a hundredth behind full screen.
+//   With `--compare` (page mode) the two pages run in the same interleaved slices as headless, so
+//   the drift between separate headed runs (1-2 ms) cancels: the running page is brought to the
+//   front (a background tab gets no animation frames), each slice has its own trace and restarts
+//   the drags through its settle and slice, and the summary adds the share of late frames
+//   (presented intervals longer than the frame pacer's pace) as a delta over the slices.
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
 // numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
@@ -233,7 +240,7 @@ const stamp = new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 );
 const LABEL = opt( 'label', COMPARE ? `compare-${ stamp }` : TOGGLE ? `toggle-${ stamp }` : `profile-${ stamp }` );
 if ( COMPARE && TOGGLE ) throw new Error( '--toggle A/Bs inside one page: give one url, not --compare' );
 if ( TOGGLE && MODE === 'reload' ) throw new Error( '--toggle needs --mode page' );
-if ( DISPLAY && ( COMPARE || TOGGLE || ACCEPT || SCALES.length || MODE === 'reload' ) ) throw new Error( '--display is for profile runs in page mode (no --compare, --toggle, --accept, --scales or --mode reload)' );
+if ( DISPLAY && ( TOGGLE || ACCEPT || SCALES.length || MODE === 'reload' ) ) throw new Error( '--display is for profile runs and --compare in page mode (no --toggle, --accept, --scales or --mode reload)' );
 // a headed window takes over the user's screen: only while they allow it (tools/display-gate.mjs)
 if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
@@ -1066,6 +1073,45 @@ function displayStats( events, sync, samples, pacing, t0, t1 ) {
 
 }
 
+// One page's display figures over its slices of a scene (--display --compare): the shares weighted
+// by each slice's intervals, the longest interval of any
+function poolDisplay( list ) {
+
+	const pool = ( key ) => {
+
+		const parts = list.map( ( d ) => d[ key ] ).filter( Boolean );
+		if ( ! parts.length ) return null;
+		const n = parts.reduce( ( a, c ) => a + Math.max( c.frames - 1, 0 ), 0 ) || 1;
+		const share = ( f ) => r3( parts.reduce( ( a, c ) => a + f( c ) * Math.max( c.frames - 1, 0 ), 0 ) / n );
+		return {
+			frames: parts.reduce( ( a, c ) => a + c.frames, 0 ), refreshes: Object.fromEntries( Object.keys( parts[ 0 ].refreshes ).map( ( k ) => [ k, share( ( c ) => c.refreshes[ k ] ?? 0 ) ] ) ),
+			cadenceChanges: share( ( c ) => c.cadenceChanges ?? 0 ), median: r2( quantile( parts.map( ( c ) => c.median ), 0.5 ) ), max: r2( Math.max( ...parts.map( ( c ) => c.max ) ) ),
+		};
+
+	};
+	const cams = list.map( ( d ) => d.camera ).filter( ( c ) => c.frames > 0 );
+	const camN = cams.reduce( ( a, c ) => a + c.frames, 0 ) || 1;
+	const cam = ( k ) => r3( cams.reduce( ( a, c ) => a + ( c[ k ] ?? 0 ) * c.frames, 0 ) / camN );
+	return {
+		refresh: r2( quantile( list.map( ( d ) => d.refresh ), 0.5 ) ), pacing: list[ list.length - 1 ].pacing, slices: list.length,
+		rendered: pool( 'rendered' ), presented: pool( 'presented' ),
+		camera: { frames: cams.reduce( ( a, c ) => a + c.frames, 0 ), median: cam( 'median' ), p90: cam( 'p90' ), over25: cam( 'over25' ) },
+	};
+
+}
+
+// The share of a display slice's intervals longer than the pace (the compositor's presented
+// frames, else the rendered ones): the late frames. The pace is the frame pacer's divisor of the
+// refresh (2 for 60 fps on a 120 Hz display), one refresh without a pacer.
+const lateShare = ( d ) => {
+
+	const c = d?.presented ?? d?.rendered;
+	if ( ! c ) return NaN;
+	const pace = d.pacing?.divisor ?? 1;
+	return Object.entries( c.refreshes ).reduce( ( a, [ k, v ] ) => a + ( ( k === '4+' ? 4 : Number( k ) ) > pace ? v : 0 ), 0 );
+
+};
+
 const pct = ( x ) => Number.isFinite( x ) ? `${ Math.round( x * 1000 ) / 10 } %` : '–';
 const refreshText = ( c ) => c ? Object.entries( c.refreshes ).map( ( [ k, v ] ) => `${ k }: ${ pct( v ) }` ).join( ', ' ) : '–';
 const displayLog = ( scene, d ) => `${ scene.padEnd( 20 ) } display ${ d.refresh } ms refresh${ d.pacing ? `, paced to ${ d.pacing.divisor } (target ${ d.pacing.target })` : '' }: rendered ${ refreshText( d.rendered ) } (cadence changes ${ pct( d.rendered.cadenceChanges ) }); ` +
@@ -1177,18 +1223,23 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 
 }
 
+// The page (A or B) each browser page of an A/B shows, to name it on its errors
+const pageNames = new WeakMap();
+
 // compare in page mode: A and B in two pages of one browser, measured in alternating slices with
 // the other page stopped. Returns each variant's slices per scene and its frames pooled.
 async function runPair( context, bases, evals, log, names = sceneNames, timestamps = TIMESTAMP_MODE !== 'off' ) {
 
 	const pages = [ context.pages()[ 0 ] ?? await context.newPage() ];
 	pages.push( await context.newPage() );
+	pages.forEach( ( p, v ) => pageNames.set( p, 'AB'[ v ] ) );
 	for ( const p of pages ) await p.goto( 'about:blank' );
 	const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
 	// one after the other (a page running starves the other's queue), each stopped once loaded
 	const loaded = [];
 	for ( const v of [ 0, 1 ] ) {
 
+		if ( DISPLAY ) await pages[ v ].bringToFront();
 		loaded[ v ] = await load( pages[ v ], bases[ v ], SCENES[ names[ 0 ] ].q, timestamps );
 		log( `${ 'AB'[ v ] } loaded ${ loaded[ v ].url } in ${ ( loaded[ v ].loadMs / 1000 ).toFixed( 1 ) } s (world cache ${ JSON.stringify( loaded[ v ].startup.diagnostics.worldCache ) }; runtime hooks ${ JSON.stringify( loaded[ v ].hooks ) })` );
 		if ( v === 0 ) await pages[ 0 ].evaluate( () => window.__profileTools.loop.stop() );
@@ -1213,6 +1264,9 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 
 		if ( active === v ) return;
 		if ( active !== null ) stopped[ active ].push( { from: await loop( active, 'stop' ) } );
+		// headed, a background tab gets no animation frames: the running page is the one in front
+		// (the page hides and shows itself without restarting a loop stopped here)
+		if ( DISPLAY ) await pages[ v ].bringToFront();
 		const started = await loop( v, 'start' );
 		const last = stopped[ v ][ stopped[ v ].length - 1 ];
 		if ( last && last.to === undefined ) last.to = started;
@@ -1240,17 +1294,19 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		for ( let i = 0; i < SLICES; i ++ ) {
 
 			const v = 1 - ORDER[ i % ORDER.length ];
-			if ( active !== v ) {
-
-				await run( v );
-				// the measured slice starts once this page has run alone a little (its queue fills)
-				await sleep( SETTLE * 1000 );
-
-			}
+			const switched = active !== v;
+			if ( switched ) await run( v );
+			// on the display: the compositor's trace for the slice, and the camera dragged through
+			// the settle and the slice (each slice starts the same drags, so both pages see them)
+			const display = DISPLAY ? await startDisplay( pages[ v ] ) : null;
+			const motion = MOTION === 'user' ? driveUser( pages[ v ], ( switched ? SETTLE : 0 ) + SLICE ) : null;
+			// the measured slice starts once this page has run alone a little (its queue fills)
+			if ( switched ) await sleep( SETTLE * 1000 );
 			const t0 = await frames[ v ].now();
 			await sleep( SLICE * 1000 );
 			const t1 = await frames[ v ].now();
-			windows[ v ].push( { scene, slice: i, t0, t1 } );
+			await motion;
+			windows[ v ].push( { scene, slice: i, t0, t1, display: display ? await display.stop( t0, t1 ) : undefined } );
 
 		}
 		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ SLICES } slices` );
@@ -1272,7 +1328,8 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			const mine = windows[ v ].filter( ( w ) => w.scene === scene );
 			const pooled = mine.flatMap( ( w ) => frames[ v ].in( w.t0, w.t1 ) );
 			scenes[ scene ] = { ...summarise( pooled ), switch: switches[ scene ][ v ], gpuIdle: gpuIdle.idle?.mean ?? null, contended: gpuIdle.contended,
-				slices: mine.map( ( w ) => sliceStats( frames[ v ].in( w.t0, w.t1 ) ) ) };
+				slices: mine.map( ( w ) => ( { ...sliceStats( frames[ v ].in( w.t0, w.t1 ) ), ...( w.display ? { display: w.display } : {} ) } ) ) };
+			if ( DISPLAY ) scenes[ scene ].display = poolDisplay( mine.map( ( w ) => w.display ) );
 			if ( RAW ) scenes[ scene ].raw = pooled;
 
 		}
@@ -1585,8 +1642,10 @@ async function main() {
 		const errors = [];
 		const watch = ( p ) => {
 
-			p.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
-			p.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
+			// named by the page (A or B) in an A/B
+			const name = () => pageNames.has( p ) ? ` (page ${ pageNames.get( p ) })` : '';
+			p.on( 'pageerror', ( e ) => errors.push( `pageerror${ name() }: ${ e.message }` ) );
+			p.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( `${ name() ? `console${ name() }: ` : '' }${ m.text() }` ); } );
 
 		};
 		context.pages().forEach( watch );
@@ -1624,14 +1683,18 @@ async function main() {
 					const [ A, B ] = TOGGLE ? await runToggle( page, URL_A, opt( 'eval', '' ), TOGGLE, log, sceneNames, timestamps ) : await runPair( context, COMPARE, evals, log, sceneNames, timestamps );
 					runs ??= { A: [ A ], B: [ B ] };
 					reports.push( { timestamps, report: sliceReport( A, B ), strayFrames: [ A.strayFrames, B.strayFrames ] } );
+					if ( ! TOGGLE ) for ( const [ scene, r ] of Object.entries( reports[ reports.length - 1 ].report ) ) log( `${ scene.padEnd( 20 ) } scale A ${ scaleText( r.scale[ 0 ] ) }, B ${ scaleText( r.scale[ 1 ] ) }${ r.late ? `; late frames ${ pct( r.late.a ) } -> ${ pct( r.late.b ) }` : '' }` );
 					if ( A.strayFrames || B.strayFrames ) log( `WARNING: a stopped page drew ${ A.strayFrames } / ${ B.strayFrames } frames` );
 
 				}
 				meta.compare = TOGGLE ? { A: `${ URL_A } with on = false`, B: `${ URL_A } with on = true`, toggle: TOGGLE, block: BLOCK, blocks: BLOCKS, lag: LAG } :
 					{ A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ], slices: SLICES, slice: SLICE, settle: SETTLE };
 				meta.timestamps = TIMESTAMP_MODE === 'both' ? 'both' : tsModes[ 0 ];
-				const s = runs.A[ 0 ].loads[ 0 ]?.startup;
-				meta.render = s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
+				const renderAt = ( s ) => s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
+				meta.render = renderAt( runs.A[ 0 ].loads[ 0 ]?.startup );
+				// each page's render at its load (a dynamic scale moves it afterwards: see each scene's scale)
+				meta.renderB = renderAt( runs.B[ 0 ].loads[ 0 ]?.startup );
+				if ( DISPLAY ) meta.viewport = await page.evaluate( () => ( { width: innerWidth, height: innerHeight, scale: devicePixelRatio } ) );
 				meta.gpu = await gpuInfo( page );
 				meta.finished = new Date().toISOString();
 				meta.wallSeconds = r2( ( Date.now() - started ) / 1000 );
@@ -1714,6 +1777,7 @@ async function main() {
 					for ( const v of [ 0, 1, 1, 0 ] ) {
 
 						log( `variant ${ 'AB'[ v ] }: ${ COMPARE[ v ] }${ evals[ v ] ? ` eval ${ evals[ v ] }` : '' }` );
+						pageNames.set( page, 'AB'[ v ] );
 						const run = await runVariant( page, COMPARE[ v ], evals[ v ], log, [ group ], `-${ 'AB'[ v ] }` );
 						// one entry per repetition, holding every scene
 						const list = runs[ 'AB'[ v ] ];
@@ -1759,6 +1823,11 @@ function sliceReport( A, B ) {
 			slices: [ a.length, b.length ], frames: [ A.scenes[ scene ].frames, B.scenes[ scene ].frames ],
 			gpu: metric( ( s ) => s.gpu ), gpuInterval: metric( ( s ) => s.gpuInterval ),
 			median: metric( ( s ) => s.interval ), p95: metric( ( s ) => s.p95 ), js: metric( ( s ) => s.js ),
+			// on the display: the share of late frames (intervals longer than the pace) per slice
+			...( a.some( ( s ) => s.display ) ? { late: metric( ( s ) => lateShare( s.display ) ) } : {} ),
+			// each page's render scale over its slices (a dynamic scale settles where its GPU time puts it)
+			scale: [ A.scenes[ scene ].renderScale ?? null, B.scenes[ scene ].renderScale ?? null ],
+			over25: [ A.scenes[ scene ].over25Count, B.scenes[ scene ].over25Count ],
 			// pooled over every slice, for the scene's level
 			pooled: { a: { median: A.scenes[ scene ].interval.median, p95: A.scenes[ scene ].interval.p95, gpu: A.scenes[ scene ].gpu.mean }, b: { median: B.scenes[ scene ].interval.median, p95: B.scenes[ scene ].interval.p95, gpu: B.scenes[ scene ].gpu.mean } },
 			groups: Object.fromEntries( [ ...groups ].map( ( g ) => [ g, metric( ( s ) => s.groups[ g ] ?? 0 ) ] ).sort( ( x, y ) => Math.abs( y[ 1 ].delta ) - Math.abs( x[ 1 ].delta ) ) ),
@@ -1777,23 +1846,28 @@ function sliceMarkdown( meta, reports ) {
 		`two pages in one browser, ${ c.slices } slices of ${ c.slice } s per scene (B A A B A B B A), each after the other page stopped and drained and this one ran ${ c.settle } s`;
 	const lines = [ `# Frame profile ${ meta.mode === 'toggle' ? 'toggle' : 'compare' }: ${ meta.label }`, '',
 		`A: ${ c.A }${ c.evalA ? ` (eval ${ c.evalA })` : '' }`, `B: ${ c.B }${ c.evalB ? ` (eval ${ c.evalB })` : '' }`, '',
-		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; render ${ meta.render ?? '?' }; ${ how }. ` +
+		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; render at load ${ meta.renderB && meta.renderB !== meta.render ? `A ${ meta.render ?? '?' }, B ${ meta.renderB }` : meta.render ?? '?' }; ${ how }` +
+		`${ meta.display ? `, headed on the real display at its own refresh, ${ meta.motion === 'user' ? 'the camera dragged like a player\'s in each slice' : meta.motion === 'none' ? 'the camera still' : `orbit ${ meta.orbit } deg/s` }` : '' }. ` +
 		`Scenes are switched at runtime and warmed ${ meta.warmup } s and until no pipeline compiled for a second. Each cell: A -> B (B - A ± its 95 % interval over the slices); * marks a delta beyond it. ` +
 		`B/A follows each delta as a ratio (x0.9: B takes 10 % less). Decide on GPU busy and the passes (GPU time per frame); take frame rates from the run without timestamps. ${ meta.wallSeconds ? `Wall time ${ Math.round( meta.wallSeconds ) } s.` : '' }`, '' ];
 	const cell = ( m ) => m.delta === null ? '–' : `${ fmt( m.a ) } -> ${ fmt( m.b ) } (${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) } ± ${ fmt( m.ci ) }; ${ ratioText( m.ratio ) })${ m.significant ? ' *' : '' }`;
 	for ( const { timestamps, report, strayFrames } of reports ) {
 
 		lines.push( `## ${ timestamps ? 'With GPU timestamps (GPU time per pass)' : 'Without timestamps (the frame rate a player sees)' }`, '' );
-		if ( timestamps ) lines.push( '| scene | GPU busy | GPU frame interval | frame interval median | p95 | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|' );
-		else lines.push( '| scene | frame interval median | p95 | JS tick |', '|---|---|---|---|' );
+		const late = Object.values( report ).some( ( r ) => r.late );
+		// each page's render scale over the scene's slices: median (range, changes)
+		const scales = ( r ) => r.scale ? `${ scaleText( r.scale[ 0 ] ) } / ${ scaleText( r.scale[ 1 ] ) }` : '–';
+		if ( timestamps ) lines.push( '| scene | scale A / B | GPU busy | GPU frame interval | frame interval median | p95 | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|---|' );
+		else lines.push( `| scene | scale A / B | frame interval median | p95 | JS tick |${ late ? ' late frames (share over the pace) | frames over 25 ms A / B |' : '' }`, `|---|---|---|---|---|${ late ? '---|---|' : '' }` );
 		for ( const [ scene, r ] of Object.entries( report ) ) {
 
 			const passes = Object.entries( r.groups ).slice( 0, 3 ).map( ( [ g, m ] ) => `${ g } ${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }${ m.significant ? '*' : '' }` ).join( ', ' );
-			if ( timestamps ) lines.push( `| ${ scene } | ${ cell( r.gpu ) } | ${ cell( r.gpuInterval ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } | ${ passes } |` );
-			else lines.push( `| ${ scene } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } |` );
+			if ( timestamps ) lines.push( `| ${ scene } | ${ scales( r ) } | ${ cell( r.gpu ) } | ${ cell( r.gpuInterval ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } | ${ passes } |` );
+			else lines.push( `| ${ scene } | ${ scales( r ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } |${ late ? ` ${ r.late ? cell( r.late ) : '–' } | ${ r.over25?.join( ' / ' ) ?? '–' } |` : '' }` );
 
 		}
 		lines.push( '' );
+		if ( late ) lines.push( 'Late frames: the share of the intervals between the frames the compositor presented (else those the scene rendered) longer than the pace (the frame pacer\'s refreshes per frame, one without it), per slice.', '' );
 		const compiles = Object.entries( report ).map( ( [ scene, r ] ) => {
 
 			const w = ( x ) => x ? `${ x.pipelines ?? x.warmB?.pipelines ?? 0 } pipelines${ x.pipelineMs ? ` (${ fmt( x.pipelineMs ) } ms JS)` : '' }` : '?';
@@ -1848,6 +1922,8 @@ function compareReport( runs ) {
 			median: metric( ( r ) => r.interval.median ), p95: metric( ( r ) => r.interval.p95 ), p99: metric( ( r ) => r.interval.p99 ),
 			gpu: metric( ( r ) => r.gpu.median ), js: metric( ( r ) => r.js.median ),
 			groups: Object.fromEntries( [ ...groups ].map( ( g ) => [ g, metric( ( r ) => r.groups[ g ]?.mean ?? 0 ) ] ).sort( ( x, y ) => Math.abs( y[ 1 ].delta ) - Math.abs( x[ 1 ].delta ) ) ),
+			// each load's render scale (a dynamic scale settles where its GPU time puts it)
+			scale: [ runs.A.map( ( r ) => r.scenes[ scene ].renderScale ?? null ), runs.B.map( ( r ) => r.scenes[ scene ].renderScale ?? null ) ],
 		};
 
 	}
@@ -1859,12 +1935,13 @@ function compareMarkdown( meta, report ) {
 
 	const lines = [ `# Frame profile compare: ${ meta.label }`, '', `A: ${ meta.compare.A }${ meta.compare.evalA ? ` (eval ${ meta.compare.evalA })` : '' }`, `B: ${ meta.compare.B }${ meta.compare.evalB ? ` (eval ${ meta.compare.evalB })` : '' }`, '',
 		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; A B B A per load; noise = the larger run-to-run spread of A or B; * marks a delta beyond it; B/A follows as a ratio.`, '',
-		'| scene | median A -> B (delta, noise) | p95 | p99 | GPU busy | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|' ];
+		'| scene | scale A / B (each load) | median A -> B (delta, noise) | p95 | p99 | GPU busy | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|---|' ];
 	const cell = ( m ) => `${ fmt( m.a ) } -> ${ fmt( m.b ) } (${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }, ±${ fmt( m.noise ) }; ${ ratioText( m.ratio ) })${ m.significant ? ' *' : '' }`;
 	for ( const [ scene, r ] of Object.entries( report ) ) {
 
 		const passes = Object.entries( r.groups ).slice( 0, 3 ).map( ( [ g, m ] ) => `${ g } ${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }${ m.significant ? '*' : '' }` ).join( ', ' );
-		lines.push( `| ${ scene } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.p99 ) } | ${ cell( r.gpu ) } | ${ cell( r.js ) } | ${ passes } |` );
+		const scales = r.scale ? r.scale.map( ( list ) => list.map( scaleText ).join( ', ' ) ).join( ' / ' ) : '–';
+		lines.push( `| ${ scene } | ${ scales } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.p99 ) } | ${ cell( r.gpu ) } | ${ cell( r.js ) } | ${ passes } |` );
 
 	}
 	return lines.join( '\n' ) + '\n';
