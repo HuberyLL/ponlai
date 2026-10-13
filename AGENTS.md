@@ -20,6 +20,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   required (the ocean FFT runs on compute shaders); without it the page shows a message.
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
   `npm run preview` (port 5191). URL options and in-page keys: `docs/tools.md`.
+- `node tools/serve.mjs dev|preview` starts one for a worktree on a free port (`docs/tools.md`).
 - `node tools/capture.mjs <name> [--q "paused&t=12&dpr=1"]` screenshots the dev server into
   `artifacts/captures/` (git-ignored).
 - A list of views, ad-hoc ones included (`--view "name:query"`, `--views-file`, `--sweep
