@@ -331,41 +331,141 @@ export function plantFlowers( veg: Float32Array, walkDistance?: ( x: number, z: 
 
 }
 
+// The instance buffers hold a capacity: at least FLOWER_CAPACITY, else the next power of two of twice
+// the plants. Over 1024 instances three keeps the matrices in an instanced attribute, whose shader
+// does not name the count (up to 1024 it uses a uniform array of exactly the capacity), so a grown
+// island's beds are written into the same meshes (`setFlowers`: their used part uploaded in the
+// swap's frame, under a megabyte), and a species that outgrows its capacity gets a new mesh of the
+// same material and shader, made and compiled ahead (`flowerReplacements`): neither builds a
+// pipeline. A new instanced mesh is a node build of its own (tens of milliseconds in one idle step
+// of the preparation), so the capacity leaves room: the starting island's lasts to about grow 12.
+export const FLOWER_CAPACITY = 4096;
+export const flowerCapacity = ( count: number ) => Math.max( FLOWER_CAPACITY, 2 ** Math.ceil( Math.log2( Math.max( 2 * count, 1 ) ) ) );
+
+/** One species' instances, as its mesh's buffers take them. */
+export interface FlowerInstances { count: number; matrices: Float32Array; colors: Float32Array; ground: Float32Array; visibility: Float32Array }
+
+/** The instance arrays of `plants` (plantFlowers' lists), per species. */
+export function flowerInstances( plants: Plant[][] ): FlowerInstances[] {
+
+	return plants.map( ( list ) => {
+
+		const n = list.length;
+		const out = { count: n, matrices: new Float32Array( n * 16 ), colors: new Float32Array( n * 4 ), ground: new Float32Array( n * 4 ), visibility: new Float32Array( n ) };
+		list.forEach( ( plant, i ) => {
+
+			plant.m.toArray( out.matrices, i * 16 );
+			plant.color.toArray( out.colors, i * 4 );
+			out.colors[ i * 4 + 3 ] = plant.stretch;
+			plant.root.toArray( out.ground, i * 4 );
+			out.ground[ i * 4 + 3 ] = plant.sward;
+			out.visibility[ i ] = plant.visibility;
+
+		} );
+		return out;
+
+	} );
+
+}
+
+/** A species' mesh over `capacity` instances, holding `instances`; with `like`, a replacement of that
+ * mesh (its materials, name and flags). */
+export function flowerMesh( s: number, capacity: number, instances: FlowerInstances, material: THREE.Material, legacy: THREE.Material ): THREE.InstancedMesh {
+
+	const species = SPECIES[ s ];
+	const geo = species.geometry();
+	geo.setAttribute( 'flowerColor', new THREE.InstancedBufferAttribute( new Float32Array( capacity * 4 ), 4 ) );
+	geo.setAttribute( 'flowerGround', new THREE.InstancedBufferAttribute( new Float32Array( capacity * 4 ), 4 ) );
+	geo.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( new Float32Array( capacity ), 1 ) );
+	const mesh = new THREE.InstancedMesh( geo, material, capacity );
+	keepLegacyWind( mesh, legacy );
+	writeFlowers( mesh, instances );
+	mesh.frustumCulled = false;
+	mesh.castShadow = true;
+	mesh.receiveShadow = true;
+	mesh.name = `flowers-${ species.name }`;
+	mesh.renderOrder = - 1;
+	return mesh;
+
+}
+
+// Writes the instances into the mesh's buffers (their used part re-uploaded) and sets its count.
+function writeFlowers( mesh: THREE.InstancedMesh, instances: FlowerInstances ): void {
+
+	const geo = mesh.geometry, n = instances.count;
+	const put = ( attribute: THREE.BufferAttribute, values: Float32Array ) => {
+
+		( attribute.array as Float32Array ).set( values );
+		attribute.clearUpdateRanges();
+		attribute.addUpdateRange( 0, Math.max( values.length, attribute.itemSize ) );
+		attribute.needsUpdate = true;
+
+	};
+	put( mesh.instanceMatrix, instances.matrices );
+	put( geo.getAttribute( 'flowerColor' ) as THREE.BufferAttribute, instances.colors );
+	put( geo.getAttribute( 'flowerGround' ) as THREE.BufferAttribute, instances.ground );
+	put( geo.getAttribute( 'skyVisibility' ) as THREE.BufferAttribute, instances.visibility );
+	mesh.count = n;
+	// (its box and sphere follow the instances: the sun's caster box reads them)
+	mesh.boundingBox = null;
+	mesh.boundingSphere = null;
+
+}
+
 /** Wildflower beds on the meadow: the plants `plantFlowers` grew, one instanced mesh per species. */
 export function buildFlowers( plants: Plant[][], shared: Shared ): THREE.Group {
 
 	const group = new THREE.Group();
 	group.name = 'flowers';
+	const instances = flowerInstances( plants );
 	SPECIES.forEach( ( species, s ) => {
 
-		const list = plants[ s ], count = Math.max( list.length, 1 );
-		const geo = species.geometry();
-		const colors = new Float32Array( count * 4 ), ground = new Float32Array( count * 4 ), visibility = new Float32Array( count );
-		geo.setAttribute( 'flowerColor', new THREE.InstancedBufferAttribute( colors, 4 ) );
-		geo.setAttribute( 'flowerGround', new THREE.InstancedBufferAttribute( ground, 4 ) );
-		geo.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( visibility, 1 ) );
-		const mesh = new THREE.InstancedMesh( geo, flowerMaterial( shared, species.centre ), count );
-		keepLegacyWind( mesh, flowerMaterial( shared, species.centre, true ) );
-		list.forEach( ( plant, i ) => {
-
-			mesh.setMatrixAt( i, plant.m );
-			plant.color.toArray( colors, i * 4 );
-			colors[ i * 4 + 3 ] = plant.stretch;
-			plant.root.toArray( ground, i * 4 );
-			ground[ i * 4 + 3 ] = plant.sward;
-			visibility[ i ] = plant.visibility;
-
-		} );
-		mesh.count = list.length;
-		mesh.instanceMatrix.needsUpdate = true;
-		mesh.frustumCulled = false;
-		mesh.castShadow = true;
-		mesh.receiveShadow = true;
-		mesh.name = `flowers-${ species.name }`;
-		mesh.renderOrder = - 1;
-		group.add( mesh );
+		group.add( flowerMesh( s, flowerCapacity( instances[ s ].count ), instances[ s ], flowerMaterial( shared, species.centre ), flowerMaterial( shared, species.centre, true ) ) );
 
 	} );
 	return group;
+
+}
+
+/** The new mesh a grown island's bed of species `s` needs in `group` (buildFlowers): null when its
+ * instances fit the mesh it has, else a mesh of that species' materials with its box (to compile
+ * ahead, then `setFlowers`). */
+export function flowerReplacement( group: THREE.Group, s: number, instances: FlowerInstances ): THREE.InstancedMesh | null {
+
+	const mesh = group.children[ s ] as THREE.InstancedMesh;
+	if ( instances.count <= mesh.instanceMatrix.count ) return null;
+	const variants = mesh.userData.windVariants as { shipped: THREE.Material; legacy: THREE.Material };
+	const next = flowerMesh( s, flowerCapacity( instances.count ), instances, variants.shipped, variants.legacy );
+	next.computeBoundingBox();
+	return next;
+
+}
+
+/** Swaps the beds of `group` to `instances` in place, with each mesh's box (`boxes`: as
+ * InstancedMesh.computeBoundingBox finds it), or to a replacement mesh where given (taking the
+ * material its predecessor drew with). Returns the meshes replaced, to dispose of once nothing draws
+ * them. */
+export function setFlowers( group: THREE.Group, instances: FlowerInstances[], replacements: readonly ( THREE.InstancedMesh | null )[], boxes: readonly ( THREE.Box3 | null )[] ): THREE.InstancedMesh[] {
+
+	const old: THREE.InstancedMesh[] = [];
+	( [ ...group.children ] as THREE.InstancedMesh[] ).forEach( ( mesh, s ) => {
+
+		const next = replacements[ s ];
+		if ( ! next ) {
+
+			writeFlowers( mesh, instances[ s ] );
+			mesh.boundingBox = boxes[ s ];
+			return;
+
+		}
+		// (the same place among the group's children: the meshes draw in that order)
+		next.material = mesh.material;
+		group.children[ s ] = next;
+		next.parent = group;
+		mesh.parent = null;
+		old.push( mesh );
+
+	} );
+	return old;
 
 }

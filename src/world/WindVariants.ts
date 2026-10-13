@@ -53,18 +53,20 @@ export function followWindMotionFlag( material: THREE.Material ): void {
 
 export const legacyWind = (): boolean => debugFlags.windLegacy === true;
 
-/** Swap every registered mesh under `roots` to the variant the flag asks for, before each render
- * of the scene. */
+/** Swap every registered mesh under `roots` (those under them when a flag changes) to the variant
+ * the flag asks for, before each render of the scene. */
 export function installWindVariants( scene: THREE.Scene, roots: THREE.Object3D[] ): void {
 
 	if ( new URLSearchParams( location.search ).has( 'windLegacy' ) ) debugFlags.windLegacy = true;
-	const meshes: THREE.Mesh[] = [];
-	for ( const root of roots ) root.traverse( ( object ) => { if ( windVariants( object ) ) meshes.push( object as THREE.Mesh ); } );
 	let state: boolean | undefined, still: boolean | undefined;
 	const previous = scene.onBeforeRender;
 	scene.onBeforeRender = ( ...args ) => {
 
 		const windStill = debugFlags.mv.wind === false;
+		const legacy = legacyWind();
+		// (found again at each change: a grown island's meshes may have replaced some, World growth)
+		const meshes: THREE.Mesh[] = [];
+		if ( windStill !== still || legacy !== state ) for ( const root of roots ) root.traverse( ( object ) => { if ( windVariants( object ) ) meshes.push( object as THREE.Mesh ); } );
 		if ( windStill !== still ) {
 
 			still = windStill;
@@ -72,7 +74,6 @@ export function installWindVariants( scene: THREE.Scene, roots: THREE.Object3D[]
 			for ( const m of followers ) setWindMotion( m, windStill );
 
 		}
-		const legacy = legacyWind();
 		if ( legacy !== state ) {
 
 			state = legacy;

@@ -463,24 +463,29 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture, legacy = fal
 
 }
 
-/** The rim bushes the world generator placed (FoliageSites' BUSH_STRIDE floats each), one instance each. */
-export function buildFoliage( bushes: Float32Array, shared: Shared ): THREE.InstancedMesh {
+// The bushes' instance buffers hold BUSH_CAPACITY instances whatever the island's size: three keeps
+// up to 1024 instance matrices in a uniform array of exactly the capacity, which the shader names,
+// so a fixed capacity lets a grown island's bushes be written into the same mesh (`setBushes`)
+// without a new pipeline. A land past it would need another mesh and shader (warned; the
+// growth horizon's land has well under a thousand).
+export const BUSH_CAPACITY = 1024;
 
-	const count = bushes.length / BUSH_STRIDE;
-	const map = leafTexture();
-	const geo = bushGeometry();
-	const visibility = new Float32Array( count );
-	geo.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( visibility, 1 ) );
-	// each bush's root in world space, where it leans from and reads the gust field
-	const roots = new Float32Array( count * 4 );
-	geo.setAttribute( 'bushRoot', new THREE.InstancedBufferAttribute( roots, 4 ) );
-	const mat = foliageMaterial( shared, map );
-	const mesh = new THREE.InstancedMesh( geo, mat, count );
-	keepLegacyWind( mesh, foliageMaterial( shared, map, true, mat.alphaMap! ) );
+/** The bushes' instance arrays, as the mesh's buffers take them. */
+export interface BushInstances { count: number; matrices: Float32Array; colors: Float32Array; visibility: Float32Array; roots: Float32Array }
+
+/** The instance arrays of the rim bushes the world generator placed (BUSH_STRIDE floats each). */
+export function bushInstances( bushes: Float32Array ): BushInstances {
+
+	let count = bushes.length / BUSH_STRIDE;
+	if ( count > BUSH_CAPACITY ) {
+
+		console.warn( `${ count } rim bushes: only the first ${ BUSH_CAPACITY } are drawn (Foliage.ts BUSH_CAPACITY)` );
+		count = BUSH_CAPACITY;
+
+	}
+	const out = { count, matrices: new Float32Array( count * 16 ), colors: new Float32Array( count * 3 ), visibility: new Float32Array( count ), roots: new Float32Array( count * 4 ) };
 	const m = new THREE.Matrix4(), q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
-	const col = new THREE.Color();
-
 	for ( let i = 0; i < count; i ++ ) {
 
 		const [ x, y, z, r, nx, ny, nz, yaw, sx, sy, sz, cr, cg, cb, sky ] = bushes.subarray( i * BUSH_STRIDE, ( i + 1 ) * BUSH_STRIDE );
@@ -491,15 +496,52 @@ export function buildFoliage( bushes: Float32Array, shared: Shared ): THREE.Inst
 		q.multiply( qy );
 		pos.set( x, y - 0.08 * r, z );
 		m.compose( pos, q, scl.set( sx, sy, sz ) );
-		visibility[ i ] = sky;
-		roots.set( [ pos.x, pos.y, pos.z, 0 ], i * 4 );
-		mesh.setMatrixAt( i, m );
-		mesh.setColorAt( i, col.setRGB( cr, cg, cb ) );
+		out.visibility[ i ] = sky;
+		out.roots.set( [ pos.x, pos.y, pos.z, 0 ], i * 4 );
+		m.toArray( out.matrices, i * 16 );
+		out.colors.set( [ cr, cg, cb ], i * 3 );
 
 	}
+	return out;
 
-	mesh.instanceMatrix.needsUpdate = true;
-	if ( mesh.instanceColor ) mesh.instanceColor.needsUpdate = true;
+}
+
+/** Writes `instances` into the bushes' buffers (their used part re-uploaded) and sets the count. */
+export function setBushes( mesh: THREE.InstancedMesh, instances: BushInstances ): void {
+
+	const put = ( attribute: THREE.BufferAttribute, values: Float32Array ) => {
+
+		( attribute.array as Float32Array ).set( values );
+		attribute.clearUpdateRanges();
+		attribute.addUpdateRange( 0, Math.max( values.length, attribute.itemSize ) );
+		attribute.needsUpdate = true;
+
+	};
+	put( mesh.instanceMatrix, instances.matrices );
+	put( mesh.instanceColor!, instances.colors );
+	put( mesh.geometry.getAttribute( 'skyVisibility' ) as THREE.BufferAttribute, instances.visibility );
+	put( mesh.geometry.getAttribute( 'bushRoot' ) as THREE.BufferAttribute, instances.roots );
+	mesh.count = instances.count;
+	// (its box and sphere follow the instances: the sun's caster box reads them)
+	mesh.boundingBox = null;
+	mesh.boundingSphere = null;
+
+}
+
+/** The rim bushes the world generator placed (FoliageSites' BUSH_STRIDE floats each), one instance each. */
+export function buildFoliage( bushes: Float32Array, shared: Shared ): THREE.InstancedMesh {
+
+	const map = leafTexture();
+	const geo = bushGeometry();
+	geo.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( new Float32Array( BUSH_CAPACITY ), 1 ) );
+	// each bush's root in world space, where it leans from and reads the gust field
+	geo.setAttribute( 'bushRoot', new THREE.InstancedBufferAttribute( new Float32Array( BUSH_CAPACITY * 4 ), 4 ) );
+	const mat = foliageMaterial( shared, map );
+	const mesh = new THREE.InstancedMesh( geo, mat, BUSH_CAPACITY );
+	keepLegacyWind( mesh, foliageMaterial( shared, map, true, mat.alphaMap! ) );
+	// (a colour per instance whatever the count, so the shader is the same on every land)
+	mesh.instanceColor = new THREE.InstancedBufferAttribute( new Float32Array( BUSH_CAPACITY * 3 ), 3 );
+	setBushes( mesh, bushInstances( bushes ) );
 	mesh.frustumCulled = false;
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
