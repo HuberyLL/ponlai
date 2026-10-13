@@ -12,13 +12,22 @@
 //     its slot over the views of a set (leaseGpuLock): it keeps it from view to view and gives it up
 //     for a waiter once it has held it for its lease (20 s), so a waiter's extra delay is bounded by
 //     the lease (and the view in flight), not by the set.
-// Both modes wait in one queue, served in arrival order: an exclusive request lets the requests
-// queued before it go first, then blocks new shared holders, waits for the current ones to drain
-// and holds the lock alone; everything queued after it, exclusive or shared, waits for it. So a
-// stream of probes cannot starve a profile, and neither can another session's back-to-back timing
-// runs: exclusive requests used to race for the lock (a mkdir every 500 ms), so a process that
-// released and asked again at once, or a run started the moment the previous one ended, won it
-// every time, and another session's exclusive request once waited 14 minutes behind such a series.
+// Both modes wait in one queue (tickets), shared first: a shared request joins whenever a slot is
+// free, even with an exclusive request queued ahead of it, and an exclusive request takes the lock
+// only when it is really free (no holders, no shared request that may still join). Exclusive
+// requests are served among themselves in arrival order. Making one timing run wait is cheaper than
+// making a queue of agents wait: under the earlier rule an exclusive request at the head of the
+// queue stopped every later shared one, and once a single long shared hold (20+ min) with an
+// exclusive request queued behind it stopped 22 captures while two slots stood free. Nothing
+// starves: PONLAI_GPU_EXCLUSIVE_MAX_WAIT seconds (default 1800) after an exclusive request queued
+// (its ticket carries the time, `capAt`, so every requester agrees), the earlier rule applies to it
+// again: it blocks the shared requests queued after it, lets those queued before it go first, waits
+// for the holders to drain and goes next. 30 min bounds a timing run's wait at about the cap plus
+// one hold while a session's captures keep arriving; it stays under the 90 min after which a
+// waiting agent hands its work back. Back-to-back timing runs cannot starve another session's
+// either: exclusive requests used to race for the lock (a mkdir every 500 ms), so a process that
+// released and asked again at once won it every time, and another session's exclusive request once
+// waited 14 minutes behind such a series.
 //
 // The lock is a directory (mkdir is atomic) under the user's temporary folder holding owner.json
 // (pid, label, start time, mode); a lock whose process is gone is stale and taken over. Shared
@@ -28,15 +37,23 @@
 // `ponlai-gpu.lock.queue/` (tickets numbered from `ponlai-gpu.lock.seq`; an exclusive one carries
 // `mode: 'exclusive'`); the exclusive request first in turn also announces itself in
 // `ponlai-gpu.lock.waiting/`, which holds back older copies' shared requests (they rank exclusive
-// tickets as shared ones). Taking a ticket, joining, leaving and taking the lock alone are
-// serialised by the `ponlai-gpu.lock.mutex` directory. A holder, ticket or waiter whose process is
-// gone (killed) is dropped at the next look, so its slot frees itself and the queue moves on.
+// tickets as shared ones), but only once past its cap: before it, a waiter file would stop older
+// copies' shared requests that the exclusive one then waits for. Taking a ticket, joining, leaving
+// and taking the lock alone are serialised by the `ponlai-gpu.lock.mutex` directory. A holder,
+// ticket or waiter whose process is gone (killed) is dropped at the next look, so its slot frees
+// itself and the queue moves on.
 // Older copies of this file are treated conservatively, as they treat us: their exclusive requests
 // take no ticket and are known only by a waiter file without a ticket number; such a request blocks
 // every shared join while it waits (as it always did), and an exclusive request that asked after it
 // lets it go first (one that asked before it races it for the lock, as before). An older copy that
 // predates the slots joins without a ticket, a slot or the limit, and is not counted: its
 // `run --shared` wrappers are members for a whole set, so counting them would starve the queue.
+// The copies from before shared first (exclusive tickets without `capAt`, tickets without
+// `sharedFirst`) keep the earlier rule, and this copy takes their exclusive tickets as capped: its
+// shared requests wait for them as theirs do. Their shared requests wait for any exclusive ticket
+// ranked before them, so an exclusive request of this copy does not wait for those (joinableShared),
+// or each would wait for the other; nor does it while an older copy's untracked exclusive request
+// holds every shared one back.
 //
 // Shared requests have a class: normal, or low with PONLAI_GPU_PRIORITY=low (inherited by every
 // child through the environment, so `PONLAI_GPU_PRIORITY=low node tools/gpu-lock.mjs run --shared --
@@ -84,14 +101,17 @@
 // bound carries `promoted`.
 // Inherited holds (re-entry, a child under an exclusive holder) take nothing and log nothing.
 // A waiting request prints a timestamped line every 30 s: its place in the queue, the next in
-// turn, who holds the GPU and why it waits, and its estimated start when it first waits and whenever
+// turn, who holds the GPU and why it waits (an exclusive one before its cap: shared requests first
+// until then), and its estimated start when it first waits and whenever
 // the estimate moves by more than a minute or a quarter.
 //
 // The estimated start (estimateWaits; `status` gives every queued request an `eta`, `eta` one made
 // now or an existing ticket's) lets a waiting agent choose between waiting and handing its work back.
 // It is an estimate, a range rather than a time. It runs the queue forward under the grant rules
-// above (slots in queueOrder, exclusive tickets draining the slots, low tickets yielding until their
-// promoteAt, leased holders giving up past their budget), 200 times, each hold lasting a duration
+// above (slots in queueOrder, shared tickets joining past the exclusive ones until their cap, an
+// exclusive ticket starting once nothing holds the lock and no shared ticket may join, or past its
+// cap draining the slots, low tickets yielding until their promoteAt, leased holders giving up past
+// their budget), 200 times, each hold lasting a duration
 // drawn from what holds of its kind took: the label's kind (labelKind: `capture`, `capture-clip`,
 // `profile-frame compare`, ...) and mode, from the log's recent releases, or from a built-in table
 // (FALLBACK, p25 / median / p90 per kind) while the log has few of a kind. A current holder runs on
@@ -101,7 +121,8 @@
 // early (a sum of many holds tends to their mean, not their median) and a queue of p90s far too
 // late (every hold long at once), and both errors grow with the queue. Requests made later are
 // not foreseen: a normal request that asks after a low one still goes first, so a low request
-// can start after its range.
+// can start after its range, and shared requests made later still go before an exclusive one
+// until its cap, so an exclusive request's eta also says when that ends (`capIn`).
 //
 // `log` summarises the window: waits (grants that queued, not take-overs) and holds per class or
 // label, median, p95 and total, and the longest waits with who held the GPU meanwhile.
@@ -165,6 +186,10 @@ export const PRIORITY = process.env.PONLAI_GPU_PRIORITY === 'low' ? 'low' : 'nor
 /** The longest a low request yields, in seconds (PONLAI_GPU_LOW_MAX_WAIT, default 600: see the
  * header); past it the request queues as a normal one from its original place. */
 export const LOW_MAX_WAIT = ( ( v ) => Number.isFinite( v ) && v >= 0 ? v : 600 )( Number( process.env.PONLAI_GPU_LOW_MAX_WAIT ?? NaN ) );
+/** The longest an exclusive request lets shared requests go first, in seconds
+ * (PONLAI_GPU_EXCLUSIVE_MAX_WAIT, default 1800: see the header); past it, shared requests queued
+ * after it stop joining and it goes next. */
+export const EXCLUSIVE_MAX_WAIT = ( ( v ) => Number.isFinite( v ) && v >= 0 ? v : 1800 )( Number( process.env.PONLAI_GPU_EXCLUSIVE_MAX_WAIT ?? NaN ) );
 
 let depth = 0; // re-entrant within this process
 let heldMode = null; // 'exclusive' | 'shared' while this process holds the lock itself
@@ -323,8 +348,8 @@ function enqueue( label, exclusive = false ) {
 	mkdirSync( QUEUE, { recursive: true } );
 	const now = Date.now();
 	const priority = exclusive ? 'normal' : PRIORITY;
-	const ticket = { pid: process.pid, label, seq, start: new Date( now ).toISOString(), priority };
-	if ( exclusive ) ticket.mode = 'exclusive';
+	const ticket = { pid: process.pid, label, seq, start: new Date( now ).toISOString(), priority, sharedFirst: true };
+	if ( exclusive ) Object.assign( ticket, { mode: 'exclusive', capAt: new Date( now + EXCLUSIVE_MAX_WAIT * 1000 ).toISOString() } );
 	if ( priority === 'low' ) ticket.promoteAt = new Date( now + LOW_MAX_WAIT * 1000 ).toISOString();
 	writeJson( path.join( QUEUE, `${ process.pid }.json` ), ticket );
 	return ticket;
@@ -357,6 +382,36 @@ function ticketsBefore( ticket ) {
 
 }
 const ticketsAhead = ( ticket ) => ticketsBefore( ticket ).length;
+
+// An exclusive ticket that holds back the shared requests ranked after it: one past its capAt (the
+// starvation guard), or one of an older copy (no capAt), which waits under the old rule and whose
+// copy expects that. Before its cap an exclusive request lets every shared request go first.
+const capped = ( t, now = Date.now() ) => t.mode === 'exclusive' && ! ( now < Date.parse( t.capAt ) );
+
+// The shared tickets in `order` (the queue in turn) that may still join before the exclusive ones
+// waiting: those ranked before any capped exclusive ticket, except an older copy's ranked after
+// any exclusive ticket (an older copy's shared request waits for every exclusive ticket ranked
+// before it).
+function joinableShared( order, now = Date.now() ) {
+
+	const out = [];
+	let exclusive = false;
+	for ( const t of order ) {
+
+		if ( t.mode === 'exclusive' ) {
+
+			if ( capped( t, now ) ) break;
+			exclusive = true;
+			continue;
+
+		}
+		if ( exclusive && ! t.sharedFirst ) continue;
+		out.push( t );
+
+	}
+	return out;
+
+}
 
 /** The lock as other tools see it (job.mjs reports where a job stands; the estimate runs the queue
  * forward from it): the holders, each { pid, label, start, mode, slot?, lease? } (a shared member
@@ -539,22 +594,41 @@ function tryAcquireExclusive( label, seq ) {
 
 }
 
-// Takes the lock alone when this ticket is first in turn (queueOrder) and no older copy's exclusive
-// request that asked earlier waits; the shared holders drain first. While first, its waiter file
-// (which names the ticket) holds back older copies' shared requests, which do not rank exclusive
-// tickets; it is withdrawn while anything ranks before this ticket (a low ticket promoted meanwhile),
-// or an older copy's request ranked before it would wait for it while it waits for that request.
-// Call inside the mutex.
+// Takes the lock alone. Before its cap (capAt), only when the lock is really free: no holders, no
+// exclusive ticket ranked before it, no older copy's exclusive request that asked earlier, and no
+// shared request that may still join (joinableShared; an older copy's exclusive request waiting
+// holds every shared one back, so then none may). It announces nothing meanwhile: a waiter file
+// would hold back older copies' shared requests, which it would then wait for.
+// Past its cap, the old rule: when this ticket is first in turn (queueOrder) and no older copy's
+// exclusive request that asked earlier waits; the shared holders drain first. While first, its
+// waiter file (which names the ticket) holds back older copies' shared requests, which do not rank
+// exclusive tickets; it is withdrawn while anything ranks before this ticket (a low ticket promoted
+// meanwhile), or an older copy's request ranked before it would wait for it while it waits for that
+// request. Call inside the mutex.
 function takeExclusive( label, ticket ) {
 
 	const waitFile = path.join( WAITING, `${ process.pid }.json` );
+	const mine = Date.parse( ticket.start );
+	const now = Date.now();
+	if ( ! capped( ticket, now ) ) {
+
+		rmSync( waitFile, { force: true } );
+		const order = queueOrder( [ ...queued().filter( ( t ) => t.pid !== ticket.pid ), ticket ], now );
+		if ( order.slice( 0, order.indexOf( ticket ) ).some( ( t ) => t.mode === 'exclusive' ) ) return false;
+		const untracked = untrackedWaiters();
+		if ( untracked.some( ( w ) => Date.parse( w.start ) < mine ) ) return false;
+		if ( ! untracked.length && joinableShared( order, now ).length ) return false;
+		const got = tryAcquireExclusive( label, ticket.seq );
+		if ( got === 'shared' ) repairShared();
+		return got === true;
+
+	}
 	if ( ticketsAhead( ticket ) > 0 ) {
 
 		rmSync( waitFile, { force: true } );
 		return false;
 
 	}
-	const mine = Date.parse( ticket.start );
 	let got = untrackedWaiters().some( ( w ) => Date.parse( w.start ) < mine ) ? false : tryAcquireExclusive( label, ticket.seq );
 	if ( got === 'shared' ) {
 
@@ -574,15 +648,19 @@ function takeExclusive( label, ticket ) {
 
 }
 
-// Joins the shared lock when a slot is free, no exclusive ticket ranks before this one (queueOrder)
-// and fewer tickets that do wait than there are free slots. Call inside the mutex (an older copy's
-// exclusive request does not take it, so the lock may change under us: mkdir decides).
+// Joins the shared lock when a slot is free, no capped exclusive ticket ranks before this one
+// (queueOrder: an exclusive request before its cap lets shared ones go first) and fewer shared
+// tickets that may join before it (joinableShared) than there are free slots. Call inside the mutex
+// (an older copy's exclusive request does not take it, so the lock may change under us: mkdir
+// decides).
 function joinShared( label, ticket ) {
 
 	// an exclusive request through an older copy goes first (as it always did: it has no place)
 	if ( untrackedWaiters().length ) return false;
+	const now = Date.now();
 	const before = ticketsBefore( ticket );
-	if ( before.some( ( t ) => t.mode === 'exclusive' ) ) return false;
+	if ( before.some( ( t ) => capped( t, now ) ) ) return false;
+	const ahead = joinableShared( before, now );
 	const owner = readJson( OWNER );
 	if ( owner ) {
 
@@ -609,7 +687,7 @@ function joinShared( label, ticket ) {
 	// holders that joined through an older copy of this file have no slot and are not counted
 	const members = readJson( OWNER ) ? sharedMembers().filter( ( m ) => m.slot !== undefined ) : [];
 	const free = SLOTS - members.length;
-	if ( free <= 0 || before.length >= free ) return false;
+	if ( free <= 0 || ahead.length >= free ) return false;
 	const taken = new Set( members.map( ( m ) => m.slot ) );
 	let slot = 0;
 	while ( taken.has( slot ) ) slot ++;
@@ -759,7 +837,7 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 				const owner = lockOwner();
 				const before = ticketsBefore( mine );
 				const total = queued().length;
-				const first = untrackedWaiters()[ 0 ] ?? ( shared ? before.find( ( t ) => t.mode === 'exclusive' ) : null );
+				const first = untrackedWaiters()[ 0 ] ?? ( shared ? before.find( ( t ) => capped( t ) ) : null );
 				const next = before.length ? `, next "${ before[ 0 ].label }"${ before[ 0 ].mode === 'exclusive' ? ' (exclusive)' : '' }` : '';
 				let held = 'nobody (taking it)';
 				if ( owner?.mode === 'shared' ) {
@@ -769,7 +847,8 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 
 				} else if ( owner ) held = `"${ owner.label }" (pid ${ owner.pid }, exclusive since ${ clock( new Date( owner.start ) ) })`;
 				const why = first ? `; "${ first.label }" (pid ${ first.pid }) wants the GPU to itself first`
-					: mine.priority === 'low' && Date.now() < Date.parse( mine.promoteAt ) ? `; low priority: normal requests first until ${ clock( new Date( mine.promoteAt ) ) }` : '';
+					: mine.priority === 'low' && Date.now() < Date.parse( mine.promoteAt ) ? `; low priority: normal requests first until ${ clock( new Date( mine.promoteAt ) ) }`
+						: ! shared && ! capped( mine ) ? `; shared requests first until ${ clock( new Date( mine.capAt ) ) }, then it goes next` : '';
 				// the estimated start, when it is new or has moved by more than a minute or a quarter
 				const eta = estimateWaits( { logged: recentDurations() } ).queue.find( ( t ) => t.pid === process.pid )?.eta;
 				const moved = eta && eta.startIn !== null && ( toldEta === null || Math.abs( eta.startIn - ( toldEta.startIn - ( waited - toldEta.at ) / 1000 ) ) > Math.max( 60, 0.25 * toldEta.startIn ) );
@@ -825,6 +904,8 @@ export async function withGpuLock( label, fn, options = {} ) {
  * request), an older copy's exclusive request, or, when every shared slot is taken, a shared request
  * that ranks before a new one of this process (a normal request ahead of a low holder, any request
  * ahead of a normal one; a low request ranks after a normal holder's new request until its bound).
+ * A shared holder counts an exclusive request only once it is capped: before its cap, the holder's
+ * new shared request would join ahead of it again, so yielding would not let it in.
  * Null while this process holds nothing itself (an inherited hold included). */
 function gpuLockWaiter() {
 
@@ -835,9 +916,11 @@ function gpuLockWaiter() {
 	const priority = holding.mode === 'exclusive' ? 'normal' : PRIORITY;
 	const again = { pid: process.pid, seq: Infinity, priority, ...( priority === 'low' ? { promoteAt: new Date( now + LOW_MAX_WAIT * 1000 ).toISOString() } : {} ) };
 	const order = queueOrder( [ ...queued().filter( ( t ) => t.pid !== process.pid ), again ], now );
-	const before = order.slice( 0, order.indexOf( again ) );
+	let before = order.slice( 0, order.indexOf( again ) );
+	if ( holding.mode === 'exclusive' ) return before[ 0 ] ?? null;
+	before = before.filter( ( t ) => t.mode !== 'exclusive' || capped( t, now ) );
 	const exclusive = before.find( ( t ) => t.mode === 'exclusive' );
-	if ( exclusive || before.length === 0 || holding.mode === 'exclusive' ) return exclusive ?? before[ 0 ] ?? null;
+	if ( exclusive || before.length === 0 ) return exclusive ?? null;
 	const slotted = readJson( OWNER )?.mode === 'shared' ? sharedMembers().filter( ( m ) => m.slot !== undefined ).length : 0;
 	return slotted >= SLOTS ? before[ 0 ] : null;
 
@@ -1170,20 +1253,20 @@ function simulateQueue( state, logged, rand, now, slots ) {
 		for ( let i = holders.length - 1; i >= 0; i -- ) if ( holders[ i ].end <= t ) holders.splice( i, 1 );
 		const order = queueOrder( waiting, t );
 		const exclusiveHeld = holders.some( ( h ) => h.mode === 'exclusive' );
+		// shared tickets join while slots are free (an exclusive one lets them go first until its cap);
+		// then the first exclusive ticket takes the lock if nothing holds it: before its cap only when
+		// no shared ticket that may join is left, past it when nothing ranks before it
 		let free = exclusiveHeld ? 0 : slots - holders.length;
-		for ( const ticket of order ) {
+		const shared = joinableShared( order, t );
+		for ( const ticket of shared ) {
 
-			if ( ticket.mode === 'exclusive' ) {
-
-				if ( holders.length === 0 ) grant( ticket, 'exclusive', t );
-				break;
-
-			}
 			if ( free <= 0 ) break;
 			grant( ticket, 'shared', t );
 			free --;
 
 		}
+		const first = order.find( ( w ) => w.mode === 'exclusive' );
+		if ( first && holders.length === 0 && ( ! capped( first, t ) || order[ 0 ] === first ) ) grant( first, 'exclusive', t );
 		if ( ! waiting.length ) break;
 		// leased holders yield to a waiter served before their next request
 		const next = queueOrder( waiting, t );
@@ -1193,7 +1276,8 @@ function simulateQueue( state, logged, rand, now, slots ) {
 			if ( ! h.lease || h.yields ) continue;
 			const again = { pid: h.pid, seq: Infinity, priority: h.mode === 'exclusive' ? 'normal' : h.priority, promoteAt: new Date( t + LOW_MAX_WAIT * 1000 ).toISOString() };
 			const order = queueOrder( [ ...next, again ], t );
-			const before = order.slice( 0, order.indexOf( again ) );
+			// a shared holder yields to an exclusive waiter only past its cap (gpuLockWaiter)
+			const before = order.slice( 0, order.indexOf( again ) ).filter( ( w ) => h.mode === 'exclusive' || w.mode !== 'exclusive' || capped( w, t ) );
 			const waiter = before.some( ( w ) => w.mode === 'exclusive' ) || ( h.mode === 'exclusive' ? before.length > 0 : full && before.length > 0 );
 			if ( ! waiter ) continue;
 			const lowYield = h.mode === 'shared' && h.priority === 'low' && before[ 0 ]?.mode !== 'exclusive' && before[ 0 ]?.priority === 'normal';
@@ -1201,12 +1285,15 @@ function simulateQueue( state, logged, rand, now, slots ) {
 			h.yields = true;
 
 		}
-		// the next moment anything changes: a hold ends or a low ticket stops yielding
+		// the next moment anything changes: a hold ends, a low ticket stops yielding or an exclusive
+		// one reaches its cap
 		let at = Math.min( ...holders.map( ( h ) => h.end ) );
 		for ( const w of waiting ) {
 
 			const promote = w.priority === 'low' ? Date.parse( w.promoteAt ) : NaN;
 			if ( promote > t && promote < at ) at = promote;
+			const cap = w.mode === 'exclusive' ? Date.parse( w.capAt ) : NaN;
+			if ( cap > t && cap < at ) at = cap;
 
 		}
 		if ( ! Number.isFinite( at ) ) break; // nothing held and nothing granted: an older copy's own rules decide
@@ -1248,15 +1335,15 @@ export function estimateWaits( { state = lockState(), logged = lockDurations(), 
 
 		const exclusive = request.mode === 'exclusive';
 		const priority = exclusive ? 'normal' : request.priority ?? PRIORITY;
-		mine = { pid: - 1, label: request.label ?? '(this request)', seq: Math.max( 0, ...queue.map( ( t ) => t.seq ) ) + 1, start: new Date( now ).toISOString(), priority,
-			...( exclusive ? { mode: 'exclusive' } : {} ), ...( priority === 'low' ? { promoteAt: new Date( now + LOW_MAX_WAIT * 1000 ).toISOString() } : {} ) };
+		mine = { pid: - 1, label: request.label ?? '(this request)', seq: Math.max( 0, ...queue.map( ( t ) => t.seq ) ) + 1, start: new Date( now ).toISOString(), priority, sharedFirst: true,
+			...( exclusive ? { mode: 'exclusive', capAt: new Date( now + EXCLUSIVE_MAX_WAIT * 1000 ).toISOString() } : {} ), ...( priority === 'low' ? { promoteAt: new Date( now + LOW_MAX_WAIT * 1000 ).toISOString() } : {} ) };
 		queue.push( mine );
 
 	}
 	const full = { ...state, queue };
 	const rand = seeded( 0x9e3779b9 );
 	const starts = new Map( queue.map( ( t ) => [ t.pid, [] ] ) );
-	for ( let run = 0; run < RUNS; run ++ ) for ( const [ pid, at ] of simulateQueue( full, logged, rand, now, slots ) ) starts.get( pid ).push( at );
+	for ( let run = 0; run < RUNS; run ++ ) for ( const [ pid, at ] of simulateQueue( full, logged, rand, now, slots ) ) starts.get( pid )?.push( at ); // an older copy's untracked request has no entry
 	// where the durations came from: the holders' and every ticket's ahead
 	const sources = state.holders.filter( ( h ) => h.mode !== 'shared' || h.slot !== undefined ).map( ( h ) => durationOf( h.label, h.mode, logged ).basis );
 	const ahead = queueOrder( queue, now );
@@ -1267,7 +1354,9 @@ export function estimateWaits( { state = lockState(), logged = lockDurations(), 
 		const all = starts.get( ticket.pid ).sort( ( a, b ) => a - b );
 		if ( ! all.length ) return { startIn: null, range: [ null, null ], basis };
 		const s = ( q ) => Math.round( ( quantile( all, q ) - now ) / 1000 );
-		return { startIn: s( 0.5 ), range: [ s( 0.1 ), s( 0.9 ) ], basis };
+		// an exclusive request before its cap: shared requests made later still go first until then
+		const capIn = ticket.mode === 'exclusive' && ! capped( ticket, now ) ? Math.round( ( Date.parse( ticket.capAt ) - now ) / 1000 ) : null;
+		return { startIn: s( 0.5 ), range: [ s( 0.1 ), s( 0.9 ) ], basis, ...( capIn !== null ? { capIn } : {} ) };
 
 	};
 	const out = ahead.map( ( t, i ) => ( { pid: t.pid, seq: t.seq, label: t.label, mode: t.mode ?? 'shared', priority: t.priority, eta: eta( t, i ) } ) );
@@ -1286,13 +1375,15 @@ function recentDurations() {
 
 }
 
-// "~12 min (range 8-20 min, estimate)"
+// "~12 min (range 8-20 min, estimate)"; an exclusive request before its cap adds how long shared
+// requests made meanwhile (which the estimate does not foresee) may still go first
 export function etaText( eta ) {
 
 	if ( ! eta || eta.startIn === null ) return 'unknown (estimate)';
 	const m = ( s ) => s < 90 ? `${ Math.max( 0, s ) } s` : `${ Math.round( s / 60 ) } min`;
 	const [ lo, hi ] = eta.range;
-	return `~${ m( eta.startIn ) } (range ${ m( lo ) }-${ hi === null ? '?' : m( hi ) }, estimate)`;
+	const cap = eta.capIn > eta.startIn ? `; shared requests made meanwhile go first for up to ${ m( eta.capIn ) }` : '';
+	return `~${ m( eta.startIn ) } (range ${ m( lo ) }-${ hi === null ? '?' : m( hi ) }, estimate${ cap })`;
 
 }
 
