@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, dot, pow, clamp, fract, sin, select, normalize,
 	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, varying, varyingProperty, uniform,
-	smoothstep as smoothstepN, storage, instanceIndex, normalLocal, transformNormal, instanceColor,
+	smoothstep as smoothstepN, instanceIndex, normalLocal, transformNormal, instanceColor,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
@@ -20,7 +20,7 @@ import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { ALPHA_TO_COVERAGE, coverageDither, markVegetation } from './Foliage.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
-import { GrassCull, cullInputs, type CullRange } from './GrassCull.ts';
+import { GrassCull, cullInputs, poolSteps, type CullBatchInput, type CullBuffers, type CullPool, type CullRange } from './GrassCull.ts';
 import type { Shared } from '../shared.ts';
 
 // Stylised meadow on the island top, a sward of two instanced tuft kinds. The lawn is a dense
@@ -260,7 +260,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 	// threshold per pixel keeps that share of a blade's pixels instead (`coverageDither`).
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.86, metalness: 0, side: THREE.DoubleSide, alphaToCoverage: ALPHA_TO_COVERAGE } );
 	const slot = instanceIndex.add( cullBase );
-	const tuftSlot = select( cullOn.equal( 1 ), storage( cull.visible, 'uint', cull.slots ).toReadOnly().element( slot ), slot ).toVar( 'grassTuft' );
+	const tuftSlot = select( cullOn.equal( 1 ), cull.node( 'visible', 'uint', true ).element( slot ), slot ).toVar( 'grassTuft' );
 	const input = cullInputs( cull, tuftSlot );
 	// The tuft's instance data, read as the instanced attributes were: what the fragment stage
 	// reads passes as a varying, as an attribute did.
@@ -381,6 +381,8 @@ function tuftMesh( source: THREE.BufferGeometry, material: THREE.Material, cull:
 	( mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
 	( mesh as unknown as { instanceColor: THREE.BufferAttribute } ).instanceColor = cull.colors;
 	mesh.count = range.count;
+	// its whole count (it picks its count per view draw): the rain's collision bake draws them all
+	mesh.userData.bakeCount = range.count;
 	mesh.frustumCulled = false;
 	mesh.castShadow = false; // see MeadowCanopy
 	mesh.receiveShadow = true;
@@ -622,7 +624,9 @@ export function buildGrass( { lawn, tussocks, lawnThin }: GrassTufts, shared: Sh
 		{ geometry: lawnGeometry, shape: LAWN, tufts: lawn, name: 'grass-lawn', thin: false },
 		{ geometry: tussockGeometry, shape: tussock, tufts: tussocks, name: 'grass-tussocks', thin: false },
 	];
-	if ( lawnThin.length ) kinds.push( { geometry: lawnGeometry, shape: LAWN, tufts: lawnThin, name: 'grass-lawn-thin', thin: true } );
+	// (the thin batch exists whenever the tier grows thin tufts, even with none yet: a grown island's
+	// meadow then fills the same batches, and the cull's kernels stay the same)
+	if ( grassQuality.thinTufts ) kinds.push( { geometry: lawnGeometry, shape: LAWN, tufts: lawnThin, name: 'grass-lawn-thin', thin: true } );
 	const cull = new GrassCull( kinds.map( ( k ) => ( { tufts: k.tufts, geometry: k.geometry, halfWidth: halfWidth( k.shape ) } ) ), grassUniforms.thinFar );
 	const material = grassMaterial( shared, cull );
 	const legacyMaterial = grassMaterial( shared, cull, true );
@@ -647,6 +651,52 @@ export function buildGrass( { lawn, tussocks, lawnThin }: GrassTufts, shared: Sh
 	group.userData.thinFar = grassUniforms.thinFar;
 	group.userData.batches = batches;
 	group.userData.cull = cull;
+	group.userData.kinds = kinds.map( ( k ) => ( { geometry: k.geometry, halfWidth: halfWidth( k.shape ), key: k.name === 'grass-lawn' ? 'lawn' : k.name === 'grass-tussocks' ? 'tussocks' : 'lawnThin' } ) );
 	return group;
+
+}
+
+/** A meadow grown on another land, ready for `setGrass`: the pool of its tufts in the meadow's
+ * batches, the buffers made for it (to be uploaded before the swap), and each batch's planting box
+ * and count. */
+export interface GrassPrepared { pool: CullPool; buffers: CullBuffers; boxes: THREE.Box3[]; counts: number[] }
+
+/** The pool of `tufts` for the meadow `group` (buildGrass), in steps (GrassCull's `poolSteps`): the
+ * growth (Growth.ts) takes them in idle time. */
+export function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 ): Generator<void, GrassPrepared> {
+
+	const kinds = group.userData.kinds as { geometry: THREE.BufferGeometry; halfWidth: number; key: keyof GrassTufts }[];
+	const inputs: CullBatchInput[] = kinds.map( ( k ) => ( { tufts: tufts[ k.key ], geometry: k.geometry, halfWidth: k.halfWidth } ) );
+	const pool = yield* poolSteps( inputs, per );
+	const boxes = inputs.map( ( b ) => {
+
+		const box = new THREE.Box3();
+		for ( const t of b.tufts ) box.expandByPoint( t.origin );
+		return box;
+
+	} );
+	return { pool, buffers: GrassCull.buffers( pool ), boxes, counts: inputs.map( ( b ) => b.tufts.length ) };
+
+}
+
+/** Swaps the meadow `group` to a prepared one in place: the same meshes, materials and kernels over
+ * the new pool's buffers. Returns the buffers it replaced (dispose of them once drawn no more). */
+export function setGrass( group: THREE.Group, prepared: GrassPrepared ): CullBuffers {
+
+	const cull = group.userData.cull as GrassCull, batches = group.userData.batches as Batch[];
+	const old = cull.setPool( prepared.pool, prepared.buffers );
+	batches.forEach( ( b, k ) => {
+
+		b.box.copy( prepared.boxes[ k ] );
+		b.count = prepared.counts[ k ];
+		b.mesh.count = b.count;
+		b.mesh.userData.bakeCount = b.count;
+		b.mesh.geometry.userData.grassBase = b.range.start;
+		( b.mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
+		( b.mesh as unknown as { instanceColor: THREE.BufferAttribute } ).instanceColor = cull.colors;
+		for ( const child of b.mesh.children ) if ( ( child as THREE.InstancedMesh ).isInstancedMesh ) ( child as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
+
+	} );
+	return old;
 
 }
