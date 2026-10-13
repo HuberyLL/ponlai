@@ -26,7 +26,9 @@ import { reactiveUniforms, velocityOutput } from '../post/Motion.ts';
 // The storm is a function of the scene clock: time is cut into short slots, and a seeded hash
 // decides whether a strike begins in each and everything about it. A paused frame therefore
 // shows exactly the same strike every time, and `force` (`sky.lightning.force`) puts one in front
-// of a review camera. Its light inside the clouds stays out of the view's accumulated history, the
+// of a review camera. A strike keeps the bearing it was given in the frame that first saw it (most
+// come ahead of that frame's camera), so a scene jump forgets every strike (`reset`), as a new
+// page knows none. Its light inside the clouds stays out of the view's accumulated history, the
 // bake and the panorama (Clouds.ts).
 //
 // Under the temporal modes (Antialiasing.ts) a strike reaches the resolve twice. The channel draws
@@ -147,6 +149,21 @@ export class Lightning {
 
 		this.forced = strike;
 		this.strikes.delete( - 1 );
+
+	}
+
+	/** Forgets every strike, as a new page knows none (a scene jump, main.ts `establishScene`): a
+	 * strike keeps the bearing it was given when first seen, ahead of the camera of that frame, so
+	 * strikes seen from the scene before would come back where that scene's camera looked. Clears a
+	 * forced strike too; the next update finds the storm's strikes again. */
+	reset(): void {
+
+		this.forced = null;
+		this.strikes.clear();
+		this.islandBefore = null;
+		this.slots.fill( null );
+		this.fill = 0;
+		this.island = 0;
 
 	}
 

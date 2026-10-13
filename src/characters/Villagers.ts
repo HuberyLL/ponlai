@@ -12,6 +12,8 @@ import type { Shared } from '../shared.ts';
 // one skeleton and its animation clips. The parts are repainted in the island's palette as
 // vertex colours and merged into one skinned mesh, lit by the island's character light. One
 // walks a loop through the meadow; the walk clip's rate follows its speed so feet do not slide.
+// Its place on the loop is a function of the scene clock; its clips cross-fade on the frame delta,
+// which a paused clock holds, so a scene jump restarts them (`reset`).
 // Their dress stays plain while the basic look settles: undyed linen and calm earthy tones, leather
 // shoes, no hat (looks.ts). While the character art is settled the models load from the
 // git-ignored artifacts/assets/ (dev server only). A small moving sun-shadow map of the figures is
@@ -246,6 +248,20 @@ export class Villagers {
 
 		} );
 		( this as { walker: Villager } ).walker = next;
+
+	}
+
+	/** The walker as constructed: standing, its clips from their start, its heading taken afresh on
+	 * the next update (a scene jump, main.ts `establishScene`: a paused clock never finishes a
+	 * cross-fade the scene before began). */
+	reset(): void {
+
+		const w = this.walker;
+		w.mixer.stopAllAction();
+		w.mixer.setTime( 0 );
+		w.actions.Idle_Neutral.reset().play();
+		this.walking = false;
+		this.heading = NaN;
 
 	}
 

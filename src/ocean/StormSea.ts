@@ -46,7 +46,9 @@ type IV2 = THREE.Node<'ivec2'>;
 // Determinism: a paused frame must be exactly repeatable, so the state is a function of scene
 // time and weather. A jump in time, or a change of the weather while the clock stands still,
 // rebuilds the state by replaying the last seconds at fixed steps (the FFT is a closed-form
-// function of time); live frames integrate their own time step.
+// function of time); live frames integrate their own time step. The window follows the camera with
+// slack, so it depends on where the storm was first seen from: a scene jump forgets the state
+// (`reset`), and the next update places the window and replays as on a new page.
 
 const RES = 512;
 const CELL = 0.625; // m
@@ -248,6 +250,17 @@ export class StormSea {
 		const inside = float( 1 ).sub( smoothstep( 0.38, 0.47, max( edge.x, edge.y ) ) )
 			.mul( float( 1 ).sub( smoothstep( 1, 2.5, footprint.div( CELL ) ) ) );
 		return vec3( s.x, s.y, inside );
+
+	}
+
+	/** Forgets the storm's state, as a new page has none (a scene jump, main.ts `establishScene`):
+	 * the window is placed afresh and the history replayed on the next update. The window follows the
+	 * camera with slack, so without this a storm seen from the scene before kept that scene's window. */
+	reset(): void {
+
+		this.active = false;
+		this.time = undefined;
+		this.signature = '';
 
 	}
 

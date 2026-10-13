@@ -69,6 +69,8 @@ export interface WeatherFront {
 }
 
 const fields = Object.keys( WEATHER_PRESETS.clear ) as ( keyof Preset )[];
+// The auto-weather chain's seed (mulberry32), at construction and at `establish`.
+const SEED = 0x5eed;
 const smooth = ( t: number ) => t * t * ( 3 - 2 * t );
 const smoothIntegral = ( t: number ) => t * t * t * ( 1 - 0.5 * t );
 // Signed change of heading along the shorter arc, so 350° to 10° turns 20°, not 340°.
@@ -98,7 +100,7 @@ export class Weather {
 	// Auto weather: a seeded chain, so a given start and time always give the same sky.
 	auto = false;
 	private dwell = 0;
-	private seed = 0x5eed;
+	private seed = SEED;
 
 	constructor( name: WeatherName = 'fair' ) {
 
@@ -113,7 +115,8 @@ export class Weather {
 	}
 
 	/** Jumps to `name` as established weather, the way loading it does: no transition, a sky
-	 * without a front, and the ground as wet as the constructor leaves it. */
+	 * without a front, the ground as wet as the constructor leaves it, and the auto-weather chain
+	 * from its seed. */
 	establish( name: WeatherName ): void {
 
 		const preset = presetFor( name );
@@ -124,6 +127,7 @@ export class Weather {
 		this.elapsed = 0;
 		this.duration = 0;
 		this.dwell = 0;
+		this.seed = SEED;
 
 	}
 
