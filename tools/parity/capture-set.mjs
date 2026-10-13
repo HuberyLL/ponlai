@@ -2,7 +2,7 @@
 // one page per set (one per worker with --jobs), the views reached in place by the exact scene jump.
 //
 //   node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
-//       [--quality high] [--aa mode] [--q "extra&query"] [--jobs 1] [--retries 1] [--size 1728x1117@2]
+//       [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
 //       [--page-per-view] [--runs file.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
 //   node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
 //   node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url U]
@@ -29,8 +29,9 @@
 //   repeats run after all the first captures, on other pages (a page serves first captures or
 //   repeats, never both) and in reverse order, so a view's repeat is reached from another scene than
 //   its first capture (the view loaded fresh in one pass is jumped to in the other): an A/A that also
-//   shows anything a jump left behind. Measure an A/A floor with --jobs 1: concurrent pages may
-//   change which views repeat.
+//   shows anything a jump left behind. The frames do not depend on the job count (24 views at
+//   --jobs 1 and 4 decoded to the same pixels); a view that differs only by sparse single-frame
+//   speckle on the vegetation while other browsers render is GPU noise: shoot it again.
 // --reference makes the set a stored reference of a commit (reference.mjs; layout and manifest in
 //   tools/parity/README.md): if the directory's `complete.json` matches (tool version, browser
 //   build, tier, aa, size, extra query, capture.mjs options) and covers the views (and repeats) the
@@ -52,9 +53,11 @@
 //   mode's view (aa=taa|taau, and the ground truth aa=gt: 64 jitters at the canvas's resolution) is
 //   captured once its paused rest has converged (capture.mjs waits for `diag.taa.converged`). Keep a
 //   ground-truth set per merge-base, shared by every task on it: `<parity root>/<sha>/gt/`.
-// --jobs runs that many pages at once (default 1), each in its own profile slot
-//   (tools/capture-browser.mjs); captures are GPU-bound: 3 at once is the most throughput, more only
-//   adds latency. Each view holds a GPU lock slot from its load or jump to its shot (capture.mjs).
+// --jobs runs that many pages at once, each in its own profile slot (tools/capture-browser.mjs).
+//   Captures are GPU-bound: 3 at once is the most throughput, more only adds latency, and every
+//   extra page costs a load (5-8 s, a jump 2-4 s), which a small set does not earn back. So the
+//   default is one page per 5 captures, at most 3 (repeats counted: 24 views take 3, 7 views 2,
+//   up to 5 one). Each view holds a GPU lock slot from its load or jump to its shot (capture.mjs).
 //   --retries (default 1) captures a failed view again on a fresh page (a load that timed out while
 //   other pages kept the GPU busy, a page error, a crash): a failure ends its page, and the views
 //   still to come go on in a fresh one, so a crash or a stuck page (no answer within three times
@@ -140,7 +143,8 @@ const quality = options.quality ?? 'high';
 let common = `debug&paused&t=12&quality=${ quality }`;
 if ( options.aa ) common += `&aa=${ options.aa }`;
 if ( options.q ) common += `&${ options.q }`;
-const jobs = Math.max( 1, Number( options.jobs ?? 1 ) );
+const captures = views.length * ( options.repeat ? 2 : 1 );
+const jobs = Math.max( 1, Number( options.jobs ?? Math.min( 3, Math.ceil( captures / 5 ) ) ) );
 const retries = Math.max( 0, Number( options.retries ?? 1 ) );
 // capture.mjs's waits for the page: generous, since other agents' pages may share the GPU
 const timeout = Number( options.timeout ?? 240000 );

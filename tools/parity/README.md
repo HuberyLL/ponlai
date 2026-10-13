@@ -162,7 +162,7 @@ the boxes placed before it.
 
 ```sh
 node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
-    [--quality high] [--aa mode] [--q "extra&query"] [--jobs 1] [--retries 1] [--size 1728x1117@2]
+    [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
     [--runs runs.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
 node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
 node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url <refUrl>]
@@ -195,12 +195,14 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   exit 1 if any differ (or any capture failed). The repeats run after all the first captures, on
   other pages than the first captures and in reverse order: a view's repeat is reached from another
   scene than its first capture, and the view one pass loaded fresh is jumped to in the other, so
-  the A/A also shows anything a jump leaves behind. Take an A/A floor with `--jobs 1`: concurrent
-  pages may change which views repeat.
+  the A/A also shows anything a jump leaves behind. The frames do not depend on the job count (24
+  views at `--jobs 1` and `4` decoded to the same pixels); a view that differs only by sparse
+  single-frame speckle on the vegetation while other browsers render is GPU noise: shoot it again.
 - `--aa` adds `aa=<mode>` only when given. `--q` adds options to every view (e.g. `msaa=1`).
 - `--jobs n` runs n pages at once, each in its own profile slot, the views handed out one at a time
   from one queue (captures are GPU-bound: 3 at once gives the most captures per minute, more only
-  adds latency). Each view holds a GPU lock slot from its load or jump to its shot, so the page
+  adds latency, and each extra page costs a load that a small set does not earn back). Default: one
+  page per 5 captures, at most 3, repeats counted (24 views take 3, 7 views 2, up to 5 one). Each view holds a GPU lock slot from its load or jump to its shot, so the page
   stands stopped between views without one.
 - `--runs` (or `PARITY_RUNS`) appends a line per run to a CSV: date, task, procedure, sha, wall
   minutes, whether the GPU was busy before the run, captures, failures and the set. Without either
