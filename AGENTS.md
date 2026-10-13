@@ -28,6 +28,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `node tools/gpu-lock.mjs run [--shared] -- <command>` (`status`, `gpu`). Timing runs hold it
   alone; paused captures and verify probes share it, one slot per browser (3 by default, FIFO).
   Background work runs with `PONLAI_GPU_PRIORITY=low`: its requests yield free slots to others.
+- Processes an agent starts run at a starved QoS on a busy Mac: the tools raise themselves to the
+  application policy (`tools/qos.mjs`); a new CPU-heavy tool imports it first, and a one-off script
+  runs through `node tools/qos.mjs <command>` (`docs/tools.md`, Process priority).
 - Headed browser runs take over the user's screen: they run only while
   `node tools/display-gate.mjs status` allows them; otherwise run headless and record the headed
   run as pending.
