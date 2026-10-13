@@ -14,7 +14,8 @@
 //   function (`async () => { ... }`, called), or statements with a `return`; `await` works in all
 //   three. `@file` reads it from a file. In scope: `P` = `window.__PONLAI__`, `D` =
 //   `window.__THREE_GAME_DIAGNOSTICS__` as the step starts (most of its counters lag by up to 30
-//   frames; read live counters from `P`), `frames( n )`, `sleep( ms )`, `until( fn, timeoutMs )`.
+//   frames; read live counters from `P`), `frames( n )`, `sleep( ms )`, `until( fn, timeoutMs )`,
+//   `pipelines` (`mark()`, `since( mark )`: which pipelines an action built, tools/pipeline-trace.mjs).
 //   The value is serialised in the page (cycles, functions, typed arrays, three's vectors). The
 //   forms, the scope and the serialiser are tools/page-eval.mjs, which tools/capture.mjs's
 //   `--eval` shares: its header has the details.

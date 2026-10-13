@@ -12,11 +12,18 @@
 // read live counters from `P`, such as `P.renderer.info.frame`), `frames( n )` (resolves after n
 // rendered frames), `sleep( ms )`, `until( fn, timeoutMs )` (resolves with fn's first truthy value,
 // checked every rendered frame, or every 100 ms while the loop is stopped; rejects after timeoutMs,
-// the tool's --timeout by default).
+// the tool's --timeout by default), `pipelines` (which pipelines an action built, tools/
+// pipeline-trace.mjs: `const m = pipelines.mark()` installs the tracer on first use, and
+// `pipelines.since( m )` lists every pipeline created after the mark with its kind, label, material,
+// object, target, frame and the app's stack; pipelines created before the first mark are not listed).
 // Value. Serialised in the page: cycles become "[cycle]", functions "[function]", bigints strings,
 // typed arrays plain arrays (the first 64 entries), three's vectors, colours and matrices their
 // `toArray()`, undefined null.
 import { readFileSync } from 'node:fs';
+import { installScript } from './pipeline-trace.mjs';
+
+// (installed in the page on first use only: a probe that never asks pays nothing)
+const TRACE = installScript();
 
 /** An `--eval` argument's js: `@file` reads the file, anything else is the js itself. */
 export const evalSource = ( text ) => text.startsWith( '@' ) ? readFileSync( text.slice( 1 ), 'utf8' ) : text;
@@ -26,7 +33,7 @@ export const evalSource = ( text ) => text.startsWith( '@' ) ? readFileSync( tex
  * when the js throws or an `until` times out (`timeout` ms). */
 export function runInPage( page, js, { mode = 'eval', timeout = 60000 } = {} ) {
 
-	return page.evaluate( async ( { js, mode, timeout } ) => {
+	return page.evaluate( async ( { js, mode, timeout, trace } ) => {
 
 		const frameNow = () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0;
 		const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
@@ -45,15 +52,17 @@ export function runInPage( page, js, { mode = 'eval', timeout = 60000 } = {} ) {
 			}
 
 		};
+		const tracer = () => window.__pipelineTrace ?? ( 0, eval )( trace );
+		const pipelines = { mark: () => tracer().mark(), since: ( mark ) => tracer().since( mark ) };
 		const frames = ( n ) => { const target = frameNow() + n; return until( () => frameNow() >= target ); };
 		// an expression, else statements; a function value is called
 		let body;
 		try { new Function( `return (${ js }\n)` ); body = `return (${ js }\n);`; } catch { body = js; }
 		const AsyncFunction = ( async () => {} ).constructor;
-		const fn = new AsyncFunction( 'P', 'D', 'frames', 'sleep', 'until', body );
+		const fn = new AsyncFunction( 'P', 'D', 'frames', 'sleep', 'until', 'pipelines', body );
 		const value = async () => {
 
-			const v = await fn( window.__PONLAI__, window.__THREE_GAME_DIAGNOSTICS__, frames, sleep, until );
+			const v = await fn( window.__PONLAI__, window.__THREE_GAME_DIAGNOSTICS__, frames, sleep, until, pipelines );
 			return typeof v === 'function' ? await v() : v;
 
 		};
@@ -83,6 +92,6 @@ export function runInPage( page, js, { mode = 'eval', timeout = 60000 } = {} ) {
 		await until( value );
 		return JSON.stringify( { ms: Math.round( performance.now() - start ), frames: frameNow() - from } );
 
-	}, { js, mode, timeout } ).then( ( text ) => text === undefined ? undefined : JSON.parse( text ) );
+	}, { js, mode, timeout, trace: TRACE } ).then( ( text ) => text === undefined ? undefined : JSON.parse( text ) );
 
 }
