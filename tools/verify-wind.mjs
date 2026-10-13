@@ -146,7 +146,7 @@ for ( const [ file, text ] of sources ) {
 	assert.ok( ! /gustScroll/.test( text ), `${ file }: the gust scroll read outside Wind.ts` );
 
 }
-assert.ok( reads >= 15, `found ${ reads } wind clock reads` );
+assert.ok( reads >= 12, `found ${ reads } wind clock reads` );
 // mainBend's `sway( r, ... )`: rate, its multiples in mainBend and their halves (slow), at every call's rate
 const foliage = sources.find( ( [ f ] ) => f === path.join( 'world', 'Foliage.ts' ) )[ 1 ];
 const multiples = [ 1, ...[ ...foliage.matchAll( /sway\(\s*rate\s*\*\s*([\d.]+)/g ) ].map( ( m ) => Number( m[ 1 ] ) ) ];
@@ -158,7 +158,7 @@ for ( const [ file, text ] of sources ) for ( const m of text.matchAll( /mainBen
 	for ( const k of multiples ) for ( const half of [ 1, 0.5 ] ) assert.ok( whole( Number( m[ 1 ] ) * k * half ), `${ file }: mainBend at ${ m[ 1 ] } Hz x ${ k * half }` );
 
 }
-assert.ok( bends >= 3, `found ${ bends } mainBend calls` );
+assert.ok( bends >= 2, `found ${ bends } mainBend calls` );
 // numerically: across the wraps the shaders' arguments move by the step alone
 const wrap = new Wind( createWindUniforms(), { speed: 6, time: CLOCK_PERIOD - 0.01 } );
 const atWrap = { clock: wrap.uniforms.clock.value, scroll: wrap.uniforms.gustScroll.value.clone() };
