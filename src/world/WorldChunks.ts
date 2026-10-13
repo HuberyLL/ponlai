@@ -20,8 +20,10 @@
 //   hold when the worker opened it misses without asking IndexedDB (WorldCache.ts), so a chunk run
 //   again after the field never waits for the other workers' writes, and a cold load costs what
 //   one with `worldCache=off` does.
-//   (The field is cloned to every worker rather than each job sent its window: a window is 4 MB,
-//   so a load would copy several times the field's bytes on the main thread.)
+//   (The worker that builds the field keeps it and sends a copy for every other worker, which the
+//   page passes on without copying: rather than each job sent its window, as a window is 4 MB and
+//   a load would copy several times the field's bytes, and rather than the page cloning it, about
+//   10 MB on the main thread, in a frame of a page that grows.)
 // - The merge runs once every chunk has arrived, in rows ( cj, then ci ), so the world is the same
 //   whatever order the workers finish in, and the same as the node tools' serial path
 //   (tools/world-node.mjs).
@@ -38,7 +40,7 @@ import { WORLD_GENERATOR_HASH } from 'virtual:world-generator';
 import { mergeChunks, type LandData } from './ChunkMerge.ts';
 import { landCentroid } from './WorldShapes.ts';
 import { LandLattice } from './IslandGrowth.ts';
-import type { ChunkData, LandField } from './Chunks.ts';
+import type { ChunkData } from './Chunks.ts';
 import type { ChunkJob, ChunkReply, CacheResult } from './chunkWorker.ts';
 import type { WorldData, WorldOptions } from './types.ts';
 
@@ -119,7 +121,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 
 		const pool: Slot[] = [];
 		let settled = false;
-		let land: LandData | null = null, landCache: CacheResult = 'off', field: LandField | null = null, fieldAsked = false;
+		let land: LandData | null = null, landCache: CacheResult = 'off', field = false, fieldAsked = false;
 		// every chunk by its key; those not yet asked for, nearest first; those that missed the cache
 		// before the field came
 		const chunks = new Map<string, Pending>(), queue: Pending[] = [], needs: Pending[] = [];
@@ -154,7 +156,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 				if ( ! fieldAsked && ( needs.length > 0 || ( landCache !== 'hit' && queue.length > 0 ) ) ) {
 
 					fieldAsked = true;
-					send( slot, { kind: 'field', land: land.land.slice() } );
+					send( slot, { kind: 'field', land: land.land.slice(), copies: pool.length - 1 } );
 					continue;
 
 				}
@@ -225,13 +227,24 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 					break;
 
 				}
-				case 'field':
-					field = reply.field;
+				case 'field': {
+
+					field = true;
 					mark( 'field' );
-					// every worker cuts its chunks' windows from it (the last one takes the buffer)
-					pool.forEach( ( other, k ) => send( other, { kind: 'use', land: land!.land, field: field! }, k === pool.length - 1 ? [ field!.data.buffer ] : [] ) );
+					// every other worker cuts its chunks' windows from a copy (made by the worker that
+					// built it, which keeps its own: the page only passes the buffers on)
+					const copies = [ ...reply.copies ];
+					for ( const other of pool ) {
+
+						if ( other === slot ) continue;
+						const copy = copies.pop()!;
+						send( other, { kind: 'use', land: land!.land, field: copy }, [ copy.data.buffer ] );
+
+					}
 					needs.sort( ( a, b ) => a.distance - b.distance );
 					break;
+
+				}
 				case 'need':
 					needs.push( chunks.get( `${ reply.ci },${ reply.cj }` )! );
 					break;
