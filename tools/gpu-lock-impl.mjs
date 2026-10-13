@@ -57,22 +57,41 @@
 // exclusive tickets. Taking a ticket, joining, leaving, taking the lock alone and changing the table
 // are serialised by the `ponlai-gpu.lock.mutex` directory. A holder, ticket or waiter whose process
 // is gone (killed) is dropped at the next look, so its slot frees itself and the queue moves on.
-// Older copies of this file run on the same lock (other sessions' worktrees), and levels hold only
-// among copies that know them. This copy ranks an older copy's ticket (no `levels`) at its mode's
-// default, matched against the table by its label only (it records no working directory). Older
-// copies rank tickets by their class (`priority`), so this copy's tickets say `normal` and they serve
-// them first in, first out; those from shared first let a shared ticket (`sharedFirst`) pass an
-// exclusive one before its cap (`capAt`), so this copy's low exclusive tickets carry a cap beyond any
-// wait (they rank after every shared request here too) and those of normal level or higher a cap at
-// their start (they hold back what queues after them). Otherwise a copy could wait for a request
-// that waits for it. They still disagree with this copy on raised levels; each then takes itself to
-// be first and the mutex decides, which delays but does not deadlock. An older copy's exclusive
-// request that takes no ticket is known only by a waiter file without a ticket number; such a
-// request blocks every shared join while it waits (as it always did), and an exclusive request that
-// asked after it lets it go first (one that asked before it races it for the lock). An older copy
-// that predates the slots joins without a ticket, a slot or the limit, and is not counted: its
-// `run --shared` wrappers are members for a whole set, so counting them would starve the queue. A
-// ticket from before the classes (no `priority`) is a barrier (queueOrder).
+// Older copies of this file run on the same lock (worktrees branched before the entry below), and
+// levels hold only among copies that know them. The rules between copies, by kind of older copy:
+// - Every older copy with tickets ranks them by class (`priority`): normal ones first in, first out,
+//   then low ones until their `promoteAt` (PONLAI_GPU_PRIORITY=low there). Main's copy before the
+//   levels (shared first) also lets a shared ticket (`sharedFirst`) pass an exclusive one until that
+//   one's cap (`capAt`, 30 min) and holds shared tickets back behind a capped one; a copy from
+//   before shared first lets nothing pass an exclusive ticket ranked before it.
+// - This copy ranks an older copy's ticket or holder at its mode's default, whatever its class:
+//   shared normal, exclusive low (source `older copy`). Neither the table nor a bump moves it (`prio
+//   bump` refuses): raised here only, an older exclusive request would wait for nothing, while the
+//   older copy kept it waiting for this copy's shared requests ranked after it, and this copy's
+//   leased holders would yield to it. (It once matched the table by its label; that deadlocked.)
+// - This copy's tickets tell older copies the class nearest their level (forOlderCopies): below
+//   normal `low`, never promoted, so they rank it after their own normal requests as this copy
+//   does; normal or higher `normal`, an exclusive ticket capped from its start, a shared one going
+//   first. (Said `normal`, a default exclusive ticket and a later shared request of a copy from
+//   before shared first each waited for the other, for ever.)
+// - Where the two orders still differ, neither waits for a request that waits for it, so the
+//   cost is a delay: a raised request (high, urgent) of this copy ranks before an older copy's
+//   earlier normal ticket here but after it there, and both start when they can (an exclusive one
+//   still waits for the holders to drain); an older copy's exclusive request ranks low here, so it
+//   waits while this copy's shared requests keep arriving, as this copy's own default exclusive
+//   requests do (and the older copy's shared requests queued behind it wait with it), while this
+//   copy's low requests and that exclusive request race for the lock.
+// - One stall remains: an older copy's shared request at class low (PONLAI_GPU_PRIORITY=low) ranks
+//   normal here but after this copy's normal shared ones there, so with one slot free each may wait
+//   for the other until another slot frees or its promoteAt (10 min) passes. Sessions leave the
+//   variable unset, so it ends with those copies.
+// - An older copy's exclusive request that takes no ticket (a copy from before the tickets) is known
+//   only by a waiter file without a ticket number; it blocks every shared join while it waits (as it
+//   always did), and an exclusive request that asked after it lets it go first (one that asked
+//   before it races it for the lock). A copy that predates the slots joins without a ticket, a slot
+//   or the limit, and is not counted: its `run --shared` wrappers are members for a whole set, so
+//   counting them would starve the queue. A ticket from before the classes (no `priority`) is a
+//   barrier (queueOrder).
 //
 // This file is the implementation; tools import the entry, tools/gpu-lock.mjs, which loads whichever
 // copy declares the higher LOCK_VERSION: its own worktree's or the main checkout's (the main
@@ -108,7 +127,8 @@
 // succeeded, so it is written once); `lease` marks a leased hold given up for a waiter, and a leased
 // hold's release counts the pieces of work it served (`uses`). Every event carries the request's
 // effective level as `class` (urgent, high, normal, low; older copies log normal or low there) and
-// where it came from as `source` (bump, table, env, default).
+// where it came from as `source` (bump, table, env, default; `older copy` for an older copy's
+// request seen by this copy).
 // Inherited holds (re-entry, a child under an exclusive holder) take nothing and log nothing.
 // A waiting request prints a timestamped line every 30 s: its level and where it comes from, its
 // place in the queue, the next in turn, who holds the GPU and why it waits (an exclusive request
@@ -176,7 +196,7 @@ function tempRoot() {
 }
 
 /** This implementation's version: the entry (gpu-lock.mjs) loads the highest on the machine. */
-export const LOCK_VERSION = 1;
+export const LOCK_VERSION = 2;
 
 export const LOCK_DIR = path.join( process.env.PONLAI_GPU_LOCK_DIR || tempRoot(), 'ponlai-gpu.lock' );
 const OWNER = path.join( LOCK_DIR, 'owner.json' );
@@ -330,16 +350,12 @@ function tableEntry( t, table, now ) {
 
 /** A request's (ticket's, holder's) effective level from the inputs it records, { level, source,
  * match? }: a bump, else the table's entry, else its environment's level, else its mode's default
- * (defaultLevel). A ticket or holder of an older copy (no `levels`) is matched against the table by
- * its label only (it records no cwd), else takes its mode's default. */
+ * (defaultLevel). A ticket or holder of an older copy (no `levels`) always takes its mode's default
+ * (source `older copy`): neither the table nor a bump moves it, since that copy ranks it by its own
+ * rules and a level only this copy knows would make the two wait for each other (see the header). */
 export function levelOf( t, table = readTable(), now = Date.now() ) {
 
-	if ( ! t.levels ) {
-
-		const entry = tableEntry( { label: t.label }, table, now );
-		return entry ? { level: parseLevel( entry.level ), source: 'table', match: entry.match } : { level: defaultLevel( t ), source: 'older copy' };
-
-	}
+	if ( ! t.levels ) return { level: defaultLevel( t ), source: 'older copy' };
 	const bump = parseLevel( t.bump );
 	if ( bump ) return { level: bump, source: 'bump' };
 	const entry = tableEntry( t, table, now );
@@ -451,14 +467,30 @@ function queued( now = Date.now() ) {
 
 }
 
-// What a ticket tells the copies from before the levels (shared first, see the header) so that they
-// order it as this copy does, as far as they can: they rank tickets first in, first out
-// (`priority: 'normal'`), let shared requests (`sharedFirst`) pass an exclusive one before its cap
-// (`capAt`), and hold them back after it. A low exclusive ticket ranks after every shared one, so its
-// cap lies beyond any wait; one of normal or higher level stops the shared requests queued after it
-// from the start. Otherwise each copy could wait for a request that waits for it.
+// What a ticket tells the copies from before the levels (see the header) so that they order it as
+// this copy does, as far as they can. They know two classes (`priority`): normal tickets first in,
+// first out, then low ones until their `promoteAt`. Those from shared first also let a shared request
+// (`sharedFirst`) pass an exclusive one before its cap (`capAt`) and hold shared ones back after it.
+// - A ticket below normal says `low`, never promoted: they then rank it after their own (normal)
+//   requests, as this copy ranks their requests (at their mode's default) before it. Said `normal`,
+//   a default exclusive ticket and a shared request of a copy from before shared first that queued
+//   after it each waited for the other, for ever.
+// - A low exclusive ticket's cap lies beyond any wait; a low shared one does not claim to go first,
+//   or an older copy's exclusive request (low here, normal there) would wait for it before its cap
+//   while it waits for that request.
+// - One of normal level or higher says `normal`; an exclusive one is capped from its start (it holds
+//   back the shared requests queued after it), a shared one goes first (`sharedFirst`), as this copy
+//   ranks an older copy's exclusive request (low) after it.
+// Every key is set (undefined drops it from the file), so a change of level rewrites them all.
 const OLD_NEVER = '9999-12-31T00:00:00.000Z';
-const forOlderCopies = ( t ) => t.mode === 'exclusive' ? { capAt: levelRank( t ) <= LEVELS.indexOf( 'normal' ) ? t.start : OLD_NEVER } : { sharedFirst: true };
+const forOlderCopies = ( t ) => {
+
+	const low = levelRank( t ) > LEVELS.indexOf( 'normal' );
+	const exclusive = t.mode === 'exclusive';
+	return { priority: low ? 'low' : 'normal', promoteAt: low ? OLD_NEVER : undefined,
+		capAt: exclusive ? ( low ? OLD_NEVER : t.start ) : undefined, sharedFirst: ! exclusive && ! low ? true : undefined };
+
+};
 
 // A place in the queue (the ticket); call inside the mutex. It records the inputs of its level
 // (requestInputs), not the level, so that a table change reranks it.
@@ -469,8 +501,9 @@ function enqueue( label, exclusive = false ) {
 	mkdirSync( QUEUE, { recursive: true } );
 	const ticket = withLevel( { pid: process.pid, label, seq, start: new Date().toISOString(), priority: 'normal', ...( exclusive ? { mode: 'exclusive' } : {} ), ...requestInputs() }, readTable(), Date.now() );
 	const { level, source, match, ...inputs } = ticket;
-	writeJson( path.join( QUEUE, `${ process.pid }.json` ), { ...inputs, ...forOlderCopies( ticket ) } );
-	return ticket;
+	const onFile = { ...inputs, ...forOlderCopies( ticket ) };
+	writeJson( path.join( QUEUE, `${ process.pid }.json` ), onFile );
+	return { ...onFile, level, source, match };
 
 }
 
@@ -1746,7 +1779,7 @@ export async function main( argv, { impl = `${ fileURLToPath( import.meta.url ) 
 	};
 	// a request or holder as the CLI shows it: its level and where it comes from, without the
 	// fields kept for older copies
-	const show = ( { levels, sharedFirst, capAt, priority, match, file, ...t } ) => ( { ...t, ...( match ? { match } : {} ) } );
+	const show = ( { levels, sharedFirst, capAt, priority, promoteAt, match, file, ...t } ) => ( { ...t, ...( match ? { match } : {} ) } );
 	if ( command === 'status' ) {
 
 		const owner = lockOwner();
