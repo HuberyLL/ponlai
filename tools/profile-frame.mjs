@@ -900,10 +900,25 @@ let releasedMs = 0, holdStart = 0, lockStop = null;
 // set by main once it holds the lock: the first runner's first scene goes on under that hold (main
 // has just checked the GPU for idle)
 let freshHold = false;
+// (a hang names the step it was at: the lock's wait, its idle check; the step ends with the hold)
 async function holdScene( scene, log, forLoad = false ) {
+
+	try {
+
+		return await takeScene( scene, log, forLoad );
+
+	} finally {
+
+		step( null );
+
+	}
+
+}
+async function takeScene( scene, log, forLoad ) {
 
 	// the attempt replaced after a hang holds nothing of its own: the lock is the run's
 	if ( abandoned() ) throw new Abandoned( `an abandoned attempt asked for the lock before ${ scene }` );
+	step( 'the GPU lock between scenes' );
 	if ( freshHold ) {
 
 		freshHold = false;
@@ -929,6 +944,7 @@ async function holdScene( scene, log, forLoad = false ) {
 	releasedMs += away;
 	// with --contended, once a check found the GPU busy the later ones do not wait it out again (as
 	// the loads': it would cost IDLE_WAIT per scene under the lock and change nothing)
+	step( 'the idle check after the lock came back' );
 	const idle = await idleCheck( { seconds: 2, wait: idleWaitLoad === 0 ? 0 : IDLE_WAIT, log } );
 	if ( idle.contended ) idleWaitLoad = 0;
 	holds.push( { scene, at: r2( ( asked - holdStart ) / 1000 ), waitSeconds: r2( away / 1000 ), checkSeconds: r2( ( Date.now() - asked - away ) / 1000 ), idle: idle.idle?.mean ?? null, contended: idle.contended } );
@@ -950,9 +966,12 @@ async function holdScene( scene, log, forLoad = false ) {
 const stopPages = async ( pages ) => { for ( const p of pages ) await p.evaluate( () => window.__profileTools?.loop.stop() ).catch( () => {} ); };
 async function nextScene( page, scene, log ) {
 
+	step( 'the halt before the scene' );
 	await page.evaluate( () => window.__profileTools.loop.stop() );
 	const held = await holdScene( scene, log );
+	step( 'the loop\'s start after the lock' );
 	if ( held !== false ) await page.evaluate( () => window.__profileTools.loop.start() );
+	step( null );
 	return held;
 
 }
@@ -1784,6 +1803,7 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 	for ( const group of groups ) {
 
 		beginScene( group.scenes[ 0 ] );
+		step( 'the halt before the scene' );
 		await stopPages( [ page ] );
 		if ( await holdScene( group.scenes[ 0 ], log, true ) === false ) break;
 		// between page loads the GPU should be idle: anything rendering now is outside this run (the
@@ -1837,6 +1857,7 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix = '', timestamps = TIMESTAMP_MODE !== 'off', out = newRun(), record = {} ) {
 
 	beginScene( names[ 0 ] );
+	step( 'the halt before the scene' );
 	await stopPages( [ page ] );
 	if ( await holdScene( names[ 0 ], log, true ) === false ) return out;
 	await page.goto( 'about:blank' );
@@ -1948,6 +1969,7 @@ const stopText = ( stop ) => ! stop ? '' : stop.reason === 'max' ? `${ stop.slic
 async function runPair( context, bases, evals, log, names = sceneNames, timestamps = TIMESTAMP_MODE !== 'off', outs = [ newRun(), newRun() ] ) {
 
 	beginScene( names[ 0 ] );
+	step( 'the halt before the scene' );
 	await stopPages( context.pages() );
 	if ( await holdScene( names[ 0 ], log, true ) === false ) return outs;
 	const pages = [ context.pages()[ 0 ] ?? await context.newPage() ];
@@ -2109,7 +2131,9 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		if ( k > 0 || scene !== names[ 0 ] ) {
 
 			// both pages stand still while the lock is away (see holdScene), the one in front covered
+			step( 'the halt before the scene' );
 			await halt();
+			step( 'the cover before the scene' );
 			if ( front !== null && ! covered[ front ] ) await cover( front, true );
 			const held = await holdScene( scene, log );
 			if ( held === false ) break;
@@ -2256,6 +2280,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames, timestamps = TIMESTAMP_MODE !== 'off', runs = [ newRun(), newRun() ] ) {
 
 	beginScene( names[ 0 ] );
+	step( 'the halt before the scene' );
 	await stopPages( [ page ] );
 	if ( await holdScene( names[ 0 ], log, true ) === false ) return runs;
 	await page.goto( 'about:blank' );

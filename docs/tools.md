@@ -554,7 +554,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   slot and between scenes).
 - A scene that shows no progress for `--hang` seconds (180) is recorded as hung (profile.json
   `meta.hung`, a section of summary.md), with the step it was at (a compare's load, warm-up,
-  slice, trace end or results) and what each page still did (answering, visible, its animation
+  slice, trace end or results; at a scene's start, the halt, the cover, the lock's wait or its
+  idle check) and what each page still did (answering, visible, its animation
   and scene frames over a second). A scene whose browser or page closes or crashes under it (a
   headed window closed, Chrome gone) is recorded as lost the same way. Either way the browser is
   closed (killed when it is still open after 30 s, so it neither runs on nor holds the profile)
