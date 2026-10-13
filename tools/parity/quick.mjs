@@ -3,6 +3,7 @@
 // full sets (capture-set --check, baseline.mjs).
 //
 //   node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
+//       [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
 //       [--variant "[label::]js"]... [--quality high] [--aa mode] [--q "extra&query"]
 //       [--size 1728x1117@2] [--store <root>/<sha>] [--ref-url R] [--timeout ms] [--runs file.csv] [--task name]
 //
@@ -50,6 +51,10 @@
 // from the base, MSAA's, the sharpness S and the brightness B against the GT, and dMSAA (mean
 // luma difference to MSAA's crop, levels: about 0 for the base of an MSAA run).
 //
+// Ad-hoc views (--view, --views-file, --sweep; adhoc.mjs) are loaded with the query capture-set
+// gives them; the store keeps rest entries of views.mjs's views only, so they are shot without
+// metrics.
+//
 // Views run one after another in one process, each page holding one shared GPU slot.
 import { spawn } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
@@ -58,7 +63,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { acquireGpuLock, releaseGpuLock, gpuUtilisation } from '../gpu-lock.mjs';
 import { launchCapture, waitForScene, waitForStable, stableOptions, startLoop } from '../capture-browser.mjs';
-import { VIEWS, viewNames, viewEval } from './views.mjs';
+import { VIEWS, viewEval } from './views.mjs';
+import { selectViews, viewQuery } from './adhoc.mjs';
 import { CLIPS } from './clips.mjs';
 import { resolveRefDir } from './reference.mjs';
 
@@ -67,11 +73,11 @@ const TOOLS = path.resolve( HERE, '..' );
 // the crop box in CSS px (capture-clip.mjs's BOX)
 const BOX = 192;
 const FLAGS = new Set( [ 'quick', 'full' ] );
-const KNOWN = [ 'quick', 'full', 'views', 'crops', 'variant', 'quality', 'aa', 'q', 'size', 'store', 'ref-url', 'timeout', 'runs', 'task' ];
+const KNOWN = [ 'quick', 'full', 'views', 'view', 'views-file', 'sweep', 'crops', 'variant', 'quality', 'aa', 'q', 'size', 'store', 'ref-url', 'timeout', 'runs', 'task' ];
 
 function parse( argv ) {
 
-	const o = { variant: [] }, positional = [];
+	const o = { variant: [], view: [], sweep: [] }, positional = [];
 	for ( let i = 0; i < argv.length; i ++ ) {
 
 		const a = argv[ i ];
@@ -79,7 +85,7 @@ function parse( argv ) {
 		const k = a.slice( 2 );
 		if ( ! KNOWN.includes( k ) ) throw new Error( `--quick: unknown option --${ k } (see tools/parity/quick.mjs)` );
 		if ( FLAGS.has( k ) ) o[ k ] = true;
-		else if ( k === 'variant' ) o.variant.push( argv[ ++ i ] );
+		else if ( Array.isArray( o[ k ] ) ) o[ k ].push( argv[ ++ i ] );
 		else o[ k ] = argv[ ++ i ];
 
 	}
@@ -147,10 +153,8 @@ async function ready( page, stable, timeout ) {
 export async function main( argv ) {
 
 	const { o, positional } = parse( argv );
-	if ( ! o.views ) throw new Error( '--quick needs --views a,b' );
-	const views = [ 'parity', 'taa', 'all' ].includes( o.views ) ? viewNames( o.views ) : o.views.split( ',' ).filter( Boolean );
-	const bad = views.filter( ( v ) => ! VIEWS[ v ] );
-	if ( bad.length ) throw new Error( `unknown view ${ bad.join( ', ' ) }` );
+	if ( ! o.views && ! o.view.length && ! o[ 'views-file' ] && ! o.sweep.length ) throw new Error( '--quick needs --views a,b (or ad-hoc views: --view, --views-file, --sweep)' );
+	const views = selectViews( o );
 	const size = ( o.size ?? '1728x1117@2' ).match( /^(\d+)x(\d+)(?:@([\d.]+))?$/ );
 	if ( ! size ) throw new Error( `bad --size ${ o.size }` );
 	const W = Number( size[ 1 ] ), H = Number( size[ 2 ] ), DSF = Number( size[ 3 ] ?? 1 );
@@ -177,9 +181,12 @@ export async function main( argv ) {
 	const busy = await gpuUtilisation();
 
 	// the references first: their anchors frame the crops
-	const refs = o.store ? await references( o, views, quality, outDir ) : null;
+	// (ad-hoc views have no stored rest entries: baseline.mjs keeps views.mjs's)
+	const stored = views.filter( ( v ) => ! VIEWS[ v ].adhoc );
+	const refs = o.store && stored.length ? await references( o, stored, quality, outDir ) : null;
+	if ( refs ) for ( const v of views ) if ( VIEWS[ v ].adhoc ) refs.views[ v ] = { missing: 'an ad-hoc view' };
 	if ( refs ) for ( const [ v, r ] of Object.entries( refs.views ) ) if ( r.missing ) console.log( `${ v }: no reference, shot without metrics (${ r.missing })` );
-	if ( ! refs ) console.log( 'no --store: shots only, no metrics' );
+	if ( ! refs ) console.log( o.store ? 'ad-hoc views only (no stored references): shots only, no metrics' : 'no --store: shots only, no metrics' );
 
 	const record = { url: base, common, quality, aa: o.aa ?? null, q: o.q ?? null, size: o.size ?? '1728x1117@2', variants, store: o.store ?? null, references: refs, views: {}, wall: {} };
 	let failed = 0;
@@ -187,7 +194,7 @@ export async function main( argv ) {
 	for ( const view of views ) {
 
 		const crops = o.crops ? o.crops.split( ',' ).filter( Boolean ) : VIEWS[ view ].crops ?? [];
-		const url = `${ base }?${ common }&${ VIEWS[ view ].q }`;
+		const url = `${ base }?${ viewQuery( view, common ) }`;
 		const anchorsFile = refs?.views[ view ]?.msaa ? path.join( refs.views[ view ].msaa, 'clip.json' ) : null;
 		const viewRecord = record.views[ view ] = { url, variants: {} };
 		const t0 = Date.now();

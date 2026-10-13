@@ -11,10 +11,15 @@ import type * as THREE from 'three/webgpu';
 // A pass's GPU time is the time it adds to the GPU's timeline, not its end minus its start: a
 // tile-based GPU stamps a render pass's start when its vertex stage begins, and the tiler runs a
 // full-screen pass's few vertices long before the passes it reads have finished, so the raw
-// intervals overlap and summed to several times the frame. The passes are taken in the
-// order they complete, each charged from the previous completion (or its own start, if later) to
-// its end; the charges sum to the time the GPU was busy with the frame, which on a GPU-bound frame
-// is the frame interval. Where passes run one after another this is simply each one's duration.
+// intervals overlap and summed to several times the frame. The passes are taken in the order they
+// start, each charged the part of its interval that no pass before it covered (from the latest end
+// so far, or its own start, if later, to its end): the charges sum to the union of the passes'
+// intervals since the last frame's work ended, the time the GPU was busy with the frame, which on a
+// GPU-bound frame is the frame interval. Where passes run one after another this is simply each
+// one's duration. (Taken in the order they complete, each from the previous completion, a pass
+// that ran inside a longer one hid the longer one's time before it started: in rain under TAAU the
+// grade table's bake ran inside the opaque scene and the frames' sum fell 1.5 ms short of their
+// GPU time.)
 //
 // The tick's wall time includes the browser's backpressure: once the GPU falls behind, Chrome
 // blocks the calls that hand work to its GPU process until earlier frames drain, so a GPU-bound
@@ -658,9 +663,9 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 				first = Math.min( first, pass.start );
 
 			}
-			// in the order they complete, each from the previous completion (this frame's, or the end of
-			// the last frame's work still running) or its own start, whichever is later
-			timed.sort( ( a, b ) => a.end - b.end );
+			// in the order they start, each from the latest end so far (this frame's, or the end of the
+			// last frame's work still running) or its own start, whichever is later
+			timed.sort( ( a, b ) => a.start - b.start );
 			let cursor = this.lastEnd, pixel = 0;
 			for ( const pass of timed ) {
 
