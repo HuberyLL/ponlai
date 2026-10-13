@@ -22,12 +22,23 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `npm run preview` (port 5191). URL options and in-page keys: `docs/tools.md`.
 - `node tools/capture.mjs <name> [--q "paused&t=12&dpr=1"]` screenshots the dev server into
   `artifacts/captures/` (git-ignored).
+- `node tools/probe.mjs [url] --q "<query>" --eval "<js>"` reads values from the page (diagnostics,
+  timings, uniforms, pipeline counts after an action) as JSON, under the GPU lock and in a warm
+  profile: use it instead of a Playwright script of one's own (`docs/tools.md`, Probes).
 - `node tools/profile-frame.mjs` profiles a production build (scene matrix, A/B deltas, per-pass
   GPU time, the 60 fps acceptance); its options and modes are in `docs/tools.md`.
 - Everything that renders the scene in a browser takes the GPU lock:
   `node tools/gpu-lock.mjs run [--shared] -- <command>` (`status`, `gpu`). Timing runs hold it
-  alone; paused captures and verify probes share it, one slot per browser (3 by default, FIFO).
-  Background work runs with `PONLAI_GPU_PRIORITY=low`: its requests yield free slots to others.
+  alone; paused captures and verify probes share it, one slot per browser (3 by default, FIFO),
+  and go before a waiting timing run until it has waited 30 min.
+  Every session's work runs at the same class: leave `PONLAI_GPU_PRIORITY` unset.
+- Processes an agent starts run at a starved QoS on a busy Mac: the tools raise themselves to the
+  application policy (`tools/qos.mjs`); a new CPU-heavy tool imports it first, and a one-off script
+  runs through `node tools/qos.mjs <command>` (`docs/tools.md`, Process priority).
+- A command that may run for minutes (a capture set, a profile, references) runs under
+  `node tools/job.mjs start --log <file> -- <command>` and is waited on with
+  `node tools/job.mjs wait <file>` (at most 4 minutes per call; it shows the job's place in the GPU
+  queue), not with sleep loops of one's own (`docs/tools.md`, Long jobs).
 - Headed browser runs take over the user's screen: they run only while
   `node tools/display-gate.mjs status` allows them; otherwise run headless and record the headed
   run as pending.

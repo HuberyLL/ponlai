@@ -129,6 +129,11 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 // into one buffer and drops what it resolves while that is mapped; `GpuFrameTimer` and the frame
 // profiler each take over the pools' `resolveQueriesAsync`, so only one may own them: while the
 // profiler times passes it feeds this from its own readings.
+// Its holds, bars and windows run on its own `clock`, performance.now's in every page a player
+// sees. The profiler's A/B (profile-frame --compare) stops one page while the other runs its slice;
+// through a debug hook (main.ts `dynamicClock`) the stopped page's clock stands still meanwhile, so
+// a hold or bar does not run out while the page draws nothing and each page's controller sees its
+// slices as one continuous run.
 
 // The quantile of the frames' GPU times it steers (QUANTILE), and the time (ms) left in the paced
 // interval for the main thread's share of the frame and the compositor: past the interval less
@@ -226,7 +231,7 @@ export interface FrameSampleOptions {
 	pixel?: number;
 	/** periodic work in the frame (`PeriodicWork` bits) */
 	heavy?: number;
-	/** when it arrived (s of `performance.now`) */
+	/** when it arrived (s of its `clock`) */
 	now?: number;
 }
 
@@ -240,7 +245,7 @@ interface Sample {
 	heavy: number;
 }
 
-/** A change of scale (seconds of `performance.now`), the rule that made it and, for the GPU's rules,
+/** A change of scale (seconds of its `clock`), the rule that made it and, for the GPU's rules,
  * the 90th percentile predicted at the new scale and (once its frames are in) the one measured. */
 export interface ScaleChange { at: number; scale: number; why: string; from?: number; predicted?: number; measured?: number }
 
@@ -297,6 +302,11 @@ export class DynamicResolution {
 	/** Called once with a message when something it reads looks wrong (main.ts sets it in debug
 	 * builds). */
 	onWarning: ( ( message: string ) => void ) | null = null;
+	/** Its clock (s), which every hold, bar and window reads: `performance.now`'s. Only the profiler
+	 * replaces it (main.ts's debug hook `dynamicClock`): a page it keeps stopped during another
+	 * page's slices (profile-frame --compare) holds its clock still, so its timers do not run out
+	 * while it draws nothing. */
+	clock: () => number = () => performance.now() / 1000;
 	private samples: Sample[] = [];
 	private intervals: number[] = [];
 	private lastChange = - Infinity;
@@ -353,7 +363,7 @@ export class DynamicResolution {
 		this.max = max;
 		this.floor = this.boundedFloor();
 		this.qualityFloor = Math.min( Math.max( this.qualityFloor, this.floor ), max );
-		this.change( Math.min( this.scale, max ), performance.now() / 1000, 'max' );
+		this.change( Math.min( this.scale, max ), this.clock(), 'max' );
 
 	}
 
@@ -368,7 +378,7 @@ export class DynamicResolution {
 		let floor = this.max;
 		for ( const s of this.steps ) if ( s >= QUALITY_FLOOR * ratio - 1e-6 ) floor = s;
 		this.qualityFloor = Math.max( floor, this.floor );
-		if ( this.scale < this.floor - 1e-6 ) this.change( this.floor, performance.now() / 1000, 'floor' );
+		if ( this.scale < this.floor - 1e-6 ) this.change( this.floor, this.clock(), 'floor' );
 
 	}
 
@@ -403,7 +413,7 @@ export class DynamicResolution {
 	/** The key the scales it holds are remembered under (`renderScaleKey`: tier, AA mode, frame
 	 * rate, canvas size, GPU and steering), or null to remember nothing; set again whenever the canvas changes
 	 * size. A new key gets its entry once the scale has held STORE_AFTER seconds under it. */
-	setStoreKey( key: string | null, now = performance.now() / 1000 ): void {
+	setStoreKey( key: string | null, now = this.clock() ): void {
 
 		if ( key === this.storeKey ) return;
 		this.storeKey = key;
@@ -425,7 +435,7 @@ export class DynamicResolution {
 
 	/** One frame's GPU busy time (ms), rendered at `scale` (NaN: a frame that does not steer it, while
 	 * paused or pinned). */
-	sample( ms: number, scale: number, { pixel = NaN, heavy = 0, now = performance.now() / 1000 }: FrameSampleOptions = {} ): void {
+	sample( ms: number, scale: number, { pixel = NaN, heavy = 0, now = this.clock() }: FrameSampleOptions = {} ): void {
 
 		if ( ! Number.isFinite( ms ) || ms <= 0 ) return;
 		this.source = 'gpu';
@@ -455,7 +465,7 @@ export class DynamicResolution {
 	}
 
 	/** One frame interval (ms), for a browser without timestamp queries. */
-	sampleInterval( ms: number, now = performance.now() / 1000 ): void {
+	sampleInterval( ms: number, now = this.clock() ): void {
 
 		if ( this.source === 'gpu' || ! Number.isFinite( ms ) || ms <= 0 || ms > 250 ) return;
 		if ( now - this.lastChange < SETTLE ) return;
@@ -465,7 +475,7 @@ export class DynamicResolution {
 	}
 
 	/** Moves the scale when its window says so. Returns whether it changed. */
-	update( now = performance.now() / 1000 ): boolean {
+	update( now = this.clock() ): boolean {
 
 		if ( ! this.enabled ) return false;
 		const changed = this.source === 'gpu' ? this.steerByGpu( now ) : this.steerByIntervals( now );
@@ -476,7 +486,7 @@ export class DynamicResolution {
 
 	/** The frame loop starts (or restarts after a stop): its first frames (first-use work, whole
 	 * bakes) do not count, and it settles again from the next clean frames. */
-	begin( now = performance.now() / 1000 ): void {
+	begin( now = this.clock() ): void {
 
 		this.lastChange = now;
 		this.samples.length = 0;
@@ -488,7 +498,7 @@ export class DynamicResolution {
 	}
 
 	/** Sets the scale (a debug override, or a seek to a known settle point). */
-	force( scale: number, now = performance.now() / 1000 ): void {
+	force( scale: number, now = this.clock() ): void {
 
 		this.change( Math.min( Math.max( this.round( scale ), this.floor ), this.max ), now, 'force' );
 
@@ -497,7 +507,7 @@ export class DynamicResolution {
 	/** The lowest scale it may step down to now: the quality floor, and below it only while frames
 	 * are really late, never past it in one step (the step to it is judged first), not while a
 	 * failed step holds it there, and from below it only once the step there saved time. */
-	lowestAllowed( now = performance.now() / 1000 ): number {
+	lowestAllowed( now = this.clock() ): number {
 
 		if ( this.scale > this.qualityFloor + 1e-6 || now < this.contendedUntil ) return this.qualityFloor;
 		if ( this.scale < this.qualityFloor - 1e-6 && ( this.response !== null || this.lastStepSaved !== true ) ) return this.scale;

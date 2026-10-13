@@ -8,7 +8,7 @@
 //   - `tool`: a hash of the capture tools' sources (TOOL_FILES; `toolFiles` keeps each file's own
 //     hash, so a forced recapture names the files that changed);
 //   - `browser`: the browser build (Playwright's Chromium or CHROME_PATH, and its version): frames
-//     never match across builds;
+//     may differ across builds, so a set stored under another build is verified before reuse (below);
 //   - the options that change pixels (tier, aa, size and device pixel ratio, extra query, the
 //     capture tool's own options; for a clip entry its clip, view, frame sampling and anchors).
 // What it covers (`coverage`) is recorded apart from the key: a set's views, each with or without
@@ -25,6 +25,18 @@
 // vouches for them and the claim only extended it).
 // So two tasks that need the same reference at once capture it once.
 //
+// A new browser build (a Chrome auto-update) leaves most frames unchanged, and recapturing every set
+// for it cost close to an hour. So a set whose stored key differs from the request's only by the
+// browser build is verified instead (under the claim, the stored set untouched meanwhile): up to
+// three of its stored views (sampleViews: the island by day, vegetation, water, preferring views the
+// request needs) are captured with the new build into `<root>/<sha>/.verify/` and compared with
+// the stored frames, an MSAA (or aa=off) view by decoded pixels, a temporal one (aa=taa|taau|gt)
+// with diff-set.py --temporal. If they match, the manifest records the build in `verifiedBrowsers`
+// and the set is reused (keyMatches accepts a key that differs only by a verified build); if not,
+// the set is captured afresh as for any other key change, starting from the samples. Clip entries
+// (baseline.mjs) are not verified: an entry is one capture, so checking it costs as much as
+// capturing it; a new build recaptures them.
+//
 //   import { ensureReference, setKey, clipKey } from './reference.mjs';
 //   node tools/parity/reference.mjs status <dir>     (every manifest and claim under a directory)
 //
@@ -33,8 +45,8 @@
 // baseline.mjs's carry-over (carry.mjs) fills an entry through the same claim: its `capture` clones
 // an earlier commit's entry and adds `carriedFrom` to the manifest (status `carried`).
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, rmdirSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -49,7 +61,7 @@ const REPO = path.resolve( TOOLS, '..' );
 // a change to one kind's files leaves the other kind's references valid. Add a file here when a
 // capture starts reading it; the lock (gpu-lock.mjs) and this store decide no pixels.
 export const TOOL_FILES = {
-	set: [ 'capture.mjs', 'capture-browser.mjs', 'parity/capture-set.mjs', 'parity/views.mjs' ],
+	set: [ 'capture.mjs', 'capture-browser.mjs', 'parity/capture-set.mjs', 'parity/views.mjs', 'parity/adhoc.mjs' ],
 	clip: [ 'capture-clip.mjs', 'capture-browser.mjs', 'parity/views.mjs', 'parity/clips.mjs' ],
 };
 
@@ -160,6 +172,23 @@ export function anchorsHash( file ) {
 
 	const clip = readJson( file );
 	return clip?.anchors ? hash( stable( clip.anchors ) ) : null;
+
+}
+
+// The temporal modes, whose paused frames repeat only within a tolerance (diff-set.py --temporal).
+const TEMPORAL = [ 'taa', 'taau', 'gt' ];
+
+/** Two keys that differ at most by the browser build. */
+export const sameButBrowser = ( a, b ) => stable( { ...a, browser: null } ) === stable( { ...b, browser: null } );
+
+/** Whether a stored manifest serves a key: the same key, or one that differs only by a browser build
+ * the manifest records as verified (`verifiedBrowsers`: sample views captured with that build
+ * matched the stored frames). */
+export function keyMatches( manifest, key ) {
+
+	if ( ! manifest?.key ) return false;
+	if ( stable( manifest.key ) === stable( key ) ) return true;
+	return sameButBrowser( manifest.key, key ) && ( manifest.verifiedBrowsers ?? [] ).some( ( v ) => stable( v.browser ) === stable( key.browser ) );
 
 }
 
@@ -308,8 +337,12 @@ export function describeKeyChange( stored, storedFiles, key, files ) {
 
 // ------------------------------------------------------------------ coverage per kind
 
-/** A set's coverage: { views: { <view>: { repeat, identical } } }; what a request wants:
- * { views: [...], repeat }. */
+/** A set's coverage: { views: { <view>: { repeat, identical, def } } }; what a request wants:
+ * { views: [...], repeat, defs: { <view>: def } }. `def` is an ad-hoc view's definition hash
+ * (adhoc.mjs; views.mjs's views have none, their definitions are in the tool hash): the store keys
+ * views by name, so a stored view whose def differs from the request's is not covered, and its
+ * recapture replaces the entry rather than merging into it. */
+const sameDef = ( a, b ) => ( a ?? null ) === ( b ?? null );
 export const SET = {
 
 	missing( coverage, want ) {
@@ -317,7 +350,8 @@ export const SET = {
 		const todo = [];
 		for ( const v of want.views ) {
 
-			const c = coverage?.views?.[ v ];
+			let c = coverage?.views?.[ v ];
+			if ( c && ! sameDef( c.def, want.defs?.[ v ] ) ) c = null;
 			if ( ! c?.captured ) todo.push( [ v, '' ] );
 			if ( want.repeat && ! c?.repeat ) todo.push( [ v, '.repeat' ] );
 
@@ -328,14 +362,14 @@ export const SET = {
 	merge( coverage, add ) {
 
 		const views = { ...( coverage?.views ?? {} ) };
-		for ( const [ v, c ] of Object.entries( add.views ) ) views[ v ] = { ...views[ v ], ...c };
+		for ( const [ v, c ] of Object.entries( add.views ) ) views[ v ] = views[ v ] && sameDef( views[ v ].def, c.def ) ? { ...views[ v ], ...c } : { ...c };
 		return { views };
 
 	},
-	planned( coverage, todo ) {
+	planned( coverage, todo, want ) {
 
 		const add = { views: {} };
-		for ( const [ v, s ] of todo ) add.views[ v ] = { ...add.views[ v ], ...( s ? { repeat: true } : { captured: true } ) };
+		for ( const [ v, s ] of todo ) add.views[ v ] = { ...add.views[ v ], ...( s ? { repeat: true } : { captured: true } ), ...( want?.defs?.[ v ] ? { def: want.defs[ v ] } : {} ) };
 		return SET.merge( coverage, add );
 
 	},
@@ -373,6 +407,104 @@ export const CLIP = {
 	describe: () => 'the clip',
 
 };
+
+// ------------------------------------------------------------------ a new browser build
+
+// The sample views that vouch for a set under a new browser build, one per kind of content a
+// browser update could render differently: the island by day, vegetation (alpha-to-coverage,
+// derivatives), water (the ocean's compute and refraction). Each list in order of preference.
+const SAMPLES = [
+	[ 'island-fair-noon', 'horizon-fair-noon', 'low-36', 'island-clear-golden' ],
+	[ 'meadow-close', 'flowers-close', 'meadow-24', 'meadow-shade', 'twigs-sky' ],
+	[ 'water-skim-cliffs', 'rim-sea', 'island-from-sea', 'cliff-sea-golden' ],
+];
+const SAMPLE_COUNT = 3;
+
+/** Up to three stored views of a set to capture again with a new build: a view of each SAMPLES
+ * list, the views the request needs first (on a mismatch they become the new set's first
+ * captures), then any stored view. An MSAA view whose stored A/A differed is left out: it is
+ * compared by identity. */
+export function sampleViews( coverage, want, temporal ) {
+
+	const all = Object.entries( coverage?.views ?? {} ).filter( ( [ , c ] ) => c.captured );
+	const steady = all.filter( ( [ , c ] ) => temporal || c.identical !== false ).map( ( [ v ] ) => v );
+	const stored = steady.length ? steady : all.map( ( [ v ] ) => v );
+	const wanted = new Set( want?.views ?? [] );
+	const picks = [];
+	for ( const list of SAMPLES ) {
+
+		const v = list.find( ( x ) => wanted.has( x ) && stored.includes( x ) ) ?? list.find( ( x ) => stored.includes( x ) );
+		if ( v && ! picks.includes( v ) ) picks.push( v );
+
+	}
+	for ( const v of [ ...stored.filter( ( x ) => wanted.has( x ) ), ...stored ] ) if ( picks.length < SAMPLE_COUNT && ! picks.includes( v ) ) picks.push( v );
+	return picks;
+
+}
+
+function runDiff( args, out ) {
+
+	return new Promise( ( resolve ) => {
+
+		// (not `python -I`: diff-set.py imports tolerance.py from its own directory)
+		const child = spawn( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( TOOLS, 'parity/diff-set.py' ), ...args ], { cwd: REPO, stdio: [ 'ignore', 'pipe', 'pipe' ] } );
+		const chunks = [];
+		child.stdout.on( 'data', ( d ) => chunks.push( d ) );
+		child.stderr.on( 'data', ( d ) => chunks.push( d ) );
+		child.on( 'error', ( error ) => chunks.push( Buffer.from( `uv: ${ error.message }\n` ) ) );
+		child.on( 'close', ( code ) => { writeFileSync( out, Buffer.concat( chunks ) ); resolve( code ?? 1 ); } );
+
+	} );
+
+}
+
+/**
+ * Captures a set's sample views with the browser build of `key` into `scratch` (through the
+ * request's own capture, so with the set's options) and compares them with the stored frames: an
+ * MSAA (or aa=off) view by decoded pixels, a temporal one with diff-set.py --temporal (against the
+ * stored capture and its repeat, when stored). Resolves to { ok, views, captured, rule, why }.
+ */
+async function verifySamples( spec, m, dir, scratch ) {
+
+	const temporal = TEMPORAL.includes( m.key.aa );
+	const views = sampleViews( m.coverage, spec.want, temporal );
+	const rule = temporal ? 'diff-set --temporal' : 'decoded pixels';
+	if ( ! views.length ) return { ok: false, views, captured: [], rule, why: 'the stored set lists no view to compare' };
+	let captured;
+	try { captured = await spec.capture( views.map( ( v ) => [ v, '' ] ), scratch ); } catch ( error ) { captured = { coverage: null, error }; }
+	const got = views.filter( ( v ) => captured?.coverage?.views?.[ v ]?.captured );
+	if ( got.length < views.length ) return { ok: false, views, captured: got, rule, why: `${ views.length - got.length } of the ${ views.length } sample views failed to capture` };
+	const differ = [];
+	if ( temporal ) {
+
+		const code = await runDiff( [ dir, scratch, '--views', views.join( ',' ), '--out', path.join( scratch, 'diff' ), '--temporal' ], path.join( scratch, 'diff.txt' ) );
+		// (the scratch directory goes once the samples decide: the reasons are kept in the log line)
+		const report = readJson( path.join( scratch, 'diff', 'report.json' ) );
+		for ( const v of views ) {
+
+			const t = report?.[ v ]?.temporal;
+			if ( t && ! t.pass ) differ.push( `${ v } (use ${ t.use }: ${ t.why?.[ 0 ] ?? '?' })` );
+
+		}
+		if ( code !== 0 && ! differ.length ) differ.push( `diff-set --temporal exit ${ code }: ${ readFileSync( path.join( scratch, 'diff.txt' ), 'utf8' ).trim().split( '\n' ).pop() }` );
+
+	} else {
+
+		const { decodePng, compareFrames } = await import( '../capture-browser.mjs' );
+		for ( const v of views ) {
+
+			const a = readFileSync( path.join( dir, `${ v }.png` ) ), b = readFileSync( path.join( scratch, `${ v }.png` ) );
+			if ( a.equals( b ) ) continue;
+			const c = compareFrames( decodePng( a ), decodePng( b ) );
+			if ( c.over[ 0 ] ) differ.push( `${ v } (${ c.over[ 0 ] } px differ, max ${ c.max } levels)` );
+
+		}
+
+	}
+	return { ok: ! differ.length, views, captured: got, rule, why: differ.length ? `the sample views differ: ${ differ.join( ', ' ) }` : `${ views.length } sample views match (${ rule })`,
+		short: differ.length ? `${ differ.length } of ${ views.length } sample views differ` : '' };
+
+}
 
 // ------------------------------------------------------------------ the store
 
@@ -414,7 +546,7 @@ function siblingSets( shaDir, self ) {
  *   dir,                 the reference's directory (under <root>/<sha>/; resolveRefDir)
  *   kind: 'set'|'clip',  SET or CLIP coverage
  *   key, files,          setKey() / clipKey()
- *   want,                for a set { views, repeat }
+ *   want,                for a set { views, repeat, defs }
  *   url,                 where to capture it from, or null: reuse or wait only
  *   capture( todo, dir ) the capture itself: resolves to { coverage, failed, manifest } (coverage:
  *                        what it captured, in the kind's shape; manifest: fields added to the
@@ -439,19 +571,39 @@ export async function ensureReference( spec ) {
 	const key = spec.key, keyText = stable( key );
 	const name = path.relative( path.dirname( shaDir ), dir );
 	const started = Date.now();
-	let waitedSince = 0, announced = 0;
-	const result = ( status, extra ) => ( { status, dir, sha, rel, waitedMinutes: waitedSince ? ( Date.now() - waitedSince ) / 60000 : 0, ...extra } );
+	let waitedSince = 0, announced = 0, verified = null;
+	const result = ( status, extra ) => ( { status, dir, sha, rel, waitedMinutes: waitedSince ? ( Date.now() - waitedSince ) / 60000 : 0, ...( verified ? { browserVerified: verified } : {} ), ...extra } );
+	const stamp = () => new Date().toISOString().replace( /[:.]/g, '-' );
+	const flat = rel.split( path.sep ).join( '~' );
+	// (under the mutex, and only by the claim's holder or a process about to take it)
+	const moveAside = () => {
+
+		const aside = path.join( shaDir, '.replaced', `${ flat }@${ stamp() }` );
+		mkdirSync( path.dirname( aside ), { recursive: true } );
+		renameSync( dir, aside );
+		rmSync( claimDir( aside ), { recursive: true, force: true } );
+		log( `reference ${ name }: the old one moved to ${ path.relative( shaDir, aside ) }` );
+
+	};
+	const writeClaim = ( will ) => {
+
+		mkdirSync( claimDir( dir ), { recursive: true } );
+		writeJson( path.join( claimDir( dir ), 'owner.json' ), {
+			pid: process.pid, host: os.hostname(), started: new Date().toISOString(), label: spec.label ?? path.basename( process.argv[ 1 ] ?? 'node' ), key, will,
+		} );
+
+	};
 
 	// a usable stored reference: this directory's, else (a set) a sibling's of the same key
 	const usable = ( state ) => {
 
 		if ( spec.force ) return null;
 		const m = state.manifest;
-		if ( m && stable( m.key ) === keyText && ! kind.missing( m.coverage, spec.want ).length ) return { dir, manifest: m };
+		if ( keyMatches( m, key ) && ! kind.missing( m.coverage, spec.want ).length ) return { dir, manifest: m };
 		if ( spec.siblings ) for ( const sub of siblingSets( shaDir, dir ) ) {
 
 			const sm = readJson( manifestFile( sub ) );
-			if ( sm && stable( sm.key ) === keyText && ! kind.missing( sm.coverage, spec.want ).length ) return { dir: sub, manifest: sm };
+			if ( keyMatches( sm, key ) && ! kind.missing( sm.coverage, spec.want ).length ) return { dir: sub, manifest: sm };
 
 		}
 		return null;
@@ -479,7 +631,7 @@ export async function ensureReference( spec ) {
 		if ( found ) {
 
 			const via = found.dir === dir ? '' : ` (covered by ${ path.relative( shaDir, found.dir ) })`;
-			if ( ! spec.dryRun ) log( `reference ${ name }: ${ waitedSince ? 'reused after waiting' : 'reused' }${ via }` );
+			if ( ! spec.dryRun ) log( `reference ${ name }: ${ waitedSince ? 'reused after waiting' : 'reused' }${ via }${ verified ? ` (verified for ${ key.browser.version })` : '' }` );
 			return result( waitedSince ? 'waited' : 'reused', { dir: found.dir, manifest: found.manifest } );
 
 		}
@@ -511,14 +663,17 @@ export async function ensureReference( spec ) {
 		const m = state.manifest;
 		let action, reason;
 		if ( spec.force ) { action = 'replace'; reason = 'forced (--recapture-reference)'; }
-		else if ( m && stable( m.key ) !== keyText ) { action = 'replace'; reason = describeKeyChange( m.key, m.toolFiles, key, spec.files ); }
+		// a set whose key differs only by the browser build: a few of its views captured with this
+		// build decide whether it still holds (a browser update rarely changes the frames)
+		else if ( m && ! keyMatches( m, key ) && spec.kind === 'set' && sameButBrowser( m.key, key ) ) { action = 'verify'; reason = describeKeyChange( m.key, m.toolFiles, key, spec.files ); }
+		else if ( m && ! keyMatches( m, key ) ) { action = 'replace'; reason = describeKeyChange( m.key, m.toolFiles, key, spec.files ); }
 		else if ( m ) { action = 'extend'; reason = `not captured yet: ${ kind.describe( kind.missing( m.coverage, spec.want ) ) }`; }
 		else if ( state.claim && ! state.claim.live ) { action = 'wipe'; reason = `the capture by pid ${ state.claim.pid } did not finish (its process is gone)`; }
 		else if ( state.incomplete ) { action = 'wipe'; reason = 'the last capture failed'; }
 		else if ( hasContent( dir ) ) { action = 'replace'; reason = 'no manifest (captured before the reference store, or by hand)'; }
 		else { action = 'fresh'; reason = 'no reference yet'; }
 
-		if ( spec.acceptStale && action === 'replace' && ! spec.force ) {
+		if ( spec.acceptStale && ( action === 'replace' || action === 'verify' ) && ! spec.force ) {
 
 			const coverage = m ? m.coverage : kind.infer( dir );
 			if ( ! kind.missing( coverage, spec.want ).length ) {
@@ -533,7 +688,7 @@ export async function ensureReference( spec ) {
 		if ( spec.dryRun ) return result( 'capture', { reason, action } );
 
 		// take the claim, unless another process took it (or finished) meanwhile
-		const coverageBefore = action === 'extend' ? m.coverage : {};
+		let coverageBefore = action === 'extend' ? m.coverage : {};
 		let todo = action === 'extend' ? kind.missing( m.coverage, spec.want ) : kind.missing( {}, spec.want );
 		const claimed = withMutex( dir, () => {
 
@@ -541,20 +696,10 @@ export async function ensureReference( spec ) {
 			if ( now.claim?.live ) return false;
 			if ( stable( now.manifest ) !== stable( m ) ) return false;
 			if ( now.claim ) rmSync( claimDir( dir ), { recursive: true, force: true } );
-			if ( action === 'replace' && existsSync( dir ) ) {
-
-				const aside = path.join( shaDir, '.replaced', `${ rel.split( path.sep ).join( '~' ) }@${ new Date().toISOString().replace( /[:.]/g, '-' ) }` );
-				mkdirSync( path.dirname( aside ), { recursive: true } );
-				renameSync( dir, aside );
-				log( `reference ${ name }: the old one moved to ${ path.relative( shaDir, aside ) }` );
-
-			}
+			if ( action === 'replace' && existsSync( dir ) ) moveAside();
 			if ( action === 'wipe' ) rmSync( dir, { recursive: true, force: true } );
-			mkdirSync( claimDir( dir ), { recursive: true } );
-			writeJson( path.join( claimDir( dir ), 'owner.json' ), {
-				pid: process.pid, host: os.hostname(), started: new Date().toISOString(), label: spec.label ?? path.basename( process.argv[ 1 ] ?? 'node' ),
-				key, will: kind.planned( coverageBefore, todo ),
-			} );
+			// (a set being verified will cover what it covers now)
+			writeClaim( action === 'verify' ? m.coverage : kind.planned( coverageBefore, todo, spec.want ) );
 			held.add( dir );
 			hookExit();
 			return true;
@@ -562,12 +707,73 @@ export async function ensureReference( spec ) {
 		} );
 		if ( ! claimed ) continue;
 
-		log( `reference ${ name }: capturing ${ kind.describe( todo ) } ${ spec.via ?? `from ${ spec.url }` } (${ reason })` );
+		let samples = null;
+		if ( action === 'verify' ) {
+
+			// the samples go to a scratch directory under the commit: the stored set stays untouched
+			// until they decide
+			const t0 = Date.now(), scratch = path.join( shaDir, '.verify', `${ flat }@${ stamp() }` );
+			const dropScratch = () => {
+
+				rmSync( scratch, { recursive: true, force: true } );
+				try { rmdirSync( path.dirname( scratch ) ); } catch { /* another verification is under way */ }
+
+			};
+			log( `reference ${ name }: ${ reason }: capturing sample views ${ spec.via ?? `from ${ spec.url }` } to compare with the stored frames` );
+			const v = await verifySamples( spec, m, dir, scratch );
+			const minutes = Number( ( ( Date.now() - t0 ) / 60000 ).toFixed( 2 ) );
+			if ( ! ownClaim( dir ) ) {
+
+				held.delete( dir );
+				log( `reference ${ name }: lost the claim on ${ rel } while verifying; nothing recorded` );
+				return result( 'failed', { reason: 'lost the claim' } );
+
+			}
+			const round = { pid: process.pid, label: spec.label ?? null, started: new Date( t0 ).toISOString(), finished: new Date().toISOString(), minutes,
+				verify: { browser: key.browser, views: v.views, rule: v.rule, ok: v.ok, why: v.why } };
+			if ( v.ok ) {
+
+				writeJson( manifestFile( dir ), { ...m, verifiedBrowsers: [ ...( m.verifiedBrowsers ?? [] ), { browser: key.browser, at: round.finished, views: v.views, rule: v.rule } ],
+					rounds: [ ...( m.rounds ?? [] ), round ] } );
+				releaseClaim( dir );
+				dropScratch();
+				verified = { from: m.key.browser, views: v.views, rule: v.rule, minutes };
+				log( `reference ${ name }: the stored set holds for ${ key.browser.version }: ${ v.why }, in ${ minutes.toFixed( 1 ) } min` );
+				continue;
+
+			}
+			// a mismatch: captured afresh as before, starting from the samples (this build's frames)
+			log( `reference ${ name }: ${ v.why }: capturing it afresh` );
+			withMutex( dir, () => {
+
+				moveAside();
+				samples = { views: {} };
+				for ( const view of v.captured ) samples.views[ view ] = { captured: true, ...( spec.want?.defs?.[ view ] ? { def: spec.want.defs[ view ] } : {} ) };
+				coverageBefore = samples;
+				todo = kind.missing( coverageBefore, spec.want );
+				writeClaim( kind.planned( coverageBefore, todo, spec.want ) );
+
+			} );
+			for ( const f of existsSync( scratch ) ? readdirSync( scratch ) : [] ) {
+
+				const view = f.match( /^(.+?)\.(png|json|log)$/ )?.[ 1 ];
+				if ( samples.views[ view ] ) renameSync( path.join( scratch, f ), path.join( dir, f ) );
+
+			}
+			dropScratch();
+			reason = `${ reason }; ${ v.short || v.why }`;
+			action = 'replace';
+			samples.round = round;
+
+		}
+
+		log( todo.length ? `reference ${ name }: capturing ${ kind.describe( todo ) } ${ spec.via ?? `from ${ spec.url }` } (${ reason })` : `reference ${ name }: the sample views cover the request` );
 		const t0 = Date.now();
 		let captured;
 		try {
 
-			captured = await spec.capture( todo, dir );
+			// (nothing left when the samples were all the request wanted)
+			captured = todo.length ? await spec.capture( todo, dir ) : { coverage: coverageBefore, failed: 0 };
 
 		} catch ( error ) {
 
@@ -584,15 +790,16 @@ export async function ensureReference( spec ) {
 
 		}
 		const add = captured.coverage;
-		const got = add && ( spec.kind === 'set' ? Object.keys( add.views ?? {} ).length : add.captured );
+		// (the samples of a failed verification count even when the rest failed to capture)
+		const got = ( add && ( spec.kind === 'set' ? Object.keys( add.views ?? {} ).length : add.captured ) ) || ( samples && Object.keys( samples.views ).length );
 		if ( got ) {
 
-			const coverage = kind.merge( coverageBefore, add );
+			const coverage = kind.merge( coverageBefore, add ?? { views: {} } );
 			writeJson( manifestFile( dir ), {
 				format: FORMAT, kind: spec.kind, sha, path: rel, key, toolFiles: spec.files, coverage, url: spec.url, ...captured.manifest,
-				rounds: [ ...( action === 'extend' ? m.rounds ?? [] : [] ), {
+				rounds: [ ...( action === 'extend' ? m.rounds ?? [] : [] ), ...( samples ? [ samples.round ] : [] ), {
 					pid: process.pid, label: spec.label ?? null, started: new Date( t0 ).toISOString(), finished: new Date().toISOString(),
-					minutes: Number( ( ( Date.now() - t0 ) / 60000 ).toFixed( 2 ) ), captured: kind.describe( todo ), reason, failed: captured.failed ?? 0,
+					minutes: Number( ( ( Date.now() - t0 ) / 60000 ).toFixed( 2 ) ), captured: todo.length ? kind.describe( todo ) : 'nothing more (the samples cover it)', reason, failed: captured.failed ?? 0,
 					...( captured.manifest?.carriedFrom ? { carriedFrom: captured.manifest.carriedFrom.sha } : {} ),
 				} ],
 			} );
@@ -635,7 +842,7 @@ function status( dir ) {
 		const parts = [ path.relative( dir, d ) || '.' ];
 		if ( m ) {
 
-			parts.push( m.kind, m.key.tool === current[ m.kind ] ? 'tools current' : 'tools CHANGED', `${ m.key.browser?.executable } ${ m.key.browser?.version }` );
+			parts.push( m.kind, m.key.tool === current[ m.kind ] ? 'tools current' : 'tools CHANGED', `${ m.key.browser?.executable } ${ m.key.browser?.version }${ m.verifiedBrowsers?.length ? ` (verified for ${ m.verifiedBrowsers.map( ( v ) => v.browser.version ).join( ', ' ) })` : '' }` );
 			if ( m.kind === 'set' ) {
 
 				const views = Object.entries( m.coverage.views );
