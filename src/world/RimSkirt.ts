@@ -8,7 +8,7 @@ import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
-import { float32Steps, indexSteps } from './Steps.ts';
+import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
 import type { RimSkirtData } from './types.ts';
@@ -55,18 +55,18 @@ export function setTurfSkirt( mesh: THREE.Mesh, built: TurfSkirtBuilt ): THREE.B
 
 }
 
-/** The skirt's geometry in steps (a generator, `per` pieces a step in each pass), so the growth
+/** The skirt's geometry in steps (a generator, `per` samples a step in each pass), so the growth
  * (Growth.ts) builds a grown island's in idle time; `buildTurfSkirt` runs it to the end. The result
  * is the same however it is stepped. */
 export function* turfSkirtSteps( skirt: RimSkirtData, per = Infinity ): Generator<void, TurfSkirtBuilt> {
 
-	const P: number[] = [], C: number[] = [], N: number[] = [], B: number[] = [], W: number[] = [], I: number[] = [];
+	const P = new Growing(), C = new Growing(), N = new Growing(), B = new Growing(), W = new Growing(), I = new Growing();
 	const { points, normals, info, pieces } = skirt;
 	const col = new THREE.Color(), earth = new THREE.Color( ...SOIL_PALETTE.root );
 	const base = new THREE.Vector3(), dir = new THREE.Vector3(), side = new THREE.Vector3(), up = new THREE.Vector3( 0, 1, 0 );
 	const normal = new THREE.Vector3(), v = new THREE.Vector3();
 	const ring = ( s: number, k: number, target = v ) => target.fromArray( points, ( s * SKIRT_RING + k ) * 3 );
-	let blades = 0;
+	let blades = 0, done = 0;
 
 	// Torn gaps: short stretches where the curl has broken off below the shoulder, so the sod's
 	// face reads as separate lobes and tufts rather than one smooth mat. Sample s is in a gap.
@@ -79,11 +79,10 @@ export function* turfSkirtSteps( skirt: RimSkirtData, per = Infinity ): Generato
 	// Body: the sod sheet, smooth-shaded by the normals the worker found from its rings.
 	for ( let l = 0; l < pieces.length; l += 2 ) {
 
-		if ( l > 0 && ( l / 2 ) % per === 0 ) yield;
-
 		const first = pieces[ l ], count = pieces[ l + 1 ];
 		for ( let s = first; s < first + count; s ++ ) for ( let k = 0; k < SKIRT_RING; k ++ ) {
 
+			if ( k === 0 && ++ done % per === 0 ) yield;
 			ring( s, k );
 			P.push( v.x, v.y, v.z );
 			// Shaded turf under the thatch, mottled with moss and bare earth.
@@ -139,11 +138,11 @@ export function* turfSkirtSteps( skirt: RimSkirtData, per = Infinity ): Generato
 	const a = new THREE.Vector3(), b = new THREE.Vector3(), tangent = new THREE.Vector3(), out = new THREE.Vector3();
 	for ( let l = 0; l < pieces.length; l += 2 ) {
 
-		if ( ( l / 2 ) % per === 0 ) yield;
 		// the blades of the samples that start a segment: a piece's last sample starts the next piece
 		const first = pieces[ l ], count = pieces[ l + 1 ];
 		for ( let s = first; s + 1 < first + count; s ++ ) {
 
+			if ( ++ done % per === 0 ) yield;
 			const [ x, z, nx, nz, presence, droop ] = info.subarray( s * SKIRT_INFO, ( s + 1 ) * SKIRT_INFO );
 			if ( presence < 0.12 ) continue;
 			const rng = cellStream( Math.round( x * 1000 ), Math.round( z * 1000 ), 5501 );
@@ -202,7 +201,7 @@ export function* turfSkirtSteps( skirt: RimSkirtData, per = Infinity ): Generato
 	geometry.setAttribute( 'skirtBlade', new THREE.BufferAttribute( yield* float32Steps( B ), 1 ) );
 	geometry.setAttribute( 'skirtSway', new THREE.BufferAttribute( yield* float32Steps( W ), 1 ) );
 	geometry.setIndex( yield* indexSteps( I ) );
-	geometry.computeBoundingSphere();
+	yield* boundsSteps( geometry );
 	geometry.boundingSphere!.radius += 0.12; // the thatch's lean in a gale
 	return { geometry, counts: { blades, triangles: I.length / 3 } };
 

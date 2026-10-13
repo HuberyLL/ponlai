@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { texture, vec2 } from 'three/tsl';
 import { SEABED_TILE } from './SeabedTile.ts';
 import { RIM_CELL } from './RimGround.ts';
+import { textureSteps } from './Upload.ts';
 import type { WorldData, ShoreField } from './types.ts';
 
 // The world fields on the GPU (ChunkMerge.ts assembles them on the CPU): the shore's sea-level
@@ -20,8 +21,8 @@ import type { WorldData, ShoreField } from './types.ts';
 //   packed into a staging buffer ahead, then copied into place on the GPU in the swap's frame,
 //   which sends no texel data (three r186's WebGPU backend writes a DataTexture whole and has no
 //   update ranges);
-// - takes a new texture once the land outgrows them, made and filled ahead (`uploadTexture`) and
-//   set as the base node's value in the swap's frame.
+// - takes a new texture once the land outgrows them, made and filled ahead (Upload.ts
+//   `textureSteps`) and set as the base node's value in the swap's frame.
 // Texels go up through buffers mapped at creation and copies on the GPU, never queue.writeTexture:
 // a write sends its data through the GPU process's command stream, and with the GPU busy a few
 // megabytes stalled the main thread for hundreds of milliseconds, in the swap's frame or the idle
@@ -49,49 +50,6 @@ const COPY_SRC = 0x0004, ROW_ALIGN = 256;
 type Rect = [ number, number, number, number ];
 /** The changed squares of a field and the staging buffer holding them (rows `pitch` bytes apart). */
 interface Staged { rects: Rect[]; buffer: GpuBuffer; pitch: number }
-
-// A buffer the GPU copies from, holding `fill`'s bytes (written through its mapping: no queue write).
-function stagingBuffer( device: GpuDevice, size: number, fill: ( bytes: Uint8Array ) => void ): GpuBuffer {
-
-	const buffer = device.createBuffer( { size: Math.ceil( size / 4 ) * 4, usage: COPY_SRC, mappedAtCreation: true } );
-	fill( new Uint8Array( buffer.getMappedRange() ) );
-	buffer.unmap();
-	return buffer;
-
-}
-
-/** Makes `texture`'s GPU texture and fills it from its data through a staging buffer and a copy on
- * the GPU (see the header: no queue write); three's own upload where the internals are missing. */
-export function uploadTexture( renderer: THREE.WebGPURenderer, texture: THREE.DataTexture ): void {
-
-	const backend = renderer.backend as unknown as Backend;
-	const data = texture.image.data as ArrayBufferView, { width, height } = texture.image;
-	texture.source.dataReady = false;
-	renderer.initTexture( texture );
-	texture.source.dataReady = true;
-	const gpu = backend.get( texture ).texture;
-	if ( ! gpu || ! backend.device?.createBuffer ) {
-
-		texture.needsUpdate = true;
-		renderer.initTexture( texture );
-		return;
-
-	}
-	const row = data.byteLength / height, pitch = Math.ceil( row / ROW_ALIGN ) * ROW_ALIGN;
-	const source = new Uint8Array( data.buffer, data.byteOffset, data.byteLength );
-	const buffer = stagingBuffer( backend.device, pitch * height, ( bytes ) => {
-
-		if ( pitch === row ) bytes.set( source );
-		else for ( let j = 0; j < height; j ++ ) bytes.set( source.subarray( j * row, ( j + 1 ) * row ), j * pitch );
-
-	} );
-	const encoder = backend.device.createCommandEncoder();
-	encoder.copyBufferToTexture( { buffer, offset: 0, bytesPerRow: pitch, rowsPerImage: height }, { texture: gpu, origin: { x: 0, y: 0 } }, { width, height } );
-	backend.device.queue.submit( [ encoder.finish() ] );
-	// (freed once the copy has run)
-	buffer.destroy();
-
-}
 
 interface Texel { format: THREE.PixelFormat; type: THREE.TextureDataType; channels: number; bytes: number }
 const TEXEL: Record<FieldKey, Texel> = {
@@ -157,20 +115,26 @@ function pack( texels: Texels, old: Texels, nx: number, channels: number, i0: nu
 /** A changed square of a field: x, y and its texels, packed. */
 type Square = [ number, number, Texels ];
 
-// The squares of a field (each side x side texels) one after another in a staging buffer, each row
-// on a ROW_ALIGN boundary: null when there are none.
-function stage( key: FieldKey, squares: Square[], side: number, device: GpuDevice ): Staged | null {
+// The squares of a field (each side x side texels) one after another in a staging buffer mapped at
+// creation (no queue write), each row on a ROW_ALIGN boundary, a square a step: null when there are
+// none.
+function* stage( key: FieldKey, squares: Square[], side: number, device: GpuDevice ): Generator<void, Staged | null> {
 
 	if ( squares.length === 0 ) return null;
 	const row = side * TEXEL[ key ].bytes, pitch = Math.ceil( row / ROW_ALIGN ) * ROW_ALIGN, size = pitch * side;
 	const rects: Rect[] = [];
-	const buffer = stagingBuffer( device, size * squares.length, ( bytes ) => squares.forEach( ( [ x, y, texels ], k ) => {
+	const buffer = device.createBuffer( { size: Math.ceil( size * squares.length / 4 ) * 4, usage: COPY_SRC, mappedAtCreation: true } );
+	const bytes = new Uint8Array( buffer.getMappedRange() );
+	for ( let k = 0; k < squares.length; k ++ ) {
 
+		yield;
+		const [ x, y, texels ] = squares[ k ];
 		const source = new Uint8Array( texels.buffer, texels.byteOffset, texels.byteLength );
 		for ( let j = 0; j < side; j ++ ) bytes.set( source.subarray( j * row, ( j + 1 ) * row ), k * size + j * pitch );
 		rects.push( [ x, y, side, k * size ] );
 
-	} ) );
+	}
+	buffer.unmap();
 	return { rects, buffer, pitch };
 
 }
@@ -219,8 +183,9 @@ export class WorldFields {
 	}
 
 	/** The fields of `data` (a version merged from these chunks and `changed`, those whose data
-	 * differs from the shown version's), in steps: the half floats, and for fields whose bounds
-	 * changed new textures uploaded through `upload` (one per step). */
+	 * differs from the shown version's), in steps of a few tenths of a millisecond: the half
+	 * floats, the changed squares staged, and for fields whose bounds changed new textures
+	 * uploaded (Upload.ts textureSteps). */
 	* steps( data: WorldData, changed: readonly { ci: number; cj: number }[], renderer: THREE.WebGPURenderer ): Generator<void, FieldsPrepared> {
 
 		const device = ( renderer.backend as unknown as Backend ).device;
@@ -229,7 +194,7 @@ export class WorldFields {
 		const same = sameBounds( old.shore, data.shore ), sameRim = sameBounds( old.rimGround, data.rimGround );
 		// the beds: small (0.5 m), converted whole
 		const beds = new Uint16Array( data.seabedBeds.data.length );
-		const ROWS = 1 << 16;
+		const ROWS = 1 << 14;
 		for ( let k = 0; k < beds.length; k += ROWS ) {
 
 			half( data.seabedBeds.data, beds, k, Math.min( k + ROWS, beds.length ) );
@@ -260,13 +225,18 @@ export class WorldFields {
 				const at = inRim( c );
 				if ( ! at ) continue;
 				const [ i0, j0 ] = at;
-				for ( let j = j0; j < j0 + rimTile; j ++ ) half( r.data, rim, ( j * r.nx + i0 ) * 4, ( j * r.nx + i0 + rimTile ) * 4 );
+				for ( let j = j0; j < j0 + rimTile; j ++ ) {
+
+					half( r.data, rim, ( j * r.nx + i0 ) * 4, ( j * r.nx + i0 + rimTile ) * 4 );
+					if ( ( j - j0 ) % 16 === 15 ) yield;
+
+				}
 				const packed = pack( rim, from, r.nx, 4, i0, j0, rimTile, rimTile );
 				if ( packed ) squares.push( [ i0, j0, packed ] );
 				yield;
 
 			}
-			staged.rim = stage( 'rim', squares, rimTile, device );
+			staged.rim = yield* stage( 'rim', squares, rimTile, device );
 
 		} else {
 
@@ -289,9 +259,10 @@ export class WorldFields {
 				const i0 = ( c.ci * SEABED_TILE - f.x0 ) / f.cell, j0 = ( c.cj * SEABED_TILE - f.z0 ) / f.cell;
 				const packed = pack( texels[ key ], this.texels[ key ], f.nx, channels, i0, j0, tile, tile );
 				if ( packed ) squares.push( [ i0, j0, packed ] );
+				yield;
 
 			}
-			staged[ key ] = stage( key, squares, tile, device );
+			staged[ key ] = yield* stage( key, squares, tile, device );
 			yield;
 
 		}
@@ -299,7 +270,7 @@ export class WorldFields {
 
 			if ( staged[ key ] !== undefined ) continue;
 			const tex = textures[ key ] = fieldTexture( key, texels[ key ], fields[ key ].nx, fields[ key ].nz );
-			uploadTexture( renderer, tex );
+			yield* textureSteps( renderer, tex );
 			yield;
 
 		}

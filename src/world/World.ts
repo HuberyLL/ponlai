@@ -91,18 +91,20 @@ export function islandMesh( part: IslandChunk, material: THREE.Material ): THREE
 
 }
 
-/** The stones' merged mesh. */
-export function stonesGeometry( data: WorldData ): THREE.BufferGeometry {
+/** The stones' merged mesh; `bounds: false` leaves its bounds to the caller (the growth finds
+ * them in steps: Steps.ts boundsSteps). */
+export function stonesGeometry( data: WorldData, bounds = true ): THREE.BufferGeometry {
 
 	const geo = meshGeometry( data.stones );
+	if ( ! bounds ) return geo;
 	geo.computeBoundingSphere();
 	geo.computeBoundingBox();
 	return geo;
 
 }
 
-/** The sea floor's mesh: the chunks' near tiles and the far floor. */
-export function seabedGeometry( data: WorldData ): THREE.BufferGeometry {
+/** The sea floor's mesh: the chunks' near tiles and the far floor (`bounds`: as the stones'). */
+export function seabedGeometry( data: WorldData, bounds = true ): THREE.BufferGeometry {
 
 	const { positions, normals, ao, bed, indices } = data.seabed;
 	const geo = new THREE.BufferGeometry();
@@ -111,7 +113,7 @@ export function seabedGeometry( data: WorldData ): THREE.BufferGeometry {
 	geo.setIndex( new THREE.BufferAttribute( indices, 1 ) );
 	geo.setAttribute( 'ao', new THREE.BufferAttribute( ao, 1 ) );
 	geo.setAttribute( 'bed', new THREE.BufferAttribute( bed, 2 ) );
-	geo.computeBoundingSphere();
+	if ( bounds ) geo.computeBoundingSphere();
 	return geo;
 
 }

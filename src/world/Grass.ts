@@ -668,13 +668,20 @@ export function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 )
 	const kinds = group.userData.kinds as { geometry: THREE.BufferGeometry; halfWidth: number; key: keyof GrassTufts }[];
 	const inputs: CullBatchInput[] = kinds.map( ( k ) => ( { tufts: tufts[ k.key ], geometry: k.geometry, halfWidth: k.halfWidth } ) );
 	const pool = yield* poolSteps( inputs, per );
-	const boxes = inputs.map( ( b ) => {
+	const boxes: THREE.Box3[] = [];
+	for ( const b of inputs ) {
 
 		const box = new THREE.Box3();
-		for ( const t of b.tufts ) box.expandByPoint( t.origin );
-		return box;
+		for ( let k = 0; k < b.tufts.length; k ++ ) {
 
-	} );
+			box.expandByPoint( b.tufts[ k ].origin );
+			if ( k % ( per * 4 ) === per * 4 - 1 ) yield;
+
+		}
+		boxes.push( box );
+		yield;
+
+	}
 	return { pool, buffers: GrassCull.buffers( pool ), boxes, counts: inputs.map( ( b ) => b.tufts.length ) };
 
 }

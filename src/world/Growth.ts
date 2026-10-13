@@ -4,7 +4,10 @@ import { mergeSteps } from './ChunkMerge.ts';
 import { GROWTH, LandLattice } from './IslandGrowth.ts';
 import { landBounds, type Bounds } from './WorldShapes.ts';
 import { derive, islandMesh, seabedGeometry, stonesGeometry, type WorldMeshes } from './World.ts';
-import { uploadTexture, type WorldFields, type FieldsPrepared } from './WorldFields.ts';
+import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
+import { AttributeType, geometrySteps, textureSteps, uploadSteps } from './Upload.ts';
+import { boundsSteps } from './Steps.ts';
+import { debugFlags } from '../debug/DebugFlags.ts';
 import { plantGrass, grassSteps, setGrass, type GrassPrepared, type GrassTufts } from './Grass.ts';
 import { plantFlowers, flowerInstances, flowerReplacement, setFlowers, type FlowerInstances, type Plant } from './Flowers.ts';
 import { bushInstances, setBushes, type BushInstances } from './Foliage.ts';
@@ -115,10 +118,14 @@ export type GrowthPhase = 'idle' | 'generating' | 'preparing' | 'ready' | 'swapp
 // A preparation step yields nothing (a slice ends) or a promise (wait for it: a worker, a compile).
 type Steps<T> = Generator<void | Promise<unknown>, T>;
 
-// the idle time a slice of preparation takes at most (ms), and where there is no idle callback
-const SLICE = 4, NO_IDLE_SLICE = 2;
+// The idle time a slice of preparation takes at most (ms; where there is no idle callback, the
+// time a timer's slice takes). A slice runs steps until it has used this, so it ends at most a step
+// later: steps are a few tenths of a millisecond, and a frame's whole share of the growth stays
+// under 2 ms (`work`).
+const SLICE = 1.2;
+// steps longer than this (ms) are listed in `work.slow`
+const SLOW = 0.6;
 
-const AttributeType = { VERTEX: 1, INDEX: 2, STORAGE: 3 } as const;
 
 export class Growth {
 
@@ -134,6 +141,20 @@ export class Growth {
 		last: null as null | { step: number; chunks: number; rebuilt: number; changed: number; added: number; removed: number; ms: Record<string, number>; at: number },
 		error: '',
 	};
+	/** The growth's own main-thread time per frame (ms; a frame runs from one `update` to the next):
+	 * the preparation's slices, the swap and the frames after it, and the generation's replies from
+	 * the workers. Since the pending version began: the largest frame and its stage, every frame
+	 * with any as ( page time, ms ) pairs, the steps over SLOW ms ( stage, step, ms ), and when the
+	 * preparation began, the swap happened and the frames after it ended (page times). */
+	readonly work = {
+		max: 0, stage: '',
+		frames: [] as number[],
+		slow: [] as [ string, number, number ][],
+		prepared: 0, swapped: 0, ended: 0,
+	};
+	private frameMs = 0;
+	private frameAt = 0;
+	private stepIndex = 0;
 	private shown: Shown;
 	private prepared: Prepared | null = null;
 	private steps: Steps<Prepared> | null = null;
@@ -158,8 +179,10 @@ export class Growth {
 
 	}
 
-	/** Starts generating the next piece (once the page shows: the workers then share the machine
-	 * with the frames, not with the page's start). */
+	/** Starts generating the next piece ahead (the game, once the page shows: the workers then share
+	 * the machine with the frames, not with the page's start). A page that never calls it generates
+	 * on its first `grow`, and keeps a piece ahead from then on; one that never grows spends no
+	 * worker time on it. */
 	start(): void {
 
 		if ( this.state.phase === 'idle' && this.state.pending < 0 && this.after.length === 0 ) this.next();
@@ -171,7 +194,9 @@ export class Growth {
 	grow(): Promise<void> {
 
 		if ( this.state.step >= GROWTH.maxSteps || this.state.phase === 'failed' ) return Promise.resolve();
-		return new Promise( ( resolve ) => this.wanted.push( resolve ) );
+		const wanted = new Promise<void>( ( resolve ) => this.wanted.push( resolve ) );
+		this.start();
+		return wanted;
 
 	}
 
@@ -187,15 +212,45 @@ export class Growth {
 	 * swap asked for and ready, or the next of the frames after one. */
 	update(): void {
 
+		// the frame before ends here
+		const now = performance.now();
+		if ( this.frameMs > 0 ) {
+
+			if ( this.work.frames.length < 20000 ) this.work.frames.push( + this.frameAt.toFixed( 1 ), + this.frameMs.toFixed( 3 ) );
+			this.frameMs = 0;
+
+		}
+		this.frameAt = now;
 		if ( this.after.length > 0 ) {
 
-			const t = performance.now(), k = this.afterStep ++;
+			const k = this.afterStep ++;
 			if ( ! this.after[ 0 ]() ) this.after.shift();
-			this.times[ `after ${ k }` ] = performance.now() - t;
+			const ms = performance.now() - now;
+			this.times[ `after ${ k }` ] = ms;
+			this.charge( ms, `after ${ k }` );
+			if ( this.after.length === 0 ) this.work.ended = performance.now();
 			return;
 
 		}
-		if ( this.wanted.length > 0 && this.state.phase === 'ready' ) this.swap();
+		if ( this.wanted.length > 0 && this.state.phase === 'ready' ) {
+
+			this.swap();
+			this.charge( performance.now() - now, 'swap' );
+
+		}
+
+	}
+
+	// Adds growth work to the frame under way.
+	private charge( ms: number, stage: string ): void {
+
+		this.frameMs += ms;
+		if ( this.frameMs > this.work.max ) {
+
+			this.work.max = this.frameMs;
+			this.work.stage = stage;
+
+		}
 
 	}
 
@@ -215,8 +270,10 @@ export class Growth {
 		this.state.pending = step;
 		this.state.phase = 'generating';
 		for ( const key of Object.keys( this.times ) ) delete this.times[ key ];
+		Object.assign( this.work, { max: 0, stage: '', frames: [], slow: [], prepared: 0, swapped: 0, ended: 0 } );
 		const t = performance.now();
-		generateVersion( { worldSeed: this.seed, step }, { cache: this.cache, threads: 2, from: this.shown.version } ).then( ( g ) => {
+		const clock = ( ms: number ) => this.charge( ms, 'generate' );
+		generateVersion( { worldSeed: this.seed, step }, { cache: this.cache, threads: 2, from: this.shown.version, clock } ).then( ( g ) => {
 
 			this.times.generate = Math.round( performance.now() - t );
 			this.state.phase = 'preparing';
@@ -244,7 +301,8 @@ export class Growth {
 		const run = ( deadline?: { timeRemaining(): number } ) => {
 
 			this.idleQueued = false;
-			const t = performance.now(), until = t + ( deadline ? Math.min( deadline.timeRemaining(), SLICE ) : NO_IDLE_SLICE );
+			const t = performance.now(), until = t + ( deadline ? Math.min( deadline.timeRemaining(), SLICE ) : SLICE );
+			if ( ! this.work.prepared ) this.work.prepared = t;
 			try {
 
 				do {
@@ -253,6 +311,9 @@ export class Growth {
 					const next = this.steps!.next();
 					const took = performance.now() - before;
 					this.times[ `longest step ${ stage }` ] = Math.max( this.times[ `longest step ${ stage }` ] ?? 0, took );
+					if ( this.stage !== stage ) this.stepIndex = 0;
+					else this.stepIndex ++;
+					if ( took > SLOW && this.work.slow.length < 500 ) this.work.slow.push( [ stage, this.stepIndex, + took.toFixed( 2 ) ] );
 					if ( next.done ) {
 
 						this.steps = null;
@@ -285,6 +346,7 @@ export class Growth {
 			} finally {
 
 				this.time( 'prepare', t );
+				this.charge( performance.now() - t, this.stage );
 
 			}
 			this.schedule();
@@ -304,30 +366,9 @@ export class Growth {
 
 	}
 
-	private upload( attribute: THREE.BufferAttribute | THREE.InterleavedBuffer | null | undefined, type: number ): void {
-
-		const attributes = ( this.page.renderer as unknown as { _attributes?: { update( attribute: unknown, type: number ): void } } )._attributes;
-		if ( attribute && attributes ) attributes.update( attribute, type );
-
-	}
-
-	// Every buffer of `geometry` uploaded, one per step.
-	private * uploadGeometry( geometry: THREE.BufferGeometry ): Steps<void> {
-
-		for ( const attribute of Object.values( geometry.attributes ) ) {
-
-			this.upload( attribute as THREE.BufferAttribute, AttributeType.VERTEX );
-			yield;
-
-		}
-		this.upload( geometry.getIndex(), AttributeType.INDEX );
-		yield;
-
-	}
-
 	private * prepare( version: VersionChunks ): Steps<Prepared> {
 
-		const page = this.page, shown = this.shown;
+		const page = this.page, shown = this.shown, renderer = page.renderer;
 		this.stage = 'chunks';
 		// a rebuilt chunk equal to the shown one is the shown one
 		const before = new Map( shown.version.chunks.map( ( c ) => [ `${ c.ci },${ c.cj }`, c ] ) );
@@ -345,37 +386,42 @@ export class Growth {
 		this.stage = 'merge';
 		const data: WorldData = yield* mergeSteps( version.land, chunks );
 		const land = LandLattice.fromBytes( data.land );
+		yield;
 
-		// the island: a mesh per changed land chunk, compiled for its passes
+		// the island: a mesh per changed land chunk, its buffers uploaded. The frame's passes draw it
+		// with the pipelines the loaded chunks drew with (the same material and layout): nothing is
+		// compiled ahead (the swap's frame makes its render objects, which build no pipeline).
+		this.stage = 'island';
 		const changedKeys = new Set( changed.map( ( c ) => `${ c.ci },${ c.cj }` ) );
-		const add = data.islands.filter( ( part ) => changedKeys.has( `${ part.ci },${ part.cj }` ) ).map( ( part ) => islandMesh( part, page.world.cliff ) );
+		const add: THREE.Mesh[] = [];
+		for ( const part of data.islands ) {
+
+			if ( ! changedKeys.has( `${ part.ci },${ part.cj }` ) ) continue;
+			const mesh = islandMesh( part, page.world.cliff );
+			add.push( mesh );
+			yield* geometrySteps( renderer, mesh.geometry );
+
+		}
 		const remove = ( page.world.island.children as THREE.Mesh[] ).filter( ( mesh ) => {
 
 			const part = mesh.userData.part as IslandChunk;
 			return changedKeys.has( `${ part.ci },${ part.cj }` );
 
 		} );
-		this.stage = 'island';
-		for ( const mesh of add ) {
+		if ( debugFlags.growthCompile ) {
 
-			// (its buffers first, a step each, so the compile's own step stays short). The sun's map
-			// draws it with the pipelines the loaded chunks drew with (the same material and layout):
-			// compiled through SunShadow.compileCasters' copy of three's shadow material, the island's
-			// front-face cast built one of its own that no draw used.
-			yield* this.uploadGeometry( mesh.geometry );
-			yield page.compileDraws( [ mesh ], false );
+			for ( const mesh of add ) yield page.compileDraws( [ mesh ], false );
+			if ( add.length ) yield page.rain.collision.prepare( renderer, add );
 
 		}
-		// and their proxies in the rain's collision bake, which draws them in a frame after the swap
-		if ( add.length ) yield page.rain.collision.prepare( page.renderer, add );
 		this.stage = 'stones';
-		// the merged kinds' new geometry, uploaded
-		const rocks = stonesGeometry( data );
-		yield;
-		yield* this.uploadGeometry( rocks );
-		const seabed = seabedGeometry( data );
-		yield;
-		yield* this.uploadGeometry( seabed );
+		// the merged kinds' new geometry, its bounds and buffers
+		const rocks = stonesGeometry( data, false );
+		yield* boundsSteps( rocks );
+		yield* geometrySteps( renderer, rocks );
+		const seabed = seabedGeometry( data, false );
+		yield* boundsSteps( seabed );
+		yield* geometrySteps( renderer, seabed );
 
 		// the walking loop, and the meadow planted on it a slice of anchors at a time
 		this.stage = 'grass';
@@ -386,26 +432,22 @@ export class Growth {
 		const veg = data.vegetation, anchors = veg.length / VEGETATION_STRIDE;
 		const tufts: GrassTufts = { lawn: [], tussocks: [], lawnThin: [] };
 		const plants: Plant[][] = page.flowers.children.map( () => [] );
-		for ( let a = 0; a < anchors; a += 128 ) {
+		for ( let a = 0; a < anchors; a += 16 ) {
 
-			const part = plantGrass( veg.subarray( a * VEGETATION_STRIDE, Math.min( anchors, a + 128 ) * VEGETATION_STRIDE ), data.rimGround, walkDistance );
+			const part = plantGrass( veg.subarray( a * VEGETATION_STRIDE, Math.min( anchors, a + 16 ) * VEGETATION_STRIDE ), data.rimGround, walkDistance );
 			tufts.lawn.push( ...part.lawn );
 			tufts.tussocks.push( ...part.tussocks );
 			tufts.lawnThin.push( ...part.lawnThin );
 			yield;
 
 		}
-		const grass = yield* grassSteps( page.grass, tufts, 1500 );
-		for ( const buffer of Object.values( grass.buffers ) as CullBuffers[ keyof CullBuffers ][] ) {
-
-			this.upload( buffer, AttributeType.STORAGE );
-			yield;
-
-		}
+		const grass = yield* grassSteps( page.grass, tufts, 256 );
+		yield;
+		for ( const buffer of Object.values( grass.buffers ) as CullBuffers[ keyof CullBuffers ][] ) yield* uploadSteps( renderer, buffer, AttributeType.STORAGE );
 		this.stage = 'flowers';
-		for ( let a = 0; a < anchors; a += 1024 ) {
+		for ( let a = 0; a < anchors; a += 128 ) {
 
-			const part = plantFlowers( veg.subarray( a * VEGETATION_STRIDE, Math.min( anchors, a + 1024 ) * VEGETATION_STRIDE ), walkDistance );
+			const part = plantFlowers( veg.subarray( a * VEGETATION_STRIDE, Math.min( anchors, a + 128 ) * VEGETATION_STRIDE ), walkDistance );
 			part.forEach( ( list, s ) => plants[ s ].push( ...list ) );
 			yield;
 
@@ -425,7 +467,7 @@ export class Growth {
 			if ( replacement ) {
 
 				yield page.compileDraws( [ replacement ] );
-				yield page.rain.collision.prepare( page.renderer, [ replacement ] );
+				yield page.rain.collision.prepare( renderer, [ replacement ] );
 
 			}
 
@@ -433,29 +475,33 @@ export class Growth {
 		// the bushes' instances and their box, as InstancedMesh.computeBoundingBox finds it (the sun's
 		// caster box reads it)
 		const bushes = bushInstances( data.bushes );
+		yield;
 		const bushBox = instancesBox( page.foliage.geometry, bushes.matrices, bushes.count );
 		yield;
 
-		// the rim's trails and the turf skirt
+		// the rim's trails and the turf skirt (their bounds found in the steps)
 		this.stage = 'rim';
-		const rim: RimFoliageBuilt = yield* rimFoliageSteps( data.rimStrands, 4 );
-		if ( rim.geometry ) {
+		const rim: RimFoliageBuilt = yield* rimFoliageSteps( data.rimStrands, 1 );
+		if ( rim.geometry ) yield* geometrySteps( renderer, rim.geometry );
+		this.stage = 'skirt';
+		const skirt: TurfSkirtBuilt = yield* turfSkirtSteps( data.rimSkirt, 8 );
+		yield* geometrySteps( renderer, skirt.geometry );
 
-			rim.geometry.computeBoundingBox();
-			yield* this.uploadGeometry( rim.geometry );
+		// the fields, and the shore's wave fields from the new shore field (in a worker, on a copy)
+		this.stage = 'fields';
+		const fields: FieldsPrepared = yield* page.fields.steps( data, changed, renderer );
+		this.stage = 'shore';
+		const copy = new Float32Array( data.shore.data.length );
+		for ( let k = 0; k < copy.length; k += 1 << 16 ) {
+
+			copy.set( data.shore.data.subarray( k, k + ( 1 << 16 ) ), k );
+			yield;
 
 		}
-		this.stage = 'skirt';
-		const skirt: TurfSkirtBuilt = yield* turfSkirtSteps( data.rimSkirt, 4 );
-		skirt.geometry.computeBoundingBox();
-		yield* this.uploadGeometry( skirt.geometry );
-
-		// the fields, and the shore's wave fields from the new shore field (in a worker)
-		this.stage = 'fields';
-		const fields: FieldsPrepared = yield* page.fields.steps( data, changed, page.renderer );
-		this.stage = 'shore';
 		let shore: ShoreFields | null = null;
-		yield page.shoreWaves.fieldsFor( data, ( tex ) => uploadTexture( page.renderer, tex ) ).then( ( fieldsOf ) => { shore = fieldsOf; } );
+		yield page.shoreWaves.fieldsFor( data, copy ).then( ( fieldsOf ) => { shore = fieldsOf; } );
+		yield* textureSteps( renderer, shore!.boundary );
+		yield* textureSteps( renderer, shore!.shelter );
 		const top = topFromTiles( chunks );
 		return {
 			version, data, land, changed, islands: { add, remove }, rocks, seabed, walk, grass,
@@ -475,6 +521,7 @@ export class Growth {
 		const part = ( name: string ) => { const now = performance.now(); parts[ name ] = + ( now - mark ).toFixed( 2 ); mark = now; };
 		const p = this.prepared!, page = this.page, world = page.world;
 		this.prepared = null;
+		this.work.swapped = t0;
 		this.state.phase = 'swapping';
 		const disposals: ( () => void )[] = [];
 

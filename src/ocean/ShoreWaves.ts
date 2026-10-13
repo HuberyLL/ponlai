@@ -47,7 +47,9 @@ export interface ShoreFields { data: WorldData; boundary: THREE.DataTexture; she
 // without adding the independent, single-period beach wave over the open sea.
 //
 // A grown island (Growth.ts) brings a new shore field: its wave fields are built in a worker
-// (`fieldsFor`: shoreFieldWorker.ts, ShoreWaveField's plain-data functions) and set in place
+// (`fieldsFor`: shoreFieldWorker.ts, ShoreWaveField's plain-data functions, on a copy of the
+// field the caller makes and hands over: the page keeps its own; their textures the caller
+// uploads) and set in place
 // (`setFields`: the base nodes' values, the surface targets resized to the field), so no material
 // changes and no pipeline is built.
 //
@@ -246,9 +248,9 @@ export class ShoreWaves {
 
 	}
 
-	/** The wave fields of a grown island's shore field, built in a worker; their textures are
-	 * uploaded through `upload` before this resolves. */
-	fieldsFor( data: WorldData, upload: ( texture: THREE.DataTexture ) => void ): Promise<ShoreFields> {
+	/** The wave fields of a grown island's shore field, built in a worker from `shore` (a copy of
+	 * `data.shore.data`, transferred to it); their textures are not uploaded yet. */
+	fieldsFor( data: WorldData, shore: Float32Array ): Promise<ShoreFields> {
 
 		const worker = new Worker( new URL( './shoreFieldWorker.ts', import.meta.url ), { type: 'module' } );
 		const direction = this.direction.value.clone();
@@ -257,15 +259,11 @@ export class ShoreWaves {
 			worker.onmessage = ( e: MessageEvent<ShoreFieldReply> ) => {
 
 				worker.terminate();
-				const fields = { data, boundary: fieldTexture( e.data.boundary, 'shoreWaveBoundary' ), shelter: shelterTexture( e.data.shelter ), direction };
-				upload( fields.boundary );
-				upload( fields.shelter );
-				resolve( fields );
+				resolve( { data, boundary: fieldTexture( e.data.boundary, 'shoreWaveBoundary' ), shelter: shelterTexture( e.data.shelter ), direction } );
 
 			};
 			worker.onerror = ( e ) => { worker.terminate(); reject( e ); };
-			// (the shore field is copied: the page keeps it)
-			worker.postMessage( { shore: data.shore, direction: { x: direction.x, y: direction.y } } satisfies ShoreFieldJob );
+			worker.postMessage( { shore: { ...data.shore, data: shore }, direction: { x: direction.x, y: direction.y } } satisfies ShoreFieldJob, { transfer: [ shore.buffer ] } );
 
 		} );
 

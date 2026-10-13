@@ -87,6 +87,8 @@ export interface LoadOptions {
 	threads?: number;
 	// the version this one grows from: its chunks whose steps are the same are taken as they are
 	from?: VersionChunks;
+	// given the main thread's time (ms) handling each of the workers' replies
+	clock?: ( ms: number ) => void;
 }
 
 interface Slot { worker: Worker; job: ChunkJob[ 'kind' ] | null }
@@ -108,7 +110,7 @@ export function loadWorld( options: WorldOptions = {}, load: LoadOptions = {} ):
 }
 
 /** The chunks of `options`' land, generated (or read from the cache, or taken from `from`). */
-export function generateVersion( options: WorldOptions = {}, { cache = true, pivot, progress, threads: wanted, from }: LoadOptions = {} ): Promise<Generated> {
+export function generateVersion( options: WorldOptions = {}, { cache = true, pivot, progress, threads: wanted, from, clock }: LoadOptions = {} ): Promise<Generated> {
 
 	const t0 = performance.now();
 	const { worldSeed = 1, step = 0, contactOcclusion = true } = options;
@@ -268,6 +270,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 			// loop and leave the load pending for ever: it rejects the load instead
 			slot.worker.onmessage = ( e: MessageEvent<ChunkReply> ) => {
 
+				const t = performance.now();
 				try {
 
 					receive( slot, e.data );
@@ -277,6 +280,7 @@ export function generateVersion( options: WorldOptions = {}, { cache = true, piv
 					fail( error );
 
 				}
+				clock?.( performance.now() - t );
 
 			};
 			// (an ErrorEvent names the throw; a plain Event, a worker that could not load: a page left

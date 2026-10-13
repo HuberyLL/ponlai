@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, materialColor, uv, vec3, vec4, float, mix, sin, cos, dot, pow, clamp, max } from 'three/tsl';
 import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
-import { float32Steps, indexSteps } from './Steps.ts';
+import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
 import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, LEAF_STEM, leafCastMask, markVegetation, useLeafCoverage } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
@@ -173,8 +173,8 @@ export function* rimFoliageSteps( strands: RimStrand[], per = Infinity ): Genera
 
 	// each drawn strand's first vertex and index (its vertices and triangles are its own)
 	const blocks: number[] = [];
-	const P: number[] = [], U: number[] = [], C: number[] = [], E: number[] = [], W: number[] = [], F: number[] = [], S: number[] = [], I: number[] = [];
-	const O: number[] = []; // the wall's outward normal where the vertex hangs, for the wind
+	const P = new Growing(), U = new Growing(), C = new Growing(), E = new Growing(), W = new Growing(), F = new Growing(), S = new Growing(), I = new Growing();
+	const O = new Growing(); // the wall's outward normal where the vertex hangs, for the wind
 	const up = new THREE.Vector3( 0, 1, 0 );
 	const point = new THREE.Vector3(), outward = new THREE.Vector3(), tangent = new THREE.Vector3(), lateral = new THREE.Vector3();
 	const normal = new THREE.Vector3(), along = new THREE.Vector3(), width = new THREE.Vector3(), vertex = new THREE.Vector3(), radial = new THREE.Vector3();
@@ -310,6 +310,7 @@ export function* rimFoliageSteps( strands: RimStrand[], per = Infinity ): Genera
 				direction.addScaledVector( surface, - direction.dot( surface ) ).normalize();
 				if ( direction.lengthSq() < 0.5 ) direction.set( 1, 0, 0 );
 				leaf( anchor, direction, surface, 0, i % 12 ? 1 : - 1, 0.12 + rng() * 0.1, 0.95 + rng() * 0.25 );
+				if ( i % ( 6 * 64 ) === 6 * 63 ) yield;
 
 			}
 			clumpCount ++;
@@ -341,6 +342,7 @@ export function* rimFoliageSteps( strands: RimStrand[], per = Infinity ): Genera
 
 			for ( let pair = 0; pair < pairs; pair ++ ) {
 
+				if ( pair % 16 === 15 ) yield;
 				const t = begin + ( end - begin ) * ( pair + 0.22 + rng() * 0.65 ) / ( pairs + 0.25 );
 				const hangingProgress = Math.max( 0, ( t - lipT ) / Math.max( 0.001, 1 - lipT ) );
 				for ( const side of [ - 1, 1 ] ) {
@@ -425,7 +427,7 @@ export function* rimFoliageSteps( strands: RimStrand[], per = Infinity ): Genera
 	const position = geometry.getAttribute( 'position' ).array as Float32Array, index = geometry.getIndex()!.array;
 	const n = new Float32Array( position.length );
 	geometry.setAttribute( 'normal', new THREE.BufferAttribute( n, 3 ) );
-	const STEP = 64;
+	const STEP = 4;
 	for ( let b = 0; b < blocks.length; b += 2 * STEP ) {
 
 		const v0 = blocks[ b ], i0 = b === 0 ? 0 : blocks[ b - 1 ];
@@ -448,16 +450,15 @@ export function* rimFoliageSteps( strands: RimStrand[], per = Infinity ): Genera
 
 			const x = n[ v * 3 ], y = n[ v * 3 + 1 ], z = n[ v * 3 + 2 ], scale = 1 / ( Math.sqrt( x * x + y * y + z * z ) || 1 );
 			n[ v * 3 ] = x * scale; n[ v * 3 + 1 ] = y * scale; n[ v * 3 + 2 ] = z * scale;
-			normal.set( n[ v * 3 ], n[ v * 3 + 1 ], n[ v * 3 + 2 ] ).multiplyScalar( 0.82 ).addScaledVector( outward.fromArray( E, v * 3 ), 0.18 ).normalize();
+			normal.set( n[ v * 3 ], n[ v * 3 + 1 ], n[ v * 3 + 2 ] ).multiplyScalar( 0.82 ).addScaledVector( outward.set( E.get( v * 3 ), E.get( v * 3 + 1 ), E.get( v * 3 + 2 ) ), 0.18 ).normalize();
 			n[ v * 3 ] = normal.x; n[ v * 3 + 1 ] = normal.y; n[ v * 3 + 2 ] = normal.z;
 
 		}
 		yield;
 
 	}
-	geometry.computeBoundingSphere();
+	yield* boundsSteps( geometry );
 	geometry.boundingSphere!.radius += 0.15; // the trails' sway in a gale
-	yield;
 	return { geometry, counts };
 
 }
