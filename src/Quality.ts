@@ -3,11 +3,18 @@
 // where it is not measured). The GUI's quality control reloads the page with it.
 //
 // High is the reference image and holds 60 fps on the target display through its dynamic render
-// scale; medium and low render at fixed budgets that leave room there, for slower GPUs. All three multisample the scene with 4
-// samples (their `aa` knob, `msaa`; WebGPU has 1 or 4, no 2): without it the meadow's alpha to coverage turns into a dither
-// and geometric edges alias, so the lower tiers save through their render scale and the knobs
-// below instead. No knob alters the weather, clock or lighting state: a tier changes the cost,
-// never the mood.
+// scale; medium and low render at fixed budgets that leave room there, for slower GPUs.
+//
+// Each tier picks its anti-aliasing (the `aa` knob, post/Antialiasing.ts; `?aa` or the GUI choose
+// any mode over it). High and low multisample the scene with 4 samples (`msaa`; WebGPU has 1 or 4,
+// no 2), upscaled by FSR 1: high is the reference image and its dynamic scale already holds 60 fps,
+// and low holds 60 fps with msaa too, where its lite temporal resolve drew a softer image with a
+// darker meadow and fewer flowers. Medium runs `taau`: one jittered sample upsampled against a
+// history, since at medium's fixed budget msaa missed 60 fps in most of the acceptance scenes where
+// taau held it in all of them. Medium's TAAU sharpening is one RCAS stop softer than high's
+// (high's is aimed at the ground truth; medium's, as sharp, rang on edges where msaa did not). Without multisampling or a temporal resolve the meadow's alpha to coverage
+// turns into a dither and geometric edges alias, so no tier runs `off`. No knob alters the weather,
+// clock or lighting state: a tier changes the cost, never the mood.
 //
 // Two kinds of knob:
 // - load: compiled into materials or the frame graph (shader loops, pass structure, map sizes), read
@@ -173,8 +180,9 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		rainDrops: 49152,
 	},
 	medium: {
-		aa: 'msaa',
-		taa: { ...TAA },
+		aa: 'taau',
+		// TAAU's sharpening one RCAS stop softer than high's (higher is softer)
+		taa: { ...TAA, sharpness: { taa: TAA.sharpness.taa, taau: [ 2.0, 1.5 ] } },
 		render: { budget: 1600 * 900 },
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 6, stormFoam: 'full' },
 		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048, dofTaps: 24, bloomChains: 2 },
