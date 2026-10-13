@@ -63,7 +63,8 @@
 // lock's temporary root, so a scratch `PONLAI_GPU_LOCK_DIR` moves the registry with the lock. The
 // runner removes its entry after the end line; entries whose runner is gone are pruned by `list`
 // and `stop`. `list` shows the running jobs started under the current repo top (default), under a
-// directory, or all of them, with the `status` screen. `stop` exists so that an agent hands back
+// directory, or all of them, with the `status` screen. `--cwd <dir>` matches only jobs in dir's own
+// checkout (nearest `.git` entry), never those of a worktree nested under it. `stop` exists so that an agent hands back
 // with nothing of its own running: it snapshots each job's process tree (a child that detached
 // into its own group is still found, while its parent lives), sends SIGTERM to the runner, which
 // passes it to the command so tools run their own cleanup (lock release, browser close), and after
@@ -196,6 +197,19 @@ function registry() {
 }
 
 const under = ( dir, root ) => dir === root || dir.startsWith( root.endsWith( path.sep ) ? root : root + path.sep );
+
+// The checkout a directory belongs to: the nearest ancestor (or itself) holding a `.git` entry,
+// a directory or a worktree's file, so a nested worktree counts as another checkout.
+function checkoutOf( dir ) {
+
+	for ( let d = dir; ; d = path.dirname( d ) ) {
+
+		if ( existsSync( path.join( d, '.git' ) ) ) return d;
+		if ( path.dirname( d ) === d ) return null;
+
+	}
+
+}
 
 // --- run -------------------------------------------------------------------------------------
 
@@ -564,7 +578,8 @@ function scoped( options ) {
 	const entries = registry();
 	if ( options.all ) return entries;
 	const root = options.cwd !== undefined ? path.resolve( options.cwd ) : repoTop( process.cwd() );
-	return entries.filter( ( e ) => under( e.cwd, root ) );
+	const top = checkoutOf( root );
+	return entries.filter( ( e ) => under( e.cwd, root ) && checkoutOf( e.cwd ) === top );
 
 }
 
