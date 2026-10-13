@@ -506,8 +506,10 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   in headless Chrome (`CHROME_PATH`, else the system Chrome) with the frame rate uncapped, or at
   60 Hz with `--vsync` (the intervals a player sees; uncapped, a GPU-bound scene's p95 is mostly
   pacing noise).
-- It plays a matrix of named scenes (`--list`: fair, golden, horizon, sky, overcast, rain, storm,
-  fog, night, close over the meadow, a weather front), each with the clock running, fixed weather
+- It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
+  `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-rain`, `island-storm`,
+  `horizon-storm`, `island-fog-dawn`, `island-night-clear`, `meadow-close` (over the meadow),
+  `weather-change` (a front sweeping in); `--scenes` takes these ids), each with the clock running, fixed weather
   and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md): frame interval
   median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their cause, and the
   startup.
