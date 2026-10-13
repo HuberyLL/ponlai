@@ -108,9 +108,11 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches
   (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
 - `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
-- `src/game/`: the game behind `?game` (`Game.ts`): `sim/` is the headless simulation (no three.js
-  or DOM; node runs it by stripping types), `view/` draws the islanders, the palm and the
-  chest, and `Hud.ts` / `Placement.ts` are the player's prototype HUD.
+- `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
+  population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
+  node runs it by stripping types; `sim/save.ts` is the save slot the world's start reads), `view/`
+  draws the islanders, the palm and the chest, and `Hud.ts` / `Placement.ts` are the player's
+  prototype HUD.
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout.
 - `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the world's chunk
   checks (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node
