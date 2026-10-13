@@ -40,7 +40,10 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
 
 - Profile slots: each capture runs in a persistent profile, `artifacts/.capture-profiles/<browser
   build>/<n>` of the main checkout, taking the lowest free slot (a `<n>.lock` directory naming its
-  pid; stale once that process is gone), so `--jobs 4` uses slots 0-3. The world cache
+  pid; stale once that process is gone), so `--jobs 4` uses slots 0-3. A capture that names its
+  page takes the slots that page (its origin and build) ran in last first, from `affinity.json`
+  beside the slots, so another job holding a warm slot no longer moves it to a cold one for good
+  (`tools/capture-browser.mjs`). The world cache
   (IndexedDB, keyed on the generator's sources and the browser; one entry per preview port) and
   the GPU shader cache then hit from the second load: the island is not generated again (3 s
   alone, about a minute under a busy CPU). A hit is byte-identical to a miss. localStorage and

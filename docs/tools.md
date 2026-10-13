@@ -179,7 +179,9 @@ Game:
 Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser runs in a
 persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
 (one browser per slot, each with its own lock; `PONLAI_CAPTURE_PROFILES` moves them; safe to
-delete), so the world cache and the GPU shader cache hit from the second capture on. A paused
+delete), so the world cache and the GPU shader cache hit from the second capture on. A capture
+takes the free slots its page (origin and build) used last first (`affinity.json` beside the
+slots), else the lowest free one. A paused
 capture is shot once its image stops changing: grabbed every 2 frames from the frame after the
 evals, shot when a comparison found no pixel changed (after 40 frames, at most 5000
 changed pixels count as unchanged; after 120 the view is shot anyway, marked `capped`). A paused
