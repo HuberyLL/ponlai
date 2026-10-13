@@ -53,10 +53,10 @@ const WINDOW = [ 16, 47 ];
 const STRIKE_AT_30 = `if ( i === 30 ) { const f = new s.camera.position.constructor( 0, 0, - 1 ).applyQuaternion( s.camera.quaternion );
 	s.sky.lightning.force( { start: s.clockTime() + dt, azimuth: Math.atan2( f.z, f.x ), distance: 3000, seed: 7 } ); }`;
 
-// The sun-shadow clip wants the vegetation still, so only the shadows move: a wind freeze flag
-// does not exist yet (it arrives with the vegetation's motion vectors, mv-vegetation in M8); until
-// then the clip runs with the wind as it is and says so in its notes.
-const WIND_FREEZE = `if ( 'windFreeze' in s.flags ) s.flags.windFreeze = true; else window.__PONLAI_CLIP_NOTES__.push( 'flags.windFreeze does not exist yet (mv-vegetation, M8): the vegetation sways with the wind' );`;
+// The sun-shadow clip wants the vegetation still, so only the shadows move: `flags.windFreeze`
+// (DebugFlags.ts, read by Wind.ts every frame) holds the wind. The flag starts unset, so it is set
+// here rather than tested for.
+const WIND_FREEZE = 's.flags.windFreeze = true;';
 
 export const CLIPS = {
 	// a still frame of any view (capture-clip.mjs --view): the rest sets of tools/parity/baseline.mjs
