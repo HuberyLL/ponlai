@@ -479,7 +479,9 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   and how much the camera's turning speed changes from frame to frame. A window covers the screen
   while it runs: keep the runs short and other animated windows closed. It needs the display gate.
   `--display --compare urlA urlB` interleaves A and B in the same slices as the headless compare
-  (the running page brought to the front, the drags restarted in each slice), so the drift between
+  (the running page brought to the front; the drags run in the measured slices only, each page's
+  on from where its last slice left them, so A's and B's k-th slices see the same motion from the
+  same view; the screen changes to the other page's view at every switch), so the drift between
   separate headed runs (a millisecond or two) cancels; its summary adds the share of late frames
   (presented intervals longer than the frame pacer's pace) per slice, as a delta with its interval, and each page's
   frames over 25 ms.

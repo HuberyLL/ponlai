@@ -127,9 +127,14 @@
 //   the app with that pane took a tenth of the GPU beside a window, a hundredth behind full screen.
 //   With `--compare` (page mode) the two pages run in the same interleaved slices as headless, so
 //   the drift between separate headed runs (1-2 ms) cancels: the running page is brought to the
-//   front (a background tab gets no animation frames), each slice has its own trace and restarts
-//   the drags through its settle and slice, and the summary adds the share of late frames
-//   (presented intervals longer than the frame pacer's pace) as a delta over the slices.
+//   front (a background tab gets no animation frames), each slice has its own trace, and the
+//   summary adds the share of late frames (presented intervals longer than the frame pacer's pace)
+//   as a delta over the slices. The drags run in the measured slices only, each page's on from
+//   where its last slice left them, so the k-th slice of A and of B see the same motion from the
+//   same view (they ran through the settles too, and the order's switches gave each page its own
+//   views: 25-35 degrees apart in an A/A). The screen still changes at every switch, to the other
+//   page's view: expected. A drag that loses its pointer to an event the run did not send (the
+//   system cursor's, which reaches the headed page) is pressed again and logged.
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
 // numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
@@ -1091,9 +1096,15 @@ async function startDisplay( page ) {
 
 // The camera dragged as a player drags it: through Chrome's input (CDP mouse events, dispatched
 // once per display refresh as real ones are), turning drags of 30 to 200 degrees a second with
-// pauses, a wheel zoom in and out and a flick it glides on from, repeated until `seconds` have
-// passed.
-async function driveUser( page, seconds ) {
+// pauses, a wheel zoom in and out and a flick it glides on from, repeated, for `seconds` from
+// `from` seconds into the sequence (an A/B plays each page's slices on from where its last one
+// stopped, so the k-th slice of A and of B see the same drags from the same view). A drag cut at
+// the end rests before its release, so it leaves no glide to turn the camera after the window.
+// The macOS cursor's own events reach a headed page too: one (with the cursor resting, no hand
+// on it) cancelled a drag mid-slice, and the camera stood still for the rest of it. A drag whose
+// pointer capture is lost without its release is pressed again where it was; returns how many
+// times that happened.
+async function driveUser( page, seconds, from = 0 ) {
 
 	// the island camera turns with the right button, by its turn per window height dragged, and
 	// zooms by its own step a wheel notch; older builds' OrbitControls with the left, a full circle
@@ -1101,18 +1112,36 @@ async function driveUser( page, seconds ) {
 	const view = await page.evaluate( () => {
 
 		const c = window.__PONLAI__.controls, island = c.isIslandCamera === true;
+		// a pointer capture lost while the button is held: the drag ended without the tool's release
+		window.__pfInput ??= ( () => {
+
+			const state = { down: false, lost: 0 };
+			addEventListener( 'pointerdown', () => { state.down = true; }, true );
+			addEventListener( 'pointerup', () => { state.down = false; }, true );
+			addEventListener( 'lostpointercapture', () => { if ( state.down ) { state.down = false; state.lost ++; } }, true );
+			return state;
+
+		} )();
 		return { w: innerWidth, h: innerHeight, button: island ? 'right' : 'left', perHeight: island ? c.turnPerHeight * 180 / Math.PI : 360,
-			notches: island ? Math.max( 1, Math.round( - 8 * Math.log( 0.95 ) / c.wheelZoom ) ) : 8 };
+			notches: island ? Math.max( 1, Math.round( - 8 * Math.log( 0.95 ) / c.wheelZoom ) ) : 8, lost: window.__pfInput.lost };
 
 	} );
 	const cx = view.w * 0.45, cy = view.h / 2;
 	const pxPerDeg = view.h / view.perHeight;
 	const end = Date.now() + seconds * 1000;
 	const left = () => end - Date.now();
+	let lost = view.lost, regained = 0;
+	// the sequence, by step: its kind, its length (s) and what it does
+	const steps = [
+		[ 'pause', 0.6 ], [ 'drag', 2, - 60, 0 ], [ 'pause', 0.6 ], [ 'drag', 1.5, 120, 0 ], [ 'pause', 0.5 ], [ 'drag', 1, 0, 30 ], [ 'drag', 1.5, - 90, - 10 ],
+		[ 'pause', 0.8 ], [ 'wheel', 1, - 1 ], [ 'pause', 0.4 ], [ 'wheel', 1, 1 ], [ 'drag', 2, 90, 0 ], [ 'pause', 0.8 ], [ 'drag', 0.4, - 200, 0 ], [ 'pause', 1.5 ],
+	];
+	const cycle = steps.reduce( ( a, s ) => a + s[ 1 ], 0 );
 	const pause = ( s ) => sleep( Math.max( Math.min( s * 1000, left() ), 0 ) );
 	const drag = async ( degX, degY, s ) => {
 
 		if ( left() <= 0 ) return;
+		const cut = s > left() / 1000;
 		s = Math.min( s, left() / 1000 );
 		const dx = degX * pxPerDeg * s, dy = degY * pxPerDeg * s;
 		// starting where the whole drag fits, clear of the GUI's corner
@@ -1120,14 +1149,31 @@ async function driveUser( page, seconds ) {
 		await page.mouse.move( x0, y0 );
 		await page.mouse.down( { button: view.button } );
 		const started = Date.now();
+		let checked = started;
 		for ( ;; ) {
 
 			const f = Math.min( ( Date.now() - started ) / 1000 / s, 1 );
 			await page.mouse.move( x0 + dx * f, y0 + dy * f );
 			if ( f >= 1 ) break;
+			if ( Date.now() - checked >= 100 ) {
+
+				checked = Date.now();
+				const now = await page.evaluate( () => window.__pfInput.lost );
+				if ( now !== lost ) {
+
+					lost = now;
+					regained ++;
+					await page.mouse.up( { button: view.button } );
+					await page.mouse.down( { button: view.button } );
+
+				}
+
+			}
 			await sleep( 4 );
 
 		}
+		// at rest before the release (IslandCameraControls' RELEASE_STILL), so a cut drag does not glide
+		if ( cut ) await sleep( 60 );
 		await page.mouse.up( { button: view.button } );
 
 	};
@@ -1142,25 +1188,21 @@ async function driveUser( page, seconds ) {
 		}
 
 	};
+	// the step `from` falls in, and how far into it (the rest of a step an earlier slice began)
+	let k = 0, skip = from % cycle;
+	while ( skip >= steps[ k ][ 1 ] ) skip -= steps[ k ++ ][ 1 ];
 	while ( left() > 0 ) {
 
-		await pause( 0.6 );
-		await drag( - 60, 0, 2 );
-		await pause( 0.6 );
-		await drag( 120, 0, 1.5 );
-		await pause( 0.5 );
-		await drag( 0, 30, 1 );
-		await drag( - 90, - 10, 1.5 );
-		await pause( 0.8 );
-		await wheel( view.notches, 1, - 1 );
-		await pause( 0.4 );
-		await wheel( view.notches, 1, 1 );
-		await drag( 90, 0, 2 );
-		await pause( 0.8 );
-		await drag( - 200, 0, 0.4 );
-		await pause( 1.5 );
+		const [ kind, s, a, b ] = steps[ k ];
+		const notches = kind === 'wheel' ? Math.round( view.notches * ( s - skip ) / s ) : 0;
+		if ( kind === 'pause' || ( kind === 'wheel' && notches === 0 ) ) await pause( s - skip );
+		else if ( kind === 'drag' ) await drag( a, b, s - skip );
+		else await wheel( notches, s - skip, a );
+		skip = 0;
+		k = ( k + 1 ) % steps.length;
 
 	}
+	return regained;
 
 }
 
@@ -1383,7 +1425,8 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 			return performance.now();
 
 		}, { change: def.change ?? null } );
-		const [ utilisation ] = await Promise.all( [ sampleGpuUtilisation( Math.max( SECONDS - 0.5, 0.5 ) ), MOTION === 'user' ? driveUser( page, SECONDS ) : sleep( SECONDS * 1000 ) ] );
+		const [ utilisation, regained ] = await Promise.all( [ sampleGpuUtilisation( Math.max( SECONDS - 0.5, 0.5 ) ), MOTION === 'user' ? driveUser( page, SECONDS ) : sleep( SECONDS * 1000 ) ] );
+		if ( regained ) log( `${ scene.padEnd( 20 ) } a drag lost its pointer to an event the run did not send (the system cursor's?) ${ regained } time(s); pressed again` );
 		const t1 = await frames.now();
 		const displayed = display ? await display.stop( t0, t1 ) : undefined;
 		if ( SHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
@@ -1523,23 +1566,30 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 
 		}
 		if ( k === 0 ) switches[ scene ] = compile;
+		// each page's drags so far in this scene (s): its next slice plays them on from there
+		const dragged = [ 0, 0 ];
 		for ( let i = 0; i < SLICES; i ++ ) {
 
 			const v = 1 - ORDER[ i % ORDER.length ];
 			const switched = active !== v;
 			if ( switched ) await run( v, scene, i );
-			// on the display: the compositor's trace for the slice, and the camera dragged through
-			// the settle and the slice (each slice starts the same drags, so both pages see them)
+			// on the display: the compositor's trace for the slice
 			const display = DISPLAY ? await startDisplay( pages[ v ] ) : null;
-			const motion = MOTION === 'user' ? driveUser( pages[ v ], ( switched ? SETTLE : 0 ) + SLICE ) : null;
-			// (a hang closes the browser under the drags: their failure is the hang's)
-			motion?.catch( () => {} );
 			// the measured slice starts once this page has run alone a little (its queue fills)
 			if ( switched ) await sleep( SETTLE * 1000 );
 			const t0 = await frames[ v ].now();
+			// the camera dragged through the slice alone, on from the page's last slice: whether a
+			// slice follows a switch (and so a settle) or not, A's k-th slice and B's see the same
+			// drags from the same view (the drags through the settle as well gave the two pages
+			// other views, by the order's switches)
+			const motion = MOTION === 'user' ? driveUser( pages[ v ], SLICE, dragged[ v ] ) : null;
+			dragged[ v ] += SLICE;
+			// (a hang closes the browser under the drags: their failure is the hang's)
+			motion?.catch( () => {} );
 			await sleep( SLICE * 1000 );
 			const t1 = await frames[ v ].now();
-			await motion;
+			const regained = await motion;
+			if ( regained ) log( `${ scene.padEnd( 20 ) } ${ 'AB'[ v ] } slice ${ i }: a drag lost its pointer to an event the run did not send (the system cursor's?) ${ regained } time(s); pressed again` );
 			windows[ v ].push( { scene, slice: i, t0, t1, display: display ? await display.stop( t0, t1 ) : undefined } );
 			progress();
 
