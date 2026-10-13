@@ -23,7 +23,7 @@ everyday commands; this file has the details. Each tool's own file says the rest
   `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock, converge } )` stops the live loop and
   steps the tick itself with fixed timestamps, the frame pacer and the dynamic scale bypassed and
   nothing taken from the wall clock (`loop.start()` resumes the live loop); the diagnostics add
-  the scene's anti-aliasing (`aa`), the pipelines created so far (`pipelines`, counted by
+  the scene's anti-aliasing (`aa`, and `aaSource`: `url` or `tier`, where it came from), the pipelines created so far (`pipelines`, counted by
   `src/debug/PipelineCounter.ts`) and `graph` (the frame graph's dev counters: the attachment
   ops it rewrote and expected in the last frame, the frames they differed, targets found at a
   size other than their class's).
@@ -115,15 +115,17 @@ Quality and look:
 Rendering and A/B options, read at load (runtime switches for one-page A/Bs live in
 `src/debug/DebugFlags.ts`):
 
-- `aa` (the anti-aliasing mode, `src/post/Antialiasing.ts`: `msaa`, 4 samples, or `off`, one
-  sample, over the tier's `aa` knob; `taa` and `taau`, the temporal modes, from the URL only: one
-  sample, jittered, with motion vectors, resolved against a history in `TemporalAA.ts`, at the
+- `aa` (the anti-aliasing mode, `src/post/Antialiasing.ts`, over the tier's `aa` knob: each tier
+  has its default, high `msaa`, medium `taau`, low `msaa`, and the GUI's Antialiasing control
+  reloads with any of TAAU, TAA, MSAA 4x and, in debug builds, Off. `msaa`: 4 samples, upscaled by
+  FSR 1; `off`: one sample; `taa` and `taau`, the temporal modes: one sample, jittered, with motion vectors, resolved against a history in `TemporalAA.ts`, at the
   render's size or upsampled to the canvas; a paused page shows the rest image, the jitter
   sequence averaged, once it has converged, `TemporalRest.ts`; what changes the scene raises a
   scene event, `SceneEvents.ts`, which restarts the rest and may cut the history: the diagnostics'
   `taa.lastEvent`, and `__PONLAI__.taa.restart()` by hand) and its older alias `msaa` (`4`
   reads as `aa=msaa`, `1` and `2` as `aa=off`, since WebGPU multisamples with 1 or 4 samples
-  only).
+  only). The capture and parity tools apply the temporal tolerances by their own `--aa` option, so
+  a set of medium's default passes `--aa taau`.
 - `aa=gt` (debug builds only; refused with a warning otherwise): the ground truth the temporal
   modes are measured against: the temporal graph at the canvas's resolution, no dynamic scale,
   whose rest averages `tier.taa.gtJitters` jittered frames (64 by default, 32 per frame of a
@@ -525,7 +527,8 @@ Forms:
   `<repo top>/artifacts/jobs/<UTC stamp>-<command>.log` and its path is printed. The log holds the
   command's output between a start line and an end line, `[done] exit <code> at <time> after
   <duration>`, with ` (stopped)` when the job was stopped. A single argument after `--` runs
-  through `sh -c` (pipes, `&&`), several run as they are.
+  through `sh -c` (pipes, `&&`), several run as they are. A single argument with an unquoted `&`
+  inside a word (`--view near:like=a&dist=40`) is refused with exit 2: quote that word.
 - `start --wait [--lines n] -- command` starts the job the same way and waits on it within the
   budget: when it ends, it prints the log's last lines (20) and exits with the command's code;
   otherwise it exits 124 and prints the `wait` to call next. Nothing is killed at the budget, so a

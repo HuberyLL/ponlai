@@ -58,7 +58,7 @@ import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters
 import { CharacterShadow } from './characters/CharacterShadow.ts';
 import { characterLook } from './characters/CharacterMaterial.ts';
 import { debugFlags } from './debug/DebugFlags.ts';
-import { AA_GUI_MODES, AA_MODE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
+import { AA_MODE, AA_SOURCE, AFTER_RESOLVE, QUALITY_CHOICE, TEMPORAL, type AAMode } from './post/Antialiasing.ts';
 import type { LatentRegistry } from './post/graph/FrameGraph.ts';
 import { MOTION_CLASS, motionCheck, motionState, motionUniforms, onTaaCut, taaCut } from './post/Motion.ts';
 import { jitter } from './post/Jitter.ts';
@@ -908,10 +908,14 @@ frameStats.visible = () => ! gui._hidden && ! gui._closed && ! performanceF._clo
 frameStats.onReadout = () => { for ( const c of statsF ) c.updateDisplay(); };
 frameStats.extra = () => `scale ${ resolution.scale }   GPU ${ resolution.gpu }`;
 // The anti-aliasing mode (post/Antialiasing.ts) is built into materials and the frame graph, so a
-// change reloads the page with `aa=` (the older `msaa` alias dropped). The temporal modes stay
-// URL-only until they are tuned.
+// change reloads the page with `aa=` (the older `msaa` alias dropped). It shows the running mode,
+// the tier's default or the URL's; `off` is offered in debug builds only, and the ground truth (URL
+// only) is listed while it runs.
 const antialiasingF = gui.addFolder( 'Antialiasing' );
-antialiasingF.add( { mode: AA_MODE }, 'mode', AA_GUI_MODES ).name( 'mode (reloads)' ).onFinishChange( ( mode: AAMode ) => {
+const aaChoices: Record<string, AAMode> = { 'TAAU': 'taau', 'TAA': 'taa', 'MSAA 4x': 'msaa' };
+if ( DEBUG ) aaChoices[ 'Off' ] = 'off';
+if ( AA_MODE === 'gt' ) aaChoices[ 'Ground truth' ] = 'gt';
+antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)' ).onFinishChange( ( mode: AAMode ) => {
 
 	if ( mode === AA_MODE ) return;
 	const url = new URL( location.href );
@@ -1578,6 +1582,8 @@ function diagnostics( now = false ): void {
 		// the scene's anti-aliasing, the pipelines created so far and the frame graph's state and
 		// dev counters, for the clip and first-use tools
 		aa: AA_MODE,
+		// where the mode came from: the URL (`aa`, `msaa`) or the quality tier's `aa` knob
+		aaSource: AA_SOURCE,
 		pipelines: pipelineCount?.total ?? 0,
 		graph: graphDiagnostics(),
 		// the temporal resolve: its mode, the rest (converged, frames, target), the jitter, the history's

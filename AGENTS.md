@@ -54,6 +54,11 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   captures.
 - `node tools/capture-growth.mjs --base url [--cand url]` captures two pages side by side over
   seeds, growth steps and six views, with region statistics (`docs/tools.md`).
+- `tools/parity/` captures sets of paused views and motion clips and measures them against
+  references stored per commit: MSAA byte for byte, the temporal modes within a tolerance, both
+  against a ground truth (`aa=gt`); `tools/verify-first-use.mjs` counts the pipelines still created
+  after the warm-up. Captures of a paused temporal page wait for its rest to converge. Manuals:
+  `tools/parity/README.md`, `docs/tools.md`.
 
 ## Map
 
@@ -94,8 +99,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/weather/`: wind (`Wind.ts`: the one wind field all vegetation moves in), lightning, rain,
   puddles, distant air and sea fog (`AerialPerspective.ts`).
 - `src/post/`: the frame's passes, tone curve and look (`Pipeline.ts`), light shafts
-  (`LightShafts.ts`), FSR 1, render scale and dynamic resolution, the frame pacer, the submit
-  batching, the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
+  (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
+  `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
+  final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
   temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal resolve
   (`TemporalAA.ts`), the image of a resting scene (`TemporalRest.ts`), the scene events that
   restart it or cut the history (`SceneEvents.ts`) and the rain's streaks and the storm's spray
@@ -110,7 +116,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   node runs it by stripping types; `sim/save.ts` is the save slot the world's start reads), `view/`
   draws the islanders, the palm and the chest, and `Hud.ts` / `Placement.ts` are the player's
   prototype HUD.
-- `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout.
+- `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
+  the pipeline counter (`PipelineCounter.ts`).
 - `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the world's chunk
   checks (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node
   helpers in `world-node.mjs`.
@@ -124,7 +131,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   A scene jump (`establishScene` in `main.ts`) draws the frame a fresh load of the same query
   draws: state a scene leaves behind (a cache, a history, a size that only grows, a window that
   follows the camera) is cleared there (`tools/verify-scene-jump.mjs`). Captures and probes depend
-  on it. Temporal AA modes are compared within a tolerance, not byte
+  on it. Under the temporal modes a paused page shows its rest image, its own jitter sequence
+  averaged once converged (`TemporalRest.ts`), so it does not depend on the frames before either.
+  Temporal AA modes are compared within a tolerance, not byte
   for byte: the GPU splits render passes on its own, which moves a few samples, and the temporal
   rest freezes that (`tools/parity/README.md`).
 - Everything generated for the island is generic, because the island grows one piece at a time
@@ -213,10 +222,15 @@ image diffs, wait loops); the shared tools now cover them.
 - Screen uv ( 0, 0 ) is the top-left corner, NDC y points up, depth runs 0..1.
 - Multisampled depth is read with `textureLoad`, one sample at a time (the sample index in its level
   argument); single-sampled, that argument is a mip level. More in `Pipeline.ts`.
-- WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The scene is
-  4x on every tier; the temporal modes (`aa=taa|taau`, URL only) draw one sample, jittered
-  (`Antialiasing.ts`). Find vegetation by `userData.vegetation`, never by `alphaToCoverage`
-  (`Foliage.ts`).
+- WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The
+  anti-aliasing mode is a load knob of the tier (`aa` in `Quality.ts`): high and low run `msaa`
+  (the scene 4x, a lower render upscaled by FSR 1), medium `taau` (one sample, jittered, resolved
+  against a history and upsampled to the canvas, which holds medium's fixed budget at 60 fps where
+  MSAA does not); every mode can be chosen on any tier (`aa=msaa|taa|taau|off`, also the GUI's
+  Antialiasing control; `off` is for debugging, `aa=gt` exists in debug builds only). Code that differs by mode reads `Antialiasing.ts`'s exports
+  (`TEMPORAL`, `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier; the vegetation's cut-outs are
+  alpha to coverage under MSAA only (`Foliage.ts`, `VegetationPrepass.ts`). Find vegetation by
+  `userData.vegetation`, never by `alphaToCoverage` (`Foliage.ts`).
 - Implicitly filtered texture samples and derivatives need uniform control flow: take them
   (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
   Keep filters that take `dFdx` / `dFdy` out of `select()` / `If` branches (`SolarShadow.ts`).
@@ -231,7 +245,8 @@ image diffs, wait loops); the shared tools now cover them.
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
   (`renderOrder = -1`). See `Foliage.ts`.
 - The water samples neither the target it draws into nor more textures: it already binds 16
-  sampled textures and 14 of 16 varyings, 15 under the temporal modes (`Water.ts`). It reflects
+  sampled textures and 14 of 16 varyings, 15 under the temporal modes (`Water.ts`): it takes no
+  history or reactive input; what the resolve needs from it goes out through its velocity. It reflects
   only what lies inside `Water.reflectionBounds`: anything opaque placed off the island or above
   3 m must grow that box.
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
@@ -259,19 +274,33 @@ image diffs, wait loops); the shared tools now cover them.
 - `renderer.compileAsync` alone does not compile what a render draws (target, MRT, side, call
   depth, a render context shared by targets of the same attachments): compile ahead through the
   frame graph's warm-up, a draw that shows only at times registered as a latent of its pass
-  (`FrameGraph.ts`, `graph/Compile.ts`; a shadow map's draws with `compileLatentInto`).
+  (`FrameGraph.ts`, `graph/Compile.ts`; a shadow map's draws with `compileLatentInto`). The
+  warm-up's priming renders only what keeps no state and never leaves a persistent resource
+  written (`fgPrime=0` turns it off).
 - A fragmentNode that writes several attachments must be the `outputStruct( ... )` itself: one
   returned from inside an `Fn` is emitted with a single output (`struct member m0 not found`).
   Build the members in one `Fn` and return them as a matrix's columns (`TemporalAA.ts`
   `neighbourhood`).
 - Under the temporal modes every scene material writes the velocity beside the colour: one with
   a fragmentNode writes both outputs, one whose positionNode animates supplies `positionPrevious`
-  (`Motion.ts`). A new site that changes the scene in a way its frames do not show (a seek, a jump,
+  and sets `userData.previousPosition` (`Motion.ts`). The blend of each attachment comes only from
+  the pass's own MRT (`Motion.ts` `sceneMRT`, `overlayMRT`), whatever a material's MRT node says;
+  a material drawn into two attachment layouts builds once per layout through
+  `graph/ThreePatches.ts`'s cache keys. A new site that changes the scene in a way its frames do not show (a seek, a jump,
   a new scene, a control that retunes a paused frame) raises a scene event (`SceneEvents.ts`).
 - `SubmitBatch.ts` wraps the device, queue and encoders and holds command buffers: raw WebGPU work
   and new queue operations must go through its rules, and one invalid command buffer loses its
   whole batch. `graph/AttachmentOps.ts` wraps the encoders too: a wrapper that hands out encoders
   of its own must be installed before it.
+- Under the temporal modes the scene passes (the graph's jittered span) see the camera's projection
+  jittered by a fraction of a render pixel. Work keyed, culled or placed by the camera takes the
+  unjittered projection (`jitter.uniforms.unjitteredProjection`): the sky dome, the grass cull and
+  the light shafts' sun do (`Jitter.ts`).
+- What a frame reads from the frame before (a history, the previous depth, an object's previous
+  matrix, a clock's step) advances once per rendered frame, not per draw or per tick. A texture's
+  history is declared on the graph: a ping-pong resource read through `previous()`, or a frame-end
+  `copyToPersistent` (single-sampled, same size class and format), never a `copyTextureToTexture`
+  of its own around the graph (`GraphCompiler.ts`).
 - Timestamp queries (`trackTimestamp`) have one owner at a time (`DynamicResolution.ts`).
 - `Sky.ts` drives three's private `PMREMGenerator` steps, `SunShadow.compileCasters` mirrors
   three's shadow-pass material, and `graph/ThreePatches.ts`, `graph/AttachmentOps.ts` and
