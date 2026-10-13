@@ -43,6 +43,9 @@
 // captured before the store) and skips the side under test where its clip.json exists;
 // --recapture-reference captures the reference entries afresh. --clips may also name a clip that
 // is not a gate's (`--clips drs-steps`): its baseline and ground truth are kept the same way.
+// --views and --clips take groups beside names (views.mjs, clips.mjs: `--views normal --clips
+// normal` for the normal weathers, `special` for the storm, the fog and the weather front); a clip
+// group only selects among the plan's clips.
 //
 // `--label x --aa taau` captures the same entries for another mode and measures them against the
 // baseline's MSAA captures and the shared ground truth (with --thresholds: gate verdicts). The
@@ -70,8 +73,8 @@ import { mkdir, readFile, writeFile, appendFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { VIEWS, viewNames } from './views.mjs';
-import { CLIPS, gtSampling } from './clips.mjs';
+import { VIEWS, viewNames, expandViews } from './views.mjs';
+import { CLIPS, CLIP_GROUPS, clipNames, gtSampling } from './clips.mjs';
 import { sampleGpuUtilisation } from '../gpu-lock.mjs';
 import { ensureReference, clipKey, anchorsHash, checkServed } from './reference.mjs';
 import { planCarry } from './carry.mjs';
@@ -129,7 +132,11 @@ function parse( argv ) {
 export function entries( o ) {
 
 	const tiers = ( o.tiers ?? 'high,medium,low' ).split( ',' );
-	const views = o.views ? new Set( o.views.split( ',' ) ) : null, clips = o.clips ? new Set( o.clips.split( ',' ) ) : null;
+	const views = o.views ? new Set( expandViews( o.views ) ) : null;
+	// a clip group only selects among the plan's clips; a clip named beyond them is added below
+	const clipItems = o.clips ? o.clips.split( ',' ).filter( Boolean ) : null;
+	const named = clipItems ? clipItems.filter( ( c ) => ! CLIP_GROUPS.includes( c ) ) : null;
+	const clips = clipItems ? new Set( [ ...named, ...clipItems.filter( ( c ) => CLIP_GROUPS.includes( c ) ).flatMap( ( g ) => clipNames( g ) ) ] ) : null;
 	const out = [];
 	for ( const tier of tiers ) {
 
@@ -150,7 +157,7 @@ export function entries( o ) {
 		}
 		// clips named with --clips beyond the gates' (a task's own clip, such as drs-steps): its
 		// baseline and ground truth are references of the merge-base like the gates'
-		if ( o.only !== 'rest' && clips ) for ( const name of clips ) {
+		if ( o.only !== 'rest' && named ) for ( const name of named ) {
 
 			if ( out.some( ( e ) => e.tier === tier && e.kind === 'clip' && ( e.name === name || e.clip === name ) ) ) continue;
 			const [ clip, view ] = name.split( '@' );

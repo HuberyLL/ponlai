@@ -1,4 +1,4 @@
-// The parity views: name -> { q, eval, crops, group }. Every view is a paused frame at a fixed t;
+// The parity views: name -> { q, eval, crops, group, special }. Every view is a paused frame at a fixed t;
 // `q` is added to the common query (capture-set.mjs), `eval` runs in the page once
 // window.__PONLAI__ exists (before capture.mjs's settling wait). Placements derive from the island
 // meshes' bounds (one mesh, or a mesh per land chunk), the plant sites (the first rim bush where
@@ -6,7 +6,11 @@
 // they follow any land, as tools/profile-frame.mjs places its scenes.
 //
 // Groups: `parity` (the 17 views every parity check runs; the default) and `taa` (7 close views
-// for the temporal anti-aliasing work: thin and moving detail); `all` is both.
+// for the temporal anti-aliasing work: thin and moving detail); `all` is both. Across them,
+// `special` holds the special weathers (`special: true`: the storm, the fog and the weather front)
+// and `normal` every other view: normal weather is tuned and accepted first, the special weathers
+// after it, so a check can run the normal views alone (and tools/parity/gates.py --normal leaves
+// the special ones unjudged). A clip belongs to the group of its view (clips.mjs).
 //
 // Crop anchors: each view names the subjects worth a 1:1 look (`crops`). The page projects a world
 // point for each into a 384 px box of the captured image (device pixels) and exposes them as
@@ -15,7 +19,7 @@
 // those boxes. An anchor that is off screen or hidden behind the island is reported with
 // `missing` instead of a box. Reading the anchors does not change the scene.
 //
-//   node views.mjs list [parity|taa|all]   -> view names, one per line
+//   node views.mjs list [parity|taa|all|normal|special]   -> view names, one per line
 //   node views.mjs query <name>            -> the view's extra query
 //   node views.mjs eval <name>             -> the view's eval js (the crop anchors' setup included)
 //   node views.mjs crops <name>            -> the view's anchor names, comma-separated
@@ -263,16 +267,16 @@ export const VIEWS = {
 	'sky-cloudy': { q: 'weather=cloudy&preset=noon', eval: `s.setCameraView( 'sky' );`, crops: [] },
 	'island-overcast': { q: 'weather=overcast&preset=noon', crops: [ 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
 	'island-rain': { q: 'weather=rain&preset=noon', crops: [ 'rain-streaks', 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
-	'island-storm': { q: 'weather=storm&preset=noon', crops: [ 'rain-streaks', 'rim-lip', 'cliff-edge-sea' ] },
-	'horizon-storm': { q: 'weather=storm&preset=noon', eval: `s.setCameraView( 'horizon' );`, crops: [ 'rain-streaks', 'horizon-line', 'cliff-edge-sea' ] },
-	'island-fog-dawn': { q: 'weather=fog&preset=dawn', crops: [ 'fog-cliff', 'rim-lip', 'meadow-band-70m' ] },
+	'island-storm': { special: true, q: 'weather=storm&preset=noon', crops: [ 'rain-streaks', 'rim-lip', 'cliff-edge-sea' ] },
+	'horizon-storm': { special: true, q: 'weather=storm&preset=noon', eval: `s.setCameraView( 'horizon' );`, crops: [ 'rain-streaks', 'horizon-line', 'cliff-edge-sea' ] },
+	'island-fog-dawn': { special: true, q: 'weather=fog&preset=dawn', crops: [ 'fog-cliff', 'rim-lip', 'meadow-band-70m' ] },
 	'island-night-clear': { q: 'weather=clear&preset=midnight', crops: [ 'rim-lip', 'meadow-band-70m', 'cliff-edge-sea' ] },
 	// the profiler's meadow placement: eye height a little inside the rim, looking out over the lip
 	'meadow-close': { q: 'weather=fair&preset=noon', eval: `const b = isl(); const d = { x: Math.cos( 0.7 ), z: Math.sin( 0.7 ) };
 		const p = [ b.cx + d.x * b.rx * 0.45, b.top + 1.6, b.cz + d.z * b.rz * 0.45 ];
 		free( p, [ p[ 0 ] + d.x * 10, p[ 1 ] - 2.2, p[ 2 ] + d.z * 10 ], 55 );`, crops: [ 'meadow-near', 'rim-lip', 'horizon-line' ] },
 	// the profiler's front from fair to rain, frozen half way (3 s of its 6 s), its environment baked
-	'weather-change': { q: 'weather=fair&preset=noon', eval: `await s.setWeather( 'rain', 6 ); s.weather.update( 3 ); await s.refreshEnvironment();`, crops: [ 'rain-streaks', 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
+	'weather-change': { special: true, q: 'weather=fair&preset=noon', eval: `await s.setWeather( 'rain', 6 ); s.weather.update( 3 ); await s.refreshEnvironment();`, crops: [ 'rain-streaks', 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
 
 	// extra views
 	// a low camera 1.4 m over the sea, just off the cliffs, looking along the coast (reflections of
@@ -334,9 +338,22 @@ export const VIEWS = {
 		free( [ b.cx + Math.cos( a ) * ( r + 30 ), 3, b.cz + Math.sin( a ) * ( r + 30 ) ], [ b.cx, 2.5, b.cz ], 45 );`, crops: [ 'cliff-edge-sea', 'cliff-edge-sky', 'sea-glints', 'horizon-line' ] },
 };
 
+export const VIEW_GROUPS = [ 'parity', 'taa', 'all', 'normal', 'special' ];
+
 export function viewNames( group = 'parity' ) {
 
-	return Object.keys( VIEWS ).filter( ( v ) => group === 'all' || ( VIEWS[ v ].group ?? 'parity' ) === group );
+	if ( ! VIEW_GROUPS.includes( group ) ) throw new Error( `unknown view group ${ group } (${ VIEW_GROUPS.join( ', ' ) })` );
+	return Object.keys( VIEWS ).filter( ( v ) => group === 'all' || ( group === 'special' ? VIEWS[ v ].special === true
+		: group === 'normal' ? VIEWS[ v ].special !== true : ( VIEWS[ v ].group ?? 'parity' ) === group ) );
+
+}
+
+/** A --views value as view names: comma-separated names and groups, each group expanded in place
+ * (`normal,flowers-close`). Names are not checked here: each tool says what it does with one it
+ * does not know. */
+export function expandViews( spec ) {
+
+	return [ ...new Set( spec.split( ',' ).filter( Boolean ).flatMap( ( v ) => VIEW_GROUPS.includes( v ) ? viewNames( v ) : [ v ] ) ) ];
 
 }
 
@@ -350,6 +367,6 @@ if ( process.argv[ 1 ] && path.resolve( process.argv[ 1 ] ) === fileURLToPath( i
 	else if ( cmd === 'query' ) console.log( VIEWS[ name ].q );
 	else if ( cmd === 'eval' ) console.log( viewEval( name ) );
 	else if ( cmd === 'crops' ) console.log( ( VIEWS[ name ].crops ?? [] ).join( ',' ) );
-	else { console.error( 'usage: node views.mjs list [parity|taa|all] | query <view> | eval <view> | crops <view>' ); process.exitCode = 2; }
+	else { console.error( 'usage: node views.mjs list [parity|taa|all|normal|special] | query <view> | eval <view> | crops <view>' ); process.exitCode = 2; }
 
 }

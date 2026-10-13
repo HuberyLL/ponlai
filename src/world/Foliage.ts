@@ -506,21 +506,30 @@ export function bushInstances( bushes: Float32Array ): BushInstances {
 
 }
 
+/** The bushes' buffers `instances` are written into, each with its values (a grown island's are
+ * staged ahead: Growth.ts, Upload.ts stagedWriteSteps). */
+export function bushWrites( mesh: THREE.InstancedMesh, instances: BushInstances ): [ THREE.BufferAttribute, Float32Array ][] {
+
+	return [
+		[ mesh.instanceMatrix, instances.matrices ],
+		[ mesh.instanceColor!, instances.colors ],
+		[ mesh.geometry.getAttribute( 'skyVisibility' ) as THREE.BufferAttribute, instances.visibility ],
+		[ mesh.geometry.getAttribute( 'bushRoot' ) as THREE.BufferAttribute, instances.roots ],
+	];
+
+}
+
 /** Writes `instances` into the bushes' buffers (their used part re-uploaded) and sets the count. */
 export function setBushes( mesh: THREE.InstancedMesh, instances: BushInstances ): void {
 
-	const put = ( attribute: THREE.BufferAttribute, values: Float32Array ) => {
+	for ( const [ attribute, values ] of bushWrites( mesh, instances ) ) {
 
 		( attribute.array as Float32Array ).set( values );
 		attribute.clearUpdateRanges();
 		attribute.addUpdateRange( 0, Math.max( values.length, attribute.itemSize ) );
 		attribute.needsUpdate = true;
 
-	};
-	put( mesh.instanceMatrix, instances.matrices );
-	put( mesh.instanceColor!, instances.colors );
-	put( mesh.geometry.getAttribute( 'skyVisibility' ) as THREE.BufferAttribute, instances.visibility );
-	put( mesh.geometry.getAttribute( 'bushRoot' ) as THREE.BufferAttribute, instances.roots );
+	}
 	mesh.count = instances.count;
 	// (its box and sphere follow the instances: the sun's caster box reads them)
 	mesh.boundingBox = null;

@@ -2,12 +2,23 @@
 // a jump within one page must be the frame a fresh load of its query draws. It captures the views
 // both ways, in the layout of tools/parity/capture-set.mjs, so tools/parity/diff-set.py judges them:
 //
-//   node tools/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--views parity|taa|all|a,b,c]
+//   node tools/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--views parity|taa|all|normal|special|a,b,c]
+//       [--view "name:query[::js]"]...
 //       [--order list|reverse] [--from <view or query>]... [--between <view or query>]...
 //       [--suffix .repeat] [--quality high]
 //       [--aa mode] [--q "extra&query"] [--size 1728x1117@2] [--frames n] [--stable-* (as capture.mjs)]
 //       [--profile dir] [--timeout 240000]
 //   node tools/verify-scene-jump.mjs <baseUrl> <outDir> --check <root>/<sha>/<set> [same options]
+//
+// --view adds an ad-hoc view (repeatable), with capture-set.mjs's syntax and parser
+// (tools/parity/adhoc.mjs, whose header has the rules: `like=<view>` starts from a views.mjs view, the
+// view's own options win over the set's). The ad-hoc views follow --views's in the run's list; with
+// --view and no --views the list is just the ad-hoc views (no --views and no --view: all). So a new
+// scene option is checked as `--views island-fair-noon --view approach-half:approach=0.5` rather than
+// pieced together from --q and --from. One page reaches every view, so the views must share their
+// load-time options (adhoc.mjs loadSignature; establishScene refuses the others). Under --check the
+// fresh side's set stores each ad-hoc view with its definition's hash, as capture-set's: a stored
+// fresh load of the same name and definition is reused, a changed query or eval captures it again.
 //
 // --check runs the whole check in one command: the fresh side, the jump side in both orders into
 // <outDir>, then diff-set.py (`--aa-floor`, `--temporal` for aa=taa|taau|gt; its table also in
@@ -58,11 +69,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { waitForScene, waitForStable, stableOptions, stopLoop } from './capture-browser.mjs';
-import { VIEWS, viewNames, viewEval } from './parity/views.mjs';
+import { VIEWS, viewEval } from './parity/views.mjs';
+import { selectViews, viewQuery } from './parity/adhoc.mjs';
 
 const argv = process.argv.slice( 2 );
 const flags = new Set( [ 'fresh', 'legacy' ] );
-const options = {}, positional = [], from = [], between = [];
+const options = {}, positional = [], from = [], between = [], adhoc = [];
 for ( let i = 0; i < argv.length; i ++ ) {
 
 	if ( ! argv[ i ].startsWith( '--' ) ) { positional.push( argv[ i ] ); continue; }
@@ -70,6 +82,7 @@ for ( let i = 0; i < argv.length; i ++ ) {
 	if ( flags.has( k ) ) options[ k ] = true;
 	else if ( k === 'from' ) from.push( argv[ ++ i ] );
 	else if ( k === 'between' ) between.push( argv[ ++ i ] );
+	else if ( k === 'view' ) adhoc.push( argv[ ++ i ] );
 	else options[ k ] = argv[ ++ i ];
 
 }
@@ -85,16 +98,10 @@ if ( positional.length !== 2 || unknown.length ) {
 let [ base, outDir ] = positional;
 if ( ! base.endsWith( '/' ) && ! base.includes( '?' ) ) base += '/';
 outDir = path.resolve( outDir );
-const views = ( () => {
-
-	const v = options.views ?? 'all';
-	if ( [ 'parity', 'taa', 'all' ].includes( v ) ) return viewNames( v );
-	const list = v.split( ',' ).filter( Boolean );
-	const bad = list.filter( ( name ) => ! VIEWS[ name ] );
-	if ( bad.length ) { console.error( `unknown view ${ bad.join( ', ' ) }` ); process.exit( 2 ); }
-	return list;
-
-} )();
+// capture-set's selection (adhoc.mjs), ad-hoc views registered into VIEWS; this tool's default
+// stays every view when neither --views nor --view is given
+let views;
+try { views = selectViews( { views: options.views ?? ( adhoc.length ? undefined : 'all' ), view: adhoc } ); } catch ( error ) { console.error( error.message ); process.exit( 2 ); }
 const listed = [ ...views ];
 if ( options.order === 'reverse' ) views.reverse();
 const size = ( options.size ?? '1728x1117@2' ).match( /^(\d+)x(\d+)(?:@([\d.]+))?$/ );
@@ -111,7 +118,7 @@ const profile = path.resolve( options.profile ?? 'artifacts/.capture-profiles/sc
 // a view's scene: its full query and eval; a raw query (a `--from` scene) has no eval
 // (whose options replace the common ones: the page reads the first of a repeated option)
 const merged = ( q ) => { const p = new URLSearchParams( common ); for ( const [ k, value ] of new URLSearchParams( q ) ) p.set( k, value ); return p.toString(); };
-const scene = ( v ) => VIEWS[ v ] ? { name: v, q: `${ common }&${ VIEWS[ v ].q }`, eval: viewEval( v ) } : { name: v, q: merged( v ), eval: null };
+const scene = ( v ) => VIEWS[ v ] ? { name: v, q: viewQuery( v, common ), eval: viewEval( v ) } : { name: v, q: merged( v ), eval: null };
 
 // the slot lease from view to view, in ms (capture.mjs's --lease: see the header)
 const LEASE = 20000;
@@ -282,7 +289,10 @@ async function check() {
 	const t0 = Date.now();
 	const minutes = () => ( ( Date.now() - t0 ) / 60000 ).toFixed( 1 );
 	const stableArgs = Object.keys( options ).filter( ( k ) => k.startsWith( 'stable-' ) ).flatMap( ( k ) => [ `--${ k }`, options[ k ] ] );
-	const common = [ '--views', listed.join( ',' ), ...[ 'quality', 'aa', 'q', 'size', 'timeout' ].flatMap( ( k ) => options[ k ] === undefined ? [] : [ `--${ k }`, options[ k ] ] ) ];
+	// views.mjs's views by name, the ad-hoc ones as given (capture-set and the children register them
+	// again; the fresh side's store keys them by their definitions' hashes)
+	const named = listed.filter( ( v ) => ! VIEWS[ v ].adhoc );
+	const common = [ ...( named.length ? [ '--views', named.join( ',' ) ] : [] ), ...adhoc.flatMap( ( v ) => [ '--view', v ] ), ...[ 'quality', 'aa', 'q', 'size', 'timeout' ].flatMap( ( k ) => options[ k ] === undefined ? [] : [ `--${ k }`, options[ k ] ] ) ];
 	const run = ( label, argList, log ) => new Promise( ( resolve ) => {
 
 		const child = spawn( process.execPath, argList, { cwd: repo, stdio: [ 'ignore', 'pipe', 'pipe' ] } );
