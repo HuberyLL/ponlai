@@ -22,6 +22,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `npm run preview` (port 5191). URL options and in-page keys: `docs/tools.md`.
 - `node tools/capture.mjs <name> [--q "paused&t=12&dpr=1"]` screenshots the dev server into
   `artifacts/captures/` (git-ignored).
+- `node tools/probe.mjs [url] --q "<query>" --eval "<js>"` reads values from the page (diagnostics,
+  timings, uniforms, pipeline counts after an action) as JSON, under the GPU lock and in a warm
+  profile: use it instead of a Playwright script of one's own (`docs/tools.md`, Probes).
 - `node tools/profile-frame.mjs` profiles a production build (scene matrix, A/B deltas, per-pass
   GPU time, the 60 fps acceptance); its options and modes are in `docs/tools.md`.
 - Everything that renders the scene in a browser takes the GPU lock:

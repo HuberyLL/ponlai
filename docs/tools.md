@@ -255,6 +255,28 @@ again and compared); an entry that may not carry is captured and the log says wh
 `node tools/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
 Rules and proof: the README's Carry-over.
 
+## Probes
+
+`node tools/probe.mjs [url] [--q query] [--query q]... --eval js [--until js] [--frames n]`
+answers a question about the running page without a Playwright script of one's own: it loads the
+scene in the capture tools' browser (headless, a warm profile slot; `--fresh` for a cold load),
+holds a shared GPU slot from the load to the end (`--exclusive` for frame times), runs the steps in
+the order given and prints JSON (per query: load or jump, the time until up, each step's value,
+console errors and failed requests). Each `--query` after the first is reached in the same page by
+the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n )`, `sleep( ms )`
+and `until( fn )` (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
+from `P`); `--init js` hooks the page before its scripts run. A production preview needs
+`debug` in the query. Common questions:
+
+- diagnostics and load timings: `--eval "D.timings" --eval "D.worldCache"`;
+- a uniform or a setting: `--eval "P.shared.wetness.value"`, `--eval "P.camera.position"`;
+- the pipelines an action creates: `--until "D.settled" --eval "P.pipelines.total"
+  --eval "P.setWeather( 'storm', 0 )" --frames 120 --eval "P.pipelines.total"`;
+- the game: `--q "debug&game" --eval "P.game.sim.state.villagers[ 0 ]"`;
+- frame time: `--exclusive --q "debug" --frames 300 --eval "D.frameMs"` (profile-frame for A/B).
+
+Steps, scope, the value's serialisation and the exit code are in the file's header.
+
 ## GPU lock
 
 Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
