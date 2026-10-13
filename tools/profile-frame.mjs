@@ -6,12 +6,18 @@
 // its window is up, by the GPU time of the clients other than its Chrome and WindowServer; see
 // idleCheck): when something still does after `--idle-wait` seconds (20, 60 in reload mode), it measures nothing and exits with 3 (a
 // contended run's frame rates and verdicts prove nothing, and it held the lock for minutes);
-// `--contended` measures anyway and marks the results contended.
+// `--contended` measures anyway and marks the results contended. The machine's load over the whole
+// run (CPU per process group, GPU time per client, about once a second) goes to <out>/load.jsonl
+// (load-timeline.mjs; macOS); each measured slice gets the mean load outside the run over its
+// window, a slice whose outside GPU share exceeds `--idle-threshold` is contended, and a scene
+// with more than a quarter of its slices contended is marked contended (see annotateLoads;
+// `--load-timeline off` turns it off).
 //
 //   node tools/profile-frame.mjs [url] [--scenes a,b | --scene a] [--w 1920 --h 1080 --scale 2]
 //        [--quality high] [--timestamps on|off|both|auto] [--warmup s] [--seconds 7] [--orbit 3]
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s] [--contended]
+//        [--load-timeline off]
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
 //        [--scale-settle s] [--drs-store] [--frame-fallback] [--preload-wait 60] [--display [--motion user | orbit | none]]
 //        [--hang 180] [--scale-log]
@@ -20,6 +26,7 @@
 //        (two pages, alternating slices)
 //   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
 //   node tools/profile-frame.mjs --report <dir>/profile.json     (re-renders its summary.md)
+//   node tools/profile-frame.mjs --report <dir> | <dir>/scenes.jsonl  (an unfinished run's, see below)
 //   node tools/profile-frame.mjs --list
 //
 // The reference is a production build (`npm run build && npm run preview`, port 5191, the
@@ -48,8 +55,14 @@
 // recorded as hung (`meta.hung`, summary.md: the step it was at and what each page still did), the
 // browser is closed (killed if still open after 30 s) and opened again, and the run goes on with the
 // scenes not finished; a browser or page that closes or crashes under a scene loses it the same way,
-// and a second lost scene stops the run with the finished scenes written (see guarded).
-// Every finished scene is also appended to <out>/scenes.jsonl as it finishes.
+// as does a scene whose setup or placement throws in the page (a layout `place()` cannot read: the
+// meadow view once ended a whole --compare without a profile.json), and a second lost scene stops
+// the run with the finished scenes written (see guarded).
+// Every finished scene is also appended to <out>/scenes.jsonl as it finishes, and the meta known at
+// the start is written to <out>/meta.json; `--report <dir>` on a folder without a profile.json
+// rebuilds summary.md from them (and load.jsonl) with the same reports, marked unfinished, the
+// scenes missing a variant or pass listed and left out (see unfinishedReport). --report opens no
+// browser and takes no lock.
 // A page paused or pinned during the run stops it the same way: each page's `clockPaused` and
 // `scalePinned` (diagnostics) are read at its load (`?dpr` pins legitimately) and after every slice
 // or measured window, and a change stops the run with the finished scenes written (`meta.spoiled`)
@@ -215,13 +228,14 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { withGpuLock, leaseGpuLock, waitForIdleGpu, gpuClients, sampleGpuUtilisation } from './gpu-lock.mjs';
 import { announceHeadedRun, requireDisplayAllowed } from './display-gate.mjs';
+import { startLoadTimeline, markSlices, windowLoad } from './load-timeline.mjs';
 
 // ------------------------------------------------------------------ options
 
 const argv = process.argv.slice( 2 );
 const flags = new Set( argv.filter( ( a ) => a.startsWith( '--' ) ) );
 const VALUE_FLAGS = new Set( [ 'report', 'scenes', 'scene', 'w', 'h', 'scale', 'quality', 'warmup', 'seconds', 'orbit', 'eval', 'eval-a', 'eval-b', 'repeat', 'out', 'label', 'q', 'compare', 'idle-wait', 'idle-threshold', 'timestamps', 'hooks',
-	'mode', 'toggle', 'world-cache', 'slices', 'min-slices', 'stop-margin', 'stop-width', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion', 'preload-wait', 'hang' ] );
+	'mode', 'toggle', 'world-cache', 'slices', 'min-slices', 'stop-margin', 'stop-width', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion', 'preload-wait', 'hang', 'load-timeline' ] );
 const opt = ( name, fallback ) => {
 
 	const i = argv.indexOf( '--' + name );
@@ -340,6 +354,8 @@ const IDLE_THRESHOLD = Number( opt( 'idle-threshold', 15 ) );
 const IDLE_WAIT = Number( opt( 'idle-wait', MODE === 'reload' ? 60 : 20 ) );
 // (not again before every load when the run already found the GPU busy for a minute)
 let idleWaitLoad = Math.min( IDLE_WAIT, 20 );
+// --load-timeline off: no machine-load timeline (see load-timeline.mjs and annotateLoads)
+const LOAD_TIMELINE = opt( 'load-timeline', 'on' ) !== 'off';
 // --contended: measure even when the run's opening check finds the GPU busy outside the lock
 const CONTENDED_OK = flags.has( '--contended' );
 // the exit code of a run that found the GPU busy and measured nothing
@@ -572,9 +588,10 @@ const ratio = ( a, b ) => Number.isFinite( a ) && Number.isFinite( b ) && a !== 
 
 // The 60 fps criterion for one scene's results (frame intervals from the run without timestamps
 // when there was one): median and p95 within TARGET_SLACK of TARGET, no frame over ACCEPT_MAX.
-function acceptance( r ) {
+// (`target`: a run's own, when --report rebuilds an unfinished run's verdicts)
+function acceptance( r, target = TARGET ) {
 
-	const limit = TARGET + TARGET_SLACK;
+	const limit = target + TARGET_SLACK;
 	const reasons = [];
 	if ( ! ( r.interval.median <= limit ) ) reasons.push( `median ${ r.interval.median }` );
 	if ( ! ( r.interval.p95 <= limit ) ) reasons.push( `p95 ${ r.interval.p95 }` );
@@ -582,10 +599,10 @@ function acceptance( r ) {
 	const pass = reasons.length === 0, contended = Boolean( r.contended );
 	// a contended run's failure proves nothing (see the file's header) unless the scene's own GPU
 	// work already takes longer than a frame
-	const overBudget = r.gpu?.median > TARGET;
-	if ( ! pass && overBudget ) reasons.push( `gpu busy ${ r.gpu.median } over ${ TARGET }` );
+	const overBudget = r.gpu?.median > target;
+	if ( ! pass && overBudget ) reasons.push( `gpu busy ${ r.gpu.median } over ${ target }` );
 	return {
-		pass, verdict: pass ? contended ? 'PASS (contended)' : 'PASS' : contended && ! overBudget ? 'INCONCLUSIVE (contended)' : 'FAIL', reasons, target: TARGET, limit: r2( limit ),
+		pass, verdict: pass ? contended ? 'PASS (contended)' : 'PASS' : contended && ! overBudget ? 'INCONCLUSIVE (contended)' : 'FAIL', reasons, target, limit: r2( limit ),
 		median: r.interval.median, p95: r.interval.p95, p99: r.interval.p99, max: r.interval.max, framesOver25: r.over25Count, frames: r.frames,
 		// the GPU's busy time per frame, from the run with timestamps (null without one)
 		gpuBusy: r.gpu?.median ?? null, gpuBusyP95: r.gpu?.p95 ?? null, contended,
@@ -710,6 +727,71 @@ async function waitForIdleClients( { seconds, wait, log } ) {
 
 }
 
+// The machine's load over the run (load-timeline.mjs: CPU per process group, GPU time per client,
+// about once a second into <out>/load.jsonl), from the exclusive lock's hold to the end of the run.
+// Each measured slice (a compare's slice, a toggle's block, a profile scene's window) gets the mean
+// load outside the run over its window (`load`: cpu, gpu); a slice is contended when its outside
+// GPU mean exceeds --idle-threshold, as the idle checks judge, and a scene is contended (the flag
+// the idle checks set, with its verdict rules) when more than a quarter of its slices are. The idle
+// checks sample a few seconds before a load or a scene; this catches what starts during one.
+let timeline = null;
+const loadRows = [];
+async function annotateLoads( runs, label = '' ) {
+
+	if ( ! timeline ) return;
+	const ends = runs.flatMap( ( run ) => Object.values( run.scenes ) ).flatMap( ( r ) => loadWindows( r ) ).map( ( w ) => w.at?.[ 1 ] ).filter( Number.isFinite );
+	if ( ! ends.length ) return;
+	// the sample that covers the last window's end comes up to a second later
+	await timeline.until( Math.max( ...ends ) );
+	for ( const row of markLoads( runs, label, timeline.samples, IDLE_THRESHOLD ) ) {
+
+		loadRows.push( row );
+		if ( row.contended ) console.error( `[profile] ${ row.scene.padEnd( 20 ) }${ runs.length > 1 ? ` ${ row.run.slice( - 1 ) }` : '' } ${ row.contended } of ${ row.slices } slices contended (outside the run: GPU ${ row.gpu } %, CPU ${ row.cpu } %)${ row.flag ? ': the scene is marked contended' : '' }` );
+
+	}
+
+}
+const loadWindows = ( r ) => r.slices ?? ( r.window ? [ r.window ] : [] );
+// each scene's load from the samples, its rows for the summary's table; a scene the load marks is
+// contended (also run by --report on an unfinished run's load.jsonl: scenes.jsonl holds each scene
+// as it finished, before this)
+function markLoads( runs, label, samples, threshold ) {
+
+	const rows = [];
+	runs.forEach( ( run, i ) => {
+
+		for ( const [ scene, r ] of Object.entries( run.scenes ) ) {
+
+			if ( r.load ) continue;
+			const marked = markSlices( samples, loadWindows( r ), { threshold } );
+			if ( ! marked.slices ) continue;
+			r.load = { cpu: marked.cpu, gpu: marked.gpu, slices: marked.slices, contended: marked.contended };
+			if ( marked.flag && ! r.contended ) {
+
+				r.contended = true;
+				r.contendedBy = 'load timeline';
+
+			}
+			rows.push( { scene, run: [ label, runs.length > 1 ? 'AB'[ i ] : '' ].filter( Boolean ).join( ' ' ), ...r.load, flag: marked.flag } );
+
+		}
+
+	} );
+	return rows;
+
+}
+// the summary's table of the load outside the run per scene (see annotateLoads)
+function loadMarkdown( meta ) {
+
+	const l = meta.load;
+	if ( ! l?.rows?.length ) return l?.skipped ? `\nLoad timeline: ${ l.skipped }.\n` : '';
+	return [ '', '## Machine load outside the run', '',
+		`Mean load outside this run's Chrome and WindowServer over each scene's measured slices (${ path.basename( l.file ) }: CPU per process group, 100 % = one core; GPU % of its time). A slice is contended when its GPU figure exceeds ${ l.threshold } %; a scene with more than a quarter of its slices contended is marked contended.`, '',
+		'| scene | run | contended slices | GPU % | CPU % |', '| --- | --- | --- | --- | --- |',
+		...l.rows.map( ( r ) => `| ${ r.scene }${ r.flag ? ' (contended)' : '' } | ${ r.run || '–' } | ${ r.contended } / ${ r.slices } | ${ fmt( r.gpu ) } | ${ fmt( r.cpu ) } |` ), '' ].join( '\n' );
+
+}
+
 // the render scale of the run under way (--scales), added to every page's url as `dpr`
 let renderScale = null;
 
@@ -736,7 +818,8 @@ function beginScene( scene ) {
 
 }
 // the scenes lost ({ scene, run, seconds, step, pages } for a hang, { scene, run, closed, step } for a
-// browser that closed under it), and whether a second loss stopped the run
+// browser that closed under it, { scene, run, failed, step } for a setup or placement that threw),
+// and whether a second loss stopped the run
 const hung = [];
 let stopRun = false;
 // closes the browser and opens it again, and the pages open in it (set by main)
@@ -764,6 +847,8 @@ const pageState = ( page ) => page.evaluate( () => {
 // the change that stopped the run ({ page, scene, slice, baseline, now, message })
 let spoiled = null;
 class Spoiled extends Error {}
+// a scene whose setup or placement threw in the page (prepare): lost alone, as a hang is (guarded)
+class SceneFailed extends Error {}
 async function checkState( page, scene, slice ) {
 
 	const was = baselines.get( page );
@@ -781,7 +866,9 @@ async function checkState( page, scene, slice ) {
 // finishes (`finished( scene )` tells), and survives a hang: a scene that shows no progress for
 // HANG_SECONDS is recorded as hung, the browser is closed and opened again, and the runner goes on
 // with the scenes not finished yet (loading its pages again). A browser or page that closes or
-// crashes under the attempt (a headed window closed, Chrome gone) loses its scene the same way:
+// crashes under the attempt (a headed window closed, Chrome gone) loses its scene the same way, as
+// does a scene whose setup or placement throws (prepare's SceneFailed: the page's loop and clock
+// were left stopped, so the browser is reopened as after a hang):
 // after a hang's reopen, the reopened browser's page closed during the next scene and the error
 // ended the run. A second loss in one run stops the run: what follows runs nothing, and the finished
 // scenes are written as usual. (Two runs of `--display --compare` hung on one scene, and the
@@ -799,6 +886,7 @@ async function guarded( names, finished, attempt, label = '' ) {
 		const done = attempts.run( token, () => attempt( left ) ).then( () => 'done', ( error ) => {
 
 			if ( error instanceof Spoiled ) return 'spoiled';
+			if ( error instanceof SceneFailed ) return { failed: error.message };
 			if ( browserGone( error ) ) return { closed: error.message.split( '\n' )[ 0 ] };
 			throw error;
 
@@ -829,6 +917,11 @@ async function guarded( names, finished, attempt, label = '' ) {
 			const pages = await probePages();
 			hung.push( { scene, run: label || null, seconds: HANG_SECONDS, step: currentStep, pages } );
 			console.error( `[profile] HUNG: ${ scene }${ label ? ` (${ label })` : '' } showed no progress for ${ HANG_SECONDS } s${ at }; recorded as hung. ${ pagesText( pages ) }` );
+
+		} else if ( outcome.failed ) {
+
+			hung.push( { scene, run: label || null, failed: outcome.failed, step: currentStep } );
+			console.error( `[profile] LOST: ${ scene }${ label ? ` (${ label })` : '' }${ at }: ${ outcome.failed }; recorded as lost.` );
 
 		} else {
 
@@ -1169,7 +1262,8 @@ function pageHelpers() {
 				s.setCameraView( 'island' );
 				s.setCameraMode( 'free' );
 				const parts = [];
-				s.scene.getObjectByName( 'island' ).traverse( ( o ) => { if ( o.isMesh ) parts.push( o.geometry.getAttribute( 'position' ).array ); } );
+				s.scene.getObjectByName( 'island' )?.traverse( ( o ) => { if ( o.isMesh ) parts.push( o.geometry.getAttribute( 'position' ).array ); } );
+				if ( ! parts.length ) throw new Error( `${ def.name }: no island ground to place the meadow view on (no mesh named or under 'island')` );
 				let x0 = Infinity, z0 = Infinity, x1 = - Infinity, z1 = - Infinity;
 				for ( const p of parts ) for ( let v = 0; v < p.length; v += 3 ) {
 
@@ -1318,7 +1412,14 @@ async function prepare( page, scene, evalJs, establish ) {
 		}
 		return { switchMs, t };
 
-	}, { def: SCENES[ scene ], orbit: MOTION === 'orbit' ? ORBIT : 0, evalJs, establish } );
+	}, { def: { ...SCENES[ scene ], name: scene }, orbit: MOTION === 'orbit' ? ORBIT : 0, evalJs, establish } ).catch( ( error ) => {
+
+		// a scene that cannot be set up or placed is lost alone (see guarded); a closed browser
+		// stays a closed browser
+		if ( error instanceof Abandoned || browserGone( error ) ) throw error;
+		throw new SceneFailed( `the scene's setup or placement threw: ${ String( error?.message ?? error ).split( '\n' )[ 0 ] }` );
+
+	} );
 
 }
 
@@ -1358,6 +1459,15 @@ class Frames {
 	now() {
 
 		return this.page.evaluate( () => performance.now() );
+
+	}
+
+	// the page's clock origin (ms since the epoch): a window in page time plus it is on the load
+	// timeline's clock
+	async origin() {
+
+		this.timeOrigin ??= await this.page.evaluate( () => performance.timeOrigin );
+		return this.timeOrigin;
 
 	}
 
@@ -1446,11 +1556,12 @@ async function measure( page, scene ) {
 	const info = await page.evaluate( () => {
 
 		window.__profileTools.stopMotion();
-		const { lostPasses, failedPasses, readbackMs } = window.__PONLAI_PROFILE__.info();
-		return { lostPasses, failedPasses, readbackMs };
+		const { lostPasses, failedPasses, readbackMs, origin } = { ...window.__PONLAI_PROFILE__.info(), origin: performance.timeOrigin };
+		return { lostPasses, failedPasses, readbackMs, origin };
 
 	} );
-	return { frames, info: { ...info, utilisation } };
+	const { origin, ...rest } = info;
+	return { frames, info: { ...rest, utilisation }, at: [ origin + t0, origin + t1 ] };
 
 }
 
@@ -1864,10 +1975,10 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 
 			}
 			await prepare( page, scene, evalJs, false );
-			const { frames, info } = await measure( page, scene );
+			const { frames, info, at } = await measure( page, scene );
 			await checkState( page, scene );
 			if ( SHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
-			const r = { ...summarise( frames ), profiler: info, gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended };
+			const r = { ...summarise( frames ), profiler: info, gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended, window: { at } };
 			if ( RAW ) r.raw = frames;
 			if ( SCALE_LOG ) r.scaleLog = await scaleChanges( page );
 			results[ scene ] = r;
@@ -1942,7 +2053,8 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 
 		} );
 		const list = frames.in( t0, t1 );
-		const r = { ...summarise( list ), profiler: { ...info, utilisation }, switch: sw, gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended };
+		const origin = await frames.origin();
+		const r = { ...summarise( list ), profiler: { ...info, utilisation }, switch: sw, gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended, window: { at: [ origin + t0, origin + t1 ] } };
 		if ( displayed ) r.display = displayed;
 		if ( RAW ) r.raw = list;
 		if ( SCALE_LOG ) r.scaleLog = await scaleChanges( page );
@@ -2273,8 +2385,9 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			const mine = windows[ v ].filter( ( w ) => w.scene === scene );
 			await frames[ v ].settle( Math.max( ...mine.map( ( w ) => w.t1 ) ) );
 			const pooled = mine.flatMap( ( w ) => frames[ v ].in( w.t0, w.t1 ) );
+			const origin = await frames[ v ].origin();
 			const r = { ...summarise( pooled ), switch: switches[ scene ][ v ], gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended,
-				slices: mine.map( ( w ) => ( { ...sliceStats( frames[ v ].in( w.t0, w.t1 ) ), ...( w.display ? { display: w.display } : {} ) } ) ) };
+				slices: mine.map( ( w ) => ( { ...sliceStats( frames[ v ].in( w.t0, w.t1 ) ), ...( w.display ? { display: w.display } : {} ), at: [ origin + w.t0, origin + w.t1 ] } ) ) };
 			if ( DISPLAY ) r.display = poolDisplay( mine.map( ( w ) => w.display ) );
 			r.stop = stop;
 			if ( RAW ) r.raw = pooled;
@@ -2392,6 +2505,7 @@ async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames,
 		// after a change, intervals the first LAG) once their GPU times are in
 		const mine = scenes.filter( ( x ) => x.scene === scene );
 		await frames.settle( marks[ marks.length - 1 ].t );
+		const origin = await frames.origin();
 		const pooled = [ [], [] ], slices = [ [], [] ];
 		for ( const { marks } of mine ) {
 
@@ -2402,7 +2516,7 @@ async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames,
 				const list = frames.in( marks[ i ].t, marks[ i + 1 ].t );
 				const gpuFrames = changed ? list.slice( 2 ) : list;
 				const intervalFrames = changed ? list.slice( LAG ) : list;
-				slices[ v ].push( sliceStats( gpuFrames, intervalFrames ) );
+				slices[ v ].push( { ...sliceStats( gpuFrames, intervalFrames ), at: [ origin + marks[ i ].t, origin + marks[ i + 1 ].t ] } );
 				pooled[ v ].push( ...gpuFrames );
 
 			}
@@ -2807,6 +2921,9 @@ async function main() {
 	await mkdir( OUT, { recursive: true } );
 	scenesFile = path.join( OUT, 'scenes.jsonl' );
 	await writeFile( scenesFile, '' );
+	// a profile.json or meta.json left by an earlier run into this folder would be read with this
+	// run's scenes by --report
+	for ( const name of [ 'profile.json', 'meta.json' ] ) await rm( path.join( OUT, name ), { force: true } );
 	const label = `profile-frame ${ LABEL }`;
 	const begun = Date.now();
 	// Setup outside the exclusive lock: when the profile's caches may not hold this build yet, the
@@ -2857,6 +2974,8 @@ async function main() {
 			freshHold = true;
 			waitedMs = started - requested;
 			if ( waitedMs > 1000 ) console.error( `[profile] GPU lock acquired after ${ ( waitedMs / 1000 ).toFixed( 0 ) } s` );
+			// the machine's load from here to the end of the run (see annotateLoads)
+			if ( LOAD_TIMELINE && ! timeline ) timeline = startLoadTimeline( { file: path.join( OUT, 'load.jsonl' ), runPid: () => runChromePid } );
 			// the opening check: before the browser opens, or in full-screen display mode once its
 			// window is up, on its blank page (see idleCheck: full screen removes the other windows' load)
 			// the user is told before the window takes the screen (a full-screen run opens it
@@ -2903,6 +3022,13 @@ async function main() {
 			};
 			const evals = [ opt( 'eval-a', opt( 'eval', '' ) ), opt( 'eval-b', opt( 'eval', '' ) ) ];
 			const tsModes = TIMESTAMP_MODE === 'both' ? [ true, false ] : [ TIMESTAMP_MODE !== 'off' ];
+			if ( TOGGLE ) meta.compare = { A: `${ URL_A } with on = false`, B: `${ URL_A } with on = true`, toggle: TOGGLE, block: BLOCK, blocks: BLOCKS, lag: LAG };
+			else if ( COMPARE && MODE === 'page' ) meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ], slices: SLICES, minSlices: MIN_SLICES, stopMargin: STOP_MARGIN, stopWidth: STOP_WIDTH, slice: SLICE, settle: SETTLE };
+			else if ( COMPARE ) meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ] };
+			if ( SCALES.length ) meta.scales = SCALES;
+			if ( ACCEPT ) meta.accept = { target: TARGET, limit: r2( TARGET + TARGET_SLACK ), maxFrame: ACCEPT_MAX };
+			// the meta known at the start, for --report on a run that does not finish
+			await writeFile( path.join( OUT, 'meta.json' ), JSON.stringify( meta, null, 1 ) );
 			if ( TOGGLE || ( COMPARE && MODE === 'page' ) ) {
 
 				// A/B in page mode: GPU time first (timestamps on), the frame rate without them
@@ -2915,14 +3041,13 @@ async function main() {
 					await guarded( sceneNames, ( scene ) => Boolean( pair[ 0 ].scenes[ scene ] ), ( left ) => TOGGLE ? runToggle( page, URL_A, opt( 'eval', '' ), TOGGLE, log, left, timestamps, pair ) :
 						runPair( context, COMPARE, evals, log, left, timestamps, pair ), tsModes.length > 1 ? `timestamps ${ timestamps ? 'on' : 'off' }` : '' );
 					const [ A, B ] = pair;
+					await annotateLoads( pair, tsModes.length > 1 ? `timestamps ${ timestamps ? 'on' : 'off' }` : '' );
 					runs ??= { A: [ A ], B: [ B ] };
 					reports.push( { timestamps, report: sliceReport( A, B ), strayFrames: [ A.strayFrames, B.strayFrames ] } );
 					if ( ! TOGGLE ) for ( const [ scene, r ] of Object.entries( reports[ reports.length - 1 ].report ) ) log( `${ scene.padEnd( 20 ) } scale A ${ scaleText( r.scale[ 0 ] ) }, B ${ scaleText( r.scale[ 1 ] ) }${ r.late ? `; late frames ${ pct( r.late.a ) } -> ${ pct( r.late.b ) }, ${ r.fps?.a ?? '–' } -> ${ r.fps?.b ?? '–' } fps (fallback ${ pct( r.fallback?.a ) } -> ${ pct( r.fallback?.b ) })` : '' }` );
 					if ( A.strayFrames || B.strayFrames ) log( `WARNING: a stopped page drew ${ A.strayFrames } / ${ B.strayFrames } frames` );
 
 				}
-				meta.compare = TOGGLE ? { A: `${ URL_A } with on = false`, B: `${ URL_A } with on = true`, toggle: TOGGLE, block: BLOCK, blocks: BLOCKS, lag: LAG } :
-					{ A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ], slices: SLICES, minSlices: MIN_SLICES, stopMargin: STOP_MARGIN, stopWidth: STOP_WIDTH, slice: SLICE, settle: SETTLE };
 				meta.timestamps = TIMESTAMP_MODE === 'both' ? 'both' : tsModes[ 0 ];
 				const renderAt = ( s ) => s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
 				meta.render = renderAt( runs.A[ 0 ].loads[ 0 ]?.startup );
@@ -2939,6 +3064,7 @@ async function main() {
 					const record = { mode: MODE, timestamps, scale: renderScale, run: suffix || null };
 					await guarded( names, ( scene ) => Boolean( out.scenes[ scene ] ), ( left ) => MODE === 'reload' ? runVariant( page, URL_A, opt( 'eval', '' ), log, plan( left ), suffix, timestamps, out, record ) :
 						runPage( page, URL_A, opt( 'eval', '' ), log, left, suffix, timestamps, out, record ), [ suffix, `timestamps ${ timestamps ? 'on' : 'off' }` ].filter( Boolean ).join( ', ' ) );
+					await annotateLoads( [ out ], [ suffix.replace( /^-/, '' ), `timestamps ${ timestamps ? 'on' : 'off' }` ].filter( Boolean ).join( ', ' ) );
 					return out;
 
 				};
@@ -2996,10 +3122,8 @@ async function main() {
 				}
 				renderScale = null;
 				if ( DISPLAY ) meta.viewport = await page.evaluate( () => ( { width: innerWidth, height: innerHeight, scale: devicePixelRatio } ) );
-				if ( SCALES.length ) meta.scales = SCALES;
 				if ( ACCEPT ) {
 
-					meta.accept = { target: TARGET, limit: r2( TARGET + TARGET_SLACK ), maxFrame: ACCEPT_MAX };
 					const verdicts = runs.flatMap( ( run ) => Object.values( run.scenes ).map( ( r ) => r.accept.verdict ) );
 					const tally = {};
 					for ( const v of verdicts ) tally[ v ] = ( tally[ v ] ?? 0 ) + 1;
@@ -3026,6 +3150,7 @@ async function main() {
 						const run = newRun();
 						const record = { mode: 'reload compare', variant: 'AB'[ v ] };
 						await guarded( group.scenes, ( scene ) => Boolean( run.scenes[ scene ] ), ( left ) => runVariant( page, COMPARE[ v ], evals[ v ], log, [ { ...group, scenes: left } ], `-${ 'AB'[ v ] }`, undefined, run, record ), `variant ${ 'AB'[ v ] }` );
+						await annotateLoads( [ run ], `variant ${ 'AB'[ v ] }` );
 						// one entry per repetition, holding every scene
 						const list = runs[ 'AB'[ v ] ];
 						const slot = list.find( ( r ) => ! Object.keys( r.scenes ).some( ( s ) => group.scenes.includes( s ) ) );
@@ -3034,7 +3159,6 @@ async function main() {
 					}
 
 				}
-				meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ] };
 				const report = compareReport( runs );
 				result = { meta, json: () => ( { meta, runs, report, errors } ), markdown: () => compareMarkdown( meta, report ) };
 
@@ -3045,7 +3169,7 @@ async function main() {
 			if ( hung.length ) {
 
 				meta.hung = hung;
-				log( `LOST: ${ hung.map( ( h ) => `${ h.scene }${ h.run ? ` (${ h.run })` : '' } ${ h.closed ? 'closed' : 'hung' }` ).join( ', ' ) }${ hung.length >= 2 ? '; the run stopped at the second' : '' }` );
+				log( `LOST: ${ hung.map( ( h ) => `${ h.scene }${ h.run ? ` (${ h.run })` : '' } ${ h.failed ? 'failed' : h.closed ? 'closed' : 'hung' }` ).join( ', ' ) }${ hung.length >= 2 ? '; the run stopped at the second' : '' }` );
 
 			}
 			// the measurements are done: once every page's loop stood still (no frame, its queue
@@ -3054,6 +3178,8 @@ async function main() {
 			held = Date.now() - started - releasedMs;
 			meta.holds = { releases: holds.length, awaySeconds: r2( releasedMs / 1000 ), taken: holds };
 			if ( lockStop ) meta.contendedStop = { scene: lockStop.scene, idle: lockStop.idle.idle?.mean ?? null, clients: lockStop.idle.clients ?? [] };
+			meta.load = ! LOAD_TIMELINE ? { skipped: 'off (--load-timeline off)' } : ! timeline ? { skipped: 'not sampled on this platform' } :
+				{ file: timeline.file, threshold: IDLE_THRESHOLD, rows: loadRows };
 			clearInterval( watchdog );
 
 		} );
@@ -3075,7 +3201,7 @@ async function main() {
 		meta.lockWaitSeconds = r2( waitedMs / 1000 );
 		meta.totalSeconds = r2( ( Date.now() - begun ) / 1000 );
 		await writeFile( path.join( OUT, 'profile.json' ), JSON.stringify( result.json(), null, 1 ) );
-		await writeFile( path.join( OUT, 'summary.md' ), result.markdown() + hungMarkdown( meta ) );
+		await writeFile( path.join( OUT, 'summary.md' ), result.markdown() + loadMarkdown( meta ) + hungMarkdown( meta ) );
 		if ( errors.length ) console.error( errors.slice( 0, 10 ).join( '\n' ) );
 		if ( lockStop ) {
 
@@ -3086,6 +3212,7 @@ async function main() {
 
 	} finally {
 
+		await timeline?.stop();
 		if ( browser ) await close( browser );
 		for ( const dir of temporaries ) await rm( dir, { recursive: true, force: true } );
 
@@ -3293,21 +3420,159 @@ function stopMarkdown( meta ) {
 
 function hungList( meta ) {
 
-	const why = ( h ) => ( h.closed ? `its browser closed under it (${ h.closed })` : `no progress for ${ h.seconds } s` ) + ( h.step ? ` at ${ h.step }` : '' ) + '.' +
+	const why = ( h ) => ( h.failed ? h.failed : h.closed ? `its browser closed under it (${ h.closed })` : `no progress for ${ h.seconds } s` ) + ( h.step ? ` at ${ h.step }` : '' ) + '.' +
 		( h.pages?.length ? ` ${ pagesText( h.pages ) }` : '' );
 	return `\n## Hung or lost scenes\n\n${ meta.hung.map( ( h ) => `- ${ h.scene }${ h.run ? ` (${ h.run })` : '' }: ${ why( h ) } The browser was reopened for the scenes after it.` ).join( '\n' ) }\n` +
 		( meta.hung.length >= 2 ? '\nThe second lost scene stopped the run: scenes after it were not measured.\n' : '' );
 
 }
 
+// --report on a run that did not finish (crashed, stopped, or handed back at a budget): its
+// scenes.jsonl holds each scene as it finished, meta.json the meta known at its start. The summary
+// is rebuilt with the reports a finished run uses; a scene without both variants (or, with
+// --timestamps both or auto, without the pass it still needed) is listed and left out. Writes
+// summary.md only: no profile.json, so nothing takes it for a finished run.
+async function unfinishedReport( dir ) {
+
+	const read = async ( name ) => existsSync( path.join( dir, name ) ) ? ( await readFile( path.join( dir, name ), 'utf8' ) ).split( '\n' ).filter( Boolean ).map( ( l ) => JSON.parse( l ) ) : null;
+	const lines = await read( 'scenes.jsonl' ) ?? [];
+	const mode = lines[ 0 ]?.mode;
+	// without meta.json (a run from before it, or one that died before the lock): what the lines tell
+	const meta = existsSync( path.join( dir, 'meta.json' ) ) ? JSON.parse( await readFile( path.join( dir, 'meta.json' ), 'utf8' ) ) : {
+		label: path.basename( path.resolve( dir ) ), url: '?', viewport: { width: '?', height: '?', scale: '?' }, quality: '?', warmup: '?', seconds: '?', orbit: '?',
+		mode: mode === 'toggle' ? 'toggle' : mode === 'compare' ? 'page' : mode === 'reload compare' ? 'reload' : mode,
+		timestampMode: new Set( lines.map( ( l ) => l.timestamps ) ).size > 1 ? 'both' : lines[ 0 ]?.timestamps === false ? 'off' : 'on',
+		...( mode === 'compare' || mode === 'toggle' || mode === 'reload compare' ? { compare: { A: '?', B: '?', slices: '?', minSlices: '?', slice: '?', settle: '?', toggle: '?', block: '?', blocks: '?', lag: '?' } } : {} ),
+		...( new Set( lines.map( ( l ) => l.scale ?? null ) ).size > 1 || lines[ 0 ]?.scale != null ? { scales: [ ...new Set( lines.map( ( l ) => l.scale ) ) ] } : {} ),
+	};
+	// the load outside the run, as a finished run marks it after each run of scenes
+	const samples = await read( 'load.jsonl' );
+	const rows = [];
+	const mark = ( runs, label ) => { if ( samples ) rows.push( ...markLoads( runs, label, samples, meta.load?.threshold ?? IDLE_THRESHOLD ) ); };
+	const missing = [];
+	const group = ( list, key ) => {
+
+		const groups = new Map();
+		for ( const l of list ) {
+
+			const k = key( l );
+			if ( ! groups.has( k ) ) groups.set( k, [] );
+			groups.get( k ).push( l );
+
+		}
+		return groups;
+
+	};
+	const runOf = ( list ) => ( { scenes: Object.fromEntries( list.map( ( l ) => [ l.scene, l.result ] ) ), loads: [] } );
+	let body;
+	if ( mode === 'compare' || mode === 'toggle' ) {
+
+		// one report per timestamps pass, in the order the run took them
+		const passes = group( lines, ( l ) => l.timestamps );
+		const reports = [];
+		for ( const [ timestamps, list ] of passes ) {
+
+			const pair = [ 'A', 'B' ].map( ( v ) => runOf( list.filter( ( l ) => l.variant === v ) ) );
+			mark( pair, meta.timestampMode === 'both' ? `timestamps ${ timestamps ? 'on' : 'off' }` : '' );
+			const pass = passes.size > 1 || meta.timestampMode === 'both' ? ` (timestamps ${ timestamps ? 'on' : 'off' })` : '';
+			for ( const scene of new Set( list.map( ( l ) => l.scene ) ) ) for ( const v of [ 0, 1 ] ) if ( ! pair[ v ].scenes[ scene ] ) missing.push( `${ scene }: no ${ 'AB'[ v ] }${ pass }` );
+			reports.push( { timestamps, report: sliceReport( ...pair ) } );
+
+		}
+		if ( meta.timestampMode === 'both' ) for ( const timestamps of [ true, false ] ) if ( ! passes.has( timestamps ) ) missing.push( `every scene: no pass with timestamps ${ timestamps ? 'on' : 'off' }` );
+		body = sliceMarkdown( meta, reports );
+
+	} else if ( mode === 'reload compare' ) {
+
+		// one entry per repetition, holding every scene (as the run fills them)
+		const runs = { A: [], B: [] };
+		for ( const l of lines ) {
+
+			const list = runs[ l.variant ];
+			const slot = list.find( ( r ) => ! r.scenes[ l.scene ] );
+			if ( slot ) slot.scenes[ l.scene ] = l.result;
+			else list.push( runOf( [ l ] ) );
+			mark( [ { scenes: { [ l.scene ]: l.result } } ], `variant ${ l.variant }` );
+
+		}
+		// compareReport takes a scene that every load of both variants holds
+		const report = compareReport( runs.A.length && runs.B.length ? runs : { A: [], B: [] } );
+		for ( const scene of new Set( lines.map( ( l ) => l.scene ) ) ) if ( ! report[ scene ] ) missing.push( `${ scene }: not in every load of A and B` );
+		body = compareMarkdown( meta, report );
+
+	} else {
+
+		// a profile: one run per render scale and repetition, each from its timestamps passes
+		const runs = [];
+		const both = meta.timestampMode === 'both' || meta.timestampMode === 'auto';
+		for ( const list of group( lines, ( l ) => `${ l.scale ?? '' } ${ l.run ?? '' }` ).values() ) {
+
+			const suffix = list[ 0 ].run ?? '';
+			const label = ( timestamps ) => [ suffix.replace( /^-/, '' ), `timestamps ${ timestamps ? 'on' : 'off' }` ].filter( Boolean ).join( ', ' );
+			let result;
+			if ( both ) {
+
+				const off = runOf( list.filter( ( l ) => ! l.timestamps ) ), on = runOf( list.filter( ( l ) => l.timestamps ) );
+				mark( [ off ], label( false ) );
+				mark( [ on ], label( true ) );
+				// --timestamps both: every scene in both passes; auto: a scene that did not pass also
+				// with timestamps
+				for ( const scene of Object.keys( off.scenes ) ) {
+
+					const needed = meta.timestampMode === 'both' || ! acceptance( off.scenes[ scene ], meta.accept?.target ).pass;
+					if ( needed && ! on.scenes[ scene ] ) {
+
+						missing.push( `${ scene }${ suffix ? ` (${ suffix.replace( /^-/, '' ) })` : '' }: no pass with timestamps` );
+						delete off.scenes[ scene ];
+
+					}
+
+				}
+				result = mergeModes( off, on );
+
+			} else {
+
+				result = runOf( list );
+				mark( [ result ], label( list[ 0 ].timestamps ) );
+
+			}
+			result.scale = list[ 0 ].scale ?? null;
+			result.render = null;
+			if ( meta.accept ) for ( const r of Object.values( result.scenes ) ) r.accept = acceptance( r, meta.accept.target );
+			runs.push( result );
+
+		}
+		meta.timestamps ??= both ? meta.timestampMode : lines.some( ( l ) => l.timestamps );
+		body = markdownProfile( meta, runs.length ? runs : [ newRun() ] );
+
+	}
+	meta.load = samples ? { file: 'load.jsonl', threshold: meta.load?.threshold ?? IDLE_THRESHOLD, rows } : { skipped: 'no load.jsonl' };
+	const note = `**Unfinished run**: rebuilt by --report from scenes.jsonl (${ lines.length } scenes finished${ existsSync( path.join( dir, 'meta.json' ) ) ? '' : '; no meta.json: what the scenes do not tell is ?' }). ` +
+		( missing.length ? `Left out, with a variant or pass missing:\n\n${ missing.map( ( m ) => `- ${ m }` ).join( '\n' ) }` : 'Every scene it holds has all its variants and passes.' );
+	const out = path.join( dir, 'summary.md' );
+	await writeFile( out, body.replace( '\n\n', `\n\n${ note }\n\n` ) + loadMarkdown( meta ) + hungMarkdown( meta ) );
+	console.log( out );
+
+}
+
 if ( flags.has( '--report' ) ) {
 
-	// re-render summary.md from a profile.json written earlier (after a change to the report)
+	// re-render summary.md from a profile.json written earlier (after a change to the report), or
+	// rebuild it from the scenes.jsonl of a run that did not finish (see unfinishedReport)
 	const file = opt( 'report' );
-	const data = JSON.parse( await readFile( file, 'utf8' ) );
-	const out = path.join( path.dirname( file ), 'summary.md' );
-	await writeFile( out, ( data.reports ? sliceMarkdown( data.meta, data.reports ) : data.report ? compareMarkdown( data.meta, data.report ) : markdownProfile( data.meta, data.runs ) ) + hungMarkdown( data.meta ) );
-	console.log( out );
+	const dir = file.endsWith( '.json' ) || file.endsWith( '.jsonl' ) ? path.dirname( file ) : file;
+	if ( file.endsWith( 'scenes.jsonl' ) || ( ! file.endsWith( '.json' ) && ! existsSync( path.join( dir, 'profile.json' ) ) ) ) {
+
+		await unfinishedReport( dir );
+
+	} else {
+
+		const data = JSON.parse( await readFile( file.endsWith( '.json' ) ? file : path.join( dir, 'profile.json' ), 'utf8' ) );
+		const out = path.join( dir, 'summary.md' );
+		await writeFile( out, ( data.reports ? sliceMarkdown( data.meta, data.reports ) : data.report ? compareMarkdown( data.meta, data.report ) : markdownProfile( data.meta, data.runs ) ) + loadMarkdown( data.meta ) + hungMarkdown( data.meta ) );
+		console.log( out );
+
+	}
 
 } else {
 

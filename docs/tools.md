@@ -13,6 +13,12 @@ everyday commands; this file has the details. Each tool's own file says the rest
   names the pid and cwd holding it), builds first for `preview` unless `--no-build`, runs vite
   through `job.mjs` with its log at `artifacts/jobs/serve-<mode>-<port>.log`, waits until it
   answers and prints the URL and the `job.mjs stop` command that ends it.
+- `node tools/serve.mjs dev|preview --sha <rev>` serves another commit: a detached worktree at
+  the main checkout's `.claude/worktrees/sha-<12 hex>`, made once and reused. Its node_modules
+  links the main checkout's entries (vite's caches left out) when the commit's package-lock.json
+  is the same, else `npm ci` runs there; `preview` builds once per worktree (`dist/.serve-sha`).
+  The log is `artifacts/jobs/serve-<mode>-sha-<12 hex>-<port>.log` in the calling checkout.
+  `node tools/serve.mjs clean` stops the jobs in every sha-* worktree and removes them.
 - The islanders load from the git-ignored `artifacts/assets/`. `tools/vite-assets.mjs` finds the
   folder (the checkout's own, else the main checkout's through git's common directory, so a fresh
   worktree needs no link): the dev server serves it and `vite build` links it into
@@ -358,6 +364,12 @@ file, matched by gate id, entry, view, clip, crop and metric with globs, never c
 in the tool's header. `--views normal` / `--clips normal` (and `special`) select the normal
 weathers in baseline.mjs and the capture tools.
 
+`uv run tools/parity/table.py <metrics.json | label dir>... [--names a,b] [--base col]
+[--refs msaa,gt] [--entries glob] [--metrics m1,m2] [--crops c1,c2] [--csv f]` tables several
+labels' metrics (baseline.mjs labels or clip-metrics outputs) side by side: rows crop x metric,
+a column per input's test values and per reference (MSAA, ground truth), and each column's ratio to
+`--base`. Use it instead of a per-task table script.
+
 ## Probes
 
 `node tools/probe.mjs [url] [--q query] [--query q]... --eval js [--until js] [--frames n]`
@@ -369,7 +381,10 @@ console errors and failed requests). Each `--query` after the first is reached i
 the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n )`, `sleep( ms )`,
 `until( fn )` and `pipelines` (`mark()`, `since( mark )`: which pipelines an action built), with the same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
 from `P`); `--init js` hooks the page before its scripts run. A production preview needs
-`debug` in the query. Common questions:
+`debug` in the query. A long eval that waits on CPU work (worker generation, a grown page) stops
+the loop (`await P.loop.stop()`) and waits with `until` or `sleep`: while the loop stands the probe
+gives its shared slot up to a request ranked before it and takes it back before the helper resolves
+(each give-up on stderr, the step's `gaveUpMs`). Common questions:
 `--load` loads every query after the first in a page of its own instead of jumping to it: the
 scene-jump contract covers the image, not the world's generation path, so use it to compare two
 freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
@@ -600,7 +615,7 @@ one tells the user beforehand, as information rather than a question.
 ```
 node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
   [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
-  [--idle-wait s] [--contended] [--hang s] [--scale-log]
+  [--idle-wait s] [--contended] [--load-timeline off] [--hang s] [--scale-log]
   [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]
   [--drs-store] [--frame-fallback]
 ```
@@ -643,6 +658,19 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   run again, or pass `--contended` to measure anyway (results marked contended, as before). A
   later page load that finds the GPU busy still marks its results contended. Every summary.md
   marks such a scene `(contended)` in its table, a compare's as a single profile's.
+- The idle checks see a few seconds before a load or a scene; the load timeline sees the whole
+  run (macOS; `tools/load-timeline.mjs`). From the exclusive lock's hold to the end of the run, one
+  streaming `top` and a loop of one-second GPU client samples write `<out>/load.jsonl`, a line a
+  second: `{ t, cpu, gpu }`, each by group (`run`: this run's Chrome and its descendants,
+  `windowServer`, `app`: the desktop app, `otherChrome`, `kernel`: CPU only, `rest`), t in ms since
+  the epoch (a page's frame time plus its `performance.timeOrigin`). Each measured slice (a
+  compare's slice, a toggle's block, a profile scene's window) gets `load: { cpu, gpu }`, the mean
+  outside the run (every group but `run` and `windowServer`, which composites the screen for every run)
+  over its window; a slice whose outside GPU mean exceeds `--idle-threshold` (15 %) is contended,
+  and a scene with more than a quarter of its slices contended is marked contended (with the
+  verdict rules above). The summary's "Machine load outside the run" gives each scene its
+  contended slices and mean outside load. `--load-timeline off` turns it off. It replaces the
+  ad-hoc top and GPU sampler scripts run beside a profile.
 - A run with several scenes holds the exclusive lock one scene at a time (every mode: profile,
   compare, toggle, accept, reload): before a scene's warm-up it asks for the lock, after its last
   slice its pages stop and drain. The pages and the browser stay open, their loops stopped, so
@@ -662,20 +690,29 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   slice, trace end or results; at a scene's start, the halt, the cover, the lock's wait or its
   idle check) and what each page still did (answering, visible, its animation
   and scene frames over a second). A scene whose browser or page closes or crashes under it (a
-  headed window closed, Chrome gone) is recorded as lost the same way. Either way the browser is
+  headed window closed, Chrome gone) is recorded as lost the same way, as is a scene whose setup
+  or placement throws in the page (`meta.hung[].failed`: the error). Either way the browser is
   closed (killed when it is still open after 30 s, so it neither runs on nor holds the profile)
   and opened again, and the run goes on with the scenes not finished yet; the runner given up
   takes no lock and counts as no progress. A second hung or lost scene stops the run, with the
   finished scenes written as usual. Each scene's results are also appended to `scenes.jsonl` in
-  the output folder as it finishes, so a run that dies otherwise still leaves what it measured.
+  the output folder as it finishes, so a run that dies otherwise still leaves what it measured,
+  and the meta known at the start to `meta.json`. `--report <dir>` (or `<dir>/scenes.jsonl`) on
+  a folder without a `profile.json` (a run that crashed, was stopped or handed back) rebuilds
+  `summary.md` from them with the reports a finished run uses (A/B deltas and their intervals per
+  timestamps pass, a profile's tables and verdicts, the load table from `load.jsonl`). The summary
+  says the run is unfinished and lists the scenes left out for a missing variant or pass; it
+  writes no `profile.json`. Without `meta.json` the meta it cannot read from the scenes is `?`.
+  `--report` opens no browser and takes no lock.
 - Each page's `clockPaused` and `scalePinned` (diagnostics) are read at its load as its baseline
   (`?dpr` pins legitimately) and again after every slice or measured window. A change (a key or
   click reached the page: a Space pauses it, and a paused page renders at its nominal scale and
   stops steering, spoiling every scene after it) stops the run as a second hang does, with the
   finished scenes written (`meta.spoiled`, a section of summary.md), and exits with 1; the message
   names the page, scene and slice.
-- `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
-  other page stopped, and reports deltas with their 95 % interval, each page's render scale per
+- `--compare urlA urlB` (the other build from `serve.mjs preview --sha`) runs A and B as two
+  pages in one browser, in alternating slices with the other page stopped, and reports deltas
+  with their 95 % interval, each page's render scale per
   scene (high's dynamic scale may settle higher on one side: compare the deltas with that in mind),
   and errors named by their page (`pageerror (page B): ...`). `--toggle "js"` A/Bs inside one
   page by applying the expression (with `s` = `window.__PONLAI__` and `on` false for A, true for
@@ -750,7 +787,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   rate, so both sides of an A/B run at one pace); `--frame-fallback` keeps the automatic fallback
   (72 -> 48 fps on a 144 Hz display) on.
 - `--eval` runs in the page with `s` = `window.__PONLAI__` (an ablation, e.g.
-  `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a summary.
+  `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a summary (`--report <dir>`
+  rebuilds an unfinished run's, see above).
 
 ### Measuring frame time
 
