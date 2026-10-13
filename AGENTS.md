@@ -139,15 +139,18 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   and every dependent of the land's shape follows it, the same function of the version as at load
   (a grown page draws a page loaded on that land bit for bit, paused). Anything new that depends
   on the land's shape joins the swap (`GrowthPage` and main.ts's `onSwap`), and work it needs on
-  the main thread goes into the preparation's idle-time steps, never into the swap's frame.
+  the main thread goes into the preparation's idle-time steps, never into the swap's frame. A
+  step takes a few tenths of a millisecond (a generator yielding inside its loops: `Steps.ts`,
+  uploads through `Upload.ts`), so the growth's share of any frame stays under 2 ms
+  (`growth.work`).
 - A swap never builds a pipeline; one that needs one is a bug. New chunk meshes share their kind's
-  material and are compiled ahead (`compileDraws`); merged kinds take new geometry of the same
-  layout, uploaded ahead; instanced kinds hold a capacity whose shader does not change (three puts
-  up to 1024 instance matrices in a uniform array of exactly the capacity: `Flowers.ts`,
-  `Foliage.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels reading
-  their bounds from uniforms (`GrassCull.ts`); the world fields swap textures through the one base
-  node each material samples them by (`WorldFields.ts`), and other passes keep their materials
-  across rebakes (`RainCollision.ts`).
+  material and layout, so they draw with the loaded chunks' pipelines; merged kinds take new
+  geometry of the same layout, uploaded ahead; instanced kinds hold a capacity whose shader does not
+  change (three puts up to 1024 instance matrices in a uniform array of exactly the capacity:
+  `Flowers.ts`, `Foliage.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels
+  reading their bounds from uniforms (`GrassCull.ts`); the world fields swap textures through the
+  one base node each material samples them by (`WorldFields.ts`), and other passes keep their
+  materials across rebakes (`RainCollision.ts`).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High is the reference image; every default in the modules is high's. A load knob is read
   once when materials and the frame graph are built, so a change of tier reloads the page.
