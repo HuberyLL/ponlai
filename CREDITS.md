@@ -449,14 +449,25 @@ comment where it is used.
   Halton (2, 3) sub-pixel jitter, the motion of the nearest surface in a 3x3 neighbourhood and a
   clipped history, after Brian Karis,
   [*High Quality Temporal Supersampling*](https://advances.realtimerendering.com/s2014/) (SIGGRAPH
-  2014), and Lasse Jon Fuglsang Pedersen, *Temporal Reprojection Anti-Aliasing in INSIDE* (Playdead,
-  GDC 2016); variance clipping in YCoCg: Marco Salvi, *An Excursion in Temporal Supersampling*
-  (GDC 2016); the history fetched by a Catmull-Rom filter in five bilinear taps: Jorge Jimenez,
-  *Filmic SMAA* (SIGGRAPH 2016); the current frame's samples weighted by their distance to each
-  output pixel with the accumulated weight kept in the history, and reactive masks that limit the
-  history where nothing describes the motion (rain, spray, a lightning strike): AMD FidelityFX
-  Super Resolution 2 (its documentation) and Unreal Engine's Temporal Super Resolution. All used
-  as techniques only.
+  2014), and Lasse Jon Fuglsang Pedersen,
+  [*Temporal Reprojection Anti-Aliasing in INSIDE*](https://github.com/playdeadgames/temporal)
+  (Playdead, GDC 2016); variance clipping in YCoCg: Marco Salvi, *An Excursion in Temporal
+  Supersampling* (GDC 2016); the history fetched by a Catmull-Rom filter in five bilinear taps:
+  Jorge Jimenez, *Filmic SMAA: Sharp Morphological and Temporal Antialiasing* (SIGGRAPH 2016
+  course *Advances in Real-Time Rendering in Games*); the current frame's samples weighted by their
+  distance to each output pixel with the accumulated weight kept in the history, reactive masks that limit the history where nothing
+  describes the motion (rain, spray, a lightning strike), and TAAU's split into a pass at the
+  render's size that takes what depends only on the nearest input pixel (the clip box, the nearest
+  motion and depth) and the resolve at the canvas's size, after FSR 2's reconstruct-and-dilate
+  pass: AMD FidelityFX Super Resolution 2
+  ([its documentation](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/super-resolution-temporal/))
+  and Unreal Engine's Temporal Super Resolution. All used as techniques only; no code of three.js's
+  `TRAANode` or `TAAUNode` is used.
+- The frame graph (`src/post/graph/`: passes that declare what they read and write, versioned
+  resources, the declared order checked, passes nothing reads culled, the attachments' load and
+  store derived from the passes that run): Yuriy O'Donnell,
+  [*FrameGraph: Extensible Rendering Architecture in Frostbite*](https://www.gdcvault.com/play/1024612/FrameGraph-Extensible-Rendering-Architecture-in)
+  (GDC 2017), used as a technique only.
 - The tolerance that compares temporal AA captures (`tools/parity/tolerance.py`): a per-pixel
   level with the share of pixels over it bounded on the frame and in local blocks, and a mean
   error, after Unity's Graphics Test Framework (`ImageComparisonSettings`) and Unreal Engine's
