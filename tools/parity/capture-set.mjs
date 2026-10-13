@@ -1,13 +1,14 @@
 // Paused parity captures of a fixed set of views (views.mjs), through tools/capture.mjs's worker:
 // one page per set (one per worker with --jobs), the views reached in place by the exact scene jump.
 //
-//   node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
+//   node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--view "name:query[::js]"]...
+//       [--views-file f.json] [--sweep "key=a,b,c"]... [--repeat]
 //       [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
 //       [--page-per-view] [--runs file.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
 //   node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
 //   node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url U]
 //       [--diff "diff-set.py options"] [--recapture-reference] [same options]
-//   node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
+//   node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b|--view ...|--sweep ... [--crops x,y] [--full]
 //       [--variant "[label::]js"]... [--store <root>/<sha>] [--ref-url R] [--quality, --aa, --q, --size]
 //
 // Every view is the frame of `<baseUrl>?debug&paused&t=12&quality=<q>[&aa=<mode>][&<extra>]&<view's
@@ -15,6 +16,14 @@
 // device pixel ratio (1728x1117 at 2 by default: high renders 2592x1675 and FSR 1 brings it to
 // 3456x2234), after the view's eval; it is written as `<outDir>/<view>.png`, its diagnostics and crop
 // anchors `<view>.json` and capture.mjs's output `<view>.log`.
+// Ad-hoc views (adhoc.mjs, whose header has the rules) instead of or beside views.mjs's, through the
+//   same path (pages, jump, readiness, --jobs, --repeat, --reference, --check, --quick):
+//   --view "name:query[::js]" (repeatable; `like=<view>` in the query starts from a views.mjs view),
+//   --views-file f.json, --sweep "key=a,b,c" (repeatable: every selected view per value, every
+//   combination of several). An ad-hoc view's own options win over the set's (t, tier, aa, --q);
+//   views whose load-time options differ get their own pages, group after group. Their definitions
+//   go to `<outDir>/views.json`; in the reference store each carries its hash, so two ad-hoc views
+//   of one name never share a capture.
 // One page per set (plan item #9): only load-time options (quality, aa, size and dpr, the debug
 //   switches in --q) need a new page, and every view of a set shares them, so each worker opens one
 //   page (capture.mjs --worker), loads the first view it is given and reaches each later one by
@@ -57,7 +66,8 @@
 //   Captures are GPU-bound: 3 at once is the most throughput, more only adds latency, and every
 //   extra page costs a load (5-8 s, a jump 2-4 s), which a small set does not earn back. So the
 //   default is one page per 5 captures, at most 3 (repeats counted: 24 views take 3, 7 views 2,
-//   up to 5 one). Each view holds a GPU lock slot from its load or jump to its shot (capture.mjs).
+//   up to 5 one). Each page leases a GPU lock slot (capture.mjs): it keeps it from view to view and
+//   gives it up between views for a waiter after 20 s of holding (capture.mjs --lease, after `--`).
 //   --retries (default 1) captures a failed view again on a fresh page (a load that timed out while
 //   other pages kept the GPU busy, a page error, a crash): a failure ends its page, and the views
 //   still to come go on in a fresh one, so a crash or a stuck page (no answer within three times
@@ -76,12 +86,16 @@
 // an `--eval` there runs after the view's own).
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
 // output; see tools/parity/README.md.
+// The set and its capture.mjs workers run with the application scheduling policy on macOS
+// (tools/qos.mjs); a worker is started with it, since re-executing would close its IPC channel.
+import { appPolicy } from '../qos.mjs'; // first: the set and its workers run with the application policy
 import { spawn } from 'node:child_process';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { VIEWS, viewNames, viewEval } from './views.mjs';
+import { viewEval } from './views.mjs';
+import { selectViews, viewQuery, loadSignature, viewDefs, describeViews } from './adhoc.mjs';
 import { gpuUtilisation } from '../gpu-lock.mjs';
 import { samePixels } from '../capture-browser.mjs';
 import { ensureReference, setKey, resolveRefDir, checkServed } from './reference.mjs';
@@ -99,19 +113,21 @@ const dash = argv.indexOf( '--' );
 const passThrough = dash >= 0 ? argv.slice( dash + 1 ) : [];
 const args = dash >= 0 ? argv.slice( 0, dash ) : argv;
 const flags = new Set( [ 'repeat', 'recapture-reference', 'page-per-view' ] );
-const options = {}, positional = [];
+const lists = new Set( [ 'view', 'sweep' ] );
+const options = { view: [], sweep: [] }, positional = [];
 for ( let i = 0; i < args.length; i ++ ) {
 
 	if ( args[ i ].startsWith( '--' ) ) {
 
 		const k = args[ i ].slice( 2 );
 		if ( flags.has( k ) ) options[ k ] = true;
+		else if ( lists.has( k ) ) options[ k ].push( args[ ++ i ] );
 		else options[ k ] = args[ ++ i ];
 
 	} else positional.push( args[ i ] );
 
 }
-const known = [ 'repeat', 'quality', 'aa', 'q', 'views', 'jobs', 'retries', 'timeout', 'size', 'runs', 'task', 'procedure', 'sha',
+const known = [ 'repeat', 'quality', 'aa', 'q', 'views', 'view', 'views-file', 'sweep', 'jobs', 'retries', 'timeout', 'size', 'runs', 'task', 'procedure', 'sha',
 	'reference', 'check', 'ref-url', 'diff', 'recapture-reference', 'page-per-view' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! known.includes( k ) );
 const mode = options.reference ? 'reference' : options.check ? 'check' : 'plain';
@@ -129,16 +145,9 @@ const sizeText = options.size ?? '1728x1117@2';
 const size = sizeText.match( /^(\d+)x(\d+)(?:@([\d.]+))?$/ );
 if ( ! size ) { console.error( `bad --size ${ options.size }` ); process.exit( 2 ); }
 const [ , W, H, scale = '1' ] = size;
-const views = ( () => {
-
-	const v = options.views ?? 'parity';
-	if ( [ 'parity', 'taa', 'all' ].includes( v ) ) return viewNames( v );
-	const list = v.split( ',' ).filter( Boolean );
-	const bad = list.filter( ( name ) => ! VIEWS[ name ] );
-	if ( bad.length ) { console.error( `unknown view ${ bad.join( ', ' ) }` ); process.exit( 2 ); }
-	return list;
-
-} )();
+// views.mjs's views and ad-hoc ones (adhoc.mjs)
+let views;
+try { views = selectViews( options ); } catch ( error ) { console.error( error.message ); process.exit( 2 ); }
 const quality = options.quality ?? 'high';
 let common = `debug&paused&t=12&quality=${ quality }`;
 if ( options.aa ) common += `&aa=${ options.aa }`;
@@ -171,6 +180,26 @@ let jumpless = false;
 async function captureList( url, dir, list ) {
 
 	await mkdir( dir, { recursive: true } );
+	// views whose load-time options differ cannot share a page: a group of pages per set of them, in
+	// the order given (views.mjs's views all share the set's, so they make one group; adhoc.mjs)
+	const groups = new Map();
+	for ( const pair of list ) {
+
+		const sig = loadSignature( viewQuery( pair[ 0 ], common ) );
+		if ( ! groups.has( sig ) ) groups.set( sig, [] );
+		groups.get( sig ).push( pair );
+
+	}
+	if ( groups.size > 1 ) console.log( `${ groups.size } groups of views by load-time options: ${ [ ...groups.keys() ].join( ' | ' ) }` );
+	const done = [];
+	for ( const group of groups.values() ) done.push( ...await captureGroup( url, dir, group ) );
+	return done;
+
+}
+
+/** captureList's views of one set of load-time options. */
+async function captureGroup( url, dir, list ) {
+
 	// every first capture before every repeat, the repeats in reverse order (see the header)
 	const queue = [ ...list.filter( ( [ , s ] ) => ! s ), ...list.filter( ( [ , s ] ) => s ).reverse() ]
 		.map( ( [ view, suffix ] ) => ( { view, suffix, key: `${ view }${ suffix }`, attempts: 0 } ) );
@@ -190,8 +219,9 @@ async function captureList( url, dir, list ) {
 	// a page: one capture.mjs worker, serving items of one kind (first or repeat) until none is left
 	const runPage = ( repeat ) => new Promise( ( resolve ) => {
 
-		const child = spawn( process.execPath, [ 'tools/capture.mjs', '--worker', '--url', url, '--w', W, '--h', H, '--scale', scale,
-			'--timeout', String( timeout ), ...( options[ 'page-per-view' ] ? [ '--page-per-view' ] : [] ), ...passThrough ],
+		// started with the application policy: an exec would close its IPC channel (tools/qos.mjs)
+		const child = spawn( ...appPolicy( process.execPath, [ 'tools/capture.mjs', '--worker', '--url', url, '--w', W, '--h', H, '--scale', scale,
+			'--timeout', String( timeout ), ...( options[ 'page-per-view' ] ? [ '--page-per-view' ] : [] ), ...passThrough ] ),
 		{ cwd: REPO, stdio: [ 'ignore', 'pipe', 'pipe', 'ipc' ] } );
 		let output = [], current = null, timer = null, killer = null, writing = Promise.resolve();
 		child.stdout.on( 'data', ( d ) => output.push( d ) );
@@ -214,7 +244,7 @@ async function captureList( url, dir, list ) {
 				if ( ! current ) { child.send( { type: 'done' }, () => {} ); return; }
 				const item = current;
 				// (a page that died meanwhile never got it: back in line, no attempt counted)
-				child.send( { type: 'view', view: { key: item.key, query: `${ common }&${ VIEWS[ item.view ].q }`, evals: [ viewEval( item.view ) ], out: path.join( dir, item.key ) } },
+				child.send( { type: 'view', view: { key: item.key, query: viewQuery( item.view, common ), evals: [ viewEval( item.view ) ], out: path.join( dir, item.key ) } },
 					( error ) => { if ( error && current === item ) { current = null; queue.unshift( item ); } } );
 
 			} else if ( m.type === 'locked' ) {
@@ -248,7 +278,7 @@ async function captureList( url, dir, list ) {
 				if ( m.ok ) {
 
 					done.push( [ item.view, item.suffix ] );
-					console.log( `${ item.key } rc=0 ${ m.mode }${ m.from ? ` from ${ m.from }` : '' } ${ m.seconds.toFixed( 1 ) } s${ m.lockSeconds >= 0.5 ? ` (+${ m.lockSeconds.toFixed( 1 ) } s waiting for the GPU lock)` : '' }` );
+					console.log( `${ item.key } rc=0 ${ m.mode }${ m.from ? ` from ${ m.from }` : '' } ${ m.seconds.toFixed( 1 ) } s${ m.worldSeconds >= 0.5 ? ` (+${ m.worldSeconds.toFixed( 1 ) } s loading its world)` : '' }${ m.lockSeconds >= 0.5 ? ` (+${ m.lockSeconds.toFixed( 1 ) } s waiting for the GPU lock)` : '' }` );
 
 				} else fail( item, 'failed' );
 
@@ -318,12 +348,13 @@ async function logRun( started, busy, proc, sha, captured, failed, out ) {
 // ------------------------------------------------------------------ the reference (--reference, --check)
 
 let refCaptured = 0, served = null;
+const defs = viewDefs( views );
 async function reference( url, { dryRun = false } = {} ) {
 
 	const { dir } = resolveRefDir( options.reference ?? options.check );
 	const { key, files } = await setKey( { quality, aa: options.aa, q: options.q, size: sizeText, capture: passThrough } );
 	return ensureReference( {
-		dir, kind: 'set', key, files, want: { views, repeat: !! options.repeat }, url, siblings: true, dryRun,
+		dir, kind: 'set', key, files, want: { views, repeat: !! options.repeat, defs }, url, siblings: true, dryRun,
 		// (a check's test side, captured meanwhile, takes the wrapper's slot over itself)
 		yieldGpu: mode === 'reference',
 		force: options[ 'recapture-reference' ], label: `capture-set ${ options.task ?? '' } ${ procedure }`.trim(),
@@ -337,12 +368,24 @@ async function reference( url, { dryRun = false } = {} ) {
 			const repeats = new Set( done.filter( ( [ , s ] ) => s ).map( ( [ v ] ) => v ) );
 			const same = await repeatability( into, [ ...repeats ], true );
 			const coverage = { views: {} };
-			for ( const v of firsts ) coverage.views[ v ] = { captured: true };
-			for ( const v of repeats ) if ( firsts.has( v ) || existsSync( path.join( into, `${ v }.png` ) ) ) coverage.views[ v ] = { ...coverage.views[ v ], captured: true, repeat: true, identical: same[ v ] };
+			// (an ad-hoc view's definition goes with it: reference.mjs SET)
+			const def = ( v ) => defs[ v ] ? { def: defs[ v ] } : {};
+			for ( const v of firsts ) coverage.views[ v ] = { captured: true, ...def( v ) };
+			for ( const v of repeats ) if ( firsts.has( v ) || existsSync( path.join( into, `${ v }.png` ) ) ) coverage.views[ v ] = { ...coverage.views[ v ], captured: true, repeat: true, identical: same[ v ], ...def( v ) };
 			return { coverage, failed: todo.length - done.length, captured: done.length };
 
 		},
 	} );
+
+}
+
+/** The ad-hoc views' definitions beside their captures (`views.json`), when there are any. */
+async function writeViews( dir ) {
+
+	const adhoc = describeViews( views, common );
+	if ( ! Object.keys( adhoc ).length ) return;
+	await mkdir( dir, { recursive: true } );
+	await writeFile( path.join( dir, 'views.json' ), JSON.stringify( adhoc, null, '\t' ) + '\n' );
 
 }
 
@@ -352,6 +395,7 @@ const started = Date.now();
 if ( mode === 'plain' ) {
 
 	const list = [ ...views.map( ( v ) => [ v, '' ] ), ...( options.repeat ? views.map( ( v ) => [ v, '.repeat' ] ) : [] ) ];
+	await writeViews( outDir );
 	const done = await captureList( base, outDir, list );
 	const failed = list.length - done.length;
 	const same = options.repeat ? await repeatability( outDir, views ) : {};
@@ -391,6 +435,7 @@ if ( mode === 'plain' ) {
 		if ( mode !== 'check' ) return null;
 		const list = [ ...views.map( ( v ) => [ v, '' ] ), ...( options.repeat ? views.map( ( v ) => [ v, '.repeat' ] ) : [] ) ];
 		const t0 = Date.now();
+		await writeViews( outDir );
 		const done = await captureList( base, outDir, list );
 		if ( options.repeat ) await repeatability( outDir, views );
 		await logRun( t0, busy, procedure, options.sha, list.length, list.length - done.length, outDir );

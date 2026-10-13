@@ -6,7 +6,9 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
 
 - `views.mjs`: the views (camera, weather, time) and their crop anchors.
 - `capture-set.mjs`: captures a set through `tools/capture.mjs`.
-- `diff-set.py`: compares two sets.
+- `adhoc.mjs`: ad-hoc views for capture-set (command line, JSON file, sweeps).
+- `diff-set.py`: compares two sets; its pixel helpers (`pixels.py`) are shared with
+  `../img.py` (ad-hoc diffs, crops, sheets and statistics of any captures).
 - `../verify-scene-jump.mjs`: the views reached by scene jumps in one page, against fresh loads
   (see One page, many views below).
 - `clips.mjs`, `../capture-clip.mjs`, `../clip-metrics.py`: stepped clips (a view set in motion),
@@ -29,8 +31,8 @@ Capture a production build (`npm run build`, then `npx vite preview --host 127.0
 
 Paused captures take the GPU lock shared (`tools/gpu-lock.mjs`): their pixels do not depend on what
 else renders, so they run beside other paused captures and probes, and wait for timing runs. Each
-capture holds one of the lock's shared slots (default 3, queued first in, first out), so `--jobs`
-above the free slots only queues.
+page holds one of the lock's shared slots (default 3, queued first in, first out) while it
+captures, so `--jobs` above the free slots only queues.
 
 ## Fast mode (tools/capture-browser.mjs)
 
@@ -162,6 +164,7 @@ the boxes placed before it.
 
 ```sh
 node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
+    [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
     [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
     [--runs runs.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
 node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
@@ -199,18 +202,41 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   views at `--jobs 1` and `4` decoded to the same pixels); a view that differs only by sparse
   single-frame speckle on the vegetation while other browsers render is GPU noise: shoot it again.
 - `--aa` adds `aa=<mode>` only when given. `--q` adds options to every view (e.g. `msaa=1`).
+- Ad-hoc views (`adhoc.mjs`) go through the same path, instead of a script looping capture.mjs:
+  - `--view "name:query[::js]"` (repeatable): the view's query and optional eval (`s` is
+    `window.__PONLAI__`; views.mjs's helpers `isl()`, `free()`, `orbitAround()` exist).
+    `like=<view>` in the query starts from a views.mjs view: its query, eval and crops, the
+    ad-hoc options winning.
+  - `--views-file f.json`: `[ { "name", "q", "eval"?, "crops"?, "like"? } ]` or `{ "<name>": { ... } }`.
+  - `--sweep "key=a,b,c"` (repeatable): each selected view once per value, every combination of
+    several sweeps, named `<view>--<key>-<value>` (`<key>-<value>` with no views given).
+    `--views island-fair-noon,meadow-close --sweep weather=fair,rain --sweep hour=7,12,17` makes 12.
+  - With `--views` too, both sets; with only ad-hoc views or sweeps, not the parity group.
+  - An ad-hoc view's own options win over the set's (`t=12`, the tier, aa, `--q`); views.mjs views
+    keep the set's first, unchanged. Views whose load-time options differ (anything outside
+    `SCENE_OPTIONS` in `src/main.ts`: tier, aa, `game`, `seed`, debug switches) cannot share a page:
+    they are captured in groups, a group's pages after the last group's.
+  - Names: letters, digits, `-`, `_`, none of views.mjs's. `<outDir>/views.json` records the ad-hoc
+    views (their query, eval, crops and full query). In the reference store each ad-hoc view's
+    coverage holds its definition's hash (`def`): a stored view of that name with another
+    definition is captured again and replaces the entry, never served for it.
 - `--jobs n` runs n pages at once, each in its own profile slot, the views handed out one at a time
   from one queue (captures are GPU-bound: 3 at once gives the most captures per minute, more only
   adds latency, and each extra page costs a load that a small set does not earn back). Default: one
-  page per 5 captures, at most 3, repeats counted (24 views take 3, 7 views 2, up to 5 one). Each view holds a GPU lock slot from its load or jump to its shot, so the page
-  stands stopped between views without one.
+  page per 5 captures, at most 3, repeats counted (24 views take 3, 7 views 2, up to 5 one). Each
+  page leases a GPU lock slot: it keeps it from view to view and gives it up between views when
+  someone waits for it and it has held it for 20 s (capture.mjs `--lease` after `--`; 0 frees it
+  after every view), so a set behind a series of timing runs advances several views per run, and a
+  timing run waits at most about the lease (and the view in flight) for it.
 - `--runs` (or `PARITY_RUNS`) appends a line per run to a CSV: date, task, procedure, sha, wall
   minutes, whether the GPU was busy before the run, captures, failures and the set. Without either
   nothing is logged: a procedure that keeps a run log passes one of them on every run.
 - After `--`, options for capture.mjs: `--wait-for "expr"` (polled up to 60 s once the page is
   ready), `--frames n --every k` (n captures k rendered frames apart: `<view>.png`,
   `<view>.f1.png` ...; the loop runs between them and stops for each shot), the `--stable-*`
-  options, `--ready-frames n`, `--wait ms`, `--settle ms` (fast mode above).
+  options, `--ready-frames n`, `--wait ms`, `--settle ms` (fast mode above), `--lease s` (the GPU
+  slot's lease, above; it changes no pixel, but like every option after `--` it is part of a stored
+  reference's key).
 
 ### Quick mode (--quick, quick.mjs)
 
@@ -219,6 +245,7 @@ each measured against the stored references of a commit.
 
 ```sh
 node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
+    [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
     [--variant "[label::]js"]... [--quality high] [--aa mode] [--q "extra"] [--size 1728x1117@2]
     [--store <root>/<sha>] [--ref-url <refUrl>] [--runs runs.csv] [--task name]
 ```
@@ -228,6 +255,9 @@ node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,
   `window.__PONLAI__`), the loop starts again, the temporal rest restarts (an epoch bump), the
   page is ready again as capture.mjs makes it (stability for MSAA, the converged rest for taa,
   taau and gt), shot. No repeat.
+- Ad-hoc views (`--view`, `--views-file`, `--sweep`, as in capture-set) load with the query
+  capture-set gives them; the store keeps rest entries of views.mjs's views only, so they are shot
+  without metrics.
 - Variants accumulate on the one page: each sets every knob it tunes to an absolute value
   (`sigma04::s.taa.settings.sigmaRest = 0.4`, then `sharp::s.taa.settings.sigmaRest = 0.3; ...`).
   Only runtime knobs work (`s.taa.settings.*`, uniforms, `s.applyQuality( { ... } )`); load-time
@@ -271,8 +301,9 @@ uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [-
 - `--temporal`: the rule for temporal AA captures (`aa=taa|taau`), whose paused frames do not
   repeat pixel for pixel (see Temporal tolerance below). MSAA sets keep the exact rules above.
 - Each capture's JSON records the browser build (`browser`); diff-set warns when the two sets come
-  from different builds, since their frames never match pixel for pixel. Compare only sets captured
-  with the same browser (Playwright's Chromium, or one `CHROME_PATH`).
+  from different builds, since their frames may differ. Compare sets captured with the same
+  browser (Playwright's Chromium, or one `CHROME_PATH`), or a stored set verified for the other
+  build (Reference store, Browser updates).
 - `--crops-from`: per anchor, the difference counts and a `ref | test | diff x8` sheet
   (`<out>/<view>.<anchor>.png`), and per view `<view>.anchors.png`, the test frame at a quarter size
   with its anchor boxes.
@@ -312,7 +343,8 @@ flower entirely. Crops come from `--crops-from`, else from the test side's JSON.
 ## Reference store (reference.mjs)
 
 References are kept per commit and shared by every task and process that checks against it, so a
-reference is captured once per commit, capture-tool version and browser build. `capture-set.mjs
+reference is captured once per commit and capture-tool version (a capture set survives a browser
+update once a few of its views match under the new build: Browser updates below). `capture-set.mjs
 --reference` / `--check` keep capture sets there, `baseline.mjs` its `baseline` and ground-truth
 entries. A task that runs the usual command gets reuse and waiting by itself.
 
@@ -332,6 +364,8 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   carry/<A>/                       the carry-over checks from commit A: verdict.json, the paused
                                    set's diff, the spot checks' captures (Carry-over below)
   .replaced/<path with ~>@<time>/  a reference replaced by a fresh capture (safe to delete)
+  .verify/<path with ~>@<time>/    a set's sample views while they are checked against a new
+                                   browser build (removed afterwards)
   .<name>.mutex                    beside a reference for a few milliseconds while a process
                                    inspects it and takes its claim
 ```
@@ -343,16 +377,20 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   "format": 1, "kind": "set" | "clip", "sha": "<40 hex>", "path": "S1",
   "key": { "kind": "set", "tool": "<16 hex>", "browser": { "executable": "playwright chromium", "version": "153.0.8010.12" },
            "quality": "high", "aa": null, "q": null, "size": "1728x1117@2", "capture": [] },
-  "toolFiles": { "capture.mjs": "<12 hex>", "capture-browser.mjs": "...", "parity/capture-set.mjs": "...", "parity/views.mjs": "..." },
-  "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true } } },
+  "toolFiles": { "capture.mjs": "<12 hex>", "capture-browser.mjs": "...", "parity/capture-set.mjs": "...", "parity/views.mjs": "...", "parity/adhoc.mjs": "..." },
+  "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true },
+                           "my-adhoc": { "captured": true, "def": "<16 hex>" } } },
   "url": "<the preview it was captured from>",
   "rounds": [ { "pid": 0, "label": "...", "started": "...", "finished": "...", "minutes": 2.1,
-                "captured": "3 views + 3 repeats", "reason": "no reference yet", "failed": 0 } ]
+                "captured": "3 views + 3 repeats", "reason": "no reference yet", "failed": 0 } ],
+  "verifiedBrowsers": [ { "browser": { "executable": "...", "version": "153.0.8010.13" }, "at": "...",
+                          "views": [ "island-fair-noon", "meadow-close", "water-skim-cliffs" ], "rule": "decoded pixels" } ]
 }
 ```
 
 - `key`: what the pixels depend on. `tool` hashes the capture tools' sources: for sets
-  `capture.mjs`, `capture-browser.mjs`, `parity/capture-set.mjs`, `parity/views.mjs`; for clip
+  `capture.mjs`, `capture-browser.mjs`, `parity/capture-set.mjs`, `parity/views.mjs`,
+  `parity/adhoc.mjs`; for clip
   entries `capture-clip.mjs`, `capture-browser.mjs`, `parity/views.mjs`, `parity/clips.mjs`
   (`TOOL_FILES` in reference.mjs: every file of that kind's capture path, the shared browser,
   readiness and grab included; a change to the clip tools leaves sets valid and the other way
@@ -364,10 +402,15 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   its own), so a ground truth follows a recaptured baseline.
 - `coverage`: what the directory holds, apart from the key. A set lists its views, each with
   `repeat` (the second fresh-load capture exists) and `identical` (the two hold identical pixels:
-  the view's A/A this time); a clip entry is `{ "captured": true }`. The manifest vouches only for what
+  the view's A/A this time), and an ad-hoc view `def`, its definition's hash; a clip entry is
+  `{ "captured": true }`. The manifest vouches only for what
   it lists: a set whose views partly failed lists the others, and the next request captures the
   rest.
-- `rounds`: each capture or extension, with its reason.
+- `rounds`: each capture or extension, with its reason; a verification against a new browser
+  build is a round with `verify` (the build, the sample views, the rule, whether they matched).
+- `verifiedBrowsers` (sets only): other browser builds whose captures of the sample views matched
+  the stored frames; a request under one of them reuses the set as if the key were its own. The
+  key keeps the build that captured the set, so two builds in use at once never flip it.
 
 ### What a request does
 
@@ -383,7 +426,9 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
    - same key, less coverage (a view, a repeat): `not captured yet: ...`, the set is extended in
      place and the manifest rewritten with the union;
    - another key: the capture tools changed (and which files), the browser build changed, or an
-     option differs; the old directory moves to `.replaced/`;
+     option differs; the old directory moves to `.replaced/`. A set whose key differs only by the
+     browser build is verified first (Browser updates below) and captured afresh only when that
+     fails;
    - a claim whose process is gone (killed, crashed): `the capture by pid N did not finish`, the
      partial captures are discarded (kept when a manifest already vouched for them and the claim
      only extended it);
@@ -405,14 +450,48 @@ the last commit of those inputs. `node
 tools/parity/reference.mjs status <root>/<sha>` lists every manifest and claim under a commit,
 and whether its tool hash is current.
 
-A recapture of a reference is forced when the browser build or the capture tools change (one
-reference round after a tool change lands), when a check needs repeats or views the stored set
-lacks (only those are captured), and on request. Repeatability: with readiness by stability (Fast
+A recapture of a reference is forced when the capture tools change (one reference round after a
+tool change lands), when the browser build changes and the set's samples no longer match (and for
+every clip entry), when a check needs repeats or views the stored set lacks (only those are
+captured), and on request. Repeatability: with readiness by stability (Fast
 mode above) MSAA views repeat pixel for pixel between page loads (24 of 24 in the base references),
 where the fixed waits left a few views 1-3 levels apart on a few pixels of vegetation; temporal
 sets never do. Still compare with `--aa-floor` (or `--temporal`) on sets captured with `--repeat`:
 a view that differs once is judged against its own A/A. `coverage.views.<view>.identical` records
 each stored A/A.
+
+### Browser updates
+
+A Chrome auto-update (a minor build, .39 -> .40) changed the browser in every key and cost a full
+reference round (one S1 alone took 57 minutes), although frames rarely change between such builds.
+So a capture set whose stored key differs from the request's only by `browser` is verified rather
+than replaced, under the claim (waiters wait as for a capture; the stored set is untouched until
+the samples decide):
+
+1. Up to three stored views are captured with the new build into `<root>/<sha>/.verify/`, one of
+   each kind a browser change could render differently: the island by day (`island-fair-noon`,
+   `horizon-fair-noon`, `low-36`, `island-clear-golden`), vegetation (`meadow-close`,
+   `flowers-close`, `meadow-24`, `meadow-shade`, `twigs-sky`) and water (`water-skim-cliffs`,
+   `rim-sea`, `island-from-sea`, `cliff-sea-golden`), each the first stored one, preferring views
+   the request needs; a set with none of a kind fills up with other stored views. MSAA views whose
+   stored A/A differed (`identical: false`) are not picked when others are stored.
+2. They are compared with the stored frames: MSAA and `aa=off` by decoded pixels (every pixel
+   equal), the temporal modes (`aa=taa|taau|gt`) with `diff-set.py --temporal` (against the stored
+   capture and its repeat when stored).
+3. All match: the build is appended to the manifest's `verifiedBrowsers` and the set is reused
+   (`reference S1: the stored set holds for <version>: 3 sample views match ...`, then `reused
+   (verified for <version>)`); later requests under that build reuse it straight away, and a request
+   that needs more views extends it with the new build.
+4. Any differ (or fails to capture): the set is captured afresh as for any other key change (the
+   old one moved to `.replaced/`), the samples kept as the new set's first captures of their
+   views (`... the sample views differ: meadow-close (14806 px differ, max 9 levels), ...: capturing it
+   afresh`).
+
+`--recapture-reference` skips the verification. Not covered: a sibling set (S1 serving FAST3) is
+not verified on another set's request (FAST3 is captured), and clip entries (baseline.mjs's
+`baseline` and ground-truth entries) are recaptured under a new build, since an entry is a single
+capture and checking it costs as much as capturing it. carry.mjs accepts a verified build where
+it compares paused sets' keys.
 
 ### Carry-over (carry.mjs)
 

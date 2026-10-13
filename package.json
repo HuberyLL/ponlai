@@ -6,9 +6,9 @@
   "license": "MIT",
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5190",
-    "build": "tsc && vite build",
+    "build": "node tools/qos.mjs tsc && node tools/qos.mjs vite build",
     "preview": "vite preview --host 127.0.0.1 --port 5191",
-    "typecheck": "tsc"
+    "typecheck": "node tools/qos.mjs tsc"
   },
   "dependencies": {
     "lil-gui": "^0.21.0",

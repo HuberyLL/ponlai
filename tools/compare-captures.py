@@ -1,14 +1,16 @@
 """Measure matched overview captures and save unretouched comparison crops.
 
-Usage: python3 tools/compare-captures.py before.png after.png
-Requires Pillow and NumPy; available in the Codex bundled Python runtime.
+Usage: uv run --with numpy --with pillow tools/compare-captures.py before.png after.png
+The metrics are pixels.metrics (tools/parity/pixels.py), which `tools/img.py stats` reports too.
 """
 import json
 import sys
 from pathlib import Path
 
-import numpy as np
 from PIL import Image, ImageDraw
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "parity"))
+from pixels import metrics  # noqa: E402
 
 
 before, after = [Image.open(path).convert("RGB") for path in sys.argv[1:3]]
@@ -21,20 +23,6 @@ regions = {
     "open-water": (25, 30, 375, 155),
     "water-glare": (1480, 310, 1650, 720),
 }
-
-
-def metrics(im):
-    a = np.asarray(im, dtype=np.float64)
-    y = a @ np.array([0.2126, 0.7152, 0.0722])
-    dx = np.abs(np.diff(y, axis=1)).mean()
-    dy = np.abs(np.diff(y, axis=0)).mean()
-    return {
-        "meanRGB": np.round(a.mean(axis=(0, 1)), 2).tolist(),
-        "lumaMean": round(float(y.mean()), 2),
-        "lumaStdDev": round(float(y.std()), 2),
-        "meanAdjacentLumaDifference": round(float((dx + dy) / 2), 3),
-        "brightPixelPercent": round(float((y > 245).mean() * 100), 3),
-    }
 
 
 report = {}
