@@ -10,7 +10,7 @@
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s]
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
-//        [--scale-settle s] [--drs-store] [--display [--motion user | orbit | none]]
+//        [--scale-settle s] [--drs-store] [--preload-wait 60] [--display [--motion user | orbit | none]]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
 //        [--slices 8] [--slice 1.5] [--settle 1]                 (two pages, alternating slices)
 //   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
@@ -23,6 +23,18 @@
 // Playwright's Chromium, with a profile of its own kept between runs (`--profile-dir`), so the
 // world cache below survives. Writes <out>/profile.json and <out>/summary.md (default
 // artifacts/perf/<label>).
+//
+// The exclusive lock covers what is measured, not the setup: the browser starts before it, and a
+// build this profile has not loaded yet is first loaded once under a shared GPU slot (`preload`;
+// skipped when no slot frees within `--preload-wait` seconds), so the loads under the lock find the
+// world cache and the shader cache warm, as every run but a build's first always did (a miss
+// generates the island: seconds alone, a minute under a busy CPU). Under the lock everything runs
+// as before: the idle check (which also stands for the first load's), each load, each scene's
+// switch, warm-up, scale settle and measured window. The pages' loops stop before the lock is
+// released; the GPU name, the files and the browser's close follow. profile.json's `wallSeconds`
+// is the time under the exclusive lock (`lockWaitSeconds`, `totalSeconds`, `preload` beside it).
+// Measured: per-pass GPU times, frame rates and
+// acceptance verdicts within the run-to-run noise of the earlier tool, 4-12 s less held per run.
 //
 // Modes (most of a page load is generating the island, about 10 s; scenes are switched instead):
 // - page (the default): one page load per variant; each scene is set up at runtime through
@@ -111,6 +123,7 @@ import { chromium } from 'playwright';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { withGpuLock, waitForIdleGpu, sampleGpuUtilisation } from './gpu-lock.mjs';
 import { requireDisplayAllowed } from './display-gate.mjs';
@@ -120,7 +133,7 @@ import { requireDisplayAllowed } from './display-gate.mjs';
 const argv = process.argv.slice( 2 );
 const flags = new Set( argv.filter( ( a ) => a.startsWith( '--' ) ) );
 const VALUE_FLAGS = new Set( [ 'report', 'scenes', 'scene', 'w', 'h', 'scale', 'quality', 'warmup', 'seconds', 'orbit', 'eval', 'eval-a', 'eval-b', 'repeat', 'out', 'label', 'q', 'compare', 'idle-wait', 'idle-threshold', 'timestamps', 'hooks',
-	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion' ] );
+	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion', 'preload-wait' ] );
 const opt = ( name, fallback ) => {
 
 	const i = argv.indexOf( '--' + name );
@@ -185,6 +198,8 @@ const WORLD_CACHE = opt( 'world-cache', 'on' ) !== 'off';
 // moved for s seconds (at most 60 s), so the scene is measured at its settle point
 const SCALE_SETTLE = Number( opt( 'scale-settle', 0 ) );
 const PROFILE_DIR = opt( 'profile-dir', path.join( os.tmpdir(), 'ponlai-profile-frame-chrome' ) );
+// the longest wait for a shared GPU slot to preload in (see preload), seconds
+const PRELOAD_WAIT = Number( opt( 'preload-wait', 60 ) );
 const REPEAT = Math.max( 1, Number( opt( 'repeat', 1 ) ) );
 const EXTRA_Q = opt( 'q', '' );
 // GPU timestamps: on (the default: frame intervals and the GPU time per pass), off (frame intervals
@@ -482,6 +497,17 @@ function delta( a, b ) {
 // ------------------------------------------------------------------ the page
 
 const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
+
+// The run's own idle check (main), taken with the browser already open on a blank page just before
+// the first load: it stands for that load's check instead of sampling the same idle GPU again.
+let startIdle = null;
+function loadIdle( log ) {
+
+	const idle = startIdle;
+	startIdle = null;
+	return idle ?? waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+
+}
 
 // the render scale of the run under way (--scales), added to every page's url as `dpr`
 let renderScale = null;
@@ -1098,10 +1124,15 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 	const loads = [];
 	for ( const group of groups ) {
 
-		// between page loads the GPU should be idle: anything rendering now is outside this run
-		await page.goto( 'about:blank' );
-		await page.waitForTimeout( 1000 );
-		const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+		// between page loads the GPU should be idle: anything rendering now is outside this run (the
+		// first load's page is blank already)
+		if ( ! startIdle ) {
+
+			await page.goto( 'about:blank' );
+			await page.waitForTimeout( 1000 );
+
+		}
+		const gpuIdle = await loadIdle( log );
 		const loaded = await load( page, base, SCENES[ group.scenes[ 0 ] ].q, timestamps );
 		loads.push( { scenes: group.scenes, loadMs: loaded.loadMs, url: loaded.url, gpuIdle, startup: loaded.startup } );
 		const entry = loads[ loads.length - 1 ];
@@ -1127,7 +1158,7 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix = '', timestamps = TIMESTAMP_MODE !== 'off' ) {
 
 	await page.goto( 'about:blank' );
-	const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+	const gpuIdle = await loadIdle( log );
 	const loaded = await load( page, base, SCENES[ names[ 0 ] ].q, timestamps );
 	log( `loaded ${ loaded.url } in ${ ( loaded.loadMs / 1000 ).toFixed( 1 ) } s (world cache ${ JSON.stringify( loaded.startup.diagnostics.worldCache ) })` );
 	const frames = new Frames( page );
@@ -1184,7 +1215,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 	const pages = [ context.pages()[ 0 ] ?? await context.newPage() ];
 	pages.push( await context.newPage() );
 	for ( const p of pages ) await p.goto( 'about:blank' );
-	const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+	const gpuIdle = await loadIdle( log );
 	// one after the other (a page running starves the other's queue), each stopped once loaded
 	const loaded = [];
 	for ( const v of [ 0, 1 ] ) {
@@ -1290,7 +1321,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames, timestamps = TIMESTAMP_MODE !== 'off' ) {
 
 	await page.goto( 'about:blank' );
-	const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+	const gpuIdle = await loadIdle( log );
 	const loaded = await load( page, base, SCENES[ names[ 0 ] ].q, timestamps );
 	log( `loaded ${ loaded.url } in ${ ( loaded.loadMs / 1000 ).toFixed( 1 ) } s (world cache ${ JSON.stringify( loaded.startup.diagnostics.worldCache ) })` );
 	const frames = new Frames( page );
@@ -1543,8 +1574,8 @@ function startupLine( s ) {
 
 // ------------------------------------------------------------------ main
 
-// Chrome with a profile kept between runs (the world cache lives in its IndexedDB); a profile
-// still in use by another run falls back to a temporary one
+// Chrome with a profile kept between runs (the world cache lives in its IndexedDB, the shader cache
+// beside it); a profile still in use by another run falls back to a temporary one
 async function launch() {
 
 	const options = {
@@ -1567,34 +1598,120 @@ async function launch() {
 
 }
 
+// The preload: the run's first page loaded once under a shared GPU slot, before the exclusive lock,
+// so that the loads under the lock find the profile's world cache and shader cache warm. A load that
+// misses the world cache generates the island inside the exclusive hold (seconds alone, a minute
+// under a busy CPU) and compiles every shader cold; a load that hits is what every run but a build's
+// first already measured, so the preload changes no measured window, only which loads hit. The
+// preloaded page is left (a blank page) before the slot is released. It is skipped when the profile
+// already preloaded this build in this browser (`profile-frame-preloaded.json` in the profile, per
+// origin, as the world cache keeps one world per origin: a hash of the served index.html, whose
+// asset names carry the bundle's content hashes, and the Chrome version its user agent gives, the
+// world cache's key; the world's options do not depend on the url), always on a dev server (its
+// index does not change with its sources), and never with `--world-cache off` (the island is then
+// generated as on a first visit by design). The url is the first load's with `drsStore=off`, so
+// the preload neither restores nor stores a dynamic scale.
+async function preload( page, dir, label, chrome ) {
+
+	if ( ! WORLD_CACHE ) return null;
+	const markerFile = path.join( dir, 'profile-frame-preloaded.json' );
+	let marker = {};
+	try { marker = JSON.parse( await readFile( markerFile, 'utf8' ) ); } catch { /* none yet */ }
+	renderScale = SCALES[ 0 ] ?? null;
+	const timestamps = TIMESTAMP_MODE !== 'off' && ! ( TIMESTAMP_MODE === 'both' && ! COMPARE && ! TOGGLE );
+	const entries = [];
+	for ( const base of COMPARE ?? [ URL_A ] ) {
+
+		const url = new URL( pageUrl( base, SCENES[ sceneNames[ 0 ] ].q, timestamps ) );
+		url.search = [ ...url.search.slice( 1 ).split( '&' ).filter( ( o ) => ! o.startsWith( 'drsStore=' ) ), 'drsStore=off' ].join( '&' );
+		let build = null;
+		try {
+
+			const html = await ( await fetch( base ) ).text();
+			if ( ! html.includes( '/@vite/client' ) ) build = createHash( 'sha1' ).update( html ).digest( 'hex' ).slice( 0, 16 );
+
+		} catch { /* unknown: preload */ }
+		const last = marker[ url.origin ];
+		entries.push( { url: url.href, build, cached: build !== null && last?.build === build && last?.chrome === chrome } );
+
+	}
+	renderScale = null;
+	const todo = entries.filter( ( e ) => ! e.cached );
+	if ( todo.length === 0 ) return { skipped: 'this build was preloaded before', entries };
+	// a slot waits behind every exclusive request queued: after PRELOAD_WAIT the build loads under the
+	// exclusive lock as before, rather than queueing twice
+	const requested = Date.now();
+	let lockWaitMs = 0;
+	const load = async () => {
+
+		lockWaitMs = Date.now() - requested;
+		for ( const e of todo ) {
+
+			const started = Date.now();
+			await page.goto( e.url );
+			await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30 &&
+				document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 'raf' } );
+			e.worldCache = await page.evaluate( () => window.__THREE_GAME_DIAGNOSTICS__.worldCache ?? 'unsupported' );
+			e.ms = Date.now() - started;
+			console.error( `[profile] preloaded ${ e.url } in ${ ( e.ms / 1000 ).toFixed( 1 ) } s (world cache ${ JSON.stringify( e.worldCache ) })` );
+
+		}
+		await page.goto( 'about:blank' );
+
+	};
+	try {
+
+		await withGpuLock( `${ label } preload`, load, { shared: true, timeout: PRELOAD_WAIT } );
+
+	} catch ( error ) {
+
+		if ( lockWaitMs > 0 || ! /still held/.test( error.message ) ) throw error;
+		console.error( `[profile] no GPU slot for the preload within ${ PRELOAD_WAIT } s: the first load runs under the exclusive lock` );
+		return { skipped: `no GPU slot within ${ PRELOAD_WAIT } s`, entries };
+
+	}
+	for ( const e of todo ) marker[ new URL( e.url ).origin ] = { build: e.build, chrome, url: e.url };
+	await writeFile( markerFile, JSON.stringify( marker, null, 1 ) );
+	return { lockWaitMs, entries };
+
+}
+
 async function main() {
 
 	await mkdir( OUT, { recursive: true } );
 	const label = `profile-frame ${ LABEL }`;
-	const requested = Date.now();
-	let started = requested;
-	await withGpuLock( label, async () => {
+	const begun = Date.now();
+	// Setup outside the exclusive lock: the browser (its blank page draws nothing) and, when the
+	// profile's caches may not hold this build yet, the preload under a shared GPU slot (see preload)
+	const { context, dir, temporary } = await launch();
+	const errors = [];
+	const watch = ( p ) => {
 
-		// wall time from here on: the lock's wait is someone else's run
-		started = Date.now();
-		if ( started - requested > 1000 ) console.error( `[profile] GPU lock acquired after ${ ( ( started - requested ) / 1000 ).toFixed( 0 ) } s` );
-		const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, wait: IDLE_WAIT } );
-		if ( gpuIdle.contended ) idleWaitLoad = 0;
-		console.error( `[profile] GPU idle ${ gpuIdle.idle?.mean ?? '?' } % (max ${ gpuIdle.idle?.max ?? '?' } %)${ gpuIdle.contended ? ', CONTENDED' : '' }; Chrome: ${ executablePath ?? 'Playwright Chromium' }; mode ${ TOGGLE ? 'toggle' : MODE }${ VSYNC ? ', vsync' : ', uncapped' }${ ACCEPT ? `, accept at ${ TARGET } ms` : '' }` );
-		const { context, dir, temporary } = await launch();
-		const errors = [];
-		const watch = ( p ) => {
+		p.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
+		p.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
 
-			p.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
-			p.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
+	};
+	context.pages().forEach( watch );
+	context.on( 'page', watch );
+	let started = 0, held = 0, waitedMs = 0, result = null, preloaded = null;
+	try {
 
-		};
-		context.pages().forEach( watch );
-		context.on( 'page', watch );
-		try {
+		const page = context.pages()[ 0 ] ?? await context.newPage();
+		const version = ( await page.evaluate( () => navigator.userAgent ) ).match( /Chrome\/([\d.]+)/ )?.[ 1 ] ?? '?';
+		preloaded = await preload( page, dir, label, version );
+		// (the preload's page errors are not the run's)
+		if ( errors.length ) console.error( `[profile] the preload logged: ${ errors.splice( 0 ).slice( 0, 5 ).join( ' | ' ) }` );
+		const requested = Date.now();
+		await withGpuLock( label, async () => {
 
-			const page = context.pages()[ 0 ] ?? await context.newPage();
-			const version = ( await page.evaluate( () => navigator.userAgent ) ).match( /Chrome\/([\d.]+)/ )?.[ 1 ] ?? '?';
+			// the run's time from here on: the lock's wait is someone else's run
+			started = Date.now();
+			waitedMs = started - requested;
+			if ( waitedMs > 1000 ) console.error( `[profile] GPU lock acquired after ${ ( waitedMs / 1000 ).toFixed( 0 ) } s` );
+			const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, wait: IDLE_WAIT } );
+			if ( gpuIdle.contended ) idleWaitLoad = 0;
+			startIdle = gpuIdle;
+			console.error( `[profile] GPU idle ${ gpuIdle.idle?.mean ?? '?' } % (max ${ gpuIdle.idle?.max ?? '?' } %)${ gpuIdle.contended ? ', CONTENDED' : '' }; Chrome: ${ executablePath ?? 'Playwright Chromium' }; mode ${ TOGGLE ? 'toggle' : MODE }${ VSYNC ? ', vsync' : ', uncapped' }${ ACCEPT ? `, accept at ${ TARGET } ms` : '' }` );
 			// a run that stops making progress fails rather than holding the lock
 			let progress = Date.now();
 			const watchdog = setInterval( () => {
@@ -1609,7 +1726,7 @@ async function main() {
 			const meta = {
 				label: LABEL, url: URL_A, viewport: { width: W, height: H, scale: SCALE }, quality: QUALITY, warmup: WARMUP, seconds: SECONDS, orbit: ORBIT,
 				chrome: version, args: CHROME_ARGS, gpuIdle, started: new Date().toISOString(), fresh: FRESH, eval: opt( 'eval', '' ), extraQuery: EXTRA_Q,
-				mode: TOGGLE ? 'toggle' : MODE, worldCache: WORLD_CACHE, vsync: VSYNC, timestampMode: TIMESTAMP_MODE, hooks: HOOKS, display: DISPLAY, motion: MOTION,
+				mode: TOGGLE ? 'toggle' : MODE, worldCache: WORLD_CACHE, vsync: VSYNC, timestampMode: TIMESTAMP_MODE, hooks: HOOKS, display: DISPLAY, motion: MOTION, preload: preloaded,
 			};
 			const evals = [ opt( 'eval-a', opt( 'eval', '' ) ), opt( 'eval-b', opt( 'eval', '' ) ) ];
 			const tsModes = TIMESTAMP_MODE === 'both' ? [ true, false ] : [ TIMESTAMP_MODE !== 'off' ];
@@ -1632,11 +1749,7 @@ async function main() {
 				meta.timestamps = TIMESTAMP_MODE === 'both' ? 'both' : tsModes[ 0 ];
 				const s = runs.A[ 0 ].loads[ 0 ]?.startup;
 				meta.render = s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
-				meta.gpu = await gpuInfo( page );
-				meta.finished = new Date().toISOString();
-				meta.wallSeconds = r2( ( Date.now() - started ) / 1000 );
-				await writeFile( path.join( OUT, 'profile.json' ), JSON.stringify( { meta, runs, reports, errors }, null, 1 ) );
-				await writeFile( path.join( OUT, 'summary.md' ), sliceMarkdown( meta, reports ) );
+				result = { meta, json: () => ( { meta, runs, reports, errors } ), markdown: () => sliceMarkdown( meta, reports ) };
 
 			} else if ( ! COMPARE ) {
 
@@ -1698,11 +1811,7 @@ async function main() {
 				const s = runs[ 0 ].loads.find( ( l ) => l.startup?.timestamps )?.startup ?? runs[ 0 ].loads[ 0 ]?.startup;
 				meta.timestamps = TIMESTAMP_MODE === 'both' ? 'both' : s?.timestamps;
 				meta.render = s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
-				meta.gpu = await gpuInfo( page );
-				meta.finished = new Date().toISOString();
-				meta.wallSeconds = r2( ( Date.now() - started ) / 1000 );
-				await writeFile( path.join( OUT, 'profile.json' ), JSON.stringify( { meta, runs, errors }, null, 1 ) );
-				await writeFile( path.join( OUT, 'summary.md' ), markdownProfile( meta, runs ) );
+				result = { meta, json: () => ( { meta, runs, errors } ), markdown: () => markdownProfile( meta, runs ) };
 
 			} else {
 
@@ -1724,24 +1833,37 @@ async function main() {
 
 				}
 				meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ] };
-				meta.finished = new Date().toISOString();
-				meta.wallSeconds = r2( ( Date.now() - started ) / 1000 );
 				const report = compareReport( runs );
-				await writeFile( path.join( OUT, 'profile.json' ), JSON.stringify( { meta, runs, report, errors }, null, 1 ) );
-				await writeFile( path.join( OUT, 'summary.md' ), compareMarkdown( meta, report ) );
+				result = { meta, json: () => ( { meta, runs, report, errors } ), markdown: () => compareMarkdown( meta, report ) };
 
 			}
-			if ( errors.length ) console.error( errors.slice( 0, 10 ).join( '\n' ) );
+			// the measurements are done: once every page's loop stood still (no frame, its queue
+			// drained), nothing of this run renders and the lock goes to the next run
+			for ( const p of context.pages() ) await p.evaluate( () => window.__profileTools?.loop.stop() ).catch( () => {} );
+			held = Date.now() - started;
+			clearInterval( watchdog );
 
-		} finally {
+		} );
+		const { meta } = result;
+		meta.gpu = await gpuInfo( page );
+		meta.finished = new Date().toISOString();
+		// wallSeconds: the run under the exclusive lock (as before: from taking it to the results);
+		// the setup before it (launch, preload and its shared slot) and the wait for the lock apart
+		meta.wallSeconds = r2( held / 1000 );
+		meta.lockWaitSeconds = r2( waitedMs / 1000 );
+		meta.totalSeconds = r2( ( Date.now() - begun ) / 1000 );
+		await writeFile( path.join( OUT, 'profile.json' ), JSON.stringify( result.json(), null, 1 ) );
+		await writeFile( path.join( OUT, 'summary.md' ), result.markdown() );
+		if ( errors.length ) console.error( errors.slice( 0, 10 ).join( '\n' ) );
 
-			await context.close();
-			if ( temporary ) await rm( dir, { recursive: true, force: true } );
+	} finally {
 
-		}
+		await context.close();
+		if ( temporary ) await rm( dir, { recursive: true, force: true } );
 
-	} );
-	console.error( `[profile] done in ${ ( ( Date.now() - started ) / 1000 ).toFixed( 0 ) } s under the lock` );
+	}
+	const waits = waitedMs + ( preloaded?.lockWaitMs ?? 0 );
+	console.error( `[profile] done: ${ ( held / 1000 ).toFixed( 0 ) } s under the exclusive lock, ${ ( ( Date.now() - begun - waits ) / 1000 ).toFixed( 0 ) } s in all without the waits for the GPU lock` );
 	console.log( path.join( OUT, 'summary.md' ) );
 
 }
