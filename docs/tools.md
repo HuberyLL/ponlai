@@ -225,17 +225,25 @@ regenerated island), judge the look by eye and region statistics (`tools/capture
 by pixel difference.
 
 `node tools/capture-growth.mjs --base url [--cand url] [--seeds 1,2] [--grow 0,4,12]
-[--views v1,v3] [--label x] [--q "query"]` sets a base and a candidate page side by side
-(`tools/capture.mjs` per shot, headless and paused under the shared GPU lock, a few at a time) in
-six views (v1 overview, also in golden hour; v2 top-down; v3 cliff, v4 meadow and v5 rim close;
-v6 sea floor), framed on the land in the page (`__PONLAI__.land`: the overview is the page's own
-island view; today's framing without it), into `artifacts/captures/growth/<label>/index.html`
-with each pair's crop statistics (mean luma, saturation and edge density, by
-compare-captures.py's metrics) and deltas beyond 10 % flagged. A URL's own query and `--q` pass
-through and override the tool's settings. The default (seed 1 at steps 0 and 12) is 14 shots a
-URL; base and candidate took about 8 min when every capture started with an empty world cache,
-most of a grown step's shot generating its world (captures now keep the cache in their profile
-slot, see above, so later runs of the same land load it).
+[--views v1,v3] [--label x] [--q "query"] [--jobs 2] [--base-ref sha] [--recheck 1]` sets a base
+and a candidate page side by side in six views (v1 overview, also in golden hour; v2 top-down; v3
+cliff, v4 meadow and v5 rim close; v6 sea floor), framed on the land in the page
+(`__PONLAI__.land`: the overview is the page's own island view; today's framing without it), into
+`artifacts/captures/growth/<label>/index.html` with each pair's crop statistics (mean luma,
+saturation and edge density, by compare-captures.py's metrics; deltas beyond 10 % flagged) and its
+pixel difference (pixels that differ, largest channel difference, on decoded pixels). A URL's own
+query and `--q` pass through and override the tool's settings (`debug` is added, so a production
+preview works). The shots are grouped by side and by the options a page reads at load (seed, grow,
+quality, dpr, ...), and each group is one `capture.mjs --worker` page (paused, headless, the shared
+GPU lock per view) that loads its first view and reaches the others by the exact scene jump, so a
+group's world is generated once; `--jobs` pages run at once. Each group keeps its own browser profile
+(`artifacts/.capture-profiles/growth/<side>-s<seed>-g<grow>`), so a repeat run finds its world in
+the cache. A failed view or a lost page is shot again once on a fresh page. `--base-ref <sha>` keeps
+the base side's shots per commit in `artifacts/captures/growth-ref/<sha>/` (one entry per shot,
+keyed by its query, size, camera code, capture tools and browser) and reuses them on later runs;
+the base URL must serve that commit. A pair with a tiny difference (at most 64 px and 2 levels by
+default) is shot again on both sides and reported as identical, repeatable or not repeatable
+(`--recheck 0` turns it off). The header of the tool has the details.
 
 `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
 (`capture-set.mjs`) and diffs it against a reference set, pixel for pixel or within the reference's
