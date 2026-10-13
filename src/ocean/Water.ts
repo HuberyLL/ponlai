@@ -1329,13 +1329,14 @@ export class Water {
 
 	/** The reflection's box for the land's box `b` (WorldShapes.landBounds): again when the land
 	 * grows (Growth.ts), which grows it; whatever was held beyond it (a placed prop: the caller
-	 * unions it in again) is dropped. Debug builds measure the scene against it again. */
+	 * unions it in again) is dropped. Debug builds measure the scene against it once, at the load:
+	 * not after a growth step, whose frame it would take tens of milliseconds (it reads every
+	 * vertex); a page loaded on the grown land measures that land. */
 	setLand( b: Bounds ): void {
 
 		this.reflectionBounds.set(
 			new THREE.Vector3( b.x0 - REFLECTOR_REACH, this.inputs.shared.waterLevel.value - REFLECTION_FLOOR, b.z0 - REFLECTOR_REACH ),
 			new THREE.Vector3( b.x1 + REFLECTOR_REACH, ISLAND_TOP + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );
-		this.boundsChecked = false;
 
 	}
 
