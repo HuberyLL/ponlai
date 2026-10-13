@@ -15,7 +15,8 @@
 //        [--scale-settle s] [--drs-store] [--preload-wait 60] [--display [--motion user | orbit | none]]
 //        [--hang 180] [--scale-log]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
-//        [--slices 8] [--slice 1.5] [--settle 1] [--display]       (two pages, alternating slices)
+//        [--slices 8] [--min-slices n] [--stop-margin x] [--stop-width x] [--slice 1.5] [--settle 1] [--display]
+//        (two pages, alternating slices)
 //   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
 //   node tools/profile-frame.mjs --report <dir>/profile.json     (re-renders its summary.md)
 //   node tools/profile-frame.mjs --list
@@ -64,6 +65,10 @@
 //   frames starve the other's queue. Deltas are reported with a 95 % interval from the slices' spread,
 //   beside each page's render scale per scene (high's dynamic scale can settle higher on one side,
 //   which the load-time render in the header does not show). Page errors name their page (A or B).
+//   Adaptive slices: `--slices` is the most a scene takes; from `--min-slices` on (4 with
+//   --display, else equal to --slices: off), a scene stops at the end of a balanced block of four
+//   once its leading delta has its answer (see MIN_SLICES); the summary and each scene's `stop`
+//   give the slices taken and why.
 // - toggle (`--toggle "js"`): A/B inside one page. The expression runs with `s` = window.__PONLAI__
 //   and `on` (false for A, true for B), and is applied every `--block` frames in an A B B A B A A B
 //   pattern after both states were warmed: for example --toggle "s.water.mesh.visible = !on", or
@@ -162,7 +167,7 @@ import { requireDisplayAllowed } from './display-gate.mjs';
 const argv = process.argv.slice( 2 );
 const flags = new Set( argv.filter( ( a ) => a.startsWith( '--' ) ) );
 const VALUE_FLAGS = new Set( [ 'report', 'scenes', 'scene', 'w', 'h', 'scale', 'quality', 'warmup', 'seconds', 'orbit', 'eval', 'eval-a', 'eval-b', 'repeat', 'out', 'label', 'q', 'compare', 'idle-wait', 'idle-threshold', 'timestamps', 'hooks',
-	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion', 'preload-wait', 'hang' ] );
+	'mode', 'toggle', 'world-cache', 'slices', 'min-slices', 'stop-margin', 'stop-width', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion', 'preload-wait', 'hang' ] );
 const opt = ( name, fallback ) => {
 
 	const i = argv.indexOf( '--' + name );
@@ -218,6 +223,18 @@ const QUALITY = opt( 'quality', 'high' );
 const WARMUP = Number( opt( 'warmup', MODE === 'reload' ? 3 : 1.5 ) ), SECONDS = Number( opt( 'seconds', DISPLAY ? 20 : 7 ) ), ORBIT = Number( opt( 'orbit', 3 ) );
 // compare in page mode: alternating slices of each page, measured for SLICE seconds after SETTLE
 const SLICES = Math.max( 2, Number( opt( 'slices', 8 ) ) ), SLICE = Number( opt( 'slice', 1.5 ) ), SETTLE = Number( opt( 'settle', 1 ) );
+// Adaptive slices: --slices is the most a scene takes; from --min-slices on, at the end of each
+// balanced block of the order (B A A B, then A B B A: a drift over the run stays cancelled), the
+// scene stops once the primary delta's 95 % interval clears zero by --stop-margin or is no wider
+// than ± --stop-width (that one only with 4 slices a side: from 2 a side the interval can come
+// out near zero by chance). The primary delta is the one the summary leads with: the late frames
+// on the display (a share: 0.1 is 10 points), else GPU busy with timestamps, else the median frame
+// interval (ms). The defaults come from a replay of the display compares of 2026-10-13 (stops
+// saved about a sixth of their slices, the late-frame verdicts held but for two borderline
+// scenes). Headless the default is off (--min-slices = --slices): an A/B there is judged by the
+// passes, whose deltas need every slice, and a stop at 4 of 8 slices saved little.
+const MIN_SLICES = Math.min( SLICES, Math.max( 2, Number( opt( 'min-slices', DISPLAY ? 4 : SLICES ) ) ) );
+const STOP_MARGIN = Number( opt( 'stop-margin', DISPLAY ? 0.1 : 0.2 ) ), STOP_WIDTH = Number( opt( 'stop-width', DISPLAY ? 0.02 : 0.05 ) );
 // toggle: frames per block, blocks per scene, frames dropped from the intervals after a change
 const BLOCK = Math.max( 4, Number( opt( 'block', 60 ) ) ), BLOCKS = Math.max( 2, Number( opt( 'blocks', 8 ) ) ), LAG = Number( opt( 'lag', 30 ) );
 // the order of slices and toggle blocks: balanced against a drift over the run (0 = A, 1 = B)
@@ -519,19 +536,26 @@ function acceptance( r ) {
 
 }
 
-// B - A over slices (or blocks): the mean difference, its 95 % interval (Welch) and the larger
-// range of either side (the old mode's noise)
-function delta( a, b ) {
+// B - A over slices (or blocks): the mean difference and its 95 % interval (Welch), unrounded
+function welch( a, b ) {
 
-	a = a.filter( ( x ) => Number.isFinite( x ) );
-	b = b.filter( ( x ) => Number.isFinite( x ) );
-	if ( ! a.length || ! b.length ) return { a: null, b: null, delta: null, ci: null, noise: null, significant: false };
 	const variance = ( v ) => v.length > 1 ? v.reduce( ( s, x ) => s + ( x - mean( v ) ) ** 2, 0 ) / ( v.length - 1 ) : NaN;
 	const va = variance( a ) / a.length, vb = variance( b ) / b.length;
 	const se = Math.sqrt( va + vb );
 	const df = se > 0 ? Math.round( ( va + vb ) ** 2 / ( ( a.length > 1 ? va * va / ( a.length - 1 ) : 0 ) + ( b.length > 1 ? vb * vb / ( b.length - 1 ) : 0 ) ) ) : a.length + b.length - 2;
 	const d = mean( b ) - mean( a );
-	const ci = t95( Math.max( 1, df ) ) * se;
+	return { d, ci: t95( Math.max( 1, df ) ) * se };
+
+}
+
+// B - A over slices (or blocks): the mean difference, its 95 % interval and the larger range of
+// either side (the old mode's noise)
+function delta( a, b ) {
+
+	a = a.filter( ( x ) => Number.isFinite( x ) );
+	b = b.filter( ( x ) => Number.isFinite( x ) );
+	if ( ! a.length || ! b.length ) return { a: null, b: null, delta: null, ci: null, noise: null, significant: false };
+	const { d, ci } = welch( a, b );
 	const noise = Math.max( Math.max( ...a ) - Math.min( ...a ), Math.max( ...b ) - Math.min( ...b ) );
 	return { a: r2( mean( a ) ), b: r2( mean( b ) ), delta: r2( d ), ratio: ratio( mean( a ), mean( b ) ), ci: r2( ci ), noise: r2( noise ), significant: Number.isFinite( ci ) && Math.abs( d ) > ci };
 
@@ -1418,6 +1442,38 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 // The page (A or B) each browser page of an A/B shows, to name it on its errors
 const pageNames = new WeakMap();
 
+// The primary delta of a compare (the one the summary leads with) in one slice's stats
+const primaryMetric = ( timestamps ) => DISPLAY ? { name: 'late frames', of: ( s ) => lateShare( s.display ) } :
+	timestamps ? { name: 'GPU busy', of: ( s ) => s.gpu } : { name: 'frame interval median', of: ( s ) => s.interval };
+
+// Adaptive slices (see MIN_SLICES): after a balanced block, whether the scene has its answer. Returns
+// the stop ({ slices, reason: 'clear' | 'narrow', delta, ci }) or null to go on.
+async function stopCheck( scene, timestamps, windows, frames, n ) {
+
+	const metric = primaryMetric( timestamps );
+	const values = [];
+	for ( const v of [ 0, 1 ] ) {
+
+		const mine = windows[ v ].filter( ( w ) => w.scene === scene );
+		// the display's figures are in the windows; frame stats need the slices' frames in
+		if ( ! DISPLAY ) await frames[ v ].settle( Math.max( ...mine.map( ( w ) => w.t1 ) ) );
+		values.push( mine.map( ( w ) => metric.of( w.display ? { display: w.display } : sliceStats( frames[ v ].in( w.t0, w.t1 ) ) ) ) );
+
+	}
+	const [ a, b ] = values.map( ( list ) => list.filter( Number.isFinite ) );
+	if ( ! a.length || ! b.length ) return null;
+	const { d, ci } = welch( a, b );
+	if ( ! Number.isFinite( ci ) ) return null;
+	const found = { slices: n, delta: r3( d ), ci: r3( ci ), metric: metric.name };
+	if ( Math.abs( d ) - ci >= STOP_MARGIN ) return { ...found, reason: 'clear' };
+	if ( Math.min( a.length, b.length ) >= 4 && ci <= STOP_WIDTH ) return { ...found, reason: 'narrow' };
+	return null;
+
+}
+
+const stopText = ( stop ) => ! stop ? '' : stop.reason === 'max' ? `${ stop.slices } slices` :
+	`${ stop.slices } of ${ SLICES } slices (${ stop.metric } ${ stop.delta > 0 ? '+' : '' }${ stop.delta } ± ${ stop.ci }: ${ stop.reason === 'clear' ? `clears zero by ${ STOP_MARGIN } or more` : `within ± ${ STOP_WIDTH }` })`;
+
 // compare in page mode: A and B in two pages of one browser, measured in alternating slices with
 // the other page stopped. Fills `outs` (A's and B's runs: each scene's slices and its frames pooled)
 // as each scene finishes. While a page stands stopped its dynamic scale's clock stands still too
@@ -1523,7 +1579,8 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 
 		}
 		if ( k === 0 ) switches[ scene ] = compile;
-		for ( let i = 0; i < SLICES; i ++ ) {
+		let stop = null;
+		for ( let i = 0; i < SLICES && ! stop; i ++ ) {
 
 			const v = 1 - ORDER[ i % ORDER.length ];
 			const switched = active !== v;
@@ -1542,9 +1599,11 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			await motion;
 			windows[ v ].push( { scene, slice: i, t0, t1, display: display ? await display.stop( t0, t1 ) : undefined } );
 			progress();
+			if ( i + 1 === SLICES ) stop = { slices: i + 1, reason: 'max' };
+			else if ( ( i + 1 ) % 4 === 0 && i + 1 >= MIN_SLICES ) stop = await stopCheck( scene, timestamps, windows, frames, i + 1 );
 
 		}
-		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ SLICES } slices` );
+		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ stopText( stop ) }` );
 		if ( k < REPEAT - 1 ) continue;
 		// the scene's last repetition is done: its results, once both pages' frames are in
 		const scaleLogs = SCALE_LOG ? [ await scaleChanges( pages[ 0 ] ), await scaleChanges( pages[ 1 ] ) ] : null;
@@ -1556,6 +1615,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			const r = { ...summarise( pooled ), switch: switches[ scene ][ v ], gpuIdle: gpuIdle.idle?.mean ?? null, contended: gpuIdle.contended,
 				slices: mine.map( ( w ) => ( { ...sliceStats( frames[ v ].in( w.t0, w.t1 ) ), ...( w.display ? { display: w.display } : {} ) } ) ) };
 			if ( DISPLAY ) r.display = poolDisplay( mine.map( ( w ) => w.display ) );
+			r.stop = stop;
 			if ( RAW ) r.raw = pooled;
 			if ( SCALE_LOG ) r.scaleLog = { changes: scaleLogs[ v ], offSlices: offSlices[ v ].filter( ( o ) => o.scene === scene ) };
 			outs[ v ].scenes[ scene ] = r;
@@ -2120,7 +2180,7 @@ async function main() {
 
 				}
 				meta.compare = TOGGLE ? { A: `${ URL_A } with on = false`, B: `${ URL_A } with on = true`, toggle: TOGGLE, block: BLOCK, blocks: BLOCKS, lag: LAG } :
-					{ A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ], slices: SLICES, slice: SLICE, settle: SETTLE };
+					{ A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ], slices: SLICES, minSlices: MIN_SLICES, stopMargin: STOP_MARGIN, stopWidth: STOP_WIDTH, slice: SLICE, settle: SETTLE };
 				meta.timestamps = TIMESTAMP_MODE === 'both' ? 'both' : tsModes[ 0 ];
 				const renderAt = ( s ) => s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
 				meta.render = renderAt( runs.A[ 0 ].loads[ 0 ]?.startup );
@@ -2295,6 +2355,8 @@ function sliceReport( A, B ) {
 		const groups = new Set( [ ...a, ...b ].flatMap( ( s ) => Object.keys( s.groups ) ) );
 		report[ scene ] = {
 			slices: [ a.length, b.length ], frames: [ A.scenes[ scene ].frames, B.scenes[ scene ].frames ],
+			// adaptive slices: the slices the scene took and why it stopped
+			...( A.scenes[ scene ].stop ? { stop: A.scenes[ scene ].stop } : {} ),
 			gpu: metric( ( s ) => s.gpu ), gpuInterval: metric( ( s ) => s.gpuInterval ),
 			median: metric( ( s ) => s.interval ), p95: metric( ( s ) => s.p95 ), js: metric( ( s ) => s.js ),
 			// on the display: the share of late frames (intervals longer than the pace) per slice
@@ -2317,7 +2379,8 @@ function sliceMarkdown( meta, reports ) {
 
 	const c = meta.compare;
 	const how = meta.mode === 'toggle' ? `in one page: \`${ c.toggle }\` applied every ${ c.block } frames, ${ c.blocks } blocks per scene (A B B A B A A B); GPU figures drop 2 frames after a change, frame intervals ${ c.lag }` :
-		`two pages in one browser, ${ c.slices } slices of ${ c.slice } s per scene (B A A B A B B A), each after the other page stopped and drained and this one ran ${ c.settle } s`;
+		`two pages in one browser, ${ c.minSlices < c.slices ? `${ c.minSlices } to ${ c.slices }` : c.slices } slices of ${ c.slice } s per scene (B A A B A B B A), each after the other page stopped and drained and this one ran ${ c.settle } s` +
+		( c.minSlices < c.slices ? ` (adaptive: after each block of 4 from ${ c.minSlices } slices on, a scene stopped once its leading delta's interval cleared zero by ${ c.stopMargin } or was within ± ${ c.stopWidth }, the latter with 4 slices a side)` : '' );
 	const lines = [ `# Frame profile ${ meta.mode === 'toggle' ? 'toggle' : 'compare' }: ${ meta.label }`, '',
 		`A: ${ c.A }${ c.evalA ? ` (eval ${ c.evalA })` : '' }`, `B: ${ c.B }${ c.evalB ? ` (eval ${ c.evalB })` : '' }`, '',
 		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; render at load ${ meta.renderB && meta.renderB !== meta.render ? `A ${ meta.render ?? '?' }, B ${ meta.renderB }` : meta.render ?? '?' }; ${ how }` +
@@ -2341,6 +2404,8 @@ function sliceMarkdown( meta, reports ) {
 
 		}
 		lines.push( '' );
+		const stops = Object.entries( report ).filter( ( [ , r ] ) => r.stop );
+		if ( stops.length && c.minSlices < c.slices ) lines.push( `Slices per scene: ${ stops.map( ( [ scene, r ] ) => `${ scene } ${ r.stop.slices }${ r.stop.reason === 'max' ? ' (all)' : ` (${ r.stop.metric } ${ r.stop.delta > 0 ? '+' : '' }${ fmt( r.stop.delta ) } ± ${ fmt( r.stop.ci ) }: ${ r.stop.reason === 'clear' ? 'cleared zero' : 'narrow' })` }` ).join( '; ' ) }.`, '' );
 		if ( late ) lines.push( 'Late frames: the share of the intervals between the frames the compositor presented (else those the scene rendered) longer than the pace (the frame pacer\'s refreshes per frame, one without it), per slice.', '' );
 		const compiles = Object.entries( report ).map( ( [ scene, r ] ) => {
 
