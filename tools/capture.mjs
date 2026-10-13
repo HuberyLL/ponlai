@@ -27,6 +27,8 @@
 // (tools/parity/views.mjs) as `crops` when it is set, and the profile slot it ran in (`slot`).
 // --eval may be given more than once: each runs in the page in order, awaited (tools/parity's
 // capture-set passes the view's own first, then any given after its `--`).
+// The GPU lock is taken once the page has its world (see "The slot after the world" below; the
+// load's goto waits for the DOM, not the load event, which waits for the gate).
 // A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
 // a running one, or --exclusive, takes it to itself, since its frame times are reported too.
 // A paused page of the temporal modes (aa=taa|taau|gt) shows its rest image once that has
@@ -64,6 +66,20 @@
 //   longer lease gives the set little more (the timing runs still alternate with it) and delays every
 //   run of a series by as much. --lease 0 frees the slot after every view, as before. Nobody waiting,
 //   the slot is kept for the whole set. The lease changes when views run, never what they render.
+// - The slot after the world: a load takes its slot only once the page has its world. Up to then the
+//   page's GPU use is held back: an init script gates `GPUAdapter.requestDevice`, so the page
+//   asks for its adapter (the quality choice reads its name) and starts its world, then waits in
+//   the renderer's start with no device, no render, no compile; the tool waits, without a slot,
+//   for `window.__PONLAI_WORLD__.ready` (src/world/WorldStart.ts, debug pages), then takes the slot
+//   and opens the gate, and the page sets up the sky, textures and pipelines, renders and is shot
+//   under it as before. It used to take the slot before the load, so on a grown island a load held a
+//   shared slot through its CPU world generation (7-35 s cold on a grown island) with the GPU nearly idle. The production
+//   bundle starts the world after the quality choice's adapter request (a top-level await), which
+//   is why the gate is the device, not the adapter. The cost: the GPU set-up no longer overlaps the
+//   world's generation, so a load takes that much longer from end to end. The world wait has its
+//   own deadline (five times --timeout); a page without the marker (an older build) takes the slot
+//   once it asks for its device, so its world is generated under the slot as before. The JSON's
+//   `page.worldMs` is the load's time to its world. A jump has no load and is unchanged.
 // - A view that fails (a timeout, a page or console error, a crash, no answer within the view's
 //   deadline: three times --timeout plus a minute) ends the worker: the page is not trusted after
 //   it. capture-set retries that view (--retries) and the views still to come on a fresh page.
@@ -94,6 +110,8 @@ const baseUrl = opt( 'url', 'http://127.0.0.1:5190/' );
 const sampleCount = Number( opt( 'samples', 1 ) );
 const waitFor = opt( 'wait-for', '' );
 const timeout = Number( opt( 'timeout', 60000 ) );
+// a load's wait for its world, without the slot (generous: a cold grown island under load)
+const worldTimeout = timeout * 5;
 const frameCount = Math.max( 1, Number( opt( 'frames', 1 ) ) );
 const frameEvery = Math.max( 1, Number( opt( 'every', 1 ) ) );
 const verbose = args.includes( '--verbose' );
@@ -125,7 +143,40 @@ async function openPage( viewport ) {
 	page.on( 'crash', () => current.errors.push( 'pageerror: the page crashed' ) );
 	page.on( 'response', ( r ) => { if ( r.status() >= 400 ) current.failures.push( `${ r.status() } ${ r.url() }` ); } );
 	page.on( 'requestfailed', ( r ) => current.failures.push( `${ r.failure()?.errorText } ${ r.url() }` ) );
-	return { capture, page, begin: () => ( current = { errors: [], failures: [] } ) };
+	// the GPU gate (see the header, "The slot after the world"): a load gets its GPU device, and so
+	// does any GPU work, only once the gate is opened (`asked`: the page has asked for it)
+	await page.addInitScript( () => {
+
+		if ( ! window.GPUAdapter || window !== window.top ) return;
+		let open;
+		const gate = new Promise( ( resolve ) => { open = resolve; } );
+		const state = window.__PONLAI_GPU_GATE__ = { open: () => open(), asked: false };
+		const proto = GPUAdapter.prototype, requestDevice = proto.requestDevice;
+		proto.requestDevice = async function ( ...a ) {
+
+			state.asked = true;
+			await gate;
+			return requestDevice.apply( this, a );
+
+		};
+
+	} );
+	return { capture, page, begin: () => ( current = { errors: [], failures: [] } ), record: () => current };
+
+}
+
+/** A fresh load of `url` up to its world, without the GPU (see the header, "The slot after the world"):
+ * returns the time it took (ms), or null on a page that does not say when its world is in. */
+async function loadToWorld( page, url ) {
+
+	const started = Date.now();
+	// (not the load event: the page's top-level awaits wait for the gate)
+	await page.goto( url, { waitUntil: 'domcontentloaded', timeout: worldTimeout } );
+	// the world in, or the device asked for (the renderer's start, after the world's module has run)
+	// on a page without the marker
+	await page.waitForFunction( () => window.__PONLAI_WORLD__?.ready || ( ! window.__PONLAI_WORLD__ && window.__PONLAI_GPU_GATE__?.asked ),
+		null, { timeout: worldTimeout, polling: 100 } );
+	return await page.evaluate( () => window.__PONLAI_WORLD__ !== undefined ) ? Date.now() - started : null;
 
 }
 
@@ -134,16 +185,17 @@ const failed = ( record ) => record.errors.some( ( e ) => e.startsWith( 'pageerr
 // the renderer's frame counter (three's animation loop: rendered frames only)
 const renderedFrame = ( page ) => page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
 
-/** Brings the page to the view (`load`: a fresh load of `url`; `jump`: the scene jump to `query`),
- * waits until it is ready and shoots it into `<out>.png` (and further frames), `<out>.json`.
- * `pageInfo` (async) adds the JSON's `page`. Returns { out, ready, diag, record }. */
+/** Brings the page to the view (`load`: the fresh load of `url` loadToWorld started, its GPU gate
+ * opened; `jump`: the scene jump to `query`), waits until it is ready and shoots it into `<out>.png`
+ * (and further frames), `<out>.json`, with the view's error record (`session.begin()`, called
+ * before the load). `pageInfo` (async) adds the JSON's `page`. Returns { out, ready, diag, record }. */
 async function captureView( session, { url, query, evals, out, mode, pageInfo = null } ) {
 
 	const { capture, page } = session;
-	const record = session.begin();
+	const record = session.record();
 	if ( mode === 'load' ) {
 
-		await page.goto( url );
+		await page.evaluate( () => window.__PONLAI_GPU_GATE__?.open() );
 		await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__, null, { timeout } );
 
 	} else {
@@ -273,10 +325,13 @@ if ( ! worker ) {
 	const query = opt( 'q', 'paused&t=12&dpr=1' );
 	const url = `${ baseUrl }?${ query }`;
 	await mkdir( 'artifacts/captures', { recursive: true } );
-	await acquireGpuLock( `capture ${ name }`, { shared: sharedFor( query ) } );
 	const session = await openPage( { viewport: { width: W, height: H }, deviceScaleFactor: Number( opt( 'scale', 1 ) ) } );
 	try {
 
+		// the world without the slot, then the rest under it (see the header)
+		session.begin();
+		await loadToWorld( session.page, url );
+		await acquireGpuLock( `capture ${ name }`, { shared: sharedFor( query ) } );
 		const shot = await captureView( session, { url, query, evals: argEvals, out: `artifacts/captures/${ name }`, mode: 'load' } );
 		console.log( report( shot ) );
 		if ( failed( shot.record ) ) process.exitCode = 1;
@@ -316,6 +371,23 @@ if ( ! worker ) {
 			const mode = index === 0 ? 'load' : 'jump';
 			const url = `${ baseUrl }?${ query }`;
 			const started = Date.now();
+			session.begin();
+			// a load: its world first, without the slot (see the header, "The slot after the world")
+			let worldMs = 0;
+			if ( mode === 'load' ) {
+
+				try {
+
+					worldMs = await loadToWorld( session.page, url ) ?? 0;
+
+				} catch ( error ) {
+
+					await send( { type: 'shot', key, mode, from: previous, seconds: ( Date.now() - started ) / 1000, lockSeconds: 0, ok: false, log: `${ key }: its world did not load: ${ error.message ?? error }` } );
+					break;
+
+				}
+
+			}
 			// the slot: kept from the view before while the lease allows (see the header), else queued for
 			const { waitMs: lockMs, kept } = lease > 0 ? await leaseGpuLock( `capture ${ key }`, { shared: sharedFor( query ), budget: lease } )
 				: { waitMs: await acquireGpuLock( `capture ${ key }`, { shared: sharedFor( query ) } ), kept: false };
@@ -325,7 +397,7 @@ if ( ! worker ) {
 			try {
 
 				const shot = await within( captureView( session, { url, query, evals: [ ...evals, ...argEvals ], out, mode,
-					pageInfo: async () => ( { visit: index, mode, from: previous, pid: process.pid, lockMs, ...( kept ? { lockKept: true } : {} ), ms: Date.now() - started - lockMs, memory: await pageMemory( session.page ) } ) } ), viewDeadline, `view ${ key }` );
+					pageInfo: async () => ( { visit: index, mode, from: previous, pid: process.pid, ...( mode === 'load' ? { worldMs } : {} ), lockMs, ...( kept ? { lockKept: true } : {} ), ms: Date.now() - started - worldMs - lockMs, memory: await pageMemory( session.page ) } ) } ), viewDeadline, `view ${ key }` );
 				result = { ok: ! failed( shot.record ), log: report( shot ) };
 
 			} catch ( error ) {
@@ -344,7 +416,7 @@ if ( ! worker ) {
 				await send( { type: 'page', jump, marker } );
 
 			}
-			await send( { type: 'shot', key, mode, from: previous, seconds: ( Date.now() - started - lockMs ) / 1000, lockSeconds: lockMs / 1000, ...result } );
+			await send( { type: 'shot', key, mode, from: previous, seconds: ( Date.now() - started - worldMs - lockMs ) / 1000, lockSeconds: lockMs / 1000, worldSeconds: worldMs / 1000, ...result } );
 			// a failed view leaves a page not to be trusted; without the jump, a page per view
 			if ( ! result.ok || ! jump || onePerPage ) { releaseGpuLock(); break; }
 			previous = key;

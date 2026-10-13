@@ -261,7 +261,12 @@ request, or a shared one when every slot is taken) and it has held it for its le
 (capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view), so a set behind
 back-to-back timing runs advances about four views per run instead of one, and a timing run waits
 at most 20 s plus the view in flight for it (a low page gives its slot to a normal shared request
-at the next view); capture-clip.mjs holds a slot per clip. Under a
+at the next view); capture-clip.mjs holds a slot per clip. A capture that loads a page (capture.mjs,
+and the first view of a capture-set page) takes its slot only once the page has generated its world:
+until then it holds the page's GPU device back (the page waits in `requestDevice`), so the world's
+CPU work in its workers (tens of seconds when it is not cached) runs without a
+slot and without GPU work, and the slot covers the GPU set-up, warm-up and shot (a page that does
+not mark its world, `window.__PONLAI_WORLD__`, takes it at the renderer's start). Under a
 `run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
 from then on, so a wrapped orchestrator never holds a slot its own captures wait for. Exclusive and
 shared requests wait in one queue, in arrival order: an exclusive request lets the requests queued
