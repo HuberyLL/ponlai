@@ -499,6 +499,14 @@ under the user's home, `profile-frame --display` refuses without it, and scripts
 window call `requireDisplayAllowed` from the same module. Everything else runs headless; a headed
 run that is not allowed now is recorded as pending and run later in one batch.
 
+The gate is a switch, not a reason to go headed. A run is headed only for what a screen alone
+shows: how frames are paced and presented on the display (cadence, late frames), the frame pacer's
+rate, the dynamic scale under a player's drags, and the display tools' own tests, plus a
+milestone's final acceptance on those. Whether the GPU holds a budget, a change's cost per pass and
+tuning rounds run headless: headless GPU times match the display's within about 5 %. A headed run
+covers at most 3 scenes, and whoever dispatches work that includes one tells the user beforehand,
+as information rather than a question; the user may be at the screen.
+
 ## Frame profiler: `tools/profile-frame.mjs`
 
 ```
