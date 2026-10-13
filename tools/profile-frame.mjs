@@ -8,7 +8,7 @@
 // `--contended` measures anyway and marks the results contended.
 //
 //   node tools/profile-frame.mjs [url] [--scenes a,b | --scene a] [--w 1920 --h 1080 --scale 2]
-//        [--quality high] [--timestamps on|off|both] [--warmup s] [--seconds 7] [--orbit 3]
+//        [--quality high] [--timestamps on|off|both|auto] [--warmup s] [--seconds 7] [--orbit 3]
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s] [--contended]
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
@@ -66,14 +66,22 @@
 //   misses. Uncapped, a GPU-bound scene's p95 is mostly pacing noise (a sky that holds 60 Hz under
 //   vsync showed a p95 of 33.5 ms uncapped); with vsync the queue stays shallow and the intervals
 //   quantise to vblanks.
-// - acceptance (`--accept`, implies --vsync and, unless given, --timestamps both): a pass or fail
+// - acceptance (`--accept`, implies --vsync and, unless given, --timestamps auto): a pass or fail
 //   per scene for the 60 fps criterion. From the run without timestamps: the median and the p95
 //   within half a millisecond of `--target` (16.7), and no frame over 25 ms in the measured window
-//   (7 s by default); the p99, the maximum, and the GPU busy time of the run with timestamps are
+//   (7 s by default); the p99, the maximum, and the GPU busy time of a run with timestamps are
 //   reported beside the verdict. Other work on the GPU costs frames, so a scene measured while something
 //   else kept the GPU busy (contended: with --contended, or found at a later page load) that fails
 //   is INCONCLUSIVE, unless its own GPU busy time (median, with timestamps) is over the target,
-//   which no idle GPU would make up; one that passes is PASS (contended). The exit code stays 0 unless `--strict` is given, which exits 1 on a FAIL.
+//   which no idle GPU would make up; one that passes is PASS (contended). Contended means the run
+//   without timestamps was, since its frames are the ones judged. The exit code stays 0 unless
+//   `--strict` is given, which exits 1 on a FAIL.
+//   The run with timestamps decides no verdict on an idle GPU and only turns a contended failure
+//   into FAIL, so `auto` runs it for the scenes that did not pass (FAIL or INCONCLUSIVE), where the
+//   GPU busy time and the passes explain the failure; a run where every scene passes has none
+//   (about half the exclusive hold of `both`). A scene that passed reports no GPU busy time, no
+//   passes and no GPU hitches (its headroom under the frame): `--timestamps both` runs every scene
+//   twice as before, `off` never with timestamps.
 //   Headless 60 Hz does not show how a faster display paces the frames (see --display).
 // - scales (`--scales 1.5,1.25,1`): the run once per render scale (the page's `dpr` option), in one
 //   invocation, with a table of every scene at every scale (for the threshold where a scene holds
@@ -218,7 +226,8 @@ const EXTRA_Q = opt( 'q', '' );
 // player sees is the one without them; their per-pass split stays the reference for where the time
 // goes, and A/B deltas in one mode cancel the bias.
 // --accept: the 60 fps criterion per scene (see above), under vsync; frame intervals come from the
-// run without timestamps, the GPU busy time from the run with them
+// run without timestamps, the GPU busy time from a run with them (by default, `auto`, only of the
+// scenes that did not pass)
 const ACCEPT = flags.has( '--accept' );
 const VSYNC = flags.has( '--vsync' ) || ACCEPT || DISPLAY;
 // --strict: exit with 1 when an uncontended scene fails the acceptance (the verdicts are written
@@ -228,10 +237,13 @@ if ( STRICT && ! ACCEPT ) throw new Error( '--strict goes with --accept' );
 // the frame interval to hold (ms), the slack allowed on its median and p95 (vblank timestamps
 // jitter by a few tenths), and the longest frame allowed
 const TARGET = Number( opt( 'target', 16.7 ) ), TARGET_SLACK = 0.5, ACCEPT_MAX = 25;
-// (display mode: off, as a player's page runs; high's dynamic resolution keeps its own queries)
-const TIMESTAMP_MODE = opt( 'timestamps', ACCEPT ? 'both' : DISPLAY ? 'off' : 'on' );
-if ( ! [ 'on', 'off', 'both' ].includes( TIMESTAMP_MODE ) ) throw new Error( '--timestamps on | off | both' );
-if ( ACCEPT && TIMESTAMP_MODE === 'on' ) throw new Error( '--accept judges the frame rate a player sees: --timestamps both (the default) or off' );
+// (display mode: off, as a player's page runs; high's dynamic resolution keeps its own queries).
+// auto (--accept's default): every scene without timestamps, then the scenes that did not pass
+// again with them, for the GPU busy time that explains a failure (see the header)
+const TIMESTAMP_MODE = opt( 'timestamps', ACCEPT ? 'auto' : DISPLAY ? 'off' : 'on' );
+if ( ! [ 'on', 'off', 'both', 'auto' ].includes( TIMESTAMP_MODE ) ) throw new Error( '--timestamps on | off | both | auto' );
+if ( ACCEPT && TIMESTAMP_MODE === 'on' ) throw new Error( '--accept judges the frame rate a player sees: --timestamps auto (the default), both or off' );
+if ( TIMESTAMP_MODE === 'auto' && ! ACCEPT ) throw new Error( '--timestamps auto picks scenes by their acceptance verdict: it goes with --accept' );
 // --scales: render scales (the page's dpr option) to sweep in one invocation
 const SCALES = opt( 'scales', '' ).split( ',' ).map( ( x ) => x.trim() ).filter( Boolean ).map( Number );
 if ( SCALES.some( ( x ) => ! ( x > 0 ) ) ) throw new Error( '--scales takes a list of positive numbers, e.g. 1.5,1.25,1' );
@@ -1491,7 +1503,7 @@ function markdownProfile( meta, runs ) {
 
 	const lines = [ `# Frame profile: ${ meta.label }`, '', `${ meta.url } at ${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; ` +
 		`render ${ meta.render ?? '?' }; warm-up ${ meta.warmup } s, ${ meta.seconds } s measured per scene, ${ meta.motion === 'user' ? 'the camera dragged like a player\'s' : meta.motion === 'none' ? 'the camera still' : `orbit ${ meta.orbit } deg/s` }${ meta.display ? ', headed on the real display at its own refresh' : '' }; ` +
-		`GPU utilisation before the run ${ meta.gpuIdle?.idle?.mean ?? '?' } %${ meta.gpuIdle?.contended ? ` (CONTENDED: something else was rendering${ meta.gpuIdle.clients?.length ? `: ${ meta.gpuIdle.clients.map( ( c ) => `${ c.name.replace( / \(pid \d+\)/, '' ) } ${ c.percent } %` ).join( ', ' ) }` : '' })` : '' }; GPU timestamps ${ meta.timestamps === 'both' ? 'both (frame intervals without them, passes with them)' : meta.timestamps ? 'on' : 'off' }.`, '',
+		`GPU utilisation before the run ${ meta.gpuIdle?.idle?.mean ?? '?' } %${ meta.gpuIdle?.contended ? ` (CONTENDED: something else was rendering${ meta.gpuIdle.clients?.length ? `: ${ meta.gpuIdle.clients.map( ( c ) => `${ c.name.replace( / \(pid \d+\)/, '' ) } ${ c.percent } %` ).join( ', ' ) }` : '' })` : '' }; GPU timestamps ${ meta.timestamps === 'both' ? 'both (frame intervals without them, passes with them)' : meta.timestamps === 'auto' ? 'auto (frame intervals without them; passes with them for the scenes that did not pass, – for the others)' : meta.timestamps ? 'on' : 'off' }.`, '',
 		`Frame interval in ms (rAF to rAF, ${ meta.display ? 'at the display\'s refresh' : meta.vsync ? 'under vsync at 60 Hz' : 'uncapped' }). ` +
 		'GPU busy: the time the frame\'s passes add to the GPU\'s timeline (median); ' +
 		'GPU p95: the 95th percentile of the GPU\'s own frame-to-frame interval. JS: the tick\'s own work (median), without the time it was ' +
@@ -1503,7 +1515,7 @@ function markdownProfile( meta, runs ) {
 		const repeat = runs.filter( ( r ) => r.scale === run.scale ).indexOf( run );
 		if ( run.scale !== undefined && run.scale !== null ) lines.push( `## Render scale ${ run.scale }${ run.render ? ` (render ${ run.render })` : '' }${ runs.length > ( meta.scales?.length ?? 1 ) ? `, run ${ repeat + 1 }` : '' }`, '' );
 		else if ( runs.length > 1 ) lines.push( `## Run ${ k + 1 }`, '' );
-		const both = meta.timestamps === 'both';
+		const both = meta.timestamps === 'both' || meta.timestamps === 'auto';
 		lines.push( `| scene | median | p95 | p99 | max | >16.7 | >25 |${ both ? ' median (timestamps on) |' : '' } GPU busy | GPU p95 | JS | hitches frame / GPU | top passes (mean GPU ms) |`, `|---|---|---|---|---|---|---|${ both ? '---|' : '' }---|---|---|---|---|` );
 		for ( const [ scene, r ] of Object.entries( run.scenes ) ) {
 
@@ -1564,7 +1576,7 @@ function markdownProfile( meta, runs ) {
 
 		const a = meta.accept;
 		lines.push( '## Acceptance (60 fps)', '', `Pass: frame interval median and p95 at most ${ a.limit } ms (${ a.target } plus vblank jitter) and no frame over ${ a.maxFrame } ms in the ${ meta.seconds } s measured, ` +
-			`from the run ${ meta.timestampMode === 'on' && meta.hooks !== false ? 'with' : 'without' } GPU timestamps under vsync; p99, the maximum and the GPU busy time (median / p95, from the run with timestamps) are reported. ` +
+			`from the run ${ meta.timestampMode === 'on' && meta.hooks !== false ? 'with' : 'without' } GPU timestamps under vsync; p99, the maximum and the GPU busy time (median / p95, from the run with timestamps${ meta.timestamps === 'auto' ? ', which only the scenes that did not pass ran: – for a scene that passed' : '' }) are reported. ` +
 			'Headless 60 Hz shows whether the GPU holds 60 fps, not how a faster display paces the frames: check that with --display. ' +
 			'A contended scene (something else kept the GPU busy) that fails is INCONCLUSIVE, not FAIL, unless its GPU busy median is over the target: run it again on an idle GPU.', '',
 			`| ${ meta.scales ? 'render scale | ' : '' }scene | verdict | median | p95 | p99 | max | frames over ${ a.maxFrame } ms | GPU busy | frames' scale (with timestamps) | why |`, `|${ meta.scales ? '---|' : '' }---|---|---|---|---|---|---|---|---|---|` );
@@ -1682,7 +1694,8 @@ async function preload( page, dir, label, chrome ) {
 	let marker = {};
 	try { marker = JSON.parse( await readFile( markerFile, 'utf8' ) ); } catch { /* none yet */ }
 	renderScale = SCALES[ 0 ] ?? null;
-	const timestamps = TIMESTAMP_MODE !== 'off' && ! ( TIMESTAMP_MODE === 'both' && ! COMPARE && ! TOGGLE );
+	// (as the run's first load: profile runs in both and auto start without timestamps)
+	const timestamps = TIMESTAMP_MODE === 'on' || ( TIMESTAMP_MODE === 'both' && Boolean( COMPARE || TOGGLE ) );
 	const entries = [];
 	for ( const base of COMPARE ?? [ URL_A ] ) {
 
@@ -1831,8 +1844,8 @@ async function main() {
 
 			} else if ( ! COMPARE ) {
 
-				const run = ( timestamps, suffix ) => MODE === 'reload' ? runVariant( page, URL_A, opt( 'eval', '' ), log, plan( sceneNames ), suffix, timestamps ) :
-					runPage( page, URL_A, opt( 'eval', '' ), log, sceneNames, suffix, timestamps );
+				const run = ( timestamps, suffix, names = sceneNames ) => MODE === 'reload' ? runVariant( page, URL_A, opt( 'eval', '' ), log, plan( names ), suffix, timestamps ) :
+					runPage( page, URL_A, opt( 'eval', '' ), log, names, suffix, timestamps );
 				const runs = [];
 				for ( const scale of SCALES.length ? SCALES : [ null ] ) {
 
@@ -1850,6 +1863,18 @@ async function main() {
 							log( 'with timestamps (GPU time per pass)' );
 							const on = await run( true, suffix );
 							result = mergeModes( off, on );
+
+						} else if ( TIMESTAMP_MODE === 'auto' ) {
+
+							// the verdict rests on the frames without timestamps; the GPU busy time
+							// only explains a scene that did not pass (and tells a contended failure
+							// that no idle GPU would fix), so only those scenes run again with them
+							log( 'without timestamps (frame intervals)' );
+							const off = await run( false, suffix );
+							const again = Object.keys( off.scenes ).filter( ( scene ) => ! acceptance( off.scenes[ scene ] ).pass );
+							if ( again.length ) log( `with timestamps (GPU time per pass), the scenes that did not pass: ${ again.join( ', ' ) }` );
+							else log( 'every scene passed: no run with timestamps' );
+							result = mergeModes( off, again.length ? await run( true, suffix, again ) : { scenes: {}, loads: [] } );
 
 						} else {
 
@@ -1887,7 +1912,7 @@ async function main() {
 
 				}
 				const s = runs[ 0 ].loads.find( ( l ) => l.startup?.timestamps )?.startup ?? runs[ 0 ].loads[ 0 ]?.startup;
-				meta.timestamps = TIMESTAMP_MODE === 'both' ? 'both' : s?.timestamps;
+				meta.timestamps = TIMESTAMP_MODE === 'both' || TIMESTAMP_MODE === 'auto' ? TIMESTAMP_MODE : s?.timestamps;
 				meta.render = s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
 				result = { meta, json: () => ( { meta, runs, errors } ), markdown: () => markdownProfile( meta, runs ) };
 
@@ -2030,18 +2055,20 @@ function sliceMarkdown( meta, reports ) {
 }
 
 // --timestamps both: a scene's frame intervals (and frame hitches) from the run without timestamps,
-// everything else from the run with them, which keeps its own intervals under `withTimestamps`
+// everything else from the run with them, which keeps its own intervals under `withTimestamps`.
+// `contended` is the run without timestamps' (the frames a verdict judges). --timestamps auto: a
+// scene the run with timestamps left out keeps the run without them as it is (no GPU times).
 function mergeModes( off, on ) {
 
 	const scenes = {};
-	for ( const [ scene, r ] of Object.entries( on.scenes ) ) {
+	for ( const [ scene, o ] of Object.entries( off.scenes ) ) {
 
-		const o = off.scenes[ scene ];
-		scenes[ scene ] = {
+		const r = on.scenes[ scene ];
+		scenes[ scene ] = ! r ? o : {
 			...r, frames: o.frames, fps: o.fps, interval: o.interval, over16: o.over16, over25: o.over25, over25Count: o.over25Count, hitchThreshold: o.hitchThreshold, hitches: o.hitches,
-			js: o.js, jsWall: o.jsWall, submitWait: o.submitWait, waits: o.waits, outsideJs: o.outsideJs, outsideWait: o.outsideWait, contended: o.contended || r.contended, renderScale: o.renderScale,
+			js: o.js, jsWall: o.jsWall, submitWait: o.submitWait, waits: o.waits, outsideJs: o.outsideJs, outsideWait: o.outsideWait, contended: o.contended, renderScale: o.renderScale,
 			...( o.display ? { display: o.display, displayWithTimestamps: r.display } : {} ),
-			withTimestamps: { frames: r.frames, fps: r.fps, interval: r.interval, over16: r.over16, over25: r.over25, over25Count: r.over25Count, hitches: r.hitches, js: r.js, renderScale: r.renderScale },
+			withTimestamps: { frames: r.frames, fps: r.fps, interval: r.interval, over16: r.over16, over25: r.over25, over25Count: r.over25Count, hitches: r.hitches, js: r.js, renderScale: r.renderScale, contended: r.contended },
 			...( r.raw ? { raw: r.raw, rawWithoutTimestamps: o.raw } : {} ),
 		};
 
