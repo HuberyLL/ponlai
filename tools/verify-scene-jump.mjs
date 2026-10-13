@@ -2,7 +2,7 @@
 // a jump within one page must be the frame a fresh load of its query draws. It captures the views
 // both ways, in the layout of tools/parity/capture-set.mjs, so tools/parity/diff-set.py judges them:
 //
-//   node tools/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--views parity|taa|all|a,b,c]
+//   node tools/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--views parity|taa|all|normal|special|a,b,c]
 //       [--order list|reverse] [--from <view or query>]... [--between <view or query>]...
 //       [--suffix .repeat] [--quality high]
 //       [--aa mode] [--q "extra&query"] [--size 1728x1117@2] [--frames n] [--stable-* (as capture.mjs)]
@@ -58,7 +58,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { waitForScene, waitForStable, stableOptions, stopLoop } from './capture-browser.mjs';
-import { VIEWS, viewNames, viewEval } from './parity/views.mjs';
+import { VIEWS, viewEval, expandViews } from './parity/views.mjs';
 
 const argv = process.argv.slice( 2 );
 const flags = new Set( [ 'fresh', 'legacy' ] );
@@ -88,8 +88,7 @@ outDir = path.resolve( outDir );
 const views = ( () => {
 
 	const v = options.views ?? 'all';
-	if ( [ 'parity', 'taa', 'all' ].includes( v ) ) return viewNames( v );
-	const list = v.split( ',' ).filter( Boolean );
+	const list = expandViews( v );
 	const bad = list.filter( ( name ) => ! VIEWS[ name ] );
 	if ( bad.length ) { console.error( `unknown view ${ bad.join( ', ' ) }` ); process.exit( 2 ); }
 	return list;

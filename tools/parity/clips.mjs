@@ -32,7 +32,11 @@
 // Paused clips isolate the camera's motion over a frozen scene; running ones (the clock steps by
 // dt from t=12) add the scene's own motion: wind, sea, rain, the islander, lightning, the sun.
 //
-//   node tools/parity/clips.mjs list            -> clip names, one per line
+// Groups: `all`; `special`, the clips whose view is a special weather's (views.mjs: the storm, the
+// fog, the weather front), and `normal`, the rest. The view decides, so a clip and its view never
+// fall into different groups.
+//
+//   node tools/parity/clips.mjs list [all|normal|special]  -> clip names, one per line
 //   node tools/parity/clips.mjs show <clip>     -> the clip's definition as JSON
 //   node tools/parity/clips.mjs eval <clip>     -> the page js that installs window.__PONLAI_CLIP__
 import path from 'node:path';
@@ -103,7 +107,14 @@ export const CLIPS = {
 		about: 'a fast day (600 s) under a still camera: the sun map steps and cross-fades as the sun moves' },
 };
 
-export const clipNames = () => Object.keys( CLIPS );
+export const CLIP_GROUPS = [ 'all', 'normal', 'special' ];
+
+export function clipNames( group = 'all' ) {
+
+	if ( ! CLIP_GROUPS.includes( group ) ) throw new Error( `unknown clip group ${ group } (${ CLIP_GROUPS.join( ', ' ) })` );
+	return Object.keys( CLIPS ).filter( ( c ) => group === 'all' || ( VIEWS[ CLIPS[ c ].view ].special === true ) === ( group === 'special' ) );
+
+}
 
 // The ground truth's frames (plan section 3.3): every frame of a clip of up to 60 frames, else
 // every 4th, plus the clip's `gtDense` runs [ first, last ] where a gate reads single frames or
@@ -183,9 +194,9 @@ window.__PONLAI_CLIP__ = { name: ${ JSON.stringify( name ) }, frames: ${ frames 
 if ( process.argv[ 1 ] && path.resolve( process.argv[ 1 ] ) === fileURLToPath( import.meta.url ) ) {
 
 	const [ cmd, name ] = process.argv.slice( 2 );
-	if ( cmd === 'list' ) console.log( clipNames().join( '\n' ) );
+	if ( cmd === 'list' ) console.log( clipNames( name ).join( '\n' ) );
 	else if ( cmd === 'show' && CLIPS[ name ] ) console.log( JSON.stringify( { ...CLIPS[ name ], viewQuery: VIEWS[ CLIPS[ name ].view ].q, gt: gtSampling( CLIPS[ name ] ) }, null, 2 ) );
 	else if ( cmd === 'eval' && CLIPS[ name ] ) console.log( clipEval( name ) );
-	else { console.error( 'usage: node clips.mjs list | show <clip> | eval <clip>' ); process.exitCode = 2; }
+	else { console.error( 'usage: node clips.mjs list [all|normal|special] | show <clip> | eval <clip>' ); process.exitCode = 2; }
 
 }
