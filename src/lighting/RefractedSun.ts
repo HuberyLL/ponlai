@@ -169,7 +169,7 @@ function submergedTriangles( source: THREE.Mesh, level: number ): THREE.BufferGe
 	const subset = new THREE.BufferGeometry();
 	subset.setAttribute( 'position', position );
 	subset.setIndex( position.count > 65535 ? new THREE.Uint32BufferAttribute( kept, 1 ) : new THREE.Uint16BufferAttribute( kept, 1 ) );
-	return subset;
+	return sourceBounds( subset, source );
 
 }
 
@@ -180,7 +180,7 @@ function givenTriangles( source: THREE.Mesh, index: Uint32Array | null ): THREE.
 	const subset = new THREE.BufferGeometry();
 	subset.setAttribute( 'position', source.geometry.getAttribute( 'position' ) );
 	subset.setIndex( new THREE.BufferAttribute( index, 1 ) );
-	return subset;
+	return sourceBounds( subset, source );
 
 }
 
@@ -196,6 +196,19 @@ function allTriangles( source: THREE.Mesh ): THREE.BufferGeometry | null {
 	subset.setAttribute( 'position', source.geometry.getAttribute( 'position' ) );
 	subset.setIndex( index );
 	subset.userData.sharedIndex = true;
+	return sourceBounds( subset, source );
+
+}
+
+// A subset culled by its source's bounds, which hold its triangles: found by the frustum test at
+// its first draw, they would read every vertex of the source (the whole sea floor's: tens of
+// milliseconds in the frame a grown island swaps its floor in, Growth.ts). Culling by either is
+// conservative, so the map is the same.
+function sourceBounds( subset: THREE.BufferGeometry, source: THREE.Mesh ): THREE.BufferGeometry {
+
+	const geometry = source.geometry;
+	if ( geometry.boundingSphere ) subset.boundingSphere = geometry.boundingSphere.clone();
+	if ( geometry.boundingBox ) subset.boundingBox = geometry.boundingBox.clone();
 	return subset;
 
 }
