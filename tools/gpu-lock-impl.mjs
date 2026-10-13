@@ -572,50 +572,58 @@ function takeOverSlot( ancestor, label, reason = 'handed' ) {
 }
 
 // The mutex serialises joining and leaving the shared lock (and repairing it). Held for a few
-// file operations only; one whose holder is gone, or older than 10 s, is broken.
-async function withMutex( fn ) {
+// file operations only; one whose holder is gone, or older than 10 s, is broken. Its holder
+// removes it only while it is still its own (owner.json names it): a holder stalled past 10 s
+// whose mutex another process broke and took must not remove that one's.
+const MUTEX_OWNER = path.join( MUTEX, 'owner.json' );
+// true when this process now holds the mutex; a stale one is broken on the way
+function tryMutex() {
 
-	for ( ;; ) {
-
-		try {
-
-			mkdirSync( MUTEX );
-			break;
-
-		} catch ( error ) {
-
-			if ( error.code !== 'EEXIST' ) throw error;
-			const holder = readJson( path.join( MUTEX, 'owner.json' ) );
-			let age = 0;
-			try { age = Date.now() - statSync( MUTEX ).mtimeMs; } catch { continue; }
-			if ( ( holder && ! alive( holder.pid ) ) || age > 10000 ) rmSync( MUTEX, { recursive: true, force: true } );
-			else await new Promise( ( resolve ) => setTimeout( resolve, 20 ) );
-
-		}
-
-	}
 	try {
 
-		writeFileSync( path.join( MUTEX, 'owner.json' ), JSON.stringify( { pid: process.pid } ) );
-		return fn();
+		mkdirSync( MUTEX );
+		writeFileSync( MUTEX_OWNER, JSON.stringify( { pid: process.pid } ) );
+		return true;
 
-	} finally {
+	} catch ( error ) {
 
-		rmSync( MUTEX, { recursive: true, force: true } );
+		if ( error.code !== 'EEXIST' ) throw error;
+		const holder = readJson( MUTEX_OWNER );
+		let age = 0;
+		try { age = Date.now() - statSync( MUTEX ).mtimeMs; } catch { return false; }
+		if ( ( holder && ! alive( holder.pid ) ) || age > 10000 ) rmSync( MUTEX, { recursive: true, force: true } );
+		return false;
 
 	}
 
 }
-// the synchronous variant, for the exit handler (which cannot wait); it breaks a busy mutex after 2 s
+function leaveMutex() {
+
+	if ( readJson( MUTEX_OWNER )?.pid === process.pid ) rmSync( MUTEX, { recursive: true, force: true } );
+
+}
+async function withMutex( fn ) {
+
+	while ( ! tryMutex() ) await new Promise( ( resolve ) => setTimeout( resolve, 20 ) );
+	try { return fn(); } finally { leaveMutex(); }
+
+}
+// The synchronous variant, for the exit handler (which cannot wait for an event loop). It tries for
+// 2 s, breaking a stale mutex as withMutex does; a mutex still busy then (its holder alive, younger
+// than 10 s) is left alone, and the release goes ahead without it rather than leave this process's
+// hold behind (a release only removes this process's own files; repairShared then rechecks).
 function withMutexSync( fn ) {
 
 	const until = Date.now() + 2000;
-	while ( Date.now() < until ) {
+	const nap = new Int32Array( new SharedArrayBuffer( 4 ) );
+	let own = tryMutex();
+	while ( ! own && Date.now() < until ) {
 
-		try { mkdirSync( MUTEX ); break; } catch ( error ) { if ( error.code !== 'EEXIST' ) throw error; }
+		Atomics.wait( nap, 0, 0, 5 );
+		own = tryMutex();
 
 	}
-	try { return fn(); } finally { rmSync( MUTEX, { recursive: true, force: true } ); }
+	try { return fn(); } finally { if ( own ) leaveMutex(); }
 
 }
 
