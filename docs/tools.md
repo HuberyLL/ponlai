@@ -374,7 +374,7 @@ run that is not allowed now is recorded as pending and run later in one batch.
 ```
 node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
   [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
-  [--idle-wait s] [--contended]
+  [--idle-wait s] [--contended] [--hang s] [--scale-log]
   [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]
 ```
 
@@ -391,26 +391,41 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   the original method); every page keeps the generated island in IndexedDB (in the tool's own
   Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
   `worldCache=off`).
-- It holds the GPU lock exclusively only for what it measures. The browser starts before it, and a
+- It holds the GPU lock exclusively only for what it measures, and no browser while it queues: a
   build the profile has not loaded yet (a new bundle, port or browser version) is first loaded once
-  under a shared slot (the preload; skipped when no slot frees within `--preload-wait`, 60 s), so
-  the loads under the exclusive lock hit the world cache and the shader cache, as every run but a
-  build's first already did. The idle check that opens the run also stands for the first load's,
-  and the pages stop before the lock is released (the GPU name, the files and the browser's close
-  come after it). `wallSeconds` in profile.json is the time under the exclusive lock;
+  in a browser opened inside a shared slot and closed before the slot is released (the preload;
+  skipped when no slot frees within `--preload-wait`, 60 s), so the loads under the exclusive lock
+  hit the world cache and the shader cache, as every run but a build's first already did. The
+  run's own browser opens once the exclusive lock is held and the idle check has passed (a headed
+  window no longer sits on the screen, or dies, while the run queues). The idle check also stands
+  for the first load's, and the pages stop before the lock is released (the GPU name, the files
+  and the browser's close come after it). `wallSeconds` in profile.json is the time under the exclusive lock;
   `lockWaitSeconds`, `totalSeconds` and `preload` sit beside it.
 - When its opening idle check still finds another client keeping the GPU busy after
   `--idle-wait` seconds (20; 60 with `--mode reload`), it names the client, measures nothing and
   exits with 3, releasing the lock: a contended run's numbers prove nothing. Stop the client and
   run again, or pass `--contended` to measure anyway (results marked contended, as before). A
   later page load that finds the GPU busy still marks its results contended.
+- A scene that shows no progress for `--hang` seconds (180) is recorded as hung (profile.json
+  `meta.hung`, a section of summary.md): the browser is closed and opened again and the run goes
+  on with the scenes not finished yet; a second hang stops the run, with the finished scenes
+  written as usual. Each scene's results are also appended to `scenes.jsonl` in the output folder
+  as it finishes, so a run that dies otherwise still leaves what it measured.
 - `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
   other page stopped, and reports deltas with their 95 % interval, each page's render scale per
   scene (high's dynamic scale may settle higher on one side: compare the deltas with that in mind),
   and errors named by their page (`pageerror (page B): ...`). `--toggle "js"` A/Bs inside one
   page by applying the expression (with `s` = `window.__PONLAI__` and `on` false for A, true for
   B) every few frames, for example `--toggle "s.flags.myChange = on"` with a flag an optimisation
-  reads from `src/debug/DebugFlags.ts`. Both give B/A as a ratio beside the delta.
+  reads from `src/debug/DebugFlags.ts`. Both give B/A as a ratio beside the delta. While a page
+  of `--compare` stands stopped, its dynamic scale's clock stands still too (the debug hook
+  `dynamicClock`; older builds without it let their holds and bars run out during the other
+  page's slices).
+- `--scale-log` writes each page's dynamic-scale changes (time on the controller's clock, from and
+  to, the rule and, for the GPU's rules, the predicted and measured 90th percentile) per scene to
+  the output and to each scene's `scaleLog` in profile.json; in `--compare` also, per slice, how
+  long the page stood stopped, how far its controller's clock moved meanwhile and which of its
+  timers (holds, a failed step's bar, the contention hold) ran out.
 - `--accept` (vsync) judges the 60 fps criterion per scene: frame interval median and p95 within
   0.5 ms of 16.7 (`--target`) and no frame over 25 ms in the 7 s measured, from the run without
   timestamps, with the p99, the maximum and the GPU busy time reported beside it. A contended
