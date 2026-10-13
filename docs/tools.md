@@ -281,6 +281,9 @@ the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n 
 and `until( fn )` (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
 from `P`); `--init js` hooks the page before its scripts run. A production preview needs
 `debug` in the query. Common questions:
+`--load` loads every query after the first in a page of its own instead of jumping to it: the
+scene-jump contract covers the image, not the world's generation path, so use it to compare two
+freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
 
 - diagnostics and load timings: `--eval "D.timings" --eval "D.worldCache"`;
 - a uniform or a setting: `--eval "P.shared.wetness.value"`, `--eval "P.camera.position"`;
