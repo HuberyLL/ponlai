@@ -14,10 +14,11 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 // and tags for periodic work. Nothing else about the frame graph is assumed.
 //
 // - The GPU time comes from timestamp queries (`GpuFrameTimer`, or the frame profiler's own when it
-//   runs), as the time the GPU was busy with each frame: every pass charged from the previous
-//   pass's completion (or its own start, if later) to its end. A tile-based GPU stamps a pass's
-//   start when its vertex stage begins, long before the passes it reads have finished, so the raw
-//   intervals overlap; summed they come to several times the frame. Without timestamp queries the
+//   runs), as the time the GPU was busy with each frame: the union of its passes' intervals since
+//   the last frame's work ended (in the order they start, each charged from the latest end so far,
+//   or its own start, if later, to its end). A tile-based GPU stamps a pass's start when its vertex
+//   stage begins, long before the passes it reads have finished, so the raw intervals overlap;
+//   summed they come to several times the frame. Without timestamp queries the
 //   frame intervals steer it instead (`sampleInterval`).
 // - Each frame's time is split by pass: passes into targets sized from the render (the scene, its
 //   resolves and copies, the post chain, bloom's mips) and the rest (the canvas-sized upscale and
@@ -1200,7 +1201,7 @@ export class GpuFrameTimer {
 		const ready = [ ...this.frames.keys() ].filter( ( f ) => f < this.newest - 1 ).sort( ( a, b ) => a - b );
 		for ( const frame of ready ) {
 
-			const passes = this.frames.get( frame )!.sort( ( a, b ) => a[ 1 ] - b[ 1 ] );
+			const passes = this.frames.get( frame )!.sort( ( a, b ) => a[ 0 ] - b[ 0 ] );
 			this.frames.delete( frame );
 			this.reported = Math.max( this.reported, frame );
 			let cursor = this.lastEnd, busy = 0, pixel = 0;
