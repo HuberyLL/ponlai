@@ -528,6 +528,30 @@ Animation Hitches templates show when frames reached the display and what the GP
 --time-limit 10s --output <file>.trace`, then open it in Instruments). Extend our tools only for
 what these do not give (automation, A/B statistics, pass names).
 
+## Writing a tool
+
+- The header comment comes first: the usage line, what the tool guarantees (what it compares or
+  measures, and under which conditions), its rules with their reasons, and its outputs. Options
+  it does not know are an error, not ignored.
+- Output goes to files (images, JSON a script can read) with a short summary on stdout. Exit
+  codes mean something: 0 passed, 1 failed, and 3 for contended (the GPU was busy, nothing
+  measured). A long tool prints progress lines, so `job.mjs wait` shows where it is.
+- A tool that renders takes the GPU lock (`gpu-lock.mjs`): shared for paused captures and probes,
+  exclusive for timing. It holds the lock per piece of work where it can (`leaseGpuLock`), so a
+  long run gives way at its boundaries to a request ranked before it. It never holds a slot while
+  it does CPU work or waits for something else.
+- Readiness comes from the page, never from a fixed frame count or a sleep. Use
+  capture-browser's `waitForScene` and `waitForStable`, or the diagnostics' `settled`. A fixed
+  40-frame wait passed or failed by chance on a busy GPU.
+- Expensive results that depend only on the commit, the tool and the browser are stored and
+  reused through `parity/reference.mjs`; record in the key everything that changes them.
+- CPU-heavy node tools import `qos.mjs` first. Python tools declare their dependencies inline (PEP
+  723) and run with `uv run`; image metrics come from `parity/pixels.py`.
+- Tools are shared by every session's worktrees. A tool change goes to main promptly, and the
+  sessions using it are told. Older copies in other worktrees are not kept compatible: those
+  sessions update. The GPU lock runs the newest implementation on the machine, so a rule change
+  bumps its `LOCK_VERSION` (`gpu-lock-impl.mjs`).
+
 ## Other tools
 
 - `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water and wave
