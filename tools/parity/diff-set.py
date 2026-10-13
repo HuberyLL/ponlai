@@ -58,12 +58,29 @@ world generation share the CPU (--jobs 1 runs them one after the other). Each vi
 its PNGs once and keeps them as uint8; the output is the same as one view at a time, printed in view
 order. Window sums are exact integer sums on a coarse integral image (tolerance.window_sums), and
 every mean is an exact integer sum divided once, so no number depends on the order of summation.
+On macOS the process and its threads run with the application scheduling policy (tools/qos.mjs
+says why; see QOS below).
 """
 import argparse
 import json
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
+
+# The application scheduling policy on macOS (tools/qos.mjs says why): this process re-executes
+# itself in place under taskpolicy -a, and its pool threads ask for the user-initiated QoS, which
+# such a process is granted (threads do not inherit the main thread's).
+QOS = sys.platform == "darwin" and os.environ.get("PONLAI_QOS") != "off"
+if QOS and os.environ.get("PONLAI_QOS") != str(os.getpid()):
+    os.environ["PONLAI_QOS"] = str(os.getpid())
+    os.execv("/usr/sbin/taskpolicy", ["/usr/sbin/taskpolicy", "-a", sys.executable, *sys.orig_argv[1:]])
+
+
+def raise_thread():
+    if QOS:
+        import ctypes
+        ctypes.CDLL(None).pthread_set_qos_class_self_np(0x19, 0)  # QOS_CLASS_USER_INITIATED
+
 from io import BytesIO
 from pathlib import Path
 
@@ -365,7 +382,7 @@ elif a.temporal:
 else:
     print(f"{'view':24} {'ident':5} {'max':>4} {'mean':>8} " + " ".join(f"{'>' + str(l):>9}" for l in LEVELS) + "  pass")
 sys.stdout.flush()
-with ThreadPoolExecutor(max_workers=max(1, a.jobs)) as pool:
+with ThreadPoolExecutor(max_workers=max(1, a.jobs), initializer=raise_thread) as pool:
     # map() yields in view order: the table prints as the views finish, in order
     for v, (lines, r, row, ok) in zip(views, pool.map(compare, views)):
         print("\n".join(lines), flush=True)

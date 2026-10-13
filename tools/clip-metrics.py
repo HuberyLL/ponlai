@@ -158,7 +158,8 @@ that pair frames from the frames' luma. Every number is the same expression on t
 in one loop, so the output does not depend on the worker count (byte-identical metrics.json).
 Workers: --workers N, else the environment's CLIP_METRICS_WORKERS, else a quarter of the CPUs
 within 1 to 4 (the CPU is shared with captures, and baseline.mjs runs several metric runs at once);
-1 measures in the main process.
+1 measures in the main process. On macOS the main process and the workers run with the application
+scheduling policy (tools/qos.mjs says why; see QOS below).
 
 Outputs: <out>/metrics.json (per crop: test, msaa, ratio, per-frame series and verdicts; `gates`:
 the failed count by kind) and <out>/metrics.md (a table), out defaulting to <test>/metrics.
@@ -170,6 +171,33 @@ import multiprocessing
 import os
 import sys
 from concurrent.futures import ProcessPoolExecutor
+
+# The application scheduling policy on macOS (tools/qos.mjs says why): the main process
+# re-executes itself in place under taskpolicy -a; the workers are new processes, which do not
+# inherit it, so they start through a shim that does the same (pool_context).
+QOS = sys.platform == 'darwin' and os.environ.get( 'PONLAI_QOS' ) != 'off'
+if QOS and __name__ == '__main__' and os.environ.get( 'PONLAI_QOS' ) != str( os.getpid() ):
+	os.environ[ 'PONLAI_QOS' ] = str( os.getpid() )
+	os.execv( '/usr/sbin/taskpolicy', [ '/usr/sbin/taskpolicy', '-a', sys.executable, *sys.orig_argv[ 1: ] ] )
+
+
+def pool_context():
+	ctx = multiprocessing.get_context( 'spawn' )
+	if QOS:
+		# written afresh into a private directory of this run (never a file found at a known path)
+		import atexit
+		import shlex
+		import shutil
+		import tempfile
+		folder = tempfile.mkdtemp( prefix='ponlai-qos-' )
+		atexit.register( shutil.rmtree, folder, True )
+		shim = os.path.join( folder, 'python.sh' )
+		with open( shim, 'w' ) as f:
+			f.write( f'#!/bin/sh\nPONLAI_QOS=$$ exec /usr/sbin/taskpolicy -a { shlex.quote( sys.executable ) } "$@"\n' )
+		os.chmod( shim, 0o700 )
+		ctx.set_executable( shim )
+	return ctx
+
 
 import numpy as np
 from PIL import Image
@@ -1229,7 +1257,7 @@ def main():
 		plans.append( { 'crop': crop, 'idx': idx, 'own_idx': own_idx, 'm': m, 'size': size, 'jobs': jobs } )
 	jobs = [ j for p in plans for j in p.get( 'jobs', [] ) ]
 	workers = max( 1, min( a.workers if a.workers is not None else default_workers(), len( jobs ) ) )
-	pool = ProcessPoolExecutor( max_workers=workers, mp_context=multiprocessing.get_context( 'spawn' ) ) if workers > 1 else None
+	pool = ProcessPoolExecutor( max_workers=workers, mp_context=pool_context() ) if workers > 1 else None
 	results = pool.map( frame_job, jobs ) if pool else map( frame_job, jobs )
 	for plan in plans:
 		crop = plan[ 'crop' ]
