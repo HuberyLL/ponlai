@@ -63,6 +63,8 @@
 // option, and the log says which condition failed. The checks capture on this sha's preview (the
 // reference URL above); --carry-url captures what A's store lacks for them from a preview of A;
 // --carry-recheck runs the spot checks again instead of reusing an earlier run's verdict.
+// A reference entry that is not stored, may not carry and has no URL to capture it from fails the
+// run with exit 1 before any capture starts, naming each such entry and why.
 //
 // Clips and rest frames are deterministic (the page's stepper), so captures take the GPU lock shared
 // (capture-clip.mjs takes it). Wall times go to --runs (or PARITY_RUNS) and into metrics.json.
@@ -254,6 +256,21 @@ async function capture( o, list, root ) {
 
 		carry = await planCarry( { from: o[ 'carry-from' ], to: o.sha, storeRoot: path.dirname( root ), targets: [ ...jobs, ...gtJobs ].filter( ( j ) => j.store ).map( ( j ) => ( { side: j.side, e: j.e } ) ),
 			url: refUrl, fromUrl: o[ 'carry-url' ], gtAa: o[ 'gt-aa' ], size: o.size, q: o.q, jobs: o.jobs, recheck: o[ 'carry-recheck' ] } );
+
+	}
+	// a reference entry that is not stored, may not carry and has no URL to capture it from fails
+	// its job only after every other capture: fail the run here instead, before any capture
+	if ( carry ) {
+
+		const missing = [ ...jobs, ...gtJobs ].filter( ( j ) => j.store && ( j.capture === false || ! refUrl ) && ! existsSync( path.join( j.dir, 'complete.json' ) ) )
+			.map( ( j ) => ( { j, c: carry.allows( j.side, j.e ) } ) ).filter( ( { c } ) => ! c.ok );
+		if ( missing.length ) {
+
+			for ( const { j, c } of missing ) console.error( `${ j.side } ${ j.e.key }: not carried (${ c.why }) and no reference URL to capture it from` );
+			console.error( `${ missing.length } reference entries have no source: pass --ref-url <a preview of ${ o.sha.slice( 0, 12 ) }>${ gtJobs.some( ( j ) => j.capture === false ) ? ' (and --gt)' : '' }; nothing was captured` );
+			process.exit( 1 );
+
+		}
 
 	}
 	const done = [];
