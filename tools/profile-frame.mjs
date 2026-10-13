@@ -26,6 +26,7 @@
 //        (two pages, alternating slices)
 //   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
 //   node tools/profile-frame.mjs --report <dir>/profile.json     (re-renders its summary.md)
+//   node tools/profile-frame.mjs --report <dir> | <dir>/scenes.jsonl  (an unfinished run's, see below)
 //   node tools/profile-frame.mjs --list
 //
 // The reference is a production build (`npm run build && npm run preview`, port 5191, the
@@ -57,7 +58,11 @@
 // as does a scene whose setup or placement throws in the page (a layout `place()` cannot read: the
 // meadow view once ended a whole --compare without a profile.json), and a second lost scene stops
 // the run with the finished scenes written (see guarded).
-// Every finished scene is also appended to <out>/scenes.jsonl as it finishes.
+// Every finished scene is also appended to <out>/scenes.jsonl as it finishes, and the meta known at
+// the start is written to <out>/meta.json; `--report <dir>` on a folder without a profile.json
+// rebuilds summary.md from them (and load.jsonl) with the same reports, marked unfinished, the
+// scenes missing a variant or pass listed and left out (see unfinishedReport). --report opens no
+// browser and takes no lock.
 // A page paused or pinned during the run stops it the same way: each page's `clockPaused` and
 // `scalePinned` (diagnostics) are read at its load (`?dpr` pins legitimately) and after every slice
 // or measured window, and a change stops the run with the finished scenes written (`meta.spoiled`)
@@ -583,9 +588,10 @@ const ratio = ( a, b ) => Number.isFinite( a ) && Number.isFinite( b ) && a !== 
 
 // The 60 fps criterion for one scene's results (frame intervals from the run without timestamps
 // when there was one): median and p95 within TARGET_SLACK of TARGET, no frame over ACCEPT_MAX.
-function acceptance( r ) {
+// (`target`: a run's own, when --report rebuilds an unfinished run's verdicts)
+function acceptance( r, target = TARGET ) {
 
-	const limit = TARGET + TARGET_SLACK;
+	const limit = target + TARGET_SLACK;
 	const reasons = [];
 	if ( ! ( r.interval.median <= limit ) ) reasons.push( `median ${ r.interval.median }` );
 	if ( ! ( r.interval.p95 <= limit ) ) reasons.push( `p95 ${ r.interval.p95 }` );
@@ -593,10 +599,10 @@ function acceptance( r ) {
 	const pass = reasons.length === 0, contended = Boolean( r.contended );
 	// a contended run's failure proves nothing (see the file's header) unless the scene's own GPU
 	// work already takes longer than a frame
-	const overBudget = r.gpu?.median > TARGET;
-	if ( ! pass && overBudget ) reasons.push( `gpu busy ${ r.gpu.median } over ${ TARGET }` );
+	const overBudget = r.gpu?.median > target;
+	if ( ! pass && overBudget ) reasons.push( `gpu busy ${ r.gpu.median } over ${ target }` );
 	return {
-		pass, verdict: pass ? contended ? 'PASS (contended)' : 'PASS' : contended && ! overBudget ? 'INCONCLUSIVE (contended)' : 'FAIL', reasons, target: TARGET, limit: r2( limit ),
+		pass, verdict: pass ? contended ? 'PASS (contended)' : 'PASS' : contended && ! overBudget ? 'INCONCLUSIVE (contended)' : 'FAIL', reasons, target, limit: r2( limit ),
 		median: r.interval.median, p95: r.interval.p95, p99: r.interval.p99, max: r.interval.max, framesOver25: r.over25Count, frames: r.frames,
 		// the GPU's busy time per frame, from the run with timestamps (null without one)
 		gpuBusy: r.gpu?.median ?? null, gpuBusyP95: r.gpu?.p95 ?? null, contended,
@@ -733,18 +739,31 @@ const loadRows = [];
 async function annotateLoads( runs, label = '' ) {
 
 	if ( ! timeline ) return;
-	const windows = ( r ) => r.slices ?? ( r.window ? [ r.window ] : [] );
-	const ends = runs.flatMap( ( run ) => Object.values( run.scenes ) ).flatMap( ( r ) => windows( r ) ).map( ( w ) => w.at?.[ 1 ] ).filter( Number.isFinite );
+	const ends = runs.flatMap( ( run ) => Object.values( run.scenes ) ).flatMap( ( r ) => loadWindows( r ) ).map( ( w ) => w.at?.[ 1 ] ).filter( Number.isFinite );
 	if ( ! ends.length ) return;
 	// the sample that covers the last window's end comes up to a second later
 	await timeline.until( Math.max( ...ends ) );
-	const options = { threshold: IDLE_THRESHOLD };
+	for ( const row of markLoads( runs, label, timeline.samples, IDLE_THRESHOLD ) ) {
+
+		loadRows.push( row );
+		if ( row.contended ) console.error( `[profile] ${ row.scene.padEnd( 20 ) }${ runs.length > 1 ? ` ${ row.run.slice( - 1 ) }` : '' } ${ row.contended } of ${ row.slices } slices contended (outside the run: GPU ${ row.gpu } %, CPU ${ row.cpu } %)${ row.flag ? ': the scene is marked contended' : '' }` );
+
+	}
+
+}
+const loadWindows = ( r ) => r.slices ?? ( r.window ? [ r.window ] : [] );
+// each scene's load from the samples, its rows for the summary's table; a scene the load marks is
+// contended (also run by --report on an unfinished run's load.jsonl: scenes.jsonl holds each scene
+// as it finished, before this)
+function markLoads( runs, label, samples, threshold ) {
+
+	const rows = [];
 	runs.forEach( ( run, i ) => {
 
 		for ( const [ scene, r ] of Object.entries( run.scenes ) ) {
 
 			if ( r.load ) continue;
-			const marked = markSlices( timeline.samples, windows( r ), options );
+			const marked = markSlices( samples, loadWindows( r ), { threshold } );
 			if ( ! marked.slices ) continue;
 			r.load = { cpu: marked.cpu, gpu: marked.gpu, slices: marked.slices, contended: marked.contended };
 			if ( marked.flag && ! r.contended ) {
@@ -753,12 +772,12 @@ async function annotateLoads( runs, label = '' ) {
 				r.contendedBy = 'load timeline';
 
 			}
-			loadRows.push( { scene, run: [ label, runs.length > 1 ? 'AB'[ i ] : '' ].filter( Boolean ).join( ' ' ), ...r.load, flag: marked.flag } );
-			if ( marked.contended ) console.error( `[profile] ${ scene.padEnd( 20 ) }${ runs.length > 1 ? ` ${ 'AB'[ i ] }` : '' } ${ marked.contended } of ${ marked.slices } slices contended (outside the run: GPU ${ marked.gpu } %, CPU ${ marked.cpu } %)${ marked.flag ? ': the scene is marked contended' : '' }` );
+			rows.push( { scene, run: [ label, runs.length > 1 ? 'AB'[ i ] : '' ].filter( Boolean ).join( ' ' ), ...r.load, flag: marked.flag } );
 
 		}
 
 	} );
+	return rows;
 
 }
 // the summary's table of the load outside the run per scene (see annotateLoads)
@@ -2882,6 +2901,9 @@ async function main() {
 	await mkdir( OUT, { recursive: true } );
 	scenesFile = path.join( OUT, 'scenes.jsonl' );
 	await writeFile( scenesFile, '' );
+	// a profile.json or meta.json left by an earlier run into this folder would be read with this
+	// run's scenes by --report
+	for ( const name of [ 'profile.json', 'meta.json' ] ) await rm( path.join( OUT, name ), { force: true } );
 	const label = `profile-frame ${ LABEL }`;
 	const begun = Date.now();
 	// Setup outside the exclusive lock: when the profile's caches may not hold this build yet, the
@@ -2980,6 +3002,13 @@ async function main() {
 			};
 			const evals = [ opt( 'eval-a', opt( 'eval', '' ) ), opt( 'eval-b', opt( 'eval', '' ) ) ];
 			const tsModes = TIMESTAMP_MODE === 'both' ? [ true, false ] : [ TIMESTAMP_MODE !== 'off' ];
+			if ( TOGGLE ) meta.compare = { A: `${ URL_A } with on = false`, B: `${ URL_A } with on = true`, toggle: TOGGLE, block: BLOCK, blocks: BLOCKS, lag: LAG };
+			else if ( COMPARE && MODE === 'page' ) meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ], slices: SLICES, minSlices: MIN_SLICES, stopMargin: STOP_MARGIN, stopWidth: STOP_WIDTH, slice: SLICE, settle: SETTLE };
+			else if ( COMPARE ) meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ] };
+			if ( SCALES.length ) meta.scales = SCALES;
+			if ( ACCEPT ) meta.accept = { target: TARGET, limit: r2( TARGET + TARGET_SLACK ), maxFrame: ACCEPT_MAX };
+			// the meta known at the start, for --report on a run that does not finish
+			await writeFile( path.join( OUT, 'meta.json' ), JSON.stringify( meta, null, 1 ) );
 			if ( TOGGLE || ( COMPARE && MODE === 'page' ) ) {
 
 				// A/B in page mode: GPU time first (timestamps on), the frame rate without them
@@ -2999,8 +3028,6 @@ async function main() {
 					if ( A.strayFrames || B.strayFrames ) log( `WARNING: a stopped page drew ${ A.strayFrames } / ${ B.strayFrames } frames` );
 
 				}
-				meta.compare = TOGGLE ? { A: `${ URL_A } with on = false`, B: `${ URL_A } with on = true`, toggle: TOGGLE, block: BLOCK, blocks: BLOCKS, lag: LAG } :
-					{ A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ], slices: SLICES, minSlices: MIN_SLICES, stopMargin: STOP_MARGIN, stopWidth: STOP_WIDTH, slice: SLICE, settle: SETTLE };
 				meta.timestamps = TIMESTAMP_MODE === 'both' ? 'both' : tsModes[ 0 ];
 				const renderAt = ( s ) => s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
 				meta.render = renderAt( runs.A[ 0 ].loads[ 0 ]?.startup );
@@ -3075,10 +3102,8 @@ async function main() {
 				}
 				renderScale = null;
 				if ( DISPLAY ) meta.viewport = await page.evaluate( () => ( { width: innerWidth, height: innerHeight, scale: devicePixelRatio } ) );
-				if ( SCALES.length ) meta.scales = SCALES;
 				if ( ACCEPT ) {
 
-					meta.accept = { target: TARGET, limit: r2( TARGET + TARGET_SLACK ), maxFrame: ACCEPT_MAX };
 					const verdicts = runs.flatMap( ( run ) => Object.values( run.scenes ).map( ( r ) => r.accept.verdict ) );
 					const tally = {};
 					for ( const v of verdicts ) tally[ v ] = ( tally[ v ] ?? 0 ) + 1;
@@ -3114,7 +3139,6 @@ async function main() {
 					}
 
 				}
-				meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ] };
 				const report = compareReport( runs );
 				result = { meta, json: () => ( { meta, runs, report, errors } ), markdown: () => compareMarkdown( meta, report ) };
 
@@ -3383,14 +3407,152 @@ function hungList( meta ) {
 
 }
 
+// --report on a run that did not finish (crashed, stopped, or handed back at a budget): its
+// scenes.jsonl holds each scene as it finished, meta.json the meta known at its start. The summary
+// is rebuilt with the reports a finished run uses; a scene without both variants (or, with
+// --timestamps both or auto, without the pass it still needed) is listed and left out. Writes
+// summary.md only: no profile.json, so nothing takes it for a finished run.
+async function unfinishedReport( dir ) {
+
+	const read = async ( name ) => existsSync( path.join( dir, name ) ) ? ( await readFile( path.join( dir, name ), 'utf8' ) ).split( '\n' ).filter( Boolean ).map( ( l ) => JSON.parse( l ) ) : null;
+	const lines = await read( 'scenes.jsonl' ) ?? [];
+	const mode = lines[ 0 ]?.mode;
+	// without meta.json (a run from before it, or one that died before the lock): what the lines tell
+	const meta = existsSync( path.join( dir, 'meta.json' ) ) ? JSON.parse( await readFile( path.join( dir, 'meta.json' ), 'utf8' ) ) : {
+		label: path.basename( path.resolve( dir ) ), url: '?', viewport: { width: '?', height: '?', scale: '?' }, quality: '?', warmup: '?', seconds: '?', orbit: '?',
+		mode: mode === 'toggle' ? 'toggle' : mode === 'compare' ? 'page' : mode === 'reload compare' ? 'reload' : mode,
+		timestampMode: new Set( lines.map( ( l ) => l.timestamps ) ).size > 1 ? 'both' : lines[ 0 ]?.timestamps === false ? 'off' : 'on',
+		...( mode === 'compare' || mode === 'toggle' || mode === 'reload compare' ? { compare: { A: '?', B: '?', slices: '?', minSlices: '?', slice: '?', settle: '?', toggle: '?', block: '?', blocks: '?', lag: '?' } } : {} ),
+		...( new Set( lines.map( ( l ) => l.scale ?? null ) ).size > 1 || lines[ 0 ]?.scale != null ? { scales: [ ...new Set( lines.map( ( l ) => l.scale ) ) ] } : {} ),
+	};
+	// the load outside the run, as a finished run marks it after each run of scenes
+	const samples = await read( 'load.jsonl' );
+	const rows = [];
+	const mark = ( runs, label ) => { if ( samples ) rows.push( ...markLoads( runs, label, samples, meta.load?.threshold ?? IDLE_THRESHOLD ) ); };
+	const missing = [];
+	const group = ( list, key ) => {
+
+		const groups = new Map();
+		for ( const l of list ) {
+
+			const k = key( l );
+			if ( ! groups.has( k ) ) groups.set( k, [] );
+			groups.get( k ).push( l );
+
+		}
+		return groups;
+
+	};
+	const runOf = ( list ) => ( { scenes: Object.fromEntries( list.map( ( l ) => [ l.scene, l.result ] ) ), loads: [] } );
+	let body;
+	if ( mode === 'compare' || mode === 'toggle' ) {
+
+		// one report per timestamps pass, in the order the run took them
+		const passes = group( lines, ( l ) => l.timestamps );
+		const reports = [];
+		for ( const [ timestamps, list ] of passes ) {
+
+			const pair = [ 'A', 'B' ].map( ( v ) => runOf( list.filter( ( l ) => l.variant === v ) ) );
+			mark( pair, meta.timestampMode === 'both' ? `timestamps ${ timestamps ? 'on' : 'off' }` : '' );
+			const pass = passes.size > 1 || meta.timestampMode === 'both' ? ` (timestamps ${ timestamps ? 'on' : 'off' })` : '';
+			for ( const scene of new Set( list.map( ( l ) => l.scene ) ) ) for ( const v of [ 0, 1 ] ) if ( ! pair[ v ].scenes[ scene ] ) missing.push( `${ scene }: no ${ 'AB'[ v ] }${ pass }` );
+			reports.push( { timestamps, report: sliceReport( ...pair ) } );
+
+		}
+		if ( meta.timestampMode === 'both' ) for ( const timestamps of [ true, false ] ) if ( ! passes.has( timestamps ) ) missing.push( `every scene: no pass with timestamps ${ timestamps ? 'on' : 'off' }` );
+		body = sliceMarkdown( meta, reports );
+
+	} else if ( mode === 'reload compare' ) {
+
+		// one entry per repetition, holding every scene (as the run fills them)
+		const runs = { A: [], B: [] };
+		for ( const l of lines ) {
+
+			const list = runs[ l.variant ];
+			const slot = list.find( ( r ) => ! r.scenes[ l.scene ] );
+			if ( slot ) slot.scenes[ l.scene ] = l.result;
+			else list.push( runOf( [ l ] ) );
+			mark( [ { scenes: { [ l.scene ]: l.result } } ], `variant ${ l.variant }` );
+
+		}
+		// compareReport takes a scene that every load of both variants holds
+		const report = compareReport( runs.A.length && runs.B.length ? runs : { A: [], B: [] } );
+		for ( const scene of new Set( lines.map( ( l ) => l.scene ) ) ) if ( ! report[ scene ] ) missing.push( `${ scene }: not in every load of A and B` );
+		body = compareMarkdown( meta, report );
+
+	} else {
+
+		// a profile: one run per render scale and repetition, each from its timestamps passes
+		const runs = [];
+		const both = meta.timestampMode === 'both' || meta.timestampMode === 'auto';
+		for ( const list of group( lines, ( l ) => `${ l.scale ?? '' } ${ l.run ?? '' }` ).values() ) {
+
+			const suffix = list[ 0 ].run ?? '';
+			const label = ( timestamps ) => [ suffix.replace( /^-/, '' ), `timestamps ${ timestamps ? 'on' : 'off' }` ].filter( Boolean ).join( ', ' );
+			let result;
+			if ( both ) {
+
+				const off = runOf( list.filter( ( l ) => ! l.timestamps ) ), on = runOf( list.filter( ( l ) => l.timestamps ) );
+				mark( [ off ], label( false ) );
+				mark( [ on ], label( true ) );
+				// --timestamps both: every scene in both passes; auto: a scene that did not pass also
+				// with timestamps
+				for ( const scene of Object.keys( off.scenes ) ) {
+
+					const needed = meta.timestampMode === 'both' || ! acceptance( off.scenes[ scene ], meta.accept?.target ).pass;
+					if ( needed && ! on.scenes[ scene ] ) {
+
+						missing.push( `${ scene }${ suffix ? ` (${ suffix.replace( /^-/, '' ) })` : '' }: no pass with timestamps` );
+						delete off.scenes[ scene ];
+
+					}
+
+				}
+				result = mergeModes( off, on );
+
+			} else {
+
+				result = runOf( list );
+				mark( [ result ], label( list[ 0 ].timestamps ) );
+
+			}
+			result.scale = list[ 0 ].scale ?? null;
+			result.render = null;
+			if ( meta.accept ) for ( const r of Object.values( result.scenes ) ) r.accept = acceptance( r, meta.accept.target );
+			runs.push( result );
+
+		}
+		meta.timestamps ??= both ? meta.timestampMode : lines.some( ( l ) => l.timestamps );
+		body = markdownProfile( meta, runs.length ? runs : [ newRun() ] );
+
+	}
+	meta.load = samples ? { file: 'load.jsonl', threshold: meta.load?.threshold ?? IDLE_THRESHOLD, rows } : { skipped: 'no load.jsonl' };
+	const note = `**Unfinished run**: rebuilt by --report from scenes.jsonl (${ lines.length } scenes finished${ existsSync( path.join( dir, 'meta.json' ) ) ? '' : '; no meta.json: what the scenes do not tell is ?' }). ` +
+		( missing.length ? `Left out, with a variant or pass missing:\n\n${ missing.map( ( m ) => `- ${ m }` ).join( '\n' ) }` : 'Every scene it holds has all its variants and passes.' );
+	const out = path.join( dir, 'summary.md' );
+	await writeFile( out, body.replace( '\n\n', `\n\n${ note }\n\n` ) + loadMarkdown( meta ) + hungMarkdown( meta ) );
+	console.log( out );
+
+}
+
 if ( flags.has( '--report' ) ) {
 
-	// re-render summary.md from a profile.json written earlier (after a change to the report)
+	// re-render summary.md from a profile.json written earlier (after a change to the report), or
+	// rebuild it from the scenes.jsonl of a run that did not finish (see unfinishedReport)
 	const file = opt( 'report' );
-	const data = JSON.parse( await readFile( file, 'utf8' ) );
-	const out = path.join( path.dirname( file ), 'summary.md' );
-	await writeFile( out, ( data.reports ? sliceMarkdown( data.meta, data.reports ) : data.report ? compareMarkdown( data.meta, data.report ) : markdownProfile( data.meta, data.runs ) ) + loadMarkdown( data.meta ) + hungMarkdown( data.meta ) );
-	console.log( out );
+	const dir = file.endsWith( '.json' ) || file.endsWith( '.jsonl' ) ? path.dirname( file ) : file;
+	if ( file.endsWith( 'scenes.jsonl' ) || ( ! file.endsWith( '.json' ) && ! existsSync( path.join( dir, 'profile.json' ) ) ) ) {
+
+		await unfinishedReport( dir );
+
+	} else {
+
+		const data = JSON.parse( await readFile( file.endsWith( '.json' ) ? file : path.join( dir, 'profile.json' ), 'utf8' ) );
+		const out = path.join( dir, 'summary.md' );
+		await writeFile( out, ( data.reports ? sliceMarkdown( data.meta, data.reports ) : data.report ? compareMarkdown( data.meta, data.report ) : markdownProfile( data.meta, data.runs ) ) + loadMarkdown( data.meta ) + hungMarkdown( data.meta ) );
+		console.log( out );
+
+	}
 
 } else {
 
