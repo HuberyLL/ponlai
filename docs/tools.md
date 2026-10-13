@@ -277,11 +277,23 @@ exclusive requests ignore the class. A low request ranks as a normal one from it
 after `PONLAI_GPU_LOW_MAX_WAIT` seconds (default 600, so it never waits for ever; the reason is in
 the module's header).
 `node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
-`status` names the holders (shared: their slots and classes), the queue in turn and the exclusive
-requests in turn (`waiting`), and `gpu` shows
-the GPU's utilisation and the processes using it. A request that waits prints a timestamped line
+`status` names the holders (shared: their slots and classes), the queue in turn (each with its
+estimated start, below) and the exclusive requests in turn (`waiting`), and `gpu` shows the GPU's
+utilisation and the processes using it. A request that waits prints a timestamped line
 every 30 s: its place in the queue, the next in turn, who holds the GPU (the exclusive holder or
-the shared slots' labels) and why it waits (an exclusive request first, or low priority).
+the shared slots' labels) and why it waits (an exclusive request first, or low priority), and,
+when it starts waiting and whenever the figure moves by more than a minute or a quarter, its
+estimated start: `estimated start in ~12 min (range 7 min-25 min, estimate)`.
+The estimate is also in `status` (`eta: { startIn, range: [ lo, hi ], basis }` on every queued
+request, in seconds from now) and in `node tools/gpu-lock.mjs eta [--shared|--exclusive] [--class
+low|normal] [--json]` for a request made now (`--pid p` for a waiting one). It is an estimate, not
+a schedule: the queue is run forward under the lock's rules 200 times, each hold lasting a duration
+drawn from what holds of that kind took (the log's recent releases of the same tool and mode,
+`profile-frame` per mode; a built-in table until the log has five of a kind: `basis` counts which).
+`startIn` is the median start over the runs and `range` its 10th to 90th percentile. Requests made
+later are not foreseen, so a low request can start after its range when normal work keeps
+arriving. To choose between waiting and handing work back, compare `startIn` with the threshold
+(the range's upper end is cautious: it adds the spread of every hold ahead).
 Every request, grant, release, timeout and abandoned request is appended to a JSON-lines log next
 to the lock (`ponlai-gpu.lock.log.jsonl`, rotated to `.log.1.jsonl` past 4 MB): time, pid, label,
 mode, class, ticket, wait or hold in ms, and why a hold ended when its holder did not end it (a
