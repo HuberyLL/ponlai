@@ -330,6 +330,8 @@ export class SunShadow {
 				this.frontCasters.add( material );
 				const node = material as THREE.NodeMaterial;
 				node.castShadowPositionNode = positionLocal.add( modelWorldMatrixInverse.mul( vec4( this.frontPush, 0 ) ).xyz );
+				// (a bias that follows the sun: the rain's collision map draws the surface itself, RainCollision.ts)
+				node.userData.shadowPush = true;
 				node.needsUpdate = true;
 
 			}

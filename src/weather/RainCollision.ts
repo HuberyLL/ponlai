@@ -89,7 +89,11 @@ export class RainCollision {
 
 	/** Draw the height of every mesh under `roots` (skinned figures excepted: they move). Each
 	 * material's rest-pose position and alpha test are kept, so blades and leaf cards print
-	 * their own shapes rather than their bounding quads. Again whenever the island grows: the
+	 * their own shapes rather than their bounding quads. A closed solid's cast position is the sun
+	 * shadow's push away from the light (SunShadow.castFrontFaces), not a pose: it follows the sun,
+	 * so a map drawn with it would depend on the hour it was drawn at (a grown page's against a
+	 * fresh load's, where the push is still 0); such a material prints its own surface. Again
+	 * whenever the island grows: the
 	 * height materials and the meshes' proxies are kept from bake to bake (a proxy per mesh, a
 	 * material per source material), so a bake after the first builds no pipeline, and every
 	 * mesh is drawn whole (all its instances, its whole draw range) as at the first. */
@@ -206,7 +210,9 @@ export class RainCollision {
 		if ( material ) return material;
 		const node = source as THREE.MeshStandardNodeMaterial;
 		material = new THREE.MeshBasicNodeMaterial( { side: THREE.DoubleSide } );
-		material.positionNode = node.castShadowPositionNode ?? node.positionNode ?? null;
+		// the rest pose a vegetation material casts with (VegetationShadow.ts), never the shadow's push
+		const rest = node.userData.shadowPush ? null : node.castShadowPositionNode;
+		material.positionNode = rest ?? node.positionNode ?? null;
 		if ( node.alphaMap ) {
 
 			material.alphaMap = node.alphaMap;
