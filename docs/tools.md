@@ -443,28 +443,55 @@ take-overs, timeouts, abandoned and stale counted apart) and the longest waits w
 long a run queued and behind whom. The profiler also checks that the GPU is idle before it
 measures and marks its results contended otherwise. Keep other pages that render the scene closed.
 
-## Long jobs: `tools/job.mjs`
+## Long jobs and waiting: `tools/job.mjs`
 
-A command that may run longer than a few minutes (a capture set, a profile, a build of the
-references) runs under `tools/job.mjs`, and whoever waits for it waits with `job.mjs wait` rather
-than a loop of their own:
+Every wait goes through `tools/job.mjs`: a command that may run longer than a few minutes (a
+capture set, a profile, a build of the references) runs as a job, and whoever waits for it, or for
+anything else, waits with `job.mjs` rather than a loop of their own. Its header is the full manual.
 
+    node tools/job.mjs start --wait -- npm run build                        (inline when it is short)
     node tools/job.mjs start --log artifacts/plans/<topic>/data/set.log -- node tools/capture-set.mjs ...
     node tools/job.mjs wait artifacts/plans/<topic>/data/set.log          (repeat until it exits 0 or with the job's code)
+    node tools/job.mjs stop artifacts/plans/<topic>/data/set.log          (before handing back with it still running)
 
-`start` runs the command detached (it outlives the calling shell) and returns at once; `run` runs
-it in the foreground (under an agent's background shell, say). Either way the log holds the
-command's output between a start line and an end line, `[done] exit <code> at <time> after
-<duration>`. A single argument after `--` runs through `sh -c` (pipes, `&&`), several run as they
-are. `wait <log>... [--max s] [--lines n]` returns when every job has ended, exiting with the first
-failing job's code (0 when all succeeded), or after `--max` seconds (default and ceiling 240, so
-no single wait outlives an agent's five-minute prompt cache), exiting 124 while any still runs:
-call it again. A job whose runner was killed before its end line counts as ended (lost, exit 1),
-and a file that is not a job's log fails at once (exit 2), so no wait can hang on a line that will
-never come. It prints one screen: each job's state and elapsed time, where it stands in the GPU
-lock (holding a slot or the lock alone, or queued: its place, the requests ahead of it and the
-holders), its log's last lines, and the lock as a whole. `status <log>...` prints the same without
-waiting.
+Forms:
+
+- `start [--log file] -- command` runs the command detached (it outlives the calling shell) and
+  returns at once; `run` runs it in the foreground. Without `--log` the log goes to
+  `<repo top>/artifacts/jobs/<UTC stamp>-<command>.log` and its path is printed. The log holds the
+  command's output between a start line and an end line, `[done] exit <code> at <time> after
+  <duration>`, with ` (stopped)` when the job was stopped. A single argument after `--` runs
+  through `sh -c` (pipes, `&&`), several run as they are.
+- `start --wait [--lines n] -- command` starts the job the same way and waits on it within the
+  budget: when it ends, it prints the log's last lines (20) and exits with the command's code;
+  otherwise it exits 124 and prints the `wait` to call next. Nothing is killed at the budget, so a
+  command that may be short or long needs no guess: run it this way in the foreground.
+- `wait <log>...` returns when every job has ended, exiting with the first failing job's code (0
+  when all succeeded), or at the budget, exiting 124 while any still runs: call it again. A job
+  whose runner was killed before its end line counts as ended (lost, exit 1), and a file that is
+  not a job's log fails at once (exit 2), so no wait can hang on a line that will never come. It
+  prints one screen: each job's state and elapsed time, where it stands in the GPU lock (holding a
+  slot or the lock alone, or queued: its place, the requests ahead of it and the holders), its
+  log's last lines, and the lock as a whole. Wait on several jobs with one call.
+- `wait` with a condition instead of logs: `--file F --match RE` (a line of F matches),
+  `--exists F`, `--pid N` (the process has exited) or `--cmd 'shell'` (it exits 0; each run is
+  killed at the deadline); with neither it is a plain timer. It prints `done after`, `still waiting
+  after` (exit 124) or `timer ended after`, with the budget; `--tail F [n]` adds F's last lines.
+- `status <log>...` prints the `wait` screen without waiting.
+- `list [--cwd dir | --all]` shows the running jobs started under the current repo top, under a
+  directory, or anywhere, with the same screen. Every `run` and `start` registers itself in
+  `ponlai-jobs/` beside the GPU lock (a scratch `PONLAI_GPU_LOCK_DIR` moves it too).
+- `stop <log>... | --cwd dir | --all [--grace 10]` ends jobs with everything they started: it
+  sends SIGTERM through the job's runner, so the tools run their own cleanup (lock release, browser
+  close), and after the grace SIGKILLs whatever is left of the job's process tree, children that
+  detached into their own group included. An agent hands back with nothing of its own running.
+
+Budgets (roles). A wait ends at a wall-clock deadline counted from its start, whatever the load.
+`--role agent` (the default) waits at most 240 s, because an agent's prompt cache lives five
+minutes between its requests; run it in the foreground with the Bash tool's timeout above that,
+one wait per message. `--role main` waits at most 3300 s, under a main session's one-hour cache: a
+main session keeps `wait --role main` running in the background while it waits on agents or jobs,
+and re-arms it each time it fires. `--max s` only lowers the budget.
 
 ## Process priority (macOS)
 
