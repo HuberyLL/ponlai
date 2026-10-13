@@ -1375,6 +1375,7 @@ function diagnostics( now = false ): void {
 		backend: 'webgpu',
 		hour: + dayCycle.hour.toFixed( 4 ),
 		clockPaused: dayCycle.paused,
+		scalePinned: resolution.full,
 		skyBakeMs: + sky.lastBakeMs.toFixed( 2 ),
 		skyBusy: sky.busy,
 		skyTransitioning: sky.transitioning,
