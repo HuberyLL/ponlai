@@ -943,9 +943,17 @@ const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.re
 // (DynamicResolution.ts); MSAA's FSR 1 path keeps the tier's floor.
 const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRule, maxUpscale: AA_MODE === 'taau' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
-// the same number of refreshes; `frameRate` overrides it (0 renders on every refresh: the profiler's
-// uncapped runs, where the animation frames' intervals measure the work, not a display).
-const pacer = new FramePacer( params.has( 'frameRate' ) ? Number( params.get( 'frameRate' ) ) : quality.frameRate );
+// the same number of refreshes, falling back to the next divisor when the dynamic scale's floor
+// cannot hold it. `frameRate=auto` is that default; `frameRate=<fps>` holds a fixed rate (0 renders on
+// every refresh: the profiler's uncapped runs, where the animation frames' intervals measure the
+// work, not a display); `frameFallback=0` keeps 'auto' from falling back (A/B runs). A settings menu
+// sets the rate through the pacer (`choices()`, `setRate()`, `mode`, `fps`): `__PONLAI__.pacer` in
+// debug builds; a production `?game` menu needs the game to be handed the pacer (not wired yet).
+const frameRateParam = params.get( 'frameRate' );
+const pacer = new FramePacer( quality.frameRate, {
+	rate: frameRateParam === null || frameRateParam === 'auto' ? 'auto' : Number( frameRateParam ),
+	allowFallback: params.get( 'frameFallback' ) !== '0',
+} );
 // the render scale each frame was drawn at and its periodic work (by three's frame id), for the
 // GPU times read back later
 const frameScales = new Map<number, { scale: number; heavy: number }>();
@@ -978,10 +986,8 @@ if ( dynamicResolution ) {
 
 	}
 	if ( DEBUG ) dynamicResolution.onWarning = ( message ) => console.warn( message );
-	// Under sustained contention (another page or app drawing, the frames still late at the quality
-	// floor) the scale holds at the quality floor at 60 fps. Falling back to 40 fps there is not
-	// chosen yet: it would hook in here, through `dynamicResolution.onSustainedContention`, and
-	// stays off.
+	// the dynamic scale decides when the pacer falls back to its slower rate and returns
+	dynamicResolution.pacer = pacer;
 
 }
 
@@ -990,7 +996,7 @@ if ( dynamicResolution ) {
 if ( qualityChoice.source === 'detect' ) {
 
 	const queue = ( renderer.backend as unknown as { device: { queue: { onSubmittedWorkDone(): Promise<void> } } } ).device.queue;
-	const view = () => ( { paused, hidden: document.hidden, scale: renderScale, interval: pacer.target > 0 ? pacer.interval : 1000 / 60, width: innerWidth, height: innerHeight, cap: DPR_CAP } );
+	const view = () => ( { paused, hidden: document.hidden, scale: renderScale, interval: pacer.rate > 0 ? pacer.interval : 1000 / 60, width: innerWidth, height: innerHeight, cap: DPR_CAP } );
 	detector = new QualityDetector( qualityChoice, view, gpuTimer !== null || profiler?.timestamps === true, () => queue.onSubmittedWorkDone(), () => renderer.info.frame );
 	if ( dynamicResolution ) dynamicResolution.enabled = false;
 
@@ -1020,7 +1026,17 @@ function resize(): void {
 	camera.aspect = w / h;
 	camera.updateProjectionMatrix();
 	applyRenderScale( true );
-	if ( scaleMemory ) dynamicResolution?.setStoreKey( renderScaleKey( renderer, qualityTier, AA_MODE, pacer.target, canvasSize.x, canvasSize.y, gpuTimer !== null || profiler?.timestamps === true ? 'gpu' : 'frames' ) );
+	refreshStoreKey();
+
+}
+
+// The key the dynamic scale remembers its scales under (the frame rate's in it): set on a resize and
+// whenever the pacer's rate changes (`generation`).
+let storeKeyGeneration = NaN;
+function refreshStoreKey(): void {
+
+	storeKeyGeneration = pacer.generation;
+	if ( scaleMemory ) dynamicResolution?.setStoreKey( renderScaleKey( renderer, qualityTier, AA_MODE, pacer.rate, canvasSize.x, canvasSize.y, gpuTimer !== null || profiler?.timestamps === true ? 'gpu' : 'frames' ) );
 
 }
 
@@ -1290,21 +1306,27 @@ function periodicWork(): number {
 
 // After the frame's passes: read the GPU times back and move the dynamic scale (it applies from the
 // next frame on). Paused or pinned, the window keeps no samples and the scale holds.
+// whether the last rendered frame steered the scale (false again at a loop start)
+let steeredLast = false;
 function steerRenderScale( rawDt: number ): void {
 
 	if ( ! dynamicResolution ) return;
+	if ( pacer.generation !== storeKeyGeneration ) refreshStoreKey();
 	// the GPU's budget follows the paced frame interval (a 60 Hz frame unpaced)
-	dynamicResolution.setFrameInterval( pacer.target > 0 ? pacer.interval : 1000 / 60 );
+	dynamicResolution.setFrameInterval( pacer.rate > 0 ? pacer.interval : 1000 / 60 );
 	const steering = steppedScale === null && ! paused && ! resolution.full && renderScale === dynamicResolution.scale;
 	frameScales.set( renderer.info.frame, { scale: steering ? renderScale : NaN, heavy: periodicWork() } );
 	if ( frameScales.size > 240 ) frameScales.delete( frameScales.keys().next().value! );
 	gpuTimer?.resolve();
 	if ( steering ) {
 
-		dynamicResolution.sampleInterval( rawDt * 1000 );
+		// an interval since a frame that did not steer (or a loop start) spans the break
+		if ( steeredLast ) dynamicResolution.sampleInterval( rawDt * 1000 );
+		else dynamicResolution.resume();
 		dynamicResolution.update();
 
 	}
+	steeredLast = steering;
 	applyRenderScale();
 	if ( frame % 30 === 0 ) describeRenderScale();
 
@@ -1365,7 +1387,7 @@ function diagnostics( now = false ): void {
 		dpr: + ( pipeline.width / innerWidth ).toFixed( 4 ), // the render's pixel ratio
 		renderScale,
 		dynamicResolution: dynamicResolution ? { scale: dynamicResolution.scale, source: dynamicResolution.source, changes: dynamicResolution.changes.length } : null,
-		pacing: { target: pacer.target, refreshMs: + pacer.period.toFixed( 3 ), divisor: pacer.divisor, rendered: pacer.rendered, skipped: pacer.skipped },
+		pacing: { target: pacer.target, rate: pacer.rate, mode: pacer.mode, refreshMs: + pacer.period.toFixed( 3 ), divisor: pacer.divisor, base: pacer.base, fallback: pacer.fallen, falls: pacer.falls, returns: pacer.returns, rendered: pacer.rendered, skipped: pacer.skipped },
 		submits: { ...submitBatch.stats, why: { ...submitBatch.stats.why } },
 		canvasDpr: renderer.getPixelRatio(),
 		worldTriangles: world.triangles,
@@ -1551,6 +1573,8 @@ const establishScene = async ( scene: string | URLSearchParams | { weather?: Wea
 	characters?.reset();
 	pipeline.air.invalidate();
 	shadowElapsed = 0;
+	// a fresh load starts at the held frame rate, not at a fallback the last scene fell to
+	pacer.reset();
 	sceneEvent( 'establish scene' );
 	manualSun = false;
 	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment( true ) );
@@ -1588,6 +1612,7 @@ const loop = {
 		hiddenStop = false;
 		if ( loop.running ) return;
 		loop.running = true;
+		steeredLast = false;
 		sceneEvent( 'loop start' );
 		clock.reset();
 		animation.start();

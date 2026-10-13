@@ -113,8 +113,17 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   per tier, AA mode, frame rate, canvas size and GPU, and saves the scale it holds: on by default,
   off in an automated browser so a profile or capture does not start where the last run ended;
   `on` tests a returning load there, `off` neither restores nor saves anywhere).
-- `frameRate` (the frame rate the loop holds on a faster display, over the tier's; `frameRate=0`
-  renders on every refresh, as the profiler's uncapped runs do).
+- `frameRate=auto|<fps>` (the frame rate the loop holds on a faster display: `auto`, the default,
+  holds the tier's and falls back to the next whole divisor of the refresh, e.g. 72 -> 48 fps on
+  144 Hz, when the dynamic scale's floor cannot hold it, `src/post/FramePacer.ts`; a number is a cap,
+  the fastest whole-divisor rate not above it, without the fallback; `frameRate=0` renders on every
+  refresh, as the profiler's uncapped runs do). `frameFallback=0` keeps `auto` at the tier's rate
+  (profile-frame adds it on `--compare` and `--accept`; `--frame-fallback` keeps the fallback on). A
+  scene jump (`establishScene`) leaves the fallback, as a fresh load starts at the held rate. In a
+  debug page, `__PONLAI__.pacer.choices()` lists the display's even rates, `setRate( fps | 'auto' )`
+  sets one, `mode` and `rate` read the choice and `fps` the rate held now (a production `?game`
+  settings menu needs the game to be handed the pacer: not wired yet); the diagnostics' `pacing`
+  block shows `mode`, `fallback`, `falls` and `returns`.
 - `submits=each` (three's own submit per pass, without the submit batching; at runtime
   `flags.batchSubmits`; its tracking wrappers stay installed, so compare against `main` for their
   JS cost) and `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`).
@@ -454,6 +463,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
   [--idle-wait s] [--contended] [--hang s] [--scale-log]
   [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]
+  [--drs-store] [--frame-fallback]
 ```
 
 - Profiles a production build (`npm run build && npm run preview`; the url defaults to its port)
@@ -546,10 +556,12 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   `--display --compare urlA urlB` interleaves A and B in the same slices as the headless compare
   (the running page brought to the front, the drags restarted in each slice), so the drift between
   separate headed runs (a millisecond or two) cancels; its summary adds the share of late frames
-  (presented intervals longer than the frame pacer's pace) per slice, as a delta with its interval, and each page's
-  frames over 25 ms. One trace spans a scene's slices of both pages, split by a performance mark
-  per slice (ended early at each adaptive stop check); a trace per slice nearly doubled the time a
-  slice took beyond its settle and window.
+  (presented intervals longer than the pace each frame was rendered at, the frame pacer's divisor
+  then) per slice, as a delta with its interval, each page's frames over 25 ms, its effective rate
+  (rendered frames per second) and its share of frames at the pacer's fallback rate. One trace
+  spans a scene's slices of both pages, split by a performance mark per slice (ended early at each
+  adaptive stop check); a trace per slice nearly doubled the time a slice took beyond its settle
+  and window.
 - Adaptive slices: in `--compare`, `--slices` is the most a scene takes. From `--min-slices` on
   (4 with `--display`; headless it defaults to `--slices`, which turns it off), at the end of each
   balanced block of four slices (B A A B, then A B B A) a scene stops once its leading delta's 95 %
@@ -568,6 +580,9 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - `--compare` and `--accept` load their pages with `drsStore=off`, so neither side of an A/B (two
   AA modes, two builds) starts from a dynamic scale the other or an earlier run settled at;
   `--drs-store` loads them with `drsStore=on` instead (a returning load).
+- `--compare` and `--accept` also load their pages with `frameFallback=0` (the pacer holds the tier's
+  rate, so both sides of an A/B run at one pace); `--frame-fallback` keeps the automatic fallback
+  (72 -> 48 fps on a 144 Hz display) on.
 - `--eval` runs in the page with `s` = `window.__PONLAI__` (an ablation, e.g.
   `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a summary.
 

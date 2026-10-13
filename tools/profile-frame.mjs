@@ -12,7 +12,7 @@
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s] [--contended]
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
-//        [--scale-settle s] [--drs-store] [--preload-wait 60] [--display [--motion user | orbit | none]]
+//        [--scale-settle s] [--drs-store] [--frame-fallback] [--preload-wait 60] [--display [--motion user | orbit | none]]
 //        [--hang 180] [--scale-log]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
 //        [--slices 8] [--min-slices n] [--stop-margin x] [--stop-width x] [--slice 1.5] [--settle 1] [--display]
@@ -120,6 +120,12 @@
 //   automated browser anyway); --compare and --accept add `drsStore=off` so neither side of an A/B
 //   (two AA modes or two builds) starts from a scale the other settled at, and `--drs-store` adds
 //   `drsStore=on` instead, to measure a returning load.
+// - the frame rate's fallback: on a faster display the pacer may step from the tier's rate to the next
+//   divisor (72 -> 48 fps on 144 Hz) when the dynamic scale's floor cannot hold it (FramePacer.ts);
+//   --compare and --accept add `frameFallback=0` so both sides hold one rate and stay comparable, and
+//   `--frame-fallback` keeps the fallback on. On the display each scene reports its effective rate
+//   (rendered frames per second) and the share of frames at the fallback, and late frames are judged
+//   against the pace each frame was rendered at.
 // - display (`--display`): the real display, headed. Chrome (the system's, without the switches the
 //   headless runs take) opens full screen (`--kiosk`) at the display's size and pixel ratio with
 //   its own vsync, so a 120 Hz display runs rAF at 120 Hz. The camera is dragged like a player's
@@ -335,6 +341,10 @@ const OUT = opt( 'out', path.join( 'artifacts/perf', LABEL ) );
 // off (`drsStore=off`), so neither side starts from a scale the other, or an earlier run, settled at;
 // `--drs-store` keeps it (`drsStore=on`: restored and saved even in this automated browser).
 const DRS_STORE = flags.has( '--drs-store' ) ? 'drsStore=on' : COMPARE || ACCEPT ? 'drsStore=off' : '';
+// The frame pacer's automatic fallback: off in an A/B or an acceptance run unless --frame-fallback.
+// The page reads it once at load, so it holds on a page kept open from scene to scene (a scene
+// switch's establishScene only returns the pacer to its held rate).
+const FRAME_FALLBACK = ( COMPARE || ACCEPT ) && ! flags.has( '--frame-fallback' ) ? 'frameFallback=0' : '';
 
 const SYSTEM_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const executablePath = process.env.CHROME_PATH || ( existsSync( SYSTEM_CHROME ) ? SYSTEM_CHROME : undefined );
@@ -835,7 +845,7 @@ function pageUrl( base, q, timestamps ) {
 	// the url's own options first (the page reads the first of a repeated option), then the
 	// scene's; `debug` too, so a build without the profiler still exposes its handles
 	// uncapped, the frame pacer would read the work's own intervals as a display's refresh
-	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : 'worldCache=off', `quality=${ QUALITY }`, q, EXTRA_Q, DRS_STORE, renderScale ? `dpr=${ renderScale }` : '', VSYNC ? '' : 'frameRate=0' ].filter( Boolean ).join( '&' );
+	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : 'worldCache=off', `quality=${ QUALITY }`, q, EXTRA_Q, DRS_STORE, FRAME_FALLBACK, renderScale ? `dpr=${ renderScale }` : '', VSYNC ? '' : 'frameRate=0' ].filter( Boolean ).join( '&' );
 	return url.href;
 
 }
@@ -1255,7 +1265,8 @@ async function startSamples( page ) {
 
 			if ( ! on ) return;
 			s.camera.getWorldDirection( dir );
-			samples.push( [ time, s.renderer.info.render.calls, Math.atan2( dir.x, dir.z ), s.camera.position.x, s.camera.position.z ] );
+			// the pacer's refreshes per frame now and at its held rate (the fallback renders at one more)
+			samples.push( [ time, s.renderer.info.render.calls, Math.atan2( dir.x, dir.z ), s.camera.position.x, s.camera.position.z, s.pacer?.divisor ?? 1, s.pacer?.base ?? s.pacer?.divisor ?? 1 ] );
 			requestAnimationFrame( step );
 
 		};
@@ -1425,10 +1436,36 @@ function displayStats( events, { mark: name, sync, samples, pacing }, t0, t1 ) {
 	const shown = [ ...new Set( frames.filter( ( f ) => f.pid === pid && f.fr.has_main_animation && /PRESENTED/.test( f.fr.state ?? '' ) && f.end >= t0 && f.end < t1 )
 		.map( ( f ) => Math.round( f.end * 10 ) / 10 ) ) ].sort( ( a, b ) => a - b );
 	const presentedIntervals = shown.slice( 1 ).map( ( t, i ) => t - shown[ i ] ).filter( ( x ) => x > 1 );
+	// Late frames against each frame's own pace (the pacer's divisor when it was rendered: the fallback
+	// paces at one refresh more): the presented intervals, else the rendered ones, by refreshes. The
+	// pace of a presented frame is the divisor read before the last animation frame at or before it
+	// (each sample reads the divisor after its own tick, which may have changed it for the frames
+	// after).
+	const paceAt = ( t ) => {
+
+		let lo = 0, hi = samples.length - 1;
+		if ( hi < 0 || t < samples[ 0 ][ 0 ] ) return samples[ 0 ]?.[ 5 ] ?? 1;
+		while ( lo < hi ) {
+
+			const mid = ( lo + hi + 1 ) >> 1;
+			if ( samples[ mid ][ 0 ] <= t ) lo = mid;
+			else hi = mid - 1;
+
+		}
+		return samples[ Math.max( lo - 1, 0 ) ][ 5 ] ?? 1;
+
+	};
+	const presentedOk = Number.isFinite( offset ) && shown.length > 1;
+	const judged = presentedOk ? shown.slice( 1 ).map( ( t, i ) => [ t - shown[ i ], paceAt( t ) ] ).filter( ( [ x ] ) => x > 1 ) : rendered.slice( 1 ).map( ( k, i ) => [ k[ 0 ] - rendered[ i ][ 0 ], rendered[ i ][ 5 ] ?? 1 ] );
+	const late = judged.length ? judged.filter( ( [ x, pace ] ) => Math.max( 1, Math.round( x / refresh ) ) > pace ).length / judged.length : NaN;
+	// the effective rate: rendered frames per second over the window, and the share at the fallback
+	const span = rendered.length > 1 ? ( rendered[ rendered.length - 1 ][ 0 ] - rendered[ 0 ][ 0 ] ) / 1000 : NaN;
+	const rate = span > 0 ? ( rendered.length - 1 ) / span : NaN;
+	const fallback = rendered.length ? rendered.filter( ( k ) => ( k[ 5 ] ?? 1 ) > ( k[ 6 ] ?? 1 ) ).length / rendered.length : NaN;
 	return {
-		refresh: r2( refresh ), pacing,
+		refresh: r2( refresh ), pacing, late: r3( late ), rate: r2( rate ), fallback: r3( fallback ),
 		rendered: cadence( renderedIntervals, refresh ),
-		presented: Number.isFinite( offset ) && shown.length > 1 ? cadence( presentedIntervals, refresh ) : null,
+		presented: presentedOk ? cadence( presentedIntervals, refresh ) : null,
 		camera: { frames: changes.length, median: r3( quantile( changes, 0.5 ) ), p90: r3( quantile( changes, 0.9 ) ), p99: r3( quantile( changes, 0.99 ) ), over25: r3( changes.filter( ( x ) => x > 0.25 ).length / Math.max( changes.length, 1 ) ) },
 	};
 
@@ -1453,8 +1490,17 @@ function poolDisplay( list ) {
 	const cams = list.map( ( d ) => d.camera ).filter( ( c ) => c.frames > 0 );
 	const camN = cams.reduce( ( a, c ) => a + c.frames, 0 ) || 1;
 	const cam = ( k ) => r3( cams.reduce( ( a, c ) => a + ( c[ k ] ?? 0 ) * c.frames, 0 ) / camN );
+	// late frames and the fallback's share weighted by each slice's frames, the rate by its frames too
+	const weigh = ( key ) => {
+
+		const parts = list.filter( ( d ) => Number.isFinite( d[ key ] ) );
+		const n = parts.reduce( ( a, d ) => a + ( d.rendered?.frames ?? 0 ), 0 );
+		return n ? parts.reduce( ( a, d ) => a + d[ key ] * ( d.rendered?.frames ?? 0 ), 0 ) / n : NaN;
+
+	};
 	return {
 		refresh: r2( quantile( list.map( ( d ) => d.refresh ), 0.5 ) ), pacing: list[ list.length - 1 ].pacing, slices: list.length,
+		late: r3( weigh( 'late' ) ), rate: r2( weigh( 'rate' ) ), fallback: r3( weigh( 'fallback' ) ),
 		rendered: pool( 'rendered' ), presented: pool( 'presented' ),
 		camera: { frames: cams.reduce( ( a, c ) => a + c.frames, 0 ), median: cam( 'median' ), p90: cam( 'p90' ), over25: cam( 'over25' ) },
 	};
@@ -1466,6 +1512,8 @@ function poolDisplay( list ) {
 // refresh (2 for 60 fps on a 120 Hz display), one refresh without a pacer.
 const lateShare = ( d ) => {
 
+	// judged per frame against its own pace (a build with the fallback's diagnostics)
+	if ( Number.isFinite( d?.late ) ) return d.late;
 	const c = d?.presented ?? d?.rendered;
 	if ( ! c ) return NaN;
 	const pace = d.pacing?.divisor ?? 1;
@@ -1473,9 +1521,11 @@ const lateShare = ( d ) => {
 
 };
 
+// the effective rate (rendered frames per second), with the share at the pacer's fallback
+const fpsText = ( d ) => Number.isFinite( d?.rate ) ? `${ d.rate } fps${ d.fallback > 0 ? ` (${ pct( d.fallback ) } at the fallback)` : '' }` : '–';
 const pct = ( x ) => Number.isFinite( x ) ? `${ Math.round( x * 1000 ) / 10 } %` : '–';
 const refreshText = ( c ) => c ? Object.entries( c.refreshes ).map( ( [ k, v ] ) => `${ k }: ${ pct( v ) }` ).join( ', ' ) : '–';
-const displayLog = ( scene, d ) => `${ scene.padEnd( 20 ) } display ${ d.refresh } ms refresh${ d.pacing ? `, paced to ${ d.pacing.divisor } (target ${ d.pacing.target })` : '' }: rendered ${ refreshText( d.rendered ) } (cadence changes ${ pct( d.rendered.cadenceChanges ) }); ` +
+const displayLog = ( scene, d ) => `${ scene.padEnd( 20 ) } display ${ d.refresh } ms refresh${ d.pacing ? `, paced to ${ d.pacing.divisor } (target ${ d.pacing.target }${ d.pacing.mode ? `, ${ d.pacing.mode }, ${ d.pacing.falls } falls, ${ d.pacing.returns } returns` : '' })` : '' }: ${ fpsText( d ) }; rendered ${ refreshText( d.rendered ) } (cadence changes ${ pct( d.rendered.cadenceChanges ) }); ` +
 	`presented ${ refreshText( d.presented ) } (cadence changes ${ pct( d.presented?.cadenceChanges ) }, max ${ d.presented?.max ?? '–' } ms); camera speed change per frame median ${ pct( d.camera.median ) }, p90 ${ pct( d.camera.p90 ) }, over 25 % ${ pct( d.camera.over25 ) }`;
 
 function plan( names ) {
@@ -2041,13 +2091,13 @@ function markdownProfile( meta, runs ) {
 			lines.push( 'On the display: the intervals between the frames the scene rendered and between the frames the compositor presented, by display refreshes ' +
 				'(their shares), and the share of intervals that differ from the one before by half a refresh or more (cadence changes: judder at a steady pace). ' +
 				'Camera: how much the camera\'s turning speed changes from one rendered frame to the next while it turns (median, p90, share over 25 %).', '',
-				'| scene | refresh | rendered (1 / 2 / 3 / 4+) | cadence changes | presented (1 / 2 / 3 / 4+) | cadence changes | presented max | camera speed change | scale |', '|---|---|---|---|---|---|---|---|---|' );
+				'| scene | refresh | effective rate | late (off its pace) | rendered (1 / 2 / 3 / 4+) | cadence changes | presented (1 / 2 / 3 / 4+) | cadence changes | presented max | camera speed change | scale |', '|---|---|---|---|---|---|---|---|---|---|---|' );
 			const shares = ( c ) => c ? [ 1, 2, 3, '4+' ].map( ( n ) => pct( c.refreshes[ n ] ) ).join( ' / ' ) : '–';
 			for ( const [ scene, r ] of Object.entries( run.scenes ) ) {
 
 				const d = r.display;
 				if ( ! d ) continue;
-				lines.push( `| ${ scene } | ${ fmt( d.refresh ) } ms${ d.pacing ? `, paced ${ d.pacing.divisor }` : '' } | ${ shares( d.rendered ) } | ${ pct( d.rendered.cadenceChanges ) } | ${ shares( d.presented ) } | ${ pct( d.presented?.cadenceChanges ) } | ${ fmt( d.presented?.max ) } | ${ pct( d.camera.median ) } / ${ pct( d.camera.p90 ) } / ${ pct( d.camera.over25 ) } | ${ scaleText( r.renderScale ) } |` );
+				lines.push( `| ${ scene } | ${ fmt( d.refresh ) } ms${ d.pacing ? `, paced ${ d.pacing.divisor }` : '' } | ${ fpsText( d ) } | ${ pct( lateShare( d ) ) } | ${ shares( d.rendered ) } | ${ pct( d.rendered.cadenceChanges ) } | ${ shares( d.presented ) } | ${ pct( d.presented?.cadenceChanges ) } | ${ fmt( d.presented?.max ) } | ${ pct( d.camera.median ) } / ${ pct( d.camera.p90 ) } / ${ pct( d.camera.over25 ) } | ${ scaleText( r.renderScale ) } |` );
 
 			}
 			lines.push( '' );
@@ -2436,7 +2486,7 @@ async function main() {
 					const [ A, B ] = pair;
 					runs ??= { A: [ A ], B: [ B ] };
 					reports.push( { timestamps, report: sliceReport( A, B ), strayFrames: [ A.strayFrames, B.strayFrames ] } );
-					if ( ! TOGGLE ) for ( const [ scene, r ] of Object.entries( reports[ reports.length - 1 ].report ) ) log( `${ scene.padEnd( 20 ) } scale A ${ scaleText( r.scale[ 0 ] ) }, B ${ scaleText( r.scale[ 1 ] ) }${ r.late ? `; late frames ${ pct( r.late.a ) } -> ${ pct( r.late.b ) }` : '' }` );
+					if ( ! TOGGLE ) for ( const [ scene, r ] of Object.entries( reports[ reports.length - 1 ].report ) ) log( `${ scene.padEnd( 20 ) } scale A ${ scaleText( r.scale[ 0 ] ) }, B ${ scaleText( r.scale[ 1 ] ) }${ r.late ? `; late frames ${ pct( r.late.a ) } -> ${ pct( r.late.b ) }, ${ r.fps?.a ?? '–' } -> ${ r.fps?.b ?? '–' } fps (fallback ${ pct( r.fallback?.a ) } -> ${ pct( r.fallback?.b ) })` : '' }` );
 					if ( A.strayFrames || B.strayFrames ) log( `WARNING: a stopped page drew ${ A.strayFrames } / ${ B.strayFrames } frames` );
 
 				}
@@ -2637,7 +2687,7 @@ function sliceReport( A, B ) {
 			gpu: metric( ( s ) => s.gpu ), gpuInterval: metric( ( s ) => s.gpuInterval ),
 			median: metric( ( s ) => s.interval ), p95: metric( ( s ) => s.p95 ), js: metric( ( s ) => s.js ),
 			// on the display: the share of late frames (intervals longer than the pace) per slice
-			...( a.some( ( s ) => s.display ) ? { late: metric( ( s ) => lateShare( s.display ) ) } : {} ),
+			...( a.some( ( s ) => s.display ) ? { late: metric( ( s ) => lateShare( s.display ) ), fps: metric( ( s ) => s.display?.rate ), fallback: metric( ( s ) => s.display?.fallback ) } : {} ),
 			// each page's render scale over its slices (a dynamic scale settles where its GPU time puts it)
 			scale: [ A.scenes[ scene ].renderScale ?? null, B.scenes[ scene ].renderScale ?? null ],
 			over25: [ A.scenes[ scene ].over25Count, B.scenes[ scene ].over25Count ],
@@ -2672,18 +2722,18 @@ function sliceMarkdown( meta, reports ) {
 		// each page's render scale over the scene's slices: median (range, changes)
 		const scales = ( r ) => r.scale ? `${ scaleText( r.scale[ 0 ] ) } / ${ scaleText( r.scale[ 1 ] ) }` : '–';
 		if ( timestamps ) lines.push( '| scene | scale A / B | GPU busy | GPU frame interval | frame interval median | p95 | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|---|' );
-		else lines.push( `| scene | scale A / B | frame interval median | p95 | JS tick |${ late ? ' late frames (share over the pace) | frames over 25 ms A / B |' : '' }`, `|---|---|---|---|---|${ late ? '---|---|' : '' }` );
+		else lines.push( `| scene | scale A / B | frame interval median | p95 | JS tick |${ late ? ' late frames (share over the pace) | frames over 25 ms A / B | effective fps | share at the fallback |' : '' }`, `|---|---|---|---|---|${ late ? '---|---|---|---|' : '' }` );
 		for ( const [ scene, r ] of Object.entries( report ) ) {
 
 			const passes = Object.entries( r.groups ).slice( 0, 3 ).map( ( [ g, m ] ) => `${ g } ${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }${ m.significant ? '*' : '' }` ).join( ', ' );
 			if ( timestamps ) lines.push( `| ${ scene } | ${ scales( r ) } | ${ cell( r.gpu ) } | ${ cell( r.gpuInterval ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } | ${ passes } |` );
-			else lines.push( `| ${ scene } | ${ scales( r ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } |${ late ? ` ${ r.late ? cell( r.late ) : '–' } | ${ r.over25?.join( ' / ' ) ?? '–' } |` : '' }` );
+			else lines.push( `| ${ scene } | ${ scales( r ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } |${ late ? ` ${ r.late ? cell( r.late ) : '–' } | ${ r.over25?.join( ' / ' ) ?? '–' } | ${ r.fps ? cell( r.fps ) : '–' } | ${ r.fallback ? cell( r.fallback ) : '–' } |` : '' }` );
 
 		}
 		lines.push( '' );
 		const stops = Object.entries( report ).filter( ( [ , r ] ) => r.stop );
 		if ( stops.length && c.minSlices < c.slices ) lines.push( `Slices per scene: ${ stops.map( ( [ scene, r ] ) => `${ scene } ${ r.stop.slices }${ r.stop.reason === 'max' ? ' (all)' : ` (${ r.stop.metric } ${ r.stop.delta > 0 ? '+' : '' }${ fmt( r.stop.delta ) } ± ${ fmt( r.stop.ci ) }: ${ r.stop.reason === 'clear' ? 'cleared zero' : 'narrow' })` }` ).join( '; ' ) }.`, '' );
-		if ( late ) lines.push( 'Late frames: the share of the intervals between the frames the compositor presented (else those the scene rendered) longer than the pace (the frame pacer\'s refreshes per frame, one without it), per slice.', '' );
+		if ( late ) lines.push( 'Late frames: the share of the intervals between the frames the compositor presented (else those the scene rendered) longer than the pace each frame was rendered at (the frame pacer\'s refreshes per frame then, one without it), per slice. Effective fps: rendered frames per second; the fallback\'s share: rendered frames at the pacer\'s slower rate.', '' );
 		const compiles = Object.entries( report ).map( ( [ scene, r ] ) => {
 
 			const w = ( x ) => x ? `${ x.pipelines ?? x.warmB?.pipelines ?? 0 } pipelines${ x.pipelineMs ? ` (${ fmt( x.pipelineMs ) } ms JS)` : '' }` : '?';
