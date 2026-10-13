@@ -5,7 +5,8 @@
 //
 // - `land`: the grown land of a seed and step (IslandGrowth.ts), with what the page needs before
 //   any chunk arrives (ChunkMerge.ts `LandData`: the chunks, the steps each chunk's cache key
-//   names, the far floor, the floor's fields over the fields' bounds). Cached under its own key.
+//   names, the far floor, the floor's fields over the fields' bounds, the walking loop). Cached
+//   under its own key.
 // - `field`: the land field of a land version (Chunks.ts `landField`, the costliest part of the
 //   land: a few tenths of a second), once per version, and only when the land or a chunk was not
 //   in the cache.
@@ -29,6 +30,7 @@ import { buildFarFloor, nearLandCells, underLand } from './SeabedTile.ts';
 import { openSeaBeds, openSeaHeight, SHELF_CEILING } from './Bathymetry.ts';
 import { fieldBounds, BED_CELL, FLOOR_CELL, type LandData } from './ChunkMerge.ts';
 import { openChunkStore, type ChunkStore } from './WorldCache.ts';
+import { walkLoop } from './WalkLoop.ts';
 
 /** The land of `seed` after `step` growth steps, and what the page needs of it before its chunks. */
 export function buildLand( seed: number, step: number ): LandData {
@@ -67,7 +69,7 @@ export function buildLand( seed: number, step: number ): LandData {
 		}
 
 	}
-	return { seed, step, land: land.toBytes(), chunks, steps, far: buildFarFloor( near ), bounds, floor, beds };
+	return { seed, step, land: land.toBytes(), chunks, steps, far: buildFarFloor( near ), bounds, floor, beds, walk: new Float64Array( walkLoop( land ).flat() ) };
 
 }
 

@@ -1,4 +1,3 @@
-import * as THREE from 'three/webgpu';
 import { coastLoops } from './RimGround.ts';
 import type { LandLattice } from './IslandGrowth.ts';
 
@@ -6,7 +5,9 @@ import type { LandLattice } from './IslandGrowth.ts';
 // must leave it clear: tussocks and tall flowers there would hide the walker's legs. It runs round
 // the land 5 m in from its coast: the largest loop of the land's signed distance at -5 m, smoothed
 // over a couple of metres and kept every 2.5 m as the waypoints of a centripetal Catmull-Rom loop,
-// so it follows any shape the land grows into.
+// so it follows any shape the land grows into. A function of the land alone, without three (the
+// land job computes it in the world's workers, chunkWorker.ts); the curve and the distance to it
+// are WalkPath.ts's.
 const INSET = 5;
 const SAMPLE = 0.5, SMOOTH = 4, PASSES = 3, WAYPOINT = 5;
 
@@ -52,31 +53,3 @@ export function walkLoop( land: LandLattice ): [ number, number ][] {
 
 }
 
-/** The closed curve the walker follows through `points` (the same centripetal Catmull-Rom). */
-export function walkCurve( points: [ number, number ][] ): THREE.CatmullRomCurve3 {
-
-	return new THREE.CatmullRomCurve3( points.map( ( [ x, z ] ) => new THREE.Vector3( x, 0, z ) ), true, 'centripetal' );
-
-}
-
-/** Horizontal distance (m) from ( x, z ) to the walking loop, as a polyline of fine samples. */
-export function walkLoopDistance( points: [ number, number ][] ): ( x: number, z: number ) => number {
-
-	const curve = walkCurve( points );
-	const samples = curve.getSpacedPoints( 400 );
-	return ( x, z ) => {
-
-		let best = Infinity;
-		for ( let i = 0; i < samples.length - 1; i ++ ) {
-
-			const a = samples[ i ], b = samples[ i + 1 ];
-			const ex = b.x - a.x, ez = b.z - a.z;
-			const t = Math.min( Math.max( ( ( x - a.x ) * ex + ( z - a.z ) * ez ) / ( ex * ex + ez * ez || 1 ), 0 ), 1 );
-			best = Math.min( best, Math.hypot( x - a.x - ex * t, z - a.z - ez * t ) );
-
-		}
-		return best;
-
-	};
-
-}

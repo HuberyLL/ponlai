@@ -58,6 +58,8 @@ export interface LandData {
 	bounds: Bounds;
 	floor: Float32Array;
 	beds: Float32Array;
+	// the islander's walking loop on this land (WalkLoop.ts): x, z per waypoint, as computed (doubles)
+	walk: Float64Array;
 }
 
 /** The world fields' bounds: the land's box and 32 m round it, out to the world's 32 m grid. A
@@ -156,6 +158,7 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 		rimStrands, rimGround,
 		rimSkirt: mergeRimSkirts( chunks.map( ( c ) => c.skirt ) ),
 		shore, seabedField, seabedBeds,
+		walk: land.walk,
 		timings: { merge: Math.round( performance.now() - t0 ) },
 	};
 

@@ -38,7 +38,7 @@ import type { ChunkJob, ChunkReply, CacheResult } from './chunkWorker.ts';
 import type { WorldData, WorldOptions } from './types.ts';
 
 // bumped whenever what a record holds changes without the generator's sources changing
-const CACHE_FORMAT = 4;
+const CACHE_FORMAT = 5;
 // the chunk's side (m): Chunks.ts S
 const CHUNK = 16;
 

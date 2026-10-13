@@ -39,7 +39,7 @@ import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
 import { islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
 import { LandLattice } from './world/IslandGrowth.ts';
-import { walkLoop, walkLoopDistance } from './world/WalkLoop.ts';
+import { walkLoopDistance, walkPoints } from './world/WalkPath.ts';
 import { setIslandClearing } from './weather/AerialPerspective.ts';
 import { Villagers, loadVillager } from './characters/Villagers.ts';
 import { PROPORTIONS, PROPORTION_NAMES, type ProportionName } from './characters/Proportions.ts';
@@ -494,7 +494,7 @@ shared.shoreXform.value.copy( shore.xform );
 const seabedField = shoreTextureFrom( data.seabedField );
 const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
 // Tussocks and tall flowers keep clear of the islander's walking loop, 5 m in from the coast.
-const walk = walkLoop( land );
+const walk = walkPoints( data.walk );
 const walkDistance = walkLoopDistance( walk );
 const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
 scene.add( world.group );

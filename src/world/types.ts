@@ -102,6 +102,8 @@ export interface WorldData {
 	seabedField: ShoreField;
 	// The floor's beds over the same bounds at 0.5 m.
 	seabedBeds: SeabedBedField;
+	// The islander's walking loop (WalkLoop.ts): x, z per waypoint.
+	walk: Float64Array;
 	timings: Record<string, number>;
 }
 
