@@ -1,8 +1,9 @@
 // The parity views: name -> { q, eval, crops, group }. Every view is a paused frame at a fixed t;
 // `q` is added to the common query (capture-set.mjs), `eval` runs in the page once
 // window.__PONLAI__ exists (before capture.mjs's settling wait). Placements derive from the island
-// mesh's bounds, the plant sites, the flower instances, the rim trails, the islander and the sun
-// and moon, so they follow any tile layout, as tools/profile-frame.mjs places its scenes.
+// meshes' bounds (one mesh, or a mesh per land chunk), the plant sites (the first rim bush where
+// there are none), the flower instances, the rim trails, the islander and the sun and moon, so
+// they follow any land, as tools/profile-frame.mjs places its scenes.
 //
 // Groups: `parity` (the 17 views every parity check runs; the default) and `taa` (7 close views
 // for the temporal anti-aliasing work: thin and moving detail); `all` is both.
@@ -22,8 +23,18 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PRE = `const s = window.__PONLAI__;
-const isl = () => { const i = s.scene.getObjectByName( 'island' ); i.geometry.computeBoundingBox(); const b = i.geometry.boundingBox;
-	return { cx: ( b.min.x + b.max.x ) / 2, cz: ( b.min.z + b.max.z ) / 2, rx: ( b.max.x - b.min.x ) / 2, rz: ( b.max.z - b.min.z ) / 2, top: b.max.y }; };
+// the island's meshes: one, or a mesh per land chunk under the group 'island'
+const islandMeshes = () => { const out = []; s.scene.getObjectByName( 'island' ).traverse( ( o ) => { if ( o.isMesh ) out.push( o ); } ); return out; };
+const isl = () => { const b = { x0: Infinity, y1: - Infinity, z0: Infinity, x1: - Infinity, z1: - Infinity };
+	for ( const m of islandMeshes() ) { m.geometry.computeBoundingBox(); const g = m.geometry.boundingBox;
+		b.x0 = Math.min( b.x0, g.min.x ); b.z0 = Math.min( b.z0, g.min.z ); b.x1 = Math.max( b.x1, g.max.x ); b.z1 = Math.max( b.z1, g.max.z ); b.y1 = Math.max( b.y1, g.max.y ); }
+	return { cx: ( b.x0 + b.x1 ) / 2, cz: ( b.z0 + b.z1 ) / 2, rx: ( b.x1 - b.x0 ) / 2, rz: ( b.z1 - b.z0 ) / 2, top: b.y1 }; };
+// the shrubs' and trees' sites; without them (the grown island has none) the first rim bush, as a
+// site 1.2 m tall
+const plantSites = () => { const sites = s.plants?.userData.sites; if ( sites?.length ) return sites;
+	const m = new s.camera.matrixWorld.constructor(), v = s.camera.position.clone(); s.foliage.updateWorldMatrix( true, false );
+	s.foliage.getMatrixAt( 0, m ); v.setFromMatrixPosition( m ).applyMatrix4( s.foliage.matrixWorld );
+	return [ { kind: 'bush', x: v.x, y: v.y, z: v.z, height: 1.2, radius: 0.6 } ]; };
 // (older builds, such as the exp/taa preview, have no setCameraView or controls.settle: the views
 // fall back to what those builds have, so the experiment's images can be cut alike)
 const free = ( p, l, fov ) => { s.setCameraView?.( 'island' ); s.setCameraMode( 'free' ); s.camera.position.set( p[ 0 ], p[ 1 ], p[ 2 ] );
@@ -39,17 +50,21 @@ const CROP = 384, CELL = 0.5;
 let grid = null;
 const heightGrid = () => {
 	if ( grid ) return grid;
-	const mesh = s.scene.getObjectByName( 'island' ), pos = mesh.geometry.attributes.position;
-	mesh.updateWorldMatrix( true, false );
+	const meshes = islandMeshes(), count = meshes.reduce( ( n, m ) => n + m.geometry.attributes.position.count, 0 );
 	const v = new s.camera.position.constructor(), box = { x0: Infinity, z0: Infinity, x1: - Infinity, z1: - Infinity };
-	const pts = new Float32Array( pos.count * 3 );
-	for ( let i = 0; i < pos.count; i ++ ) {
-		v.fromBufferAttribute( pos, i ).applyMatrix4( mesh.matrixWorld ); pts.set( [ v.x, v.y, v.z ], i * 3 );
-		box.x0 = Math.min( box.x0, v.x ); box.x1 = Math.max( box.x1, v.x ); box.z0 = Math.min( box.z0, v.z ); box.z1 = Math.max( box.z1, v.z );
+	const pts = new Float32Array( count * 3 );
+	let k = 0;
+	for ( const mesh of meshes ) {
+		const pos = mesh.geometry.attributes.position;
+		mesh.updateWorldMatrix( true, false );
+		for ( let i = 0; i < pos.count; i ++, k ++ ) {
+			v.fromBufferAttribute( pos, i ).applyMatrix4( mesh.matrixWorld ); pts.set( [ v.x, v.y, v.z ], k * 3 );
+			box.x0 = Math.min( box.x0, v.x ); box.x1 = Math.max( box.x1, v.x ); box.z0 = Math.min( box.z0, v.z ); box.z1 = Math.max( box.z1, v.z );
+		}
 	}
 	const nx = Math.ceil( ( box.x1 - box.x0 ) / CELL ) + 1, nz = Math.ceil( ( box.z1 - box.z0 ) / CELL ) + 1;
 	const h = new Float32Array( nx * nz ).fill( - Infinity );
-	for ( let i = 0; i < pos.count; i ++ ) {
+	for ( let i = 0; i < count; i ++ ) {
 		const c = Math.floor( ( pts[ i * 3 ] - box.x0 ) / CELL ) + Math.floor( ( pts[ i * 3 + 2 ] - box.z0 ) / CELL ) * nx;
 		h[ c ] = Math.max( h[ c ], pts[ i * 3 + 1 ] );
 	}
@@ -69,7 +84,7 @@ const height = ( x, z ) => { const g = heightGrid(); const i = Math.floor( ( x -
 	return i < 0 || k < 0 || i >= g.nx || k >= g.nz ? - Infinity : g.h[ i + k * g.nx ]; };
 const V = ( x, y, z ) => new s.camera.position.constructor( x, y, z );
 // shrubs and trees as solid cylinders (their sites' ground radius and height)
-const sites = s.plants.userData.sites;
+const sites = s.plants?.userData.sites ?? [];
 const inPlant = ( x, y, z, skip ) => { for ( const t of sites ) if ( t !== skip && y > t.y && y < t.y + t.height && ( x - t.x ) ** 2 + ( z - t.z ) ** 2 < ( t.radius * 0.85 ) ** 2 ) return true; return false; };
 // terrain or plants between the camera and p (the last 'margin' metres excepted; 'skip' is a plant
 // site the anchor itself belongs to)
@@ -135,7 +150,7 @@ const lips = () => { const g = heightGrid(); return cells( ( x, y, z, i, k ) => 
 	if ( ! o ) return null; const p = V( x, y, z ); return facing( p, o ) || p.y > s.camera.position.y ? { p, o } : null; } ); };
 const coast = ( y0 ) => cells( ( x, y, z, i, k ) => { if ( y < y0 + 0.3 ) return null; const o = outward( i, k, - 0.5, 2 );
 	if ( ! o ) return null; const p = V( x + o[ 0 ] * CELL, y0, z + o[ 1 ] * CELL ); return facing( p, o ) ? { p, o } : null; } );
-const nearestTree = () => { const t = s.plants.userData.sites.filter( ( x ) => x.kind === 'tree' ).map( ( x ) => ( { x, d: dist( V( x.x, x.y + x.height * 0.7, x.z ) ) } ) )
+const nearestTree = () => { const t = sites.filter( ( x ) => x.kind === 'tree' ).map( ( x ) => ( { x, d: dist( V( x.x, x.y + x.height * 0.7, x.z ) ) } ) )
 	.filter( ( e ) => inner( project( V( e.x.x, e.x.y + e.x.height * 0.7, e.x.z ) ) ) ).sort( ( a, b ) => a.d - b.d ); return t[ 0 ]?.x; };
 const flowerBeds = () => { const m = new s.camera.matrixWorld.constructor(), v = V( 0, 0, 0 ), bins = new Map();
 	for ( const mesh of s.flowers.children ) { if ( ! mesh.isInstancedMesh ) continue; mesh.updateWorldMatrix( true, false );
@@ -270,7 +285,7 @@ export const VIEWS = {
 	'island-from-sea': { q: 'weather=fair&preset=noon', eval: `const b = isl(); const a = 4.0;
 		free( [ b.cx + Math.cos( a ) * 150, 14, b.cz + Math.sin( a ) * 150 ], [ b.cx, 3, b.cz ], 35 );`, crops: [ 'cliff-edge-sea', 'rim-lip', 'horizon-line' ] },
 	// mid-afternoon, beside the first small tree's crown: shrubs and trees in dappled shade
-	'meadow-shade': { q: 'weather=fair&hour=15', eval: `const b = isl(); const t = s.plants.userData.sites.find( ( x ) => x.kind === 'tree' ) ?? s.plants.userData.sites[ 0 ];
+	'meadow-shade': { q: 'weather=fair&hour=15', eval: `const b = isl(); const sites = plantSites(), t = sites.find( ( x ) => x.kind === 'tree' ) ?? sites[ 0 ];
 		let dx = t.x - b.cx, dz = t.z - b.cz; const len = Math.hypot( dx, dz ) || 1; dx /= len; dz /= len;
 		free( [ t.x + dx * 6, t.y + 1.7, t.z + dz * 6 ], [ t.x - dx * 1.5, t.y + 0.6, t.z - dz * 1.5 ], 55 );`, crops: [ 'tree-crown', 'twigs', 'meadow-near' ] },
 	// sunrise, the orbit turned across the sun so the long shadows run sideways over the meadow
@@ -300,7 +315,7 @@ export const VIEWS = {
 		const back = 1.2 / Math.tan( 35 * Math.PI / 180 );
 		free( [ f[ 0 ] - dx * back, f[ 1 ] + 1.2, f[ 2 ] - dz * back ], f, 55 );`, crops: [ 'flowers', 'meadow-near' ] },
 	// beside the first tree's trunk, looking up through its crown at the sky
-	'twigs-sky': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(); const t = s.plants.userData.sites.find( ( x ) => x.kind === 'tree' ) ?? s.plants.userData.sites[ 0 ];
+	'twigs-sky': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(); const sites = plantSites(), t = sites.find( ( x ) => x.kind === 'tree' ) ?? sites[ 0 ];
 		let dx = t.x - b.cx, dz = t.z - b.cz; const len = Math.hypot( dx, dz ) || 1; dx /= len; dz /= len;
 		free( [ t.x + dx * 1.0, t.y + 1.1, t.z + dz * 1.0 ], [ t.x - dx * 0.4, t.y + t.height * 0.9, t.z - dz * 0.4 ], 60 );`, crops: [ 'tree-crown', 'twigs' ] },
 	// 25 m out over the sea and 4 m up, facing the rim trails' densest stretch (5 degree sectors of the
