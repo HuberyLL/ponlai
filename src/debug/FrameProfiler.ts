@@ -26,8 +26,16 @@ import type * as THREE from 'three/webgpu';
 // tick looks as long as the frame. Not only `queue.submit`: a `queue.writeBuffer` of a few dozen
 // kilobytes waited 10-25 ms for Chrome's transfer buffer at night and on the horizon, the other
 // queue writes (`writeTexture`, `copyExternalImageToTexture`) go through the same buffer, and
-// `getCurrentTexture` may wait for a free swap-chain image. Time in these calls is measured apart,
-// by call (`waits`), and the tick's own JS work is the rest. That time includes the calls' own
+// `getCurrentTexture` may wait for a free swap-chain image. Nor only the queue: the block lands on
+// whichever call finds Chrome's command buffer full, which depends on the frame's command stream.
+// On main it was mostly a writeBuffer (and createCommandEncoder); on the chunked island it was the
+// first setPipeline of the opaque pass and of the vegetation prepass, 8-10 ms a GPU-bound frame
+// that showed as JS. So the encoding calls are timed too, patched on their prototypes: the
+// device's createCommandEncoder; the command encoder's pass, copy, clear, resolve and finish calls;
+// the passes' state calls, draws and dispatches. Only a call whose own time reaches
+// `ENCODE_BLOCK_MS` counts, as `encode`, so their own encoding work (about a thousand calls a
+// frame, a few tenths of a millisecond) stays JS. Time in these calls is measured apart, by call
+// (`waits`), and the tick's own JS work is the rest. That time includes the calls' own
 // copying: about 0.15 ms a frame for the uniform uploads, more for a large upload, which then
 // shows as a long write wait rather than as JS. The same holds for the work issued after the
 // tick (the sky's bakes), whose submits block as well.
@@ -80,7 +88,7 @@ interface Frame {
 	js: number;
 	jsWall: number;
 	wait: number;
-	waits: { submit: number; write: number; texture: number };
+	waits: { submit: number; write: number; texture: number; encode: number };
 	outside: number;
 	outsideWait: number;
 	gap: number;
@@ -100,12 +108,12 @@ export interface FrameRecord {
 	t: number; // since navigation start
 	interval: number; // rAF time since the previous frame
 	nowInterval: number; // performance.now() since the previous frame's callback
-	js: number; // the synchronous tick's own work (its wall time less the queue waits)
+	js: number; // the synchronous tick's own work (its wall time less the waits)
 	jsWall: number; // the tick's wall time
-	submitWait: number; // time the tick spent in queue.submit, the queue writes and getCurrentTexture (GPU backpressure)
-	waits: { submit: number; write: number; texture: number }; // submitWait by call
-	outsideJs: number; // JS time of render and compute calls issued after the tick (async bakes), less their queue waits
-	outsideWait: number; // time those calls spent in the queue calls
+	submitWait: number; // time the tick spent in queue.submit, the queue writes, getCurrentTexture and the encoding calls' blocks (GPU backpressure)
+	waits: { submit: number; write: number; texture: number; encode: number }; // submitWait by call
+	outsideJs: number; // JS time of render and compute calls issued after the tick (async bakes), less their waits
+	outsideWait: number; // time those calls spent in the queue calls and the encoding calls' blocks
 	gap: number; // from the end of the previous tick to the start of this one
 	gpu: number; // GPU busy time: the passes' charges (see above)
 	pixel: number; // the part of gpu in passes that follow the render's pixel count (`pixelPass`; NaN without it)
@@ -136,7 +144,7 @@ type GPUDevice = {
 	queue: { submit( buffers: object[] ): void };
 };
 // the calls whose time is counted as waiting (see above), by key in `Frame.waits`
-type QueueCall = 'submit' | 'write' | 'texture';
+type WaitCall = 'submit' | 'write' | 'texture' | 'encode';
 // GPUBufferUsage.MAP_READ | COPY_DST, GPUMapMode.READ
 const READBACK_USAGE = 0x0001 | 0x0008;
 const MAP_READ = 0x0001;
@@ -160,6 +168,9 @@ const RING = 1024;
 const readbackBytes = ( queries: number ) => Math.max( 4096, 2 ** Math.ceil( Math.log2( queries * 8 ) ) );
 // a frame whose timestamps have not arrived by then is recorded with its passes missing
 const LATE_MS = 4000;
+// an encoding call counts as a wait only from this long (ms): its own work (well under a
+// microsecond; the coarsened timer reads it as 0 or 0.1 ms) stays JS, a block takes milliseconds
+const ENCODE_BLOCK_MS = 0.25;
 
 /** The profiler, built on the renderer's inspector base (`THREE.InspectorBase`). */
 export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: { timestamps?: boolean } = {} ) {
@@ -190,7 +201,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		private lastNow = 0;
 		private lastEnd = - Infinity;
 		private lastComplete = false;
-		private waits = { submit: 0, write: 0, texture: 0 };
+		private waits = { submit: 0, write: 0, texture: 0, encode: 0 };
 		private outsideWait = 0;
 		private inTick = false;
 		private lastTickEnd = NaN;
@@ -376,7 +387,8 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		 * queue's own submit and writeBuffer beneath it (`QUEUE_NATIVES`), so each real call counts
 		 * once and the batching's bookkeeping counts as JS. A timed call made inside another (a
 		 * texture write that first submits what is held) counts under its own key, and the outer
-		 * one only for the rest of its time, so no time counts twice. */
+		 * one only for the rest of its time, so no time counts twice. The encoding calls count only
+		 * from `ENCODE_BLOCK_MS` (`encode` in the tick, the outside wait after it). */
 		private wrapQueue(): void {
 
 			type Callable = ( ...args: unknown[] ) => unknown;
@@ -387,7 +399,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			// time of the timed calls made inside the one running
 			let inner = 0;
 			// `target`: the object the method is called on (the queue, for its natives)
-			const wrap = ( host: Record<string, Callable> | null | undefined, method: string, key: QueueCall, target: object | null | undefined = host ) => {
+			const wrap = ( host: Record<string, Callable> | null | undefined, method: string, key: WaitCall, target: object | null | undefined = host ) => {
 
 				const original = host?.[ method ];
 				if ( ! host || typeof original !== 'function' ) return;
@@ -424,6 +436,62 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			wrap( queue, 'copyExternalImageToTexture', 'write' );
 			// the canvas context (it hands out the swap chain's image, the render's final target)
 			wrap( backend?.context, 'getCurrentTexture', 'texture' );
+			// The encoding calls, on their prototypes: Chrome's backpressure lands on whichever call finds
+			// its command buffer full, and on the chunked island that was a render pass's setPipeline,
+			// 8-10 ms a frame counted as JS. AttachmentOps' instance wrappers call through to the
+			// prototype at call time, so this one runs beneath them; SubmitBatch's prototype wrappers are
+			// installed first (its module loads before this one), so this one runs above them, and their
+			// tracking is inside the timed call, below the threshold.
+			const prototypes: [ string, string[] ][] = [
+				[ 'GPUDevice', [ 'createCommandEncoder' ] ],
+				[ 'GPUCommandEncoder', [ 'beginRenderPass', 'beginComputePass', 'copyBufferToBuffer', 'copyBufferToTexture', 'copyTextureToBuffer', 'copyTextureToTexture', 'clearBuffer', 'resolveQuerySet', 'finish' ] ],
+				[ 'GPURenderPassEncoder', [ 'setPipeline', 'setBindGroup', 'setVertexBuffer', 'setIndexBuffer', 'setViewport', 'setScissorRect', 'setStencilReference', 'setBlendConstant', 'draw', 'drawIndexed', 'drawIndirect', 'drawIndexedIndirect', 'executeBundles', 'end' ] ],
+				[ 'GPUComputePassEncoder', [ 'setPipeline', 'setBindGroup', 'dispatchWorkgroups', 'dispatchWorkgroupsIndirect', 'end' ] ],
+			];
+			for ( const [ type, methods ] of prototypes ) {
+
+				const proto = ( globalThis as unknown as Record<string, { prototype: Record<string, Callable> } | undefined> )[ type ]?.prototype;
+				if ( ! proto ) continue;
+				for ( const method of methods ) {
+
+					const original = proto[ method ];
+					if ( typeof original !== 'function' ) continue;
+					const self = this;
+					// no rest parameter: about a thousand calls a frame would each allocate an array
+					proto[ method ] = function ( this: unknown ) {
+
+						const outside = ! self.inTick && self.outsideDepth > 0;
+						if ( ! self.inTick && ! outside ) return original.apply( this, arguments as unknown as unknown[] );
+						const outer = inner;
+						inner = 0;
+						const t0 = performance.now();
+						try {
+
+							return original.apply( this, arguments as unknown as unknown[] );
+
+						} finally {
+
+							const ms = performance.now() - t0;
+							const nested = inner;
+							const own = ms - nested;
+							const blocked = own >= ENCODE_BLOCK_MS ? own : 0;
+							// the parent subtracts only the time counted somewhere: a call below the threshold
+							// stays in its parent's (or the tick's) own time
+							inner = outer + nested + blocked;
+							if ( blocked > 0 ) {
+
+								if ( outside ) self.outsideWait += blocked;
+								else self.waits.encode += blocked;
+
+							}
+
+						}
+
+					};
+
+				}
+
+			}
 
 		}
 
@@ -433,7 +501,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			if ( ! this.queueWrapped ) this.wrapQueue();
 			this.context = null;
 			this.frame = {
-				id: this.nodeFrame.frameId, time: 0, now: performance.now(), js: 0, jsWall: 0, wait: 0, waits: { submit: 0, write: 0, texture: 0 }, outside: 0, outsideWait: 0, gap: NaN, passes: [], pending: 0,
+				id: this.nodeFrame.frameId, time: 0, now: performance.now(), js: 0, jsWall: 0, wait: 0, waits: { submit: 0, write: 0, texture: 0, encode: 0 }, outside: 0, outsideWait: 0, gap: NaN, passes: [], pending: 0,
 				pipelines: 0, pipelineMs: 0, calls: 0, triangles: 0, finishedAt: 0, scale: this.renderScale,
 			};
 			this.pipelineCount = 0;
@@ -712,7 +780,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			return ( time: number ) => {
 
 				const frame = this.frame;
-				const waits = this.waits = { submit: 0, write: 0, texture: 0 };
+				const waits = this.waits = { submit: 0, write: 0, texture: 0, encode: 0 };
 				this.inTick = true;
 				const t0 = performance.now();
 				try {
@@ -728,7 +796,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 				const wall = t1 - t0;
 				const gap = t0 - this.lastTickEnd;
 				this.lastTickEnd = t1;
-				const wait = waits.submit + waits.write + waits.texture;
+				const wait = waits.submit + waits.write + waits.texture + waits.encode;
 				const js = Math.max( wall - wait, 0 );
 				if ( frame ) {
 
