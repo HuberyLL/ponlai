@@ -13,6 +13,8 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
   (see One page, many views below).
 - `clips.mjs`, `../capture-clip.mjs`, `../clip-metrics.py`: stepped clips (a view set in motion),
   their capture and their metrics against MSAA and a ground truth (see Clips below).
+- `gates.py`: a baseline.mjs label's gate verdicts per gate id, a task's decisions applied from a
+  policy file (its header has the format; `docs/tools.md`, Captures).
 
 ## Serving a build for captures
 
@@ -126,7 +128,13 @@ frozen, plus 5 more.
 | rim-sea | weather=fair&preset=noon | 25 m out, 4 m up, facing the densest stretch of rim trails |
 | cliff-sea-golden | weather=clear&preset=golden-hour | from the sea, 3 m up, the island against the low sun |
 
-`node tools/parity/views.mjs list [parity|taa|all]`, `query <view>`, `eval <view>`, `crops <view>`.
+Across both, `special` (island-storm, horizon-storm, island-fog-dawn, weather-change: the views
+marked `special: true`) holds the special weathers and `normal` the other 20 views: normal weather
+is tuned and accepted first, so `--views normal` runs it alone (baseline.mjs's `--clips normal`
+does the same for clips: a clip is in its view's group). Every tool that takes `--views` takes
+names and groups mixed (`normal,flowers-close`).
+
+`node tools/parity/views.mjs list [parity|taa|all|normal|special]`, `query <view>`, `eval <view>`, `crops <view>`.
 
 ### Crop anchors
 
@@ -159,7 +167,7 @@ the boxes placed before it.
 ## capture-set.mjs
 
 ```sh
-node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
+node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|normal|special|a,b,c] [--repeat]
     [--view "name:query[::js]"]... [--views-file f.json] [--sweep "key=a,b,c"]...
     [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
     [--runs runs.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
@@ -594,7 +602,7 @@ shares of the tier's nominal ratio: 0.8, 0.6, 0.8, which is 1.2, 0.9, 1.2 on hig
 URL options (`sun-shadow`: `dayLength=600`) or a per-frame hook (`lightning`: a strike forced at
 frame 30), and lead frames stepped before frame 0 and not captured (`drs-steps`: 32 at its first
 scale, so a temporal mode's history, cut when the stepper starts, has converged before the scale
-steps it measures). `node tools/parity/clips.mjs list | show <clip>`.
+steps it measures). `node tools/parity/clips.mjs list [all|normal|special] | show <clip>`.
 
 ```sh
 node tools/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]

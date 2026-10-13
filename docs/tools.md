@@ -282,6 +282,16 @@ again and compared); an entry that may not carry is captured and the log says wh
 `node tools/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
 Rules and proof: the README's Carry-over.
 
+`uv run tools/parity/gates.py <root>/<sha>/<label>/metrics.json --thresholds T [--policy P]
+[--normal] [--md f] [--json f] [--title t]` turns a label's metrics (baseline.mjs with
+--thresholds) into gate verdicts per gate id: PASS and FAIL counts and every failing item, exit 0
+only when every judged gate passes. A task's decisions on top of clip-metrics' verdicts (a gate
+judged against the ground truth instead of MSAA, a gate left informational) are rules of its policy
+file, matched by gate id, entry, view, clip, crop and metric with globs, never code in the tool;
+`--normal` counts the special weathers (views.mjs's `special` group) apart. The policy's format is
+in the tool's header. `--views normal` / `--clips normal` (and `special`) select the normal
+weathers in baseline.mjs and the capture tools.
+
 ## Probes
 
 `node tools/probe.mjs [url] [--q query] [--query q]... --eval js [--until js] [--frames n]`
