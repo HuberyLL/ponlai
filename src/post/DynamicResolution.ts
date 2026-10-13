@@ -94,8 +94,38 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 //   towards the floor, where the image is soft and the frames are still late; one failed step alone
 //   is not taken for it, a second within CONTENTION_HOLD seconds is (the view moving under a
 //   player's drags failed single steps). Held there with late
-//   frames for SUSTAINED seconds, it tells `onSustainedContention` (a hook for a lower frame rate,
-//   not set: the choice is open).
+//   frames for SUSTAINED seconds, it tells `onSustainedContention` (a hook, not set: the frame
+//   pacer's fallback below covers frames still late there).
+// - The frame rate's fallback (FramePacer.ts) is decided here, from the GPU's times, since only the
+//   scale knows its floor, its frames and its cost model; the pacer only steps. It falls back (72 ->
+//   48 fps on a 144 Hz display) when the scale is at its floor (the floor, the quality floor while
+//   contention holds it there, or a scale whose step down would save too little: below the quality
+//   floor a step too small to judge, where a simulated 4K orbit stayed at 0.65, never reaching the
+//   floor, with its frames over the interval; or a view bound by its fixed work) and more than
+//   FALL_LATE of its last FALL_SPAN seconds of steered frames came late (a rendered interval over
+//   the paced one plus half a refresh: shown a refresh late). Seconds of frames, not of the clock:
+//   the frames count only at the current scale (after SETTLE) and pace, and only once their
+//   intervals add up to FALL_SPAN; main.ts passes no interval that spans a break in the steering
+//   (paused, pinned, stepped, a loop start: `resume`), so the first frame after an unpause, often
+//   late, is one frame of FALL_SPAN's, not all of them. It also falls on the emergency there (the
+//   median of the last EMERGENCY_FRAMES steered since the break over the interval). The scale's
+//   budget follows the pacer's interval, so at the fallback it rises. It
+//   returns once the floor's GPU time, predicted from the frames at whatever scale (`level`, as a
+//   step down reads it), stays under RETURN_FIT of the faster interval for RETURN_SPAN seconds of
+//   running time (a stopped loop keeps the count: a profiler's A/B runs each page for slices of a
+//   few seconds, in which a count restarted at each start could not reach RETURN_SPAN), and
+//   no sooner than RETURN_WAIT seconds after the fall; a return that falls again within RETURN_WAIT
+//   doubles the wait before the next (up to RETURN_MAX), and the wait goes back to RETURN_WAIT only
+//   after RETURN_MAX seconds back at the faster rate without a fall (a return that held between
+//   RETURN_WAIT and RETURN_MAX keeps the wait), so a view on the edge settles at the slower rate rather
+//   than flipping between the two. (At 72 fps the return asks for 11.1 ms at the floor: the
+//   steering target there is 11.5, so a view returns only with room to step back up.) A change of
+//   pace it did not decide (the pacer's `generation`: the player's `setRate`, a new divisor from the
+//   refresh's estimate, a scene jump's reset) drops the frames judged at the old pace, the return's
+//   running time and its wait. While fallen it remembers no scale (the store holds the held rate's).
+//   A known gap: a view that rests one step above the floor, its frames late from work outside the
+//   GPU's times (the main thread, the compositor), takes no step down (its GPU times fit) and so is
+//   not at its floor, and does not fall (a simulated orbit at 0.65 with 13-17 % presented late).
 // - Until its first decision (`settling`) it waits for SETTLE_FRAMES clean frames and then takes
 //   the largest scale their median predicts fits, up or down, with room for the first frames
 //   running lighter than the scene will (SETTLE_LIGHT). It starts from the scale it last held
@@ -201,6 +231,10 @@ const MISS_SHARE = 0.02, MISS_LATE = 0.06, MISS_CUT = 0.6, UP_AFTER = 6, INTERVA
 const FRAME_BAR = 8, FRAME_BAR_MAX = 64;
 // the stored scales (localStorage) and how many displays it remembers
 const STORE_KEY = 'soomi.renderScale', STORE_ENTRIES = 8;
+// the frame rate's fallback: the share of late frames at the floor over FALL_SPAN seconds that falls
+// back; a return's fit (share of the faster interval), how long it must hold (s), and the wait after
+// a fall (s), doubled up to RETURN_MAX after a return that fell again within it
+const FALL_LATE = 0.1, FALL_SPAN = 2, RETURN_FIT = 0.8, RETURN_SPAN = 5, RETURN_WAIT = 10, RETURN_MAX = 80;
 
 /** Periodic work in a frame (bits of `sample`'s `heavy`). */
 export const PeriodicWork = { skyBake: 1, sunShadow: 2, refractedSun: 4, fogBank: 8 } as const;
@@ -257,6 +291,21 @@ interface Response { change: ScaleChange; beforePixel: number; saving: number }
 // A failed step up's bar (see `barPenalty`).
 interface Bar { scale: number; from: number; until: number; error: number }
 
+/** The frame pacer's side of the frame rate's fallback (FramePacer.ts). */
+export interface PacedRate {
+	/** the refresh period and the paced interval now (ms) */
+	readonly period: number;
+	readonly interval: number;
+	/** the paced interval at the held (faster) rate (ms) */
+	readonly baseInterval: number;
+	/** whether it runs at the fallback, and whether it may step there */
+	readonly fallen: boolean;
+	/** bumped by each change of pace it did not ask for (a new rate, a new divisor, a reset) */
+	readonly generation: number;
+	readonly canFall: boolean;
+	fallback( on: boolean ): boolean;
+}
+
 export class DynamicResolution {
 
 	max: number;
@@ -292,13 +341,14 @@ export class DynamicResolution {
 	fixedBound = false;
 	/**
 	 * Hook: called with true once the frames stay late at the quality floor for SUSTAINED seconds
-	 * after a step down failed to save time (contention), and with false when that ends. The
-	 * fallback it is meant for (holding 40 fps instead of 60) is not chosen yet: nothing sets it, so
-	 * the scale holds at the quality floor at 60 fps.
+	 * after a step down failed to save time (contention), and with false when that ends. Nothing
+	 * sets it: the frame pacer's fallback (`pacer`) takes frames still late there.
 	 */
 	onSustainedContention: ( ( sustained: boolean ) => void ) | null = null;
 	/** Whether the sustained-contention hook was last called with true. */
 	sustained = false;
+	/** The frame pacer whose fallback it decides (null: none). */
+	pacer: PacedRate | null = null;
 	/** Called once with a message when something it reads looks wrong (main.ts sets it in debug
 	 * builds). */
 	onWarning: ( ( message: string ) => void ) | null = null;
@@ -341,6 +391,21 @@ export class DynamicResolution {
 	// for how long it was
 	private readonly frameBars = new Map<number, { until: number; seconds: number }>();
 	private warned = false;
+	// the fallback: the last FALL_SPAN seconds of steered frames (each one's interval, ms, whether it
+	// came late, its scale and pace), since when they count, the pacer's generation they were taken
+	// at, when the steering last resumed after a break, the last fall and return (s), the wait before
+	// a return (s), and the running time (s) the floor has been predicted to fit the faster interval,
+	// with the last update it counted
+	private paced: { t: number; ms: number; late: boolean; scale: number; pace: number }[] = [];
+	private pacedMs = 0;
+	private pacedSince = - Infinity;
+	private pacerGeneration = NaN;
+	private resumedAt = - Infinity;
+	private fellAt = - Infinity;
+	private returnedAt = - Infinity;
+	private returnWait = RETURN_WAIT;
+	private fit = 0;
+	private fitSeen = - Infinity;
 
 	constructor( { max, floor, step, maxUpscale = Infinity }: DynamicResolutionOptions ) {
 
@@ -464,10 +529,22 @@ export class DynamicResolution {
 
 	}
 
-	/** One frame interval (ms), for a browser without timestamp queries. */
+	/** One rendered frame's interval (ms) since the previous steered frame: whether it came late (the
+	 * frame rate's fallback), and the steering for a browser without timestamp queries. An interval
+	 * that spans a break in the steering is not passed: `resume` instead. */
 	sampleInterval( ms: number, now = this.clock() ): void {
 
-		if ( this.source === 'gpu' || ! Number.isFinite( ms ) || ms <= 0 || ms > 250 ) return;
+		if ( ! Number.isFinite( ms ) || ms <= 0 || ms > 250 ) return;
+		// an interval over a change of pace belongs to neither pace
+		if ( this.pacer && this.syncPacer( now ) ) {
+
+			const pace = this.pacer.interval;
+			this.paced.push( { t: now, ms, late: ms > pace + this.pacer.period * 0.5, scale: this.scale, pace } );
+			this.pacedMs += ms;
+			while ( this.paced.length > 1 && this.pacedMs - this.paced[ 0 ].ms >= FALL_SPAN * 1000 ) this.pacedMs -= this.paced.shift()!.ms;
+
+		}
+		if ( this.source === 'gpu' ) return;
 		if ( now - this.lastChange < SETTLE ) return;
 		this.intervals.push( ms );
 		if ( this.intervals.length > INTERVALS ) this.intervals.shift();
@@ -479,6 +556,7 @@ export class DynamicResolution {
 
 		if ( ! this.enabled ) return false;
 		const changed = this.source === 'gpu' ? this.steerByGpu( now ) : this.steerByIntervals( now );
+		if ( this.source === 'gpu' && ! this.settling ) this.steerPacing( now );
 		this.remember( now );
 		return changed;
 
@@ -494,6 +572,17 @@ export class DynamicResolution {
 		this.response = null;
 		this.missedBefore = null;
 		this.settling = true;
+		this.clearPaced( now );
+		// the time the loop stood still is not time the floor fitted (the fit so far stands)
+		this.fitSeen = now;
+
+	}
+
+	/** A steered frame after frames that did not steer (paused, pinned, stepped) or after a loop start:
+	 * its interval spans the break and is not passed; the emergency counts frames from here. */
+	resume( now = this.clock() ): void {
+
+		this.resumedAt = now;
 
 	}
 
@@ -592,6 +681,89 @@ export class DynamicResolution {
 
 		}
 		return false;
+
+	}
+
+	// The frame rate's fallback (see the header): falls back at the floor while frames still come
+	// late, returns once the floor is predicted to fit the faster interval with room.
+	private steerPacing( now: number ): void {
+
+		const pacer = this.pacer;
+		if ( ! pacer || ! this.syncPacer( now ) ) return;
+		if ( ! pacer.fallen ) {
+
+			if ( ! pacer.canFall || ! this.atFloor( now ) ) return;
+			// FALL_SPAN seconds of steered frames rendered at this scale (after SETTLE) and pace
+			const pace = pacer.interval, from = this.lastChange + SETTLE;
+			const frames = this.paced.filter( ( x ) => x.scale === this.scale && x.t >= from && Math.abs( x.pace - pace ) < pacer.period * 0.5 );
+			const span = frames.reduce( ( sum, x ) => sum + x.ms, 0 );
+			const late = span >= FALL_SPAN * 1000 && frames.filter( ( x ) => x.late ).length > frames.length * FALL_LATE;
+			const last = this.samples.filter( ( x ) => x.scale === this.scale && x.t - this.lastChange >= SETTLE && x.t >= this.resumedAt ).slice( - EMERGENCY_FRAMES );
+			const emergency = now - Math.max( this.lastChange, this.pacedSince ) >= EMERGENCY_HOLD && last.length === EMERGENCY_FRAMES && quantile( last.map( ( x ) => x.total ), 0.5 ) > this.interval;
+			if ( ! ( late || emergency ) || ! pacer.fallback( true ) ) return;
+			// a return that fell again soon: wait twice as long before the next; back to RETURN_WAIT
+			// only after RETURN_MAX seconds at the faster rate without a fall
+			if ( now - this.returnedAt >= RETURN_MAX ) this.returnWait = RETURN_WAIT;
+			else if ( now - this.returnedAt < RETURN_WAIT ) this.returnWait = Math.min( this.returnWait * 2, RETURN_MAX );
+			this.fellAt = now;
+			this.clearPaced( now );
+			this.fit = 0;
+			this.fitSeen = now;
+			return;
+
+		}
+		// RETURN_SPAN seconds of running time (a loop stopped and started again, `begin`, keeps what it
+		// had: the frames before and after the stop both fitted), at most a tenth of a second per update
+		const dt = Math.min( Math.max( now - this.fitSeen, 0 ), 0.1 );
+		this.fitSeen = now;
+		const all = this.samples.filter( ( x ) => now - x.t <= DOWN_SPAN );
+		const clean = all.filter( ( x ) => this.clean( x ) );
+		// too few frames since a start say nothing either way
+		if ( clean.length < MIN_FRAMES ) return;
+		if ( this.level( clean, all, this.floor ) > RETURN_FIT * pacer.baseInterval ) {
+
+			this.fit = 0;
+			return;
+
+		}
+		this.fit += dt;
+		if ( this.fit < RETURN_SPAN || now - this.fellAt < this.returnWait || ! pacer.fallback( false ) ) return;
+		this.returnedAt = now;
+		this.clearPaced( now );
+		this.fit = 0;
+
+	}
+
+	// Follows the pacer's own changes (see the header): a change it did not decide drops the frames
+	// judged at the old pace, the return's running time and its wait. Returns false at a change.
+	private syncPacer( now: number ): boolean {
+
+		const generation = this.pacer!.generation;
+		if ( generation === this.pacerGeneration ) return true;
+		const first = Number.isNaN( this.pacerGeneration );
+		this.pacerGeneration = generation;
+		if ( first ) return true;
+		this.clearPaced( now );
+		this.fit = 0;
+		this.fitSeen = now;
+		this.returnWait = RETURN_WAIT;
+		return false;
+
+	}
+
+	private clearPaced( now: number ): void {
+
+		this.paced.length = 0;
+		this.pacedMs = 0;
+		this.pacedSince = now;
+
+	}
+
+	// At the lowest scale that helps: the floor; the quality floor while contention holds it there; or
+	// any scale whose step down would save too little (below the quality floor, one too small to judge).
+	private atFloor( now: number ): boolean {
+
+		return this.scale <= this.floor + 1e-6 || this.fixedBound || ( now < this.contendedUntil && this.scale <= this.qualityFloor + 1e-6 );
 
 	}
 
@@ -905,6 +1077,8 @@ export class DynamicResolution {
 			if ( this.changes.length > 200 ) this.changes.shift();
 			this.response = null;
 			this.missedBefore = null;
+			// whether the view is bound by its fixed work is judged again at the new scale
+			this.fixedBound = false;
 			// room to step up: whatever held the time up has gone (below the quality floor the steps
 			// that saved time down there still count)
 			if ( why === 'up' ) {
@@ -926,7 +1100,8 @@ export class DynamicResolution {
 	// Remembers a scale once it has held STORE_AFTER seconds under the current key.
 	private remember( now: number ): void {
 
-		if ( this.storeKey === null || this.settling || this.scale === this.stored || now - Math.max( this.lastChange, this.keySince ) < STORE_AFTER ) return;
+		// at the frame rate's fallback the scale is the slower rate's: the store is the held rate's
+		if ( this.storeKey === null || this.settling || this.pacer?.fallen || this.scale === this.stored || now - Math.max( this.lastChange, this.keySince ) < STORE_AFTER ) return;
 		this.stored = this.scale;
 		writeStore( this.storeKey, this.scale );
 
