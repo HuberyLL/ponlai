@@ -1,12 +1,14 @@
 # Parity captures
 
 Paused captures of a fixed set of views, and a per-view diff against a reference set: the check
-that a refactor leaves the image as it was (byte for byte, or within the reference's own
+that a refactor leaves the image as it was (pixel for pixel, or within the reference's own
 repeatability), and 1:1 crops of named subjects for judging a change that is meant to show.
 
 - `views.mjs`: the views (camera, weather, time) and their crop anchors.
 - `capture-set.mjs`: captures a set through `tools/capture.mjs`.
 - `diff-set.py`: compares two sets.
+- `../verify-scene-jump.mjs`: the views reached by scene jumps in one page, against fresh loads
+  (see One page, many views below).
 - `clips.mjs`, `../capture-clip.mjs`, `../clip-metrics.py`: stepped clips (a view set in motion),
   their capture and their metrics against MSAA and a ground truth (see Clips below).
 
@@ -71,10 +73,18 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
   The rest is restarted only once the loading screen's fade has finished: a rest converged during
   the fade was shot with up to 2 % of the screen blended over the frame (0.3-1.9 levels darker
   over millions of pixels, A/A up to 268 under taa).
-  Rests are not byte-repeatable: temporal sets are judged with `diff-set.py --temporal`.
+  Rests do not repeat pixel for pixel: temporal sets are judged with `diff-set.py --temporal`.
 - The loop stops before the shot (`__PONLAI__.loop.stop()`: no new frames, the GPU queue drained):
   a headless page queues seconds of frames ahead of the GPU, and a running page's screenshot
   waits for them. The frame shot is the same; the shot takes about 1 s instead of 4-11 s.
+- The shot (capture.mjs's frames, capture-clip's crops and full frames) is taken like the grab:
+  the compositor's image through CDP at the page's ratio, PNG optimised for speed, instead of
+  Playwright's `page.screenshot`. Same pixels, other bytes (Chrome's fast encoder; the files are
+  8-57 % larger, median 28 %), and about 1 s less per capture at 3456x2234 (the shot 0.26 s
+  instead of 1.3 s, plus 35 ms to give the page its device metrics back). So **every comparison
+  decodes**: a capture's bytes depend on the encoder, its pixels do not (capture-set's `--repeat`,
+  diff-set.py, `samePixels` in capture-browser.mjs; equal bytes still short-cut to equal).
+  References written by the earlier encoder stay comparable.
 
 ## Views (views.mjs)
 
@@ -152,7 +162,7 @@ the boxes placed before it.
 
 ```sh
 node tools/parity/capture-set.mjs <baseUrl> <outDir> [--views parity|taa|all|a,b,c] [--repeat]
-    [--quality high] [--aa mode] [--q "extra&query"] [--jobs 1] [--retries 1] [--size 1728x1117@2]
+    [--quality high] [--aa mode] [--q "extra&query"] [--jobs n] [--retries 1] [--size 1728x1117@2]
     [--runs runs.csv] [--task name] [--procedure name] [--sha sha] [-- capture.mjs options]
 node tools/parity/capture-set.mjs <refUrl> --reference <root>/<sha>/<set> [same options]
 node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set> [--ref-url <refUrl>]
@@ -163,15 +173,37 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   the test side only and diffs it against the stored reference of the base commit, which it
   reuses, waits for, or (with `--ref-url`) captures.
 
-- Each view loads `?debug&paused&t=12&quality=<tier>[&aa=<mode>][&<extra>]&<view query>` and is
-  written as `<view>.png`, `<view>.json` (diagnostics, crop anchors) and `<view>.log`.
-- `--repeat`: each view twice from fresh page loads (`<view>.repeat.png`), then a byte comparison
-  per view; exit 1 if any differ (or any capture failed). The repeats run after all the first
-  captures, so a view's two loads never run side by side. Take an A/A floor with `--jobs 1`:
-  concurrent pages may change which views repeat.
+- Each view is the frame of `?debug&paused&t=12&quality=<tier>[&aa=<mode>][&<extra>]&<view query>`
+  and is written as `<view>.png`, `<view>.json` (diagnostics, crop anchors) and `<view>.log`.
+- One page per set: each worker (`capture.mjs --worker`) loads the first view it is given and
+  reaches every later one in place by the exact scene jump, `__PONLAI__.establishScene( <the view's
+  full query> )`, a frame at the jump's camera, then the view's eval, readiness and shot as after a
+  load. Its contract (`src/main.ts`): the frame equals a fresh load's, byte for byte wherever the
+  fresh load repeats. Only load-time options (quality, aa, size and dpr, the debug switches) need a
+  new page, and a set shares them. Each view's JSON has `page`: its visit on the page, `load` or
+  `jump`, the view before, the GPU lock wait and the capture's own time (ms), the page's memory then
+  (JS heap, DOM nodes, listeners, renderer.info's geometries and textures).
+- Capability: a page marks the jump with `__PONLAI__.sceneJump` (the contract's version, 1).
+  Builds without it (older commits, whose `establishScene` takes only an options form) get a page
+  per view, as before; the set says so once. `--page-per-view` forces that on any build.
+- A failed view (a timeout, a page or console error, a crash) ends its page; it is retried
+  (`--retries`, default 1) and the views still to come go on in a fresh page, whose first view is a
+  fresh load. A page silent for three times `--timeout` plus two minutes, counted from the moment
+  its view holds the GPU slot (the wait for the lock is not silence), is killed and treated the
+  same way. So one crash or a stuck page does not lose the set.
+- `--repeat`: each view twice (`<view>.repeat.png`), then a pixel comparison per view (decoded);
+  exit 1 if any differ (or any capture failed). The repeats run after all the first captures, on
+  other pages than the first captures and in reverse order: a view's repeat is reached from another
+  scene than its first capture, and the view one pass loaded fresh is jumped to in the other, so
+  the A/A also shows anything a jump leaves behind. The frames do not depend on the job count (24
+  views at `--jobs 1` and `4` decoded to the same pixels); a view that differs only by sparse
+  single-frame speckle on the vegetation while other browsers render is GPU noise: shoot it again.
 - `--aa` adds `aa=<mode>` only when given. `--q` adds options to every view (e.g. `msaa=1`).
-- `--jobs n` runs n captures at once, each in its own profile slot (a paused capture takes about
-  5-7 s alone; captures are GPU-bound: 3 at once gives the most captures per minute, more only adds latency).
+- `--jobs n` runs n pages at once, each in its own profile slot, the views handed out one at a time
+  from one queue (captures are GPU-bound: 3 at once gives the most captures per minute, more only
+  adds latency, and each extra page costs a load that a small set does not earn back). Default: one
+  page per 5 captures, at most 3, repeats counted (24 views take 3, 7 views 2, up to 5 one). Each view holds a GPU lock slot from its load or jump to its shot, so the page
+  stands stopped between views without one.
 - `--runs` (or `PARITY_RUNS`) appends a line per run to a CSV: date, task, procedure, sha, wall
   minutes, whether the GPU was busy before the run, captures, failures and the set. Without either
   nothing is logged: a procedure that keeps a run log passes one of them on every run.
@@ -179,6 +211,43 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   ready), `--frames n --every k` (n captures k rendered frames apart: `<view>.png`,
   `<view>.f1.png` ...; the loop runs between them and stops for each shot), the `--stable-*`
   options, `--ready-frames n`, `--wait ms`, `--settle ms` (fast mode above).
+
+### Quick mode (--quick, quick.mjs)
+
+For tuning, not a gate (the gates still run full sets): knob variants on a few views and crops,
+each measured against the stored references of a commit.
+
+```sh
+node tools/parity/capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--full]
+    [--variant "[label::]js"]... [--quality high] [--aa mode] [--q "extra"] [--size 1728x1117@2]
+    [--store <root>/<sha>] [--ref-url <refUrl>] [--runs runs.csv] [--task name]
+```
+
+- One page per view (loaded as capture-set loads it, film grain 0 as in capture-clip). The base is
+  shot once ready, then each `--variant` in order on the same page: its js runs (`s` is
+  `window.__PONLAI__`), the loop starts again, the temporal rest restarts (an epoch bump), the
+  page is ready again as capture.mjs makes it (stability for MSAA, the converged rest for taa,
+  taau and gt), shot. No repeat.
+- Variants accumulate on the one page: each sets every knob it tunes to an absolute value
+  (`sigma04::s.taa.settings.sigmaRest = 0.4`, then `sharp::s.taa.settings.sigmaRest = 0.3; ...`).
+  Only runtime knobs work (`s.taa.settings.*`, uniforms, `s.applyQuality( { ... } )`); load-time
+  ones (tier, aa, size, the S3 switches) need another run with `--q`.
+- Crops are shot through the screenshot's clip (only their pixels are encoded), 192 CSS px about
+  the anchor as capture-clip cuts them, from the anchors of the store's MSAA rest entry, so they
+  match the references' boxes. `--full` adds the whole frame as a set's `<view>.png`.
+- `--store <root>/<sha>`: the MSAA rest entries (`baseline/<tier>/rest/<view>`) and the ground
+  truth's (`gt/<tier>/rest/<view>`) through baseline.mjs `--capture-only --only rest --gt`: reused,
+  waited for, captured from `--ref-url` when missing, or reported (that view is shot without
+  metrics). Each variant's view folder is a capture-clip folder of the clip `rest`, measured by
+  clip-metrics.py against them.
+- Output: `<outDir>/<variant>/<view>/<crop>/0.png` and `clip.json`, `metrics/`; with `--full`
+  `<outDir>/<variant>/<view>.png`; `quick.md` (per variant and crop: FLIP against the GT, its change
+  from the base, MSAA's FLIP, S, B, dMSAA) and `quick.json` (readiness, timings, metrics).
+- Proof: variants live in one page equal fresh loads
+  with the knob in the URL: MSAA byte-identical (`diff-set --aa-floor`), taau within `--temporal`
+  (at most 3 levels on a few pixels, as its own A/A). A variant costs its readiness and its crops,
+  about 1-3 s, against about 12 s for a fresh load (3 views, base and 2 variants: 43 s against
+  108 s under MSAA, 68 s against 114 s under taau, references reused and metrics included).
 
 ## diff-set.py
 
@@ -188,21 +257,21 @@ uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [-
     [--md table.md] [--crops-from ref|test|<dir>|<file.json>] [--jobs 4]
 ```
 
-- Per view: byte-identical or not, max and mean absolute difference, pixels over 1, 2, 8 and 32
-  levels. Pass: fewer than `--max-px1` pixels over 1 level and none over 2 (`--max-px1 0` demands
-  byte identity). Exit 1 on any failure or missing view.
+- Per view: identical or not (decoded pixels, not file bytes), max and mean absolute difference,
+  pixels over 1, 2, 8 and 32 levels. Pass: fewer than `--max-px1` pixels over 1 level and none
+  over 2 (`--max-px1 0` demands identity). Exit 1 on any failure or missing view.
 - Differing views get `<out>/<view>.diff.png` (difference x8) and the worst windows as
   `ref | test | diff x8` sheets; `<out>/report.json` holds everything (default `<testDir>/diff`).
-- `--aa-floor`: both sets captured with `--repeat`. A view passes when it is byte-identical across
+- `--aa-floor`: both sets captured with `--repeat`. A view passes when it is pixel-identical across
   the sets, or when the reference does not repeat and the cross difference stays within the larger
   of the two sides' A/A differences. The test side need not be non-repeatable too: a stable test
   frame inside the reference's spread passes (the note says so). A view that repeats on the
-  reference must repeat on the test side and match it byte for byte. Diffing a set against itself
+  reference must repeat on the test side and match it pixel for pixel. Diffing a set against itself
   lists its A/A floor; `--md` writes the table.
-- `--temporal`: the rule for temporal AA captures (`aa=taa|taau`), whose paused frames are not
-  byte-repeatable (see Temporal tolerance below). MSAA sets keep the byte rules above.
+- `--temporal`: the rule for temporal AA captures (`aa=taa|taau`), whose paused frames do not
+  repeat pixel for pixel (see Temporal tolerance below). MSAA sets keep the exact rules above.
 - Each capture's JSON records the browser build (`browser`); diff-set warns when the two sets come
-  from different builds, since their frames never match byte for byte. Compare only sets captured
+  from different builds, since their frames never match pixel for pixel. Compare only sets captured
   with the same browser (Playwright's Chromium, or one `CHROME_PATH`).
 - `--crops-from`: per anchor, the difference counts and a `ref | test | diff x8` sheet
   (`<out>/<view>.<anchor>.png`), and per view `<view>.anchors.png`, the test frame at a quarter size
@@ -213,8 +282,8 @@ uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [-
 
 ## Temporal tolerance (diff-set.py --temporal, tolerance.py)
 
-MSAA paused frames repeat byte for byte (or within their small A/A floor); temporal ones do not, and
-we chose not to make them: the GPU ends a render pass on its own (tile overflow, preemption) at
+MSAA paused frames repeat pixel for pixel (or within their small A/A floor); temporal ones do not,
+and we chose not to make them: the GPU ends a render pass on its own (tile overflow, preemption) at
 points that vary from draw to draw, a split pass shades a few samples differently (mostly through
 fragment derivatives), and the temporal rest averages 40 such frames and freezes what they held.
 Under a busy GPU that reaches a few hundredths of a percent of the pixels, a few levels each (up to
@@ -260,6 +329,8 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   baseline/<tier>/clip/<clip>[@<view>]/   complete.json (and .capturing/ while being captured)
   gt/<tier>/..., gt-hi/high/...    the ground truth's entries, the same way
   <label>/...                      a test side's entries (baseline.mjs --label): not references
+  carry/<A>/                       the carry-over checks from commit A: verdict.json, the paused
+                                   set's diff, the spot checks' captures (Carry-over below)
   .replaced/<path with ~>@<time>/  a reference replaced by a fresh capture (safe to delete)
   .<name>.mutex                    beside a reference for a few milliseconds while a process
                                    inspects it and takes its claim
@@ -292,8 +363,8 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   `every`, `dense` and `anchors` (the hash of the anchors it took with `--anchors-from`, null for
   its own), so a ground truth follows a recaptured baseline.
 - `coverage`: what the directory holds, apart from the key. A set lists its views, each with
-  `repeat` (the second fresh-load capture exists) and `identical` (the two are byte-identical: the
-  view's A/A this time); a clip entry is `{ "captured": true }`. The manifest vouches only for what
+  `repeat` (the second fresh-load capture exists) and `identical` (the two hold identical pixels:
+  the view's A/A this time); a clip entry is `{ "captured": true }`. The manifest vouches only for what
   it lists: a set whose views partly failed lists the others, and the next request captures the
   rest.
 - `rounds`: each capture or extension, with its reason.
@@ -337,11 +408,87 @@ and whether its tool hash is current.
 A recapture of a reference is forced when the browser build or the capture tools change (one
 reference round after a tool change lands), when a check needs repeats or views the stored set
 lacks (only those are captured), and on request. Repeatability: with readiness by stability (Fast
-mode above) MSAA views repeat byte for byte between page loads (24 of 24 in the base references),
+mode above) MSAA views repeat pixel for pixel between page loads (24 of 24 in the base references),
 where the fixed waits left a few views 1-3 levels apart on a few pixels of vegetation; temporal
 sets never do. Still compare with `--aa-floor` (or `--temporal`) on sets captured with `--repeat`:
 a view that differs once is judged against its own A/A. `coverage.views.<view>.identical` records
 each stored A/A.
+
+### Carry-over (carry.mjs)
+
+A new merge-base B whose diff from an earlier commit A cannot have changed A's baseline and ground
+truth takes them over instead of capturing them again (most of a reference round: the gates' clips
+and 64 jittered renders per rest view):
+
+```sh
+node tools/parity/baseline.mjs --url <preview of B> --sha B ... --carry-from A [--carry-url <preview of A>] [--carry-recheck]
+node tools/parity/carry.mjs check --from A --to B [--url <preview of B>] [--carry-url U] [--root DIR]
+    [--tiers high] [--views a,b] [--clips a,b] [--only rest|clips] [--all] [--recheck]
+```
+
+The conditions, cheapest first (a baseline run stops at the first that fails; `check --all`
+evaluates every one and carries nothing):
+
+| condition | how it is ruled out | gates |
+|---|---|---|
+| `sameBuild` | `git diff A B` touches nothing the build reads (`BUILD_INPUTS`): the same build, so everything carries with no further check | all |
+| key | A's entry manifest has exactly the key B asks for: tool hash, browser build, tier, aa, size, query, clip, view, sampling, anchors | each entry |
+| `motionWatch` | the diff touches none of `src/main.ts`, `src/weather/`, `src/characters/`, `src/ocean/`, `src/game/view/`, `package.json`, `package-lock.json` (motion a paused frame cannot show; the stepper) | all |
+| `paused-<tier>` | B's paused set matches A's: `S1` on high (the 17 parity views plus every view an entry is on), `S2/<tier>` below (those views); diff-set `--aa-floor` where both hold repeats, else pixel identity. Captured or extended through the store; A's from `--carry-url` when its store lacks it | all |
+| `stored` | A's rest baseline entry's whole frame matches A's own paused-set frame of that view within 2 levels (files only): the paused check vouches for A's set, not its entries, and a capture that went wrong at A would otherwise carry on. Entries without a whole frame (the TAA rest views, the lower tiers) are not checked | rest entries with a whole frame |
+| `spot` | the first 16 frames of `pan-slow` and `islander-walk` under MSAA captured on B with A's anchors, pixel-equal to A's stored baseline entries (a differing clip is captured once more: a whole-frame outlier under a shared GPU does not repeat) | clips |
+| `gtWatch` | the diff touches none of `src/post/` `TemporalAA`, `TemporalRest`, `Jitter`, `Antialiasing`, `Motion`, `Pipeline`, `AfterResolve`, `SceneEvents` (`.ts`), nor the dependencies | aa=gt |
+| `gtSpot` | one rest ground truth (the first of island-fair-noon, meadow-close, meadow-24, flowers-close, rim-sea that A holds) captured on B within the ground truth's noise of A's: per image max 8 levels and at most 0.05 % of pixels over 2 | aa=gt |
+
+GT-HI, the lower tiers' clips and the test labels never carry. The metrics are recomputed by every
+baseline run, so a change to `clip-metrics.py` or the thresholds invalidates no capture.
+
+A carried entry is a real directory at B's path holding clones of A's files (copy-on-write on APFS,
+a plain copy elsewhere; never hard links: a later write would change both) with its own manifest:
+A's key, so later requests on B reuse it, and
+
+```json
+"carriedFrom": { "sha": "<A>", "path": "baseline/high/rest/meadow-close", "origin": "<the commit that captured it>",
+                 "at": "...", "verdict": "<B>/carry/<A>/verdict.json" }
+```
+
+(its round also names `carriedFrom`; `reference.mjs status` shows `carried from`). The checks'
+captures, diffs and the verdict stay under `<root>/<B>/carry/<A>/`; the spot checks' results are
+reused by later runs with the same inputs (the clip tools, the browser, A's entries' last capture).
+An entry that may not carry is captured as without the option, and the log names the condition
+that failed (`baseline high/clip/pan-slow: not carried (spot: ...)`).
+
+What the rule cannot see: a change that alters motion only, outside the watch list, in a view or
+clip the spot check does not cover; a temporal-only change visible in the ground truth of views
+other than the one spot-checked; the lower tiers' ground truth (checked on high only); and a rest baseline entry without a whole frame
+that was captured wrong at A (only whole frames are checked against A's paused set).
+
+## One page, many views: the scene jump (verify-scene-jump.mjs)
+
+Only the load-time options need a new page (quality, aa, size and dpr, the S3 switches): the views'
+weather, time, moon and camera are runtime state, and `__PONLAI__.establishScene( query )` jumps to
+them in place (`src/main.ts`, where its contract is written): after the jump, one rendered frame at
+the jump's camera and the view's eval, the paused frame is the one a fresh load of the view's query
+draws, byte for byte wherever the fresh load repeats. A tool that captures a set in one page calls it
+with the view's full query (the common part and the view's own), waits for a frame, runs the eval,
+then its readiness and the shot.
+
+`tools/verify-scene-jump.mjs` is that check, and the regression probe for anything that adds state a
+jump must clear (AGENTS.md: paused frames):
+
+```sh
+node tools/verify-scene-jump.mjs <baseUrl> <ref> --fresh                     # fresh loads
+node tools/verify-scene-jump.mjs <baseUrl> <ref> --fresh --suffix .repeat    # their A/A
+node tools/verify-scene-jump.mjs <baseUrl> <test>                            # one page, list order
+node tools/verify-scene-jump.mjs <baseUrl> <test> --order reverse --suffix .repeat
+uv run --with numpy --with pillow tools/parity/diff-set.py <ref> <test> --aa-floor
+```
+
+Both sides use capture fast mode (a persistent profile, 40 rendered frames after the evals, the loop
+stopped before the shot), so they differ only in how the scene was reached. `--from <view or query>`
+visits scenes first without capturing them (a storm, a night, fog, another clock: `--from
+"weather=storm&preset=noon&t=5"`); `--aa taau` with `diff-set.py --temporal` checks the temporal
+modes. All 24 views take about 2-3 s each in one page, against 6-7 s per fresh load (unshared GPU).
 
 ## Clips (clips.mjs, capture-clip.mjs, clip-metrics.py)
 
@@ -371,6 +518,12 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
   long its frames took either. Clips take the GPU lock shared.
 - Film grain is set to 0 on every side (it is re-seeded each frame and would add noise to the
   temporal metrics); `clip.json` records it.
+- A paused one-frame clip without a temporal rest (`rest` under msaa, off, gt-hi) is stepped again
+  and shot whole until two shots agree within the readiness tolerance (at most 6 shots, else the
+  clip fails and writes nothing): a single stepped frame can be the GPU's alternative image (task O;
+  most often while other browsers render), which the readiness check before it cannot see. `clip.json` records the
+  shots (`recheck`); `--test-fault` draws the first one with film grain to test it. Header of
+  `capture-clip.mjs`.
 - Crops: the view's anchors, or the clip's own (`night-still`: the horizon's stars, no crop of the
   view's rest image), or `--crops`, are read once at the base pose, and each frame projects
   their world points into a 192 CSS px box (384 device px at 2x). `--full` frames are captured whole.
@@ -410,7 +563,7 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
   are measured only when `--crops` names them. The frames are measured in worker processes
   (`--workers N`, `CLIP_METRICS_WORKERS`, by default a quarter of the CPUs within 1 to 4; results
   identical whatever the count): baseline.mjs runs several metric runs at once on top of that.
-- Repeatability: pan-slow on meadow-close repeats byte for byte between fresh loads. Vegetation
+- Repeatability: pan-slow on meadow-close repeats pixel for pixel between fresh loads. Vegetation
   crops elsewhere can differ in single frames: with the vegetation depth prepass on, a few samples
   pass its equal depth test differently from frame to frame (blobs of a few to 150 px on leaves
   and blades; none with `vegPrepass=0`).

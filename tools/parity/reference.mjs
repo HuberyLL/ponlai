@@ -30,6 +30,8 @@
 //
 // capture-set.mjs (`--reference`, `--check`) and baseline.mjs (the `baseline` and ground-truth
 // entries) use it; the layout and the manifest are documented in tools/parity/README.md.
+// baseline.mjs's carry-over (carry.mjs) fills an entry through the same claim: its `capture` clones
+// an earlier commit's entry and adds `carriedFrom` to the manifest (status `carried`).
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
@@ -53,7 +55,7 @@ export const TOOL_FILES = {
 
 // what a build reads: a server whose worktree differs from the reference's commit only elsewhere
 // serves the reference's build
-const BUILD_INPUTS = [ 'src', 'index.html', 'public', 'vite.config.ts', 'package.json', 'package-lock.json', 'tsconfig.json' ];
+export const BUILD_INPUTS = [ 'src', 'index.html', 'public', 'vite.config.ts', 'package.json', 'package-lock.json', 'tsconfig.json' ];
 const POLL_MS = 5000, ANNOUNCE_MS = 60000, MUTEX_STALE_MS = 30000;
 const FORMAT = 1;
 
@@ -283,7 +285,8 @@ function hookExit() {
 
 // ------------------------------------------------------------------ reasons
 
-function describeKeyChange( stored, storedFiles, key, files ) {
+/** Why a stored key is not the key asked for, in words (each tool file that changed by name). */
+export function describeKeyChange( stored, storedFiles, key, files ) {
 
 	const reasons = [];
 	if ( stored.tool !== key.tool ) {
@@ -413,8 +416,10 @@ function siblingSets( shaDir, self ) {
  *   key, files,          setKey() / clipKey()
  *   want,                for a set { views, repeat }
  *   url,                 where to capture it from, or null: reuse or wait only
- *   capture( todo, dir ) the capture itself: resolves to { coverage, failed } (coverage: what it
- *                        captured, in the kind's shape)
+ *   capture( todo, dir ) the capture itself: resolves to { coverage, failed, manifest } (coverage:
+ *                        what it captured, in the kind's shape; manifest: fields added to the
+ *                        manifest, such as a carried entry's `url` and `carriedFrom`)
+ *   via,                 how it captures, for the log line (default `from <url>`)
  *   acceptStale,         take a directory without a manifest, or of another key, as it is
  *   force,               capture afresh whatever is stored (a reference suspected bad)
  *   siblings,            a set may be served by another set of the commit that covers it
@@ -423,7 +428,7 @@ function siblingSets( shaDir, self ) {
  *                        process, a check's test side, takes it over), default true
  *   label, log
  * }
- * Resolves to { status: 'reused'|'waited'|'captured'|'extended'|'unavailable'|'failed', dir,
+ * Resolves to { status: 'reused'|'waited'|'captured'|'carried'|'extended'|'unavailable'|'failed', dir,
  * manifest, reason, waitedMinutes, stale }.
  */
 export async function ensureReference( spec ) {
@@ -557,7 +562,7 @@ export async function ensureReference( spec ) {
 		} );
 		if ( ! claimed ) continue;
 
-		log( `reference ${ name }: capturing ${ kind.describe( todo ) } from ${ spec.url } (${ reason })` );
+		log( `reference ${ name }: capturing ${ kind.describe( todo ) } ${ spec.via ?? `from ${ spec.url }` } (${ reason })` );
 		const t0 = Date.now();
 		let captured;
 		try {
@@ -584,10 +589,11 @@ export async function ensureReference( spec ) {
 
 			const coverage = kind.merge( coverageBefore, add );
 			writeJson( manifestFile( dir ), {
-				format: FORMAT, kind: spec.kind, sha, path: rel, key, toolFiles: spec.files, coverage, url: spec.url,
+				format: FORMAT, kind: spec.kind, sha, path: rel, key, toolFiles: spec.files, coverage, url: spec.url, ...captured.manifest,
 				rounds: [ ...( action === 'extend' ? m.rounds ?? [] : [] ), {
 					pid: process.pid, label: spec.label ?? null, started: new Date( t0 ).toISOString(), finished: new Date().toISOString(),
 					minutes: Number( ( ( Date.now() - t0 ) / 60000 ).toFixed( 2 ) ), captured: kind.describe( todo ), reason, failed: captured.failed ?? 0,
+					...( captured.manifest?.carriedFrom ? { carriedFrom: captured.manifest.carriedFrom.sha } : {} ),
 				} ],
 			} );
 			rmSync( path.join( dir, 'incomplete.json' ), { force: true } );
@@ -595,7 +601,7 @@ export async function ensureReference( spec ) {
 		} else writeJson( path.join( dir, 'incomplete.json' ), { pid: process.pid, finished: new Date().toISOString(), error: String( captured.error?.message ?? captured.error ?? 'no capture succeeded' ) } );
 		releaseClaim( dir );
 		const manifest = readJson( manifestFile( dir ) );
-		const status = ! got ? 'failed' : action === 'extend' ? 'extended' : 'captured';
+		const status = ! got ? 'failed' : captured.manifest?.carriedFrom ? 'carried' : action === 'extend' ? 'extended' : 'captured';
 		const still = got ? kind.missing( manifest.coverage, spec.want ) : todo;
 		log( `reference ${ name }: ${ status } in ${ ( ( Date.now() - t0 ) / 60000 ).toFixed( 1 ) } min${ still.length ? `; still missing ${ kind.describe( still ) }` : '' }` );
 		todo = still;
@@ -637,6 +643,7 @@ function status( dir ) {
 					`${ m.key.quality }${ m.key.aa ? ' aa=' + m.key.aa : '' }${ m.key.q ? ' ' + m.key.q : '' }` );
 
 			} else parts.push( `${ m.key.aa } ${ m.key.tier } ${ m.key.clip }@${ m.key.view }` );
+			if ( m.carriedFrom ) parts.push( `carried from ${ m.carriedFrom.sha.slice( 0, 12 ) }${ m.carriedFrom.origin !== m.carriedFrom.sha ? ` (captured at ${ m.carriedFrom.origin.slice( 0, 12 ) })` : '' }` );
 
 		}
 		if ( c ) parts.push( c.live ? `being captured by pid ${ c.pid } since ${ c.started }` : `stale claim of pid ${ c.pid }` );
