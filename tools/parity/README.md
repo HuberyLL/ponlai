@@ -15,6 +15,8 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
   their capture and their metrics against MSAA and a ground truth (see Clips below).
 - `gates.py`: a baseline.mjs label's gate verdicts per gate id, a task's decisions applied from a
   policy file (its header has the format; `docs/tools.md`, Captures).
+- `table.py`: several labels' metrics.json (baseline.mjs or clip-metrics) side by side, crop x
+  metric, with each column's ratio to a base column (MSAA by default).
 
 ## Serving a build for captures
 
