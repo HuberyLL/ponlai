@@ -193,8 +193,15 @@ screenshot, not its bytes, so the tools compare captures by decoded pixels. A pa
 about 5-7 s alone.
 
 Check visual changes with captures, compared against the previous capture (and crops, not only
-the whole frame); report measured differences. `tools/compare-captures.py` measures two overview
-captures (needs Pillow and NumPy).
+the whole frame); report measured differences. `tools/img.py` does the image work around
+captures (`uv run tools/img.py <cmd>`: its dependencies are inline, no system Pillow or NumPy
+needed): `diff` (two images or two directories: max, mean, pixels over levels, signed bias, luma
+change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors, `--zoom`),
+`sheet` (a labelled grid of images, directories or crops, `--diff` for A | B | diff) and `stats`
+(mean RGB, luma, percentiles per image or region); regions are `--box x,y,w,h` or `--anchor
+name|all` from the capture's JSON. Its numbers are diff-set.py's and compare-captures.py's
+(shared helpers in `tools/parity/pixels.py`). `tools/compare-captures.py` measures two overview
+captures (`uv run --with numpy --with pillow`).
 
 `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
 (`capture-set.mjs`) and diffs it against a reference set, pixel for pixel or within the reference's

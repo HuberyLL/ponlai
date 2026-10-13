@@ -64,13 +64,13 @@ import json
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from io import BytesIO
 from pathlib import Path
 
 import numpy as np
 from PIL import Image, ImageDraw
 
 import tolerance
+from pixels import LEVELS, X8, Files, sheet, stats
 
 ap = argparse.ArgumentParser()
 ap.add_argument("ref")
@@ -94,63 +94,6 @@ ref, test = Path(a.ref), Path(a.test)
 out = Path(a.out) if a.out else test / "diff"
 out.mkdir(parents=True, exist_ok=True)
 views = a.views.split(",") if a.views else sorted(p.stem for p in ref.glob("*.png") if "." not in p.stem)
-LEVELS = (1, 2, 8, 32)
-# the difference amplified x8 and clipped, as a lookup on uint8 differences
-X8 = np.minimum(np.arange(256) * 8, 255).astype(np.uint8)
-
-
-class Files:
-    """One view's PNGs, each read and decoded once (uint8 H x W x 3)."""
-
-    def __init__(self):
-        self.raw, self.img = {}, {}
-
-    def bytes(self, f):
-        k = str(f)
-        if k not in self.raw:
-            self.raw[k] = Path(f).read_bytes()
-        return self.raw[k]
-
-    def load(self, f):
-        k = str(f)
-        if k not in self.img:
-            self.img[k] = np.asarray(Image.open(BytesIO(self.bytes(f))).convert("RGB"))
-        return self.img[k]
-
-    def same(self, p, q):
-        """Identical pixels: equal bytes, else equal decoded arrays (the bytes depend on the encoder)."""
-        if self.bytes(p) == self.bytes(q):
-            return True
-        A, B = self.load(p), self.load(q)
-        return A.shape == B.shape and np.array_equal(A, B)
-
-
-def stats(A, B):
-    """|A - B| (uint8, per channel), its per-pixel max over the channels, and the numbers."""
-    D = np.maximum(A, B)
-    D -= np.minimum(A, B)
-    M = np.maximum(np.maximum(D[..., 0], D[..., 1]), D[..., 2])
-    # the mean: an exact integer sum over one division (what D.mean() returns, whatever the order);
-    # a row of a frame sums to under 2^32
-    total = int(D.reshape(D.shape[0], -1).sum(1, dtype=np.uint32).sum(dtype=np.int64))
-    return D, M, {
-        "max": int(M.max()),
-        "mean": round(float(total / D.size), 5),
-        "over": {str(l): int(np.count_nonzero(M > l)) for l in LEVELS},
-        "pixels": int(M.size),
-    }
-
-
-def sheet(A, B, D, box, title):
-    x, y, w, h = box
-    tiles = (A[y:y + h, x:x + w], B[y:y + h, x:x + w], X8[D[y:y + h, x:x + w]])
-    im = Image.new("RGB", (w * 3 + 8, h + 18), "#202020")
-    for j, t in enumerate(tiles):
-        im.paste(Image.fromarray(t), (j * (w + 4), 18))
-    ImageDraw.Draw(im).text((4, 3), title, fill="white")
-    return im
-
-
 def worst_windows(v, A, B, D, M, r):
     # worst windows: sum of the difference over crop-sized windows on a half-crop grid, the largest
     # first (ties: the larger x, then the larger y), picked greedily without overlap

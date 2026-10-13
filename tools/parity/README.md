@@ -6,7 +6,8 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
 
 - `views.mjs`: the views (camera, weather, time) and their crop anchors.
 - `capture-set.mjs`: captures a set through `tools/capture.mjs`.
-- `diff-set.py`: compares two sets.
+- `diff-set.py`: compares two sets; its pixel helpers (`pixels.py`) are shared with
+  `../img.py` (ad-hoc diffs, crops, sheets and statistics of any captures).
 - `../verify-scene-jump.mjs`: the views reached by scene jumps in one page, against fresh loads
   (see One page, many views below).
 - `clips.mjs`, `../capture-clip.mjs`, `../clip-metrics.py`: stepped clips (a view set in motion),
