@@ -91,7 +91,9 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 //   does not follow the pixel count (another page or app drawing: its work lands inside this page's
 //   passes, or a view bound by work that does not scale), and it holds at the quality floor for
 //   CONTENTION_HOLD seconds, twice as long each time a step below fails again, rather than sinking
-//   towards the floor, where the image is soft and the frames are still late. Held there with late
+//   towards the floor, where the image is soft and the frames are still late; one failed step alone
+//   is not taken for it, a second within CONTENTION_HOLD seconds is (the view moving under a
+//   player's drags failed single steps). Held there with late
 //   frames for SUSTAINED seconds, it tells `onSustainedContention` (a hook for a lower frame rate,
 //   not set: the choice is open).
 // - Until its first decision (`settling`) it waits for SETTLE_FRAMES clean frames and then takes
@@ -311,6 +313,8 @@ export class DynamicResolution {
 	private lateAtFloorSince = NaN;
 	// the last contention hold (s), doubled on each failed step until a step up or one that saves
 	private contentionHold = 0;
+	// when a judged step last failed without being taken for contention (one failure alone is not)
+	private doubted = - Infinity;
 	// periodic work steady enough to stay in the quantiles (PeriodicWork bits)
 	private steady = 0;
 	private nextUp = - Infinity;
@@ -727,16 +731,29 @@ export class DynamicResolution {
 		this.response = null;
 		change.measured = quantile( frames.map( ( x ) => x.total ), QUANTILE );
 		const afterPixel = quantile( frames.map( ( x ) => x.pixel ), 0.5 );
-		let saved = true;
+		let saved = true, doubt = false;
 		if ( response.saving >= PROBE_SAVING ) {
 
 			saved = response.beforePixel - afterPixel >= RESPONSE * response.saving;
-			this.lastStepSaved = saved;
+			// One failed step is not taken for contention unless another failed within CONTENTION_HOLD
+			// seconds: the view moves under the judgement (under a player's drags a step from 0.8 to 0.7
+			// in overcast measured 3 ms over its prediction as the camera turned, and the hold kept 0.8
+			// for 25 s with a fifth more late frames), while another page's load fails every step. The
+			// step stands, the next one is judged again, and the measurement teaches nothing.
+			doubt = ! saved && now - this.doubted > CONTENTION_HOLD;
+			if ( doubt ) this.doubted = now;
+			this.lastStepSaved = saved || doubt;
 
 		}
+		if ( doubt ) return;
 		if ( saved ) {
 
-			if ( response.saving >= PROBE_SAVING ) this.contentionHold = 0;
+			if ( response.saving >= PROBE_SAVING ) {
+
+				this.contentionHold = 0;
+				this.doubted = - Infinity;
+
+			}
 			// Where the maximum is the canvas's own ratio, leaving it adds the canvas-sized upscale and
 			// moves the output pass to the fixed side: that change's ratio says nothing of the share.
 			const atCanvas = Math.abs( this.max - this.canvasRatio ) < 1e-6 && ( change.from === this.max || change.scale === this.max );
