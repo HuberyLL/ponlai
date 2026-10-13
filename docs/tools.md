@@ -257,6 +257,10 @@ twice high's nominal ratio, downsampled) with gates from a thresholds file
 README). clip-metrics.py measures the
 frames in worker processes: `--workers N` or `CLIP_METRICS_WORKERS`, by default a quarter of the
 CPUs within 1 to 4; the output does not depend on the count.
+Without `--gt` it takes each side's own metrics only; `--crops boxes.json` cuts crops from whole
+frames (`{ view: { crop: [ x0, y0, x1, y1 ] } }`), and `--split-redraws` also reports each crop's
+Fhp near the shadow map redraws the clip's notes mark and between them (the shadow-shimmer study:
+use it instead of a script of one's own).
 References are stored per commit and shared (`tools/parity/reference.mjs`): `capture-set.mjs
 --reference <root>/<sha>/<set>` and the baseline's and ground truth's entries of
 `tools/parity/baseline.mjs` reuse a stored reference whose manifest (`complete.json`, written
