@@ -248,8 +248,9 @@ packages, into `dist/licenses/`.
   factor carried to the next frame (its sign: the pixel moved) and the weight a clipped history
   drops.
 - Changes: TSL; weights in frames' worth of a frame's weight instead of Lanczos sample weights;
-  display-referred input; the reactive inputs left out of the carried factor; the clamp-drop only
-  on moving pixels, to one frame, by how far the history lay outside the box.
+  display-referred input; the reactive inputs left out of the carried factor, which scales the
+  capped frames (after the cap, not before it) and is not set to 1 where the history is new; the
+  clamp-drop only on moving pixels, to one frame, by how far the history lay outside the box.
 
 ## Assets
 

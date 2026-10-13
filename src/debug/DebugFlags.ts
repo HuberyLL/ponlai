@@ -30,9 +30,9 @@ export const debugFlags: Record<string, boolean | number | string | MotionSource
 // as this module loads, before any module reads them, so a capture or a clip A/Bs a flag by its
 // query. A value reads as true / false, a number, or else the string itself; `mv.<source>` sets a
 // motion source. (Under node, as the plain verify tools run modules, there is no location.)
-const search = ( globalThis as { location?: { search: string } } ).location?.search ?? '';
+const search = globalThis.location?.search ?? '';
 const query = new URLSearchParams( search );
-if ( query.has( 'flags' ) && ( ( import.meta as { env?: { DEV?: boolean } } ).env?.DEV || query.has( 'debug' ) || query.has( 'profile' ) ) ) {
+if ( query.has( 'flags' ) && ( import.meta.env?.DEV || query.has( 'debug' ) || query.has( 'profile' ) ) ) {
 
 	for ( const entry of ( query.get( 'flags' ) ?? '' ).split( ',' ) ) {
 

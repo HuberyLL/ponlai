@@ -69,8 +69,11 @@ export interface TemporalSettings {
 	// moving `speedFull` render pixels a frame or more (eased between). 24 still (12 before M14):
 	// with the movers' motion cap (TemporalAA.ts) a moving pixel keeps at most 10 whatever this is,
 	// so the longer still history no longer lengthens the islanders' trail (the islander walk's
-	// ghosting at 24 with the movers no higher than at 12 without), and it took the still camera's
-	// flicker on rock edges to within twice MSAA's; lite (no movers) keeps 12.
+	// ghosting at 24 with the movers no higher than at 12 without), and the second stage
+	// (`taaSmooth`), which averages the history's image again over as many frames, needs the 24 to
+	// take a still camera's sunlit meadow to within twice MSAA's high-pass flicker (2.4 times at
+	// 12). The debug flags that turn the movers or the second stage off leave it at 24; lite (no
+	// movers, no second stage) keeps 12.
 	framesStill: number;
 	// the sea's still frame count (its class share and `waterFar` apply to it as to `framesStill`):
 	// held apart so a longer still history elsewhere does not lengthen it (a longer one, 24, raised the

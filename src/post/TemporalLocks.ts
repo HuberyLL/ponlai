@@ -15,12 +15,15 @@ import { float, max, min, mix, abs, select, saturate } from 'three/tsl';
 // tone mapping), which none of these terms depend on.
 // - The motion cap (ComputeBaseAccumulationWeight): a moving pixel, or one whose history was
 //   written by a moving pixel (the temporal reactive's sign, below), keeps at most `capFrames`; the
-//   cap eases to one frame at 20 output pixels a frame.
+//   cap eases to one frame at 20 output pixels a frame. The carried reactive scales the capped
+//   frames (FSR 2 scales the frames before the cap, so a reactive pixel's cap stayed whole there).
 // - The temporal reactive (ComputeTemporalReactiveFactor): a per-pixel factor carried to the next
 //   frame (0.4 at a pixel a frame or more, squared as it is carried, so a steady mover keeps 0.84 of
-//   its frames), negative where the pixel moved 0.1 output pixels or more. Ours leaves the per-pixel
-//   reactive inputs (bolts, the flash, the veil) out of it: they already cut the frames where they
-//   are, and carried over they would hold a bolt's cut a frame longer.
+//   its frames), negative where the pixel moved 0.1 output pixels or more. FSR 2 sets it to 1 where
+//   the pixel has no history (a new sample), which drops the next frame's history too; ours keeps
+//   the disocclusion's tenth there. Ours leaves the per-pixel reactive inputs (bolts, the flash, the
+//   veil) out of it: they already cut the frames where they are, and carried over they would hold
+//   a bolt's cut a frame longer.
 // - The clamp-drop (RectifyHistory): a clipped history drops its weight, so the frames that follow
 //   take over. FSR 2 drops it to a tenth of a frame on any clip, and needs its locks and luma
 //   instability to keep a still camera's thin detail; ours drops it to one frame, by how far outside
