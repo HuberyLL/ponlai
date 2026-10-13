@@ -16,7 +16,7 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, Break, Continue, uniform, uv, texture, texture3D, textureStore, textureLoad, instanceIndex, uint, int, float,
+	Fn, If, Loop, Break, Continue, uniform, uv, texture, texture3D, storageTexture, textureStore, textureLoad, instanceIndex, uint, int, float,
 	vec2, vec3, vec4, ivec2, uvec3, fract, dot, mix, smoothstep, clamp, max, min, exp, log2, sqrt, select,
 	asin, acos, atan, cos, sin, normalize, floor, abs, length, not,
 } from 'three/tsl';
@@ -53,7 +53,10 @@ type V4 = THREE.Node<'vec4'>;
 // settles its clouds once and keeps them, so a paused frame is exactly repeatable. The march
 // assumes a camera below the cloud base. On high the view's resolution is a share of the display
 // (0.58 of the render at high's nominal ratio), not of the render, so the dynamic render scale
-// neither softens the clouds again nor rebuilds the view's kernels. Lightning's light inside the
+// does not soften the clouds again. A new view size (a resized window; on the tiers below high,
+// whose view follows the render, a new render scale) swaps the view's textures under the same
+// kernels, which index by uniforms: a kernel built per size built its pipelines mid-play.
+// Lightning's light inside the
 // cloud stays out of the view's accumulated history, the bake and the panorama. The panorama and
 // the shadow map refresh in part each frame and whole on a jump and when a paused scene settles.
 
@@ -268,11 +271,16 @@ const weatherFbm = ( q: V2, profile: number[] ) => {
 
 };
 
-interface View {
-	width: number; height: number;
+interface ViewTextures {
 	trace: THREE.StorageTexture; depth: THREE.StorageTexture; high: THREE.StorageTexture; motion: THREE.StorageTexture; flash: THREE.StorageTexture;
 	boxMin: THREE.StorageTexture; boxMax: THREE.StorageTexture; history: THREE.StorageTexture[];
+}
+// a texture node of the view's kernels, and which of the view's textures it holds
+type ViewSlot = [ { value: THREE.Texture }, ( t: ViewTextures ) => THREE.StorageTexture ];
+interface View extends ViewTextures {
+	width: number; height: number;
 	kernels: { trace: THREE.ComputeNode; high: THREE.ComputeNode; box: THREE.ComputeNode; resolve: THREE.ComputeNode[] };
+	slots: ViewSlot[];
 }
 
 export class Clouds {
@@ -350,6 +358,9 @@ export class Clouds {
 	private readonly viewCam = { right: uniform( new THREE.Vector3( 1, 0, 0 ) ), up: uniform( new THREE.Vector3( 0, 1, 0 ) ), fwd: uniform( new THREE.Vector3( 0, 0, - 1 ) ), tan: uniform( new THREE.Vector2( 1, 1 ) ) };
 	private readonly viewSize = uniform( new THREE.Vector2( 4, 4 ) );
 	private readonly traceSize = uniform( new THREE.Vector2( 1, 1 ) );
+	// the trace's and the view's widths, which the kernels index by (uniforms: see buildView)
+	private readonly traceWidth = uniform( 1, 'uint' );
+	private readonly viewWidth = uniform( 1, 'uint' );
 	private readonly displayHeight = uniform( 4 );
 	private readonly viewValid = uniform( 0 );
 	private readonly slot = uniform( new THREE.Vector2() );
@@ -1036,7 +1047,10 @@ export class Clouds {
 	}
 
 
-	/** Build the view buffers and kernels for a view size. */
+	/** Build the view buffers for a view size, and the kernels for the first one. Later sizes keep
+	 * the kernels and their pipelines: their textures are swapped under them and the sizes they
+	 * index by are uniforms, so a resized window (and, on the tiers whose view follows the render
+	 * scale, a new scale) builds no compute pipeline mid-play (a kernel rebuilt per size built five). */
 	private buildView( width: number, height: number ): void {
 
 		const make = ( w: number, h: number, name: string ) => {
@@ -1050,7 +1064,8 @@ export class Clouds {
 			return t;
 
 		};
-		this.disposeView();
+		const kept = this.view;
+		if ( kept ) this.disposeViewTextures( kept );
 		const tw = Math.ceil( width / 4 ), th = Math.ceil( height / 4 );
 		const trace = make( tw, th, 'cloudTrace' ), depth = make( tw, th, 'cloudTraceDepth' ), high = make( tw, th, 'cloudHighTrace' );
 		// A flash lasts a fraction of a second, a pixel's history seconds: averaged in, a flash
@@ -1062,6 +1077,34 @@ export class Clouds {
 		const history = [ make( width, height, 'cloudViewA' ), make( width, height, 'cloudViewB' ) ];
 		this.viewSize.value.set( width, height );
 		this.traceSize.value.set( tw, th );
+		this.traceWidth.value = tw;
+		this.viewWidth.value = width;
+		const textures: ViewTextures = { trace, depth, high, motion, flash: flashTrace, boxMin, boxMax, history };
+		if ( kept ) {
+
+			for ( const [ node, pick ] of kept.slots ) node.value = pick( textures );
+			for ( const kernel of [ kept.kernels.trace, kept.kernels.high, kept.kernels.box ] ) kernel.count = tw * th;
+			for ( const kernel of kept.kernels.resolve ) kernel.count = width * height;
+			this.showView( { width, height, ...textures, kernels: kept.kernels, slots: kept.slots } );
+			return;
+
+		}
+		// the kernels' texture nodes, kept to swap their textures at the next size
+		const slots: ViewSlot[] = [];
+		const stored = ( pick: ViewSlot[ 1 ] ) => {
+
+			const node = storageTexture( pick( textures ) );
+			slots.push( [ node, pick ] );
+			return node;
+
+		};
+		const read = ( pick: ViewSlot[ 1 ] ) => {
+
+			const node = texture( pick( textures ) );
+			slots.push( [ node, pick ] );
+			return node;
+
+		};
 		const marchView = this.marchView!, highAt = this.highAt!, rainAt = this.rainAt!, skyAt = this.skyAt!;
 		const C = this.cam, P = this.prev;
 
@@ -1071,7 +1114,7 @@ export class Clouds {
 			return normalize( C.fwd.add( C.right.mul( ndc.x ) ).add( C.up.mul( ndc.y ) ) );
 
 		};
-		const tracePixel = () => ivec2( int( instanceIndex.mod( uint( tw ) ) ), int( instanceIndex.div( uint( tw ) ) ) );
+		const tracePixel = () => ivec2( int( instanceIndex.mod( this.traceWidth ) ), int( instanceIndex.div( this.traceWidth ) ) );
 		const tracedAt = ( tp: THREE.Node<'ivec2'> ) => vec2( tp ).mul( 4 ).add( this.slot ).add( 0.5 ).add( this.subPixel );
 		const hash = ( px: V2 ) => fract( sin( dot( px, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
 		const project = ( d: V3, right: V3, upv: V3, fwd: V3, tanv: V2 ) => {
@@ -1082,6 +1125,7 @@ export class Clouds {
 
 		};
 
+		const traceOut = stored( ( t ) => t.trace ), flashOut = stored( ( t ) => t.flash ), depthOut = stored( ( t ) => t.depth );
 		const traceKernel = Fn( () => {
 
 			const tp = tracePixel().toVar();
@@ -1093,13 +1137,14 @@ export class Clouds {
 			const m = marchView( rd, jitter );
 			const rainSample = rainAt( rd, C.tan.y.mul( 2 ).div( this.displayHeight ), jitter, true );
 			const rain = rainSample.color.toVar();
-			textureStore( trace, tp, over( rain, vec4( m.L, m.T ) ) );
-			textureStore( flashTrace, tp, vec4( m.F.mul( rain.a ).add( rainSample.flash ), 1 ) );
-			textureStore( depth, tp, vec4( m.depth, float( 1 ).sub( m.T ), 0, 1 ) );
+			textureStore( traceOut, tp, over( rain, vec4( m.L, m.T ) ) );
+			textureStore( flashOut, tp, vec4( m.F.mul( rain.a ).add( rainSample.flash ), 1 ) );
+			textureStore( depthOut, tp, vec4( m.depth, float( 1 ).sub( m.T ), 0, 1 ) );
 
 		} )().compute( tw * th, [ 64 ] ).setName( 'Clouds.ViewTrace' );
 
-		const depthNode = texture( depth );
+		const depthNode = read( ( t ) => t.depth );
+		const highOut = stored( ( t ) => t.high ), motionOut = stored( ( t ) => t.motion );
 		const highKernel = Fn( () => {
 
 			const tp = tracePixel().toVar();
@@ -1110,11 +1155,11 @@ export class Clouds {
 				hi.assign( highAt( rd, C.tan.y.mul( 2 ).div( this.viewSize.y ) ) );
 
 			} );
-			textureStore( high, tp, hi );
+			textureStore( highOut, tp, hi );
 			// Motion for the resolve: the closest cumulus sample around this block (like the closest
 			// depth dilation of TAA), so a cloud's edges move with it and the foreground wins.
 			const best = vec3( 1e9, 0, 0 ).toVar();
-			const tmax = vec2( tw - 1, th - 1 );
+			const tmax = this.traceSize.sub( 1 );
 			for ( let y = - 1; y <= 1; y ++ ) for ( let x = - 1; x <= 1; x ++ ) {
 
 				const dz = textureLoad( depthNode, ivec2( clamp( vec2( tp ).add( vec2( x, y ) ), vec2( 0 ), tmax ) ) ).toVar();
@@ -1132,11 +1177,12 @@ export class Clouds {
 				best.assign( vec3( 0, own.x, own.y ) );
 
 			} );
-			textureStore( motion, tp, vec4( best.y, best.z, 0, 1 ) );
+			textureStore( motionOut, tp, vec4( best.y, best.z, 0, 1 ) );
 
 		} )().compute( tw * th, [ 64 ] ).setName( 'Clouds.ViewHigh' );
 
-		const traceNode = texture( trace ), highNode = texture( high );
+		const traceNode = read( ( t ) => t.trace ), highNode = read( ( t ) => t.high );
+		const boxMinOut = stored( ( t ) => t.boxMin ), boxMaxOut = stored( ( t ) => t.boxMax );
 		// The range of this frame's samples is taken over the clouds composited onto the sky: a
 		// per-channel range of radiance and transmittance would pair the dark radiance of clear
 		// samples with the low transmittance of cloudy ones, an opaque black cloud.
@@ -1144,7 +1190,7 @@ export class Clouds {
 
 			const tp = tracePixel().toVar();
 			const sky = skyAt( viewDir( tracedAt( tp ).div( this.viewSize ) ) ).toVar();
-			const tmax = vec2( tw - 1, th - 1 );
+			const tmax = this.traceSize.sub( 1 );
 			const lo = vec4( 1e4 ).toVar(), hi = vec4( - 1e4 ).toVar();
 			for ( let y = - 1; y <= 1; y ++ ) for ( let x = - 1; x <= 1; x ++ ) {
 
@@ -1155,18 +1201,19 @@ export class Clouds {
 				hi.assign( max( hi, composite ) );
 
 			}
-			textureStore( boxMin, tp, lo );
-			textureStore( boxMax, tp, hi );
+			textureStore( boxMinOut, tp, lo );
+			textureStore( boxMaxOut, tp, hi );
 
 		} )().compute( tw * th, [ 64 ] ).setName( 'Clouds.ViewBox' );
 
-		const motionNode = texture( motion ), boxMinNode = texture( boxMin ), boxMaxNode = texture( boxMax );
-		const resolve = ( src: THREE.StorageTexture, dst: THREE.StorageTexture ) => {
+		const motionNode = read( ( t ) => t.motion ), boxMinNode = read( ( t ) => t.boxMin ), boxMaxNode = read( ( t ) => t.boxMax );
+		// from history[ src ] into history[ dst ]
+		const resolve = ( src: number, dst: number ) => {
 
-			const srcNode = texture( src );
+			const srcNode = read( ( t ) => t.history[ src ] ), dstOut = stored( ( t ) => t.history[ dst ] );
 			return Fn( () => {
 
-				const p = ivec2( int( instanceIndex.mod( uint( width ) ) ), int( instanceIndex.div( uint( width ) ) ) ).toVar();
+				const p = ivec2( int( instanceIndex.mod( this.viewWidth ) ), int( instanceIndex.div( this.viewWidth ) ) ).toVar();
 				const uv = vec2( p ).add( 0.5 ).div( this.viewSize ).toVar();
 				const rd = viewDir( uv ).toVar();
 				const out = vec4( 0, 0, 0, 1 ).toVar();
@@ -1228,17 +1275,24 @@ export class Clouds {
 					} );
 
 				} );
-				textureStore( dst, p, vec4( out.rgb, clamp( out.a, 0, 1 ) ) );
+				textureStore( dstOut, p, vec4( out.rgb, clamp( out.a, 0, 1 ) ) );
 
 			} )().compute( width * height, [ 64 ] ).setName( 'Clouds.ViewResolve' );
 
 		};
-		this.view = {
-			width, height, trace, depth, high, motion, flash: flashTrace, boxMin, boxMax, history,
-			kernels: { trace: traceKernel, high: highKernel, box: boxKernel, resolve: [ resolve( history[ 1 ], history[ 0 ] ), resolve( history[ 0 ], history[ 1 ] ) ] },
-		};
-		this.viewNode.value = history[ 0 ];
-		this.flashNode.value = flashTrace;
+		this.showView( {
+			width, height, ...textures, slots,
+			kernels: { trace: traceKernel, high: highKernel, box: boxKernel, resolve: [ resolve( 1, 0 ), resolve( 0, 1 ) ] },
+		} );
+
+	}
+
+	// the view's new buffers in use, its history started over
+	private showView( view: View ): void {
+
+		this.view = view;
+		this.viewNode.value = view.history[ 0 ];
+		this.flashNode.value = view.flash;
 		this.viewValid.value = 0;
 		this.resetHistory();
 
@@ -1649,10 +1703,16 @@ export class Clouds {
 
 		const view = this.view;
 		if ( ! view ) return;
-		for ( const t of [ view.trace, view.depth, view.high, view.motion, view.flash, view.boxMin, view.boxMax, ...view.history ] ) t.dispose();
+		this.disposeViewTextures( view );
 		for ( const kernel of [ view.kernels.trace, view.kernels.high, view.kernels.box, ...view.kernels.resolve ] ) kernel.dispose();
 		this.view = null;
 		this.viewValid.value = 0;
+
+	}
+
+	private disposeViewTextures( view: ViewTextures ): void {
+
+		for ( const t of [ view.trace, view.depth, view.high, view.motion, view.flash, view.boxMin, view.boxMax, ...view.history ] ) t.dispose();
 
 	}
 
