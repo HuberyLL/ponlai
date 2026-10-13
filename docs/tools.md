@@ -624,7 +624,14 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   and opened again, and the run goes on with the scenes not finished yet; the runner given up
   takes no lock and counts as no progress. A second hung or lost scene stops the run, with the
   finished scenes written as usual. Each scene's results are also appended to `scenes.jsonl` in
-  the output folder as it finishes, so a run that dies otherwise still leaves what it measured.
+  the output folder as it finishes, so a run that dies otherwise still leaves what it measured,
+  and the meta known at the start to `meta.json`. `--report <dir>` (or `<dir>/scenes.jsonl`) on
+  a folder without a `profile.json` (a run that crashed, was stopped or handed back) rebuilds
+  `summary.md` from them with the reports a finished run uses (A/B deltas and their intervals per
+  timestamps pass, a profile's tables and verdicts, the load table from `load.jsonl`). The summary
+  says the run is unfinished and lists the scenes left out for a missing variant or pass; it
+  writes no `profile.json`. Without `meta.json` the meta it cannot read from the scenes is `?`.
+  `--report` opens no browser and takes no lock.
 - Each page's `clockPaused` and `scalePinned` (diagnostics) are read at its load as its baseline
   (`?dpr` pins legitimately) and again after every slice or measured window. A change (a key or
   click reached the page: a Space pauses it, and a paused page renders at its nominal scale and
@@ -707,7 +714,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   rate, so both sides of an A/B run at one pace); `--frame-fallback` keeps the automatic fallback
   (72 -> 48 fps on a 144 Hz display) on.
 - `--eval` runs in the page with `s` = `window.__PONLAI__` (an ablation, e.g.
-  `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a summary.
+  `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a summary (`--report <dir>`
+  rebuilds an unfinished run's, see above).
 
 ### Measuring frame time
 
