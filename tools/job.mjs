@@ -33,7 +33,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { lockState } from './gpu-lock.mjs';
+import { estimateWaits, etaText, lockState } from './gpu-lock.mjs';
 import { appPolicy } from './qos.mjs';
 
 const MAX_WAIT = 240;
@@ -178,12 +178,15 @@ function lockLine( job, lock, below ) {
 	const held = lock.holders.filter( ( h ) => below( h.pid, job.pid ) );
 	const waiting = lock.queue.map( ( t, i ) => ( { t, i } ) ).filter( ( { t } ) => below( t.pid, job.pid ) );
 	const parts = held.map( ( h ) => h.mode === 'exclusive' ? `holding the lock alone (${ h.label })` : `holding shared slot ${ h.slot ?? '?' } (${ h.label })` );
+	// when a queued job should start, from gpu-lock's run of the queue forward (an estimate)
+	const estimate = waiting.length ? estimateWaits( { state: lock } ) : null;
 	for ( const { t, i } of waiting ) {
 
 		const ahead = lock.queue.slice( 0, i );
 		const others = lock.holders.filter( ( h ) => ! below( h.pid, job.pid ) );
 		parts.push( `queued #${ i + 1 } of ${ lock.queue.length } (${ t.mode === 'exclusive' ? 'exclusive' : `shared, ${ t.priority ?? 'normal' }` }, ${ duration( Date.now() - Date.parse( t.start ) ) })` +
-			( ahead.length ? `, behind ${ names( ahead ) }` : '' ) + ( others.length ? `; held by ${ names( others ) }` : '' ) );
+			( ahead.length ? `, behind ${ names( ahead ) }` : '' ) + ( others.length ? `; held by ${ names( others ) }` : '' ) +
+			`; estimated start in ${ etaText( estimate.queue.find( ( q ) => q.pid === t.pid )?.eta ) }` );
 
 	}
 	return parts.length ? parts.join( '; ' ) : 'not in it';

@@ -398,15 +398,17 @@ function ticketsBefore( ticket ) {
 }
 const ticketsAhead = ( ticket ) => ticketsBefore( ticket ).length;
 
-/** The lock as other tools see it (job.mjs reports where a job stands): the holders, each
- * { pid, label, start, mode, slot? }, and the waiting tickets in the order they are served. */
+/** The lock as other tools see it (job.mjs reports where a job stands; the estimate runs the queue
+ * forward from it): the holders, each { pid, label, start, mode, slot?, lease? } (a shared member
+ * without a slot runs inside an ancestor's), the waiting tickets in the order they are served, older
+ * copies' exclusive waiters (`untracked`) and the slot count. */
 export function lockState() {
 
 	const owner = lockOwner();
-	const holders = ! owner ? [] : owner.mode === 'shared'
-		? owner.members.map( ( m ) => ( { ...m, mode: 'shared' } ) )
-		: [ { pid: owner.pid, label: owner.label, start: owner.start, mode: 'exclusive' } ];
-	return { holders, queue: queueOrder( queued() ), slots: SLOTS };
+	let holders = [];
+	if ( owner?.mode === 'shared' ) holders = owner.members.map( ( m ) => ( { ...m, mode: 'shared' } ) );
+	else if ( owner && ! owner.unknown ) holders = [ { ...owner, mode: 'exclusive' } ];
+	return { holders, queue: queueOrder( queued() ), untracked: untrackedWaiters().map( ( { file, ...w } ) => w ), slots: SLOTS };
 
 }
 
@@ -1169,18 +1171,6 @@ function durationOf( label, mode, logged ) {
 
 }
 
-/** The lock's state as the estimate needs it: { holders: [ { pid, label, mode, start, lease? } ],
- * queue: [ tickets ], untracked: [ older copies' exclusive waiters ] }. */
-export function lockState() {
-
-	const owner = lockOwner();
-	let holders = [];
-	if ( owner?.mode === 'shared' ) holders = owner.members.filter( ( m ) => m.slot !== undefined ).map( ( m ) => ( { ...m, mode: 'shared' } ) );
-	else if ( owner && ! owner.unknown ) holders = [ { ...owner, mode: 'exclusive' } ];
-	return { holders, queue: queued(), untracked: untrackedWaiters().map( ( { file, ...w } ) => w ) };
-
-}
-
 // One run of the queue forward in time under the lock's grant rules, every hold lasting a duration
 // drawn for it (durationOf): Map( pid -> start time ). A current holder runs on for a duration drawn
 // longer than it has already run; one older than anything drawn (work the table does not know, an
@@ -1192,7 +1182,8 @@ export function lockState() {
 // waiter would be served before it (gpuLockWaiter's rule). Nothing that asks later is foreseen.
 function simulateQueue( state, logged, rand, now, slots ) {
 
-	const holders = state.holders.map( ( h ) => {
+	// a shared member without a slot runs inside an ancestor's and frees nothing of its own
+	const holders = state.holders.filter( ( h ) => h.mode !== 'shared' || h.slot !== undefined ).map( ( h ) => {
 
 		const d = durationOf( h.label, h.mode, logged );
 		const start = Date.parse( h.start ) || now;
@@ -1307,7 +1298,7 @@ export function estimateWaits( { state = lockState(), logged = lockDurations(), 
 	const starts = new Map( queue.map( ( t ) => [ t.pid, [] ] ) );
 	for ( let run = 0; run < RUNS; run ++ ) for ( const [ pid, at ] of simulateQueue( full, logged, rand, now, slots ) ) starts.get( pid ).push( at );
 	// where the durations came from: the holders' and every ticket's ahead
-	const sources = state.holders.map( ( h ) => durationOf( h.label, h.mode, logged ).basis );
+	const sources = state.holders.filter( ( h ) => h.mode !== 'shared' || h.slot !== undefined ).map( ( h ) => durationOf( h.label, h.mode, logged ).basis );
 	const ahead = queueOrder( queue, now );
 	const eta = ( ticket, index ) => {
 
@@ -1336,7 +1327,7 @@ function recentDurations() {
 }
 
 // "~12 min (range 8-20 min, estimate)"
-function etaText( eta ) {
+export function etaText( eta ) {
 
 	if ( ! eta || eta.startIn === null ) return 'unknown (estimate)';
 	const m = ( s ) => s < 90 ? `${ Math.max( 0, s ) } s` : `${ Math.round( s / 60 ) } min`;
