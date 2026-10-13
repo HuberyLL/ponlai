@@ -1,13 +1,16 @@
 // GPU regression: FFT-filtered slope energy and physically normalized Gaussian sea optics.
+// Needs the Vite dev server: it imports /src/ modules into the page (tools/dev-server.mjs).
 // Usage: node tools/verify-wave-optics.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { requireDevServer } from './dev-server.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const errors = [];
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
 // run (tools/gpu-lock.mjs; released when the process exits)
+await requireDevServer( process.argv[ 2 ] || 'http://127.0.0.1:5190', 'verify-wave-optics' );
 await acquireGpuLock( 'verify-wave-optics', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,

@@ -1,7 +1,9 @@
 // Actual WebGPU helper regression: separated solar/sky column sources in the water volume.
+// Needs the Vite dev server: it imports /src/ modules into the page (tools/dev-server.mjs).
 // Usage: node tools/verify-water-energy.mjs http://127.0.0.1:5190
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { requireDevServer } from './dev-server.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile, readFile } from 'node:fs/promises';
 
@@ -14,6 +16,7 @@ for ( const call of [ "from './WaterTransport.ts'", 'waterIncidentSun(', 'waterC
 const errors = [];
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
 // run (tools/gpu-lock.mjs; released when the process exits)
+await requireDevServer( process.argv[ 2 ] || 'http://127.0.0.1:5190', 'verify-water-energy' );
 await acquireGpuLock( 'verify-water-energy', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
