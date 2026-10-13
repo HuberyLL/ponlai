@@ -18,6 +18,22 @@ import * as THREE from 'three/webgpu';
 // Data three converts on upload (16-bit or 8-bit integers, items padded to 4 bytes, vec3 storage)
 // goes through three's own upload, in one step. Re-check against three's createAttribute on a
 // three upgrade.
+//
+// Writes in place (`stagedWriteSteps`): an attribute rewritten at the swap (the flowers' and the
+// bushes' instances, Flowers.ts and Foliage.ts) keeps its buffer, so its new data is staged ahead in
+// a buffer mapped at creation, and when three next writes that range of the attribute's array (its
+// first draw after the swap) the backend copies the staged data on the GPU instead of a queue write
+// (`updateAttribute` wrapped once per backend). The writes were under a megabyte, yet each 256 KB
+// instance-matrix write blocked the main thread for 15-35 ms on a running page with the GPU busy,
+// and the first after-swap step (the rain's map, whose proxies share those buffers) took 50-200 ms.
+// The key is the typed array: three uploads an instanced mesh's matrices and colours through
+// buffers of its own (r186 nodes/accessors/Instance.js) that wrap the attribute's array, so the
+// array is what the write and the stage share. There three also repeats the write: it keeps the
+// uploaded version per node attribute, and every material built on the mesh (its shadow, prepass
+// and wind variants, the rain map's proxies) has four on the one buffer, so the first write takes
+// the update range and each later one wrote the whole buffer again (256 KB a species). A write of
+// the staged version is therefore the copy once per GPU buffer and skipped after it; a write of
+// an older version (before the swap) or of other data goes through three.
 
 /** three's AttributeType (common/Constants.js). */
 export const AttributeType = { VERTEX: 1, INDEX: 2, STORAGE: 3 } as const;
@@ -95,6 +111,83 @@ export function* uploadSteps( renderer: THREE.WebGPURenderer, attribute: Attribu
 	buffer.unmap();
 	backend.get( source ).buffer = buffer;
 	attributes.update( attribute, type );
+
+}
+
+// (`staged`: the array's version when it was staged; `version`: the write's, once the copy is made)
+type Staged = { buffer: GpuBuffer | null; count: number; staged: number; version: number; copied: WeakSet<GpuBuffer> };
+type WrappedBackend = Backend & { updateAttribute( attribute: unknown ): void; [ STAGED ]?: WeakMap<ArrayBufferView, Staged> };
+const STAGED = Symbol( 'ponlai.stagedWrites' );
+
+// The backend's staged writes, its updateAttribute wrapped on first use (see the header).
+function stagedWrites( backend: WrappedBackend ): WeakMap<ArrayBufferView, Staged> {
+
+	let staged = backend[ STAGED ];
+	if ( staged ) return staged;
+	const writes = staged = backend[ STAGED ] = new WeakMap();
+	const update = backend.updateAttribute;
+	backend.updateAttribute = function ( this: WrappedBackend, attribute: unknown ) {
+
+		const source = ( attribute as { isInterleavedBufferAttribute?: boolean; data: unknown } ).isInterleavedBufferAttribute ? ( attribute as { data: unknown } ).data : attribute;
+		const { array, updateRanges, version } = source as { array: ArrayBufferView; updateRanges: { start: number; count: number }[]; version: number };
+		const write = writes.get( array );
+		const gpu = ( this.get( source ) as { buffer?: GpuBuffer; _paddedItemSize?: number } );
+		// (a write of the data before it was staged is three's own)
+		if ( ! write || ! gpu.buffer || gpu._paddedItemSize !== undefined || version <= write.staged ) return update.call( this, attribute );
+		// the staged range, or the whole array (three's write once another of its attributes has
+		// taken the ranges): beyond the range the array and the buffer hold the same old data
+		const ranged = updateRanges.length === 0 || ( updateRanges.length === 1 && updateRanges[ 0 ].start === 0 && updateRanges[ 0 ].count === write.count );
+		if ( write.version < 0 && ranged ) write.version = version;
+		if ( write.version !== version ) {
+
+			// a write of other data: three's own
+			writes.delete( array );
+			return update.call( this, attribute );
+
+		}
+		( source as { clearUpdateRanges(): void } ).clearUpdateRanges();
+		if ( write.copied.has( gpu.buffer ) ) return;
+		if ( ! write.buffer ) return update.call( this, attribute );
+		const encoder = this.device!.createCommandEncoder() as unknown as { copyBufferToBuffer( source: GpuBuffer, sourceOffset: number, destination: GpuBuffer, destinationOffset: number, size: number ): void; finish(): unknown };
+		encoder.copyBufferToBuffer( write.buffer, 0, gpu.buffer, 0, write.count * 4 );
+		this.device!.queue.submit( [ encoder.finish() ] );
+		write.copied.add( gpu.buffer );
+
+	};
+	return staged;
+
+}
+
+/** Stages `values` for a later in-place write of `attribute`'s first `values.length` elements (an
+ * update range of that length from 0), so that three's write becomes a copy on the GPU (see the
+ * header). Returns what frees the stage once the write has been drawn, or null where nothing was
+ * staged (three's own write then). */
+export function* stagedWriteSteps( renderer: THREE.WebGPURenderer, attribute: THREE.BufferAttribute, values: Float32Array ): Generator<void, ( () => void ) | null> {
+
+	const backend = renderer.backend as unknown as WrappedBackend;
+	const array = attribute.array;
+	if ( ! backend.device || ! ( array instanceof Float32Array ) || values.length === 0 ) return null;
+	const writes = stagedWrites( backend );
+	const buffer = backend.device.createBuffer( { label: 'stagedWrite', size: values.byteLength, usage: COPY_SRC, mappedAtCreation: true } );
+	const mapped = new Float32Array( buffer.getMappedRange() );
+	for ( let k = 0; k < values.length; k += SLICE / 4 ) {
+
+		yield;
+		mapped.set( values.subarray( k, k + SLICE / 4 ), k );
+
+	}
+	yield;
+	buffer.unmap();
+	const write: Staged = { buffer, count: values.length, staged: attribute.version, version: - 1, copied: new WeakSet() };
+	writes.set( array, write );
+	return () => {
+
+		// (the entry stays: a later write of the same version is one three repeats for another of
+		// the buffer's attributes, and is skipped where the copy went)
+		write.buffer = null;
+		buffer.destroy();
+
+	};
 
 }
 

@@ -5,11 +5,11 @@ import { GROWTH, LandLattice } from './IslandGrowth.ts';
 import { landBounds, type Bounds } from './WorldShapes.ts';
 import { derive, islandMesh, seabedGeometry, stonesGeometry, type WorldMeshes } from './World.ts';
 import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
-import { AttributeType, geometrySteps, textureSteps, uploadSteps } from './Upload.ts';
+import { AttributeType, geometrySteps, stagedWriteSteps, textureSteps, uploadSteps } from './Upload.ts';
 import { boundsSteps } from './Steps.ts';
 import { plantGrass, grassSteps, setGrass, type GrassPrepared, type GrassTufts } from './Grass.ts';
-import { plantFlowers, flowerInstances, flowerReplacement, setFlowers, type FlowerInstances, type Plant } from './Flowers.ts';
-import { bushInstances, setBushes, type BushInstances } from './Foliage.ts';
+import { plantFlowers, flowerInstances, flowerReplacement, flowerWrites, setFlowers, type FlowerInstances, type Plant } from './Flowers.ts';
+import { bushInstances, bushWrites, setBushes, type BushInstances } from './Foliage.ts';
 import { rimFoliageSteps, setRimFoliage, type RimFoliageBuilt } from './RimFoliage.ts';
 import { turfSkirtSteps, setTurfSkirt, type TurfSkirtBuilt } from './RimSkirt.ts';
 import { walkLoopDistance, walkPoints } from './WalkPath.ts';
@@ -50,9 +50,12 @@ import type { CullBuffers } from './GrassCull.ts';
 //   and the shore's wave fields (in a worker, ShoreWaves.ts, on a copy of the shore field made in
 //   steps). Every buffer and texture goes up ahead, a slice a step (Upload.ts: buffers mapped at
 //   creation and copies on the GPU, never queue writes, which stalled the page for hundreds of
-//   milliseconds with the GPU busy); the flowers and bushes are the exception (under a megabyte
-//   written in place at the swap: a new instanced mesh would be a node build of tens of
-//   milliseconds, Flowers.ts). Nothing is compiled ahead for the island's chunks: their draws use
+//   milliseconds with the GPU busy). The flowers' and bushes' instances are written in place at
+//   the swap (a new instanced mesh would be a node build of tens of milliseconds, Flowers.ts), so
+//   their data is staged ahead too and three's write at their first draw becomes a copy on the GPU
+//   (Upload.ts stagedWriteSteps): as queue writes, each 256 KB of instance matrices blocked the
+//   main thread for 15-35 ms on a running page, and the first frame after the swap (the rain's map
+//   draws them first) took 50-200 ms. Nothing is compiled ahead for the island's chunks: their draws use
 //   the pipelines the loaded chunks drew with (the same materials and layouts), and the swap's
 //   frame only makes their render objects (compiling ahead cost 10-19 ms of the main thread per
 //   chunk, more than that frame's share).
@@ -136,6 +139,8 @@ interface Prepared<M> {
 	fields: FieldsPrepared;
 	shore: ShoreFields;
 	top: Uint8Array;
+	// the staged in-place writes of the flowers and bushes, freed after the swap
+	staged: ( () => void )[];
 }
 
 /** What the growth is doing: `idle` (nothing pending: at the horizon, or between steps), generating
@@ -524,6 +529,9 @@ export class Growth<M = unknown> {
 		// per species its instances, written in place at the swap with their box, or (outgrown) a
 		// new mesh, compiled (and its proxy in the rain's bake)
 		const flowers: Prepared<M>[ 'flowers' ] = { instances: [], replacements: [], boxes: [] };
+		// (what is written in place at the swap is staged here, so that it is copied on the GPU)
+		const staged: ( () => void )[] = [];
+		const stage = ( free: ( () => void ) | null ) => { if ( free ) staged.push( free ); };
 		for ( let k = 0; k < plants.length; k ++ ) {
 
 			const instances = flowerInstances( [ plants[ k ] ] )[ 0 ];
@@ -533,6 +541,7 @@ export class Growth<M = unknown> {
 			flowers.replacements.push( replacement );
 			flowers.boxes.push( replacement ? null : instancesBox( ( page.flowers.children[ k ] as THREE.Mesh ).geometry, instances.matrices, instances.count ) );
 			yield;
+			if ( ! replacement ) for ( const [ attribute, values ] of flowerWrites( page.flowers.children[ k ] as THREE.InstancedMesh, instances ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
 			if ( replacement ) {
 
 				yield page.compileDraws( [ replacement ] );
@@ -547,6 +556,7 @@ export class Growth<M = unknown> {
 		yield;
 		const bushBox = instancesBox( page.foliage.geometry, bushes.matrices, bushes.count );
 		yield;
+		for ( const [ attribute, values ] of bushWrites( page.foliage, bushes ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
 
 		// the rim's trails and the turf skirt (their bounds found in the steps)
 		this.stage = 'rim';
@@ -575,7 +585,7 @@ export class Growth<M = unknown> {
 		return {
 			version, measured, bounds, data, land, changed, islands: { add, remove }, rocks, seabed, walk, grass,
 			flowers, bushes: { instances: bushes, box: bushBox },
-			rim, skirt, fields, shore: shore!, top,
+			rim, skirt, fields, shore: shore!, top, staged,
 		};
 
 	}
@@ -621,6 +631,7 @@ export class Growth<M = unknown> {
 		disposals.push( () => atDisposal( page.renderer ) );
 		const oldFlowers = setFlowers( page.flowers, p.flowers.instances, p.flowers.replacements, p.flowers.boxes );
 		disposals.push( () => { for ( const mesh of oldFlowers ) { mesh.geometry.dispose(); mesh.dispose(); } } );
+		disposals.push( () => { for ( const free of p.staged ) free(); } );
 		setBushes( page.foliage, p.bushes.instances );
 		page.foliage.boundingBox = p.bushes.box;
 		const oldRim = setRimFoliage( page.rimFoliage, p.rim );

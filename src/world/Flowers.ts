@@ -389,23 +389,32 @@ export function flowerMesh( s: number, capacity: number, instances: FlowerInstan
 
 }
 
+/** The mesh's buffers `instances` are written into, each with its values (a grown island's are
+ * staged ahead: Growth.ts, Upload.ts stagedWriteSteps). */
+export function flowerWrites( mesh: THREE.InstancedMesh, instances: FlowerInstances ): [ THREE.BufferAttribute, Float32Array ][] {
+
+	const geo = mesh.geometry;
+	return [
+		[ mesh.instanceMatrix, instances.matrices ],
+		[ geo.getAttribute( 'flowerColor' ) as THREE.BufferAttribute, instances.colors ],
+		[ geo.getAttribute( 'flowerGround' ) as THREE.BufferAttribute, instances.ground ],
+		[ geo.getAttribute( 'skyVisibility' ) as THREE.BufferAttribute, instances.visibility ],
+	];
+
+}
+
 // Writes the instances into the mesh's buffers (their used part re-uploaded) and sets its count.
 function writeFlowers( mesh: THREE.InstancedMesh, instances: FlowerInstances ): void {
 
-	const geo = mesh.geometry, n = instances.count;
-	const put = ( attribute: THREE.BufferAttribute, values: Float32Array ) => {
+	for ( const [ attribute, values ] of flowerWrites( mesh, instances ) ) {
 
 		( attribute.array as Float32Array ).set( values );
 		attribute.clearUpdateRanges();
 		attribute.addUpdateRange( 0, Math.max( values.length, attribute.itemSize ) );
 		attribute.needsUpdate = true;
 
-	};
-	put( mesh.instanceMatrix, instances.matrices );
-	put( geo.getAttribute( 'flowerColor' ) as THREE.BufferAttribute, instances.colors );
-	put( geo.getAttribute( 'flowerGround' ) as THREE.BufferAttribute, instances.ground );
-	put( geo.getAttribute( 'skyVisibility' ) as THREE.BufferAttribute, instances.visibility );
-	mesh.count = n;
+	}
+	mesh.count = instances.count;
 	// (its box and sphere follow the instances: the sun's caster box reads them)
 	mesh.boundingBox = null;
 	mesh.boundingSphere = null;
