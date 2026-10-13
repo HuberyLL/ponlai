@@ -37,7 +37,10 @@ type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed'
 // for it, then the environment's PMREM conversion and GGX filters at most four render passes a
 // frame, published (with the same products as a whole bake) a few frames later. Explicit bakes
 // (presets, seeks, weather jumps, the first bake) and any bake while the scene clock is paused run
-// whole, so paused frames stay exact. The spread drives three's `PMREMGenerator` private steps
+// whole, so paused frames stay exact. A paused page keeps its first bake's products, which a
+// first bake makes from the clouds as they stand before the first frame; a scene jump (`reset`)
+// returns the sky to that state, so its bake makes the same ones. The spread drives three's
+// `PMREMGenerator` private steps
 // (`_setSizeFromTexture`, `_init`, `_textureToCubeUV`, `_applyGGXFilter`, `_setViewport`): re-check
 // them on a three upgrade; without them it falls back to `fromEquirectangular`.
 
@@ -492,6 +495,35 @@ export class Sky {
 		const compiling = pairs.map( ( [ quad, target ] ) => compileInto( r, quad, quad.camera, target ) );
 		compiling.push( this.pmrem.compileEquirectangularShader() );
 		await Promise.all( compiling );
+
+	}
+
+	/** Back to the state before the first bake, so the next `update` bakes as a page's first does: both
+	 * endpoints and both environment atlases from one bake, shown without a blend (no trace of the
+	 * bakes before), and the clouds as they stand before the first frame (no view yet, the wind's
+	 * offset and the evolution at zero, the viewer at its start: Clouds.restart). For a scene jump
+	 * (main.ts `establishScene`): a paused page keeps its first bake's products, so a jump must make
+	 * the same ones. Call it with no bake in flight. */
+	reset(): void {
+
+		if ( this.busy ) throw new Error( 'Sky.reset: a bake is in flight' );
+		this.initialized = false;
+		this.front = 0;
+		this.destination = 0;
+		this.environmentFront = 0;
+		this.bakesSinceEnvironment = 0;
+		this.transitionDuration = 0;
+		this.transitionElapsed = 0;
+		this.blend.value = 0;
+		this.liveDiagnostics = false;
+		this.viewCamera = null;
+		this.viewWidth = 1;
+		this.viewHeight = 1;
+		this.cloudTime = 0;
+		this.clockStill = false;
+		this.viewer.set( 0, 15, 0 );
+		this.night.time.value = 0;
+		this.clouds.restart();
 
 	}
 

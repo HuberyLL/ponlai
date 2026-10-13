@@ -13,7 +13,7 @@
 //
 //   node tools/verify-first-use.mjs --url <base> [--quality high,medium,low] [--aa msaa,taa,taau,off]
 //        [--q "extra&query"] [--steps rest,events,idle,gui,camera,scale,resize,presets,weather,bolt,pause]
-//        [--frames 20] [--out file.json] [--compare ref.json] [--strict]
+//        [--frames 20] [--out file.json] [--compare ref.json] [--strict] [--fresh]
 //
 // `--quality` and `--aa` take one value or a list: every tier with every mode, each in a fresh page
 // (the output JSON is then `{ runs: [ ... ] }`, with a summary table at the end).
@@ -24,11 +24,29 @@
 // than the reference did. `--strict` exits with 1 on a FAIL. Headless (system Chrome through
 // CHROME_PATH, else Playwright's Chromium), under the GPU lock shared with paused captures and
 // probes (no timing is measured).
+//
+// The browser runs in a profile slot of the captures (tools/capture-browser.mjs, launchCapture),
+// with this tool's own switches (vsync on), so the island loads from the world cache instead of
+// being generated again (task FU: the loaded page 5-7 s after launch instead of 11-14 s under light
+// sharing; the world's generation takes a minute under a busy CPU). The cache is per slot and per
+// origin, so the first run on a new preview port in a slot still generates. The slot also keeps the
+// browser's GPU shader cache (Dawn's), which cannot hide a first-use pipeline from the counts: they
+// are the page's create*Pipeline calls, made whether the browser then compiles or finds the
+// shader in its cache; only the time a call takes changes. Measured:
+// a fresh profile, a warm slot and a slot with its shader caches wiped
+// counted the same pipelines with the same labels at load and in every step, the resize step's
+// cloud kernels included. `--fresh` loads in a throwaway profile, as the tool did before. The
+// matrix's runs share the one browser (a new page each), so its later pages also load from the
+// cache. What follows the load stays as it was: the 60 frames, every step's seconds of running,
+// the sky's bakes and the counting window of FRAMES + 31 frames are what is measured, not waits to
+// shorten. Each run's `wallMs` keeps the time from its new page to the loaded page, to the end of
+// the 60 frames, per step and in all.
 
 import { chromium } from 'playwright';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { launchCapture } from './capture-browser.mjs';
 
 const args = process.argv.slice( 2 );
 const opt = ( name, fallback = null ) => {
@@ -40,7 +58,7 @@ const opt = ( name, fallback = null ) => {
 const base = opt( 'url' );
 if ( ! base ) {
 
-	console.error( 'usage: node tools/verify-first-use.mjs --url <base> [--quality tier] [--aa mode] [--q extra] [--steps list] [--frames n] [--out file] [--compare ref.json] [--strict]' );
+	console.error( 'usage: node tools/verify-first-use.mjs --url <base> [--quality tier] [--aa mode] [--q extra] [--steps list] [--frames n] [--out file] [--compare ref.json] [--strict] [--fresh]' );
 	process.exit( 2 );
 
 }
@@ -52,6 +70,7 @@ const STEPS = ( opt( 'steps', 'rest,events,idle,gui,camera,scale,resize,presets,
 const OUT = opt( 'out' );
 const COMPARE = opt( 'compare' );
 const STRICT = args.includes( '--strict' );
+const FRESH = args.includes( '--fresh' );
 const VIEWPORT = { width: 1280, height: 800 };
 
 // Counts every pipeline the page asks WebGPU for, with its label and the frame it came in.
@@ -79,13 +98,30 @@ function pageUrl( quality, aa ) {
 
 }
 
+// (the browser's own frame rate, vsync on: unlike the captures, whose LAUNCH_ARGS turn it off)
+const ARGS = [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu' ];
 await acquireGpuLock( 'verify-first-use', { shared: true } );
-const browser = await chromium.launch( {
-	headless: true,
-	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),
-	args: [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu' ],
-} );
-// every tier with every mode, each in a fresh page (the page's default mode when none is given)
+let newPage, close, profile;
+if ( FRESH ) {
+
+	const browser = await chromium.launch( {
+		headless: true,
+		...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),
+		args: ARGS,
+	} );
+	newPage = () => browser.newPage( { viewport: VIEWPORT, deviceScaleFactor: 2 } );
+	close = () => browser.close();
+	profile = 'fresh';
+
+} else {
+
+	const capture = await launchCapture( { viewport: VIEWPORT, deviceScaleFactor: 2, args: ARGS } );
+	newPage = () => capture.context.newPage();
+	close = capture.close;
+	profile = `slot ${ capture.slot }`;
+
+}
+// every tier with every mode, each in a new page (the page's default mode when none is given)
 const results = [];
 try {
 
@@ -93,7 +129,7 @@ try {
 
 } finally {
 
-	await browser.close();
+	await close();
 
 }
 if ( OUT ) {
@@ -142,18 +178,22 @@ process.exitCode = results.some( ( r ) => r.errors.length > 0 ) || ( STRICT && f
 async function runOne( quality, aa ) {
 
 	const errors = [];
-	const result = { url: pageUrl( quality, aa ), quality, aa: aa ?? 'default', frames: FRAMES, load: null, steps: [] };
-	const page = await browser.newPage( { viewport: VIEWPORT, deviceScaleFactor: 2 } );
+	const result = { url: pageUrl( quality, aa ), quality, aa: aa ?? 'default', frames: FRAMES, profile, load: null, steps: [] };
+	const t0 = performance.now();
+	const ms = ( t ) => Math.round( performance.now() - t );
+	const page = await newPage();
 	try {
 
 		page.on( 'pageerror', ( e ) => errors.push( `pageerror: ${ e.message }` ) );
 		page.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( `console: ${ m.text() }` ); } );
 		await page.addInitScript( COUNTER );
 		await page.goto( result.url );
-		await page.waitForFunction( () => window.__PONLAI__?.renderer?.info && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 250 } );
+		await page.waitForFunction( () => window.__PONLAI__?.renderer?.info && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 'raf' } );
+		const ready = ms( t0 );
 		// the first frames build what nothing warmed (the world's materials, the shadow maps); the steps
 		// count from after them
 		await frames( page, 60 );
+		const warm = ms( t0 );
 		result.load = await page.evaluate( () => {
 
 			const log = window.__fuPipelines;
@@ -172,13 +212,17 @@ async function runOne( quality, aa ) {
 				laterLabels: log.filter( ( p ) => p.frame > firstFrame ).map( ( p ) => `${ p.label } (frame ${ p.frame })` ),
 				render: d.render, canvas: d.canvas, upscaled: d.upscaled, quality: d.quality, aa: d.aa ?? null,
 				warm: window.__PONLAI__.pipeline?.graph?.warmStats ?? null,
+				worldCache: d.worldCache ?? null,
 			};
 
 		} );
+		result.wallMs = { ready, warm };
 		console.log( `loaded ${ result.url }: ${ result.load.total } pipelines (${ result.load.beforeLoop } before the loop, ${ result.load.firstFrame } in the first frame, ${ result.load.later } in the next 60)` );
 		for ( const step of STEPS ) {
 
+			const t = performance.now();
 			const counted = await measure( page, step );
+			counted.wallMs = ms( t );
 			result.steps.push( counted );
 			const extra = [ ...counted.notes, ...( counted.rebuilds ? [ `graph rebuilds +${ counted.rebuilds }` ] : [] ), ...( counted.historyResets ? [ `history resets +${ counted.historyResets }` ] : [] ) ];
 			console.log( `${ step.padEnd( 18 ) } ${ String( counted.render ).padStart( 3 ) } render, ${ String( counted.compute ).padStart( 3 ) } compute${ extra.length ? `  (${ extra.join( '; ' ) })` : '' }` );
@@ -189,6 +233,7 @@ async function runOne( quality, aa ) {
 	} finally {
 
 		await page.close();
+		if ( result.wallMs ) result.wallMs.total = ms( t0 );
 
 	}
 	result.errors = errors;

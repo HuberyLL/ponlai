@@ -7,28 +7,31 @@
 
 Per view (each <view>.png present in both): the max absolute channel difference, the mean absolute
 difference (over all channels), and how many pixels differ by more than 1, 2, 8 and 32 levels (a
-pixel counts when its largest channel difference exceeds the level). `identical` is byte-equality
-of the files. For views that differ, it writes <out>/<view>.diff.png (the per-pixel max channel
-difference, amplified x8 and clipped) and the N worst regions as side-by-side crops (ref | test |
-diff x8) at 1:1, chosen as the windows holding the most difference, non-overlapping.
+pixel counts when its largest channel difference exceeds the level). `identical` is equality of
+the decoded pixels (equal bytes, or equal arrays once decoded): a PNG's bytes depend on the encoder
+(the capture tools' fast PNG against Playwright's default one), its pixels do not, so sets written
+by either encoder compare alike. For views that differ, it writes <out>/<view>.diff.png (the
+per-pixel max channel difference, amplified x8 and clipped) and the N worst regions as
+side-by-side crops (ref | test | diff x8) at 1:1, chosen as the windows holding the most
+difference, non-overlapping.
 --max-px1 is a pass threshold: a view passes when it has fewer than that many pixels over 1 level
 and none over 2; pass 0 to require identity.
 
 --aa-floor judges by each view's own repeatability instead (both sets captured with --repeat, so
-<view>.repeat.png exists on both sides). A view passes when the test frame is byte-identical to the
+<view>.repeat.png exists on both sides). A view passes when the test frame is pixel-identical to the
 reference frame (either capture of each side), or when the reference does not repeat (its A/A pair
 differs) and the cross difference stays within the larger of the two sides' A/A differences (max
 level and the count of pixels over 1 and 2 levels). The test side need not be non-repeatable too:
 a test that repeats while the reference does not passes when its frame lies within the reference's
 spread (noted as such). A view that repeats on the reference must repeat on the test side, and
-must match it byte for byte. Comparing a set with itself (refDir = testDir) lists its A/A floor.
+must match it pixel for pixel. Comparing a set with itself (refDir = testDir) lists its A/A floor.
 Both sets must come from the same browser build (`browser` in each capture's JSON): a mismatch is
-reported as a warning, since no frame then matches byte for byte. --md writes the table as
+reported as a warning, since no frame then matches pixel for pixel. --md writes the table as
 Markdown too.
 
 --temporal judges temporal AA captures (taa, taau) by the tolerance in tolerance.py instead: their
-paused frames are not byte-repeatable (the rest averages 40 frames and freezes the GPU's own render
-pass splits), so per-pixel differences up to a level are ignored and the share of pixels over it
+paused frames do not repeat pixel for pixel (the rest averages 40 frames and freezes the GPU's
+own render pass splits), so per-pixel differences up to a level are ignored and the share of pixels over it
 is bounded on the frame, in every 32 px window and on every named crop, with the windows' and
 crops' mean signed difference bounding coherent shifts under the level (thresholds and their
 calibration: tolerance.py). A failure counts only after one recapture: the view passes when any
@@ -36,7 +39,7 @@ pairing of the two sides' captures (<view>.png, <view>.repeat.png) passes, and a
 without a recapture on the test side says so. `use` is the largest measurement / threshold ratio of
 the best pairing (pass: <= 1). Comparing a set with itself (refDir = testDir) judges each view's
 A/A pair. The crops are those of --crops-from, else of the test side's JSON. --flip adds the mean
-NVIDIA FLIP of the frame, reported only (needs `--with flip-evaluator`). MSAA sets stay byte-exact
+NVIDIA FLIP of the frame, reported only (needs `--with flip-evaluator`). MSAA sets stay pixel-exact
 (the default and --aa-floor).
 
 --crops-from cuts the named crop anchors (views.mjs; `crops` in each capture's JSON) from both
@@ -115,7 +118,11 @@ class Files:
         return self.img[k]
 
     def same(self, p, q):
-        return self.bytes(p) == self.bytes(q)
+        """Identical pixels: equal bytes, else equal decoded arrays (the bytes depend on the encoder)."""
+        if self.bytes(p) == self.bytes(q):
+            return True
+        A, B = self.load(p), self.load(q)
+        return A.shape == B.shape and np.array_equal(A, B)
 
 
 def stats(A, B):
@@ -344,7 +351,7 @@ def compare(v):
     return lines, r, row, bool(ok)
 
 
-# frames from two browser builds never match byte for byte: say so before the table
+# frames from two browser builds never match pixel for pixel: say so before the table
 seen = {(browser(ref, v), browser(test, v)) for v in views}
 mixed = sorted({f"{r} vs {t}" for r, t in seen if r and t and r != t})
 if mixed:

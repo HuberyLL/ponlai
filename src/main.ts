@@ -1,3 +1,11 @@
+// The page: renderer, camera, sun, GUI, frame loop and diagnostics. On the dev server and with
+// ?debug (or ?profile) it hands the scene to the capture and profiling tools as
+// `window.__PONLAI__`; among its handles `establishScene( query )` jumps to a whole scene as a fresh
+// load of `?<query>` draws it (its contract is written where it is defined, after the frame loop;
+// `sceneJump`, the contract's version, tells a capture tool that this page has it: builds without
+// it have only the options form, so the tools load a page per view there),
+// `loop.stop()` / `loop.start()` hold and resume the frame loop and `loop.step` steps the tick with
+// fixed timestamps.
 import * as THREE from 'three/webgpu';
 import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
@@ -142,15 +150,26 @@ const afterScene = new THREE.Scene();
 // depth, -1e5, and the passes' sky threshold, -9e4, stay beyond it).
 const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 60000 );
 const target = new THREE.Vector3( 1.5, 0.5, 1.0 );
-const view = { distance: Number( params.get( 'dist' ) ?? 58 ), polar: Number( params.get( 'polar' ) ?? 50 ), azimuth: Number( params.get( 'az' ) ?? 318 ) };
-camera.position.setFromSphericalCoords( view.distance, THREE.MathUtils.degToRad( view.polar ), THREE.MathUtils.degToRad( view.azimuth ) ).add( target );
+// The orbit's starting pose from the `dist`, `polar` and `az` options (metres, degrees): the camera
+// on its sphere about the target, then the island camera's constructor update (about the origin,
+// with its default limits) and a settle within the orbit's limits. A scene jump (`establishScene`)
+// repeats it on a camera and controls of its own, so its pose is the load's to the bit.
+function placeOrbit( on: THREE.PerspectiveCamera, element: HTMLElement, options: URLSearchParams ): IslandCameraControls {
+
+	const view = { distance: Number( options.get( 'dist' ) ?? 58 ), polar: Number( options.get( 'polar' ) ?? 50 ), azimuth: Number( options.get( 'az' ) ?? 318 ) };
+	on.position.setFromSphericalCoords( view.distance, THREE.MathUtils.degToRad( view.polar ), THREE.MathUtils.degToRad( view.azimuth ) ).add( target );
+	const orbit = new IslandCameraControls( on, element );
+	orbit.target.copy( target );
+	orbit.minDistance = 22;
+	orbit.maxDistance = 190;
+	orbit.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
+	orbit.settle();
+	return orbit;
+
+}
 // the island's camera: drags follow the hand on the frame that draws them (IslandCameraControls.ts)
-const controls = new IslandCameraControls( camera, renderer.domElement );
-controls.target.copy( target );
-controls.minDistance = 22;
-controls.maxDistance = 190;
-controls.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
-controls.settle();
+const controls = placeOrbit( camera, renderer.domElement, params );
+// the island view's pose (the R key, `setCameraView( 'island' )`); a scene jump sets it anew
 const initialCameraPosition = camera.position.clone();
 const initialCameraQuaternion = camera.quaternion.clone();
 const initialCameraFov = camera.fov;
@@ -162,30 +181,48 @@ const freeControls = new FreeCameraControls( camera, renderer.domElement );
 
 const sky = new Sky( renderer, { elevation: 32, azimuth: - 8 } );
 sky.setEnvironmentSource( quality.environmentSource );
-const numberParam = ( name: string, fallback: number ) => {
+const numberParam = ( name: string, fallback: number, options = params ) => {
 
-	const value = Number( params.get( name ) ?? fallback );
+	const value = Number( options.get( name ) ?? fallback );
 	return Number.isFinite( value ) ? value : fallback;
 
 };
+// The scene a query's options set: the weather (held when one is asked for, else evolving on its
+// own), the day clock and its preset, the scene clock and the cloud override. The load reads its
+// own query with it, and a scene jump (`establishScene`) the query it is given, so the two agree.
 // A 48-minute day, as in many open-world games: slow enough to watch the light and the stars
 // turn. The game's day is 24 minutes at 1x, so a day's work and its evening fit one sitting.
 // The default first-quarter moon lights the evening and sets at midnight, leaving the small
 // hours dark enough for the Milky Way. The game starts at 8 (see Game.ts), so the sky is lit
 // once for that hour.
-const dayCycle = new DayCycle( { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : 16 ),
-	dayLength: Math.max( 30, numberParam( 'dayLength', params.has( 'game' ) ? 1440 : 2880 ) ),
-	paused: params.has( 'paused' ) || params.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.25 ) } );
-const requestedWeather = params.get( 'weather' ) ?? 'fair';
-const weather = new Weather( Object.hasOwn( WEATHER_PRESETS, requestedWeather ) ? requestedWeather as WeatherName : 'fair' );
+function sceneOptions( options: URLSearchParams ) {
+
+	const weather = options.get( 'weather' ) ?? 'fair', preset = options.get( 'preset' );
+	return {
+		weather: Object.hasOwn( WEATHER_PRESETS, weather ) ? weather as WeatherName : 'fair',
+		autoWeather: ! options.has( 'weather' ),
+		day: { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : 16, options ),
+			dayLength: Math.max( 30, numberParam( 'dayLength', params.has( 'game' ) ? 1440 : 2880, options ) ),
+			paused: options.has( 'paused' ) || options.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.25, options ) },
+		preset: preset && Object.hasOwn( DAY_PRESETS, preset ) ? preset as DayPreset : null,
+		paused: options.has( 'paused' ),
+		time: Math.max( 0, numberParam( 't', 0, options ) ),
+		// Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
+		clouds: options.has( 'clouds' ) ? THREE.MathUtils.clamp( numberParam( 'clouds', 0.32, options ), 0, 1 ) : null,
+		camera: options.get( 'camera' ) === 'free' ? 'free' : 'orbit',
+	};
+
+}
+const loaded = sceneOptions( params );
+const dayCycle = new DayCycle( loaded.day );
+const weather = new Weather( loaded.weather );
 const weatherEffects = { rain: true, wetness: true };
-// Without a requested preset the weather evolves on its own; choosing one holds it.
-weather.auto = ! params.has( 'weather' );
+weather.auto = loaded.autoWeather;
 const requestedPreset = params.get( 'preset' );
-if ( requestedPreset && Object.hasOwn( DAY_PRESETS, requestedPreset ) ) dayCycle.setPreset( requestedPreset as DayPreset );
+if ( loaded.preset ) dayCycle.setPreset( loaded.preset );
 let manualSun = false;
-let paused = params.has( 'paused' );
-let simTime = Math.max( 0, numberParam( 't', 0 ) );
+let paused = loaded.paused;
+let simTime = loaded.time;
 const wind = new Wind( shared.wind, { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
 // Across a cut of the temporal modes' history (Motion.ts) the vegetation's wind has no motion either:
 // its previous state becomes the current one.
@@ -195,8 +232,7 @@ let skyElapsed = 0;
 let lastSkyTime = simTime;
 let lastSkyHour = dayCycle.hour;
 let lastWeatherSignature = '';
-// Explicit cloud tuning is a review override; selecting a weather preset restores authored coverage.
-let cloudOverride: number | null = params.has( 'clouds' ) ? THREE.MathUtils.clamp( numberParam( 'clouds', 0.32 ), 0, 1 ) : null;
+let cloudOverride: number | null = loaded.clouds;
 const skyQuality = { value: qualityTier };
 // The tier's runtime knobs (a debug override may replace some of them: `s.applyQuality( { ... } )`).
 const runtime = { refractedSun: null as RefractedSun | null };
@@ -294,11 +330,13 @@ function publishLighting(): void {
 
 }
 
-async function bakeEnvironment(): Promise<void> {
+async function bakeEnvironment( first = false ): Promise<void> {
 
 	// Explicit preset changes settle any in-flight bake first. The running clock uses a single
 	// coalesced request below, never a growing async queue or a suspended animation loop.
 	if ( sky.busy ) await sky.update();
+	// a scene jump bakes as the page's first bake does (Sky.reset)
+	if ( first ) sky.reset();
 	prepareSkyState();
 	await sky.update();
 	scene.environment = sky.envMap!.texture;
@@ -314,7 +352,7 @@ async function bakeEnvironment(): Promise<void> {
 function refreshEnvironment(): Promise<void> {
 
 	manualSun = false;
-	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( bakeEnvironment );
+	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment() );
 	return sunUpdates;
 
 }
@@ -322,7 +360,7 @@ function refreshEnvironment(): Promise<void> {
 function applySun(): Promise<void> {
 
 	manualSun = true;
-	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( bakeEnvironment );
+	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment() );
 	return sunUpdates;
 
 }
@@ -338,26 +376,7 @@ const setWeather = async ( name: WeatherName, seconds = 20 ) => {
 	if ( seconds === 0 ) await refreshEnvironment();
 
 };
-// A scene as its URL options load it, for the frame profiler's scene switches within one page
-// load: the weather established at once (wet in rain), the time preset or hour, the scene clock
-// (and the wind integrated to it), with one bake of the environment.
-const establishScene = async ( options: { weather?: WeatherName; preset?: DayPreset; hour?: number; time?: number } ) => {
-
-	cloudOverride = null;
-	if ( options.weather ) {
-
-		weather.auto = false;
-		weather.establish( options.weather );
-
-	}
-	if ( options.preset ) dayCycle.setPreset( options.preset );
-	else if ( options.hour !== undefined ) dayCycle.setHour( options.hour );
-	if ( options.time !== undefined ) simTime = options.time;
-	wind.reset( { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
-	sceneEvent( 'establish scene' );
-	await refreshEnvironment();
-
-};
+// (a whole scene at once, as a query loads it: `establishScene`, below the frame loop)
 
 function applySkyFill(): void {
 
@@ -610,7 +629,7 @@ gui.onChange( () => sceneEvent( 'gui' ) );
 if ( ! params.has( 'gui' ) ) gui.hide();
 const S = pipeline.settings;
 type CameraView = 'island' | 'horizon' | 'sky';
-const cameraSettings = { mode: params.get( 'camera' ) === 'free' ? 'free' : 'orbit' };
+const cameraSettings = { mode: loaded.camera as string };
 const reviewView = { camera: 'island' as CameraView };
 let orbitDof = S.dof;
 const viewDirection = new THREE.Vector3();
@@ -1451,6 +1470,97 @@ const setTime = ( t: number ) => {
 	return refreshEnvironment();
 
 };
+// A whole scene at once, as a page loads it (the capture tools' one page per set; the profiler's
+// scene switches). `establishScene( query )` (a string or URLSearchParams) leaves the page as a
+// fresh load of `?<query>` would draw it, from any scene before: once the caller has rendered a
+// frame at the jump's camera and then run what it runs after a load (a view's eval), the paused
+// frame equals the fresh load's, to the byte wherever the fresh load repeats itself
+// (tools/verify-scene-jump.mjs checks every parity view from several scenes before).
+// - The scene's options (SCENE_OPTIONS) come from the query, each one left out at its load default
+//   (`sceneOptions`): the weather established (wet in rain; auto weather without `weather`), the day
+//   clock (hour or preset, moon phase, day length, paused), the scene clock (`t`, `paused`) and the
+//   wind integrated to it, the cloud override.
+// - The camera: the orbit's island view at the query's dist / polar / az (`placeOrbit`, as the load
+//   places it), the controls' limits and depth of field restored, in the query's camera mode.
+// - What the scenes before left behind is cleared: the sky bakes as the page's first bake (Sky.reset:
+//   both endpoints and atlases, the clouds as before the first frame), the lightning forgets its
+//   strikes, the storm sea its foam window, the islander its clips, the refracted sun its map
+//   (back to its size and redrawn at once after the bake, as the load's `prepare` draws it), the
+//   fog its bank; the sun's map redraws from scratch and the temporal modes cut their history
+//   ('establish scene').
+// - Load-time options the query names (quality, aa, dpr, the debug switches: read once when
+//   materials and the frame graph are built) must equal the page's own, or it throws: reload
+//   instead. Those it leaves out are the page's. GUI edits and console changes are not undone.
+// The frame after the jump must render at the jump's camera before a view's eval moves it, as a
+// fresh load's first frames do before a capture's eval runs: the storm's strikes take their
+// bearings ahead of the camera of the frame that first sees them (Lightning.ts), the storm sea
+// places its window there (StormSea.ts). (The art-review page only: under ?game the game owns the
+// clock.)
+// The options form `{ weather?, preset?, hour?, time? }` (tools/profile-frame.mjs) sets what it
+// names, keeps the rest and the camera, and clears the leftovers all the same.
+// `__PONLAI__.sceneJump` (1) marks a page that keeps this contract: tools/parity/capture-set.mjs
+// captures a set in one page only where it is set (older builds' establishScene takes only the
+// options form and leaves state behind). Raise it if the contract changes in a way callers see.
+const SCENE_OPTIONS = [ 'weather', 'preset', 'hour', 'moon', 't', 'dist', 'polar', 'az', 'camera', 'clouds', 'dayLength', 'paused', 'clock' ];
+const establishScene = async ( scene: string | URLSearchParams | { weather?: WeatherName; preset?: DayPreset; hour?: number; time?: number } ): Promise<void> => {
+
+	const query = typeof scene === 'string' ? new URLSearchParams( scene ) : scene instanceof URLSearchParams ? scene : null;
+	if ( query ) {
+
+		const fixed = [ ...new Set( query.keys() ) ].filter( ( key ) => ! SCENE_OPTIONS.includes( key ) && query.getAll( key ).join( '&' ) !== params.getAll( key ).join( '&' ) );
+		if ( fixed.length ) throw new Error( `establishScene: ${ fixed.join( ', ' ) } differ from the page's and are read once at load: reload the page with them` );
+		const next = sceneOptions( query );
+		cloudOverride = next.clouds;
+		weather.establish( next.weather );
+		weather.auto = next.autoWeather;
+		dayCycle.reset( next.day );
+		if ( next.preset ) dayCycle.setPreset( next.preset );
+		timeView.preset = query.get( 'preset' ) ?? 'golden-hour';
+		paused = next.paused;
+		simTime = next.time;
+		// the island view's pose, placed as the load places it, on a camera and controls of its own
+		const probe = camera.clone();
+		placeOrbit( probe, document.createElement( 'div' ), query ).dispose();
+		initialCameraPosition.copy( probe.position );
+		initialCameraQuaternion.copy( probe.quaternion );
+		controls.clearInput();
+		setCameraMode( 'orbit' );
+		setCameraView( 'island' );
+		if ( next.camera === 'free' ) setCameraMode( 'free' );
+
+	} else {
+
+		const options = scene as { weather?: WeatherName; preset?: DayPreset; hour?: number; time?: number };
+		cloudOverride = null;
+		if ( options.weather ) {
+
+			weather.auto = false;
+			weather.establish( options.weather );
+
+		}
+		if ( options.preset ) dayCycle.setPreset( options.preset );
+		else if ( options.hour !== undefined ) dayCycle.setHour( options.hour );
+		if ( options.time !== undefined ) simTime = options.time;
+
+	}
+	wind.reset( { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
+	sky.lightning.reset();
+	stormSea.reset();
+	characters?.reset();
+	pipeline.air.invalidate();
+	shadowElapsed = 0;
+	sceneEvent( 'establish scene' );
+	manualSun = false;
+	sunUpdates = sunUpdates.catch( ( error: unknown ) => console.error( error ) ).then( () => bakeEnvironment( true ) );
+	await sunUpdates;
+	// The underwater map at its constructed size, drawn now for the jump's light (published by the
+	// bake), as the load's `prepare` draws it before the first frame. Left to the loop's cadence
+	// (wall time) a capture ready within a few frames shot the cleared map: the sea without its
+	// refracted sun.
+	refractedSun.reset();
+	refractedSun.update();
+
+};
 // set while the loop stands still because the page is hidden (see below)
 let hiddenStop = false;
 // Stops and restarts the frame loop, so the profiler can keep two pages in one browser and time one
@@ -1666,7 +1776,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, plants, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),
 	// the temporal resolve (TemporalAA.ts, TemporalRest.ts): its live settings and knobs, the rest, the
 	// epoch, and `restart()`, which starts the history and the rest over (a cut and an epoch bump)

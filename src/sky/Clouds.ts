@@ -56,6 +56,8 @@ type V4 = THREE.Node<'vec4'>;
 // neither softens the clouds again nor rebuilds the view's kernels. Lightning's light inside the
 // cloud stays out of the view's accumulated history, the bake and the panorama. The panorama and
 // the shadow map refresh in part each frame and whole on a jump and when a paused scene settles.
+// A scene jump (main.ts `establishScene`, through Sky.reset) restarts the clouds as they stand
+// before a page's first frame (`restart`), for the bake that follows it.
 
 export const EARTH_RADIUS = 6_360_000;
 export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
@@ -1474,6 +1476,40 @@ export class Clouds {
 
 		this.needsFull = true;
 		this.resetHistory();
+
+	}
+
+	/** Back to the state before the page's first frame (a scene jump, through Sky.reset): the wind's
+	 * offset, the evolution, the front's and cirrus' axes and the viewer as constructed, no view
+	 * history, the frame count at zero and a whole refresh due. The first bake of a page computes the
+	 * panorama in that state, and the bake products keep it while the clock is paused. */
+	restart(): void {
+
+		this.evolve.value = 0;
+		this.windOffset.value.set( 0, 0 );
+		this.frontAxis.value.set( 1, 0 );
+		this.cirrusAxis.value.set( 1, 0 );
+		this.origin.value.set( 0, 15, 0 );
+		for ( const { source, color } of this.flash ) {
+
+			source.value.set( 0, - 1e6, 0, 1 );
+			color.value.setRGB( 0, 0, 0 );
+
+		}
+		this.flashOn.value = 0;
+		this.frame = 0;
+		this.pingPong = 0;
+		this.traces = 0;
+		this.turned = 0;
+		this.hasPrevious = false;
+		this.previousCamera.set( 0, 0, 0 );
+		this.previousKey.set( 0, 0, 0 );
+		this.previousOffset.set( 0, 0 );
+		this.previousTime = 0;
+		this.previousFlash = '';
+		if ( this.view ) this.viewNode.value = this.view.history[ 0 ];
+		this.viewValid.value = 0;
+		this.invalidate();
 
 	}
 
