@@ -670,9 +670,13 @@ what these do not give (automation, A/B statistics, pass names).
 
 ## Writing a tool
 
+- Build on the shared modules instead of copying them: `capture-browser.mjs` (browser, warm
+  profiles, readiness), `parity/reference.mjs` (stored references), `parity/views.mjs`,
+  `parity/pixels.py` (image metrics), `gpu-lock.mjs`, `job.mjs`, `qos.mjs`.
 - The header comment comes first: the usage line, what the tool guarantees (what it compares or
   measures, and under which conditions), its rules with their reasons, and its outputs. Options
-  it does not know are an error, not ignored.
+  it does not know are an error, not ignored. A change that makes a check faster keeps that
+  guarantee true (a scene-jump check compares jumps with fresh loads, not with other jumps).
 - Output goes to files (images, JSON a script can read) with a short summary on stdout. Exit
   codes mean something: 0 passed, 1 failed, and 3 for contended (the GPU was busy, nothing
   measured). A long tool prints progress lines, so `job.mjs wait` shows where it is.
