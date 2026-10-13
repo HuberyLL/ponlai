@@ -32,7 +32,9 @@
 //   readiness and shot. A view's JSON says how it was reached (`page`: visit, load or jump, the view
 //   before, the page's memory). The views are handed out one at a time from one queue, so --jobs
 //   balances itself. Builds whose page does not mark the exact jump (`__PONLAI__.sceneJump`; older
-//   commits) get a page per view, as before, said once; --page-per-view forces that.
+//   commits) get a page per view, as before, said once; --page-per-view forces that. A stored
+//   reference records which (reference.mjs, `pages`: 'jump' or 'view'), so a set reached by jumps
+//   never stands in for one of fresh loads, nor the other way round.
 // --repeat captures each view twice (`<view>.png`, `<view>.repeat.png`) and reports whether the two
 //   hold identical pixels (decoded: the PNG bytes depend on the encoder; exit 1 if any differ). The
 //   repeats run after all the first captures, on other pages (a page serves first captures or
@@ -352,7 +354,8 @@ const defs = viewDefs( views );
 async function reference( url, { dryRun = false } = {} ) {
 
 	const { dir } = resolveRefDir( options.reference ?? options.check );
-	const { key, files } = await setKey( { quality, aa: options.aa, q: options.q, size: sizeText, capture: passThrough } );
+	// (how the views are reached is part of the key: a check of the jump needs fresh loads)
+	const { key, files } = await setKey( { quality, aa: options.aa, q: options.q, size: sizeText, capture: passThrough, pages: options[ 'page-per-view' ] ? 'view' : 'jump' } );
 	return ensureReference( {
 		dir, kind: 'set', key, files, want: { views, repeat: !! options.repeat, defs }, url, siblings: true, dryRun,
 		// (a check's test side, captured meanwhile, takes the wrapper's slot over itself)
@@ -372,7 +375,8 @@ async function reference( url, { dryRun = false } = {} ) {
 			const def = ( v ) => defs[ v ] ? { def: defs[ v ] } : {};
 			for ( const v of firsts ) coverage.views[ v ] = { captured: true, ...def( v ) };
 			for ( const v of repeats ) if ( firsts.has( v ) || existsSync( path.join( into, `${ v }.png` ) ) ) coverage.views[ v ] = { ...coverage.views[ v ], captured: true, repeat: true, identical: same[ v ], ...def( v ) };
-			return { coverage, failed: todo.length - done.length, captured: done.length };
+			// a build without the exact jump got a page per view whatever was asked: stored as such
+			return { coverage, failed: todo.length - done.length, captured: done.length, ...( jumpless ? { manifest: { key: { ...key, pages: 'view' }, jumpless: true } } : {} ) };
 
 		},
 	} );

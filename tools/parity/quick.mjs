@@ -204,7 +204,7 @@ export async function main( argv ) {
 		const errors = [];
 		try {
 
-			session = await launchCapture( { viewport: { width: W, height: H }, deviceScaleFactor: DSF } );
+			session = await launchCapture( { viewport: { width: W, height: H }, deviceScaleFactor: DSF, url } );
 			const page = session.page;
 			page.on( 'console', ( m ) => { if ( m.type() === 'error' || m.type() === 'warning' ) errors.push( m.type() + ': ' + m.text() ); } );
 			page.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );

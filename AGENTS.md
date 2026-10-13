@@ -22,6 +22,12 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `npm run preview` (port 5191). URL options and in-page keys: `docs/tools.md`.
 - `node tools/capture.mjs <name> [--q "paused&t=12&dpr=1"]` screenshots the dev server into
   `artifacts/captures/` (git-ignored).
+- A list of views, ad-hoc ones included (`--view "name:query"`, `--views-file`, `--sweep
+  "key=a,b"`), is captured with `node tools/parity/capture-set.mjs <url> <outDir>`: one warm page per
+  set, the scene jump between views. Use it instead of a script that loops capture.mjs.
+- `uv run tools/img.py diff|crop|sheet|stats` does the image work on captures (differences, crops,
+  A/B sheets, region statistics), with its dependencies inline. Use it instead of an inline
+  Pillow/NumPy script (`docs/tools.md`, Captures).
 - `node tools/probe.mjs [url] --q "<query>" --eval "<js>"` reads values from the page (diagnostics,
   timings, uniforms, pipeline counts after an action) as JSON, under the GPU lock and in a warm
   profile: use it instead of a Playwright script of one's own (`docs/tools.md`, Probes).
@@ -29,9 +35,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   GPU time, the 60 fps acceptance); its options and modes are in `docs/tools.md`.
 - Everything that renders the scene in a browser takes the GPU lock:
   `node tools/gpu-lock.mjs run [--shared] -- <command>` (`status`, `gpu`). Timing runs hold it
-  alone; paused captures and verify probes share it, one slot per browser (3 by default, FIFO),
-  and go before a waiting timing run until it has waited 30 min.
-  Every session's work runs at the same class: leave `PONLAI_GPU_PRIORITY` unset.
+  alone; paused captures and verify probes share it, one slot per browser (3 by default). One queue
+  ranked by level, then arrival: shared requests default to `normal`, exclusive ones to `low`, so a
+  timing run waits behind captures unless raised. Sessions leave `PONLAI_GPU_PRIORITY` unset; the
+  user or a main session schedules with `node tools/gpu-lock.mjs prio set <worktree> <level>`.
 - Processes an agent starts run at a starved QoS on a busy Mac: the tools raise themselves to the
   application policy (`tools/qos.mjs`); a new CPU-heavy tool imports it first, and a one-off script
   runs through `node tools/qos.mjs <command>` (`docs/tools.md`, Process priority).
@@ -136,6 +143,23 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `style`, `test`, `docs`, `build`, `ci`, `chore`, `revert`. The optional scope names the section
   of the codebase changed (for example `ocean`, `world`, `ai`). Mark breaking changes with `!`
   after the scope or a `BREAKING CHANGE:` footer.
+
+## Tools
+
+Agents once wrote thousands of throwaway scripts for the same few jobs (view loops, page probes,
+image diffs, wait loops); the shared tools now cover them. Before writing a script:
+
+- Look for the tool that answers the question (`docs/tools.md`, Which tool for which question).
+  If a tool almost fits, add an option to it instead of working around it.
+- A script needed a second time, or by another task, becomes a tool in `tools/` (or an option of an
+  existing one) with a header comment and a `docs/tools.md` entry (`docs/tools.md`, Writing a
+  tool). A truly one-off script stays in the task's artifacts folder.
+- Build on the shared modules instead of copying them: `capture-browser.mjs` (browser, warm
+  profiles, readiness), `parity/reference.mjs` (stored references), `parity/views.mjs`,
+  `parity/pixels.py` (image metrics), `gpu-lock.mjs`, `job.mjs`, `qos.mjs`.
+- A check keeps what it proves: when a check is made faster, its header states what it compares
+  and that stays true (a scene-jump check compares jumps with fresh loads, not with other jumps).
+- Never start a GPU tool to see its options: it queues for the lock and renders. Read its header.
 
 ## WebGPU / TSL pitfalls
 

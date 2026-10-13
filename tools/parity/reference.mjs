@@ -10,7 +10,8 @@
 //   - `browser`: the browser build (Playwright's Chromium or CHROME_PATH, and its version): frames
 //     may differ across builds, so a set stored under another build is verified before reuse (below);
 //   - the options that change pixels (tier, aa, size and device pixel ratio, extra query, the
-//     capture tool's own options; for a clip entry its clip, view, frame sampling and anchors).
+//     capture tool's own options; for a clip entry its clip, view, frame sampling and anchors);
+//   - for a set, `pages`: how its views were reached, 'jump' or 'view' (setKey).
 // What it covers (`coverage`) is recorded apart from the key: a set's views, each with or without
 // its repeat capture. A request whose key matches but which needs more (another view, a repeat)
 // extends the set in place; anything that needs a different key is captured afresh, and the old
@@ -150,13 +151,19 @@ export async function browserBuild() {
 
 }
 
-/** The key of a capture set (capture-set.mjs): what its pixels depend on besides the views. */
-export async function setKey( { quality, aa, q, size, capture } ) {
+/** The key of a capture set (capture-set.mjs): what its pixels depend on besides the views, and how
+ * its views were reached (`pages`: 'jump', one page per worker reaching most views by the scene
+ * jump; 'view', a fresh page per view). A check of the jump (verify-scene-jump.mjs) must compare
+ * against fresh loads, so the two never stand in for each other. */
+export async function setKey( { quality, aa, q, size, capture, pages = 'jump' } ) {
 
 	const { tool, files } = toolVersion( 'set' );
-	return { key: { kind: 'set', tool, browser: await browserBuild(), quality, aa: aa ?? null, q: q ?? null, size, capture: capture ?? [] }, files };
+	return { key: { kind: 'set', tool, browser: await browserBuild(), quality, aa: aa ?? null, q: q ?? null, size, capture: capture ?? [], pages }, files };
 
 }
+
+/** A key as it compares: a set stored before `pages` was recorded was reached by jumps. */
+const keyOf = ( key ) => key?.kind === 'set' && key.pages === undefined ? { ...key, pages: 'jump' } : key;
 
 /** The key of one clip entry (capture-clip.mjs through baseline.mjs). `anchors`: the hash of the
  * anchors it takes from another entry (anchorsHash), or null for its own. */
@@ -179,7 +186,7 @@ export function anchorsHash( file ) {
 const TEMPORAL = [ 'taa', 'taau', 'gt' ];
 
 /** Two keys that differ at most by the browser build. */
-export const sameButBrowser = ( a, b ) => stable( { ...a, browser: null } ) === stable( { ...b, browser: null } );
+export const sameButBrowser = ( a, b ) => stable( { ...keyOf( a ), browser: null } ) === stable( { ...keyOf( b ), browser: null } );
 
 /** Whether a stored manifest serves a key: the same key, or one that differs only by a browser build
  * the manifest records as verified (`verifiedBrowsers`: sample views captured with that build
@@ -187,8 +194,12 @@ export const sameButBrowser = ( a, b ) => stable( { ...a, browser: null } ) === 
 export function keyMatches( manifest, key ) {
 
 	if ( ! manifest?.key ) return false;
-	if ( stable( manifest.key ) === stable( key ) ) return true;
-	return sameButBrowser( manifest.key, key ) && ( manifest.verifiedBrowsers ?? [] ).some( ( v ) => stable( v.browser ) === stable( key.browser ) );
+	// a build without the exact jump (`jumpless`: capture-set gave it a page per view) serves either
+	// way of reaching the views: a request for jumps on it is captured a page per view too
+	const pages = ( k ) => manifest.jumpless ? { ...keyOf( k ), pages: 'view' } : keyOf( k );
+	const stored = pages( manifest.key ), asked = pages( key );
+	if ( stable( stored ) === stable( asked ) ) return true;
+	return sameButBrowser( stored, asked ) && ( manifest.verifiedBrowsers ?? [] ).some( ( v ) => stable( v.browser ) === stable( key.browser ) );
 
 }
 
@@ -317,6 +328,8 @@ function hookExit() {
 /** Why a stored key is not the key asked for, in words (each tool file that changed by name). */
 export function describeKeyChange( stored, storedFiles, key, files ) {
 
+	stored = keyOf( stored );
+	key = keyOf( key );
 	const reasons = [];
 	if ( stored.tool !== key.tool ) {
 
@@ -568,7 +581,7 @@ export async function ensureReference( spec ) {
 	const kind = spec.kind === 'set' ? SET : CLIP;
 	const log = spec.log ?? console.log;
 	const { dir, sha, shaDir, rel } = resolveRefDir( spec.dir );
-	const key = spec.key, keyText = stable( key );
+	const key = spec.key, keyText = stable( keyOf( key ) );
 	const name = path.relative( path.dirname( shaDir ), dir );
 	const started = Date.now();
 	let waitedSince = 0, announced = 0, verified = null;
@@ -617,7 +630,7 @@ export async function ensureReference( spec ) {
 		if ( spec.siblings && ! spec.force ) for ( const sub of siblingSets( shaDir, dir ) ) {
 
 			const c = readClaim( sub );
-			if ( c?.live && c.key && stable( c.key ) === keyText && ! kind.missing( c.will, spec.want ).length ) return { dir: sub, claim: c };
+			if ( c?.live && c.key && stable( keyOf( c.key ) ) === keyText && ! kind.missing( c.will, spec.want ).length ) return { dir: sub, claim: c };
 
 		}
 		return null;
@@ -836,13 +849,13 @@ function status( dir ) {
 
 	};
 	walk( dir, 0 );
-	const current = { set: toolVersion( 'set' ).tool, clip: toolVersion( 'clip' ).tool };
+	const current = Object.fromEntries( Object.keys( TOOL_FILES ).map( ( k ) => [ k, toolVersion( k ).tool ] ) );
 	for ( const { d, m, c } of rows ) {
 
 		const parts = [ path.relative( dir, d ) || '.' ];
 		if ( m ) {
 
-			parts.push( m.kind, m.key.tool === current[ m.kind ] ? 'tools current' : 'tools CHANGED', `${ m.key.browser?.executable } ${ m.key.browser?.version }${ m.verifiedBrowsers?.length ? ` (verified for ${ m.verifiedBrowsers.map( ( v ) => v.browser.version ).join( ', ' ) })` : '' }` );
+			parts.push( m.kind, ! ( m.kind in current ) ? 'tools ?' : m.key.tool === current[ m.kind ] ? 'tools current' : 'tools CHANGED', `${ [ m.key.browser?.executable, m.key.browser?.version ].filter( Boolean ).join( ' ' ) }${ m.verifiedBrowsers?.length ? ` (verified for ${ m.verifiedBrowsers.map( ( v ) => v.browser.version ).join( ', ' ) })` : '' }` );
 			if ( m.kind === 'set' ) {
 
 				const views = Object.entries( m.coverage.views );
