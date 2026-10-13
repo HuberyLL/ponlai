@@ -1,8 +1,12 @@
+# /// script
+# dependencies = [ "numpy", "pillow", "scipy" ]
+# ///
 """Image and temporal metrics of a stepped clip against MSAA and a ground truth.
 
-    uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/clip-metrics.py \
-        --test DIR --msaa DIR --gt DIR [--crops a,b] [--thresholds thresholds.json] \
-        [--baseline metrics.json [--key tier/kind/name]] [--out DIR] [--no-flip] [--no-gt-gates] [--workers N]
+    uv run [--with flip-evaluator] tools/clip-metrics.py \
+        --test DIR --msaa DIR [--gt DIR] [--crops a,b | --crops boxes.json] [--split-redraws] \
+        [--thresholds thresholds.json] [--baseline metrics.json [--key tier/kind/name]] [--out DIR] \
+        [--no-flip] [--no-gt-gates] [--workers N]
     uv run ... tools/clip-metrics.py --calibrate masks.json [--size 288] DIR [DIR ...] [--overlays DIR]
 
 Each DIR is a tools/capture-clip.mjs output folder (clip.json and <crop>/<i>.png) of the same clip:
@@ -28,6 +32,11 @@ Metrics (per crop, for the test and for MSAA; "ratio" is test / MSAA):
           Raw frame-to-frame change, true motion included: compare like with like.
   Fhp     temporal high-pass flicker: mean |L_t - (L_t-2 + L_t+2) / 2| (levels), own frames: steps
           and shimmer without the steady change of a slow motion (the shadow-shimmer check).
+          With --split-redraws, where the side's clip.json notes mark shadow map redraws
+          (`sun <i> <draws> <weight>` lines, redraws_of()), also FhpNear over the frames t within 2
+          of a redraw (the first frame drawn on the new map) and FhpBetween over the others: a
+          redraw's step shows as FhpNear well above FhpBetween, the shadow filter's own noise as
+          FhpBetween high against a lit control crop. The series' Fhp holds the per-frame values.
   TI      temporal instability: mean over consecutive GT frame pairs of the mean |dL_t - dL_gt,t| with
           dL_t = L_t - L_t-1: the change that the GT does not have (shimmer, crawl, jitter left in
           the output), 0 = as steady as the GT.
@@ -106,8 +115,14 @@ Metrics (per crop, for the test and for MSAA; "ratio" is test / MSAA):
           frames: a jitter or reprojection offset left in the output; shiftX and shiftY its signed
           components (x right, y down).
 
-Crops: every crop folder of the GT, or those named by --crops. The "full" folder (whole frames,
-capture-clip.mjs --full) is measured only when --crops names it.
+Crops: every crop folder of the GT (without a GT, the test's), or those named by --crops. The
+"full" folder (whole frames, capture-clip.mjs --full) is measured only when --crops names it.
+--crops boxes.json cuts crops from the whole frames instead, for clips captured whole (every frame
+in full/): { view: { crop: [ x0, y0, x1, y1 ] } } in the whole frame's pixels, the entry of
+clip.json's view; every side's full/ frames must be the same size.
+
+Without --gt only the sides' own metrics are taken (F, Fhp, Vown, Rec, holes, twinkle, sparkle,
+dMSAA): a clip that has no ground truth, such as a shadow-shimmer study of MSAA and a temporal mode.
 
 Masks: thresholds.json's `masks` holds the calibrated mask parameters: `masks.default`, then per
 view `masks[view]['*']` and per crop `masks[view][crop]`, each a partial copy of DEFAULT_MASKS
@@ -161,8 +176,8 @@ within 1 to 4 (the CPU is shared with captures, and baseline.mjs runs several me
 1 measures in the main process. On macOS the main process and the workers run with the application
 scheduling policy (tools/qos.mjs says why; see QOS below).
 
-Outputs: <out>/metrics.json (per crop: test, msaa, ratio, per-frame series and verdicts; `gates`:
-the failed count by kind) and <out>/metrics.md (a table), out defaulting to <test>/metrics.
+Outputs: <out>/metrics.json (per crop: test, msaa, ratio, per-frame series and verdicts, a box
+crop's box, with --split-redraws each side's redraw frames; `gates`: the failed count by kind) and <out>/metrics.md (a table), out defaulting to <test>/metrics.
 """
 import argparse
 import copy
@@ -239,9 +254,12 @@ def frames_of( folder, crop ):
 	return { int( f[ :-4 ] ): os.path.join( d, f ) for f in os.listdir( d ) if f.endswith( '.png' ) and f[ :-4 ].isdigit() }
 
 
-def load_u8( path, size=None ):
+def load_u8( path, size=None, box=None ):
 
 	im = Image.open( path ).convert( 'RGB' )
+	if box is not None:
+		# a crop box of --crops <json>, in the whole frame's pixels
+		im = im.crop( tuple( box ) )
 	if size is not None and im.size != size:
 		im = im.resize( size, Image.BOX )
 	return np.asarray( im )
@@ -725,7 +743,7 @@ def frame_job( job ):
 	frames = {}
 	for side in ( 'test', 'msaa' ):
 		if job[ side ] is not None:
-			out[ 'rgb' ][ side ] = load_u8( job[ side ], size )
+			out[ 'rgb' ][ side ] = load_u8( job[ side ], size, job[ 'box' ] )
 			frames[ side ] = np.asarray( out[ 'rgb' ][ side ], dtype=np.float64 )
 	lumas = { side: luma( X ) for side, X in frames.items() }
 	for side, X in frames.items():
@@ -734,7 +752,7 @@ def frame_job( job ):
 	if 'msaa' in frames:
 		out[ 'dMSAA' ] = float( np.abs( lumas[ 'test' ] - lumas[ 'msaa' ] ).mean() )
 	if job[ 'gt' ] is not None:
-		u8 = load_u8( job[ 'gt' ] )
+		u8 = load_u8( job[ 'gt' ], None, job[ 'box' ] )
 		out[ 'rgb' ][ 'gt' ] = u8
 		gt = gt_frame( np.asarray( u8, dtype=np.float64 ), u8, crop, m )
 		out[ 'gt' ] = gt[ 'own' ]
@@ -743,16 +761,42 @@ def frame_job( job ):
 	return out
 
 
-def own_metrics( L, own, crop, m, hashes, clock, path=None ):
+def redraws_of( clip ):
+
+	"""The frames drawn first on a new shadow map, from clip.json's notes: a hook in the clip writes
+	`sun <i> <draws> <weight>` at step i, the map's draw count as the step begins, so it shows the
+	state after frame i - 1; where the count changes from one note to the next, frame i - 1 is the
+	first one drawn on the new map. None when the notes hold no such lines (nothing to split by)."""
+	rows = []
+	for note in ( clip.get( 'stepped' ) or {} ).get( 'notes', [] ):
+		w = note.split()
+		if len( w ) == 4 and w[ 0 ] == 'sun':
+			rows.append( ( int( w[ 1 ] ), int( w[ 2 ] ) ) )
+	if not rows:
+		return None
+	return [ i - 1 for ( i, d ), ( _, pd ) in zip( rows[ 1: ], rows ) if d != pd ]
+
+
+def own_metrics( L, own, crop, m, hashes, clock, path=None, redraws=None ):
 
 	"""Metrics of a side's own frames (every frame it captured), no GT: L its luma and own its
-	per-frame values (side_own()), by frame index."""
+	per-frame values (side_own()), by frame index; with redraws (redraws_of()), Fhp near them and
+	between them too. Returns the metrics and the per-frame Fhp series."""
 	idx = sorted( L )
 	out = {}
 	pairs = [ ( a, b ) for a, b in zip( idx, idx[ 1: ] ) if b == a + 1 ]
 	out[ 'F' ] = float( np.mean( [ np.abs( L[ b ] - L[ a ] ).mean() for a, b in pairs ] ) ) if pairs else None
 	trip = [ i for i in idx if i - 2 in L and i + 2 in L ]
-	out[ 'Fhp' ] = float( np.mean( [ np.abs( L[ i ] - ( L[ i - 2 ] + L[ i + 2 ] ) / 2 ).mean() for i in trip ] ) ) if trip else None
+	hp = { i: float( np.abs( L[ i ] - ( L[ i - 2 ] + L[ i + 2 ] ) / 2 ).mean() ) for i in trip }
+	out[ 'Fhp' ] = float( np.mean( list( hp.values() ) ) ) if trip else None
+	if redraws is not None:
+		# a map redraw shows as a step: the frames within 2 of one (those whose high-pass reaches it)
+		# are near, the rest between; near well above between is the redraw's step, between itself
+		# high (against a lit control crop) is the filter's own noise
+		near = { k for r in redraws for k in range( r - 2, r + 3 ) }
+		hn, hb = [ hp[ i ] for i in trip if i in near ], [ hp[ i ] for i in trip if i not in near ]
+		out[ 'FhpNear' ] = float( np.mean( hn ) ) if hn else None
+		out[ 'FhpBetween' ] = float( np.mean( hb ) ) if hb else None
 	sharp = { i: own[ i ][ 'sharp' ] for i in idx }
 	steps = [ abs( sharp[ b ] - sharp[ a ] ) for a, b in pairs ]
 	out[ 'Vown' ] = float( max( steps ) / np.mean( list( sharp.values() ) ) ) if steps and np.mean( list( sharp.values() ) ) > 1e-9 else None
@@ -788,7 +832,7 @@ def own_metrics( L, own, crop, m, hashes, clock, path=None ):
 		counts = { i: own[ i ][ 'glintCount' ] for i in idx }
 		mean = np.mean( list( counts.values() ) )
 		out[ 'glints.sparkle' ] = float( np.mean( [ abs( counts[ b ] - counts[ a ] ) for a, b in pairs ] ) / mean ) if pairs and mean > 0 else None
-	return out
+	return out, { 'Fhp': [ hp[ i ] for i in trip ], 'FhpFrames': trip }
 
 
 def measure( L, Lg, vs, gt, crop, use_flip ):
@@ -1181,7 +1225,8 @@ def main():
 	ap.add_argument( '--test' )
 	ap.add_argument( '--msaa' )
 	ap.add_argument( '--gt' )
-	ap.add_argument( '--crops' )
+	ap.add_argument( '--crops', help='crop folders a,b, or a JSON file of crop boxes cut from the whole frames (full/)' )
+	ap.add_argument( '--split-redraws', action='store_true', help='Fhp also near and between the shadow map redraws the clip\'s notes mark' )
 	ap.add_argument( '--thresholds' )
 	ap.add_argument( '--baseline' )
 	ap.add_argument( '--key' )
@@ -1203,11 +1248,13 @@ def main():
 		json.dump( result, open( a.calibrate, 'w' ), indent=1 )
 		print( json.dumps( result, indent=1 ) )
 		return
-	if not ( a.test and a.msaa and a.gt ):
-		ap.error( '--test, --msaa and --gt are required' )
+	if not ( a.test and a.msaa ):
+		ap.error( '--test and --msaa are required' )
 	use_flip = flip is not None and not a.no_flip
-	clip_json = {}
+	clip_json = { 'gt': {} }
 	for side, d in ( ( 'test', a.test ), ( 'msaa', a.msaa ), ( 'gt', a.gt ) ):
+		if d is None:
+			continue
 		p = os.path.join( d, 'clip.json' )
 		clip_json[ side ] = json.load( open( p ) ) if os.path.exists( p ) else {}
 	names = { c.get( 'clip' ) for c in clip_json.values() if c.get( 'clip' ) }
@@ -1219,8 +1266,19 @@ def main():
 	cam_path = ( clip_json[ 'test' ].get( 'clipDef' ) or clip_json[ 'msaa' ].get( 'clipDef' ) or {} ).get( 'path' )
 	scopes = [ f'{ clip_name }@{ view }', clip_name ]
 	tier = a.key.split( '/' )[ 0 ] if a.key else None
-	# whole frames only when named (see the docstring)
-	crops = a.crops.split( ',' ) if a.crops else sorted( c for c in os.listdir( a.gt ) if os.path.isdir( os.path.join( a.gt, c ) ) and c not in ( 'metrics', 'full' ) )
+	# whole frames only when named (see the docstring); crop boxes are the view's in the JSON file
+	boxes = {}
+	if a.crops and a.crops.endswith( '.json' ):
+		boxes = json.load( open( a.crops ) ).get( view )
+		if not boxes:
+			raise SystemExit( f'{ a.crops }: no crop boxes for the view { view!r }' )
+		crops = list( boxes )
+	elif a.crops:
+		crops = a.crops.split( ',' )
+	else:
+		listed = a.gt or a.test
+		crops = sorted( c for c in os.listdir( listed ) if os.path.isdir( os.path.join( listed, c ) ) and c not in ( 'metrics', 'full' ) )
+	redraws = { side: redraws_of( clip_json[ side ] ) if a.split_redraws else None for side in ( 'test', 'msaa' ) }
 	cfg = json.load( open( a.thresholds ) ) if a.thresholds else {}
 	rules, gt_rules, mask_cfg = cfg.get( 'metrics', {} ), cfg.get( 'gt', {} ), cfg.get( 'masks', {} )
 	if a.no_gt_gates:
@@ -1241,18 +1299,24 @@ def main():
 	same = os.path.realpath( a.test ) == os.path.realpath( a.msaa )
 	plans = []
 	for crop in crops:
-		ft, fm, fg = frames_of( a.test, crop ), frames_of( a.msaa, crop ), frames_of( a.gt, crop )
-		idx = sorted( set( ft ) & set( fm ) & set( fg ) )
-		if not idx:
+		box = boxes.get( crop )
+		folder = 'full' if box else crop
+		ft, fm = frames_of( a.test, folder ), frames_of( a.msaa, folder )
+		fg = frames_of( a.gt, folder ) if a.gt else {}
+		own_idx = sorted( set( ft ) & set( fm ) )
+		idx = sorted( set( own_idx ) & set( fg ) )
+		if not ( idx if a.gt else own_idx ):
 			plans.append( { 'crop': crop } )
 			continue
 		m = masks_for( mask_cfg, view, crop )
-		# the GT frame's size, which every metric runs at
-		size = Image.open( fg[ idx[ 0 ] ] ).size
-		own_idx = sorted( set( ft ) & set( fm ) )
+		# the GT frame's size, which every metric runs at (without a GT, the test's)
+		if box:
+			size = ( box[ 2 ] - box[ 0 ], box[ 3 ] - box[ 1 ] )
+		else:
+			size = Image.open( fg[ idx[ 0 ] ] if a.gt else ft[ own_idx[ 0 ] ] ).size
 		twinkle = 'star' in crop and bool( cam_path ) and cam_path[ 0 ] == 'still' and len( own_idx ) > 2
 		gidx = set( idx )
-		jobs = [ { 'crop': crop, 'm': m, 'size': size, 'flip': use_flip, 'twinkle': twinkle, 'test': ft[ i ], 'msaa': None if same else fm[ i ],
+		jobs = [ { 'crop': crop, 'm': m, 'size': size, 'box': box, 'flip': use_flip, 'twinkle': twinkle, 'test': ft[ i ], 'msaa': None if same else fm[ i ],
 			'gt': fg[ i ] if i in gidx else None } for i in own_idx ]
 		plans.append( { 'crop': crop, 'idx': idx, 'own_idx': own_idx, 'm': m, 'size': size, 'jobs': jobs } )
 	jobs = [ j for p in plans for j in p.get( 'jobs', [] ) ]
@@ -1262,7 +1326,7 @@ def main():
 	for plan in plans:
 		crop = plan[ 'crop' ]
 		if 'jobs' not in plan:
-			result[ 'crops' ][ crop ] = { 'missing': 'no frame in all three folders' }
+			result[ 'crops' ][ crop ] = { 'missing': 'no frame in all three folders' if a.gt else 'no frame in both folders' }
 			continue
 		idx, own_idx, m, size = plan[ 'idx' ], plan[ 'own_idx' ], plan[ 'm' ], plan[ 'size' ]
 		recs = { i: next( results ) for i in own_idx }
@@ -1270,15 +1334,17 @@ def main():
 		Lt, Lg = lumas( 'test', own_idx ), lumas( 'gt', idx )
 		gt = { i: recs[ i ][ 'gt' ] for i in idx }
 		side_of = lambda side, key, frames: { i: recs[ i ][ key ][ side ] for i in frames }
-		mt, st = measure( { i: Lt[ i ] for i in idx }, Lg, side_of( 'test', 'vs', idx ), gt, crop, use_flip )
-		# merged, not updated: own_metrics adds to nested groups (stars, glints) that measure() fills
-		mt = merge( mt, unflatten( own_metrics( Lt, side_of( 'test', 'own', own_idx ), crop, m, hashes( 'test' ), clock, cam_path ) ) )
+		def side_metrics( side, L ):
+			# without a GT only the side's own metrics; merged, not updated: own_metrics adds to nested
+			# groups (stars, glints) that measure() fills
+			mx, sx = measure( { i: L[ i ] for i in idx }, Lg, side_of( side, 'vs', idx ), gt, crop, use_flip ) if a.gt else ( {}, {} )
+			mo, so = own_metrics( L, side_of( side, 'own', own_idx ), crop, m, hashes( side ), clock, cam_path, redraws[ side ] )
+			return merge( mx, unflatten( mo ) ), { **sx, **so }
+		mt, st = side_metrics( 'test', Lt )
 		if same:
 			mm, sm = copy.deepcopy( mt ), copy.deepcopy( st )
 		else:
-			Lm = lumas( 'msaa', own_idx )
-			mm, sm = measure( { i: Lm[ i ] for i in idx }, Lg, side_of( 'msaa', 'vs', idx ), gt, crop, use_flip )
-			mm = merge( mm, unflatten( own_metrics( Lm, side_of( 'msaa', 'own', own_idx ), crop, m, hashes( 'msaa' ), clock, cam_path ) ) )
+			mm, sm = side_metrics( 'msaa', lumas( 'msaa', own_idx ) )
 		mt[ 'dMSAA' ] = 0.0 if same else float( np.mean( [ recs[ i ][ 'dMSAA' ] for i in own_idx ] ) )
 		mm[ 'dMSAA' ] = 0.0
 		ft_, fm_ = flatten( mt ), flatten( mm )
@@ -1289,7 +1355,8 @@ def main():
 		# the GT's own frame-to-frame change, over its consecutive frames (its dense runs)
 		gpairs = [ ( p, q ) for p, q in zip( idx, idx[ 1: ] ) if q == p + 1 ]
 		gown = { 'F': float( np.mean( [ np.abs( Lg[ q ] - Lg[ p ] ).mean() for p, q in gpairs ] ) ) if gpairs else None }
-		entry = { 'frames': len( own_idx ), 'gtFrames': len( idx ), 'size': list( size ), 'test': mt, 'msaa': mm, 'gtOwn': gown,
+		entry = { 'frames': len( own_idx ), 'gtFrames': len( idx ), 'size': list( size ), **( { 'box': box } if box else {} ),
+			**( { 'redraws': redraws } if a.split_redraws else {} ), 'test': mt, 'msaa': mm, 'gtOwn': gown,
 			'ratio': { k: safe_ratio( v, fm_.get( k ) ) for k, v in ft_.items() if isinstance( v, ( int, float ) ) },
 			'series': { 'test': st, 'msaa': sm } }
 		if rules or gt_rules:
@@ -1318,7 +1385,7 @@ def main():
 	json.dump( result, open( os.path.join( out, 'metrics.json' ), 'w' ), indent=1 )
 	# the table
 	fmt = lambda v: '–' if v is None else ( f'{ v:.4g}' if isinstance( v, float ) else str( v ) )
-	lines = [ f'# clip metrics: { ", ".join( result[ "clip" ] ) } ({ view })', '', f'test `{ a.test }`, MSAA `{ a.msaa }`, GT `{ a.gt }`; { result[ "metric" ] }' + ( f'; baseline `{ a.baseline }` { a.key or "" }' if a.baseline else '' ), '' ]
+	lines = [ f'# clip metrics: { ", ".join( result[ "clip" ] ) } ({ view })', '', f'test `{ a.test }`, MSAA `{ a.msaa }`, ' + ( f'GT `{ a.gt }`; { result[ "metric" ] }' if a.gt else 'no GT: own metrics only' ) + ( f'; baseline `{ a.baseline }` { a.key or "" }' if a.baseline else '' ), '' ]
 	for crop, e in result[ 'crops' ].items():
 		lines.append( f'## { crop }' )
 		if 'missing' in e:
