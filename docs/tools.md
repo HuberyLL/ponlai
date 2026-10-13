@@ -490,7 +490,8 @@ take over the screen of whoever is using the machine, so they run only while the
 `node tools/display-gate.mjs allow [hours]` (and `deny`, `status`) keeps the permission in a file
 under the user's home, `profile-frame --display` refuses without it, and scripts that open a headed
 window call `requireDisplayAllowed` from the same module. Everything else runs headless; a headed
-run that is not allowed now is recorded as pending and run later in one batch.
+run that is not allowed now is recorded as pending and run later in one batch. Before the window
+opens, the tool posts a desktop notification (`announceHeadedRun`) and waits 10 s.
 
 ## Frame profiler: `tools/profile-frame.mjs`
 

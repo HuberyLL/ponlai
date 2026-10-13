@@ -205,7 +205,7 @@ import os from 'node:os';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { withGpuLock, leaseGpuLock, waitForIdleGpu, sampleGpuUtilisation } from './gpu-lock.mjs';
-import { requireDisplayAllowed } from './display-gate.mjs';
+import { announceHeadedRun, requireDisplayAllowed } from './display-gate.mjs';
 
 // ------------------------------------------------------------------ options
 
@@ -617,6 +617,7 @@ const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
 // The run's own idle check (main), taken with the browser already open on a blank page just before
 // the first load: it stands for that load's check instead of sampling the same idle GPU again.
 let startIdle = null;
+let headedAnnounced = false;
 function loadIdle( log ) {
 
 	const idle = startIdle;
@@ -2725,6 +2726,14 @@ async function main() {
 			}
 			if ( gpuIdle.contended ) idleWaitLoad = 0;
 			startIdle = gpuIdle;
+			// the user is told before the window takes the screen, once per run (not on a reopen)
+			if ( DISPLAY && ! headedAnnounced ) {
+
+				headedAnnounced = true;
+				const minutes = Math.ceil( sceneNames.length * SLICES * SLICE * ( COMPARE ? 2 : 1 ) / 60 ) + 1;
+				await announceHeadedRun( { label: LABEL, scenes: sceneNames.length, minutes } );
+
+			}
 			// the browser opens now (its blank page draws nothing: the idle check stands for the first
 			// load's, as before)
 			await openRun();
