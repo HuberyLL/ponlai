@@ -45,7 +45,10 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 //   bank's re-bakes) is tagged by frame (`sample`'s `heavy`) and left out of the quantiles: it hardly
 //   follows the pixel count, and a quantile sitting on it stepped the scale down while most frames
 //   had room. A kind of work that runs on more than HEAVY_SHARE of the frames is steady cost and
-//   stays in. Tagged frames still count where frames take the whole interval (the emergency).
+//   stays in. Tagged frames still count where frames take the whole interval (the emergency), and
+//   in a second quantile: every frame, periodic work included, must also fit at ALL_QUANTILE, so
+//   periodic work alone leaves at most that share of the frames late. (Left out altogether, the
+//   sky's bake slices, on a sixth of the frames at noon, were each shown a refresh late.)
 // - Down: when the quantile of the frames at the scale passes the paced interval less
 //   DOWN_HEADROOM (at most every HOLD seconds; after EMERGENCY_HOLD when the last frames take the
 //   whole interval), straight to the largest scale predicted to land under the interval less
@@ -169,6 +172,13 @@ const STORE_AFTER = 4;
 // usual time (at noon on high the sky's bake slices ran on about a sixth of the frames and the
 // refracted sun's redraws on one in fifteen)
 const HEAVY_SHARE = 0.2;
+// Periodic work stays out of the quantile, not out of the late frames: every frame, periodic work
+// included, must also fit at this quantile, so periodic work may leave at most this share of the
+// frames over the limit. (Left out altogether, the sky's bake slices on a sixth of the frames at noon
+// on high were each shown a refresh late: on a 144 Hz display paced to 72 fps the sky view held 0.8
+// with 16 % of its frames late, where the earlier controller, which read every frame, held 0.6 with
+// 8 %.)
+const ALL_QUANTILE = 0.95;
 // samples kept (s)
 const KEEP = Math.max( UP_LONG, DOWN_SPAN, LATE_SPAN ) + 0.5;
 // frame-interval fallback: a frame over 1.5 refresh periods missed its vblank; steps down when
@@ -521,16 +531,17 @@ export class DynamicResolution {
 
 		}
 		if ( since < HOLD ) return false;
-		const recent = current.filter( ( x ) => clean( x ) && now - x.t <= DOWN_SPAN );
+		const window = current.filter( ( x ) => now - x.t <= DOWN_SPAN );
+		const recent = window.filter( clean );
 		if ( recent.length >= MIN_FRAMES ) {
 
-			const high = this.predict( recent, this.scale, QUANTILE );
+			const high = this.level( recent, window, this.scale );
 			if ( high > this.interval - DOWN_HEADROOM ) {
 
 				if ( this.scale <= lowest ) return false;
-				const s = this.largestFitting( recent, target, QUANTILE, lowest, this.scale );
+				const s = this.largestFitting( recent, target, QUANTILE, lowest, this.scale, undefined, window );
 				// a step that saves too little: the view is bound by its fixed work
-				this.fixedBound = high - this.predict( recent, s, QUANTILE ) < MIN_SAVING;
+				this.fixedBound = high - this.level( recent, window, s ) < MIN_SAVING;
 				return this.fixedBound ? false : this.down( s, now, 'down', recent );
 
 			}
@@ -541,13 +552,15 @@ export class DynamicResolution {
 		if ( since >= UP_HOLD && this.scale < this.max && now >= this.nextUp ) {
 
 			this.nextUp = now + UP_EVERY;
-			const long = this.samples.filter( ( x ) => clean( x ) && now - x.t <= UP_LONG );
-			const short = long.filter( ( x ) => now - x.t <= UP_SHORT );
+			const longAll = this.samples.filter( ( x ) => now - x.t <= UP_LONG );
+			const shortAll = longAll.filter( ( x ) => now - x.t <= UP_SHORT );
+			const long = longAll.filter( clean );
+			const short = shortAll.filter( clean );
 			if ( short.length >= MIN_FRAMES ) {
 
 				const bar = now < this.bar.until ? this.bar : undefined;
-				const a = this.largestFitting( long, target, QUANTILE, this.scale, Infinity, bar );
-				const b = this.largestFitting( short, target - UP_MARGIN, QUANTILE, this.scale, Infinity, bar );
+				const a = this.largestFitting( long, target, QUANTILE, this.scale, Infinity, bar, longAll );
+				const b = this.largestFitting( short, target - UP_MARGIN, QUANTILE, this.scale, Infinity, bar, shortAll );
 				// Up to the short window's level once the long one allows at least as much (waiting for
 				// the two to be equal would never step up where the margin keeps them a level apart);
 				// while the long one allows less, the view has just turned lighter: wait, then step once.
@@ -582,6 +595,15 @@ export class DynamicResolution {
 
 	}
 
+	// The level the rules steer at `scale`: the QUANTILE of the clean frames, or the ALL_QUANTILE of
+	// every frame (periodic work included), whichever is higher.
+	private level( clean: readonly Sample[], all: readonly Sample[], scale: number ): number {
+
+		const high = this.predict( clean, scale, QUANTILE );
+		return all.length >= MIN_FRAMES ? Math.max( high, this.predict( all, scale, ALL_QUANTILE ) ) : high;
+
+	}
+
 	// The error a bar adds to the prediction at `scale`: all of it at and above the barred scale, none
 	// at or below the scale the failed step left, and between the two in proportion to the predicted
 	// growth of the render-sized passes (rising with the scale).
@@ -598,7 +620,7 @@ export class DynamicResolution {
 	// predicted `q` quantile (plus a bar's error, `barPenalty`) lands under `limit`; `lowest` if none
 	// does (the cost rises with the scale, the bar's error too, so a bisection over the levels finds
 	// it).
-	private largestFitting( frames: readonly Sample[], limit: number, q: number, lowest: number, ceiling = Infinity, bar?: Bar ): number {
+	private largestFitting( frames: readonly Sample[], limit: number, q: number, lowest: number, ceiling = Infinity, bar?: Bar, all?: readonly Sample[] ): number {
 
 		const levels = this.steps.filter( ( s ) => s >= lowest - 1e-6 && s < ceiling - 1e-6 );
 		if ( levels.length === 0 ) return lowest;
@@ -608,7 +630,8 @@ export class DynamicResolution {
 
 			const mid = ( lo + hi ) >> 1;
 			const penalty = bar ? this.barPenalty( bar, levels[ mid ] ) : 0;
-			if ( this.predict( frames, levels[ mid ], q ) + penalty <= limit ) hi = mid;
+			const cost = all ? this.level( frames, all, levels[ mid ] ) : this.predict( frames, levels[ mid ], q );
+			if ( cost + penalty <= limit ) hi = mid;
 			else lo = mid + 1;
 
 		}
@@ -737,8 +760,9 @@ export class DynamicResolution {
 	// the limit for a step down.
 	private overLimit( now: number ): boolean {
 
-		const frames = this.samples.filter( ( x ) => now - x.t <= LATE_SPAN && this.clean( x ) );
-		return frames.length >= MIN_FRAMES && this.predict( frames, this.scale, QUANTILE ) > this.interval - DOWN_HEADROOM;
+		const all = this.samples.filter( ( x ) => now - x.t <= LATE_SPAN );
+		const frames = all.filter( ( x ) => this.clean( x ) );
+		return frames.length >= MIN_FRAMES && this.level( frames, all, this.scale ) > this.interval - DOWN_HEADROOM;
 
 	}
 
