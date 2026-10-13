@@ -9,7 +9,8 @@ import { Fn, If, texture, uniform, uv, float, vec2, vec4, dot, length, max, min,
 import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
 import type { WorldData } from '../world/types.ts';
-import { createShoreBoundaryField, createShoreShelterField } from './ShoreWaveField.ts';
+import { shoreBoundaryPixels, shoreShelterPixels, type FieldPixels } from './ShoreWaveField.ts';
+import type { ShoreFieldJob, ShoreFieldReply } from './shoreFieldWorker.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 
 type F = THREE.Node<'float'>;
@@ -19,9 +20,36 @@ type V2 = THREE.Node<'vec2'>;
 // kept as the shore field grows with the land, so the contact strip along the rock stays as sharp.
 const TEXEL = 96 / 512;
 
+// A field's texels as a texture (filtered, no mips).
+function fieldTexture( field: FieldPixels, name: string ): THREE.DataTexture {
+
+	const texture = new THREE.DataTexture( field.pixels, field.nx, field.nz, THREE.RGBAFormat, THREE.FloatType );
+	texture.name = name;
+	texture.minFilter = texture.magFilter = THREE.LinearFilter;
+	texture.generateMipmaps = false; texture.flipY = false; texture.needsUpdate = true;
+	return texture;
+
+}
+
+function shelterTexture( field: FieldPixels & { info: Record<string, unknown> } ): THREE.DataTexture {
+
+	const texture = fieldTexture( field, 'shoreWaveShelter' );
+	texture.userData.shoreWaveShelter = field.info;
+	return texture;
+
+}
+
+/** A grown island's wave fields (ShoreWaves.fieldsFor), for `setFields`. */
+export interface ShoreFields { data: WorldData; boundary: THREE.DataTexture; shelter: THREE.DataTexture; direction: THREE.Vector2 }
+
 // Tidewater's FFT supplies every incident wave. This rocky boundary is a Ponlai extension:
 // a weak mirrored response and whitewater use that wave's height and orbital velocity,
 // without adding the independent, single-period beach wave over the open sea.
+//
+// A grown island (Growth.ts) brings a new shore field: its wave fields are built in a worker
+// (`fieldsFor`: shoreFieldWorker.ts, ShoreWaveField's plain-data functions) and set in place
+// (`setFields`: the base nodes' values, the surface targets resized to the field), so no material
+// changes and no pipeline is built.
 //
 // The surface field is baked once per change of the scene clock. Under the temporal modes
 // (Antialiasing.ts) it alternates between two targets, so the one baked before stays readable as
@@ -57,8 +85,8 @@ export class ShoreWaves {
 		this.renderer = renderer;
 		this.data = data;
 		this.setDirection( fft );
-		this.boundary = texture( createShoreBoundaryField( data ) );
-		this.shelter = texture( createShoreShelterField( data, this.direction.value ) );
+		this.boundary = texture( fieldTexture( shoreBoundaryPixels( data.shore ), 'shoreWaveBoundary' ) );
+		this.shelter = texture( shelterTexture( shoreShelterPixels( data.shore, this.direction.value ) ) );
 		this.revision = fft.spectrumRevision;
 		const toUV = ( p: V2 ) => p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
 		const coastDamp = Fn( ( [ sd ]: [ F ] ) => mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) ) )
@@ -159,7 +187,7 @@ export class ShoreWaves {
 			return out;
 
 		} )();
-		const width = Math.ceil( data.shore.nx * data.shore.cell / TEXEL ), height = Math.ceil( data.shore.nz * data.shore.cell / TEXEL );
+		const [ width, height ] = surfaceSize( data );
 		const field = ( name: string ) => {
 
 			const target = new THREE.RenderTarget( width, height, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false } );
@@ -187,7 +215,7 @@ export class ShoreWaves {
 			if ( ! previous.equals( this.direction.value ) ) {
 
 				const old = this.shelter.value;
-				this.shelter.value = createShoreShelterField( this.data, this.direction.value );
+				this.shelter.value = shelterTexture( shoreShelterPixels( this.data.shore, this.direction.value ) );
 				old.dispose();
 
 			}
@@ -218,11 +246,67 @@ export class ShoreWaves {
 
 	}
 
+	/** The wave fields of a grown island's shore field, built in a worker; their textures are
+	 * uploaded through `upload` before this resolves. */
+	fieldsFor( data: WorldData, upload: ( texture: THREE.DataTexture ) => void ): Promise<ShoreFields> {
+
+		const worker = new Worker( new URL( './shoreFieldWorker.ts', import.meta.url ), { type: 'module' } );
+		const direction = this.direction.value.clone();
+		return new Promise<ShoreFields>( ( resolve, reject ) => {
+
+			worker.onmessage = ( e: MessageEvent<ShoreFieldReply> ) => {
+
+				worker.terminate();
+				const fields = { data, boundary: fieldTexture( e.data.boundary, 'shoreWaveBoundary' ), shelter: shelterTexture( e.data.shelter ), direction };
+				upload( fields.boundary );
+				upload( fields.shelter );
+				resolve( fields );
+
+			};
+			worker.onerror = ( e ) => { worker.terminate(); reject( e ); };
+			// (the shore field is copied: the page keeps it)
+			worker.postMessage( { shore: data.shore, direction: { x: direction.x, y: direction.y } } satisfies ShoreFieldJob );
+
+		} );
+
+	}
+
+	/** Takes a grown island's wave fields (`fieldsFor`): their textures on the nodes, the surface
+	 * targets sized to its shore field, the surface baked again on the next update. Returns the
+	 * textures replaced, to dispose of once no frame draws with them. (A swell that turned since
+	 * `fieldsFor` has its shelter field made here, as a turn makes it on the main thread.) */
+	setFields( fields: ShoreFields ): THREE.Texture[] {
+
+		const old = [ this.boundary.value, this.shelter.value ];
+		this.data = fields.data;
+		this.boundary.value = fields.boundary;
+		if ( fields.direction.equals( this.direction.value ) ) this.shelter.value = fields.shelter;
+		else {
+
+			fields.shelter.dispose();
+			this.shelter.value = shelterTexture( shoreShelterPixels( fields.data.shore, this.direction.value ) );
+
+		}
+		const [ width, height ] = surfaceSize( fields.data );
+		for ( const target of this.surfaces ) if ( target.width !== width || target.height !== height ) target.setSize( width, height );
+		this.fieldRevision ++;
+		this.lastTime = undefined;
+		return old;
+
+	}
+
 	private setDirection( fft: OceanFFT ): void {
 
 		const angle = ( fft.params.windDirection + fft.swell.directionOffset ) * Math.PI / 180;
 		this.direction.value.set( - Math.cos( angle ), - Math.sin( angle ) );
 
 	}
+
+}
+
+// The reflected surface's targets for a shore field: TEXEL over its extent.
+function surfaceSize( data: WorldData ): [ number, number ] {
+
+	return [ Math.ceil( data.shore.nx * data.shore.cell / TEXEL ), Math.ceil( data.shore.nz * data.shore.cell / TEXEL ) ];
 
 }
