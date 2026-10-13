@@ -540,7 +540,7 @@ one tells the user beforehand, as information rather than a question.
 ```
 node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] [--quality high]
   [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
-  [--idle-wait s] [--contended] [--hang s] [--scale-log]
+  [--idle-wait s] [--contended] [--load-timeline off] [--hang s] [--scale-log]
   [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]
   [--drs-store] [--frame-fallback]
 ```
@@ -583,6 +583,19 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   run again, or pass `--contended` to measure anyway (results marked contended, as before). A
   later page load that finds the GPU busy still marks its results contended. Every summary.md
   marks such a scene `(contended)` in its table, a compare's as a single profile's.
+- The idle checks see a few seconds before a load or a scene; the load timeline sees the whole
+  run (macOS; `tools/load-timeline.mjs`). From the exclusive lock's hold to the end of the run, one
+  streaming `top` and a loop of one-second GPU client samples write `<out>/load.jsonl`, a line a
+  second: `{ t, cpu, gpu }`, each by group (`run`: this run's Chrome and its descendants,
+  `windowServer`, `app`: the desktop app, `otherChrome`, `kernel`: CPU only, `rest`), t in ms since
+  the epoch (a page's frame time plus its `performance.timeOrigin`). Each measured slice (a
+  compare's slice, a toggle's block, a profile scene's window) gets `load: { cpu, gpu }`, the mean
+  outside the run (every group but `run`, and WindowServer left out in full-screen `--display`)
+  over its window; a slice whose outside GPU mean exceeds `--idle-threshold` (15 %) is contended,
+  and a scene with more than a quarter of its slices contended is marked contended (with the
+  verdict rules above). The summary's "Machine load outside the run" gives each scene its
+  contended slices and mean outside load. `--load-timeline off` turns it off. It replaces the
+  ad-hoc top and GPU sampler scripts run beside a profile.
 - A run with several scenes holds the exclusive lock one scene at a time (every mode: profile,
   compare, toggle, accept, reload): before a scene's warm-up it asks for the lock, after its last
   slice its pages stop and drain. The pages and the browser stay open, their loops stopped, so

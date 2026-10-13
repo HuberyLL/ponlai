@@ -1247,8 +1247,9 @@ function gpuTimes() {
 }
 
 /** The processes that used the GPU over `seconds`, busiest first: [ { name, percent } ] (macOS
- * with an Apple GPU; null elsewhere). */
-export async function gpuClients( seconds = 2 ) {
+ * with an Apple GPU; null elsewhere), the `limit` busiest (profile-frame's load timeline takes
+ * them all). */
+export async function gpuClients( seconds = 2, limit = 6 ) {
 
 	if ( process.platform !== 'darwin' ) return null;
 	const a = await gpuTimes();
@@ -1258,7 +1259,7 @@ export async function gpuClients( seconds = 2 ) {
 	const elapsed = Number( process.hrtime.bigint() - t0 );
 	if ( ! a || ! b ) return null;
 	return [ ...b ].map( ( [ name, ns ] ) => ( { name, percent: + ( ( ns - ( a.get( name ) ?? 0 ) ) / elapsed * 100 ).toFixed( 1 ) } ) )
-		.filter( ( c ) => c.percent >= 0.5 ).sort( ( x, y ) => y.percent - x.percent ).slice( 0, 6 );
+		.filter( ( c ) => c.percent >= 0.5 ).sort( ( x, y ) => y.percent - x.percent ).slice( 0, limit );
 
 }
 
