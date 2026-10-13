@@ -471,6 +471,18 @@ what these do not give (automation, A/B statistics, pass names).
   `IslandGround.fromGrids` of the chunks' `ground` has the walked grid's bounds and top and every
   height within one cell. It prints each builder's time on the merged meshes against the merge's.
   About 15 s on 8 threads.
+- The three world verifiers above (`verify-world-chunks`, `verify-world-stats`,
+  `verify-chunk-derived`) skip a run whose inputs passed before: each pass is recorded under a key
+  hashed from the node version, the run's arguments and every source file the verifier loads (its
+  import graph walked from the script, plus `package-lock.json` when it imports a package), and a
+  run with the same key prints one line (`skipped, these inputs passed at <commit> on <time>`) and
+  exits 0 in about a second. A change to any file the verifier reaches, a comment included, or
+  different arguments run it again; `--force` runs it anyway (and records the pass again).
+  Failures and interrupted runs record nothing, and `verify-world-chunks --bench` is never skipped
+  nor recorded. A skipped `verify-world-chunks` writes no chunk sheets. The records are JSON files
+  in the main checkout's `artifacts/verify-cache/` (git-ignored), shared by every worktree, so a
+  pass proven on a branch counts on its merge; delete the folder to forget them all. The helper is
+  `tools/verify-cache.mjs`.
 - `tools/verify-storage-realloc.mjs` (GPU, headless, shared lock; it serves its own page from a
   Vite server over the repository) checks what three's WebGPU backend does with storage buffers,
   for pools that outgrow their capacity (the meadow's, `GrassCull.ts`): rewritten in place and

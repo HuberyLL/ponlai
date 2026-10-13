@@ -39,6 +39,8 @@
 //           own planes would have cut beyond it above y -1 is at most 0.6 m thick (`chunkScars`).
 //
 // Every failed bound prints FAIL and sets the exit code; the run goes on to print every number.
+// A pass is recorded (tools/verify-cache.mjs): a later run with the same arguments, node and source
+// files (the script's whole import graph) prints that it was skipped and exits 0; --force runs it.
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +55,7 @@ import { assembleRimGround, coastChains, rimBoxes, RIM_CELL } from '../src/world
 import { hanging } from '../src/world/RimTrails.ts';
 import { BUSH_STRIDE } from '../src/world/FoliageSites.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
+import { verifyCache } from './verify-cache.mjs';
 
 const grow = ( b, m ) => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
 
@@ -750,6 +753,8 @@ const argument = ( name, fallback ) => {
 async function main() {
 
 	const start = performance.now();
+	const cache = verifyCache( import.meta.url );
+	cache.check();
 	const seeds = argument( '--seeds', '1,2' ).split( ',' ).map( Number );
 	const steps = argument( '--grow', '0,8' ).split( ',' ).map( Number );
 	const threads = Number( argument( '--threads', String( Math.max( 1, Math.min( 8, availableParallelism() - 4 ) ) ) ) );
@@ -819,6 +824,7 @@ async function main() {
 
 	}
 	console.log( 'All statistical checks passed.' );
+	cache.record();
 	process.exit( 0 );
 
 }
