@@ -554,10 +554,13 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   its own listeners (the tool sends none); pointer and wheel stay open for the drags. A window covers the screen
   while it runs: keep the runs short and other animated windows closed. It needs the display gate.
   `--display --compare urlA urlB` interleaves A and B in the same slices as the headless compare
-  (the running page brought to the front, the drags restarted in each slice), so the drift between
-  separate headed runs (a millisecond or two) cancels; its summary adds the share of late frames
-  (presented intervals longer than the pace each frame was rendered at, the frame pacer's divisor
-  then) per slice, as a delta with its interval, each page's frames over 25 ms, its effective rate
+  (the running page brought to the front; the drags run in the measured slices only, each page's
+  on from where its last slice left them, so A's and B's k-th slices see the same motion from the
+  same view; the screen changes to the other page's view at every switch, but never back to the
+  scene before: a page switches scene stopped and out of sight and comes to the front with the
+  new scene drawn), so the drift between separate headed runs (a millisecond or two) cancels;
+  its summary adds the share of late frames (presented intervals longer than the pace each frame
+  was rendered at, the frame pacer's divisor then) per slice, as a delta with its interval, each page's frames over 25 ms, its effective rate
   (rendered frames per second) and its share of frames at the pacer's fallback rate. One trace
   spans a scene's slices of both pages, split by a performance mark per slice (ended early at each
   adaptive stop check); a trace per slice nearly doubled the time a slice took beyond its settle
@@ -574,7 +577,9 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
   leave out) and tabulates every scene at every scale. Every report gives the render scale the
   measured frames were drawn at (its median, range and changes: high's moves); `--scale-settle s`
-  waits after each scene's warm-up until that scale has held for s seconds. With GPU timestamps on,
+  waits after each scene's warm-up until that scale has held for s seconds (in `--compare` each
+  page after its own warm-up; without it the run's first slices catch high's scale still stepping
+  down from its nominal). With GPU timestamps on,
   high's reports add `gpuPixel`: the part of the GPU time in passes that follow the render's pixel
   count (the dynamic resolution's split), for fitting its cost model at fixed scales.
 - `--compare` and `--accept` load their pages with `drsStore=off`, so neither side of an A/B (two

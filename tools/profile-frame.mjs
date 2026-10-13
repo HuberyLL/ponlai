@@ -59,7 +59,8 @@
 // Modes (most of a page load is generating the island, about 10 s; scenes are switched instead):
 // - page (the default): one page load per variant; each scene is set up at runtime through
 //   window.__PONLAI__ as its URL options would load it (weather established at once and wet in
-//   rain, the time preset, the clock from 0, the camera view and its motion), then warmed up for
+//   rain, the time preset, the clock from 0, the camera view and its motion; the loop stands still
+//   meanwhile, so no frame mixes the scenes), then warmed up for
 //   `--warmup` seconds (1.5) and until no pipeline was created for a second (a new weather compiles
 //   its pipelines on first use; that compile is reported per scene, outside the measured window).
 // - reload (`--mode reload`): the original method, a fresh page load per group of scenes sharing
@@ -115,7 +116,9 @@
 // - scale settle (`--scale-settle s`): a tier with a dynamic render scale (high) moves it by the
 //   GPU's frame time; after a scene's warm-up the run waits until it has held for s seconds (at
 //   most 60), so the scene is measured at its settle point. Each scene's results give the scale
-//   its frames were drawn at (median, range and changes) beside the frame times.
+//   its frames were drawn at (median, range and changes) beside the frame times. In --compare each
+//   page settles after its own warm-up: without it, high's scale stepped down from its nominal
+//   inside the first slices of the run's first scene, on both pages (A/A runs on the display).
 // - the remembered scale: high starts from the dynamic scale it last held (`drsStore`, off in an
 //   automated browser anyway); --compare and --accept add `drsStore=off` so neither side of an A/B
 //   (two AA modes or two builds) starts from a scale the other settled at, and `--drs-store` adds
@@ -146,12 +149,22 @@
 //   the app with that pane took a tenth of the GPU beside a window, a hundredth behind full screen.
 //   With `--compare` (page mode) the two pages run in the same interleaved slices as headless, so
 //   the drift between separate headed runs (1-2 ms) cancels: the running page is brought to the
-//   front (a background tab gets no animation frames), each slice restarts the drags through its
-//   settle and slice, and the summary adds the share of late frames (presented intervals longer
-//   than the frame pacer's pace) as a delta over the slices. One trace spans a scene's slices of
-//   both pages (Chrome traces one session at a time, every page in it), ended early only where an
-//   adaptive stop checks the figures so far; a mark per slice splits it (see startTrace). The run
-//   log gives each scene's time over its settles and slices.
+//   front (a background tab gets no animation frames), and the summary adds the share of late
+//   frames (presented intervals longer than the frame pacer's pace) as a delta over the slices.
+//   One trace spans a scene's slices of both pages (Chrome traces one session at a time, every
+//   page in it), ended early only where an adaptive stop checks the figures so far; a mark per
+//   slice splits it (see startTrace). The run log gives each scene's time over its settles and
+//   slices. The drags run in the measured slices only, each page's on from where its last slice
+//   left them, so the k-th slice of A and of B see the same motion from the same view (they ran
+//   through the settles too, and the order's switches gave each page its own views: 25-35 degrees
+//   apart in an A/A). The screen still changes at every switch, to the other page's view:
+//   expected. A scene switch never shows the scene before: each page switches with its loop
+//   stopped, out of sight, and starts before it comes to the front, so its first frame on screen
+//   is the new scene's (brought to the front first and switched while running, a page showed its
+//   last frame of the scene before and kept drawing that view until the camera was placed: the
+//   screen went back to the previous scene for a moment). A drag that loses its pointer to an
+//   event the run did not send (the system cursor's, which reaches the headed page) is pressed
+//   again and logged.
 //   Bringing a page to the front gives Chrome the keyboard focus (on macOS), so keys typed for
 //   another window reach it: every page of a --display run stops key events (keydown, keyup,
 //   keypress) on the window in the capture phase, before the page's own listeners. The tool sends
@@ -1064,17 +1077,36 @@ async function gpuInfo( page ) {
 
 // Sets a scene up: (page modes) its weather, time and clock at runtime, then the camera, the
 // ablation and the motion. Returns the switch's time and the page time it was done.
+// The page draws no frame meanwhile: a running loop stops for the switch (and its dynamic scale's
+// clock with it) and starts again after it, a stopped one stays stopped (--compare starts it).
+// Drawn while the switch ran, the frames between the jump's start and the camera's placing showed
+// the scene before (its view, under the new light while the sky baked): on the display, the
+// screen went back to the previous scene for a moment after the next one began.
 async function prepare( page, scene, evalJs, establish ) {
 
 	return page.evaluate( async ( { def, orbit, evalJs, establish } ) => {
 
-		const T = window.__profileTools;
+		const T = window.__profileTools, s = window.__PONLAI__;
 		T.stopMotion();
+		const running = T.loop.running;
+		if ( running ) {
+
+			s.dynamicClock?.suspend();
+			await T.loop.stop();
+
+		}
 		const switchMs = establish ? await T.establish( def.q ) : 0;
 		T.place( def );
-		if ( evalJs ) ( 0, eval )( `( ( s ) => { ${ evalJs } } )` )( window.__PONLAI__ );
+		if ( evalJs ) ( 0, eval )( `( ( s ) => { ${ evalJs } } )` )( s );
 		T.startMotion( def, orbit );
-		return { switchMs, t: performance.now() };
+		const t = performance.now();
+		if ( running ) {
+
+			s.dynamicClock?.resume();
+			T.loop.start();
+
+		}
+		return { switchMs, t };
 
 	}, { def: SCENES[ scene ], orbit: MOTION === 'orbit' ? ORBIT : 0, evalJs, establish } );
 
@@ -1170,8 +1202,9 @@ async function settleScale( page ) {
 
 			const d = window.__PONLAI__?.dynamicResolution;
 			if ( ! d ) return null;
+			// (on the controller's clock, which stands still while --compare keeps the page stopped)
 			const last = d.changes.length ? d.changes[ d.changes.length - 1 ].at : - Infinity;
-			return { scale: d.scale, quiet: performance.now() / 1000 - last };
+			return { scale: d.scale, quiet: ( d.clock ? d.clock() : performance.now() / 1000 ) - last };
 
 		} );
 		const waited = ( Date.now() - started ) / 1000;
@@ -1290,9 +1323,15 @@ async function startSamples( page ) {
 
 // The camera dragged as a player drags it: through Chrome's input (CDP mouse events, dispatched
 // once per display refresh as real ones are), turning drags of 30 to 200 degrees a second with
-// pauses, a wheel zoom in and out and a flick it glides on from, repeated until `seconds` have
-// passed.
-async function driveUser( page, seconds ) {
+// pauses, a wheel zoom in and out and a flick it glides on from, repeated, for `seconds` from
+// `from` seconds into the sequence (an A/B plays each page's slices on from where its last one
+// stopped, so the k-th slice of A and of B see the same drags from the same view). A drag cut at
+// the end rests before its release, so it leaves no glide to turn the camera after the window.
+// The macOS cursor's own events reach a headed page too: one (with the cursor resting, no hand
+// on it) cancelled a drag mid-slice, and the camera stood still for the rest of it. A drag whose
+// pointer capture is lost without its release is pressed again where it was; returns how many
+// times that happened.
+async function driveUser( page, seconds, from = 0 ) {
 
 	// the island camera turns with the right button, by its turn per window height dragged, and
 	// zooms by its own step a wheel notch; older builds' OrbitControls with the left, a full circle
@@ -1300,18 +1339,36 @@ async function driveUser( page, seconds ) {
 	const view = await page.evaluate( () => {
 
 		const c = window.__PONLAI__.controls, island = c.isIslandCamera === true;
+		// a pointer capture lost while the button is held: the drag ended without the tool's release
+		window.__pfInput ??= ( () => {
+
+			const state = { down: false, lost: 0 };
+			addEventListener( 'pointerdown', () => { state.down = true; }, true );
+			addEventListener( 'pointerup', () => { state.down = false; }, true );
+			addEventListener( 'lostpointercapture', () => { if ( state.down ) { state.down = false; state.lost ++; } }, true );
+			return state;
+
+		} )();
 		return { w: innerWidth, h: innerHeight, button: island ? 'right' : 'left', perHeight: island ? c.turnPerHeight * 180 / Math.PI : 360,
-			notches: island ? Math.max( 1, Math.round( - 8 * Math.log( 0.95 ) / c.wheelZoom ) ) : 8 };
+			notches: island ? Math.max( 1, Math.round( - 8 * Math.log( 0.95 ) / c.wheelZoom ) ) : 8, lost: window.__pfInput.lost };
 
 	} );
 	const cx = view.w * 0.45, cy = view.h / 2;
 	const pxPerDeg = view.h / view.perHeight;
 	const end = Date.now() + seconds * 1000;
 	const left = () => end - Date.now();
+	let lost = view.lost, regained = 0;
+	// the sequence, by step: its kind, its length (s) and what it does
+	const steps = [
+		[ 'pause', 0.6 ], [ 'drag', 2, - 60, 0 ], [ 'pause', 0.6 ], [ 'drag', 1.5, 120, 0 ], [ 'pause', 0.5 ], [ 'drag', 1, 0, 30 ], [ 'drag', 1.5, - 90, - 10 ],
+		[ 'pause', 0.8 ], [ 'wheel', 1, - 1 ], [ 'pause', 0.4 ], [ 'wheel', 1, 1 ], [ 'drag', 2, 90, 0 ], [ 'pause', 0.8 ], [ 'drag', 0.4, - 200, 0 ], [ 'pause', 1.5 ],
+	];
+	const cycle = steps.reduce( ( a, s ) => a + s[ 1 ], 0 );
 	const pause = ( s ) => sleep( Math.max( Math.min( s * 1000, left() ), 0 ) );
 	const drag = async ( degX, degY, s ) => {
 
 		if ( left() <= 0 ) return;
+		const cut = s > left() / 1000;
 		s = Math.min( s, left() / 1000 );
 		const dx = degX * pxPerDeg * s, dy = degY * pxPerDeg * s;
 		// starting where the whole drag fits, clear of the GUI's corner
@@ -1319,14 +1376,31 @@ async function driveUser( page, seconds ) {
 		await page.mouse.move( x0, y0 );
 		await page.mouse.down( { button: view.button } );
 		const started = Date.now();
+		let checked = started;
 		for ( ;; ) {
 
 			const f = Math.min( ( Date.now() - started ) / 1000 / s, 1 );
 			await page.mouse.move( x0 + dx * f, y0 + dy * f );
 			if ( f >= 1 ) break;
+			if ( Date.now() - checked >= 100 ) {
+
+				checked = Date.now();
+				const now = await page.evaluate( () => window.__pfInput.lost );
+				if ( now !== lost ) {
+
+					lost = now;
+					regained ++;
+					await page.mouse.up( { button: view.button } );
+					await page.mouse.down( { button: view.button } );
+
+				}
+
+			}
 			await sleep( 4 );
 
 		}
+		// at rest before the release (IslandCameraControls' RELEASE_STILL), so a cut drag does not glide
+		if ( cut ) await sleep( 60 );
 		await page.mouse.up( { button: view.button } );
 
 	};
@@ -1341,25 +1415,21 @@ async function driveUser( page, seconds ) {
 		}
 
 	};
+	// the step `from` falls in, and how far into it (the rest of a step an earlier slice began)
+	let k = 0, skip = from % cycle;
+	while ( skip >= steps[ k ][ 1 ] ) skip -= steps[ k ++ ][ 1 ];
 	while ( left() > 0 ) {
 
-		await pause( 0.6 );
-		await drag( - 60, 0, 2 );
-		await pause( 0.6 );
-		await drag( 120, 0, 1.5 );
-		await pause( 0.5 );
-		await drag( 0, 30, 1 );
-		await drag( - 90, - 10, 1.5 );
-		await pause( 0.8 );
-		await wheel( view.notches, 1, - 1 );
-		await pause( 0.4 );
-		await wheel( view.notches, 1, 1 );
-		await drag( 90, 0, 2 );
-		await pause( 0.8 );
-		await drag( - 200, 0, 0.4 );
-		await pause( 1.5 );
+		const [ kind, s, a, b ] = steps[ k ];
+		const notches = kind === 'wheel' ? Math.round( view.notches * ( s - skip ) / s ) : 0;
+		if ( kind === 'pause' || ( kind === 'wheel' && notches === 0 ) ) await pause( s - skip );
+		else if ( kind === 'drag' ) await drag( a, b, s - skip );
+		else await wheel( notches, s - skip, a );
+		skip = 0;
+		k = ( k + 1 ) % steps.length;
 
 	}
+	return regained;
 
 }
 
@@ -1642,7 +1712,8 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 			return performance.now();
 
 		}, { change: def.change ?? null } );
-		const [ utilisation ] = await Promise.all( [ sampleGpuUtilisation( Math.max( SECONDS - 0.5, 0.5 ) ), MOTION === 'user' ? driveUser( page, SECONDS ) : sleep( SECONDS * 1000 ) ] );
+		const [ utilisation, regained ] = await Promise.all( [ sampleGpuUtilisation( Math.max( SECONDS - 0.5, 0.5 ) ), MOTION === 'user' ? driveUser( page, SECONDS ) : sleep( SECONDS * 1000 ) ] );
+		if ( regained ) log( `${ scene.padEnd( 20 ) } a drag lost its pointer to an event the run did not send (the system cursor's?) ${ regained } time(s); pressed again` );
 		const t1 = await frames.now();
 		const sampled = sampler ? await sampler.stop() : null;
 		const displayed = trace ? displayStats( await trace.end(), sampled, t0, t1 ) : undefined;
@@ -1762,18 +1833,24 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 	// --scale-log: each page's dynamic scale at its last stop, and per slice what ran out meanwhile
 	const atStop = [ null, null ], offSlices = [ [], [] ];
 	let active = null;
-	const run = async ( v, scene, slice ) => {
+	const halt = async () => {
+
+		if ( active === null ) return;
+		stopped[ active ].push( { from: await loop( active, 'stop' ) } );
+		if ( SCALE_LOG ) atStop[ active ] = await scaleState( pages[ active ] );
+		active = null;
+
+	};
+	// `drawn`: the page has just switched scene while stopped; it starts before it comes to the
+	// front, so the start's first frame (drawn at once) is on its canvas when it shows. Brought to
+	// the front first, it showed its last frame of the scene before until it drew.
+	const run = async ( v, scene, slice, drawn = false ) => {
 
 		if ( active === v ) return;
-		if ( active !== null ) {
-
-			stopped[ active ].push( { from: await loop( active, 'stop' ) } );
-			if ( SCALE_LOG ) atStop[ active ] = await scaleState( pages[ active ] );
-
-		}
+		await halt();
 		// headed, a background tab gets no animation frames: the running page is the one in front
 		// (the page hides and shows itself without restarting a loop stopped here)
-		if ( DISPLAY ) await pages[ v ].bringToFront();
+		if ( DISPLAY && ! drawn ) await pages[ v ].bringToFront();
 		if ( SCALE_LOG && atStop[ v ] && slice !== undefined ) {
 
 			// the controller's clock and timers just before the page runs again: unchanged since its
@@ -1784,6 +1861,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 
 		}
 		const started = await loop( v, 'start' );
+		if ( DISPLAY && drawn ) await pages[ v ].bringToFront();
 		const last = stopped[ v ][ stopped[ v ].length - 1 ];
 		if ( last && last.to === undefined ) last.to = started;
 		active = v;
@@ -1809,9 +1887,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		if ( k > 0 || scene !== names[ 0 ] ) {
 
 			// both pages stand still while the lock is away (see holdScene)
-			stopped[ active ].push( { from: await loop( active, 'stop' ) } );
-			if ( SCALE_LOG ) atStop[ active ] = await scaleState( pages[ active ] );
-			active = null;
+			await halt();
 			const held = await holdScene( scene, log );
 			if ( held === false ) break;
 			sceneIdle = held ?? sceneIdle;
@@ -1823,9 +1899,13 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		const compile = [];
 		for ( const v of [ 0, 1 ] ) {
 
-			await run( v );
+			// the page switches stopped and out of sight (the other one stopped too), then starts
+			// and comes to the front with the new scene drawn (see `run`)
+			await halt();
 			const prepared = await prepare( pages[ v ], scene, evals[ v ], true );
+			await run( v, undefined, undefined, true );
 			compile[ v ] = { ms: r2( prepared.switchMs ), ...( await warm( frames[ v ], [ prepared.t ], WARMUP ) )[ 0 ] };
+			if ( SCALE_SETTLE > 0 ) compile[ v ].scaleSettle = await settleScale( pages[ v ] );
 			if ( def.change ) await pages[ v ].evaluate( ( c ) => window.__PONLAI__.setWeather( c.weather, c.seconds ), def.change );
 
 		}
@@ -1848,25 +1928,32 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			}
 
 		};
+		// each page's drags so far in this scene (s): its next slice plays them on from there
+		const dragged = [ 0, 0 ];
 		let stop = null;
 		for ( let i = 0; i < SLICES && ! stop; i ++ ) {
 
 			const v = 1 - ORDER[ i % ORDER.length ];
 			const switched = active !== v;
 			if ( switched ) await run( v, scene, i );
-			// on the display: the slice's sampler in the scene's trace, and the camera dragged through
-			// the settle and the slice (each slice starts the same drags, so both pages see them)
+			// on the display: the slice's sampler in the scene's trace
 			if ( DISPLAY && ! trace ) trace = await startTrace( pages[ v ] );
 			const sampler = DISPLAY ? await startSamples( pages[ v ] ) : null;
-			const motion = MOTION === 'user' ? driveUser( pages[ v ], ( switched ? SETTLE : 0 ) + SLICE ) : null;
-			// (a hang closes the browser under the drags: their failure is the hang's)
-			motion?.catch( () => {} );
 			// the measured slice starts once this page has run alone a little (its queue fills)
 			if ( switched ) await sleep( SETTLE * 1000 );
 			const t0 = await frames[ v ].now();
+			// the camera dragged through the slice alone, on from the page's last slice: whether a
+			// slice follows a switch (and so a settle) or not, A's k-th slice and B's see the same
+			// drags from the same view (the drags through the settle as well gave the two pages
+			// other views, by the order's switches)
+			const motion = MOTION === 'user' ? driveUser( pages[ v ], SLICE, dragged[ v ] ) : null;
+			dragged[ v ] += SLICE;
+			// (a hang closes the browser under the drags: their failure is the hang's)
+			motion?.catch( () => {} );
 			await sleep( SLICE * 1000 );
 			const t1 = await frames[ v ].now();
-			await motion;
+			const regained = await motion;
+			if ( regained ) log( `${ scene.padEnd( 20 ) } ${ 'AB'[ v ] } slice ${ i }: a drag lost its pointer to an event the run did not send (the system cursor's?) ${ regained } time(s); pressed again` );
 			const w = { scene, slice: i, t0, t1 };
 			if ( sampler ) traced.push( Object.assign( w, { sampled: await sampler.stop() } ) );
 			windows[ v ].push( w );
@@ -1886,7 +1973,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		// the time the slices took beyond their settles and measuring windows (switching pages,
 		// the display's samplers and traces)
 		stop.overhead = r2( ( Date.now() - slicesFrom ) / 1000 - measured );
-		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ stopText( stop ) }, ${ stop.overhead } s over the settles and slices` );
+		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ stopText( stop ) }, ${ stop.overhead } s over the settles and slices${ compile[ 0 ].scaleSettle ? `; scale settled at ${ compile[ 0 ].scaleSettle.scale } / ${ compile[ 1 ].scaleSettle?.scale } after ${ compile[ 0 ].scaleSettle.seconds } / ${ compile[ 1 ].scaleSettle?.seconds } s more` : '' }` );
 		if ( k < REPEAT - 1 ) continue;
 		// the scene's last repetition is done: its results, once both pages' frames are in
 		const scaleLogs = SCALE_LOG ? [ await scaleChanges( pages[ 0 ] ), await scaleChanges( pages[ 1 ] ) ] : null;
