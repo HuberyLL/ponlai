@@ -295,6 +295,14 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   the original method); every page keeps the generated island in IndexedDB (in the tool's own
   Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
   `worldCache=off`).
+- It holds the GPU lock exclusively only for what it measures. The browser starts before it, and a
+  build the profile has not loaded yet (a new bundle, port or browser version) is first loaded once
+  under a shared slot (the preload; skipped when no slot frees within `--preload-wait`, 60 s), so
+  the loads under the exclusive lock hit the world cache and the shader cache, as every run but a
+  build's first already did. The idle check that opens the run also stands for the first load's,
+  and the pages stop before the lock is released (the GPU name, the files and the browser's close
+  come after it). `wallSeconds` in profile.json is the time under the exclusive lock;
+  `lockWaitSeconds`, `totalSeconds` and `preload` sit beside it.
 - `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
   other page stopped, and reports deltas with their 95 % interval. `--toggle "js"` A/Bs inside one
   page by applying the expression (with `s` = `window.__PONLAI__` and `on` false for A, true for
