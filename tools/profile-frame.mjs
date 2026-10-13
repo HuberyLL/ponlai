@@ -37,7 +37,9 @@
 // minute under a busy CPU). Under the lock: the idle check (which also stands for the first load's),
 // then the browser's launch, each load, each scene's switch, warm-up, scale settle and measured
 // window. The pages' loops stop before the lock is
-// released; the GPU name, the files and the browser's close follow. profile.json's `wallSeconds`
+// released; the GPU name, the files and the browser's close follow. Several scenes hold it one at a
+// time: between scenes it goes to whoever waits (queued captures) and comes back before the next
+// warm-up, with the pages open and stopped meanwhile (see holdScene). profile.json's `wallSeconds`
 // is the time under the exclusive lock (`lockWaitSeconds`, `totalSeconds`, `preload` beside it).
 // Measured: per-pass GPU times, frame rates and
 // acceptance verdicts within the run-to-run noise of the earlier tool, 4-12 s less held per run.
@@ -159,7 +161,7 @@ import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { withGpuLock, waitForIdleGpu, sampleGpuUtilisation } from './gpu-lock.mjs';
+import { withGpuLock, leaseGpuLock, waitForIdleGpu, sampleGpuUtilisation } from './gpu-lock.mjs';
 import { requireDisplayAllowed } from './display-gate.mjs';
 
 // ------------------------------------------------------------------ options
@@ -636,6 +638,72 @@ async function guarded( names, finished, attempt, label = '' ) {
 		left = left.filter( ( s ) => s !== scene && ! finished( s ) );
 
 	}
+
+}
+
+// ------------------------------------------------------------------ the exclusive lock per scene
+
+// The run holds the exclusive lock one scene at a time, so that captures queued meanwhile run
+// between its scenes instead of waiting for the whole run (7 scenes of a display compare held it
+// for 7-11 minutes). A runner calls holdScene before a scene's warm-up (and at its start, before its
+// page loads, which the first scene's hold covers) with every page's loop stopped and drained; the
+// pages and the browser stay open, drawing nothing, while the lock is away. The hold is a lease
+// (gpu-lock's leaseGpuLock with no budget): it is kept from scene to scene while nobody waits, and
+// otherwise released and asked for again at once, behind the shared requests queued meanwhile (up
+// to the exclusive cap, as any exclusive request). Only a hold taken again checks the GPU for idle
+// (one kept throughout saw nothing else run): a GPU still busy after `--idle-wait` stops the run
+// with the finished scenes written and exit 3, unless `--contended`, which marks the scene contended.
+let lockLabel = null;
+// each hold taken again: { scene, at (s from the first grant), waitSeconds, idle }; the lock's time
+// away from this run in all (ms), and the scene whose idle check stopped the run
+const holds = [];
+let releasedMs = 0, holdStart = 0, lockStop = null;
+async function holdScene( scene, log, forLoad = false ) {
+
+	// the wait may outlast a hang's timeout: it is no hang
+	const alive = setInterval( progress, 5000 );
+	const asked = Date.now();
+	let lease;
+	try {
+
+		lease = await leaseGpuLock( lockLabel, { budget: 0 } );
+
+	} finally {
+
+		clearInterval( alive );
+
+	}
+	progress();
+	if ( lease.kept ) return null;
+	const away = Date.now() - asked;
+	releasedMs += away;
+	// with --contended, once a check found the GPU busy the later ones do not wait it out again (as
+	// the loads': it would cost IDLE_WAIT per scene under the lock and change nothing)
+	const idle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad === 0 ? 0 : IDLE_WAIT, log } );
+	if ( idle.contended ) idleWaitLoad = 0;
+	holds.push( { scene, at: r2( ( asked - holdStart ) / 1000 ), waitSeconds: r2( away / 1000 ), checkSeconds: r2( ( Date.now() - asked - away ) / 1000 ), idle: idle.idle?.mean ?? null, contended: idle.contended } );
+	log( `${ scene }: the lock went to others' work for ${ ( away / 1000 ).toFixed( 1 ) } s; held again, GPU idle ${ idle.idle?.mean ?? '?' } % with this run's pages stopped (checked in ${ ( ( Date.now() - asked - away ) / 1000 ).toFixed( 1 ) } s)${ idle.contended ? ', CONTENDED' : '' }` );
+	if ( idle.contended && ! CONTENDED_OK ) {
+
+		lockStop = { scene, idle };
+		stopRun = true;
+		return false;
+
+	}
+	// a load right after takes this check for its own (loadIdle)
+	if ( forLoad ) startIdle = idle;
+	return idle;
+
+}
+// stops a single page's loop (drained) and holds the lock for the next scene; the loop runs again
+// once held. False when the run stops (see holdScene), else the idle check taken (or null if kept).
+const stopPages = async ( pages ) => { for ( const p of pages ) await p.evaluate( () => window.__profileTools?.loop.stop() ).catch( () => {} ); };
+async function nextScene( page, scene, log ) {
+
+	await page.evaluate( () => window.__profileTools.loop.stop() );
+	const held = await holdScene( scene, log );
+	if ( held !== false ) await page.evaluate( () => window.__profileTools.loop.start() );
+	return held;
 
 }
 
@@ -1344,6 +1412,8 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 	for ( const group of groups ) {
 
 		beginScene( group.scenes[ 0 ] );
+		await stopPages( [ page ] );
+		if ( await holdScene( group.scenes[ 0 ], log, true ) === false ) break;
 		// between page loads the GPU should be idle: anything rendering now is outside this run (the
 		// first load's page is blank already)
 		if ( ! startIdle ) {
@@ -1357,13 +1427,21 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 		loads.push( { scenes: group.scenes, loadMs: loaded.loadMs, url: loaded.url, gpuIdle, startup: loaded.startup } );
 		const entry = loads[ loads.length - 1 ];
 		if ( SCALE_LOG ) await scaleChanges( page );
+		let sceneIdle = gpuIdle;
 		for ( const scene of group.scenes ) {
 
 			beginScene( scene );
+			if ( scene !== group.scenes[ 0 ] ) {
+
+				const held = await nextScene( page, scene, log );
+				if ( held === false ) break;
+				sceneIdle = held ?? sceneIdle;
+
+			}
 			await prepare( page, scene, evalJs, false );
 			const { frames, info } = await measure( page, scene );
 			if ( SHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
-			const r = { ...summarise( frames ), profiler: info, gpuIdle: gpuIdle.idle?.mean ?? null, contended: gpuIdle.contended };
+			const r = { ...summarise( frames ), profiler: info, gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended };
 			if ( RAW ) r.raw = frames;
 			if ( SCALE_LOG ) r.scaleLog = await scaleChanges( page );
 			results[ scene ] = r;
@@ -1374,6 +1452,7 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 		}
 		// the startup frames' GPU completions arrive late with a deep queue: read them again now
 		if ( entry.startup ) entry.startup.startup = await page.evaluate( () => window.__PONLAI_PROFILE__.info().startup );
+		if ( stopRun ) break;
 
 	}
 	return out;
@@ -1385,6 +1464,8 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix = '', timestamps = TIMESTAMP_MODE !== 'off', out = newRun(), record = {} ) {
 
 	beginScene( names[ 0 ] );
+	await stopPages( [ page ] );
+	if ( await holdScene( names[ 0 ], log, true ) === false ) return out;
 	await page.goto( 'about:blank' );
 	const gpuIdle = await loadIdle( log );
 	const loaded = await load( page, base, SCENES[ names[ 0 ] ].q, timestamps );
@@ -1393,9 +1474,17 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 	out.loads.push( entry );
 	if ( SCALE_LOG ) await scaleChanges( page );
 	const frames = new Frames( page );
+	let sceneIdle = gpuIdle;
 	for ( const scene of names ) {
 
 		beginScene( scene );
+		if ( scene !== names[ 0 ] ) {
+
+			const held = await nextScene( page, scene, log );
+			if ( held === false ) break;
+			sceneIdle = held ?? sceneIdle;
+
+		}
 		const def = SCENES[ scene ];
 		const { switchMs, t } = await prepare( page, scene, evalJs, true );
 		const compile = ( await warm( frames, [ t ], WARMUP ) )[ 0 ];
@@ -1422,7 +1511,7 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 
 		} );
 		const list = frames.in( t0, t1 );
-		const r = { ...summarise( list ), profiler: { ...info, utilisation }, switch: sw, gpuIdle: gpuIdle.idle?.mean ?? null, contended: gpuIdle.contended };
+		const r = { ...summarise( list ), profiler: { ...info, utilisation }, switch: sw, gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended };
 		if ( displayed ) r.display = displayed;
 		if ( RAW ) r.raw = list;
 		if ( SCALE_LOG ) r.scaleLog = await scaleChanges( page );
@@ -1482,6 +1571,8 @@ const stopText = ( stop ) => ! stop ? '' : stop.reason === 'max' ? `${ stop.slic
 async function runPair( context, bases, evals, log, names = sceneNames, timestamps = TIMESTAMP_MODE !== 'off', outs = [ newRun(), newRun() ] ) {
 
 	beginScene( names[ 0 ] );
+	await stopPages( context.pages() );
+	if ( await holdScene( names[ 0 ], log, true ) === false ) return outs;
 	const pages = [ context.pages()[ 0 ] ?? await context.newPage() ];
 	pages.push( await context.newPage() );
 	pages.forEach( ( p, v ) => pageNames.set( p, 'AB'[ v ] ) );
@@ -1563,9 +1654,21 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		for ( const p of pages ) await scaleChanges( p );
 
 	}
-	for ( let k = 0; k < REPEAT; k ++ ) for ( const scene of names ) {
+	let sceneIdle = gpuIdle;
+	for ( let k = 0; k < REPEAT && ! stopRun; k ++ ) for ( const scene of names ) {
 
 		beginScene( scene );
+		if ( k > 0 || scene !== names[ 0 ] ) {
+
+			// both pages stand still while the lock is away (see holdScene)
+			stopped[ active ].push( { from: await loop( active, 'stop' ) } );
+			if ( SCALE_LOG ) atStop[ active ] = await scaleState( pages[ active ] );
+			active = null;
+			const held = await holdScene( scene, log );
+			if ( held === false ) break;
+			sceneIdle = held ?? sceneIdle;
+
+		}
 		const def = SCENES[ scene ];
 		// each page switches and warms (compiles included) alone; the slices start with the page
 		// warmed last, B, so the order is B A A B A B B A
@@ -1612,7 +1715,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			const mine = windows[ v ].filter( ( w ) => w.scene === scene );
 			await frames[ v ].settle( Math.max( ...mine.map( ( w ) => w.t1 ) ) );
 			const pooled = mine.flatMap( ( w ) => frames[ v ].in( w.t0, w.t1 ) );
-			const r = { ...summarise( pooled ), switch: switches[ scene ][ v ], gpuIdle: gpuIdle.idle?.mean ?? null, contended: gpuIdle.contended,
+			const r = { ...summarise( pooled ), switch: switches[ scene ][ v ], gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended,
 				slices: mine.map( ( w ) => ( { ...sliceStats( frames[ v ].in( w.t0, w.t1 ) ), ...( w.display ? { display: w.display } : {} ) } ) ) };
 			if ( DISPLAY ) r.display = poolDisplay( mine.map( ( w ) => w.display ) );
 			r.stop = stop;
@@ -1634,7 +1737,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		}
 
 	}
-	stopped[ active ].push( { from: await loop( active, 'stop' ) } );
+	if ( active !== null ) stopped[ active ].push( { from: await loop( active, 'stop' ) } );
 	for ( const v of [ 0, 1 ] ) {
 
 		const last = stopped[ v ][ stopped[ v ].length - 1 ];
@@ -1652,6 +1755,8 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames, timestamps = TIMESTAMP_MODE !== 'off', runs = [ newRun(), newRun() ] ) {
 
 	beginScene( names[ 0 ] );
+	await stopPages( [ page ] );
+	if ( await holdScene( names[ 0 ], log, true ) === false ) return runs;
 	await page.goto( 'about:blank' );
 	const gpuIdle = await loadIdle( log );
 	const loaded = await load( page, base, SCENES[ names[ 0 ] ].q, timestamps );
@@ -1666,9 +1771,17 @@ async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames,
 
 	}, { js: toggleJs, on } );
 	const scenes = [];
-	for ( let k = 0; k < REPEAT; k ++ ) for ( const scene of names ) {
+	let sceneIdle = gpuIdle;
+	for ( let k = 0; k < REPEAT && ! stopRun; k ++ ) for ( const scene of names ) {
 
 		beginScene( scene );
+		if ( k > 0 || scene !== names[ 0 ] ) {
+
+			const held = await nextScene( page, scene, log );
+			if ( held === false ) break;
+			sceneIdle = held ?? sceneIdle;
+
+		}
 		const def = SCENES[ scene ];
 		const { switchMs } = await prepare( page, scene, evalJs, true );
 		// both states warmed (B, then A, which the blocks start with)
@@ -1739,7 +1852,7 @@ async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames,
 		if ( SCALE_LOG ) log( `${ scene.padEnd( 20 ) } scale changes: ${ scaleLogText( scaleLog ) }` );
 		for ( const v of [ 0, 1 ] ) {
 
-			runs[ v ].scenes[ scene ] = { ...summarise( pooled[ v ] ), switch: mine[ 0 ].switch, gpuIdle: gpuIdle.idle?.mean ?? null, contended: gpuIdle.contended, slices: slices[ v ], ...( SCALE_LOG ? { scaleLog } : {} ) };
+			runs[ v ].scenes[ scene ] = { ...summarise( pooled[ v ] ), switch: mine[ 0 ].switch, gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended, slices: slices[ v ], ...( SCALE_LOG ? { scaleLog } : {} ) };
 			await sceneDone( { mode: 'toggle', variant: 'AB'[ v ], timestamps, scene, result: runs[ v ].scenes[ scene ] } );
 
 		}
@@ -2125,6 +2238,8 @@ async function main() {
 
 			// the run's time from here on: the lock's wait is someone else's run
 			started = Date.now();
+			holdStart = started;
+			lockLabel = label;
 			waitedMs = started - requested;
 			if ( waitedMs > 1000 ) console.error( `[profile] GPU lock acquired after ${ ( waitedMs / 1000 ).toFixed( 0 ) } s` );
 			const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, wait: IDLE_WAIT } );
@@ -2301,13 +2416,15 @@ async function main() {
 			if ( hung.length ) {
 
 				meta.hung = hung;
-				log( `HUNG: ${ hung.map( ( h ) => `${ h.scene }${ h.run ? ` (${ h.run })` : '' }` ).join( ', ' ) }${ stopRun ? '; the run stopped at the second hang' : '' }` );
+				log( `HUNG: ${ hung.map( ( h ) => `${ h.scene }${ h.run ? ` (${ h.run })` : '' }` ).join( ', ' ) }${ hung.length >= 2 ? '; the run stopped at the second hang' : '' }` );
 
 			}
 			// the measurements are done: once every page's loop stood still (no frame, its queue
 			// drained), nothing of this run renders and the lock goes to the next run
-			for ( const p of context.pages() ) await p.evaluate( () => window.__profileTools?.loop.stop() ).catch( () => {} );
-			held = Date.now() - started;
+			await stopPages( context.pages() );
+			held = Date.now() - started - releasedMs;
+			meta.holds = { releases: holds.length, awaySeconds: r2( releasedMs / 1000 ), taken: holds };
+			if ( lockStop ) meta.contendedStop = { scene: lockStop.scene, idle: lockStop.idle.idle?.mean ?? null, clients: lockStop.idle.clients ?? [] };
 			clearInterval( watchdog );
 
 		} );
@@ -2331,6 +2448,12 @@ async function main() {
 		await writeFile( path.join( OUT, 'profile.json' ), JSON.stringify( result.json(), null, 1 ) );
 		await writeFile( path.join( OUT, 'summary.md' ), result.markdown() + hungMarkdown( meta ) );
 		if ( errors.length ) console.error( errors.slice( 0, 10 ).join( '\n' ) );
+		if ( lockStop ) {
+
+			console.error( `[profile] CONTENDED at ${ lockStop.scene }: the GPU was still ${ lockStop.idle.idle?.mean } % busy after the lock came back. The run stopped there with the finished scenes written (exit ${ EXIT_CONTENDED }); --contended measures anyway.` );
+			process.exitCode = EXIT_CONTENDED;
+
+		}
 
 	} finally {
 
@@ -2339,7 +2462,7 @@ async function main() {
 
 	}
 	const waits = waitedMs + ( preloaded?.lockWaitMs ?? 0 );
-	console.error( `[profile] done: ${ ( held / 1000 ).toFixed( 0 ) } s under the exclusive lock, ${ ( ( Date.now() - begun - waits ) / 1000 ).toFixed( 0 ) } s in all without the waits for the GPU lock` );
+	console.error( `[profile] done: ${ ( held / 1000 ).toFixed( 0 ) } s under the exclusive lock${ holds.length ? ` (given up ${ holds.length } times between scenes, ${ ( releasedMs / 1000 ).toFixed( 0 ) } s away)` : '' }, ${ ( ( Date.now() - begun - waits ) / 1000 ).toFixed( 0 ) } s in all without the waits for the GPU lock` );
 	console.log( path.join( OUT, 'summary.md' ) );
 
 }
@@ -2490,10 +2613,27 @@ function compareMarkdown( meta, report ) {
 
 }
 
-// the scenes that hung (see guarded), after the summary
+// after the summary: the lock's releases, a contended stop and the scenes that hung (see guarded)
 function hungMarkdown( meta ) {
 
-	if ( ! meta.hung?.length ) return '';
+	return stopMarkdown( meta ) + ( meta.hung?.length ? hungList( meta ) : '' );
+
+}
+
+// a run stopped at a scene's idle check (see holdScene), and the lock's releases between scenes
+function stopMarkdown( meta ) {
+
+	const h = meta.holds;
+	const lines = [];
+	if ( h?.releases ) lines.push( `The exclusive lock went to others' work ${ h.releases } times between scenes (${ h.awaySeconds } s in all, not in the held time): ${ h.taken.map( ( t ) => `before ${ t.scene } ${ t.waitSeconds } s, GPU idle ${ t.idle ?? '?' } %` ).join( '; ' ) }.` );
+	const c = meta.contendedStop;
+	if ( c ) lines.push( `CONTENDED at ${ c.scene }: the GPU was still ${ c.idle } % busy when the lock came back${ c.clients.length ? ` (${ c.clients.map( ( x ) => `${ x.name } ${ x.percent } %` ).join( ', ' ) })` : '' }; the run stopped there, and the scenes after it were not measured (exit 3).` );
+	return lines.length ? `\n## Lock\n\n${ lines.map( ( l ) => `- ${ l }` ).join( '\n' ) }\n` : '';
+
+}
+
+function hungList( meta ) {
+
 	return `\n## Hung scenes\n\n${ meta.hung.map( ( h ) => `- ${ h.scene }${ h.run ? ` (${ h.run })` : '' }: no progress for ${ h.seconds } s; the browser was reopened for the scenes after it` ).join( '\n' ) }\n` +
 		( meta.hung.length >= 2 ? '\nThe second hang stopped the run: scenes after it were not measured.\n' : '' );
 
