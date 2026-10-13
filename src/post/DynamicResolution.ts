@@ -58,7 +58,15 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 //   seconds (every frame moved to the candidate scale) allow at least as much: a view whose cost
 //   swings (the camera turning from the horizon back to the island) waits until the heavier frames
 //   have left the long window and then steps once. A scale it stepped up to and had to leave within
-//   PROBE seconds is barred, with every scale above it, for BAR seconds.
+//   PROBE seconds is barred, with every scale above it, for BAR seconds: not outright, but by the
+//   error that step showed (the quantile its frames reached over the one predicted, at least
+//   BAR_MARGIN ms), added to their predictions; the scales between the one the step left and the
+//   barred one take that error in proportion to their predicted growth (the model's error grows
+//   with the jump: in the meadow a step from 0.8 to 1.3 came out 3 ms over its prediction and one
+//   to 1.25 just under the bar then failed as badly). The same view does not try the same step
+//   again, while a view that has turned lighter since (the camera off the horizon, the rain gone)
+//   steps up as soon as its frames show room for that error too: an outright bar held a light view
+//   at the heavy one's scale for up to BAR seconds.
 // - Without GPU times (no timestamp queries, `gpuTimer=off`) the frame intervals steer it, one step
 //   at a time: down while more than MISS_SHARE of a window's frames missed their vblank, up after
 //   UP_AFTER seconds without a miss. Every step down bars the scale it left from a step back up
@@ -129,8 +137,9 @@ const UP_HOLD = 3, UP_LONG = 6, UP_SHORT = 2, UP_MARGIN = 0.3;
 const UP_EVERY = 0.25;
 // frames that take the whole interval: the median of the last EMERGENCY_FRAMES does
 const EMERGENCY_HOLD = 0.5, EMERGENCY_FRAMES = 12;
-// a step down within PROBE seconds of a step up bars the scale it left, and those above, for BAR s
-const PROBE = 8, BAR = 30;
+// a step down within PROBE seconds of a step up bars the scale it left, and those above, for BAR s,
+// by the step's error and at least BAR_MARGIN ms (the frames' noise: as PROBE_SAVING below)
+const PROBE = 8, BAR = 30, BAR_MARGIN = 1;
 // the quality floor's share of the canvas's pixel ratio
 const QUALITY_FLOOR = 0.4;
 // late frames persist at the quality floor: the quantile of the last LATE_SPAN seconds over its limit
@@ -224,6 +233,9 @@ export interface ScaleChange { at: number; scale: number; why: string; from?: nu
 // when at least PROBE_SAVING).
 interface Response { change: ScaleChange; beforePixel: number; saving: number }
 
+// A failed step up's bar (see `barPenalty`).
+interface Bar { scale: number; from: number; until: number; error: number }
+
 export class DynamicResolution {
 
 	max: number;
@@ -275,8 +287,9 @@ export class DynamicResolution {
 	private lastMiss = - Infinity;
 	// the paced frame interval (ms)
 	private interval = 1000 / 60;
-	// a step up's bar: scales at or above `scale` are not tried before `until`
-	private bar = { scale: Infinity, until: - Infinity };
+	// a step up's bar: until `until`, scales at or above `scale` are predicted `error` ms dearer, and
+	// those between `from` (the scale the step left) and `scale` a share of it (`barPenalty`)
+	private bar: Bar = { scale: Infinity, from: Infinity, until: - Infinity, error: 0 };
 	private lastWhy = '';
 	private response: Response | null = null;
 	// measurements of the non-scaling share (the prior counts once)
@@ -531,9 +544,9 @@ export class DynamicResolution {
 			const short = long.filter( ( x ) => now - x.t <= UP_SHORT );
 			if ( short.length >= MIN_FRAMES ) {
 
-				const ceiling = now < this.bar.until ? this.bar.scale : Infinity;
-				const a = this.largestFitting( long, target, QUANTILE, this.scale, ceiling );
-				const b = this.largestFitting( short, target - UP_MARGIN, QUANTILE, this.scale, ceiling );
+				const bar = now < this.bar.until ? this.bar : undefined;
+				const a = this.largestFitting( long, target, QUANTILE, this.scale, Infinity, bar );
+				const b = this.largestFitting( short, target - UP_MARGIN, QUANTILE, this.scale, Infinity, bar );
 				// Up to the short window's level once the long one allows at least as much (waiting for
 				// the two to be equal would never step up where the margin keeps them a level apart);
 				// while the long one allows less, the view has just turned lighter: wait, then step once.
@@ -568,10 +581,23 @@ export class DynamicResolution {
 
 	}
 
+	// The error a bar adds to the prediction at `scale`: all of it at and above the barred scale, none
+	// at or below the scale the failed step left, and between the two in proportion to the predicted
+	// growth of the render-sized passes (rising with the scale).
+	private barPenalty( bar: Bar, scale: number ): number {
+
+		if ( scale <= bar.from + 1e-6 ) return 0;
+		if ( scale >= bar.scale - 1e-6 ) return bar.error;
+		const g = this.growth( bar.from );
+		return bar.error * ( this.growth( scale ) - g ) / ( this.growth( bar.scale ) - g );
+
+	}
+
 	// The largest scale between `lowest` and below `ceiling` (the maximum without one) whose
-	// predicted `q` quantile lands under `limit`; `lowest` if none does (the cost rises with the
-	// scale, so a bisection over the levels finds it).
-	private largestFitting( frames: readonly Sample[], limit: number, q: number, lowest: number, ceiling = Infinity ): number {
+	// predicted `q` quantile (plus a bar's error, `barPenalty`) lands under `limit`; `lowest` if none
+	// does (the cost rises with the scale, the bar's error too, so a bisection over the levels finds
+	// it).
+	private largestFitting( frames: readonly Sample[], limit: number, q: number, lowest: number, ceiling = Infinity, bar?: Bar ): number {
 
 		const levels = this.steps.filter( ( s ) => s >= lowest - 1e-6 && s < ceiling - 1e-6 );
 		if ( levels.length === 0 ) return lowest;
@@ -580,7 +606,8 @@ export class DynamicResolution {
 		while ( lo < hi ) {
 
 			const mid = ( lo + hi ) >> 1;
-			if ( this.predict( frames, levels[ mid ], q ) <= limit ) hi = mid;
+			const penalty = bar ? this.barPenalty( bar, levels[ mid ] ) : 0;
+			if ( this.predict( frames, levels[ mid ], q ) + penalty <= limit ) hi = mid;
 			else lo = mid + 1;
 
 		}
@@ -614,8 +641,16 @@ export class DynamicResolution {
 			scale = s;
 
 		}
-		// a step up it has to take back at once: bar it, and every scale above, for a while
-		if ( this.lastWhy === 'up' && now - this.lastChange < PROBE ) this.bar = { scale: from, until: now + BAR };
+		// a step up it has to take back at once: bar it, and every scale above, for a while, by the
+		// error the step showed (the quantile its frames reached over the one predicted for them)
+		if ( this.lastWhy === 'up' && now - this.lastChange < PROBE ) {
+
+			const up = this.changes[ this.changes.length - 1 ];
+			const predicted = up?.predicted ?? NaN;
+			const error = frames.length && Number.isFinite( predicted ) ? this.predict( frames, from, QUANTILE ) - predicted : 0;
+			this.bar = { scale: from, from: Math.min( up?.from ?? from, from ), until: now + BAR, error: Math.max( error, BAR_MARGIN ) };
+
+		}
 		return this.to( scale, now, why, frames, saving( scale ) );
 
 	}
