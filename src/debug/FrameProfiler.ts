@@ -103,6 +103,7 @@ export interface FrameRecord {
 	outsideWait: number; // time those calls spent in the queue calls
 	gap: number; // from the end of the previous tick to the start of this one
 	gpu: number; // GPU busy time: the passes' charges (see above)
+	pixel: number; // the part of gpu in passes that follow the render's pixel count (`pixelPass`; NaN without it)
 	gpuInterval: number; // the GPU's completion of this frame since the previous frame's
 	span: number; // first pass start to last pass end on the GPU (may overlap the previous frame)
 	passes: number;
@@ -165,6 +166,9 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		renderScale = NaN;
 		/** Called with each frame as it finishes (the page's dynamic resolution reads its GPU time). */
 		onRecord: ( ( record: FrameRecord ) => void ) | null = null;
+		/** Whether the pass with a timestamp uid follows the render's pixel count (the dynamic
+		 * resolution's split, `PassScaling`), asked once per timed pass. */
+		pixelPass: ( ( uid: string ) => boolean ) | null = null;
 		private targets = new WeakMap<object, string>();
 		private objects = new WeakMap<object, { label: string; target?: object }[]>();
 		private patterns: [ RegExp, string ][] = [];
@@ -657,13 +661,14 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			// in the order they complete, each from the previous completion (this frame's, or the end of
 			// the last frame's work still running) or its own start, whichever is later
 			timed.sort( ( a, b ) => a.end - b.end );
-			let cursor = this.lastEnd;
+			let cursor = this.lastEnd, pixel = 0;
 			for ( const pass of timed ) {
 
 				const ms = Math.max( pass.end - Math.max( pass.start, cursor ), 0 );
 				cursor = Math.max( cursor, pass.end );
 				charges.set( pass, ms );
 				gpu += ms;
+				if ( this.pixelPass?.( pass.uid ) ) pixel += ms;
 				groups[ pass.group ] = ( groups[ pass.group ] ?? 0 ) + ms;
 				if ( this.detail ) {
 
@@ -679,7 +684,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			const record: FrameRecord = {
 				id: frame.id, t: frame.now, interval: frame.time - this.lastTime, nowInterval: frame.now - this.lastNow,
 				js: frame.js, jsWall: frame.jsWall, submitWait: frame.wait, waits: frame.waits, outsideJs: frame.outside, outsideWait: frame.outsideWait, gap: frame.gap,
-				gpu, gpuInterval: complete && this.lastComplete ? end - this.lastEnd : NaN,
+				gpu, pixel: this.pixelPass ? pixel : NaN, gpuInterval: complete && this.lastComplete ? end - this.lastEnd : NaN,
 				span: timed.length ? end - first : 0, passes: frame.passes.length, missing: this.timestamps ? missing : 0,
 				pipelines: frame.pipelines, pipelineMs: frame.pipelineMs, calls: frame.calls, triangles: frame.triangles, scale: frame.scale, groups,
 			};

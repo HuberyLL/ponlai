@@ -65,8 +65,11 @@
 // shot itself when --full does not ask for it). Motion clips and the temporal rests are not shot twice: a moving
 // frame cannot be rendered again without replaying its state, and a temporal rest averages 32-64
 // renders, so one odd render is a 1/32 share there, inside the temporal comparisons' tolerance.
-// `--test-fault` checks the check: the first stepped frame is drawn with film grain 0.1 (a mean-zero
-// speckle over the whole frame) and grain goes back to 0 for the next.
+// A clip's lead frames (clips.mjs: stepped before frame 0 at frame 0's pose and scale, never shot)
+// run once, before the first shot; each further shot steps one frame at frame 0's pose and scale,
+// without the lead (the clock is paused, so the scene is frame 0's).
+// `--test-fault` checks the check: frame 0 (with any lead frames before it) is drawn with film grain
+// 0.1 (a mean-zero speckle over the whole frame) and grain goes back to 0 for the next.
 //
 // --aa gt-hi is the interim ground truth (plan section 3.3): MSAA on high at twice high's nominal
 // ratio for the --size given (nominal = min( ratio, 1.5 ), so 3 at the default @2 and 2 at @1),
@@ -335,17 +338,22 @@ try {
 		const t0 = performance.now();
 		const before = s.pipelines?.total ?? null;
 		const captured = ( i ) => i % every === 0 || fullFrames.includes( i ) || dense.some( ( [ a, b ] ) => i >= a && i <= b );
-		// --test-fault: the first frame drawn with a speckle of film grain, taken out after its shots
+		// the clip's lead frames step before its frame 0, at frame 0's pose and scale, uncaptured
+		// (clips.mjs); the frames are numbered from the clip's frame 0
+		const lead = clip.lead ?? 0;
+		// --test-fault: frame 0 (and any lead frames before it, never shot) drawn with a speckle of
+		// film grain, taken out after frame 0's shots
 		if ( fault ) s.pipeline.settings.grain = 0.1;
 		const result = await s.loop.step( {
-			frames: clip.frames, dt: clip.dt, clock: clip.clock, camera: clip.camera,
-			...( clip.scale ? { scale: clip.scale } : {} ),
+			frames: lead + clip.frames, dt: clip.dt, clock: clip.clock, camera: ( k ) => clip.camera( Math.max( k - lead, 0 ) ),
+			...( clip.scale ? { scale: [ ...Array( lead ).fill( clip.scale[ 0 ] ), ...clip.scale ] } : {} ),
 			// the ground truth: each captured frame held still until the rest has converged on it; a
 			// clip of one frame is a rest image, so the other temporal modes wait for their rest too
-			...( gtRest || ( s.taa && clip.frames <= 1 ) ? { converge: captured } : {} ),
-			onFrame: async ( i ) => {
+			...( gtRest || ( s.taa && clip.frames <= 1 ) ? { converge: ( k ) => k >= lead && captured( k - lead ) } : {} ),
+			onFrame: async ( k ) => {
 
-				if ( ! captured( i ) ) return;
+				const i = k - lead;
+				if ( i < 0 || ! captured( i ) ) return;
 				s.camera.updateMatrixWorld();
 				const out = {};
 				for ( const t of tracked ) {

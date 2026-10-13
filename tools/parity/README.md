@@ -465,7 +465,9 @@ camera path that is a function of the frame index applied to the view's own pose
 dolly, an orbit about the islander), and where needed a render scale schedule (`drs-steps`, in
 shares of the tier's nominal ratio: 0.8, 0.6, 0.8, which is 1.2, 0.9, 1.2 on high at 2x), extra
 URL options (`sun-shadow`: `dayLength=600`) or a per-frame hook (`lightning`: a strike forced at
-frame 30). `node tools/parity/clips.mjs list | show <clip>`.
+frame 30), and lead frames stepped before frame 0 and not captured (`drs-steps`: 32 at its first
+scale, so a temporal mode's history, cut when the stepper starts, has converged before the scale
+steps it measures). `node tools/parity/clips.mjs list | show <clip>`.
 
 ```sh
 node tools/capture-clip.mjs <name> --url <preview> --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]

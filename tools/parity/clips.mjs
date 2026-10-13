@@ -24,6 +24,11 @@
 // 1.5 on high at the default size), so it keeps its meaning at any --size; the page turns it into
 // the absolute ratios `loop.step` takes.
 //
+// A clip may step `lead` frames before its frame 0 (at frame 0's pose and scale, the clock running
+// as the clip's, nothing captured): a temporal mode starts each clip with its history cut (the
+// stepper restarts the loop), so its first frames converge from one frame's samples, a change that
+// is the start, not the clip's subject (drs-steps: the steps of the scale, not the warm-up).
+//
 // Paused clips isolate the camera's motion over a frozen scene; running ones (the clock steps by
 // dt from t=12) add the scene's own motion: wind, sea, rain, the islander, lightning, the sun.
 //
@@ -92,8 +97,8 @@ export const CLIPS = {
 		about: 'sea fog at dawn under a slow pan' },
 	// render scale and light
 	'drs-steps': { view: 'island-fair-noon', clock: 'running', frames: 120, path: [ 'still' ],
-		scale: [ [ 0.8, 40 ], [ 0.6, 40 ], [ 0.8, 40 ] ], gtDense: [ [ 36, 44 ], [ 76, 84 ] ],
-		about: 'the render scale stepped to 0.8 -> 0.6 -> 0.8 of the nominal ratio (1.2 -> 0.9 -> 1.2 on high at a ratio of 2), 40 frames each, a still camera' },
+		scale: [ [ 0.8, 40 ], [ 0.6, 40 ], [ 0.8, 40 ] ], gtDense: [ [ 36, 44 ], [ 76, 84 ] ], lead: 32,
+		about: 'the render scale stepped to 0.8 -> 0.6 -> 0.8 of the nominal ratio (1.2 -> 0.9 -> 1.2 on high at a ratio of 2), 40 frames each, a still camera, after 32 lead frames at the first scale' },
 	'sun-shadow': { view: 'meadow-shade', clock: 'running', frames: 64, q: 'dayLength=600', path: [ 'still' ], setup: WIND_FREEZE,
 		about: 'a fast day (600 s) under a still camera: the sun map steps and cross-fades as the sun moves' },
 };
@@ -150,7 +155,7 @@ const PATH = {
 		return ( i ) => { const c = subjects[ subject ](); place( c.clone().add( offset.clone().applyAxisAngle( up, deg * rad * i ) ), c ); }; },
 };`;
 
-/** Page code that installs `window.__PONLAI_CLIP__` = { camera( i ), frames, clock, dt, scale } for
+/** Page code that installs `window.__PONLAI_CLIP__` = { camera( i ), frames, lead, clock, dt, scale } for
  * the clip, from the camera's current pose (run it after the view's eval); `scale` holds absolute
  * render ratios, one per frame. */
 export function clipEval( name, { frames, dt = 1 / 60 } = {} ) {
@@ -163,7 +168,7 @@ window.__PONLAI_CLIP_NOTES__ = [];
 ${ clip.setup ?? '' }
 ${ PATHS }
 const path = PATH[ ${ JSON.stringify( kind ) } ]( ...${ JSON.stringify( args ) } );
-window.__PONLAI_CLIP__ = { name: ${ JSON.stringify( name ) }, frames: ${ frames ?? clip.frames }, clock: ${ JSON.stringify( clip.clock ) }, dt,
+window.__PONLAI_CLIP__ = { name: ${ JSON.stringify( name ) }, frames: ${ frames ?? clip.frames }, lead: ${ clip.lead ?? 0 }, clock: ${ JSON.stringify( clip.clock ) }, dt,
 	scale: ( ( shares ) => {
 		if ( ! shares ) return null;
 		if ( typeof s.nominalScale !== 'function' ) throw new Error( 'this build has no __PONLAI__.nominalScale for the scale schedule of the clip' );

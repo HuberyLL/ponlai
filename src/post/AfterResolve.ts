@@ -44,29 +44,38 @@ import { jitter } from './Jitter.ts';
 //   scene before the composite.
 // - The veil (Rain.veil): evaluated at the canvas pixel's unjittered ray (interpolated from the
 //   pass's vertices), in front of what lies at the render texel nearest the point it shows, as the
-//   composite laid it over the air (the shafts the composite added over it now lie under it); the
-//   rest of a shell's work only where a streak may show. Evaluated in the composite instead, along
-//   the render texels' unjittered rays and read bilinearly, it cost as much at equal sizes and,
-//   below the canvas, lost its faint streaks against the ground truth (ghosting 1.5 x MSAA's, from
-//   0.2 x).
-// - Grade: a pass at the canvas's size (`rainLayer`, Pipeline.ts), while it rains or the overlay
-//   holds something, draws the change the rain makes to the graded colour, which the canvas pass
-//   adds after RCAS and before the grain (TemporalAA.ts `layer`). At the render texel nearest the
-//   point the pixel shows, the display pass's grade input (the sharp image, its depth of field and
-//   the look's glow) is evaluated again; the veil, then the overlay, are laid over it in scene
-//   radiance, as they were before the grade, and that goes through the display pass's grade
-//   (exposure, curve, grade, look, in linear light); the change is its difference from what the
-//   display pass graded at the texel, which it reads (one grade a pixel: grading the input too cost
-//   a third of the pass). The change is added to the resolved image decoded to linear light (the
-//   S-curve and the sRGB transfer undone, on changed pixels only), which is encoded again; the
-//   vignette applies to it as to the image. It is taken at the rain's coverage of a single sample
-//   (Pipeline.ts AFTER_COVERAGE) and spread over the pixel, as a supersampled image grades each
-//   sample before it averages them. Laid over the graded image instead, faint rain over the dark
-//   sea and meadow, in the curve's toe, came out brighter and harder (the rings on the sea most);
-//   laid over it before the grade at its full coverage, thin streaks came out fainter than the
-//   ground truth's. (In the canvas pass itself the rain's work held so many registers that the
-//   whole pass slowed.) The depth of field's blur, bloom and the look's glow of the rain are left
-//   out.
+//   composite laid it over the air (the shafts the composite added over it now lie under it); a
+//   shell's work only past it (none at all for what lies before the nearest shell, as the near
+//   meadow does), and the rest of it only where a streak may show. Evaluated in the composite
+//   instead, along the render texels' unjittered rays and read bilinearly, it cost as much at equal
+//   sizes and, below the canvas, lost its faint streaks against the ground truth (ghosting 1.5 x
+//   MSAA's, from 0.2 x).
+// - Grade: while it rains or the overlay holds something, the canvas pass adds the change the rain
+//   makes to the graded colour after RCAS and before the grain (TemporalAA.ts `layer`). At the
+//   render texel nearest the point the pixel shows, the display pass's grade input (the sharp image,
+//   its depth of field and the look's glow, taken once a texel by a pass at the render's size,
+//   `rainInput`: per canvas pixel they took a fifth of the layer's time) has the veil, then the
+//   overlay, laid over it in scene radiance, as they were before the grade, and that goes through
+//   the display pass's grade (exposure, curve, grade, look, in linear light); the change is its
+//   difference from what the display pass graded at the texel. The change is added to the resolved
+//   image decoded to linear light (the S-curve and the sRGB transfer undone, on changed pixels
+//   only), which is encoded again; the vignette applies to it as to the image. It is taken at the
+//   rain's coverage of a single sample (Pipeline.ts AFTER_COVERAGE) and spread over the pixel, as a
+//   supersampled image grades each sample before it averages them. Laid over the graded image
+//   instead, faint rain over the dark sea and meadow, in the curve's toe, came out brighter and
+//   harder (the rings on the sea most); laid over it before the grade at its full coverage, thin
+//   streaks came out fainter than the ground truth's. The depth of field's blur, bloom and the
+//   look's glow of the rain are left out.
+// - Where: a running frame's canvas pass draws the change itself, in a build of its own used only
+//   while the layer shows (built into the one canvas pass for every frame, the rain's registers
+//   slowed it in fair weather too; drawn by a pass of its own, it cost a canvas-size target written
+//   and read), and grades by a table (Pipeline.ts `gradeTable`, baked each frame from the grade
+//   itself: the change is the difference of two readings, so the table's error cancels to first
+//   order; in a stepped rain clip a few hundredths of a level from the full grade's on average, at
+//   most one in 99.9 % of the pixels). The full grade at every canvas pixel was a third of the
+//   layer's time.
+//   The frame that completes the rest draws the change with the full grade into `rainLayer`, which
+//   the canvas pass reads as it is while the rest holds (below), as TAA's upscaled canvas pass does.
 // - At rest (TemporalRest.ts): the passes draw over the frame's own jitter and jittered depth, and
 //   once the rest has converged the jitter runs on through the running sequence, whose place
 //   depends on the frames rendered. So while the rest holds its image neither pass runs: the
