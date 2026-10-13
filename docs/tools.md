@@ -507,8 +507,10 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   in headless Chrome (`CHROME_PATH`, else the system Chrome) with the frame rate uncapped, or at
   60 Hz with `--vsync` (the intervals a player sees; uncapped, a GPU-bound scene's p95 is mostly
   pacing noise).
-- It plays a matrix of named scenes (`--list`: fair, golden, horizon, sky, overcast, rain, storm,
-  fog, night, close over the meadow, a weather front), each with the clock running, fixed weather
+- It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
+  `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-rain`, `island-storm`,
+  `horizon-storm`, `island-fog-dawn`, `island-night-clear`, `meadow-close` (over the meadow),
+  `weather-change` (a front sweeping in); `--scenes` takes these ids), each with the clock running, fixed weather
   and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md): frame interval
   median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their cause, and the
   startup.
@@ -528,11 +530,17 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   for the first load's, and the pages stop before the lock is released (the GPU name, the files
   and the browser's close come after it). `wallSeconds` in profile.json is the time under the exclusive lock;
   `lockWaitSeconds`, `totalSeconds` and `preload` sit beside it.
+- In full-screen `--display` the idle checks run with the run's window up (the opening one on its
+  blank page) and sum the GPU time of the clients other than the run's Chrome and WindowServer:
+  full screen hides the other windows and they stop drawing, so the GPU's utilisation before the
+  window opened counted a load the run never meets and refused runs for nothing. With `--window`
+  the check stays the utilisation's: the other windows stay on screen and their load is real.
 - When its opening idle check still finds another client keeping the GPU busy after
   `--idle-wait` seconds (20; 60 with `--mode reload`), it names the client, measures nothing and
   exits with 3, releasing the lock: a contended run's numbers prove nothing. Stop the client and
   run again, or pass `--contended` to measure anyway (results marked contended, as before). A
-  later page load that finds the GPU busy still marks its results contended.
+  later page load that finds the GPU busy still marks its results contended. Every summary.md
+  marks such a scene `(contended)` in its table, a compare's as a single profile's.
 - A run with several scenes holds the exclusive lock one scene at a time (every mode: profile,
   compare, toggle, accept, reload): before a scene's warm-up it asks for the lock, after its last
   slice its pages stop and drain. The pages and the browser stay open, their loops stopped, so
@@ -544,10 +552,13 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   run stops with the finished scenes written and exits 3, unless `--contended` (that scene marked
   contended). The first scene's hold covers the page loads. `wallSeconds` counts only the time
   held; `meta.holds` lists each scene the lock came back for (its wait and the GPU idle with this
-  run's pages stopped), also under "Lock" in summary.md.
+  run's pages stopped), also under "Lock" in summary.md. The run's last lines give the time held
+  and, apart, the time in all without the waits for the lock (before the run, for the preload's
+  slot and between scenes).
 - A scene that shows no progress for `--hang` seconds (180) is recorded as hung (profile.json
   `meta.hung`, a section of summary.md), with the step it was at (a compare's load, warm-up,
-  slice, trace end or results) and what each page still did (answering, visible, its animation
+  slice, trace end or results; at a scene's start, the halt, the cover, the lock's wait or its
+  idle check) and what each page still did (answering, visible, its animation
   and scene frames over a second). A scene whose browser or page closes or crashes under it (a
   headed window closed, Chrome gone) is recorded as lost the same way. Either way the browser is
   closed (killed when it is still open after 30 s, so it neither runs on nor holds the profile)
@@ -626,7 +637,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   measured frames were drawn at (its median, range and changes: high's moves); `--scale-settle s`
   waits after each scene's warm-up until that scale has held for s seconds (in `--compare` each
   page after its own warm-up; without it the run's first slices catch high's scale still stepping
-  down from its nominal). With GPU timestamps on,
+  down from its nominal). `--display --compare` settles 2 s by default (`--scale-settle 0` turns it
+  off); every other run 0. With GPU timestamps on,
   high's reports add `gpuPixel`: the part of the GPU time in passes that follow the render's pixel
   count (the dynamic resolution's split), for fitting its cost model at fixed scales.
 - `--compare` and `--accept` load their pages with `drsStore=off`, so neither side of an A/B (two
