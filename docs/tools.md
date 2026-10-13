@@ -590,7 +590,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   `windowServer`, `app`: the desktop app, `otherChrome`, `kernel`: CPU only, `rest`), t in ms since
   the epoch (a page's frame time plus its `performance.timeOrigin`). Each measured slice (a
   compare's slice, a toggle's block, a profile scene's window) gets `load: { cpu, gpu }`, the mean
-  outside the run (every group but `run`, and WindowServer left out in full-screen `--display`)
+  outside the run (every group but `run` and `windowServer`, which composites the screen for every run)
   over its window; a slice whose outside GPU mean exceeds `--idle-threshold` (15 %) is contended,
   and a scene with more than a quarter of its slices contended is marked contended (with the
   verdict rules above). The summary's "Machine load outside the run" gives each scene its

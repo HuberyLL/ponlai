@@ -736,7 +736,7 @@ async function annotateLoads( runs, label = '' ) {
 	if ( ! ends.length ) return;
 	// the sample that covers the last window's end comes up to a second later
 	await timeline.until( Math.max( ...ends ) );
-	const options = { threshold: IDLE_THRESHOLD, excludeWindowServer: FULL_SCREEN };
+	const options = { threshold: IDLE_THRESHOLD };
 	runs.forEach( ( run, i ) => {
 
 		for ( const [ scene, r ] of Object.entries( run.scenes ) ) {
@@ -765,7 +765,7 @@ function loadMarkdown( meta ) {
 	const l = meta.load;
 	if ( ! l?.rows?.length ) return l?.skipped ? `\nLoad timeline: ${ l.skipped }.\n` : '';
 	return [ '', '## Machine load outside the run', '',
-		`Mean load outside this run's Chrome${ l.excludeWindowServer ? ' and WindowServer' : '' } over each scene's measured slices (${ path.basename( l.file ) }: CPU per process group, 100 % = one core; GPU % of its time). A slice is contended when its GPU figure exceeds ${ l.threshold } %; a scene with more than a quarter of its slices contended is marked contended.`, '',
+		`Mean load outside this run's Chrome and WindowServer over each scene's measured slices (${ path.basename( l.file ) }: CPU per process group, 100 % = one core; GPU % of its time). A slice is contended when its GPU figure exceeds ${ l.threshold } %; a scene with more than a quarter of its slices contended is marked contended.`, '',
 		'| scene | run | contended slices | GPU % | CPU % |', '| --- | --- | --- | --- | --- |',
 		...l.rows.map( ( r ) => `| ${ r.scene }${ r.flag ? ' (contended)' : '' } | ${ r.run || '–' } | ${ r.contended } / ${ r.slices } | ${ fmt( r.gpu ) } | ${ fmt( r.cpu ) } |` ), '' ].join( '\n' );
 
@@ -3102,7 +3102,7 @@ async function main() {
 			meta.holds = { releases: holds.length, awaySeconds: r2( releasedMs / 1000 ), taken: holds };
 			if ( lockStop ) meta.contendedStop = { scene: lockStop.scene, idle: lockStop.idle.idle?.mean ?? null, clients: lockStop.idle.clients ?? [] };
 			meta.load = ! LOAD_TIMELINE ? { skipped: 'off (--load-timeline off)' } : ! timeline ? { skipped: 'not sampled on this platform' } :
-				{ file: timeline.file, threshold: IDLE_THRESHOLD, excludeWindowServer: FULL_SCREEN, rows: loadRows };
+				{ file: timeline.file, threshold: IDLE_THRESHOLD, rows: loadRows };
 			clearInterval( watchdog );
 
 		} );

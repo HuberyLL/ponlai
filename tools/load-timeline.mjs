@@ -17,9 +17,9 @@
 // Groups: `run` (the run's Chrome: its browser process and descendants, found through top's ppid
 // column), `windowServer`, `app` (the desktop app: commands starting with `Claude`), `otherChrome`
 // (any other Chrome or Chromium), `kernel` (kernel_task; CPU only, its GPU time counts as rest)
-// and `rest`. The load outside the run is every group but `run`, and also without `windowServer`
-// when the run is full screen on the display (its share presents the run's window there, as in
-// profile-frame's idle check).
+// and `rest`. The load outside the run is every group but `run` and `windowServer`: WindowServer
+// composites the screen, the run's own window in full-screen `--display` and otherwise a desktop
+// every run shares (counted, its share alone marked nearly every headless slice contended, T36).
 //
 // The pure parts (grouping, top's parser, the slice marking) are exported for a CPU-only test.
 import { spawn } from 'node:child_process';
@@ -198,10 +198,10 @@ export function startLoadTimeline( { file, runPid, log = console.error } ) {
 }
 
 // the load outside the run in one sample's groups (null without that source)
-export function outside( groups, excludeWindowServer ) {
+export function outside( groups ) {
 
 	if ( ! groups ) return null;
-	return Object.entries( groups ).reduce( ( a, [ g, v ] ) => g === 'run' || ( excludeWindowServer && g === 'windowServer' ) ? a : a + v, 0 );
+	return Object.entries( groups ).reduce( ( a, [ g, v ] ) => g === 'run' || g === 'windowServer' ? a : a + v, 0 );
 
 }
 
@@ -209,11 +209,11 @@ const mean = ( v ) => v.length ? r1( v.reduce( ( a, b ) => a + b, 0 ) / v.length
 
 // A window's load: the mean outside the run over the samples whose second overlaps [ t0, t1 ]
 // (ms since the epoch). Contended when the outside GPU mean exceeds `threshold`.
-export function windowLoad( samples, t0, t1, { threshold, excludeWindowServer = false } ) {
+export function windowLoad( samples, t0, t1, { threshold } ) {
 
 	const mine = samples.filter( ( s ) => s.t + 500 > t0 && s.t - 500 < t1 );
-	const cpu = mean( mine.map( ( s ) => outside( s.cpu, excludeWindowServer ) ).filter( ( x ) => x !== null ) );
-	const gpu = mean( mine.map( ( s ) => outside( s.gpu, excludeWindowServer ) ).filter( ( x ) => x !== null ) );
+	const cpu = mean( mine.map( ( s ) => outside( s.cpu ) ).filter( ( x ) => x !== null ) );
+	const gpu = mean( mine.map( ( s ) => outside( s.gpu ) ).filter( ( x ) => x !== null ) );
 	return { cpu, gpu, samples: mine.length, contended: gpu !== null && gpu > threshold };
 
 }
