@@ -53,9 +53,8 @@
 //   starts a fresh worker per view: a page per view, as before.
 // - The GPU lock's slot is leased (gpu-lock.mjs `leaseGpuLock`): the worker keeps it from one view
 //   to the next, and gives it up before a view only when it has held it for --lease seconds (20) and
-//   someone waits for it (an exclusive request, or a shared one when every slot is taken and it ranks
-//   first); it then queues again like any request. A low worker (PONLAI_GPU_PRIORITY=low) gives it up
-//   to a normal shared request at the next view, as it did before. It frees the slot whenever it has no next view
+//   a request ranked before its next one waits for it (an exclusive request, or a shared one when
+//   every slot is taken); it then queues again like any request. It frees the slot whenever it has no next view
 //   (the set's end, a failed view, a page per view). It used to free the slot after every view, so a
 //   set behind another session's back-to-back timing runs waited one whole timing run per view (34
 //   views in 57 min, 12 in 53 min, with under 20 s of readiness in each). Why 20 s: a paused view
