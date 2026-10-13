@@ -50,7 +50,8 @@
 // Modes (most of a page load is generating the island, about 10 s; scenes are switched instead):
 // - page (the default): one page load per variant; each scene is set up at runtime through
 //   window.__PONLAI__ as its URL options would load it (weather established at once and wet in
-//   rain, the time preset, the clock from 0, the camera view and its motion), then warmed up for
+//   rain, the time preset, the clock from 0, the camera view and its motion; the loop stands still
+//   meanwhile, so no frame mixes the scenes), then warmed up for
 //   `--warmup` seconds (1.5) and until no pipeline was created for a second (a new weather compiles
 //   its pipelines on first use; that compile is reported per scene, outside the measured window).
 // - reload (`--mode reload`): the original method, a fresh page load per group of scenes sharing
@@ -135,8 +136,13 @@
 //   where its last slice left them, so the k-th slice of A and of B see the same motion from the
 //   same view (they ran through the settles too, and the order's switches gave each page its own
 //   views: 25-35 degrees apart in an A/A). The screen still changes at every switch, to the other
-//   page's view: expected. A drag that loses its pointer to an event the run did not send (the
-//   system cursor's, which reaches the headed page) is pressed again and logged.
+//   page's view: expected. A scene switch never shows the scene before: each page switches with
+//   its loop stopped, out of sight, and starts before it comes to the front, so its first frame
+//   on screen is the new scene's (brought to the front first and switched while running, a page
+//   showed its last frame of the scene before and kept drawing that view until the camera was
+//   placed: the screen went back to the previous scene for a moment). A drag that loses its
+//   pointer to an event the run did not send (the system cursor's, which reaches the headed page)
+//   is pressed again and logged.
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
 // numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
@@ -899,17 +905,36 @@ async function gpuInfo( page ) {
 
 // Sets a scene up: (page modes) its weather, time and clock at runtime, then the camera, the
 // ablation and the motion. Returns the switch's time and the page time it was done.
+// The page draws no frame meanwhile: a running loop stops for the switch (and its dynamic scale's
+// clock with it) and starts again after it, a stopped one stays stopped (--compare starts it).
+// Drawn while the switch ran, the frames between the jump's start and the camera's placing showed
+// the scene before (its view, under the new light while the sky baked): on the display, the
+// screen went back to the previous scene for a moment after the next one began.
 async function prepare( page, scene, evalJs, establish ) {
 
 	return page.evaluate( async ( { def, orbit, evalJs, establish } ) => {
 
-		const T = window.__profileTools;
+		const T = window.__profileTools, s = window.__PONLAI__;
 		T.stopMotion();
+		const running = T.loop.running;
+		if ( running ) {
+
+			s.dynamicClock?.suspend();
+			await T.loop.stop();
+
+		}
 		const switchMs = establish ? await T.establish( def.q ) : 0;
 		T.place( def );
-		if ( evalJs ) ( 0, eval )( `( ( s ) => { ${ evalJs } } )` )( window.__PONLAI__ );
+		if ( evalJs ) ( 0, eval )( `( ( s ) => { ${ evalJs } } )` )( s );
 		T.startMotion( def, orbit );
-		return { switchMs, t: performance.now() };
+		const t = performance.now();
+		if ( running ) {
+
+			s.dynamicClock?.resume();
+			T.loop.start();
+
+		}
+		return { switchMs, t };
 
 	}, { def: SCENES[ scene ], orbit: MOTION === 'orbit' ? ORBIT : 0, evalJs, establish } );
 
@@ -1513,18 +1538,24 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 	// --scale-log: each page's dynamic scale at its last stop, and per slice what ran out meanwhile
 	const atStop = [ null, null ], offSlices = [ [], [] ];
 	let active = null;
-	const run = async ( v, scene, slice ) => {
+	const halt = async () => {
+
+		if ( active === null ) return;
+		stopped[ active ].push( { from: await loop( active, 'stop' ) } );
+		if ( SCALE_LOG ) atStop[ active ] = await scaleState( pages[ active ] );
+		active = null;
+
+	};
+	// `drawn`: the page has just switched scene while stopped; it starts before it comes to the
+	// front, so the start's first frame (drawn at once) is on its canvas when it shows. Brought to
+	// the front first, it showed its last frame of the scene before until it drew.
+	const run = async ( v, scene, slice, drawn = false ) => {
 
 		if ( active === v ) return;
-		if ( active !== null ) {
-
-			stopped[ active ].push( { from: await loop( active, 'stop' ) } );
-			if ( SCALE_LOG ) atStop[ active ] = await scaleState( pages[ active ] );
-
-		}
+		await halt();
 		// headed, a background tab gets no animation frames: the running page is the one in front
 		// (the page hides and shows itself without restarting a loop stopped here)
-		if ( DISPLAY ) await pages[ v ].bringToFront();
+		if ( DISPLAY && ! drawn ) await pages[ v ].bringToFront();
 		if ( SCALE_LOG && atStop[ v ] && slice !== undefined ) {
 
 			// the controller's clock and timers just before the page runs again: unchanged since its
@@ -1535,6 +1566,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 
 		}
 		const started = await loop( v, 'start' );
+		if ( DISPLAY && drawn ) await pages[ v ].bringToFront();
 		const last = stopped[ v ][ stopped[ v ].length - 1 ];
 		if ( last && last.to === undefined ) last.to = started;
 		active = v;
@@ -1562,8 +1594,11 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		const compile = [];
 		for ( const v of [ 0, 1 ] ) {
 
-			await run( v );
+			// the page switches stopped and out of sight (the other one stopped too), then starts
+			// and comes to the front with the new scene drawn (see `run`)
+			await halt();
 			const prepared = await prepare( pages[ v ], scene, evals[ v ], true );
+			await run( v, undefined, undefined, true );
 			compile[ v ] = { ms: r2( prepared.switchMs ), ...( await warm( frames[ v ], [ prepared.t ], WARMUP ) )[ 0 ] };
 			if ( SCALE_SETTLE > 0 ) compile[ v ].scaleSettle = await settleScale( pages[ v ] );
 			if ( def.change ) await pages[ v ].evaluate( ( c ) => window.__PONLAI__.setWeather( c.weather, c.seconds ), def.change );

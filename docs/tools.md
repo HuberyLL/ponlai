@@ -481,8 +481,10 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   `--display --compare urlA urlB` interleaves A and B in the same slices as the headless compare
   (the running page brought to the front; the drags run in the measured slices only, each page's
   on from where its last slice left them, so A's and B's k-th slices see the same motion from the
-  same view; the screen changes to the other page's view at every switch), so the drift between
-  separate headed runs (a millisecond or two) cancels; its summary adds the share of late frames
+  same view; the screen changes to the other page's view at every switch, but never back to the
+  scene before: a page switches scene stopped and out of sight and comes to the front with the
+  new scene drawn), so the drift between separate headed runs (a millisecond or two) cancels; its
+  summary adds the share of late frames
   (presented intervals longer than the frame pacer's pace) per slice, as a delta with its interval, and each page's
   frames over 25 ms.
 - `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
