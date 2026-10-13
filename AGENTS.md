@@ -51,12 +51,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   most 4 minutes per call; it shows the job's place in the GPU queue) or a condition
   (`wait --file F --match RE`, `--exists`, `--pid`, `--cmd`). Before handing back, an agent stops
   what it started and still runs: `node tools/job.mjs stop <file>`.
-- Headed browser runs take over the user's screen, so they are rare: run headless unless the
-  question is one only a screen answers (pacing and cadence, late frames, the frame pacer's rate,
-  the dynamic scale under drags, a display tool's own tests). GPU cost, per-pass times and tuning
-  stay headless. Headed runs need no permission while `node tools/display-gate.mjs status` allows
-  them (otherwise record them as pending); keep them to 3 scenes, and say in the report that one
-  ran (`docs/tools.md`, Display gate).
+- Headed browser runs take over the user's screen: run one only for what a screen alone shows, and
+  only while `node tools/display-gate.mjs status` allows it (`docs/tools.md`, Display gate).
 - `tools/verify-*.mjs` are regression probes (GPU ones take the lock; `verify-day-cycle`,
   `verify-weather-state`, `verify-wind`, `verify-game`, `verify-framegraph` are plain `node`):
   see `docs/tools.md`.
