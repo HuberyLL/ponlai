@@ -623,6 +623,9 @@ if ( GAME ) {
 	game = await Game.start( {
 		params, scene, camera, canvas: renderer.domElement, land, bushes: data.bushes, top: topFromTiles( worldCache.version.chunks ),
 		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment, sceneEvent,
+		// the island grows with the population (Growth.ts, made below: called from the frame loop on)
+		pieces: landOptions.step,
+		island: { approach: ( p ) => growth.approach( p ), grow: () => growth.grow() },
 		// A prop can rise above all the island grows (the palm's crown): the sun's map fits its
 		// casters and the sea's reflection marches its box, so both grow to hold it.
 		holdOpaque: ( box ) => {

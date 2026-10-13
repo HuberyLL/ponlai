@@ -5,12 +5,15 @@ import { CLICK_SLOP } from '../camera/IslandCameraControls.ts';
 import type { Game } from './Game.ts';
 import { groundPoint, pointerRay } from './pick.ts';
 import { describeCall } from './sim/actions.ts';
+import { GROWTH_STEPS } from './sim/types.ts';
 import type { EntityId, Speed } from './sim/types.ts';
 
 // The game's developer controls: a Game folder in the scene's lil-gui panel (H), not a player
 // interface. It sets the speed and pauses, saves and loads, shows one islander's body as the
 // simulation holds it (where it is, the action under way, whether a thought is in flight for it)
-// and sends that body walking to the next click on the island. Everything
+// and sends that body walking to the next click on the island. Its Growth folder bumps the
+// population by an islander (how islanders arrive is not designed yet), so a step of the island's
+// growth can be crossed by hand, and shows the population against the next step. Everything
 // goes through the Game's methods, which the console reaches as window.__PONLAI__.game.
 
 // ms between refreshes of the read-only fields
@@ -25,6 +28,7 @@ export class GameDebug {
 	private readonly folder: GUI;
 	private readonly fields = {
 		speed: 1 as Speed, status: '', islander: '' as EntityId, position: '', doing: '', thinking: false,
+		population: '',
 	};
 	private readonly islander: Controller;
 	private readonly readouts: Controller[] = [];
@@ -54,6 +58,15 @@ export class GameDebug {
 		} }, 'save' );
 		folder.add( { load: () => void game.load().then( ( text ) => this.say( text ) ) }, 'load' );
 		this.readouts.push( folder.add( f, 'status' ).disable() );
+
+		const growth = folder.addFolder( 'Growth' );
+		this.readouts.push( growth.add( f, 'population' ).disable() );
+		growth.add( { add: () => {
+
+			game.addIslander();
+			this.reset();
+
+		} }, 'add' ).name( 'add an islander' );
 
 		const who = folder.addFolder( 'Inspect islander' );
 		this.islander = who.add( f, 'islander', {} ).onChange( ( id: EntityId ) => game.focus( id ) );
@@ -88,6 +101,8 @@ export class GameDebug {
 		this.nextRefresh = now + REFRESH_MS;
 		const f = this.fields, sim = this.game.sim;
 		f.speed = sim.speed;
+		const next = GROWTH_STEPS[ sim.state.pieces ];
+		f.population = `${ sim.population() } islanders, ${ sim.state.pieces } pieces, next at ${ next ?? '-' }`;
 		const v = sim.state.villagers.find( ( o ) => o.id === f.islander );
 		f.position = v ? `${ v.pos.x.toFixed( 1 ) }, ${ v.pos.z.toFixed( 1 ) }` : '';
 		f.doing = v ? ( v.action ? describeCall( v.action.call ) : v.path ? 'walking' : 'standing' ) : '';

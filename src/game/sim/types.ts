@@ -6,6 +6,7 @@
 // import types with `import type` and use only erasable syntax (no enums, namespaces or
 // constructor parameter properties).
 
+import { GROWTH } from '../../world/IslandGrowth.ts';
 import type { LandLattice } from '../../world/IslandGrowth.ts';
 
 export interface Vec2 { x: number; z: number }
@@ -22,6 +23,25 @@ export const SPEED_FACTORS: Readonly<Record<Speed, number>> = { 0: 0, 1: 1, 2: 3
 export const SECONDS_PER_GAME_DAY = 86400;
 /** walking speed, metres per game second: 1.8 m/s on screen at the game's 24-minute day at 1x */
 export const WALK_SPEED = 0.9 * 2880 / 86400;
+
+/** the population the island's growth counts from (docs/game-design.md: a few islanders on a
+ * small island) */
+export const POPULATION_START = 3;
+/**
+ * The island's growth (docs/game-design.md, "How the island grows"): the population at which each
+ * piece arrives, the first at index 0. A game-design number, not settled: for now one piece per 2
+ * islanders above the starting 3, up to the growth horizon (IslandGrowth.ts GROWTH.maxSteps).
+ */
+export const GROWTH_STEPS: readonly number[] = Array.from( { length: GROWTH.maxSteps }, ( _, k ) => POPULATION_START + 2 * ( k + 1 ) );
+
+/** The pieces the island has grown by at a population (GROWTH_STEPS). */
+export function piecesFor( population: number ): number {
+
+	let pieces = 0;
+	while ( pieces < GROWTH_STEPS.length && population >= GROWTH_STEPS[ pieces ] ) pieces ++;
+	return pieces;
+
+}
 
 /** An islander's body. */
 export interface Villager {
@@ -92,7 +112,7 @@ export interface BuildingState {
 }
 
 export interface SimState {
-	/** see Sim.ts SAVE_VERSION */
+	/** see save.ts SAVE_VERSION */
 	version: number;
 	seed: number;
 	/** game seconds since the game began */
@@ -107,6 +127,9 @@ export interface SimState {
 	buildings: BuildingState[];
 	/** how many of each building kind were ever placed: the count in their ids (buildings.ts) */
 	placed: Record<string, number>;
+	/** the pieces the island has grown by after the starting island: the land step the game stands
+	 * on (world/Growth.ts), so a save loads its world at it */
+	pieces: number;
 }
 
 /**

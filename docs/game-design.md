@@ -88,6 +88,15 @@ The player should want to rebuild after watching their islanders walk the long w
   belongs to a chunk. What a chunk holds depends only on the land within a fixed distance of it,
   so a new piece rebuilds only itself and its neighbours; everything else stays exactly as it
   was. The sea floor near the island follows the coast locally in the same way.
+- **As built** (the trigger, against the instant swap; the rise is not built): the population is
+  the islanders' count, and the steps are a table (`GROWTH_STEPS` in `src/game/sim/types.ts`),
+  for now one piece per 2 islanders above the starting 3 (a piece at 5, 7, 9, ... up to the 36th
+  step). Once a step is due the game asks the page to grow, and the next piece swaps in at once;
+  the simulation's ground opens the new cells (every index and path stays valid) and counts the
+  piece. The pending piece is generated from the moment the game shows, and its cells are given
+  to the simulation ahead (`comingLand`) for planning. A save keeps the piece count, and a resumed
+  game loads its world at it. How a new islander arrives is not designed: the debug panel adds
+  one by hand.
 - The trees and shrubs on today's island were placeholders for its look; plants that matter to
   play (coconut palms) are content placed in the world, not part of the terrain.
 

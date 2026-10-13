@@ -197,7 +197,8 @@ Game:
 
 - `game` (the island as a game), `hour` (the start hour, default 8), `dayLength` (real seconds
   per game day at 1x, default 1440: 24 minutes), `paused` (the game starts paused; the scene runs
-  again once the game does), `load` (resume the game saved in this browser). The page's own
+  again once the game does), `load` (resume the game saved in this browser, its world loaded at the
+  save's piece count unless `grow` is given). The page's own
   `weather` option and auto weather work in the game as without it.
 - The player's interface is a prototype HUD (`src/game/Hud.ts`): a readout of the islander (day
   and time, satiety and hydration, the bag, what they are doing, each unbuilt site's progress in
@@ -207,12 +208,14 @@ Game:
   clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
   day), and its Game folder (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
   (position, the action under way, whether a thought is in flight) and sends it walking to the
-  next click on the island. The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
+  next click on the island; its Growth subfolder shows the population against the next step and
+  adds an islander (one piece per 2 islanders above 3: the island grows at 5 islanders). The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
   actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
   `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setSpeed`, `togglePause`,
-  `save` and `load`.
+  `addIslander()`, `save` and `load` (a save of another piece count loads only with the page);
+  `.sim.comingLand` holds the next piece's cells once the page has it.
 
 ## Captures
 

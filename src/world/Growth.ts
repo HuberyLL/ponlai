@@ -32,7 +32,8 @@ import type { CullBuffers } from './GrassCull.ts';
 // - When: the game (`start()` once the page shows) generates the next piece at once, as it will
 //   need it; any other page only from its first `grow()`, so a page that never grows spends no
 //   worker time on it. From then on one piece is kept ahead: the next is asked for (in idle time)
-//   once a swap's frames are done.
+//   once a swap's frames are done. The game's population sets when (Game.ts): it is told the
+//   pending piece once it is ready (`game.setComing`), and asks for the grow once a step is due.
 // - Versions: a version is a land step and its chunks (WorldChunks.ts `VersionChunks`). The shown
 //   one is the page's; the next step is generated as the pending one, on at most two workers (the
 //   shown one's own chunks are taken over wherever the growth steps in a chunk's window are the
@@ -93,7 +94,11 @@ export interface GrowthPage<M = unknown> {
 	refractedSun: RefractedSun;
 	rain: Rain;
 	characters: Villagers | null;
-	game: { setIsland( land: LandLattice, bushes: Float32Array, top?: Uint8Array ): void } | null;
+	/** the game (?game): the pending piece once it is ready (`setComing`), the new land after a swap (`setIsland`) */
+	game: {
+		setComing( land: LandLattice, bushes: Float32Array, top?: Uint8Array ): void;
+		setIsland( land: LandLattice, bushes: Float32Array, top?: Uint8Array ): void;
+	} | null;
 	// the roots the rain's collision map is baked from
 	rainRoots: THREE.Object3D[];
 	/** compiles what `objects` draw in the frame's passes, the sun's map included (and uploads
@@ -372,6 +377,7 @@ export class Growth<M = unknown> {
 						this.steps = null;
 						this.prepared = next.value;
 						this.state.phase = 'ready';
+						this.page.game?.setComing( next.value.land, next.value.data.bushes, next.value.top );
 						if ( this.wanted.length === 0 ) console.info( `growth: step ${ this.state.pending } ready`, this.times );
 						return;
 

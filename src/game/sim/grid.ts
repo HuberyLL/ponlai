@@ -8,7 +8,7 @@ import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 // world's own functions on the land, its bushes from the world generator's input, so a loaded game
 // rebuilds the same grid. The page gives the island's top from the world's chunks (their walk
 // tiles, `topFromTiles`, the same cells as the land's footprint 0.9 m inside its edge), so a grown
-// island's grid (`setIsland`, Growth.ts) is a fresh load's; without them (the node checks) it is
+// island's grid (`setIsland`, Growth.ts and Sim.addPiece) is a fresh load's; without them (the node checks) it is
 // found from the land. The game's own obstacles (a palm, the chest) are added on top by
 // `obstruct`, from the simulation's state.
 
@@ -31,6 +31,14 @@ function islandMask( land: LandLattice ): Uint8Array {
 	for ( let j = 0; j < SIDE; j ++ ) for ( let i = 0; i < SIDE; i ++ ) mask[ j * SIDE + i ] = fp.dist( - GROWTH.half + ( i + 0.5 ) * CELL, - GROWTH.half + ( j + 0.5 ) * CELL ) < - RIM_MARGIN ? 1 : 0;
 	islandTop = { land, mask };
 	return mask;
+
+}
+
+/** The island's top clear of the rim for an island (a byte per ground cell): its own `top`, else
+ * found from its land. */
+export function topOf( input: IslandInput ): Uint8Array {
+
+	return input.top ?? islandMask( input.land );
 
 }
 
@@ -87,7 +95,7 @@ export class Grid implements GridApi {
 		this.x0 = this.z0 = - GROWTH.half;
 		this.cols = this.rows = SIDE;
 		const n = this.cols * this.rows;
-		this.top = input.top ?? islandMask( input.land );
+		this.top = topOf( input );
 		this.open = this.top.slice();
 		for ( const o of input.bushes ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
 		this.region = new Int32Array( n );
@@ -104,10 +112,11 @@ export class Grid implements GridApi {
 	}
 
 	/** The ground of a grown island: its top and bushes again (the indices stay: the grid spans the
-	 * land lattice). The game's own obstacles are added again by the caller (Sim.setIsland). */
+	 * land lattice, so a piece only opens cells). The game's own obstacles are added again by the
+	 * caller (Sim.addPiece). */
 	setIsland( input: IslandInput ): void {
 
-		this.top = input.top ?? islandMask( input.land );
+		this.top = topOf( input );
 		this.open.set( this.top );
 		for ( const o of input.bushes ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
 		this.main = this.label();

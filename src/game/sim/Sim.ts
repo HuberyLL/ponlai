@@ -2,13 +2,14 @@ import { actionTools, advanceAction, findWaysAgain } from './actions.ts';
 import { act, perceive } from './agent.ts';
 import type { Brain, ToolRegistry, ToolResult } from './agent.ts';
 import { dayOf, hourOf } from './clock.ts';
-import { Grid } from './grid.ts';
+import { Grid, topOf } from './grid.ts';
 import { fallNeeds, START_NEEDS } from './needs.ts';
 import { findPath, goalAt } from './path.ts';
 import { BUILDING_KINDS, blueprintRefusal, newBuilding } from './buildings.ts';
 import { growPalms, newPalms, obstructPlaces } from './places.ts';
 import { random } from './rng.ts';
-import { SECONDS_PER_GAME_DAY, SPEED_FACTORS, WALK_SPEED } from './types.ts';
+import { SAVE_VERSION } from './save.ts';
+import { GROWTH_STEPS, POPULATION_START, SECONDS_PER_GAME_DAY, SPEED_FACTORS, WALK_SPEED, piecesFor } from './types.ts';
 import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './types.ts';
 
 // The island simulation: a fixed step of one game second, with every change kept in SimState, so
@@ -23,10 +24,20 @@ import type { EntityId, IslandInput, SimState, Speed, Vec2, Villager } from './t
 // the temporary trigger asks the brain for a thought for every islander with nothing under way
 // (no action, no walk) and no thought in flight. A brain that answers at once (the stand-in) acts
 // within the tick, so a game with it is deterministic for a seed; a slow one acts when it answers.
+//
+// The island grows with the population (docs/game-design.md, "How the island grows"): the
+// population is the islanders' count, and each step of GROWTH_STEPS (types.ts) is one piece. The
+// simulation only says when growth is due (`growthDue`) and how near the next step is
+// (`approach`); the page grows the island (Game.ts `island`, world/Growth.ts), and the swap hands
+// the new land back as `addPiece`, which opens its cells and counts the piece (SimState.pieces: the
+// land step the game stands on, so a save loads its world at it). The piece to come is known ahead:
+// its cells are `comingLand` from the moment the page has it, for planning.
 
-/** the state's shape this build reads; a save of another is refused */
-export const SAVE_VERSION = 15;
-const NAMES = [ 'Kai' ];
+export { SAVE_VERSION };
+// the islanders' names, in the order they arrive
+const NAMES = [ 'Kai', 'Lani', 'Noa', 'Mele', 'Tavi', 'Sina', 'Rua', 'Ana', 'Iko', 'Hina' ];
+// islanders after the first stand round the island's middle a golden angle apart
+const GOLDEN_ANGLE = Math.PI * ( 3 - Math.sqrt( 5 ) );
 
 export class Sim {
 
@@ -42,6 +53,9 @@ export class Sim {
 	private carry = 0;
 	/** the islanders with a thought in flight */
 	private readonly thoughts = new Map<EntityId, Promise<ToolResult[]>>();
+	/** the cells the next piece opens (1 per ground cell, on the grid's indices), once the page has
+	 * the piece; null until then and after it arrived. Derived from the world, not saved. */
+	comingLand: Uint8Array | null = null;
 
 	constructor( state: SimState, input: IslandInput ) {
 
@@ -51,13 +65,71 @@ export class Sim {
 
 	}
 
-	/** The island grew (Growth.ts): the ground of the new land, the game's obstacles on it again,
-	 * and every walk under way finds its way again. */
-	setIsland( input: IslandInput ): void {
+	// ------------------------------------------------------------------ the island's growth
+
+	/** the islanders' count, which the island's growth follows */
+	population(): number {
+
+		return this.state.villagers.length;
+
+	}
+
+	/** Whether the population has reached a step the island has not grown for yet. */
+	growthDue(): boolean {
+
+		return piecesFor( this.population() ) > this.state.pieces;
+
+	}
+
+	/** How near the population is to the next step, 0..1 (1: due); 0 past the last step. */
+	approach(): number {
+
+		const k = this.state.pieces;
+		if ( k >= GROWTH_STEPS.length ) return 0;
+		const from = k > 0 ? GROWTH_STEPS[ k - 1 ] : POPULATION_START;
+		return Math.min( Math.max( ( this.population() - from ) / ( GROWTH_STEPS[ k ] - from ), 0 ), 1 );
+
+	}
+
+	/** The next piece is known (the page's pending land, Growth.ts): its cells become `comingLand`,
+	 * those on its top not on the island's now. */
+	setComing( input: IslandInput ): void {
+
+		const next = topOf( input ), now = this.grid.top;
+		const coming = new Uint8Array( next.length );
+		for ( let k = 0; k < next.length; k ++ ) coming[ k ] = next[ k ] & ~ now[ k ] & 1;
+		this.comingLand = coming;
+
+	}
+
+	/** The island grew by a piece (Growth.ts's swap): the ground of the new land (the grid only
+	 * opens cells: every index, path and place stays valid), the game's obstacles on it again, every
+	 * walk under way finds its way again, and the piece is counted. */
+	addPiece( input: IslandInput ): void {
 
 		this.grid.setIsland( input );
 		obstructPlaces( this );
 		findWaysAgain( this );
+		this.state.pieces ++;
+		this.comingLand = null;
+
+	}
+
+	/** A new islander, standing near the island's middle (the debug panel's population bump: how
+	 * islanders arrive is not designed yet); returns its id. */
+	addIslander(): EntityId {
+
+		const state = this.state, grid = this.grid, n = state.villagers.length;
+		const a = n * GOLDEN_ANGLE;
+		const k = grid.nearestOpen( grid.indexAt( Math.cos( a ) * 1.5, Math.sin( a ) * 1.5 ), 40, grid.main );
+		if ( k < 0 ) throw new Error( 'No open ground near the island\'s centre' );
+		const p = grid.centreOf( k );
+		const id = `v${ n + 1 }`;
+		state.villagers.push( {
+			id, name: NAMES[ n % NAMES.length ], look: n, pos: { ...p }, prev: { ...p }, heading: Math.atan2( - p.x, - p.z ), path: null,
+			needs: { ...START_NEEDS }, bag: {}, action: null, last: null, said: null,
+		} );
+		return id;
 
 	}
 
@@ -231,26 +303,15 @@ export class Sim {
 
 }
 
-/** A new game: its palm, and one islander standing near the island's centre, facing it. */
-export function newGame( input: IslandInput, options: { seed?: number; startHour?: number } = {} ): Sim {
+/** A new game on an island grown by `pieces` (0: the starting island): its palm, and one islander
+ * standing near the island's centre, facing it. */
+export function newGame( input: IslandInput, options: { seed?: number; startHour?: number; pieces?: number } = {} ): Sim {
 
 	const seed = ( options.seed ?? 1 ) >>> 0;
-	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], palms: [], buildings: [], placed: {} }, input );
-	const grid = sim.grid;
+	const sim = new Sim( { version: SAVE_VERSION, seed, tick: 0, startHour: options.startHour ?? 8, rng: seed, villagers: [], palms: [], buildings: [], placed: {}, pieces: options.pieces ?? 0 }, input );
 	sim.state.palms = newPalms( sim );
 	obstructPlaces( sim );
-	NAMES.forEach( ( name, n ) => {
-
-		const a = n / NAMES.length * Math.PI * 2;
-		const k = grid.nearestOpen( grid.indexAt( Math.cos( a ) * 1.5, Math.sin( a ) * 1.5 ), 40, grid.main );
-		if ( k < 0 ) throw new Error( 'No open ground near the island\'s centre' );
-		const p = grid.centreOf( k );
-		sim.state.villagers.push( {
-			id: `v${ n + 1 }`, name, look: n, pos: { ...p }, prev: { ...p }, heading: Math.atan2( - p.x, - p.z ), path: null,
-			needs: { ...START_NEEDS }, bag: {}, action: null, last: null, said: null,
-		} );
-
-	} );
+	sim.addIslander();
 	return sim;
 
 }
