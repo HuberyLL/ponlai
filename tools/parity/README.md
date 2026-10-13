@@ -563,6 +563,20 @@ node tools/verify-scene-jump.mjs <baseUrl> <test> --order reverse --suffix .repe
 uv run --with numpy --with pillow tools/parity/diff-set.py <ref> <test> --aa-floor
 ```
 
+or, in one command, against the reference store:
+
+```sh
+node tools/verify-scene-jump.mjs <baseUrl> <test> --check <root>/<sha>/<set>
+```
+
+`--check` takes the fresh side from the store (capture-set `--reference --repeat` of the same views
+and options: reused for the commit, else captured with capture-set's parallel pages), runs the two
+jump orders at once (two pages, one leased GPU slot each) and then `diff-set.py` (`--aa-floor`, or
+`--temporal` for the temporal modes; the table also in `<test>/diff.txt`). Note that capture-set's
+pages reach most views by a jump too, so the stored side is fresh loads only as far as the exact
+jump holds; `--fresh` remains the way to capture true fresh loads. Every run leases its slot per
+view (as capture.mjs's worker), so a waiter gets in at the next view boundary.
+
 Both sides use capture.mjs's readiness (a persistent profile; after the evals the image grabbed
 with the loop stopped until two grabs agree, a temporal page's converged rest; the loop stopped for
 the shot; `--frames n` for the old fixed count), so they differ only in how the scene was reached.
