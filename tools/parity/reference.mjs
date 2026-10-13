@@ -308,8 +308,12 @@ export function describeKeyChange( stored, storedFiles, key, files ) {
 
 // ------------------------------------------------------------------ coverage per kind
 
-/** A set's coverage: { views: { <view>: { repeat, identical } } }; what a request wants:
- * { views: [...], repeat }. */
+/** A set's coverage: { views: { <view>: { repeat, identical, def } } }; what a request wants:
+ * { views: [...], repeat, defs: { <view>: def } }. `def` is an ad-hoc view's definition hash
+ * (adhoc.mjs; views.mjs's views have none, their definitions are in the tool hash): the store keys
+ * views by name, so a stored view whose def differs from the request's is not covered, and its
+ * recapture replaces the entry rather than merging into it. */
+const sameDef = ( a, b ) => ( a ?? null ) === ( b ?? null );
 export const SET = {
 
 	missing( coverage, want ) {
@@ -317,7 +321,8 @@ export const SET = {
 		const todo = [];
 		for ( const v of want.views ) {
 
-			const c = coverage?.views?.[ v ];
+			let c = coverage?.views?.[ v ];
+			if ( c && ! sameDef( c.def, want.defs?.[ v ] ) ) c = null;
 			if ( ! c?.captured ) todo.push( [ v, '' ] );
 			if ( want.repeat && ! c?.repeat ) todo.push( [ v, '.repeat' ] );
 
@@ -328,14 +333,14 @@ export const SET = {
 	merge( coverage, add ) {
 
 		const views = { ...( coverage?.views ?? {} ) };
-		for ( const [ v, c ] of Object.entries( add.views ) ) views[ v ] = { ...views[ v ], ...c };
+		for ( const [ v, c ] of Object.entries( add.views ) ) views[ v ] = views[ v ] && sameDef( views[ v ].def, c.def ) ? { ...views[ v ], ...c } : { ...c };
 		return { views };
 
 	},
-	planned( coverage, todo ) {
+	planned( coverage, todo, want ) {
 
 		const add = { views: {} };
-		for ( const [ v, s ] of todo ) add.views[ v ] = { ...add.views[ v ], ...( s ? { repeat: true } : { captured: true } ) };
+		for ( const [ v, s ] of todo ) add.views[ v ] = { ...add.views[ v ], ...( s ? { repeat: true } : { captured: true } ), ...( want?.defs?.[ v ] ? { def: want.defs[ v ] } : {} ) };
 		return SET.merge( coverage, add );
 
 	},
@@ -414,7 +419,7 @@ function siblingSets( shaDir, self ) {
  *   dir,                 the reference's directory (under <root>/<sha>/; resolveRefDir)
  *   kind: 'set'|'clip',  SET or CLIP coverage
  *   key, files,          setKey() / clipKey()
- *   want,                for a set { views, repeat }
+ *   want,                for a set { views, repeat, defs }
  *   url,                 where to capture it from, or null: reuse or wait only
  *   capture( todo, dir ) the capture itself: resolves to { coverage, failed, manifest } (coverage:
  *                        what it captured, in the kind's shape; manifest: fields added to the
@@ -553,7 +558,7 @@ export async function ensureReference( spec ) {
 			mkdirSync( claimDir( dir ), { recursive: true } );
 			writeJson( path.join( claimDir( dir ), 'owner.json' ), {
 				pid: process.pid, host: os.hostname(), started: new Date().toISOString(), label: spec.label ?? path.basename( process.argv[ 1 ] ?? 'node' ),
-				key, will: kind.planned( coverageBefore, todo ),
+				key, will: kind.planned( coverageBefore, todo, spec.want ),
 			} );
 			held.add( dir );
 			hookExit();
