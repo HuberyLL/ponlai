@@ -13,13 +13,11 @@
 // - `--eval js`: runs in the page and records its value. `js` is an expression (`D.timings`), a
 //   function (`async () => { ... }`, called), or statements with a `return`; `await` works in all
 //   three. `@file` reads it from a file. In scope: `P` = `window.__PONLAI__`, `D` =
-//   `window.__THREE_GAME_DIAGNOSTICS__` as the step starts (the page rebuilds that object every 30
-//   frames, so most of its counters lag by up to 30 frames: `D.frame` is the frame it was built on;
-//   `settled`, `settle` and `taa` are current every frame; read live counters from `P`, such as
-//   `P.renderer.info.frame` or `P.pipelines.total`), `frames( n )` (resolves after n rendered frames), `sleep(
-//   ms )`, `until( fn, timeoutMs )`. The value is serialised in the page: cycles become "[cycle]",
-//   functions "[function]", typed arrays plain arrays (the first 64 entries), three's vectors,
-//   colours and matrices their `toArray()`.
+//   `window.__THREE_GAME_DIAGNOSTICS__` as the step starts (most of its counters lag by up to 30
+//   frames; read live counters from `P`), `frames( n )`, `sleep( ms )`, `until( fn, timeoutMs )`.
+//   The value is serialised in the page (cycles, functions, typed arrays, three's vectors). The
+//   forms, the scope and the serialiser are tools/page-eval.mjs, which tools/capture.mjs's
+//   `--eval` shares: its header has the details.
 // - `--until js`: waits until the expression (same forms and scope) is truthy, checked every
 //   rendered frame (every 100 ms while the loop is stopped), up to --timeout; records the wait in ms
 //   and frames. Examples: `D.settled` (the paused page will draw the same frame from now on),
@@ -54,7 +52,8 @@
 // frame times (`D.frameMs`) or GPU timings that others' work would disturb.
 import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, waitForScene } from './capture-browser.mjs';
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { evalSource as source, runInPage } from './page-eval.mjs';
+import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -63,7 +62,6 @@ const argv = process.argv.slice( 2 );
 const options = { w: '1600', h: '900', scale: '1', timeout: '60000' };
 const queries = [], inits = [], steps = [];
 let url = 'http://127.0.0.1:5190/', consoleFilter = null;
-const source = ( text ) => text.startsWith( '@' ) ? readFileSync( text.slice( 1 ), 'utf8' ) : text;
 for ( let i = 0; i < argv.length; i ++ ) {
 
 	const a = argv[ i ];
@@ -85,71 +83,6 @@ for ( let i = 0; i < argv.length; i ++ ) {
 if ( queries.length === 0 ) queries.push( 'paused&t=12&dpr=1' );
 if ( ! url.endsWith( '/' ) && ! url.includes( '?' ) ) url += '/';
 const timeout = Number( options.timeout );
-
-/** Runs a step's js in the page with the probe's scope (see the header) and returns its value,
- * serialised in the page. `mode` 'until' polls it until truthy. */
-function runInPage( page, js, mode = 'eval' ) {
-
-	return page.evaluate( async ( { js, mode, timeout } ) => {
-
-		const frameNow = () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0;
-		const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
-		// a frame, or 100 ms when the loop stands (rAF still fires, but no frame is rendered)
-		const tick = () => new Promise( ( resolve ) => { const t = setTimeout( resolve, 100 ); requestAnimationFrame( () => { clearTimeout( t ); resolve(); } ); } );
-		const until = async ( fn, ms = timeout ) => {
-
-			const deadline = performance.now() + ms;
-			for ( ;; ) {
-
-				const v = await fn();
-				if ( v ) return v;
-				if ( performance.now() > deadline ) throw new Error( `until: not true within ${ ms } ms` );
-				await tick();
-
-			}
-
-		};
-		const frames = ( n ) => { const target = frameNow() + n; return until( () => frameNow() >= target ); };
-		// an expression, else statements; a function value is called
-		let body;
-		try { new Function( `return (${ js }\n)` ); body = `return (${ js }\n);`; } catch { body = js; }
-		const AsyncFunction = ( async () => {} ).constructor;
-		const fn = new AsyncFunction( 'P', 'D', 'frames', 'sleep', 'until', body );
-		const value = async () => {
-
-			const v = await fn( window.__PONLAI__, window.__THREE_GAME_DIAGNOSTICS__, frames, sleep, until );
-			return typeof v === 'function' ? await v() : v;
-
-		};
-		const serialise = ( v ) => {
-
-			const seen = new WeakSet();
-			return JSON.stringify( v, function ( key, x ) {
-
-				if ( typeof x === 'function' ) return '[function]';
-				if ( typeof x === 'bigint' ) return String( x );
-				if ( x === undefined && key === '' ) return null;
-				if ( x && typeof x === 'object' ) {
-
-					if ( ArrayBuffer.isView( x ) ) return Array.from( x.length > 64 ? x.subarray( 0, 64 ) : x );
-					if ( ( x.isVector2 || x.isVector3 || x.isVector4 || x.isColor || x.isQuaternion || x.isMatrix3 || x.isMatrix4 || x.isEuler ) && x.toArray ) return x.toArray();
-					if ( seen.has( x ) ) return '[cycle]';
-					seen.add( x );
-
-				}
-				return x;
-
-			} );
-
-		};
-		if ( mode === 'eval' ) return serialise( await value() );
-		const from = frameNow(), start = performance.now();
-		await until( value );
-		return JSON.stringify( { ms: Math.round( performance.now() - start ), frames: frameNow() - from } );
-
-	}, { js, mode, timeout } ).then( ( text ) => text === undefined ? undefined : JSON.parse( text ) );
-
-}
 
 // the page's own frame counter (rendered frames)
 const renderedFrame = ( page ) => page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
@@ -232,7 +165,7 @@ try {
 
 				if ( step.eval !== undefined ) {
 
-					try { record.steps.push( { eval: step.eval, value: await runInPage( page, step.js ) } ); } catch ( error ) {
+					try { record.steps.push( { eval: step.eval, value: await runInPage( page, step.js, { timeout } ) } ); } catch ( error ) {
 
 						record.steps.push( { eval: step.eval, error: error.message.split( '\n' )[ 0 ] } );
 						failed = true;
@@ -241,7 +174,7 @@ try {
 
 				} else if ( step.until !== undefined ) {
 
-					try { record.steps.push( { until: step.until, ...( await runInPage( page, step.js, 'until' ) ) } ); } catch ( error ) {
+					try { record.steps.push( { until: step.until, ...( await runInPage( page, step.js, { mode: 'until', timeout } ) ) } ); } catch ( error ) {
 
 						record.steps.push( { until: step.until, error: error.message.split( '\n' )[ 0 ] } );
 						failed = true;
