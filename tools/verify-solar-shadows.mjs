@@ -1,13 +1,16 @@
 // GPU regression: physical contact hardening plus unoccluded receiver planes at low solar elevation.
+// Needs the Vite dev server: it imports /src/ modules into the page (tools/dev-server.mjs).
 // Usage: node tools/verify-solar-shadows.mjs http://127.0.0.1:5190 [extra query, e.g. shadowFilter=legacy]
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
+import { requireDevServer } from './dev-server.mjs';
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 const errors = [];
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing
 // run (tools/gpu-lock.mjs; released when the process exits)
+await requireDevServer( process.argv[ 2 ] || 'http://127.0.0.1:5190', 'verify-solar-shadows' );
 await acquireGpuLock( 'verify-solar-shadows', { shared: true } );
 const browser = await chromium.launch( {
 	headless: true,
