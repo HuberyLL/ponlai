@@ -20,8 +20,9 @@
 // tools/parity/capture-set.mjs drives it: the group's first view is a fresh load, every later one
 // is reached by the exact scene jump (`__PONLAI__.establishScene`), so a group's world is built
 // once. --jobs pages run at once (default 2), one group each. The worker takes the GPU lock itself,
-// shared, per view (from its load or jump to its shot), and stops the page's frame loop before it
-// lets go, so this tool holds no lock and no frame renders without one; between views a page
+// shared: a load only once its world is generated (capture.mjs, "The slot after the world"), then
+// leased from view to view; the page's frame loop is stopped before each shot, so this tool holds
+// no lock across the world's CPU work and no frame renders without one; between views a page
 // stands stopped.
 // - A view that fails, or a page that dies or goes silent (no answer within 3 x --timeout + 2 min
 //   of the view taking its GPU slot: killed), is shot again once (--retries) on a fresh page, and
@@ -379,7 +380,7 @@ function runPage( queue ) {
 				const item = current;
 				current = null;
 				flushLog( item, m.log );
-				item.reached = { mode: m.mode, from: m.from, seconds: m.seconds, lockSeconds: m.lockSeconds };
+				item.reached = { mode: m.mode, from: m.from, seconds: m.seconds, lockSeconds: m.lockSeconds, worldSeconds: m.worldSeconds ?? 0 };
 				if ( m.ok ) item.done( true );
 				else fail( item, 'failed' );
 
@@ -439,7 +440,7 @@ async function settle( shot, ok, why, item ) {
 
 	}
 	finished ++;
-	const how = shot.ref ? `reference ${ shot.ref.status }` : shot.reached ? `${ shot.reached.mode }${ shot.reached.from ? ` from ${ shot.reached.from }` : '' } ${ shot.reached.seconds.toFixed( 1 ) } s` : '';
+	const how = shot.ref ? `reference ${ shot.ref.status }` : shot.reached ? `${ shot.reached.mode }${ shot.reached.from ? ` from ${ shot.reached.from }` : '' } ${ shot.reached.seconds.toFixed( 1 ) } s${ shot.reached.worldSeconds ? `, world ${ shot.reached.worldSeconds.toFixed( 1 ) } s` : '' }${ shot.reached.lockSeconds >= 0.5 ? `, ${ shot.reached.lockSeconds.toFixed( 1 ) } s waiting for the GPU` : '' }` : '';
 	console.log( `[${ finished }/${ total }] ${ shot.side } ${ shot.key } ${ ok ? 'ok' : 'FAILED' }${ how ? ` (${ how })` : '' }${ shot.messages.length ? ` (${ shot.messages.length } messages)` : '' }` );
 
 }
@@ -561,19 +562,16 @@ if ( recheckPairs.length ) {
 }
 const pixelsByKey = Object.fromEntries( pairs.map( ( p ) => [ p.key, { ...p.pixels, ...( p.recheck ? { recheck: p.recheck } : {} ) } ] ) );
 
-// region statistics, by compare-captures.py's `metrics` (taken from its source, which runs its own
-// overview comparison at the top level) plus the mean HSV saturation
+// region statistics, by compare-captures.py's `metrics` (tools/parity/pixels.py, which it imports)
+// plus the mean HSV saturation
 const PY = `
-import ast, json, sys
+import json, sys
+job = json.load(sys.stdin)
+sys.dont_write_bytecode = True
+sys.path.insert(0, job["pixels"])
 import numpy as np
 from PIL import Image
-job = json.load(sys.stdin)
-ns = {"np": np}
-src = open(job["compare"]).read()
-for node in ast.parse(src).body:
-    if isinstance(node, ast.FunctionDef) and node.name == "metrics":
-        exec(compile(ast.Module([node], []), job["compare"], "exec"), ns)
-metrics = ns["metrics"]
+from pixels import metrics
 def stats(im):
     m = metrics(im)
     a = np.asarray(im, dtype=np.float64)
@@ -598,7 +596,7 @@ const stats = await new Promise( ( resolve, reject ) => {
 	let output = '';
 	child.stdout.on( 'data', ( b ) => output += b );
 	child.on( 'close', ( code ) => code === 0 ? resolve( JSON.parse( output ) ) : reject( new Error( `region statistics failed (${ code })` ) ) );
-	child.stdin.end( JSON.stringify( { compare: path.join( ROOT, 'tools/compare-captures.py' ), images, regions: REGIONS } ) );
+	child.stdin.end( JSON.stringify( { pixels: path.join( ROOT, 'tools/parity' ), images, regions: REGIONS } ) );
 
 } );
 for ( const s of shots ) s.stats = stats[ path.join( outDir, s.file + '.png' ) ] ?? null;
