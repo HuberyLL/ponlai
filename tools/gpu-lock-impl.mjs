@@ -18,22 +18,29 @@
 // a slot is free. A shared request may also start beside a shared head while that leaves the head a
 // slot (startableShared); nothing ranked after the head ever holds it up.
 // Levels, highest first: urgent (the user's own runs), high, normal, low (0-3 name them too).
-// A request's level is, first match wins: a bump on its ticket (`prio bump`, which the process then
-// keeps for its later requests: a lease's next one); the scheduling table; PONLAI_GPU_PRIORITY; the
-// default of its mode, normal for shared requests and low for exclusive ones. The defaults are the
-// user's (2026-10-13): timing runs get no special treatment and simply rank below captures and
-// probes, so a low exclusive request waits for as long as normal work keeps arriving; the remedy is
-// to raise it, `prio set`. The scheduling table (`ponlai-gpu.lock.priorities.json` beside the lock)
-// is how the user or a main session schedules sessions: entries { match, level, until?, note? },
-// `match` a substring of a request's working directory (a worktree's name) or of its label; the
-// longest match wins and an entry past `until` is ignored. A level set for a session applies to all
-// its requests, shared and exclusive alike. Sessions leave PONLAI_GPU_PRIORITY unset (inherited by
+// A request's level is, first match wins: a bump on its ticket or its shared hold (`prio bump`, by
+// pid or `#ticket`; the process keeps it for its later requests: a lease's next one; an exclusive
+// hold is not bumped, its owner.json goes without the mutex); the scheduling table;
+// PONLAI_GPU_PRIORITY; the default of its mode, normal for shared requests and low for exclusive
+// ones. The defaults are the user's (2026-10-13): timing runs get no special treatment and simply
+// rank below captures and probes, so a low exclusive request waits for as long as normal work keeps
+// arriving; the remedy is to raise it, `prio set`. The scheduling table
+// (`ponlai-gpu.lock.priorities.json` beside the lock) is how the user or a main session schedules
+// sessions: entries { match, level, until?, note? }, `match` a substring of one of a request's
+// session names or of its label; the longest match wins, an entry past `until` is ignored (and
+// dropped at the next write), and `prio set` lists what an entry applies to now (and warns when
+// nothing). A request's session names are the names of the checkouts (a worktree, or the main
+// checkout) holding the script it runs and its working directory, and that directory's own name: a
+// tool started by its absolute path from another directory is still found by its worktree's name,
+// and the main checkout's name matches only requests from the main checkout (a substring of the
+// whole path would match every worktree below it). A level set for a session applies to all its
+// requests, shared and exclusive alike. Sessions leave PONLAI_GPU_PRIORITY unset (inherited by
 // every child, it would raise or lower everything below the command it is set on). Tickets, holders
-// and the owner record the inputs (`cwd`, `env`, `bump`), never the level: every requester computes
-// the effective level when it ranks, from those inputs and the table file read then, so a table
-// change reranks tickets already queued and all requesters agree. The table is written under the
-// mutex. Nothing ages: an earlier rule let shared requests pass a waiting exclusive one until a cap
-// (30 min) and promoted low requests after 10 min; the levels replace both.
+// and the owner record the inputs (`session`, `env`, `bump`), never the level: every requester
+// computes the effective level when it ranks, from those inputs and the table file read then, so a
+// table change reranks tickets already queued and all requesters agree. The table is written under
+// the mutex. Nothing ages: an earlier rule let shared requests pass a waiting exclusive one until a
+// cap (30 min) and promoted low requests after 10 min; the levels replace both.
 // Before the levels, under the earlier rule, a single long shared hold (20+ min) with an exclusive
 // request queued behind it stopped 22 captures while two slots stood free, and back-to-back timing
 // runs that raced for the lock (a mkdir every 500 ms) let one session win every time: tickets
@@ -85,7 +92,7 @@
 //   node tools/gpu-lock.mjs status                 (the owner, the holders, the queue in turn with each request's level and eta, the exclusive requests)
 //   node tools/gpu-lock.mjs eta [--shared|--exclusive] [--level l] [--pid p] [--json]   (estimated start of a request made now, or of a ticket)
 //   node tools/gpu-lock.mjs prio                   (the scheduling table, and every holder's and ticket's level with its source)
-//   node tools/gpu-lock.mjs prio set <match> <level> [--for 90m] [--note text] | prio clear <match> | prio bump <pid|ticket> <level>
+//   node tools/gpu-lock.mjs prio set <match> <level> [--for 90m] [--note text] | prio clear <match> | prio bump <pid|#ticket> <level>
 //   node tools/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
 //   node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]   (waits and holds, from the log)
 //
@@ -279,16 +286,41 @@ export function readTable() {
 
 }
 
-// The table's entry for a request, or null: the longest `match` found in its cwd or its label,
-// among the entries not past their `until`.
+// The checkout (the main one or a worktree) holding a directory: the nearest one with a `.git`.
+function checkoutOf( dir ) {
+
+	for ( let d = path.resolve( dir ), up; ; d = up ) {
+
+		try { statSync( path.join( d, '.git' ) ); return d; } catch { /* not here */ }
+		up = path.dirname( d );
+		if ( up === d ) return null;
+
+	}
+
+}
+// This process's session names, which the table's entries match (see the header): the names of the
+// checkouts holding the script it runs and its working directory, and that directory's own name. A
+// tool run by its absolute path from another directory is still found by its worktree's name, and
+// the main checkout's name names only requests from the main checkout.
+const SESSION = ( () => {
+
+	const script = process.argv[ 1 ] ? checkoutOf( path.dirname( path.resolve( process.argv[ 1 ] ) ) ) : null;
+	return [ ...new Set( [ script, checkoutOf( process.cwd() ), process.cwd() ].filter( Boolean ).map( ( d ) => path.basename( d ) ) ) ];
+
+} )();
+
+// The table's entry for a request, or null: the longest `match` found in one of its session names
+// (`session`; a copy from before them recorded only its working directory, `cwd`, matched whole) or
+// in its label, among the entries not past their `until`.
 function tableEntry( t, table, now ) {
 
+	const names = Array.isArray( t.session ) ? t.session.map( String ) : [ String( t.cwd ?? '' ) ];
 	let best = null;
 	for ( const e of table ) {
 
 		if ( typeof e?.match !== 'string' || ! e.match || ! parseLevel( e.level ) ) continue;
 		if ( e.until && ! ( now < Date.parse( e.until ) ) ) continue;
-		if ( ! ( String( t.cwd ?? '' ).includes( e.match ) || String( t.label ?? '' ).includes( e.match ) ) ) continue;
+		if ( ! ( names.some( ( name ) => name.includes( e.match ) ) || String( t.label ?? '' ).includes( e.match ) ) ) continue;
 		if ( ! best || e.match.length > best.match.length ) best = e;
 
 	}
@@ -331,7 +363,7 @@ export const levelRank = ( t ) => LEVELS.indexOf( t.level ?? levelOf( t, [] ).le
 // What a request of this process records so that every requester can rank it (see the header).
 function requestInputs() {
 
-	return { levels: true, cwd: process.cwd(), ...( ENV_LEVEL ? { env: ENV_LEVEL } : {} ), ...( bumped ? { bump: bumped } : {} ) };
+	return { levels: true, cwd: process.cwd(), session: SESSION, ...( ENV_LEVEL ? { env: ENV_LEVEL } : {} ), ...( bumped ? { bump: bumped } : {} ) };
 
 }
 
@@ -1563,7 +1595,9 @@ function printLockLog( summary, { by, sinceText } ) {
 // header). Writes go under the mutex, like every change to the queue.
 async function prioCommand( rest, opt, show ) {
 
-	const [ sub, ...args ] = rest;
+	// the subcommand, if any, comes first (`prio --json` has none)
+	const sub = rest[ 0 ]?.startsWith( '--' ) ? undefined : rest[ 0 ];
+	const args = sub === undefined ? rest : rest.slice( 1 );
 	const words = args.filter( ( a, i ) => ! a.startsWith( '--' ) && ! ( i > 0 && args[ i - 1 ].startsWith( '--' ) ) );
 	const level = ( text ) => {
 
@@ -1572,7 +1606,25 @@ async function prioCommand( rest, opt, show ) {
 		return l;
 
 	};
-	const writeTable = ( entries ) => entries.length ? writeJson( TABLE, { entries } ) : rmSync( TABLE, { force: true } );
+	// every write drops the entries past their `until` (an entry is replaced only by one of the same match)
+	const writeTable = ( entries ) => {
+
+		const now = Date.now();
+		const kept = entries.filter( ( e ) => ! e.until || now < Date.parse( e.until ) );
+		if ( kept.length ) writeJson( TABLE, { entries: kept } );
+		else rmSync( TABLE, { force: true } );
+
+	};
+	// the holders and tickets whose level comes from the table's entry `match` now, and those of older
+	// copies whose label it names (the table does not move them)
+	const matched = ( match ) => {
+
+		const state = lockState();
+		const all = [ ...state.holders.map( ( h ) => ( { ...h, held: true } ) ), ...state.queue ];
+		return { now: all.filter( ( t ) => t.source === 'table' && t.match === match ), older: all.filter( ( t ) => t.source === 'older copy' && String( t.label ?? '' ).includes( match ) ) };
+
+	};
+	const name = ( t ) => `${ t.held ? 'holder' : 'ticket' } pid ${ t.pid }${ t.seq !== undefined && ! t.held ? ` #${ t.seq }` : '' } "${ t.label }"${ t.mode === 'exclusive' ? ' (exclusive)' : '' }`;
 	if ( sub === 'set' ) {
 
 		const [ match, text ] = words;
@@ -1591,6 +1643,12 @@ async function prioCommand( rest, opt, show ) {
 		entry.set = new Date().toISOString();
 		await withMutex( () => writeTable( [ ...readTable().filter( ( e ) => e.match !== match ), entry ] ) );
 		console.log( `set: "${ match }" -> ${ entry.level }${ entry.until ? ` until ${ entry.until }` : '' }` );
+		// what it applies to now; a match nothing has may be a typo, or a session that has not asked yet
+		const { now, older } = matched( match );
+		for ( const t of now ) console.log( `  applies to ${ name( t ) }` );
+		for ( const t of older ) console.log( `  not to ${ name( t ) }: an older copy of the lock, whose requests keep their mode's default` );
+		const longer = readTable().some( ( e ) => e.match !== match && e.match.includes( match ) );
+		if ( ! now.length ) console.error( `[gpu-lock] no holder or queued request matches "${ match }" now (a worktree's name or a label); it applies to later requests that do${ longer ? `, unless a longer entry matches them` : '' }` );
 		return 0;
 
 	}
@@ -1612,46 +1670,65 @@ async function prioCommand( rest, opt, show ) {
 	}
 	if ( sub === 'bump' ) {
 
-		// a waiting ticket (by pid, then by ticket number), else a holder (by pid)
+		// `#n` is a ticket number; a bare number a pid (a waiting ticket's, else a shared holder's),
+		// else a ticket number. Ticket numbers grow without bound into the range of pids, so a pid
+		// that holds or waits is taken first.
 		const [ id, text ] = words;
-		const n = Number( id );
+		const byTicket = /^#\d+$/.test( id ?? '' );
+		const n = Number( byTicket ? id.slice( 1 ) : id );
 		const to = level( text );
-		if ( ! ( n > 0 ) ) throw new Error( 'usage: prio bump <pid|ticket> <level>' );
+		if ( ! ( n > 0 ) ) throw new Error( 'usage: prio bump <pid|#ticket> <level>' );
 		const done = await withMutex( () => {
 
-			const tickets = listJson( QUEUE );
-			const ticket = tickets.find( ( t ) => t.pid === n ) ?? tickets.find( ( t ) => t.seq === n );
-			const records = ticket ? [ ticket ] : [ ...listJson( MEMBERS ), { file: OWNER, ...readJson( OWNER ) } ].filter( ( r ) => r.pid === n && r.mode !== 'shared' );
-			if ( ! records.length ) return null;
-			const { file, ...record } = records[ 0 ];
+			const tickets = listJson( QUEUE ).filter( ( t ) => alive( t.pid ) );
+			const members = listJson( MEMBERS ).filter( ( m ) => alive( m.pid ) );
+			const owner = readJson( OWNER );
+			const found = byTicket ? tickets.find( ( t ) => t.seq === n )
+				: tickets.find( ( t ) => t.pid === n ) ?? members.find( ( m ) => m.pid === n ) ?? ( owner?.pid === n && owner.mode !== 'shared' ? { file: OWNER, ...owner } : null ) ?? tickets.find( ( t ) => t.seq === n );
+			if ( ! found ) return { error: `no ticket or holder with ${ byTicket ? 'ticket number' : 'pid or ticket number' } ${ n }` };
+			const { file, ...record } = found;
+			const what = file === OWNER ? 'the exclusive hold' : file.startsWith( QUEUE ) ? `ticket #${ record.seq }` : 'the shared hold';
+			const who = `${ what } of pid ${ record.pid } ("${ record.label }")`;
+			// an older copy ranks its requests by its own rules: a level only this copy knows would make
+			// the two wait for each other (see the header)
+			if ( ! record.levels ) return { error: `${ who } comes from an older copy of the lock, which does not read levels; it keeps its mode's default here too, since raising it in this copy only would leave the two copies waiting for each other` };
+			// an exclusive holder has the GPU to itself, and its owner.json is removed without the mutex
+			// when it ends, so a write could race that; the bump would only matter for its next request
+			if ( file === OWNER ) return { error: `${ who } already has the GPU to itself; to raise its next request, bump that request's ticket or set the table` };
 			const bumpedRecord = { ...record, bump: to };
 			// what older copies read of a ticket follows its new level (forOlderCopies)
-			writeJson( file, ticket ? { ...bumpedRecord, ...( record.levels ? forOlderCopies( withLevel( bumpedRecord, readTable(), Date.now() ) ) : {} ) } : bumpedRecord );
-			return { what: ticket ? `ticket ${ record.seq }` : 'the hold', pid: record.pid, label: record.label, levels: record.levels };
+			writeJson( file, file.startsWith( QUEUE ) ? { ...bumpedRecord, ...forOlderCopies( withLevel( bumpedRecord, readTable(), Date.now() ) ) } : bumpedRecord );
+			return { who };
 
 		} );
-		if ( ! done ) throw new Error( `no ticket or holder with pid or ticket number ${ n }` );
-		console.log( `bumped ${ done.what } of pid ${ done.pid } ("${ done.label }") to ${ to }${ done.levels ? '' : ' (an older copy of this file: it does not read levels, so only this copy ranks it so)' }` );
+		if ( done.error ) throw new Error( done.error );
+		console.log( `bumped ${ done.who } to ${ to }` );
 		return 0;
 
 	}
-	if ( sub !== undefined ) throw new Error( 'usage: prio | prio set <match> <level> [--for 90m] [--note text] | prio clear <match> | prio bump <pid|ticket> <level>' );
+	if ( sub !== undefined ) throw new Error( 'usage: prio | prio set <match> <level> [--for 90m] [--note text] | prio clear <match> | prio bump <pid|#ticket> <level>' );
 	// the table, then every holder and ticket with its effective level and its source
 	const now = Date.now();
 	const state = lockState( now );
 	const entries = readTable();
 	const at = ( iso ) => new Date( iso ).toLocaleString( 'sv' ).slice( 5, 16 );
+	if ( rest.includes( '--json' ) ) {
+
+		console.log( JSON.stringify( { table: entries, holders: state.holders.map( show ), queue: state.queue.map( show ) } ) );
+		return 0;
+
+	}
 	console.log( `scheduling table (${ TABLE }):` );
 	if ( ! entries.length ) console.log( '  (empty: shared requests normal, exclusive ones low)' );
 	for ( const e of entries ) console.log( `  "${ e.match }" -> ${ parseLevel( e.level ) ?? `? (${ e.level })` }${ e.until ? `${ now < Date.parse( e.until ) ? ' until' : ' expired' } ${ at( e.until ) }` : '' }${ e.note ? `  (${ e.note })` : '' }` );
-	const line = ( t ) => `${ t.level.padEnd( 6 ) } ${ t.source === 'table' ? `table "${ t.match }"` : t.source }`.padEnd( 34 ) + ` ${ t.mode === 'exclusive' ? 'exclusive' : 'shared   ' } pid ${ t.pid }${ t.seq !== undefined ? ` #${ t.seq }` : '' } "${ t.label }"${ t.cwd ? `  ${ path.basename( t.cwd ) }` : '' }`;
+	const where = ( t ) => Array.isArray( t.session ) ? t.session.join( ', ' ) : t.cwd ? path.basename( t.cwd ) : '';
+	const line = ( t ) => `${ t.level.padEnd( 6 ) } ${ t.source === 'table' ? `table "${ t.match }"` : t.source }`.padEnd( 34 ) + ` ${ t.mode === 'exclusive' ? 'exclusive' : 'shared   ' } pid ${ t.pid }${ t.seq !== undefined ? ` #${ t.seq }` : '' } "${ t.label }"${ where( t ) ? `  (${ where( t ) })` : '' }`;
 	console.log( 'holding:' );
 	if ( ! state.holders.length ) console.log( '  (nobody)' );
 	for ( const h of state.holders ) console.log( `  ${ line( h ) }` );
 	console.log( 'queue, in turn:' );
 	if ( ! state.queue.length ) console.log( '  (empty)' );
 	for ( const t of state.queue ) console.log( `  ${ line( t ) }` );
-	if ( rest.includes( '--json' ) ) console.log( JSON.stringify( { table: entries, holders: state.holders.map( show ), queue: state.queue.map( show ) } ) );
 	return 0;
 
 }
@@ -1776,7 +1853,7 @@ export async function main( argv, { impl = `${ fileURLToPath( import.meta.url ) 
 		} );
 
 	}
-	console.error( 'usage: node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout s] -- <command ...> | status | eta [--shared|--exclusive] [--level l] [--pid p] [--json] | prio [set <match> <level> [--for 90m] [--note text] | clear <match> | bump <pid|ticket> <level>] | gpu [--seconds n] | log [--since 2h] [--by class|label] [--top n] [--json]' );
+	console.error( 'usage: node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout s] -- <command ...> | status | eta [--shared|--exclusive] [--level l] [--pid p] [--json] | prio [set <match> <level> [--for 90m] [--note text] | clear <match> | bump <pid|#ticket> <level>] | gpu [--seconds n] | log [--since 2h] [--by class|label] [--top n] [--json]' );
 	return 2;
 
 }
