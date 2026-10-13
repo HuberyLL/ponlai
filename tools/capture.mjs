@@ -135,7 +135,7 @@ function within( promise, ms, what ) {
 /** Opens the capture page and listens to it: `begin()` starts a view's error record. */
 async function openPage( viewport ) {
 
-	const capture = await launchCapture( viewport );
+	const capture = await launchCapture( { ...viewport, url: baseUrl } );
 	const page = capture.page;
 	let current = { errors: [], failures: [] };
 	page.on( 'console', ( m ) => { if ( verbose || m.type() === 'error' || m.type() === 'warning' ) current.errors.push( m.type() + ': ' + m.text() ); } );

@@ -239,7 +239,7 @@ try {
 
 	async function open( deviceScaleFactor, cssScale ) {
 
-		session = await launchCapture( { viewport: { width: W * cssScale, height: H * cssScale }, deviceScaleFactor } );
+		session = await launchCapture( { viewport: { width: W * cssScale, height: H * cssScale }, deviceScaleFactor, url } );
 		const p = session.page;
 		p.on( 'console', ( m ) => { if ( options.verbose || m.type() === 'error' || m.type() === 'warning' ) errors.push( m.type() + ': ' + m.text() ); } );
 		p.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
