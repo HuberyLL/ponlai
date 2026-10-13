@@ -1,9 +1,11 @@
 // Headed browser runs (profile-frame --display, any script that opens a visible Chrome window) take
 // over the screen of whoever is using the machine. They run only while the user has allowed them:
 // a file under the user's home holds the time the permission ends. Everything else runs headless.
+// announceHeadedRun posts a desktop notification 10 s before a headed window opens.
 //   node tools/display-gate.mjs allow [hours]   (default 8)
 //   node tools/display-gate.mjs deny
 //   node tools/display-gate.mjs status          (exit code 0 when allowed, 1 when not)
+import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -34,6 +36,21 @@ export function requireDisplayAllowed( label = 'a headed run' ) {
 	throw new Error( `${ label } would open a window on the user's screen, and headed runs are not allowed now (${ GATE_FILE }). ` +
 		'Use a headless run instead, or record this run as pending in your report: the main session runs pending ' +
 		'display runs together while the user allows them (node tools/display-gate.mjs allow <hours>).' );
+
+}
+
+// Headed runs take over the user's screen, and the user asked to be told, not asked: post a
+// notification, then give them 10 s before the window opens. A failed notification never stops a run.
+export async function announceHeadedRun( { label, scenes, minutes } ) {
+
+	const text = `${ label }: a headed run takes the screen in 10 s, ${ scenes } scenes, about ${ minutes } min`.replace( /\\/g, '\\\\' ).replace( /"/g, '\\"' );
+	await new Promise( ( resolve ) => execFile( 'osascript', [ '-e', `display notification "${ text }" with title "Ponlai"` ], ( error ) => {
+
+		if ( error ) console.error( `[display-gate] notification failed: ${ error.message.split( '\n' )[ 0 ] }` );
+		resolve();
+
+	} ) );
+	await new Promise( ( resolve ) => setTimeout( resolve, 10000 ) );
 
 }
 
