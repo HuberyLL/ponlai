@@ -495,15 +495,21 @@ mark( 'world' );
 // The grown land, and the framing it sets (again whenever the island grows: `setLand`).
 let land = LandLattice.fromBytes( data.land );
 let landBox = landBounds( land );
+function measureLand( next: LandLattice ) {
+
+	return { box: landBounds( next ), framing: landFraming( next ) };
+
+}
 let { centroid, scale: landScale, onLand } = landFraming( land );
 // the land for the tools: its seed and step, box, centroid, the framing's scale against the first
 // island and the default pivot
 const landInfo = { seed: landOptions.worldSeed, step: landOptions.step, bounds: landBox, centroid, scale: landScale, target: [ 0, 0, 0 ] };
-function setLand( next: LandLattice, step: number ): void {
+// (`measured`: the land's box and framing found ahead, as Growth.ts's preparation finds them)
+function setLand( next: LandLattice, step: number, measured = measureLand( next ) ): void {
 
 	land = next;
-	landBox = landBounds( land );
-	( { centroid, scale: landScale, onLand } = landFraming( land ) );
+	landBox = measured.box;
+	( { centroid, scale: landScale, onLand } = measured.framing );
 	target.copy( onLand( 1.5, 0.5, 1 ) );
 	// the sea fog thins over the island and in its lee
 	const fogClearing = onLand( 0, 0, 0 );
@@ -683,9 +689,10 @@ const growth = new Growth( {
 	renderer, world, fields, grass, flowers, foliage, rimFoliage, turfSkirt, shoreWaves, refractedSun, rain, characters, game,
 	rainRoots: [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt ],
 	compileDraws,
-	onSwap: ( next, version ) => {
+	measure: measureLand,
+	onSwap: ( next, version, measured ) => {
 
-		setLand( next, growth.state.step );
+		setLand( next, growth.state.step, measured );
 		water!.setLand( landBox );
 		for ( const box of heldOpaque ) water!.reflectionBounds.union( box );
 		setSunCasters();

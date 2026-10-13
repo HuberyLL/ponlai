@@ -64,7 +64,7 @@ import type { CullBuffers } from './GrassCull.ts';
 //   ordered alike (World.ts on split draws).
 
 /** What the growth changes on the page: its world objects, and the page's own hooks. */
-export interface GrowthPage {
+export interface GrowthPage<M = unknown> {
 	renderer: THREE.WebGPURenderer;
 	world: WorldMeshes;
 	fields: WorldFields;
@@ -84,15 +84,20 @@ export interface GrowthPage {
 	 * the sun's map too */
 	compileDraws( objects: THREE.Object3D[], casters?: boolean ): Promise<void>;
 	/** the page's own land-dependent state, in the swap's frame */
-	onSwap( land: LandLattice, data: WorldData ): void;
+	/** what the page measures of a land (its box and framing), ahead in a step of the preparation */
+	measure( land: LandLattice ): M;
+	/** the page's own land-dependent state, in the swap's frame, with `measure`'s result */
+	onSwap( land: LandLattice, data: WorldData, measured: M ): void;
 	/** after the swap's frames (the chunks' borders, the diagnostics) */
 	onSwapped?( data: WorldData ): void;
 }
 
 interface Shown { version: VersionChunks; data: WorldData; land: LandLattice }
 
-interface Prepared {
+interface Prepared<M> {
 	version: VersionChunks;
+	measured: M;
+	bounds: Bounds;
 	data: WorldData;
 	land: LandLattice;
 	changed: ChunkData[];
@@ -127,7 +132,7 @@ const SLICE = 1.2;
 const SLOW = 0.6;
 
 
-export class Growth {
+export class Growth<M = unknown> {
 
 	readonly state = {
 		/** the land step shown */
@@ -156,8 +161,8 @@ export class Growth {
 	private frameAt = 0;
 	private stepIndex = 0;
 	private shown: Shown;
-	private prepared: Prepared | null = null;
-	private steps: Steps<Prepared> | null = null;
+	private prepared: Prepared<M> | null = null;
+	private steps: Steps<Prepared<M>> | null = null;
 	private waiting = false;
 	private idleQueued = false;
 	private wanted: ( () => void )[] = [];
@@ -170,7 +175,7 @@ export class Growth {
 	private readonly seed: number;
 	private readonly cache: boolean;
 
-	constructor( private readonly page: GrowthPage, loaded: LoadedWorld, { seed, cache }: { seed: number; cache: boolean } ) {
+	constructor( private readonly page: GrowthPage<M>, loaded: LoadedWorld, { seed, cache }: { seed: number; cache: boolean } ) {
 
 		this.seed = seed;
 		this.cache = cache;
@@ -366,7 +371,7 @@ export class Growth {
 
 	}
 
-	private * prepare( version: VersionChunks ): Steps<Prepared> {
+	private * prepare( version: VersionChunks ): Steps<Prepared<M>> {
 
 		const page = this.page, shown = this.shown, renderer = page.renderer;
 		this.stage = 'chunks';
@@ -386,6 +391,10 @@ export class Growth {
 		this.stage = 'merge';
 		const data: WorldData = yield* mergeSteps( version.land, chunks );
 		const land = LandLattice.fromBytes( data.land );
+		yield;
+		const bounds = landBounds( land );
+		yield;
+		const measured = page.measure( land );
 		yield;
 
 		// the island: a mesh per changed land chunk, its buffers uploaded. The frame's passes draw it
@@ -454,7 +463,7 @@ export class Growth {
 		}
 		// per species its instances, written in place at the swap with their box, or (outgrown) a
 		// new mesh, compiled (and its proxy in the rain's bake)
-		const flowers: Prepared[ 'flowers' ] = { instances: [], replacements: [], boxes: [] };
+		const flowers: Prepared<M>[ 'flowers' ] = { instances: [], replacements: [], boxes: [] };
 		for ( let k = 0; k < plants.length; k ++ ) {
 
 			const instances = flowerInstances( [ plants[ k ] ] )[ 0 ];
@@ -504,7 +513,7 @@ export class Growth {
 		yield* textureSteps( renderer, shore!.shelter );
 		const top = topFromTiles( chunks );
 		return {
-			version, data, land, changed, islands: { add, remove }, rocks, seabed, walk, grass,
+			version, measured, bounds, data, land, changed, islands: { add, remove }, rocks, seabed, walk, grass,
 			flowers, bushes: { instances: bushes, box: bushBox },
 			rim, skirt, fields, shore: shore!, top,
 		};
@@ -572,10 +581,10 @@ export class Growth {
 		this.state.pending = - 1;
 		this.state.swaps ++;
 		this.afterStep = 0;
-		page.onSwap( p.land, p.data );
+		page.onSwap( p.land, p.data, p.measured );
 		part( 'page' );
 		const swapMs = performance.now() - t0;
-		const box: Bounds = landBounds( p.land );
+		const box: Bounds = p.bounds;
 		// (the rain's map a few meshes a frame)
 		let bake: Generator<void, void> | null = null;
 		this.after.push(
