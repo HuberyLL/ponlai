@@ -467,7 +467,8 @@ Forms:
   `<repo top>/artifacts/jobs/<UTC stamp>-<command>.log` and its path is printed. The log holds the
   command's output between a start line and an end line, `[done] exit <code> at <time> after
   <duration>`, with ` (stopped)` when the job was stopped. A single argument after `--` runs
-  through `sh -c` (pipes, `&&`), several run as they are.
+  through `sh -c` (pipes, `&&`), several run as they are. A single argument with an unquoted `&`
+  inside a word (`--view near:like=a&dist=40`) is refused with exit 2: quote that word.
 - `start --wait [--lines n] -- command` starts the job the same way and waits on it within the
   budget: when it ends, it prints the log's last lines (20) and exits with the command's code;
   otherwise it exits 124 and prints the `wait` to call next. Nothing is killed at the budget, so a

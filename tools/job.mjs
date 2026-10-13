@@ -15,8 +15,9 @@
 //   node tools/job.mjs stop <file>... | --cwd <dir> | --all [--grace 10]
 //
 // Jobs. A single argument after `--` runs through `sh -c` (pipes, redirections, `&&`); several are
-// run as they are. Without `--log` the log is `<repo top>/artifacts/jobs/<UTC stamp>-<command>.log`
-// (git-ignored), and its path is printed. The log starts with `[job] start <time> pid <runner pid>:
+// run as they are; a single argument with an `&` inside an unquoted word (a query) is refused with
+// exit 2, since sh would background half of it. Without `--log` the log is
+// `<repo top>/artifacts/jobs/<UTC stamp>-<command>.log` (git-ignored), and its path is printed. The log starts with `[job] start <time> pid <runner pid>:
 // <command>`, then holds the command's stdout and stderr, and ends with `[done] exit <code> at
 // <time> after <duration>` (a command killed by a signal exits 128 + its number, one that cannot
 // start 127), with ` (stopped)` appended when the runner was signalled. The runner forwards SIGINT,
@@ -749,6 +750,35 @@ const count = ( value, fallback, flag ) => {
 
 };
 
+// A single-string command runs through sh -c, where an unquoted & inside a word (a query such as
+// near:like=a&dist=40) backgrounds the first half and drops the rest without a word (T44). Returns
+// the word holding such an &, or null; 2>&1, &&, `cmd &` and `a & b` pass.
+function splitAmpersand( line ) {
+
+	let quote = null;
+	for ( let i = 0; i < line.length; i ++ ) {
+
+		const c = line[ i ];
+		if ( quote ) {
+
+			if ( c === quote ) quote = null;
+			else if ( c === '\\' && quote === '"' ) i ++;
+			continue;
+
+		}
+		if ( c === '\\' ) { i ++; continue; }
+		if ( c === "'" || c === '"' ) { quote = c; continue; }
+		if ( c !== '&' || i === 0 || /[\s&><|]/.test( line[ i - 1 ] ) || ! /\w/.test( line[ i + 1 ] ?? '' ) ) continue;
+		let a = i, b = i;
+		while ( a > 0 && ! /\s/.test( line[ a - 1 ] ) ) a --;
+		while ( b < line.length && ! /\s/.test( line[ b ] ) ) b ++;
+		return line.slice( a, b );
+
+	}
+	return null;
+
+}
+
 async function main( argv ) {
 
 	const [ command, ...rest ] = argv;
@@ -760,6 +790,13 @@ async function main( argv ) {
 	if ( command === 'run' || command === 'start' ) {
 
 		if ( ! cmd.length || files.length ) throw new UsageError( `${ command } takes its command after --` );
+		const split = cmd.length === 1 ? splitAmpersand( cmd[ 0 ] ) : null;
+		if ( split ) {
+
+			console.error( `job: the shell would split \`${ split }\` at its unquoted &: quote that word ('${ split }')` );
+			return 2;
+
+		}
 		if ( ! options.wait && ( options.lines !== undefined || options.role !== undefined || options.max !== undefined ) ) throw new UsageError( '--lines, --role and --max go with start --wait' );
 		const budget = options.wait ? budgetOf( options ).budget : 0;
 		const lines = options.wait ? count( options.lines, 20, '--lines' ) : 0;
