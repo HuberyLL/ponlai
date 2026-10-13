@@ -4,8 +4,9 @@
 // load of `?<query>` draws it (its contract is written where it is defined, after the frame loop;
 // `sceneJump`, the contract's version, tells a capture tool that this page has it: builds without
 // it have only the options form, so the tools load a page per view there),
-// `loop.stop()` / `loop.start()` hold and resume the frame loop and `loop.step` steps the tick with
-// fixed timestamps.
+// `loop.stop()` / `loop.start()` hold and resume the frame loop (`dynamicClock` holds the dynamic
+// scale's clock with it, for the profiler's A/B) and `loop.step` steps the tick with fixed
+// timestamps.
 import * as THREE from 'three/webgpu';
 import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
@@ -1784,4 +1785,34 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { ren
 		resolve: pipeline.temporal, settings: pipeline.temporal.settings, knobs: pipeline.temporal.knobs, rest: pipeline.temporal.rest, epoch: restEpoch,
 		get converged() { return pipeline.temporal!.converged; },
 		restart: () => sceneEvent( 'restart' ),
-	} : null };
+	} : null,
+	// the profiler's A/B (profile-frame --compare): while it keeps this page stopped for the other
+	// page's slices, the dynamic scale's clock stands still (DynamicResolution.ts `clock`), so its
+	// holds and bars do not run out while the page draws nothing
+	dynamicClock: dynamicResolution ? dynamicClock( dynamicResolution ) : null };
+// The debug hook above: `suspend()` holds the controller's clock where it is, `resume()` lets it run
+// on from there (the time between is skipped).
+function dynamicClock( d: DynamicResolution ): { suspend(): void; resume(): void; readonly suspended: boolean } {
+
+	let skipped = 0, since = NaN;
+	return {
+		suspend() {
+
+			if ( ! Number.isNaN( since ) ) return;
+			since = performance.now() / 1000;
+			const held = since - skipped;
+			d.clock = () => held;
+
+		},
+		resume() {
+
+			if ( Number.isNaN( since ) ) return;
+			skipped += performance.now() / 1000 - since;
+			since = NaN;
+			d.clock = () => performance.now() / 1000 - skipped;
+
+		},
+		get suspended() { return ! Number.isNaN( since ); },
+	};
+
+}
