@@ -71,6 +71,9 @@ export interface TemporalSettings {
 	// of the history's frames it keeps, and what it adds to the clip box's width
 	classFrames: number[];
 	classGamma: number[];
+	// the view distance (m) over which the sea's share of the history grows from its class's to a whole
+	// one (its waves' phase motion, which the motion vectors leave out, shrinks under a pixel far off)
+	waterFar: number[];
 	// the sea's glints' reactive weight (Water.ts): from 0 at `from` to `max` at `to` times the
 	// luminance of a white diffuse surface under the same light
 	glintReactive: { from: number; to: number; max: number };
@@ -79,6 +82,10 @@ export interface TemporalSettings {
 	sigmaRest: number;
 	// the output's sharpening: taa's, and taau's at an upscale of 1 and of 2 per axis (eased between)
 	sharpness: { taa: number; taau: [ number, number ] };
+	// more sharpening where a surface moves on screen (the history's resampling softens moving detail):
+	// RCAS stops taken off the sharpening at `speed` output pixels a frame and over, per surface class
+	// (as classFrames; all 0: none, and the canvas pass reads no motion; read at load)
+	sharpenMoving: { stops: number[]; speed: number };
 	// the sky (far depth) resolved from the current frame without a history
 	skyPassThrough: boolean;
 	// accumulate in linear light (the display curve undone) rather than display values
@@ -138,9 +145,9 @@ const PCSS_HIGH: SolarShadowTaps = { soft: true, blockerSamples: 6, filterSample
 const BILINEAR: SolarShadowTaps = { soft: false, blockerSamples: 0, filterSamples: 0 };
 const TAA: TemporalSettings = {
 	framesStill: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
-	classFrames: [ 1, 1, 0.4, 0.8, 0 ], classGamma: [ 0, 0.25, 0, - 0.25, 0 ], glintReactive: { from: 2, to: 8, max: 1 },
+	classFrames: [ 1, 1, 0.4, 0.8, 0 ], classGamma: [ 0, 0.25, 0, - 0.25, 0 ], waterFar: [ 1e6, 2e6 ], glintReactive: { from: 2, to: 8, max: 1 },
 	sigma: 0.42, sigmaRest: 0.30,
-	sharpness: { taa: 1.0, taau: [ 1.0, 0.5 ] }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
+	sharpness: { taa: 1.0, taau: [ 1.0, 0.5 ] }, sharpenMoving: { stops: [ 0, 0, 0, 0, 0 ], speed: 4 }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
 	gtJitters: 64,
 };
 
