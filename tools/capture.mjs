@@ -1,5 +1,5 @@
 // Full-resolution captures of the running dev server (or a preview build) for visual review.
-//   node tools/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval "js"] [--verbose] [--exclusive]
+//   node tools/capture.mjs [name] [--w 1600 --h 900] [--q "query"] [--eval js|@file]... [--verbose] [--exclusive]
 //                          [--wait-for "js expression"] [--frames n --every k] [--timeout 60000]
 //                          [--stable-min 1] [--stable-every 2] [--stable-repeats 1] [--stable-tolerance 0:5000|exact]
 //                          [--stable-patience 40] [--stable-cap 120] [--stable-trace] [--ready-frames n] [--wait ms] [--settle ms]
@@ -25,8 +25,15 @@
 // --timeout (ms) bounds each wait for the page (its load, its readiness, a screenshot);
 // raise it when other pages keep the GPU busy. The JSON holds the page's `window.__PONLAI_CROPS__`
 // (tools/parity/views.mjs) as `crops` when it is set, and the profile slot it ran in (`slot`).
-// --eval may be given more than once: each runs in the page in order, awaited (tools/parity's
-// capture-set passes the view's own first, then any given after its `--`).
+// --eval js|@file may be given more than once: each runs in the page in order, awaited, once
+// `__PONLAI__` and the diagnostics exist (before the floor's frames and the readiness wait), with probe's forms and scope (tools/page-eval.mjs:
+// an expression, a function or statements with a `return`, `await` in all three; `P`, `D`,
+// `frames( n )`, `sleep( ms )`, `until( fn, timeoutMs )`, so an eval waits with `await until( ...
+// )` instead of a polling loop of its own). The JSON records each as `evals: [ { eval, value } |
+// { eval, error } ]` (`eval` as given, the value serialised as probe's) and stdout prints them; an
+// eval that throws fails the shot (exit 1, as probe's), which is still taken and written.
+// tools/parity's capture-set runs the view's own eval first (same forms, not recorded: a throw
+// fails the view), then any given after its `--`.
 // The GPU lock is taken once the page has its world (see "The slot after the world" below; the
 // load's goto waits for the DOM, not the load event, which waits for the gate).
 // A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
@@ -91,6 +98,7 @@
 //   to the written shot (ms), and the page's memory then (JS heap, DOM nodes, listeners, renderer.info's geometries and textures).
 import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, waitForScene, waitForStable, stableOptions, stopLoop, startLoop, pngShooter, READY_FRAMES } from './capture-browser.mjs';
+import { evalSource, runInPage } from './page-eval.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 /** The scene jump contract's version this tool drives (`__PONLAI__.sceneJump`, src/main.ts). */
@@ -103,7 +111,8 @@ const opt = ( k, d ) => { const i = args.indexOf( '--' + k ); return i >= 0 ? ar
 const worker = args.includes( '--worker' );
 const name = ! worker && args[ 0 ] && ! args[ 0 ].startsWith( '--' ) ? args[ 0 ] : 'shot';
 const W = Number( opt( 'w', 1600 ) ), H = Number( opt( 'h', 900 ) );
-const argEvals = args.flatMap( ( a, i ) => a === '--eval' && args[ i + 1 ] ? [ args[ i + 1 ] ] : [] );
+// the --eval steps, in order: `eval` as given (js or @file), `js` what runs (see the header)
+const argEvals = args.flatMap( ( a, i ) => a === '--eval' && args[ i + 1 ] ? [ { eval: args[ i + 1 ], js: evalSource( args[ i + 1 ] ) } ] : [] );
 const wait = Number( opt( 'wait', 0 ) ), settle = Number( opt( 'settle', 0 ) );
 const stable = stableOptions( ( k ) => k === 'stable-trace' ? ( args.includes( '--stable-trace' ) ? '' : undefined ) : opt( k ) );
 const baseUrl = opt( 'url', 'http://127.0.0.1:5190/' );
@@ -180,16 +189,18 @@ async function loadToWorld( page, url ) {
 
 }
 
-const failed = ( record ) => record.errors.some( ( e ) => e.startsWith( 'pageerror:' ) || e.startsWith( 'error:' ) ) || record.failures.length > 0;
+const failed = ( record ) => record.evalFailed || record.errors.some( ( e ) => e.startsWith( 'pageerror:' ) || e.startsWith( 'error:' ) ) || record.failures.length > 0;
 
 // the renderer's frame counter (three's animation loop: rendered frames only)
 const renderedFrame = ( page ) => page.evaluate( () => window.__PONLAI__?.renderer.info.frame ?? window.__THREE_GAME_DIAGNOSTICS__?.frame ?? 0 );
 
 /** Brings the page to the view (`load`: the fresh load of `url` loadToWorld started, its GPU gate
- * opened; `jump`: the scene jump to `query`), waits until it is ready and shoots it into `<out>.png`
- * (and further frames), `<out>.json`, with the view's error record (`session.begin()`, called
- * before the load). `pageInfo` (async) adds the JSON's `page`. Returns { out, ready, diag, record }. */
-async function captureView( session, { url, query, evals, out, mode, pageInfo = null } ) {
+ * opened; `jump`: the scene jump to `query`), runs the view's `evals` (js; a throw fails the view)
+ * and the --eval `steps` (recorded in the JSON's `evals`; a throw is recorded and fails the shot,
+ * which is still taken), waits until it is ready and shoots it into `<out>.png` (and further
+ * frames), `<out>.json`, with the view's error record (`session.begin()`, called before the load).
+ * `pageInfo` (async) adds the JSON's `page`. Returns { out, ready, diag, record, evals }. */
+async function captureView( session, { url, query, evals, steps, out, mode, pageInfo = null } ) {
 
 	const { capture, page } = session;
 	const record = session.record();
@@ -213,7 +224,19 @@ async function captureView( session, { url, query, evals, out, mode, pageInfo = 
 		await page.waitForFunction( ( f ) => window.__PONLAI__.renderer.info.frame > f, jumped, { timeout, polling: 'raf' } );
 
 	}
-	for ( const js of evals ) await page.evaluate( js );
+	// the view's evals, then the --eval steps, with probe's forms and scope (tools/page-eval.mjs)
+	for ( const js of evals ) await runInPage( page, js, { timeout } );
+	const evalRecords = [];
+	for ( const step of steps ) {
+
+		try { evalRecords.push( { eval: step.eval, value: await runInPage( page, step.js, { timeout } ) } ); } catch ( error ) {
+
+			evalRecords.push( { eval: step.eval, error: error.message.split( '\n' )[ 0 ] } );
+			record.evalFailed = true;
+
+		}
+
+	}
 	const readyFrames = readyFramesFor( query );
 	// up: the floor's frames after the evals, the loading screen gone (an edit can trigger a Vite reload)
 	await waitForScene( page, { frames: readyFrames ?? stable.min, wait, settle, timeout } );
@@ -273,19 +296,20 @@ async function captureView( session, { url, query, evals, out, mode, pageInfo = 
 	const visit = pageInfo ? await pageInfo() : null;
 	const json = {
 		url, viewport: { width: W, height: H }, browser: capture.version, slot: capture.slot, ready, samples, diag, gpu: session.gpu,
-		errors: record.errors, failures: record.failures,
+		...( evalRecords.length ? { evals: evalRecords } : {} ), errors: record.errors, failures: record.failures,
 		meanFrameMs: samples.reduce( ( s, d ) => s + d.frameMs, 0 ) / samples.length,
 		...( frameCount > 1 ? { frames } : {} ), ...( crops ? { crops } : {} ), ...( visit ? { page: visit } : {} ),
 	};
 	await writeFile( `${ out }.json`, JSON.stringify( json, null, 2 ) );
-	return { out: `${ out }.png`, ready, diag, record };
+	return { out: `${ out }.png`, ready, diag, record, evals: evalRecords };
 
 }
 
 // the lines capture.mjs prints for a view
-function report( { out, ready, diag, record } ) {
+function report( { out, ready, diag, record, evals } ) {
 
 	const lines = [];
+	for ( const e of evals ) lines.push( 'error' in e ? `eval failed: ${ e.eval }: ${ e.error }` : `eval ${ e.eval }: ${ JSON.stringify( e.value )?.slice( 0, 300 ) }` );
 	if ( ready.status === 'capped' ) lines.push( `unstable: still changing after ${ ready.framesWaited } frames (max ${ ready.maxSeen } levels), captured at the cap` );
 	lines.push( `${ out } ${ JSON.stringify( diag ) }` );
 	if ( record.errors.length ) lines.push( record.errors.slice( 0, verbose ? 60 : 12 ).join( '\n' ) );
@@ -332,7 +356,7 @@ if ( ! worker ) {
 		session.begin();
 		await loadToWorld( session.page, url );
 		await acquireGpuLock( `capture ${ name }`, { shared: sharedFor( query ) } );
-		const shot = await captureView( session, { url, query, evals: argEvals, out: `artifacts/captures/${ name }`, mode: 'load' } );
+		const shot = await captureView( session, { url, query, evals: [], steps: argEvals, out: `artifacts/captures/${ name }`, mode: 'load' } );
 		console.log( report( shot ) );
 		if ( failed( shot.record ) ) process.exitCode = 1;
 
@@ -396,7 +420,7 @@ if ( ! worker ) {
 			let result;
 			try {
 
-				const shot = await within( captureView( session, { url, query, evals: [ ...evals, ...argEvals ], out, mode,
+				const shot = await within( captureView( session, { url, query, evals, steps: argEvals, out, mode,
 					pageInfo: async () => ( { visit: index, mode, from: previous, pid: process.pid, ...( mode === 'load' ? { worldMs } : {} ), lockMs, ...( kept ? { lockKept: true } : {} ), ms: Date.now() - started - worldMs - lockMs, memory: await pageMemory( session.page ) } ) } ), viewDeadline, `view ${ key }` );
 				result = { ok: ! failed( shot.record ), log: report( shot ) };
 

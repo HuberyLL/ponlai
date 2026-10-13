@@ -187,10 +187,16 @@ Game:
 
 ## Captures
 
-`node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval "js"]
+`node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval js|@file]...
 [--verbose]` takes a screenshot of the running dev server into `artifacts/captures/`
 (git-ignored) and prints frame diagnostics. It needs Playwright's Chromium once
 (`npx playwright install chromium`), or `CHROME_PATH` set to a WebGPU-capable Chrome.
+
+`--eval` takes the same forms and scope as the probe's (`tools/page-eval.mjs`, shared by both: an
+expression, a function or statements with a `return`, `await`, `@file`; `P`, `D`, `frames( n )`,
+`sleep( ms )`, `until( fn, timeoutMs )`): wait in an eval with `await until( () => D.settled )`,
+not a polling loop. Each eval's value lands in the capture's JSON as `evals: [ { eval, value } |
+{ eval, error } ]`; an eval that throws fails the capture (exit 1), which is still shot.
 
 Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser runs in a
 persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
@@ -285,7 +291,7 @@ holds a shared GPU slot from the load to the end (`--exclusive` for frame times)
 the order given and prints JSON (per query: load or jump, the time until up, each step's value,
 console errors and failed requests). Each `--query` after the first is reached in the same page by
 the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n )`, `sleep( ms )`
-and `until( fn )` (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
+and `until( fn )`, with the same forms and scope as capture's `--eval` (`tools/page-eval.mjs`) (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
 from `P`); `--init js` hooks the page before its scripts run. A production preview needs
 `debug` in the query. Common questions:
 `--load` loads every query after the first in a page of its own instead of jumping to it: the
