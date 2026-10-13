@@ -9,6 +9,7 @@
 //       [--tiers high,medium,low] [--only rest|clips] [--views a,b] [--clips a,b] [--gt | --no-gt] [--gt-aa gt|gt-hi]
 //       [--jobs 2] [--capture-only | --metrics-only] [--thresholds thresholds.json] [--runs runs.csv] [--task name]
 //       [--ref-url R] [--recapture-reference] [--skip-existing] [--size 1728x1117@2] [--q "extra&query"] [--verbose]
+//       [--carry-from A [--carry-url <preview of A>] [--carry-recheck]]
 //
 // The plan (PLAN below): on high the 24 parity and TAA views at rest (the 17 parity views also as
 // whole frames, for the overall fidelity gate) and the gates' clips; on medium and low six views at
@@ -36,6 +37,8 @@
 // captured from the reference's own preview only: `--url` for the baseline's run, `--ref-url` for
 // another label's (a test build's run), whose missing references are otherwise reported and their
 // entries skipped. With --ref-url another label's run also captures the ground truth (as --gt).
+// --capture-only without --url only reuses or waits for the reference entries (missing ones are
+// reported): capture-set.mjs --quick checks its references that way.
 // --skip-existing accepts an entry without a manifest or of another key as it is (references
 // captured before the store) and skips the side under test where its clip.json exists;
 // --recapture-reference captures the reference entries afresh. --clips may also name a clip that
@@ -48,6 +51,15 @@
 // content), so each tier is measured against its own ground truth. Where a tier has none (gt-hi
 // exists for high only) its metrics take high's ground truth of the same view, which cancels in
 // every ratio to MSAA; their GT-relative values mean nothing and no gate reads them.
+//
+// --carry-from A takes the baseline's and the ground truth's entries over from an earlier commit A's
+// store instead of capturing them, when carry.mjs finds nothing between A and this sha that could
+// change them (the conditions, their order and the watch lists are in carry.mjs): a missing or
+// stale reference entry whose A counterpart has the key this run asks for is then cloned from A,
+// its manifest saying `carriedFrom`. An entry that may not carry is captured as without the
+// option, and the log says which condition failed. The checks capture on this sha's preview (the
+// reference URL above); --carry-url captures what A's store lacks for them from a preview of A;
+// --carry-recheck runs the spot checks again instead of reusing an earlier run's verdict.
 //
 // Clips and rest frames are deterministic (the page's stepper), so captures take the GPU lock shared
 // (capture-clip.mjs takes it). Wall times go to --runs (or PARITY_RUNS) and into metrics.json.
@@ -62,6 +74,7 @@ import { VIEWS, viewNames } from './views.mjs';
 import { CLIPS, gtSampling } from './clips.mjs';
 import { sampleGpuUtilisation } from '../gpu-lock.mjs';
 import { ensureReference, clipKey, anchorsHash, checkServed } from './reference.mjs';
+import { planCarry } from './carry.mjs';
 
 const HERE = path.dirname( fileURLToPath( import.meta.url ) );
 const TOOLS = path.resolve( HERE, '..' );
@@ -90,8 +103,8 @@ export const PLAN = {
 
 // ------------------------------------------------------------------ options
 
-const FLAGS = new Set( [ 'gt', 'no-gt', 'metrics-only', 'capture-only', 'skip-existing', 'recapture-reference', 'verbose' ] );
-const KNOWN = [ 'url', 'ref-url', 'sha', 'root', 'label', 'aa', 'tiers', 'only', 'views', 'clips', 'jobs', 'thresholds', 'runs', 'task', 'size', 'q', 'gt-aa', ...FLAGS ];
+const FLAGS = new Set( [ 'gt', 'no-gt', 'metrics-only', 'capture-only', 'skip-existing', 'recapture-reference', 'verbose', 'carry-recheck' ] );
+const KNOWN = [ 'url', 'ref-url', 'sha', 'root', 'label', 'aa', 'tiers', 'only', 'views', 'clips', 'jobs', 'thresholds', 'runs', 'task', 'size', 'q', 'gt-aa', 'carry-from', 'carry-url', ...FLAGS ];
 
 // the ground truth's folder under <root>/<sha>/ for each GT mode
 const GT_LABEL = { gt: 'gt', 'gt-hi': 'gt-hi' };
@@ -228,6 +241,14 @@ async function capture( o, list, root ) {
 			sampling: gtSampling( CLIPS[ e.clip ] ) } );
 
 	}
+	// carry-over from an earlier commit: decided once for the run's reference entries
+	let carry = null;
+	if ( o[ 'carry-from' ] && ! o[ 'recapture-reference' ] ) {
+
+		carry = await planCarry( { from: o[ 'carry-from' ], to: o.sha, storeRoot: path.dirname( root ), targets: [ ...jobs, ...gtJobs ].filter( ( j ) => j.store ).map( ( j ) => ( { side: j.side, e: j.e } ) ),
+			url: refUrl, fromUrl: o[ 'carry-url' ], gtAa: o[ 'gt-aa' ], size: o.size, q: o.q, jobs: o.jobs, recheck: o[ 'carry-recheck' ] } );
+
+	}
 	const done = [];
 	// a job whose anchors another job of this run writes (a lower tier's, high's of the same view)
 	// waits for it; the queue puts high first, so the writer has started by then
@@ -270,11 +291,21 @@ async function capture( o, list, root ) {
 			const { key, files } = await clipKey( { tier: j.e.tier, aa: j.mode, size, q: o.q ?? null, clip: j.e.clip, view: j.e.view, full: j.e.full,
 				every: j.sampling.every, dense: j.sampling.dense, anchors: j.needs ? anchorsHash( j.needs ) : null } );
 			let out = '';
+			const carried = carry?.allows( j.side, j.e );
+			const url = j.capture === false ? null : refUrl;
 			const r = await ensureReference( {
-				dir: j.dir, kind: 'clip', key, files, url: j.capture === false ? null : refUrl, acceptStale: o[ 'skip-existing' ], force: o[ 'recapture-reference' ],
-				label: `baseline ${ o.task ?? '' } ${ j.side } ${ j.e.key }`,
+				dir: j.dir, kind: 'clip', key, files, url: url ?? ( carried?.ok ? `carry:${ carry.from }` : null ), acceptStale: o[ 'skip-existing' ], force: o[ 'recapture-reference' ],
+				label: `baseline ${ o.task ?? '' } ${ j.side } ${ j.e.key }`, ...( carried?.ok ? { via: `by carrying it over from ${ carry.from.slice( 0, 12 ) }` } : {} ),
 				capture: async ( todo, dir ) => {
 
+					if ( carried?.ok ) {
+
+						const c = carry.carryEntry( j.side, j.e, key, dir );
+						if ( c.coverage ) return { coverage: c.coverage, failed: 0, manifest: c.manifest };
+						console.log( `${ j.side } ${ j.e.key }: not carried (${ c.why })${ url ? '; capturing it' : '' }` );
+						if ( ! url ) return { coverage: null, failed: 1, error: `not carried (${ c.why }) and no reference URL to capture it from` };
+
+					} else if ( carried ) console.log( `${ j.side } ${ j.e.key }: not carried (${ carried.why })` );
 					checkRefServed();
 					const c = await run( process.execPath, clipArgs( refUrl, j.side, j.e, j.mode, dir, extra ), { log: path.join( dir, 'capture.log' ), verbose: o.verbose } );
 					out = c.out;
@@ -282,7 +313,7 @@ async function capture( o, list, root ) {
 
 				},
 			} );
-			const ok = [ 'reused', 'waited', 'captured' ].includes( r.status );
+			const ok = [ 'reused', 'waited', 'captured', 'carried' ].includes( r.status );
 			if ( ! ok ) unusable.set( j.dir, r.reason ?? r.status );
 			if ( r.status === 'unavailable' ) console.log( `skip ${ j.side } ${ j.e.key }: the reference must be captured (${ r.reason })${ refUrl ? '' : `: pass --ref-url <a preview of ${ o.sha.slice( 0, 12 ) }>${ j.capture === false ? ' and --gt' : '' }` }` );
 			else report( j, ok ? 0 : 1, t0, out || r.error, ` (reference ${ r.status }${ r.stale ? ', stale: ' + r.stale : '' })` );
@@ -443,7 +474,8 @@ async function logRun( o, started, captures, failed, out, what, contended ) {
 async function main() {
 
 	const o = parse( process.argv.slice( 2 ) );
-	if ( ! o.sha || ( ! o.url && ! o[ 'metrics-only' ] ) ) {
+	// (--capture-only without --url only reuses or waits for the reference entries: capture-set --quick)
+	if ( ! o.sha || ( ! o.url && ! o[ 'metrics-only' ] && ! o[ 'capture-only' ] ) ) {
 
 		console.error( 'usage: baseline.mjs --url U --sha SHA [options] (see the file header)' );
 		process.exit( 2 );

@@ -30,8 +30,15 @@
 //      velocity) overwrites the velocity while its colour adds;
 //    - `renderer.copyTextureToTexture` between single-sampled render-target textures, RGBA16F and
 //      R32F, copies every texel exactly.
-// 3. The app (`?debug`): the cache-key patches installed on its renderer, the warm-up done
-//    (FrameGraph.warmStats), and no pipeline created in the 60 frames after its first 60.
+// 3. The app (`?debug`), in its default mode and under taa: the cache-key patches installed on its
+//    renderer, the warm-up done (FrameGraph.warmStats), and no pipeline created in the 60 frames
+//    after its first 60.
+// 4. The app's own materials (the taa page): a vegetation mesh with its depth copy, under a
+//    shadow-casting sun (whose pass builds their nodes without an MRT), and the storm's spray, each
+//    drawn by a fresh patched renderer into a plain target and into its pass's layout and MRT (the
+//    scene MRT; the spray's after-resolve MRT), in both orders, drawn and warmed (`compileInto`
+//    first). Each draw needs its own pipeline (a warmed one none), a fragment shader with one output
+//    per attachment, and the vegetation's velocity its motion class.
 // Shared GPU lock (no timing), headless (CHROME_PATH or Playwright's Chromium).
 
 import { chromium } from 'playwright';
@@ -46,7 +53,7 @@ const browser = await chromium.launch( {
 	...( process.env.CHROME_PATH ? { executablePath: process.env.CHROME_PATH } : { channel: 'chromium' } ),
 	args: [ '--enable-gpu', '--ignore-gpu-blocklist', '--enable-unsafe-webgpu' ],
 } );
-const report = { mrt: null, temporal: null, app: null };
+const report = { mrt: null, temporal: null, app: null, real: null };
 let failed = false;
 const check = ( ok, what ) => {
 
@@ -72,47 +79,59 @@ try {
 	check( pageErrors.length === 0, `no page errors${ pageErrors.length ? `: ${ pageErrors.slice( 0, 3 ).join( '; ' ) }` : '' }` );
 	await page.close();
 
-	// ---- 3. the app
-	const app = await browser.newPage( { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 } );
-	const appErrors = [];
-	app.on( 'pageerror', ( e ) => appErrors.push( `pageerror: ${ e.message }` ) );
-	app.on( 'console', ( m ) => { if ( m.type() === 'error' ) appErrors.push( m.text() ); } );
-	await app.goto( `${ base }/?debug&quality=high` );
-	await app.waitForFunction( () => window.__PONLAI__?.renderer?.info?.frame > 0 && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 250 } );
-	report.app = await app.evaluate( async () => {
+	// ---- 3. the app, in its default mode and under taa; 4. the real materials (taa page)
+	for ( const aa of [ null, 'taa' ] ) {
 
-		const s = window.__PONLAI__;
-		const frames = ( n ) => new Promise( ( resolve ) => {
+		const app = await browser.newPage( { viewport: { width: 1280, height: 800 }, deviceScaleFactor: 2 } );
+		const appErrors = [];
+		app.on( 'pageerror', ( e ) => appErrors.push( `pageerror: ${ e.message }` ) );
+		app.on( 'console', ( m ) => { if ( m.type() === 'error' ) appErrors.push( m.text() ); } );
+		await app.goto( `${ base }/?debug&quality=high${ aa ? `&aa=${ aa }` : '' }` );
+		await app.waitForFunction( () => window.__PONLAI__?.renderer?.info?.frame > 0 && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 250 } );
+		const result = await app.evaluate( async () => {
 
-			const end = s.renderer.info.frame + n;
-			const tick = () => s.renderer.info.frame >= end ? resolve() : requestAnimationFrame( tick );
-			tick();
+			const s = window.__PONLAI__;
+			const frames = ( n ) => new Promise( ( resolve ) => {
+
+				const end = s.renderer.info.frame + n;
+				const tick = () => s.renderer.info.frame >= end ? resolve() : requestAnimationFrame( tick );
+				tick();
+
+			} );
+			await frames( 60 );
+			const before = s.pipelines.total;
+			const perFrame = [];
+			for ( let i = 0; i < 60; i ++ ) {
+
+				const n = s.pipelines.total;
+				await frames( 1 );
+				perFrame.push( s.pipelines.total - n );
+
+			}
+			const nodes = s.renderer._nodes;
+			return {
+				patched: Object.prototype.hasOwnProperty.call( nodes, 'getForRenderCacheKey' ),
+				warm: s.pipeline.graph.warmStats,
+				created: s.pipelines.total - before,
+				perFrameMax: Math.max( ...perFrame ),
+			};
 
 		} );
-		await frames( 60 );
-		const before = s.pipelines.total;
-		const perFrame = [];
-		for ( let i = 0; i < 60; i ++ ) {
+		const mode = aa ?? 'default mode';
+		check( result.patched, `${ mode }: the app's renderer has the cache-key patches` );
+		check( result.warm !== null && result.warm.passes > 0 && ( result.warm.failed ?? [] ).length === 0, `${ mode }: the warm-up ran, nothing failed (${ JSON.stringify( result.warm ) })` );
+		check( result.created === 0, `${ mode }: no pipeline in the 60 frames after the first 60 (${ result.created })` );
+		if ( aa === 'taa' ) {
 
-			const n = s.pipelines.total;
-			await frames( 1 );
-			perFrame.push( s.pipelines.total - n );
+			report.real = await app.evaluate( probeReal );
+			for ( const c of report.real.cases ) check( c.pass, `${ c.name }: ${ c.detail }` );
 
 		}
-		const nodes = s.renderer._nodes;
-		return {
-			patched: Object.prototype.hasOwnProperty.call( nodes, 'getForRenderCacheKey' ),
-			warm: s.pipeline.graph.warmStats,
-			created: s.pipelines.total - before,
-			perFrameMax: Math.max( ...perFrame ),
-		};
+		check( appErrors.length === 0, `${ mode }: no errors in the app${ appErrors.length ? `: ${ appErrors.slice( 0, 3 ).join( '; ' ) }` : '' }` );
+		report.app = { ...report.app, [ mode ]: { ...result, errors: appErrors } };
+		await app.close();
 
-	} );
-	check( report.app.patched, 'the app\'s renderer has the cache-key patches' );
-	check( report.app.warm !== null && report.app.warm.passes > 0 && ( report.app.warm.failed ?? [] ).length === 0, `the warm-up ran, nothing failed (${ JSON.stringify( report.app.warm ) })` );
-	check( report.app.created === 0, `no pipeline in the 60 frames after the first 60 (${ report.app.created })` );
-	check( appErrors.length === 0, `no errors in the app${ appErrors.length ? `: ${ appErrors.slice( 0, 3 ).join( '; ' ) }` : '' }` );
-	report.appErrors = appErrors;
+	}
 
 } finally {
 
@@ -473,6 +492,235 @@ async function probeTemporal() {
 	await renderer.backend.device.queue.onSubmittedWorkDone();
 	cases.push( { name: 'no WebGPU errors', pass: errors.length === 0, detail: errors.length ? errors.slice( 0, 3 ).join( '; ' ) : 'none' } );
 	renderer.dispose();
+	return { cases };
+
+}
+
+// In the app's page under taa (dev server): the cache keys with the app's own materials, a
+// vegetation mesh (its depth copy and its shaded draw, and a shadow pass over them, which builds
+// their nodes without an MRT) and the storm's spray, each drawn by a fresh patched renderer into a
+// plain target and into the target and MRT its pass draws with (the scene MRT; the spray's
+// after-resolve MRT), in both orders, and again with each draw compiled first by the warm-up's
+// compile (`compileInto`). Every draw of the material must have its own pipeline for its layout (a
+// second draw into the other layout makes a new one; a warmed draw makes none), its fragment
+// shader as many outputs as its target has attachments, and the vegetation's velocity its class.
+async function probeReal() {
+
+	const source = await ( await fetch( '/src/post/graph/FrameGraph.ts' ) ).text();
+	const url = ( name ) => source.match( new RegExp( `from\\s*["'](/[^"']*${ name }[^"']*)["']` ) )?.[ 1 ];
+	const THREE = await import( url( 'three_webgpu' ) );
+	const { installCacheKeyPatches } = await import( '/src/post/graph/ThreePatches.ts' );
+	const { compileInto } = await import( '/src/post/graph/Compile.ts' );
+	const { sceneMRT, MOTION_CLASS } = await import( '/src/post/Motion.ts' );
+	const { afterMRT, RAIN_OVERLAY } = await import( '/src/post/AfterResolve.ts' );
+	const s = window.__PONLAI__;
+	const SIZE = 64;
+	const cases = [];
+
+	// the subjects: a vegetation mesh with its depth copy that casts into the sun's map (the bushes:
+	// grass blades stay out of it), and the spray
+	let vegetation = null;
+	s.scene.traverse( ( o ) => { if ( ! vegetation && o.isInstancedMesh && o.castShadow && o.material?.userData?.vegetation === true && o.children.length > 0 && o.count > 0 ) vegetation = o; } );
+	const spray = s.stormSea?.spray?.mesh ?? null;
+
+	async function setup() {
+
+		const renderer = new THREE.WebGPURenderer();
+		await renderer.init();
+		if ( ! installCacheKeyPatches( renderer ) ) throw new Error( 'installCacheKeyPatches failed' );
+		renderer.shadowMap.enabled = true;
+		renderer.setClearColor( new THREE.Color( 0, 0, 0 ), 0 );
+		const device = renderer.backend.device;
+		const env = { renderer, modules: [], pipelines: [], errors: [] };
+		const createShaderModule = device.createShaderModule.bind( device );
+		device.createShaderModule = ( d ) => {
+
+			env.modules.push( { label: d.label, code: d.code } );
+			return createShaderModule( d );
+
+		};
+		for ( const method of [ 'createRenderPipeline', 'createRenderPipelineAsync' ] ) {
+
+			const original = device[ method ].bind( device );
+			device[ method ] = ( d ) => {
+
+				env.pipelines.push( d.label ?? '' );
+				return original( d );
+
+			};
+
+		}
+		device.addEventListener( 'uncapturederror', ( e ) => env.errors.push( e.error.message.split( '\n' )[ 0 ] ) );
+		renderer.onError = ( e ) => env.errors.push( String( e?.message ?? e ).split( '\n' )[ 0 ] );
+		return env;
+
+	}
+	const target = ( names ) => {
+
+		const rt = new THREE.RenderTarget( SIZE, SIZE, { count: names.length, type: THREE.HalfFloatType, depthBuffer: true } );
+		names.forEach( ( name, i ) => { rt.textures[ i ].name = name; } );
+		return rt;
+
+	};
+	// the fragment stage's outputs: its entry point's return type, a location or a struct of them
+	// (its inputs, the varyings, have locations too)
+	const outputs = ( code ) => {
+
+		const ret = code?.match( /fn main\b[^{]*?->\s*(@location|[A-Za-z_]\w*)/ )?.[ 1 ];
+		if ( ! ret ) return 0;
+		if ( ret.startsWith( '@location' ) ) return 1;
+		const struct = code.match( new RegExp( `struct ${ ret }\\s*\\{([^}]*)\\}` ) );
+		return struct ? ( struct[ 1 ].match( /@location/g ) ?? [] ).length : 0;
+
+	};
+	async function pixels( renderer, rt, index ) {
+
+		const data = await renderer.readRenderTargetPixelsAsync( rt, 0, 0, SIZE, SIZE, index );
+		return Array.from( data, ( h ) => THREE.DataUtils.fromHalfFloat( h ) );
+
+	}
+
+	// a scene drawing a copy of `mesh` (its children too: the vegetation's depth copy) under a
+	// shadow-casting sun, over a ground that receives its shadow, and a camera on its first instance
+	function stage( mesh ) {
+
+		const scene = new THREE.Scene();
+		const copy = mesh.clone();
+		// (the spray hides in calm weather)
+		copy.traverse( ( o ) => {
+
+			o.frustumCulled = false;
+			o.visible = true;
+
+		} );
+		const m = new THREE.Matrix4(), p = new THREE.Vector3(), q = new THREE.Quaternion(), k = new THREE.Vector3();
+		if ( mesh.isInstancedMesh ) mesh.getMatrixAt( 0, m );
+		m.premultiply( mesh.matrixWorld ).decompose( p, q, k );
+		const r = Math.max( k.x, k.y, k.z, 0.5 );
+		scene.add( copy );
+		const ground = new THREE.Mesh( new THREE.PlaneGeometry( 16 * r, 16 * r ).rotateX( - Math.PI / 2 ), new THREE.MeshStandardNodeMaterial() );
+		ground.position.copy( p ).add( new THREE.Vector3( 0, - 0.05 * r, 0 ) );
+		ground.receiveShadow = true;
+		scene.add( ground );
+		const sun = new THREE.DirectionalLight( 0xffffff, 3 );
+		sun.position.copy( p ).add( new THREE.Vector3( 1, 3, 2 ).multiplyScalar( r * 4 ) );
+		sun.target.position.copy( p );
+		sun.castShadow = true;
+		sun.shadow.mapSize.set( 256, 256 );
+		Object.assign( sun.shadow.camera, { left: - 4 * r, right: 4 * r, top: 4 * r, bottom: - 4 * r, near: 0.1, far: 40 * r } );
+		// (the shadow pass sees the subject on either layer: see `shadow` below)
+		sun.shadow.camera.layers.enableAll();
+		scene.add( sun, sun.target );
+		const camera = new THREE.PerspectiveCamera( 40, 1, 0.05, 100 * r );
+		camera.position.copy( p ).add( new THREE.Vector3( 0, 0.6 * r, 3.5 * r ) );
+		camera.lookAt( p );
+		camera.updateMatrixWorld();
+		return { scene, camera, copy, sun };
+
+	}
+
+	// One subject's draws in `order`; `warm`: each draw compiled first. The steps: `plain` (the
+	// subject into a target of one attachment, no MRT), `pass` (into its pass's layout, under its
+	// MRT), `shadow` (only the sun's shadow pass draws the subject: it is on a layer the camera does
+	// not see, the ground shows the map), and `pass` without the sun's shadow (`noShadow`).
+	async function run( subject, order, warm ) {
+
+		const env = await setup();
+		const { scene, camera, copy, sun } = stage( subject.mesh );
+		const plainRt = target( [ 'output' ] ), passRt = target( subject.layout );
+		const results = [];
+		for ( const step of order ) {
+
+			const pass = step.startsWith( 'pass' );
+			const rt = pass ? passRt : plainRt, mrt = pass ? subject.mrt : null;
+			copy.traverse( ( o ) => o.layers.set( step === 'shadow' ? 1 : 0 ) );
+			// the vegetation's depth copies draw only in its pass (under the temporal modes their only
+			// colour output is the velocity: drawn without it, their shader would have none)
+			for ( const child of copy.children ) child.visible = pass;
+			sun.castShadow = step !== 'pass-noShadow';
+			const m0 = env.modules.length;
+			if ( warm ) await compileInto( env.renderer, scene, camera, rt, null, mrt );
+			const p0 = env.pipelines.length;
+			env.renderer.setRenderTarget( rt );
+			env.renderer.setMRT( mrt );
+			env.renderer.render( scene, camera );
+			env.renderer.setRenderTarget( null );
+			env.renderer.setMRT( null );
+			await env.renderer.backend.device.queue.onSubmittedWorkDone();
+			const result = { step, pipelinesAtDraw: env.pipelines.slice( p0 ).filter( ( label ) => label.includes( subject.name ) ).length, shadowPipelines: env.pipelines.slice( p0 ).filter( ( label ) => label.includes( 'ShadowMaterial' ) ).length };
+			if ( step !== 'shadow' ) {
+
+				// the subject's fragment shaders built for this draw (none new: three serves a program
+				// of the same code, its last one)
+				const label = `fragment_${ subject.name }`;
+				let built = env.modules.slice( m0 ).filter( ( m ) => m.label === label );
+				if ( built.length === 0 ) built = env.modules.filter( ( m ) => m.label === label ).slice( - 1 );
+				result.outputs = built.map( ( m ) => outputs( m.code ) );
+				result.want = pass ? subject.layout.length : 1;
+
+			}
+			if ( subject.velocityClass !== undefined && pass ) {
+
+				const v = await pixels( env.renderer, rt, 1 );
+				let hits = 0;
+				for ( let i = 0; i < v.length; i += 4 ) if ( Math.abs( v[ i + 2 ] - subject.velocityClass ) < 0.01 ) hits ++;
+				result.velocityPixels = hits;
+
+			}
+			results.push( result );
+
+		}
+		await env.renderer.backend.device.queue.onSubmittedWorkDone();
+		const drawn = results.filter( ( r ) => r.want !== undefined );
+		const ok = env.errors.length === 0
+			&& drawn.every( ( r ) => r.outputs.length > 0 && r.outputs.every( ( n ) => n === r.want ) && ( r.velocityPixels ?? 1 ) > 0 )
+			// warmed: no draw builds a pipeline of the subject's; drawn: its first draw into each
+			// layout builds one
+			&& ( warm ? drawn.every( ( r ) => r.pipelinesAtDraw === 0 ) : drawn.filter( ( r, i ) => drawn.findIndex( ( x ) => x.want === r.want ) === i ).every( ( r ) => r.pipelinesAtDraw > 0 ) )
+			// the shadow pass drew the subject
+			&& results.filter( ( r ) => r.step === 'shadow' ).every( ( r ) => r.shadowPipelines > 0 || results.some( ( x ) => x !== r && x.shadowPipelines > 0 ) );
+		const detail = results.map( ( r ) => `${ r.step }: ${ r.pipelinesAtDraw } pipeline(s) at the draw${ r.outputs ? `, fragment outputs ${ JSON.stringify( r.outputs ) } (want ${ r.want })` : '' }${ r.shadowPipelines ? `, ${ r.shadowPipelines } shadow-pass pipeline(s)` : '' }${ r.velocityPixels !== undefined ? `, ${ r.velocityPixels } px of class ${ subject.velocityClass }` : '' }` ).join( '; then ' )
+			+ ( env.errors.length ? `; errors: ${ env.errors.slice( 0, 2 ).join( '; ' ) }` : '' );
+		plainRt.dispose();
+		passRt.dispose();
+		env.renderer.dispose();
+		return { ok, detail };
+
+	}
+
+	// The vegetation: its nodes first built by the sun's shadow pass (no MRT), then drawn in its
+	// pass; or drawn in its pass first (no shadow), then the shadow pass, then the pass again. Under
+	// the temporal modes it draws only in its pass (its velocity is its own MRT output). The spray:
+	// plain and in its pass, both ways round.
+	const subjects = [];
+	if ( vegetation ) subjects.push( { name: 'probeVegetation', what: `vegetation (${ vegetation.name })`, mesh: vegetation, layout: [ 'sceneColor', 'velocity' ], mrt: sceneMRT, velocityClass: MOTION_CLASS.vegetation,
+		orders: { 'shadow-first': [ 'shadow', 'pass' ], 'pass-first': [ 'pass-noShadow', 'shadow', 'pass' ] } } );
+	else cases.push( { name: 'vegetation', pass: false, detail: 'no vegetation mesh with a depth copy in the scene' } );
+	if ( spray ) subjects.push( { name: 'probeSpray', what: 'spray (after-resolve MRT)', mesh: spray, layout: [ RAIN_OVERLAY ], mrt: afterMRT,
+		orders: { 'plain-first': [ 'plain', 'pass' ], 'pass-first': [ 'pass', 'plain' ] } } );
+	else cases.push( { name: 'spray', pass: false, detail: 'no spray mesh' } );
+	for ( const subject of subjects ) {
+
+		// named for the probe's shader modules and pipelines (the name is not part of a build's key)
+		const material = subject.mesh.material;
+		const name = material.name;
+		material.name = subject.name;
+		try {
+
+			for ( const warm of [ false, true ] ) for ( const [ order, steps ] of Object.entries( subject.orders ) ) {
+
+				const r = await run( subject, steps, warm );
+				cases.push( { name: `${ subject.what }, ${ warm ? 'warmed' : 'drawn' }, ${ order }`, pass: r.ok, detail: r.detail } );
+
+			}
+
+		} finally {
+
+			material.name = name;
+
+		}
+
+	}
 	return { cases };
 
 }

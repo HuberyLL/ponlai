@@ -10,9 +10,9 @@
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s]
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
-//        [--scale-settle s] [--drs-store] [--display [--motion user | orbit | none]]
+//        [--scale-settle s] [--drs-store] [--preload-wait 60] [--display [--motion user | orbit | none]]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
-//        [--slices 8] [--slice 1.5] [--settle 1]                 (two pages, alternating slices)
+//        [--slices 8] [--slice 1.5] [--settle 1] [--display]       (two pages, alternating slices)
 //   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
 //   node tools/profile-frame.mjs --report <dir>/profile.json     (re-renders its summary.md)
 //   node tools/profile-frame.mjs --list
@@ -23,6 +23,18 @@
 // Playwright's Chromium, with a profile of its own kept between runs (`--profile-dir`), so the
 // world cache below survives. Writes <out>/profile.json and <out>/summary.md (default
 // artifacts/perf/<label>).
+//
+// The exclusive lock covers what is measured, not the setup: the browser starts before it, and a
+// build this profile has not loaded yet is first loaded once under a shared GPU slot (`preload`;
+// skipped when no slot frees within `--preload-wait` seconds), so the loads under the lock find the
+// world cache and the shader cache warm, as every run but a build's first always did (a miss
+// generates the island: seconds alone, a minute under a busy CPU). Under the lock everything runs
+// as before: the idle check (which also stands for the first load's), each load, each scene's
+// switch, warm-up, scale settle and measured window. The pages' loops stop before the lock is
+// released; the GPU name, the files and the browser's close follow. profile.json's `wallSeconds`
+// is the time under the exclusive lock (`lockWaitSeconds`, `totalSeconds`, `preload` beside it).
+// Measured: per-pass GPU times, frame rates and
+// acceptance verdicts within the run-to-run noise of the earlier tool, 4-12 s less held per run.
 //
 // Modes (most of a page load is generating the island, about 10 s; scenes are switched instead):
 // - page (the default): one page load per variant; each scene is set up at runtime through
@@ -36,7 +48,9 @@
 //   in alternating slices (`--slices` 8 in the order B A A B A B B A, `--slice` 1.5 s each) under
 //   the same conditions. One page runs at a time: the other is stopped (no animation frame, no GPU
 //   work; its queued frames and any sky bake drained before the other starts; its camera and
-//   clock wait), since Chrome let one page's frames starve the other's queue. Deltas are reported with a 95 % interval from the slices' spread.
+//   clock wait), since Chrome let one page's frames starve the other's queue. Deltas are reported with a 95 % interval from the slices' spread,
+//   beside each page's render scale per scene (high's dynamic scale can settle higher on one side,
+//   which the load-time render in the header does not show). Page errors name their page (A or B).
 // - toggle (`--toggle "js"`): A/B inside one page. The expression runs with `s` = window.__PONLAI__
 //   and `on` (false for A, true for B), and is applied every `--block` frames in an A B B A B A A B
 //   pattern after both states were warmed: for example --toggle "s.water.mesh.visible = !on", or
@@ -90,6 +104,11 @@
 //   screen, and a page drawing in one of them (an app's hidden browser pane kept rendering a second
 //   Ponlai page) shares the GPU and lowers high's scale. Full screen covers them, and they drew less:
 //   the app with that pane took a tenth of the GPU beside a window, a hundredth behind full screen.
+//   With `--compare` (page mode) the two pages run in the same interleaved slices as headless, so
+//   the drift between separate headed runs (1-2 ms) cancels: the running page is brought to the
+//   front (a background tab gets no animation frames), each slice has its own trace and restarts
+//   the drags through its settle and slice, and the summary adds the share of late frames
+//   (presented intervals longer than the frame pacer's pace) as a delta over the slices.
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
 // numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
@@ -111,6 +130,7 @@ import { chromium } from 'playwright';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { withGpuLock, waitForIdleGpu, sampleGpuUtilisation } from './gpu-lock.mjs';
 import { requireDisplayAllowed } from './display-gate.mjs';
@@ -120,7 +140,7 @@ import { requireDisplayAllowed } from './display-gate.mjs';
 const argv = process.argv.slice( 2 );
 const flags = new Set( argv.filter( ( a ) => a.startsWith( '--' ) ) );
 const VALUE_FLAGS = new Set( [ 'report', 'scenes', 'scene', 'w', 'h', 'scale', 'quality', 'warmup', 'seconds', 'orbit', 'eval', 'eval-a', 'eval-b', 'repeat', 'out', 'label', 'q', 'compare', 'idle-wait', 'idle-threshold', 'timestamps', 'hooks',
-	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion' ] );
+	'mode', 'toggle', 'world-cache', 'slices', 'slice', 'settle', 'block', 'blocks', 'lag', 'profile-dir', 'target', 'scales', 'scale-settle', 'motion', 'preload-wait' ] );
 const opt = ( name, fallback ) => {
 
 	const i = argv.indexOf( '--' + name );
@@ -185,6 +205,8 @@ const WORLD_CACHE = opt( 'world-cache', 'on' ) !== 'off';
 // moved for s seconds (at most 60 s), so the scene is measured at its settle point
 const SCALE_SETTLE = Number( opt( 'scale-settle', 0 ) );
 const PROFILE_DIR = opt( 'profile-dir', path.join( os.tmpdir(), 'ponlai-profile-frame-chrome' ) );
+// the longest wait for a shared GPU slot to preload in (see preload), seconds
+const PRELOAD_WAIT = Number( opt( 'preload-wait', 60 ) );
 const REPEAT = Math.max( 1, Number( opt( 'repeat', 1 ) ) );
 const EXTRA_Q = opt( 'q', '' );
 // GPU timestamps: on (the default: frame intervals and the GPU time per pass), off (frame intervals
@@ -233,7 +255,7 @@ const stamp = new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 );
 const LABEL = opt( 'label', COMPARE ? `compare-${ stamp }` : TOGGLE ? `toggle-${ stamp }` : `profile-${ stamp }` );
 if ( COMPARE && TOGGLE ) throw new Error( '--toggle A/Bs inside one page: give one url, not --compare' );
 if ( TOGGLE && MODE === 'reload' ) throw new Error( '--toggle needs --mode page' );
-if ( DISPLAY && ( COMPARE || TOGGLE || ACCEPT || SCALES.length || MODE === 'reload' ) ) throw new Error( '--display is for profile runs in page mode (no --compare, --toggle, --accept, --scales or --mode reload)' );
+if ( DISPLAY && ( TOGGLE || ACCEPT || SCALES.length || MODE === 'reload' ) ) throw new Error( '--display is for profile runs and --compare in page mode (no --toggle, --accept, --scales or --mode reload)' );
 // a headed window takes over the user's screen: only while they allow it (tools/display-gate.mjs)
 if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
@@ -482,6 +504,17 @@ function delta( a, b ) {
 // ------------------------------------------------------------------ the page
 
 const sleep = ( ms ) => new Promise( ( resolve ) => setTimeout( resolve, ms ) );
+
+// The run's own idle check (main), taken with the browser already open on a blank page just before
+// the first load: it stands for that load's check instead of sampling the same idle GPU again.
+let startIdle = null;
+function loadIdle( log ) {
+
+	const idle = startIdle;
+	startIdle = null;
+	return idle ?? waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+
+}
 
 // the render scale of the run under way (--scales), added to every page's url as `dpr`
 let renderScale = null;
@@ -1098,6 +1131,45 @@ function displayStats( events, sync, samples, pacing, t0, t1 ) {
 
 }
 
+// One page's display figures over its slices of a scene (--display --compare): the shares weighted
+// by each slice's intervals, the longest interval of any
+function poolDisplay( list ) {
+
+	const pool = ( key ) => {
+
+		const parts = list.map( ( d ) => d[ key ] ).filter( Boolean );
+		if ( ! parts.length ) return null;
+		const n = parts.reduce( ( a, c ) => a + Math.max( c.frames - 1, 0 ), 0 ) || 1;
+		const share = ( f ) => r3( parts.reduce( ( a, c ) => a + f( c ) * Math.max( c.frames - 1, 0 ), 0 ) / n );
+		return {
+			frames: parts.reduce( ( a, c ) => a + c.frames, 0 ), refreshes: Object.fromEntries( Object.keys( parts[ 0 ].refreshes ).map( ( k ) => [ k, share( ( c ) => c.refreshes[ k ] ?? 0 ) ] ) ),
+			cadenceChanges: share( ( c ) => c.cadenceChanges ?? 0 ), median: r2( quantile( parts.map( ( c ) => c.median ), 0.5 ) ), max: r2( Math.max( ...parts.map( ( c ) => c.max ) ) ),
+		};
+
+	};
+	const cams = list.map( ( d ) => d.camera ).filter( ( c ) => c.frames > 0 );
+	const camN = cams.reduce( ( a, c ) => a + c.frames, 0 ) || 1;
+	const cam = ( k ) => r3( cams.reduce( ( a, c ) => a + ( c[ k ] ?? 0 ) * c.frames, 0 ) / camN );
+	return {
+		refresh: r2( quantile( list.map( ( d ) => d.refresh ), 0.5 ) ), pacing: list[ list.length - 1 ].pacing, slices: list.length,
+		rendered: pool( 'rendered' ), presented: pool( 'presented' ),
+		camera: { frames: cams.reduce( ( a, c ) => a + c.frames, 0 ), median: cam( 'median' ), p90: cam( 'p90' ), over25: cam( 'over25' ) },
+	};
+
+}
+
+// The share of a display slice's intervals longer than the pace (the compositor's presented
+// frames, else the rendered ones): the late frames. The pace is the frame pacer's divisor of the
+// refresh (2 for 60 fps on a 120 Hz display), one refresh without a pacer.
+const lateShare = ( d ) => {
+
+	const c = d?.presented ?? d?.rendered;
+	if ( ! c ) return NaN;
+	const pace = d.pacing?.divisor ?? 1;
+	return Object.entries( c.refreshes ).reduce( ( a, [ k, v ] ) => a + ( ( k === '4+' ? 4 : Number( k ) ) > pace ? v : 0 ), 0 );
+
+};
+
 const pct = ( x ) => Number.isFinite( x ) ? `${ Math.round( x * 1000 ) / 10 } %` : '–';
 const refreshText = ( c ) => c ? Object.entries( c.refreshes ).map( ( [ k, v ] ) => `${ k }: ${ pct( v ) }` ).join( ', ' ) : '–';
 const displayLog = ( scene, d ) => `${ scene.padEnd( 20 ) } display ${ d.refresh } ms refresh${ d.pacing ? `, paced to ${ d.pacing.divisor } (target ${ d.pacing.target })` : '' }: rendered ${ refreshText( d.rendered ) } (cadence changes ${ pct( d.rendered.cadenceChanges ) }); ` +
@@ -1130,10 +1202,15 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 	const loads = [];
 	for ( const group of groups ) {
 
-		// between page loads the GPU should be idle: anything rendering now is outside this run
-		await page.goto( 'about:blank' );
-		await page.waitForTimeout( 1000 );
-		const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+		// between page loads the GPU should be idle: anything rendering now is outside this run (the
+		// first load's page is blank already)
+		if ( ! startIdle ) {
+
+			await page.goto( 'about:blank' );
+			await page.waitForTimeout( 1000 );
+
+		}
+		const gpuIdle = await loadIdle( log );
 		const loaded = await load( page, base, SCENES[ group.scenes[ 0 ] ].q, timestamps );
 		loads.push( { scenes: group.scenes, loadMs: loaded.loadMs, url: loaded.url, gpuIdle, startup: loaded.startup } );
 		const entry = loads[ loads.length - 1 ];
@@ -1159,7 +1236,7 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix = '', timestamps = TIMESTAMP_MODE !== 'off' ) {
 
 	await page.goto( 'about:blank' );
-	const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+	const gpuIdle = await loadIdle( log );
 	const loaded = await load( page, base, SCENES[ names[ 0 ] ].q, timestamps );
 	log( `loaded ${ loaded.url } in ${ ( loaded.loadMs / 1000 ).toFixed( 1 ) } s (world cache ${ JSON.stringify( loaded.startup.diagnostics.worldCache ) })` );
 	const frames = new Frames( page );
@@ -1209,18 +1286,23 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 
 }
 
+// The page (A or B) each browser page of an A/B shows, to name it on its errors
+const pageNames = new WeakMap();
+
 // compare in page mode: A and B in two pages of one browser, measured in alternating slices with
 // the other page stopped. Returns each variant's slices per scene and its frames pooled.
 async function runPair( context, bases, evals, log, names = sceneNames, timestamps = TIMESTAMP_MODE !== 'off' ) {
 
 	const pages = [ context.pages()[ 0 ] ?? await context.newPage() ];
 	pages.push( await context.newPage() );
+	pages.forEach( ( p, v ) => pageNames.set( p, 'AB'[ v ] ) );
 	for ( const p of pages ) await p.goto( 'about:blank' );
-	const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+	const gpuIdle = await loadIdle( log );
 	// one after the other (a page running starves the other's queue), each stopped once loaded
 	const loaded = [];
 	for ( const v of [ 0, 1 ] ) {
 
+		if ( DISPLAY ) await pages[ v ].bringToFront();
 		loaded[ v ] = await load( pages[ v ], bases[ v ], SCENES[ names[ 0 ] ].q, timestamps );
 		log( `${ 'AB'[ v ] } loaded ${ loaded[ v ].url } in ${ ( loaded[ v ].loadMs / 1000 ).toFixed( 1 ) } s (world cache ${ JSON.stringify( loaded[ v ].startup.diagnostics.worldCache ) }; runtime hooks ${ JSON.stringify( loaded[ v ].hooks ) })` );
 		if ( v === 0 ) await pages[ 0 ].evaluate( () => window.__profileTools.loop.stop() );
@@ -1245,6 +1327,9 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 
 		if ( active === v ) return;
 		if ( active !== null ) stopped[ active ].push( { from: await loop( active, 'stop' ) } );
+		// headed, a background tab gets no animation frames: the running page is the one in front
+		// (the page hides and shows itself without restarting a loop stopped here)
+		if ( DISPLAY ) await pages[ v ].bringToFront();
 		const started = await loop( v, 'start' );
 		const last = stopped[ v ][ stopped[ v ].length - 1 ];
 		if ( last && last.to === undefined ) last.to = started;
@@ -1272,17 +1357,19 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		for ( let i = 0; i < SLICES; i ++ ) {
 
 			const v = 1 - ORDER[ i % ORDER.length ];
-			if ( active !== v ) {
-
-				await run( v );
-				// the measured slice starts once this page has run alone a little (its queue fills)
-				await sleep( SETTLE * 1000 );
-
-			}
+			const switched = active !== v;
+			if ( switched ) await run( v );
+			// on the display: the compositor's trace for the slice, and the camera dragged through
+			// the settle and the slice (each slice starts the same drags, so both pages see them)
+			const display = DISPLAY ? await startDisplay( pages[ v ] ) : null;
+			const motion = MOTION === 'user' ? driveUser( pages[ v ], ( switched ? SETTLE : 0 ) + SLICE ) : null;
+			// the measured slice starts once this page has run alone a little (its queue fills)
+			if ( switched ) await sleep( SETTLE * 1000 );
 			const t0 = await frames[ v ].now();
 			await sleep( SLICE * 1000 );
 			const t1 = await frames[ v ].now();
-			windows[ v ].push( { scene, slice: i, t0, t1 } );
+			await motion;
+			windows[ v ].push( { scene, slice: i, t0, t1, display: display ? await display.stop( t0, t1 ) : undefined } );
 
 		}
 		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ SLICES } slices` );
@@ -1304,7 +1391,8 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			const mine = windows[ v ].filter( ( w ) => w.scene === scene );
 			const pooled = mine.flatMap( ( w ) => frames[ v ].in( w.t0, w.t1 ) );
 			scenes[ scene ] = { ...summarise( pooled ), switch: switches[ scene ][ v ], gpuIdle: gpuIdle.idle?.mean ?? null, contended: gpuIdle.contended,
-				slices: mine.map( ( w ) => sliceStats( frames[ v ].in( w.t0, w.t1 ) ) ) };
+				slices: mine.map( ( w ) => ( { ...sliceStats( frames[ v ].in( w.t0, w.t1 ) ), ...( w.display ? { display: w.display } : {} ) } ) ) };
+			if ( DISPLAY ) scenes[ scene ].display = poolDisplay( mine.map( ( w ) => w.display ) );
 			if ( RAW ) scenes[ scene ].raw = pooled;
 
 		}
@@ -1322,7 +1410,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames, timestamps = TIMESTAMP_MODE !== 'off' ) {
 
 	await page.goto( 'about:blank' );
-	const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, seconds: 2, wait: idleWaitLoad, log } );
+	const gpuIdle = await loadIdle( log );
 	const loaded = await load( page, base, SCENES[ names[ 0 ] ].q, timestamps );
 	log( `loaded ${ loaded.url } in ${ ( loaded.loadMs / 1000 ).toFixed( 1 ) } s (world cache ${ JSON.stringify( loaded.startup.diagnostics.worldCache ) })` );
 	const frames = new Frames( page );
@@ -1575,8 +1663,8 @@ function startupLine( s ) {
 
 // ------------------------------------------------------------------ main
 
-// Chrome with a profile kept between runs (the world cache lives in its IndexedDB); a profile
-// still in use by another run falls back to a temporary one
+// Chrome with a profile kept between runs (the world cache lives in its IndexedDB, the shader cache
+// beside it); a profile still in use by another run falls back to a temporary one
 async function launch() {
 
 	const options = {
@@ -1599,34 +1687,122 @@ async function launch() {
 
 }
 
+// The preload: the run's first page loaded once under a shared GPU slot, before the exclusive lock,
+// so that the loads under the lock find the profile's world cache and shader cache warm. A load that
+// misses the world cache generates the island inside the exclusive hold (seconds alone, a minute
+// under a busy CPU) and compiles every shader cold; a load that hits is what every run but a build's
+// first already measured, so the preload changes no measured window, only which loads hit. The
+// preloaded page is left (a blank page) before the slot is released. It is skipped when the profile
+// already preloaded this build in this browser (`profile-frame-preloaded.json` in the profile, per
+// origin, as the world cache keeps one world per origin: a hash of the served index.html, whose
+// asset names carry the bundle's content hashes, and the Chrome version its user agent gives, the
+// world cache's key; the world's options do not depend on the url), always on a dev server (its
+// index does not change with its sources), and never with `--world-cache off` (the island is then
+// generated as on a first visit by design). The url is the first load's with `drsStore=off`, so
+// the preload neither restores nor stores a dynamic scale.
+async function preload( page, dir, label, chrome ) {
+
+	if ( ! WORLD_CACHE ) return null;
+	const markerFile = path.join( dir, 'profile-frame-preloaded.json' );
+	let marker = {};
+	try { marker = JSON.parse( await readFile( markerFile, 'utf8' ) ); } catch { /* none yet */ }
+	renderScale = SCALES[ 0 ] ?? null;
+	const timestamps = TIMESTAMP_MODE !== 'off' && ! ( TIMESTAMP_MODE === 'both' && ! COMPARE && ! TOGGLE );
+	const entries = [];
+	for ( const base of COMPARE ?? [ URL_A ] ) {
+
+		const url = new URL( pageUrl( base, SCENES[ sceneNames[ 0 ] ].q, timestamps ) );
+		url.search = [ ...url.search.slice( 1 ).split( '&' ).filter( ( o ) => ! o.startsWith( 'drsStore=' ) ), 'drsStore=off' ].join( '&' );
+		let build = null;
+		try {
+
+			const html = await ( await fetch( base ) ).text();
+			if ( ! html.includes( '/@vite/client' ) ) build = createHash( 'sha1' ).update( html ).digest( 'hex' ).slice( 0, 16 );
+
+		} catch { /* unknown: preload */ }
+		const last = marker[ url.origin ];
+		entries.push( { url: url.href, build, cached: build !== null && last?.build === build && last?.chrome === chrome } );
+
+	}
+	renderScale = null;
+	const todo = entries.filter( ( e ) => ! e.cached );
+	if ( todo.length === 0 ) return { skipped: 'this build was preloaded before', entries };
+	// a slot waits behind every exclusive request queued: after PRELOAD_WAIT the build loads under the
+	// exclusive lock as before, rather than queueing twice
+	const requested = Date.now();
+	let lockWaitMs = 0;
+	const load = async () => {
+
+		lockWaitMs = Date.now() - requested;
+		for ( const e of todo ) {
+
+			const started = Date.now();
+			await page.goto( e.url );
+			await page.waitForFunction( () => window.__PONLAI__ && window.__THREE_GAME_DIAGNOSTICS__?.frame > 30 &&
+				document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 'raf' } );
+			e.worldCache = await page.evaluate( () => window.__THREE_GAME_DIAGNOSTICS__.worldCache ?? 'unsupported' );
+			e.ms = Date.now() - started;
+			console.error( `[profile] preloaded ${ e.url } in ${ ( e.ms / 1000 ).toFixed( 1 ) } s (world cache ${ JSON.stringify( e.worldCache ) })` );
+
+		}
+		await page.goto( 'about:blank' );
+
+	};
+	try {
+
+		await withGpuLock( `${ label } preload`, load, { shared: true, timeout: PRELOAD_WAIT } );
+
+	} catch ( error ) {
+
+		if ( lockWaitMs > 0 || ! /still held/.test( error.message ) ) throw error;
+		console.error( `[profile] no GPU slot for the preload within ${ PRELOAD_WAIT } s: the first load runs under the exclusive lock` );
+		return { skipped: `no GPU slot within ${ PRELOAD_WAIT } s`, entries };
+
+	}
+	for ( const e of todo ) marker[ new URL( e.url ).origin ] = { build: e.build, chrome, url: e.url };
+	await writeFile( markerFile, JSON.stringify( marker, null, 1 ) );
+	return { lockWaitMs, entries };
+
+}
+
 async function main() {
 
 	await mkdir( OUT, { recursive: true } );
 	const label = `profile-frame ${ LABEL }`;
-	const requested = Date.now();
-	let started = requested;
-	await withGpuLock( label, async () => {
+	const begun = Date.now();
+	// Setup outside the exclusive lock: the browser (its blank page draws nothing) and, when the
+	// profile's caches may not hold this build yet, the preload under a shared GPU slot (see preload)
+	const { context, dir, temporary } = await launch();
+	const errors = [];
+	const watch = ( p ) => {
 
-		// wall time from here on: the lock's wait is someone else's run
-		started = Date.now();
-		if ( started - requested > 1000 ) console.error( `[profile] GPU lock acquired after ${ ( ( started - requested ) / 1000 ).toFixed( 0 ) } s` );
-		const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, wait: IDLE_WAIT } );
-		if ( gpuIdle.contended ) idleWaitLoad = 0;
-		console.error( `[profile] GPU idle ${ gpuIdle.idle?.mean ?? '?' } % (max ${ gpuIdle.idle?.max ?? '?' } %)${ gpuIdle.contended ? ', CONTENDED' : '' }; Chrome: ${ executablePath ?? 'Playwright Chromium' }; mode ${ TOGGLE ? 'toggle' : MODE }${ VSYNC ? ', vsync' : ', uncapped' }${ ACCEPT ? `, accept at ${ TARGET } ms` : '' }` );
-		const { context, dir, temporary } = await launch();
-		const errors = [];
-		const watch = ( p ) => {
+		// named by the page (A or B) in an A/B
+		const name = () => pageNames.has( p ) ? ` (page ${ pageNames.get( p ) })` : '';
+		p.on( 'pageerror', ( e ) => errors.push( `pageerror${ name() }: ${ e.message }` ) );
+		p.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( `${ name() ? `console${ name() }: ` : '' }${ m.text() }` ); } );
 
-			p.on( 'pageerror', ( e ) => errors.push( 'pageerror: ' + e.message ) );
-			p.on( 'console', ( m ) => { if ( m.type() === 'error' ) errors.push( m.text() ); } );
+	};
+	context.pages().forEach( watch );
+	context.on( 'page', watch );
+	let started = 0, held = 0, waitedMs = 0, result = null, preloaded = null;
+	try {
 
-		};
-		context.pages().forEach( watch );
-		context.on( 'page', watch );
-		try {
+		const page = context.pages()[ 0 ] ?? await context.newPage();
+		const version = ( await page.evaluate( () => navigator.userAgent ) ).match( /Chrome\/([\d.]+)/ )?.[ 1 ] ?? '?';
+		preloaded = await preload( page, dir, label, version );
+		// (the preload's page errors are not the run's)
+		if ( errors.length ) console.error( `[profile] the preload logged: ${ errors.splice( 0 ).slice( 0, 5 ).join( ' | ' ) }` );
+		const requested = Date.now();
+		await withGpuLock( label, async () => {
 
-			const page = context.pages()[ 0 ] ?? await context.newPage();
-			const version = ( await page.evaluate( () => navigator.userAgent ) ).match( /Chrome\/([\d.]+)/ )?.[ 1 ] ?? '?';
+			// the run's time from here on: the lock's wait is someone else's run
+			started = Date.now();
+			waitedMs = started - requested;
+			if ( waitedMs > 1000 ) console.error( `[profile] GPU lock acquired after ${ ( waitedMs / 1000 ).toFixed( 0 ) } s` );
+			const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, wait: IDLE_WAIT } );
+			if ( gpuIdle.contended ) idleWaitLoad = 0;
+			startIdle = gpuIdle;
+			console.error( `[profile] GPU idle ${ gpuIdle.idle?.mean ?? '?' } % (max ${ gpuIdle.idle?.max ?? '?' } %)${ gpuIdle.contended ? ', CONTENDED' : '' }; Chrome: ${ executablePath ?? 'Playwright Chromium' }; mode ${ TOGGLE ? 'toggle' : MODE }${ VSYNC ? ', vsync' : ', uncapped' }${ ACCEPT ? `, accept at ${ TARGET } ms` : '' }` );
 			// a run that stops making progress fails rather than holding the lock
 			let progress = Date.now();
 			const watchdog = setInterval( () => {
@@ -1641,7 +1817,7 @@ async function main() {
 			const meta = {
 				label: LABEL, url: URL_A, viewport: { width: W, height: H, scale: SCALE }, quality: QUALITY, warmup: WARMUP, seconds: SECONDS, orbit: ORBIT,
 				chrome: version, args: CHROME_ARGS, gpuIdle, started: new Date().toISOString(), fresh: FRESH, eval: opt( 'eval', '' ), extraQuery: EXTRA_Q,
-				mode: TOGGLE ? 'toggle' : MODE, worldCache: WORLD_CACHE, vsync: VSYNC, timestampMode: TIMESTAMP_MODE, hooks: HOOKS, display: DISPLAY, motion: MOTION,
+				mode: TOGGLE ? 'toggle' : MODE, worldCache: WORLD_CACHE, vsync: VSYNC, timestampMode: TIMESTAMP_MODE, hooks: HOOKS, display: DISPLAY, motion: MOTION, preload: preloaded,
 			};
 			const evals = [ opt( 'eval-a', opt( 'eval', '' ) ), opt( 'eval-b', opt( 'eval', '' ) ) ];
 			const tsModes = TIMESTAMP_MODE === 'both' ? [ true, false ] : [ TIMESTAMP_MODE !== 'off' ];
@@ -1656,19 +1832,19 @@ async function main() {
 					const [ A, B ] = TOGGLE ? await runToggle( page, URL_A, opt( 'eval', '' ), TOGGLE, log, sceneNames, timestamps ) : await runPair( context, COMPARE, evals, log, sceneNames, timestamps );
 					runs ??= { A: [ A ], B: [ B ] };
 					reports.push( { timestamps, report: sliceReport( A, B ), strayFrames: [ A.strayFrames, B.strayFrames ] } );
+					if ( ! TOGGLE ) for ( const [ scene, r ] of Object.entries( reports[ reports.length - 1 ].report ) ) log( `${ scene.padEnd( 20 ) } scale A ${ scaleText( r.scale[ 0 ] ) }, B ${ scaleText( r.scale[ 1 ] ) }${ r.late ? `; late frames ${ pct( r.late.a ) } -> ${ pct( r.late.b ) }` : '' }` );
 					if ( A.strayFrames || B.strayFrames ) log( `WARNING: a stopped page drew ${ A.strayFrames } / ${ B.strayFrames } frames` );
 
 				}
 				meta.compare = TOGGLE ? { A: `${ URL_A } with on = false`, B: `${ URL_A } with on = true`, toggle: TOGGLE, block: BLOCK, blocks: BLOCKS, lag: LAG } :
 					{ A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ], slices: SLICES, slice: SLICE, settle: SETTLE };
 				meta.timestamps = TIMESTAMP_MODE === 'both' ? 'both' : tsModes[ 0 ];
-				const s = runs.A[ 0 ].loads[ 0 ]?.startup;
-				meta.render = s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
-				meta.gpu = await gpuInfo( page );
-				meta.finished = new Date().toISOString();
-				meta.wallSeconds = r2( ( Date.now() - started ) / 1000 );
-				await writeFile( path.join( OUT, 'profile.json' ), JSON.stringify( { meta, runs, reports, errors }, null, 1 ) );
-				await writeFile( path.join( OUT, 'summary.md' ), sliceMarkdown( meta, reports ) );
+				const renderAt = ( s ) => s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
+				meta.render = renderAt( runs.A[ 0 ].loads[ 0 ]?.startup );
+				// each page's render at its load (a dynamic scale moves it afterwards: see each scene's scale)
+				meta.renderB = renderAt( runs.B[ 0 ].loads[ 0 ]?.startup );
+				if ( DISPLAY ) meta.viewport = await page.evaluate( () => ( { width: innerWidth, height: innerHeight, scale: devicePixelRatio } ) );
+				result = { meta, json: () => ( { meta, runs, reports, errors } ), markdown: () => sliceMarkdown( meta, reports ) };
 
 			} else if ( ! COMPARE ) {
 
@@ -1730,11 +1906,7 @@ async function main() {
 				const s = runs[ 0 ].loads.find( ( l ) => l.startup?.timestamps )?.startup ?? runs[ 0 ].loads[ 0 ]?.startup;
 				meta.timestamps = TIMESTAMP_MODE === 'both' ? 'both' : s?.timestamps;
 				meta.render = s?.diagnostics ? `${ s.diagnostics.render.join( 'x' ) } -> ${ s.diagnostics.canvas.join( 'x' ) }${ s.diagnostics.upscaled ? ' (FSR)' : '' }` : null;
-				meta.gpu = await gpuInfo( page );
-				meta.finished = new Date().toISOString();
-				meta.wallSeconds = r2( ( Date.now() - started ) / 1000 );
-				await writeFile( path.join( OUT, 'profile.json' ), JSON.stringify( { meta, runs, errors }, null, 1 ) );
-				await writeFile( path.join( OUT, 'summary.md' ), markdownProfile( meta, runs ) );
+				result = { meta, json: () => ( { meta, runs, errors } ), markdown: () => markdownProfile( meta, runs ) };
 
 			} else {
 
@@ -1746,6 +1918,7 @@ async function main() {
 					for ( const v of [ 0, 1, 1, 0 ] ) {
 
 						log( `variant ${ 'AB'[ v ] }: ${ COMPARE[ v ] }${ evals[ v ] ? ` eval ${ evals[ v ] }` : '' }` );
+						pageNames.set( page, 'AB'[ v ] );
 						const run = await runVariant( page, COMPARE[ v ], evals[ v ], log, [ group ], `-${ 'AB'[ v ] }` );
 						// one entry per repetition, holding every scene
 						const list = runs[ 'AB'[ v ] ];
@@ -1756,24 +1929,37 @@ async function main() {
 
 				}
 				meta.compare = { A: COMPARE[ 0 ], B: COMPARE[ 1 ], evalA: evals[ 0 ], evalB: evals[ 1 ] };
-				meta.finished = new Date().toISOString();
-				meta.wallSeconds = r2( ( Date.now() - started ) / 1000 );
 				const report = compareReport( runs );
-				await writeFile( path.join( OUT, 'profile.json' ), JSON.stringify( { meta, runs, report, errors }, null, 1 ) );
-				await writeFile( path.join( OUT, 'summary.md' ), compareMarkdown( meta, report ) );
+				result = { meta, json: () => ( { meta, runs, report, errors } ), markdown: () => compareMarkdown( meta, report ) };
 
 			}
-			if ( errors.length ) console.error( errors.slice( 0, 10 ).join( '\n' ) );
+			// the measurements are done: once every page's loop stood still (no frame, its queue
+			// drained), nothing of this run renders and the lock goes to the next run
+			for ( const p of context.pages() ) await p.evaluate( () => window.__profileTools?.loop.stop() ).catch( () => {} );
+			held = Date.now() - started;
+			clearInterval( watchdog );
 
-		} finally {
+		} );
+		const { meta } = result;
+		meta.gpu = await gpuInfo( page );
+		meta.finished = new Date().toISOString();
+		// wallSeconds: the run under the exclusive lock (as before: from taking it to the results);
+		// the setup before it (launch, preload and its shared slot) and the wait for the lock apart
+		meta.wallSeconds = r2( held / 1000 );
+		meta.lockWaitSeconds = r2( waitedMs / 1000 );
+		meta.totalSeconds = r2( ( Date.now() - begun ) / 1000 );
+		await writeFile( path.join( OUT, 'profile.json' ), JSON.stringify( result.json(), null, 1 ) );
+		await writeFile( path.join( OUT, 'summary.md' ), result.markdown() );
+		if ( errors.length ) console.error( errors.slice( 0, 10 ).join( '\n' ) );
 
-			await context.close();
-			if ( temporary ) await rm( dir, { recursive: true, force: true } );
+	} finally {
 
-		}
+		await context.close();
+		if ( temporary ) await rm( dir, { recursive: true, force: true } );
 
-	} );
-	console.error( `[profile] done in ${ ( ( Date.now() - started ) / 1000 ).toFixed( 0 ) } s under the lock` );
+	}
+	const waits = waitedMs + ( preloaded?.lockWaitMs ?? 0 );
+	console.error( `[profile] done: ${ ( held / 1000 ).toFixed( 0 ) } s under the exclusive lock, ${ ( ( Date.now() - begun - waits ) / 1000 ).toFixed( 0 ) } s in all without the waits for the GPU lock` );
 	console.log( path.join( OUT, 'summary.md' ) );
 
 }
@@ -1791,6 +1977,11 @@ function sliceReport( A, B ) {
 			slices: [ a.length, b.length ], frames: [ A.scenes[ scene ].frames, B.scenes[ scene ].frames ],
 			gpu: metric( ( s ) => s.gpu ), gpuInterval: metric( ( s ) => s.gpuInterval ),
 			median: metric( ( s ) => s.interval ), p95: metric( ( s ) => s.p95 ), js: metric( ( s ) => s.js ),
+			// on the display: the share of late frames (intervals longer than the pace) per slice
+			...( a.some( ( s ) => s.display ) ? { late: metric( ( s ) => lateShare( s.display ) ) } : {} ),
+			// each page's render scale over its slices (a dynamic scale settles where its GPU time puts it)
+			scale: [ A.scenes[ scene ].renderScale ?? null, B.scenes[ scene ].renderScale ?? null ],
+			over25: [ A.scenes[ scene ].over25Count, B.scenes[ scene ].over25Count ],
 			// pooled over every slice, for the scene's level
 			pooled: { a: { median: A.scenes[ scene ].interval.median, p95: A.scenes[ scene ].interval.p95, gpu: A.scenes[ scene ].gpu.mean }, b: { median: B.scenes[ scene ].interval.median, p95: B.scenes[ scene ].interval.p95, gpu: B.scenes[ scene ].gpu.mean } },
 			groups: Object.fromEntries( [ ...groups ].map( ( g ) => [ g, metric( ( s ) => s.groups[ g ] ?? 0 ) ] ).sort( ( x, y ) => Math.abs( y[ 1 ].delta ) - Math.abs( x[ 1 ].delta ) ) ),
@@ -1809,23 +2000,28 @@ function sliceMarkdown( meta, reports ) {
 		`two pages in one browser, ${ c.slices } slices of ${ c.slice } s per scene (B A A B A B B A), each after the other page stopped and drained and this one ran ${ c.settle } s`;
 	const lines = [ `# Frame profile ${ meta.mode === 'toggle' ? 'toggle' : 'compare' }: ${ meta.label }`, '',
 		`A: ${ c.A }${ c.evalA ? ` (eval ${ c.evalA })` : '' }`, `B: ${ c.B }${ c.evalB ? ` (eval ${ c.evalB })` : '' }`, '',
-		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; render ${ meta.render ?? '?' }; ${ how }. ` +
+		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; render at load ${ meta.renderB && meta.renderB !== meta.render ? `A ${ meta.render ?? '?' }, B ${ meta.renderB }` : meta.render ?? '?' }; ${ how }` +
+		`${ meta.display ? `, headed on the real display at its own refresh, ${ meta.motion === 'user' ? 'the camera dragged like a player\'s in each slice' : meta.motion === 'none' ? 'the camera still' : `orbit ${ meta.orbit } deg/s` }` : '' }. ` +
 		`Scenes are switched at runtime and warmed ${ meta.warmup } s and until no pipeline compiled for a second. Each cell: A -> B (B - A ± its 95 % interval over the slices); * marks a delta beyond it. ` +
 		`B/A follows each delta as a ratio (x0.9: B takes 10 % less). Decide on GPU busy and the passes (GPU time per frame); take frame rates from the run without timestamps. ${ meta.wallSeconds ? `Wall time ${ Math.round( meta.wallSeconds ) } s.` : '' }`, '' ];
 	const cell = ( m ) => m.delta === null ? '–' : `${ fmt( m.a ) } -> ${ fmt( m.b ) } (${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) } ± ${ fmt( m.ci ) }; ${ ratioText( m.ratio ) })${ m.significant ? ' *' : '' }`;
 	for ( const { timestamps, report, strayFrames } of reports ) {
 
 		lines.push( `## ${ timestamps ? 'With GPU timestamps (GPU time per pass)' : 'Without timestamps (the frame rate a player sees)' }`, '' );
-		if ( timestamps ) lines.push( '| scene | GPU busy | GPU frame interval | frame interval median | p95 | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|' );
-		else lines.push( '| scene | frame interval median | p95 | JS tick |', '|---|---|---|---|' );
+		const late = Object.values( report ).some( ( r ) => r.late );
+		// each page's render scale over the scene's slices: median (range, changes)
+		const scales = ( r ) => r.scale ? `${ scaleText( r.scale[ 0 ] ) } / ${ scaleText( r.scale[ 1 ] ) }` : '–';
+		if ( timestamps ) lines.push( '| scene | scale A / B | GPU busy | GPU frame interval | frame interval median | p95 | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|---|' );
+		else lines.push( `| scene | scale A / B | frame interval median | p95 | JS tick |${ late ? ' late frames (share over the pace) | frames over 25 ms A / B |' : '' }`, `|---|---|---|---|---|${ late ? '---|---|' : '' }` );
 		for ( const [ scene, r ] of Object.entries( report ) ) {
 
 			const passes = Object.entries( r.groups ).slice( 0, 3 ).map( ( [ g, m ] ) => `${ g } ${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }${ m.significant ? '*' : '' }` ).join( ', ' );
-			if ( timestamps ) lines.push( `| ${ scene } | ${ cell( r.gpu ) } | ${ cell( r.gpuInterval ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } | ${ passes } |` );
-			else lines.push( `| ${ scene } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } |` );
+			if ( timestamps ) lines.push( `| ${ scene } | ${ scales( r ) } | ${ cell( r.gpu ) } | ${ cell( r.gpuInterval ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } | ${ passes } |` );
+			else lines.push( `| ${ scene } | ${ scales( r ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } |${ late ? ` ${ r.late ? cell( r.late ) : '–' } | ${ r.over25?.join( ' / ' ) ?? '–' } |` : '' }` );
 
 		}
 		lines.push( '' );
+		if ( late ) lines.push( 'Late frames: the share of the intervals between the frames the compositor presented (else those the scene rendered) longer than the pace (the frame pacer\'s refreshes per frame, one without it), per slice.', '' );
 		const compiles = Object.entries( report ).map( ( [ scene, r ] ) => {
 
 			const w = ( x ) => x ? `${ x.pipelines ?? x.warmB?.pipelines ?? 0 } pipelines${ x.pipelineMs ? ` (${ fmt( x.pipelineMs ) } ms JS)` : '' }` : '?';
@@ -1880,6 +2076,8 @@ function compareReport( runs ) {
 			median: metric( ( r ) => r.interval.median ), p95: metric( ( r ) => r.interval.p95 ), p99: metric( ( r ) => r.interval.p99 ),
 			gpu: metric( ( r ) => r.gpu.median ), js: metric( ( r ) => r.js.median ),
 			groups: Object.fromEntries( [ ...groups ].map( ( g ) => [ g, metric( ( r ) => r.groups[ g ]?.mean ?? 0 ) ] ).sort( ( x, y ) => Math.abs( y[ 1 ].delta ) - Math.abs( x[ 1 ].delta ) ) ),
+			// each load's render scale (a dynamic scale settles where its GPU time puts it)
+			scale: [ runs.A.map( ( r ) => r.scenes[ scene ].renderScale ?? null ), runs.B.map( ( r ) => r.scenes[ scene ].renderScale ?? null ) ],
 		};
 
 	}
@@ -1891,12 +2089,13 @@ function compareMarkdown( meta, report ) {
 
 	const lines = [ `# Frame profile compare: ${ meta.label }`, '', `A: ${ meta.compare.A }${ meta.compare.evalA ? ` (eval ${ meta.compare.evalA })` : '' }`, `B: ${ meta.compare.B }${ meta.compare.evalB ? ` (eval ${ meta.compare.evalB })` : '' }`, '',
 		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; A B B A per load; noise = the larger run-to-run spread of A or B; * marks a delta beyond it; B/A follows as a ratio.`, '',
-		'| scene | median A -> B (delta, noise) | p95 | p99 | GPU busy | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|' ];
+		'| scene | scale A / B (each load) | median A -> B (delta, noise) | p95 | p99 | GPU busy | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|---|' ];
 	const cell = ( m ) => `${ fmt( m.a ) } -> ${ fmt( m.b ) } (${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }, ±${ fmt( m.noise ) }; ${ ratioText( m.ratio ) })${ m.significant ? ' *' : '' }`;
 	for ( const [ scene, r ] of Object.entries( report ) ) {
 
 		const passes = Object.entries( r.groups ).slice( 0, 3 ).map( ( [ g, m ] ) => `${ g } ${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }${ m.significant ? '*' : '' }` ).join( ', ' );
-		lines.push( `| ${ scene } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.p99 ) } | ${ cell( r.gpu ) } | ${ cell( r.js ) } | ${ passes } |` );
+		const scales = r.scale ? r.scale.map( ( list ) => list.map( scaleText ).join( ', ' ) ).join( ' / ' ) : '–';
+		lines.push( `| ${ scene } | ${ scales } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.p99 ) } | ${ cell( r.gpu ) } | ${ cell( r.js ) } | ${ passes } |` );
 
 	}
 	return lines.join( '\n' ) + '\n';

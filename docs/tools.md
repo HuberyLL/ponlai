@@ -16,6 +16,11 @@ everyday commands; this file has the details. Each tool's own file says the rest
   `src/debug/PipelineCounter.ts`) and `graph` (the frame graph's dev counters: the attachment
   ops it rewrote and expected in the last frame, the frames they differed, targets found at a
   size other than their class's).
+  `__PONLAI__.establishScene( query )` jumps to a whole scene in place, as a fresh load of
+  `?<query>` would draw it (weather, day clock, moon, scene clock, camera; the leftovers of the
+  scenes before cleared; load-time options must match the page's): one page can capture a whole
+  set (contract in `src/main.ts`, check in `tools/verify-scene-jump.mjs`; `__PONLAI__.sceneJump`
+  = 1 marks the exact jump for the capture tools).
 - `__THREE_GAME_DIAGNOSTICS__.settled` (updated every frame, every anti-aliasing mode): true once
   the paused page will draw the same frame from now on, so a capture can wait for it instead of a
   fixed time or frame count (`src/post/Settled.ts`). It reuses the temporal rest's key (camera,
@@ -197,7 +202,10 @@ Replayed over per-frame traces of the 24 parity views, these defaults shot no lo
 one on its settled frame. The capture's JSON records it as `ready` (`--stable-*` options in `tools/capture.mjs`, the rule and its
 evidence in `tools/capture-browser.mjs`). `--ready-frames n` waits for a fixed count instead, as a
 running capture does (60); `--wait` / `--settle` ms add fixed delays. The frame loop is stopped
-and the GPU queue drained before the shot. A paused capture takes about 5-7 s alone.
+and the GPU queue drained before the shot. The shot is the compositor's image through CDP with
+Chrome's fast PNG encoder (0.26 s instead of 1.3 s at 3456x2234): the pixels of Playwright's
+screenshot, not its bytes, so the tools compare captures by decoded pixels. A paused capture takes
+about 5-7 s alone.
 
 Check visual changes with captures, compared against the previous capture (and crops, not only
 the whole frame); report measured differences. `tools/compare-captures.py` measures two overview
@@ -218,11 +226,18 @@ most of a grown step's shot generating its world (captures now keep the cache in
 slot, see above, so later runs of the same land load it).
 
 `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
-(`capture-set.mjs`) and diffs it against a reference set, byte for byte or within the reference's
-own repeatability (`diff-set.py --aa-floor`; see its README). Temporal AA sets (taa, taau) are
-not byte-repeatable and are judged by a tolerance instead (`diff-set.py --temporal`: shares of
-pixels over a level on the frame, in local windows and on the crops, a bound on coherent sub-level
+(`capture-set.mjs`) and diffs it against a reference set, pixel for pixel or within the reference's
+own repeatability (`diff-set.py --aa-floor`; see its README). Temporal AA sets (taa, taau) do
+not repeat pixel for pixel and are judged by a tolerance instead (`diff-set.py --temporal`: shares
+of pixels over a level on the frame, in local windows and on the crops, a bound on coherent sub-level
 shifts, and one recapture before a failure counts; thresholds in `tools/parity/tolerance.py`).
+capture-set opens one page per set (one per `--jobs` worker) and reaches every view after the
+first by the exact scene jump (`__PONLAI__.establishScene( <the view's query> )`, then the view's eval
+and the usual readiness): only load-time options (quality, aa, size and dpr, debug switches) need a
+new page, and a set shares them. Builds without the jump's marker (`__PONLAI__.sceneJump`, older
+commits) get a page per view, as `--page-per-view` forces; a failed view or a lost page is retried
+and the rest of the set goes on in a fresh page. `--repeat` takes the repeats on other pages, in
+reverse order.
 `tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
 crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA and a ground truth (`--aa gt-hi`: MSAA at
@@ -240,6 +255,19 @@ otherwise capture it and say why (missing, tools or browser
 changed, a capture left unfinished). `capture-set.mjs <testUrl> <testDir> --check
 <root>/<sha>/<set> [--ref-url U]` captures only the test side and diffs it against the stored
 reference. Layout, manifest and rules: the README's Reference store.
+For tuning, `capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--variant
+"[label::]js"]... --store <root>/<sha> [--ref-url U]` loads one page per view, shoots the base and
+then each variant (js run in the page, ready again, shot: crops only, `--full` for whole frames)
+and measures the crops against the store's MSAA and ground-truth rest entries of that commit
+(clip-metrics.py), a short table per variant. It is not a gate; details in the README's Quick mode.
+
+`baseline.mjs ... --carry-from A` takes the baseline's and the ground truth's entries over from an
+earlier commit A instead of capturing them, when `tools/parity/carry.mjs` finds nothing between the
+two that could change them (same build inputs; otherwise the diff against two watch lists, the
+paused set S1 matching A's (and A's stored rest frames matching A's own S1), the first 16 frames of two clips and one rest ground truth captured
+again and compared); an entry that may not carry is captured and the log says why.
+`node tools/parity/carry.mjs check --from A --to B [--url U] [--all]` prints the verdict alone.
+Rules and proof: the README's Carry-over.
 
 ## GPU lock
 
@@ -248,12 +276,15 @@ machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
 do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 3) and the
 rest queue first in, first out: captures are GPU-bound, so past 2-3 pages at once only each page's
-latency grows. A slot is held per browser (capture.mjs and capture-clip.mjs take one each), so
-capture-set `--jobs n` and baseline.mjs interleave with other sets capture by capture; under a
+latency grows. A slot is held per capture (capture.mjs from a view's load or scene jump to its
+shot, so a capture-set page frees it between views; capture-clip.mjs per clip), so capture-set
+`--jobs n` and baseline.mjs interleave with other sets capture by capture; under a
 `run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
-from then on, so a wrapped orchestrator never holds a slot its own captures wait for. An exclusive
-request waits for the slots in use, blocks new ones, and the queue resumes after it. A killed
-holder's slot frees itself at the next look. Background work (tool proofs, reference rounds) runs
+from then on, so a wrapped orchestrator never holds a slot its own captures wait for. Exclusive and
+shared requests wait in one queue, in arrival order: an exclusive request lets the requests queued
+before it go first, then waits for the slots in use, blocks new ones and runs alone, and everything
+queued after it (another session's next timing run too) waits for it. A killed holder's slot frees
+itself at the next look, and a killed request leaves the queue. Background work (tool proofs, reference rounds) runs
 with `PONLAI_GPU_PRIORITY=low` (inherited by every child, so set it on the outer command): a free
 slot goes to the oldest normal request first and to a low one only when no normal request waits, so
 low work fills the slots nobody else wants without fixed shares; holders are never preempted and
@@ -261,7 +292,8 @@ exclusive requests ignore the class. A low request ranks as a normal one from it
 after `PONLAI_GPU_LOW_MAX_WAIT` seconds (default 600, so it never waits for ever; the reason is in
 the module's header).
 `node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
-`status` names the holders (shared: their slots, classes and the queue in turn) and `gpu` shows
+`status` names the holders (shared: their slots and classes), the queue in turn and the exclusive
+requests in turn (`waiting`), and `gpu` shows
 the GPU's utilisation and the processes using it. The profiler also checks that the GPU is idle before it
 measures and marks its results contended otherwise. Keep other pages that render the scene closed.
 
@@ -295,8 +327,18 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   the original method); every page keeps the generated island's chunks in IndexedDB (in the
   tool's own Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
   `worldCache=off`).
+- It holds the GPU lock exclusively only for what it measures. The browser starts before it, and a
+  build the profile has not loaded yet (a new bundle, port or browser version) is first loaded once
+  under a shared slot (the preload; skipped when no slot frees within `--preload-wait`, 60 s), so
+  the loads under the exclusive lock hit the world cache and the shader cache, as every run but a
+  build's first already did. The idle check that opens the run also stands for the first load's,
+  and the pages stop before the lock is released (the GPU name, the files and the browser's close
+  come after it). `wallSeconds` in profile.json is the time under the exclusive lock;
+  `lockWaitSeconds`, `totalSeconds` and `preload` sit beside it.
 - `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
-  other page stopped, and reports deltas with their 95 % interval. `--toggle "js"` A/Bs inside one
+  other page stopped, and reports deltas with their 95 % interval, each page's render scale per
+  scene (high's dynamic scale may settle higher on one side: compare the deltas with that in mind),
+  and errors named by their page (`pageerror (page B): ...`). `--toggle "js"` A/Bs inside one
   page by applying the expression (with `s` = `window.__PONLAI__` and `on` false for A, true for
   B) every few frames, for example `--toggle "s.flags.myChange = on"` with a flag an optimisation
   reads from `src/debug/DebugFlags.ts`. Both give B/A as a ratio beside the delta.
@@ -316,6 +358,11 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   presented (from a trace of Chrome's frame pipeline), the share of intervals that change cadence,
   and how much the camera's turning speed changes from frame to frame. A window covers the screen
   while it runs: keep the runs short and other animated windows closed. It needs the display gate.
+  `--display --compare urlA urlB` interleaves A and B in the same slices as the headless compare
+  (the running page brought to the front, the drags restarted in each slice), so the drift between
+  separate headed runs (a millisecond or two) cancels; its summary adds the share of late frames
+  (presented intervals longer than the frame pacer's pace) per slice, as a delta with its interval, and each page's
+  frames over 25 ms.
 - `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
   leave out) and tabulates every scene at every scale. Every report gives the render scale the
   measured frames were drawn at (its median, range and changes: high's moves); `--scale-settle s`
@@ -365,7 +412,9 @@ what these do not give (automation, A/B statistics, pass names).
 
 - `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water and wave
   optics (each file names the server it expects); they take the GPU lock (shared).
-  `tools/verify-scene.mjs` checks a production preview.
+  `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
+  parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`
+  (`tools/parity/README.md`, One page, many views).
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
@@ -429,9 +478,15 @@ what these do not give (automation, A/B statistics, pass names).
   draw, counting the pipelines, shader modules and bind groups the device creates and checking
   the results. Run it again after a three upgrade.
 - `tools/verify-framegraph.mjs` checks the frame graph's compiler and runtime on the CPU (plain
-  `node`); `tools/verify-frame-graph-gpu.mjs` checks three's cache-key patches and the motion
-  vectors' blends on the GPU; `tools/verify-first-use.mjs` counts the pipelines any step still
-  creates after the warm-up.
+  `node`); `tools/verify-frame-graph-gpu.mjs` checks three's cache-key patches (with plain
+  materials, and with the app's vegetation and spray drawn by a fresh renderer under a shadow
+  pass and their pass's MRT, both ways round) and the motion vectors' blends on the GPU;
+  `tools/verify-first-use.mjs` counts the pipelines any step still creates after the warm-up
+  (`--aa msaa,taa,taau,off --quality high,medium,low` runs the whole matrix, a page per run).
+  It loads in a capture profile slot (as the captures' fast mode does), so the island comes from
+  the world cache; the browser's shader cache in the slot does not change the counts (they are the
+  page's requests to WebGPU, cached or not), and `--fresh` runs in a throwaway profile as before.
+  Its steps' waits are part of what it measures and stay fixed.
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and

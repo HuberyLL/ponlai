@@ -96,7 +96,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   places are `Fn( ... ).setLayout( ... )`, so they compile to one shader function each.
 - Paused frames are exactly repeatable: everything animated is a function of the scene clock, the
   weather and integrated state (wind travel, fog time), never of the path taken to get there.
-  Captures and probes depend on it. Temporal AA modes are compared within a tolerance, not byte
+  A scene jump (`establishScene` in `main.ts`) draws the frame a fresh load of the same query
+  draws: state a scene leaves behind (a cache, a history, a size that only grows, a window that
+  follows the camera) is cleared there (`tools/verify-scene-jump.mjs`). Captures and probes depend
+  on it. Temporal AA modes are compared within a tolerance, not byte
   for byte: the GPU splits render passes on its own, which moves a few samples, and the temporal
   rest freezes that (`tools/parity/README.md`).
 - Everything generated for the island is generic, because the island grows one piece at a time
