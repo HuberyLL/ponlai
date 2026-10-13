@@ -79,7 +79,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   chunk and the pieces in its window), merged by `ChunkMerge.ts` and drawn by `World.ts` (the
   island a mesh per land chunk; the world fields' textures in `WorldFields.ts`); the island grown in
   place by `Growth.ts` (the next version generated and prepared ahead, then swapped in one frame,
-  every dependent following: the GUI's Island folder, `__PONLAI__.growth`); the footprint, SDF
+  every dependent following: the GUI's Island folder, `__PONLAI__.growth`; the only sign of a
+  coming piece is the shoal, `SeabedRise.ts`: the floor tiles under it rise toward their grown form
+  as the approach grows, while the stones, the contact shade and every other kind change at the
+  swap); the footprint, SDF
   shapes and surface nets (`WorldShapes.ts`), the
   cliffs (`Cliff.ts`), the submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as
   tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`,

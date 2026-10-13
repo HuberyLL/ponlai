@@ -237,8 +237,8 @@ function copyTile( out: Float32Array, nx: number, tile: Float32Array, n: number,
 // The floor tile's lattice values ( `channels` per point) at the centres of a field's cells of
 // `cell` m over the tile's square, interpolated on the triangles the floor's meshes draw (split by
 // the diagonal from ( i + 1, j ) to ( i, j + 1 ), as Bathymetry's `floorAt`), into a field nx
-// wide at cell ( i0, j0 ).
-function fromTile( out: Float32Array, nx: number, tile: Float32Array, channels: number, cell: number, i0: number, j0: number ): void {
+// wide at cell ( i0, j0 ). (SeabedRise.ts fills the shoal's squares with it.)
+export function fromTile( out: Float32Array, nx: number, tile: Float32Array, channels: number, cell: number, i0: number, j0: number ): void {
 
 	const n = SEABED_TILE / cell, side = TILE_SIDE;
 	for ( let q = 0; q < n; q ++ ) for ( let p = 0; p < n; p ++ ) {

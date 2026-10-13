@@ -25,6 +25,9 @@
 //   stones by their centre, anchors by their jittered point, bushes and trail patches by their
 //   anchor, skirt segments by their piece's start, texels (rim ground, shore, walk) by their centre;
 //   the floor tile's lattice points are shared on the borders, computed alike by both tiles.
+//   A chunk the land covers (SeabedTile.ts `underLand`) draws no tile, but carries the floor it
+//   would have (`floorUnder`, without the contact shade): a tile of the version before rises to it
+//   as the piece that covers it nears (SeabedRise.ts).
 // - `dirtyChunks( before, after )`: the chunks whose window meets the land cells that changed,
 //   grown by 2 m (the raster): `windowCells`, the one range of land cells a chunk reads, which the
 //   cache key's growth steps test too (chunkWorker.ts), so a chunk whose key stays is a chunk this
@@ -92,7 +95,7 @@ import {
 import { surfaceNets } from './SurfaceNets.ts';
 import { makeRockSDF, placeStones } from './Stones.ts';
 import { floorAt, SHELF_CEILING } from './Bathymetry.ts';
-import { buildFloorTile, nearLandCells, tileIndices, underLand, FAR_HALF, SEABED_TILE, TILE_SIDE } from './SeabedTile.ts';
+import { buildFloorTile, nearLandCells, tileIndices, underLand, FAR_HALF, SEABED_TILE, TILE_SIDE, type FloorShape } from './SeabedTile.ts';
 import { casterColumns, groundGrid, submergedIndex, SEA_LEVEL, type CasterColumns, type GroundGrid } from './ChunkDerived.ts';
 import { scatterTop } from './Anchors.ts';
 import { buildRimSkirt, coastChains, ownTexels, rimGroundTile, RimLattice, RIM_PAD } from './RimGround.ts';
@@ -322,6 +325,9 @@ export interface ChunkData {
 	stones: { rocks: Rock[]; mesh: MeshData };
 	// the floor's near tile (null: the land covers the chunk and 2 m round it)
 	floor: ChunkFloor | null;
+	// where the land covers it (`floor` null), the floor that tile would have (no contact shade):
+	// the shoal a tile of the version before rises to (SeabedRise.ts), never drawn
+	floorUnder: FloorShape | null;
 	// VEGETATION_STRIDE per owned turf anchor
 	anchors: Float32Array;
 	// BUSH_STRIDE per owned rim bush (FoliageSites.ts)
@@ -493,12 +499,15 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	mark( 'rocks' );
 
 	// --- the sea floor's near tile, shaded by the island and the stones
-	let floor: ChunkFloor | null = null, floorPositions: Float32Array | null = null;
-	if ( ! underLand( land, ci, cj ) ) {
+	let floor: ChunkFloor | null = null, floorUnder: FloorShape | null = null, floorPositions: Float32Array | null = null;
+	// (a covered tile without the contact shade: only its shape and beds are kept)
+	const covered = underLand( land, ci, cj );
+	const tile = buildFloorTile( ci, cj, fp, contactOcclusion && ! covered ? [ islandSolid, ...rockBounds ] : [] );
+	const height = new Float32Array( TILE_SIDE * TILE_SIDE );
+	for ( let v = 0; v < height.length; v ++ ) height[ v ] = tile.positions[ v * 3 + 1 ];
+	if ( covered ) floorUnder = { height, normal: tile.normals, bed: tile.bed };
+	else {
 
-		const tile = buildFloorTile( ci, cj, fp, contactOcclusion ? [ islandSolid, ...rockBounds ] : [] );
-		const height = new Float32Array( TILE_SIDE * TILE_SIDE );
-		for ( let v = 0; v < height.length; v ++ ) height[ v ] = tile.positions[ v * 3 + 1 ];
 		floor = { height, normal: tile.normals, ao: tile.ao, bed: tile.bed };
 		floorPositions = tile.positions;
 
@@ -553,7 +562,7 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 
 	const data: ChunkData = {
 		key: chunkKey( ci, cj ), ci, cj, land: version,
-		island: islandMesh, stones, floor, anchors, bushes, strands, skirt, rimGround, shore, walk,
+		island: islandMesh, stones, floor, floorUnder, anchors, bushes, strands, skirt, rimGround, shore, walk,
 		casters: casterBox( islandMesh, stones.mesh, skirt, strands, bushes ),
 		casterColumns: casterColumns( islandPositions ), refracted, ground: groundGrid( islandPositions ),
 		hash: '', timings,
