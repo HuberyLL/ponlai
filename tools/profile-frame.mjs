@@ -102,7 +102,9 @@
 // - scale settle (`--scale-settle s`): a tier with a dynamic render scale (high) moves it by the
 //   GPU's frame time; after a scene's warm-up the run waits until it has held for s seconds (at
 //   most 60), so the scene is measured at its settle point. Each scene's results give the scale
-//   its frames were drawn at (median, range and changes) beside the frame times.
+//   its frames were drawn at (median, range and changes) beside the frame times. In --compare each
+//   page settles after its own warm-up: without it, high's scale stepped down from its nominal
+//   inside the first slices of the run's first scene, on both pages (A/A runs on the display).
 // - the remembered scale: high starts from the dynamic scale it last held (`drsStore`, off in an
 //   automated browser anyway); --compare and --accept add `drsStore=off` so neither side of an A/B
 //   (two AA modes or two builds) starts from a scale the other settled at, and `--drs-store` adds
@@ -1003,8 +1005,9 @@ async function settleScale( page ) {
 
 			const d = window.__PONLAI__?.dynamicResolution;
 			if ( ! d ) return null;
+			// (on the controller's clock, which stands still while --compare keeps the page stopped)
 			const last = d.changes.length ? d.changes[ d.changes.length - 1 ].at : - Infinity;
-			return { scale: d.scale, quiet: performance.now() / 1000 - last };
+			return { scale: d.scale, quiet: ( d.clock ? d.clock() : performance.now() / 1000 ) - last };
 
 		} );
 		const waited = ( Date.now() - started ) / 1000;
@@ -1562,6 +1565,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			await run( v );
 			const prepared = await prepare( pages[ v ], scene, evals[ v ], true );
 			compile[ v ] = { ms: r2( prepared.switchMs ), ...( await warm( frames[ v ], [ prepared.t ], WARMUP ) )[ 0 ] };
+			if ( SCALE_SETTLE > 0 ) compile[ v ].scaleSettle = await settleScale( pages[ v ] );
 			if ( def.change ) await pages[ v ].evaluate( ( c ) => window.__PONLAI__.setWeather( c.weather, c.seconds ), def.change );
 
 		}
@@ -1594,7 +1598,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			progress();
 
 		}
-		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ SLICES } slices` );
+		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ SLICES } slices${ compile[ 0 ].scaleSettle ? `; scale settled at ${ compile[ 0 ].scaleSettle.scale } / ${ compile[ 1 ].scaleSettle?.scale } after ${ compile[ 0 ].scaleSettle.seconds } / ${ compile[ 1 ].scaleSettle?.seconds } s more` : '' }` );
 		if ( k < REPEAT - 1 ) continue;
 		// the scene's last repetition is done: its results, once both pages' frames are in
 		const scaleLogs = SCALE_LOG ? [ await scaleChanges( pages[ 0 ] ), await scaleChanges( pages[ 1 ] ) ] : null;
