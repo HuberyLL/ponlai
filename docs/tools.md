@@ -478,7 +478,9 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - It loads each variant once and switches scenes at runtime (`--mode reload` reloads per scene,
   the original method); every page keeps the generated island in IndexedDB (in the tool's own
   Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
-  `worldCache=off`).
+  `worldCache=off`). A profile that another Chrome holds (another run's) is not launched on: the
+  run takes a temporary one, with cold caches. (Launched on, a headed Chrome holding it opened a
+  blank window of its own, in front of that run's page.)
 - It holds the GPU lock exclusively only for what it measures, and no browser while it queues: a
   build the profile has not loaded yet (a new bundle, port or browser version) is first loaded once
   in a browser opened inside a shared slot and closed before the slot is released (the preload;

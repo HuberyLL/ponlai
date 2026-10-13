@@ -177,7 +177,7 @@
 // of each scene after its measurement (profile runs, not A/Bs), `--detail` adds each pass's own time and `--raw` every
 // frame.
 import { chromium } from 'playwright';
-import { existsSync } from 'node:fs';
+import { existsSync, readlinkSync } from 'node:fs';
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -2280,7 +2280,10 @@ function startupLine( s ) {
 // ------------------------------------------------------------------ main
 
 // Chrome with a profile kept between runs (the world cache lives in its IndexedDB, the shader cache
-// beside it); a profile still in use by another run falls back to a temporary one
+// beside it); a profile still in use by another run falls back to a temporary one. One in use is not
+// launched on at all: a headed Chrome holding it takes the launch over and opens a blank window of
+// its own (a measuring run's, while its lock is away between scenes and another run preloads, in
+// front of its page), and the launch fails anyway.
 async function launch() {
 
 	const options = {
@@ -2289,8 +2292,10 @@ async function launch() {
 		...( DISPLAY ? { viewport: null, ignoreDefaultArgs: [ '--disable-field-trial-config' ] } : { viewport: { width: W, height: H }, deviceScaleFactor: SCALE } ),
 	};
 	let browser;
+	const holder = profileHolder( PROFILE_DIR );
 	try {
 
+		if ( holder ) throw new Error( `in use by Chrome pid ${ holder }` );
 		await mkdir( PROFILE_DIR, { recursive: true } );
 		browser = { context: await chromium.launchPersistentContext( PROFILE_DIR, options ), dir: PROFILE_DIR, temporary: false };
 
@@ -2339,6 +2344,16 @@ async function open( errors ) {
 	} );
 	browser.page = browser.context.pages()[ 0 ] ?? await browser.context.newPage();
 	return browser;
+
+}
+
+// The live Chrome that holds a profile, from the profile's SingletonLock ("host-pid"), or null
+function profileHolder( dir ) {
+
+	let target;
+	try { target = readlinkSync( path.join( dir, 'SingletonLock' ) ); } catch { return null; }
+	const pid = Number( target.match( /-(\d+)$/ )?.[ 1 ] );
+	return pid && alive( pid ) ? pid : null;
 
 }
 
