@@ -6,7 +6,8 @@ everyday commands; this file has the details. Each tool's own file says the rest
 ## Page
 
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
-  `npm run preview` (port 5191, the production build).
+  `npm run preview` (port 5191, the production build). Build and typecheck run tsc and vite with
+  the application policy on macOS (Process priority, below).
 - `window.__PONLAI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the
   dev server or with `?debug` (or `?profile`, which also loads the frame profiler).
   `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock, converge } )` stops the live loop and
@@ -312,6 +313,24 @@ never come. It prints one screen: each job's state and elapsed time, where it st
 lock (holding a slot or the lock alone, or queued: its place, the requests ahead of it and the
 holders), its log's last lines, and the lock as a whole. `status <log>...` prints the same without
 waiting.
+
+## Process priority (macOS)
+
+Processes an agent starts are not applications to macOS: their threads run at the legacy QoS
+whatever they ask for, and on a busy machine that work is kept on the efficiency cores while the
+performance cores idle, so it runs several times longer (3-14x measured while other agents captured
+and built; alike on a quiet machine). `tools/qos.mjs` starts the tools with the application policy
+(`taskpolicy -a`) instead, which children do not inherit, so each process gets it on its own:
+- every tool that imports `gpu-lock.mjs` or `capture-browser.mjs` (the captures, capture-set and its
+  workers, baseline, reference, carry, profile-frame, the verify probes) re-executes itself under it
+  in place as it starts, and `gpu-lock.mjs run` starts its command with it;
+- `clip-metrics.py` (and its worker processes) and `diff-set.py` (and its threads) raise themselves;
+- `npm run build` and `npm run typecheck` start tsc and vite through `node tools/qos.mjs <command>`,
+  which runs any command so (a one-off script: `node tools/qos.mjs python3 my-script.py`).
+Chrome's own helper processes (GPU, renderers, workers) set their QoS themselves and were never held
+back. `PONLAI_QOS=off` keeps a process at the policy it was given (for an A/B); nothing changes on
+other systems. A new CPU-heavy tool imports `tools/qos.mjs` first (node) or copies the few lines of
+`diff-set.py` (Python).
 
 ## Display gate
 

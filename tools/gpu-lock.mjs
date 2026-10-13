@@ -98,6 +98,11 @@
 // captures of a set rather than after the whole set. A descendant about to wait for something else
 // (yieldAncestorSlot: a reference another process is capturing) frees that slot the same way.
 // PONLAI_GPU_LOCK_DIR moves the lock.
+//
+// Importing this module raises the process to the application scheduling policy on macOS
+// (tools/qos.mjs: agent-started processes otherwise starve on a busy machine), so every tool that
+// takes the lock does; `run` starts its command with that policy too.
+import { appPolicy } from './qos.mjs'; // first: every tool that takes the lock runs with the application policy
 import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync, statSync } from 'node:fs';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
@@ -1160,7 +1165,7 @@ async function main( argv ) {
 		const shared = ( split >= 0 ? rest.slice( 0, split ) : rest ).includes( '--shared' );
 		const waited = await acquireGpuLock( label, { timeout: Number( opt( 'timeout', 0 ) ), shared } );
 		if ( waited > 1000 ) console.error( `[gpu-lock ${ clock() }] acquired${ shared ? ' (shared)' : '' } after ${ ( waited / 1000 ).toFixed( 1 ) } s` );
-		const child = spawn( cmd[ 0 ], cmd.slice( 1 ), { stdio: 'inherit', env: { ...process.env, PONLAI_GPU_LOCK_HELD: String( process.pid ), PONLAI_GPU_LOCK_MODE: shared ? 'shared' : 'exclusive' } } );
+		const child = spawn( ...appPolicy( cmd[ 0 ], cmd.slice( 1 ) ), { stdio: 'inherit', env: { ...process.env, PONLAI_GPU_LOCK_HELD: String( process.pid ), PONLAI_GPU_LOCK_MODE: shared ? 'shared' : 'exclusive' } } );
 		for ( const signal of [ 'SIGINT', 'SIGTERM', 'SIGHUP' ] ) {
 
 			process.removeAllListeners( signal );

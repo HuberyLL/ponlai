@@ -77,6 +77,9 @@
 // an `--eval` there runs after the view's own).
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build's
 // output; see tools/parity/README.md.
+// The set and its capture.mjs workers run with the application scheduling policy on macOS
+// (tools/qos.mjs); a worker is started with it, since re-executing would close its IPC channel.
+import { appPolicy } from '../qos.mjs'; // first: the set and its workers run with the application policy
 import { spawn } from 'node:child_process';
 import { appendFile, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
@@ -191,8 +194,9 @@ async function captureList( url, dir, list ) {
 	// a page: one capture.mjs worker, serving items of one kind (first or repeat) until none is left
 	const runPage = ( repeat ) => new Promise( ( resolve ) => {
 
-		const child = spawn( process.execPath, [ 'tools/capture.mjs', '--worker', '--url', url, '--w', W, '--h', H, '--scale', scale,
-			'--timeout', String( timeout ), ...( options[ 'page-per-view' ] ? [ '--page-per-view' ] : [] ), ...passThrough ],
+		// started with the application policy: an exec would close its IPC channel (tools/qos.mjs)
+		const child = spawn( ...appPolicy( process.execPath, [ 'tools/capture.mjs', '--worker', '--url', url, '--w', W, '--h', H, '--scale', scale,
+			'--timeout', String( timeout ), ...( options[ 'page-per-view' ] ? [ '--page-per-view' ] : [] ), ...passThrough ] ),
 		{ cwd: REPO, stdio: [ 'ignore', 'pipe', 'pipe', 'ipc' ] } );
 		let output = [], current = null, timer = null, killer = null, writing = Promise.resolve();
 		child.stdout.on( 'data', ( d ) => output.push( d ) );

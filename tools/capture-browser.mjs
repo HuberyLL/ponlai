@@ -105,6 +105,11 @@
 // (`__PONLAI__.loop.stop()`: no more frames, then the queue drained) before the shot; the pixels
 // are the same frame's, the shot no longer waits 4-11 s for queued frames, and the GPU is free for
 // other captures meanwhile. Builds without `loop` are shot with the loop running.
+//
+// Importing this module raises the process to the application scheduling policy on macOS
+// (tools/qos.mjs): the PNG decode and frame compare of readiness run in this process while it holds
+// a GPU slot, and took 5-10x as long at the legacy QoS agent-started processes get on a busy machine.
+import './qos.mjs'; // first: the decode and compare below run with the application policy
 import { chromium } from 'playwright';
 import { execFileSync } from 'node:child_process';
 import { mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
