@@ -630,7 +630,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   measured frames were drawn at (its median, range and changes: high's moves); `--scale-settle s`
   waits after each scene's warm-up until that scale has held for s seconds (in `--compare` each
   page after its own warm-up; without it the run's first slices catch high's scale still stepping
-  down from its nominal). With GPU timestamps on,
+  down from its nominal). `--display --compare` settles 2 s by default (`--scale-settle 0` turns it
+  off); every other run 0. With GPU timestamps on,
   high's reports add `gpuPixel`: the part of the GPU time in passes that follow the render's pixel
   count (the dynamic resolution's split), for fitting its cost model at fixed scales.
 - `--compare` and `--accept` load their pages with `drsStore=off`, so neither side of an A/B (two

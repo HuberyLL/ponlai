@@ -122,6 +122,12 @@
 //   its frames were drawn at (median, range and changes) beside the frame times. In --compare each
 //   page settles after its own warm-up: without it, high's scale stepped down from its nominal
 //   inside the first slices of the run's first scene, on both pages (A/A runs on the display).
+//   So `--display --compare` settles for 2 s by default (`--scale-settle 0` turns it off): in three
+//   display A/As without it, both pages' scale stepped down (0.8 -> 0.7) inside their first slice,
+//   at different times, which put a step into one side's measured frames and not the other's; with
+//   2 s, no scale change fell inside a measured slice. It costs about 2-6 s per page per scene
+//   under the exclusive lock. Headless runs keep 0: their A/Bs are judged by the passes, which a
+//   scale step moves on both sides alike.
 // - the remembered scale: high starts from the dynamic scale it last held (`drsStore`, off in an
 //   automated browser anyway); --compare and --accept add `drsStore=off` so neither side of an A/B
 //   (two AA modes or two builds) starts from a scale the other settled at, and `--drs-store` adds
@@ -289,8 +295,9 @@ const BLOCK = Math.max( 4, Number( opt( 'block', 60 ) ) ), BLOCKS = Math.max( 2,
 const ORDER = [ 0, 1, 1, 0, 1, 0, 0, 1 ];
 const WORLD_CACHE = opt( 'world-cache', 'on' ) !== 'off';
 // --scale-settle s: after a scene's warm-up, wait until a dynamic render scale (high's) has not
-// moved for s seconds (at most 60 s), so the scene is measured at its settle point
-const SCALE_SETTLE = Number( opt( 'scale-settle', 0 ) );
+// moved for s seconds (at most 60 s), so the scene is measured at its settle point; 2 by default
+// for --display --compare (see the header), else 0 (off)
+const SCALE_SETTLE = Number( opt( 'scale-settle', DISPLAY && argv.includes( '--compare' ) ? 2 : 0 ) );
 const PROFILE_DIR = opt( 'profile-dir', path.join( os.tmpdir(), 'ponlai-profile-frame-chrome' ) );
 // the longest wait for a shared GPU slot to preload in (see preload), seconds
 const PRELOAD_WAIT = Number( opt( 'preload-wait', 60 ) );
