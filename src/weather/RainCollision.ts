@@ -13,6 +13,7 @@
 import * as THREE from 'three/webgpu';
 import { Fn, ivec2, max, positionWorld, select, textureLoad, uniform, vec4 } from 'three/tsl';
 import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
+import { compileLatentInto } from '../post/graph/Compile.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -88,66 +89,140 @@ export class RainCollision {
 
 	/** Draw the height of every mesh under `roots` (skinned figures excepted: they move). Each
 	 * material's rest-pose position and alpha test are kept, so blades and leaf cards print
-	 * their own shapes rather than their bounding quads. */
+	 * their own shapes rather than their bounding quads. Again whenever the island grows: the
+	 * height materials and the meshes' proxies are kept from bake to bake (a proxy per mesh, a
+	 * material per source material), so a bake after the first builds no pipeline, and every
+	 * mesh is drawn whole (all its instances, its whole draw range) as at the first. */
 	bake( renderer: THREE.WebGPURenderer, roots: THREE.Object3D[] ): void {
 
-		const scene = new THREE.Scene();
-		const materials = new Map<THREE.Material, THREE.MeshBasicNodeMaterial>();
-		const heightOf = ( source: THREE.Material ) => {
+		const steps = this.bakeSteps( renderer, roots );
+		while ( ! steps.next().done );
 
-			let material = materials.get( source );
-			if ( material ) return material;
-			const node = source as THREE.MeshStandardNodeMaterial;
-			material = new THREE.MeshBasicNodeMaterial( { side: THREE.DoubleSide } );
-			material.positionNode = node.castShadowPositionNode ?? node.positionNode ?? null;
-			if ( node.alphaMap ) {
+	}
 
-				material.alphaMap = node.alphaMap;
-				material.alphaTest = node.alphaTest;
+	/** `bake` in steps of `per` meshes a frame (a generator: Growth.ts takes a step a frame), drawn
+	 * into the map in turn without clearing it between them: the map is the same as one draw of them
+	 * all (each texel the highest surface's height). */
+	* bakeSteps( renderer: THREE.WebGPURenderer, roots: THREE.Object3D[], per = Infinity ): Generator<void, void> {
 
-			}
-			material.outputNode = vec4( positionWorld.y, 0, 0, 1 );
-			materials.set( source, material );
-			return material;
-
-		};
+		const scene = this.scene;
+		const seen = new Set<THREE.Mesh>();
 		for ( const root of roots ) root.traverse( ( object ) => {
 
 			const mesh = object as THREE.Mesh;
-			if ( ! mesh.isMesh || ( mesh as THREE.SkinnedMesh ).isSkinnedMesh || ! object.visible ) return;
-			const source = Array.isArray( mesh.material ) ? mesh.material[ 0 ] : mesh.material;
-			let proxy: THREE.Mesh;
-			if ( ( mesh as THREE.InstancedMesh ).isInstancedMesh ) {
-
-				const instanced = mesh as THREE.InstancedMesh;
-				const copy = new THREE.InstancedMesh( mesh.geometry, heightOf( source ), instanced.count );
-				copy.instanceMatrix = instanced.instanceMatrix;
-				proxy = copy;
-
-			} else proxy = new THREE.Mesh( mesh.geometry, heightOf( source ) );
+			// (a vegetation mesh's depth prepass copy, VegetationPrepass.ts, prints the same shape)
+			if ( ! mesh.isMesh || ( mesh as THREE.SkinnedMesh ).isSkinnedMesh || ! object.visible || mesh.userData.prepassCopy ) return;
+			seen.add( mesh );
+			const instanced = mesh as THREE.InstancedMesh;
+			const proxy = this.proxyOf( mesh );
+			proxy.geometry = mesh.geometry;
+			// (the grass picks its count per draw, Grass.ts: its whole count is `bakeCount`)
+			if ( instanced.isInstancedMesh ) ( proxy as THREE.InstancedMesh ).count = mesh.userData.bakeCount ?? instanced.count;
 			mesh.updateWorldMatrix( true, false );
-			proxy.matrixAutoUpdate = false;
 			proxy.matrix.copy( mesh.matrixWorld );
-			proxy.frustumCulled = false;
-			scene.add( proxy );
 
 		} );
+		for ( const [ mesh, proxy ] of this.proxies ) {
+
+			if ( seen.has( mesh ) ) continue;
+			scene.remove( proxy );
+			this.proxies.delete( mesh );
+
+		}
 		scene.updateMatrixWorld( true );
-		const target = renderer.getRenderTarget();
-		const clear = renderer.getClearColor( new THREE.Color() ), alpha = renderer.getClearAlpha();
-		renderer.setRenderTarget( this.target );
-		renderer.setClearColor( 0x000000, 0 );
-		renderer.clear();
-		renderer.render( scene, this.camera );
-		renderer.setRenderTarget( target );
-		renderer.setClearColor( clear, alpha );
-		for ( const material of materials.values() ) material.dispose();
+		const list = [ ...this.proxies.values() ];
+		for ( let first = 0; first < list.length; first += per ) {
+
+			const part = list.slice( first, first + per );
+			for ( const p of list ) p.visible = false;
+			for ( const p of part ) p.visible = true;
+			// every geometry drawn whole (the grass sets its blades' range per view draw)
+			const ranges = part.map( ( p ) => [ p.geometry.drawRange.start, p.geometry.drawRange.count ] as const );
+			for ( const p of part ) p.geometry.setDrawRange( 0, Infinity );
+			const target = renderer.getRenderTarget(), autoClear = renderer.autoClear;
+			const clear = renderer.getClearColor( new THREE.Color() ), alpha = renderer.getClearAlpha();
+			renderer.setRenderTarget( this.target );
+			renderer.setClearColor( 0x000000, 0 );
+			if ( first === 0 ) renderer.clear();
+			renderer.autoClear = false;
+			renderer.render( scene, this.camera );
+			renderer.autoClear = autoClear;
+			renderer.setRenderTarget( target );
+			renderer.setClearColor( clear, alpha );
+			part.forEach( ( p, k ) => p.geometry.setDrawRange( ranges[ k ][ 0 ], ranges[ k ][ 1 ] ) );
+			for ( const p of list ) p.visible = true;
+			if ( first + per < list.length ) yield;
+
+		}
+
+	}
+
+	/** Makes the proxies of meshes a later bake will draw (a grown island's new chunks: Growth.ts)
+	 * and compiles them into the map, so that bake builds nothing. */
+	prepare( renderer: THREE.WebGPURenderer, meshes: THREE.Mesh[] ): Promise<void> {
+
+		const proxies = meshes.map( ( mesh ) => {
+
+			const proxy = this.proxyOf( mesh );
+			mesh.updateWorldMatrix( true, false );
+			proxy.matrix.copy( mesh.matrixWorld );
+			proxy.updateMatrixWorld();
+			return proxy;
+
+		} );
+		return compileLatentInto( renderer, proxies, this.scene, this.camera, this.target );
+
+	}
+
+	// The mesh's proxy, made on first need: its height material, its instances.
+	private proxyOf( mesh: THREE.Mesh ): THREE.Mesh {
+
+		let proxy = this.proxies.get( mesh );
+		if ( proxy ) return proxy;
+		const source = Array.isArray( mesh.material ) ? mesh.material[ 0 ] : mesh.material;
+		const instanced = mesh as THREE.InstancedMesh;
+		if ( instanced.isInstancedMesh ) {
+
+			const copy = new THREE.InstancedMesh( mesh.geometry, this.heightOf( source ), instanced.count );
+			copy.instanceMatrix = instanced.instanceMatrix;
+			proxy = copy;
+
+		} else proxy = new THREE.Mesh( mesh.geometry, this.heightOf( source ) );
+		proxy.matrixAutoUpdate = false;
+		proxy.frustumCulled = false;
+		this.proxies.set( mesh, proxy );
+		this.scene.add( proxy );
+		return proxy;
+
+	}
+
+	private readonly scene = new THREE.Scene();
+	private readonly proxies = new Map<THREE.Mesh, THREE.Mesh>();
+	private readonly materials = new Map<THREE.Material, THREE.MeshBasicNodeMaterial>();
+
+	private heightOf( source: THREE.Material ): THREE.MeshBasicNodeMaterial {
+
+		let material = this.materials.get( source );
+		if ( material ) return material;
+		const node = source as THREE.MeshStandardNodeMaterial;
+		material = new THREE.MeshBasicNodeMaterial( { side: THREE.DoubleSide } );
+		material.positionNode = node.castShadowPositionNode ?? node.positionNode ?? null;
+		if ( node.alphaMap ) {
+
+			material.alphaMap = node.alphaMap;
+			material.alphaTest = node.alphaTest;
+
+		}
+		material.outputNode = vec4( positionWorld.y, 0, 0, 1 );
+		this.materials.set( source, material );
+		return material;
 
 	}
 
 	dispose(): void {
 
 		this.target.dispose();
+		for ( const material of this.materials.values() ) material.dispose();
 
 	}
 
