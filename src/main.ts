@@ -43,7 +43,7 @@ import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
-import { installCacheKeyPatches } from './post/graph/ThreePatches.ts';
+import { installBindingPatches, installCacheKeyPatches } from './post/graph/ThreePatches.ts';
 import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
@@ -123,6 +123,9 @@ if ( ! installCacheKeyPatches( renderer ) && TEMPORAL ) {
 	throw new Error( `three's cache keys could not be patched for aa=${ AA_MODE }` );
 
 }
+// a new render object's texture bindings start at their node's current texture, so a texture the
+// growth replaced and disposed is not uploaded again (graph/ThreePatches.ts)
+installBindingPatches( renderer );
 // three submits every pass on its own; the frame reaches the GPU in a few submits instead
 // (SubmitBatch.ts: a submit per pass kept Chrome's GPU process from presenting the page on time)
 const submitBatch = new SubmitBatch( ( renderer.backend as unknown as { device: ConstructorParameters<typeof SubmitBatch>[ 0 ] } ).device, { debug: DEBUG } );

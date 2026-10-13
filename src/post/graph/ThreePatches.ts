@@ -24,12 +24,24 @@ import { REVISION } from 'three/webgpu';
 // `tools/verify-frame-graph-gpu.mjs` checks the patches (both orders of an MRT and a plain draw, a
 // swapped layout). They refuse another three revision with a warning, and `Antialiasing.ts` then
 // refuses the temporal modes, which need them: re-check them on a three upgrade.
+//
+// One more patch, of the bindings (`installBindingPatches`): a render object's bind groups are cloned
+// from its build's (NodeBuilderState.createBindings), and a cloned texture binding starts with the
+// texture its node held when the material was built; `_createBindings` makes that texture ready on
+// the GPU before the first update moves the binding to the node's current one. Once the page has
+// put another texture in the node and disposed the first (the island's growth replaces its fields
+// and wave fields: world/Growth.ts), every new render object of the material (a grown chunk's
+// shadow draw) uploads the disposed texture again, and it stays on the GPU for good, since its
+// dispose event has already fired (13.6 MB from a twelve-step growth). The patch starts each
+// texture binding at its node's current texture, which is where the first update would move it.
+// There is no public path: the build's bindings are three's internal state.
 
 type Texture = { format: unknown; type: unknown; name: string };
 type RenderContext = { mrt?: { id: number } | null; textures: Texture[] | null };
 type RenderObject = { initialCacheKey: unknown; context: RenderContext };
 type Callable = ( this: unknown, ...args: unknown[] ) => unknown;
 type Host = Record<string, unknown>;
+type BindGroup = { bindings: { isSampledTexture?: boolean; textureNode?: { value: unknown } | null; texture: unknown }[] };
 
 // the attachment layout: their count, and each texture's format, type and name
 function layoutKey( context: RenderContext ): string {
@@ -85,6 +97,43 @@ export function installCacheKeyPatches( renderer: unknown, revision: string = RE
 		const context = renderObject.context;
 		const formats = backend.utils?.getCurrentColorFormats?.( context ) ?? [ layoutKey( context ) ];
 		return `${ pipelineKey.call( this, renderObject ) },${ formats.join( '/' ) },${ context.mrt?.id ?? '-' }`;
+
+	};
+	return true;
+
+}
+
+/** Patches the renderer's bindings (an instance) so that a new bind group's texture bindings start at
+ * their node's current texture, not the one the material was built with (see the header). Call after
+ * `renderer.init()`. Returns false (and warns) on a three revision other than 186, or before init. */
+export function installBindingPatches( renderer: unknown, revision: string = REVISION ): boolean {
+
+	if ( ! /^186(\.|$)/.test( revision ) ) {
+
+		console.warn( `installBindingPatches: written for three r186, this is r${ revision }; not installed` );
+		return false;
+
+	}
+	const bindings = ( renderer as { _bindings?: Host | null } )._bindings;
+	if ( ! bindings || typeof bindings._createBindings !== 'function' ) {
+
+		console.warn( 'installBindingPatches: the renderer is not initialised (or not WebGPU); not installed' );
+		return false;
+
+	}
+	if ( patched.has( bindings ) ) return true;
+	patched.add( bindings );
+
+	const create = bindings._createBindings as Callable;
+	bindings._createBindings = function ( this: unknown, groups: BindGroup[] ) {
+
+		for ( const group of groups ) for ( const binding of group.bindings ) {
+
+			// (the setter resets the binding's version when the texture changes)
+			if ( binding.isSampledTexture && binding.textureNode ) binding.texture = binding.textureNode.value;
+
+		}
+		return create.call( this, groups );
 
 	};
 	return true;
