@@ -1596,8 +1596,9 @@ const reveal = () => {
 		loading?.classList.add( 'done' );
 		// the counts start where the scene shows
 		frameStats.reset();
-		// the island's next piece is generated from here on (Growth.ts)
-		growth.start();
+		// the game's island grows as its people need: its next piece is generated from here on; any
+		// other page generates one only once it is asked to grow (Growth.ts)
+		if ( GAME ) growth.start();
 
 	}
 
