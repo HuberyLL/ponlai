@@ -1,6 +1,7 @@
 // One land version's chunks (Chunks.ts `ChunkData`) merged into the WorldData the page draws: the
 // page's pool (WorldChunks.ts) and the node tools' serial path (tools/world-node.mjs) both end
-// here, so they draw and check the same world. Pure (no three, no DOM).
+// here, so they draw and check the same world. Pure (no three, no DOM). A grown island's version
+// is merged in steps (`mergeSteps`, in idle time: Growth.ts), to the same result.
 //
 // - Everything is concatenated in rows of chunks ( cj, then ci ), each chunk's owned items in its
 //   own order (Chunks.ts), so the merged arrays, the meadow's pools and a paused frame are the
@@ -87,7 +88,30 @@ export function rimBounds( land: LandLattice ): Bounds {
 /** The WorldData of a land version from all its chunks (in any order). */
 export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): WorldData {
 
+	const steps = mergeSteps( land, unordered );
+	for ( ;; ) {
+
+		const next = steps.next();
+		if ( next.done ) return next.value;
+
+	}
+
+}
+
+/** `mergeChunks` in steps (a generator): it yields after each chunk's share of the fields and
+ * between the larger fills, so the growth (Growth.ts) can merge a pending version in idle time.
+ * The result is the same however it is stepped. */
+export function* mergeSteps( land: LandData, unordered: readonly ChunkData[] ): Generator<void, WorldData> {
+
 	const t0 = performance.now();
+	let busy = 0, mark = t0;
+	const pause = function* () {
+
+		busy += performance.now() - mark;
+		yield;
+		mark = performance.now();
+
+	};
 	const chunks = [ ...unordered ].sort( ( a, b ) => a.cj - b.cj || a.ci - b.ci );
 	const { bounds } = land;
 	const width = bounds.x1 - bounds.x0, depth = bounds.z1 - bounds.z0;
@@ -99,7 +123,9 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 	} ] : [] );
 	const rocks: Rock[] = chunks.flatMap( ( c ) => c.stones.rocks );
 	const stones = mergeMeshes( chunks.map( ( c ) => c.stones.mesh ) );
+	yield* pause();
 	const seabed = mergeFloor( chunks, land.far );
+	yield* pause();
 	const tiles = chunks.filter( ( c ) => c.floor ), tileIndex = tileIndices();
 	const refracted = {
 		level: chunks[ 0 ]?.refracted.level ?? SEA_LEVEL,
@@ -109,6 +135,7 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 			[ submergedIndex( land.far.positions, land.far.indices ), land.far.indices, land.far.positions.length / 3 ],
 		] ),
 	};
+	yield* pause();
 
 	// --- owned items
 	const concat = ( parts: Float32Array[] ) => {
@@ -131,9 +158,16 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 	const rim = rimBounds( LandLattice.fromBytes( land.land ) );
 	const rx = Math.round( ( rim.x1 - rim.x0 ) / RIM_CELL ), rz = Math.round( ( rim.z1 - rim.z0 ) / RIM_CELL ), ri0 = Math.round( rim.x0 / RIM_CELL ), rj0 = Math.round( rim.z0 / RIM_CELL );
 	const rimGround = { data: new Float32Array( rx * rz * 4 ), nx: rx, nz: rz, x0: ri0 * RIM_CELL, z0: rj0 * RIM_CELL, cell: RIM_CELL };
-	for ( let k = 0; k < rx * rz; k ++ ) { rimGround.data[ k * 4 ] = RIM_REACH; rimGround.data[ k * 4 + 1 ] = ISLAND_TOP; }
+	yield* pause();
+	for ( let j = 0; j < rz; j ++ ) {
+
+		for ( let k = j * rx; k < ( j + 1 ) * rx; k ++ ) { rimGround.data[ k * 4 ] = RIM_REACH; rimGround.data[ k * 4 + 1 ] = ISLAND_TOP; }
+		if ( j % 128 === 127 ) yield* pause();
+
+	}
 	const seabedField = { data: land.floor.slice(), nx: width / FLOOR_CELL, nz: depth / FLOOR_CELL, x0: bounds.x0, z0: bounds.z0, cell: FLOOR_CELL };
 	const seabedBeds = { data: land.beds.slice(), nx: width / BED_CELL, nz: depth / BED_CELL, x0: bounds.x0, z0: bounds.z0, cell: BED_CELL };
+	yield* pause();
 	for ( const c of chunks ) {
 
 		const x0 = c.ci * SEABED_TILE, z0 = c.cj * SEABED_TILE;
@@ -145,12 +179,13 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 			fromTile( seabedBeds.data, seabedBeds.nx, c.floor.bed, 2, BED_CELL, ( x0 - bounds.x0 ) / BED_CELL, ( z0 - bounds.z0 ) / BED_CELL );
 
 		}
+		yield* pause();
 
 	}
 
 	const chunkList = new Int32Array( chunks.length * 2 );
 	chunks.forEach( ( c, k ) => { chunkList[ k * 2 ] = c.ci; chunkList[ k * 2 + 1 ] = c.cj; } );
-	return {
+	const data: WorldData = {
 		land: land.land, chunks: chunkList,
 		islands, stones, rocks, seabed, refracted,
 		vegetation: concat( chunks.map( ( c ) => c.anchors ) ),
@@ -159,8 +194,12 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 		rimSkirt: mergeRimSkirts( chunks.map( ( c ) => c.skirt ) ),
 		shore, seabedField, seabedBeds,
 		walk: land.walk,
-		timings: { merge: Math.round( performance.now() - t0 ) },
+		timings: {},
 	};
+	busy += performance.now() - mark;
+	// (the time spent merging, not the time the steps were spread over)
+	data.timings = { merge: Math.round( busy ) };
+	return data;
 
 }
 
