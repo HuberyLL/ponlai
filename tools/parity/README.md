@@ -13,6 +13,8 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
   (see One page, many views below).
 - `clips.mjs`, `../capture-clip.mjs`, `../clip-metrics.py`: stepped clips (a view set in motion),
   their capture and their metrics against MSAA and a ground truth (see Clips below).
+- `gates.py`: a baseline.mjs label's gate verdicts per gate id, a task's decisions applied from a
+  policy file (its header has the format; `docs/tools.md`, Captures).
 
 ## Serving a build for captures
 
