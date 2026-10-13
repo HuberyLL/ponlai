@@ -1258,7 +1258,9 @@ function pageHelpers() {
 				// works), the eye 1.6 m up, looking out over the lip and down a little. The heights are
 				// those of the island group's meshes (`island`), on a 0.5 m grid from their box's corner
 				// as the camera's ground was built before it came from the chunks' grids: a build that
-				// draws the same island, merged or a mesh per chunk, takes the same view.
+				// draws the same island, merged or a mesh per chunk, takes the same view. Their position
+				// arrays are read as world-space, non-interleaved (the chunk meshes are), and every mesh
+				// under `island` counts as ground (a stone there raises its cell).
 				s.setCameraView( 'island' );
 				s.setCameraMode( 'free' );
 				const parts = [];
@@ -1295,6 +1297,7 @@ function pageHelpers() {
 				const top = ( t ) => heightAt( cx + dir.x * t, cz + dir.z * t ) > 1;
 				let t = 0;
 				while ( ! top( t ) && t < 200 ) t += 0.25;
+				if ( ! top( t ) ) throw new Error( `${ def.name }: no land along the meadow direction from the centroid` );
 				while ( top( t ) ) t += 0.25;
 				const x = cx + dir.x * ( t - 5.5 ), z = cz + dir.z * ( t - 5.5 );
 				s.camera.position.set( x, heightAt( x, z ) + 1.6, z );
