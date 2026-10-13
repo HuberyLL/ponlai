@@ -807,7 +807,7 @@ export async function waitForIdleGpu( { threshold = 15, seconds = 3, wait = 60, 
 		const who = clients?.length ? `: ${ clients.map( ( c ) => `${ c.name } ${ c.percent } %` ).join( ', ' ) }` : '';
 		if ( waited > wait * 1000 ) {
 
-			log( `[gpu-lock] the GPU is still ${ sample.mean } % busy after ${ Math.round( waited / 1000 ) } s${ who }; results are marked contended` );
+			log( `[gpu-lock] the GPU is still ${ sample.mean } % busy after ${ Math.round( waited / 1000 ) } s${ who }: contended` );
 			return { idle: sample, contended: true, waitedMs: waited, samples: history, clients };
 
 		}

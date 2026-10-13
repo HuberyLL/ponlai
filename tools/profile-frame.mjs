@@ -2,13 +2,15 @@
 // headless Chrome with an uncapped frame rate (or at 60 Hz with `--vsync`), and reports the frame
 // interval, the GPU time per pass (timestamp queries, labelled by `src/debug/FrameProfiler.ts`
 // through `?profile`), the tick's JS time, hitches with their cause, and the startup. Runs under the machine-wide GPU lock (held
-// exclusively) and first checks that nothing else keeps the GPU busy (its results are marked
-// contended otherwise).
+// exclusively) and first checks that nothing else keeps the GPU busy: when something still does
+// after `--idle-wait` seconds (20, 60 in reload mode), it measures nothing and exits with 3 (a
+// contended run's frame rates and verdicts prove nothing, and it held the lock for minutes);
+// `--contended` measures anyway and marks the results contended.
 //
 //   node tools/profile-frame.mjs [url] [--scenes a,b | --scene a] [--w 1920 --h 1080 --scale 2]
 //        [--quality high] [--timestamps on|off|both] [--warmup s] [--seconds 7] [--orbit 3]
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
-//        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s]
+//        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s] [--contended]
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
 //        [--scale-settle s] [--drs-store] [--preload-wait 60] [--display [--motion user | orbit | none]]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
@@ -69,9 +71,9 @@
 //   within half a millisecond of `--target` (16.7), and no frame over 25 ms in the measured window
 //   (7 s by default); the p99, the maximum, and the GPU busy time of the run with timestamps are
 //   reported beside the verdict. Other work on the GPU costs frames, so a scene measured while something
-//   else kept the GPU busy (contended) that fails is INCONCLUSIVE, unless its own GPU busy time
-//   (median, with timestamps) is over the target, which no idle GPU would make up; one that passes
-//   is PASS (contended). The exit code stays 0 unless `--strict` is given, which exits 1 on a FAIL.
+//   else kept the GPU busy (contended: with --contended, or found at a later page load) that fails
+//   is INCONCLUSIVE, unless its own GPU busy time (median, with timestamps) is over the target,
+//   which no idle GPU would make up; one that passes is PASS (contended). The exit code stays 0 unless `--strict` is given, which exits 1 on a FAIL.
 //   Headless 60 Hz does not show how a faster display paces the frames (see --display).
 // - scales (`--scales 1.5,1.25,1`): the run once per render scale (the page's `dpr` option), in one
 //   invocation, with a table of every scene at every scale (for the threshold where a scene holds
@@ -236,11 +238,16 @@ if ( SCALES.some( ( x ) => ! ( x > 0 ) ) ) throw new Error( '--scales takes a li
 // --hooks off: no ?profile, frame intervals only (to check what the hooks cost, or a build without them)
 const HOOKS = opt( 'hooks', 'on' ) !== 'off';
 // GPU utilisation (%) above which something outside the run is rendering, and how long to wait
-// for it to stop before the run (and before each page load) goes on marked as contended
+// for it to stop before the run stops without measuring (exit 3), or with --contended goes on
+// marked as contended (a later page load's check marks its results either way)
 const IDLE_THRESHOLD = Number( opt( 'idle-threshold', 15 ) );
 const IDLE_WAIT = Number( opt( 'idle-wait', MODE === 'reload' ? 60 : 20 ) );
 // (not again before every load when the run already found the GPU busy for a minute)
 let idleWaitLoad = Math.min( IDLE_WAIT, 20 );
+// --contended: measure even when the run's opening check finds the GPU busy outside the lock
+const CONTENDED_OK = flags.has( '--contended' );
+// the exit code of a run that found the GPU busy and measured nothing
+const EXIT_CONTENDED = 3;
 const DETAIL = flags.has( '--detail' );
 const RAW = flags.has( '--raw' );
 const FRESH = flags.has( '--fresh' );
@@ -1752,7 +1759,7 @@ async function main() {
 	};
 	context.pages().forEach( watch );
 	context.on( 'page', watch );
-	let started = 0, held = 0, waitedMs = 0, result = null, preloaded = null;
+	let started = 0, held = 0, waitedMs = 0, result = null, preloaded = null, refused = null;
 	try {
 
 		const page = context.pages()[ 0 ] ?? await context.newPage();
@@ -1768,6 +1775,14 @@ async function main() {
 			waitedMs = started - requested;
 			if ( waitedMs > 1000 ) console.error( `[profile] GPU lock acquired after ${ ( waitedMs / 1000 ).toFixed( 0 ) } s` );
 			const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, wait: IDLE_WAIT } );
+			// another client keeps the GPU busy: a run measured now is marked contended and its
+			// verdicts are inconclusive, so it stops here (releasing the lock) unless asked to go on
+			if ( gpuIdle.contended && ! CONTENDED_OK ) {
+
+				refused = gpuIdle;
+				return;
+
+			}
 			if ( gpuIdle.contended ) idleWaitLoad = 0;
 			startIdle = gpuIdle;
 			console.error( `[profile] GPU idle ${ gpuIdle.idle?.mean ?? '?' } % (max ${ gpuIdle.idle?.max ?? '?' } %)${ gpuIdle.contended ? ', CONTENDED' : '' }; Chrome: ${ executablePath ?? 'Playwright Chromium' }; mode ${ TOGGLE ? 'toggle' : MODE }${ VSYNC ? ', vsync' : ', uncapped' }${ ACCEPT ? `, accept at ${ TARGET } ms` : '' }` );
@@ -1908,6 +1923,15 @@ async function main() {
 			clearInterval( watchdog );
 
 		} );
+		if ( refused ) {
+
+			const busy = refused.clients?.length ? `: ${ refused.clients.map( ( c ) => `${ c.name } ${ c.percent } %` ).join( ', ' ) }` : '';
+			console.error( `[profile] CONTENDED: the GPU was still ${ refused.idle?.mean } % busy outside the lock after ${ Math.round( refused.waitedMs / 1000 ) } s${ busy }. ` +
+				`Nothing was measured (exit ${ EXIT_CONTENDED }): stop that client and run again, wait longer with --idle-wait s, or measure anyway with --contended (results marked contended).` );
+			process.exitCode = EXIT_CONTENDED;
+			return;
+
+		}
 		const { meta } = result;
 		meta.gpu = await gpuInfo( page );
 		meta.finished = new Date().toISOString();
