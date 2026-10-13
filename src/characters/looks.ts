@@ -3,8 +3,9 @@ import type { PartSpec } from './Villagers.ts';
 
 // The islanders' dress: modular parts (Ultimate Modular Characters by Quaternius, CC0) repainted
 // in the island's palette (sRGB, as they should read in sunlight). The models are local,
-// unversioned assets (artifacts/ is git-ignored) served by the dev server while the character
-// art is still changing.
+// unversioned assets (artifacts/ is git-ignored) while the character art is still changing: the
+// dev server serves them and a build links them into dist/, from the main checkout in a worktree
+// (tools/vite-assets.mjs).
 
 export const umc = ( name: string ) => `/artifacts/assets/quaternius/ultimate-modular-characters/${ name }.gltf`;
 

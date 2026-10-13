@@ -20,6 +20,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   required (the ocean FFT runs on compute shaders); without it the page shows a message.
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
   `npm run preview` (port 5191). URL options and in-page keys: `docs/tools.md`.
+- `node tools/serve.mjs dev|preview` starts one for a worktree on a free port (`docs/tools.md`).
 - `node tools/capture.mjs <name> [--q "paused&t=12&dpr=1"]` screenshots the dev server into
   `artifacts/captures/` (git-ignored).
 - A list of views, ad-hoc ones included (`--view "name:query"`, `--views-file`, `--sweep
@@ -34,25 +35,18 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `node tools/profile-frame.mjs` profiles a production build (scene matrix, A/B deltas, per-pass
   GPU time, the 60 fps acceptance); its options and modes are in `docs/tools.md`.
 - Everything that renders the scene in a browser takes the GPU lock:
-  `node tools/gpu-lock.mjs run [--shared] -- <command>` (`status`, `gpu`). Timing runs hold it
-  alone; paused captures and verify probes share it, one slot per browser (3 by default). One queue
-  ranked by level, then arrival: shared requests default to `normal`, exclusive ones to `low`, so a
-  timing run waits behind captures unless raised, until it has waited 30 min and ranks `normal`.
-  Sessions leave `PONLAI_GPU_PRIORITY` unset; the
-  user or a main session schedules with `node tools/gpu-lock.mjs prio set <worktree> <level>`.
+  `node tools/gpu-lock.mjs run [--shared] -- <command>` (`status`, `gpu`): timing runs hold it
+  alone, paused captures and probes share it. Sessions leave `PONLAI_GPU_PRIORITY` unset; the user
+  or a main session schedules with `gpu-lock.mjs prio set` (`docs/tools.md`, GPU lock).
 - Processes an agent starts run at a starved QoS on a busy Mac: the tools raise themselves to the
   application policy (`tools/qos.mjs`); a new CPU-heavy tool imports it first, and a one-off script
   runs through `node tools/qos.mjs <command>` (`docs/tools.md`, Process priority).
-- Every wait goes through `tools/job.mjs`, never a sleep loop of one's own (`docs/tools.md`, Long
-  jobs). A command that may run for minutes (a capture set, a profile, references) runs as
-  `node tools/job.mjs start --wait -- <command>` (inline when it ends within the budget) or
-  `start --log <file> -- <command>`, and is waited on with `node tools/job.mjs wait <file>` (at
-  most 4 minutes per call; it shows the job's place in the GPU queue) or a condition
-  (`wait --file F --match RE`, `--exists`, `--pid`, `--cmd`). Before handing back, an agent stops
-  what it started and still runs: `node tools/job.mjs stop <file>`.
-- Headed browser runs take over the user's screen: they run only while
-  `node tools/display-gate.mjs status` allows them; otherwise run headless and record the headed
-  run as pending.
+- Every wait goes through `tools/job.mjs`, never a sleep loop of one's own: a command that may run
+  for minutes runs as `node tools/job.mjs start --wait -- <command>`, is waited on with
+  `node tools/job.mjs wait <log>` (at most 4 minutes per call), and is stopped with
+  `job.mjs stop <log>` before an agent hands back (`docs/tools.md`, Long jobs and waiting).
+- Headed browser runs take over the user's screen: run one only for what a screen alone shows, and
+  only while `node tools/display-gate.mjs status` allows it (`docs/tools.md`, Display gate).
 - `tools/verify-*.mjs` are regression probes (GPU ones take the lock; `verify-day-cycle`,
   `verify-weather-state`, `verify-wind`, `verify-game`, `verify-framegraph` are plain `node`):
   see `docs/tools.md`.
@@ -151,18 +145,11 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 ## Tools
 
 Agents once wrote thousands of throwaway scripts for the same few jobs (view loops, page probes,
-image diffs, wait loops); the shared tools now cover them. Before writing a script:
-
-- Look for the tool that answers the question (`docs/tools.md`, Which tool for which question).
-  If a tool almost fits, add an option to it instead of working around it.
-- A script needed a second time, or by another task, becomes a tool in `tools/` (or an option of an
-  existing one) with a header comment and a `docs/tools.md` entry (`docs/tools.md`, Writing a
+image diffs, wait loops); the shared tools now cover them.
+- Before writing a script, look for the tool that answers the question (`docs/tools.md`, Which
+  tool for which question); if one almost fits, add an option to it.
+- A script needed a second time, or by another task, becomes a tool (`docs/tools.md`, Writing a
   tool). A truly one-off script stays in the task's artifacts folder.
-- Build on the shared modules instead of copying them: `capture-browser.mjs` (browser, warm
-  profiles, readiness), `parity/reference.mjs` (stored references), `parity/views.mjs`,
-  `parity/pixels.py` (image metrics), `gpu-lock.mjs`, `job.mjs`, `qos.mjs`.
-- A check keeps what it proves: when a check is made faster, its header states what it compares
-  and that stays true (a scene-jump check compares jumps with fresh loads, not with other jumps).
 - Never start a GPU tool to see its options: it queues for the lock and renders. Read its header.
 
 ## WebGPU / TSL pitfalls

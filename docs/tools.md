@@ -8,9 +8,16 @@ everyday commands; this file has the details. Each tool's own file says the rest
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
   `npm run preview` (port 5191, the production build). Build and typecheck run tsc and vite with
   the application policy on macOS (Process priority, below).
-- The islanders load from the git-ignored `artifacts/assets/`, which only the dev server serves: a
-  production build (a preview, a worktree's) needs them linked into `dist/` after each build
-  (`tools/parity/README.md`, setup), or its page stays on the loading screen.
+- `node tools/serve.mjs dev|preview [--port N] [--no-build]` starts a worktree's server without
+  colliding with another's: it takes the first free port in 6400-6499 (or checks `--port N` and
+  names the pid and cwd holding it), builds first for `preview` unless `--no-build`, runs vite
+  through `job.mjs` with its log at `artifacts/jobs/serve-<mode>-<port>.log`, waits until it
+  answers and prints the URL and the `job.mjs stop` command that ends it.
+- The islanders load from the git-ignored `artifacts/assets/`. `tools/vite-assets.mjs` finds the
+  folder (the checkout's own, else the main checkout's through git's common directory, so a fresh
+  worktree needs no link): the dev server serves it and `vite build` links it into
+  `dist/artifacts/assets`. Without either, the build warns once and the page stays on the loading
+  screen.
 - `window.__PONLAI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the
   dev server or with `?debug` (or `?profile`, which also loads the frame profiler).
   `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock, converge } )` stops the live loop and
@@ -493,6 +500,12 @@ window call `requireDisplayAllowed` from the same module. Everything else runs h
 run that is not allowed now is recorded as pending and run later in one batch. Before the window
 opens, the tool posts a desktop notification (`announceHeadedRun`) and waits 10 s.
 
+The gate is a switch, not a reason to go headed. A run is headed only for what a screen alone
+shows (Frame profiler, `--display`): pacing and cadence, late frames, the frame pacer's rate, the
+dynamic scale under a player's drags, and the display tools' own tests. Everything else, GPU cost
+and tuning included, runs headless. A headed run covers at most 3 scenes, and whoever dispatches
+one tells the user beforehand, as information rather than a question.
+
 ## Frame profiler: `tools/profile-frame.mjs`
 
 ```
@@ -685,9 +698,13 @@ what these do not give (automation, A/B statistics, pass names).
 
 ## Writing a tool
 
+- Build on the shared modules instead of copying them: `capture-browser.mjs` (browser, warm
+  profiles, readiness), `parity/reference.mjs` (stored references), `parity/views.mjs`,
+  `parity/pixels.py` (image metrics), `gpu-lock.mjs`, `job.mjs`, `qos.mjs`.
 - The header comment comes first: the usage line, what the tool guarantees (what it compares or
   measures, and under which conditions), its rules with their reasons, and its outputs. Options
-  it does not know are an error, not ignored.
+  it does not know are an error, not ignored. A change that makes a check faster keeps that
+  guarantee true (a scene-jump check compares jumps with fresh loads, not with other jumps).
 - Output goes to files (images, JSON a script can read) with a short summary on stdout. Exit
   codes mean something: 0 passed, 1 failed, and 3 for contended (the GPU was busy, nothing
   measured). A long tool prints progress lines, so `job.mjs wait` shows where it is.
@@ -711,6 +728,9 @@ what these do not give (automation, A/B statistics, pass names).
 
 - `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water and wave
   optics (each file names the server it expects); they take the GPU lock (shared).
+  `verify-optical-interface`, `verify-frame-graph-gpu`, `verify-water-energy`, `verify-refracted-sun`,
+  `verify-solar-shadows`, `verify-wave-optics` and `verify-water-volume` import `/src/` modules and
+  need the dev server: on any other server they exit 1 at once (`tools/dev-server.mjs`).
   `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
   parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
   ready by capture.mjs's stability rule (`tools/parity/README.md`, One page, many views);
