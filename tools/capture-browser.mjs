@@ -9,6 +9,17 @@
 // directory `<n>.lock` (mkdir is atomic) holding owner.json (pid), stale once that process is gone.
 // A capture takes the lowest free slot, so n jobs at once use slots 0..n-1 and keep them warm. The
 // slots are independent of tools/gpu-lock.mjs (taken after it, held only while the browser runs).
+// - Affinity: a slot is warm for the pages it has served, not for every page (the world cache is per
+//   origin, so per preview port), so the lowest free slot put a page on a cold slot whenever
+//   another job held its warm one, and kept it there the next time too. A caller that names its
+//   page (`url`) takes the slots that page used last first: `<root>/<browser build>/affinity.json`
+//   maps the page's origin plus its build's id (a hash of the page's HTML without the query: a
+//   production build's names its hashed bundles; the URL alone when it cannot be read) to the
+//   slots it ran in, most recent first. The capture takes the first of them that is free, else the
+//   lowest free slot, and moves the slot it took to the front. A list rather than one slot, so
+//   that n jobs at once on one page find their n warm slots again. The file is rewritten whole
+//   (by rename) on each launch; a lost race between two launches only drops one record, which
+//   costs a cold slot, never a wrong capture. Callers without `url` take the lowest free slot.
 // - The browser build is in the path because a profile does not move between browser versions:
 //   Playwright's Chromium is named by its install folder (`chromium-1243`), a CHROME_PATH browser
 //   by its `--version` output.
@@ -207,6 +218,48 @@ function tryTake( lock ) {
 
 }
 
+// the affinity key of a page: its origin and its build's id (see the header)
+async function affinityKey( url ) {
+
+	const page = new URL( url );
+	page.search = '';
+	page.hash = '';
+	try {
+
+		const response = await fetch( page, { signal: AbortSignal.timeout( 5000 ) } );
+		if ( response.ok ) return `${ page.origin } ${ createHash( 'sha1' ).update( await response.text() ).digest( 'hex' ).slice( 0, 12 ) }`;
+
+	} catch { /* unreadable: keyed by the URL */ }
+	return page.href;
+
+}
+
+// takes a free slot in `dir`: the page's recent slots first, then the lowest; records the one taken
+async function takeSlot( dir, url ) {
+
+	const file = path.join( dir, 'affinity.json' );
+	const key = url ? await affinityKey( url ) : null;
+	const recent = key ? readJson( file )?.[ key ] ?? [] : [];
+	let slot = recent.find( ( n ) => tryTake( path.join( dir, `${ n }.lock` ) ) );
+	if ( slot === undefined ) {
+
+		slot = 0;
+		while ( ! tryTake( path.join( dir, `${ slot }.lock` ) ) ) slot ++;
+
+	}
+	if ( key ) {
+
+		const map = readJson( file ) ?? {};
+		map[ key ] = [ slot, ...( map[ key ] ?? [] ).filter( ( n ) => n !== slot ) ];
+		const tmp = `${ file }.${ process.pid }`;
+		writeFileSync( tmp, JSON.stringify( map, null, '\t' ) + '\n' );
+		renameSync( tmp, file );
+
+	}
+	return slot;
+
+}
+
 let held = null;
 function release() {
 
@@ -228,18 +281,17 @@ function installRelease() {
 
 }
 
-/** Launches the capture browser in the lowest free profile slot, with one page of the given
- * viewport and device scale factor, and `args` as its switches (LAUNCH_ARGS; verify-first-use
- * passes its own, vsync on). Returns { context, page, version, slot, profile, close }:
+/** Launches the capture browser in a free profile slot (the slots `url`'s page used last first, else
+ * the lowest; see the header), with one page of the given viewport and device scale factor, and
+ * `args` as its switches (LAUNCH_ARGS; verify-first-use passes its own, vsync on). Returns { context, page, version, slot, profile, close }:
  * `version` as Playwright's browser.version() reports it (the parity tools compare it between
  * sets), `close()` closes the browser and frees the slot. */
-export async function launchCapture( { viewport, deviceScaleFactor = 1, args = LAUNCH_ARGS } ) {
+export async function launchCapture( { viewport, deviceScaleFactor = 1, args = LAUNCH_ARGS, url = null } ) {
 
 	const dir = path.join( profileRoot(), browserBuild() );
 	mkdirSync( dir, { recursive: true } );
 	installRelease();
-	let slot = 0;
-	while ( ! tryTake( path.join( dir, `${ slot }.lock` ) ) ) slot ++;
+	const slot = await takeSlot( dir, url );
 	held = path.join( dir, `${ slot }.lock` );
 	const profile = path.join( dir, String( slot ) );
 	let context;

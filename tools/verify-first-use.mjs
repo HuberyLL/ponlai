@@ -115,7 +115,7 @@ if ( FRESH ) {
 
 } else {
 
-	const capture = await launchCapture( { viewport: VIEWPORT, deviceScaleFactor: 2, args: ARGS } );
+	const capture = await launchCapture( { viewport: VIEWPORT, deviceScaleFactor: 2, args: ARGS, url: base } );
 	newPage = () => capture.context.newPage();
 	close = capture.close;
 	profile = `slot ${ capture.slot }`;

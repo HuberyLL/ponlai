@@ -192,7 +192,7 @@ const started = Date.now();
 const fresh = options.fresh ? mkdtempSync( path.join( tmpdir(), 'ponlai-probe-' ) ) : null;
 if ( fresh ) process.env.PONLAI_CAPTURE_PROFILES = fresh;
 const lockMs = await acquireGpuLock( `probe ${ queries[ 0 ] }`, { shared: ! options.exclusive } );
-const capture = await launchCapture( { viewport: { width: Number( options.w ), height: Number( options.h ) }, deviceScaleFactor: Number( options.scale ) } );
+const capture = await launchCapture( { viewport: { width: Number( options.w ), height: Number( options.h ) }, deviceScaleFactor: Number( options.scale ), url } );
 const { page } = capture;
 for ( const js of inits ) await capture.context.addInitScript( js );
 let record = null;

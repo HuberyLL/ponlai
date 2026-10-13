@@ -40,7 +40,10 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
 
 - Profile slots: each capture runs in a persistent profile, `artifacts/.capture-profiles/<browser
   build>/<n>` of the main checkout, taking the lowest free slot (a `<n>.lock` directory naming its
-  pid; stale once that process is gone), so `--jobs 4` uses slots 0-3. The world cache
+  pid; stale once that process is gone), so `--jobs 4` uses slots 0-3. A capture that names its
+  page takes the slots that page (its origin and build) ran in last first, from `affinity.json`
+  beside the slots, so another job holding a warm slot no longer moves it to a cold one for good
+  (`tools/capture-browser.mjs`). The world cache
   (IndexedDB, keyed on the generator's sources and the browser; one entry per preview port) and
   the GPU shader cache then hit from the second load: the island is not generated again (3 s
   alone, about a minute under a busy CPU). A hit is byte-identical to a miss. localStorage and
@@ -376,7 +379,7 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
 {
   "format": 1, "kind": "set" | "clip", "sha": "<40 hex>", "path": "S1",
   "key": { "kind": "set", "tool": "<16 hex>", "browser": { "executable": "playwright chromium", "version": "153.0.8010.12" },
-           "quality": "high", "aa": null, "q": null, "size": "1728x1117@2", "capture": [] },
+           "quality": "high", "aa": null, "q": null, "size": "1728x1117@2", "capture": [], "pages": "jump" },
   "toolFiles": { "capture.mjs": "<12 hex>", "capture-browser.mjs": "...", "parity/capture-set.mjs": "...", "parity/views.mjs": "...", "parity/adhoc.mjs": "..." },
   "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true },
                            "my-adhoc": { "captured": true, "def": "<16 hex>" } } },
@@ -397,7 +400,11 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   round); `toolFiles` keeps each
   file's hash so a forced recapture names the files that changed. `browser`: CHROME_PATH or
   Playwright's Chromium, and its version. Then the options: a set's tier, aa, size, extra query
-  and capture.mjs options; a clip entry's `tier`, `aa`, `size`, `q`, `clip`, `view`, `full`,
+  and capture.mjs options, and `pages`, how its views were reached: `"jump"` (a page per worker,
+  most views by the scene jump; a manifest without it counts as this) or `"view"` (a fresh page
+  per view, `--page-per-view`), so neither stands in for the other. A build without the exact jump
+  gets a page per view whatever was asked: its set is stored as `"view"` with `"jumpless": true`,
+  and serves both. A clip entry's key holds its `tier`, `aa`, `size`, `q`, `clip`, `view`, `full`,
   `every`, `dense` and `anchors` (the hash of the anchors it took with `--anchors-from`, null for
   its own), so a ground truth follows a recaptured baseline.
 - `coverage`: what the directory holds, apart from the key. A set lists its views, each with
@@ -563,8 +570,24 @@ node tools/verify-scene-jump.mjs <baseUrl> <test> --order reverse --suffix .repe
 uv run --with numpy --with pillow tools/parity/diff-set.py <ref> <test> --aa-floor
 ```
 
-Both sides use capture fast mode (a persistent profile, 40 rendered frames after the evals, the loop
-stopped before the shot), so they differ only in how the scene was reached. `--from <view or query>`
+or, in one command, against the reference store:
+
+```sh
+node tools/verify-scene-jump.mjs <baseUrl> <test> --check <root>/<sha>/<set>
+```
+
+`--check` takes the fresh side from the store (capture-set `--reference --repeat --page-per-view`
+of the same views and options: a fresh page per view, reused for the commit, else captured in
+parallel), runs the two jump orders at once (two pages, one leased GPU slot each) and then
+`diff-set.py` (`--aa-floor`, or `--temporal` for the temporal modes; the table also in
+`<test>/diff.txt`). It refuses a stored set whose key is not `pages: "view"`: a set reached by jumps
+would compare the jump with itself. Every run leases its slot per
+view (as capture.mjs's worker), so a waiter gets in at the next view boundary.
+
+Both sides use capture.mjs's readiness (a persistent profile; after the evals the image grabbed
+with the loop stopped until two grabs agree, a temporal page's converged rest; the loop stopped for
+the shot; `--frames n` for the old fixed count), so they differ only in how the scene was reached.
+Each shot's JSON records `ready`; a shot still changing at the cap is printed as unstable. `--from <view or query>`
 visits scenes first without capturing them (a storm, a night, fog, another clock: `--from
 "weather=storm&preset=noon&t=5"`); `--aa taau` with `diff-set.py --temporal` checks the temporal
 modes. All 24 views take about 2-3 s each in one page, against 6-7 s per fresh load (unshared GPU).

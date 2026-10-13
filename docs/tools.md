@@ -126,8 +126,17 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   per tier, AA mode, frame rate, canvas size and GPU, and saves the scale it holds: on by default,
   off in an automated browser so a profile or capture does not start where the last run ended;
   `on` tests a returning load there, `off` neither restores nor saves anywhere).
-- `frameRate` (the frame rate the loop holds on a faster display, over the tier's; `frameRate=0`
-  renders on every refresh, as the profiler's uncapped runs do).
+- `frameRate=auto|<fps>` (the frame rate the loop holds on a faster display: `auto`, the default,
+  holds the tier's and falls back to the next whole divisor of the refresh, e.g. 72 -> 48 fps on
+  144 Hz, when the dynamic scale's floor cannot hold it, `src/post/FramePacer.ts`; a number is a cap,
+  the fastest whole-divisor rate not above it, without the fallback; `frameRate=0` renders on every
+  refresh, as the profiler's uncapped runs do). `frameFallback=0` keeps `auto` at the tier's rate
+  (profile-frame adds it on `--compare` and `--accept`; `--frame-fallback` keeps the fallback on). A
+  scene jump (`establishScene`) leaves the fallback, as a fresh load starts at the held rate. In a
+  debug page, `__PONLAI__.pacer.choices()` lists the display's even rates, `setRate( fps | 'auto' )`
+  sets one, `mode` and `rate` read the choice and `fps` the rate held now (a production `?game`
+  settings menu needs the game to be handed the pacer: not wired yet); the diagnostics' `pacing`
+  block shows `mode`, `fallback`, `falls` and `returns`.
 - `submits=each` (three's own submit per pass, without the submit batching; at runtime
   `flags.batchSubmits`; its tracking wrappers stay installed, so compare against `main` for their
   JS cost) and `submitBatch=hold,wait,idle` (its policy, see `SubmitBatch.ts`).
@@ -194,7 +203,9 @@ Game:
 Captures and clips run in "fast mode" (`tools/capture-browser.mjs`): the browser runs in a
 persistent profile slot, `artifacts/.capture-profiles/<browser build>/<n>` of the main checkout
 (one browser per slot, each with its own lock; `PONLAI_CAPTURE_PROFILES` moves them; safe to
-delete), so the world cache and the GPU shader cache hit from the second capture on. A paused
+delete), so the world cache and the GPU shader cache hit from the second capture on. A capture
+takes the free slots its page (origin and build) used last first (`affinity.json` beside the
+slots), else the lowest free one. A paused
 capture is shot once its image stops changing: grabbed every 2 frames from the frame after the
 evals, shot when a comparison found no pixel changed (after 40 frames, at most 5000
 changed pixels count as unchanged; after 120 the view is shot anyway, marked `capped`). A paused
@@ -325,62 +336,105 @@ Everything that renders the scene in a browser (captures, profiles, GPU probes) 
 machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks, running captures)
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
 do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 3) and the
-rest queue first in, first out: captures are GPU-bound, so past 2-3 pages at once only each page's
+rest queue: captures are GPU-bound, so past 2-3 pages at once only each page's
 latency grows. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
-it from view to view and gives it up between views only when someone waits for it (an exclusive
-request past its cap, below, or a shared one when every slot is taken) and it has held it for its
-lease, 20 s (capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view), so a set
-behind back-to-back timing runs advances about four views per run instead of one, and a timing run
-past its cap waits at most 20 s plus the view in flight for it (a low page gives its slot to a
-normal shared request at the next view); capture-clip.mjs holds a slot per clip. A capture that
+it from view to view and gives it up between views only when a request ranked before its next one
+waits for it (an exclusive request, or a shared one when every slot is taken) and it has held it
+for its lease, 20 s (capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view),
+so a set behind back-to-back timing runs advances about four views per run instead of one, and a
+timing run ranked before it waits at most 20 s plus the view in flight for it; capture-clip.mjs holds a slot per clip.
+An exclusive lease can keep its place (`leaseGpuLock` with `keepPlace`, profile-frame's hold per
+scene): it is ranked, and asked for again, under the ticket number of its first request, so it
+yields only to a request ranked before that one (a higher level: captures at normal before a
+default timing run, or a session raised with `prio set`) and keeps its rank within its level; a
+timing run of the same level queued meanwhile goes after the whole series. A capture that
 loads a page (capture.mjs, and the first view of a capture-set page) takes its slot only once the
 page has generated its world: until then it holds the page's GPU device back (the page waits in
 `requestDevice`), so the world's CPU work in its workers (tens of seconds when it is not cached)
 runs without a slot and without GPU work, and the slot covers the GPU set-up, warm-up and shot (a
 page that does not mark its world, `window.__PONLAI_WORLD__`, takes it at the renderer's start). Under a
 `run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
-from then on, so a wrapped orchestrator never holds a slot its own captures wait for. Exclusive and
-shared requests wait in one queue, shared first: a shared request joins whenever a slot is free,
-even with an exclusive request queued ahead of it, and an exclusive request takes the lock only
-when it is really free (no holders, no shared request waiting); exclusive requests go among
-themselves in arrival order. One timing run waiting is cheaper than a queue of agents waiting.
-`PONLAI_GPU_EXCLUSIVE_MAX_WAIT` seconds (default 1800) after an exclusive request queued, it stops
-the shared requests queued after it, waits for the holders to drain and goes next, so a timing run
-waits at most about 30 min plus one hold while captures keep arriving. A killed holder's slot frees
-itself at the next look, and a killed request leaves the queue. Every session's work runs at the
-same class, normal: leave `PONLAI_GPU_PRIORITY` unset (a lower class made one session's agents wait
-behind everyone else's, which costs as much as anyone's wait). The lock still has a low class,
-`PONLAI_GPU_PRIORITY=low` (inherited by every child, so set on the outer command), for a run that
-should only fill slots nobody else wants: a free slot goes to the oldest normal request first and to
-a low one only when no normal request waits; holders are never preempted and exclusive requests
-ignore the class. A low request ranks as a normal one from its original place
-after `PONLAI_GPU_LOW_MAX_WAIT` seconds (default 600, so it never waits for ever; the reason is in
-the module's header).
+from then on, so a wrapped orchestrator never holds a slot its own captures wait for.
+Exclusive and shared requests wait in one queue under one rule: they rank by level, then first in,
+first out, and a request starts when nothing ranked before it still waits (an exclusive one once
+every holder has left, a shared one when a slot is free; a shared one may start beside a shared
+head while that leaves the head a slot). Nothing ranked after the head holds it up. The levels,
+highest first: `urgent` (the user's own runs), `high`, `normal`, `low` (or 0-3). By default shared
+requests are `normal` and exclusive ones `low`: timing runs get no special treatment and rank below
+captures and probes, so a default timing run waits for as long as captures keep arriving. The
+remedy is to raise it. Scheduling is done by the user or a main session with the scheduling table,
+never by a session itself:
+
+    node tools/gpu-lock.mjs prio                                   # the table, every holder's and ticket's level and where it comes from
+    node tools/gpu-lock.mjs prio set m11-tune high --for 90m --note "timing round"
+    node tools/gpu-lock.mjs prio clear m11-tune
+    node tools/gpu-lock.mjs prio bump <pid|#ticket> urgent         # one request (kept for that process's later requests)
+
+An entry's match is a substring of one of a request's session names or of its label. The session
+names are the names of the checkouts (a worktree, or the main checkout) that hold the script the
+request runs and its working directory, and that directory's own name. So a tool started by its
+absolute path from another directory is still matched by its worktree's name, and the main
+checkout's name matches only requests from the main checkout. The longest match wins, an entry past
+its `--for` is ignored (and dropped at the next write), and the level applies to all the session's
+requests, shared and exclusive alike. `prio set` lists the holders and queued requests the entry
+applies to now, and warns when there are none (a typo, or a session that has not asked yet). A
+request's level is, first match wins: a bump, the table, `PONLAI_GPU_PRIORITY`, its mode's default.
+`prio bump` takes a pid (a queued request's, else a shared holder's) or a ticket number as `#n`; it
+refuses an exclusive holder (it already has the GPU to itself: bump its next request) and an older
+copy's request (below). Sessions never set `PONLAI_GPU_PRIORITY` (every child inherits it). The
+level is worked out whenever the queue is ranked, so a table change reorders requests already
+waiting. `prio --json` prints only the JSON.
+Levels hold only among copies of the lock that know them; copies in worktrees branched before the
+entry below still run their own rules. This copy ranks an older copy's requests at their mode's
+default (shared `normal`, exclusive `low`; source `older copy`), and neither the table nor a bump
+moves them: raised in this copy only, an older exclusive request and this copy's shared requests
+would wait for each other. Older copies rank by their classes (`normal` first in, first out, then
+`low`); main's copy from before the levels lets shared requests pass an exclusive one for up to
+30 min, a copy from before that lets nothing pass it. This copy's requests tell them `low` below
+normal and `normal` otherwise, so the copies agree on the defaults. Where they still disagree the
+cost is a delay, not a deadlock:
+- a raised (high, urgent) request of this copy goes before an older copy's earlier request here
+  but not there, so both start when they can;
+- an older copy's exclusive request ranks `low` here, so it waits while this copy's captures keep
+  arriving, like a default timing run (that copy's own captures queued behind it wait with it);
+- an older copy run with `PONLAI_GPU_PRIORITY=low` and this copy's normal captures can each wait
+  for the other's request with one slot free, until a second slot frees or 10 min pass (that copy
+  promotes its low requests then); sessions leave the variable unset.
+A copy from before the tickets announces its exclusive request in a waiter file, which holds back
+every shared request while it waits. A killed holder's slot frees itself at the next look, and a
+killed request leaves the queue.
+One implementation runs on the machine: `tools/gpu-lock.mjs` is an entry that loads the lock from
+`tools/gpu-lock-impl.mjs`, either its own worktree's or the main checkout's, whichever declares the
+higher `LOCK_VERSION` (the main checkout's on a tie; a main checkout from before the entry counts as
+version 0). So a branch runs every later lock upgrade as soon as main has it, without merging main,
+and once every worktree has the entry, copies with different rules no longer share the lock. If the main checkout's file does not load
+(a conflict mid-merge, a syntax error), the worktree's runs and stderr says so. A change to the lock
+goes in `gpu-lock-impl.mjs`, bumps `LOCK_VERSION` and keeps its exports and CLI additive; test it
+with `PONLAI_GPU_LOCK_IMPL=local`, which forces the worktree's copy. `status` ends with the file
+that runs and why (`impl` in its JSON).
 `node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
-`status` names the holders (shared: their slots and classes), the queue in turn (each with its
+`status` names the holders (shared: their slots; each with its level and source), the queue in turn (each with its
 estimated start, below) and the exclusive requests in turn (`waiting`), and `gpu` shows the GPU's
 utilisation and the processes using it. A request that waits prints a timestamped line
 every 30 s: its place in the queue, the next in turn, who holds the GPU (the exclusive holder or
-the shared slots' labels) and why it waits (an exclusive request past its cap first, low priority,
-or, for an exclusive request, shared requests first until its cap), and,
+the shared slots' labels) and why it waits (an exclusive request ahead, requests of a higher
+level), and,
 when it starts waiting and whenever the figure moves by more than a minute or a quarter, its
 estimated start: `estimated start in ~12 min (range 7 min-25 min, estimate)`.
 The estimate is also in `status` (`eta: { startIn, range: [ lo, hi ], basis }` on every queued
-request, in seconds from now) and in `node tools/gpu-lock.mjs eta [--shared|--exclusive] [--class
-low|normal] [--json]` for a request made now (`--pid p` for a waiting one). It is an estimate, not
+request, in seconds from now) and in `node tools/gpu-lock.mjs eta [--shared|--exclusive] [--level
+l] [--json]` for a request made now (at this shell's level unless `--level` says otherwise) (`--pid p` for a waiting one). It is an estimate, not
 a schedule: the queue is run forward under the lock's rules 200 times, each hold lasting a duration
 drawn from what holds of that kind took (the log's recent releases of the same tool and mode,
 `profile-frame` per mode; a built-in table until the log has five of a kind: `basis` counts which).
 `startIn` is the median start over the runs and `range` its 10th to 90th percentile. Requests made
-later are not foreseen, so a low request can start after its range when normal work keeps
-arriving, and an exclusive request after its range when shared work keeps arriving: its eta's
-`capIn` (and the line's "shared requests made meanwhile go first for up to ...") is the most that
-can add, plus the holds in progress then. To choose between waiting and handing work back, compare
+later are not foreseen, so a request can start after its range when work of a higher level keeps
+arriving (a default exclusive request while captures do). To choose between waiting and handing work back, compare
 `startIn` with the threshold (the range's upper end is cautious: it adds the spread of every hold
 ahead).
 Every request, grant, release, timeout and abandoned request is appended to a JSON-lines log next
 to the lock (`ponlai-gpu.lock.log.jsonl`, rotated to `.log.1.jsonl` past 4 MB): time, pid, label,
-mode, class, ticket, wait or hold in ms, and why a hold ended when its holder did not end it (a
+mode, class (the level), source (of the level), ticket, wait or hold in ms, and why a hold ended when its holder did not end it (a
 child took the slot over, a yielded slot, a killed holder reclaimed as stale, a lease given up for
 a waiter; a leased hold's release counts the views it served).
 `node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]` summarises it:
@@ -447,6 +501,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
   [--idle-wait s] [--contended] [--hang s] [--scale-log]
   [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]
+  [--drs-store] [--frame-fallback]
 ```
 
 - Profiles a production build (`npm run build && npm run preview`; the url defaults to its port)
@@ -477,11 +532,29 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   exits with 3, releasing the lock: a contended run's numbers prove nothing. Stop the client and
   run again, or pass `--contended` to measure anyway (results marked contended, as before). A
   later page load that finds the GPU busy still marks its results contended.
+- A run with several scenes holds the exclusive lock one scene at a time (every mode: profile,
+  compare, toggle, accept, reload): before a scene's warm-up it asks for the lock, after its last
+  slice its pages stop and drain. The pages and the browser stay open, their loops stopped, so
+  they draw nothing while the lock is away. The hold is a lease (`leaseGpuLock` with
+  `keepPlace`): kept from scene to scene while no request ranked before the run's first one
+  waits, otherwise given up and asked for again at once under that request's ticket number, so
+  queued captures (normal, before a default low timing run) run between the scenes instead of
+  after the whole run, and a timing run of the same level queued meanwhile still goes after it. A hold taken again checks the GPU for idle; still busy after `--idle-wait`, the
+  run stops with the finished scenes written and exits 3, unless `--contended` (that scene marked
+  contended). The first scene's hold covers the page loads. `wallSeconds` counts only the time
+  held; `meta.holds` lists each scene the lock came back for (its wait and the GPU idle with this
+  run's pages stopped), also under "Lock" in summary.md.
 - A scene that shows no progress for `--hang` seconds (180) is recorded as hung (profile.json
   `meta.hung`, a section of summary.md): the browser is closed and opened again and the run goes
   on with the scenes not finished yet; a second hang stops the run, with the finished scenes
   written as usual. Each scene's results are also appended to `scenes.jsonl` in the output folder
   as it finishes, so a run that dies otherwise still leaves what it measured.
+- Each page's `clockPaused` and `scalePinned` (diagnostics) are read at its load as its baseline
+  (`?dpr` pins legitimately) and again after every slice or measured window. A change (a key or
+  click reached the page: a Space pauses it, and a paused page renders at its nominal scale and
+  stops steering, spoiling every scene after it) stops the run as a second hang does, with the
+  finished scenes written (`meta.spoiled`, a section of summary.md), and exits with 1; the message
+  names the page, scene and slice.
 - `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
   other page stopped, and reports deltas with their 95 % interval, each page's render scale per
   scene (high's dynamic scale may settle higher on one side: compare the deltas with that in mind),
@@ -514,13 +587,28 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   to 200 deg/s with pauses, a wheel zoom, a flick; 20 s per scene), and per scene, by display
   refreshes, the intervals between the frames the scene rendered and between those the compositor
   presented (from a trace of Chrome's frame pipeline), the share of intervals that change cadence,
-  and how much the camera's turning speed changes from frame to frame. A window covers the screen
+  and how much the camera's turning speed changes from frame to frame. Bringing the window to the
+  front gives Chrome the keyboard focus, so every page stops all key events on the window before
+  its own listeners (the tool sends none); pointer and wheel stay open for the drags. A window covers the screen
   while it runs: keep the runs short and other animated windows closed. It needs the display gate.
   `--display --compare urlA urlB` interleaves A and B in the same slices as the headless compare
   (the running page brought to the front, the drags restarted in each slice), so the drift between
   separate headed runs (a millisecond or two) cancels; its summary adds the share of late frames
-  (presented intervals longer than the frame pacer's pace) per slice, as a delta with its interval, and each page's
-  frames over 25 ms.
+  (presented intervals longer than the pace each frame was rendered at, the frame pacer's divisor
+  then) per slice, as a delta with its interval, each page's frames over 25 ms, its effective rate
+  (rendered frames per second) and its share of frames at the pacer's fallback rate. One trace
+  spans a scene's slices of both pages, split by a performance mark per slice (ended early at each
+  adaptive stop check); a trace per slice nearly doubled the time a slice took beyond its settle
+  and window.
+- Adaptive slices: in `--compare`, `--slices` is the most a scene takes. From `--min-slices` on
+  (4 with `--display`; headless it defaults to `--slices`, which turns it off), at the end of each
+  balanced block of four slices (B A A B, then A B B A) a scene stops once its leading delta's 95 %
+  interval clears zero by `--stop-margin` or is no wider than ± `--stop-width` (that one only with 4
+  slices a side). The leading delta is the late frames on the display (a share: defaults 0.1 and
+  0.02), else GPU busy with timestamps, else the median frame interval (ms: 0.2 and 0.05). The
+  summary and each scene's `stop` in profile.json give the slices taken and why. A stop answers the
+  leading delta only: the other deltas get fewer slices and wider intervals, so a run whose passes
+  or secondary figures matter sets `--min-slices` equal to `--slices`.
 - `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
   leave out) and tabulates every scene at every scale. Every report gives the render scale the
   measured frames were drawn at (its median, range and changes: high's moves); `--scale-settle s`
@@ -530,6 +618,9 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - `--compare` and `--accept` load their pages with `drsStore=off`, so neither side of an A/B (two
   AA modes, two builds) starts from a dynamic scale the other or an earlier run settled at;
   `--drs-store` loads them with `drsStore=on` instead (a returning load).
+- `--compare` and `--accept` also load their pages with `frameFallback=0` (the pacer holds the tier's
+  rate, so both sides of an A/B run at one pace); `--frame-fallback` keeps the automatic fallback
+  (72 -> 48 fps on a 144 Hz display) on.
 - `--eval` runs in the page with `s` = `window.__PONLAI__` (an ablation, e.g.
   `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a summary.
 
@@ -566,13 +657,39 @@ Animation Hitches templates show when frames reached the display and what the GP
 --time-limit 10s --output <file>.trace`, then open it in Instruments). Extend our tools only for
 what these do not give (automation, A/B statistics, pass names).
 
+## Writing a tool
+
+- The header comment comes first: the usage line, what the tool guarantees (what it compares or
+  measures, and under which conditions), its rules with their reasons, and its outputs. Options
+  it does not know are an error, not ignored.
+- Output goes to files (images, JSON a script can read) with a short summary on stdout. Exit
+  codes mean something: 0 passed, 1 failed, and 3 for contended (the GPU was busy, nothing
+  measured). A long tool prints progress lines, so `job.mjs wait` shows where it is.
+- A tool that renders takes the GPU lock (`gpu-lock.mjs`): shared for paused captures and probes,
+  exclusive for timing. It holds the lock per piece of work where it can (`leaseGpuLock`), so a
+  long run gives way at its boundaries to a request ranked before it. It never holds a slot while
+  it does CPU work or waits for something else.
+- Readiness comes from the page, never from a fixed frame count or a sleep. Use
+  capture-browser's `waitForScene` and `waitForStable`, or the diagnostics' `settled`. A fixed
+  40-frame wait passed or failed by chance on a busy GPU.
+- Expensive results that depend only on the commit, the tool and the browser are stored and
+  reused through `parity/reference.mjs`; record in the key everything that changes them.
+- CPU-heavy node tools import `qos.mjs` first. Python tools declare their dependencies inline (PEP
+  723) and run with `uv run`; image metrics come from `parity/pixels.py`.
+- Tools are shared by every session's worktrees. A tool change goes to main promptly, and the
+  sessions using it are told. Older copies in other worktrees are not kept compatible: those
+  sessions update. The GPU lock runs the newest implementation on the machine, so a rule change
+  bumps its `LOCK_VERSION` (`gpu-lock-impl.mjs`).
+
 ## Other tools
 
 - `tools/verify-*.mjs` are GPU regression probes for the sky, lighting, shadows, water and wave
   optics (each file names the server it expects); they take the GPU lock (shared).
   `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
-  parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`
-  (`tools/parity/README.md`, One page, many views).
+  parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
+  ready by capture.mjs's stability rule (`tools/parity/README.md`, One page, many views);
+  `--check <root>/<sha>/<set>` runs the whole check (the stored set of fresh loads, a page per
+  view, both jump orders at once, the diff) in one command.
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
