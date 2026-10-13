@@ -618,7 +618,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   slice, trace end or results; at a scene's start, the halt, the cover, the lock's wait or its
   idle check) and what each page still did (answering, visible, its animation
   and scene frames over a second). A scene whose browser or page closes or crashes under it (a
-  headed window closed, Chrome gone) is recorded as lost the same way. Either way the browser is
+  headed window closed, Chrome gone) is recorded as lost the same way, as is a scene whose setup
+  or placement throws in the page (`meta.hung[].failed`: the error). Either way the browser is
   closed (killed when it is still open after 30 s, so it neither runs on nor holds the profile)
   and opened again, and the run goes on with the scenes not finished yet; the runner given up
   takes no lock and counts as no progress. A second hung or lost scene stops the run, with the
