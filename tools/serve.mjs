@@ -1,4 +1,4 @@
-// Starts this checkout's dev or preview server on a free port, through job.mjs.
+// Starts the dev or preview server of the checkout the cwd is in, on a free port, through job.mjs.
 // Agents used to pick a port by hand, look it up with lsof and start vite themselves; in T37 a
 // worktree's server failed on a port another worktree's server already held. This picks a free
 // port (or names who holds the one asked for), starts vite detached with its log under
@@ -10,7 +10,11 @@
 // Ports: 6400-6499 by default, the first free one. `--port N` uses N or fails naming the process
 // that listens on it (pid, cwd). `preview` runs `npm run build` first unless given `--no-build`.
 // Prints `<url>  log <path>  (stop: node tools/job.mjs stop <path>)`.
-// Exit codes: 0 serving; 1 bad usage, port taken, no free port or the server did not answer within
+// The served checkout is the one containing the cwd, not the one holding this file: agents call
+// the tool by the main checkout's absolute path from their worktrees, and it used to serve (and
+// rebuild) main's dist silently. A cwd outside this repository exits 1. The first line printed
+// names the served checkout: its path, HEAD (short sha) and branch.
+// Exit codes: 0 serving; 1 bad usage, a cwd outside the repository, port taken, no free port or the server did not answer within
 // 60 s (the log's tail is printed); a failed build or npm ci exits with its code.
 //
 // `--sha <rev>` serves another commit instead of this checkout. Agents comparing against an older
@@ -23,7 +27,7 @@
 // cache, which its own dev server uses. With another lockfile it runs `npm ci` there instead. The
 // islanders' assets link themselves (tools/vite-assets.mjs, in commits that have it). `preview`
 // builds once per worktree: a successful build writes the sha into dist/.serve-sha, and a call that
-// finds it skips the build. The vite job runs in the worktree, with its log in this checkout's
+// finds it skips the build. The vite job runs in the worktree, with its log in the calling checkout's
 // artifacts/jobs/ (serve-<mode>-sha-<12 hex>-<port>.log), so `clean` cannot delete it.
 // `clean` stops the jobs running in each sha-* worktree (job.mjs stop --cwd), removes the
 // worktrees (git worktree remove --force: node_modules and dist are untracked; the links are
@@ -36,6 +40,7 @@ import { existsSync, readFileSync, readdirSync, mkdirSync, symlinkSync, writeFil
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+// The tool's own files (job.mjs); the checkout it serves is `caller`, below.
 const here = join( dirname( fileURLToPath( import.meta.url ) ), '..' );
 const jobTool = join( here, 'tools', 'job.mjs' );
 const usage = 'usage: node tools/serve.mjs dev|preview [--port N] [--no-build] [--sha <rev>] | clean';
@@ -75,42 +80,60 @@ for ( let i = 0; i < args.length; i ++ ) {
 if ( ! mode ) fail( usage );
 if ( mode === 'clean' && ( args.length > 1 ) ) fail( `clean takes no options\n${ usage }` );
 
-function git( a, cwd = here ) {
+function git( a, cwd ) {
 
 	return execFileSync( 'git', a, { cwd, encoding: 'utf8', stdio: [ 'ignore', 'pipe', 'pipe' ] } ).trim();
 
 }
 
+const commonDir = ( cwd ) => git( [ 'rev-parse', '--path-format=absolute', '--git-common-dir' ], cwd );
+
+// The checkout the cwd is in: it is served, built and logged into. It must be a checkout of this
+// repository (the same common git directory as the tool's own), or the tool would serve a stranger.
+let caller;
+try {
+
+	caller = git( [ 'rev-parse', '--show-toplevel' ], process.cwd() );
+	if ( commonDir( caller ) !== commonDir( here ) ) caller = null;
+
+} catch {
+
+	caller = null;
+
+}
+
+if ( ! caller ) fail( `${ process.cwd() } is not in a checkout of ${ dirname( commonDir( here ) ) }; run serve.mjs from one` );
+
 // The main checkout: sha-* worktrees live there whichever worktree this script runs from.
-const mainCheckout = dirname( git( [ 'rev-parse', '--path-format=absolute', '--git-common-dir' ] ) );
+const mainCheckout = dirname( commonDir( caller ) );
 const shaRoot = join( mainCheckout, '.claude', 'worktrees' );
 
 if ( mode === 'clean' ) {
 
-	const trees = git( [ 'worktree', 'list', '--porcelain' ] ).split( '\n' )
+	const trees = git( [ 'worktree', 'list', '--porcelain' ], caller ).split( '\n' )
 		.filter( ( l ) => l.startsWith( 'worktree ' ) ).map( ( l ) => l.slice( 9 ) )
 		.filter( ( p ) => dirname( p ) === shaRoot && /^sha-[0-9a-f]+$/.test( p.slice( shaRoot.length + 1 ) ) );
 	for ( const t of trees ) {
 
 		spawnSync( 'node', [ jobTool, 'stop', '--cwd', t ], { stdio: 'inherit' } );
-		git( [ 'worktree', 'remove', '--force', t ] );
+		git( [ 'worktree', 'remove', '--force', t ], caller );
 		console.log( `removed ${ t }` );
 
 	}
 
-	git( [ 'worktree', 'prune' ] );
+	git( [ 'worktree', 'prune' ], caller );
 	if ( trees.length === 0 ) console.log( 'no sha-* worktrees' );
 	process.exit( 0 );
 
 }
 
-let repo = here, tag = '';
+let repo = caller, tag = '';
 if ( rev !== null ) {
 
 	let sha;
 	try {
 
-		sha = git( [ 'rev-parse', '--verify', '--quiet', `${ rev }^{commit}` ] );
+		sha = git( [ 'rev-parse', '--verify', '--quiet', `${ rev }^{commit}` ], caller );
 
 	} catch {
 
@@ -120,6 +143,7 @@ if ( rev !== null ) {
 
 	tag = sha.slice( 0, 12 );
 	repo = join( shaRoot, `sha-${ tag }` );
+	console.log( `serving ${ repo }  HEAD ${ sha.slice( 0, 7 ) }  (detached)` );
 	if ( existsSync( repo ) ) {
 
 		const head = git( [ 'rev-parse', 'HEAD' ], repo );
@@ -139,7 +163,7 @@ if ( rev !== null ) {
 		let lock = null;
 		try {
 
-			lock = git( [ 'show', `${ sha }:package-lock.json` ] );
+			lock = git( [ 'show', `${ sha }:package-lock.json` ], caller );
 
 		} catch {}
 		const mainLock = join( mainCheckout, 'package-lock.json' );
@@ -166,6 +190,12 @@ if ( rev !== null ) {
 		}
 
 	}
+
+} else {
+
+	const head = git( [ 'rev-parse', '--short=7', 'HEAD' ], repo );
+	const branch = git( [ 'branch', '--show-current' ], repo ) || 'detached';
+	console.log( `serving ${ repo }  HEAD ${ head }  (${ branch })` );
 
 }
 
@@ -230,7 +260,7 @@ if ( mode === 'preview' && build ) {
 
 }
 
-const log = join( here, 'artifacts', 'jobs', `serve-${ mode }${ tag ? `-sha-${ tag }` : '' }-${ port }.log` );
+const log = join( caller, 'artifacts', 'jobs', `serve-${ mode }${ tag ? `-sha-${ tag }` : '' }-${ port }.log` );
 mkdirSync( dirname( log ), { recursive: true } );
 const vite = `npx vite ${ mode === 'preview' ? 'preview ' : '' }--host 127.0.0.1 --port ${ port } --strictPort`;
 const started = spawnSync( 'node', [ jobTool, 'start', '--log', log, '--', vite ], { cwd: repo, stdio: [ 'ignore', 'ignore', 'inherit' ] } );

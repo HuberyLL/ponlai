@@ -12,7 +12,9 @@ everyday commands; this file has the details. Each tool's own file says the rest
   colliding with another's: it takes the first free port in 6400-6499 (or checks `--port N` and
   names the pid and cwd holding it), builds first for `preview` unless `--no-build`, runs vite
   through `job.mjs` with its log at `artifacts/jobs/serve-<mode>-<port>.log`, waits until it
-  answers and prints the URL and the `job.mjs stop` command that ends it.
+  answers and prints the URL and the `job.mjs stop` command that ends it. It serves the checkout
+  the cwd is in, whichever copy of serve.mjs runs (outside the repository it exits 1), and its
+  first line names that checkout's path, HEAD and branch.
 - `node tools/serve.mjs dev|preview --sha <rev>` serves another commit: a detached worktree at
   the main checkout's `.claude/worktrees/sha-<12 hex>`, made once and reused. Its node_modules
   links the main checkout's entries (vite's caches left out) when the commit's package-lock.json
