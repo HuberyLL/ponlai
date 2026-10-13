@@ -507,10 +507,15 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   held; `meta.holds` lists each scene the lock came back for (its wait and the GPU idle with this
   run's pages stopped), also under "Lock" in summary.md.
 - A scene that shows no progress for `--hang` seconds (180) is recorded as hung (profile.json
-  `meta.hung`, a section of summary.md): the browser is closed and opened again and the run goes
-  on with the scenes not finished yet; a second hang stops the run, with the finished scenes
-  written as usual. Each scene's results are also appended to `scenes.jsonl` in the output folder
-  as it finishes, so a run that dies otherwise still leaves what it measured.
+  `meta.hung`, a section of summary.md), with the step it was at (a compare's load, warm-up,
+  slice, trace end or results) and what each page still did (answering, visible, its animation
+  and scene frames over a second). A scene whose browser or page closes or crashes under it (a
+  headed window closed, Chrome gone) is recorded as lost the same way. Either way the browser is
+  closed (killed when it is still open after 30 s, so it neither runs on nor holds the profile)
+  and opened again, and the run goes on with the scenes not finished yet; the runner given up
+  takes no lock and counts as no progress. A second hung or lost scene stops the run, with the
+  finished scenes written as usual. Each scene's results are also appended to `scenes.jsonl` in
+  the output folder as it finishes, so a run that dies otherwise still leaves what it measured.
 - Each page's `clockPaused` and `scalePinned` (diagnostics) are read at its load as its baseline
   (`?dpr` pins legitimately) and again after every slice or measured window. A change (a key or
   click reached the page: a Space pauses it, and a paused page renders at its nominal scale and

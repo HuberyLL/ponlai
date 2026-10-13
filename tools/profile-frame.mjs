@@ -44,8 +44,10 @@
 // Measured: per-pass GPU times, frame rates and
 // acceptance verdicts within the run-to-run noise of the earlier tool, 4-12 s less held per run.
 // A hang loses one scene, not the run: a scene that shows no progress for `--hang` seconds (180) is
-// recorded as hung (`meta.hung`, summary.md), the browser is closed and opened again, and the run
-// goes on with the scenes not finished; a second hang stops it with the finished scenes written.
+// recorded as hung (`meta.hung`, summary.md: the step it was at and what each page still did), the
+// browser is closed (killed if still open after 30 s) and opened again, and the run goes on with the
+// scenes not finished; a browser or page that closes or crashes under a scene loses it the same way,
+// and a second lost scene stops the run with the finished scenes written (see guarded).
 // Every finished scene is also appended to <out>/scenes.jsonl as it finishes.
 // A page paused or pinned during the run stops it the same way: each page's `clockPaused` and
 // `scalePinned` (diagnostics) are read at its load (`?dpr` pins legitimately) and after every slice
@@ -178,6 +180,7 @@ import { chromium } from 'playwright';
 import { existsSync } from 'node:fs';
 import { appendFile, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
@@ -607,21 +610,32 @@ let renderScale = null;
 
 // ------------------------------------------------------------------ hangs and finished scenes
 
-// The last sign of progress (a log line, a scene begun) and the scene under way: a scene that shows
-// none for HANG_SECONDS is hung (guarded).
-let progressAt = Date.now(), currentScene = null;
-const progress = () => { progressAt = Date.now(); };
+// The last sign of progress (a log line, a scene begun) and the scene under way, with the step it was
+// at (runPair's loads, warm-ups and slices): a scene that shows none for HANG_SECONDS is hung (guarded).
+let progressAt = Date.now(), currentScene = null, currentStep = null;
+// The attempt a runner call belongs to (see guarded). An attempt given up at a hang is not cancelled:
+// its runner goes on until its next call into the closed browser fails. Until then it counts as no
+// progress, begins no scene and takes no lock (it would lease the lock beside the attempt that
+// replaced it: holdScene), and it stops at the first of these it reaches.
+const attempts = new AsyncLocalStorage();
+class Abandoned extends Error {}
+const abandoned = () => attempts.getStore()?.abandoned === true;
+const progress = () => { if ( ! abandoned() ) progressAt = Date.now(); };
+const step = ( what ) => { if ( ! abandoned() ) currentStep = what; };
 function beginScene( scene ) {
 
+	if ( abandoned() ) throw new Abandoned( `an abandoned attempt began ${ scene }` );
 	currentScene = scene;
+	currentStep = null;
 	progress();
 
 }
-// the scenes recorded as hung ({ scene, run, seconds }), and whether a second hang stopped the run
+// the scenes lost ({ scene, run, seconds, step, pages } for a hang, { scene, run, closed, step } for a
+// browser that closed under it), and whether a second loss stopped the run
 const hung = [];
 let stopRun = false;
-// closes the browser and opens it again (set by main)
-let reopen = null;
+// closes the browser and opens it again, and the pages open in it (set by main)
+let reopen = null, openPages = () => [];
 // <out>/scenes.jsonl: each finished scene's results, appended as it finishes, so a run that dies
 // still leaves what it measured
 let scenesFile = null;
@@ -661,10 +675,13 @@ async function checkState( page, scene, slice ) {
 // Runs `attempt( left )`, a runner over the scenes in `left` that fills its results as each scene
 // finishes (`finished( scene )` tells), and survives a hang: a scene that shows no progress for
 // HANG_SECONDS is recorded as hung, the browser is closed and opened again, and the runner goes on
-// with the scenes not finished yet (loading its pages again). A second hang in one run stops the
-// run: what follows runs nothing, and the finished scenes are written as usual. (Two runs of
-// `--display --compare` hung on one scene, and the watchdog that then killed the process lost every
-// scene; what makes a scene hang is not known.)
+// with the scenes not finished yet (loading its pages again). A browser or page that closes or
+// crashes under the attempt (a headed window closed, Chrome gone) loses its scene the same way:
+// after a hang's reopen, the reopened browser's page closed during the next scene and the error
+// ended the run. A second loss in one run stops the run: what follows runs nothing, and the finished
+// scenes are written as usual. (Two runs of `--display --compare` hung on one scene, and the
+// watchdog that then killed the process lost every scene; what makes a scene hang is not known, so
+// a hang records the step it was at and what each page still does: probePages.)
 async function guarded( names, finished, attempt, label = '' ) {
 
 	let left = names.filter( ( scene ) => ! finished( scene ) );
@@ -672,9 +689,12 @@ async function guarded( names, finished, attempt, label = '' ) {
 
 		progress();
 		currentScene = null;
-		const done = attempt( left ).then( () => 'done', ( error ) => {
+		currentStep = null;
+		const token = { abandoned: false };
+		const done = attempts.run( token, () => attempt( left ) ).then( () => 'done', ( error ) => {
 
 			if ( error instanceof Spoiled ) return 'spoiled';
+			if ( browserGone( error ) ) return { closed: error.message.split( '\n' )[ 0 ] };
 			throw error;
 
 		} );
@@ -693,19 +713,64 @@ async function guarded( names, finished, attempt, label = '' ) {
 			return;
 
 		}
-		// the runner left behind fails at its next call into the closed browser
+		// the runner left behind fails at its next call into the closed browser, and does nothing
+		// before that (see attempts)
+		token.abandoned = true;
 		done.catch( () => {} );
 		const scene = currentScene ?? left[ 0 ];
-		hung.push( { scene, run: label || null, seconds: HANG_SECONDS } );
+		const at = currentStep ? ` at ${ currentStep }` : '';
+		if ( outcome === 'hang' ) {
+
+			const pages = await probePages();
+			hung.push( { scene, run: label || null, seconds: HANG_SECONDS, step: currentStep, pages } );
+			console.error( `[profile] HUNG: ${ scene }${ label ? ` (${ label })` : '' } showed no progress for ${ HANG_SECONDS } s${ at }; recorded as hung. ${ pagesText( pages ) }` );
+
+		} else {
+
+			hung.push( { scene, run: label || null, closed: outcome.closed, step: currentStep } );
+			console.error( `[profile] LOST: ${ scene }${ label ? ` (${ label })` : '' }${ at }: its browser closed under it (${ outcome.closed }); recorded as lost.` );
+
+		}
 		stopRun = hung.length >= 2;
-		console.error( `[profile] HUNG: ${ scene }${ label ? ` (${ label })` : '' } showed no progress for ${ HANG_SECONDS } s; recorded as hung. ` +
-			( stopRun ? 'A second hang: the run stops, with the finished scenes written.' : 'The browser is closed and opened again for the scenes left.' ) );
+		console.error( `[profile] ${ stopRun ? 'A second lost scene: the run stops, with the finished scenes written.' : 'The browser is closed and opened again for the scenes left.' }` );
 		await reopen();
 		left = left.filter( ( s ) => s !== scene && ! finished( s ) );
 
 	}
 
 }
+
+// Playwright's errors for a browser, context or page that closed or crashed
+const browserGone = ( error ) => /Target page, context or browser has been closed|Target crashed|Browser has been closed|has been disconnected/.test( String( error?.message ) );
+
+// What each open page does at a hang, for the report: whether its main thread answers (within 3 s),
+// its visibility and focus, and over one second its animation frames and the scene's frames (none
+// while the page stands stopped, its window is hidden, or its renderer or GPU is stuck).
+async function probePages() {
+
+	return Promise.all( openPages().map( async ( p ) => {
+
+		const name = pageNames.get( p ) ?? null;
+		const answer = p.evaluate( () => new Promise( ( resolve ) => {
+
+			// (three's frame count: the diagnostics object is replaced every 30 frames)
+			const count = () => window.__PONLAI__?.renderer?.info.frame ?? null;
+			const frame = count();
+			let animationFrames = 0;
+			const tick = () => { animationFrames ++; requestAnimationFrame( tick ); };
+			requestAnimationFrame( tick );
+			setTimeout( () => resolve( { visibility: document.visibilityState, focus: document.hasFocus(), running: window.__profileTools?.loop.running ?? null,
+				animationFrames, frames: frame === null ? null : count() - frame } ), 1000 );
+
+		} ) ).catch( ( error ) => ( { error: error.message.split( '\n' )[ 0 ] } ) );
+		const state = await Promise.race( [ answer, sleep( 3000 ).then( () => ( { answered: false } ) ) ] );
+		return { page: name, url: p.url(), ...state };
+
+	} ) );
+
+}
+const pagesText = ( pages ) => pages.map( ( p ) => `Page ${ p.page ?? p.url }: ${ p.answered === false ? 'no answer in 3 s' : p.error ? p.error :
+	`${ p.visibility }${ p.focus ? ', focused' : '' }, loop ${ p.running ? 'running' : 'stopped' }, ${ p.animationFrames } animation frames and ${ p.frames ?? '?' } scene frames in 1 s` }.` ).join( ' ' );
 
 // ------------------------------------------------------------------ the exclusive lock per scene
 
@@ -733,6 +798,8 @@ let releasedMs = 0, holdStart = 0, lockStop = null;
 let freshHold = false;
 async function holdScene( scene, log, forLoad = false ) {
 
+	// the attempt replaced after a hang holds nothing of its own: the lock is the run's
+	if ( abandoned() ) throw new Abandoned( `an abandoned attempt asked for the lock before ${ scene }` );
 	if ( freshHold ) {
 
 		freshHold = false;
@@ -1730,6 +1797,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 	const loaded = [];
 	for ( const v of [ 0, 1 ] ) {
 
+		step( `page ${ 'AB'[ v ] }'s load` );
 		if ( DISPLAY ) await pages[ v ].bringToFront();
 		loaded[ v ] = await load( pages[ v ], bases[ v ], SCENES[ names[ 0 ] ].q, timestamps );
 		log( `${ 'AB'[ v ] } loaded ${ loaded[ v ].url } in ${ ( loaded[ v ].loadMs / 1000 ).toFixed( 1 ) } s (world cache ${ JSON.stringify( loaded[ v ].startup.diagnostics.worldCache ) }; runtime hooks ${ JSON.stringify( loaded[ v ].hooks ) })` );
@@ -1823,6 +1891,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		const compile = [];
 		for ( const v of [ 0, 1 ] ) {
 
+			step( `page ${ 'AB'[ v ] }'s switch and warm-up` );
 			await run( v );
 			const prepared = await prepare( pages[ v ], scene, evals[ v ], true );
 			compile[ v ] = { ms: r2( prepared.switchMs ), ...( await warm( frames[ v ], [ prepared.t ], WARMUP ) )[ 0 ] };
@@ -1838,6 +1907,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		const endTrace = async () => {
 
 			if ( ! trace ) return;
+			step( 'the display trace\'s end' );
 			const events = await trace.end();
 			trace = null;
 			for ( const w of traced.splice( 0 ) ) {
@@ -1853,6 +1923,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 
 			const v = 1 - ORDER[ i % ORDER.length ];
 			const switched = active !== v;
+			step( `slice ${ i + 1 } (page ${ 'AB'[ v ] })` );
 			if ( switched ) await run( v, scene, i );
 			// on the display: the slice's sampler in the scene's trace, and the camera dragged through
 			// the settle and the slice (each slice starts the same drags, so both pages see them)
@@ -1889,6 +1960,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		log( `${ scene.padEnd( 20 ) } A switched in ${ compile[ 0 ].ms } ms, warmed ${ compile[ 0 ].seconds } s (${ compile[ 0 ].pipelines } pipelines); B ${ compile[ 1 ].ms } ms, ${ compile[ 1 ].seconds } s (${ compile[ 1 ].pipelines } pipelines); ${ stopText( stop ) }, ${ stop.overhead } s over the settles and slices` );
 		if ( k < REPEAT - 1 ) continue;
 		// the scene's last repetition is done: its results, once both pages' frames are in
+		step( 'the results' );
 		const scaleLogs = SCALE_LOG ? [ await scaleChanges( pages[ 0 ] ), await scaleChanges( pages[ 1 ] ) ] : null;
 		for ( const v of [ 0, 1 ] ) {
 
@@ -2216,18 +2288,24 @@ async function launch() {
 		// on the display the page takes the screen's size and pixel ratio, and Chrome its field trials
 		...( DISPLAY ? { viewport: null, ignoreDefaultArgs: [ '--disable-field-trial-config' ] } : { viewport: { width: W, height: H }, deviceScaleFactor: SCALE } ),
 	};
+	let browser;
 	try {
 
 		await mkdir( PROFILE_DIR, { recursive: true } );
-		return { context: await chromium.launchPersistentContext( PROFILE_DIR, options ), dir: PROFILE_DIR, temporary: false };
+		browser = { context: await chromium.launchPersistentContext( PROFILE_DIR, options ), dir: PROFILE_DIR, temporary: false };
 
 	} catch ( error ) {
 
 		console.error( `[profile] the Chrome profile ${ PROFILE_DIR } is unavailable (${ error.message.split( '\n' )[ 0 ] }); using a temporary one, without the world cache of earlier runs` );
 		const dir = await mkdtemp( path.join( os.tmpdir(), 'ponlai-profile-frame-' ) );
-		return { context: await chromium.launchPersistentContext( dir, options ), dir, temporary: true };
+		browser = { context: await chromium.launchPersistentContext( dir, options ), dir, temporary: true };
 
 	}
+	// the browser's process, for close (Playwright does not give a persistent context's)
+	const cdp = await browser.context.browser().newBrowserCDPSession();
+	browser.pid = ( await cdp.send( 'SystemInfo.getProcessInfo' ) ).processInfo.find( ( p ) => p.type === 'browser' )?.id ?? null;
+	await cdp.detach();
+	return browser;
 
 }
 
@@ -2264,12 +2342,29 @@ async function open( errors ) {
 
 }
 
+// Closes the browser. A hung page can keep it from closing: one still open after 30 s is killed and
+// waited for, so that it neither runs on beside the browser opened after it (the runner given up at
+// a hang would go on driving it) nor holds the profile, which would send the next browser to a
+// temporary one with cold caches.
 async function close( browser ) {
 
-	await browser.context.close();
+	const closed = await Promise.race( [ browser.context.close().then( () => true, () => true ), sleep( 30000 ).then( () => false ) ] );
+	if ( ! closed && browser.pid ) {
+
+		console.error( `[profile] Chrome (pid ${ browser.pid }) did not close within 30 s: killed` );
+		try { process.kill( browser.pid, 'SIGKILL' ); } catch { /* gone meanwhile */ }
+		const until = Date.now() + 10000;
+		while ( Date.now() < until && alive( browser.pid ) ) await sleep( 100 );
+
+	}
 	if ( browser.temporary ) await rm( browser.dir, { recursive: true, force: true } );
 
 }
+const alive = ( pid ) => {
+
+	try { process.kill( pid, 0 ); return true; } catch { return false; }
+
+};
 
 // The browser's version, from its executable, before any browser opens (the preload's marker, the
 // profile's meta)
@@ -2410,12 +2505,13 @@ async function main() {
 	};
 	reopen = async () => {
 
-		// a hung page may not let its browser close: the run goes on with a new one after 30 s
-		await Promise.race( [ browser.context.close().catch( () => {} ), sleep( 30000 ) ] );
+		await close( browser );
 		await openRun();
+		console.error( `[profile] Chrome opened again, ${ browser.temporary ? 'on a temporary profile (cold world and shader caches)' : 'on its profile' }` );
 		progress();
 
 	};
+	openPages = () => browser?.context.pages() ?? [];
 	// a runner abandoned at a hang fails at its next call into the closed browser
 	process.on( 'unhandledRejection', ( error ) => {
 
@@ -2614,7 +2710,7 @@ async function main() {
 			if ( hung.length ) {
 
 				meta.hung = hung;
-				log( `HUNG: ${ hung.map( ( h ) => `${ h.scene }${ h.run ? ` (${ h.run })` : '' }` ).join( ', ' ) }${ hung.length >= 2 ? '; the run stopped at the second hang' : '' }` );
+				log( `LOST: ${ hung.map( ( h ) => `${ h.scene }${ h.run ? ` (${ h.run })` : '' } ${ h.closed ? 'closed' : 'hung' }` ).join( ', ' ) }${ hung.length >= 2 ? '; the run stopped at the second' : '' }` );
 
 			}
 			// the measurements are done: once every page's loop stood still (no frame, its queue
@@ -2655,7 +2751,7 @@ async function main() {
 
 	} finally {
 
-		if ( browser ) await Promise.race( [ browser.context.close().catch( () => {} ), sleep( 30000 ) ] );
+		if ( browser ) await close( browser );
 		for ( const dir of temporaries ) await rm( dir, { recursive: true, force: true } );
 
 	}
@@ -2840,8 +2936,10 @@ function stopMarkdown( meta ) {
 
 function hungList( meta ) {
 
-	return `\n## Hung scenes\n\n${ meta.hung.map( ( h ) => `- ${ h.scene }${ h.run ? ` (${ h.run })` : '' }: no progress for ${ h.seconds } s; the browser was reopened for the scenes after it` ).join( '\n' ) }\n` +
-		( meta.hung.length >= 2 ? '\nThe second hang stopped the run: scenes after it were not measured.\n' : '' );
+	const why = ( h ) => ( h.closed ? `its browser closed under it (${ h.closed })` : `no progress for ${ h.seconds } s` ) + ( h.step ? ` at ${ h.step }` : '' ) + '.' +
+		( h.pages?.length ? ` ${ pagesText( h.pages ) }` : '' );
+	return `\n## Hung or lost scenes\n\n${ meta.hung.map( ( h ) => `- ${ h.scene }${ h.run ? ` (${ h.run })` : '' }: ${ why( h ) } The browser was reopened for the scenes after it.` ).join( '\n' ) }\n` +
+		( meta.hung.length >= 2 ? '\nThe second lost scene stopped the run: scenes after it were not measured.\n' : '' );
 
 }
 
