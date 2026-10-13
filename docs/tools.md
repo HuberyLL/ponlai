@@ -8,9 +8,11 @@ everyday commands; this file has the details. Each tool's own file says the rest
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
   `npm run preview` (port 5191, the production build). Build and typecheck run tsc and vite with
   the application policy on macOS (Process priority, below).
-- The islanders load from the git-ignored `artifacts/assets/`, which only the dev server serves: a
-  production build (a preview, a worktree's) needs them linked into `dist/` after each build
-  (`tools/parity/README.md`, setup), or its page stays on the loading screen.
+- The islanders load from the git-ignored `artifacts/assets/`. `tools/vite-assets.mjs` finds the
+  folder (the checkout's own, else the main checkout's through git's common directory, so a fresh
+  worktree needs no link): the dev server serves it and `vite build` links it into
+  `dist/artifacts/assets`. Without either, the build warns once and the page stays on the loading
+  screen.
 - `window.__PONLAI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the
   dev server or with `?debug` (or `?profile`, which also loads the frame profiler).
   `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock, converge } )` stops the live loop and
@@ -331,6 +333,9 @@ the scene jump. Evals see `P` (`__PONLAI__`), `D` (the diagnostics), `frames( n 
 and `until( fn )` (`D` is rebuilt every 30 frames: live counters such as `P.pipelines.total` come
 from `P`); `--init js` hooks the page before its scripts run. A production preview needs
 `debug` in the query. Common questions:
+`--load` loads every query after the first in a page of its own instead of jumping to it: the
+scene-jump contract covers the image, not the world's generation path, so use it to compare two
+freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
 
 - diagnostics and load timings: `--eval "D.timings" --eval "D.worldCache"`;
 - a uniform or a setting: `--eval "P.shared.wetness.value"`, `--eval "P.camera.position"`;
@@ -373,8 +378,13 @@ every holder has left, a shared one when a slot is free; a shared one may start 
 head while that leaves the head a slot). Nothing ranked after the head holds it up. The levels,
 highest first: `urgent` (the user's own runs), `high`, `normal`, `low` (or 0-3). By default shared
 requests are `normal` and exclusive ones `low`: timing runs get no special treatment and rank below
-captures and probes, so a default timing run waits for as long as captures keep arriving. The
-remedy is to raise it. Scheduling is done by the user or a main session with the scheduling table,
+captures and probes. A default timing run ages: 30 min after its run's first request
+(`AGE_AFTER_MS`; a `keepPlace` run such as profile-frame's scenes counts from its first scene's
+request) it ranks `normal` (source `aged`), keeping its ticket, so it goes before the captures that
+queued after it, still after `high` and `urgent`. Only the default ages: a request at a level from
+the table, `PONLAI_GPU_PRIORITY` or a bump keeps it (a session set to `low` stays low), and shared
+requests never age. `PONLAI_GPU_LOCK_AGE_S` shortens the threshold for the lock's own tests only.
+To start sooner than that, raise it. Scheduling is done by the user or a main session with the scheduling table,
 never by a session itself:
 
     node tools/gpu-lock.mjs prio                                   # the table, every holder's and ticket's level and where it comes from
@@ -446,7 +456,8 @@ arriving (a default exclusive request while captures do). To choose between wait
 ahead).
 Every request, grant, release, timeout and abandoned request is appended to a JSON-lines log next
 to the lock (`ponlai-gpu.lock.log.jsonl`, rotated to `.log.1.jsonl` past 4 MB): time, pid, label,
-mode, class (the level), source (of the level), ticket, wait or hold in ms, and why a hold ended when its holder did not end it (a
+mode, class (the level), source (of the level: bump, table, env, default, aged), ticket, a
+request's parent pid and working directory (`ppid`, `cwd`: who asked), wait or hold in ms, and why a hold ended when its holder did not end it (a
 child took the slot over, a yielded slot, a killed holder reclaimed as stale, a lease given up for
 a waiter; a leased hold's release counts the views it served).
 `node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]` summarises it:

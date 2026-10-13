@@ -17,17 +17,10 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
 ## Serving a build for captures
 
 Capture a production build (`npm run build`, then `npx vite preview --host 127.0.0.1 --port <port>
---strictPort`), each branch from its own worktree on its own port. Two things the captures need:
-
-1. `?debug` in the URL (capture-set.mjs adds it): `window.__PONLAI__` and the diagnostics exist only
-   on the dev server or with it.
-2. The islanders load from `/artifacts/assets/...`, which only the dev server serves. In a preview
-   build the page waits at "Waking the villagers..." and the capture times out. Link the assets into
-   the build output after every build (`vite build` empties `dist/`):
-
-   ```sh
-   mkdir -p dist/artifacts && ln -s <main checkout>/artifacts/assets dist/artifacts/assets
-   ```
+--strictPort`), each branch from its own worktree on its own port. The URL needs `?debug`
+(capture-set.mjs adds it): `window.__PONLAI__` and the diagnostics exist only on the dev server or
+with it. The islanders' models (`/artifacts/assets/...`, git-ignored) need no setup: the build
+links them into `dist/`, from the main checkout in a worktree (`tools/vite-assets.mjs`).
 
 Paused captures take the GPU lock shared (`tools/gpu-lock.mjs`): their pixels do not depend on what
 else renders, so they run beside other paused captures and probes, and wait for timing runs. Each
