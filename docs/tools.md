@@ -66,7 +66,19 @@ The island:
   starting island, 0 by default, up to `GROWTH.maxSteps`). The page generates its world from that
   land in 16 m chunks and frames its views on it; debug pages expose `window.__PONLAI__.land` (`seed`,
   `step`, `bounds`, `centroid`, the views' `scale` against the first island and the default pivot
-  `target`) for the tools to frame by.
+  `target`) for the tools to frame by, which follows the island as it grows.
+- Growing in place (src/world/Growth.ts): Grow (the GUI's Island folder) or `await
+  __PONLAI__.growth.grow()` generates the next piece in the background and swaps it in (the
+  promise resolves once the frames after the swap are done); from then on the page keeps a piece
+  ahead. A `?game` page generates it from its start; `growth.start()` generates it ahead on any
+  page without growing (a probe that wants the piece ready). `growth.state` holds the step shown,
+  the next piece's phase and the last swap's chunks and times (preparation, the swap's frame by
+  part, the frames after it) and its `work`: the growth's own main-thread time per frame (`max`,
+  its `stage`, `frames` as page time and ms pairs, steps over 0.6 ms in `slow`, and the page
+  times the preparation began, the swap happened and its frames ended); `growth.
+  chunkHashes()` the shown chunks' hashes (equal on a grown page and one loaded with `grow` at the
+  same step), `growth.fieldBytes()` the world fields' GPU bytes. The island view (key R,
+  `setCameraView( 'island' )`) frames the land shown; the camera itself stays where it is.
 
 Sky and weather:
 

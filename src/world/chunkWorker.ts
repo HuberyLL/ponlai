@@ -5,11 +5,13 @@
 //
 // - `land`: the grown land of a seed and step (IslandGrowth.ts), with what the page needs before
 //   any chunk arrives (ChunkMerge.ts `LandData`: the chunks, the steps each chunk's cache key
-//   names, the far floor, the floor's fields over the fields' bounds). Cached under its own key.
+//   names, the far floor, the floor's fields over the fields' bounds, the walking loop). Cached
+//   under its own key.
 // - `field`: the land field of a land version (Chunks.ts `landField`, the costliest part of the
 //   land: a few tenths of a second), once per version, and only when the land or a chunk was not
 //   in the cache.
-//   The page hands it to every worker (`use`), which cut the chunks' windows from it.
+//   The worker keeps it, and its reply carries a copy for every other worker, which the page hands
+//   on (`use`); each cuts the chunks' windows from its own.
 // - `chunk`: the chunk from the cache when it holds it, else built (when the worker has the field)
 //   and stored; without the field the worker answers `need` and the page sends the job again once
 //   it has the field. The cache (WorldCache.ts) is read and written here, off the main thread.
@@ -29,6 +31,7 @@ import { buildFarFloor, nearLandCells, underLand } from './SeabedTile.ts';
 import { openSeaBeds, openSeaHeight, SHELF_CEILING } from './Bathymetry.ts';
 import { fieldBounds, BED_CELL, FLOOR_CELL, type LandData } from './ChunkMerge.ts';
 import { openChunkStore, type ChunkStore } from './WorldCache.ts';
+import { walkLoop } from './WalkLoop.ts';
 
 /** The land of `seed` after `step` growth steps, and what the page needs of it before its chunks. */
 export function buildLand( seed: number, step: number ): LandData {
@@ -67,7 +70,7 @@ export function buildLand( seed: number, step: number ): LandData {
 		}
 
 	}
-	return { seed, step, land: land.toBytes(), chunks, steps, far: buildFarFloor( near ), bounds, floor, beds };
+	return { seed, step, land: land.toBytes(), chunks, steps, far: buildFarFloor( near ), bounds, floor, beds, walk: new Float64Array( walkLoop( land ).flat() ) };
 
 }
 
@@ -92,7 +95,7 @@ function windowSteps( pieces: Piece[], near: [ number, number ][] ): number[][] 
 export type ChunkJob =
 	| { kind: 'init'; generator: string | null }
 	| { kind: 'land'; seed: number; step: number; key: string | null }
-	| { kind: 'field'; land: Uint8Array }
+	| { kind: 'field'; land: Uint8Array; copies: number }
 	| { kind: 'use'; land: Uint8Array; field: LandField }
 	| { kind: 'chunk'; ci: number; cj: number; version: number; key: string | null; contactOcclusion: boolean }
 	| { kind: 'keep'; keys: string[] }
@@ -104,7 +107,7 @@ export type CacheResult = 'hit' | 'miss' | 'error' | 'off';
 
 export type ChunkReply =
 	| { kind: 'land'; data: LandData; cache: CacheResult }
-	| { kind: 'field'; field: LandField }
+	| { kind: 'field'; copies: LandField[] }
 	| { kind: 'chunk'; data: ChunkData; cache: CacheResult; ms: number }
 	| { kind: 'need'; ci: number; cj: number };
 
@@ -155,9 +158,16 @@ async function run( job: ChunkJob ): Promise<void> {
 
 		}
 
-		case 'field':
-			post( { kind: 'field', field: landField( LandLattice.fromBytes( job.land ) ) } );
+		case 'field': {
+
+			// kept here, and copied for the other workers
+			land = LandLattice.fromBytes( job.land );
+			field = landField( land );
+			const copies = Array.from( { length: job.copies }, () => ( { ...field!, data: field!.data.slice() } ) );
+			post( { kind: 'field', copies } );
 			break;
+
+		}
 
 		case 'use':
 			land = LandLattice.fromBytes( job.land );

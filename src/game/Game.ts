@@ -51,9 +51,11 @@ export interface GameContext {
 	camera: THREE.PerspectiveCamera;
 	/** the canvas, for the debug panel's send-to-click */
 	canvas: HTMLCanvasElement;
-	/** the grown land and the rim bushes from the world generator (WorldData) */
+	/** the grown land and the rim bushes from the world generator (WorldData), and the island's top
+	 * from its chunks (sim/grid.ts topFromTiles) */
 	land: LandLattice;
 	bushes: Float32Array;
+	top?: Uint8Array;
 	dayCycle: DayCycle;
 	characterShadow: CharacterShadow;
 	/** a skinned islander figure for a look index, its pipelines compiled (GameView "First draws") */
@@ -76,11 +78,11 @@ const MAX_FRAME = 0.25;
 // The simulation's island from the world generator's own exports: its land, and the bushes it
 // placed (BUSH_STRIDE floats each), which buildFoliage draws, so the game's obstacles are exactly
 // what is drawn.
-function islandInput( land: LandLattice, bushes: Float32Array ): IslandInput {
+function islandInput( land: LandLattice, bushes: Float32Array, top?: Uint8Array ): IslandInput {
 
 	const obstacles = [];
 	for ( let k = 0; k < bushes.length; k += BUSH_STRIDE ) obstacles.push( { x: bushes[ k ], z: bushes[ k + 2 ], r: bushes[ k + 3 ] } );
-	return { land, bushes: obstacles };
+	return { land, bushes: obstacles, top };
 
 }
 
@@ -100,7 +102,7 @@ export class Game {
 	sim!: Sim;
 	private view: GameView | null = null;
 	private readonly context: GameContext;
-	private readonly input: IslandInput;
+	private input: IslandInput;
 	private debug: { update(): void; reset(): void } | null = null;
 	private hud: GameHud | null = null;
 	/** the tools a brain acts through, by name (sim/agent.ts): the five actions, kept across a load */
@@ -116,7 +118,16 @@ export class Game {
 	private constructor( context: GameContext ) {
 
 		this.context = context;
-		this.input = islandInput( context.land, context.bushes );
+		this.input = islandInput( context.land, context.bushes, context.top );
+
+	}
+
+	/** The island grew (Growth.ts): the simulation's ground follows the new land, its bushes and
+	 * its top, and a saved game loads onto it. */
+	setIsland( land: LandLattice, bushes: Float32Array, top?: Uint8Array ): void {
+
+		this.input = islandInput( land, bushes, top );
+		this.sim.setIsland( this.input );
 
 	}
 

@@ -156,6 +156,8 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 
 		} else depth = new THREE.Mesh( mesh.geometry, depths[ 0 ] );
 		depth.name = mesh.name + '-depth';
+		// (the rain's collision bake, RainCollision.ts, leaves the copies out: they print the same shape)
+		depth.userData.prepassCopy = true;
 		depth.frustumCulled = mesh.frustumCulled;
 		depth.castShadow = false;
 		depth.receiveShadow = false;

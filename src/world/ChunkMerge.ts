@@ -1,6 +1,7 @@
 // One land version's chunks (Chunks.ts `ChunkData`) merged into the WorldData the page draws: the
 // page's pool (WorldChunks.ts) and the node tools' serial path (tools/world-node.mjs) both end
-// here, so they draw and check the same world. Pure (no three, no DOM).
+// here, so they draw and check the same world. Pure (no three, no DOM). A grown island's version
+// is merged in steps (`mergeSteps`, in idle time: Growth.ts), to the same result.
 //
 // - Everything is concatenated in rows of chunks ( cj, then ci ), each chunk's owned items in its
 //   own order (Chunks.ts), so the merged arrays, the meadow's pools and a paused frame are the
@@ -41,6 +42,8 @@ import type { IslandChunk, MeshData, RimStrand, Rock, WorldData } from './types.
 export const SHORE_CELL = 0.125, FLOOR_CELL = 0.25, BED_CELL = 0.5;
 // the floor tile's lattice step (m): SEABED_TILE over its TILE_SIDE - 1 cells
 const STEP = SEABED_TILE / ( TILE_SIDE - 1 );
+// the shore field's texels filled a step (in steps)
+const FILL = 1 << 15;
 
 /** A land version and what the page needs of it before its chunks (chunkWorker.ts `buildLand`). */
 export interface LandData {
@@ -58,6 +61,8 @@ export interface LandData {
 	bounds: Bounds;
 	floor: Float32Array;
 	beds: Float32Array;
+	// the islander's walking loop on this land (WalkLoop.ts): x, z per waypoint, as computed (doubles)
+	walk: Float64Array;
 }
 
 /** The world fields' bounds: the land's box and 32 m round it, out to the world's 32 m grid. A
@@ -85,7 +90,43 @@ export function rimBounds( land: LandLattice ): Bounds {
 /** The WorldData of a land version from all its chunks (in any order). */
 export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): WorldData {
 
+	const steps = mergeSteps( land, unordered );
+	for ( ;; ) {
+
+		const next = steps.next();
+		if ( next.done ) return next.value;
+
+	}
+
+}
+
+/** `mergeChunks` in steps (a generator): it yields after each chunk's share of the meshes and the
+ * fields and between slices of the larger fills, so the growth (Growth.ts) can merge a pending
+ * version in idle time, a few tenths of a millisecond a step. The result is the same however it is
+ * stepped. */
+export function* mergeSteps( land: LandData, unordered: readonly ChunkData[] ): Generator<void, WorldData> {
+
 	const t0 = performance.now();
+	let busy = 0, mark = t0;
+	const pause = function* () {
+
+		busy += performance.now() - mark;
+		yield;
+		mark = performance.now();
+
+	};
+	// a helper's steps, each a pause
+	const pausing = function* <T>( steps: Generator<void, T> ): Generator<void, T> {
+
+		for ( ;; ) {
+
+			const next = steps.next();
+			if ( next.done ) return next.value;
+			yield* pause();
+
+		}
+
+	};
 	const chunks = [ ...unordered ].sort( ( a, b ) => a.cj - b.cj || a.ci - b.ci );
 	const { bounds } = land;
 	const width = bounds.x1 - bounds.x0, depth = bounds.z1 - bounds.z0;
@@ -96,17 +137,20 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 		refracted: { level: c.refracted.level, index: c.refracted.island },
 	} ] : [] );
 	const rocks: Rock[] = chunks.flatMap( ( c ) => c.stones.rocks );
-	const stones = mergeMeshes( chunks.map( ( c ) => c.stones.mesh ) );
-	const seabed = mergeFloor( chunks, land.far );
+	const stones: MeshData = yield* pausing( mergeMeshes( chunks.map( ( c ) => c.stones.mesh ) ) );
+	yield* pause();
+	const seabed: WorldData[ 'seabed' ] = yield* pausing( mergeFloor( chunks, land.far ) );
+	yield* pause();
 	const tiles = chunks.filter( ( c ) => c.floor ), tileIndex = tileIndices();
-	const refracted = {
-		level: chunks[ 0 ]?.refracted.level ?? SEA_LEVEL,
-		stones: joinSubsets( chunks.map( ( c ): Subset => [ c.refracted.stones, c.stones.mesh.indices, c.stones.mesh.positions.length / 3 ] ) ),
-		seabed: joinSubsets( [
-			...tiles.map( ( c ): Subset => [ c.refracted.floor, tileIndex, TILE_SIDE * TILE_SIDE ] ),
-			[ submergedIndex( land.far.positions, land.far.indices ), land.far.indices, land.far.positions.length / 3 ],
-		] ),
-	};
+	const stoneSubset: Uint32Array | null = yield* pausing( joinSubsets( chunks.map( ( c ): Subset => [ c.refracted.stones, c.stones.mesh.indices, c.stones.mesh.positions.length / 3 ] ) ) );
+	const far = submergedIndex( land.far.positions, land.far.indices );
+	yield* pause();
+	const seabedSubset: Uint32Array | null = yield* pausing( joinSubsets( [
+		...tiles.map( ( c ): Subset => [ c.refracted.floor, tileIndex, TILE_SIDE * TILE_SIDE ] ),
+		[ far, land.far.indices, land.far.positions.length / 3 ],
+	] ) );
+	const refracted = { level: chunks[ 0 ]?.refracted.level ?? SEA_LEVEL, stones: stoneSubset, seabed: seabedSubset };
+	yield* pause();
 
 	// --- owned items
 	const concat = ( parts: Float32Array[] ) => {
@@ -125,13 +169,27 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 	}
 
 	// --- the world fields
-	const shore = { data: new Float32Array( width / SHORE_CELL * depth / SHORE_CELL ).fill( LAND_REACH ), nx: width / SHORE_CELL, nz: depth / SHORE_CELL, x0: bounds.x0, z0: bounds.z0, cell: SHORE_CELL };
+	const shore = { data: new Float32Array( width / SHORE_CELL * depth / SHORE_CELL ), nx: width / SHORE_CELL, nz: depth / SHORE_CELL, x0: bounds.x0, z0: bounds.z0, cell: SHORE_CELL };
+	for ( let k = 0; k < shore.data.length; k += FILL ) {
+
+		shore.data.fill( LAND_REACH, k, k + FILL );
+		yield* pause();
+
+	}
 	const rim = rimBounds( LandLattice.fromBytes( land.land ) );
 	const rx = Math.round( ( rim.x1 - rim.x0 ) / RIM_CELL ), rz = Math.round( ( rim.z1 - rim.z0 ) / RIM_CELL ), ri0 = Math.round( rim.x0 / RIM_CELL ), rj0 = Math.round( rim.z0 / RIM_CELL );
 	const rimGround = { data: new Float32Array( rx * rz * 4 ), nx: rx, nz: rz, x0: ri0 * RIM_CELL, z0: rj0 * RIM_CELL, cell: RIM_CELL };
-	for ( let k = 0; k < rx * rz; k ++ ) { rimGround.data[ k * 4 ] = RIM_REACH; rimGround.data[ k * 4 + 1 ] = ISLAND_TOP; }
+	yield* pause();
+	for ( let j = 0; j < rz; j ++ ) {
+
+		for ( let k = j * rx; k < ( j + 1 ) * rx; k ++ ) { rimGround.data[ k * 4 ] = RIM_REACH; rimGround.data[ k * 4 + 1 ] = ISLAND_TOP; }
+		if ( j % 8 === 7 ) yield* pause();
+
+	}
 	const seabedField = { data: land.floor.slice(), nx: width / FLOOR_CELL, nz: depth / FLOOR_CELL, x0: bounds.x0, z0: bounds.z0, cell: FLOOR_CELL };
+	yield* pause();
 	const seabedBeds = { data: land.beds.slice(), nx: width / BED_CELL, nz: depth / BED_CELL, x0: bounds.x0, z0: bounds.z0, cell: BED_CELL };
+	yield* pause();
 	for ( const c of chunks ) {
 
 		const x0 = c.ci * SEABED_TILE, z0 = c.cj * SEABED_TILE;
@@ -143,21 +201,29 @@ export function mergeChunks( land: LandData, unordered: readonly ChunkData[] ): 
 			fromTile( seabedBeds.data, seabedBeds.nx, c.floor.bed, 2, BED_CELL, ( x0 - bounds.x0 ) / BED_CELL, ( z0 - bounds.z0 ) / BED_CELL );
 
 		}
+		yield* pause();
 
 	}
 
 	const chunkList = new Int32Array( chunks.length * 2 );
 	chunks.forEach( ( c, k ) => { chunkList[ k * 2 ] = c.ci; chunkList[ k * 2 + 1 ] = c.cj; } );
-	return {
+	const vegetation = concat( chunks.map( ( c ) => c.anchors ) ), bushes = concat( chunks.map( ( c ) => c.bushes ) );
+	yield* pause();
+	const rimSkirt = mergeRimSkirts( chunks.map( ( c ) => c.skirt ) );
+	const data: WorldData = {
 		land: land.land, chunks: chunkList,
 		islands, stones, rocks, seabed, refracted,
-		vegetation: concat( chunks.map( ( c ) => c.anchors ) ),
-		bushes: concat( chunks.map( ( c ) => c.bushes ) ),
+		vegetation, bushes,
 		rimStrands, rimGround,
-		rimSkirt: mergeRimSkirts( chunks.map( ( c ) => c.skirt ) ),
+		rimSkirt,
 		shore, seabedField, seabedBeds,
-		timings: { merge: Math.round( performance.now() - t0 ) },
+		walk: land.walk,
+		timings: {},
 	};
+	busy += performance.now() - mark;
+	// (the time spent merging, not the time the steps were spread over)
+	data.timings = { merge: Math.round( busy ) };
+	return data;
 
 }
 
@@ -206,7 +272,8 @@ type Subset = [ Uint32Array | null, Uint32Array, number ];
 
 // The subsets of meshes concatenated in order (as `mergeMeshes`, `mergeFloor`), in their one index
 // space: the triangles a cut of the whole would keep, in its order; null when that is every one.
-function joinSubsets( parts: Subset[] ): Uint32Array | null {
+// A step a part.
+function* joinSubsets( parts: Subset[] ): Generator<void, Uint32Array | null> {
 
 	let total = 0, kept = 0;
 	for ( const [ subset, index ] of parts ) { total += index.length; kept += ( subset ?? index ).length; }
@@ -217,14 +284,15 @@ function joinSubsets( parts: Subset[] ): Uint32Array | null {
 
 		for ( const v of subset ?? index ) out[ k ++ ] = v + offset;
 		offset += vertices;
+		yield;
 
 	}
 	return out;
 
 }
 
-// Meshes concatenated in order, one index space (the stones: they carry no cliff detail).
-function mergeMeshes( parts: MeshData[] ): MeshData {
+// Meshes concatenated in order, one index space (the stones: they carry no cliff detail). A step a part.
+function* mergeMeshes( parts: MeshData[] ): Generator<void, MeshData> {
 
 	let nv = 0, ni = 0;
 	for ( const p of parts ) { nv += p.positions.length / 3; ni += p.indices.length; }
@@ -243,6 +311,7 @@ function mergeMeshes( parts: MeshData[] ): MeshData {
 		for ( let k = 0; k < p.indices.length; k ++ ) out.indices[ oi + k ] = p.indices[ k ] + ov;
 		ov += p.positions.length / 3;
 		oi += p.indices.length;
+		yield;
 
 	}
 	return out;
@@ -250,8 +319,8 @@ function mergeMeshes( parts: MeshData[] ): MeshData {
 }
 
 // The sea floor as one mesh: the chunks' near tiles in order (their lattice points placed as
-// SeabedTile's `buildFloorTile` places them), then the far floor (its contact shade 1).
-function mergeFloor( chunks: readonly ChunkData[], far: FarFloor ): WorldData[ 'seabed' ] {
+// SeabedTile's `buildFloorTile` places them), then the far floor (its contact shade 1). A step a tile.
+function* mergeFloor( chunks: readonly ChunkData[], far: FarFloor ): Generator<void, WorldData[ 'seabed' ]> {
 
 	const tiles = chunks.filter( ( c ) => c.floor );
 	const n = TILE_SIDE, tileVertices = n * n, nt = tiles.length * tileVertices, nv = nt + far.positions.length / 3;
@@ -259,9 +328,9 @@ function mergeFloor( chunks: readonly ChunkData[], far: FarFloor ): WorldData[ '
 	const ao = new Float32Array( nv ).fill( 1 ), bed = new Float32Array( nv * 2 );
 	const cell = tileIndices();
 	const indices = new Uint32Array( tiles.length * cell.length + far.indices.length );
-	tiles.forEach( ( c, t ) => {
+	for ( let t = 0; t < tiles.length; t ++ ) {
 
-		const floor = c.floor!, x0 = c.ci * SEABED_TILE, z0 = c.cj * SEABED_TILE, v0 = t * tileVertices;
+		const c = tiles[ t ], floor = c.floor!, x0 = c.ci * SEABED_TILE, z0 = c.cj * SEABED_TILE, v0 = t * tileVertices;
 		for ( let j = 0; j < n; j ++ ) for ( let i = 0; i < n; i ++ ) {
 
 			const v = v0 + j * n + i;
@@ -272,8 +341,9 @@ function mergeFloor( chunks: readonly ChunkData[], far: FarFloor ): WorldData[ '
 		ao.set( floor.ao, v0 );
 		bed.set( floor.bed, v0 * 2 );
 		for ( let k = 0; k < cell.length; k ++ ) indices[ t * cell.length + k ] = cell[ k ] + v0;
+		yield;
 
-	} );
+	}
 	positions.set( far.positions, nt * 3 );
 	normals.set( far.normals, nt * 3 );
 	bed.set( far.bed, nt * 2 );

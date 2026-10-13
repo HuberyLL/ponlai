@@ -4,8 +4,14 @@
  * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
  */
 
-import * as THREE from 'three/webgpu';
-import type { WorldData, ShoreField } from '../world/types.ts';
+import type { ShoreField } from '../world/types.ts';
+
+// The rocky shore's wave fields as plain data (no three, no DOM): a function of the shore's
+// distance field alone, so the page builds them at load and a grown island's in a worker
+// (shoreFieldWorker.ts, World growth in Growth.ts); ShoreWaves.ts makes their textures.
+
+/** A field's RGBA float texels, nx by nz. */
+export interface FieldPixels { pixels: Float32Array; nx: number; nz: number }
 
 const MAX_RES = 256;
 
@@ -120,9 +126,8 @@ function sampleShore( field: ShoreField, x: number, z: number ): number {
 
 // A geometric boundary only: confidence and distance gradient. Wave timing comes from FFT,
 // so crossing wave systems never inherit the old single-period arrival-time field.
-export function createShoreBoundaryField( data: WorldData ): THREE.DataTexture {
+export function shoreBoundaryPixels( shore: ShoreField ): FieldPixels {
 
-	const shore = data.shore;
 	const scale = Math.min( 1, MAX_RES / Math.max( shore.nx, shore.nz ) );
 	const nx = Math.max( 2, Math.round( shore.nx * scale ) ), nz = Math.max( 2, Math.round( shore.nz * scale ) );
 	const width = shore.nx * shore.cell, height = shore.nz * shore.cell;
@@ -139,11 +144,7 @@ export function createShoreBoundaryField( data: WorldData ): THREE.DataTexture {
 		pixels[ k + 2 ] = gx; pixels[ k + 3 ] = gz;
 
 	}
-	const texture = new THREE.DataTexture( pixels, nx, nz, THREE.RGBAFormat, THREE.FloatType );
-	texture.name = 'shoreWaveBoundary';
-	texture.minFilter = texture.magFilter = THREE.LinearFilter;
-	texture.generateMipmaps = false; texture.flipY = false; texture.needsUpdate = true;
-	return texture;
+	return { pixels, nx, nz };
 
 }
 
@@ -153,16 +154,15 @@ export function createShoreBoundaryField( data: WorldData ): THREE.DataTexture {
  * R: swell amplitude transmission, G: central-ray visibility, BA: spatial derivatives of R.
  * This is an art-directed soft wave shadow, not a diffraction or fluid solver.
  */
-export function createShoreShelterField( data: WorldData, direction: THREE.Vector2, spreadDegrees = 18 ): THREE.DataTexture {
+export function shoreShelterPixels( shoreGrid: ShoreField, direction: { x: number; y: number }, spreadDegrees = 18 ): FieldPixels & { info: Record<string, unknown> } {
 
 	const started = performance.now();
-	const shoreGrid = data.shore;
 	const scale = Math.min( 1, MAX_RES / Math.max( shoreGrid.nx, shoreGrid.nz ) );
 	const nx = Math.max( 2, Math.round( shoreGrid.nx * scale ) ), nz = Math.max( 2, Math.round( shoreGrid.nz * scale ) );
 	const info = { x0: shoreGrid.x0, z0: shoreGrid.z0, width: shoreGrid.nx * shoreGrid.cell, height: shoreGrid.nz * shoreGrid.cell,
 		cellX: shoreGrid.nx * shoreGrid.cell / nx, cellZ: shoreGrid.nz * shoreGrid.cell / nz };
 	const dx = direction.x, dz = direction.y;
-	const shore = data.shore, count = nx * nz;
+	const shore = shoreGrid, count = nx * nz;
 	const visible = new Float32Array( count ), direct = new Float32Array( count );
 	const water = new Uint8Array( count ), distances = new Float32Array( count );
 	const angles = [ - spreadDegrees, - spreadDegrees / 2, 0, spreadDegrees / 2, spreadDegrees ], weights = [ 1, 2, 6, 2, 1 ];
@@ -281,11 +281,6 @@ export function createShoreShelterField( data: WorldData, direction: THREE.Vecto
 		}
 
 	}
-	const texture = new THREE.DataTexture( pixels, nx, nz, THREE.RGBAFormat, THREE.FloatType );
-	texture.name = 'shoreWaveShelter';
-	texture.minFilter = texture.magFilter = THREE.LinearFilter;
-	texture.generateMipmaps = false; texture.flipY = false; texture.needsUpdate = true;
-	texture.userData.shoreWaveShelter = { direction: [ dx, dz ], fanDegrees: angles, residualAmplitude: 0.06, buildMs: performance.now() - started };
-	return texture;
+	return { pixels, nx, nz, info: { direction: [ dx, dz ], fanDegrees: angles, residualAmplitude: 0.06, buildMs: performance.now() - started } };
 
 }

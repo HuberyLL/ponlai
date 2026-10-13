@@ -375,7 +375,8 @@ async function loadPlanting() {
 	} );
 	const { plantGrass } = await server.ssrLoadModule( '/src/world/Grass.ts' );
 	const { plantFlowers } = await server.ssrLoadModule( '/src/world/Flowers.ts' );
-	const { walkLoop, walkLoopDistance } = await server.ssrLoadModule( '/src/world/WalkLoop.ts' );
+	const { walkLoop } = await server.ssrLoadModule( '/src/world/WalkLoop.ts' );
+	const { walkLoopDistance } = await server.ssrLoadModule( '/src/world/WalkPath.ts' );
 	await server.close();
 	return { plantGrass, plantFlowers, walkLoop, walkLoopDistance };
 

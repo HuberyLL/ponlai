@@ -76,12 +76,16 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `chunkWorker.ts` workers run by `WorldChunks.ts` (started by `WorldStart.ts` as the page loads),
   one IndexedDB record per chunk (`WorldCache.ts`, keyed by the generator's hash, options, browser,
   chunk and the pieces in its window), merged by `ChunkMerge.ts` and drawn by `World.ts` (the
-  island a mesh per land chunk); the footprint, SDF shapes and surface nets (`WorldShapes.ts`), the
+  island a mesh per land chunk; the world fields' textures in `WorldFields.ts`); the island grown in
+  place by `Growth.ts` (the next version generated and prepared ahead, then swapped in one frame,
+  every dependent following: the GUI's Island folder, `__PONLAI__.growth`); the footprint, SDF
+  shapes and surface nets (`WorldShapes.ts`), the
   cliffs (`Cliff.ts`), the submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as
   tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`,
   `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled by
   `GrassCull.ts`), flowers, the rim bushes (`FoliageSites.ts`; `Foliage.ts`: what all vegetation
-  materials share), the islander's walking loop (`WalkLoop.ts`), the vegetation's depth prepass
+  materials share), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
+  vegetation's depth prepass
   (`VegetationPrepass.ts`).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the air/water interface, sky occlusion, the meadow's canopy light.
@@ -140,12 +144,23 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   scars are cut in canonical order, curvature comes from the apron, and a chunk's own triangles
   never go through `computeVertexNormals`. The page draws the island a mesh per land chunk and
   every other kind as one mesh or pool, concatenated in the chunks' order ( cj, ci ) whatever
-  order the workers finished in (`ChunkMerge.ts`, `World.ts`); a growth step still reloads the
-  world.
-- A chunk change never builds a pipeline: chunk meshes share their kind's material and attribute
-  set, merged kinds take new attributes on their existing geometry, the meadow's pool is
-  rewritten in place within its capacity (`GrassCull.ts`), and a pending version's buffers are
-  uploaded in the frames before the swap.
+  order the workers finished in (`ChunkMerge.ts`, `World.ts`).
+- The island grows in place (`Growth.ts`): a Grow swaps in only the changed chunks in one frame,
+  and every dependent of the land's shape follows it, the same function of the version as at load
+  (a grown page draws a page loaded on that land bit for bit, paused). Anything new that depends
+  on the land's shape joins the swap (`GrowthPage` and main.ts's `onSwap`), and work it needs on
+  the main thread goes into the preparation's idle-time steps, never into the swap's frame. A
+  step takes a few tenths of a millisecond (a generator yielding inside its loops: `Steps.ts`,
+  uploads through `Upload.ts`), so the growth's share of any frame stays under 2 ms
+  (`growth.work`).
+- A swap never builds a pipeline; one that needs one is a bug. New chunk meshes share their kind's
+  material and layout, so they draw with the loaded chunks' pipelines; merged kinds take new
+  geometry of the same layout, uploaded ahead; instanced kinds hold a capacity whose shader does not
+  change (three puts up to 1024 instance matrices in a uniform array of exactly the capacity:
+  `Flowers.ts`, `Foliage.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels
+  reading their bounds from uniforms (`GrassCull.ts`); the world fields swap textures through the
+  one base node each material samples them by (`WorldFields.ts`), and other passes keep their
+  materials across rebakes (`RainCollision.ts`).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High is the reference image; every default in the modules is high's. A load knob is read
   once when materials and the frame graph are built, so a change of tier reloads the page.

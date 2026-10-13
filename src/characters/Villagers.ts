@@ -181,8 +181,8 @@ export class Villagers {
 
 	readonly group = new THREE.Group();
 	readonly walker: Villager;
-	private readonly path: THREE.CatmullRomCurve3;
-	private readonly length: number;
+	private path: THREE.CatmullRomCurve3;
+	private length: number;
 	private readonly ground: GroundFn;
 	private readonly shadow: CharacterShadow;
 	private readonly centre = new THREE.Vector3();
@@ -196,11 +196,28 @@ export class Villagers {
 		this.ground = ground;
 		this.shadow = shadow;
 		this.speed = speed;
-		this.path = new THREE.CatmullRomCurve3( waypoints.map( ( [ x, z ] ) => new THREE.Vector3( x, 0, z ) ), true, 'centripetal' );
-		this.path.arcLengthDivisions = 800;
-		this.length = this.path.getLength();
+		( { path: this.path, length: this.length } = Villagers.loop( waypoints ) );
 		this.group.add( walker.group );
 		walker.actions.Idle_Neutral.play();
+
+	}
+
+	/** The walking loop through `waypoints` and its length (its arc lengths measured). */
+	static loop( waypoints: [ number, number ][] ): { path: THREE.CatmullRomCurve3; length: number } {
+
+		const path = new THREE.CatmullRomCurve3( waypoints.map( ( [ x, z ] ) => new THREE.Vector3( x, 0, z ) ), true, 'centripetal' );
+		path.arcLengthDivisions = 800;
+		return { path, length: path.getLength() };
+
+	}
+
+	/** Walk another loop (a grown island's, made ahead with `Villagers.loop`: Growth.ts): the
+	 * walker stands where the schedule puts it on the new loop at the next update, as on a page
+	 * loaded on that land. */
+	setLoop( loop: { path: THREE.CatmullRomCurve3; length: number } ): void {
+
+		this.path = loop.path;
+		this.length = loop.length;
 
 	}
 

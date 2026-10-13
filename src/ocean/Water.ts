@@ -266,11 +266,11 @@ export interface WaterInputs {
 	fft: OceanFFT;
 	sky: Sky;
 	shared: Shared;
-	shore: THREE.Texture;
-	seabedHeight: THREE.Texture; // the rendered floor's height over the shoreline field's bounds
+	shore: THREE.Texture | THREE.TextureNode;
+	seabedHeight: THREE.Texture | THREE.TextureNode; // the rendered floor's height over the shoreline field's bounds
 	// The floor's look: its beds over the shoreline field's bounds (seabedBedTextureFrom), and the
 	// terrain's normalsB detail texture, whose alpha is the sand's broad variation.
-	seabedLook: { beds: THREE.Texture; variation: THREE.Texture };
+	seabedLook: { beds: THREE.Texture | THREE.TextureNode; variation: THREE.Texture };
 	land: Bounds; // the land's box (WorldShapes.landBounds), for reflectionBounds
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
@@ -388,7 +388,7 @@ export class Water {
 
 	constructor( inputs: WaterInputs ) {
 
-		const { shared, size = 700, res = 320, quality } = inputs;
+		const { size = 700, res = 320, quality } = inputs;
 
 		// grid in world xz, warped dense under the island and sparse toward the horizon
 		const n = res;
@@ -451,10 +451,8 @@ export class Water {
 
 		this.inputs = inputs;
 		this.quality = { ...DEFAULT_WATER_QUALITY, ...quality };
-		const b = inputs.land;
-		this.reflectionBounds = new THREE.Box3(
-			new THREE.Vector3( b.x0 - REFLECTOR_REACH, shared.waterLevel.value - REFLECTION_FLOOR, b.z0 - REFLECTOR_REACH ),
-			new THREE.Vector3( b.x1 + REFLECTOR_REACH, ISLAND_TOP + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );
+		this.reflectionBounds = new THREE.Box3();
+		this.setLand( inputs.land );
 		this.material = this.buildMaterial( SSR_BOXED );
 		this.materials.set( variantKey( SSR_BOXED ), this.material );
 		this.mesh = new THREE.Mesh( geo, this.material );
@@ -1326,6 +1324,19 @@ export class Water {
 			u.shadowOn.value = 1;
 
 		} else u.shadowOn.value = 0;
+
+	}
+
+	/** The reflection's box for the land's box `b` (WorldShapes.landBounds): again when the land
+	 * grows (Growth.ts), which grows it; whatever was held beyond it (a placed prop: the caller
+	 * unions it in again) is dropped. Debug builds measure the scene against it once, at the load:
+	 * not after a growth step, whose frame it would take tens of milliseconds (it reads every
+	 * vertex); a page loaded on the grown land measures that land. */
+	setLand( b: Bounds ): void {
+
+		this.reflectionBounds.set(
+			new THREE.Vector3( b.x0 - REFLECTOR_REACH, this.inputs.shared.waterLevel.value - REFLECTION_FLOOR, b.z0 - REFLECTOR_REACH ),
+			new THREE.Vector3( b.x1 + REFLECTOR_REACH, ISLAND_TOP + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );
 
 	}
 
