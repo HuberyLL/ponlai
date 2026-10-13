@@ -1,4 +1,5 @@
 import { defineConfig, type Plugin } from 'vite';
+import { assets } from './tools/vite-assets.mjs';
 import { worldGeneratorHash } from './tools/vite-world-generator.mjs';
 
 // Licence texts that must travel with the built site: MIT asks for the full notice in every copy,
@@ -55,8 +56,9 @@ function licences(): Plugin {
 
 export default defineConfig( {
 	base: './',
+	// assets(): the git-ignored islander models, served and linked into dist/ (tools/vite-assets.mjs);
 	// the world generator's source hash, for the world cache (src/world/WorldCache.ts)
-	plugins: [ licences(), worldGeneratorHash() ],
+	plugins: [ licences(), assets(), worldGeneratorHash() ],
 	server: {
 		// Worktrees for parallel branches live under .claude/. A build or checkout there writes an
 		// index.html inside this root, which would make the dev server reload every open page. The
