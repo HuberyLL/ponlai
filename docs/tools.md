@@ -13,6 +13,12 @@ everyday commands; this file has the details. Each tool's own file says the rest
   names the pid and cwd holding it), builds first for `preview` unless `--no-build`, runs vite
   through `job.mjs` with its log at `artifacts/jobs/serve-<mode>-<port>.log`, waits until it
   answers and prints the URL and the `job.mjs stop` command that ends it.
+- `node tools/serve.mjs dev|preview --sha <rev>` serves another commit: a detached worktree at
+  the main checkout's `.claude/worktrees/sha-<12 hex>`, made once and reused. Its node_modules
+  links the main checkout's entries (vite's caches left out) when the commit's package-lock.json
+  is the same, else `npm ci` runs there; `preview` builds once per worktree (`dist/.serve-sha`).
+  The log is `artifacts/jobs/serve-<mode>-sha-<12 hex>-<port>.log` in the calling checkout.
+  `node tools/serve.mjs clean` stops the jobs in every sha-* worktree and removes them.
 - The islanders load from the git-ignored `artifacts/assets/`. `tools/vite-assets.mjs` finds the
   folder (the checkout's own, else the main checkout's through git's common directory, so a fresh
   worktree needs no link): the dev server serves it and `vite build` links it into
@@ -644,8 +650,9 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   stops steering, spoiling every scene after it) stops the run as a second hang does, with the
   finished scenes written (`meta.spoiled`, a section of summary.md), and exits with 1; the message
   names the page, scene and slice.
-- `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
-  other page stopped, and reports deltas with their 95 % interval, each page's render scale per
+- `--compare urlA urlB` (the other build from `serve.mjs preview --sha`) runs A and B as two
+  pages in one browser, in alternating slices with the other page stopped, and reports deltas
+  with their 95 % interval, each page's render scale per
   scene (high's dynamic scale may settle higher on one side: compare the deltas with that in mind),
   and errors named by their page (`pageerror (page B): ...`). `--toggle "js"` A/Bs inside one
   page by applying the expression (with `s` = `window.__PONLAI__` and `on` false for A, true for
