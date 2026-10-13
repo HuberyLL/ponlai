@@ -648,9 +648,12 @@ async function guarded( names, finished, attempt, label = '' ) {
 // for 7-11 minutes). A runner calls holdScene before a scene's warm-up (and at its start, before its
 // page loads, which the first scene's hold covers) with every page's loop stopped and drained; the
 // pages and the browser stay open, drawing nothing, while the lock is away. The hold is a lease
-// (gpu-lock's leaseGpuLock with no budget): it is kept from scene to scene while nobody waits, and
-// otherwise released and asked for again at once, behind the shared requests queued meanwhile (up
-// to the exclusive cap, as any exclusive request). Only a hold taken again checks the GPU for idle
+// (gpu-lock's leaseGpuLock with no budget and keepPlace): it is kept from scene to scene while no
+// shared request waits, and otherwise released and asked for again at once, behind the shared
+// requests queued meanwhile (up to the exclusive cap) but in its first request's place among the
+// exclusive ones: a timing run queued meanwhile still goes after the whole run. (Asked for again
+// under a new ticket, the first proof run gave its place up to a held-throughout run queued after
+// it, and then waited behind four more.) Only a hold taken again checks the GPU for idle
 // (one kept throughout saw nothing else run): a GPU still busy after `--idle-wait` stops the run
 // with the finished scenes written and exit 3, unless `--contended`, which marks the scene contended.
 let lockLabel = null;
@@ -658,15 +661,24 @@ let lockLabel = null;
 // away from this run in all (ms), and the scene whose idle check stopped the run
 const holds = [];
 let releasedMs = 0, holdStart = 0, lockStop = null;
+// set by main once it holds the lock: the first runner's first scene goes on under that hold (main
+// has just checked the GPU for idle)
+let freshHold = false;
 async function holdScene( scene, log, forLoad = false ) {
 
+	if ( freshHold ) {
+
+		freshHold = false;
+		return null;
+
+	}
 	// the wait may outlast a hang's timeout: it is no hang
 	const alive = setInterval( progress, 5000 );
 	const asked = Date.now();
 	let lease;
 	try {
 
-		lease = await leaseGpuLock( lockLabel, { budget: 0 } );
+		lease = await leaseGpuLock( lockLabel, { budget: 0, keepPlace: true } );
 
 	} finally {
 
@@ -2240,6 +2252,7 @@ async function main() {
 			started = Date.now();
 			holdStart = started;
 			lockLabel = label;
+			freshHold = true;
 			waitedMs = started - requested;
 			if ( waitedMs > 1000 ) console.error( `[profile] GPU lock acquired after ${ ( waitedMs / 1000 ).toFixed( 0 ) } s` );
 			const gpuIdle = await waitForIdleGpu( { threshold: IDLE_THRESHOLD, wait: IDLE_WAIT } );

@@ -441,10 +441,11 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
 - A run with several scenes holds the exclusive lock one scene at a time (every mode: profile,
   compare, toggle, accept, reload): before a scene's warm-up it asks for the lock, after its last
   slice its pages stop and drain. The pages and the browser stay open, their loops stopped, so
-  they draw nothing while the lock is away. The hold is a lease: kept from scene to scene while
-  nobody waits, otherwise given up and asked for again at once, behind the shared requests queued
-  meanwhile (up to the exclusive cap), so queued captures run between the scenes instead of after
-  the whole run. A hold taken again checks the GPU for idle; still busy after `--idle-wait`, the
+  they draw nothing while the lock is away. The hold is a lease (`leaseGpuLock` with
+  `keepPlace`): kept from scene to scene while no shared request waits, otherwise given up and
+  asked for again at once, behind the shared requests queued meanwhile (up to the exclusive cap)
+  but in the run's first place among the exclusive requests, so queued captures run between the
+  scenes instead of after the whole run, and a timing run queued meanwhile still goes after it. A hold taken again checks the GPU for idle; still busy after `--idle-wait`, the
   run stops with the finished scenes written and exits 3, unless `--contended` (that scene marked
   contended). The first scene's hold covers the page loads. `wallSeconds` counts only the time
   held; `meta.holds` lists each scene the lock came back for (its wait and the GPU idle with this
