@@ -563,8 +563,10 @@ node tools/verify-scene-jump.mjs <baseUrl> <test> --order reverse --suffix .repe
 uv run --with numpy --with pillow tools/parity/diff-set.py <ref> <test> --aa-floor
 ```
 
-Both sides use capture fast mode (a persistent profile, 40 rendered frames after the evals, the loop
-stopped before the shot), so they differ only in how the scene was reached. `--from <view or query>`
+Both sides use capture.mjs's readiness (a persistent profile; after the evals the image grabbed
+with the loop stopped until two grabs agree, a temporal page's converged rest; the loop stopped for
+the shot; `--frames n` for the old fixed count), so they differ only in how the scene was reached.
+Each shot's JSON records `ready`; a shot still changing at the cap is printed as unstable. `--from <view or query>`
 visits scenes first without capturing them (a storm, a night, fog, another clock: `--from
 "weather=storm&preset=noon&t=5"`); `--aa taau` with `diff-set.py --temporal` checks the temporal
 modes. All 24 views take about 2-3 s each in one page, against 6-7 s per fresh load (unshared GPU).

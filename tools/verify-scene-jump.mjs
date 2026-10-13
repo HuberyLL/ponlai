@@ -5,8 +5,8 @@
 //   node tools/verify-scene-jump.mjs <baseUrl> <outDir> [--fresh | --legacy] [--views parity|taa|all|a,b,c]
 //       [--order list|reverse] [--from <view or query>]... [--between <view or query>]...
 //       [--suffix .repeat] [--quality high]
-//       [--aa mode] [--q "extra&query"] [--size 1728x1117@2] [--frames 40] [--profile dir]
-//       [--timeout 240000]
+//       [--aa mode] [--q "extra&query"] [--size 1728x1117@2] [--frames n] [--stable-* (as capture.mjs)]
+//       [--profile dir] [--timeout 240000]
 //
 // --fresh: one fresh page load per view (a new page in the same browser), as capture-set loads it.
 // Otherwise one page for the whole list: it loads the first scene (the first `--from`, else the
@@ -17,22 +17,26 @@
 // a frame rendered at the jump's camera, the view's eval, readiness, the shot.
 // --legacy jumps the way builds before the exact jump could: establishScene's options (weather,
 // preset or hour, time) and the camera reset to the island view (capture-tooling plan 3.2).
-// Readiness is capture fast mode as it stood at the jump's commit: `--frames` rendered frames after
-// the evals and the loading screen gone (its fade finished), a temporal page's rest restarted
-// and converged, then the loop stopped (its last frame on the canvas) before the screenshot; the
-// next jump starts it again. A persistent browser profile (`--profile`, one browser at a time)
-// keeps the world cache and the shader cache across runs. Where tools/capture-browser.mjs exists
-// (readiness by stability, profile slots), the jump's proof shot both sides with it instead; this
-// probe should move onto it with the capture tools' one page per set.
+// Readiness is capture.mjs's by default (tools/capture-browser.mjs, "Readiness by stability"):
+// after the evals the floor's frames and the loading screen gone (waitForScene), a temporal page's
+// rest restarted and converged, then the image grabbed with the loop stopped until two grabs agree
+// (waitForStable, the `--stable-*` options as capture.mjs's; a temporal page is shot on its held
+// rest). A page still changing at the cap is shot anyway and printed as unstable. The loop stays
+// stopped for the screenshot (its last frame on the canvas); the next jump starts it again. A fixed
+// wait settled pages off their settled image under GPU load, so the views wandered between loads.
+// `--frames n` keeps the old fixed rule: n rendered frames after the evals, then the rest and the
+// stop. A persistent browser profile (`--profile`, one browser at a time) keeps the world cache and
+// the shader cache across runs.
 // Writes `<outDir>/<view><suffix>.png` and `.json` (the page's diagnostics, the crop anchors, the
-// scene it was reached from). Compare two sets with diff-set.py: the fresh set taken twice
-// (`--suffix .repeat`) as the reference, and a jump set in two orders (list, then reverse with
+// scene it was reached from, `ready`: the readiness record, as capture.mjs's). Compare two sets
+// with diff-set.py: the fresh set taken twice (`--suffix .repeat`) as the reference, and a jump set in two orders (list, then reverse with
 // `--suffix .repeat`) as the test, `--aa-floor` for MSAA, `--temporal` for taa and taau.
 // The page renders paused, so the GPU lock is taken shared.
 import { chromium } from 'playwright';
 import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
+import { waitForScene, waitForStable, stableOptions, stopLoop } from './capture-browser.mjs';
 import { VIEWS, viewNames, viewEval } from './parity/views.mjs';
 
 const argv = process.argv.slice( 2 );
@@ -48,7 +52,8 @@ for ( let i = 0; i < argv.length; i ++ ) {
 	else options[ k ] = argv[ ++ i ];
 
 }
-const known = [ 'fresh', 'legacy', 'views', 'order', 'suffix', 'quality', 'aa', 'q', 'size', 'frames', 'profile', 'timeout' ];
+const known = [ 'fresh', 'legacy', 'views', 'order', 'suffix', 'quality', 'aa', 'q', 'size', 'frames', 'profile', 'timeout',
+	'stable-min', 'stable-every', 'stable-repeats', 'stable-tolerance', 'stable-patience', 'stable-cap' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! known.includes( k ) );
 if ( positional.length !== 2 || unknown.length ) {
 
@@ -77,7 +82,8 @@ let common = `debug&paused&t=12&quality=${ options.quality ?? 'high' }`;
 if ( options.aa ) common += `&aa=${ options.aa }`;
 if ( options.q ) common += `&${ options.q }`;
 const suffix = options.suffix ?? '';
-const frames = Number( options.frames ?? 40 );
+const frames = options.frames === undefined ? null : Number( options.frames );
+const stable = stableOptions( ( k ) => options[ k ] );
 const timeout = Number( options.timeout ?? 240000 );
 const profile = path.resolve( options.profile ?? 'artifacts/.capture-profiles/scene-jump' );
 // a view's scene: its full query and eval; a raw query (a `--from` scene) has no eval
@@ -110,19 +116,14 @@ async function open( q ) {
 
 }
 
-// the view's evals run, then `frames` rendered frames, the rest (temporal), the loop stopped
+// the view's evals run, then readiness as capture.mjs's by default (tools/capture-browser.mjs): the
+// floor's frames and the loading screen gone, a temporal page's rest restarted and converged, then
+// the image stable (or the rest held) with the loop stopped; `--frames n` waits that fixed count
+// instead. Returns the record the shot's JSON keeps as `ready`.
 async function settle( page, js ) {
 
 	if ( js ) await page.evaluate( js );
-	const evalFrame = await page.evaluate( () => window.__PONLAI__.renderer.info.frame );
-	// the loading screen gone: its computed opacity 0 (its `done` class only starts a 1 s fade, and a
-	// shot during the fade carries the screen over the frame)
-	await page.waitForFunction( ( f ) => {
-
-		const loading = document.getElementById( 'loading' );
-		return window.__PONLAI__.renderer.info.frame >= f && ( ! loading || getComputedStyle( loading ).opacity === '0' );
-
-	}, evalFrame + frames, { timeout, polling: 'raf' } );
+	await waitForScene( page, { frames: frames ?? stable.min, timeout } );
 	await page.evaluate( () => window.__PONLAI__.taa?.epoch.bump( 'capture' ) );
 	await page.waitForFunction( () => {
 
@@ -130,17 +131,24 @@ async function settle( page, js ) {
 		return ! t || t.restTarget === 0 || ( t.converged && t.restEpoch === window.__PONLAI__.taa.epoch.value );
 
 	}, null, { timeout, polling: 100 } );
-	await page.evaluate( () => window.__PONLAI__.loop.stop() );
+	if ( frames !== null ) {
+
+		await stopLoop( page );
+		return { rule: 'frames', frames };
+
+	}
+	return waitForStable( page, { ...stable, timeout } );
 
 }
 
-async function shoot( page, view, extra ) {
+async function shoot( page, view, ready, extra ) {
 
+	if ( ready.status === 'capped' ) console.log( `${ view }${ suffix } unstable: still changing after ${ ready.framesWaited } frames (max ${ ready.maxSeen } levels), captured at the cap` );
 	const file = path.join( outDir, `${ view }${ suffix }.png` );
 	await page.screenshot( { path: file, timeout } );
 	const diag = await page.evaluate( () => ( { ...window.__THREE_GAME_DIAGNOSTICS__ } ) );
 	const crops = await page.evaluate( () => window.__PONLAI_CROPS__ ?? null );
-	await writeFile( path.join( outDir, `${ view }${ suffix }.json` ), JSON.stringify( { browser, viewport: { width: W, height: H }, ...extra, diag, ...( crops ? { crops } : {} ) }, null, 1 ) );
+	await writeFile( path.join( outDir, `${ view }${ suffix }.json` ), JSON.stringify( { browser, viewport: { width: W, height: H }, ...extra, ready, diag, ...( crops ? { crops } : {} ) }, null, 1 ) );
 
 }
 
@@ -155,9 +163,9 @@ try {
 			const { page, errors } = await open( s.q );
 			try {
 
-				await settle( page, s.eval );
-				await shoot( page, v, { mode: 'fresh', query: s.q, errors } );
-				console.log( `${ v }${ suffix } fresh ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) } s${ errors.length ? ' ERRORS ' + errors.slice( 0, 3 ).join( ' | ' ) : '' }` );
+				const ready = await settle( page, s.eval );
+				await shoot( page, v, ready, { mode: 'fresh', query: s.q, errors } );
+				console.log( `${ v }${ suffix } fresh ${ ready.status ?? ready.rule } ${ ( ( Date.now() - t0 ) / 1000 ).toFixed( 1 ) } s${ errors.length ? ' ERRORS ' + errors.slice( 0, 3 ).join( ' | ' ) : '' }` );
 				if ( errors.length ) failed ++;
 
 			} finally {
@@ -204,9 +212,9 @@ try {
 				await page.waitForFunction( ( f ) => window.__PONLAI__.renderer.info.frame > f, jumped, { timeout, polling: 'raf' } );
 
 			}
-			await settle( page, s.eval );
-			if ( capture ) await shoot( page, v, { mode: i > 0 ? 'jump' : 'load', query: s.q, from: previous, errors: errors.splice( 0 ) } );
-			console.log( `${ v }${ capture ? suffix : ' (not captured)' } ${ i > 0 ? `jump from ${ previous }` : 'load' } ${ ( ( Date.now() - t1 ) / 1000 ).toFixed( 1 ) } s` );
+			const ready = await settle( page, s.eval );
+			if ( capture ) await shoot( page, v, ready, { mode: i > 0 ? 'jump' : 'load', query: s.q, from: previous, errors: errors.splice( 0 ) } );
+			console.log( `${ v }${ capture ? suffix : ' (not captured)' } ${ ready.status ?? ready.rule } ${ i > 0 ? `jump from ${ previous }` : 'load' } ${ ( ( Date.now() - t1 ) / 1000 ).toFixed( 1 ) } s` );
 			previous = v;
 
 		}
