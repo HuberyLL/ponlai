@@ -57,7 +57,8 @@
 //   Captures are GPU-bound: 3 at once is the most throughput, more only adds latency, and every
 //   extra page costs a load (5-8 s, a jump 2-4 s), which a small set does not earn back. So the
 //   default is one page per 5 captures, at most 3 (repeats counted: 24 views take 3, 7 views 2,
-//   up to 5 one). Each view holds a GPU lock slot from its load or jump to its shot (capture.mjs).
+//   up to 5 one). Each page leases a GPU lock slot (capture.mjs): it keeps it from view to view and
+//   gives it up between views for a waiter after 20 s of holding (capture.mjs --lease, after `--`).
 //   --retries (default 1) captures a failed view again on a fresh page (a load that timed out while
 //   other pages kept the GPU busy, a page error, a crash): a failure ends its page, and the views
 //   still to come go on in a fresh one, so a crash or a stuck page (no answer within three times

@@ -7,9 +7,11 @@
 //   - shared (deterministic captures and probes): up to PONLAI_GPU_SLOTS holders together (default
 //     3), none while an exclusive holder runs. Captures are GPU-bound: past 2-3 pages at once the
 //     throughput stays flat and only each page's latency grows (and its loads time out), so the
-//     rest queue first in, first out. A slot is held per capture (capture.mjs from a view's load or
-//     scene jump to its shot, capture-clip.mjs around its clip), not per set or page, so a long set
-//     and a one-view probe interleave.
+//     rest queue first in, first out. A slot is held per capture (capture-clip.mjs around its clip),
+//     not per set or page, so a long set and a one-view probe interleave; capture.mjs's worker leases
+//     its slot over the views of a set (leaseGpuLock): it keeps it from view to view and gives it up
+//     for a waiter once it has held it for its lease (20 s), so a waiter's extra delay is bounded by
+//     the lease (and the view in flight), not by the set.
 // Both modes wait in one queue, served in arrival order: an exclusive request lets the requests
 // queued before it go first, then blocks new shared holders, waits for the current ones to drain
 // and holds the lock alone; everything queued after it, exclusive or shared, waits for it. So a
@@ -59,6 +61,7 @@
 //   await withGpuLock( 'profile island', async () => { ... } );           // held while fn runs
 //   await acquireGpuLock( 'capture overview' );                           // held until this process exits
 //   await acquireGpuLock( 'verify-sky', { shared: true } );               // shared with other probes
+//   await leaseGpuLock( 'capture v', { shared: true, budget: 20000 } );   // kept from the last piece of work, or yielded to a waiter
 //
 //   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
 //   node tools/gpu-lock.mjs status                 (the owner, the holders, the queue and the exclusive requests in turn)
@@ -74,7 +77,9 @@
 // says why a hold ended when its holder did not end it itself: `handed` (a child took the slot over:
 // the child's grant carries `from`), `yielded` (yieldAncestorSlot) or `stale` (the holder was killed
 // and whoever looked next reclaimed the slot; the log line is written by the one whose unlink
-// succeeded, so it is written once). A grant of a low request past its bound carries `promoted`.
+// succeeded, so it is written once); `lease` marks a leased hold given up for a waiter, and a leased
+// hold's release counts the pieces of work it served (`uses`). A grant of a low request past its
+// bound carries `promoted`.
 // Inherited holds (re-entry, a child under an exclusive holder) take nothing and log nothing.
 // A waiting request prints a timestamped line every 30 s: its place in the queue, the next in
 // turn, who holds the GPU and why it waits.
@@ -600,10 +605,18 @@ function leaveShared() {
 	} );
 
 }
-const logRelease = ( hold ) => logEvent( { ev: 'release', pid: process.pid, label: hold.label, mode: hold.mode, class: PRIORITY, ticket: hold.ticket, holdMs: Date.now() - hold.at } );
+const logRelease = ( hold, reason ) => logEvent( { ev: 'release', ...( reason ? { reason } : {} ), pid: process.pid, label: hold.label, mode: hold.mode, class: PRIORITY, ticket: hold.ticket, holdMs: Date.now() - hold.at,
+	...( hold.uses > 1 ? { uses: hold.uses } : {} ) } );
 
 /** Releases the lock if this process holds it. */
 export function releaseGpuLock() {
+
+	release();
+
+}
+
+// (`reason` only for the log: 'lease' when leaseGpuLock gives the hold up for a waiter)
+function release( reason ) {
 
 	depth = 0;
 	rmSync( path.join( WAITING, `${ process.pid }.json` ), { force: true } );
@@ -619,7 +632,7 @@ export function releaseGpuLock() {
 	if ( heldMode === 'shared' ) {
 
 		heldMode = null;
-		if ( leaveShared() && hold ) logRelease( hold );
+		if ( leaveShared() && hold ) logRelease( hold, reason );
 		return;
 
 	}
@@ -628,7 +641,7 @@ export function releaseGpuLock() {
 	if ( owner && owner.pid === process.pid && owner.mode !== 'shared' ) {
 
 		rmSync( LOCK_DIR, { recursive: true, force: true } );
-		if ( hold ) logRelease( hold );
+		if ( hold ) logRelease( hold, reason );
 
 	}
 
@@ -757,6 +770,61 @@ export async function withGpuLock( label, fn, options = {} ) {
 		else depth = Math.max( depth - 1, 0 );
 
 	}
+
+}
+
+/** The waiting request that this process's own hold keeps waiting, the first in turn, or null: one
+ * that would be served before this process if it gave the hold up now and asked again at once. That
+ * is an exclusive request (it waits for every shared slot to drain, and ranks before any new
+ * request), an older copy's exclusive request, or, when every shared slot is taken, a shared request
+ * that ranks before a new one of this process (a normal request ahead of a low holder, any request
+ * ahead of a normal one; a low request ranks after a normal holder's new request until its bound).
+ * Null while this process holds nothing itself (an inherited hold included). */
+function gpuLockWaiter() {
+
+	if ( ! holding ) return null;
+	const untracked = untrackedWaiters()[ 0 ];
+	if ( untracked ) return { ...untracked, mode: 'exclusive' };
+	const now = Date.now();
+	const priority = holding.mode === 'exclusive' ? 'normal' : PRIORITY;
+	const again = { pid: process.pid, seq: Infinity, priority, ...( priority === 'low' ? { promoteAt: new Date( now + LOW_MAX_WAIT * 1000 ).toISOString() } : {} ) };
+	const order = queueOrder( [ ...queued().filter( ( t ) => t.pid !== process.pid ), again ], now );
+	const before = order.slice( 0, order.indexOf( again ) );
+	const exclusive = before.find( ( t ) => t.mode === 'exclusive' );
+	if ( exclusive || before.length === 0 || holding.mode === 'exclusive' ) return exclusive ?? before[ 0 ] ?? null;
+	const slotted = readJson( OWNER )?.mode === 'shared' ? sharedMembers().filter( ( m ) => m.slot !== undefined ).length : 0;
+	return slotted >= SLOTS ? before[ 0 ] : null;
+
+}
+
+/** A hold kept from one piece of work to the next (capture.mjs's views): call it before each piece
+ * instead of acquireGpuLock, and releaseGpuLock() after the last. This process keeps the hold it
+ * already has (same mode) while nobody waits for it (gpuLockWaiter), or while it has held it for less
+ * than `budget` ms; otherwise it gives the hold up (logged as `reason: 'lease'`) and queues again
+ * like any request. A waiter's extra delay is therefore at most the budget plus the piece in flight
+ * when it runs out, however long the series of pieces. A low holder gives its slot up for a normal
+ * shared request at once, budget or not, as it would between per-piece holds: low work never keeps
+ * a session's interactive captures and probes waiting longer than before (exclusive requests ignore
+ * the class, so they get the budget). Without a hold of its own (or in another mode) it simply
+ * acquires. The release that ends a hold logs how many pieces it served (`uses`).
+ * Returns { waitMs, kept }: the wait for the lock, and whether the hold was kept. */
+export async function leaseGpuLock( label, { shared = false, budget = 0, ...options } = {} ) {
+
+	if ( holding && heldMode === ( shared ? 'shared' : 'exclusive' ) ) {
+
+		const waiter = gpuLockWaiter();
+		const yieldNow = waiter && ( Date.now() - holding.at >= budget ||
+			( heldMode === 'shared' && PRIORITY === 'low' && waiter.mode !== 'exclusive' && waiter.priority === 'normal' ) );
+		if ( ! yieldNow ) {
+
+			holding.uses = ( holding.uses ?? 1 ) + 1;
+			return { waitMs: 0, kept: true };
+
+		}
+		release( 'lease' );
+
+	} else if ( holding ) release();
+	return { waitMs: await acquireGpuLock( label, { shared, ...options } ), kept: false };
 
 }
 
@@ -938,7 +1006,7 @@ export function summariseLockLog( events, { by = 'class', top = 5, now = Date.no
 	for ( const e of events ) {
 
 		const k = key( e );
-		if ( ! groups.has( k ) ) groups.set( k, { requests: 0, waits: [], holds: [], takeovers: 0, timeouts: 0, abandoned: 0, stale: 0 } );
+		if ( ! groups.has( k ) ) groups.set( k, { requests: 0, waits: [], holds: [], takeovers: 0, timeouts: 0, abandoned: 0, stale: 0, leases: 0, uses: 0 } );
 		const g = groups.get( k );
 		const t = Date.parse( e.t );
 		if ( e.ev === 'request' ) g.requests ++;
@@ -952,6 +1020,8 @@ export function summariseLockLog( events, { by = 'class', top = 5, now = Date.no
 
 			g.holds.push( e.holdMs );
 			if ( e.reason === 'stale' ) g.stale ++;
+			if ( e.reason === 'lease' ) g.leases ++;
+			g.uses += e.uses ?? 1;
 			holds.push( { pid: e.pid, label: e.label, mode: e.mode, start: t - e.holdMs, end: t } );
 			open.delete( e.pid );
 
@@ -970,7 +1040,7 @@ export function summariseLockLog( events, { by = 'class', top = 5, now = Date.no
 			return { t: e.t, label: e.label, mode: e.mode, class: e.class, waitMs: e.waitMs, holders };
 
 		} );
-	const rows = [ ...groups ].map( ( [ group, g ] ) => ( { group, requests: g.requests, wait: stats( g.waits ), hold: stats( g.holds ), takeovers: g.takeovers, timeouts: g.timeouts, abandoned: g.abandoned, stale: g.stale } ) )
+	const rows = [ ...groups ].map( ( [ group, g ] ) => ( { group, requests: g.requests, wait: stats( g.waits ), hold: stats( g.holds ), takeovers: g.takeovers, timeouts: g.timeouts, abandoned: g.abandoned, stale: g.stale, leases: g.leases, uses: g.uses } ) )
 		.sort( ( a, b ) => b.wait.total - a.wait.total || b.hold.total - a.hold.total );
 	return { events: events.length, from: events[ 0 ]?.t ?? null, to: events.at( -1 )?.t ?? null, groups: rows, longest };
 
@@ -986,7 +1056,7 @@ function printLockLog( summary, { by, sinceText } ) {
 	const width = Math.min( 40, Math.max( 5, ...summary.groups.map( ( r ) => r.group.length ) ) );
 	const head = [ by === 'label' ? 'label' : 'class', 'req', 'waits', 'median', 'p95', 'total', 'holds', 'median', 'p95', 'total', 'other' ];
 	const table = summary.groups.map( ( r ) => [ cut( r.group, width ), r.requests, r.wait.n, d( r.wait.median ), d( r.wait.p95 ), d( r.wait.total ), r.hold.n, d( r.hold.median ), d( r.hold.p95 ), d( r.hold.total ),
-		[ r.takeovers && `${ r.takeovers } taken over`, r.timeouts && `${ r.timeouts } timed out`, r.abandoned && `${ r.abandoned } abandoned`, r.stale && `${ r.stale } stale` ].filter( Boolean ).join( ', ' ) ].map( String ) );
+		[ r.uses > r.hold.n && `${ r.uses } uses`, r.leases && `${ r.leases } lease yields`, r.takeovers && `${ r.takeovers } taken over`, r.timeouts && `${ r.timeouts } timed out`, r.abandoned && `${ r.abandoned } abandoned`, r.stale && `${ r.stale } stale` ].filter( Boolean ).join( ', ' ) ].map( String ) );
 	const widths = head.map( ( h, i ) => Math.max( h.length, ...table.map( ( row ) => row[ i ].length ) ) );
 	for ( const row of [ head, ...table ] ) console.log( row.map( ( c, i ) => i === 0 || i === row.length - 1 ? c.padEnd( widths[ i ] ) : c.padStart( widths[ i ] ) ).join( '  ' ).trimEnd() );
 	if ( summary.longest.length ) {

@@ -29,8 +29,8 @@ Capture a production build (`npm run build`, then `npx vite preview --host 127.0
 
 Paused captures take the GPU lock shared (`tools/gpu-lock.mjs`): their pixels do not depend on what
 else renders, so they run beside other paused captures and probes, and wait for timing runs. Each
-capture holds one of the lock's shared slots (default 3, queued first in, first out), so `--jobs`
-above the free slots only queues.
+page holds one of the lock's shared slots (default 3, queued first in, first out) while it
+captures, so `--jobs` above the free slots only queues.
 
 ## Fast mode (tools/capture-browser.mjs)
 
@@ -202,15 +202,20 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
 - `--jobs n` runs n pages at once, each in its own profile slot, the views handed out one at a time
   from one queue (captures are GPU-bound: 3 at once gives the most captures per minute, more only
   adds latency, and each extra page costs a load that a small set does not earn back). Default: one
-  page per 5 captures, at most 3, repeats counted (24 views take 3, 7 views 2, up to 5 one). Each view holds a GPU lock slot from its load or jump to its shot, so the page
-  stands stopped between views without one.
+  page per 5 captures, at most 3, repeats counted (24 views take 3, 7 views 2, up to 5 one). Each
+  page leases a GPU lock slot: it keeps it from view to view and gives it up between views when
+  someone waits for it and it has held it for 20 s (capture.mjs `--lease` after `--`; 0 frees it
+  after every view), so a set behind a series of timing runs advances several views per run, and a
+  timing run waits at most about the lease (and the view in flight) for it.
 - `--runs` (or `PARITY_RUNS`) appends a line per run to a CSV: date, task, procedure, sha, wall
   minutes, whether the GPU was busy before the run, captures, failures and the set. Without either
   nothing is logged: a procedure that keeps a run log passes one of them on every run.
 - After `--`, options for capture.mjs: `--wait-for "expr"` (polled up to 60 s once the page is
   ready), `--frames n --every k` (n captures k rendered frames apart: `<view>.png`,
   `<view>.f1.png` ...; the loop runs between them and stops for each shot), the `--stable-*`
-  options, `--ready-frames n`, `--wait ms`, `--settle ms` (fast mode above).
+  options, `--ready-frames n`, `--wait ms`, `--settle ms` (fast mode above), `--lease s` (the GPU
+  slot's lease, above; it changes no pixel, but like every option after `--` it is part of a stored
+  reference's key).
 
 ### Quick mode (--quick, quick.mjs)
 
