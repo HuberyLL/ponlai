@@ -213,7 +213,12 @@ shifts, and one recapture before a failure counts; thresholds in `tools/parity/t
 capture-set opens one page per set (one per `--jobs` worker) and reaches every view after the
 first by the exact scene jump (`__PONLAI__.establishScene( <the view's query> )`, then the view's eval
 and the usual readiness): only load-time options (quality, aa, size and dpr, debug switches) need a
-new page, and a set shares them. Builds without the jump's marker (`__PONLAI__.sceneJump`, older
+new page, and a set shares them. Views need not be views.mjs's: `--view "name:query[::js]"`,
+`--views-file f.json` and `--sweep "key=a,b,c"` (each view per value, e.g. `--sweep
+weather=fair,rain --sweep hour=7,12,17`) capture ad-hoc views through the same pages, jump and
+readiness (and `--quick`, `--reference`, `--check`); use them instead of a script that loops
+capture.mjs over views, which loads a cold page per view (`tools/parity/adhoc.mjs`, the README's
+capture-set). Builds without the jump's marker (`__PONLAI__.sceneJump`, older
 commits) get a page per view, as `--page-per-view` forces; a failed view or a lost page is retried
 and the rest of the set goes on in a fresh page. `--repeat` takes the repeats on other pages, in
 reverse order.
