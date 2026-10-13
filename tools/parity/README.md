@@ -271,8 +271,9 @@ uv run --with numpy --with pillow tools/parity/diff-set.py <refDir> <testDir> [-
 - `--temporal`: the rule for temporal AA captures (`aa=taa|taau`), whose paused frames do not
   repeat pixel for pixel (see Temporal tolerance below). MSAA sets keep the exact rules above.
 - Each capture's JSON records the browser build (`browser`); diff-set warns when the two sets come
-  from different builds, since their frames never match pixel for pixel. Compare only sets captured
-  with the same browser (Playwright's Chromium, or one `CHROME_PATH`).
+  from different builds, since their frames may differ. Compare sets captured with the same
+  browser (Playwright's Chromium, or one `CHROME_PATH`), or a stored set verified for the other
+  build (Reference store, Browser updates).
 - `--crops-from`: per anchor, the difference counts and a `ref | test | diff x8` sheet
   (`<out>/<view>.<anchor>.png`), and per view `<view>.anchors.png`, the test frame at a quarter size
   with its anchor boxes.
@@ -312,7 +313,8 @@ flower entirely. Crops come from `--crops-from`, else from the test side's JSON.
 ## Reference store (reference.mjs)
 
 References are kept per commit and shared by every task and process that checks against it, so a
-reference is captured once per commit, capture-tool version and browser build. `capture-set.mjs
+reference is captured once per commit and capture-tool version (a capture set survives a browser
+update once a few of its views match under the new build: Browser updates below). `capture-set.mjs
 --reference` / `--check` keep capture sets there, `baseline.mjs` its `baseline` and ground-truth
 entries. A task that runs the usual command gets reuse and waiting by itself.
 
@@ -332,6 +334,8 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   carry/<A>/                       the carry-over checks from commit A: verdict.json, the paused
                                    set's diff, the spot checks' captures (Carry-over below)
   .replaced/<path with ~>@<time>/  a reference replaced by a fresh capture (safe to delete)
+  .verify/<path with ~>@<time>/    a set's sample views while they are checked against a new
+                                   browser build (removed afterwards)
   .<name>.mutex                    beside a reference for a few milliseconds while a process
                                    inspects it and takes its claim
 ```
@@ -347,7 +351,9 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true } } },
   "url": "<the preview it was captured from>",
   "rounds": [ { "pid": 0, "label": "...", "started": "...", "finished": "...", "minutes": 2.1,
-                "captured": "3 views + 3 repeats", "reason": "no reference yet", "failed": 0 } ]
+                "captured": "3 views + 3 repeats", "reason": "no reference yet", "failed": 0 } ],
+  "verifiedBrowsers": [ { "browser": { "executable": "...", "version": "153.0.8010.13" }, "at": "...",
+                          "views": [ "island-fair-noon", "meadow-close", "water-skim-cliffs" ], "rule": "decoded pixels" } ]
 }
 ```
 
@@ -367,7 +373,11 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   the view's A/A this time); a clip entry is `{ "captured": true }`. The manifest vouches only for what
   it lists: a set whose views partly failed lists the others, and the next request captures the
   rest.
-- `rounds`: each capture or extension, with its reason.
+- `rounds`: each capture or extension, with its reason; a verification against a new browser
+  build is a round with `verify` (the build, the sample views, the rule, whether they matched).
+- `verifiedBrowsers` (sets only): other browser builds whose captures of the sample views matched
+  the stored frames; a request under one of them reuses the set as if the key were its own. The
+  key keeps the build that captured the set, so two builds in use at once never flip it.
 
 ### What a request does
 
@@ -383,7 +393,9 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
    - same key, less coverage (a view, a repeat): `not captured yet: ...`, the set is extended in
      place and the manifest rewritten with the union;
    - another key: the capture tools changed (and which files), the browser build changed, or an
-     option differs; the old directory moves to `.replaced/`;
+     option differs; the old directory moves to `.replaced/`. A set whose key differs only by the
+     browser build is verified first (Browser updates below) and captured afresh only when that
+     fails;
    - a claim whose process is gone (killed, crashed): `the capture by pid N did not finish`, the
      partial captures are discarded (kept when a manifest already vouched for them and the claim
      only extended it);
@@ -405,14 +417,48 @@ the last commit of those inputs. `node
 tools/parity/reference.mjs status <root>/<sha>` lists every manifest and claim under a commit,
 and whether its tool hash is current.
 
-A recapture of a reference is forced when the browser build or the capture tools change (one
-reference round after a tool change lands), when a check needs repeats or views the stored set
-lacks (only those are captured), and on request. Repeatability: with readiness by stability (Fast
+A recapture of a reference is forced when the capture tools change (one reference round after a
+tool change lands), when the browser build changes and the set's samples no longer match (and for
+every clip entry), when a check needs repeats or views the stored set lacks (only those are
+captured), and on request. Repeatability: with readiness by stability (Fast
 mode above) MSAA views repeat pixel for pixel between page loads (24 of 24 in the base references),
 where the fixed waits left a few views 1-3 levels apart on a few pixels of vegetation; temporal
 sets never do. Still compare with `--aa-floor` (or `--temporal`) on sets captured with `--repeat`:
 a view that differs once is judged against its own A/A. `coverage.views.<view>.identical` records
 each stored A/A.
+
+### Browser updates
+
+A Chrome auto-update (a minor build, .39 -> .40) changed the browser in every key and cost a full
+reference round (one S1 alone took 57 minutes), although frames rarely change between such builds.
+So a capture set whose stored key differs from the request's only by `browser` is verified rather
+than replaced, under the claim (waiters wait as for a capture; the stored set is untouched until
+the samples decide):
+
+1. Up to three stored views are captured with the new build into `<root>/<sha>/.verify/`, one of
+   each kind a browser change could render differently: the island by day (`island-fair-noon`,
+   `horizon-fair-noon`, `low-36`, `island-clear-golden`), vegetation (`meadow-close`,
+   `flowers-close`, `meadow-24`, `meadow-shade`, `twigs-sky`) and water (`water-skim-cliffs`,
+   `rim-sea`, `island-from-sea`, `cliff-sea-golden`), each the first stored one, preferring views
+   the request needs; a set with none of a kind fills up with other stored views. MSAA views whose
+   stored A/A differed (`identical: false`) are not picked when others are stored.
+2. They are compared with the stored frames: MSAA and `aa=off` by decoded pixels (every pixel
+   equal), the temporal modes (`aa=taa|taau|gt`) with `diff-set.py --temporal` (against the stored
+   capture and its repeat when stored).
+3. All match: the build is appended to the manifest's `verifiedBrowsers` and the set is reused
+   (`reference S1: the stored set holds for <version>: 3 sample views match ...`, then `reused
+   (verified for <version>)`); later requests under that build reuse it straight away, and a request
+   that needs more views extends it with the new build.
+4. Any differ (or fails to capture): the set is captured afresh as for any other key change (the
+   old one moved to `.replaced/`), the samples kept as the new set's first captures of their
+   views (`... the sample views differ: meadow-close (14806 px differ, max 9 levels), ...: capturing it
+   afresh`).
+
+`--recapture-reference` skips the verification. Not covered: a sibling set (S1 serving FAST3) is
+not verified on another set's request (FAST3 is captured), and clip entries (baseline.mjs's
+`baseline` and ground-truth entries) are recaptured under a new build, since an entry is a single
+capture and checking it costs as much as capturing it. carry.mjs accepts a verified build where
+it compares paused sets' keys.
 
 ### Carry-over (carry.mjs)
 

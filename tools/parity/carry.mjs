@@ -44,7 +44,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { constants, cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { BUILD_INPUTS, describeKeyChange, setKey, stable, toolVersion, browserBuild, checkServed } from './reference.mjs';
+import { BUILD_INPUTS, describeKeyChange, keyMatches, setKey, stable, toolVersion, browserBuild, checkServed } from './reference.mjs';
 import { decodePng, compareFrames } from '../capture-browser.mjs';
 import { viewNames } from './views.mjs';
 
@@ -239,10 +239,10 @@ export async function planCarry( options ) {
 		};
 		// A's: stored with the same key and every view, else captured from A's preview when given
 		const m = readJson( path.join( a, 'complete.json' ) );
-		const lacks = m && stable( m.key ) === stable( key ) ? views.filter( ( view ) => ! m.coverage?.views?.[ view ]?.captured ) : views;
+		const lacks = keyMatches( m, key ) ? views.filter( ( view ) => ! m.coverage?.views?.[ view ]?.captured ) : views;
 		if ( lacks.length ) {
 
-			const why = ! m ? `${ short( from ) } has no stored ${ set }` : stable( m.key ) !== stable( key ) ? `${ short( from ) }'s ${ set } has another key (${ describeKeyChange( m.key, m.toolFiles, key, files ) })` : `${ short( from ) }'s ${ set } lacks ${ lacks.join( ', ' ) }`;
+			const why = ! m ? `${ short( from ) } has no stored ${ set }` : ! keyMatches( m, key ) ? `${ short( from ) }'s ${ set } has another key (${ describeKeyChange( m.key, m.toolFiles, key, files ) })` : `${ short( from ) }'s ${ set } lacks ${ lacks.join( ', ' ) }`;
 			if ( ! options.fromUrl ) return fail( name, `${ why }: pass --carry-url <a preview of ${ short( from ) }>` );
 			say( `${ why }: capturing it from ${ options.fromUrl }` );
 			if ( ! await capture( options.fromUrl, a, 'from' ) ) return fail( name, `${ why }, and its capture failed (${ path.join( work, set + '-from.log' ) })` );
@@ -250,7 +250,7 @@ export async function planCarry( options ) {
 		}
 		// B's: the store reuses, extends or captures it
 		const mb = readJson( path.join( b, 'complete.json' ) );
-		const bLacks = mb && stable( mb.key ) === stable( key ) ? views.filter( ( view ) => ! mb.coverage?.views?.[ view ]?.captured ) : views;
+		const bLacks = keyMatches( mb, key ) ? views.filter( ( view ) => ! mb.coverage?.views?.[ view ]?.captured ) : views;
 		if ( bLacks.length ) {
 
 			if ( ! options.url ) return fail( name, `${ short( to ) }'s ${ set } lacks ${ bLacks.length } views and no preview of ${ short( to ) } was given` );

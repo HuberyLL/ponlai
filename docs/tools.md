@@ -223,7 +223,9 @@ References are stored per commit and shared (`tools/parity/reference.mjs`): `cap
 last) matches the capture tools' version, the browser build and the options, wait for another live
 process that is capturing it (freeing the GPU slot of a `run --shared` wrapper meanwhile), and
 otherwise capture it and say why (missing, tools or browser
-changed, a capture left unfinished). `capture-set.mjs <testUrl> <testDir> --check
+changed, a capture left unfinished). A capture set stored under another browser build only (an
+auto-update) is verified instead: three of its views captured with the new build and compared
+(decoded pixels, or the temporal tolerance), the set reused when they match. `capture-set.mjs <testUrl> <testDir> --check
 <root>/<sha>/<set> [--ref-url U]` captures only the test side and diffs it against the stored
 reference. Layout, manifest and rules: the README's Reference store.
 For tuning, `capture-set.mjs <url> <outDir> --quick --views a,b [--crops x,y] [--variant
