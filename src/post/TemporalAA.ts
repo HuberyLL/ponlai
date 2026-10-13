@@ -354,7 +354,7 @@ export class TemporalAA {
 		// TAAU, the frame after a step up of the render scale: the history's weight times the new
 		// render density over the old (1 otherwise)
 		historyGain: uniform( 1 ),
-		framesStill: uniform( 12 ), framesMoving: uniform( 5 ), speedFull: uniform( 16 ),
+		framesStill: uniform( 12 ), framesStillWater: uniform( 12 ), framesMoving: uniform( 5 ), speedFull: uniform( 16 ),
 		gammaStill: uniform( 1.25 ), gammaMove: uniform( 0.75 ), sigma: uniform( 0.42 ), sigmaRest: uniform( 0.3 ),
 		classFrames: Array.from( { length: CLASSES }, () => uniform( 1 ) ), classGamma: Array.from( { length: CLASSES }, () => uniform( 0 ) ),
 		skyPassThrough: uniform( 1 ),
@@ -1097,7 +1097,8 @@ export class TemporalAA {
 			react.assign( max( react.mul( float( 1 ).sub( far ) ), reactiveUniforms.flash ) );
 
 		} );
-		const frames = mix( u.framesStill, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( share )
+		const still = select( cls.equal( 2 ), u.framesStillWater, u.framesStill );
+		const frames = mix( still, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( share )
 			.mul( clamp( float( 1 ).sub( react ), 0, 1 ) ).mul( dof );
 		return { mean, extent, frames };
 
@@ -1280,7 +1281,7 @@ export class TemporalAA {
 		if ( k === this.settingsKey ) return;
 		this.settingsKey = k;
 		this.settingsVersion ++;
-		u.framesStill.value = S.framesStill; u.framesMoving.value = S.framesMoving; u.speedFull.value = S.speedFull;
+		u.framesStill.value = S.framesStill; u.framesStillWater.value = S.framesStillWater; u.framesMoving.value = S.framesMoving; u.speedFull.value = S.speedFull;
 		u.gammaStill.value = S.gammaStill; u.gammaMove.value = S.gammaMove; u.sigma.value = S.sigma; u.sigmaRest.value = S.sigmaRest;
 		u.skyPassThrough.value = S.skyPassThrough ? 1 : 0;
 		for ( let i = 0; i < CLASSES; i ++ ) {

@@ -66,8 +66,16 @@ export type RenderScaleRule =
 /** The temporal resolve's settings (taa and taau; read once as the resolve is built). */
 export interface TemporalSettings {
 	// the history's effective frame count (its blend weight 1 / n) for a still pixel and for one
-	// moving `speedFull` render pixels a frame or more (eased between)
+	// moving `speedFull` render pixels a frame or more (eased between). 24 still (12 before M14):
+	// with the movers' motion cap (TemporalAA.ts) a moving pixel keeps at most 10 whatever this is,
+	// so the longer still history no longer lengthens the islanders' trail (the islander walk's
+	// ghosting at 24 with the movers no higher than at 12 without), and it took the still camera's
+	// flicker on rock edges to within twice MSAA's; lite (no movers) keeps 12.
 	framesStill: number;
+	// the sea's still frame count (its class share and `waterFar` apply to it as to `framesStill`):
+	// held apart so a longer still history elsewhere does not lengthen it (a longer one, 24, raised the
+	// ghosting and softened the horizon in sea pans)
+	framesStillWater: number;
 	framesMoving: number;
 	speedFull: number;
 	// the neighbourhood clip box's width in standard deviations (variance clipping after Salvi),
@@ -151,7 +159,7 @@ export interface QualityProfile {
 const PCSS_HIGH: SolarShadowTaps = { soft: true, blockerSamples: 6, filterSamples: 8 };
 const BILINEAR: SolarShadowTaps = { soft: false, blockerSamples: 0, filterSamples: 0 };
 const TAA: TemporalSettings = {
-	framesStill: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
+	framesStill: 24, framesStillWater: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
 	classFrames: [ 1, 1, 0.4, 0.8, 0 ], classGamma: [ 0, 0.25, 0, - 0.25, 0 ], waterFar: [ 150, 600 ], glintReactive: { from: 2, to: 8, max: 1 },
 	sigma: 0.42, sigmaRest: 0.30,
 	sharpness: { taa: 1.0, taau: [ 1.0, 0.5 ] }, sharpenMoving: { stops: [ 0, 0, 1, 0, 0 ], speed: 4 }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
@@ -202,7 +210,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 	},
 	low: {
 		aa: 'msaa',
-		taa: { ...TAA, lite: true },
+		taa: { ...TAA, lite: true, framesStill: 12 },
 		render: { budget: 1280 * 720 },
 		// (one bloom chain veiled a golden-hour island in glow, and the merged storm foam turned
 		// the crests' streaks into scattered lace: both kept as on high)
