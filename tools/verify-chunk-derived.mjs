@@ -20,6 +20,8 @@
 //             the 3 x 3 cells round it); prints the largest difference at a point.
 // It also prints the time today's builders take on these meshes and what the merge takes instead.
 // Exit code 1 on any failure.
+// A pass is recorded (tools/verify-cache.mjs): a later run with the same arguments, node and source
+// files (the script's whole import graph) prints that it was skipped and exits 0; --force runs it.
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -31,6 +33,7 @@ import { growLand, LandLattice } from '../src/world/IslandGrowth.ts';
 import { tileIndices, TILE_SIDE } from '../src/world/SeabedTile.ts';
 import { FLOOR_STEP } from '../src/world/Bathymetry.ts';
 import { SEA_LEVEL } from '../src/world/ChunkDerived.ts';
+import { verifyCache } from './verify-cache.mjs';
 
 // ------------------------------------------------------------------ the worker
 
@@ -155,6 +158,8 @@ const time = ( f, n = 3 ) => {
 
 async function main() {
 
+	const cache = verifyCache( import.meta.url );
+	cache.check();
 	const seed = Number( argument( '--seed', '1' ) );
 	const steps = argument( '--steps', '0,8' ).split( ',' ).map( Number );
 	const threads = Number( argument( '--threads', String( Math.max( 1, Math.min( 8, availableParallelism() - 4 ) ) ) ) );
@@ -358,6 +363,7 @@ async function main() {
 
 	}
 	console.log( failures ? `${ failures } FAILED` : 'all passed' );
+	if ( ! failures ) cache.record();
 	process.exit( failures ? 1 : 0 );
 
 }

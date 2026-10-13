@@ -79,6 +79,9 @@
 // chunks `dirtyChunks` rebuilds, how many come out changed, their CPU time (summed over the jobs,
 // on a loaded pool more than alone) and their bytes. Every run writes the chunk sheet, one PNG per
 // seed (`sheet`), to --sheets (default artifacts/captures/world-chunks/).
+// A pass is recorded (tools/verify-cache.mjs): a later run with the same arguments, node and source
+// files (the script's whole import graph) prints that it was skipped and exits 0; --force runs it.
+// --bench is never skipped nor recorded, and a skipped run writes no sheet.
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { spawn } from 'node:child_process';
 import { availableParallelism } from 'node:os';
@@ -99,6 +102,7 @@ import { openSeaBeds, openSeaHeight, FLOOR_STEP, SHELF_CEILING } from '../src/wo
 import { BUSH_STRIDE } from '../src/world/FoliageSites.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
 import { hashBuffers, meshClosure, positionKey } from './world-node.mjs';
+import { verifyCache } from './verify-cache.mjs';
 
 // the island mesh's lattice (Chunks.ts)
 const VOXEL = 0.125, Y0 = ISLAND_BOTTOM + 0.5;
@@ -256,6 +260,9 @@ async function main() {
 
 	const start = performance.now();
 	const long = process.argv.includes( '--long' ), bench = process.argv.includes( '--bench' );
+	// --bench measures rather than proves: it is never skipped nor recorded
+	const cache = bench ? null : verifyCache( import.meta.url );
+	cache?.check();
 	const seeds = argument( '--seeds', '1,2' ).split( ',' ).map( Number );
 	const last = Number( argument( '--steps', '12' ) );
 	const threads = Number( argument( '--threads', String( Math.max( 1, Math.min( 8, availableParallelism() - 4 ) ) ) ) );
@@ -362,6 +369,7 @@ async function main() {
 
 	}
 	console.log( bench ? 'D4 passed.' : 'All chunk checks passed.' );
+	cache?.record();
 
 }
 
