@@ -9,10 +9,10 @@
 // - `off`: one sample, leaves alpha-tested and grass blades dithered (`msaa=1` before);
 // - `taa`, `taau`: temporal anti-aliasing at the render's size, and temporal upsampling to the
 //   canvas: one sample, jittered, with motion vectors (Jitter.ts, Motion.ts), resolved against a
-//   history (TemporalAA.ts). Chosen by the URL only (the tiers' knob and the GUI keep to msaa and
-//   off until the tiers adopt them), and refused, with a warning, where three's cache keys cannot
-//   be patched (graph/ThreePatches.ts: three r186 only), since their scene materials build one
-//   shader per MRT (if the patches still fail to install, main.ts stops the page);
+//   history (TemporalAA.ts). A tier's knob may ask for them (medium defaults to taau, Quality.ts)
+//   and the GUI offers them; they are refused, with a warning, where three's cache keys cannot be
+//   patched (graph/ThreePatches.ts: three r186 only), since their scene materials build one shader
+//   per MRT (if the patches still fail to install, main.ts stops the page);
 // - `gt` (debug builds only): the ground truth the temporal modes are measured against, the
 //   temporal graph rendered at the canvas's resolution whose image at rest averages many jittered
 //   frames with a box filter (TemporalAA.ts, TemporalRest.ts): 64 by default, `tier.taa.gtJitters`.
@@ -21,7 +21,9 @@
 // no 2x: `msaa=1` and `msaa=2` are read as `off`, `msaa=4` as `msaa`.
 //
 // The mode comes from the URL's `aa`, else its `msaa` alias, else the quality tier's `aa` knob
-// (`QualityProfile.aa`, with `tier.aa=` over it), else `msaa`. The tier is chosen here, once, for
+// (`QualityProfile.aa`, with `tier.aa=` over it), else `msaa`: the URL wins over the tier, and
+// `AA_SOURCE` says which of them chose (main.ts reports it as `aaSource`). `gt` is taken from the
+// URL in a debug build only, never from a tier. The tier is chosen here, once, for
 // the whole page (main.ts reads `QUALITY_CHOICE`): modules that read the mode when they load
 // (Foliage.ts, Grass.ts) are evaluated before the page's own code runs.
 import { REVISION } from 'three/webgpu';
@@ -30,8 +32,10 @@ import { chooseQuality, type QualityChoice } from '../QualityDetect.ts';
 
 export const AA_MODES = [ 'msaa', 'taa', 'taau', 'off', 'gt' ] as const;
 export type AAMode = typeof AA_MODES[ number ];
-// the modes the GUI offers; the temporal ones stay URL-only until they are tuned
+// the modes the GUI offers
 export const AA_GUI_MODES: readonly AAMode[] = [ 'msaa', 'off' ];
+/** Where the page's mode came from: the URL (`aa` or its `msaa` alias), the tier's knob, or neither. */
+export type AASource = 'url' | 'tier' | 'default';
 export type SceneSampleCount = 1 | 4;
 
 export interface AAPlan {
@@ -50,36 +54,37 @@ export function isAAMode( value: unknown ): value is AAMode {
 
 }
 
-/** The mode requested by a page's options: `aa`, else the `msaa` alias, else the tier's `aa`
- * knob, else `msaa`. An unknown value warns and falls through to the next source; so does `gt`
- * outside a debug build (`debug`: the dev server or `?debug`). */
-export function requestedAAMode( params: URLSearchParams, profile: Pick<QualityProfile, 'aa'> | null, debug = false ): AAMode {
+/** The mode requested by a page's options, and where it came from: `aa`, else the `msaa` alias,
+ * else the tier's `aa` knob, else `msaa`. An unknown value warns and falls through to the next
+ * source; so does `gt` outside a debug build (`debug`: the dev server or `?debug`), and `gt` from a
+ * tier (the ground truth is a measuring tool, never a tier's default). */
+export function requestedAAMode( params: URLSearchParams, profile: Pick<QualityProfile, 'aa'> | null, debug = false ): { mode: AAMode; source: AASource } {
 
 	const aa = params.get( 'aa' );
 	if ( aa !== null ) {
 
 		if ( aa === 'gt' && ! debug ) console.warn( 'aa=gt (the ground truth) exists in debug builds only (?debug)' );
-		else if ( isAAMode( aa ) ) return aa;
+		else if ( isAAMode( aa ) ) return { mode: aa, source: 'url' };
 		else console.warn( `Unknown aa=${ aa }: expected one of ${ AA_MODES.join( ', ' ) }` );
 
 	}
 	const msaa = params.get( 'msaa' );
 	if ( msaa !== null ) {
 
-		if ( msaa === '1' || msaa === '2' ) return 'off';
-		if ( msaa === '4' ) return 'msaa';
+		if ( msaa === '1' || msaa === '2' ) return { mode: 'off', source: 'url' };
+		if ( msaa === '4' ) return { mode: 'msaa', source: 'url' };
 		console.warn( `Unknown msaa=${ msaa }: expected 1 or 4` );
 
 	}
 	const tier = profile?.aa;
 	if ( tier !== undefined ) {
 
-		if ( tier === 'taa' || tier === 'taau' || tier === 'gt' ) console.warn( `The quality tier's aa knob asks for ${ tier }: the temporal modes are chosen by the URL only (aa=${ tier }); running msaa` );
-		else if ( isAAMode( tier ) ) return tier;
+		if ( tier === 'gt' ) console.warn( 'The quality tier\'s aa knob asks for gt: the ground truth is chosen by the URL only (aa=gt, debug builds); running msaa' );
+		else if ( isAAMode( tier ) ) return { mode: tier, source: 'tier' };
 		else console.warn( `Unknown quality aa knob ${ String( tier ) }: expected one of ${ AA_MODES.join( ', ' ) }` );
 
 	}
-	return 'msaa';
+	return { mode: 'msaa', source: 'default' };
 
 }
 
@@ -116,8 +121,11 @@ export function aaPlan( requested: AAMode, revision: string = REVISION ): AAPlan
 // measurement on this load), and the mode it asks for.
 const params = new URLSearchParams( location.search );
 export const QUALITY_CHOICE: QualityChoice = await chooseQuality( params );
+const REQUEST = requestedAAMode( params, qualityProfile( QUALITY_CHOICE.tier ), import.meta.env.DEV || params.has( 'debug' ) || params.has( 'profile' ) );
 /** The mode the page asked for (before a refused one falls back). */
-export const AA_REQUESTED: AAMode = requestedAAMode( params, qualityProfile( QUALITY_CHOICE.tier ), import.meta.env.DEV || params.has( 'debug' ) || params.has( 'profile' ) );
+export const AA_REQUESTED: AAMode = REQUEST.mode;
+/** Where the requested mode came from (the URL wins over the tier). */
+export const AA_SOURCE: AASource = REQUEST.source;
 export const AA_PLAN: Readonly<AAPlan> = Object.freeze( aaPlan( AA_REQUESTED ) );
 /** The mode the page runs. */
 export const AA_MODE: AAMode = AA_PLAN.mode;
