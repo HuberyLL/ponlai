@@ -164,7 +164,14 @@
 //   stopped, out of sight, and starts before it comes to the front, so its first frame on screen
 //   is the new scene's (brought to the front first and switched while running, a page showed its
 //   last frame of the scene before and kept drawing that view until the camera was placed: the
-//   screen went back to the previous scene for a moment). A drag that loses its pointer to an
+//   screen went back to the previous scene for a moment). Chrome still shows a page that comes to
+//   the front with the surface it kept when the page last went to the background, for about a
+//   frame, before the page's new frames: so a page leaves the front for the last time in a scene
+//   under a cover (opaque, the loading screen's colour), shows that cover when it comes back with
+//   the next scene, and drops it once it has drawn a few frames under it. The cover is up and down
+//   outside the measured windows; on screen it shows for a frame or two at each scene switch, and
+//   once inside a scene (other than the run's last) where the page that ends its slices first
+//   leaves the front. A drag that loses its pointer to an
 //   event the run did not send (the system cursor's, which reaches the headed page) is pressed
 //   again and logged.
 //   Bringing a page to the front gives Chrome the keyboard focus (on macOS), so keys typed for
@@ -1909,6 +1916,57 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		active = null;
 
 	};
+	// --display: a page that comes to the front shows, for about a frame, the surface Chrome kept
+	// when it last went to the background, before its own frames (drawn while hidden or just after)
+	// reach the screen. So a page leaves the front for the last time in a scene under a cover (opaque,
+	// the loading screen's colour), and that is what it shows when it comes back with the next scene;
+	// the cover goes once the page has drawn under it in front. It goes up and down outside the
+	// measured windows, with the loop stopped (up) or running (down): no stray frame.
+	const covered = [ false, false ];
+	const cover = async ( v, on ) => {
+
+		await pages[ v ].evaluate( async ( on ) => {
+
+			// until a frame with (or under) the cover has reached the page's compositor
+			const frames = ( n ) => new Promise( ( r ) => { const f = () => -- n ? requestAnimationFrame( f ) : r(); requestAnimationFrame( f ); } );
+			let el = document.getElementById( 'profile-cover' );
+			if ( on ) {
+
+				if ( ! el ) {
+
+					el = document.createElement( 'div' );
+					el.id = 'profile-cover';
+					el.style.cssText = 'position: fixed; inset: 0; z-index: 2147483647; background: #0b1a1f; pointer-events: none';
+					document.body.appendChild( el );
+
+				}
+				await frames( 2 );
+
+			} else {
+
+				// the page has just come to the front: its new frames go to the screen under the cover
+				await frames( 3 );
+				el?.remove();
+
+			}
+
+		}, on );
+		covered[ v ] = on;
+
+	};
+	// the page that may have run its last slice of the scene before slice `i` (run by the other
+	// page): it does not run again up to the next point where the scene may stop, and another scene
+	// follows
+	const leavesScene = ( u, i, last ) => {
+
+		if ( last ) return false;
+		let end = i + 1;
+		while ( end < SLICES && ! ( end % 4 === 0 && end >= MIN_SLICES ) ) end ++;
+		for ( let j = i + 1; j < end; j ++ ) if ( 1 - ORDER[ j % ORDER.length ] === u ) return false;
+		return true;
+
+	};
+	let front = null;
 	// `drawn`: the page has just switched scene while stopped; it starts before it comes to the
 	// front, so the start's first frame (drawn at once) is on its canvas when it shows. Brought to
 	// the front first, it showed its last frame of the scene before until it drew.
@@ -1918,7 +1976,12 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		await halt();
 		// headed, a background tab gets no animation frames: the running page is the one in front
 		// (the page hides and shows itself without restarting a loop stopped here)
-		if ( DISPLAY && ! drawn ) await pages[ v ].bringToFront();
+		if ( DISPLAY && ! drawn ) {
+
+			await pages[ v ].bringToFront();
+			front = v;
+
+		}
 		if ( SCALE_LOG && atStop[ v ] && slice !== undefined ) {
 
 			// the controller's clock and timers just before the page runs again: unchanged since its
@@ -1929,10 +1992,16 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 
 		}
 		const started = await loop( v, 'start' );
-		if ( DISPLAY && drawn ) await pages[ v ].bringToFront();
+		if ( DISPLAY && drawn ) {
+
+			await pages[ v ].bringToFront();
+			front = v;
+
+		}
 		const last = stopped[ v ][ stopped[ v ].length - 1 ];
 		if ( last && last.to === undefined ) last.to = started;
 		active = v;
+		if ( covered[ v ] ) await cover( v, false );
 
 	};
 	// frames the page drew while it should have stood still (more than the one in flight), added to
@@ -1942,6 +2011,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 	// A stood stopped while B loaded
 	stopped[ 0 ].push( { from: await frames[ 0 ].now() } );
 	active = 1;
+	if ( DISPLAY ) front = 1;
 	if ( SCALE_LOG ) {
 
 		atStop[ 0 ] = await scaleState( pages[ 0 ] );
@@ -1954,8 +2024,9 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 		beginScene( scene );
 		if ( k > 0 || scene !== names[ 0 ] ) {
 
-			// both pages stand still while the lock is away (see holdScene)
+			// both pages stand still while the lock is away (see holdScene), the one in front covered
 			await halt();
+			if ( front !== null && ! covered[ front ] ) await cover( front, true );
 			const held = await holdScene( scene, log );
 			if ( held === false ) break;
 			sceneIdle = held ?? sceneIdle;
@@ -2006,6 +2077,13 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			const v = 1 - ORDER[ i % ORDER.length ];
 			const switched = active !== v;
 			step( `slice ${ i + 1 } (page ${ 'AB'[ v ] })` );
+			if ( switched && DISPLAY && active !== null && leavesScene( active, i, k === REPEAT - 1 && scene === names[ names.length - 1 ] ) ) {
+
+				const u = active;
+				await halt();
+				await cover( u, true );
+
+			}
 			if ( switched ) await run( v, scene, i );
 			// on the display: the slice's sampler in the scene's trace
 			if ( DISPLAY && ! trace ) trace = await startTrace( pages[ v ] );

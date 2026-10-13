@@ -601,7 +601,10 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   on from where its last slice left them, so A's and B's k-th slices see the same motion from the
   same view; the screen changes to the other page's view at every switch, but never back to the
   scene before: a page switches scene stopped and out of sight and comes to the front with the
-  new scene drawn), so the drift between separate headed runs (a millisecond or two) cancels;
+  new scene drawn; the surface Chrome kept from its last time in front is a cover, raised before
+  the page left the front for the last time in the scene and dropped once the new scene is on
+  screen, so a switch shows the loading screen's colour for a frame or two, and a scene other than
+  the run's last shows it once where the page that ends its slices first leaves), so the drift between separate headed runs (a millisecond or two) cancels;
   its summary adds the share of late frames (presented intervals longer than the pace each frame
   was rendered at, the frame pacer's divisor then) per slice, as a delta with its interval, each page's frames over 25 ms, its effective rate
   (rendered frames per second) and its share of frames at the pacer's fallback rate. One trace
