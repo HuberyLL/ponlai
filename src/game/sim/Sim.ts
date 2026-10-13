@@ -51,6 +51,16 @@ export class Sim {
 
 	}
 
+	/** The island grew (Growth.ts): the ground of the new land, the game's obstacles on it again,
+	 * and every walk under way finds its way again. */
+	setIsland( input: IslandInput ): void {
+
+		this.grid.setIsland( input );
+		obstructPlaces( this );
+		findWaysAgain( this );
+
+	}
+
 	// ------------------------------------------------------------------ clock
 
 	/** hour of day, 0..24 */

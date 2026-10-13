@@ -6,7 +6,10 @@ import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 // grown island only opens cells and every index stays valid. A cell is walkable on the island top,
 // clear of the cliff rim, and free of bushes. Everything here is derived: the island from the
 // world's own functions on the land, its bushes from the world generator's input, so a loaded game
-// rebuilds the same grid. The game's own obstacles (a palm, the chest) are added on top by
+// rebuilds the same grid. The page gives the island's top from the world's chunks (their walk
+// tiles, `topFromTiles`, the same cells as the land's footprint 0.9 m inside its edge), so a grown
+// island's grid (`setIsland`, Growth.ts) is a fresh load's; without them (the node checks) it is
+// found from the land. The game's own obstacles (a palm, the chest) are added on top by
 // `obstruct`, from the simulation's state.
 
 const CELL = 0.5;
@@ -31,6 +34,27 @@ function islandMask( land: LandLattice ): Uint8Array {
 
 }
 
+/** The island's top clear of the rim from the world's chunks' walk tiles (Chunks.ts: 32 x 32 cells
+ * of 0.5 m per 16 m chunk, on this grid's lattice), as the page has them: a grown island's grid
+ * comes from the same tiles as a fresh load's (Growth.ts). */
+export function topFromTiles( tiles: readonly { ci: number; cj: number; walk: Uint8Array }[] ): Uint8Array {
+
+	const top = new Uint8Array( SIDE * SIDE ), n = Math.round( Math.sqrt( tiles[ 0 ]?.walk.length ?? 0 ) );
+	for ( const { ci, cj, walk } of tiles ) {
+
+		const i0 = Math.round( ( ci * n * CELL + GROWTH.half ) / CELL ), j0 = Math.round( ( cj * n * CELL + GROWTH.half ) / CELL );
+		for ( let j = 0; j < n; j ++ ) for ( let i = 0; i < n; i ++ ) {
+
+			const gi = i0 + i, gj = j0 + j;
+			if ( gi >= 0 && gj >= 0 && gi < SIDE && gj < SIDE && walk[ j * n + i ] ) top[ gj * SIDE + gi ] = 1;
+
+		}
+
+	}
+	return top;
+
+}
+
 export class Grid implements GridApi {
 
 	readonly size = CELL;
@@ -39,7 +63,7 @@ export class Grid implements GridApi {
 	readonly x0: number;
 	readonly z0: number;
 	/** 1 on the island top, clear of the rim, whatever grows there (shared: never written) */
-	readonly top: Uint8Array;
+	top: Uint8Array;
 	/** 1 where walkable: on the island top, clear of the rim, no bush, palm or building */
 	readonly open: Uint8Array;
 	/** connected walkable regions: a label per open cell, -1 elsewhere */
@@ -63,7 +87,7 @@ export class Grid implements GridApi {
 		this.x0 = this.z0 = - GROWTH.half;
 		this.cols = this.rows = SIDE;
 		const n = this.cols * this.rows;
-		this.top = islandMask( input.land );
+		this.top = input.top ?? islandMask( input.land );
 		this.open = this.top.slice();
 		for ( const o of input.bushes ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
 		this.region = new Int32Array( n );
@@ -75,6 +99,17 @@ export class Grid implements GridApi {
 		this.heapIndex = new Int32Array( n * 8 );
 		this.heapCost = new Float64Array( n * 8 );
 		this.queue = new Int32Array( n );
+		this.main = this.label();
+
+	}
+
+	/** The ground of a grown island: its top and bushes again (the indices stay: the grid spans the
+	 * land lattice). The game's own obstacles are added again by the caller (Sim.setIsland). */
+	setIsland( input: IslandInput ): void {
+
+		this.top = input.top ?? islandMask( input.land );
+		this.open.set( this.top );
+		for ( const o of input.bushes ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
 		this.main = this.label();
 
 	}
