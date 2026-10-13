@@ -52,7 +52,7 @@ export class ShoreWaves {
 	private lastReflection = - 1;
 	private readonly lastWeatherGain = new THREE.Vector3( - 1, - 1, - 1 );
 
-	constructor( renderer: THREE.WebGPURenderer, data: WorldData, shared: Shared, shore: THREE.Texture, fft: OceanFFT ) {
+	constructor( renderer: THREE.WebGPURenderer, data: WorldData, shared: Shared, shore: THREE.Texture | THREE.TextureNode, fft: OceanFFT ) {
 
 		this.renderer = renderer;
 		this.data = data;

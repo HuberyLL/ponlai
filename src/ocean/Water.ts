@@ -266,11 +266,11 @@ export interface WaterInputs {
 	fft: OceanFFT;
 	sky: Sky;
 	shared: Shared;
-	shore: THREE.Texture;
-	seabedHeight: THREE.Texture; // the rendered floor's height over the shoreline field's bounds
+	shore: THREE.Texture | THREE.TextureNode;
+	seabedHeight: THREE.Texture | THREE.TextureNode; // the rendered floor's height over the shoreline field's bounds
 	// The floor's look: its beds over the shoreline field's bounds (seabedBedTextureFrom), and the
 	// terrain's normalsB detail texture, whose alpha is the sand's broad variation.
-	seabedLook: { beds: THREE.Texture; variation: THREE.Texture };
+	seabedLook: { beds: THREE.Texture | THREE.TextureNode; variation: THREE.Texture };
 	land: Bounds; // the land's box (WorldShapes.landBounds), for reflectionBounds
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;

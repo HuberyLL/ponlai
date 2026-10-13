@@ -16,7 +16,8 @@ import { Water } from './ocean/Water.ts';
 import { StormSea } from './ocean/StormSea.ts';
 import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
-import { buildWorldMeshes, shoreTextureFrom, seabedBedTextureFrom } from './world/World.ts';
+import { buildWorldMeshes } from './world/World.ts';
+import { WorldFields } from './world/WorldFields.ts';
 // first of all that may wait as the modules load: the world's workers start here (WorldStart.ts)
 import { worldJob, worldProgress, landOptions, landFraming } from './world/WorldStart.ts';
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
@@ -488,15 +489,15 @@ target.copy( onLand( 1.5, 0.5, 1 ) );
 // the sea fog thins over the island and in its lee
 const fogClearing = onLand( 0, 0, 0 );
 setIslandClearing( fogClearing.x, fogClearing.z, 20 * landScale, 100 * landScale );
-const shore = shoreTextureFrom( data.shore );
-shared.shoreXform.value.copy( shore.xform );
-// The floor's height shares the shoreline field's bounds, and so its transform.
-const seabedField = shoreTextureFrom( data.seabedField );
-const shoreWaves = new ShoreWaves( renderer, data, shared, shore.tex, fft );
+// The world fields' textures (WorldFields.ts), sampled through one node each: the shore's distance
+// (its transform is the shared shoreXform), the floor's height and beds over the same bounds, the
+// rim ground over its own.
+const fields = new WorldFields( data, shared.shoreXform.value );
+const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft );
 // Tussocks and tall flowers keep clear of the islander's walking loop, 5 m in from the coast.
 const walk = walkPoints( data.walk );
 const walkDistance = walkLoopDistance( walk );
-const world = buildWorldMeshes( data, textures, shared, caustics, shore.tex );
+const world = buildWorldMeshes( data, textures, shared, caustics, fields );
 scene.add( world.group );
 // The chunks' borders (GUI Ground folder, ?chunkBorders), built on first show.
 const chunkView = { borders: params.has( 'chunkBorders' ), lines: null as THREE.LineSegments | null };
@@ -615,15 +616,15 @@ if ( GAME ) {
 mark( 'villagers' );
 
 // Storm whitecap foam with a memory, and the spray torn off breaking crests (idle in calm weather).
-const stormSea = new StormSea( renderer, fft, shared, shore.tex, shoreWaves, {
+const stormSea = new StormSea( renderer, fft, shared, fields.shore, shoreWaves, {
 	sunDir: shared.sunDir, sunColor: shared.sunColor,
 	sky: shared.skyIrradianceSource.div( shared.skyFill.max( 1 ).sqrt() ),
 	// (after the resolve the spray tests the nearest surface, the sea's included: it has no depth buffer)
 	sunVisibility: ( p ) => sky.cloudVisibility( p ), opaqueDepth: AFTER_RESOLVE ? pipeline.surfaceRT.texture : pipeline.depthRT.texture,
 } );
 water = new Water( {
-	fft, sky, shared, shore: shore.tex, seabedHeight: seabedField.tex, shoreWaves,
-	seabedLook: { beds: seabedBedTextureFrom( data.seabedBeds ), variation: textures.normalsB },
+	fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
+	seabedLook: { beds: fields.beds, variation: textures.normalsB },
 	land: landBox, refractedSun, sunShadow, storm: stormSea,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 } );

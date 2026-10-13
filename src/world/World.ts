@@ -5,16 +5,20 @@ import type { Caustics } from '../ocean/Caustics.ts';
 import type { Shared } from '../shared.ts';
 import { ISLAND_TOP } from './WorldShapes.ts';
 import type { CasterColumns, GroundGrid, SubmergedSubset } from './ChunkDerived.ts';
-import type { IslandChunk, MeshData, WorldData, ShoreField, RimGroundField, SeabedBedField } from './types.ts';
+import type { IslandChunk, MeshData, WorldData } from './types.ts';
+import type { WorldFields } from './WorldFields.ts';
 
-// Turns the merged world (WorldChunks.ts) into meshes and the textures of its fields.
+// Turns the merged world (WorldChunks.ts) into meshes (its fields' textures: WorldFields.ts).
 //
 // - The island is a mesh per land chunk (chunk design, section 8), all under the group 'island',
 //   sharing the cliff material and one attribute set, so a chunk added later builds no pipeline.
 //   Each is placed in world coordinates (identity matrices: the derived products below are world
 //   space) and frustum-culled by its box, which the chunk's ground grid carries (the exact box of
-//   its vertices): the page walks none of the island's vertices.
-// - The stones and the sea floor stay one mesh each (ChunkMerge.ts), as every small kind does.
+//   its vertices): the page walks none of the island's vertices. A grown island (Growth.ts) takes
+//   out the changed chunks' meshes and adds theirs (`islandMesh`), kept in the chunks' order
+//   ( cj, ci ), and `derive` collects what they carry again.
+// - The stones and the sea floor stay one mesh each (ChunkMerge.ts), as every small kind does; a
+//   grown island gives them new geometry of the same layout (`stonesGeometry`, `seabedGeometry`).
 // - What the chunks' jobs derived from the meshes comes back with them, keyed for its consumers:
 //   the island parts' caster columns (SunShadow.setCasters), the triangle subsets of the island
 //   parts, the stones and the floor (RefractedSun.setCasters) and the ground grids
@@ -26,128 +30,112 @@ import type { IslandChunk, MeshData, WorldData, ShoreField, RimGroundField, Seab
 //   same order) moves results at some partly covered pixels. Byte comparisons hold between pages
 //   that split the island alike; a paused frame repeats, since the split follows the chunks.
 
-export function shoreTextureFrom( shore: ShoreField ): { tex: THREE.DataTexture; xform: THREE.Vector4 } {
-
-	const tex = new THREE.DataTexture( shore.data, shore.nx, shore.nz, THREE.RedFormat, THREE.FloatType );
-	tex.minFilter = THREE.LinearFilter;
-	tex.magFilter = THREE.LinearFilter;
-	tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-	tex.needsUpdate = true;
-	const xform = new THREE.Vector4( shore.x0, shore.z0, 1 / ( shore.nx * shore.cell ), 1 / ( shore.nz * shore.cell ) );
-	return { tex, xform };
-
-}
-
-// The floor's beds (seagrass cover, pale-sand share) over the shoreline field's bounds, in half
-// floats (filterable everywhere); read through the same transform as the shoreline field.
-export function seabedBedTextureFrom( beds: SeabedBedField ): THREE.DataTexture {
-
-	const half = new Uint16Array( beds.data.length );
-	for ( let k = 0; k < half.length; k ++ ) half[ k ] = THREE.DataUtils.toHalfFloat( beds.data[ k ] );
-	const tex = new THREE.DataTexture( half, beds.nx, beds.nz, THREE.RGFormat, THREE.HalfFloatType );
-	tex.minFilter = tex.magFilter = THREE.LinearFilter;
-	tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-	tex.generateMipmaps = false;
-	tex.needsUpdate = true;
-	tex.name = 'seabed-beds';
-	return tex;
-
-}
-
-// The rim ground (RimGround.ts: the chunks' tiles, assembled by ChunkMerge.ts) in half floats: filterable
-// everywhere and half the memory of floats as the land grows; its distance is clamped to 1.5 m, so
-// they keep it to a millimetre.
-function rimGroundTextureFrom( ground: RimGroundField ): { tex: THREE.DataTexture; xform: THREE.Vector4 } {
-
-	const half = new Uint16Array( ground.data.length );
-	for ( let k = 0; k < half.length; k ++ ) half[ k ] = THREE.DataUtils.toHalfFloat( ground.data[ k ] );
-	const tex = new THREE.DataTexture( half, ground.nx, ground.nz, THREE.RGBAFormat, THREE.HalfFloatType );
-	tex.minFilter = tex.magFilter = THREE.LinearFilter;
-	tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
-	tex.generateMipmaps = false;
-	tex.needsUpdate = true;
-	tex.name = 'rim-root-bed';
-	return { tex, xform: new THREE.Vector4( ground.x0, ground.z0, 1 / ( ground.nx * ground.cell ), 1 / ( ground.nz * ground.cell ) ) };
-
-}
-
 /** The world's meshes, and what its chunks derived from them for their consumers. */
 export interface WorldMeshes {
 	// 'world': the island, the stones and the sea floor
 	group: THREE.Group;
 	// 'island': a mesh per land chunk, in the chunks' order
 	island: THREE.Group;
+	rocks: THREE.Mesh;
+	seabed: THREE.Mesh;
+	// the island's material, which every land chunk's mesh shares
+	cliff: THREE.Material;
 	triangles: number;
 	columns: Map<THREE.Object3D, CasterColumns>;
 	subsets: Map<THREE.Object3D, SubmergedSubset>;
 	grounds: GroundGrid[];
 }
 
-export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: Shared, caustics: Caustics, shore: THREE.Texture ): WorldMeshes {
+export function buildWorldMeshes( data: WorldData, tex: DetailTextures, shared: Shared, caustics: Caustics, fields: WorldFields ): WorldMeshes {
 
 	const group = new THREE.Group();
 	group.name = 'world';
-	const rimGround = rimGroundTextureFrom( data.rimGround );
-	const cliffMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, shore, { topY: ISLAND_TOP, rimGround: rimGround.tex, rimGroundXform: rimGround.xform } );
-	const rockMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, shore, { vegetation: false } );
-	const columns = new Map<THREE.Object3D, CasterColumns>(), subsets = new Map<THREE.Object3D, SubmergedSubset>();
-	let triangles = 0;
-
+	const cliffMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, fields.shore, { topY: ISLAND_TOP, rimGround: fields.rim, rimGroundXform: fields.rimXform } );
+	const rockMat = makeTerrainMaterial( 'cliff', tex, shared, caustics, fields.shore, { vegetation: false } );
 	const island = new THREE.Group();
 	island.name = 'island';
-	for ( const part of data.islands ) {
-
-		const mesh = new THREE.Mesh( islandGeometry( part ), cliffMat );
-		mesh.name = `island ${ part.ci },${ part.cj }`;
-		mesh.castShadow = true;
-		mesh.receiveShadow = true;
-		island.add( mesh );
-		columns.set( mesh, part.columns );
-		subsets.set( mesh, part.refracted );
-		triangles += part.mesh.indices.length / 3;
-
-	}
+	for ( const part of data.islands ) island.add( islandMesh( part, cliffMat ) );
 	group.add( island );
 
 	// The sea floor's stones lie well under the surface, so they cannot shade anything lit
 	// through the air; submerged receivers take their shadows from the refracted map.
 	// Keeping them out of the sun's map lets it fit the island alone.
-	{
-
-		const geo = meshGeometry( data.stones );
-		geo.computeBoundingSphere();
-		geo.computeBoundingBox();
-		const mesh = new THREE.Mesh( geo, rockMat );
-		mesh.name = 'rocks';
-		mesh.receiveShadow = true;
-		group.add( mesh );
-		subsets.set( mesh, { level: data.refracted.level, index: data.refracted.stones } );
-		triangles += data.stones.indices.length / 3;
-
-	}
+	const rocks = new THREE.Mesh( stonesGeometry( data ), rockMat );
+	rocks.name = 'rocks';
+	rocks.receiveShadow = true;
+	group.add( rocks );
 
 	// the sea floor: its near tiles and the far floor, one mesh (their normals come with them:
 	// the floor function's slopes, which agree along every tile's border)
-	{
+	const seabed = new THREE.Mesh( seabedGeometry( data ), makeTerrainMaterial( 'seabed', tex, shared, caustics, fields.shore ) );
+	seabed.name = 'seabed';
+	seabed.receiveShadow = true;
+	group.add( seabed );
 
-		const { positions, normals, ao, bed, indices } = data.seabed;
-		const geo = new THREE.BufferGeometry();
-		geo.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
-		geo.setAttribute( 'normal', new THREE.BufferAttribute( normals, 3 ) );
-		geo.setIndex( new THREE.BufferAttribute( indices, 1 ) );
-		geo.setAttribute( 'ao', new THREE.BufferAttribute( ao, 1 ) );
-		geo.setAttribute( 'bed', new THREE.BufferAttribute( bed, 2 ) );
-		geo.computeBoundingSphere();
-		const mesh = new THREE.Mesh( geo, makeTerrainMaterial( 'seabed', tex, shared, caustics, shore ) );
-		mesh.name = 'seabed';
-		mesh.receiveShadow = true;
-		group.add( mesh );
-		subsets.set( mesh, { level: data.refracted.level, index: data.refracted.seabed } );
-		triangles += indices.length / 3;
+	const world: WorldMeshes = { group, island, rocks, seabed, cliff: cliffMat, triangles: 0, columns: new Map(), subsets: new Map(), grounds: [] };
+	derive( world, data );
+	return world;
+
+}
+
+/** A land chunk's mesh (World.ts's rules above: world space, its box from its ground grid), with
+ * what its job derived from it in `userData.part`. */
+export function islandMesh( part: IslandChunk, material: THREE.Material ): THREE.Mesh {
+
+	const mesh = new THREE.Mesh( islandGeometry( part ), material );
+	mesh.name = `island ${ part.ci },${ part.cj }`;
+	mesh.castShadow = true;
+	mesh.receiveShadow = true;
+	mesh.userData.part = part;
+	return mesh;
+
+}
+
+/** The stones' merged mesh. */
+export function stonesGeometry( data: WorldData ): THREE.BufferGeometry {
+
+	const geo = meshGeometry( data.stones );
+	geo.computeBoundingSphere();
+	geo.computeBoundingBox();
+	return geo;
+
+}
+
+/** The sea floor's mesh: the chunks' near tiles and the far floor. */
+export function seabedGeometry( data: WorldData ): THREE.BufferGeometry {
+
+	const { positions, normals, ao, bed, indices } = data.seabed;
+	const geo = new THREE.BufferGeometry();
+	geo.setAttribute( 'position', new THREE.BufferAttribute( positions, 3 ) );
+	geo.setAttribute( 'normal', new THREE.BufferAttribute( normals, 3 ) );
+	geo.setIndex( new THREE.BufferAttribute( indices, 1 ) );
+	geo.setAttribute( 'ao', new THREE.BufferAttribute( ao, 1 ) );
+	geo.setAttribute( 'bed', new THREE.BufferAttribute( bed, 2 ) );
+	geo.computeBoundingSphere();
+	return geo;
+
+}
+
+/** The world's derived products (`columns`, `subsets`, `grounds`, `triangles`) for the meshes it
+ * now holds and the version `data` they show: again after a growth step swaps them. */
+export function derive( world: WorldMeshes, data: WorldData ): void {
+
+	world.columns.clear();
+	world.subsets.clear();
+	let triangles = 0;
+	for ( const mesh of world.island.children as THREE.Mesh[] ) {
+
+		const part = mesh.userData.part as IslandChunk;
+		world.columns.set( mesh, part.columns );
+		world.subsets.set( mesh, part.refracted );
+		triangles += part.mesh.indices.length / 3;
 
 	}
-
-	return { group, island, triangles, columns, subsets, grounds: data.islands.map( ( part ) => part.ground ) };
+	world.subsets.set( world.rocks, { level: data.refracted.level, index: data.refracted.stones } );
+	world.subsets.set( world.seabed, { level: data.refracted.level, index: data.refracted.seabed } );
+	triangles += data.stones.indices.length / 3 + data.seabed.indices.length / 3;
+	world.triangles = triangles;
+	world.grounds = ( world.island.children as THREE.Mesh[] ).map( ( mesh ) => ( mesh.userData.part as IslandChunk ).ground );
 
 }
 
