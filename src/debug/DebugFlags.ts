@@ -25,3 +25,24 @@
 // stand in one pose with no motion, for clips where only the shadows or the jitter should move.
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
+
+// `flags=<name>:<value>,...` in the URL (debug builds: the dev server, ?debug, ?profile) sets flags
+// as this module loads, before any module reads them, so a capture or a clip A/Bs a flag by its
+// query. A value reads as true / false, a number, or else the string itself; `mv.<source>` sets a
+// motion source. (Under node, as the plain verify tools run modules, there is no location.)
+const search = ( globalThis as { location?: { search: string } } ).location?.search ?? '';
+const query = new URLSearchParams( search );
+if ( query.has( 'flags' ) && ( ( import.meta as { env?: { DEV?: boolean } } ).env?.DEV || query.has( 'debug' ) || query.has( 'profile' ) ) ) {
+
+	for ( const entry of ( query.get( 'flags' ) ?? '' ).split( ',' ) ) {
+
+		const at = entry.indexOf( ':' );
+		if ( at <= 0 ) continue;
+		const name = entry.slice( 0, at ), text = entry.slice( at + 1 );
+		const value = text === 'true' ? true : text === 'false' ? false : text !== '' && Number.isFinite( Number( text ) ) ? Number( text ) : text;
+		if ( name.startsWith( 'mv.' ) ) ( debugFlags.mv as Record<string, unknown> )[ name.slice( 3 ) ] = value;
+		else debugFlags[ name ] = value;
+
+	}
+
+}
