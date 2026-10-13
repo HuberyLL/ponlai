@@ -12,13 +12,15 @@ everyday commands; this file has the details. Each tool's own file says the rest
   colliding with another's: it takes the first free port in 6400-6499 (or checks `--port N` and
   names the pid and cwd holding it), builds first for `preview` unless `--no-build`, runs vite
   through `job.mjs` with its log at `artifacts/jobs/serve-<mode>-<port>.log`, waits until it
-  answers and prints the URL and the `job.mjs stop` command that ends it.
+  answers and prints the URL and the `job.mjs stop` command that ends it. It serves the checkout
+  the cwd is in, whichever copy of serve.mjs runs (outside the repository it exits 1), and its
+  first line names that checkout's path, HEAD and branch.
 - `node tools/serve.mjs dev|preview --sha <rev>` serves another commit: a detached worktree at
   the main checkout's `.claude/worktrees/sha-<12 hex>`, made once and reused. Its node_modules
   links the main checkout's entries (vite's caches left out) when the commit's package-lock.json
   is the same, else `npm ci` runs there; `preview` builds once per worktree (`dist/.serve-sha`).
   The log is `artifacts/jobs/serve-<mode>-sha-<12 hex>-<port>.log` in the calling checkout.
-  `node tools/serve.mjs clean` stops the jobs in every sha-* worktree and removes them.
+  `node tools/serve.mjs clean` removes every sha-* worktree; one with a live job is skipped and named (stop its job first).
 - The islanders load from the git-ignored `artifacts/assets/`. `tools/vite-assets.mjs` finds the
   folder (the checkout's own, else the main checkout's through git's common directory, so a fresh
   worktree needs no link): the dev server serves it and `vite build` links it into
@@ -566,7 +568,8 @@ Forms:
 - `stop <log>... | --cwd dir | --all [--grace 10]` ends jobs with everything they started: it
   sends SIGTERM through the job's runner, so the tools run their own cleanup (lock release, browser
   close), and after the grace SIGKILLs whatever is left of the job's process tree, children that
-  detached into their own group included. An agent hands back with nothing of its own running.
+  detached into their own group included. `--cwd dir` matches only jobs in dir's own checkout
+  (nearest `.git` entry), never a worktree nested under it. An agent hands back with nothing of its own running.
 
 Budgets (roles). A wait ends at a wall-clock deadline counted from its start, whatever the load.
 `--role agent` (the default) waits at most 240 s, because an agent's prompt cache lives five
