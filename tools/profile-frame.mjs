@@ -2381,7 +2381,7 @@ function markdownProfile( meta, runs ) {
 
 	const lines = [ `# Frame profile: ${ meta.label }`, '', `${ meta.url } at ${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; ` +
 		`render ${ meta.render ?? '?' }; warm-up ${ meta.warmup } s, ${ meta.seconds } s measured per scene, ${ meta.motion === 'user' ? 'the camera dragged like a player\'s' : meta.motion === 'none' ? 'the camera still' : `orbit ${ meta.orbit } deg/s` }${ meta.display ? ', headed on the real display at its own refresh' : '' }; ` +
-		`GPU utilisation before the run ${ meta.gpuIdle?.idle?.mean ?? '?' } %${ meta.gpuIdle?.contended ? ` (CONTENDED: something else was rendering${ meta.gpuIdle.clients?.length ? `: ${ meta.gpuIdle.clients.map( ( c ) => `${ c.name.replace( / \(pid \d+\)/, '' ) } ${ c.percent } %` ).join( ', ' ) }` : '' })` : '' }; GPU timestamps ${ meta.timestamps === 'both' ? 'both (frame intervals without them, passes with them)' : meta.timestamps === 'auto' ? 'auto (frame intervals without them; passes with them for the scenes that did not pass, – for the others)' : meta.timestamps ? 'on' : 'off' }.`, '',
+		`${ idleLine( meta.gpuIdle ) }; GPU timestamps ${ meta.timestamps === 'both' ? 'both (frame intervals without them, passes with them)' : meta.timestamps === 'auto' ? 'auto (frame intervals without them; passes with them for the scenes that did not pass, – for the others)' : meta.timestamps ? 'on' : 'off' }.`, '',
 		`Frame interval in ms (rAF to rAF, ${ meta.display ? 'at the display\'s refresh' : meta.vsync ? 'under vsync at 60 Hz' : 'uncapped' }). ` +
 		'GPU busy: the time the frame\'s passes add to the GPU\'s timeline (median); ' +
 		'GPU p95: the 95th percentile of the GPU\'s own frame-to-frame interval. JS: the tick\'s own work (median), without the time it was ' +
@@ -3035,6 +3035,20 @@ async function main() {
 
 }
 
+// The opening idle check, for a summary's header: the GPU's utilisation, or in full-screen display
+// mode its other clients' share (see idleCheck), and what kept it busy when contended
+function idleLine( gpuIdle ) {
+
+	const what = gpuIdle?.by === 'clients' ? 'The GPU\'s other clients before the run (this run\'s Chrome and WindowServer left out)' : 'GPU utilisation before the run';
+	const clients = gpuIdle?.clients?.length ? `: ${ gpuIdle.clients.map( ( c ) => `${ c.name.replace( / \(pid \d+\)/, '' ) } ${ c.percent } %` ).join( ', ' ) }` : '';
+	return `${ what } ${ gpuIdle?.idle?.mean ?? '?' } %${ gpuIdle?.contended ? ` (CONTENDED: something else was rendering${ clients })` : '' }`;
+
+}
+// a scene's name in a compare's table, marked as a single profile's table marks it when either
+// page or load of it was measured contended
+const sceneCell = ( scene, r ) => `${ scene }${ r.contended ? ' (contended)' : '' }`;
+const contendedNote = ( rows ) => rows.some( ( r ) => r.contended ) ? ' A scene marked (contended) was measured while something else kept the GPU busy (with --contended, or found when the lock came back between scenes): its figures carry that load.' : '';
+
 // page-mode compare and toggle: deltas over the slices or blocks
 function sliceReport( A, B ) {
 
@@ -3047,6 +3061,7 @@ function sliceReport( A, B ) {
 		const groups = new Set( [ ...a, ...b ].flatMap( ( s ) => Object.keys( s.groups ) ) );
 		report[ scene ] = {
 			slices: [ a.length, b.length ], frames: [ A.scenes[ scene ].frames, B.scenes[ scene ].frames ],
+			contended: Boolean( A.scenes[ scene ].contended || B.scenes[ scene ].contended ),
 			// adaptive slices: the slices the scene took and why it stopped
 			...( A.scenes[ scene ].stop ? { stop: A.scenes[ scene ].stop } : {} ),
 			gpu: metric( ( s ) => s.gpu ), gpuInterval: metric( ( s ) => s.gpuInterval ),
@@ -3078,7 +3093,8 @@ function sliceMarkdown( meta, reports ) {
 		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; render at load ${ meta.renderB && meta.renderB !== meta.render ? `A ${ meta.render ?? '?' }, B ${ meta.renderB }` : meta.render ?? '?' }; ${ how }` +
 		`${ meta.display ? `, headed on the real display at its own refresh, ${ meta.motion === 'user' ? 'the camera dragged like a player\'s in each slice' : meta.motion === 'none' ? 'the camera still' : `orbit ${ meta.orbit } deg/s` }` : '' }. ` +
 		`Scenes are switched at runtime and warmed ${ meta.warmup } s and until no pipeline compiled for a second. Each cell: A -> B (B - A ± its 95 % interval over the slices); * marks a delta beyond it. ` +
-		`B/A follows each delta as a ratio (x0.9: B takes 10 % less). Decide on GPU busy and the passes (GPU time per frame); take frame rates from the run without timestamps. ${ meta.wallSeconds ? `Wall time ${ Math.round( meta.wallSeconds ) } s.` : '' }`, '' ];
+		`B/A follows each delta as a ratio (x0.9: B takes 10 % less). Decide on GPU busy and the passes (GPU time per frame); take frame rates from the run without timestamps. ${ meta.wallSeconds ? `Wall time ${ Math.round( meta.wallSeconds ) } s.` : '' }`, '',
+		`${ idleLine( meta.gpuIdle ) }.${ contendedNote( reports.flatMap( ( x ) => Object.values( x.report ) ) ) }`, '' ];
 	const cell = ( m ) => m.delta === null ? '–' : `${ fmt( m.a ) } -> ${ fmt( m.b ) } (${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) } ± ${ fmt( m.ci ) }; ${ ratioText( m.ratio ) })${ m.significant ? ' *' : '' }`;
 	for ( const { timestamps, report, strayFrames } of reports ) {
 
@@ -3091,8 +3107,8 @@ function sliceMarkdown( meta, reports ) {
 		for ( const [ scene, r ] of Object.entries( report ) ) {
 
 			const passes = Object.entries( r.groups ).slice( 0, 3 ).map( ( [ g, m ] ) => `${ g } ${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }${ m.significant ? '*' : '' }` ).join( ', ' );
-			if ( timestamps ) lines.push( `| ${ scene } | ${ scales( r ) } | ${ cell( r.gpu ) } | ${ cell( r.gpuInterval ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } | ${ passes } |` );
-			else lines.push( `| ${ scene } | ${ scales( r ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } |${ late ? ` ${ r.late ? cell( r.late ) : '–' } | ${ r.over25?.join( ' / ' ) ?? '–' } | ${ r.fps ? cell( r.fps ) : '–' } | ${ r.fallback ? cell( r.fallback ) : '–' } |` : '' }` );
+			if ( timestamps ) lines.push( `| ${ sceneCell( scene, r ) } | ${ scales( r ) } | ${ cell( r.gpu ) } | ${ cell( r.gpuInterval ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } | ${ passes } |` );
+			else lines.push( `| ${ sceneCell( scene, r ) } | ${ scales( r ) } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.js ) } |${ late ? ` ${ r.late ? cell( r.late ) : '–' } | ${ r.over25?.join( ' / ' ) ?? '–' } | ${ r.fps ? cell( r.fps ) : '–' } | ${ r.fallback ? cell( r.fallback ) : '–' } |` : '' }` );
 
 		}
 		lines.push( '' );
@@ -3153,6 +3169,7 @@ function compareReport( runs ) {
 		};
 		const groups = new Set( [ ...runs.A, ...runs.B ].flatMap( ( r ) => Object.keys( r.scenes[ scene ].groups ) ) );
 		report[ scene ] = {
+			contended: [ ...runs.A, ...runs.B ].some( ( r ) => r.scenes[ scene ].contended ),
 			median: metric( ( r ) => r.interval.median ), p95: metric( ( r ) => r.interval.p95 ), p99: metric( ( r ) => r.interval.p99 ),
 			gpu: metric( ( r ) => r.gpu.median ), js: metric( ( r ) => r.js.median ),
 			groups: Object.fromEntries( [ ...groups ].map( ( g ) => [ g, metric( ( r ) => r.groups[ g ]?.mean ?? 0 ) ] ).sort( ( x, y ) => Math.abs( y[ 1 ].delta ) - Math.abs( x[ 1 ].delta ) ) ),
@@ -3169,13 +3186,14 @@ function compareMarkdown( meta, report ) {
 
 	const lines = [ `# Frame profile compare: ${ meta.label }`, '', `A: ${ meta.compare.A }${ meta.compare.evalA ? ` (eval ${ meta.compare.evalA })` : '' }`, `B: ${ meta.compare.B }${ meta.compare.evalB ? ` (eval ${ meta.compare.evalB })` : '' }`, '',
 		`${ meta.viewport.width }x${ meta.viewport.height } CSS, DPR ${ meta.viewport.scale }, quality ${ meta.quality }; A B B A per load; noise = the larger run-to-run spread of A or B; * marks a delta beyond it; B/A follows as a ratio.`, '',
+		`${ idleLine( meta.gpuIdle ) }.${ contendedNote( Object.values( report ) ) }`, '',
 		'| scene | scale A / B (each load) | median A -> B (delta, noise) | p95 | p99 | GPU busy | JS tick | largest pass deltas |', '|---|---|---|---|---|---|---|---|' ];
 	const cell = ( m ) => `${ fmt( m.a ) } -> ${ fmt( m.b ) } (${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }, ±${ fmt( m.noise ) }; ${ ratioText( m.ratio ) })${ m.significant ? ' *' : '' }`;
 	for ( const [ scene, r ] of Object.entries( report ) ) {
 
 		const passes = Object.entries( r.groups ).slice( 0, 3 ).map( ( [ g, m ] ) => `${ g } ${ m.delta > 0 ? '+' : '' }${ fmt( m.delta ) }${ m.significant ? '*' : '' }` ).join( ', ' );
 		const scales = r.scale ? r.scale.map( ( list ) => list.map( scaleText ).join( ', ' ) ).join( ' / ' ) : '–';
-		lines.push( `| ${ scene } | ${ scales } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.p99 ) } | ${ cell( r.gpu ) } | ${ cell( r.js ) } | ${ passes } |` );
+		lines.push( `| ${ sceneCell( scene, r ) } | ${ scales } | ${ cell( r.median ) } | ${ cell( r.p95 ) } | ${ cell( r.p99 ) } | ${ cell( r.gpu ) } | ${ cell( r.js ) } | ${ passes } |` );
 
 	}
 	return lines.join( '\n' ) + '\n';

@@ -536,7 +536,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   `--idle-wait` seconds (20; 60 with `--mode reload`), it names the client, measures nothing and
   exits with 3, releasing the lock: a contended run's numbers prove nothing. Stop the client and
   run again, or pass `--contended` to measure anyway (results marked contended, as before). A
-  later page load that finds the GPU busy still marks its results contended.
+  later page load that finds the GPU busy still marks its results contended. Every summary.md
+  marks such a scene `(contended)` in its table, a compare's as a single profile's.
 - A run with several scenes holds the exclusive lock one scene at a time (every mode: profile,
   compare, toggle, accept, reload): before a scene's warm-up it asks for the lock, after its last
   slice its pages stop and drain. The pages and the browser stay open, their loops stopped, so
