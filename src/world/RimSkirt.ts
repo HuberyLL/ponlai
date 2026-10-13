@@ -8,6 +8,7 @@ import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
+import { float32Steps, indexSteps } from './Steps.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
 import type { RimSkirtData } from './types.ts';
@@ -24,6 +25,40 @@ import type { RimSkirtData } from './types.ts';
 const SHADE = [ 0.86, 0.94, 1, 0.9, 0.7, 0.52, 0.4 ];
 
 export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mesh {
+
+	const steps = turfSkirtSteps( skirt );
+	let next = steps.next();
+	while ( ! next.done ) next = steps.next();
+	const mesh = new THREE.Mesh( next.value.geometry, skirtMaterial( shared ) );
+	keepLegacyWind( mesh, skirtMaterial( shared, true ) );
+	mesh.name = 'turfSkirt';
+	mesh.castShadow = true;
+	mesh.receiveShadow = true;
+	// Like the other vegetation: drawn before the terrain, so the rim's turf under it fails the depth test.
+	mesh.renderOrder = - 1;
+	mesh.userData = next.value.counts;
+	return mesh;
+
+}
+
+/** The skirt's geometry and its counts (blades, triangles). */
+export interface TurfSkirtBuilt { geometry: THREE.BufferGeometry; counts: { blades: number; triangles: number } }
+
+/** Swaps the skirt `mesh` (buildTurfSkirt) to `built` in place. Returns the geometry replaced, to
+ * dispose of once nothing draws it. */
+export function setTurfSkirt( mesh: THREE.Mesh, built: TurfSkirtBuilt ): THREE.BufferGeometry {
+
+	const old = mesh.geometry;
+	mesh.geometry = built.geometry;
+	mesh.userData = built.counts;
+	return old;
+
+}
+
+/** The skirt's geometry in steps (a generator, `per` pieces a step in each pass), so the growth
+ * (Growth.ts) builds a grown island's in idle time; `buildTurfSkirt` runs it to the end. The result
+ * is the same however it is stepped. */
+export function* turfSkirtSteps( skirt: RimSkirtData, per = Infinity ): Generator<void, TurfSkirtBuilt> {
 
 	const P: number[] = [], C: number[] = [], N: number[] = [], B: number[] = [], W: number[] = [], I: number[] = [];
 	const { points, normals, info, pieces } = skirt;
@@ -43,6 +78,8 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 	};
 	// Body: the sod sheet, smooth-shaded by the normals the worker found from its rings.
 	for ( let l = 0; l < pieces.length; l += 2 ) {
+
+		if ( l > 0 && ( l / 2 ) % per === 0 ) yield;
 
 		const first = pieces[ l ], count = pieces[ l + 1 ];
 		for ( let s = first; s < first + count; s ++ ) for ( let k = 0; k < SKIRT_RING; k ++ ) {
@@ -102,6 +139,7 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 	const a = new THREE.Vector3(), b = new THREE.Vector3(), tangent = new THREE.Vector3(), out = new THREE.Vector3();
 	for ( let l = 0; l < pieces.length; l += 2 ) {
 
+		if ( ( l / 2 ) % per === 0 ) yield;
 		// the blades of the samples that start a segment: a piece's last sample starts the next piece
 		const first = pieces[ l ], count = pieces[ l + 1 ];
 		for ( let s = first; s + 1 < first + count; s ++ ) {
@@ -158,24 +196,15 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 	}
 
 	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( P, 3 ) );
-	geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( N, 3 ) );
-	geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( C, 3 ) );
-	geometry.setAttribute( 'skirtBlade', new THREE.Float32BufferAttribute( B, 1 ) );
-	geometry.setAttribute( 'skirtSway', new THREE.Float32BufferAttribute( W, 1 ) );
-	geometry.setIndex( I );
+	geometry.setAttribute( 'position', new THREE.BufferAttribute( yield* float32Steps( P ), 3 ) );
+	geometry.setAttribute( 'normal', new THREE.BufferAttribute( yield* float32Steps( N ), 3 ) );
+	geometry.setAttribute( 'color', new THREE.BufferAttribute( yield* float32Steps( C ), 3 ) );
+	geometry.setAttribute( 'skirtBlade', new THREE.BufferAttribute( yield* float32Steps( B ), 1 ) );
+	geometry.setAttribute( 'skirtSway', new THREE.BufferAttribute( yield* float32Steps( W ), 1 ) );
+	geometry.setIndex( yield* indexSteps( I ) );
 	geometry.computeBoundingSphere();
 	geometry.boundingSphere!.radius += 0.12; // the thatch's lean in a gale
-
-	const mesh = new THREE.Mesh( geometry, skirtMaterial( shared ) );
-	keepLegacyWind( mesh, skirtMaterial( shared, true ) );
-	mesh.name = 'turfSkirt';
-	mesh.castShadow = true;
-	mesh.receiveShadow = true;
-	// Like the other vegetation: drawn before the terrain, so the rim's turf under it fails the depth test.
-	mesh.renderOrder = - 1;
-	mesh.userData = { blades, triangles: I.length / 3 };
-	return mesh;
+	return { geometry, counts: { blades, triangles: I.length / 3 } };
 
 }
 
