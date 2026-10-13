@@ -63,7 +63,23 @@
 //   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
 //   node tools/gpu-lock.mjs status                 (the owner, the holders, the queue and the exclusive requests in turn)
 //   node tools/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
+//   node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]   (waits and holds, from the log)
 //
+// The lock keeps a history, so how long anyone waited is measured rather than guessed: every request,
+// grant, release, timeout and abandoned request is one JSON line appended to `ponlai-gpu.lock.log.jsonl`
+// next to the lock (t, ev, pid, label, mode, class, ticket, waitMs / holdMs, reason). A line is
+// written whole by one append (O_APPEND), so concurrent writers never interleave, and logging never
+// fails a run. Past LOG_CAP the file is renamed to `.log.1.jsonl` (one older file is kept; two writers
+// rotating at the same instant may drop that older file, which only shortens the history). A release
+// says why a hold ended when its holder did not end it itself: `handed` (a child took the slot over:
+// the child's grant carries `from`), `yielded` (yieldAncestorSlot) or `stale` (the holder was killed
+// and whoever looked next reclaimed the slot; the log line is written by the one whose unlink
+// succeeded, so it is written once). A grant of a low request past its bound carries `promoted`.
+// Inherited holds (re-entry, a child under an exclusive holder) take nothing and log nothing.
+// A waiting request prints a timestamped line every 30 s: its place in the queue, the next in
+// turn, who holds the GPU and why it waits.
+// `log` summarises the window: waits (grants that queued, not take-overs) and holds per class or
+// label, median, p95 and total, and the longest waits with who held the GPU meanwhile.
 // A command started through `run` inherits the lock (PONLAI_GPU_LOCK_HELD, PONLAI_GPU_LOCK_MODE), and
 // so does any process below a holder in the process tree, through any wrappers, so a wrapped tool
 // that takes the lock itself does not wait for its own ancestor (a timing tool under a shared parent
@@ -76,7 +92,7 @@
 // captures of a set rather than after the whole set. A descendant about to wait for something else
 // (yieldAncestorSlot: a reference another process is capturing) frees that slot the same way.
 // PONLAI_GPU_LOCK_DIR moves the lock.
-import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync, statSync } from 'node:fs';
+import { appendFileSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync, statSync } from 'node:fs';
 import { execFile, execFileSync, spawn } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
@@ -107,6 +123,9 @@ const WAITING = `${ LOCK_DIR }.waiting`;
 const QUEUE = `${ LOCK_DIR }.queue`;
 const SEQ = `${ LOCK_DIR }.seq`;
 const MUTEX = `${ LOCK_DIR }.mutex`;
+const LOG = `${ LOCK_DIR }.log.jsonl`;
+const LOG_OLD = `${ LOCK_DIR }.log.1.jsonl`;
+const LOG_CAP = 4 << 20; // ~20k events, days of busy use
 const POLL_MS = 500;
 /** How many shared holders may render at once (each requester reads its own environment). */
 export const SLOTS = Math.max( 1, Math.floor( Number( process.env.PONLAI_GPU_SLOTS ) ) || 3 );
@@ -120,6 +139,35 @@ export const LOW_MAX_WAIT = ( ( v ) => Number.isFinite( v ) && v >= 0 ? v : 600 
 let depth = 0; // re-entrant within this process
 let heldMode = null; // 'exclusive' | 'shared' while this process holds the lock itself
 let installed = false;
+let pending = null; // this process's request while it waits: { label, mode, ticket, at }
+let holding = null; // this process's own hold while it lasts: { label, mode, ticket, at }
+
+// One event on the log (see the header). Never throws.
+function logEvent( event ) {
+
+	try {
+
+		let size = 0;
+		try { size = statSync( LOG ).size; } catch { /* the first event */ }
+		if ( size > LOG_CAP ) {
+
+			const aside = `${ LOG }.${ process.pid }.rot`;
+			try { renameSync( LOG, aside ); renameSync( aside, LOG_OLD ); } catch { /* another writer rotated it */ }
+
+		}
+		appendFileSync( LOG, JSON.stringify( { t: new Date().toISOString(), ...event } ) + '\n' );
+
+	} catch { /* the log is a record, never a reason to fail a run */ }
+
+}
+const since = ( iso ) => Math.max( 0, Date.now() - Date.parse( iso ) ) || 0;
+// true for the one caller whose unlink removed the file (so a reclaim is logged once)
+function unlinkOnce( file ) {
+
+	try { unlinkSync( file ); return true; } catch { return false; }
+
+}
+const clock = ( date = new Date() ) => date.toTimeString().slice( 0, 8 );
 
 function alive( pid ) {
 
@@ -197,7 +245,7 @@ function sharedMembers() {
 	return listJson( MEMBERS ).filter( ( m ) => {
 
 		if ( alive( m.pid ) ) return true;
-		rmSync( m.file, { force: true } );
+		if ( unlinkOnce( m.file ) ) logEvent( { ev: 'release', reason: 'stale', pid: m.pid, label: m.label, mode: 'shared', class: m.priority, ticket: m.seq, holdMs: since( m.start ) } );
 		return false;
 
 	} ).map( ( { file, ...m } ) => m );
@@ -227,7 +275,7 @@ function queued() {
 	return listJson( QUEUE ).filter( ( t ) => {
 
 		if ( alive( t.pid ) ) return true;
-		rmSync( t.file, { force: true } );
+		if ( unlinkOnce( t.file ) ) logEvent( { ev: 'abandon', reason: 'stale', pid: t.pid, label: t.label, mode: t.mode ?? 'shared', class: t.priority, ticket: t.seq, waitMs: since( t.start ) } );
 		return false;
 
 	} ).sort( ( a, b ) => a.seq - b.seq ).map( ( { file, ...t } ) => t );
@@ -319,13 +367,14 @@ function holdingAncestor() {
 
 // Takes the slot of a shared holder above this process over (see the header); false when that
 // holder has left or handed its slot on meanwhile. Call inside the mutex.
-function takeOverSlot( ancestor, label ) {
+function takeOverSlot( ancestor, label, reason = 'handed' ) {
 
 	const file = path.join( MEMBERS, `${ ancestor.pid }.json` );
 	const held = readJson( file );
 	if ( ! held || ! alive( ancestor.pid ) || readJson( OWNER )?.mode !== 'shared' ) return false;
 	writeJson( path.join( MEMBERS, `${ process.pid }.json` ), { pid: process.pid, label, start: new Date().toISOString(), slot: held.slot, priority: PRIORITY, from: ancestor.pid } );
 	rmSync( file, { force: true } );
+	logEvent( { ev: 'release', reason, pid: ancestor.pid, label: held.label, mode: 'shared', class: held.priority, ticket: held.seq, holdMs: since( held.start ), to: process.pid } );
 	repairShared();
 	return true;
 
@@ -400,6 +449,7 @@ function removeStale( owner ) {
 		try { renameSync( aside, LOCK_DIR ); return; } catch { /* taken: its owner keeps running unlocked */ }
 
 	}
+	if ( moved ) logEvent( { ev: 'release', reason: 'stale', pid: moved.pid, label: moved.label, mode: moved.mode ?? 'exclusive', class: moved.priority, ticket: moved.seq, holdMs: since( moved.start ) } );
 	rmSync( aside, { recursive: true, force: true } );
 
 }
@@ -422,7 +472,7 @@ function repairShared() {
 
 }
 
-function tryAcquireExclusive( label ) {
+function tryAcquireExclusive( label, seq ) {
 
 	try {
 
@@ -439,7 +489,7 @@ function tryAcquireExclusive( label ) {
 		return false;
 
 	}
-	writeFileSync( OWNER, JSON.stringify( { pid: process.pid, label, start: new Date().toISOString(), mode: 'exclusive' } ) );
+	writeFileSync( OWNER, JSON.stringify( { pid: process.pid, label, start: new Date().toISOString(), mode: 'exclusive', seq, priority: PRIORITY } ) );
 	return true;
 
 }
@@ -460,7 +510,7 @@ function takeExclusive( label, ticket ) {
 
 	}
 	const mine = Date.parse( ticket.start );
-	let got = untrackedWaiters().some( ( w ) => Date.parse( w.start ) < mine ) ? false : tryAcquireExclusive( label );
+	let got = untrackedWaiters().some( ( w ) => Date.parse( w.start ) < mine ) ? false : tryAcquireExclusive( label, ticket.seq );
 	if ( got === 'shared' ) {
 
 		// a shared lock whose named owner died while others hold it: hand it on
@@ -518,7 +568,7 @@ function joinShared( label, ticket ) {
 	const taken = new Set( members.map( ( m ) => m.slot ) );
 	let slot = 0;
 	while ( taken.has( slot ) ) slot ++;
-	const me = { pid: process.pid, label, start: new Date().toISOString(), slot, priority: PRIORITY };
+	const me = { pid: process.pid, label, start: new Date().toISOString(), slot, priority: PRIORITY, seq: ticket.seq };
 	try {
 
 		mkdirSync( LOCK_DIR );
@@ -538,16 +588,19 @@ function joinShared( label, ticket ) {
 
 }
 
+// false when this process held no slot any more (a child took it over)
 function leaveShared() {
 
-	withMutexSync( () => {
+	return withMutexSync( () => {
 
-		rmSync( path.join( MEMBERS, `${ process.pid }.json` ), { force: true } );
+		const left = unlinkOnce( path.join( MEMBERS, `${ process.pid }.json` ) );
 		repairShared();
+		return left;
 
 	} );
 
 }
+const logRelease = ( hold ) => logEvent( { ev: 'release', pid: process.pid, label: hold.label, mode: hold.mode, class: PRIORITY, ticket: hold.ticket, holdMs: Date.now() - hold.at } );
 
 /** Releases the lock if this process holds it. */
 export function releaseGpuLock() {
@@ -555,16 +608,29 @@ export function releaseGpuLock() {
 	depth = 0;
 	rmSync( path.join( WAITING, `${ process.pid }.json` ), { force: true } );
 	rmSync( path.join( QUEUE, `${ process.pid }.json` ), { force: true } );
+	if ( pending ) {
+
+		logEvent( { ev: 'abandon', reason: 'exit', pid: process.pid, label: pending.label, mode: pending.mode, class: PRIORITY, ticket: pending.ticket, waitMs: Date.now() - pending.at } );
+		pending = null;
+
+	}
+	const hold = holding;
+	holding = null;
 	if ( heldMode === 'shared' ) {
 
 		heldMode = null;
-		leaveShared();
+		if ( leaveShared() && hold ) logRelease( hold );
 		return;
 
 	}
 	heldMode = null;
 	const owner = readJson( OWNER );
-	if ( owner && owner.pid === process.pid && owner.mode !== 'shared' ) rmSync( LOCK_DIR, { recursive: true, force: true } );
+	if ( owner && owner.pid === process.pid && owner.mode !== 'shared' ) {
+
+		rmSync( LOCK_DIR, { recursive: true, force: true } );
+		if ( hold ) logRelease( hold );
+
+	}
 
 }
 
@@ -607,6 +673,8 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 
 		depth = 1;
 		heldMode = 'shared';
+		holding = { label, mode: 'shared', at: Date.now() };
+		logEvent( { ev: 'grant', pid: process.pid, label, mode: 'shared', class: PRIORITY, waitMs: 0, from: ancestor.pid } );
 		return 0;
 
 	}
@@ -614,6 +682,9 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 	const waitFile = path.join( WAITING, `${ process.pid }.json` );
 	const ticket = path.join( QUEUE, `${ process.pid }.json` );
 	const mine = await withMutex( () => enqueue( label, ! shared ) );
+	const mode = shared ? 'shared' : 'exclusive';
+	pending = { label, mode, ticket: mine.seq, at: started };
+	logEvent( { ev: 'request', pid: process.pid, label, mode, class: PRIORITY, ticket: mine.seq } );
 	try {
 
 		for ( ;; ) {
@@ -623,24 +694,29 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 			if ( timeout > 0 && waited > timeout * 1000 ) {
 
 				const owner = lockOwner();
+				pending = null;
+				logEvent( { ev: 'timeout', pid: process.pid, label, mode, class: PRIORITY, ticket: mine.seq, waitMs: waited } );
 				throw new Error( `GPU lock: still held by ${ owner?.label } (pid ${ owner?.pid }) after ${ timeout } s` );
 
 			}
 			if ( ! quiet && waited - told >= ( told === 0 ? 0 : 30000 ) ) {
 
+				// one line: the time, the place in the queue, who holds the GPU and why this waits
 				const owner = lockOwner();
 				const before = ticketsBefore( mine );
+				const total = queued().length;
 				const first = untrackedWaiters()[ 0 ] ?? ( shared ? before.find( ( t ) => t.mode === 'exclusive' ) : null );
-				const yielding = mine.priority === 'low' && Date.now() < Date.parse( mine.promoteAt ) ? ` (low priority: normal requests first until ${ mine.promoteAt })` : '';
-				if ( first ) console.error( `[gpu-lock] waiting: "${ first.label }" (pid ${ first.pid }) wants the GPU to itself first${ before.length ? `, ${ before.length } ahead in the queue` : '' }` );
-				else if ( before.length ) console.error( `[gpu-lock] waiting: ${ before.length } ahead in the queue (next "${ before[ 0 ].label }"${ before[ 0 ].mode === 'exclusive' ? ', exclusive' : '' })${ yielding }` );
-				else if ( owner?.mode === 'shared' && shared ) {
+				const next = before.length ? `, next "${ before[ 0 ].label }"${ before[ 0 ].mode === 'exclusive' ? ' (exclusive)' : '' }` : '';
+				let held = 'nobody (taking it)';
+				if ( owner?.mode === 'shared' ) {
 
 					const slotted = owner.members.filter( ( m ) => m.slot !== undefined );
-					console.error( `[gpu-lock] waiting for a GPU slot: ${ slotted.length } of ${ SLOTS } in use (${ slotted.map( ( m ) => `"${ m.label }"` ).join( ', ' ) })${ yielding }` );
+					held = `${ slotted.length } of ${ SLOTS } shared slots (${ slotted.map( ( m ) => `"${ m.label }"` ).join( ', ' ) })`;
 
-				}
-				else if ( owner ) console.error( `[gpu-lock] waiting for "${ owner.label }" (pid ${ owner.pid }, since ${ owner.start }${ owner.members?.length > 1 ? `, ${ owner.members.length } shared holders` : '' })` );
+				} else if ( owner ) held = `"${ owner.label }" (pid ${ owner.pid }, exclusive since ${ clock( new Date( owner.start ) ) })`;
+				const why = first ? `; "${ first.label }" (pid ${ first.pid }) wants the GPU to itself first`
+					: mine.priority === 'low' && Date.now() < Date.parse( mine.promoteAt ) ? `; low priority: normal requests first until ${ clock( new Date( mine.promoteAt ) ) }` : '';
+				console.error( `[gpu-lock ${ clock() }] waiting (${ mode }${ PRIORITY === 'low' ? ', low' : '' }) ${ Math.round( waited / 1000 ) } s: ${ before.length + 1 } of ${ Math.max( total, before.length + 1 ) } in the queue${ next }; held by ${ held }${ why }` );
 				told = waited || 1;
 
 			}
@@ -655,7 +731,11 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 
 	}
 	depth = 1;
-	heldMode = shared ? 'shared' : 'exclusive';
+	heldMode = mode;
+	pending = null;
+	holding = { label, mode, ticket: mine.seq, at: Date.now() };
+	logEvent( { ev: 'grant', pid: process.pid, label, mode, class: PRIORITY, ticket: mine.seq, waitMs: Date.now() - started,
+		...( mine.priority === 'low' && Date.now() >= Date.parse( mine.promoteAt ) ? { promoted: true } : {} ) } );
 	return Date.now() - started;
 
 }
@@ -690,7 +770,7 @@ export async function yieldAncestorSlot( label = path.basename( process.argv[ 1 
 	if ( depth > 0 ) return false;
 	const ancestor = holdingAncestor();
 	if ( ancestor?.mode !== 'shared' ) return false;
-	if ( ! await withMutex( () => takeOverSlot( ancestor, label ) ) ) return false;
+	if ( ! await withMutex( () => takeOverSlot( ancestor, label, 'yielded' ) ) ) return false;
 	heldMode = 'shared';
 	depth = 1;
 	releaseGpuLock();
@@ -819,6 +899,110 @@ export async function waitForIdleGpu( { threshold = 15, seconds = 3, wait = 60, 
 
 // ------------------------------------------------------------------ CLI
 
+/** The log's events, oldest first (the rotated file, then the current one). */
+export function readLockLog() {
+
+	const events = [];
+	for ( const file of [ LOG_OLD, LOG ] ) {
+
+		let text = '';
+		try { text = readFileSync( file, 'utf8' ); } catch { continue; }
+		for ( const line of text.split( '\n' ) ) {
+
+			if ( ! line ) continue;
+			try { events.push( JSON.parse( line ) ); } catch { /* a line cut short by a full disk */ }
+
+		}
+
+	}
+	return events;
+
+}
+
+const quantile = ( sorted, q ) => sorted.length ? sorted[ Math.min( sorted.length - 1, Math.ceil( q * sorted.length ) - 1 ) ] : null;
+const stats = ( values ) => {
+
+	const sorted = values.filter( Number.isFinite ).sort( ( a, b ) => a - b );
+	return { n: sorted.length, median: quantile( sorted, 0.5 ), p95: quantile( sorted, 0.95 ), total: sorted.reduce( ( a, b ) => a + b, 0 ) };
+
+};
+
+/** Waits and holds per group ('class': mode and class, or 'label') and the `top` longest waits,
+ * each with the holds that overlapped it (who held the GPU meanwhile, longest overlap first). */
+export function summariseLockLog( events, { by = 'class', top = 5, now = Date.now() } = {} ) {
+
+	const key = ( e ) => by === 'label' ? e.label ?? '?' : `${ e.mode ?? '?' } ${ e.class ?? '?' }`;
+	const groups = new Map();
+	const holds = []; // { pid, label, mode, start, end, open }
+	const open = new Map(); // pid -> its grant without a release yet
+	for ( const e of events ) {
+
+		const k = key( e );
+		if ( ! groups.has( k ) ) groups.set( k, { requests: 0, waits: [], holds: [], takeovers: 0, timeouts: 0, abandoned: 0, stale: 0 } );
+		const g = groups.get( k );
+		const t = Date.parse( e.t );
+		if ( e.ev === 'request' ) g.requests ++;
+		else if ( e.ev === 'grant' ) {
+
+			if ( e.from ) g.takeovers ++;
+			else g.waits.push( e.waitMs );
+			open.set( e.pid, e );
+
+		} else if ( e.ev === 'release' ) {
+
+			g.holds.push( e.holdMs );
+			if ( e.reason === 'stale' ) g.stale ++;
+			holds.push( { pid: e.pid, label: e.label, mode: e.mode, start: t - e.holdMs, end: t } );
+			open.delete( e.pid );
+
+		} else if ( e.ev === 'timeout' ) g.timeouts ++;
+		else if ( e.ev === 'abandon' ) g.abandoned ++;
+
+	}
+	for ( const e of open.values() ) holds.push( { pid: e.pid, label: e.label, mode: e.mode, start: Date.parse( e.t ), end: now, open: true } );
+	const longest = events.filter( ( e ) => e.ev === 'grant' && ! e.from && e.waitMs > 0 )
+		.sort( ( a, b ) => b.waitMs - a.waitMs ).slice( 0, top ).map( ( e ) => {
+
+			const end = Date.parse( e.t ), start = end - e.waitMs;
+			const holders = holds.filter( ( h ) => h.pid !== e.pid && h.start < end && h.end > start )
+				.map( ( h ) => ( { label: h.label, mode: h.mode, pid: h.pid, overlapMs: Math.min( end, h.end ) - Math.max( start, h.start ), ...( h.open ? { open: true } : {} ) } ) )
+				.sort( ( a, b ) => b.overlapMs - a.overlapMs );
+			return { t: e.t, label: e.label, mode: e.mode, class: e.class, waitMs: e.waitMs, holders };
+
+		} );
+	const rows = [ ...groups ].map( ( [ group, g ] ) => ( { group, requests: g.requests, wait: stats( g.waits ), hold: stats( g.holds ), takeovers: g.takeovers, timeouts: g.timeouts, abandoned: g.abandoned, stale: g.stale } ) )
+		.sort( ( a, b ) => b.wait.total - a.wait.total || b.hold.total - a.hold.total );
+	return { events: events.length, from: events[ 0 ]?.t ?? null, to: events.at( -1 )?.t ?? null, groups: rows, longest };
+
+}
+
+function printLockLog( summary, { by, sinceText } ) {
+
+	const d = ( ms ) => ms === null ? '-' : ms < 1000 ? `${ Math.round( ms ) } ms` : ms < 120000 ? `${ ( ms / 1000 ).toFixed( 1 ) } s` : ms < 7200000 ? `${ ( ms / 60000 ).toFixed( 1 ) } min` : `${ ( ms / 3600000 ).toFixed( 1 ) } h`;
+	const at = ( iso ) => new Date( iso ).toLocaleString( 'sv' ).slice( 5, 19 );
+	console.log( `gpu-lock log${ sinceText ? ` (last ${ sinceText })` : '' }: ${ summary.events } events${ summary.from ? `, ${ at( summary.from ) } .. ${ at( summary.to ) }` : '' } (${ LOG })` );
+	if ( ! summary.events ) return;
+	const cut = ( text, n ) => text.length > n ? text.slice( 0, n - 1 ) + '~' : text;
+	const width = Math.min( 40, Math.max( 5, ...summary.groups.map( ( r ) => r.group.length ) ) );
+	const head = [ by === 'label' ? 'label' : 'class', 'req', 'waits', 'median', 'p95', 'total', 'holds', 'median', 'p95', 'total', 'other' ];
+	const table = summary.groups.map( ( r ) => [ cut( r.group, width ), r.requests, r.wait.n, d( r.wait.median ), d( r.wait.p95 ), d( r.wait.total ), r.hold.n, d( r.hold.median ), d( r.hold.p95 ), d( r.hold.total ),
+		[ r.takeovers && `${ r.takeovers } taken over`, r.timeouts && `${ r.timeouts } timed out`, r.abandoned && `${ r.abandoned } abandoned`, r.stale && `${ r.stale } stale` ].filter( Boolean ).join( ', ' ) ].map( String ) );
+	const widths = head.map( ( h, i ) => Math.max( h.length, ...table.map( ( row ) => row[ i ].length ) ) );
+	for ( const row of [ head, ...table ] ) console.log( row.map( ( c, i ) => i === 0 || i === row.length - 1 ? c.padEnd( widths[ i ] ) : c.padStart( widths[ i ] ) ).join( '  ' ).trimEnd() );
+	if ( summary.longest.length ) {
+
+		console.log( '\nlongest waits (who held the GPU meanwhile, overlap):' );
+		for ( const w of summary.longest ) {
+
+			const who = w.holders.slice( 0, 3 ).map( ( h ) => `"${ cut( h.label ?? '?', 40 ) }" ${ h.mode === 'exclusive' ? 'excl ' : '' }${ d( h.overlapMs ) }${ h.open ? ' (no release logged)' : '' }` ).join( ', ' );
+			console.log( `  ${ at( w.t ) }  ${ d( w.waitMs ).padStart( 8 ) }  ${ w.mode } ${ w.class }  "${ cut( w.label ?? '?', 40 ) }"  <- ${ who || 'nobody logged' }${ w.holders.length > 3 ? `, +${ w.holders.length - 3 } more` : '' }` );
+
+		}
+
+	}
+
+}
+
 async function main( argv ) {
 
 	const [ command, ...rest ] = argv;
@@ -856,6 +1040,26 @@ async function main( argv ) {
 		return 0;
 
 	}
+	if ( command === 'log' ) {
+
+		const sinceText = opt( 'since', null );
+		const by = opt( 'by', 'class' );
+		if ( ! [ 'class', 'label' ].includes( by ) ) throw new Error( '--by takes class or label' );
+		let events = readLockLog();
+		if ( sinceText ) {
+
+			const m = /^(\d+(?:\.\d+)?)(s|m|min|h|d)$/.exec( sinceText );
+			if ( ! m ) throw new Error( '--since takes a duration such as 90s, 30m, 2h or 1d' );
+			const from = Date.now() - Number( m[ 1 ] ) * { s: 1e3, m: 6e4, min: 6e4, h: 36e5, d: 864e5 }[ m[ 2 ] ];
+			events = events.filter( ( e ) => Date.parse( e.t ) >= from );
+
+		}
+		const summary = summariseLockLog( events, { by, top: Number( opt( 'top', 5 ) ) } );
+		if ( rest.includes( '--json' ) ) console.log( JSON.stringify( summary ) );
+		else printLockLog( summary, { by, sinceText } );
+		return 0;
+
+	}
 	if ( command === 'gpu' ) {
 
 		const seconds = Number( opt( 'seconds', 3 ) );
@@ -872,7 +1076,7 @@ async function main( argv ) {
 		const label = opt( 'label', cmd.join( ' ' ).slice( 0, 80 ) );
 		const shared = ( split >= 0 ? rest.slice( 0, split ) : rest ).includes( '--shared' );
 		const waited = await acquireGpuLock( label, { timeout: Number( opt( 'timeout', 0 ) ), shared } );
-		if ( waited > 1000 ) console.error( `[gpu-lock] acquired${ shared ? ' (shared)' : '' } after ${ ( waited / 1000 ).toFixed( 1 ) } s` );
+		if ( waited > 1000 ) console.error( `[gpu-lock ${ clock() }] acquired${ shared ? ' (shared)' : '' } after ${ ( waited / 1000 ).toFixed( 1 ) } s` );
 		const child = spawn( cmd[ 0 ], cmd.slice( 1 ), { stdio: 'inherit', env: { ...process.env, PONLAI_GPU_LOCK_HELD: String( process.pid ), PONLAI_GPU_LOCK_MODE: shared ? 'shared' : 'exclusive' } } );
 		for ( const signal of [ 'SIGINT', 'SIGTERM', 'SIGHUP' ] ) {
 
@@ -888,7 +1092,7 @@ async function main( argv ) {
 		} );
 
 	}
-	console.error( 'usage: node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout s] -- <command ...> | status | gpu [--seconds n]' );
+	console.error( 'usage: node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout s] -- <command ...> | status | gpu [--seconds n] | log [--since 2h] [--by class|label] [--top n] [--json]' );
 	return 2;
 
 }

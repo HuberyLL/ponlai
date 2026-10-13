@@ -265,7 +265,17 @@ the module's header).
 `node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
 `status` names the holders (shared: their slots and classes), the queue in turn and the exclusive
 requests in turn (`waiting`), and `gpu` shows
-the GPU's utilisation and the processes using it. The profiler also checks that the GPU is idle before it
+the GPU's utilisation and the processes using it. A request that waits prints a timestamped line
+every 30 s: its place in the queue, the next in turn, who holds the GPU (the exclusive holder or
+the shared slots' labels) and why it waits (an exclusive request first, or low priority).
+Every request, grant, release, timeout and abandoned request is appended to a JSON-lines log next
+to the lock (`ponlai-gpu.lock.log.jsonl`, rotated to `.log.1.jsonl` past 4 MB): time, pid, label,
+mode, class, ticket, wait or hold in ms, and why a hold ended when its holder did not end it (a
+child took the slot over, a yielded slot, a killed holder reclaimed as stale).
+`node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]` summarises it:
+requests, waits and holds per group (median, p95, total; take-overs, timeouts, abandoned and stale
+counted apart) and the longest waits with the holds that overlapped them, so a report can say how
+long a run queued and behind whom. The profiler also checks that the GPU is idle before it
 measures and marks its results contended otherwise. Keep other pages that render the scene closed.
 
 ## Display gate
