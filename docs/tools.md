@@ -247,9 +247,13 @@ machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
 do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 3) and the
 rest queue first in, first out: captures are GPU-bound, so past 2-3 pages at once only each page's
-latency grows. A slot is held per capture (capture.mjs from a view's load or scene jump to its
-shot, so a capture-set page frees it between views; capture-clip.mjs per clip), so capture-set
-`--jobs n` and baseline.mjs interleave with other sets capture by capture; under a
+latency grows. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
+it from view to view and gives it up between views only when someone waits for it (an exclusive
+request, or a shared one when every slot is taken) and it has held it for its lease, 20 s
+(capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view), so a set behind
+back-to-back timing runs advances about four views per run instead of one, and a timing run waits
+at most 20 s plus the view in flight for it (a low page gives its slot to a normal shared request
+at the next view); capture-clip.mjs holds a slot per clip. Under a
 `run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
 from then on, so a wrapped orchestrator never holds a slot its own captures wait for. Exclusive and
 shared requests wait in one queue, in arrival order: an exclusive request lets the requests queued
@@ -271,10 +275,11 @@ the shared slots' labels) and why it waits (an exclusive request first, or low p
 Every request, grant, release, timeout and abandoned request is appended to a JSON-lines log next
 to the lock (`ponlai-gpu.lock.log.jsonl`, rotated to `.log.1.jsonl` past 4 MB): time, pid, label,
 mode, class, ticket, wait or hold in ms, and why a hold ended when its holder did not end it (a
-child took the slot over, a yielded slot, a killed holder reclaimed as stale).
+child took the slot over, a yielded slot, a killed holder reclaimed as stale, a lease given up for
+a waiter; a leased hold's release counts the views it served).
 `node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]` summarises it:
-requests, waits and holds per group (median, p95, total; take-overs, timeouts, abandoned and stale
-counted apart) and the longest waits with the holds that overlapped them, so a report can say how
+requests, waits and holds per group (median, p95, total; uses of leased holds, lease yields,
+take-overs, timeouts, abandoned and stale counted apart) and the longest waits with the holds that overlapped them, so a report can say how
 long a run queued and behind whom. The profiler also checks that the GPU is idle before it
 measures and marks its results contended otherwise. Keep other pages that render the scene closed.
 

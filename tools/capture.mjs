@@ -3,7 +3,7 @@
 //                          [--wait-for "js expression"] [--frames n --every k] [--timeout 60000]
 //                          [--stable-min 1] [--stable-every 2] [--stable-repeats 1] [--stable-tolerance 0:5000|exact]
 //                          [--stable-patience 40] [--stable-cap 120] [--stable-trace] [--ready-frames n] [--wait ms] [--settle ms]
-//   node tools/capture.mjs --worker --url <base> [--w --h --scale --timeout, the options above] [--page-per-view]
+//   node tools/capture.mjs --worker --url <base> [--w --h --scale --timeout, the options above] [--page-per-view] [--lease 20]
 // Writes artifacts/captures/<name>.png and prints the page's console errors and diagnostics.
 // The browser runs in a persistent profile slot and a paused capture (MSAA or off) is taken once its
 // image has stopped changing (tools/capture-browser.mjs, "readiness by stability"): after the evals, the
@@ -49,8 +49,21 @@
 //   older builds have an `establishScene` that takes only an options form and leaves state behind,
 //   so on them (and with --page-per-view) the worker stops after its first view, and capture-set
 //   starts a fresh worker per view: a page per view, as before.
-// - The GPU lock's slot is held per view (from the load or jump to the shot), not per page: the
-//   page stands stopped between views, and a set and another task's one-view probe interleave.
+// - The GPU lock's slot is leased (gpu-lock.mjs `leaseGpuLock`): the worker keeps it from one view
+//   to the next, and gives it up before a view only when it has held it for --lease seconds (20) and
+//   someone waits for it (an exclusive request, or a shared one when every slot is taken and it ranks
+//   first); it then queues again like any request. A low worker (PONLAI_GPU_PRIORITY=low) gives it up
+//   to a normal shared request at the next view, as it did before. It frees the slot whenever it has no next view
+//   (the set's end, a failed view, a page per view). It used to free the slot after every view, so a
+//   set behind another session's back-to-back timing runs waited one whole timing run per view (34
+//   views in 57 min, 12 in 53 min, with under 20 s of readiness in each). Why 20 s: a paused view
+//   takes 5-7 s alone, so such a set advances about four views per timing run (0, 6, 12, 18 s, then
+//   it yields), and still two when three pages share the GPU and a view takes about 18 s; a waiting
+//   timing run gets the GPU at most 20 s plus the view in flight after its turn, small against the
+//   3-8 minutes it then holds it, and it already waited for a view in flight (up to 22 s seen). A
+//   longer lease gives the set little more (the timing runs still alternate with it) and delays every
+//   run of a series by as much. --lease 0 frees the slot after every view, as before. Nobody waiting,
+//   the slot is kept for the whole set. The lease changes when views run, never what they render.
 // - A view that fails (a timeout, a page or console error, a crash, no answer within the view's
 //   deadline: three times --timeout plus a minute) ends the worker: the page is not trusted after
 //   it. capture-set retries that view (--retries) and the views still to come on a fresh page.
@@ -58,13 +71,16 @@
 //   watchdog for a silent page counts from there, so a long wait for the lock is not a hang.
 // - Each view's files go straight to the path capture-set names (`<out>.png`, `.json`, `.f<i>.png`);
 //   the JSON adds `page`: the visit's index on the page, `load` or `jump`, the view before, the wait
-//   for the GPU lock and the time from then to the written shot (ms), and the page's memory then (JS heap, DOM nodes, listeners, renderer.info's geometries and textures).
-import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
+//   for the GPU lock (`lockKept` when the slot was kept from the view before) and the time from then
+//   to the written shot (ms), and the page's memory then (JS heap, DOM nodes, listeners, renderer.info's geometries and textures).
+import { acquireGpuLock, leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, waitForScene, waitForStable, stableOptions, stopLoop, startLoop, pngShooter, READY_FRAMES } from './capture-browser.mjs';
 import { mkdir, writeFile } from 'node:fs/promises';
 
 /** The scene jump contract's version this tool drives (`__PONLAI__.sceneJump`, src/main.ts). */
 const SCENE_JUMP = 1;
+/** The worker's GPU slot lease in seconds (--lease; see the header). */
+const LEASE = 20;
 
 const args = process.argv.slice( 2 );
 const opt = ( k, d ) => { const i = args.indexOf( '--' + k ); return i >= 0 ? args[ i + 1 ] : d; };
@@ -287,6 +303,7 @@ if ( ! worker ) {
 	process.on( 'disconnect', () => process.exit( 1 ) );
 	const onePerPage = args.includes( '--page-per-view' );
 	const viewDeadline = timeout * 3 + 60000;
+	const lease = Number( opt( 'lease', LEASE ) ) * 1000;
 	const session = await openPage( { viewport: { width: W, height: H }, deviceScaleFactor: Number( opt( 'scale', 1 ) ) } );
 	let jump = false, previous = null;
 	try {
@@ -294,19 +311,21 @@ if ( ! worker ) {
 		for ( let index = 0; ; index ++ ) {
 
 			const message = await next();
-			if ( message.type !== 'view' ) break;
+			if ( message.type !== 'view' ) { releaseGpuLock(); break; }
 			const { key, query, evals, out } = message.view;
 			const mode = index === 0 ? 'load' : 'jump';
 			const url = `${ baseUrl }?${ query }`;
 			const started = Date.now();
-			const lockMs = await acquireGpuLock( `capture ${ key }`, { shared: sharedFor( query ) } );
+			// the slot: kept from the view before while the lease allows (see the header), else queued for
+			const { waitMs: lockMs, kept } = lease > 0 ? await leaseGpuLock( `capture ${ key }`, { shared: sharedFor( query ), budget: lease } )
+				: { waitMs: await acquireGpuLock( `capture ${ key }`, { shared: sharedFor( query ) } ), kept: false };
 			// capture-set's watchdog counts from here, not from the view's hand-out
 			await send( { type: 'locked', key } );
 			let result;
 			try {
 
 				const shot = await within( captureView( session, { url, query, evals: [ ...evals, ...argEvals ], out, mode,
-					pageInfo: async () => ( { visit: index, mode, from: previous, pid: process.pid, lockMs, ms: Date.now() - started - lockMs, memory: await pageMemory( session.page ) } ) } ), viewDeadline, `view ${ key }` );
+					pageInfo: async () => ( { visit: index, mode, from: previous, pid: process.pid, lockMs, ...( kept ? { lockKept: true } : {} ), ms: Date.now() - started - lockMs, memory: await pageMemory( session.page ) } ) } ), viewDeadline, `view ${ key }` );
 				result = { ok: ! failed( shot.record ), log: report( shot ) };
 
 			} catch ( error ) {
@@ -315,7 +334,7 @@ if ( ! worker ) {
 
 			} finally {
 
-				releaseGpuLock();
+				if ( lease === 0 ) releaseGpuLock();
 
 			}
 			if ( index === 0 && result.ok ) {
@@ -327,7 +346,7 @@ if ( ! worker ) {
 			}
 			await send( { type: 'shot', key, mode, from: previous, seconds: ( Date.now() - started - lockMs ) / 1000, lockSeconds: lockMs / 1000, ...result } );
 			// a failed view leaves a page not to be trusted; without the jump, a page per view
-			if ( ! result.ok || ! jump || onePerPage ) break;
+			if ( ! result.ok || ! jump || onePerPage ) { releaseGpuLock(); break; }
 			previous = key;
 
 		}
