@@ -139,10 +139,11 @@ function fitCamera( camera: THREE.OrthographicCamera, bounds: THREE.Box3, direct
 interface RefractedSunOptions { mapSize?: number; contactBias?: number }
 // `empty`: its subset holds no triangle (a part of the island wholly above the water), so its proxy
 // is not drawn: WebGPU warns about a draw of no indices.
-interface Caster { source: THREE.Mesh; proxy: THREE.Mesh; floor: boolean; subset?: SubmergedSubset; empty?: boolean }
+// `geometry`: the source's geometry when the proxy was made; `cut`: its subset, cut at `cutAt`.
+interface Caster { source: THREE.Mesh; proxy: THREE.Mesh; floor: boolean; subset?: SubmergedSubset; empty?: boolean; geometry: THREE.BufferGeometry; cut: THREE.BufferGeometry | null; cutAt: number }
 
-// The source's triangles that reach below `level` in world space, sharing its attributes; null
-// when every triangle does (the proxy then draws the source geometry itself).
+// The source's triangles that reach below `level` in world space, sharing its position (all of
+// them when every triangle does: allTriangles).
 function submergedTriangles( source: THREE.Mesh, level: number ): THREE.BufferGeometry | null {
 
 	const geometry = source.geometry, position = geometry.getAttribute( 'position' );
@@ -160,7 +161,7 @@ function submergedTriangles( source: THREE.Mesh, level: number ): THREE.BufferGe
 		if ( below[ a ] || below[ b ] || below[ c ] ) kept.push( a, b, c );
 
 	}
-	if ( kept.length === count ) return null;
+	if ( kept.length === count ) return allTriangles( source );
 	// the map's material reads the position alone
 	const subset = new THREE.BufferGeometry();
 	subset.setAttribute( 'position', position );
@@ -172,7 +173,7 @@ function submergedTriangles( source: THREE.Mesh, level: number ): THREE.BufferGe
 // A subset cut in a worker (ChunkDerived.ts), sharing the source's position as above.
 function givenTriangles( source: THREE.Mesh, index: Uint32Array | null ): THREE.BufferGeometry | null {
 
-	if ( ! index ) return null;
+	if ( ! index ) return allTriangles( source );
 	const subset = new THREE.BufferGeometry();
 	subset.setAttribute( 'position', source.geometry.getAttribute( 'position' ) );
 	subset.setIndex( new THREE.BufferAttribute( index, 1 ) );
@@ -180,11 +181,28 @@ function givenTriangles( source: THREE.Mesh, index: Uint32Array | null ): THREE.
 
 }
 
-// Disposing a geometry releases every attribute's GPU buffer: detach the shared position first,
-// so only the subset's own index goes.
+// Every triangle of the source, as a subset (its position and index shared): the proxies then all
+// draw a position-only geometry, so a caster whose triangles all reach below the water (a grown
+// island's chunk under it) finds the pipeline the others built, where its own geometry's vertex
+// layout would build another. Null for a mesh without an index (drawn as it is).
+function allTriangles( source: THREE.Mesh ): THREE.BufferGeometry | null {
+
+	const index = source.geometry.getIndex();
+	if ( ! index ) return null;
+	const subset = new THREE.BufferGeometry();
+	subset.setAttribute( 'position', source.geometry.getAttribute( 'position' ) );
+	subset.setIndex( index );
+	subset.userData.sharedIndex = true;
+	return subset;
+
+}
+
+// Disposing a geometry releases every attribute's GPU buffer: detach the shared position (and a
+// shared index) first, so only the subset's own index goes.
 function disposeSubset( subset: THREE.BufferGeometry ): void {
 
 	subset.deleteAttribute( 'position' );
+	if ( subset.userData.sharedIndex ) subset.setIndex( null );
 	subset.dispose();
 
 }
@@ -216,7 +234,6 @@ export class RefractedSun {
 	private lastLevel = NaN;
 	// the level the proxies' triangle subsets were cut at
 	private subsetLevel = NaN;
-	private readonly subsets: THREE.BufferGeometry[] = [];
 	private dirty = true;
 	/** Maps drawn since the page loaded (the settled signal's signature, post/Settled.ts; the dynamic
 	 * resolution leaves frames with periodic work out of its quantiles). */
@@ -336,12 +353,14 @@ export class RefractedSun {
 	/** Draw the static meshes under `root` whose materials receive this map. `subsets` gives
 	 * meshes' triangle subsets cut off the main thread (the chunks', ChunkDerived.ts: world space,
 	 * for meshes drawn with an identity world matrix), used while the water level stays within
-	 * half the margin of the level they were cut at; every other mesh is cut here. */
+	 * half the margin of the level they were cut at; every other mesh is cut here. Again when the
+	 * casters change (a grown island, Growth.ts): a mesh with the same geometry and subset as
+	 * before keeps its proxy and its cut, so only the new ones are made. */
 	setCasters( root: THREE.Object3D, subsets?: ReadonlyMap<THREE.Object3D, SubmergedSubset> ): void {
 
+		const before = new Map( this.casters.map( ( c ) => [ c.source, c ] ) );
 		this.scene.clear();
 		this.casters.length = 0;
-		this.subsetLevel = NaN;
 		root.updateWorldMatrix( true, true );
 		root.traverse( ( object ) => {
 
@@ -351,6 +370,15 @@ export class RefractedSun {
 			// shadow pass; their undisplaced geometry would be an invalid submerged blocker.
 			const materials = Array.isArray( source.material ) ? source.material : [ source.material ];
 			if ( ! materials.some( ( material ) => material.userData.refractedSolarReceiver ) ) return;
+			const subset = subsets?.get( source ), kept = before.get( source );
+			if ( kept && kept.geometry === source.geometry && kept.subset === subset ) {
+
+				before.delete( source );
+				this.casters.push( kept );
+				this.scene.add( kept.proxy );
+				return;
+
+			}
 			const proxy = new THREE.Mesh( source.geometry, this.material );
 			proxy.matrixAutoUpdate = false;
 			proxy.matrix.copy( source.matrixWorld );
@@ -358,9 +386,10 @@ export class RefractedSun {
 			proxy.name = `submerged-${ source.name }`;
 			this.scene.add( proxy );
 			const floor = source.userData.refractedSolarFloor === true || materials.every( ( material ) => material.userData.refractedSolarFloor === true );
-			this.casters.push( { source, proxy, floor, subset: subsets?.get( source ) } );
+			this.casters.push( { source, proxy, floor, subset, geometry: source.geometry, cut: null, cutAt: NaN } );
 
 		} );
+		for ( const dropped of before.values() ) if ( dropped.cut ) disposeSubset( dropped.cut );
 		this.dirty = true;
 
 	}
@@ -396,21 +425,22 @@ export class RefractedSun {
 
 	// Leave out the caster triangles that lie wholly above the water (plus a margin): the map's
 	// material discards their fragments anyway, so the map is unchanged and their vertices are
-	// not transformed at every redraw.
-	private cutSubsets( level: number ): void {
+	// not transformed at every redraw. Every caster when the level moved, else those not cut yet.
+	private cutSubsets( level: number, all: boolean ): void {
 
-		for ( const subset of this.subsets ) disposeSubset( subset );
-		this.subsets.length = 0;
 		for ( const caster of this.casters ) {
 
+			if ( ! all && caster.cutAt === level ) continue;
 			const { source, proxy, subset: given } = caster;
+			if ( caster.cut ) disposeSubset( caster.cut );
 			source.updateWorldMatrix( true, false );
 			const subset = debugFlags.refractedSunSubset === false ? null
 				: given && Math.abs( level - given.level ) <= LEVEL_MARGIN * 0.5 ? givenTriangles( source, given.index )
 					: submergedTriangles( source, level + LEVEL_MARGIN );
 			proxy.geometry = subset ?? source.geometry;
 			caster.empty = subset !== null && subset.getIndex()!.count === 0;
-			if ( subset ) this.subsets.push( subset );
+			caster.cut = subset;
+			caster.cutAt = level;
 
 		}
 		this.subsetLevel = level;
@@ -432,7 +462,8 @@ export class RefractedSun {
 			if ( ! resting && debugFlags.refractedSunGate !== false && this.lastSun.angleTo( sun ) < this.angleGate ) return false;
 
 		}
-		if ( ! ( Math.abs( level - this.subsetLevel ) <= LEVEL_MARGIN * 0.5 ) ) this.cutSubsets( level );
+		const moved = ! ( Math.abs( level - this.subsetLevel ) <= LEVEL_MARGIN * 0.5 );
+		if ( moved || this.casters.some( ( c ) => c.cutAt !== this.subsetLevel ) ) this.cutSubsets( moved ? level : this.subsetLevel, moved );
 		const localBounds = new THREE.Box3();
 		let floorY = Infinity;
 		for ( const { source, proxy, floor, empty } of this.casters ) {
@@ -491,9 +522,8 @@ export class RefractedSun {
 
 		}
 		this.receivers.length = 0;
+		for ( const caster of this.casters ) if ( caster.cut ) disposeSubset( caster.cut );
 		this.casters.length = 0;
-		for ( const subset of this.subsets ) disposeSubset( subset );
-		this.subsets.length = 0;
 		this.scene.clear();
 		this.material.dispose();
 		this.target.dispose();
