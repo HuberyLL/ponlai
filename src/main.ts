@@ -599,13 +599,12 @@ const buildIslander = ( name: ProportionName ) => loadVillager( ISLANDER.base, I
 // part of its pipelines' keys) and then the sun's map, one draw at a time and in the order a frame
 // first draws them (the scene's pass, then the map's redraw): a pass into the map shares its
 // material's nodes, and compiled the other way round or side by side, the game's chest came out
-// shaded differently from the chest drawn without them. The game's props and the grown island's
-// new meshes come this way (Growth.ts), which also uploads their buffers. `casters: false` leaves
-// the sun's map out (a grown island's chunk: see Growth.ts).
-async function compileDraws( objects: THREE.Object3D[], casters = true ): Promise<void> {
+// shaded differently from the chest drawn without them. The game's props come this way, and a
+// grown island's flower species that outgrew its mesh (Growth.ts); this also uploads their
+// buffers. (A grown island's chunks need none: they draw with the loaded chunks' pipelines.)
+async function compileDraws( objects: THREE.Object3D[] ): Promise<void> {
 
 	for ( const object of objects ) await pipeline.graph.latent( 'opaque', [ object ] );
-	if ( ! casters ) return;
 	const compiled = sunShadow.compileCasters( renderer, objects );
 	if ( compiled ) await compiled;
 	else console.warn( 'The sun\'s shadow map is not built yet: these draws compile their shadow pass when first drawn' );

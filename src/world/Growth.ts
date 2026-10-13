@@ -7,7 +7,6 @@ import { derive, islandMesh, seabedGeometry, stonesGeometry, type WorldMeshes } 
 import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
 import { AttributeType, geometrySteps, textureSteps, uploadSteps } from './Upload.ts';
 import { boundsSteps } from './Steps.ts';
-import { debugFlags } from '../debug/DebugFlags.ts';
 import { plantGrass, grassSteps, setGrass, type GrassPrepared, type GrassTufts } from './Grass.ts';
 import { plantFlowers, flowerInstances, flowerReplacement, setFlowers, type FlowerInstances, type Plant } from './Flowers.ts';
 import { bushInstances, setBushes, type BushInstances } from './Foliage.ts';
@@ -25,28 +24,36 @@ import { Villagers } from '../characters/Villagers.ts';
 import type { CullBuffers } from './GrassCull.ts';
 
 // The island grows in place (chunk design, sections 3.4, 10 and 11; plan M8): the next piece is
-// generated ahead in the background, and a Grow (`grow()`, the GUI's Island folder) swaps in only
-// the chunks that changed, in one frame, with every dependent following. No pipeline is built: a
-// swap needing one would be a bug (tools/verify-first-use.mjs and the page's pipeline count).
+// generated in the background, and a Grow (`grow()`, the GUI's Island folder) swaps in only the
+// chunks that changed, in one frame, with every dependent following. No pipeline is built: a swap
+// needing one would be a bug (tools/verify-first-use.mjs and the page's pipeline count).
 //
+// - When: the game (`start()` once the page shows) generates the next piece at once, as it will
+//   need it; any other page only from its first `grow()`, so a page that never grows spends no
+//   worker time on it. From then on one piece is kept ahead: the next is asked for (in idle time)
+//   once a swap's frames are done.
 // - Versions: a version is a land step and its chunks (WorldChunks.ts `VersionChunks`). The shown
-//   one is the page's; once it shows, the next step is generated as the pending one, on at most
-//   two workers (the shown one's own chunks are taken over wherever the growth steps in a chunk's
-//   window are the same, Chunks.ts dirtyChunks, so only the rebuild set is generated or read from
-//   the cache). A rebuilt chunk whose hash equals the shown one's is the shown one's (the same
-//   object), so it is not swapped: `changed` lists the chunks whose data differs.
-// - Preparation, in idle time (requestIdleCallback; setTimeout where there is none), a step of a
-//   millisecond or two at a time: the merge (ChunkMerge.ts mergeSteps), the new island meshes of
-//   the changed land chunks (built and compiled for the frame's passes ahead, one per step:
-//   `compileDraws`, which uploads their buffers), the merged kinds' new geometry (the stones, the
-//   sea floor, the turf skirt, the rim trails: their buffers uploaded ahead), the meadow (planted
-//   a slice of anchors at a step, its cull pool filled and its buffers uploaded), the flowers' and
-//   bushes' instances (and a new mesh, compiled, for a species that outgrew its capacity), the
-//   world fields (WorldFields.ts) and the shore's wave fields (in a worker, ShoreWaves.ts). Data
-//   goes up in buffers made for it (mapped at creation) and copies on the GPU, not queue writes,
-//   which stalled the page for hundreds of milliseconds with the GPU busy; the flowers and bushes
-//   are the exception (under a megabyte written in place at the swap: a new instanced mesh would
-//   be a node build of tens of milliseconds, Flowers.ts).
+//   one is the page's; the next step is generated as the pending one, on at most two workers (the
+//   shown one's own chunks are taken over wherever the growth steps in a chunk's window are the
+//   same, Chunks.ts dirtyChunks, so only the rebuild set is generated or read from the cache). A
+//   rebuilt chunk whose hash equals the shown one's is the shown one's (the same object), so it is
+//   not swapped: `changed` lists the chunks whose data differs.
+// - Preparation, in idle time (requestIdleCallback; a timer where there is none), slices of at
+//   most SLICE ms of steps of a few tenths of a millisecond each: the merge (ChunkMerge.ts
+//   mergeSteps), the land's box and the page's framing of it (`measure`), the new island meshes
+//   of the changed land chunks, the merged kinds' new geometry (the stones, the sea floor, the
+//   turf skirt, the rim trails, their bounds found in steps: Steps.ts), the meadow (planted a
+//   slice of anchors at a step, its cull pool filled), the flowers' and bushes' instances (and a
+//   new mesh, compiled, for a species that outgrew its capacity), the world fields (WorldFields.ts)
+//   and the shore's wave fields (in a worker, ShoreWaves.ts, on a copy of the shore field made in
+//   steps). Every buffer and texture goes up ahead, a slice a step (Upload.ts: buffers mapped at
+//   creation and copies on the GPU, never queue writes, which stalled the page for hundreds of
+//   milliseconds with the GPU busy); the flowers and bushes are the exception (under a megabyte
+//   written in place at the swap: a new instanced mesh would be a node build of tens of
+//   milliseconds, Flowers.ts). Nothing is compiled ahead for the island's chunks: their draws use
+//   the pipelines the loaded chunks drew with (the same materials and layouts), and the swap's
+//   frame only makes their render objects (compiling ahead cost 10-19 ms of the main thread per
+//   chunk, more than that frame's share).
 //   A grow asked for before it is done swaps once it is.
 // - The swap, in the frame's tick before the camera and the shadows update (main.ts's one-line
 //   hook): the changed island meshes out and the new ones in (ordered by chunk, ( cj, ci ), as a
@@ -54,11 +61,14 @@ import type { CullBuffers } from './GrassCull.ts';
 //   bushes' instances, the meadow's pool (GrassCull's storage nodes pointed at the new buffers),
 //   the fields' changed squares (copied on the GPU) or new textures, the shore's wave fields, the
 //   refracted sun's casters, the walker's loop, and the page's own (main.ts `onSwap`: the land's
-//   box and framing, the fog's clearing, the sun's caster box and columns, the sea's reflection
-//   box, the camera's ground).
-// - The frames after it: the rain's collision map (resized, then baked again eight meshes a frame:
-//   RainCollision.bakeSteps), the game's ground (the chunks' walk tiles, sim/grid.ts), the old
-//   resources disposed; then the next version is generated.
+//   box and framing as measured ahead, the fog's clearing, the sun's caster box and columns, the
+//   sea's reflection box, the camera's ground).
+// - The frames after it, one step each: the rain's collision map (resized, then baked again eight
+//   meshes a frame: RainCollision.bakeSteps), the game's ground (the chunks' walk tiles,
+//   sim/grid.ts), the old resources disposed (a kind a frame), the page's own (`onSwapped`).
+// - The growth's own main-thread time is counted per frame (`work`; the workers' replies
+//   included), and kept with the swap's record (`state.last.work`): no frame's share should pass
+//   2 ms (plan M8's frame-time acceptance).
 // - The page then draws what a page loaded on the grown land draws, bit for bit (paused): every
 //   dependent is the same function of the same version, and the island's meshes are split and
 //   ordered alike (World.ts on split draws).
@@ -80,9 +90,9 @@ export interface GrowthPage<M = unknown> {
 	game: { setIsland( land: LandLattice, bushes: Float32Array, top?: Uint8Array ): void } | null;
 	// the roots the rain's collision map is baked from
 	rainRoots: THREE.Object3D[];
-	/** compiles what `objects` draw in the frame's passes (and uploads their buffers); `casters`:
-	 * the sun's map too */
-	compileDraws( objects: THREE.Object3D[], casters?: boolean ): Promise<void>;
+	/** compiles what `objects` draw in the frame's passes, the sun's map included (and uploads
+	 * their buffers) */
+	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
 	/** the page's own land-dependent state, in the swap's frame */
 	/** what the page measures of a land (its box and framing), ahead in a step of the preparation */
 	measure( land: LandLattice ): M;
@@ -127,7 +137,7 @@ type Steps<T> = Generator<void | Promise<unknown>, T>;
 // time a timer's slice takes). A slice runs steps until it has used this, so it ends at most a step
 // later: steps are a few tenths of a millisecond, and a frame's whole share of the growth stays
 // under 2 ms (`work`).
-const SLICE = 1.2;
+const SLICE = 1;
 // steps longer than this (ms) are listed in `work.slow`
 const SLOW = 0.6;
 
@@ -143,7 +153,7 @@ export class Growth<M = unknown> {
 		swaps: 0,
 		/** the chunks of the last swap: rebuilt (the rebuild set), changed (swapped), island meshes added and
 		 * removed, its times (ms) and the page time it happened at (`at`) */
-		last: null as null | { step: number; chunks: number; rebuilt: number; changed: number; added: number; removed: number; ms: Record<string, number>; at: number },
+		last: null as null | { step: number; chunks: number; rebuilt: number; changed: number; added: number; removed: number; ms: Record<string, number>; at: number; work: Growth[ 'work' ] },
 		error: '',
 	};
 	/** The growth's own main-thread time per frame (ms; a frame runs from one `update` to the next):
@@ -233,7 +243,6 @@ export class Growth<M = unknown> {
 			const ms = performance.now() - now;
 			this.times[ `after ${ k }` ] = ms;
 			this.charge( ms, `after ${ k }` );
-			if ( this.after.length === 0 ) this.work.ended = performance.now();
 			return;
 
 		}
@@ -357,6 +366,13 @@ export class Growth<M = unknown> {
 			this.schedule();
 
 		};
+		this.idle( run );
+
+	}
+
+	// `run` in idle time (requestIdleCallback; a timer where there is none)
+	private idle( run: ( deadline?: { timeRemaining(): number } ) => void ): void {
+
 		const page = globalThis as { requestIdleCallback?: ( callback: ( deadline: { timeRemaining(): number } ) => void, options?: { timeout: number } ) => number };
 		if ( page.requestIdleCallback ) page.requestIdleCallback( run, { timeout: 200 } );
 		else setTimeout( run, 0 );
@@ -417,12 +433,6 @@ export class Growth<M = unknown> {
 			return changedKeys.has( `${ part.ci },${ part.cj }` );
 
 		} );
-		if ( debugFlags.growthCompile ) {
-
-			for ( const mesh of add ) yield page.compileDraws( [ mesh ], false );
-			if ( add.length ) yield page.rain.collision.prepare( renderer, add );
-
-		}
 		this.stage = 'stones';
 		// the merged kinds' new geometry, its bounds and buffers
 		const rocks = stonesGeometry( data, false );
@@ -600,21 +610,26 @@ export class Growth<M = unknown> {
 
 			},
 			() => page.game?.setIsland( p.land, p.data.bushes, p.top ),
+			// (the old resources a frame each)
+			...disposals.map( ( dispose ) => () => dispose() ),
+			() => page.onSwapped?.( p.data ),
 			() => {
 
-				for ( const dispose of disposals ) dispose();
-				page.onSwapped?.( p.data );
 				const rebuilt = p.version.chunks.length - p.version.reused;
+				this.work.ended = performance.now();
 				this.state.last = {
 					step: p.version.step, chunks: p.version.chunks.length, rebuilt, changed: p.changed.length, at: + t0.toFixed( 1 ),
 					added: p.islands.add.length, removed: p.islands.remove.length,
 					ms: { ...Object.fromEntries( Object.entries( this.times ).map( ( [ k, v ] ) => [ k, + v.toFixed( 2 ) ] ) ), swap: + swapMs.toFixed( 2 ), ...Object.fromEntries( Object.entries( parts ).map( ( [ k, v ] ) => [ `swap ${ k }`, v ] ) ) },
+					work: { ...this.work },
 				};
 				console.info( `growth: step ${ previous.version.step } -> ${ p.version.step }`, this.state.last );
 				this.state.phase = 'idle';
 				const done = this.wanted.shift();
 				done?.();
-				this.next();
+				// the next piece is asked of the workers in idle time, not in a frame (starting them
+				// takes a few milliseconds)
+				this.idle( () => this.start() );
 
 			},
 		);
