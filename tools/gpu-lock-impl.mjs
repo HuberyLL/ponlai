@@ -12,6 +12,13 @@
 //     its slot over the views of a set (leaseGpuLock): it keeps it from view to view and gives it up
 //     for a waiter ranked before it that it blocks once it has held it for its lease (20 s), so a waiter's extra delay is bounded by
 //     the lease (and the view in flight), not by the set.
+//     An exclusive lease may keep its place (`keepPlace`: profile-frame holds the lock one scene at
+//     a time): it yields only to a waiter ranked before its first request, and queues again under
+//     that request's ticket number, so it keeps its rank within its level. A later exclusive request
+//     of the same level still goes after the whole series, as after one long hold, while a request
+//     ranked before it (a capture at normal ahead of a default timing run, or a session raised by
+//     `prio set`) gets in between its pieces. (Asked for again under a new number, profile-frame's
+//     first per-scene run gave its place up to a timing run queued after it, and waited behind four.)
 // Both modes wait in one queue (tickets), under one rule: requests rank by level, then by ticket
 // number (first in, first out), shared and exclusive alike, and a request starts when nothing ranked
 // before it still waits: an exclusive one at the head once every holder has left, a shared one when
@@ -105,6 +112,7 @@
 //   await acquireGpuLock( 'capture overview' );                           // held until this process exits
 //   await acquireGpuLock( 'verify-sky', { shared: true } );               // shared with other probes
 //   await leaseGpuLock( 'capture v', { shared: true, budget: 20000 } );   // kept from the last piece of work, or yielded to a waiter
+//   await leaseGpuLock( 'profile', { keepPlace: true } );                 // exclusive: yields to a waiter ranked before it, asks again in its old place
 //   lockState();                                                          // holders and queue in turn, with levels (job.mjs)
 //
 //   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
@@ -196,7 +204,7 @@ function tempRoot() {
 }
 
 /** This implementation's version: the entry (gpu-lock.mjs) loads the highest on the machine. */
-export const LOCK_VERSION = 2;
+export const LOCK_VERSION = 3;
 
 export const LOCK_DIR = path.join( process.env.PONLAI_GPU_LOCK_DIR || tempRoot(), 'ponlai-gpu.lock' );
 const OWNER = path.join( LOCK_DIR, 'owner.json' );
@@ -493,11 +501,13 @@ const forOlderCopies = ( t ) => {
 };
 
 // A place in the queue (the ticket); call inside the mutex. It records the inputs of its level
-// (requestInputs), not the level, so that a table change reranks it.
-function enqueue( label, exclusive = false ) {
+// (requestInputs), not the level, so that a table change reranks it. `place`: the number of an
+// earlier ticket of this process to queue under again (leaseGpuLock's keepPlace); the seq file is
+// left alone then, and the ticket's file is named by the pid, so the number is never taken twice.
+function enqueue( label, exclusive = false, place = null ) {
 
-	const seq = ( Number( readJson( SEQ ) ) || 0 ) + 1;
-	writeJson( SEQ, seq );
+	const seq = place ?? ( Number( readJson( SEQ ) ) || 0 ) + 1;
+	if ( place === null ) writeJson( SEQ, seq );
 	mkdirSync( QUEUE, { recursive: true } );
 	const ticket = withLevel( { pid: process.pid, label, seq, start: new Date().toISOString(), priority: 'normal', ...( exclusive ? { mode: 'exclusive' } : {} ), ...requestInputs() }, readTable(), Date.now() );
 	const { level, source, match, ...inputs } = ticket;
@@ -941,7 +951,7 @@ function installRelease() {
 /** Waits for the lock and takes it. It is held until releaseGpuLock() or this process exits.
  * `timeout` in seconds (0: wait for ever); `shared: true` for work whose result does not depend
  * on what else runs on the GPU (paused captures, pixel probes). Returns the wait in milliseconds. */
-export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?? 'node' ), { timeout = 0, quiet = false, shared = false } = {} ) {
+export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?? 'node' ), { timeout = 0, quiet = false, shared = false, place = null } = {} ) {
 
 	const ancestor = depth > 0 ? null : holdingAncestor();
 	if ( depth > 0 || ( ancestor && ! ( shared && ancestor.mode === 'shared' ) ) ) {
@@ -969,10 +979,10 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 	let toldEta = null; // the estimate last printed, and the wait when it was
 	const waitFile = path.join( WAITING, `${ process.pid }.json` );
 	const ticket = path.join( QUEUE, `${ process.pid }.json` );
-	let mine = await withMutex( () => enqueue( label, ! shared ) );
+	let mine = await withMutex( () => enqueue( label, ! shared, place ) );
 	const mode = shared ? 'shared' : 'exclusive';
 	pending = { label, mode, ticket: mine.seq, at: started, level: mine.level, source: mine.source };
-	logEvent( { ev: 'request', pid: process.pid, label, mode, class: mine.level, source: mine.source, ticket: mine.seq } );
+	logEvent( { ev: 'request', pid: process.pid, label, mode, class: mine.level, source: mine.source, ticket: mine.seq, ...( place !== null ? { place: true } : {} ) } );
 	try {
 
 		for ( ;; ) {
@@ -1063,17 +1073,18 @@ export async function withGpuLock( label, fn, options = {} ) {
 
 /** The waiting request that this process's own hold keeps waiting, the first in turn, or null: one
  * that ranks before the request this process would make if it gave the hold up now and asked again
- * at once (at its level now: a bump or a table change counts), and that this hold blocks. For an
+ * at once (at its level now: a bump or a table change counts; under ticket number `place` when it
+ * would keep its place, else last), and that this hold blocks. For an
  * exclusive holder that is any such request; for a shared holder an exclusive one (it waits for
  * every slot to drain) or, when every slot is taken, a shared one; an older copy's exclusive request
  * blocks either. Null while this process holds nothing itself (an inherited hold included). */
-function gpuLockWaiter() {
+function gpuLockWaiter( place = null ) {
 
 	if ( ! holding ) return null;
 	const untracked = untrackedWaiters()[ 0 ];
 	if ( untracked ) return { ...untracked, mode: 'exclusive' };
 	const bump = parseLevel( ownRecord()?.bump );
-	const again = withLevel( { pid: process.pid, label: holding.label, seq: Infinity, priority: 'normal', ...( holding.mode === 'exclusive' ? { mode: 'exclusive' } : {} ), ...requestInputs(), ...( bump ? { bump } : {} ) }, readTable(), Date.now() );
+	const again = withLevel( { pid: process.pid, label: holding.label, seq: place ?? Infinity, priority: 'normal', ...( holding.mode === 'exclusive' ? { mode: 'exclusive' } : {} ), ...requestInputs(), ...( bump ? { bump } : {} ) }, readTable(), Date.now() );
 	const order = queueOrder( [ ...queued().filter( ( t ) => t.pid !== process.pid ), again ] );
 	const before = order.slice( 0, order.indexOf( again ) );
 	if ( holding.mode === 'exclusive' ) return before[ 0 ] ?? null;
@@ -1092,12 +1103,19 @@ function gpuLockWaiter() {
  * when it runs out, however long the series of pieces, and a long series never stalls the head of
  * the queue. Without a hold of its own (or in another mode) it simply acquires. The release that ends
  * a hold logs how many pieces it served (`uses`).
+ * `keepPlace` (exclusive holds: profile-frame's scenes): the hold is ranked, and asked for again,
+ * under the ticket number of the request that first took it, so it yields only to a waiter ranked
+ * before that request (a higher level, or an earlier ticket of its own level) and keeps its rank
+ * within its level: an exclusive request of the same level queued meanwhile goes after the whole
+ * series, as it would after one long hold. Asked for again under a new number, it went behind every
+ * request of its level queued since.
  * Returns { waitMs, kept }: the wait for the lock, and whether the hold was kept. */
-export async function leaseGpuLock( label, { shared = false, budget = 0, ...options } = {} ) {
+export async function leaseGpuLock( label, { shared = false, budget = 0, keepPlace = false, ...options } = {} ) {
 
 	if ( holding && heldMode === ( shared ? 'shared' : 'exclusive' ) ) {
 
-		const waiter = gpuLockWaiter();
+		const place = keepPlace && ! shared ? holding.ticket ?? null : null;
+		const waiter = gpuLockWaiter( place );
 		const yieldNow = waiter && Date.now() - holding.at >= budget;
 		if ( ! yieldNow ) {
 
@@ -1105,6 +1123,7 @@ export async function leaseGpuLock( label, { shared = false, budget = 0, ...opti
 			return { waitMs: 0, kept: true };
 
 		}
+		options.place = place;
 		release( 'lease' );
 
 	} else if ( holding ) release();

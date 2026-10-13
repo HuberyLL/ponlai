@@ -705,9 +705,10 @@ async function guarded( names, finished, attempt, label = '' ) {
 // page loads, which the first scene's hold covers) with every page's loop stopped and drained; the
 // pages and the browser stay open, drawing nothing, while the lock is away. The hold is a lease
 // (gpu-lock's leaseGpuLock with no budget and keepPlace): it is kept from scene to scene while no
-// shared request waits, and otherwise released and asked for again at once, behind the shared
-// requests queued meanwhile (up to the exclusive cap) but in its first request's place among the
-// exclusive ones: a timing run queued meanwhile still goes after the whole run. (Asked for again
+// request ranked before the run's first one waits, and otherwise released and asked for again at
+// once under that request's ticket number: behind the requests of a higher level queued meanwhile
+// (captures, normal, before a default low timing run) but in its first request's place within its
+// level: a timing run of the same level queued meanwhile still goes after the whole run. (Asked for again
 // under a new ticket, the first proof run gave its place up to a held-throughout run queued after
 // it, and then waited behind four more.) Only a hold taken again checks the GPU for idle
 // (one kept throughout saw nothing else run): a GPU still busy after `--idle-wait` stops the run

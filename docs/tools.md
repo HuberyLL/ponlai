@@ -293,7 +293,12 @@ it from view to view and gives it up between views only when a request ranked be
 waits for it (an exclusive request, or a shared one when every slot is taken) and it has held it
 for its lease, 20 s (capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view),
 so a set behind back-to-back timing runs advances about four views per run instead of one, and a
-timing run ranked before it waits at most 20 s plus the view in flight for it; capture-clip.mjs holds a slot per clip. A capture that
+timing run ranked before it waits at most 20 s plus the view in flight for it; capture-clip.mjs holds a slot per clip.
+An exclusive lease can keep its place (`leaseGpuLock` with `keepPlace`, profile-frame's hold per
+scene): it is ranked, and asked for again, under the ticket number of its first request, so it
+yields only to a request ranked before that one (a higher level: captures at normal before a
+default timing run, or a session raised with `prio set`) and keeps its rank within its level; a
+timing run of the same level queued meanwhile goes after the whole series. A capture that
 loads a page (capture.mjs, and the first view of a capture-set page) takes its slot only once the
 page has generated its world: until then it holds the page's GPU device back (the page waits in
 `requestDevice`), so the world's CPU work in its workers (tens of seconds when it is not cached)
@@ -481,10 +486,10 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   compare, toggle, accept, reload): before a scene's warm-up it asks for the lock, after its last
   slice its pages stop and drain. The pages and the browser stay open, their loops stopped, so
   they draw nothing while the lock is away. The hold is a lease (`leaseGpuLock` with
-  `keepPlace`): kept from scene to scene while no shared request waits, otherwise given up and
-  asked for again at once, behind the shared requests queued meanwhile (up to the exclusive cap)
-  but in the run's first place among the exclusive requests, so queued captures run between the
-  scenes instead of after the whole run, and a timing run queued meanwhile still goes after it. A hold taken again checks the GPU for idle; still busy after `--idle-wait`, the
+  `keepPlace`): kept from scene to scene while no request ranked before the run's first one
+  waits, otherwise given up and asked for again at once under that request's ticket number, so
+  queued captures (normal, before a default low timing run) run between the scenes instead of
+  after the whole run, and a timing run of the same level queued meanwhile still goes after it. A hold taken again checks the GPU for idle; still busy after `--idle-wait`, the
   run stops with the finished scenes written and exits 3, unless `--contended` (that scene marked
   contended). The first scene's hold covers the page loads. `wallSeconds` counts only the time
   held; `meta.holds` lists each scene the lock came back for (its wait and the GPU idle with this
