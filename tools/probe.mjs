@@ -40,7 +40,8 @@
 //
 // Output (stdout, JSON): the url, the browser, the profile slot, the GPU lock's wait, and per query
 // its `mode` (load|jump), `readyMs` (load or jump until up), `ms` (the whole query), `steps`
-// (`{ eval, value }`, `{ eval, error }`, `{ until, ms, frames }`, `{ frames }`, `{ sleep }`),
+// (`{ eval, value }`, `{ eval, error }`, `{ until, ms, frames }`, `{ frames }`, `{ sleep }`; an
+// eval or until under the shared lock adds `gaveUpMs`, below),
 // the console's errors and warnings and the failed requests; `--console` adds every console line
 // (or those starting with the prefix) as `console`. Exits 1 when an eval failed, an `--until`
 // timed out or the page threw.
@@ -51,7 +52,16 @@
 // afterwards. The GPU lock is held from before the load to the end of the last query: shared,
 // since a probe's values do not depend on what else renders; `--exclusive` takes it alone, for
 // frame times (`D.frameMs`) or GPU timings that others' work would disturb.
-import { acquireGpuLock, releaseGpuLock } from './gpu-lock.mjs';
+// A long eval that waits on CPU work (worker generation, a grown page) stops the loop
+// (`await P.loop.stop()`) and waits with `until` (or `sleep`): while the loop stands, those helpers
+// offer the shared slot back (tools/page-eval.mjs), and the probe gives it up when a request ranked
+// before its next one waits (leaseGpuLock with no budget: the rule capture's views lease by), then
+// queues again by rank and resolves the helper only once it holds the slot again, so the eval never
+// renders without it. Each give-up is logged on stderr with its duration, and the step's
+// `gaveUpMs` sums them. (One such eval held a slot for 30 min while a timing run waited for the
+// lock.) Note the ranks: a default exclusive request (low) ranks after a probe (normal) until it
+// ages (30 min), so it is let in from then on, not at once. `--exclusive` keeps its hold.
+import { acquireGpuLock, leaseGpuLock, lockOwner, releaseGpuLock } from './gpu-lock.mjs';
 import { launchCapture, waitForScene } from './capture-browser.mjs';
 import { evalSource as source, runInPage } from './page-eval.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -127,9 +137,28 @@ async function jump( page, query ) {
 const started = Date.now();
 const fresh = options.fresh ? mkdtempSync( path.join( tmpdir(), 'ponlai-probe-' ) ) : null;
 if ( fresh ) process.env.PONLAI_CAPTURE_PROFILES = fresh;
-const lockMs = await acquireGpuLock( `probe ${ queries[ 0 ] }`, { shared: ! options.exclusive } );
+const label = `probe ${ queries[ 0 ] }`;
+const lockMs = await acquireGpuLock( label, { shared: ! options.exclusive } );
 const capture = await launchCapture( { viewport: { width: Number( options.w ), height: Number( options.h ) }, deviceScaleFactor: Number( options.scale ), url } );
 const { page } = capture;
+
+// The slot the page's waiting helpers offer back while its loop stands (see the header): only a
+// shared slot this process holds itself (not an exclusive hold, nor one an ancestor holds alone).
+const SLOT_BINDING = '__probeGiveUpSlot';
+let gaveUpMs = 0;
+const slotBinding = ! options.exclusive && lockOwner()?.members?.some( ( m ) => m.pid === process.pid ) ? SLOT_BINDING : null;
+if ( slotBinding ) await page.exposeFunction( SLOT_BINDING, async () => {
+
+	const from = Date.now();
+	const { kept } = await leaseGpuLock( label, { shared: true, budget: 0 } );
+	if ( kept ) return 0;
+	const ms = Date.now() - from;
+	gaveUpMs += ms;
+	console.error( `[probe] gave the shared slot up at ${ new Date( from ).toTimeString().slice( 0, 8 ) } for a waiter ranked before it (loop stopped), held again after ${ ( ms / 1000 ).toFixed( 1 ) } s` );
+	return ms;
+
+} );
+const gaveUp = () => slotBinding ? { gaveUpMs } : {};
 for ( const js of inits ) await capture.context.addInitScript( js );
 let record = null;
 page.on( 'console', ( m ) => {
@@ -166,18 +195,20 @@ try {
 
 				if ( step.eval !== undefined ) {
 
-					try { record.steps.push( { eval: step.eval, value: await runInPage( page, step.js, { timeout } ) } ); } catch ( error ) {
+					gaveUpMs = 0;
+					try { record.steps.push( { eval: step.eval, value: await runInPage( page, step.js, { timeout, slotBinding } ), ...gaveUp() } ); } catch ( error ) {
 
-						record.steps.push( { eval: step.eval, error: error.message.split( '\n' )[ 0 ] } );
+						record.steps.push( { eval: step.eval, error: error.message.split( '\n' )[ 0 ], ...gaveUp() } );
 						failed = true;
 
 					}
 
 				} else if ( step.until !== undefined ) {
 
-					try { record.steps.push( { until: step.until, ...( await runInPage( page, step.js, { mode: 'until', timeout } ) ) } ); } catch ( error ) {
+					gaveUpMs = 0;
+					try { record.steps.push( { until: step.until, ...( await runInPage( page, step.js, { mode: 'until', timeout, slotBinding } ) ), ...gaveUp() } ); } catch ( error ) {
 
-						record.steps.push( { until: step.until, error: error.message.split( '\n' )[ 0 ] } );
+						record.steps.push( { until: step.until, error: error.message.split( '\n' )[ 0 ], ...gaveUp() } );
 						failed = true;
 
 					}
