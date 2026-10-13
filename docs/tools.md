@@ -300,7 +300,7 @@ page has generated its world: until then it holds the page's GPU device back (th
 runs without a slot and without GPU work, and the slot covers the GPU set-up, warm-up and shot (a
 page that does not mark its world, `window.__PONLAI_WORLD__`, takes it at the renderer's start). Under a
 `run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
-from then on, so a wrapped orchestrator never holds a slot its own captures wait for. 
+from then on, so a wrapped orchestrator never holds a slot its own captures wait for.
 Exclusive and shared requests wait in one queue under one rule: they rank by level, then first in,
 first out, and a request starts when nothing ranked before it still waits (an exclusive one once
 every holder has left, a shared one when a slot is free; a shared one may start beside a shared
@@ -314,22 +314,46 @@ never by a session itself:
     node tools/gpu-lock.mjs prio                                   # the table, every holder's and ticket's level and where it comes from
     node tools/gpu-lock.mjs prio set m11-tune high --for 90m --note "timing round"
     node tools/gpu-lock.mjs prio clear m11-tune
-    node tools/gpu-lock.mjs prio bump <pid|ticket> urgent          # one request (kept for that process's later requests)
+    node tools/gpu-lock.mjs prio bump <pid|#ticket> urgent         # one request (kept for that process's later requests)
 
-An entry's match is a substring of a request's working directory (a worktree's name) or of its
-label; the longest match wins, an entry past its `--for` is ignored, and the level applies to all
-the session's requests, shared and exclusive alike. A request's level is, first match wins: a bump,
-the table, `PONLAI_GPU_PRIORITY`, its mode's default. Sessions never set `PONLAI_GPU_PRIORITY`
-(every child inherits it). The level is worked out whenever the queue is ranked, so a table change
-reorders requests already waiting. Levels hold only among copies of the lock that know them: an
-older copy in another worktree queues its own requests first in, first out, and this copy ranks
-them at their mode's default (the table by label only). A killed holder's slot frees itself at the
-next look, and a killed request leaves the queue.
+An entry's match is a substring of one of a request's session names or of its label. The session
+names are the names of the checkouts (a worktree, or the main checkout) that hold the script the
+request runs and its working directory, and that directory's own name. So a tool started by its
+absolute path from another directory is still matched by its worktree's name, and the main
+checkout's name matches only requests from the main checkout. The longest match wins, an entry past
+its `--for` is ignored (and dropped at the next write), and the level applies to all the session's
+requests, shared and exclusive alike. `prio set` lists the holders and queued requests the entry
+applies to now, and warns when there are none (a typo, or a session that has not asked yet). A
+request's level is, first match wins: a bump, the table, `PONLAI_GPU_PRIORITY`, its mode's default.
+`prio bump` takes a pid (a queued request's, else a shared holder's) or a ticket number as `#n`; it
+refuses an exclusive holder (it already has the GPU to itself: bump its next request) and an older
+copy's request (below). Sessions never set `PONLAI_GPU_PRIORITY` (every child inherits it). The
+level is worked out whenever the queue is ranked, so a table change reorders requests already
+waiting. `prio --json` prints only the JSON.
+Levels hold only among copies of the lock that know them; copies in worktrees branched before the
+entry below still run their own rules. This copy ranks an older copy's requests at their mode's
+default (shared `normal`, exclusive `low`; source `older copy`), and neither the table nor a bump
+moves them: raised in this copy only, an older exclusive request and this copy's shared requests
+would wait for each other. Older copies rank by their classes (`normal` first in, first out, then
+`low`); main's copy from before the levels lets shared requests pass an exclusive one for up to
+30 min, a copy from before that lets nothing pass it. This copy's requests tell them `low` below
+normal and `normal` otherwise, so the copies agree on the defaults. Where they still disagree the
+cost is a delay, not a deadlock:
+- a raised (high, urgent) request of this copy goes before an older copy's earlier request here
+  but not there, so both start when they can;
+- an older copy's exclusive request ranks `low` here, so it waits while this copy's captures keep
+  arriving, like a default timing run (that copy's own captures queued behind it wait with it);
+- an older copy run with `PONLAI_GPU_PRIORITY=low` and this copy's normal captures can each wait
+  for the other's request with one slot free, until a second slot frees or 10 min pass (that copy
+  promotes its low requests then); sessions leave the variable unset.
+A copy from before the tickets announces its exclusive request in a waiter file, which holds back
+every shared request while it waits. A killed holder's slot frees itself at the next look, and a
+killed request leaves the queue.
 One implementation runs on the machine: `tools/gpu-lock.mjs` is an entry that loads the lock from
 `tools/gpu-lock-impl.mjs`, either its own worktree's or the main checkout's, whichever declares the
 higher `LOCK_VERSION` (the main checkout's on a tie; a main checkout from before the entry counts as
 version 0). So a branch runs every later lock upgrade as soon as main has it, without merging main,
-and copies with different rules no longer share the lock. If the main checkout's file does not load
+and once every worktree has the entry, copies with different rules no longer share the lock. If the main checkout's file does not load
 (a conflict mid-merge, a syntax error), the worktree's runs and stderr says so. A change to the lock
 goes in `gpu-lock-impl.mjs`, bumps `LOCK_VERSION` and keeps its exports and CLI additive; test it
 with `PONLAI_GPU_LOCK_IMPL=local`, which forces the worktree's copy. `status` ends with the file
