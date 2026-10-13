@@ -836,13 +836,13 @@ function status( dir ) {
 
 	};
 	walk( dir, 0 );
-	const current = { set: toolVersion( 'set' ).tool, clip: toolVersion( 'clip' ).tool };
+	const current = Object.fromEntries( Object.keys( TOOL_FILES ).map( ( k ) => [ k, toolVersion( k ).tool ] ) );
 	for ( const { d, m, c } of rows ) {
 
 		const parts = [ path.relative( dir, d ) || '.' ];
 		if ( m ) {
 
-			parts.push( m.kind, m.key.tool === current[ m.kind ] ? 'tools current' : 'tools CHANGED', `${ m.key.browser?.executable } ${ m.key.browser?.version }${ m.verifiedBrowsers?.length ? ` (verified for ${ m.verifiedBrowsers.map( ( v ) => v.browser.version ).join( ', ' ) })` : '' }` );
+			parts.push( m.kind, ! ( m.kind in current ) ? 'tools ?' : m.key.tool === current[ m.kind ] ? 'tools current' : 'tools CHANGED', `${ [ m.key.browser?.executable, m.key.browser?.version ].filter( Boolean ).join( ' ' ) }${ m.verifiedBrowsers?.length ? ` (verified for ${ m.verifiedBrowsers.map( ( v ) => v.browser.version ).join( ', ' ) })` : '' }` );
 			if ( m.kind === 'set' ) {
 
 				const views = Object.entries( m.coverage.views );
