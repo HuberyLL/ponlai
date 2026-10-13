@@ -47,6 +47,12 @@
 // recorded as hung (`meta.hung`, summary.md), the browser is closed and opened again, and the run
 // goes on with the scenes not finished; a second hang stops it with the finished scenes written.
 // Every finished scene is also appended to <out>/scenes.jsonl as it finishes.
+// A page paused or pinned during the run stops it the same way: each page's `clockPaused` and
+// `scalePinned` (diagnostics) are read at its load (`?dpr` pins legitimately) and after every slice
+// or measured window, and a change stops the run with the finished scenes written (`meta.spoiled`)
+// and exits 1. (A Space typed for another window reached a headed page and paused it; paused, it
+// renders at its nominal scale and stops steering, and a scene switch leaves the pause alone, so
+// it spoiled every scene after it.)
 // `--scale-log`: each page's dynamic-scale changes and their rules per scene, in the output and in
 // each scene's `scaleLog` (in --compare also each slice's stop: the controller's clock and timers).
 //
@@ -140,6 +146,11 @@
 //   both pages (Chrome traces one session at a time, every page in it), ended early only where an
 //   adaptive stop checks the figures so far; a mark per slice splits it (see startTrace). The run
 //   log gives each scene's time over its settles and slices.
+//   Bringing a page to the front gives Chrome the keyboard focus (on macOS), so keys typed for
+//   another window reach it: every page of a --display run stops key events (keydown, keyup,
+//   keypress) on the window in the capture phase, before the page's own listeners. The tool sends
+//   no keys. Pointer and wheel stay open: the drags go through page.mouse, and no incident
+//   involved them.
 // A/B decisions should rest on GPU time (per pass and in total): it is measured per frame on the
 // GPU's timeline and converges in far fewer frames than the frame interval. Frame rates for final
 // numbers come from `--timestamps off` or `both`, since Chrome paces frames differently with
@@ -607,6 +618,36 @@ let scenesFile = null;
 const newRun = () => ( { scenes: {}, loads: [] } );
 const sceneDone = ( record ) => appendFile( scenesFile, JSON.stringify( { finished: new Date().toISOString(), ...record } ) + '\n' );
 
+// ------------------------------------------------------------------ the page's state during a run
+
+// Whether the page's clock is paused and its scale pinned, read at each page load as that page's
+// baseline (`?dpr` pins legitimately) and again after each slice or measured window. Paused, a page
+// renders at its nominal scale and stops steering it, and a scene switch leaves the pause alone, so
+// a key that reached the page (a Space toggles the pause) spoiled every scene after it. A change
+// stops the run as a second hang does, with the finished scenes written, and exits 1.
+const baselines = new WeakMap();
+const pageState = ( page ) => page.evaluate( () => {
+
+	const d = window.__THREE_GAME_DIAGNOSTICS__;
+	return { clockPaused: d?.clockPaused ?? null, scalePinned: d?.scalePinned ?? null };
+
+} );
+// the change that stopped the run ({ page, scene, slice, baseline, now, message })
+let spoiled = null;
+class Spoiled extends Error {}
+async function checkState( page, scene, slice ) {
+
+	const was = baselines.get( page );
+	const now = await pageState( page );
+	if ( ! was || ( now.clockPaused === was.clockPaused && now.scalePinned === was.scalePinned ) ) return;
+	const name = pageNames.has( page ) ? `page ${ pageNames.get( page ) }` : 'the page';
+	const message = `${ name }, scene ${ scene }${ slice !== undefined ? `, slice ${ slice }` : '' }: ` +
+		`paused / pinned during the run: a key or click reached the page? (clockPaused ${ was.clockPaused } -> ${ now.clockPaused }, scalePinned ${ was.scalePinned } -> ${ now.scalePinned })`;
+	spoiled = { page: name, scene, slice: slice ?? null, baseline: was, now, message };
+	throw new Spoiled( message );
+
+}
+
 // Runs `attempt( left )`, a runner over the scenes in `left` that fills its results as each scene
 // finishes (`finished( scene )` tells), and survives a hang: a scene that shows no progress for
 // HANG_SECONDS is recorded as hung, the browser is closed and opened again, and the runner goes on
@@ -621,7 +662,12 @@ async function guarded( names, finished, attempt, label = '' ) {
 
 		progress();
 		currentScene = null;
-		const done = attempt( left ).then( () => 'done' );
+		const done = attempt( left ).then( () => 'done', ( error ) => {
+
+			if ( error instanceof Spoiled ) return 'spoiled';
+			throw error;
+
+		} );
 		let timer;
 		const hang = new Promise( ( resolve ) => {
 
@@ -630,6 +676,13 @@ async function guarded( names, finished, attempt, label = '' ) {
 		} );
 		const outcome = await Promise.race( [ done, hang ] ).finally( () => clearInterval( timer ) );
 		if ( outcome === 'done' ) return;
+		if ( outcome === 'spoiled' ) {
+
+			stopRun = true;
+			console.error( `[profile] STOPPED: ${ spoiled.message }. The run stops, with the finished scenes written.` );
+			return;
+
+		}
 		// the runner left behind fails at its next call into the closed browser
 		done.catch( () => {} );
 		const scene = currentScene ?? left[ 0 ];
@@ -829,6 +882,7 @@ async function load( page, base, q, timestamps ) {
 		window.__PONLAI_PROFILE__.setRaw( raw );
 
 	}, { detail: DETAIL, raw: RAW } );
+	baselines.set( page, await pageState( page ) );
 	return { url, loadMs: Date.now() - started, startup, hooks };
 
 }
@@ -1479,6 +1533,7 @@ async function runVariant( page, base, evalJs, log, groups = plan( sceneNames ),
 			}
 			await prepare( page, scene, evalJs, false );
 			const { frames, info } = await measure( page, scene );
+			await checkState( page, scene );
 			if ( SHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
 			const r = { ...summarise( frames ), profiler: info, gpuIdle: sceneIdle.idle?.mean ?? null, contended: sceneIdle.contended };
 			if ( RAW ) r.raw = frames;
@@ -1540,6 +1595,7 @@ async function runPage( page, base, evalJs, log, names = sceneNames, shotSuffix 
 		const t1 = await frames.now();
 		const sampled = sampler ? await sampler.stop() : null;
 		const displayed = trace ? displayStats( await trace.end(), sampled, t0, t1 ) : undefined;
+		await checkState( page, scene );
 		if ( SHOTS ) await page.screenshot( { path: path.join( OUT, `${ scene }${ shotSuffix }.jpg` ), type: 'jpeg', quality: 70, scale: 'css' } );
 		const sw = { ms: r2( switchMs ), ...compile };
 		log( `${ scene.padEnd( 20 ) } switched in ${ Math.round( switchMs ) } ms, warmed ${ compile.seconds } s (${ compile.pipelines } pipelines, ${ compile.pipelineMs } ms JS, last ${ compile.lastCompileMs } ms after the switch)${ compile.scaleSettle ? `, scale settled at ${ compile.scaleSettle.scale } after ${ compile.scaleSettle.seconds } s more` : '' }` );
@@ -1764,6 +1820,7 @@ async function runPair( context, bases, evals, log, names = sceneNames, timestam
 			if ( sampler ) traced.push( Object.assign( w, { sampled: await sampler.stop() } ) );
 			windows[ v ].push( w );
 			measured += ( switched ? SETTLE : 0 ) + SLICE;
+			await checkState( pages[ v ], scene, i );
 			progress();
 			if ( i + 1 === SLICES ) stop = { slices: i + 1, reason: 'max' };
 			else if ( ( i + 1 ) % 4 === 0 && i + 1 >= MIN_SLICES ) {
@@ -1898,6 +1955,7 @@ async function runToggle( page, base, evalJs, toggleJs, log, names = sceneNames,
 
 		} ), { js: toggleJs, block: BLOCK, blocks: BLOCKS, order: ORDER } );
 		if ( k === 0 ) log( `${ scene.padEnd( 20 ) } switched in ${ Math.round( switchMs ) } ms; warmed B ${ warmed[ 0 ].seconds } s (${ warmed[ 0 ].pipelines } pipelines), A ${ warmed[ 1 ].seconds } s (${ warmed[ 1 ].pipelines }); ${ BLOCKS } blocks of ${ BLOCK } frames in ${ ( ( marks[ marks.length - 1 ].t - marks[ 0 ].t ) / 1000 ).toFixed( 1 ) } s` );
+		await checkState( page, scene );
 		scenes.push( { scene, marks, switch: { ms: r2( switchMs ), warmB: warmed[ 0 ], warmA: warmed[ 1 ] } } );
 		if ( k < REPEAT - 1 ) continue;
 		// the scene's last repetition is done: sort each block's frames (GPU figures drop the first 2
@@ -2136,6 +2194,20 @@ async function open( errors ) {
 	};
 	browser.context.pages().forEach( watch );
 	browser.context.on( 'page', watch );
+	// --display: bringToFront gives Chrome the keyboard focus, so keys typed for another window
+	// reach the page (a Space paused it, spoiling the scenes after it). The tool sends no keys: every
+	// key event is stopped on the window before the page's own listeners see it. Pointer and wheel
+	// stay open, since the player's drags go through page.mouse.
+	if ( DISPLAY ) await browser.context.addInitScript( () => {
+
+		for ( const type of [ 'keydown', 'keyup', 'keypress' ] ) window.addEventListener( type, ( e ) => {
+
+			e.stopImmediatePropagation();
+			e.preventDefault();
+
+		}, { capture: true } );
+
+	} );
 	browser.page = browser.context.pages()[ 0 ] ?? await browser.context.newPage();
 	return browser;
 
@@ -2485,6 +2557,8 @@ async function main() {
 				result = { meta, json: () => ( { meta, runs, report, errors } ), markdown: () => compareMarkdown( meta, report ) };
 
 			}
+			// a page paused or pinned during the run: in the results and the summary
+			if ( spoiled ) meta.spoiled = spoiled;
 			// scenes that hung: in the results, the summary and the run's output
 			if ( hung.length ) {
 
@@ -2537,6 +2611,12 @@ async function main() {
 	const waits = waitedMs + ( preloaded?.lockWaitMs ?? 0 );
 	console.error( `[profile] done: ${ ( held / 1000 ).toFixed( 0 ) } s under the exclusive lock${ holds.length ? ` (given up ${ holds.length } times between scenes, ${ ( releasedMs / 1000 ).toFixed( 0 ) } s away)` : '' }, ${ ( ( Date.now() - begun - waits ) / 1000 ).toFixed( 0 ) } s in all without the waits for the GPU lock` );
 	console.log( path.join( OUT, 'summary.md' ) );
+	if ( spoiled ) {
+
+		console.error( `[profile] STOPPED: ${ spoiled.message }. Finished scenes are in ${ OUT }.` );
+		process.exitCode = 1;
+
+	}
 
 }
 
@@ -2686,10 +2766,12 @@ function compareMarkdown( meta, report ) {
 
 }
 
-// after the summary: the lock's releases, a contended stop and the scenes that hung (see guarded)
+// after the summary: the lock's releases, a contended stop, a page found paused or pinned (see
+// checkState) and the scenes that hung (see guarded)
 function hungMarkdown( meta ) {
 
-	return stopMarkdown( meta ) + ( meta.hung?.length ? hungList( meta ) : '' );
+	const stopped = meta.spoiled ? `\n## Stopped\n\n${ meta.spoiled.message }. Scenes after it were not measured.\n` : '';
+	return stopMarkdown( meta ) + stopped + ( meta.hung?.length ? hungList( meta ) : '' );
 
 }
 

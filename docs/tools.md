@@ -456,6 +456,12 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   on with the scenes not finished yet; a second hang stops the run, with the finished scenes
   written as usual. Each scene's results are also appended to `scenes.jsonl` in the output folder
   as it finishes, so a run that dies otherwise still leaves what it measured.
+- Each page's `clockPaused` and `scalePinned` (diagnostics) are read at its load as its baseline
+  (`?dpr` pins legitimately) and again after every slice or measured window. A change (a key or
+  click reached the page: a Space pauses it, and a paused page renders at its nominal scale and
+  stops steering, spoiling every scene after it) stops the run as a second hang does, with the
+  finished scenes written (`meta.spoiled`, a section of summary.md), and exits with 1; the message
+  names the page, scene and slice.
 - `--compare urlA urlB` runs A and B as two pages in one browser, in alternating slices with the
   other page stopped, and reports deltas with their 95 % interval, each page's render scale per
   scene (high's dynamic scale may settle higher on one side: compare the deltas with that in mind),
@@ -488,7 +494,9 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   to 200 deg/s with pauses, a wheel zoom, a flick; 20 s per scene), and per scene, by display
   refreshes, the intervals between the frames the scene rendered and between those the compositor
   presented (from a trace of Chrome's frame pipeline), the share of intervals that change cadence,
-  and how much the camera's turning speed changes from frame to frame. A window covers the screen
+  and how much the camera's turning speed changes from frame to frame. Bringing the window to the
+  front gives Chrome the keyboard focus, so every page stops all key events on the window before
+  its own listeners (the tool sends none); pointer and wheel stay open for the drags. A window covers the screen
   while it runs: keep the runs short and other animated windows closed. It needs the display gate.
   `--display --compare urlA urlB` interleaves A and B in the same slices as the headless compare
   (the running page brought to the front, the drags restarted in each slice), so the drift between
