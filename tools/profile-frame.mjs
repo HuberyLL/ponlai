@@ -2786,7 +2786,8 @@ async function main() {
 function sliceReport( A, B ) {
 
 	const report = {};
-	for ( const scene of Object.keys( A.scenes ) ) {
+	// (a scene lost to a hang between its two pages' results has A's only: it is in the hung list)
+	for ( const scene of Object.keys( A.scenes ).filter( ( s ) => B.scenes[ s ] ) ) {
 
 		const a = A.scenes[ scene ].slices, b = B.scenes[ scene ].slices;
 		const metric = ( f ) => delta( a.map( f ), b.map( f ) );
