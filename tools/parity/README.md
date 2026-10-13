@@ -171,15 +171,34 @@ node tools/parity/capture-set.mjs <testUrl> <testDir> --check <root>/<sha>/<set>
   the test side only and diffs it against the stored reference of the base commit, which it
   reuses, waits for, or (with `--ref-url`) captures.
 
-- Each view loads `?debug&paused&t=12&quality=<tier>[&aa=<mode>][&<extra>]&<view query>` and is
-  written as `<view>.png`, `<view>.json` (diagnostics, crop anchors) and `<view>.log`.
-- `--repeat`: each view twice from fresh page loads (`<view>.repeat.png`), then a pixel comparison
-  per view (decoded); exit 1 if any differ (or any capture failed). The repeats run after all the
-  first captures, so a view's two loads never run side by side. Take an A/A floor with `--jobs 1`:
-  concurrent pages may change which views repeat.
+- Each view is the frame of `?debug&paused&t=12&quality=<tier>[&aa=<mode>][&<extra>]&<view query>`
+  and is written as `<view>.png`, `<view>.json` (diagnostics, crop anchors) and `<view>.log`.
+- One page per set: each worker (`capture.mjs --worker`) loads the first view it is given and
+  reaches every later one in place by the exact scene jump, `__PONLAI__.establishScene( <the view's
+  full query> )`, a frame at the jump's camera, then the view's eval, readiness and shot as after a
+  load. Its contract (`src/main.ts`): the frame equals a fresh load's, byte for byte wherever the
+  fresh load repeats. Only load-time options (quality, aa, size and dpr, the debug switches) need a
+  new page, and a set shares them. Each view's JSON has `page`: its visit on the page, `load` or
+  `jump`, the view before, the GPU lock wait and the capture's own time (ms), the page's memory then
+  (JS heap, DOM nodes, listeners, renderer.info's geometries and textures).
+- Capability: a page marks the jump with `__PONLAI__.sceneJump` (the contract's version, 1).
+  Builds without it (older commits, whose `establishScene` takes only an options form) get a page
+  per view, as before; the set says so once. `--page-per-view` forces that on any build.
+- A failed view (a timeout, a page or console error, a crash) ends its page; it is retried
+  (`--retries`, default 1) and the views still to come go on in a fresh page, whose first view is a
+  fresh load. A page silent for three times `--timeout` plus two minutes is killed and treated the
+  same way. So one crash or a stuck page does not lose the set.
+- `--repeat`: each view twice (`<view>.repeat.png`), then a pixel comparison per view (decoded);
+  exit 1 if any differ (or any capture failed). The repeats run after all the first captures, on
+  other pages than the first captures and in reverse order: a view's repeat is reached from another
+  scene than its first capture, and the view one pass loaded fresh is jumped to in the other, so
+  the A/A also shows anything a jump leaves behind. Take an A/A floor with `--jobs 1`: concurrent
+  pages may change which views repeat.
 - `--aa` adds `aa=<mode>` only when given. `--q` adds options to every view (e.g. `msaa=1`).
-- `--jobs n` runs n captures at once, each in its own profile slot (a paused capture takes about
-  5-7 s alone; captures are GPU-bound: 3 at once gives the most captures per minute, more only adds latency).
+- `--jobs n` runs n pages at once, each in its own profile slot, the views handed out one at a time
+  from one queue (captures are GPU-bound: 3 at once gives the most captures per minute, more only
+  adds latency). Each view holds a GPU lock slot from its load or jump to its shot, so the page
+  stands stopped between views without one.
 - `--runs` (or `PARITY_RUNS`) appends a line per run to a CSV: date, task, procedure, sha, wall
   minutes, whether the GPU was busy before the run, captures, failures and the set. Without either
   nothing is logged: a procedure that keeps a run log passes one of them on every run.

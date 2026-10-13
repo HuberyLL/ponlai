@@ -179,6 +179,13 @@ own repeatability (`diff-set.py --aa-floor`; see its README). Temporal AA sets (
 not repeat pixel for pixel and are judged by a tolerance instead (`diff-set.py --temporal`: shares
 of pixels over a level on the frame, in local windows and on the crops, a bound on coherent sub-level
 shifts, and one recapture before a failure counts; thresholds in `tools/parity/tolerance.py`).
+capture-set opens one page per set (one per `--jobs` worker) and reaches every view after the
+first by the exact scene jump (`__PONLAI__.establishScene( <the view's query> )`, then the view's eval
+and the usual readiness): only load-time options (quality, aa, size and dpr, debug switches) need a
+new page, and a set shares them. Builds without the jump's marker (`__PONLAI__.sceneJump`, older
+commits) get a page per view, as `--page-per-view` forces; a failed view or a lost page is retried
+and the rest of the set goes on in a fresh page. `--repeat` takes the repeats on other pages, in
+reverse order.
 `tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
 crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA and a ground truth (`--aa gt-hi`: MSAA at
@@ -217,8 +224,9 @@ machine-wide GPU lock in `tools/gpu-lock.mjs`: timing runs (profiles, benchmarks
 hold it alone; paused captures and the verify probes share it with each other, since their pixels
 do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (default 3) and the
 rest queue first in, first out: captures are GPU-bound, so past 2-3 pages at once only each page's
-latency grows. A slot is held per browser (capture.mjs and capture-clip.mjs take one each), so
-capture-set `--jobs n` and baseline.mjs interleave with other sets capture by capture; under a
+latency grows. A slot is held per capture (capture.mjs from a view's load or scene jump to its
+shot, so a capture-set page frees it between views; capture-clip.mjs per clip), so capture-set
+`--jobs n` and baseline.mjs interleave with other sets capture by capture; under a
 `run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
 from then on, so a wrapped orchestrator never holds a slot its own captures wait for. An exclusive
 request waits for the slots in use, blocks new ones, and the queue resumes after it. A killed
