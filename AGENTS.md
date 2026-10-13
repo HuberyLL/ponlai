@@ -35,9 +35,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   GPU time, the 60 fps acceptance); its options and modes are in `docs/tools.md`.
 - Everything that renders the scene in a browser takes the GPU lock:
   `node tools/gpu-lock.mjs run [--shared] -- <command>` (`status`, `gpu`). Timing runs hold it
-  alone; paused captures and verify probes share it, one slot per browser (3 by default, FIFO),
-  and go before a waiting timing run until it has waited 30 min.
-  Every session's work runs at the same class: leave `PONLAI_GPU_PRIORITY` unset.
+  alone; paused captures and verify probes share it, one slot per browser (3 by default). One queue
+  ranked by level, then arrival: shared requests default to `normal`, exclusive ones to `low`, so a
+  timing run waits behind captures unless raised. Sessions leave `PONLAI_GPU_PRIORITY` unset; the
+  user or a main session schedules with `node tools/gpu-lock.mjs prio set <worktree> <level>`.
 - Processes an agent starts run at a starved QoS on a busy Mac: the tools raise themselves to the
   application policy (`tools/qos.mjs`); a new CPU-heavy tool imports it first, and a one-off script
   runs through `node tools/qos.mjs <command>` (`docs/tools.md`, Process priority).
