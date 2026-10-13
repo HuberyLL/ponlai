@@ -3023,8 +3023,11 @@ async function main() {
 		for ( const dir of temporaries ) await rm( dir, { recursive: true, force: true } );
 
 	}
-	const waits = waitedMs + ( preloaded?.lockWaitMs ?? 0 );
-	console.error( `[profile] done: ${ ( held / 1000 ).toFixed( 0 ) } s under the exclusive lock${ holds.length ? ` (given up ${ holds.length } times between scenes, ${ ( releasedMs / 1000 ).toFixed( 0 ) } s away)` : '' }, ${ ( ( Date.now() - begun - waits ) / 1000 ).toFixed( 0 ) } s in all without the waits for the GPU lock` );
+	// the waits for the GPU lock: the opening one, the preload's for its shared slot, and the lock's
+	// time away between scenes (see holdScene)
+	const waits = waitedMs + ( preloaded?.lockWaitMs ?? 0 ) + releasedMs;
+	console.error( `[profile] done: ${ ( held / 1000 ).toFixed( 0 ) } s under the exclusive lock${ holds.length ? ` (given up ${ holds.length } times between scenes, ${ ( releasedMs / 1000 ).toFixed( 0 ) } s away)` : '' }` );
+	console.error( `[profile] ${ ( ( Date.now() - begun - waits ) / 1000 ).toFixed( 0 ) } s in all without the waits for the GPU lock (${ ( waits / 1000 ).toFixed( 0 ) } s: before the run, for the preload's slot and between scenes)` );
 	console.log( path.join( OUT, 'summary.md' ) );
 	if ( spoiled ) {
 

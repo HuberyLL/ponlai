@@ -549,7 +549,9 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   run stops with the finished scenes written and exits 3, unless `--contended` (that scene marked
   contended). The first scene's hold covers the page loads. `wallSeconds` counts only the time
   held; `meta.holds` lists each scene the lock came back for (its wait and the GPU idle with this
-  run's pages stopped), also under "Lock" in summary.md.
+  run's pages stopped), also under "Lock" in summary.md. The run's last lines give the time held
+  and, apart, the time in all without the waits for the lock (before the run, for the preload's
+  slot and between scenes).
 - A scene that shows no progress for `--hang` seconds (180) is recorded as hung (profile.json
   `meta.hung`, a section of summary.md), with the step it was at (a compare's load, warm-up,
   slice, trace end or results) and what each page still did (answering, visible, its animation
