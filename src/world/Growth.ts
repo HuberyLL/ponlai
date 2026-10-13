@@ -71,6 +71,11 @@ import type { CullBuffers } from './GrassCull.ts';
 // - The frames after it, one step each: the rain's collision map (resized, then baked again eight
 //   meshes a frame: RainCollision.bakeSteps), the game's ground (the chunks' walk tiles,
 //   sim/grid.ts), the old resources disposed (a kind a frame), the page's own (`onSwapped`).
+//   A replaced mesh, and the refracted sun's and the rain map's proxies of it, are disposed as
+//   objects, not only their geometry: three keeps a render object (and its uniform buffers) per
+//   object and pass until the object's dispose. Their shared materials stay. They go after the swap's
+//   frame has drawn their successors, so no pipeline loses its last user. A replaced texture is not
+//   uploaded again by a later chunk's first draw (graph/ThreePatches.ts `installBindingPatches`).
 // - The growth's own main-thread time is counted per frame (`work`; the workers' replies
 //   included), and kept with the swap's record (`state.last.work`): no frame's share should pass
 //   2 ms (plan M8's frame-time acceptance).
@@ -608,7 +613,9 @@ export class Growth<M = unknown> {
 		for ( const mesh of p.islands.remove ) {
 
 			world.island.remove( mesh );
-			disposals.push( () => mesh.geometry.dispose() );
+			// (the mesh's own dispose releases its draws: three keeps a render object, and its
+			// uniform buffers, per object and pass until then; the material is shared and stays)
+			disposals.push( () => { mesh.geometry.dispose(); mesh.dispose(); } );
 
 		}
 		for ( const mesh of p.islands.add ) world.island.add( mesh );
@@ -630,7 +637,8 @@ export class Growth<M = unknown> {
 		};
 		disposals.push( () => atDisposal( page.renderer ) );
 		const oldFlowers = setFlowers( page.flowers, p.flowers.instances, p.flowers.replacements, p.flowers.boxes );
-		disposals.push( () => { for ( const mesh of oldFlowers ) { mesh.geometry.dispose(); mesh.dispose(); } } );
+		// (with their depth prepass copies, VegetationPrepass.ts)
+		disposals.push( () => { for ( const mesh of oldFlowers ) { mesh.geometry.dispose(); mesh.traverse( ( object ) => object.dispose() ); } } );
 		disposals.push( () => { for ( const free of p.staged ) free(); } );
 		setBushes( page.foliage, p.bushes.instances );
 		page.foliage.boundingBox = p.bushes.box;
@@ -646,7 +654,7 @@ export class Growth<M = unknown> {
 		disposals.push( () => { for ( const dispose of oldFields ) dispose(); for ( const texture of oldTextures ) texture.dispose(); } );
 		part( 'fields' );
 		// what draws or reads the island
-		page.refractedSun.setCasters( world.group, world.subsets );
+		disposals.push( page.refractedSun.setCasters( world.group, world.subsets ) );
 		page.characters?.setLoop( p.walk );
 		part( 'casters' );
 		const previous = this.shown;

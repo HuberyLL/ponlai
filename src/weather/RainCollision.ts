@@ -129,11 +129,13 @@ export class RainCollision {
 			proxy.matrix.copy( mesh.matrixWorld );
 
 		} );
+		const dropped: THREE.Mesh[] = [];
 		for ( const [ mesh, proxy ] of this.proxies ) {
 
 			if ( seen.has( mesh ) ) continue;
 			scene.remove( proxy );
 			this.proxies.delete( mesh );
+			dropped.push( proxy );
 
 		}
 		scene.updateMatrixWorld( true );
@@ -165,6 +167,10 @@ export class RainCollision {
 			if ( first + per < list.length ) yield;
 
 		}
+		// the meshes gone since the last bake: their proxies' draws released (three keeps a render
+		// object, and its uniform buffers, per object until it is disposed), once the new proxies
+		// have drawn, so a pipeline they shared is never left without a user
+		for ( const proxy of dropped ) proxy.dispose();
 
 	}
 

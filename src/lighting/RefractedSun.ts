@@ -374,8 +374,9 @@ export class RefractedSun {
 	 * for meshes drawn with an identity world matrix), used while the water level stays within
 	 * half the margin of the level they were cut at; every other mesh is cut here. Again when the
 	 * casters change (a grown island, Growth.ts): a mesh with the same geometry and subset as
-	 * before keeps its proxy and its cut, so only the new ones are made. */
-	setCasters( root: THREE.Object3D, subsets?: ReadonlyMap<THREE.Object3D, SubmergedSubset> ): void {
+	 * before keeps its proxy and its cut, so only the new ones are made. Returns the disposal of the
+	 * proxies dropped, for once the new ones have drawn. */
+	setCasters( root: THREE.Object3D, subsets?: ReadonlyMap<THREE.Object3D, SubmergedSubset> ): () => void {
 
 		const before = new Map( this.casters.map( ( c ) => [ c.source, c ] ) );
 		this.scene.clear();
@@ -410,6 +411,9 @@ export class RefractedSun {
 		} );
 		for ( const dropped of before.values() ) if ( dropped.cut ) disposeSubset( dropped.cut );
 		this.dirty = true;
+		// (three keeps a dropped proxy's draws, and their uniform buffers, until it is disposed)
+		const dropped = [ ...before.values() ].map( ( caster ) => caster.proxy );
+		return () => { for ( const proxy of dropped ) proxy.dispose(); };
 
 	}
 
