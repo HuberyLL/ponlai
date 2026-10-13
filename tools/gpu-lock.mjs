@@ -79,6 +79,7 @@
 //   await acquireGpuLock( 'capture overview' );                           // held until this process exits
 //   await acquireGpuLock( 'verify-sky', { shared: true } );               // shared with other probes
 //   await leaseGpuLock( 'capture v', { shared: true, budget: 20000 } );   // kept from the last piece of work, or yielded to a waiter
+//   await leaseGpuLock( 'profile', { keepPlace: true } );                 // exclusive: yields to shared waiters only, asks again in its old place
 //   lockState();                                                          // holders and queue in turn (job.mjs)
 //
 //   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
@@ -340,11 +341,12 @@ function queued() {
 
 // a place in the queue (the ticket); call inside the mutex. A low ticket carries the time it stops
 // yielding, so every requester ranks it alike whatever its own environment says. An exclusive
-// ticket is always normal (exclusive requests ignore the class: see the header).
-function enqueue( label, exclusive = false ) {
+// ticket is always normal (exclusive requests ignore the class: see the header). `place`: the
+// number of an earlier ticket of this process to queue under again (leaseGpuLock's keepPlace).
+function enqueue( label, exclusive = false, place = null ) {
 
-	const seq = ( Number( readJson( SEQ ) ) || 0 ) + 1;
-	writeJson( SEQ, seq );
+	const seq = place ?? ( Number( readJson( SEQ ) ) || 0 ) + 1;
+	if ( place === null ) writeJson( SEQ, seq );
 	mkdirSync( QUEUE, { recursive: true } );
 	const now = Date.now();
 	const priority = exclusive ? 'normal' : PRIORITY;
@@ -786,7 +788,7 @@ function installRelease() {
 /** Waits for the lock and takes it. It is held until releaseGpuLock() or this process exits.
  * `timeout` in seconds (0: wait for ever); `shared: true` for work whose result does not depend
  * on what else runs on the GPU (paused captures, pixel probes). Returns the wait in milliseconds. */
-export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?? 'node' ), { timeout = 0, quiet = false, shared = false } = {} ) {
+export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?? 'node' ), { timeout = 0, quiet = false, shared = false, place = null } = {} ) {
 
 	const ancestor = depth > 0 ? null : holdingAncestor();
 	if ( depth > 0 || ( ancestor && ! ( shared && ancestor.mode === 'shared' ) ) ) {
@@ -813,10 +815,10 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 	let toldEta = null; // the estimate last printed, and the wait when it was
 	const waitFile = path.join( WAITING, `${ process.pid }.json` );
 	const ticket = path.join( QUEUE, `${ process.pid }.json` );
-	const mine = await withMutex( () => enqueue( label, ! shared ) );
+	const mine = await withMutex( () => enqueue( label, ! shared, place ) );
 	const mode = shared ? 'shared' : 'exclusive';
 	pending = { label, mode, ticket: mine.seq, at: started };
-	logEvent( { ev: 'request', pid: process.pid, label, mode, class: PRIORITY, ticket: mine.seq } );
+	logEvent( { ev: 'request', pid: process.pid, label, mode, class: PRIORITY, ticket: mine.seq, ...( place !== null ? { place: true } : {} ) } );
 	try {
 
 		for ( ;; ) {
@@ -936,12 +938,18 @@ function gpuLockWaiter() {
  * a session's interactive captures and probes waiting longer than before (exclusive requests ignore
  * the class, so they get the budget). Without a hold of its own (or in another mode) it simply
  * acquires. The release that ends a hold logs how many pieces it served (`uses`).
+ * `keepPlace` (exclusive holds: profile-frame's scenes): the hold is given up only for a shared
+ * request waiting, never for another exclusive one, and is asked for again under its old ticket's
+ * number, so it keeps its place among the exclusive requests (they go after the whole series, as
+ * they would after one long hold) while the shared ones queued meanwhile join first, up to a fresh
+ * cap. Asked for again under a new number, it went behind every exclusive request queued since,
+ * each of which may wait out its own cap.
  * Returns { waitMs, kept }: the wait for the lock, and whether the hold was kept. */
-export async function leaseGpuLock( label, { shared = false, budget = 0, ...options } = {} ) {
+export async function leaseGpuLock( label, { shared = false, budget = 0, keepPlace = false, ...options } = {} ) {
 
 	if ( holding && heldMode === ( shared ? 'shared' : 'exclusive' ) ) {
 
-		const waiter = gpuLockWaiter();
+		const waiter = keepPlace && ! shared ? queued().find( ( t ) => t.pid !== process.pid && t.mode !== 'exclusive' ) ?? null : gpuLockWaiter();
 		const yieldNow = waiter && ( Date.now() - holding.at >= budget ||
 			( heldMode === 'shared' && PRIORITY === 'low' && waiter.mode !== 'exclusive' && waiter.priority === 'normal' ) );
 		if ( ! yieldNow ) {
@@ -950,6 +958,7 @@ export async function leaseGpuLock( label, { shared = false, budget = 0, ...opti
 			return { waitMs: 0, kept: true };
 
 		}
+		if ( keepPlace && ! shared ) options.place = holding.ticket ?? null;
 		release( 'lease' );
 
 	} else if ( holding ) release();

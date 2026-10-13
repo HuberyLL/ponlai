@@ -439,6 +439,18 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   exits with 3, releasing the lock: a contended run's numbers prove nothing. Stop the client and
   run again, or pass `--contended` to measure anyway (results marked contended, as before). A
   later page load that finds the GPU busy still marks its results contended.
+- A run with several scenes holds the exclusive lock one scene at a time (every mode: profile,
+  compare, toggle, accept, reload): before a scene's warm-up it asks for the lock, after its last
+  slice its pages stop and drain. The pages and the browser stay open, their loops stopped, so
+  they draw nothing while the lock is away. The hold is a lease (`leaseGpuLock` with
+  `keepPlace`): kept from scene to scene while no shared request waits, otherwise given up and
+  asked for again at once, behind the shared requests queued meanwhile (up to the exclusive cap)
+  but in the run's first place among the exclusive requests, so queued captures run between the
+  scenes instead of after the whole run, and a timing run queued meanwhile still goes after it. A hold taken again checks the GPU for idle; still busy after `--idle-wait`, the
+  run stops with the finished scenes written and exits 3, unless `--contended` (that scene marked
+  contended). The first scene's hold covers the page loads. `wallSeconds` counts only the time
+  held; `meta.holds` lists each scene the lock came back for (its wait and the GPU idle with this
+  run's pages stopped), also under "Lock" in summary.md.
 - A scene that shows no progress for `--hang` seconds (180) is recorded as hung (profile.json
   `meta.hung`, a section of summary.md): the browser is closed and opened again and the run goes
   on with the scenes not finished yet; a second hang stops the run, with the finished scenes
@@ -482,7 +494,18 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   (the running page brought to the front, the drags restarted in each slice), so the drift between
   separate headed runs (a millisecond or two) cancels; its summary adds the share of late frames
   (presented intervals longer than the frame pacer's pace) per slice, as a delta with its interval, and each page's
-  frames over 25 ms.
+  frames over 25 ms. One trace spans a scene's slices of both pages, split by a performance mark
+  per slice (ended early at each adaptive stop check); a trace per slice nearly doubled the time a
+  slice took beyond its settle and window.
+- Adaptive slices: in `--compare`, `--slices` is the most a scene takes. From `--min-slices` on
+  (4 with `--display`; headless it defaults to `--slices`, which turns it off), at the end of each
+  balanced block of four slices (B A A B, then A B B A) a scene stops once its leading delta's 95 %
+  interval clears zero by `--stop-margin` or is no wider than ± `--stop-width` (that one only with 4
+  slices a side). The leading delta is the late frames on the display (a share: defaults 0.1 and
+  0.02), else GPU busy with timestamps, else the median frame interval (ms: 0.2 and 0.05). The
+  summary and each scene's `stop` in profile.json give the slices taken and why. A stop answers the
+  leading delta only: the other deltas get fewer slices and wider intervals, so a run whose passes
+  or secondary figures matter sets `--min-slices` equal to `--slices`.
 - `--scales` repeats the run per render scale (the `dpr` option, which the url and `--q` must then
   leave out) and tabulates every scene at every scale. Every report gives the render scale the
   measured frames were drawn at (its median, range and changes: high's moves); `--scale-settle s`
