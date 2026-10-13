@@ -325,6 +325,15 @@ reorders requests already waiting. Levels hold only among copies of the lock tha
 older copy in another worktree queues its own requests first in, first out, and this copy ranks
 them at their mode's default (the table by label only). A killed holder's slot frees itself at the
 next look, and a killed request leaves the queue.
+One implementation runs on the machine: `tools/gpu-lock.mjs` is an entry that loads the lock from
+`tools/gpu-lock-impl.mjs`, either its own worktree's or the main checkout's, whichever declares the
+higher `LOCK_VERSION` (the main checkout's on a tie; a main checkout from before the entry counts as
+version 0). So a branch runs every later lock upgrade as soon as main has it, without merging main,
+and copies with different rules no longer share the lock. If the main checkout's file does not load
+(a conflict mid-merge, a syntax error), the worktree's runs and stderr says so. A change to the lock
+goes in `gpu-lock-impl.mjs`, bumps `LOCK_VERSION` and keeps its exports and CLI additive; test it
+with `PONLAI_GPU_LOCK_IMPL=local`, which forces the worktree's copy. `status` ends with the file
+that runs and why (`impl` in its JSON).
 `node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
 `status` names the holders (shared: their slots; each with its level and source), the queue in turn (each with its
 estimated start, below) and the exclusive requests in turn (`waiting`), and `gpu` shows the GPU's
