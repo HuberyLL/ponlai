@@ -213,8 +213,9 @@ island view; today's framing without it), into `artifacts/captures/growth/<label
 with each pair's crop statistics (mean luma, saturation and edge density, by
 compare-captures.py's metrics) and deltas beyond 10 % flagged. A URL's own query and `--q` pass
 through and override the tool's settings. The default (seed 1 at steps 0 and 12) is 14 shots a
-URL; base and candidate took about 8 min, most of a grown step's shot generating its world, as
-each capture starts with an empty world cache.
+URL; base and candidate took about 8 min when every capture started with an empty world cache,
+most of a grown step's shot generating its world (captures now keep the cache in their profile
+slot, see above, so later runs of the same land load it).
 
 `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
 (`capture-set.mjs`) and diffs it against a reference set, byte for byte or within the reference's
