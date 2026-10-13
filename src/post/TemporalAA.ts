@@ -81,9 +81,13 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   against the ground truth: the islander orbit's ghosting about a third lower and its sharpness at
 //   the ground truth's, the slow pan's ghosting lower, for 5-10 % more high-pass flicker on moving
 //   crops; the islander walk's ghosting is mostly the swaying meadow behind it (its shading changes,
-//   which no motion vector carries), which the movers barely touch.
+//   which no motion vector carries), which the movers barely touch. The flags switch the measures
+//   by uniforms in the same shader, so `profile-frame --toggle` on them shows no cost: time the
+//   second stage by a load with `flags=taaSmooth:false` (built without its target) and the movers
+//   with `--compare` against a build without them.
 // - The second stage (taa, taau; not lite, not the ground truth; under `linear`, where the canvas
-//   pass reads the encoded image; `taaSmooth = false` builds without it, `taaSmoothBox` its box):
+//   pass reads the encoded image, and TAA's encode below the canvas reads its image; `taaSmooth =
+//   false` builds without it):
 //   a still camera's thin detail flickered at 2-8 times MSAA's high-pass flicker on a sunlit meadow
 //   (the sun-shadow clip), and the history's accumulation, not its clip, let it through: the
 //   jitter's sub-pixel hits and misses of blades and the vegetation's coverage dither
@@ -96,11 +100,17 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   whatever the history drops (a cut, a disocclusion, a rejection, a clamp-drop, the reactive
 //   inputs), and it runs only on still opaque and vegetation pixels (it gives way from 0.02 to 0.1
 //   output pixels a frame, and to a strike's flash), its previous image clipped to twice the
-//   history's box so a change of light is not held back. Two averages in a row pass about 1/N^2 of
-//   a frame's change at the cost of a second N frames' lag on slow changes the box lets through (a
-//   shadow edge drifting with the sun: its difference from MSAA rose by under a quarter). Measured at
-//   high taau: the meadow's high-pass flicker from 8.1 to 1.8 times MSAA's, the cliffs from 2.0 and
-//   1.7 to under 1; the islander walk's ghosting unchanged. The history itself (what reprojects and
+//   history's box so a change of light is not held back. It also gives way where the first stage's
+//   history was clipped (from the box's edge to twice its width): shading that changes with no
+//   motion vector (rain ripples on a puddle, a moving shadow on still ground) is what the clip
+//   catches, and without this the puddles' ghosting rose by three quarters (by a sixth with it).
+//   Two averages in a row pass about 1/N^2 of a frame's change at the cost of a second N frames'
+//   lag on slow changes the box lets through (a shadow edge drifting with the sun: its difference
+//   from MSAA rose by about a fifth; a slow change of the whole view's light shows about twice as
+//   late). Measured at high taau: on the sun-shadow clip the meadow's high-pass flicker from 8.1
+//   and 3.7 to 1.9 and 1.2 times MSAA's, the cliffs from 2.0 and 1.7 to 1.2 and 0.8; with the wind
+//   running at the same view the meadow's from 1.0 to 0.5 (its blades there sway under the exit
+//   speed); the islander walk's ghosting unchanged. The history itself (what reprojects and
 //   accumulates) stays the first stage's, and so does everything the rest shows.
 // - TAAU resolves straight to the canvas's size and keeps that history across render-scale steps
 //   (read by uv); TAA resolves at the render's size and resamples its history once when that changes.
@@ -136,7 +146,11 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   (`taaEncoded`, the vignette at each pixel), so RCAS's five taps are not encoded one by one
 //   (they were half the canvas pass's time at 3840x2160; the extra half-float write costs less
 //   than that). The rest's image and the ground truth (one tap) are encoded in the canvas pass.
-//   TAA below the canvas encodes at the render's size and upscales with EASU first.
+//   TAA below the canvas encodes at the render's size (the second stage's image where it runs)
+//   and upscales with EASU first. The running resolve's attachments, the history, `taaEncoded`,
+//   the movers' state and the second stage's image, are four half-float RGBA targets: 32 bytes a
+//   sample, WebGPU's limit for one pass's colour attachments, so a fifth needs packing (the
+//   reactive into the second stage's alpha, the state into RG16F).
 // - After the resolve (taa, taau: AfterResolve.ts) the rain's streaks and the storm's spray are
 //   drawn unjittered into an overlay at the canvas's size, between the resolve's passes and the
 //   canvas pass (`after`), and the canvas pass adds the change the rain veil and that overlay make
@@ -192,6 +206,8 @@ const MOVER_CLASSES = [ 1, 1, 0, 1, 0 ];
 // (output pixels a frame) over which it gives way to the first stage's image
 const SMOOTH_CLASSES = [ 1, 1, 0, 0, 0 ];
 const SMOOTH_SPEED_FROM = 0.02, SMOOTH_SPEED_TO = 0.1;
+// its previous image's clip box, in widths of the history's
+const SMOOTH_BOX = 2;
 // velocity rejection: the change of the dilated motion (output pixels a frame) from none to all
 const REJECT_FROM = 0.5, REJECT_TO = 2;
 // FSR 2's frames' worth for a moving pixel (times the class's share)
@@ -387,10 +403,8 @@ export class TemporalAA {
 		skyPassThrough: uniform( 1 ),
 		// the movers: whether the state holds the previous frame's, each measure on (1) or off, and
 		// the classes they act on
-		stateValid: uniform( 0 ), velocityReject: uniform( 1 ), clampDrop: uniform( 1 ), motionCap: uniform( 1 ), widen: uniform( 1 ), smoothOn: uniform( 1 ), smoothValid: uniform( 0 ), smoothBox: uniform( 2 ), smoothClass: SMOOTH_CLASSES.map( ( v ) => uniform( v ) ),
+		stateValid: uniform( 0 ), velocityReject: uniform( 1 ), clampDrop: uniform( 1 ), motionCap: uniform( 1 ), widen: uniform( 1 ), smoothOn: uniform( 1 ), smoothValid: uniform( 0 ), smoothClass: SMOOTH_CLASSES.map( ( v ) => uniform( v ) ),
 		moverClass: MOVER_CLASSES.map( ( v ) => uniform( v ) ),
-		// (tuning: the clamp-drop's rate over the clip's reach and its floor in frames, the motion cap)
-		dropGain: uniform( 1 ), dropTo: uniform( 1 ), capFrames: uniform( CAP_FRAMES ),
 		sharpenMoving: Array.from( { length: CLASSES }, () => uniform( 0 ) ), sharpenSpeed: uniform( 4 ), waterFar0: uniform( 1e6 ), waterFar1: uniform( 2e6 ),
 		// the camera's world matrix this frame and the previous rendered frame's, with its unjittered
 		// inverse projection (the disocclusion test and the sky's rotation)
@@ -710,7 +724,9 @@ export class TemporalAA {
 			return vec4( encode( c, O.vignette( renderSize ) ), 1 );
 
 		} )();
-		this.encodeQuads = sources.map( ( source ) => {
+		// (a running frame's image is the second stage's where it runs, as the canvas pass shows it)
+		const encodeSources = smooth ? [ g.texture( smooth, 0 ), g.texture( smooth, 1 ), sources[ 2 ] ] : sources;
+		this.encodeQuads = encodeSources.map( ( source ) => {
 
 			const material = new THREE.NodeMaterial();
 			material.name = 'TAA.Encode';
@@ -722,7 +738,7 @@ export class TemporalAA {
 		} );
 		g.addPass( 'taaEncode', 'quad', ( b ) => {
 
-			b.read( history );
+			b.read( smooth ?? history );
 			b.readOptional( restShown );
 			encoded = b.write( encoded );
 			return {
@@ -1052,7 +1068,7 @@ export class TemporalAA {
 					const moved = max( u.gammaMove.add( classGamma ), 0.05 );
 					extent = extent.mul( mix( float( 1 ), moved.div( now ), mv.reject ) );
 					// FSR 2's motion cap and temporal reactive (TemporalLocks.ts), the class's share of its frames
-					const capped = motionCap( frames, u.capFrames.mul( byClassOf( mv.cls, u.classFrames ) ), mv.moving, mv.speed, carriedReactive( mv.carried.z ) );
+					const capped = motionCap( frames, float( CAP_FRAMES ).mul( byClassOf( mv.cls, u.classFrames ) ), mv.moving, mv.speed, carriedReactive( mv.carried.z ) );
 					frames = mix( frames, capped, u.motionCap.mul( mv.mask ) );
 
 				}
@@ -1064,13 +1080,13 @@ export class TemporalAA {
 				// the weight the history may keep, in frames' worth
 				const valid = inside.and( u.reset.lessThan( 0.5 ) ).and( disoccluded.lessThan( 0.5 ) ).and( passThrough.not() );
 				historyWeight.assign( select( valid, min( max( hist.a, 0 ).mul( u.historyGain ), frames.mul( perFrame ) ), float( 0 ) ) );
-				const drop = mv ? saturate( reach.sub( 1 ).mul( u.dropGain ) ).mul( max( mv.moving, mv.reject ) ).mul( u.clampDrop ).toVar() : null;
+				const drop = mv ? saturate( reach.sub( 1 ) ).mul( max( mv.moving, mv.reject ) ).mul( u.clampDrop ).toVar() : null;
 				if ( mv && drop ) {
 
 					// a rejected history goes, and a moving pixel's clip drops its weight (FSR 2's clamp-drop,
 					// TemporalLocks.ts), down to a frame at twice the box
 					historyWeight.assign( historyWeight.mul( float( 1 ).sub( mv.reject ) ) );
-					historyWeight.assign( clampDrop( historyWeight, perFrame.mul( u.dropTo ), drop ) );
+					historyWeight.assign( clampDrop( historyWeight, perFrame, drop ) );
 
 				}
 				If( inside.not().or( u.reset.greaterThan( 0.5 ) ), () => {
@@ -1091,12 +1107,14 @@ export class TemporalAA {
 						// a box twice as wide as the history's, takes the first stage's new image by the
 						// first stage's own share of the new frame, so it drops whatever the first stage
 						// drops (a cut, a disocclusion, a rejection, a clamp-drop, a reactive input); still
-						// opaque and vegetation pixels only, never while a strike flashes.
+						// opaque and vegetation pixels only, never while a strike flashes, and less where the
+						// first stage's history was clipped.
 						const gate = float( 1 ).sub( smoothstep( SMOOTH_SPEED_FROM, SMOOTH_SPEED_TO, mv.speed ) ).mul( byClassOf( mv.cls, u.smoothClass ) )
+							.mul( float( 1 ).sub( smoothstep( 1, 2, reach ) ) )
 							.mul( u.smoothOn ).mul( u.smoothValid ).mul( select( inside.and( passThrough.not() ), float( 1 ), float( 0 ) ) )
 							.mul( float( 1 ).sub( saturate( reactiveUniforms.flash ) ) );
 						const prev = toYCoCg( max( ( textureLoad( smoothTex, ivec2( q ) ) as unknown as V4 ).rgb, vec3( 0 ) ) ).sub( mean ).toVar();
-						const unit2 = abs( prev ).div( extent.mul( u.smoothBox ) ).toVar();
+						const unit2 = abs( prev ).div( extent.mul( SMOOTH_BOX ) ).toVar();
 						smoothed.assign( mean.add( prev.div( max( max( unit2.x, max( unit2.y, unit2.z ) ), 1 ) ) ) );
 						beta.assign( mix( float( 1 ), float( 0 ), gate ) );
 
@@ -1280,10 +1298,7 @@ export class TemporalAA {
 		const all = debugFlags.taaMovers;
 		const [ reject, drop, cap, widen ] = MOVER_FLAGS.map( ( name ) => ( debugFlags[ name ] ?? all ?? MOVERS ) !== false ? 1 : 0 );
 		this.u.velocityReject.value = reject; this.u.clampDrop.value = drop; this.u.motionCap.value = cap; this.u.widen.value = widen;
-		const tune = ( name: string, value: number ) => typeof debugFlags[ name ] === 'number' ? debugFlags[ name ] as number : value;
 		this.u.smoothOn.value = debugFlags.taaSmooth === false ? 0 : 1;
-		this.u.smoothBox.value = tune( 'taaSmoothBox', 2 );
-		this.u.dropGain.value = tune( 'taaDropGain', 1 ); this.u.dropTo.value = tune( 'taaDropTo', 1 ); this.u.capFrames.value = tune( 'taaCapFrames', CAP_FRAMES );
 		// the rest: what the frame draws from, unjittered
 		const key = restKey( this.key, camera, renderWidth, renderHeight, outputWidth, outputHeight, time, [ this.settingsVersion, ...( frame.signature ?? [] ) ] );
 		this.rest.settle = Math.max( 0, Math.round( this.settings.restSettle ) );
