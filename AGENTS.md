@@ -37,15 +37,19 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `node tools/gpu-lock.mjs run [--shared] -- <command>` (`status`, `gpu`). Timing runs hold it
   alone; paused captures and verify probes share it, one slot per browser (3 by default). One queue
   ranked by level, then arrival: shared requests default to `normal`, exclusive ones to `low`, so a
-  timing run waits behind captures unless raised. Sessions leave `PONLAI_GPU_PRIORITY` unset; the
+  timing run waits behind captures unless raised, until it has waited 30 min and ranks `normal`.
+  Sessions leave `PONLAI_GPU_PRIORITY` unset; the
   user or a main session schedules with `node tools/gpu-lock.mjs prio set <worktree> <level>`.
 - Processes an agent starts run at a starved QoS on a busy Mac: the tools raise themselves to the
   application policy (`tools/qos.mjs`); a new CPU-heavy tool imports it first, and a one-off script
   runs through `node tools/qos.mjs <command>` (`docs/tools.md`, Process priority).
-- A command that may run for minutes (a capture set, a profile, references) runs under
-  `node tools/job.mjs start --log <file> -- <command>` and is waited on with
-  `node tools/job.mjs wait <file>` (at most 4 minutes per call; it shows the job's place in the GPU
-  queue), not with sleep loops of one's own (`docs/tools.md`, Long jobs).
+- Every wait goes through `tools/job.mjs`, never a sleep loop of one's own (`docs/tools.md`, Long
+  jobs). A command that may run for minutes (a capture set, a profile, references) runs as
+  `node tools/job.mjs start --wait -- <command>` (inline when it ends within the budget) or
+  `start --log <file> -- <command>`, and is waited on with `node tools/job.mjs wait <file>` (at
+  most 4 minutes per call; it shows the job's place in the GPU queue) or a condition
+  (`wait --file F --match RE`, `--exists`, `--pid`, `--cmd`). Before handing back, an agent stops
+  what it started and still runs: `node tools/job.mjs stop <file>`.
 - Headed browser runs take over the user's screen: they run only while
   `node tools/display-gate.mjs status` allows them; otherwise run headless and record the headed
   run as pending.

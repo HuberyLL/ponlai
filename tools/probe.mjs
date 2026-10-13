@@ -4,7 +4,7 @@
 //
 //   node tools/probe.mjs [url] [--q "paused&t=12&dpr=1"] [--query q2]... [--init js|@file]...
 //       [--eval js|@file] [--until js|@file] [--frames n] [--sleep ms] ...  (steps, in order)
-//       [--w 1600 --h 900 --scale 1] [--timeout 60000] [--exclusive] [--fresh] [--console [prefix]]
+//       [--w 1600 --h 900 --scale 1] [--timeout 60000] [--exclusive] [--fresh] [--load] [--console [prefix]]
 //
 // url: the server (default http://127.0.0.1:5190/, the dev server); a production preview needs
 // `debug` in the query for `window.__PONLAI__` and the diagnostics (docs/tools.md, Page).
@@ -35,7 +35,9 @@
 // page by the exact scene jump (`await __PONLAI__.establishScene( query )`, the loop started, one
 // frame rendered: src/main.ts), as tools/parity/capture-set.mjs reaches its views. A query whose
 // load-time options differ (quality, aa, dpr, debug switches: establishScene refuses it) and builds
-// without the jump (`__PONLAI__.sceneJump`) get a fresh load instead. Each query runs every step.
+// without the jump (`__PONLAI__.sceneJump`) get a fresh load instead. `--load` loads every query in
+// a page of its own: a jump draws a fresh load's image, not the world's generation path, so comparing
+// two loaded pages (a grown page against a fresh grow=1 page) needs it. Each query runs every step.
 //
 // Output (stdout, JSON): the url, the browser, the profile slot, the GPU lock's wait, and per query
 // its `mode` (load|jump), `readyMs` (load or jump until up), `ms` (the whole query), `steps`
@@ -56,7 +58,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-const usage = 'usage: node tools/probe.mjs [url] [--q query] [--query q]... [--init js|@file]... [--eval js|@file] [--until js] [--frames n] [--sleep ms] ... [--w --h --scale] [--timeout ms] [--exclusive] [--fresh] [--console [prefix]] (see the file header)';
+const usage = 'usage: node tools/probe.mjs [url] [--q query] [--query q]... [--init js|@file]... [--eval js|@file] [--until js] [--frames n] [--sleep ms] ... [--w --h --scale] [--timeout ms] [--exclusive] [--fresh] [--load] [--console [prefix]] (see the file header)';
 const argv = process.argv.slice( 2 );
 const options = { w: '1600', h: '900', scale: '1', timeout: '60000' };
 const queries = [], inits = [], steps = [];
@@ -67,7 +69,7 @@ for ( let i = 0; i < argv.length; i ++ ) {
 	const a = argv[ i ];
 	if ( ! a.startsWith( '--' ) ) { url = a; continue; }
 	const k = a.slice( 2 );
-	if ( k === 'exclusive' || k === 'fresh' ) { options[ k ] = true; continue; }
+	if ( k === 'exclusive' || k === 'fresh' || k === 'load' ) { options[ k ] = true; continue; }
 	if ( k === 'console' ) { consoleFilter = argv[ i + 1 ] && ! argv[ i + 1 ].startsWith( '--' ) ? argv[ ++ i ] : ''; continue; }
 	const v = argv[ ++ i ];
 	if ( v === undefined ) { console.error( `--${ k } needs a value\n${ usage }` ); process.exit( 2 ); }
@@ -222,7 +224,7 @@ try {
 		try {
 
 			// (a page whose last query failed is not trusted: a fresh load)
-			record.mode = index > 0 && ! out.queries[ index - 1 ].broken && await jump( page, query ) ? 'jump' : 'load';
+			record.mode = index > 0 && ! options.load && ! out.queries[ index - 1 ].broken && await jump( page, query ) ? 'jump' : 'load';
 			if ( record.mode === 'load' ) await load( page, query );
 			await waitForScene( page, { frames: 1, timeout } );
 			record.readyMs = Date.now() - t0;
