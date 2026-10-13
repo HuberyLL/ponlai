@@ -298,6 +298,12 @@ file, matched by gate id, entry, view, clip, crop and metric with globs, never c
 in the tool's header. `--views normal` / `--clips normal` (and `special`) select the normal
 weathers in baseline.mjs and the capture tools.
 
+`uv run tools/parity/table.py <metrics.json | label dir>... [--names a,b] [--base col]
+[--refs msaa,gt] [--entries glob] [--metrics m1,m2] [--crops c1,c2] [--csv f]` tables several
+labels' metrics (baseline.mjs labels or clip-metrics outputs) side by side: rows crop x metric,
+a column per input's test values and per reference (MSAA, ground truth), and each column's ratio to
+`--base`. Use it instead of a per-task table script.
+
 ## Probes
 
 `node tools/probe.mjs [url] [--q query] [--query q]... --eval js [--until js] [--frames n]`
