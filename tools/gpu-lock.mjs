@@ -62,6 +62,7 @@
 //   await acquireGpuLock( 'capture overview' );                           // held until this process exits
 //   await acquireGpuLock( 'verify-sky', { shared: true } );               // shared with other probes
 //   await leaseGpuLock( 'capture v', { shared: true, budget: 20000 } );   // kept from the last piece of work, or yielded to a waiter
+//   lockState();                                                          // holders and queue in turn (job.mjs)
 //
 //   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
 //   node tools/gpu-lock.mjs status                 (the owner, the holders, the queue and the exclusive requests in turn)
@@ -331,6 +332,18 @@ function ticketsBefore( ticket ) {
 
 }
 const ticketsAhead = ( ticket ) => ticketsBefore( ticket ).length;
+
+/** The lock as other tools see it (job.mjs reports where a job stands): the holders, each
+ * { pid, label, start, mode, slot? }, and the waiting tickets in the order they are served. */
+export function lockState() {
+
+	const owner = lockOwner();
+	const holders = ! owner ? [] : owner.mode === 'shared'
+		? owner.members.map( ( m ) => ( { ...m, mode: 'shared' } ) )
+		: [ { pid: owner.pid, label: owner.label, start: owner.start, mode: 'exclusive' } ];
+	return { holders, queue: queueOrder( queued() ), slots: SLOTS };
+
+}
 
 // this process's parent's parent and so on (0 when it cannot be read)
 function parentOf( pid ) {

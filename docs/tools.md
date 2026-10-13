@@ -283,6 +283,29 @@ take-overs, timeouts, abandoned and stale counted apart) and the longest waits w
 long a run queued and behind whom. The profiler also checks that the GPU is idle before it
 measures and marks its results contended otherwise. Keep other pages that render the scene closed.
 
+## Long jobs: `tools/job.mjs`
+
+A command that may run longer than a few minutes (a capture set, a profile, a build of the
+references) runs under `tools/job.mjs`, and whoever waits for it waits with `job.mjs wait` rather
+than a loop of their own:
+
+    node tools/job.mjs start --log artifacts/plans/<topic>/data/set.log -- node tools/capture-set.mjs ...
+    node tools/job.mjs wait artifacts/plans/<topic>/data/set.log          (repeat until it exits 0 or with the job's code)
+
+`start` runs the command detached (it outlives the calling shell) and returns at once; `run` runs
+it in the foreground (under an agent's background shell, say). Either way the log holds the
+command's output between a start line and an end line, `[done] exit <code> at <time> after
+<duration>`. A single argument after `--` runs through `sh -c` (pipes, `&&`), several run as they
+are. `wait <log>... [--max s] [--lines n]` returns when every job has ended, exiting with the first
+failing job's code (0 when all succeeded), or after `--max` seconds (default and ceiling 240, so
+no single wait outlives an agent's five-minute prompt cache), exiting 124 while any still runs:
+call it again. A job whose runner was killed before its end line counts as ended (lost, exit 1),
+and a file that is not a job's log fails at once (exit 2), so no wait can hang on a line that will
+never come. It prints one screen: each job's state and elapsed time, where it stands in the GPU
+lock (holding a slot or the lock alone, or queued: its place, the requests ahead of it and the
+holders), its log's last lines, and the lock as a whole. `status <log>...` prints the same without
+waiting.
+
 ## Display gate
 
 Headed browser runs (`profile-frame --display`, any script that opens a visible Chrome window)
