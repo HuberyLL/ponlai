@@ -8,6 +8,7 @@ import { BUSH_STRIDE } from '../world/FoliageSites.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
 import { GameHud } from './Hud.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
+import { SAVE_KEY, savedPieces } from './sim/save.ts';
 import type { Sim } from './sim/Sim.ts';
 import { actionTools } from './sim/actions.ts';
 import type { Brain, ToolRegistry, ToolResult } from './sim/agent.ts';
@@ -44,6 +45,17 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 // installed at start or load, the speed or the pause, a placed blueprint, the placement ring the
 // pointer moves) tells the page through the context's `sceneEvent` (post/SceneEvents.ts), so the
 // temporal anti-aliasing cuts its history or converges a paused frame again.
+//
+// The island grows with the population (docs/game-design.md, "How the island grows"): each frame
+// `update` tells the page's island how near the next step is (`island.approach`, the sea floor's
+// rise over the coming piece) and, once a step is due and nothing is growing, asks it to grow
+// (`island.grow`, world/Growth.ts's instant swap). The swap hands the new land to `setIsland`,
+// which is the simulation's `addPiece`: the piece is counted there, whoever asked for the growth,
+// so the simulation's piece count is always the land step shown. The pending piece's land comes to
+// `setComing` once the page has it, and the simulation exposes its cells (Sim.comingLand). A save
+// keeps the piece count, and the page loads its world at it (world/WorldStart.ts; the `grow` URL
+// option wins), so a game resumes on its own island; one loaded from the panel must stand on the
+// island shown.
 
 export interface GameContext {
 	params: URLSearchParams;
@@ -68,10 +80,13 @@ export interface GameContext {
 	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
 	/** a change of the scene for the temporal anti-aliasing (post/SceneEvents.ts: its table says which cut) */
 	sceneEvent( reason: SceneEventReason ): void;
+	/** the island's pieces the world was loaded with (its land step: the save's, or the `grow` URL option) */
+	pieces: number;
+	/** the page's growing island (world/Growth.ts): how near the next step is (0..1), and a grow that
+	 * resolves once the next piece is in and every dependent has followed (`setIsland` included) */
+	island: { approach( p: number ): void; grow(): Promise<void> };
 }
 
-// the one save slot
-const SAVE_KEY = 'ponlai.game';
 // a stalled frame (a background tab, a debugger stop) resumes without running hours at once
 const MAX_FRAME = 0.25;
 
@@ -91,8 +106,10 @@ export class Game {
 	static async start( context: GameContext ): Promise<Game> {
 
 		const game = new Game( context );
-		// a new game starts at the page's hour (the `hour` URL option)
-		const sim = ( context.params.has( 'load' ) ? game.savedGame() : null ) ?? newGame( game.input, { startHour: context.dayCycle.hour } );
+		// a new game starts at the page's hour (the `hour` URL option), on the island loaded
+		const sim = ( context.params.has( 'load' ) ? game.savedGame() : null ) ?? newGame( game.input, { startHour: context.dayCycle.hour, pieces: context.pieces } );
+		// (a save stands on the world loaded for it, unless the `grow` URL option chose another)
+		sim.state.pieces = context.pieces;
 		if ( context.params.has( 'paused' ) ) sim.speed = 0;
 		await game.begin( sim );
 		return game;
@@ -111,6 +128,10 @@ export class Game {
 	private brain: Brain | null = new StandInBrain();
 	private gameDt = 0;
 	private resumeSpeed: Speed = 1;
+	// a grow asked of the page and not yet in
+	private growing = false;
+	// the pending piece's island, kept for a simulation installed later (a load)
+	private coming: IslandInput | null = null;
 	// frames rendered so far, and whether the props' pipelines are compiling (render)
 	private framesDrawn = 0;
 	private compiling = false;
@@ -122,12 +143,30 @@ export class Game {
 
 	}
 
-	/** The island grew (Growth.ts): the simulation's ground follows the new land, its bushes and
-	 * its top, and a saved game loads onto it. */
+	/** The island grew by a piece (Growth.ts's swap): the simulation's ground follows the new land,
+	 * its bushes and its top, and counts the piece (Sim.addPiece); a saved game loads onto it. */
 	setIsland( land: LandLattice, bushes: Float32Array, top?: Uint8Array ): void {
 
 		this.input = islandInput( land, bushes, top );
-		this.sim.setIsland( this.input );
+		this.coming = null;
+		this.sim.addPiece( this.input );
+
+	}
+
+	/** The next piece is ready on the page (Growth.ts): the simulation sees its cells (Sim.comingLand). */
+	setComing( land: LandLattice, bushes: Float32Array, top?: Uint8Array ): void {
+
+		this.coming = islandInput( land, bushes, top );
+		this.sim.setComing( this.coming );
+
+	}
+
+	/** A new islander near the island's middle (the debug panel's population bump); returns its id. */
+	addIslander(): EntityId {
+
+		const id = this.sim.addIslander();
+		this.context.sceneEvent( 'game order' );
+		return id;
 
 	}
 
@@ -154,6 +193,7 @@ export class Game {
 		const c = this.context;
 		sim.tools = this.tools;
 		sim.brain = this.brain;
+		if ( this.coming ) sim.setComing( this.coming );
 		this.view?.dispose();
 		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook } );
 		this.sim = sim;
@@ -178,7 +218,26 @@ export class Game {
 		// a speed set directly (the debug panel, the console) is the one Space resumes
 		if ( this.sim.speed !== 0 ) this.resumeSpeed = this.sim.speed;
 		this.gameDt = this.sim.advance( Math.min( Math.max( rawDt, 0 ), MAX_FRAME ), secondsPerDay );
+		this.grow();
 		return this.gameDt * secondsPerDay / SECONDS_PER_GAME_DAY;
+
+	}
+
+	// The island follows the population: how near the next step is, and a grow once one is due and
+	// none is under way. A grow that brought no piece (the growth horizon, a failed generation) is
+	// not asked again.
+	private grow(): void {
+
+		const sim = this.sim, island = this.context.island;
+		island.approach( sim.approach() );
+		if ( this.growing || ! sim.growthDue() ) return;
+		this.growing = true;
+		const before = sim.state.pieces;
+		island.grow().then( () => {
+
+			if ( this.sim.state.pieces > before ) this.growing = false;
+
+		} );
 
 	}
 
@@ -228,9 +287,12 @@ export class Game {
 
 	}
 
-	/** Resume the saved game; says whether it was loaded. */
+	/** Resume the saved game; says whether it was loaded. A save stands on its own island: one of
+	 * another piece count loads with the page (`?game&load`), not here. */
 	async load(): Promise<string> {
 
+		const pieces = savedPieces( localStorage.getItem( SAVE_KEY ) );
+		if ( pieces !== null && pieces !== this.sim.state.pieces ) return `The save stands on ${ pieces } pieces, this island on ${ this.sim.state.pieces }: reload with ?game&load`;
 		const sim = this.savedGame();
 		if ( ! sim ) return 'No saved game was loaded';
 		await this.begin( sim );

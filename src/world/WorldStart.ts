@@ -7,7 +7,7 @@
 // (WorldCache.ts); ?worldCache=off generates every chunk regardless, as on a first visit. A
 // browser without WebGPU stops at the renderer, so it starts no workers.
 //
-// The land's options and the framing it sets live here too, since the job asks for the camera's
+// The land's options and the framing it sets live here too (a resumed game's land from its save), since the job asks for the camera's
 // pivot as soon as the land is grown, which may be before main.ts runs.
 //
 // Debug pages (main.ts's DEBUG: the dev server, ?debug, ?profile) say when the world is in, as
@@ -18,6 +18,7 @@ import * as THREE from 'three/webgpu';
 import { loadWorld, type LoadedWorld } from './WorldChunks.ts';
 import { GROWTH, type LandLattice } from './IslandGrowth.ts';
 import { landArea, landCentroid } from './WorldShapes.ts';
+import { SAVE_KEY, savedPieces } from '../game/sim/save.ts';
 
 const params = new URLSearchParams( location.search );
 const intParam = ( name: string, fallback: number ) => {
@@ -27,9 +28,14 @@ const intParam = ( name: string, fallback: number ) => {
 
 };
 
+// A resumed game (`?game&load`) stands on the island its save grew (game/sim/save.ts): its piece
+// count is the step, unless the `grow` option is given.
+const savedStep = () => params.has( 'game' ) && params.has( 'load' ) ? savedPieces( localStorage.getItem( SAVE_KEY ) ) ?? 0 : 0;
+
 /** The island: the land a world seed grows in `grow` steps after the starting island
- * (IslandGrowth.ts; the `seed` and `grow` URL options, 1 and 0 by default). */
-export const landOptions = { worldSeed: intParam( 'seed', 1 ), step: THREE.MathUtils.clamp( intParam( 'grow', 0 ), 0, GROWTH.maxSteps ) };
+ * (IslandGrowth.ts; the `seed` and `grow` URL options, 1 and 0 by default; a resumed game's
+ * pieces without `grow`). */
+export const landOptions = { worldSeed: intParam( 'seed', 1 ), step: THREE.MathUtils.clamp( params.has( 'grow' ) ? intParam( 'grow', 0 ) : savedStep(), 0, GROWTH.maxSteps ) };
 
 // The framing a land sets: the first island's (the tile layout's 384 m^2 round ( 1/3, -1 ), which
 // the views were placed for) moved to the land's centroid and scaled by the ratio of their

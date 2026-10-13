@@ -1,14 +1,12 @@
 // The island for the CPU-only game checks (verify-game.mjs): the page's default land (seed 1, the
-// starting island). The real bush sites come from the world worker's turf anchors (node cannot run
-// it), so the island gets deterministic stand-ins: ~30 bushes crowded along the rim like
-// FoliageSites, a few inland.
+// starting island), and the land IslandGrowth grows from it by a number of pieces (`inputAt`). The
+// real bush sites come from the world worker's turf anchors (node cannot run it), so the island
+// gets deterministic stand-ins: ~30 bushes crowded along the rim like FoliageSites, a few inland.
 import { buildFootprint, landBounds } from '../src/world/WorldShapes.ts';
 import { growLand } from '../src/world/IslandGrowth.ts';
 import { mulberry32 } from '../src/world/noise.ts';
 
-const { land } = growLand( 1, 0 );
-
-function syntheticBushes() {
+function syntheticBushes( land ) {
 
 	const fp = buildFootprint( land ), b = landBounds( land ), rng = mulberry32( 99 );
 	const out = [];
@@ -27,4 +25,12 @@ function syntheticBushes() {
 
 }
 
-export const input = { land, bushes: syntheticBushes() };
+/** The island grown by `step` pieces after the starting island (seed 1), with its stand-in bushes. */
+export function inputAt( step ) {
+
+	const { land } = growLand( 1, step );
+	return { land, bushes: syntheticBushes( land ) };
+
+}
+
+export const input = inputAt( 0 );
