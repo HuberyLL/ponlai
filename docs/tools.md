@@ -259,16 +259,20 @@ do not depend on the load. Shared holders take one of `PONLAI_GPU_SLOTS` slots (
 rest queue first in, first out: captures are GPU-bound, so past 2-3 pages at once only each page's
 latency grows. A capture-set page leases its slot (capture.mjs's worker, `leaseGpuLock`): it keeps
 it from view to view and gives it up between views only when someone waits for it (an exclusive
-request, or a shared one when every slot is taken) and it has held it for its lease, 20 s
-(capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view), so a set behind
-back-to-back timing runs advances about four views per run instead of one, and a timing run waits
-at most 20 s plus the view in flight for it (a low page gives its slot to a normal shared request
-at the next view); capture-clip.mjs holds a slot per clip. Under a
+request past its cap, below, or a shared one when every slot is taken) and it has held it for its
+lease, 20 s (capture.mjs `--lease`, after capture-set's `--`; 0 frees it after every view), so a set
+behind back-to-back timing runs advances about four views per run instead of one, and a timing run
+past its cap waits at most 20 s plus the view in flight for it (a low page gives its slot to a
+normal shared request at the next view); capture-clip.mjs holds a slot per clip. Under a
 `run --shared` wrapper the first capture takes the wrapper's slot over and the wrapper holds nothing
 from then on, so a wrapped orchestrator never holds a slot its own captures wait for. Exclusive and
-shared requests wait in one queue, in arrival order: an exclusive request lets the requests queued
-before it go first, then waits for the slots in use, blocks new ones and runs alone, and everything
-queued after it (another session's next timing run too) waits for it. A killed holder's slot frees
+shared requests wait in one queue, shared first: a shared request joins whenever a slot is free,
+even with an exclusive request queued ahead of it, and an exclusive request takes the lock only
+when it is really free (no holders, no shared request waiting); exclusive requests go among
+themselves in arrival order. One timing run waiting is cheaper than a queue of agents waiting.
+`PONLAI_GPU_EXCLUSIVE_MAX_WAIT` seconds (default 1800) after an exclusive request queued, it stops
+the shared requests queued after it, waits for the holders to drain and goes next, so a timing run
+waits at most about 30 min plus one hold while captures keep arriving. A killed holder's slot frees
 itself at the next look, and a killed request leaves the queue. Background work (tool proofs, reference rounds) runs
 with `PONLAI_GPU_PRIORITY=low` (inherited by every child, so set it on the outer command): a free
 slot goes to the oldest normal request first and to a low one only when no normal request waits, so
@@ -281,7 +285,8 @@ the module's header).
 estimated start, below) and the exclusive requests in turn (`waiting`), and `gpu` shows the GPU's
 utilisation and the processes using it. A request that waits prints a timestamped line
 every 30 s: its place in the queue, the next in turn, who holds the GPU (the exclusive holder or
-the shared slots' labels) and why it waits (an exclusive request first, or low priority), and,
+the shared slots' labels) and why it waits (an exclusive request past its cap first, low priority,
+or, for an exclusive request, shared requests first until its cap), and,
 when it starts waiting and whenever the figure moves by more than a minute or a quarter, its
 estimated start: `estimated start in ~12 min (range 7 min-25 min, estimate)`.
 The estimate is also in `status` (`eta: { startIn, range: [ lo, hi ], basis }` on every queued
@@ -292,8 +297,11 @@ drawn from what holds of that kind took (the log's recent releases of the same t
 `profile-frame` per mode; a built-in table until the log has five of a kind: `basis` counts which).
 `startIn` is the median start over the runs and `range` its 10th to 90th percentile. Requests made
 later are not foreseen, so a low request can start after its range when normal work keeps
-arriving. To choose between waiting and handing work back, compare `startIn` with the threshold
-(the range's upper end is cautious: it adds the spread of every hold ahead).
+arriving, and an exclusive request after its range when shared work keeps arriving: its eta's
+`capIn` (and the line's "shared requests made meanwhile go first for up to ...") is the most that
+can add, plus the holds in progress then. To choose between waiting and handing work back, compare
+`startIn` with the threshold (the range's upper end is cautious: it adds the spread of every hold
+ahead).
 Every request, grant, release, timeout and abandoned request is appended to a JSON-lines log next
 to the lock (`ponlai-gpu.lock.log.jsonl`, rotated to `.log.1.jsonl` past 4 MB): time, pid, label,
 mode, class, ticket, wait or hold in ms, and why a hold ended when its holder did not end it (a
