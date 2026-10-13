@@ -7,9 +7,9 @@ import { setWindDisplacement, wave } from '../weather/Wind.ts';
 import { mainBend } from './Foliage.ts';
 import { keepLegacyWind } from './WindVariants.ts';
 import { mulberry32, type Rng } from './noise.ts';
-import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, markVegetation } from './Foliage.ts';
+import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, markVegetation, useLeafCoverage } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { useRestPoseShadows } from './VegetationShadow.ts';
+import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import type { PlantSite } from './PlantSites.ts';
 import type { Shared } from '../shared.ts';
 
@@ -530,6 +530,7 @@ function plantMaterial( shared: Shared, legacy = false, maps?: { map: THREE.Text
 	} );
 	mat.alphaMap = maps?.alphaMap ?? leafAlphaTexture( map.image.width );
 	markVegetation( mat );
+	useLeafCoverage( mat );
 	const motion = attribute<'vec4'>( 'plantMotion', 'vec4' );
 	const shade = attribute<'vec2'>( 'plantShade', 'vec2' );
 	const bark = motion.w;
@@ -593,7 +594,7 @@ function plantMaterial( shared: Shared, legacy = false, maps?: { map: THREE.Text
 		}, shared.wind );
 
 	}
-	useRestPoseShadows( mat, p, swayed, float( 1 ).sub( motion.z ) );
+	useRestPoseShadows( mat, p, swayed, float( 1 ).sub( motion.z ), previousSway( mat, shared.wind ) );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = shade.x;
 	useLighting( mat, () => new VegetationLighting( shade.y, ( L, V, N ) => {

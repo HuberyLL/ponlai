@@ -14,6 +14,7 @@ import type { ShoreWaves } from './ShoreWaves.ts';
 import type { Shared } from '../shared.ts';
 import { createFoamPattern } from './FoamPattern.ts';
 import { Spray, type SprayLighting } from './Spray.ts';
+import type { LatentRegistry } from '../post/graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -338,21 +339,13 @@ export class StormSea {
 
 	}
 
-	/** Create the storm's pipelines before its onset: the foam step and the spray's kernels
-	 * (each run once with no storm, then cleared, which leaves the calm sea's state as it
-	 * was), and the spray's draw for `camera` into the scene's multisampled target
-	 * (`Pipeline.sceneRT`), as `waterScene` (which holds `spray.mesh`) draws it. Skipped
-	 * while a storm runs: its pipelines exist then. */
-	warm( renderer: THREE.WebGPURenderer, waterScene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
+	/** Registers the storm's draws and kernels with the frame graph's water pass (MSAA draws the
+	 * spray in the water scene): the spray's mesh, the foam's step and clear and the spray's
+	 * kernels, so the graph's warm-up compiles them before a storm's onset, without running them
+	 * (the calm sea's state stays as it is). Call it with the spray's mesh in the water scene. */
+	registerLatent( graph: LatentRegistry ): Promise<void> {
 
-		if ( this.active ) return Promise.resolve();
-		const gate = this.gate.value;
-		this.gate.value = 0;
-		this.dt.value = 0;
-		renderer.compute( this.stepKernel );
-		renderer.compute( this.clearKernel );
-		this.gate.value = gate;
-		return this.spray.warm( waterScene, camera, target );
+		return graph.latent( 'water', [ this.spray.mesh ], [ this.stepKernel, this.clearKernel, ...this.spray.kernels ] );
 
 	}
 

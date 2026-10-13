@@ -1,0 +1,158 @@
+import { TemporalRest, restKey } from './TemporalRest.ts';
+
+// The page's settled signal (`__THREE_GAME_DIAGNOSTICS__.settled`, debug builds): true once a paused
+// page will draw the same frame from now on, under every anti-aliasing mode, so a capture can be
+// taken as soon as it holds instead of after a fixed wait or frame count (a bake that lands late
+// on a slow or shared GPU defeats any count).
+//
+// It reuses the temporal rest's machinery (TemporalRest.ts): a TemporalRest of its own (no settle
+// frames, a "sequence" as long as the run it needs) observes, every frame, the same key the rest
+// is tested on (`restKey`: the camera's unjittered view and projection, the scene clock, the
+// render's and the output's sizes, the epoch) plus the page's signature, and counts the frames in a
+// row that share it while the page is stable and quiet:
+// - stable: as for the temporal rest (main.ts): no sky bake in flight, no sky transition running;
+// - quiet: nothing that will change the frame without changing the key is pending (main.ts names
+//   them in `pending`: a periodic sky bake due, the refracted sun's map behind its light, a sun
+//   shadow redraw queued), and no render or compute pipeline is being compiled asynchronously
+//   (`watchPipelines`, installed by main.ts before anything compiles, counts the device's
+//   `create*PipelineAsync` calls in flight: three skips a draw whose pipeline is not ready yet, so
+//   a frame drawn meanwhile lacks it);
+// - the signature holds the redraw counts of the stepped and refracted sun maps, so a redraw
+//   (after a bake, an invalidation) starts the run over too.
+// Under MSAA (and aa=off) the page is settled once that run reaches the tier's `restSettle` frames
+// (8 on every tier): what settles on its own after the key stops changing (the clouds' view on its
+// second still frame, a bake's products landing) has then settled, as the temporal rest assumes
+// for its own settle frames. Under the temporal modes it is settled when the temporal rest has
+// converged and the quiet run began no later than the rest's sequence did (the rest's start plus
+// its settle frames), so every frame the rest's image averaged was drawn from the same, quiet
+// scene. A refresh that lands under a held rest image, or during its sequence, leaves the signal
+// false until the rest starts over (the held image is no longer the scene's): the diagnostics then
+// report `stale` (the rest converged, the quiet run long enough, the run too late), and a tool bumps
+// the epoch (`__PONLAI__.taa.epoch.bump()`; the capture tools bump it before they wait anyway).
+// With `restSequence` 0 (no rest) the temporal modes never settle.
+// Whatever the mode, the page also waits for what covers the canvas without changing its frames
+// (`shown`: the loading screen until its fade has ended; a paused page lifts it at once, main.ts).
+// A converged rest alone is not enough for a shot: rests that converged about 40 frames after a
+// view's eval were shot through the fade's last percent, and only this flag told them apart.
+//
+// It turns false on the frame anything it watches changes: a camera move, a resize or a render
+// scale change, a seek or any scene event (each bumps the epoch: SceneEvents.ts), `establishScene`
+// and every other bake (the sky is busy), a forced strike, a redraw of either sun map. A running
+// clock changes the key every frame, so a running page never settles.
+//
+// It reads state and changes nothing the frame draws (the pipeline counter wraps the device's
+// two async creation calls and passes them through unchanged).
+
+/** The page's per-frame inputs (main.ts). */
+export interface SettleFrame {
+	// the page's own signature: a forced strike's version, the sun maps' redraw counts
+	signature: readonly number[];
+	// false while a sky bake is in flight or a sky transition runs (the temporal rest's `stable`)
+	stable: boolean;
+	// the refreshes that will change the frame without changing the key (empty: none)
+	pending: readonly string[];
+	// nothing covers the canvas (the loading screen has faded out)
+	shown: boolean;
+}
+
+type AsyncCreate = ( ...args: unknown[] ) => Promise<unknown>;
+
+// the device's async pipeline creations in flight (null: not watched)
+let compiling: number | null = null;
+
+/** Counts the device's async pipeline creations in flight, from now on (once per page). The two
+ * calls are passed through unchanged. */
+export function watchPipelines( device: unknown ): void {
+
+	if ( compiling !== null ) return;
+	compiling = 0;
+	const d = device as Record<'createRenderPipelineAsync' | 'createComputePipelineAsync', AsyncCreate>;
+	for ( const name of [ 'createRenderPipelineAsync', 'createComputePipelineAsync' ] as const ) {
+
+		const original = d[ name ];
+		if ( typeof original !== 'function' ) continue;
+		d[ name ] = ( ...args: unknown[] ) => {
+
+			const created = original.apply( device, args );
+			compiling = ( compiling ?? 0 ) + 1;
+			const done = () => { compiling = ( compiling ?? 1 ) - 1; };
+			created.then( done, done );
+			return created;
+
+		};
+
+	}
+
+}
+
+export class Settled {
+
+	/** The run MSAA and aa=off need (the tier's `restSettle`). */
+	settle = 8;
+	/** The quiet run: consecutive frames with the same key while stable and quiet. */
+	readonly rest = new TemporalRest();
+	/** The signal. */
+	value = false;
+	/** The frame (frames observed since the loop started, as `diag.frame` counts them) it last
+	 * turned true on, and the times it turned true. */
+	since: number | null = null;
+	turns = 0;
+	/** Under the temporal modes: the rest converged on frames that were not all quiet (see above). */
+	stale = false;
+	private frame = 0;
+	private quietStart = 0;
+	private restStart = 0;
+	private pending: readonly string[] = [];
+	private stable = false;
+	private shown = false;
+	private readonly key: number[] = [];
+
+	/** Once per rendered frame, after the temporal rest observed it (`temporal`: that rest, under the
+	 * temporal modes). */
+	observe( camera: Parameters<typeof restKey>[ 1 ], renderWidth: number, renderHeight: number, outputWidth: number, outputHeight: number, time: number,
+		input: SettleFrame, temporal: TemporalRest | null ): void {
+
+		this.frame ++;
+		this.pending = input.pending;
+		this.stable = input.stable;
+		this.shown = input.shown;
+		const key = restKey( this.key, camera, renderWidth, renderHeight, outputWidth, outputHeight, time, input.signature );
+		const r = this.rest;
+		r.settle = 0;
+		r.sequence = Math.max( 1, temporal ? temporal.sequence : this.settle );
+		r.observe( key, input.stable && input.pending.length === 0 && ! compiling );
+		if ( r.frames === 1 ) this.quietStart = this.frame;
+		if ( temporal && temporal.frames === 1 ) this.restStart = this.frame;
+		const was = this.value;
+		const covered = temporal !== null && this.quietStart <= this.restStart + temporal.settle;
+		this.stale = temporal !== null && temporal.converged && r.converged && ! covered;
+		this.value = input.shown && ( temporal ? temporal.converged && r.converged && covered : r.converged );
+		if ( this.value && ! was ) {
+
+			this.since = this.frame;
+			this.turns ++;
+
+		}
+
+	}
+
+	/** The diagnostics' `settle` block. */
+	diagnostics(): Record<string, unknown> {
+
+		return {
+			settled: this.value,
+			// the quiet run and the run it needs (under the temporal modes the rest's sequence, and the
+			// rest's own convergence besides)
+			frames: this.rest.frames,
+			need: this.rest.sequence,
+			since: this.since,
+			turns: this.turns,
+			stable: this.stable,
+			shown: this.shown,
+			stale: this.stale,
+			pending: compiling ? [ ...this.pending, `compiling ${ compiling }` ] : this.pending,
+		};
+
+	}
+
+}

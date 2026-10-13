@@ -8,9 +8,9 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, float, vec2, vec3, vec4, ivec2, uv, abs, max, min, clamp, saturate, sqrt, select, exp2, texture, textureLoad,
-	screenCoordinate, uniform,
+	screenCoordinate,
 } from 'three/tsl';
-import { compileInto } from './Warm.ts';
+import type { GraphResources } from './graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -18,56 +18,36 @@ type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
 
 // FSR 1 for the frame graph's upscale, split differently from three's FSR1Node: EASU (edge-adaptive
-// upsampling) runs as its own pass into a canvas-sized target, and RCAS (contrast-adaptive
-// sharpening) is a function the canvas pass calls before it adds the grain, so the canvas no longer
-// takes a second full-size pass and target between the two. EASU fetches its 12-texel cross as four
-// 2x2 gathers per channel where the input is filterable (AMD's own layout), and with single texel
-// loads otherwise; either way the taps and the maths are three's, and only the alpha channel,
-// which the frame never uses, is dropped.
+// upsampling) runs as its own pass (the graph's `easu`) into a canvas-sized texture the graph owns,
+// and RCAS (contrast-adaptive sharpening) is a function the canvas pass calls before it adds the
+// grain, so the canvas no longer takes a second full-size pass and target between the two (the
+// temporal modes' canvas pass calls the same `rcas` on the resolved image). EASU
+// fetches its 12-texel cross as four 2x2 gathers per channel where the input is filterable (AMD's
+// own layout), and with single texel loads otherwise; either way the taps and the maths are
+// three's, and only the alpha channel, which the frame never uses, is dropped.
 export class FSR {
 
-	/** The upscaled image, before sharpening. */
-	readonly easuRT = new THREE.RenderTarget( 1, 1, { depthBuffer: false, type: THREE.HalfFloatType } );
-	private readonly quad: THREE.QuadMesh;
-	private readonly inputSize = uniform( new THREE.Vector2( 1, 1 ) );
-	private readonly outputSize = uniform( new THREE.Vector2( 1, 1 ) );
+	/** EASU's full-screen pass: the frame graph draws it into `output`. */
+	readonly quad: THREE.QuadMesh;
+	// the upscaled image, before sharpening (the canvas's size; the frame graph owns and sizes it)
+	private readonly output: THREE.Texture;
+	// the render's size (the input's) and the canvas's (the frame graph's extents)
+	private readonly inputSize: THREE.UniformNode<'vec2', THREE.Vector2>;
+	private readonly outputSize: THREE.UniformNode<'vec2', THREE.Vector2>;
 
 	/** `input` holds display values at the render's size; `gather` reads it with textureGather
-	 * (it must then be filterable). */
-	constructor( input: THREE.Texture, gather: boolean ) {
+	 * (it must then be filterable). EASU draws into `output`, a texture of the canvas's size on
+	 * `graph`, which also gives both sizes. */
+	constructor( input: THREE.Texture, output: THREE.Texture, gather: boolean, graph: GraphResources ) {
 
-		this.easuRT.texture.name = 'FSR.easu';
+		this.output = output;
+		this.inputSize = graph.extent( { of: 'render' } );
+		this.outputSize = graph.extent( { of: 'canvas' } );
 		const material = new THREE.NodeMaterial();
 		material.name = 'FSR.EASU';
 		material.fragmentNode = this.easu( input, gather );
 		this.quad = new THREE.QuadMesh( material );
 		this.quad.name = 'FSR.EASU';
-
-	}
-
-	/** The canvas's size, and the render's (the input's). */
-	setSize( width: number, height: number, inputWidth: number, inputHeight: number ): void {
-
-		this.easuRT.setSize( width, height );
-		this.inputSize.value.set( inputWidth, inputHeight );
-		this.outputSize.value.set( width, height );
-
-	}
-
-	/** Runs EASU into `easuRT`. */
-	render( renderer: THREE.WebGPURenderer ): void {
-
-		const target = renderer.getRenderTarget();
-		renderer.setRenderTarget( this.easuRT );
-		this.quad.render( renderer );
-		renderer.setRenderTarget( target );
-
-	}
-
-	/** Compiles EASU ahead of its first frame (see `AerialPerspective.warm`). */
-	async warm( renderer: THREE.WebGPURenderer ): Promise<void> {
-
-		await compileInto( renderer, this.quad, ( this.quad as unknown as { camera: THREE.Camera } ).camera, this.easuRT );
 
 	}
 
@@ -218,43 +198,52 @@ export class FSR {
 
 	}
 
-	/** RCAS on `easuRT` at the canvas pixel being drawn. `sharpness` in stops: 0 the strongest, 2
+	/** RCAS on `output` at the canvas pixel being drawn. `sharpness` in stops: 0 the strongest, 2
 	 * none (three's fsr1() leaves its noise attenuation off, and so does this). */
 	rcas( sharpness: F ): V3 {
 
-		const easu = this.easuRT.texture;
+		const easu = this.output;
 		return Fn( () => {
 
 			// (the cross clamped at the frame's edge, as EASU's taps are)
 			const p = screenCoordinate.xy.floor().toConst();
 			const last = this.outputSize.sub( 1 ).toConst();
-			const tap = ( dx: number, dy: number ) => textureLoad( easu, ivec2( clamp( p.add( vec2( dx, dy ) ), vec2( 0 ), last ) ) ) as unknown as V4;
-			const e = tap( 0, 0 );
-			const b = tap( 0, - 1 );
-			const d = tap( - 1, 0 );
-			const f = tap( 1, 0 );
-			const h = tap( 0, 1 );
-			const con = exp2( sharpness.negate() ).toConst();
-			// the ring's minimum and maximum, and the lobe weight the local contrast can take
-			const mn4 = min( min( b.rgb, d.rgb ), min( f.rgb, h.rgb ) ).toConst();
-			const mx4 = max( max( b.rgb, d.rgb ), max( f.rgb, h.rgb ) ).toConst();
-			const RCAS_LIMIT = float( 0.25 - 1.0 / 16.0 ).toConst();
-			const hitMin = min( mn4, e.rgb ).div( mx4.mul( 4.0 ) ).toConst();
-			const hitMax = vec3( 1.0 ).sub( max( mx4, e.rgb ) ).div( mn4.mul( 4.0 ).sub( 4.0 ) ).toConst();
-			const lobeRGB = max( hitMin.negate(), hitMax ).toConst();
-			const lobe = max( RCAS_LIMIT.negate(), min( max( lobeRGB.r, max( lobeRGB.g, lobeRGB.b ) ), float( 0.0 ) ) ).mul( con ).toConst();
-			// the cross and the centre, blended
-			return b.rgb.add( d.rgb ).add( f.rgb ).add( h.rgb ).mul( lobe ).add( e.rgb ).div( lobe.mul( 4.0 ).add( 1.0 ) );
+			return rcas( ( dx, dy ) => textureLoad( easu, ivec2( clamp( p.add( vec2( dx, dy ) ), vec2( 0 ), last ) ) ) as unknown as V4, sharpness );
 
 		} )() as V3;
 
 	}
 
+	// (the frame graph owns the EASU texture)
 	dispose(): void {
 
-		this.easuRT.dispose();
 		( this.quad.material as THREE.Material ).dispose();
 
 	}
+
+}
+
+/** RCAS (contrast-adaptive sharpening) at the pixel being drawn, from `tap( dx, dy )`: the input
+ * (display values, rgb) at that offset in pixels, clamped at the frame's edge by the caller. The
+ * upscale's canvas pass runs it on EASU's image, the temporal modes' canvas pass on the resolved
+ * one. `sharpness` in stops: 0 the strongest, 2 none. Call it inside a `Fn`. */
+export function rcas( tap: ( dx: number, dy: number ) => V4, sharpness: F ): V3 {
+
+	const e = tap( 0, 0 );
+	const b = tap( 0, - 1 );
+	const d = tap( - 1, 0 );
+	const f = tap( 1, 0 );
+	const h = tap( 0, 1 );
+	const con = exp2( sharpness.negate() ).toConst();
+	// the ring's minimum and maximum, and the lobe weight the local contrast can take
+	const mn4 = min( min( b.rgb, d.rgb ), min( f.rgb, h.rgb ) ).toConst();
+	const mx4 = max( max( b.rgb, d.rgb ), max( f.rgb, h.rgb ) ).toConst();
+	const RCAS_LIMIT = float( 0.25 - 1.0 / 16.0 ).toConst();
+	const hitMin = min( mn4, e.rgb ).div( mx4.mul( 4.0 ) ).toConst();
+	const hitMax = vec3( 1.0 ).sub( max( mx4, e.rgb ) ).div( mn4.mul( 4.0 ).sub( 4.0 ) ).toConst();
+	const lobeRGB = max( hitMin.negate(), hitMax ).toConst();
+	const lobe = max( RCAS_LIMIT.negate(), min( max( lobeRGB.r, max( lobeRGB.g, lobeRGB.b ) ), float( 0.0 ) ) ).mul( con ).toConst();
+	// the cross and the centre, blended
+	return b.rgb.add( d.rgb ).add( f.rgb ).add( h.rgb ).mul( lobe ).add( e.rgb ).div( lobe.mul( 4.0 ).add( 1.0 ) );
 
 }

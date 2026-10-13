@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, uv, uniform, texture, positionWorld, cameraPosition, normalize, smoothstep, dot,
 	vec2, vec3, vec4, ivec2, float, sqrt, max, atan, asin, acos, clamp, cos, sin, mix, abs, select,
-	pmremTexture, textureLoad, Loop, exp2,
+	pmremTexture, textureLoad, Loop, exp2, positionView,
 } from 'three/tsl';
 import { Atmosphere, SUN_ILLUMINANCE } from './Atmosphere.ts';
 import { SCENE_RADIANCE_SCALE, SUN_DISPLAY_RADIUS, SUN_DISPLAY_SOLID_ANGLE } from '../lighting/Radiometry.ts';
@@ -16,7 +16,10 @@ import { Clouds, EVOLVE_PERIOD, type CloudViewScale } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { compileInto } from '../post/Warm.ts';
+import { compileInto } from '../post/graph/Compile.ts';
+import { TEMPORAL } from '../post/Antialiasing.ts';
+import { jitter } from '../post/Jitter.ts';
+import { MOTION_CLASS, velocityOutput } from '../post/Motion.ts';
 import { DAY_BLACK_LIFT, type DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherFront, WeatherState } from './Weather.ts';
 
@@ -390,6 +393,20 @@ export class Sky {
 			return vec4( background.add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).add( airglow ).mul( through ) ), 1 );
 
 		} )();
+		if ( TEMPORAL ) {
+
+			// Under the temporal modes the scene half renders jittered (Jitter.ts), but the dome does
+			// not: each pixel keeps the direction it shows without the jitter, so a pure-sky pixel is
+			// what an unjittered frame shows, and the clouds, which accumulate in their own history
+			// (Clouds' view), are not accumulated a second time by the resolve. The projection is
+			// three's own clip position (`cameraProjectionMatrix` times `positionView`) with the
+			// unjittered matrix. Its velocity is written explicitly, no motion and class sky: the
+			// resolve derives the sky's motion from the view's rotation, and the scene MRT would
+			// otherwise overwrite the cleared value with an opaque surface's.
+			domeMat.vertexNode = jitter.uniforms.unjitteredProjection.mul( positionView );
+			domeMat.mrtNode = velocityOutput( vec4( 0, 0, MOTION_CLASS.sky, 0 ) );
+
+		}
 		this.dome = new THREE.Mesh( new THREE.SphereGeometry( 1000, 32, 16 ), domeMat );
 		this.dome.frustumCulled = false;
 		// Render behind the completed opaque depth so covered pixels skip the sky shader.

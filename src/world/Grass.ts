@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, dot, pow, clamp, fract, sin, select, normalize,
-	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, screenCoordinate, ivec2, varying, varyingProperty, uniform,
+	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, varying, varyingProperty, uniform,
 	smoothstep as smoothstepN, storage, instanceIndex, normalLocal, transformNormal, instanceColor,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
@@ -16,8 +16,9 @@ import { keepLegacyWind } from './WindVariants.ts';
 import { CANOPY_TOP, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
-import { ALPHA_TO_COVERAGE, markVegetation } from './Foliage.ts';
+import { ALPHA_TO_COVERAGE, coverageDither, markVegetation } from './Foliage.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { TEMPORAL } from '../post/Antialiasing.ts';
 import { GrassCull, cullInputs, type CullRange } from './GrassCull.ts';
 import type { Shared } from '../shared.ts';
 
@@ -49,6 +50,9 @@ import type { Shared } from '../shared.ts';
 // - The view camera's draws are culled per tuft on the GPU (GrassCull.ts); every other draw over
 //   the same geometry draws every tuft. Tufts bend with the wind field at their root and their
 //   normals turn with the bend, so a gust shows as a sheen (Wind.ts).
+// - Under the temporal modes a blade's previous position (motion vectors) is its bend under the
+//   previous frame's wind from the same rooted point, widened by this frame's offset: the culled
+//   list keeps each tuft's own slot, so the tuft is the same whichever instance draws it.
 
 interface TuftShape {
 	blades: number; segs: number;
@@ -80,8 +84,11 @@ export interface GrassQuality {
 	/** Light through the canopy per vertex instead of per pixel: the dapple inside a blade is
 	 * lost close up, so it suits the lower tiers only. */
 	canopyPerVertex: boolean;
+	/** The least width of a blade on screen (render pixels, see `pixelWideBlade`) under the
+	 * temporal modes; 4x multisampling keeps 2 and one sample outside them 1. */
+	minWidth: number;
 }
-const grassQuality: GrassQuality = { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false };
+const grassQuality: GrassQuality = { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 };
 
 export function setGrassQuality( quality: Partial<GrassQuality> ): void {
 
@@ -155,9 +162,12 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 // the treatment of thin wires after Emil Persson ("Phone-wire AA", Humus, 2012). Two pixels
 // brought a slow orbit's meadow flicker most of the way to a supersampled render's; narrower
 // widths left more of it, wider ones soften the blades further for little gain. Without
-// multisampling the coverage is dithered instead (`coverageDither`), and a blade dithered at half
+// multisampling the coverage is dithered instead (`coverageDither`, Foliage.ts), and a blade dithered at half
 // its pixels across two reads as a dotted line, sharpened further by the upscale: one pixel keeps
-// such blades solid, with the meadow's brightness as at two.
+// such blades solid, with the meadow's brightness as at two. Under the temporal modes the dither
+// turns from frame to frame and the resolve averages it, so a blade keeps its two pixels there
+// (`GrassQuality.minWidth`, set by `buildGrass`), as at 4x: one pixel darkened the meadow and lost
+// the flower heads between the blades.
 const grassUniforms = {
 	minWidth: uniform( ALPHA_TO_COVERAGE ? 2 : 1 ), // render-target pixels
 	rimMinWidth: uniform( 0.75 ), // on the outer rim, see `rimEdge` in buildGrass
@@ -210,21 +220,6 @@ function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F ): V3 {
 	} )() as V3;
 
 }
-
-// The single-sample stand-in for alpha to coverage: a 4x4 Bayer threshold (16 levels, as many as
-// the hardware's 4x pattern gives). Like that pattern it is the same for every blade over a
-// pixel, so overlapping blades share their covered pixels rather than adding up: the soil and
-// the flowers keep showing through a stack of widened blades as they do at 4x. A hash per blade
-// (alphaHash) drew independent pixels for each and closed the meadow over them.
-const coverageDither = Fn( () => {
-
-	const p = ivec2( screenCoordinate.xy );
-	const x = p.x.bitAnd( 3 ), y = p.y.bitAnd( 3 );
-	const d = x.bitXor( y );
-	const index = d.bitAnd( 1 ).shiftLeft( 3 ).bitOr( y.bitAnd( 1 ).shiftLeft( 2 ) ).bitOr( d.bitAnd( 2 ) ).bitOr( y.shiftRight( 1 ) );
-	return float( index ).add( 0.5 ).div( 16 );
-
-} );
 
 // The tuft a vertex belongs to. The meadow's instance data lives in `GrassCull`'s storage buffers,
 // one slot per tuft (each batch from its own first slot, `grassBase`): the view camera's draws read
@@ -318,7 +313,11 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 	const swayed = bend ? setWindDisplacement( mat, ( state ) => pixelWideBlade(
 		state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, bladePhase ).position, across, minWidth ), shared.wind )
 		: pixelWideBlade( rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) ), across, minWidth );
-	const rest = useRestPoseShadows( mat, rooted, swayed );
+	// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
+	// rooted point, widened by the offset the current pose took (the widening follows the camera,
+	// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
+	const previous = bend && TEMPORAL ? swayed.sub( bend.position ).add( bendBlade( shared.wind.previous, rooted, origin, tuft.w, t2, bladePhase ).position ) : undefined;
+	const rest = useRestPoseShadows( mat, rooted, swayed, undefined, previous );
 	// The rest of three's instancing: the normal and the instance colour, before the blade moves.
 	const placed = mat.positionNode!;
 	mat.positionNode = Fn( () => {
@@ -478,6 +477,9 @@ function batchOf( source: THREE.BufferGeometry, shape: TuftShape, material: THRE
  * islander's loop) keeps tussocks off the path. */
 export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): THREE.Group {
 
+	// (the tier's least blade width applies under the temporal modes only: 4x and one sample keep
+	// theirs, see `grassUniforms`)
+	if ( TEMPORAL ) grassUniforms.minWidth.value = grassQuality.minWidth;
 	const n = veg.length / STRIDE;
 	const lawn: Tuft[] = [], tussocks: Tuft[] = [], lawnThin: Tuft[] = [];
 	// The lawn's own draws keep their old order; everything added since draws from a second

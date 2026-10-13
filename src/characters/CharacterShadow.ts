@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { Fn, uniform, vec2, vec4, float } from 'three/tsl';
 import { solarShadowVisibility } from '../lighting/SolarShadow.ts';
-import { compileDraws } from '../post/Warm.ts';
+import { compileLatentInto } from '../post/graph/Compile.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -52,8 +52,9 @@ export class CharacterShadow {
 		this.depth.minFilter = this.depth.magFilter = THREE.LinearFilter;
 		// The colour is never written. One channel keeps this map's render context its own: three
 		// shares one between targets of the same attachments (colour format, samples, depth flag)
-		// whatever their depth format, and `compile` builds with the context it collected in, so
-		// with the sun's map drawn in between it built a pipeline for that map's depth format.
+		// whatever their depth format, and a compile that builds after its awaits (three's
+		// compileAsync, Compile.ts's fallback) builds with the context it collected in, so with the
+		// sun's map drawn in between it built a pipeline for that map's depth format.
 		this.target = new THREE.RenderTarget( size, size, { depthTexture: this.depth, depthBuffer: true, format: THREE.RedFormat } );
 		this.target.texture.name = 'characterShadowColor';
 		this.camera = new THREE.OrthographicCamera( - half, half, half, - half, 0, range );
@@ -62,7 +63,8 @@ export class CharacterShadow {
 		// No blending: three sets an override's `transparent` from each drawn material and can leave
 		// it null rather than false (Renderer.renderObject, r186), which reads as blended; a blended
 		// pipeline into this one-channel target reads an alpha its shader does not output, so
-		// WebGPU refuses it and every draw of the map uses an invalid pipeline.
+		// WebGPU refuses it and every draw of the map uses an invalid pipeline (this map's shader is
+		// built for its own target, graph/Compile.ts).
 		this.material.blending = THREE.NoBlending;
 		this.material.side = THREE.DoubleSide;
 		this.material.name = 'characterShadowDepth';
@@ -92,15 +94,15 @@ export class CharacterShadow {
 
 	/** Compile the pipelines `object` draws into this map with, off the frame (a figure loaded
 	 * mid-game would build them in the frame that first draws the map with it). The pass material
-	 * takes no nodes from the figure's own, so only the scene's override is set while compileAsync
-	 * collects its draws (Warm.ts). */
+	 * takes no nodes from the figure's own, so only the scene's override is set while the compile
+	 * collects its draws (graph/Compile.ts `compileLatentInto`). */
 	compile( renderer: THREE.WebGPURenderer, scene: THREE.Scene, object: THREE.Object3D ): Promise<void> {
 
 		const override = scene.overrideMaterial;
 		scene.overrideMaterial = this.material;
 		try {
 
-			return compileDraws( renderer, [ object ], scene, this.camera, this.target );
+			return compileLatentInto( renderer, [ object ], scene, this.camera, this.target );
 
 		} finally {
 

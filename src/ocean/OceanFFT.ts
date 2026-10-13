@@ -35,6 +35,10 @@ import { createWaveSpectrum, type SwellParams } from './OceanSpectrum.ts';
 //   displacement  (Dx, Dy, Dz, jacobian)       derivatives  (dDy/dx, dDy/dz, dDx/dx, dDz/dz)
 //   slope moments (dDy/dx squared, dDy/dz squared, their product, signed dDx/dz)
 //   orbital velocity (Ux, Uz, Vy, unused), without artistic choppiness
+// The displacement's rate of change is that velocity with its horizontal part scaled by `chop`
+// (Vy is dDy/dt exactly; horizontally the orbital speed is 1 / tanh( k depth ) times the
+// displacement's rate, which differs only for waves far longer than those that carry the sea's
+// energy): the temporal modes' motion vectors move the water's vertices back along it (Water.ts).
 // Derivatives and slope moments use the same filtering kernel; their mip chains retain
 // unresolved slope variance.
 // Sample a cascade at its undisplaced world xz / size.
@@ -80,7 +84,8 @@ export class OceanFFT {
 	readonly weatherGain = uniform( new THREE.Vector3( 1, 1, 1 ) );
 
 	private time = uniform( 0 );
-	private chop = uniform( 0.85 );
+	/** The horizontal displacement's scale (artistic choppiness), which the velocity leaves out. */
+	readonly chop = uniform( 0.85 );
 	private depthU = uniform( 8 );
 	private h0Attr: THREE.StorageBufferAttribute;
 	private kernels: THREE.ComputeNode[] = [];

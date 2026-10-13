@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, select, mix, positionLocal, modelWorldMatrixInverse } from 'three/tsl';
-import { compileDraws } from '../post/Warm.ts';
+import { compileLatentInto } from '../post/graph/Compile.ts';
 import { solarSteppedShadowVisibility, solarVolumeVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
 
 type F = THREE.Node<'float'>;
@@ -130,6 +130,9 @@ export class SunShadow {
 	private vegetationTaps: Readonly<SolarShadowTaps> = SHADOW_FILTER_PATH.vegetation ? VEGETATION_TAPS : SOLAR_SHADOW_TAPS;
 	private hasPrevious = false;
 	private cut = true;
+	/** Maps drawn since the page loaded (the settled signal's signature, post/Settled.ts; the dynamic
+	 * resolution leaves frames with periodic work out of its quantiles). */
+	draws = 0;
 	private readonly previousCoordinate = new THREE.Matrix4();
 	private readonly currentCoordinate = new THREE.Matrix4();
 	private readonly corner = new THREE.Vector3();
@@ -248,17 +251,18 @@ export class SunShadow {
 	}
 
 	/**
-	 * Compile the pipelines `casters` draw with into this map, off the frame (renderer.compileAsync),
+	 * Compile the pipelines `casters` draw with into this map, off the frame (graph/Compile.ts),
 	 * so that a caster first added mid-game (a game's prop) builds none in the frame that redraws
 	 * the map. Null until three has built the map and its node (with the first receiver compiled
 	 * or drawn). The casters need not be in the scene.
 	 *
 	 * three draws a caster into the map with the shadow node's material in its own's place
 	 * (scene.overrideMaterial), taking the caster's colour, depth and position nodes and side into
-	 * it per draw and restoring them after (Renderer.renderObject, r186). compileAsync builds its
-	 * draws after that restore, so each caster here compiles with a pass material of its own that
-	 * already holds what the draw takes into it: the restore then leaves it as it was. This mirrors
-	 * three's shadow material and its non-VSM side rule: re-check it on a three upgrade.
+	 * it per draw and restoring them after (Renderer.renderObject, r186). Each caster here compiles
+	 * with a pass material of its own that already holds what the draw takes into it, so the build
+	 * is the draw's whether it runs before that restore (the bound compile) or after it (three's
+	 * compileAsync, the fallback). This mirrors three's shadow material and its non-VSM side rule:
+	 * re-check it on a three upgrade.
 	 */
 	compileCasters( renderer: THREE.WebGPURenderer, casters: THREE.Object3D[] ): Promise<void> | null {
 
@@ -294,7 +298,7 @@ export class SunShadow {
 			pass.transparent = material.transparent;
 			const scene = new THREE.Scene();
 			scene.overrideMaterial = pass;
-			return compileDraws( renderer, [ mesh ], scene, this.sun.shadow.camera, map );
+			return compileLatentInto( renderer, [ mesh ], scene, this.sun.shadow.camera, map );
 
 		};
 		return meshes.reduce( ( done, mesh ) => done.then( () => compile( mesh ) ), Promise.resolve() );
@@ -329,6 +333,14 @@ export class SunShadow {
 	invalidate(): void {
 
 		this.cut = true;
+
+	}
+
+	/** Whether the next update redraws the map or projects the caster grid without the light
+	 * having moved (an invalidation, a new receiver): the settled signal waits for it. */
+	get pending(): boolean {
+
+		return this.cut || this.gridDirty;
 
 	}
 
@@ -398,6 +410,7 @@ export class SunShadow {
 	private draw( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, node: ShadowRenderer, map: THREE.RenderTarget, keyDir: THREE.Vector3 ): void {
 
 		const shadow = this.sun.shadow, shadowCamera = shadow.camera;
+		this.draws ++;
 		this.drawn.copy( keyDir );
 		this.fit( renderer, keyDir );
 		// closed solids cast their front faces into this map alone (see the header)

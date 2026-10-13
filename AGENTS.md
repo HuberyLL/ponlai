@@ -26,12 +26,14 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   GPU time, the 60 fps acceptance); its options and modes are in `docs/tools.md`.
 - Everything that renders the scene in a browser takes the GPU lock:
   `node tools/gpu-lock.mjs run [--shared] -- <command>` (`status`, `gpu`). Timing runs hold it
-  alone; paused captures and verify probes share it.
+  alone; paused captures and verify probes share it, one slot per browser (3 by default, FIFO).
+  Background work runs with `PONLAI_GPU_PRIORITY=low`: its requests yield free slots to others.
 - Headed browser runs take over the user's screen: they run only while
   `node tools/display-gate.mjs status` allows them; otherwise run headless and record the headed
   run as pending.
 - `tools/verify-*.mjs` are regression probes (GPU ones take the lock; `verify-day-cycle`,
-  `verify-weather-state`, `verify-wind`, `verify-game` are plain `node`): see `docs/tools.md`.
+  `verify-weather-state`, `verify-wind`, `verify-game`, `verify-framegraph` are plain `node`):
+  see `docs/tools.md`.
 
 ## Map
 
@@ -43,7 +45,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
 - `src/camera/`: the island camera (`IslandCameraControls.ts`, the ground it grabs in
   `IslandGround.ts`) and the free flight.
-- `src/world/`: the island generated in Web Workers (`worldWorker.ts`, cached by `WorldCache.ts`):
+- `src/world/`: the island generated in Web Workers (`worldWorker.ts`, started by `WorldStart.ts`
+  as the page loads, cached by `WorldCache.ts`):
   SDF shapes and surface nets (`WorldShapes.ts`), the cliffs (`Cliff.ts`), the sea floor
   (`Bathymetry.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`, `RimSkirt.ts`), the
   meadow (`Grass.ts`, culled by `GrassCull.ts`), flowers, bushes (`Foliage.ts`: what all vegetation
@@ -57,8 +60,17 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), weather presets.
 - `src/weather/`: wind (`Wind.ts`: the one wind field all vegetation moves in), lightning, rain,
   puddles, distant air and sea fog (`AerialPerspective.ts`).
-- `src/post/`: the frame graph, tone curve and look (`Pipeline.ts`), FSR 1, render scale and
-  dynamic resolution, the frame pacer, the submit batching, the sample count, pipeline warm-up.
+- `src/post/`: the frame's passes, tone curve and look (`Pipeline.ts`), light shafts
+  (`LightShafts.ts`), FSR 1, render scale and dynamic resolution, the frame pacer, the submit
+  batching, the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
+  temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal resolve
+  (`TemporalAA.ts`), the image of a resting scene (`TemporalRest.ts`), the scene events that
+  restart it or cut the history (`SceneEvents.ts`) and the rain's streaks and the storm's spray
+  drawn after the resolve (`AfterResolve.ts`).
+- `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
+  TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
+  `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches
+  (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
 - `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
 - `src/game/`: the game behind `?game` (`Game.ts`): `sim/` is the headless simulation (no three.js
   or DOM; node runs it by stripping types), `view/` draws the islanders, the palm and the
@@ -71,7 +83,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   places are `Fn( ... ).setLayout( ... )`, so they compile to one shader function each.
 - Paused frames are exactly repeatable: everything animated is a function of the scene clock, the
   weather and integrated state (wind travel, fog time), never of the path taken to get there.
-  Captures and probes depend on it.
+  Captures and probes depend on it. Temporal AA modes are compared within a tolerance, not byte
+  for byte: the GPU splits render passes on its own, which moves a few samples, and the temporal
+  rest freezes that (`tools/parity/README.md`).
 - Everything generated for the island is generic, because the island must grow by more tiles: it
   derives from the footprint, the island's SDF and noise fields with fixed seeds (hashes of
   position, or random streams that draw a fixed count per anchor), never from coordinates placed
@@ -119,12 +133,16 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - Multisampled depth is read with `textureLoad`, one sample at a time (the sample index in its level
   argument); single-sampled, that argument is a mip level. More in `Pipeline.ts`.
 - WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The scene is
-  4x on every tier. Find vegetation by `userData.vegetation`, never by `alphaToCoverage`
+  4x on every tier; the temporal modes (`aa=taa|taau`, URL only) draw one sample, jittered
+  (`Antialiasing.ts`). Find vegetation by `userData.vegetation`, never by `alphaToCoverage`
   (`Foliage.ts`).
 - Implicitly filtered texture samples and derivatives need uniform control flow: take them
   (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
   Keep filters that take `dFdx` / `dFdy` out of `select()` / `If` branches (`SolarShadow.ts`).
 - Nested loops: pass both ranges to one `Loop()` call so the counters get distinct names.
+- TSL may compile a `select()` of large operands into branches: a node first built inside one is
+  declared in that branch only, and the shader silently draws nothing. Select between values
+  built before it (`.toVar()`), or blend with 0/1 weights (`Water.ts`).
 - A `DepthTexture` without a `RenderTarget` takes the renderer's sample count, so it is declared
   multisampled and cannot be sampled with a comparison; give it a render target.
 - three picks one sampler type per depth texture per material: a material that gathers a shadow
@@ -132,11 +150,12 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
   (`renderOrder = -1`). See `Foliage.ts`.
 - The water samples neither the target it draws into nor more textures: it already binds 16
-  sampled textures and 14 of 16 varyings (`Water.ts`). It reflects only what lies inside
-  `Water.reflectionBounds`: anything opaque off the island or above the trees must grow that box.
-- New passes: `Pipeline.passes` are resized to the render by `sizeRtt` (keep reduced or
-  fixed-size passes out); a pass after the rain that reads `sceneRT`'s samples must move its
-  discard (`Pipeline.ts`).
+  sampled textures and 14 of 16 varyings, 15 under the temporal modes (`Water.ts`). It reflects
+  only what lies inside `Water.reflectionBounds`: anything opaque off the island or above the
+  trees must grow that box.
+- New frame work is a pass on the frame graph, its targets declared with a size class and every
+  texture it binds declared as a read (the attachment ops discard what nothing declares), never an
+  rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).
 - A compute kernel dispatched by a target's size is rebuilt with new pipelines whenever the size
   changes (at every step of high's dynamic scale): size it from something fixed or keep it a render
   pass. A kernel with `workgroupBarrier()` is dispatched by size, not by a thread count
@@ -149,12 +168,23 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - Programs that must produce bit-identical depth need `@invariant` on the clip position, which
   three r186 does not emit (`VegetationPrepass.ts`). A material that instances from storage
   buffers holds the placed position in a `toVar` (`GrassCull.ts`).
-- `renderer.compileAsync` reads the render target before its first await, builds a
-  double-sided transparent material as one unused pipeline, and builds later with a render context
-  shared by every target of the same attachments whatever its depth format (`Warm.ts`).
+- `renderer.compileAsync` alone does not compile what a render draws (target, MRT, side, call
+  depth, a render context shared by targets of the same attachments): compile ahead through the
+  frame graph's warm-up, a draw that shows only at times registered as a latent of its pass
+  (`FrameGraph.ts`, `graph/Compile.ts`; a shadow map's draws with `compileLatentInto`).
+- A fragmentNode that writes several attachments must be the `outputStruct( ... )` itself: one
+  returned from inside an `Fn` is emitted with a single output (`struct member m0 not found`).
+  Build the members in one `Fn` and return them as a matrix's columns (`TemporalAA.ts`
+  `neighbourhood`).
+- Under the temporal modes every scene material writes the velocity beside the colour: one with
+  a fragmentNode writes both outputs, one whose positionNode animates supplies `positionPrevious`
+  (`Motion.ts`). A new site that changes the scene in a way its frames do not show (a seek, a jump,
+  a new scene, a control that retunes a paused frame) raises a scene event (`SceneEvents.ts`).
 - `SubmitBatch.ts` wraps the device, queue and encoders and holds command buffers: raw WebGPU work
   and new queue operations must go through its rules, and one invalid command buffer loses its
-  whole batch.
+  whole batch. `graph/AttachmentOps.ts` wraps the encoders too: a wrapper that hands out encoders
+  of its own must be installed before it.
 - Timestamp queries (`trackTimestamp`) have one owner at a time (`DynamicResolution.ts`).
-- `Sky.ts` drives three's private `PMREMGenerator` steps, and `SunShadow.compileCasters` mirrors
-  three's shadow-pass material: re-check them on a three upgrade.
+- `Sky.ts` drives three's private `PMREMGenerator` steps, `SunShadow.compileCasters` mirrors
+  three's shadow-pass material, and `graph/ThreePatches.ts`, `graph/AttachmentOps.ts` and
+  `graph/Compile.ts` patch or stand in for r186 internals: re-check them on a three upgrade.

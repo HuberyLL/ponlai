@@ -43,9 +43,14 @@ import type * as THREE from 'three/webgpu';
 //   2. a registered scene, quad or compute node (`object()`, optionally only into one target), or a
 //      name pattern on the compute node, quad or target (`pattern()`), else
 //   3. the pass it is nested in (an rtt() pass rendered from another pass's node graph), else
-//   4. the innermost wrapped method on the call stack (`scope()`), else
-//   5. a wrapped async method still running (`scope( ..., { async: true } )`: the sky's bakes run
+//   4. the frame graph's pass running (`graphPass()`, which the graph's pass hooks call with the
+//      pass's label), else
+//   5. the innermost wrapped method on the call stack (`scope()`), else
+//   6. a wrapped async method still running (`scope( ..., { async: true } )`: the sky's bakes run
 //      in microtasks after the frame's tick), else 'other'.
+// So the graph labels its own passes and what three's nodes render as part of them (the bloom
+// chains' passes); what runs outside the graph (the sky, the shadow maps, the ocean) is labelled
+// by hand.
 // The page exposes `window.__PONLAI_PROFILE__` (see `api`), read by tools/profile-frame.mjs.
 // `?profile=frames` keeps the frame and tick timing but skips the GPU timestamps. Measure frame
 // rates that way: with timestamp queries on, Chrome ran the same frames up to a quarter faster
@@ -98,6 +103,7 @@ export interface FrameRecord {
 	outsideWait: number; // time those calls spent in the queue calls
 	gap: number; // from the end of the previous tick to the start of this one
 	gpu: number; // GPU busy time: the passes' charges (see above)
+	pixel: number; // the part of gpu in passes that follow the render's pixel count (`pixelPass`; NaN without it)
 	gpuInterval: number; // the GPU's completion of this frame since the previous frame's
 	span: number; // first pass start to last pass end on the GPU (may overlap the previous frame)
 	passes: number;
@@ -140,9 +146,13 @@ type Backend = {
 };
 type Named = { name?: string; isQuadMesh?: boolean; isScene?: boolean; isComputeNode?: boolean; texture?: THREE.Texture; width?: number; height?: number };
 
-// read-back buffers in flight: one per pool (render, compute) per frame, for a GPU a few dozen
-// frames behind
-const RING = 128;
+// read-back buffers in flight: one per pool (render, compute) per frame. In an uncapped run their
+// maps resolved more than 64 frames after their frame, so a ring of 128 ran out and lost a pool's
+// passes in about a third of the frames; a buffer holds one frame's queries, so a deeper ring
+// costs little memory
+const RING = 1024;
+// a read-back buffer's size: its frame's queries, rounded up so most frames reuse any free buffer
+const readbackBytes = ( queries: number ) => Math.max( 4096, 2 ** Math.ceil( Math.log2( queries * 8 ) ) );
 // a frame whose timestamps have not arrived by then is recorded with its passes missing
 const LATE_MS = 4000;
 
@@ -156,10 +166,14 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		renderScale = NaN;
 		/** Called with each frame as it finishes (the page's dynamic resolution reads its GPU time). */
 		onRecord: ( ( record: FrameRecord ) => void ) | null = null;
+		/** Whether the pass with a timestamp uid follows the render's pixel count (the dynamic
+		 * resolution's split, `PassScaling`), asked once per timed pass. */
+		pixelPass: ( ( uid: string ) => boolean ) | null = null;
 		private targets = new WeakMap<object, string>();
 		private objects = new WeakMap<object, { label: string; target?: object }[]>();
 		private patterns: [ RegExp, string ][] = [];
 		private stack: string[] = [];
+		private graphLabel: string | null = null;
 		private asyncScopes = new Map<number, string>();
 		private asyncId = 0;
 		private frame: Frame | null = null;
@@ -226,30 +240,11 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 		}
 
-		/** Registers the render targets, quads and compute nodes reachable from `root` (own fields,
-		 * arrays and plain objects, `depth` levels down) that are not labelled yet. */
-		scan( root: unknown, label: string, depth = 3 ): void {
+		/** Passes issued until the next call belong to `label` (the frame graph's pass running; null
+		 * when it ends), unless a target, object, pattern or parent pass labels them. */
+		graphPass( label: string | null ): void {
 
-			const seen = new Set<unknown>();
-			const visit = ( value: unknown, level: number ) => {
-
-				if ( ! value || typeof value !== 'object' || seen.has( value ) ) return;
-				seen.add( value );
-				const v = value as Record<string, unknown> & Named & { isRenderTarget?: boolean; isTexture?: boolean; isNode?: boolean; isMaterial?: boolean; isBufferGeometry?: boolean; isObject3D?: boolean };
-				if ( v.isRenderTarget ) { this.target( v, label ); return; }
-				if ( v.isQuadMesh || v.isComputeNode ) { if ( ! this.objects.has( v ) ) this.object( v, label ); return; }
-				if ( v.isTexture || v.isMaterial || v.isBufferGeometry || ( v.isObject3D && ! v.isScene ) ) return;
-				if ( level >= depth ) return;
-				if ( v.isNode && ! ( 'renderTarget' in v || '_quadMesh' in v ) && level > 0 ) return;
-				for ( const key of Object.keys( v ) ) {
-
-					if ( key === 'renderer' || key === 'parent' || key === 'children' ) continue;
-					visit( v[ key ], level + 1 );
-
-				}
-
-			};
-			visit( root, 0 );
+			this.graphLabel = label;
 
 		}
 
@@ -298,6 +293,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			const names = this.names( drawn, target );
 			for ( const [ match, label ] of this.patterns ) if ( names.some( ( n ) => match.test( n ) ) ) return label;
 			if ( parent ) return parent.group;
+			if ( this.graphLabel !== null ) return this.graphLabel;
 			if ( this.stack.length ) return this.stack[ this.stack.length - 1 ];
 			if ( this.asyncScopes.size ) return [ ...this.asyncScopes.values() ].pop()!;
 			return 'other';
@@ -553,10 +549,11 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			const offsets = new Map( pool.queryOffsets );
 			pool.currentQueryIndex = 0;
 			pool.queryOffsets.clear();
-			let slot = this.buffers.find( ( b ) => ! b.busy && b.buffer.size >= pool.maxQueries * 8 );
+			const bytes = count * 8;
+			let slot = this.buffers.find( ( b ) => ! b.busy && b.buffer.size >= bytes );
 			if ( ! slot && this.buffers.length < RING ) {
 
-				slot = { buffer: device.createBuffer( { label: 'profiler.timestamps', size: pool.maxQueries * 8, usage: READBACK_USAGE } ), busy: false };
+				slot = { buffer: device.createBuffer( { label: 'profiler.timestamps', size: readbackBytes( count ), usage: READBACK_USAGE } ), busy: false };
 				this.buffers.push( slot );
 
 			}
@@ -569,7 +566,6 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 			}
 			slot.busy = true;
-			const bytes = count * 8;
 			const encoder = device.createCommandEncoder( { label: 'profiler.resolve' } );
 			encoder.resolveQuerySet( pool.querySet, 0, count, pool.resolveBuffer, 0 );
 			encoder.copyBufferToBuffer( pool.resolveBuffer, 0, slot.buffer, 0, bytes );
@@ -631,7 +627,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 				this.open.shift();
 				for ( const pass of pending ) this.byUid.delete( pass.uid );
 				this.failed.late += pending.length;
-				const record = this.record( frame, pending.length );
+				const record = this.record( frame );
 				this.done.push( record );
 				this.onRecord?.( record );
 				if ( this.done.length > 20000 ) this.done.splice( 0, this.done.length - 20000 );
@@ -640,8 +636,10 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 		}
 
-		private record( frame: Frame, missing: number ): FrameRecord {
+		private record( frame: Frame ): FrameRecord {
 
+			// (passes that never reported are not done, and counted here once)
+			let missing = 0;
 			const groups: Record<string, number> = {};
 			const detail: Record<string, number> = {};
 			const charges = new Map<Pass, number>();
@@ -663,13 +661,14 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			// in the order they complete, each from the previous completion (this frame's, or the end of
 			// the last frame's work still running) or its own start, whichever is later
 			timed.sort( ( a, b ) => a.end - b.end );
-			let cursor = this.lastEnd;
+			let cursor = this.lastEnd, pixel = 0;
 			for ( const pass of timed ) {
 
 				const ms = Math.max( pass.end - Math.max( pass.start, cursor ), 0 );
 				cursor = Math.max( cursor, pass.end );
 				charges.set( pass, ms );
 				gpu += ms;
+				if ( this.pixelPass?.( pass.uid ) ) pixel += ms;
 				groups[ pass.group ] = ( groups[ pass.group ] ?? 0 ) + ms;
 				if ( this.detail ) {
 
@@ -685,7 +684,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 			const record: FrameRecord = {
 				id: frame.id, t: frame.now, interval: frame.time - this.lastTime, nowInterval: frame.now - this.lastNow,
 				js: frame.js, jsWall: frame.jsWall, submitWait: frame.wait, waits: frame.waits, outsideJs: frame.outside, outsideWait: frame.outsideWait, gap: frame.gap,
-				gpu, gpuInterval: complete && this.lastComplete ? end - this.lastEnd : NaN,
+				gpu, pixel: this.pixelPass ? pixel : NaN, gpuInterval: complete && this.lastComplete ? end - this.lastEnd : NaN,
 				span: timed.length ? end - first : 0, passes: frame.passes.length, missing: this.timestamps ? missing : 0,
 				pipelines: frame.pipelines, pipelineMs: frame.pipelineMs, calls: frame.calls, triangles: frame.triangles, scale: frame.scale, groups,
 			};
@@ -811,32 +810,8 @@ export type FrameProfiler = ReturnType<typeof createFrameProfiler>;
 export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
 
 	const h = handles as Record<string, Record<string, unknown>>;
-	const pipeline = h.pipeline;
-	const P = pipeline as Record<string, unknown> & { blooms: { node: unknown }[]; diffusion: { node: unknown }; passes: unknown[] };
-	// the frame graph
-	profiler.object( h.scene, 'opaque scene', P.sceneRT as object );
-	profiler.object( h.waterScene, 'water', P.sceneRT as object );
-	profiler.object( h.rainScene, 'rain draw', P.sceneRT as object );
-	for ( const quad of [ P.depthQuad, P.copyQuad, P.surfaceQuad ] ) profiler.object( quad as object, 'depth & copy resolves' );
-	// the frame graph's own rtt() passes first: a bloom's scan reaches the targets of the passes
-	// it reads, and the first label a target gets is kept
-	profiler.scan( P.shafts, 'light shafts' );
-	profiler.scan( P.passes[ 0 ], 'composite (air, fog, veil)', 1 );
-	profiler.scan( P.passes[ 1 ], 'tilt-shift blur', 1 );
-	// the sharp image (the composite plus both blooms) is passes[ 2 ] when the composite renders
-	// once; label it before the look glow's scan reaches it
-	if ( P.passes[ 2 ] ) profiler.scan( P.passes[ 2 ], 'sharp (composite + blooms)', 1 );
-	// the sea fog's bank map, nearest depth and half-resolution march, and the blur's distances
-	profiler.pattern( /^Fog\./, 'composite (air, fog, veil)' );
-	profiler.pattern( /^Post\.ViewDistance/, 'tilt-shift blur' );
-	profiler.scan( P.blooms[ 0 ]?.node, 'bloom' );
-	profiler.scan( P.blooms[ 1 ]?.node, 'wide glow' );
-	profiler.scan( P.diffusion?.node, 'look glow' );
-	profiler.scan( P.display, 'grade & look' );
-	profiler.target( P.displayRT as object, 'grade & look' );
-	profiler.scan( P.output, 'output' );
-	profiler.scan( P.upscaledOutput, 'output & FSR' );
-	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes and the port's EASU (FSR.)
+	// the frame graph labels its passes itself (`graphPass`), the bloom chains' own passes with them
+	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes inside its chain (post=three-fsr)
 	// the sky's per-frame compute and its bakes
 	profiler.pattern( /^Clouds\.View/, 'clouds view march' );
 	profiler.pattern( /^Clouds\.Panorama/, 'clouds panorama' );

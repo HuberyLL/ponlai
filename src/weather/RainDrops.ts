@@ -16,15 +16,24 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, Break, instancedArray, instanceIndex, hash, uniform, varying, cameraPosition, positionGeometry, positionView,
 	screenCoordinate, texture, textureLoad, textureSize, uv, ivec2, vec2, vec3, vec4, float, floor, fract, select, min, max, abs,
-	length, normalize, cross, dot, smoothstep, clamp, exp, sin, sqrt, pow, mix,
+	length, normalize, cross, dot, smoothstep, clamp, exp, sin, sqrt, pow, mix, output,
 } from 'three/tsl';
 import type { RainCollision } from './RainCollision.ts';
-import { compileDraws } from '../post/Warm.ts';
+import { overlayVelocity, velocityOutput } from '../post/Motion.ts';
+import { AFTER_RESOLVE } from '../post/Antialiasing.ts';
+import { afterResolveCover } from '../post/AfterResolve.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type V4 = THREE.Node<'vec4'>;
+
+// Under taa and taau (post/Antialiasing.ts AFTER_RESOLVE) the streaks, splashes and rings draw after
+// the temporal resolve, at the canvas's resolution and unjittered (`afterGroup`,
+// post/AfterResolve.ts): no depth buffer there, so they test the render texels around their pixel
+// (the same tests as below, per texel) and fade by the depth of field's weight there, and their
+// widths follow the canvas's pixel. (A splash is a glint of a few frames: kept before the resolve
+// with its reactive weight, it still lost most of itself to the history.)
 
 export const RAIN_MAX_DROPS = 49152;
 
@@ -48,6 +57,13 @@ const SPRAY_LIFE = 0.26, SEA_SPRAY_LIFE = 0.16, RING_LIFE = 0.75;
 const SPRAY_SIZE = 0.18, RING_SIZE = 0.5; // m
 // Collision search: steps down the drop's path from the highest ground, then bisections.
 const STEPS = 20, BISECTIONS = 5;
+// Under the temporal modes, a splash's reactive weight per unit of its opacity (at most 1), and a
+// streak's under the ground truth (aa=gt), which draws them before its resolve. A streak is
+// sub-pixel and faint (opacities of 0.1 - 0.3), so at 1 the resolve kept most of its history there:
+// the streaks lost a quarter of their energy against the ground truth in a storm and trailed. At 4
+// they kept 0.83 - 0.87 of it, still broken into dashes, so under taa and taau they now draw after
+// the resolve (post/AfterResolve.ts) and write no velocity.
+const REACTIVE_GAIN = 4;
 
 /** Nested volumes of drops, each a window onto a field that repeats every `size` metres, so
  * moving a window never moves a drop: it only trades drops at its faces. Near the eye a dense
@@ -125,7 +141,11 @@ export interface RainDropsOptions {
 
 export class RainDrops {
 
+	/** The drops' draws: the streaks and the splashes (empty after the resolve). */
 	readonly group = new THREE.Group();
+	/** After the resolve (Antialiasing.ts `AFTER_RESOLVE`), the streaks and the splashes, drawn in
+	 * the after pass; else null. */
+	readonly afterGroup: THREE.Group | null = null;
 	readonly streaks: THREE.Mesh;
 	readonly sprays: THREE.Mesh;
 	readonly rings: THREE.Mesh;
@@ -285,11 +305,18 @@ export class RainDrops {
 			const sharp = max( float( DIAMETER ), pixel.mul( 1.3 ) );
 			const blurred = max( sharp, pixel.mul( blur.mul( 2 ).add( 1.3 ) ) );
 			const width = min( blurred, max( sharp, pixel.mul( SOFT_PIXELS ) ) );
+			// After the resolve a streak is drawn with one sample a pixel and nothing averages it: drawn
+			// as it is, a line a pixel or so wide steps and breaks along its length where the multisampled
+			// and supersampled images show it whole. It is prefiltered instead: widened to the width of
+			// its profile convolved with a pixel (the variances add: a parabolic profile's is width^2 / 20,
+			// a pixel's 1 / 12) and faded by the ratio, so its energy holds.
+			const drawn = AFTER_RESOLVE ? sqrt( width.mul( width ).add( pixel.mul( pixel ).mul( 20 / 12 ) ) ) : width;
 			const streak = speed.mul( EXPOSURE ).mul( random( instanceIndex, 5 ).mul( 0.5 ).add( 0.75 ) ).add( width );
 			const shown = select( data.w.greaterThan( 0.004 ), float( 1 ), float( 0 ) );
-			const material = this.makeMaterial( 'rainStreaks', true );
+			// (after the resolve there is no depth to test: bindOpaqueDepth's cover hides them)
+			const material = this.makeMaterial( 'rainStreaks', ! AFTER_RESOLVE, AFTER_RESOLVE );
 			material.positionNode = head.add( axis.mul( positionGeometry.y.sub( 0.5 ).mul( streak ) )
-				.add( side.mul( positionGeometry.x.mul( width ) ) ).mul( shown ) );
+				.add( side.mul( positionGeometry.x.mul( drawn ) ) ).mul( shown ) );
 			// Some drops catch the light, most are faint.
 			const glint = random( instanceIndex, 6 ).pow( 2 ).mul( 1.3 ).add( 0.35 );
 			// Each drawn drop stands for many unseen ones, so sub-pixel coverage is lifted (power < 1).
@@ -297,7 +324,8 @@ export class RainDrops {
 			// that would fall beyond the drawn width fades the drop, so a strongly blurred near drop
 			// grows fainter, never brighter or wider.
 			const lift = pow( float( DIAMETER ).div( sharp ), 0.6 );
-			const spread = sharp.div( width ).mul( sqrt( width.div( blurred ) ) );
+			const kept = sharp.div( width ).mul( sqrt( width.div( blurred ) ) );
+			const spread = AFTER_RESOLVE ? kept.mul( width.div( drawn ) ) : kept;
 			const strength = varying( data.w.mul( lift ).mul( spread ).mul( glint ) as F, 'vRainStreak' );
 			const q = uv();
 			const across = abs( q.x.sub( 0.5 ) ).mul( 2 );
@@ -335,7 +363,7 @@ export class RainDrops {
 			const origin = e.mul( 0.38 ).add( - 0.42 );
 			// Not depth-tested: a splash sinks a little way into the ground it lands on (see
 			// bindOpaqueDepth), which the scene target's depth, holding the ground, would cut off.
-			const material = this.makeMaterial( 'rainSprays', false );
+			const material = this.makeMaterial( 'rainSprays', false, AFTER_RESOLVE );
 			material.positionNode = base.add( right.mul( positionGeometry.x ).add( up.mul( positionGeometry.y.sub( origin ) ) )
 				.mul( drawn ).mul( select( live, float( 1 ), float( 0 ) ) ) );
 			const vT = varying( t, 'vSprayAge' ), vE = varying( e, 'vSprayTilt' ), vSeed = varying( random( instanceIndex, 7 ), 'vSpraySeed' );
@@ -370,7 +398,7 @@ export class RainDrops {
 			const distance = length( cameraPosition.sub( base ) );
 			const size = float( RING_SIZE ).mul( random( instanceIndex, 6 ).mul( 0.7 ).add( 0.5 ) );
 			const drawn = max( size, distance.mul( pixelAngle ).mul( 6 ) );
-			const material = this.makeMaterial( 'rainRings', false );
+			const material = this.makeMaterial( 'rainRings', false, AFTER_RESOLVE );
 			material.positionNode = base.add( vec3( positionGeometry.x, 0, positionGeometry.y.negate() ).mul( drawn ).mul( select( live, float( 1 ), float( 0 ) ) ) );
 			const vT = varying( t, 'vRingAge' );
 			const vEnergy = varying( size.div( drawn ).pow( 2 ), 'vRingEnergy' );
@@ -382,15 +410,28 @@ export class RainDrops {
 
 		}
 		this.group.name = 'weatherRain';
-		this.group.add( this.rings, this.streaks, this.sprays );
+		// (after the resolve they draw in a pass of their own: `afterGroup`)
+		if ( AFTER_RESOLVE ) {
+
+			this.afterGroup = new THREE.Group();
+			this.afterGroup.name = 'weatherRainAfter';
+			this.afterGroup.add( this.rings, this.streaks, this.sprays );
+
+		} else this.group.add( this.rings, this.streaks, this.sprays );
 
 	}
 
-	private makeMaterial( name: string, depthTest: boolean ): THREE.MeshBasicNodeMaterial {
+	private makeMaterial( name: string, depthTest: boolean, after = false ): THREE.MeshBasicNodeMaterial {
 
 		const material = new THREE.MeshBasicNodeMaterial( { transparent: true, depthTest, depthWrite: false, side: THREE.DoubleSide } );
 		material.forceSinglePass = true;
 		material.name = name;
+		// under the temporal modes the splashes (and the streaks under aa=gt) draw in the overlay pass,
+		// which keeps the velocity under them; only their reactive weight counts (Motion.ts): their
+		// final opacity (`output`, set before the MRT's outputs are built) times REACTIVE_GAIN, which
+		// the overlay MRT's max keeps where drops overlap, so the resolve trusts its history less where
+		// a drop covers the pixel. After the resolve the streaks write their colour alone.
+		if ( ! after ) material.mrtNode = velocityOutput( overlayVelocity( clamp( output.a.mul( REACTIVE_GAIN ), 0, 1 ) ) );
 		this.materials.push( material );
 		return material;
 
@@ -446,7 +487,10 @@ export class RainDrops {
 	/** Reject drops and splashes behind the island and the figures, using the opaque pass's
 	 * resolved linear view z. Splashes lie on surfaces, so they get a little slack. The sea hides
 	 * the splashes behind it outright, as the depth test did (`surfaceDepth`: the nearest
-	 * surface's view z, the sea's included); streaks keep the depth test. */
+	 * surface's view z, the sea's included); streaks keep the depth test. After the resolve there is
+	 * no depth to test: the streaks test the nearest surface (the sea's included) and the splashes
+	 * as here, at the four render texels around their pixel, faded by the depth of field's weight
+	 * around each vertex (AfterResolve.ts). */
 	bindOpaqueDepth( linearDepth: THREE.Texture, surfaceDepth: THREE.Texture ): void {
 
 		const depth = texture( linearDepth ), surface = texture( surfaceDepth );
@@ -460,20 +504,26 @@ export class RainDrops {
 		this.materials.forEach( ( material, i ) => {
 
 			const slack = material === this.streaks.material ? 0 : 0.12;
+			if ( AFTER_RESOLVE ) {
+
+				const streak = material === this.streaks.material, spray = material === this.sprays.material;
+				material.opacityNode = this.opacities[ i ].mul( afterResolveCover( surfaceDepth, ( texel, nearest ) => {
+
+					if ( streak ) return smoothstep( 0, 0.06, positionView.z.sub( nearest ) );
+					const opaque = textureLoad( depth, texel ).r;
+					const shown = smoothstep( - slack, 0.06 - slack * 0.5, positionView.z.sub( opaque ) );
+					return spray ? select( nearest.greaterThan( opaque ).and( positionView.z.lessThan( nearest ) ), float( 0 ), shown ) : shown;
+
+				} ) );
+				material.needsUpdate = true;
+				return;
+
+			}
 			const visible = smoothstep( - slack, 0.06 - slack * 0.5, ahead );
 			material.opacityNode = this.opacities[ i ].mul( material === this.sprays.material ? select( behindSea, float( 0 ), visible ) : visible );
 			material.needsUpdate = true;
 
 		} );
-
-	}
-
-	/** Compile the simulation (one workgroup, which the next update overwrites) and the draws
-	 * of `group` for `camera` into `target`, as `scene` draws them. */
-	warm( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
-
-		renderer.compute( this.compute, 64 );
-		return compileDraws( renderer, [ this.group ], scene, camera, target );
 
 	}
 
