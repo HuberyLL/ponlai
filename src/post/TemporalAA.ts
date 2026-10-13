@@ -48,7 +48,11 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   from the point is a disocclusion, and its history goes (unless the 3x3 straddles an edge, where
 //   the jitter alone moves what the pixel shows and the clip box handles it).
 // - The history's weight is capped at a number of frames' worth: more still, fewer moving, scaled by
-//   the surface's class (the sea and the islanders keep less), by the reactive inputs (the velocity's
+//   the surface's class (the sea and the islanders keep less; the sea a whole history again with
+//   distance, `waterFar`, where its waves' phase motion, which the motion vectors leave out, is under a
+//   pixel a frame: a short history there left the jitter as a flickering line where a moon's or sun's
+//   glitter meets the horizon, and the glints' reactive weight fades over the same distance), by the
+//   reactive inputs (the velocity's
 //   alpha: a bolt, and under the ground truth the rain and spray; a strike's flash; under the ground
 //   truth the rain veil's per-pixel reactive `veilReactive`; after FSR 2's reactive and
 //   transparency-and-composition masks) and where the depth of field
@@ -80,7 +84,10 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   Jitter.ts) at the canvas's resolution.
 // - The canvas pass sharpens the encoded image and adds what must not be accumulated: the vignette
 //   (in linear, before the encoding, as the grade did), RCAS sharpening (FSR.ts), the grain and the
-//   dither. Under `linear` the running resolve writes its image encoded as a second target
+//   dither. A class with `sharpenMoving` stops is sharpened more where it moves on screen (by its
+//   speed from the velocity under the pixel): the sea, whose short history, resampled each frame,
+//   came out at 0.7 of the ground truth's sharpness under a pan (vegetation keeps the frame's: more
+//   sharpening there raised its crawl). Under `linear` the running resolve writes its image encoded as a second target
 //   (`taaEncoded`, the vignette at each pixel), so RCAS's five taps are not encoded one by one
 //   (they were half the canvas pass's time at 3840x2160; the extra half-float write costs less
 //   than that). The rest's image and the ground truth (one tap) are encoded in the canvas pass.

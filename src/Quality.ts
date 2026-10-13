@@ -145,9 +145,9 @@ const PCSS_HIGH: SolarShadowTaps = { soft: true, blockerSamples: 6, filterSample
 const BILINEAR: SolarShadowTaps = { soft: false, blockerSamples: 0, filterSamples: 0 };
 const TAA: TemporalSettings = {
 	framesStill: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
-	classFrames: [ 1, 1, 0.4, 0.8, 0 ], classGamma: [ 0, 0.25, 0, - 0.25, 0 ], waterFar: [ 1e6, 2e6 ], glintReactive: { from: 2, to: 8, max: 1 },
+	classFrames: [ 1, 1, 0.4, 0.8, 0 ], classGamma: [ 0, 0.25, 0, - 0.25, 0 ], waterFar: [ 150, 600 ], glintReactive: { from: 2, to: 8, max: 1 },
 	sigma: 0.42, sigmaRest: 0.30,
-	sharpness: { taa: 1.0, taau: [ 1.0, 0.5 ] }, sharpenMoving: { stops: [ 0, 0, 0, 0, 0 ], speed: 4 }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
+	sharpness: { taa: 1.0, taau: [ 1.0, 0.5 ] }, sharpenMoving: { stops: [ 0, 0, 1, 0, 0 ], speed: 4 }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
 	gtJitters: 64,
 };
 
