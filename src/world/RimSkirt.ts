@@ -5,7 +5,7 @@ import { SOIL_PALETTE } from '../materials/Soil.ts';
 import { SKIRT_INFO, SKIRT_RING } from './RimGround.ts';
 import { cellStream } from './Anchors.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { useRestPoseShadows } from './VegetationShadow.ts';
+import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
 import { noise3, smoothstep } from './noise.ts';
@@ -204,7 +204,7 @@ function skirtMaterial( shared: Shared, legacy = false ): THREE.MeshStandardNode
 
 	}
 	// Blades are a few millimetres wide, far under a shadow texel: only the sod casts.
-	useRestPoseShadows( mat, positionLocal, swayed, float( 1 ).sub( blade ) );
+	useRestPoseShadows( mat, positionLocal, swayed, float( 1 ).sub( blade ), previousSway( mat, shared.wind ) );
 	useLighting( mat, () => new VegetationLighting( float( 1 ), ( L, V ) =>
 		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.4 ).add( 0.03 ).mul( blade ) ) );
 	mat.name = 'turfSkirt';

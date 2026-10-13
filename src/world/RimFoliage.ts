@@ -2,9 +2,9 @@ import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, materialColor, uv, vec3, vec4, float, mix, sin, cos, dot, pow, clamp, max } from 'three/tsl';
 import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
-import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, LEAF_STEM, leafCastMask, markVegetation } from './Foliage.ts';
+import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, LEAF_STEM, leafCastMask, markVegetation, useLeafCoverage } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { useRestPoseShadows } from './VegetationShadow.ts';
+import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import { mulberry32, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
 import type { RimStrand } from './types.ts';
@@ -46,6 +46,10 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = fa
 	// Reusing both silhouettes also keeps the shadow pass consistent with the existing bush.
 	if ( ! mat.alphaMap ) mat.alphaMap = leafAlphaTexture();
 	markVegetation( mat );
+	// (the clone keeps no numeric alphaTest: three's NodeMaterial.copy skips Material's setter, so
+	// the shadow passes and 4x cut these leaves by their alpha alone; under the temporal modes the
+	// coverage band is set here and cuts them at the bush's cutoff)
+	useLeafCoverage( mat );
 	const wetness = clamp( shared.wetness, 0, 1 );
 	const wetTint = mix( 1, 0.92, wetness );
 	// Replace the cloned colour graph so wetness applies once, including the fallback material.
@@ -89,7 +93,7 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = fa
 	}
 	// The cloned bush material has shadow hooks for its own wind graph. Replace both
 	// hooks with this mesh's rest pose.
-	useRestPoseShadows( mat, positionLocal, swayed, leafCastMask() );
+	useRestPoseShadows( mat, positionLocal, swayed, leafCastMask(), previousSway( mat, shared.wind ) );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.72 ), float( 0.96 ), weight );
 	useLighting( mat, () => new VegetationLighting( float( 0.94 ), ( L, V, N ) => {

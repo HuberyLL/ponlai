@@ -442,6 +442,24 @@ comment where it is used.
   of percolation theory* (Journal of Physics A 16, 1983), with the priority queue of Richard
   Barnes, Clarence Lehman and David Mulla, *Priority-Flood: An optimal depression-filling and
   watershed-labeling algorithm for digital elevation models* (Computers & Geosciences 62, 2014).
+- Temporal anti-aliasing and upsampling (`src/post/TemporalAA.ts`, `Jitter.ts`, `Motion.ts`): a
+  Halton (2, 3) sub-pixel jitter, the motion of the nearest surface in a 3x3 neighbourhood and a
+  clipped history, after Brian Karis,
+  [*High Quality Temporal Supersampling*](https://advances.realtimerendering.com/s2014/) (SIGGRAPH
+  2014), and Lasse Jon Fuglsang Pedersen, *Temporal Reprojection Anti-Aliasing in INSIDE* (Playdead,
+  GDC 2016); variance clipping in YCoCg: Marco Salvi, *An Excursion in Temporal Supersampling*
+  (GDC 2016); the history fetched by a Catmull-Rom filter in five bilinear taps: Jorge Jimenez,
+  *Filmic SMAA* (SIGGRAPH 2016); the current frame's samples weighted by their distance to each
+  output pixel with the accumulated weight kept in the history, and reactive masks that limit the
+  history where nothing describes the motion (rain, spray, a lightning strike): AMD FidelityFX
+  Super Resolution 2 (its documentation) and Unreal Engine's Temporal Super Resolution. All used
+  as techniques only.
+- The tolerance that compares temporal AA captures (`tools/parity/tolerance.py`): a per-pixel
+  level with the share of pixels over it bounded on the frame and in local blocks, and a mean
+  error, after Unity's Graphics Test Framework (`ImageComparisonSettings`) and Unreal Engine's
+  automation screenshot comparison (`FAutomationScreenshotTolerance`); NVIDIA FLIP (Andersson et
+  al., *FLIP: A Difference Evaluator for Alternating Images*, HPG 2020) is reported through the
+  optional `flip-evaluator` package (BSD-3-Clause). Used as techniques only.
 - Gusts as a noise field scrolled with the wind, sweeping across the grass: Sucker Punch
   Productions' wind and grass in *Ghost of Tsushima* (Eric Wohllaib, *Procedural Grass in 'Ghost
   of Tsushima'*, GDC 2021: 2D Perlin noise scrolled in the wind's direction; Bill Rockenbeck,

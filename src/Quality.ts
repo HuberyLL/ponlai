@@ -4,7 +4,7 @@
 //
 // High is the reference image and holds 60 fps on the target display through its dynamic render
 // scale; medium and low render at fixed budgets that leave room there, for slower GPUs. All three multisample the scene with 4
-// samples (WebGPU has 1 or 4, no 2): without it the meadow's alpha to coverage turns into a dither
+// samples (their `aa` knob, `msaa`; WebGPU has 1 or 4, no 2): without it the meadow's alpha to coverage turns into a dither
 // and geometric edges alias, so the lower tiers save through their render scale and the knobs
 // below instead. No knob alters the weather, clock or lighting state: a tier changes the cost,
 // never the mood.
@@ -17,7 +17,9 @@
 // Load knobs reach their modules as `water` (Water.ts), `grass` (`setGrassQuality`), `shadow`
 // (`SunShadow.setFilter`), `rainShading` (`setRainShading`), `post` (`PostOptions` for
 // `new Pipeline`), `environmentSource` (`Sky.setEnvironmentSource`, before the first bake),
-// `frameRate` (FramePacer) and `render` (RenderScale.ts). Runtime ones: the cloud view
+// `frameRate` (FramePacer), `aa` (the anti-aliasing mode, post/Antialiasing.ts, which also chooses
+// the tier, since the vegetation's modules read the mode as they load), `taa` (the temporal
+// resolve's settings, TemporalAA.ts) and `render` (RenderScale.ts). Runtime ones: the cloud view
 // (`Sky.setCloudView`), the clouds' `setDome`, `setMarch` and `setShadowRefresh`,
 // `Sky.setEnvironmentCadence`, the sky bake interval, the refracted sun's interval and
 // `angleGate`, and the rain's drop count. Every default in the modules themselves is high's.
@@ -40,6 +42,7 @@ import type { GrassQuality } from './world/Grass.ts';
 import type { SolarShadowTaps } from './lighting/SolarShadow.ts';
 import type { CloudMarch, CloudViewScale } from './sky/Clouds.ts';
 import type { PostOptions } from './post/Pipeline.ts';
+import type { AAMode } from './post/Antialiasing.ts';
 
 export const QUALITY_TIERS = [ 'low', 'medium', 'high' ] as const;
 export type QualityTier = typeof QUALITY_TIERS[ number ];
@@ -53,9 +56,44 @@ export type RenderScaleRule =
 	// steered by the GPU's frame time (post/DynamicResolution.ts)
 	| { dynamic: { max: number; floor: number; step: number } };
 
+/** The temporal resolve's settings (taa and taau; read once as the resolve is built). */
+export interface TemporalSettings {
+	// the history's effective frame count (its blend weight 1 / n) for a still pixel and for one
+	// moving `speedFull` render pixels a frame or more (eased between)
+	framesStill: number;
+	framesMoving: number;
+	speedFull: number;
+	// the neighbourhood clip box's width in standard deviations (variance clipping after Salvi),
+	// still and moving
+	gammaStill: number;
+	gammaMove: number;
+	// the reconstruction filter's Gaussian width (input pixels), running and while the scene rests
+	sigma: number;
+	sigmaRest: number;
+	// the output's sharpening: taa's, and taau's at an upscale of 1 and of 2 per axis (eased between)
+	sharpness: { taa: number; taau: [ number, number ] };
+	// the sky (far depth) resolved from the current frame without a history
+	skyPassThrough: boolean;
+	// accumulate in linear light (the display curve undone) rather than display values
+	linear: boolean;
+	// a resting scene (paused clock, still camera): frames rendered before the jitter sequence
+	// starts, and the jitter sequence's length, after which the image holds (D10)
+	restSettle: number;
+	restSequence: number;
+	// the cheaper resolve (fewer taps, no reactive mask) for the lowest tier
+	lite: boolean;
+	// the ground truth's jitter count (`aa=gt`, debug builds: the rest's sequence at the canvas's
+	// resolution, box-filtered): 64 for a still image, 32 (`tier.taa.gtJitters=32`) per frame of a clip
+	gtJitters: number;
+}
+
 export interface QualityProfile {
 
 	// ---- load
+	// the scene's anti-aliasing (post/Antialiasing.ts; `?aa` overrides it) and the temporal modes'
+	// resolve
+	aa: AAMode;
+	taa: TemporalSettings;
 	render: RenderScaleRule;
 	water: WaterQuality;
 	// the frame graph's structural options (sea fog, depth of field, bloom); the rest keep their
@@ -91,14 +129,21 @@ export interface QualityProfile {
 
 const PCSS_HIGH: SolarShadowTaps = { soft: true, blockerSamples: 6, filterSamples: 8 };
 const BILINEAR: SolarShadowTaps = { soft: false, blockerSamples: 0, filterSamples: 0 };
+const TAA: TemporalSettings = {
+	framesStill: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75, sigma: 0.42, sigmaRest: 0.30,
+	sharpness: { taa: 1.0, taau: [ 1.0, 0.5 ] }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
+	gtJitters: 64,
+};
 
 export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = {
 	high: {
+		aa: 'msaa',
+		taa: { ...TAA },
 		render: { dynamic: { max: 1.5, floor: 0.6, step: 0.05 } },
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 36, bloomChains: 2 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },
-		grass: { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false },
+		grass: { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
 		frameRate: 60,
@@ -112,11 +157,13 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		rainDrops: 49152,
 	},
 	medium: {
+		aa: 'msaa',
+		taa: { ...TAA },
 		render: { budget: 1600 * 900 },
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 6, stormFoam: 'full' },
 		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048, dofTaps: 24, bloomChains: 2 },
 		shadow: { surface: { soft: true, blockerSamples: 4, filterSamples: 5 }, vegetation: BILINEAR },
-		grass: { lawnBlades: [ 12, 8, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 3, thinTufts: false, canopyPerVertex: true },
+		grass: { lawnBlades: [ 12, 8, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 256,
 		frameRate: 60,
@@ -130,13 +177,15 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		rainDrops: 32768,
 	},
 	low: {
+		aa: 'msaa',
+		taa: { ...TAA, lite: true },
 		render: { budget: 1280 * 720 },
 		// (one bloom chain veiled a golden-hour island in glow, and the merged storm foam turned
 		// the crests' streaks into scattered lace: both kept as on high)
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'full' },
 		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024, dofTaps: 16, bloomChains: 2 },
 		shadow: { surface: BILINEAR, vegetation: BILINEAR },
-		grass: { lawnBlades: [ 8, 8, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 3, thinTufts: false, canopyPerVertex: true },
+		grass: { lawnBlades: [ 8, 8, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 2, rippleLayers: 1 },
 		environmentSource: 256,
 		// light enough to render on most refreshes of a fast display: held to 60 Hz there, its

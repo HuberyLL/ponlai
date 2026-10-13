@@ -6,7 +6,8 @@ import type { GridApi, Vec2 } from '../sim/types.ts';
 // Where the chest would stand under the pointer while the player places it: a ring the size
 // of the ground it would block, laid on the turf, light green where it can go and red where it
 // cannot. It is drawn over the meadow (no depth test), so tall grass never hides it, and casts
-// nothing. It shows only while placing.
+// nothing. It shows only while placing. `show` says whether the ring changed (the page's temporal
+// anti-aliasing converges a paused frame again only when told: Placement.ts).
 
 const SEGMENTS = 48;
 const WIDTH = 0.07;
@@ -21,6 +22,8 @@ export class PlacementPreview {
 	private readonly colour = uniform( new THREE.Color() );
 	private readonly positions: Float32Array;
 	private readonly attribute: THREE.BufferAttribute;
+	// what the ring shows now: a point and whether it is allowed there, or null (hidden)
+	private shown: { x: number; z: number; ok: boolean } | null = null;
 
 	constructor() {
 
@@ -50,11 +53,15 @@ export class PlacementPreview {
 
 	}
 
-	/** Show the ring at a point (null: hide it), green when the chest can go there. */
-	show( p: Vec2 | null, ok: boolean, grid: GridApi ): void {
+	/** Show the ring at a point (null: hide it), green when the chest can go there; true when that
+	 * changed what it shows. */
+	show( p: Vec2 | null, ok: boolean, grid: GridApi ): boolean {
 
+		const was = this.shown;
+		if ( p === null ? was === null : was !== null && was.x === p.x && was.z === p.z && was.ok === ok ) return false;
+		this.shown = p && { x: p.x, z: p.z, ok };
 		this.mesh.visible = p !== null;
-		if ( ! p ) return;
+		if ( ! p ) return true;
 		this.colour.value.copy( ok ? OK : REFUSED );
 		const a = this.positions;
 		for ( let k = 0; k <= SEGMENTS; k ++ ) {
@@ -72,6 +79,7 @@ export class PlacementPreview {
 
 		}
 		this.attribute.needsUpdate = true;
+		return true;
 
 	}
 

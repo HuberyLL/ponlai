@@ -13,4 +13,15 @@
 // shipped path, so its flag either selects the old path only on an explicit `false`
 // (`flags.ssrCull = false`) or is named for the old path (`flags.skyWholeBake = true`); the code
 // that reads the flag says which. --toggle sets the flag explicitly on both sides either way.
-export const debugFlags: Record<string, boolean | number | string | undefined> = {};
+//
+// `mv` holds the temporal modes' motion vector sources (src/post/Motion.ts), each on unless set to
+// false: `flags.mv.camera = false` leaves the camera's motion out of every surface's velocity, as
+// MV-UNIT compares a source on against off. `camera` and `object` (an object's world matrix) are
+// read by Motion.ts; `skin`, `wind`, `sea` and `foam` by the movers that write those motions
+// (`wind`: the vegetation's materials, through WindVariants.ts, swap to a build without the previous
+// sway, so a --toggle of it also times that sway).
+//
+// `windFreeze = true` holds the vegetation's wind while the scene clock runs (Wind.ts): the plants
+// stand in one pose with no motion, for clips where only the shadows or the jitter should move.
+export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
+export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };

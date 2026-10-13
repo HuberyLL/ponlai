@@ -11,7 +11,9 @@ import {
 	positionGeometry, positionView, positionWorld, cameraPosition, cameraProjectionMatrix, screenSize, screenCoordinate,
 	textureLoad, texture, varyingProperty,
 } from 'three/tsl';
-import { compileDraws } from '../post/Warm.ts';
+import { outputStruct, overlayVelocity } from '../post/Motion.ts';
+import { AFTER_RESOLVE } from '../post/Antialiasing.ts';
+import { afterResolveCover } from '../post/AfterResolve.ts';
 
 type F = THREE.Node<'float'>;
 type U = THREE.Node<'uint'>;
@@ -27,7 +29,11 @@ type V3 = THREE.Node<'vec3'>;
 // repeatable. Each step every idle emitter picks a random cell of the foam field and bursts with
 // a probability that grows with the fresh breaking there (Poisson in time).
 //
-// Rendering (camera-facing sprites, premultiplied alpha, in the water target after the sea):
+// Rendering (camera-facing sprites, premultiplied alpha, in the water target after the sea; under
+// taa and taau after the resolve, at the canvas's resolution and unjittered, its occlusion and
+// depth of field from the nearest surface's texels around the pixel: post/AfterResolve.ts; under
+// the ground truth in the overlay pass over the finished scene, Pipeline.ts, its coverage the
+// reactive weight: Motion.ts):
 //  * drops and ligaments are clear water: a sub-pixel drop is drawn as a motion streak whose
 //    opacity conserves its cross-section, so its visual weight is the amount of water; they
 //    show the sky they refract and light up when backlit (forward lobe)
@@ -69,6 +75,10 @@ const BURST = [
 ];
 const GROUP = BURST.length;
 const GROUP_BUSY = 3.5; // s: longer than any life in a burst
+// Under the ground truth (aa=gt, the spray before its resolve), the reactive weight per unit of
+// coverage (at most 1), as the rain's drops (RainDrops.ts): at 1 the faint drops and mist kept most
+// of their history and trailed.
+const REACTIVE_GAIN = 4;
 
 // PCG hash of a uint to [0, 1)
 const hashU = Fn( ( [ seed ]: [ U ] ) => {
@@ -99,7 +109,9 @@ export interface SprayLighting {
 	sunVisibility: ( p: V3 ) => F;
 	wind: V2; // air velocity, m/s
 	waterLevel: F;
-	opaqueDepth: THREE.Texture; // resolved linear view z of the opaque pass
+	// resolved linear view z of the opaque pass (after the resolve: of the nearest surface, the sea's
+	// included, which it then also hides the spray behind)
+	opaqueDepth: THREE.Texture;
 }
 
 export class Spray {
@@ -264,22 +276,15 @@ export class Spray {
 
 	}
 
-	/** Create the spray's pipelines before the first storm: its kernels (one step that moves
-	 * nothing, dt 0 and no breaking, then a clear) and its draw for `camera` into `target`, as
-	 * `scene` (which holds `mesh`) draws it. Only while no storm runs. */
-	warm( scene: THREE.Scene, camera: THREE.Camera, target: THREE.RenderTarget ): Promise<void> {
+	/** The spray's compute kernels (emission, the step and the clear), for the frame graph's
+	 * warm-up (StormSea.registerLatent). */
+	get kernels(): THREE.ComputeNode[] {
 
-		const gate = this.params.gate.value;
-		this.params.gate.value = 0;
-		this.dt.value = 0;
-		this.renderer.compute( [ this.emitKernel, this.updateKernel ] );
-		this.renderer.compute( this.clearKernel );
-		this.params.gate.value = gate;
-		return compileDraws( this.renderer, [ this.mesh ], scene, camera, target );
+		return [ this.emitKernel, this.updateKernel, this.clearKernel ];
 
 	}
 
-	/** Remove every particle (a new storm, or before a warm-up). */
+	/** Remove every particle (a new storm). */
 	clear(): void {
 
 		this.renderer.compute( this.clearKernel );
@@ -307,7 +312,8 @@ export class Spray {
 		material.name = 'Spray';
 		material.transparent = true;
 		material.depthWrite = false;
-		material.depthTest = true;
+		// (after the resolve there is no depth to test: the cover below hides it)
+		material.depthTest = ! AFTER_RESOLVE;
 		material.side = THREE.DoubleSide;
 		material.forceSinglePass = true;
 		// premultiplied radiance, like the rain sharing this target
@@ -452,9 +458,10 @@ export class Spray {
 			const glow = select( isSpray, float( 1 ).sub( dens.mul( 0.6 ) ), float( 1 ) );
 
 			// soft intersections with the opaque scene (resolved linear depth) and the sea under the particle
-			const sceneZ = textureLoad( depth, ivec2( screenCoordinate.xy ) ).x;
 			const soft = vMisc.z.mul( 1.5 ).add( 0.03 );
-			const fadeScene = clamp( positionView.z.sub( sceneZ ).div( soft ), 0, 1 );
+			const fadeScene = AFTER_RESOLVE
+				? afterResolveCover( light.opaqueDepth, ( _texel, z ) => clamp( positionView.z.sub( z ).div( soft ), 0, 1 ) )
+				: clamp( positionView.z.sub( textureLoad( depth, ivec2( screenCoordinate.xy ) ).x ).div( soft ), 0, 1 );
 			const fadeWater = clamp( positionWorld.y.sub( vMisc.y ).div( soft.mul( 0.6 ) ).add( 0.15 ), 0, 1 );
 			const alpha = vCol.w.mul( shape ).mul( fadeScene ).mul( fadeWater ).min( 1 ).toVar();
 			If( alpha.lessThan( 0.002 ), () => {
@@ -465,6 +472,12 @@ export class Spray {
 			return vec4( vCol.rgb.mul( shade ).add( vFwd.mul( glow ) ).mul( alpha ), alpha );
 
 		} )();
+		// under the ground truth it draws in the overlay pass, whose velocity it keeps (Motion.ts), with
+		// its coverage times REACTIVE_GAIN as the reactive weight (the overlay MRT keeps the larger
+		// where particles overlap): the resolve trusts its history less where spray covers the pixel.
+		// After the resolve it writes its colour alone.
+		const shaded = material.fragmentNode as THREE.Node<'vec4'>;
+		if ( ! AFTER_RESOLVE ) material.fragmentNode = outputStruct( shaded, overlayVelocity( shaded.a.mul( REACTIVE_GAIN ).min( 1 ) ) );
 
 		const mesh = new THREE.Mesh( geometry, material );
 		( mesh as unknown as { count: number } ).count = this.count;

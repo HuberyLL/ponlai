@@ -1,43 +1,108 @@
 import type * as THREE from 'three/webgpu';
+import type { FrameGraph } from './graph/FrameGraph.ts';
 
 // Dynamic resolution (high tier): the scene's render scale moves between the tier's maximum and a
 // floor so that the GPU's frame time stays inside the paced frame (a 60 Hz frame, `FramePacer.ts`),
 // changing as seldom as it can: every change softens or sharpens the whole image at once.
+//
+// Its interface to the frame graph is one number per frame: `scale`, the render's pixel ratio,
+// read after `update()` and applied to the next frame (main.ts sizes the frame graph's targets
+// from it and upscales the render to the canvas). In return it takes, per frame, the GPU's busy
+// time, the part of it in passes whose cost follows the render's pixel count (`PassScaling`: the
+// frame graph's class of each pass, `currentPass.scales`, so an upscaler's canvas-class passes, FSR 1's
+// or the TAAU resolve's, count as fixed whatever upscaler it is; by the target's size outside it)
+// and tags for periodic work. Nothing else about the frame graph is assumed.
 //
 // - The GPU time comes from timestamp queries (`GpuFrameTimer`, or the frame profiler's own when it
 //   runs), as the time the GPU was busy with each frame: every pass charged from the previous
 //   pass's completion (or its own start, if later) to its end. A tile-based GPU stamps a pass's
 //   start when its vertex stage begins, long before the passes it reads have finished, so the raw
 //   intervals overlap; summed they come to several times the frame. Without timestamp queries the
-//   frame intervals steer it instead (`sampleInterval`): missed vblanks step it down, and a long
-//   run without one steps it up, backing off each time a step up costs frames.
-// - It steers a high quantile of the frames' GPU times (the 90th percentile) by what the display
-//   shows. On a 120 Hz display at 60 fps the share of frames presented a refresh late stayed at its
-//   floor (1-2 %, as many with frames of 10 ms as of 14 ms) until that quantile passed about 14.5 ms,
-//   then rose steeply (4 % at 15.1 - 15.4 ms, 13 % at 16.3 ms, 31 % at 17.5 ms). The 97th percentile
-//   it steered before sat on periodic work that hardly follows the pixel count (sky bakes, map
-//   redraws): just over its budget, it stepped the scale down again and again while most frames
-//   had room. The GPU's clock held its top step at every scale while the frames were paced (its
-//   performance states, read through IOReport), so the time follows the scale; another page or app
-//   drawing at the same time lengthens it, and then the scale goes down as it should.
-// - Down: when the quantile of the last DOWN_FRAMES frames passes the paced interval less
+//   frame intervals steer it instead (`sampleInterval`).
+// - Each frame's time is split by pass: passes into targets sized from the render (the scene, its
+//   resolves and copies, the post chain, bloom's mips) and the rest (the canvas-sized upscale and
+//   output, shadow maps, the FFT, every compute pass, the cloud view sized from the display, sky
+//   bakes), which cost the same at any scale. One fixed share for every view was half the
+//   horizon's (whose cloud view and sky take about four fifths of its frame), so every step down
+//   there fell short and a single drop took three or four. The render-sized passes do not all
+//   follow the pixel count either: their vertex work (the meadow's blades, the terrain, the sea's
+//   grid) is the same at any scale. Timed at fixed scales they cost a share of their time at
+//   scale 1 plus the rest in proportion to the pixel count (s^2): the share, `nonScaling`, was
+//   0.4 - 0.5 over the island and the horizon between scales 0.8 and 1.5, under MSAA and TAAU alike
+//   (TAAU: 0.39 - 0.48 on fair, horizon, storm and close, its fixed part, the resolve among it,
+//   flat across the scales). It starts there and is measured again at every change of scale (the
+//   render-sized passes' median just before and just after), the median of the last SHARE_KEEP
+//   measurements.
+// - Every sample keeps the scale it was drawn at, so frames at any scale predict the cost at any
+//   other: fixed + render-sized x g(s') / g(s), g(s) = k + (1 - k) s^2. Decisions read a quantile
+//   of those predictions.
+// - It steers a high quantile (the 90th percentile) by what the display shows. With frames paced
+//   to every second refresh, the share of frames presented a refresh late stayed at its floor
+//   (1-2 %) until that quantile passed about seven eighths of the paced interval, then rose steeply
+//   (to about a third of the frames once it ran 5 % over the interval).
+// - Periodic work (sky bake slices, the sun's shadow redraws, the refracted sun's redraws, the fog
+//   bank's re-bakes) is tagged by frame (`sample`'s `heavy`) and left out of the quantiles: it hardly
+//   follows the pixel count, and a quantile sitting on it stepped the scale down while most frames
+//   had room. A kind of work that runs on more than HEAVY_SHARE of the frames is steady cost and
+//   stays in. Tagged frames still count where frames take the whole interval (the emergency).
+// - Down: when the quantile of the frames at the scale passes the paced interval less
 //   DOWN_HEADROOM (at most every HOLD seconds; after EMERGENCY_HOLD when the last frames take the
-//   whole interval, or when more than SPIKE_SHARE of the window does), straight to the scale a cost
-//   model predicts lands under the interval less TARGET_HEADROOM: a fixed part (FIXED ms) plus a part
-//   that follows the pixel count, in one change.
-// - Up: after UP_HOLD seconds at the scale with UP_SAMPLES frames in, by at most UP_STEPS steps,
-//   whenever the same model predicts the window's quantile at the larger render lands under that
-//   target. A scale it had to leave is barred for a while (BAR seconds, doubled each time, up to
-//   BAR_MAX): a step back up to it needs BAR_MARGIN ms more, and one it stepped up to and had to
-//   leave again at once is not tried until its bar runs out, so it does not oscillate. Bars expire
-//   and the model follows the load, so once a heavier view or another page's load is gone the scale
-//   climbs back: it never drifts only down.
-// - Until its first decision (`settling`) it decides as soon as a few frames are in, so the page can
-//   keep its loading screen up over the first jump from the maximum.
+//   whole interval), straight to the largest scale predicted to land under the interval less
+//   TARGET_HEADROOM, in one change. A step that would save under MIN_SAVING ms is not taken: the
+//   view is bound by its fixed work, and a softer image would not make it faster. A frame whose
+//   pass split finds no render-sized pass (a frame graph that renders into targets of another size,
+//   such as max-size targets drawn through a viewport) is taken as wholly render-sized, with a
+//   warning (`onWarning`): otherwise every scale would predict the same cost.
+// - Up: after UP_HOLD seconds at the scale, in one jump to the largest scale that the last UP_SHORT
+//   seconds predict lands under the target with UP_MARGIN ms to spare, once the last UP_LONG
+//   seconds (every frame moved to the candidate scale) allow at least as much: a view whose cost
+//   swings (the camera turning from the horizon back to the island) waits until the heavier frames
+//   have left the long window and then steps once. A scale it stepped up to and had to leave within
+//   PROBE seconds is barred, with every scale above it, for BAR seconds.
+// - Without GPU times (no timestamp queries, `gpuTimer=off`) the frame intervals steer it, one step
+//   at a time: down while more than MISS_SHARE of a window's frames missed their vblank, up after
+//   UP_AFTER seconds without a miss. Every step down bars the scale it left from a step back up
+//   for FRAME_BAR seconds, doubling each time it is left again soon after (up to FRAME_BAR_MAX),
+//   so a load that misses just above a scale settles below it instead of flipping.
+// - A quality floor (QUALITY_FLOOR x the canvas's pixel ratio: a 40 % render per axis, already
+//   below FSR 1's Performance mode at 50 %; chosen from captures, where 30 % looked soft). A step
+//   down stops there, and it goes below only while late frames persist (the quantile of the last
+//   LATE_SPAN seconds still over its limit after FLOOR_DWELL seconds at the floor), by the regular
+//   rule, never the emergency's, one judged step at a time: to the nearest level predicted to save
+//   PROBE_SAVING (a single level saves too little to tell from the frames' noise, so this is often
+//   two or three), never further, and only once the step before it was judged to have saved.
+//   Each step down is judged once
+//   frames at the new scale are in: if it saved under RESPONSE of the time predicted, the GPU's time
+//   does not follow the pixel count (another page or app drawing: its work lands inside this page's
+//   passes, or a view bound by work that does not scale), and it holds at the quality floor for
+//   CONTENTION_HOLD seconds, twice as long each time a step below fails again, rather than sinking
+//   towards the floor, where the image is soft and the frames are still late. Held there with late
+//   frames for SUSTAINED seconds, it tells `onSustainedContention` (a hook for a lower frame rate,
+//   not set: the choice is open).
+// - Until its first decision (`settling`) it waits for SETTLE_FRAMES clean frames and then takes
+//   the largest scale their median predicts fits, up or down, with room for the first frames
+//   running lighter than the scene will (SETTLE_LIGHT). It starts from the scale it last held
+//   on this display (`restore`: localStorage, keyed by tier, AA mode, frame rate, canvas size, GPU
+//   and whether GPU times or frame intervals steer it), so a returning player's first frames are near
+//   it and the page keeps its loading screen up over the first jump only. A scale is remembered
+//   once it has held STORE_AFTER seconds at the current key (main.ts leaves the memory off in an
+//   automated browser, so a measurement does not start where the last one ended; `drsStore=off`
+//   turns it off anywhere, `on` on there). The key holds the AA mode: a TAAU frame (one sample
+//   per pixel, the resolve at the canvas's size) costs less per render pixel than a 4x MSAA one,
+//   so the two settle at different scales.
+// - TAAU (aa=taau) upscales in its resolve, which accumulates jittered renders into a history at
+//   the canvas's size: a change of scale resizes only the render-class targets (no pipeline, no
+//   graph rebuild, the history kept and read by uv; the jitter sequence's length follows the new
+//   ratio while its frame count runs on; RCAS's sharpness eases to the new ratio's over a quarter
+//   second: TemporalAA.ts, Jitter.ts). Its floor rises so the canvas is at most TAAU_MAX_UPSCALE
+//   times the render per axis (`maxUpscale`): below that a moving image has too few samples per
+//   output pixel. The quality floor is then the floor, and nothing goes below it. MSAA (FSR 1)
+//   keeps the tier's floor, the quality floor and the steps below it.
 // The page renders at the tier's nominal scale whenever the scale is pinned (`?dpr`, the GUI's
 // full resolution) or the scene is paused, so paused frames and captures render at the reference
 // scale whatever scale the running page had reached.
-// The range runs from the display's ratio (up to 1.5) down to 0.6 in steps of 0.05 (Quality.ts).
+// The range runs from the display's ratio (up to 1.5) down to 0.6 in steps of 0.05 (Quality.ts;
+// under TAAU down to 0.8 on a 2x display).
 // The loading screen waits for the first decision (at most 3 s), so the first jump from the
 // nominal ratio happens behind it. A change only resizes the frame graph's targets: no pipeline is
 // built and no frame is dropped (the cloud view on high is sized from the display, so its kernels
@@ -48,60 +113,132 @@ import type * as THREE from 'three/webgpu';
 // profiler each take over the pools' `resolveQueriesAsync`, so only one may own them: while the
 // profiler times passes it feeds this from its own readings.
 
-// The quantile of the window's GPU times it steers (QUANTILE), and the time (ms) left in the paced
+// The quantile of the frames' GPU times it steers (QUANTILE), and the time (ms) left in the paced
 // interval for the main thread's share of the frame and the compositor: past the interval less
 // DOWN_HEADROOM it steps down, and it steps to scales predicted to land under the interval less
-// TARGET_HEADROOM (14.9 and 14.3 ms at 60 fps, 23.2 and 22.6 ms at 40 fps). Held there, the frames
-// in a player's window on a 120 Hz display were presented late about as often as at lower scales
-// (2.5 % at 1.05, 2.2 % at 1.0); 0.6 ms higher it settled at 1.1 with a quarter more late frames.
-// A high quantile, not the median, so a noisy load (another page drawing, a view whose cost changes
-// from frame to frame) keeps a margin; not the 97th percentile, which sat on the periodic bake
-// frames (one in thirty at high's sky cadence).
+// TARGET_HEADROOM (14.9 and 14.3 ms at 60 fps, 23.2 and 22.6 ms at 40 fps).
 const QUANTILE = 0.9, DOWN_HEADROOM = 1.8, TARGET_HEADROOM = 2.4;
-// The part of a frame's GPU time (ms) that does not follow the render's pixel count (shadow maps,
-// FFT, sky bakes, the cloud view sized from the display, canvas-sized upscale and output), at most
-// FIXED_SHARE of the frame. Fitted to fixed scales on a 120 Hz display: 7.3 ms full screen and
-// 6.4 ms in a window of four fifths its height, beside 14.2 and 12.9 ms frames at scale 1.
-const FIXED = 6.8, FIXED_SHARE = 0.7;
-// seconds between steps down, after a change before its frames count, the least frames a decision
-// takes, the frames the down quantile spans and the most in its window (about 2.5 s at 60 Hz)
-const HOLD = 1.5, SETTLE = 0.4, MIN_SAMPLES = 45, DOWN_FRAMES = 90, WINDOW = 150;
-// a step up: seconds after any change, the frames its window needs, and the most steps at once
-const UP_HOLD = 4, UP_SAMPLES = 120, UP_STEPS = 2;
-// frames a decision takes while settling (after SETTLE seconds at the scale)
-const SETTLING_FRAMES = 20, SETTLING_SPREAD = 0.4;
-// frames that take the whole interval: the median of the last EMERGENCY_FRAMES does, or more than
-// SPIKE_SHARE of the window does (a few periodic bakes stay under it)
-const EMERGENCY_HOLD = 0.5, EMERGENCY_FRAMES = 12, SPIKE_SHARE = 0.1;
-// seconds a scale it stepped down from stays barred, doubling each time it is barred again; while
-// barred, a step back up to it needs BAR_MARGIN ms more headroom. A step up it had to take back
-// within PROBE seconds bars that scale outright (and every scale above it) for its time: under a
-// noisy load (another page drawing) the estimate kept promising the next step, and the scale went
-// up and down every few seconds.
-const BAR = 8, BAR_MAX = 64, BAR_MARGIN = 0.5, PROBE = 6;
+// seconds between steps down, after a change before frames at the new scale count, the seconds a
+// step down reads and the least clean frames a decision takes
+const HOLD = 1.5, SETTLE = 0.4, DOWN_SPAN = 2, MIN_FRAMES = 45;
+// the least a step down must save (ms); less, and the view is bound by its fixed work
+const MIN_SAVING = 0.5;
+// a step up: seconds after any change, its two windows (s) and the short one's extra headroom (ms)
+const UP_HOLD = 3, UP_LONG = 6, UP_SHORT = 2, UP_MARGIN = 0.3;
+// seconds between evaluations of a step up
+const UP_EVERY = 0.25;
+// frames that take the whole interval: the median of the last EMERGENCY_FRAMES does
+const EMERGENCY_HOLD = 0.5, EMERGENCY_FRAMES = 12;
+// a step down within PROBE seconds of a step up bars the scale it left, and those above, for BAR s
+const PROBE = 8, BAR = 30;
+// the quality floor's share of the canvas's pixel ratio
+const QUALITY_FLOOR = 0.4;
+// late frames persist at the quality floor: the quantile of the last LATE_SPAN seconds over its limit
+// after FLOOR_DWELL seconds there. (Under another page's load the GPU's busy time understates how
+// late the frames are shown: frames whose GPU time this page put at a level that has room alone
+// were shown a refresh late four times as often.)
+const LATE_SPAN = 2, FLOOR_DWELL = 3;
+// a step down that saved under RESPONSE of the predicted time reads as contention, held at the
+// quality floor CONTENTION_HOLD seconds (doubling up to CONTENTION_MAX); held there with late frames
+// for SUSTAINED seconds, it is sustained. The time before a step is the median of its last
+// PROBE_SPAN seconds at the old scale (the frames that called for it, not those of a lighter view
+// before them), and only steps predicted to save PROBE_SAVING ms or more are judged: a smaller one
+// drowns in the frames' noise.
+const RESPONSE = 0.4, CONTENTION_HOLD = 20, CONTENTION_MAX = 160, SUSTAINED = 10, PROBE_SPAN = 0.5, PROBE_SAVING = 1;
+// the render-sized passes' share that does not follow the pixel count: its first estimate, the
+// range it is kept in, the measurements it is the median of and the least change of the squared
+// scale a measurement takes (a smaller step drowns in the frames' noise)
+const NON_SCALING = 0.45, SHARE_MIN = 0, SHARE_MAX = 0.85, SHARE_KEEP = 7, SHARE_SPAN = 0.12;
+// settling: the clean frames it reads, the usual lead of the quantile over their median (ms) and
+// how much lighter the first frames run than the scene will (until the key light's first shadow step
+// its receivers read one shadow map, not two: about 7 % of a frame)
+const SETTLE_FRAMES = 45, SETTLE_SPREAD = 0.4, SETTLE_LIGHT = 0.07;
+// seconds a scale holds before it is remembered
+const STORE_AFTER = 4;
+// a kind of periodic work on more than this share of the frames is steady cost, part of the frames'
+// usual time (at noon on high the sky's bake slices ran on about a sixth of the frames and the
+// refracted sun's redraws on one in fifteen)
+const HEAVY_SHARE = 0.2;
+// samples kept (s)
+const KEEP = Math.max( UP_LONG, DOWN_SPAN, LATE_SPAN ) + 0.5;
 // frame-interval fallback: a frame over 1.5 refresh periods missed its vblank; steps down when
-// more than MISS_SHARE of a window missed, up after UP_AFTER seconds without a miss
-const MISS_SHARE = 0.02, UP_AFTER = 6;
+// more than MISS_SHARE of a window missed (below the quality floor, more than MISS_LATE of a whole
+// window, and each step must cut the share to MISS_CUT of it), up after UP_AFTER seconds without a
+// miss
+const MISS_SHARE = 0.02, MISS_LATE = 0.06, MISS_CUT = 0.6, UP_AFTER = 6, INTERVALS = 150;
+// frame-interval fallback: seconds a scale it stepped down from is barred from a step back up,
+// doubled each time it is left again within FRAME_BAR_MAX seconds of the last bar's end
+const FRAME_BAR = 8, FRAME_BAR_MAX = 64;
+// the stored scales (localStorage) and how many displays it remembers
+const STORE_KEY = 'soomi.renderScale', STORE_ENTRIES = 8;
+
+/** Periodic work in a frame (bits of `sample`'s `heavy`). */
+export const PeriodicWork = { skyBake: 1, sunShadow: 2, refractedSun: 4, fogBank: 8 } as const;
+const WORK_KINDS = Object.values( PeriodicWork );
 
 export interface DynamicResolutionOptions {
 	max: number; // the largest scale (the tier's nominal: the display's ratio, up to its cap)
 	floor: number;
 	step: number;
+	// the most the canvas may be upscaled from the render, per axis (Infinity: no bound; TAAU's
+	// TAAU_MAX_UPSCALE): raises the floor to the canvas's ratio over it
+	maxUpscale?: number;
 }
+
+/** TAAU's bound on the upscale (canvas over render, per axis): the floor rises to the canvas's ratio
+ * over it (0.8 on a 2x display, where the floor is otherwise 0.6). TAAU reconstructs the canvas from
+ * jittered renders, about eight samples per output pixel over its sequence (Jitter.ts: L = 8 r^2,
+ * up to 64), so far below the canvas a moving image has too few samples per pixel to hold its detail
+ * (FSR 2 and DLSS stop at 3x, their Ultra Performance mode, and recommend 2x at most for quality);
+ * 2.5 is the plan's choice (decision D8). MSAA's FSR 1 path keeps the tier's floor and the quality
+ * floor below. */
+export const TAAU_MAX_UPSCALE = 2.5;
+
+/** One frame's GPU time (ms) and how it was drawn. */
+export interface FrameSampleOptions {
+	/** the part of `ms` in passes whose targets are sized from the render (NaN: not known; the
+	 * whole frame is then taken as render-sized) */
+	pixel?: number;
+	/** periodic work in the frame (`PeriodicWork` bits) */
+	heavy?: number;
+	/** when it arrived (s of `performance.now`) */
+	now?: number;
+}
+
+interface Sample {
+	t: number;
+	scale: number;
+	total: number;
+	// the part in fixed passes and in render-sized ones
+	fixed: number;
+	pixel: number;
+	heavy: number;
+}
+
+/** A change of scale (seconds of `performance.now`), the rule that made it and, for the GPU's rules,
+ * the 90th percentile predicted at the new scale and (once its frames are in) the one measured. */
+export interface ScaleChange { at: number; scale: number; why: string; from?: number; predicted?: number; measured?: number }
+
+// A change whose frames at the new scale are still to come: the median of the render-sized passes'
+// time in the frames that called for it and, for a step down, the saving predicted there (judged
+// when at least PROBE_SAVING).
+interface Response { change: ScaleChange; beforePixel: number; saving: number }
 
 export class DynamicResolution {
 
 	max: number;
 	floor: number;
+	/** The scale it goes below only while frames are really late and steps down save time. */
+	qualityFloor: number;
 	readonly step: number;
-	// the tier's own range
+	// the tier's own range, and the upscale bound
 	private readonly limit: number;
 	private readonly limitFloor: number;
+	private readonly maxUpscale: number;
 	/** The scale the scene renders at while the resolution is dynamic. */
 	scale: number;
-	/** Changes so far, newest last (seconds of `performance.now`, the new scale and the rule that
-	 * made it). */
-	readonly changes: { at: number; scale: number; why: string }[] = [];
+	/** Changes so far, newest last. */
+	readonly changes: ScaleChange[] = [];
 	/** 'gpu' once a GPU time arrived, 'frames' while it steers by frame intervals. */
 	source: 'gpu' | 'frames' = 'frames';
 	/** false holds the scale where it is (debug: with `force`, to time one scale). */
@@ -110,20 +247,67 @@ export class DynamicResolution {
 	settling = true;
 	/** The last frames' GPU busy times (ms), whatever their scale (shown in the GUI). */
 	readonly observed: number[] = [];
-	private samples: number[] = [];
+	/** The render-sized passes' share of their time at scale 1 that does not follow the pixel count. */
+	nonScaling = NON_SCALING;
+	/** Until when (s) a step down that did not save time holds it at the quality floor. */
+	contendedUntil = - Infinity;
+	/** Whether the last step down it judged saved the time predicted (null: none judged since the
+	 * last step up). */
+	lastStepSaved: boolean | null = null;
+	/** Whether the last step down it considered would have saved too little (a view bound by its
+	 * fixed work). */
+	fixedBound = false;
+	/**
+	 * Hook: called with true once the frames stay late at the quality floor for SUSTAINED seconds
+	 * after a step down failed to save time (contention), and with false when that ends. The
+	 * fallback it is meant for (holding 40 fps instead of 60) is not chosen yet: nothing sets it, so
+	 * the scale holds at the quality floor at 60 fps.
+	 */
+	onSustainedContention: ( ( sustained: boolean ) => void ) | null = null;
+	/** Whether the sustained-contention hook was last called with true. */
+	sustained = false;
+	/** Called once with a message when something it reads looks wrong (main.ts sets it in debug
+	 * builds). */
+	onWarning: ( ( message: string ) => void ) | null = null;
+	private samples: Sample[] = [];
 	private intervals: number[] = [];
 	private lastChange = - Infinity;
 	private lastMiss = - Infinity;
 	// the paced frame interval (ms)
 	private interval = 1000 / 60;
-	private readonly bars = new Map<number, { until: number; seconds: number; hard: boolean }>();
+	// a step up's bar: scales at or above `scale` are not tried before `until`
+	private bar = { scale: Infinity, until: - Infinity };
 	private lastWhy = '';
+	private response: Response | null = null;
+	// measurements of the non-scaling share (the prior counts once)
+	private readonly shares: number[] = [ NON_SCALING ];
+	private lateAtFloorSince = NaN;
+	// the last contention hold (s), doubled on each failed step until a step up or one that saves
+	private contentionHold = 0;
+	// periodic work steady enough to stay in the quantiles (PeriodicWork bits)
+	private steady = 0;
+	private nextUp = - Infinity;
+	// the frame-interval fallback: the share of frames that missed their vblank before a step below
+	// the quality floor, until the step is judged
+	private missedBefore: number | null = null;
+	private storeKey: string | null = null;
+	// the scale last remembered under the store key, and since when the key holds (s)
+	private stored = NaN;
+	private keySince = - Infinity;
+	// the canvas's pixel ratio
+	private canvasRatio = NaN;
+	// the frame-interval fallback's bars: a scale it stepped down from, until when it is barred and
+	// for how long it was
+	private readonly frameBars = new Map<number, { until: number; seconds: number }>();
+	private warned = false;
 
-	constructor( { max, floor, step }: DynamicResolutionOptions ) {
+	constructor( { max, floor, step, maxUpscale = Infinity }: DynamicResolutionOptions ) {
 
-		if ( ! ( floor > 0 && floor <= max && step > 0 ) ) throw new RangeError( 'Dynamic resolution needs 0 < floor <= max and a positive step' );
+		if ( ! ( floor > 0 && floor <= max && step > 0 && maxUpscale >= 1 ) ) throw new RangeError( 'Dynamic resolution needs 0 < floor <= max, a positive step and an upscale bound of at least 1' );
 		this.max = this.limit = max;
 		this.floor = this.limitFloor = floor;
+		this.maxUpscale = maxUpscale;
+		this.qualityFloor = floor;
 		this.step = step;
 		this.scale = max;
 
@@ -136,8 +320,35 @@ export class DynamicResolution {
 		const max = Math.min( nominal, this.limit );
 		if ( max === this.max ) return;
 		this.max = max;
-		this.floor = Math.min( this.limitFloor, max );
+		this.floor = this.boundedFloor();
+		this.qualityFloor = Math.min( Math.max( this.qualityFloor, this.floor ), max );
 		this.change( Math.min( this.scale, max ), performance.now() / 1000, 'max' );
+
+	}
+
+	/** The canvas's pixel ratio (the display's, up to its cap): the quality floor follows it, and so
+	 * does the floor under an upscale bound. */
+	setCanvasRatio( ratio: number ): void {
+
+		if ( ! ( ratio > 0 ) ) return;
+		this.canvasRatio = ratio;
+		this.floor = this.boundedFloor();
+		// the lowest level at or above the share
+		let floor = this.max;
+		for ( const s of this.steps ) if ( s >= QUALITY_FLOOR * ratio - 1e-6 ) floor = s;
+		this.qualityFloor = Math.max( floor, this.floor );
+		if ( this.scale < this.floor - 1e-6 ) this.change( this.floor, performance.now() / 1000, 'floor' );
+
+	}
+
+	// The tier's floor, raised to the lowest level at or above the canvas's ratio over the upscale
+	// bound (the levels run down from the maximum in steps), never above the maximum.
+	private boundedFloor(): number {
+
+		const least = this.canvasRatio > 0 ? this.canvasRatio / this.maxUpscale : 0;
+		if ( least <= this.limitFloor ) return Math.min( this.limitFloor, this.max );
+		const n = Math.floor( ( this.max - least ) / this.step + 1e-6 );
+		return Math.min( Math.max( this.round( this.max - n * this.step ), this.limitFloor ), this.max );
 
 	}
 
@@ -158,19 +369,57 @@ export class DynamicResolution {
 
 	}
 
+	/** The key the scales it holds are remembered under (`renderScaleKey`: tier, AA mode, frame
+	 * rate, canvas size, GPU and steering), or null to remember nothing; set again whenever the canvas changes
+	 * size. A new key gets its entry once the scale has held STORE_AFTER seconds under it. */
+	setStoreKey( key: string | null, now = performance.now() / 1000 ): void {
+
+		if ( key === this.storeKey ) return;
+		this.storeKey = key;
+		this.stored = NaN;
+		this.keySince = now;
+
+	}
+
+	/** Starts from the scale last held under the store key, if any (before the first frame). */
+	restore(): void {
+
+		const entry = this.storeKey === null ? undefined : readStore()[ this.storeKey ];
+		if ( ! entry || ! Number.isFinite( entry.scale ) ) return;
+		// before the first frame, behind the loading screen: not a change anyone sees
+		this.scale = this.stored = this.round( Math.min( Math.max( entry.scale, this.floor ), this.max ) );
+		this.lastWhy = 'restore';
+
+	}
+
 	/** One frame's GPU busy time (ms), rendered at `scale` (NaN: a frame that does not steer it, while
 	 * paused or pinned). */
-	sample( ms: number, scale: number, now = performance.now() / 1000 ): void {
+	sample( ms: number, scale: number, { pixel = NaN, heavy = 0, now = performance.now() / 1000 }: FrameSampleOptions = {} ): void {
 
 		if ( ! Number.isFinite( ms ) || ms <= 0 ) return;
 		this.source = 'gpu';
 		this.observed.push( ms );
 		if ( this.observed.length > 120 ) this.observed.shift();
-		// frames of the previous scale (their timestamps arrive a few frames late) and the first
-		// frames after a change (new targets' first use) are left out
-		if ( scale !== this.scale || now - this.lastChange < SETTLE ) return;
-		this.samples.push( ms );
-		if ( this.samples.length > WINDOW ) this.samples.shift();
+		if ( ! ( scale > 0 ) ) return;
+		// the first frames at a new scale use its targets for the first time
+		if ( scale === this.scale && now - this.lastChange < SETTLE ) return;
+		// A split that finds no render-sized pass at all (the scene pass always is one) means the
+		// targets no longer match the render's size: every scale would then predict the same cost,
+		// and no step down would ever save. The frame counts as wholly render-sized instead.
+		if ( pixel <= 0 ) {
+
+			pixel = NaN;
+			if ( ! this.warned ) {
+
+				this.warned = true;
+				this.onWarning?.( 'Dynamic resolution: no pass of a frame renders into a target sized from the render (PassScaling); its whole GPU time is taken to follow the pixel count' );
+
+			}
+
+		}
+		const p = Number.isFinite( pixel ) ? Math.min( pixel, ms ) : ms;
+		this.samples.push( { t: now, scale, total: ms, fixed: ms - p, pixel: p, heavy } );
+		while ( this.samples.length && now - this.samples[ 0 ].t > KEEP ) this.samples.shift();
 
 	}
 
@@ -180,7 +429,7 @@ export class DynamicResolution {
 		if ( this.source === 'gpu' || ! Number.isFinite( ms ) || ms <= 0 || ms > 250 ) return;
 		if ( now - this.lastChange < SETTLE ) return;
 		this.intervals.push( ms );
-		if ( this.intervals.length > WINDOW ) this.intervals.shift();
+		if ( this.intervals.length > INTERVALS ) this.intervals.shift();
 
 	}
 
@@ -188,158 +437,397 @@ export class DynamicResolution {
 	update( now = performance.now() / 1000 ): boolean {
 
 		if ( ! this.enabled ) return false;
-		return this.source === 'gpu' ? this.steerByGpu( now ) : this.steerByIntervals( now );
+		const changed = this.source === 'gpu' ? this.steerByGpu( now ) : this.steerByIntervals( now );
+		this.remember( now );
+		return changed;
 
 	}
 
 	/** The frame loop starts (or restarts after a stop): its first frames (first-use work, whole
-	 * bakes) do not count, and the next decision comes as soon as a few frames are in. */
+	 * bakes) do not count, and it settles again from the next clean frames. */
 	begin( now = performance.now() / 1000 ): void {
 
 		this.lastChange = now;
 		this.samples.length = 0;
 		this.intervals.length = 0;
+		this.response = null;
+		this.missedBefore = null;
 		this.settling = true;
 
 	}
 
-	/** Sets the scale (a debug override, or a seek to a known settle point); clears the window. */
+	/** Sets the scale (a debug override, or a seek to a known settle point). */
 	force( scale: number, now = performance.now() / 1000 ): void {
 
 		this.change( Math.min( Math.max( this.round( scale ), this.floor ), this.max ), now, 'force' );
 
 	}
 
+	/** The lowest scale it may step down to now: the quality floor, and below it only while frames
+	 * are really late, never past it in one step (the step to it is judged first), not while a
+	 * failed step holds it there, and from below it only once the step there saved time. */
+	lowestAllowed( now = performance.now() / 1000 ): number {
+
+		if ( this.scale > this.qualityFloor + 1e-6 || now < this.contendedUntil ) return this.qualityFloor;
+		if ( this.scale < this.qualityFloor - 1e-6 && ( this.response !== null || this.lastStepSaved !== true ) ) return this.scale;
+		if ( this.scale >= this.qualityFloor - 1e-6 && now - this.lastChange < FLOOR_DWELL ) return this.qualityFloor;
+		return this.overLimit( now ) ? this.floor : this.qualityFloor;
+
+	}
+
 	private steerByGpu( now: number ): boolean {
 
-		const s = this.samples;
+		this.steady = this.steadyWork( now );
+		this.measureResponse( now );
 		const since = now - this.lastChange;
-		const over = this.interval - DOWN_HEADROOM, target = this.interval - TARGET_HEADROOM;
-		// settling, it decides as soon as a few frames are in, until a window fits
+		const target = this.interval - TARGET_HEADROOM;
+		const clean = ( x: Sample ) => this.clean( x );
+		// the frames drawn at the scale since it was set
+		const current = this.samples.filter( ( x ) => x.scale === this.scale && x.t - this.lastChange >= SETTLE );
 		if ( this.settling ) {
 
-			if ( s.length < SETTLING_FRAMES ) return false;
-			// the median and the quantile's usual lead over it in a steady view: the first frames after
-			// a load carry one-off work (whole bakes, first draws)
-			const typical = quantile( s, 0.5 ) + SETTLING_SPREAD;
-			if ( typical > over && this.scale > this.floor ) return this.down( now, typical, 'settle' );
+			const frames = current.filter( clean );
+			if ( frames.length < SETTLE_FRAMES ) return false;
 			this.settling = false;
-			return false;
+			const s = this.largestFitting( frames, ( target - SETTLE_SPREAD ) / ( 1 + SETTLE_LIGHT ), 0.5, this.qualityFloor );
+			if ( s < this.scale ) return this.down( s, now, 'settle', frames );
+			return this.to( s, now, 'settle', frames );
 
 		}
-		if ( this.scale > this.floor && since >= EMERGENCY_HOLD && s.length >= EMERGENCY_FRAMES ) {
+		this.watchSustained( now );
+		const lowest = this.lowestAllowed( now );
+		// Frames that take the whole interval, periodic work included: no waiting for the window. It
+		// stops at the quality floor: a dozen frames do not show late frames persisting.
+		const last = current.slice( - EMERGENCY_FRAMES );
+		const urgent = Math.max( lowest, Math.min( this.qualityFloor, this.scale ) );
+		if ( this.scale > urgent && since >= EMERGENCY_HOLD && last.length === EMERGENCY_FRAMES && quantile( last.map( ( x ) => x.total ), 0.5 ) > this.interval ) {
 
-			const recent = quantile( s.slice( - EMERGENCY_FRAMES ), 0.5 );
-			if ( recent > this.interval ) return this.down( now, recent, 'emergency' );
-
-		}
-		if ( since < HOLD || s.length < MIN_SAMPLES ) return false;
-		const high = quantile( s.slice( - DOWN_FRAMES ), QUANTILE );
-		if ( this.scale > this.floor ) {
-
-			if ( high > over ) return this.down( now, high, 'over' );
-			if ( s.filter( ( ms ) => ms > this.interval ).length > s.length * SPIKE_SHARE ) return this.down( now, Math.max( high, over ), 'spikes' );
+			const s = this.largestFitting( last, target, 0.5, urgent, this.scale );
+			if ( s < this.scale && this.down( s, now, 'emergency', current.filter( clean ) ) ) return true;
 
 		}
-		if ( this.scale < this.max && since >= UP_HOLD && s.length >= UP_SAMPLES ) {
+		if ( since < HOLD ) return false;
+		const recent = current.filter( ( x ) => clean( x ) && now - x.t <= DOWN_SPAN );
+		if ( recent.length >= MIN_FRAMES ) {
 
-			// the largest of the next few scales up the model predicts lands under the target; a
-			// scale it recently had to leave (or one it would jump past) needs a wider margin, and one
-			// whose step up did not hold stops the climb below it
-			const window = quantile( s, QUANTILE );
-			let margin = 0;
-			let best = 0;
-			for ( let k = 1; k <= UP_STEPS; k ++ ) {
+			const high = this.predict( recent, this.scale, QUANTILE );
+			if ( high > this.interval - DOWN_HEADROOM ) {
 
-				const up = this.round( Math.min( this.scale + k * this.step, this.max ) );
-				if ( up <= this.scale || up === best ) break;
-				const bar = this.barred( up, now );
-				if ( bar === 'hard' ) break;
-				if ( bar === 'soft' ) margin = BAR_MARGIN;
-				if ( this.cost( window, up ) < target - margin ) best = up;
-				else break;
+				if ( this.scale <= lowest ) return false;
+				const s = this.largestFitting( recent, target, QUANTILE, lowest, this.scale );
+				// a step that saves too little: the view is bound by its fixed work
+				this.fixedBound = high - this.predict( recent, s, QUANTILE ) < MIN_SAVING;
+				return this.fixedBound ? false : this.down( s, now, 'down', recent );
 
 			}
-			if ( best > this.scale ) return this.up( best, now );
+			this.fixedBound = false;
+
+		}
+		// (a few times a second: it reads every frame of the last seconds at a few scales)
+		if ( since >= UP_HOLD && this.scale < this.max && now >= this.nextUp ) {
+
+			this.nextUp = now + UP_EVERY;
+			const long = this.samples.filter( ( x ) => clean( x ) && now - x.t <= UP_LONG );
+			const short = long.filter( ( x ) => now - x.t <= UP_SHORT );
+			if ( short.length >= MIN_FRAMES ) {
+
+				const ceiling = now < this.bar.until ? this.bar.scale : Infinity;
+				const a = this.largestFitting( long, target, QUANTILE, this.scale, ceiling );
+				const b = this.largestFitting( short, target - UP_MARGIN, QUANTILE, this.scale, ceiling );
+				// Up to the short window's level once the long one allows at least as much (waiting for
+				// the two to be equal would never step up where the margin keeps them a level apart);
+				// while the long one allows less, the view has just turned lighter: wait, then step once.
+				if ( b > this.scale && a >= b ) return this.to( b, now, 'up', short );
+
+			}
 
 		}
 		return false;
 
 	}
 
-	// The GPU time (ms) a frame that takes `ms` at the current scale is predicted to take at `scale`.
-	private cost( ms: number, scale: number ): number {
+	// Not periodic work, or only work that runs on so many frames it is steady cost.
+	private clean( x: Sample ): boolean {
 
-		const fixed = Math.min( FIXED, FIXED_SHARE * ms );
-		return fixed + ( ms - fixed ) * ( scale * scale ) / ( this.scale * this.scale );
+		return ( x.heavy & ~ this.steady ) === 0;
+
+	}
+
+	// The render-sized passes' time at `scale` relative to scale 1.
+	private growth( scale: number ): number {
+
+		return this.nonScaling + ( 1 - this.nonScaling ) * scale * scale;
+
+	}
+
+	// The GPU time (ms) the `q` quantile of `frames` is predicted to take at `scale`.
+	private predict( frames: readonly Sample[], scale: number, q: number ): number {
+
+		const g = this.growth( scale );
+		return quantile( frames.map( ( x ) => x.fixed + x.pixel * g / this.growth( x.scale ) ), q );
+
+	}
+
+	// The largest scale between `lowest` and below `ceiling` (the maximum without one) whose
+	// predicted `q` quantile lands under `limit`; `lowest` if none does (the cost rises with the
+	// scale, so a bisection over the levels finds it).
+	private largestFitting( frames: readonly Sample[], limit: number, q: number, lowest: number, ceiling = Infinity ): number {
+
+		const levels = this.steps.filter( ( s ) => s >= lowest - 1e-6 && s < ceiling - 1e-6 );
+		if ( levels.length === 0 ) return lowest;
+		// levels run from the largest down: find the first that fits
+		let lo = 0, hi = levels.length;
+		while ( lo < hi ) {
+
+			const mid = ( lo + hi ) >> 1;
+			if ( this.predict( frames, levels[ mid ], q ) <= limit ) hi = mid;
+			else lo = mid + 1;
+
+		}
+		return lo < levels.length ? levels[ lo ] : Math.max( lowest, levels[ levels.length - 1 ] );
+
+	}
+
+	// Steps down to `scale` (`frames`: the clean frames at the scale it leaves that called for it).
+	// Returns false when the step is not taken.
+	private down( scale: number, now: number, why: string, frames: readonly Sample[] ): boolean {
+
+		const from = this.scale;
+		const response = this.before( frames, now );
+		// the render-sized passes' saving: the fixed ones (the cloud view above all) change with the
+		// view, so a step taken as the camera turns would be judged by the turn
+		const saving = ( s: number ) => response ? response.beforePixel * ( 1 - this.growth( s ) / this.growth( from ) ) : NaN;
+		if ( scale < this.qualityFloor - 1e-6 ) {
+
+			// Below the quality floor every step is judged, one at a time: it goes to the nearest level
+			// below that is predicted to save enough to judge (often two or three levels: one saves too
+			// little to tell from the frames' noise), never further even when the fit asks for more,
+			// and is not taken if none does (a run of small steps would sink to the floor under
+			// contention, none of them judged).
+			const s = this.steps.find( ( l ) => l < from - 1e-6 && saving( l ) >= PROBE_SAVING );
+			if ( s === undefined ) {
+
+				this.fixedBound = true;
+				return false;
+
+			}
+			scale = s;
+
+		}
+		// a step up it has to take back at once: bar it, and every scale above, for a while
+		if ( this.lastWhy === 'up' && now - this.lastChange < PROBE ) this.bar = { scale: from, until: now + BAR };
+		return this.to( scale, now, why, frames, saving( scale ) );
+
+	}
+
+	// The frames that called for a change (its last PROBE_SPAN seconds at the scale it leaves, not
+	// those of a lighter view before them) and their medians.
+	private before( frames: readonly Sample[], now: number ): { beforePixel: number } | null {
+
+		const last = frames.filter( ( x ) => now - x.t <= PROBE_SPAN );
+		const list = last.length >= EMERGENCY_FRAMES ? last : frames.slice( - EMERGENCY_FRAMES );
+		if ( list.length < EMERGENCY_FRAMES ) return null;
+		return { beforePixel: quantile( list.map( ( x ) => x.pixel ), 0.5 ) };
+
+	}
+
+	// Changes to `scale` by one of the GPU's rules, and arms the measurement of its response.
+	private to( scale: number, now: number, why: string, frames: readonly Sample[], saving = NaN ): boolean {
+
+		const response = this.before( frames, now );
+		const changed = this.change( scale, now, why, frames.length ? this.predict( frames, scale, QUANTILE ) : NaN );
+		if ( changed && response ) this.response = { change: this.changes[ this.changes.length - 1 ], beforePixel: response.beforePixel, saving };
+		return changed;
+
+	}
+
+	// Once frames at the scale a change went to are in: the quantile it reached, what the
+	// render-sized passes' time did (the non-scaling share) and, for a step down, whether it saved
+	// what was predicted.
+	private measureResponse( now: number ): void {
+
+		const response = this.response;
+		if ( ! response ) return;
+		const change = response.change;
+		const frames = this.samples.filter( ( x ) => x.scale === change.scale && x.t - change.at >= SETTLE && this.clean( x ) );
+		if ( frames.length < MIN_FRAMES ) return;
+		this.response = null;
+		change.measured = quantile( frames.map( ( x ) => x.total ), QUANTILE );
+		const afterPixel = quantile( frames.map( ( x ) => x.pixel ), 0.5 );
+		let saved = true;
+		if ( response.saving >= PROBE_SAVING ) {
+
+			saved = response.beforePixel - afterPixel >= RESPONSE * response.saving;
+			this.lastStepSaved = saved;
+
+		}
+		if ( saved ) {
+
+			if ( response.saving >= PROBE_SAVING ) this.contentionHold = 0;
+			// Where the maximum is the canvas's own ratio, leaving it adds the canvas-sized upscale and
+			// moves the output pass to the fixed side: that change's ratio says nothing of the share.
+			const atCanvas = Math.abs( this.max - this.canvasRatio ) < 1e-6 && ( change.from === this.max || change.scale === this.max );
+			if ( ! atCanvas ) this.learnShare( change.from!, change.scale, response.beforePixel, afterPixel );
+			return;
+
+		}
+		// The GPU's time did not follow the pixel count: something else is drawing. Hold at the
+		// quality floor, twice as long each time a step below it fails again.
+		this.contentionHold = this.contentionHold > 0 ? Math.min( this.contentionHold * 2, CONTENTION_MAX ) : CONTENTION_HOLD;
+		this.contendedUntil = now + this.contentionHold;
+		if ( this.scale < this.qualityFloor ) this.change( this.qualityFloor, now, 'contention' );
+
+	}
+
+	// One measurement of the non-scaling share from the render-sized passes' medians before (at
+	// `from`) and after (at `to`) a change: after / before = g( to ) / g( from ).
+	private learnShare( from: number, to: number, before: number, after: number ): void {
+
+		const f = from * from, t = to * to;
+		if ( Math.abs( f - t ) < SHARE_SPAN || ! ( before > 0 ) || ! ( after > 0 ) ) return;
+		const r = after / before;
+		const d = r * ( 1 - f ) - ( 1 - t );
+		if ( Math.abs( d ) < 1e-3 ) return;
+		const k = ( t - r * f ) / d;
+		// far outside the range: the view changed under the step
+		if ( ! ( k > SHARE_MIN - 0.3 && k < 1.2 ) ) return;
+		this.shares.push( Math.min( Math.max( k, SHARE_MIN ), SHARE_MAX ) );
+		if ( this.shares.length > SHARE_KEEP ) this.shares.shift();
+		this.nonScaling = quantile( this.shares, 0.5 );
+
+	}
+
+	// Whether the quantile of the last LATE_SPAN seconds' clean frames (moved to the scale) is over
+	// the limit for a step down.
+	private overLimit( now: number ): boolean {
+
+		const frames = this.samples.filter( ( x ) => now - x.t <= LATE_SPAN && this.clean( x ) );
+		return frames.length >= MIN_FRAMES && this.predict( frames, this.scale, QUANTILE ) > this.interval - DOWN_HEADROOM;
+
+	}
+
+	// The kinds of periodic work that run on more than HEAVY_SHARE of the recent frames.
+	private steadyWork( now: number ): number {
+
+		const frames = this.samples.filter( ( x ) => now - x.t <= UP_LONG );
+		let steady = 0;
+		if ( frames.length === 0 ) return steady;
+		for ( const kind of WORK_KINDS ) if ( frames.filter( ( x ) => x.heavy & kind ).length > frames.length * HEAVY_SHARE ) steady |= kind;
+		return steady;
+
+	}
+
+	// Late frames held at the quality floor while its steps down did not save time: tells the hook.
+	private watchSustained( now: number ): void {
+
+		const held = this.scale <= this.qualityFloor + 1e-6 && this.lastStepSaved === false && this.overLimit( now );
+		if ( ! held ) this.lateAtFloorSince = NaN;
+		else if ( Number.isNaN( this.lateAtFloorSince ) ) this.lateAtFloorSince = now;
+		const sustained = held && now - this.lateAtFloorSince >= SUSTAINED;
+		if ( sustained === this.sustained ) return;
+		this.sustained = sustained;
+		this.onSustainedContention?.( sustained );
 
 	}
 
 	private steerByIntervals( now: number ): boolean {
 
 		const v = this.intervals;
-		if ( v.length < MIN_SAMPLES ) return false;
+		if ( v.length < MIN_FRAMES ) return false;
+		// its first decision (its scales are remembered from here on)
+		this.settling = false;
 		const period = quantile( v, 0.1 );
-		const missed = v.filter( ( x ) => x > period * 1.5 ).length;
+		const missed = v.filter( ( x ) => x > period * 1.5 ).length / v.length;
 		if ( missed > 0 ) this.lastMiss = Math.max( this.lastMiss, now );
 		const since = now - this.lastChange;
-		if ( since >= HOLD && missed > v.length * MISS_SHARE && this.scale > this.floor ) return this.down( now );
+		const full = v.length >= INTERVALS;
+		// Below the quality floor only while frames keep missing their vblank, one step at a time, each
+		// judged once on a whole window after it: it must have cut the missed frames clearly (to
+		// MISS_CUT of the window that called for it, which was picked for its misses, so the next one
+		// has fewer by chance alone). One that did not reads as contention: it returns to the floor
+		// and holds there, twice as long each time a step fails again.
+		if ( this.missedBefore !== null ) {
+
+			if ( ! full ) return false;
+			const helped = missed <= this.missedBefore * MISS_CUT;
+			this.missedBefore = null;
+			this.lastStepSaved = helped;
+			if ( ! helped ) {
+
+				this.contentionHold = this.contentionHold > 0 ? Math.min( this.contentionHold * 2, CONTENTION_MAX ) : CONTENTION_HOLD;
+				this.contendedUntil = now + this.contentionHold;
+				return this.change( this.qualityFloor, now, 'contention' );
+
+			}
+			this.contentionHold = 0;
+
+		}
+		if ( since >= HOLD && missed > MISS_SHARE ) {
+
+			// a step below the quality floor reads a whole window, after FLOOR_DWELL at the scale
+			const late = missed > MISS_LATE && full && since >= FLOOR_DWELL && now >= this.contendedUntil;
+			const lowest = late && this.scale <= this.qualityFloor + 1e-6 ? this.floor : this.qualityFloor;
+			if ( this.scale > lowest + 1e-6 ) {
+
+				const scale = this.round( Math.max( this.scale - this.step, lowest ) );
+				// the scale it leaves missed: keep away from it for a while, longer each time
+				const bar = this.frameBars.get( this.scale );
+				const seconds = bar && now - bar.until < FRAME_BAR_MAX ? Math.min( bar.seconds * 2, FRAME_BAR_MAX ) : FRAME_BAR;
+				this.frameBars.set( this.scale, { until: now + seconds, seconds } );
+				const changed = this.change( scale, now, 'frames' );
+				if ( scale < this.qualityFloor - 1e-6 ) this.missedBefore = missed;
+				return changed;
+
+			}
+
+		}
 		if ( since >= UP_AFTER && now - this.lastMiss >= UP_AFTER && this.scale < this.max ) {
 
 			const up = this.round( Math.min( this.scale + this.step, this.max ) );
-			if ( this.barred( up, now ) === null ) return this.up( up, now, 'frames' );
+			const bar = this.frameBars.get( up );
+			if ( ! ( bar && now < bar.until ) ) return this.change( up, now, 'frames up' );
 
 		}
 		return false;
 
 	}
 
-	/** Steps down, to the largest scale the model predicts frames costing `ms` now to land at under
-	 * the target; one step without a cost (the frame-interval fallback). */
-	private down( now: number, ms = NaN, why = 'frames' ): boolean {
+	private change( scale: number, now: number, why: string, predicted = NaN ): boolean {
 
-		// the scale it leaves cost too much: keep away from it for a while, longer each time
-		const bar = this.bars.get( this.scale );
-		const seconds = bar && now - bar.until < BAR_MAX ? Math.min( bar.seconds * 2, BAR_MAX ) : BAR;
-		const hard = this.lastWhy === 'up' && now - this.lastChange < PROBE;
-		this.bars.set( this.scale, { until: now + seconds, seconds, hard } );
-		let scale = this.round( Math.max( this.scale - this.step, this.floor ) );
-		if ( ms > 0 ) {
+		const from = this.scale;
+		const changed = scale !== from;
+		if ( changed ) {
 
-			const target = this.interval - TARGET_HEADROOM;
-			while ( scale > this.floor && this.cost( ms, scale ) > target ) scale = this.round( Math.max( scale - this.step, this.floor ) );
+			const entry: ScaleChange = { at: now, scale, why, from };
+			if ( Number.isFinite( predicted ) ) entry.predicted = predicted;
+			this.changes.push( entry );
+			if ( this.changes.length > 200 ) this.changes.shift();
+			this.response = null;
+			this.missedBefore = null;
+			// room to step up: whatever held the time up has gone (below the quality floor the steps
+			// that saved time down there still count)
+			if ( why === 'up' ) {
+
+				this.contentionHold = 0;
+				if ( scale >= this.qualityFloor - 1e-6 ) this.lastStepSaved = null;
+
+			}
 
 		}
-		this.change( scale, now, why );
-		return true;
-
-	}
-
-	private up( scale: number, now: number, why = 'up' ): boolean {
-
-		this.change( scale, now, why );
-		return true;
-
-	}
-
-	// Whether a step up to `scale` is barred now: 'hard' (a step up to it did not hold), 'soft' (it
-	// had to leave it) or null.
-	private barred( scale: number, now: number ): 'hard' | 'soft' | null {
-
-		const bar = this.bars.get( scale );
-		return bar === undefined || now >= bar.until ? null : bar.hard ? 'hard' : 'soft';
-
-	}
-
-	private change( scale: number, now: number, why: string ): void {
-
-		if ( scale !== this.scale ) this.changes.push( { at: now, scale, why } );
 		this.lastWhy = why;
-		if ( this.changes.length > 200 ) this.changes.shift();
 		this.scale = scale;
 		this.lastChange = now;
-		this.samples.length = 0;
 		this.intervals.length = 0;
+		return changed;
+
+	}
+
+	// Remembers a scale once it has held STORE_AFTER seconds under the current key.
+	private remember( now: number ): void {
+
+		if ( this.storeKey === null || this.settling || this.scale === this.stored || now - Math.max( this.lastChange, this.keySince ) < STORE_AFTER ) return;
+		this.stored = this.scale;
+		writeStore( this.storeKey, this.scale );
 
 	}
 
@@ -356,6 +844,172 @@ function quantile( values: readonly number[], q: number ): number {
 	const s = [ ...values ].sort( ( a, b ) => a - b );
 	const i = ( s.length - 1 ) * q, lo = Math.floor( i ), hi = Math.ceil( i );
 	return s[ lo ] + ( s[ hi ] - s[ lo ] ) * ( i - lo );
+
+}
+
+// ------------------------------------------------------------------ the remembered scale
+
+type Store = Record<string, { scale: number; at: number }>;
+
+// Storage can be missing or refuse (a private window, blocked site data): the page then starts from
+// the nominal scale, as on a first visit.
+function readStore(): Store {
+
+	try {
+
+		const text = globalThis.localStorage?.getItem( STORE_KEY );
+		const store = text ? JSON.parse( text ) as unknown : null;
+		return store && typeof store === 'object' ? store as Store : {};
+
+	} catch {
+
+		return {};
+
+	}
+
+}
+
+function writeStore( key: string, scale: number ): void {
+
+	try {
+
+		const store = readStore();
+		store[ key ] = { scale, at: Date.now() };
+		// the displays used most recently
+		const keep = Object.entries( store ).sort( ( a, b ) => b[ 1 ].at - a[ 1 ].at ).slice( 0, STORE_ENTRIES );
+		globalThis.localStorage?.setItem( STORE_KEY, JSON.stringify( Object.fromEntries( keep ) ) );
+
+	} catch {
+
+		// not remembered: the next visit settles from the nominal scale
+
+	}
+
+}
+
+/** The key a scale is remembered under: the tier, the antialiasing mode (a TAAU frame's render costs
+ * less than a 4x MSAA one's, so the two settle at different scales), its frame rate, the canvas's
+ * size, the GPU and what steers it ('gpu' times or frame intervals: the fallback's scales are not
+ * the GPU rule's). */
+export function renderScaleKey( renderer: THREE.WebGPURenderer, tier: string, aa: string, frameRate: number, canvasWidth: number, canvasHeight: number, steering: 'gpu' | 'frames' ): string {
+
+	let gpu = '';
+	try {
+
+		const info = ( renderer.backend as unknown as { device?: { adapterInfo?: { vendor?: string; architecture?: string; device?: string; description?: string } } } ).device?.adapterInfo;
+		if ( info ) gpu = [ info.vendor, info.architecture, info.device, info.description ].filter( Boolean ).join( '/' );
+
+	} catch {
+
+		// no adapter info: the key still holds the canvas and tier
+
+	}
+	return `${ tier }|${ aa }|${ frameRate }|${ canvasWidth }x${ canvasHeight }|${ gpu }` + ( steering === 'gpu' ? '' : '|frames' );
+
+}
+
+// ------------------------------------------------------------------ which passes follow the pixels
+
+// the passes whose class is kept until their timestamps are read (several seconds of frames)
+const PASSES_KEPT = 1 << 16;
+
+/** Sorts the renderer's passes, as they begin, into those whose cost follows the render's pixel
+ * count and the rest. Inside a frame graph pass, a render into a target of the pass's own size class
+ * takes the graph's word (`currentPass.scales`: a render-class pass follows it; a canvas-class one,
+ * such as the TAAU resolve, the upscale and the output, does not, even when the canvas and the render
+ * are the same size); any other render (a shadow map redrawn inside the scene pass, a chain's
+ * reduced mips, work outside the graph) is sorted by its target's size: at the render's size or a
+ * power-of-two fraction of it (the scene, its resolves and copies, the post chain, bloom's mips) it
+ * follows, otherwise (the canvas, shadow maps, the FFT's and the sky's fixed targets) it does not.
+ * Every compute pass is fixed (the cloud view's dispatch follows the display). Reads three's
+ * inspector hooks, wrapping whichever inspector the renderer has. */
+export class PassScaling {
+
+	/** The frame graph whose passes it asks first (main.ts sets it once the pipeline is built). */
+	graph: Pick<FrameGraph<unknown>, 'currentPass' | 'extent'> | null = null;
+	private readonly pixel = new Map<string, boolean>();
+	private width = 0;
+	private height = 0;
+
+	private constructor( renderer: THREE.WebGPURenderer ) {
+
+		type Hooks = { beginRender( uid: string, scene: unknown, camera: unknown, target: { width: number; height: number } | null ): void; beginCompute( uid: string, nodes: unknown ): void };
+		const inspector = renderer.inspector as unknown as Hooks;
+		const beginRender = inspector.beginRender.bind( inspector ), beginCompute = inspector.beginCompute.bind( inspector );
+		inspector.beginRender = ( uid, scene, camera, target ) => {
+
+			this.note( uid, target !== null && this.classify( target.width, target.height ) );
+			beginRender( uid, scene, camera, target );
+
+		};
+		inspector.beginCompute = ( uid, nodes ) => {
+
+			this.note( uid, false );
+			beginCompute( uid, nodes );
+
+		};
+
+	}
+
+	static install( renderer: THREE.WebGPURenderer ): PassScaling {
+
+		return new PassScaling( renderer );
+
+	}
+
+	/** The render's size in pixels (call whenever it changes). */
+	setSize( width: number, height: number ): void {
+
+		this.width = width;
+		this.height = height;
+
+	}
+
+	/** Whether the pass with timestamp uid `uid` followed the pixel count (and forgets it). */
+	take( uid: string ): boolean {
+
+		const pixel = this.pixel.get( uid ) ?? false;
+		this.pixel.delete( uid );
+		return pixel;
+
+	}
+
+	private note( uid: string, pixel: boolean ): void {
+
+		this.pixel.set( uid, pixel );
+		// Uids whose timestamps never arrive (lost read-backs) must not pile up, but the ones still
+		// to be read must stay: a frame has about a hundred passes and computes (the sky's bake
+		// slices among them), and the frame profiler's read-backs ran about forty frames behind under
+		// load, so 4096 entries were evicted before they were read (every pass then counted as fixed)
+		if ( this.pixel.size > PASSES_KEPT ) this.pixel.delete( this.pixel.keys().next().value! );
+
+	}
+
+	// The graph's class for a render into a target of its pass's size, else the target's size.
+	private classify( w: number, h: number ): boolean {
+
+		const pass = this.graph?.currentPass;
+		if ( pass?.size ) {
+
+			const e = this.graph!.extent( pass.size ).value;
+			if ( e.x === w && e.y === h ) return pass.scales === 'pixel';
+
+		}
+		return this.follows( w, h );
+
+	}
+
+	// at the render's size or a fraction 1 / 2^k of it (floored or rounded), in both axes alike
+	private follows( w: number, h: number ): boolean {
+
+		for ( let k = 0, d = 1; k <= 6; k ++, d *= 2 ) {
+
+			if ( Math.abs( w - this.width / d ) <= 1.01 && Math.abs( h - this.height / d ) <= 1.01 ) return true;
+
+		}
+		return false;
+
+	}
 
 }
 
@@ -392,14 +1046,17 @@ const RING = 8;
 
 /** The GPU's busy time per frame from three's timestamp queries (`trackTimestamp`), read back
  * through a small ring of buffers (three's pool maps a single one and drops the frames it
- * resolves while that one is mapped). Call `resolve()` once per frame, after its passes. */
+ * resolves while that one is mapped), and the part of it in passes that follow the render's pixel
+ * count (`PassScaling`). Call `resolve()` once per frame, after its passes. */
 export class GpuFrameTimer {
 
-	/** Called with each frame's id (three's `info.frame`) and its GPU busy time in ms. */
-	onFrame: ( ( frame: number, ms: number ) => void ) | null = null;
+	/** Called with each frame's id (three's `info.frame`), its GPU busy time in ms and the part of it
+	 * in passes that follow the pixel count. */
+	onFrame: ( ( frame: number, ms: number, pixel: number ) => void ) | null = null;
 	private readonly backend: Backend;
+	private readonly passes: PassScaling;
 	private readonly buffers: { buffer: GPUBuffer; busy: boolean }[] = [];
-	private readonly frames = new Map<number, [ number, number ][]>();
+	private readonly frames = new Map<number, [ number, number, boolean ][]>();
 	private origin: bigint | null = null;
 	private lastEnd = - Infinity;
 	private newest = - 1;
@@ -407,17 +1064,18 @@ export class GpuFrameTimer {
 	private reported = - 1;
 	private readonly lost = new Set<number>();
 
-	private constructor( backend: Backend ) {
+	private constructor( backend: Backend, passes: PassScaling ) {
 
 		this.backend = backend;
+		this.passes = passes;
 
 	}
 
 	/** A timer, or null where the device has no timestamp queries (or the renderer does not track them). */
-	static create( renderer: THREE.WebGPURenderer ): GpuFrameTimer | null {
+	static create( renderer: THREE.WebGPURenderer, passes: PassScaling ): GpuFrameTimer | null {
 
 		const backend = renderer.backend as unknown as Backend;
-		return backend.trackTimestamp ? new GpuFrameTimer( backend ) : null;
+		return backend.trackTimestamp ? new GpuFrameTimer( backend, passes ) : null;
 
 	}
 
@@ -449,7 +1107,7 @@ export class GpuFrameTimer {
 
 		const count = pool.currentQueryIndex;
 		if ( count === 0 ) return;
-		const offsets = [ ...pool.queryOffsets ];
+		const offsets = [ ...pool.queryOffsets ].map( ( [ uid, base ] ) => [ uid, base, this.passes.take( uid ) ] as const );
 		pool.currentQueryIndex = 0;
 		pool.queryOffsets.clear();
 		const device = this.backend.device;
@@ -480,7 +1138,7 @@ export class GpuFrameTimer {
 			const times = new BigUint64Array( target.buffer.getMappedRange( 0, bytes ).slice( 0 ) );
 			target.buffer.unmap();
 			target.busy = false;
-			for ( const [ uid, base ] of offsets ) {
+			for ( const [ uid, base, pixel ] of offsets ) {
 
 				const start = times[ base ], end = times[ base + 1 ];
 				if ( start === 0n || end < start ) continue;
@@ -489,7 +1147,7 @@ export class GpuFrameTimer {
 				if ( ! Number.isFinite( frame ) || frame <= this.reported ) continue;
 				if ( this.origin === null ) this.origin = start;
 				const list = this.frames.get( frame ) ?? [];
-				list.push( [ Number( start - this.origin ) / 1e6, Number( end - this.origin ) / 1e6 ] );
+				list.push( [ Number( start - this.origin ) / 1e6, Number( end - this.origin ) / 1e6, pixel ] );
 				this.frames.set( frame, list );
 				this.newest = Math.max( this.newest, frame );
 
@@ -510,15 +1168,17 @@ export class GpuFrameTimer {
 			const passes = this.frames.get( frame )!.sort( ( a, b ) => a[ 1 ] - b[ 1 ] );
 			this.frames.delete( frame );
 			this.reported = Math.max( this.reported, frame );
-			let cursor = this.lastEnd, busy = 0;
-			for ( const [ start, end ] of passes ) {
+			let cursor = this.lastEnd, busy = 0, pixel = 0;
+			for ( const [ start, end, follows ] of passes ) {
 
-				busy += Math.max( end - Math.max( start, cursor ), 0 );
+				const ms = Math.max( end - Math.max( start, cursor ), 0 );
+				busy += ms;
+				if ( follows ) pixel += ms;
 				cursor = Math.max( cursor, end );
 
 			}
 			this.lastEnd = cursor;
-			if ( ! this.lost.delete( frame ) ) this.onFrame?.( frame, busy );
+			if ( ! this.lost.delete( frame ) ) this.onFrame?.( frame, busy, pixel );
 
 		}
 		// frames lost whole never come up here

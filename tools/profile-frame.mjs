@@ -10,7 +10,7 @@
 //        [--eval "js"] [--repeat n] [--shots] [--detail] [--raw] [--out dir] [--label name]
 //        [--q "extra=url&options"] [--hooks off] [--world-cache off] [--idle-threshold 15] [--idle-wait s]
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
-//        [--scale-settle s] [--display [--motion user | orbit | none]]
+//        [--scale-settle s] [--drs-store] [--display [--motion user | orbit | none]]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
 //        [--slices 8] [--slice 1.5] [--settle 1]                 (two pages, alternating slices)
 //   node tools/profile-frame.mjs [url] --toggle "js using s and on" [--block 60] [--blocks 8] [--lag 30]
@@ -68,6 +68,10 @@
 //   GPU's frame time; after a scene's warm-up the run waits until it has held for s seconds (at
 //   most 60), so the scene is measured at its settle point. Each scene's results give the scale
 //   its frames were drawn at (median, range and changes) beside the frame times.
+// - the remembered scale: high starts from the dynamic scale it last held (`drsStore`, off in an
+//   automated browser anyway); --compare and --accept add `drsStore=off` so neither side of an A/B
+//   (two AA modes or two builds) starts from a scale the other settled at, and `--drs-store` adds
+//   `drsStore=on` instead, to measure a returning load.
 // - display (`--display`): the real display, headed. Chrome (the system's, without the switches the
 //   headless runs take) opens full screen (`--kiosk`) at the display's size and pixel ratio with
 //   its own vsync, so a 120 Hz display runs rAF at 120 Hz. The camera is dragged like a player's
@@ -236,6 +240,10 @@ if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
 if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
 const OUT = opt( 'out', path.join( 'artifacts/perf', LABEL ) );
+// The page's remembered dynamic scale (`drsStore`): an A/B (--compare) or an acceptance run turns it
+// off (`drsStore=off`), so neither side starts from a scale the other, or an earlier run, settled at;
+// `--drs-store` keeps it (`drsStore=on`: restored and saved even in this automated browser).
+const DRS_STORE = flags.has( '--drs-store' ) ? 'drsStore=on' : COMPARE || ACCEPT ? 'drsStore=off' : '';
 
 const SYSTEM_CHROME = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 const executablePath = process.env.CHROME_PATH || ( existsSync( SYSTEM_CHROME ) ? SYSTEM_CHROME : undefined );
@@ -367,6 +375,9 @@ function summarise( frames ) {
 		over25Count: intervals.filter( ( x ) => x > 25 ).length,
 		// GPU busy time per frame (the passes' charges) and the GPU's own frame-to-frame interval
 		gpu: stats( timed.map( ( f ) => f.gpu ) ),
+		// the part of it in passes that follow the render's pixel count (the dynamic resolution's
+		// split, high only: `PassScaling`)
+		...( timed.some( ( f ) => Number.isFinite( f.pixel ) ) ? { gpuPixel: stats( timed.map( ( f ) => f.pixel ).filter( Number.isFinite ) ) } : {} ),
 		gpuInterval: stats( gpuIntervals ),
 		// the GPU's share of the frame: near 1 the frame is GPU-bound
 		gpuShare: r2( mean( timed.map( ( f ) => f.gpu ) ) / mean( intervals ) ),
@@ -481,7 +492,7 @@ function pageUrl( base, q, timestamps ) {
 	// the url's own options first (the page reads the first of a repeated option), then the
 	// scene's; `debug` too, so a build without the profiler still exposes its handles
 	// uncapped, the frame pacer would read the work's own intervals as a display's refresh
-	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : 'worldCache=off', `quality=${ QUALITY }`, q, EXTRA_Q, renderScale ? `dpr=${ renderScale }` : '', VSYNC ? '' : 'frameRate=0' ].filter( Boolean ).join( '&' );
+	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : 'worldCache=off', `quality=${ QUALITY }`, q, EXTRA_Q, DRS_STORE, renderScale ? `dpr=${ renderScale }` : '', VSYNC ? '' : 'frameRate=0' ].filter( Boolean ).join( '&' );
 	return url.href;
 
 }

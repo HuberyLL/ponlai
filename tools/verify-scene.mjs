@@ -75,7 +75,10 @@ try {
 	await page.screenshot( { path: `${ out }/close.png` } );
 	checks.push( 'Real pointer drag rotates the island and wheel zooms without rendering errors' );
 	await page.setViewportSize( { width: 1280, height: 800 } );
-	await page.waitForTimeout( 900 );
+	// The diagnostics refresh every 30 frames (main.ts), so a fixed wait reads a stale snapshot
+	// whenever fewer frames fit in it: wait for the first snapshot taken after the resize.
+	const resizedAt = await page.evaluate( () => window.__THREE_GAME_DIAGNOSTICS__.frame );
+	await page.waitForFunction( ( f ) => window.__THREE_GAME_DIAGNOSTICS__.frame > f, resizedAt, { timeout: 30000 } );
 	assert.deepEqual( await page.evaluate( () => window.__THREE_GAME_DIAGNOSTICS__.canvas ), [ 1280, 800 ] );
 	checks.push( 'Resize updates camera and all render targets to 1280 × 800' );
 	await page.keyboard.press( 'h' );

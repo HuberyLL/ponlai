@@ -10,6 +10,7 @@ import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
 import type { WorldData } from '../world/types.ts';
 import { createShoreBoundaryField, createShoreShelterField } from './ShoreWaveField.ts';
+import { TEMPORAL } from '../post/Antialiasing.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -21,6 +22,12 @@ const TEXEL = 96 / 512;
 // Tidewater's FFT supplies every incident wave. This rocky boundary is a Ponlai extension:
 // a weak mirrored response and whitewater use that wave's height and orbital velocity,
 // without adding the independent, single-period beach wave over the open sea.
+//
+// The surface field is baked once per change of the scene clock. Under the temporal modes
+// (Antialiasing.ts) it alternates between two targets, so the one baked before stays readable as
+// the field a step of the clock ago (`previousSurfaceAt`): the water's motion vectors take its
+// vertices' previous heights from it (Water.ts). `texture` and `previous` swap their targets at
+// each bake; whoever samples them follows.
 export class ShoreWaves {
 
 	readonly direction = uniform( new THREE.Vector2() );
@@ -29,12 +36,17 @@ export class ShoreWaves {
 	readonly shelter: THREE.TextureNode;
 	// RGBA: local reflected height, its x/z slopes, incident rock-contact energy.
 	readonly texture: THREE.TextureNode;
+	// The surface field as baked before the current one (temporal modes; otherwise the current one).
+	readonly previous: THREE.TextureNode;
 	readonly surfaceAt: ( p: V2, time: F ) => THREE.Node<'vec4'>;
+	/** The surface field at the clock's previous bake (see the note above). */
+	readonly previousSurfaceAt: ( p: V2 ) => THREE.Node<'vec4'>;
 	fieldRevision = 0;
 	private data: WorldData;
 	private revision = - 1;
 	private renderer: THREE.WebGPURenderer;
-	private target: THREE.RenderTarget;
+	// the surface field's targets: [ current, previous ] (one under MSAA)
+	private surfaces: THREE.RenderTarget[];
 	private quad: THREE.QuadMesh;
 	private lastTime: number | undefined;
 	private lastReflection = - 1;
@@ -148,13 +160,21 @@ export class ShoreWaves {
 
 		} )();
 		const width = Math.ceil( data.shore.nx * data.shore.cell / TEXEL ), height = Math.ceil( data.shore.nz * data.shore.cell / TEXEL );
-		this.target = new THREE.RenderTarget( width, height, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false } );
-		this.target.texture.name = 'rockWaveSurface';
-		this.texture = texture( this.target.texture );
+		const field = ( name: string ) => {
+
+			const target = new THREE.RenderTarget( width, height, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false } );
+			target.texture.name = name;
+			return target;
+
+		};
+		this.surfaces = TEMPORAL ? [ field( 'rockWaveSurface' ), field( 'rockWaveSurfacePrevious' ) ] : [ field( 'rockWaveSurface' ) ];
+		this.texture = texture( this.surfaces[ 0 ].texture );
+		this.previous = texture( this.surfaces[ this.surfaces.length - 1 ].texture );
 		const material = new THREE.NodeMaterial();
 		material.fragmentNode = Fn( () => surface( uv().div( shared.shoreXform.zw ).add( shared.shoreXform.xy ) ) )();
 		this.quad = new THREE.QuadMesh( material );
 		this.surfaceAt = ( p, _time ) => this.texture.sample( toUV( p ) ).level( float( 0 ) );
+		this.previousSurfaceAt = ( p ) => this.previous.sample( toUV( p ) ).level( float( 0 ) );
 
 	}
 
@@ -181,7 +201,15 @@ export class ShoreWaves {
 		if ( time === undefined || ( time === this.lastTime && this.lastReflection === this.reflection.value &&
 			this.lastWeatherGain.equals( fft.weatherGain.value ) ) ) return;
 		const previousTarget = this.renderer.getRenderTarget();
-		this.renderer.setRenderTarget( this.target );
+		// (temporal modes: the surface is baked into the target that held the field before last)
+		if ( this.surfaces.length > 1 ) {
+
+			this.surfaces.reverse();
+			this.texture.value = this.surfaces[ 0 ].texture;
+			this.previous.value = this.surfaces[ 1 ].texture;
+
+		}
+		this.renderer.setRenderTarget( this.surfaces[ 0 ] );
 		this.quad.render( this.renderer );
 		this.renderer.setRenderTarget( previousTarget );
 		this.lastTime = time;

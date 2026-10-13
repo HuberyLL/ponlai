@@ -1,6 +1,7 @@
 import { DataTexture, LinearFilter, RGFormat, RepeatWrapping, UnsignedByteType, Vector2, Vector3 } from 'three/webgpu';
 import type { Node } from 'three/webgpu';
 import { Fn, dot, float, fract, normalize, sin, smoothstep, texture, uniform, vec2, vec4 } from 'three/tsl';
+import { debugFlags } from '../debug/DebugFlags.ts';
 
 // The weather's wind, integrated on the CPU, and the one wind field all vegetation moves in.
 //
@@ -29,6 +30,17 @@ import { Fn, dot, float, fract, normalize, sin, smoothstep, texture, uniform, ve
 // (the last rendered frame's, equal to the current one while paused and after a seek, so a jump
 // leaves no motion); the grass's widening keeps the current camera's. Each mesh keeps the old
 // global-sine sway for A/Bs (WindVariants.ts).
+//
+// `previous` is kept for motion vectors: `update` copies the current state into it before it
+// integrates, once per rendered frame (main.ts calls it once per tick, and every tick renders),
+// `reset` (a seek) and `cut` (Motion.ts's `taaCut`, through `onTaaCut`) make it the current state.
+// The wrapped clocks may differ by a wrap between the two: every shader reads them only through
+// functions periodic in their wrap (`wave` at whole cycles per CLOCK_PERIOD, the gust map's repeat
+// over its tiles), so the difference of the two poses is the frame's motion alone
+// (tools/verify-wind.mjs checks the sources).
+// `debugFlags.windFreeze = true` holds the vegetation's wind (its clocks and gust scroll, previous
+// equal to current) while the scene clock runs, for clips that want only the shadows or the jitter
+// to move; the clouds and the sea keep their wind.
 
 const BASE_SPEED = 3.8;
 const CLOUD_DRIFT = 0.21;
@@ -310,6 +322,22 @@ export class Wind {
 
 		validate( speed, heading, dt );
 		this.keepPrevious();
+		this.integrate( dt, speed, heading );
+		// (debug) the vegetation's wind held: its clocks back to the last frame's, no motion
+		if ( debugFlags.windFreeze === true ) this.hold();
+
+	}
+
+	/** A cut of the temporal modes' history (Motion.ts `taaCut`): the previous frame's wind becomes
+	 * the current one, so nothing sways across the cut. */
+	cut(): void {
+
+		this.keepPrevious();
+
+	}
+
+	private integrate( dt: number, speed: number, heading: number ): void {
+
 		const previousSpeed = this.currentSpeed;
 		this.previousVelocity.copy( this.uniforms.velocity.value );
 		this.publish( speed, heading );
@@ -323,6 +351,18 @@ export class Wind {
 		this.travel += dt * ( previousSpeed + speed ) * 0.5;
 		this.flutterTime += dt * ( flutterRate( previousSpeed ) + flutterRate( speed ) ) * 0.5;
 		this.publishVegetation();
+
+	}
+
+	// windFreeze: the integrated clocks keep the values `previous` holds, and `previous` takes the
+	// rest of the current state (the weather's direction and pressure), so both stay equal.
+	private hold(): void {
+
+		const u = this.uniforms, p = u.previous;
+		u.clock.value = p.clock.value;
+		u.flutter.value = p.flutter.value;
+		u.gustScroll.value.copy( p.gustScroll.value );
+		this.keepPrevious();
 
 	}
 

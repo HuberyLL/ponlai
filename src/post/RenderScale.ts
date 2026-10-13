@@ -1,4 +1,3 @@
-import type * as THREE from 'three/webgpu';
 import type { RenderScaleRule } from '../Quality.ts';
 
 // Render scale per quality tier (`QualityProfile.render` in Quality.ts). The scene renders at a
@@ -14,8 +13,8 @@ import type { RenderScaleRule } from '../Quality.ts';
 //   GUI's full resolution lift it.
 // The canvas always matches the display (up to OUTPUT_PIXEL_RATIO_CAP): a render below it is
 // upscaled inside the frame graph with FSR 1 and the grain added after, never stretched by the
-// browser. Every pass is sized to the render, not the canvas (Pipeline's `rtt()` passes through
-// `sizeRtt`). At the display's ratio nothing is upscaled, so `dpr=1` captures are unchanged. The
+// browser. Every pass is sized to the render, not the canvas (the frame graph sizes each target by
+// its size class). At the display's ratio nothing is upscaled, so `dpr=1` captures are unchanged. The
 // tiers never save through multisampling: every one draws the scene at 4x (Quality.ts).
 
 // The canvas follows the display up to this ratio. Past it only the upscale and grade passes
@@ -39,16 +38,5 @@ export function renderPixelRatio( width: number, height: number, rule: RenderSca
 export function outputPixelRatio( render: number ): number {
 
 	return Math.max( Math.min( devicePixelRatio, OUTPUT_PIXEL_RATIO_CAP ), render );
-
-}
-
-/** Fixes an `rtt()` pass to a size (before its resolution scale). Left alone it follows the
- * canvas, which is larger than the scene's render while the frame is upscaled. */
-export function sizeRtt( node: THREE.RTTNode, width: number, height: number ): void {
-
-	// an RTTNode resizes itself to the canvas every frame while its width is null
-	node.width = width;
-	node.height = height;
-	node.setSize( width, height );
 
 }

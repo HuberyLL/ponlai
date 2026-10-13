@@ -1,16 +1,18 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, uniform, texture, textureLoad, rtt, uv, ivec2, vec2, vec4, float, min, clamp,
+	Fn, If, Loop, uniform, texture, textureLoad, uv, ivec2, vec2, vec4, float, min, clamp,
 	dot, normalize, acos, exp, select,
 } from 'three/tsl';
 import type { Sky } from '../sky/Sky.ts';
-import { sizeRtt } from './RenderScale.ts';
+import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from './graph/FrameGraph.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
 const STEPS = 48;
+// the passes' size: half the render, at least a texel
+const HALF: SizeClass = { of: 'render', scale: 0.5, min: 1 };
 
 /** Crepuscular rays (the Tyndall effect in hazy air) and the sun's glare.
  *
@@ -35,15 +37,20 @@ export class LightShafts {
 	private readonly fogVisibility = uniform( 1 );
 	private readonly projectionInverse = uniform( new THREE.Matrix4() );
 	private readonly cameraWorld = uniform( new THREE.Matrix4() );
-	private readonly resolution = uniform( new THREE.Vector2( 1, 1 ) );
 	private readonly clip = new THREE.Vector4();
-	// the half-resolution passes, sized with the scene's render
-	private readonly passes: THREE.RTTNode[] = [];
+	// the two half-resolution passes (the open sky near the sun, the rays marched over it), their
+	// targets the frame graph's (see `passes`)
+	private resources!: { source: ResourceHandle; rays: ResourceHandle };
+	private sourceQuad!: THREE.QuadMesh;
+	private raysQuad!: THREE.QuadMesh;
 
-	/** Radiance to add to the HDR image, from the resolved depth (the sea's included) and the sky. */
-	build( depth: THREE.Texture, sky: Sky ): V3 {
+	/** Radiance to add to the HDR image, from the resolved depth (the sea's included) and the sky.
+	 * Its two half-resolution targets are declared on `graph`, which owns and sizes them; `passes`
+	 * then adds the passes that draw them. */
+	build( depth: THREE.Texture, sky: Sky, graph: GraphResources ): V3 {
 
 		const sceneDepth = texture( depth );
+		const resolution = graph.extent( { of: 'render' } );
 		const direction = ( q: V2 ) => {
 
 			const ndc = vec4( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1, 1 );
@@ -52,11 +59,18 @@ export class LightShafts {
 
 		};
 
+		// (half float, as three's rtt() made them)
+		const source = graph.color( 'shafts.source', { size: HALF, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
+		const rays = graph.color( 'shafts.rays', { size: HALF, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
+		this.resources = { source, rays };
+		// (read as their rtt() nodes were: with their uv, no uv transform)
+		const tSource = texture( graph.texture( source ), uv() ), tRays = texture( graph.texture( rays ), uv() );
+
 		// Half resolution: the open sky's brightness near the sun (r) and its plain visibility (g).
-		const source = this.pass( rtt( Fn( () => {
+		this.sourceQuad = this.quad( 'Shafts.Source', Fn( () => {
 
 			const q = uv().toVar();
-			const px = ivec2( clamp( q.mul( this.resolution ), vec2( 0 ), this.resolution.sub( 1 ) ) );
+			const px = ivec2( clamp( q.mul( resolution ), vec2( 0 ), resolution.sub( 1 ) ) );
 			const z = ( textureLoad( sceneDepth, px ) as unknown as F ).toVar();
 			const d = direction( q ).toVar();
 			const open = float( 0 ).toVar();
@@ -70,11 +84,11 @@ export class LightShafts {
 			const bright = exp( angle.div( - 0.05 ) ).mul( 1.5 ).add( exp( angle.div( - 0.15 ) ).mul( 0.15 ) );
 			return vec4( open.mul( bright ), open, 0, 1 );
 
-		} )(), null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } ) );
+		} )() );
 
 		const inside = ( p: V2 ) => select( p.x.greaterThanEqual( 0 ).and( p.x.lessThanEqual( 1 ) ).and( p.y.greaterThanEqual( 0 ) ).and( p.y.lessThanEqual( 1 ) ), float( 1 ), float( 0 ) );
 
-		const rays = this.pass( rtt( Fn( () => {
+		this.raysQuad = this.quad( 'Shafts.Rays', Fn( () => {
 
 			const result = float( 0 ).toVar();
 			If( this.facing.greaterThan( 0.001 ), () => {
@@ -87,7 +101,7 @@ export class LightShafts {
 				Loop( STEPS, () => {
 
 					p.addAssign( step );
-					result.addAssign( texture( source, p ).level( float( 0 ) ).r.mul( inside( p ) ).mul( decay ) );
+					result.addAssign( texture( tSource, p ).level( float( 0 ) ).r.mul( inside( p ) ).mul( decay ) );
 					decay.mulAssign( 0.97 );
 
 				} );
@@ -96,40 +110,63 @@ export class LightShafts {
 			} );
 			return vec4( result, 0, 0, 1 );
 
-		} )(), null, null, { type: THREE.HalfFloatType, resolutionScale: 0.5 } ) );
+		} )() );
 
 		return Fn( () => {
 
 			const q = uv().toVar();
 			// The unobstructed fraction of the disk: the sky's visibility at the sun's position.
 			const s = this.sunUV;
-			const t = vec2( 2 ).div( this.resolution );
-			const visible = texture( source, s ).level( float( 0 ) ).g.add( texture( source, s.add( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g )
-				.add( texture( source, s.sub( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g ).add( texture( source, s.add( vec2( 0, t.y ) ) ).level( float( 0 ) ).g )
-				.add( texture( source, s.sub( vec2( 0, t.y ) ) ).level( float( 0 ) ).g ).mul( 0.2 ).mul( inside( s ) );
+			const t = vec2( 2 ).div( resolution );
+			const visible = texture( tSource, s ).level( float( 0 ) ).g.add( texture( tSource, s.add( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g )
+				.add( texture( tSource, s.sub( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g ).add( texture( tSource, s.add( vec2( 0, t.y ) ) ).level( float( 0 ) ).g )
+				.add( texture( tSource, s.sub( vec2( 0, t.y ) ) ).level( float( 0 ) ).g ).mul( 0.2 ).mul( inside( s ) );
 			const angle = acos( clamp( dot( direction( q ), this.sunDir ), - 1, 1 ) );
 			const glare = exp( angle.div( - 0.012 ) ).mul( 0.7 ).add( exp( angle.div( - 0.045 ) ).mul( 0.04 ) ).mul( visible ).mul( this.fogVisibility ).mul( this.glare );
 			// Beams need haze to scatter in, and a low sun's long path through it; clear air at
 			// midday still shows them faintly. Weak enough that a clear sky only gains a glow.
 			const air = min( this.haze.mul( 600 ).add( 0.5 ), 2 ).mul( this.lowSun.mul( 4 ).add( 1 ) );
-			const beams = texture( rays, q ).level( float( 0 ) ).r.mul( air ).mul( this.strength ).mul( 0.14 );
+			const beams = texture( tRays, q ).level( float( 0 ) ).r.mul( air ).mul( this.strength ).mul( 0.14 );
 			return this.color.rgb.mul( glare.add( beams ) ).mul( this.facing );
 
 		} )();
 
 	}
 
-	private pass( node: THREE.RTTNode ): THREE.RTTNode {
+	private quad( name: string, fragment: THREE.Node<'vec4'> ): THREE.QuadMesh {
 
-		this.passes.push( node );
-		return node;
+		const material = new THREE.NodeMaterial();
+		material.name = name;
+		material.fragmentNode = fragment;
+		const quad = new THREE.QuadMesh( material );
+		quad.name = name;
+		return quad;
 
 	}
 
-	/** The size of the scene's render (the canvas may be larger while the frame is upscaled). */
-	setSize( width: number, height: number ): void {
+	/** Adds the shafts' two passes to `graph`, after the pass that writes `surfaceDepth` (the
+	 * nearest surface's linear view z) and before the composite: the open sky near the sun, then
+	 * the rays marched over it toward the sun. Returns the resources the composite reads. */
+	passes<F>( graph: FrameGraph<F>, surfaceDepth: ResourceHandle ): ResourceHandle[] {
 
-		for ( const node of this.passes ) sizeRtt( node, width, height );
+		const LABEL = 'light shafts';
+		let { source, rays } = this.resources;
+		const sourceQuad = this.sourceQuad, raysQuad = this.raysQuad;
+		graph.addPass( 'shaftsSource', 'quad', ( b ) => {
+
+			b.read( surfaceDepth );
+			source = b.write( source );
+			return { label: LABEL, quad: sourceQuad };
+
+		} );
+		graph.addPass( 'shaftsRays', 'quad', ( b ) => {
+
+			b.read( source );
+			rays = b.write( rays );
+			return { label: LABEL, quad: raysQuad };
+
+		} );
+		return [ source, rays ];
 
 	}
 
@@ -144,22 +181,34 @@ export class LightShafts {
 
 	}
 
-	update( camera: THREE.PerspectiveCamera, width: number, height: number, haze: number, fogVisibility = 1 ): void {
+	/** The frame's camera, haze and the fog's transmittance toward the sun. `projection`: the camera's
+	 * projection without the temporal modes' jitter (Jitter.ts), which the sun's position on screen
+	 * leaves out: a jittered sun would shake the rays' origin by a fraction of a pixel each frame
+	 * (default: the camera's own, unjittered outside the graph's jittered span). */
+	update( camera: THREE.PerspectiveCamera, haze: number, fogVisibility = 1, projection: THREE.Matrix4 = camera.projectionMatrix ): void {
 
 		const key = this.sunDir.value;
 		this.projectionInverse.value.copy( camera.projectionMatrixInverse );
 		this.cameraWorld.value.copy( camera.matrixWorld );
-		this.resolution.value.set( width, height );
 		this.haze.value = haze;
 		this.fogVisibility.value = fogVisibility;
 		this.lowSun.value = 1 - THREE.MathUtils.smoothstep( key.y, 0.05, 0.35 );
-		const c = this.clip.set( key.x, key.y, key.z, 0 ).applyMatrix4( camera.matrixWorldInverse ).applyMatrix4( camera.projectionMatrix );
+		const c = this.clip.set( key.x, key.y, key.z, 0 ).applyMatrix4( camera.matrixWorldInverse ).applyMatrix4( projection );
 		const forward = c.w > 1e-6;
 		const x = forward ? c.x / c.w : 0, y = forward ? c.y / c.w : 0;
 		this.sunUV.value.set( x * 0.5 + 0.5, 0.5 - y * 0.5 );
 		// Fade as the sun leaves the view, and as it sets.
 		const offscreen = Math.max( Math.abs( x ), Math.abs( y ) );
 		this.facing.value = forward ? ( 1 - THREE.MathUtils.smoothstep( offscreen, 1.2, 2.2 ) ) * THREE.MathUtils.smoothstep( key.y, - 0.02, 0.02 ) : 0;
+
+	}
+
+	/** The inverse projection the rays' directions are reconstructed with (`update` takes the
+	 * camera's): under the temporal modes the jittered one the depth they read was drawn with, set
+	 * by Pipeline's jitter hook, so each pixel's ray meets its own depth sample. */
+	setProjectionInverse( inverse: THREE.Matrix4 ): void {
+
+		this.projectionInverse.value.copy( inverse );
 
 	}
 
