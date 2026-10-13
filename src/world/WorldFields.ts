@@ -27,6 +27,10 @@ import type { WorldData, ShoreField } from './types.ts';
 // a write sends its data through the GPU process's command stream, and with the GPU busy a few
 // megabytes stalled the main thread for hundreds of milliseconds, in the swap's frame or the idle
 // time before it.
+// The shoal under the next piece (SeabedRise.ts) writes squares of the floor's height and beds
+// through the same staging and copies (`writeSquares`); the CPU texels stay the shown version's, so
+// a growth step's comparison of squares is against those, and the swap writes back the squares it
+// leaves as they are.
 // Either way the textures hold what a page loaded on the grown land holds, bit for bit: the CPU
 // fields are the same merge's, and a half float is a function of its float alone (the rim's half
 // floats are carried over where the chunks did not change and converted where they did).
@@ -113,7 +117,7 @@ function pack( texels: Texels, old: Texels, nx: number, channels: number, i0: nu
 }
 
 /** A changed square of a field: x, y and its texels, packed. */
-type Square = [ number, number, Texels ];
+export type Square = [ number, number, Texels ];
 
 // The squares of a field (each side x side texels) one after another in a staging buffer mapped at
 // creation (no queue write), each row on a ROW_ALIGN boundary, a square a step: null when there are
@@ -318,6 +322,44 @@ export class WorldFields {
 		// (the staging buffers go with the replaced textures, once the copies have run)
 		for ( const staging of Object.values( prepared.staged ) ) if ( staging ) replaced.push( () => staging.buffer.destroy() );
 		return replaced;
+
+	}
+
+	/** The float texels of the floor's height or beds over tile ( ci, cj )'s square, packed, as the
+	 * shown version holds them, and the square's first texel and side. */
+	tileSquare( key: 'floor' | 'beds', ci: number, cj: number ): { texels: Float32Array; i0: number; j0: number; side: number } {
+
+		const f = key === 'floor' ? this.data.seabedField : this.data.seabedBeds, channels = TEXEL[ key ].channels;
+		const side = SEABED_TILE / f.cell, i0 = ( ci * SEABED_TILE - f.x0 ) / f.cell, j0 = ( cj * SEABED_TILE - f.z0 ) / f.cell;
+		const texels = new Float32Array( side * side * channels );
+		for ( let j = 0; j < side; j ++ ) {
+
+			const from = ( ( j0 + j ) * f.nx + i0 ) * channels;
+			texels.set( f.data.subarray( from, from + side * channels ), j * side * channels );
+
+		}
+		return { texels, i0, j0, side };
+
+	}
+
+	/** Writes squares of the floor's height (floats) or beds (half floats) into the texture shown, as a
+	 * growth step's changed squares go (staged in a buffer mapped at creation, copied on the GPU;
+	 * SeabedRise.ts's shoal). The fields' CPU texels stay the shown version's. Returns the staging
+	 * buffer's disposal, for once the copies have run (null: nothing written, the texture not yet on
+	 * the GPU, which then uploads the shown texels at its first use). */
+	writeSquares( key: 'floor' | 'beds', squares: Square[], side: number, renderer: THREE.WebGPURenderer ): ( () => void ) | null {
+
+		const backend = renderer.backend as unknown as Backend;
+		const node = key === 'floor' ? this.floor : this.beds, gpu = backend.get( node.value ).texture;
+		if ( ! gpu || squares.length === 0 ) return null;
+		const steps = stage( key, squares, side, backend.device );
+		let next = steps.next();
+		while ( ! next.done ) next = steps.next();
+		const staging = next.value!;
+		const encoder = backend.device.createCommandEncoder();
+		for ( const [ x, y, size, offset ] of staging.rects ) encoder.copyBufferToTexture( { buffer: staging.buffer, offset, bytesPerRow: staging.pitch, rowsPerImage: size }, { texture: gpu, origin: { x, y } }, { width: size, height: size } );
+		backend.device.queue.submit( [ encoder.finish() ] );
+		return () => staging.buffer.destroy();
 
 	}
 

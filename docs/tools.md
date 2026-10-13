@@ -81,6 +81,13 @@ The island:
   chunkHashes()` the shown chunks' hashes (equal on a grown page and one loaded with `grow` at the
   same step), `growth.fieldBytes()` the world fields' GPU bytes. The island view (key R,
   `setCameraView( 'island' )`) frames the land shown; the camera itself stays where it is.
+- `approach` (0 .. 1, 0 by default): the progress toward the next piece, the shoal under it
+  (src/world/SeabedRise.ts) put on it at once; above 0 the page generates the next piece and keeps
+  its loading screen up until the shoal is written, so a paused load repeats. A scene option: a
+  scene jump sets it as the load does. On a page, the Island folder's Approach slider (eased over
+  seconds of scene time, or at once while paused), `growth.approach( p )` (eased) and `await
+  growth.approachNow( p )`; `growth.rise.state` holds the approach, R (`r`, its `target`, the R last
+  `written`), the pending `tiles`, their largest `rise` (m), the `writes` and the last one's `ms`.
 
 Sky and weather:
 

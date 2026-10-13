@@ -716,7 +716,17 @@ const growth = new Growth( {
 		worldInfo.rimStrands = version.rimStrands.length;
 
 	},
+	onRise: () => sceneEvent( 'approach' ),
 }, worldCache, { seed: landOptions.worldSeed, cache: worldCacheOn } );
+// `approach=<0..1>`: the shoal under the next piece put on that progress at once (Growth.ts
+// `approachNow`); the loading screen stays up until it is written, so a paused load repeats.
+let approachWritten = true;
+if ( params.has( 'approach' ) ) {
+
+	approachWritten = false;
+	void growth.approachNow( Number( params.get( 'approach' ) ) ).then( () => { approachWritten = true; } );
+
+}
 
 // ------------------------------------------------------------------ GUI
 
@@ -945,6 +955,13 @@ const islandF = gui.addFolder( 'Island' );
 islandF.add( growth.state, 'step' ).name( 'growth step' ).listen().disable();
 islandF.add( growth.state, 'phase' ).name( 'next piece' ).listen().disable();
 islandF.add( { grow: () => { void growth.grow(); } }, 'grow' ).name( 'Grow' );
+// the progress toward the next piece: the shoal eases toward it, or (paused) is put on it at once
+islandF.add( growth.rise.state, 'approach', 0, 1, 0.01 ).name( 'Approach' ).listen().onChange( ( value: number ) => {
+
+	if ( paused ) void growth.approachNow( value );
+	else growth.approach( value );
+
+} );
 const sunF = gui.addFolder( 'Sun' );
 const cloudF = gui.addFolder( 'Sky & clouds' );
 cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover override' ).onFinishChange( ( value: number ) => { cloudOverride = value; void refreshEnvironment(); } );
@@ -1324,7 +1341,7 @@ function tick( time: number ): void {
 	// In the game the simulation's clock sets the pace of the day (and so of the page's weather).
 	const clockDt = game ? game.update( rawDt ) : rawDt;
 	// the island's growth: a swap, or one of the frames after it (before the camera and the shadows)
-	growth.update();
+	growth.update( simTime );
 	dayCycle.advance( clockDt );
 	// the sky shows the simulation's hour, whatever else moved the day clock
 	if ( game ) dayCycle.setHour( game.hour() );
@@ -1612,7 +1629,7 @@ const REVEAL_WAIT = 3000;
 const revealAt = performance.now() + REVEAL_WAIT;
 const reveal = () => {
 
-	const waiting = ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || ( game !== null && ! game.ready() ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
+	const waiting = ! approachWritten || ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || ( game !== null && ! game.ready() ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
 		! paused && ! resolution.full && performance.now() < revealAt;
 	if ( waiting ) setTimeout( reveal, 50 );
 	else {
@@ -1676,7 +1693,7 @@ const setTime = ( t: number ) => {
 // `__PONLAI__.sceneJump` (1) marks a page that keeps this contract: tools/parity/capture-set.mjs
 // captures a set in one page only where it is set (older builds' establishScene takes only the
 // options form and leaves state behind). Raise it if the contract changes in a way callers see.
-const SCENE_OPTIONS = [ 'weather', 'preset', 'hour', 'moon', 't', 'dist', 'polar', 'az', 'camera', 'clouds', 'dayLength', 'paused', 'clock' ];
+const SCENE_OPTIONS = [ 'weather', 'preset', 'hour', 'moon', 't', 'dist', 'polar', 'az', 'camera', 'clouds', 'dayLength', 'paused', 'clock', 'approach' ];
 const establishScene = async ( scene: string | URLSearchParams | { weather?: WeatherName; preset?: DayPreset; hour?: number; time?: number } ): Promise<void> => {
 
 	const query = typeof scene === 'string' ? new URLSearchParams( scene ) : scene instanceof URLSearchParams ? scene : null;
@@ -1701,6 +1718,8 @@ const establishScene = async ( scene: string | URLSearchParams | { weather?: Wea
 		setCameraMode( 'orbit' );
 		setCameraView( 'island' );
 		if ( next.camera === 'free' ) setCameraMode( 'free' );
+		// the shoal at the query's approach (0 without one), put on it at once
+		await growth.approachNow( Number( query.get( 'approach' ) ?? 0 ) );
 
 	} else {
 

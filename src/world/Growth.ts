@@ -21,6 +21,7 @@ import type { ShoreWaves, ShoreFields } from '../ocean/ShoreWaves.ts';
 import type { RefractedSun } from '../lighting/RefractedSun.ts';
 import type { Rain } from '../weather/Rain.ts';
 import { Villagers } from '../characters/Villagers.ts';
+import { SeabedRise } from './SeabedRise.ts';
 import type { CullBuffers } from './GrassCull.ts';
 
 // The island grows in place (chunk design, sections 3.4, 10 and 11; plan M8): the next piece is
@@ -72,6 +73,11 @@ import type { CullBuffers } from './GrassCull.ts';
 // - The page then draws what a page loaded on the grown land draws, bit for bit (paused): every
 //   dependent is the same function of the same version, and the island's meshes are split and
 //   ordered alike (World.ts on split draws).
+// - The shoal (SeabedRise.ts, `rise`): once the next version is generated, the preparation's first
+//   steps find the floor tiles it changes and install them; from then on the floor there rises
+//   toward the next version's as the approach (`approach`, 0 .. 1) grows, and the swap resets it.
+//   `approach` and `approachNow` start the generation first, so a page that only moves the GUI's
+//   Approach slider gets a pending piece. Its writes count in `work` (stage 'rise').
 
 /** What the growth changes on the page: its world objects, and the page's own hooks. */
 export interface GrowthPage<M = unknown> {
@@ -100,6 +106,8 @@ export interface GrowthPage<M = unknown> {
 	onSwap( land: LandLattice, data: WorldData, measured: M ): void;
 	/** after the swap's frames (the chunks' borders, the diagnostics) */
 	onSwapped?( data: WorldData ): void;
+	/** the shoal's floor was written anew (SeabedRise.ts): a change no frame before shows */
+	onRise?(): void;
 }
 
 interface Shown { version: VersionChunks; data: WorldData; land: LandLattice }
@@ -184,6 +192,9 @@ export class Growth<M = unknown> {
 	private afterStep = 0;
 	private readonly seed: number;
 	private readonly cache: boolean;
+	/** the shoal under the next piece */
+	readonly rise: SeabedRise;
+	private sceneTime = - 1;
 
 	constructor( private readonly page: GrowthPage<M>, loaded: LoadedWorld, { seed, cache }: { seed: number; cache: boolean } ) {
 
@@ -191,6 +202,27 @@ export class Growth<M = unknown> {
 		this.cache = cache;
 		this.shown = { version: loaded.version, data: loaded.data, land: LandLattice.fromBytes( loaded.data.land ) };
 		this.state.step = loaded.version.step;
+		this.rise = new SeabedRise( page.world.seabed, page.fields, page.refractedSun, page.renderer, () => page.onRise?.() );
+
+	}
+
+	/** The progress toward the next piece (0 .. 1): the floor under it rises toward its grown form,
+	 * easing over seconds of scene time (SeabedRise.ts). Starts generating the piece if none is. */
+	approach( p: number ): void {
+
+		this.start();
+		this.rise.approach( p );
+
+	}
+
+	/** `approach`, with the floor put on it at once (the URL's option, a scene jump, a paused page's
+	 * slider): resolves once it is written, which for p > 0 waits for the next piece to be generated
+	 * and its tiles installed. At 0 nothing is generated. */
+	approachNow( p: number ): Promise<void> {
+
+		const waits = p > 0 && this.state.step < GROWTH.maxSteps && this.state.phase !== 'failed';
+		if ( waits ) this.start();
+		return this.rise.snap( p, waits );
 
 	}
 
@@ -223,9 +255,10 @@ export class Growth<M = unknown> {
 
 	}
 
-	/** Once a frame, in the tick after the game's update and before the camera and the shadows: a
-	 * swap asked for and ready, or the next of the frames after one. */
-	update(): void {
+	/** Once a frame, in the tick after the game's update and before the camera and the shadows, at
+	 * scene time `time` (s): the shoal eased and written, a swap asked for and ready, or the next of
+	 * the frames after one. */
+	update( time: number ): void {
 
 		// the frame before ends here
 		const now = performance.now();
@@ -236,6 +269,12 @@ export class Growth<M = unknown> {
 
 		}
 		this.frameAt = now;
+		// (a seek back holds R; one forward eases it at most a quarter of a second's worth)
+		const dt = this.sceneTime < 0 ? 0 : Math.min( 0.25, Math.max( 0, time - this.sceneTime ) );
+		this.sceneTime = time;
+		this.rise.update( dt );
+		const risen = performance.now() - now;
+		if ( risen > 0.05 ) this.charge( risen, 'rise' );
 		if ( this.after.length > 0 ) {
 
 			const k = this.afterStep ++;
@@ -401,6 +440,11 @@ export class Growth<M = unknown> {
 		} );
 		version.chunks = chunks;
 		const changed = chunks.filter( ( c ) => before.get( `${ c.ci },${ c.cj }` ) !== c );
+		yield;
+
+		// the shoal: the floor this version changes, installed at once (SeabedRise.ts)
+		this.stage = 'shoal';
+		this.rise.install( yield* SeabedRise.plan( shown.version.chunks, chunks, page.fields, page.world.seabed.geometry ) );
 		yield;
 
 		// the merge
@@ -577,7 +621,10 @@ export class Growth<M = unknown> {
 		const oldSkirt = setTurfSkirt( page.turfSkirt, p.skirt );
 		disposals.push( () => { oldRim?.dispose(); oldSkirt.dispose(); } );
 		part( 'vegetation' );
-		// the fields and the shore's wave fields
+		// the shoal's tiles go with the old floor, and its field squares the swap keeps are written back;
+		// then the fields and the shore's wave fields
+		const kept = ( key: 'floor' | 'beds' ) => p.fields.textures[ key ] ? null : new Set( ( p.fields.staged[ key ]?.rects ?? [] ).map( ( [ x, y ] ) => `${ x },${ y }` ) );
+		this.rise.clear( { floor: kept( 'floor' ), beds: kept( 'beds' ) } );
 		const oldFields = page.fields.apply( p.fields, page.renderer ), oldTextures = page.shoreWaves.setFields( p.shore );
 		disposals.push( () => { for ( const dispose of oldFields ) dispose(); for ( const texture of oldTextures ) texture.dispose(); } );
 		part( 'fields' );
