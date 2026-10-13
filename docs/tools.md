@@ -344,9 +344,11 @@ what these do not give (automation, A/B statistics, pass names).
   built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action); its island is in
   `tools/game-fixture.mjs`.
 - `tools/verify-framegraph.mjs` checks the frame graph's compiler and runtime on the CPU (plain
-  `node`); `tools/verify-frame-graph-gpu.mjs` checks three's cache-key patches and the motion
-  vectors' blends on the GPU; `tools/verify-first-use.mjs` counts the pipelines any step still
-  creates after the warm-up.
+  `node`); `tools/verify-frame-graph-gpu.mjs` checks three's cache-key patches (with plain
+  materials, and with the app's vegetation and spray drawn by a fresh renderer under a shadow
+  pass and their pass's MRT, both ways round) and the motion vectors' blends on the GPU;
+  `tools/verify-first-use.mjs` counts the pipelines any step still creates after the warm-up
+  (`--aa msaa,taa,taau,off --quality high,medium,low` runs the whole matrix, a page per run).
 - `tools/benchmark-lighting.mjs` A/B-times two builds.
 - `tools/build-moon-textures.py` rebuilds the moon's textures from NASA's CGI Moon Kit
   (`uv run --with pillow --with numpy`). `tools/build-star-catalog.mjs` and
