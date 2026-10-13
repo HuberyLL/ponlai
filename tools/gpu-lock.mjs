@@ -103,46 +103,6 @@
 // not foreseen: a normal request that asks after a low one still goes first, so a low request
 // can start after its range.
 //
-//   import { withGpuLock, acquireGpuLock } from './gpu-lock.mjs';
-//   await withGpuLock( 'profile island', async () => { ... } );           // held while fn runs
-//   await acquireGpuLock( 'capture overview' );                           // held until this process exits
-//   await acquireGpuLock( 'verify-sky', { shared: true } );               // shared with other probes
-//   await leaseGpuLock( 'capture v', { shared: true, budget: 20000 } );   // kept from the last piece of work, or yielded to a waiter
-//
-//   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
-//   node tools/gpu-lock.mjs status                 (the owner, the holders, the queue in turn with each request's eta, the exclusive requests)
-//   node tools/gpu-lock.mjs eta [--shared|--exclusive] [--class low|normal] [--pid p] [--json]   (estimated start of a request made now, or of a ticket)
-//   node tools/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
-//   node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]   (waits and holds, from the log)
-//
-// The lock keeps a history, so how long anyone waited is measured rather than guessed: every request,
-// grant, release, timeout and abandoned request is one JSON line appended to `ponlai-gpu.lock.log.jsonl`
-// next to the lock (t, ev, pid, label, mode, class, ticket, waitMs / holdMs, reason). A line is
-// written whole by one append (O_APPEND), so concurrent writers never interleave, and logging never
-// fails a run. Past LOG_CAP the file is renamed to `.log.1.jsonl` (one older file is kept; two writers
-// rotating at the same instant may drop that older file, which only shortens the history). A release
-// says why a hold ended when its holder did not end it itself: `handed` (a child took the slot over:
-// the child's grant carries `from`), `yielded` (yieldAncestorSlot) or `stale` (the holder was killed
-// and whoever looked next reclaimed the slot; the log line is written by the one whose unlink
-// succeeded, so it is written once); `lease` marks a leased hold given up for a waiter, and a leased
-// hold's release counts the pieces of work it served (`uses`). A grant of a low request past its
-// bound carries `promoted`.
-// Inherited holds (re-entry, a child under an exclusive holder) take nothing and log nothing.
-// A waiting request prints a timestamped line every 30 s: its place in the queue, the next in
-// turn, who holds the GPU and why it waits, and its estimated start when it first waits and whenever
-// the estimate moves by more than a minute or a quarter.
-//
-// The estimated start (estimateWaits; `status` gives every queued request an `eta`, `eta` one made
-// now or an existing ticket's) lets a waiting agent choose between waiting and handing its work back.
-// It is an estimate, a range rather than a time. It runs the queue forward under the grant rules
-// above (slots in queueOrder, exclusive tickets draining the slots, low tickets yielding until their
-// promoteAt, leased holders giving up within their budget), each hold lasting what holds of its kind
-// took: the label's kind (labelKind: `capture`, `capture-clip`, `profile-frame compare`, ...) and mode,
-// p25 / median / p90 over the log's recent releases, or a built-in table (FALLBACK) for kinds the log
-// has few of. A current holder runs to its next quantile past its elapsed time, and one older than
-// p90 on in proportion to its age. Three runs, with the p25, median and p90 durations, give the range
-// and the median start. Requests made later are not foreseen: a normal request that asks after a low
-// one still goes first, so a low request's estimate is the earliest it could start.
 // `log` summarises the window: waits (grants that queued, not take-overs) and holds per class or
 // label, median, p95 and total, and the longest waits with who held the GPU meanwhile.
 // A command started through `run` inherits the lock (PONLAI_GPU_LOCK_HELD, PONLAI_GPU_LOCK_MODE), and
