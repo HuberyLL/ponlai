@@ -308,11 +308,13 @@ themselves in arrival order. One timing run waiting is cheaper than a queue of a
 `PONLAI_GPU_EXCLUSIVE_MAX_WAIT` seconds (default 1800) after an exclusive request queued, it stops
 the shared requests queued after it, waits for the holders to drain and goes next, so a timing run
 waits at most about 30 min plus one hold while captures keep arriving. A killed holder's slot frees
-itself at the next look, and a killed request leaves the queue. Background work (tool proofs, reference rounds) runs
-with `PONLAI_GPU_PRIORITY=low` (inherited by every child, so set it on the outer command): a free
-slot goes to the oldest normal request first and to a low one only when no normal request waits, so
-low work fills the slots nobody else wants without fixed shares; holders are never preempted and
-exclusive requests ignore the class. A low request ranks as a normal one from its original place
+itself at the next look, and a killed request leaves the queue. Every session's work runs at the
+same class, normal: leave `PONLAI_GPU_PRIORITY` unset (a lower class made one session's agents wait
+behind everyone else's, which costs as much as anyone's wait). The lock still has a low class,
+`PONLAI_GPU_PRIORITY=low` (inherited by every child, so set on the outer command), for a run that
+should only fill slots nobody else wants: a free slot goes to the oldest normal request first and to
+a low one only when no normal request waits; holders are never preempted and exclusive requests
+ignore the class. A low request ranks as a normal one from its original place
 after `PONLAI_GPU_LOW_MAX_WAIT` seconds (default 600, so it never waits for ever; the reason is in
 the module's header).
 `node tools/gpu-lock.mjs run [--shared] [--label x] -- <command ...>` wraps any other script,
