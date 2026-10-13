@@ -54,7 +54,9 @@
 // recorded as hung (`meta.hung`, summary.md: the step it was at and what each page still did), the
 // browser is closed (killed if still open after 30 s) and opened again, and the run goes on with the
 // scenes not finished; a browser or page that closes or crashes under a scene loses it the same way,
-// and a second lost scene stops the run with the finished scenes written (see guarded).
+// as does a scene whose setup or placement throws in the page (a layout `place()` cannot read: the
+// meadow view once ended a whole --compare without a profile.json), and a second lost scene stops
+// the run with the finished scenes written (see guarded).
 // Every finished scene is also appended to <out>/scenes.jsonl as it finishes.
 // A page paused or pinned during the run stops it the same way: each page's `clockPaused` and
 // `scalePinned` (diagnostics) are read at its load (`?dpr` pins legitimately) and after every slice
@@ -797,7 +799,8 @@ function beginScene( scene ) {
 
 }
 // the scenes lost ({ scene, run, seconds, step, pages } for a hang, { scene, run, closed, step } for a
-// browser that closed under it), and whether a second loss stopped the run
+// browser that closed under it, { scene, run, failed, step } for a setup or placement that threw),
+// and whether a second loss stopped the run
 const hung = [];
 let stopRun = false;
 // closes the browser and opens it again, and the pages open in it (set by main)
@@ -825,6 +828,8 @@ const pageState = ( page ) => page.evaluate( () => {
 // the change that stopped the run ({ page, scene, slice, baseline, now, message })
 let spoiled = null;
 class Spoiled extends Error {}
+// a scene whose setup or placement threw in the page (prepare): lost alone, as a hang is (guarded)
+class SceneFailed extends Error {}
 async function checkState( page, scene, slice ) {
 
 	const was = baselines.get( page );
@@ -842,7 +847,9 @@ async function checkState( page, scene, slice ) {
 // finishes (`finished( scene )` tells), and survives a hang: a scene that shows no progress for
 // HANG_SECONDS is recorded as hung, the browser is closed and opened again, and the runner goes on
 // with the scenes not finished yet (loading its pages again). A browser or page that closes or
-// crashes under the attempt (a headed window closed, Chrome gone) loses its scene the same way:
+// crashes under the attempt (a headed window closed, Chrome gone) loses its scene the same way, as
+// does a scene whose setup or placement throws (prepare's SceneFailed: the page's loop and clock
+// were left stopped, so the browser is reopened as after a hang):
 // after a hang's reopen, the reopened browser's page closed during the next scene and the error
 // ended the run. A second loss in one run stops the run: what follows runs nothing, and the finished
 // scenes are written as usual. (Two runs of `--display --compare` hung on one scene, and the
@@ -860,6 +867,7 @@ async function guarded( names, finished, attempt, label = '' ) {
 		const done = attempts.run( token, () => attempt( left ) ).then( () => 'done', ( error ) => {
 
 			if ( error instanceof Spoiled ) return 'spoiled';
+			if ( error instanceof SceneFailed ) return { failed: error.message };
 			if ( browserGone( error ) ) return { closed: error.message.split( '\n' )[ 0 ] };
 			throw error;
 
@@ -890,6 +898,11 @@ async function guarded( names, finished, attempt, label = '' ) {
 			const pages = await probePages();
 			hung.push( { scene, run: label || null, seconds: HANG_SECONDS, step: currentStep, pages } );
 			console.error( `[profile] HUNG: ${ scene }${ label ? ` (${ label })` : '' } showed no progress for ${ HANG_SECONDS } s${ at }; recorded as hung. ${ pagesText( pages ) }` );
+
+		} else if ( outcome.failed ) {
+
+			hung.push( { scene, run: label || null, failed: outcome.failed, step: currentStep } );
+			console.error( `[profile] LOST: ${ scene }${ label ? ` (${ label })` : '' }${ at }: ${ outcome.failed }; recorded as lost.` );
 
 		} else {
 
@@ -1222,13 +1235,26 @@ function pageHelpers() {
 
 			if ( def.view === 'meadow' ) {
 
-				// a point on the meadow a little inside the rim (from the island mesh's bounds, so any
-				// layout works), the eye 1.6 m up, looking out over the lip and down a little
+				// a point on the meadow a little inside the rim (from the island ground's bounds, so any
+				// layout works), the eye 1.6 m up, looking out over the lip and down a little. The ground
+				// is the object named 'island' and every mesh under it: one mesh at the identity on main,
+				// a group of per-chunk meshes in world space on the chunked island (World.ts). Their
+				// world boxes are joined: on main that is the mesh's geometry box itself, so the pose
+				// stays the one earlier runs measured.
 				s.setCameraView( 'island' );
 				s.setCameraMode( 'free' );
-				const island = s.scene.getObjectByName( 'island' );
-				island.geometry.computeBoundingBox();
-				const box = island.geometry.boundingBox;
+				const ground = [];
+				s.scene.getObjectByName( 'island' )?.traverse( ( o ) => { if ( o.isMesh ) ground.push( o ); } );
+				if ( ! ground.length ) throw new Error( `${ def.name }: no island ground to place the meadow view on (no mesh named or under 'island')` );
+				let box = null;
+				for ( const mesh of ground ) {
+
+					mesh.updateWorldMatrix( true, false );
+					mesh.geometry.computeBoundingBox();
+					const b = mesh.geometry.boundingBox.clone().applyMatrix4( mesh.matrixWorld );
+					box = box ? box.union( b ) : b;
+
+				}
 				const cx = ( box.min.x + box.max.x ) / 2, cz = ( box.min.z + box.max.z ) / 2;
 				const rx = ( box.max.x - box.min.x ) / 2, rz = ( box.max.z - box.min.z ) / 2;
 				const dir = { x: Math.cos( 0.7 ), z: Math.sin( 0.7 ) };
@@ -1347,7 +1373,14 @@ async function prepare( page, scene, evalJs, establish ) {
 		}
 		return { switchMs, t };
 
-	}, { def: SCENES[ scene ], orbit: MOTION === 'orbit' ? ORBIT : 0, evalJs, establish } );
+	}, { def: { ...SCENES[ scene ], name: scene }, orbit: MOTION === 'orbit' ? ORBIT : 0, evalJs, establish } ).catch( ( error ) => {
+
+		// a scene that cannot be set up or placed is lost alone (see guarded); a closed browser
+		// stays a closed browser
+		if ( error instanceof Abandoned || browserGone( error ) ) throw error;
+		throw new SceneFailed( `the scene's setup or placement threw: ${ String( error?.message ?? error ).split( '\n' )[ 0 ] }` );
+
+	} );
 
 }
 
@@ -3092,7 +3125,7 @@ async function main() {
 			if ( hung.length ) {
 
 				meta.hung = hung;
-				log( `LOST: ${ hung.map( ( h ) => `${ h.scene }${ h.run ? ` (${ h.run })` : '' } ${ h.closed ? 'closed' : 'hung' }` ).join( ', ' ) }${ hung.length >= 2 ? '; the run stopped at the second' : '' }` );
+				log( `LOST: ${ hung.map( ( h ) => `${ h.scene }${ h.run ? ` (${ h.run })` : '' } ${ h.failed ? 'failed' : h.closed ? 'closed' : 'hung' }` ).join( ', ' ) }${ hung.length >= 2 ? '; the run stopped at the second' : '' }` );
 
 			}
 			// the measurements are done: once every page's loop stood still (no frame, its queue
@@ -3343,7 +3376,7 @@ function stopMarkdown( meta ) {
 
 function hungList( meta ) {
 
-	const why = ( h ) => ( h.closed ? `its browser closed under it (${ h.closed })` : `no progress for ${ h.seconds } s` ) + ( h.step ? ` at ${ h.step }` : '' ) + '.' +
+	const why = ( h ) => ( h.failed ? h.failed : h.closed ? `its browser closed under it (${ h.closed })` : `no progress for ${ h.seconds } s` ) + ( h.step ? ` at ${ h.step }` : '' ) + '.' +
 		( h.pages?.length ? ` ${ pagesText( h.pages ) }` : '' );
 	return `\n## Hung or lost scenes\n\n${ meta.hung.map( ( h ) => `- ${ h.scene }${ h.run ? ` (${ h.run })` : '' }: ${ why( h ) } The browser was reopened for the scenes after it.` ).join( '\n' ) }\n` +
 		( meta.hung.length >= 2 ? '\nThe second lost scene stopped the run: scenes after it were not measured.\n' : '' );
