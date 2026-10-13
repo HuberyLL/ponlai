@@ -7,7 +7,7 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 // their true size (equal to each other); shadows and glints use the true sun. A low sun's key stays
 // golden orange: the optical depth that sets its hue is capped, while its brightness still follows
 // the full extinction (Sky.ts `capSunHue`). The sky, sun, moon, stars, key light and grade follow
-// the clock every frame.
+// the clock every frame. `reset` sets the clock as the constructor does (a scene jump).
 //
 // The exposure only rises from afternoon into night and holds from the end of the blue hour (about
 // -7 degrees) on, higher than the night sky was tuned for, so the island reads by moonlight and
@@ -172,12 +172,22 @@ export class DayCycle {
 
 	constructor( options: DayCycleOptions = {} ) {
 
+		this.paused = false;
+		this.advanceMoonPhase = false;
+		this.reset( options );
+
+	}
+
+	/** The clock as the constructor sets it from `options` (a scene jump: no days completed). */
+	reset( options: DayCycleOptions = {} ): void {
+
 		this.hour = options.hour ?? 16;
 		this.dayLength = options.dayLength ?? 2880;
 		this.moonPhase = options.moonPhase ?? 0.25;
 		this.lunarPeriodDays = options.lunarPeriodDays ?? 29.53;
 		this.paused = options.paused ?? false;
 		this.advanceMoonPhase = options.advanceMoonPhase ?? false;
+		this.completedDays = 0;
 
 	}
 

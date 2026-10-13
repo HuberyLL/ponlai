@@ -7,6 +7,8 @@ repeatability), and 1:1 crops of named subjects for judging a change that is mea
 - `views.mjs`: the views (camera, weather, time) and their crop anchors.
 - `capture-set.mjs`: captures a set through `tools/capture.mjs`.
 - `diff-set.py`: compares two sets.
+- `../verify-scene-jump.mjs`: the views reached by scene jumps in one page, against fresh loads
+  (see One page, many views below).
 - `clips.mjs`, `../capture-clip.mjs`, `../clip-metrics.py`: stepped clips (a view set in motion),
   their capture and their metrics against MSAA and a ground truth (see Clips below).
 
@@ -457,6 +459,33 @@ What the rule cannot see: a change that alters motion only, outside the watch li
 clip the spot check does not cover; a temporal-only change visible in the ground truth of views
 other than the one spot-checked; the lower tiers' ground truth (checked on high only); and a rest baseline entry without a whole frame
 that was captured wrong at A (only whole frames are checked against A's paused set).
+
+## One page, many views: the scene jump (verify-scene-jump.mjs)
+
+Only the load-time options need a new page (quality, aa, size and dpr, the S3 switches): the views'
+weather, time, moon and camera are runtime state, and `__PONLAI__.establishScene( query )` jumps to
+them in place (`src/main.ts`, where its contract is written): after the jump, one rendered frame at
+the jump's camera and the view's eval, the paused frame is the one a fresh load of the view's query
+draws, byte for byte wherever the fresh load repeats. A tool that captures a set in one page calls it
+with the view's full query (the common part and the view's own), waits for a frame, runs the eval,
+then its readiness and the shot.
+
+`tools/verify-scene-jump.mjs` is that check, and the regression probe for anything that adds state a
+jump must clear (AGENTS.md: paused frames):
+
+```sh
+node tools/verify-scene-jump.mjs <baseUrl> <ref> --fresh                     # fresh loads
+node tools/verify-scene-jump.mjs <baseUrl> <ref> --fresh --suffix .repeat    # their A/A
+node tools/verify-scene-jump.mjs <baseUrl> <test>                            # one page, list order
+node tools/verify-scene-jump.mjs <baseUrl> <test> --order reverse --suffix .repeat
+uv run --with numpy --with pillow tools/parity/diff-set.py <ref> <test> --aa-floor
+```
+
+Both sides use capture fast mode (a persistent profile, 40 rendered frames after the evals, the loop
+stopped before the shot), so they differ only in how the scene was reached. `--from <view or query>`
+visits scenes first without capturing them (a storm, a night, fog, another clock: `--from
+"weather=storm&preset=noon&t=5"`); `--aa taau` with `diff-set.py --temporal` checks the temporal
+modes. All 24 views take about 2-3 s each in one page, against 6-7 s per fresh load (unshared GPU).
 
 ## Clips (clips.mjs, capture-clip.mjs, clip-metrics.py)
 
