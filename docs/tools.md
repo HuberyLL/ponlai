@@ -8,9 +8,11 @@ everyday commands; this file has the details. Each tool's own file says the rest
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
   `npm run preview` (port 5191, the production build). Build and typecheck run tsc and vite with
   the application policy on macOS (Process priority, below).
-- The islanders load from the git-ignored `artifacts/assets/`, which only the dev server serves: a
-  production build (a preview, a worktree's) needs them linked into `dist/` after each build
-  (`tools/parity/README.md`, setup), or its page stays on the loading screen.
+- The islanders load from the git-ignored `artifacts/assets/`. `tools/vite-assets.mjs` finds the
+  folder (the checkout's own, else the main checkout's through git's common directory, so a fresh
+  worktree needs no link): the dev server serves it and `vite build` links it into
+  `dist/artifacts/assets`. Without either, the build warns once and the page stays on the loading
+  screen.
 - `window.__PONLAI__` (scene handles) and `window.__THREE_GAME_DIAGNOSTICS__` exist only on the
   dev server or with `?debug` (or `?profile`, which also loads the frame profiler).
   `__PONLAI__.loop.step( { frames, dt, scale, camera, onFrame, clock, converge } )` stops the live loop and
