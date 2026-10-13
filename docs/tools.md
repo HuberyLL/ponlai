@@ -723,7 +723,10 @@ what these do not give (automation, A/B statistics, pass names).
   parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
   ready by capture.mjs's stability rule (`tools/parity/README.md`, One page, many views);
   `--check <root>/<sha>/<set>` runs the whole check (the stored set of fresh loads, a page per
-  view, both jump orders at once, the diff) in one command.
+  view, both jump orders at once, the diff) in one command. `--view "name:query[::js]"`
+  (repeatable) adds ad-hoc views with capture-set's syntax (`like=<view>` included), so a jump
+  into a new scene option is checked as `--views island-fair-noon --view near:dist=40`; their fresh
+  loads are stored with their definitions' hashes, so a changed query captures a new reference.
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
