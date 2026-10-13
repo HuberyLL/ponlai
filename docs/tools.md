@@ -535,8 +535,8 @@ what these do not give (automation, A/B statistics, pass names).
   `tools/verify-scene.mjs` checks a production preview. `tools/verify-scene-jump.mjs` captures the
   parity views reached by scene jumps in one page and as fresh loads, for `diff-set.py`, each shot
   ready by capture.mjs's stability rule (`tools/parity/README.md`, One page, many views);
-  `--check <root>/<sha>/<set>` runs the whole check (the stored fresh set, both jump orders at
-  once, the diff) in one command.
+  `--check <root>/<sha>/<set>` runs the whole check (the stored set of fresh loads, a page per
+  view, both jump orders at once, the diff) in one command.
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the

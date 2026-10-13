@@ -376,7 +376,7 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
 {
   "format": 1, "kind": "set" | "clip", "sha": "<40 hex>", "path": "S1",
   "key": { "kind": "set", "tool": "<16 hex>", "browser": { "executable": "playwright chromium", "version": "153.0.8010.12" },
-           "quality": "high", "aa": null, "q": null, "size": "1728x1117@2", "capture": [] },
+           "quality": "high", "aa": null, "q": null, "size": "1728x1117@2", "capture": [], "pages": "jump" },
   "toolFiles": { "capture.mjs": "<12 hex>", "capture-browser.mjs": "...", "parity/capture-set.mjs": "...", "parity/views.mjs": "...", "parity/adhoc.mjs": "..." },
   "coverage": { "views": { "meadow-close": { "captured": true, "repeat": true, "identical": true },
                            "my-adhoc": { "captured": true, "def": "<16 hex>" } } },
@@ -397,7 +397,11 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   round); `toolFiles` keeps each
   file's hash so a forced recapture names the files that changed. `browser`: CHROME_PATH or
   Playwright's Chromium, and its version. Then the options: a set's tier, aa, size, extra query
-  and capture.mjs options; a clip entry's `tier`, `aa`, `size`, `q`, `clip`, `view`, `full`,
+  and capture.mjs options, and `pages`, how its views were reached: `"jump"` (a page per worker,
+  most views by the scene jump; a manifest without it counts as this) or `"view"` (a fresh page
+  per view, `--page-per-view`), so neither stands in for the other. A build without the exact jump
+  gets a page per view whatever was asked: its set is stored as `"view"` with `"jumpless": true`,
+  and serves both. A clip entry's key holds its `tier`, `aa`, `size`, `q`, `clip`, `view`, `full`,
   `every`, `dense` and `anchors` (the hash of the anchors it took with `--anchors-from`, null for
   its own), so a ground truth follows a recaptured baseline.
 - `coverage`: what the directory holds, apart from the key. A set lists its views, each with
@@ -569,12 +573,12 @@ or, in one command, against the reference store:
 node tools/verify-scene-jump.mjs <baseUrl> <test> --check <root>/<sha>/<set>
 ```
 
-`--check` takes the fresh side from the store (capture-set `--reference --repeat` of the same views
-and options: reused for the commit, else captured with capture-set's parallel pages), runs the two
-jump orders at once (two pages, one leased GPU slot each) and then `diff-set.py` (`--aa-floor`, or
-`--temporal` for the temporal modes; the table also in `<test>/diff.txt`). Note that capture-set's
-pages reach most views by a jump too, so the stored side is fresh loads only as far as the exact
-jump holds; `--fresh` remains the way to capture true fresh loads. Every run leases its slot per
+`--check` takes the fresh side from the store (capture-set `--reference --repeat --page-per-view`
+of the same views and options: a fresh page per view, reused for the commit, else captured in
+parallel), runs the two jump orders at once (two pages, one leased GPU slot each) and then
+`diff-set.py` (`--aa-floor`, or `--temporal` for the temporal modes; the table also in
+`<test>/diff.txt`). It refuses a stored set whose key is not `pages: "view"`: a set reached by jumps
+would compare the jump with itself. Every run leases its slot per
 view (as capture.mjs's worker), so a waiter gets in at the next view boundary.
 
 Both sides use capture.mjs's readiness (a persistent profile; after the evals the image grabbed

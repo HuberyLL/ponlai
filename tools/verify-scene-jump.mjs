@@ -12,14 +12,16 @@
 // --check runs the whole check in one command: the fresh side, the jump side in both orders into
 // <outDir>, then diff-set.py (`--aa-floor`, `--temporal` for aa=taa|taau|gt; its table also in
 // <outDir>/diff.txt; its exit code is the check's). The fresh side is the reference store's set of
-// the commit (tools/parity/reference.mjs, through capture-set.mjs `--reference --repeat` with the
-// same views and options, so it is keyed like every capture-set set): a stored set of the commit is
-// reused, else capture-set captures it with its parallel pages (default --jobs). The URL must serve
-// that commit (capture-set checks it). The two jump orders (the list, and the reverse with
+// the commit (tools/parity/reference.mjs, through capture-set.mjs `--reference --repeat
+// --page-per-view` with the same views and options, so it is keyed like every capture-set set): a
+// fresh page per view, so the jump is compared with fresh loads, never with itself (the key's
+// `pages: 'view'`; a set reached by jumps is refused). A stored set of the commit is reused, else
+// capture-set captures it, still parallel (default --jobs). The URL must serve that commit
+// (capture-set checks it). The two jump orders (the list, and the reverse with
 // `--suffix .repeat`) are independent pages, so they run at once, as two child processes of this
 // tool, each with its own browser profile (`<profile>` and `<profile>-reverse`) and its own leased
 // slot. A full 24-view check used to run as four commands through one page at a time, the fresh
-// loads alone two thirds of it; `--fresh` stays the way to capture true fresh loads here.
+// loads alone two thirds of it; `--fresh` still captures fresh loads into <outDir> by hand.
 // --fresh: one fresh page load per view (a new page in the same browser), as capture-set loads it.
 // Otherwise one page for the whole list: it loads the first scene (the first `--from`, else the
 // first view), then visits each `--from` scene in turn without capturing it (a view's name, or a
@@ -51,7 +53,7 @@
 // The closing line gives the run's time and how much of it went to waiting for the lock.
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { leaseGpuLock, releaseGpuLock } from './gpu-lock.mjs';
@@ -270,7 +272,7 @@ console.log( `${ views.length } views in ${ ( ( Date.now() - started ) / 1000 ).
 if ( failed ) process.exitCode = 1;
 
 // --check: the whole check in one command (see the header). The fresh side is the commit's stored
-// set (capture-set.mjs --reference --repeat: reused, or captured with its parallel pages), the two
+// set (capture-set.mjs --reference --repeat --page-per-view: reused, or captured in parallel), the two
 // jump orders run at once as two child processes of this tool (one page and one leased slot each,
 // their own browser profiles), then diff-set.py. Resolves to the exit code.
 async function check() {
@@ -307,11 +309,23 @@ async function check() {
 
 	} );
 
-	// the fresh side: the stored set of this commit, captured when there is none
-	const refDir = path.resolve( options.check );
-	const ref = await run( 'ref', [ path.join( repo, 'tools/parity/capture-set.mjs' ), base, '--reference', refDir, '--repeat',
-		'--procedure', 'verify-scene-jump ref', ...common, ...( stableArgs.length ? [ '--', ...stableArgs ] : [] ) ] );
-	if ( ref.code !== 0 ) { console.error( `reference ${ refDir } failed (exit ${ ref.code })` ); return 2; }
+	// the fresh side: the stored set of this commit, a fresh page per view, captured when there is none
+	const ref = await run( 'ref', [ path.join( repo, 'tools/parity/capture-set.mjs' ), base, '--reference', path.resolve( options.check ), '--repeat',
+		'--page-per-view', '--procedure', 'verify-scene-jump ref', ...common, ...( stableArgs.length ? [ '--', ...stableArgs ] : [] ) ] );
+	if ( ref.code !== 0 ) { console.error( `reference ${ options.check } failed (exit ${ ref.code })` ); return 2; }
+	// the set that served it (another set of the commit with the same key may): capture-set's last
+	// `reference <sha>/<set>: <status>` line, relative to the store's root
+	const served = [ ...ref.out.matchAll( /^reference (\S+): (?:reused|waited|captured|extended)/gm ) ].pop()?.[ 1 ];
+	const refDir = served ? path.join( path.dirname( path.dirname( path.resolve( options.check ) ) ), served ) : path.resolve( options.check );
+	// a set reached by jumps would compare the jump with itself
+	let manifest = null;
+	try { manifest = JSON.parse( await readFile( path.join( refDir, 'complete.json' ), 'utf8' ) ); } catch { /* reported below */ }
+	if ( manifest?.key?.pages !== 'view' ) {
+
+		console.error( `reference ${ refDir }: its views were not each reached by a fresh load (key pages ${ JSON.stringify( manifest?.key?.pages ?? null ) }): not a fresh side` );
+		return 2;
+
+	}
 	console.log( `fresh side: ${ refDir } (${ minutes() } min)` );
 
 	// the jump side: both orders at once
