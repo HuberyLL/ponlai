@@ -85,6 +85,7 @@
 //   it. capture-set retries that view (--retries) and the views still to come on a fresh page.
 //   The worker tells capture-set when the view holds its GPU slot (`locked`): capture-set's own
 //   watchdog for a silent page counts from there, so a long wait for the lock is not a hang.
+//   A view that fails during the world's generation sends its failed `shot` with no `locked` before it.
 // - Each view's files go straight to the path capture-set names (`<out>.png`, `.json`, `.f<i>.png`);
 //   the JSON adds `page`: the visit's index on the page, `load` or `jump`, the view before, the wait
 //   for the GPU lock (`lockKept` when the slot was kept from the view before) and the time from then
