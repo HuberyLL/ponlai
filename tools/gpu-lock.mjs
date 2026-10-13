@@ -64,7 +64,8 @@
 //   await leaseGpuLock( 'capture v', { shared: true, budget: 20000 } );   // kept from the last piece of work, or yielded to a waiter
 //
 //   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
-//   node tools/gpu-lock.mjs status                 (the owner, the holders, the queue and the exclusive requests in turn)
+//   node tools/gpu-lock.mjs status                 (the owner, the holders, the queue in turn with each request's eta, the exclusive requests)
+//   node tools/gpu-lock.mjs eta [--shared|--exclusive] [--class low|normal] [--pid p] [--json]   (estimated start of a request made now, or of a ticket)
 //   node tools/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
 //   node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]   (waits and holds, from the log)
 //
@@ -82,7 +83,65 @@
 // bound carries `promoted`.
 // Inherited holds (re-entry, a child under an exclusive holder) take nothing and log nothing.
 // A waiting request prints a timestamped line every 30 s: its place in the queue, the next in
-// turn, who holds the GPU and why it waits.
+// turn, who holds the GPU and why it waits, and its estimated start when it first waits and whenever
+// the estimate moves by more than a minute or a quarter.
+//
+// The estimated start (estimateWaits; `status` gives every queued request an `eta`, `eta` one made
+// now or an existing ticket's) lets a waiting agent choose between waiting and handing its work back.
+// It is an estimate, a range rather than a time. It runs the queue forward under the grant rules
+// above (slots in queueOrder, exclusive tickets draining the slots, low tickets yielding until their
+// promoteAt, leased holders giving up past their budget), 200 times, each hold lasting a duration
+// drawn from what holds of its kind took: the label's kind (labelKind: `capture`, `capture-clip`,
+// `profile-frame compare`, ...) and mode, from the log's recent releases, or from a built-in table
+// (FALLBACK, p25 / median / p90 per kind) while the log has few of a kind. A current holder runs on
+// for a draw longer than it has run; one older than anything drawn, for a share of its age. The
+// median start over the runs is the estimate, the 10th and 90th percentiles the range. Drawn rather
+// than a run with medians and one with p90s: hold times are skewed, so a queue of medians ends
+// early (a sum of many holds tends to their mean, not their median) and a queue of p90s far too
+// late (every hold long at once), and both errors grow with the queue. Requests made later are
+// not foreseen: a normal request that asks after a low one still goes first, so a low request
+// can start after its range.
+//
+//   import { withGpuLock, acquireGpuLock } from './gpu-lock.mjs';
+//   await withGpuLock( 'profile island', async () => { ... } );           // held while fn runs
+//   await acquireGpuLock( 'capture overview' );                           // held until this process exits
+//   await acquireGpuLock( 'verify-sky', { shared: true } );               // shared with other probes
+//   await leaseGpuLock( 'capture v', { shared: true, budget: 20000 } );   // kept from the last piece of work, or yielded to a waiter
+//
+//   node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout seconds] -- <command ...>
+//   node tools/gpu-lock.mjs status                 (the owner, the holders, the queue in turn with each request's eta, the exclusive requests)
+//   node tools/gpu-lock.mjs eta [--shared|--exclusive] [--class low|normal] [--pid p] [--json]   (estimated start of a request made now, or of a ticket)
+//   node tools/gpu-lock.mjs gpu [--seconds 3]      (the GPU's utilisation and its busiest processes, macOS)
+//   node tools/gpu-lock.mjs log [--since 2h] [--by class|label] [--top 5] [--json]   (waits and holds, from the log)
+//
+// The lock keeps a history, so how long anyone waited is measured rather than guessed: every request,
+// grant, release, timeout and abandoned request is one JSON line appended to `ponlai-gpu.lock.log.jsonl`
+// next to the lock (t, ev, pid, label, mode, class, ticket, waitMs / holdMs, reason). A line is
+// written whole by one append (O_APPEND), so concurrent writers never interleave, and logging never
+// fails a run. Past LOG_CAP the file is renamed to `.log.1.jsonl` (one older file is kept; two writers
+// rotating at the same instant may drop that older file, which only shortens the history). A release
+// says why a hold ended when its holder did not end it itself: `handed` (a child took the slot over:
+// the child's grant carries `from`), `yielded` (yieldAncestorSlot) or `stale` (the holder was killed
+// and whoever looked next reclaimed the slot; the log line is written by the one whose unlink
+// succeeded, so it is written once); `lease` marks a leased hold given up for a waiter, and a leased
+// hold's release counts the pieces of work it served (`uses`). A grant of a low request past its
+// bound carries `promoted`.
+// Inherited holds (re-entry, a child under an exclusive holder) take nothing and log nothing.
+// A waiting request prints a timestamped line every 30 s: its place in the queue, the next in
+// turn, who holds the GPU and why it waits, and its estimated start when it first waits and whenever
+// the estimate moves by more than a minute or a quarter.
+//
+// The estimated start (estimateWaits; `status` gives every queued request an `eta`, `eta` one made
+// now or an existing ticket's) lets a waiting agent choose between waiting and handing its work back.
+// It is an estimate, a range rather than a time. It runs the queue forward under the grant rules
+// above (slots in queueOrder, exclusive tickets draining the slots, low tickets yielding until their
+// promoteAt, leased holders giving up within their budget), each hold lasting what holds of its kind
+// took: the label's kind (labelKind: `capture`, `capture-clip`, `profile-frame compare`, ...) and mode,
+// p25 / median / p90 over the log's recent releases, or a built-in table (FALLBACK) for kinds the log
+// has few of. A current holder runs to its next quantile past its elapsed time, and one older than
+// p90 on in proportion to its age. Three runs, with the p25, median and p90 durations, give the range
+// and the median start. Requests made later are not foreseen: a normal request that asks after a low
+// one still goes first, so a low request's estimate is the earliest it could start.
 // `log` summarises the window: waits (grants that queued, not take-overs) and holds per class or
 // label, median, p95 and total, and the longest waits with who held the GPU meanwhile.
 // A command started through `run` inherits the lock (PONLAI_GPU_LOCK_HELD, PONLAI_GPU_LOCK_MODE), and
@@ -146,6 +205,7 @@ let heldMode = null; // 'exclusive' | 'shared' while this process holds the lock
 let installed = false;
 let pending = null; // this process's request while it waits: { label, mode, ticket, at }
 let holding = null; // this process's own hold while it lasts: { label, mode, ticket, at }
+let leasing = 0; // the budget (ms) of the leaseGpuLock request under way, recorded on its hold for the estimate
 
 // One event on the log (see the header). Never throws.
 function logEvent( event ) {
@@ -494,7 +554,7 @@ function tryAcquireExclusive( label, seq ) {
 		return false;
 
 	}
-	writeFileSync( OWNER, JSON.stringify( { pid: process.pid, label, start: new Date().toISOString(), mode: 'exclusive', seq, priority: PRIORITY } ) );
+	writeFileSync( OWNER, JSON.stringify( { pid: process.pid, label, start: new Date().toISOString(), mode: 'exclusive', seq, priority: PRIORITY, ...( leasing ? { lease: leasing / 1000 } : {} ) } ) );
 	return true;
 
 }
@@ -573,7 +633,7 @@ function joinShared( label, ticket ) {
 	const taken = new Set( members.map( ( m ) => m.slot ) );
 	let slot = 0;
 	while ( taken.has( slot ) ) slot ++;
-	const me = { pid: process.pid, label, start: new Date().toISOString(), slot, priority: PRIORITY, seq: ticket.seq };
+	const me = { pid: process.pid, label, start: new Date().toISOString(), slot, priority: PRIORITY, seq: ticket.seq, ...( leasing ? { lease: leasing / 1000 } : {} ) };
 	try {
 
 		mkdirSync( LOCK_DIR );
@@ -692,6 +752,7 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 
 	}
 	let told = 0;
+	let toldEta = null; // the estimate last printed, and the wait when it was
 	const waitFile = path.join( WAITING, `${ process.pid }.json` );
 	const ticket = path.join( QUEUE, `${ process.pid }.json` );
 	const mine = await withMutex( () => enqueue( label, ! shared ) );
@@ -729,7 +790,12 @@ export async function acquireGpuLock( label = path.basename( process.argv[ 1 ] ?
 				} else if ( owner ) held = `"${ owner.label }" (pid ${ owner.pid }, exclusive since ${ clock( new Date( owner.start ) ) })`;
 				const why = first ? `; "${ first.label }" (pid ${ first.pid }) wants the GPU to itself first`
 					: mine.priority === 'low' && Date.now() < Date.parse( mine.promoteAt ) ? `; low priority: normal requests first until ${ clock( new Date( mine.promoteAt ) ) }` : '';
-				console.error( `[gpu-lock ${ clock() }] waiting (${ mode }${ PRIORITY === 'low' ? ', low' : '' }) ${ Math.round( waited / 1000 ) } s: ${ before.length + 1 } of ${ Math.max( total, before.length + 1 ) } in the queue${ next }; held by ${ held }${ why }` );
+				// the estimated start, when it is new or has moved by more than a minute or a quarter
+				const eta = estimateWaits( { logged: recentDurations() } ).queue.find( ( t ) => t.pid === process.pid )?.eta;
+				const moved = eta && eta.startIn !== null && ( toldEta === null || Math.abs( eta.startIn - ( toldEta.startIn - ( waited - toldEta.at ) / 1000 ) ) > Math.max( 60, 0.25 * toldEta.startIn ) );
+				if ( moved ) toldEta = { ...eta, at: waited };
+				const estimate = moved ? `; estimated start in ${ etaText( eta ) }` : '';
+				console.error( `[gpu-lock ${ clock() }] waiting (${ mode }${ PRIORITY === 'low' ? ', low' : '' }) ${ Math.round( waited / 1000 ) } s: ${ before.length + 1 } of ${ Math.max( total, before.length + 1 ) } in the queue${ next }; held by ${ held }${ why }${ estimate }` );
 				told = waited || 1;
 
 			}
@@ -824,7 +890,16 @@ export async function leaseGpuLock( label, { shared = false, budget = 0, ...opti
 		release( 'lease' );
 
 	} else if ( holding ) release();
-	return { waitMs: await acquireGpuLock( label, { shared, ...options } ), kept: false };
+	leasing = budget;
+	try {
+
+		return { waitMs: await acquireGpuLock( label, { shared, ...options } ), kept: false };
+
+	} finally {
+
+		leasing = 0;
+
+	}
 
 }
 
@@ -965,6 +1040,293 @@ export async function waitForIdleGpu( { threshold = 15, seconds = 3, wait = 60, 
 
 }
 
+// ------------------------------------------------------------------ estimated wait
+
+// How long holds of a kind of work take, in ms (p25, median, p90), for kinds the log has too few of
+// (fewer than MIN_LOGGED releases). From 2026-10-11..13, before the log existed: the grant times and
+// the next sightings of holders in the `gpu-lock status` outputs that sessions printed, and the run
+// reports of the aa and island sessions (a view 5-7 s alone, 20 s leases, clips about a minute, a
+// profile with --accept 7-8 min, a compare 11-17 min). A capture hold is one view, or several under
+// capture.mjs's lease (its 20 s budget plus the view in flight); a capture-clip is one clip;
+// profile-frame's exclusive holds are whole runs (--accept is labelled `profile` too and sits at its
+// long end), its shared holds the preload before them; `node` is a script under `run`.
+const FALLBACK = {
+	'capture shared': [ 6e3, 12e3, 45e3 ],
+	'capture exclusive': [ 10e3, 20e3, 60e3 ],
+	'capture-clip shared': [ 15e3, 30e3, 120e3 ],
+	'probe shared': [ 15e3, 45e3, 120e3 ],
+	'verify shared': [ 60e3, 180e3, 450e3 ],
+	'node shared': [ 30e3, 120e3, 420e3 ],
+	'node exclusive': [ 120e3, 300e3, 900e3 ],
+	'profile-frame shared': [ 10e3, 20e3, 60e3 ],
+	'profile-frame profile exclusive': [ 180e3, 320e3, 600e3 ],
+	'profile-frame compare exclusive': [ 180e3, 450e3, 950e3 ],
+	'profile-frame toggle exclusive': [ 300e3, 500e3, 900e3 ],
+	'profile-frame exclusive': [ 60e3, 200e3, 700e3 ],
+	'shared': [ 10e3, 30e3, 150e3 ],
+	'exclusive': [ 120e3, 300e3, 900e3 ],
+};
+const MIN_LOGGED = 5; // releases of a kind before the log's own holds replace the table
+const LOG_RECENT = 100; // the most recent releases per kind that count
+const PIECE = [ 3e3, 6e3, 20e3 ]; // one piece of leased work (a capture view), until the log has leased holds of the kind
+
+/** A label's kind: the label without its run-specific tail, so that holds of the same work group
+ * together. The first word names the tool (`capture island-fair-noon` -> `capture`, `capture-clip
+ * baseline-...` -> `capture-clip`, `verify-scene-jump fresh` -> `verify-scene-jump`); a script run
+ * through node or a shell is named by its file (`node tools/parity/capture-set.mjs ...` -> `node
+ * capture-set`); profile-frame keeps its mode (`profile-frame compare-2026-...` -> `profile-frame
+ * compare`, a custom --label -> `profile-frame`). Timestamps, hashes and numbers are dropped. */
+export function labelKind( label = '' ) {
+
+	const clean = String( label ).replace( /^shared: /, '' ).replace( /\d{4}-\d\d-\d\dT[\d:.-]+Z?/g, '' ).trim();
+	const [ first = '', ...rest ] = clean.split( /\s+/ );
+	if ( /^(node|bash|sh|zsh)$/.test( first ) ) {
+
+		const script = rest.find( ( w ) => ! w.startsWith( '-' ) );
+		return script ? `node ${ path.basename( script ).replace( /\.(m?js|sh)$/, '' ) }` : first;
+
+	}
+	if ( first === 'profile-frame' ) {
+
+		const mode = /^(profile|compare|toggle)-?$/.exec( rest[ 0 ] ?? '' );
+		return mode ? `profile-frame ${ mode[ 1 ] }` : 'profile-frame';
+
+	}
+	return first.replace( /\b[0-9a-f]{7,40}\b/g, '' ).replace( /[-_.]*\d+$/, '' ) || '?';
+
+}
+
+/** Hold durations per kind and mode from the log's releases: Map( 'kind mode' -> { n, holds, pieces? } ),
+ * the LOG_RECENT most recent holds of each (ms); `pieces` the pieces of leased work (holdMs / uses
+ * over leased holds that served several), when there are enough. Holds a child took over or that
+ * were yielded (an orchestrator's share before it handed on) say nothing about the work and are left
+ * out. */
+export function lockDurations( events = readLockLog() ) {
+
+	const groups = new Map();
+	for ( const e of events ) {
+
+		if ( e.ev !== 'release' || ! Number.isFinite( e.holdMs ) || e.reason === 'handed' || e.reason === 'yielded' ) continue;
+		const key = `${ labelKind( e.label ) } ${ e.mode === 'exclusive' ? 'exclusive' : 'shared' }`;
+		if ( ! groups.has( key ) ) groups.set( key, { holds: [], pieces: [] } );
+		groups.get( key ).holds.push( e.holdMs );
+		if ( e.uses > 1 ) groups.get( key ).pieces.push( e.holdMs / e.uses );
+
+	}
+	const table = new Map();
+	for ( const [ key, g ] of groups ) {
+
+		const holds = g.holds.slice( - LOG_RECENT ), pieces = g.pieces.slice( - LOG_RECENT );
+		table.set( key, { n: holds.length, holds, ...( pieces.length >= MIN_LOGGED ? { pieces } : {} ) } );
+
+	}
+	return table;
+
+}
+
+// A duration drawn from p25 / median / p90: a log-normal through the median, its spread below the
+// median from p25 and above it from p90 (hold times are skewed: most short, a few long).
+function drawQuantiles( [ p25, p50, p90 ], rand ) {
+
+	const u = Math.min( Math.max( rand(), 1e-6 ), 1 - 1e-6 );
+	// the standard normal quantile of u, near enough (the logistic distribution scaled to match it)
+	const z = Math.log( u / ( 1 - u ) ) / 1.702;
+	return p50 * Math.exp( z * ( z < 0 ? Math.log( p50 / p25 ) / 0.6745 : Math.log( p90 / p50 ) / 1.2816 ) );
+
+}
+
+// How long a hold of `label` in `mode` lasts, as something to draw from: the log's recent holds of
+// the kind when it has MIN_LOGGED of them (drawn as they came), else the table's quantiles (the
+// kind's, its tool's, or its mode's). { basis: 'log' | 'table' | 'default', hold( rand ), piece( rand ) }.
+function durationOf( label, mode, logged ) {
+
+	const kind = labelKind( label );
+	const m = mode === 'exclusive' ? 'exclusive' : 'shared';
+	const own = logged.get( `${ kind } ${ m }` );
+	const piece = own?.pieces ? ( rand ) => own.pieces[ Math.floor( rand() * own.pieces.length ) ] : ( rand ) => drawQuantiles( PIECE, rand );
+	if ( own && own.n >= MIN_LOGGED ) return { basis: 'log', hold: ( rand ) => own.holds[ Math.floor( rand() * own.holds.length ) ], piece };
+	const tool = kind.split( ' ' )[ 0 ].replace( /^verify-.*/, 'verify' );
+	const row = FALLBACK[ `${ kind } ${ m }` ] ?? FALLBACK[ `${ tool } ${ m }` ] ?? FALLBACK[ m ];
+	return { basis: FALLBACK[ `${ kind } ${ m }` ] || FALLBACK[ `${ tool } ${ m }` ] ? 'table' : 'default', hold: ( rand ) => drawQuantiles( row, rand ), piece };
+
+}
+
+/** The lock's state as the estimate needs it: { holders: [ { pid, label, mode, start, lease? } ],
+ * queue: [ tickets ], untracked: [ older copies' exclusive waiters ] }. */
+export function lockState() {
+
+	const owner = lockOwner();
+	let holders = [];
+	if ( owner?.mode === 'shared' ) holders = owner.members.filter( ( m ) => m.slot !== undefined ).map( ( m ) => ( { ...m, mode: 'shared' } ) );
+	else if ( owner && ! owner.unknown ) holders = [ { ...owner, mode: 'exclusive' } ];
+	return { holders, queue: queued(), untracked: untrackedWaiters().map( ( { file, ...w } ) => w ) };
+
+}
+
+// One run of the queue forward in time under the lock's grant rules, every hold lasting a duration
+// drawn for it (durationOf): Map( pid -> start time ). A current holder runs on for a duration drawn
+// longer than it has already run; one older than anything drawn (work the table does not know, an
+// own script, a hung page) is expected to run on for a share of its age, so a hold of a quarter of an
+// hour is not taken to end within seconds at every look. Free slots go to the tickets in queueOrder at
+// each moment (low tickets rank as normal ones from their promoteAt on), an exclusive ticket first in
+// turn waits for every holder to leave and blocks the tickets after it, a shared one joins while
+// slots are free; a leased holder gives its hold up at the first piece boundary past its budget once a
+// waiter would be served before it (gpuLockWaiter's rule). Nothing that asks later is foreseen.
+function simulateQueue( state, logged, rand, now, slots ) {
+
+	const holders = state.holders.map( ( h ) => {
+
+		const d = durationOf( h.label, h.mode, logged );
+		const start = Date.parse( h.start ) || now;
+		const elapsed = now - start;
+		let left = 0;
+		for ( let i = 0; i < 30 && left <= 0; i ++ ) left = d.hold( rand ) - elapsed;
+		if ( left <= 0 ) left = Math.max( 5000, ( 0.05 + 0.45 * rand() ) * elapsed );
+		return { pid: h.pid, mode: h.mode, priority: h.priority ?? 'normal', start, lease: h.lease, piece: d.piece, end: now + left };
+
+	} );
+	// an older copy's exclusive request goes before every ticket (it blocks every shared join)
+	const waiting = [ ...state.untracked.map( ( w, i ) => ( { ...w, mode: 'exclusive', priority: 'normal', seq: - 1 - i } ) ), ...state.queue ];
+	const starts = new Map();
+	const grant = ( ticket, mode, t ) => {
+
+		holders.push( { pid: ticket.pid, mode, priority: ticket.priority ?? 'normal', start: t, end: t + durationOf( ticket.label, mode, logged ).hold( rand ) } );
+		starts.set( ticket.pid, t );
+		waiting.splice( waiting.indexOf( ticket ), 1 );
+
+	};
+	let t = now;
+	for ( let step = 0; waiting.length && step < 100000; step ++ ) {
+
+		for ( let i = holders.length - 1; i >= 0; i -- ) if ( holders[ i ].end <= t ) holders.splice( i, 1 );
+		const order = queueOrder( waiting, t );
+		const exclusiveHeld = holders.some( ( h ) => h.mode === 'exclusive' );
+		let free = exclusiveHeld ? 0 : slots - holders.length;
+		for ( const ticket of order ) {
+
+			if ( ticket.mode === 'exclusive' ) {
+
+				if ( holders.length === 0 ) grant( ticket, 'exclusive', t );
+				break;
+
+			}
+			if ( free <= 0 ) break;
+			grant( ticket, 'shared', t );
+			free --;
+
+		}
+		if ( ! waiting.length ) break;
+		// leased holders yield to a waiter served before their next request
+		const next = queueOrder( waiting, t );
+		const full = ! exclusiveHeld && holders.length >= slots;
+		for ( const h of holders ) {
+
+			if ( ! h.lease || h.yields ) continue;
+			const again = { pid: h.pid, seq: Infinity, priority: h.mode === 'exclusive' ? 'normal' : h.priority, promoteAt: new Date( t + LOW_MAX_WAIT * 1000 ).toISOString() };
+			const order = queueOrder( [ ...next, again ], t );
+			const before = order.slice( 0, order.indexOf( again ) );
+			const waiter = before.some( ( w ) => w.mode === 'exclusive' ) || ( h.mode === 'exclusive' ? before.length > 0 : full && before.length > 0 );
+			if ( ! waiter ) continue;
+			const lowYield = h.mode === 'shared' && h.priority === 'low' && before[ 0 ]?.mode !== 'exclusive' && before[ 0 ]?.priority === 'normal';
+			h.end = Math.min( h.end, ( lowYield ? t : Math.max( t, h.start + h.lease * 1000 ) ) + rand() * h.piece( rand ) );
+			h.yields = true;
+
+		}
+		// the next moment anything changes: a hold ends or a low ticket stops yielding
+		let at = Math.min( ...holders.map( ( h ) => h.end ) );
+		for ( const w of waiting ) {
+
+			const promote = w.priority === 'low' ? Date.parse( w.promoteAt ) : NaN;
+			if ( promote > t && promote < at ) at = promote;
+
+		}
+		if ( ! Number.isFinite( at ) ) break; // nothing held and nothing granted: an older copy's own rules decide
+		t = Math.max( at, t + 1 );
+
+	}
+	return starts;
+
+}
+
+const RUNS = 200; // simulated futures per estimate
+// a small seeded generator (mulberry32), so the same queue gives the same estimate at every look
+function seeded( seed ) {
+
+	return () => {
+
+		seed = ( seed + 0x6d2b79f5 ) | 0;
+		let x = Math.imul( seed ^ ( seed >>> 15 ), 1 | seed );
+		x = ( x + Math.imul( x ^ ( x >>> 7 ), 61 | x ) ) ^ x;
+		return ( ( x ^ ( x >>> 14 ) ) >>> 0 ) / 4294967296;
+
+	};
+
+}
+
+/** Estimated waits, in seconds from now, for every queued request (and, given `request` { mode:
+ * 'shared' | 'exclusive', priority: 'low' | 'normal', label }, for one made now): the queue simulated
+ * RUNS times, each hold's duration drawn anew (simulateQueue). Returns { now, queue: [ { pid, seq,
+ * label, mode, priority, eta } ], request?: eta }, eta = { startIn, range: [ lo, hi ], basis }: the
+ * median start over the runs, the 10th and 90th percentiles, and where the durations of the holds
+ * ahead came from (the log, the built-in table, a default per mode). Every number is an estimate:
+ * holds vary, and requests made later (a normal one ahead of a low one) are not foreseen.
+ * `state`, `logged` and `now` may be given (replays, tests); they default to the lock's own. */
+export function estimateWaits( { state = lockState(), logged = lockDurations(), now = Date.now(), slots = SLOTS, request = null } = {} ) {
+
+	const queue = state.queue.map( ( t ) => ( { ...t } ) );
+	let mine = null;
+	if ( request ) {
+
+		const exclusive = request.mode === 'exclusive';
+		const priority = exclusive ? 'normal' : request.priority ?? PRIORITY;
+		mine = { pid: - 1, label: request.label ?? '(this request)', seq: Math.max( 0, ...queue.map( ( t ) => t.seq ) ) + 1, start: new Date( now ).toISOString(), priority,
+			...( exclusive ? { mode: 'exclusive' } : {} ), ...( priority === 'low' ? { promoteAt: new Date( now + LOW_MAX_WAIT * 1000 ).toISOString() } : {} ) };
+		queue.push( mine );
+
+	}
+	const full = { ...state, queue };
+	const rand = seeded( 0x9e3779b9 );
+	const starts = new Map( queue.map( ( t ) => [ t.pid, [] ] ) );
+	for ( let run = 0; run < RUNS; run ++ ) for ( const [ pid, at ] of simulateQueue( full, logged, rand, now, slots ) ) starts.get( pid ).push( at );
+	// where the durations came from: the holders' and every ticket's ahead
+	const sources = state.holders.map( ( h ) => durationOf( h.label, h.mode, logged ).basis );
+	const ahead = queueOrder( queue, now );
+	const eta = ( ticket, index ) => {
+
+		const basis = {};
+		for ( const b of [ ...sources, ...ahead.slice( 0, index ).map( ( t ) => durationOf( t.label, t.mode, logged ).basis ) ] ) basis[ b ] = ( basis[ b ] ?? 0 ) + 1;
+		const all = starts.get( ticket.pid ).sort( ( a, b ) => a - b );
+		if ( ! all.length ) return { startIn: null, range: [ null, null ], basis };
+		const s = ( q ) => Math.round( ( quantile( all, q ) - now ) / 1000 );
+		return { startIn: s( 0.5 ), range: [ s( 0.1 ), s( 0.9 ) ], basis };
+
+	};
+	const out = ahead.map( ( t, i ) => ( { pid: t.pid, seq: t.seq, label: t.label, mode: t.mode ?? 'shared', priority: t.priority, eta: eta( t, i ) } ) );
+	const result = { now: new Date( now ).toISOString(), queue: out.filter( ( t ) => t.pid !== - 1 ) };
+	if ( mine ) result.request = out.find( ( t ) => t.pid === - 1 ).eta;
+	return result;
+
+}
+
+// the log's durations, read again every few minutes by a waiting process (the log may hold 20k events)
+let durationsCache = null;
+function recentDurations() {
+
+	if ( ! durationsCache || Date.now() - durationsCache.at > 300000 ) durationsCache = { at: Date.now(), logged: lockDurations() };
+	return durationsCache.logged;
+
+}
+
+// "~12 min (range 8-20 min, estimate)"
+function etaText( eta ) {
+
+	if ( ! eta || eta.startIn === null ) return 'unknown (estimate)';
+	const m = ( s ) => s < 90 ? `${ Math.max( 0, s ) } s` : `${ Math.round( s / 60 ) } min`;
+	const [ lo, hi ] = eta.range;
+	return `~${ m( eta.startIn ) } (range ${ m( lo ) }-${ hi === null ? '?' : m( hi ) }, estimate)`;
+
+}
+
 // ------------------------------------------------------------------ CLI
 
 /** The log's events, oldest first (the rotated file, then the current one). */
@@ -1088,11 +1450,14 @@ async function main( argv ) {
 		const owner = lockOwner();
 		// the queue in turn, low tickets past their bound marked promoted
 		const now = Date.now();
+		// and each with its estimated start (estimateWaits)
+		const etas = new Map( estimateWaits( { now } ).queue.map( ( t ) => [ t.pid, t.eta ] ) );
 		const queue = queueOrder( queued(), now )
-			.map( ( t ) => t.priority === 'low' && now >= Date.parse( t.promoteAt ) ? { ...t, promoted: true } : t );
+			.map( ( t ) => t.priority === 'low' && now >= Date.parse( t.promoteAt ) ? { ...t, promoted: true } : t )
+			.map( ( t ) => etas.has( t.pid ) ? { ...t, eta: etas.get( t.pid ) } : t );
 		// the exclusive requests in turn: the queue's, with an older copy's (no ticket) placed before
 		// the first of them that asked later (those yield to it; earlier ones race it for the lock)
-		const waiting = queue.filter( ( t ) => t.mode === 'exclusive' );
+		const waiting = queue.filter( ( t ) => t.mode === 'exclusive' ).map( ( { eta, ...t } ) => t );
 		for ( const { file, ...w } of untrackedWaiters().sort( ( a, b ) => Date.parse( a.start ) - Date.parse( b.start ) ) ) {
 
 			const i = waiting.findIndex( ( t ) => ! t.olderCopy && Date.parse( t.start ) > Date.parse( w.start ) );
@@ -1107,6 +1472,26 @@ async function main( argv ) {
 			console.log( JSON.stringify( { ...rest, alive: alive( owner.pid ), dir: LOCK_DIR, slots: { limit: SLOTS, used: holders.length, holders, ...( unslotted.length ? { unslotted } : {} ) }, ...extra } ) );
 
 		} else console.log( owner ? JSON.stringify( { ...owner, alive: owner.pid ? alive( owner.pid ) : null, dir: LOCK_DIR, ...extra } ) : `free (${ LOCK_DIR }, ${ SLOTS } shared slots, this shell's class ${ PRIORITY })${ Object.keys( extra ).length ? ` ${ JSON.stringify( extra ) }` : '' }` );
+		return 0;
+
+	}
+	if ( command === 'eta' ) {
+
+		// a request made now (--shared / --exclusive, --class), or an existing ticket (--pid)
+		const pid = Number( opt( 'pid', 0 ) );
+		const flags = new Set( rest );
+		const request = pid ? null : { mode: flags.has( '--exclusive' ) || ! flags.has( '--shared' ) ? 'exclusive' : 'shared', priority: opt( 'class', PRIORITY ), label: opt( 'label', undefined ) };
+		if ( request && ! [ 'low', 'normal' ].includes( request.priority ) ) throw new Error( '--class takes low or normal' );
+		const result = estimateWaits( { request } );
+		const eta = pid ? result.queue.find( ( t ) => t.pid === pid )?.eta : result.request;
+		if ( pid && ! eta ) throw new Error( `pid ${ pid } has no ticket in the queue (it holds the GPU, has not asked, or has gone)` );
+		if ( flags.has( '--json' ) ) console.log( JSON.stringify( { now: result.now, ...( pid ? { pid } : { request } ), eta } ) );
+		else {
+
+			const basis = Object.entries( eta.basis ).map( ( [ k, n ] ) => `${ n } from the ${ k === 'log' ? 'log' : k === 'table' ? 'built-in table' : 'default per mode' }` ).join( ', ' );
+			console.log( `${ pid ? `pid ${ pid }` : `${ request.mode === 'exclusive' ? 'an' : 'a' } ${ request.mode }${ request.mode === 'shared' ? ` ${ request.priority }` : '' } request now` }: estimated start in ${ etaText( eta ) }; ${ result.queue.length } queued, durations ${ basis || 'none needed' }` );
+
+		}
 		return 0;
 
 	}
@@ -1162,7 +1547,7 @@ async function main( argv ) {
 		} );
 
 	}
-	console.error( 'usage: node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout s] -- <command ...> | status | gpu [--seconds n] | log [--since 2h] [--by class|label] [--top n] [--json]' );
+	console.error( 'usage: node tools/gpu-lock.mjs run [--shared] [--label name] [--timeout s] -- <command ...> | status | eta [--shared|--exclusive] [--class low|normal] [--pid p] [--json] | gpu [--seconds n] | log [--since 2h] [--by class|label] [--top n] [--json]' );
 	return 2;
 
 }
