@@ -14,6 +14,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, ivec2, max, positionWorld, select, textureLoad, uniform, vec4 } from 'three/tsl';
 import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
 import { compileLatentInto } from '../post/graph/Compile.ts';
+import { shared } from '../shared.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -92,11 +93,13 @@ export class RainCollision {
 	 * their own shapes rather than their bounding quads. A closed solid's cast position is the sun
 	 * shadow's push away from the light (SunShadow.castFrontFaces), not a pose: it follows the sun,
 	 * so a map drawn with it would depend on the hour it was drawn at (a grown page's against a
-	 * fresh load's, where the push is still 0); such a material prints its own surface. Again
-	 * whenever the island grows: the
-	 * height materials and the meshes' proxies are kept from bake to bake (a proxy per mesh, a
-	 * material per source material), so a bake after the first builds no pipeline, and every
-	 * mesh is drawn whole (all its instances, its whole draw range) as at the first. */
+	 * fresh load's, where the push is still 0); such a material prints its own surface. The ground
+	 * is dry: standing water sinks the blades (Grass.ts, `shared.wetness`), which the weather sets
+	 * every frame, so the draws hold it at 0, as at the load's bake before the first frame. Again
+	 * whenever the island grows: the height materials and the meshes' proxies are kept from bake to
+	 * bake (a proxy per mesh, a material per source material), so a bake after the first builds no
+	 * pipeline, and every mesh is drawn whole (all its instances, its whole draw range) as at the
+	 * first. */
 	bake( renderer: THREE.WebGPURenderer, roots: THREE.Object3D[] ): void {
 
 		const steps = this.bakeSteps( renderer, roots );
@@ -149,7 +152,11 @@ export class RainCollision {
 			renderer.setClearColor( 0x000000, 0 );
 			if ( first === 0 ) renderer.clear();
 			renderer.autoClear = false;
+			// the ground dry (see `bake`), the weather's wetness back for the frame's own draws
+			const wetness = shared.wetness.value;
+			shared.wetness.value = 0;
 			renderer.render( scene, this.camera );
+			shared.wetness.value = wetness;
 			renderer.autoClear = autoClear;
 			renderer.setRenderTarget( target );
 			renderer.setClearColor( clear, alpha );
