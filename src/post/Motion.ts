@@ -76,8 +76,10 @@ export const motionUniforms = {
 };
 
 /** Reactive weights that are not per pixel: `flash`, a lightning strike's light over the whole frame
- * (the resolve trusts its history less while it changes; set by Lightning.update). */
-export const reactiveUniforms = { flash: uniform( 0 ) };
+ * (the resolve trusts its history less while it changes; set by Lightning.update). And the sea's
+ * glints' reactive weight (Water.ts): smoothstep( glintFrom, glintTo, the glint's luminance over a
+ * white diffuse surface's ) times glintMax (TemporalSettings.glintReactive, set by the resolve). */
+export const reactiveUniforms = { flash: uniform( 0 ), glintFrom: uniform( 2 ), glintTo: uniform( 8 ), glintMax: uniform( 1 ) };
 
 // ---- the frame's state
 

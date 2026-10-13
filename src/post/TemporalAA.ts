@@ -48,7 +48,11 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   from the point is a disocclusion, and its history goes (unless the 3x3 straddles an edge, where
 //   the jitter alone moves what the pixel shows and the clip box handles it).
 // - The history's weight is capped at a number of frames' worth: more still, fewer moving, scaled by
-//   the surface's class (the sea and the islanders keep less), by the reactive inputs (the velocity's
+//   the surface's class (the sea and the islanders keep less; the sea a whole history again with
+//   distance, `waterFar`, where its waves' phase motion, which the motion vectors leave out, is under a
+//   pixel a frame: a short history there left the jitter as a flickering line where a moon's or sun's
+//   glitter meets the horizon, and the glints' reactive weight fades over the same distance), by the
+//   reactive inputs (the velocity's
 //   alpha: a bolt, and under the ground truth the rain and spray; a strike's flash; under the ground
 //   truth the rain veil's per-pixel reactive `veilReactive`; after FSR 2's reactive and
 //   transparency-and-composition masks) and where the depth of field
@@ -80,7 +84,10 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   Jitter.ts) at the canvas's resolution.
 // - The canvas pass sharpens the encoded image and adds what must not be accumulated: the vignette
 //   (in linear, before the encoding, as the grade did), RCAS sharpening (FSR.ts), the grain and the
-//   dither. Under `linear` the running resolve writes its image encoded as a second target
+//   dither. A class with `sharpenMoving` stops is sharpened more where it moves on screen (by its
+//   speed from the velocity under the pixel): the sea, whose short history, resampled each frame,
+//   came out at 0.7 of the ground truth's sharpness under a pan (vegetation keeps the frame's: more
+//   sharpening there raised its crawl). Under `linear` the running resolve writes its image encoded as a second target
 //   (`taaEncoded`, the vignette at each pixel), so RCAS's five taps are not encoded one by one
 //   (they were half the canvas pass's time at 3840x2160; the extra half-float write costs less
 //   than that). The rest's image and the ground truth (one tap) are encoded in the canvas pass.
@@ -109,10 +116,18 @@ const RENDER: SizeClass = { of: 'render' };
 const CANVAS: SizeClass = { of: 'canvas' };
 // view z beyond which a pixel is sky (the resolved sky is -1e5)
 const SKY_Z = - 9e4;
-// per class (Motion.ts MOTION_CLASS: opaque, vegetation, water, character, sky): the share of the
-// history's frames it keeps, and what it adds to the clip box's width in standard deviations
-const CLASS_SCALE = [ 1, 1, 0.4, 0.8, 0 ];
-const CLASS_GAMMA = [ 0, 0.25, 0, - 0.25, 0 ];
+// the surface classes (Motion.ts MOTION_CLASS: opaque, vegetation, water, character, sky), each with
+// its share of the history's frames and its clip box's extra width (TemporalSettings classFrames,
+// classGamma)
+const CLASSES = 5;
+// one value per class (a uniform each), picked by a class index node (0 ... 4)
+const byClassOf = ( cls: THREE.Node<'float'>, values: THREE.UniformNode<'float', number>[] ): THREE.Node<'float'> => {
+
+	let v: THREE.Node<'float'> = values[ CLASSES - 1 ];
+	for ( let i = CLASSES - 2; i >= 0; i -- ) v = select( cls.lessThan( i + 0.5 ), values[ i ], v );
+	return v;
+
+};
 // the wide Gaussian's sigma (input pixels) and its share of a frame's weight
 const WIDE_SIGMA = 0.6, WIDE_SHARE = 0.05;
 // the sharpening's easing after a change of render scale (seconds)
@@ -301,7 +316,9 @@ export class TemporalAA {
 		historyGain: uniform( 1 ),
 		framesStill: uniform( 12 ), framesMoving: uniform( 5 ), speedFull: uniform( 16 ),
 		gammaStill: uniform( 1.25 ), gammaMove: uniform( 0.75 ), sigma: uniform( 0.42 ), sigmaRest: uniform( 0.3 ),
+		classFrames: Array.from( { length: CLASSES }, () => uniform( 1 ) ), classGamma: Array.from( { length: CLASSES }, () => uniform( 0 ) ),
 		skyPassThrough: uniform( 1 ),
+		sharpenMoving: Array.from( { length: CLASSES }, () => uniform( 0 ) ), sharpenSpeed: uniform( 4 ), waterFar0: uniform( 1e6 ), waterFar1: uniform( 2e6 ),
 		// the camera's world matrix this frame and the previous rendered frame's, with its unjittered
 		// inverse projection (the disocclusion test and the sky's rotation)
 		cameraWorld: uniform( new THREE.Matrix4() ),
@@ -527,6 +544,20 @@ export class TemporalAA {
 		// the resolved image (linear) to display values, with the vignette (in linear, as the grade
 		// applied it); accumulated in display values (`linear` off), the vignette applies to those
 		const encode = ( c: V3, v: F ) => this.settings.linear ? toDisplay( c.mul( v ), O.contrast ) : c.mul( v );
+		// the sharpening at a canvas pixel `p`: the frame's, plus up to its class's `sharpenMoving` stops
+		// where the surface there moves on screen (its speed in canvas pixels from the velocity at the
+		// render pixel under it; still pixels, the sky and the rest keep the frame's)
+		const moving = this.settings.sharpenMoving.stops.some( ( v ) => v > 0 ) && ! gt;
+		const sharpnessAt = ( p: V2 ): F => {
+
+			if ( ! moving ) return this.sharpness;
+			const cell = ivec2( clamp( floor( p.mul( renderSize ).div( canvasSize ) ), vec2( 0 ), renderSize.sub( 1 ) ) );
+			const v = ( textureLoad( textures.velocity, cell ) as unknown as V4 ).toVar();
+			const speed = length( v.xy.mul( 0.5 ).mul( canvasSize ) );
+			const stops = byClassOf( round( clamp( v.z, 0, 1 ).mul( 4 ) ), this.u.sharpenMoving );
+			return max( this.sharpness.sub( stops.mul( smoothstep( 0, this.u.sharpenSpeed, speed ) ) ), 0 );
+
+		};
 		// one canvas pixel: the image encoded (with the vignette at that pixel), sharpened by RCAS; the
 		// resolve's encoded image as it is (its taps carry the vignette at their own pixels)
 		const canvasNode = ( source: THREE.Texture, isEncoded: boolean, inline = false ) => Fn( () => {
@@ -537,7 +568,7 @@ export class TemporalAA {
 			const load = ( dx: number, dy: number ) => ( textureLoad( source, ivec2( clamp( p.add( vec2( dx, dy ) ), vec2( 0 ), last ) ) ) as unknown as V4 ).rgb;
 			const tap = ( dx: number, dy: number ) => vec4( isEncoded ? load( dx, dy ) : encode( load( dx, dy ), v ), 1 );
 			// (the ground truth is not sharpened)
-			const s = gt ? tap( 0, 0 ).rgb : rcas( tap, this.sharpness );
+			const s = gt ? tap( 0, 0 ).rgb : rcas( tap, sharpnessAt( p.add( 0.5 ) ) );
 			return O.finish( over( s.toVar(), v, inline ), canvasSize, float( 1 ) );
 
 		} )();
@@ -545,6 +576,7 @@ export class TemporalAA {
 
 			b.read( canvasImage ?? history );
 			b.readOptional( restShown );
+			if ( moving ) b.readOptional( velocity );
 			for ( const h of afterReads.required ) b.read( h );
 			for ( const h of afterReads.optional ) b.readOptional( h );
 			canvas = b.write( canvas );
@@ -614,11 +646,12 @@ export class TemporalAA {
 			return { label: 'output & FSR', when: () => this.upscaling, whenLabel: 'upscaling', quad: fsr.quad };
 
 		} );
-		const upscaled = this.upscaledPipeline = new THREE.RenderPipeline( this.renderer, Fn( () => O.finish( over( fsr.rcas( this.sharpness ).toVar(), O.vignette( canvasSize ) ), canvasSize, float( 1 ) ) )() );
+		const upscaled = this.upscaledPipeline = new THREE.RenderPipeline( this.renderer, Fn( () => O.finish( over( fsr.rcas( sharpnessAt( screenCoordinate.xy ) ).toVar(), O.vignette( canvasSize ) ), canvasSize, float( 1 ) ) )() );
 		upscaled.outputColorTransform = false;
 		g.addPass( 'taaUpscaledOutput', 'chain', ( b ) => {
 
 			b.readOptional( easuImage );
+			if ( moving ) b.readOptional( velocity );
 			for ( const h of afterReads.required ) b.read( h );
 			for ( const h of afterReads.optional ) b.readOptional( h );
 			canvas = b.write( canvas );
@@ -877,7 +910,7 @@ export class TemporalAA {
 					const veil = t.veil;
 					const reactive = lite ? reactiveUniforms.flash : max( velocity.w, veil ? max( reactiveUniforms.flash,
 						( textureLoad( veil, ivec2( clamp( floor( pIn ), vec2( 0 ), last ) ) ) as unknown as V4 ).r ) : reactiveUniforms.flash );
-					( { mean, extent, frames } = this.hoodStats( m1!, m2!, n, velocity, nearCell!, reactive, inputSize, outputSize, dofBlur ) );
+					( { mean, extent, frames } = this.hoodStats( m1!, m2!, n, velocity, nearCell!, zNear, reactive, inputSize, outputSize, dofBlur ) );
 
 				}
 				// variance clipping toward the neighbourhood's mean (Salvi), wider still than moving
@@ -913,26 +946,32 @@ export class TemporalAA {
 	// box's centre and half-widths (variance clipping toward the mean, wider while moving, by
 	// class), and the frames' worth the history may keep (fewer while it moves, by class, less where
 	// it is `reactive` or the depth of field blurs).
-	private hoodStats( m1: V3, m2: V3, n: number, velocity: V4, nearCell: V2, reactive: F, inputSize: Uniform2, outputSize: Uniform2, dofBlur: ( q: V2 ) => F ): { mean: V3; extent: V3; frames: F } {
+	private hoodStats( m1: V3, m2: V3, n: number, velocity: V4, nearCell: V2, z: F, reactive: F, inputSize: Uniform2, outputSize: Uniform2, dofBlur: ( q: V2 ) => F ): { mean: V3; extent: V3; frames: F } {
 
 		const u = this.u, K = this.knobs;
 		// the surface's class (the velocity's b: 0, 0.25 ... 1)
 		const cls = round( clamp( velocity.z, 0, 1 ).mul( 4 ) ).toVar();
-		const byClass = ( values: number[] ) => {
-
-			let v: F = float( values[ 4 ] );
-			for ( let i = 3; i >= 0; i -- ) v = select( cls.lessThan( i + 0.5 ), float( values[ i ] ), v );
-			return v;
-
-		};
+		const byClass = ( values: THREE.UniformNode<'float', number>[] ) => byClassOf( cls, values );
 		const speed = length( velocity.xy.mul( 0.5 ).mul( outputSize ) ).toVar();
 		const mean = m1.div( n ).toVar();
 		const sd = sqrt( max( m2.div( n ).sub( mean.mul( mean ) ), vec3( 0 ) ) );
-		const gamma = mix( u.gammaStill, u.gammaMove, smoothstep( 0, 2, speed ) ).add( byClass( CLASS_GAMMA ) );
+		const gamma = mix( u.gammaStill, u.gammaMove, smoothstep( 0, 2, speed ) ).add( byClass( u.classGamma ) );
 		const extent = sd.mul( max( gamma, 0.05 ) ).add( 1e-5 ).toVar();
 		const dof = float( 1 ).sub( K.dofCut.mul( dofBlur( nearCell.add( 0.5 ).div( inputSize ) ) ) );
-		const frames = mix( u.framesStill, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( byClass( CLASS_SCALE ) )
-			.mul( clamp( float( 1 ).sub( reactive ), 0, 1 ) ).mul( dof );
+		// (the sea's share grows to a whole history with distance, and its glints' reactive weight fades:
+		// its normals move at the waves' phase speed, which the motion vectors leave out, by under a pixel
+		// a frame far off; a strike's flash still counts)
+		const share = byClass( u.classFrames ).toVar();
+		const react = reactive.toVar();
+		If( cls.equal( 2 ), () => {
+
+			const far = smoothstep( u.waterFar0, u.waterFar1, abs( z ) ).toVar();
+			share.assign( mix( share, 1, far ) );
+			react.assign( max( react.mul( float( 1 ).sub( far ) ), reactiveUniforms.flash ) );
+
+		} );
+		const frames = mix( u.framesStill, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( share )
+			.mul( clamp( float( 1 ).sub( react ), 0, 1 ) ).mul( dof );
 		return { mean, extent, frames };
 
 	}
@@ -974,7 +1013,7 @@ export class TemporalAA {
 			const velocity = ( textureLoad( t.velocity, ivec2( clamp( nearCell, vec2( 0 ), last ) ) ) as unknown as V4 ).toVar();
 			const tolerance = abs( nearZ ).mul( K.disoccludeRelative ).add( K.disoccludeAbsolute );
 			const edge = select( nearZ.sub( farZ ).greaterThan( tolerance ), float( 1 ), float( 0 ) );
-			const { mean, extent, frames } = this.hoodStats( m1, m2, TAPS_3X3.length, velocity, nearCell, max( velocity.w, reactiveUniforms.flash ), inputSize, outputSize, dofBlur );
+			const { mean, extent, frames } = this.hoodStats( m1, m2, TAPS_3X3.length, velocity, nearCell, nearZ, max( velocity.w, reactiveUniforms.flash ), inputSize, outputSize, dofBlur );
 			return mat4( vec4( mean, frames ), vec4( extent, edge ), vec4( velocity.xy, nearZ.div( NEAR_Z_SCALE ), 0 ), vec4( 0 ) );
 
 		} )() as unknown as { element( i: number ): THREE.Node<'vec4'> };
@@ -1110,6 +1149,17 @@ export class TemporalAA {
 		u.framesStill.value = S.framesStill; u.framesMoving.value = S.framesMoving; u.speedFull.value = S.speedFull;
 		u.gammaStill.value = S.gammaStill; u.gammaMove.value = S.gammaMove; u.sigma.value = S.sigma; u.sigmaRest.value = S.sigmaRest;
 		u.skyPassThrough.value = S.skyPassThrough ? 1 : 0;
+		for ( let i = 0; i < CLASSES; i ++ ) {
+
+			u.classFrames[ i ].value = S.classFrames[ i ] ?? 1;
+			u.classGamma[ i ].value = S.classGamma[ i ] ?? 0;
+
+		}
+		for ( let i = 0; i < CLASSES; i ++ ) u.sharpenMoving[ i ].value = S.sharpenMoving.stops[ i ] ?? 0;
+		u.sharpenSpeed.value = S.sharpenMoving.speed;
+		u.waterFar0.value = S.waterFar[ 0 ]; u.waterFar1.value = Math.max( S.waterFar[ 1 ], S.waterFar[ 0 ] + 1e-3 );
+		const glint = S.glintReactive;
+		reactiveUniforms.glintFrom.value = glint.from; reactiveUniforms.glintTo.value = glint.to; reactiveUniforms.glintMax.value = glint.max;
 
 	}
 
