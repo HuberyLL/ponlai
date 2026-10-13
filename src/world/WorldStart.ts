@@ -43,9 +43,10 @@ export const landFraming = ( land: LandLattice ) => {
  * island (main.ts). */
 export const worldProgress = { text: '', show: null as ( ( text: string ) => void ) | null };
 
-const cache = ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' );
+/** Whether the world's chunks come from and go to the cache (`worldCache=off`: never). */
+export const worldCacheOn = ! params.getAll( 'worldCache' ).some( ( v ) => v === 'off' || v === '0' );
 export const worldJob: Promise<LoadedWorld> = 'gpu' in navigator ? loadWorld( landOptions, {
-	cache,
+	cache: worldCacheOn,
 	pivot: ( land ) => landFraming( land ).pivot,
 	progress: ( done, total ) => {
 

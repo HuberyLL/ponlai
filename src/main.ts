@@ -18,8 +18,10 @@ import { bakeProceduralTextures } from './materials/ProceduralTextures.ts';
 import { soilUniforms } from './materials/Soil.ts';
 import { buildWorldMeshes } from './world/World.ts';
 import { WorldFields } from './world/WorldFields.ts';
+import { Growth } from './world/Growth.ts';
+import { topFromTiles } from './game/sim/grid.ts';
 // first of all that may wait as the modules load: the world's workers start here (WorldStart.ts)
-import { worldJob, worldProgress, landOptions, landFraming } from './world/WorldStart.ts';
+import { worldJob, worldProgress, landOptions, landFraming, worldCacheOn } from './world/WorldStart.ts';
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { buildGrass, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
@@ -151,8 +153,6 @@ const view = { distance: params.has( 'dist' ) ? Number( params.get( 'dist' ) ) :
 const controls = new IslandCameraControls( camera, renderer.domElement );
 controls.minDistance = 22;
 controls.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
-const initialCameraPosition = new THREE.Vector3();
-const initialCameraQuaternion = new THREE.Quaternion();
 const initialCameraFov = camera.fov;
 const orbitMaxPolar = controls.maxPolarAngle;
 const orbitMinDistance = controls.minDistance;
@@ -481,14 +481,26 @@ const worldCache = await worldJob.catch( ( error: unknown ) => {
 worldProgress.show = null;
 const data = worldCache.data;
 mark( 'world' );
-// The grown land, and the framing it sets.
-const land = LandLattice.fromBytes( data.land );
-const landBox = landBounds( land );
-const { centroid, scale: landScale, onLand } = landFraming( land );
-target.copy( onLand( 1.5, 0.5, 1 ) );
-// the sea fog thins over the island and in its lee
-const fogClearing = onLand( 0, 0, 0 );
-setIslandClearing( fogClearing.x, fogClearing.z, 20 * landScale, 100 * landScale );
+// The grown land, and the framing it sets (again whenever the island grows: `setLand`).
+let land = LandLattice.fromBytes( data.land );
+let landBox = landBounds( land );
+let { centroid, scale: landScale, onLand } = landFraming( land );
+// the land for the tools: its seed and step, box, centroid, the framing's scale against the first
+// island and the default pivot
+const landInfo = { seed: landOptions.worldSeed, step: landOptions.step, bounds: landBox, centroid, scale: landScale, target: [ 0, 0, 0 ] };
+function setLand( next: LandLattice, step: number ): void {
+
+	land = next;
+	landBox = landBounds( land );
+	( { centroid, scale: landScale, onLand } = landFraming( land ) );
+	target.copy( onLand( 1.5, 0.5, 1 ) );
+	// the sea fog thins over the island and in its lee
+	const fogClearing = onLand( 0, 0, 0 );
+	setIslandClearing( fogClearing.x, fogClearing.z, 20 * landScale, 100 * landScale );
+	Object.assign( landInfo, { step, bounds: landBox, centroid, scale: landScale, target: target.toArray() } );
+
+}
+setLand( land, landOptions.step );
 // The world fields' textures (WorldFields.ts), sampled through one node each: the shore's distance
 // (its transform is the shared shoreXform), the floor's height and beds over the same bounds, the
 // rim ground over its own.
@@ -501,9 +513,11 @@ const world = buildWorldMeshes( data, textures, shared, caustics, fields );
 scene.add( world.group );
 // The chunks' borders (GUI Ground folder, ?chunkBorders), built on first show.
 const chunkView = { borders: params.has( 'chunkBorders' ), lines: null as THREE.LineSegments | null };
+// the version shown (a grown island's, once the island grows)
+let shownData = data;
 const showChunkBorders = ( on: boolean ) => {
 
-	if ( on && ! chunkView.lines ) scene.add( chunkView.lines = buildChunkBorders( data ) );
+	if ( on && ! chunkView.lines ) scene.add( chunkView.lines = buildChunkBorders( shownData ) );
 	if ( chunkView.lines ) chunkView.lines.visible = on;
 
 };
@@ -525,22 +539,28 @@ scene.add( grass, foliage, flowers, rimFoliage, turfSkirt );
 installWindVariants( scene, [ grass, foliage, flowers, rimFoliage, turfSkirt ] );
 installVegetationPrepass( scene, [ grass, foliage, rimFoliage ] );
 // Everything that casts into the sun's map: the figures cast through their own map, and the sea
-// floor's stones only into the refracted one. The game's props grow it (holdOpaque below).
+// floor's stones only into the refracted one. The game's props grow it (holdOpaque below), and so
+// does the island (setSunCasters again at each growth step).
 const sunCasters = new THREE.Box3();
-{
+// the boxes the game's props hold (holdOpaque), kept over the island's growth
+const heldOpaque: THREE.Box3[] = [];
+function setSunCasters(): void {
 
+	sunCasters.makeEmpty();
 	for ( const root of [ world.group, foliage, flowers, rimFoliage, turfSkirt ] ) {
 
 		root.updateWorldMatrix( true, true );
 		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) sunCasters.expandByObject( object ); } );
 
 	}
+	for ( const box of heldOpaque ) sunCasters.union( box );
 	// (the island parts' caster columns come with the chunks, World.ts)
 	sunShadow.setCasters( sunCasters, world.columns );
-	// the island's terrain is a closed solid: it casts its front faces (SunShadow)
-	sunShadow.castFrontFaces( world.group );
 
 }
+setSunCasters();
+// the island's terrain is a closed solid: it casts its front faces (SunShadow)
+sunShadow.castFrontFaces( world.group );
 // the camera grabs the island's ground (the chunks' grids, World.ts) and keeps its pivot over the land
 controls.setIsland( world.grounds, landBox );
 frameLand();
@@ -557,6 +577,23 @@ setStatus( 'Waking the villagers…' );
 // own (`stock`) and the other builds stay selectable for comparison.
 const islanderBuild = { proportions: ( PROPORTION_NAMES as string[] ).includes( params.get( 'islander' ) ?? '' ) ? params.get( 'islander' ) as ProportionName : 'medium' };
 const buildIslander = ( name: ProportionName ) => loadVillager( ISLANDER.base, ISLANDER.parts, shared, PROPORTIONS[ name ] );
+// Compiles what `objects` draw in the frame's passes ahead, off the frame: the scene's pass (a latent
+// of the frame graph's opaque pass, under its target and MRT: the temporal modes' velocity output is
+// part of its pipelines' keys) and then the sun's map, one draw at a time and in the order a frame
+// first draws them (the scene's pass, then the map's redraw): a pass into the map shares its
+// material's nodes, and compiled the other way round or side by side, the game's chest came out
+// shaded differently from the chest drawn without them. The game's props and the grown island's
+// new meshes come this way (Growth.ts), which also uploads their buffers. `casters: false` leaves
+// the sun's map out (a grown island's chunk: see Growth.ts).
+async function compileDraws( objects: THREE.Object3D[], casters = true ): Promise<void> {
+
+	for ( const object of objects ) await pipeline.graph.latent( 'opaque', [ object ] );
+	if ( ! casters ) return;
+	const compiled = sunShadow.compileCasters( renderer, objects );
+	if ( compiled ) await compiled;
+	else console.warn( 'The sun\'s shadow map is not built yet: these draws compile their shadow pass when first drawn' );
+
+}
 // ?game turns the island into the game: its own islanders and a clock that drives the sky (no
 // player interface yet: the GUI's Game folder and window.__PONLAI__.game drive it). Without it
 // the scene stays the art-review scene with one islander walking a loop.
@@ -568,30 +605,19 @@ if ( GAME ) {
 	// loaded only here, so the art-review page does not carry the game's code
 	const { Game } = await import( './game/Game.ts' );
 	game = await Game.start( {
-		params, scene, camera, canvas: renderer.domElement, land, bushes: data.bushes,
+		params, scene, camera, canvas: renderer.domElement, land, bushes: data.bushes, top: topFromTiles( worldCache.version.chunks ),
 		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment, sceneEvent,
 		// A prop can rise above all the island grows (the palm's crown): the sun's map fits its
 		// casters and the sea's reflection marches its box, so both grow to hold it.
 		holdOpaque: ( box ) => {
 
+			heldOpaque.push( box.clone() );
 			if ( ! sunCasters.containsBox( box ) ) sunShadow.setCasters( sunCasters.union( box ) );
 			water?.reflectionBounds.union( box );
 
 		},
-		// The game's props, for the scene's pass (a latent of the frame graph's opaque pass, under
-		// its target and MRT: the temporal modes' velocity output is part of its pipelines' keys) and
-		// then the sun's map (Game.render), one draw at a time and in the order a frame first draws
-		// them (the scene's pass, then the map's redraw): a prop's pass into the map shares its
-		// material's nodes, and compiled the other way round or side by side, the chest came out
-		// shaded differently from the chest drawn without them.
-		compileDraws: async ( objects ) => {
-
-			for ( const object of objects ) await pipeline.graph.latent( 'opaque', [ object ] );
-			const casters = sunShadow.compileCasters( renderer, objects );
-			if ( casters ) await casters;
-			else console.warn( 'The sun\'s shadow map is not built yet: the game\'s props compile their shadow pass when first drawn' );
-
-		},
+		// the game's props, for the scene's pass and the sun's map (see compileDraws)
+		compileDraws,
 		// every islander in the scene islander's proportions (the `islander` URL option). A figure
 		// is handed over once its pipelines are built, off the frame (GameView "First draws"): it
 		// arrives after the game's first frame, and each load brings its own material, so the frame
@@ -634,6 +660,46 @@ waterScene.add( water.mesh );
 
 console.info( `world: ${ worldCache.hits } of ${ worldCache.chunks + 1 } records from the cache (${ worldCache.cache })`, data.timings, 'triangles', world.triangles, 'in', Math.round( performance.now() - t0 ), 'ms' );
 
+// The island grows in place (Growth.ts): the next piece is generated ahead, and a Grow (the GUI's
+// Island folder, `__PONLAI__.growth.grow()`) swaps it in, every dependent following. The page's own
+// part of a swap: the land's framing and the fog's clearing (setLand), the sea's reflection box and
+// the sun's casters (the game's held props kept), the camera's ground; the scene event keeps the
+// temporal modes' history (the new land is a change of the scene, which the resolve's clip handles,
+// as a placed prop's) and restarts a paused frame's rest.
+// (for the diagnostics, which follow a grown island)
+const worldInfo = { worldTriangles: world.triangles, rimStrands: data.rimStrands.length };
+const growth = new Growth( {
+	renderer, world, fields, grass, flowers, foliage, rimFoliage, turfSkirt, shoreWaves, refractedSun, rain, characters, game,
+	rainRoots: [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt ],
+	compileDraws,
+	onSwap: ( next, version ) => {
+
+		setLand( next, growth.state.step );
+		water!.setLand( landBox );
+		for ( const box of heldOpaque ) water!.reflectionBounds.union( box );
+		setSunCasters();
+		controls.setIsland( world.grounds, landBox );
+		shownData = version;
+		sceneEvent( 'world swap' );
+
+	},
+	onSwapped: ( version ) => {
+
+		// the chunks' borders follow, if built (made again on their next show otherwise)
+		if ( chunkView.lines ) {
+
+			scene.remove( chunkView.lines );
+			chunkView.lines.geometry.dispose();
+			chunkView.lines = null;
+			showChunkBorders( chunkView.borders );
+
+		}
+		worldInfo.worldTriangles = world.triangles;
+		worldInfo.rimStrands = version.rimStrands.length;
+
+	},
+}, worldCache, { seed: landOptions.worldSeed, cache: worldCacheOn } );
+
 // ------------------------------------------------------------------ GUI
 
 const gui = new GUI( { title: 'Ponlai · lighting & water' } );
@@ -648,14 +714,13 @@ let orbitDof = S.dof;
 const viewDirection = new THREE.Vector3();
 
 // The island view on this land: the default pivot, and the camera at the `dist`, `polar` and `az`
-// URL options (the distance scaled with the land unless given).
+// URL options (the distance scaled with the land unless given). The island view (R, setCameraView)
+// frames the land shown, a grown island's too.
 function frameLand(): void {
 
 	controls.target.copy( target );
 	camera.position.setFromSphericalCoords( view.distance ?? 58 * landScale, THREE.MathUtils.degToRad( view.polar ), THREE.MathUtils.degToRad( view.azimuth ) ).add( target );
 	controls.settle();
-	initialCameraPosition.copy( camera.position );
-	initialCameraQuaternion.copy( camera.quaternion );
 
 }
 
@@ -725,10 +790,11 @@ function setCameraView( view: CameraView ): void {
 
 	} else {
 
-		controls.target.copy( target );
-		camera.position.copy( initialCameraPosition );
-		camera.quaternion.copy( initialCameraQuaternion );
 		camera.fov = initialCameraFov;
+		camera.updateProjectionMatrix();
+		applyOrbitLimit();
+		frameLand();
+		return;
 
 	}
 	camera.updateProjectionMatrix();
@@ -826,6 +892,11 @@ groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean 
 groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' ).onChange( invalidateSunShadow );
 groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' ).onChange( invalidateSunShadow );
 groundF.add( chunkView, 'borders' ).name( 'chunk borders' ).onChange( showChunkBorders );
+// The island's growth (Growth.ts): Grow swaps in the next piece once it is generated and prepared.
+const islandF = gui.addFolder( 'Island' );
+islandF.add( growth.state, 'step' ).name( 'growth step' ).listen().disable();
+islandF.add( growth.state, 'phase' ).name( 'next piece' ).listen().disable();
+islandF.add( { grow: () => { void growth.grow(); } }, 'grow' ).name( 'Grow' );
 const sunF = gui.addFolder( 'Sun' );
 const cloudF = gui.addFolder( 'Sky & clouds' );
 cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover override' ).onFinishChange( ( value: number ) => { cloudOverride = value; void refreshEnvironment(); } );
@@ -1188,6 +1259,8 @@ function tick( time: number ): void {
 	if ( ! paused ) simTime += dt;
 	// In the game the simulation's clock sets the pace of the day (and so of the page's weather).
 	const clockDt = game ? game.update( rawDt ) : rawDt;
+	// the island's growth: a swap, or one of the frames after it (before the camera and the shadows)
+	growth.update();
 	dayCycle.advance( clockDt );
 	// the sky shows the simulation's hour, whatever else moved the day clock
 	if ( game ) dayCycle.setHour( game.hour() );
@@ -1393,8 +1466,8 @@ function diagnostics( now = false ): void {
 		pacing: { target: pacer.target, refreshMs: + pacer.period.toFixed( 3 ), divisor: pacer.divisor, rendered: pacer.rendered, skipped: pacer.skipped },
 		submits: { ...submitBatch.stats, why: { ...submitBatch.stats.why } },
 		canvasDpr: renderer.getPixelRatio(),
-		worldTriangles: world.triangles,
-		rimStrands: data.rimStrands.length,
+		worldTriangles: worldInfo.worldTriangles,
+		rimStrands: worldInfo.rimStrands,
 		rimBushes: foliage.count,
 		timings: data.timings,
 		worldCache: worldCache.cache === 'off' ? 'off' : { cache: worldCache.cache, hits: worldCache.hits, chunks: worldCache.chunks, ms: + worldCache.ms.toFixed( 1 ) },
@@ -1482,6 +1555,8 @@ const reveal = () => {
 		loading?.classList.add( 'done' );
 		// the counts start where the scene shows
 		frameStats.reset();
+		// the island's next piece is generated from here on (Growth.ts)
+		growth.start();
 
 	}
 
@@ -1712,10 +1787,9 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-// the land for the tools: its seed and step, box, centroid, the framing's scale against the first
-// island and the default pivot
-const landInfo = { seed: landOptions.worldSeed, step: landOptions.step, bounds: landBox, centroid, scale: landScale, target: target.toArray() };
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes
+	growth: Object.assign( growth, { fieldBytes: () => fields.bytes() } ),
 	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),
 	// the temporal resolve (TemporalAA.ts, TemporalRest.ts): its live settings and knobs, the rest, the
 	// epoch, and `restart()`, which starts the history and the rest over (a cut and an epoch bump)
