@@ -6,7 +6,7 @@
 // tools/verify-framegraph.mjs.
 
 import assert from 'node:assert/strict';
-import { compilePipeline, compileToday, declareTemporal } from './tables-passes.mjs';
+import { bloomPasses, bloomTable, compilePipeline, compileToday, declareTemporal } from './tables-passes.mjs';
 import { GraphDecl, compileGraph } from '../../src/post/graph/GraphCompiler.ts';
 import { AttachmentOps, opsModeFromURL } from '../../src/post/graph/AttachmentOps.ts';
 
@@ -14,19 +14,19 @@ const col = ( resource, load, store, resolve = null ) => ( { resource, load, sto
 const dep = ( resource, write, load, store ) => ( { resource, write, load, store } );
 const row = ( pass, colors, depth = null ) => ( { pass, colors, depth } );
 
-// every conditional pass but the upscale: rain, fog with a bank bake, the depth of field, the look glow
-const FULL = [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'diffusion', 'output' ];
+// every conditional pass but the upscale: rain, fog with a bank bake, the light shafts, the depth of
+// field, the look glow
+const FULL = [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'blur', 'diffusion', 'output' ];
 
 const POST = [
 	row( 'fogBank', [ col( 'fogBanks', 'clear', 'store' ) ] ),
 	row( 'fogDepth', [ col( 'fogNearestDepth', 'clear', 'store' ) ] ),
 	row( 'fogMarch', [ col( 'fogMarch', 'clear', 'store' ) ] ),
-	row( 'viewDistance', [ col( 'viewDistance', 'clear', 'store' ) ] ),
 	row( 'shaftsSource', [ col( 'shafts.source', 'clear', 'store' ) ] ),
 	row( 'shaftsRays', [ col( 'shafts.rays', 'clear', 'store' ) ] ),
+	row( 'postConstants', [ col( 'postConstants', 'clear', 'store' ) ] ),
 	row( 'composite', [ col( 'hdr', 'clear', 'store' ) ] ),
-	row( 'bloom', [ col( 'bloom', 'clear', 'store' ) ] ),
-	row( 'glow', [ col( 'glow', 'clear', 'store' ) ] ),
+	...bloomTable( 2, [] ).rows.map( ( r ) => row( r.name, r.writes.map( ( x ) => col( x.name, 'clear', 'store' ) ) ) ),
 	row( 'sharp', [ col( 'sharp', 'clear', 'store' ) ] ),
 	row( 'blur', [ col( 'blur', 'clear', 'store' ) ] ),
 	row( 'diffusion', [ col( 'diffusion', 'clear', 'store' ) ] ),
@@ -36,7 +36,7 @@ const POST = [
 const RESOLVES = {
 	depthResolve: row( 'depthResolve', [ col( 'linearDepth', 'clear', 'store' ) ] ),
 	opaqueCopy: row( 'opaqueCopy', [ col( 'opaqueColor', 'clear', 'store' ) ] ),
-	surfaceResolve: row( 'surfaceResolve', [ col( 'surfaceDepth', 'clear', 'store' ) ] ),
+	surfaceResolve: row( 'surfaceResolve', [ col( 'surfaceDepth', 'clear', 'store' ), col( 'viewDistance', 'clear', 'store' ) ] ),
 };
 
 export const LEGACY_FULL = [
@@ -229,9 +229,9 @@ export const checks = [
 
 		const c = compileToday();
 		const clear = c.ops( 'derived', c.maskOf( [ 'rain', 'output' ] ) );
-		assert.deepEqual( clear.running, [ 'opaque', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'shaftsSource', 'shaftsRays', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'output' ] );
+		assert.deepEqual( clear.running, [ 'opaque', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve', 'rain', 'postConstants', 'composite', ...bloomPasses( 2 ), 'sharp', 'display', 'output' ] );
 		assert.deepEqual( strip( clear ).slice( 0, 6 ), DERIVED_FULL.slice( 0, 6 ) );
-		const up = c.ops( 'derived', c.maskOf( [ 'rain', 'viewDistance', 'easu', 'upscaledOutput' ] ) );
+		const up = c.ops( 'derived', c.maskOf( [ 'rain', 'blur', 'easu', 'upscaledOutput' ] ) );
 		assert.deepEqual( find( up, 'easu' ).colors, [ col( 'FSR.easu', 'clear', 'store' ) ] );
 		assert.deepEqual( find( up, 'upscaledOutput' ).colors, [ col( 'canvas', 'clear', 'store' ) ] );
 		assert.equal( up.rewrites, 2 );

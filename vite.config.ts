@@ -21,6 +21,7 @@ const LICENCE_FILES: Record<string, string> = {
 	'licenses/godot-rain-shader.LICENSE.txt': 'src/materials/godot-rain-shader.LICENSE.txt',
 	'licenses/hextile-demo.LICENSE.txt': 'src/materials/hextile-demo.LICENSE.txt',
 	'licenses/fsr.LICENSE.txt': 'src/post/fsr.LICENSE.txt',
+	'licenses/three-bloom.LICENSE.txt': 'src/post/three-bloom.LICENSE.txt',
 };
 
 function licences(): Plugin {

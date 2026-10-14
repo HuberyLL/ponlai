@@ -10,6 +10,7 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
+import { BloomChains, type BloomChain } from './BloomChains.ts';
 import { AA_MODE, AFTER_RESOLVE, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { beginMotionFrame, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
 import { RAIN_OVERLAY, afterFocus, afterMRT } from './AfterResolve.ts';
@@ -27,15 +28,19 @@ import type { Rain } from '../weather/Rain.ts';
 //   depth resolve ── depthRT (view-space z of the opaque pass: sample 0, and the farthest sample)
 //   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts and reflects)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
-//   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
+//   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included) and
+//     viewDistance (its distance, for the depth of field and the grade's sky test)
 //   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them;
 //     without rain the water discards the colour and the surface resolve's read keeps the depth)
-//   sea fog (in fog: the bank noise baked into a map, the march at half resolution), the view
-//   distance for the depth of field
-//   light shafts: the open sky near the sun, the rays marched toward it (half resolution)
+//   sea fog (in fog: the bank noise baked into a map, the march at half resolution)
+//   light shafts: the open sky near the sun, the rays marched toward it (half resolution, while the
+//   sun faces the view)
+//   constants: what the composite takes that is the same for every pixel (the horizon's average,
+//   the sun disk's visibility), evaluated once into a texel
 //   composite (air, fog, rain veil, shafts) ── hdr, once (the veil after the resolve under taa, taau)
 //   bloom (tight) and glow (wide) from hdr, both through a clamped soft-knee prefilter
-//   sharp (hdr + the blooms) ── tilt-shift blur (half-res gather) ── the look's diffusion glow
+//   sharp (hdr + the blooms) ── tilt-shift blur (half-res gather, with the depth of field on) ── the
+//   look's diffusion glow
 //   display: the depth of field's mix, the diffusion glow, exposure, tone curve (PBR Neutral with
 //   hue-kept highlights by default), split-tone grade, vibrance, the art-directed look
 //   (hue-selective colour, warm / cool split, coloured shadow lift), lifted blacks, vignette,
@@ -95,19 +100,23 @@ import type { Rain } from '../weather/Rain.ts';
 // display pixels.
 // The targets are the frame graph's (graph/FrameGraph.ts): each is declared with its format,
 // sample count and size class (the render, a share of it, the canvas or fixed), and the graph sizes
-// them all from `setSize`'s render and canvas sizes (three's bloom chains, which keep targets of
-// their own, through a resize hook). The passes read their sizes from the graph's extent uniforms.
+// them all from `setSize`'s render and canvas sizes (the look glow's bloom chain, three's, which
+// keeps targets of its own, through a resize hook). The passes read their sizes from the graph's extent uniforms.
 // The graph runs the whole frame as passes that declare what they read and write: the scene half
 // (opaque, the depth and copy resolves, water, the surface resolve, rain), the sea fog (its bank
-// map, nearest depth and march), the view distance, the light shafts' two passes, the composite,
-// the blooms (three's bloom chains, a pass each, their results imported into the graph), the sharp
-// image, the depth of field's blur, the look's glow (a bloom chain), the display pass, and the
-// canvas pass, or EASU and the sharpening canvas pass while upscaling. Every pass but the scene
-// passes, the blooms and the canvas passes is a full-screen quad of its own, and no pass renders
+// map, nearest depth and march), the light shafts' two passes, the composite's constants, the
+// composite, the blooms (BloomChains.ts: the tight bloom and the wide glow drawn together, a pass
+// for the high pass and each blur, one composite per chain), the sharp image, the depth of field's
+// blur, the look's glow (three's bloom chain, its result imported into the graph), the display
+// pass, and the canvas pass, or EASU and the sharpening canvas pass while upscaling. Every pass
+// but the scene passes, the look's glow and the canvas passes is a full-screen quad of its own, and no pass renders
 // another inside it (but three's FSR1Node, `post=three-fsr`, in its canvas pass). Each pass
-// that runs only now and then (rain, fog, the view distance, the look's glow, either output) says
-// when by a predicate the graph evaluates at the frame's start. The `post=` legacy switches are
-// variants of the graph, chosen as it is built.
+// that runs only now and then (rain, fog, the light shafts, the depth of field's blur, the look's
+// glow, either output) says when by a predicate the graph evaluates at the frame's start. A pass
+// whose output weighs nothing in what reads it (the shafts without the sun toward the view, the
+// blur without the depth of field) is skipped rather than drawn and multiplied by 0; its reader
+// reads it optionally and gets what it last held, finite, times 0. The `post=` legacy switches
+// are variants of the graph, chosen as it is built.
 // At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass and the bloom
 // chains' own passes, so one that first runs later (fog, the upscale, the look's glow) builds
 // nothing then.
@@ -130,7 +139,7 @@ import type { Rain } from '../weather/Rain.ts';
 //   binds from the scene target (colour, multisampled depth) must be declared (`read`,
 //   `readOptional`): an undeclared read of a discarded attachment shows garbage, and one between
 //   the water and the rain sees the scene without the sea.
-// - `render` is `graph.execute`: the sea fog's bank, depth and march, the view distance and the
+// - `render` is `graph.execute`: the sea fog's bank, depth and march and the
 //   output and FSR passes are graph passes too (the `post=` switches choose which are declared at
 //   load), so new frame work goes in as a pass, not as a call around the graph. A pass that
 //   declares no depth clears whatever depth its target holds outside the graph (the canvas's, and
@@ -473,11 +482,11 @@ export class Pipeline {
 	private upscaledOutput: THREE.RenderPipeline | null = null;
 	private upscaledOutputThree: THREE.RenderPipeline | null = null;
 	private fsr: FSR | null = null;
-	// the view distance per pixel, for the depth of field (the dofDistance option)
-	private distanceQuad: THREE.QuadMesh | null = null;
 	// the composite of the air, fog, rain veil and shafts over the scene, into hdr (the
 	// compositeOnce option)
 	private compositeQuad: THREE.QuadMesh | null = null;
+	// the composite's per-frame constants, into a texel (`postConstants`)
+	private constants = {} as { quad: THREE.QuadMesh; output: ResourceHandle };
 	// after the resolve, the rain's layer over the graded image (AfterResolve.ts), and the rain
 	private layerQuad: THREE.QuadMesh | null = null;
 	private rainInputQuad: THREE.QuadMesh | null = null;
@@ -488,9 +497,10 @@ export class Pipeline {
 	private blurQuad: THREE.QuadMesh;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private displayQuad: THREE.QuadMesh;
-	// the bloom chains (each a pass of the graph's: the tight bloom, and the wide glow when there are
-	// two) and their results, imported into the graph
-	private blooms: { node: RenderBloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number>; output: ResourceHandle }[] = [];
+	// the bloom chains (the tight bloom, and the wide glow when there are two), drawn together
+	// (BloomChains.ts), and each chain's clamps
+	private bloom!: BloomChains;
+	private blooms: { chain: BloomChain; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
 	private u = {
 		// (exposure: the clock's, for PBR Neutral and the depth of field; curveExposure: with the
 		// chosen curve's gain; day: 1 - the night's return to PBR Neutral)
@@ -570,7 +580,9 @@ export class Pipeline {
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( velocity ? [ sceneColor, velocity ] : [ sceneColor ], sceneDepth );
-		for ( const h of [ linearDepth, opaqueColor, surfaceDepth, display, ...( viewDistance ? [ viewDistance ] : [] ) ] ) g.renderTarget( [ h ] );
+		for ( const h of [ linearDepth, opaqueColor, display ] ) g.renderTarget( [ h ] );
+		// (the view distance beside the nearest surface: the surface resolve writes both)
+		g.renderTarget( viewDistance ? [ surfaceDepth, viewDistance ] : [ surfaceDepth ] );
 		this.textures = { opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ) };
 		// the sizes the passes read, the graph's shared extent uniforms (set with the targets' own
 		// sizes): the render's, its texel, the half-resolution blur's and the canvas's
@@ -589,6 +601,25 @@ export class Pipeline {
 
 			} );
 			return z;
+
+		};
+		// The distance to the nearest surface, the water's included (view-space z: closer is larger),
+		// 1e5 for the sky. A surface's is held below 9e4, so the distance alone tells the sky (the
+		// grade's `onSurface`): only the far plane's corners under a field of view above about 66
+		// degrees reach past it, where the depth of field's coc has long been constant (from 15 km
+		// on) and the gather's depth order between two such taps picks between equal cocs.
+		const distanceAt = ( q: V2, z: F ) => {
+
+			const ndc = vec2( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ) ).toVar();
+			const dist = float( 1e5 ).toVar();
+			If( z.greaterThan( - 9e4 ), () => {
+
+				const v = u.projInv.mul( vec4( ndc, 1, 1 ) ).toVar();
+				const dir = v.xyz.div( v.w ).toVar();
+				dist.assign( min( length( dir.mul( z.div( dir.z ) ) ), 9e4 ) );
+
+			} );
+			return dist;
 
 		};
 		const msDepth = texture( g.texture( sceneDepth ) );
@@ -617,8 +648,24 @@ export class Pipeline {
 			this.copyQuad = new THREE.QuadMesh( copyMat );
 
 		}
+		// The nearest surface's view z, and beside it (the dofDistance option) the view distance per
+		// pixel for the depth of field, in full float: the gather's taps read it instead of each
+		// deriving it from the depth (half float tied distances, and the depth order flipped). Written
+		// in this pass rather than one of its own, which read the depth back.
+		// (one body for both attachments: an output struct is the material's own node, so the two are
+		// a matrix's columns)
 		const surfaceMat = new THREE.NodeMaterial();
-		surfaceMat.fragmentNode = Fn( () => vec4( viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ) ) )();
+		if ( viewDistance ) {
+
+			const resolved = Fn( () => {
+
+				const z = viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ).toVar();
+				return mat4( vec4( z ), vec4( distanceAt( uv(), z ), 0, 0, 1 ), vec4( 0 ), vec4( 0 ) );
+
+			} )() as unknown as { element( i: number ): THREE.Node<'vec4'> };
+			surfaceMat.fragmentNode = outputStruct( resolved.element( 0 ), resolved.element( 1 ) );
+
+		} else surfaceMat.fragmentNode = Fn( () => vec4( viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ) ) )();
 		this.surfaceQuad = new THREE.QuadMesh( surfaceMat );
 
 		// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it
@@ -627,8 +674,20 @@ export class Pipeline {
 		// (the air's alpha: the rain veil's opacity, for the resolve's veilReactive; after the resolve,
 		// where the veil is drawn, the air's transmittance)
 		const veil = rain && ! AFTER_RESOLVE ? ( d: V3, distance: F, background: V3 ) => rain.veil( d, distance, background ) : undefined;
-		const aired = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil );
-		const shafts = this.shafts.build( tSurfaceDepth, sky, g );
+		// What the composite takes that is the same for every pixel of a frame, evaluated once into
+		// a texel by a pass of its own and loaded there: the horizon's average colour the air takes
+		// looking down (rgb: four panorama samples) and the sun disk's unobstructed fraction for the
+		// glare (a: five samples of the shafts' source). In full float, so the composite gets exactly
+		// the values it computed itself.
+		const constants = this.constants.output = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: THREE.RGBAFormat, type: THREE.FloatType } );
+		const constant = textureLoad( texture( g.texture( constants ) ), ivec2( 0 ) ) as unknown as THREE.Node<'vec4'>;
+		const aired = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil, constant.rgb );
+		const shafts = this.shafts.build( tSurfaceDepth, sky, g, constant.a );
+		const constantsMat = new THREE.NodeMaterial();
+		constantsMat.name = 'Post.Constants';
+		constantsMat.fragmentNode = vec4( this.air.around( sky ), this.shafts.visibility() );
+		this.constants.quad = new THREE.QuadMesh( constantsMat );
+		this.constants.quad.name = 'Post.Constants';
 		const composited = aired.rgb.add( shafts );
 		// Rendered once (the composite pass, into hdr), the composite feeds the sharp image and both
 		// blooms' high passes; as an expression each of them evaluated it again, the sea fog's march
@@ -657,44 +716,45 @@ export class Pipeline {
 		const hdrColor: V3 = tHdr ? tHdr.rgb : composited;
 		const bloomInput = tHdr ?? nodeObject( vec4( hdrColor, 1 ) );
 
-		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a
+		// ---- blooms (BloomChains.ts: both chains drawn together, each as three's BloomNode drew it):
+		// glints clamped first so a few firefly pixels cannot flood the frame, then a
 		// soft knee instead of a hard threshold. On surfaces (anything in front of the sky) the
 		// tight bloom's clamp sits just above its threshold (bloomSurfaceMaxLum 2 against 1.4):
 		// every pixel of the sun's glitter path reaches the clamp, so a higher one let the path's
 		// bloom pile up into a bright column over the island. The sky keeps the higher clamp, so
 		// the sun's disc and a lightning channel (drawn without depth) keep their glow.
 		const tBloomD = texture( tSurfaceDepth );
-		const makeBloom = ( name: string ) => {
+		// (one chain: the wide glow's radius and both strengths, see render())
+		const names = O.bloomChains === 2 ? [ 'bloom', 'glow' ] : [ 'bloom' ];
+		this.blooms = names.map( () => ( { chain: null!, maxLum: uniform( 5 ), surfaceMaxLum: uniform( 5 ) } ) );
+		const bloom = this.bloom = new BloomChains( g, names, bloomInput, ( input, chain, i ) => {
 
-			const maxLum = uniform( 5 ), surfaceMaxLum = uniform( 5 );
-			const node = new RenderBloomNode( bloomInput, 0.3, 0.5, 1.5 );
-			( node as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input, threshold }: { input: THREE.Node<'vec4'>; threshold: THREE.Node<'float'> } ) => {
+			const { maxLum, surfaceMaxLum } = this.blooms[ i ];
+			const threshold = chain.threshold;
+			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
+			const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 );
+			const clampLum = select( surface, surfaceMaxLum, maxLum );
+			const c = input.rgb;
+			const v0 = luminance( c );
+			const c1 = c.mul( min( float( 1 ), clampLum.div( max( v0, 1e-4 ) ) ) );
+			const v = min( v0, clampLum );
+			const knee = threshold.mul( 0.5 );
+			const soft0 = clamp( v.sub( threshold ).add( knee ), 0, knee.mul( 2 ) );
+			const soft = soft0.mul( soft0 ).div( knee.mul( 4 ).add( 1e-4 ) );
+			return vec4( c1.mul( max( soft, v.sub( threshold ) ) ).div( max( v, 1e-4 ) ), 1 );
 
-				const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
-				const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 );
-				const clampLum = select( surface, surfaceMaxLum, maxLum );
-				const c = input.rgb;
-				const v0 = luminance( c );
-				const c1 = c.mul( min( float( 1 ), clampLum.div( max( v0, 1e-4 ) ) ) );
-				const v = min( v0, clampLum );
-				const knee = threshold.mul( 0.5 );
-				const soft0 = clamp( v.sub( threshold ).add( knee ), 0, knee.mul( 2 ) );
-				const soft = soft0.mul( soft0 ).div( knee.mul( 4 ).add( 1e-4 ) );
-				return vec4( c1.mul( max( soft, v.sub( threshold ) ) ).div( max( v, 1e-4 ) ), 1 );
+		} );
+		bloom.chains.forEach( ( chain, i ) => { this.blooms[ i ].chain = chain; } );
+		// (the sharp image reads each chain's result without the uv transform texture() gives a node
+		// made without a uv, as three's bloom output node did)
+		const bloomResult = ( i: number ) => {
 
-			} );
-			// (its graph pass renders it: the sharp image reads its result as a texture, without the uv
-			// transform texture() gives a node made without a uv, as the bloom's own output node)
-			const output = g.import( name, node.setUpAlone().output, HALF );
-			this.blooms.push( { node, maxLum, surfaceMaxLum, output } );
-			const result = texture( g.texture( output ) );
+			const result = texture( bloom.output( i ) );
 			result.updateMatrix = false;
-			return result;
+			return result.rgb;
 
 		};
-
-		// (one chain: the wide glow's radius and both strengths, see render())
-		const withBloom = O.bloomChains === 2 ? hdrColor.add( makeBloom( 'bloom' ).rgb ).add( makeBloom( 'glow' ).rgb ) : hdrColor.add( makeBloom( 'bloom' ).rgb );
+		const withBloom = names.reduce( ( sum: V3, _, i ) => sum.add( bloomResult( i ) ), hdrColor );
 
 		// ---- the sharp image: the composite and the blooms (the composite evaluated here, inline,
 		// without the composite pass)
@@ -710,39 +770,8 @@ export class Pipeline {
 		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
 		// the blur is mixed over the sharp image by the full-resolution coc
 		const tD = texture( tSurfaceDepth );
-		// The distance to the nearest surface, the water's included (view-space z: closer is larger).
-		const distanceAt = ( q: V2, z: F ) => {
-
-			const ndc = vec2( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ) ).toVar();
-			const dist = float( 1e5 ).toVar();
-			If( z.greaterThan( - 9e4 ), () => {
-
-				const v = u.projInv.mul( vec4( ndc, 1, 1 ) ).toVar();
-				const dir = v.xyz.div( v.w ).toVar();
-				dist.assign( length( dir.mul( z.div( dir.z ) ) ) );
-
-			} );
-			return dist;
-
-		};
-		// Written once per pixel, in full float: the gather's taps then read it instead of each
-		// deriving it from the depth (half float tied distances, and the depth order below flipped).
-		let tDistance: THREE.TextureNode | null = null;
-		if ( viewDistance ) {
-
-			const distanceMat = new THREE.NodeMaterial();
-			distanceMat.name = 'Post.ViewDistance';
-			distanceMat.fragmentNode = Fn( () => {
-
-				const px = ivec2( screenCoordinate.xy );
-				return vec4( distanceAt( uv(), ( textureLoad( tD, px ) as unknown as F ).toVar() ), 0, 0, 1 );
-
-			} )();
-			this.distanceQuad = new THREE.QuadMesh( distanceMat );
-			this.distanceQuad.name = 'Post.ViewDistance';
-			tDistance = texture( g.texture( viewDistance ) );
-
-		}
+		// (the view distance per pixel, written by the surface resolve: the dofDistance option)
+		const tDistance = viewDistance ? texture( g.texture( viewDistance ) ) : null;
 		// The circle of confusion (0..1 of the widest blur) and the distance. One function per pass:
 		// a layout function shared by two shaders keeps the first one's uniform bindings.
 		const makeCocAt = () => Fn( ( [ q ]: [ V2 ] ) => {
@@ -1048,7 +1077,9 @@ export class Pipeline {
 			const satAmt = u.saturation.add( u.vibrance.mul( float( 1 ).sub( smoothstep( 0, 0.35, chroma.div( max( l2, 1e-3 ) ).mul( 0.5 ) ) ) ) ).add( u.highlightSat.mul( smoothstep( 0.6, 0.9, l2 ) ).mul( float( 1 ).sub( hot ) ) );
 			c.assign( max( mix( vec3( l2 ), c, satAmt ), vec3( 0 ) ) );
 			// The look (a uniform branch: 'realistic' skips it and keeps the grade above exactly).
-			const onSurface = surface ?? select( ( textureLoad( tD, ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) ) ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) ).toVar();
+			// (from the view distance where it is kept: a surface's lies below 9e4, the sky's is 1e5)
+			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
+			const onSurface = surface ?? select( tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).lessThan( 1e5 ) : ( textureLoad( tD, px ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) ).toVar();
 			If( u.lookOn.greaterThan( 0.5 ), () => {
 
 				c.assign( look( c, onSurface ) );
@@ -1131,7 +1162,8 @@ export class Pipeline {
 		// own targets (its dev check compares a pass's target with its size class before it runs).
 		g.onResize( RENDER, ( w, h ) => {
 
-			for ( const { node } of [ ...this.blooms, this.diffusion ] ) { node.renderWidth = w; node.renderHeight = h; node.setSize(); }
+			const node = this.diffusion.node;
+			node.renderWidth = w; node.renderHeight = h; node.setSize();
 
 		} );
 		// What the rain's layer pass draws at the canvas's size, for the canvas pass to add to the
@@ -1371,8 +1403,8 @@ export class Pipeline {
 	private declarePasses(): void {
 
 		const g = this.graph;
-		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity } = this.resources;
-		if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity ] = this.declareTemporalScene();
+		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, viewDistance } = this.resources;
+		if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity, viewDistance ] = this.declareTemporalScene();
 		else {
 
 			g.addPass( 'opaque', 'scene', ( b ) => {
@@ -1411,11 +1443,14 @@ export class Pipeline {
 				};
 
 			} );
+			// (and the depth of field's view distance beside it: the attachments in the struct's order,
+			// the MRT only declares them)
 			g.addPass( 'surfaceResolve', 'quad', ( b ) => {
 
 				b.read( sceneDepth, 'samples' );
 				surfaceDepth = b.write( surfaceDepth );
-				return { label: 'depth & copy resolves', quad: this.surfaceQuad };
+				if ( viewDistance ) viewDistance = b.write( viewDistance );
+				return { label: 'depth & copy resolves', quad: this.surfaceQuad, mrt: viewDistance ? mrt( {} ) : null };
 
 			} );
 			// (the last pass into the scene target: its samples are resolved, then never read)
@@ -1436,27 +1471,32 @@ export class Pipeline {
 		// the sea fog: its bank map when due, the nearest depth and the reduced march (only while
 		// there is fog; the composite reads what they last drew)
 		const fogReads = this.air.passes( g, surfaceDepth );
-		// the depth of field's distances (without the depth of field its blur is mixed in at weight
-		// 0, so stale distances never show)
-		let { hdr, sharp, blur, viewDistance, display, easu, canvas, veilReactive, rainAir } = this.resources;
-		const distanceQuad = this.distanceQuad;
-		if ( viewDistance && distanceQuad ) g.addPass( 'viewDistance', 'quad', ( b ) => {
+		let { hdr, sharp, blur, display, easu, canvas, veilReactive, rainAir } = this.resources;
+		// the light shafts: the open sky near the sun, and the rays marched over it (while the sun is
+		// toward the view: the composite weighs them by `facing`, 0 otherwise)
+		const shaftReads = this.shafts.passes( g, surfaceDepth );
+		// the composite's per-frame constants, into a texel: the horizon's average and the sun disk's
+		// visibility (from the shafts' source, skipped with the shafts, when the composite weighs
+		// the glare by 0)
+		let constants = this.constants.output;
+		const constantsQuad = this.constants.quad;
+		g.addPass( 'postConstants', 'quad', ( b ) => {
 
-			b.read( surfaceDepth );
-			viewDistance = b.write( viewDistance! );
-			return { label: 'tilt-shift blur', when: () => this.settings.dof > 0, whenLabel: 'dof > 0', quad: distanceQuad };
+			b.readOptional( shaftReads[ 0 ] );
+			constants = b.write( constants );
+			return { label: 'composite (air, fog, veil)', quad: constantsQuad };
 
 		} );
-		// the light shafts: the open sky near the sun, and the rays marched over it
-		const shaftReads = this.shafts.passes( g, surfaceDepth );
 		// what the composite reads: the scene (after the rain, which may be skipped), the nearest
-		// surface's depth, the sea fog (its passes run only in fog) and the light shafts
+		// surface's depth, the sea fog (its passes run only in fog), the light shafts and the
+		// constants
 		const compositeReads = ( b: PassBuilder ) => {
 
 			b.readOptional( sceneColor );
 			b.read( surfaceDepth );
 			for ( const h of fogReads ) b.readOptional( h );
-			for ( const h of shaftReads ) b.read( h );
+			for ( const h of shaftReads ) b.readOptional( h );
+			b.read( constants );
 
 		};
 		// the composite of the air, fog, veil and shafts, rendered once
@@ -1472,25 +1512,17 @@ export class Pipeline {
 			return { label: 'composite (air, fog, veil)', quad: compositeQuad, mrt: veilReactive || rainAir ? mrt( {} ) : null };
 
 		} );
-		// the blooms (three's bloom chains, each a pass): from hdr, or the composite inline; their high
-		// passes keep the surfaces' glints below the sky's
-		const blooms = this.blooms.map( ( { node, output }, i ) => {
+		// the blooms (BloomChains.ts: both chains drawn together, twelve passes): from hdr, or the
+		// composite inline; their high pass keeps the surfaces' glints below the sky's
+		const blooms = this.bloom.passes( g, this.blooms.length === 2 ? 'bloom & wide glow' : 'bloom', ( b ) => {
 
-			let out = output;
-			g.addPass( i === 0 ? 'bloom' : 'glow', 'chain', ( b ) => {
+			// (inline, the composite's reads include the surface depth)
+			if ( hdr ) {
 
-				// (inline, the composite's reads include the surface depth)
-				if ( hdr ) {
+				b.read( hdr );
+				b.read( surfaceDepth );
 
-					b.read( hdr );
-					b.read( surfaceDepth );
-
-				} else compositeReads( b );
-				out = b.write( out );
-				return { label: i === 0 ? 'bloom' : 'wide glow', nodes: [ node ] };
-
-			} );
-			return out;
+			} else compositeReads( b );
 
 		} );
 		// the sharp image: the composite (inline, without the composite pass: the profiler's
@@ -1506,15 +1538,15 @@ export class Pipeline {
 
 		} );
 		// the depth of field's half-resolution gather: its circle of confusion from the view distance
-		// (or the surface depth, inline-coc)
+		// (or the surface depth, inline-coc); only with the depth of field (without it the display
+		// mixes the blur in at weight 0, so what it last held never shows)
 		const blurQuad = this.blurQuad;
 		g.addPass( 'blur', 'quad', ( b ) => {
 
 			b.read( sharp );
-			if ( viewDistance ) b.readOptional( viewDistance );
-			else b.read( surfaceDepth );
+			b.read( viewDistance ?? surfaceDepth );
 			blur = b.write( blur );
-			return { label: 'tilt-shift blur', quad: blurQuad };
+			return { label: 'tilt-shift blur', when: () => this.settings.dof > 0, whenLabel: 'dof > 0', quad: blurQuad };
 
 		} );
 		// the look's diffusion glow, a bloom chain over the sharp image, while it shows
@@ -1533,10 +1565,10 @@ export class Pipeline {
 		g.addPass( 'display', 'quad', ( b ) => {
 
 			b.read( sharp );
-			b.read( blur );
+			b.readOptional( blur );
 			b.readOptional( glow );
-			b.read( surfaceDepth );
-			if ( viewDistance ) b.readOptional( viewDistance );
+			// (the sky test from the view distance where it is kept)
+			b.read( viewDistance ?? surfaceDepth );
 			display = b.write( display );
 			return { label: 'grade & look', quad: displayQuad };
 
@@ -1569,9 +1601,9 @@ export class Pipeline {
 					// (the grade's input: the sharp image, the depth of field's blur and distances, the
 					// look's glow)
 					b.read( sharp );
-					b.read( blur );
+					b.readOptional( blur );
 					b.read( surfaceDepth );
-					if ( viewDistance ) b.readOptional( viewDistance );
+					if ( viewDistance ) b.read( viewDistance );
 					b.readOptional( glow );
 					if ( rainAir ) {
 
@@ -1666,11 +1698,12 @@ export class Pipeline {
 	// to the overlay are the graph's jittered span), the motion vectors written beside the colour.
 	// The opaque and water passes draw with the scene MRT (sceneMRT), the rain and the storm's spray
 	// in the overlay pass with the overlay MRT, which keeps the motion of the surfaces under them
-	// (Motion.ts). Returns the scene colour's, the nearest surface's and the velocity's last versions.
-	private declareTemporalScene(): [ ResourceHandle, ResourceHandle, ResourceHandle ] {
+	// (Motion.ts). Returns the scene colour's, the nearest surface's, the velocity's and the view
+	// distance's last versions.
+	private declareTemporalScene(): [ ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle | null ] {
 
 		const g = this.graph;
-		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth } = this.resources;
+		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, viewDistance } = this.resources;
 		let velocity = this.resources.velocity!;
 		g.addPass( 'opaque', 'scene', ( b ) => {
 
@@ -1714,7 +1747,8 @@ export class Pipeline {
 
 			b.read( sceneDepth, 'samples' );
 			surfaceDepth = b.write( surfaceDepth );
-			return { label: 'depth & copy resolves', jittered: true, quad: this.surfaceQuad };
+			if ( viewDistance ) viewDistance = b.write( viewDistance );
+			return { label: 'depth & copy resolves', jittered: true, quad: this.surfaceQuad, mrt: viewDistance ? mrt( {} ) : null };
 
 		} );
 		// The rain and the spray over the finished scene: their colour blends as each material says,
@@ -1736,7 +1770,7 @@ export class Pipeline {
 		} );
 		// the nearest surface's depth, kept for the next frame
 		g.copyToPersistent( surfaceDepth, this.resources.surfaceDepthPrev! );
-		return [ sceneColor, surfaceDepth, velocity ];
+		return [ sceneColor, surfaceDepth, velocity, viewDistance ];
 
 	}
 
@@ -1883,14 +1917,14 @@ export class Pipeline {
 		const [ b, g ] = this.blooms;
 		if ( g ) {
 
-			b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
-			g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
+			b.chain.strength.value = S.bloomStrength; b.chain.radius.value = S.bloomRadius; b.chain.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
+			g.chain.strength.value = S.glowStrength; g.chain.radius.value = S.glowRadius; g.chain.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
 
 		} else {
 
 			// One chain for both: the wide glow's radius and threshold, the tight bloom's clamps, and
 			// the two strengths together (an approximation for the low tier).
-			b.node.strength.value = S.bloomStrength + S.glowStrength; b.node.radius.value = S.glowRadius; b.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE;
+			b.chain.strength.value = S.bloomStrength + S.glowStrength; b.chain.radius.value = S.glowRadius; b.chain.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE;
 			b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
 
 		}
