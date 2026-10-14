@@ -221,6 +221,16 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 
 ## Tools
 
+Every step an agent takes re-reads its whole context, so the number of steps is most of an agent's
+cost (in one week 95 % of agent steps sent a single tool call, a quarter of them one grep, sed or ls).
+- Send tool calls that do not depend on each other in one step, and put several look-ups (grep,
+  sed, ls, git log) in one shell command.
+- Do not watch processes or the GPU lock by hand (`ps`, `sleep`, `kill -0`, repeated
+  `gpu-lock.mjs status`): start long work with `job.mjs start --wait` and wait with `job.mjs wait`,
+  which report the job's state and end.
+- Read only the part of a file or log that matters, and look at image crops or sheets
+  (`img.py crop|sheet`) rather than full captures: what enters the context is re-read every step.
+
 Agents once wrote thousands of throwaway scripts for the same few jobs (view loops, page probes,
 image diffs, wait loops); the shared tools now cover them.
 - Before writing a script, look for the tool that answers the question (`docs/tools.md`, Which
