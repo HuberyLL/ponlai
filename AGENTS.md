@@ -197,9 +197,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - Keep machine details out of the repository (hardware, user names, local paths); describe
   measurements in relative terms.
 - Comments and docs state what was measured and found, not where the notes are: never cite the
-  git-ignored `artifacts/` notes, plans or reports, or internal task and milestone names (task R,
-  T36, M7), which a clone does not have and an outside reader cannot follow. Naming a folder a tool
-  writes its output to is fine.
+  git-ignored `artifacts/` notes, plans or reports, or internal task and milestone names. Naming a
+  folder a tool writes its output to is fine.
 - Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, comments in
   English that explain why.
 - Game UI (anything the player sees in `?game`: HUD, menus, overlays, in-world labels, mockups of
@@ -221,18 +220,6 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 
 ## Tools
 
-Every step an agent takes re-reads its whole context, so the number of steps is most of an agent's
-cost (in one week 95 % of agent steps sent a single tool call, a quarter of them one grep, sed or ls).
-- Send tool calls that do not depend on each other in one step, and put several look-ups (grep,
-  sed, ls, git log) in one shell command.
-- Do not watch processes or the GPU lock by hand (`ps`, `sleep`, `kill -0`, repeated
-  `gpu-lock.mjs status`): start long work with `job.mjs start --wait` and wait with `job.mjs wait`,
-  which report the job's state and end.
-- Read only the part of a file or log that matters, and look at image crops or sheets
-  (`img.py crop|sheet`) rather than full captures: what enters the context is re-read every step.
-
-Agents once wrote thousands of throwaway scripts for the same few jobs (view loops, page probes,
-image diffs, wait loops); the shared tools now cover them.
 - Before writing a script, look for the tool that answers the question (`docs/tools.md`, Which
   tool for which question); if one almost fits, add an option to it.
 - A script needed a second time, or by another task, becomes a tool (`docs/tools.md`, Writing a
