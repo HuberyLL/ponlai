@@ -34,8 +34,7 @@
 // origin, so the first run on a new preview port in a slot still generates. The slot also keeps the
 // browser's GPU shader cache (Dawn's), which cannot hide a first-use pipeline from the counts: they
 // are the page's create*Pipeline calls, made whether the browser then compiles or finds the
-// shader in its cache; only the time a call takes changes. Measured:
-// a fresh profile, a warm slot and a slot with its shader caches wiped
+// shader in its cache; only the time a call takes changes. Measured: a fresh profile, a warm slot and a slot with its shader caches wiped
 // counted the same pipelines with the same labels at load and in every step, the resize step's
 // cloud kernels included. `--fresh` loads in a throwaway profile, as the tool did before. The
 // matrix's runs share the one browser (a new page each), so its later pages also load from the

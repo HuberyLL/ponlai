@@ -50,7 +50,7 @@
 // clip then steps: the clip's eval and grain 0 come after it, so the stepped frame is a new render,
 // and a single frame can come out as a discrete alternative image (measured:
 // 0.3-1 M px of scattered vegetation pixels off by up to 190 levels, mean about 0, the same
-// image each time; task clip-single-frame: about 1.5 % of the frames stepped in the first seconds
+// image each time; and about 1.5 % of the frames stepped in the first seconds
 // after the readiness, alone or not, and 2 of 24 rest clips stored it while other browsers
 // rendered; a stored rest reference once was such a frame). So a paused one-frame clip without a
 // temporal rest (MSAA, off, gt-hi) is stepped again with the same state and shot whole each time
