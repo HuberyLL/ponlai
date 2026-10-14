@@ -9,7 +9,7 @@ import { AttributeType, geometrySteps, stagedWriteSteps, textureSteps, uploadSte
 import { boundsSteps } from './Steps.ts';
 import { plantGrass, grassSteps, setGrass, type GrassPrepared, type GrassTufts } from './Grass.ts';
 import { plantFlowers, flowerInstances, flowerReplacement, flowerWrites, setFlowers, type FlowerInstances, type Plant } from './Flowers.ts';
-import { bushInstances, bushWrites, setBushes, type BushInstances } from './Foliage.ts';
+import { BUSH_POOL, bushInstances, type BushInstances } from './Foliage.ts';
 import { rimFoliageSteps, setRimFoliage, type RimFoliageBuilt } from './RimFoliage.ts';
 import { plantSiteSteps, anchorContactSteps } from './PlantSites.ts';
 import { plantSteps, setPlants, type PlantCache, type PlantsBuilt } from './Plants.ts';
@@ -575,9 +575,9 @@ export class Growth<M = unknown> {
 		// caster box reads it)
 		const bushes = bushInstances( data.bushes );
 		yield;
-		const bushBox = instancesBox( page.foliage.geometry, bushes.matrices, bushes.count );
+		const bushBox = BUSH_POOL.box( page.foliage, bushes );
 		yield;
-		for ( const [ attribute, values ] of bushWrites( page.foliage, bushes ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
+		for ( const [ attribute, values ] of BUSH_POOL.writes( page.foliage, bushes ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
 
 		// the rim's trails and the turf skirt (their bounds found in the steps)
 		this.stage = 'rim';
@@ -656,8 +656,7 @@ export class Growth<M = unknown> {
 		// (with their depth prepass copies, VegetationPrepass.ts)
 		disposals.push( () => { for ( const mesh of oldFlowers ) { mesh.geometry.dispose(); mesh.traverse( ( object ) => object.dispose() ); } } );
 		disposals.push( () => { for ( const free of p.staged ) free(); } );
-		setBushes( page.foliage, p.bushes.instances );
-		page.foliage.boundingBox = p.bushes.box;
+		BUSH_POOL.set( page.foliage, p.bushes.instances, p.bushes.box );
 		const oldPlants = setPlants( page.plants, p.plants );
 		page.plantCache.keep( p.plants.sites, p.plants.parts );
 		const oldRim = setRimFoliage( page.rimFoliage, p.rim );
