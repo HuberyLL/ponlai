@@ -10,6 +10,7 @@ import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
+import { BloomChains, type BloomChain } from './BloomChains.ts';
 import { AA_MODE, AFTER_RESOLVE, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { beginMotionFrame, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
 import { RAIN_OVERLAY, afterFocus, afterMRT } from './AfterResolve.ts';
@@ -99,15 +100,16 @@ import type { Rain } from '../weather/Rain.ts';
 // display pixels.
 // The targets are the frame graph's (graph/FrameGraph.ts): each is declared with its format,
 // sample count and size class (the render, a share of it, the canvas or fixed), and the graph sizes
-// them all from `setSize`'s render and canvas sizes (three's bloom chains, which keep targets of
-// their own, through a resize hook). The passes read their sizes from the graph's extent uniforms.
+// them all from `setSize`'s render and canvas sizes (the look glow's bloom chain, three's, which
+// keeps targets of its own, through a resize hook). The passes read their sizes from the graph's extent uniforms.
 // The graph runs the whole frame as passes that declare what they read and write: the scene half
 // (opaque, the depth and copy resolves, water, the surface resolve, rain), the sea fog (its bank
-// map, nearest depth and march), the light shafts' two passes, the composite's constants, the composite,
-// the blooms (three's bloom chains, a pass each, their results imported into the graph), the sharp
-// image, the depth of field's blur, the look's glow (a bloom chain), the display pass, and the
-// canvas pass, or EASU and the sharpening canvas pass while upscaling. Every pass but the scene
-// passes, the blooms and the canvas passes is a full-screen quad of its own, and no pass renders
+// map, nearest depth and march), the light shafts' two passes, the composite's constants, the
+// composite, the blooms (BloomChains.ts: the tight bloom and the wide glow drawn together, a pass
+// for the high pass and each blur, one composite per chain), the sharp image, the depth of field's
+// blur, the look's glow (three's bloom chain, its result imported into the graph), the display
+// pass, and the canvas pass, or EASU and the sharpening canvas pass while upscaling. Every pass
+// but the scene passes, the look's glow and the canvas passes is a full-screen quad of its own, and no pass renders
 // another inside it (but three's FSR1Node, `post=three-fsr`, in its canvas pass). Each pass
 // that runs only now and then (rain, fog, the light shafts, the depth of field's blur, the look's
 // glow, either output) says when by a predicate the graph evaluates at the frame's start. A pass
@@ -495,9 +497,10 @@ export class Pipeline {
 	private blurQuad: THREE.QuadMesh;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private displayQuad: THREE.QuadMesh;
-	// the bloom chains (each a pass of the graph's: the tight bloom, and the wide glow when there are
-	// two) and their results, imported into the graph
-	private blooms: { node: RenderBloomNode; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number>; output: ResourceHandle }[] = [];
+	// the bloom chains (the tight bloom, and the wide glow when there are two), drawn together
+	// (BloomChains.ts), and each chain's clamps
+	private bloom!: BloomChains;
+	private blooms: { chain: BloomChain; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
 	private u = {
 		// (exposure: the clock's, for PBR Neutral and the depth of field; curveExposure: with the
 		// chosen curve's gain; day: 1 - the night's return to PBR Neutral)
@@ -713,44 +716,45 @@ export class Pipeline {
 		const hdrColor: V3 = tHdr ? tHdr.rgb : composited;
 		const bloomInput = tHdr ?? nodeObject( vec4( hdrColor, 1 ) );
 
-		// ---- blooms: glints clamped first so a few firefly pixels cannot flood the frame, then a
+		// ---- blooms (BloomChains.ts: both chains drawn together, each as three's BloomNode drew it):
+		// glints clamped first so a few firefly pixels cannot flood the frame, then a
 		// soft knee instead of a hard threshold. On surfaces (anything in front of the sky) the
 		// tight bloom's clamp sits just above its threshold (bloomSurfaceMaxLum 2 against 1.4):
 		// every pixel of the sun's glitter path reaches the clamp, so a higher one let the path's
 		// bloom pile up into a bright column over the island. The sky keeps the higher clamp, so
 		// the sun's disc and a lightning channel (drawn without depth) keep their glow.
 		const tBloomD = texture( tSurfaceDepth );
-		const makeBloom = ( name: string ) => {
+		// (one chain: the wide glow's radius and both strengths, see render())
+		const names = O.bloomChains === 2 ? [ 'bloom', 'glow' ] : [ 'bloom' ];
+		this.blooms = names.map( () => ( { chain: null!, maxLum: uniform( 5 ), surfaceMaxLum: uniform( 5 ) } ) );
+		const bloom = this.bloom = new BloomChains( g, names, bloomInput, ( input, chain, i ) => {
 
-			const maxLum = uniform( 5 ), surfaceMaxLum = uniform( 5 );
-			const node = new RenderBloomNode( bloomInput, 0.3, 0.5, 1.5 );
-			( node as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input, threshold }: { input: THREE.Node<'vec4'>; threshold: THREE.Node<'float'> } ) => {
+			const { maxLum, surfaceMaxLum } = this.blooms[ i ];
+			const threshold = chain.threshold;
+			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
+			const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 );
+			const clampLum = select( surface, surfaceMaxLum, maxLum );
+			const c = input.rgb;
+			const v0 = luminance( c );
+			const c1 = c.mul( min( float( 1 ), clampLum.div( max( v0, 1e-4 ) ) ) );
+			const v = min( v0, clampLum );
+			const knee = threshold.mul( 0.5 );
+			const soft0 = clamp( v.sub( threshold ).add( knee ), 0, knee.mul( 2 ) );
+			const soft = soft0.mul( soft0 ).div( knee.mul( 4 ).add( 1e-4 ) );
+			return vec4( c1.mul( max( soft, v.sub( threshold ) ) ).div( max( v, 1e-4 ) ), 1 );
 
-				const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
-				const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 );
-				const clampLum = select( surface, surfaceMaxLum, maxLum );
-				const c = input.rgb;
-				const v0 = luminance( c );
-				const c1 = c.mul( min( float( 1 ), clampLum.div( max( v0, 1e-4 ) ) ) );
-				const v = min( v0, clampLum );
-				const knee = threshold.mul( 0.5 );
-				const soft0 = clamp( v.sub( threshold ).add( knee ), 0, knee.mul( 2 ) );
-				const soft = soft0.mul( soft0 ).div( knee.mul( 4 ).add( 1e-4 ) );
-				return vec4( c1.mul( max( soft, v.sub( threshold ) ) ).div( max( v, 1e-4 ) ), 1 );
+		} );
+		bloom.chains.forEach( ( chain, i ) => { this.blooms[ i ].chain = chain; } );
+		// (the sharp image reads each chain's result without the uv transform texture() gives a node
+		// made without a uv, as three's bloom output node did)
+		const bloomResult = ( i: number ) => {
 
-			} );
-			// (its graph pass renders it: the sharp image reads its result as a texture, without the uv
-			// transform texture() gives a node made without a uv, as the bloom's own output node)
-			const output = g.import( name, node.setUpAlone().output, HALF );
-			this.blooms.push( { node, maxLum, surfaceMaxLum, output } );
-			const result = texture( g.texture( output ) );
+			const result = texture( bloom.output( i ) );
 			result.updateMatrix = false;
-			return result;
+			return result.rgb;
 
 		};
-
-		// (one chain: the wide glow's radius and both strengths, see render())
-		const withBloom = O.bloomChains === 2 ? hdrColor.add( makeBloom( 'bloom' ).rgb ).add( makeBloom( 'glow' ).rgb ) : hdrColor.add( makeBloom( 'bloom' ).rgb );
+		const withBloom = names.reduce( ( sum: V3, _, i ) => sum.add( bloomResult( i ) ), hdrColor );
 
 		// ---- the sharp image: the composite and the blooms (the composite evaluated here, inline,
 		// without the composite pass)
@@ -1158,7 +1162,8 @@ export class Pipeline {
 		// own targets (its dev check compares a pass's target with its size class before it runs).
 		g.onResize( RENDER, ( w, h ) => {
 
-			for ( const { node } of [ ...this.blooms, this.diffusion ] ) { node.renderWidth = w; node.renderHeight = h; node.setSize(); }
+			const node = this.diffusion.node;
+			node.renderWidth = w; node.renderHeight = h; node.setSize();
 
 		} );
 		// What the rain's layer pass draws at the canvas's size, for the canvas pass to add to the
@@ -1507,25 +1512,17 @@ export class Pipeline {
 			return { label: 'composite (air, fog, veil)', quad: compositeQuad, mrt: veilReactive || rainAir ? mrt( {} ) : null };
 
 		} );
-		// the blooms (three's bloom chains, each a pass): from hdr, or the composite inline; their high
-		// passes keep the surfaces' glints below the sky's
-		const blooms = this.blooms.map( ( { node, output }, i ) => {
+		// the blooms (BloomChains.ts: both chains drawn together, twelve passes): from hdr, or the
+		// composite inline; their high pass keeps the surfaces' glints below the sky's
+		const blooms = this.bloom.passes( g, this.blooms.length === 2 ? 'bloom & wide glow' : 'bloom', ( b ) => {
 
-			let out = output;
-			g.addPass( i === 0 ? 'bloom' : 'glow', 'chain', ( b ) => {
+			// (inline, the composite's reads include the surface depth)
+			if ( hdr ) {
 
-				// (inline, the composite's reads include the surface depth)
-				if ( hdr ) {
+				b.read( hdr );
+				b.read( surfaceDepth );
 
-					b.read( hdr );
-					b.read( surfaceDepth );
-
-				} else compositeReads( b );
-				out = b.write( out );
-				return { label: i === 0 ? 'bloom' : 'wide glow', nodes: [ node ] };
-
-			} );
-			return out;
+			} else compositeReads( b );
 
 		} );
 		// the sharp image: the composite (inline, without the composite pass: the profiler's
@@ -1920,14 +1917,14 @@ export class Pipeline {
 		const [ b, g ] = this.blooms;
 		if ( g ) {
 
-			b.node.strength.value = S.bloomStrength; b.node.radius.value = S.bloomRadius; b.node.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
-			g.node.strength.value = S.glowStrength; g.node.radius.value = S.glowRadius; g.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
+			b.chain.strength.value = S.bloomStrength; b.chain.radius.value = S.bloomRadius; b.chain.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
+			g.chain.strength.value = S.glowStrength; g.chain.radius.value = S.glowRadius; g.chain.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
 
 		} else {
 
 			// One chain for both: the wide glow's radius and threshold, the tight bloom's clamps, and
 			// the two strengths together (an approximation for the low tier).
-			b.node.strength.value = S.bloomStrength + S.glowStrength; b.node.radius.value = S.glowRadius; b.node.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE;
+			b.chain.strength.value = S.bloomStrength + S.glowStrength; b.chain.radius.value = S.glowRadius; b.chain.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE;
 			b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
 
 		}

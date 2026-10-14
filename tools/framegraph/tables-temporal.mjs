@@ -7,6 +7,7 @@
 import assert from 'node:assert/strict';
 import { GraphDecl, compileGraph } from '../../src/post/graph/GraphCompiler.ts';
 import { FrameGraph } from '../../src/post/graph/FrameGraph.ts';
+import { bloomPasses, declareBloomPasses, declareBloomTargets } from './tables-passes.mjs';
 
 const RENDER = { of: 'render' };
 const CANVAS = { of: 'canvas' };
@@ -47,7 +48,7 @@ export function declarePipelineTemporal( options = {} ) {
 	}
 	h.shaftsSource = g.color( 'shafts.source', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	h.shaftsRays = g.color( 'shafts.rays', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
-	h.blooms = [ 'bloom', 'glow' ].slice( 0, o.bloomChains ).map( ( name ) => g.import( name, { size: HALF, format: 'RGBA', type: 'HalfFloat' } ) );
+	h.blooms = declareBloomTargets( g, o.bloomChains );
 	h.diffusion = g.import( 'diffusion', { size: HALF, format: 'RGBA', type: 'HalfFloat' } );
 	const sceneMRT = { name: 'sceneMRT' }, overlayMRT = { name: 'overlayMRT' };
 
@@ -132,7 +133,7 @@ export function declarePipelineTemporal( options = {} ) {
 		} else compositeReads( b );
 
 	};
-	h.blooms = h.blooms.map( ( out, i ) => ( g.addPass( i === 0 ? 'bloom' : 'glow', 'chain', ( b ) => ( hdrReads( b ), out = b.write( out ), { label: i === 0 ? 'bloom' : 'wide glow' } ) ), out ) );
+	h.blooms = declareBloomPasses( g, h.blooms, hdrReads );
 	g.addPass( 'sharp', 'quad', ( b ) => {
 
 		if ( h.hdr ) b.read( h.hdr );
@@ -193,7 +194,7 @@ export const TEMPORAL_SCENE = [
 	{ name: 'surfaceResolve', kind: 'quad', label: 'depth & copy resolves', when: null, jittered: true, writes: [ w( 'surfaceDepth', R, 'Red', 'Float' ), w( 'viewDistance', R, 'Red', 'Float' ) ], depth: null, target: 'surfaceDepth+viewDistance|-' },
 	{ name: 'overlay', kind: 'scene', label: 'overlay', when: 'rain || spray', jittered: true, writes: SCENE, depth: DEPTH( false ), target: 'sceneColor+velocity|sceneDepth' },
 ];
-const POST = [ 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'postConstants', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'diffusion', 'display', 'output', 'easu', 'upscaledOutput' ];
+const POST = [ 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'postConstants', 'composite', ...bloomPasses( 2 ), 'sharp', 'blur', 'diffusion', 'display', 'output', 'easu', 'upscaledOutput' ];
 const READS = {
 	opaque: [], depthResolve: [ 'sceneDepth@1:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
 	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
@@ -248,7 +249,7 @@ export const checks = [
 		assert.ok( s.targets.every( ( t ) => t.samples === 1 ), 'every target single-sampled' );
 		assert.deepEqual( s.targets.find( ( t ) => t.key === 'sceneColor+velocity|sceneDepth' ), { key: 'sceneColor+velocity|sceneDepth', size: R, samples: 1, pingPong: false } );
 		const { g } = declarePipelineTemporal();
-		assert.deepEqual( g.passes.filter( ( p ) => p.hasMrt ).map( ( p ) => p.name ), [ 'opaque', 'water', 'surfaceResolve', 'overlay' ] );
+		assert.deepEqual( g.passes.filter( ( p ) => p.hasMrt ).map( ( p ) => p.name ), [ 'opaque', 'water', 'surfaceResolve', 'overlay', ...bloomPasses( 2 ).filter( ( p ) => ! p.startsWith( 'bloomComposite' ) ) ] );
 		// the history the next frame reads is persistent; nothing writes it but the copy
 		const prev = g.resources.find( ( r ) => r.name === 'surfaceDepthPrev' );
 		assert.ok( prev.persistent && prev.producers.length === 1 );

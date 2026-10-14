@@ -216,6 +216,17 @@ packages, into `dist/licenses/`.
   folder or its CC BY-NC-SA derived shaders (`rainRipples.js`, `surfaceRain.js`, `rainGlass.js`)
   is used.
 
+### Bloom chains (three.js's BloomNode)
+
+- Upstream: three.js `examples/jsm/tsl/display/BloomNode.js` (r186), after UnrealBloomPass
+- Copyright: 2010-2026 three.js authors
+- Licence: MIT, see [`src/post/three-bloom.LICENSE.txt`](src/post/three-bloom.LICENSE.txt)
+- File: `src/post/BloomChains.ts`: the high pass, the five mips' separable Gaussian blurs and the
+  composite of the tight bloom and the wide glow.
+- Changes: the chains are drawn together (the high pass and each blur write every chain's target
+  in one MRT pass, the composite stays a pass per chain), as passes of the frame graph into
+  targets it declares and sizes; the high pass is the pipeline's own (clamped, soft-knee).
+
 ### FSR 1 (AMD FidelityFX, through three.js's FSR1Node)
 
 - Upstream: three.js `examples/jsm/tsl/display/FSR1Node.js` (r186), a TSL port of AMD FidelityFX
