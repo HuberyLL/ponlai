@@ -55,8 +55,8 @@ const LOG2_GROUP = 8;
 // A tuft's widened blades reach out by at most this many times their half width (`MAX_WIDEN` times
 // the largest blade gain, 16 / 8, less the blade itself), see `pixelWideBlade` in Grass.ts.
 export const WIDEN_REACH = 15;
-// Slack (m) for the old global-sine sway (`flags.windLegacy`: a few centimetres at the tips in a
-// gale) and rounding. The wind's bend (`bendBlade` in Grass.ts) keeps every vertex at its
+// Slack (m) for rounding, kept at the width it had for the old global-sine sway (a few
+// centimetres at the tips in a gale): a smaller pad changes the visible list. The wind's bend (`bendBlade` in Grass.ts) keeps every vertex at its
 // distance from the tuft's origin, so it stays inside the sphere when that is padded by twice
 // the origin's distance from the sphere's centre (see below), whatever the wind.
 const SWAY_PAD = 0.2;

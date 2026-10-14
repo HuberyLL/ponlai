@@ -1,9 +1,9 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, materialColor, uv, vec3, vec4, float, fract, mix, sin, cos, dot, pow, clamp, max } from 'three/tsl';
+import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, materialColor, uv, vec3, vec4, float, fract, mix, dot, pow, clamp, max } from 'three/tsl';
 import { LEAN_REF, gustWave, setWindDisplacement, swingOf, wave, windField } from '../weather/Wind.ts';
 
 const TAU = Math.PI * 2;
-import { keepLegacyWind } from './WindVariants.ts';
+import { followWindMotionFlag } from './WindMotion.ts';
 import { showSway } from '../debug/WindView.ts';
 import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
 import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, LEAF_STEM, leafCastMask, markVegetation, useLeafCoverage } from './Foliage.ts';
@@ -40,7 +40,7 @@ const RIM_SWAY = 0.012;
 const PRESS = 0.03;
 const LEAF_EDGE = 0.004;
 
-function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = false ): THREE.MeshStandardNodeMaterial {
+function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh ): THREE.MeshStandardNodeMaterial {
 
 	const source = Array.isArray( foliage?.material ) ? foliage.material[ 0 ] : foliage?.material;
 	const mat = source instanceof THREE.MeshStandardNodeMaterial ? source.clone() : new THREE.MeshStandardNodeMaterial( {
@@ -61,45 +61,31 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = fa
 	mat.roughnessNode = mix( 0.82, 0.68, wetness );
 	const weight = attribute( 'rimSway', 'float' );
 	const strandPhase = attribute( 'rimPhase', 'float' );
-	let swayed: THREE.Node<'vec3'>;
+	// A hanging strand leans with the gust field and swings like a pendulum (1.5 - 2.6 m: about
+	// 0.4 Hz, 14 swings per gust tile) with the plants about it (Wind.ts `gustWave`), its own
+	// phase a little apart, its forks with it; its leaves flutter along their normals from
+	// stalk to tip on their own phase. The wall bounds it: wind into the cliff presses the
+	// strand back by at most PRESS, and a gust lifts it off the stone a little.
+	const out = attribute<'vec3'>( 'rimOut', 'vec3' );
+	const leafEdge = float( 1 ).sub( attribute<'float'>( LEAF_STEM, 'float' ) ).mul( uv().y );
+	const leafPhase = strandPhase.mul( 3 ).add( dot( positionGeometry, vec3( 9.1, 7.3, 8.7 ) ) );
 	let sway: THREE.Node<'vec2'> | undefined;
-	if ( legacy ) {
+	const swayed = setWindDisplacement( mat, ( wind ) => {
 
-		const phase = strandPhase.sub( shared.wind.phase.mul( 1.3 / 1.6 ) );
-		const wind = shared.wind.direction;
-		const along = vec3( wind.x, 0, wind.y ).mul( sin( phase ) );
-		const across = vec3( wind.y.negate(), 0, wind.x ).mul( cos( phase.mul( 0.91 ) ).mul( 0.35 ) );
-		const lift = vec3( 0, sin( phase.mul( 0.83 ) ).mul( 0.10 ), 0 );
-		swayed = positionLocal.add( along.add( across ).add( lift ).mul( weight.mul( 0.0048 ).mul( shared.wind.strength ) ) );
+		const field = windField( wind, positionLocal.xz ).toVar();
+		const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
+		const lively = wind.breeze.mul( field.w.mul( 0.6 ).add( 0.3 ) );
+		const own = fract( strandPhase.div( TAU ) ).sub( 0.5 ).mul( 0.8 );
+		const swing = swingOf( wind, field.w ).mul( 1.5 );
+		const unit = along.mul( field.z.div( LEAN_REF ).add( gustWave( wind, positionLocal.xz, 14, own ).mul( swing ) ) )
+			.add( across.mul( gustWave( wind, positionLocal.xz, 10, own.mul( 1.6 ).add( 1.3 ) ).mul( swing ).mul( 0.35 ) ) );
+		if ( wind === shared.wind ) sway = unit.xz.mul( LEAN_REF );
+		const free = unit.mul( weight.mul( RIM_SWAY ) ).toVar();
+		const offset = free.add( out.mul( max( float( - PRESS ).sub( dot( free, out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( weight ).mul( 0.01 ) ) ) );
+		const flutter = wave( wind.flutter, 3.7, leafPhase );
+		return positionLocal.add( offset ).add( normalGeometry.mul( flutter.mul( leafEdge ).mul( lively ).mul( LEAF_EDGE ) ) );
 
-	} else {
-
-		// A hanging strand leans with the gust field and swings like a pendulum (1.5 - 2.6 m: about
-		// 0.4 Hz, 14 swings per gust tile) with the plants about it (Wind.ts `gustWave`), its own
-		// phase a little apart, its forks with it; its leaves flutter along their normals from
-		// stalk to tip on their own phase. The wall bounds it: wind into the cliff presses the
-		// strand back by at most PRESS, and a gust lifts it off the stone a little.
-		const out = attribute<'vec3'>( 'rimOut', 'vec3' );
-		const leafEdge = float( 1 ).sub( attribute<'float'>( LEAF_STEM, 'float' ) ).mul( uv().y );
-		const leafPhase = strandPhase.mul( 3 ).add( dot( positionGeometry, vec3( 9.1, 7.3, 8.7 ) ) );
-		swayed = setWindDisplacement( mat, ( wind ) => {
-
-			const field = windField( wind, positionLocal.xz ).toVar();
-			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
-			const lively = wind.breeze.mul( field.w.mul( 0.6 ).add( 0.3 ) );
-			const own = fract( strandPhase.div( TAU ) ).sub( 0.5 ).mul( 0.8 );
-			const swing = swingOf( wind, field.w ).mul( 1.5 );
-			const unit = along.mul( field.z.div( LEAN_REF ).add( gustWave( wind, positionLocal.xz, 14, own ).mul( swing ) ) )
-				.add( across.mul( gustWave( wind, positionLocal.xz, 10, own.mul( 1.6 ).add( 1.3 ) ).mul( swing ).mul( 0.35 ) ) );
-			if ( wind === shared.wind ) sway = unit.xz.mul( LEAN_REF );
-			const free = unit.mul( weight.mul( RIM_SWAY ) ).toVar();
-			const offset = free.add( out.mul( max( float( - PRESS ).sub( dot( free, out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( weight ).mul( 0.01 ) ) ) );
-			const flutter = wave( wind.flutter, 3.7, leafPhase );
-			return positionLocal.add( offset ).add( normalGeometry.mul( flutter.mul( leafEdge ).mul( lively ).mul( LEAF_EDGE ) ) );
-
-		}, shared.wind );
-
-	}
+	}, shared.wind );
 	// The cloned bush material has shadow hooks for its own wind graph. Replace both
 	// hooks with this mesh's rest pose.
 	useRestPoseShadows( mat, positionLocal, swayed, leafCastMask(), previousSway( mat, shared.wind ) );
@@ -130,7 +116,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 	group.userData = built.counts;
 	if ( ! built.geometry ) return group;
 	const mesh = new THREE.Mesh( built.geometry, rimMaterial( shared, foliage ) );
-	keepLegacyWind( mesh, rimMaterial( shared, foliage, true ) );
+	followWindMotionFlag( mesh.material as THREE.Material );
 	mesh.name = 'rimFoliageLeaves';
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;

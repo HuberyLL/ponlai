@@ -12,8 +12,8 @@ import { sampleMeadow, meadowColor, meadowBare, supportsMeadow } from '../materi
 import { soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
-import { gustWave, setWindDisplacement, wave, windGust, windField, type WindState } from '../weather/Wind.ts';
-import { keepLegacyWind } from './WindVariants.ts';
+import { gustWave, setWindDisplacement, wave, windField, type WindState } from '../weather/Wind.ts';
+import { followWindMotionFlag } from './WindMotion.ts';
 import { showSway } from '../debug/WindView.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { puddleCover } from '../weather/Puddles.ts';
@@ -257,7 +257,7 @@ export function bendBlade( wind: WindState, rooted: THREE.Node<'vec3'>, origin: 
 
 }
 
-function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE.MeshStandardNodeMaterial {
+function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNodeMaterial {
 
 	// Alpha to coverage carries the widened blades' coverage (see `pixelWideBlade`); a blade at
 	// least `minWidth` wide keeps full coverage and renders as before. Without multisampling
@@ -305,25 +305,23 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 	const sink = max( tuft.w.div( CANOPY_TOP ).mul( drowned ).mul( 0.9 ).sub( tip ), 0 );
 	const rooted = p.sub( p.sub( origin ).mul( vec3( 0.5, 0.6, 0.5 ) ).mul( soil ) ).sub( origin ).mul( drowned ).add( origin )
 		.sub( vec3( 0, pool.mul( sink ), 0 ) );
-	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
 	const bladePhase = fract( blade.w.mul( 17.31 ).add( pick.mul( 5.13 ) ) ).mul( TAU );
 	// The blade's half width at this vertex in world space: its local offset from the centreline
 	// through the instance's own axes, then the same soil and drowning scale as `rooted` (an
-	// affine map of the position, so it scales offsets alike; the gust barely varies across a blade).
+	// affine map of the position, so it scales offsets alike; the bend barely varies across a blade).
 	const across = ground1.xyz.mul( blade.y ).add( ground2.xyz.mul( blade.z ) )
 		.mul( vec3( float( 1 ).sub( soil.mul( 0.5 ) ), float( 1 ).sub( soil.mul( 0.6 ) ), float( 1 ).sub( soil.mul( 0.5 ) ) ) ).mul( drowned );
 	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, ground0.w );
-	const bend = legacy ? undefined : bendBlade( shared.wind, rooted, origin, tuft.w, t2, bladePhase );
+	const bend = bendBlade( shared.wind, rooted, origin, tuft.w, t2, bladePhase );
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
 	// The widening (`pixelWideBlade`) follows the current camera: a previous frame's pose from
 	// the registered displacement keeps the widening as it is now.
-	const swayed = bend ? setWindDisplacement( mat, ( state ) => pixelWideBlade(
-		state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, bladePhase ).position, across, minWidth ), shared.wind )
-		: pixelWideBlade( rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.023 ).mul( t2 ) ) ).sub( vec3( 0, gust.mul( 0.007 ).mul( t2 ), 0 ) ), across, minWidth );
+	const swayed = setWindDisplacement( mat, ( state ) => pixelWideBlade(
+		state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, bladePhase ).position, across, minWidth ), shared.wind );
 	// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
 	// rooted point, widened by the offset the current pose took (the widening follows the camera,
 	// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
-	const previous = bend && TEMPORAL ? swayed.sub( bend.position ).add( bendBlade( shared.wind.previous, rooted, origin, tuft.w, t2, bladePhase ).position ) : undefined;
+	const previous = TEMPORAL ? swayed.sub( bend.position ).add( bendBlade( shared.wind.previous, rooted, origin, tuft.w, t2, bladePhase ).position ) : undefined;
 	const rest = useRestPoseShadows( mat, rooted, swayed, undefined, previous );
 	// The rest of three's instancing: the normal and the instance colour, before the blade moves.
 	const placed = mat.positionNode!;
@@ -331,12 +329,12 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 
 		// A bent blade's normal turns with it, so a gust shows as it sweeps by, as a sheen.
 		const normal = transformNormal( normalLocal, input.matrix );
-		normalLocal.assign( bend ? normalize( normal.add( bend.lean.mul( t.mul( 1.5 ) ) ) ) : normal );
+		normalLocal.assign( normalize( normal.add( bend.lean.mul( t.mul( 1.5 ) ) ) ) );
 		instanceColor.assign( input.color );
 		return placed;
 
 	} )();
-	if ( bend ) showSway( mat, bend.lean.xz, shared.wind );
+	showSway( mat, bend.lean.xz, shared.wind );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const cover = rimCover;
 	// Each blade shifts its value by up to +/-8 % and its hue a little toward yellow or blue
@@ -641,9 +639,8 @@ export function buildGrass( { lawn, tussocks, lawnThin }: GrassTufts, shared: Sh
 	if ( grassQuality.thinTufts ) kinds.push( { geometry: lawnGeometry, shape: LAWN, tufts: lawnThin, name: 'grass-lawn-thin', thin: true } );
 	const cull = new GrassCull( kinds.map( ( k ) => ( { tufts: k.tufts, geometry: k.geometry, halfWidth: halfWidth( k.shape ) } ) ), grassUniforms.thinFar );
 	const material = grassMaterial( shared, cull );
-	const legacyMaterial = grassMaterial( shared, cull, true );
+	followWindMotionFlag( material );
 	const batches = kinds.map( ( k, i ) => batchOf( k.geometry, k.shape, material, cull, cull.ranges[ i ], k.tufts, k.name, k.thin ) );
-	for ( const b of batches ) keepLegacyWind( b.mesh, legacyMaterial );
 	for ( const b of batches ) {
 
 		b.mesh.onBeforeRender = ( renderer, _scene, camera ) => drawBatch( batches, cull, b, renderer as unknown as THREE.Renderer, camera );

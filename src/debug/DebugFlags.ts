@@ -18,7 +18,7 @@
 // false: `flags.mv.camera = false` leaves the camera's motion out of every surface's velocity, as
 // MV-UNIT compares a source on against off. `camera` and `object` (an object's world matrix) are
 // read by Motion.ts; `skin`, `wind`, `sea` and `foam` by the movers that write those motions
-// (`wind`: the vegetation's materials, through WindVariants.ts, swap to a build without the previous
+// (`wind`: the vegetation's materials, through WindMotion.ts, rebuild without the previous
 // sway, so a --toggle of it also times that sway).
 //
 // `windFreeze = true` holds the vegetation's wind while the scene clock runs (Wind.ts): the plants

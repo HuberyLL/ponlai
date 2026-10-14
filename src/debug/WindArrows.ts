@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, clamp, float, mix, positionGeometry, varying, vec2, vec3 } from 'three/tsl';
 import { setWindDisplacement, windField, type WindUniforms } from '../weather/Wind.ts';
 import { previousSway, useRestPoseShadows } from '../world/VegetationShadow.ts';
-import { followWindMotionFlag } from '../world/WindVariants.ts';
+import { followWindMotionFlag } from '../world/WindMotion.ts';
 import { islandSurfaceHeight } from '../world/WorldShapes.ts';
 import { CANOPY_TOP } from '../lighting/MeadowCanopy.ts';
 import { sampleShore } from './ChunkBorders.ts';
