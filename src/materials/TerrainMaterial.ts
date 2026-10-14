@@ -32,9 +32,10 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // lichens take its raised grain first), each keeping its mask's mean cover; stacked layers (cliff
 // moss, root soil and turf) take adjacent ranges of the relief in stacking order, so each one's
 // visible cover matches the plain mix's. Turf stays on the meadow: never on ledges below the lip.
-// The meadow's ground is one model: the turf's colour and its bare earth both come from the meadow
-// map (Meadow.ts), and the blades shade it through one canopy depth (MeadowCanopy.ts), so neither
-// its albedo nor its shade follows the growth field's ~4 m drifts.
+// The meadow's ground is one model: the turf takes the lawn's colour from the meadow map (Meadow.ts),
+// darkened as the blades' mean (`TURF_TONE`) so the far meadow, where the turf shows between
+// blades under a pixel wide, reads as one carpet with them, and the blades shade it through one
+// canopy depth (MeadowCanopy.ts).
 // `?terrainHex=0` builds the plain triplanar variant; `userData.terrainVariant` swaps them.
 //
 // kind 'cliff'  : island block and submerged rocks (triplanar)
@@ -43,6 +44,11 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 type V3 = THREE.Node<'vec3'>;
 type V2 = THREE.Node<'vec2'>;
 type F = THREE.Node<'float'>;
+
+// The turf's albedo against the lawn's colour (Meadow.ts): the blades' mean as the view sees them,
+// dark roots under bright tips (Grass.ts), so where the blades thin to under a pixel the turf
+// between them continues their colour.
+const TURF_TONE = 0.8;
 
 // canopy: direct light left under the meadow's blades (1 where nothing grows)
 // water: share under a water film or standing water (water's specular reflectance)
@@ -139,7 +145,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		// Bare stone must always sample its mineral maps, including upward boulder faces.
 		const legacyTurf = ( vegetation ? smoothstep( 0.85, 0.97, n0.y ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ).mul( meadowTop ) : float( 0 ) ).toVar();
 		const turf = legacyTurf.toVar();
-		const rimBlend = float( 0 ).toVar(), rimTurf = float( 0 ).toVar(), rimSoil = float( 0 ).toVar(), rimOvergrown = float( 0 ).toVar();
+		const rimBlend = float( 0 ).toVar(), rimTurf = float( 0 ).toVar(), rimSoil = float( 0 ).toVar();
 		if ( vegetation && rimGround && rimGroundXform ) {
 
 			// One cell-centred field also controls edge grass on the CPU. Sample it before any
@@ -155,7 +161,6 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			// A shallow root bed lets the turf grow down over the lip, onto steeper faces and further
 			// below the roof, with a ragged lower edge; deep beds stop it short above their soil.
 			const overgrown = float( 1 ).sub( smoothstep( 0.08, 0.14, depth ) ).mul( soilUniforms.strength.min( 1 ) );
-			rimOvergrown.assign( overgrown.mul( rimBlend ) );
 			const ragged = texture( tex.heights, p.xz.mul( 1.3 ).add( p.y.mul( 0.9 ) ) ).g.sub( 0.5 ).mul( 0.12 );
 			const greenDrop = mix( clamp( depth.add( 0.02 ), 0.05, 0.16 ), float( 0.27 ).add( ragged ), overgrown );
 			rimTurf.assign( cover.mul( smoothstep( mix( 0.65, 0.18, overgrown ), mix( 0.95, 0.6, overgrown ), n0.y ) )
@@ -396,50 +401,34 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			const mossN = H.g.sub( 0.5 ).mul( 0.5 ).add( big.sub( 0.5 ).mul( 0.6 ) );
 			const turfRim = smoothstep( MEADOW_MIN_UP, 0.97, up )
 				.mul( smoothstep( topY.sub( MEADOW_MAX_DROP ), topY.sub( 0.12 ), p.y.add( mossN.mul( 0.15 ) ) ) ).mul( meadowTop );
-			// The turf's own cover, which also sets the blades' shade over it and its bare earth,
-			// keeps the plain mask: only the visible mix of turf and stone follows the stone's relief
+			// The turf's own cover, which also sets the blades' shade over it, keeps the plain mask: only the visible mix of turf and stone follows the stone's relief
 			// (`layer` below).
 			const turfCover = max( legacyTurf, turfRim ).toVar();
 			const mossC = mix( vec3( 0.025, 0.06, 0.015 ), vec3( 0.11, 0.2, 0.035 ), smoothstep( 0.2, 0.9, H.g ) ).toVar();
 			mossC.mulAssign( smoothstep( 0.3, 0.8, texture( tex.heights, p.xz.mul( 0.9 ).add( p.y.mul( 0.5 ) ) ).g ).mul( 0.6 ).add( 0.7 ) );
 			mossC.assign( mix( mossC, vec3( 0.2, 0.21, 0.06 ), smoothstep( 0.6, 0.9, big2 ).mul( 0.35 ) ) ); // sun-dried
 			// Keep the same meadow bed on top, with a narrow blend into bare rock.
-			const groundSoil = float( 0 ).toVar();
 			const rimGrassC = mossC.toVar();
 			If( max( turfCover, turf ).greaterThan( 0 ), () => {
 
 				const q1 = p.xz.mul( 0.23 ), q2 = mat2( 0.8, - 0.6, 0.6, 0.8 ).mul( p.xz ).mul( 0.61 ).add( 0.37 );
 				const c1 = texture( tex.heights, q1 ).level( float( 0 ) ).g, c2 = texture( tex.heights, q2 ).level( float( 0 ) ).g;
 				const meadow = texture( tex.meadow, p.xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) );
-				// Broad colour matches the instanced blades. Fine relief stays subdued so the bed
-				// reads as soil-bound turf, rather than a second layer of rounded moss lumps.
+				// The lawn's colour as the blades show it on average. Fine relief stays subdued so
+				// the bed reads as close turf under the blades, never as a second, patchier layer.
 				const fibres = smoothstep( 0.2, 0.65, c1.mul( 0.55 ).add( c2.mul( 0.45 ) ) );
-				const grassC = meadow.rgb.mul( mix( float( 0.75 ), float( 1.2 ), fibres ) ).mul( 0.9 ).toVar();
-				// One ground model: turf, and the meadow's bare earth (Meadow.ts `meadowBare`, the
-				// texture's alpha) where it opens, the tufts above folded over it. The stone's moss
-				// grain breaks the patches' edges below the field's quarter-metre texels. The
-				// overgrown stretches of the lip keep their turf closed to the edge, so bare earth
-				// shows at the rim only where the root bed is cut open.
-				If( soilUniforms.strength.greaterThan( 0 ).and( soilUniforms.blend.greaterThan( 0 ) ), () => {
-
-					const bare = smoothstep( 0.2, 0.8, meadow.a.add( H.g.sub( 0.5 ).mul( 0.5 ) ) );
-					groundSoil.assign( bare.mul( soilUniforms.blend ).mul( soilUniforms.strength ).mul( turfCover )
-						.mul( float( 1 ).sub( rimOvergrown ) ) );
-					const earth = vec3( ...SOIL_PALETTE.humus ).mul( H.r.mul( 0.3 ).add( 0.85 ) ).mul( mix( float( 0.9 ), float( 1.08 ), fibres ) );
-					grassC.assign( mix( grassC, earth, groundSoil ) );
-
-				} );
+				const grassC = meadow.rgb.mul( mix( float( 0.92 ), float( 1.06 ), fibres ) ).mul( TURF_TONE ).toVar();
 				mossC.assign( mix( mossC, grassC, turfCover ) );
 				rimGrassC.assign( grassC );
 				// The blades above shade the turf, through one canopy depth everywhere
-				// (MeadowCanopy.ts): it follows neither the growth field nor the bare earth.
-				canopy.assign( meadowCanopyLight( p.xz, turfCover.mul( TURF_CANOPY_DEPTH ), shared.sunDir ) );
+				// (MeadowCanopy.ts).
+				canopy.assign( meadowCanopyLight( turfCover.mul( TURF_CANOPY_DEPTH ), shared.sunDir ) );
 				Hg.assign( mix( Hg, c1.mul( 0.5 ).add( c2.mul( 0.5 ) ), legacyTurf ) );
 
 			} );
 
 			const nMoss = triNormal( unpack2( aX.zw ), unpack2( aY.zw ), unpack2( aZ.zw ), n0, w, float( 0.8 ) );
-			const nBed = normalize( mix( nMoss, n0, turfCover.mul( 0.2 ).add( groundSoil.mul( 0.25 ) ) ) );
+			const nBed = normalize( mix( nMoss, n0, turfCover.mul( 0.2 ) ) );
 
 			// Moss and small greenery on the upper cliff, 0.2 - 1.2 m below each block's own top:
 			// on the ledges and in the joints and hollows that hold water and grit, and on the bare
@@ -508,7 +497,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 
 			albedo.assign( mix( rock, mossC, mossCover ) );
 			nW.assign( normalize( mix( nRock, nBed, mossCover ) ) );
-			rough.assign( mix( mix( stoneRough, float( 0.94 ), mossCover ), float( 0.98 ), groundSoil ) );
+			rough.assign( mix( stoneRough, float( 0.94 ), mossCover ) );
 			If( cutting, () => {
 
 				albedo.assign( mix( albedo, earth, cutCover ) );

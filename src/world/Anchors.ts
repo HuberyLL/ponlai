@@ -36,7 +36,7 @@ export function cellStream( i: number, j: number, salt: number ): Rng {
 }
 
 // MurmurHash3's finaliser. `hash3i` mixes a lattice cell in a single round, and streams seeded
-// straight from it drew a little low where a gate is rare: the tussocks (about one anchor in ten)
+// straight from it drew a little low where a gate is rare: the former tussocks (one anchor in ten)
 // came out 2 - 4 % short of their expected count on every island measured; mixed again, they
 // scatter about it as a running stream's do.
 function mix32( h: number ): number {

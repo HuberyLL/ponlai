@@ -10,7 +10,7 @@ import { puddleCover } from '../weather/Puddles.ts';
 import { meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
 import type { Shared } from '../shared.ts';
-import { sampleMeadow, meadowBare, supportsMeadow } from '../materials/Meadow.ts';
+import { SWARD_HEIGHT, supportsMeadow } from '../materials/Meadow.ts';
 
 // Wildflowers as plants rather than coloured stars on the lawn: four species (a rayed daisy, a
 // flat umbel, a tall spike and a cupped buttercup), each a low rosette of leaves under the grass
@@ -255,7 +255,7 @@ function flowerMaterial( shared: Shared, centre: number[] ): THREE.MeshStandardN
 		// Lit as the other plants: the grass canopy shades what stands in it, and thin petals glow
 		// with light from behind (more than the leaves, which are thicker and darker).
 		light: ( rest ) => ( {
-			scale: meadowCanopyLight( rest.xz, max( ground.w.sub( rest.y.sub( ground.y ) ), 0 ), shared.sunDir ),
+			scale: meadowCanopyLight( max( ground.w.sub( rest.y.sub( ground.y ) ), 0 ), shared.sunDir ),
 			extra: ( L, V ) => backlight( L, V, 3 ).mul( mix( float( 0.25 ), float( 0.6 ), isBloom ) ).add( mix( float( 0.04 ), float( 0.12 ), isBloom ) ),
 		} ),
 	} );
@@ -303,11 +303,9 @@ export function plantFlowers( veg: Float32Array, walkDistance?: ( x: number, z: 
 			const a = bed() * Math.PI * 2, r = Math.pow( bed(), 0.7 ) * radius;
 			const px = x + Math.cos( a ) * r, pz = z + Math.sin( a ) * r;
 			const py = islandSurfaceHeight( px, pz );
-			// Nothing roots in the meadow's bare earth (Meadow.ts `meadowBare`): it shows beside the beds.
-			if ( Math.abs( py - y ) > 0.08 || meadowBare( px, pz ) > 0.3 ) continue;
-			// The sward top here, as plantGrass grows it: the head stands a little clear of it.
-			const growth = sampleMeadow( px, pz ).growth;
-			const sward = ( 0.17 + 0.14 * growth ) * 0.85;
+			if ( Math.abs( py - y ) > 0.08 ) continue;
+			// The sward top, as plantGrass grows it: the head stands a little clear of it.
+			const sward = SWARD_HEIGHT * 0.85;
 			const size = species.size[ 0 ] + bed() * ( species.size[ 1 ] - species.size[ 0 ] );
 			const head = sward + species.lift[ 0 ] + bed() * ( species.lift[ 1 ] - species.lift[ 0 ] );
 			q.setFromAxisAngle( up, bed() * Math.PI * 2 );
