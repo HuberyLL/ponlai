@@ -19,7 +19,8 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // the gusts, as a meadow moves; each plant keeps only a small share of its own (`swayJitter`:
 // +-0.4 rad, +-10 %). The swing is about a sixth of the lean, so a plant never swings upwind of
 // upright and stays within a few degrees of the local wind. Rates are whole swings per gust tile
-// (the rim bushes 30, about 0.9 Hz in a fair wind; flowers 40; grass 50; the palm half a bush's).
+// (the rim bushes and the plateau's shrubs 30, about 0.9 Hz in a fair wind; flowers 40; grass 50;
+// the small trees and the palm half a bush's).
 // Leaf edges, sprays and fronds still flutter on their own phases, a small motion on top, faster as
 // the wind rises. Grass tufts bend with the field at their root, flowers and the turf skirt follow
 // the same field, and rim trails swing like pendulums with the same sway (RimFoliage.ts).
