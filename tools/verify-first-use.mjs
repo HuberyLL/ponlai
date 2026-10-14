@@ -5,7 +5,14 @@
 // curves and looks, the depth of field and grain switched off and on, the camera's modes and views,
 // a sweep of the render scale (upscaled and not), a resized window, the time presets and a pause
 // and the rest after it. The rest and the events come first, so the first use of what they draw is
-// counted there. Two steps run only when `--steps` names them, since they reach the parked weathers
+// counted there. Before them, the load itself is judged as the step `load`: the first frame may
+// build what nothing warmed (the world's materials), but no frame of the 60 after it may create a
+// pipeline synchronously, nor may the first frame's draws into the sun's shadow map (found by their
+// stack: `SunShadow.update`). The map's first redraw comes in the second frame (three builds the map
+// with the first frame's receivers) and created every caster's pipeline there, which the steps
+// after the 60 frames never saw; it now compiles them asynchronously and draws once they exist
+// (src/lighting/SunShadow.ts), and an asynchronous creation does not stall the frame. The steps
+// count every creation, asynchronous ones included. Two steps run only when `--steps` names them, since they reach the parked weathers
 // (src/sky/Weather.ts PARKED_WEATHER): `weather`, every weather jumped to and changing over seconds,
 // and `bolt`, a forced bolt in a storm. Pipelines are counted
 // from WebGPU's device (an init script wraps GPUDevice's create*Pipeline and create*PipelineAsync),
@@ -181,8 +188,8 @@ async function runOne( quality, aa ) {
 		await page.goto( result.url );
 		await page.waitForFunction( () => window.__PONLAI__?.renderer?.info && document.getElementById( 'loading' )?.classList.contains( 'done' ), null, { timeout: 180000, polling: 'raf' } );
 		const ready = ms( t0 );
-		// the first frames build what nothing warmed (the world's materials, the shadow maps); the steps
-		// count from after them
+		// the first frame builds what nothing warmed (the world's materials, the shadow maps' nodes);
+		// the steps count from after the 60 (the `load` step judges what they built: see the header)
 		await frames( page, 60 );
 		const warm = ms( t0 );
 		result.load = await page.evaluate( () => {
@@ -201,6 +208,9 @@ async function runOne( quality, aa ) {
 				// what the first frames still built, by label
 				firstFrameLabels: log.filter( ( p ) => p.frame === firstFrame ).map( ( p ) => p.label ),
 				laterLabels: log.filter( ( p ) => p.frame > firstFrame ).map( ( p ) => `${ p.label } (frame ${ p.frame })` ),
+				// judged as the `load` step below: what the frames after the first created synchronously,
+				// and the first frame's synchronous draws into the sun's map
+				loadPipelines: log.filter( ( p ) => ! p.async && ( p.frame > firstFrame || ( p.frame === firstFrame && ( p.stack ?? [] ).some( ( s ) => s.startsWith( 'SunShadow.update ' ) ) ) ) ),
 				render: d.render, canvas: d.canvas, upscaled: d.upscaled, quality: d.quality, aa: d.aa ?? null,
 				warm: window.__PONLAI__.pipeline?.graph?.warmStats ?? null,
 				worldCache: d.worldCache ?? null,
@@ -209,15 +219,19 @@ async function runOne( quality, aa ) {
 		} );
 		result.wallMs = { ready, warm };
 		console.log( `loaded ${ result.url }: ${ result.load.total } pipelines (${ result.load.beforeLoop } before the loop, ${ result.load.firstFrame } in the first frame, ${ result.load.later } in the next 60)` );
+		const loaded = result.load.loadPipelines;
+		delete result.load.loadPipelines;
+		const loadStep = {
+			step: 'load', render: loaded.filter( ( p ) => p.kind === 'render' ).length, compute: loaded.filter( ( p ) => p.kind === 'compute' ).length,
+			pipelines: loaded, rebuilds: null, historyResets: null, notes: [], wallMs: warm - ready,
+		};
+		report( loadStep );
 		for ( const step of STEPS ) {
 
 			const t = performance.now();
 			const counted = await measure( page, step );
 			counted.wallMs = ms( t );
-			result.steps.push( counted );
-			const extra = [ ...counted.notes, ...( counted.rebuilds ? [ `graph rebuilds +${ counted.rebuilds }` ] : [] ), ...( counted.historyResets ? [ `history resets +${ counted.historyResets }` ] : [] ) ];
-			console.log( `${ step.padEnd( 18 ) } ${ String( counted.render ).padStart( 3 ) } render, ${ String( counted.compute ).padStart( 3 ) } compute${ extra.length ? `  (${ extra.join( '; ' ) })` : '' }` );
-			for ( const p of counted.pipelines.slice( 0, 12 ) ) console.log( `                     ${ p.kind } ${ p.label } (frame ${ p.frame })` );
+			report( counted );
 
 		}
 
@@ -230,6 +244,16 @@ async function runOne( quality, aa ) {
 	result.errors = errors;
 	if ( errors.length ) console.log( `errors:\n  ${ errors.slice( 0, 20 ).join( '\n  ' ) }` );
 	return result;
+
+	function report( counted ) {
+
+		const step = counted.step;
+		result.steps.push( counted );
+		const extra = [ ...counted.notes, ...( counted.rebuilds ? [ `graph rebuilds +${ counted.rebuilds }` ] : [] ), ...( counted.historyResets ? [ `history resets +${ counted.historyResets }` ] : [] ) ];
+		console.log( `${ step.padEnd( 18 ) } ${ String( counted.render ).padStart( 3 ) } render, ${ String( counted.compute ).padStart( 3 ) } compute${ extra.length ? `  (${ extra.join( '; ' ) })` : '' }` );
+		for ( const p of counted.pipelines.slice( 0, 12 ) ) console.log( `                     ${ p.kind } ${ p.label } (frame ${ p.frame })${ p.object ? ` ${ p.object.type } '${ p.object.name }'` : '' }${ p.material ? ` / ${ p.material.type } '${ p.material.name }'` : '' }` );
+
+	}
 
 }
 

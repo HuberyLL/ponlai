@@ -286,7 +286,12 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   frame graph's warm-up, a draw that shows only at times registered as a latent of its pass
   (`FrameGraph.ts`, `graph/Compile.ts`; a shadow map's draws with `compileLatentInto`). The
   warm-up's priming renders only what keeps no state and never leaves a persistent resource
-  written (`fgPrime=0` turns it off).
+  written (`fgPrime=0` turns it off). The order materials first build in is part of the image:
+  r186 emits a shader from node state the builds share, so compiling draws ahead in another order
+  than the frame builds them changed other materials' code and moved a few pixels by one level. A
+  render three makes of its own that cannot be compiled before its first frame (the sun's map,
+  built with the first receiver) compiles by rendering it once with asynchronous pipelines
+  (`compileByRendering`, `SunShadow.ts`).
 - A fragmentNode that writes several attachments must be the `outputStruct( ... )` itself: one
   returned from inside an `Fn` is emitted with a single output (`struct member m0 not found`).
   Build the members in one `Fn` and return them as a matrix's columns (`TemporalAA.ts`
