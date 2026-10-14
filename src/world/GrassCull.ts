@@ -31,7 +31,7 @@ import { jitter } from '../post/Jitter.ts';
 // two words of three 10-bit fields (a workgroup has at most 256 tufts in a band), scanned together.
 // Without `indirect-first-instance` every batch has one band, its first: its draw starts at 0.
 //
-// The meadow is one pool (chunk design, section 8): a batch per kind (lawn, tussocks, the thin
+// The meadow is one pool (chunk design, section 8): a batch per kind (the lawn, the thin
 // extra tufts) holds every chunk's tufts in the chunks' order ( cj, ci ), as the anchors come
 // (ChunkMerge.ts), each drawn in one draw. The buffers hold a capacity, the next power of two of
 // the slots the batches fill; the dispatches cover the filled workgroups, and the slots past them
@@ -91,7 +91,7 @@ const SWAY_PAD = 0.2;
 const FOLD_PAD = 0.01;
 
 export interface CullTuft {
-	m: THREE.Matrix4; col: THREE.Color; visibility: number; soil: number; cover: number; rimEdge: number; thin: number;
+	m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number;
 	top: number; origin: THREE.Vector3;
 }
 
@@ -175,7 +175,7 @@ export function* poolSteps( batches: CullBatchInput[], per = Infinity ): Generat
 			t.m.toArray( matrices, i * 16 );
 			colors[ i * 4 ] = t.col.r; colors[ i * 4 + 1 ] = t.col.g; colors[ i * 4 + 2 ] = t.col.b;
 			const e = t.m.elements;
-			// x: sky visibility, y: soil cover, z: rim cover, w: rim edge (1 on the plateau's
+			// x: sky visibility, y: unused (0), z: rim cover, w: rim edge (1 on the plateau's
 			// outer rim, where blades stand against the sea and stay narrower: the opaque
 			// pass's MSAA edge pixels there resolve against the sky-coloured clear, so every
 			// partly covered pixel a widened blade adds shows as a pale fringe over the sea);
@@ -183,7 +183,7 @@ export function* poolSteps( batches: CullBatchInput[], per = Infinity ): Generat
 			// fold away with distance), and its local z axis. A blade's width lies in the
 			// plane of those axes: the vertex stage keeps thin blades a minimum width on screen
 			// in world space.
-			ground.set( [ t.visibility, t.soil, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], 0 ], i * 12 );
+			ground.set( [ t.visibility, 0, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], 0 ], i * 12 );
 			t.origin.toArray( origins, i * 4 );
 			origins[ i * 4 + 3 ] = t.top;
 			// The tuft's box in world space, extended down by its own height (standing water

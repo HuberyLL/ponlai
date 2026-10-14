@@ -8,8 +8,6 @@ import { noise3, smoothstep } from '../world/noise.ts';
 // The root bed cut open at the meadow's shoulder (TerrainMaterial's root-soil cut).
 // The narrow height encoding retains millimetre precision in an inexpensive RGBA8 map.
 // Thickness and exposed patches vary independently, so the root bed never becomes a belt.
-// The meadow's own bare earth is not here: it is a field of the meadow (Meadow.ts `meadowBare`),
-// apart from the growth field, and takes the humus colour below.
 // The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m.
 export const SOIL_EXTENT = 2 * GROWTH.half;
 export const SOIL_HEIGHT_RANGE = 0.5;
@@ -18,12 +16,9 @@ const SOIL_SIZE = SOIL_EXTENT * 4;
 export const soilUniforms = {
 	strength: uniform( 1 ),
 	depth: uniform( 1 ),
-	blend: uniform( 1 ),
 };
 
 export const SOIL_PALETTE = {
-	// Dark humus of the meadow's bare patches, a little toward green: moss and litter in it.
-	humus: [ 0.045, 0.038, 0.02 ],
 	cut: [ 0.18, 0.115, 0.062 ],
 	root: [ 0.12, 0.075, 0.039 ],
 } as const;

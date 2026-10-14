@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, select, mix, positionLocal, modelWorldMatrixInverse } from 'three/tsl';
+import { Fn, uniform, uniformArray, texture, vec3, vec4, int, float, clamp, floor, dot, select, mix, positionLocal, modelWorldMatrixInverse } from 'three/tsl';
 import { compileByRendering, compileLatentInto } from '../post/graph/Compile.ts';
 import { solarSteppedShadowVisibility, solarVolumeVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
 import type { CasterColumns } from '../world/ChunkDerived.ts';
@@ -28,7 +28,8 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // VegetationShadow.ts). Both stepped maps always share one filter mode, each with its own blocker
 // search, so the cross-fade stays continuous across a redraw; the mode is set per quality tier
 // (`setFilter`) before the materials build. Receivers read the maps through SolarShadow's gather
-// filter (see its rules on sampler types and derivatives). The caster-depth grid
+// filter (see its rules on sampler types and derivatives); a receiver that wants only a soft,
+// cheap shade of the larger casters takes `softVisibility` in its vertex stage instead (the lawn). The caster-depth grid
 // (`nearestCasterDepth`) lets a march through the water skip the 2x2 volume lookups where nothing
 // casts, never the surface filter's PCSS search. It projects world-space columns of the casters,
 // walked from their vertices, or for meshes made in the world's workers folded in from the columns
@@ -119,6 +120,9 @@ export class SunShadow {
 	readonly previousRange = uniform( 1 );
 	// false until the first map has been drawn: receivers are lit rather than reading an empty layer
 	readonly ready = uniform( 0 );
+	// world -> the current map's shadow coordinate (three's, bias included), for lookups made away
+	// from three's receiver path (`softVisibility`)
+	readonly coordinate = uniform( new THREE.Matrix4() );
 	private readonly sun: THREE.DirectionalLight;
 	// Both maps share one array texture (previous, current), so a receiver binds one texture as
 	// before: the water already binds as many as WebGPU guarantees. three's own map is only the
@@ -190,9 +194,17 @@ export class SunShadow {
 	/** Install the blended filter on the sun's shadow; receivers built afterwards use it. */
 	install(): void {
 
-		const filter = Fn( ( { shadowCoord }: FilterInput, builder: THREE.NodeBuilder ) => this.surfaceVisibility( shadowCoord,
+		const filter = Fn( ( { shadowCoord }: FilterInput, builder: THREE.NodeBuilder ) => {
+
+			const material = builder.material as THREE.Material | null;
+			// A receiver that brings its own visibility (the lawn's `softVisibility`, made in its
+			// vertex stage) takes it in place of the filter.
+			const own = material?.userData.sunVisibility as F | undefined;
+			if ( own ) return own;
 			// Vegetation is told by its tag, not by alphaToCoverage, which is off without multisampling.
-			( builder.material as THREE.Material | null )?.userData.vegetation === true ? this.vegetationTaps : this.taps ) );
+			return this.surfaceVisibility( shadowCoord, material?.userData.vegetation === true ? this.vegetationTaps : this.taps );
+
+		} );
 		// The runtime exposes filterNode; @types/three has not declared this WebGPU hook yet.
 		( this.sun.shadow as unknown as { filterNode: typeof filter } ).filterNode = filter;
 
@@ -233,6 +245,25 @@ export class SunShadow {
 			solarVolumeVisibility( this.depth, this.previousCoordinateNode( coordinate ), this.mapSize, this.weight.lessThan( 1 ), PREVIOUS ),
 			solarVolumeVisibility( this.depth, coordinate, this.mapSize, this.ready.greaterThan( 0 ), CURRENT ),
 			this.weight );
+
+	}
+
+	/** A soft visibility of the world point `world`, without derivatives or a receiver plane, so it
+	 * can be taken in a vertex stage: the bilinear lookups of both stepped maps (volumeVisibility)
+	 * at the point and at `taps` points around it on a level ring of `radius` metres, averaged. Used
+	 * where a soft, cheap shadow of the larger casters is wanted (the lawn's blades, Grass.ts): the
+	 * ring's points lie on the receiver's level, so flat ground under it does not shadow it. */
+	softVisibility( world: V3, radius: number, taps = 4 ): F {
+
+		const at = ( dx: number, dz: number ) => this.volumeVisibility( this.coordinate.mul( vec4( world.add( vec3( dx, 0, dz ) ), 1 ) ).xyz );
+		let sum = at( 0, 0 );
+		for ( let i = 0; i < taps; i ++ ) {
+
+			const a = ( i + 0.5 ) / taps * Math.PI * 2;
+			sum = sum.add( at( Math.cos( a ) * radius, Math.sin( a ) * radius ) );
+
+		}
+		return sum.div( taps + 1 );
 
 	}
 
@@ -459,6 +490,7 @@ export class SunShadow {
 		this.mapSize.value.set( map.width, map.height );
 		this.span.value.set( shadowCamera.right - shadowCamera.left, shadowCamera.top - shadowCamera.bottom );
 		this.range.value = shadowCamera.far - shadowCamera.near;
+		shadowCoordinateMatrix( shadow, this.coordinate.value );
 		this.ready.value = 1;
 
 	}

@@ -35,7 +35,7 @@ import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, plantGrass, setGrassQuality } from './world/Grass.ts';
-import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
+import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
 import { pickPlantSites, bakeAnchorContact } from './world/PlantSites.ts';
 import { buildPlants, plantsBox, PlantCache } from './world/Plants.ts';
@@ -80,7 +80,6 @@ import type { Game } from './game/Game.ts';
 const params = new URLSearchParams( location.search );
 const ground = { soil: params.get( 'soil' ) !== '0' };
 soilUniforms.strength.value = ground.soil ? 1 : 0;
-soilUniforms.blend.value = params.get( 'blend' ) === '0' ? 0 : 1;
 // GPU time per pass, tick time and startup marks for tools/profile-frame.mjs (?profile, or
 // ?profile=frames without the GPU timestamps). The profiler loads only then; without it the
 // renderer, its pipelines and the image are unchanged.
@@ -328,7 +327,6 @@ function publishLighting(): void {
 	sun.intensity = 1;
 	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
 	shared.sunDir.value.copy( sky.keyDir );
-	trackMeadowCanopy( sky.keyDir );
 	shared.sunColor.value.set( sky.keyColor.r, sky.keyColor.g, sky.keyColor.b );
 	shared.glintScale.value = sky.glintScale;
 	const cosI = Math.max( sky.keyDir.y, 0 );
@@ -540,7 +538,7 @@ setLand( land, landOptions.step );
 // rim ground over its own.
 const fields = new WorldFields( data, shared.shoreXform.value );
 const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft );
-// Tussocks, tall flowers, shrubs and trees keep clear of the islander's walking loop, 5 m in from the coast.
+// Tall flowers, shrubs and trees keep clear of the islander's walking loop, 5 m in from the coast.
 const walk = walkPoints( data.walk );
 const walkDistance = walkLoopDistance( walk );
 const world = buildWorldMeshes( data, textures, shared, caustics, fields );
@@ -586,7 +584,7 @@ const plantSites = pickPlantSites( data.vegetation, data.bushes, walkDistance );
 bakeAnchorContact( data.vegetation, plantSites );
 const plants = buildPlants( plantSites, shared, plantCache );
 setGrassQuality( quality.grass );
-const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance ), shared );
+const grass = buildGrass( plantGrass( data.vegetation, data.rimGround ), shared, sunShadow );
 const flowers = buildFlowers( plantFlowers( data.vegetation, walkDistance ), shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
@@ -998,7 +996,6 @@ groundF.add( ground, 'soil' ).name( 'soil layer' ).onChange( ( enabled: boolean 
 
 } );
 groundF.add( soilUniforms.depth, 'value', 0.5, 1.75, 0.05 ).name( 'soil depth' ).onChange( invalidateSunShadow );
-groundF.add( soilUniforms.blend, 'value', 0, 1, 0.01 ).name( 'grass / soil' ).onChange( invalidateSunShadow );
 groundF.add( chunkView, 'borders' ).name( 'chunk borders' ).onChange( showChunkBorders );
 // The island's growth (Growth.ts): Grow swaps in the next piece once it is generated and prepared.
 const islandF = gui.addFolder( 'Island' );

@@ -153,8 +153,7 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 	if ( o.kinds.includes( 'grass' ) ) {
 
 		// Grass.ts grassMaterial: the blade's phase from its id and a hash of the tuft's origin
-		const { lawn, tussocks } = plantGrass( data.vegetation, data.rimGround );
-		const all = [ ...lawn, ...tussocks ];
+		const { lawn: all } = plantGrass( data.vegetation, data.rimGround );
 		const keep = Math.min( 1, o.tufts / all.length );
 		const points = all.filter( () => random() < keep ).map( ( t ) => [ t.origin.x, t.origin.z, t.top, random() ] );
 		add( 'grass', points, ( wind, p ) => {

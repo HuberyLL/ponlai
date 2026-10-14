@@ -526,13 +526,12 @@ export class Growth<M = unknown> {
 		if ( plantsBuilt.geometry ) yield* geometrySteps( renderer, plantsBuilt.geometry );
 		this.stage = 'grass';
 		const veg = data.vegetation, anchors = veg.length / VEGETATION_STRIDE;
-		const tufts: GrassTufts = { lawn: [], tussocks: [], lawnThin: [] };
+		const tufts: GrassTufts = { lawn: [], lawnThin: [] };
 		const plants: Plant[][] = page.flowers.children.map( () => [] );
 		for ( let a = 0; a < anchors; a += 16 ) {
 
-			const part = plantGrass( veg.subarray( a * VEGETATION_STRIDE, Math.min( anchors, a + 16 ) * VEGETATION_STRIDE ), data.rimGround, walkDistance );
+			const part = plantGrass( veg.subarray( a * VEGETATION_STRIDE, Math.min( anchors, a + 16 ) * VEGETATION_STRIDE ), data.rimGround );
 			tufts.lawn.push( ...part.lawn );
-			tufts.tussocks.push( ...part.tussocks );
 			tufts.lawnThin.push( ...part.lawnThin );
 			yield;
 
