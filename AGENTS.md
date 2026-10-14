@@ -178,6 +178,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   reading their bounds from uniforms (`GrassCull.ts`); the world fields swap textures through the
   one base node each material samples them by (`WorldFields.ts`), and other passes keep their
   materials across rebakes (`RainCollision.ts`).
+- Changes need to hold in the kept weathers only (clear, fair, cloudy, overcast). The parked ones
+  (rain, storm, fog: `PARKED_WEATHER` in `src/sky/Weather.ts`) are revived later as their own
+  milestone: new work need not support them, but must keep them compiling. The default checks
+  leave them out (`docs/tools.md`, Parked weathers).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High is the reference image; every default in the modules is high's. A load knob is read
   once when materials and the frame graph are built, so a change of tier reloads the page.

@@ -67,6 +67,8 @@ art decision changes; reference images stay out of the repository.
 
 ## Sea, sky and weather
 
+- Rain, storm and fog are parked (`PARKED_WEATHER` in `src/sky/Weather.ts`): out of the rotation
+  and the production page until the game needs them; the notes on them below stand for their revival.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps, trailing foam and spray. The sea continues to the horizon.
 - One dominant key light, sun by day and moon by night. A low sun's light stays golden orange. The
