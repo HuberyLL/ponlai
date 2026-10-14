@@ -518,6 +518,29 @@ one wait per message. `--role main` waits at most 3300 s, under a main session's
 main session keeps `wait --role main` running in the background while it waits on agents or jobs,
 and re-arms it each time it fires. `--max s` only lowers the budget.
 
+## Disk space: `tools/storage.mjs`
+
+Captures, clip frames and references are removed by age and held under a cap, so the disk does not
+fill with frames read once (in a week they reached hundreds of GB). `job.mjs` starts
+`storage.mjs clean --auto` in the background every 6 hours; nobody runs it by hand.
+
+    node tools/storage.mjs                 what each kind holds and what a clean would remove
+    node tools/storage.mjs clean           remove it now ([--days 2] [--cap 50] [--floor 12])
+
+- Images and videos of 256 KB or more under `artifacts/{plans,perf,verification,crops}` go after
+  2 days, unless a report or page (.md, .html) there links to them: what the user reviews keeps
+  its pictures. `artifacts/captures` (one-off screenshots) keeps them 7 days. Reports, JSON and
+  small images stay; other artifacts folders are never touched.
+- A commit's folder in a reference store goes once unused for 2 days, unless the commit is live (a
+  worktree's HEAD, a branch tip committed to in the last 7 days, or where such a branch leaves
+  main).
+- Past that, the oldest go while those images (but `captures`) and dead references hold more than
+  50 GB, never one less than 12 hours old.
+- Idle browser profiles go after 2 days; an idle capture slot's caches past 512 MB are dropped
+  (one cold load). Leftovers in the temp folder go after a day; Claude Code's temp folder of a
+  session idle for 3 days goes.
+- To keep a set longer (a reference a later task needs), put a `.keep` file in its folder.
+
 ## Process priority (macOS)
 
 Processes an agent starts are not applications to macOS: their threads run at the legacy QoS

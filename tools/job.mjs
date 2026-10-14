@@ -4,6 +4,8 @@
 // status calls, and some conditions never came true (one waited a day for an `^exit` line that
 // its log never got). Every job started here writes the same start and end lines, and `wait`
 // knows when a job has ended even if it was killed before it could say so.
+// Every command also starts the disk clean in the background when one is due (tools/storage.mjs,
+// every 6 h): every session waits through here, so the clean needs no schedule of its own.
 //
 //   node tools/job.mjs run [--log <file>] -- <command ...>      runs it in the foreground
 //   node tools/job.mjs start [--log <file>] -- <command ...>    runs it detached and returns at once
@@ -81,6 +83,7 @@ import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
 import { estimateWaits, etaText, LOCK_DIR, lockState } from './gpu-lock.mjs';
 import { appPolicy } from './qos.mjs';
+import { autoClean } from './storage.mjs';
 
 const BUDGETS = { agent: 240, main: 3300 };
 const STILL_RUNNING = 124;
@@ -796,6 +799,8 @@ function splitAmpersand( line ) {
 
 async function main( argv ) {
 
+	// every session's waits come through here: the disk clean rides on them (tools/storage.mjs)
+	autoClean();
 	const [ command, ...rest ] = argv;
 	const split = rest.indexOf( '--' );
 	const args = split >= 0 ? rest.slice( 0, split ) : rest;
