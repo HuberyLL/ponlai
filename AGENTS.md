@@ -125,7 +125,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   draws the islanders, the palm and the chest, and `Hud.ts` / `Placement.ts` are the player's
   prototype HUD.
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
-  the pipeline counter (`PipelineCounter.ts`).
+  the pipeline counter (`PipelineCounter.ts`), the wind view and its probe (`WindView.ts`,
+  `WindArrows.ts`, `WindProbe.ts`).
 - `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the world's chunk
   checks (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node
   helpers in `world-node.mjs`.

@@ -5,6 +5,7 @@ import { setWindDisplacement, wave } from '../../weather/Wind.ts';
 import { mainBend } from '../../world/Foliage.ts';
 import { previousSway, useRestPoseShadows } from '../../world/VegetationShadow.ts';
 import { followWindMotionFlag } from '../../world/WindVariants.ts';
+import { showSway } from '../../debug/WindView.ts';
 import { PALM_COCONUTS } from '../sim/places.ts';
 import type { PalmState } from '../sim/types.ts';
 import { BALL, PropBuilder, at, hashAt, propMaterial } from './Props.ts';
@@ -195,10 +196,12 @@ function palmMaterial(): THREE.MeshStandardNodeMaterial {
 	const sway = attribute<'vec4'>( 'palmSway', 'vec4' );
 	// coconuts past the palm's count collapse onto the crown (zero-area triangles)
 	const rest = select( sway.w.lessThan( coconuts ), positionGeometry, crown ).toVar();
+	let trunk: THREE.Node<'vec2'> | undefined;
 	const swayed = setWindDisplacement( m, ( wind ) => {
 
 		// the whole palm bends slowly from its foot (half a shrub's rate)
 		const bent = mainBend( wind, rest, root, sway.x, 0.9, float( 1 ) );
+		if ( wind === shared.wind ) trunk = bent.sway;
 		const field = bent.field;
 		const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
 		const lively = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) );
@@ -211,6 +214,7 @@ function palmMaterial(): THREE.MeshStandardNodeMaterial {
 	}, shared.wind );
 	useRestPoseShadows( m, rest, swayed, undefined, previousSway( m, shared.wind ) );
 	followWindMotionFlag( m );
+	if ( trunk ) showSway( m, trunk, shared.wind );
 	return m;
 
 }

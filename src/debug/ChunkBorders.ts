@@ -12,8 +12,8 @@ import type { ShoreField, WorldData } from '../world/types.ts';
 // samples along a border (m), and the lines' lift above the ground (m)
 const STEP = 0.25, LIFT = 0.04;
 
-// bilinear over the field's cell centres, the edge continued
-function sample( f: ShoreField, x: number, z: number ): number {
+/** A shore field bilinear over its cell centres, the edge continued. */
+export function sampleShore( f: ShoreField, x: number, z: number ): number {
 
 	const fx = Math.min( Math.max( ( x - f.x0 ) / f.cell - 0.5, 0 ), f.nx - 1 ), fz = Math.min( Math.max( ( z - f.z0 ) / f.cell - 0.5, 0 ), f.nz - 1 );
 	const i = Math.min( Math.floor( fx ), f.nx - 2 ), j = Math.min( Math.floor( fz ), f.nz - 2 ), u = fx - i, v = fz - j;
@@ -28,8 +28,8 @@ export function buildChunkBorders( data: WorldData, side = S ): THREE.LineSegmen
 	// the ground under a point: the meadow's top inside the coast, the floor outside, none on the cliff
 	const ground = ( x: number, z: number ) => {
 
-		const d = sample( data.shore, x, z );
-		return d < - 0.6 ? islandSurfaceHeight( x, z ) + LIFT : d > 0.6 ? sample( data.seabedField, x, z ) + LIFT : null;
+		const d = sampleShore( data.shore, x, z );
+		return d < - 0.6 ? islandSurfaceHeight( x, z ) + LIFT : d > 0.6 ? sampleShore( data.seabedField, x, z ) + LIFT : null;
 
 	};
 	const edges = new Set<string>(), corners = new Set<string>(), points: number[] = [];
@@ -57,7 +57,7 @@ export function buildChunkBorders( data: WorldData, side = S ): THREE.LineSegmen
 
 			if ( corners.has( `${ x },${ z }` ) ) continue;
 			corners.add( `${ x },${ z }` );
-			points.push( x, sample( data.seabedField, x, z ), z, x, ISLAND_TOP + 1, z );
+			points.push( x, sampleShore( data.seabedField, x, z ), z, x, ISLAND_TOP + 1, z );
 
 		}
 

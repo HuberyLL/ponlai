@@ -8,6 +8,7 @@ import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
+import { showSway } from '../debug/WindView.ts';
 import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
@@ -218,6 +219,7 @@ function skirtMaterial( shared: Shared, legacy = false ): THREE.MeshStandardNode
 	const wind = shared.wind.direction;
 	const phase = shared.wind.phase.mul( 1.3 ).add( dot( positionLocal.xz, vec2( 2.1, 1.7 ) ) );
 	let swayed;
+	let skirtSway: THREE.Node<'vec2'> | undefined;
 	if ( legacy ) swayed = positionLocal.add( vec3( wind.x, 0.25, wind.y ).mul( sin( phase ).mul( sway ).mul( shared.wind.strength ).mul( 0.012 ) ) );
 	else {
 
@@ -226,6 +228,7 @@ function skirtMaterial( shared: Shared, legacy = false ): THREE.MeshStandardNode
 
 			const field = windField( wind, positionLocal.xz );
 			const shiver = wave( wind.flutter, 1.9, dot( positionLocal.xz, vec2( 2.1, 1.7 ) ) ).mul( wind.breeze ).mul( field.w.mul( 0.5 ).add( 0.3 ) );
+			if ( wind === shared.wind ) skirtSway = field.xy.mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( LEAN_REF );
 			return positionLocal.add( vec3( field.x, 0.25, field.y ).mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( sway ).mul( 0.012 ) );
 
 		}, shared.wind );
@@ -233,6 +236,7 @@ function skirtMaterial( shared: Shared, legacy = false ): THREE.MeshStandardNode
 	}
 	// Blades are a few millimetres wide, far under a shadow texel: only the sod casts.
 	useRestPoseShadows( mat, positionLocal, swayed, float( 1 ).sub( blade ), previousSway( mat, shared.wind ) );
+	if ( skirtSway ) showSway( mat, skirtSway, shared.wind );
 	useLighting( mat, () => new VegetationLighting( float( 1 ), ( L, V ) =>
 		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.4 ).add( 0.03 ).mul( blade ) ) );
 	mat.name = 'turfSkirt';

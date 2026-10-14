@@ -14,6 +14,7 @@ import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
 import { setWindDisplacement, wave, windGust, windField, type WindState } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
+import { showSway } from '../debug/WindView.ts';
 import { CANOPY_TOP, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
@@ -236,8 +237,9 @@ const TAU = Math.PI * 2;
 // offset grows with the square of the blade parameter) while every vertex keeps its distance from
 // the root, so a bent blade arcs over and sinks rather than stretching; each blade flutters on
 // its own phase across the wind, more in a gust. `wind` is the frame's wind state (`shared.wind`,
-// or `.previous`). Returns the bent position and the lean as a world-space vector, for the normals.
-function bendBlade( wind: WindState, rooted: THREE.Node<'vec3'>, origin: THREE.Node<'vec3'>, height: THREE.Node<'float'>,
+// or `.previous`). Returns the bent position and the lean as a world-space vector, for the normals
+// (its x, z are the blade's sway for the wind view and probe, src/debug/WindView.ts).
+export function bendBlade( wind: WindState, rooted: THREE.Node<'vec3'>, origin: THREE.Node<'vec3'>, height: THREE.Node<'float'>,
 	t2: THREE.Node<'float'>, phase: THREE.Node<'float'> ): { position: THREE.Node<'vec3'>; lean: THREE.Node<'vec3'> } {
 
 	const field = windField( wind, origin.xz ).toVar();
@@ -330,6 +332,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 		return placed;
 
 	} )();
+	if ( bend ) showSway( mat, bend.lean.xz, shared.wind );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const cover = rimCover;
 	// Each blade shifts its value by up to +/-8 % and its hue a little toward yellow or blue

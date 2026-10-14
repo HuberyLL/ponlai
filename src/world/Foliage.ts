@@ -5,6 +5,7 @@ import {
 } from 'three/tsl';
 import { LEAN_REF, rootPhase, setWindDisplacement, wave, windField, type WindState } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
+import { showSway } from '../debug/WindView.ts';
 import { mulberry32 } from './noise.ts';
 import { ALPHA_TO_COVERAGE, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
@@ -384,9 +385,11 @@ type F = THREE.Node<'float'>;
  * neighbours. `rate` is the sway's
  * frequency (Hz, an even number of thousandths), and `slow` (0..1) eases it to half that rate for
  * taller plants (the game's palm). `wind` is the frame's wind state (`shared.wind`, or
- * `.previous`). Returns the bent position and the wind field's ( direction x, direction z, lean,
- * gust ) at the root. */
-export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F, rate: number, slow?: F ): { position: V3; field: THREE.Node<'vec4'> } {
+ * `.previous`). Returns the bent position, the wind field's ( direction x, direction z, lean,
+ * gust ) at the root and the plant's sway: its horizontal offset over `amplitude` times LEAN_REF,
+ * the lean and swing as a tip offset over height (world x, z; for the wind view and probe,
+ * src/debug/WindView.ts; a shader that does not read it compiles as before). */
+export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F, rate: number, slow?: F ): { position: V3; field: THREE.Node<'vec4'>; sway: THREE.Node<'vec2'> } {
 
 	const field = windField( wind, root.xz ).toVar();
 	const phase = rootPhase( root.xz );
@@ -395,9 +398,10 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
 	const sway = ( r: number, ph: F ) => slow ? mix( wave( wind.clock, r, ph ), wave( wind.clock, r / 2, ph ), slow ) : wave( wind.clock, r, ph );
 	const response = field.z.div( LEAN_REF ).add( sway( rate, phase ).mul( swing ) );
 	const sideways = sway( rate * 0.78, phase.mul( 1.7 ) ).mul( swing ).mul( 0.35 );
-	const offset = vec3( field.x, 0, field.y ).mul( response ).add( vec3( field.y.negate(), 0, field.x ).mul( sideways ) ).mul( amplitude );
+	const unit = vec3( field.x, 0, field.y ).mul( response ).add( vec3( field.y.negate(), 0, field.x ).mul( sideways ) );
+	const offset = unit.mul( amplitude );
 	const rel = position.sub( root ).toVar();
-	return { position: normalize( rel.add( offset ).add( vec3( 0, 1e-5, 0 ) ) ).mul( length( rel ) ).add( root ), field };
+	return { position: normalize( rel.add( offset ).add( vec3( 0, 1e-5, 0 ) ) ).mul( length( rel ) ).add( root ), field, sway: unit.xz.mul( LEAN_REF ) };
 
 }
 
@@ -420,6 +424,7 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture, legacy = fal
 	const p = positionLocal; // placed: world space
 	const wind = shared.wind.direction;
 	let swayed: V3;
+	let sway: THREE.Node<'vec2'> | undefined;
 	if ( legacy ) {
 
 		const ph = dot( p.xz, wind ).mul( 0.45 ).sub( shared.wind.phase.mul( 1.3 / 1.6 ) );
@@ -436,6 +441,7 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture, legacy = fal
 		swayed = setWindDisplacement( mat, ( wind ) => {
 
 			const bend = mainBend( wind, p, root, vH.mul( vH ).mul( 0.022 ), 0.9 );
+			if ( wind === shared.wind ) sway = bend.sway;
 			const field = bend.field;
 			const shake = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) ).mul( vH ).mul( 0.006 );
 			const flutter = vec3( 0, wave( wind.flutter, 2.3, ph ), 0 )
@@ -446,6 +452,7 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture, legacy = fal
 
 	}
 	useRestPoseShadows( mat, p, swayed, leafCastMask(), previousSway( mat, shared.wind ) );
+	if ( sway ) showSway( mat, sway, shared.wind );
 	// Each folded leaf keeps its own highlights and shading across the canopy.
 	mat.normalNode = normalViewGeometry;
 	// deep inside and underneath a bush the light is gone
