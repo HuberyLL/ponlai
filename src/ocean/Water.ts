@@ -42,7 +42,9 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   - exact dielectric Fresnel, anisotropic Beckmann sun glint shadowed by the island,
 //     measured FFT slope covariance that this pixel cannot resolve
 //   - refraction: the refracted view ray is traced to the floor through the opaque pass's linear
-//     depth (bounded steps and bisection), the scene behind is sampled where it lands
+//     depth (bounded steps and bisection), the scene behind is sampled where it lands; a hit is
+//     trusted less where an occluder hides the ray's continuation within a few pixels on the
+//     screen (traceRefraction)
 //   - water volume: Beer-Lambert absorption along the refracted path plus analytic single
 //     scattering of the sun (Henyey-Greenstein) and the sky, multiple-scatter backscatter boost
 //   - reflection: calibrated baked sky + screen-space reflection of cliffs and stacks
@@ -171,6 +173,12 @@ const GLITTER_TILE = 8.8;
 
 // Refraction hits within this share of the screen's edges fade to the fallback.
 const EDGE_FADE = 0.06;
+// A point on the screen hides the refracted ray's continuation where it lies this much nearer than
+// the hit (view depth, m: no trust taken at the first, all at the second). Checked this many
+// render pixels ahead of the hit along the ray's course on the screen, each taking this share of
+// the trust: the trust falls over the last pixels before the occluder rather than at one.
+const OCCLUDER_GAP = [ 0.3, 0.8 ];
+const OCCLUDER_AHEAD = [ [ 1, 0.75 ], [ 2, 0.5 ], [ 4, 0.25 ] ];
 
 // view-space direction through a screen point (on the far plane; scaled by the caller)
 const viewRay = Fn( ( [ q, projInv ]: [ V2, M4 ] ) => {
@@ -739,6 +747,12 @@ export class Water {
 		// its pixel, and the water changed colour along every silhouette the rays passed behind.)
 		// A ray that finds nothing (off the screen, hidden to the end, out of range) returns no trust;
 		// the shading then takes the floor from the world-space estimate (see the lost rays below).
+		// Where a band of lost rays (a ridge on the floor hiding the deep floor behind it on the
+		// screen) meets traced ones, a hit on the floor next to the ridge's silhouette read the
+		// ridge's colour with it (the filtered and resolved colour around the hit): a dotted line of
+		// bright pixels ran along the band's edge. So the trust falls over the few pixels before an
+		// occluder that hides the ray's continuation on the screen (OCCLUDER_AHEAD), which also
+		// spreads the change from traced to lost over those pixels.
 		const traceRefraction = Fn( ( [ posV, directionV, range, surfaceY, footprint ]: [ V3, V3, F, F, F ] ) => {
 
 			const step = range.div( quality.refractionSteps ).toVar();
@@ -782,6 +796,17 @@ export class Water {
 						// gradual one rather than a line across the water.
 						const edge = smoothstep( 0.001, EDGE_FADE, qh.x ).mul( smoothstep( 0.999, 1 - EDGE_FADE, qh.x ) )
 							.mul( smoothstep( 0.001, EDGE_FADE, qh.y ) ).mul( smoothstep( 0.999, 1 - EDGE_FADE, qh.y ) );
+						// The ray's course on the screen, one render pixel long, and what hides it ahead.
+						const ahead = projectView( hit.add( directionV.mul( 0.1 ) ), cameraProjectionMatrix ).sub( qh ).toVar();
+						const unit = ahead.div( max( length( ahead.mul( depthSize ) ), 1e-6 ) ).toVar();
+						const hidden = float( 0 ).toVar();
+						for ( const [ pixels, share ] of OCCLUDER_AHEAD ) {
+
+							const nearer = sceneViewZ( qh.add( unit.mul( pixels ) ) ).sub( visible.z );
+							hidden.assign( max( hidden, smoothstep( OCCLUDER_GAP[ 0 ], OCCLUDER_GAP[ 1 ], nearer ).mul( share ) ) );
+
+						}
+						trust.mulAssign( float( 1 ).sub( hidden ) );
 						result.assign( vec4( qh, max( dot( visible.sub( posV ), directionV ), 0 ), trust.mul( edge ) ) );
 						Break();
 
