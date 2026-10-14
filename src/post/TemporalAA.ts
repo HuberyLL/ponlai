@@ -91,7 +91,7 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   a still camera's thin detail flickered at 2-8 times MSAA's high-pass flicker on a sunlit meadow
 //   (the sun-shadow clip), and the history's accumulation, not its clip, let it through: the
 //   jitter's sub-pixel hits and misses of blades and the vegetation's coverage dither
-//   (Foliage.ts) change a pixel every frame, and an exponential average of N frames passes about
+//   (world/vegetation/Coverage.ts) change a pixel every frame, and an exponential average of N frames passes about
 //   1/N of each frame's change (with no jitter and the dither held the meadow measured below MSAA;
 //   without any clip on still pixels it barely moved; reordering the jitter and the dither in time
 //   bought a few per cent, 48 still frames a third). The image shown is a second exponential
