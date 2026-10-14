@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, materialColor, uv, vec3, vec4, float, mix, sin, cos, dot, pow, clamp, max } from 'three/tsl';
-import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
+import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, materialColor, uv, vec3, vec4, float, fract, mix, sin, cos, dot, pow, clamp, max } from 'three/tsl';
+import { LEAN_REF, gustWave, setWindDisplacement, swingOf, wave, windField } from '../weather/Wind.ts';
+
+const TAU = Math.PI * 2;
 import { keepLegacyWind } from './WindVariants.ts';
 import { showSway } from '../debug/WindView.ts';
 import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
@@ -73,9 +75,10 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = fa
 	} else {
 
 		// A hanging strand leans with the gust field and swings like a pendulum (1.5 - 2.6 m: about
-		// 0.4 Hz) on its own phase, its forks with it; its leaves flutter along their normals from
-		// stalk to tip. The wall bounds it: wind into the cliff presses the strand back by at most
-		// PRESS, and a gust lifts it off the stone a little.
+		// 0.4 Hz, 14 swings per gust tile) with the plants about it (Wind.ts `gustWave`), its own
+		// phase a little apart, its forks with it; its leaves flutter along their normals from
+		// stalk to tip on their own phase. The wall bounds it: wind into the cliff presses the
+		// strand back by at most PRESS, and a gust lifts it off the stone a little.
 		const out = attribute<'vec3'>( 'rimOut', 'vec3' );
 		const leafEdge = float( 1 ).sub( attribute<'float'>( LEAF_STEM, 'float' ) ).mul( uv().y );
 		const leafPhase = strandPhase.mul( 3 ).add( dot( positionGeometry, vec3( 9.1, 7.3, 8.7 ) ) );
@@ -84,8 +87,10 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = fa
 			const field = windField( wind, positionLocal.xz ).toVar();
 			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
 			const lively = wind.breeze.mul( field.w.mul( 0.6 ).add( 0.3 ) );
-			const swing = wave( wind.clock, 0.4, strandPhase ).mul( lively );
-			const unit = along.mul( field.z.div( LEAN_REF ).add( swing.mul( 0.5 ) ) ).add( across.mul( wave( wind.clock, 0.31, strandPhase.mul( 1.6 ) ).mul( lively ) ) );
+			const own = fract( strandPhase.div( TAU ) ).sub( 0.5 ).mul( 0.8 );
+			const swing = swingOf( wind, field.w ).mul( 1.5 );
+			const unit = along.mul( field.z.div( LEAN_REF ).add( gustWave( wind, positionLocal.xz, 14, own ).mul( swing ) ) )
+				.add( across.mul( gustWave( wind, positionLocal.xz, 10, own.mul( 1.6 ).add( 1.3 ) ).mul( swing ).mul( 0.35 ) ) );
 			if ( wind === shared.wind ) sway = unit.xz.mul( LEAN_REF );
 			const free = unit.mul( weight.mul( RIM_SWAY ) ).toVar();
 			const offset = free.add( out.mul( max( float( - PRESS ).sub( dot( free, out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( weight ).mul( 0.01 ) ) ) );

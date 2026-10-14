@@ -12,7 +12,7 @@ import { sampleMeadow, meadowColor, meadowBare, supportsMeadow } from '../materi
 import { soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
-import { setWindDisplacement, wave, windGust, windField, type WindState } from '../weather/Wind.ts';
+import { gustWave, setWindDisplacement, wave, windGust, windField, type WindState } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
 import { showSway } from '../debug/WindView.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
@@ -235,18 +235,21 @@ const TAU = Math.PI * 2;
 // The meadow's response to `windField`:
 // each tuft leans with the gust field at its root, its blades bending along their length (the
 // offset grows with the square of the blade parameter) while every vertex keeps its distance from
-// the root, so a bent blade arcs over and sinks rather than stretching; each blade flutters on
-// its own phase across the wind, more in a gust. `wind` is the frame's wind state (`shared.wind`,
-// or `.previous`). Returns the bent position and the lean as a world-space vector, for the normals
-// (its x, z are the blade's sway for the wind view and probe, src/debug/WindView.ts).
+// the root, so a bent blade arcs over and sinks rather than stretching. About that lean the blades
+// sway along the wind with their neighbours (Wind.ts `gustWave`, 50 swings per gust tile: about
+// 1.5 Hz in a fair wind), each a little apart (`phase`, the blade's own, within +-0.4 rad), and
+// shiver across it on their own phase, a quarter of that sway. `wind` is the frame's wind state
+// (`shared.wind`, or `.previous`). Returns the bent position and the lean as a world-space vector,
+// for the normals (its x, z are the blade's sway for the wind view and probe, src/debug/WindView.ts).
 export function bendBlade( wind: WindState, rooted: THREE.Node<'vec3'>, origin: THREE.Node<'vec3'>, height: THREE.Node<'float'>,
 	t2: THREE.Node<'float'>, phase: THREE.Node<'float'> ): { position: THREE.Node<'vec3'>; lean: THREE.Node<'vec3'> } {
 
 	const field = windField( wind, origin.xz ).toVar();
 	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
+	const swing = gustWave( wind, origin.xz, 50, phase.div( TAU ).sub( 0.5 ).mul( 0.8 ) ).mul( wind.breeze.mul( field.w.mul( 0.02 ).add( 0.009 ) ) );
 	const flutter = wave( wind.flutter, 1.7, phase ).mul( 0.65 ).add( wave( wind.flutter, 2.9, phase.mul( 2.3 ) ).mul( 0.35 ) );
-	const shiver = wind.breeze.mul( field.w.mul( 0.05 ).add( 0.012 ) ).mul( flutter );
-	const lean = along.mul( field.z.add( shiver.mul( 0.4 ) ) ).add( across.mul( shiver ) ).toVar();
+	const shiver = wind.breeze.mul( field.w.mul( 0.006 ).add( 0.003 ) ).mul( flutter );
+	const lean = along.mul( field.z.add( swing ) ).add( across.mul( shiver ) ).toVar();
 	const rel = rooted.sub( origin ).toVar();
 	const reach = length( rel );
 	const bent = normalize( rel.add( lean.mul( height.mul( t2 ) ) ).add( vec3( 0, 1e-5, 0 ) ) ).mul( reach ).add( origin );

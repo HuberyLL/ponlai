@@ -245,8 +245,9 @@ function flowerMaterial( shared: Shared, centre: number[], legacy = false ): THR
 	const wind = shared.wind.direction;
 	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
 	// The stem bends from its root with the gust field as the grass around it does (its lean
-	// times its height, growing with the square of the lift), nodding on its own at 1.2 Hz.
-	const bend = ( state: typeof shared.wind.previous ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( LEAN_REF ), 1.2 );
+	// times its height, growing with the square of the lift), nodding with its neighbours at about
+	// 1.2 Hz (40 swings per gust tile, Foliage.ts mainBend).
+	const bend = ( state: typeof shared.wind.previous ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( LEAN_REF ), 40 );
 	const swayed = legacy ? rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.03 ).mul( lift.mul( lift ) ) ) )
 		: setWindDisplacement( mat, ( state ) => bend( state ).position, shared.wind );
 	// Only the heads cast into the sun's map: stems and the rosette under the grass are thinner
