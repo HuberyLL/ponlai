@@ -19,7 +19,7 @@ import { ALPHA_TO_COVERAGE } from './Foliage.ts';
 import { backlight, vegetationMaterial } from './vegetation/Material.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
-import { GrassCull, cullInputs, poolSteps, type CullBatchInput, type CullBuffers, type CullPool, type CullRange } from './GrassCull.ts';
+import { VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullBuffers, type CullPayload, type CullPool, type CullRange } from './vegetation/VegetationCull.ts';
 import { AttributeType, uploadSteps } from './Upload.ts';
 import type { VegetationKind } from './vegetation/Registry.ts';
 import type { Shared } from '../shared.ts';
@@ -65,8 +65,9 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   tuft's distance from the camera's position alone (no hysteresis), so a paused frame does not
 //   depend on the camera's path; other cameras draw every blade. The cull sorts the view's tufts
 //   into bands by the blades they keep and draws each band with only those (`bandCaps`,
-//   GrassCull.ts), so the narrowed blades cost no vertex work either.
-// - The view camera's draws are culled per tuft on the GPU (GrassCull.ts); every other draw over
+//   vegetation/VegetationCull.ts), so the narrowed blades cost no vertex work either.
+// - The view camera's draws are culled per tuft on the GPU (vegetation/VegetationCull.ts, the
+//   tufts' payload and spheres `GRASS_PAYLOAD`); every other draw over
 //   the same geometry draws every tuft. Tufts bend with the wind field at their root and their
 //   normals turn with the bend, so a gust shows as a sheen (vegetation/Deform.ts `bendBlade`, its
 //   numbers GRASS_WIND, which the wind probe reads too).
@@ -197,13 +198,15 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 	g.setAttribute( 'blade', new THREE.Float32BufferAttribute( T, 4 ) );
 	g.setIndex( I );
 	// The box of every rest pose the vertex stage gives a blade (`restBlade`): the cull bounds a tuft
-	// by it (GrassCull.ts).
+	// by it (`tuftSphere`).
 	g.computeBoundingBox();
 	const box = g.boundingBox!.clone();
 	const top = box.max.y * HEIGHT_MAX, out = top * LEAN_MAX;
 	box.max.y = top;
 	box.min.x -= out; box.min.z -= out; box.max.x += out; box.max.z += out;
 	g.userData.restBox = box;
+	// The root half width of the widest blade, which the cull pads for the widening.
+	g.userData.halfWidth = shape.w[ 1 ] * 0.5 + 0.004;
 	return g;
 
 }
@@ -276,7 +279,7 @@ function bladeShare( distance: number, floor: number ): number {
 
 }
 
-// The cull's bands as shares of a tuft's blades (GrassCull.ts): a visible tuft draws in the band of
+// The cull's bands as shares of a tuft's blades (vegetation/VegetationCull.ts): a visible tuft draws in the band of
 // the least cap at or above the blades it keeps. Five bands of a lawn tuft (16, 12, 8, 6, 4 on
 // high) leave about a blade and a half of waste in the 25 to 45 m ring and one beyond; each band
 // is a draw of its own (and one of the depth prepass), most of them nearly empty in close views.
@@ -303,7 +306,7 @@ function bandCaps( blades: number, floor: number, minShare: number ): number[] {
 }
 
 // The blades a tuft keeps (`tuftLod`), as a node: also the cull's, which bands the tufts by it
-// (GrassCull's `CullLod`), so both compute it alike.
+// (VegetationCull's `CullLod`), so both compute it alike.
 function bladeCount( origin: V3, camera: V3, blades: F, floor: F, on: F ): F {
 
 	const stagger = fract( sin( dot( origin.xz, vec2( 39.3468, 11.1351 ) ) ).mul( 24634.6345 ) );
@@ -366,7 +369,7 @@ function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F, keep: F, blad
 
 }
 
-// The tuft a vertex belongs to. The meadow's instance data lives in `GrassCull`'s storage buffers,
+// The tuft a vertex belongs to. The meadow's instance data lives in the cull's storage buffers,
 // one slot per tuft (each batch from its own first slot, `grassBase`): the view camera's draws read
 // the slot from the culled list it wrote, every other draw (the rain's collision bake, a draw with
 // the cull switched off) takes each slot in turn, as an instanced draw of every tuft did.
@@ -453,7 +456,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// `coverageDither`'s threshold (vegetation/Material.ts).
 	const slot = instanceIndex.add( cullBase );
 	const tuftSlot = select( cullOn.equal( 1 ), cull.node( 'visible', 'uint', true ).element( slot ), slot ).toVar( 'grassTuft' );
-	const input = cullInputs( cull, tuftSlot );
+	const input = tuftInputs( cull, tuftSlot );
 	// The tuft's instance data, read as the instanced attributes were: what the fragment stage
 	// reads passes as a varying, as an attribute did.
 	const ground0 = input.ground( 0 ), ground1 = input.ground( 1 ), ground2 = input.ground( 2 );
@@ -622,9 +625,96 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 
 export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3 }
 
+type GrassCull = VegetationCull<Tuft>;
+
+// The cull's bounds of a tuft (`tuftSphere`). Its widened blades reach out by at most WIDEN_REACH
+// times their half width (`MAX_WIDEN` times the largest blade gain, 4: a far tuft keeps a quarter
+// of its blades, less the blade itself), see `pixelWideBlade` and `tuftLod`. SWAY_PAD is slack
+// (m) for rounding: 0.2, wider than the rounding needs, since a tighter sphere changes the visible
+// list and with it a few isolated meadow pixels behind the prepass (VegetationCull's rules); a
+// smaller pad is a performance step of its own. The wind's bend (Deform.ts `bendBlade`) keeps
+// every vertex at its distance from the tuft's origin, so it stays inside the sphere when that is
+// padded by twice the origin's distance from the sphere's centre, whatever the wind. The thin
+// tufts are culled FOLD_PAD past their fold, so the test never takes a tuft the vertex stage would
+// still draw a sliver of.
+const WIDEN_REACH = 31;
+const SWAY_PAD = 0.2;
+const FOLD_PAD = 0.01;
+
+const _corner = new THREE.Vector3(), _world = new THREE.Box3(), _sphere = new THREE.Sphere();
+
+// A tuft's sphere: the box of its blades' rest poses (its geometry's `restBox`) in world space,
+// extended down by its own height (standing water sinks the blades below their anchor), then
+// padded for the widening and the sway.
+function tuftSphere( t: Tuft, geometry: THREE.BufferGeometry, spheres: Float32Array, i: number ): void {
+
+	const box = geometry.userData.restBox as THREE.Box3, e = t.m.elements;
+	_world.makeEmpty();
+	for ( let c = 0; c < 8; c ++ ) {
+
+		_corner.set( c & 1 ? box.max.x : box.min.x, c & 2 ? box.max.y : box.min.y, c & 4 ? box.max.z : box.min.z ).applyMatrix4( t.m );
+		_world.expandByPoint( _corner );
+
+	}
+	_world.min.y -= _world.max.y - _world.min.y;
+	_world.getBoundingSphere( _sphere );
+	const axisScale = Math.max( Math.hypot( e[ 0 ], e[ 1 ], e[ 2 ] ), Math.hypot( e[ 8 ], e[ 9 ], e[ 10 ] ) );
+	_sphere.center.toArray( spheres, i * 4 );
+	// Every vertex lies in the box, so within the box's radius plus the origin's offset from its
+	// centre of the origin; a vertex turned about the origin stays that close to it, so within the
+	// radius plus twice the offset of the centre.
+	const bend = 2 * _sphere.center.distanceTo( t.origin );
+	spheres[ i * 4 + 3 ] = _sphere.radius + bend + WIDEN_REACH * ( geometry.userData.halfWidth as number ) * axisScale + SWAY_PAD;
+
+}
+
+// The tufts' data in the cull's storage buffers, a slot each: the instance transform, the colour,
+// the ground inputs (three vec4s) and the planting anchor with the tuft's height.
+const GRASS_PAYLOAD: CullPayload<Tuft> = {
+	buffers: [ { name: 'matrices', floats: 16, itemSize: 16 }, { name: 'colors', floats: 4, itemSize: 4 }, { name: 'ground', floats: 12, itemSize: 4 }, { name: 'origins', floats: 4, itemSize: 4 } ],
+	origin: 'origins',
+	matrices: 'matrices',
+	write( t, i, { matrices, colors, ground, origins } ) {
+
+		t.m.toArray( matrices, i * 16 );
+		colors[ i * 4 ] = t.col.r; colors[ i * 4 + 1 ] = t.col.g; colors[ i * 4 + 2 ] = t.col.b;
+		const e = t.m.elements;
+		// x: sky visibility, y: unused (0), z: rim cover, w: rim edge (1 on the plateau's outer rim,
+		// where blades stand against the sea and stay narrower: the opaque pass's MSAA edge pixels
+		// there resolve against the sky-coloured clear, so every partly covered pixel a widened
+		// blade adds shows as a pale fringe over the sea); then the instance's local x axis with the
+		// thin flag (1 for the extra tufts that fold away with distance), and its local z axis. A
+		// blade's width lies in the plane of those axes: the vertex stage keeps thin blades a
+		// minimum width on screen in world space.
+		ground.set( [ t.visibility, 0, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], 0 ], i * 12 );
+		t.origin.toArray( origins, i * 4 );
+		origins[ i * 4 + 3 ] = t.top;
+
+	},
+	sphere: tuftSphere,
+	// the thin extra tufts have folded into their roots beyond thinFar
+	fold: {
+		far: grassUniforms.thinFar,
+		folded: ( slot, origin, camera, node ) => node( 'ground' ).element( slot.mul( 3 ).add( 1 ) ).w.greaterThan( 0.5 ).and( length( camera.sub( origin ) ).greaterThanEqual( grassUniforms.thinFar.add( FOLD_PAD ) ) ),
+	},
+};
+
+/** The vertex stage's view of the culled buffers: `index` is the drawn tuft's slot. */
+function tuftInputs( cull: GrassCull, index: THREE.Node<'uint'> ) {
+
+	const ground = cull.node( 'ground', 'vec4', true );
+	return {
+		matrix: cull.node( 'matrices', 'mat4', true ).element( index ),
+		color: cull.node( 'colors', 'vec4', true ).element( index ).xyz,
+		ground: ( k: number ) => ground.element( index.mul( 3 ).add( k ) ),
+		origin: cull.node( 'origins', 'vec4', true ).element( index ),
+	};
+
+}
+
 // One instanced mesh per batch of tufts of one kind, over its own geometry (the draw range and the
 // indirect arguments belong to it) that shares the tuft's vertex buffers. Its instance data (the
-// transform, colour, ground inputs and anchor) live in `GrassCull`'s storage buffers from the
+// transform, colour, ground inputs and anchor) live in the cull's storage buffers from the
 // batch's first slot on, read by the material through the drawn tuft's slot; `instanceMatrix`
 // and `instanceColor` point at those buffers for code that looks for them, and since neither is an
 // instanced attribute three leaves the instancing to the material.
@@ -639,8 +729,8 @@ function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, floor: number
 	geometry.userData.grassBladeVerts = ( shape.segs + 1 ) * 2;
 	const mesh = new THREE.InstancedMesh( geometry, material, Math.max( range.count, 1 ) );
 	mesh.instanceMatrix.array = new Float32Array( 16 ); // replaced below; drop the copy InstancedMesh allocates
-	( mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
-	( mesh as unknown as { instanceColor: THREE.BufferAttribute } ).instanceColor = cull.colors;
+	( mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.buffer( 'matrices' );
+	( mesh as unknown as { instanceColor: THREE.BufferAttribute } ).instanceColor = cull.buffer( 'colors' );
 	mesh.count = range.count;
 	// its whole count (it picks its count per view draw): the rain's collision bake draws them all
 	mesh.userData.bakeCount = range.count;
@@ -664,12 +754,12 @@ function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, floor: number
 //   stage. Culled, that range is the first band's index count, and the cull draws every other
 //   band with its own cap's blades (`bandCaps`), so a far tuft runs only the blades it keeps (and
 //   at most a band's step more).
-// A batch is one per kind, holding every chunk's tufts in the chunks' order (GrassCull's pool),
+// A batch is one per kind, holding every chunk's tufts in the chunks' order (the cull's pool),
 // not one per chunk: that would add render objects per meadow chunk. Its bands are draws of the
 // one render object (the geometry's indirect offsets), and so are its depth copy's.
 // Other cameras (the rain's collision bake looks straight down, orthographic) see every tuft
 // with all its blades, as before.
-// The view camera's draws are then culled per tuft on the GPU (`GrassCull`): one compute pass
+// The view camera's draws are then culled per tuft on the GPU (`VegetationCull`): one compute pass
 // for all batches, before the first of them draws, and only when the view or the selection
 // changed; each batch draws its surviving tufts through indirect arguments, set on its geometry
 // for that draw alone, so any other mesh over the same geometry (the collision bake's proxies)
@@ -852,8 +942,6 @@ export function buildGrass( { lawn, lawnThin }: GrassTufts, shared: Shared, sunS
 	const group = new THREE.Group();
 	group.name = 'grass';
 	const lawnGeometry = tuftGeometry( LAWN, 3 );
-	// Root half widths of the widest blade, for the cull's bounds.
-	const halfWidth = ( shape: TuftShape ) => shape.w[ 1 ] * 0.5 + 0.004;
 	// The extra tufts of thick patches draw on their own, so they can be skipped as a whole.
 	// The least share a visible tuft keeps: the curve's last, or a thin tuft's at its fold (the cull
 	// drops it past thinFar).
@@ -865,10 +953,10 @@ export function buildGrass( { lawn, lawnThin }: GrassTufts, shared: Shared, sunS
 	// (the thin batch exists whenever the tier grows thin tufts, even with none yet: a grown island's
 	// meadow then fills the same batches, and the cull's kernels stay the same)
 	if ( grassQuality.thinTufts ) kinds.push( { geometry: lawnGeometry, shape: LAWN, floor: 0, tufts: lawnThin, name: 'grass-lawn-thin', thin: true, minShare: thinShare } );
-	const cull = new GrassCull( kinds.map( ( k ) => ( {
-		tufts: k.tufts, geometry: k.geometry, halfWidth: halfWidth( k.shape ), blades: k.shape.blades, floor: k.floor,
+	const cull: GrassCull = new VegetationCull( { name: 'Grass', payload: GRASS_PAYLOAD, lod: cullLod }, kinds.map( ( k ) => ( {
+		records: k.tufts, geometry: k.geometry, blades: k.shape.blades, floor: k.floor,
 		caps: bandCaps( k.shape.blades, k.floor, k.minShare ), bladeIndices: k.shape.segs * 6,
-	} ) ), grassUniforms.thinFar, cullLod );
+	} ) ) );
 	const material = grassMaterial( shared, cull, sunShadow );
 	const batches = kinds.map( ( k, i ) => batchOf( k.geometry, k.shape, k.floor, material, cull, cull.ranges[ i ], k.tufts, k.name, k.thin ) );
 	for ( const b of batches ) {
@@ -890,7 +978,7 @@ export function buildGrass( { lawn, lawnThin }: GrassTufts, shared: Shared, sunS
 	group.userData.thinFar = grassUniforms.thinFar;
 	group.userData.batches = batches;
 	group.userData.cull = cull;
-	group.userData.kinds = kinds.map( ( k ) => ( { geometry: k.geometry, halfWidth: halfWidth( k.shape ), key: k.name === 'grass-lawn' ? 'lawn' : 'lawnThin' } ) );
+	group.userData.kinds = kinds.map( ( k ) => ( { geometry: k.geometry, key: k.name === 'grass-lawn' ? 'lawn' : 'lawnThin' } ) );
 	return group;
 
 }
@@ -900,20 +988,20 @@ export function buildGrass( { lawn, lawnThin }: GrassTufts, shared: Shared, sunS
  * and count. */
 export interface GrassPrepared { pool: CullPool; buffers: CullBuffers; boxes: THREE.Box3[]; counts: number[] }
 
-/** The pool of `tufts` for the meadow `group` (buildGrass), in steps (GrassCull's `poolSteps`): the
+/** The pool of `tufts` for the meadow `group` (buildGrass), in steps (VegetationCull's `poolSteps`): the
  * growth (Growth.ts) takes them in idle time. */
 function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 ): Generator<void, GrassPrepared> {
 
-	const kinds = group.userData.kinds as { geometry: THREE.BufferGeometry; halfWidth: number; key: keyof GrassTufts }[];
-	const inputs: CullBatchInput[] = kinds.map( ( k ) => ( { tufts: tufts[ k.key ], geometry: k.geometry, halfWidth: k.halfWidth } ) );
-	const pool = yield* poolSteps( inputs, per );
+	const kinds = group.userData.kinds as { geometry: THREE.BufferGeometry; key: keyof GrassTufts }[];
+	const inputs: CullBatchInput<Tuft>[] = kinds.map( ( k ) => ( { records: tufts[ k.key ], geometry: k.geometry } ) );
+	const pool = yield* poolSteps( GRASS_PAYLOAD, inputs, per );
 	const boxes: THREE.Box3[] = [];
 	for ( const b of inputs ) {
 
 		const box = new THREE.Box3();
-		for ( let k = 0; k < b.tufts.length; k ++ ) {
+		for ( let k = 0; k < b.records.length; k ++ ) {
 
-			box.expandByPoint( b.tufts[ k ].origin );
+			box.expandByPoint( b.records[ k ].origin );
 			if ( k % ( per * 4 ) === per * 4 - 1 ) yield;
 
 		}
@@ -921,7 +1009,7 @@ function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 ): Gener
 		yield;
 
 	}
-	return { pool, buffers: GrassCull.buffers( pool ), boxes, counts: inputs.map( ( b ) => b.tufts.length ) };
+	return { pool, buffers: poolBuffers( GRASS_PAYLOAD, pool ), boxes, counts: inputs.map( ( b ) => b.records.length ) };
 
 }
 
@@ -938,9 +1026,9 @@ function setGrass( group: THREE.Group, prepared: GrassPrepared ): CullBuffers {
 		b.mesh.count = b.count;
 		b.mesh.userData.bakeCount = b.count;
 		b.mesh.geometry.userData.grassBase = b.range.start;
-		( b.mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
-		( b.mesh as unknown as { instanceColor: THREE.BufferAttribute } ).instanceColor = cull.colors;
-		for ( const child of b.mesh.children ) if ( ( child as THREE.InstancedMesh ).isInstancedMesh ) ( child as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
+		( b.mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.buffer( 'matrices' );
+		( b.mesh as unknown as { instanceColor: THREE.BufferAttribute } ).instanceColor = cull.buffer( 'colors' );
+		for ( const child of b.mesh.children ) if ( ( child as THREE.InstancedMesh ).isInstancedMesh ) ( child as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.buffer( 'matrices' );
 
 	} );
 	return old;
@@ -971,7 +1059,7 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 				}
 				const grass = yield* grassSteps( group, tufts, 256 );
 				yield;
-				for ( const buffer of Object.values( grass.buffers ) as CullBuffers[ keyof CullBuffers ][] ) yield* uploadSteps( input.renderer, buffer, AttributeType.STORAGE );
+				for ( const buffer of Object.values( grass.buffers ) ) yield* uploadSteps( input.renderer, buffer, AttributeType.STORAGE );
 				return grass;
 
 			},

@@ -63,7 +63,7 @@ import { SeabedRise } from './SeabedRise.ts';
 //   hook): the changed island meshes out and the new ones in (ordered by chunk, ( cj, ci ), as a
 //   page loaded on that land orders them), the merged kinds' geometry, then each vegetation kind's
 //   swap (the plants' and the trails' geometry, the flowers' and the bushes' instances, the
-//   meadow's pool: GrassCull's storage nodes pointed at the new buffers),
+//   meadow's pool: the cull's storage nodes (vegetation/VegetationCull.ts) pointed at the new buffers),
 //   the fields' changed squares (copied on the GPU) or new textures, the shore's wave fields, the
 //   refracted sun's casters, the walker's loop, and the page's own (main.ts `onSwap`: the land's
 //   box and framing as measured ahead, the fog's clearing, the sun's caster box and columns, the
