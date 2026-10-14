@@ -32,9 +32,10 @@
 // Paused clips isolate the camera's motion over a frozen scene; running ones (the clock steps by
 // dt from t=12) add the scene's own motion: wind, sea, rain, the islander, lightning, the sun.
 //
-// Groups: `all`; `special`, the clips whose view is a special weather's (views.mjs: the storm, the
-// fog, the weather front), and `normal`, the rest. The view decides, so a clip and its view never
-// fall into different groups.
+// Groups: `special`, the clips whose view is a parked weather's (views.mjs: the rain, the storm, the
+// lightning, the fog), and `normal`, the rest; `all` is `normal` (the default), so a parked clip is
+// reached by name or by `special`. The view decides, so a clip and its view never fall into
+// different groups.
 //
 //   node tools/parity/clips.mjs list [all|normal|special]  -> clip names, one per line
 //   node tools/parity/clips.mjs show <clip>     -> the clip's definition as JSON
@@ -112,7 +113,7 @@ export const CLIP_GROUPS = [ 'all', 'normal', 'special' ];
 export function clipNames( group = 'all' ) {
 
 	if ( ! CLIP_GROUPS.includes( group ) ) throw new Error( `unknown clip group ${ group } (${ CLIP_GROUPS.join( ', ' ) })` );
-	return Object.keys( CLIPS ).filter( ( c ) => group === 'all' || ( VIEWS[ CLIPS[ c ].view ].special === true ) === ( group === 'special' ) );
+	return Object.keys( CLIPS ).filter( ( c ) => ( VIEWS[ CLIPS[ c ].view ].special === true ) === ( group === 'special' ) );
 
 }
 

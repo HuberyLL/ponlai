@@ -2,8 +2,17 @@
 // existing light; it never adds a grey screen veil (docs/art-direction.md). A weather change sweeps
 // the sky as a front from upwind, and the island's lighting follows the front's progress over the
 // island. No tier or knob alters the weather state (Quality.ts).
+//
+// Parked weathers (`PARKED_WEATHER`: rain, storm, fog) slowed every line of work down, so until the
+// game needs them as pressure (docs/game-design.md) they are out of the rotation: the auto chain
+// never reaches them, the production page refuses them (main.ts falls back to fair) and the default
+// checks skip them. Their code stays and keeps compiling; debug builds (the dev server, `?debug`)
+// still reach every preset, so captures, probes and a later revival can use them.
 
 export type WeatherName = 'clear' | 'fair' | 'cloudy' | 'overcast' | 'rain' | 'storm' | 'fog';
+
+export const PARKED_WEATHER: ReadonlyArray<WeatherName> = [ 'rain', 'storm', 'fog' ];
+export const isParkedWeather = ( name: string ): boolean => ( PARKED_WEATHER as readonly string[] ).includes( name );
 
 export interface WeatherState {
 
@@ -48,15 +57,17 @@ export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<Preset>>> = 
 	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, ambientGain: 0.92, haze: 0.0012, windSpeed: 1.8, windDirection: 40, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
 };
 
-// Auto weather: from each state, the next one and its weight. Rain builds through overcast
-// and clears through cloud; fair weather is the most common resting state.
+// Auto weather: from each state, the next one and its weight. The chain moves among the kept
+// presets only (PARKED_WEATHER never appears): cloud thickens through cloudy to overcast and clears
+// back the same way; fair weather is the most common resting state. The parked states keep a way
+// back, for a page that loaded one in a debug build.
 const NEXT: Readonly<Record<WeatherName, ReadonlyArray<readonly [ WeatherName, number ]>>> = {
-	clear: [ [ 'fair', 0.65 ], [ 'cloudy', 0.2 ], [ 'fog', 0.15 ] ],
-	fair: [ [ 'clear', 0.3 ], [ 'cloudy', 0.5 ], [ 'overcast', 0.1 ], [ 'fog', 0.1 ] ],
-	cloudy: [ [ 'fair', 0.45 ], [ 'overcast', 0.35 ], [ 'rain', 0.2 ] ],
-	overcast: [ [ 'rain', 0.5 ], [ 'cloudy', 0.45 ], [ 'storm', 0.05 ] ],
-	rain: [ [ 'overcast', 0.5 ], [ 'cloudy', 0.3 ], [ 'storm', 0.2 ] ],
-	storm: [ [ 'rain', 0.75 ], [ 'overcast', 0.25 ] ],
+	clear: [ [ 'fair', 0.75 ], [ 'cloudy', 0.25 ] ],
+	fair: [ [ 'clear', 0.35 ], [ 'cloudy', 0.5 ], [ 'overcast', 0.15 ] ],
+	cloudy: [ [ 'fair', 0.6 ], [ 'overcast', 0.4 ] ],
+	overcast: [ [ 'cloudy', 0.7 ], [ 'fair', 0.3 ] ],
+	rain: [ [ 'overcast', 0.6 ], [ 'cloudy', 0.4 ] ],
+	storm: [ [ 'overcast', 1 ] ],
 	fog: [ [ 'clear', 0.4 ], [ 'fair', 0.6 ] ],
 };
 

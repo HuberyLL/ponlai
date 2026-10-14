@@ -1,18 +1,20 @@
 // First-use pipelines (FU): once the page has loaded (its warm-up and first frames behind it), every
 // step a player or the GUI may take should create no render or compute pipeline, since a frame that
 // creates one stalls on it. The steps: the first pause and the temporal rest it settles into, scene
-// events (a time preset and a weather jump, paused and running), idle frames, the GUI's tone curves
-// and looks, the depth of field and grain switched off and on, the camera's modes and views, a
-// sweep of the render scale (upscaled and not), a resized window, the time presets, every weather
-// (jumped to and changing over seconds), a forced bolt, a pause and the rest after it. The rest and
-// the events come first, so the first use of what they draw is counted there. Pipelines are counted
+// events (a time preset and a jump to overcast, paused and running), idle frames, the GUI's tone
+// curves and looks, the depth of field and grain switched off and on, the camera's modes and views,
+// a sweep of the render scale (upscaled and not), a resized window, the time presets and a pause
+// and the rest after it. The rest and the events come first, so the first use of what they draw is
+// counted there. Two steps run only when `--steps` names them, since they reach the parked weathers
+// (src/sky/Weather.ts PARKED_WEATHER): `weather`, every weather jumped to and changing over seconds,
+// and `bolt`, a forced bolt in a storm. Pipelines are counted
 // from WebGPU's device (an init script wraps GPUDevice's create*Pipeline and create*PipelineAsync),
 // so any build can be measured the same way, the reference included; each is listed with its label.
 // The frame graph's `rebuilds` and the temporal resolve's `historyResets`, where the page's
 // diagnostics have them, are reported per step too (both should not move through the scale sweep).
 //
 //   node tools/verify-first-use.mjs --url <base> [--quality high,medium,low] [--aa msaa,taa,taau,off]
-//        [--q "extra&query"] [--steps rest,events,idle,gui,camera,scale,resize,presets,weather,bolt,pause]
+//        [--q "extra&query"] [--steps rest,events,idle,gui,camera,scale,resize,presets,pause] (+ weather,bolt)
 //        [--frames 20] [--out file.json] [--compare ref.json] [--strict] [--fresh]
 //
 // `--quality` and `--aa` take one value or a list: every tier with every mode, each in a fresh page
@@ -67,7 +69,7 @@ const QUALITIES = opt( 'quality', 'high' ).split( ',' ).filter( Boolean );
 const MODES = ( opt( 'aa' ) ?? '' ).split( ',' ).filter( Boolean );
 const EXTRA = opt( 'q', '' );
 const FRAMES = Math.max( 4, Number( opt( 'frames', 20 ) ) );
-const STEPS = ( opt( 'steps', 'rest,events,idle,gui,camera,scale,resize,presets,weather,bolt,pause' ) ).split( ',' ).filter( Boolean );
+const STEPS = ( opt( 'steps', 'rest,events,idle,gui,camera,scale,resize,presets,pause' ) ).split( ',' ).filter( Boolean );
 const OUT = opt( 'out' );
 const COMPARE = opt( 'compare' );
 const STRICT = args.includes( '--strict' );
@@ -446,10 +448,10 @@ async function apply( page, step, notes ) {
 
 			// scene events while paused (each restarts the rest on the new scene, and the temporal
 			// modes cut their history), then the same while running: a time preset, and a jump into
-			// rain and back to the page's weather
+			// overcast (a kept weather: rain is parked) and back to the page's weather
 			const initial = await page.evaluate( () => window.__PONLAI__.weather.target );
 			await page.keyboard.press( 'Space' );
-			for ( const [ fn, arg ] of [ [ 'setPreset', 'golden-hour' ], [ 'setWeather', 'rain' ] ] ) {
+			for ( const [ fn, arg ] of [ [ 'setPreset', 'golden-hour' ], [ 'setWeather', 'overcast' ] ] ) {
 
 				await page.evaluate( ( [ fn, arg ] ) => fn === 'setWeather' ? window.__PONLAI__.setWeather( arg, 0 ) : window.__PONLAI__.setPreset( arg ), [ fn, arg ] );
 				await settled( page );

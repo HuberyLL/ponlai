@@ -246,27 +246,29 @@ const positional = argv.filter( ( a, i ) => ! a.startsWith( '--' ) && ! ( i > 0 
 
 // Every scene runs its clock (a paused, still scene settles its clouds once and skips the march
 // and the shadow steps, so it under-measures) with fixed weather, the camera moving as in play.
-// Scenes sharing a query run in one page load unless --fresh; `change` scenes run last.
+// Scenes sharing a query run in one page load unless --fresh; `change` scenes run last. The parked
+// weathers' scenes (`parked: true`; src/sky/Weather.ts PARKED_WEATHER) are left out of the default
+// matrix and of --accept's: name them with --scenes (?profile reaches them on a production build).
 export const SCENES = {
 	'island-fair-noon': { q: 'weather=fair&preset=noon', view: 'island' },
 	'island-clear-golden': { q: 'weather=clear&preset=golden-hour', view: 'island', faceSun: true },
 	'horizon-fair-noon': { q: 'weather=fair&preset=noon', view: 'horizon' },
 	'sky-cloudy': { q: 'weather=cloudy&preset=noon', view: 'sky' },
 	'island-overcast': { q: 'weather=overcast&preset=noon', view: 'island' },
-	'island-rain': { q: 'weather=rain&preset=noon', view: 'island' },
-	'island-storm': { q: 'weather=storm&preset=noon', view: 'island' },
-	'horizon-storm': { q: 'weather=storm&preset=noon', view: 'horizon' },
-	'island-fog-dawn': { q: 'weather=fog&preset=dawn', view: 'island' },
+	'island-rain': { parked: true, q: 'weather=rain&preset=noon', view: 'island' },
+	'island-storm': { parked: true, q: 'weather=storm&preset=noon', view: 'island' },
+	'horizon-storm': { parked: true, q: 'weather=storm&preset=noon', view: 'horizon' },
+	'island-fog-dawn': { parked: true, q: 'weather=fog&preset=dawn', view: 'island' },
 	'island-night-clear': { q: 'weather=clear&preset=midnight', view: 'island' },
 	// eye height over the meadow near the rim, looking out over the lip
 	'meadow-close': { q: 'weather=fair&preset=noon', view: 'meadow' },
 	// a front from fair to rain sweeps in during the measurement: pipeline compiles, bakes
-	'weather-change': { q: 'weather=fair&preset=noon', view: 'island', change: { weather: 'rain', seconds: 6 } },
+	'weather-change': { parked: true, q: 'weather=fair&preset=noon', view: 'island', change: { weather: 'rain', seconds: 6 } },
 };
 
 if ( flags.has( '--list' ) ) {
 
-	for ( const [ name, s ] of Object.entries( SCENES ) ) console.log( name.padEnd( 22 ), s.q, s.view, s.change ? `-> ${ s.change.weather }` : '' );
+	for ( const [ name, s ] of Object.entries( SCENES ) ) console.log( name.padEnd( 22 ), s.q, s.view, s.change ? `-> ${ s.change.weather }` : '', s.parked ? '(parked: by name only)' : '' );
 	process.exit( 0 );
 
 }
@@ -373,7 +375,7 @@ const HANG_SECONDS = Number( opt( 'hang', 180 ) );
 const compareIndex = argv.indexOf( '--compare' );
 const COMPARE = compareIndex >= 0 ? [ argv[ compareIndex + 1 ], argv[ compareIndex + 2 ] ] : null;
 const URL_A = COMPARE ? COMPARE[ 0 ] : positional[ 0 ] ?? 'http://127.0.0.1:5191/';
-const sceneNames = ( opt( 'scenes', opt( 'scene', '' ) ) || Object.keys( SCENES ).join( ',' ) ).split( ',' ).map( ( s ) => s.trim() ).filter( Boolean );
+const sceneNames = ( opt( 'scenes', opt( 'scene', '' ) ) || Object.keys( SCENES ).filter( ( name ) => ! SCENES[ name ].parked ).join( ',' ) ).split( ',' ).map( ( s ) => s.trim() ).filter( Boolean );
 for ( const name of sceneNames ) if ( ! SCENES[ name ] ) throw new Error( `unknown scene ${ name } (--list)` );
 const stamp = new Date().toISOString().replace( /[:.]/g, '-' ).slice( 0, 19 );
 const LABEL = opt( 'label', COMPARE ? `compare-${ stamp }` : TOGGLE ? `toggle-${ stamp }` : `profile-${ stamp }` );

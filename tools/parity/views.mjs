@@ -5,12 +5,13 @@
 // there are none), the flower instances, the rim trails, the islander and the sun and moon, so
 // they follow any land, as tools/profile-frame.mjs places its scenes.
 //
-// Groups: `parity` (the 17 views every parity check runs; the default) and `taa` (7 close views
-// for the temporal anti-aliasing work: thin and moving detail); `all` is both. Across them,
-// `special` holds the special weathers (`special: true`: the storm, the fog and the weather front)
-// and `normal` every other view: normal weather is tuned and accepted first, the special weathers
-// after it, so a check can run the normal views alone (and tools/parity/gates.py --normal leaves
-// the special ones unjudged). A clip belongs to the group of its view (clips.mjs).
+// Groups: `parity` (the views every parity check runs; the default) and `taa` (7 close views for
+// the temporal anti-aliasing work: thin and moving detail); `all` is both. `special` holds the
+// parked weathers' views (`special: true`: the rain, the storm, the fog and the weather front into
+// rain; src/sky/Weather.ts PARKED_WEATHER): no other group lists them, so every default set is the
+// normal weathers' and a parked view is reached by name or by `special` (`all,special` is every
+// view). `normal` is `all`, kept as a name. tools/parity/gates.py --normal leaves special entries
+// unjudged. A clip belongs to the group of its view (clips.mjs).
 //
 // Crop anchors: each view names the subjects worth a 1:1 look (`crops`). The page projects a world
 // point for each into a 384 px box of the captured image (device pixels) and exposes them as
@@ -266,7 +267,7 @@ export const VIEWS = {
 	'horizon-fair-noon': { q: 'weather=fair&preset=noon', eval: `s.setCameraView( 'horizon' );`, crops: [ 'cliff-edge-sea', 'rim-lip', 'horizon-line' ] },
 	'sky-cloudy': { q: 'weather=cloudy&preset=noon', eval: `s.setCameraView( 'sky' );`, crops: [] },
 	'island-overcast': { q: 'weather=overcast&preset=noon', crops: [ 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
-	'island-rain': { q: 'weather=rain&preset=noon', crops: [ 'rain-streaks', 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
+	'island-rain': { special: true, q: 'weather=rain&preset=noon', crops: [ 'rain-streaks', 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
 	'island-storm': { special: true, q: 'weather=storm&preset=noon', crops: [ 'rain-streaks', 'rim-lip', 'cliff-edge-sea' ] },
 	'horizon-storm': { special: true, q: 'weather=storm&preset=noon', eval: `s.setCameraView( 'horizon' );`, crops: [ 'rain-streaks', 'horizon-line', 'cliff-edge-sea' ] },
 	'island-fog-dawn': { special: true, q: 'weather=fog&preset=dawn', crops: [ 'fog-cliff', 'rim-lip', 'meadow-band-70m' ] },
@@ -343,8 +344,9 @@ export const VIEW_GROUPS = [ 'parity', 'taa', 'all', 'normal', 'special' ];
 export function viewNames( group = 'parity' ) {
 
 	if ( ! VIEW_GROUPS.includes( group ) ) throw new Error( `unknown view group ${ group } (${ VIEW_GROUPS.join( ', ' ) })` );
-	return Object.keys( VIEWS ).filter( ( v ) => group === 'all' || ( group === 'special' ? VIEWS[ v ].special === true
-		: group === 'normal' ? VIEWS[ v ].special !== true : ( VIEWS[ v ].group ?? 'parity' ) === group ) );
+	// the parked weathers' views only by name or in `special`
+	return Object.keys( VIEWS ).filter( ( v ) => group === 'special' ? VIEWS[ v ].special === true
+		: VIEWS[ v ].special !== true && ( group === 'all' || group === 'normal' || ( VIEWS[ v ].group ?? 'parity' ) === group ) );
 
 }
 

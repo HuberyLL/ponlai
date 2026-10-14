@@ -43,9 +43,10 @@
 // captured before the store) and skips the side under test where its clip.json exists;
 // --recapture-reference captures the reference entries afresh. --clips may also name a clip that
 // is not a gate's (`--clips drs-steps`): its baseline and ground truth are kept the same way.
-// --views and --clips take groups beside names (views.mjs, clips.mjs: `--views normal --clips
-// normal` for the normal weathers, `special` for the storm, the fog and the weather front); a clip
-// group only selects among the plan's clips.
+// --views and --clips take groups beside names (views.mjs, clips.mjs: `special` for the parked
+// weathers, src/sky/Weather.ts PARKED_WEATHER); a clip group only selects among the plan's clips.
+// Without --views / --clips the run takes the normal weathers' entries only: the parked weathers'
+// views and clips stay in the plan but are run only when named or asked for by `special`.
 //
 // `--label x --aa taau` captures the same entries for another mode and measures them against the
 // baseline's MSAA captures and the shared ground truth (with --thresholds: gate verdicts). The
@@ -101,7 +102,8 @@ export const GATE_CLIPS = [
 ];
 
 export const PLAN = {
-	high: { rest: viewNames( 'all' ), full: viewNames( 'parity' ), clips: GATE_CLIPS },
+	// every view, the parked weathers' too (left out by default in `entries`)
+	high: { rest: Object.keys( VIEWS ), full: Object.keys( VIEWS ).filter( ( v ) => ( VIEWS[ v ].group ?? 'parity' ) === 'parity' ), clips: GATE_CLIPS },
 	medium: { rest: TIER_VIEWS, full: [], clips: [] },
 	low: { rest: TIER_VIEWS, full: [], clips: [] },
 };
@@ -139,6 +141,8 @@ export function entries( o ) {
 	const clipItems = o.clips ? o.clips.split( ',' ).filter( Boolean ) : null;
 	const named = clipItems ? clipItems.filter( ( c ) => ! CLIP_GROUPS.includes( c ) ) : null;
 	const clips = clipItems ? new Set( [ ...named, ...clipItems.filter( ( c ) => CLIP_GROUPS.includes( c ) ).flatMap( ( g ) => clipNames( g ) ) ] ) : null;
+	// the parked weathers' views (views.mjs `special`), run only when asked for
+	const parked = new Set( viewNames( 'special' ) );
 	const out = [];
 	for ( const tier of tiers ) {
 
@@ -146,14 +150,14 @@ export function entries( o ) {
 		if ( ! plan ) throw new Error( `unknown tier ${ tier }` );
 		if ( o.only !== 'clips' ) for ( const view of plan.rest ) {
 
-			if ( views && ! views.has( view ) ) continue;
+			if ( views ? ! views.has( view ) : parked.has( view ) ) continue;
 			out.push( { tier, kind: 'rest', name: view, clip: 'rest', view, full: plan.full.includes( view ), key: `${ tier }/rest/${ view }` } );
 
 		}
 		if ( o.only !== 'rest' ) for ( const [ clip, view ] of plan.clips ) {
 
 			const name = view ? `${ clip }@${ view }` : clip;
-			if ( clips && ! clips.has( name ) && ! clips.has( clip ) ) continue;
+			if ( clips ? ! clips.has( name ) && ! clips.has( clip ) : parked.has( view ?? CLIPS[ clip ].view ) ) continue;
 			out.push( { tier, kind: 'clip', name, clip, view: view ?? CLIPS[ clip ].view, full: false, key: `${ tier }/clip/${ name }` } );
 
 		}

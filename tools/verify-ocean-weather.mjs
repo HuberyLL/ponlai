@@ -1,6 +1,8 @@
 // GPU readback contracts for the weather envelope on the existing FFT/shore outputs.
 // Run only when the integrated renderer is idle elsewhere:
 //   node tools/verify-ocean-weather.mjs http://127.0.0.1:5190
+// Parked with the rain (it measures the rain's sea against the clear one; src/sky/Weather.ts
+// PARKED_WEATHER): out of the default checks until the parked weathers are revived.
 import assert from 'node:assert/strict';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';

@@ -1,7 +1,7 @@
 // CPU-only transition contracts; Node's native TypeScript stripping needs no browser/GPU.
 // Run: node --experimental-strip-types tools/verify-weather-state.mjs
 import assert from 'node:assert/strict';
-import { Weather, WEATHER_PRESETS } from '../src/sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, PARKED_WEATHER } from '../src/sky/Weather.ts';
 import { QUALITY } from '../src/Quality.ts';
 
 const close = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
@@ -103,6 +103,18 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 		if ( pair.includes( 'fog' ) ) assert.ok( pair.every( ( name ) => [ 'fog', 'clear', 'fair' ].includes( name ) ), `${ pair } leaves fog's neighbours` );
 		else assert.ok( Math.abs( order.indexOf( first[ i ] ) - order.indexOf( first[ i - 1 ] ) ) <= 2, `${ first[ i - 1 ] } -> ${ first[ i ] } skips too far` );
 	}
+	// The parked weathers (Weather.ts PARKED_WEATHER) are out of the rotation: a chain from any
+	// kept state never reaches one, and one loaded in a debug build leaves for a kept state.
+	for ( const start of Object.keys( WEATHER_PRESETS ) ) {
+		const chain = new Weather( start );
+		chain.auto = true;
+		const visited = new Set();
+		for ( let t = 0; t < 4 * 3600; t += 1 ) { chain.update( 1 ); visited.add( chain.target ); }
+		const parked = [ ...visited ].filter( ( name ) => PARKED_WEATHER.includes( name ) && name !== start );
+		assert.deepEqual( parked, [], `auto weather from ${ start } reaches parked ${ parked }` );
+		if ( PARKED_WEATHER.includes( start ) ) assert.ok( visited.size > 1, `auto weather stays in parked ${ start }` );
+		else assert.deepEqual( [ ...visited ].sort(), [ 'clear', 'cloudy', 'fair', 'overcast' ], `auto weather from ${ start } visits every kept state` );
+	}
 	const held = new Weather( 'rain' );
 	for ( let t = 0; t < 600; t ++ ) held.update( 1 );
 	assert.equal( held.target, 'rain', 'without auto the weather holds' );
@@ -120,4 +132,4 @@ for ( const invalid of [ 'hail', '__proto__', '', null ] ) {
 }
 assert.ok( QUALITY.low.cloudMarch.viewSteps < QUALITY.high.cloudMarch.viewSteps );
 assert.ok( QUALITY.low.rainDrops < QUALITY.high.rainDrops );
-console.log( 'weather state: transition, interruption, pause, presets, heading wrap, auto chain, moisture, lingering showers, ranges and validation passed' );
+console.log( 'weather state: transition, interruption, pause, presets, heading wrap, auto chain, moisture, parked weathers out of the chain, lingering showers, ranges and validation passed' );

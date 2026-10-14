@@ -108,7 +108,10 @@ Sky and weather:
   (seconds), `moon` (phase), `clock=paused` (freezes only the day clock; `paused` freezes it with
   the scene).
 - `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load as established,
-  already wet; without it the weather evolves on its own), `clouds` (coverage override).
+  already wet; without it the weather evolves on its own, among the kept presets), `clouds`
+  (coverage override). Rain, storm and fog are parked (`src/sky/Weather.ts` `PARKED_WEATHER`):
+  a production page without `?debug` refuses them with a console warning and shows fair; the dev
+  server, `?debug` and `?profile` still reach them.
 
 Quality and look:
 
@@ -381,8 +384,15 @@ only when every judged gate passes. A task's decisions on top of clip-metrics' v
 judged against the ground truth instead of MSAA, a gate left informational) are rules of its policy
 file, matched by gate id, entry, view, clip, crop and metric with globs, never code in the tool;
 `--normal` counts the special weathers (views.mjs's `special` group) apart. The policy's format is
-in the tool's header. `--views normal` / `--clips normal` (and `special`) select the normal
-weathers in baseline.mjs and the capture tools.
+in the tool's header.
+
+Parked weathers: rain, storm and fog (`src/sky/Weather.ts` `PARKED_WEATHER`) are out of the default
+checks. Every default set is the normal weathers' (views.mjs's `parity`, `taa` and `all`,
+clips.mjs's `all`, baseline.mjs's plan without `--views` / `--clips`, verify-scene-jump's views,
+profile-frame's scene matrix and `--accept`, verify-first-use's steps); `special` or a name
+reaches a parked view, clip or scene, and verify-first-use runs its `weather` and `bolt` steps only
+when `--steps` names them. `verify-weather-effects.mjs`, `verify-ocean-weather.mjs` and the rain
+parts of `verify-weather.mjs` are parked with them: not part of any default check.
 
 `uv run tools/parity/table.py <metrics.json | label dir>... [--names a,b] [--base col]
 [--refs msaa,gt] [--entries glob] [--metrics m1,m2] [--crops c1,c2] [--csv f]` tables several
@@ -669,9 +679,10 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   60 Hz with `--vsync` (the intervals a player sees; uncapped, a GPU-bound scene's p95 is mostly
   pacing noise).
 - It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
-  `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-rain`, `island-storm`,
-  `horizon-storm`, `island-fog-dawn`, `island-night-clear`, `meadow-close` (over the meadow),
-  `weather-change` (a front sweeping in); `--scenes` takes these ids), each with the clock running, fixed weather
+  `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-night-clear`, `meadow-close` (over
+  the meadow); the parked weathers' `island-rain`, `island-storm`, `horizon-storm`,
+  `island-fog-dawn` and `weather-change` (a front sweeping in) run only when `--scenes` names
+  them, and `--scenes` takes these ids), each with the clock running, fixed weather
   and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md): frame interval
   median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their cause, and the
   startup.
@@ -993,7 +1004,8 @@ probe eval of one's own.
   materials, and with the app's vegetation and spray drawn by a fresh renderer under a shadow
   pass and their pass's MRT, both ways round) and the motion vectors' blends on the GPU;
   `tools/verify-first-use.mjs` counts the pipelines any step still creates after the warm-up
-  (`--aa msaa,taa,taau,off --quality high,medium,low` runs the whole matrix, a page per run).
+  (`--aa msaa,taa,taau,off --quality high,medium,low` runs the whole matrix, a page per run; its
+  `weather` and `bolt` steps reach the parked weathers and run only when `--steps` names them).
   It loads in a capture profile slot (as the captures' fast mode does), so the island comes from
   the world cache; the browser's shader cache in the slot does not change the counts (they are the
   page's requests to WebGPU, cached or not), and `--fresh` runs in a throwaway profile as before.
