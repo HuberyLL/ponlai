@@ -10,16 +10,13 @@ import { mulberry32, smoothstep } from './noise.ts';
 import { anchorStream } from './Anchors.ts';
 import { SWARD_HEIGHT, meadowColor, supportsMeadow } from '../materials/Meadow.ts';
 import { soilUniforms } from '../materials/Soil.ts';
-import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { useRestPoseShadows } from './VegetationShadow.ts';
-import { rootHash, setWindDisplacement } from '../weather/Wind.ts';
+import { rootHash } from '../weather/Wind.ts';
 import { bendBlade, bladePhase, drown } from './vegetation/Deform.ts';
-import { followWindMotionFlag } from './WindMotion.ts';
-import { showSway } from '../debug/WindView.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
-import { ALPHA_TO_COVERAGE, coverageDither, markVegetation } from './Foliage.ts';
+import { ALPHA_TO_COVERAGE } from './Foliage.ts';
+import { backlight, vegetationMaterial } from './vegetation/Material.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { GrassCull, cullInputs, poolSteps, type CullBatchInput, type CullBuffers, type CullPool, type CullRange } from './GrassCull.ts';
@@ -449,9 +446,9 @@ const SHADE_TAPS = 2;
 
 function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ): THREE.MeshStandardNodeMaterial {
 
-	// The blades' opacity is 0 or 1 (whole blades, below): alpha to coverage and, without
-	// multisampling, `coverageDither`'s threshold draw a fragment or drop it whole.
-	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.86, metalness: 0, side: THREE.DoubleSide, alphaToCoverage: ALPHA_TO_COVERAGE } );
+	// The blades' opacity is 0 or 1 (whole blades, below): the factory's 'blade' family draws a
+	// fragment or drops it whole, by alpha to coverage or, without multisampling, by
+	// `coverageDither`'s threshold (vegetation/Material.ts).
 	const slot = instanceIndex.add( cullBase );
 	const tuftSlot = select( cullOn.equal( 1 ), cull.node( 'visible', 'uint', true ).element( slot ), slot ).toVar( 'grassTuft' );
 	const input = cullInputs( cull, tuftSlot );
@@ -460,9 +457,6 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const ground0 = input.ground( 0 ), ground1 = input.ground( 1 ), ground2 = input.ground( 2 );
 	const skyVisibility = varying( ground0.x, 'vGrassSkyVisibility' ), rimCover = varying( ground0.z, 'vGrassRimCover' );
 	const tuftOrigin = varying( input.origin, 'vGrassTuftOrigin' );
-	if ( ! ALPHA_TO_COVERAGE ) mat.alphaTestNode = coverageDither();
-	markVegetation( mat );
-	const wind = shared.wind.direction;
 	const blade = attribute<'vec4'>( 'blade', 'vec4' );
 	const t = blade.x;
 	const t2 = t.mul( t );
@@ -485,7 +479,6 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// (taken per vertex: the blade's id comes from its attribute's magnitude, whose sign flips
 	// across the blade, so interpolated it is the id only at the edges).
 	const bladeVarying = varying( vec4( pose.hash, pose.side, bladeHash( pose.id, pick, 5 ), bladeHash( pose.id, pick, 6 ) ), 'vGrassBlade' );
-	mat.opacityNode = step( bladeVarying.x, bladeCoverage );
 	// sway: gusts travel across the meadow, the tips move most. `p` is the vertex of the blade's
 	// rest pose placed by the tuft's transform, i.e. in world space (the mesh itself stays
 	// untransformed), computed as three's instancing did; held in a variable as three's was,
@@ -512,30 +505,6 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, ground0.w );
 	const lod = tuftLod( origin );
 	const bend = bendBlade( shared.wind, rooted, origin, tuft.w, t2, phase );
-	// Short growth needs a smaller world-space sway to keep its tips above the soil.
-	// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
-	// camera: a previous frame's pose from the registered displacement keeps them as they are now.
-	const swayed = setWindDisplacement( mat, ( state ) => pixelWideBlade(
-		state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, phase ).position, across, minWidth, lod.keep, lod.gain ), shared.wind );
-	// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
-	// rooted point, widened by the offset the current pose took (the widening follows the camera,
-	// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
-	const previous = TEMPORAL ? swayed.sub( bend.position ).add( bendBlade( shared.wind.previous, rooted, origin, tuft.w, t2, phase ).position ) : undefined;
-	const rest = useRestPoseShadows( mat, rooted, swayed, undefined, previous );
-	// The rest of three's instancing: the normal and the instance colour, before the blade moves.
-	const placed = mat.positionNode!;
-	mat.positionNode = Fn( () => {
-
-		// A bent blade's normal turns with it, so a gust shows as it sweeps by, as a sheen.
-		// The blade's own lean tilts it too, so blades leaning apart take the light apart.
-		const normal = transformNormal( normalLocal, input.matrix );
-		const leanWorld = ground1.xyz.mul( pose.lean.x ).add( ground2.xyz.mul( pose.lean.y ) );
-		normalLocal.assign( normalize( normal.add( bend.lean.mul( t.mul( 1.5 ) ) ).add( leanWorld.mul( t.mul( LEAN_NORMAL ) ) ) ) );
-		instanceColor.assign( input.color );
-		return placed;
-
-	} )();
-	showSway( mat, bend.lean.xz, shared.wind );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const cover = rimCover;
 	// Each blade shifts its value by up to +/-10 % and its hue a hint toward yellow or blue green,
@@ -554,14 +523,81 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// through the tips (below) adds the yellow. At the rim's soil pockets the roots take the soil's
 	// colour.
 	const root = mix( vec3( ROOT ), vec3( 0.55, 0.38, 0.23 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
-	const wetness = clamp( shared.wetness, 0, 1 );
 	// The blade's side and width axis, for the edge here and the fold below. The edge is a lighter
 	// rim along the blade's margins, only seen where a blade is several pixels wide.
 	const side = bladeVarying.y;
 	const axisView = varying( cameraViewMatrix.mul( vec4( normalize( ground1.xyz.mul( pose.axis.x ).add( ground2.xyz.mul( pose.axis.y ) ) ), 0 ) ).xyz, 'vGrassAxis' );
 	const edge = smoothstepN( EDGE_FROM, 1, abs( side ) ).mul( EDGE ).add( 1 );
-	mat.colorNode = mix( root, vec3( TIP ), smoothstepN( 0.12, 1, t ) ).mul( bladeShift ).mul( edge ).mul( mix( 1, 0.92, wetness ) );
-	mat.roughnessNode = mix( 0.86, 0.76, wetness );
+	// A blade's depth in the canopy is its share of the way down its own tuft times the turf's one
+	// canopy depth (MeadowCanopy.ts TURF_CANOPY_DEPTH), not its metres below the tuft's top: tall
+	// and short tufts then shade alike, so the growth field does not show as drifts of darker
+	// sward, and every root meets the turf's own shade.
+	const canopyDepth = ( at: THREE.Node<'vec3'> ) => max( float( 1 ).sub( at.y.sub( origin.y ).div( tuft.w ) ), 0 ).mul( TURF_CANOPY_DEPTH );
+	const mat = vegetationMaterial( shared, {
+		family: 'blade', roughness: 0.86,
+		wet: { tint: 0.92, roughness: 0.76 },
+		color: ( wet ) => mix( root, vec3( TIP ), smoothstepN( 0.12, 1, t ) ).mul( bladeShift ).mul( edge ).mul( wet ),
+		rest: rooted,
+		// Short growth needs a smaller world-space sway to keep its tips above the soil.
+		// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
+		// camera: a previous frame's pose from the registered displacement keeps them as they are now.
+		displacement: ( state ) => pixelWideBlade(
+			state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, phase ).position, across, minWidth, lod.keep, lod.gain ),
+		// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
+		// rooted point, widened by the offset the current pose took (the widening follows the camera,
+		// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
+		previous: ( swayed ) => TEMPORAL ? swayed.sub( bend.position ).add( bendBlade( shared.wind.previous, rooted, origin, tuft.w, t2, phase ).position ) : undefined,
+		// The rest of three's instancing: the normal and the instance colour, before the blade moves.
+		beforePosition: () => {
+
+			// A bent blade's normal turns with it, so a gust shows as it sweeps by, as a sheen.
+			// The blade's own lean tilts it too, so blades leaning apart take the light apart.
+			const normal = transformNormal( normalLocal, input.matrix );
+			const leanWorld = ground1.xyz.mul( pose.lean.x ).add( ground2.xyz.mul( pose.lean.y ) );
+			normalLocal.assign( normalize( normal.add( bend.lean.mul( t.mul( 1.5 ) ) ).add( leanWorld.mul( t.mul( LEAN_NORMAL ) ) ) ) );
+			instanceColor.assign( input.color );
+
+		},
+		sway: () => bend.lean.xz,
+		// The tuft's envelope, the same from both sides, folded: each half of a blade turns its normal
+		// toward its own edge, so one half takes the light and the other turns from it (FOLD), as a
+		// leaf folded along its midrib does.
+		normal: normalize( normalViewGeometry.add( axisView.mul( clamp( side.mul( 4 ), - 1, 1 ).mul( FOLD ) ) ) ),
+		// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
+		// Both the sky's light (here) and the key light (`VegetationLighting` below) fall off toward
+		// the root.
+		ao: mix( float( ROOT_SKY ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( skyVisibility ),
+		// Light through the blades: strongest when the grass stands against the sun. Blades do not
+		// cast into the sun's shadow map; see MeadowCanopy. Per vertex (lower tiers) it takes the
+		// rest pose before the widening, as the shadows do; the mesh is untransformed, so `rooted`
+		// is that pose in world space.
+		light: ( rest ) => {
+
+			const canopy = grassQuality.canopyPerVertex
+				? varying( meadowCanopyLight( canopyDepth( rooted ), shared.sunDir ) )
+				: meadowCanopyLight( canopyDepth( rest ), shared.sunDir );
+			// Light through the upper blades, yellower than the light off them (it crosses the
+			// leaf): strongest against the sun, a little from any side, so lit tips glow
+			// yellow-green. A soft gloss along the blades (`SHEEN`): a blade is a thin strip standing
+			// along its envelope's normal, so it reflects as a fibre about that axis (Kajiya and
+			// Kay's sine of the half vector), broad and faint, brightest on the tips toward a low
+			// sun; at half its first strength, as with the specular it paled the lawn toward a coated
+			// look. Both follow the key light alone, so by night they stay as faint as the moon.
+			return {
+				scale: () => mix( float( ROOT_KEY ), float( 1 ), t ).mul( canopy ),
+				extra: ( L, V ) => backlight( L, V, 4 ).mul( 0.42 ).add( TRANSLUCENT_FLOOR ).mul( t2 ).mul( vec3( TRANSLUCENT_TINT ) ),
+				sheen: ( L, V, N ) => {
+
+					const along = dot( N, normalize( L.add( V ) ) );
+					const facing = clamp( dot( N, L ).add( 0.35 ), 0, 1 );
+					return vec3( SHEEN ).mul( pow( clamp( float( 1 ).sub( along.mul( along ) ), 0, 1 ), SHEEN_POWER ).mul( facing ).mul( t2 ) );
+
+				},
+			};
+
+		},
+	} );
+	mat.opacityNode = step( bladeVarying.x, bladeCoverage );
 	// A blade's specular at SPECULAR of a plain dielectric's (F0 0.04, F90 1): seen edge on, as the
 	// game camera sees upright blades, the full Fresnel term laid a pale sky reflection over the
 	// whole meadow, a grey veil that read as plastic and took a quarter of its saturation.
@@ -572,48 +608,12 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		specularF90.assign( SPECULAR );
 
 	};
-	// The tuft's envelope, the same from both sides, folded: each half of a blade turns its normal
-	// toward its own edge, so one half takes the light and the other turns from it (FOLD), as a
-	// leaf folded along its midrib does.
-	mat.normalNode = normalize( normalViewGeometry.add( axisView.mul( clamp( side.mul( 4 ), - 1, 1 ).mul( FOLD ) ) ) );
-	// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
-	// Both the sky's light (here) and the key light (`VegetationLighting` below) fall off toward
-	// the root.
-	mat.aoNode = mix( float( ROOT_SKY ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( skyVisibility );
-	// light through the blades: strongest when the grass stands against the sun
-	// Blades do not cast into the sun's shadow map; see MeadowCanopy.
-	// Per vertex (lower tiers) it takes the rest pose before the widening, as the shadows do; the
-	// mesh is untransformed, so `rooted` is that pose in world space.
-	// A blade's depth in the canopy is its share of the way down its own tuft times the turf's one
-	// canopy depth (MeadowCanopy.ts TURF_CANOPY_DEPTH), not its metres below the tuft's top: tall
-	// and short tufts then shade alike, so the growth field does not show as drifts of darker
-	// sward, and every root meets the turf's own shade.
-	const canopyDepth = ( at: THREE.Node<'vec3'> ) => max( float( 1 ).sub( at.y.sub( origin.y ).div( tuft.w ) ), 0 ).mul( TURF_CANOPY_DEPTH );
-	const canopy = grassQuality.canopyPerVertex
-		? varying( meadowCanopyLight( canopyDepth( rooted ), shared.sunDir ) )
-		: meadowCanopyLight( canopyDepth( rest ), shared.sunDir );
 	// The larger casters' shade on the blades, soft and light (SHADE_*), at the rest pose like
 	// every vegetation shadow (VegetationShadow.ts), per vertex: the sun's filter takes it in place
 	// of its own (SunShadow `install`).
 	const shade = sunShadow.softVisibility( rooted.add( vec3( 0, SHADE_LIFT, 0 ) ), SHADE_RADIUS, SHADE_TAPS );
 	mat.userData.sunVisibility = varying( mix( float( 1 ), shade, SHADE_DEPTH ), 'vGrassSunVisibility' );
-	// Light through the upper blades, yellower than the light off them (it crosses the leaf):
-	// strongest against the sun, a little from any side, so lit tips glow yellow-green. A soft
-	// gloss along the blades (`SHEEN`): a blade is a thin strip standing along its envelope's
-	// normal, so it reflects as a fibre about that axis (Kajiya and Kay's sine of the half vector),
-	// broad and faint, brightest on the tips toward a low sun; at half its first strength, as with
-	// the specular it paled the lawn toward a coated look. Both follow the key light alone, so
-	// by night they stay as faint as the moon.
-	useLighting( mat, () => new VegetationLighting( mix( float( ROOT_KEY ), float( 1 ), t ).mul( canopy ), ( L, V ) =>
-		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.42 ).add( TRANSLUCENT_FLOOR ).mul( t2 ).mul( vec3( TRANSLUCENT_TINT ) ),
-	( L, V, N ) => {
-
-		const along = dot( N, normalize( L.add( V ) ) );
-		const facing = clamp( dot( N, L ).add( 0.35 ), 0, 1 );
-		return vec3( SHEEN ).mul( pow( clamp( float( 1 ).sub( along.mul( along ) ), 0, 1 ), SHEEN_POWER ).mul( facing ).mul( t2 ) );
-
-	} ) );
-	mat.userData.wind = wind;
+	mat.userData.wind = shared.wind.direction;
 	return mat;
 
 }
@@ -868,7 +868,6 @@ export function buildGrass( { lawn, lawnThin }: GrassTufts, shared: Shared, sunS
 		caps: bandCaps( k.shape.blades, k.floor, k.minShare ), bladeIndices: k.shape.segs * 6,
 	} ) ), grassUniforms.thinFar, cullLod );
 	const material = grassMaterial( shared, cull, sunShadow );
-	followWindMotionFlag( material );
 	const batches = kinds.map( ( k, i ) => batchOf( k.geometry, k.shape, k.floor, material, cull, cull.ranges[ i ], k.tufts, k.name, k.thin ) );
 	for ( const b of batches ) {
 
