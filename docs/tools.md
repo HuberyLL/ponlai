@@ -203,6 +203,19 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   in the shaded draw), `windLegacy` (the old global-sine sway).
 - `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
   GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
+- `windView` makes the vegetation's wind visible (debug pages only; read at load, so without it
+  no shader changes; `src/debug/WindView.ts`): flat unlit arrows every 2 m over the meadow, just
+  above the grass, point where the local wind blows (the eddies' veer included), longer in a
+  gust and brighter with the lean it gives; and every plant (grass, flowers, rim bushes, rim
+  trails, turf skirt, the game's palm) is drawn unlit in the colour of its current sway s (tip
+  offset over height): the hue is s's angle from the mean wind on a cyclic map (downwind blue,
+  upwind orange, left of the wind, counter-clockwise seen from above, magenta, right of it green),
+  the brightness |s| / 0.15. `windView=arrows` or `windView=plants` shows one half. The numbers
+  behind it: `__PONLAI__.windProbe( options )` (`src/debug/WindProbe.ts`: the shaders' own wind
+  functions in a compute kernel built on the first call; angle histograms, lean and swing,
+  neighbours' correlation, the gust field's size and travel, the plants' wiring, the directions of
+  the sea, clouds and plants per weather), through the probe as
+  `--eval "return JSON.stringify( await P.windProbe() )"`.
 - `islander` picks the islanders' proportions (`medium`, the default, or `stock` (the kit's own),
   `subtle` and `strong` builds of `Proportions.ts`); also in the GUI's Islander folder, which
   rebuilds the scene's walker in place. In game mode the folder's proportion control is disabled:

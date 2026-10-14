@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, materialColor, uv, vec3, vec4, float, mix, sin, cos, dot, pow, clamp, max } from 'three/tsl';
 import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
+import { showSway } from '../debug/WindView.ts';
 import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
 import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, LEAF_STEM, leafCastMask, markVegetation, useLeafCoverage } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
@@ -59,6 +60,7 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = fa
 	const weight = attribute( 'rimSway', 'float' );
 	const strandPhase = attribute( 'rimPhase', 'float' );
 	let swayed: THREE.Node<'vec3'>;
+	let sway: THREE.Node<'vec2'> | undefined;
 	if ( legacy ) {
 
 		const phase = strandPhase.sub( shared.wind.phase.mul( 1.3 / 1.6 ) );
@@ -83,8 +85,9 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = fa
 			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
 			const lively = wind.breeze.mul( field.w.mul( 0.6 ).add( 0.3 ) );
 			const swing = wave( wind.clock, 0.4, strandPhase ).mul( lively );
-			const free = along.mul( field.z.div( LEAN_REF ).add( swing.mul( 0.5 ) ) ).add( across.mul( wave( wind.clock, 0.31, strandPhase.mul( 1.6 ) ).mul( lively ) ) )
-				.mul( weight.mul( RIM_SWAY ) ).toVar();
+			const unit = along.mul( field.z.div( LEAN_REF ).add( swing.mul( 0.5 ) ) ).add( across.mul( wave( wind.clock, 0.31, strandPhase.mul( 1.6 ) ).mul( lively ) ) );
+			if ( wind === shared.wind ) sway = unit.xz.mul( LEAN_REF );
+			const free = unit.mul( weight.mul( RIM_SWAY ) ).toVar();
 			const offset = free.add( out.mul( max( float( - PRESS ).sub( dot( free, out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( weight ).mul( 0.01 ) ) ) );
 			const flutter = wave( wind.flutter, 3.7, leafPhase );
 			return positionLocal.add( offset ).add( normalGeometry.mul( flutter.mul( leafEdge ).mul( lively ).mul( LEAF_EDGE ) ) );
@@ -95,6 +98,7 @@ function rimMaterial( shared: Shared, foliage?: THREE.InstancedMesh, legacy = fa
 	// The cloned bush material has shadow hooks for its own wind graph. Replace both
 	// hooks with this mesh's rest pose.
 	useRestPoseShadows( mat, positionLocal, swayed, leafCastMask(), previousSway( mat, shared.wind ) );
+	if ( sway ) showSway( mat, sway, shared.wind );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.72 ), float( 0.96 ), weight );
 	useLighting( mat, () => new VegetationLighting( float( 0.94 ), ( L, V, N ) => {

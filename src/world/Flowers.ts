@@ -8,6 +8,7 @@ import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { LEAN_REF, setWindDisplacement, windGust } from '../weather/Wind.ts';
 import { mainBend } from './Foliage.ts';
 import { keepLegacyWind } from './WindVariants.ts';
+import { showSway } from '../debug/WindView.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
@@ -245,11 +246,13 @@ function flowerMaterial( shared: Shared, centre: number[], legacy = false ): THR
 	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
 	// The stem bends from its root with the gust field as the grass around it does (its lean
 	// times its height, growing with the square of the lift), nodding on its own at 1.2 Hz.
+	const bend = ( state: typeof shared.wind.previous ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( LEAN_REF ), 1.2 );
 	const swayed = legacy ? rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.03 ).mul( lift.mul( lift ) ) ) )
-		: setWindDisplacement( mat, ( state ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( LEAN_REF ), 1.2 ).position, shared.wind );
+		: setWindDisplacement( mat, ( state ) => bend( state ).position, shared.wind );
 	// Only the heads cast into the sun's map: stems and the rosette under the grass are thinner
 	// than a texel (see useRestPoseShadows), and the meadow's canopy shades the rosette instead.
 	const rest = useRestPoseShadows( mat, rooted, swayed, step( 0.5, part ), previousSway( mat, shared.wind ) );
+	if ( ! legacy ) showSway( mat, bend( shared.wind ).sway, shared.wind );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.6 ), float( 1 ), lift ).mul( attribute<'float'>( 'skyVisibility', 'float' ) );
 	// Lit as the other plants: the grass canopy shades what stands in it, and thin petals glow

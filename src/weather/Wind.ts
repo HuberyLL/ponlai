@@ -38,6 +38,8 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // functions periodic in their wrap (`wave` at whole cycles per CLOCK_PERIOD, the gust map's repeat
 // over its tiles), so the difference of the two poses is the frame's motion alone
 // (tools/verify-wind.mjs checks the sources).
+// The URL option `windView` shows this field and every plant's answer to it, and
+// `__PONLAI__.windProbe` measures them (src/debug/WindView.ts, WindProbe.ts; docs/tools.md).
 // `debugFlags.windFreeze = true` holds the vegetation's wind (its clocks and gust scroll, previous
 // equal to current) while the scene clock runs, for clips that want only the shadows or the jitter
 // to move; the clouds and the sea keep their wind.
@@ -91,6 +93,22 @@ function vegetationWind( direction: Vector2 ) {
  * root and amplitudes). `createWindUniforms` holds two: the frame being rendered (the uniforms
  * themselves) and the frame rendered before it (`previous`), for motion vectors. */
 export type WindState = ReturnType<typeof vegetationWind>;
+
+/** A wind state's values as two vec4s, ( direction, pressure, breeze ) and ( clock, flutter, gust
+ * scroll ), and the state read back from two such nodes: a debug kernel's per-step wind
+ * (src/debug/WindProbe.ts), so the gust scroll stays read here alone (tools/verify-wind.mjs). */
+export function packWindState( state: WindState ): number[] {
+
+	return [ state.direction.value.x, state.direction.value.y, state.pressure.value, state.breeze.value,
+		state.clock.value, state.flutter.value, state.gustScroll.value.x, state.gustScroll.value.y ];
+
+}
+
+export function windStateOf( a: Node<'vec4'>, b: Node<'vec4'> ): WindState {
+
+	return { direction: a.xy, pressure: a.z, breeze: a.w, clock: b.x, flutter: b.y, gustScroll: b.zw } as unknown as WindState;
+
+}
 
 /** Add this object to shared before constructing materials, then give that same object to
  * Wind. Every consumer holds the same node identities throughout weather transitions. */

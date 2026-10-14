@@ -1,0 +1,546 @@
+import * as THREE from 'three/webgpu';
+import { Fn, If, cos, dot, float, fract, instanceIndex, instancedArray, sin, uint, vec2, vec3, vec4 } from 'three/tsl';
+import { Wind, createWindUniforms, packWindState, windField, windGust, windStateOf, type WindState } from '../weather/Wind.ts';
+import { bendBlade, plantGrass } from '../world/Grass.ts';
+import { bushInstances, mainBend } from '../world/Foliage.ts';
+import { plantFlowers } from '../world/Flowers.ts';
+import { windDisplacement } from '../weather/Wind.ts';
+import { windVariants, legacyWind } from '../world/WindVariants.ts';
+import { debugFlags } from './DebugFlags.ts';
+import type { WorldData } from '../world/types.ts';
+import type { Shared } from '../shared.ts';
+
+// `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
+// tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
+// Grass.ts `bendBlade`, Foliage.ts `mainBend`), evaluated in a compute kernel built on the first
+// call (none exists on a page that never calls it, so the page's pipelines are unchanged), for the
+// plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled), the rim bushes'
+// roots, the flowers' roots, the game's palms. The wind is a copy of the page's (`Wind`, the same
+// speed, heading and scene time), stepped on the CPU and handed to the kernel per step through a
+// storage buffer, so the page's own wind is never touched. Two time series: fast (64 x 0.05 s,
+// the swing) and slow (40 x 0.5 s, the gusts' travel). Options: DEFAULTS below. The result is
+// large and deep: probe.mjs takes it as `--eval "JSON.stringify( await P.windProbe( { ... } ) )"`.
+//
+// Per kind of plant, for each series: the sway s (tip offset over height, LEAN_REF's unit) against
+// the local wind d (`windField`'s direction at the root, the eddies' veer included) and the mean
+// wind D: histograms of its angle in 15 degree bins, the share pointing upwind (s . d < 0) and
+// beyond +-30 degrees; the mean lean along the wind L, the plants' own temporal deviation along and
+// across it (RMS over plants), and their ratios; the swing alone (s . d less the lean `windField`
+// gives at the root: what the plant adds to the gusts' lean), against L and the across sway; between neighbouring plants, by distance bin, the
+// mean correlation of their along-wind series, raw ("total", uncentred cosine: lean and swing) and
+// Pearson ("swing", each series less its mean), over all pairs, pairs separated along the wind
+// (within 30 degrees of it) and across it (within 30 degrees of square); and the Pearson
+// correlation of the swing alone, the same way (`swingCorrelation`). The gust field itself on
+// a grid over the land: its correlation length along and across the wind (lag where the
+// autocorrelation of `field.w` falls under 1/e), its travel velocity (the peak of the
+// cross-correlation between slow steps, against the wind's), and the share of the land in a gust
+// (w > 0.5), over the land's box along and across the wind (`gustSpan`: a square of that side
+// about its centre instead, for lengths the land is too small to show). `w4`: every vegetation mesh and palm, whether its material has a wind displacement,
+// and the legacy flag. `w5` (scene jumps, so last): for each kept weather and a few presets the
+// vegetation's wind, the clouds' drift, the sea's travel and the weather's heading, their angles.
+//
+// `legacy: true` evaluates the old global-sine sway (WindVariants.ts) in place of the new for the
+// grass, bushes and flowers, as a comparison; the old sway knows no local wind, so d = D there.
+// windGust is a setLayout helper, but it reads no uniform (its inputs are arguments), so it is
+// safe in a second kernel (AGENTS.md, r186's uniform names).
+
+type V2 = THREE.Node<'vec2'>;
+type V4 = THREE.Node<'vec4'>;
+type F = THREE.Node<'float'>;
+
+export interface WindProbeContext {
+
+	renderer: THREE.WebGPURenderer;
+	scene: THREE.Scene;
+	shared: Shared;
+	wind: Wind;
+	sky: { weather: { windSpeed: number; windDirection: number }; clouds: { frontAxis?: { value: THREE.Vector2 }; cirrusAxis?: { value: THREE.Vector2 } } };
+	fft: { params: { windDirection: number }; swell: { directionOffset: number } };
+	establishScene: ( scene: never ) => Promise<unknown>; // main.ts's, with { weather, preset }
+	data: () => WorldData;
+
+}
+
+interface Series { steps: number; dt: number }
+interface Options {
+	tufts: number; fast: Series; slow: Series; legacy: boolean; anchors: number; grid: number;
+	w5: boolean; kinds: string[]; seed: number; weathers: string[]; presets: string[]; gustSpan: number;
+}
+const DEFAULTS: Options = {
+	tufts: 20000, fast: { steps: 64, dt: 0.05 }, slow: { steps: 40, dt: 0.5 }, legacy: false, anchors: 1500, grid: 0.5,
+	w5: true, kinds: [ 'grass', 'bush', 'flower', 'palm' ], seed: 1,
+	weathers: [ 'clear', 'fair', 'cloudy', 'overcast' ], presets: [ 'sunrise', 'noon', 'golden-hour', 'midnight' ], gustSpan: 0,
+};
+const TAU = Math.PI * 2;
+const STATE = 3; // vec4s per wind step
+const BINS = [ 0, 0.5, 1, 2, 4, 8, 16 ];
+const r3 = ( v: number ) => Math.round( v * 1000 ) / 1000;
+
+function rng( seed: number ) {
+
+	let s = seed >>> 0;
+	return () => {
+
+		s = ( s + 0x6d2b79f5 ) >>> 0;
+		let t = Math.imul( s ^ ( s >>> 15 ), 1 | s );
+		t = ( t + Math.imul( t ^ ( t >>> 7 ), 61 | t ) ) ^ t;
+		return ( ( t ^ ( t >>> 14 ) ) >>> 0 ) / 4294967296;
+
+	};
+
+}
+
+// The page's wind at its scene time, stepped `steps` times by `dt` on a copy: per step
+// ( direction, pressure, breeze ), ( clock, flutter, gust scroll ) (Wind.ts packWindState), ( phase, strength, speed, 0 ).
+function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: Float32Array; speed: number; heading: number; direction: THREE.Vector2; travel: THREE.Vector2[] } {
+
+	const speed = ctx.sky.weather.windSpeed, heading = ctx.sky.weather.windDirection;
+	const freeze = debugFlags.windFreeze;
+	debugFlags.windFreeze = false;
+	const copy = new Wind( createWindUniforms(), { speed, heading, time: ctx.wind.time } );
+	const u = copy.uniforms, states = new Float32Array( steps * STATE * 4 ), travel: THREE.Vector2[] = [];
+	for ( let k = 0; k < steps; k ++ ) {
+
+		if ( k > 0 ) copy.update( dt, speed, heading );
+		states.set( [ ...packWindState( u ), u.phase.value, u.strength.value, speed, 0 ], k * STATE * 4 );
+		travel.push( u.cloudOffset.value.clone() );
+
+	}
+	debugFlags.windFreeze = freeze;
+	return { states, speed, heading, direction: u.direction.value.clone(), travel };
+
+}
+
+// d: the local wind's direction times the lean `windField` gives there (the old sway: the unit mean wind)
+type Body = ( wind: WindState, input: V4, legacy: { direction: V2; phase: F; strength: F } ) => { s: V2; d: V2 };
+
+// One dispatch of `body` for every input and step: out[ plant * steps + k ] = ( s, d ).
+async function evaluate( renderer: THREE.WebGPURenderer, inputs: Float32Array, states: Float32Array, steps: number, body: Body ): Promise<Float32Array> {
+
+	const n = inputs.length / 4, total = n * steps;
+	const input = instancedArray( inputs, 'vec4' ), state = instancedArray( states, 'vec4' ), out = instancedArray( total, 'vec4' );
+	const kernel = Fn( () => {
+
+		const i = instanceIndex;
+		If( i.lessThan( uint( total ) ), () => {
+
+			const plant = i.div( uint( steps ) ), k = i.mod( uint( steps ) ).mul( uint( STATE ) );
+			const s0 = state.element( k ).toVar(), s1 = state.element( k.add( 1 ) ).toVar(), s2 = state.element( k.add( 2 ) ).toVar();
+			const wind = windStateOf( s0, s1 );
+			const r = body( wind, input.element( plant ).toVar(), { direction: s0.xy, phase: s2.x, strength: s2.y } );
+			out.element( i ).assign( vec4( r.s, r.d ) );
+
+		} );
+
+	} )().compute( total, [ 64 ] );
+	await renderer.computeAsync( kernel );
+	const buffer = await renderer.getArrayBufferAsync( out.value as THREE.StorageBufferAttribute );
+	kernel.dispose();
+	return new Float32Array( buffer.slice( 0 ) );
+
+}
+
+const hash = ( p: V2 ): F => fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
+
+// The kinds of plant: their inputs ( x, z, two kind values ) and their sway in the kernel.
+interface Kind { name: string; inputs: Float32Array; root: Float32Array; body: Body; legacyBody?: Body }
+
+function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
+
+	const data = ctx.data(), random = rng( o.seed ), out: Kind[] = [];
+	const add = ( name: string, points: number[][], body: Body, legacyBody?: Body ) => {
+
+		if ( points.length === 0 ) return;
+		const inputs = new Float32Array( points.length * 4 ), root = new Float32Array( points.length * 2 );
+		points.forEach( ( p, i ) => { inputs.set( p, i * 4 ); root.set( [ p[ 0 ], p[ 1 ] ], i * 2 ); } );
+		out.push( { name, inputs, root, body, legacyBody } );
+
+	};
+	if ( o.kinds.includes( 'grass' ) ) {
+
+		// Grass.ts grassMaterial: the blade's phase from its id and a hash of the tuft's origin
+		const { lawn, tussocks } = plantGrass( data.vegetation, data.rimGround );
+		const all = [ ...lawn, ...tussocks ];
+		const keep = Math.min( 1, o.tufts / all.length );
+		const points = all.filter( () => random() < keep ).map( ( t ) => [ t.origin.x, t.origin.z, t.top, random() ] );
+		add( 'grass', points, ( wind, p ) => {
+
+			const origin = vec3( p.x, 0, p.y ), phase = fract( p.w.mul( 17.31 ).add( hash( origin.xz ).mul( 5.13 ) ) ).mul( TAU );
+			const field = windField( wind, origin.xz );
+			return { s: bendBlade( wind, vec3( p.x, p.z, p.y ), origin, p.z, float( 1 ), phase ).lean.xz, d: field.xy.mul( field.z ) };
+
+		}, ( _wind, p, l ) => {
+
+			// the old sway: the tip pushed along the mean wind by the global sine, over the tuft's height
+			const gust = windGust( p.xy, l.direction, l.phase ).mul( l.strength );
+			return { s: l.direction.mul( gust.mul( 0.023 ).div( p.z ) ), d: l.direction };
+
+		} );
+
+	}
+	if ( o.kinds.includes( 'bush' ) ) {
+
+		const b = bushInstances( data.bushes ), points: number[][] = [];
+		for ( let i = 0; i < b.count; i ++ ) points.push( [ b.roots[ i * 4 ], b.roots[ i * 4 + 2 ], b.roots[ i * 4 + 1 ], 0 ] );
+		add( 'bush', points, ( wind, p ) => {
+
+			const root = vec3( p.x, p.z, p.y );
+			const bend = mainBend( wind, root.add( vec3( 0, 1, 0 ) ), root, float( 0.022 ), 0.9 );
+			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
+
+		}, ( _wind, p, l ) => {
+
+			// Foliage.ts's old sway at the crown of the unit bush ( 0, 0.72, 0 ), over its height
+			const ph = dot( p.xy, l.direction ).mul( 0.45 ).sub( l.phase.mul( 1.3 / 1.6 ) );
+			const across = vec2( l.direction.y.negate(), l.direction.x );
+			const s = l.direction.mul( sin( ph.add( 0.72 * 3 ) ) ).add( across.mul( cos( ph.mul( 1.3 ) ).mul( 0.35 ) ) ).mul( l.strength.mul( 0.02 / 0.72 ) );
+			return { s, d: l.direction };
+
+		} );
+
+	}
+	if ( o.kinds.includes( 'flower' ) ) {
+
+		const points: number[][] = [];
+		for ( const list of plantFlowers( data.vegetation ) ) for ( const plant of list ) points.push( [ plant.root.x, plant.root.z, plant.root.y, plant.sward + plant.stretch + 0.1 ] );
+		add( 'flower', points, ( wind, p ) => {
+
+			const root = vec3( p.x, p.z, p.y );
+			const bend = mainBend( wind, root.add( vec3( 0, p.w, 0 ) ), root, p.w.mul( 0.08 ), 1.2 );
+			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
+
+		}, ( _wind, p, l ) => {
+
+			const gust = windGust( p.xy, l.direction, l.phase ).mul( l.strength );
+			return { s: l.direction.mul( gust.mul( 0.03 ).div( p.w ) ), d: l.direction };
+
+		} );
+
+	}
+	if ( o.kinds.includes( 'palm' ) ) {
+
+		const points: number[][] = [];
+		ctx.scene.traverse( ( object ) => {
+
+			const place = object.userData.palm as { root: THREE.Vector3 } | undefined;
+			if ( place?.root ) points.push( [ place.root.x, place.root.z, place.root.y, 0 ] );
+
+		} );
+		add( 'palm', points, ( wind, p ) => {
+
+			const root = vec3( p.x, p.z, p.y );
+			const bend = mainBend( wind, root.add( vec3( 0, 4, 0 ) ), root, float( 0.3 ), 0.9, float( 1 ) );
+			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
+
+		} );
+
+	}
+	return out;
+
+}
+
+// ---- statistics on the host
+
+const histogram = ( angles: number[] ) => {
+
+	const bins = new Array( 24 ).fill( 0 );
+	for ( const a of angles ) bins[ Math.min( 23, Math.floor( ( a + 180 ) / 15 ) ) ] ++;
+	return bins.map( ( c ) => r3( c / Math.max( 1, angles.length ) ) );
+
+};
+const angle = ( sx: number, sz: number, dx: number, dz: number ) => Math.atan2( dx * sz - dz * sx, dx * sx + dz * sz ) * 180 / Math.PI;
+
+function sways( kind: Kind, result: Float32Array, steps: number, D: THREE.Vector2, random: () => number, anchors: number, legacy: boolean ) {
+
+	const n = kind.inputs.length / 4;
+	const local: number[] = [], mean: number[] = [];
+	let upwind = 0, wide = 0, count = 0, leanSum = 0, varAlong = 0, varAcross = 0, own = 0;
+	const along = new Float32Array( n * steps ); // s against the local wind, per plant and step
+	const ownSeries = new Float32Array( n * steps ); // less the field's lean: the plant's own swing
+	for ( let i = 0; i < n; i ++ ) {
+
+		let a1 = 0, a2 = 0, c1 = 0, c2 = 0;
+		for ( let k = 0; k < steps; k ++ ) {
+
+			const o = ( i * steps + k ) * 4, sx = result[ o ], sz = result[ o + 1 ];
+			const dl = Math.hypot( result[ o + 2 ], result[ o + 3 ] ) || 1, dx = result[ o + 2 ] / dl, dz = result[ o + 3 ] / dl;
+			const a = sx * dx + sz * dz, c = dx * sz - dz * sx;
+			own += ( a - dl ) ** 2; // the plant's own swing along the wind: s less the field's lean
+			ownSeries[ i * steps + k ] = a - dl;
+			along[ i * steps + k ] = a;
+			a1 += a; a2 += a * a; c1 += c; c2 += c * c;
+			const al = angle( sx, sz, dx, dz );
+			local.push( al );
+			mean.push( angle( sx, sz, D.x, D.y ) );
+			if ( a < 0 ) upwind ++;
+			if ( Math.abs( al ) > 30 ) wide ++;
+			count ++;
+
+		}
+		leanSum += a1;
+		varAlong += a2 / steps - ( a1 / steps ) ** 2;
+		varAcross += c2 / steps - ( c1 / steps ) ** 2;
+
+	}
+	const L = leanSum / count, sAlong = Math.sqrt( Math.max( 0, varAlong / n ) ), sAcross = Math.sqrt( Math.max( 0, varAcross / n ) );
+	const swing = legacy ? null : Math.sqrt( own / count );
+	return {
+		plants: n,
+		angleLocal: histogram( local ), angleMean: histogram( mean ),
+		upwindShare: r3( upwind / count ), beyond30Share: r3( wide / count ),
+		lean: r3( L ), sigmaAlong: r3( sAlong ), sigmaAcross: r3( sAcross ),
+		sigmaAlongOverLean: r3( sAlong / L ), sigmaAcrossOverLean: r3( sAcross / L ), acrossOverAlong: r3( sAcross / sAlong ),
+		// the swing alone (RMS of s . d less the field's lean), against the lean and the across sway
+		swingAlong: swing === null ? null : r3( swing ), swingOverLean: swing === null ? null : r3( swing / L ), acrossOverSwing: swing === null ? null : r3( sAcross / swing ),
+		correlation: correlations( kind.root, along, steps, D, random, anchors ),
+		// the same pairs' correlation of the swing alone (Pearson)
+		swingCorrelation: legacy ? null : correlations( kind.root, ownSeries, steps, D, rng( 99 ), anchors ),
+	};
+
+}
+
+// mean correlation of the along-wind series between plants, by distance bin and direction
+function correlations( root: Float32Array, along: Float32Array, steps: number, D: THREE.Vector2, random: () => number, anchors: number ) {
+
+	const n = root.length / 2, cell = 16, grid = new Map<string, number[]>();
+	for ( let i = 0; i < n; i ++ ) {
+
+		const key = `${ Math.floor( root[ i * 2 ] / cell ) },${ Math.floor( root[ i * 2 + 1 ] / cell ) }`;
+		( grid.get( key ) ?? grid.set( key, [] ).get( key )! ).push( i );
+
+	}
+	const stats = ( i: number ) => {
+
+		let m = 0, q = 0;
+		for ( let k = 0; k < steps; k ++ ) { const v = along[ i * steps + k ]; m += v; q += v * v; }
+		m /= steps;
+		return { m, raw: Math.sqrt( q ), dev: Math.sqrt( Math.max( 1e-20, q - steps * m * m ) ) };
+
+	};
+	const cache = new Map<number, ReturnType<typeof stats>>();
+	const get = ( i: number ) => cache.get( i ) ?? cache.set( i, stats( i ) ).get( i )!;
+	const groups = [ 'all', 'along', 'across' ] as const;
+	const acc = groups.map( () => BINS.slice( 1 ).map( () => ( { pairs: 0, total: 0, swing: 0 } ) ) );
+	const perBin = 4000;
+	for ( let a = 0; a < Math.min( anchors, n ); a ++ ) {
+
+		const i = Math.floor( random() * n );
+		const xi = root[ i * 2 ], zi = root[ i * 2 + 1 ], gi = Math.floor( xi / cell ), gj = Math.floor( zi / cell );
+		for ( let dj = - 1; dj <= 1; dj ++ ) for ( let di = - 1; di <= 1; di ++ ) for ( const j of grid.get( `${ gi + di },${ gj + dj }` ) ?? [] ) {
+
+			if ( j === i ) continue;
+			const dx = root[ j * 2 ] - xi, dz = root[ j * 2 + 1 ] - zi, r = Math.hypot( dx, dz );
+			const b = BINS.findIndex( ( edge, k ) => k > 0 && r < edge ) - 1;
+			if ( b < 0 || acc[ 0 ][ b ].pairs >= perBin ) continue;
+			const si = get( i ), sj = get( j );
+			let dot = 0;
+			for ( let k = 0; k < steps; k ++ ) dot += along[ i * steps + k ] * along[ j * steps + k ];
+			const total = dot / ( si.raw * sj.raw || 1 );
+			const swing = ( dot - steps * si.m * sj.m ) / ( si.dev * sj.dev );
+			const cos = Math.abs( dx * D.x + dz * D.y ) / ( r || 1 );
+			for ( const [ g, on ] of [ [ 0, true ], [ 1, cos > Math.cos( Math.PI / 6 ) ], [ 2, cos < Math.sin( Math.PI / 6 ) ] ] as [ number, boolean ][] ) {
+
+				if ( ! on ) continue;
+				const e = acc[ g ][ b ];
+				e.pairs ++; e.total += total; e.swing += swing;
+
+			}
+
+		}
+
+	}
+	return Object.fromEntries( groups.map( ( g, gi ) => [ g, acc[ gi ].map( ( e, b ) => ( {
+		bin: `${ BINS[ b ] }-${ BINS[ b + 1 ] } m`, pairs: e.pairs, total: e.pairs ? r3( e.total / e.pairs ) : null, swing: e.pairs ? r3( e.swing / e.pairs ) : null,
+	} ) ) ] ) );
+
+}
+
+// The gust field on a grid over the land (axes along and across the mean wind).
+async function gustField( ctx: WindProbeContext, o: Options, slow: ReturnType<typeof windStates>, roots: Float32Array ) {
+
+	const D = slow.direction, C = new THREE.Vector2( - D.y, D.x );
+	let a0 = Infinity, a1 = - Infinity, c0 = Infinity, c1 = - Infinity;
+	for ( let i = 0; i < roots.length; i += 2 ) {
+
+		const a = roots[ i ] * D.x + roots[ i + 1 ] * D.y, c = roots[ i ] * C.x + roots[ i + 1 ] * C.y;
+		a0 = Math.min( a0, a ); a1 = Math.max( a1, a ); c0 = Math.min( c0, c ); c1 = Math.max( c1, c );
+
+	}
+	if ( o.gustSpan > 0 ) { // a square of that side about the land's centre instead
+
+		const am = ( a0 + a1 ) / 2, cm = ( c0 + c1 ) / 2;
+		a0 = am - o.gustSpan / 2; a1 = am + o.gustSpan / 2; c0 = cm - o.gustSpan / 2; c1 = cm + o.gustSpan / 2;
+
+	}
+	const h = o.grid, na = Math.floor( ( a1 - a0 ) / h ) + 1, nc = Math.floor( ( c1 - c0 ) / h ) + 1, steps = o.slow.steps;
+	const inputs = new Float32Array( na * nc * 4 );
+	for ( let j = 0; j < nc; j ++ ) for ( let i = 0; i < na; i ++ ) {
+
+		const a = a0 + i * h, c = c0 + j * h;
+		inputs.set( [ a * D.x + c * C.x, a * D.y + c * C.y, 0, 0 ], ( j * na + i ) * 4 );
+
+	}
+	const out = await evaluate( ctx.renderer, inputs, slow.states, steps, ( wind, p ) => {
+
+		const field = windField( wind, p.xy );
+		return { s: field.zw, d: field.xy };
+
+	} );
+	const w = ( i: number, j: number, k: number ) => out[ ( ( j * na + i ) * steps + k ) * 4 + 1 ];
+	let mean = 0, gusty = 0;
+	for ( let j = 0; j < nc; j ++ ) for ( let i = 0; i < na; i ++ ) for ( let k = 0; k < steps; k ++ ) { const v = w( i, j, k ); mean += v; if ( v > 0.5 ) gusty ++; }
+	const N = na * nc * steps;
+	mean /= N;
+	let variance = 0;
+	for ( let j = 0; j < nc; j ++ ) for ( let i = 0; i < na; i ++ ) for ( let k = 0; k < steps; k ++ ) variance += ( w( i, j, k ) - mean ) ** 2;
+	variance /= N;
+	// autocorrelation along a (di) and across c (dj), over every row and step
+	const auto = ( di: number, dj: number ) => {
+
+		let s = 0, c = 0;
+		for ( let k = 0; k < steps; k += 4 ) for ( let j = 0; j + dj < nc; j ++ ) for ( let i = 0; i + di < na; i ++ ) { s += ( w( i, j, k ) - mean ) * ( w( i + di, j + dj, k ) - mean ); c ++; }
+		return c ? s / c / variance : 0;
+
+	};
+	const length = ( along: boolean ) => {
+
+		let prev = 1;
+		const max = Math.floor( ( along ? na : nc ) * 0.6 );
+		for ( let l = 1; l < max; l ++ ) {
+
+			const r = along ? auto( l, 0 ) : auto( 0, l );
+			if ( r < 1 / Math.E ) return r3( ( l - 1 + ( prev - 1 / Math.E ) / ( prev - r ) ) * h );
+			prev = r;
+
+		}
+		return null;
+
+	};
+	// travel: the shift ( da, dc ) of the field between steps k and k + m, by the peak of the
+	// cross-correlation, refined by a parabola
+	const travel = ( m: number ) => {
+
+		const range = Math.ceil( slow.speed * 1.6 * o.slow.dt * m / h ) + 2, across = Math.ceil( 3 / h );
+		let best = - Infinity, bi = 0, bj = 0;
+		const score = new Map<string, number>();
+		const corr = ( di: number, dj: number ) => {
+
+			let s = 0, c = 0;
+			for ( let k = 0; k + m < steps; k += 2 ) for ( let j = Math.max( 0, - dj ); j < nc - Math.max( 0, dj ); j += 2 ) for ( let i = Math.max( 0, - di ); i < na - Math.max( 0, di ); i += 2 ) {
+
+				s += ( w( i, j, k ) - mean ) * ( w( i + di, j + dj, k + m ) - mean ); c ++;
+
+			}
+			return c ? s / c / variance : - Infinity;
+
+		};
+		for ( let dj = - across; dj <= across; dj ++ ) for ( let di = - range; di <= range; di ++ ) {
+
+			const v = corr( di, dj );
+			score.set( `${ di },${ dj }`, v );
+			if ( v > best ) { best = v; bi = di; bj = dj; }
+
+		}
+		const peak = ( a: number | undefined, b: number, c: number | undefined ) => a === undefined || c === undefined || a - 2 * b + c >= 0 ? 0 : 0.5 * ( a - c ) / ( a - 2 * b + c );
+		const fi = bi + peak( score.get( `${ bi - 1 },${ bj }` ), best, score.get( `${ bi + 1 },${ bj }` ) );
+		const fj = bj + peak( score.get( `${ bi },${ bj - 1 }` ), best, score.get( `${ bi },${ bj + 1 }` ) );
+		const t = m * o.slow.dt, va = fi * h / t, vc = fj * h / t;
+		return { stepGap: m, seconds: t, along: r3( va ), across: r3( vc ), speed: r3( Math.hypot( va, vc ) ), angleFromWind: r3( Math.atan2( vc, va ) * 180 / Math.PI ), peakCorrelation: r3( best ) };
+
+	};
+	return {
+		grid: { along: na, across: nc, cell: h, metres: [ r3( a1 - a0 ), r3( c1 - c0 ) ] },
+		meanGust: r3( mean ), gustShare: r3( gusty / N ),
+		correlationLength: { along: length( true ), across: length( false ) },
+		travel: [ 1, 2, 4 ].map( travel ),
+		windSpeed: slow.speed,
+	};
+
+}
+
+// W4: every vegetation mesh and palm, and what its material does with the wind
+function inventory( ctx: WindProbeContext ) {
+
+	const rows: Record<string, unknown>[] = [];
+	ctx.scene.traverse( ( object ) => {
+
+		const mesh = object as THREE.Mesh;
+		if ( ! mesh.isMesh ) return;
+		const material = ( Array.isArray( mesh.material ) ? mesh.material[ 0 ] : mesh.material ) as THREE.Material;
+		const variants = windVariants( mesh );
+		const named = /palm|tree|bush|grass|flower|reed|fern|plant|foliage|leaf|skirt|rim/i.test( `${ mesh.name } ${ material.name }` );
+		if ( ! material.userData.vegetation && ! mesh.userData.palm && ! variants && ! windDisplacement( material ) && ! named ) return;
+		rows.push( {
+			mesh: mesh.name || mesh.type, material: material.name || material.type, parent: mesh.parent?.name,
+			vegetationTag: material.userData.vegetation === true, windDisplacement: !! windDisplacement( material ),
+			shippedHasWind: variants ? !! windDisplacement( variants.shipped ) : null, drawingLegacy: variants ? mesh.material === variants.legacy : null,
+			palm: !! mesh.userData.palm, visible: mesh.visible,
+		} );
+
+	} );
+	return { windLegacy: legacyWind(), meshes: rows };
+
+}
+
+// W5: the directions things travel in, degrees in the world's x-z plane ( atan2( z, x ) )
+async function directions( ctx: WindProbeContext, o: Options ) {
+
+	const deg = ( v: { x: number; y: number } ) => r3( Math.atan2( v.y, v.x ) * 180 / Math.PI );
+	const gap = ( a: number, b: number ) => r3( Math.abs( ( ( a - b ) % 360 + 540 ) % 360 - 180 ) );
+	const frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+	const rows: Record<string, unknown>[] = [];
+	for ( const weather of o.weathers ) for ( const preset of o.presets ) {
+
+		await ctx.establishScene( { weather, preset } as never );
+		for ( let i = 0; i < 3; i ++ ) await frame();
+		const vegetation = deg( ctx.shared.wind.direction.value );
+		// the clouds sample their density at p + cloudOffset: they drift by - d( cloudOffset )
+		const states = windStates( ctx, { steps: 2, dt: 1 } );
+		const drift = states.travel[ 0 ].clone().sub( states.travel[ 1 ] );
+		const clouds = deg( drift );
+		// the FFT's heading is the spectrum's; the positive inverse FFT travels opposite it
+		const h = ctx.fft.params.windDirection * Math.PI / 180, hs = ( ctx.fft.params.windDirection + ctx.fft.swell.directionOffset ) * Math.PI / 180;
+		const sea = deg( { x: - Math.cos( h ), y: - Math.sin( h ) } ), swell = deg( { x: - Math.cos( hs ), y: - Math.sin( hs ) } );
+		const heading = ctx.sky.weather.windDirection;
+		const weatherTravel = deg( { x: - Math.cos( heading * Math.PI / 180 ), y: - Math.sin( heading * Math.PI / 180 ) } );
+		const front = ctx.sky.clouds.frontAxis?.value, cirrus = ctx.sky.clouds.cirrusAxis?.value;
+		rows.push( {
+			weather, preset, weatherHeading: heading, fftHeading: ctx.fft.params.windDirection, windSpeed: ctx.sky.weather.windSpeed,
+			travel: { vegetation, weather: weatherTravel, clouds, sea, swell, cloudFrontAxis: front ? deg( front ) : null, cirrusAxis: cirrus ? deg( cirrus ) : null },
+			gapToVegetation: { clouds: gap( clouds, vegetation ), sea: gap( sea, vegetation ), swell: gap( swell, vegetation ), weather: gap( weatherTravel, vegetation ) },
+		} );
+
+	}
+	return rows;
+
+}
+
+export async function windProbe( ctx: WindProbeContext, options: Partial<Options> = {} ) {
+
+	const o: Options = { ...DEFAULTS, ...options };
+	const t0 = performance.now();
+	const fast = windStates( ctx, o.fast ), slow = windStates( ctx, o.slow );
+	const list = kinds( ctx, o );
+	const plants: Record<string, unknown> = {};
+	for ( const kind of list ) {
+
+		const body = o.legacy ? kind.legacyBody : kind.body;
+		if ( ! body ) continue;
+		const random = rng( o.seed + 7 );
+		const f = await evaluate( ctx.renderer, kind.inputs, fast.states, o.fast.steps, body );
+		const s = await evaluate( ctx.renderer, kind.inputs, slow.states, o.slow.steps, body );
+		plants[ kind.name ] = { fast: sways( kind, f, o.fast.steps, fast.direction, random, o.anchors, o.legacy ), slow: sways( kind, s, o.slow.steps, slow.direction, random, o.anchors, o.legacy ) };
+
+	}
+	const grass = list.find( ( k ) => k.name === 'grass' );
+	const gust = grass ? await gustField( ctx, o, slow, grass.root ) : null;
+	const w4 = inventory( ctx );
+	const time = ctx.wind.time;
+	const w5 = o.w5 ? await directions( ctx, o ) : null;
+	return {
+		legacy: o.legacy, time, windSpeed: fast.speed, heading: fast.heading, meanDirection: [ r3( fast.direction.x ), r3( fast.direction.y ) ],
+		series: { fast: o.fast, slow: o.slow }, plants, gust, w4, w5, ms: Math.round( performance.now() - t0 ),
+	};
+
+}
+

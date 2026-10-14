@@ -32,6 +32,8 @@ import { topFromTiles } from './game/sim/grid.ts';
 // first of all that may wait as the modules load: the world's workers start here (WorldStart.ts)
 import { worldJob, worldProgress, landOptions, landFraming, worldCacheOn } from './world/WorldStart.ts';
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
+import { WIND_VIEW } from './debug/WindView.ts';
+import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
@@ -551,6 +553,21 @@ const showChunkBorders = ( on: boolean ) => {
 
 };
 showChunkBorders( chunkView.borders );
+// The wind view's arrows (`windView`, debug/WindView.ts), over the land shown: built only on a page
+// that shows them, again after the island grows.
+let windArrows: THREE.Mesh | null = null;
+const showWindArrows = () => {
+
+	if ( ! WIND_VIEW.arrows ) return;
+	if ( windArrows ) {
+
+		windArrows.geometry.dispose();
+		windArrows.geometry = windArrowGeometry( shownData );
+
+	} else scene.add( windArrows = buildWindArrows( shownData, shared.wind ) );
+
+};
+showWindArrows();
 const refractedSun = new RefractedSun( renderer, shared );
 runtime.refractedSun = refractedSun;
 refractedSun.angleGate = THREE.MathUtils.degToRad( runtimeQuality.refractedSun.angleGate );
@@ -727,6 +744,7 @@ const growth = new Growth( {
 			showChunkBorders( chunkView.borders );
 
 		}
+		showWindArrows();
 		worldInfo.worldTriangles = world.triangles;
 		worldInfo.rimStrands = version.rimStrands.length;
 
@@ -1995,6 +2013,8 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 };
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
+	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, sky, fft, establishScene, data: () => shownData }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes
 	growth: Object.assign( growth, { fieldBytes: () => fields.bytes() } ),
 	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),
