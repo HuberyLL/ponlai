@@ -615,7 +615,7 @@ fill with frames read once (in a week they reached hundreds of GB). `job.mjs` st
     node tools/storage.mjs                 what each kind holds and what a clean would remove
     node tools/storage.mjs clean           remove it now ([--days 2] [--cap 50] [--floor 12])
 
-- Images and videos of 256 KB or more under `artifacts/{plans,perf,verification,crops}` go after
+- Images and videos of 256 KB or more under `artifacts/{plans,archive,perf,verification,crops}` go after
   2 days, unless a report or page (.md, .html) there links to them: what the user reviews keeps
   its pictures. `artifacts/captures` (one-off screenshots) keeps them 7 days. Reports, JSON and
   small images stay; other artifacts folders are never touched.
