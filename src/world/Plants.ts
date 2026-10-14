@@ -1,15 +1,12 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, attribute, positionGeometry, positionLocal, normalViewGeometry, normalGeometry, materialColor, vec3, vec4, float, mix, dot, pow, clamp, step,
-	mx_noise_float, smoothstep,
+	Fn, If, attribute, positionGeometry, positionLocal, normalViewGeometry, normalGeometry, vec3, float, mix, dot, step, mx_noise_float, smoothstep,
 } from 'three/tsl';
-import { setWindDisplacement, wave } from '../weather/Wind.ts';
-import { followWindMotionFlag } from './WindMotion.ts';
-import { showSway } from '../debug/WindView.ts';
+import { wave } from '../weather/Wind.ts';
 import { mulberry32, type Rng } from './noise.ts';
-import { leafTexture, leafAlphaTexture, mainBend, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, markVegetation, useLeafCoverage } from './Foliage.ts';
-import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
+import { mainBend } from './Foliage.ts';
+import { leafTexture } from './vegetation/LeafTexture.ts';
+import { leafTransmission, vegetationMaterial } from './vegetation/Material.ts';
 import { boundsSteps, float32Steps, Growing } from './Steps.ts';
 import { PLANT_STRIDE, PLANT_TREE, PLANT_ROUND, PLANT_BROADLEAF, PLANT_FERN } from './PlantSites.ts';
 import type { Shared } from '../shared.ts';
@@ -17,8 +14,9 @@ import type { Shared } from '../shared.ts';
 // The island top's shrubs and small trees (sited by PlantSites.ts). Every plant is grown once from
 // its own seed, so no two share a silhouette: round shrubs of small or larger leaves, broad-leaved
 // clumps, ferns and small trees with a forked trunk under clustered crowns. They use the rim
-// bushes' folded leaf (one texture, its coverage-preserving alpha mips) and their light model, and
-// merge into one mesh in world space: one draw, one shadow draw, one depth prepass draw
+// bushes' folded leaf (one texture, its coverage-preserving alpha mips) and their light model (the
+// vegetation's factory, vegetation/Material.ts, family 'leaf'), and merge into one mesh in world
+// space: one draw, one shadow draw, one depth prepass draw
 // (VegetationPrepass.ts). Per vertex: plantMotion ( wind phase, flags: stem 1 + bark 2, ambient
 // occlusion, direct light ), plantRoot ( the plant's root in world space ) and plantWind ( main
 // bend, branch and leaf-edge amplitudes in metres, the plant's height ): seven vertex buffers, one
@@ -657,16 +655,9 @@ export function* plantSteps( sites: Float32Array, cache: PlantCache ): Generator
 function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 	const map = leafTexture();
-	const mat = new THREE.MeshStandardNodeMaterial( {
-		map, alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: ALPHA_TO_COVERAGE, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
-	} );
-	mat.alphaMap = leafAlphaTexture( map.image.width );
-	markVegetation( mat );
-	useLeafCoverage( mat );
 	const motion = attribute<'vec4'>( 'plantMotion', 'vec4' );
 	const bark = step( 1.5, motion.y );
 	const stem = motion.y.sub( bark.mul( 2 ) );
-	const wetness = clamp( shared.wetness, 0, 1 );
 	// Bark: grey-brown furrows along the stem, from the rest pose so they do not swim in the wind.
 	// Leaves skip the noise: only bark fragments take the branch.
 	const furrows = Fn( () => {
@@ -683,11 +674,6 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 		return f;
 
 	} )();
-	// Wet bark darkens far more than a leaf, whose waxy surface sheds the water.
-	const wetTint = mix( float( 1 ), mix( float( 0.92 ), float( 0.62 ), bark ), wetness ).mul( furrows );
-	// materialColor retains the leaf map and its alpha; the vertex colours multiply in after.
-	mat.colorNode = materialColor.mul( vec4( wetTint, wetTint, wetTint, 1 ) );
-	mat.roughnessNode = mix( mix( float( 0.82 ), float( 0.9 ), bark ), float( 0.68 ), wetness );
 	const p = positionLocal; // the mesh sits at the origin: world space
 	// Three layers, after Sousa (GPU Gems 3, ch. 16): the whole plant bends from its root with the
 	// gust field (trees sway at half a shrub's rate); each spray, frond or leaf stalk swings on its
@@ -699,35 +685,35 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	const slow = smoothstep( 1.4, 2.6, amp.w );
 	const local = dot( positionGeometry, vec3( 1.7, 2.3, 1.9 ) );
 	let sway: THREE.Node<'vec2'> | undefined;
-	const swayed = setWindDisplacement( mat, ( wind ) => {
+	return vegetationMaterial( shared, {
+		family: 'leaf', name: 'plants', roughness: 0.82, leaf: { map },
+		wet: {
+			// Wet bark darkens far more than a leaf, whose waxy surface sheds the water.
+			tint: ( wetness ) => mix( float( 1 ), mix( float( 0.92 ), float( 0.62 ), bark ), wetness ).mul( furrows ),
+			roughness: ( wetness ) => mix( mix( float( 0.82 ), float( 0.9 ), bark ), float( 0.68 ), wetness ),
+		},
+		rest: p,
+		displacement: ( wind ) => {
 
-		const bend = mainBend( wind, p, root, amp.x, 30, slow );
-		if ( wind === shared.wind ) sway = bend.sway;
-		const field = bend.field;
-		const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
-		const lively = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) );
-		const swing = wave( wind.flutter, 0.85, motion.x ).mul( 0.6 ).add( wave( wind.flutter, 1.37, motion.x.mul( 1.9 ).add( local ) ).mul( 0.4 ) );
-		const swayBranch = wave( wind.flutter, 0.63, motion.x.mul( 2.3 ) );
-		const branch = vec3( 0, swing, 0 ).add( along.mul( swayBranch.mul( 0.5 ).add( 0.35 ) ) ).add( across.mul( swing.mul( 0.4 ) ) ).mul( amp.y.mul( lively ) );
-		const edge = normalGeometry.mul( wave( wind.flutter, 4.1, motion.x.mul( 3 ).add( local.mul( 4 ) ) ).mul( amp.z.mul( lively ) ) );
-		return bend.position.add( branch ).add( edge );
+			const bend = mainBend( wind, p, root, amp.x, 30, slow );
+			if ( wind === shared.wind ) sway = bend.sway;
+			const field = bend.field;
+			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
+			const lively = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) );
+			const swing = wave( wind.flutter, 0.85, motion.x ).mul( 0.6 ).add( wave( wind.flutter, 1.37, motion.x.mul( 1.9 ).add( local ) ).mul( 0.4 ) );
+			const swayBranch = wave( wind.flutter, 0.63, motion.x.mul( 2.3 ) );
+			const branch = vec3( 0, swing, 0 ).add( along.mul( swayBranch.mul( 0.5 ).add( 0.35 ) ) ).add( across.mul( swing.mul( 0.4 ) ) ).mul( amp.y.mul( lively ) );
+			const edge = normalGeometry.mul( wave( wind.flutter, 4.1, motion.x.mul( 3 ).add( local.mul( 4 ) ) ).mul( amp.z.mul( lively ) ) );
+			return bend.position.add( branch ).add( edge );
 
-	}, shared.wind );
-	useRestPoseShadows( mat, p, swayed, float( 1 ).sub( stem ), previousSway( mat, shared.wind ) );
-	if ( sway ) showSway( mat, sway, shared.wind );
-	mat.normalNode = normalViewGeometry;
-	mat.aoNode = motion.z;
-	useLighting( mat, () => new VegetationLighting( motion.w, ( L, V, N ) => {
-
-		// leaves: wrapped light and a glow against the sun; bark is opaque
-		const back = pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 );
-		const rim = float( 1 ).sub( clamp( dot( N, V ), 0, 1 ) );
-		const wrap = clamp( dot( N, L ).mul( 0.5 ).add( 0.5 ), 0, 1 );
-		return wrap.mul( wrap ).mul( 0.13 ).add( back.mul( rim.mul( rim ).mul( 0.9 ).add( 0.1 ) ) ).mul( float( 1 ).sub( bark ) );
-
-	} ) );
-	mat.name = 'plants';
-	return mat;
+		},
+		castMask: float( 1 ).sub( stem ),
+		sway: () => sway,
+		normal: normalViewGeometry,
+		ao: motion.z,
+		// leaves: wrapped light and a glow against the sun (`leafTransmission`); bark is opaque
+		light: { scale: () => motion.w, extra: ( L, V, N ) => leafTransmission( L, V, N ).mul( float( 1 ).sub( bark ) ) },
+	} );
 
 }
 
@@ -756,7 +742,6 @@ export function buildPlants( sites: Float32Array, shared: Shared, cache: PlantCa
 	const group = new THREE.Group();
 	group.name = 'plants';
 	const material = plantMaterial( shared );
-	followWindMotionFlag( material );
 	const mesh = new THREE.Mesh( built.geometry ?? emptyGeometry(), material );
 	if ( ! built.geometry ) console.warn( 'No shrubs or trees on the first land: a grown island\'s would build their pipelines as they first draw (Plants.ts)' );
 	mesh.visible = built.geometry !== null;
