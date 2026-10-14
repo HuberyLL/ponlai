@@ -8,8 +8,8 @@ import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
 import { AttributeType, geometrySteps, stagedWriteSteps, textureSteps, uploadSteps } from './Upload.ts';
 import { boundsSteps } from './Steps.ts';
 import { plantGrass, grassSteps, setGrass, type GrassPrepared, type GrassTufts } from './Grass.ts';
-import { plantFlowers, flowerInstances, flowerReplacement, flowerWrites, setFlowers, type FlowerInstances, type Plant } from './Flowers.ts';
-import { bushInstances, bushWrites, setBushes, type BushInstances } from './Foliage.ts';
+import { plantFlowers, FLOWER_POOL, flowerInstances, flowerReplacement, setFlowers, type FlowerInstances, type Plant } from './Flowers.ts';
+import { BUSH_POOL, bushInstances, type BushInstances } from './Foliage.ts';
 import { rimFoliageSteps, setRimFoliage, type RimFoliageBuilt } from './RimFoliage.ts';
 import { plantSiteSteps, anchorContactSteps } from './PlantSites.ts';
 import { plantSteps, setPlants, type PlantCache, type PlantsBuilt } from './Plants.ts';
@@ -560,9 +560,9 @@ export class Growth<M = unknown> {
 			yield;
 			const replacement = flowerReplacement( page.flowers, k, instances );
 			flowers.replacements.push( replacement );
-			flowers.boxes.push( replacement ? null : instancesBox( ( page.flowers.children[ k ] as THREE.Mesh ).geometry, instances.matrices, instances.count ) );
+			flowers.boxes.push( replacement ? null : FLOWER_POOL.box( page.flowers.children[ k ] as THREE.InstancedMesh, instances ) );
 			yield;
-			if ( ! replacement ) for ( const [ attribute, values ] of flowerWrites( page.flowers.children[ k ] as THREE.InstancedMesh, instances ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
+			if ( ! replacement ) for ( const [ attribute, values ] of FLOWER_POOL.writes( page.flowers.children[ k ] as THREE.InstancedMesh, instances ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
 			if ( replacement ) {
 
 				yield page.compileDraws( [ replacement ] );
@@ -575,9 +575,9 @@ export class Growth<M = unknown> {
 		// caster box reads it)
 		const bushes = bushInstances( data.bushes );
 		yield;
-		const bushBox = instancesBox( page.foliage.geometry, bushes.matrices, bushes.count );
+		const bushBox = BUSH_POOL.box( page.foliage, bushes );
 		yield;
-		for ( const [ attribute, values ] of bushWrites( page.foliage, bushes ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
+		for ( const [ attribute, values ] of BUSH_POOL.writes( page.foliage, bushes ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
 
 		// the rim's trails and the turf skirt (their bounds found in the steps)
 		this.stage = 'rim';
@@ -656,8 +656,7 @@ export class Growth<M = unknown> {
 		// (with their depth prepass copies, VegetationPrepass.ts)
 		disposals.push( () => { for ( const mesh of oldFlowers ) { mesh.geometry.dispose(); mesh.traverse( ( object ) => object.dispose() ); } } );
 		disposals.push( () => { for ( const free of p.staged ) free(); } );
-		setBushes( page.foliage, p.bushes.instances );
-		page.foliage.boundingBox = p.bushes.box;
+		BUSH_POOL.set( page.foliage, p.bushes.instances, p.bushes.box );
 		const oldPlants = setPlants( page.plants, p.plants );
 		page.plantCache.keep( p.plants.sites, p.plants.parts );
 		const oldRim = setRimFoliage( page.rimFoliage, p.rim );
@@ -725,21 +724,5 @@ export class Growth<M = unknown> {
 		);
 
 	}
-
-}
-
-// An InstancedMesh's box over `count` instances of `matrices`, as its computeBoundingBox finds it.
-function instancesBox( geometry: THREE.BufferGeometry, matrices: Float32Array, count: number ): THREE.Box3 {
-
-	if ( geometry.boundingBox === null ) geometry.computeBoundingBox();
-	const box = new THREE.Box3(), part = new THREE.Box3(), m = new THREE.Matrix4();
-	for ( let i = 0; i < count; i ++ ) {
-
-		m.fromArray( matrices, i * 16 );
-		part.copy( geometry.boundingBox! ).applyMatrix4( m );
-		box.union( part );
-
-	}
-	return box;
 
 }
