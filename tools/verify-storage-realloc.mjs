@@ -1,6 +1,6 @@
 // GPU probe of three's WebGPU backend (r186): what reallocating a storage buffer costs, for pools
-// that outgrow their capacity (the meadow's, GrassCull.ts). A compute kernel and an instanced draw
-// read and write storage buffers, as GrassCull's kernels and the grass material do; then:
+// that outgrow their capacity (the meadow's, vegetation/VegetationCull.ts). A compute kernel and an
+// instanced draw read and write storage buffers, as the cull's kernels and the grass material do; then:
 //   in place   the same buffers rewritten (`needsUpdate`), the dispatch and draw repeated;
 //   realloc    each storage node's `value` replaced by a new, twice as large attribute, the kernel
 //              dispatched and the draw instanced over all of it;
@@ -45,7 +45,7 @@ async function run() {
 	const device = renderer.backend.device;
 	const vec4s = ( n, f ) => { const a = new Float32Array( n * 4 ); for ( let i = 0; i < n; i ++ ) a.set( f( i ), i * 4 ); return a; };
 
-	// compute: element i += ( 1, 2, 3, 4 ), over whole workgroups (as GrassCull dispatches)
+	// compute: element i += ( 1, 2, 3, 4 ), over whole workgroups (as VegetationCull dispatches)
 	const pool = storage( new THREE.StorageBufferAttribute( vec4s( N, ( i ) => [ i, 0, 0, 0 ] ), 4 ), 'vec4', N );
 	const kernel = Fn( () => {
 
