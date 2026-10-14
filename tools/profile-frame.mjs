@@ -20,7 +20,7 @@
 //        [--load-timeline off]
 //        [--mode page | reload] [--fresh] [--vsync] [--accept [--target 16.7] [--strict]] [--scales 1.5,1.25,1]
 //        [--scale-settle s] [--drs-store] [--frame-fallback] [--preload-wait 60] [--display [--motion user | orbit | none]]
-//        [--hang 180] [--scale-log]
+//        [--hang 180] [--scale-log] [--unpinned]
 //   node tools/profile-frame.mjs --compare urlA urlB [--eval-a "js"] [--eval-b "js"] [--scenes ...]
 //        [--slices 8] [--min-slices n] [--stop-margin x] [--stop-width x] [--slice 1.5] [--settle 1] [--display]
 //        (two pages, alternating slices)
@@ -31,7 +31,12 @@
 //
 // The reference is a production build (`npm run build && npm run preview`, port 5191, the
 // default url); the dev server works for quick checks. The default viewport is a generic 4K
-// display (1920x1080 CSS at DPR 2). Chrome comes from CHROME_PATH, else the system Chrome, else
+// display (1920x1080 CSS at DPR 2). High is timed at its baseline by default (src/Quality.ts:
+// 1440p internal at 4K output): its render scale pinned at two thirds of the viewport's ratio (4/3,
+// `dpr=1.3333333333333333` added to the query), so profiles and --compare measure the level every
+// trade-off is judged at; `--unpinned` lets the dynamic resolution steer instead (to see where it
+// settles, with --scale-settle and --scale-log). --accept, --display, --scales and a dpr of the
+// url's or --q's own are never pinned. Chrome comes from CHROME_PATH, else the system Chrome, else
 // Playwright's Chromium, with a profile of its own kept between runs (`--profile-dir`), so the
 // world cache below survives. Writes <out>/profile.json and <out>/summary.md (default
 // artifacts/perf/<label>).
@@ -387,6 +392,15 @@ if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
 if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
+// High's baseline pin: a profile or --compare of high times at the baseline (src/Quality.ts: 1440p
+// internal at 4K output, two thirds of the display's ratio, 4/3 at the default 1920x1080@2), its
+// render scale pinned by the page's `dpr`, so every run measures the level trade-offs are judged at.
+// `--unpinned` leaves the dynamic resolution steering (where it settles); --accept (the frame rate
+// a player sees), --display, --scales and a dpr in the url or --q are never pinned.
+const UNPINNED = flags.has( '--unpinned' );
+const BASELINE_DPR = QUALITY === 'high' && ! UNPINNED && ! ACCEPT && ! DISPLAY && ! SCALES.length &&
+	! [ new URL( URL_A ).search.slice( 1 ), COMPARE ? new URL( COMPARE[ 1 ] ).search.slice( 1 ) : '', EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) )
+	? String( Math.min( SCALE, 2 ) * 2 / 3 ) : '';
 const OUT = opt( 'out', path.join( 'artifacts/perf', LABEL ) );
 // The page's remembered dynamic scale (`drsStore`): an A/B (--compare) or an acceptance run turns it
 // off (`drsStore=off`), so neither side starts from a scale the other, or an earlier run, settled at;
@@ -1131,7 +1145,7 @@ function pageUrl( base, q, timestamps ) {
 	// the url's own options first (the page reads the first of a repeated option), then the
 	// scene's; `debug` too, so a build without the profiler still exposes its handles
 	// uncapped, the frame pacer would read the work's own intervals as a display's refresh
-	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : 'worldCache=off', `quality=${ QUALITY }`, q, EXTRA_Q, DRS_STORE, FRAME_FALLBACK, renderScale ? `dpr=${ renderScale }` : '', VSYNC ? '' : 'frameRate=0' ].filter( Boolean ).join( '&' );
+	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : 'worldCache=off', `quality=${ QUALITY }`, q, EXTRA_Q, DRS_STORE, FRAME_FALLBACK, renderScale ? `dpr=${ renderScale }` : BASELINE_DPR ? `dpr=${ BASELINE_DPR }` : '', VSYNC ? '' : 'frameRate=0' ].filter( Boolean ).join( '&' );
 	return url.href;
 
 }
