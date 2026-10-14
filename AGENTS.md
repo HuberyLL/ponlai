@@ -98,7 +98,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   vegetation's depth prepass
   (`VegetationPrepass.ts`); what the vegetation's materials share in `src/world/vegetation/`: the
   material factory every plant kind but the grass builds with (`Material.ts`), the coverage paths
-  and the vegetation tag (`Coverage.ts`), the folded leaf's textures (`LeafTexture.ts`).
+  and the vegetation tag (`Coverage.ts`), the folded leaf's textures (`LeafTexture.ts`), the
+  instance pool (`Instances.ts`), the wind's deforms and each kind's wind numbers (`Deform.ts`), and
+  the registry of the plant kinds the page's vegetation lists and the growth read (`Registry.ts`;
+  the grass's entry in `GrassKind.ts`).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the air/water interface, sky occlusion, the meadow's canopy light.
 - `src/materials/`: procedural textures, the terrain (`TerrainMaterial.ts`), wet surfaces.
@@ -168,8 +171,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - The island grows in place (`Growth.ts`): a Grow swaps in only the changed chunks in one frame, and
   every dependent of the land's shape follows it, the same function of the version as at load (a
   grown page draws a page loaded on that land bit for bit, paused: `tools/verify-growth-swap.mjs`).
-  Anything new that depends on the land's shape joins the swap (`GrowthPage` and main.ts's
-  `onSwap`), and work it needs on the main thread goes into the preparation's idle-time steps, never
+  Anything new that depends on the land's shape joins the swap (`GrowthPage`, a vegetation kind's
+  `growth` in `vegetation/Registry.ts`, and main.ts's `onSwap`), and work it needs on the main thread goes into the preparation's idle-time steps, never
   into the swap's frame. A step takes a few tenths of a millisecond (a generator yielding inside its
   loops: `Steps.ts`, uploads through `Upload.ts`), so the growth's share of any frame stays under
   2 ms (`growth.work`).
