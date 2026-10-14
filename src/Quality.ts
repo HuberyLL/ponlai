@@ -2,10 +2,15 @@
 // picks the tier at load; without it the page loads high (QualityDetect.ts). The GUI's quality
 // control reloads the page with it.
 //
-// High, at 4K output (1920x1080 CSS pixels at a device pixel ratio of 2), is the reference image and
-// the only active tier: every trade-off of image against time is judged on it. It holds 60 fps on the
-// target display through its dynamic render scale, multisamples the scene with 4 samples (`msaa`;
-// WebGPU has 1 or 4, no 2) and upscales with FSR 1.
+// High is the reference image and the only active tier: every trade-off of image against time is
+// judged on it, at its baseline: 4K output (3840x2160: 1920x1080 CSS pixels at a device pixel ratio
+// of 2) rendered at 1440p (2560x1440, render scale 4/3: FSR 1's Quality 1.5x upscale) at 60 fps,
+// with a GPU budget of about 14 ms a frame in the normal scenes (island views, the meadow close up),
+// leaving about 15 % of the 16.7 ms frame for pacing and the OS. 1440p is the guaranteed level: a
+// load starts there and a paused page renders there; the dynamic render scale (`render`,
+// post/DynamicResolution.ts) climbs to the display's own ratio (native 4K) with headroom and drops to
+// half the output's linear resolution (1080p) when busy. High multisamples the scene with 4 samples
+// (`msaa`; WebGPU has 1 or 4, no 2) and upscales with FSR 1.
 //
 // Parked tiers (`PARKED_QUALITY`: medium, low) slowed every line of work down, so until they are
 // revived as their own milestone they are out of the default choice (no GPU timing picks them), the
@@ -68,9 +73,11 @@ export const ACTIVE_QUALITY: ReadonlyArray<QualityTier> = QUALITY_TIERS.filter( 
 export type RenderScaleRule =
 	// a fixed budget of rendered pixels (the scale follows the window's size)
 	| { budget: number }
-	// dynamic resolution: from `max` (capped by the display's own ratio) down to `floor` in `step`s,
-	// steered by the GPU's frame time (post/DynamicResolution.ts)
-	| { dynamic: { max: number; floor: number; step: number } };
+	// dynamic resolution: from `max` (capped by the display's own ratio) down to `floorShare` of the
+	// canvas's pixel ratio (the output's linear resolution) in `step`s, steered by the GPU's frame
+	// time (post/DynamicResolution.ts); a share keeps a 1x display's floor below its maximum. A load,
+	// a paused page and a pinned one render at the baseline, `baselineShare` of the maximum.
+	| { dynamic: { max: number; baselineShare: number; floorShare: number; step: number } };
 
 /** The temporal resolve's settings (taa and taau; read once as the resolve is built). */
 export interface TemporalSettings {
@@ -182,7 +189,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 	high: {
 		aa: 'msaa',
 		taa: { ...TAA },
-		render: { dynamic: { max: 1.5, floor: 0.6, step: 0.05 } },
+		render: { dynamic: { max: 2, baselineShare: 2 / 3, floorShare: 0.5, step: 0.05 } },
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 36, bloomChains: 2 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },
