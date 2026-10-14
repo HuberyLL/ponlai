@@ -383,8 +383,8 @@ type F = THREE.Node<'float'>;
  * neighbours swing together, each plant only a little
  * apart (`swayJitter`), about a sixth of the lean (`swingOf`), a third of that across the wind.
  * `cycles` is the sway's rate in whole swings per gust tile (an even number: about 0.9 Hz at 30
- * in a fair wind), and `slow` (0..1) eases it to half that rate for taller plants (the game's
- * palm). `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the bent
+ * in a fair wind), and `slow` (0..1) eases it to half that rate for taller plants (the small
+ * trees, Plants.ts; the game's palm). `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the bent
  * position, the wind field's ( direction x, direction z, lean, gust ) at the root and the plant's
  * sway: its horizontal offset over `amplitude` times LEAN_REF, the lean and swing as a tip offset
  * over height (world x, z; for the wind view and probe, src/debug/WindView.ts; a shader that does

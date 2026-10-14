@@ -74,6 +74,10 @@ packages, into `dist/licenses/`.
     shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,
     integrated wind and the rain veil and ripple gradients are original Ponlai code as well; the
     wet-material response implements the published techniques acknowledged below.
+  - Techniques without code: the meadow's blades thinned by distance in `src/world/Grass.ts`
+    (`tuftLod`) follow the tier fade of `src/world/vegetation/GrassField.js` (each blade narrowing
+    to nothing over a short distance of its own while the kept ones widen so that the blade count
+    times the width holds); written for this project's tufts, culling and coverage rules.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
 ### three-geospatial
@@ -317,6 +321,9 @@ packages, into `dist/licenses/`.
 Published techniques this project implements without using their code; each is also credited in a
 comment where it is used.
 
+- Rosettes of broad leaves and fern fronds turned by the golden angle: H. Vogel,
+  *A better way to construct the sunflower head* (Mathematical Biosciences 44, 1979), in
+  `src/world/Plants.ts`.
 - FFT ocean: J. Tessendorf,
   [*Simulating Ocean Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
   (SIGGRAPH course notes, 2002 revision).
@@ -449,7 +456,7 @@ comment where it is used.
 - Vegetation wind in layers (the whole plant bent from its root keeping each vertex's distance to
   it, branches swinging on their own phase, leaf edges fluttering along the normal): Tiago Sousa,
   *Vegetation Procedural Animation and Shading in Crysis* (GPU Gems 3, chapter 16, 2007), in
-  `src/world/Foliage.ts` (`mainBend`) and `RimFoliage.ts`. Each plant answering the
+  `src/world/Foliage.ts` (`mainBend`), `Plants.ts` and `RimFoliage.ts`. Each plant answering the
   local wind like a spring at its own natural frequency: Santa Monica Studio's wind in *God of War*
   (Rupert Renard, *Wind Simulation in God of War*, GDC 2019), in `mainBend`.
 - The island's growth (`src/world/IslandGrowth.ts`): coastlines as the level sets of a fractal

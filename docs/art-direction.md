@@ -59,9 +59,11 @@ art decision changes; reference images stay out of the repository.
   between overgrown stretches and cut-open root soil.
 - Wildflowers are plants (daisy, umbel, spike, cup) with leaf rosettes, their heads just above the
   sward, in beds of a few of one kind gathered in drifts, not coloured stars on the lawn.
-- The terrain plants only the meadow (grass, wildflowers), the rim bushes and the rim's hanging
-  growth. Plants that matter to play (coconut palms) are content placed in the world, not
-  terrain.
+- The terrain plants the meadow (grass, wildflowers), the rim bushes, the rim's hanging growth and,
+  on the plateau, loose groups of round shrubs (up to about head height), broad-leaved clumps and
+  ferns, with a few small trees (2.5 - 3.5 m, a forked grey-brown trunk under clustered crowns),
+  each grown from its own seed so no two share a silhouette. The walker's loop stays open meadow.
+  Plants that matter to play (coconut palms) are content placed in the world, not terrain.
 - All vegetation moves in one wind: gusts visibly sweep the meadow and change as they go; still air
   is the rest pose.
 

@@ -4,8 +4,9 @@ import type { Cell, GridApi, IslandInput, Vec2 } from './types.ts';
 
 // The ground grid: 0.5 m cells over the land lattice's whole extent, anchored to the world, so a
 // grown island only opens cells and every index stays valid. A cell is walkable on the island top,
-// clear of the cliff rim, and free of bushes. Everything here is derived: the island from the
-// world's own functions on the land, its bushes from the world generator's input, so a loaded game
+// clear of the cliff rim, and free of bushes, shrubs and trees. Everything here is derived: the
+// island from the world's own functions on the land, its bushes and plants from the world
+// generator's input and the page's planting, so a loaded game
 // rebuilds the same grid. The page gives the island's top from the world's chunks (their walk
 // tiles, `topFromTiles`, the same cells as the land's footprint 0.9 m inside its edge), so a grown
 // island's grid (`setIsland`, Growth.ts and Sim.addPiece) is a fresh load's; without them (the node checks) it is
@@ -16,7 +17,7 @@ const CELL = 0.5;
 const SIDE = Math.round( 2 * GROWTH.half / CELL );
 /** keep this far inside the island's edge (m), so feet never hang over the rim */
 const RIM_MARGIN = 0.9;
-/** a bush blocks the cells within this fraction of its radius (and the cell under its centre) */
+/** a bush or a plant blocks the cells within this fraction of its radius (and the cell under its centre) */
 const BLOCK_FRACTION = 0.6;
 
 // the island's top depends on the land alone: computed once per land (the footprint takes a
@@ -97,7 +98,7 @@ export class Grid implements GridApi {
 		const n = this.cols * this.rows;
 		this.top = topOf( input );
 		this.open = this.top.slice();
-		for ( const o of input.bushes ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
+		for ( const o of [ ...input.bushes, ...input.plants ] ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
 		this.region = new Int32Array( n );
 		this.g = new Float64Array( n );
 		this.parent = new Int32Array( n );
@@ -118,7 +119,7 @@ export class Grid implements GridApi {
 
 		this.top = topOf( input );
 		this.open.set( this.top );
-		for ( const o of input.bushes ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
+		for ( const o of [ ...input.bushes, ...input.plants ] ) this.block( o.x, o.z, o.r * BLOCK_FRACTION );
 		this.main = this.label();
 
 	}

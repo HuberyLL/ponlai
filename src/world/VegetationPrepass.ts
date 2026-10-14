@@ -4,7 +4,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 
-// A depth prepass for the alpha-to-coverage vegetation (grass, bushes, rim leaves).
+// A depth prepass for the alpha-to-coverage vegetation (grass, bushes, plateau plants, rim leaves).
 //
 // Profiling at 4x MSAA showed that nearly all of the vegetation's cost is its fragment shading:
 // the same draws with a flat shader were 4.4 ms (render scale 1) to 5.9 ms (1.5) cheaper over the
@@ -42,9 +42,10 @@ import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 // Rules for anything that touches it:
 // - At 4x the vegetation's coverage is decided by the prepass alone: the shaded draw is plain
 //   opaque geometry limited by equal depth to the prepass's samples.
-// - A depth copy follows its mesh's per-draw choices (blade count, `bladeGain`, the culled list),
-//   so the equal test holds for every batch; a per-object uniform (`onObjectUpdate`) reads the
-//   drawn object's own userData, so each copy carries the fields its shader reads.
+// - A depth copy follows its mesh's per-draw choices (blade count, `grassLod`, the culled list and
+//   its bands, which are the shared geometry's indirect offsets), so the equal test holds for
+//   every batch; a per-object uniform (`onObjectUpdate`) reads the drawn object's own userData, so
+//   each copy carries the fields its shader reads.
 // - Keep `material.alphaTest` itself at its value (the shadow passes copy it) and leave it out of
 //   the shaded draw's shader build only.
 // - A new alpha-to-coverage vegetation group joins `installVegetationPrepass`'s list; anything
@@ -169,7 +170,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 
 			before.call( mesh, renderer, s, camera, geometry, mat, group );
 			if ( ( depth as THREE.InstancedMesh ).isInstancedMesh ) ( depth as THREE.InstancedMesh ).count = ( mesh as THREE.InstancedMesh ).count;
-			depth.userData.bladeGain = mesh.userData.bladeGain;
+			depth.userData.grassLod = mesh.userData.grassLod;
 			depth.userData.grassCulled = mesh.userData.grassCulled;
 
 		};

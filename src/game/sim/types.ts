@@ -134,12 +134,15 @@ export interface SimState {
 
 /**
  * What the island looks like to the simulation, from the world generator's own exports (never
- * re-sampled here): the grown land, whose outline WorldShapes' footprint gives, and the rim bushes
- * it placed (WorldData.bushes), each an obstacle.
+ * re-sampled here): the grown land, whose outline WorldShapes' footprint gives, the rim bushes
+ * it placed (WorldData.bushes) and the shrubs and small trees the page planted (PlantSites.ts),
+ * each an obstacle.
  */
 export interface IslandInput {
 	land: LandLattice;
 	bushes: readonly { x: number; z: number; r: number }[];
+	/** r is the ground the plant covers */
+	plants: readonly { x: number; z: number; r: number }[];
 	/** the island's top clear of the rim, a byte per ground cell (grid.ts `topFromTiles`: the page
 	 * takes it from the world's chunks); without it the grid finds it from the land */
 	top?: Uint8Array;
