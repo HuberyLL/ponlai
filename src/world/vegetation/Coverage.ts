@@ -80,8 +80,8 @@ export function coverageAlphaTest( alpha: F, cutoff: F ): F {
  * (VegetationPrepass.ts) and the shaded draw leaves it out of its shader there, while the shadow
  * passes copy only the numeric `alphaTest` and keep their plain cut-out. 4x and one sample outside
  * the temporal modes keep theirs (alpha to coverage, the plain test). Set explicitly on every leaf
- * material: a cloned node material loses its numeric `alphaTest` (RimFoliage.ts), so its depth copy
- * had no cut-out at all under the temporal modes before this. */
+ * material: a leaf without a numeric `alphaTest` (the rim's trails, `alphaTest: 'alphaOnly'` in
+ * Material.ts) would otherwise have no cut-out at all in its depth copy under the temporal modes. */
 export function useLeafCoverage( material: THREE.NodeMaterial, cutoff = LEAF_ALPHA_TEST ): void {
 
 	if ( TEMPORAL ) material.alphaTestNode = coverageAlphaTest( diffuseColor.a, float( cutoff ) );
