@@ -10,7 +10,7 @@
 // their artifacts) and the temp folders:
 // - bulk: images and videos of 256 KB or more (captures, clip frames, crops: .png .jpg .jpeg
 //   .webm .mp4 .mov .exr .raw .rgba .bin) and browser profiles left in a task folder, under
-//   artifacts/{plans,perf,verification,crops}, once older than --days. Reports, JSON and small
+//   artifacts/{plans,archive,perf,verification,crops}, once older than --days. Reports, JSON and small
 //   images stay, and so does every image a report or page links to (a path in a .md or .html file
 //   under those folders, read relative to that file, the checkout or artifacts/): what the user
 //   reviews keeps its pictures, while clip frames and capture sets nobody links go. Other artifacts
@@ -53,7 +53,7 @@ const HOUR = 3600e3;
 const DAY = 24 * HOUR;
 const GB = 1024 ** 3;
 const DEFAULTS = { days: 2, cap: 50, floor: 12 };
-const GENERATED = [ 'plans', 'captures', 'perf', 'verification', 'crops', 'parity' ];
+const GENERATED = [ 'plans', 'archive', 'captures', 'perf', 'verification', 'crops', 'parity' ];
 const BULK = new Set( [ '.png', '.jpg', '.jpeg', '.webm', '.mp4', '.mov', '.exr', '.raw', '.rgba', '.bin' ] );
 const BULK_MIN = 256 * 1024;
 const LINK = /[\w./~@+%-]+\.(?:png|jpe?g|webm|mp4|mov|exr|raw|rgba|bin)\b/gi;
