@@ -74,13 +74,13 @@ export const EDDY_TILE = 30; // the eddies' tile, both ways (six cells: 5 m)
 export const EDDY_RATE = 1.1; // eddies travel this much faster than the mean wind
 const EDDY_SHARE = 0.15;
 // The plants' lean (horizontal tip offset over height) is the wind's pressure, (speed / fair)^2,
-// times a calm share plus the gust's, eased toward MAX_LEAN: about 0.06 between gusts and 0.11
-// in one on a fair day, 0.15 and 0.27 in a storm's gale, and nothing in still air. A plant leans
-// downwind all the time and a gust deepens it: the gust's share is held near the calm one so the
-// lean varies by about a fifth of its mean as gusts pass (the probe's sigma along over lean),
-// a sweep the eye follows without the plants pumping.
-const MEAN_LEAN = 0.06;
-const GUST_LEAN = 0.05;
+// times a calm share plus the gust's, eased toward MAX_LEAN: about 0.035 between gusts and 0.145
+// at a gust's core on a fair day (four times as much), 0.09 and 0.34 in a storm's gale, and
+// nothing in still air. A plant leans downwind all the time and a gust bends it well over: the
+// gust's share is several times the calm one so the gusts read as bright and dark bands sweeping
+// the meadow (docs/art-direction.md), while each plant's own swing stays a sixth of its lean.
+const MEAN_LEAN = 0.035;
+const GUST_LEAN = 0.13;
 const MAX_LEAN = 1.2;
 // The plants' own sway about the lean travels with the gusts (`gustWave`): its crests lie
 // SWAY_SPREAD metres apart along the wind, so neighbours within a metre or two move together and
@@ -305,7 +305,7 @@ export function gustWave( wind: WindState, position: Node<'vec2'>, cycles: numbe
  * wider in a gust and with the wind. */
 export function swingOf( wind: WindState, gust: Node<'float'> ): Node<'float'> {
 
-	return wind.breeze.mul( gust.mul( 0.25 ).add( 0.135 ) );
+	return wind.breeze.mul( gust.mul( 0.32 ).add( 0.09 ) );
 
 }
 
