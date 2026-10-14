@@ -483,11 +483,11 @@ function summarise( frames ) {
 	// Frame hitches: long rAF intervals. The tick's own work shows in its own frame (new pipelines,
 	// a long JS tick), work issued after the previous tick (async bakes) in the next interval; a GPU
 	// hitch reaches the interval through the queue up to a few seconds later (the largest one in
-	// the 2.5 s before is taken as the cause). A tick held up in one of the queue calls (their time
-	// is not JS: a large upload's copy counts there too) names the call; the rest is the browser's
-	// pacing.
+	// the 2.5 s before is taken as the cause). A tick held up in one of the queue calls or in an
+	// encoding call that blocked (their time is not JS: a large upload's copy counts there too)
+	// names the call; the rest is the browser's pacing.
 	const outsideMedian = quantile( of( 'outsideJs' ), 0.5 );
-	const CALLS = { submit: 'queue.submit', write: 'queue writes', texture: 'getCurrentTexture' };
+	const CALLS = { submit: 'queue.submit', write: 'queue writes', texture: 'getCurrentTexture', encode: 'an encoding call' };
 	const waitMedians = Object.fromEntries( Object.keys( CALLS ).map( ( k ) => [ k, quantile( frames.map( ( f ) => f.waits?.[ k ] ).filter( Number.isFinite ), 0.5 ) || 0 ] ) );
 	const hitches = [];
 	frames.forEach( ( f, i ) => {
@@ -533,13 +533,13 @@ function summarise( frames ) {
 		gpuShare: r2( mean( timed.map( ( f ) => f.gpu ) ) / mean( intervals ) ),
 		span: stats( timed.map( ( f ) => f.span ) ),
 		// the tick's own JS work, its wall time and the part of it spent blocked in the queue calls
-		// (submit, writeBuffer, getCurrentTexture; by call in `waits`)
+		// (submit, writeBuffer, getCurrentTexture) and the encoding calls' blocks (by call in `waits`)
 		js: stats( of( 'js' ) ),
 		jsWall: stats( of( 'jsWall' ) ),
 		submitWait: stats( of( 'submitWait' ) ),
-		...( frames.some( ( f ) => f.waits ) ? { waits: Object.fromEntries( [ 'submit', 'write', 'texture' ].map( ( k ) => [ k, stats( frames.map( ( f ) => f.waits?.[ k ] ).filter( Number.isFinite ) ) ] ) ) } : {} ),
+		...( frames.some( ( f ) => f.waits ) ? { waits: Object.fromEntries( Object.keys( CALLS ).map( ( k ) => [ k, stats( frames.map( ( f ) => f.waits?.[ k ] ).filter( Number.isFinite ) ) ] ) ) } : {} ),
 		// JS of the render and compute calls issued after the tick (the sky's bakes), less their
-		// queue waits (`outsideWait`), and the gap between ticks
+		// waits (`outsideWait`), and the gap between ticks
 		outsideJs: stats( of( 'outsideJs' ) ),
 		outsideWait: stats( of( 'outsideWait' ) ),
 		gap: stats( of( 'gap' ) ),
@@ -2560,7 +2560,7 @@ function markdownProfile( meta, runs ) {
 		`Frame interval in ms (rAF to rAF, ${ meta.display ? 'at the display\'s refresh' : meta.vsync ? 'under vsync at 60 Hz' : 'uncapped' }). ` +
 		'GPU busy: the time the frame\'s passes add to the GPU\'s timeline (median); ' +
 		'GPU p95: the 95th percentile of the GPU\'s own frame-to-frame interval. JS: the tick\'s own work (median), without the time it was ' +
-		'blocked in queue.submit, writeBuffer and getCurrentTexture while the GPU caught up. Passes: mean GPU ms per frame. Hitches: frames over 25 ms and over 1.5 times the ' +
+		'blocked in queue.submit, writeBuffer, getCurrentTexture or an encoding call while the GPU caught up. Passes: mean GPU ms per frame. Hitches: frames over 25 ms and over 1.5 times the ' +
 		'median, as frame intervals (cause: pipeline compile, JS tick, or GPU work through the queue) / on the GPU\'s timeline (cause: the pass ' +
 		'that rose most above its median).' + ( meta.vsync ? ' Under vsync the intervals quantise to vblanks (16.7, 33.3 ms) and a GPU-bound frame waits for the display in getCurrentTexture.' : '' ), '' ];
 	runs.forEach( ( run, k ) => {

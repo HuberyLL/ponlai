@@ -38,6 +38,9 @@ packages, into `dist/licenses/`.
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
     `Sky.js`, ported from WGSL to TSL.
+  - `src/post/TemporalLocks.ts`: the motion cap, the temporal reactive and the clamp-drop of
+    `TemporalUpscale.js`'s accumulation, which is AMD's FSR 2 (see "FSR 2" below; licence
+    [`src/post/tidewater-fsr2.LICENSE.txt`](src/post/tidewater-fsr2.LICENSE.txt), both notices).
   - `src/sky/Clouds.ts`, `src/materials/CloudNoise.ts`: the volumetric cumulus from
     `SkyProClouds.js`, tidewater's port of the Three.js Sky Pro clouds ("Partly cloudy" preset),
     ported from WGSL to TSL: the procedural weather map and its bounds grid, the shell density
@@ -222,6 +225,22 @@ packages, into `dist/licenses/`.
   (AMD's layout) where the input is filterable; RCAS is a function the frame graph's canvas pass
   calls before the grain, instead of a second canvas-sized pass and target; the unused alpha
   channel is dropped.
+
+### FSR 2 (AMD FidelityFX, through tidewater)
+
+- Upstream: tidewater's `src/post/TemporalUpscale.js` (commit 4811ba4, above), the accumulation of AMD
+  FidelityFX Super Resolution 2 2.2 ([FidelityFX-FSR2](https://github.com/GPUOpen-Effects/FidelityFX-FSR2),
+  `ffx_fsr2_accumulate.h`)
+- Copyright: (c) 2022-2023 Advanced Micro Devices, Inc.; (c) 2026 DRG Software Solutions LLC
+- Licence: MIT, see [`src/post/tidewater-fsr2.LICENSE.txt`](src/post/tidewater-fsr2.LICENSE.txt) (both
+  notices)
+- File: `src/post/TemporalLocks.ts`: the accumulation cap of a moving pixel, the temporal reactive
+  factor carried to the next frame (its sign: the pixel moved) and the weight a clipped history
+  drops.
+- Changes: TSL; weights in frames' worth of a frame's weight instead of Lanczos sample weights;
+  display-referred input; the reactive inputs left out of the carried factor, which scales the
+  capped frames (after the cap, not before it) and is not set to 1 where the history is new; the
+  clamp-drop only on moving pixels, to one frame, by how far the history lay outside the box.
 
 ## Assets
 
@@ -458,8 +477,10 @@ comment where it is used.
   motion and depth) and the resolve at the canvas's size, after FSR 2's reconstruct-and-dilate
   pass: AMD FidelityFX Super Resolution 2
   ([its documentation](https://gpuopen.com/manuals/fidelityfx_sdk/techniques/super-resolution-temporal/))
-  and Unreal Engine's Temporal Super Resolution. All used as techniques only; no code of three.js's
-  `TRAANode` or `TAAUNode` is used.
+  and Unreal Engine's Temporal Super Resolution, used as techniques (FSR 2's code that is used is
+  listed under "FSR 2" above); no code of three.js's `TRAANode` or `TAAUNode` is used. A history
+  rejected where the motion it was written with differs from this pixel's: after Unity HDRP's TAA
+  (motion vector rejection) and Unreal's TSR (history rejection), as a technique.
 - The frame graph (`src/post/graph/`: passes that declare what they read and write, versioned
   resources, the declared order checked, passes nothing reads culled, the attachments' load and
   store derived from the passes that run): Yuriy O'Donnell,

@@ -46,6 +46,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   for minutes runs as `node tools/job.mjs start --wait -- <command>`, is waited on with
   `node tools/job.mjs wait <log>` (at most 4 minutes per call), and is stopped with
   `job.mjs stop <log>` before an agent hands back (`docs/tools.md`, Long jobs and waiting).
+- Clip frames, capture sets and references older than 2 days are removed on their own
+  (`tools/storage.mjs`, started by `job.mjs`); images a report or page links to stay, and a folder
+  with a `.keep` file is kept (`docs/tools.md`, Disk space).
 - Headed browser runs take over the user's screen: run one only for what a screen alone shows, and
   only while `node tools/display-gate.mjs status` allows it (`docs/tools.md`, Display gate).
 - `tools/verify-*.mjs` are regression probes (GPU ones take the lock; `verify-day-cycle`,
@@ -104,9 +107,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
   final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
   temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal resolve
-  (`TemporalAA.ts`), the image of a resting scene (`TemporalRest.ts`), the scene events that
-  restart it or cut the history (`SceneEvents.ts`) and the rain's streaks and the storm's spray
-  drawn after the resolve (`AfterResolve.ts`).
+  (`TemporalAA.ts`) and the FSR 2 measures it takes for moving pixels (`TemporalLocks.ts`), the
+  image of a resting scene (`TemporalRest.ts`), the scene events that restart it or cut the
+  history (`SceneEvents.ts`) and the rain's streaks and the storm's spray drawn after the resolve
+  (`AfterResolve.ts`).
 - `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
   TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
   `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches
@@ -224,14 +228,12 @@ image diffs, wait loops); the shared tools now cover them.
 - Multisampled depth is read with `textureLoad`, one sample at a time (the sample index in its level
   argument); single-sampled, that argument is a mip level. More in `Pipeline.ts`.
 - WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The
-  anti-aliasing mode is a load knob of the tier (`aa` in `Quality.ts`): high and low run `msaa`
-  (the scene 4x, a lower render upscaled by FSR 1), medium `taau` (one sample, jittered, resolved
-  against a history and upsampled to the canvas, which holds medium's fixed budget at 60 fps where
-  MSAA does not); every mode can be chosen on any tier (`aa=msaa|taa|taau|off`, also the GUI's
-  Antialiasing control; `off` is for debugging, `aa=gt` exists in debug builds only). Code that differs by mode reads `Antialiasing.ts`'s exports
-  (`TEMPORAL`, `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier; the vegetation's cut-outs are
-  alpha to coverage under MSAA only (`Foliage.ts`, `VegetationPrepass.ts`). Find vegetation by
-  `userData.vegetation`, never by `alphaToCoverage` (`Foliage.ts`).
+  anti-aliasing mode (`msaa`, the temporal `taa` and `taau`, `off`) is a load knob of the tier
+  (`aa` in `Quality.ts`, whose header says which tier runs which and why); `aa=` or the GUI picks
+  any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
+  `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier. The vegetation's cut-outs are alpha to
+  coverage under MSAA only: find vegetation by `userData.vegetation`, never by `alphaToCoverage`
+  (`Foliage.ts`).
 - Implicitly filtered texture samples and derivatives need uniform control flow: take them
   (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
   Keep filters that take `dFdx` / `dFdy` out of `select()` / `If` branches (`SolarShadow.ts`).
@@ -240,16 +242,14 @@ image diffs, wait loops); the shared tools now cover them.
   declared in that branch only, and the shader silently draws nothing. Select between values
   built before it (`.toVar()`), or blend with 0/1 weights (`Water.ts`).
 - A `DepthTexture` without a `RenderTarget` takes the renderer's sample count, so it is declared
-  multisampled and cannot be sampled with a comparison; give it a render target.
-- three picks one sampler type per depth texture per material: a material that gathers a shadow
-  map reads it only by gather (`SolarShadow.ts`).
+  multisampled and cannot be sampled with a comparison; give it a render target. three picks one
+  sampler type per depth texture per material (`SolarShadow.ts`).
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
   (`renderOrder = -1`). See `Foliage.ts`.
-- The water samples neither the target it draws into nor more textures: it already binds 16
-  sampled textures and 14 of 16 varyings, 15 under the temporal modes (`Water.ts`): it takes no
-  history or reactive input; what the resolve needs from it goes out through its velocity. It reflects
-  only what lies inside `Water.reflectionBounds`: anything opaque placed off the island or above
-  3 m must grow that box.
+- The water samples neither the target it draws into nor more textures (it is at WebGPU's 16, its
+  varyings near the limit: `Water.ts`), so it takes no history or reactive input: what the resolve
+  needs from it goes out through its velocity. It reflects only what lies inside
+  `Water.reflectionBounds`: anything opaque placed off the island or above 3 m must grow that box.
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an
   rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).
