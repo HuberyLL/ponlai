@@ -4,6 +4,7 @@ import {
 } from 'three/tsl';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
+import { runSteps } from './Steps.ts';
 
 // GPU-driven culling for the meadow's tufts. Every tuft of every batch lives in one set of storage
 // buffers (instance transform, colour, the ground inputs, the planting anchor and a bounding
@@ -146,7 +147,8 @@ export interface CullBuffers {
 }
 
 /** The pool's arrays for `batches`, filled `per` tufts at a step (a generator, so the growth can
- * spread the work over idle time: World growth, Growth.ts); `fillPool` runs it to the end. The
+ * spread the work over idle time: World growth, Growth.ts); a first build runs it to the end
+ * (Steps.ts `runSteps`). The
  * result is the same however it is stepped. */
 export function* poolSteps( batches: CullBatchInput[], per = Infinity ): Generator<void, CullPool> {
 
@@ -221,19 +223,6 @@ export function* poolSteps( batches: CullBatchInput[], per = Infinity ): Generat
 	// check). Slots past the last batch are never read.
 	for ( const range of ranges ) for ( let i = range.start + range.count; i < range.groupEnd * GROUP && range.count > 0; i ++ ) matrices.copyWithin( i * 16, range.start * 16, range.start * 16 + 16 );
 	return { slots: n, groups, ranges, matrices, colors, ground, origins, spheres };
-
-}
-
-/** `poolSteps` run to the end. */
-export function fillPool( batches: CullBatchInput[] ): CullPool {
-
-	const steps = poolSteps( batches );
-	for ( ;; ) {
-
-		const next = steps.next();
-		if ( next.done ) return next.value;
-
-	}
 
 }
 
@@ -318,7 +307,7 @@ export class GrassCull {
 
 	constructor( batches: CullBatchInput[], private readonly thinFar: THREE.UniformNode<'float', number>, private readonly lod: CullLod ) {
 
-		const pool = fillPool( batches );
+		const pool = runSteps( poolSteps( batches ) );
 		this.slots = pool.slots;
 		this.groups = pool.groups;
 		this.buffers = GrassCull.buffers( pool );
