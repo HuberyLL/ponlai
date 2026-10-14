@@ -1665,11 +1665,13 @@ sceneEvent( 'loop start' );
 // to the scale the GPU's times call for within a second, out of sight (at most REVEAL_WAIT ms).
 // The game's islanders show before it lifts too: their figures arrive after the first frames once
 // their pipelines are compiled (GameView "First draws"), which on a cold shader cache took seconds.
+// So do the sun's shadows: its map draws for the first time once its casters' pipelines exist, a
+// few frames in (SunShadow).
 const REVEAL_WAIT = 3000;
 const revealAt = performance.now() + REVEAL_WAIT;
 const reveal = () => {
 
-	const waiting = ! approachWritten || ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || ( game !== null && ! game.ready() ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
+	const waiting = ! approachWritten || sunShadow.draws === 0 || ( detector !== null && ( detector.pending || ( detector.result !== null && detector.result.tier !== qualityTier ) ) ) || ( game !== null && ! game.ready() ) || dynamicResolution !== null && dynamicResolution.settling && ( gpuTimer !== null || profiler?.timestamps === true ) &&
 		! paused && ! resolution.full && performance.now() < revealAt;
 	if ( waiting ) setTimeout( reveal, 50 );
 	else {

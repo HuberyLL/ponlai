@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, select, mix, positionLocal, modelWorldMatrixInverse } from 'three/tsl';
-import { compileLatentInto } from '../post/graph/Compile.ts';
+import { compileByRendering, compileLatentInto } from '../post/graph/Compile.ts';
 import { solarSteppedShadowVisibility, solarVolumeVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
 import type { CasterColumns } from '../world/ChunkDerived.ts';
 
@@ -49,6 +49,16 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // vegetation's contact shadows); rock thinner than that along the light leaks again, so it stays
 // a few centimetres. Only this map changes: three's `shadowSide` is set for the draw and restored,
 // and the refracted map draws its casters with a material of its own.
+//
+// The map's first redraw builds every caster's pass into it, and three builds the map itself only
+// with the first receiver, in the page's first frame, so no warm-up before the loop could compile
+// those passes into it. Drawn as usual, that redraw (the frame after the first) created their
+// pipelines synchronously and stalled. It is made first with its pipelines compiled asynchronously
+// (graph/Compile.ts `compileByRendering`), drawing nothing, and drawn for real once they exist; until
+// then the receivers stay lit (`ready`) and `pending` holds the settled signal. The compile is the
+// redraw itself, its node builds made in its order, as three would make them: compiled ahead in
+// another order, the receivers' and casters' shaders came out with other temporaries and moved a
+// few pixels by one level (three r186 emits from shared node state).
 const STEP = THREE.MathUtils.degToRad( 0.2 );
 // how far closed solids' cast depth is pushed away from the light (m), see above
 const FRONT_PUSH = 0.03;
@@ -133,6 +143,8 @@ export class SunShadow {
 	private vegetationTaps: Readonly<SolarShadowTaps> = SHADOW_FILTER_PATH.vegetation ? VEGETATION_TAPS : SOLAR_SHADOW_TAPS;
 	private hasPrevious = false;
 	private cut = true;
+	// Whether the casters' passes into the map have their pipelines (see the header).
+	private casterPipelines: 'none' | 'compiling' | 'ready' = 'none';
 	/** Maps drawn since the page loaded (the settled signal's signature, post/Settled.ts; the dynamic
 	 * resolution leaves frames with periodic work out of its quantiles). */
 	draws = 0;
@@ -369,6 +381,20 @@ export class SunShadow {
 			return;
 
 		}
+		if ( this.casterPipelines !== 'ready' ) {
+
+			// the map's first redraw, its pipelines compiled first (see the header)
+			if ( this.casterPipelines === 'none' ) {
+
+				this.casterPipelines = 'compiling';
+				const ready = () => { this.casterPipelines = 'ready'; };
+				compileByRendering( renderer, () => this.render( renderer, scene, camera, node, keyDir ) ).then( ready, ready );
+
+			}
+			shadow.needsUpdate = false;
+			return;
+
+		}
 		const turned = this.drawn.lengthSq() > 0 ? this.drawn.angleTo( keyDir ) : Infinity;
 		const resized = this.maps.width !== shadow.mapSize.width || this.maps.height !== shadow.mapSize.height;
 		if ( this.cut || turned > CUT || resized ) {
@@ -424,16 +450,9 @@ export class SunShadow {
 		const shadow = this.sun.shadow, shadowCamera = shadow.camera;
 		this.draws ++;
 		this.drawn.copy( keyDir );
-		this.fit( renderer, keyDir );
-		// closed solids cast their front faces into this map alone (see the header)
-		const sides = new Map( [ ...this.frontCasters ].map( ( material ) => [ material, material.shadowSide ] ) );
-		for ( const material of this.frontCasters ) material.shadowSide = THREE.FrontSide;
-		this.frontPush.value.copy( keyDir ).normalize().multiplyScalar( - FRONT_PUSH );
 		// Draw now rather than inside the next scene render, so the copy below lands before any
 		// receiver reads the array. This is what ShadowNode.updateBefore would do with the flag.
-		node.updateShadow( { renderer, scene, camera } );
-		for ( const [ material, side ] of sides ) material.shadowSide = side;
-		shadow.needsUpdate = false;
+		this.render( renderer, scene, camera, node, keyDir );
 		if ( this.maps.width !== map.width || this.maps.height !== map.height ) this.maps.setSize( map.width, map.height, 2 );
 		renderer.copyTextureToTexture( map.depthTexture!, this.maps.depthTexture!, null, this.toCurrentLayer );
 		this.currentLayer.max.set( map.width, map.height, CURRENT + 1 );
@@ -441,6 +460,20 @@ export class SunShadow {
 		this.span.value.set( shadowCamera.right - shadowCamera.left, shadowCamera.top - shadowCamera.bottom );
 		this.range.value = shadowCamera.far - shadowCamera.near;
 		this.ready.value = 1;
+
+	}
+
+	// three's map, fitted to the casters for `keyDir` and drawn
+	private render( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, node: ShadowRenderer, keyDir: THREE.Vector3 ): void {
+
+		this.fit( renderer, keyDir );
+		// closed solids cast their front faces into this map alone (see the header)
+		const sides = new Map( [ ...this.frontCasters ].map( ( material ) => [ material, material.shadowSide ] ) );
+		for ( const material of this.frontCasters ) material.shadowSide = THREE.FrontSide;
+		this.frontPush.value.copy( keyDir ).normalize().multiplyScalar( - FRONT_PUSH );
+		node.updateShadow( { renderer, scene, camera } );
+		for ( const [ material, side ] of sides ) material.shadowSide = side;
+		this.sun.shadow.needsUpdate = false;
 
 	}
 

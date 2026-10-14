@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 
 // Ahead-of-time pipeline compiles (the frame graph's warm-up, FrameGraph.warm, the sky's and the
-// shadow maps', `compileLatentInto`):
+// shadow maps', `compileLatentInto`, and the sun map's first redraw, `compileByRendering`):
 // every draw the frame will make, built and handed to WebGPU's async pipeline creation before the
 // frame that first shows it, so no frame stalls on a pipeline (a weather change, the first bolt, a
 // storm's spray, fog setting in, the upscale switching on).
@@ -332,6 +332,41 @@ export function compileLatentInto( renderer: THREE.WebGPURenderer, objects: read
 	return withBinding( renderer, target, null, () => compileLatent( renderer, objects, scene, camera ) ).done;
 
 }
+
+/** Runs `render`, a render the renderer makes of its own (a shadow map's redraw), with the
+ * pipelines its draws need created asynchronously, as `compileAsync` creates them: a draw whose
+ * pipeline is not ready draws nothing. Its node builds are the render's own, made by its own path
+ * and in its order, which a compile of the same draws ahead cannot match: three r186 emits a shader
+ * from shared node state, so the order in which materials first build can change the code of
+ * later builds (a temporary inlined or kept), and with it a few pixels of the image. Resolves once
+ * the pipelines exist: then the render, made again, draws. Stands in for three's
+ * `Pipelines.updateForRender` (r186) for the call. */
+export function compileByRendering( renderer: THREE.WebGPURenderer, render: () => void ): Promise<void> {
+
+	const pipelines = ( renderer as unknown as { _pipelines?: PipelineCache } )._pipelines;
+	if ( typeof pipelines?.getForRender !== 'function' || typeof pipelines.updateForRender !== 'function' ) {
+
+		render();
+		return Promise.resolve();
+
+	}
+	const promises: Promise<unknown>[] = [];
+	const own = Object.prototype.hasOwnProperty.call( pipelines, 'updateForRender' ) ? pipelines.updateForRender : null;
+	pipelines.updateForRender = ( renderObject ) => void pipelines.getForRender( renderObject, promises );
+	try {
+
+		render();
+
+	} finally {
+
+		if ( own ) pipelines.updateForRender = own;
+		else delete ( pipelines as Partial<PipelineCache> ).updateForRender;
+
+	}
+	return Promise.all( promises ).then( () => undefined );
+
+}
+type PipelineCache = { getForRender( renderObject: RenderObject, promises: Promise<unknown>[] | null ): unknown; updateForRender( renderObject: RenderObject ): void };
 
 // ---- chains: the passes a full-screen material renders before itself
 
