@@ -46,6 +46,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   for minutes runs as `node tools/job.mjs start --wait -- <command>`, is waited on with
   `node tools/job.mjs wait <log>` (at most 4 minutes per call), and is stopped with
   `job.mjs stop <log>` before an agent hands back (`docs/tools.md`, Long jobs and waiting).
+- Clip frames, capture sets and references older than 2 days are removed on their own
+  (`tools/storage.mjs`, started by `job.mjs`); images a report or page links to stay, and a folder
+  with a `.keep` file is kept (`docs/tools.md`, Disk space).
 - Headed browser runs take over the user's screen: run one only for what a screen alone shows, and
   only while `node tools/display-gate.mjs status` allows it (`docs/tools.md`, Display gate).
 - `tools/verify-*.mjs` are regression probes (GPU ones take the lock; `verify-day-cycle`,
