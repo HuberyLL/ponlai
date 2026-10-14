@@ -8,14 +8,14 @@ import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { anchorStream } from './Anchors.ts';
-import { sampleMeadow, meadowColor, supportsMeadow } from '../materials/Meadow.ts';
-import { sampleMeadowSoil, soilUniforms } from '../materials/Soil.ts';
+import { sampleMeadow, meadowColor, meadowBare, supportsMeadow } from '../materials/Meadow.ts';
+import { soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
 import { setWindDisplacement, wave, windGust, windField, type WindState } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
 import { showSway } from '../debug/WindView.ts';
-import { CANOPY_TOP, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
+import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { ALPHA_TO_COVERAGE, coverageDither, markVegetation } from './Foliage.ts';
@@ -287,8 +287,9 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 	// Folding a thinned tuft into its root: a scale about the anchor, applied like the drowning.
 	const thin = ground1.w;
 	const kept = float( 1 ).sub( thin.mul( smoothstepN( grassUniforms.thinNear, grassUniforms.thinFar, length( cameraPosition.sub( origin ) ) ) ) );
-	// Keep every planting anchor. Narrower, slightly shorter shoots reveal the same soil
-	// pockets as the ground material, and a zero blend restores their original footprint.
+	// Keep every planting anchor. Over the meadow's bare earth (Meadow.ts `meadowBare`, the same
+	// field the turf shows) a tuft folds toward its root, narrower and much shorter, so the earth
+	// shows between the stubs; a zero blend restores their original footprint.
 	// Standing water drowns the blades: the tufts sink below the waterline (the ground, which
 	// carries the water's surface, hides them). About a third keep a few centimetres of their
 	// tips above it, so sparse drowned spikes stand in an open sheet of water rather than a
@@ -299,7 +300,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 	const tip = select( pick.greaterThan( 0.66 ), pick.sub( 0.66 ).mul( 0.25 ).add( 0.03 ), float( - 0.03 ) );
 	// The tallest blade of a tuft reaches about 0.9 of its height ( tuft.w / CANOPY_TOP ).
 	const sink = max( tuft.w.div( CANOPY_TOP ).mul( drowned ).mul( 0.9 ).sub( tip ), 0 );
-	const rooted = p.sub( p.sub( origin ).mul( vec3( 0.22, 0.06, 0.22 ) ).mul( soil ) ).sub( origin ).mul( drowned ).add( origin )
+	const rooted = p.sub( p.sub( origin ).mul( vec3( 0.5, 0.6, 0.5 ) ).mul( soil ) ).sub( origin ).mul( drowned ).add( origin )
 		.sub( vec3( 0, pool.mul( sink ), 0 ) );
 	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
 	const bladePhase = fract( blade.w.mul( 17.31 ).add( pick.mul( 5.13 ) ) ).mul( TAU );
@@ -307,7 +308,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 	// through the instance's own axes, then the same soil and drowning scale as `rooted` (an
 	// affine map of the position, so it scales offsets alike; the gust barely varies across a blade).
 	const across = ground1.xyz.mul( blade.y ).add( ground2.xyz.mul( blade.z ) )
-		.mul( vec3( float( 1 ).sub( soil.mul( 0.22 ) ), float( 1 ).sub( soil.mul( 0.06 ) ), float( 1 ).sub( soil.mul( 0.22 ) ) ) ).mul( drowned );
+		.mul( vec3( float( 1 ).sub( soil.mul( 0.5 ) ), float( 1 ).sub( soil.mul( 0.6 ) ), float( 1 ).sub( soil.mul( 0.5 ) ) ) ).mul( drowned );
 	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, ground0.w );
 	const bend = legacy ? undefined : bendBlade( shared.wind, rooted, origin, tuft.w, t2, bladePhase );
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
@@ -355,9 +356,14 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 	// Blades do not cast into the sun's shadow map; see MeadowCanopy.
 	// Per vertex (lower tiers) it takes the rest pose before the widening, as the shadows do; the
 	// mesh is untransformed, so `rooted` is that pose in world space.
+	// A blade's depth in the canopy is its share of the way down its own tuft times the turf's one
+	// canopy depth (MeadowCanopy.ts TURF_CANOPY_DEPTH), not its metres below the tuft's top: tall
+	// and short tufts then shade alike, so the growth field does not show as drifts of darker
+	// sward, and every root meets the turf's own shade.
+	const canopyDepth = ( at: THREE.Node<'vec3'> ) => max( float( 1 ).sub( at.y.sub( origin.y ).div( tuft.w ) ), 0 ).mul( TURF_CANOPY_DEPTH );
 	const canopy = grassQuality.canopyPerVertex
-		? varying( meadowCanopyLight( rooted.xz, tuft.w.sub( rooted.y.sub( origin.y ) ), shared.sunDir ) )
-		: meadowCanopyLight( rest.xz, tuft.w.sub( rest.y.sub( origin.y ) ), shared.sunDir );
+		? varying( meadowCanopyLight( rooted.xz, canopyDepth( rooted ), shared.sunDir ) )
+		: meadowCanopyLight( rest.xz, canopyDepth( rest ), shared.sunDir );
 	useLighting( mat, () => new VegetationLighting( mix( float( 0.72 ), float( 1 ), t ).mul( canopy ), ( L, V ) =>
 		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.42 ).add( 0.04 ).mul( t2 ) ) );
 	mat.userData.wind = wind;
@@ -518,7 +524,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		q.multiply( qy );
 
 		// Height gives the meadow a close-cropped bed with irregular islands of longer growth;
-		// the canopy's light (meadowCanopyHeight) follows this mean.
+		// the turf's canopy depth (MeadowCanopy.ts TURF_CANOPY_DEPTH) is about this mean.
 		const { growth, variation } = sampleMeadow( x, z );
 		const onStack = veg[ k + 7 ] > 0;
 		const edge = smoothstep( - 1.1, - 0.05, rim );
@@ -533,7 +539,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		meadowColor( x, z, col ).multiplyScalar( 0.93 + rng() * 0.14 );
 		for ( let d = 0; d < draws.length; d ++ ) draws[ d ] = more();
 		if ( ! supportsMeadow( y, veg[ k + 4 ] ) ) continue;
-		const soil = onStack ? 0 : sampleMeadowSoil( x, z );
+		const soil = onStack ? 0 : meadowBare( x, z );
 		const rimEdge = smoothstep( - 1.5, - 0.3, rim );
 
 		// The meadow spills to the lip. Toward the coast the tufts grow taller and lean out over
