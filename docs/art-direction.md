@@ -55,12 +55,13 @@ art decision changes; reference images stay out of the repository.
   mounded leaf clump at the lip; the lowest quarter of the cliff above the sea stays bare. The
   meadow's sod curls a little over the lip as a ragged turf skirt.
 - The meadow is a lawn: dense, even, thin straight blades of one height, standing nearly upright and
-  bending with the wind together. One grass colour, dark deep green at the root and bright fresh
-  green at the tip, with only a gentle, broad swing of its value; no clumps, tall islands or bare
+  bending with the wind together. One grass colour, a deep, slightly cool green: dark at the root
+  and in the gaps between blades, bright fresh green at the tip, with only a gentle, broad swing of
+  its value, and still green, never olive, under a low sun; no clumps, tall islands or bare
   patches. Inside the grass there are no hard shadows, only an even darkening toward the ground;
   the shade of bushes and trees lies on it soft and light, and cloud shadows pass over the whole
-  island as one soft gradient. The turf under the blades is their colour, so from afar the meadow
-  reads as one smooth carpet. Toward the coast the tufts grow taller and lean out over the lip
+  island as one soft gradient. The turf under the blades is the dark of their lower half, so from
+  afar the meadow reads as one smooth carpet. Toward the coast the tufts grow taller and lean out over the lip
   instead of thinning, and the lip alternates between overgrown stretches and cut-open root soil.
 - Wildflowers are plants (daisy, umbel, spike, cup) with leaf rosettes, their heads just above the
   sward, in beds of a few of one kind gathered in drifts, not coloured stars on the lawn.

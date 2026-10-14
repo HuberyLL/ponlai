@@ -23,9 +23,10 @@ export const SWARD_HEIGHT = 0.28;
 
 interface MeadowSample { growth: number; tone: number }
 
-// Linear albedo, before the blades' root-to-tip colour: a fresh, slightly blue green (red low
-// against green, as a lit lawn shows it), the meadow's former mean value kept.
-const LAWN = new THREE.Color( 0.062, 0.117, 0.022 );
+// Linear albedo, before the blades' root-to-tip colour: a deep, slightly cool green (red low
+// against green, and enough blue that the lit lawn reads green rather than lime, and stays green
+// rather than olive under a low, warm sun).
+const LAWN = new THREE.Color( 0.057, 0.112, 0.026 );
 
 export function sampleMeadow( x: number, z: number ): MeadowSample {
 

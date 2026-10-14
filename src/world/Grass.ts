@@ -457,15 +457,19 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const tint = fract( jitter.mul( 7.13 ).add( pick.mul( 3.7 ) ) );
 	const bladeShift = mix( vec3( 0.98, 1, 1.03 ), vec3( 1.02, 1, 0.95 ), tint ).mul( jitter.mul( 0.1 ).add( 0.95 ) );
 	// Dark, deep green at the root to a bright, fresh green at the tip (the instance colour
-	// multiplies in). At the rim's soil pockets the roots take the soil's colour.
-	const root = mix( vec3( 0.2, 0.3, 0.16 ), vec3( 0.55, 0.38, 0.23 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
+	// multiplies in): the lowest fifth keeps the root's colour and the ramp runs over the rest, so
+	// the gaps between blades read dark and the tips bright, a deep sward rather than a flat turf.
+	// The root is cooler than the tip. At the rim's soil pockets the roots take the soil's colour.
+	const root = mix( vec3( 0.07, 0.13, 0.1 ), vec3( 0.55, 0.38, 0.23 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
 	const wetness = clamp( shared.wetness, 0, 1 );
-	mat.colorNode = mix( root, vec3( 1.06, 1.08, 0.74 ), smoothstepN( 0.05, 1, t ) ).mul( bladeShift ).mul( mix( 1, 0.92, wetness ) );
+	mat.colorNode = mix( root, vec3( 1.15, 1.35, 0.95 ), smoothstepN( 0.2, 1, t ) ).mul( bladeShift ).mul( mix( 1, 0.92, wetness ) );
 	mat.roughnessNode = mix( 0.86, 0.76, wetness );
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
 	// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
-	mat.aoNode = mix( float( 0.55 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( skyVisibility );
+	// Both the sky's light (here) and the key light (`VegetationLighting` below) fall off toward
+	// the root, deepening the gaps further.
+	mat.aoNode = mix( float( 0.4 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( skyVisibility );
 	// light through the blades: strongest when the grass stands against the sun
 	// Blades do not cast into the sun's shadow map; see MeadowCanopy.
 	// Per vertex (lower tiers) it takes the rest pose before the widening, as the shadows do; the
@@ -483,7 +487,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// of its own (SunShadow `install`).
 	const shade = sunShadow.softVisibility( rooted.add( vec3( 0, SHADE_LIFT, 0 ) ), SHADE_RADIUS, SHADE_TAPS );
 	mat.userData.sunVisibility = varying( mix( float( 1 ), shade, SHADE_DEPTH ), 'vGrassSunVisibility' );
-	useLighting( mat, () => new VegetationLighting( mix( float( 0.72 ), float( 1 ), t ).mul( canopy ), ( L, V ) =>
+	useLighting( mat, () => new VegetationLighting( mix( float( 0.5 ), float( 1 ), t ).mul( canopy ), ( L, V ) =>
 		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.42 ).add( 0.04 ).mul( t2 ) ) );
 	mat.userData.wind = wind;
 	return mat;
