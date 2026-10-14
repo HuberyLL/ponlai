@@ -1,21 +1,17 @@
 import * as THREE from 'three/webgpu';
 import {
-	attribute, positionGeometry, positionLocal, normalViewGeometry, materialColor, vec3, vec4, float, mix, dot, pow, clamp,
-	smoothstep as smoothstepN, normalize, length,
+	attribute, positionGeometry, positionLocal, normalViewGeometry, vec3, float, mix, dot, clamp, smoothstep as smoothstepN, normalize, length,
 } from 'three/tsl';
-import { LEAN_REF, gustWave, setWindDisplacement, swayJitter, swingOf, wave, windField, type WindState } from '../weather/Wind.ts';
-import { followWindMotionFlag } from './WindMotion.ts';
-import { showSway } from '../debug/WindView.ts';
+import { LEAN_REF, gustWave, swayJitter, swingOf, wave, windField, type WindState } from '../weather/Wind.ts';
 import { mulberry32 } from './noise.ts';
 import { BUSH_STRIDE } from './FoliageSites.ts';
-import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
-import { ALPHA_TO_COVERAGE, markVegetation, useLeafCoverage } from './vegetation/Coverage.ts';
-import { LEAF_ALPHA_TEST, leafAlphaTexture, leafTexture } from './vegetation/LeafTexture.ts';
+import { leafTexture } from './vegetation/LeafTexture.ts';
+import { vegetationMaterial } from './vegetation/Material.ts';
 import type { Shared } from '../shared.ts';
 
 // Individual folded leaves on short branching sprays. Three offset crowns keep bushes
-// irregular; real leaf normals separate sunlit faces from their shaded neighbours.
+// irregular; real leaf normals separate sunlit faces from their shaded neighbours. The material
+// comes from the vegetation's factory (vegetation/Material.ts, family 'leaf').
 //
 // This module also holds the plants' main bend (`mainBend`), which the flowers, the plateau's
 // plants and the game's palm share, and the leaf-stem flag (`LEAF_STEM`). What every vegetation
@@ -163,18 +159,6 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
 
 function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.MeshStandardNodeMaterial {
 
-	const mat = new THREE.MeshStandardNodeMaterial( {
-		map, alphaTest: LEAF_ALPHA_TEST, alphaToCoverage: ALPHA_TO_COVERAGE, side: THREE.DoubleSide, roughness: 0.82, metalness: 0, vertexColors: true,
-	} );
-	mat.alphaMap = leafAlphaTexture( map.image.width );
-	markVegetation( mat );
-	useLeafCoverage( mat );
-	const wetness = clamp( shared.wetness, 0, 1 );
-	const wetTint = mix( 1, 0.92, wetness );
-	// materialColor retains the leaf map and its alpha; Three applies vertex and instance
-	// colours afterward. Wetness must not darken the cutout silhouette itself.
-	mat.colorNode = materialColor.mul( vec4( wetTint, wetTint, wetTint, 1 ) );
-	mat.roughnessNode = mix( 0.82, 0.68, wetness );
 	const g = positionGeometry; // the unit bush, before the instance places it
 	const vH = clamp( g.y.div( 0.72 ), 0, 1 );
 	const p = positionLocal; // placed: world space
@@ -184,33 +168,30 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.Mesh
 	const root = attribute<'vec4'>( 'bushRoot', 'vec4' ).xyz;
 	const ph = dot( g, vec3( 4.1, 3.3, 5.7 ) );
 	let sway: THREE.Node<'vec2'> | undefined;
-	const swayed = setWindDisplacement( mat, ( wind ) => {
+	return vegetationMaterial( shared, {
+		family: 'leaf', roughness: 0.82, leaf: { map },
+		wet: { tint: 0.92, roughness: 0.68 },
+		rest: p,
+		displacement: ( wind ) => {
 
-		const bend = mainBend( wind, p, root, vH.mul( vH ).mul( 0.022 ), 30 );
-		if ( wind === shared.wind ) sway = bend.sway;
-		const field = bend.field;
-		const shake = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) ).mul( vH ).mul( 0.006 );
-		const flutter = vec3( 0, wave( wind.flutter, 2.3, ph ), 0 )
-			.add( vec3( field.y.negate(), 0, field.x ).mul( wave( wind.flutter, 3.1, ph.mul( 1.3 ) ).mul( 0.6 ) ) );
-		return bend.position.add( flutter.mul( shake ) );
+			const bend = mainBend( wind, p, root, vH.mul( vH ).mul( 0.022 ), 30 );
+			if ( wind === shared.wind ) sway = bend.sway;
+			const field = bend.field;
+			const shake = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) ).mul( vH ).mul( 0.006 );
+			const flutter = vec3( 0, wave( wind.flutter, 2.3, ph ), 0 )
+				.add( vec3( field.y.negate(), 0, field.x ).mul( wave( wind.flutter, 3.1, ph.mul( 1.3 ) ).mul( 0.6 ) ) );
+			return bend.position.add( flutter.mul( shake ) );
 
-	}, shared.wind );
-	useRestPoseShadows( mat, p, swayed, leafCastMask(), previousSway( mat, shared.wind ) );
-	if ( sway ) showSway( mat, sway, shared.wind );
-	// Each folded leaf keeps its own highlights and shading across the canopy.
-	mat.normalNode = normalViewGeometry;
-	// deep inside and underneath a bush the light is gone
-	mat.aoNode = mix( float( 0.32 ), float( 1 ), smoothstepN( 0, 0.85, vH ) ).mul( attribute<'float'>( 'skyVisibility', 'float' ) );
-	useLighting( mat, () => new VegetationLighting( mix( float( 0.7 ), float( 1 ), smoothstepN( 0, 0.6, vH ) ), ( L, V, N ) => {
-
-		// wrapped light (leaves scatter light round to the shadow side) + glow against the sun
-		const back = pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 );
-		const rim = float( 1 ).sub( clamp( dot( N, V ), 0, 1 ) );
-		const wrap = clamp( dot( N, L ).mul( 0.5 ).add( 0.5 ), 0, 1 );
-		return wrap.mul( wrap ).mul( 0.13 ).add( back.mul( rim.mul( rim ).mul( 0.9 ).add( 0.1 ) ) );
-
-	} ) );
-	return mat;
+		},
+		castMask: leafCastMask(),
+		sway: () => sway,
+		// Each folded leaf keeps its own highlights and shading across the canopy.
+		normal: normalViewGeometry,
+		// deep inside and underneath a bush the light is gone
+		ao: mix( float( 0.32 ), float( 1 ), smoothstepN( 0, 0.85, vH ) ).mul( attribute<'float'>( 'skyVisibility', 'float' ) ),
+		// wrapped light and a glow against the sun (`leafTransmission`), dimmed toward the root
+		light: { scale: () => mix( float( 0.7 ), float( 1 ), smoothstepN( 0, 0.6, vH ) ) },
+	} );
 
 }
 
@@ -298,7 +279,6 @@ export function buildFoliage( bushes: Float32Array, shared: Shared ): THREE.Inst
 	geo.setAttribute( 'bushRoot', new THREE.InstancedBufferAttribute( new Float32Array( BUSH_CAPACITY * 4 ), 4 ) );
 	const mat = foliageMaterial( shared, map );
 	const mesh = new THREE.InstancedMesh( geo, mat, BUSH_CAPACITY );
-	followWindMotionFlag( mat );
 	// (a colour per instance whatever the count, so the shader is the same on every land)
 	mesh.instanceColor = new THREE.InstancedBufferAttribute( new Float32Array( BUSH_CAPACITY * 3 ), 3 );
 	setBushes( mesh, bushInstances( bushes ) );
