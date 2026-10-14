@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionLocal, vec2, vec3, vec4, float, mix, sin, dot, pow, clamp, materialColor } from 'three/tsl';
+import { attribute, positionLocal, vec3, vec4, float, mix, dot, pow, clamp, materialColor } from 'three/tsl';
 import { meadowColor } from '../materials/Meadow.ts';
 import { SOIL_PALETTE } from '../materials/Soil.ts';
 import { SKIRT_INFO, SKIRT_RING } from './RimGround.ts';
@@ -7,7 +7,7 @@ import { cellStream } from './Anchors.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import { LEAN_REF, gustWave, setWindDisplacement, swingOf, windField } from '../weather/Wind.ts';
-import { keepLegacyWind } from './WindVariants.ts';
+import { followWindMotionFlag } from './WindMotion.ts';
 import { showSway } from '../debug/WindView.ts';
 import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
 import { noise3, smoothstep } from './noise.ts';
@@ -31,7 +31,6 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 	let next = steps.next();
 	while ( ! next.done ) next = steps.next();
 	const mesh = new THREE.Mesh( next.value.geometry, skirtMaterial( shared ) );
-	keepLegacyWind( mesh, skirtMaterial( shared, true ) );
 	mesh.name = 'turfSkirt';
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
@@ -208,7 +207,7 @@ export function* turfSkirtSteps( skirt: RimSkirtData, per = Infinity ): Generato
 
 }
 
-function skirtMaterial( shared: Shared, legacy = false ): THREE.MeshStandardNodeMaterial {
+function skirtMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 	const mat = new THREE.MeshStandardNodeMaterial( { vertexColors: true, side: THREE.DoubleSide, roughness: 0.93, metalness: 0 } );
 	const wetness = clamp( shared.wetness, 0, 1 );
@@ -216,28 +215,21 @@ function skirtMaterial( shared: Shared, legacy = false ): THREE.MeshStandardNode
 	mat.colorNode = materialColor.mul( vec4( wetTint, wetTint, wetTint, 1 ) );
 	mat.roughnessNode = mix( 0.93, 0.74, wetness );
 	const blade = attribute<'float'>( 'skirtBlade', 'float' ), sway = attribute<'float'>( 'skirtSway', 'float' );
-	const wind = shared.wind.direction;
-	const phase = shared.wind.phase.mul( 1.3 ).add( dot( positionLocal.xz, vec2( 2.1, 1.7 ) ) );
-	let swayed;
+	// The thatch leans with the meadow's gust field and sways with it (Wind.ts `gustWave`, 64
+	// swings per gust tile: about 1.9 Hz in a fair wind), a sixth of its lean.
 	let skirtSway: THREE.Node<'vec2'> | undefined;
-	if ( legacy ) swayed = positionLocal.add( vec3( wind.x, 0.25, wind.y ).mul( sin( phase ).mul( sway ).mul( shared.wind.strength ).mul( 0.012 ) ) );
-	else {
+	const swayed = setWindDisplacement( mat, ( wind ) => {
 
-		// The thatch leans with the meadow's gust field and sways with it (Wind.ts `gustWave`, 64
-		// swings per gust tile: about 1.9 Hz in a fair wind), a sixth of its lean.
-		swayed = setWindDisplacement( mat, ( wind ) => {
+		const field = windField( wind, positionLocal.xz );
+		const shiver = gustWave( wind, positionLocal.xz, 64 ).mul( swingOf( wind, field.w ) );
+		if ( wind === shared.wind ) skirtSway = field.xy.mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( LEAN_REF );
+		return positionLocal.add( vec3( field.x, 0.25, field.y ).mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( sway ).mul( 0.012 ) );
 
-			const field = windField( wind, positionLocal.xz );
-			const shiver = gustWave( wind, positionLocal.xz, 64 ).mul( swingOf( wind, field.w ) );
-			if ( wind === shared.wind ) skirtSway = field.xy.mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( LEAN_REF );
-			return positionLocal.add( vec3( field.x, 0.25, field.y ).mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( sway ).mul( 0.012 ) );
-
-		}, shared.wind );
-
-	}
+	}, shared.wind );
 	// Blades are a few millimetres wide, far under a shadow texel: only the sod casts.
 	useRestPoseShadows( mat, positionLocal, swayed, float( 1 ).sub( blade ), previousSway( mat, shared.wind ) );
 	if ( skirtSway ) showSway( mat, skirtSway, shared.wind );
+	followWindMotionFlag( mat );
 	useLighting( mat, () => new VegetationLighting( float( 1 ), ( L, V ) =>
 		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.4 ).add( 0.03 ).mul( blade ) ) );
 	mat.name = 'turfSkirt';

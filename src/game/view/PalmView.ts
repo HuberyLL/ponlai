@@ -4,7 +4,7 @@ import { shared } from '../../shared.ts';
 import { setWindDisplacement, wave } from '../../weather/Wind.ts';
 import { mainBend } from '../../world/Foliage.ts';
 import { previousSway, useRestPoseShadows } from '../../world/VegetationShadow.ts';
-import { followWindMotionFlag } from '../../world/WindVariants.ts';
+import { followWindMotionFlag } from '../../world/WindMotion.ts';
 import { showSway } from '../../debug/WindView.ts';
 import { PALM_COCONUTS } from '../sim/places.ts';
 import type { PalmState } from '../sim/types.ts';
@@ -22,7 +22,7 @@ import type { RGB } from './Props.ts';
 // its root, swaying with the plants about it at half a shrub's rate (Foliage.ts mainBend, `slow`),
 // and each frond swings a little on its own phase from the crown out. Its shadow keeps the rest pose, as the vegetation's does
 // (VegetationShadow.ts), and under the temporal modes it writes the wind's motion as they do (its
-// previous sway, class vegetation; `flags.mv.wind` turns it off, WindVariants.ts). The geometry
+// previous sway, class vegetation; `flags.mv.wind` turns it off, WindMotion.ts). The geometry
 // is in world space (the mesh sits at the origin), as the wind field is sampled at world
 // positions. Its crown rises above everything the island grows, so GameView grows the sea's
 // reflection box and the sun shadow's casters to hold it (Water.ts, SunShadow.ts).

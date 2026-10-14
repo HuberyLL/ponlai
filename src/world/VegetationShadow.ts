@@ -25,7 +25,7 @@ type V3 = THREE.Node<'vec3'>;
 // no motion (VegetationPrepass.ts), the shadow passes draw the rest pose, and a draw without a
 // velocity target needs no previous data, so none of them evaluates the sway twice. Without the
 // temporal modes nothing is built for it (MSAA's shaders are unchanged).
-// `flags.mv.wind = false` (WindVariants.ts sets `userData.windMotion = false`) builds the material
+// `flags.mv.wind = false` (WindMotion.ts sets `userData.windMotion = false`) builds the material
 // with the current pose as the previous one: no wind motion and no second sway, the A/B of its
 // cost and the MV-UNIT check's "source off".
 export function useRestPoseShadows( material: THREE.NodeMaterial, restPosition: V3, animatedPosition: V3, castMask?: F, previousPosition?: V3 ): V3 {

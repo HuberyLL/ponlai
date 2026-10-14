@@ -200,7 +200,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   vectors, `flags.jitter = false` the jitter, `s.taaCut( reason )` cuts the history and
   `s.motionCheck()` lists the materials whose motion vectors are missing or partial.
 - `vegPrepass=0` (the single coverage pass), `vegPrepass=coverage` (the prepass with coverage kept
-  in the shaded draw), `windLegacy` (the old global-sine sway).
+  in the shaded draw).
 - `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
   GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
 - `windView` makes the vegetation's wind visible (debug pages only; read at load, so without it

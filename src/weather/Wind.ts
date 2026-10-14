@@ -32,8 +32,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // evaluated in the material's position stage (its rest inputs read `positionLocal` before three
 // assigns the swayed position) with `shared.wind` for the frame drawn or `shared.wind.previous`
 // (the last rendered frame's, equal to the current one while paused and after a seek, so a jump
-// leaves no motion); the grass's widening keeps the current camera's. Each mesh keeps the old
-// global-sine sway for A/Bs (WindVariants.ts).
+// leaves no motion); the grass's widening keeps the current camera's.
 //
 // `previous` is kept for motion vectors: `update` copies the current state into it before it
 // integrates, once per rendered frame (main.ts calls it once per tick, and every tick renders),
@@ -51,9 +50,10 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 const BASE_SPEED = 3.8;
 const CLOUD_DRIFT = 0.21;
 const clamp = ( value: number, low: number, high: number ) => Math.max( low, Math.min( high, value ) );
-// Shaders take sines of the phase at these rates: windGust 1 and 2.7; bushes and rim strands
-// 13/16 of it, times 1.3, .91 and .83. 1600 turns is a whole number of periods for every one of
-// them, so wrapping there is seamless and keeps the float32 phase precise in long sessions.
+// The integrated gust phase (`uniforms.phase`) and the amplitude (`uniforms.strength`) drove the
+// old global-sine sway; no shader reads them now, and they stay as CPU values the weather checks
+// read (tools/verify-weather.mjs, verify-wind.mjs). The phase wraps at 1600 turns, a whole number
+// of periods for the rates that sway used, which keeps the float32 phase precise in long sessions.
 const PHASE_PERIOD = 1600 * 2 * Math.PI;
 // The vegetation's clocks (seconds) wrap here. Shaders take fract( clock * f ) only at rates f
 // with at most three decimals (Hz), so every one of them completes whole cycles in a period.
@@ -172,17 +172,6 @@ function validate( speed: number, heading: number, time: number ): void {
 	if ( ! Number.isFinite( time ) || time < 0 ) throw new RangeError( 'Wind time must be finite and non-negative' );
 
 }
-
-// Original travelling gust shared by vegetation types. Their own root/tip weights and
-// displacement amplitudes remain responsible for keeping every plant attached to the soil.
-export const windGust = Fn( ( [ position, direction, phase ]: [ Node<'vec2'>, Node<'vec2'>, Node<'float'> ] ) => {
-
-	const p = dot( position, direction ).mul( 0.45 ).sub( phase ).toVar();
-	return sin( p ).mul( 0.45 ).add( 0.55 ).add( sin( p.mul( 2.7 ).add( position.x.mul( 0.9 ) ) ).mul( 0.2 ) );
-
-} ).setLayout( { name: 'ponlaiWindGust', type: 'float', inputs: [
-	{ name: 'position', type: 'vec2' }, { name: 'direction', type: 'vec2' }, { name: 'phase', type: 'float' },
-] } );
 
 // A periodic gradient noise (Ken Perlin's improved noise, SIGGRAPH 2002, in 2D, wrapped every
 // `cells` cells) summed over octaves, then ranked so its values spread evenly over 0..1: a

@@ -40,7 +40,7 @@ wind.reset( { time: 12 } );
 near( wind.uniforms.phase.value, start );
 assert.ok( wind.uniforms.cloudOffset.value.equals( offset ), 'Explicit fixed-time reset must reproduce startup' );
 for ( const invalid of [ NaN, Infinity, - 1 ] ) assert.throws( () => wind.update( invalid ), RangeError );
-// The phase wraps where every shader rate completes whole turns, so long sessions stay seamless.
+// The phase wraps where every rate of the old sway completes whole turns, so long sessions stay seamless.
 const period = 1600 * 2 * Math.PI;
 const late = new Wind( createWindUniforms(), { time: period / 1.6 - 0.01 } );
 const before = late.uniforms.phase.value;

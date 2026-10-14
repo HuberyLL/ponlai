@@ -71,7 +71,7 @@ import { watchPipelines, type SettleFrame } from './post/Settled.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
-import { installWindVariants } from './world/WindVariants.ts';
+import { installWindMotionFlag } from './world/WindMotion.ts';
 import { ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
 import type { Game } from './game/Game.ts';
 
@@ -582,7 +582,7 @@ const flowers = buildFlowers( plantFlowers( data.vegetation, walkDistance ), sha
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
 scene.add( grass, foliage, flowers, rimFoliage, turfSkirt );
-installWindVariants( scene, [ grass, foliage, flowers, rimFoliage, turfSkirt ] );
+installWindMotionFlag( scene );
 installVegetationPrepass( scene, [ grass, foliage, rimFoliage ] );
 // Everything that casts into the sun's map: the figures cast through their own map, and the sea
 // floor's stones only into the refracted one. The game's props grow it (holdOpaque below), and so

@@ -5,9 +5,9 @@ import { anchorStream } from './Anchors.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { LEAN_REF, setWindDisplacement, windGust } from '../weather/Wind.ts';
+import { LEAN_REF, setWindDisplacement } from '../weather/Wind.ts';
 import { mainBend } from './Foliage.ts';
-import { keepLegacyWind } from './WindVariants.ts';
+import { followWindMotionFlag } from './WindMotion.ts';
 import { showSway } from '../debug/WindView.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
@@ -224,7 +224,7 @@ const SPECIES: Species[] = [
 	{ name: 'cup', geometry: cupGeometry, palette: [ [ 0.65, 0.39, 0.045 ], [ 0.7, 0.46, 0.05 ], [ 0.62, 0.24, 0.055 ] ], centre: [ 0.3, 0.17, 0.03 ], lift: [ 0.02, 0.12 ], size: [ 0.85, 1.2 ], clear: 0.55 },
 ];
 
-function flowerMaterial( shared: Shared, centre: number[], legacy = false ): THREE.MeshStandardNodeMaterial {
+function flowerMaterial( shared: Shared, centre: number[] ): THREE.MeshStandardNodeMaterial {
 
 	const mat = new THREE.MeshStandardNodeMaterial( { side: THREE.DoubleSide, roughness: 0.79 } );
 	const attr = attribute<'vec4'>( 'petal', 'vec4' );
@@ -242,18 +242,15 @@ function flowerMaterial( shared: Shared, centre: number[], legacy = false ): THR
 	// Standing water drowns the whole plant: it sinks under the ground, which carries the water.
 	const pool = puddleCover( ground.xz, shared.wetness );
 	const rooted = raised.sub( vec3( 0, pool.mul( ground.w.add( tint.w ).add( 0.3 ) ), 0 ) );
-	const wind = shared.wind.direction;
-	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
 	// The stem bends from its root with the gust field as the grass around it does (its lean
 	// times its height, growing with the square of the lift), nodding with its neighbours at about
 	// 1.2 Hz (40 swings per gust tile, Foliage.ts mainBend).
 	const bend = ( state: typeof shared.wind.previous ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( LEAN_REF ), 40 );
-	const swayed = legacy ? rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.03 ).mul( lift.mul( lift ) ) ) )
-		: setWindDisplacement( mat, ( state ) => bend( state ).position, shared.wind );
+	const swayed = setWindDisplacement( mat, ( state ) => bend( state ).position, shared.wind );
 	// Only the heads cast into the sun's map: stems and the rosette under the grass are thinner
 	// than a texel (see useRestPoseShadows), and the meadow's canopy shades the rosette instead.
 	const rest = useRestPoseShadows( mat, rooted, swayed, step( 0.5, part ), previousSway( mat, shared.wind ) );
-	if ( ! legacy ) showSway( mat, bend( shared.wind ).sway, shared.wind );
+	showSway( mat, bend( shared.wind ).sway, shared.wind );
 	mat.normalNode = normalViewGeometry;
 	mat.aoNode = mix( float( 0.6 ), float( 1 ), lift ).mul( attribute<'float'>( 'skyVisibility', 'float' ) );
 	// Lit as the other plants: the grass canopy shades what stands in it, and thin petals glow
@@ -261,6 +258,7 @@ function flowerMaterial( shared: Shared, centre: number[], legacy = false ): THR
 	const canopy = meadowCanopyLight( rest.xz, max( ground.w.sub( rest.y.sub( ground.y ) ), 0 ), shared.sunDir );
 	useLighting( mat, () => new VegetationLighting( canopy, ( L, V ) =>
 		pow( clamp( dot( V.negate(), L ), 0, 1 ), 3 ).mul( mix( float( 0.25 ), float( 0.6 ), isBloom ) ).add( mix( float( 0.04 ), float( 0.12 ), isBloom ) ) ) );
+	followWindMotionFlag( mat );
 	return mat;
 
 }
@@ -375,7 +373,7 @@ export function flowerInstances( plants: Plant[][] ): FlowerInstances[] {
 
 /** A species' mesh over `capacity` instances, holding `instances`; with `like`, a replacement of that
  * mesh (its materials, name and flags). */
-export function flowerMesh( s: number, capacity: number, instances: FlowerInstances, material: THREE.Material, legacy: THREE.Material ): THREE.InstancedMesh {
+export function flowerMesh( s: number, capacity: number, instances: FlowerInstances, material: THREE.Material ): THREE.InstancedMesh {
 
 	const species = SPECIES[ s ];
 	const geo = species.geometry();
@@ -383,7 +381,6 @@ export function flowerMesh( s: number, capacity: number, instances: FlowerInstan
 	geo.setAttribute( 'flowerGround', new THREE.InstancedBufferAttribute( new Float32Array( capacity * 4 ), 4 ) );
 	geo.setAttribute( 'skyVisibility', new THREE.InstancedBufferAttribute( new Float32Array( capacity ), 1 ) );
 	const mesh = new THREE.InstancedMesh( geo, material, capacity );
-	keepLegacyWind( mesh, legacy );
 	writeFlowers( mesh, instances );
 	mesh.frustumCulled = false;
 	mesh.castShadow = true;
@@ -434,7 +431,7 @@ export function buildFlowers( plants: Plant[][], shared: Shared ): THREE.Group {
 	const instances = flowerInstances( plants );
 	SPECIES.forEach( ( species, s ) => {
 
-		group.add( flowerMesh( s, flowerCapacity( instances[ s ].count ), instances[ s ], flowerMaterial( shared, species.centre ), flowerMaterial( shared, species.centre, true ) ) );
+		group.add( flowerMesh( s, flowerCapacity( instances[ s ].count ), instances[ s ], flowerMaterial( shared, species.centre ) ) );
 
 	} );
 	return group;
@@ -448,8 +445,7 @@ export function flowerReplacement( group: THREE.Group, s: number, instances: Flo
 
 	const mesh = group.children[ s ] as THREE.InstancedMesh;
 	if ( instances.count <= mesh.instanceMatrix.count ) return null;
-	const variants = mesh.userData.windVariants as { shipped: THREE.Material; legacy: THREE.Material };
-	const next = flowerMesh( s, flowerCapacity( instances.count ), instances, variants.shipped, variants.legacy );
+	const next = flowerMesh( s, flowerCapacity( instances.count ), instances, mesh.material as THREE.Material );
 	next.computeBoundingBox();
 	return next;
 
