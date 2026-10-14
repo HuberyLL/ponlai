@@ -297,9 +297,11 @@ export interface WaterInputs {
 //     14 steps at x1.45 (14 at about x1.51 would keep the 158 m);
 //   refractionSteps, refractionRefine: the refraction's linear steps and bisection steps;
 //   columnSamples: samples of the water column's shadow march (both cross-faded sun maps at each).
-//     Its cost is the lookups, not the march's arithmetic. 4 on high: against 8, a low view into
-//     the cliffs' shadow on the water changed by a few levels in under 0.5 % of its pixels, unseen
-//     side by side, and the island's views took about a tenth less time in the water pass;
+//     Its cost is the lookups, not the march's arithmetic. 3 on high, the knee of a sweep from 2
+//     to 8 scored against 8 with a perceptual metric in the island camera's worst views (a low
+//     view facing the sun over the cliffs' shadow): at 3 under 0.4 % of the pixels moved more than
+//     a level, unseen side by side; at 2 that share tripled. 3 takes about an eighth off the
+//     island views' water pass;
 //   stormFoam: 'merged' reads the storm foam's mat and lace from one pattern fetch instead of
 //     three: the mat keeps only its first layer, and the lace takes the mat's coordinates, so it
 //     is no longer drawn out along the wind. The streaks keep their own fetch (they need
@@ -321,7 +323,7 @@ export interface WaterQuality {
 }
 
 // High's values, today's image; the tiers' values are in Quality.ts.
-export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 };
+export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 3, stormFoam: 'full', fftAnisotropy: 4 };
 
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
 // its plants and its people. A box around them, from the land's box (so it grows with the island):

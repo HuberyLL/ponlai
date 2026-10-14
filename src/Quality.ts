@@ -179,7 +179,9 @@ export interface QualityProfile {
 }
 
 const PCSS_HIGH: SolarShadowTaps = { soft: true, blockerSamples: 6, filterSamples: 8 };
-const PCSS_MEDIUM: SolarShadowTaps = { soft: true, blockerSamples: 4, filterSamples: 5 };
+// high's sea surface: in a sweep against PCSS_HIGH the error stayed flat down to 4 / 5 (the
+// change sits on the glints' edges, unseen side by side); 3 / 4 came out no faster
+const PCSS_LIGHT: SolarShadowTaps = { soft: true, blockerSamples: 4, filterSamples: 5 };
 const BILINEAR: SolarShadowTaps = { soft: false, blockerSamples: 0, filterSamples: 0 };
 const TAA: TemporalSettings = {
 	framesStill: 24, framesStillWater: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
@@ -194,14 +196,14 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		aa: 'msaa',
 		taa: { ...TAA },
 		render: { dynamic: { max: 2, baselineShare: 2 / 3, floorShare: 0.5, step: 0.05 } },
-		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 },
-		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 36, bloomChains: 2 },
-		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH, water: PCSS_HIGH },
+		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 3, stormFoam: 'full', fftAnisotropy: 4 },
+		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 16, bloomChains: 2 },
+		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH, water: PCSS_LIGHT },
 		grass: { lawnBlades: [ 16, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockFloor: 0.5, tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
 		frameRate: 60,
-		cloudView: { display: 0.58 },
+		cloudView: { display: 0.45 },
 		cloudDome: { width: 1024, height: 256, strideX: 4, strideY: 8 },
 		cloudMarch: { viewSteps: 256, panoramaSteps: 128, lightTaps: 5, rainSteps: 16 },
 		cloudShadowRows: 1 / 8,
@@ -215,9 +217,9 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		// TAAU's sharpening one RCAS stop softer than high's (higher is softer)
 		taa: { ...TAA, sharpness: { taa: TAA.sharpness.taa, taau: [ 2.0, 1.5 ] } },
 		render: { budget: 1600 * 900 },
-		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 },
-		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048, dofTaps: 24, bloomChains: 2 },
-		shadow: { surface: PCSS_MEDIUM, vegetation: BILINEAR, water: PCSS_MEDIUM },
+		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 3, stormFoam: 'full', fftAnisotropy: 4 },
+		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048, dofTaps: 16, bloomChains: 2 },
+		shadow: { surface: PCSS_LIGHT, vegetation: BILINEAR, water: PCSS_LIGHT },
 		grass: { lawnBlades: [ 12, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockFloor: 0.5, tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 256,
@@ -237,7 +239,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		render: { budget: 1280 * 720 },
 		// (one bloom chain veiled a golden-hour island in glow, and the merged storm foam turned
 		// the crests' streaks into scattered lace: both kept as on high)
-		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 },
+		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 3, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024, dofTaps: 16, bloomChains: 2 },
 		shadow: { surface: BILINEAR, vegetation: BILINEAR, water: BILINEAR },
 		grass: { lawnBlades: [ 8, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockFloor: 0.5, tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
@@ -270,8 +272,9 @@ export function isQualityTier( value: unknown ): value is QualityTier {
  * must name an existing knob; numbers, booleans and comma lists are parsed. */
 export function qualityProfile( tier: QualityTier, search = location.search ): QualityProfile {
 
-	// a JSON copy, not structuredClone: that keeps the table's shared objects shared (high's three
-	// shadow filters are one PCSS_HIGH), so an override of one knob would change its siblings too
+	// a JSON copy, not structuredClone: that keeps the table's shared objects shared (high's surface
+	// and vegetation shadow filters are one PCSS_HIGH), so an override of one knob would change its
+	// siblings too
 	const profile = JSON.parse( JSON.stringify( QUALITY[ tier ] ) ) as QualityProfile;
 	for ( const [ key, raw ] of new URLSearchParams( search ) ) {
 

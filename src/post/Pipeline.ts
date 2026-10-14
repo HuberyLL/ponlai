@@ -210,7 +210,9 @@ export interface PipelineFrame {
 export interface PostOptions extends AirOptions {
 	// the composite evaluated once into a texture both blooms read (else each re-evaluates it)
 	compositeOnce: boolean;
-	// the depth of field's gather taps
+	// the depth of field's gather taps. 16 on high, the knee of a sweep from 12 to 48 against 36 in
+	// the island camera's views of strongest blur (the gather is arithmetic-bound, so its cost
+	// follows the taps); the error rose smoothly below it
 	dofTaps: number;
 	// the depth of field reads the view distance from a target written once per pixel (else each
 	// tap derives it from the depth)
@@ -226,7 +228,7 @@ export interface PostOptions extends AirOptions {
 }
 
 export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
-	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 36, dofDistance: true, bloomChains: 2, fsrPort: true, discardScene: true,
+	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 16, dofDistance: true, bloomChains: 2, fsrPort: true, discardScene: true,
 };
 
 const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
