@@ -44,7 +44,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   runs through `node tools/qos.mjs <command>` (`docs/tools.md`, Process priority).
 - Every wait goes through `tools/job.mjs`, never a sleep loop of one's own: a command that may run
   for minutes runs as `node tools/job.mjs start --wait -- <command>`, is waited on with
-  `node tools/job.mjs wait <log>` (at most 4 minutes per call), and is stopped with
+  `node tools/job.mjs wait <log>` (at most 9.5 minutes per call), and is stopped with
   `job.mjs stop <log>` before an agent hands back (`docs/tools.md`, Long jobs and waiting).
 - Clip frames, capture sets and references older than 2 days are removed on their own
   (`tools/storage.mjs`, started by `job.mjs`); images a report or page links to stay, and a folder

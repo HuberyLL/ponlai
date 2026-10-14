@@ -35,8 +35,10 @@
 //
 // Budgets. Every wait ends at a wall-clock deadline counted from this process's start, whatever the
 // load, because a wait written as "N times sleep S" stretches on a busy machine. `--role agent`
-// (default) waits at most 240 s: an agent's prompt cache lives five minutes between its requests,
-// so no single wait may outlive it; call it again until the jobs end. `--role main` waits at most
+// (default) waits at most 570 s: an agent's Bash call ends at 10 minutes (the tool's largest
+// timeout, 600000 ms), so each wait returns before it with room to spare; call it again until the
+// jobs end. Agents run with the one-hour prompt cache, so the wait no longer has to fit a
+// five-minute one, and a longer wait means fewer wake-ups. `--role main` waits at most
 // 3300 s: a main session's cache lives an hour, and it runs a plain `wait --role main` in the
 // background as a keep-alive, re-armed each time it fires while its work is still running.
 // `--max` may only lower the budget.
@@ -85,7 +87,7 @@ import { estimateWaits, etaText, LOCK_DIR, lockState } from './gpu-lock.mjs';
 import { appPolicy } from './qos.mjs';
 import { autoClean } from './storage.mjs';
 
-const BUDGETS = { agent: 240, main: 3300 };
+const BUDGETS = { agent: 570, main: 3300 };
 const STILL_RUNNING = 124;
 const POLL_MS = 1000;
 const CONDITION_POLL_MS = 2000;
