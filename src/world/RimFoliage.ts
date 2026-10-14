@@ -1,6 +1,8 @@
 import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, uv, vec3, float, mix, dot } from 'three/tsl';
 import { hangingSway } from './vegetation/Deform.ts';
+import type { VegetationKind } from './vegetation/Registry.ts';
+import { geometrySteps } from './Upload.ts';
 import { boundsSteps, float32Steps, indexSteps, runSteps, Growing } from './Steps.ts';
 import { LEAF_STEM, leafCastMask } from './Foliage.ts';
 import { vegetationMaterial } from './vegetation/Material.ts';
@@ -71,8 +73,9 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage: 
 	group.name = 'rimFoliage';
 	const built = runSteps( rimFoliageSteps( strands ) );
 	group.userData = built.counts;
-	if ( ! built.geometry ) return group;
-	const mesh = new THREE.Mesh( built.geometry, rimMaterial( shared, foliage ) );
+	// (always a mesh, empty and hidden on a land without trails, so a grown island's draw with it)
+	const mesh = new THREE.Mesh( built.geometry ?? emptyGeometry(), rimMaterial( shared, foliage ) );
+	mesh.visible = built.geometry !== null;
 	mesh.name = 'rimFoliageLeaves';
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
@@ -87,19 +90,13 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage: 
 export interface RimFoliageBuilt { geometry: THREE.BufferGeometry | null; counts: Record<string, number> }
 
 /** Swaps the trails of `group` (buildRimFoliage) to `built` in place, the depth prepass's copy with
- * them. Returns the geometry replaced, to dispose of once nothing draws it (null: none). */
-export function setRimFoliage( group: THREE.Group, built: RimFoliageBuilt ): THREE.BufferGeometry | null {
+ * them. Returns the geometry replaced, to dispose of once nothing draws it. */
+function setRimFoliage( group: THREE.Group, built: RimFoliageBuilt ): THREE.BufferGeometry {
 
 	group.userData = built.counts;
-	const mesh = group.children[ 0 ] as THREE.Mesh | undefined;
-	if ( ! mesh ) {
-
-		if ( built.geometry ) console.warn( 'The rim trails had no mesh on the first land: a grown island\'s trails are not drawn (RimFoliage.ts)' );
-		return null;
-
-	}
+	const mesh = group.children[ 0 ] as THREE.Mesh;
 	const old = mesh.geometry;
-	const geometry = built.geometry ?? emptyGeometry( old );
+	const geometry = built.geometry ?? emptyGeometry();
 	mesh.geometry = geometry;
 	for ( const child of mesh.children ) if ( ( child as THREE.Mesh ).geometry === old ) ( child as THREE.Mesh ).geometry = geometry;
 	mesh.visible = built.geometry !== null;
@@ -107,11 +104,39 @@ export function setRimFoliage( group: THREE.Group, built: RimFoliageBuilt ): THR
 
 }
 
-// A geometry with the attributes of `like` and nothing to draw.
-function emptyGeometry( like: THREE.BufferGeometry ): THREE.BufferGeometry {
+/** The rim's trails as a vegetation kind (vegetation/Registry.ts): a grown island's trails are built
+ * in steps, uploaded ahead, and swapped into the mesh. */
+export function rimFoliageKind( group: THREE.Group ): VegetationKind<RimFoliageBuilt> {
+
+	return {
+		name: 'rim', root: group, prepass: true, shadowFilter: 'vegetation', sunCaster: true, rainBake: true,
+		growth: {
+			*prepare( input ) {
+
+				const rim = yield* rimFoliageSteps( input.data.rimStrands, 1 );
+				if ( rim.geometry ) yield* geometrySteps( input.renderer, rim.geometry );
+				return rim;
+
+			},
+			swap( prepared ) {
+
+				const old = setRimFoliage( group, prepared );
+				return () => old.dispose();
+
+			},
+		},
+	};
+
+}
+
+// The trails' attributes, in the order rimFoliageSteps sets them.
+const ATTRIBUTES: [ string, number ][] = [ [ 'position', 3 ], [ 'uv', 2 ], [ 'color', 3 ], [ 'rimSway', 1 ], [ 'rimPhase', 1 ], [ LEAF_STEM, 1 ], [ 'rimOut', 3 ], [ 'normal', 3 ] ];
+
+// A geometry with the trails' attributes and nothing to draw.
+function emptyGeometry(): THREE.BufferGeometry {
 
 	const geometry = new THREE.BufferGeometry();
-	for ( const [ name, attribute ] of Object.entries( like.attributes ) ) geometry.setAttribute( name, new THREE.BufferAttribute( new Float32Array( attribute.itemSize ), attribute.itemSize ) );
+	for ( const [ name, itemSize ] of ATTRIBUTES ) geometry.setAttribute( name, new THREE.BufferAttribute( new Float32Array( itemSize ), itemSize ) );
 	geometry.setIndex( [] );
 	return geometry;
 

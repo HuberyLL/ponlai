@@ -5,18 +5,12 @@ import { GROWTH, LandLattice } from './IslandGrowth.ts';
 import { landBounds, type Bounds } from './WorldShapes.ts';
 import { derive, islandMesh, seabedGeometry, stonesGeometry, type WorldMeshes } from './World.ts';
 import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
-import { AttributeType, geometrySteps, stagedWriteSteps, textureSteps, uploadSteps } from './Upload.ts';
+import { geometrySteps, textureSteps } from './Upload.ts';
 import { boundsSteps } from './Steps.ts';
-import { plantGrass, grassSteps, setGrass, type GrassPrepared, type GrassTufts } from './Grass.ts';
-import { plantFlowers, FLOWER_POOL, flowerInstances, flowerReplacement, setFlowers, type FlowerInstances, type Plant } from './Flowers.ts';
-import { BUSH_POOL, bushInstances, type BushInstances } from './Foliage.ts';
-import { rimFoliageSteps, setRimFoliage, type RimFoliageBuilt } from './RimFoliage.ts';
 import { plantSiteSteps, anchorContactSteps } from './PlantSites.ts';
-import { plantSteps, setPlants, type PlantCache, type PlantsBuilt } from './Plants.ts';
-import { turfSkirtSteps, setTurfSkirt, type TurfSkirtBuilt } from './RimSkirt.ts';
 import { walkLoopDistance, walkPoints } from './WalkPath.ts';
 import { topFromTiles } from '../game/sim/grid.ts';
-import { VEGETATION_STRIDE } from './types.ts';
+import type { GrowthInput, GrowthSteps, Vegetation, VegetationKind } from './vegetation/Registry.ts';
 import type { ChunkData } from './Chunks.ts';
 import type { IslandChunk, WorldData } from './types.ts';
 import type { ShoreWaves, ShoreFields } from '../ocean/ShoreWaves.ts';
@@ -24,7 +18,6 @@ import type { RefractedSun } from '../lighting/RefractedSun.ts';
 import type { Rain } from '../weather/Rain.ts';
 import { Villagers } from '../characters/Villagers.ts';
 import { SeabedRise } from './SeabedRise.ts';
-import type { CullBuffers } from './GrassCull.ts';
 
 // The island grows in place (chunk design, sections 3.4, 10 and 11; plan M8): the next piece is
 // generated in the background, and a Grow (`grow()`, the GUI's Island folder) swaps in only the
@@ -51,7 +44,8 @@ import type { CullBuffers } from './GrassCull.ts';
 //   (sited off the walking loop, their shade baked into the anchors before the meadow reads them,
 //   only the plants not grown before grown, all copied into one new geometry: Plants.ts), the
 //   meadow (planted a slice of anchors at a step, its cull pool filled), the flowers' and bushes' instances (and a
-//   new mesh, compiled, for a species that outgrew its capacity), the world fields (WorldFields.ts)
+//   new mesh, compiled, for a species that outgrew its capacity), each vegetation kind its own part
+//   after the plants' sites, in registry order (vegetation/Registry.ts), the world fields (WorldFields.ts)
 //   and the shore's wave fields (in a worker, ShoreWaves.ts, on a copy of the shore field made in
 //   steps). Every buffer and texture goes up ahead, a slice a step (Upload.ts: buffers mapped at
 //   creation and copies on the GPU, never queue writes, which stalled the page for hundreds of
@@ -67,14 +61,15 @@ import type { CullBuffers } from './GrassCull.ts';
 //   A grow asked for before it is done swaps once it is.
 // - The swap, in the frame's tick before the camera and the shadows update (main.ts's one-line
 //   hook): the changed island meshes out and the new ones in (ordered by chunk, ( cj, ci ), as a
-//   page loaded on that land orders them), the merged kinds' geometry (the plants' with them), the flowers' and the
-//   bushes' instances, the meadow's pool (GrassCull's storage nodes pointed at the new buffers),
+//   page loaded on that land orders them), the merged kinds' geometry, then each vegetation kind's
+//   swap (the plants' and the trails' geometry, the flowers' and the bushes' instances, the
+//   meadow's pool: GrassCull's storage nodes pointed at the new buffers),
 //   the fields' changed squares (copied on the GPU) or new textures, the shore's wave fields, the
 //   refracted sun's casters, the walker's loop, and the page's own (main.ts `onSwap`: the land's
 //   box and framing as measured ahead, the fog's clearing, the sun's caster box and columns, the
 //   sea's reflection box, the camera's ground).
 // - The frames after it, one step each: the rain's collision map (resized, then baked again eight
-//   meshes a frame: RainCollision.bakeSteps), the game's ground (the chunks' walk tiles,
+//   meshes a frame from the island and the kinds registered with `rainBake`: RainCollision.bakeSteps), the game's ground (the chunks' walk tiles,
 //   sim/grid.ts), the old resources disposed (a kind a frame), the page's own (`onSwapped`).
 //   A replaced mesh, and the refracted sun's and the rain map's proxies of it, are disposed as
 //   objects, not only their geometry: three keeps a render object (and its uniform buffers) per
@@ -98,14 +93,9 @@ export interface GrowthPage<M = unknown> {
 	renderer: THREE.WebGPURenderer;
 	world: WorldMeshes;
 	fields: WorldFields;
-	grass: THREE.Group;
-	flowers: THREE.Group;
-	foliage: THREE.InstancedMesh;
-	// the shrubs and small trees (Plants.ts buildPlants) and the parts grown so far
-	plants: THREE.Group;
-	plantCache: PlantCache;
-	rimFoliage: THREE.Group;
-	turfSkirt: THREE.Mesh;
+	/** the vegetation's kinds (vegetation/Registry.ts): each prepares and swaps its own part, and
+	 * the rain's collision map is baked from the island and the kinds that take part in it */
+	vegetation: Vegetation;
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
 	rain: Rain;
@@ -115,8 +105,6 @@ export interface GrowthPage<M = unknown> {
 		setComing( land: LandLattice, bushes: Float32Array, top?: Uint8Array, plants?: Float32Array ): void;
 		setIsland( land: LandLattice, bushes: Float32Array, top?: Uint8Array, plants?: Float32Array ): void;
 	} | null;
-	// the roots the rain's collision map is baked from
-	rainRoots: THREE.Object3D[];
 	/** compiles what `objects` draw in the frame's passes, the sun's map included (and uploads
 	 * their buffers) */
 	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
@@ -144,12 +132,10 @@ interface Prepared<M> {
 	rocks: THREE.BufferGeometry;
 	seabed: THREE.BufferGeometry;
 	walk: ReturnType<typeof Villagers.loop>;
-	grass: GrassPrepared;
-	flowers: { instances: FlowerInstances[]; replacements: ( THREE.InstancedMesh | null )[]; boxes: ( THREE.Box3 | null )[] };
-	bushes: { instances: BushInstances; box: THREE.Box3 };
-	plants: PlantsBuilt;
-	rim: RimFoliageBuilt;
-	skirt: TurfSkirtBuilt;
+	// the shrubs and small trees sited on the land (PlantSites.ts), for the game
+	plantSites: Float32Array;
+	// each growing vegetation kind's prepared part, in registry order
+	vegetation: { kind: VegetationKind; prepared: unknown }[];
 	fields: FieldsPrepared;
 	shore: ShoreFields;
 	top: Uint8Array;
@@ -163,7 +149,7 @@ interface Prepared<M> {
 export type GrowthPhase = 'idle' | 'generating' | 'preparing' | 'ready' | 'swapping' | 'failed';
 
 // A preparation step yields nothing (a slice ends) or a promise (wait for it: a worker, a compile).
-type Steps<T> = Generator<void | Promise<unknown>, T>;
+type Steps<T> = GrowthSteps<T>;
 
 // The idle time a slice of preparation takes at most (ms; where there is no idle callback, the
 // time a timer's slice takes). A slice runs steps until it has used this, so it ends at most a step
@@ -396,7 +382,7 @@ export class Growth<M = unknown> {
 						this.steps = null;
 						this.prepared = next.value;
 						this.state.phase = 'ready';
-						this.page.game?.setComing( next.value.land, next.value.data.bushes, next.value.top, next.value.plants.sites );
+						this.page.game?.setComing( next.value.land, next.value.data.bushes, next.value.top, next.value.plantSites );
 						if ( this.wanted.length === 0 ) console.info( `growth: step ${ this.state.pending } ready`, this.times );
 						return;
 
@@ -511,81 +497,32 @@ export class Growth<M = unknown> {
 		yield* boundsSteps( seabed );
 		yield* geometrySteps( renderer, seabed );
 
-		// the walking loop, and the meadow planted on it a slice of anchors at a time
-		this.stage = 'grass';
+		// the walking loop, and the plants' sites off it
+		this.stage = 'walk';
 		const points = walkPoints( data.walk ), walkDistance = walkLoopDistance( points );
 		yield;
 		const walk = Villagers.loop( points );
 		yield;
 		// the shrubs and small trees off the loop, and their shade in the anchors' sky visibility
-		// before the meadow reads it; their geometry (the plants not grown before) and its buffers
+		// before the meadow and the flowers read it
 		this.stage = 'plants';
 		const plantSites = yield* plantSiteSteps( data.vegetation, data.bushes, walkDistance );
 		yield* anchorContactSteps( data.vegetation, plantSites );
-		const plantsBuilt: PlantsBuilt = yield* plantSteps( plantSites, page.plantCache );
-		if ( plantsBuilt.geometry ) yield* geometrySteps( renderer, plantsBuilt.geometry );
-		this.stage = 'grass';
-		const veg = data.vegetation, anchors = veg.length / VEGETATION_STRIDE;
-		const tufts: GrassTufts = { lawn: [], lawnThin: [] };
-		const plants: Plant[][] = page.flowers.children.map( () => [] );
-		for ( let a = 0; a < anchors; a += 16 ) {
-
-			const part = plantGrass( veg.subarray( a * VEGETATION_STRIDE, Math.min( anchors, a + 16 ) * VEGETATION_STRIDE ), data.rimGround );
-			tufts.lawn.push( ...part.lawn );
-			tufts.lawnThin.push( ...part.lawnThin );
-			yield;
-
-		}
-		const grass = yield* grassSteps( page.grass, tufts, 256 );
-		yield;
-		for ( const buffer of Object.values( grass.buffers ) as CullBuffers[ keyof CullBuffers ][] ) yield* uploadSteps( renderer, buffer, AttributeType.STORAGE );
-		this.stage = 'flowers';
-		for ( let a = 0; a < anchors; a += 128 ) {
-
-			const part = plantFlowers( veg.subarray( a * VEGETATION_STRIDE, Math.min( anchors, a + 128 ) * VEGETATION_STRIDE ), walkDistance );
-			part.forEach( ( list, s ) => plants[ s ].push( ...list ) );
-			yield;
-
-		}
-		// per species its instances, written in place at the swap with their box, or (outgrown) a
-		// new mesh, compiled (and its proxy in the rain's bake)
-		const flowers: Prepared<M>[ 'flowers' ] = { instances: [], replacements: [], boxes: [] };
-		// (what is written in place at the swap is staged here, so that it is copied on the GPU)
+		// each vegetation kind's part, in registry order (vegetation/Registry.ts); what a kind writes
+		// in place at the swap is staged here, so that it is copied on the GPU
 		const staged: ( () => void )[] = [];
-		const stage = ( free: ( () => void ) | null ) => { if ( free ) staged.push( free ); };
-		for ( let k = 0; k < plants.length; k ++ ) {
+		const input: GrowthInput = {
+			renderer, data, walkDistance, plantSites, compileDraws: ( objects ) => page.compileDraws( objects ), rain: page.rain,
+			stage: ( free ) => { if ( free ) staged.push( free ); },
+		};
+		const vegetation: Prepared<M>[ 'vegetation' ] = [];
+		for ( const kind of page.vegetation.kinds ) {
 
-			const instances = flowerInstances( [ plants[ k ] ] )[ 0 ];
-			flowers.instances.push( instances );
-			yield;
-			const replacement = flowerReplacement( page.flowers, k, instances );
-			flowers.replacements.push( replacement );
-			flowers.boxes.push( replacement ? null : FLOWER_POOL.box( page.flowers.children[ k ] as THREE.InstancedMesh, instances ) );
-			yield;
-			if ( ! replacement ) for ( const [ attribute, values ] of FLOWER_POOL.writes( page.flowers.children[ k ] as THREE.InstancedMesh, instances ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
-			if ( replacement ) {
-
-				yield page.compileDraws( [ replacement ] );
-				yield page.rain.collision.prepare( renderer, [ replacement ] );
-
-			}
+			if ( ! kind.growth ) continue;
+			this.stage = kind.name;
+			vegetation.push( { kind, prepared: yield* kind.growth.prepare( input ) } );
 
 		}
-		// the bushes' instances and their box, as InstancedMesh.computeBoundingBox finds it (the sun's
-		// caster box reads it)
-		const bushes = bushInstances( data.bushes );
-		yield;
-		const bushBox = BUSH_POOL.box( page.foliage, bushes );
-		yield;
-		for ( const [ attribute, values ] of BUSH_POOL.writes( page.foliage, bushes ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
-
-		// the rim's trails and the turf skirt (their bounds found in the steps)
-		this.stage = 'rim';
-		const rim: RimFoliageBuilt = yield* rimFoliageSteps( data.rimStrands, 1 );
-		if ( rim.geometry ) yield* geometrySteps( renderer, rim.geometry );
-		this.stage = 'skirt';
-		const skirt: TurfSkirtBuilt = yield* turfSkirtSteps( data.rimSkirt, 8 );
-		yield* geometrySteps( renderer, skirt.geometry );
 
 		// the fields, and the shore's wave fields from the new shore field (in a worker, on a copy)
 		this.stage = 'fields';
@@ -604,9 +541,8 @@ export class Growth<M = unknown> {
 		yield* textureSteps( renderer, shore!.shelter );
 		const top = topFromTiles( chunks );
 		return {
-			version, measured, bounds, data, land, changed, islands: { add, remove }, rocks, seabed, walk, grass,
-			flowers, bushes: { instances: bushes, box: bushBox }, plants: plantsBuilt,
-			rim, skirt, fields, shore: shore!, top, staged,
+			version, measured, bounds, data, land, changed, islands: { add, remove }, rocks, seabed, walk, plantSites,
+			vegetation, fields, shore: shore!, top, staged,
 		};
 
 	}
@@ -644,24 +580,14 @@ export class Growth<M = unknown> {
 		disposals.push( () => { oldRocks.dispose(); oldSeabed.dispose(); } );
 		derive( world, p.data );
 		part( 'meshes' );
-		const oldGrass = setGrass( page.grass, p.grass );
-		const atDisposal = ( renderer: THREE.WebGPURenderer ) => {
+		// the vegetation's kinds, each its own part (vegetation/Registry.ts)
+		for ( const { kind, prepared } of p.vegetation ) {
 
-			const attributes = ( renderer as unknown as { _attributes?: { delete( attribute: unknown ): void } } )._attributes;
-			for ( const buffer of Object.values( oldGrass ) ) attributes?.delete( buffer );
+			const dispose = kind.growth!.swap( prepared );
+			if ( dispose ) disposals.push( dispose );
 
-		};
-		disposals.push( () => atDisposal( page.renderer ) );
-		const oldFlowers = setFlowers( page.flowers, p.flowers.instances, p.flowers.replacements, p.flowers.boxes );
-		// (with their depth prepass copies, VegetationPrepass.ts)
-		disposals.push( () => { for ( const mesh of oldFlowers ) { mesh.geometry.dispose(); mesh.traverse( ( object ) => object.dispose() ); } } );
+		}
 		disposals.push( () => { for ( const free of p.staged ) free(); } );
-		BUSH_POOL.set( page.foliage, p.bushes.instances, p.bushes.box );
-		const oldPlants = setPlants( page.plants, p.plants );
-		page.plantCache.keep( p.plants.sites, p.plants.parts );
-		const oldRim = setRimFoliage( page.rimFoliage, p.rim );
-		const oldSkirt = setTurfSkirt( page.turfSkirt, p.skirt );
-		disposals.push( () => { oldRim?.dispose(); oldSkirt.dispose(); oldPlants.dispose(); } );
 		part( 'vegetation' );
 		// the shoal's tiles go with the old floor, and its field squares the swap keeps are written back;
 		// then the fields and the shore's wave fields
@@ -692,13 +618,13 @@ export class Growth<M = unknown> {
 				if ( ! bake ) {
 
 					page.rain.collision.setArea( box );
-					bake = page.rain.collision.bakeSteps( page.renderer, page.rainRoots, 8 );
+					bake = page.rain.collision.bakeSteps( page.renderer, [ world.group, ...page.vegetation.roots( ( kind ) => kind.rainBake ) ], 8 );
 
 				}
 				return ! bake.next().done;
 
 			},
-			() => page.game?.setIsland( p.land, p.data.bushes, p.top, p.plants.sites ),
+			() => page.game?.setIsland( p.land, p.data.bushes, p.top, p.plantSites ),
 			// (the old resources a frame each)
 			...disposals.map( ( dispose ) => () => dispose() ),
 			() => page.onSwapped?.( p.data ),

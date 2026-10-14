@@ -5,6 +5,8 @@ import {
 import { wave } from '../weather/Wind.ts';
 import { mulberry32, type Rng } from './noise.ts';
 import { PLANT_WIND, mainBend } from './vegetation/Deform.ts';
+import type { VegetationKind } from './vegetation/Registry.ts';
+import { geometrySteps } from './Upload.ts';
 import { leafTexture } from './vegetation/LeafTexture.ts';
 import { leafTransmission, vegetationMaterial } from './vegetation/Material.ts';
 import { boundsSteps, float32Steps, runSteps, Growing } from './Steps.ts';
@@ -754,7 +756,7 @@ export function buildPlants( sites: Float32Array, shared: Shared, cache: PlantCa
 
 /** Swaps the plants of `group` (buildPlants) to `built` in place, the depth prepass's copy with
  * them. Returns the geometry replaced, to dispose of once nothing draws it. */
-export function setPlants( group: THREE.Group, built: PlantsBuilt ): THREE.BufferGeometry {
+function setPlants( group: THREE.Group, built: PlantsBuilt ): THREE.BufferGeometry {
 
 	group.userData.sites = siteList( built.sites );
 	const mesh = group.children[ 0 ] as THREE.Mesh;
@@ -764,6 +766,33 @@ export function setPlants( group: THREE.Group, built: PlantsBuilt ): THREE.Buffe
 	for ( const child of mesh.children ) if ( ( child as THREE.Mesh ).geometry === old ) ( child as THREE.Mesh ).geometry = geometry;
 	mesh.visible = built.geometry !== null;
 	return old;
+
+}
+
+/** The plateau's plants as a vegetation kind (vegetation/Registry.ts): a grown island's plants (only
+ * those `cache` does not hold) are grown in steps on the sites the growth found, copied into one new
+ * geometry, uploaded ahead and swapped into the mesh; the cache keeps their parts. */
+export function plantsKind( group: THREE.Group, cache: PlantCache ): VegetationKind<PlantsBuilt> {
+
+	return {
+		name: 'plants', root: group, prepass: true, shadowFilter: 'vegetation', sunCaster: true, rainBake: true,
+		growth: {
+			*prepare( input ) {
+
+				const built = yield* plantSteps( input.plantSites, cache );
+				if ( built.geometry ) yield* geometrySteps( input.renderer, built.geometry );
+				return built;
+
+			},
+			swap( prepared ) {
+
+				const old = setPlants( group, prepared );
+				cache.keep( prepared.sites, prepared.parts );
+				return () => old.dispose();
+
+			},
+		},
+	};
 
 }
 

@@ -9,6 +9,8 @@ import { leafTexture } from './vegetation/LeafTexture.ts';
 import { vegetationMaterial } from './vegetation/Material.ts';
 import { BUSH_WIND, mainBend } from './vegetation/Deform.ts';
 import { InstancePool, type Instances } from './vegetation/Instances.ts';
+import type { VegetationKind } from './vegetation/Registry.ts';
+import { stagedWriteSteps } from './Upload.ts';
 import type { Shared } from '../shared.ts';
 
 // Individual folded leaves on short branching sprays. Three offset crowns keep bushes
@@ -24,7 +26,8 @@ import type { Shared } from '../shared.ts';
 // - Twigs, stems and leaf stalks (a few millimetres across) stay out of the sun's shadow map
 //   (`LEAF_STEM`, VegetationShadow.ts).
 // - The bushes' instances live in a fixed pool of BUSH_CAPACITY (`BUSH_POOL`, vegetation/Instances.ts):
-//   a grown island's are written into the same mesh (Growth.ts).
+//   a grown island's are written into the same mesh at the swap, staged ahead (`foliageKind`'s
+//   growth, Growth.ts).
 
 export { ALPHA_TO_COVERAGE, coverageAlphaTest, coverageDither, markVegetation, useLeafCoverage } from './vegetation/Coverage.ts';
 export { LEAF_ALPHA_TEST, leafAlphaTexture, leafTexture } from './vegetation/LeafTexture.ts';
@@ -220,5 +223,34 @@ export function buildFoliage( bushes: Float32Array, shared: Shared ): THREE.Inst
 	mesh.name = 'foliage';
 	mesh.renderOrder = - 1; // before the terrain: the turf it covers then fails the depth test
 	return mesh;
+
+}
+
+/** The rim bushes as a vegetation kind (vegetation/Registry.ts): a grown island's instances and their
+ * box (as InstancedMesh.computeBoundingBox finds it: the sun's caster box reads it) are staged
+ * ahead and written into `mesh` at the swap. */
+export function foliageKind( mesh: THREE.InstancedMesh ): VegetationKind<{ instances: BushInstances; box: THREE.Box3 }> {
+
+	return {
+		name: 'bushes', root: mesh, prepass: true, shadowFilter: 'vegetation', sunCaster: true, rainBake: true,
+		growth: {
+			*prepare( input ) {
+
+				const instances = bushInstances( input.data.bushes );
+				yield;
+				const box = BUSH_POOL.box( mesh, instances );
+				yield;
+				for ( const [ attribute, values ] of BUSH_POOL.writes( mesh, instances ) ) input.stage( yield* stagedWriteSteps( input.renderer, attribute, values ) );
+				return { instances, box };
+
+			},
+			swap( prepared ) {
+
+				BUSH_POOL.set( mesh, prepared.instances, prepared.box );
+				return null;
+
+			},
+		},
+	};
 
 }

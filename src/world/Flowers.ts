@@ -5,6 +5,8 @@ import { anchorStream } from './Anchors.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { backlight, vegetationMaterial } from './vegetation/Material.ts';
 import { InstancePool, type Instances } from './vegetation/Instances.ts';
+import type { VegetationKind } from './vegetation/Registry.ts';
+import { stagedWriteSteps } from './Upload.ts';
 import { FLOWER_WIND, drown, mainBend } from './vegetation/Deform.ts';
 import { meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
@@ -404,7 +406,7 @@ export function buildFlowers( plants: Plant[][], shared: Shared ): THREE.Group {
 /** The new mesh a grown island's bed of species `s` needs in `group` (buildFlowers): null when its
  * instances fit the mesh it has, else a mesh of that species' materials with its box (to compile
  * ahead, then `setFlowers`). */
-export function flowerReplacement( group: THREE.Group, s: number, instances: FlowerInstances ): THREE.InstancedMesh | null {
+function flowerReplacement( group: THREE.Group, s: number, instances: FlowerInstances ): THREE.InstancedMesh | null {
 
 	const mesh = group.children[ s ] as THREE.InstancedMesh;
 	return FLOWER_POOL.replacement( mesh, instances, ( capacity ) => flowerMesh( s, capacity, instances, mesh.material as THREE.Material ) );
@@ -414,7 +416,7 @@ export function flowerReplacement( group: THREE.Group, s: number, instances: Flo
 /** Swaps the beds of `group` to `instances` in place, with each mesh's box (`boxes`: FLOWER_POOL.box,
  * found ahead), or to a replacement mesh where given (taking the material its predecessor drew
  * with). Returns the meshes replaced, to dispose of once nothing draws them. */
-export function setFlowers( group: THREE.Group, instances: FlowerInstances[], replacements: readonly ( THREE.InstancedMesh | null )[], boxes: readonly ( THREE.Box3 | null )[] ): THREE.InstancedMesh[] {
+function setFlowers( group: THREE.Group, instances: FlowerInstances[], replacements: readonly ( THREE.InstancedMesh | null )[], boxes: readonly ( THREE.Box3 | null )[] ): THREE.InstancedMesh[] {
 
 	const old: THREE.InstancedMesh[] = [];
 	( [ ...group.children ] as THREE.InstancedMesh[] ).forEach( ( mesh, s ) => {
@@ -425,5 +427,63 @@ export function setFlowers( group: THREE.Group, instances: FlowerInstances[], re
 
 	} );
 	return old;
+
+}
+
+/** What a grown island's flowers swap in: per species its instances, and a new mesh where they
+ * outgrew its capacity (else null, and the mesh's box). */
+export interface FlowersPrepared { instances: FlowerInstances[]; replacements: ( THREE.InstancedMesh | null )[]; boxes: ( THREE.Box3 | null )[] }
+
+/** The flowers as a vegetation kind (vegetation/Registry.ts): a grown island's beds are planted a
+ * slice of anchors at a step; per species its instances are written into its mesh at the swap,
+ * staged ahead, or (outgrown) a new mesh is made and compiled ahead (with its proxy in the rain's
+ * bake) and takes the old one's place. */
+export function flowersKind( group: THREE.Group ): VegetationKind<FlowersPrepared> {
+
+	return {
+		name: 'flowers', root: group, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true,
+		growth: {
+			*prepare( input ) {
+
+				const veg = input.data.vegetation, anchors = veg.length / STRIDE;
+				const plants: Plant[][] = group.children.map( () => [] );
+				for ( let a = 0; a < anchors; a += 128 ) {
+
+					const part = plantFlowers( veg.subarray( a * STRIDE, Math.min( anchors, a + 128 ) * STRIDE ), ( x, z ) => input.walkDistance( x, z ) );
+					part.forEach( ( list, s ) => plants[ s ].push( ...list ) );
+					yield;
+
+				}
+				const prepared: FlowersPrepared = { instances: [], replacements: [], boxes: [] };
+				for ( let k = 0; k < plants.length; k ++ ) {
+
+					const instances = flowerInstances( [ plants[ k ] ] )[ 0 ];
+					prepared.instances.push( instances );
+					yield;
+					const replacement = flowerReplacement( group, k, instances );
+					prepared.replacements.push( replacement );
+					prepared.boxes.push( replacement ? null : FLOWER_POOL.box( group.children[ k ] as THREE.InstancedMesh, instances ) );
+					yield;
+					if ( ! replacement ) for ( const [ attribute, values ] of FLOWER_POOL.writes( group.children[ k ] as THREE.InstancedMesh, instances ) ) input.stage( yield* stagedWriteSteps( input.renderer, attribute, values ) );
+					if ( replacement ) {
+
+						yield input.compileDraws( [ replacement ] );
+						yield input.rain.collision.prepare( input.renderer, [ replacement ] );
+
+					}
+
+				}
+				return prepared;
+
+			},
+			swap( prepared ) {
+
+				const old = setFlowers( group, prepared.instances, prepared.replacements, prepared.boxes );
+				// (with their depth prepass copies, VegetationPrepass.ts)
+				return () => { for ( const mesh of old ) { mesh.geometry.dispose(); mesh.traverse( ( object ) => object.dispose() ); } };
+
+			},
+		},
+	};
 
 }

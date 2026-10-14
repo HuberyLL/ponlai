@@ -36,12 +36,12 @@ import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
-import { buildFoliage } from './world/Foliage.ts';
+import { buildFoliage, foliageKind } from './world/Foliage.ts';
 import { pickPlantSites, bakeAnchorContact } from './world/PlantSites.ts';
-import { buildPlants, plantsBox, PlantCache } from './world/Plants.ts';
-import { buildRimFoliage } from './world/RimFoliage.ts';
-import { buildTurfSkirt } from './world/RimSkirt.ts';
-import { buildFlowers, plantFlowers } from './world/Flowers.ts';
+import { buildPlants, plantsBox, plantsKind, PlantCache } from './world/Plants.ts';
+import { buildRimFoliage, rimFoliageKind } from './world/RimFoliage.ts';
+import { buildTurfSkirt, turfSkirtKind } from './world/RimSkirt.ts';
+import { buildFlowers, flowersKind, plantFlowers } from './world/Flowers.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
@@ -73,6 +73,8 @@ import { watchPipelines, type SettleFrame } from './post/Settled.ts';
 import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
+import { Vegetation } from './world/vegetation/Registry.ts';
+import { grassKind } from './world/vegetation/GrassKind.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
 import { ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
 import type { Game } from './game/Game.ts';
@@ -588,9 +590,18 @@ const grass = buildGrass( plantGrass( data.vegetation, data.rimGround ), shared,
 const flowers = buildFlowers( plantFlowers( data.vegetation, walkDistance ), shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
-scene.add( grass, foliage, flowers, rimFoliage, turfSkirt, plants );
+// The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
+// of vegetation below reads it.
+const vegetation = new Vegetation();
+vegetation.add( grassKind( grass, renderer ) );
+vegetation.add( foliageKind( foliage ) );
+vegetation.add( flowersKind( flowers ) );
+vegetation.add( rimFoliageKind( rimFoliage ) );
+vegetation.add( turfSkirtKind( turfSkirt ) );
+vegetation.add( plantsKind( plants, plantCache ) );
+scene.add( ...vegetation.roots() );
 installWindMotionFlag( scene );
-installVegetationPrepass( scene, [ grass, foliage, rimFoliage, plants ] );
+installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
 // Everything that casts into the sun's map: the figures cast through their own map, and the sea
 // floor's stones only into the refracted one. The game's props grow it (holdOpaque below), and so
 // does the island (setSunCasters again at each growth step).
@@ -600,7 +611,7 @@ const heldOpaque: THREE.Box3[] = [];
 function setSunCasters(): void {
 
 	sunCasters.makeEmpty();
-	for ( const root of [ world.group, foliage, flowers, rimFoliage, turfSkirt, plants ] ) {
+	for ( const root of [ world.group, ...vegetation.roots( ( kind ) => kind.sunCaster ) ] ) {
 
 		root.updateWorldMatrix( true, true );
 		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) sunCasters.expandByObject( object ); } );
@@ -619,7 +630,7 @@ controls.setIsland( world.grounds, landBox );
 frameLand();
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
 rain.collision.setArea( landBox );
-rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt, plants ] );
+rain.bakeCollision( renderer, [ world.group, ...vegetation.roots( ( kind ) => kind.rainBake ) ] );
 mark( 'meshes' );
 setStatus( 'Waking the villagers…' );
 // A plain islander while the basic look settles (src/characters/looks.ts: bare head, so the
@@ -673,6 +684,8 @@ if ( GAME ) {
 		},
 		// the game's props, for the scene's pass and the sun's map (see compileDraws)
 		compileDraws,
+		// the game's palms join the vegetation's kinds while they are drawn
+		vegetation,
 		// every islander in the scene islander's proportions (the `islander` URL option). A figure
 		// is handed over once its pipelines are built, off the frame (GameView "First draws"): it
 		// arrives after the game's first frame, and each load brings its own material, so the frame
@@ -727,8 +740,7 @@ console.info( `world: ${ worldCache.hits } of ${ worldCache.chunks + 1 } records
 // (for the diagnostics, which follow a grown island)
 const worldInfo = { worldTriangles: world.triangles, rimStrands: data.rimStrands.length };
 const growth = new Growth( {
-	renderer, world, fields, grass, flowers, foliage, plants, plantCache, rimFoliage, turfSkirt, shoreWaves, refractedSun, rain, characters, game,
-	rainRoots: [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt, plants ],
+	renderer, world, fields, vegetation, shoreWaves, refractedSun, rain, characters, game,
 	compileDraws,
 	measure: measureLand,
 	onSwap: ( next, version, measured ) => {
@@ -2029,7 +2041,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, plants, flowers, rimFoliage, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
-	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, sky, fft, establishScene, data: () => shownData }, options ),
+	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, sky, fft, establishScene, data: () => shownData, vegetation }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes
 	growth: Object.assign( growth, { fieldBytes: () => fields.bytes() } ),
 	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),

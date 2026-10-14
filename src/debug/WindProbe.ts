@@ -8,6 +8,7 @@ import { plantFlowers } from '../world/Flowers.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
+import type { Vegetation } from '../world/vegetation/Registry.ts';
 import type { Shared } from '../shared.ts';
 
 // `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
@@ -53,6 +54,7 @@ export interface WindProbeContext {
 	fft: { params: { windDirection: number }; swell: { directionOffset: number } };
 	establishScene: ( scene: never ) => Promise<unknown>; // main.ts's, with { weather, preset }
 	data: () => WorldData;
+	vegetation: Vegetation;
 
 }
 
@@ -194,13 +196,14 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 	}
 	if ( o.kinds.includes( 'palm' ) ) {
 
+		// the game's palms, as its view registers them (PalmView.ts `kind`)
 		const points: number[][] = [];
-		ctx.scene.traverse( ( object ) => {
+		for ( const root of ctx.vegetation.roots( ( kind ) => kind.name === 'palm' ) ) {
 
-			const place = object.userData.palm as { root: THREE.Vector3 } | undefined;
-			if ( place?.root ) points.push( [ place.root.x, place.root.z, place.root.y, 0 ] );
+			const place = root.userData.palm as { root: THREE.Vector3 };
+			points.push( [ place.root.x, place.root.z, place.root.y, 0 ] );
 
-		} );
+		}
 		add( 'palm', points, ( wind, p ) => {
 
 			const root = vec3( p.x, p.z, p.y );

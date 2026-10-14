@@ -6,6 +6,8 @@ import { SKIRT_INFO, SKIRT_RING } from './RimGround.ts';
 import { cellStream } from './Anchors.ts';
 import { backlight, vegetationMaterial } from './vegetation/Material.ts';
 import { skirtLean } from './vegetation/Deform.ts';
+import type { VegetationKind } from './vegetation/Registry.ts';
+import { geometrySteps } from './Upload.ts';
 import { boundsSteps, float32Steps, indexSteps, runSteps, Growing } from './Steps.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
@@ -42,12 +44,37 @@ export interface TurfSkirtBuilt { geometry: THREE.BufferGeometry; counts: { blad
 
 /** Swaps the skirt `mesh` (buildTurfSkirt) to `built` in place. Returns the geometry replaced, to
  * dispose of once nothing draws it. */
-export function setTurfSkirt( mesh: THREE.Mesh, built: TurfSkirtBuilt ): THREE.BufferGeometry {
+function setTurfSkirt( mesh: THREE.Mesh, built: TurfSkirtBuilt ): THREE.BufferGeometry {
 
 	const old = mesh.geometry;
 	mesh.geometry = built.geometry;
 	mesh.userData = built.counts;
 	return old;
+
+}
+
+/** The turf skirt as a vegetation kind (vegetation/Registry.ts): a grown island's skirt is built in
+ * steps, uploaded ahead, and swapped into the mesh. */
+export function turfSkirtKind( mesh: THREE.Mesh ): VegetationKind<TurfSkirtBuilt> {
+
+	return {
+		name: 'skirt', root: mesh, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true,
+		growth: {
+			*prepare( input ) {
+
+				const skirt = yield* turfSkirtSteps( input.data.rimSkirt, 8 );
+				yield* geometrySteps( input.renderer, skirt.geometry );
+				return skirt;
+
+			},
+			swap( prepared ) {
+
+				const old = setTurfSkirt( mesh, prepared );
+				return () => old.dispose();
+
+			},
+		},
+	};
 
 }
 

@@ -4,6 +4,7 @@ import { shared } from '../../shared.ts';
 import { wave } from '../../weather/Wind.ts';
 import { PALM_WIND, mainBend } from '../../world/vegetation/Deform.ts';
 import { useVegetationMotion } from '../../world/vegetation/Material.ts';
+import type { VegetationKind } from '../../world/vegetation/Registry.ts';
 import { PALM_COCONUTS } from '../sim/places.ts';
 import type { PalmState } from '../sim/types.ts';
 import { BALL, PropBuilder, at, hashAt, propMaterial } from './Props.ts';
@@ -34,6 +35,11 @@ import type { RGB } from './Props.ts';
 // view's palm had released them: about 20 ms of script, and a frame of about 0.35 s on a cold shader
 // cache. The game compiles a sample palm with the props at start and keeps it (GameView "First
 // draws"), so no palm builds a pipeline in a frame.
+//
+// Each palm is a vegetation kind (`kind`, world/vegetation/Registry.ts), which the game's view
+// registers while it draws the palm: it takes part in none of the page's vegetation lists (the
+// game adds it to the scene, and grows the sun's casters for it itself), and the wind probe finds
+// the palms there.
 
 const TRUNK_HEIGHT = 2.9;
 const TRUNK_SEGMENTS = 9;
@@ -225,6 +231,8 @@ export class PalmView {
 
 	readonly id: string;
 	readonly mesh: THREE.Mesh;
+	/** the palm as the vegetation registry holds it (GameView registers it) */
+	readonly kind: VegetationKind;
 	stamp = 0;
 	private readonly place: PalmPlace;
 
@@ -238,6 +246,7 @@ export class PalmView {
 		this.mesh.name = `palm:${ palm.id }`;
 		this.mesh.castShadow = true;
 		this.mesh.receiveShadow = true;
+		this.kind = { name: 'palm', root: this.mesh, prepass: false, shadowFilter: 'ordinary', sunCaster: false, rainBake: false };
 		this.update( palm );
 
 	}

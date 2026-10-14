@@ -9,6 +9,7 @@ import type { Sim } from '../sim/Sim.ts';
 import { BUILDING_KINDS, stageOf } from '../sim/buildings.ts';
 import type { BuildingState } from '../sim/types.ts';
 import { PalmView } from './PalmView.ts';
+import type { Vegetation } from '../../world/vegetation/Registry.ts';
 import { standIn } from './StandIn.ts';
 import { ChestView } from './ChestView.ts';
 import { SiteView } from './SiteView.ts';
@@ -50,6 +51,8 @@ export interface GameViewOptions {
 	holdOpaque( box: THREE.Box3 ): void;
 	/** a skinned islander figure for a look index (src/characters/looks.ts) */
 	loadLook( look: number ): Promise<Figure>;
+	/** the page's vegetation registry, which holds the palms while they are drawn (GameContext) */
+	vegetation: Vegetation;
 }
 
 // Figures kept from the last GameView for the next one: a loaded game has the same islanders, and
@@ -219,6 +222,7 @@ export class GameView {
 				view = new PalmView( palm, grid.height( palm.x, palm.z ) );
 				this.palms.set( palm.id, view );
 				this.add( view.mesh );
+				this.options.vegetation.add( view.kind );
 				changed = true;
 
 			}
@@ -229,6 +233,7 @@ export class GameView {
 		for ( const [ id, view ] of this.palms ) {
 
 			if ( view.stamp === stamp ) continue;
+			this.options.vegetation.remove( view.kind );
 			view.dispose();
 			this.palms.delete( id );
 			changed = true;
@@ -347,7 +352,12 @@ export class GameView {
 		for ( const v of this.villagers ) v.dispose();
 		this.villagers.length = 0;
 		this.byId.clear();
-		for ( const p of this.palms.values() ) p.dispose();
+		for ( const p of this.palms.values() ) {
+
+			this.options.vegetation.remove( p.kind );
+			p.dispose();
+
+		}
 		this.palms.clear();
 		for ( const draw of this.buildings.values() ) this.drop( draw );
 		this.buildings.clear();

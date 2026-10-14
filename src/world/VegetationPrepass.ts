@@ -48,9 +48,11 @@ import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 //   each copy carries the fields its shader reads.
 // - Keep `material.alphaTest` itself at its value (the shadow passes copy it) and leave it out of
 //   the shaded draw's shader build only.
-// - A new alpha-to-coverage vegetation group joins `installVegetationPrepass`'s list; anything
-//   that finds vegetation after the first frame reads `userData.vegetation` (this turns
-//   `alphaToCoverage` off).
+// - A new alpha-to-coverage vegetation kind registers with `prepass: true` (vegetation/Registry.ts:
+//   main.ts hands the registered roots to `installVegetationPrepass`); anything that finds
+//   vegetation after the first frame reads `userData.vegetation` (this turns `alphaToCoverage` off).
+// - A depth copy's material is made once per shaded material (the grass's three batches share one),
+//   so its node graph and pipelines are built once.
 
 // Equal depth needs the prepass and the shaded draw to place every vertex bit for bit alike. The
 // two programs differ (the shaded one computes much more), and the shader compiler then reorders
@@ -112,8 +114,9 @@ function depthMaterial( source: THREE.MeshStandardNodeMaterial ): THREE.MeshBasi
 type Pair = { mesh: THREE.Mesh; material: THREE.MeshStandardNodeMaterial; depth: THREE.Mesh };
 
 /** What `installVegetationPrepass` installed (kept on `scene.userData.vegetationPrepass` for the
- * diagnostics): its pairs of a depth copy and a shaded mesh, and the shaded materials patched. */
-export interface VegetationPrepassInfo { pairs: number; materials: number }
+ * diagnostics): its pairs of a depth copy and a shaded mesh, the shaded materials patched and their
+ * depth copies' materials. */
+export interface VegetationPrepassInfo { pairs: number; materials: number; depthMaterials: number }
 
 /** Give every alpha-to-coverage mesh under `roots` its depth prepass, and under the temporal modes
  * every vegetation mesh (`markVegetation`: their coverage materials are alpha-tested there). With
@@ -139,10 +142,14 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 
 	const pairs: Pair[] = [];
 	const patched = new Set<THREE.Material>();
+	// one depth copy per shaded material, whatever number of meshes draw with it (the grass's
+	// batches share theirs): the same shader, so the same pipelines
+	const depthCopies = new Map<THREE.Material, THREE.MeshBasicNodeMaterial>();
 	for ( const mesh of meshes ) {
 
 		const material = mesh.material as THREE.MeshStandardNodeMaterial;
-		const depthCopy = depthMaterial( material );
+		let depthCopy = depthCopies.get( material );
+		if ( ! depthCopy ) depthCopies.set( material, depthCopy = depthMaterial( material ) );
 		let depth: THREE.Mesh;
 		if ( ( mesh as THREE.InstancedMesh ).isInstancedMesh ) {
 
@@ -247,7 +254,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		previous.apply( scene, args );
 
 	};
-	const info: VegetationPrepassInfo = { pairs: pairs.length, materials: patched.size };
+	const info: VegetationPrepassInfo = { pairs: pairs.length, materials: patched.size, depthMaterials: depthCopies.size };
 	scene.userData.vegetationPrepass = info;
 	return info;
 
