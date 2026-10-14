@@ -33,8 +33,9 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // moss, root soil and turf) take adjacent ranges of the relief in stacking order, so each one's
 // visible cover matches the plain mix's. Turf stays on the meadow: never on ledges below the lip.
 // The meadow's ground is one model: the turf takes the lawn's colour from the meadow map (Meadow.ts),
-// darkened to the blades' lower half (`TURF_TONE`) so it reads as the gaps between them, while the
-// far meadow, where the turf shows between blades under a pixel wide, still reads as one carpet;
+// darkened to the blades' lower part (`TURF_TONE`) so it reads as the deeper green of the gaps
+// between them, while the far meadow, where the turf shows between blades under a pixel wide,
+// still reads as one carpet;
 // the blades shade it through one canopy depth (MeadowCanopy.ts).
 // `?terrainHex=0` builds the plain triplanar variant; `userData.terrainVariant` swaps them.
 //
@@ -45,11 +46,11 @@ type V3 = THREE.Node<'vec3'>;
 type V2 = THREE.Node<'vec2'>;
 type F = THREE.Node<'float'>;
 
-// The turf's albedo against the lawn's colour (Meadow.ts): about the blades' lower half (Grass.ts),
-// so the ground seen between near blades reads as the dark gaps of a deep sward. Where the blades
-// thin to under a pixel they still cover most of it, and the turf only deepens the carpet a little,
-// evenly.
-const TURF_TONE = 0.38;
+// The turf's albedo against the lawn's colour (Meadow.ts): about the blades' lower part (Grass.ts),
+// so the ground seen between near blades reads as the deeper green of the gaps, not as holes.
+// Where the blades thin to under a pixel they still cover most of it, and the turf only deepens the
+// carpet a little, evenly.
+const TURF_TONE = 0.66;
 
 // canopy: direct light left under the meadow's blades (1 where nothing grows)
 // water: share under a water film or standing water (water's specular reflectance)

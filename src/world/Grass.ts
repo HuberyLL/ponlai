@@ -27,9 +27,11 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 
 // The meadow on the island top: a lawn of thin, straight, nearly upright blades of one height,
 // one instanced tuft on every planting anchor and a second on about a quarter of them, so it reads
-// as a dense, even sward that sways with the wind as one. One grass colour (Meadow.ts), dark at the
-// root and bright at the tip; soft upward normals join the blades to the turf rather than lighting
-// every tuft as a cushion, and each blade shifts its value and hue only a little. Anchors come from
+// as a dense, even sward that sways with the wind as one. One grass colour (Meadow.ts), a deeper,
+// cooler green at the root and a lighter, yellower one at the tip, where the key light shines
+// through the blade, with a faint gloss along it; soft upward normals join the blades to the turf
+// rather than lighting every tuft as a cushion, and each blade shifts its value and hue only a
+// little. Anchors come from
 // the world worker (x, y, z, normal, rim distance, kind and local sky visibility); every choice
 // below is a seeded hash of the anchor, so the meadow grows with the island's footprint and needs
 // no placed features.
@@ -370,6 +372,14 @@ export function bendBlade( wind: WindState, rooted: THREE.Node<'vec3'>, origin: 
 // (a share of the direct light), lighter than on the ground, as light scatters through the blades;
 // and how far above its root a vertex looks up, so the root does not take the ground it stands in.
 const SHADE_RADIUS = 0.3, SHADE_DEPTH = 0.8, SHADE_LIFT = 0.08;
+// The blades' colour and light (grassMaterial): the root's colour against the lawn's, the key light
+// left at the root, the sky's at the root, light through the upper blades (a floor from any side,
+// tinted against the albedo) and the gloss along them (its colour and the sine's power).
+const ROOT = new THREE.Vector3( 0.15, 0.3, 0.24 ), TIP = new THREE.Vector3( 1.0, 1.06, 0.8 );
+const ROOT_KEY = 0.72, ROOT_SKY = 0.55;
+const TRANSLUCENT_FLOOR = 0.3;
+const TRANSLUCENT_TINT = new THREE.Vector3( 1.4, 1.15, 0.5 );
+const SHEEN = new THREE.Vector3( 0.06, 0.065, 0.045 ), SHEEN_POWER = 2;
 // The ring's lookups besides the centre: each costs 0.05 - 0.08 ms a frame in the island views
 // (every blade vertex takes them), and two keep the shade's cost near half the per-pixel filter's.
 const SHADE_TAPS = 2;
@@ -456,20 +466,21 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const jitter = fract( sin( blade.w.mul( 91.7 ).add( pick.mul( 37.3 ) ) ).mul( 43758.5453 ) );
 	const tint = fract( jitter.mul( 7.13 ).add( pick.mul( 3.7 ) ) );
 	const bladeShift = mix( vec3( 0.98, 1, 1.03 ), vec3( 1.02, 1, 0.95 ), tint ).mul( jitter.mul( 0.1 ).add( 0.95 ) );
-	// Dark, deep green at the root to a bright, fresh green at the tip (the instance colour
-	// multiplies in): the lowest fifth keeps the root's colour and the ramp runs over the rest, so
-	// the gaps between blades read dark and the tips bright, a deep sward rather than a flat turf.
-	// The root is cooler than the tip. At the rim's soil pockets the roots take the soil's colour.
-	const root = mix( vec3( 0.07, 0.13, 0.1 ), vec3( 0.55, 0.38, 0.23 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
+	// A deeper, cooler green at the root to a light, fresh green at the tip (the instance colour
+	// multiplies in), so the gaps between blades read as a deeper green, never near black (that
+	// read as holes in a bright lawn), and the sward has depth without looking dirty. The light
+	// through the tips (below) adds the yellow. At the rim's soil pockets the roots take the soil's
+	// colour.
+	const root = mix( vec3( ROOT ), vec3( 0.55, 0.38, 0.23 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
 	const wetness = clamp( shared.wetness, 0, 1 );
-	mat.colorNode = mix( root, vec3( 1.15, 1.35, 0.95 ), smoothstepN( 0.2, 1, t ) ).mul( bladeShift ).mul( mix( 1, 0.92, wetness ) );
+	mat.colorNode = mix( root, vec3( TIP ), smoothstepN( 0.12, 1, t ) ).mul( bladeShift ).mul( mix( 1, 0.92, wetness ) );
 	mat.roughnessNode = mix( 0.86, 0.76, wetness );
 	// the tuft's envelope, the same from both sides
 	mat.normalNode = normalViewGeometry;
 	// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
 	// Both the sky's light (here) and the key light (`VegetationLighting` below) fall off toward
-	// the root, deepening the gaps further.
-	mat.aoNode = mix( float( 0.4 ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( skyVisibility );
+	// the root.
+	mat.aoNode = mix( float( ROOT_SKY ), float( 1 ), smoothstepN( 0.08, 0.85, t ) ).mul( skyVisibility );
 	// light through the blades: strongest when the grass stands against the sun
 	// Blades do not cast into the sun's shadow map; see MeadowCanopy.
 	// Per vertex (lower tiers) it takes the rest pose before the widening, as the shadows do; the
@@ -487,8 +498,21 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// of its own (SunShadow `install`).
 	const shade = sunShadow.softVisibility( rooted.add( vec3( 0, SHADE_LIFT, 0 ) ), SHADE_RADIUS, SHADE_TAPS );
 	mat.userData.sunVisibility = varying( mix( float( 1 ), shade, SHADE_DEPTH ), 'vGrassSunVisibility' );
-	useLighting( mat, () => new VegetationLighting( mix( float( 0.5 ), float( 1 ), t ).mul( canopy ), ( L, V ) =>
-		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.42 ).add( 0.04 ).mul( t2 ) ) );
+	// Light through the upper blades, yellower than the light off them (it crosses the leaf):
+	// strongest against the sun, a little from any side, so lit tips glow yellow-green. A soft
+	// gloss along the blades (`SHEEN`): a blade is a thin strip standing along its envelope's
+	// normal, so it reflects as a fibre about that axis (Kajiya and Kay's sine of the half vector),
+	// broad and faint, brightest on the tips toward a low sun. Both follow the key light alone, so
+	// by night they stay as faint as the moon.
+	useLighting( mat, () => new VegetationLighting( mix( float( ROOT_KEY ), float( 1 ), t ).mul( canopy ), ( L, V ) =>
+		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.42 ).add( TRANSLUCENT_FLOOR ).mul( t2 ).mul( vec3( TRANSLUCENT_TINT ) ),
+	( L, V, N ) => {
+
+		const along = dot( N, normalize( L.add( V ) ) );
+		const facing = clamp( dot( N, L ).add( 0.35 ), 0, 1 );
+		return vec3( SHEEN ).mul( pow( clamp( float( 1 ).sub( along.mul( along ) ), 0, 1 ), SHEEN_POWER ).mul( facing ).mul( t2 ) );
+
+	} ) );
 	mat.userData.wind = wind;
 	return mat;
 
