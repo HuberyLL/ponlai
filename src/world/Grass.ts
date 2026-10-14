@@ -27,10 +27,11 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 
 // The meadow on the island top: a lawn even as a whole and of blades each its own, one instanced
 // tuft on every planting anchor and a second on about a quarter of them, so it reads as a dense,
-// even sward that sways with the wind as one. The blades are sword-shaped, wide to high up and
-// running to a point; each takes its own height, facing, lean and arc and its own value and tint,
-// all hashed from the blade and its anchor. One grass colour (Meadow.ts), a deeper, cooler green at
-// the root and a lighter, yellower one at the tip, where the key light shines through the blade,
+// even sward that sways with the wind as one. The blades are sword-shaped, wide to two thirds up
+// and running to a point; each takes its own height, facing, lean and arc and its own value and
+// tint, all hashed from the blade and its anchor, most standing nearly upright and a few leaning
+// over. One grass colour (Meadow.ts), a deeper, cooler green at the root and a lighter, yellower
+// one at the tip, where the key light shines through the blade,
 // with a faint gloss along it and little of a dielectric's specular; soft upward normals join the
 // blades to the turf rather than lighting every tuft as a cushion, and each blade is folded along
 // its midrib, one half turned to the light and the other from it, with a thin lighter edge.
@@ -90,15 +91,21 @@ interface TuftShape {
 // about twice the anchors' spacing (r0 is drawn by area), so neighbouring tufts meet in one sward
 // instead of rosettes. Two segments are enough for blades this short: the arc's one bend sits at
 // their upper level. Their widths keep the lawn's cover with the pointed tips.
-const LAWN: TuftShape = { blades: 16, segs: 2, r0: [ 0, 0.2 ], h: [ 0.9, 1 ], lean: [ 0.02, 0.08 ], w: [ 0.031, 0.044 ], droop: 0.15, reachPow: 2 };
+const LAWN: TuftShape = { blades: 16, segs: 2, r0: [ 0, 0.2 ], h: [ 0.9, 1 ], lean: [ 0.02, 0.08 ], w: [ 0.034, 0.048 ], droop: 0.15, reachPow: 2 };
 // Each blade's own rest pose, a hash of the blade and its tuft's anchor (`restBlade`): its height
 // times 0.75 to 1.25 (and one in twelve a fifth taller, the mean kept at 1), its width axis turned
 // by up to FACING / 2 either way, and a lean of LEAN_MIN to LEAN_MAX of its height toward any side,
-// growing with the square of the way up, so the blade arcs. HEIGHT_MAX and LEAN_MAX bound the
-// cull's box (`restBox`).
+// growing with the square of the way up, so the blade arcs. The lean is the hash to LEAN_POWER, so
+// most blades stand nearly upright (at the sward's height 16 degrees at least, half of them under
+// 20, four in five under 28) and a few lean well over (to 38): from the game's 62 degree view a leaning blade turns
+// its face to the camera, and with the lean spread evenly over the range the lawn read at 60 m as
+// a cover of broad leaves, without the upright grain of grass; the few that lean far cross the
+// upright ones here and there. Leaner still (LEAN_MIN toward 0) stands the tufts up as clumps with
+// turf between them, which the 32 px block contrast of the lawn picks up. HEIGHT_MAX and LEAN_MAX
+// bound the cull's box (`restBox`).
 const TALL_SHARE = 1 / 12, TALL = 1.2;
 const HEIGHT_MAX = 1.25 * TALL / ( 1 + TALL_SHARE * ( TALL - 1 ) );
-const FACING = Math.PI, LEAN_MIN = 0.03, LEAN_MAX = 0.22;
+const FACING = Math.PI, LEAN_MIN = 0.08, LEAN_MAX = 0.22, LEAN_POWER = 3;
 // The tuft's scale across (its local x and z, m per unit) about which its own jitter varies.
 const PLANT_SPREAD = 1;
 // The share of the anchors that take a second tuft (the extra tufts, folded away by distance):
@@ -156,13 +163,14 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 		const base = P.length / 3;
 		for ( let i = 0; i <= segs; i ++ ) {
 
-			// Sword-shaped: the levels crowd toward the tip ( 0, 0.6, 1 at two segments), the blade
-			// keeps most of its width to the upper level and runs to a point.
+			// Sword-shaped: the levels crowd toward the tip ( 0, 0.7, 1 at two segments), the blade
+			// keeps most of its width (0.7) to the upper level and runs to a point; holding more of it
+			// there read as broad leaves from the overview.
 			const t = 1 - Math.pow( 1 - i / segs, 1.32 );
 			const reach = lean * h * Math.pow( t, shape.reachPow );
 			const cx = ox + dx * reach, cz = oz + dz * reach;
 			const cy = h * t * ( 1.0 - shape.droop * lean * t );
-			const hw = w * 0.5 * Math.sqrt( Math.max( 1 - t * t * t, 0 ) );
+			const hw = w * 0.5 * Math.sqrt( Math.max( 1 - t * t, 0 ) );
 			for ( const sg of [ - 1, 1 ] ) {
 
 				const px = cx + wx * hw * sg, pz = cz + wz * hw * sg;
@@ -419,7 +427,7 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F ) {
 	const height = bladeHash( id, pick, 0 ).mul( 0.5 ).add( 0.75 ).mul( tall ).div( 1 + TALL_SHARE * ( TALL - 1 ) );
 	const turn = bladeHash( id, pick, 2 ).sub( 0.5 ).mul( FACING );
 	const leanAngle = bladeHash( id, pick, 3 ).mul( TAU );
-	const leanAmount = bladeHash( id, pick, 4 ).mul( LEAN_MAX - LEAN_MIN ).add( LEAN_MIN );
+	const leanAmount = pow( bladeHash( id, pick, 4 ), LEAN_POWER ).mul( LEAN_MAX - LEAN_MIN ).add( LEAN_MIN );
 	const half = blade.z.mul( side );
 	const offset0 = vec2( cos( blade.y ), sin( blade.y ) ).mul( half );
 	const axis = vec2( cos( blade.y.add( turn ) ), sin( blade.y.add( turn ) ) ).toVar();
