@@ -20,6 +20,8 @@ import { backlight, vegetationMaterial } from './vegetation/Material.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { GrassCull, cullInputs, poolSteps, type CullBatchInput, type CullBuffers, type CullPool, type CullRange } from './GrassCull.ts';
+import { AttributeType, uploadSteps } from './Upload.ts';
+import type { VegetationKind } from './vegetation/Registry.ts';
 import type { Shared } from '../shared.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 
@@ -900,7 +902,7 @@ export interface GrassPrepared { pool: CullPool; buffers: CullBuffers; boxes: TH
 
 /** The pool of `tufts` for the meadow `group` (buildGrass), in steps (GrassCull's `poolSteps`): the
  * growth (Growth.ts) takes them in idle time. */
-export function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 ): Generator<void, GrassPrepared> {
+function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 ): Generator<void, GrassPrepared> {
 
 	const kinds = group.userData.kinds as { geometry: THREE.BufferGeometry; halfWidth: number; key: keyof GrassTufts }[];
 	const inputs: CullBatchInput[] = kinds.map( ( k ) => ( { tufts: tufts[ k.key ], geometry: k.geometry, halfWidth: k.halfWidth } ) );
@@ -925,7 +927,7 @@ export function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 )
 
 /** Swaps the meadow `group` to a prepared one in place: the same meshes, materials and kernels over
  * the new pool's buffers. Returns the buffers it replaced (dispose of them once drawn no more). */
-export function setGrass( group: THREE.Group, prepared: GrassPrepared ): CullBuffers {
+function setGrass( group: THREE.Group, prepared: GrassPrepared ): CullBuffers {
 
 	const cull = group.userData.cull as GrassCull, batches = group.userData.batches as Batch[];
 	const old = cull.setPool( prepared.pool, prepared.buffers );
@@ -942,5 +944,49 @@ export function setGrass( group: THREE.Group, prepared: GrassPrepared ): CullBuf
 
 	} );
 	return old;
+
+}
+
+// The meadow as a vegetation kind (vegetation/Registry.ts): a grown island's meadow is planted a
+// slice of anchors at a step and its cull pool filled and uploaded ahead; the swap points the
+// pool's storage nodes at the new buffers (`setGrass`, no pipeline), and the old buffers leave the
+// renderer's attributes once nothing draws them. It stays out of the sun's caster box, as it
+// always has.
+export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ): VegetationKind<GrassPrepared> {
+
+	return {
+		name: 'grass', root: group, prepass: true, shadowFilter: 'vegetation', sunCaster: false, rainBake: true,
+		growth: {
+			*prepare( input ) {
+
+				const veg = input.data.vegetation, anchors = veg.length / STRIDE;
+				const tufts: GrassTufts = { lawn: [], lawnThin: [] };
+				for ( let a = 0; a < anchors; a += 16 ) {
+
+					const part = plantGrass( veg.subarray( a * STRIDE, Math.min( anchors, a + 16 ) * STRIDE ), input.data.rimGround );
+					tufts.lawn.push( ...part.lawn );
+					tufts.lawnThin.push( ...part.lawnThin );
+					yield;
+
+				}
+				const grass = yield* grassSteps( group, tufts, 256 );
+				yield;
+				for ( const buffer of Object.values( grass.buffers ) as CullBuffers[ keyof CullBuffers ][] ) yield* uploadSteps( input.renderer, buffer, AttributeType.STORAGE );
+				return grass;
+
+			},
+			swap( prepared ) {
+
+				const old = setGrass( group, prepared );
+				return () => {
+
+					const attributes = ( renderer as unknown as { _attributes?: { delete( attribute: unknown ): void } } )._attributes;
+					for ( const buffer of Object.values( old ) ) attributes?.delete( buffer );
+
+				};
+
+			},
+		},
+	};
 
 }
