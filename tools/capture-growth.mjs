@@ -51,7 +51,8 @@
 // port (reference.mjs `checkServed`) and refuses another commit or uncommitted changes, and trusts
 // the URL when it cannot tell.
 //
-// Writes artifacts/captures/growth/<label>/index.html (and stats.json, the shots and each view's
+// Writes artifacts/captures/growth/<label>/index.html (a label already used is refused; the default
+// is the start time to the second and the pid) (and stats.json, the shots and each view's
 // log). Each pair's crops (the whole frame, its centre and its upper and lower bands) are measured
 // with compare-captures.py's `metrics` (`uv run --with pillow --with numpy`) plus the mean
 // saturation; deltas beyond 10 % are flagged. Each pair also gets its pixel difference: the pixels
@@ -83,7 +84,9 @@ const cand = opt( 'cand', '' );
 const seeds = list( 'seeds', '1' );
 const grows = list( 'grow', '0,12' );
 const views = list( 'views', 'v1,v2,v3,v4,v5,v6' );
-const label = opt( 'label', new Date().toISOString().slice( 0, 16 ).replace( /[:T]/g, '-' ) );
+// the default names each run by its second and pid: two runs in one minute once shared a folder,
+// and the second overwrote the first's stats.json
+const label = opt( 'label', `${ new Date().toISOString().slice( 0, 19 ).replace( /[:T]/g, '-' ) }-${ process.pid }` );
 const extra = opt( 'q', '' );
 const jobs = Math.max( 1, Number( opt( 'jobs', 2 ) ) );
 const retries = Math.max( 0, Number( opt( 'retries', 1 ) ) );
@@ -274,6 +277,12 @@ for ( const seed of seeds ) for ( const grow of grows ) for ( const view of view
 }
 
 const outDir = path.join( ROOT, 'artifacts/captures/growth', label );
+if ( existsSync( path.join( outDir, 'stats.json' ) ) ) {
+
+	console.error( `capture-growth: ${ outDir } holds another run's results: choose another --label` );
+	process.exit( 1 );
+
+}
 await mkdir( path.join( outDir, 'shots' ), { recursive: true } );
 await mkdir( path.join( outDir, 'logs' ), { recursive: true } );
 
