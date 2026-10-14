@@ -196,6 +196,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   third-party art without a licence.
 - Keep machine details out of the repository (hardware, user names, local paths); describe
   measurements in relative terms.
+- Comments and docs state what was measured and found, not where the notes are: never cite the
+  git-ignored `artifacts/` notes, plans or reports, or internal task and milestone names (task R,
+  T36, M7), which a clone does not have and an outside reader cannot follow. Naming a folder a tool
+  writes its output to is fine.
 - Code style follows three.js (mrdoob): tabs, spaces inside parentheses and brackets, comments in
   English that explain why.
 - Game UI (anything the player sees in `?game`: HUD, menus, overlays, in-world labels, mockups of
