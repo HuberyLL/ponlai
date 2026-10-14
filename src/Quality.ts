@@ -30,8 +30,9 @@
 //   once while they are built, so they change only with a reload;
 // - runtime: setters the page applies through `applySkyQuality` (main.ts) at load; a debug page can
 //   override them there (`s.applyQuality( { ... } )`) to time one at a time.
-// Load knobs reach their modules as `water` (Water.ts), `grass` (`setGrassQuality`), `shadow`
-// (`SunShadow.setFilter`), `rainShading` (`setRainShading`), `post` (`PostOptions` for
+// Load knobs reach their modules as `water` (Water.ts; its `fftAnisotropy` goes to OceanFFT's
+// output targets), `grass` (`setGrassQuality`), `shadow` (`SunShadow.setFilter`; its `water` to
+// Water.ts's surface shadow), `rainShading` (`setRainShading`), `post` (`PostOptions` for
 // `new Pipeline`), `environmentSource` (`Sky.setEnvironmentSource`, before the first bake),
 // `frameRate` (FramePacer), `aa` (the anti-aliasing mode, post/Antialiasing.ts, which also chooses
 // the tier, since the vegetation's modules read the mode as they load), `taa` (the temporal
@@ -147,8 +148,10 @@ export interface QualityProfile {
 	// the frame graph's structural options (sea fog, depth of field, bloom); the rest keep their
 	// defaults
 	post: Pick<PostOptions, 'fogScale' | 'fogSteps' | 'bankSize' | 'dofTaps' | 'bloomChains'>;
-	// the sun shadow's filter, for most receivers and for vegetation (both stepped maps alike)
-	shadow: { surface: SolarShadowTaps; vegetation: SolarShadowTaps };
+	// the sun shadow's filter, for most receivers, for vegetation and for the sea's surface (both
+	// stepped maps alike). On the sea it shades only the glints and the subsurface glow, so a lighter
+	// filter there shows little at noon.
+	shadow: { surface: SolarShadowTaps; vegetation: SolarShadowTaps; water: SolarShadowTaps };
 	grass: GrassQuality;
 	// the rain veil's shells and the sea's ripple layers
 	rainShading: { veilShells: number; rippleLayers: number };
@@ -176,6 +179,7 @@ export interface QualityProfile {
 }
 
 const PCSS_HIGH: SolarShadowTaps = { soft: true, blockerSamples: 6, filterSamples: 8 };
+const PCSS_MEDIUM: SolarShadowTaps = { soft: true, blockerSamples: 4, filterSamples: 5 };
 const BILINEAR: SolarShadowTaps = { soft: false, blockerSamples: 0, filterSamples: 0 };
 const TAA: TemporalSettings = {
 	framesStill: 24, framesStillWater: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
@@ -190,9 +194,9 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		aa: 'msaa',
 		taa: { ...TAA },
 		render: { dynamic: { max: 2, baselineShare: 2 / 3, floorShare: 0.5, step: 0.05 } },
-		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' },
+		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 36, bloomChains: 2 },
-		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },
+		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH, water: PCSS_HIGH },
 		grass: { lawnBlades: [ 16, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockFloor: 0.5, tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
@@ -211,9 +215,9 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		// TAAU's sharpening one RCAS stop softer than high's (higher is softer)
 		taa: { ...TAA, sharpness: { taa: TAA.sharpness.taa, taau: [ 2.0, 1.5 ] } },
 		render: { budget: 1600 * 900 },
-		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 6, stormFoam: 'full' },
+		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048, dofTaps: 24, bloomChains: 2 },
-		shadow: { surface: { soft: true, blockerSamples: 4, filterSamples: 5 }, vegetation: BILINEAR },
+		shadow: { surface: PCSS_MEDIUM, vegetation: BILINEAR, water: PCSS_MEDIUM },
 		grass: { lawnBlades: [ 12, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockFloor: 0.5, tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 256,
@@ -233,9 +237,9 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		render: { budget: 1280 * 720 },
 		// (one bloom chain veiled a golden-hour island in glow, and the merged storm foam turned
 		// the crests' streaks into scattered lace: both kept as on high)
-		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'full' },
+		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024, dofTaps: 16, bloomChains: 2 },
-		shadow: { surface: BILINEAR, vegetation: BILINEAR },
+		shadow: { surface: BILINEAR, vegetation: BILINEAR, water: BILINEAR },
 		grass: { lawnBlades: [ 8, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockFloor: 0.5, tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 2, rippleLayers: 1 },
 		environmentSource: 256,
@@ -261,11 +265,14 @@ export function isQualityTier( value: unknown ): value is QualityTier {
 }
 
 /** The tier's profile with `?tier.<knob path>=<value>` options over it, for A/B captures of one
- * knob (`tier.post.fogScale=0.5`, `tier.water.ssrRays=2`, `tier.grass.lawnBlades=16,8,4`). A path
+ * knob (`tier.post.fogScale=0.5`, `tier.water.ssrRays=2`, `tier.grass.lawnBlades=16,8,4`,
+ * `tier.shadow.water.soft=false`). A path
  * must name an existing knob; numbers, booleans and comma lists are parsed. */
 export function qualityProfile( tier: QualityTier, search = location.search ): QualityProfile {
 
-	const profile = structuredClone( QUALITY[ tier ] ) as QualityProfile;
+	// a JSON copy, not structuredClone: that keeps the table's shared objects shared (high's three
+	// shadow filters are one PCSS_HIGH), so an override of one knob would change its siblings too
+	const profile = JSON.parse( JSON.stringify( QUALITY[ tier ] ) ) as QualityProfile;
 	for ( const [ key, raw ] of new URLSearchParams( search ) ) {
 
 		if ( ! key.startsWith( 'tier.' ) ) continue;

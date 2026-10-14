@@ -409,7 +409,7 @@ const textures = await bakeProceduralTextures( renderer );
 // Keep the swell broad and modest so it supports the body without becoming a dominant wave train.
 const fft = new OceanFFT( renderer, {
 	windSpeed: 3.8, windDirection: 40, fetch: 3500, amplitude: 0.76, choppiness: 0.55, spread: 0.52,
-	swell: { height: 0.18 },
+	swell: { height: 0.18 }, anisotropy: quality.water.fftAnisotropy,
 } );
 const caustics = new Caustics( renderer, fft );
 // the veil's shells and the sea's ripple layers are built into the rain's and the water's materials
@@ -710,6 +710,7 @@ water = new Water( {
 	seabedLook: { beds: fields.beds, variation: textures.normalsB },
 	land: landBox, refractedSun, sunShadow, storm: stormSea,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
+	shadowTaps: quality.shadow.water,
 } );
 applySkyFill();
 // the small trees rise past the box's 3 m over the meadow (here and at each swap)
