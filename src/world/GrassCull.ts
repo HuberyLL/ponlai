@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, uniform, storage, workgroupArray, workgroupBarrier, workgroupId, localId, uint, select, length, dot, min, max,
+	Fn, If, Loop, uniform, storage, workgroupArray, workgroupBarrier, workgroupId, localId, uint, float, select, length, dot, min, max, ceil,
 } from 'three/tsl';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
@@ -18,6 +18,18 @@ import { jitter } from '../post/Jitter.ts';
 // Two dispatches: the first counts each workgroup's visible tufts, the second sums the counts of
 // the batch's earlier workgroups, scans its own and scatters. Each batch is padded to whole
 // workgroups, so no workgroup spans two batches.
+//
+// Bands: a tuft far from the camera keeps only some of its blades (Grass.ts `tuftLod`), the rest
+// narrowed to degenerate triangles that would still run the vertex stage. So each batch's visible
+// tufts are sorted into a few bands by the blades they keep (`CullBatchInput.caps`, say 16, 12, 8,
+// 6 and 4 of a lawn tuft's 16), each band drawn by its own indirect arguments with only its cap's
+// blades: the band's tufts follow one another in the batch's visible list, in slot order within
+// the band, and its draw starts at its first through `firstInstance` (the instance index the
+// vertex stage reads includes it). The count pass decides each tuft's band from the same blade
+// count the vertex stage computes (`CullLod.count`) and keeps it per slot (`bands`), so the scatter
+// places every tuft by the decision the counts were made from. Each workgroup counts its bands in
+// two words of three 10-bit fields (a workgroup has at most 256 tufts in a band), scanned together.
+// Without `indirect-first-instance` every batch has one band, its first: its draw starts at 0.
 //
 // The meadow is one pool (chunk design, section 8): a batch per kind (lawn, tussocks, the thin
 // extra tufts) holds every chunk's tufts in the chunks' order ( cj, ci ), as the anchors come
@@ -40,8 +52,17 @@ import { jitter } from '../post/Jitter.ts';
 //   every tuft to the byte; behind the prepass's opaque shaded draw a few isolated meadow pixels
 //   differ from it (the set depends on the drawn instance list).
 // - Indirect arguments are set on a batch's geometry for its own draw only: other draws over the
-//   same geometry (the rain's collision proxies, orthographic cameras) draw every tuft.
-//   `flags.grassCull = false` draws every tuft through the same storage path.
+//   same geometry (the rain's collision proxies, orthographic cameras) draw every tuft. A batch's
+//   bands are its geometry's indirect offsets (an array: three issues a draw for each), so the
+//   batch stays one render object and its depth copy draws the same bands.
+// - A band's cap never cuts a blade its tufts keep any of: a tuft goes into the band of the least
+//   cap at or above its count (less 0.001, a hair against the vertex stage's rounding), and the
+//   first band, which also takes any tuft over its cap (`flags.grassLod = false`), draws the
+//   batch's index count of the view (`CullRange.indexCount`, its nearest tuft's blades). The image
+//   is the one-draw image but for the split (AGENTS.md: about 1 % of pixels a level or two apart).
+//   `flags.grassCull = false` draws every tuft through the same storage path, and
+//   `flags.grassBands = false` puts every visible tuft in its batch's first band (the one draw of
+//   before), for A/Bs.
 // - A material that applies instancing itself from storage buffers must hold the placed position
 //   in a variable (`toVar`), as three's instancing assigns it to `positionLocal`: an inline
 //   expression rounds differently and flips a few hundred edge samples. `instanceColor` multiplies
@@ -52,6 +73,10 @@ type UintMax = ( a: THREE.Node<'uint'>, b: THREE.Node<'uint'> ) => THREE.Node<'u
 
 const GROUP = 256;
 const LOG2_GROUP = 8;
+// A batch's bands at most, counted per workgroup in BAND_WORDS words of three 10-bit fields.
+export const MAX_BANDS = 6;
+const BAND_WORDS = 2;
+const BAND_BITS = 10;
 // A tuft's widened blades reach out by at most this many times their half width (`MAX_WIDEN` times
 // the largest blade gain, 4: a far tuft keeps a quarter of its blades, less the blade itself), see
 // `pixelWideBlade` and `tuftLod` in Grass.ts.
@@ -70,7 +95,23 @@ export interface CullTuft {
 	top: number; origin: THREE.Vector3;
 }
 
-export interface CullBatchInput { tufts: CullTuft[]; geometry: THREE.BufferGeometry; halfWidth: number }
+export interface CullBatchInput {
+	tufts: CullTuft[]; geometry: THREE.BufferGeometry; halfWidth: number;
+	/** The tuft's blades and the least share of them it keeps (`CullLod.count`). */
+	blades?: number; floor?: number;
+	/** The blade counts of the batch's bands, descending (at most MAX_BANDS), and the indices of
+	 * one blade: a band's draw takes its cap's blades. */
+	caps?: number[]; bladeIndices?: number;
+}
+
+/** The blade count the vertex stage keeps a tuft at (Grass.ts `tuftLod`), as a node: its anchor,
+ * the camera's position, its blades and floor; and whether the view thins by distance at all. */
+export interface CullLod {
+	count: ( origin: THREE.Node<'vec3'>, camera: THREE.Node<'vec3'>, blades: THREE.Node<'float'>, floor: THREE.Node<'float'>, on: THREE.Node<'float'> ) => THREE.Node<'float'>;
+	on: THREE.UniformNode<'float', number>;
+	/** 0 puts every visible tuft in its batch's first band (`flags.grassBands = false`, for A/Bs). */
+	bands: THREE.UniformNode<'uint', number>;
+}
 
 export interface CullRange {
 	/** First slot of the batch in the shared buffers (and in the visible list). */
@@ -78,10 +119,11 @@ export interface CullRange {
 	count: number;
 	groupStart: number;
 	groupEnd: number;
-	/** The batch's index count for this draw (its blade selection), written into its arguments. */
+	/** The batch's index count for this view (its nearest tuft's blades): its first band's, and the
+	 * most any band draws. */
 	indexCount: THREE.UniformNode<'uint', number>;
-	/** Byte offset of the batch's five indirect arguments. */
-	indirectOffset: number;
+	/** Byte offsets of the five indirect arguments of each of the batch's bands. */
+	indirectOffsets: number[];
 }
 
 /** A pool's contents: the slots (a power of two of workgroups), the workgroups its batches fill,
@@ -94,11 +136,12 @@ export interface CullPool {
 }
 
 /** A pool's storage buffers, made ahead of `setPool` so they can be uploaded before the frame that
- * takes them (`visible` holds every slot's own index, `counts` a count per workgroup). */
+ * takes them (`visible` holds every slot's own index, `bands` each slot's band, `counts` a
+ * workgroup's band counts). */
 export interface CullBuffers {
 	matrices: THREE.StorageBufferAttribute; colors: THREE.StorageBufferAttribute; ground: THREE.StorageBufferAttribute;
 	origins: THREE.StorageBufferAttribute; spheres: THREE.StorageBufferAttribute; visible: THREE.StorageBufferAttribute;
-	counts: THREE.StorageBufferAttribute;
+	bands: THREE.StorageBufferAttribute; counts: THREE.StorageBufferAttribute;
 }
 
 /** The pool's arrays for `batches`, filled `per` tufts at a step (a generator, so the growth can
@@ -249,22 +292,42 @@ export class GrassCull {
 	private readonly dispatch: [ number, number, number ] = [ 1, 1, 1 ];
 	private readonly planes = Array.from( { length: 5 }, () => uniform( new THREE.Vector4() ) );
 	private readonly cameraPosition = uniform( new THREE.Vector3() );
-	private readonly kernels: THREE.ComputeNode[];
-	private readonly lastKey = new Float64Array( 16 + 3 + 8 ).fill( NaN );
+	// built at the first update, which knows whether the device draws from a first instance
+	private kernels: THREE.ComputeNode[] | null = null;
+	private readonly lastKey: Float64Array;
+	// each batch's tuft (blades, floor), band caps and indices per blade
+	private readonly batches: { blades: number; floor: number; caps: number[]; bladeIndices: number; first: number }[];
 	/** Debug diagnostics: views culled (dispatches) and updates skipped as unchanged, since load. */
 	readonly stats = { dispatches: 0, skipped: 0 };
 
-	constructor( batches: CullBatchInput[], private readonly thinFar: THREE.UniformNode<'float', number> ) {
+	constructor( batches: CullBatchInput[], private readonly thinFar: THREE.UniformNode<'float', number>, private readonly lod: CullLod ) {
 
 		const pool = fillPool( batches );
 		this.slots = pool.slots;
 		this.groups = pool.groups;
 		this.buffers = GrassCull.buffers( pool );
-		this.indirect = new THREE.IndirectStorageBufferAttribute( new Uint32Array( batches.length * 5 ), 1 );
+		let draws = 0;
+		this.batches = batches.map( ( b ) => {
+
+			const blades = b.blades ?? 16, caps = ( b.caps ?? [ blades ] ).slice( 0, MAX_BANDS );
+			const batch = { blades, floor: b.floor ?? 0, caps, bladeIndices: b.bladeIndices ?? 1, first: draws };
+			draws += caps.length;
+			return batch;
+
+		} );
+		this.indirect = new THREE.IndirectStorageBufferAttribute( new Uint32Array( draws * 5 ), 1 );
 		this.bounds = batches.map( () => ( { start: uniform( 0, 'uint' ), groupStart: uniform( 0, 'uint' ), groupEnd: uniform( 0, 'uint' ) } ) );
-		pool.ranges.forEach( ( r, k ) => this.ranges.push( { ...r, indexCount: uniform( 0, 'uint' ), indirectOffset: k * 20 } ) );
+		pool.ranges.forEach( ( r, k ) => this.ranges.push( { ...r, indexCount: uniform( 0, 'uint' ),
+			indirectOffsets: this.batches[ k ].caps.map( ( _, j ) => ( this.batches[ k ].first + j ) * 20 ) } ) );
+		this.lastKey = new Float64Array( 16 + 9 + batches.length ).fill( NaN );
 		this.setRanges( pool );
-		this.kernels = this.buildKernels();
+
+	}
+
+	/** Each batch's band caps as drawn (blades), known from the first update on. */
+	get bands(): number[][] {
+
+		return this.batches.map( ( b, k ) => b.caps.slice( 0, this.ranges[ k ].indirectOffsets.length ) );
 
 	}
 
@@ -280,7 +343,8 @@ export class GrassCull {
 			origins: new THREE.StorageBufferAttribute( pool.origins, 4 ),
 			spheres: new THREE.StorageBufferAttribute( pool.spheres, 4 ),
 			visible: new THREE.StorageBufferAttribute( visible, 1 ),
-			counts: new THREE.StorageBufferAttribute( new Uint32Array( n / GROUP ), 1 ),
+			bands: new THREE.StorageBufferAttribute( new Uint32Array( n ), 1 ),
+			counts: new THREE.StorageBufferAttribute( new Uint32Array( n / GROUP * BAND_WORDS ), 1 ),
 		};
 
 	}
@@ -332,9 +396,10 @@ export class GrassCull {
 			b.start.value = r.start;
 			b.groupStart.value = r.groupStart;
 			b.groupEnd.value = r.groupEnd;
-			// (a batch's arguments are the scatter's from its first dispatch on; an empty batch's stay 0)
-			args.fill( 0, k * 5, k * 5 + 5 );
-			args[ k * 5 + 1 ] = r.count;
+			// (a batch's arguments are the scatter's from its first dispatch on; an empty batch's stay 0,
+			// as do the first index and base vertex)
+			const first = this.batches[ k ].first * 5;
+			args.fill( 0, first, first + this.batches[ k ].caps.length * 5 );
 
 		} );
 		this.indirect.needsUpdate = true;
@@ -350,16 +415,21 @@ export class GrassCull {
 		const origins = this.node( 'origins', 'vec4', true );
 		const ground = this.node( 'ground', 'vec4', true );
 		const visible = this.node( 'visible', 'uint' );
+		const bandOf = this.node( 'bands', 'uint' );
 		const counts = this.node( 'counts', 'uint' );
-		const args = storage( this.indirect, 'uint', this.ranges.length * 5 );
+		const args = storage( this.indirect, 'uint', this.indirect.count );
 		const planes = this.planes, cameraPosition = this.cameraPosition, thinFar = this.thinFar, bounds = this.bounds;
-		// Per workgroup: its batch's first workgroup or first slot. The batches lie in order, so the
-		// last batch starting at or before the workgroup holds it (an empty batch starts where the
-		// next one does, and loses to it).
-		const pick = ( g: THREE.Node<'uint'>, value: ( b: typeof bounds[ number ] ) => THREE.Node<'uint'> ) => {
+		// the bands drawn: every batch's, or its first alone (`update`)
+		const caps = this.bands;
+		const K = Math.max( ...caps.map( ( c ) => c.length ) );
+		type Bound = typeof bounds[ number ];
+		// Per workgroup: a value of its batch (its first workgroup, first slot, a constant). The
+		// batches lie in order, so the last batch starting at or before the workgroup holds it (an
+		// empty batch starts where the next one does, and loses to it).
+		const pick = <T extends 'uint' | 'float'>( g: THREE.Node<'uint'>, value: ( b: Bound, k: number ) => THREE.Node<T> ) => {
 
-			let node: THREE.Node<'uint'> = value( bounds[ 0 ] );
-			for ( let k = 1; k < bounds.length; k ++ ) node = select( g.greaterThanEqual( bounds[ k ].groupStart ), value( bounds[ k ] ), node );
+			let node: THREE.Node<T> = value( bounds[ 0 ], 0 );
+			for ( let k = 1; k < bounds.length; k ++ ) node = select( g.greaterThanEqual( bounds[ k ].groupStart ), value( bounds[ k ], k ), node ) as THREE.Node<T>;
 			return node;
 
 		};
@@ -372,37 +442,68 @@ export class GrassCull {
 			// the thin extra tufts have folded into their roots beyond thinFar
 			const o = origins.element( gi ).xyz;
 			const folded = ground.element( gi.mul( 3 ).add( 1 ) ).w.greaterThan( 0.5 ).and( length( cameraPosition.sub( o ) ).greaterThanEqual( thinFar.add( FOLD_PAD ) ) );
-			return select( inside.and( folded.not() ), uint( 1 ), uint( 0 ) );
+			return inside.and( folded.not() );
 
 		};
-		// Inclusive scan of one flag per thread over the workgroup (Hillis-Steele, ping-ponged
-		// between two arrays so each step needs one barrier). Returns the array holding the result.
-		const scan = ( flag: THREE.Node<'uint'> ) => {
+		// A tuft's band: the last of its batch's bands whose cap holds the blades it keeps (the first
+		// when none does); K for a tuft not drawn.
+		const bandOfTuft = ( g: THREE.Node<'uint'>, gi: THREE.Node<'uint'> ) => {
 
-			const lanes = [ workgroupArray( 'uint', GROUP ), workgroupArray( 'uint', GROUP ) ] as unknown as { element: ( i: THREE.Node<'uint'> ) => THREE.Node<'uint'> }[];
+			const blades = pick( g, ( _, k ) => float( this.batches[ k ].blades ) );
+			const floor = pick( g, ( _, k ) => float( this.batches[ k ].floor ) );
+			const count = this.lod.count( origins.element( gi ).xyz, cameraPosition, blades, floor, this.lod.on );
+			const n = uint( ceil( count.sub( 0.001 ) ) ).toVar();
+			let band: THREE.Node<'uint'> = uint( 0 );
+			for ( let j = 1; j < K; j ++ ) band = band.add( select( pick( g, ( _, k ) => uint( caps[ k ][ j ] ?? 0 ) ).greaterThanEqual( n ), uint( 1 ), uint( 0 ) ) );
+			return select( isVisible( gi ), select( this.lod.bands.equal( uint( 1 ) ), band, uint( 0 ) ), uint( K ) );
+
+		};
+		// The band as a one in its word's field (BAND_BITS each), one node per word.
+		const flags = ( band: THREE.Node<'uint'> ) => Array.from( { length: BAND_WORDS }, ( _, w ) => {
+
+			let word: THREE.Node<'uint'> = uint( 0 );
+			for ( let k = w * 3; k < Math.min( K, w * 3 + 3 ); k ++ ) word = word.add( select( band.equal( uint( k ) ), uint( 1 << ( BAND_BITS * ( k - w * 3 ) ) ), uint( 0 ) ) );
+			return word;
+
+		} );
+		const field = ( word: THREE.Node<'uint'>, k: number ) => word.shiftRight( uint( BAND_BITS * ( k % 3 ) ) ).bitAnd( uint( ( 1 << BAND_BITS ) - 1 ) );
+		type Lanes = { element: ( i: THREE.Node<'uint'> ) => THREE.Node<'uint'> };
+		// Inclusive scan of the words of each thread over the workgroup (Hillis-Steele, ping-ponged
+		// between two arrays per word so each step needs one barrier). Returns the arrays holding the
+		// results; a field never carries into the next (at most GROUP < 2^BAND_BITS).
+		const scan = ( words: THREE.Node<'uint'>[] ) => {
+
+			const lanes = words.map( () => [ workgroupArray( 'uint', GROUP ), workgroupArray( 'uint', GROUP ) ] as unknown as Lanes[] );
 			const i = localId.x;
-			lanes[ 0 ].element( i ).assign( flag );
+			words.forEach( ( word, w ) => lanes[ w ][ 0 ].element( i ).assign( word ) );
 			for ( let s = 0; s < LOG2_GROUP; s ++ ) {
 
 				workgroupBarrier();
-				const from = lanes[ s & 1 ], to = lanes[ ( s + 1 ) & 1 ];
 				const off = 1 << s;
-				const before = select( i.greaterThanEqual( uint( off ) ), from.element( ( max as unknown as UintMax )( i, uint( off ) ).sub( off ) ), uint( 0 ) );
-				to.element( i ).assign( from.element( i ).add( before ) );
+				for ( const pair of lanes ) {
+
+					const from = pair[ s & 1 ], to = pair[ ( s + 1 ) & 1 ];
+					const before = select( i.greaterThanEqual( uint( off ) ), from.element( ( max as unknown as UintMax )( i, uint( off ) ).sub( off ) ), uint( 0 ) );
+					to.element( i ).assign( from.element( i ).add( before ) );
+
+				}
 
 			}
 			workgroupBarrier();
-			return lanes[ LOG2_GROUP & 1 ];
+			return lanes.map( ( pair ) => pair[ LOG2_GROUP & 1 ] );
 
 		};
 
 		const count = Fn( () => {
 
 			const g = workgroupId.x, i = localId.x;
-			const result = scan( isVisible( g.mul( GROUP ).add( i ) ) );
+			const gi = g.mul( GROUP ).add( i );
+			const band = bandOfTuft( g, gi ).toVar();
+			bandOf.element( gi ).assign( band );
+			const result = scan( flags( band ) );
 			If( i.equal( uint( GROUP - 1 ) ), () => {
 
-				counts.element( g ).assign( result.element( uint( GROUP - 1 ) ) );
+				result.forEach( ( r, w ) => counts.element( g.mul( BAND_WORDS ).add( w ) ).assign( r.element( uint( GROUP - 1 ) ) ) );
 
 			} );
 
@@ -412,46 +513,76 @@ export class GrassCull {
 
 			const g = workgroupId.x, i = localId.x;
 			const gi = g.mul( GROUP ).add( i );
-			const flag = isVisible( gi ).toVar();
-			const result = scan( flag );
-			const inclusive = result.element( i ).toVar();
-			const total = result.element( uint( GROUP - 1 ) ).toVar();
-			// the visible tufts of the batch's earlier workgroups
+			// (the band the count pass decided, so the counts and the places agree)
+			const band = bandOf.element( gi ).toVar();
+			const result = scan( flags( band ) );
+			const inclusive = result.map( ( r ) => r.element( i ).toVar() );
+			// Per band, the tufts of the batch's earlier workgroups and of all of them: each thread
+			// sums every GROUP-th workgroup's counts, then the workgroup reduces the sums.
 			const first = pick( g, ( b ) => b.groupStart ).toVar();
-			const partial = uint( 0 ).toVar();
+			const end = pick( g, ( b ) => b.groupEnd ).toVar();
+			const earlier = Array.from( { length: K }, () => uint( 0 ).toVar() );
+			const total = Array.from( { length: K }, () => uint( 0 ).toVar() );
 			Loop( { start: uint( 0 ), end: this.sumPasses, type: 'uint', condition: '<' }, ( { i: pass } ) => {
 
-				const j = first.add( i ).add( pass.mul( GROUP ) );
-				partial.addAssign( select( j.lessThan( g ), counts.element( ( min as unknown as UintMax )( j, this.lastGroup ) ), uint( 0 ) ) );
+				const j = first.add( i ).add( pass.mul( GROUP ) ).toVar();
+				const at = ( min as unknown as UintMax )( j, this.lastGroup ).mul( BAND_WORDS );
+				const words = Array.from( { length: BAND_WORDS }, ( _, w ) => select( j.lessThan( end ), counts.element( at.add( w ) ), uint( 0 ) ).toVar() );
+				for ( let k = 0; k < K; k ++ ) {
+
+					const n = field( words[ Math.floor( k / 3 ) ], k ).toVar();
+					total[ k ].addAssign( n );
+					earlier[ k ].addAssign( select( j.lessThan( g ), n, uint( 0 ) ) );
+
+				}
 
 			} );
-			const sum = workgroupArray( 'uint', GROUP ) as unknown as { element: ( i: THREE.Node<'uint'> ) => THREE.Node<'uint'> };
-			sum.element( i ).assign( partial );
+			const M = 2 * K;
+			const sum = workgroupArray( 'uint', GROUP * M ) as unknown as Lanes;
+			for ( let k = 0; k < K; k ++ ) {
+
+				sum.element( i.mul( M ).add( k ) ).assign( earlier[ k ] );
+				sum.element( i.mul( M ).add( K + k ) ).assign( total[ k ] );
+
+			}
 			for ( let s = GROUP >> 1; s >= 1; s >>= 1 ) {
 
 				workgroupBarrier();
 				If( i.lessThan( uint( s ) ), () => {
 
-					sum.element( i ).addAssign( sum.element( i.add( s ) ) );
+					for ( let m = 0; m < M; m ++ ) sum.element( i.mul( M ).add( m ) ).addAssign( sum.element( i.add( s ).mul( M ).add( m ) ) );
 
 				} );
 
 			}
 			workgroupBarrier();
-			const offset = sum.element( uint( 0 ) ).toVar();
-			If( flag.equal( 1 ), () => {
+			const offset = Array.from( { length: K }, ( _, k ) => sum.element( uint( k ) ).toVar() );
+			const tufts = Array.from( { length: K }, ( _, k ) => sum.element( uint( K + k ) ).toVar() );
+			// each band's first place in the batch's list: after the bands before it
+			const bandStart: THREE.Node<'uint'>[] = [ uint( 0 ) ];
+			for ( let k = 1; k < K; k ++ ) bandStart.push( bandStart[ k - 1 ].add( tufts[ k - 1 ] ).toVar() );
+			If( band.lessThan( uint( K ) ), () => {
 
-				visible.element( pick( g, ( b ) => b.start ).add( offset ).add( inclusive ).sub( 1 ) ).assign( gi );
+				let place: THREE.Node<'uint'> = uint( 0 );
+				for ( let k = 0; k < K; k ++ ) place = place.add( select( band.equal( uint( k ) ), bandStart[ k ].add( offset[ k ] ).add( field( inclusive[ Math.floor( k / 3 ) ], k ) ).sub( 1 ), uint( 0 ) ) );
+				visible.element( pick( g, ( b ) => b.start ).add( place ) ).assign( gi );
 
 			} );
-			// The batch's last workgroup writes its draw arguments: index count, instance count
-			// (first index, base vertex and first instance stay 0). An empty batch has none.
+			// The batch's last workgroup writes its bands' draw arguments: index count, instance
+			// count and first instance (first index and base vertex stay 0). An empty batch has none.
 			bounds.forEach( ( b, k ) => {
 
 				If( g.add( 1 ).equal( b.groupEnd ).and( b.groupEnd.greaterThan( b.groupStart ) ).and( i.equal( 0 ) ), () => {
 
-					args.element( uint( k * 5 ) ).assign( this.ranges[ k ].indexCount );
-					args.element( uint( k * 5 + 1 ) ).assign( offset.add( total ) );
+					const { first: draw, bladeIndices } = this.batches[ k ];
+					caps[ k ].forEach( ( cap, j ) => {
+
+						const indexCount = j === 0 ? this.ranges[ k ].indexCount : ( min as unknown as UintMax )( uint( cap * bladeIndices ), this.ranges[ k ].indexCount );
+						args.element( uint( ( draw + j ) * 5 ) ).assign( indexCount );
+						args.element( uint( ( draw + j ) * 5 + 1 ) ).assign( tufts[ j ] );
+						args.element( uint( ( draw + j ) * 5 + 4 ) ).assign( bandStart[ j ] );
+
+					} );
 
 				} );
 
@@ -472,9 +603,18 @@ export class GrassCull {
 	}
 
 	/** Cull for `camera` unless the last dispatch was for the same view and the same draws. The
-	 * caller has set every batch's `indexCount`. */
+	 * caller has set every batch's `indexCount` and the LOD's `on`. */
 	update( renderer: THREE.Renderer, camera: THREE.Camera ): void {
 
+		if ( ! this.kernels ) {
+
+			// A band's draw starts at its first tuft's place through `firstInstance`, which an
+			// indirect draw honours only with this feature: without it each batch keeps its first band.
+			const backend = renderer.backend as unknown as { hasFeature?( name: string ): boolean };
+			if ( backend.hasFeature?.( 'indirect-first-instance' ) !== true ) for ( const r of this.ranges ) r.indirectOffsets.length = 1;
+			this.kernels = this.buildKernels();
+
+		}
 		const key = this.lastKey;
 		const projection = ( TEMPORAL ? unjitteredPadded( renderer, camera ) : null ) ?? camera.projectionMatrix;
 		const e = camera.matrixWorld.elements, p = projection.elements;
@@ -493,7 +633,9 @@ export class GrassCull {
 		check( 16, p[ 0 ] ); check( 17, p[ 5 ] ); check( 18, p[ 8 ] );
 		check( 19, p[ 9 ] ); check( 20, p[ 10 ] ); check( 21, p[ 14 ] );
 		check( 22, this.thinFar.value );
-		this.ranges.forEach( ( r, k ) => check( 23 + k, r.indexCount.value ) );
+		check( 23, this.lod.on.value );
+		check( 24, this.lod.bands.value );
+		this.ranges.forEach( ( r, k ) => check( 25 + k, r.indexCount.value ) );
 		if ( same ) {
 
 			this.stats.skipped ++;

@@ -46,11 +46,15 @@ import type { Shared } from '../shared.ts';
 //   blades take an ordered 4x4 dither and stay one pixel wide (a blade dithered across two pixels
 //   reads as a dotted line).
 // - Each tuft draws fewer blades the farther it stands from the view camera: on high every one of
-//   its 16 within 25 m, easing to 8 at 45 m and to 4 at 70 m, never fewer (tussocks in proportion;
-//   GrassQuality). A dropped blade narrows to nothing over a short distance of its own, and the
-//   kept ones widen and cover for it (`tuftLod`, `pixelWideBlade`), so density and brightness hold.
-//   It is a function of the tuft's distance from the camera's position alone (no hysteresis), so a
-//   paused frame does not depend on the camera's path; other cameras draw every blade.
+//   its 16 within 25 m, easing to 8 at 45 m and to 4 at 70 m, never fewer (tussocks in proportion,
+//   but never fewer than half of theirs: a far tussock of a quarter of its blades, each widened
+//   fourfold, read as a flat ribbon at the island's edge; GrassQuality). A dropped blade narrows to
+//   nothing over a short distance of its own, and the kept ones widen and cover for it (`tuftLod`,
+//   `pixelWideBlade`), so density and brightness hold. It is a function of the tuft's distance
+//   from the camera's position alone (no hysteresis), so a paused frame does not depend on the
+//   camera's path; other cameras draw every blade. The cull sorts the view's tufts into bands by
+//   the blades they keep and draws each band with only those (`bandCaps`, GrassCull.ts), so the
+//   narrowed blades cost no vertex work either.
 // - The view camera's draws are culled per tuft on the GPU (GrassCull.ts); every other draw over
 //   the same geometry draws every tuft. Tufts bend with the wind field at their root and their
 //   normals turn with the bend, so a gust shows as a sheen (Wind.ts).
@@ -84,6 +88,9 @@ export interface GrassQuality {
 	lawnBlades: [ number, number, number ];
 	/** Camera distances (m) from a tuft where its blade counts `lawnBlades` apply. */
 	bladeBands: [ number, number, number ];
+	/** The least share of its blades a tussock keeps at any distance (the lawn's curve as a share
+	 * of its 16 applies above it). */
+	tussockFloor: number;
 	/** Segments along a tussock blade (4 arches them smoothly, 3 is close at a distance). */
 	tussockSegments: number;
 	/** Whether the extra tufts of thick patches exist at all (they fold away beyond 42 m). */
@@ -95,7 +102,7 @@ export interface GrassQuality {
 	 * temporal modes; 4x multisampling keeps 2 and one sample outside them 1. */
 	minWidth: number;
 }
-const grassQuality: GrassQuality = { lawnBlades: [ 16, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 };
+const grassQuality: GrassQuality = { lawnBlades: [ 16, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockFloor: 0.5, tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 };
 
 export function setGrassQuality( quality: Partial<GrassQuality> ): void {
 
@@ -204,6 +211,7 @@ type F = THREE.Node<'float'>;
 // blades and the vertices of one blade (its blades follow one another in the index order).
 const lodOn = uniform( 0 ).onObjectUpdate( ( { object } ) => object?.userData.grassLod === true ? 1 : 0 );
 const tuftBlades = uniform( 16 ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassBlades ?? 16 );
+const tuftFloor = uniform( 0 ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassFloor ?? 0 );
 const bladeVerts = uniform( 6, 'uint' ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassBladeVerts ?? 6 );
 // The blade-count curve (`GrassQuality.lawnBlades` over `bladeBands`), the counts as shares of
 // the lawn's 16; set by `buildGrass`.
@@ -212,34 +220,75 @@ const lodUniforms = { bands: uniform( new THREE.Vector3( 25, 45, 70 ) ), shares:
 // neighbouring tufts drop a given blade at different distances and no ring of half-narrowed
 // blades forms around the camera; never in, so a tuft within the first band keeps every blade.
 const LOD_STAGGER = 0.1;
+// The cull's view of the curve: it bands the tufts by the same count (`bladeCount`); `on` follows
+// `flags.grassLod` for the view's draws, `bands` `flags.grassBands` (false: every tuft in its
+// batch's first band, the one draw of before, for A/Bs).
+const cullLod = { count: ( origin: V3, camera: V3, blades: F, floor: F, on: F ) => bladeCount( origin, camera, blades, floor, on ), on: uniform( 1 ), bands: uniform( 1, 'uint' ) };
 
-/** The share of the lawn's blades a tuft keeps at `distance` (m) from the view camera, the curve
- * `tuftLod` follows ( 1 near on high ); the batches' draw ranges take it at their nearest tuft. */
-function bladeShare( distance: number ): number {
+/** The share of its blades a tuft of floor `floor` keeps at `distance` (m) from the view camera,
+ * the curve `tuftLod` follows ( 1 near on high ); the batches' draw ranges take it at their nearest
+ * tuft. */
+function bladeShare( distance: number, floor: number ): number {
 
 	const [ b0, b1, b2 ] = grassQuality.bladeBands, [ c0, c1, c2 ] = grassQuality.lawnBlades;
 	const s = ( x: number ) => Math.min( Math.max( x, 0 ), 1 );
-	return ( c0 + ( c1 - c0 ) * s( ( distance - b0 ) / ( b1 - b0 ) ) + ( c2 - c1 ) * s( ( distance - b1 ) / ( b2 - b1 ) ) ) / LAWN.blades;
+	return Math.max( ( c0 + ( c1 - c0 ) * s( ( distance - b0 ) / ( b1 - b0 ) ) + ( c2 - c1 ) * s( ( distance - b1 ) / ( b2 - b1 ) ) ) / LAWN.blades, floor );
+
+}
+
+// The cull's bands as shares of a tuft's blades (GrassCull.ts): a visible tuft draws in the band of
+// the least cap at or above the blades it keeps. Five bands of a lawn tuft (16, 12, 8, 6, 4 on
+// high) leave about a blade and a half of waste in the 25 to 45 m ring and one beyond; each band
+// is a draw of its own (and one of the depth prepass), most of them nearly empty in close views.
+const BAND_SHARES = [ 1, 0.75, 0.5, 0.375, 0.25 ];
+
+/** A batch's band caps (blades, descending): its most at the tier's nearest share (all its blades
+ * without `grassLod`, through the first band's draw range), the shares above between, and its
+ * least at the fewest a visible tuft of it keeps (`minShare`: the curve's last, or the thin tufts'
+ * share at their fold). */
+function bandCaps( blades: number, floor: number, minShare: number ): number[] {
+
+	const top = Math.min( blades, Math.ceil( blades * Math.max( ...grassQuality.lawnBlades.map( ( c ) => c / LAWN.blades ), floor ) - 1e-6 ) );
+	const least = Math.min( top, Math.ceil( blades * Math.max( minShare, floor ) - 1e-6 ) );
+	const caps = [ top ];
+	for ( const share of BAND_SHARES ) {
+
+		const cap = Math.ceil( blades * share - 1e-6 );
+		if ( cap < caps[ caps.length - 1 ] && cap > least ) caps.push( cap );
+
+	}
+	if ( least < caps[ caps.length - 1 ] ) caps.push( least );
+	return caps;
+
+}
+
+// The blades a tuft keeps (`tuftLod`), as a node: also the cull's, which bands the tufts by it
+// (GrassCull's `CullLod`), so both compute it alike.
+function bladeCount( origin: V3, camera: V3, blades: F, floor: F, on: F ): F {
+
+	const stagger = fract( sin( dot( origin.xz, vec2( 39.3468, 11.1351 ) ) ).mul( 24634.6345 ) );
+	const d = length( camera.sub( origin ) ).mul( float( 1 ).sub( stagger.mul( LOD_STAGGER ) ) );
+	const { bands, shares } = lodUniforms;
+	const share = mix( shares.x, shares.y, clamp( d.sub( bands.x ).div( bands.y.sub( bands.x ) ), 0, 1 ) )
+		.add( shares.z.sub( shares.y ).mul( clamp( d.sub( bands.y ).div( bands.z.sub( bands.y ) ), 0, 1 ) ) );
+	return mix( blades, blades.mul( max( share, floor ) ), on );
 
 }
 
 // A tuft's blades by distance, after tidewater's GrassField tier fade (Daniel Greenheck, MIT;
 // the technique only): the tuft keeps c of its n blades, c falling with its distance from the view
-// camera along the curve above, and blade b (blades are generated in a random order, so any first
-// ones are a fair subset) keeps the share clamp( c - b, 0, 1 ) of its width: each blade narrows to
-// nothing over the distance in which c falls by one, at its own distance, rather than a batch
-// stepping between counts. A blade of zero width is a degenerate triangle pair, never rasterised.
+// camera along the curve above (never below its floor, `tuftFloor`), and blade b (blades are
+// generated in a random order, so any first ones are a fair subset) keeps the share
+// clamp( c - b, 0, 1 ) of its width: each blade narrows to nothing over the distance in which c
+// falls by one, at its own distance, rather than a batch stepping between counts. A blade of zero
+// width is a degenerate triangle pair, never rasterised, and the cull's bands leave out the blades
+// at or past their cap (`bandCaps`).
 // The kept widths sum to c, and the gain n / c widens them back to the tuft's whole width
 // (`pixelWideBlade`). Off (other cameras, `flags.grassLod = false`) every blade keeps its width
 // and the gain is 1. Returns the blade's width share and the tuft's gain.
 function tuftLod( origin: V3 ): { keep: F; gain: F } {
 
-	const stagger = fract( sin( dot( origin.xz, vec2( 39.3468, 11.1351 ) ) ).mul( 24634.6345 ) );
-	const d = length( cameraPosition.sub( origin ) ).mul( float( 1 ).sub( stagger.mul( LOD_STAGGER ) ) );
-	const { bands, shares } = lodUniforms;
-	const share = mix( shares.x, shares.y, clamp( d.sub( bands.x ).div( bands.y.sub( bands.x ) ), 0, 1 ) )
-		.add( shares.z.sub( shares.y ).mul( clamp( d.sub( bands.y ).div( bands.z.sub( bands.y ) ), 0, 1 ) ) );
-	const count = mix( tuftBlades, tuftBlades.mul( share ), lodOn ).toVar();
+	const count = bladeCount( origin, cameraPosition, tuftBlades, tuftFloor, lodOn ).toVar();
 	const blade = float( vertexIndex.div( bladeVerts ) );
 	return { keep: clamp( count.sub( blade ), 0, 1 ), gain: tuftBlades.div( count ) };
 
@@ -435,13 +484,14 @@ export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; 
 // batch's first slot on, read by the material through the drawn tuft's slot; `instanceMatrix`
 // and `instanceColor` point at those buffers for code that looks for them, and since neither is an
 // instanced attribute three leaves the instancing to the material.
-function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, material: THREE.Material, cull: GrassCull, range: CullRange, name: string ): THREE.InstancedMesh {
+function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, floor: number, material: THREE.Material, cull: GrassCull, range: CullRange, name: string ): THREE.InstancedMesh {
 
 	const geometry = new THREE.BufferGeometry();
 	for ( const key of [ 'position', 'normal', 'blade' ] ) geometry.setAttribute( key, source.getAttribute( key ) );
 	geometry.setIndex( source.getIndex() );
 	geometry.userData.grassBase = range.start;
 	geometry.userData.grassBlades = shape.blades;
+	geometry.userData.grassFloor = floor;
 	geometry.userData.grassBladeVerts = ( shape.segs + 1 ) * 2;
 	const mesh = new THREE.InstancedMesh( geometry, material, Math.max( range.count, 1 ) );
 	mesh.instanceMatrix.array = new Float32Array( 16 ); // replaced below; drop the copy InstancedMesh allocates
@@ -467,10 +517,12 @@ function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, material: THR
 // - each tuft keeps its blades by its own distance in the vertex stage (`tuftLod`); the batch's
 //   draw range ends after the blades its nearest possible tuft keeps (the box's nearest point,
 //   at the least staggered distance), so blades no tuft keeps are not even run through the vertex
-//   stage. The narrowed blades within the range still are: a degenerate blade costs its vertices.
+//   stage. Culled, that range is the first band's index count, and the cull draws every other
+//   band with its own cap's blades (`bandCaps`), so a far tuft runs only the blades it keeps (and
+//   at most a band's step more).
 // A batch is one per kind, holding every chunk's tufts in the chunks' order (GrassCull's pool),
-// not one per chunk: that would add draws (and prepass draws) per meadow chunk; a range per chunk
-// chosen in the cull pass is the step that would save the narrowed blades' vertices too.
+// not one per chunk: that would add render objects per meadow chunk. Its bands are draws of the
+// one render object (the geometry's indirect offsets), and so are its depth copy's.
 // Other cameras (the rain's collision bake looks straight down, orthographic) see every tuft
 // with all its blades, as before.
 // The view camera's draws are then culled per tuft on the GPU (`GrassCull`): one compute pass
@@ -480,7 +532,7 @@ function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, material: THR
 // draws every tuft.
 const _cameraPosition = new THREE.Vector3();
 
-interface Batch { mesh: THREE.InstancedMesh; box: THREE.Box3; shape: TuftShape; thin: boolean; count: number; range: CullRange }
+interface Batch { mesh: THREE.InstancedMesh; box: THREE.Box3; shape: TuftShape; floor: number; thin: boolean; count: number; range: CullRange }
 
 function selectBatch( batch: Batch, camera: THREE.Camera ): void {
 
@@ -500,7 +552,7 @@ function selectBatch( batch: Batch, camera: THREE.Camera ): void {
 	const lod = debugFlags.grassLod !== false;
 	// (the shader's count rounds a little differently: a blade it keeps a sliver of past the range
 	// is a hair's width, and the full range at the first band is exact)
-	const blades = lod ? Math.min( shape.blades, Math.ceil( shape.blades * bladeShare( d * ( 1 - LOD_STAGGER ) ) - 1e-6 ) ) : shape.blades;
+	const blades = lod ? Math.min( shape.blades, Math.ceil( shape.blades * bladeShare( d * ( 1 - LOD_STAGGER ), batch.floor ) - 1e-6 ) ) : shape.blades;
 	mesh.geometry.drawRange.count = blades * shape.segs * 6;
 	mesh.userData.grassLod = lod;
 
@@ -526,20 +578,23 @@ function drawBatch( batches: Batch[], cull: GrassCull, batch: Batch, renderer: T
 			b.range.indexCount.value = b.mesh.geometry.drawRange.count;
 
 		}
+		cullLod.on.value = debugFlags.grassLod !== false ? 1 : 0;
+		cullLod.bands.value = debugFlags.grassBands !== false ? 1 : 0;
 		cull.update( renderer, camera );
 
 	} else selectBatch( batch, camera );
 	batch.mesh.userData.grassCulled = true;
-	batch.mesh.geometry.setIndirect( cull.indirect, batch.range.indirectOffset );
+	// a draw per band (three issues one for each offset)
+	( batch.mesh.geometry as unknown as { setIndirect( a: THREE.IndirectStorageBufferAttribute, offsets: number[] ): void } ).setIndirect( cull.indirect, batch.range.indirectOffsets );
 
 }
 
-function batchOf( source: THREE.BufferGeometry, shape: TuftShape, material: THREE.Material, cull: GrassCull, range: CullRange, tufts: Tuft[], name: string, thin = false ): Batch {
+function batchOf( source: THREE.BufferGeometry, shape: TuftShape, floor: number, material: THREE.Material, cull: GrassCull, range: CullRange, tufts: Tuft[], name: string, thin = false ): Batch {
 
-	const mesh = tuftMesh( source, shape, material, cull, range, name );
+	const mesh = tuftMesh( source, shape, floor, material, cull, range, name );
 	const box = new THREE.Box3();
 	for ( const t of tufts ) box.expandByPoint( t.origin );
-	return { mesh, box, shape, thin, count: tufts.length, range };
+	return { mesh, box, shape, floor, thin, count: tufts.length, range };
 
 }
 
@@ -686,17 +741,24 @@ export function buildGrass( { lawn, tussocks, lawnThin }: GrassTufts, shared: Sh
 	// Root half widths of the widest blade, for the cull's bounds.
 	const halfWidth = ( shape: TuftShape ) => shape.w[ 1 ] * 0.5 + 0.004;
 	// The extra tufts of thick patches draw on their own, so they can be skipped as a whole.
+	// The least share a visible tuft keeps: the curve's last, or a thin tuft's at its fold (the cull
+	// drops it past thinFar).
+	const minShare = grassQuality.lawnBlades[ 2 ] / LAWN.blades;
+	const thinShare = bladeShare( grassUniforms.thinFar.value + 0.01, 0 );
 	const kinds = [
-		{ geometry: lawnGeometry, shape: LAWN, tufts: lawn, name: 'grass-lawn', thin: false },
-		{ geometry: tussockGeometry, shape: tussock, tufts: tussocks, name: 'grass-tussocks', thin: false },
+		{ geometry: lawnGeometry, shape: LAWN, floor: 0, tufts: lawn, name: 'grass-lawn', thin: false, minShare },
+		{ geometry: tussockGeometry, shape: tussock, floor: grassQuality.tussockFloor, tufts: tussocks, name: 'grass-tussocks', thin: false, minShare },
 	];
 	// (the thin batch exists whenever the tier grows thin tufts, even with none yet: a grown island's
 	// meadow then fills the same batches, and the cull's kernels stay the same)
-	if ( grassQuality.thinTufts ) kinds.push( { geometry: lawnGeometry, shape: LAWN, tufts: lawnThin, name: 'grass-lawn-thin', thin: true } );
-	const cull = new GrassCull( kinds.map( ( k ) => ( { tufts: k.tufts, geometry: k.geometry, halfWidth: halfWidth( k.shape ) } ) ), grassUniforms.thinFar );
+	if ( grassQuality.thinTufts ) kinds.push( { geometry: lawnGeometry, shape: LAWN, floor: 0, tufts: lawnThin, name: 'grass-lawn-thin', thin: true, minShare: thinShare } );
+	const cull = new GrassCull( kinds.map( ( k ) => ( {
+		tufts: k.tufts, geometry: k.geometry, halfWidth: halfWidth( k.shape ), blades: k.shape.blades, floor: k.floor,
+		caps: bandCaps( k.shape.blades, k.floor, k.minShare ), bladeIndices: k.shape.segs * 6,
+	} ) ), grassUniforms.thinFar, cullLod );
 	const material = grassMaterial( shared, cull );
 	followWindMotionFlag( material );
-	const batches = kinds.map( ( k, i ) => batchOf( k.geometry, k.shape, material, cull, cull.ranges[ i ], k.tufts, k.name, k.thin ) );
+	const batches = kinds.map( ( k, i ) => batchOf( k.geometry, k.shape, k.floor, material, cull, cull.ranges[ i ], k.tufts, k.name, k.thin ) );
 	for ( const b of batches ) {
 
 		b.mesh.onBeforeRender = ( renderer, _scene, camera ) => drawBatch( batches, cull, b, renderer as unknown as THREE.Renderer, camera );
