@@ -14,8 +14,8 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, isParkedWeather, type WeatherName } from './sky/Weather.ts';
-import { QUALITY_TIERS, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
-import { forgetQuality, qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
+import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
+import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
@@ -41,7 +41,7 @@ import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildTurfSkirt } from './world/RimSkirt.ts';
 import { buildFlowers, plantFlowers } from './world/Flowers.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
-import { renderPixelRatio, outputPixelRatio } from './post/RenderScale.ts';
+import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
@@ -137,10 +137,11 @@ if ( DEBUG ) watchPipelines( ( renderer.backend as unknown as { device: unknown 
 const pipelineCount = DEBUG ? ( await import( './debug/PipelineCounter.ts' ) ).installPipelineCounter( renderer ) : null;
 
 // The scene renders at a pixel ratio set by the quality tier (see RenderScale.ts), at most the
-// display's and DPR_CAP; the canvas matches the display and the frame graph upscales to it.
+// display's and DPR_CAP (the canvas's cap: native 4K on a 2x display at high's maximum, or `?dpr`);
+// the canvas matches the display and the frame graph upscales to it.
 // Explicit DPR captures and the full-resolution control lift the tier's pixel budget and pin a
 // dynamic scale at its nominal.
-const DPR_CAP = params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : 1.5;
+const DPR_CAP = params.has( 'dpr' ) ? Number( params.get( 'dpr' ) ) : OUTPUT_PIXEL_RATIO_CAP;
 const resolution = { full: params.has( 'dpr' ), render: '', scale: '', gpu: '–' };
 renderer.setPixelRatio( outputPixelRatio( 1 ) );
 renderer.setSize( innerWidth, innerHeight );
@@ -906,16 +907,16 @@ cameraF.add( camera, 'fov', 15, 100, 1 ).name( 'field of view' ).listen().onChan
 cameraF.add( { reset: () => setCameraView( 'island' ) }, 'reset' ).name( 'return to island (R)' );
 const environmentLook = { exposure: true };
 const W = water.uniforms;
-// The quality tier sets every knob of the frame's cost (Quality.ts); a change reloads the page.
+// The quality tier sets every knob of the frame's cost (Quality.ts); a change reloads the page. It
+// lists the active tiers (high alone while medium and low are parked), and the page's own tier when
+// `?quality` loaded a parked one.
 const performanceF = gui.addFolder( 'Performance' );
-performanceF.add( skyQuality, 'value', QUALITY_TIERS ).name( 'quality (reloads)' ).onFinishChange( ( tier: QualityTier ) => { if ( tier !== qualityTier ) reloadWithQuality( tier ); } );
-// How the tier was chosen (QualityDetect.ts): the measurement and each tier's predicted GPU time
-// against the budget; re-detect forgets the choice and reloads without ?quality to measure again.
-const autoQuality = { ...qualityLines( qualityTier, qualityChoice.why, qualityChoice.record ), redetect: () => { forgetQuality(); reloadWithQuality( null ); } };
+const qualityChoices = ACTIVE_QUALITY.includes( qualityTier ) ? [ ...ACTIVE_QUALITY ] : [ ...ACTIVE_QUALITY, qualityTier ];
+performanceF.add( skyQuality, 'value', qualityChoices ).name( 'quality (reloads)' ).onFinishChange( ( tier: QualityTier ) => { if ( tier !== qualityTier ) reloadWithQuality( tier ); } );
+// How the tier was chosen (QualityDetect.ts: `?quality` or high; the GPU is not measured while the
+// lower tiers are parked).
+const autoQuality = qualityLines( qualityTier, qualityChoice.why, qualityChoice.record );
 performanceF.add( autoQuality, 'chosen' ).name( 'quality chosen' ).listen().disable();
-performanceF.add( autoQuality, 'measured' ).name( 'GPU measured' ).listen().disable();
-performanceF.add( autoQuality, 'predicted' ).name( 'predicted ms / budget' ).listen().disable();
-performanceF.add( autoQuality, 'redetect' ).name( 're-detect quality (reloads)' );
 performanceF.add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
 performanceF.add( pipeline.sharpness, 'value', 0, 2, 0.05 ).name( 'upscale softness' );
 // The live readout (FrameStats.ts): the rendered frames' cadence by their rAF timestamps, the render
@@ -1133,13 +1134,14 @@ if ( DEBUG ) {
 
 // ------------------------------------------------------------------ loop
 
-// High's render scale is dynamic (DynamicResolution.ts): it moves between the tier's nominal and
-// a floor by the GPU's frame time, and renders at the nominal while it is pinned (?dpr, full
-// resolution) or the scene is paused, so paused frames and captures render at the reference scale.
+// High's render scale is dynamic (DynamicResolution.ts): it starts at the baseline (the nominal:
+// 1440p internal at 4K output), moves between the display's ratio and a floor (1080p) by the GPU's
+// frame time, and renders at the baseline while the scene is paused, so paused frames and captures
+// render at the scale every trade-off is judged at (pinned, ?dpr or full resolution, at that ratio).
 // (the ground truth renders at the canvas's resolution: no dynamic scale)
 const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render.dynamic : null;
 // Under TAAU the floor rises so the canvas is at most TAAU_MAX_UPSCALE times the render per axis
-// (DynamicResolution.ts); MSAA's FSR 1 path keeps the tier's floor.
+// (DynamicResolution.ts; below high's floor, half the canvas's ratio, at a 2x display).
 const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRule, maxUpscale: AA_MODE === 'taau' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
 // the same number of refreshes, falling back to the next divisor when the dynamic scale's floor
@@ -1218,7 +1220,8 @@ function resize(): void {
 	nominalScale = renderPixelRatio( w, h, quality.render, resolution.full, DPR_CAP );
 	// the ground truth renders at the canvas's ratio, every pixel of it
 	if ( AA_MODE === 'gt' ) nominalScale = outputPixelRatio( nominalScale );
-	dynamicResolution?.setMax( nominalScale );
+	// the dynamic range tops out at the display's ratio, above the baseline it starts from
+	if ( dynamicResolution && 'dynamic' in quality.render ) dynamicResolution.setMax( resolution.full ? nominalScale : dynamicMaxRatio( quality.render, DPR_CAP ) );
 	renderer.setPixelRatio( outputPixelRatio( nominalScale ) );
 	dynamicResolution?.setCanvasRatio( renderer.getPixelRatio() );
 	renderer.setSize( w, h );
@@ -1244,7 +1247,7 @@ function currentRenderScale(): number {
 
 	if ( steppedScale !== null ) return steppedScale;
 	if ( ! dynamicResolution || resolution.full || paused ) return nominalScale;
-	return Math.min( dynamicResolution.scale, nominalScale );
+	return dynamicResolution.scale;
 
 }
 

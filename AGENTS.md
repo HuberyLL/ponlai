@@ -72,8 +72,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `docs/`: `art-direction.md`, `game-design.md`, `tools.md`.
 - `src/main.ts`: renderer, camera, sun, GUI, frame loop, diagnostics. `window.__PONLAI__` and
   `window.__THREE_GAME_DIAGNOSTICS__` exist only on the dev server or with `?debug` / `?profile`.
-- `src/Quality.ts`: the quality tiers, every cost knob in one table; `src/QualityDetect.ts` picks
-  the tier for the GPU at startup.
+- `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
+  `src/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the lower tiers).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
 - `src/camera/`: the island camera (`IslandCameraControls.ts`, the ground it grabs in
   `IslandGround.ts`) and the free flight.
@@ -179,12 +179,19 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   reading their bounds from uniforms (`GrassCull.ts`); the world fields swap textures through the
   one base node each material samples them by (`WorldFields.ts`), and other passes keep their
   materials across rebakes (`RainCollision.ts`).
-- Changes need to hold in the kept weathers only (clear, fair, cloudy, overcast). The parked ones
-  (rain, storm, fog: `PARKED_WEATHER` in `src/sky/Weather.ts`) are revived later as their own
-  milestone: new work need not support them, but must keep them compiling. The default checks
-  leave them out (`docs/tools.md`, Parked weathers).
+- Changes need to hold in the kept weathers only (clear, fair, cloudy, overcast), and on high only
+  (4K output: 1920x1080 CSS pixels at DPR 2). The parked weathers (rain, storm, fog:
+  `PARKED_WEATHER` in `src/sky/Weather.ts`) and quality tiers (medium, low: `PARKED_QUALITY` in
+  `src/Quality.ts`) are revived later as their own milestones: new work need not support them, but
+  must keep them compiling and loadable by name (`?weather=`, `?quality=`). The default checks
+  leave them out (`docs/tools.md`, Parked weathers, Parked quality tiers). Changes are judged at
+  high's baseline: 4K output rendered at 1440p (scale 4/3) at 60 fps, about 14 ms of GPU time a
+  frame in the normal scenes; the dynamic resolution climbs to native 4K with headroom and drops to
+  1080p when busy, and a paused page renders at the baseline (`src/Quality.ts`, profile-frame's
+  default pin: `docs/tools.md`, Measuring frame time).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
-  state. High is the reference image; every default in the modules is high's. A load knob is read
+  state. High at 4K output is the reference image, the only active tier and the one every
+  trade-off is judged on; every default in the modules is high's. A load knob is read
   once when materials and the frame graph are built, so a change of tier reloads the page.
 - Third-party code: files adapted from another project open with a `/*! ... */` notice (project,
   copyright line, licence) and the licence text sits next to them (see
@@ -238,8 +245,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   argument); single-sampled, that argument is a mip level. More in `Pipeline.ts`.
 - WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The
   anti-aliasing mode (`msaa`, the temporal `taa` and `taau`, `off`) is a load knob of the tier
-  (`aa` in `Quality.ts`, whose header says which tier runs which and why); `aa=` or the GUI picks
-  any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
+  (`aa` in `Quality.ts`, whose header says which tier runs which and why: high, the only active
+  tier, runs `msaa`); `aa=` or the GUI picks any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
   `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier. The vegetation's cut-outs are alpha to
   coverage under MSAA only: find vegetation by `userData.vegetation`, never by `alphaToCoverage`
   (`Foliage.ts`).

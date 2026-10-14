@@ -6,14 +6,15 @@
 // mode.
 //
 //   node tools/parity/baseline.mjs --url U --sha SHA [--root DIR] [--label baseline] [--aa msaa]
-//       [--tiers high,medium,low] [--only rest|clips] [--views a,b] [--clips a,b] [--gt | --no-gt] [--gt-aa gt|gt-hi]
+//       [--tiers high] [--only rest|clips] [--views a,b] [--clips a,b] [--gt | --no-gt] [--gt-aa gt|gt-hi]
 //       [--jobs 2] [--capture-only | --metrics-only] [--thresholds thresholds.json] [--runs runs.csv] [--task name]
 //       [--ref-url R] [--recapture-reference] [--skip-existing] [--size 1728x1117@2] [--q "extra&query"] [--verbose]
 //       [--carry-from A [--carry-url <preview of A>] [--carry-recheck]]
 //
 // The plan (PLAN below): on high the 24 parity and TAA views at rest (the 17 parity views also as
 // whole frames, for the overall fidelity gate) and the gates' clips; on medium and low six views at
-// rest. Rest images go through tools/capture-clip.mjs as the one-frame clip `rest`, so their crops
+// rest. Medium and low are parked (src/Quality.ts PARKED_QUALITY): without --tiers a run takes high
+// only; `--tiers high,medium,low` reaches their entries. Rest images go through tools/capture-clip.mjs as the one-frame clip `rest`, so their crops
 // are cut exactly as a clip's are.
 //
 // Layout under <root>/<sha>/:
@@ -135,7 +136,7 @@ function parse( argv ) {
 /** The entries of the plan for the options: { tier, kind, name, clip, view, key, dir }. */
 export function entries( o ) {
 
-	const tiers = ( o.tiers ?? 'high,medium,low' ).split( ',' );
+	const tiers = ( o.tiers ?? 'high' ).split( ',' );
 	const views = o.views ? new Set( expandViews( o.views ) ) : null;
 	// a clip group only selects among the plan's clips; a clip named beyond them is added below
 	const clipItems = o.clips ? o.clips.split( ',' ).filter( Boolean ) : null;
@@ -492,7 +493,7 @@ async function logRun( o, started, captures, failed, out, what, contended ) {
 	const runs = o.runs ?? process.env.PARITY_RUNS;
 	if ( ! runs ) return;
 	const header = 'date,task,procedure,sha,wall_min,contended,captures,failed,out\n';
-	const line = [ new Date( started ).toISOString(), o.task ?? '', `baseline ${ what } ${ o.label } ${ o.aa }${ o.gt && what !== 'metrics' ? ' +' + o[ 'gt-aa' ] : '' } ${ ( o.tiers ?? 'high,medium,low' ).replace( /,/g, '+' ) }${ o.only ? ' ' + o.only : '' }${ o.views ? ' views=' + o.views.replace( /,/g, ' ' ) : '' }${ o.clips ? ' clips=' + o.clips.replace( /,/g, ' ' ) : '' }`, o.sha,
+	const line = [ new Date( started ).toISOString(), o.task ?? '', `baseline ${ what } ${ o.label } ${ o.aa }${ o.gt && what !== 'metrics' ? ' +' + o[ 'gt-aa' ] : '' } ${ ( o.tiers ?? 'high' ).replace( /,/g, '+' ) }${ o.only ? ' ' + o.only : '' }${ o.views ? ' views=' + o.views.replace( /,/g, ' ' ) : '' }${ o.clips ? ' clips=' + o.clips.replace( /,/g, ' ' ) : '' }`, o.sha,
 		( ( Date.now() - started ) / 60000 ).toFixed( 2 ), contended, String( captures ), String( failed ), out ].join( ',' ) + '\n';
 	await mkdir( path.dirname( path.resolve( runs ) ), { recursive: true } );
 	await appendFile( runs, existsSync( runs ) ? line : header + line );

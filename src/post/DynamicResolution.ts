@@ -145,11 +145,16 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 //   times the render per axis (`maxUpscale`): below that a moving image has too few samples per
 //   output pixel. The quality floor is then the floor, and nothing goes below it. MSAA (FSR 1)
 //   keeps the tier's floor, the quality floor and the steps below it.
-// The page renders at the tier's nominal scale whenever the scale is pinned (`?dpr`, the GUI's
-// full resolution) or the scene is paused, so paused frames and captures render at the reference
-// scale whatever scale the running page had reached.
-// The range runs from the display's ratio (up to 1.5) down to 0.6 in steps of 0.05 (Quality.ts;
-// under TAAU down to 0.8 on a 2x display).
+// High's baseline (Quality.ts): 4K output (1920x1080 CSS at a 2x display) rendered at 1440p, scale
+// 4/3 (`baseline`: two thirds of the maximum, FSR 1's Quality 1.5x upscale), the level 60 fps is
+// guaranteed at, with about 14 ms of GPU time a frame in the normal scenes. A load starts there; the
+// page renders there whenever the scene is paused, so paused frames and captures render at the
+// baseline whatever scale the running page had reached (pinned, `?dpr` or the GUI's full
+// resolution, at that ratio instead).
+// The range runs from the display's ratio (up to the canvas's cap, 2: native 4K) down to half the
+// canvas's ratio (`floorShare`: 1080p at 4K output; 0.5 on a 1x display, below its maximum) in steps
+// of 0.05, the baseline one of the levels. TAAU's upscale bound (0.8 on a 2x display) lies below
+// that floor, and so does the quality floor (40 %), so neither moves it at 4K output.
 // The loading screen waits for the first decision (at most 3 s), so the first jump from the
 // nominal ratio happens behind it. A change only resizes the frame graph's targets: no pipeline is
 // built and no frame is dropped (the cloud view on high is sized from the display, so its kernels
@@ -242,7 +247,11 @@ const WORK_KINDS = Object.values( PeriodicWork );
 
 export interface DynamicResolutionOptions {
 	max: number; // the largest scale (the tier's nominal: the display's ratio, up to its cap)
-	floor: number;
+	// the scale it starts from, as a share of the maximum (2/3: 1440p at 4K output)
+	baselineShare: number;
+	// the tier's floor as a share of the canvas's pixel ratio (0.5: half the output's linear
+	// resolution), never above the maximum
+	floorShare: number;
 	step: number;
 	// the most the canvas may be upscaled from the render, per axis (Infinity: no bound; TAAU's
 	// TAAU_MAX_UPSCALE): raises the floor to the canvas's ratio over it
@@ -250,7 +259,7 @@ export interface DynamicResolutionOptions {
 }
 
 /** TAAU's bound on the upscale (canvas over render, per axis): the floor rises to the canvas's ratio
- * over it (0.8 on a 2x display, where the floor is otherwise 0.6). TAAU reconstructs the canvas from
+ * over it (0.8 on a 2x display, below high's floor there, 1.0). TAAU reconstructs the canvas from
  * jittered renders, about eight samples per output pixel over its sequence (Jitter.ts: L = 8 r^2,
  * up to 64), so far below the canvas a moving image has too few samples per pixel to hold its detail
  * (FSR 2 and DLSS stop at 3x, their Ultra Performance mode, and recommend 2x at most for quality);
@@ -315,7 +324,9 @@ export class DynamicResolution {
 	readonly step: number;
 	// the tier's own range, and the upscale bound
 	private readonly limit: number;
-	private readonly limitFloor: number;
+	private readonly floorShare: number;
+	private readonly baselineShare: number;
+	private limitFloor: number;
 	private readonly maxUpscale: number;
 	/** The scale the scene renders at while the resolution is dynamic. */
 	scale: number;
@@ -407,15 +418,27 @@ export class DynamicResolution {
 	private fit = 0;
 	private fitSeen = - Infinity;
 
-	constructor( { max, floor, step, maxUpscale = Infinity }: DynamicResolutionOptions ) {
+	constructor( { max, baselineShare, floorShare, step, maxUpscale = Infinity }: DynamicResolutionOptions ) {
 
-		if ( ! ( floor > 0 && floor <= max && step > 0 && maxUpscale >= 1 ) ) throw new RangeError( 'Dynamic resolution needs 0 < floor <= max, a positive step and an upscale bound of at least 1' );
+		if ( ! ( floorShare > 0 && floorShare <= baselineShare && baselineShare <= 1 && max > 0 && step > 0 && maxUpscale >= 1 ) ) throw new RangeError( 'Dynamic resolution needs 0 < floorShare <= baselineShare <= 1, a positive maximum and step and an upscale bound of at least 1' );
 		this.max = this.limit = max;
-		this.floor = this.limitFloor = floor;
+		// until the canvas's ratio is known (setCanvasRatio), the floor is the share of the maximum
+		this.floorShare = floorShare;
+		this.baselineShare = baselineShare;
+		const floor = this.floor = this.limitFloor = this.round( floorShare * max );
 		this.maxUpscale = maxUpscale;
 		this.qualityFloor = floor;
 		this.step = step;
-		this.scale = max;
+		this.scale = this.baseline;
+
+	}
+
+	/** The scale a load starts from and a paused or pinned page renders at: the baseline share of
+	 * the maximum, within the range. Not rounded (4/3 x 1920 is 2560 pixels; 1.333 x 1920 is not), and
+	 * one of the levels (`steps`). */
+	get baseline(): number {
+
+		return Math.min( Math.max( this.baselineShare * this.max, this.floor ), this.max );
 
 	}
 
@@ -425,10 +448,12 @@ export class DynamicResolution {
 
 		const max = Math.min( nominal, this.limit );
 		if ( max === this.max ) return;
+		// a scale at the baseline (a load's start) follows the new baseline
+		const atBaseline = Math.abs( this.scale - this.baseline ) < 1e-6;
 		this.max = max;
 		this.floor = this.boundedFloor();
 		this.qualityFloor = Math.min( Math.max( this.qualityFloor, this.floor ), max );
-		this.change( Math.min( this.scale, max ), this.clock(), 'max' );
+		this.change( atBaseline ? this.baseline : Math.min( this.scale, max ), this.clock(), 'max' );
 
 	}
 
@@ -438,6 +463,7 @@ export class DynamicResolution {
 
 		if ( ! ( ratio > 0 ) ) return;
 		this.canvasRatio = ratio;
+		this.limitFloor = this.round( this.floorShare * ratio );
 		this.floor = this.boundedFloor();
 		// the lowest level at or above the share
 		let floor = this.max;
@@ -465,13 +491,29 @@ export class DynamicResolution {
 
 	}
 
-	/** The scales it can take, from the maximum down to the floor. */
+	/** The scales it can take, from the maximum down to the floor, the baseline among them. */
 	get steps(): number[] {
 
 		const list: number[] = [];
 		for ( let s = this.max; s > this.floor - 1e-6; s = this.round( s - this.step ) ) list.push( s );
 		if ( list[ list.length - 1 ] > this.floor + 1e-6 ) list.push( this.floor );
+		const baseline = this.baseline;
+		if ( ! list.some( ( s ) => Math.abs( s - baseline ) < 1e-6 ) ) {
+
+			list.push( baseline );
+			list.sort( ( a, b ) => b - a );
+
+		}
 		return list;
+
+	}
+
+	// A scale rounded to the nearest level when it is within rounding of one (a remembered or forced
+	// 1.333 is the baseline 4/3), else to a thousandth.
+	private snap( scale: number ): number {
+
+		const near = this.steps.find( ( s ) => Math.abs( s - scale ) < 1e-3 );
+		return near ?? this.round( scale );
 
 	}
 
@@ -493,7 +535,7 @@ export class DynamicResolution {
 		const entry = this.storeKey === null ? undefined : readStore()[ this.storeKey ];
 		if ( ! entry || ! Number.isFinite( entry.scale ) ) return;
 		// before the first frame, behind the loading screen: not a change anyone sees
-		this.scale = this.stored = this.round( Math.min( Math.max( entry.scale, this.floor ), this.max ) );
+		this.scale = this.stored = this.snap( Math.min( Math.max( entry.scale, this.floor ), this.max ) );
 		this.lastWhy = 'restore';
 
 	}
@@ -589,7 +631,7 @@ export class DynamicResolution {
 	/** Sets the scale (a debug override, or a seek to a known settle point). */
 	force( scale: number, now = this.clock() ): void {
 
-		this.change( Math.min( Math.max( this.round( scale ), this.floor ), this.max ), now, 'force' );
+		this.change( Math.min( Math.max( this.snap( scale ), this.floor ), this.max ), now, 'force' );
 
 	}
 

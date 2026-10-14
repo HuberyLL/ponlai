@@ -7,10 +7,14 @@ import type { RenderScaleRule } from '../Quality.ts';
 //
 // Pixel ratios of the scene's render, relative to CSS pixels, never above the display's or the
 // cap (ocean optics, clouds and the post passes scale with the pixel count):
-// - high: dynamic, from the display's own ratio (up to 1.5, the image the reviews measure) down to
-//   a floor, steered by the GPU's frame time (DynamicResolution.ts); this returns its nominal;
-// - medium and low: a budget of rendered pixels (1600x900 and 1280x720 today); `?dpr` and the
-//   GUI's full resolution lift it.
+// - high: dynamic, steered by the GPU's frame time (DynamicResolution.ts), from the display's own
+//   ratio (up to OUTPUT_PIXEL_RATIO_CAP: native 4K on a 2x display at 1920x1080) down to half the
+//   canvas's (1080p at 4K output). A load starts at, and a paused or pinned page holds, the
+//   baseline: two thirds of the maximum (1440p internal at 4K output, scale 4/3, FSR 1's Quality
+//   1.5x upscale), the level every trade-off is judged at and the one 60 fps is guaranteed at. This
+//   returns the baseline as the nominal, `dynamicMaxRatio` the top of the range;
+// - medium and low (parked, Quality.ts): a budget of rendered pixels (1600x900 and 1280x720 today);
+//   `?dpr` and the GUI's full resolution lift it.
 // The canvas always matches the display (up to OUTPUT_PIXEL_RATIO_CAP): a render below it is
 // upscaled inside the frame graph with FSR 1 and the grain added after, never stretched by the
 // browser. Every pass is sized to the render, not the canvas (the frame graph sizes each target by
@@ -22,14 +26,21 @@ import type { RenderScaleRule } from '../Quality.ts';
 export const OUTPUT_PIXEL_RATIO_CAP = 2;
 
 /** The scene's nominal render pixel ratio for a `width` x `height` CSS-pixel view: the tier's
- * budget, or a dynamic tier's maximum. `full` (an explicit `?dpr` or the GUI's full-resolution
- * control) lifts the budget. */
+ * budget, or a dynamic tier's baseline. `full` (an explicit `?dpr` or the GUI's full-resolution
+ * control) lifts the budget and pins the ratio at the display's (or `?dpr`'s). */
 export function renderPixelRatio( width: number, height: number, rule: RenderScaleRule, full: boolean, cap: number ): number {
 
 	const requested = Math.min( devicePixelRatio, cap );
 	if ( full ) return requested;
-	if ( 'dynamic' in rule ) return Math.min( requested, rule.dynamic.max );
+	if ( 'dynamic' in rule ) return dynamicMaxRatio( rule, cap ) * rule.dynamic.baselineShare;
 	return Math.min( requested, Math.sqrt( rule.budget / Math.max( width * height, 1 ) ) );
+
+}
+
+/** The top of a dynamic tier's range: the display's ratio, up to the cap and the tier's `max`. */
+export function dynamicMaxRatio( rule: Extract<RenderScaleRule, { dynamic: unknown }>, cap: number ): number {
+
+	return Math.min( devicePixelRatio, cap, rule.dynamic.max );
 
 }
 

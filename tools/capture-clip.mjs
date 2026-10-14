@@ -71,8 +71,9 @@
 // `--test-fault` checks the check: frame 0 (with any lead frames before it) is drawn with film grain
 // 0.1 (a mean-zero speckle over the whole frame) and grain goes back to 0 for the next.
 //
-// --aa gt-hi is the interim ground truth (plan section 3.3): MSAA on high at twice high's nominal
-// ratio for the --size given (nominal = min( ratio, 1.5 ), so 3 at the default @2 and 2 at @1),
+// --aa gt-hi is the interim ground truth (plan section 3.3): MSAA on high at twice a nominal ratio
+// for the --size given (nominal = min( ratio, 1.5 ), so 3 at the default @2 and 2 at @1: high's
+// paused scale until it became the 4/3 baseline, kept so the stored ground truths stay comparable),
 // box-downsampled 2x2. The page runs at that device pixel ratio with the same `dpr` (the canvas
 // then holds the render; checked against the canvas's size). If the canvas does not reach it, the
 // tool falls back to twice the CSS size at the nominal ratio (the same render, the CSS boxes
@@ -140,7 +141,7 @@ if ( ! view ) { console.error( `unknown view ${ viewName }` ); process.exit( 2 )
 const size = ( options.size ?? '1728x1117@2' ).match( /^(\d+)x(\d+)(?:@([\d.]+))?$/ );
 if ( ! size ) { console.error( `bad --size ${ options.size }` ); process.exit( 2 ); }
 const W = Number( size[ 1 ] ), H = Number( size[ 2 ] ), DSF = Number( size[ 3 ] ?? 1 );
-// high's nominal render ratio at this size (RenderScale.ts: the display's, up to 1.5), and gt-hi's
+// gt-hi's nominal render ratio at this size (the display's, up to 1.5: see above), and its ratio
 const NOMINAL_HIGH = Math.min( DSF, 1.5 ), GT_RATIO = 2 * NOMINAL_HIGH;
 const frames = Number( options.frames ?? clip.frames );
 const gtJitters = gtRest ? Number( options[ 'gt-jitters' ] ?? ( frames <= 1 ? 64 : 32 ) ) : null;

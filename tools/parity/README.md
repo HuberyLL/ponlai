@@ -365,7 +365,7 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   S1/                              a capture set: <view>.png, <view>.repeat.png, .json, .log
     complete.json                  its manifest, written last
     .capturing/owner.json          while a process captures or extends it
-  S2/medium/, S2/low/, S3/msaa1/   further sets, each with its own manifest
+  S2/medium/, S2/low/, S3/msaa1/   further sets, each with its own manifest (S2: the parked tiers)
   FAST3/                           created only when no other set of the commit covers it
   baseline/<tier>/rest/<view>/     baseline.mjs entries (capture-clip folders), each with its own
   baseline/<tier>/clip/<clip>[@<view>]/   complete.json (and .capturing/ while being captured)
@@ -647,7 +647,7 @@ uv run --with numpy --with pillow --with scipy [--with flip-evaluator] tools/cli
   content at the canvas's resolution), so each tier has its own ground truth. Keep its sets per
   merge-base under `<parity root>/<sha>/gt/<tier>/`. Paused temporal captures (capture.mjs, capture-set.mjs) wait for the
   rest to converge (`diag.taa.converged`).
-- `--aa gt-hi`: the interim ground truth, MSAA on high at twice high's nominal ratio for the size
+- `--aa gt-hi`: the interim ground truth, MSAA on high at twice the former nominal ratio (1.5) for the size
   (3x at the default @2, where the nominal is 1.5) in a canvas that holds it, box-downsampled 2x2
   (288 px crops at the default size). It renders every frame at that ratio: a clip's scale schedule
   applies to the test and MSAA sides only. Its pixel-width vegetation rules are in render pixels,

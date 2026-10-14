@@ -63,7 +63,7 @@ everyday commands; this file has the details. Each tool's own file says the rest
   timestamps) shows the frame rate over the last second, the interval's p95 and maximum over the
   last 5 s, the frames late by a refresh against the paced interval and the intervals over 25 ms
   since the scene showed (or the reset button), the render scale and the GPU's median frame time
-  (high only), and how the quality tier was chosen with the numbers behind it.
+  (high only), and how the quality tier was chosen.
 
 ## URL options
 
@@ -115,11 +115,10 @@ Sky and weather:
 
 Quality and look:
 
-- `quality` (low, medium, high: the tier of every knob in `src/Quality.ts`; without it the tier
-  measured for this GPU, `src/QualityDetect.ts`), `tier.<knob>=<value>` overrides one knob for an
-  A/B (e.g. `tier.post.fogScale=0.5`).
-- `autoQuality` (`detect` measures again, `off` keeps medium), `autoQualitySlow=<factor>` (scales
-  the measured GPU time, to try the choice a slower GPU gets).
+- `quality` (low, medium, high: the tier of every knob in `src/Quality.ts`; without it high, the
+  only active tier: medium and low are parked, see Parked quality tiers), `tier.<knob>=<value>`
+  overrides one knob for an A/B (e.g. `tier.post.fogScale=0.5`). The GPU timing that once chose
+  the tier (`src/QualityDetect.ts`, `autoQuality`) is parked with them.
 - `tone` (neutral-hue, the default, agx-hue, agx, neutral), `look` (soft-fantasy, the default,
   rich-fantasy, realistic).
 
@@ -127,8 +126,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 `src/debug/DebugFlags.ts`):
 
 - `aa` (the anti-aliasing mode, `src/post/Antialiasing.ts`, over the tier's `aa` knob: each tier
-  has its default, high `msaa`, medium `taau`, low `msaa`, and the GUI's Antialiasing control
-  reloads with any of TAAU, TAA, MSAA 4x and, in debug builds, Off. `msaa`: 4 samples, upscaled by
+  has its default, high `msaa` (the parked medium `taau`, low `msaa`), and the GUI's Antialiasing
+  control reloads with any of TAAU, TAA, MSAA 4x and, in debug builds, Off. `msaa`: 4 samples, upscaled by
   FSR 1; `off`: one sample; `taa` and `taau`, the temporal modes: one sample, jittered, with motion vectors, resolved against a history in `TemporalAA.ts`, at the
   render's size or upsampled to the canvas; a paused page shows the rest image, the jitter
   sequence averaged, once it has converged, `TemporalRest.ts`; what changes the scene raises a
@@ -136,7 +135,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `taa.lastEvent`, and `__PONLAI__.taa.restart()` by hand) and its older alias `msaa` (`4`
   reads as `aa=msaa`, `1` and `2` as `aa=off`, since WebGPU multisamples with 1 or 4 samples
   only). The capture and parity tools apply the temporal tolerances by their own `--aa` option, so
-  a set of medium's default passes `--aa taau`.
+  a set of the parked medium's default passes `--aa taau`.
 - `aa=gt` (debug builds only; refused with a warning otherwise): the ground truth the temporal
   modes are measured against: the temporal graph at the canvas's resolution, no dynamic scale,
   whose rest averages `tier.taa.gtJitters` jittered frames (64 by default, 32 per frame of a
@@ -356,7 +355,7 @@ reverse order.
 `tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
 crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA and a ground truth (`--aa gt-hi`: MSAA at
-twice high's nominal ratio, downsampled) with gates from a thresholds file
+twice the former nominal ratio 1.5, downsampled) with gates from a thresholds file
 (`uv run --with numpy --with pillow`, clip-metrics.py also `--with scipy`; both described in the
 README). clip-metrics.py measures the
 frames in worker processes: `--workers N` or `CLIP_METRICS_WORKERS`, by default a quarter of the
@@ -406,6 +405,16 @@ profile-frame's scene matrix and `--accept`, verify-first-use's steps); `special
 reaches a parked view, clip or scene, and verify-first-use runs its `weather` and `bolt` steps only
 when `--steps` names them. `verify-weather-effects.mjs`, `verify-ocean-weather.mjs` and the rain
 parts of `verify-weather.mjs` are parked with them: not part of any default check.
+
+Parked quality tiers: medium and low (`src/Quality.ts` `PARKED_QUALITY`) are out of the default
+choice and checks; high at 4K output (1920x1080 CSS pixels at DPR 2, profile-frame's default
+viewport) is the only active tier. A page without `quality` loads high (the GPU timing that picked
+a tier, `src/QualityDetect.ts`, is parked with them) and the GUI lists high alone. Every tool's
+default is high: profile-frame's `--quality` (and so its scene matrix and `--accept`),
+verify-first-use's `--quality`, baseline.mjs's `--tiers` (its plan keeps the lower tiers' views),
+carry.mjs's `--tiers`, capture-set, quick, capture-clip and verify-scene-jump's `--quality`, and
+the pages capture.mjs, probe.mjs and capture-growth.mjs load without a `quality` in their query.
+`?quality=medium|low`, `--quality medium` or `--tiers high,medium,low` reach them.
 
 `uv run tools/parity/table.py <metrics.json | label dir>... [--names a,b] [--base col]
 [--refs msaa,gt] [--entries glob] [--metrics m1,m2] [--crops c1,c2] [--csv f]` tables several
@@ -684,7 +693,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
   [--idle-wait s] [--contended] [--load-timeline off] [--hang s] [--scale-log]
   [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]
-  [--drs-store] [--frame-fallback]
+  [--drs-store] [--frame-fallback] [--unpinned]
 ```
 
 - Profiles a production build (`npm run build && npm run preview`; the url defaults to its port)
@@ -868,6 +877,13 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   on, so their per-pass split shows where the time goes, not the frame rate a player sees. (High
   keeps its dynamic resolution's own timestamp queries in every run, as a player's page does;
   `--q gpuTimer=off` leaves them out.)
+- High is timed at its baseline by default: 4K output (1920x1080 CSS at DPR 2) rendered at 1440p
+  (2560x1440, scale 4/3), the level every trade-off is judged at, with about 14 ms of GPU time a
+  frame in the normal scenes (island views, `meadow-close`) as the budget. A profile, `--compare`
+  or `--toggle` of high pins that scale (`dpr=1.3333333333333333`: two thirds of the viewport's
+  ratio); `--unpinned` leaves the dynamic resolution steering, with `--scale-settle 5 --scale-log`
+  to see where it settles. `--accept`, `--display`, `--scales` and a `dpr` of the url's or `--q`'s
+  own are never pinned.
 - Judge whether a tier holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at
   the tier's own settings (high with its dynamic scale, measured at its settle point with
   `--scale-settle 5`; the report gives each scene's scale), and check how a change plays on a fast
@@ -1017,7 +1033,8 @@ probe eval of one's own.
   materials, and with the app's vegetation and spray drawn by a fresh renderer under a shadow
   pass and their pass's MRT, both ways round) and the motion vectors' blends on the GPU;
   `tools/verify-first-use.mjs` counts the pipelines any step still creates after the warm-up
-  (`--aa msaa,taa,taau,off --quality high,medium,low` runs the whole matrix, a page per run; its
+  (`--aa msaa,taa,taau,off --quality high,medium,low` runs the whole matrix, a page per run, the
+  parked tiers included; its
   `weather` and `bolt` steps reach the parked weathers and run only when `--steps` names them).
   The load is judged as a step of its own, `load`: no frame of the 60 after the first may create a
   pipeline synchronously, nor may the first frame's redraw of the sun's shadow map.
