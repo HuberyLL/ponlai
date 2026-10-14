@@ -62,9 +62,9 @@ export const CLOCK_PERIOD = 1000;
 // The gust field (see `windField`): a tileable noise map scrolled with the wind's integrated
 // travel. Gust fronts are long across the wind and short along it, as they sweep a meadow; the
 // finer eddies inside them run a little faster, so the pattern evolves instead of sliding by.
-// Measured with the wind probe (`field.w` falls to 1/e) on a fair day: about 11 m along the wind
-// and 24 m across it, travelling within 3 % of the wind's speed; a gust covers about 30 % of the
-// land at a time. Perlin noise decorrelates within about a third of its cell, so the cells are
+// Measured with the wind probe (where the correlation of `field.w` falls to 1/e) on a fair day:
+// 12 - 15 m along the wind and 24 m across it, travelling about 5 % faster than the wind; a gust
+// covers about a third of the land at a time. Perlin noise decorrelates within about a third of its cell, so the cells are
 // three times the patches (32 m by 72 m); the eddies stay a small share, or they break the
 // patches up and drag the pattern faster than the wind.
 const GUST_SIZE = 128;
