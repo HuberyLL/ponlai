@@ -54,9 +54,14 @@ art decision changes; reference images stay out of the repository.
   notch whose walls hold no lip runs bare longer), of uneven density and mixed lengths, under a
   mounded leaf clump at the lip; the lowest quarter of the cliff above the sea stays bare. The
   meadow's sod curls a little over the lip as a ragged turf skirt.
-- The meadow is a sward: dense lawn tufts of narrow blades and taller tussocks in clumps. Toward the
-  coast the tufts grow taller and lean out over the lip instead of thinning, and the lip alternates
-  between overgrown stretches and cut-open root soil.
+- The meadow is a lawn: dense, even, thin straight blades of one height, standing nearly upright and
+  bending with the wind together. One grass colour, dark deep green at the root and bright fresh
+  green at the tip, with only a gentle, broad swing of its value; no clumps, tall islands or bare
+  patches. Inside the grass there are no hard shadows, only an even darkening toward the ground;
+  the shade of bushes and trees lies on it soft and light, and cloud shadows pass over the whole
+  island as one soft gradient. The turf under the blades is their colour, so from afar the meadow
+  reads as one smooth carpet. Toward the coast the tufts grow taller and lean out over the lip
+  instead of thinning, and the lip alternates between overgrown stretches and cut-open root soil.
 - Wildflowers are plants (daisy, umbel, spike, cup) with leaf rosettes, their heads just above the
   sward, in beds of a few of one kind gathered in drifts, not coloured stars on the lawn.
 - The terrain plants the meadow (grass, wildflowers), the rim bushes, the rim's hanging growth and,
