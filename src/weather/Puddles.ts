@@ -7,8 +7,7 @@ type V2 = THREE.Node<'vec2'>;
 // Standing water fills fixed hollows on level ground as the ground soaks, drowning the meadow
 // blades but for a few tips, and shrinks inside its own damp stain as it dries. Puddles mirror the
 // sky through an art-directed reflectance (stronger than water's 2 %, still following Fresnel), so
-// they read as water from above. PuddleHollows.ts repeats `puddleField` on the CPU for planting:
-// change both together.
+// they read as water from above.
 
 /** Standing water on level ground: x = cover (0 to 1), y = depth (0 at the waterline, 1 where the
  * hollow is deep enough to hide the ground's relief), z = the soaked ground around each puddle.
@@ -19,7 +18,6 @@ type V2 = THREE.Node<'vec2'>;
  * `relief` (0 to 1, 0.5 neutral) lets the waterline creep into the ground's cracks first. */
 export const puddleField = Fn( ( [ xz, wetness, relief ]: [ V2, F, F ] ) => {
 
-	// PuddleHollows.ts repeats these hollows on the CPU (the plants keep out of them): change both.
 	const hollows = mx_noise_float( vec3( xz.div( 3.2 ), 0.37 ) ).mul( 0.7 )
 		.add( mx_noise_float( vec3( xz.div( 1.1 ), 4.1 ) ).mul( 0.3 ) ).mul( 0.5 ).add( 0.5 )
 		.add( relief.sub( 0.5 ).mul( 0.05 ) ).toVar();

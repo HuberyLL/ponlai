@@ -62,7 +62,7 @@ The player should want to rebuild after watching their islanders walk the long w
 ## The long arc
 
 - Start: a few islanders on a small island.
-- Growth: the island grows tile by tile (the world is generated to grow) and more people arrive.
+- Growth: the island grows piece by piece (the world is generated to grow) and more people arrive.
 - The challenge grows with it: with three people the leader can talk to each one; with thirty
   they cannot, and must delegate (put someone in charge of fishing, have someone lead the roof
   repairs). Leadership structure grows out of play rather than from a rule system.
@@ -71,6 +71,9 @@ The player should want to rebuild after watching their islanders walk the long w
 
 - **Trigger**: population. Each time the island reaches the next population step, it grows by
   one piece of land. No story has to justify it.
+- **How much**: the island starts at about 400 m^2 (a little larger than today's) and a piece
+  adds about 180 m^2 on average (from about 100 to 270 m^2), for at most 36 steps, by which
+  the island has grown to about 7,500 m^2.
 - **Where**: chosen at random, but from the centre outward: each new piece joins the island's
   current edge near its middle, so the island grows all round rather than stretching one way,
   and the player can plan around it. The shape must stay irregular and natural, like a real
@@ -85,6 +88,15 @@ The player should want to rebuild after watching their islanders walk the long w
   belongs to a chunk. What a chunk holds depends only on the land within a fixed distance of it,
   so a new piece rebuilds only itself and its neighbours; everything else stays exactly as it
   was. The sea floor near the island follows the coast locally in the same way.
+- **As built** (the trigger, against the instant swap; the rise is not built): the population is
+  the islanders' count, and the steps are a table (`GROWTH_STEPS` in `src/game/sim/types.ts`),
+  for now one piece per 2 islanders above the starting 3 (a piece at 5, 7, 9, ... up to the 36th
+  step). Once a step is due the game asks the page to grow, and the next piece swaps in at once;
+  the simulation's ground opens the new cells (every index and path stays valid) and counts the
+  piece. The pending piece is generated from the moment the game shows, and its cells are given
+  to the simulation ahead (`comingLand`) for planning. A save keeps the piece count, and a resumed
+  game loads its world at it. How a new islander arrives is not designed: the debug panel adds
+  one by hand.
 - The trees and shrubs on today's island were placeholders for its look; plants that matter to
   play (coconut palms) are content placed in the world, not part of the terrain.
 
@@ -184,5 +196,5 @@ thought are designed with the language model.
 ## Open questions
 
 - How a storm is announced and how much warning the player gets.
-- The population steps at which the island grows, and how big each new piece is.
+- The population steps at which the island grows, and whether a piece's size should grow with the population.
 - How a new islander arrives.

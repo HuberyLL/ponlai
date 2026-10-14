@@ -105,7 +105,7 @@ export class StormSea {
 	private readonly desired = new THREE.Vector2();
 	private readonly forward = new THREE.Vector3();
 
-	constructor( renderer: THREE.WebGPURenderer, fft: OceanFFT, shared: Shared, shore: THREE.Texture, shoreWaves: ShoreWaves,
+	constructor( renderer: THREE.WebGPURenderer, fft: OceanFFT, shared: Shared, shore: THREE.Texture | THREE.TextureNode, shoreWaves: ShoreWaves,
 		light: Omit<SprayLighting, 'wind' | 'waterLevel'> ) {
 
 		this.renderer = renderer;

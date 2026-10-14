@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, uniform, uniformArray, texture, vec4, int, float, clamp, floor, dot, select, mix, positionLocal, modelWorldMatrixInverse } from 'three/tsl';
 import { compileLatentInto } from '../post/graph/Compile.ts';
 import { solarSteppedShadowVisibility, solarVolumeVisibility, SOLAR_SHADOW_TAPS, SHADOW_FILTER_PATH, type SolarShadowTaps } from './SolarShadow.ts';
+import type { CasterColumns } from '../world/ChunkDerived.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -29,7 +30,9 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // (`setFilter`) before the materials build. Receivers read the maps through SolarShadow's gather
 // filter (see its rules on sampler types and derivatives). The caster-depth grid
 // (`nearestCasterDepth`) lets a march through the water skip the 2x2 volume lookups where nothing
-// casts, never the surface filter's PCSS search.
+// casts, never the surface filter's PCSS search. It projects world-space columns of the casters,
+// walked from their vertices, or for meshes made in the world's workers folded in from the columns
+// they came with (`setCasters`, ChunkDerived.ts), so the main thread does not walk those.
 //
 // Closed solids (the island's terrain, `castFrontFaces`) cast their front faces into this map,
 // not the back faces three casts for a FrontSide material. At the cliff's creases, scar-notch
@@ -151,6 +154,8 @@ export class SunShadow {
 	private gridDirty = false;
 	// world-space caster columns: per WORLD_CELLS cell, the lowest and highest caster point
 	private columns: { x0: number; z0: number; cell: number; nx: number; nz: number; low: Float32Array; high: Float32Array } | null = null;
+	// meshes whose columns came with them (setCasters): folded in rather than walked
+	private given: ReadonlyMap<THREE.Object3D, CasterColumns> = new Map();
 
 	constructor( sun: THREE.DirectionalLight, { bias = 0.01, floor = - 3, margin = 0.6 }: SunShadowOptions = {} ) {
 
@@ -240,9 +245,14 @@ export class SunShadow {
 	}
 
 	/** World-space bounds of everything that casts into this map (static). Only their part
-	 * above the floor can shade a receiver of this map. */
-	setCasters( box: THREE.Box3 ): void {
+	 * above the floor can shade a receiver of this map. `columns` gives meshes' caster columns
+	 * made off the main thread (the chunks', ChunkDerived.ts: world space, for meshes drawn with an
+	 * identity world matrix); the caster-depth grid folds them in instead of walking those meshes'
+	 * vertices, and walks every other caster as before. Without it the columns given last stay
+	 * (a prop that grows the box keeps them). */
+	setCasters( box: THREE.Box3, columns?: ReadonlyMap<THREE.Object3D, CasterColumns> ): void {
 
+		if ( columns ) this.given = columns;
 		this.casters.copy( box );
 		this.casters.min.y = Math.max( this.casters.min.y, this.floor );
 		this.columns = null;
@@ -320,6 +330,8 @@ export class SunShadow {
 				this.frontCasters.add( material );
 				const node = material as THREE.NodeMaterial;
 				node.castShadowPositionNode = positionLocal.add( modelWorldMatrixInverse.mul( vec4( this.frontPush, 0 ) ).xyz );
+				// (a bias that follows the sun: the rain's collision map draws the surface itself, RainCollision.ts)
+				node.userData.shadowPush = true;
 				node.needsUpdate = true;
 
 			}
@@ -436,7 +448,9 @@ export class SunShadow {
 	// of every shadow-casting mesh in each cell (instances by their bounding boxes), padded for
 	// what the rest pose leaves out. Generic: it follows whatever casts, on any layout. It walks
 	// every casting vertex once, so each is binned into its own cell and the sideways padding is
-	// a separate pass over the cells.
+	// a separate pass over the cells. A mesh with given columns (setCasters) folds each of its
+	// columns into every cell the column meets, so the grid holds all its walk would, and at most a
+	// column's width more.
 	private buildColumns( scene: THREE.Scene ): void {
 
 		const box = this.casters;
@@ -466,6 +480,32 @@ export class SunShadow {
 
 			const mesh = object as THREE.Mesh;
 			if ( ! mesh.isMesh || ! mesh.castShadow || ! mesh.layers.test( shadowLayers ) ) return;
+			const given = this.given.get( mesh );
+			if ( given ) {
+
+				for ( let j = 0; j < given.nz; j ++ ) {
+
+					const za = given.z0 + j * given.cell, zb = za + given.cell;
+					const ja = row( za ), jb = Math.min( Math.max( Math.ceil( ( zb - z0 ) / cell ) - 1, ja ), nz - 1 );
+					for ( let i = 0; i < given.nx; i ++ ) {
+
+						const k = j * given.nx + i;
+						if ( ! ( given.high[ k ] >= given.low[ k ] ) ) continue;
+						const xa = given.x0 + i * given.cell, ia = column( xa ), ib = Math.min( Math.max( Math.ceil( ( xa + given.cell - x0 ) / cell ) - 1, ia ), nx - 1 );
+						for ( let b = ja; b <= jb; b ++ ) for ( let a = ia; a <= ib; a ++ ) {
+
+							const c = b * nx + a;
+							if ( given.low[ k ] < binLow[ c ] ) binLow[ c ] = given.low[ k ];
+							if ( given.high[ k ] > binHigh[ c ] ) binHigh[ c ] = given.high[ k ];
+
+						}
+
+					}
+
+				}
+				return;
+
+			}
 			const geometry = mesh.geometry;
 			if ( ! geometry.boundingBox ) geometry.computeBoundingBox();
 			const instanced = mesh as THREE.InstancedMesh;

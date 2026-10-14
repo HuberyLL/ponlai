@@ -85,13 +85,16 @@ try {
 			const s = window.__PONLAI__, horizon = view === 'horizon';
 			s.controls.minDistance = view === 'near-water' ? 2 : 22;
 			if ( view === 'near-water' ) {
-				// Resolve the small impact rings in front of the southern shoreline. At the
-				// overview/horizon distance their footprint filter intentionally removes them.
-				s.controls.target.set( 0, 0, 18 );
-				s.camera.position.set( - 6, 4.5, 25 );
+				// Resolve the small impact rings in front of the southern shoreline (8 m past the
+				// land's box). At the overview/horizon distance their footprint filter intentionally
+				// removes them.
+				const { centroid, bounds } = s.land;
+				s.controls.target.set( centroid.x, 0, bounds.z1 + 8 );
+				s.camera.position.set( centroid.x - 6, 4.5, bounds.z1 + 15 );
 			} else {
-				s.controls.target.set( 1.5, 0.5, 1 );
-				s.camera.position.setFromSphericalCoords( horizon ? 110 : 58,
+				// the page's island and horizon views on its land
+				s.controls.target.fromArray( s.land.target );
+				s.camera.position.setFromSphericalCoords( ( horizon ? 110 : 58 ) * s.land.scale,
 					( horizon ? 82 : 50 ) * Math.PI / 180, ( horizon ? 125 : 318 ) * Math.PI / 180 ).add( s.controls.target );
 			}
 			s.controls.update();

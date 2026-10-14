@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { isCameraInputTarget } from './FreeCameraControls.ts';
 import { IslandGround } from './IslandGround.ts';
+import type { GroundGrid } from '../world/ChunkDerived.ts';
 
 // The island's camera, in the manner of a management or island-building game (Islanders,
 // Dorfromantik; Anno, Frostpunk and Planet Zoo differ mostly in which button does what):
@@ -25,9 +26,9 @@ import { IslandGround } from './IslandGround.ts';
 //
 // At rest, `advance` does exactly what three's OrbitControls did at rest (spherical coordinates
 // from the camera's offset, the same clamps, the same arithmetic), so a still camera holds the very
-// position it did and paused captures frame exactly as before. The pivot is clamped to the island's
-// bounds plus a margin (`setIsland`), the distance and tilt to their limits, and the camera kept
-// above the ground.
+// position it did and paused captures frame exactly as before. The pivot is clamped to the land's
+// box plus a margin (`setIsland`, again whenever the land grows), the distance and tilt to their
+// limits, and the camera kept above the ground.
 //
 // Rules and their reasons:
 // - A press stays a click until it moves 3 px, so a left-click action can share the button.
@@ -44,9 +45,10 @@ import { IslandGround } from './IslandGround.ts';
 //   between frames. A drag is read one input sample interval (at most 8 ms) behind the frame's
 //   vblank, between the two pointer samples around that time (input resampling): read at its
 //   newest sample, a 125 Hz mouse moved the view unevenly from one frame to the next.
-// - The limits constrain input only: the pivot within the island's bounds plus 12 m, the farthest
-//   zoom from the island's diagonal (190 m for the first layout), the camera 2 m above the ground
-//   (a height grid of the island's meshes, IslandGround.ts).
+// - The limits constrain input only: the pivot within the land's box plus 12 m, the farthest zoom
+//   from its diagonal (about 190 m for the starting island), both recomputed when the land grows
+//   (`setIsland`), the camera 2 m above the ground (a height grid of the island's meshes, merged
+//   from the grids the world's chunks come with: IslandGround.ts).
 // - At rest the update is three's OrbitControls' arithmetic to the bit, its constructor's update
 //   included, so paused frames do not depend on input history and match older captures.
 
@@ -134,8 +136,8 @@ export class IslandCameraControls {
 	 * trackpad's two-finger swipe. */
 	scrollMode: ScrollMode = 'auto';
 	edgePan = false;
-	/** The pivot stays within the island's bounds grown by this (m); the camera this high above
-	 * the ground (m). */
+	/** The pivot stays within the land's box grown by this (m); the camera this high above the
+	 * ground (m). */
 	boundsMargin = 12;
 	groundClearance = 2;
 	readonly ground = new IslandGround();
@@ -219,21 +221,20 @@ export class IslandCameraControls {
 
 	}
 
-	/** Derives the pivot's bounds, the ground the camera grabs and the farthest zoom from the
-	 * island's meshes. */
-	setIsland( meshes: readonly THREE.Mesh[] ): void {
+	/** Takes the ground the camera grabs from the grids of the island's chunks (ChunkDerived.ts),
+	 * and the pivot's bounds and the farthest zoom from the land's box (WorldShapes.landBounds);
+	 * again when the land grows. */
+	setIsland( grids: readonly GroundGrid[], land: { x0: number; z0: number; x1: number; z1: number } ): void {
 
-		this.ground.build( meshes );
-		const b = this.ground.bounds;
-		if ( b.isEmpty() ) return;
+		this.ground.fromGrids( grids );
 		const m = this.boundsMargin;
-		this.bounds.min.set( b.min.x - m, b.min.z - m );
-		this.bounds.max.set( b.max.x + m, b.max.z + m );
-		// at the farthest zoom the island's diagonal still spans at least 40 % of the view's height
-		// (the original limit of 190 m for the first layout)
-		const diagonal = Math.hypot( b.max.x - b.min.x, b.max.z - b.min.z );
+		this.bounds.min.set( land.x0 - m, land.z0 - m );
+		this.bounds.max.set( land.x1 + m, land.z1 + m );
+		// at the farthest zoom the land's diagonal still spans at least 40 % of the view's height
+		// (about 190 m for the starting island)
+		const diagonal = Math.hypot( land.x1 - land.x0, land.z1 - land.z0 );
 		const view = 2 * Math.tan( THREE.MathUtils.degToRad( this.camera.fov ) / 2 );
-		this.maxDistance = Math.max( this.maxDistance, diagonal / ( 0.4 * view ) );
+		this.maxDistance = diagonal / ( 0.4 * view );
 
 	}
 

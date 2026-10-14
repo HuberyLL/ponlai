@@ -1254,30 +1254,53 @@ function pageHelpers() {
 
 			if ( def.view === 'meadow' ) {
 
-				// a point on the meadow a little inside the rim (from the island ground's bounds, so any
-				// layout works), the eye 1.6 m up, looking out over the lip and down a little. The ground
-				// is the object named 'island' and every mesh under it: one mesh at the identity on main,
-				// a group of per-chunk meshes in world space on the chunked island (World.ts). Their
-				// world boxes are joined: on main that is the mesh's geometry box itself, so the pose
-				// stays the one earlier runs measured.
+				// a point on the meadow 5.5 m inside the rim, out from the land's centroid (so any land
+				// works), the eye 1.6 m up, looking out over the lip and down a little. The heights are
+				// those of the island group's meshes (`island`), on a 0.5 m grid from their box's corner
+				// as the camera's ground was built before it came from the chunks' grids: a build that
+				// draws the same island, merged or a mesh per chunk, takes the same view. Their position
+				// arrays are read as world-space, non-interleaved (the chunk meshes are), and every mesh
+				// under `island` counts as ground (a stone there raises its cell).
 				s.setCameraView( 'island' );
 				s.setCameraMode( 'free' );
-				const ground = [];
-				s.scene.getObjectByName( 'island' )?.traverse( ( o ) => { if ( o.isMesh ) ground.push( o ); } );
-				if ( ! ground.length ) throw new Error( `${ def.name }: no island ground to place the meadow view on (no mesh named or under 'island')` );
-				let box = null;
-				for ( const mesh of ground ) {
+				const parts = [];
+				s.scene.getObjectByName( 'island' )?.traverse( ( o ) => { if ( o.isMesh ) parts.push( o.geometry.getAttribute( 'position' ).array ); } );
+				if ( ! parts.length ) throw new Error( `${ def.name }: no island ground to place the meadow view on (no mesh named or under 'island')` );
+				let x0 = Infinity, z0 = Infinity, x1 = - Infinity, z1 = - Infinity;
+				for ( const p of parts ) for ( let v = 0; v < p.length; v += 3 ) {
 
-					mesh.updateWorldMatrix( true, false );
-					mesh.geometry.computeBoundingBox();
-					const b = mesh.geometry.boundingBox.clone().applyMatrix4( mesh.matrixWorld );
-					box = box ? box.union( b ) : b;
+					x0 = Math.min( x0, p[ v ] ); x1 = Math.max( x1, p[ v ] );
+					z0 = Math.min( z0, p[ v + 2 ] ); z1 = Math.max( z1, p[ v + 2 ] );
 
 				}
-				const cx = ( box.min.x + box.max.x ) / 2, cz = ( box.min.z + box.max.z ) / 2;
-				const rx = ( box.max.x - box.min.x ) / 2, rz = ( box.max.z - box.min.z ) / 2;
-				const dir = { x: Math.cos( 0.7 ), z: Math.sin( 0.7 ) };
-				s.camera.position.set( cx + dir.x * rx * 0.45, box.max.y + 1.6, cz + dir.z * rz * 0.45 );
+				const nx = Math.ceil( ( x1 - x0 ) / 0.5 ) + 1, nz = Math.ceil( ( z1 - z0 ) / 0.5 ) + 1;
+				const heights = new Float32Array( nx * nz ).fill( - Infinity );
+				const cell = ( x, z ) => {
+
+					const i = Math.floor( ( x - x0 ) / 0.5 ), j = Math.floor( ( z - z0 ) / 0.5 );
+					return i >= 0 && i < nx && j >= 0 && j < nz ? j * nx + i : - 1;
+
+				};
+				for ( const p of parts ) for ( let v = 0; v < p.length; v += 3 ) {
+
+					const k = cell( p[ v ], p[ v + 2 ] );
+					if ( k >= 0 && p[ v + 1 ] > heights[ k ] ) heights[ k ] = p[ v + 1 ];
+
+				}
+				const heightAt = ( x, z ) => {
+
+					const k = cell( x, z );
+					return k >= 0 ? Math.max( heights[ k ], 0 ) : 0;
+
+				};
+				const { x: cx, z: cz } = s.land.centroid, dir = { x: Math.cos( 0.7 ), z: Math.sin( 0.7 ) };
+				const top = ( t ) => heightAt( cx + dir.x * t, cz + dir.z * t ) > 1;
+				let t = 0;
+				while ( ! top( t ) && t < 200 ) t += 0.25;
+				if ( ! top( t ) ) throw new Error( `${ def.name }: no land along the meadow direction from the centroid` );
+				while ( top( t ) ) t += 0.25;
+				const x = cx + dir.x * ( t - 5.5 ), z = cz + dir.z * ( t - 5.5 );
+				s.camera.position.set( x, heightAt( x, z ) + 1.6, z );
 				s.camera.lookAt( s.camera.position.x + dir.x * 10, s.camera.position.y - 2.2, s.camera.position.z + dir.z * 10 );
 				s.camera.fov = 55;
 				s.camera.updateProjectionMatrix();

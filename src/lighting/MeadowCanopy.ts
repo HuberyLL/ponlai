@@ -127,7 +127,7 @@ export function meadowCanopyLight( xz: V2, depth: F, key: V3 ): F {
 }
 
 // Canopy top above the turf for a meadow growth value, matching the mean tuft height that
-// buildGrass plants there (base growth plus the share of taller shoots), at CANOPY_TOP.
+// plantGrass plants there (base growth plus the share of taller shoots), at CANOPY_TOP.
 export const CANOPY_TOP = 0.8;
 export const meadowCanopyHeight = Fn( ( [ growth ]: [ F ] ) =>
 	growth.mul( 0.14 ).add( 0.17 ).add( smoothstep( 0.38, 0.74, growth ).mul( 0.46 * 0.21 ) ).mul( CANOPY_TOP )

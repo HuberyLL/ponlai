@@ -9,15 +9,49 @@ import { Fn, If, texture, uniform, uv, float, vec2, vec4, dot, length, max, min,
 import type { OceanFFT } from './OceanFFT.ts';
 import type { Shared } from '../shared.ts';
 import type { WorldData } from '../world/types.ts';
-import { createShoreBoundaryField, createShoreShelterField } from './ShoreWaveField.ts';
+import { shoreBoundaryPixels, shoreShelterPixels, type FieldPixels } from './ShoreWaveField.ts';
+import type { ShoreFieldJob, ShoreFieldReply } from './shoreFieldWorker.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 
+// The reflected surface's texel (m): the first island's 96 m field over 512 texels,
+// kept as the shore field grows with the land, so the contact strip along the rock stays as sharp.
+const TEXEL = 96 / 512;
+
+// A field's texels as a texture (filtered, no mips).
+function fieldTexture( field: FieldPixels, name: string ): THREE.DataTexture {
+
+	const texture = new THREE.DataTexture( field.pixels, field.nx, field.nz, THREE.RGBAFormat, THREE.FloatType );
+	texture.name = name;
+	texture.minFilter = texture.magFilter = THREE.LinearFilter;
+	texture.generateMipmaps = false; texture.flipY = false; texture.needsUpdate = true;
+	return texture;
+
+}
+
+function shelterTexture( field: FieldPixels & { info: Record<string, unknown> } ): THREE.DataTexture {
+
+	const texture = fieldTexture( field, 'shoreWaveShelter' );
+	texture.userData.shoreWaveShelter = field.info;
+	return texture;
+
+}
+
+/** A grown island's wave fields (ShoreWaves.fieldsFor), for `setFields`. */
+export interface ShoreFields { data: WorldData; boundary: THREE.DataTexture; shelter: THREE.DataTexture; direction: THREE.Vector2 }
+
 // Tidewater's FFT supplies every incident wave. This rocky boundary is a Ponlai extension:
 // a weak mirrored response and whitewater use that wave's height and orbital velocity,
 // without adding the independent, single-period beach wave over the open sea.
+//
+// A grown island (Growth.ts) brings a new shore field: its wave fields are built in a worker
+// (`fieldsFor`: shoreFieldWorker.ts, ShoreWaveField's plain-data functions, on a copy of the
+// field the caller makes and hands over: the page keeps its own; their textures the caller
+// uploads) and set in place
+// (`setFields`: the base nodes' values, the surface targets resized to the field), so no material
+// changes and no pipeline is built.
 //
 // The surface field is baked once per change of the scene clock. Under the temporal modes
 // (Antialiasing.ts) it alternates between two targets, so the one baked before stays readable as
@@ -34,32 +68,27 @@ export class ShoreWaves {
 	readonly texture: THREE.TextureNode;
 	// The surface field as baked before the current one (temporal modes; otherwise the current one).
 	readonly previous: THREE.TextureNode;
-	// RGBA: horizontal particle velocity, contact energy, filtered incident height.
-	readonly motion: THREE.TextureNode;
 	readonly surfaceAt: ( p: V2, time: F ) => THREE.Node<'vec4'>;
 	/** The surface field at the clock's previous bake (see the note above). */
 	readonly previousSurfaceAt: ( p: V2 ) => THREE.Node<'vec4'>;
-	readonly sample: ( p: V2, time: F ) => THREE.Node<'vec4'>;
-	readonly incidentAt: ( p: V2 ) => THREE.Node<'vec4'>;
 	fieldRevision = 0;
 	private data: WorldData;
 	private revision = - 1;
 	private renderer: THREE.WebGPURenderer;
-	private targets: THREE.RenderTarget[];
 	// the surface field's targets: [ current, previous ] (one under MSAA)
 	private surfaces: THREE.RenderTarget[];
-	private quads: THREE.QuadMesh[];
+	private quad: THREE.QuadMesh;
 	private lastTime: number | undefined;
 	private lastReflection = - 1;
 	private readonly lastWeatherGain = new THREE.Vector3( - 1, - 1, - 1 );
 
-	constructor( renderer: THREE.WebGPURenderer, data: WorldData, shared: Shared, shore: THREE.Texture, fft: OceanFFT ) {
+	constructor( renderer: THREE.WebGPURenderer, data: WorldData, shared: Shared, shore: THREE.Texture | THREE.TextureNode, fft: OceanFFT ) {
 
 		this.renderer = renderer;
 		this.data = data;
 		this.setDirection( fft );
-		this.boundary = texture( createShoreBoundaryField( data ) );
-		this.shelter = texture( createShoreShelterField( data, this.direction.value ) );
+		this.boundary = texture( fieldTexture( shoreBoundaryPixels( data.shore ), 'shoreWaveBoundary' ) );
+		this.shelter = texture( shelterTexture( shoreShelterPixels( data.shore, this.direction.value ) ) );
 		this.revision = fft.spectrumRevision;
 		const toUV = ( p: V2 ) => p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
 		const coastDamp = Fn( ( [ sd ]: [ F ] ) => mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) ) )
@@ -98,7 +127,6 @@ export class ShoreWaves {
 			return surface;
 
 		} )();
-		this.incidentAt = p => incidence( p );
 		// `at` passes the shore distance and boundary already read at p's texel, so the centre
 		// sample does not read them a second time.
 		const reflectionHeight = ( p: V2, at?: { q: V2; sd: F; boundary: THREE.Node<'vec4'> } ) => Fn( () => {
@@ -129,75 +157,52 @@ export class ShoreWaves {
 			return height;
 
 		} )();
-		// The surface pass takes ( reflected height, flow, impact ), the motion pass ( flow, impact,
-		// incident height ): each from the reads and the incident waves this pass already made.
-		const evaluate = ( p: V2, motion: boolean ) => Fn( () => {
+		// Every channel is zero away from the rock: the reflection fades out by 3.5 m from it (its
+		// slopes read 0.12 m to either side) and the contact energy by 1.4 m. Only that strip
+		// evaluates the waves, so the pass costs by the coast's length rather than the field's area,
+		// which grows with the land.
+		const e = 0.12;
+		const surface = ( p: V2 ) => Fn( () => {
 
 			const q = toUV( p ).toVar(), edge = min( q.div( shared.shoreXform.zw ), vec2( 1 ).sub( q ).div( shared.shoreXform.zw ) );
-			const boundary = this.boundary.sample( q ).level( float( 0 ) ).toVar();
 			const sd = texture( shore, q ).level( float( 0 ) ).r.toVar();
-			const normal = boundary.ba.div( max( length( boundary.ba ), 1e-5 ) );
-			const incident = incidence( p ).toVar();
-			const flow = incident.yz.toVar(), impact = float( 0 ).toVar();
-			If( sd.greaterThan( 0 ).and( sd.lessThan( 3.5 ) ), () => {
+			const out = vec4( 0 ).toVar();
+			If( sd.greaterThan( - 1 ).and( sd.lessThan( 3.75 ) ), () => {
 
-				const reflected = incidence( p.sub( normal.mul( sd.mul( 2 ) ) ) ).toVar();
-				const response = boundary.g.mul( this.reflection ).mul( exp( sd.mul( - 0.8 ) ) )
-					.mul( float( 1 ).sub( smoothstep( 2, 3.5, sd ) ) );
-				const reflectedVelocity = reflected.yz.sub( normal.mul( dot( reflected.yz, normal ).mul( 2 ) ) );
-				flow.addAssign( reflectedVelocity.mul( response ) );
-				If( sd.lessThan( 1.4 ), () => {
+				const boundary = this.boundary.sample( q ).level( float( 0 ) ).toVar();
+				const normal = boundary.ba.div( max( length( boundary.ba ), 1e-5 ) );
+				const impact = float( 0 ).toVar();
+				If( sd.greaterThan( 0 ).and( sd.lessThan( 1.4 ) ), () => {
 
 					const contactP = p.sub( normal.mul( sd ) ).add( normal.mul( 0.16 ) );
 					const contact = incidence( contactP ).toVar();
-					// Compute contact before enforcing no flow into rock; projecting first erases impact.
 					const contactExposure = this.shelter.sample( toUV( contactP ) ).level( float( 0 ) ).r;
 					impact.assign( contactEnergy( contact.x, contact.yz, normal, sd, boundary.g, contactExposure ) );
 
 				} );
+				const inWater = sd.greaterThan( 0 ).and( min( edge.x, edge.y ).greaterThan( 1 ) );
+				const dx = reflectionHeight( p.add( vec2( e, 0 ) ) ).sub( reflectionHeight( p.sub( vec2( e, 0 ) ) ) ).div( 2 * e );
+				const dz = reflectionHeight( p.add( vec2( 0, e ) ) ).sub( reflectionHeight( p.sub( vec2( 0, e ) ) ) ).div( 2 * e );
+				out.assign( vec4( reflectionHeight( p, { q, sd, boundary } ), dx, dz, select( inWater, impact, float( 0 ) ) ) );
 
 			} );
-			const coast = float( 1 ).sub( smoothstep( 0.12, 0.7, sd ) );
-			flow.subAssign( normal.mul( dot( flow, normal ).min( 0 ) ).mul( coast ) );
-			const inWater = sd.greaterThan( 0 ).and( min( edge.x, edge.y ).greaterThan( 1 ) );
-			if ( motion ) return vec4( select( inWater, flow, vec2( 0 ) ), select( inWater, impact, float( 0 ) ), incident.x );
-			return vec4( reflectionHeight( p, { q, sd, boundary } ), select( inWater, flow, vec2( 0 ) ), select( inWater, impact, float( 0 ) ) );
+			return out;
 
 		} )();
-		const e = 0.12;
-		this.sample = ( p, _time ) => {
-
-			const centre = evaluate( p, false ).toVar();
-			const dx = reflectionHeight( p.add( vec2( e, 0 ) ) ).sub( reflectionHeight( p.sub( vec2( e, 0 ) ) ) ).div( 2 * e );
-			const dz = reflectionHeight( p.add( vec2( 0, e ) ) ).sub( reflectionHeight( p.sub( vec2( 0, e ) ) ) ).div( 2 * e );
-			return vec4( centre.x, dx, dz, centre.w );
-
-		};
+		const [ width, height ] = surfaceSize( data );
 		const field = ( name: string ) => {
 
-			const target = new THREE.RenderTarget( 512, 512, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false } );
+			const target = new THREE.RenderTarget( width, height, { type: THREE.HalfFloatType, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter, depthBuffer: false, generateMipmaps: false } );
 			target.texture.name = name;
 			return target;
 
 		};
-		this.targets = [ 'rockWaveSurface', 'rockWaveMotion' ].map( field );
-		this.surfaces = TEMPORAL ? [ this.targets[ 0 ], field( 'rockWaveSurfacePrevious' ) ] : [ this.targets[ 0 ] ];
+		this.surfaces = TEMPORAL ? [ field( 'rockWaveSurface' ), field( 'rockWaveSurfacePrevious' ) ] : [ field( 'rockWaveSurface' ) ];
 		this.texture = texture( this.surfaces[ 0 ].texture );
 		this.previous = texture( this.surfaces[ this.surfaces.length - 1 ].texture );
-		this.motion = texture( this.targets[ 1 ].texture );
-		this.quads = this.targets.map( ( _, i ) => {
-
-			const material = new THREE.NodeMaterial();
-			material.fragmentNode = Fn( () => {
-
-				const p = uv().div( shared.shoreXform.zw ).add( shared.shoreXform.xy );
-				if ( i === 0 ) return this.sample( p, float( 0 ) );
-				return evaluate( p, true );
-
-			} )();
-			return new THREE.QuadMesh( material );
-
-		} );
+		const material = new THREE.NodeMaterial();
+		material.fragmentNode = Fn( () => surface( uv().div( shared.shoreXform.zw ).add( shared.shoreXform.xy ) ) )();
+		this.quad = new THREE.QuadMesh( material );
 		this.surfaceAt = ( p, _time ) => this.texture.sample( toUV( p ) ).level( float( 0 ) );
 		this.previousSurfaceAt = ( p ) => this.previous.sample( toUV( p ) ).level( float( 0 ) );
 
@@ -212,7 +217,7 @@ export class ShoreWaves {
 			if ( ! previous.equals( this.direction.value ) ) {
 
 				const old = this.shelter.value;
-				this.shelter.value = createShoreShelterField( this.data, this.direction.value );
+				this.shelter.value = shelterTexture( shoreShelterPixels( this.data.shore, this.direction.value ) );
 				old.dispose();
 
 			}
@@ -234,16 +239,57 @@ export class ShoreWaves {
 			this.previous.value = this.surfaces[ 1 ].texture;
 
 		}
-		for ( let i = 0; i < this.targets.length; i ++ ) {
-
-			this.renderer.setRenderTarget( i === 0 ? this.surfaces[ 0 ] : this.targets[ i ] );
-			this.quads[ i ].render( this.renderer );
-
-		}
+		this.renderer.setRenderTarget( this.surfaces[ 0 ] );
+		this.quad.render( this.renderer );
 		this.renderer.setRenderTarget( previousTarget );
 		this.lastTime = time;
 		this.lastReflection = this.reflection.value;
 		this.lastWeatherGain.copy( fft.weatherGain.value );
+
+	}
+
+	/** The wave fields of a grown island's shore field, built in a worker from `shore` (a copy of
+	 * `data.shore.data`, transferred to it); their textures are not uploaded yet. */
+	fieldsFor( data: WorldData, shore: Float32Array ): Promise<ShoreFields> {
+
+		const worker = new Worker( new URL( './shoreFieldWorker.ts', import.meta.url ), { type: 'module' } );
+		const direction = this.direction.value.clone();
+		return new Promise<ShoreFields>( ( resolve, reject ) => {
+
+			worker.onmessage = ( e: MessageEvent<ShoreFieldReply> ) => {
+
+				worker.terminate();
+				resolve( { data, boundary: fieldTexture( e.data.boundary, 'shoreWaveBoundary' ), shelter: shelterTexture( e.data.shelter ), direction } );
+
+			};
+			worker.onerror = ( e ) => { worker.terminate(); reject( e ); };
+			worker.postMessage( { shore: { ...data.shore, data: shore }, direction: { x: direction.x, y: direction.y } } satisfies ShoreFieldJob, { transfer: [ shore.buffer ] } );
+
+		} );
+
+	}
+
+	/** Takes a grown island's wave fields (`fieldsFor`): their textures on the nodes, the surface
+	 * targets sized to its shore field, the surface baked again on the next update. Returns the
+	 * textures replaced, to dispose of once no frame draws with them. (A swell that turned since
+	 * `fieldsFor` has its shelter field made here, as a turn makes it on the main thread.) */
+	setFields( fields: ShoreFields ): THREE.Texture[] {
+
+		const old = [ this.boundary.value, this.shelter.value ];
+		this.data = fields.data;
+		this.boundary.value = fields.boundary;
+		if ( fields.direction.equals( this.direction.value ) ) this.shelter.value = fields.shelter;
+		else {
+
+			fields.shelter.dispose();
+			this.shelter.value = shelterTexture( shoreShelterPixels( fields.data.shore, this.direction.value ) );
+
+		}
+		const [ width, height ] = surfaceSize( fields.data );
+		for ( const target of this.surfaces ) if ( target.width !== width || target.height !== height ) target.setSize( width, height );
+		this.fieldRevision ++;
+		this.lastTime = undefined;
+		return old;
 
 	}
 
@@ -253,5 +299,12 @@ export class ShoreWaves {
 		this.direction.value.set( - Math.cos( angle ), - Math.sin( angle ) );
 
 	}
+
+}
+
+// The reflected surface's targets for a shore field: TEXEL over its extent.
+function surfaceSize( data: WorldData ): [ number, number ] {
+
+	return [ Math.ceil( data.shore.nx * data.shore.cell / TEXEL ), Math.ceil( data.shore.nz * data.shore.cell / TEXEL ) ];
 
 }

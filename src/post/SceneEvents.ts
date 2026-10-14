@@ -58,6 +58,11 @@ export const SCENE_EVENTS = {
 	'game speed': false,
 	'game order': false,
 	'game input': false,
+	// the island grew (World growth, Growth.ts): new land where the sea was, the rest unchanged; the
+	// resolve's clip takes the new surfaces as it takes a placed prop
+	'world swap': false,
+	// the shoal under the next piece written anew (SeabedRise.ts): the floor moves in place
+	'approach': false,
 	// `__PONLAI__.taa.restart()`
 	'restart': true,
 } as const satisfies Record<string, boolean>;

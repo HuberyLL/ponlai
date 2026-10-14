@@ -1,4 +1,6 @@
-// Data shared between the world worker and the main thread.
+// Data shared between the world's workers (chunkWorker.ts) and the main thread.
+
+import type { CasterColumns, GroundGrid, SubmergedSubset } from './ChunkDerived.ts';
 
 // a signed distance function (m), optionally with per-point values baked onto the mesh: one
 // float (`tint`), four more (`detail`, written to out[ o .. o + 3 ]) and three more (`detail2`)
@@ -23,17 +25,9 @@ export interface MeshData {
 	indices: Uint32Array;
 }
 
-export type MeshKind = 'cliff' | 'rock';
-
-export interface NamedMesh extends MeshData { name: string; kind: MeshKind }
-
 export interface Rock { x: number; z: number; s: number; sy: number; y: number; floor: number; rot: number; seed: number }
 
 export interface ShoreField { data: Float32Array; nx: number; nz: number; x0: number; z0: number; cell: number }
-
-// The seabed grid's warp, dense around the island and sparse toward the horizon: vertex i of
-// res + 1 lies at sign( u ) * |u|^SEABED_WARP * size / 2, where u = i / res * 2 - 1.
-export const SEABED_WARP = 1.9;
 
 export const VEGETATION_STRIDE = 9;
 // The turf anchors' jittered grid (m): one anchor per this square of meadow.
@@ -42,42 +36,81 @@ export const VEGETATION_SPACING = 0.235;
 // RGBA: actual upper-coast distance, local roof height, turf retreat and exposed root depth.
 export interface RimGroundField extends ShoreField {}
 
+// RG: the sea floor's seagrass cover and pale-sand share (Bathymetry's seabedBeds).
+export interface SeabedBedField extends ShoreField {}
+
 // A top-rooted branch centreline: x, y, z and the outward surface normal per node. `lip` is the
 // node where it crosses the edge. A fork starts on node `from` of strand `parent` (an index into
-// the same list) instead of in the turf. `clump`: leaf anchors ( x, y, z, normal ) of the leafy
-// mound over the lip at the root of a patch, carried by the patch's first strand.
-export interface RimStrand { points: Float32Array; seed: number; lip: number; parent?: number; from?: number; clump?: Float32Array }
+// the same list) instead of in the turf, and takes its parent's leaves. `clump`: leaf anchors
+// ( x, y, z, normal ) of the leafy mound over the lip at the root of a patch, carried by the
+// patch's first strand. `leaf` (a strand rooted in the turf): its leaves' colour ( r, g, b ) and
+// scale, from the nearest rim bush within 3 m, and that bush's distance (Infinity: none).
+// `anchor` (a strand rooted in the turf): the anchor cell ( i, j ) of the lip its patch grows at,
+// which names the patch even where the cliff left it no leaf mound.
+export interface RimStrand {
+	points: Float32Array; seed: number; lip: number; parent?: number; from?: number; clump?: Float32Array;
+	leaf?: [ number, number, number, number, number ]; anchor?: [ number, number ];
+}
 
-// The turf skirt over the rim: SKIRT_RING cross-section points ( x, y, z ) per coast sample,
-// per sample ( outward x, z, presence, droop ), and ( first sample, count ) per traced loop.
-export interface RimSkirtData { points: Float32Array; info: Float32Array; loops: Int32Array }
+// The turf skirt over the rim: SKIRT_RING cross-section points ( x, y, z ) per coast sample and
+// their normals, per sample its place on the coast ( x, z ), the outward direction ( x, z ),
+// presence and droop (SKIRT_INFO), and ( first sample, count ) per piece: a stretch of the coast
+// inside one box, between the points where it crosses the box's border (or a whole loop).
+export interface RimSkirtData { points: Float32Array; normals: Float32Array; info: Float32Array; pieces: Int32Array }
 
+// A land chunk's part of the island's surface (Chunks.ts: its owned quads, in world space) and what
+// its job derived from it for the page (ChunkDerived.ts): the sun's caster columns, the camera's
+// ground grid and the triangles the refracted sun's map draws.
+export interface IslandChunk {
+	ci: number; cj: number;
+	mesh: MeshData;
+	columns: CasterColumns;
+	ground: GroundGrid;
+	refracted: SubmergedSubset;
+}
+
+// One land version's world, merged from its chunks (ChunkMerge.ts).
 export interface WorldData {
-	meshes: NamedMesh[];
+	// the grown land (LandLattice.toBytes)
+	land: Uint8Array;
+	// ci, cj per chunk (Chunks.ts), in the merge's order: rows ( cj, then ci )
+	chunks: Int32Array;
+	// The island's surface, a part per land chunk (with at least one triangle), in that order.
+	islands: IslandChunk[];
+	// The stones (their meshes concatenated in that order) and their placements.
+	stones: MeshData;
 	rocks: Rock[];
-	// bed: seagrass cover and pale-sand share per vertex (see seabedBeds)
-	seabed: { positions: Float32Array; ao: Float32Array; bed: Float32Array; res: number; size: number };
+	// The sea floor as one mesh: its near tiles, then the far floor (SeabedTile.ts). ao: contact
+	// visibility of the island and stones; bed: seagrass cover and pale-sand share (seabedBeds).
+	seabed: { positions: Float32Array; normals: Float32Array; ao: Float32Array; bed: Float32Array; indices: Uint32Array };
+	// The triangles of the stones and the sea floor the refracted sun's map draws at `level`
+	// (ChunkDerived.ts `submergedIndex`; null: all), the chunks' subsets joined.
+	refracted: { level: number; stones: Uint32Array | null; seabed: Uint32Array | null };
 	// Turf anchors: x, y, z, normal x, y, z, rim distance (m, < 0 inside), kind
 	// (0 island), local sky visibility. Placement still uses the first eight.
 	vegetation: Float32Array;
-	// Sparse trails that start in top shrubs and overhang the upper cliff.
+	// The rim bushes (FoliageSites' BUSH_STRIDE floats each).
+	bushes: Float32Array;
+	// Sparse trails that start in the meadow at the rim and overhang the upper cliff.
 	rimStrands: RimStrand[];
 	rimGround: RimGroundField;
 	rimSkirt: RimSkirtData;
+	// The sea-level section's signed distance (m, clamped to +-LAND_REACH) over the land's box and
+	// 32 m round it, out to the world's 32 m grid (ChunkMerge.ts fieldBounds).
 	shore: ShoreField;
-	// Half-resolution island distance field for the local breaking-surf pass.
-	islandShore: ShoreField;
-	// The seabed's height (m) over the shoreline field's bounds, at half its resolution.
+	// The rendered floor's height (m) over the shoreline field's bounds, at half its resolution.
 	seabedField: ShoreField;
+	// The floor's beds over the same bounds at 0.5 m.
+	seabedBeds: SeabedBedField;
+	// The islander's walking loop (WalkLoop.ts): x, z per waypoint.
+	walk: Float64Array;
 	timings: Record<string, number>;
 }
 
 export interface WorldOptions {
-	islandVoxel?: number;
-	seabedRes?: number;
-	seabedSize?: number;
-	shoreSize?: number;
-	shoreCell?: number;
+	// the land: the world's seed and the growth steps taken (IslandGrowth.ts's growLand)
+	worldSeed?: number;
+	step?: number;
 	// Disable only the cross-object contact bake for CPU comparison; geometry stays identical.
 	contactOcclusion?: boolean;
 }

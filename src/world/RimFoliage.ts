@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, materialColor, uv, vec3, vec4, float, mix, sin, cos, dot, pow, clamp, max } from 'three/tsl';
 import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
+import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
 import { leafTexture, leafAlphaTexture, LEAF_ALPHA_TEST, ALPHA_TO_COVERAGE, LEAF_STEM, leafCastMask, markVegetation, useLeafCoverage } from './Foliage.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
@@ -26,25 +27,6 @@ function strandNodes( strand: RimStrand ): StrandNode[] {
 
 	}
 	return nodes;
-
-}
-
-function closestBush( root: THREE.Vector3, foliage: THREE.InstancedMesh | undefined, fallback: THREE.Color ): { color: THREE.Color; scale: number; distance: number } {
-
-	const color = fallback.clone();
-	if ( ! foliage?.instanceColor ) return { color, scale: 0.75, distance: Infinity };
-	const matrix = new THREE.Matrix4(), position = new THREE.Vector3(), scale = new THREE.Vector3();
-	let closest = Infinity, index = - 1, leafScale = 0.75;
-	for ( let i = 0; i < foliage.count; i ++ ) {
-
-		foliage.getMatrixAt( i, matrix );
-		position.setFromMatrixPosition( matrix );
-		const distance = position.distanceToSquared( root );
-		if ( distance < closest ) { closest = distance; index = i; scale.setFromMatrixScale( matrix ); leafScale = Math.sqrt( scale.x * scale.z ); }
-
-	}
-	if ( index >= 0 ) foliage.getColorAt( index, color );
-	return { color, scale: index >= 0 ? leafScale : 0.75, distance: Math.sqrt( closest ) };
 
 }
 
@@ -132,10 +114,68 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 
 	const group = new THREE.Group();
 	group.name = 'rimFoliage';
-	const P: number[] = [], U: number[] = [], C: number[] = [], E: number[] = [], W: number[] = [], F: number[] = [], S: number[] = [], I: number[] = [];
-	const O: number[] = []; // the wall's outward normal where the vertex hangs, for the wind
+	const steps = rimFoliageSteps( strands );
+	let next = steps.next();
+	while ( ! next.done ) next = steps.next();
+	const built = next.value;
+	group.userData = built.counts;
+	if ( ! built.geometry ) return group;
+	const mesh = new THREE.Mesh( built.geometry, rimMaterial( shared, foliage ) );
+	keepLegacyWind( mesh, rimMaterial( shared, foliage, true ) );
+	mesh.name = 'rimFoliageLeaves';
+	mesh.castShadow = true;
+	mesh.receiveShadow = true;
+	mesh.renderOrder = - 1;
+	group.add( mesh );
+	return group;
+
+}
+
+/** The trails' geometry (null: no strand drew), and their counts (strands, leaves, sprays, root
+ * clusters, clumps). */
+export interface RimFoliageBuilt { geometry: THREE.BufferGeometry | null; counts: Record<string, number> }
+
+/** Swaps the trails of `group` (buildRimFoliage) to `built` in place, the depth prepass's copy with
+ * them. Returns the geometry replaced, to dispose of once nothing draws it (null: none). */
+export function setRimFoliage( group: THREE.Group, built: RimFoliageBuilt ): THREE.BufferGeometry | null {
+
+	group.userData = built.counts;
+	const mesh = group.children[ 0 ] as THREE.Mesh | undefined;
+	if ( ! mesh ) {
+
+		if ( built.geometry ) console.warn( 'The rim trails had no mesh on the first land: a grown island\'s trails are not drawn (RimFoliage.ts)' );
+		return null;
+
+	}
+	const old = mesh.geometry;
+	const geometry = built.geometry ?? emptyGeometry( old );
+	mesh.geometry = geometry;
+	for ( const child of mesh.children ) if ( ( child as THREE.Mesh ).geometry === old ) ( child as THREE.Mesh ).geometry = geometry;
+	mesh.visible = built.geometry !== null;
+	return old;
+
+}
+
+// A geometry with the attributes of `like` and nothing to draw.
+function emptyGeometry( like: THREE.BufferGeometry ): THREE.BufferGeometry {
+
+	const geometry = new THREE.BufferGeometry();
+	for ( const [ name, attribute ] of Object.entries( like.attributes ) ) geometry.setAttribute( name, new THREE.BufferAttribute( new Float32Array( attribute.itemSize ), attribute.itemSize ) );
+	geometry.setIndex( [] );
+	return geometry;
+
+}
+
+/** The trails' geometry in steps (a generator, `per` strands a step, then its arrays and normals in
+ * parts), so the growth (Growth.ts) builds a grown island's in idle time; `buildRimFoliage` runs it
+ * to the end. The result is the same however it is stepped. */
+export function* rimFoliageSteps( strands: RimStrand[], per = Infinity ): Generator<void, RimFoliageBuilt> {
+
+	// each drawn strand's first vertex and index (its vertices and triangles are its own)
+	const blocks: number[] = [];
+	const P = new Growing(), U = new Growing(), C = new Growing(), E = new Growing(), W = new Growing(), F = new Growing(), S = new Growing(), I = new Growing();
+	const O = new Growing(); // the wall's outward normal where the vertex hangs, for the wind
 	const up = new THREE.Vector3( 0, 1, 0 );
-	const palette = [ [ 0.065, 0.16, 0.04 ], [ 0.095, 0.19, 0.048 ], [ 0.15, 0.205, 0.046 ], [ 0.04, 0.12, 0.043 ], [ 0.18, 0.22, 0.058 ] ];
 	const point = new THREE.Vector3(), outward = new THREE.Vector3(), tangent = new THREE.Vector3(), lateral = new THREE.Vector3();
 	const normal = new THREE.Vector3(), along = new THREE.Vector3(), width = new THREE.Vector3(), vertex = new THREE.Vector3(), radial = new THREE.Vector3();
 	let leafCount = 0, strandCount = 0, sprayCount = 0, rootClusterCount = 0, clumpCount = 0;
@@ -152,6 +192,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 	};
 	for ( let index = 0; index < strands.length; index ++ ) {
 
+		if ( index > 0 && index % per === 0 ) yield;
 		const strand = strands[ index ];
 		const nodes = strandNodes( strand );
 		if ( nodes.length < 2 || nodes[ nodes.length - 1 ].distance < 0.08 ) continue;
@@ -162,8 +203,9 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 		const length = nodes[ nodes.length - 1 ].distance;
 		// A fork moves with its parent: same phase, and its sway starts from the parent's at the joint.
 		const ownPhase = rng() * Math.PI * 2, phase = parent ? parent.phase : ownPhase;
-		const ownBush = closestBush( nodes[ 0 ].point, foliage, new THREE.Color( ...palette[ Math.floor( rng() * palette.length ) ] as [ number, number, number ] ) );
-		const bush = parent ? { color: parent.color, scale: parent.scale, distance: 0 } : ownBush;
+		// the leaves of the bush the worker found beside the root (RimTrails' `leaf`)
+		const [ r, g, b, scale, distance ] = strand.leaf ?? [ 0, 0, 0, 0.75, Infinity ];
+		const bush = parent ? { color: parent.color, scale: parent.scale, distance: 0 } : { color: new THREE.Color( r, g, b ), scale, distance };
 		const stemColor = new THREE.Color( 0.08, 0.057, 0.022 );
 		const w0 = parent ? parent.weights[ from ] : 0, p0 = parent ? parent.progress[ from ] : 0;
 		const sway = ( t: number ) => w0 + ( 1 - w0 ) * t * t * smoothstep( 0, 0.18, t );
@@ -268,13 +310,14 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 				direction.addScaledVector( surface, - direction.dot( surface ) ).normalize();
 				if ( direction.lengthSq() < 0.5 ) direction.set( 1, 0, 0 );
 				leaf( anchor, direction, surface, 0, i % 12 ? 1 : - 1, 0.12 + rng() * 0.1, 0.95 + rng() * 0.25 );
+				if ( i % ( 6 * 64 ) === 6 * 63 ) yield;
 
 			}
 			clumpCount ++;
 
 		}
-		// Meadow-rooted trails borrow the nearest shrub's palette. A few low folded leaves on
-		// the existing root stem conceal an exposed attachment without adding a separate bush.
+		// Meadow-rooted trails borrow the nearest bush's palette. A few low folded leaves on the
+		// existing root stem conceal an exposed attachment where no bush stands close.
 		if ( ! fork && bush.distance > Math.max( 0.30, bush.scale * 0.88 ) ) {
 
 			const leaves = 3 + Math.floor( rng() * 3 );
@@ -299,6 +342,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 
 			for ( let pair = 0; pair < pairs; pair ++ ) {
 
+				if ( pair % 16 === 15 ) yield;
 				const t = begin + ( end - begin ) * ( pair + 0.22 + rng() * 0.65 ) / ( pairs + 0.25 );
 				const hangingProgress = Math.max( 0, ( t - lipT ) / Math.max( 0.001, 1 - lipT ) );
 				for ( const side of [ - 1, 1 ] ) {
@@ -362,36 +406,59 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage?:
 
 		}
 		strandCount ++;
+		blocks.push( stemStart, I.length );
 
 	}
-	group.userData = { strands: strandCount, leaves: leafCount, sprays: sprayCount, rootClusters: rootClusterCount, clumps: clumpCount };
-	if ( ! P.length ) return group;
+	const counts = { strands: strandCount, leaves: leafCount, sprays: sprayCount, rootClusters: rootClusterCount, clumps: clumpCount };
+	if ( ! P.length ) return { geometry: null, counts };
 	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( P, 3 ) );
-	geometry.setAttribute( 'uv', new THREE.Float32BufferAttribute( U, 2 ) );
-	geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( C, 3 ) );
-	geometry.setAttribute( 'rimSway', new THREE.Float32BufferAttribute( W, 1 ) );
-	geometry.setAttribute( 'rimPhase', new THREE.Float32BufferAttribute( F, 1 ) );
-	geometry.setAttribute( LEAF_STEM, new THREE.Float32BufferAttribute( S, 1 ) );
-	geometry.setAttribute( 'rimOut', new THREE.Float32BufferAttribute( O, 3 ) );
-	geometry.setIndex( I );
-	geometry.computeVertexNormals();
-	const normals = geometry.getAttribute( 'normal' );
-	for ( let i = 0; i < normals.count; i ++ ) {
+	geometry.setAttribute( 'position', new THREE.BufferAttribute( yield* float32Steps( P ), 3 ) );
+	geometry.setAttribute( 'uv', new THREE.BufferAttribute( yield* float32Steps( U ), 2 ) );
+	geometry.setAttribute( 'color', new THREE.BufferAttribute( yield* float32Steps( C ), 3 ) );
+	geometry.setAttribute( 'rimSway', new THREE.BufferAttribute( yield* float32Steps( W ), 1 ) );
+	geometry.setAttribute( 'rimPhase', new THREE.BufferAttribute( yield* float32Steps( F ), 1 ) );
+	geometry.setAttribute( LEAF_STEM, new THREE.BufferAttribute( yield* float32Steps( S ), 1 ) );
+	geometry.setAttribute( 'rimOut', new THREE.BufferAttribute( yield* float32Steps( O ), 3 ) );
+	geometry.setIndex( yield* indexSteps( I ) );
+	// The normals as three's computeVertexNormals makes them (each triangle's cross product added to
+	// its corners in index order, then normalised), a block of strands at a time: no vertex is shared
+	// between strands, so each vertex sums the same triangles in the same order. Then each leans a
+	// little toward the wall's outward normal.
+	const position = geometry.getAttribute( 'position' ).array as Float32Array, index = geometry.getIndex()!.array;
+	const n = new Float32Array( position.length );
+	geometry.setAttribute( 'normal', new THREE.BufferAttribute( n, 3 ) );
+	const STEP = 4;
+	for ( let b = 0; b < blocks.length; b += 2 * STEP ) {
 
-		normal.fromBufferAttribute( normals, i ).multiplyScalar( 0.82 ).addScaledVector( outward.fromArray( E, i * 3 ), 0.18 ).normalize();
-		normals.setXYZ( i, normal.x, normal.y, normal.z );
+		const v0 = blocks[ b ], i0 = b === 0 ? 0 : blocks[ b - 1 ];
+		const last = Math.min( b + 2 * STEP, blocks.length ), v1 = last < blocks.length ? blocks[ last ] : position.length / 3, i1 = blocks[ last - 1 ];
+		for ( let t = i0; t < i1; t += 3 ) {
+
+			const a = index[ t ], bb = index[ t + 1 ], c = index[ t + 2 ];
+			const ax = position[ a * 3 ], ay = position[ a * 3 + 1 ], az = position[ a * 3 + 2 ];
+			const bx = position[ bb * 3 ], by = position[ bb * 3 + 1 ], bz = position[ bb * 3 + 2 ];
+			const cx = position[ c * 3 ] - bx, cy = position[ c * 3 + 1 ] - by, cz = position[ c * 3 + 2 ] - bz;
+			const ex = ax - bx, ey = ay - by, ez = az - bz;
+			const x = cy * ez - cz * ey, y = cz * ex - cx * ez, z = cx * ey - cy * ex;
+			// (all three corners read before any is written, as three does)
+			const na = [ n[ a * 3 ] + x, n[ a * 3 + 1 ] + y, n[ a * 3 + 2 ] + z ], nb = [ n[ bb * 3 ] + x, n[ bb * 3 + 1 ] + y, n[ bb * 3 + 2 ] + z ];
+			const nc = [ n[ c * 3 ] + x, n[ c * 3 + 1 ] + y, n[ c * 3 + 2 ] + z ];
+			n.set( na, a * 3 ); n.set( nb, bb * 3 ); n.set( nc, c * 3 );
+
+		}
+		for ( let v = v0; v < v1; v ++ ) {
+
+			const x = n[ v * 3 ], y = n[ v * 3 + 1 ], z = n[ v * 3 + 2 ], scale = 1 / ( Math.sqrt( x * x + y * y + z * z ) || 1 );
+			n[ v * 3 ] = x * scale; n[ v * 3 + 1 ] = y * scale; n[ v * 3 + 2 ] = z * scale;
+			normal.set( n[ v * 3 ], n[ v * 3 + 1 ], n[ v * 3 + 2 ] ).multiplyScalar( 0.82 ).addScaledVector( outward.set( E.get( v * 3 ), E.get( v * 3 + 1 ), E.get( v * 3 + 2 ) ), 0.18 ).normalize();
+			n[ v * 3 ] = normal.x; n[ v * 3 + 1 ] = normal.y; n[ v * 3 + 2 ] = normal.z;
+
+		}
+		yield;
 
 	}
-	geometry.computeBoundingSphere();
+	yield* boundsSteps( geometry );
 	geometry.boundingSphere!.radius += 0.15; // the trails' sway in a gale
-	const mesh = new THREE.Mesh( geometry, rimMaterial( shared, foliage ) );
-	keepLegacyWind( mesh, rimMaterial( shared, foliage, true ) );
-	mesh.name = 'rimFoliageLeaves';
-	mesh.castShadow = true;
-	mesh.receiveShadow = true;
-	mesh.renderOrder = - 1;
-	group.add( mesh );
-	return group;
+	return { geometry, counts };
 
 }

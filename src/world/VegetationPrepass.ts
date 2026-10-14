@@ -5,7 +5,7 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 import { legacyWind, windVariants } from './WindVariants.ts';
 
-// A depth prepass for the alpha-to-coverage vegetation (grass, bushes, plants, rim leaves).
+// A depth prepass for the alpha-to-coverage vegetation (grass, bushes, rim leaves).
 //
 // Profiling at 4x MSAA showed that nearly all of the vegetation's cost is its fragment shading:
 // the same draws with a flat shader were 4.4 ms (render scale 1) to 5.9 ms (1.5) cheaper over the
@@ -156,6 +156,8 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 
 		} else depth = new THREE.Mesh( mesh.geometry, depths[ 0 ] );
 		depth.name = mesh.name + '-depth';
+		// (the rain's collision bake, RainCollision.ts, leaves the copies out: they print the same shape)
+		depth.userData.prepassCopy = true;
 		depth.frustumCulled = mesh.frustumCulled;
 		depth.castShadow = false;
 		depth.receiveShadow = false;

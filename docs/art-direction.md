@@ -37,8 +37,10 @@ art decision changes; reference images stay out of the repository.
 
 ## The island
 
-- Keep the island tile layout and a flat central plateau. Natural contour, slope and weathering
-  variation belong to the outer rim and cliffs.
+- The island grows one piece of land at a time from a starting island at the world's centre
+  (docs/game-design.md, "How the island grows"): its coast always irregular and natural, never
+  drifting toward a square or a circle. Keep a flat central plateau. Natural contour, slope and
+  weathering variation belong to the outer rim and cliffs.
 - Offshore stones stay submerged and form patchy seabed detail: no exposed sea stacks or reefs;
   nothing breaks the surface off the island.
 - The cliffs read as natural rock, never masonry: no level courses or evenly spaced joints, no
@@ -47,18 +49,19 @@ art decision changes; reference images stay out of the repository.
   or a pair of eyes in the shade. Under the meadow the wall weathers back to an upper slope rather
   than jutting as a slab. No ledge follows the waterline. No waterfalls. Moss and greenery on the
   wall stay in its upper 1.2 m; the lower cliff stays bare stone.
-- Plants and meadow cover are rooted on the island top, never on cliff faces. Branches hang from
-  the top's shrubs and meadow around the upper rim in clumped patches with runs of bare stone
-  between, of uneven density and mixed lengths, under a mounded leaf clump at the lip; the lowest
-  quarter of the cliff above the sea stays bare. The meadow's sod curls a little over the lip as a
-  ragged turf skirt.
+- Plants and meadow cover are rooted on the island top, never on cliff faces. Branches root in the
+  meadow at the rim and hang over it in clumped patches with runs of bare stone between (only a
+  notch whose walls hold no lip runs bare longer), of uneven density and mixed lengths, under a
+  mounded leaf clump at the lip; the lowest quarter of the cliff above the sea stays bare. The
+  meadow's sod curls a little over the lip as a ragged turf skirt.
 - The meadow is a sward: dense lawn tufts of narrow blades and taller tussocks in clumps. Toward the
   coast the tufts grow taller and lean out over the lip instead of thinning, and the lip alternates
   between overgrown stretches and cut-open root soil.
 - Wildflowers are plants (daisy, umbel, spike, cup) with leaf rosettes, their heads just above the
   sward, in beds of a few of one kind gathered in drifts, not coloured stars on the lawn.
-- Shrubs (up to about head height) and small trees (2.5 - 3.5 m) grow on the plateau in loose
-  groups and stand in the meadow rather than on it.
+- The terrain plants only the meadow (grass, wildflowers), the rim bushes and the rim's hanging
+  growth. Plants that matter to play (coconut palms) are content placed in the world, not
+  terrain.
 - All vegetation moves in one wind: gusts visibly sweep the meadow and change as they go; still air
   is the rest pose.
 

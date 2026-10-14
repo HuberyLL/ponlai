@@ -13,7 +13,7 @@ import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld, positionPrevious,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
-	sin, abs, sign, floor, fract, fwidth, reflect, select, dFdx, dFdy,
+	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
 } from 'three/tsl';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
 import type { Sky } from '../sky/Sky.ts';
@@ -30,10 +30,9 @@ import { RefractedSun, refractedSunDirectionNode, refractedSunBeamScaleNode } fr
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance } from './WaterTransport.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
-import { ISLAND_TOP, layoutBounds } from '../world/WorldShapes.ts';
-import { TREE_HEIGHT } from '../world/PlantSites.ts';
+import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { SEABED_WARP } from '../world/types.ts';
+import { OPEN_SEAGRASS_MEAN } from '../world/Bathymetry.ts';
 import { seabedAlbedo } from '../materials/SeabedLook.ts';
 import { motionNode, motionState, motionUniforms, outputStruct, reactiveUniforms } from '../post/Motion.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
@@ -65,8 +64,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   temporal modes (Motion.ts's previous clip position). The sea's own motion must reach that
 //   varying through the water's previous position, not add another.
 // - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
-//   built off the island or above the trees (a boat, a hut, a mast) must grow that box, or the sea
-//   will not reflect it.
+//   placed off the island or above 3 m (REFLECTOR_HEIGHT; a palm, a boat, a hut, a mast) must grow
+//   that box, or the sea will not reflect it.
 //
 // Motion vectors (the temporal modes, Motion.ts): the sea writes its velocity with its colour (class
 // water). Each vertex is moved back to where it was a step of the scene clock ago (`step`: the
@@ -268,12 +267,12 @@ export interface WaterInputs {
 	fft: OceanFFT;
 	sky: Sky;
 	shared: Shared;
-	shore: THREE.Texture;
-	seabedHeight: THREE.Texture; // the rendered floor's height over the shoreline field's bounds
-	// The floor's look: its beds on the floor mesh's warped grid of res + 1 vertices a side over
-	// size metres (seabedBedTextureFrom), and the terrain's normalsB detail texture, whose alpha is
-	// the sand's broad variation.
-	seabedLook: { beds: THREE.Texture; res: number; size: number; variation: THREE.Texture };
+	shore: THREE.Texture | THREE.TextureNode;
+	seabedHeight: THREE.Texture | THREE.TextureNode; // the rendered floor's height over the shoreline field's bounds
+	// The floor's look: its beds over the shoreline field's bounds (seabedBedTextureFrom), and the
+	// terrain's normalsB detail texture, whose alpha is the sand's broad variation.
+	seabedLook: { beds: THREE.Texture | THREE.TextureNode; variation: THREE.Texture };
+	land: Bounds; // the land's box (WorldShapes.landBounds), for reflectionBounds
 	shoreWaves: ShoreWaves;
 	refractedSun: RefractedSun;
 	sunShadow: SunShadow;
@@ -313,15 +312,15 @@ export interface WaterQuality {
 export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' };
 
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
-// its plants and its people. A box around them, from the tile layout (so it grows with the island):
-// out past the layout's edge by the rim's overhang (the turf skirt, the leaf mounds and trails over
-// the lip, a crown near the rim) plus a metre's margin, and up past the meadow by the tallest tree
-// (the top of TREE_HEIGHT, 3.5 m, above the islanders' 2 m) plus a metre.
+// its plants and its people. A box around them, from the land's box (so it grows with the island):
+// out past the land's edge by the rim's overhang (the turf skirt, the leaf mounds and trails over
+// the lip, a bush near the rim) plus a metre's margin, and up past the meadow by the islanders'
+// 2 m plus a metre.
 // Hits below REFLECTION_FLOOR under the sea level already weigh nothing (see traceSSR), so the box
-// ends there. Taller plants or a wider rim overhang must grow these, or their reflection is lost
-// (debug builds warn, see checkReflectionBounds).
+// ends there. A placed object off the island or above 3 m (a palm, a hut, a mast) or a wider rim
+// overhang must grow these, or its reflection is lost (debug builds warn, see checkReflectionBounds).
 const REFLECTOR_REACH = 1.5 + 1;
-const REFLECTOR_HEIGHT = TREE_HEIGHT[ 1 ] + 1;
+const REFLECTOR_HEIGHT = 3;
 const REFLECTION_FLOOR = 0.35;
 
 // How the reflection's march uses that box. cull: a ray that never meets it within the march's
@@ -390,7 +389,7 @@ export class Water {
 
 	constructor( inputs: WaterInputs ) {
 
-		const { shared, size = 700, res = 320, quality } = inputs;
+		const { size = 700, res = 320, quality } = inputs;
 
 		// grid in world xz, warped dense under the island and sparse toward the horizon
 		const n = res;
@@ -453,10 +452,8 @@ export class Water {
 
 		this.inputs = inputs;
 		this.quality = { ...DEFAULT_WATER_QUALITY, ...quality };
-		const b = layoutBounds();
-		this.reflectionBounds = new THREE.Box3(
-			new THREE.Vector3( b.x0 - REFLECTOR_REACH, shared.waterLevel.value - REFLECTION_FLOOR, b.z0 - REFLECTOR_REACH ),
-			new THREE.Vector3( b.x1 + REFLECTOR_REACH, ISLAND_TOP + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );
+		this.reflectionBounds = new THREE.Box3();
+		this.setLand( inputs.land );
 		this.material = this.buildMaterial( SSR_BOXED );
 		this.materials.set( variantKey( SSR_BOXED ), this.material );
 		this.mesh = new THREE.Mesh( geo, this.material );
@@ -560,13 +557,13 @@ export class Water {
 			field( landedXZ.add( vec2( 0.5, 0 ) ) ).sub( field( landedXZ.sub( vec2( 0.5, 0 ) ) ) ),
 			field( landedXZ.add( vec2( 0, 0.5 ) ) ).sub( field( landedXZ.sub( vec2( 0, 0.5 ) ) ) ) );
 		const vLandingGradients = varying( vec4( gradientOf( shoreDistance ), gradientOf( floorHeight ) ) ); // shore, floor
-		// The floor's look where the ray lands, for its colour (seabedAlbedo): the beds, read from the
-		// floor mesh's own grid at the inverse of its warp so that they interpolate as the mesh does,
-		// and the sand's broad variation. Both change over metres, so the vertices carry them.
-		const bedGrid = clamp( landedXZ.div( seabedLook.size / 2 ), - 1, 1 );
-		const bedUV = sign( bedGrid ).mul( pow( abs( bedGrid ), 1 / SEABED_WARP ) ).mul( 0.5 ).add( 0.5 )
-			.mul( seabedLook.res ).add( 0.5 ).div( seabedLook.res + 1 );
-		const vLandingLook = varying( vec3( texture( seabedLook.beds, bedUV ).level( float( 0 ) ).rg,
+		// The floor's look where the ray lands, for its colour (seabedAlbedo): the beds, read from
+		// their field over the shoreline field's bounds, and the sand's broad variation. Both change
+		// over metres, so the vertices carry them. Past the field's edge the beds fade over 8 m to the
+		// open sea's mean (no pale sand), so its edge texels never streak across the deep floor.
+		const beyond = smoothstep( 0, 8, length( landedXZ.sub( clamp( landedXZ, shared.shoreXform.xy, fieldEnd ) ) ) );
+		const beds = mix( texture( seabedLook.beds, fieldUV( landedXZ ) ).level( float( 0 ) ).rg, vec2( OPEN_SEAGRASS_MEAN, 0 ), beyond );
+		const vLandingLook = varying( vec3( beds,
 			texture( seabedLook.variation, landedXZ.mul( 0.013 ).add( 0.2 ) ).level( float( 3 ) ).a ) ); // grass, pale, broad
 		const vWeights = varying( weights );
 		const vLargeDisp = varying( largeDisp ), vMediumDisp = varying( mediumDisp ), vFineDisp = varying( fineDisp );
@@ -1328,6 +1325,19 @@ export class Water {
 			u.shadowOn.value = 1;
 
 		} else u.shadowOn.value = 0;
+
+	}
+
+	/** The reflection's box for the land's box `b` (WorldShapes.landBounds): again when the land
+	 * grows (Growth.ts), which grows it; whatever was held beyond it (a placed prop: the caller
+	 * unions it in again) is dropped. Debug builds measure the scene against it once, at the load:
+	 * not after a growth step, whose frame it would take tens of milliseconds (it reads every
+	 * vertex); a page loaded on the grown land measures that land. */
+	setLand( b: Bounds ): void {
+
+		this.reflectionBounds.set(
+			new THREE.Vector3( b.x0 - REFLECTOR_REACH, this.inputs.shared.waterLevel.value - REFLECTION_FLOOR, b.z0 - REFLECTOR_REACH ),
+			new THREE.Vector3( b.x1 + REFLECTOR_REACH, ISLAND_TOP + REFLECTOR_HEIGHT, b.z1 + REFLECTOR_REACH ) );
 
 	}
 

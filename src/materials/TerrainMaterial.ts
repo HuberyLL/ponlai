@@ -107,12 +107,14 @@ const PUDDLE_F0 = 0.2, FLOW_F0 = 0.5, RING_GAIN = 5;
 const RUNNEL_DARKENING = 0.6, RUNNEL_SHADE = 0.7;
 
 interface Ctx {
-	tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: THREE.Texture;
-	rimGround?: THREE.Texture; rimGroundXform?: THREE.Node<'vec4'>; hex: boolean;
+	tex: DetailTextures; shared: Shared; topY: F; vegetation: boolean; shore: FieldTexture;
+	rimGround?: FieldTexture; rimGroundXform?: THREE.Node<'vec4'>; hex: boolean;
 }
 // hex: hex-tiled stone and height-blended layers (the default; debugFlags.terrainHex = false
 // builds the plain tiling with smooth masks, as before)
-interface TerrainOptions { topY?: number; vegetation?: boolean; rimGround?: THREE.Texture; rimGroundXform?: THREE.Vector4; hex?: boolean }
+// a world field (WorldFields.ts): its base node, which a swapped field's texture follows
+type FieldTexture = THREE.Texture | THREE.TextureNode;
+interface TerrainOptions { topY?: number; vegetation?: boolean; rimGround?: FieldTexture; rimGroundXform?: THREE.Vector4; hex?: boolean }
 
 function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXform, hex }: Ctx ) {
 
@@ -766,7 +768,7 @@ class TerrainLightingModel extends THREE.PhysicalLightingModel {
 
 type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;
 
-export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, caustics: Caustics, shore: THREE.Texture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform, hex }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
+export function makeTerrainMaterial( kind: 'cliff' | 'seabed', tex: DetailTextures, shared: Shared, caustics: Caustics, shore: FieldTexture, { topY = 3.1, vegetation = true, rimGround, rimGroundXform, hex }: TerrainOptions = {} ): THREE.MeshStandardNodeMaterial {
 
 	const topYU = uniform( topY );
 	const ctx: Omit<Ctx, 'hex'> = { tex, shared, topY: topYU, vegetation, shore, rimGround, rimGroundXform: rimGroundXform ? uniform( rimGroundXform ) : undefined };

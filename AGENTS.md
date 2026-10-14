@@ -52,8 +52,12 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - Headed browser runs take over the user's screen: run one only for what a screen alone shows, and
   only while `node tools/display-gate.mjs status` allows it (`docs/tools.md`, Display gate).
 - `tools/verify-*.mjs` are regression probes (GPU ones take the lock; `verify-day-cycle`,
-  `verify-weather-state`, `verify-wind`, `verify-game`, `verify-framegraph` are plain `node`):
-  see `docs/tools.md`.
+  `verify-weather-state`, `verify-wind`, `verify-game`, `verify-framegraph`, `verify-growth-shape`,
+  `verify-world-chunks`, `verify-world-stats` are plain `node`): see `docs/tools.md`.
+- After any change to the world's generator, run `node tools/verify-world-chunks.mjs` before
+  captures.
+- `node tools/capture-growth.mjs --base url [--cand url]` captures two pages side by side over
+  seeds, growth steps and six views, with region statistics (`docs/tools.md`).
 - `tools/parity/` captures sets of paused views and motion clips and measures them against
   references stored per commit: MSAA byte for byte, the temporal modes within a tolerance, both
   against a ground truth (`aa=gt`); `tools/verify-first-use.mjs` counts the pipelines still created
@@ -70,13 +74,26 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
 - `src/camera/`: the island camera (`IslandCameraControls.ts`, the ground it grabs in
   `IslandGround.ts`) and the free flight.
-- `src/world/`: the island generated in Web Workers (`worldWorker.ts`, started by `WorldStart.ts`
-  as the page loads, cached by `WorldCache.ts`):
-  SDF shapes and surface nets (`WorldShapes.ts`), the cliffs (`Cliff.ts`), the sea floor
-  (`Bathymetry.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`, `RimSkirt.ts`), the
-  meadow (`Grass.ts`, culled by `GrassCull.ts`), flowers, bushes (`Foliage.ts`: what all vegetation
-  materials share), shrubs and trees (`PlantSites.ts`, `Plants.ts`), the vegetation's depth
-  prepass (`VegetationPrepass.ts`).
+- `src/world/`: the world generated from the grown land (`IslandGrowth.ts`: the land lattice grown
+  one piece at a time) in 16 m chunks, each from its window of the land field (`Chunks.ts`; what the
+  page derives from its meshes, so it never walks their vertices: `ChunkDerived.ts`), on a pool of
+  `chunkWorker.ts` workers run by `WorldChunks.ts` (started by `WorldStart.ts` as the page loads),
+  one IndexedDB record per chunk (`WorldCache.ts`, keyed by the generator's hash, options, browser,
+  chunk and the pieces in its window), merged by `ChunkMerge.ts` and drawn by `World.ts` (the
+  island a mesh per land chunk; the world fields' textures in `WorldFields.ts`); the island grown in
+  place by `Growth.ts` (the next version generated and prepared ahead, then swapped in one frame,
+  every dependent following: the GUI's Island folder, `__PONLAI__.growth`; the only sign of a
+  coming piece is the shoal, `SeabedRise.ts`: the floor tiles under it rise toward their grown form
+  as the approach grows, while the stones, the contact shade and every other kind change at the
+  swap); the footprint, SDF
+  shapes and surface nets (`WorldShapes.ts`), the
+  cliffs (`Cliff.ts`), the submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as
+  tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`,
+  `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled by
+  `GrassCull.ts`), flowers, the rim bushes (`FoliageSites.ts`; `Foliage.ts`: what all vegetation
+  materials share), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
+  vegetation's depth prepass
+  (`VegetationPrepass.ts`).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the air/water interface, sky occlusion, the meadow's canopy light.
 - `src/materials/`: procedural textures, the terrain (`TerrainMaterial.ts`), wet surfaces.
@@ -99,11 +116,16 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches
   (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
 - `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
-- `src/game/`: the game behind `?game` (`Game.ts`): `sim/` is the headless simulation (no three.js
-  or DOM; node runs it by stripping types), `view/` draws the islanders, the palm and the
-  chest, and `Hud.ts` / `Placement.ts` are the player's prototype HUD.
+- `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
+  population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
+  node runs it by stripping types; `sim/save.ts` is the save slot the world's start reads), `view/`
+  draws the islanders, the palm and the chest, and `Hud.ts` / `Placement.ts` are the player's
+  prototype HUD.
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
   the pipeline counter (`PipelineCounter.ts`).
+- `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the world's chunk
+  checks (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node
+  helpers in `world-node.mjs`.
 
 ## Rules for every change
 
@@ -119,11 +141,40 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   Temporal AA modes are compared within a tolerance, not byte
   for byte: the GPU splits render passes on its own, which moves a few samples, and the temporal
   rest freezes that (`tools/parity/README.md`).
-- Everything generated for the island is generic, because the island must grow by more tiles: it
-  derives from the footprint, the island's SDF and noise fields with fixed seeds (hashes of
-  position, or random streams that draw a fixed count per anchor), never from coordinates placed
-  by hand, and counts follow the measured coast length or area. Generation stays deterministic
+- Everything generated for the island is generic, because the island grows one piece at a time
+  (`docs/game-design.md`, "How the island grows"): it derives from the land's footprint, the
+  island's SDF and noise fields with fixed seeds (hashes of position, or random streams seeded per
+  world-anchored cell, never one running stream across many items), never from coordinates placed
+  by hand, and counts follow the measured coast length or area. So does everything fitted to the
+  land on the page (the views, the camera's limits, the shore and rain fields, the reflection's
+  box, the sea fog's clearing, the walking loop, the game's grid). Generation stays deterministic
   whatever the thread count.
+- The world is built in chunks (`Chunks.ts`): a chunk's content is a function of its window of the
+  land field (the chunk grown by 32 m); a new piece rebuilds the chunks whose window meets it
+  grown by 2 m (`dirtyChunks`). For most kinds the reach stays below 34 m; the stones, trails and
+  shore read farther in principle, and D4 / D5 (`tools/verify-world-chunks.mjs`) measure that
+  nothing outside the dirty set changes. A chunk built alone, in a block or on any thread equals
+  itself. Data on a chunk border must be bit-identical in both chunks: lattices are world-anchored,
+  scars are cut in canonical order, curvature comes from the apron, and a chunk's own triangles
+  never go through `computeVertexNormals`. The page draws the island a mesh per land chunk and
+  every other kind as one mesh or pool, concatenated in the chunks' order ( cj, ci ) whatever
+  order the workers finished in (`ChunkMerge.ts`, `World.ts`).
+- The island grows in place (`Growth.ts`): a Grow swaps in only the changed chunks in one frame,
+  and every dependent of the land's shape follows it, the same function of the version as at load
+  (a grown page draws a page loaded on that land bit for bit, paused). Anything new that depends
+  on the land's shape joins the swap (`GrowthPage` and main.ts's `onSwap`), and work it needs on
+  the main thread goes into the preparation's idle-time steps, never into the swap's frame. A
+  step takes a few tenths of a millisecond (a generator yielding inside its loops: `Steps.ts`,
+  uploads through `Upload.ts`), so the growth's share of any frame stays under 2 ms
+  (`growth.work`).
+- A swap never builds a pipeline; one that needs one is a bug. New chunk meshes share their kind's
+  material and layout, so they draw with the loaded chunks' pipelines; merged kinds take new
+  geometry of the same layout, uploaded ahead; instanced kinds hold a capacity whose shader does not
+  change (three puts up to 1024 instance matrices in a uniform array of exactly the capacity:
+  `Flowers.ts`, `Foliage.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels
+  reading their bounds from uniforms (`GrassCull.ts`); the world fields swap textures through the
+  one base node each material samples them by (`WorldFields.ts`), and other passes keep their
+  materials across rebakes (`RainCollision.ts`).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High is the reference image; every default in the modules is high's. A load knob is read
   once when materials and the frame graph are built, so a change of tier reloads the page.
@@ -144,7 +195,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   them): design and build it with the `threejs-game-ui-designer` skill when the agent has it (the
   threejs-* skill pack), so it reads as a game's interface rather than a product's.
 - Visual changes: compare captures against the previous capture (and crops, not only the whole
-  frame); report measured differences.
+  frame); report measured differences. Where shapes differ (growth steps, seeds), judge the look by
+  eye and region statistics (`tools/capture-growth.mjs`), not by pixel difference.
 - Performance changes: `tools/profile-frame.mjs` on a production build under the GPU lock, before
   and after (`--compare`, or `--toggle` on a debug flag); judge an A/B by GPU time per pass, frame
   rates from runs without timestamps, 60 fps with `--accept`. Report contended runs as such.
@@ -197,7 +249,7 @@ image diffs, wait loops); the shared tools now cover them.
 - The water samples neither the target it draws into nor more textures (it is at WebGPU's 16, its
   varyings near the limit: `Water.ts`), so it takes no history or reactive input: what the resolve
   needs from it goes out through its velocity. It reflects only what lies inside
-  `Water.reflectionBounds`: anything opaque off the island or above the trees must grow that box.
+  `Water.reflectionBounds`: anything opaque placed off the island or above 3 m must grow that box.
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an
   rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).
@@ -206,6 +258,13 @@ image diffs, wait loops); the shared tools now cover them.
   pass. A kernel with `workgroupBarrier()` is dispatched by size, not by a thread count
   (`OceanFFT.ts`). A `Fn( ... ).setLayout( ... )` helper that reads uniforms can be emitted with
   another kernel's uniform names when two compute kernels that use it are built (r186).
+- The same triangles drawn in one draw or split over several (a mesh per chunk, or draw ranges)
+  shade about 1 % of their pixels a level or two apart: multisampled fragments and derivative
+  quads form within a draw. Byte comparisons hold between equal splits only (`World.ts`).
+- A storage buffer cannot grow in place (a larger array fails its `writeBuffer`). A new
+  `StorageBufferAttribute` as each reading storage node's `value` takes new bind groups and no
+  pipeline, compute or render: the shaders declare runtime-sized arrays (r186,
+  `tools/verify-storage-realloc.mjs`).
 - A 16-bit index is copied into a new 32-bit array when its GPU buffer is created, and the copy is
   uploaded from then on (r186): an index rewritten in place must be a `Uint32Array`. Leave
   attributes that change once per event at static usage with update ranges: `DynamicDrawUsage`

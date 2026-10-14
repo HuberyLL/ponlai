@@ -56,8 +56,9 @@ try {
 	const camera = async ( horizon ) => {
 		await page.evaluate( ( horizon ) => {
 			const s = window.__PONLAI__;
-			const distance = horizon ? 110 : 58, polar = horizon ? 82 : 50, azimuth = horizon ? 125 : 318;
-			s.controls.target.set( 1.5, 0.5, 1 );
+			// the page's island and horizon views on its land (window.__PONLAI__.land)
+			const distance = ( horizon ? 110 : 58 ) * s.land.scale, polar = horizon ? 82 : 50, azimuth = horizon ? 125 : 318;
+			s.controls.target.fromArray( s.land.target );
 			s.camera.position.setFromSphericalCoords( distance, polar * Math.PI / 180, azimuth * Math.PI / 180 ).add( s.controls.target );
 			s.controls.update();
 			s.camera.updateMatrixWorld();

@@ -5,7 +5,10 @@
 // the chest placed as a blueprint and built, several of a kind with ids of their own, two
 // islanders building one site, actions that replace each other, a perception
 // without positions, the stand-in brain building the chest and keeping the islander fed and
-// watered for days, and a save taken mid-action.
+// watered for days, and a save taken mid-action; then the island's growth: a land grown by
+// IslandGrowth, the population steps, the coming piece's cells, a step crossed adding exactly one
+// piece, the grid opening cells without reindexing, islanders walking onto the new piece, and a
+// save that keeps its piece count.
 // Pure CPU; Node 22.18+ strips the imported TypeScript.
 // Run: node tools/verify-game.mjs
 import assert from 'node:assert/strict';
@@ -17,7 +20,9 @@ import { BAG_CAPACITY, COCONUT_HYDRATION, FISH_SATIETY } from '../src/game/sim/i
 import { HYDRATION_PER_DAY, SATIETY_PER_DAY } from '../src/game/sim/needs.ts';
 import { FISH_SECONDS, PALM_COCONUTS, PALM_REGROW_SECONDS, PICK_SECONDS } from '../src/game/sim/places.ts';
 import { CHEST_WORK, progressOf, stageOf } from '../src/game/sim/buildings.ts';
-import { input } from './game-fixture.mjs';
+import { GROWTH_STEPS, POPULATION_START, piecesFor } from '../src/game/sim/types.ts';
+import { SAVE_VERSION, savedPieces } from '../src/game/sim/save.ts';
+import { input, inputAt } from './game-fixture.mjs';
 
 const HOUR = 3600;
 
@@ -71,7 +76,7 @@ function farthestOpen( grid, p ) {
 	const grid = sim.grid;
 	assert.ok( grid.main >= 0, 'the island has open ground' );
 	for ( const v of sim.state.villagers ) assert.equal( grid.region[ grid.indexAt( v.pos.x, v.pos.z ) ], grid.main, `${ v.name } stands on the main ground` );
-	for ( const o of [ ...input.bushes, ...input.plants ] ) assert.ok( ! grid.openAt( o.x, o.z ), 'a bush or a plant blocks its ground' );
+	for ( const o of input.bushes ) assert.ok( ! grid.openAt( o.x, o.z ), 'a bush blocks its ground' );
 	const from = sim.state.villagers[ 0 ].pos, to = farthestOpen( grid, from );
 	const path = findPath( grid, from, goalAt( grid, to ) );
 	assert.ok( path && path.length > 0, 'a path across the island' );
@@ -531,6 +536,147 @@ function buildChest( sim ) {
 
 	}
 	console.log( 'save: mid-action, loaded back and played on for two days the same' );
+
+}
+
+// ------------------------------------------------------------------ the island's growth
+
+{
+
+	// the steps: one piece per 2 islanders above the starting 3, none below
+	assert.equal( GROWTH_STEPS[ 0 ], POPULATION_START + 2 );
+	assert.deepEqual( [ 1, 4, 5, 6, 7, 8 ].map( piecesFor ), [ 0, 0, 1, 1, 2, 2 ], 'a piece per step reached' );
+	assert.equal( piecesFor( 1e6 ), GROWTH_STEPS.length, 'no piece past the growth horizon' );
+
+	// a fixture land from IslandGrowth: the next step's land holds the starting island's and more
+	const next = inputAt( 1 );
+	let gained = 0;
+	for ( let j = 0; j < 768; j ++ ) for ( let i = 0; i < 768; i ++ ) {
+
+		if ( input.land.has( i, j ) ) assert.ok( next.land.has( i, j ), 'a piece never takes land away' );
+		else if ( next.land.has( i, j ) ) gained ++;
+
+	}
+	assert.ok( gained * 0.0625 > 50, `the piece adds land (${ gained * 0.0625 } m^2)` );
+
+	const sim = newGame( input, { seed: 3 } );
+	assert.equal( sim.state.pieces, 0 );
+	assert.equal( sim.population(), 1 );
+	const grid = sim.grid, top0 = grid.top.slice(), dims = [ grid.cols, grid.rows, grid.x0, grid.z0 ];
+	const kai = sim.state.villagers[ 0 ], kaiCell = grid.indexAt( kai.pos.x, kai.pos.z );
+	// a palm's cell, as indexed before the growth
+	const palm = sim.state.palms[ 0 ], palmCell = grid.indexAt( palm.x, palm.z );
+	assert.ok( ! grid.open[ palmCell ], 'the palm blocks its ground' );
+
+	// the population approaches the step: 1, 2, 3 islanders are at the start; 4 halfway; 5 due
+	for ( let p = 2; p <= 4; p ++ ) {
+
+		sim.addIslander();
+		assert.equal( sim.growthDue(), false, `${ p } islanders: no growth yet` );
+
+	}
+	assert.equal( sim.approach(), 0.5, '4 islanders: halfway to the first step' );
+	for ( const v of sim.state.villagers ) assert.equal( grid.region[ grid.indexAt( v.pos.x, v.pos.z ) ], grid.main, `${ v.name } arrives on the main ground` );
+	assert.equal( new Set( sim.state.villagers.map( ( v ) => v.id ) ).size, 4, 'each islander an id of its own' );
+
+	// the coming piece's cells, exposed once the page has the piece
+	assert.equal( sim.comingLand, null, 'no coming land before the page has the piece' );
+	sim.setComing( next );
+	const coming = sim.comingLand;
+	let comingCells = 0;
+	for ( let k = 0; k < coming.length; k ++ ) if ( coming[ k ] ) {
+
+		comingCells ++;
+		assert.equal( top0[ k ], 0, 'a coming cell is not on the island yet' );
+
+	}
+	assert.ok( comingCells * 0.25 > 20, `the coming land has cells (${ comingCells * 0.25 } m^2)` );
+
+	// a path planned before the growth, across the island
+	const far = farthestOpen( grid, kai.pos );
+	sim.walkTo( kai.id, far );
+	const planned = kai.path.map( ( p ) => grid.indexAt( p.x, p.z ) );
+
+	// a population crossing the step: the page's loop (Game.update) grows once while due, and the
+	// swap hands the land back as addPiece; then nothing more is due
+	sim.addIslander();
+	assert.equal( sim.approach(), 1 );
+	let grows = 0;
+	for ( let frame = 0; frame < 120; frame ++ ) {
+
+		if ( sim.growthDue() ) {
+
+			grows ++;
+			sim.addPiece( next );
+
+		}
+		sim.step( 10 );
+
+	}
+	assert.equal( grows, 1, 'a step crossed grows exactly one piece' );
+	assert.equal( sim.state.pieces, 1 );
+	assert.equal( sim.approach(), 0, '5 islanders: the start of the next step' );
+	assert.equal( sim.comingLand, null, 'the coming land arrived' );
+
+	// the grid opens cells without reindexing: the same lattice, every cell on the top before still
+	// on it, the coming cells now on it, the palm's cell still blocked, the planned path walkable
+	assert.deepEqual( [ grid.cols, grid.rows, grid.x0, grid.z0 ], dims, 'the grid keeps its lattice' );
+	assert.equal( sim.grid, grid, 'the same grid object' );
+	let opened = 0;
+	for ( let k = 0; k < top0.length; k ++ ) {
+
+		if ( top0[ k ] ) assert.equal( grid.top[ k ], 1, 'a cell on the island stays on it' );
+		if ( coming[ k ] ) {
+
+			assert.equal( grid.top[ k ], 1, 'a coming cell is on the island' );
+			opened ++;
+
+		}
+
+	}
+	assert.equal( opened, comingCells );
+	assert.equal( grid.indexAt( palm.x, palm.z ), palmCell );
+	assert.ok( ! grid.open[ palmCell ], 'the palm still blocks its ground' );
+	assert.equal( grid.region[ kaiCell ] >= 0, true );
+	for ( const k of planned ) assert.equal( grid.top[ k ], 1, 'a path planned before stays on the island' );
+
+	// islanders walk onto the new piece: the open coming cell of the main ground farthest from Kai
+	let target = - 1, best = - 1;
+	for ( let k = 0; k < coming.length; k ++ ) {
+
+		if ( ! coming[ k ] || grid.region[ k ] !== grid.main ) continue;
+		const d = Math.hypot( grid.centreX( k ) - kai.pos.x, grid.centreZ( k ) - kai.pos.z );
+		if ( d > best ) { best = d; target = k; }
+
+	}
+	assert.ok( target >= 0, 'the new piece joins the main ground' );
+	for ( const v of sim.state.villagers ) {
+
+		v.action = null;
+		assert.equal( sim.walkTo( v.id, grid.centreOf( target ) ), null, `${ v.name } sets off onto the new piece` );
+
+	}
+	sim.brain = null;
+	sim.step( 3600 );
+	for ( const v of sim.state.villagers ) assert.ok( coming[ grid.indexAt( v.pos.x, v.pos.z ) ] || Math.hypot( v.pos.x - grid.centreX( target ), v.pos.z - grid.centreZ( target ) ) < 1.5, `${ v.name } stands on the new piece` );
+
+	// a save keeps its piece count, and loads back on its land at it
+	const json = sim.save();
+	assert.equal( savedPieces( json ), 1, 'the save stands on one piece' );
+	assert.equal( savedPieces( JSON.stringify( { ...JSON.parse( json ), version: SAVE_VERSION - 1 } ) ), null, 'a save of another version stands on none' );
+	assert.equal( savedPieces( null ), null );
+	const loaded = loadGame( json, next );
+	assert.equal( loaded.state.pieces, 1 );
+	assert.equal( loaded.save(), json, 'a grown game loads back the same' );
+	assert.deepEqual( loaded.grid.open, grid.open, 'and rebuilds the same ground on its land' );
+	assert.equal( loaded.growthDue(), false );
+	loaded.step( 600 );
+	sim.step( 600 );
+	assert.equal( loaded.save(), sim.save(), 'and plays on as the original' );
+
+	// a new game on a grown island starts at its piece count
+	assert.equal( newGame( next, { pieces: 1 } ).state.pieces, 1 );
+	console.log( `growth: ${ ( gained * 0.0625 ).toFixed( 0 ) } m^2 of land, ${ comingCells } coming cells opened at 5 islanders, one piece, ${ sim.population() } islanders walked onto it; saved at 1 piece and loaded back` );
 
 }
 

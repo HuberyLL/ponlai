@@ -2,11 +2,12 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, dot, pow, clamp, fract, sin, select, normalize,
 	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, varying, varyingProperty, uniform,
-	smoothstep as smoothstepN, storage, instanceIndex, normalLocal, transformNormal, instanceColor,
+	smoothstep as smoothstepN, instanceIndex, normalLocal, transformNormal, instanceColor,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
+import { anchorStream } from './Anchors.ts';
 import { sampleMeadow, meadowColor, supportsMeadow } from '../materials/Meadow.ts';
 import { sampleMeadowSoil, soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
@@ -19,7 +20,7 @@ import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { ALPHA_TO_COVERAGE, coverageDither, markVegetation } from './Foliage.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
-import { GrassCull, cullInputs, type CullRange } from './GrassCull.ts';
+import { GrassCull, cullInputs, poolSteps, type CullBatchInput, type CullBuffers, type CullPool, type CullRange } from './GrassCull.ts';
 import type { Shared } from '../shared.ts';
 
 // Stylised meadow on the island top, a sward of two instanced tuft kinds. The lawn is a dense
@@ -71,7 +72,7 @@ const LAWN: TuftShape = { blades: 16, segs: 2, r0: [ 0.02, 0.15 ], h: [ 0.45, 0.
 const TUSSOCK: TuftShape = { blades: 18, segs: 4, r0: [ 0.01, 0.08 ], h: [ 0.55, 1 ], lean: [ 0.45, 1.05 ], w: [ 0.05, 0.085 ], droop: 0.6, reachPow: 1.6 };
 
 /** The meadow's cost knobs for a quality tier. They shape the meshes and shaders, so they apply
- * when the grass is built (set them before `buildGrass`); the defaults are the high tier's. */
+ * when the grass is planted and built (set them before `plantGrass`); the defaults are the high tier's. */
 export interface GrassQuality {
 	/** Lawn blades drawn per tuft near, mid and far from the camera (of 16), see `selectBatch`. */
 	lawnBlades: [ number, number, number ];
@@ -170,7 +171,7 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 // the flower heads between the blades.
 const grassUniforms = {
 	minWidth: uniform( ALPHA_TO_COVERAGE ? 2 : 1 ), // render-target pixels
-	rimMinWidth: uniform( 0.75 ), // on the outer rim, see `rimEdge` in buildGrass
+	rimMinWidth: uniform( 0.75 ), // on the outer rim, see `rimEdge` in plantGrass
 	// The extra lawn tufts of thick patches fold away between these view distances (m): beyond
 	// them a blade is under a pixel wide and the widened blades of the remaining tufts already
 	// cover the turf, so the extras would only cost vertices.
@@ -259,7 +260,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 	// threshold per pixel keeps that share of a blade's pixels instead (`coverageDither`).
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.86, metalness: 0, side: THREE.DoubleSide, alphaToCoverage: ALPHA_TO_COVERAGE } );
 	const slot = instanceIndex.add( cullBase );
-	const tuftSlot = select( cullOn.equal( 1 ), storage( cull.visible, 'uint', cull.slots ).toReadOnly().element( slot ), slot ).toVar( 'grassTuft' );
+	const tuftSlot = select( cullOn.equal( 1 ), cull.node( 'visible', 'uint', true ).element( slot ), slot ).toVar( 'grassTuft' );
 	const input = cullInputs( cull, tuftSlot );
 	// The tuft's instance data, read as the instanced attributes were: what the fragment stage
 	// reads passes as a varying, as an attribute did.
@@ -361,7 +362,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, legacy = false ): THREE
 
 }
 
-interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; soil: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3 }
+export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; soil: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3 }
 
 // One instanced mesh per batch of tufts of one kind, over its own geometry (the draw range and the
 // indirect arguments belong to it) that shares the tuft's vertex buffers. Its instance data (the
@@ -380,6 +381,8 @@ function tuftMesh( source: THREE.BufferGeometry, material: THREE.Material, cull:
 	( mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
 	( mesh as unknown as { instanceColor: THREE.BufferAttribute } ).instanceColor = cull.colors;
 	mesh.count = range.count;
+	// its whole count (it picks its count per view draw): the rain's collision bake draws them all
+	mesh.userData.bakeCount = range.count;
 	mesh.frustumCulled = false;
 	mesh.castShadow = false; // see MeadowCanopy
 	mesh.receiveShadow = true;
@@ -400,7 +403,10 @@ function tuftMesh( source: THREE.BufferGeometry, material: THREE.Material, cull:
 //   make the count depend on where the camera came from. A camera crossing an edge steps once,
 //   between two counts that hide the same share of the ground.
 // The box spans every tuft of a batch, so its nearest tuft sets the band for all of them: a
-// larger island keeps more of its meadow in the nearer bands and saves less.
+// larger island keeps more of its meadow in the nearer bands and saves less. A batch is one per
+// kind, holding every chunk's tufts in the chunks' order (GrassCull's pool), not one per chunk:
+// that would add draws (and prepass draws) per meadow chunk; a band per chunk chosen in the cull
+// pass is the step that would save more.
 // Other cameras (the rain's collision bake looks straight down, orthographic) see every tuft
 // with all its blades, as before.
 // The view camera's draws are then culled per tuft on the GPU (`GrassCull`): one compute pass
@@ -473,19 +479,15 @@ function batchOf( source: THREE.BufferGeometry, shape: TuftShape, material: THRE
 
 }
 
-/** The meadow: lawn and tussock meshes in one group. `walkDistance` (m from a point to the
- * islander's loop) keeps tussocks off the path. */
-export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): THREE.Group {
+/** The meadow's tufts of each kind, one record per instance. */
+export interface GrassTufts { lawn: Tuft[]; tussocks: Tuft[]; lawnThin: Tuft[] }
 
-	// (the tier's least blade width applies under the temporal modes only: 4x and one sample keep
-	// theirs, see `grassUniforms`)
-	if ( TEMPORAL ) grassUniforms.minWidth.value = grassQuality.minWidth;
+/** The tufts grown on the anchors `veg` (any of them: each anchor's tufts depend on that anchor
+ * alone). `walkDistance` (m from a point to the islander's loop) keeps tussocks off the path. */
+export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): GrassTufts {
+
 	const n = veg.length / STRIDE;
 	const lawn: Tuft[] = [], tussocks: Tuft[] = [], lawnThin: Tuft[] = [];
-	// The lawn's own draws keep their old order; everything added since draws from a second
-	// stream, a fixed count per anchor, so the planting stays the same wherever a gate changes.
-	const rng = mulberry32( 99 );
-	const more = mulberry32( 131 );
 	const draws = new Float32Array( 12 );
 	const q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
@@ -503,6 +505,9 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 		const k = i * STRIDE;
 		const x = veg[ k ], y = veg[ k + 1 ], z = veg[ k + 2 ];
 		const rim = veg[ k + 6 ];
+		// Two streams of the anchor's own cell, the lawn's and one for everything added since (a
+		// fixed count of draws), so no anchor's planting depends on another's.
+		const rng = anchorStream( x, z, 99 ), more = anchorStream( x, z, 131 );
 		// stand with the ground, leaning out a little more over the rim
 		dir.set( veg[ k + 3 ], veg[ k + 4 ], veg[ k + 5 ] ).lerp( up, 0.3 ).normalize();
 		q.setFromUnitVectors( up, dir );
@@ -597,7 +602,16 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 		}
 
 	}
+	return { lawn, tussocks, lawnThin };
 
+}
+
+/** The meadow: lawn and tussock meshes in one group, drawing the tufts `plantGrass` grew. */
+export function buildGrass( { lawn, tussocks, lawnThin }: GrassTufts, shared: Shared ): THREE.Group {
+
+	// (the tier's least blade width applies under the temporal modes only: 4x and one sample keep
+	// theirs, see `grassUniforms`)
+	if ( TEMPORAL ) grassUniforms.minWidth.value = grassQuality.minWidth;
 	const group = new THREE.Group();
 	group.name = 'grass';
 	const lawnGeometry = tuftGeometry( LAWN, 3 );
@@ -610,7 +624,9 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 		{ geometry: lawnGeometry, shape: LAWN, tufts: lawn, name: 'grass-lawn', thin: false },
 		{ geometry: tussockGeometry, shape: tussock, tufts: tussocks, name: 'grass-tussocks', thin: false },
 	];
-	if ( lawnThin.length ) kinds.push( { geometry: lawnGeometry, shape: LAWN, tufts: lawnThin, name: 'grass-lawn-thin', thin: true } );
+	// (the thin batch exists whenever the tier grows thin tufts, even with none yet: a grown island's
+	// meadow then fills the same batches, and the cull's kernels stay the same)
+	if ( grassQuality.thinTufts ) kinds.push( { geometry: lawnGeometry, shape: LAWN, tufts: lawnThin, name: 'grass-lawn-thin', thin: true } );
 	const cull = new GrassCull( kinds.map( ( k ) => ( { tufts: k.tufts, geometry: k.geometry, halfWidth: halfWidth( k.shape ) } ) ), grassUniforms.thinFar );
 	const material = grassMaterial( shared, cull );
 	const legacyMaterial = grassMaterial( shared, cull, true );
@@ -635,6 +651,59 @@ export function buildGrass( veg: Float32Array, shared: Shared, rimGround?: RimGr
 	group.userData.thinFar = grassUniforms.thinFar;
 	group.userData.batches = batches;
 	group.userData.cull = cull;
+	group.userData.kinds = kinds.map( ( k ) => ( { geometry: k.geometry, halfWidth: halfWidth( k.shape ), key: k.name === 'grass-lawn' ? 'lawn' : k.name === 'grass-tussocks' ? 'tussocks' : 'lawnThin' } ) );
 	return group;
+
+}
+
+/** A meadow grown on another land, ready for `setGrass`: the pool of its tufts in the meadow's
+ * batches, the buffers made for it (to be uploaded before the swap), and each batch's planting box
+ * and count. */
+export interface GrassPrepared { pool: CullPool; buffers: CullBuffers; boxes: THREE.Box3[]; counts: number[] }
+
+/** The pool of `tufts` for the meadow `group` (buildGrass), in steps (GrassCull's `poolSteps`): the
+ * growth (Growth.ts) takes them in idle time. */
+export function* grassSteps( group: THREE.Group, tufts: GrassTufts, per = 4000 ): Generator<void, GrassPrepared> {
+
+	const kinds = group.userData.kinds as { geometry: THREE.BufferGeometry; halfWidth: number; key: keyof GrassTufts }[];
+	const inputs: CullBatchInput[] = kinds.map( ( k ) => ( { tufts: tufts[ k.key ], geometry: k.geometry, halfWidth: k.halfWidth } ) );
+	const pool = yield* poolSteps( inputs, per );
+	const boxes: THREE.Box3[] = [];
+	for ( const b of inputs ) {
+
+		const box = new THREE.Box3();
+		for ( let k = 0; k < b.tufts.length; k ++ ) {
+
+			box.expandByPoint( b.tufts[ k ].origin );
+			if ( k % ( per * 4 ) === per * 4 - 1 ) yield;
+
+		}
+		boxes.push( box );
+		yield;
+
+	}
+	return { pool, buffers: GrassCull.buffers( pool ), boxes, counts: inputs.map( ( b ) => b.tufts.length ) };
+
+}
+
+/** Swaps the meadow `group` to a prepared one in place: the same meshes, materials and kernels over
+ * the new pool's buffers. Returns the buffers it replaced (dispose of them once drawn no more). */
+export function setGrass( group: THREE.Group, prepared: GrassPrepared ): CullBuffers {
+
+	const cull = group.userData.cull as GrassCull, batches = group.userData.batches as Batch[];
+	const old = cull.setPool( prepared.pool, prepared.buffers );
+	batches.forEach( ( b, k ) => {
+
+		b.box.copy( prepared.boxes[ k ] );
+		b.count = prepared.counts[ k ];
+		b.mesh.count = b.count;
+		b.mesh.userData.bakeCount = b.count;
+		b.mesh.geometry.userData.grassBase = b.range.start;
+		( b.mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
+		( b.mesh as unknown as { instanceColor: THREE.BufferAttribute } ).instanceColor = cull.colors;
+		for ( const child of b.mesh.children ) if ( ( child as THREE.InstancedMesh ).isInstancedMesh ) ( child as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
+
+	} );
+	return old;
 
 }

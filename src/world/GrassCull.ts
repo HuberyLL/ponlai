@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, uniform, storage, workgroupArray, workgroupBarrier, workgroupId, localId, uint, select, length, dot, min, max,
+	Fn, If, Loop, uniform, storage, workgroupArray, workgroupBarrier, workgroupId, localId, uint, select, length, dot, min, max,
 } from 'three/tsl';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
@@ -18,6 +18,18 @@ import { jitter } from '../post/Jitter.ts';
 // Two dispatches: the first counts each workgroup's visible tufts, the second sums the counts of
 // the batch's earlier workgroups, scans its own and scatters. Each batch is padded to whole
 // workgroups, so no workgroup spans two batches.
+//
+// The meadow is one pool (chunk design, section 8): a batch per kind (lawn, tussocks, the thin
+// extra tufts) holds every chunk's tufts in the chunks' order ( cj, ci ), as the anchors come
+// (ChunkMerge.ts), each drawn in one draw. The buffers hold a capacity, the next power of two of
+// the slots the batches fill; the dispatches cover the filled workgroups, and the slots past them
+// are never visible. A grown island's meadow (World growth, Growth.ts) is a new pool: its arrays
+// are filled in steps (`poolSteps`) and its buffers made and uploaded ahead (`GrassCull.buffers`),
+// and `setPool` points every storage node at them (one node per buffer, type and access: `node`):
+// new bind groups, no pipeline (AGENTS.md, tools/verify-storage-realloc.mjs). The kernels read
+// the batches' bounds, the last workgroup and the scatter's passes from uniforms, and every batch
+// keeps its place even while empty (an empty batch starts where the next one does and writes no
+// arguments), so no pool changes their code.
 //
 // Rules:
 // - Each tuft's sphere is padded for the widening's 15 half widths, the sway and standing water's
@@ -71,6 +83,111 @@ export interface CullRange {
 	indirectOffset: number;
 }
 
+/** A pool's contents: the slots (a power of two of workgroups), the workgroups its batches fill,
+ * each batch's range, and the per-slot arrays the storage buffers take. */
+export interface CullPool {
+	slots: number;
+	groups: number;
+	ranges: { start: number; count: number; groupStart: number; groupEnd: number }[];
+	matrices: Float32Array; colors: Float32Array; ground: Float32Array; origins: Float32Array; spheres: Float32Array;
+}
+
+/** A pool's storage buffers, made ahead of `setPool` so they can be uploaded before the frame that
+ * takes them (`visible` holds every slot's own index, `counts` a count per workgroup). */
+export interface CullBuffers {
+	matrices: THREE.StorageBufferAttribute; colors: THREE.StorageBufferAttribute; ground: THREE.StorageBufferAttribute;
+	origins: THREE.StorageBufferAttribute; spheres: THREE.StorageBufferAttribute; visible: THREE.StorageBufferAttribute;
+	counts: THREE.StorageBufferAttribute;
+}
+
+/** The pool's arrays for `batches`, filled `per` tufts at a step (a generator, so the growth can
+ * spread the work over idle time: World growth, Growth.ts); `fillPool` runs it to the end. The
+ * result is the same however it is stepped. */
+export function* poolSteps( batches: CullBatchInput[], per = Infinity ): Generator<void, CullPool> {
+
+	const ranges: CullPool[ 'ranges' ] = [];
+	let slot = 0;
+	for ( const b of batches ) {
+
+		const count = b.tufts.length;
+		const groups = Math.ceil( count / GROUP );
+		ranges.push( { start: slot, count, groupStart: slot / GROUP, groupEnd: slot / GROUP + groups } );
+		slot += groups * GROUP;
+
+	}
+	const groups = Math.max( slot, GROUP ) / GROUP;
+	const n = 2 ** Math.ceil( Math.log2( groups ) ) * GROUP;
+	const matrices = new Float32Array( n * 16 ), colors = new Float32Array( n * 4 ), ground = new Float32Array( n * 12 );
+	const origins = new Float32Array( n * 4 ), spheres = new Float32Array( n * 4 ).fill( - 1 );
+	let done = 0;
+	for ( let k = 0; k < batches.length; k ++ ) {
+
+		const b = batches[ k ], range = ranges[ k ];
+		b.geometry.computeBoundingBox();
+		_box.copy( b.geometry.boundingBox! );
+		for ( let j = 0; j < b.tufts.length; j ++ ) {
+
+			const t = b.tufts[ j ], i = range.start + j;
+			t.m.toArray( matrices, i * 16 );
+			colors[ i * 4 ] = t.col.r; colors[ i * 4 + 1 ] = t.col.g; colors[ i * 4 + 2 ] = t.col.b;
+			const e = t.m.elements;
+			// x: sky visibility, y: soil cover, z: rim cover, w: rim edge (1 on the plateau's
+			// outer rim, where blades stand against the sea and stay narrower: the opaque
+			// pass's MSAA edge pixels there resolve against the sky-coloured clear, so every
+			// partly covered pixel a widened blade adds shows as a pale fringe over the sea);
+			// then the instance's local x axis with the thin flag (1 for the extra tufts that
+			// fold away with distance), and its local z axis. A blade's width lies in the
+			// plane of those axes: the vertex stage keeps thin blades a minimum width on screen
+			// in world space.
+			ground.set( [ t.visibility, t.soil, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], 0 ], i * 12 );
+			t.origin.toArray( origins, i * 4 );
+			origins[ i * 4 + 3 ] = t.top;
+			// The tuft's box in world space, extended down by its own height (standing water
+			// sinks the blades below their anchor), then padded for the widening and the sway.
+			_world.makeEmpty();
+			for ( let c = 0; c < 8; c ++ ) {
+
+				_corner.set( c & 1 ? _box.max.x : _box.min.x, c & 2 ? _box.max.y : _box.min.y, c & 4 ? _box.max.z : _box.min.z ).applyMatrix4( t.m );
+				_world.expandByPoint( _corner );
+
+			}
+			_world.min.y -= _world.max.y - _world.min.y;
+			_world.getBoundingSphere( _sphere );
+			const axisScale = Math.max( Math.hypot( e[ 0 ], e[ 1 ], e[ 2 ] ), Math.hypot( e[ 8 ], e[ 9 ], e[ 10 ] ) );
+			_sphere.center.toArray( spheres, i * 4 );
+			// Every vertex lies in the box, so within the box's radius plus the origin's offset
+			// from its centre of the origin; a vertex turned about the origin stays that close to
+			// it, so within the radius plus twice the offset of the centre.
+			const bend = 2 * _sphere.center.distanceTo( t.origin );
+			spheres[ i * 4 + 3 ] = _sphere.radius + bend + WIDEN_REACH * b.halfWidth * axisScale + SWAY_PAD;
+			if ( ++ done % per === 0 ) {
+
+				yield;
+				// (another pool's steps may have run meanwhile)
+				_box.copy( b.geometry.boundingBox! );
+
+			}
+
+		}
+
+	}
+	return { slots: n, groups, ranges, matrices, colors, ground, origins, spheres };
+
+}
+
+/** `poolSteps` run to the end. */
+export function fillPool( batches: CullBatchInput[] ): CullPool {
+
+	const steps = poolSteps( batches );
+	for ( ;; ) {
+
+		const next = steps.next();
+		if ( next.done ) return next.value;
+
+	}
+
+}
+
 const _box = new THREE.Box3(), _corner = new THREE.Vector3(), _world = new THREE.Box3(), _sphere = new THREE.Sphere();
 const _frustum = new THREE.Frustum(), _projScreen = new THREE.Matrix4(), _viewInverse = new THREE.Matrix4(), _camera = new THREE.Vector3();
 const _padded = new THREE.Matrix4(), _size = new THREE.Vector2();
@@ -100,19 +217,30 @@ function unjitteredPadded( renderer: THREE.Renderer, camera: THREE.Camera ): THR
 
 }
 
+type Buffer = keyof CullBuffers;
+type StorageType = 'uint' | 'vec4' | 'mat4';
+type Storage<T extends StorageType = StorageType> = THREE.StorageBufferNode<T>;
+// (the map holds every type; each node is read back as the type it was made with)
+type AnyStorage = { toReadOnly(): unknown; value: THREE.StorageBufferAttribute };
+
 export class GrassCull {
 
-	readonly slots: number;
-	readonly groups: number;
+	/** The buffers' slots: the capacity, a power of two. */
+	slots: number;
+	/** The workgroups dispatched: those the batches fill. */
+	groups: number;
 	readonly ranges: CullRange[] = [];
-	readonly matrices: THREE.StorageBufferAttribute;
-	readonly colors: THREE.StorageBufferAttribute;
-	readonly ground: THREE.StorageBufferAttribute;
-	readonly origins: THREE.StorageBufferAttribute;
-	readonly visible: THREE.StorageBufferAttribute;
 	readonly indirect: THREE.IndirectStorageBufferAttribute;
-	private readonly spheres: THREE.StorageBufferAttribute;
-	private readonly counts: THREE.StorageBufferAttribute;
+	private buffers: CullBuffers;
+	// every storage node over the pool's buffers, by buffer, type and access: `setPool` points them
+	// at new buffers (a new bind group, no pipeline: AGENTS.md)
+	private readonly nodes = new Map<string, { buffer: Buffer; node: AnyStorage }>();
+	// the batches' bounds, as the kernels read them (uniforms, so a new pool builds no pipeline)
+	private readonly bounds: { start: THREE.UniformNode<'uint', number>; groupStart: THREE.UniformNode<'uint', number>; groupEnd: THREE.UniformNode<'uint', number> }[];
+	private readonly lastGroup = uniform( 0, 'uint' );
+	// the scatter's passes over a batch's earlier workgroups: its longest batch's workgroups / GROUP
+	private readonly sumPasses = uniform( 0, 'uint' );
+	private readonly dispatch: [ number, number, number ] = [ 1, 1, 1 ];
 	private readonly planes = Array.from( { length: 5 }, () => uniform( new THREE.Vector4() ) );
 	private readonly cameraPosition = uniform( new THREE.Vector3() );
 	private readonly kernels: THREE.ComputeNode[];
@@ -122,99 +250,113 @@ export class GrassCull {
 
 	constructor( batches: CullBatchInput[], private readonly thinFar: THREE.UniformNode<'float', number> ) {
 
-		let slot = 0;
-		for ( const b of batches ) {
+		const pool = fillPool( batches );
+		this.slots = pool.slots;
+		this.groups = pool.groups;
+		this.buffers = GrassCull.buffers( pool );
+		this.indirect = new THREE.IndirectStorageBufferAttribute( new Uint32Array( batches.length * 5 ), 1 );
+		this.bounds = batches.map( () => ( { start: uniform( 0, 'uint' ), groupStart: uniform( 0, 'uint' ), groupEnd: uniform( 0, 'uint' ) } ) );
+		pool.ranges.forEach( ( r, k ) => this.ranges.push( { ...r, indexCount: uniform( 0, 'uint' ), indirectOffset: k * 20 } ) );
+		this.setRanges( pool );
+		this.kernels = this.buildKernels();
 
-			const count = b.tufts.length;
-			const groups = Math.ceil( count / GROUP );
-			this.ranges.push( { start: slot, count, groupStart: slot / GROUP, groupEnd: slot / GROUP + groups, indexCount: uniform( 0, 'uint' ), indirectOffset: this.ranges.length * 20 } );
-			slot += groups * GROUP;
+	}
+
+	/** The storage buffers of `pool`, for upload before `setPool` takes them. */
+	static buffers( pool: CullPool ): CullBuffers {
+
+		const n = pool.slots, visible = new Uint32Array( n );
+		for ( let i = 0; i < n; i ++ ) visible[ i ] = i;
+		return {
+			matrices: new THREE.StorageBufferAttribute( pool.matrices, 16 ),
+			colors: new THREE.StorageBufferAttribute( pool.colors, 4 ),
+			ground: new THREE.StorageBufferAttribute( pool.ground, 4 ),
+			origins: new THREE.StorageBufferAttribute( pool.origins, 4 ),
+			spheres: new THREE.StorageBufferAttribute( pool.spheres, 4 ),
+			visible: new THREE.StorageBufferAttribute( visible, 1 ),
+			counts: new THREE.StorageBufferAttribute( new Uint32Array( n / GROUP ), 1 ),
+		};
+
+	}
+
+	get matrices(): THREE.StorageBufferAttribute { return this.buffers.matrices; }
+	get colors(): THREE.StorageBufferAttribute { return this.buffers.colors; }
+
+	/** A storage node over one of the pool's buffers (one per buffer, type and access), which
+	 * follows the pool when `setPool` replaces it. */
+	node<T extends StorageType>( buffer: Buffer, type: T, readOnly = false ): Storage<T> {
+
+		const key = `${ buffer } ${ type } ${ readOnly }`;
+		let entry = this.nodes.get( key );
+		if ( ! entry ) {
+
+			const attribute = this.buffers[ buffer ];
+			const node = storage( attribute, type, attribute.count ) as unknown as AnyStorage;
+			if ( readOnly ) node.toReadOnly();
+			this.nodes.set( key, entry = { buffer, node } );
 
 		}
-		this.slots = Math.max( slot, GROUP );
-		this.groups = this.slots / GROUP;
-		const n = this.slots;
-		const matrices = new Float32Array( n * 16 ), colors = new Float32Array( n * 4 ), ground = new Float32Array( n * 12 );
-		const origins = new Float32Array( n * 4 ), spheres = new Float32Array( n * 4 ).fill( - 1 ), visible = new Uint32Array( n );
-		for ( let i = 0; i < n; i ++ ) visible[ i ] = i;
-		const args = new Uint32Array( batches.length * 5 );
-		batches.forEach( ( b, k ) => {
+		return entry.node as unknown as Storage<T>;
 
-			const range = this.ranges[ k ];
-			b.geometry.computeBoundingBox();
-			_box.copy( b.geometry.boundingBox! );
-			args[ k * 5 + 1 ] = range.count;
-			b.tufts.forEach( ( t, j ) => {
+	}
 
-				const i = range.start + j;
-				t.m.toArray( matrices, i * 16 );
-				colors[ i * 4 ] = t.col.r; colors[ i * 4 + 1 ] = t.col.g; colors[ i * 4 + 2 ] = t.col.b;
-				const e = t.m.elements;
-				// x: sky visibility, y: soil cover, z: rim cover, w: rim edge (1 on the plateau's
-				// outer rim, where blades stand against the sea and stay narrower: the opaque
-				// pass's MSAA edge pixels there resolve against the sky-coloured clear, so every
-				// partly covered pixel a widened blade adds shows as a pale fringe over the sea);
-				// then the instance's local x axis with the thin flag (1 for the extra tufts that
-				// fold away with distance), and its local z axis. A blade's width lies in the
-				// plane of those axes: the vertex stage keeps thin blades a minimum width on screen
-				// in world space.
-				ground.set( [ t.visibility, t.soil, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], 0 ], i * 12 );
-				t.origin.toArray( origins, i * 4 );
-				origins[ i * 4 + 3 ] = t.top;
-				// The tuft's box in world space, extended down by its own height (standing water
-				// sinks the blades below their anchor), then padded for the widening and the sway.
-				_world.makeEmpty();
-				for ( let c = 0; c < 8; c ++ ) {
+	/** Takes `pool` (the same batches in the same order), with its buffers made by `buffers`: the
+	 * nodes are pointed at them, the bounds and the dispatch follow, and the next update culls
+	 * again. Returns the buffers it replaced, to dispose of once nothing draws with them. */
+	setPool( pool: CullPool, buffers: CullBuffers = GrassCull.buffers( pool ) ): CullBuffers {
 
-					_corner.set( c & 1 ? _box.max.x : _box.min.x, c & 2 ? _box.max.y : _box.min.y, c & 4 ? _box.max.z : _box.min.z ).applyMatrix4( t.m );
-					_world.expandByPoint( _corner );
+		const old = this.buffers;
+		this.buffers = buffers;
+		for ( const { buffer, node } of this.nodes.values() ) node.value = buffers[ buffer ];
+		this.slots = pool.slots;
+		this.groups = pool.groups;
+		pool.ranges.forEach( ( r, k ) => Object.assign( this.ranges[ k ], r ) );
+		this.setRanges( pool );
+		this.invalidate();
+		return old;
 
-				}
-				_world.min.y -= _world.max.y - _world.min.y;
-				_world.getBoundingSphere( _sphere );
-				const axisScale = Math.max( Math.hypot( e[ 0 ], e[ 1 ], e[ 2 ] ), Math.hypot( e[ 8 ], e[ 9 ], e[ 10 ] ) );
-				_sphere.center.toArray( spheres, i * 4 );
-				// Every vertex lies in the box, so within the box's radius plus the origin's offset
-				// from its centre of the origin; a vertex turned about the origin stays that close to
-				// it, so within the radius plus twice the offset of the centre.
-				const bend = 2 * _sphere.center.distanceTo( t.origin );
-				spheres[ i * 4 + 3 ] = _sphere.radius + bend + WIDEN_REACH * b.halfWidth * axisScale + SWAY_PAD;
+	}
 
-			} );
+	private setRanges( pool: CullPool ): void {
+
+		const args = this.indirect.array as Uint32Array;
+		pool.ranges.forEach( ( r, k ) => {
+
+			const b = this.bounds[ k ];
+			b.start.value = r.start;
+			b.groupStart.value = r.groupStart;
+			b.groupEnd.value = r.groupEnd;
+			// (a batch's arguments are the scatter's from its first dispatch on; an empty batch's stay 0)
+			args.fill( 0, k * 5, k * 5 + 5 );
+			args[ k * 5 + 1 ] = r.count;
 
 		} );
-		this.matrices = new THREE.StorageBufferAttribute( matrices, 16 );
-		this.colors = new THREE.StorageBufferAttribute( colors, 4 );
-		this.ground = new THREE.StorageBufferAttribute( ground, 4 );
-		this.origins = new THREE.StorageBufferAttribute( origins, 4 );
-		this.spheres = new THREE.StorageBufferAttribute( spheres, 4 );
-		this.visible = new THREE.StorageBufferAttribute( visible, 1 );
-		this.counts = new THREE.StorageBufferAttribute( new Uint32Array( this.groups ), 1 );
-		this.indirect = new THREE.IndirectStorageBufferAttribute( args, 1 );
-		this.kernels = this.buildKernels();
+		this.indirect.needsUpdate = true;
+		this.lastGroup.value = pool.groups - 1;
+		this.sumPasses.value = Math.ceil( Math.max( ...pool.ranges.map( ( r ) => r.groupEnd - r.groupStart ) ) / GROUP );
+		this.dispatch[ 0 ] = pool.groups;
 
 	}
 
 	private buildKernels(): THREE.ComputeNode[] {
 
-		const n = this.slots;
-		const spheres = storage( this.spheres, 'vec4', n ).toReadOnly();
-		const origins = storage( this.origins, 'vec4', n ).toReadOnly();
-		const ground = storage( this.ground, 'vec4', n * 3 ).toReadOnly();
-		const visible = storage( this.visible, 'uint', n );
-		const counts = storage( this.counts, 'uint', this.groups );
+		const spheres = this.node( 'spheres', 'vec4', true );
+		const origins = this.node( 'origins', 'vec4', true );
+		const ground = this.node( 'ground', 'vec4', true );
+		const visible = this.node( 'visible', 'uint' );
+		const counts = this.node( 'counts', 'uint' );
 		const args = storage( this.indirect, 'uint', this.ranges.length * 5 );
-		const planes = this.planes, cameraPosition = this.cameraPosition, thinFar = this.thinFar;
-		const ranges = this.ranges.filter( ( r ) => r.count > 0 );
-		// Per workgroup: its batch's first workgroup and first slot, by the batches' fixed bounds.
-		const pick = ( g: THREE.Node<'uint'>, value: ( r: CullRange ) => number ) => {
+		const planes = this.planes, cameraPosition = this.cameraPosition, thinFar = this.thinFar, bounds = this.bounds;
+		// Per workgroup: its batch's first workgroup or first slot. The batches lie in order, so the
+		// last batch starting at or before the workgroup holds it (an empty batch starts where the
+		// next one does, and loses to it).
+		const pick = ( g: THREE.Node<'uint'>, value: ( b: typeof bounds[ number ] ) => THREE.Node<'uint'> ) => {
 
-			let node: THREE.Node<'uint'> = uint( value( ranges[ 0 ] ) );
-			for ( let k = 1; k < ranges.length; k ++ ) node = select( g.greaterThanEqual( uint( ranges[ k ].groupStart ) ), uint( value( ranges[ k ] ) ), node );
+			let node: THREE.Node<'uint'> = value( bounds[ 0 ] );
+			for ( let k = 1; k < bounds.length; k ++ ) node = select( g.greaterThanEqual( bounds[ k ].groupStart ), value( bounds[ k ] ), node );
 			return node;
 
 		};
-		const maxGroups = Math.max( ...ranges.map( ( r ) => r.groupEnd - r.groupStart ) );
 
 		const isVisible = ( gi: THREE.Node<'uint'> ) => {
 
@@ -269,14 +411,14 @@ export class GrassCull {
 			const inclusive = result.element( i ).toVar();
 			const total = result.element( uint( GROUP - 1 ) ).toVar();
 			// the visible tufts of the batch's earlier workgroups
-			const first = pick( g, ( r ) => r.groupStart ).toVar();
+			const first = pick( g, ( b ) => b.groupStart ).toVar();
 			const partial = uint( 0 ).toVar();
-			for ( let k = 0; k * GROUP < maxGroups; k ++ ) {
+			Loop( { start: uint( 0 ), end: this.sumPasses, type: 'uint', condition: '<' }, ( { i: pass } ) => {
 
-				const j = first.add( i ).add( uint( k * GROUP ) );
-				partial.addAssign( select( j.lessThan( g ), counts.element( ( min as unknown as UintMax )( j, uint( this.groups - 1 ) ) ), uint( 0 ) ) );
+				const j = first.add( i ).add( pass.mul( GROUP ) );
+				partial.addAssign( select( j.lessThan( g ), counts.element( ( min as unknown as UintMax )( j, this.lastGroup ) ), uint( 0 ) ) );
 
-			}
+			} );
 			const sum = workgroupArray( 'uint', GROUP ) as unknown as { element: ( i: THREE.Node<'uint'> ) => THREE.Node<'uint'> };
 			sum.element( i ).assign( partial );
 			for ( let s = GROUP >> 1; s >= 1; s >>= 1 ) {
@@ -293,28 +435,29 @@ export class GrassCull {
 			const offset = sum.element( uint( 0 ) ).toVar();
 			If( flag.equal( 1 ), () => {
 
-				visible.element( pick( g, ( r ) => r.start ).add( offset ).add( inclusive ).sub( 1 ) ).assign( gi );
+				visible.element( pick( g, ( b ) => b.start ).add( offset ).add( inclusive ).sub( 1 ) ).assign( gi );
 
 			} );
 			// The batch's last workgroup writes its draw arguments: index count, instance count
-			// (first index, base vertex and first instance stay 0).
-			for ( const r of ranges ) {
+			// (first index, base vertex and first instance stay 0). An empty batch has none.
+			bounds.forEach( ( b, k ) => {
 
-				const k = this.ranges.indexOf( r );
-				If( g.equal( uint( r.groupEnd - 1 ) ).and( i.equal( 0 ) ), () => {
+				If( g.add( 1 ).equal( b.groupEnd ).and( b.groupEnd.greaterThan( b.groupStart ) ).and( i.equal( 0 ) ), () => {
 
-					args.element( uint( k * 5 ) ).assign( r.indexCount );
+					args.element( uint( k * 5 ) ).assign( this.ranges[ k ].indexCount );
 					args.element( uint( k * 5 + 1 ) ).assign( offset.add( total ) );
 
 				} );
 
-			}
+			} );
 
 		} )().computeKernel( [ GROUP ] );
 
 		for ( const kernel of [ count, scatter ] ) {
 
-			kernel.dispatchSize = [ this.groups, 1, 1 ];
+			// (the same array, so a new pool's size reaches both: an array is read at each dispatch,
+			// never part of the pipeline)
+			kernel.dispatchSize = this.dispatch;
 			kernel.setName( kernel === count ? 'Grass.CullCount' : 'Grass.CullScatter' );
 
 		}
@@ -380,13 +523,12 @@ export class GrassCull {
 /** The vertex stage's view of the culled buffers: `index` is the drawn tuft's slot. */
 export function cullInputs( cull: GrassCull, index: THREE.Node<'uint'> ) {
 
-	const n = cull.slots;
-	const ground = storage( cull.ground, 'vec4', n * 3 ).toReadOnly();
+	const ground = cull.node( 'ground', 'vec4', true );
 	return {
-		matrix: storage( cull.matrices, 'mat4', n ).toReadOnly().element( index ),
-		color: storage( cull.colors, 'vec4', n ).toReadOnly().element( index ).xyz,
+		matrix: cull.node( 'matrices', 'mat4', true ).element( index ),
+		color: cull.node( 'colors', 'vec4', true ).element( index ).xyz,
 		ground: ( k: number ) => ground.element( index.mul( 3 ).add( k ) ),
-		origin: storage( cull.origins, 'vec4', n ).toReadOnly().element( index ),
+		origin: cull.node( 'origins', 'vec4', true ).element( index ),
 	};
 
 }

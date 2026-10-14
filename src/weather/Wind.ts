@@ -13,9 +13,10 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // and change as they go. It gives a lean (tip offset over height) from the wind's pressure; still
 // air is the rest pose. Plants answer it in Crysis's layers (Sousa, GPU Gems 3 ch. 16): the whole
 // plant bends from its root with the field at the root, every vertex keeping its distance from it
-// (`mainBend`), and sways about the lean at its own rate (shrubs 0.9 Hz, trees half that); sprays,
-// fronds and leaf stalks swing on their own phase from where they leave the plant; leaf edges and
-// tips flutter along their normals, faster as the wind rises. Grass tufts bend with the field at
+// (`mainBend`), and sways about the lean at its own rate (the rim bushes 0.9 Hz; a placed tree
+// about half that, as a guide); a placed plant's sprays and fronds swing on their own phase from
+// where they leave it, as the rim trails' strands do; leaf edges and tips flutter along their
+// normals, faster as the wind rises. Grass tufts bend with the field at
 // their root, flowers and the turf skirt follow the same field, and rim trails swing like
 // pendulums (RimFoliage.ts).
 //

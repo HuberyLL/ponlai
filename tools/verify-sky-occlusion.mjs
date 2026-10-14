@@ -1,10 +1,12 @@
 // Run with a Node version supporting TypeScript stripping: node tools/verify-sky-occlusion.mjs.
-// --world also generates the full scene twice and checks geometry/placement invariance.
+// --world also generates the page's world twice (from its chunks, tools/world-node.mjs), with and
+// without the contact shade, and checks geometry/placement invariance.
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import { boundedSceneField, localSkyVisibility, contactVisibilitySampler } from '../src/lighting/SkyOcclusion.ts';
 import { surfaceNets } from '../src/world/SurfaceNets.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
+import { generateWorld } from './world-node.mjs';
 
 const plane = ( x, y, z ) => y;
 const sphere = ( x, y, z ) => Math.hypot( x, y - 0.8, z ) - 0.35;
@@ -54,26 +56,33 @@ console.log( JSON.stringify( { isolated: 1, neighbouring: neighbouring( 0, 0, 0,
 
 if ( process.argv.includes( '--world' ) ) {
 
-	let world;
-	globalThis.self = { postMessage( data, { transfer } ) {
-
-		assert.equal( new Set( transfer ).size, transfer.length, 'Every worker buffer must be transferred only once.' );
-		world = data;
-
-	} };
-	await import( '../src/world/worldWorker.ts' );
 	const generate = ( contactOcclusion ) => {
 
 		const start = performance.now();
-		self.onmessage( { data: { contactOcclusion } } );
-		return { data: world, elapsedMs: performance.now() - start };
+		const data = generateWorld( { contactOcclusion } );
+		return { data, elapsedMs: performance.now() - start };
 
 	};
 	const before = generate( false ), after = generate( true );
 	assert.equal( 'stacks' in after.data, false, 'The current scene has no exposed stack API.' );
 	assert.equal( 'stacks' in before.data, false );
-	assert.ok( after.data.meshes.every( mesh => mesh.kind !== 'stack' && ! mesh.name.startsWith( 'stack' ) ) );
-	const rocksMesh = after.data.meshes.find( mesh => mesh.name === 'rocks' );
+	// the island's parts (a mesh per land chunk) taken together, and the stones
+	const meshesOf = ( data ) => {
+
+		const parts = data.islands.map( ( part ) => part.mesh );
+		const join = ( key ) => {
+
+			const out = new parts[ 0 ][ key ].constructor( parts.reduce( ( n, p ) => n + p[ key ].length, 0 ) );
+			parts.reduce( ( offset, p ) => { out.set( p[ key ], offset ); return offset + p[ key ].length; }, 0 );
+			return out;
+
+		};
+		const island = Object.fromEntries( [ 'positions', 'normals', 'indices', 'tint', 'curv', 'ao' ].map( ( key ) => [ key, join( key ) ] ) );
+		return [ { name: 'island', ...island }, { name: 'rocks', ...data.stones } ];
+
+	};
+	const afterMeshes = meshesOf( after.data ), beforeMeshes = meshesOf( before.data );
+	const rocksMesh = after.data.stones;
 	assert.ok( rocksMesh && rocksMesh.positions.length > 0 );
 	let maximumRockY = - Infinity;
 	for ( let k = 1; k < rocksMesh.positions.length; k += 3 ) maximumRockY = Math.max( maximumRockY, rocksMesh.positions[ k ] );
@@ -84,7 +93,6 @@ if ( process.argv.includes( '--world' ) ) {
 	assert.ok( after.data.rimGround.data.length > 0, 'The meadow transition field must be transferred.' );
 	assert.deepEqual( after.data.rimGround, before.data.rimGround );
 	assert.deepEqual( after.data.shore, before.data.shore );
-	assert.deepEqual( after.data.islandShore, before.data.islandShore );
 	assert.deepEqual( after.data.seabed.positions, before.data.seabed.positions );
 	assert.equal( after.data.vegetation.length, before.data.vegetation.length );
 	for ( let k = 0; k < after.data.vegetation.length; k += VEGETATION_STRIDE ) {
@@ -96,9 +104,9 @@ if ( process.argv.includes( '--world' ) ) {
 	const finiteVisibility = ( values ) => assert.ok( values.every( ( value ) => Number.isFinite( value ) && value >= 0 && value <= 1 ) );
 	finiteVisibility( after.data.seabed.ao );
 	const changes = [];
-	for ( let m = 0; m < after.data.meshes.length; m ++ ) {
+	for ( let m = 0; m < afterMeshes.length; m ++ ) {
 
-		const a = after.data.meshes[ m ], b = before.data.meshes[ m ];
+		const a = afterMeshes[ m ], b = beforeMeshes[ m ];
 		for ( const key of [ 'positions', 'normals', 'indices', 'tint', 'curv' ] ) assert.deepEqual( a[ key ], b[ key ] );
 		finiteVisibility( a.ao );
 		let changed = 0, visibleChanged = 0, visible = 0, sumChange = 0;

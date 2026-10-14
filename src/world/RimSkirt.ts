@@ -2,33 +2,71 @@ import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, vec2, vec3, vec4, float, mix, sin, dot, pow, clamp, materialColor } from 'three/tsl';
 import { meadowColor } from '../materials/Meadow.ts';
 import { SOIL_PALETTE } from '../materials/Soil.ts';
-import { SKIRT_RING } from './RimGround.ts';
+import { SKIRT_INFO, SKIRT_RING } from './RimGround.ts';
+import { cellStream } from './Anchors.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
 import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
-import { mulberry32, noise3, smoothstep } from './noise.ts';
+import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
+import { noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
 import type { RimSkirtData } from './types.ts';
 
-// The turf skirt: the meadow's sod curling a little over the rim, swept along the coast the
-// worker traced (RimGround.buildRimSkirt), with a thatch of short blades gathered in tufts on
-// its shoulder and face, and bundles of hanging grass and root hairs along its ragged lower edge.
-// One mesh, one draw. It follows the coast line traced from the rim field, never the tile edges,
-// so it takes any shape the rim takes, and it bends with the plants' wind field (Wind.ts).
+// The turf skirt: the meadow's sod curling a little over the rim, with a thatch of short blades
+// gathered in tufts on its shoulder and face, and bundles of hanging grass and root hairs along
+// its ragged lower edge. It is swept along the coast traced inside each box (a chunk's) from the
+// rim field (RimGround.buildRimSkirt), resampled between the points where the coast crosses the
+// box's border, so it follows any shape the rim takes and meets itself across boxes. Each
+// sample's blades draw from a stream of its own place, and the body's normals come with the rings,
+// so a piece builds alike whichever box traced it and neighbouring pieces meet without a seam. One
+// mesh, one draw; it bends with the plants' wind field (Wind.ts).
 
 const SHADE = [ 0.86, 0.94, 1, 0.9, 0.7, 0.52, 0.4 ];
 
 export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mesh {
 
-	const P: number[] = [], C: number[] = [], N: number[] = [], B: number[] = [], W: number[] = [], I: number[] = [];
-	const { points, info, loops } = skirt;
+	const steps = turfSkirtSteps( skirt );
+	let next = steps.next();
+	while ( ! next.done ) next = steps.next();
+	const mesh = new THREE.Mesh( next.value.geometry, skirtMaterial( shared ) );
+	keepLegacyWind( mesh, skirtMaterial( shared, true ) );
+	mesh.name = 'turfSkirt';
+	mesh.castShadow = true;
+	mesh.receiveShadow = true;
+	// Like the other vegetation: drawn before the terrain, so the rim's turf under it fails the depth test.
+	mesh.renderOrder = - 1;
+	mesh.userData = next.value.counts;
+	return mesh;
+
+}
+
+/** The skirt's geometry and its counts (blades, triangles). */
+export interface TurfSkirtBuilt { geometry: THREE.BufferGeometry; counts: { blades: number; triangles: number } }
+
+/** Swaps the skirt `mesh` (buildTurfSkirt) to `built` in place. Returns the geometry replaced, to
+ * dispose of once nothing draws it. */
+export function setTurfSkirt( mesh: THREE.Mesh, built: TurfSkirtBuilt ): THREE.BufferGeometry {
+
+	const old = mesh.geometry;
+	mesh.geometry = built.geometry;
+	mesh.userData = built.counts;
+	return old;
+
+}
+
+/** The skirt's geometry in steps (a generator, `per` samples a step in each pass), so the growth
+ * (Growth.ts) builds a grown island's in idle time; `buildTurfSkirt` runs it to the end. The result
+ * is the same however it is stepped. */
+export function* turfSkirtSteps( skirt: RimSkirtData, per = Infinity ): Generator<void, TurfSkirtBuilt> {
+
+	const P = new Growing(), C = new Growing(), N = new Growing(), B = new Growing(), W = new Growing(), I = new Growing();
+	const { points, normals, info, pieces } = skirt;
 	const col = new THREE.Color(), earth = new THREE.Color( ...SOIL_PALETTE.root );
 	const base = new THREE.Vector3(), dir = new THREE.Vector3(), side = new THREE.Vector3(), up = new THREE.Vector3( 0, 1, 0 );
 	const normal = new THREE.Vector3(), v = new THREE.Vector3();
 	const ring = ( s: number, k: number, target = v ) => target.fromArray( points, ( s * SKIRT_RING + k ) * 3 );
-	const rng = mulberry32( 5501 );
-	let blades = 0;
+	let blades = 0, done = 0;
 
 	// Torn gaps: short stretches where the curl has broken off below the shoulder, so the sod's
 	// face reads as separate lobes and tufts rather than one smooth mat. Sample s is in a gap.
@@ -38,12 +76,13 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 		return noise3( base.x * 4.7 + 3.9, 7.1, base.z * 4.7 - 2.6 ) * 0.5 + 0.5 > 0.6;
 
 	};
-	// Body: the sod sheet, smooth-shaded from its own triangles.
-	for ( let l = 0; l < loops.length; l += 2 ) {
+	// Body: the sod sheet, smooth-shaded by the normals the worker found from its rings.
+	for ( let l = 0; l < pieces.length; l += 2 ) {
 
-		const first = loops[ l ], count = loops[ l + 1 ];
+		const first = pieces[ l ], count = pieces[ l + 1 ];
 		for ( let s = first; s < first + count; s ++ ) for ( let k = 0; k < SKIRT_RING; k ++ ) {
 
+			if ( k === 0 && ++ done % per === 0 ) yield;
 			ring( s, k );
 			P.push( v.x, v.y, v.z );
 			// Shaded turf under the thatch, mottled with moss and bare earth.
@@ -53,15 +92,15 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 			const roots = Math.max( 0, ( k - 3 ) / 3 ) * ( 0.45 + 0.25 * noise3( v.x * 2.3, v.y * 2.3, v.z * 2.3 ) );
 			col.lerp( earth, roots ).multiplyScalar( SHADE[ k ] );
 			C.push( col.r, col.g, col.b );
-			N.push( 0, 1, 0 ); B.push( 0 ); W.push( 0 );
+			N.push( normals[ ( s * SKIRT_RING + k ) * 3 ], normals[ ( s * SKIRT_RING + k ) * 3 + 1 ], normals[ ( s * SKIRT_RING + k ) * 3 + 2 ] );
+			B.push( 0 ); W.push( 0 );
 
 		}
-		for ( let s = 0; s < count; s ++ ) {
+		// a piece's last sample ends its last segment (a loop's is its first again)
+		for ( let s = 0; s + 1 < count; s ++ ) {
 
-			// Closed loops wrap around; the traced iso-line returns to its start.
-			const a = first + s, b = first + ( s + 1 ) % count;
-			if ( Math.max( info[ a * 4 + 2 ], info[ b * 4 + 2 ] ) < 0.03 ) continue;
-			if ( s === count - 1 && ring( a, 0 ).distanceTo( ring( b, 0, base ) ) > 0.2 ) continue;
+			const a = first + s, b = a + 1;
+			if ( Math.max( info[ a * SKIRT_INFO + 4 ], info[ b * SKIRT_INFO + 4 ] ) < 0.03 ) continue;
 			const gap = torn( a ) || torn( b );
 			for ( let k = 0; k + 1 < SKIRT_RING; k ++ ) {
 
@@ -74,7 +113,6 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 		}
 
 	}
-	const bodyVertices = P.length / 3;
 
 	// A tapered, slightly bent blade: two quads and a tip, 5 vertices.
 	const blade = ( root: THREE.Vector3, direction: THREE.Vector3, length: number, width: number, bend: number, color: THREE.Color, n: THREE.Vector3 ) => {
@@ -98,13 +136,16 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 
 	};
 	const a = new THREE.Vector3(), b = new THREE.Vector3(), tangent = new THREE.Vector3(), out = new THREE.Vector3();
-	for ( let l = 0; l < loops.length; l += 2 ) {
+	for ( let l = 0; l < pieces.length; l += 2 ) {
 
-		const first = loops[ l ], count = loops[ l + 1 ];
-		for ( let s = first; s < first + count; s ++ ) {
+		// the blades of the samples that start a segment: a piece's last sample starts the next piece
+		const first = pieces[ l ], count = pieces[ l + 1 ];
+		for ( let s = first; s + 1 < first + count; s ++ ) {
 
-			const nx = info[ s * 4 ], nz = info[ s * 4 + 1 ], presence = info[ s * 4 + 2 ], droop = info[ s * 4 + 3 ];
+			if ( ++ done % per === 0 ) yield;
+			const [ x, z, nx, nz, presence, droop ] = info.subarray( s * SKIRT_INFO, ( s + 1 ) * SKIRT_INFO );
 			if ( presence < 0.12 ) continue;
+			const rng = cellStream( Math.round( x * 1000 ), Math.round( z * 1000 ), 5501 );
 			const along = new THREE.Vector3( - nz, 0, nx );
 			out.set( nx, 0, nz );
 			// The sod's outer face is a thatch of short blades over the dark root mat, as the meadow
@@ -154,29 +195,15 @@ export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mes
 	}
 
 	const geometry = new THREE.BufferGeometry();
-	geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( P, 3 ) );
-	geometry.setAttribute( 'normal', new THREE.Float32BufferAttribute( N, 3 ) );
-	geometry.setAttribute( 'color', new THREE.Float32BufferAttribute( C, 3 ) );
-	geometry.setAttribute( 'skirtBlade', new THREE.Float32BufferAttribute( B, 1 ) );
-	geometry.setAttribute( 'skirtSway', new THREE.Float32BufferAttribute( W, 1 ) );
-	geometry.setIndex( I );
-	// Smooth normals for the sod sheet only; blades keep their soft, upward-leaning normals.
-	const blade0 = new Float32Array( N.slice( bodyVertices * 3 ) );
-	geometry.computeVertexNormals();
-	const normals = geometry.getAttribute( 'normal' ) as THREE.BufferAttribute;
-	( normals.array as Float32Array ).set( blade0, bodyVertices * 3 );
-	geometry.computeBoundingSphere();
+	geometry.setAttribute( 'position', new THREE.BufferAttribute( yield* float32Steps( P ), 3 ) );
+	geometry.setAttribute( 'normal', new THREE.BufferAttribute( yield* float32Steps( N ), 3 ) );
+	geometry.setAttribute( 'color', new THREE.BufferAttribute( yield* float32Steps( C ), 3 ) );
+	geometry.setAttribute( 'skirtBlade', new THREE.BufferAttribute( yield* float32Steps( B ), 1 ) );
+	geometry.setAttribute( 'skirtSway', new THREE.BufferAttribute( yield* float32Steps( W ), 1 ) );
+	geometry.setIndex( yield* indexSteps( I ) );
+	yield* boundsSteps( geometry );
 	geometry.boundingSphere!.radius += 0.12; // the thatch's lean in a gale
-
-	const mesh = new THREE.Mesh( geometry, skirtMaterial( shared ) );
-	keepLegacyWind( mesh, skirtMaterial( shared, true ) );
-	mesh.name = 'turfSkirt';
-	mesh.castShadow = true;
-	mesh.receiveShadow = true;
-	// Like the other vegetation: drawn before the terrain, so the rim's turf under it fails the depth test.
-	mesh.renderOrder = - 1;
-	mesh.userData = { blades, triangles: I.length / 3 };
-	return mesh;
+	return { geometry, counts: { blades, triangles: I.length / 3 } };
 
 }
 

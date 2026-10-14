@@ -212,16 +212,6 @@ packages, into `dist/licenses/`.
   folder or its CC BY-NC-SA derived shaders (`rainRipples.js`, `surfaceRain.js`, `rainGlass.js`)
   is used.
 
-### three.js MaterialX noise (CPU port)
-
-- Upstream: three.js `src/nodes/materialx/MaterialXNoise.js` (r186), which three.js transpiled
-  from MaterialX's `mx_noise.glsl` (Contributors to the MaterialX project)
-- Copyright: 2010-2026 three.js authors
-- Licence: MIT (the `three` package's licence, shipped with the build)
-- File: `src/weather/PuddleHollows.ts`: `mx_perlin_noise_float` for a vec3 (Bob Jenkins' lookup3
-  final mix as the lattice hash, Perlin's gradients, MaterialX's 0.982 scale) in plain
-  TypeScript, so the shrub and tree picker reads the same puddle hollows as the shader.
-
 ### FSR 1 (AMD FidelityFX, through three.js's FSR1Node)
 
 - Upstream: three.js `examples/jsm/tsl/display/FSR1Node.js` (r186), a TSL port of AMD FidelityFX
@@ -327,8 +317,6 @@ packages, into `dist/licenses/`.
 Published techniques this project implements without using their code; each is also credited in a
 comment where it is used.
 
-- Rosettes of broad leaves and fern fronds turned by the golden angle: H. Vogel,
-  *A better way to construct the sunflower head* (Mathematical Biosciences 44, 1979).
 - FFT ocean: J. Tessendorf,
   [*Simulating Ocean Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
   (SIGGRAPH course notes, 2002 revision).
@@ -461,9 +449,18 @@ comment where it is used.
 - Vegetation wind in layers (the whole plant bent from its root keeping each vertex's distance to
   it, branches swinging on their own phase, leaf edges fluttering along the normal): Tiago Sousa,
   *Vegetation Procedural Animation and Shading in Crysis* (GPU Gems 3, chapter 16, 2007), in
-  `src/world/Foliage.ts` (`mainBend`), `Plants.ts` and `RimFoliage.ts`. Each plant answering the
+  `src/world/Foliage.ts` (`mainBend`) and `RimFoliage.ts`. Each plant answering the
   local wind like a spring at its own natural frequency: Santa Monica Studio's wind in *God of War*
   (Rupert Renard, *Wind Simulation in God of War*, GDC 2019), in `mainBend`.
+- The island's growth (`src/world/IslandGrowth.ts`): coastlines as the level sets of a fractal
+  surface, after Benoit B. Mandelbrot, *The Fractal Geometry of Nature* (1982); islands shaped
+  from noise, after Amit Patel, [*Making maps with noise*](https://www.redblobgames.com/maps/terrain-from-noise/)
+  (Red Blob Games); the relief's domain warp, after Inigo Quilez,
+  [*Domain warping*](https://iquilezles.org/articles/warp/); each new piece grown as invasion
+  percolation, after David Wilkinson and Jorge F. Willemsen, *Invasion percolation: a new form
+  of percolation theory* (Journal of Physics A 16, 1983), with the priority queue of Richard
+  Barnes, Clarence Lehman and David Mulla, *Priority-Flood: An optimal depression-filling and
+  watershed-labeling algorithm for digital elevation models* (Computers & Geosciences 62, 2014).
 - Temporal anti-aliasing and upsampling (`src/post/TemporalAA.ts`, `Jitter.ts`, `Motion.ts`): a
   Halton (2, 3) sub-pixel jitter, the motion of the nearest surface in a 3x3 neighbourhood and a
   clipped history, after Brian Karis,

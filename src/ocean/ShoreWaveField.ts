@@ -4,10 +4,112 @@
  * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
  */
 
-import * as THREE from 'three/webgpu';
-import type { WorldData, ShoreField } from '../world/types.ts';
+import type { ShoreField } from '../world/types.ts';
+
+// The rocky shore's wave fields as plain data (no three, no DOM): a function of the shore's
+// distance field alone, so the page builds them at load and a grown island's in a worker
+// (shoreFieldWorker.ts, World growth in Growth.ts); ShoreWaves.ts makes their textures.
+
+/** A field's RGBA float texels, nx by nz. */
+export interface FieldPixels { pixels: Float32Array; nx: number; nz: number }
 
 const MAX_RES = 256;
+
+// The shore's distance is clamped to LAND_REACH (the chunks' shore tiles), but the shelter's
+// recovery runs from 18 to 36 m. Beyond the clamp the distance to the coast is the clamp plus the
+// distance to the region under it (that region is the coast grown by the clamp), so the clamped
+// cells take the distance to an unclamped cell plus that cell's own distance, an upper bound
+// that is exact for a cell on the line to the coast: the least over the cells round the nearest. One exact Euclidean feature transform (Felzenszwalb and Huttenlocher, "Distance
+// Transforms of Sampled Functions", 2012), separable: columns, then rows.
+const SHORE_CLAMP = 24, REFINE = 2;
+function unclampShore( distances: Float32Array, nx: number, nz: number, cellX: number, cellZ: number ): void {
+
+	const count = nx * nz;
+	// per cell, the squared z distance to the nearest site in its column, and that site's row
+	const column = new Float64Array( count ).fill( Infinity ), row = new Int32Array( count ).fill( - 1 );
+	let sites = 0;
+	for ( let i = 0; i < nx; i ++ ) {
+
+		let last = - 1;
+		for ( let j = 0; j < nz; j ++ ) {
+
+			if ( distances[ j * nx + i ] < SHORE_CLAMP ) { last = j; sites ++; }
+			if ( last >= 0 ) { column[ j * nx + i ] = ( ( j - last ) * cellZ ) ** 2; row[ j * nx + i ] = last; }
+
+		}
+		last = - 1;
+		for ( let j = nz - 1; j >= 0; j -- ) {
+
+			if ( distances[ j * nx + i ] < SHORE_CLAMP ) last = j;
+			const d = last >= 0 ? ( ( last - j ) * cellZ ) ** 2 : Infinity;
+			if ( d < column[ j * nx + i ] ) { column[ j * nx + i ] = d; row[ j * nx + i ] = last; }
+
+		}
+
+	}
+	if ( sites === 0 || sites === count ) return;
+	// rows: the lower envelope of the parabolas ( x - x_q )^2 + column( q ) over the finite ones
+	const v = new Int32Array( nx ), z = new Float64Array( nx + 1 );
+	const out = distances.slice();
+	for ( let j = 0; j < nz; j ++ ) {
+
+		const o = j * nx;
+		let n = - 1;
+		for ( let q = 0; q < nx; q ++ ) {
+
+			const fq = column[ o + q ];
+			if ( fq === Infinity ) continue;
+			const xq = q * cellX;
+			let s = - Infinity;
+			while ( n >= 0 ) {
+
+				const xv = v[ n ] * cellX;
+				s = ( fq + xq * xq - column[ o + v[ n ] ] - xv * xv ) / ( 2 * ( xq - xv ) );
+				if ( s > z[ n ] ) break;
+				n --;
+
+			}
+			n ++;
+			v[ n ] = q; z[ n ] = n === 0 ? - Infinity : s; z[ n + 1 ] = Infinity;
+
+		}
+		if ( n < 0 ) continue;
+		let e = 0;
+		for ( let i = 0; i < nx; i ++ ) {
+
+			const k = j * nx + i;
+			while ( z[ e + 1 ] < i * cellX ) e ++;
+			if ( distances[ k ] < SHORE_CLAMP ) continue;
+			// the nearest site is close to the line to the coast, not on it: its neighbours may
+			// lie nearer that line, so the least bound round it is taken
+			const si = v[ e ], sj = row[ j * nx + si ];
+			const a0 = Math.max( 0, si - REFINE ), a1 = Math.min( nx - 1, si + REFINE );
+			const b0 = Math.max( 0, sj - REFINE ), b1 = Math.min( nz - 1, sj + REFINE );
+			let best = Infinity;
+			for ( let b = b0; b <= b1; b ++ ) {
+
+				const ez = ( j - b ) * cellZ;
+				for ( let a = a0; a <= a1; a ++ ) {
+
+					const d = distances[ b * nx + a ], ex = ( i - a ) * cellX;
+					if ( d < SHORE_CLAMP ) {
+
+						const bound = Math.sqrt( ex * ex + ez * ez ) + d;
+						if ( bound < best ) best = bound;
+
+					}
+
+				}
+
+			}
+			out[ k ] = best;
+
+		}
+
+	}
+	distances.set( out );
+
+}
 
 function sampleShore( field: ShoreField, x: number, z: number ): number {
 
@@ -24,9 +126,8 @@ function sampleShore( field: ShoreField, x: number, z: number ): number {
 
 // A geometric boundary only: confidence and distance gradient. Wave timing comes from FFT,
 // so crossing wave systems never inherit the old single-period arrival-time field.
-export function createShoreBoundaryField( data: WorldData ): THREE.DataTexture {
+export function shoreBoundaryPixels( shore: ShoreField ): FieldPixels {
 
-	const shore = data.shore;
 	const scale = Math.min( 1, MAX_RES / Math.max( shore.nx, shore.nz ) );
 	const nx = Math.max( 2, Math.round( shore.nx * scale ) ), nz = Math.max( 2, Math.round( shore.nz * scale ) );
 	const width = shore.nx * shore.cell, height = shore.nz * shore.cell;
@@ -43,11 +144,7 @@ export function createShoreBoundaryField( data: WorldData ): THREE.DataTexture {
 		pixels[ k + 2 ] = gx; pixels[ k + 3 ] = gz;
 
 	}
-	const texture = new THREE.DataTexture( pixels, nx, nz, THREE.RGBAFormat, THREE.FloatType );
-	texture.name = 'shoreWaveBoundary';
-	texture.minFilter = texture.magFilter = THREE.LinearFilter;
-	texture.generateMipmaps = false; texture.flipY = false; texture.needsUpdate = true;
-	return texture;
+	return { pixels, nx, nz };
 
 }
 
@@ -57,16 +154,15 @@ export function createShoreBoundaryField( data: WorldData ): THREE.DataTexture {
  * R: swell amplitude transmission, G: central-ray visibility, BA: spatial derivatives of R.
  * This is an art-directed soft wave shadow, not a diffraction or fluid solver.
  */
-export function createShoreShelterField( data: WorldData, direction: THREE.Vector2, spreadDegrees = 18 ): THREE.DataTexture {
+export function shoreShelterPixels( shoreGrid: ShoreField, direction: { x: number; y: number }, spreadDegrees = 18 ): FieldPixels & { info: Record<string, unknown> } {
 
 	const started = performance.now();
-	const shoreGrid = data.shore;
 	const scale = Math.min( 1, MAX_RES / Math.max( shoreGrid.nx, shoreGrid.nz ) );
 	const nx = Math.max( 2, Math.round( shoreGrid.nx * scale ) ), nz = Math.max( 2, Math.round( shoreGrid.nz * scale ) );
 	const info = { x0: shoreGrid.x0, z0: shoreGrid.z0, width: shoreGrid.nx * shoreGrid.cell, height: shoreGrid.nz * shoreGrid.cell,
 		cellX: shoreGrid.nx * shoreGrid.cell / nx, cellZ: shoreGrid.nz * shoreGrid.cell / nz };
 	const dx = direction.x, dz = direction.y;
-	const shore = data.shore, count = nx * nz;
+	const shore = shoreGrid, count = nx * nz;
 	const visible = new Float32Array( count ), direct = new Float32Array( count );
 	const water = new Uint8Array( count ), distances = new Float32Array( count );
 	const angles = [ - spreadDegrees, - spreadDegrees / 2, 0, spreadDegrees / 2, spreadDegrees ], weights = [ 1, 2, 6, 2, 1 ];
@@ -114,6 +210,7 @@ export function createShoreShelterField( data: WorldData, direction: THREE.Vecto
 		visible[ k ] = sum / 12;
 
 	}
+	unclampShore( distances, nx, nz, info.cellX, info.cellZ );
 	// Blur water neighbours only. This removes fan/grid steps at penumbra boundaries
 	// without bleeding a fully exposed wave through the solid island into a small inlet.
 	for ( let pass = 0; pass < 4; pass ++ ) {
@@ -184,11 +281,6 @@ export function createShoreShelterField( data: WorldData, direction: THREE.Vecto
 		}
 
 	}
-	const texture = new THREE.DataTexture( pixels, nx, nz, THREE.RGBAFormat, THREE.FloatType );
-	texture.name = 'shoreWaveShelter';
-	texture.minFilter = texture.magFilter = THREE.LinearFilter;
-	texture.generateMipmaps = false; texture.flipY = false; texture.needsUpdate = true;
-	texture.userData.shoreWaveShelter = { direction: [ dx, dz ], fanDegrees: angles, residualAmplitude: 0.06, buildMs: performance.now() - started };
-	return texture;
+	return { pixels, nx, nz, info: { direction: [ dx, dz ], fanDegrees: angles, residualAmplitude: 0.06, buildMs: performance.now() - started } };
 
 }

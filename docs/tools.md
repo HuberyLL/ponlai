@@ -69,10 +69,38 @@ everyday commands; this file has the details. Each tool's own file says the rest
 
 View and capture:
 
-- `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `dist`, `polar`, `az` (the
-  camera), `gui`, `camera` (`orbit`, the default: the island camera; or `free`: fly with the
-  mouse, WASD, Q/E and Shift). A paused page lifts its loading screen at once, without the fade,
-  so a capture of a paused frame never catches the screen over it.
+- `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `dist` (m; without it the
+  island view's distance follows the land's size), `polar`, `az` (the camera), `gui`, `camera`
+  (`orbit`, the default: the island camera; or `free`: fly with the mouse, WASD, Q/E and Shift).
+  A paused page lifts its loading screen at once, without the fade, so a capture of a paused frame
+  never catches the screen over it.
+
+The island:
+
+- `seed` (the world's seed, 1 by default: Ponlai's island) and `grow` (growth steps after the
+  starting island, 0 by default, up to `GROWTH.maxSteps`). The page generates its world from that
+  land in 16 m chunks and frames its views on it; debug pages expose `window.__PONLAI__.land` (`seed`,
+  `step`, `bounds`, `centroid`, the views' `scale` against the first island and the default pivot
+  `target`) for the tools to frame by, which follows the island as it grows.
+- Growing in place (src/world/Growth.ts): Grow (the GUI's Island folder) or `await
+  __PONLAI__.growth.grow()` generates the next piece in the background and swaps it in (the
+  promise resolves once the frames after the swap are done); from then on the page keeps a piece
+  ahead. A `?game` page generates it from its start; `growth.start()` generates it ahead on any
+  page without growing (a probe that wants the piece ready). `growth.state` holds the step shown,
+  the next piece's phase and the last swap's chunks and times (preparation, the swap's frame by
+  part, the frames after it) and its `work`: the growth's own main-thread time per frame (`max`,
+  its `stage`, `frames` as page time and ms pairs, steps over 0.6 ms in `slow`, and the page
+  times the preparation began, the swap happened and its frames ended); `growth.
+  chunkHashes()` the shown chunks' hashes (equal on a grown page and one loaded with `grow` at the
+  same step), `growth.fieldBytes()` the world fields' GPU bytes. The island view (key R,
+  `setCameraView( 'island' )`) frames the land shown; the camera itself stays where it is.
+- `approach` (0 .. 1, 0 by default): the progress toward the next piece, the shoal under it
+  (src/world/SeabedRise.ts) put on it at once; above 0 the page generates the next piece and keeps
+  its loading screen up until the shoal is written, so a paused load repeats. A scene option: a
+  scene jump sets it as the load does. On a page, the Island folder's Approach slider (eased over
+  seconds of scene time, or at once while paused), `growth.approach( p )` (eased) and `await
+  growth.approachNow( p )`; `growth.rise.state` holds the approach, R (`r`, its `target`, the R last
+  `written`), the pending `tiles`, their largest `rise` (m), the `writes` and the last one's `ms`.
 
 Sky and weather:
 
@@ -116,8 +144,12 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   After `loop.step`, `loop.start()` resumes the clock with a first delta of at most one frame.
 - `taaResolve=off` (debug builds): the temporal modes without their resolve, the jittered frame
   shown as it renders, through the output passes with the grade's vignette and grain.
-- `worldCache=off` (generate the island instead of loading it from the browser's IndexedDB cache,
-  as on a first visit).
+- `worldCache=off` (generate every chunk of the island instead of loading it from the browser's
+  IndexedDB cache, as on a first visit; `src/world/WorldChunks.ts`). The cache keeps one record per
+  chunk, so a land grown by a piece reloads the chunks the piece did not reach; the diagnostics'
+  `worldCache` counts the records read (`hits`, of the chunks and the land). It keeps the records
+  of the two land versions loaded last (a seed and `grow` step each) and deletes the rest after a
+  load, so going back to an older step rebuilds the chunks it does not share with them.
 - `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
   page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
   as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
@@ -166,6 +198,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   `s.motionCheck()` lists the materials whose motion vectors are missing or partial.
 - `vegPrepass=0` (the single coverage pass), `vegPrepass=coverage` (the prepass with coverage kept
   in the shaded draw), `windLegacy` (the old global-sine sway).
+- `chunkBorders` shows the world's 16 m chunks as lines above the sea and the meadow (also the
+  GUI's Ground folder, `chunk borders`), to tell a seam from a chunk border.
 - `islander` picks the islanders' proportions (`medium`, the default, or `stock` (the kit's own),
   `subtle` and `strong` builds of `Proportions.ts`); also in the GUI's Islander folder, which
   rebuilds the scene's walker in place. In game mode the folder's proportion control is disabled:
@@ -181,7 +215,8 @@ Game:
 
 - `game` (the island as a game), `hour` (the start hour, default 8), `dayLength` (real seconds
   per game day at 1x, default 1440: 24 minutes), `paused` (the game starts paused; the scene runs
-  again once the game does), `load` (resume the game saved in this browser). The page's own
+  again once the game does), `load` (resume the game saved in this browser, its world loaded at the
+  save's piece count unless `grow` is given). The page's own
   `weather` option and auto weather work in the game as without it.
 - The player's interface is a prototype HUD (`src/game/Hud.ts`): a readout of the islander (day
   and time, satiety and hydration, the bag, what they are doing, each unbuilt site's progress in
@@ -191,12 +226,14 @@ Game:
   clock, the GUI's hour, clock pause and time preset are off (the game's clock owns the time of
   day), and its Game folder (`src/game/GameDebug.ts`) sets the speed and pauses, saves and loads, shows one islander's body
   (position, the action under way, whether a thought is in flight) and sends it walking to the
-  next click on the island. The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
+  next click on the island; its Growth subfolder shows the population against the next step and
+  adds an islander (one piece per 2 islanders above 3: the island grows at 5 islanders). The stand-in brain (`src/game/sim/standin.ts`) thinks for the islander
   by default. `window.__PONLAI__.game` is the Game for the console: `.sim`, `.tools` (the five
   actions), `setBrain( brain )` (kept across a load; `null` leaves the islander idle),
   `think( id )`, `walkTo( id, x, z )`, `placeBlueprint( kind, x, z )` (a building of a kind,
   `'chest'`, any number, each with an id like `chest1`; returns why not, or null), `focus( id )`, `setSpeed`, `togglePause`,
-  `save` and `load`.
+  `addIslander()`, `save` and `load` (a save of another piece count loads only with the page);
+  `.sim.comingLand` holds the next piece's cells once the page has it.
 
 ## Captures
 
@@ -242,7 +279,30 @@ change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors,
 (mean RGB, luma, percentiles per image or region); regions are `--box x,y,w,h` or `--anchor
 name|all` from the capture's JSON. Its numbers are diff-set.py's and compare-captures.py's
 (shared helpers in `tools/parity/pixels.py`). `tools/compare-captures.py` measures two overview
-captures (`uv run --with numpy --with pillow`).
+captures (`uv run --with numpy --with pillow`). Where shapes differ (growth steps, seeds, a
+regenerated island), judge the look by eye and region statistics (`tools/capture-growth.mjs`), not
+by pixel difference.
+
+`node tools/capture-growth.mjs --base url [--cand url] [--seeds 1,2] [--grow 0,4,12]
+[--views v1,v3] [--label x] [--q "query"] [--jobs 2] [--base-ref sha] [--recheck 1]` sets a base
+and a candidate page side by side in six views (v1 overview, also in golden hour; v2 top-down; v3
+cliff, v4 meadow and v5 rim close; v6 sea floor), framed on the land in the page
+(`__PONLAI__.land`: the overview is the page's own island view; today's framing without it), into
+`artifacts/captures/growth/<label>/index.html` with each pair's crop statistics (mean luma,
+saturation and edge density, by compare-captures.py's metrics; deltas beyond 10 % flagged) and its
+pixel difference (pixels that differ, largest channel difference, on decoded pixels). A URL's own
+query and `--q` pass through and override the tool's settings (`debug` is added, so a production
+preview works). The shots are grouped by side and by the options a page reads at load (seed, grow,
+quality, dpr, ...), and each group is one `capture.mjs --worker` page (paused, headless, the shared
+GPU lock per view) that loads its first view and reaches the others by the exact scene jump, so a
+group's world is generated once; `--jobs` pages run at once. Each group keeps its own browser profile
+(`artifacts/.capture-profiles/growth/<side>-s<seed>-g<grow>`), so a repeat run finds its world in
+the cache. A failed view or a lost page is shot again once on a fresh page. `--base-ref <sha>` keeps
+the base side's shots per commit in `artifacts/captures/growth-ref/<sha>/` (one entry per shot,
+keyed by its query, size, camera code, capture tools and browser) and reuses them on later runs;
+the base URL must serve that commit. A pair with a tiny difference (at most 64 px and 2 levels by
+default) is shot again on both sides and reported as identical, repeatable or not repeatable
+(`--recheck 0` turns it off). The header of the tool has the details.
 
 `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
 (`capture-set.mjs`) and diffs it against a reference set, pixel for pixel or within the reference's
@@ -601,8 +661,8 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   median, p95 and p99, GPU time per pass, the tick's JS time, hitches with their cause, and the
   startup.
 - It loads each variant once and switches scenes at runtime (`--mode reload` reloads per scene,
-  the original method); every page keeps the generated island in IndexedDB (in the tool's own
-  Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
+  the original method); every page keeps the generated island's chunks in IndexedDB (in the
+  tool's own Chrome profile) while the generator's sources are unchanged (`--world-cache off` loads with
   `worldCache=off`). A profile that another Chrome holds (another run's) is not launched on: the
   run takes a temporary one, with cold caches. (Launched on, a headed Chrome holding it opened a
   blank window of its own, in front of that run's page.)
@@ -841,6 +901,74 @@ what these do not give (automation, A/B statistics, pass names).
   first prototype's rules (needs, the bag, the palm, fishing, the chest placed as a blueprint and
   built, several chests with stable ids, two builders on one site, the actions, the perception, the stand-in brain over a few game days, a save mid-action); its island is in
   `tools/game-fixture.mjs`.
+- `tools/verify-growth-shape.mjs` (plain `node`) checks the island's growth over 32 seeds and 36
+  steps: the coast's solidity, elongation and share along the lattice axes, that a grown land
+  equals the same steps taken one at a time through a saved land, and the lattice's margin; it
+  writes a sheet of eight seeds to `artifacts/growth/shape-sheet-<label>.png`.
+- `tools/verify-world-chunks.mjs [--seeds 1,2] [--steps 12] [--threads n] [--long] [--bench]
+  [--sheets dir]` (plain `node`; run it before captures after any change to the world's generator)
+  grows each seed's land step by step and builds every chunk of every step (`src/world/Chunks.ts`)
+  on a pool of worker threads (default min( 8, cores - 4 )). It checks that the chunks built
+  incrementally equal a scratch build in a fresh process in reverse order (D1), on pools of 1 and
+  4 workers (D2, the 15 costliest chunks), that the land does not depend on the order of its
+  pieces (D3), that only chunks in `dirtyChunks` change between steps (D4, warning when a changed
+  chunk lies more than 30 m from the changed land), and that land placed just beyond the dirty
+  bound (34.6 - 44 m from a coastal chunk, on the coast and offshore) changes nothing (D5); at
+  steps 0 and the last, the seams: the
+  island and stone meshes close up (S1), the island's shared vertices and a 2 x 2 block meshed
+  whole (S2), the floor tiles' shared points, the floor at or below -1.6 m off the land and the
+  tiles' outer sides on the open sea's lattice (S3), the turf skirt's border crossings (S4), a
+  2 x 2 block's rim ground, shore, walk texels, anchors, bushes and trails made in one pass (S5),
+  the stones' owners and their copies in the neighbours' contact sets (S6), no island vertex or
+  anchor near a chunk that carries no rim ground tile (S7), and no buried wall inland (I1). `--long` takes D1 at every step, D2 on all chunks of both seeds, the S checks at
+  every fourth step and the island's inland column range against whole columns. `--bench` keeps
+  only D4 and prints per growth piece the land field's time, the chunks rebuilt and changed,
+  their CPU time and bytes. Every run writes a chunk sheet per seed (each step's land, new piece,
+  16 m grid, dirty chunks outlined, changed chunks tinted) to `--sheets` (default
+  `artifacts/captures/world-chunks/`). The checks' definitions are in the script's header. The
+  pool's 1219 chunk builds dominate the time: the default run took 6 minutes and `--long` 14 on
+  8 threads of a machine busy with other work, `--bench` 4.
+- `tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]` (plain `node`) builds
+  every chunk of whole islands on a pool of worker threads (`buildChunk`, contact shade off) and
+  checks the statistics of the union of what they own, with the bounds the look was tuned on: the
+  meadow's anchors, tufts and flowers per m^2 against M2 (grown islands summed, 5 %); the rim's
+  trail patches (1 - 9 strands, no node below a quarter of its root's height, bare runs of median
+  0.4 - 4 m and at most 4 m), bushes, strands and hanging length against M3 (10 %); the stones'
+  overlaps, crowns and reach per island, and over seeds 1 - 6 at steps 0, 8, 16 their classes and
+  large sizes per 100 m of coast against today's (20 %) and their gathering below the scars; the
+  cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5 m, 3 m) and none
+  breaks off more than 0.6 m of rock above y -1 where its reach ends it. The
+  chunk checks prove seams and locality; this probe proves the chunked world keeps its numbers.
+  The default run takes about a minute on 8 threads.
+- `tools/verify-chunk-derived.mjs [--seed 1] [--steps 0,8] [--threads n]` (plain `node`; run it
+  after a change to `src/world/ChunkDerived.ts` or to the builders it stands in for) builds every
+  chunk of the grown land on a pool of worker threads and checks the chunks' derived products,
+  which the page uses, against the builders it ran before on the merged meshes (three's WebGPU
+  build imported in node, RefractedSun.ts compiled with TypeScript): SunShadow's caster columns
+  folded from the chunks' `casterColumns` hold every walked column and stay within one cell of it;
+  RefractedSun's subsets from the chunks' `refracted` are today's cut of the merged island, stones
+  and floor, triangle for triangle, and `setCasters( root, subsets )` draws them;
+  `IslandGround.fromGrids` of the chunks' `ground` has the walked grid's bounds and top and every
+  height within one cell. It prints each builder's time on the merged meshes against the merge's.
+  About 15 s on 8 threads.
+- The three world verifiers above (`verify-world-chunks`, `verify-world-stats`,
+  `verify-chunk-derived`) skip a run whose inputs passed before: each pass is recorded under a key
+  hashed from the node version, the run's arguments and every source file the verifier loads (its
+  import graph walked from the script, plus `package-lock.json` when it imports a package), and a
+  run with the same key prints one line (`skipped, these inputs passed at <commit> on <time>`) and
+  exits 0 in about a second. A change to any file the verifier reaches, a comment included, or
+  different arguments run it again; `--force` runs it anyway (and records the pass again).
+  Failures and interrupted runs record nothing, and `verify-world-chunks --bench` is never skipped
+  nor recorded. A skipped `verify-world-chunks` writes no chunk sheets. The records are JSON files
+  in the main checkout's `artifacts/verify-cache/` (git-ignored), shared by every worktree, so a
+  pass proven on a branch counts on its merge; delete the folder to forget them all. The helper is
+  `tools/verify-cache.mjs`.
+- `tools/verify-storage-realloc.mjs` (GPU, headless, shared lock; it serves its own page from a
+  Vite server over the repository) checks what three's WebGPU backend does with storage buffers,
+  for pools that outgrow their capacity (the meadow's, `GrassCull.ts`): rewritten in place and
+  replaced by larger ones (a storage node's new `value`), under a compute kernel and an instanced
+  draw, counting the pipelines, shader modules and bind groups the device creates and checking
+  the results. Run it again after a three upgrade.
 - `tools/verify-framegraph.mjs` checks the frame graph's compiler and runtime on the CPU (plain
   `node`); `tools/verify-frame-graph-gpu.mjs` checks three's cache-key patches (with plain
   materials, and with the app's vegetation and spray drawn by a fresh renderer under a shadow
