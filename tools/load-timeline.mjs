@@ -21,7 +21,7 @@
 // composites the screen, the run's own window in full-screen `--display` and otherwise a desktop
 // every run shares (counted, its share alone marked nearly every headless slice contended, T36).
 //
-// The pure parts (grouping, top's parser, the slice marking) are exported for a CPU-only test.
+// The pure parts (grouping, top's parser, the slice marking) are exported for CPU-only tests.
 import { spawn } from 'node:child_process';
 import { createWriteStream } from 'node:fs';
 import { gpuClients } from './gpu-lock.mjs';

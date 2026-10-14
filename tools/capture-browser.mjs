@@ -1,5 +1,4 @@
-// The browser and the readiness that tools/capture.mjs and tools/capture-clip.mjs share ("fast
-// mode").
+// The browser and the readiness that tools/capture.mjs and tools/capture-clip.mjs share.
 //
 // Profile slots. Each capture runs in a persistent browser profile instead of a fresh one, so the
 // page's world cache (IndexedDB, src/world/WorldCache.ts) and the browser's GPU shader cache hit
