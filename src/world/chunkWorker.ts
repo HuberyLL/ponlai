@@ -12,8 +12,8 @@
 //   in the cache.
 //   The worker keeps it, and its reply carries a copy for every other worker, which the page hands
 //   on (`use`); each cuts the chunks' windows from its own.
-// - `chunk`: the chunk from the cache when it holds it, else built (when the worker has the field)
-//   and stored; without the field the worker answers `need` and the page sends the job again once
+// - `chunk`: the chunk from the cache when it holds it, else built (when the worker has the field,
+//   once the island's simplifier is ready: IslandSimplify.ts) and stored; without the field the worker answers `need` and the page sends the job again once
 //   it has the field. The cache (WorldCache.ts) is read and written here, off the main thread.
 // - `keep`: after a load, the keys of every record of its land version (the land's first): the
 //   cache keeps them and the version loaded before, and deletes the rest (WorldCache.ts `keep`).
@@ -26,6 +26,7 @@
 // what the job built or read from the cache for it.
 
 import { buildChunk, landField, landWindow, windowCells, CellCount, S, type ChunkData, type LandField } from './Chunks.ts';
+import { simplifierReady } from './IslandSimplify.ts';
 import { growLand, LandLattice, type Piece } from './IslandGrowth.ts';
 import { buildFarFloor, nearLandCells, underLand } from './SeabedTile.ts';
 import { openSeaBeds, openSeaHeight, SHELF_CEILING } from './Bathymetry.ts';
@@ -188,6 +189,7 @@ async function run( job: ChunkJob ): Promise<void> {
 
 			}
 			if ( ! land || ! field ) { post( { kind: 'need', ci: job.ci, cj: job.cj } ); break; }
+			await simplifierReady;
 			const data = buildChunk( landWindow( field, job.ci, job.cj ), land, job.ci, job.cj, { version: job.version, contactOcclusion: job.contactOcclusion } );
 			if ( cache ) track( cache.write( job.key!, data ) );
 			post( { kind: 'chunk', data, cache: cache ? 'miss' : job.key !== null ? 'error' : 'off', ms: performance.now() - t } );

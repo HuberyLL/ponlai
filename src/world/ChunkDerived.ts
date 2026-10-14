@@ -10,6 +10,11 @@
 //   power of two, so a point's cell ( floor( x / c ) ) is exact.
 // - The products are in world space: they hold for a mesh drawn with an identity world matrix (the
 //   chunks' meshes, placed in world coordinates).
+// - The island's caster columns and ground grid are taken from its mesh before it is simplified
+//   (Chunks.ts, IslandSimplify.ts): the simplified plateau's triangles reach a few metres, so its
+//   vertices left about a quarter of the ground's cells and two thirds of the columns' empty at
+//   growth step 12, where the camera would have grabbed the sea through the meadow. The meshed
+//   surface lies within the simplifier's error of the drawn one. The subsets index the drawn mesh.
 // - SunShadow's column grid follows its casters' box (64 cells along the longer side), which a
 //   chunk does not know: a chunk keeps its raw columns (the lowest and highest point in each cell,
 //   unpadded) on a finer fixed lattice, and SunShadow folds each into every one of its cells the

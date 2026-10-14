@@ -30,6 +30,8 @@
 //   cell order). A vertex on a border is emitted by every chunk whose quads use it, bit-identical.
 // - Apron vertices that no owned quad uses get positions and normals (curvature reads them) but
 //   no AO, tint or detail: the AO probes are most of a vertex's cost.
+// - `owners` receives each owned triangle's column, so a call over several chunks can be split by
+//   chunk (Chunks.ts `chunkIsland`).
 // - Every chunk mesh carries the same attributes, even an empty one: `detail` and `detail2` are
 //   always present (zero when the SDF has none), so no chunk asks for another pipeline variant.
 //
@@ -70,6 +72,9 @@ export interface NetsOptions {
 	own?: readonly [ number, number, number, number ];
 	// lattice columns sampled around the owned ones in chunk mode (3 at least)
 	apron?: number;
+	// Chunk mode: receives each owned triangle's owning column, i and k (two numbers per triangle,
+	// in the result's order), so a call over several chunks can be split by chunk.
+	owners?: number[];
 	// A column ( x, z ) for which this returns [ lo, hi ] samples only that y range (see the
 	// header). The returned array is read at once, so it may be reused between calls.
 	columnRange?: ( x: number, z: number ) => readonly [ number, number ] | null;
@@ -118,7 +123,7 @@ function placeSharp( n: number, px: Float64Array, py: Float64Array, pz: Float64A
 
 }
 
-export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf, contactVisibility, normalStep = voxel * 0.5, sharpen, own, apron = 3, columnRange }: NetsOptions ): MeshData {
+export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf, contactVisibility, normalStep = voxel * 0.5, sharpen, own, apron = 3, columnRange, owners }: NetsOptions ): MeshData {
 
 	// This call's lattice point ( i, j, k ) lies at ( ox + ( io + i ) voxel, min.y + j voxel,
 	// oz + ( ko + k ) voxel ): at min without `own` (io = ko = 0 adds exactly nothing, so that
@@ -295,6 +300,7 @@ export function surfaceNets( sdf: SDF, { min, max, voxel, ao = true, aoSdf = sdf
 		if ( own && io + i >= own[ 0 ] && io + i < own[ 2 ] && ko + k >= own[ 1 ] && ko + k < own[ 3 ] ) {
 
 			for ( let t = first; t < idx.length; t ++ ) ownIdx.push( idx[ t ] );
+			if ( owners ) for ( let t = first; t < idx.length; t += 3 ) owners.push( io + i, ko + k );
 
 		}
 

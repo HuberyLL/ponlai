@@ -7,6 +7,10 @@ import { buildLand } from '../src/world/chunkWorker.ts';
 import { mergeChunks } from '../src/world/ChunkMerge.ts';
 import { buildChunk, landField, landWindow } from '../src/world/Chunks.ts';
 import { LandLattice } from '../src/world/IslandGrowth.ts';
+import { simplifierReady } from '../src/world/IslandSimplify.ts';
+
+// the island's simplifier (wasm) is ready before any chunk is built, in every thread
+await simplifierReady;
 
 // The page's world (src/world/WorldChunks.ts) without its workers and cache: the land, its field
 // and every chunk built here one after another, then merged as the page merges them. The result

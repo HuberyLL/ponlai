@@ -47,10 +47,16 @@
 //   sea chunk's bytes went to a tile nothing reads.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
 //   chunk's data and its hash repeat whatever order the chunks are built in.
+// - The island's mesh is simplified per chunk, its border locked (IslandSimplify.ts): its vertices
+//   keep their cell order and every bit, its triangles are the simplifier's (deterministic). The
+//   curvature and every attribute come from the full mesh before; the border's vertices and edges
+//   stay, so two chunks still meet bit for bit (S1, S2). A block meshed in one call (`chunkIsland`,
+//   the checks) is split by chunk before it is simplified, so it still equals its chunks.
 // - The page's derived products come with the chunk (ChunkDerived.ts): the island's caster columns
 //   and ground grid on world lattices (a cell on a border is filled by both chunks, merged by min
-//   and max), and the refracted map's triangle subsets of the island, the stones and the floor
-//   tile (owned with their triangles). tools/verify-chunk-derived.mjs checks that they merge to
+//   and max), taken from the island's mesh before it is simplified, and the refracted map's
+//   triangle subsets of the drawn island, the stones and the floor tile (owned with their
+//   triangles). tools/verify-chunk-derived.mjs checks that they merge to
 //   what SunShadow, RefractedSun and IslandGround build from the merged meshes.
 // - For the checks (tools/verify-world-chunks.mjs): `chunkIsland` and `chunkBlock` make a block of
 //   chunks in one pass from the block's own window, with the same stage functions as `buildChunk`,
@@ -93,6 +99,7 @@ import {
 	type Bounds, type Footprint,
 } from './WorldShapes.ts';
 import { surfaceNets } from './SurfaceNets.ts';
+import { compactMesh, simplifyIslandMesh } from './IslandSimplify.ts';
 import { makeRockSDF, placeStones } from './Stones.ts';
 import { floorAt, SHELF_CEILING } from './Bathymetry.ts';
 import { buildFloorTile, nearLandCells, tileIndices, underLand, FAR_HALF, SEABED_TILE, TILE_SIDE, type FloorShape } from './SeabedTile.ts';
@@ -395,26 +402,65 @@ function setup( window: LandField, ci: number, cj: number, span: number, contact
 
 type Setup = ReturnType<typeof setup>;
 
-// The island's owned quads over the span x span chunks from ( ci, cj ) (SurfaceNets.ts chunk mode).
-function islandNets( ctx: Setup, ci: number, cj: number, span: number, columns = true ): MeshData {
+// The island's owned quads over the span x span chunks from ( ci, cj ) (SurfaceNets.ts chunk mode):
+// `full` as meshed, `mesh` each chunk's part simplified on its own (IslandSimplify.ts) and joined
+// in rows ( cj, then ci ). A block's call is split by chunk first, so each part is the chunk's own
+// full mesh bit for bit and simplifies as it does.
+function islandNets( ctx: Setup, ci: number, cj: number, span: number, columns = true, simplify = true ): { full: MeshData; mesh: MeshData } {
 
 	const { fp, sdf, aoSdf, contacts } = ctx;
-	return surfaceNets( sdf, {
+	const owners: number[] = [];
+	const full = surfaceNets( sdf, {
 		min: [ 0, Y0, 0 ], max: [ 0, Y1, 0 ], voxel: VOXEL,
 		own: [ ci * CELLS, cj * CELLS, ( ci + span ) * CELLS, ( cj + span ) * CELLS ],
 		// as the page's island mesh (chunkWorker.ts)
 		normalStep: VOXEL * 0.15, sharpen: cliffSharpCells( fp ), columnRange: columns ? islandColumnRange( fp ) : undefined,
-		aoSdf, contactVisibility: contacts( sdf ),
+		aoSdf, contactVisibility: contacts( sdf ), owners: span > 1 ? owners : undefined,
 	} );
+	if ( ! simplify ) return { full, mesh: full };
+	if ( span === 1 ) return { full, mesh: simplifyIslandMesh( full ) };
+	const parts: MeshData[] = [];
+	for ( let j = cj; j < cj + span; j ++ ) for ( let i = ci; i < ci + span; i ++ ) {
+
+		const own: number[] = [];
+		for ( let t = 0; t < full.indices.length / 3; t ++ ) {
+
+			if ( Math.floor( owners[ 2 * t ] / CELLS ) !== i || Math.floor( owners[ 2 * t + 1 ] / CELLS ) !== j ) continue;
+			own.push( full.indices[ 3 * t ], full.indices[ 3 * t + 1 ], full.indices[ 3 * t + 2 ] );
+
+		}
+		parts.push( simplifyIslandMesh( compactMesh( full, new Uint32Array( own ) ) ) );
+
+	}
+	return { full, mesh: joinIsland( parts ) };
+
+}
+
+// Island meshes joined in order, one index space, every attribute.
+function joinIsland( parts: MeshData[] ): MeshData {
+
+	const joined = mergeMeshes( parts ), nv = joined.positions.length / 3;
+	const detail = new Float32Array( nv * 4 ), detail2 = new Float32Array( nv * 3 );
+	let ov = 0;
+	for ( const p of parts ) {
+
+		detail.set( p.detail!, ov * 4 );
+		detail2.set( p.detail2!, ov * 3 );
+		ov += p.positions.length / 3;
+
+	}
+	return { ...joined, detail, detail2 };
 
 }
 
 /** The island mesh of the span x span chunks from ( ci, cj ), meshed in one call from their window
  * (`landWindow( field, ci, cj, span )`), as each of them meshes its own: the checks compare it with
- * the chunks' meshes. `columns: false` samples whole columns (SurfaceNets.ts `columnRange`). */
-export function chunkIsland( window: LandField, ci: number, cj: number, span = 1, { contactOcclusion = true, columns = true } = {} ): MeshData {
+ * the chunks' meshes. `columns: false` samples whole columns (SurfaceNets.ts `columnRange`);
+ * `simplify: false` returns the mesh before IslandSimplify.ts, which the chunk's derived products
+ * are taken from. */
+export function chunkIsland( window: LandField, ci: number, cj: number, span = 1, { contactOcclusion = true, columns = true, simplify = true } = {} ): MeshData {
 
-	return islandNets( setup( window, ci, cj, span, contactOcclusion ), ci, cj, span, columns );
+	return islandNets( setup( window, ci, cj, span, contactOcclusion ), ci, cj, span, columns, simplify ).mesh;
 
 }
 
@@ -478,9 +524,11 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	const island = landIn( window, grow( box, ISLAND_NEAR ) );
 	mark( 'setup' );
 
-	// --- the island: owned surface-nets quads
-	const islandMesh = island ? islandNets( ctx, ci, cj, 1 ) : null;
+	// --- the island: owned surface-nets quads, simplified (IslandSimplify.ts)
+	const full = island ? islandNets( ctx, ci, cj, 1, true, false ).full : null;
 	mark( 'island' );
+	const islandMesh = full && simplifyIslandMesh( full );
+	mark( 'simplify' );
 
 	// --- the owned stones, each meshed on its own (as chunkWorker.ts meshes them)
 	const rocks: Rock[] = [], rockMeshes: MeshData[] = [];
@@ -551,8 +599,10 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	const walk = walkTile( fp, box );
 	mark( 'walk' );
 
-	// --- what the page derives from the meshes (ChunkDerived.ts)
-	const islandPositions = islandMesh?.positions ?? new Float32Array( 0 );
+	// --- what the page derives from the meshes (ChunkDerived.ts): the caster columns and the ground
+	// from the island as meshed, which the simplified one lies within ISLAND_SIMPLIFY_ERROR of (its
+	// metre-wide plateau triangles leave cells without a vertex), the subsets from the drawn one
+	const islandPositions = full?.positions ?? new Float32Array( 0 );
 	const refracted = {
 		level: SEA_LEVEL,
 		island: islandMesh && submergedIndex( islandMesh.positions, islandMesh.indices ),

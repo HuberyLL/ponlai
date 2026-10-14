@@ -57,6 +57,10 @@ import { hanging } from '../src/world/RimTrails.ts';
 import { BUSH_STRIDE } from '../src/world/FoliageSites.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
 import { verifyCache } from './verify-cache.mjs';
+import { simplifierReady } from '../src/world/IslandSimplify.ts';
+
+// the island's simplifier (wasm) is ready before any chunk is built, in every thread
+await simplifierReady;
 
 const grow = ( b, m ) => ( { x0: b.x0 - m, z0: b.z0 - m, x1: b.x1 + m, z1: b.z1 + m } );
 

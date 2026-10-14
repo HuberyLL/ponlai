@@ -78,7 +78,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/camera/`: the island camera (`IslandCameraControls.ts`, the ground it grabs in
   `IslandGround.ts`) and the free flight.
 - `src/world/`: the world generated from the grown land (`IslandGrowth.ts`: the land lattice grown
-  one piece at a time) in 16 m chunks, each from its window of the land field (`Chunks.ts`; what the
+  one piece at a time) in 16 m chunks, each from its window of the land field (`Chunks.ts`; the
+  island's mesh simplified per chunk, its border locked: `IslandSimplify.ts`; what the
   page derives from its meshes, so it never walks their vertices: `ChunkDerived.ts`), on a pool of
   `chunkWorker.ts` workers run by `WorldChunks.ts` (started by `WorldStart.ts` as the page loads),
   one IndexedDB record per chunk (`WorldCache.ts`, keyed by the generator's hash, options, browser,
