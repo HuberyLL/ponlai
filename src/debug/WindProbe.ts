@@ -1,9 +1,9 @@
 import * as THREE from 'three/webgpu';
-import { Fn, If, dot, float, fract, instanceIndex, instancedArray, sin, uint, vec2, vec3, vec4 } from 'three/tsl';
-import { Wind, createWindUniforms, packWindState, windField, windStateOf, type WindState } from '../weather/Wind.ts';
-import { bendBlade, plantGrass } from '../world/Grass.ts';
+import { Fn, If, float, instanceIndex, instancedArray, uint, vec3, vec4 } from 'three/tsl';
+import { Wind, createWindUniforms, packWindState, rootHash, windField, windStateOf, type WindState } from '../weather/Wind.ts';
+import { plantGrass } from '../world/Grass.ts';
 import { bushInstances } from '../world/Foliage.ts';
-import { BUSH_WIND, FLOWER_WIND, PALM_WIND, mainBend } from '../world/vegetation/Deform.ts';
+import { BUSH_WIND, FLOWER_WIND, PALM_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
 import { plantFlowers } from '../world/Flowers.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
@@ -13,7 +13,7 @@ import type { Shared } from '../shared.ts';
 
 // `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
 // tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
-// Grass.ts `bendBlade`, vegetation/Deform.ts `mainBend` with each kind's constants), evaluated in a compute kernel built on the first
+// vegetation/Deform.ts `bendBlade` and `mainBend` with each kind's constants), evaluated in a compute kernel built on the first
 // call (none exists on a page that never calls it, so the page's pipelines are unchanged), for the
 // plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled), the rim bushes'
 // roots, the flowers' roots, the game's palms. The wind is a copy of the page's (`Wind`, the same
@@ -42,7 +42,6 @@ import type { Shared } from '../shared.ts';
 
 type V2 = THREE.Node<'vec2'>;
 type V4 = THREE.Node<'vec4'>;
-type F = THREE.Node<'float'>;
 
 export interface WindProbeContext {
 
@@ -68,7 +67,6 @@ const DEFAULTS: Options = {
 	w5: true, kinds: [ 'grass', 'bush', 'flower', 'palm' ], seed: 1,
 	weathers: [ 'clear', 'fair', 'cloudy', 'overcast' ], presets: [ 'sunrise', 'noon', 'golden-hour', 'midnight' ], gustSpan: 0,
 };
-const TAU = Math.PI * 2;
 const STATE = 2; // vec4s per wind step
 const BINS = [ 0, 0.5, 1, 2, 4, 8, 16 ];
 const r3 = ( v: number ) => Math.round( v * 1000 ) / 1000;
@@ -137,8 +135,6 @@ async function evaluate( renderer: THREE.WebGPURenderer, inputs: Float32Array, s
 
 }
 
-const hash = ( p: V2 ): F => fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
-
 // The kinds of plant: their inputs ( x, z, two kind values ) and their sway in the kernel.
 interface Kind { name: string; inputs: Float32Array; root: Float32Array; body: Body }
 
@@ -161,7 +157,7 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 		const points = all.filter( () => random() < keep ).map( ( t ) => [ t.origin.x, t.origin.z, t.top, random() ] );
 		add( 'grass', points, ( wind, p ) => {
 
-			const origin = vec3( p.x, 0, p.y ), phase = fract( p.w.mul( 17.31 ).add( hash( origin.xz ).mul( 5.13 ) ) ).mul( TAU );
+			const origin = vec3( p.x, 0, p.y ), phase = bladePhase( p.w, rootHash( origin.xz ) );
 			const field = windField( wind, origin.xz );
 			return { s: bendBlade( wind, vec3( p.x, p.z, p.y ), origin, p.z, float( 1 ), phase ).lean.xz, d: field.xy.mul( field.z ) };
 

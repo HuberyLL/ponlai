@@ -12,7 +12,8 @@ import { SWARD_HEIGHT, meadowColor, supportsMeadow } from '../materials/Meadow.t
 import { soilUniforms } from '../materials/Soil.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { useRestPoseShadows } from './VegetationShadow.ts';
-import { gustWave, setWindDisplacement, wave, windField, type WindState } from '../weather/Wind.ts';
+import { rootHash, setWindDisplacement } from '../weather/Wind.ts';
+import { bendBlade, bladePhase, drown } from './vegetation/Deform.ts';
 import { followWindMotionFlag } from './WindMotion.ts';
 import { showSway } from '../debug/WindView.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
@@ -68,9 +69,8 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   GrassCull.ts), so the narrowed blades cost no vertex work either.
 // - The view camera's draws are culled per tuft on the GPU (GrassCull.ts); every other draw over
 //   the same geometry draws every tuft. Tufts bend with the wind field at their root and their
-//   normals turn with the bend, so a gust shows as a sheen (Wind.ts). The islanders' trail through
-//   the grass (a later field, read in the vertex stage) would join the bend there: a lean added to
-//   `bendBlade`'s, so the blade arcs over and sinks as under the wind.
+//   normals turn with the bend, so a gust shows as a sheen (vegetation/Deform.ts `bendBlade`, its
+//   numbers GRASS_WIND, which the wind probe reads too).
 // - Under the temporal modes a blade's previous position (motion vectors) is its bend under the
 //   previous frame's wind from the same rooted point, widened by this frame's offset: the culled
 //   list keeps each tuft's own slot, so the tuft is the same whichever instance draws it.
@@ -376,31 +376,6 @@ const cullOn = uniform( 0, 'uint' ).onObjectUpdate( ( { object } ) => object?.us
 
 const TAU = Math.PI * 2;
 
-// The meadow's response to `windField`:
-// each tuft leans with the gust field at its root, its blades bending along their length (the
-// offset grows with the square of the blade parameter) while every vertex keeps its distance from
-// the root, so a bent blade arcs over and sinks rather than stretching. About that lean the blades
-// sway along the wind with their neighbours (Wind.ts `gustWave`, 50 swings per gust tile: about
-// 1.5 Hz in a fair wind), each a little apart (`phase`, the blade's own, within +-0.4 rad), and
-// shiver across it on their own phase, a quarter of that sway. `wind` is the frame's wind state
-// (`shared.wind`, or `.previous`). Returns the bent position and the lean as a world-space vector,
-// for the normals (its x, z are the blade's sway for the wind view and probe, src/debug/WindView.ts).
-export function bendBlade( wind: WindState, rooted: THREE.Node<'vec3'>, origin: THREE.Node<'vec3'>, height: THREE.Node<'float'>,
-	t2: THREE.Node<'float'>, phase: THREE.Node<'float'> ): { position: THREE.Node<'vec3'>; lean: THREE.Node<'vec3'> } {
-
-	const field = windField( wind, origin.xz ).toVar();
-	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
-	const swing = gustWave( wind, origin.xz, 50, phase.div( TAU ).sub( 0.5 ).mul( 0.8 ) ).mul( wind.breeze.mul( field.w.mul( 0.02 ).add( 0.009 ) ) );
-	const flutter = wave( wind.flutter, 1.7, phase ).mul( 0.65 ).add( wave( wind.flutter, 2.9, phase.mul( 2.3 ) ).mul( 0.35 ) );
-	const shiver = wind.breeze.mul( field.w.mul( 0.006 ).add( 0.003 ) ).mul( flutter );
-	const lean = along.mul( field.z.add( swing ) ).add( across.mul( shiver ) ).toVar();
-	const rel = rooted.sub( origin ).toVar();
-	const reach = length( rel );
-	const bent = normalize( rel.add( lean.mul( height.mul( t2 ) ) ).add( vec3( 0, 1e-5, 0 ) ) ).mul( reach ).add( origin );
-	return { position: bent, lean };
-
-}
-
 // A hash of a blade (its id within the tuft, `restBlade`) and its tuft's anchor (`pick`), one per
 // `k`: every choice a blade makes, fixed to the world as the anchors are.
 function bladeHash( id: F, pick: F, k: number ): F {
@@ -493,7 +468,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const t2 = t.mul( t );
 	const tuft = tuftOrigin;
 	const origin = tuft.xyz;
-	const pick = fract( sin( dot( origin.xz, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
+	const pick = rootHash( origin.xz );
 	const pose = restBlade( blade, pick );
 	// Whole blades instead of partial coverage (after tidewater's GrassField, Daniel Greenheck, MIT;
 	// the technique only): a widened blade's fragment is drawn solid where the blade's coverage
@@ -528,24 +503,24 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const tip = select( pick.greaterThan( 0.66 ), pick.sub( 0.66 ).mul( 0.25 ).add( 0.03 ), float( - 0.03 ) );
 	// The tallest blade of a tuft reaches about 0.9 of its height ( tuft.w / CANOPY_TOP ).
 	const sink = max( tuft.w.div( CANOPY_TOP ).mul( drowned ).mul( 0.9 ).sub( tip ), 0 );
-	const rooted = p.sub( origin ).mul( drowned ).add( origin ).sub( vec3( 0, pool.mul( sink ), 0 ) );
-	const bladePhase = fract( pose.id.mul( 17.31 ).add( pick.mul( 5.13 ) ) ).mul( TAU );
+	const rooted = drown( p.sub( origin ).mul( drowned ).add( origin ), origin.xz, sink, shared.wetness, pool );
+	const phase = bladePhase( pose.id, pick );
 	// The blade's half width at this vertex in world space: its local offset from the centreline
 	// through the instance's own axes, then the same drowning scale as `rooted` (an affine map of
 	// the position, so it scales offsets alike; the bend barely varies across a blade).
 	const across = ground1.xyz.mul( pose.offset.x ).add( ground2.xyz.mul( pose.offset.y ) ).mul( drowned );
 	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, ground0.w );
 	const lod = tuftLod( origin );
-	const bend = bendBlade( shared.wind, rooted, origin, tuft.w, t2, bladePhase );
+	const bend = bendBlade( shared.wind, rooted, origin, tuft.w, t2, phase );
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
 	// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
 	// camera: a previous frame's pose from the registered displacement keeps them as they are now.
 	const swayed = setWindDisplacement( mat, ( state ) => pixelWideBlade(
-		state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, bladePhase ).position, across, minWidth, lod.keep, lod.gain ), shared.wind );
+		state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, phase ).position, across, minWidth, lod.keep, lod.gain ), shared.wind );
 	// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
 	// rooted point, widened by the offset the current pose took (the widening follows the camera,
 	// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
-	const previous = TEMPORAL ? swayed.sub( bend.position ).add( bendBlade( shared.wind.previous, rooted, origin, tuft.w, t2, bladePhase ).position ) : undefined;
+	const previous = TEMPORAL ? swayed.sub( bend.position ).add( bendBlade( shared.wind.previous, rooted, origin, tuft.w, t2, phase ).position ) : undefined;
 	const rest = useRestPoseShadows( mat, rooted, swayed, undefined, previous );
 	// The rest of three's instancing: the normal and the instance colour, before the blade moves.
 	const placed = mat.positionNode!;

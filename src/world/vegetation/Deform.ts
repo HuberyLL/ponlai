@@ -4,12 +4,12 @@ import { LEAN_REF, gustWave, swayJitter, swingOf, wave, windField, type WindStat
 import { puddleCover } from '../../weather/Puddles.ts';
 
 // How the vegetation moves: the plants' main bend (`mainBend`: the rim bushes, the flowers, the
-// plateau's plants, the game's palm), the rim trails' pendulum (`hangingSway`), the turf skirt's
-// lean (`skirtLean`) and standing water drowning a plant (`drown`). Each kind's wind numbers (its
+// plateau's plants, the game's palm), the meadow's blades (`bendBlade`, each on its own phase,
+// `bladePhase`), the rim trails' pendulum (`hangingSway`), the turf skirt's lean (`skirtLean`) and
+// standing water drowning a plant (`drown`: the flowers, the meadow). Each kind's wind numbers (its
 // amplitude, its swings per gust tile, `slow`) are the exported constants below, which its material
-// and the wind probe (debug/WindProbe.ts) both read. The grass bends by its own function (Grass.ts
-// `bendBlade`). Each function returns nodes; it builds the graph its kind built in place before,
-// in the same order, so the shaders are unchanged.
+// and the wind probe (debug/WindProbe.ts) both read. Each function returns nodes; it builds the
+// graph its kind built in place before, in the same order, so the shaders are unchanged.
 
 const TAU = Math.PI * 2;
 
@@ -29,6 +29,10 @@ export const PLANT_WIND = { cycles: 30, slow: [ 1.4, 2.6 ] } as const;
 /** The game's palm: a shrub's 30 swings per gust tile at half that rate (`slow`); its crown's bend
  * comes with its vertices (PalmView.ts `palmSway`). */
 export const PALM_WIND = { cycles: 30, slow: 1 } as const;
+/** The meadow's blades: their sway's swings per gust tile (about 1.5 Hz in a fair wind) and how far
+ * apart the blades swing (a share of a swing), the sway's and the shiver's lean (per metre of the
+ * tuft's height, in a still breeze and added at a full gust: `base + gust * field.w`). */
+export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust: 0.02 }, shiver: { base: 0.003, gust: 0.006 } } as const;
 /** The rim's trails: the sway at their tips (m at LEAN_REF: about 2 cm in a fair gust, 8 - 10 cm in
  * a gale's), the pendulum's swings per gust tile along and across the wind (about 0.4 Hz), how far
  * the wall may press them back (their nodes hang 0.11 m off the stone, their leaves a little
@@ -66,6 +70,41 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
 	const offset = unit.mul( amplitude );
 	const rel = position.sub( root ).toVar();
 	return { position: normalize( rel.add( offset ).add( vec3( 0, 1e-5, 0 ) ) ).mul( length( rel ) ).add( root ), field, sway: unit.xz.mul( LEAN_REF ) };
+
+}
+
+/** The meadow's response to `windField`:
+ * each tuft leans with the gust field at its root, its blades bending along their length (the
+ * offset grows with the square of the blade parameter, `t2`) while every vertex keeps its distance
+ * from the root, so a bent blade arcs over and sinks rather than stretching. About that lean the
+ * blades sway along the wind with their neighbours (Wind.ts `gustWave`, GRASS_WIND.cycles swings
+ * per gust tile), each a little apart (`phase`, the blade's own, `bladePhase`, within +-0.4 rad),
+ * and shiver across it on their own phase, a quarter of that sway. `wind` is the frame's wind
+ * state (`shared.wind`, or `.previous`). Returns the bent position and the lean as a world-space
+ * vector, for the normals (its x, z are the blade's sway for the wind view and probe,
+ * src/debug/WindView.ts). The islanders' trail through the grass (a later field) would join the
+ * lean here, so the blade arcs over and sinks as under the wind. */
+export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F ): { position: V3; lean: V3 } {
+
+	const field = windField( wind, origin.xz ).toVar();
+	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
+	const { cycles, spread, swing: sw, shiver: sh } = GRASS_WIND;
+	const swing = gustWave( wind, origin.xz, cycles, phase.div( TAU ).sub( 0.5 ).mul( spread ) ).mul( wind.breeze.mul( field.w.mul( sw.gust ).add( sw.base ) ) );
+	const flutter = wave( wind.flutter, 1.7, phase ).mul( 0.65 ).add( wave( wind.flutter, 2.9, phase.mul( 2.3 ) ).mul( 0.35 ) );
+	const shiver = wind.breeze.mul( field.w.mul( sh.gust ).add( sh.base ) ).mul( flutter );
+	const lean = along.mul( field.z.add( swing ) ).add( across.mul( shiver ) ).toVar();
+	const rel = rooted.sub( origin ).toVar();
+	const reach = length( rel );
+	const bent = normalize( rel.add( lean.mul( height.mul( t2 ) ) ).add( vec3( 0, 1e-5, 0 ) ) ).mul( reach ).add( origin );
+	return { position: bent, lean };
+
+}
+
+/** A blade's own phase (0..2 pi) from its id within its tuft and a hash of its tuft's root
+ * (Wind.ts `rootHash`). */
+export function bladePhase( id: F, root: F ): F {
+
+	return fract( id.mul( 17.31 ).add( root.mul( 5.13 ) ) ).mul( TAU );
 
 }
 
@@ -109,10 +148,10 @@ export function skirtLean( wind: WindState, position: V3, weight: F ): { positio
 }
 
 /** Standing water drowns a whole plant rooted at `root` (x, z): it sinks by `depth` (m) as the
- * puddle there covers it (Puddles.ts), under the ground, which carries the water. */
-export function drown( position: V3, root: V2, depth: F, wetness: F ): V3 {
+ * puddle there covers it (Puddles.ts `puddleCover`, or `pool` when the plant has read it already),
+ * under the ground, which carries the water. */
+export function drown( position: V3, root: V2, depth: F, wetness: F, pool: F = puddleCover( root, wetness ) ): V3 {
 
-	const pool = puddleCover( root, wetness );
 	return position.sub( vec3( 0, pool.mul( depth ), 0 ) );
 
 }
