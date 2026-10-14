@@ -1019,6 +1019,8 @@ probe eval of one's own.
   `tools/verify-first-use.mjs` counts the pipelines any step still creates after the warm-up
   (`--aa msaa,taa,taau,off --quality high,medium,low` runs the whole matrix, a page per run; its
   `weather` and `bolt` steps reach the parked weathers and run only when `--steps` names them).
+  The load is judged as a step of its own, `load`: no frame of the 60 after the first may create a
+  pipeline synchronously, nor may the first frame's redraw of the sun's shadow map.
   It loads in a capture profile slot (as the captures' fast mode does), so the island comes from
   the world cache; the browser's shader cache in the slot does not change the counts (they are the
   page's requests to WebGPU, cached or not), and `--fresh` runs in a throwaway profile as before.
