@@ -158,6 +158,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   history lay outside the neighbourhood's clip box, white at twice its width);
   `src/post/graph/DebugView.ts`; also the GUI's Debug folder, which reloads;
   `s.pipeline.graph.describe()` and `dot()` list the graph).
+- `flags=<name>:<value>,...` (debug builds: sets `debugFlags` as the page loads, before anything
+  reads them; values `true` / `false`, numbers or strings, `mv.<source>` a motion source), e.g.
+  `flags=taaClampDrop:false` for a capture's or clip's `--q`.
 - Under the temporal modes `flags.mv.camera` / `object` = false leave a source out of the motion
   vectors, `flags.jitter = false` the jitter, `s.taaCut( reason )` cuts the history and
   `s.motionCheck()` lists the materials whose motion vectors are missing or partial.

@@ -90,9 +90,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
   final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
   temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal resolve
-  (`TemporalAA.ts`), the image of a resting scene (`TemporalRest.ts`), the scene events that
-  restart it or cut the history (`SceneEvents.ts`) and the rain's streaks and the storm's spray
-  drawn after the resolve (`AfterResolve.ts`).
+  (`TemporalAA.ts`) and the FSR 2 measures it takes for moving pixels (`TemporalLocks.ts`), the
+  image of a resting scene (`TemporalRest.ts`), the scene events that restart it or cut the
+  history (`SceneEvents.ts`) and the rain's streaks and the storm's spray drawn after the resolve
+  (`AfterResolve.ts`).
 - `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
   TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
   `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches

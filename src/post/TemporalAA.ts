@@ -1,14 +1,16 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, float, vec2, vec3, vec4, ivec2, texture, textureLoad, uniform, screenCoordinate, floor, exp, dot, max, min,
-	clamp, abs, sqrt, select, mix, smoothstep, length, round, sRGBTransferOETF, sRGBTransferEOTF, outputStruct, mrt, mat4,
+	clamp, abs, sqrt, select, mix, smoothstep, length, round, saturate, sRGBTransferOETF, sRGBTransferEOTF, outputStruct, mrt, mat4,
 } from 'three/tsl';
+import { debugFlags } from '../debug/DebugFlags.ts';
 import type { TemporalSettings } from '../Quality.ts';
 import { jitter } from './Jitter.ts';
 import { motionState, motionUniforms, onTaaCut, reactiveUniforms } from './Motion.ts';
 import { TemporalRest, restEpoch, restKey } from './TemporalRest.ts';
 import { sceneEvents } from './SceneEvents.ts';
 import { FSR, rcas } from './FSR.ts';
+import { carriedReactive, clampDrop, motionCap, movedLastFrame, temporalReactive } from './TemporalLocks.ts';
 import { temporalSharpness } from './Antialiasing.ts';
 import type { FrameGraph, ResourceHandle, SizeClass } from './graph/FrameGraph.ts';
 import { resolveSize, type Extents } from './graph/GraphCompiler.ts';
@@ -57,6 +59,59 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   truth the rain veil's per-pixel reactive `veilReactive`; after FSR 2's reactive and
 //   transparency-and-composition masks) and where the depth of field
 //   blurs (its foreground blur spreads over background pixels whose motion it does not follow).
+// - Movers (taa, taau; not lite, not the ground truth's frames; each a debug flag read every frame,
+//   `taaVelocityReject`, `taaClampDrop`, `taaMotionCap`, `taaWiden`, all four `taaMovers`; on by
+//   default): where things move the history must go faster than the frames' count alone lets it.
+//   The state (`taaMotion`, beside the history and ping-ponged with it, its size; reset with it by a
+//   cut, and not the previous frame's after a resize or a graph rebuild, `stateValid`) keeps per
+//   output pixel the nearest surface's own motion (its dilated motion less the camera's at its depth)
+//   and FSR 2's temporal reactive (TemporalLocks.ts). Velocity rejection (after Unity HDRP's TAA and
+//   Unreal's TSR): the own motion now against the one the history at uvPrev was written with, from
+//   none at 0.5 to all at 2 output pixels apart, drops the history and narrows the box to its moving
+//   width; behind a walking islander the history is the islander's (the disocclusion test skips the
+//   depth edge next to it, where the jitter alone moves what a pixel shows). The camera's motion is
+//   left out because its acceleration changes every pixel's motion at once: compared whole, a flick
+//   rejected the whole frame's history (its ghosting doubled). FSR 2's motion cap (at most 10 frames' worth times the class's share
+//   while the pixel moves or moved last frame, one frame at 20 pixels a frame, less by the carried
+//   reactive) and its clamp-drop (a clipped history of a moving or rejected pixel drops its weight
+//   toward a frame, by how far outside the box it lay; still pixels keep theirs, so a still camera's
+//   jitter clips do not flicker). Where the history goes (disoccluded, rejected, dropped) the frame's
+//   own estimate is the wide Gaussian's, softer instead of aliased (FSR 2's kernel bias). The sea and
+//   the sky are left out (the sea's motion vectors leave out its waves' phase). Measured at high taau
+//   against the ground truth: the islander orbit's ghosting about a third lower and its sharpness at
+//   the ground truth's, the slow pan's ghosting lower, for 5-10 % more high-pass flicker on moving
+//   crops; the islander walk's ghosting is mostly the swaying meadow behind it (its shading changes,
+//   which no motion vector carries), which the movers barely touch. The flags switch the measures
+//   by uniforms in the same shader, so `profile-frame --toggle` on them shows no cost: time the
+//   second stage by a load with `flags=taaSmooth:false` (built without its target) and the movers
+//   with `--compare` against a build without them.
+// - The second stage (taa, taau; not lite, not the ground truth; under `linear`, where the canvas
+//   pass reads the encoded image, and TAA's encode below the canvas reads its image; `taaSmooth =
+//   false` builds without it):
+//   a still camera's thin detail flickered at 2-8 times MSAA's high-pass flicker on a sunlit meadow
+//   (the sun-shadow clip), and the history's accumulation, not its clip, let it through: the
+//   jitter's sub-pixel hits and misses of blades and the vegetation's coverage dither
+//   (Foliage.ts) change a pixel every frame, and an exponential average of N frames passes about
+//   1/N of each frame's change (with no jitter and the dither held the meadow measured below MSAA;
+//   without any clip on still pixels it barely moved; reordering the jitter and the dither in time
+//   bought a few per cent, 48 still frames a third). The image shown is a second exponential
+//   average of the history's (`taaSmooth`, per output pixel, ping-ponged beside the history and reset
+//   with it): it takes the new image by the history's own share of the new frame, so it drops
+//   whatever the history drops (a cut, a disocclusion, a rejection, a clamp-drop, the reactive
+//   inputs), and it runs only on still opaque and vegetation pixels (it gives way from 0.02 to 0.1
+//   output pixels a frame, and to a strike's flash), its previous image clipped to twice the
+//   history's box so a change of light is not held back. It also gives way where the first stage's
+//   history was clipped (from the box's edge to twice its width): shading that changes with no
+//   motion vector (rain ripples on a puddle, a moving shadow on still ground) is what the clip
+//   catches, and without this the puddles' ghosting rose by three quarters (by a sixth with it).
+//   Two averages in a row pass about 1/N^2 of a frame's change at the cost of a second N frames'
+//   lag on slow changes the box lets through (a shadow edge drifting with the sun: its difference
+//   from MSAA rose by about a fifth; a slow change of the whole view's light shows about twice as
+//   late). Measured at high taau: on the sun-shadow clip the meadow's high-pass flicker from 8.1
+//   and 3.7 to 1.9 and 1.2 times MSAA's, the cliffs from 2.0 and 1.7 to 1.2 and 0.8; with the wind
+//   running at the same view the meadow's from 1.0 to 0.5 (its blades there sway under the exit
+//   speed); the islander walk's ghosting unchanged. The history itself (what reprojects and
+//   accumulates) stays the first stage's, and so does everything the rest shows.
 // - TAAU resolves straight to the canvas's size and keeps that history across render-scale steps
 //   (read by uv); TAA resolves at the render's size and resamples its history once when that changes.
 //   The history's weight is counted in render samples, so after a step up (more samples a pixel)
@@ -91,7 +146,11 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   (`taaEncoded`, the vignette at each pixel), so RCAS's five taps are not encoded one by one
 //   (they were half the canvas pass's time at 3840x2160; the extra half-float write costs less
 //   than that). The rest's image and the ground truth (one tap) are encoded in the canvas pass.
-//   TAA below the canvas encodes at the render's size and upscales with EASU first.
+//   TAA below the canvas encodes at the render's size (the second stage's image where it runs)
+//   and upscales with EASU first. The running resolve's attachments, the history, `taaEncoded`,
+//   the movers' state and the second stage's image, are four half-float RGBA targets: 32 bytes a
+//   sample, WebGPU's limit for one pass's colour attachments, so a fifth needs packing (the
+//   reactive into the second stage's alpha, the state into RG16F).
 // - After the resolve (taa, taau: AfterResolve.ts) the rain's streaks and the storm's spray are
 //   drawn unjittered into an overlay at the canvas's size, between the resolve's passes and the
 //   canvas pass (`after`), and the canvas pass adds the change the rain veil and that overlay make
@@ -137,6 +196,22 @@ const TAPS_3X3 = [ - 1, 0, 1 ].flatMap( ( dy ) => [ - 1, 0, 1 ].map( ( dx ) => [
 // TAAU's neighbourhood pass keeps the nearest surface's view z over this in half float (the sky's
 // -1e5 lies beyond half float's range; the disocclusion's tolerance, 2 %, far above its precision)
 const NEAR_Z_SCALE = 1000;
+// The movers (see the header), each a debug flag read every frame (unset: `MOVERS`), and the classes
+// they act on (opaque, vegetation, character; not the water, whose motion vectors leave out its
+// waves' phase, nor the sky)
+const MOVER_FLAGS = [ 'taaVelocityReject', 'taaClampDrop', 'taaMotionCap', 'taaWiden' ] as const;
+const MOVERS = true;
+const MOVER_CLASSES = [ 1, 1, 0, 1, 0 ];
+// the second stage (see the header): the classes it smooths (opaque, vegetation) and the speed
+// (output pixels a frame) over which it gives way to the first stage's image
+const SMOOTH_CLASSES = [ 1, 1, 0, 0, 0 ];
+const SMOOTH_SPEED_FROM = 0.02, SMOOTH_SPEED_TO = 0.1;
+// its previous image's clip box, in widths of the history's
+const SMOOTH_BOX = 2;
+// velocity rejection: the change of the dilated motion (output pixels a frame) from none to all
+const REJECT_FROM = 0.5, REJECT_TO = 2;
+// FSR 2's frames' worth for a moving pixel (times the class's share)
+const CAP_FRAMES = 10;
 
 /** The graph's resources the resolve reads (their versions after the passes before it). */
 export interface TemporalInputs {
@@ -271,6 +346,14 @@ export class TemporalAA {
 	private readonly restImage: ResourceHandle;
 	private readonly restPrev: ResourceHandle;
 	private readonly restShown: ResourceHandle;
+	// the movers' state (taa, taau; not lite, not the ground truth), per output pixel and ping-pong
+	// beside the history: the surface's own motion (output pixels a frame, the camera's left out) and
+	// FSR 2's temporal reactive (TemporalLocks.ts), written by the running resolve
+	private readonly state: ResourceHandle | null = null;
+	private readonly statePrev: ResourceHandle | null = null;
+	// the second stage's image (`taaSmooth`), per output pixel and ping-pong beside the history
+	private readonly smooth: ResourceHandle | null = null;
+	private readonly smoothPrev: ResourceHandle | null = null;
 	// taa below the canvas: the resolved image encoded at the render's size, and EASU's
 	private readonly encoded: ResourceHandle | null = null;
 	private readonly easuImage: ResourceHandle | null = null;
@@ -314,10 +397,14 @@ export class TemporalAA {
 		// TAAU, the frame after a step up of the render scale: the history's weight times the new
 		// render density over the old (1 otherwise)
 		historyGain: uniform( 1 ),
-		framesStill: uniform( 12 ), framesMoving: uniform( 5 ), speedFull: uniform( 16 ),
+		framesStill: uniform( 12 ), framesStillWater: uniform( 12 ), framesMoving: uniform( 5 ), speedFull: uniform( 16 ),
 		gammaStill: uniform( 1.25 ), gammaMove: uniform( 0.75 ), sigma: uniform( 0.42 ), sigmaRest: uniform( 0.3 ),
 		classFrames: Array.from( { length: CLASSES }, () => uniform( 1 ) ), classGamma: Array.from( { length: CLASSES }, () => uniform( 0 ) ),
 		skyPassThrough: uniform( 1 ),
+		// the movers: whether the state holds the previous frame's, each measure on (1) or off, and
+		// the classes they act on
+		stateValid: uniform( 0 ), velocityReject: uniform( 1 ), clampDrop: uniform( 1 ), motionCap: uniform( 1 ), widen: uniform( 1 ), smoothOn: uniform( 1 ), smoothValid: uniform( 0 ), smoothClass: SMOOTH_CLASSES.map( ( v ) => uniform( v ) ),
+		moverClass: MOVER_CLASSES.map( ( v ) => uniform( v ) ),
 		sharpenMoving: Array.from( { length: CLASSES }, () => uniform( 0 ) ), sharpenSpeed: uniform( 4 ), waterFar0: uniform( 1e6 ), waterFar1: uniform( 2e6 ),
 		// the camera's world matrix this frame and the previous rendered frame's, with its unjittered
 		// inverse projection (the disocclusion test and the sky's rotation)
@@ -343,6 +430,18 @@ export class TemporalAA {
 		this.restImage = g.color( 'taaRest', desc );
 		this.restPrev = g.previous( this.restImage );
 		this.restShown = g.color( 'taaRestShown', desc, true );
+		if ( this.mode !== 'gt' && ! this.settings.lite ) {
+
+			this.state = g.color( 'taaMotion', desc );
+			this.statePrev = g.previous( this.state );
+			if ( debugFlags.taaSmooth !== false && this.settings.linear ) {
+
+				this.smooth = g.color( 'taaSmooth', desc );
+				this.smoothPrev = g.previous( this.smooth );
+
+			}
+
+		}
 		if ( this.mode === 'taa' ) {
 
 			// (half float: filterable, so EASU gathers)
@@ -356,6 +455,8 @@ export class TemporalAA {
 		onTaaCut( () => {
 
 			g.resetHistory( this.history );
+			if ( this.state ) g.resetHistory( this.state );
+			if ( this.smooth ) g.resetHistory( this.smooth );
 			this.carryValid = false;
 			// (no camera motion across it either)
 			this.u.previousCameraWorld.value.copy( this.u.cameraWorld.value );
@@ -447,21 +548,24 @@ export class TemporalAA {
 		const gt = this.mode === 'gt';
 		let canvasImage = this.settings.linear && ! gt ? g.color( 'taaEncoded', { size: this.historyClass, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		// the resolve, built once per parity of the history it reads
-		const build = ( history: THREE.Texture, kind: 'running' | 'rest' | TemporalDebugView, name: string ) => {
+		const build = ( history: THREE.Texture, state: THREE.Texture | null, kind: 'running' | 'rest' | TemporalDebugView, name: string, smooth: THREE.Texture | null = null ) => {
 
 			const node = texture( history );
 			const material = new THREE.NodeMaterial();
 			material.name = name;
-			material.fragmentNode = this.resolve( textures, node, kind, renderSize, outputSize, kind === 'running' && canvasImage !== null );
+			material.fragmentNode = this.resolve( textures, node, state, kind, renderSize, outputSize, kind === 'running' && canvasImage !== null, smooth );
 			const quad = new THREE.QuadMesh( material );
 			quad.name = name;
 			return { quad, node };
 
 		};
-		const running = [ 0, 1 ].map( ( p ) => build( g.texture( this.historyPrev, p as 0 | 1 ), 'running', 'TAA.Resolve' ) );
+		// (the state's parity is the history's: the resolve writes both every frame)
+		const running = [ 0, 1 ].map( ( p ) => build( g.texture( this.historyPrev, p as 0 | 1 ), this.statePrev ? g.texture( this.statePrev, p as 0 | 1 ) : null, 'running', 'TAA.Resolve', this.smoothPrev && canvasImage ? g.texture( this.smoothPrev, p as 0 | 1 ) : null ) );
 		this.resolveQuads = running.map( ( r ) => r.quad );
 		this.resolveHistory = running.map( ( r ) => r.node );
 		let history = this.history;
+		let state = this.state;
+		let smooth = canvasImage ? this.smooth : null;
 		g.addPass( 'taaResolve', 'quad', ( b ) => {
 
 			b.read( display );
@@ -471,19 +575,23 @@ export class TemporalAA {
 			if ( veilReactive ) b.readOptional( veilReactive );
 			if ( viewDistance ) b.readOptional( viewDistance );
 			b.read( this.historyPrev );
+			if ( this.statePrev ) b.read( this.statePrev );
+			if ( smooth && this.smoothPrev ) b.read( this.smoothPrev );
 			for ( const h of near ?? [] ) b.read( h );
 			history = b.write( history );
 			// (the attachments in this order: the struct's)
 			if ( canvasImage ) canvasImage = b.write( canvasImage );
-			// (its material writes both through an output struct, which ignores the MRT: the MRT only
-			// declares the two attachments to the graph, and leaves them unblended)
-			return { label: 'TAA resolve', quad: this.resolveQuads[ 0 ], mrt: canvasImage ? mrt( {} ) : null, run: () => this.runResolve() };
+			if ( state ) state = b.write( state );
+			if ( smooth ) smooth = b.write( smooth );
+			// (its material writes them through an output struct, which ignores the MRT: the MRT only
+			// declares the attachments to the graph, and leaves them unblended)
+			return { label: 'TAA resolve', quad: this.resolveQuads[ 0 ], mrt: canvasImage || state ? mrt( {} ) : null, run: () => this.runResolve() };
 
 		} );
 		this.variants.push( { pass: 'taaResolve', kind: 'quad', quads: this.resolveQuads, pipelines: [] } );
 
 		// the rest's resolve, once per parity of the rest image it reads
-		this.restQuads = [ 0, 1 ].map( ( p ) => build( g.texture( this.restPrev, p as 0 | 1 ), 'rest', 'TAA.Rest' ).quad );
+		this.restQuads = [ 0, 1 ].map( ( p ) => build( g.texture( this.restPrev, p as 0 | 1 ), null, 'rest', 'TAA.Rest' ).quad );
 		let restImage = this.restImage;
 		g.addPass( 'taaRest', 'quad', ( b ) => {
 
@@ -616,7 +724,9 @@ export class TemporalAA {
 			return vec4( encode( c, O.vignette( renderSize ) ), 1 );
 
 		} )();
-		this.encodeQuads = sources.map( ( source ) => {
+		// (a running frame's image is the second stage's where it runs, as the canvas pass shows it)
+		const encodeSources = smooth ? [ g.texture( smooth, 0 ), g.texture( smooth, 1 ), sources[ 2 ] ] : sources;
+		this.encodeQuads = encodeSources.map( ( source ) => {
 
 			const material = new THREE.NodeMaterial();
 			material.name = 'TAA.Encode';
@@ -628,7 +738,7 @@ export class TemporalAA {
 		} );
 		g.addPass( 'taaEncode', 'quad', ( b ) => {
 
-			b.read( history );
+			b.read( smooth ?? history );
 			b.readOptional( restShown );
 			encoded = b.write( encoded );
 			return {
@@ -679,7 +789,7 @@ export class TemporalAA {
 
 			const material = new THREE.NodeMaterial();
 			material.name = 'TAA.Debug';
-			material.fragmentNode = this.resolve( textures, texture( g.texture( this.historyPrev, p as 0 | 1 ) ), view, renderSize, outputSize );
+			material.fragmentNode = this.resolve( textures, texture( g.texture( this.historyPrev, p as 0 | 1 ) ), this.statePrev ? g.texture( this.statePrev, p as 0 | 1 ) : null, view, renderSize, outputSize );
 			return new THREE.QuadMesh( material );
 
 		} );
@@ -693,6 +803,7 @@ export class TemporalAA {
 			if ( inputs.veilReactive ) b.readOptional( inputs.veilReactive );
 			for ( const h of near ?? [] ) b.read( h );
 			b.read( this.historyPrev );
+			if ( this.statePrev ) b.read( this.statePrev );
 			target = b.write( target );
 			// (the history's parity is the frame's, as for the resolve)
 			return { label: 'debug view', quad: this.debugQuads[ 0 ], run: () => this.debugQuads[ g.parityOf( history ) ].render( this.renderer ) };
@@ -706,7 +817,7 @@ export class TemporalAA {
 	// The resolve's shader: the running resolve, the rest's, or one of its debug values. Under TAAU
 	// (`t.near`: the neighbourhood pass's targets) the running resolve and its debug views read the
 	// 3x3's statistics from that pass and reconstruct the frame from the 2x2 nearest samples.
-	private resolve( t: ResolveTextures, history: THREE.TextureNode, kind: 'running' | 'rest' | TemporalDebugView, inputSize: Uniform2, outputSize: Uniform2, encoded = false ): V4 {
+	private resolve( t: ResolveTextures, history: THREE.TextureNode, state: THREE.Texture | null, kind: 'running' | 'rest' | TemporalDebugView, inputSize: Uniform2, outputSize: Uniform2, encoded = false, smoothTex: THREE.Texture | null = null ): V4 {
 
 		const O = this.options, S = this.settings, u = this.u, K = this.knobs;
 		const rest = kind === 'rest';
@@ -715,6 +826,8 @@ export class TemporalAA {
 		const linear = S.linear;
 		const near = rest ? null : t.near;
 		const dofBlur = O.dofBlur();
+		// (the movers: the running resolve and its debug views, where the state exists)
+		const movers = rest ? null : state;
 		const out = Fn( () => {
 
 			const q = screenCoordinate.xy; // output pixel centres, at .5
@@ -831,6 +944,11 @@ export class TemporalAA {
 			const clipped = vec3( 0 ).toVar();
 			const disoccluded = float( 0 ).toVar();
 			const reach = float( 0 ).toVar();
+			// (the movers' state this pixel writes: its motion, and the temporal reactive)
+			const stateOut = movers ? vec4( 0 ).toVar() : null;
+			// (the second stage's image this pixel shows and writes: the first stage's unless it smooths)
+			const smoothed = smoothTex && movers ? vec3( 0 ).toVar() : null;
+			const beta = smoothed ? float( 1 ).toVar() : null;
 			if ( rest ) {
 
 				// at rest nothing moves: the image accumulated so far, at this pixel, every weight exact (a
@@ -858,6 +976,34 @@ export class TemporalAA {
 
 				} );
 				const inside = uvPrev.x.greaterThanEqual( 0 ).and( uvPrev.x.lessThanEqual( 1 ) ).and( uvPrev.y.greaterThanEqual( 0 ) ).and( uvPrev.y.lessThanEqual( 1 ) ).toVar();
+				// The movers (see the header): this pixel's motion in output pixels, its class (the
+				// nearest surface's), and the state its history was written with, at the output pixel
+				// nearest uvPrev (none outside, or when the state is not the previous frame's).
+				const mv = movers ? ( () => {
+
+					const motion = uvNow.sub( uvPrev ).mul( outputSize ).toVar();
+					const speed = length( motion ).toVar();
+					// the surface's own motion: where a still surface at its depth was (the camera's motion
+					// alone) to where it was, so the camera's own acceleration (a flick) rejects nothing
+					const ndc = vec2( uvNow.x.mul( 2 ).sub( 1 ), float( 1 ).sub( uvNow.y.mul( 2 ) ) );
+					const ray = P.mul( vec4( ndc, 1, 1 ) ).toVar();
+					const dir = ray.xyz.div( ray.w ).toVar();
+					const still = motionUniforms.previousViewProjection.mul( u.cameraWorld.mul( vec4( dir.mul( zNear.div( dir.z ) ), 1 ) ) ).toVar();
+					const uvStill = vec2( still.x.div( still.w ).mul( 0.5 ).add( 0.5 ), float( 0.5 ).sub( still.y.div( still.w ).mul( 0.5 ) ) );
+					const own = select( sky, vec2( 0 ), uvStill.sub( uvPrev ).mul( outputSize ) ).toVar();
+					const cls = round( clamp( hood ? hood.nearest.w : velocity.z, 0, 1 ).mul( 4 ) ).toVar();
+					const mask = byClassOf( cls, u.moverClass ).toVar();
+					const known = select( inside, u.stateValid, float( 0 ) ).toVar();
+					const prevAt = ivec2( clamp( floor( uvPrev.mul( outputSize ) ), vec2( 0 ), outputSize.sub( 1 ) ) );
+					const carried = ( textureLoad( movers, prevAt ) as unknown as V4 ).mul( known ).toVar();
+					// velocity rejection: the surface's own motion now against the one the history was
+					// written with (behind a mover the history is the mover's)
+					const reject = smoothstep( REJECT_FROM, REJECT_TO, length( own.sub( carried.xy ) ) ).mul( known ).mul( mask ).mul( u.velocityReject ).toVar();
+					// moving this frame (from 0.1 output pixels a frame) or last frame (FSR 2's sign)
+					const moving = max( saturate( speed.mul( 10 ) ), movedLastFrame( carried.z ) ).mul( mask ).toVar();
+					return { own, speed, cls, mask, carried, reject, moving };
+
+				} )() : null;
 				// Disocclusion: the previous frame's nearest surface at uvPrev, rebuilt into the world
 				// with the previous camera and seen from this one, against the nearest tap's depth.
 				const tolerance = abs( zNear ).mul( K.disoccludeRelative ).add( K.disoccludeAbsolute ).toVar();
@@ -913,6 +1059,19 @@ export class TemporalAA {
 					( { mean, extent, frames } = this.hoodStats( m1!, m2!, n, velocity, nearCell!, zNear, reactive, inputSize, outputSize, dofBlur ) );
 
 				}
+				if ( mv ) {
+
+					// the box goes to its moving width where the history is rejected (FSR 2 widens it where its
+					// depth clip fires): the hood's gamma by speed and class, scaled toward the moving one's
+					const classGamma = byClassOf( mv.cls, u.classGamma );
+					const now = max( mix( u.gammaStill, u.gammaMove, smoothstep( 0, 2, mv.speed ) ).add( classGamma ), 0.05 );
+					const moved = max( u.gammaMove.add( classGamma ), 0.05 );
+					extent = extent.mul( mix( float( 1 ), moved.div( now ), mv.reject ) );
+					// FSR 2's motion cap and temporal reactive (TemporalLocks.ts), the class's share of its frames
+					const capped = motionCap( frames, float( CAP_FRAMES ).mul( byClassOf( mv.cls, u.classFrames ) ), mv.moving, mv.speed, carriedReactive( mv.carried.z ) );
+					frames = mix( frames, capped, u.motionCap.mul( mv.mask ) );
+
+				}
 				// variance clipping toward the neighbourhood's mean (Salvi), wider still than moving
 				const v = histC.sub( mean ).toVar();
 				const unit = abs( v ).div( extent );
@@ -921,11 +1080,47 @@ export class TemporalAA {
 				// the weight the history may keep, in frames' worth
 				const valid = inside.and( u.reset.lessThan( 0.5 ) ).and( disoccluded.lessThan( 0.5 ) ).and( passThrough.not() );
 				historyWeight.assign( select( valid, min( max( hist.a, 0 ).mul( u.historyGain ), frames.mul( perFrame ) ), float( 0 ) ) );
+				const drop = mv ? saturate( reach.sub( 1 ) ).mul( max( mv.moving, mv.reject ) ).mul( u.clampDrop ).toVar() : null;
+				if ( mv && drop ) {
+
+					// a rejected history goes, and a moving pixel's clip drops its weight (FSR 2's clamp-drop,
+					// TemporalLocks.ts), down to a frame at twice the box
+					historyWeight.assign( historyWeight.mul( float( 1 ).sub( mv.reject ) ) );
+					historyWeight.assign( clampDrop( historyWeight, perFrame, drop ) );
+
+				}
 				If( inside.not().or( u.reset.greaterThan( 0.5 ) ), () => {
 
 					disoccluded.assign( select( u.reset.greaterThan( 0.5 ), float( 3 ), float( 2 ) ) );
 
 				} );
+				if ( mv && drop && stateOut ) {
+
+					// Where the history goes (disoccluded, rejected, dropped) the frame's own estimate is the
+					// wide Gaussian's, softer instead of aliased (FSR 2's kernel bias): the GT is a box filter.
+					const wideNow = max( saturate( disoccluded ), max( mv.reject, drop ) ).mul( mv.mask ).mul( u.widen ).mul( select( passThrough, float( 0 ), float( 1 ) ) );
+					current.assign( mix( current, sumW.div( max( wW, 1e-6 ) ), wideNow ) );
+					stateOut.assign( vec4( mv.own, temporalReactive( carriedReactive( mv.carried.z ), mv.speed, select( disoccluded.equal( 1 ), float( 1 ), float( 0 ) ) ), 0 ) );
+					if ( smoothed && beta && smoothTex ) {
+
+						// The second stage (see the header): the image shown before, at this pixel, clipped to
+						// a box twice as wide as the history's, takes the first stage's new image by the
+						// first stage's own share of the new frame, so it drops whatever the first stage
+						// drops (a cut, a disocclusion, a rejection, a clamp-drop, a reactive input); still
+						// opaque and vegetation pixels only, never while a strike flashes, and less where the
+						// first stage's history was clipped.
+						const gate = float( 1 ).sub( smoothstep( SMOOTH_SPEED_FROM, SMOOTH_SPEED_TO, mv.speed ) ).mul( byClassOf( mv.cls, u.smoothClass ) )
+							.mul( float( 1 ).sub( smoothstep( 1, 2, reach ) ) )
+							.mul( u.smoothOn ).mul( u.smoothValid ).mul( select( inside.and( passThrough.not() ), float( 1 ), float( 0 ) ) )
+							.mul( float( 1 ).sub( saturate( reactiveUniforms.flash ) ) );
+						const prev = toYCoCg( max( ( textureLoad( smoothTex, ivec2( q ) ) as unknown as V4 ).rgb, vec3( 0 ) ) ).sub( mean ).toVar();
+						const unit2 = abs( prev ).div( extent.mul( SMOOTH_BOX ) ).toVar();
+						smoothed.assign( mean.add( prev.div( max( max( unit2.x, max( unit2.y, unit2.z ) ), 1 ) ) ) );
+						beta.assign( mix( float( 1 ), float( 0 ), gate ) );
+
+					}
+
+				}
 
 			}
 			const total = historyWeight.add( currentWeight ).toVar();
@@ -933,11 +1128,22 @@ export class TemporalAA {
 			if ( kind === 'weight' ) return vec4( vec3( historyWeight.div( total ) ), 1 );
 			if ( kind === 'disocclusion' ) return vec4( select( disoccluded.equal( 1 ), float( 1 ), float( 0 ) ), select( disoccluded.equal( 2 ), float( 1 ), float( 0 ) ), select( disoccluded.equal( 3 ), float( 1 ), float( 0 ) ), 1 );
 			if ( kind === 'clip' ) return vec4( vec3( clamp( reach.sub( 1 ), 0, 1 ) ), 1 );
-			return vec4( max( fromYCoCg( resolved ), vec3( 0 ) ), total );
+			const color = vec4( max( fromYCoCg( resolved ), vec3( 0 ) ), total );
+			// (the second stage's share of the new image: the first stage's, or all of it)
+			const shown = smoothed && beta ? vec4( max( fromYCoCg( mix( smoothed, resolved, max( beta, currentWeight.div( total ) ) ) ), vec3( 0 ) ), 1 ) : null;
+			// (with the state, one body for its attachments: a matrix's columns, as the neighbourhood's)
+			return stateOut ? mat4( color, stateOut, shown ?? vec4( 0 ), vec4( 0 ) ) : color;
 
-		} )() as V4;
-		// (and the image encoded for the canvas pass, with the vignette at this pixel)
-		return encoded ? outputStruct( out, vec4( toDisplay( out.rgb.mul( O.vignette( outputSize ) ), O.contrast ), 1 ) ) as unknown as V4 : out;
+		} )();
+		const stateful = movers !== null && kind === 'running';
+		const color = stateful ? ( out as unknown as { element( i: number ): V4 } ).element( 0 ) : out as V4;
+		const smoothing = stateful && smoothTex !== null && encoded;
+		const shown = smoothing ? ( out as unknown as { element( i: number ): V4 } ).element( 2 ) : color;
+		const written = stateful ? [ ( out as unknown as { element( i: number ): V4 } ).element( 1 ), ...( smoothing ? [ shown ] : [] ) ] : [];
+		// (and the image encoded for the canvas pass, with the vignette at this pixel: the second
+		// stage's where it runs)
+		const encodedImage = encoded ? [ vec4( toDisplay( shown.rgb.mul( O.vignette( outputSize ) ), O.contrast ), 1 ) ] : [];
+		return encoded || stateful ? outputStruct( color, ...encodedImage, ...written ) as unknown as V4 : color;
 
 	}
 
@@ -970,7 +1176,8 @@ export class TemporalAA {
 			react.assign( max( react.mul( float( 1 ).sub( far ) ), reactiveUniforms.flash ) );
 
 		} );
-		const frames = mix( u.framesStill, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( share )
+		const still = select( cls.equal( 2 ), u.framesStillWater, u.framesStill );
+		const frames = mix( still, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( share )
 			.mul( clamp( float( 1 ).sub( react ), 0, 1 ) ).mul( dof );
 		return { mean, extent, frames };
 
@@ -1014,7 +1221,7 @@ export class TemporalAA {
 			const tolerance = abs( nearZ ).mul( K.disoccludeRelative ).add( K.disoccludeAbsolute );
 			const edge = select( nearZ.sub( farZ ).greaterThan( tolerance ), float( 1 ), float( 0 ) );
 			const { mean, extent, frames } = this.hoodStats( m1, m2, TAPS_3X3.length, velocity, nearCell, nearZ, max( velocity.w, reactiveUniforms.flash ), inputSize, outputSize, dofBlur );
-			return mat4( vec4( mean, frames ), vec4( extent, edge ), vec4( velocity.xy, nearZ.div( NEAR_Z_SCALE ), 0 ), vec4( 0 ) );
+			return mat4( vec4( mean, frames ), vec4( extent, edge ), vec4( velocity.xy, nearZ.div( NEAR_Z_SCALE ), velocity.z ), vec4( 0 ) );
 
 		} )() as unknown as { element( i: number ): THREE.Node<'vec4'> };
 		return outputStruct( m.element( 0 ), m.element( 1 ), m.element( 2 ) ) as unknown as V4;
@@ -1041,6 +1248,8 @@ export class TemporalAA {
 
 		} else this.u.historySize.value.copy( g.extent( this.historyClass ).value );
 		this.u.previousDepthValid.value = this.previousDepthValid ? 1 : 0;
+		this.u.stateValid.value = this.state && g.historyValid( this.state ) ? 1 : 0;
+		this.u.smoothValid.value = this.smooth && g.historyValid( this.smooth ) ? 1 : 0;
 		try {
 
 			this.resolveQuads[ parity ].render( this.renderer );
@@ -1085,6 +1294,11 @@ export class TemporalAA {
 	beginFrame( camera: THREE.Camera, renderWidth: number, renderHeight: number, outputWidth: number, outputHeight: number, time: number, frame: TemporalFrame = {} ): void {
 
 		this.applySettings();
+		// the movers' flags (`taaMovers` sets the four's default)
+		const all = debugFlags.taaMovers;
+		const [ reject, drop, cap, widen ] = MOVER_FLAGS.map( ( name ) => ( debugFlags[ name ] ?? all ?? MOVERS ) !== false ? 1 : 0 );
+		this.u.velocityReject.value = reject; this.u.clampDrop.value = drop; this.u.motionCap.value = cap; this.u.widen.value = widen;
+		this.u.smoothOn.value = debugFlags.taaSmooth === false ? 0 : 1;
 		// the rest: what the frame draws from, unjittered
 		const key = restKey( this.key, camera, renderWidth, renderHeight, outputWidth, outputHeight, time, [ this.settingsVersion, ...( frame.signature ?? [] ) ] );
 		this.rest.settle = Math.max( 0, Math.round( this.settings.restSettle ) );
@@ -1146,7 +1360,7 @@ export class TemporalAA {
 		if ( k === this.settingsKey ) return;
 		this.settingsKey = k;
 		this.settingsVersion ++;
-		u.framesStill.value = S.framesStill; u.framesMoving.value = S.framesMoving; u.speedFull.value = S.speedFull;
+		u.framesStill.value = S.framesStill; u.framesStillWater.value = S.framesStillWater; u.framesMoving.value = S.framesMoving; u.speedFull.value = S.speedFull;
 		u.gammaStill.value = S.gammaStill; u.gammaMove.value = S.gammaMove; u.sigma.value = S.sigma; u.sigmaRest.value = S.sigmaRest;
 		u.skyPassThrough.value = S.skyPassThrough ? 1 : 0;
 		for ( let i = 0; i < CLASSES; i ++ ) {
