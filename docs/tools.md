@@ -335,7 +335,9 @@ default) is shot again on both sides and reported as identical, repeatable or no
 (`--recheck 0` turns it off). The header of the tool has the details.
 
 `tools/parity/` captures a fixed set of paused views with named 1:1 crop anchors
-(`capture-set.mjs`) and diffs it against a reference set, pixel for pixel or within the reference's
+(`capture-set.mjs`; views.mjs frames and anchors them on the camera's ground, `controls.ground`:
+the island's box and height grid made from the chunks in the workers, so the drawn meshes'
+vertices are never read) and diffs it against a reference set, pixel for pixel or within the reference's
 own repeatability (`diff-set.py --aa-floor`; see its README). Temporal AA sets (taa, taau) do
 not repeat pixel for pixel and are judged by a tolerance instead (`diff-set.py --temporal`: shares
 of pixels over a level on the frame, in local windows and on the crops, a bound on coherent sub-level

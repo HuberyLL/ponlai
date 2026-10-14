@@ -1,9 +1,12 @@
 // The parity views: name -> { q, eval, crops, group, special }. Every view is a paused frame at a fixed t;
 // `q` is added to the common query (capture-set.mjs), `eval` runs in the page once
-// window.__PONLAI__ exists (before capture.mjs's settling wait). Placements derive from the island
-// meshes' bounds (one mesh, or a mesh per land chunk), the plant sites (the first rim bush where
-// there are none), the flower instances, the rim trails, the islander and the sun and moon, so
-// they follow any land, as tools/profile-frame.mjs places its scenes.
+// window.__PONLAI__ exists (before capture.mjs's settling wait). Placements derive from the
+// island's bounds and height grid as the camera's ground holds them (`controls.ground`,
+// IslandGround: made from the chunks' meshes in the workers, so the page's meshes and their
+// vertices are never read and a build that simplifies the drawn meshes frames alike), the plant
+// sites (the first rim bush where there are none), the flower instances, the rim trails, the
+// islander and the sun and moon, so they follow any land, as tools/profile-frame.mjs places its
+// scenes.
 //
 // Groups: `parity` (the views every parity check runs; the default) and `taa` (7 close views for
 // the temporal anti-aliasing work: thin and moving detail); `all` is both. `special` holds the
@@ -28,12 +31,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PRE = `const s = window.__PONLAI__;
-// the island's meshes: one, or a mesh per land chunk under the group 'island'
-const islandMeshes = () => { const out = []; s.scene.getObjectByName( 'island' ).traverse( ( o ) => { if ( o.isMesh ) out.push( o ); } ); return out; };
-const isl = () => { const b = { x0: Infinity, y1: - Infinity, z0: Infinity, x1: - Infinity, z1: - Infinity };
-	for ( const m of islandMeshes() ) { m.geometry.computeBoundingBox(); const g = m.geometry.boundingBox;
-		b.x0 = Math.min( b.x0, g.min.x ); b.z0 = Math.min( b.z0, g.min.z ); b.x1 = Math.max( b.x1, g.max.x ); b.z1 = Math.max( b.z1, g.max.z ); b.y1 = Math.max( b.y1, g.max.y ); }
-	return { cx: ( b.x0 + b.x1 ) / 2, cz: ( b.z0 + b.z1 ) / 2, rx: ( b.x1 - b.x0 ) / 2, rz: ( b.z1 - b.z0 ) / 2, top: b.y1 }; };
+// the island's box: the camera's ground (src/camera/IslandGround.ts, merged from the chunks' ground
+// grids), which equals the box of the island's chunk meshes but never reads their vertices
+const isl = () => { const b = s.controls.ground.bounds;
+	return { cx: ( b.min.x + b.max.x ) / 2, cz: ( b.min.z + b.max.z ) / 2, rx: ( b.max.x - b.min.x ) / 2, rz: ( b.max.z - b.min.z ) / 2, top: b.max.y }; };
 // the shrubs' and trees' sites; without them (the grown island has none) the first rim bush, as a
 // site 1.2 m tall
 const plantSites = () => { const sites = s.plants?.userData.sites; if ( sites?.length ) return sites;
@@ -48,32 +49,17 @@ const orbitAround = ( dirx, dirz ) => { const t = s.controls.target, p = s.camer
 	p.x = t.x + dirx / len * r; p.z = t.z + dirz / len * r; s.camera.lookAt( t ); s.controls.update(); };`;
 
 // The crop anchors, installed after the view's own eval. Everything here runs only when
-// window.__PONLAI_CROPS__ is read: the island's height grid (the highest vertex per 0.5 m cell),
-// visibility by marching the grid from the camera, and the projection into device pixels.
+// window.__PONLAI_CROPS__ is read: the island's height grid (the camera's ground: the highest point
+// of the island's chunks per 0.5 m cell of the world's lattice), visibility by marching the grid
+// from the camera, and the projection into device pixels.
 const CROPS = `
 const CROP = 384, CELL = 0.5;
 let grid = null;
 const heightGrid = () => {
 	if ( grid ) return grid;
-	const meshes = islandMeshes(), count = meshes.reduce( ( n, m ) => n + m.geometry.attributes.position.count, 0 );
-	const v = new s.camera.position.constructor(), box = { x0: Infinity, z0: Infinity, x1: - Infinity, z1: - Infinity };
-	const pts = new Float32Array( count * 3 );
-	let k = 0;
-	for ( const mesh of meshes ) {
-		const pos = mesh.geometry.attributes.position;
-		mesh.updateWorldMatrix( true, false );
-		for ( let i = 0; i < pos.count; i ++, k ++ ) {
-			v.fromBufferAttribute( pos, i ).applyMatrix4( mesh.matrixWorld ); pts.set( [ v.x, v.y, v.z ], k * 3 );
-			box.x0 = Math.min( box.x0, v.x ); box.x1 = Math.max( box.x1, v.x ); box.z0 = Math.min( box.z0, v.z ); box.z1 = Math.max( box.z1, v.z );
-		}
-	}
-	const nx = Math.ceil( ( box.x1 - box.x0 ) / CELL ) + 1, nz = Math.ceil( ( box.z1 - box.z0 ) / CELL ) + 1;
-	const h = new Float32Array( nx * nz ).fill( - Infinity );
-	for ( let i = 0; i < count; i ++ ) {
-		const c = Math.floor( ( pts[ i * 3 ] - box.x0 ) / CELL ) + Math.floor( ( pts[ i * 3 + 2 ] - box.z0 ) / CELL ) * nx;
-		h[ c ] = Math.max( h[ c ], pts[ i * 3 + 1 ] );
-	}
-	// fill cells no vertex fell in from their neighbours
+	// IslandGround's own grid (-Infinity where no point falls), read in place
+	const G = s.controls.ground, nx = G.nx, nz = G.nz, h = G.heights;
+	// fill cells no point fell in from their neighbours
 	const f = h.slice();
 	for ( let z = 1; z < nz - 1; z ++ ) for ( let x = 1; x < nx - 1; x ++ ) {
 		const c = x + z * nx; if ( h[ c ] > - Infinity ) continue;
@@ -82,7 +68,7 @@ const heightGrid = () => {
 		if ( n >= 3 ) f[ c ] = m;
 	}
 	const sorted = Array.from( f ).filter( ( y ) => y > - Infinity ).sort( ( a, b ) => a - b );
-	grid = { ...box, nx, nz, h: f, top: sorted[ Math.floor( sorted.length * 0.98 ) ] };
+	grid = { x0: G.x0, z0: G.z0, nx, nz, h: f, top: sorted[ Math.floor( sorted.length * 0.98 ) ] };
 	return grid;
 };
 const height = ( x, z ) => { const g = heightGrid(); const i = Math.floor( ( x - g.x0 ) / CELL ), k = Math.floor( ( z - g.z0 ) / CELL );
