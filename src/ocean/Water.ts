@@ -21,7 +21,7 @@ import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { StormSea } from './StormSea.ts';
 import type { Shared } from '../shared.ts';
-import { volumeShadowRayMayIntersect } from '../lighting/SolarShadow.ts';
+import { volumeShadowRayMayIntersect, type SolarShadowTaps } from '../lighting/SolarShadow.ts';
 import {
 	waveSlopeCovariance, waveLodCovariance, waveParameterGradient, waveSurfaceNormal, waveCovarianceToTangent,
 	waveLocalDirection, waveBeckmannD, waveSmithVisibility, waveSolarSlopeCovariance, waveReflectionAngularVariance, waveAirFacing,
@@ -283,6 +283,8 @@ export interface WaterInputs {
 	size?: number;
 	res?: number;
 	quality?: Partial<WaterQuality>; // compile-time: read once, a change needs a new Water (a reload)
+	// the surface's sun-shadow filter (compile-time; the sun shadow's own receivers' filter without it)
+	shadowTaps?: Readonly<SolarShadowTaps>;
 }
 
 // The water's quality knobs. They are compiled into the shader (a uniform-gated branch keeps its
@@ -298,7 +300,10 @@ export interface WaterInputs {
 //   stormFoam: 'merged' reads the storm foam's mat and lace from one pattern fetch instead of
 //     three: the mat keeps only its first layer, and the lace takes the mat's coordinates, so it
 //     is no longer drawn out along the wind. The streaks keep their own fetch (they need
-//     coordinates stretched along the wind), so 'merged' saves two of the five fetches.
+//     coordinates stretched along the wind), so 'merged' saves two of the five fetches;
+//   fftAnisotropy: the FFT output targets' anisotropic filtering (read by OceanFFT, not here; its
+//     six fetches per pixel): 8 keeps the open sea's grazing view sharp, lower blurs it toward
+//     the horizon, and on the island's views, which look down, it costs nothing.
 export interface WaterQuality {
 	ssrRays: 1 | 2;
 	ssrSteps: number;
@@ -307,10 +312,11 @@ export interface WaterQuality {
 	refractionRefine: number;
 	columnSamples: number;
 	stormFoam: 'full' | 'merged';
+	fftAnisotropy: number;
 }
 
 // High's values, today's image; the tiers' values are in Quality.ts.
-export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' };
+export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full', fftAnisotropy: 8 };
 
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
 // its plants and its people. A box around them, from the land's box (so it grows with the island):
@@ -466,7 +472,7 @@ export class Water {
 	// The sea's shading for one way of marching the screen-space reflection (see SSRVariant).
 	private buildMaterial( variant: SSRVariant ): THREE.NodeMaterial {
 
-		const { fft, sky, shared, shore, seabedHeight, seabedLook, shoreWaves, refractedSun, sunShadow, storm, sceneColor, linearDepth } = this.inputs;
+		const { fft, sky, shared, shore, seabedHeight, seabedLook, shoreWaves, refractedSun, sunShadow, shadowTaps, storm, sceneColor, linearDepth } = this.inputs;
 		const quality = this.quality;
 		const u = this.uniforms;
 		const sizes = uniform( new THREE.Vector3( ...fft.sizes ) );
@@ -855,7 +861,7 @@ export class Water {
 			const sc = u.shadowMatrix.mul( vec4( wp.add( N.mul( this.shadowNormalBias ) ), 1 ) ).toVar();
 			const s3 = sc.xyz.div( max( sc.w, 1e-6 ) ).toVar();
 			const shadowCoord = vec3( s3.x, float( 1 ).sub( s3.y ), s3.z.add( this.shadowBias ) ).toVar();
-			const visibility = sunShadow.surfaceVisibility( shadowCoord );
+			const visibility = sunShadow.surfaceVisibility( shadowCoord, shadowTaps );
 			const shadow = mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) ).toVar();
 			const cloudTransmission = sky.cloudVisibility( wp ).toVar();
 			const sunLight = shared.sunColor.mul( shadow ).mul( cloudTransmission ).toVar();

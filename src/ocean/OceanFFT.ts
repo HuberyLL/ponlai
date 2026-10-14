@@ -103,7 +103,8 @@ export class OceanFFT {
 		spread = 0.82,
 		seed = 1234,
 		swell = {},
-	}: Partial<OceanParams> & { sizes?: number[]; swell?: Partial<SwellParams> } = {} ) {
+		anisotropy = 8,
+	}: Partial<OceanParams> & { sizes?: number[]; swell?: Partial<SwellParams>; anisotropy?: number } = {} ) {
 
 		this.renderer = renderer;
 		this.sizes = sizes;
@@ -272,7 +273,7 @@ export class OceanFFT {
 				const rt = new THREE.RenderTarget( N, N, {
 					type: THREE.HalfFloatType, generateMipmaps: which !== 3,
 					minFilter: which === 3 ? THREE.LinearFilter : THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
-					wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, anisotropy: 8,
+					wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, anisotropy,
 				} );
 				rt.texture.name = [ 'oceanDisp', 'oceanDeriv', 'oceanSlopeMoments', 'oceanVelocity' ][ which ] + c;
 				const mat = new THREE.NodeMaterial();
