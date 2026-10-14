@@ -13,7 +13,7 @@ import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraCont
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, type WeatherName } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, isParkedWeather, type WeatherName } from './sky/Weather.ts';
 import { QUALITY_TIERS, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { forgetQuality, qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind } from './weather/Wind.ts';
@@ -189,10 +189,19 @@ const numberParam = ( name: string, fallback: number, options = params ) => {
 // turn. The game's day is 24 minutes at 1x, so a day's work and its evening fit one sitting.
 // The default first-quarter moon lights the evening and sets at midnight, leaving the small
 // hours dark enough for the Milky Way. The game starts at 8 (see Game.ts), so the sky is lit
-// once for that hour.
+// once for that hour. A parked weather (Weather.ts `PARKED_WEATHER`) is refused outside a debug
+// build and falls back to fair; the load and a scene jump read it here alike, and so does ?game,
+// whose weather is the page's.
 function sceneOptions( options: URLSearchParams ) {
 
-	const weather = options.get( 'weather' ) ?? 'fair', preset = options.get( 'preset' );
+	let weather = options.get( 'weather' ) ?? 'fair';
+	const preset = options.get( 'preset' );
+	if ( ! DEBUG && isParkedWeather( weather ) ) {
+
+		console.warn( `weather=${ weather } is parked (debug builds only, ?debug): showing fair` );
+		weather = 'fair';
+
+	}
 	return {
 		weather: Object.hasOwn( WEATHER_PRESETS, weather ) ? weather as WeatherName : 'fair',
 		autoWeather: ! options.has( 'weather' ),
@@ -977,7 +986,8 @@ const cloudF = gui.addFolder( 'Sky & clouds' );
 cloudF.add( sky.clouds.coverage, 'value', 0, 1, 0.01 ).name( 'cloud cover override' ).onFinishChange( ( value: number ) => { cloudOverride = value; void refreshEnvironment(); } );
 const weatherF = gui.addFolder( 'Weather' );
 const weatherView = { preset: weather.target, seconds: 20 };
-weatherF.add( weatherView, 'preset', Object.keys( WEATHER_PRESETS ) ).name( 'weather' ).listen().onChange( ( name: WeatherName ) => { void setWeather( name, weatherView.seconds ); } );
+// parked weathers are listed in debug builds only (Weather.ts)
+weatherF.add( weatherView, 'preset', Object.keys( WEATHER_PRESETS ).filter( ( name ) => DEBUG || ! isParkedWeather( name ) ) ).name( 'weather' ).listen().onChange( ( name: WeatherName ) => { void setWeather( name, weatherView.seconds ); } );
 weatherF.add( weatherView, 'seconds', 0, 120, 1 ).name( 'transition seconds' );
 weatherF.add( weather, 'auto' ).name( 'auto weather' ).listen();
 weatherF.add( weatherEffects, 'rain' ).name( 'rain & ripples' );
