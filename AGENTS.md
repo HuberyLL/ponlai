@@ -58,6 +58,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   captures.
 - `node tools/capture-growth.mjs --base url [--cand url]` captures two pages side by side over
   seeds, growth steps and six views, with region statistics (`docs/tools.md`).
+- `node tools/verify-growth-swap.mjs <url> [--steps N]` grows a page N times and compares it with a
+  fresh load of that land: views byte for byte, chunk hashes, the rain map, the camera's ground,
+  pipelines and memory across swaps (`docs/tools.md`).
 - `tools/parity/` captures sets of paused views and motion clips and measures them against
   references stored per commit: MSAA byte for byte, the temporal modes within a tolerance, both
   against a ground truth (`aa=gt`); `tools/verify-first-use.mjs` counts the pipelines still created
@@ -159,14 +162,14 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   never go through `computeVertexNormals`. The page draws the island a mesh per land chunk and
   every other kind as one mesh or pool, concatenated in the chunks' order ( cj, ci ) whatever
   order the workers finished in (`ChunkMerge.ts`, `World.ts`).
-- The island grows in place (`Growth.ts`): a Grow swaps in only the changed chunks in one frame,
-  and every dependent of the land's shape follows it, the same function of the version as at load
-  (a grown page draws a page loaded on that land bit for bit, paused). Anything new that depends
-  on the land's shape joins the swap (`GrowthPage` and main.ts's `onSwap`), and work it needs on
-  the main thread goes into the preparation's idle-time steps, never into the swap's frame. A
-  step takes a few tenths of a millisecond (a generator yielding inside its loops: `Steps.ts`,
-  uploads through `Upload.ts`), so the growth's share of any frame stays under 2 ms
-  (`growth.work`).
+- The island grows in place (`Growth.ts`): a Grow swaps in only the changed chunks in one frame, and
+  every dependent of the land's shape follows it, the same function of the version as at load (a
+  grown page draws a page loaded on that land bit for bit, paused: `tools/verify-growth-swap.mjs`).
+  Anything new that depends on the land's shape joins the swap (`GrowthPage` and main.ts's
+  `onSwap`), and work it needs on the main thread goes into the preparation's idle-time steps, never
+  into the swap's frame. A step takes a few tenths of a millisecond (a generator yielding inside its
+  loops: `Steps.ts`, uploads through `Upload.ts`), so the growth's share of any frame stays under
+  2 ms (`growth.work`).
 - A swap never builds a pipeline; one that needs one is a bug. New chunk meshes share their kind's
   material and layout, so they draw with the loaded chunks' pipelines; merged kinds take new
   geometry of the same layout, uploaded ahead; instanced kinds hold a capacity whose shader does not

@@ -283,6 +283,21 @@ captures (`uv run --with numpy --with pillow`). Where shapes differ (growth step
 regenerated island), judge the look by eye and region statistics (`tools/capture-growth.mjs`), not
 by pixel difference.
 
+`node tools/verify-growth-swap.mjs <base url> [--steps 6] [--views island,cliffs,meadow] [--q
+"query"] [--fresh-grow M] [--out dir]` checks the growth in place: a page loaded at `grow=0` and
+grown N times by `__PONLAI__.growth.grow()` against a fresh load of `grow=N`, both paused and
+headless in one warm capture browser. It compares the views (parity view names, or the aliases
+island, cliffs, meadow; each shot twice, two frames apart, after the settled signal and a stable
+image; the first shots or the second byte for byte) on decoded pixels, the chunk hashes, the rain's
+collision map read back in each page (0 differing texels), the camera's ground grid, the world
+fields' bytes, the pipeline count (constant across every swap, equal on both pages), renderer.info's
+uniform buffers and textures (the grown page at most 2 above the fresh one) and the console (no
+errors). Per step it records the swap's time and the memory. The GPU lock is shared and held only
+while a page renders: it is released while the page prepares its next piece. Writes `report.json`
+and the shots to `artifacts/captures/growth-swap/<time>-<pid>/` (or `--out`); exit 0 pass, 1 fail.
+`--fresh-grow M` loads the fresh page at another step, only to see the check fail. Its header has
+the rules.
+
 `node tools/capture-growth.mjs --base url [--cand url] [--seeds 1,2] [--grow 0,4,12]
 [--views v1,v3] [--label x] [--q "query"] [--jobs 2] [--base-ref sha] [--recheck 1]` sets a base
 and a candidate page side by side in six views (v1 overview, also in golden hour; v2 top-down; v3
@@ -851,6 +866,10 @@ Animation Hitches templates show when frames reached the display and what the GP
 (`xcrun xctrace record --template 'Metal System Trace' --attach <Chrome GPU process pid>
 --time-limit 10s --output <file>.trace`, then open it in Instruments). Extend our tools only for
 what these do not give (automation, A/B statistics, pass names).
+
+Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
+map, the camera's ground, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
+probe eval of one's own.
 
 ## Writing a tool
 

@@ -27,7 +27,8 @@ import type { CullBuffers } from './GrassCull.ts';
 // The island grows in place (chunk design, sections 3.4, 10 and 11; plan M8): the next piece is
 // generated in the background, and a Grow (`grow()`, the GUI's Island folder) swaps in only the
 // chunks that changed, in one frame, with every dependent following. No pipeline is built: a swap
-// needing one would be a bug (tools/verify-first-use.mjs and the page's pipeline count).
+// needing one would be a bug (tools/verify-first-use.mjs and the page's pipeline count). A grown
+// page against a fresh load of its land, pipelines across swaps included: tools/verify-growth-swap.mjs.
 //
 // - When: the game (`start()` once the page shows) generates the next piece at once, as it will
 //   need it; any other page only from its first `grow()`, so a page that never grows spends no
