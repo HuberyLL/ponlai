@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, dot, pow, clamp, fract, sin, select, normalize,
 	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, varying, varyingProperty, uniform,
-	smoothstep as smoothstepN, instanceIndex, vertexIndex, normalLocal, transformNormal, instanceColor,
+	smoothstep as smoothstepN, instanceIndex, vertexIndex, normalLocal, transformNormal, instanceColor, sign, abs, cos, step, specularColor, specularColorBlended, specularF90,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
@@ -25,20 +25,24 @@ import { GrassCull, cullInputs, poolSteps, type CullBatchInput, type CullBuffers
 import type { Shared } from '../shared.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 
-// The meadow on the island top: a lawn of thin, straight, nearly upright blades of one height,
-// one instanced tuft on every planting anchor and a second on about a quarter of them, so it reads
-// as a dense, even sward that sways with the wind as one. One grass colour (Meadow.ts), a deeper,
-// cooler green at the root and a lighter, yellower one at the tip, where the key light shines
-// through the blade, with a faint gloss along it; soft upward normals join the blades to the turf
-// rather than lighting every tuft as a cushion, and each blade shifts its value and hue only a
-// little. Anchors come from
+// The meadow on the island top: a lawn even as a whole and of blades each its own, one instanced
+// tuft on every planting anchor and a second on about a quarter of them, so it reads as a dense,
+// even sward that sways with the wind as one. The blades are sword-shaped, wide to high up and
+// running to a point; each takes its own height, facing, lean and arc and its own value and tint,
+// all hashed from the blade and its anchor. One grass colour (Meadow.ts), a deeper, cooler green at
+// the root and a lighter, yellower one at the tip, where the key light shines through the blade,
+// with a faint gloss along it and little of a dielectric's specular; soft upward normals join the
+// blades to the turf rather than lighting every tuft as a cushion, and each blade is folded along
+// its midrib, one half turned to the light and the other from it, with a thin lighter edge.
+// Anchors come from
 // the world worker (x, y, z, normal, rim distance, kind and local sky visibility); every choice
 // below is a seeded hash of the anchor, so the meadow grows with the island's footprint and needs
 // no placed features.
 //
 // Rules (the look is in docs/art-direction.md; the reasons are below, where each is built):
 // - An even lawn: no clumps, tall islands or bare patches (from the overview they read as dark
-//   blotches). Each tuft spreads its blades over about its anchor's share of the ground. The extra
+//   blotches). What varies is per blade (`restBlade`, the tints), far finer than any patch, with
+//   its mean kept: the lawn's average height and colour stay those of the field. Each tuft spreads its blades over about its anchor's share of the ground. The extra
 //   tufts fold away beyond about 35 m and are not drawn past their fold, 42 m. Toward the coast the
 //   tufts grow taller and lean out over the lip instead of thinning (RimGround).
 // - Blades do not cast into the sun's shadow map (narrower than a texel, they flicker as the sun
@@ -48,10 +52,11 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   the vertex stage and handed to the sun's filter in place of its own (`userData.sunVisibility`);
 //   the clouds' shade multiplies in as on every surface (SolarShadow's `installOpenShadow`).
 // - On screen a blade stays at least two pixels wide (0.75 on the outer rim, where partly covered
-//   pixels show a pale fringe over the sea), its coverage lowered to match, so the meadow does not
-//   crawl as the camera moves; close up blades render unchanged. Single-sampled (`msaa=1`) the
-//   blades take an ordered 4x4 dither and stay one pixel wide (a blade dithered across two pixels
-//   reads as a dotted line).
+//   pixels show a pale fringe over the sea), so the meadow does not crawl as the camera moves, and
+//   the coverage the widening would lower is kept by whole blades instead: a widened blade draws
+//   solid as far up as its coverage stays above its own hash. No pixel of a blade is partly
+//   covered (alpha to coverage drew its sample patterns as a grid of dots along the blades). Close
+//   up blades render unchanged. Single-sampled (`msaa=1`) blades stay one pixel wide.
 // - Each tuft draws fewer blades the farther it stands from the view camera: on high every one of
 //   its 16 within 25 m, easing to 8 at 45 m and to 4 at 70 m, never fewer (GrassQuality). A dropped
 //   blade narrows to nothing over a short distance of its own, and the kept ones widen and cover
@@ -79,11 +84,21 @@ interface TuftShape {
 	reachPow: number; // < 2 bends the blade out sooner, from lower down
 }
 
-// Lawn: 16 thin, straight blades of nearly one height, standing almost upright (a lean of at most
-// about 15 degrees at the tuft's scale, PLANT_SPREAD by SWARD_HEIGHT), their roots spread evenly
-// over a disc of about twice the anchors' spacing (r0 is drawn by area), so neighbouring tufts meet
-// in one sward instead of rosettes. Two segments are enough for blades this short and straight.
-const LAWN: TuftShape = { blades: 16, segs: 2, r0: [ 0, 0.2 ], h: [ 0.9, 1 ], lean: [ 0.02, 0.08 ], w: [ 0.02, 0.03 ], droop: 0.15, reachPow: 2 };
+// Lawn: 16 sword-shaped blades, standing almost upright in the shared geometry (a lean of at most
+// about 15 degrees at the tuft's scale, PLANT_SPREAD by SWARD_HEIGHT; each blade's own height,
+// facing and lean come in the vertex stage, `restBlade`), their roots spread evenly over a disc of
+// about twice the anchors' spacing (r0 is drawn by area), so neighbouring tufts meet in one sward
+// instead of rosettes. Two segments are enough for blades this short: the arc's one bend sits at
+// their upper level. Their widths keep the lawn's cover with the pointed tips.
+const LAWN: TuftShape = { blades: 16, segs: 2, r0: [ 0, 0.2 ], h: [ 0.9, 1 ], lean: [ 0.02, 0.08 ], w: [ 0.031, 0.044 ], droop: 0.15, reachPow: 2 };
+// Each blade's own rest pose, a hash of the blade and its tuft's anchor (`restBlade`): its height
+// times 0.75 to 1.25 (and one in twelve a fifth taller, the mean kept at 1), its width axis turned
+// by up to FACING / 2 either way, and a lean of LEAN_MIN to LEAN_MAX of its height toward any side,
+// growing with the square of the way up, so the blade arcs. HEIGHT_MAX and LEAN_MAX bound the
+// cull's box (`restBox`).
+const TALL_SHARE = 1 / 12, TALL = 1.2;
+const HEIGHT_MAX = 1.25 * TALL / ( 1 + TALL_SHARE * ( TALL - 1 ) );
+const FACING = Math.PI, LEAN_MIN = 0.03, LEAN_MAX = 0.22;
 // The tuft's scale across (its local x and z, m per unit) about which its own jitter varies.
 const PLANT_SPREAD = 1;
 // The share of the anchors that take a second tuft (the extra tufts, folded away by distance):
@@ -122,8 +137,9 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 	const rng = mulberry32( seed );
 	const range = ( [ a, b ]: [ number, number ] ) => a + rng() * ( b - a );
 	const { blades, segs } = shape;
-	// T: blade parameter along its length, the half-width offset from the centreline (x, z), and
-	// the blade's own hash for its colour shift
+	// blade: its parameter along its length, the angle of its width axis in the tuft's plane, its
+	// half width there and its side ( -1, 1 ) times one plus its hash within the tuft (the vertex
+	// stage turns the width axis and reads the side for the fold, `grassMaterial`)
 	const P: number[] = [], N: number[] = [], T: number[] = [], I: number[] = [];
 	for ( let b = 0; b < blades; b ++ ) {
 
@@ -140,18 +156,20 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 		const base = P.length / 3;
 		for ( let i = 0; i <= segs; i ++ ) {
 
-			const t = i / segs;
+			// Sword-shaped: the levels crowd toward the tip ( 0, 0.6, 1 at two segments), the blade
+			// keeps most of its width to the upper level and runs to a point.
+			const t = 1 - Math.pow( 1 - i / segs, 1.32 );
 			const reach = lean * h * Math.pow( t, shape.reachPow );
 			const cx = ox + dx * reach, cz = oz + dz * reach;
 			const cy = h * t * ( 1.0 - shape.droop * lean * t );
-			const hw = w * 0.5 * Math.pow( 1 - t, 0.85 ) + 0.004;
+			const hw = w * 0.5 * Math.sqrt( Math.max( 1 - t * t * t, 0 ) );
 			for ( const sg of [ - 1, 1 ] ) {
 
 				const px = cx + wx * hw * sg, pz = cz + wz * hw * sg;
 				P.push( px, cy, pz );
 				const nx = px, nz = pz, l = Math.hypot( nx, 0.9, nz );
 				N.push( nx / l, 0.9 / l, nz / l );
-				T.push( t, wx * hw * sg, wz * hw * sg, id );
+				T.push( t, tw, hw, sg * ( 1 + id ) );
 
 			}
 
@@ -171,6 +189,14 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 	g.setAttribute( 'normal', new THREE.Float32BufferAttribute( N, 3 ) );
 	g.setAttribute( 'blade', new THREE.Float32BufferAttribute( T, 4 ) );
 	g.setIndex( I );
+	// The box of every rest pose the vertex stage gives a blade (`restBlade`): the cull bounds a tuft
+	// by it (GrassCull.ts).
+	g.computeBoundingBox();
+	const box = g.boundingBox!.clone();
+	const top = box.max.y * HEIGHT_MAX, out = top * LEAN_MAX;
+	box.max.y = top;
+	box.min.x -= out; box.min.z -= out; box.max.x += out; box.max.z += out;
+	g.userData.restBox = box;
 	return g;
 
 }
@@ -178,15 +204,15 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 // Thin blades alias. Their tips are a few millimetres wide, a fraction of a pixel from the
 // overview, so 4x MSAA catches them on some frames and misses them on others and the meadow
 // crawls as the camera moves. Each blade is kept at least `minWidth` pixels wide on screen,
-// widened across the view, and its coverage is lowered by the same factor through alpha to
-// coverage, so it hides as much of the ground as the thin blade did at every distance. This is
-// the treatment of thin wires after Emil Persson ("Phone-wire AA", Humus, 2012). Two pixels
-// brought a slow orbit's meadow flicker most of the way to a supersampled render's; narrower
-// widths left more of it, wider ones soften the blades further for little gain. Without
-// multisampling the coverage is dithered instead (`coverageDither`, Foliage.ts), and a blade dithered at half
-// its pixels across two reads as a dotted line, sharpened further by the upscale: one pixel keeps
-// such blades solid, with the meadow's brightness as at two. Under the temporal modes the dither
-// turns from frame to frame and the resolve averages it, so a blade keeps its two pixels there
+// widened across the view, and its coverage falls by the same factor, so it hides as much of the
+// ground as the thin blade did at every distance. This is the treatment of thin wires after Emil
+// Persson ("Phone-wire AA", Humus, 2012). Two pixels brought a slow orbit's meadow flicker most of
+// the way to a supersampled render's; narrower widths left more of it, wider ones soften the
+// blades further for little gain. The coverage is not drawn as partly covered pixels but as whole
+// blades (`grassMaterial`'s opacity): a blade draws solid where its coverage is above its own hash.
+// Without multisampling a blade keeps one pixel (a blade dithered at half its pixels across two
+// read as a dotted line, sharpened further by the upscale, and one pixel kept the meadow's
+// brightness as at two). Under the temporal modes a blade keeps its two pixels
 // (`GrassQuality.minWidth`, set by `buildGrass`), as at 4x: one pixel darkened the meadow and lost
 // the flower heads between the blades.
 const grassUniforms = {
@@ -367,6 +393,46 @@ export function bendBlade( wind: WindState, rooted: THREE.Node<'vec3'>, origin: 
 
 }
 
+// A hash of a blade (its id within the tuft, `restBlade`) and its tuft's anchor (`pick`), one per
+// `k`: every choice a blade makes, fixed to the world as the anchors are.
+function bladeHash( id: F, pick: F, k: number ): F {
+
+	return fract( sin( id.mul( 91.7 + k * 17.3 ).add( pick.mul( 37.3 + k * 11.1 ) ) ).mul( 43758.5453 ) );
+
+}
+
+// A blade's own rest pose, before the tuft's transform: the shared tuft geometry's blade (attribute
+// `blade`, tuftGeometry) taller or shorter, its width axis turned and the blade leaning toward its
+// own side in an arc (the lean grows with the square of the way up, the height shrinking to keep
+// the length), all by hashes of the blade and its anchor (HEIGHT_MAX, FACING, LEAN_*). So the lawn
+// stays even as a whole while no two neighbouring blades stand alike, and a grown island draws each
+// blade as a fresh load does. The wind bends this pose (`bendBlade`). Returns the local position,
+// the half-width offset and the width axis (local x, z), the lean (local x, z, a share of the
+// blade's height), the side of the blade's centreline the vertex lies on, the blade's id and the
+// hash it is kept by where it is widened (`grassMaterial`'s opacity).
+function restBlade( blade: THREE.Node<'vec4'>, pick: F ) {
+
+	const t = blade.x;
+	const side = sign( blade.w );
+	const id = abs( blade.w ).sub( 1 );
+	const tall = select( bladeHash( id, pick, 1 ).lessThan( TALL_SHARE ), float( TALL ), float( 1 ) );
+	const height = bladeHash( id, pick, 0 ).mul( 0.5 ).add( 0.75 ).mul( tall ).div( 1 + TALL_SHARE * ( TALL - 1 ) );
+	const turn = bladeHash( id, pick, 2 ).sub( 0.5 ).mul( FACING );
+	const leanAngle = bladeHash( id, pick, 3 ).mul( TAU );
+	const leanAmount = bladeHash( id, pick, 4 ).mul( LEAN_MAX - LEAN_MIN ).add( LEAN_MIN );
+	const half = blade.z.mul( side );
+	const offset0 = vec2( cos( blade.y ), sin( blade.y ) ).mul( half );
+	const axis = vec2( cos( blade.y.add( turn ) ), sin( blade.y.add( turn ) ) ).toVar();
+	const offset = axis.mul( half );
+	const lean = vec2( cos( leanAngle ), sin( leanAngle ) ).mul( leanAmount );
+	const y = positionLocal.y.mul( height );
+	const arc = leanAmount.mul( t );
+	const centre = positionLocal.xz.sub( offset0 ).add( lean.mul( y.mul( t ) ) );
+	const position = vec3( centre.x.add( offset.x ), y.mul( float( 1 ).sub( arc.mul( arc ).mul( 0.5 ) ) ), centre.y.add( offset.y ) );
+	return { position, offset, axis, lean, side, id, hash: bladeHash( id, pick, 7 ) };
+
+}
+
 // What the larger casters throw onto the blades (`SunShadow.softVisibility`): its ring's radius
 // (m), so a bush's or a tree's shade ends in a soft edge a few decimetres wide; how deep it shades
 // (a share of the direct light), lighter than on the ground, as light scatters through the blades;
@@ -374,22 +440,34 @@ export function bendBlade( wind: WindState, rooted: THREE.Node<'vec3'>, origin: 
 const SHADE_RADIUS = 0.3, SHADE_DEPTH = 0.8, SHADE_LIFT = 0.08;
 // The blades' colour and light (grassMaterial): the root's colour against the lawn's, the key light
 // left at the root, the sky's at the root, light through the upper blades (a floor from any side,
-// tinted against the albedo) and the gloss along them (its colour and the sine's power).
-const ROOT = new THREE.Vector3( 0.15, 0.3, 0.24 ), TIP = new THREE.Vector3( 1.0, 1.06, 0.8 );
+// tinted against the albedo), the gloss along them (its colour and the sine's power) and their
+// specular against a plain dielectric's (see `grassMaterial`).
+const ROOT = new THREE.Vector3( 0.42, 0.7, 0.56 ), TIP = new THREE.Vector3( 1.2, 1.17, 0.88 );
+// The blades' own tints (grassMaterial): the share at each end of the tint hash that turns yellow
+// green or deep green, and the mean of all the shifts (the middle ones average 1), divided out.
+const BLADE_TINT_SHARE = 0.15;
+const BLADE_TINTS = ( () => {
+
+	const yellow = new THREE.Vector3( 1.08, 1.02, 0.8 ), deep = new THREE.Vector3( 0.88, 0.96, 0.98 );
+	const mean = yellow.clone().add( deep ).multiplyScalar( BLADE_TINT_SHARE ).addScalar( 1 - 2 * BLADE_TINT_SHARE );
+	return { yellow, deep, mean };
+
+} )();
 const ROOT_KEY = 0.72, ROOT_SKY = 0.55;
 const TRANSLUCENT_FLOOR = 0.3;
 const TRANSLUCENT_TINT = new THREE.Vector3( 1.4, 1.15, 0.5 );
-const SHEEN = new THREE.Vector3( 0.06, 0.065, 0.045 ), SHEEN_POWER = 2;
+const SHEEN = new THREE.Vector3( 0.03, 0.0325, 0.0225 ), SHEEN_POWER = 2, SPECULAR = 0.35;
+// The blade's fold (how far each half's normal turns toward its edge), how far its own lean tilts
+// its normal, and the lift of its thin bright edge (on the outer share EDGE_FROM of each half).
+const FOLD = 0.6, LEAN_NORMAL = 1.0, EDGE = 0.25, EDGE_FROM = 0.7;
 // The ring's lookups besides the centre: each costs 0.05 - 0.08 ms a frame in the island views
 // (every blade vertex takes them), and two keep the shade's cost near half the per-pixel filter's.
 const SHADE_TAPS = 2;
 
 function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ): THREE.MeshStandardNodeMaterial {
 
-	// Alpha to coverage carries the widened blades' coverage (see `pixelWideBlade`); a blade at
-	// least `minWidth` wide keeps full coverage and renders as before. Without multisampling
-	// there is no coverage to lower, and the widened blades would draw solid: an ordered dither
-	// threshold per pixel keeps that share of a blade's pixels instead (`coverageDither`).
+	// The blades' opacity is 0 or 1 (whole blades, below): alpha to coverage and, without
+	// multisampling, `coverageDither`'s threshold draw a fragment or drop it whole.
 	const mat = new THREE.MeshStandardNodeMaterial( { roughness: 0.86, metalness: 0, side: THREE.DoubleSide, alphaToCoverage: ALPHA_TO_COVERAGE } );
 	const slot = instanceIndex.add( cullBase );
 	const tuftSlot = select( cullOn.equal( 1 ), cull.node( 'visible', 'uint', true ).element( slot ), slot ).toVar( 'grassTuft' );
@@ -399,20 +477,37 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const ground0 = input.ground( 0 ), ground1 = input.ground( 1 ), ground2 = input.ground( 2 );
 	const skyVisibility = varying( ground0.x, 'vGrassSkyVisibility' ), rimCover = varying( ground0.z, 'vGrassRimCover' );
 	const tuftOrigin = varying( input.origin, 'vGrassTuftOrigin' );
-	mat.opacityNode = bladeCoverage;
 	if ( ! ALPHA_TO_COVERAGE ) mat.alphaTestNode = coverageDither();
 	markVegetation( mat );
 	const wind = shared.wind.direction;
 	const blade = attribute<'vec4'>( 'blade', 'vec4' );
 	const t = blade.x;
 	const t2 = t.mul( t );
-	// sway: gusts travel across the meadow, the tips move most. `p` is the vertex placed by the
-	// tuft's transform, i.e. in world space (the mesh itself stays untransformed), computed as
-	// three's instancing did; held in a variable as three's was, which keeps the rounding of
-	// every expression built on it.
-	const p = input.matrix.mul( positionLocal ).xyz.toVar( 'grassPlaced' );
 	const tuft = tuftOrigin;
 	const origin = tuft.xyz;
+	const pick = fract( sin( dot( origin.xz, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
+	const pose = restBlade( blade, pick );
+	// Whole blades instead of partial coverage (after tidewater's GrassField, Daniel Greenheck, MIT;
+	// the technique only): a widened blade's fragment is drawn solid where the blade's coverage
+	// there (`pixelWideBlade`) is at or above the blade's own hash and not at all below it. A blade
+	// then ends where it narrows past its hash and the meadow covers as much on average as with
+	// partial coverage, while no pixel of a blade takes a share of the samples: partial coverage
+	// drew alpha to coverage's fixed sample patterns as a grid of dots along the narrow upper
+	// blades, plainest on the lit tips. In a wind-still clip at the game camera's close end the
+	// meadow flickers as much as with partial coverage (a little less in its high-pass part);
+	// drawing the widened blades solid near the camera instead raised it by about a third and
+	// brightened the lawn.
+	// What the fragment stage reads of the blade, in one varying (the meadow's varyings are near
+	// WebGPU's limit): its keep hash, the side of its centreline, and its value and tint hashes
+	// (taken per vertex: the blade's id comes from its attribute's magnitude, whose sign flips
+	// across the blade, so interpolated it is the id only at the edges).
+	const bladeVarying = varying( vec4( pose.hash, pose.side, bladeHash( pose.id, pick, 5 ), bladeHash( pose.id, pick, 6 ) ), 'vGrassBlade' );
+	mat.opacityNode = step( bladeVarying.x, bladeCoverage );
+	// sway: gusts travel across the meadow, the tips move most. `p` is the vertex of the blade's
+	// rest pose placed by the tuft's transform, i.e. in world space (the mesh itself stays
+	// untransformed), computed as three's instancing did; held in a variable as three's was,
+	// which keeps the rounding of every expression built on it.
+	const p = input.matrix.mul( vec4( pose.position, 1 ) ).xyz.toVar( 'grassPlaced' );
 	// Folding a thinned tuft into its root: a scale about the anchor, applied like the drowning.
 	const thin = ground1.w;
 	const kept = float( 1 ).sub( thin.mul( smoothstepN( grassUniforms.thinNear, grassUniforms.thinFar, length( cameraPosition.sub( origin ) ) ) ) );
@@ -422,16 +517,15 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// meadow that hides it. Which tufts and how much is a hash of the planting anchor, fixed.
 	const pool = puddleCover( origin.xz, shared.wetness );
 	const drowned = float( 1 ).sub( pool.mul( 0.15 ) ).mul( kept );
-	const pick = fract( sin( dot( origin.xz, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
 	const tip = select( pick.greaterThan( 0.66 ), pick.sub( 0.66 ).mul( 0.25 ).add( 0.03 ), float( - 0.03 ) );
 	// The tallest blade of a tuft reaches about 0.9 of its height ( tuft.w / CANOPY_TOP ).
 	const sink = max( tuft.w.div( CANOPY_TOP ).mul( drowned ).mul( 0.9 ).sub( tip ), 0 );
 	const rooted = p.sub( origin ).mul( drowned ).add( origin ).sub( vec3( 0, pool.mul( sink ), 0 ) );
-	const bladePhase = fract( blade.w.mul( 17.31 ).add( pick.mul( 5.13 ) ) ).mul( TAU );
+	const bladePhase = fract( pose.id.mul( 17.31 ).add( pick.mul( 5.13 ) ) ).mul( TAU );
 	// The blade's half width at this vertex in world space: its local offset from the centreline
 	// through the instance's own axes, then the same drowning scale as `rooted` (an affine map of
 	// the position, so it scales offsets alike; the bend barely varies across a blade).
-	const across = ground1.xyz.mul( blade.y ).add( ground2.xyz.mul( blade.z ) ).mul( drowned );
+	const across = ground1.xyz.mul( pose.offset.x ).add( ground2.xyz.mul( pose.offset.y ) ).mul( drowned );
 	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, ground0.w );
 	const lod = tuftLod( origin );
 	const bend = bendBlade( shared.wind, rooted, origin, tuft.w, t2, bladePhase );
@@ -450,8 +544,10 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	mat.positionNode = Fn( () => {
 
 		// A bent blade's normal turns with it, so a gust shows as it sweeps by, as a sheen.
+		// The blade's own lean tilts it too, so blades leaning apart take the light apart.
 		const normal = transformNormal( normalLocal, input.matrix );
-		normalLocal.assign( normalize( normal.add( bend.lean.mul( t.mul( 1.5 ) ) ) ) );
+		const leanWorld = ground1.xyz.mul( pose.lean.x ).add( ground2.xyz.mul( pose.lean.y ) );
+		normalLocal.assign( normalize( normal.add( bend.lean.mul( t.mul( 1.5 ) ) ).add( leanWorld.mul( t.mul( LEAN_NORMAL ) ) ) ) );
 		instanceColor.assign( input.color );
 		return placed;
 
@@ -459,13 +555,16 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	showSway( mat, bend.lean.xz, shared.wind );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const cover = rimCover;
-	// Each blade shifts its value by up to +/-5 % and its hue a hint toward yellow or blue green:
-	// a hash of the blade within its tuft and of the tuft's anchor, so neighbouring tufts of one
-	// geometry do not repeat the same blades. Enough to tell blades apart close up, too little to
-	// mottle the lawn.
-	const jitter = fract( sin( blade.w.mul( 91.7 ).add( pick.mul( 37.3 ) ) ).mul( 43758.5453 ) );
-	const tint = fract( jitter.mul( 7.13 ).add( pick.mul( 3.7 ) ) );
-	const bladeShift = mix( vec3( 0.98, 1, 1.03 ), vec3( 1.02, 1, 0.95 ), tint ).mul( jitter.mul( 0.1 ).add( 0.95 ) );
+	// Each blade shifts its value by up to +/-10 % and its hue a hint toward yellow or blue green,
+	// and about one in seven turns a clear yellow green and as many a deep green (BLADE_TINTS): a
+	// hash of the blade and its tuft's anchor, so no two neighbouring blades match. Divided by the
+	// shifts' mean, so the lawn's average colour stays; the blades are far finer than the lawn's
+	// colour field, so they tell apart close up without mottling it.
+	const jitter = bladeVarying.z, tint = bladeVarying.w;
+	const yellow = step( tint, BLADE_TINT_SHARE ), deep = step( 1 - BLADE_TINT_SHARE, tint );
+	const hue = mix( vec3( 0.98, 1, 1.03 ), vec3( 1.02, 1, 0.97 ), tint ).mul( float( 1 ).sub( yellow ).sub( deep ) )
+		.add( vec3( BLADE_TINTS.yellow ).mul( yellow ) ).add( vec3( BLADE_TINTS.deep ).mul( deep ) );
+	const bladeShift = hue.mul( jitter.mul( 0.2 ).add( 0.9 ) ).div( vec3( BLADE_TINTS.mean ) );
 	// A deeper, cooler green at the root to a light, fresh green at the tip (the instance colour
 	// multiplies in), so the gaps between blades read as a deeper green, never near black (that
 	// read as holes in a bright lawn), and the sward has depth without looking dirty. The light
@@ -473,10 +572,27 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// colour.
 	const root = mix( vec3( ROOT ), vec3( 0.55, 0.38, 0.23 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
 	const wetness = clamp( shared.wetness, 0, 1 );
-	mat.colorNode = mix( root, vec3( TIP ), smoothstepN( 0.12, 1, t ) ).mul( bladeShift ).mul( mix( 1, 0.92, wetness ) );
+	// The blade's side and width axis, for the edge here and the fold below. The edge is a lighter
+	// rim along the blade's margins, only seen where a blade is several pixels wide.
+	const side = bladeVarying.y;
+	const axisView = varying( cameraViewMatrix.mul( vec4( normalize( ground1.xyz.mul( pose.axis.x ).add( ground2.xyz.mul( pose.axis.y ) ) ), 0 ) ).xyz, 'vGrassAxis' );
+	const edge = smoothstepN( EDGE_FROM, 1, abs( side ) ).mul( EDGE ).add( 1 );
+	mat.colorNode = mix( root, vec3( TIP ), smoothstepN( 0.12, 1, t ) ).mul( bladeShift ).mul( edge ).mul( mix( 1, 0.92, wetness ) );
 	mat.roughnessNode = mix( 0.86, 0.76, wetness );
-	// the tuft's envelope, the same from both sides
-	mat.normalNode = normalViewGeometry;
+	// A blade's specular at SPECULAR of a plain dielectric's (F0 0.04, F90 1): seen edge on, as the
+	// game camera sees upright blades, the full Fresnel term laid a pale sky reflection over the
+	// whole meadow, a grey veil that read as plastic and took a quarter of its saturation.
+	( mat as unknown as { setupSpecular: () => void } ).setupSpecular = () => {
+
+		specularColor.assign( vec3( 0.04 * SPECULAR ) );
+		specularColorBlended.assign( vec3( 0.04 * SPECULAR ) );
+		specularF90.assign( SPECULAR );
+
+	};
+	// The tuft's envelope, the same from both sides, folded: each half of a blade turns its normal
+	// toward its own edge, so one half takes the light and the other turns from it (FOLD), as a
+	// leaf folded along its midrib does.
+	mat.normalNode = normalize( normalViewGeometry.add( axisView.mul( clamp( side.mul( 4 ), - 1, 1 ).mul( FOLD ) ) ) );
 	// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
 	// Both the sky's light (here) and the key light (`VegetationLighting` below) fall off toward
 	// the root.
@@ -502,7 +618,8 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// strongest against the sun, a little from any side, so lit tips glow yellow-green. A soft
 	// gloss along the blades (`SHEEN`): a blade is a thin strip standing along its envelope's
 	// normal, so it reflects as a fibre about that axis (Kajiya and Kay's sine of the half vector),
-	// broad and faint, brightest on the tips toward a low sun. Both follow the key light alone, so
+	// broad and faint, brightest on the tips toward a low sun; at half its first strength, as with
+	// the specular it paled the lawn toward a coated look. Both follow the key light alone, so
 	// by night they stay as faint as the moon.
 	useLighting( mat, () => new VegetationLighting( mix( float( ROOT_KEY ), float( 1 ), t ).mul( canopy ), ( L, V ) =>
 		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.42 ).add( TRANSLUCENT_FLOOR ).mul( t2 ).mul( vec3( TRANSLUCENT_TINT ) ),

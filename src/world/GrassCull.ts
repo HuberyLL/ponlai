@@ -44,7 +44,8 @@ import { jitter } from '../post/Jitter.ts';
 // arguments), so no pool changes their code.
 //
 // Rules:
-// - Each tuft's sphere is padded for the widening's 31 half widths, the sway and standing water's
+// - Each tuft's sphere bounds its blades' rest poses (a geometry's `restBox`, Grass.ts) and is
+//   padded for the widening's 31 half widths, the sway and standing water's
 //   sink, and by twice its origin's offset from the sphere's centre, since the wind's bend turns
 //   every vertex about that origin.
 // - The dispatch is skipped while the view and the blade selection are unchanged.
@@ -167,8 +168,7 @@ export function* poolSteps( batches: CullBatchInput[], per = Infinity ): Generat
 	for ( let k = 0; k < batches.length; k ++ ) {
 
 		const b = batches[ k ], range = ranges[ k ];
-		b.geometry.computeBoundingBox();
-		_box.copy( b.geometry.boundingBox! );
+		tuftBox( b.geometry );
 		for ( let j = 0; j < b.tufts.length; j ++ ) {
 
 			const t = b.tufts[ j ], i = range.start + j;
@@ -208,7 +208,7 @@ export function* poolSteps( batches: CullBatchInput[], per = Infinity ): Generat
 
 				yield;
 				// (another pool's steps may have run meanwhile)
-				_box.copy( b.geometry.boundingBox! );
+				tuftBox( b.geometry );
 
 			}
 
@@ -238,6 +238,22 @@ export function fillPool( batches: CullBatchInput[] ): CullPool {
 }
 
 const _box = new THREE.Box3(), _corner = new THREE.Vector3(), _world = new THREE.Box3(), _sphere = new THREE.Sphere();
+
+// A tuft's box in its own space: the geometry's, or the box of every pose the vertex stage gives its
+// blades at rest where the geometry carries one (`userData.restBox`, Grass.ts), into `_box`.
+function tuftBox( geometry: THREE.BufferGeometry ): void {
+
+	const rest = geometry.userData.restBox as THREE.Box3 | undefined;
+	if ( rest ) {
+
+		_box.copy( rest );
+		return;
+
+	}
+	geometry.computeBoundingBox();
+	_box.copy( geometry.boundingBox! );
+
+}
 const _frustum = new THREE.Frustum(), _projScreen = new THREE.Matrix4(), _viewInverse = new THREE.Matrix4(), _camera = new THREE.Vector3();
 const _padded = new THREE.Matrix4(), _size = new THREE.Vector2();
 
