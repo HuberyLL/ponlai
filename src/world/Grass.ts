@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, dot, pow, clamp, fract, sin, select, normalize,
 	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, varying, varyingProperty, uniform,
-	smoothstep as smoothstepN, instanceIndex, normalLocal, transformNormal, instanceColor,
+	smoothstep as smoothstepN, instanceIndex, vertexIndex, normalLocal, transformNormal, instanceColor,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
@@ -45,10 +45,12 @@ import type { Shared } from '../shared.ts';
 //   crawl as the camera moves; close up blades render unchanged. Single-sampled (`msaa=1`) the
 //   blades take an ordered 4x4 dither and stay one pixel wide (a blade dithered across two pixels
 //   reads as a dotted line).
-// - Beyond 40 and 70 m from a batch the lawn draws 12 and 8 of its 16 blades (tussocks in
-//   proportion; GrassQuality), and blades a few pixels wide widen and cover for the dropped ones
-//   (`bladeGain`), so density and brightness hold. The band follows the camera's position alone
-//   (no hysteresis), so a paused frame does not depend on the camera's path.
+// - Each tuft draws fewer blades the farther it stands from the view camera: on high every one of
+//   its 16 within 25 m, easing to 8 at 45 m and to 4 at 70 m, never fewer (tussocks in proportion;
+//   GrassQuality). A dropped blade narrows to nothing over a short distance of its own, and the
+//   kept ones widen and cover for it (`tuftLod`, `pixelWideBlade`), so density and brightness hold.
+//   It is a function of the tuft's distance from the camera's position alone (no hysteresis), so a
+//   paused frame does not depend on the camera's path; other cameras draw every blade.
 // - The view camera's draws are culled per tuft on the GPU (GrassCull.ts); every other draw over
 //   the same geometry draws every tuft. Tufts bend with the wind field at their root and their
 //   normals turn with the bend, so a gust shows as a sheen (Wind.ts).
@@ -75,10 +77,13 @@ const TUSSOCK: TuftShape = { blades: 18, segs: 4, r0: [ 0.01, 0.08 ], h: [ 0.55,
 /** The meadow's cost knobs for a quality tier. They shape the meshes and shaders, so they apply
  * when the grass is planted and built (set them before `plantGrass`); the defaults are the high tier's. */
 export interface GrassQuality {
-	/** Lawn blades drawn per tuft near, mid and far from the camera (of 16), see `selectBatch`. */
+	/** Lawn blades drawn per tuft (of 16) at the camera distances `bladeBands`: the first count up
+	 * to the first distance, easing linearly to the second count at the second distance and to the
+	 * third at the third, and the third beyond (see `tuftLod`). The counts change the cost only:
+	 * the kept blades cover for the rest at every count. */
 	lawnBlades: [ number, number, number ];
-	/** Camera distances (m) from a batch's planting box where the mid and far counts begin. */
-	bladeBands: [ number, number ];
+	/** Camera distances (m) from a tuft where its blade counts `lawnBlades` apply. */
+	bladeBands: [ number, number, number ];
 	/** Segments along a tussock blade (4 arches them smoothly, 3 is close at a distance). */
 	tussockSegments: number;
 	/** Whether the extra tufts of thick patches exist at all (they fold away beyond 42 m). */
@@ -90,7 +95,7 @@ export interface GrassQuality {
 	 * temporal modes; 4x multisampling keeps 2 and one sample outside them 1. */
 	minWidth: number;
 }
-const grassQuality: GrassQuality = { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 };
+const grassQuality: GrassQuality = { lawnBlades: [ 16, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 };
 
 export function setGrassQuality( quality: Partial<GrassQuality> ): void {
 
@@ -182,22 +187,68 @@ const grassUniforms = {
 // Beyond this the blade is seen nearly edge on; widening further would only smear it.
 const MAX_WIDEN = 8;
 const bladeCoverage = varyingProperty( 'float', 'vGrassBladeCoverage' );
-// A batch drawing k of a tuft's n blades (`selectBatch`) widens and covers with each kept blade
-// n / k times as much, so the meadow hides as much ground as with every blade: a kept blade
-// stands in for the dropped ones beside it. 1 with every blade drawn. The stand-in only holds
-// where a blade is a few pixels across: a blade seen 16 or more pixels wide keeps its own width
-// and coverage (gain 1), or near tufts with fewer blades would draw each one several times as
-// broad and solid. Between 16 and 4 pixels the gain eases in.
-const bladeGain = uniform( 1 ).onObjectUpdate( ( { object } ) => object?.userData.bladeGain ?? 1 );
+// A tuft drawing c of its n blades (`tuftLod`) widens and covers with each kept blade n / c times
+// as much (its gain), so the meadow hides as much ground as with every blade: a kept blade stands
+// in for the dropped ones beside it. 1 with every blade drawn. The stand-in only holds where a
+// blade is a few pixels across: a blade seen 16 or more pixels wide keeps its own width and
+// coverage (gain 1), or near tufts with fewer blades would draw each one several times as broad
+// and solid. Between 16 and 4 pixels the gain eases in.
 const GAIN_FULL_PIXELS = 4;
 const GAIN_NONE_PIXELS = 16;
 
 type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;
 
+// Per object: whether this draw thins the tufts by distance (`grassLod`, set by `selectBatch` for
+// the view camera's draws and copied onto the prepass's depth copy), and per geometry the tuft's
+// blades and the vertices of one blade (its blades follow one another in the index order).
+const lodOn = uniform( 0 ).onObjectUpdate( ( { object } ) => object?.userData.grassLod === true ? 1 : 0 );
+const tuftBlades = uniform( 16 ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassBlades ?? 16 );
+const bladeVerts = uniform( 6, 'uint' ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassBladeVerts ?? 6 );
+// The blade-count curve (`GrassQuality.lawnBlades` over `bladeBands`), the counts as shares of
+// the lawn's 16; set by `buildGrass`.
+const lodUniforms = { bands: uniform( new THREE.Vector3( 25, 45, 70 ) ), shares: uniform( new THREE.Vector3( 1, 0.5, 0.25 ) ) };
+// Each tuft's cutoffs move out by up to this share of its distance (a hash of its anchor), so
+// neighbouring tufts drop a given blade at different distances and no ring of half-narrowed
+// blades forms around the camera; never in, so a tuft within the first band keeps every blade.
+const LOD_STAGGER = 0.1;
+
+/** The share of the lawn's blades a tuft keeps at `distance` (m) from the view camera, the curve
+ * `tuftLod` follows ( 1 near on high ); the batches' draw ranges take it at their nearest tuft. */
+function bladeShare( distance: number ): number {
+
+	const [ b0, b1, b2 ] = grassQuality.bladeBands, [ c0, c1, c2 ] = grassQuality.lawnBlades;
+	const s = ( x: number ) => Math.min( Math.max( x, 0 ), 1 );
+	return ( c0 + ( c1 - c0 ) * s( ( distance - b0 ) / ( b1 - b0 ) ) + ( c2 - c1 ) * s( ( distance - b1 ) / ( b2 - b1 ) ) ) / LAWN.blades;
+
+}
+
+// A tuft's blades by distance, after tidewater's GrassField tier fade (Daniel Greenheck, MIT;
+// the technique only): the tuft keeps c of its n blades, c falling with its distance from the view
+// camera along the curve above, and blade b (blades are generated in a random order, so any first
+// ones are a fair subset) keeps the share clamp( c - b, 0, 1 ) of its width: each blade narrows to
+// nothing over the distance in which c falls by one, at its own distance, rather than a batch
+// stepping between counts. A blade of zero width is a degenerate triangle pair, never rasterised.
+// The kept widths sum to c, and the gain n / c widens them back to the tuft's whole width
+// (`pixelWideBlade`). Off (other cameras, `flags.grassLod = false`) every blade keeps its width
+// and the gain is 1. Returns the blade's width share and the tuft's gain.
+function tuftLod( origin: V3 ): { keep: F; gain: F } {
+
+	const stagger = fract( sin( dot( origin.xz, vec2( 39.3468, 11.1351 ) ) ).mul( 24634.6345 ) );
+	const d = length( cameraPosition.sub( origin ) ).mul( float( 1 ).sub( stagger.mul( LOD_STAGGER ) ) );
+	const { bands, shares } = lodUniforms;
+	const share = mix( shares.x, shares.y, clamp( d.sub( bands.x ).div( bands.y.sub( bands.x ) ), 0, 1 ) )
+		.add( shares.z.sub( shares.y ).mul( clamp( d.sub( bands.y ).div( bands.z.sub( bands.y ) ), 0, 1 ) ) );
+	const count = mix( tuftBlades, tuftBlades.mul( share ), lodOn ).toVar();
+	const blade = float( vertexIndex.div( bladeVerts ) );
+	return { keep: clamp( count.sub( blade ), 0, 1 ), gain: tuftBlades.div( count ) };
+
+}
+
 // Returns the widened vertex and passes its coverage to the fragment stage. Positions are world
-// positions: the meadow mesh stays at the origin, untransformed.
-function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F ): V3 {
+// positions: the meadow mesh stays at the origin, untransformed. `keep` narrows the blade (the
+// share of its width it keeps, `tuftLod`) and `bladeGain` is its tuft's gain.
+function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F, keep: F, bladeGain: F ): V3 {
 
 	return Fn( () => {
 
@@ -211,13 +262,16 @@ function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F ): V3 {
 		const p11 = ( cameraProjectionMatrix as unknown as { element( i: number ): { element( i: number ): F } } ).element( 1 ).element( 1 );
 		const pixel = depth.mul( 2 ).div( p11.mul( screenSize.y ) );
 		const halfSeen = max( length( seen ), 1e-6 ).toVar();
-		// The blade's own width on screen in pixels sets how much of the batch's gain applies;
+		// The blade's own width on screen in pixels sets how much of the tuft's gain applies;
 		// written as 1 + ( gain - 1 ) * s so a gain of 1 stays exactly 1.
 		const gainShare = float( 1 ).sub( smoothstepN( GAIN_FULL_PIXELS, GAIN_NONE_PIXELS, halfSeen.mul( 2 ).div( pixel ) ) );
 		const gain = bladeGain.sub( 1 ).mul( gainShare ).add( 1 ).toVar();
-		const widen = clamp( minWidth.mul( 0.5 ).mul( pixel ).div( halfSeen ), gain, gain.mul( MAX_WIDEN ) ).toVar();
+		// A narrowing blade is widened from its narrowed width, so it keeps its coverage share
+		// (keep 1 leaves every term as it was).
+		const narrowed = max( halfSeen.mul( keep ), 1e-6 );
+		const widen = clamp( minWidth.mul( 0.5 ).mul( pixel ).div( narrowed ), gain, gain.mul( MAX_WIDEN ) ).toVar();
 		bladeCoverage.assign( gain.div( widen ) );
-		return p.add( seen.mul( widen.sub( 1 ) ) );
+		return p.add( seen.mul( keep.mul( widen ).sub( 1 ) ) );
 
 	} )() as V3;
 
@@ -312,12 +366,13 @@ function grassMaterial( shared: Shared, cull: GrassCull ): THREE.MeshStandardNod
 	const across = ground1.xyz.mul( blade.y ).add( ground2.xyz.mul( blade.z ) )
 		.mul( vec3( float( 1 ).sub( soil.mul( 0.5 ) ), float( 1 ).sub( soil.mul( 0.6 ) ), float( 1 ).sub( soil.mul( 0.5 ) ) ) ).mul( drowned );
 	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, ground0.w );
+	const lod = tuftLod( origin );
 	const bend = bendBlade( shared.wind, rooted, origin, tuft.w, t2, bladePhase );
 	// Short growth needs a smaller world-space sway to keep its tips above the soil.
-	// The widening (`pixelWideBlade`) follows the current camera: a previous frame's pose from
-	// the registered displacement keeps the widening as it is now.
+	// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
+	// camera: a previous frame's pose from the registered displacement keeps them as they are now.
 	const swayed = setWindDisplacement( mat, ( state ) => pixelWideBlade(
-		state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, bladePhase ).position, across, minWidth ), shared.wind );
+		state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, bladePhase ).position, across, minWidth, lod.keep, lod.gain ), shared.wind );
 	// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
 	// rooted point, widened by the offset the current pose took (the widening follows the camera,
 	// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
@@ -380,12 +435,14 @@ export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; 
 // batch's first slot on, read by the material through the drawn tuft's slot; `instanceMatrix`
 // and `instanceColor` point at those buffers for code that looks for them, and since neither is an
 // instanced attribute three leaves the instancing to the material.
-function tuftMesh( source: THREE.BufferGeometry, material: THREE.Material, cull: GrassCull, range: CullRange, name: string ): THREE.InstancedMesh {
+function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, material: THREE.Material, cull: GrassCull, range: CullRange, name: string ): THREE.InstancedMesh {
 
 	const geometry = new THREE.BufferGeometry();
 	for ( const key of [ 'position', 'normal', 'blade' ] ) geometry.setAttribute( key, source.getAttribute( key ) );
 	geometry.setIndex( source.getIndex() );
 	geometry.userData.grassBase = range.start;
+	geometry.userData.grassBlades = shape.blades;
+	geometry.userData.grassBladeVerts = ( shape.segs + 1 ) * 2;
 	const mesh = new THREE.InstancedMesh( geometry, material, Math.max( range.count, 1 ) );
 	mesh.instanceMatrix.array = new Float32Array( 16 ); // replaced below; drop the copy InstancedMesh allocates
 	( mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.matrices;
@@ -407,16 +464,13 @@ function tuftMesh( source: THREE.BufferGeometry, material: THREE.Material, cull:
 // position alone, never of the path it came by, so a paused frame repeats exactly:
 // - the thin extra tufts are skipped once the camera is beyond `thinFar` of every one of them,
 //   where all of them have folded into their roots (the fold is the shader's, unchanged);
-// - lawn and tussocks draw the first k blades of each tuft (GrassQuality.lawnBlades by distance
-//   band). Blades are generated in a random order, so the first k are a fair subset; the kept
-//   ones widen and cover for the rest (`bladeGain`). The bands have no hysteresis: that would
-//   make the count depend on where the camera came from. A camera crossing an edge steps once,
-//   between two counts that hide the same share of the ground.
-// The box spans every tuft of a batch, so its nearest tuft sets the band for all of them: a
-// larger island keeps more of its meadow in the nearer bands and saves less. A batch is one per
-// kind, holding every chunk's tufts in the chunks' order (GrassCull's pool), not one per chunk:
-// that would add draws (and prepass draws) per meadow chunk; a band per chunk chosen in the cull
-// pass is the step that would save more.
+// - each tuft keeps its blades by its own distance in the vertex stage (`tuftLod`); the batch's
+//   draw range ends after the blades its nearest possible tuft keeps (the box's nearest point,
+//   at the least staggered distance), so blades no tuft keeps are not even run through the vertex
+//   stage. The narrowed blades within the range still are: a degenerate blade costs its vertices.
+// A batch is one per kind, holding every chunk's tufts in the chunks' order (GrassCull's pool),
+// not one per chunk: that would add draws (and prepass draws) per meadow chunk; a range per chunk
+// chosen in the cull pass is the step that would save the narrowed blades' vertices too.
 // Other cameras (the rain's collision bake looks straight down, orthographic) see every tuft
 // with all its blades, as before.
 // The view camera's draws are then culled per tuft on the GPU (`GrassCull`): one compute pass
@@ -436,19 +490,19 @@ function selectBatch( batch: Batch, camera: THREE.Camera ): void {
 
 		mesh.count = batch.count;
 		mesh.geometry.drawRange.count = full;
-		mesh.userData.bladeGain = 1;
+		mesh.userData.grassLod = false;
 		return;
 
 	}
 
 	const d = batch.box.distanceToPoint( _cameraPosition.setFromMatrixPosition( camera.matrixWorld ) );
 	mesh.count = batch.thin && debugFlags.grassThinCull !== false && d >= grassUniforms.thinFar.value ? 0 : batch.count;
-	const bands = grassQuality.bladeBands;
-	const level = debugFlags.grassLod === false ? 0 : d < bands[ 0 ] ? 0 : d < bands[ 1 ] ? 1 : 2;
-	const lawnBlades = grassQuality.lawnBlades[ level ];
-	const blades = Math.min( shape.blades, Math.max( 1, Math.round( shape.blades * lawnBlades / LAWN.blades ) ) );
+	const lod = debugFlags.grassLod !== false;
+	// (the shader's count rounds a little differently: a blade it keeps a sliver of past the range
+	// is a hair's width, and the full range at the first band is exact)
+	const blades = lod ? Math.min( shape.blades, Math.ceil( shape.blades * bladeShare( d * ( 1 - LOD_STAGGER ) ) - 1e-6 ) ) : shape.blades;
 	mesh.geometry.drawRange.count = blades * shape.segs * 6;
-	mesh.userData.bladeGain = shape.blades / blades;
+	mesh.userData.grassLod = lod;
 
 }
 
@@ -482,7 +536,7 @@ function drawBatch( batches: Batch[], cull: GrassCull, batch: Batch, renderer: T
 
 function batchOf( source: THREE.BufferGeometry, shape: TuftShape, material: THREE.Material, cull: GrassCull, range: CullRange, tufts: Tuft[], name: string, thin = false ): Batch {
 
-	const mesh = tuftMesh( source, material, cull, range, name );
+	const mesh = tuftMesh( source, shape, material, cull, range, name );
 	const box = new THREE.Box3();
 	for ( const t of tufts ) box.expandByPoint( t.origin );
 	return { mesh, box, shape, thin, count: tufts.length, range };
@@ -622,6 +676,8 @@ export function buildGrass( { lawn, tussocks, lawnThin }: GrassTufts, shared: Sh
 	// (the tier's least blade width applies under the temporal modes only: 4x and one sample keep
 	// theirs, see `grassUniforms`)
 	if ( TEMPORAL ) grassUniforms.minWidth.value = grassQuality.minWidth;
+	lodUniforms.bands.value.fromArray( grassQuality.bladeBands );
+	lodUniforms.shares.value.fromArray( grassQuality.lawnBlades ).divideScalar( LAWN.blades );
 	const group = new THREE.Group();
 	group.name = 'grass';
 	const lawnGeometry = tuftGeometry( LAWN, 3 );

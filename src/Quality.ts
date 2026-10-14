@@ -177,7 +177,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full' },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 36, bloomChains: 2 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },
-		grass: { lawnBlades: [ 16, 12, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 },
+		grass: { lawnBlades: [ 16, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
 		frameRate: 60,
@@ -198,7 +198,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 6, stormFoam: 'full' },
 		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048, dofTaps: 24, bloomChains: 2 },
 		shadow: { surface: { soft: true, blockerSamples: 4, filterSamples: 5 }, vegetation: BILINEAR },
-		grass: { lawnBlades: [ 12, 8, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
+		grass: { lawnBlades: [ 12, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 256,
 		frameRate: 60,
@@ -220,7 +220,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'full' },
 		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024, dofTaps: 16, bloomChains: 2 },
 		shadow: { surface: BILINEAR, vegetation: BILINEAR },
-		grass: { lawnBlades: [ 8, 8, 8 ], bladeBands: [ 40, 70 ], tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
+		grass: { lawnBlades: [ 8, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 2, rippleLayers: 1 },
 		environmentSource: 256,
 		// light enough to render on most refreshes of a fast display: held to 60 Hz there, its
@@ -245,7 +245,7 @@ export function isQualityTier( value: unknown ): value is QualityTier {
 }
 
 /** The tier's profile with `?tier.<knob path>=<value>` options over it, for A/B captures of one
- * knob (`tier.post.fogScale=0.5`, `tier.water.ssrRays=2`, `tier.grass.lawnBlades=16,12,8`). A path
+ * knob (`tier.post.fogScale=0.5`, `tier.water.ssrRays=2`, `tier.grass.lawnBlades=16,8,4`). A path
  * must name an existing knob; numbers, booleans and comma lists are parsed. */
 export function qualityProfile( tier: QualityTier, search = location.search ): QualityProfile {
 

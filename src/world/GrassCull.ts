@@ -32,7 +32,7 @@ import { jitter } from '../post/Jitter.ts';
 // arguments), so no pool changes their code.
 //
 // Rules:
-// - Each tuft's sphere is padded for the widening's 15 half widths, the sway and standing water's
+// - Each tuft's sphere is padded for the widening's 31 half widths, the sway and standing water's
 //   sink, and by twice its origin's offset from the sphere's centre, since the wind's bend turns
 //   every vertex about that origin.
 // - The dispatch is skipped while the view and the blade selection are unchanged.
@@ -53,8 +53,9 @@ type UintMax = ( a: THREE.Node<'uint'>, b: THREE.Node<'uint'> ) => THREE.Node<'u
 const GROUP = 256;
 const LOG2_GROUP = 8;
 // A tuft's widened blades reach out by at most this many times their half width (`MAX_WIDEN` times
-// the largest blade gain, 16 / 8, less the blade itself), see `pixelWideBlade` in Grass.ts.
-export const WIDEN_REACH = 15;
+// the largest blade gain, 4: a far tuft keeps a quarter of its blades, less the blade itself), see
+// `pixelWideBlade` and `tuftLod` in Grass.ts.
+export const WIDEN_REACH = 31;
 // Slack (m) for rounding, kept at the width it had for the old global-sine sway (a few
 // centimetres at the tips in a gale): a smaller pad changes the visible list. The wind's bend (`bendBlade` in Grass.ts) keeps every vertex at its
 // distance from the tuft's origin, so it stays inside the sphere when that is padded by twice
