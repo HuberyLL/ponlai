@@ -171,6 +171,11 @@ export function* poolSteps( batches: CullBatchInput[], per = Infinity ): Generat
 		}
 
 	}
+	// A batch's padding to whole workgroups repeats its first tuft's transform: never drawn (its
+	// sphere is never visible), but three's InstancedMesh box reads the matrices from slot 0 up to a
+	// batch's count, and a zero matrix there divides by a zero w (a NaN box: Water.ts's reflection
+	// check). Slots past the last batch are never read.
+	for ( const range of ranges ) for ( let i = range.start + range.count; i < range.groupEnd * GROUP && range.count > 0; i ++ ) matrices.copyWithin( i * 16, range.start * 16, range.start * 16 + 16 );
 	return { slots: n, groups, ranges, matrices, colors, ground, origins, spheres };
 
 }
