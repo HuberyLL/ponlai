@@ -22,8 +22,7 @@ The model (all levels are 8-bit code values of the PNG, per channel):
     the levels above are the gate, since FLIP's mean over a frame is too forgiving of small regions.
 
 Calibration: every A/A pair of one build recorded (taa, taau and msaa; quiet and contended GPU;
-forced strike, storm, rain;
-vegPrepass=0), and synthetic regressions cut into those frames (a 1-level change over a 48 px
+forced strike, storm, rain; vegPrepass=0), and synthetic regressions cut into those frames (a 1-level change over a 48 px
 square, a recoloured flower patch, a 0.25 px shift of a 384 px crop, a missing 6 px flower or the
 islander's head) that must fail. The worst A/A pair (dense vegetation on a busy GPU) uses 0.43 of
 the tolerance (`use`: the largest measurement / threshold); the weakest regression 3.9 times it.

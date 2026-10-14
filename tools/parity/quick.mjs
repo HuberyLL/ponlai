@@ -27,8 +27,7 @@
 // stopped changing), a temporal one on its held rest; the loop is left stopped. A variant's image
 // therefore equals a fresh load with the knob in its URL within the rules sets are judged by
 // (`diff-set --aa-floor` for MSAA, `--temporal` for the temporal modes; measured when the mode
-// was built). Keep this sequence in step with
-// capture.mjs.
+// was built). Keep this sequence in step with capture.mjs.
 //
 // Shots: each crop through the screenshot's `clip` (only its pixels are encoded), a box of 192 CSS
 // px (384 device px at 2x) about the anchor's projected world point, rounded to whole CSS px, as
