@@ -1,14 +1,11 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionLocal, vec3, vec4, float, mix, dot, pow, clamp, materialColor } from 'three/tsl';
+import { attribute, positionLocal, vec3, float } from 'three/tsl';
 import { meadowColor } from '../materials/Meadow.ts';
 import { SOIL_PALETTE } from '../materials/Soil.ts';
 import { SKIRT_INFO, SKIRT_RING } from './RimGround.ts';
 import { cellStream } from './Anchors.ts';
-import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
-import { LEAN_REF, gustWave, setWindDisplacement, swingOf, windField } from '../weather/Wind.ts';
-import { followWindMotionFlag } from './WindMotion.ts';
-import { showSway } from '../debug/WindView.ts';
+import { backlight, vegetationMaterial } from './vegetation/Material.ts';
+import { LEAN_REF, gustWave, swingOf, windField } from '../weather/Wind.ts';
 import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
@@ -21,7 +18,8 @@ import type { RimSkirtData } from './types.ts';
 // box's border, so it follows any shape the rim takes and meets itself across boxes. Each
 // sample's blades draw from a stream of its own place, and the body's normals come with the rings,
 // so a piece builds alike whichever box traced it and neighbouring pieces meet without a seam. One
-// mesh, one draw; it bends with the plants' wind field (Wind.ts).
+// mesh, one draw; it bends with the plants' wind field (Wind.ts). Its material comes from the
+// vegetation's factory (vegetation/Material.ts, family 'sod').
 
 const SHADE = [ 0.86, 0.94, 1, 0.9, 0.7, 0.52, 0.4 ];
 
@@ -209,30 +207,26 @@ export function* turfSkirtSteps( skirt: RimSkirtData, per = Infinity ): Generato
 
 function skirtMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
-	const mat = new THREE.MeshStandardNodeMaterial( { vertexColors: true, side: THREE.DoubleSide, roughness: 0.93, metalness: 0 } );
-	const wetness = clamp( shared.wetness, 0, 1 );
-	const wetTint = mix( 1, 0.9, wetness );
-	mat.colorNode = materialColor.mul( vec4( wetTint, wetTint, wetTint, 1 ) );
-	mat.roughnessNode = mix( 0.93, 0.74, wetness );
 	const blade = attribute<'float'>( 'skirtBlade', 'float' ), sway = attribute<'float'>( 'skirtSway', 'float' );
 	// The thatch leans with the meadow's gust field and sways with it (Wind.ts `gustWave`, 64
 	// swings per gust tile: about 1.9 Hz in a fair wind), a sixth of its lean.
 	let skirtSway: THREE.Node<'vec2'> | undefined;
-	const swayed = setWindDisplacement( mat, ( wind ) => {
+	return vegetationMaterial( shared, {
+		family: 'sod', name: 'turfSkirt', roughness: 0.93, vertexColors: true,
+		wet: { tint: 0.9, roughness: 0.74 },
+		rest: positionLocal,
+		displacement: ( wind ) => {
 
-		const field = windField( wind, positionLocal.xz );
-		const shiver = gustWave( wind, positionLocal.xz, 64 ).mul( swingOf( wind, field.w ) );
-		if ( wind === shared.wind ) skirtSway = field.xy.mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( LEAN_REF );
-		return positionLocal.add( vec3( field.x, 0.25, field.y ).mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( sway ).mul( 0.012 ) );
+			const field = windField( wind, positionLocal.xz );
+			const shiver = gustWave( wind, positionLocal.xz, 64 ).mul( swingOf( wind, field.w ) );
+			if ( wind === shared.wind ) skirtSway = field.xy.mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( LEAN_REF );
+			return positionLocal.add( vec3( field.x, 0.25, field.y ).mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( sway ).mul( 0.012 ) );
 
-	}, shared.wind );
-	// Blades are a few millimetres wide, far under a shadow texel: only the sod casts.
-	useRestPoseShadows( mat, positionLocal, swayed, float( 1 ).sub( blade ), previousSway( mat, shared.wind ) );
-	if ( skirtSway ) showSway( mat, skirtSway, shared.wind );
-	followWindMotionFlag( mat );
-	useLighting( mat, () => new VegetationLighting( float( 1 ), ( L, V ) =>
-		pow( clamp( dot( V.negate(), L ), 0, 1 ), 4 ).mul( 0.4 ).add( 0.03 ).mul( blade ) ) );
-	mat.name = 'turfSkirt';
-	return mat;
+		},
+		// Blades are a few millimetres wide, far under a shadow texel: only the sod casts.
+		castMask: float( 1 ).sub( blade ),
+		sway: () => skirtSway,
+		light: { scale: () => float( 1 ), extra: ( L, V ) => backlight( L, V, 4 ).mul( 0.4 ).add( 0.03 ).mul( blade ) },
+	} );
 
 }

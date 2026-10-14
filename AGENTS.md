@@ -93,11 +93,12 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   cliffs (`Cliff.ts`), the submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as
   tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`,
   `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled by
-  `GrassCull.ts`), flowers, the rim bushes (`FoliageSites.ts`; `Foliage.ts`: what all vegetation
-  materials share), the plateau's shrubs and small trees (sited on the page off the walking loop by
+  `GrassCull.ts`), flowers, the rim bushes (`FoliageSites.ts`, `Foliage.ts`), the plateau's shrubs and small trees (sited on the page off the walking loop by
   `PlantSites.ts`, grown each from its seed and merged into one mesh by `Plants.ts`), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
   vegetation's depth prepass
-  (`VegetationPrepass.ts`).
+  (`VegetationPrepass.ts`); what the vegetation's materials share in `src/world/vegetation/`: the
+  material factory every plant kind but the grass builds with (`Material.ts`), the coverage paths
+  and the vegetation tag (`Coverage.ts`), the folded leaf's textures (`LeafTexture.ts`).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the air/water interface, sky occlusion, the meadow's canopy light.
 - `src/materials/`: procedural textures, the terrain (`TerrainMaterial.ts`), wet surfaces.
@@ -250,7 +251,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   tier, runs `msaa`); `aa=` or the GUI picks any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
   `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier. The vegetation's cut-outs are alpha to
   coverage under MSAA only: find vegetation by `userData.vegetation`, never by `alphaToCoverage`
-  (`Foliage.ts`).
+  (`vegetation/Coverage.ts`).
 - Implicitly filtered texture samples and derivatives need uniform control flow: take them
   (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
   Keep filters that take `dFdx` / `dFdy` out of `select()` / `If` branches (`SolarShadow.ts`).
@@ -262,7 +263,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   multisampled and cannot be sampled with a comparison; give it a render target. three picks one
   sampler type per depth texture per material (`SolarShadow.ts`).
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
-  (`renderOrder = -1`). See `Foliage.ts`.
+  (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `Foliage.ts`.
 - The water samples neither the target it draws into nor more textures (it is at WebGPU's 16, its
   varyings near the limit: `Water.ts`), so it takes no history or reactive input: what the resolve
   needs from it goes out through its velocity. It reflects only what lies inside

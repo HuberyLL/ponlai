@@ -1,11 +1,9 @@
 import * as THREE from 'three/webgpu';
 import { attribute, float, positionGeometry, select, uniform, vec3 } from 'three/tsl';
 import { shared } from '../../shared.ts';
-import { setWindDisplacement, wave } from '../../weather/Wind.ts';
+import { wave } from '../../weather/Wind.ts';
 import { mainBend } from '../../world/Foliage.ts';
-import { previousSway, useRestPoseShadows } from '../../world/VegetationShadow.ts';
-import { followWindMotionFlag } from '../../world/WindMotion.ts';
-import { showSway } from '../../debug/WindView.ts';
+import { useVegetationMotion } from '../../world/vegetation/Material.ts';
 import { PALM_COCONUTS } from '../sim/places.ts';
 import type { PalmState } from '../sim/types.ts';
 import { BALL, PropBuilder, at, hashAt, propMaterial } from './Props.ts';
@@ -20,9 +18,11 @@ import type { RGB } from './Props.ts';
 //
 // It moves in the one wind (Wind.ts): the whole palm bends from its foot with the gust field at
 // its root, swaying with the plants about it at half a shrub's rate (Foliage.ts mainBend, `slow`),
-// and each frond swings a little on its own phase from the crown out. Its shadow keeps the rest pose, as the vegetation's does
-// (VegetationShadow.ts), and under the temporal modes it writes the wind's motion as they do (its
-// previous sway, class vegetation; `flags.mv.wind` turns it off, WindMotion.ts). The geometry
+// and each frond swings a little on its own phase from the crown out. Its shadow keeps the rest
+// pose, as the vegetation's does (VegetationShadow.ts), and under the temporal modes it writes the
+// wind's motion as they do (its previous sway, class vegetation; `flags.mv.wind` turns it off,
+// WindMotion.ts): the vegetation factory's wind (`useVegetationMotion`, vegetation/Material.ts) on
+// the props' surface. The geometry
 // is in world space (the mesh sits at the origin), as the wind field is sampled at world
 // positions. Its crown rises above everything the island grows, so GameView grows the sea's
 // reflection box and the sun shadow's casters to hold it (Water.ts, SunShadow.ts).
@@ -197,25 +197,26 @@ function palmMaterial(): THREE.MeshStandardNodeMaterial {
 	// coconuts past the palm's count collapse onto the crown (zero-area triangles)
 	const rest = select( sway.w.lessThan( coconuts ), positionGeometry, crown ).toVar();
 	let trunk: THREE.Node<'vec2'> | undefined;
-	const swayed = setWindDisplacement( m, ( wind ) => {
+	useVegetationMotion( m, shared.wind, {
+		rest,
+		displacement: ( wind ) => {
 
-		// the whole palm bends slowly from its foot (half a shrub's rate)
-		const bent = mainBend( wind, rest, root, sway.x, 30, float( 1 ) );
-		if ( wind === shared.wind ) trunk = bent.sway;
-		const field = bent.field;
-		const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
-		const lively = wind.breeze.mul( field.w.mul( 0.4 ).add( 0.2 ) );
-		// each frond swings and lifts on its own phase, its tip the most: a small motion on the
-		// palm's sway, which it shares with its neighbours
-		const swing = wave( wind.flutter, 0.7, sway.z ).mul( 0.6 ).add( wave( wind.flutter, 1.13, sway.z.mul( 1.9 ) ).mul( 0.4 ) );
-		const toss = wave( wind.flutter, 0.53, sway.z.mul( 2.3 ) ).mul( 0.5 ).add( 0.35 );
-		const frond = vec3( 0, swing.mul( 0.8 ), 0 ).add( along.mul( toss ) ).add( across.mul( swing.mul( 0.5 ) ) ).mul( sway.y.mul( lively ) );
-		return bent.position.add( frond );
+			// the whole palm bends slowly from its foot (half a shrub's rate)
+			const bent = mainBend( wind, rest, root, sway.x, 30, float( 1 ) );
+			if ( wind === shared.wind ) trunk = bent.sway;
+			const field = bent.field;
+			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
+			const lively = wind.breeze.mul( field.w.mul( 0.4 ).add( 0.2 ) );
+			// each frond swings and lifts on its own phase, its tip the most: a small motion on the
+			// palm's sway, which it shares with its neighbours
+			const swing = wave( wind.flutter, 0.7, sway.z ).mul( 0.6 ).add( wave( wind.flutter, 1.13, sway.z.mul( 1.9 ) ).mul( 0.4 ) );
+			const toss = wave( wind.flutter, 0.53, sway.z.mul( 2.3 ) ).mul( 0.5 ).add( 0.35 );
+			const frond = vec3( 0, swing.mul( 0.8 ), 0 ).add( along.mul( toss ) ).add( across.mul( swing.mul( 0.5 ) ) ).mul( sway.y.mul( lively ) );
+			return bent.position.add( frond );
 
-	}, shared.wind );
-	useRestPoseShadows( m, rest, swayed, undefined, previousSway( m, shared.wind ) );
-	followWindMotionFlag( m );
-	if ( trunk ) showSway( m, trunk, shared.wind );
+		},
+		sway: () => trunk,
+	} );
 	return m;
 
 }

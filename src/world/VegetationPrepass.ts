@@ -26,7 +26,7 @@ import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 // Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene has one sample and no
 // coverage: the vegetation is alpha-tested instead (leaves by a coverage band about their cutoff,
 // grass blades by their coverage, both against the per-frame dither: `coverageAlphaTest` and
-// `coverageDither` in Foliage.ts), and the same pair is drawn. The depth copy then discards what
+// `coverageDither` in vegetation/Coverage.ts), and the same pair is drawn. The depth copy then discards what
 // the alpha test discards, and the shaded draw again keeps neither coverage nor an alpha test:
 // equal depth limits it to the pixels the copy kept, and an opaque draw rejects the hidden blades
 // and leaves before they are shaded (an alpha-tested one cannot: its discard is decided by the
@@ -83,7 +83,7 @@ function invariantPosition( material: THREE.NodeMaterial ): void {
 // alpha map's, or the blades' coverage) and alpha test, nothing else. Under the temporal modes it
 // takes the alpha test without coverage (one sample: three would draw a coverage material's alpha
 // above zero solid; the test is the material's `alphaTestNode`, the leaves' coverage band or the
-// blades' dither, Foliage.ts), and a constant velocity of its own: `colorWrite = false` masks every
+// blades' dither, vegetation/Coverage.ts), and a constant velocity of its own: `colorWrite = false` masks every
 // attachment, so the prepass writes no motion, and the copy need not compute the motion the
 // scene's MRT would ask of it (nor carry the varying).
 function depthMaterial( source: THREE.MeshStandardNodeMaterial ): THREE.MeshBasicNodeMaterial {

@@ -98,7 +98,7 @@ export class Jitter {
 	restLength = REST_SEQUENCE;
 	readonly uniforms = {
 		// the vegetation's per-frame dither index (a threshold of the pixel's 4x4 Bayer value plus 5
-		// times it, mod 16; `coverageDither` in world/Foliage.ts): the rendered frame mod 16 in the
+		// times it, mod 16; `coverageDither` in world/vegetation/Coverage.ts): the rendered frame mod 16 in the
 		// running sequence, k mod 16 at rest (see `prepare`)
 		ditherIndex: uniform( 0 ),
 		// the offset in render pixels (`px`)

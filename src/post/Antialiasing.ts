@@ -26,7 +26,7 @@
 // `AA_SOURCE` says which of them chose (main.ts reports it as `aaSource`). `gt` is taken from the
 // URL in a debug build only, never from a tier. The tier is chosen here, once, for
 // the whole page (main.ts reads `QUALITY_CHOICE`): modules that read the mode when they load
-// (Foliage.ts, Grass.ts) are evaluated before the page's own code runs.
+// (world/vegetation/Coverage.ts, Grass.ts) are evaluated before the page's own code runs.
 import { REVISION } from 'three/webgpu';
 import { qualityProfile, type QualityProfile, type TemporalSettings } from '../Quality.ts';
 import { chooseQuality, type QualityChoice } from '../QualityDetect.ts';
