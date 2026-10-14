@@ -7,7 +7,7 @@ import { mulberry32, type Rng } from './noise.ts';
 import { PLANT_WIND, mainBend } from './vegetation/Deform.ts';
 import { leafTexture } from './vegetation/LeafTexture.ts';
 import { leafTransmission, vegetationMaterial } from './vegetation/Material.ts';
-import { boundsSteps, float32Steps, Growing } from './Steps.ts';
+import { boundsSteps, float32Steps, runSteps, Growing } from './Steps.ts';
 import { PLANT_STRIDE, PLANT_TREE, PLANT_ROUND, PLANT_BROADLEAF, PLANT_FERN } from './PlantSites.ts';
 import type { Shared } from '../shared.ts';
 
@@ -734,10 +734,7 @@ function emptyGeometry(): THREE.BufferGeometry {
  * growth. */
 export function buildPlants( sites: Float32Array, shared: Shared, cache: PlantCache ): THREE.Group {
 
-	const steps = plantSteps( sites, cache );
-	let next = steps.next();
-	while ( ! next.done ) next = steps.next();
-	const built = next.value;
+	const built = runSteps( plantSteps( sites, cache ) );
 	cache.keep( built.sites, built.parts );
 	const group = new THREE.Group();
 	group.name = 'plants';

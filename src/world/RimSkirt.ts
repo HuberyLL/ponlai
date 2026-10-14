@@ -6,7 +6,7 @@ import { SKIRT_INFO, SKIRT_RING } from './RimGround.ts';
 import { cellStream } from './Anchors.ts';
 import { backlight, vegetationMaterial } from './vegetation/Material.ts';
 import { skirtLean } from './vegetation/Deform.ts';
-import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
+import { boundsSteps, float32Steps, indexSteps, runSteps, Growing } from './Steps.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
 import type { RimSkirtData } from './types.ts';
@@ -25,16 +25,14 @@ const SHADE = [ 0.86, 0.94, 1, 0.9, 0.7, 0.52, 0.4 ];
 
 export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mesh {
 
-	const steps = turfSkirtSteps( skirt );
-	let next = steps.next();
-	while ( ! next.done ) next = steps.next();
-	const mesh = new THREE.Mesh( next.value.geometry, skirtMaterial( shared ) );
+	const built = runSteps( turfSkirtSteps( skirt ) );
+	const mesh = new THREE.Mesh( built.geometry, skirtMaterial( shared ) );
 	mesh.name = 'turfSkirt';
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
 	// Like the other vegetation: drawn before the terrain, so the rim's turf under it fails the depth test.
 	mesh.renderOrder = - 1;
-	mesh.userData = next.value.counts;
+	mesh.userData = built.counts;
 	return mesh;
 
 }

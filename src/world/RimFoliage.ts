@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, uv, vec3, float, mix, dot } from 'three/tsl';
 import { hangingSway } from './vegetation/Deform.ts';
-import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
+import { boundsSteps, float32Steps, indexSteps, runSteps, Growing } from './Steps.ts';
 import { LEAF_STEM, leafCastMask } from './Foliage.ts';
 import { vegetationMaterial } from './vegetation/Material.ts';
 import { mulberry32, smoothstep } from './noise.ts';
@@ -69,10 +69,7 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage: 
 
 	const group = new THREE.Group();
 	group.name = 'rimFoliage';
-	const steps = rimFoliageSteps( strands );
-	let next = steps.next();
-	while ( ! next.done ) next = steps.next();
-	const built = next.value;
+	const built = runSteps( rimFoliageSteps( strands ) );
 	group.userData = built.counts;
 	if ( ! built.geometry ) return group;
 	const mesh = new THREE.Mesh( built.geometry, rimMaterial( shared, foliage ) );
