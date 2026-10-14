@@ -355,7 +355,7 @@ reverse order.
 `tools/capture-clip.mjs` captures a named clip (`tools/parity/clips.mjs`: a parity view set in
 motion, its camera path a function of the frame index) frame by frame with the page's stepper, as
 crops that follow their subjects, and `tools/clip-metrics.py` measures a clip against MSAA and a ground truth (`--aa gt-hi`: MSAA at
-twice high's nominal ratio, downsampled) with gates from a thresholds file
+twice the former nominal ratio 1.5, downsampled) with gates from a thresholds file
 (`uv run --with numpy --with pillow`, clip-metrics.py also `--with scipy`; both described in the
 README). clip-metrics.py measures the
 frames in worker processes: `--workers N` or `CLIP_METRICS_WORKERS`, by default a quarter of the
@@ -693,7 +693,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   [--timestamps on|off|both|auto] [--eval "js"] [--repeat n] [--shots] [--vsync] [--accept [--strict]]
   [--idle-wait s] [--contended] [--load-timeline off] [--hang s] [--scale-log]
   [--scales 1.5,1] [--scale-settle s] [--display [--motion user|orbit|none] [--window WxH]]
-  [--drs-store] [--frame-fallback]
+  [--drs-store] [--frame-fallback] [--unpinned]
 ```
 
 - Profiles a production build (`npm run build && npm run preview`; the url defaults to its port)
@@ -877,6 +877,13 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   on, so their per-pass split shows where the time goes, not the frame rate a player sees. (High
   keeps its dynamic resolution's own timestamp queries in every run, as a player's page does;
   `--q gpuTimer=off` leaves them out.)
+- High is timed at its baseline by default: 4K output (1920x1080 CSS at DPR 2) rendered at 1440p
+  (2560x1440, scale 4/3), the level every trade-off is judged at, with about 14 ms of GPU time a
+  frame in the normal scenes (island views, `meadow-close`) as the budget. A profile, `--compare`
+  or `--toggle` of high pins that scale (`dpr=1.3333333333333333`: two thirds of the viewport's
+  ratio); `--unpinned` leaves the dynamic resolution steering, with `--scale-settle 5 --scale-log`
+  to see where it settles. `--accept`, `--display`, `--scales` and a `dpr` of the url's or `--q`'s
+  own are never pinned.
 - Judge whether a tier holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at
   the tier's own settings (high with its dynamic scale, measured at its settle point with
   `--scale-settle 5`; the report gives each scene's scale), and check how a change plays on a fast

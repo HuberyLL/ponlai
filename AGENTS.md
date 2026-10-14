@@ -184,7 +184,11 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `PARKED_WEATHER` in `src/sky/Weather.ts`) and quality tiers (medium, low: `PARKED_QUALITY` in
   `src/Quality.ts`) are revived later as their own milestones: new work need not support them, but
   must keep them compiling and loadable by name (`?weather=`, `?quality=`). The default checks
-  leave them out (`docs/tools.md`, Parked weathers, Parked quality tiers).
+  leave them out (`docs/tools.md`, Parked weathers, Parked quality tiers). Changes are judged at
+  high's baseline: 4K output rendered at 1440p (scale 4/3) at 60 fps, about 14 ms of GPU time a
+  frame in the normal scenes; the dynamic resolution climbs to native 4K with headroom and drops to
+  1080p when busy, and a paused page renders at the baseline (`src/Quality.ts`, profile-frame's
+  default pin: `docs/tools.md`, Measuring frame time).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High at 4K output is the reference image, the only active tier and the one every
   trade-off is judged on; every default in the modules is high's. A load knob is read
