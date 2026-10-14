@@ -52,8 +52,10 @@ type V4 = THREE.Node<'vec4'>;
 // Rules: the view accumulates over frames, and a scene at rest (paused clock, still camera)
 // settles its clouds once and keeps them, so a paused frame is exactly repeatable. The march
 // assumes a camera below the cloud base. On high the view's resolution is a share of the display
-// (0.58 of the render at high's nominal ratio), not of the render, so the dynamic render scale
-// does not soften the clouds again. A new view size (a resized window; on the tiers below high,
+// (0.45, about two thirds of the render at high's 1440p baseline), not of the render, so the
+// dynamic render scale does not soften the clouds again. 0.45 is the knee of a sweep against
+// 0.58: it differed from it no more than a finer view did, and 0.40 stepped up; the view's
+// march costs little where the island camera looks, much where the sky fills the frame. A new view size (a resized window; on the tiers below high,
 // whose view follows the render, a new render scale) swaps the view's textures under the same
 // kernels, which index by uniforms: a kernel built per size built its pipelines mid-play.
 // Lightning's light inside the
