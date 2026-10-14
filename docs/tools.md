@@ -613,9 +613,9 @@ Forms:
   (nearest `.git` entry), never a worktree nested under it. An agent hands back with nothing of its own running.
 
 Budgets (roles). A wait ends at a wall-clock deadline counted from its start, whatever the load.
-`--role agent` (the default) waits at most 570 s, under the 10 minutes a Bash call may last (agents
-run with the one-hour prompt cache, so a long wait costs nothing extra); run it in the foreground
-with the Bash tool's timeout at its largest, 600000, one wait per message. `--role main` waits at most 3300 s, under a main session's one-hour cache: a
+`--role agent` (the default) waits at most 240 s, because an agent's prompt cache lives five
+minutes between its requests; run it in the foreground with the Bash tool's timeout above that,
+one wait per message. `--role main` waits at most 3300 s, under a main session's one-hour cache: a
 main session keeps `wait --role main` running in the background while it waits on agents or jobs,
 and re-arms it each time it fires. `--max s` only lowers the budget.
 
