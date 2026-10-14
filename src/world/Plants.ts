@@ -4,7 +4,7 @@ import {
 } from 'three/tsl';
 import { wave } from '../weather/Wind.ts';
 import { mulberry32, type Rng } from './noise.ts';
-import { mainBend } from './Foliage.ts';
+import { PLANT_WIND, mainBend } from './vegetation/Deform.ts';
 import { leafTexture } from './vegetation/LeafTexture.ts';
 import { leafTransmission, vegetationMaterial } from './vegetation/Material.ts';
 import { boundsSteps, float32Steps, Growing } from './Steps.ts';
@@ -30,7 +30,7 @@ import type { Shared } from '../shared.ts';
 // pipeline (`setPlants`). The plants are concatenated in the sites' order, so a grown page draws
 // what a fresh load of that land draws.
 //
-// Wind: the bushes' layers (Foliage.ts `mainBend`): the whole plant bends from its root with the
+// Wind: the bushes' layers (vegetation/Deform.ts `mainBend`, PLANT_WIND): the whole plant bends from its root with the
 // gust field and sways with its neighbours at 30 swings per gust tile (about 0.9 Hz), trees at half
 // that rate (`slow`, from 1.4 to 2.6 m tall); each spray, frond or leaf stalk swings on its own
 // phase from where it leaves the plant; each leaf's edges and tip flutter along its normal. Shadows
@@ -682,7 +682,7 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// up with it (the `flutter` clock).
 	const root = attribute<'vec3'>( 'plantRoot', 'vec3' );
 	const amp = attribute<'vec4'>( 'plantWind', 'vec4' );
-	const slow = smoothstep( 1.4, 2.6, amp.w );
+	const slow = smoothstep( PLANT_WIND.slow[ 0 ], PLANT_WIND.slow[ 1 ], amp.w );
 	const local = dot( positionGeometry, vec3( 1.7, 2.3, 1.9 ) );
 	let sway: THREE.Node<'vec2'> | undefined;
 	return vegetationMaterial( shared, {
@@ -695,7 +695,7 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 		rest: p,
 		displacement: ( wind ) => {
 
-			const bend = mainBend( wind, p, root, amp.x, 30, slow );
+			const bend = mainBend( wind, p, root, amp.x, PLANT_WIND.cycles, slow );
 			if ( wind === shared.wind ) sway = bend.sway;
 			const field = bend.field;
 			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );

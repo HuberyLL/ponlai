@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { attribute, float, positionGeometry, select, uniform, vec3 } from 'three/tsl';
 import { shared } from '../../shared.ts';
 import { wave } from '../../weather/Wind.ts';
-import { mainBend } from '../../world/Foliage.ts';
+import { PALM_WIND, mainBend } from '../../world/vegetation/Deform.ts';
 import { useVegetationMotion } from '../../world/vegetation/Material.ts';
 import { PALM_COCONUTS } from '../sim/places.ts';
 import type { PalmState } from '../sim/types.ts';
@@ -17,7 +17,7 @@ import type { RGB } from './Props.ts';
 // collapsed onto the crown in the vertex stage, so picking one changes a uniform, not the mesh.
 //
 // It moves in the one wind (Wind.ts): the whole palm bends from its foot with the gust field at
-// its root, swaying with the plants about it at half a shrub's rate (Foliage.ts mainBend, `slow`),
+// its root, swaying with the plants about it at half a shrub's rate (vegetation/Deform.ts mainBend, PALM_WIND),
 // and each frond swings a little on its own phase from the crown out. Its shadow keeps the rest
 // pose, as the vegetation's does (VegetationShadow.ts), and under the temporal modes it writes the
 // wind's motion as they do (its previous sway, class vegetation; `flags.mv.wind` turns it off,
@@ -202,7 +202,7 @@ function palmMaterial(): THREE.MeshStandardNodeMaterial {
 		displacement: ( wind ) => {
 
 			// the whole palm bends slowly from its foot (half a shrub's rate)
-			const bent = mainBend( wind, rest, root, sway.x, 30, float( 1 ) );
+			const bent = mainBend( wind, rest, root, sway.x, PALM_WIND.cycles, float( PALM_WIND.slow ) );
 			if ( wind === shared.wind ) trunk = bent.sway;
 			const field = bent.field;
 			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );

@@ -5,9 +5,7 @@ import { anchorStream } from './Anchors.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { backlight, vegetationMaterial } from './vegetation/Material.ts';
 import { InstancePool, type Instances } from './vegetation/Instances.ts';
-import { LEAN_REF } from '../weather/Wind.ts';
-import { mainBend } from './Foliage.ts';
-import { puddleCover } from '../weather/Puddles.ts';
+import { FLOWER_WIND, drown, mainBend } from './vegetation/Deform.ts';
 import { meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
 import type { Shared } from '../shared.ts';
@@ -237,12 +235,11 @@ function flowerMaterial( shared: Shared, centre: number[] ): THREE.MeshStandardN
 	const p = positionLocal;
 	const raised = p.add( vec3( 0, tint.w.mul( lift ), 0 ) );
 	// Standing water drowns the whole plant: it sinks under the ground, which carries the water.
-	const pool = puddleCover( ground.xz, shared.wetness );
-	const rooted = raised.sub( vec3( 0, pool.mul( ground.w.add( tint.w ).add( 0.3 ) ), 0 ) );
+	const rooted = drown( raised, ground.xz, ground.w.add( tint.w ).add( 0.3 ), shared.wetness );
 	// The stem bends from its root with the gust field as the grass around it does (its lean
-	// times its height, growing with the square of the lift), nodding with its neighbours at about
-	// 1.2 Hz (40 swings per gust tile, Foliage.ts mainBend).
-	const bend = ( state: typeof shared.wind.previous ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( LEAN_REF ), 40 );
+	// times its height, growing with the square of the lift), nodding with its neighbours
+	// (vegetation/Deform.ts mainBend, FLOWER_WIND).
+	const bend = ( state: typeof shared.wind.previous ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( FLOWER_WIND.amplitude ), FLOWER_WIND.cycles );
 	return vegetationMaterial( shared, {
 		family: 'petal', roughness: 0.79,
 		wet: { tint: 0.95, roughness: 0.72 },

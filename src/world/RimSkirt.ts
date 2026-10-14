@@ -1,11 +1,11 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionLocal, vec3, float } from 'three/tsl';
+import { attribute, positionLocal, float } from 'three/tsl';
 import { meadowColor } from '../materials/Meadow.ts';
 import { SOIL_PALETTE } from '../materials/Soil.ts';
 import { SKIRT_INFO, SKIRT_RING } from './RimGround.ts';
 import { cellStream } from './Anchors.ts';
 import { backlight, vegetationMaterial } from './vegetation/Material.ts';
-import { LEAN_REF, gustWave, swingOf, windField } from '../weather/Wind.ts';
+import { skirtLean } from './vegetation/Deform.ts';
 import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
@@ -208,8 +208,8 @@ export function* turfSkirtSteps( skirt: RimSkirtData, per = Infinity ): Generato
 function skirtMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 	const blade = attribute<'float'>( 'skirtBlade', 'float' ), sway = attribute<'float'>( 'skirtSway', 'float' );
-	// The thatch leans with the meadow's gust field and sways with it (Wind.ts `gustWave`, 64
-	// swings per gust tile: about 1.9 Hz in a fair wind), a sixth of its lean.
+	// The thatch leans with the meadow's gust field and sways with it (vegetation/Deform.ts
+	// `skirtLean`, SKIRT_WIND).
 	let skirtSway: THREE.Node<'vec2'> | undefined;
 	return vegetationMaterial( shared, {
 		family: 'sod', name: 'turfSkirt', roughness: 0.93, vertexColors: true,
@@ -217,10 +217,9 @@ function skirtMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 		rest: positionLocal,
 		displacement: ( wind ) => {
 
-			const field = windField( wind, positionLocal.xz );
-			const shiver = gustWave( wind, positionLocal.xz, 64 ).mul( swingOf( wind, field.w ) );
-			if ( wind === shared.wind ) skirtSway = field.xy.mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( LEAN_REF );
-			return positionLocal.add( vec3( field.x, 0.25, field.y ).mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( sway ).mul( 0.012 ) );
+			const lean = skirtLean( wind, positionLocal, sway );
+			if ( wind === shared.wind ) skirtSway = lean.sway;
+			return lean.position;
 
 		},
 		// Blades are a few millimetres wide, far under a shadow texel: only the sod casts.

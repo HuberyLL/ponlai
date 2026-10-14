@@ -1,12 +1,13 @@
 import * as THREE from 'three/webgpu';
 import {
-	attribute, positionGeometry, positionLocal, normalViewGeometry, vec3, float, mix, dot, clamp, smoothstep as smoothstepN, normalize, length,
+	attribute, positionGeometry, positionLocal, normalViewGeometry, vec3, float, mix, dot, clamp, smoothstep as smoothstepN,
 } from 'three/tsl';
-import { LEAN_REF, gustWave, swayJitter, swingOf, wave, windField, type WindState } from '../weather/Wind.ts';
+import { wave } from '../weather/Wind.ts';
 import { mulberry32 } from './noise.ts';
 import { BUSH_STRIDE } from './FoliageSites.ts';
 import { leafTexture } from './vegetation/LeafTexture.ts';
 import { vegetationMaterial } from './vegetation/Material.ts';
+import { BUSH_WIND, mainBend } from './vegetation/Deform.ts';
 import { InstancePool, type Instances } from './vegetation/Instances.ts';
 import type { Shared } from '../shared.ts';
 
@@ -14,10 +15,10 @@ import type { Shared } from '../shared.ts';
 // irregular; real leaf normals separate sunlit faces from their shaded neighbours. The material
 // comes from the vegetation's factory (vegetation/Material.ts, family 'leaf').
 //
-// This module also holds the plants' main bend (`mainBend`), which the flowers, the plateau's
-// plants and the game's palm share, and the leaf-stem flag (`LEAF_STEM`). What every vegetation
-// material shares lives in vegetation/: the folded leaf's textures (LeafTexture.ts), the coverage
-// paths and the vegetation tag (Coverage.ts, re-exported here for the grass).
+// This module also holds the leaf-stem flag (`LEAF_STEM`). What every vegetation material shares
+// lives in vegetation/: the folded leaf's textures (LeafTexture.ts), the coverage paths and the
+// vegetation tag (Coverage.ts, re-exported here for the grass), the wind's bend (Deform.ts
+// `mainBend`, BUSH_WIND).
 // - Vegetation draws before the terrain (`renderOrder = -1`), so the turf under it fails the depth
 //   test.
 // - Twigs, stems and leaf stalks (a few millimetres across) stay out of the sun's shadow map
@@ -126,40 +127,6 @@ function bushGeometry( seed = 5 ) {
 
 }
 
-type V3 = THREE.Node<'vec3'>;
-type F = THREE.Node<'float'>;
-
-/** A plant's main bend, after Sousa's "Vegetation Procedural Animation and Shading in Crysis"
- * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways a little
- * about that lean, each vertex by `amplitude` (metres at a fair day's typical gust, see LEAN_REF;
- * it carries the plant's stiffness and grows from the root up), keeping its distance from the root
- * so the plant arcs over instead of shearing. The sway travels with the gusts (Wind.ts `gustWave`):
- * neighbours swing together, each plant only a little
- * apart (`swayJitter`), about a sixth of the lean (`swingOf`), a third of that across the wind.
- * `cycles` is the sway's rate in whole swings per gust tile (an even number: about 0.9 Hz at 30
- * in a fair wind), and `slow` (0..1) eases it to half that rate for taller plants (the small
- * trees, Plants.ts; the game's palm). `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the bent
- * position, the wind field's ( direction x, direction z, lean, gust ) at the root and the plant's
- * sway: its horizontal offset over `amplitude` times LEAN_REF, the lean and swing as a tip offset
- * over height (world x, z; for the wind view and probe, src/debug/WindView.ts; a shader that does
- * not read it compiles as before). */
-export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F, cycles: number, slow?: F ): { position: V3; field: THREE.Node<'vec4'>; sway: THREE.Node<'vec2'> } {
-
-	if ( cycles % 2 !== 0 ) throw new RangeError( `mainBend: ${ cycles } swings per gust tile is not even` );
-	const field = windField( wind, root.xz ).toVar();
-	const own = swayJitter( root.xz );
-	// The sway grows with the wind and in a gust; the lean follows the gust field.
-	const swing = swingOf( wind, field.w ).mul( own.gain );
-	const sway = ( c: number, ph: F ) => slow ? mix( gustWave( wind, root.xz, c, ph ), gustWave( wind, root.xz, c / 2, ph ), slow ) : gustWave( wind, root.xz, c, ph );
-	const response = field.z.div( LEAN_REF ).add( sway( cycles, own.phase ).mul( swing ) );
-	const sideways = sway( 2 * Math.round( cycles * 0.4 ), own.phase.mul( 1.7 ).add( 1.3 ) ).mul( swing ).mul( 0.35 );
-	const unit = vec3( field.x, 0, field.y ).mul( response ).add( vec3( field.y.negate(), 0, field.x ).mul( sideways ) );
-	const offset = unit.mul( amplitude );
-	const rel = position.sub( root ).toVar();
-	return { position: normalize( rel.add( offset ).add( vec3( 0, 1e-5, 0 ) ) ).mul( length( rel ) ).add( root ), field, sway: unit.xz.mul( LEAN_REF ) };
-
-}
-
 function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.MeshStandardNodeMaterial {
 
 	const g = positionGeometry; // the unit bush, before the instance places it
@@ -177,7 +144,7 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture ): THREE.Mesh
 		rest: p,
 		displacement: ( wind ) => {
 
-			const bend = mainBend( wind, p, root, vH.mul( vH ).mul( 0.022 ), 30 );
+			const bend = mainBend( wind, p, root, vH.mul( vH ).mul( BUSH_WIND.amplitude ), BUSH_WIND.cycles );
 			if ( wind === shared.wind ) sway = bend.sway;
 			const field = bend.field;
 			const shake = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) ).mul( vH ).mul( 0.006 );
