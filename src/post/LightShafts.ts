@@ -43,11 +43,14 @@ export class LightShafts {
 	private resources!: { source: ResourceHandle; rays: ResourceHandle };
 	private sourceQuad!: THREE.QuadMesh;
 	private raysQuad!: THREE.QuadMesh;
+	// the unobstructed fraction of the sun's disk (see `visibility`)
+	private visibleAt!: () => F;
 
 	/** Radiance to add to the HDR image, from the resolved depth (the sea's included) and the sky.
 	 * Its two half-resolution targets are declared on `graph`, which owns and sizes them; `passes`
-	 * then adds the passes that draw them. */
-	build( depth: THREE.Texture, sky: Sky, graph: GraphResources ): V3 {
+	 * then adds the passes that draw them. `visible`: the disk's unobstructed fraction
+	 * (`visibility`) as a pass evaluated it for the frame (else per pixel). */
+	build( depth: THREE.Texture, sky: Sky, graph: GraphResources, visible0?: F ): V3 {
 
 		const sceneDepth = texture( depth );
 		const resolution = graph.extent( { of: 'render' } );
@@ -112,15 +115,20 @@ export class LightShafts {
 
 		} )() );
 
+		// The unobstructed fraction of the disk: the sky's visibility at the sun's position.
+		this.visibleAt = () => {
+
+			const s = this.sunUV;
+			const t = vec2( 2 ).div( resolution );
+			return texture( tSource, s ).level( float( 0 ) ).g.add( texture( tSource, s.add( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g )
+				.add( texture( tSource, s.sub( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g ).add( texture( tSource, s.add( vec2( 0, t.y ) ) ).level( float( 0 ) ).g )
+				.add( texture( tSource, s.sub( vec2( 0, t.y ) ) ).level( float( 0 ) ).g ).mul( 0.2 ).mul( inside( s ) );
+
+		};
 		return Fn( () => {
 
 			const q = uv().toVar();
-			// The unobstructed fraction of the disk: the sky's visibility at the sun's position.
-			const s = this.sunUV;
-			const t = vec2( 2 ).div( resolution );
-			const visible = texture( tSource, s ).level( float( 0 ) ).g.add( texture( tSource, s.add( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g )
-				.add( texture( tSource, s.sub( vec2( t.x, 0 ) ) ).level( float( 0 ) ).g ).add( texture( tSource, s.add( vec2( 0, t.y ) ) ).level( float( 0 ) ).g )
-				.add( texture( tSource, s.sub( vec2( 0, t.y ) ) ).level( float( 0 ) ).g ).mul( 0.2 ).mul( inside( s ) );
+			const visible = visible0 ?? this.visibleAt();
 			const angle = acos( clamp( dot( direction( q ), this.sunDir ), - 1, 1 ) );
 			const glare = exp( angle.div( - 0.012 ) ).mul( 0.7 ).add( exp( angle.div( - 0.045 ) ).mul( 0.04 ) ).mul( visible ).mul( this.fogVisibility ).mul( this.glare );
 			// Beams need haze to scatter in, and a low sun's long path through it; clear air at
@@ -130,6 +138,15 @@ export class LightShafts {
 			return this.color.rgb.mul( glare.add( beams ) ).mul( this.facing );
 
 		} )();
+
+	}
+
+	/** The unobstructed fraction of the sun's disk: the open sky's share at the sun's position,
+	 * from the source pass's target (the same for every pixel of a frame: Pipeline.ts evaluates it
+	 * once, in a pass after `passes`'). After `build`. */
+	visibility(): F {
+
+		return this.visibleAt();
 
 	}
 

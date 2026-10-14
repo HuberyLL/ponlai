@@ -166,6 +166,8 @@ export class AerialPerspective {
 	private fogSun = uniform( 1 );
 	private projectionInverse = uniform( new THREE.Matrix4() );
 	private cameraWorld = uniform( new THREE.Matrix4() );
+	// the camera's position (cameraWorld's translation), as the rays start from it
+	private readonly origin = uniform( new THREE.Vector3() );
 	// the render's size: the frame graph's (set in `apply`)
 	private resolution!: THREE.UniformNode<'vec2', THREE.Vector2>;
 	readonly options: Readonly<AirOptions>;
@@ -205,23 +207,33 @@ export class AerialPerspective {
 
 	}
 
+	/** The horizon's average colour, which the air takes looking down (see `ray`): the same for
+	 * every pixel of a frame, so the composite reads it from a pass that evaluates it once
+	 * (Pipeline.ts, `apply`'s `around`). */
+	around( sky: Sky ): V3 {
+
+		return sky.sampleBackground( vec3( 1, 0.06, 0 ), float( 6 ) ).add( sky.sampleBackground( vec3( - 1, 0.06, 0 ), float( 6 ) ) )
+			.add( sky.sampleBackground( vec3( 0, 0.06, 1 ), float( 6 ) ) ).add( sky.sampleBackground( vec3( 0, 0.06, - 1 ), float( 6 ) ) ).mul( 0.25 );
+
+	}
+
 	// The view ray through screen position `q` (uv) to a surface at view z `z`, and the light the
 	// air scatters along it: shared by the full-resolution composite and the reduced fog march.
-	private ray( q: V2, z: F, sky: Sky, haze: boolean ): AirRay {
+	// `around`: the horizon's average evaluated once for the frame (else here, per pixel).
+	private ray( q: V2, z: F, sky: Sky, haze: boolean, around0?: V3 ): AirRay {
 
 		const ndc = vec3( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ), 1 ).toVar();
 		const viewFar = this.projectionInverse.mul( vec4( ndc, 1 ) ).toVar();
 		const ray = viewFar.xyz.div( viewFar.w ).toVar();
 		const direction = normalize( this.cameraWorld.mul( vec4( normalize( ray ), 0 ) ).xyz ).toVar();
-		const origin = this.cameraWorld.mul( vec4( 0, 0, 0, 1 ) ).xyz.toVar();
+		const origin = this.origin.toVar();
 		// The air takes the sky's colour just above the horizon, so the far sea fades into the
 		// horizon itself rather than stopping short of it in a darker band. Looking down, the air
 		// is lit by the whole sky; a sharp horizon sample there would spread the horizon's clouds
 		// and the sun's glow into rays converging below the camera, so it turns to the horizon's
 		// average.
 		const down = smoothstep( 0.02, 0.35, direction.y.negate() ).toVar();
-		const around = sky.sampleBackground( vec3( 1, 0.06, 0 ), float( 6 ) ).add( sky.sampleBackground( vec3( - 1, 0.06, 0 ), float( 6 ) ) )
-			.add( sky.sampleBackground( vec3( 0, 0.06, 1 ), float( 6 ) ) ).add( sky.sampleBackground( vec3( 0, 0.06, - 1 ), float( 6 ) ) ).mul( 0.25 ).toVar();
+		const around = ( around0 ?? this.around( sky ) ).toVar();
 		const air = haze ? mix( sky.sampleBackground( normalize( vec3( direction.x, 0.008, direction.z ) ), float( 2 ) ), around, down ).toVar() : null;
 		// The key light scattered toward the eye, and its share of the air's light: the rest is
 		// the sky's (E / pi, comparable with a radiance).
@@ -358,9 +370,10 @@ export class AerialPerspective {
 	 * a veil); it is also given the air's transmittance to that content (`background` is
 	 * `color` times it plus the air's light), and may return that in the alpha instead (the
 	 * composite after the resolve, Pipeline.ts, where the veil is laid later along `viewRay`). The bank map and the reduced march are declared on `graph`, which owns and sizes
-	 * them; `passes` then adds the passes that draw them. Called once, as the frame graph is
-	 * built. */
-	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3, transmittance: F ) => V4 ): V4 {
+	 * them; `passes` then adds the passes that draw them. `around`: the horizon's average
+	 * (`around`) as a pass evaluated it for the frame (else per pixel). Called once, as the frame
+	 * graph is built. */
+	apply( color: V3, depth: THREE.Texture, sky: Sky, graph: GraphResources, veil?: ( direction: V3, distance: F, background: V3, transmittance: F ) => V4, around?: V3 ): V4 {
 
 		const { bankSize, fogScale } = this.options;
 		this.resolution = graph.extent( { of: 'render' } );
@@ -372,7 +385,7 @@ export class AerialPerspective {
 			const q = uv().toVar();
 			const px = ivec2( clamp( q.mul( this.resolution ), 0, this.resolution.sub( 1 ) ) );
 			const z = ( textureLoad( sceneDepth, px ) as unknown as F ).toVar();
-			const r = this.ray( q, z, sky, true );
+			const r = this.ray( q, z, sky, true, around );
 			const { fogDepth, fogLight } = reduced ? reduced( q, z, () => this.march( r, sky ) ) : this.march( r, sky );
 			// One medium: the layers' light mixed by their share of the optical depth.
 			const hazeDepth = r.hazeDepth, hazeLight = r.hazeLight!;
@@ -556,6 +569,7 @@ export class AerialPerspective {
 
 		this.projectionInverse.value.copy( ( camera as THREE.PerspectiveCamera ).projectionMatrixInverse );
 		this.cameraWorld.value.copy( camera.matrixWorld );
+		this.origin.value.setFromMatrixPosition( camera.matrixWorld );
 		this.clearEnd.value = THREE.MathUtils.lerp( CLEAR.end, CLEAR.thickEnd, THREE.MathUtils.smoothstep( this.haze.value, CLEAR.thin, CLEAR.thick ) );
 		// The beam reaching the banks low over the sea.
 		this.fogSun.value = this.fogTransmittance( 8, this.keyDir.value );

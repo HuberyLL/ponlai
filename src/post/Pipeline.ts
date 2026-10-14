@@ -34,6 +34,8 @@ import type { Rain } from '../weather/Rain.ts';
 //   sea fog (in fog: the bank noise baked into a map, the march at half resolution)
 //   light shafts: the open sky near the sun, the rays marched toward it (half resolution, while the
 //   sun faces the view)
+//   constants: what the composite takes that is the same for every pixel (the horizon's average,
+//   the sun disk's visibility), evaluated once into a texel
 //   composite (air, fog, rain veil, shafts) ── hdr, once (the veil after the resolve under taa, taau)
 //   bloom (tight) and glow (wide) from hdr, both through a clamped soft-knee prefilter
 //   sharp (hdr + the blooms) ── tilt-shift blur (half-res gather, with the depth of field on) ── the
@@ -101,7 +103,7 @@ import type { Rain } from '../weather/Rain.ts';
 // their own, through a resize hook). The passes read their sizes from the graph's extent uniforms.
 // The graph runs the whole frame as passes that declare what they read and write: the scene half
 // (opaque, the depth and copy resolves, water, the surface resolve, rain), the sea fog (its bank
-// map, nearest depth and march), the light shafts' two passes, the composite,
+// map, nearest depth and march), the light shafts' two passes, the composite's constants, the composite,
 // the blooms (three's bloom chains, a pass each, their results imported into the graph), the sharp
 // image, the depth of field's blur, the look's glow (a bloom chain), the display pass, and the
 // canvas pass, or EASU and the sharpening canvas pass while upscaling. Every pass but the scene
@@ -481,6 +483,8 @@ export class Pipeline {
 	// the composite of the air, fog, rain veil and shafts over the scene, into hdr (the
 	// compositeOnce option)
 	private compositeQuad: THREE.QuadMesh | null = null;
+	// the composite's per-frame constants, into a texel (`postConstants`)
+	private constants = {} as { quad: THREE.QuadMesh; output: ResourceHandle };
 	// after the resolve, the rain's layer over the graded image (AfterResolve.ts), and the rain
 	private layerQuad: THREE.QuadMesh | null = null;
 	private rainInputQuad: THREE.QuadMesh | null = null;
@@ -667,8 +671,20 @@ export class Pipeline {
 		// (the air's alpha: the rain veil's opacity, for the resolve's veilReactive; after the resolve,
 		// where the veil is drawn, the air's transmittance)
 		const veil = rain && ! AFTER_RESOLVE ? ( d: V3, distance: F, background: V3 ) => rain.veil( d, distance, background ) : undefined;
-		const aired = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil );
-		const shafts = this.shafts.build( tSurfaceDepth, sky, g );
+		// What the composite takes that is the same for every pixel of a frame, evaluated once into
+		// a texel by a pass of its own and loaded there: the horizon's average colour the air takes
+		// looking down (rgb: four panorama samples) and the sun disk's unobstructed fraction for the
+		// glare (a: five samples of the shafts' source). In full float, so the composite gets exactly
+		// the values it computed itself.
+		const constants = this.constants.output = g.color( 'postConstants', { size: { of: 'fixed', width: 1, height: 1 }, format: THREE.RGBAFormat, type: THREE.FloatType } );
+		const constant = textureLoad( texture( g.texture( constants ) ), ivec2( 0 ) ) as unknown as THREE.Node<'vec4'>;
+		const aired = this.air.apply( sceneTex.rgb, tSurfaceDepth, sky, g, rainAir ? ( _d, _distance, background, transmittance ) => vec4( background, transmittance ) : veil, constant.rgb );
+		const shafts = this.shafts.build( tSurfaceDepth, sky, g, constant.a );
+		const constantsMat = new THREE.NodeMaterial();
+		constantsMat.name = 'Post.Constants';
+		constantsMat.fragmentNode = vec4( this.air.around( sky ), this.shafts.visibility() );
+		this.constants.quad = new THREE.QuadMesh( constantsMat );
+		this.constants.quad.name = 'Post.Constants';
 		const composited = aired.rgb.add( shafts );
 		// Rendered once (the composite pass, into hdr), the composite feeds the sharp image and both
 		// blooms' high passes; as an expression each of them evaluated it again, the sea fog's march
@@ -1454,14 +1470,28 @@ export class Pipeline {
 		// the light shafts: the open sky near the sun, and the rays marched over it (while the sun is
 		// toward the view: the composite weighs them by `facing`, 0 otherwise)
 		const shaftReads = this.shafts.passes( g, surfaceDepth );
+		// the composite's per-frame constants, into a texel: the horizon's average and the sun disk's
+		// visibility (from the shafts' source, skipped with the shafts, when the composite weighs
+		// the glare by 0)
+		let constants = this.constants.output;
+		const constantsQuad = this.constants.quad;
+		g.addPass( 'postConstants', 'quad', ( b ) => {
+
+			b.readOptional( shaftReads[ 0 ] );
+			constants = b.write( constants );
+			return { label: 'composite (air, fog, veil)', quad: constantsQuad };
+
+		} );
 		// what the composite reads: the scene (after the rain, which may be skipped), the nearest
-		// surface's depth, the sea fog (its passes run only in fog) and the light shafts
+		// surface's depth, the sea fog (its passes run only in fog), the light shafts and the
+		// constants
 		const compositeReads = ( b: PassBuilder ) => {
 
 			b.readOptional( sceneColor );
 			b.read( surfaceDepth );
 			for ( const h of fogReads ) b.readOptional( h );
 			for ( const h of shaftReads ) b.readOptional( h );
+			b.read( constants );
 
 		};
 		// the composite of the air, fog, veil and shafts, rendered once
