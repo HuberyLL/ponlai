@@ -74,6 +74,10 @@ packages, into `dist/licenses/`.
     shading and imagery are credited under three-geospatial, a-starry-sky and the CGI Moon Kit.) Weather blending,
     integrated wind and the rain veil and ripple gradients are original Ponlai code as well; the
     wet-material response implements the published techniques acknowledged below.
+  - Techniques without code: the meadow's blades thinned by distance in `src/world/Grass.ts`
+    (`tuftLod`) follow the tier fade of `src/world/vegetation/GrassField.js` (each blade narrowing
+    to nothing over a short distance of its own while the kept ones widen so that the blade count
+    times the width holds); written for this project's tufts, culling and coverage rules.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
 ### three-geospatial
