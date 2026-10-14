@@ -1,14 +1,11 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionLocal, normalViewGeometry, vec3, float, clamp, mix, max, pow, dot, step, smoothstep as smoothstepN } from 'three/tsl';
+import { attribute, positionLocal, normalViewGeometry, vec3, float, mix, max, step, smoothstep as smoothstepN } from 'three/tsl';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { anchorStream } from './Anchors.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
-import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
-import { VegetationLighting, useLighting } from './VegetationLighting.ts';
-import { LEAN_REF, setWindDisplacement } from '../weather/Wind.ts';
+import { backlight, vegetationMaterial } from './vegetation/Material.ts';
+import { LEAN_REF } from '../weather/Wind.ts';
 import { mainBend } from './Foliage.ts';
-import { followWindMotionFlag } from './WindMotion.ts';
-import { showSway } from '../debug/WindView.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
@@ -21,7 +18,8 @@ import { sampleMeadow, meadowBare, supportsMeadow } from '../materials/Meadow.ts
 // species and colour, and the beds gather in drifts. Bed sites come from noise fields and a seeded
 // draw per planting anchor, so the meadow anywhere on a larger island flowers the same way. Beds
 // keep off the islander's walking loop (WalkLoop.ts), spikes furthest (`clear` per species), and
-// the flowers bend with the plants' wind field (Wind.ts).
+// the flowers bend with the plants' wind field (Wind.ts). Each species' material comes from the
+// vegetation's factory (vegetation/Material.ts, family 'petal'), its flower centre a constant.
 
 // Every geometry is drawn with its head at REF_HEIGHT; the stem then stretches in the vertex stage
 // (`flowerColor.w`) to put the head where the plant's own sward ends, without squashing the head.
@@ -226,16 +224,12 @@ const SPECIES: Species[] = [
 
 function flowerMaterial( shared: Shared, centre: number[] ): THREE.MeshStandardNodeMaterial {
 
-	const mat = new THREE.MeshStandardNodeMaterial( { side: THREE.DoubleSide, roughness: 0.79 } );
 	const attr = attribute<'vec4'>( 'petal', 'vec4' );
 	const shade = attr.x, part = attr.y, lift = attr.z;
 	const tint = attribute<'vec4'>( 'flowerColor', 'vec4' );
 	const ground = attribute<'vec4'>( 'flowerGround', 'vec4' ); // xyz root, w the sward top above it
 	const bloom = mix( tint.rgb, vec3( ...centre as [ number, number, number ] ), smoothstepN( 1.1, 1.9, part ) );
-	const wetness = clamp( shared.wetness, 0, 1 );
 	const isBloom = smoothstepN( 0.2, 0.8, part );
-	mat.colorNode = mix( vec3( 0.04, 0.1, 0.02 ), bloom, isBloom ).mul( shade ).mul( mix( 1, 0.95, wetness ) );
-	mat.roughnessNode = mix( 0.79, 0.72, wetness );
 	// The stem stretches to its plant's height (positionLocal is already placed by the instance).
 	const p = positionLocal;
 	const raised = p.add( vec3( 0, tint.w.mul( lift ), 0 ) );
@@ -246,20 +240,25 @@ function flowerMaterial( shared: Shared, centre: number[] ): THREE.MeshStandardN
 	// times its height, growing with the square of the lift), nodding with its neighbours at about
 	// 1.2 Hz (40 swings per gust tile, Foliage.ts mainBend).
 	const bend = ( state: typeof shared.wind.previous ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( LEAN_REF ), 40 );
-	const swayed = setWindDisplacement( mat, ( state ) => bend( state ).position, shared.wind );
-	// Only the heads cast into the sun's map: stems and the rosette under the grass are thinner
-	// than a texel (see useRestPoseShadows), and the meadow's canopy shades the rosette instead.
-	const rest = useRestPoseShadows( mat, rooted, swayed, step( 0.5, part ), previousSway( mat, shared.wind ) );
-	showSway( mat, bend( shared.wind ).sway, shared.wind );
-	mat.normalNode = normalViewGeometry;
-	mat.aoNode = mix( float( 0.6 ), float( 1 ), lift ).mul( attribute<'float'>( 'skyVisibility', 'float' ) );
-	// Lit as the other plants: the grass canopy shades what stands in it, and thin petals glow
-	// with light from behind (more than the leaves, which are thicker and darker).
-	const canopy = meadowCanopyLight( rest.xz, max( ground.w.sub( rest.y.sub( ground.y ) ), 0 ), shared.sunDir );
-	useLighting( mat, () => new VegetationLighting( canopy, ( L, V ) =>
-		pow( clamp( dot( V.negate(), L ), 0, 1 ), 3 ).mul( mix( float( 0.25 ), float( 0.6 ), isBloom ) ).add( mix( float( 0.04 ), float( 0.12 ), isBloom ) ) ) );
-	followWindMotionFlag( mat );
-	return mat;
+	return vegetationMaterial( shared, {
+		family: 'petal', roughness: 0.79,
+		wet: { tint: 0.95, roughness: 0.72 },
+		color: ( wetTint ) => mix( vec3( 0.04, 0.1, 0.02 ), bloom, isBloom ).mul( shade ).mul( wetTint ),
+		rest: rooted,
+		displacement: ( state ) => bend( state ).position,
+		// Only the heads cast into the sun's map: stems and the rosette under the grass are thinner
+		// than a texel (see useRestPoseShadows), and the meadow's canopy shades the rosette instead.
+		castMask: step( 0.5, part ),
+		sway: () => bend( shared.wind ).sway,
+		normal: normalViewGeometry,
+		ao: mix( float( 0.6 ), float( 1 ), lift ).mul( attribute<'float'>( 'skyVisibility', 'float' ) ),
+		// Lit as the other plants: the grass canopy shades what stands in it, and thin petals glow
+		// with light from behind (more than the leaves, which are thicker and darker).
+		light: ( rest ) => ( {
+			scale: meadowCanopyLight( rest.xz, max( ground.w.sub( rest.y.sub( ground.y ) ), 0 ), shared.sunDir ),
+			extra: ( L, V ) => backlight( L, V, 3 ).mul( mix( float( 0.25 ), float( 0.6 ), isBloom ) ).add( mix( float( 0.04 ), float( 0.12 ), isBloom ) ),
+		} ),
+	} );
 
 }
 
