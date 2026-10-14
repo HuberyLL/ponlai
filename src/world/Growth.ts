@@ -8,7 +8,7 @@ import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
 import { AttributeType, geometrySteps, stagedWriteSteps, textureSteps, uploadSteps } from './Upload.ts';
 import { boundsSteps } from './Steps.ts';
 import { plantGrass, grassSteps, setGrass, type GrassPrepared, type GrassTufts } from './Grass.ts';
-import { plantFlowers, flowerInstances, flowerReplacement, flowerWrites, setFlowers, type FlowerInstances, type Plant } from './Flowers.ts';
+import { plantFlowers, FLOWER_POOL, flowerInstances, flowerReplacement, setFlowers, type FlowerInstances, type Plant } from './Flowers.ts';
 import { BUSH_POOL, bushInstances, type BushInstances } from './Foliage.ts';
 import { rimFoliageSteps, setRimFoliage, type RimFoliageBuilt } from './RimFoliage.ts';
 import { plantSiteSteps, anchorContactSteps } from './PlantSites.ts';
@@ -560,9 +560,9 @@ export class Growth<M = unknown> {
 			yield;
 			const replacement = flowerReplacement( page.flowers, k, instances );
 			flowers.replacements.push( replacement );
-			flowers.boxes.push( replacement ? null : instancesBox( ( page.flowers.children[ k ] as THREE.Mesh ).geometry, instances.matrices, instances.count ) );
+			flowers.boxes.push( replacement ? null : FLOWER_POOL.box( page.flowers.children[ k ] as THREE.InstancedMesh, instances ) );
 			yield;
-			if ( ! replacement ) for ( const [ attribute, values ] of flowerWrites( page.flowers.children[ k ] as THREE.InstancedMesh, instances ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
+			if ( ! replacement ) for ( const [ attribute, values ] of FLOWER_POOL.writes( page.flowers.children[ k ] as THREE.InstancedMesh, instances ) ) stage( yield* stagedWriteSteps( renderer, attribute, values ) );
 			if ( replacement ) {
 
 				yield page.compileDraws( [ replacement ] );
@@ -724,21 +724,5 @@ export class Growth<M = unknown> {
 		);
 
 	}
-
-}
-
-// An InstancedMesh's box over `count` instances of `matrices`, as its computeBoundingBox finds it.
-function instancesBox( geometry: THREE.BufferGeometry, matrices: Float32Array, count: number ): THREE.Box3 {
-
-	if ( geometry.boundingBox === null ) geometry.computeBoundingBox();
-	const box = new THREE.Box3(), part = new THREE.Box3(), m = new THREE.Matrix4();
-	for ( let i = 0; i < count; i ++ ) {
-
-		m.fromArray( matrices, i * 16 );
-		part.copy( geometry.boundingBox! ).applyMatrix4( m );
-		box.union( part );
-
-	}
-	return box;
 
 }
