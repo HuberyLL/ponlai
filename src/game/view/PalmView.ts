@@ -19,8 +19,8 @@ import type { RGB } from './Props.ts';
 // collapsed onto the crown in the vertex stage, so picking one changes a uniform, not the mesh.
 //
 // It moves in the one wind (Wind.ts): the whole palm bends from its foot with the gust field at
-// its root, at half a shrub's rate (Foliage.ts mainBend, `slow`), and each frond swings on its
-// own phase from the crown out. Its shadow keeps the rest pose, as the vegetation's does
+// its root, swaying with the plants about it at half a shrub's rate (Foliage.ts mainBend, `slow`),
+// and each frond swings a little on its own phase from the crown out. Its shadow keeps the rest pose, as the vegetation's does
 // (VegetationShadow.ts), and under the temporal modes it writes the wind's motion as they do (its
 // previous sway, class vegetation; `flags.mv.wind` turns it off, WindVariants.ts). The geometry
 // is in world space (the mesh sits at the origin), as the wind field is sampled at world
@@ -200,12 +200,13 @@ function palmMaterial(): THREE.MeshStandardNodeMaterial {
 	const swayed = setWindDisplacement( m, ( wind ) => {
 
 		// the whole palm bends slowly from its foot (half a shrub's rate)
-		const bent = mainBend( wind, rest, root, sway.x, 0.9, float( 1 ) );
+		const bent = mainBend( wind, rest, root, sway.x, 30, float( 1 ) );
 		if ( wind === shared.wind ) trunk = bent.sway;
 		const field = bent.field;
 		const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
-		const lively = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) );
-		// each frond swings and lifts on its own phase, its tip the most
+		const lively = wind.breeze.mul( field.w.mul( 0.4 ).add( 0.2 ) );
+		// each frond swings and lifts on its own phase, its tip the most: a small motion on the
+		// palm's sway, which it shares with its neighbours
 		const swing = wave( wind.flutter, 0.7, sway.z ).mul( 0.6 ).add( wave( wind.flutter, 1.13, sway.z.mul( 1.9 ) ).mul( 0.4 ) );
 		const toss = wave( wind.flutter, 0.53, sway.z.mul( 2.3 ) ).mul( 0.5 ).add( 0.35 );
 		const frond = vec3( 0, swing.mul( 0.8 ), 0 ).add( along.mul( toss ) ).add( across.mul( swing.mul( 0.5 ) ) ).mul( sway.y.mul( lively ) );

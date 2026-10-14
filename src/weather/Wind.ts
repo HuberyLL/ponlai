@@ -13,12 +13,16 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // and change as they go. It gives a lean (tip offset over height) from the wind's pressure; still
 // air is the rest pose. Plants answer it in Crysis's layers (Sousa, GPU Gems 3 ch. 16): the whole
 // plant bends from its root with the field at the root, every vertex keeping its distance from it
-// (`mainBend`), and sways about the lean at its own rate (the rim bushes 0.9 Hz; a placed tree
-// about half that, as a guide); a placed plant's sprays and fronds swing on their own phase from
-// where they leave it, as the rim trails' strands do; leaf edges and tips flutter along their
-// normals, faster as the wind rises. Grass tufts bend with the field at
-// their root, flowers and the turf skirt follow the same field, and rim trails swing like
-// pendulums (RimFoliage.ts).
+// (`mainBend`), and sways a little about that lean (`gustWave`, `swingOf`). The sway is driven by
+// the gusts' travel, not by a clock and a random phase per plant: its phase is the scroll less the
+// root's place along the wind, so neighbours swing together and the motion sweeps downwind with
+// the gusts, as a meadow moves; each plant keeps only a small share of its own (`swayJitter`:
+// +-0.4 rad, +-10 %). The swing is about a sixth of the lean, so a plant never swings upwind of
+// upright and stays within a few degrees of the local wind. Rates are whole swings per gust tile
+// (the rim bushes 30, about 0.9 Hz in a fair wind; flowers 40; grass 50; the palm half a bush's).
+// Leaf edges, sprays and fronds still flutter on their own phases, a small motion on top, faster as
+// the wind rises. Grass tufts bend with the field at their root, flowers and the turf skirt follow
+// the same field, and rim trails swing like pendulums with the same sway (RimFoliage.ts).
 //
 // Everything is a function of the wind's integrated clocks and travel (`clock`, `flutter`,
 // `gustScroll`, wrapped where every rate completes whole cycles), never time * a changing speed,
@@ -36,7 +40,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // `reset` (a seek) and `cut` (Motion.ts's `taaCut`, through `onTaaCut`) make it the current state.
 // The wrapped clocks may differ by a wrap between the two: every shader reads them only through
 // functions periodic in their wrap (`wave` at whole cycles per CLOCK_PERIOD, the gust map's repeat
-// over its tiles), so the difference of the two poses is the frame's motion alone
+// over its tiles, `gustWave`'s whole swings per tile), so the difference of the two poses is the frame's motion alone
 // (tools/verify-wind.mjs checks the sources).
 // The URL option `windView` shows this field and every plant's answer to it, and
 // `__PONLAI__.windProbe` measures them (src/debug/WindView.ts, WindProbe.ts; docs/tools.md).
@@ -58,17 +62,33 @@ export const CLOCK_PERIOD = 1000;
 // The gust field (see `windField`): a tileable noise map scrolled with the wind's integrated
 // travel. Gust fronts are long across the wind and short along it, as they sweep a meadow; the
 // finer eddies inside them run a little faster, so the pattern evolves instead of sliding by.
+// Measured with the wind probe (where the correlation of `field.w` falls to 1/e) on a fair day:
+// 12 - 15 m along the wind and 24 m across it, travelling about 5 % faster than the wind; a gust
+// covers about a third of the land at a time. Perlin noise decorrelates within about a third of its cell, so the cells are
+// three times the patches (32 m by 72 m); the eddies stay a small share, or they break the
+// patches up and drag the pattern faster than the wind.
 const GUST_SIZE = 128;
-export const GUST_ALONG = 64; // metres per tile along the wind (four noise cells: 16 m gusts)
-export const GUST_ACROSS = 112; // across it (28 m wide fronts)
+export const GUST_ALONG = 128; // metres per tile along the wind (four noise cells of 32 m)
+export const GUST_ACROSS = 288; // across it (72 m cells)
 export const EDDY_TILE = 30; // the eddies' tile, both ways (six cells: 5 m)
-const EDDY_RATE = 1.25; // eddies travel this much faster than the mean wind
+export const EDDY_RATE = 1.1; // eddies travel this much faster than the mean wind
+const EDDY_SHARE = 0.15;
 // The plants' lean (horizontal tip offset over height) is the wind's pressure, (speed / fair)^2,
-// times a calm share plus the gust's, eased toward MAX_LEAN: about 0.03 between gusts and 0.13
-// in one on a fair day, 0.2 and 0.6 in a storm's gale, and nothing in still air.
+// times a calm share plus the gust's, eased toward MAX_LEAN: about 0.035 between gusts and 0.145
+// at a gust's core on a fair day (four times as much), 0.09 and 0.34 in a storm's gale, and
+// nothing in still air. A plant leans downwind all the time and a gust bends it well over: the
+// gust's share is several times the calm one so the gusts read as bright and dark bands sweeping
+// the meadow (docs/art-direction.md), while each plant's own swing stays a sixth of its lean.
 const MEAN_LEAN = 0.035;
 const GUST_LEAN = 0.13;
 const MAX_LEAN = 1.2;
+// The plants' own sway about the lean travels with the gusts (`gustWave`): its crests lie
+// SWAY_SPREAD metres apart along the wind, so neighbours within a metre or two move together and
+// plants a few metres apart drift out of step. With a whole-plant sway near 1 Hz the crests run
+// about twice the wind's speed (a crest spacing of wind speed / frequency, 4 m, would put plants
+// a metre apart along the wind a quarter turn out of step, which reads as each plant on its own).
+const SWAY_SPREAD = 8;
+const TAU = Math.PI * 2;
 /** The lean of a fair day's typical gust: plants scale their authored sway amplitudes by
  * lean / LEAN_REF, so 1 reproduces the amplitude they were tuned at. */
 export const LEAN_REF = 0.08;
@@ -199,7 +219,7 @@ function gustChannel( cells: number, seed: number ): Float32Array {
 			const top = corner( 0, 0 ) + ( corner( 1, 0 ) - corner( 0, 0 ) ) * u;
 			const bottom = corner( 0, 1 ) + ( corner( 1, 1 ) - corner( 0, 1 ) ) * u;
 			sum += ( top + ( bottom - top ) * v ) * amplitude;
-			amplitude *= 0.45;
+			amplitude *= 0.35;
 
 		} );
 		out[ y * n + x ] = sum;
@@ -248,7 +268,7 @@ export function windField( wind: WindState, position: Node<'vec2'> ): Node<'vec4
 		const a = dot( position, direction ), c = dot( position, across );
 		const broad = texture( gustTexture(), vec2( a.sub( wind.gustScroll.x ).div( GUST_ALONG ), c.div( GUST_ACROSS ) ) ).level( float( 0 ) ).x;
 		const eddy = texture( gustTexture(), vec2( a.sub( wind.gustScroll.y ).div( EDDY_TILE ), c.div( EDDY_TILE ).add( 0.37 ) ) ).level( float( 0 ) ).y;
-		const gust = smoothstep( 0.42, 0.9, broad.mul( 0.72 ).add( eddy.mul( 0.28 ) ) );
+		const gust = smoothstep( 0.3, 0.95, broad.mul( 1 - EDDY_SHARE ).add( eddy.mul( EDDY_SHARE ) ) );
 		const x = wind.pressure.mul( gust.mul( GUST_LEAN ).add( MEAN_LEAN ) );
 		const lean = x.div( x.div( MAX_LEAN ).add( 1 ) );
 		const veer = normalize( direction.add( across.mul( eddy.sub( 0.5 ).mul( 0.45 ) ) ) );
@@ -263,6 +283,38 @@ export function windField( wind: WindState, position: Node<'vec2'> ): Node<'vec4
 export function wave( time: Node<'float'>, rate: number, phase: Node<'float'> | number = 0 ): Node<'float'> {
 
 	return sin( fract( time.mul( rate ) ).mul( Math.PI * 2 ).add( phase ) );
+
+}
+
+/** The sway of a plant about its lean, driven by the gusts' own travel rather than a clock of its
+ * own: sin of `cycles` whole swings per GUST_ALONG of the gusts'
+ * travel, less the root's place along the wind over SWAY_SPREAD, plus `phase`. Its frequency is
+ * the wind's speed times cycles / GUST_ALONG (it quickens in a stronger wind and stops in still
+ * air), whole swings per tile keep it seamless where the scroll wraps, and plants side by side
+ * across the wind swing together. `cycles` must be a whole number. */
+export function gustWave( wind: WindState, position: Node<'vec2'>, cycles: number, phase: Node<'float'> | number = 0 ): Node<'float'> {
+
+	if ( ! Number.isInteger( cycles ) ) throw new RangeError( `gustWave: ${ cycles } is not a whole number of swings per gust tile` );
+	const travel = wind.gustScroll.x.mul( cycles / GUST_ALONG ).sub( dot( position, wind.direction ).div( SWAY_SPREAD ) );
+	return sin( fract( travel ).mul( TAU ).add( phase ) );
+
+}
+
+/** A plant's own swing about its lean, in LEAN_REF's unit (multiply by LEAN_REF for tip offset
+ * over height): about a sixth of the lean on a fair day (the probe's swing over lean, 0.15 - 0.2),
+ * wider in a gust and with the wind. */
+export function swingOf( wind: WindState, gust: Node<'float'> ): Node<'float'> {
+
+	return wind.breeze.mul( gust.mul( 0.32 ).add( 0.09 ) );
+
+}
+
+/** A plant's own share of the sway, from a hash of its root: a phase within +-0.4 rad and a gain
+ * within +-10 %, small enough that neighbours stay in step (`gustWave`). */
+export function swayJitter( root: Node<'vec2'> ): { phase: Node<'float'>; gain: Node<'float'> } {
+
+	const gain = fract( sin( dot( root, vec2( 39.3468, 11.135 ) ) ).mul( 24634.6345 ) );
+	return { phase: rootPhase( root ).div( TAU ).sub( 0.5 ).mul( 0.8 ), gain: gain.sub( 0.5 ).mul( 0.2 ).add( 1 ) };
 
 }
 

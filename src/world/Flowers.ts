@@ -13,7 +13,7 @@ import { puddleCover } from '../weather/Puddles.ts';
 import { meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { islandSurfaceHeight } from './WorldShapes.ts';
 import type { Shared } from '../shared.ts';
-import { sampleMeadow, supportsMeadow } from '../materials/Meadow.ts';
+import { sampleMeadow, meadowBare, supportsMeadow } from '../materials/Meadow.ts';
 
 // Wildflowers as plants rather than coloured stars on the lawn: four species (a rayed daisy, a
 // flat umbel, a tall spike and a cupped buttercup), each a low rosette of leaves under the grass
@@ -245,8 +245,9 @@ function flowerMaterial( shared: Shared, centre: number[], legacy = false ): THR
 	const wind = shared.wind.direction;
 	const gust = windGust( p.xz, wind, shared.wind.phase ).mul( shared.wind.strength );
 	// The stem bends from its root with the gust field as the grass around it does (its lean
-	// times its height, growing with the square of the lift), nodding on its own at 1.2 Hz.
-	const bend = ( state: typeof shared.wind.previous ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( LEAN_REF ), 1.2 );
+	// times its height, growing with the square of the lift), nodding with its neighbours at about
+	// 1.2 Hz (40 swings per gust tile, Foliage.ts mainBend).
+	const bend = ( state: typeof shared.wind.previous ) => mainBend( state, rooted, ground.xyz, ground.w.add( tint.w ).add( 0.1 ).mul( lift.mul( lift ) ).mul( LEAN_REF ), 40 );
 	const swayed = legacy ? rooted.add( vec3( wind.x, 0, wind.y ).mul( gust.mul( 0.03 ).mul( lift.mul( lift ) ) ) )
 		: setWindDisplacement( mat, ( state ) => bend( state ).position, shared.wind );
 	// Only the heads cast into the sun's map: stems and the rosette under the grass are thinner
@@ -305,7 +306,8 @@ export function plantFlowers( veg: Float32Array, walkDistance?: ( x: number, z: 
 			const a = bed() * Math.PI * 2, r = Math.pow( bed(), 0.7 ) * radius;
 			const px = x + Math.cos( a ) * r, pz = z + Math.sin( a ) * r;
 			const py = islandSurfaceHeight( px, pz );
-			if ( Math.abs( py - y ) > 0.08 ) continue;
+			// Nothing roots in the meadow's bare earth (Meadow.ts `meadowBare`): it shows beside the beds.
+			if ( Math.abs( py - y ) > 0.08 || meadowBare( px, pz ) > 0.3 ) continue;
 			// The sward top here, as plantGrass grows it: the head stands a little clear of it.
 			const growth = sampleMeadow( px, pz ).growth;
 			const sward = ( 0.17 + 0.14 * growth ) * 0.85;

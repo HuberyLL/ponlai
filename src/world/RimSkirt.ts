@@ -6,7 +6,7 @@ import { SKIRT_INFO, SKIRT_RING } from './RimGround.ts';
 import { cellStream } from './Anchors.ts';
 import { VegetationLighting, useLighting } from './VegetationLighting.ts';
 import { previousSway, useRestPoseShadows } from './VegetationShadow.ts';
-import { LEAN_REF, setWindDisplacement, wave, windField } from '../weather/Wind.ts';
+import { LEAN_REF, gustWave, setWindDisplacement, swingOf, windField } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
 import { showSway } from '../debug/WindView.ts';
 import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
@@ -223,11 +223,12 @@ function skirtMaterial( shared: Shared, legacy = false ): THREE.MeshStandardNode
 	if ( legacy ) swayed = positionLocal.add( vec3( wind.x, 0.25, wind.y ).mul( sin( phase ).mul( sway ).mul( shared.wind.strength ).mul( 0.012 ) ) );
 	else {
 
-		// The thatch leans with the meadow's gust field and shivers on a phase of its place.
+		// The thatch leans with the meadow's gust field and sways with it (Wind.ts `gustWave`, 64
+		// swings per gust tile: about 1.9 Hz in a fair wind), a sixth of its lean.
 		swayed = setWindDisplacement( mat, ( wind ) => {
 
 			const field = windField( wind, positionLocal.xz );
-			const shiver = wave( wind.flutter, 1.9, dot( positionLocal.xz, vec2( 2.1, 1.7 ) ) ).mul( wind.breeze ).mul( field.w.mul( 0.5 ).add( 0.3 ) );
+			const shiver = gustWave( wind, positionLocal.xz, 64 ).mul( swingOf( wind, field.w ) );
 			if ( wind === shared.wind ) skirtSway = field.xy.mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( LEAN_REF );
 			return positionLocal.add( vec3( field.x, 0.25, field.y ).mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( sway ).mul( 0.012 ) );
 

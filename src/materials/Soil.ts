@@ -1,12 +1,15 @@
 import * as THREE from 'three/webgpu';
-import { Fn, float, smoothstep as smoothstepNode, uniform } from 'three/tsl';
+import { uniform } from 'three/tsl';
 import { sampleMeadow } from './Meadow.ts';
 import { ISLAND_TOP, islandSurfaceHeight } from '../world/WorldShapes.ts';
 import { GROWTH } from '../world/IslandGrowth.ts';
 import { noise3, smoothstep } from '../world/noise.ts';
 
+// The root bed cut open at the meadow's shoulder (TerrainMaterial's root-soil cut).
 // The narrow height encoding retains millimetre precision in an inexpensive RGBA8 map.
 // Thickness and exposed patches vary independently, so the root bed never becomes a belt.
+// The meadow's own bare earth is not here: it is a field of the meadow (Meadow.ts `meadowBare`),
+// apart from the growth field, and takes the humus colour below.
 // The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m.
 export const SOIL_EXTENT = 2 * GROWTH.half;
 export const SOIL_HEIGHT_RANGE = 0.5;
@@ -19,24 +22,13 @@ export const soilUniforms = {
 };
 
 export const SOIL_PALETTE = {
-	surface: [ 0.105, 0.074, 0.039 ],
+	// Dark humus of the meadow's bare patches, a little toward green: moss and litter in it.
+	humus: [ 0.045, 0.038, 0.02 ],
 	cut: [ 0.18, 0.115, 0.062 ],
 	root: [ 0.12, 0.075, 0.039 ],
 } as const;
 
 interface SoilSample { thickness: number; exposure: number; variation: number }
-type F = THREE.Node<'float'>;
-
-// Both the material and the instance builder use this gate, so a thinning grass patch
-// reveals the same earth colour at the blade roots and the ground beneath them.
-export const meadowSoilCover = Fn( ( [ growth, exposure ]: [ F, F ] ) => {
-
-	return smoothstepNode( 0.08, 0.5, exposure ).mul( float( 1 ).sub( smoothstepNode( 0.18, 0.52, growth ) ) );
-
-} ).setLayout( {
-	name: 'meadowSoilCover', type: 'float',
-	inputs: [ { name: 'growth', type: 'float' }, { name: 'exposure', type: 'float' } ],
-} );
 
 function sampleWithGrowth( x: number, z: number, growth: number ): SoilSample {
 
@@ -57,14 +49,6 @@ function sampleWithGrowth( x: number, z: number, growth: number ): SoilSample {
 function sampleSoil( x: number, z: number ): SoilSample {
 
 	return sampleWithGrowth( x, z, sampleMeadow( x, z ).growth );
-
-}
-
-export function sampleMeadowSoil( x: number, z: number ): number {
-
-	const growth = sampleMeadow( x, z ).growth;
-	const exposure = sampleWithGrowth( x, z, growth ).exposure;
-	return smoothstep( 0.08, 0.5, exposure ) * ( 1 - smoothstep( 0.18, 0.52, growth ) );
 
 }
 

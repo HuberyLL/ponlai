@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Wind, createWindUniforms, CLOCK_PERIOD, GUST_ALONG, EDDY_TILE } from '../src/weather/Wind.ts';
+import { Wind, createWindUniforms, gustWave, CLOCK_PERIOD, GUST_ALONG, EDDY_TILE, EDDY_RATE } from '../src/weather/Wind.ts';
 import { Weather } from '../src/sky/Weather.ts';
 import { debugFlags } from '../src/debug/DebugFlags.ts';
 
@@ -121,8 +121,9 @@ assert.notDeepEqual( current( frames ), held );
 // The wrapped clocks may differ by a wrap between previous and current: every shader reads them
 // only through functions periodic in their wraps. Sources: every read of a wind state's `clock`
 // or `flutter` is the time of `wave` (sin of fract( time x rate ), at rates with whole cycles per
-// CLOCK_PERIOD), and the gust scroll is read only by Wind.ts's windField (the gust map repeats
-// over GUST_ALONG and EDDY_TILE, where the scroll wraps).
+// CLOCK_PERIOD), and the gust scroll is read only in Wind.ts: by windField (the gust map repeats
+// over GUST_ALONG and EDDY_TILE, where the scroll wraps) and by gustWave, the plants' sway, which
+// takes whole swings per GUST_ALONG and refuses any other rate.
 const root = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../src' );
 const sources = [];
 const walk = ( dir ) => { for ( const e of readdirSync( dir, { withFileTypes: true } ) ) { const f = path.join( dir, e.name ); if ( e.isDirectory() ) walk( f ); else if ( f.endsWith( '.ts' ) ) sources.push( [ path.relative( root, f ), readFileSync( f, 'utf8' ) ] ); } };
@@ -140,25 +141,14 @@ for ( const [ file, text ] of sources ) {
 		assert.ok( call, `${ file }:${ line }: a wind clock read outside wave()` );
 		const rate = text.slice( m.index + m[ 0 ].length ).match( /^\s*,\s*([^,)]+)/ )[ 1 ].trim();
 		if ( /^[\d.]+$/.test( rate ) ) assert.ok( whole( Number( rate ) ), `${ file }:${ line }: rate ${ rate } is not whole cycles per period` );
-		else assert.ok( file === path.join( 'world', 'Foliage.ts' ) && ( rate === 'r' || rate === 'r / 2' ), `${ file }:${ line }: rate ${ rate } is not checked` );
+		else assert.fail( `${ file }:${ line }: rate ${ rate } is not checked` );
 
 	}
 	assert.ok( ! /gustScroll/.test( text ), `${ file }: the gust scroll read outside Wind.ts` );
 
 }
-assert.ok( reads >= 12, `found ${ reads } wind clock reads` );
-// mainBend's `sway( r, ... )`: rate, its multiples in mainBend and their halves (slow), at every call's rate
-const foliage = sources.find( ( [ f ] ) => f === path.join( 'world', 'Foliage.ts' ) )[ 1 ];
-const multiples = [ 1, ...[ ...foliage.matchAll( /sway\(\s*rate\s*\*\s*([\d.]+)/g ) ].map( ( m ) => Number( m[ 1 ] ) ) ];
-assert.ok( /wave\( wind\.clock, r \/ 2, ph \)/.test( foliage ) && multiples.length === 2 );
-let bends = 0;
-for ( const [ file, text ] of sources ) for ( const m of text.matchAll( /mainBend\(.*,\s*([\d.]+)\s*(?:,\s*\w+\s*)?\)/g ) ) {
-
-	bends ++;
-	for ( const k of multiples ) for ( const half of [ 1, 0.5 ] ) assert.ok( whole( Number( m[ 1 ] ) * k * half ), `${ file }: mainBend at ${ m[ 1 ] } Hz x ${ k * half }` );
-
-}
-assert.ok( bends >= 2, `found ${ bends } mainBend calls` );
+assert.ok( reads >= 8, `found ${ reads } wind clock reads` );
+assert.throws( () => gustWave( createWindUniforms(), null, 2.5 ), RangeError, 'gustWave takes whole swings per gust tile' );
 // numerically: across the wraps the shaders' arguments move by the step alone
 const wrap = new Wind( createWindUniforms(), { speed: 6, time: CLOCK_PERIOD - 0.01 } );
 const atWrap = { clock: wrap.uniforms.clock.value, scroll: wrap.uniforms.gustScroll.value.clone() };
@@ -171,7 +161,7 @@ const s0 = tiles.uniforms.gustScroll.value.clone();
 tiles.update( 0.02, 6 );
 assert.ok( tiles.uniforms.gustScroll.value.x < s0.x, 'the gust scroll wrapped' );
 near( turn( s0.x / GUST_ALONG, tiles.uniforms.gustScroll.value.x / GUST_ALONG ), 0.02 * 6 / GUST_ALONG, 1e-9 );
-near( turn( s0.y / EDDY_TILE, tiles.uniforms.gustScroll.value.y / EDDY_TILE ), 0.02 * 6 * 1.25 / EDDY_TILE, 1e-9 );
+near( turn( s0.y / EDDY_TILE, tiles.uniforms.gustScroll.value.y / EDDY_TILE ), 0.02 * 6 * EDDY_RATE / EDDY_TILE, 1e-9 );
 const map = long.uniforms.gustMap.image;
 assert.equal( map.data.length, map.width * map.height * 2 );
 console.log( 'Wind: pause, phase continuity and wrap, advection direction, update cadence, calm ocean bounds, deterministic seek and the previous frame of the vegetation wind (rendered frames, seek, cut, windFreeze, periodic reads of the wrapped clocks) pass.' );

@@ -3,7 +3,7 @@ import {
 	Fn, attribute, positionGeometry, positionLocal, normalViewGeometry, materialColor, vec3, vec4, float, mix, dot, sin, cos, pow, clamp,
 	smoothstep as smoothstepN, normalize, length, max, fwidth, diffuseColor, screenCoordinate, ivec2, int,
 } from 'three/tsl';
-import { LEAN_REF, rootPhase, setWindDisplacement, wave, windField, type WindState } from '../weather/Wind.ts';
+import { LEAN_REF, gustWave, setWindDisplacement, swayJitter, swingOf, wave, windField, type WindState } from '../weather/Wind.ts';
 import { keepLegacyWind } from './WindVariants.ts';
 import { showSway } from '../debug/WindView.ts';
 import { mulberry32 } from './noise.ts';
@@ -376,28 +376,29 @@ type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;
 
 /** A plant's main bend, after Sousa's "Vegetation Procedural Animation and Shading in Crysis"
- * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways about
- * that lean at its own natural rate, each vertex by `amplitude` (metres at a fair day's typical
- * gust, see LEAN_REF; it carries the plant's stiffness and grows from the root up), keeping its
- * distance from the root so the plant arcs over instead of shearing. As in God of War's wind
- * (Santa Monica Studio; Rupert Renard, GDC 2019), each plant answers the local wind like a spring
- * at its own natural frequency, swinging wider in a gust rather than in step with its
- * neighbours. `rate` is the sway's
- * frequency (Hz, an even number of thousandths), and `slow` (0..1) eases it to half that rate for
- * taller plants (the game's palm). `wind` is the frame's wind state (`shared.wind`, or
- * `.previous`). Returns the bent position, the wind field's ( direction x, direction z, lean,
- * gust ) at the root and the plant's sway: its horizontal offset over `amplitude` times LEAN_REF,
- * the lean and swing as a tip offset over height (world x, z; for the wind view and probe,
- * src/debug/WindView.ts; a shader that does not read it compiles as before). */
-export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F, rate: number, slow?: F ): { position: V3; field: THREE.Node<'vec4'>; sway: THREE.Node<'vec2'> } {
+ * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways a little
+ * about that lean, each vertex by `amplitude` (metres at a fair day's typical gust, see LEAN_REF;
+ * it carries the plant's stiffness and grows from the root up), keeping its distance from the root
+ * so the plant arcs over instead of shearing. The sway travels with the gusts (Wind.ts `gustWave`):
+ * neighbours swing together, each plant only a little
+ * apart (`swayJitter`), about a sixth of the lean (`swingOf`), a third of that across the wind.
+ * `cycles` is the sway's rate in whole swings per gust tile (an even number: about 0.9 Hz at 30
+ * in a fair wind), and `slow` (0..1) eases it to half that rate for taller plants (the game's
+ * palm). `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the bent
+ * position, the wind field's ( direction x, direction z, lean, gust ) at the root and the plant's
+ * sway: its horizontal offset over `amplitude` times LEAN_REF, the lean and swing as a tip offset
+ * over height (world x, z; for the wind view and probe, src/debug/WindView.ts; a shader that does
+ * not read it compiles as before). */
+export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F, cycles: number, slow?: F ): { position: V3; field: THREE.Node<'vec4'>; sway: THREE.Node<'vec2'> } {
 
+	if ( cycles % 2 !== 0 ) throw new RangeError( `mainBend: ${ cycles } swings per gust tile is not even` );
 	const field = windField( wind, root.xz ).toVar();
-	const phase = rootPhase( root.xz );
+	const own = swayJitter( root.xz );
 	// The sway grows with the wind and in a gust; the lean follows the gust field.
-	const swing = wind.breeze.mul( field.w.mul( 0.45 ).add( 0.25 ) );
-	const sway = ( r: number, ph: F ) => slow ? mix( wave( wind.clock, r, ph ), wave( wind.clock, r / 2, ph ), slow ) : wave( wind.clock, r, ph );
-	const response = field.z.div( LEAN_REF ).add( sway( rate, phase ).mul( swing ) );
-	const sideways = sway( rate * 0.78, phase.mul( 1.7 ) ).mul( swing ).mul( 0.35 );
+	const swing = swingOf( wind, field.w ).mul( own.gain );
+	const sway = ( c: number, ph: F ) => slow ? mix( gustWave( wind, root.xz, c, ph ), gustWave( wind, root.xz, c / 2, ph ), slow ) : gustWave( wind, root.xz, c, ph );
+	const response = field.z.div( LEAN_REF ).add( sway( cycles, own.phase ).mul( swing ) );
+	const sideways = sway( 2 * Math.round( cycles * 0.4 ), own.phase.mul( 1.7 ).add( 1.3 ) ).mul( swing ).mul( 0.35 );
 	const unit = vec3( field.x, 0, field.y ).mul( response ).add( vec3( field.y.negate(), 0, field.x ).mul( sideways ) );
 	const offset = unit.mul( amplitude );
 	const rel = position.sub( root ).toVar();
@@ -434,13 +435,14 @@ function foliageMaterial( shared: Shared, map: THREE.CanvasTexture, legacy = fal
 
 	} else {
 
-		// The bush bends from its root (2 cm at the crown in a fair gust); its sprays flutter on
-		// top, each leaf on a phase of its place in the bush, so neighbours move nearly together.
+		// The bush bends from its root (2 cm at the crown in a fair gust) and sways with its
+		// neighbours (about 0.9 Hz); its sprays flutter on top, each leaf on a phase of its place in
+		// the bush, a few millimetres.
 		const root = attribute<'vec4'>( 'bushRoot', 'vec4' ).xyz;
 		const ph = dot( g, vec3( 4.1, 3.3, 5.7 ) );
 		swayed = setWindDisplacement( mat, ( wind ) => {
 
-			const bend = mainBend( wind, p, root, vH.mul( vH ).mul( 0.022 ), 0.9 );
+			const bend = mainBend( wind, p, root, vH.mul( vH ).mul( 0.022 ), 30 );
 			if ( wind === shared.wind ) sway = bend.sway;
 			const field = bend.field;
 			const shake = wind.breeze.mul( field.w.mul( 0.7 ).add( 0.3 ) ).mul( vH ).mul( 0.006 );

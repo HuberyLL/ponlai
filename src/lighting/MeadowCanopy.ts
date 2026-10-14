@@ -126,9 +126,15 @@ export function meadowCanopyLight( xz: V2, depth: F, key: V3 ): F {
 
 }
 
-// Canopy top above the turf for a meadow growth value, matching the mean tuft height that
-// plantGrass plants there (base growth plus the share of taller shoots), at CANOPY_TOP.
+// A tuft's top stands CANOPY_TOP times its height scale above its root (plantGrass). The canopy's
+// depth above the turf is one value for the whole meadow: about the mean tuft top at the growth
+// field's middle. The turf once took the local mean
+// tuft height from the growth field, so where the sward grew tall the light under it fell off
+// with exp( -density * depth / sun height ): ~4 m dark drifts in the sun that no blade outlined,
+// worst at golden hour, and brighter pockets where the soil pockets cut the height. With one
+// depth the turf's shade varies with the sun's height alone (as a low sun lengthens every ray
+// through the sward) and with the gaps' pattern. A blade takes this depth scaled by its share of
+// the way down its own tuft (Grass.ts), so its root meets the turf's shade and tall and short
+// tufts shade alike; the flowers, which stand in the sward, take their depth below its top.
 export const CANOPY_TOP = 0.8;
-export const meadowCanopyHeight = Fn( ( [ growth ]: [ F ] ) =>
-	growth.mul( 0.14 ).add( 0.17 ).add( smoothstep( 0.38, 0.74, growth ).mul( 0.46 * 0.21 ) ).mul( CANOPY_TOP )
-).setLayout( { name: 'ponlaiMeadowCanopyHeight', type: 'float', inputs: [ { name: 'growth', type: 'float' } ] } );
+export const TURF_CANOPY_DEPTH = 0.2;

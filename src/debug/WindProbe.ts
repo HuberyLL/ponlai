@@ -185,7 +185,7 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 		add( 'bush', points, ( wind, p ) => {
 
 			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, 1, 0 ) ), root, float( 0.022 ), 0.9 );
+			const bend = mainBend( wind, root.add( vec3( 0, 1, 0 ) ), root, float( 0.022 ), 30 );
 			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
 
 		}, ( _wind, p, l ) => {
@@ -206,7 +206,7 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 		add( 'flower', points, ( wind, p ) => {
 
 			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, p.w, 0 ) ), root, p.w.mul( 0.08 ), 1.2 );
+			const bend = mainBend( wind, root.add( vec3( 0, p.w, 0 ) ), root, p.w.mul( 0.08 ), 40 );
 			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
 
 		}, ( _wind, p, l ) => {
@@ -229,7 +229,7 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 		add( 'palm', points, ( wind, p ) => {
 
 			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, 4, 0 ) ), root, float( 0.3 ), 0.9, float( 1 ) );
+			const bend = mainBend( wind, root.add( vec3( 0, 4, 0 ) ), root, float( 0.3 ), 30, float( 1 ) );
 			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
 
 		} );
