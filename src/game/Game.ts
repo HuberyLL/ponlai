@@ -7,6 +7,7 @@ import type { Villager as Figure } from '../characters/Villagers.ts';
 import { BUSH_STRIDE } from '../world/FoliageSites.ts';
 import { PLANT_STRIDE } from '../world/PlantSites.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
+import type { Vegetation } from '../world/vegetation/Registry.ts';
 import { GameHud } from './Hud.ts';
 import { newGame, loadGame } from './sim/Sim.ts';
 import { SAVE_KEY, savedPieces } from './sim/save.ts';
@@ -81,6 +82,8 @@ export interface GameContext {
 	refreshEnvironment(): Promise<void>;
 	/** compile the pipelines these objects will draw with (the scene's pass, the sun's shadow map) off the frame */
 	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
+	/** the page's vegetation registry (world/vegetation/Registry.ts): the view registers its palms there */
+	vegetation: Vegetation;
 	/** a change of the scene for the temporal anti-aliasing (post/SceneEvents.ts: its table says which cut) */
 	sceneEvent( reason: SceneEventReason ): void;
 	/** the island's pieces the world was loaded with (its land step: the save's, or the `grow` URL option) */
@@ -200,7 +203,7 @@ export class Game {
 		sim.brain = this.brain;
 		if ( this.coming ) sim.setComing( this.coming );
 		this.view?.dispose();
-		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook } );
+		this.view = new GameView( { sim, scene: c.scene, camera: c.camera, characterShadow: c.characterShadow, invalidateSunShadow: c.invalidateSunShadow, holdOpaque: c.holdOpaque, loadLook: c.loadLook, vegetation: c.vegetation } );
 		this.sim = sim;
 		c.sceneEvent( 'game begin' );
 		this.debug?.reset();

@@ -2,8 +2,9 @@ import * as THREE from 'three/webgpu';
 import { attribute, float, positionGeometry, select, uniform, vec3 } from 'three/tsl';
 import { shared } from '../../shared.ts';
 import { wave } from '../../weather/Wind.ts';
-import { mainBend } from '../../world/Foliage.ts';
+import { PALM_WIND, mainBend } from '../../world/vegetation/Deform.ts';
 import { useVegetationMotion } from '../../world/vegetation/Material.ts';
+import type { VegetationKind } from '../../world/vegetation/Registry.ts';
 import { PALM_COCONUTS } from '../sim/places.ts';
 import type { PalmState } from '../sim/types.ts';
 import { BALL, PropBuilder, at, hashAt, propMaterial } from './Props.ts';
@@ -17,7 +18,7 @@ import type { RGB } from './Props.ts';
 // collapsed onto the crown in the vertex stage, so picking one changes a uniform, not the mesh.
 //
 // It moves in the one wind (Wind.ts): the whole palm bends from its foot with the gust field at
-// its root, swaying with the plants about it at half a shrub's rate (Foliage.ts mainBend, `slow`),
+// its root, swaying with the plants about it at half a shrub's rate (vegetation/Deform.ts mainBend, PALM_WIND),
 // and each frond swings a little on its own phase from the crown out. Its shadow keeps the rest
 // pose, as the vegetation's does (VegetationShadow.ts), and under the temporal modes it writes the
 // wind's motion as they do (its previous sway, class vegetation; `flags.mv.wind` turns it off,
@@ -34,6 +35,11 @@ import type { RGB } from './Props.ts';
 // view's palm had released them: about 20 ms of script, and a frame of about 0.35 s on a cold shader
 // cache. The game compiles a sample palm with the props at start and keeps it (GameView "First
 // draws"), so no palm builds a pipeline in a frame.
+//
+// Each palm is a vegetation kind (`kind`, world/vegetation/Registry.ts), which the game's view
+// registers while it draws the palm: it takes part in none of the page's vegetation lists (the
+// game adds it to the scene, and grows the sun's casters for it itself), and the wind probe finds
+// the palms there.
 
 const TRUNK_HEIGHT = 2.9;
 const TRUNK_SEGMENTS = 9;
@@ -202,7 +208,7 @@ function palmMaterial(): THREE.MeshStandardNodeMaterial {
 		displacement: ( wind ) => {
 
 			// the whole palm bends slowly from its foot (half a shrub's rate)
-			const bent = mainBend( wind, rest, root, sway.x, 30, float( 1 ) );
+			const bent = mainBend( wind, rest, root, sway.x, PALM_WIND.cycles, float( PALM_WIND.slow ) );
 			if ( wind === shared.wind ) trunk = bent.sway;
 			const field = bent.field;
 			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
@@ -225,6 +231,8 @@ export class PalmView {
 
 	readonly id: string;
 	readonly mesh: THREE.Mesh;
+	/** the palm as the vegetation registry holds it (GameView registers it) */
+	readonly kind: VegetationKind;
 	stamp = 0;
 	private readonly place: PalmPlace;
 
@@ -238,6 +246,7 @@ export class PalmView {
 		this.mesh.name = `palm:${ palm.id }`;
 		this.mesh.castShadow = true;
 		this.mesh.receiveShadow = true;
+		this.kind = { name: 'palm', root: this.mesh, prepass: false, shadowFilter: 'ordinary', sunCaster: false, rainBake: false };
 		this.update( palm );
 
 	}

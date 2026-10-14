@@ -1,12 +1,14 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionLocal, vec3, float } from 'three/tsl';
+import { attribute, positionLocal, float } from 'three/tsl';
 import { meadowColor } from '../materials/Meadow.ts';
 import { SOIL_PALETTE } from '../materials/Soil.ts';
 import { SKIRT_INFO, SKIRT_RING } from './RimGround.ts';
 import { cellStream } from './Anchors.ts';
 import { backlight, vegetationMaterial } from './vegetation/Material.ts';
-import { LEAN_REF, gustWave, swingOf, windField } from '../weather/Wind.ts';
-import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
+import { skirtLean } from './vegetation/Deform.ts';
+import type { VegetationKind } from './vegetation/Registry.ts';
+import { geometrySteps } from './Upload.ts';
+import { boundsSteps, float32Steps, indexSteps, runSteps, Growing } from './Steps.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
 import type { RimSkirtData } from './types.ts';
@@ -25,16 +27,14 @@ const SHADE = [ 0.86, 0.94, 1, 0.9, 0.7, 0.52, 0.4 ];
 
 export function buildTurfSkirt( skirt: RimSkirtData, shared: Shared ): THREE.Mesh {
 
-	const steps = turfSkirtSteps( skirt );
-	let next = steps.next();
-	while ( ! next.done ) next = steps.next();
-	const mesh = new THREE.Mesh( next.value.geometry, skirtMaterial( shared ) );
+	const built = runSteps( turfSkirtSteps( skirt ) );
+	const mesh = new THREE.Mesh( built.geometry, skirtMaterial( shared ) );
 	mesh.name = 'turfSkirt';
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
 	// Like the other vegetation: drawn before the terrain, so the rim's turf under it fails the depth test.
 	mesh.renderOrder = - 1;
-	mesh.userData = next.value.counts;
+	mesh.userData = built.counts;
 	return mesh;
 
 }
@@ -44,12 +44,37 @@ export interface TurfSkirtBuilt { geometry: THREE.BufferGeometry; counts: { blad
 
 /** Swaps the skirt `mesh` (buildTurfSkirt) to `built` in place. Returns the geometry replaced, to
  * dispose of once nothing draws it. */
-export function setTurfSkirt( mesh: THREE.Mesh, built: TurfSkirtBuilt ): THREE.BufferGeometry {
+function setTurfSkirt( mesh: THREE.Mesh, built: TurfSkirtBuilt ): THREE.BufferGeometry {
 
 	const old = mesh.geometry;
 	mesh.geometry = built.geometry;
 	mesh.userData = built.counts;
 	return old;
+
+}
+
+/** The turf skirt as a vegetation kind (vegetation/Registry.ts): a grown island's skirt is built in
+ * steps, uploaded ahead, and swapped into the mesh. */
+export function turfSkirtKind( mesh: THREE.Mesh ): VegetationKind<TurfSkirtBuilt> {
+
+	return {
+		name: 'skirt', root: mesh, prepass: false, shadowFilter: 'ordinary', sunCaster: true, rainBake: true,
+		growth: {
+			*prepare( input ) {
+
+				const skirt = yield* turfSkirtSteps( input.data.rimSkirt, 8 );
+				yield* geometrySteps( input.renderer, skirt.geometry );
+				return skirt;
+
+			},
+			swap( prepared ) {
+
+				const old = setTurfSkirt( mesh, prepared );
+				return () => old.dispose();
+
+			},
+		},
+	};
 
 }
 
@@ -208,8 +233,8 @@ export function* turfSkirtSteps( skirt: RimSkirtData, per = Infinity ): Generato
 function skirtMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 
 	const blade = attribute<'float'>( 'skirtBlade', 'float' ), sway = attribute<'float'>( 'skirtSway', 'float' );
-	// The thatch leans with the meadow's gust field and sways with it (Wind.ts `gustWave`, 64
-	// swings per gust tile: about 1.9 Hz in a fair wind), a sixth of its lean.
+	// The thatch leans with the meadow's gust field and sways with it (vegetation/Deform.ts
+	// `skirtLean`, SKIRT_WIND).
 	let skirtSway: THREE.Node<'vec2'> | undefined;
 	return vegetationMaterial( shared, {
 		family: 'sod', name: 'turfSkirt', roughness: 0.93, vertexColors: true,
@@ -217,10 +242,9 @@ function skirtMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 		rest: positionLocal,
 		displacement: ( wind ) => {
 
-			const field = windField( wind, positionLocal.xz );
-			const shiver = gustWave( wind, positionLocal.xz, 64 ).mul( swingOf( wind, field.w ) );
-			if ( wind === shared.wind ) skirtSway = field.xy.mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( LEAN_REF );
-			return positionLocal.add( vec3( field.x, 0.25, field.y ).mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( sway ).mul( 0.012 ) );
+			const lean = skirtLean( wind, positionLocal, sway );
+			if ( wind === shared.wind ) skirtSway = lean.sway;
+			return lean.position;
 
 		},
 		// Blades are a few millimetres wide, far under a shadow texel: only the sod casts.

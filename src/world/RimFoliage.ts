@@ -1,9 +1,9 @@
 import * as THREE from 'three/webgpu';
-import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, uv, vec3, float, fract, mix, dot, max } from 'three/tsl';
-import { LEAN_REF, gustWave, swingOf, wave, windField } from '../weather/Wind.ts';
-
-const TAU = Math.PI * 2;
-import { boundsSteps, float32Steps, indexSteps, Growing } from './Steps.ts';
+import { attribute, positionLocal, positionGeometry, normalGeometry, normalViewGeometry, uv, vec3, float, mix, dot } from 'three/tsl';
+import { hangingSway } from './vegetation/Deform.ts';
+import type { VegetationKind } from './vegetation/Registry.ts';
+import { geometrySteps } from './Upload.ts';
+import { boundsSteps, float32Steps, indexSteps, runSteps, Growing } from './Steps.ts';
 import { LEAF_STEM, leafCastMask } from './Foliage.ts';
 import { vegetationMaterial } from './vegetation/Material.ts';
 import { mulberry32, smoothstep } from './noise.ts';
@@ -30,13 +30,6 @@ function strandNodes( strand: RimStrand ): StrandNode[] {
 
 }
 
-// The trails' sway at their tips (m) at a fair day's typical gust (see LEAN_REF): about 2 cm in a
-// fair gust, 8 - 10 cm in a gale's. Their nodes hang 0.11 m off the stone and their leaves a
-// little further, so they may be pressed toward the wall by at most PRESS (m).
-const RIM_SWAY = 0.012;
-const PRESS = 0.03;
-const LEAF_EDGE = 0.004;
-
 function rimMaterial( shared: Shared, foliage: THREE.InstancedMesh ): THREE.MeshStandardNodeMaterial {
 
 	// The bushes' leaf: the same colour map and alpha map, so the shadow pass cuts the same
@@ -46,11 +39,8 @@ function rimMaterial( shared: Shared, foliage: THREE.InstancedMesh ): THREE.Mesh
 	const bush = foliage.material as THREE.MeshStandardNodeMaterial;
 	const weight = attribute( 'rimSway', 'float' );
 	const strandPhase = attribute( 'rimPhase', 'float' );
-	// A hanging strand leans with the gust field and swings like a pendulum (1.5 - 2.6 m: about
-	// 0.4 Hz, 14 swings per gust tile) with the plants about it (Wind.ts `gustWave`), its own
-	// phase a little apart, its forks with it; its leaves flutter along their normals from
-	// stalk to tip on their own phase. The wall bounds it: wind into the cliff presses the
-	// strand back by at most PRESS, and a gust lifts it off the stone a little.
+	// A hanging strand (1.5 - 2.6 m) swings like a pendulum with the plants about it, bounded by
+	// the wall (vegetation/Deform.ts `hangingSway`, RIM_WIND).
 	const out = attribute<'vec3'>( 'rimOut', 'vec3' );
 	const leafEdge = float( 1 ).sub( attribute<'float'>( LEAF_STEM, 'float' ) ).mul( uv().y );
 	const leafPhase = strandPhase.mul( 3 ).add( dot( positionGeometry, vec3( 9.1, 7.3, 8.7 ) ) );
@@ -62,18 +52,9 @@ function rimMaterial( shared: Shared, foliage: THREE.InstancedMesh ): THREE.Mesh
 		rest: positionLocal,
 		displacement: ( wind ) => {
 
-			const field = windField( wind, positionLocal.xz ).toVar();
-			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
-			const lively = wind.breeze.mul( field.w.mul( 0.6 ).add( 0.3 ) );
-			const own = fract( strandPhase.div( TAU ) ).sub( 0.5 ).mul( 0.8 );
-			const swing = swingOf( wind, field.w ).mul( 1.5 );
-			const unit = along.mul( field.z.div( LEAN_REF ).add( gustWave( wind, positionLocal.xz, 14, own ).mul( swing ) ) )
-				.add( across.mul( gustWave( wind, positionLocal.xz, 10, own.mul( 1.6 ).add( 1.3 ) ).mul( swing ).mul( 0.35 ) ) );
-			if ( wind === shared.wind ) sway = unit.xz.mul( LEAN_REF );
-			const free = unit.mul( weight.mul( RIM_SWAY ) ).toVar();
-			const offset = free.add( out.mul( max( float( - PRESS ).sub( dot( free, out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( weight ).mul( 0.01 ) ) ) );
-			const flutter = wave( wind.flutter, 3.7, leafPhase );
-			return positionLocal.add( offset ).add( normalGeometry.mul( flutter.mul( leafEdge ).mul( lively ).mul( LEAF_EDGE ) ) );
+			const hung = hangingSway( wind, { position: positionLocal, weight, phase: strandPhase, out, normal: normalGeometry, leafEdge, leafPhase } );
+			if ( wind === shared.wind ) sway = hung.sway;
+			return hung.position;
 
 		},
 		castMask: leafCastMask(),
@@ -90,13 +71,11 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage: 
 
 	const group = new THREE.Group();
 	group.name = 'rimFoliage';
-	const steps = rimFoliageSteps( strands );
-	let next = steps.next();
-	while ( ! next.done ) next = steps.next();
-	const built = next.value;
+	const built = runSteps( rimFoliageSteps( strands ) );
 	group.userData = built.counts;
-	if ( ! built.geometry ) return group;
-	const mesh = new THREE.Mesh( built.geometry, rimMaterial( shared, foliage ) );
+	// (always a mesh, empty and hidden on a land without trails, so a grown island's draw with it)
+	const mesh = new THREE.Mesh( built.geometry ?? emptyGeometry(), rimMaterial( shared, foliage ) );
+	mesh.visible = built.geometry !== null;
 	mesh.name = 'rimFoliageLeaves';
 	mesh.castShadow = true;
 	mesh.receiveShadow = true;
@@ -111,19 +90,13 @@ export function buildRimFoliage( strands: RimStrand[], shared: Shared, foliage: 
 export interface RimFoliageBuilt { geometry: THREE.BufferGeometry | null; counts: Record<string, number> }
 
 /** Swaps the trails of `group` (buildRimFoliage) to `built` in place, the depth prepass's copy with
- * them. Returns the geometry replaced, to dispose of once nothing draws it (null: none). */
-export function setRimFoliage( group: THREE.Group, built: RimFoliageBuilt ): THREE.BufferGeometry | null {
+ * them. Returns the geometry replaced, to dispose of once nothing draws it. */
+function setRimFoliage( group: THREE.Group, built: RimFoliageBuilt ): THREE.BufferGeometry {
 
 	group.userData = built.counts;
-	const mesh = group.children[ 0 ] as THREE.Mesh | undefined;
-	if ( ! mesh ) {
-
-		if ( built.geometry ) console.warn( 'The rim trails had no mesh on the first land: a grown island\'s trails are not drawn (RimFoliage.ts)' );
-		return null;
-
-	}
+	const mesh = group.children[ 0 ] as THREE.Mesh;
 	const old = mesh.geometry;
-	const geometry = built.geometry ?? emptyGeometry( old );
+	const geometry = built.geometry ?? emptyGeometry();
 	mesh.geometry = geometry;
 	for ( const child of mesh.children ) if ( ( child as THREE.Mesh ).geometry === old ) ( child as THREE.Mesh ).geometry = geometry;
 	mesh.visible = built.geometry !== null;
@@ -131,11 +104,39 @@ export function setRimFoliage( group: THREE.Group, built: RimFoliageBuilt ): THR
 
 }
 
-// A geometry with the attributes of `like` and nothing to draw.
-function emptyGeometry( like: THREE.BufferGeometry ): THREE.BufferGeometry {
+/** The rim's trails as a vegetation kind (vegetation/Registry.ts): a grown island's trails are built
+ * in steps, uploaded ahead, and swapped into the mesh. */
+export function rimFoliageKind( group: THREE.Group ): VegetationKind<RimFoliageBuilt> {
+
+	return {
+		name: 'rim', root: group, prepass: true, shadowFilter: 'vegetation', sunCaster: true, rainBake: true,
+		growth: {
+			*prepare( input ) {
+
+				const rim = yield* rimFoliageSteps( input.data.rimStrands, 1 );
+				if ( rim.geometry ) yield* geometrySteps( input.renderer, rim.geometry );
+				return rim;
+
+			},
+			swap( prepared ) {
+
+				const old = setRimFoliage( group, prepared );
+				return () => old.dispose();
+
+			},
+		},
+	};
+
+}
+
+// The trails' attributes, in the order rimFoliageSteps sets them.
+const ATTRIBUTES: [ string, number ][] = [ [ 'position', 3 ], [ 'uv', 2 ], [ 'color', 3 ], [ 'rimSway', 1 ], [ 'rimPhase', 1 ], [ LEAF_STEM, 1 ], [ 'rimOut', 3 ], [ 'normal', 3 ] ];
+
+// A geometry with the trails' attributes and nothing to draw.
+function emptyGeometry(): THREE.BufferGeometry {
 
 	const geometry = new THREE.BufferGeometry();
-	for ( const [ name, attribute ] of Object.entries( like.attributes ) ) geometry.setAttribute( name, new THREE.BufferAttribute( new Float32Array( attribute.itemSize ), attribute.itemSize ) );
+	for ( const [ name, itemSize ] of ATTRIBUTES ) geometry.setAttribute( name, new THREE.BufferAttribute( new Float32Array( itemSize ), itemSize ) );
 	geometry.setIndex( [] );
 	return geometry;
 

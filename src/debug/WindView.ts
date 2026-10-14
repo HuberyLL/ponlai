@@ -23,8 +23,8 @@ type V3 = THREE.Node<'vec3'>;
 //   the mean wind (`shared.wind.direction`), on a cyclic map: downwind blue, upwind orange, s
 //   turned left of the wind (counter-clockwise seen from above) magenta, right of it green; the
 //   brightness is |s| / 0.15, saturating. Each material passes the sway its displacement
-//   computes (Grass.ts `bendBlade`'s lean, Foliage.ts `mainBend`'s sway, the strands' and the
-//   skirt's own) through `showSway`; the colour is taken in the vertex stage and passes as a
+//   computes (Grass.ts `bendBlade`'s lean, vegetation/Deform.ts `mainBend`'s, `hangingSway`'s and
+//   `skirtLean`'s sway) through `showSway`; the colour is taken in the vertex stage and passes as a
 //   varying. A right wind shows a patch of meadow in one hue, brightening and darkening as gusts
 //   cross it, the hue shifting only slowly at a gust's edge.
 // The numbers behind the view come from `__PONLAI__.windProbe` (src/debug/WindProbe.ts).

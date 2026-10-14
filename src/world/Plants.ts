@@ -4,10 +4,12 @@ import {
 } from 'three/tsl';
 import { wave } from '../weather/Wind.ts';
 import { mulberry32, type Rng } from './noise.ts';
-import { mainBend } from './Foliage.ts';
+import { PLANT_WIND, mainBend } from './vegetation/Deform.ts';
+import type { VegetationKind } from './vegetation/Registry.ts';
+import { geometrySteps } from './Upload.ts';
 import { leafTexture } from './vegetation/LeafTexture.ts';
 import { leafTransmission, vegetationMaterial } from './vegetation/Material.ts';
-import { boundsSteps, float32Steps, Growing } from './Steps.ts';
+import { boundsSteps, float32Steps, runSteps, Growing } from './Steps.ts';
 import { PLANT_STRIDE, PLANT_TREE, PLANT_ROUND, PLANT_BROADLEAF, PLANT_FERN } from './PlantSites.ts';
 import type { Shared } from '../shared.ts';
 
@@ -30,7 +32,7 @@ import type { Shared } from '../shared.ts';
 // pipeline (`setPlants`). The plants are concatenated in the sites' order, so a grown page draws
 // what a fresh load of that land draws.
 //
-// Wind: the bushes' layers (Foliage.ts `mainBend`): the whole plant bends from its root with the
+// Wind: the bushes' layers (vegetation/Deform.ts `mainBend`, PLANT_WIND): the whole plant bends from its root with the
 // gust field and sways with its neighbours at 30 swings per gust tile (about 0.9 Hz), trees at half
 // that rate (`slow`, from 1.4 to 2.6 m tall); each spray, frond or leaf stalk swings on its own
 // phase from where it leaves the plant; each leaf's edges and tip flutter along its normal. Shadows
@@ -682,7 +684,7 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 	// up with it (the `flutter` clock).
 	const root = attribute<'vec3'>( 'plantRoot', 'vec3' );
 	const amp = attribute<'vec4'>( 'plantWind', 'vec4' );
-	const slow = smoothstep( 1.4, 2.6, amp.w );
+	const slow = smoothstep( PLANT_WIND.slow[ 0 ], PLANT_WIND.slow[ 1 ], amp.w );
 	const local = dot( positionGeometry, vec3( 1.7, 2.3, 1.9 ) );
 	let sway: THREE.Node<'vec2'> | undefined;
 	return vegetationMaterial( shared, {
@@ -695,7 +697,7 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 		rest: p,
 		displacement: ( wind ) => {
 
-			const bend = mainBend( wind, p, root, amp.x, 30, slow );
+			const bend = mainBend( wind, p, root, amp.x, PLANT_WIND.cycles, slow );
 			if ( wind === shared.wind ) sway = bend.sway;
 			const field = bend.field;
 			const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
@@ -734,10 +736,7 @@ function emptyGeometry(): THREE.BufferGeometry {
  * growth. */
 export function buildPlants( sites: Float32Array, shared: Shared, cache: PlantCache ): THREE.Group {
 
-	const steps = plantSteps( sites, cache );
-	let next = steps.next();
-	while ( ! next.done ) next = steps.next();
-	const built = next.value;
+	const built = runSteps( plantSteps( sites, cache ) );
 	cache.keep( built.sites, built.parts );
 	const group = new THREE.Group();
 	group.name = 'plants';
@@ -757,7 +756,7 @@ export function buildPlants( sites: Float32Array, shared: Shared, cache: PlantCa
 
 /** Swaps the plants of `group` (buildPlants) to `built` in place, the depth prepass's copy with
  * them. Returns the geometry replaced, to dispose of once nothing draws it. */
-export function setPlants( group: THREE.Group, built: PlantsBuilt ): THREE.BufferGeometry {
+function setPlants( group: THREE.Group, built: PlantsBuilt ): THREE.BufferGeometry {
 
 	group.userData.sites = siteList( built.sites );
 	const mesh = group.children[ 0 ] as THREE.Mesh;
@@ -767,6 +766,33 @@ export function setPlants( group: THREE.Group, built: PlantsBuilt ): THREE.Buffe
 	for ( const child of mesh.children ) if ( ( child as THREE.Mesh ).geometry === old ) ( child as THREE.Mesh ).geometry = geometry;
 	mesh.visible = built.geometry !== null;
 	return old;
+
+}
+
+/** The plateau's plants as a vegetation kind (vegetation/Registry.ts): a grown island's plants (only
+ * those `cache` does not hold) are grown in steps on the sites the growth found, copied into one new
+ * geometry, uploaded ahead and swapped into the mesh; the cache keeps their parts. */
+export function plantsKind( group: THREE.Group, cache: PlantCache ): VegetationKind<PlantsBuilt> {
+
+	return {
+		name: 'plants', root: group, prepass: true, shadowFilter: 'vegetation', sunCaster: true, rainBake: true,
+		growth: {
+			*prepare( input ) {
+
+				const built = yield* plantSteps( input.plantSites, cache );
+				if ( built.geometry ) yield* geometrySteps( input.renderer, built.geometry );
+				return built;
+
+			},
+			swap( prepared ) {
+
+				const old = setPlants( group, prepared );
+				cache.keep( prepared.sites, prepared.parts );
+				return () => old.dispose();
+
+			},
+		},
+	};
 
 }
 

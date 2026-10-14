@@ -2,16 +2,18 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, dot, float, fract, instanceIndex, instancedArray, sin, uint, vec2, vec3, vec4 } from 'three/tsl';
 import { Wind, createWindUniforms, packWindState, windField, windStateOf, type WindState } from '../weather/Wind.ts';
 import { bendBlade, plantGrass } from '../world/Grass.ts';
-import { bushInstances, mainBend } from '../world/Foliage.ts';
+import { bushInstances } from '../world/Foliage.ts';
+import { BUSH_WIND, FLOWER_WIND, PALM_WIND, mainBend } from '../world/vegetation/Deform.ts';
 import { plantFlowers } from '../world/Flowers.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
+import type { Vegetation } from '../world/vegetation/Registry.ts';
 import type { Shared } from '../shared.ts';
 
 // `__PONLAI__.windProbe( options )`: the numbers behind the wind view (WindView.ts), as JSON for
 // tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
-// Grass.ts `bendBlade`, Foliage.ts `mainBend`), evaluated in a compute kernel built on the first
+// Grass.ts `bendBlade`, vegetation/Deform.ts `mainBend` with each kind's constants), evaluated in a compute kernel built on the first
 // call (none exists on a page that never calls it, so the page's pipelines are unchanged), for the
 // plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled), the rim bushes'
 // roots, the flowers' roots, the game's palms. The wind is a copy of the page's (`Wind`, the same
@@ -52,6 +54,7 @@ export interface WindProbeContext {
 	fft: { params: { windDirection: number }; swell: { directionOffset: number } };
 	establishScene: ( scene: never ) => Promise<unknown>; // main.ts's, with { weather, preset }
 	data: () => WorldData;
+	vegetation: Vegetation;
 
 }
 
@@ -172,7 +175,7 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 		add( 'bush', points, ( wind, p ) => {
 
 			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, 1, 0 ) ), root, float( 0.022 ), 30 );
+			const bend = mainBend( wind, root.add( vec3( 0, 1, 0 ) ), root, float( BUSH_WIND.amplitude ), BUSH_WIND.cycles );
 			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
 
 		} );
@@ -185,7 +188,7 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 		add( 'flower', points, ( wind, p ) => {
 
 			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, p.w, 0 ) ), root, p.w.mul( 0.08 ), 40 );
+			const bend = mainBend( wind, root.add( vec3( 0, p.w, 0 ) ), root, p.w.mul( FLOWER_WIND.amplitude ), FLOWER_WIND.cycles );
 			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
 
 		} );
@@ -193,17 +196,18 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 	}
 	if ( o.kinds.includes( 'palm' ) ) {
 
+		// the game's palms, as its view registers them (PalmView.ts `kind`)
 		const points: number[][] = [];
-		ctx.scene.traverse( ( object ) => {
+		for ( const root of ctx.vegetation.roots( ( kind ) => kind.name === 'palm' ) ) {
 
-			const place = object.userData.palm as { root: THREE.Vector3 } | undefined;
-			if ( place?.root ) points.push( [ place.root.x, place.root.z, place.root.y, 0 ] );
+			const place = root.userData.palm as { root: THREE.Vector3 };
+			points.push( [ place.root.x, place.root.z, place.root.y, 0 ] );
 
-		} );
+		}
 		add( 'palm', points, ( wind, p ) => {
 
 			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, 4, 0 ) ), root, float( 0.3 ), 30, float( 1 ) );
+			const bend = mainBend( wind, root.add( vec3( 0, 4, 0 ) ), root, float( 0.3 ), PALM_WIND.cycles, float( PALM_WIND.slow ) );
 			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
 
 		} );
