@@ -365,7 +365,7 @@ entries. A task that runs the usual command gets reuse and waiting by itself.
   S1/                              a capture set: <view>.png, <view>.repeat.png, .json, .log
     complete.json                  its manifest, written last
     .capturing/owner.json          while a process captures or extends it
-  S2/medium/, S2/low/, S3/msaa1/   further sets, each with its own manifest
+  S2/medium/, S2/low/, S3/msaa1/   further sets, each with its own manifest (S2: the parked tiers)
   FAST3/                           created only when no other set of the commit covers it
   baseline/<tier>/rest/<view>/     baseline.mjs entries (capture-clip folders), each with its own
   baseline/<tier>/clip/<clip>[@<view>]/   complete.json (and .capturing/ while being captured)

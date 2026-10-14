@@ -33,7 +33,7 @@ try {
 	page.on( 'response', ( response ) => { if ( response.status() >= 400 ) report.failures.push( `${ response.status() } ${ response.url() }` ); } );
 	page.on( 'requestfailed', ( request ) => report.failures.push( `${ request.failure()?.errorText } ${ request.url() }` ) );
 	const url = new URL( base );
-	url.search = 'debug&paused&t=12&dpr=1&hour=0&moon=0.5&clouds=0&quality=medium';
+	url.search = 'debug&paused&t=12&dpr=1&hour=0&moon=0.5&clouds=0&quality=high';
 	await page.goto( url.href );
 	await page.waitForFunction( () => window.__PONLAI__?.sky?.night && window.__PONLAI__?.setHour &&
 		window.__THREE_GAME_DIAGNOSTICS__?.frame > 60 && document.getElementById( 'loading' )?.classList.contains( 'done' ) );

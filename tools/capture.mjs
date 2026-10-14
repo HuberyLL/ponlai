@@ -74,14 +74,14 @@
 //   the slot is kept for the whole set. The lease changes when views run, never what they render.
 // - The slot after the world: a load takes its slot only once the page has its world. Up to then the
 //   page's GPU use is held back: an init script gates `GPUAdapter.requestDevice`, so the page
-//   asks for its adapter (the quality choice reads its name) and starts its world, then waits in
+//   starts its world, then waits in
 //   the renderer's start with no device, no render, no compile; the tool waits, without a slot,
 //   for `window.__PONLAI_WORLD__.ready` (src/world/WorldStart.ts, debug pages), then takes the slot
 //   and opens the gate, and the page sets up the sky, textures and pipelines, renders and is shot
 //   under it as before. It used to take the slot before the load, so on a grown island a load held a
 //   shared slot through its CPU world generation (7-35 s cold on a grown island) with the GPU nearly idle. The production
-//   bundle starts the world after the quality choice's adapter request (a top-level await), which
-//   is why the gate is the device, not the adapter. The cost: the GPU set-up no longer overlaps the
+//   bundle starts the world after the quality choice (a top-level await, which once requested the
+//   adapter), and the gate stays on the device. The cost: the GPU set-up no longer overlaps the
 //   world's generation, so a load takes that much longer from end to end. The world wait has its
 //   own deadline (five times --timeout); a page without the marker (an older build) takes the slot
 //   once it asks for its device, so its world is generated under the slot as before. The JSON's

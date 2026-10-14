@@ -20,12 +20,13 @@
 // The frame graph's `rebuilds` and the temporal resolve's `historyResets`, where the page's
 // diagnostics have them, are reported per step too (both should not move through the scale sweep).
 //
-//   node tools/verify-first-use.mjs --url <base> [--quality high,medium,low] [--aa msaa,taa,taau,off]
+//   node tools/verify-first-use.mjs --url <base> [--quality high] [--aa msaa,taa,taau,off]
 //        [--q "extra&query"] [--steps rest,events,idle,gui,camera,scale,resize,presets,pause] (+ weather,bolt)
 //        [--frames 20] [--out file.json] [--compare ref.json] [--strict] [--fresh]
 //
 // `--quality` and `--aa` take one value or a list: every tier with every mode, each in a fresh page
-// (the output JSON is then `{ runs: [ ... ] }`, with a summary table at the end).
+// (the output JSON is then `{ runs: [ ... ] }`, with a summary table at the end). The default is
+// high alone: medium and low are parked (src/Quality.ts PARKED_QUALITY), reached by naming them.
 // `--steps` also takes `preset:<name>` and `weather:<name>` (a jump to one preset or weather), so a
 // load with `--q preset=midnight` and `--steps preset:sunrise` checks the switch from night to day.
 // `--compare` reads another run's JSON (the reference build, same options; a run of the same tier
