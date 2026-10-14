@@ -281,9 +281,21 @@ export class Game {
 
 	}
 
-	save(): void {
+	/** Saves the game; says whether it was saved. Storage can be off (private windows, blocked site
+	 * data), and then the game goes on unsaved instead of throwing. */
+	save(): string {
 
-		localStorage.setItem( SAVE_KEY, this.sim.save() );
+		try {
+
+			localStorage.setItem( SAVE_KEY, this.sim.save() );
+			return 'Saved';
+
+		} catch ( error ) {
+
+			console.error( 'Could not save the game', error );
+			return 'Could not save: this browser does not allow storage here';
+
+		}
 
 	}
 
@@ -291,7 +303,9 @@ export class Game {
 	 * another piece count loads with the page (`?game&load`), not here. */
 	async load(): Promise<string> {
 
-		const pieces = savedPieces( localStorage.getItem( SAVE_KEY ) );
+		let json: string | null = null;
+		try { json = localStorage.getItem( SAVE_KEY ); } catch { /* storage off: no save */ }
+		const pieces = savedPieces( json );
 		if ( pieces !== null && pieces !== this.sim.state.pieces ) return `The save stands on ${ pieces } pieces, this island on ${ this.sim.state.pieces }: reload with ?game&load`;
 		const sim = this.savedGame();
 		if ( ! sim ) return 'No saved game was loaded';

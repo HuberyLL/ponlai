@@ -52,8 +52,7 @@ export class GameDebug {
 		folder.add( { pause: () => game.togglePause() }, 'pause' ).name( 'pause / resume (Space)' );
 		folder.add( { save: () => {
 
-			game.save();
-			this.say( 'Saved' );
+			this.say( game.save() );
 
 		} }, 'save' );
 		folder.add( { load: () => void game.load().then( ( text ) => this.say( text ) ) }, 'load' );
