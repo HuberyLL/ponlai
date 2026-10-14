@@ -95,8 +95,9 @@ renders 2592x1675 and FSR 1 brings it to 3456x2234. Placements derive from the i
 bounds, the plant sites, the flower instances, the rim trails, the islander and the sun and moon,
 so they follow any tile layout.
 
-`parity` (the default group, 17 views): the profiler's 12 scenes (`tools/profile-frame.mjs`),
-frozen, plus 5 more.
+`parity` (the default group, 12 views): the profiler's scenes (`tools/profile-frame.mjs`),
+frozen, plus 5 more. The parked weathers' 5 views (marked *parked* below) are in the table but in
+no group but `special` (see below).
 
 | view | query | camera |
 |---|---|---|
@@ -105,13 +106,13 @@ frozen, plus 5 more.
 | horizon-fair-noon | weather=fair&preset=noon | horizon view |
 | sky-cloudy | weather=cloudy&preset=noon | sky view |
 | island-overcast | weather=overcast&preset=noon | island |
-| island-rain | weather=rain&preset=noon | island |
-| island-storm | weather=storm&preset=noon | island |
-| horizon-storm | weather=storm&preset=noon | horizon |
-| island-fog-dawn | weather=fog&preset=dawn | island |
+| island-rain (*parked*) | weather=rain&preset=noon | island |
+| island-storm (*parked*) | weather=storm&preset=noon | island |
+| horizon-storm (*parked*) | weather=storm&preset=noon | horizon |
+| island-fog-dawn (*parked*) | weather=fog&preset=dawn | island |
 | island-night-clear | weather=clear&preset=midnight | island |
 | meadow-close | weather=fair&preset=noon | free camera 1.6 m up inside the rim, looking out over the lip |
-| weather-change | weather=fair&preset=noon | island; a front to rain frozen half way, environment re-baked |
+| weather-change (*parked*) | weather=fair&preset=noon | island; a front to rain frozen half way, environment re-baked |
 | water-skim-cliffs | weather=fair&preset=noon | free camera 1.4 m over the sea off the cliffs, along the coast |
 | island-from-sea | weather=fair&preset=noon | free camera 150 m out, 14 m up, looking back |
 | meadow-shade | weather=fair&hour=15 | beside the first small tree: shrubs and trees in shade |
@@ -130,11 +131,14 @@ frozen, plus 5 more.
 | rim-sea | weather=fair&preset=noon | 25 m out, 4 m up, facing the densest stretch of rim trails |
 | cliff-sea-golden | weather=clear&preset=golden-hour | from the sea, 3 m up, the island against the low sun |
 
-Across both, `special` (island-storm, horizon-storm, island-fog-dawn, weather-change: the views
-marked `special: true`) holds the special weathers and `normal` the other 20 views: normal weather
-is tuned and accepted first, so `--views normal` runs it alone (baseline.mjs's `--clips normal`
-does the same for clips: a clip is in its view's group). Every tool that takes `--views` takes
-names and groups mixed (`normal,flowers-close`).
+`special` (island-rain, island-storm, horizon-storm, island-fog-dawn, weather-change: the views
+marked `special: true`) holds the parked weathers (`src/sky/Weather.ts` `PARKED_WEATHER`: rain,
+storm, fog). No other group lists them, so every default set (`parity`, `all`, verify-scene-jump's,
+baseline.mjs's plan without `--views` / `--clips`) is the normal weathers' alone; `normal` is `all`
+(19 views), kept as a name. A parked view is reached by name or by `special` (`all,special` is
+every view), and so is a clip (clips.mjs: a clip is in its view's group; the parked ones are
+storm, rain, lightning, fog). Every tool that takes `--views` takes names and groups mixed
+(`normal,flowers-close`).
 
 `node tools/parity/views.mjs list [parity|taa|all|normal|special]`, `query <view>`, `eval <view>`, `crops <view>`.
 
@@ -523,7 +527,7 @@ evaluates every one and carries nothing):
 | `sameBuild` | `git diff A B` touches nothing the build reads (`BUILD_INPUTS`): the same build, so everything carries with no further check | all |
 | key | A's entry manifest has exactly the key B asks for: tool hash, browser build, tier, aa, size, query, clip, view, sampling, anchors | each entry |
 | `motionWatch` | the diff touches none of `src/main.ts`, `src/weather/`, `src/characters/`, `src/ocean/`, `src/game/view/`, `package.json`, `package-lock.json` (motion a paused frame cannot show; the stepper) | all |
-| `paused-<tier>` | B's paused set matches A's: `S1` on high (the 17 parity views plus every view an entry is on), `S2/<tier>` below (those views); diff-set `--aa-floor` where both hold repeats, else pixel identity. Captured or extended through the store; A's from `--carry-url` when its store lacks it | all |
+| `paused-<tier>` | B's paused set matches A's: `S1` on high (the 12 parity views plus every view an entry is on), `S2/<tier>` below (those views); diff-set `--aa-floor` where both hold repeats, else pixel identity. Captured or extended through the store; A's from `--carry-url` when its store lacks it | all |
 | `stored` | A's rest baseline entry's whole frame matches A's own paused-set frame of that view within 2 levels (files only): the paused check vouches for A's set, not its entries, and a capture that went wrong at A would otherwise carry on. Entries without a whole frame (the TAA rest views, the lower tiers) are not checked | rest entries with a whole frame |
 | `spot` | the first 16 frames of `pan-slow` and `islander-walk` under MSAA captured on B with A's anchors, pixel-equal to A's stored baseline entries (a differing clip is captured once more: a whole-frame outlier under a shared GPU does not repeat) | clips |
 | `gtWatch` | the diff touches none of `src/post/` `TemporalAA`, `TemporalRest`, `Jitter`, `Antialiasing`, `Motion`, `Pipeline`, `AfterResolve`, `SceneEvents` (`.ts`), nor the dependencies | aa=gt |

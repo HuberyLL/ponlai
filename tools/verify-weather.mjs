@@ -1,6 +1,8 @@
 // Integrated weather evidence and contracts. CPU transition tests remain in verify-weather-state.
 // Run against the completed weather debug API, one WebGPU page at a time:
 //   node tools/verify-weather.mjs http://127.0.0.1:5190 [--coupling]
+// Its rain preset and the rain parts are parked with the rain (src/sky/Weather.ts PARKED_WEATHER):
+// out of the default checks until the parked weathers are revived; it still runs on a debug build.
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
