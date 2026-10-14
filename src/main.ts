@@ -37,6 +37,8 @@ import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy, trackMeadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage } from './world/Foliage.ts';
+import { pickPlantSites, bakeAnchorContact } from './world/PlantSites.ts';
+import { buildPlants, plantsBox, PlantCache } from './world/Plants.ts';
 import { buildRimFoliage } from './world/RimFoliage.ts';
 import { buildTurfSkirt } from './world/RimSkirt.ts';
 import { buildFlowers, plantFlowers } from './world/Flowers.ts';
@@ -537,7 +539,7 @@ setLand( land, landOptions.step );
 // rim ground over its own.
 const fields = new WorldFields( data, shared.shoreXform.value );
 const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft );
-// Tussocks and tall flowers keep clear of the islander's walking loop, 5 m in from the coast.
+// Tussocks, tall flowers, shrubs and trees keep clear of the islander's walking loop, 5 m in from the coast.
 const walk = walkPoints( data.walk );
 const walkDistance = walkLoopDistance( walk );
 const world = buildWorldMeshes( data, textures, shared, caustics, fields );
@@ -576,14 +578,20 @@ refractedSun.setCasters( world.group, world.subsets );
 refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
 const foliage = buildFoliage( data.bushes, shared );
+// The island top's shrubs and small trees (PlantSites.ts, Plants.ts), off the walking loop; the
+// grass and flowers then read the anchors' sky visibility with the plants' shade in it.
+const plantCache = new PlantCache();
+const plantSites = pickPlantSites( data.vegetation, data.bushes, walkDistance );
+bakeAnchorContact( data.vegetation, plantSites );
+const plants = buildPlants( plantSites, shared, plantCache );
 setGrassQuality( quality.grass );
 const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance ), shared );
 const flowers = buildFlowers( plantFlowers( data.vegetation, walkDistance ), shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
-scene.add( grass, foliage, flowers, rimFoliage, turfSkirt );
+scene.add( grass, foliage, flowers, rimFoliage, turfSkirt, plants );
 installWindMotionFlag( scene );
-installVegetationPrepass( scene, [ grass, foliage, rimFoliage ] );
+installVegetationPrepass( scene, [ grass, foliage, rimFoliage, plants ] );
 // Everything that casts into the sun's map: the figures cast through their own map, and the sea
 // floor's stones only into the refracted one. The game's props grow it (holdOpaque below), and so
 // does the island (setSunCasters again at each growth step).
@@ -593,7 +601,7 @@ const heldOpaque: THREE.Box3[] = [];
 function setSunCasters(): void {
 
 	sunCasters.makeEmpty();
-	for ( const root of [ world.group, foliage, flowers, rimFoliage, turfSkirt ] ) {
+	for ( const root of [ world.group, foliage, flowers, rimFoliage, turfSkirt, plants ] ) {
 
 		root.updateWorldMatrix( true, true );
 		root.traverse( ( object ) => { if ( ( object as THREE.Mesh ).isMesh && object.castShadow ) sunCasters.expandByObject( object ); } );
@@ -612,7 +620,7 @@ controls.setIsland( world.grounds, landBox );
 frameLand();
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
 rain.collision.setArea( landBox );
-rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt ] );
+rain.bakeCollision( renderer, [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt, plants ] );
 mark( 'meshes' );
 setStatus( 'Waking the villagers…' );
 // A plain islander while the basic look settles (src/characters/looks.ts: bare head, so the
@@ -650,7 +658,7 @@ if ( GAME ) {
 	// loaded only here, so the art-review page does not carry the game's code
 	const { Game } = await import( './game/Game.ts' );
 	game = await Game.start( {
-		params, scene, camera, canvas: renderer.domElement, land, bushes: data.bushes, top: topFromTiles( worldCache.version.chunks ),
+		params, scene, camera, canvas: renderer.domElement, land, bushes: data.bushes, plants: plantSites, top: topFromTiles( worldCache.version.chunks ),
 		dayCycle, characterShadow, invalidateSunShadow, refreshEnvironment, sceneEvent,
 		// the island grows with the population (Growth.ts, made below: called from the frame loop on)
 		pieces: landOptions.step,
@@ -703,6 +711,8 @@ water = new Water( {
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 } );
 applySkyFill();
+// the small trees rise past the box's 3 m over the meadow (here and at each swap)
+water.reflectionBounds.union( plantsBox( plants ) );
 waterScene.add( water.mesh );
 ( AFTER_RESOLVE ? afterScene : TEMPORAL ? rainScene : waterScene ).add( stormSea.spray.mesh );
 
@@ -717,14 +727,15 @@ console.info( `world: ${ worldCache.hits } of ${ worldCache.chunks + 1 } records
 // (for the diagnostics, which follow a grown island)
 const worldInfo = { worldTriangles: world.triangles, rimStrands: data.rimStrands.length };
 const growth = new Growth( {
-	renderer, world, fields, grass, flowers, foliage, rimFoliage, turfSkirt, shoreWaves, refractedSun, rain, characters, game,
-	rainRoots: [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt ],
+	renderer, world, fields, grass, flowers, foliage, plants, plantCache, rimFoliage, turfSkirt, shoreWaves, refractedSun, rain, characters, game,
+	rainRoots: [ world.group, grass, foliage, flowers, rimFoliage, turfSkirt, plants ],
 	compileDraws,
 	measure: measureLand,
 	onSwap: ( next, version, measured ) => {
 
 		setLand( next, growth.state.step, measured );
 		water!.setLand( landBox );
+		water!.reflectionBounds.union( plantsBox( plants ) );
 		for ( const box of heldOpaque ) water!.reflectionBounds.union( box );
 		setSunCasters();
 		controls.setIsland( world.grounds, landBox );
@@ -1594,6 +1605,7 @@ function diagnostics( now = false ): void {
 		worldTriangles: worldInfo.worldTriangles,
 		rimStrands: worldInfo.rimStrands,
 		rimBushes: foliage.count,
+		plants: ( plants.userData.sites as unknown[] ).length,
 		timings: data.timings,
 		worldCache: worldCache.cache === 'off' ? 'off' : { cache: worldCache.cache, hits: worldCache.hits, chunks: worldCache.chunks, ms: + worldCache.ms.toFixed( 1 ) },
 		backend: 'webgpu',
@@ -2014,7 +2026,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, flowers, rimFoliage, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, plants, flowers, rimFoliage, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, sky, fft, establishScene, data: () => shownData }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes

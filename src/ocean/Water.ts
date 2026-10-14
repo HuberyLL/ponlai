@@ -65,7 +65,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //   varying through the water's previous position, not add another.
 // - The reflection only finds what lies inside `reflectionBounds` (see below): anything opaque
 //   placed off the island or above 3 m (REFLECTOR_HEIGHT; a palm, a boat, a hut, a mast) must grow
-//   that box, or the sea will not reflect it.
+//   that box, or the sea will not reflect it. The page grows it to the plateau's small trees
+//   (main.ts, Plants.ts plantsBox) at load and at each growth step.
 //
 // Motion vectors (the temporal modes, Motion.ts): the sea writes its velocity with its colour (class
 // water). Each vertex is moved back to where it was a step of the scene clock ago (`step`: the
@@ -317,7 +318,7 @@ export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSt
 // the lip, a bush near the rim) plus a metre's margin, and up past the meadow by the islanders'
 // 2 m plus a metre.
 // Hits below REFLECTION_FLOOR under the sea level already weigh nothing (see traceSSR), so the box
-// ends there. A placed object off the island or above 3 m (a palm, a hut, a mast) or a wider rim
+// ends there. The small trees (Plants.ts) grow it (main.ts); a placed object off the island or above 3 m (a palm, a hut, a mast) or a wider rim
 // overhang must grow these, or its reflection is lost (debug builds warn, see checkReflectionBounds).
 const REFLECTOR_REACH = 1.5 + 1;
 const REFLECTOR_HEIGHT = 3;

@@ -94,7 +94,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`,
   `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled by
   `GrassCull.ts`), flowers, the rim bushes (`FoliageSites.ts`; `Foliage.ts`: what all vegetation
-  materials share), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
+  materials share), the plateau's shrubs and small trees (sited on the page off the walking loop by
+  `PlantSites.ts`, grown each from its seed and merged into one mesh by `Plants.ts`), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
   vegetation's depth prepass
   (`VegetationPrepass.ts`).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
@@ -258,7 +259,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - The water samples neither the target it draws into nor more textures (it is at WebGPU's 16, its
   varyings near the limit: `Water.ts`), so it takes no history or reactive input: what the resolve
   needs from it goes out through its velocity. It reflects only what lies inside
-  `Water.reflectionBounds`: anything opaque placed off the island or above 3 m must grow that box.
+  `Water.reflectionBounds`: anything opaque placed off the island or above 3 m must grow that box
+  (the plateau's small trees do: main.ts).
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an
   rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).
