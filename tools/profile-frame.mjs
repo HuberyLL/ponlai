@@ -1272,43 +1272,15 @@ function pageHelpers() {
 
 				// a point on the meadow 5.5 m inside the rim, out from the land's centroid (so any land
 				// works), the eye 1.6 m up, looking out over the lip and down a little. The heights are
-				// those of the island group's meshes (`island`), on a 0.5 m grid from their box's corner
-				// as the camera's ground was built before it came from the chunks' grids: a build that
-				// draws the same island, merged or a mesh per chunk, takes the same view. Their position
-				// arrays are read as world-space, non-interleaved (the chunk meshes are), and every mesh
-				// under `island` counts as ground (a stone there raises its cell).
+				// the camera's ground (IslandGround.heightAt: the highest point of the island's chunks per
+				// 0.5 m cell of the world's lattice, the sea elsewhere), made in the workers from the
+				// chunks' meshes: the page's meshes are not read, so a build that draws them simplified
+				// takes the same view.
 				s.setCameraView( 'island' );
 				s.setCameraMode( 'free' );
-				const parts = [];
-				s.scene.getObjectByName( 'island' )?.traverse( ( o ) => { if ( o.isMesh ) parts.push( o.geometry.getAttribute( 'position' ).array ); } );
-				if ( ! parts.length ) throw new Error( `${ def.name }: no island ground to place the meadow view on (no mesh named or under 'island')` );
-				let x0 = Infinity, z0 = Infinity, x1 = - Infinity, z1 = - Infinity;
-				for ( const p of parts ) for ( let v = 0; v < p.length; v += 3 ) {
-
-					x0 = Math.min( x0, p[ v ] ); x1 = Math.max( x1, p[ v ] );
-					z0 = Math.min( z0, p[ v + 2 ] ); z1 = Math.max( z1, p[ v + 2 ] );
-
-				}
-				const nx = Math.ceil( ( x1 - x0 ) / 0.5 ) + 1, nz = Math.ceil( ( z1 - z0 ) / 0.5 ) + 1;
-				const heights = new Float32Array( nx * nz ).fill( - Infinity );
-				const cell = ( x, z ) => {
-
-					const i = Math.floor( ( x - x0 ) / 0.5 ), j = Math.floor( ( z - z0 ) / 0.5 );
-					return i >= 0 && i < nx && j >= 0 && j < nz ? j * nx + i : - 1;
-
-				};
-				for ( const p of parts ) for ( let v = 0; v < p.length; v += 3 ) {
-
-					const k = cell( p[ v ], p[ v + 2 ] );
-					if ( k >= 0 && p[ v + 1 ] > heights[ k ] ) heights[ k ] = p[ v + 1 ];
-
-				}
-				const heightAt = ( x, z ) => {
-
-					const k = cell( x, z );
-					return k >= 0 ? Math.max( heights[ k ], 0 ) : 0;
-
-				};
+				const ground = s.controls.ground;
+				if ( ground.bounds.isEmpty() ) throw new Error( `${ def.name }: no island ground to place the meadow view on (controls.ground is empty)` );
+				const heightAt = ( x, z ) => ground.heightAt( x, z );
 				const { x: cx, z: cz } = s.land.centroid, dir = { x: Math.cos( 0.7 ), z: Math.sin( 0.7 ) };
 				const top = ( t ) => heightAt( cx + dir.x * t, cz + dir.z * t ) > 1;
 				let t = 0;

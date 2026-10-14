@@ -317,7 +317,8 @@ the rules.
 [--views v1,v3] [--label x] [--q "query"] [--jobs 2] [--base-ref sha] [--recheck 1]` sets a base
 and a candidate page side by side in six views (v1 overview, also in golden hour; v2 top-down; v3
 cliff, v4 meadow and v5 rim close; v6 sea floor), framed on the land in the page
-(`__PONLAI__.land`: the overview is the page's own island view; today's framing without it), into
+(`__PONLAI__.land`: the overview is the page's own island view; today's framing without it; the
+close views walk the camera's ground, `controls.ground`, never the drawn meshes' vertices), into
 `artifacts/captures/growth/<label>/index.html` with each pair's crop statistics (mean luma,
 saturation and edge density, by compare-captures.py's metrics; deltas beyond 10 % flagged) and its
 pixel difference (pixels that differ, largest channel difference, on decoded pixels). A URL's own
@@ -704,7 +705,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   pacing noise).
 - It plays a matrix of named scenes (`--list`: `island-fair-noon`, `island-clear-golden`,
   `horizon-fair-noon`, `sky-cloudy`, `island-overcast`, `island-night-clear`, `meadow-close` (over
-  the meadow); the parked weathers' `island-rain`, `island-storm`, `horizon-storm`,
+  the meadow, placed on the camera's ground, `controls.ground`); the parked weathers' `island-rain`, `island-storm`, `horizon-storm`,
   `island-fog-dawn` and `weather-change` (a front sweeping in) run only when `--scenes` names
   them, and `--scenes` takes these ids), each with the clock running, fixed weather
   and a slow orbit, and writes `artifacts/perf/<label>/` (profile.json, summary.md): frame interval
