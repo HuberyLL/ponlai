@@ -9,10 +9,11 @@
 // - `off`: one sample, leaves alpha-tested and grass blades dithered (`msaa=1` before);
 // - `taa`, `taau`: temporal anti-aliasing at the render's size, and temporal upsampling to the
 //   canvas: one sample, jittered, with motion vectors (Jitter.ts, Motion.ts), resolved against a
-//   history (TemporalAA.ts). A tier's knob may ask for them (medium defaults to taau, Quality.ts)
-//   and the GUI offers them; they are refused, with a warning, where three's cache keys cannot be
-//   patched (graph/ThreePatches.ts: three r186 only), since their scene materials build one shader
-//   per MRT (if the patches still fail to install, main.ts stops the page);
+//   history (TemporalAA.ts). A tier's knob may ask for them (the parked medium tier does, Quality.ts;
+//   high, the only active tier, runs msaa), and `aa=` or the GUI choose them on any tier; they are
+//   refused, with a warning, where three's cache keys cannot be patched (graph/ThreePatches.ts:
+//   three r186 only), since their scene materials build one shader per MRT (if the patches still
+//   fail to install, main.ts stops the page);
 // - `gt` (debug builds only): the ground truth the temporal modes are measured against, the
 //   temporal graph rendered at the canvas's resolution whose image at rest averages many jittered
 //   frames with a box filter (TemporalAA.ts, TemporalRest.ts): 64 by default, `tier.taa.gtJitters`.
@@ -115,8 +116,7 @@ export function aaPlan( requested: AAMode, revision: string = REVISION ): AAPlan
 
 }
 
-// The page's tier, chosen once (QualityDetect.ts: `?quality`, a remembered measurement, or a
-// measurement on this load), and the mode it asks for.
+// The page's tier, chosen once (QualityDetect.ts: `?quality`, else high), and the mode it asks for.
 const params = new URLSearchParams( location.search );
 export const QUALITY_CHOICE: QualityChoice = await chooseQuality( params );
 const REQUEST = requestedAAMode( params, qualityProfile( QUALITY_CHOICE.tier ), import.meta.env.DEV || params.has( 'debug' ) || params.has( 'profile' ) );

@@ -14,8 +14,8 @@ import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, isParkedWeather, type WeatherName } from './sky/Weather.ts';
-import { QUALITY_TIERS, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
-import { forgetQuality, qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
+import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
+import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
@@ -906,16 +906,16 @@ cameraF.add( camera, 'fov', 15, 100, 1 ).name( 'field of view' ).listen().onChan
 cameraF.add( { reset: () => setCameraView( 'island' ) }, 'reset' ).name( 'return to island (R)' );
 const environmentLook = { exposure: true };
 const W = water.uniforms;
-// The quality tier sets every knob of the frame's cost (Quality.ts); a change reloads the page.
+// The quality tier sets every knob of the frame's cost (Quality.ts); a change reloads the page. It
+// lists the active tiers (high alone while medium and low are parked), and the page's own tier when
+// `?quality` loaded a parked one.
 const performanceF = gui.addFolder( 'Performance' );
-performanceF.add( skyQuality, 'value', QUALITY_TIERS ).name( 'quality (reloads)' ).onFinishChange( ( tier: QualityTier ) => { if ( tier !== qualityTier ) reloadWithQuality( tier ); } );
-// How the tier was chosen (QualityDetect.ts): the measurement and each tier's predicted GPU time
-// against the budget; re-detect forgets the choice and reloads without ?quality to measure again.
-const autoQuality = { ...qualityLines( qualityTier, qualityChoice.why, qualityChoice.record ), redetect: () => { forgetQuality(); reloadWithQuality( null ); } };
+const qualityChoices = ACTIVE_QUALITY.includes( qualityTier ) ? [ ...ACTIVE_QUALITY ] : [ ...ACTIVE_QUALITY, qualityTier ];
+performanceF.add( skyQuality, 'value', qualityChoices ).name( 'quality (reloads)' ).onFinishChange( ( tier: QualityTier ) => { if ( tier !== qualityTier ) reloadWithQuality( tier ); } );
+// How the tier was chosen (QualityDetect.ts: `?quality` or high; the GPU is not measured while the
+// lower tiers are parked).
+const autoQuality = qualityLines( qualityTier, qualityChoice.why, qualityChoice.record );
 performanceF.add( autoQuality, 'chosen' ).name( 'quality chosen' ).listen().disable();
-performanceF.add( autoQuality, 'measured' ).name( 'GPU measured' ).listen().disable();
-performanceF.add( autoQuality, 'predicted' ).name( 'predicted ms / budget' ).listen().disable();
-performanceF.add( autoQuality, 'redetect' ).name( 're-detect quality (reloads)' );
 performanceF.add( resolution, 'full' ).name( 'full resolution' ).onChange( resize );
 performanceF.add( pipeline.sharpness, 'value', 0, 2, 0.05 ).name( 'upscale softness' );
 // The live readout (FrameStats.ts): the rendered frames' cadence by their rAF timestamps, the render

@@ -1,18 +1,22 @@
 // The quality tiers: every knob the frame's cost depends on, per tier, in one table. `?quality`
-// picks the tier at load; without it the tier is chosen by timing this GPU (QualityDetect.ts; medium
-// where it is not measured). The GUI's quality control reloads the page with it.
+// picks the tier at load; without it the page loads high (QualityDetect.ts). The GUI's quality
+// control reloads the page with it.
 //
-// High is the reference image and holds 60 fps on the target display through its dynamic render
-// scale; medium and low render at fixed budgets that leave room there, for slower GPUs.
+// High, at 4K output (1920x1080 CSS pixels at a device pixel ratio of 2), is the reference image and
+// the only active tier: every trade-off of image against time is judged on it. It holds 60 fps on the
+// target display through its dynamic render scale, multisamples the scene with 4 samples (`msaa`;
+// WebGPU has 1 or 4, no 2) and upscales with FSR 1.
+//
+// Parked tiers (`PARKED_QUALITY`: medium, low) slowed every line of work down, so until they are
+// revived as their own milestone they are out of the default choice (no GPU timing picks them), the
+// GUI's list and the default checks (the tools' default sets name high only). Their rows stay in the
+// table and keep compiling, and `?quality=medium|low` (or a tool's `--quality` / `--tiers`) still
+// loads them; new work need not support them. Their last tuning: medium runs `taau` at a fixed
+// budget (msaa missed 60 fps there where taau held it), its TAAU sharpening one RCAS stop softer than
+// high's; low runs `msaa` at a smaller budget. A revival measures them again against high.
 //
 // Each tier picks its anti-aliasing (the `aa` knob, post/Antialiasing.ts; `?aa` or the GUI choose
-// any mode over it). High and low multisample the scene with 4 samples (`msaa`; WebGPU has 1 or 4,
-// no 2), upscaled by FSR 1: high is the reference image and its dynamic scale already holds 60 fps,
-// and low holds 60 fps with msaa too, where its lite temporal resolve drew a softer image with a
-// darker meadow and fewer flowers. Medium runs `taau`: one jittered sample upsampled against a
-// history, since at medium's fixed budget msaa missed 60 fps in most of the acceptance scenes where
-// taau held it in all of them. Medium's TAAU sharpening is one RCAS stop softer than high's
-// (high's is aimed at the ground truth; medium's, as sharp, rang on edges where msaa did not). Without multisampling or a temporal resolve the meadow's alpha to coverage
+// any mode over it). Without multisampling or a temporal resolve the meadow's alpha to coverage
 // turns into a dither and geometric edges alias, so no tier runs `off`. No knob alters the weather,
 // clock or lighting state: a tier changes the cost, never the mood.
 //
@@ -32,8 +36,8 @@
 // `angleGate`, and the rain's drop count. Every default in the modules themselves is high's.
 // `?tier.<knob>=<value>` overrides one knob for an A/B.
 //
-// Medium and low trade a little of high's image for time, each knob judged in captures: one
-// screen-space reflection ray (its 14 steps grow by 1.51, so it reaches as far as high's), fewer
+// The parked medium and low traded a little of high's image for time, each knob judged in captures:
+// one screen-space reflection ray (its 14 steps grow by 1.51, so it reaches as far as high's), fewer
 // refraction and water-column samples, a lighter sun-shadow filter (bilinear on vegetation, and on
 // everything on low), fewer lawn blades with the canopy light per vertex, fewer sea-fog steps and
 // depth-of-field taps, a cheaper cloud march and panorama refresh, slower sky bakes with the
@@ -53,7 +57,12 @@ import type { AAMode } from './post/Antialiasing.ts';
 
 export const QUALITY_TIERS = [ 'low', 'medium', 'high' ] as const;
 export type QualityTier = typeof QUALITY_TIERS[ number ];
-export const DEFAULT_QUALITY: QualityTier = 'medium';
+export const DEFAULT_QUALITY: QualityTier = 'high';
+/** Tiers out of the default choice, the GUI and the default checks; still loaded by name. */
+export const PARKED_QUALITY: ReadonlyArray<QualityTier> = [ 'medium', 'low' ];
+export const isParkedQuality = ( tier: string ): boolean => ( PARKED_QUALITY as readonly string[] ).includes( tier );
+/** The active tiers (today high alone). */
+export const ACTIVE_QUALITY: ReadonlyArray<QualityTier> = QUALITY_TIERS.filter( ( tier ) => ! isParkedQuality( tier ) );
 
 /** How the scene's render scale (its pixel ratio relative to CSS pixels) is chosen. */
 export type RenderScaleRule =
