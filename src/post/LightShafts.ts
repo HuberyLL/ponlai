@@ -146,24 +146,29 @@ export class LightShafts {
 
 	/** Adds the shafts' two passes to `graph`, after the pass that writes `surfaceDepth` (the
 	 * nearest surface's linear view z) and before the composite: the open sky near the sun, then
-	 * the rays marched over it toward the sun. Returns the resources the composite reads. */
+	 * the rays marched over it toward the sun. Both run only while the sun faces the view (`facing`
+	 * above 0): the composite's term is multiplied by it, so what they last drew, finite, adds
+	 * exactly nothing otherwise (the composite reads them optionally). Returns the resources the
+	 * composite reads. */
 	passes<F>( graph: FrameGraph<F>, surfaceDepth: ResourceHandle ): ResourceHandle[] {
 
 		const LABEL = 'light shafts';
 		let { source, rays } = this.resources;
 		const sourceQuad = this.sourceQuad, raysQuad = this.raysQuad;
+		const when = () => this.facing.value > 0, whenLabel = 'facing > 0';
 		graph.addPass( 'shaftsSource', 'quad', ( b ) => {
 
 			b.read( surfaceDepth );
 			source = b.write( source );
-			return { label: LABEL, quad: sourceQuad };
+			return { label: LABEL, when, whenLabel, quad: sourceQuad };
 
 		} );
 		graph.addPass( 'shaftsRays', 'quad', ( b ) => {
 
-			b.read( source );
+			// (the same predicate as the source's)
+			b.readOptional( source );
 			rays = b.write( rays );
-			return { label: LABEL, quad: raysQuad };
+			return { label: LABEL, when, whenLabel, quad: raysQuad };
 
 		} );
 		return [ source, rays ];

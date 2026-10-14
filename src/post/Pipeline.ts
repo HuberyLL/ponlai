@@ -27,15 +27,17 @@ import type { Rain } from '../weather/Rain.ts';
 //   depth resolve ── depthRT (view-space z of the opaque pass: sample 0, and the farthest sample)
 //   opaque copy ── opaqueRT (the resolved opaque colour: what the water refracts and reflects)
 //   water ── back into sceneRT, depth-tested per sample against the opaque samples
-//   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included)
+//   surface resolve ── surfaceRT (view-space z of the nearest surface, the sea's included) and
+//     viewDistance (its distance, for the depth of field and the grade's sky test)
 //   rain ── into sceneRT (its multisampled colour and depth are then discarded: nothing reads them;
 //     without rain the water discards the colour and the surface resolve's read keeps the depth)
-//   sea fog (in fog: the bank noise baked into a map, the march at half resolution), the view
-//   distance for the depth of field
-//   light shafts: the open sky near the sun, the rays marched toward it (half resolution)
+//   sea fog (in fog: the bank noise baked into a map, the march at half resolution)
+//   light shafts: the open sky near the sun, the rays marched toward it (half resolution, while the
+//   sun faces the view)
 //   composite (air, fog, rain veil, shafts) ── hdr, once (the veil after the resolve under taa, taau)
 //   bloom (tight) and glow (wide) from hdr, both through a clamped soft-knee prefilter
-//   sharp (hdr + the blooms) ── tilt-shift blur (half-res gather) ── the look's diffusion glow
+//   sharp (hdr + the blooms) ── tilt-shift blur (half-res gather, with the depth of field on) ── the
+//   look's diffusion glow
 //   display: the depth of field's mix, the diffusion glow, exposure, tone curve (PBR Neutral with
 //   hue-kept highlights by default), split-tone grade, vibrance, the art-directed look
 //   (hue-selective colour, warm / cool split, coloured shadow lift), lifted blacks, vignette,
@@ -99,15 +101,18 @@ import type { Rain } from '../weather/Rain.ts';
 // their own, through a resize hook). The passes read their sizes from the graph's extent uniforms.
 // The graph runs the whole frame as passes that declare what they read and write: the scene half
 // (opaque, the depth and copy resolves, water, the surface resolve, rain), the sea fog (its bank
-// map, nearest depth and march), the view distance, the light shafts' two passes, the composite,
+// map, nearest depth and march), the light shafts' two passes, the composite,
 // the blooms (three's bloom chains, a pass each, their results imported into the graph), the sharp
 // image, the depth of field's blur, the look's glow (a bloom chain), the display pass, and the
 // canvas pass, or EASU and the sharpening canvas pass while upscaling. Every pass but the scene
 // passes, the blooms and the canvas passes is a full-screen quad of its own, and no pass renders
 // another inside it (but three's FSR1Node, `post=three-fsr`, in its canvas pass). Each pass
-// that runs only now and then (rain, fog, the view distance, the look's glow, either output) says
-// when by a predicate the graph evaluates at the frame's start. The `post=` legacy switches are
-// variants of the graph, chosen as it is built.
+// that runs only now and then (rain, fog, the light shafts, the depth of field's blur, the look's
+// glow, either output) says when by a predicate the graph evaluates at the frame's start. A pass
+// whose output weighs nothing in what reads it (the shafts without the sun toward the view, the
+// blur without the depth of field) is skipped rather than drawn and multiplied by 0; its reader
+// reads it optionally and gets what it last held, finite, times 0. The `post=` legacy switches
+// are variants of the graph, chosen as it is built.
 // At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass and the bloom
 // chains' own passes, so one that first runs later (fog, the upscale, the look's glow) builds
 // nothing then.
@@ -130,7 +135,7 @@ import type { Rain } from '../weather/Rain.ts';
 //   binds from the scene target (colour, multisampled depth) must be declared (`read`,
 //   `readOptional`): an undeclared read of a discarded attachment shows garbage, and one between
 //   the water and the rain sees the scene without the sea.
-// - `render` is `graph.execute`: the sea fog's bank, depth and march, the view distance and the
+// - `render` is `graph.execute`: the sea fog's bank, depth and march and the
 //   output and FSR passes are graph passes too (the `post=` switches choose which are declared at
 //   load), so new frame work goes in as a pass, not as a call around the graph. A pass that
 //   declares no depth clears whatever depth its target holds outside the graph (the canvas's, and
@@ -473,8 +478,6 @@ export class Pipeline {
 	private upscaledOutput: THREE.RenderPipeline | null = null;
 	private upscaledOutputThree: THREE.RenderPipeline | null = null;
 	private fsr: FSR | null = null;
-	// the view distance per pixel, for the depth of field (the dofDistance option)
-	private distanceQuad: THREE.QuadMesh | null = null;
 	// the composite of the air, fog, rain veil and shafts over the scene, into hdr (the
 	// compositeOnce option)
 	private compositeQuad: THREE.QuadMesh | null = null;
@@ -570,7 +573,9 @@ export class Pipeline {
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
 		// textures need them before the first frame)
 		g.renderTarget( velocity ? [ sceneColor, velocity ] : [ sceneColor ], sceneDepth );
-		for ( const h of [ linearDepth, opaqueColor, surfaceDepth, display, ...( viewDistance ? [ viewDistance ] : [] ) ] ) g.renderTarget( [ h ] );
+		for ( const h of [ linearDepth, opaqueColor, display ] ) g.renderTarget( [ h ] );
+		// (the view distance beside the nearest surface: the surface resolve writes both)
+		g.renderTarget( viewDistance ? [ surfaceDepth, viewDistance ] : [ surfaceDepth ] );
 		this.textures = { opaqueColor: g.texture( opaqueColor ), linearDepth: g.texture( linearDepth ), surfaceDepth: g.texture( surfaceDepth ) };
 		// the sizes the passes read, the graph's shared extent uniforms (set with the targets' own
 		// sizes): the render's, its texel, the half-resolution blur's and the canvas's
@@ -589,6 +594,25 @@ export class Pipeline {
 
 			} );
 			return z;
+
+		};
+		// The distance to the nearest surface, the water's included (view-space z: closer is larger),
+		// 1e5 for the sky. A surface's is held below 9e4, so the distance alone tells the sky (the
+		// grade's `onSurface`): only the far plane's corners under a field of view above about 66
+		// degrees reach past it, where the depth of field's coc has long been constant (from 15 km
+		// on) and the gather's depth order between two such taps picks between equal cocs.
+		const distanceAt = ( q: V2, z: F ) => {
+
+			const ndc = vec2( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ) ).toVar();
+			const dist = float( 1e5 ).toVar();
+			If( z.greaterThan( - 9e4 ), () => {
+
+				const v = u.projInv.mul( vec4( ndc, 1, 1 ) ).toVar();
+				const dir = v.xyz.div( v.w ).toVar();
+				dist.assign( min( length( dir.mul( z.div( dir.z ) ) ), 9e4 ) );
+
+			} );
+			return dist;
 
 		};
 		const msDepth = texture( g.texture( sceneDepth ) );
@@ -617,8 +641,24 @@ export class Pipeline {
 			this.copyQuad = new THREE.QuadMesh( copyMat );
 
 		}
+		// The nearest surface's view z, and beside it (the dofDistance option) the view distance per
+		// pixel for the depth of field, in full float: the gather's taps read it instead of each
+		// deriving it from the depth (half float tied distances, and the depth order flipped). Written
+		// in this pass rather than one of its own, which read the depth back.
+		// (one body for both attachments: an output struct is the material's own node, so the two are
+		// a matrix's columns)
 		const surfaceMat = new THREE.NodeMaterial();
-		surfaceMat.fragmentNode = Fn( () => vec4( viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ) ) )();
+		if ( viewDistance ) {
+
+			const resolved = Fn( () => {
+
+				const z = viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ).toVar();
+				return mat4( vec4( z ), vec4( distanceAt( uv(), z ), 0, 0, 1 ), vec4( 0 ), vec4( 0 ) );
+
+			} )() as unknown as { element( i: number ): THREE.Node<'vec4'> };
+			surfaceMat.fragmentNode = outputStruct( resolved.element( 0 ), resolved.element( 1 ) );
+
+		} else surfaceMat.fragmentNode = Fn( () => vec4( viewZ( screenCoordinate.xy, depthSample( screenCoordinate.xy, 0 ) ) ) )();
 		this.surfaceQuad = new THREE.QuadMesh( surfaceMat );
 
 		// ---- composite: the scene target holds the opaque image with the sea and the rain drawn over it
@@ -710,39 +750,8 @@ export class Pipeline {
 		// with the circle of confusion; a sample only counts where its blur reaches this pixel, then
 		// the blur is mixed over the sharp image by the full-resolution coc
 		const tD = texture( tSurfaceDepth );
-		// The distance to the nearest surface, the water's included (view-space z: closer is larger).
-		const distanceAt = ( q: V2, z: F ) => {
-
-			const ndc = vec2( q.x.mul( 2 ).sub( 1 ), float( 1 ).sub( q.y ).mul( 2 ).sub( 1 ) ).toVar();
-			const dist = float( 1e5 ).toVar();
-			If( z.greaterThan( - 9e4 ), () => {
-
-				const v = u.projInv.mul( vec4( ndc, 1, 1 ) ).toVar();
-				const dir = v.xyz.div( v.w ).toVar();
-				dist.assign( length( dir.mul( z.div( dir.z ) ) ) );
-
-			} );
-			return dist;
-
-		};
-		// Written once per pixel, in full float: the gather's taps then read it instead of each
-		// deriving it from the depth (half float tied distances, and the depth order below flipped).
-		let tDistance: THREE.TextureNode | null = null;
-		if ( viewDistance ) {
-
-			const distanceMat = new THREE.NodeMaterial();
-			distanceMat.name = 'Post.ViewDistance';
-			distanceMat.fragmentNode = Fn( () => {
-
-				const px = ivec2( screenCoordinate.xy );
-				return vec4( distanceAt( uv(), ( textureLoad( tD, px ) as unknown as F ).toVar() ), 0, 0, 1 );
-
-			} )();
-			this.distanceQuad = new THREE.QuadMesh( distanceMat );
-			this.distanceQuad.name = 'Post.ViewDistance';
-			tDistance = texture( g.texture( viewDistance ) );
-
-		}
+		// (the view distance per pixel, written by the surface resolve: the dofDistance option)
+		const tDistance = viewDistance ? texture( g.texture( viewDistance ) ) : null;
 		// The circle of confusion (0..1 of the widest blur) and the distance. One function per pass:
 		// a layout function shared by two shaders keeps the first one's uniform bindings.
 		const makeCocAt = () => Fn( ( [ q ]: [ V2 ] ) => {
@@ -1048,7 +1057,9 @@ export class Pipeline {
 			const satAmt = u.saturation.add( u.vibrance.mul( float( 1 ).sub( smoothstep( 0, 0.35, chroma.div( max( l2, 1e-3 ) ).mul( 0.5 ) ) ) ) ).add( u.highlightSat.mul( smoothstep( 0.6, 0.9, l2 ) ).mul( float( 1 ).sub( hot ) ) );
 			c.assign( max( mix( vec3( l2 ), c, satAmt ), vec3( 0 ) ) );
 			// The look (a uniform branch: 'realistic' skips it and keeps the grade above exactly).
-			const onSurface = surface ?? select( ( textureLoad( tD, ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) ) ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) ).toVar();
+			// (from the view distance where it is kept: a surface's lies below 9e4, the sky's is 1e5)
+			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
+			const onSurface = surface ?? select( tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).lessThan( 1e5 ) : ( textureLoad( tD, px ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) ).toVar();
 			If( u.lookOn.greaterThan( 0.5 ), () => {
 
 				c.assign( look( c, onSurface ) );
@@ -1371,8 +1382,8 @@ export class Pipeline {
 	private declarePasses(): void {
 
 		const g = this.graph;
-		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity } = this.resources;
-		if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity ] = this.declareTemporalScene();
+		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, viewDistance } = this.resources;
+		if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity, viewDistance ] = this.declareTemporalScene();
 		else {
 
 			g.addPass( 'opaque', 'scene', ( b ) => {
@@ -1411,11 +1422,14 @@ export class Pipeline {
 				};
 
 			} );
+			// (and the depth of field's view distance beside it: the attachments in the struct's order,
+			// the MRT only declares them)
 			g.addPass( 'surfaceResolve', 'quad', ( b ) => {
 
 				b.read( sceneDepth, 'samples' );
 				surfaceDepth = b.write( surfaceDepth );
-				return { label: 'depth & copy resolves', quad: this.surfaceQuad };
+				if ( viewDistance ) viewDistance = b.write( viewDistance );
+				return { label: 'depth & copy resolves', quad: this.surfaceQuad, mrt: viewDistance ? mrt( {} ) : null };
 
 			} );
 			// (the last pass into the scene target: its samples are resolved, then never read)
@@ -1436,18 +1450,9 @@ export class Pipeline {
 		// the sea fog: its bank map when due, the nearest depth and the reduced march (only while
 		// there is fog; the composite reads what they last drew)
 		const fogReads = this.air.passes( g, surfaceDepth );
-		// the depth of field's distances (without the depth of field its blur is mixed in at weight
-		// 0, so stale distances never show)
-		let { hdr, sharp, blur, viewDistance, display, easu, canvas, veilReactive, rainAir } = this.resources;
-		const distanceQuad = this.distanceQuad;
-		if ( viewDistance && distanceQuad ) g.addPass( 'viewDistance', 'quad', ( b ) => {
-
-			b.read( surfaceDepth );
-			viewDistance = b.write( viewDistance! );
-			return { label: 'tilt-shift blur', when: () => this.settings.dof > 0, whenLabel: 'dof > 0', quad: distanceQuad };
-
-		} );
-		// the light shafts: the open sky near the sun, and the rays marched over it
+		let { hdr, sharp, blur, display, easu, canvas, veilReactive, rainAir } = this.resources;
+		// the light shafts: the open sky near the sun, and the rays marched over it (while the sun is
+		// toward the view: the composite weighs them by `facing`, 0 otherwise)
 		const shaftReads = this.shafts.passes( g, surfaceDepth );
 		// what the composite reads: the scene (after the rain, which may be skipped), the nearest
 		// surface's depth, the sea fog (its passes run only in fog) and the light shafts
@@ -1456,7 +1461,7 @@ export class Pipeline {
 			b.readOptional( sceneColor );
 			b.read( surfaceDepth );
 			for ( const h of fogReads ) b.readOptional( h );
-			for ( const h of shaftReads ) b.read( h );
+			for ( const h of shaftReads ) b.readOptional( h );
 
 		};
 		// the composite of the air, fog, veil and shafts, rendered once
@@ -1506,15 +1511,15 @@ export class Pipeline {
 
 		} );
 		// the depth of field's half-resolution gather: its circle of confusion from the view distance
-		// (or the surface depth, inline-coc)
+		// (or the surface depth, inline-coc); only with the depth of field (without it the display
+		// mixes the blur in at weight 0, so what it last held never shows)
 		const blurQuad = this.blurQuad;
 		g.addPass( 'blur', 'quad', ( b ) => {
 
 			b.read( sharp );
-			if ( viewDistance ) b.readOptional( viewDistance );
-			else b.read( surfaceDepth );
+			b.read( viewDistance ?? surfaceDepth );
 			blur = b.write( blur );
-			return { label: 'tilt-shift blur', quad: blurQuad };
+			return { label: 'tilt-shift blur', when: () => this.settings.dof > 0, whenLabel: 'dof > 0', quad: blurQuad };
 
 		} );
 		// the look's diffusion glow, a bloom chain over the sharp image, while it shows
@@ -1533,10 +1538,10 @@ export class Pipeline {
 		g.addPass( 'display', 'quad', ( b ) => {
 
 			b.read( sharp );
-			b.read( blur );
+			b.readOptional( blur );
 			b.readOptional( glow );
-			b.read( surfaceDepth );
-			if ( viewDistance ) b.readOptional( viewDistance );
+			// (the sky test from the view distance where it is kept)
+			b.read( viewDistance ?? surfaceDepth );
 			display = b.write( display );
 			return { label: 'grade & look', quad: displayQuad };
 
@@ -1569,9 +1574,9 @@ export class Pipeline {
 					// (the grade's input: the sharp image, the depth of field's blur and distances, the
 					// look's glow)
 					b.read( sharp );
-					b.read( blur );
+					b.readOptional( blur );
 					b.read( surfaceDepth );
-					if ( viewDistance ) b.readOptional( viewDistance );
+					if ( viewDistance ) b.read( viewDistance );
 					b.readOptional( glow );
 					if ( rainAir ) {
 
@@ -1666,11 +1671,12 @@ export class Pipeline {
 	// to the overlay are the graph's jittered span), the motion vectors written beside the colour.
 	// The opaque and water passes draw with the scene MRT (sceneMRT), the rain and the storm's spray
 	// in the overlay pass with the overlay MRT, which keeps the motion of the surfaces under them
-	// (Motion.ts). Returns the scene colour's, the nearest surface's and the velocity's last versions.
-	private declareTemporalScene(): [ ResourceHandle, ResourceHandle, ResourceHandle ] {
+	// (Motion.ts). Returns the scene colour's, the nearest surface's, the velocity's and the view
+	// distance's last versions.
+	private declareTemporalScene(): [ ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle | null ] {
 
 		const g = this.graph;
-		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth } = this.resources;
+		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, viewDistance } = this.resources;
 		let velocity = this.resources.velocity!;
 		g.addPass( 'opaque', 'scene', ( b ) => {
 
@@ -1714,7 +1720,8 @@ export class Pipeline {
 
 			b.read( sceneDepth, 'samples' );
 			surfaceDepth = b.write( surfaceDepth );
-			return { label: 'depth & copy resolves', jittered: true, quad: this.surfaceQuad };
+			if ( viewDistance ) viewDistance = b.write( viewDistance );
+			return { label: 'depth & copy resolves', jittered: true, quad: this.surfaceQuad, mrt: viewDistance ? mrt( {} ) : null };
 
 		} );
 		// The rain and the spray over the finished scene: their colour blends as each material says,
@@ -1736,7 +1743,7 @@ export class Pipeline {
 		} );
 		// the nearest surface's depth, kept for the next frame
 		g.copyToPersistent( surfaceDepth, this.resources.surfaceDepthPrev! );
-		return [ sceneColor, surfaceDepth, velocity ];
+		return [ sceneColor, surfaceDepth, velocity, viewDistance ];
 
 	}
 

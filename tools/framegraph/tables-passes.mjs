@@ -79,11 +79,13 @@ export function declareToday( options = {} ) {
 		return { label: 'water' };
 
 	} );
+	// (and the depth of field's view distance beside it)
 	g.addPass( 'surfaceResolve', 'quad', ( b ) => {
 
 		b.read( h.sceneDepth, 'samples' );
 		h.surfaceDepth = b.write( h.surfaceDepth );
-		return { label: 'depth & copy resolves' };
+		if ( h.viewDistance ) h.viewDistance = b.write( h.viewDistance );
+		return { label: 'depth & copy resolves', mrt: h.viewDistance ? {} : null };
 
 	} );
 	g.addPass( 'rain', 'scene', ( b ) => {
@@ -120,26 +122,20 @@ export function declareToday( options = {} ) {
 		} );
 
 	}
-	if ( h.viewDistance ) g.addPass( 'viewDistance', 'quad', ( b ) => {
-
-		b.read( h.surfaceDepth );
-		h.viewDistance = b.write( h.viewDistance );
-		return { label: 'tilt-shift blur', when: () => true, whenLabel: 'dof > 0' };
-
-	} );
-	// the light shafts: the open sky near the sun, the rays marched over it
+	// the light shafts: the open sky near the sun, the rays marched over it (while the sun faces
+	// the view)
 	g.addPass( 'shaftsSource', 'quad', ( b ) => {
 
 		b.read( h.surfaceDepth );
 		h.shaftsSource = b.write( h.shaftsSource );
-		return { label: 'light shafts' };
+		return { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' };
 
 	} );
 	g.addPass( 'shaftsRays', 'quad', ( b ) => {
 
-		b.read( h.shaftsSource );
+		b.readOptional( h.shaftsSource );
 		h.shaftsRays = b.write( h.shaftsRays );
-		return { label: 'light shafts' };
+		return { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' };
 
 	} );
 	// what the composite reads: the scene after the rain, the surface depth, the sea fog and the shafts
@@ -154,8 +150,8 @@ export function declareToday( options = {} ) {
 
 		}
 		if ( h.fogBanks ) b.readOptional( h.fogBanks );
-		b.read( h.shaftsSource );
-		b.read( h.shaftsRays );
+		b.readOptional( h.shaftsSource );
+		b.readOptional( h.shaftsRays );
 
 	};
 	// the composite of air, fog, veil and shafts, rendered once into hdr
@@ -198,10 +194,9 @@ export function declareToday( options = {} ) {
 	g.addPass( 'blur', 'quad', ( b ) => {
 
 		b.read( h.sharp );
-		if ( h.viewDistance ) b.readOptional( h.viewDistance );
-		else b.read( h.surfaceDepth );
+		b.read( h.viewDistance ?? h.surfaceDepth );
 		h.blur = b.write( h.blur );
-		return { label: 'tilt-shift blur' };
+		return { label: 'tilt-shift blur', when: () => true, whenLabel: 'dof > 0' };
 
 	} );
 	// the look's glow, a bloom chain over the sharp image, while it shows
@@ -217,10 +212,9 @@ export function declareToday( options = {} ) {
 	g.addPass( 'display', 'quad', ( b ) => {
 
 		b.read( h.sharp );
-		b.read( h.blur );
+		b.readOptional( h.blur );
 		b.readOptional( h.diffusion );
-		b.read( h.surfaceDepth );
-		if ( h.viewDistance ) b.readOptional( h.viewDistance );
+		b.read( h.viewDistance ?? h.surfaceDepth );
 		h.display = b.write( h.display );
 		return { label: 'grade & look' };
 
@@ -337,11 +331,13 @@ export function declarePipeline( options = {} ) {
 		return { label: 'water' };
 
 	} );
+	// (and the depth of field's view distance beside it)
 	g.addPass( 'surfaceResolve', 'quad', ( b ) => {
 
 		b.read( h.sceneDepth, 'samples' );
 		h.surfaceDepth = b.write( h.surfaceDepth );
-		return { label: 'depth & copy resolves' };
+		if ( h.viewDistance ) h.viewDistance = b.write( h.viewDistance );
+		return { label: 'depth & copy resolves', mrt: h.viewDistance ? {} : null };
 
 	} );
 	g.addPass( 'rain', 'scene', ( b ) => {
@@ -371,17 +367,16 @@ export function declarePipeline( options = {} ) {
 	}
 	const fogReads = [ h.fogMarch, h.fogNearestDepth, h.fogBanks ].filter( Boolean );
 	// declarePasses: the post passes
-	if ( h.viewDistance ) g.addPass( 'viewDistance', 'quad', ( b ) => ( b.read( h.surfaceDepth ), h.viewDistance = b.write( h.viewDistance ), { label: 'tilt-shift blur', when: () => true, whenLabel: 'dof > 0' } ) );
 	// LightShafts.passes
 	const shaftReads = [];
-	g.addPass( 'shaftsSource', 'quad', ( b ) => ( b.read( h.surfaceDepth ), shaftReads[ 0 ] = b.write( h.shaftsSource ), { label: 'light shafts' } ) );
-	g.addPass( 'shaftsRays', 'quad', ( b ) => ( b.read( shaftReads[ 0 ] ), shaftReads[ 1 ] = b.write( h.shaftsRays ), { label: 'light shafts' } ) );
+	g.addPass( 'shaftsSource', 'quad', ( b ) => ( b.read( h.surfaceDepth ), shaftReads[ 0 ] = b.write( h.shaftsSource ), { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' } ) );
+	g.addPass( 'shaftsRays', 'quad', ( b ) => ( b.readOptional( shaftReads[ 0 ] ), shaftReads[ 1 ] = b.write( h.shaftsRays ), { label: 'light shafts', when: () => true, whenLabel: 'facing > 0' } ) );
 	const compositeReads = ( b ) => {
 
 		b.readOptional( h.sceneColor );
 		b.read( h.surfaceDepth );
 		for ( const x of fogReads ) b.readOptional( x );
-		for ( const x of shaftReads ) b.read( x );
+		for ( const x of shaftReads ) b.readOptional( x );
 
 	};
 	if ( h.hdr ) g.addPass( 'composite', 'quad', ( b ) => ( compositeReads( b ), h.hdr = b.write( h.hdr ), { label: 'composite (air, fog, veil)' } ) );
@@ -408,20 +403,18 @@ export function declarePipeline( options = {} ) {
 	g.addPass( 'blur', 'quad', ( b ) => {
 
 		b.read( h.sharp );
-		if ( h.viewDistance ) b.readOptional( h.viewDistance );
-		else b.read( h.surfaceDepth );
+		b.read( h.viewDistance ?? h.surfaceDepth );
 		h.blur = b.write( h.blur );
-		return { label: 'tilt-shift blur' };
+		return { label: 'tilt-shift blur', when: () => true, whenLabel: 'dof > 0' };
 
 	} );
 	g.addPass( 'diffusion', 'chain', ( b ) => ( b.read( h.sharp ), b.read( h.surfaceDepth ), h.diffusion = b.write( h.diffusion ), { label: 'look glow', when: () => true, whenLabel: 'look glow' } ) );
 	g.addPass( 'display', 'quad', ( b ) => {
 
 		b.read( h.sharp );
-		b.read( h.blur );
+		b.readOptional( h.blur );
 		b.readOptional( h.diffusion );
-		b.read( h.surfaceDepth );
-		if ( h.viewDistance ) b.readOptional( h.viewDistance );
+		b.read( h.viewDistance ?? h.surfaceDepth );
 		h.display = b.write( h.display );
 		return { label: 'grade & look' };
 
@@ -453,19 +446,18 @@ export const TODAY = [
 	{ name: 'depthResolve', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'linearDepth', R, 'RG', 'Float' ) ], depth: null, target: 'linearDepth|-' },
 	{ name: 'opaqueCopy', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'opaqueColor', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'opaqueColor|-' },
 	{ name: 'water', kind: 'scene', label: 'water', when: null, size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: true }, target: 'sceneColor|sceneDepth' },
-	{ name: 'surfaceResolve', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'surfaceDepth', R, 'Red', 'Float' ) ], depth: null, target: 'surfaceDepth|-' },
+	{ name: 'surfaceResolve', kind: 'quad', label: 'depth & copy resolves', when: null, size: R, writes: [ w( 'surfaceDepth', R, 'Red', 'Float' ), w( 'viewDistance', R, 'Red', 'Float' ) ], depth: null, target: 'surfaceDepth+viewDistance|-' },
 	{ name: 'rain', kind: 'scene', label: 'rain draw', when: 'rainVisible', size: R, writes: [ w( 'sceneColor', R, 'RGBA', 'HalfFloat', 4 ) ], depth: { ...w( 'sceneDepth', R, null, 'Float', 4 ), write: false }, target: 'sceneColor|sceneDepth' },
 	{ name: 'fogBank', kind: 'quad', label: 'composite (air, fog, veil)', when: 'fog && bankDue', size: 'fixed:2048x2048', writes: [ w( 'fogBanks', 'fixed:2048x2048', 'Red', 'HalfFloat' ) ], depth: null, target: 'fogBanks|-' },
 	{ name: 'fogDepth', kind: 'quad', label: 'composite (air, fog, veil)', when: 'fog', size: 'render:1:2:0', writes: [ w( 'fogNearestDepth', 'render:1:2:0', 'Red', 'Float' ) ], depth: null, target: 'fogNearestDepth|-' },
 	{ name: 'fogMarch', kind: 'quad', label: 'composite (air, fog, veil)', when: 'fog', size: 'render:1:2:0', writes: [ w( 'fogMarch', 'render:1:2:0', 'RGBA', 'HalfFloat' ) ], depth: null, target: 'fogMarch|-' },
-	{ name: 'viewDistance', kind: 'quad', label: 'tilt-shift blur', when: 'dof > 0', size: R, writes: [ w( 'viewDistance', R, 'Red', 'Float' ) ], depth: null, target: 'viewDistance|-' },
-	{ name: 'shaftsSource', kind: 'quad', label: 'light shafts', when: null, size: H, writes: [ w( 'shafts.source', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'shafts.source|-' },
-	{ name: 'shaftsRays', kind: 'quad', label: 'light shafts', when: null, size: H, writes: [ w( 'shafts.rays', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'shafts.rays|-' },
+	{ name: 'shaftsSource', kind: 'quad', label: 'light shafts', when: 'facing > 0', size: H, writes: [ w( 'shafts.source', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'shafts.source|-' },
+	{ name: 'shaftsRays', kind: 'quad', label: 'light shafts', when: 'facing > 0', size: H, writes: [ w( 'shafts.rays', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'shafts.rays|-' },
 	{ name: 'composite', kind: 'quad', label: 'composite (air, fog, veil)', when: null, size: R, writes: [ w( 'hdr', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'hdr|-' },
 	{ name: 'bloom', kind: 'chain', label: 'bloom', when: null, size: H, writes: [ w( 'bloom', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'bloom|-' },
 	{ name: 'glow', kind: 'chain', label: 'wide glow', when: null, size: H, writes: [ w( 'glow', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'glow|-' },
 	{ name: 'sharp', kind: 'quad', label: 'sharp (composite + blooms)', when: null, size: R, writes: [ w( 'sharp', R, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'sharp|-' },
-	{ name: 'blur', kind: 'quad', label: 'tilt-shift blur', when: null, size: H, writes: [ w( 'blur', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'blur|-' },
+	{ name: 'blur', kind: 'quad', label: 'tilt-shift blur', when: 'dof > 0', size: H, writes: [ w( 'blur', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'blur|-' },
 	{ name: 'diffusion', kind: 'chain', label: 'look glow', when: 'look glow', size: H, writes: [ w( 'diffusion', H, 'RGBA', 'HalfFloat' ) ], depth: null, target: 'diffusion|-' },
 	{ name: 'display', kind: 'quad', label: 'grade & look', when: null, size: R, writes: [ w( 'display', R, 'RGBA', 'Float' ) ], depth: null, target: 'display|-' },
 	{ name: 'output', kind: 'chain', label: 'output', when: '!upscaling', size: C, writes: [ w( 'canvas', C, null, null ) ], depth: null, target: 'canvas|-' },
@@ -478,13 +470,13 @@ export const TODAY_READS = {
 	opaque: [], depthResolve: [ 'sceneDepth@1:samples' ], opaqueCopy: [ 'sceneColor@1:sample' ],
 	water: [ 'opaqueColor@1:sample', 'linearDepth@1:sample' ], surfaceResolve: [ 'sceneDepth@2:samples' ],
 	rain: [ 'linearDepth@1:sample', 'surfaceDepth@1:sample' ], fogBank: [], fogDepth: [ 'surfaceDepth@1:sample' ],
-	fogMarch: [ 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?' ], viewDistance: [ 'surfaceDepth@1:sample' ],
-	shaftsSource: [ 'surfaceDepth@1:sample' ], shaftsRays: [ 'shafts.source@1:sample' ],
-	composite: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample', 'fogMarch@1:sample?', 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?', 'shafts.source@1:sample', 'shafts.rays@1:sample' ],
+	fogMarch: [ 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?' ],
+	shaftsSource: [ 'surfaceDepth@1:sample' ], shaftsRays: [ 'shafts.source@1:sample?' ],
+	composite: [ 'sceneColor@3:sample?', 'surfaceDepth@1:sample', 'fogMarch@1:sample?', 'fogNearestDepth@1:sample?', 'fogBanks@1:sample?', 'shafts.source@1:sample?', 'shafts.rays@1:sample?' ],
 	bloom: [ 'hdr@1:sample', 'surfaceDepth@1:sample' ], glow: [ 'hdr@1:sample', 'surfaceDepth@1:sample' ],
-	sharp: [ 'hdr@1:sample', 'bloom@1:sample', 'glow@1:sample' ], blur: [ 'sharp@1:sample', 'viewDistance@1:sample?' ],
+	sharp: [ 'hdr@1:sample', 'bloom@1:sample', 'glow@1:sample' ], blur: [ 'sharp@1:sample', 'viewDistance@1:sample' ],
 	diffusion: [ 'sharp@1:sample', 'surfaceDepth@1:sample' ],
-	display: [ 'sharp@1:sample', 'blur@1:sample', 'diffusion@1:sample?', 'surfaceDepth@1:sample', 'viewDistance@1:sample?' ],
+	display: [ 'sharp@1:sample', 'blur@1:sample?', 'diffusion@1:sample?', 'viewDistance@1:sample' ],
 	output: [ 'display@1:sample' ], easu: [ 'display@1:sample' ], upscaledOutput: [ 'FSR.easu@1:sample?' ],
 };
 
@@ -529,18 +521,17 @@ export const checks = [
 
 		const c = compilePipeline();
 		const rows = ( t ) => t.passes.map( ( p ) => [ p.pass, p.colors.map( ( x ) => `${ x.resource }:${ x.load }/${ x.store }${ x.resolve === null ? '' : x.resolve ? '/resolve' : '/no-resolve' }` ), p.depth && `${ p.depth.resource }:${ p.depth.load }/${ p.depth.store }`, p.rewrite ] );
-		const rainOn = c.ops( 'legacy', c.maskOf( [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'diffusion', 'output' ] ) );
+		const rainOn = c.ops( 'legacy', c.maskOf( [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'blur', 'diffusion', 'output' ] ) );
 		assert.deepEqual( rows( rainOn ), [
 			[ 'opaque', [ 'sceneColor:clear/store/resolve' ], 'sceneDepth:clear/store', false ],
 			[ 'depthResolve', [ 'linearDepth:clear/store' ], null, false ],
 			[ 'opaqueCopy', [ 'opaqueColor:clear/store' ], null, false ],
 			[ 'water', [ 'sceneColor:load/store/resolve' ], 'sceneDepth:load/store', false ],
-			[ 'surfaceResolve', [ 'surfaceDepth:clear/store' ], null, false ],
+			[ 'surfaceResolve', [ 'surfaceDepth:clear/store', 'viewDistance:clear/store' ], null, false ],
 			[ 'rain', [ 'sceneColor:load/discard/resolve' ], 'sceneDepth:load/discard', true ],
 			[ 'fogBank', [ 'fogBanks:clear/store' ], null, false ],
 			[ 'fogDepth', [ 'fogNearestDepth:clear/store' ], null, false ],
 			[ 'fogMarch', [ 'fogMarch:clear/store' ], null, false ],
-			[ 'viewDistance', [ 'viewDistance:clear/store' ], null, false ],
 			[ 'shaftsSource', [ 'shafts.source:clear/store' ], null, false ],
 			[ 'shaftsRays', [ 'shafts.rays:clear/store' ], null, false ],
 			[ 'composite', [ 'hdr:clear/store' ], null, false ],
@@ -553,7 +544,7 @@ export const checks = [
 			[ 'output', [ 'canvas:clear/store' ], null, false ],
 		] );
 		assert.equal( rainOn.rewrites, 1 );
-		const upscaled = c.ops( 'legacy', c.maskOf( [ 'rain', 'easu', 'upscaledOutput' ] ) );
+		const upscaled = c.ops( 'legacy', c.maskOf( [ 'rain', 'shaftsSource', 'shaftsRays', 'blur', 'easu', 'upscaledOutput' ] ) );
 		assert.deepEqual( upscaled.running.slice( - 10 ), [ 'shaftsSource', 'shaftsRays', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'easu', 'upscaledOutput' ] );
 		assert.equal( upscaled.rewrites, 1, 'the upscale rewrites nothing' );
 		assert.equal( c.ops( 'legacy', c.maskOf( [ 'output' ] ) ).rewrites, 0, 'without the rain nothing is discarded (the water\'s stores stay)' );
@@ -569,11 +560,11 @@ export const checks = [
 		const c = compileToday();
 		compareTable( c.summary(), TODAY );
 		assert.deepEqual( c.passNames, ALL );
-		assert.deepEqual( c.conditional.map( ( i ) => c.decl.passes[ i ].name ), [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'diffusion', 'output', 'easu', 'upscaledOutput' ] );
+		assert.deepEqual( c.conditional.map( ( i ) => c.decl.passes[ i ].name ), [ 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'shaftsSource', 'shaftsRays', 'blur', 'diffusion', 'output', 'easu', 'upscaledOutput' ] );
 		assert.deepEqual( c.summary().targets.map( ( t ) => [ t.key, t.size, t.samples ] ), [
-			[ 'sceneColor|sceneDepth', R, 4 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'surfaceDepth|-', R, 1 ],
+			[ 'sceneColor|sceneDepth', R, 4 ], [ 'linearDepth|-', R, 1 ], [ 'opaqueColor|-', R, 1 ], [ 'surfaceDepth+viewDistance|-', R, 1 ],
 			[ 'fogBanks|-', 'fixed:2048x2048', 1 ], [ 'fogNearestDepth|-', 'render:1:2:0', 1 ], [ 'fogMarch|-', 'render:1:2:0', 1 ],
-			[ 'viewDistance|-', R, 1 ], [ 'shafts.source|-', H, 1 ], [ 'shafts.rays|-', H, 1 ], [ 'hdr|-', R, 1 ], [ 'bloom|-', H, 1 ], [ 'glow|-', H, 1 ], [ 'sharp|-', R, 1 ], [ 'blur|-', H, 1 ],
+			[ 'shafts.source|-', H, 1 ], [ 'shafts.rays|-', H, 1 ], [ 'hdr|-', R, 1 ], [ 'bloom|-', H, 1 ], [ 'glow|-', H, 1 ], [ 'sharp|-', R, 1 ], [ 'blur|-', H, 1 ],
 			[ 'diffusion|-', H, 1 ], [ 'display|-', R, 1 ], [ 'canvas|-', C, 1 ], [ 'FSR.easu|-', C, 1 ],
 		] );
 		assert.equal( c.jitterSpan, null );
@@ -611,12 +602,12 @@ export const checks = [
 		const cases = [
 			[ 'full-fog', { fogScale: 1 }, without( 'fogDepth', 'fogMarch' ) ],
 			[ 'no-bank', { bankSize: 0 }, without( 'fogBank' ) ],
-			[ 'inline-coc', { dofDistance: false }, without( 'viewDistance' ) ],
+			[ 'inline-coc', { dofDistance: false }, ALL ],
 			[ 'three-fsr', { fsrPort: false }, [ ...without( 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
 			// (store-scene changes the ops only)
 			[ 'inline-composite', { compositeOnce: false }, without( 'composite' ) ],
 			[ 'one bloom chain (low)', { bloomChains: 1 }, without( 'glow' ) ],
-			[ 'legacy (all)', { fogScale: 1, bankSize: 0, dofDistance: false, fsrPort: false, compositeOnce: false }, [ ...without( 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'composite', 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
+			[ 'legacy (all)', { fogScale: 1, bankSize: 0, dofDistance: false, fsrPort: false, compositeOnce: false }, [ ...without( 'fogBank', 'fogDepth', 'fogMarch', 'composite', 'easu', 'upscaledOutput' ), 'upscaledOutputThree' ] ],
 		];
 		for ( const [ name, options, passes ] of cases ) {
 
@@ -633,13 +624,14 @@ export const checks = [
 		const c = compileToday();
 		const run = ( ...enabled ) => c.running( c.maskOf( enabled ) ).map( ( i ) => c.decl.passes[ i ].name );
 		const base = [ 'opaque', 'depthResolve', 'opaqueCopy', 'water', 'surfaceResolve' ];
-		assert.deepEqual( run( 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'output' ), [ ...base, 'rain', 'fogBank', 'fogDepth', 'fogMarch', 'viewDistance', 'shaftsSource', 'shaftsRays', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'output' ] );
-		assert.deepEqual( run( 'fogDepth', 'fogMarch', 'viewDistance', 'output' ), [ ...base, 'fogDepth', 'fogMarch', 'viewDistance', 'shaftsSource', 'shaftsRays', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'output' ], 'rain off' );
-		assert.deepEqual( run( 'rain', 'viewDistance', 'output' ), [ ...base, 'rain', 'viewDistance', 'shaftsSource', 'shaftsRays', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'output' ], 'fog off' );
-		assert.deepEqual( run( 'rain', 'output' ), [ ...base, 'rain', 'shaftsSource', 'shaftsRays', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'output' ], 'fog off, dof 0' );
-		assert.deepEqual( run( 'viewDistance', 'easu', 'upscaledOutput' ), [ ...base, 'viewDistance', 'shaftsSource', 'shaftsRays', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'easu', 'upscaledOutput' ], 'upscaling' );
-		assert.deepEqual( run( 'rain', 'diffusion', 'output' ), [ ...base, 'rain', 'shaftsSource', 'shaftsRays', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'diffusion', 'display', 'output' ], 'the look glow' );
-		assert.equal( c.fullMask, 511 );
+		const shafts = [ 'shaftsSource', 'shaftsRays' ];
+		assert.deepEqual( run( 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, 'blur', 'output' ), [ ...base, 'rain', 'fogBank', 'fogDepth', 'fogMarch', ...shafts, 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'output' ] );
+		assert.deepEqual( run( 'fogDepth', 'fogMarch', 'blur', 'output' ), [ ...base, 'fogDepth', 'fogMarch', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'output' ], 'rain off, the sun away' );
+		assert.deepEqual( run( 'rain', ...shafts, 'blur', 'output' ), [ ...base, 'rain', ...shafts, 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'output' ], 'fog off' );
+		assert.deepEqual( run( 'rain', 'output' ), [ ...base, 'rain', 'composite', 'bloom', 'glow', 'sharp', 'display', 'output' ], 'fog off, dof 0, the sun away' );
+		assert.deepEqual( run( 'blur', 'easu', 'upscaledOutput' ), [ ...base, 'composite', 'bloom', 'glow', 'sharp', 'blur', 'display', 'easu', 'upscaledOutput' ], 'upscaling' );
+		assert.deepEqual( run( 'rain', 'blur', 'diffusion', 'output' ), [ ...base, 'rain', 'composite', 'bloom', 'glow', 'sharp', 'blur', 'diffusion', 'display', 'output' ], 'the look glow' );
+		assert.equal( c.fullMask, 2047 );
 
 	} ],
 
