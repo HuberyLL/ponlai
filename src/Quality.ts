@@ -194,7 +194,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		aa: 'msaa',
 		taa: { ...TAA },
 		render: { dynamic: { max: 2, baselineShare: 2 / 3, floorShare: 0.5, step: 0.05 } },
-		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full', fftAnisotropy: 8 },
+		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 36, bloomChains: 2 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH, water: PCSS_HIGH },
 		grass: { lawnBlades: [ 16, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockFloor: 0.5, tussockSegments: 4, thinTufts: true, canopyPerVertex: false, minWidth: 2 },
@@ -215,7 +215,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		// TAAU's sharpening one RCAS stop softer than high's (higher is softer)
 		taa: { ...TAA, sharpness: { taa: TAA.sharpness.taa, taau: [ 2.0, 1.5 ] } },
 		render: { budget: 1600 * 900 },
-		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 6, stormFoam: 'full', fftAnisotropy: 8 },
+		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048, dofTaps: 24, bloomChains: 2 },
 		shadow: { surface: PCSS_MEDIUM, vegetation: BILINEAR, water: PCSS_MEDIUM },
 		grass: { lawnBlades: [ 12, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockFloor: 0.5, tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },
@@ -237,7 +237,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		render: { budget: 1280 * 720 },
 		// (one bloom chain veiled a golden-hour island in glow, and the merged storm foam turned
 		// the crests' streaks into scattered lace: both kept as on high)
-		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 8 },
+		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, refractionSteps: 6, refractionRefine: 4, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024, dofTaps: 16, bloomChains: 2 },
 		shadow: { surface: BILINEAR, vegetation: BILINEAR, water: BILINEAR },
 		grass: { lawnBlades: [ 8, 8, 4 ], bladeBands: [ 25, 45, 70 ], tussockFloor: 0.5, tussockSegments: 3, thinTufts: false, canopyPerVertex: true, minWidth: 2 },

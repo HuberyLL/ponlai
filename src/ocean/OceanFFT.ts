@@ -103,7 +103,7 @@ export class OceanFFT {
 		spread = 0.82,
 		seed = 1234,
 		swell = {},
-		anisotropy = 8,
+		anisotropy = 4,
 	}: Partial<OceanParams> & { sizes?: number[]; swell?: Partial<SwellParams>; anisotropy?: number } = {} ) {
 
 		this.renderer = renderer;

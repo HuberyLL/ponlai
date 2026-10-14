@@ -296,14 +296,19 @@ export interface WaterInputs {
 //     reaches 0.15 + 0.25 (growth^steps - 1) / (growth - 1) metres: 158 m on high, 100 m for
 //     14 steps at x1.45 (14 at about x1.51 would keep the 158 m);
 //   refractionSteps, refractionRefine: the refraction's linear steps and bisection steps;
-//   columnSamples: samples of the water column's shadow march (both cross-faded sun maps at each);
+//   columnSamples: samples of the water column's shadow march (both cross-faded sun maps at each).
+//     Its cost is the lookups, not the march's arithmetic. 4 on high: against 8, a low view into
+//     the cliffs' shadow on the water changed by a few levels in under 0.5 % of its pixels, unseen
+//     side by side, and the island's views took about a tenth less time in the water pass;
 //   stormFoam: 'merged' reads the storm foam's mat and lace from one pattern fetch instead of
 //     three: the mat keeps only its first layer, and the lace takes the mat's coordinates, so it
 //     is no longer drawn out along the wind. The streaks keep their own fetch (they need
 //     coordinates stretched along the wind), so 'merged' saves two of the five fetches;
 //   fftAnisotropy: the FFT output targets' anisotropic filtering (read by OceanFFT, not here; its
-//     six fetches per pixel): 8 keeps the open sea's grazing view sharp, lower blurs it toward
-//     the horizon, and on the island's views, which look down, it costs nothing.
+//     six fetches per pixel). It costs only at grazing angles: the island's views, which look
+//     down, take no time for it. 4 on high: against 8 it changed under 2 % of the horizon view's
+//     pixels, unseen side by side, for about a twelfth of that view's water pass; 2 dulled the
+//     far glitter (a tenth of the pixels).
 export interface WaterQuality {
 	ssrRays: 1 | 2;
 	ssrSteps: number;
@@ -316,7 +321,7 @@ export interface WaterQuality {
 }
 
 // High's values, today's image; the tiers' values are in Quality.ts.
-export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 8, stormFoam: 'full', fftAnisotropy: 8 };
+export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, refractionSteps: 8, refractionRefine: 5, columnSamples: 4, stormFoam: 'full', fftAnisotropy: 4 };
 
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
 // its plants and its people. A box around them, from the land's box (so it grows with the island):
