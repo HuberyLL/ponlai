@@ -37,7 +37,10 @@ import { SUN_MAP_LAYER } from '../lighting/SunShadow.ts';
 //   same at every load and grow) lies below the share; within LEAF_FADE of it the leaf shrinks to
 //   its centre, so leaves leave one by one and never pop. The leaves kept grow by 1 / sqrt( keep )
 //   about their centres, so the plant covers about as much and keeps its colour (the grass's
-//   thinning and widening, Grass.ts, is the model). Bark and stalks stay whole.
+//   thinning and widening, Grass.ts, is the model). Bark and stalks stay whole. PLANT_LOD.keep
+//   is 0.45: at 0.3 single enlarged bright leaves showed in the plateau's shrubs from the game's
+//   camera, at 0.45 they do not, and the far plants still cost about 0.6 ms less than every leaf
+//   (the cost rises about 0.7 ms with each 0.15 of the share).
 // - The far mesh holds the bark, the stalks and the leaves ranked below PLANT_LOD.keep, the same
 //   vertices as the full geometry through an index of its own, and draws the plants from
 //   PLANT_LOD.far on; the near meshes draw the full index and the plants nearer than that. At
@@ -115,7 +118,7 @@ const LEAF_EDGE = 0.005;
 /** The plants' level of detail (see the header): a plant keeps all its leaves nearer the camera
  * than `near` (m, from its root), the share `keep` of them from `far` on, the share easing down
  * between; the near meshes draw a plant nearer than `far`, the far mesh from `far` on. */
-export const PLANT_LOD = { near: uniform( 40 ), far: uniform( 100 ), keep: 0.3 };
+export const PLANT_LOD = { near: uniform( 40 ), far: uniform( 100 ), keep: 0.45 };
 // A leaf shrinks to nothing over this much of the share as it drops out, so no leaf pops; leaf
 // ranks lie below 1 - LEAF_FADE, so a plant at the share 1 keeps every leaf whole.
 const LEAF_FADE = 0.1;
@@ -701,7 +704,7 @@ const siteKey = ( sites: Float32Array, k: number ) => Array.prototype.join.call(
 export interface PlantCell { start: number; count: number; farStart: number; farCount: number; box: THREE.Box3; bounds: THREE.Box3 }
 
 // What a plant may be drawn beyond its vertices' box (m): a gale's bend (as the bounding sphere's
-// room) and a leaf grown by the far share, 1 / sqrt( 0.3 ) of a leaf's half length.
+// room) and a leaf grown by the far share, 1 / sqrt( 0.45 ) of a leaf's half length.
 const DRAWN_ROOM = 0.75;
 
 /** The merged geometry of a land's plants (null: none) with every leaf, the far mesh's geometry
