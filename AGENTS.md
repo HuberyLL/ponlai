@@ -142,16 +142,29 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 
 - Shaders are written in TSL only (no raw WGSL or GLSL strings). Helpers called from several
   places are `Fn( ... ).setLayout( ... )`, so they compile to one shader function each.
-- Paused frames are exactly repeatable: everything animated is a function of the scene clock, the
-  weather and integrated state (wind travel, fog time), never of the path taken to get there.
-  A scene jump (`establishScene` in `main.ts`) draws the frame a fresh load of the same query
-  draws: state a scene leaves behind (a cache, a history, a size that only grows, a window that
-  follows the camera) is cleared there (`tools/verify-scene-jump.mjs`). Captures and probes depend
-  on it. Under the temporal modes a paused page shows its rest image, its own jitter sequence
-  averaged once converged (`TemporalRest.ts`), so it does not depend on the frames before either.
-  Temporal AA modes are compared within a tolerance, not byte
-  for byte: the GPU splits render passes on its own, which moves a few samples, and the temporal
-  rest freezes that (`tools/parity/README.md`).
+- Simulation and generation are deterministic and path-independent: the world, its growth, the
+  weather, the wind and every integrated state (wind travel, fog time) are functions of the land,
+  the seeds, the scene clock and the weather, never of the path taken to get there or of the
+  thread count. A grown page holds the world a fresh load of its land holds, and a scene jump
+  (`establishScene` in `main.ts`) the scene a fresh load of the same query holds.
+- Rendering may keep history-dependent effects (a temporal resolve, exposure adaptation, lighting
+  or fog accumulated over frames, vegetation that responds to what passes through it, a per-frame
+  physics simulation) when each one meets three conditions: a scene jump clears its history, as it
+  clears all state a scene leaves behind (a cache, a history, a size that only grows, a window that
+  follows the camera: `tools/verify-scene-jump.mjs`); on a still scene it converges to the same
+  image whatever came before, or it can be frozen or turned off in the test mode; and outside the
+  test mode its frames are compared within a tolerance (`tools/parity/README.md`, Temporal
+  tolerance). Its per-frame update reads the scene clock's step, never the wall clock, so a stepped
+  clip repeats.
+- The test mode is a paused page under high's MSAA with every history-dependent effect frozen or
+  off, shot once the page's `settled` signal holds (`src/post/Settled.ts`). There a paused frame is
+  exactly repeatable and equals a fresh load's, and refactors are checked byte for byte (the parity
+  MSAA sets, `tools/verify-scene-jump.mjs`, `tools/verify-growth-swap.mjs`). Under the temporal
+  modes a paused page shows its rest image, its own jitter sequence averaged once converged
+  (`TemporalRest.ts`), compared within the tolerance. A new history-dependent effect keeps
+  `settled` false until it has converged, and the test mode's one shared switch, which the
+  capture, parity and verify tools set by default, freezes or turns it off (`docs/tools.md`, Test
+  mode).
 - Everything generated for the island is generic, because the island grows one piece at a time
   (`docs/game-design.md`, "How the island grows"): it derives from the land's footprint, the
   island's SDF and noise fields with fixed seeds (hashes of position, or random streams seeded per
@@ -172,7 +185,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   order the workers finished in (`ChunkMerge.ts`, `World.ts`).
 - The island grows in place (`Growth.ts`): a Grow swaps in only the changed chunks in one frame, and
   every dependent of the land's shape follows it, the same function of the version as at load (a
-  grown page draws a page loaded on that land bit for bit, paused: `tools/verify-growth-swap.mjs`).
+  grown page draws a page loaded on that land bit for bit in the test mode:
+  `tools/verify-growth-swap.mjs`).
   Anything new that depends on the land's shape joins the swap (`GrowthPage`, a vegetation kind's
   `growth` in `vegetation/Registry.ts`, and main.ts's `onSwap`), and work it needs on the main thread goes into the preparation's idle-time steps, never
   into the swap's frame. A step takes a few tenths of a millisecond (a generator yielding inside its

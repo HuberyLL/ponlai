@@ -3,6 +3,7 @@
 Paused captures of a fixed set of views, and a per-view diff against a reference set: the check
 that a refactor leaves the image as it was (pixel for pixel, or within the reference's own
 repeatability), and 1:1 crops of named subjects for judging a change that is meant to show.
+MSAA sets are captured in the test mode (`docs/tools.md`, Test mode), where the exact rules hold.
 
 - `views.mjs`: the views (camera, weather, time) and their crop anchors.
 - `capture-set.mjs`: captures a set through `tools/capture.mjs`.
@@ -567,7 +568,7 @@ with the view's full query (the common part and the view's own), waits for a fra
 then its readiness and the shot.
 
 `tools/verify-scene-jump.mjs` is that check, and the regression probe for anything that adds state a
-jump must clear (AGENTS.md: paused frames):
+jump must clear (AGENTS.md, Rules for every change: a scene jump clears every rendering history):
 
 ```sh
 node tools/verify-scene-jump.mjs <baseUrl> <ref> --fresh                     # fresh loads

@@ -253,6 +253,34 @@ Game:
   `addIslander()`, `save` and `load` (a save of another piece count loads only with the page);
   `.sim.comingLand` holds the next piece's cells once the page has it.
 
+## Test mode
+
+The rule (AGENTS.md, Rules for every change): simulation and generation are deterministic and
+path-independent; rendering may keep history-dependent effects that a scene jump clears, that
+converge on a still scene (or are frozen or turned off in the test mode) and that are compared
+within a tolerance; the test mode keeps the byte-for-byte checks valid.
+
+- The test mode today: `paused` in the query, high's default `aa=msaa`, the shot taken once
+  `__THREE_GAME_DIAGNOSTICS__.settled` holds (capture.mjs's readiness). Every capture, parity and
+  verify tool already loads its pages this way, so their exact checks hold as their headers say.
+  The page's only history-dependent rendering effects are the temporal resolve (`aa=taa|taau|gt`,
+  frozen by its rest image, `TemporalRest.ts`, and compared within the temporal tolerance) and the
+  states that settle on their own on a still scene (the clouds' view, the sky's bakes, the
+  refracted sun's map, the fog's bank), which `settled` waits for.
+- A new history-dependent effect:
+  - `establishScene` (`src/main.ts`) clears its history; `tools/verify-scene-jump.mjs` checks it;
+  - it reports itself to `settled` (main.ts `pending`, or the rest's signature) until it has
+    converged on a still scene, or it is frozen or turned off in the test mode;
+  - the first such effect adds the test mode's one switch, a load-time query option every such
+    effect reads (frozen or off), and the capture, parity and verify tools set it by default, with
+    an option to leave it out; later effects read the same switch;
+  - a Grow does not clear rendering history (`tools/verify-growth-swap.mjs` shoots its first view
+    without a jump), so the effect is frozen or off under the switch there, or the swap resets it;
+  - its module joins `WATCH.motion` in `tools/parity/carry.mjs` when its paths are not already
+    there: with it frozen or off, the paused set no longer shows it, only the clips do;
+  - its frames outside the test mode (live, clips) are compared within a tolerance, as the
+    temporal modes' are (`tools/parity/tolerance.py`), unless they repeat pixel for pixel.
+
 ## Captures
 
 `node tools/capture.mjs <name> [--w 1672 --h 941] [--q "paused&t=12&dpr=1"] [--eval js|@file]...
