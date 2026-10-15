@@ -1747,6 +1747,14 @@ export class Clouds {
 	/** Drift the clouds by the surface wind's integrated displacement (metres downwind; Wind.ts
 	 * `displacement`): a function of the wind's state alone, so a paused frame and a seek draw the
 	 * same sky. Set `cirrusAxis` first: the cirrus' shift is kept in its fibres' frame. */
+	/** Each layer's sampling offset before wrapping, from the displacement setDrift was last given:
+	 * the layer moves by minus its change (the wind probe's W5 reads the drifts off these). */
+	layerOffsets(): { cumulus: THREE.Vector2; cirrus: THREE.Vector2 } {
+
+		return { cumulus: driftOffset( this.displacement, LOW_DRIFT, LOW_VEER ), cirrus: driftOffset( this.displacement, HIGH_DRIFT, UPPER_VEER ) };
+
+	}
+
 	setDrift( displacement: THREE.Vector2 ): void {
 
 		this.displacement.copy( displacement );

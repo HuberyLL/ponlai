@@ -819,8 +819,8 @@ export class Sky {
 	/** Advance the cloud field for this frame: wind, slow evolution and the view from `camera`,
 	 * whose drawing buffer is `width` by `height` pixels. The clouds drift by the surface wind's
 	 * integrated displacement (`shared.wind.displacement`, Clouds.setDrift), at their own rates
-	 * aloft; `_surfaceOffset` (the wind's own `cloudOffset`) is no longer read. */
-	updateClouds( camera: THREE.PerspectiveCamera, width: number, height: number, _surfaceOffset: THREE.Vector2, windDirection: THREE.Vector2, time: number ): void {
+	 * aloft. */
+	updateClouds( camera: THREE.PerspectiveCamera, width: number, height: number, windDirection: THREE.Vector2, time: number ): void {
 
 		if ( ! this.clouds.ready ) return;
 		this.viewCamera = camera;

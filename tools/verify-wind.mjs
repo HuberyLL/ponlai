@@ -9,14 +9,11 @@ import { debugFlags } from '../src/debug/DebugFlags.ts';
 const near = ( a, b, tolerance = 1e-9 ) => assert.ok( Math.abs( a - b ) <= tolerance, `${ a } != ${ b }` );
 const wind = new Wind( createWindUniforms(), { time: 12 } );
 const start = wind.uniforms.displacement.value.clone();
-const offset = wind.uniforms.cloudOffset.value.clone();
 wind.update( 0, 5.2 );
 assert.ok( wind.uniforms.displacement.value.equals( start ), 'A preset change while paused must not move the air' );
-assert.ok( wind.uniforms.cloudOffset.value.equals( offset ), 'A preset change while paused must not teleport clouds' );
 wind.update( 0.1, 5.2 );
 assert.ok( wind.uniforms.displacement.value.distanceTo( start ) > 0 );
 assert.ok( wind.uniforms.displacement.value.dot( wind.uniforms.direction.value ) > 0 );
-assert.ok( wind.uniforms.cloudOffset.value.dot( wind.uniforms.direction.value ) < 0, 'Density coordinates advect against physical travel' );
 
 const run = ( step ) => {
 
@@ -34,11 +31,9 @@ const run = ( step ) => {
 };
 const coarse = run( 0.05 ), fine = run( 0.01 );
 assert.ok( coarse.uniforms.displacement.value.distanceTo( fine.uniforms.displacement.value ) < 1e-6 );
-assert.ok( coarse.uniforms.cloudOffset.value.distanceTo( fine.uniforms.cloudOffset.value ) < 1e-7 );
 assert.ok( coarse.uniforms.oceanGain.value.toArray().every( ( gain ) => gain > 0 && gain < 1.4 ) );
 wind.reset( { time: 12 } );
 assert.ok( wind.uniforms.displacement.value.equals( start ), 'Explicit fixed-time reset must reproduce startup' );
-assert.ok( wind.uniforms.cloudOffset.value.equals( offset ), 'Explicit fixed-time reset must reproduce startup' );
 for ( const invalid of [ NaN, Infinity, - 1 ] ) assert.throws( () => wind.update( invalid ), RangeError );
 for ( const invalid of [ NaN, 0.9 ] ) assert.throws( () => wind.update( 0, 3.8, 40, invalid ), RangeError );
 // Every preset gives the wind its three numbers, and the parts read them from Wind alone.
