@@ -1027,7 +1027,7 @@ probe eval of one's own.
   `tools/verify-cache.mjs`.
 - `tools/verify-storage-realloc.mjs` (GPU, headless, shared lock; it serves its own page from a
   Vite server over the repository) checks what three's WebGPU backend does with storage buffers,
-  for pools that outgrow their capacity (the meadow's, `GrassCull.ts`): rewritten in place and
+  for pools that outgrow their capacity (the meadow's, `vegetation/VegetationCull.ts`): rewritten in place and
   replaced by larger ones (a storage node's new `value`), under a compute kernel and an instanced
   draw, counting the pipelines, shader modules and bind groups the device creates and checking
   the results. Run it again after a three upgrade.

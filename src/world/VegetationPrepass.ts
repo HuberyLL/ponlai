@@ -132,7 +132,8 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 	for ( const root of roots ) root.traverse( ( object ) => {
 
 		const mesh = object as THREE.Mesh;
-		if ( ! mesh.isMesh || Array.isArray( mesh.material ) ) return;
+		// (a mesh off the view's layer, a caster of the sun's map alone, draws no depth there)
+		if ( ! mesh.isMesh || Array.isArray( mesh.material ) || ! mesh.layers.isEnabled( 0 ) ) return;
 		// (`alphaToCoverage` is off under the temporal modes: the vegetation's tag finds the same
 		// meshes there, the grass, bushes, plants and rim leaves)
 		const material = mesh.material as THREE.Material;
@@ -163,6 +164,8 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		depth.name = mesh.name + '-depth';
 		// (the rain's collision bake, RainCollision.ts, leaves the copies out: they print the same shape)
 		depth.userData.prepassCopy = true;
+		// a field the plants' shader reads per object (Plants.ts `farDraw`), fixed for the mesh
+		depth.userData.plantsFar = mesh.userData.plantsFar;
 		depth.frustumCulled = mesh.frustumCulled;
 		depth.castShadow = false;
 		depth.receiveShadow = false;

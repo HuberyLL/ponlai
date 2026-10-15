@@ -54,11 +54,17 @@ art decision changes; reference images stay out of the repository.
   notch whose walls hold no lip runs bare longer), of uneven density and mixed lengths, under a
   mounded leaf clump at the lip; the lowest quarter of the cliff above the sea stays bare. The
   meadow's sod curls a little over the lip as a ragged turf skirt.
-- The meadow is a lawn: dense, even, thin straight blades of one height, standing nearly upright and
-  bending with the wind together. One grass colour, a bright, soft, slightly cool and muted green:
-  the gaps between blades a deeper, cooler green (never near black), the tips lighter and
-  yellow-green where the sun shines through them, with a faint gloss along the blades; only a
-  gentle, broad swing of its value; no clumps, tall islands or bare patches. Inside the grass there are no hard shadows, only an even darkening toward the ground;
+- The meadow is a lawn, even as a whole and every blade its own: dense, sword-shaped blades, wide
+  to high up and tapering to a point, standing nearly upright but each a little taller or shorter,
+  turned and leaning its own way with a slight arc, so they cross rather than look combed; they
+  bend with the wind together. Each blade is folded along its midrib, one half lit and the other
+  shaded, with a thin lighter edge, and differs a little in value and tint (now and then a yellower
+  or a deeper green), all of it far finer than any patch, so the lawn's average stays one colour.
+  One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
+  over the blades, which reads as plastic): the gaps between blades a deeper, cooler green (never
+  near black), the tips lighter and yellow-green where the sun shines through them; only a gentle,
+  broad swing of its value; no clumps, tall islands or bare patches, and no pattern of dots on the
+  blades. Inside the grass there are no hard shadows, only an even darkening toward the ground;
   the shade of bushes and trees lies on it soft and light, and cloud shadows pass over the whole
   island as one soft gradient. The turf under the blades is the deeper green of their lower part,
   so from afar the meadow reads as one smooth carpet. By night the lawn is a dark blue-green, its

@@ -80,7 +80,9 @@ packages, into `dist/licenses/`.
   - Techniques without code: the meadow's blades thinned by distance in `src/world/Grass.ts`
     (`tuftLod`) follow the tier fade of `src/world/vegetation/GrassField.js` (each blade narrowing
     to nothing over a short distance of its own while the kept ones widen so that the blade count
-    times the width holds); written for this project's tufts, culling and coverage rules.
+    times the width holds), and its blades kept whole rather than partly covered (each widened
+    blade drawn solid as far as its coverage stays above its own hash, `grassMaterial`), after the
+    same file's opaque blades; written for this project's tufts, culling and coverage rules.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
 ### three-geospatial
@@ -461,8 +463,8 @@ comment where it is used.
   overexposed, defocused exposure of the same view, 1980s), as a blurred copy of the highlights added
   back over the image (`src/post/Pipeline.ts`). Its hue-selective colour follows the secondary
   (HSL-keyed) correction of colour grading, and its warm / cool split the photographic split tone.
-- Grass blades kept a minimum width on screen with their coverage lowered to match (alpha to
-  coverage), so thin blades stop crawling under camera motion: Emil Persson, *Phone-wire AA*
+- Grass blades kept a minimum width on screen with their coverage lowered to match (drawn as
+  whole blades), so thin blades stop crawling under camera motion: Emil Persson, *Phone-wire AA*
   (2012 demo and write-up on [humus.name](http://www.humus.name/)).
 - Sharp cliff edges on the island mesh (vertices placed at the least-squares point of the edge
   crossings' tangent planes): Tao Ju, Frank Losasso, Scott Schaefer and Joe Warren,

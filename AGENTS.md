@@ -93,16 +93,17 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   shapes and surface nets (`WorldShapes.ts`), the
   cliffs (`Cliff.ts`), the submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as
   tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`,
-  `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled by
-  `GrassCull.ts`), flowers, the rim bushes (`FoliageSites.ts`, `Foliage.ts`), the plateau's shrubs and small trees (sited on the page off the walking loop by
-  `PlantSites.ts`, grown each from its seed and merged into one mesh by `Plants.ts`), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
+  `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled on the GPU
+  by `vegetation/VegetationCull.ts`), flowers, the rim bushes (`FoliageSites.ts`, `Foliage.ts`), the plateau's shrubs and small trees (sited on the page off the walking loop by
+  `PlantSites.ts`, grown each from its seed and merged into one geometry by `Plants.ts`, its far plants drawn with a share of their leaves), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
   vegetation's depth prepass
   (`VegetationPrepass.ts`); what the vegetation's materials share in `src/world/vegetation/`: the
-  material factory every plant kind but the grass builds with (`Material.ts`), the coverage paths
+  material factory every plant kind builds with (`Material.ts`), the coverage paths
   and the vegetation tag (`Coverage.ts`), the folded leaf's textures (`LeafTexture.ts`), the
-  instance pool (`Instances.ts`), the wind's deforms and each kind's wind numbers (`Deform.ts`), and
-  the registry of the plant kinds the page's vegetation lists and the growth read (`Registry.ts`;
-  the grass's entry in `GrassKind.ts`).
+  instance pool (`Instances.ts`), the GPU cull of a storage-instanced kind, its payload declared by
+  the kind (`VegetationCull.ts`, the meadow's), the wind's deforms and each kind's wind numbers
+  (`Deform.ts`), and the registry of the plant kinds the page's vegetation lists and the growth
+  read (`Registry.ts`; each kind's entry exported by its own module).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the air/water interface, sky occlusion, the meadow's canopy light.
 - `src/materials/`: procedural textures, the terrain (`TerrainMaterial.ts`), wet surfaces.
@@ -182,7 +183,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   geometry of the same layout, uploaded ahead; instanced kinds hold a capacity whose shader does not
   change (three puts up to 1024 instance matrices in a uniform array of exactly the capacity:
   `Flowers.ts`, `Foliage.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels
-  reading their bounds from uniforms (`GrassCull.ts`); the world fields swap textures through the
+  reading their bounds from uniforms (`vegetation/VegetationCull.ts`); the world fields swap textures through the
   one base node each material samples them by (`WorldFields.ts`), and other passes keep their
   materials across rebakes (`RainCollision.ts`).
 - Changes need to hold in the kept weathers only (clear, fair, cloudy, overcast), and on high only
@@ -294,7 +295,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   re-uploads the whole buffer on every draw.
 - Programs that must produce bit-identical depth need `@invariant` on the clip position, which
   three r186 does not emit (`VegetationPrepass.ts`). A material that instances from storage
-  buffers holds the placed position in a `toVar` (`GrassCull.ts`).
+  buffers holds the placed position in a `toVar` (`vegetation/VegetationCull.ts`).
 - `renderer.compileAsync` alone does not compile what a render draws (target, MRT, side, call
   depth, a render context shared by targets of the same attachments): compile ahead through the
   frame graph's warm-up, a draw that shows only at times registered as a latent of its pass

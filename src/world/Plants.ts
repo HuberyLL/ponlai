@@ -1,36 +1,77 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, attribute, positionGeometry, positionLocal, normalViewGeometry, normalGeometry, vec3, float, mix, dot, step, mx_noise_float, smoothstep,
+	uniform, cameraPosition, length, clamp, select,
 } from 'three/tsl';
 import { wave } from '../weather/Wind.ts';
-import { mulberry32, type Rng } from './noise.ts';
+import { hash3i, mulberry32, type Rng } from './noise.ts';
 import { PLANT_WIND, mainBend } from './vegetation/Deform.ts';
 import type { VegetationKind } from './vegetation/Registry.ts';
-import { geometrySteps } from './Upload.ts';
+import { AttributeType, geometrySteps, uploadSteps } from './Upload.ts';
 import { leafTexture } from './vegetation/LeafTexture.ts';
 import { leafTransmission, vegetationMaterial } from './vegetation/Material.ts';
 import { boundsSteps, float32Steps, runSteps, Growing } from './Steps.ts';
 import { PLANT_STRIDE, PLANT_TREE, PLANT_ROUND, PLANT_BROADLEAF, PLANT_FERN } from './PlantSites.ts';
 import type { Shared } from '../shared.ts';
+import { SUN_MAP_LAYER } from '../lighting/SunShadow.ts';
 
 // The island top's shrubs and small trees (sited by PlantSites.ts). Every plant is grown once from
 // its own seed, so no two share a silhouette: round shrubs of small or larger leaves, broad-leaved
 // clumps, ferns and small trees with a forked trunk under clustered crowns. They use the rim
 // bushes' folded leaf (one texture, its coverage-preserving alpha mips) and their light model (the
-// vegetation's factory, vegetation/Material.ts, family 'leaf'), and merge into one mesh in world
-// space: one draw, one shadow draw, one depth prepass draw
-// (VegetationPrepass.ts). Per vertex: plantMotion ( wind phase, flags: stem 1 + bark 2, ambient
-// occlusion, direct light ), plantRoot ( the plant's root in world space ) and plantWind ( main
-// bend, branch and leaf-edge amplitudes in metres, the plant's height ): seven vertex buffers, one
-// draw may bind eight.
+// vegetation's factory, vegetation/Material.ts, family 'leaf'), and merge into one geometry in
+// world space. Per vertex: plantMotion ( wind phase, flags: stem 1 + bark 2, ambient occlusion,
+// direct light ), plantRoot ( the plant's root in world space ), plantWind ( main bend, branch and
+// leaf-edge amplitudes in metres, the plant's height ) and plantLeaf ( its leaf's centre in world
+// space and the leaf's rank, -1 on bark and stalks ): eight vertex buffers, the most one draw may
+// bind.
+//
+// Level of detail. The plants' cost is in their triangles (3.2 million on a grown island, half of
+// them drawn again by the depth prepass), not their pixels: the same at 1080p as at 1440p. With
+// every leaf collapsed to a point in the vertex stage (bark drawn) the opaque pass kept about 40 %
+// of the plants' cost, the vertices' share; so the far plants are drawn from a mesh that holds
+// fewer vertices, not only fewer triangles. As a function of the camera's position alone:
+// - A plant keeps the share keep( d ) of its leaves at d metres from its root to the camera:
+//   1 nearer than PLANT_LOD.near, PLANT_LOD.keep from PLANT_LOD.far on, easing between. A leaf is
+//   kept while its rank (a hash of the plant's seed and the leaf's number, so the subset is the
+//   same at every load and grow) lies below the share; within LEAF_FADE of it the leaf shrinks to
+//   its centre, so leaves leave one by one and never pop. The leaves kept grow by 1 / sqrt( keep )
+//   about their centres, so the plant covers about as much and keeps its colour (the grass's
+//   thinning and widening, Grass.ts, is the model). Bark and stalks stay whole. PLANT_LOD.keep
+//   is 0.45: at 0.3 single enlarged bright leaves showed in the plateau's shrubs from the game's
+//   camera, at 0.45 they do not, and the far plants still cost about 0.6 ms less than every leaf
+//   (the cost rises about 0.7 ms with each 0.15 of the share).
+// - The far mesh holds the bark, the stalks and the leaves ranked below PLANT_LOD.keep, the same
+//   vertices as the full geometry through an index of its own, and draws the plants from
+//   PLANT_LOD.far on; the near meshes draw the full index and the plants nearer than that. At
+//   PLANT_LOD.far a plant is the same in both (the same leaves, the same scale), so it changes
+//   meshes without a change in the image. A plant a mesh does not draw collapses to a point.
+// - The index is ordered by world-anchored cells of LOD_CELL metres (`cellOrder`): the near meshes
+//   (NEAR_RANGES of them, each one range of the index) draw only the runs of cells in view with a
+//   root nearer than PLANT_LOD.far, and the far mesh only from its first cell in view with a root at
+//   that distance or beyond to its last (`CellRanges`, set in each mesh's onBeforeRender for the
+//   camera that draws it, the depth prepass's copies sharing the geometry and so the range). A
+//   cell out of view draws no pixel, so the image stays a function of the camera's position; the
+//   culling spares the vertex stage the plants behind the camera, which the single mesh ran. An
+//   empty range draws a lone degenerate triangle at the index's end: WebGPU flags a draw of no
+//   index.
+// - Shadows: the sun's map is drawn only as the sun turns, so a caster that followed the camera
+//   would leave the shadows where the camera stood at the map's last redraw. The plants cast from
+//   a mesh of their own with every leaf, drawn only into the sun's map (SunShadow's
+//   SUN_MAP_LAYER, which the view's camera does not enable); the near and far meshes cast nothing.
+//   Casting the far mesh's share instead lightened the near plants' self-shadowing visibly, so
+//   the map costs what it did. The rain's collision map prints the caster too (the others are
+//   `rainBake: false`).
+// Material, layout and pipelines are shared by all of them: the near or far draw is a per-object
+// uniform (`farDraw`, `userData.plantsFar`, which the prepass's copy carries).
 //
 // The island grows (Growth.ts): a grown island's plants are grown in the preparation's idle-time
 // steps (`plantSteps`, yielding inside each plant's sprays and fronds), each plant once: its
 // arrays are kept by its site (`PlantCache`), so a grow grows only the plants that are new or
-// changed and copies the rest into the new merged geometry, uploaded ahead (Upload.ts). The swap
-// gives the mesh, and its depth copy, the new geometry: same material, same attributes, no new
-// pipeline (`setPlants`). The plants are concatenated in the sites' order, so a grown page draws
-// what a fresh load of that land draws.
+// changed and copies the rest into the new merged geometry, uploaded ahead with the far index
+// (Upload.ts). The swap gives the meshes, and their depth copies, new geometries over those
+// buffers: same material, same attributes, no new pipeline (`setPlants`). The plants are ordered by
+// cell, then in the sites' order, so a grown page draws what a fresh load of that land draws.
 //
 // Wind: the bushes' layers (vegetation/Deform.ts `mainBend`, PLANT_WIND): the whole plant bends from its root with the
 // gust field and sways with its neighbours at 30 swings per gust tile (about 0.9 Hz), trees at half
@@ -74,28 +115,48 @@ interface Look {
 // a leaf's edge and tip flutter in the wind (m, at a fair day's gust) on top of its part's sway
 const LEAF_EDGE = 0.005;
 
+/** The plants' level of detail (see the header): a plant keeps all its leaves nearer the camera
+ * than `near` (m, from its root), the share `keep` of them from `far` on, the share easing down
+ * between; the near meshes draw a plant nearer than `far`, the far mesh from `far` on. */
+export const PLANT_LOD = { near: uniform( 40 ), far: uniform( 100 ), keep: 0.45 };
+// A leaf shrinks to nothing over this much of the share as it drops out, so no leaf pops; leaf
+// ranks lie below 1 - LEAF_FADE, so a plant at the share 1 keeps every leaf whole.
+const LEAF_FADE = 0.1;
+// the near meshes' cells (m, world-anchored squares): each draws the plants rooted in it, or not
+const LOD_CELL = 32;
+// how many index ranges the near meshes draw at most (a mesh each): the near cells' runs, the
+// closest runs merged when there are more
+const NEAR_RANGES = 4;
+const SALT_LEAF = 4271;
+
 /** One plant's arrays (world space; its indices count from its own first vertex). */
 export interface PlantPart {
 	position: Float32Array; uv: Float32Array; color: Float32Array; normal: Float32Array;
-	motion: Float32Array; root: Float32Array; wind: Float32Array; index: Uint32Array;
+	motion: Float32Array; root: Float32Array; wind: Float32Array; leaf: Float32Array; index: Uint32Array;
 }
 
 // what one vertex carries, in floats per attribute (the merged geometry's layout)
-const LAYOUT = { position: 3, uv: 2, color: 3, normal: 3, motion: 4, root: 3, wind: 4 } as const;
+const LAYOUT = { position: 3, uv: 2, color: 3, normal: 3, motion: 4, root: 3, wind: 4, leaf: 4 } as const;
 const ATTRIBUTES: Record<keyof typeof LAYOUT, string> = {
-	position: 'position', uv: 'uv', color: 'color', normal: 'normal', motion: 'plantMotion', root: 'plantRoot', wind: 'plantWind',
+	position: 'position', uv: 'uv', color: 'color', normal: 'normal', motion: 'plantMotion', root: 'plantRoot', wind: 'plantWind', leaf: 'plantLeaf',
 };
 
 class PlantBuilder {
 
 	readonly P = new Growing(); readonly U = new Growing(); readonly C = new Growing();
 	readonly M = new Growing(); readonly R = new Growing(); readonly W = new Growing(); readonly I = new Growing();
+	readonly L = new Growing();
 	readonly intended = new Growing(); readonly envelope = new Growing(); readonly envelopeWeight = new Growing();
 	// the plant being grown: its frame on the ground, its sky visibility and how it bends
 	readonly frame = new THREE.Matrix4();
 	readonly turn = new THREE.Matrix3();
 	visibility = 1;
 	height = 1;
+	seed = 0;
+	// the leaf being grown: its centre in world space and its rank (-1 outside a leaf)
+	private leaves = 0;
+	private rank = - 1;
+	private readonly centre = new THREE.Vector3();
 	bend: ( local: THREE.Vector3 ) => number = () => 0;
 	private readonly root = new THREE.Vector3();
 	private readonly w = new THREE.Vector3(); private readonly n = new THREE.Vector3(); private readonly e = new THREE.Vector3();
@@ -122,6 +183,7 @@ class PlantBuilder {
 		this.M.push( look.phase, ( stem ? 1 : 0 ) + ( bark ? 2 : 0 ), THREE.MathUtils.lerp( 0.32, 1, light ) * this.visibility, THREE.MathUtils.lerp( 0.7, 1, light ) );
 		const branch = look.base ? THREE.MathUtils.clamp( p.distanceTo( look.base ) / Math.max( 1e-3, look.reach ?? 1 ), 0, 1 ) : flutter;
 		this.R.push( this.root.x, this.root.y, this.root.z );
+		this.L.push( this.centre.x, this.centre.y, this.centre.z, this.rank );
 		this.W.push( this.bend( p ), branch * look.flutter, stem || bark ? 0 : flutter * LEAF_EDGE, this.height );
 		this.n.copy( normal ).applyMatrix3( this.turn ).normalize();
 		this.e.copy( look.envelope ).applyMatrix3( this.turn ).normalize();
@@ -129,6 +191,22 @@ class PlantBuilder {
 		this.envelope.push( this.e.x, this.e.y, this.e.z );
 		this.envelopeWeight.push( bark ? 0 : look.envelopeWeight );
 		return index;
+
+	}
+
+	// A leaf's vertices follow: their centre ( local ) and the leaf's rank, a hash of the plant's seed
+	// and the leaf's number in it (every grow of the plant ranks its leaves alike).
+	private beginLeaf( centre: THREE.Vector3 ): void {
+
+		this.rank = hash3i( this.seed, this.leaves ++, SALT_LEAF ) * ( 1 - LEAF_FADE );
+		this.centre.copy( centre ).applyMatrix4( this.frame );
+
+	}
+
+	private endLeaf(): void {
+
+		this.rank = - 1;
+		this.centre.set( 0, 0, 0 );
 
 	}
 
@@ -156,12 +234,14 @@ class PlantBuilder {
 
 		const width = new THREE.Vector3().crossVectors( n, along ).normalize();
 		const v = new THREE.Vector3();
+		this.beginLeaf( v.copy( p ).addScaledVector( along, L * 0.5 ) );
 		const i = this.vertex( p, 0.5, 0, color, shade * 0.82, n, look, false, false, 0.3 );
 		this.vertex( v.copy( p ).addScaledVector( along, L * 0.48 ).addScaledVector( width, - W * 0.5 ), 0, 0.5, color, shade, n, look, false, false, 0.7 );
 		this.vertex( v.copy( p ).addScaledVector( along, L * 0.51 ).addScaledVector( n, fold ), 0.5, 0.5, color, shade * 1.03, n, look, false, false, 0.7 );
 		this.vertex( v.copy( p ).addScaledVector( along, L * 0.48 ).addScaledVector( width, W * 0.5 ), 1, 0.5, color, shade, n, look, false, false, 0.7 );
 		this.vertex( v.copy( p ).addScaledVector( along, L ).addScaledVector( n, fold * 0.32 ), 0.5, 1, color, shade * 1.04, n, look, false, false, 1 );
 		this.I.push( i, i + 1, i + 2, i + 1, i + 4, i + 2, i, i + 2, i + 3, i + 2, i + 4, i + 3 );
+		this.endLeaf();
 
 	}
 
@@ -171,6 +251,7 @@ class PlantBuilder {
 		const width = new THREE.Vector3().crossVectors( n, along ).normalize();
 		const c = new THREE.Vector3(), v = new THREE.Vector3(), rowN = new THREE.Vector3();
 		const first = this.P.length / 3;
+		this.beginLeaf( c.copy( p ).addScaledVector( along, L * 0.5 ).addScaledVector( UP, - droop * 0.25 ) );
 		for ( let r = 0; r <= rows; r ++ ) {
 
 			const t = r / rows;
@@ -189,6 +270,7 @@ class PlantBuilder {
 			this.I.push( a, b, a + 1, a + 1, b, b + 1, a + 1, b + 1, a + 2, a + 2, b + 1, b + 2 );
 
 		}
+		this.endLeaf();
 
 	}
 
@@ -273,8 +355,8 @@ class PlantBuilder {
 		}
 		yield;
 		const uv = yield* float32Steps( this.U ), color = yield* float32Steps( this.C ), motion = yield* float32Steps( this.M );
-		const root = yield* float32Steps( this.R ), wind = yield* float32Steps( this.W );
-		return { position, uv, color, normal: n, motion, root, wind, index };
+		const root = yield* float32Steps( this.R ), wind = yield* float32Steps( this.W ), leaf = yield* float32Steps( this.L );
+		return { position, uv, color, normal: n, motion, root, wind, leaf, index };
 
 	}
 
@@ -574,6 +656,7 @@ function* growPlant( sites: Float32Array, k: number ): Generator<void, PlantPart
 
 	const [ kind, x, y, z, nx, ny, nz, height, , seed, visibility ] = sites.subarray( k, k + PLANT_STRIDE );
 	const b = new PlantBuilder();
+	b.seed = seed;
 	const rng = mulberry32( seed );
 	// shrubs follow the ground a little; trees grow toward the light
 	const tilt = new THREE.Vector3( nx, ny, nz ).lerp( UP, kind === PLANT_TREE ? 1 : 0.5 ).normalize();
@@ -616,41 +699,123 @@ export class PlantCache {
 
 const siteKey = ( sites: Float32Array, k: number ) => Array.prototype.join.call( sites.subarray( k, k + PLANT_STRIDE ), ',' );
 
-/** The merged geometry of a land's plants (null: none), the parts it holds and their sites. */
-export interface PlantsBuilt { geometry: THREE.BufferGeometry | null; sites: Float32Array; parts: PlantPart[] }
+/** A cell of the plants: its plants' range in the near meshes' index and in the far mesh's, the
+ * box of their roots and the box they may be drawn in. */
+export interface PlantCell { start: number; count: number; farStart: number; farCount: number; box: THREE.Box3; bounds: THREE.Box3 }
+
+// What a plant may be drawn beyond its vertices' box (m): a gale's bend (as the bounding sphere's
+// room) and a leaf grown by the far share, 1 / sqrt( 0.45 ) of a leaf's half length.
+const DRAWN_ROOM = 0.75;
+
+/** The merged geometry of a land's plants (null: none) with every leaf, the far mesh's geometry
+ * (the same vertices, the share PLANT_LOD.keep of the leaves), the near meshes' cells, the parts it
+ * holds and their sites. */
+export interface PlantsBuilt { geometry: THREE.BufferGeometry | null; far: THREE.BufferGeometry | null; cells: PlantCell[]; sites: Float32Array; parts: PlantPart[] }
+
+// The plants' order in the merged geometry: by cell ( row, column ), the sites' order within a cell,
+// so each cell's triangles follow one another.
+function cellOrder( sites: Float32Array ): { order: number[]; keys: number[] } {
+
+	const keys: number[] = [];
+	for ( let k = 0; k < sites.length; k += PLANT_STRIDE ) {
+
+		const cx = Math.floor( sites[ k + 1 ] / LOD_CELL ), cz = Math.floor( sites[ k + 3 ] / LOD_CELL );
+		keys.push( ( cz + 4096 ) * 8192 + cx + 4096 );
+
+	}
+	const order = keys.map( ( _, i ) => i ).sort( ( i, j ) => keys[ i ] - keys[ j ] || i - j );
+	return { order, keys };
+
+}
+
+const _point = new THREE.Vector3();
 
 /** The plants of `sites` as one geometry, in steps (the growth's idle time, Growth.ts): the parts
- * `cache` lacks grown, then every part copied in order into the merged arrays, a part a step. */
+ * `cache` lacks grown, then every part copied in order into the merged arrays, a part a step, and
+ * the far mesh's index (the triangles of bark, stalks and the leaves ranked below PLANT_LOD.keep). */
 export function* plantSteps( sites: Float32Array, cache: PlantCache ): Generator<void, PlantsBuilt> {
 
 	const parts = yield* cache.grow( sites );
-	if ( ! parts.length ) return { geometry: null, sites, parts };
-	let vertices = 0, indices = 0;
+	if ( ! parts.length ) return { geometry: null, far: null, cells: [], sites, parts };
+	const { order, keys } = cellOrder( sites );
+	let vertices = 0, indices = 0, farIndices = 0;
 	for ( const p of parts ) {
 
 		vertices += p.position.length / 3;
 		indices += p.index.length;
+		for ( let t = 0; t < p.index.length; t += 3 ) if ( p.leaf[ p.index[ t ] * 4 + 3 ] < PLANT_LOD.keep ) farIndices += 3;
 
 	}
 	const arrays = Object.fromEntries( Object.entries( LAYOUT ).map( ( [ name, size ] ) => [ name, new Float32Array( vertices * size ) ] ) ) as Record<keyof typeof LAYOUT, Float32Array>;
-	const index = new Uint32Array( indices );
-	let v = 0, i = 0;
-	for ( const p of parts ) {
+	// (the index ends in a triangle of vertex 0 alone: what a near mesh with no cell to draw draws,
+	// nothing, where a draw of no index would be flagged by WebGPU)
+	const index = new Uint32Array( indices + 3 ), farIndex = new Uint32Array( farIndices + 3 );
+	const cells: PlantCell[] = [];
+	let v = 0, i = 0, f = 0;
+	for ( let o = 0; o < order.length; o ++ ) {
 
 		yield;
+		const n = order[ o ], p = parts[ n ], farFirst = f;
 		for ( const name of Object.keys( LAYOUT ) as ( keyof typeof LAYOUT )[] ) arrays[ name ].set( p[ name ], v * LAYOUT[ name ] );
 		for ( let t = 0; t < p.index.length; t ++ ) index[ i + t ] = p.index[ t ] + v;
+		for ( let t = 0; t < p.index.length; t += 3 ) {
+
+			if ( p.leaf[ p.index[ t ] * 4 + 3 ] >= PLANT_LOD.keep ) continue;
+			farIndex[ f ++ ] = p.index[ t ] + v; farIndex[ f ++ ] = p.index[ t + 1 ] + v; farIndex[ f ++ ] = p.index[ t + 2 ] + v;
+
+		}
+		let cell = cells[ cells.length - 1 ];
+		if ( o === 0 || keys[ n ] !== keys[ order[ o - 1 ] ] ) cells.push( cell = { start: i, count: 0, farStart: farFirst, farCount: 0, box: new THREE.Box3(), bounds: new THREE.Box3() } );
+		cell.count += p.index.length;
+		cell.farCount = f - cell.farStart;
+		cell.box.expandByPoint( new THREE.Vector3( sites[ n * PLANT_STRIDE + 1 ], sites[ n * PLANT_STRIDE + 2 ], sites[ n * PLANT_STRIDE + 3 ] ) );
+		for ( let k = 0; k < p.position.length; k += 3 ) cell.bounds.expandByPoint( _point.fromArray( p.position, k ) );
 		v += p.position.length / 3;
 		i += p.index.length;
 
 	}
+	for ( const cell of cells ) cell.bounds.expandByScalar( DRAWN_ROOM );
 	const geometry = new THREE.BufferGeometry();
 	for ( const name of Object.keys( LAYOUT ) as ( keyof typeof LAYOUT )[] ) geometry.setAttribute( ATTRIBUTES[ name ], new THREE.BufferAttribute( arrays[ name ], LAYOUT[ name ] ) );
 	geometry.setIndex( new THREE.BufferAttribute( index, 1 ) );
 	yield* boundsSteps( geometry );
 	// Room for the bend: a gale's gust lays a crown over by a few decimetres.
 	geometry.boundingSphere!.radius += 0.5;
-	return { geometry, sites, parts };
+	const far = sharedGeometry( geometry );
+	far.setIndex( new THREE.BufferAttribute( farIndex, 1 ) );
+	return { geometry, far, cells, sites, parts };
+
+}
+
+// A geometry drawing `source`'s vertices (the same attributes, so the same GPU buffers) with its
+// index, its own draw range and its bounds.
+function sharedGeometry( source: THREE.BufferGeometry ): THREE.BufferGeometry {
+
+	const geometry = new THREE.BufferGeometry();
+	for ( const [ name, attribute ] of Object.entries( source.attributes ) ) geometry.setAttribute( name, attribute );
+	geometry.setIndex( source.getIndex() );
+	geometry.boundingBox = source.boundingBox?.clone() ?? null;
+	geometry.boundingSphere = source.boundingSphere?.clone() ?? null;
+	return geometry;
+
+}
+
+// Per object: 1 for the far mesh's draws (and its depth copy's), 0 for the near meshes'.
+const farDraw = uniform( 0 ).onObjectUpdate( ( { object } ) => object?.userData.plantsFar === true ? 1 : 0 );
+
+// A plant's leaves at the share `keep` of them (PLANT_LOD): a leaf ranked at or above the share is
+// gone (its scale 0), one within LEAF_FADE below it shrinks toward its centre, and the leaves kept
+// grow by 1 / sqrt( keep ) about their centres, so the plant covers about as much as with every
+// leaf and its colour holds (after the grass's thinning and widening, Grass.ts `tuftLod`). Bark
+// and stalks (rank -1) keep their shape. Returns the position and whether anything is left of it.
+function leafShare( p: THREE.Node<'vec3'>, keep: THREE.Node<'float'> ): { position: THREE.Node<'vec3'>; left: THREE.Node<'bool'> } {
+
+	const leaf = attribute<'vec4'>( 'plantLeaf', 'vec4' );
+	const scale = clamp( keep.sub( leaf.w ).div( LEAF_FADE ), 0, 1 );
+	// (a plant keeping every leaf takes p itself: centre + ( p - centre ) is not always p)
+	const shrinks = leaf.w.greaterThanEqual( 0 ).and( keep.lessThan( 1 ) );
+	const position = select( shrinks, leaf.xyz.add( p.sub( leaf.xyz ).mul( scale.div( keep.sqrt() ) ) ), p );
+	return { position, left: leaf.w.lessThan( 0 ).or( scale.greaterThan( 0 ) ) };
 
 }
 
@@ -676,13 +841,20 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 		return f;
 
 	} )();
-	const p = positionLocal; // the mesh sits at the origin: world space
+	const rest = positionLocal; // the mesh sits at the origin: world space
+	const root = attribute<'vec3'>( 'plantRoot', 'vec3' );
+	// The level of detail (see the header): the share of its leaves the plant keeps at its distance
+	// from the camera, and whether this mesh draws the plant there (the near meshes below
+	// PLANT_LOD.far, the far mesh from it on); a plant it does not draw collapses to a point.
+	const distance = length( cameraPosition.sub( root ) );
+	const lod = leafShare( rest, mix( float( 1 ), float( PLANT_LOD.keep ), smoothstep( PLANT_LOD.near, PLANT_LOD.far, distance ) ) );
+	const drawn = farDraw.equal( step( PLANT_LOD.far, distance ) ).and( lod.left );
+	const p = lod.position;
 	// Three layers, after Sousa (GPU Gems 3, ch. 16): the whole plant bends from its root with the
 	// gust field (trees sway at half a shrub's rate); each spray, frond or leaf stalk swings on its
 	// own phase, from where it leaves the plant out; each leaf's edges and tip flutter along its
 	// normal. Branches and leaves move more in a gust and in a strong wind, and their flutter speeds
 	// up with it (the `flutter` clock).
-	const root = attribute<'vec3'>( 'plantRoot', 'vec3' );
 	const amp = attribute<'vec4'>( 'plantWind', 'vec4' );
 	const slow = smoothstep( PLANT_WIND.slow[ 0 ], PLANT_WIND.slow[ 1 ], amp.w );
 	const local = dot( positionGeometry, vec3( 1.7, 2.3, 1.9 ) );
@@ -694,7 +866,7 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 			tint: ( wetness ) => mix( float( 1 ), mix( float( 0.92 ), float( 0.62 ), bark ), wetness ).mul( furrows ),
 			roughness: ( wetness ) => mix( mix( float( 0.82 ), float( 0.9 ), bark ), float( 0.68 ), wetness ),
 		},
-		rest: p,
+		rest,
 		displacement: ( wind ) => {
 
 			const bend = mainBend( wind, p, root, amp.x, PLANT_WIND.cycles, slow );
@@ -706,7 +878,7 @@ function plantMaterial( shared: Shared ): THREE.MeshStandardNodeMaterial {
 			const swayBranch = wave( wind.flutter, 0.63, motion.x.mul( 2.3 ) );
 			const branch = vec3( 0, swing, 0 ).add( along.mul( swayBranch.mul( 0.5 ).add( 0.35 ) ) ).add( across.mul( swing.mul( 0.4 ) ) ).mul( amp.y.mul( lively ) );
 			const edge = normalGeometry.mul( wave( wind.flutter, 4.1, motion.x.mul( 3 ).add( local.mul( 4 ) ) ).mul( amp.z.mul( lively ) ) );
-			return bend.position.add( branch ).add( edge );
+			return select( drawn, bend.position.add( branch ).add( edge ), vec3( 0 ) );
 
 		},
 		castMask: float( 1 ).sub( stem ),
@@ -731,9 +903,99 @@ function emptyGeometry(): THREE.BufferGeometry {
 
 }
 
-/** The plants of `sites` (PlantSites.ts) as one mesh in world space, in a group (`setPlants` swaps
- * its geometry; `userData.sites` lists them for the tools). `cache` keeps their parts for the
- * growth. */
+// The draw ranges for a camera. The near meshes draw the cells in view whose roots lie nearer than
+// PLANT_LOD.far, in runs of cells that follow one another in the index, the closest runs merged
+// until there are NEAR_RANGES at most; the far mesh draws from its first cell in view with a root
+// at PLANT_LOD.far or beyond to its last. A merged gap only draws plants the mesh collapses anyway,
+// and a cell out of view (its `bounds` outside the camera's frustum) draws nothing: which plant
+// draws how is a function of the camera's position alone.
+class CellRanges {
+
+	private cells: PlantCell[] = [];
+	private key = '';
+	private runs: [ number, number ][] = [];
+	private farRun: [ number, number ] = [ 0, 0 ];
+	// the empty triangles at the indices' ends (plantSteps)
+	private none: [ number, number ] = [ 0, 0 ];
+	private farNone: [ number, number ] = [ 0, 0 ];
+
+	reset( cells: PlantCell[] ): void {
+
+		this.cells = cells;
+		this.key = '';
+		const last = cells[ cells.length - 1 ];
+		this.none = last ? [ last.start + last.count, 3 ] : [ 0, 0 ];
+		this.farNone = last ? [ last.farStart + last.farCount, 3 ] : [ 0, 0 ];
+
+	}
+
+	near( k: number, camera: THREE.Camera ): [ number, number ] {
+
+		this.update( camera );
+		return this.runs[ k ] ?? this.none;
+
+	}
+
+	far( camera: THREE.Camera ): [ number, number ] {
+
+		this.update( camera );
+		return this.farRun;
+
+	}
+
+	private update( view: THREE.Camera ): void {
+
+		const far = PLANT_LOD.far.value;
+		const key = `${ view.matrixWorld.elements.join( ' ' ) } ${ view.projectionMatrix.elements.join( ' ' ) } ${ far }`;
+		if ( key === this.key ) return;
+		this.key = key;
+		const camera = _camera.setFromMatrixPosition( view.matrixWorld );
+		_frustum.setFromProjectionMatrix( _matrix.multiplyMatrices( view.projectionMatrix, view.matrixWorldInverse ), view.coordinateSystem, view.reversedDepth );
+		this.runs = [];
+		let first = - 1, end = 0;
+		for ( const cell of this.cells ) {
+
+			if ( ! _frustum.intersectsBox( cell.bounds ) ) continue;
+			// (a centimetre's margin for the shader's rounding of a root's distance)
+			if ( cell.box.distanceToPoint( camera ) < far + 0.01 ) {
+
+				const last = this.runs[ this.runs.length - 1 ];
+				if ( last && last[ 0 ] + last[ 1 ] === cell.start ) last[ 1 ] += cell.count;
+				else this.runs.push( [ cell.start, cell.count ] );
+
+			}
+			const { min, max } = cell.box;
+			const dx = Math.max( camera.x - min.x, max.x - camera.x ), dy = Math.max( camera.y - min.y, max.y - camera.y ), dz = Math.max( camera.z - min.z, max.z - camera.z );
+			if ( Math.hypot( dx, dy, dz ) >= far - 0.01 && cell.farCount > 0 ) {
+
+				if ( first < 0 ) first = cell.farStart;
+				end = cell.farStart + cell.farCount;
+
+			}
+
+		}
+		while ( this.runs.length > NEAR_RANGES ) {
+
+			const gap = ( r: number ) => this.runs[ r + 1 ][ 0 ] - this.runs[ r ][ 0 ] - this.runs[ r ][ 1 ];
+			let best = 0;
+			for ( let r = 1; r + 1 < this.runs.length; r ++ ) if ( gap( r ) < gap( best ) ) best = r;
+			const [ a, b ] = [ this.runs[ best ], this.runs[ best + 1 ] ];
+			this.runs.splice( best, 2, [ a[ 0 ], b[ 0 ] + b[ 1 ] - a[ 0 ] ] );
+
+		}
+		this.farRun = first < 0 ? this.farNone : [ first, end - first ];
+
+	}
+
+}
+
+const _camera = new THREE.Vector3();
+const _frustum = new THREE.Frustum();
+const _matrix = new THREE.Matrix4();
+
+/** The plants of `sites` (PlantSites.ts) in world space, in a group (`setPlants` swaps their
+ * geometry; `userData.sites` lists them for the tools): NEAR_RANGES near meshes drawing the near
+ * cells' plants with every leaf, and the far mesh. `cache` keeps their parts for the growth. */
 export function buildPlants( sites: Float32Array, shared: Shared, cache: PlantCache ): THREE.Group {
 
 	const built = runSteps( plantSteps( sites, cache ) );
@@ -741,37 +1003,85 @@ export function buildPlants( sites: Float32Array, shared: Shared, cache: PlantCa
 	const group = new THREE.Group();
 	group.name = 'plants';
 	const material = plantMaterial( shared );
-	const mesh = new THREE.Mesh( built.geometry ?? emptyGeometry(), material );
+	const ranges = new CellRanges();
+	ranges.reset( built.cells );
+	group.userData.ranges = ranges;
+	// (the distances, for the tools: `__PONLAI__.plants.userData.lod`)
+	group.userData.lod = PLANT_LOD;
 	if ( ! built.geometry ) console.warn( 'No shrubs or trees on the first land: a grown island\'s would build their pipelines as they first draw (Plants.ts)' );
-	mesh.visible = built.geometry !== null;
-	mesh.castShadow = true;
-	mesh.receiveShadow = true;
-	mesh.name = 'plantsMesh';
-	mesh.renderOrder = - 1; // before the terrain: the turf it covers then fails the depth test
+	for ( let k = 0; k < NEAR_RANGES; k ++ ) {
+
+		const mesh = new THREE.Mesh( built.geometry ? sharedGeometry( built.geometry ) : emptyGeometry(), material );
+		mesh.name = `plantsNear${ k }`;
+		mesh.castShadow = false;
+		// (the far mesh prints the plants into the rain's map)
+		mesh.userData.rainBake = false;
+		// the camera's own draw range of the near cells (the depth prepass's copy shares the geometry)
+		mesh.onBeforeRender = ( _renderer, _scene, camera ) => {
+
+			const [ start, count ] = ranges.near( k, camera );
+			mesh.geometry.setDrawRange( start, count );
+
+		};
+		group.add( mesh );
+
+	}
+	const far = new THREE.Mesh( built.far ?? emptyGeometry(), material );
+	far.name = 'plantsFar';
+	far.userData.plantsFar = true;
+	far.castShadow = false;
+	far.onBeforeRender = ( _renderer, _scene, camera ) => {
+
+		const [ start, count ] = ranges.far( camera );
+		far.geometry.setDrawRange( start, count );
+
+	};
+	far.userData.rainBake = false;
+	group.add( far );
+	// Every leaf casts, whatever the camera: the sun's map is drawn only as the sun turns, so a
+	// caster that followed the camera would leave the shadows where the camera stood at the last
+	// redraw. A mesh of its own on the sun's layer alone, the view never draws it.
+	const caster = new THREE.Mesh( built.geometry ? sharedGeometry( built.geometry ) : emptyGeometry(), material );
+	caster.name = 'plantsShadow';
+	caster.layers.set( SUN_MAP_LAYER );
+	caster.castShadow = true;
+	group.add( caster );
+	for ( const mesh of group.children as THREE.Mesh[] ) {
+
+		mesh.visible = built.geometry !== null;
+		mesh.receiveShadow = mesh !== caster;
+		mesh.renderOrder = - 1; // before the terrain: the turf it covers then fails the depth test
+
+	}
 	group.userData.sites = siteList( sites );
-	group.add( mesh );
 	return group;
 
 }
 
-/** Swaps the plants of `group` (buildPlants) to `built` in place, the depth prepass's copy with
- * them. Returns the geometry replaced, to dispose of once nothing draws it. */
-function setPlants( group: THREE.Group, built: PlantsBuilt ): THREE.BufferGeometry {
+/** Swaps the plants of `group` (buildPlants) to `built` in place, the depth prepass's copies with
+ * them. Returns the geometries replaced, to dispose of once nothing draws them. */
+function setPlants( group: THREE.Group, built: PlantsBuilt ): THREE.BufferGeometry[] {
 
 	group.userData.sites = siteList( built.sites );
-	const mesh = group.children[ 0 ] as THREE.Mesh;
-	const old = mesh.geometry;
-	const geometry = built.geometry ?? emptyGeometry();
-	mesh.geometry = geometry;
-	for ( const child of mesh.children ) if ( ( child as THREE.Mesh ).geometry === old ) ( child as THREE.Mesh ).geometry = geometry;
-	mesh.visible = built.geometry !== null;
+	( group.userData.ranges as CellRanges ).reset( built.cells );
+	const old: THREE.BufferGeometry[] = [];
+	for ( const mesh of group.children as THREE.Mesh[] ) {
+
+		const geometry = mesh.userData.plantsFar ? built.far ?? emptyGeometry() : built.geometry ? sharedGeometry( built.geometry ) : emptyGeometry();
+		old.push( mesh.geometry );
+		for ( const child of mesh.children ) if ( ( child as THREE.Mesh ).geometry === mesh.geometry ) ( child as THREE.Mesh ).geometry = geometry;
+		mesh.geometry = geometry;
+		mesh.visible = built.geometry !== null;
+
+	}
 	return old;
 
 }
 
 /** The plateau's plants as a vegetation kind (vegetation/Registry.ts): a grown island's plants (only
  * those `cache` does not hold) are grown in steps on the sites the growth found, copied into one new
- * geometry, uploaded ahead and swapped into the mesh; the cache keeps their parts. */
+ * geometry, uploaded ahead (the far mesh's index with it) and swapped into the meshes; the cache
+ * keeps their parts. */
 export function plantsKind( group: THREE.Group, cache: PlantCache ): VegetationKind<PlantsBuilt> {
 
 	return {
@@ -780,7 +1090,12 @@ export function plantsKind( group: THREE.Group, cache: PlantCache ): VegetationK
 			*prepare( input ) {
 
 				const built = yield* plantSteps( input.plantSites, cache );
-				if ( built.geometry ) yield* geometrySteps( input.renderer, built.geometry );
+				if ( built.geometry ) {
+
+					yield* geometrySteps( input.renderer, built.geometry );
+					yield* uploadSteps( input.renderer, built.far!.getIndex(), AttributeType.INDEX );
+
+				}
 				return built;
 
 			},
@@ -788,7 +1103,11 @@ export function plantsKind( group: THREE.Group, cache: PlantCache ): VegetationK
 
 				const old = setPlants( group, prepared );
 				cache.keep( prepared.sites, prepared.parts );
-				return () => old.dispose();
+				return () => {
+
+					for ( const geometry of old ) geometry.dispose();
+
+				};
 
 			},
 		},
@@ -812,7 +1131,7 @@ function siteList( sites: Float32Array ): { kind: string; x: number; y: number; 
  * casters grow to hold it. */
 export function plantsBox( group: THREE.Group ): THREE.Box3 {
 
-	const mesh = group.children[ 0 ] as THREE.Mesh;
+	const mesh = group.getObjectByName( 'plantsShadow' ) as THREE.Mesh;
 	return mesh.visible && mesh.geometry.boundingBox ? mesh.geometry.boundingBox.clone() : new THREE.Box3();
 
 }
