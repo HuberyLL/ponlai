@@ -6,7 +6,7 @@
  */
 
 import { If, float, int, vec2, vec3, ivec2, min, max, clamp, floor, dot, length, exp, select } from './Tsl.ts';
-import type { N } from './Core.ts';
+import { ffxLerp, type N } from './Core.ts';
 import {
 	ClampLoad, IsOnScreen, RGBToYCoCg, YCoCgToRGB, Tonemap, InverseTonemap, RectificationBoxAddSample,
 	RectificationBoxComputeVarianceBoxData, FSR3UPSCALER_EPSILON, fAverageLanczosWeightPerFrame,
@@ -29,6 +29,12 @@ import type { Fsr3ShaderOptions } from './Host.ts';
 // (FFX_FSR3UPSCALER_USE_XBOX_PAIRED_16BIT_MATH_OPTIMIZATIONS) and the FFX_HALF weight are not
 // ported. The 3 x 3 loops are unrolled at build time, as upstream's FFX_UNROLL asks; the flips stay
 // runtime selects.
+//
+// Every lerp is `ffxLerp` ( x, y, t ), never TSL's method form: three's `a.mix( b, t )` is
+// mix( b, t, a ), not mix( a, b, t ). The kernel bias once went through it and came out as
+// max + min ( weight - max ): at a 1.5x upscale 1 instead of 1.5 while accumulating (a Lanczos
+// two render pixels wide, softening every frame's contribution) and 0, a 3 x 3 box, on new or
+// disoccluded pixels; at a scale of 1 it equals upstream's only while the weight is 1.
 
 export function Deringing( clippingBox: RectificationBox, fColor: N ): void {
 
@@ -127,7 +133,7 @@ export function ComputeUpsampledColorAndWeight( b: Fsr3Bindings, o: Fsr3ShaderOp
 				data.fHistoryWeight.mul( 5.0 ).saturate(),
 			) ).toVar();
 
-	const fKernelBias = fKernelBiasMin.mix( fKernelBiasMax, fKernelBiasWeight ).toVar();
+	const fKernelBias = ffxLerp( fKernelBiasMin, fKernelBiasMax, fKernelBiasWeight ).toVar();
 
 	let iSampleIndex = 0;
 	for ( let row = 0; row < 3; row ++ ) {
