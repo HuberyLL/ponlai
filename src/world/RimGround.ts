@@ -118,7 +118,7 @@ export function rimGroundTile( lattice: RimLattice, box: Bounds ): RimGroundFiel
 		const x = ( i0 + col + 0.5 ) * RIM_CELL, z = ( j0 + row + 0.5 ) * RIM_CELL;
 		const broad = noise3( x * 0.49 + 3.8, 8.7, z * 0.49 - 2.1 ) * 0.5 + 0.5;
 		const broken = noise3( x * 1.17 - 6.2, 3.4, z * 1.17 + 7.1 ) * 0.5 + 0.5;
-		const pocket = Math.pow( smoothstep( 0.38, 0.68, broad * 0.72 + broken * 0.28 ), 1.7 );
+		const pocket = Math.pow( smoothstep( 0.55, 0.85, broad * 0.72 + broken * 0.28 ), 1.7 );
 		const roots = noise3( x * 0.67 - 2.6, 5.8, z * 0.67 + 9.3 ) * 0.5 + 0.5;
 		const k = ( row * nx + col ) * 4;
 		data[ k ] = Math.max( - RIM_REACH, Math.min( RIM_REACH, coast.data[ k / 4 ] ) );
@@ -126,8 +126,10 @@ export function rimGroundTile( lattice: RimLattice, box: Bounds ): RimGroundFiel
 		data[ k + 2 ] = - 0.09 + pocket * 0.43;
 		// The root bed's depth below the roof, patchy along the coast: deep cuts expose a band of
 		// root soil, and where it runs shallow the turf creeps down over the lip instead (see
-		// TerrainMaterial), so the edge alternates between earth and overgrown stretches.
-		data[ k + 3 ] = 0.035 + Math.pow( smoothstep( 0.3, 0.72, roots ), 1.4 ) * 0.17;
+		// TerrainMaterial), so the edge alternates between earth and overgrown stretches. Both the
+		// band (3 - 15 cm) and the retreat pockets stay small: the turf skirt curls over most of the
+		// lip and its soil shows only where the skirt has torn off.
+		data[ k + 3 ] = 0.03 + Math.pow( smoothstep( 0.45, 0.8, roots ), 1.4 ) * 0.12;
 
 	}
 	return { data, nx, nz, x0: i0 * RIM_CELL, z0: j0 * RIM_CELL, cell: RIM_CELL };
@@ -460,12 +462,12 @@ export interface RimSkirtShape { presence: number; reach: number; droop: number 
 
 export function rimSkirtShape( x: number, z: number, retreat: number ): RimSkirtShape {
 
-	// About half the coast is left bare in stretches of one to a few metres.
+	// Most of the coast is covered; the rest is left bare in stretches of one to a few metres.
 	const broad = noise3( x * 0.41 + 1.3, 6.1, z * 0.41 - 4.4 ) * 0.5 + 0.5;
 	const thick = noise3( x * 0.93 - 5.2, 2.4, z * 0.93 + 3.3 ) * 0.5 + 0.5;
 	// A finer field breaks the longest runs, so no stretch reads as a continuous hem.
 	const breakup = noise3( x * 1.6 - 3.7, 0.9, z * 1.6 + 8.1 ) * 0.5 + 0.5;
-	const presence = smoothstep( 0.27, 0.48, broad ) * smoothstep( 0.30, 0.50, breakup ) * ( 1 - smoothstep( - 0.03, 0.09, retreat ) );
+	const presence = smoothstep( 0.12, 0.34, broad ) * smoothstep( 0.14, 0.36, breakup ) * ( 1 - smoothstep( - 0.03, 0.09, retreat ) );
 	// Ragged lower edge: rounded lobes of sod a few decimetres wide between torn notches where it
 	// barely curls over, each lobe frayed by shorter tongues, so the edge never reads as a smooth
 	// hem. (Tongues alone, a hand's width apart, cut it into even saw teeth.)
@@ -497,11 +499,11 @@ export function topAt( sdf: SDF, x: number, z: number ): number | undefined {
 // relative to the roof. The first ring is buried in the turf; the last is the ragged lower edge.
 export const SKIRT_RING = 7;
 // Per skirt sample: its place on the coast ( x, z ), the outward direction ( x, z ), presence, droop,
-// the roof's height and the wall below it: at each of SKIRT_WALL's depths under the roof, the
-// outward offset from the coast (m) where the stone is SKIRT_CLEAR away, which the grass hanging
-// from the lip (RimSkirt.ts) keeps outside of, so it drapes over a battered wall instead of
-// passing into it.
-export const SKIRT_WALL = [ 0.25, 0.6, 1.05 ];
+// the roof's height and the wall below it: at each of SKIRT_WALL's depths under the roof (every
+// 10 cm down to the longest hanging blade's reach), the outward offset from the coast (m) where
+// the stone is SKIRT_CLEAR away, which the grass hanging from the lip (RimSkirt.ts) lies on, so it
+// drapes over a battered wall instead of passing into it.
+export const SKIRT_WALL = Array.from( { length: 15 }, ( _, k ) => Math.round( ( k + 1 ) * 10 ) / 100 );
 export const SKIRT_INFO = 7 + SKIRT_WALL.length;
 const SKIRT_CLEAR = 0.03;
 // The skirt's samples lie this far apart along the coast, or a little less.

@@ -64,10 +64,15 @@ art decision changes; reference images stay out of the repository.
   than jutting as a slab. No ledge follows the waterline. No waterfalls. Moss and greenery on the
   wall stay in its upper 1.2 m; the lower cliff stays bare stone.
 - Plants and meadow cover are rooted on the island top, never on cliff faces. The meadow's sod
-  curls a little over the lip as a ragged turf skirt, and the meadow passes into the cliff through
-  grass hanging from that lip, as on a sea cliff's top: bundles of the meadow's blades, of mixed
-  lengths (0.2 - 1 m), combed to one side, drier and yellower than the meadow, in stretches with
-  clumps and thin places, fewer where bare stone meets the meadow. What hangs over the rim is the
+  curls a little over the lip along most of the coast as a ragged turf skirt; the lip's soil shows
+  only where it has torn off. The meadow passes into the cliff through grass growing from that
+  lip and hanging over it as one fringe, as on a sea cliff's top: dense, short,
+  nearly parallel bundles of the meadow's blades (mostly 0.15 - 0.5 m, a few to 0.8 m), each
+  bent by its own weight into one smooth arc (stiff at the root, soft at the tip: long blades
+  arc over and hang, short ones only bend), lying on the sod and the stone where they meet
+  them, combed to one side, drier and yellower than the meadow, in stretches with clumps and
+  thin places, fewer where bare stone meets the meadow. Not fans of long blades like small palm
+  leaves. What hangs over the rim is the
   meadow's own grass, not leafy branches; the lowest quarter of the cliff above the sea stays bare.
 - The meadow is a lawn, even as a whole and every blade its own: dense, sword-shaped blades, wide
   to high up and tapering to a point, standing nearly upright but each a little taller or shorter,
