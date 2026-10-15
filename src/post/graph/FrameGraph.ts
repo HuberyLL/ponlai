@@ -87,7 +87,9 @@ export interface PassDef<F> extends PassFlags {
 	// composite), so keep such a pass out of derived store rewrites, or give it a target drawn once.
 	pipeline?: THREE.RenderPipeline;
 	nodes?: THREE.Node[];
-	// compute: the kernels to dispatch
+	// compute: the kernels to dispatch (dispatched by `renderer.compute( nodes )`); with a `run` of
+	// its own (a 2D dispatch, a kernel picked per frame) every kernel the pass may dispatch, which the
+	// warm-up compiles
 	compute?: THREE.ComputeNode | THREE.ComputeNode[] | ( ( f: F ) => THREE.ComputeNode | THREE.ComputeNode[] | null );
 	// any kind: replaces the default executor (callback: required)
 	run?( f: F, graph: FrameGraph<F> ): void;
@@ -97,11 +99,12 @@ export interface PassDef<F> extends PassFlags {
 }
 
 /** The pass executing: its name, profiler label and size class, and whether its cost follows the
- * render's pixel count ('pixel': a pass at the render's size or a share of it) or not ('fixed':
- * the canvas, a fixed size, a compute or callback pass without a render-sized attachment). */
+ * render's pixel count ('pixel': a pass at the render's size or a share of it, a compute pass that
+ * declares such a `size`) or not ('fixed': the canvas, a fixed size, a compute or callback pass
+ * without a render-sized attachment or `size`). */
 export interface CurrentPass { readonly name: string; readonly label: string; readonly size: SizeClass | null; readonly scales: 'pixel' | 'fixed' }
 
-const passScales = ( kind: PassKind, size: SizeClass | null ): 'pixel' | 'fixed' => kind !== 'compute' && size?.of === 'render' ? 'pixel' : 'fixed';
+const passScales = ( size: SizeClass | null ): 'pixel' | 'fixed' => size?.of === 'render' ? 'pixel' : 'fixed';
 
 /** What the owners of passes (the sea fog, the upscale) declare on the graph while it is built. */
 export interface GraphResources {
@@ -801,7 +804,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 		const running = compiled.running( mask );
 		const span = running.filter( ( i ) => this.decl.passes[ i ].jittered );
 		const written = new Set<number>();
-		for ( const i of running ) for ( const w of this.decl.passes[ i ].writes ) written.add( w.resource );
+		for ( const i of running ) for ( const w of [ ...this.decl.passes[ i ].writes, ...this.decl.passes[ i ].storage ] ) written.add( w.resource );
 		const first = span[ 0 ], last = span[ span.length - 1 ];
 		if ( this.options.dev ) this.validateSizes();
 		this.initTargets();
@@ -853,7 +856,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 		const def = this.defs[ index ];
 		const target = this.compiled!.targetOf[ index ];
 		const size = decl.size ?? target?.size ?? null;
-		const current: CurrentPass = { name: decl.name, label: decl.label, size, scales: passScales( decl.kind, size ) };
+		const current: CurrentPass = { name: decl.name, label: decl.label, size, scales: passScales( size ) };
 		this.currentPass = current;
 		this.bind( index, table );
 		const rt = target ? this.targetOf( index ) : undefined;
@@ -1323,9 +1326,10 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 				when: p.whenLabel, jittered: p.jittered, mrt: p.hasMrt,
 				reads: p.reads.map( ( r ) => ( { resource: name( r.resource ), version: r.previous ? 'previous' : r.version, mode: r.mode, optional: r.optional } ) ),
 				writes: p.writes.map( ( w ) => ( { resource: name( w.resource ), version: w.version, load: drawsOver( p, w ) ? 'clear' : 'load', blend: w.blend ?? null } ) ),
+				...( p.storage.length > 0 ? { storage: p.storage.map( ( w ) => ( { resource: name( w.resource ), version: w.version } ) ) } : {} ),
 				depth: p.depth ? { resource: name( p.depth.resource ), version: p.depth.version, write: p.depth.write, clear: p.depth.clear } : null,
 				target: target ? ( target.canvas ? 'canvas' : target.key ) : null,
-				size: cls ? sizeClassKey( cls ) : null, actual: cls ? size( cls ) : null, scales: passScales( p.kind, cls ),
+				size: cls ? sizeClassKey( cls ) : null, actual: cls ? size( cls ) : null, scales: passScales( cls ),
 				// (a copy: the table is the one execute() applies)
 				ops: structuredClone( table?.passes.find( ( o ) => o.index === p.index ) ?? null ),
 			};
@@ -1406,6 +1410,7 @@ export class FrameGraph<F = unknown> implements LatentRegistry {
 			for ( const r of p.reads ) lines.push( `\t${ version( r.resource, r.version ) } -> ${ pass }${ r.mode === 'samples' ? ' [style=bold' + ( r.optional ? ', color=gray40' : '' ) + ']' : r.optional ? ' [style=dashed]' : '' };` );
 			if ( p.depth && ! p.depth.write ) lines.push( `\t${ version( p.depth.resource, p.depth.version ) } -> ${ pass } [style=dotted];` );
 			// a write that loads (draws over) the version before it depends on that version too
+			for ( const w of p.storage ?? [] ) lines.push( `\t${ pass } -> ${ version( w.resource, w.version ) } [style=dashed, label="storage"];` );
 			for ( const w of p.writes ) {
 
 				if ( w.load === 'load' && w.version > 0 ) lines.push( `\t${ version( w.resource, w.version - 1 ) } -> ${ pass } [style=dotted, label="load"];` );
@@ -1434,6 +1439,8 @@ export interface PassDescription {
 	when: string | null; jittered: boolean; mrt: boolean;
 	reads: { resource: string; version: number | 'previous'; mode: string; optional: boolean }[];
 	writes: { resource: string; version: number; load: 'clear' | 'load'; blend: string | null }[];
+	// the versions written through storage (left out when none)
+	storage?: { resource: string; version: number }[];
 	depth: { resource: string; version: number; write: boolean; clear: boolean } | null;
 	target: string | null; size: string | null; actual: Size | null; scales: 'pixel' | 'fixed';
 	ops: OpsTable[ 'passes' ][ number ] | null;

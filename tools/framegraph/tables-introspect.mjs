@@ -125,7 +125,8 @@ export const checks = [
 		assert.deepEqual( d.passes[ 1 ].reads, [ { resource: 'sceneDepth', version: 1, mode: 'samples', optional: false } ] );
 		assert.deepEqual( d.passes[ 0 ].actual, { width: 100, height: 50 } );
 		// the cost class the dynamic resolution reads: render-sized draws follow the pixel count
-		assert.deepEqual( state.scales, [ [ 'opaque', 'pixel' ], [ 'depthResolve', 'pixel' ], [ 'cull', 'fixed' ], [ 'output', 'fixed' ] ] );
+		// (a compute pass that declares a render-class size follows the render's pixels, as FSR 3's kernels do)
+		assert.deepEqual( state.scales, [ [ 'opaque', 'pixel' ], [ 'depthResolve', 'pixel' ], [ 'cull', 'pixel' ], [ 'output', 'fixed' ] ] );
 		assert.equal( g.currentPass, null, 'no pass outside execute()' );
 		const r = Object.fromEntries( d.resources.map( ( x ) => [ x.name, x ] ) );
 		assert.equal( r.sceneColor.format, 'RGBA' );
