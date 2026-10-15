@@ -960,6 +960,11 @@ probe eval of one's own.
   (repeatable) adds ad-hoc views with capture-set's syntax (`like=<view>` included), so a jump
   into a new scene option is checked as `--views island-fair-noon --view near:dist=40`; their fresh
   loads are stored with their definitions' hashes, so a changed query captures a new reference.
+- `tools/verify-zoom-anchor.mjs [url] [--runs 24] [--out file.json]` checks the island camera's
+  anchors in one probe page: wheel zooms with the cursor over the sea (`--runs` times) and over
+  land, a pinch out and in, and a drag; it fails on any zoom anchor that found no ground or a drift
+  of the point under the cursor of 0.5 px or more. Run it after a change to the island camera or
+  its ground (`src/camera/`).
 - `tools/verify-day-cycle.mjs`, `verify-weather-state.mjs`, `verify-wind.mjs` and `verify-game.mjs`
   are CPU-only (plain `node`). `verify-game.mjs` checks the game's simulation: the clock, the
   ground and a path, a body walking to a point, a save round trip, a brain's late answer, and the
