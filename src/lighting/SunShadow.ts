@@ -52,9 +52,10 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // and the refracted map draws its casters with a material of its own.
 //
 // The map's first redraw builds every caster's pass into it, and three builds the map itself only
-// with the first receiver, in the page's first frame, so no warm-up before the loop could compile
-// those passes into it. Drawn as usual, that redraw (the frame after the first) created their
-// pipelines synchronously and stalled. It is made first with its pipelines compiled asynchronously
+// with the first receiver, the throwaway one built just before the loop (graph/ThreePatches.ts
+// `primeSharedNodes`), so no warm-up before the loop could compile those passes into it. Drawn as
+// usual, that redraw (the loop's first frame, before the receivers build) created their pipelines
+// synchronously and stalled. It is made first with its pipelines compiled asynchronously
 // (graph/Compile.ts `compileByRendering`), drawing nothing, and drawn for real once they exist; until
 // then the receivers stay lit (`ready`) and `pending` holds the settled signal. The compile is the
 // redraw itself, its node builds made in its order, as three would make them: compiled ahead in
@@ -408,7 +409,7 @@ export class SunShadow {
 	update( renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, keyDir: THREE.Vector3 ): void {
 
 		const shadow = this.sun.shadow;
-		// three builds its map and the node drawing it with the first receiver's material
+		// three builds its map and the node drawing it with the first receiver's build (primeSharedNodes)
 		const node = shadow.shadowNode as unknown as ShadowRenderer | undefined;
 		const map = node?.shadowMap;
 		if ( ! node || ! map ) {

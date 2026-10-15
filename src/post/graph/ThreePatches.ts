@@ -1,4 +1,5 @@
-import { REVISION } from 'three/webgpu';
+import { REVISION, Mesh, MeshStandardNodeMaterial, PlaneGeometry } from 'three/webgpu';
+import type { Camera, Light, Node, Scene, WebGPURenderer } from 'three/webgpu';
 
 // Cache-key patches for three r186's node and pipeline caches, so a material drawn into targets
 // of different layouts (another MRT, other attachment formats or names) gets a shader and a
@@ -35,6 +36,23 @@ import { REVISION } from 'three/webgpu';
 // dispose event has already fired (13.6 MB from a twelve-step growth). The patch starts each
 // texture binding at its node's current texture, which is where the first update would move it.
 // There is no public path: the build's bindings are three's internal state.
+//
+// And one build ahead of the frame (`primeSharedNodes`). r186 makes some nodes every lit material
+// shares inside the first build that needs them, and that build's code differs from every later
+// one's, though they draw the same: the light's colour times its shadow and the shadow node's own
+// graph (AnalyticLightNode.setupShadow, ShadowNode.setup) are made once, in the first receiver's
+// build, which declares the shadow's variable where the graph was made and keeps the product in a
+// variable of its own; the camera's world matrix (`cameraWorldMatrix`, made on first use, by the
+// environment's reflection) takes its node id there, and a shared uniform group lists its
+// uniforms by node id (NodeBuilder._getBindGroup), so the render group's order differs between a
+// build that made its own screen-size uniform before that matrix existed and one after. Which
+// receiver built first followed the land (the meadow and the turf skirt both draw at render order
+// -1, by their distance from the camera): a page loaded at grow=6 built the meadow's first batch
+// apart from its other two, one pipeline more than a page grown to it. A throwaway receiver of the
+// scene's lights and environment builds first, before the loop's first frame, so every receiver
+// the frame builds has the later code whatever its order. It makes no pipeline; three keeps the
+// shadow map it creates for the real receivers (so the map's first redraw moves to the loop's first
+// frame, SunShadow.ts). Paused views at grow 0, 6 and 12 drew the same pixels with it as without.
 
 type Texture = { format: unknown; type: unknown; name: string };
 type RenderContext = { mrt?: { id: number } | null; textures: Texture[] | null };
@@ -136,6 +154,44 @@ export function installBindingPatches( renderer: unknown, revision: string = REV
 		return create.call( this, groups );
 
 	};
+	return true;
+
+}
+
+/** Builds one throwaway receiver of `scene`'s lights and environment through the backend's node
+ * builder (no pipeline), so the nodes r186 makes inside the first lit build exist before any material
+ * the frame draws is built (see the header). Call once, after the lights, their shadows' filters
+ * and the scene's environment are in place and before the first frame. Returns false (and warns) on
+ * a three revision other than 186. */
+export function primeSharedNodes( renderer: WebGPURenderer, scene: Scene, camera: Camera, revision: string = REVISION ): boolean {
+
+	if ( ! /^186(\.|$)/.test( revision ) ) {
+
+		console.warn( `primeSharedNodes: written for three r186, this is r${ revision }; not run` );
+		return false;
+
+	}
+	type Builder = { scene: Scene; material: unknown; camera: Camera; context: Record<string, unknown>; lightsNode: unknown; environmentNode: unknown; build(): void };
+	const r = renderer as unknown as { lighting: { createNode( lights: Light[] ): unknown }; backend: { createNodeBuilder( object: Mesh, renderer: unknown ): Builder } };
+	const lights: Light[] = [];
+	scene.traverseVisible( ( object ) => {
+
+		if ( ( object as Light ).isLight ) lights.push( object as Light );
+
+	} );
+	const material = new MeshStandardNodeMaterial();
+	const mesh = new Mesh( new PlaneGeometry(), material );
+	mesh.receiveShadow = true;
+	const builder = r.backend.createNodeBuilder( mesh, renderer );
+	builder.scene = scene;
+	builder.material = material;
+	builder.camera = camera;
+	builder.context.material = material;
+	builder.lightsNode = r.lighting.createNode( lights );
+	builder.environmentNode = ( scene as unknown as { environmentNode?: Node | null } ).environmentNode ?? null;
+	builder.build();
+	mesh.geometry.dispose();
+	material.dispose();
 	return true;
 
 }

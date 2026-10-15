@@ -42,7 +42,7 @@ import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
 import { SubmitBatch } from './post/SubmitBatch.ts';
-import { installBindingPatches, installCacheKeyPatches } from './post/graph/ThreePatches.ts';
+import { installBindingPatches, installCacheKeyPatches, primeSharedNodes } from './post/graph/ThreePatches.ts';
 import { FrameStats } from './debug/FrameStats.ts';
 import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
@@ -1671,6 +1671,9 @@ if ( profiler ) {
 	labelPonlaiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, caustics, characters } );
 
 }
+// the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
+// build the same code whichever comes first (graph/ThreePatches.ts)
+primeSharedNodes( renderer, scene, camera );
 mark( 'loop' );
 const loopBody = profiler ? profiler.wrapLoop( tick ) : tick;
 const animationLoop = detector ? ( time: number ) => detector.frame( loopBody, time ) : loopBody;

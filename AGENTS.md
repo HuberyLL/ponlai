@@ -123,8 +123,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`AfterResolve.ts`).
 - `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
   TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
-  `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches
-  (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
+  `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches and its first lit build made
+  ahead (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
 - `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
@@ -303,7 +303,11 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   warm-up's priming renders only what keeps no state and never leaves a persistent resource
   written (`fgPrime=0` turns it off). The order materials first build in is part of the image:
   r186 emits a shader from node state the builds share, so compiling draws ahead in another order
-  than the frame builds them changed other materials' code and moved a few pixels by one level. A
+  than the frame builds them changed other materials' code and moved a few pixels by one level.
+  The first lit build also makes nodes every receiver shares (the shadow's graph, the camera's world
+  matrix) and emits other code than the later ones: a throwaway receiver builds them before the
+  loop (`ThreePatches.ts` `primeSharedNodes`), so a receiver's code (and a kind's pipeline count)
+  does not depend on which draws first. A
   render three makes of its own that cannot be compiled before its first frame (the sun's map,
   built with the first receiver) compiles by rendering it once with asynchronous pipelines
   (`compileByRendering`, `SunShadow.ts`).
