@@ -330,8 +330,8 @@ export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSt
 
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
 // its plants and its people. A box around them, from the land's box (so it grows with the island):
-// out past the land's edge by the rim's overhang (the turf skirt over the lip, and room for what
-// hangs from it) plus a metre's margin, and up past the meadow by the islanders'
+// out past the land's edge by the rim's overhang (the grass hanging from the lip, and room for
+// more) plus a metre's margin, and up past the meadow by the islanders'
 // 2 m plus a metre.
 // Hits below REFLECTION_FLOOR under the sea level already weigh nothing (see traceSSR), so the box
 // ends there. A placed object off the island or above 3 m (a palm, a hut, a mast) or a wider rim

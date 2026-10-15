@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, float, instanceIndex, instancedArray, uint, vec3, vec4 } from 'three/tsl';
 import { WIND_STATE_VEC4S, Wind, createWindUniforms, packWindState, rootHash, swayFrequency, windField, windStateOf, type WindState } from '../weather/Wind.ts';
 import { plantGrass } from '../world/Grass.ts';
-import { GRASS_WIND, PALM_WIND, SKIRT_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
+import { GRASS_WIND, PALM_WIND, RIM_GRASS_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
@@ -421,7 +421,7 @@ function inventory( ctx: WindProbeContext ) {
 		const mesh = object as THREE.Mesh;
 		if ( ! mesh.isMesh ) return;
 		const material = ( Array.isArray( mesh.material ) ? mesh.material[ 0 ] : mesh.material ) as THREE.Material;
-		const named = /palm|tree|bush|grass|reed|fern|plant|foliage|leaf|skirt|rim/i.test( `${ mesh.name } ${ material.name }` );
+		const named = /palm|tree|bush|grass|reed|fern|plant|foliage|leaf|rim/i.test( `${ mesh.name } ${ material.name }` );
 		if ( ! material.userData.vegetation && ! mesh.userData.palm && ! windDisplacement( material ) && ! named ) return;
 		rows.push( {
 			mesh: mesh.name || mesh.type, material: material.name || material.type, parent: mesh.parent?.name,
@@ -436,8 +436,8 @@ function inventory( ctx: WindProbeContext ) {
 
 // each kind's natural sway frequency, Hz (Wind.ts `swayFrequency`; Deform.ts's numbers)
 const naturalFrequencies = () => ( {
-	grassAndFlowers: r3( swayFrequency( GRASS_WIND.cycles ) ), skirtThatch: r3( swayFrequency( SKIRT_WIND.cycles ) ),
-	hangingGrass: r3( swayFrequency( SKIRT_WIND.hang.cycles ) ), hangingGrassAcross: r3( swayFrequency( SKIRT_WIND.hang.across ) ),
+	grassAndFlowers: r3( swayFrequency( GRASS_WIND.cycles ) ),
+	hangingGrass: r3( swayFrequency( RIM_GRASS_WIND.cycles ) ), hangingGrassAcross: r3( swayFrequency( RIM_GRASS_WIND.across ) ),
 	palm: r3( swayFrequency( PALM_WIND.cycles / 2 ) ), // `slow`: half mainBend's rate
 } );
 

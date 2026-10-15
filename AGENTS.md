@@ -92,7 +92,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   swap); the footprint, SDF
   shapes and surface nets (`WorldShapes.ts`), the
   cliffs (`Cliff.ts`), the submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as
-  tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled on the GPU
+  tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, the grass hanging from its lip: `RimGrass.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled on the GPU
   by `vegetation/VegetationCull.ts`; its wildflowers are heads on some of its tufts, a batch of the
   pool, grown in patches of one species by the habitat fields of `materials/Meadow.ts`), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
   vegetation's depth prepass

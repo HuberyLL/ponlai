@@ -63,18 +63,18 @@
 //       point off the land (land distance > 0) lies at or below -1.6 m, and every tile side with no
 //       chunk beyond it, where the far floor meets the tile, is the open sea's lattice bit for bit
 //       (openSeaHeight, the far floor's normals, openSeaBeds, ao 1).
-//   S4  skirt seams: every piece of the turf skirt that ends on a chunk border meets exactly one
-//       piece that starts there in a neighbouring chunk, with the same crossing sample (ring
-//       points, normals, coast data) to 1e-5 (the count of bit-identical ones is printed); no piece
+//   S4  lip seams: every piece of the rim's lip that ends on a chunk border meets exactly one
+//       piece that starts there in a neighbouring chunk, with the same crossing sample (root
+//       points, coast data) to 1e-5 (the count of bit-identical ones is printed); no piece
 //       ends inside its chunk.
-//   S5  shared-out content: the 2 x 2 block with the most coast (turf skirt samples), made in one
+//   S5  shared-out content: the 2 x 2 block with the most coast (lip samples), made in one
 //       pass from its own window (`chunkBlock`) and shared out by chunk, equals its four chunks bit
 //       for bit in the rim ground, shore and walk texels and the anchors.
 //   S6  stones: every stone is owned once, by the chunk its centre lies in; and every stone a chunk
 //       places round itself for the contact shade (`contactStones`) whose centre lies in another
 //       chunk is that chunk's own stone, bit for bit, so two chunks shade with the same stone.
 //   S7  rim tiles: a chunk without island carries no rim ground tile (Chunks.ts; ChunkMerge.ts
-//       fills its square with the open sea's constant), no skirt and no anchors, and no island
+//       fills its square with the open sea's constant), no lip and no anchors, and no island
 //       vertex or anchor of any chunk lies within 0.5 m of its square: the merged field's readers
 //       (the cliff material's linear lookups on the island, the meadow's tufts at the anchors)
 //       never reach those texels. Prints the nearest such point.
@@ -107,7 +107,7 @@ import {
 	parseChunkKey, windowFootprint, R, S,
 } from '../src/world/Chunks.ts';
 import { ISLAND_BOTTOM, islandSurfaceHeight, makeIslandSDF } from '../src/world/WorldShapes.ts';
-import { SKIRT_INFO, SKIRT_RING } from '../src/world/RimGround.ts';
+import { LIP_INFO, LIP_POINTS } from '../src/world/RimGround.ts';
 import { pendingFloors, riseTile, TILE_SIDE } from '../src/world/SeabedTile.ts';
 import { openSeaBeds, openSeaHeight, FLOOR_STEP, OPEN_LATTICE, SHELF_CEILING } from '../src/world/Bathymetry.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
@@ -124,7 +124,7 @@ const VOXEL = 0.125, Y0 = ISLAND_BOTTOM + 0.5;
 // ------------------------------------------------------------------ the worker
 
 // A job: one chunk from its window and the land; the reply carries its hash, timings and size, and
-// at the S steps what the seam checks compare (its meshes, floor tile, skirt, rasters, items, the
+// at the S steps what the seam checks compare (its meshes, floor tile, lip, rasters, items, the
 // stones it places round it, the inland columns). A `block` job makes a 2 x 2 block's share-out
 // instead (S5), an `islandBlock` job its island mesh (S2).
 if ( ! isMainThread ) {
@@ -161,7 +161,7 @@ if ( ! isMainThread ) {
 			reply.stones = c.stones.mesh;
 			for ( const m of [ c.island, c.stones.mesh ] ) if ( m ) for ( const a of Object.values( m ) ) if ( ! transfer.includes( a.buffer ) ) transfer.push( a.buffer );
 			Object.assign( reply, {
-				floor: c.floor, skirt: c.skirt, rimGround: c.rimGround, shore: c.shore, walk: c.walk,
+				floor: c.floor, lip: c.lip, rimGround: c.rimGround, shore: c.shore, walk: c.walk,
 				anchors: c.anchors, rocks: c.stones.rocks,
 				contact: contactStones( job.window, job.ci, job.cj ),
 				inland: inlandColumns( job.window, job.ci, job.cj, c.island ),
@@ -359,10 +359,10 @@ async function main() {
 		for ( const s of run.steps ) if ( sSteps.includes( s.step ) ) {
 
 			const ctx = { label: `seed ${ run.seed } step ${ s.step }`, field: s.field, chunks: s.chunks };
-			for ( const check of [ closed, seams, floorSeams, skirtSeams, blockShare, stoneOwners, rimTiles, inland, ...( long ? [ columns ] : [] ) ] ) if ( ! await check( ctx, pool ) ) failed ++;
+			for ( const check of [ closed, seams, floorSeams, lipSeams, blockShare, stoneOwners, rimTiles, inland, ...( long ? [ columns ] : [] ) ] ) if ( ! await check( ctx, pool ) ) failed ++;
 			s.field = null;
 			// the meshes and rasters are not needed past this step
-			for ( const c of s.chunks ) for ( const k of [ 'island', 'stones', 'floor', 'skirt', 'rimGround', 'shore', 'walk', 'anchors', 'contact' ] ) delete c[ k ];
+			for ( const c of s.chunks ) for ( const k of [ 'island', 'stones', 'floor', 'lip', 'rimGround', 'shore', 'walk', 'anchors', 'contact' ] ) delete c[ k ];
 
 		}
 
@@ -1140,18 +1140,18 @@ function floorSeams( ctx ) {
 
 }
 
-// S4: the turf skirt's pieces that cross a chunk border meet a piece of the neighbour there, with
-// the same crossing sample (ring points, normals, coast data).
+// S4: the lip's pieces that cross a chunk border meet a piece of the neighbour there, with the
+// same crossing sample (root points, coast data).
 const RING = 1e-5;
-function skirtSeams( ctx ) {
+function lipSeams( ctx ) {
 
 	const map = chunkMap( ctx.chunks );
 	const endsOf = ( c ) => {
 
-		const { points, normals, info, pieces } = c.skirt, ends = [];
+		const { points, info, pieces } = c.lip, ends = [];
 		const sample = ( q, start ) => ( {
-			key: c.key, start, x: info[ q * SKIRT_INFO ], z: info[ q * SKIRT_INFO + 1 ],
-			data: [ ...points.subarray( q * SKIRT_RING * 3, ( q + 1 ) * SKIRT_RING * 3 ), ...normals.subarray( q * SKIRT_RING * 3, ( q + 1 ) * SKIRT_RING * 3 ), ...info.subarray( q * SKIRT_INFO, ( q + 1 ) * SKIRT_INFO ) ],
+			key: c.key, start, x: info[ q * LIP_INFO ], z: info[ q * LIP_INFO + 1 ],
+			data: [ ...points.subarray( q * LIP_POINTS * 3, ( q + 1 ) * LIP_POINTS * 3 ), ...info.subarray( q * LIP_INFO, ( q + 1 ) * LIP_INFO ) ],
 		} );
 		for ( let k = 0; k < pieces.length; k += 2 ) {
 
@@ -1169,7 +1169,7 @@ function skirtSeams( ctx ) {
 	for ( const c of ctx.chunks ) for ( const e of ends.get( c.key ) ) {
 
 		const b = chunkBox( c.ci, c.cj ), on = ( v, line ) => Math.abs( v - line ) < 1e-9;
-		if ( ! ( on( e.x, b.x0 ) || on( e.x, b.x1 ) || on( e.z, b.z0 ) || on( e.z, b.z1 ) ) ) { fail( `chunk ( ${ c.key } ): a skirt piece ends inside it at ( ${ e.x }, ${ e.z } )` ); continue; }
+		if ( ! ( on( e.x, b.x0 ) || on( e.x, b.x1 ) || on( e.z, b.z0 ) || on( e.z, b.z1 ) ) ) { fail( `chunk ( ${ c.key } ): a lip piece ends inside it at ( ${ e.x }, ${ e.z } )` ); continue; }
 		// a start meets an end: count each crossing once, at its start
 		if ( ! e.start ) continue;
 		const found = [];
@@ -1180,7 +1180,7 @@ function skirtSeams( ctx ) {
 			if ( n ) for ( const o of ends.get( n.key ) ) if ( ! o.start && Math.abs( o.x - e.x ) <= RING && Math.abs( o.z - e.z ) <= RING ) found.push( o );
 
 		}
-		if ( found.length !== 1 ) { fail( `chunk ( ${ c.key } ): a skirt piece starting at ( ${ e.x }, ${ e.z } ) meets ${ found.length } pieces across the border` ); continue; }
+		if ( found.length !== 1 ) { fail( `chunk ( ${ c.key } ): a lip piece starting at ( ${ e.x }, ${ e.z } ) meets ${ found.length } pieces across the border` ); continue; }
 		crossings ++;
 		let d = 0;
 		for ( let k = 0; k < e.data.length; k ++ ) d = Math.max( d, Math.abs( e.data[ k ] - found[ 0 ].data[ k ] ) );
@@ -1191,8 +1191,8 @@ function skirtSeams( ctx ) {
 	}
 	// every end was paired: as many ends as starts were matched
 	const unpaired = ctx.chunks.reduce( ( n, c ) => n + ends.get( c.key ).filter( ( e ) => ! e.start ).length, 0 ) - crossings;
-	if ( unpaired && ! failures ) fail( `${ unpaired } skirt pieces end on a border where none starts` );
-	console.log( `${ failures ? 'FAIL' : 'ok  ' } S4 ${ ctx.label }: ${ crossings } skirt crossings of chunk borders, each one piece ending where one starts across it; ` +
+	if ( unpaired && ! failures ) fail( `${ unpaired } lip pieces end on a border where none starts` );
+	console.log( `${ failures ? 'FAIL' : 'ok  ' } S4 ${ ctx.label }: ${ crossings } lip crossings of chunk borders, each one piece ending where one starts across it; ` +
 		`${ identical } bit-identical, the largest difference ${ worst.toExponential( 1 ) } (at most ${ RING })` );
 	return failures === 0;
 
@@ -1239,7 +1239,7 @@ function rimTiles( ctx ) {
 
 	const bare = ctx.chunks.filter( ( c ) => c.rimGround.length === 0 ).map( ( c ) => chunkBox( c.ci, c.cj ) );
 	let wrong = 0, nearest = Infinity, points = 0;
-	for ( const c of ctx.chunks ) if ( c.rimGround.length === 0 && ( c.island || c.anchors.length > 0 || c.skirt.points.length > 0 ) ) wrong ++;
+	for ( const c of ctx.chunks ) if ( c.rimGround.length === 0 && ( c.island || c.anchors.length > 0 || c.lip.points.length > 0 ) ) wrong ++;
 	const visit = ( near, x, z ) => {
 
 		points ++;
@@ -1257,7 +1257,7 @@ function rimTiles( ctx ) {
 
 	}
 	const ok = wrong === 0 && nearest > 0.5;
-	console.log( `${ ok ? 'ok  ' : 'FAIL' } S7 ${ ctx.label }: ${ bare.length } chunks without a rim tile (${ wrong } with island, anchors or skirt); ` +
+	console.log( `${ ok ? 'ok  ' : 'FAIL' } S7 ${ ctx.label }: ${ bare.length } chunks without a rim tile (${ wrong } with island, anchors or lip); ` +
 		`the nearest of ${ points } island vertices and anchors beside them lies ${ nearest.toFixed( 2 ) } m from their squares` );
 	return ok;
 
@@ -1282,7 +1282,7 @@ function inland( ctx ) {
 
 }
 
-// S5: the 2 x 2 block with the most coast (turf skirt samples), made in one pass from its own
+// S5: the 2 x 2 block with the most coast (lip samples), made in one pass from its own
 // window (`chunkBlock`), shares out exactly its four chunks' rim ground, shore and walk texels and
 // anchors.
 async function blockShare( ctx, pool ) {
@@ -1293,7 +1293,7 @@ async function blockShare( ctx, pool ) {
 
 		const quad = [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ].map( ( [ di, dj ] ) => map.get( `${ c.ci + di },${ c.cj + dj }` ) );
 		if ( quad.some( ( q ) => ! q ) ) continue;
-		const items = quad.reduce( ( n, q ) => n + q.skirt.info.length / SKIRT_INFO, 0 );
+		const items = quad.reduce( ( n, q ) => n + q.lip.info.length / LIP_INFO, 0 );
 		if ( items > most ) { most = items; best = c; }
 
 	}

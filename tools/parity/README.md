@@ -93,7 +93,7 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
 
 All paused at `t=12`, at the tier's own pixel ratio (no `dpr`): on high, 1728x1117 CSS at DPR 2
 renders 2592x1675 and FSR 1 brings it to 3456x2234. Placements derive from the island mesh's
-bounds, the meadow's flower heads, the turf skirt, the islander and the sun and moon,
+bounds, the meadow's flower heads, the rim's hanging grass, the islander and the sun and moon,
 so they follow any tile layout.
 
 `parity` (the default group, 12 views): the profiler's scenes (`tools/profile-frame.mjs`),
@@ -127,7 +127,7 @@ no group but `special` (see below).
 | low-36 | weather=fair&preset=noon&dist=36&polar=80&az=330 | orbit low over the sea at 36 m |
 | islander-close | weather=fair&preset=noon | orbit about the islander, 3.2 / 2.4 / 3.6 m off its centre |
 | flowers-close | weather=fair&preset=noon | free camera 1.2 m over the densest flowers, 35 degrees down |
-| rim-sea | weather=fair&preset=noon | 25 m out, 4 m up, facing the densest stretch of the turf skirt |
+| rim-sea | weather=fair&preset=noon | 25 m out, 4 m up, facing the densest stretch of the rim's hanging grass |
 | cliff-sea-golden | weather=clear&preset=golden-hour | from the sea, 3 m up, the island against the low sun |
 
 `special` (island-rain, island-storm, horizon-storm, island-fog-dawn, weather-change: the views

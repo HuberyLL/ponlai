@@ -1,7 +1,7 @@
 import { Field2D } from './Field2D.ts';
 import { ISLAND_TOP, islandSurfaceHeight, solidSide, type Bounds, type Footprint } from './WorldShapes.ts';
 import { noise3, smoothstep } from './noise.ts';
-import type { RimGroundField, RimSkirtData, SDF, ShoreField } from './types.ts';
+import type { RimGroundField, RimLipData, SDF, ShoreField } from './types.ts';
 
 export const RIM_FRINGE_FADE = 0.12;
 export const RIM_INNER_LIMIT = 0.70;
@@ -21,7 +21,7 @@ export const RIM_CELL = 0.1;
 // Its distance is clamped to +-RIM_REACH (m), and a box's tile spans RIM_PAD round the box: the
 // texels of the box then find every cell their clamped distance depends on inside the tile (the
 // transform is exact), so they equal those of any larger tile, bit for bit, and so do the texels
-// the turf skirt reads in the tile's first half metre outside the box.
+// the lip reads in the tile's first half metre outside the box.
 export const RIM_REACH = 1.5;
 export const RIM_PAD = 2;
 const PAD_TEXELS = Math.round( RIM_PAD / RIM_CELL );
@@ -62,7 +62,7 @@ function texelRange( a: number, b: number ): [ number, number ] {
 
 /** The top coast differs from the land's footprint: the island's actual solid just below the
  * roof, on the rim ground's lattice over the texels whose centres lie in `box`. Grass thinning,
- * exposed root soil, stone shoulders and the turf skirt all
+ * exposed root soil, stone shoulders and the lip's hanging grass all
  * share this one boundary. */
 export class RimLattice {
 
@@ -127,8 +127,7 @@ export function rimGroundTile( lattice: RimLattice, box: Bounds ): RimGroundFiel
 		// The root bed's depth below the roof, patchy along the coast: deep cuts expose a band of
 		// root soil, and where it runs shallow the turf creeps down over the lip instead (see
 		// TerrainMaterial), so the edge alternates between earth and overgrown stretches. Both the
-		// band (3 - 15 cm) and the retreat pockets stay small: the turf skirt curls over most of the
-		// lip and its soil shows only where the skirt has torn off.
+		// band (3 - 15 cm) and the retreat pockets stay small.
 		data[ k + 3 ] = 0.03 + Math.pow( smoothstep( 0.45, 0.8, roots ), 1.4 ) * 0.12;
 
 	}
@@ -186,7 +185,7 @@ export function rimBoxes( sdf: SDF, b: Bounds ): { boxes: Bounds[]; lattice: Rim
 
 /** The rim ground over the land's box `b` and RIM_PAD round it, assembled from the tiles of the
  * world's RIM_BOX boxes that cover it: the tests' entry point (the worker assembles the same tiles
- * in `buildRim`, where it also drapes the turf skirt over them). */
+ * in each chunk (Chunks.ts), where it also traces the lip over them). */
 export function buildRimGround( sdf: SDF, b: Bounds ): RimGroundField {
 
 	const { boxes, lattice } = rimBoxes( sdf, b );
@@ -450,33 +449,18 @@ function resamplePiece( piece: ChainPiece, step: number ): ChainPoint[] {
 
 }
 
-// ------------------------------------------------------------------ turf skirt
+// ------------------------------------------------------------------ the lip
 
-// The sod's mat of roots overhangs the stone a little and drapes over the lip, so the meadow
-// spills over the edge instead of stopping on a line. Its shape is a function of position and
-// of the same root bed: retreat pockets, where the turf already gives way to soil and stone,
-// stay bare. Nothing is placed by hand, so the skirt follows any coast the island takes.
-// Reach and droop are the sod's where it is fully present; the skirt scales them by presence
-// after easing it along the coast.
-export interface RimSkirtShape { presence: number; reach: number; droop: number }
+// How far the meadow's turf holds at the rim, 0..1: a function of position and of the root bed
+// (retreat pockets, where the turf already gives way to soil and stone, hold none). Most of the
+// coast is covered; the rest is thinner in stretches of one to a few metres, and a finer field
+// breaks the longest runs. The grass hanging from the lip (RimGrass.ts) grows by it. Nothing is
+// placed by hand, so it follows any coast the island takes.
+export function rimLipPresence( x: number, z: number, retreat: number ): number {
 
-export function rimSkirtShape( x: number, z: number, retreat: number ): RimSkirtShape {
-
-	// Most of the coast is covered; the rest is left bare in stretches of one to a few metres.
 	const broad = noise3( x * 0.41 + 1.3, 6.1, z * 0.41 - 4.4 ) * 0.5 + 0.5;
-	const thick = noise3( x * 0.93 - 5.2, 2.4, z * 0.93 + 3.3 ) * 0.5 + 0.5;
-	// A finer field breaks the longest runs, so no stretch reads as a continuous hem.
 	const breakup = noise3( x * 1.6 - 3.7, 0.9, z * 1.6 + 8.1 ) * 0.5 + 0.5;
-	const presence = smoothstep( 0.12, 0.34, broad ) * smoothstep( 0.14, 0.36, breakup ) * ( 1 - smoothstep( - 0.03, 0.09, retreat ) );
-	// Ragged lower edge: rounded lobes of sod a few decimetres wide between torn notches where it
-	// barely curls over, each lobe frayed by shorter tongues, so the edge never reads as a smooth
-	// hem. (Tongues alone, a hand's width apart, cut it into even saw teeth.)
-	const tongue = noise3( x * 6.3 + 0.7, 9.2, z * 6.3 - 1.9 ) * 0.5 + 0.5;
-	const lobe = smoothstep( 0.3, 0.62, noise3( x * 2.9 - 6.1, 3.3, z * 2.9 + 0.4 ) * 0.5 + 0.5 );
-	const vigour = smoothstep( 0.30, 0.80, broad * 0.6 + thick * 0.4 );
-	const reach = ( 0.07 + 0.17 * vigour ) * ( 0.65 + 0.4 * lobe );
-	const droop = ( 0.09 + 0.23 * vigour ) * ( 0.25 + 0.85 * lobe ) * ( 0.8 + 0.4 * tongue );
-	return { presence, reach, droop };
+	return smoothstep( 0.12, 0.34, broad ) * smoothstep( 0.14, 0.36, breakup ) * ( 1 - smoothstep( - 0.03, 0.09, retreat ) );
 
 }
 
@@ -495,98 +479,74 @@ export function topAt( sdf: SDF, x: number, z: number ): number | undefined {
 
 }
 
-// Cross-section of the skirt, outward offset from the traced coast (m) and its height
-// relative to the roof. The first ring is buried in the turf; the last is the ragged lower edge.
-export const SKIRT_RING = 7;
-// Per skirt sample: its place on the coast ( x, z ), the outward direction ( x, z ), presence, droop,
-// the roof's height and the wall below it: at each of SKIRT_WALL's depths under the roof (every
-// 10 cm down to the longest hanging blade's reach), the outward offset from the coast (m) where
-// the stone is SKIRT_CLEAR away, which the grass hanging from the lip (RimSkirt.ts) lies on, so it
+// Per lip sample, the span the hanging grass roots along: LIP_POINTS points ( x, y, z ) on the
+// meadow's ground just inside the lip, from LIP_SPAN[ 0 ] to LIP_SPAN[ 1 ] (m, inside the traced
+// coast), a centimetre above the ground. Rooted among the meadow's own tufts, the hanging grass
+// reads as the lawn growing out over the edge rather than a row starting at it.
+export const LIP_POINTS = 2;
+const LIP_SPAN = [ - 0.16, - 0.02 ];
+// Per lip sample: its place on the coast ( x, z ), the outward direction ( x, z ), presence, the
+// roof's height and the wall below it: at each of LIP_WALL's depths under the roof (every 10 cm
+// down to the longest hanging blade's reach), the outward offset from the coast (m) where the
+// stone is LIP_CLEAR away, which the grass hanging from the lip (RimGrass.ts) lies on, so it
 // drapes over a battered wall instead of passing into it.
-export const SKIRT_WALL = Array.from( { length: 15 }, ( _, k ) => Math.round( ( k + 1 ) * 10 ) / 100 );
-export const SKIRT_INFO = 7 + SKIRT_WALL.length;
-const SKIRT_CLEAR = 0.03;
-// The skirt's samples lie this far apart along the coast, or a little less.
-export const SKIRT_STEP = 0.05;
-// Where the noise fields cross their thresholds steeply, a run of sod would end in a cut face. A
-// triangular filter along the coast (taps SKIRT_STEP apart, half-width EASE taps) thins every end
-// out over a few decimetres instead.
+export const LIP_WALL = Array.from( { length: 15 }, ( _, k ) => Math.round( ( k + 1 ) * 10 ) / 100 );
+export const LIP_INFO = 6 + LIP_WALL.length;
+const LIP_CLEAR = 0.03;
+// The lip's samples lie this far apart along the coast, or a little less.
+export const LIP_STEP = 0.05;
+// Where the noise fields cross their thresholds steeply, the hanging grass would end in a cut. A
+// triangular filter along the coast (taps LIP_STEP apart, half-width EASE taps) eases the
+// presence over a few decimetres instead.
 const EASE = 4;
 
-interface SkirtRing { points: number[]; nx: number; nz: number; presence: number; droop: number; roof: number }
-
-// The skirt's cross-section at a place on the coast: its rings swept from the traced coast, kept
-// clear of the rock. Everything it reads is the tile near the place, the SDF and the chain within
-// EASE steps of it, so a place both boxes share gives both the same rings.
-function skirtRing( sdf: SDF, tile: RimGroundField, chain: CoastChain, at: ChainPoint ): SkirtRing {
+// The lip at a place on the coast: its root span and its record (LIP_INFO without the wall).
+// Everything it reads is the tile near the place, the SDF and the chain within EASE steps of it,
+// so a place both boxes share gives both the same sample.
+function lipSample( sdf: SDF, tile: RimGroundField, chain: CoastChain, at: ChainPoint, points: number[], info: number[] ): void {
 
 	const { x, z } = at;
-	const presenceAt = ( p: ChainPoint ) => rimSkirtShape( p.x, p.z, sampleRimGround( tile, p.x, p.z ).retreat ).presence;
+	const presenceAt = ( p: ChainPoint ) => rimLipPresence( p.x, p.z, sampleRimGround( tile, p.x, p.z ).retreat );
 	let sum = 0, weight = 0;
 	for ( let j = - EASE; j <= EASE; j ++ ) {
 
-		const tap = j === 0 ? at : walkChain( chain, at, j * SKIRT_STEP );
+		const tap = j === 0 ? at : walkChain( chain, at, j * LIP_STEP );
 		if ( ! tap ) continue;
 		const w = EASE + 1 - Math.abs( j );
 		sum += presenceAt( tap ) * w; weight += w;
 
 	}
 	const presence = sum / weight;
-	const g = sampleRimGround( tile, x, z ), shape = rimSkirtShape( x, z, g.retreat );
+	const g = sampleRimGround( tile, x, z );
 	const e = 0.15;
 	let nx = sampleRimGround( tile, x + e, z ).distance - sampleRimGround( tile, x - e, z ).distance;
 	let nz = sampleRimGround( tile, x, z + e ).distance - sampleRimGround( tile, x, z - e ).distance;
 	const l = Math.hypot( nx, nz ) || 1;
 	nx /= l; nz /= l;
-	const reach = shape.reach * presence, droop = shape.droop * presence;
 	const roof = topAt( sdf, x - nx * 0.22, z - nz * 0.22 ) ?? g.roofY;
-	// ( outward offset, height above the roof ). The sod bulges a little over the lip before it
-	// curls down and tucks back toward the wall at its lower edge.
-	const ring: [ number, number ][] = [
-		[ - 0.42, - 0.02 ], [ - 0.22, 0.012 * presence ], [ - 0.05, 0.018 * presence ],
-		[ reach * 0.72, 0.008 * presence - droop * 0.12 ], [ reach, - droop * 0.42 ],
-		[ reach * 0.9, - droop * 0.76 ], [ reach * 0.74, - droop ],
-	];
-	const points: number[] = [];
-	for ( let k = 0; k < SKIRT_RING; k ++ ) {
-
-		const [ s, h ] = ring[ k ];
-		let px = x + nx * s, pz = z + nz * s, py = roof + h;
-		if ( k < 3 ) {
-
-			// On the plateau the sod follows the ground; the buried ring meets it.
-			const ground = topAt( sdf, px, pz );
-			if ( ground !== undefined ) py = k === 0 ? ground - 0.02 : Math.max( py, ground + 0.004 + 0.01 * presence );
-
-		}
-		// Over the edge, keep every ring a little clear of the stone ( batter, chips, bulges ).
-		for ( let i = 0; i < 8 && k >= 2; i ++ ) {
-
-			const d = sdf( px, py, pz );
-			if ( d >= 0.018 ) break;
-			px += nx * ( 0.022 - d ); pz += nz * ( 0.022 - d );
-
-		}
-		points.push( px, py, pz );
-
-	}
-	return { points, nx, nz, presence, droop, roof };
+	// the inner root on the meadow; the outer one where the ground falls away, held within 15 cm
+	// below the inner one (and there where the wall has receded under it)
+	const inner = topAt( sdf, x + nx * LIP_SPAN[ 0 ], z + nz * LIP_SPAN[ 0 ] ) ?? roof;
+	const outer = Math.min( inner, Math.max( topAt( sdf, x + nx * LIP_SPAN[ 1 ], z + nz * LIP_SPAN[ 1 ] ) ?? - Infinity, inner - 0.15 ) );
+	points.push( x + nx * LIP_SPAN[ 0 ], inner + 0.01, z + nz * LIP_SPAN[ 0 ], x + nx * LIP_SPAN[ 1 ], outer + 0.01, z + nz * LIP_SPAN[ 1 ] );
+	info.push( x, z, nx, nz, presence, roof );
+	lipWall( sdf, x, z, nx, nz, roof, info );
 
 }
 
-// The wall under a skirt sample (SKIRT_INFO): from 0.3 m inside the coast, outward until the stone
-// is SKIRT_CLEAR away, at each of SKIRT_WALL's depths under the roof. Where the wall recedes the
+// The wall under a lip sample (LIP_INFO): from 0.3 m inside the coast, outward until the stone
+// is LIP_CLEAR away, at each of LIP_WALL's depths under the roof. Where the wall recedes the
 // offset stays at -0.3 (nothing to keep clear of); it reaches out at most 1.5 m.
-function skirtWall( sdf: SDF, x: number, z: number, nx: number, nz: number, roof: number, out: number[] ): void {
+function lipWall( sdf: SDF, x: number, z: number, nx: number, nz: number, roof: number, out: number[] ): void {
 
-	for ( const depth of SKIRT_WALL ) {
+	for ( const depth of LIP_WALL ) {
 
 		let s = - 0.3;
 		for ( let i = 0; i < 12 && s < 1.5; i ++ ) {
 
 			const d = sdf( x + nx * s, roof - depth, z + nz * s );
-			if ( d >= SKIRT_CLEAR ) break;
-			s += SKIRT_CLEAR - d;
+			if ( d >= LIP_CLEAR ) break;
+			s += LIP_CLEAR - d;
 
 		}
 		out.push( Math.min( s, 1.5 ) );
@@ -595,17 +555,17 @@ function skirtWall( sdf: SDF, x: number, z: number, nx: number, nz: number, roof
 
 }
 
-/** The turf skirt a box owns: the coast traced in its tile (`rimGroundTile`), cut where it crosses
- * the box's border, each piece between two crossings resampled evenly so both crossings are
- * samples (and a loop inside the box from its first vertex), with the sod's cross-section swept
- * along it. Neighbouring boxes compute a crossing they share alike, rings and normals included,
- * so their pieces meet without a seam; a segment belongs to the box of the piece it lies in. */
-export function buildRimSkirt( sdf: SDF, tile: RimGroundField, box: Bounds ): RimSkirtData {
+/** The lip a box owns: the coast traced in its tile (`rimGroundTile`), cut where it crosses the
+ * box's border, each piece between two crossings resampled evenly so both crossings are samples
+ * (and a loop inside the box from its first vertex), with each sample's root span and record.
+ * Neighbouring boxes compute a crossing they share alike, so the grass along their pieces meets
+ * without a seam; a segment belongs to the box of the piece it lies in. */
+export function buildRimLip( sdf: SDF, tile: RimGroundField, box: Bounds ): RimLipData {
 
-	const points: number[] = [], normals: number[] = [], info: number[] = [], pieces: number[] = [];
+	const points: number[] = [], info: number[] = [], pieces: number[] = [];
 	for ( const chain of coastChains( tile ) ) {
 
-		// specks of solid or of open stone a few texels across hold no sod
+		// specks of solid or of open stone a few texels across hold no grass
 		if ( chain.closed ) {
 
 			let length = 0;
@@ -620,63 +580,30 @@ export function buildRimSkirt( sdf: SDF, tile: RimGroundField, box: Bounds ): Ri
 		}
 		for ( const piece of piecesInBox( chain, box ) ) {
 
-			const samples = resamplePiece( piece, SKIRT_STEP );
-			const rings = samples.map( ( at ) => skirtRing( sdf, tile, chain, at ) );
-			// the body's normals from the rings and their neighbours along the coast: at a crossing,
-			// rings a step either way along the chain, which the box beyond takes alike
-			const last = samples.length - 1;
-			const beside = ( q: number, side: number ) => {
-
-				// a loop's last sample is its first
-				if ( piece.loop ) return rings[ ( q + side + last ) % last ];
-				if ( q > 0 && q < last ) return rings[ q + side ];
-				const at = walkChain( chain, samples[ q ], side * SKIRT_STEP );
-				return at ? skirtRing( sdf, tile, chain, at ) : rings[ q ];
-
-			};
-			pieces.push( info.length / SKIRT_INFO, samples.length );
-			samples.forEach( ( at, q ) => {
-
-				const ring = rings[ q ], before = beside( q, - 1 ).points, after = beside( q, 1 ).points;
-				for ( let k = 0; k < SKIRT_RING; k ++ ) {
-
-					const p = ring.points, a = k * 3, lo = Math.max( 0, k - 1 ) * 3, hi = Math.min( SKIRT_RING - 1, k + 1 ) * 3;
-					const ax = after[ a ] - before[ a ], ay = after[ a + 1 ] - before[ a + 1 ], az = after[ a + 2 ] - before[ a + 2 ];
-					const cx = p[ hi ] - p[ lo ], cy = p[ hi + 1 ] - p[ lo + 1 ], cz = p[ hi + 2 ] - p[ lo + 2 ];
-					// along x across, as the strip's triangles wind
-					let nx = ay * cz - az * cy, ny = az * cx - ax * cz, nz = ax * cy - ay * cx;
-					const l = Math.hypot( nx, ny, nz ) || 1;
-					nx /= l; ny /= l; nz /= l;
-					points.push( p[ a ], p[ a + 1 ], p[ a + 2 ] );
-					normals.push( nx, ny, nz );
-
-				}
-				info.push( at.x, at.z, ring.nx, ring.nz, ring.presence, ring.droop, ring.roof );
-				skirtWall( sdf, at.x, at.z, ring.nx, ring.nz, ring.roof, info );
-
-			} );
+			const samples = resamplePiece( piece, LIP_STEP );
+			pieces.push( info.length / LIP_INFO, samples.length );
+			for ( const at of samples ) lipSample( sdf, tile, chain, at, points, info );
 
 		}
 
 	}
-	return { points: new Float32Array( points ), normals: new Float32Array( normals ), info: new Float32Array( info ), pieces: new Int32Array( pieces ) };
+	return { points: new Float32Array( points ), info: new Float32Array( info ), pieces: new Int32Array( pieces ) };
 
 }
 
-/** Boxes' skirts in one, in the order given. */
-export function mergeRimSkirts( parts: RimSkirtData[] ): RimSkirtData {
+/** Boxes' lips in one, in the order given. */
+export function mergeRimLips( parts: RimLipData[] ): RimLipData {
 
-	const sum = ( key: 'points' | 'normals' | 'info' | 'pieces' ) => parts.reduce( ( n, p ) => n + p[ key ].length, 0 );
-	const merged: RimSkirtData = { points: new Float32Array( sum( 'points' ) ), normals: new Float32Array( sum( 'normals' ) ), info: new Float32Array( sum( 'info' ) ), pieces: new Int32Array( sum( 'pieces' ) ) };
+	const sum = ( key: 'points' | 'info' | 'pieces' ) => parts.reduce( ( n, p ) => n + p[ key ].length, 0 );
+	const merged: RimLipData = { points: new Float32Array( sum( 'points' ) ), info: new Float32Array( sum( 'info' ) ), pieces: new Int32Array( sum( 'pieces' ) ) };
 	let points = 0, info = 0, pieces = 0;
 	for ( const p of parts ) {
 
 		merged.points.set( p.points, points );
-		merged.normals.set( p.normals, points );
 		merged.info.set( p.info, info );
 		for ( let k = 0; k < p.pieces.length; k += 2 ) {
 
-			merged.pieces[ pieces + k ] = p.pieces[ k ] + info / SKIRT_INFO;
+			merged.pieces[ pieces + k ] = p.pieces[ k ] + info / LIP_INFO;
 			merged.pieces[ pieces + k + 1 ] = p.pieces[ k + 1 ];
 
 		}

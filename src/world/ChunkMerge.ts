@@ -33,7 +33,7 @@
 import type { ChunkData } from './Chunks.ts';
 import { LandLattice } from './IslandGrowth.ts';
 import { tileIndices, SEABED_TILE, TILE_SIDE, type FarFloor } from './SeabedTile.ts';
-import { gridBoxes, mergeRimSkirts, RIM_BOX, RIM_CELL, RIM_PAD, RIM_REACH } from './RimGround.ts';
+import { gridBoxes, mergeRimLips, RIM_BOX, RIM_CELL, RIM_PAD, RIM_REACH } from './RimGround.ts';
 import { landBounds, ISLAND_TOP, LAND_REACH, type Bounds } from './WorldShapes.ts';
 import { submergedIndex, SEA_LEVEL } from './ChunkDerived.ts';
 import type { IslandChunk, MeshData, Rock, WorldData } from './types.ts';
@@ -202,13 +202,13 @@ export function* mergeSteps( land: LandData, unordered: readonly ChunkData[] ): 
 	chunks.forEach( ( c, k ) => { chunkList[ k * 2 ] = c.ci; chunkList[ k * 2 + 1 ] = c.cj; } );
 	const vegetation = concat( chunks.map( ( c ) => c.anchors ) );
 	yield* pause();
-	const rimSkirt = mergeRimSkirts( chunks.map( ( c ) => c.skirt ) );
+	const rimLip = mergeRimLips( chunks.map( ( c ) => c.lip ) );
 	const data: WorldData = {
 		land: land.land, chunks: chunkList,
 		islands, stones, rocks, seabed, refracted,
 		vegetation,
 		rimGround,
-		rimSkirt,
+		rimLip,
 		shore, seabedField, seabedBeds,
 		walk: land.walk,
 		timings: {},
