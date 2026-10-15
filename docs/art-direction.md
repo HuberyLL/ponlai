@@ -64,12 +64,15 @@ art decision changes; reference images stay out of the repository.
   shaded, with a thin lighter edge, and differs a little in value and tint (now and then a yellower
   or a deeper green), all of it far finer than any patch, so the lawn's average stays one colour.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
-  over the blades, which reads as plastic): the gaps between blades a deeper, cooler green (never
-  near black), the tips lighter and yellow-green where the sun shines through them; only a gentle,
-  broad swing of its value; no clumps, tall islands or bare patches, and no pattern of dots on the
-  blades. Inside the grass there are no hard shadows, only an even darkening toward the ground;
-  the shade of bushes and trees lies on it soft and light, and cloud shadows pass over the whole
-  island as one soft gradient. The turf under the blades is the deeper green of their lower part,
+  over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
+  near black) under tips that stand out lighter and yellow-green where the sun shines through
+  them; looking toward the sun the whole lawn glows, away from it it is plainer and greener; no
+  clumps, tall islands or bare patches, and no pattern of dots on the blades. Inside the grass
+  there are no hard shadows, only an even darkening toward the ground; the shade of bushes and
+  trees lies on it soft and light. Cloud shadows are soft patches a few tens of metres across
+  that drift slowly over the island and the sea with the wind: none under a clear sky, some in
+  fair weather, more and softer as cloud gathers, merging into one even shade under overcast.
+  The light moves; nothing dark is painted onto the ground. The turf under the blades is the deeper green of their lower part,
   so from afar the meadow reads as one smooth carpet. By night the lawn is a dark blue-green, its
   blades lit only as the moon's own strength allows. Toward the coast the tufts grow taller and lean out over the lip
   instead of thinning, and the lip alternates between overgrown stretches and cut-open root soil.

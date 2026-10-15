@@ -58,6 +58,15 @@ export function backlight( L: V3, V: V3, power: number ): F {
 
 }
 
+/** Light scattered forward through a blade, broad: the view's angle from the sun, half-wrapped to
+ * the power `power`, so it brightens the whole half of the view that faces the sun (a lawn seen
+ * from above toward a high sun) and peaks looking into it, unlike `backlight`'s narrow lobe. */
+export function forwardLight( L: V3, V: V3, power: number ): F {
+
+	return pow( clamp( dot( V.negate(), L ).mul( 0.5 ).add( 0.5 ), 0, 1 ), power );
+
+}
+
 /** A plant's wind: its swayed pose (`displacement`, Wind.ts), the shadow cast and received in the
  * rest pose (`rest`, with `castMask` keeping parts out of the sun's map), the previous frame's sway
  * for the temporal modes' motion vectors, the `flags.mv.wind` follower (WindMotion.ts) and the

@@ -16,7 +16,7 @@ import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/Me
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { ALPHA_TO_COVERAGE } from './Foliage.ts';
-import { backlight, vegetationMaterial } from './vegetation/Material.ts';
+import { forwardLight, vegetationMaterial } from './vegetation/Material.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullBuffers, type CullPayload, type CullPool, type CullRange } from './vegetation/VegetationCull.ts';
@@ -445,8 +445,8 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F ) {
 // and how far above its root a vertex looks up, so the root does not take the ground it stands in.
 const SHADE_RADIUS = 0.3, SHADE_DEPTH = 0.8, SHADE_LIFT = 0.08;
 // The blades' colour and light (grassMaterial): the root's colour against the lawn's, the key light
-// left at the root, the sky's at the root, light through the upper blades (a floor from any side,
-// tinted against the albedo), the gloss along them (its colour and the sine's power) and their
+// left at the root, the sky's at the root, light through the upper blades (a broad lobe toward the
+// sun and a floor from any side, tinted against the albedo), the gloss along them (its colour and the sine's power) and their
 // specular against a plain dielectric's (see `grassMaterial`).
 const ROOT = new THREE.Vector3( 0.42, 0.7, 0.56 ), TIP = new THREE.Vector3( 1.2, 1.17, 0.88 );
 // The blades' own tints (grassMaterial): the share at each end of the tint hash that turns yellow
@@ -459,9 +459,9 @@ const BLADE_TINTS = ( () => {
 	return { yellow, deep, mean };
 
 } )();
-const ROOT_KEY = 0.72, ROOT_SKY = 0.55;
-const TRANSLUCENT_FLOOR = 0.3;
-const TRANSLUCENT_TINT = new THREE.Vector3( 1.4, 1.15, 0.5 );
+const ROOT_KEY = 0.45, ROOT_SKY = 0.55;
+const TRANSLUCENT_FLOOR = 0.6, TRANSLUCENT_FORWARD = 1, FORWARD_POWER = 3;
+const TRANSLUCENT_TINT = new THREE.Vector3( 1.2, 1.2, 0.8 );
 const SHEEN = new THREE.Vector3( 0.03, 0.0325, 0.0225 ), SHEEN_POWER = 2, SPECULAR = 0.35;
 // The blade's fold (how far each half's normal turns toward its edge), how far its own lean tilts
 // its normal, and the lift of its thin bright edge (on the outer share EDGE_FROM of each half).
@@ -626,15 +626,17 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 				? varying( meadowCanopyLight( canopyDepth( rooted ), shared.sunDir ) )
 				: meadowCanopyLight( canopyDepth( rest ), shared.sunDir );
 			// Light through the upper blades, yellower than the light off them (it crosses the
-			// leaf): strongest against the sun, a little from any side, so lit tips glow
-			// yellow-green. A soft gloss along the blades (`SHEEN`): a blade is a thin strip standing
+			// leaf): over the whole half of the view that faces the sun, strongest looking into it
+			// (`forwardLight`; the game camera looks down, so a narrow lobe round the sun never met
+			// the lawn by day), and some from any side, so lit tips glow yellow-green over roots the
+			// key reaches at ROOT_KEY, below the canopy's own shade. A soft gloss along the blades (`SHEEN`): a blade is a thin strip standing
 			// along its envelope's normal, so it reflects as a fibre about that axis (Kajiya and
 			// Kay's sine of the half vector), broad and faint, brightest on the tips toward a low
 			// sun; at half its first strength, as with the specular it paled the lawn toward a coated
 			// look. Both follow the key light alone, so by night they stay as faint as the moon.
 			return {
 				scale: () => mix( float( ROOT_KEY ), float( 1 ), t ).mul( canopy ),
-				extra: ( L, V ) => backlight( L, V, 4 ).mul( 0.42 ).add( TRANSLUCENT_FLOOR ).mul( t2 ).mul( vec3( TRANSLUCENT_TINT ) ),
+				extra: ( L, V ) => forwardLight( L, V, FORWARD_POWER ).mul( TRANSLUCENT_FORWARD ).add( TRANSLUCENT_FLOOR ).mul( t2 ).mul( vec3( TRANSLUCENT_TINT ) ),
 				sheen: ( L, V, N ) => {
 
 					const along = dot( N, normalize( L.add( V ) ) );
