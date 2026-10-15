@@ -21,14 +21,14 @@ import type { OceanFFT } from './OceanFFT.ts';
 import type { ShoreWaves } from './ShoreWaves.ts';
 import type { StormSea } from './StormSea.ts';
 import type { Shared } from '../shared.ts';
-import { volumeShadowRayMayIntersect, type SolarShadowTaps } from '../lighting/SolarShadow.ts';
+import type { SolarShadowTaps } from '../lighting/SolarShadow.ts';
 import {
 	waveSlopeCovariance, waveLodCovariance, waveParameterGradient, waveSurfaceNormal, waveCovarianceToTangent,
 	waveLocalDirection, waveBeckmannD, waveSmithVisibility, waveSolarSlopeCovariance, waveReflectionAngularVariance, waveAirFacing,
 } from './WaveOptics.ts';
 import { RefractedSun, refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
-import { waterIncidentSun, waterColumnRadiance, waterShadowedColumnRadiance } from './WaterTransport.ts';
+import { waterIncidentSun, waterColumnRadiance } from './WaterTransport.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
 import { ISLAND_TOP, type Bounds } from '../world/WorldShapes.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -46,7 +46,8 @@ import { TEMPORAL } from '../post/Antialiasing.ts';
 //     nothing under the sea lies straight behind, a world-space estimate of the floor the refracted
 //     ray meets (see "the refracted floor" below)
 //   - water volume: Beer-Lambert absorption along the refracted path plus analytic single
-//     scattering of the sun (Henyey-Greenstein) and the sky, multiple-scatter backscatter boost
+//     scattering of the sun (Henyey-Greenstein) and the sky, multiple-scatter backscatter boost;
+//     the sun in the column shadowed by the surface point's shadow (tidewater's)
 //   - reflection: calibrated baked sky + screen-space reflection of cliffs and stacks
 //   - sun glint: simulated slope moments, with optional additional artistic lobes
 // Drawn after the opaque pass into the same multisampled target, depth-tested per sample against
@@ -294,12 +295,6 @@ export interface WaterInputs {
 //   ssrSteps, ssrGrowth: its geometric steps, each this much longer than the last. The march
 //     reaches 0.15 + 0.25 (growth^steps - 1) / (growth - 1) metres: 158 m on high, 100 m for
 //     14 steps at x1.45 (14 at about x1.51 would keep the 158 m);
-//   columnSamples: samples of the water column's shadow march (both cross-faded sun maps at each).
-//     Its cost is the lookups, not the march's arithmetic. 3 on high, the knee of a sweep from 2
-//     to 8 scored against 8 with a perceptual metric in the island camera's worst views (a low
-//     view facing the sun over the cliffs' shadow): at 3 under 0.4 % of the pixels moved more than
-//     a level, unseen side by side; at 2 that share tripled. 3 takes about an eighth off the
-//     island views' water pass;
 //   ssrMinFresnel: the reflectance under which a pixel marches no reflection and keeps the sky
 //     (tidewater's gate). 0.05 on every tier: it skips most of the sea the island camera looks
 //     down on, for about a seventh of the island views' water pass, and with it the faint (2-5 %
@@ -327,13 +322,12 @@ export interface WaterQuality {
 	ssrGrowth: number;
 	ssrMinFresnel: number;
 	ssrOneRayFresnel: number;
-	columnSamples: number;
 	stormFoam: 'full' | 'merged';
 	fftAnisotropy: number;
 }
 
 // High's values; the tiers' values are in Quality.ts.
-export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, columnSamples: 3, stormFoam: 'full', fftAnisotropy: 4 };
+export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 };
 
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
 // its plants and its people. A box around them, from the land's box (so it grows with the island):
@@ -1034,32 +1028,13 @@ export class Water {
 			const albedoMS = bb.mul( 0.33 * 4 ).div( sigA.add( bb ) ).toVar();
 			// The MS source remains an empirical backscatter boost, not a conserved GI model.
 			const solarSource = sunIn.mul( sigS.mul( ph ).add( albedoMS.mul( sigT ).div( PI ) ) );
-			const wetStart = refractedSun.submergedVolumeCoordinateNode( wp ).toVar();
-			const wetEnd = refractedSun.submergedVolumeCoordinateNode( wp.add( Tv.mul( pathLen ) ) ).toVar();
-			const interfaceDistance = clamp( shared.waterLevel.sub( wp.y ).div( min( Tv.y, - 1e-5 ) ), 0, pathLen );
-			const airStart = airCoordinate( float( 0 ) ).toVar();
-			const airTurn = airCoordinate( interfaceDistance ).toVar();
-			const airEnd = airCoordinate( pathLen ).toVar();
-			const mayBeShadowed = volumeShadowRayMayIntersect( airStart, airTurn )
-				.or( volumeShadowRayMayIntersect( airTurn, airEnd ) ).or( volumeShadowRayMayIntersect( wetStart, wetEnd ) );
-			const inSun = waterColumnRadiance( solarSource, kSun, pathLen ).toVar();
-			// Open-sea rays outside both maps keep the exact analytic solution without marching.
-			If( u.shadowOn.greaterThan( 0 ).and( this.shadowIntensity.greaterThan( 0 ) ).and( mayBeShadowed ), () => {
-
-				inSun.assign( waterShadowedColumnRadiance( solarSource, kSun, pathLen, ( distance ) => {
-
-					const visibility = sunShadow.volumeVisibility( airCoordinate( distance ) ).toVar();
-					If( visibility.greaterThan( 0 ).and( columnDepth( distance ).greaterThan( 0 ) ), () => {
-
-						const coordinate = mix( wetStart, wetEnd, distance.div( max( pathLen, 1e-5 ) ) );
-						visibility.mulAssign( refractedSun.submergedVolumeVisibilityAtCoordinateNode( coordinate ) );
-
-					} );
-					return mix( float( 1 ), visibility, this.shadowIntensity.mul( u.shadowOn ) );
-
-				}, quality.columnSamples ) );
-
-			} );
+			// The sun in the column is shadowed by the surface point's shadow (tidewater's water), already
+			// taken for the glint and the crests: the island's shadow in the water is a flat one at the
+			// surface. A march along the refracted path through the sun's shadow and the refracted sun's
+			// submerged map drew it falling through the water in depth, for about a fifth of the island
+			// views' water pass; side by side the two were not told apart there (under 0.01 % of their
+			// pixels moved more than 8 levels; 0.06 % in a low view facing the sun over the cliffs' shadow).
+			const inSun = waterColumnRadiance( solarSource.mul( shadow ), kSun, pathLen ).toVar();
 			const inAmb = waterColumnRadiance( shared.skyIrradianceSource.mul( sigS.mul( 0.25 ).add( albedoMS.mul( sigT ) ) ), kAmb, pathLen );
 			// sun shining through the thin crests of the waves
 			const vH = normalize( V.xz.add( 1e-5 ) ), lH = normalize( L.xz.add( 1e-5 ) );
