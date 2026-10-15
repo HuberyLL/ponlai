@@ -13,7 +13,7 @@ import {
 	Fn, If, Loop, Break, texture, textureLoad, textureSize, uniform, varying, positionGeometry, positionWorld, positionPrevious,
 	cameraPosition, cameraViewMatrix, cameraProjectionMatrix, cameraProjectionMatrixInverse, cameraWorldMatrix, screenUV,
 	float, ivec2, vec2, vec3, vec4, mix, smoothstep, clamp, length, normalize, dot, max, min, pow, sqrt, exp, log2,
-	sin, abs, floor, fract, fwidth, reflect, select, dFdx, dFdy,
+	sin, abs, floor, fract, fwidth, reflect, select, step, dFdx, dFdy,
 } from 'three/tsl';
 import { airToWaterDirectionNode, radianceAcrossInterfaceNode } from '../lighting/OpticalInterface.ts';
 import type { Sky } from '../sky/Sky.ts';
@@ -287,8 +287,8 @@ export interface WaterInputs {
 }
 
 // The water's quality knobs. They are compiled into the shader (a uniform-gated branch keeps its
-// registers), so they are fixed for the material's life. High is today's image; the lower tiers
-// trade a little of it for time:
+// registers), so they are fixed for the material's life. High is the reference image; the lower
+// tiers trade a little of it for time:
 //   ssrRays: rays per pixel for the screen-space reflection, either side of the centre (2) or
 //     through it (1, a little stair-stepping on the reflected island's edge);
 //   ssrSteps, ssrGrowth: its geometric steps, each this much longer than the last. The march
@@ -300,6 +300,18 @@ export interface WaterInputs {
 //     view facing the sun over the cliffs' shadow): at 3 under 0.4 % of the pixels moved more than
 //     a level, unseen side by side; at 2 that share tripled. 3 takes about an eighth off the
 //     island views' water pass;
+//   ssrMinFresnel: the reflectance under which a pixel marches no reflection and keeps the sky
+//     (tidewater's gate). 0.05 on every tier: it skips most of the sea the island camera looks
+//     down on, for about a seventh of the island views' water pass, and with it the faint (2-5 %
+//     reflectance) image of the cliffs in the water at their feet (1-2 % of those views' pixels
+//     moved more than 8 levels against 0.01); the low views over the sea, where the reflectance is
+//     high, keep their reflection;
+//   ssrOneRayFresnel: the reflectance under which a pixel takes one ray through its centre instead
+//     of two (ssrRays 2 only). The second ray's stair-step and speck are scaled by the reflectance:
+//     at 0.05 with the gate at 0.01 it took about a fourteenth of the island views' water pass
+//     with under 0.1 % of their pixels moved more than 8 levels (at 0.1 short bright streaks showed
+//     at the cliffs' foot). It acts only above ssrMinFresnel: at or under it no shader is built for
+//     it, as on high, whose gate already skips those pixels;
 //   stormFoam: 'merged' reads the storm foam's mat and lace from one pattern fetch instead of
 //     three: the mat keeps only its first layer, and the lace takes the mat's coordinates, so it
 //     is no longer drawn out along the wind. The streaks keep their own fetch (they need
@@ -313,13 +325,15 @@ export interface WaterQuality {
 	ssrRays: 1 | 2;
 	ssrSteps: number;
 	ssrGrowth: number;
+	ssrMinFresnel: number;
+	ssrOneRayFresnel: number;
 	columnSamples: number;
 	stormFoam: 'full' | 'merged';
 	fftAnisotropy: number;
 }
 
-// High's values, today's image; the tiers' values are in Quality.ts.
-export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, columnSamples: 3, stormFoam: 'full', fftAnisotropy: 4 };
+// High's values; the tiers' values are in Quality.ts.
+export const DEFAULT_WATER_QUALITY: Readonly<WaterQuality> = { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, columnSamples: 3, stormFoam: 'full', fftAnisotropy: 4 };
 
 // The screen-space reflection can only find what the opaque pass drew above the sea: the island,
 // its plants and its people. A box around them, from the land's box (so it grows with the island):
@@ -809,18 +823,39 @@ export class Water {
 				refl.mulAssign( cap.add( lr.sub( cap ).mul( 0.12 ) ).div( lr ) );
 
 			} );
-			If( u.ssr.greaterThan( 0.5 ).and( Fr.greaterThan( 0.01 ) ), () => {
+			If( u.ssr.greaterThan( 0.5 ).and( Fr.greaterThan( quality.ssrMinFresnel ) ), () => {
 
 				// Two rays a quarter pixel either side of the pixel's centre, averaged: a ray either hits
 				// the island or shows the sky, so with one ray per pixel the reflected island's edge and
 				// the sky seen through it between the waves were pixel stair-steps and single bright
 				// specks (that the depth of field then spread into discs). Two rays give the edges a
 				// half step and halve a lone speck. The offsets are fixed, so a paused frame repeats.
-				// The lower tiers take the one ray through the centre.
+				// The lower tiers take the one ray through the centre, and so does a pixel whose
+				// reflectance is under ssrOneRayFresnel: the stair-step and the speck are scaled by it.
+				// The first ray moves to the centre when it is alone, so the march is built twice, not
+				// three times: a branch between a one-ray and a two-ray march kept a third of the time
+				// one ray everywhere saves. Nothing of it is built unless ssrOneRayFresnel is above
+				// ssrMinFresnel: no pixel under the gate marches.
 				if ( quality.ssrRays === 1 ) {
 
 					const rc = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr, 0 ) ).xyz ) ).toVar();
 					refl.assign( mix( refl, rc.rgb, rc.a ) );
+
+				} else if ( quality.ssrOneRayFresnel > quality.ssrMinFresnel ) {
+
+					const both = step( quality.ssrOneRayFresnel, Fr ).toVar();
+					const ra = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr.sub( reflectionJitter.mul( both ) ), 0 ) ).xyz ) ).toVar();
+					const first = mix( refl, ra.rgb, ra.a ).toVar();
+					If( both.greaterThan( 0.5 ), () => {
+
+						const rb = traceSSR( posV, normalize( cameraViewMatrix.mul( vec4( Rr.add( reflectionJitter ), 0 ) ).xyz ) ).toVar();
+						refl.assign( first.add( mix( refl, rb.rgb, rb.a ) ).mul( 0.5 ) );
+
+					} ).Else( () => {
+
+						refl.assign( first );
+
+					} );
 
 				} else {
 
