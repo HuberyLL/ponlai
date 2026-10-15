@@ -99,9 +99,11 @@ export function ComputeMotionDivergence( b: Fsr3Bindings, fUv: N, fMotionVector:
 
 	const fDistanceFactor = MinDividedByMax( fNucleusDepthInMeters, fCurrentDepthInMeters );
 	const fVelocityFactor = ffxSaturate( f4KVelocity.div( 10.0 ) );
-	const fMotionVectorFieldConfidence = float( 1.0 ).sub( ffxSaturate( fReprojectedVelocity.div( f4KVelocity ) ) ).mul( fDistanceFactor ).mul( fVelocityFactor );
+	const fMotionVectorFieldConfidence = float( 1.0 ).sub( ffxSaturate( fReprojectedVelocity.div( f4KVelocity ) ) ).mul( fDistanceFactor ).mul( fVelocityFactor ).toVar();
 
-	return fMotionVectorFieldConfidence;
+	// a still pixel divides by 0: HLSL's saturate flushes the NaN to 0 and the velocity factor
+	// makes the result 0, while WGSL leaves a NaN or infinity indeterminate, so take upstream's 0
+	return select( f4KVelocity.greaterThan( 0.0 ), fMotionVectorFieldConfidence, float( 0.0 ) );
 
 }
 
