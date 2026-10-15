@@ -483,9 +483,11 @@ export class Pipeline {
 	// greens about 11 degrees toward pure green and takes a tenth off their brightness, so the
 	// sunlit meadow reads fresh and cool rather than straw-yellow and does not outshine the sky,
 	// and takes a little luminance contrast away: the day stays soft and high-key (its depth comes
-	// from the light). Its glow is wide and starts low (from about 0.45 of display white), so the
-	// sunlit grass tips, the horizon and the glints spread a soft light into what is round them,
-	// and the airy shadow lift is twice the earlier one.
+	// from the light). Its glow is wide and starts at about 0.7 of display white, so the horizon,
+	// the glints and the brightest sunlit grass tips spread a soft light into what is round them,
+	// and the airy shadow lift is twice the earlier one. From 0.45 at 0.3 the glow spread over the
+	// whole sunlit meadow and washed a low sun's frame out toward white (about 9 to 12 levels of
+	// its mean luma).
 	readonly lookPresets: Record<LookName, LookSettings> = {
 		realistic: {
 			glow: 0, glowThreshold: 0.6, glowRadius: 0.8, glowWarmth: 0, glowHalo: 1,
@@ -494,7 +496,7 @@ export class Pipeline {
 			shadowLift: 0, contrast: 0, vignette: 0, sky: 1, overcast: 0,
 		},
 		'soft-fantasy': {
-			glow: 0.3, glowThreshold: 0.45, glowRadius: 0.85, glowWarmth: 0.25, glowHalo: 0.2,
+			glow: 0.18, glowThreshold: 0.7, glowRadius: 0.85, glowWarmth: 0.25, glowHalo: 0.2,
 			greenSaturation: 0.25, greenBrightness: - 0.1, greenHue: 0.2, tealSaturation: 0.12, tealBrightness: 0.02, tealHue: 0.04,
 			shadowTint: new THREE.Color( 0.55, 0.85, 1.0 ), shadowTone: 0.18, highlightTint: new THREE.Color( 1.0, 0.86, 0.6 ), highlightTone: 0.25, pivot: 0.18,
 			shadowLift: 0.02, contrast: - 0.05, vignette: 0.06, sky: 0.3, overcast: 0.5,
@@ -536,9 +538,9 @@ export class Pipeline {
 		lift: new THREE.Color( DAY_BLACK_LIFT, DAY_BLACK_LIFT, DAY_BLACK_LIFT * 0.97 ),
 		vignette: 0.06, grain: 0.004,
 		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0, bloomSurfaceMaxLum: 2.0,
-		glowStrength: 0.18, glowRadius: 1.0, glowThreshold: 0.5, glowMaxLum: 1.0,
+		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,
 		// the moonlit night's: both chains stronger and from lower thresholds in scene radiance (the
-		// bloom's under half the day's, the glow's 0.7 of it), the glow's clamp doubled, so the moon,
+		// bloom's and the glow's under half the day's), the glow's clamp doubled, so the moon,
 		// the clouds round it and the moonlit sea's sheen bloom
 		night: { bloomStrength: 0.3, bloomThreshold: 0.6, glowStrength: 0.3, glowThreshold: 0.35, glowMaxLum: 2.0 },
 		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
