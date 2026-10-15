@@ -19,6 +19,8 @@ import type { Fsr3Bindings } from './Bindings.ts';
 // - The `Declare*` macros become functions that take the texel load (and, for the sample, the
 //   interpolator and fetch) as arguments; the 4 x 4 fetch is an object of 16 variables.
 // - `Lanczos2_UseLUT` reads the LUT through the bindings (`SampleLanczos2Weight`).
+// - The 2D Lanczos filters compute each axis's four weights once (`lanczos2D`), not at each of
+//   the five 1D calls: the same values from 8 weight evaluations instead of 20.
 // - `FFX_FSR3UPSCALER_GET_LANCZOS_SAMPLER1D( x )` is `getLanczosSampler1D( x )`.
 
 export interface FetchedBilinearSamples {
@@ -95,49 +97,39 @@ export function Lanczos2_UseLUT( b: Fsr3Bindings, x: N ): N {
 
 }
 
-/** The four-tap 1D filter of a weight function. */
-function filter4( weight: ( x: N ) => N, fColor0: N, fColor1: N, fColor2: N, fColor3: N, t: N ): N {
+/** The four weights of the 1D filter at t (upstream's Lanczos2( fColor0..3, t ) computes them at each
+ * call: the 2D filter calls it five times, four of them at the same t). */
+function weights4( weight: ( x: N ) => N, t: N ): N[] {
 
-	const fWeight0 = weight( float( - 1.0 ).sub( t ) ).toVar();
-	const fWeight1 = weight( float( - 0.0 ).sub( t ) ).toVar();
-	const fWeight2 = weight( float( + 1.0 ).sub( t ) ).toVar();
-	const fWeight3 = weight( float( + 2.0 ).sub( t ) ).toVar();
+	return [
+		weight( float( - 1.0 ).sub( t ) ).toVar(),
+		weight( float( - 0.0 ).sub( t ) ).toVar(),
+		weight( float( + 1.0 ).sub( t ) ).toVar(),
+		weight( float( + 2.0 ).sub( t ) ).toVar(),
+	];
+
+}
+
+/** The four-tap 1D filter with its weights: upstream's sums, in its order. */
+export const Filter4 = /*@__PURE__*/ Fn( ( [ fColor0, fColor1, fColor2, fColor3, fWeight0, fWeight1, fWeight2, fWeight3 ]: N[] ) => {
+
 	return fWeight0.mul( fColor0 ).add( fWeight1.mul( fColor1 ) ).add( fWeight2.mul( fColor2 ) ).add( fWeight3.mul( fColor3 ) )
 		.div( fWeight0.add( fWeight1 ).add( fWeight2 ).add( fWeight3 ) );
 
-}
+} ).setLayout( { name: 'Filter4', type: 'vec4', inputs: [ 'fColor0', 'fColor1', 'fColor2', 'fColor3' ].map( ( name ) => ( { name, type: 'vec4' } ) ).concat( [ 'fWeight0', 'fWeight1', 'fWeight2', 'fWeight3' ].map( ( name ) => ( { name, type: 'float' } ) ) ) } );
 
-const vec4In = ( name: string ) => ( { name, type: 'vec4' } );
+/** The 2D separable filter and upstream's deringing clamp to the four nearest texels. The weights of
+ * x are computed once for the four rows and those of y once (the same values upstream's five 1D
+ * calls compute: the reference Lanczos's sines were most of the accumulation's time). */
+function lanczos2D( weight: ( x: N ) => N, Samples: FetchedBicubicSamples, fPxFrac: N ): N {
 
-/** Lanczos2_UseLUT( fColor0..3, t ): the 1D filter with the LUT's weights. */
-export function Lanczos2_UseLUT4( b: Fsr3Bindings, fColor0: N, fColor1: N, fColor2: N, fColor3: N, t: N ): N {
-
-	return filter4( ( x ) => Lanczos2_UseLUT( b, x ), fColor0, fColor1, fColor2, fColor3, t );
-
-}
-
-/** Lanczos2( fColor0..3, t ): the 1D filter with the reference weights. */
-export const Lanczos2_4 = /*@__PURE__*/ Fn( ( [ fColor0, fColor1, fColor2, fColor3, t ]: N[] ) => {
-
-	return filter4( Lanczos2, fColor0, fColor1, fColor2, fColor3, t );
-
-} ).setLayout( { name: 'Lanczos2_4', type: 'vec4', inputs: [ vec4In( 'fColor0' ), vec4In( 'fColor1' ), vec4In( 'fColor2' ), vec4In( 'fColor3' ), { name: 't', type: 'float' } ] } );
-
-/** Lanczos2Approx( fColor0..3, t ): the 1D filter with FSR 1's approximation. */
-export const Lanczos2Approx_4 = /*@__PURE__*/ Fn( ( [ fColor0, fColor1, fColor2, fColor3, t ]: N[] ) => {
-
-	return filter4( Lanczos2ApproxNoClamp, fColor0, fColor1, fColor2, fColor3, t );
-
-} ).setLayout( { name: 'Lanczos2Approx_4', type: 'vec4', inputs: [ vec4In( 'fColor0' ), vec4In( 'fColor1' ), vec4In( 'fColor2' ), vec4In( 'fColor3' ), { name: 't', type: 'float' } ] } );
-
-/** The 2D separable filter and upstream's deringing clamp to the four nearest texels. */
-function lanczos2D( filter1D: ( c0: N, c1: N, c2: N, c3: N, t: N ) => N, Samples: FetchedBicubicSamples, fPxFrac: N ): N {
-
-	const fColorX0 = filter1D( Samples.fColor00, Samples.fColor10, Samples.fColor20, Samples.fColor30, fPxFrac.x );
-	const fColorX1 = filter1D( Samples.fColor01, Samples.fColor11, Samples.fColor21, Samples.fColor31, fPxFrac.x );
-	const fColorX2 = filter1D( Samples.fColor02, Samples.fColor12, Samples.fColor22, Samples.fColor32, fPxFrac.x );
-	const fColorX3 = filter1D( Samples.fColor03, Samples.fColor13, Samples.fColor23, Samples.fColor33, fPxFrac.x );
-	const fColorXY = filter1D( fColorX0, fColorX1, fColorX2, fColorX3, fPxFrac.y ).toVar();
+	const wx = weights4( weight, fPxFrac.x );
+	const wy = weights4( weight, fPxFrac.y );
+	const fColorX0 = Filter4( Samples.fColor00, Samples.fColor10, Samples.fColor20, Samples.fColor30, ...wx );
+	const fColorX1 = Filter4( Samples.fColor01, Samples.fColor11, Samples.fColor21, Samples.fColor31, ...wx );
+	const fColorX2 = Filter4( Samples.fColor02, Samples.fColor12, Samples.fColor22, Samples.fColor32, ...wx );
+	const fColorX3 = Filter4( Samples.fColor03, Samples.fColor13, Samples.fColor23, Samples.fColor33, ...wx );
+	const fColorXY = Filter4( fColorX0, fColorX1, fColorX2, fColorX3, ...wy ).toVar();
 
 	// Deringing
 
@@ -166,21 +158,21 @@ function lanczos2D( filter1D: ( c0: N, c1: N, c2: N, c3: N, t: N ) => N, Samples
 /** Lanczos2( FetchedBicubicSamples, fPxFrac ) */
 export function Lanczos2Samples( Samples: FetchedBicubicSamples, fPxFrac: N ): N {
 
-	return lanczos2D( Lanczos2_4, Samples, fPxFrac );
+	return lanczos2D( Lanczos2, Samples, fPxFrac );
 
 }
 
 /** Lanczos2LUT( FetchedBicubicSamples, fPxFrac ) */
 export function Lanczos2LUT( b: Fsr3Bindings, Samples: FetchedBicubicSamples, fPxFrac: N ): N {
 
-	return lanczos2D( ( c0, c1, c2, c3, t ) => Lanczos2_UseLUT4( b, c0, c1, c2, c3, t ), Samples, fPxFrac );
+	return lanczos2D( ( x ) => Lanczos2_UseLUT( b, x ), Samples, fPxFrac );
 
 }
 
 /** Lanczos2Approx( FetchedBicubicSamples, fPxFrac ) */
 export function Lanczos2ApproxSamples( Samples: FetchedBicubicSamples, fPxFrac: N ): N {
 
-	return lanczos2D( Lanczos2Approx_4, Samples, fPxFrac );
+	return lanczos2D( Lanczos2ApproxNoClamp, Samples, fPxFrac );
 
 }
 
