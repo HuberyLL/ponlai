@@ -519,9 +519,11 @@ export class Pipeline {
 	// (the night's grade turns them, `nightGreenTurn`: the day's turn on top took the moonlit
 	// meadow past 150 degrees, toward teal). Its strengths
 	// (glow, the colour layers' amounts, lift, vignette) are seven tenths of the values it was
-	// chosen by, which ran under seven tenths of the day's weight.
+	// chosen by, which ran under seven tenths of the day's weight. Its threshold is about half the
+	// first one's (0.12 from 0.25), so seen from the game's overview the moon path on the sea and the
+	// moonlit meadow glow too, not only the moon and its clouds.
 	readonly lookNightPreset: LookSettings = {
-		glow: 0.35, glowThreshold: 0.25, glowRadius: 0.85, glowWarmth: - 0.8, glowHalo: 0.15,
+		glow: 0.35, glowThreshold: 0.12, glowRadius: 0.85, glowWarmth: - 0.8, glowHalo: 0.15,
 		greenSaturation: 0.07, greenBrightness: - 0.07, greenHue: 0, tealSaturation: 0.084, tealBrightness: 0.014, tealHue: 0.028,
 		shadowTint: new THREE.Color( 0.55, 0.85, 1.0 ), shadowTone: 0.126, highlightTint: new THREE.Color( 0.8, 0.9, 1.0 ), highlightTone: 0.175, pivot: 0.18,
 		shadowLift: 0.0028, contrast: 0, vignette: 0.042, sky: 0.6, overcast: 0.5,
@@ -541,9 +543,12 @@ export class Pipeline {
 		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0, bloomSurfaceMaxLum: 2.0,
 		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,
 		// the moonlit night's: both chains stronger and from lower thresholds in scene radiance (the
-		// bloom's and the glow's under half the day's), the glow's clamp doubled, so the moon,
-		// the clouds round it and the moonlit sea's sheen bloom
-		night: { bloomStrength: 0.3, bloomThreshold: 0.6, glowStrength: 0.3, glowThreshold: 0.35, glowMaxLum: 2.0 },
+		// bloom's under half the day's), the glow's clamp doubled, so the moon, the clouds round it
+		// and the moonlit sea's sheen bloom. The wide glow starts at 0.02, near the night look's
+		// threshold (0.12 of display white over the night's exposure): from 0.35 only the moon and
+		// its clouds reached it, and the moon path seen from the overview stayed hard. Lower still
+		// (0.013) spread a haze round the moon in a view toward it a third brighter than before.
+		night: { bloomStrength: 0.3, bloomThreshold: 0.6, glowStrength: 0.3, glowThreshold: 0.02, glowMaxLum: 2.0 },
 		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
 	};
 

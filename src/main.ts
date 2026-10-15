@@ -1124,7 +1124,7 @@ postF.add( S, 'grain', 0, 0.05, 0.001 );
 function addLookControls( f: GUI, L: LookSettings ): void {
 
 	f.add( L, 'glow', 0, 1.5, 0.01 ).name( 'soft glow' ).listen();
-	f.add( L, 'glowThreshold', 0.1, 2, 0.01 ).name( 'glow from' ).listen();
+	f.add( L, 'glowThreshold', 0.05, 2, 0.01 ).name( 'glow from' ).listen();
 	f.add( L, 'glowRadius', 0, 1, 0.01 ).name( 'glow spread' ).listen();
 	f.add( L, 'glowWarmth', - 1, 1, 0.01 ).name( 'glow warmth' ).listen();
 	f.add( L, 'glowHalo', 0, 1, 0.01 ).name( 'glow into shade' ).listen();
@@ -1155,7 +1155,7 @@ const nightLookF = lookF.addFolder( 'Night' );
 nightLookF.add( S.night, 'bloomStrength', 0, 1.5, 0.01 ).name( 'bloom' );
 nightLookF.add( S.night, 'bloomThreshold', 0, 5, 0.01 ).name( 'bloom threshold' );
 nightLookF.add( S.night, 'glowStrength', 0, 1, 0.01 ).name( 'wide glow' );
-nightLookF.add( S.night, 'glowThreshold', 0, 3, 0.01 ).name( 'wide glow threshold' );
+nightLookF.add( S.night, 'glowThreshold', 0, 3, 0.005 ).name( 'wide glow threshold' );
 nightLookF.add( S.night, 'glowMaxLum', 0.5, 10, 0.1 ).name( 'wide glow clamp' );
 addLookControls( nightLookF, pipeline.lookNight );
 if ( DEBUG ) {
