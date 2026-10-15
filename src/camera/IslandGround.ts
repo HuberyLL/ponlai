@@ -9,6 +9,9 @@ import { GROUND_CELL as CELL, type GroundGrid } from '../world/ChunkDerived.ts';
 // (ChunkDerived.ts) on the world's lattice, so the main thread walks none of their vertices.
 // `build` walks the meshes' vertices on a grid from their box's corner, as the page did before;
 // tools/verify-chunk-derived.mjs checks that the two differ by less than a cell.
+// A ray that reaches the sea's distance meets the sea there: its height at that distance rounds an
+// ulp or two above the sea for a few rays in a hundred, which a height test alone read as misses
+// (a wheel zoom over the water lost its anchor and closed in on the pivot).
 
 // the sea's height for the camera (the waves' few decimetres do not matter to a grab)
 const SEA = 0;
@@ -105,16 +108,17 @@ export class IslandGround {
 
 		if ( dir.y >= - 1e-6 ) return null;
 		// from where the ray comes down to the island's top to where it meets the sea
+		const sea = ( SEA - origin.y ) / dir.y;
 		const t0 = Math.max( 0, ( this.top - origin.y ) / dir.y );
-		const t1 = Math.min( far, ( SEA - origin.y ) / dir.y );
+		const t1 = Math.min( far, sea );
 		if ( t1 < t0 ) return null;
 		const horizontal = Math.hypot( dir.x, dir.z );
 		const step = horizontal > 1e-6 ? Math.min( CELL * 0.5 / horizontal, t1 - t0 ) : t1 - t0;
 		let previous = t0;
 		for ( let t = t0; ; t = Math.min( t + step, t1 ) ) {
 
-			const y = origin.y + dir.y * t;
-			if ( y <= this.heightAt( origin.x + dir.x * t, origin.z + dir.z * t ) ) {
+			// (at the sea's distance the ray is on the sea, whatever its height there rounds to)
+			if ( t >= sea || origin.y + dir.y * t <= this.heightAt( origin.x + dir.x * t, origin.z + dir.z * t ) ) {
 
 				// bisect between the last point above the ground and this one
 				let a = previous, b = t;
