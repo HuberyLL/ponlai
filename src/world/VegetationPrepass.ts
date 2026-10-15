@@ -4,7 +4,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VELOCITY_CLEAR, velocityOutput } from '../post/Motion.ts';
 
-// A depth prepass for the alpha-to-coverage vegetation (grass, bushes, plateau plants, rim leaves).
+// A depth prepass for the alpha-to-coverage vegetation (today the grass and its flower heads).
 //
 // Profiling at 4x MSAA showed that nearly all of the vegetation's cost is its fragment shading:
 // the same draws with a flat shader were 4.4 ms (render scale 1) to 5.9 ms (1.5) cheaper over the
@@ -135,7 +135,7 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		// (a mesh off the view's layer, a caster of the sun's map alone, draws no depth there)
 		if ( ! mesh.isMesh || Array.isArray( mesh.material ) || ! mesh.layers.isEnabled( 0 ) ) return;
 		// (`alphaToCoverage` is off under the temporal modes: the vegetation's tag finds the same
-		// meshes there, the grass, bushes, plants and rim leaves)
+		// meshes there)
 		const material = mesh.material as THREE.Material;
 		if ( TEMPORAL ? material.userData.vegetation === true : material.alphaToCoverage === true ) meshes.push( mesh );
 
@@ -164,8 +164,6 @@ export function installVegetationPrepass( scene: THREE.Scene, roots: THREE.Objec
 		depth.name = mesh.name + '-depth';
 		// (the rain's collision bake, RainCollision.ts, leaves the copies out: they print the same shape)
 		depth.userData.prepassCopy = true;
-		// a field the plants' shader reads per object (Plants.ts `farDraw`), fixed for the mesh
-		depth.userData.plantsFar = mesh.userData.plantsFar;
 		depth.frustumCulled = mesh.frustumCulled;
 		depth.castShadow = false;
 		depth.receiveShadow = false;

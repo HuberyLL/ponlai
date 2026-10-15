@@ -104,7 +104,7 @@ export const CLIPS = {
 	'drs-steps': { view: 'island-fair-noon', clock: 'running', frames: 120, path: [ 'still' ],
 		scale: [ [ 0.8, 40 ], [ 0.6, 40 ], [ 0.8, 40 ] ], gtDense: [ [ 36, 44 ], [ 76, 84 ] ], lead: 32,
 		about: 'the render scale stepped to 0.8 -> 0.6 -> 0.8 of the nominal ratio (1.2 -> 0.9 -> 1.2 on high at a ratio of 2), 40 frames each, a still camera, after 32 lead frames at the first scale' },
-	'sun-shadow': { view: 'meadow-shade', clock: 'running', frames: 64, q: 'dayLength=600', path: [ 'still' ], setup: WIND_FREEZE,
+	'sun-shadow': { view: 'meadow-close', clock: 'running', frames: 64, q: 'dayLength=600', path: [ 'still' ], setup: WIND_FREEZE,
 		about: 'a fast day (600 s) under a still camera: the sun map steps and cross-fades as the sun moves' },
 };
 

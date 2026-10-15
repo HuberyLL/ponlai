@@ -20,13 +20,14 @@ import type { Shared } from '../../shared.ts';
 //      sway for motion vectors, a kind's own vertex work before its position, the
 //      `flags.mv.wind` follower, the wind view)
 //   -> the normal and ambient occlusion -> the light through thin leaves (VegetationLighting).
-// Families: 'leaf' (alpha-tested folded leaves: the rim bushes, the rim's trails, the plateau's
-// plants), 'blade' (the meadow's blades and flower heads: tagged as vegetation, no leaf map, drawn
+// Families: 'leaf' (alpha-tested folded leaves, vegetation/LeafTexture.ts: kept for the plant kinds
+// to come; no kind uses it today, since the rim bushes, the rim's trails and the plateau's plants
+// were removed), 'blade' (the meadow's blades and flower heads: tagged as vegetation, no leaf map, drawn
 // whole or not at all: alpha to coverage at 4x, else `coverageDither`'s threshold) and 'sod' (the
 // turf skirt: not tagged, so it takes the ordinary shadow filter and stays out of the depth
-// prepass). A leaf's `alphaTest: 'alphaOnly'` keeps no numeric
-// cut-out, as the rim's trails had when they cloned the bushes' material (three's NodeMaterial.copy
-// skips Material's alphaTest setter): the shadow passes and 4x cut them by their alpha alone.
+// prepass). A leaf's `alphaTest: 'alphaOnly'` keeps no numeric cut-out (as a material cloned with
+// three's NodeMaterial.copy has, which skips Material's alphaTest setter): the shadow passes and 4x
+// cut it by its alpha alone.
 // The game's palm takes only the wind (`useVegetationMotion`) on its prop surface.
 // The meadow (Grass.ts) instances itself from the cull's storage buffers and widens its blades on
 // screen (`pixelWideBlade`) inside its own displacement; the factory only takes its hooks: its own

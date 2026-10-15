@@ -88,8 +88,6 @@ if ( process.argv.includes( '--world' ) ) {
 	for ( let k = 1; k < rocksMesh.positions.length; k += 3 ) maximumRockY = Math.max( maximumRockY, rocksMesh.positions[ k ] );
 	assert.ok( maximumRockY <= - 1.15, 'All offshore stones must remain below the accepted submergence limit.' );
 	assert.deepEqual( after.data.rocks, before.data.rocks );
-	assert.ok( after.data.rimStrands.length > 0, 'The worker must supply top-rooted hanging foliage.' );
-	assert.deepEqual( after.data.rimStrands, before.data.rimStrands );
 	assert.ok( after.data.rimGround.data.length > 0, 'The meadow transition field must be transferred.' );
 	assert.deepEqual( after.data.rimGround, before.data.rimGround );
 	assert.deepEqual( after.data.shore, before.data.shore );

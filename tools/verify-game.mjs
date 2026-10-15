@@ -76,7 +76,6 @@ function farthestOpen( grid, p ) {
 	const grid = sim.grid;
 	assert.ok( grid.main >= 0, 'the island has open ground' );
 	for ( const v of sim.state.villagers ) assert.equal( grid.region[ grid.indexAt( v.pos.x, v.pos.z ) ], grid.main, `${ v.name } stands on the main ground` );
-	for ( const o of [ ...input.bushes, ...input.plants ] ) assert.ok( ! grid.openAt( o.x, o.z ), 'a bush or a plant blocks its ground' );
 	const from = sim.state.villagers[ 0 ].pos, to = farthestOpen( grid, from );
 	const path = findPath( grid, from, goalAt( grid, to ) );
 	assert.ok( path && path.length > 0, 'a path across the island' );

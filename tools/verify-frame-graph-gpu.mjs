@@ -519,10 +519,10 @@ async function probeReal() {
 	const SIZE = 64;
 	const cases = [];
 
-	// the subjects: a vegetation mesh with its depth copy that casts into the sun's map (the bushes:
-	// grass blades stay out of it), and the spray
+	// the subjects: a vegetation mesh with its depth copy (the meadow's: no vegetation kind casts into
+	// the sun's map today, so its copy is made to cast, see `stage`), and the spray
 	let vegetation = null;
-	s.scene.traverse( ( o ) => { if ( ! vegetation && o.isInstancedMesh && o.castShadow && o.material?.userData?.vegetation === true && o.children.length > 0 && o.count > 0 ) vegetation = o; } );
+	s.scene.traverse( ( o ) => { if ( ! vegetation && o.isInstancedMesh && o.material?.userData?.vegetation === true && o.children.length > 0 && o.count > 0 ) vegetation = o; } );
 	const spray = s.stormSea?.spray?.mesh ?? null;
 
 	async function setup() {
@@ -588,6 +588,9 @@ async function probeReal() {
 
 		const scene = new THREE.Scene();
 		const copy = mesh.clone();
+		// (a vegetation subject casts here whether or not its kind does on the page, so the shadow
+		// pass builds its nodes)
+		if ( mesh.material?.userData?.vegetation === true ) copy.castShadow = true;
 		// (the spray hides in calm weather)
 		copy.traverse( ( o ) => {
 

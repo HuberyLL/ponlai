@@ -147,7 +147,8 @@ for ( const [ file, text ] of sources ) {
 	assert.ok( ! /gustScroll/.test( text ), `${ file }: the gust scroll read outside Wind.ts` );
 
 }
-assert.ok( reads >= 8, `found ${ reads } wind clock reads` );
+// (the grass, its flowers, the skirt, the palm and hangingSway read them today: the scan must find them)
+assert.ok( reads >= 6, `found ${ reads } wind clock reads` );
 assert.throws( () => gustWave( createWindUniforms(), null, 2.5 ), RangeError, 'gustWave takes whole swings per gust tile' );
 // numerically: across the wraps the shaders' arguments move by the step alone
 const wrap = new Wind( createWindUniforms(), { speed: 6, time: CLOCK_PERIOD - 0.01 } );

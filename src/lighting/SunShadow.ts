@@ -62,7 +62,8 @@ type ShadowRenderer = { updateShadow( frame: { renderer: THREE.Renderer; scene: 
 // few pixels by one level (three r186 emits from shared node state).
 const STEP = THREE.MathUtils.degToRad( 0.2 );
 /** The layer of a mesh only the sun's map draws (its camera enables it; the view's does not): a
- * caster of a shape of its own (Plants.ts, every leaf of the plants the view thins by distance). */
+ * caster of a shape of its own (a plant whose far leaves the view thins casts with all of them).
+ * Kept for the plant kinds to come; no kind uses it today (the removed plateau plants did). */
 export const SUN_MAP_LAYER = 6;
 // how far closed solids' cast depth is pushed away from the light (m), see above
 const FRONT_PUSH = 0.03;

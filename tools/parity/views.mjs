@@ -3,12 +3,11 @@
 // window.__PONLAI__ exists (before capture.mjs's settling wait). Placements derive from the
 // island's bounds and height grid as the camera's ground holds them (`controls.ground`,
 // IslandGround: made from the chunks' meshes in the workers, so the page's meshes and their
-// vertices are never read and a build that simplifies the drawn meshes frames alike), the plant
-// sites (the first rim bush where there are none), the meadow's flower heads, the rim trails, the
-// islander and the sun and moon, so they follow any land, as tools/profile-frame.mjs places its
+// vertices are never read and a build that simplifies the drawn meshes frames alike), the meadow's
+// flower heads, the turf skirt, the islander and the sun and moon, so they follow any land, as tools/profile-frame.mjs places its
 // scenes.
 //
-// Groups: `parity` (the views every parity check runs; the default) and `taa` (7 close views for
+// Groups: `parity` (the views every parity check runs; the default) and `taa` (6 close views for
 // the temporal anti-aliasing work: thin and moving detail); `all` is both. `special` holds the
 // parked weathers' views (`special: true`: the rain, the storm, the fog and the weather front into
 // rain; src/sky/Weather.ts PARKED_WEATHER): no other group lists them, so every default set is the
@@ -35,12 +34,6 @@ const PRE = `const s = window.__PONLAI__;
 // grids), which equals the box of the island's chunk meshes but never reads their vertices
 const isl = () => { const b = s.controls.ground.bounds;
 	return { cx: ( b.min.x + b.max.x ) / 2, cz: ( b.min.z + b.max.z ) / 2, rx: ( b.max.x - b.min.x ) / 2, rz: ( b.max.z - b.min.z ) / 2, top: b.max.y }; };
-// the shrubs' and trees' sites; without them (the grown island has none) the first rim bush, as a
-// site 1.2 m tall
-const plantSites = () => { const sites = s.plants?.userData.sites; if ( sites?.length ) return sites;
-	const m = new s.camera.matrixWorld.constructor(), v = s.camera.position.clone(); s.foliage.updateWorldMatrix( true, false );
-	s.foliage.getMatrixAt( 0, m ); v.setFromMatrixPosition( m ).applyMatrix4( s.foliage.matrixWorld );
-	return [ { kind: 'bush', x: v.x, y: v.y, z: v.z, height: 1.2, radius: 0.6 } ]; };
 // (older builds, such as the exp/taa preview, have no setCameraView or controls.settle: the views
 // fall back to what those builds have, so the experiment's images can be cut alike)
 const free = ( p, l, fov ) => { s.setCameraView?.( 'island' ); s.setCameraMode( 'free' ); s.camera.position.set( p[ 0 ], p[ 1 ], p[ 2 ] );
@@ -74,16 +67,12 @@ const heightGrid = () => {
 const height = ( x, z ) => { const g = heightGrid(); const i = Math.floor( ( x - g.x0 ) / CELL ), k = Math.floor( ( z - g.z0 ) / CELL );
 	return i < 0 || k < 0 || i >= g.nx || k >= g.nz ? - Infinity : g.h[ i + k * g.nx ]; };
 const V = ( x, y, z ) => new s.camera.position.constructor( x, y, z );
-// shrubs and trees as solid cylinders (their sites' ground radius and height)
-const sites = s.plants?.userData.sites ?? [];
-const inPlant = ( x, y, z, skip ) => { for ( const t of sites ) if ( t !== skip && y > t.y && y < t.y + t.height && ( x - t.x ) ** 2 + ( z - t.z ) ** 2 < ( t.radius * 0.85 ) ** 2 ) return true; return false; };
-// terrain or plants between the camera and p (the last 'margin' metres excepted; 'skip' is a plant
-// site the anchor itself belongs to)
-const visible = ( p, margin = 0.8, skip = null ) => {
+// terrain between the camera and p (the last 'margin' metres excepted)
+const visible = ( p, margin = 0.8 ) => {
 	const c = s.camera.position, d = p.clone().sub( c ), len = d.length(); d.divideScalar( len );
 	for ( let t = 0.5; t < len - margin; t += 0.25 ) {
 		const x = c.x + d.x * t, y = c.y + d.y * t, z = c.z + d.z * t;
-		if ( y < height( x, z ) - 0.05 || inPlant( x, y, z, skip ) ) return false;
+		if ( y < height( x, z ) - 0.05 ) return false;
 	}
 	return true;
 };
@@ -141,8 +130,6 @@ const lips = () => { const g = heightGrid(); return cells( ( x, y, z, i, k ) => 
 	if ( ! o ) return null; const p = V( x, y, z ); return facing( p, o ) || p.y > s.camera.position.y ? { p, o } : null; } ); };
 const coast = ( y0 ) => cells( ( x, y, z, i, k ) => { if ( y < y0 + 0.3 ) return null; const o = outward( i, k, - 0.5, 2 );
 	if ( ! o ) return null; const p = V( x + o[ 0 ] * CELL, y0, z + o[ 1 ] * CELL ); return facing( p, o ) ? { p, o } : null; } );
-const nearestTree = () => { const t = sites.filter( ( x ) => x.kind === 'tree' ).map( ( x ) => ( { x, d: dist( V( x.x, x.y + x.height * 0.7, x.z ) ) } ) )
-	.filter( ( e ) => inner( project( V( e.x.x, e.x.y + e.x.height * 0.7, e.x.z ) ) ) ).sort( ( a, b ) => a.d - b.d ); return t[ 0 ]?.x; };
 const flowerBeds = () => { const bins = new Map();
 	for ( const [ x, y, z ] of s.grass.userData.flowerHeads() ) {
 			const key = Math.floor( x / 2 ) + ',' + Math.floor( z / 2 ); const b = bins.get( key ) ?? { n: 0, x: 0, y: 0, z: 0 };
@@ -158,7 +145,7 @@ const ANCHORS = {
 	'meadow-band-70m': () => meadowAt( 70, 62, 80 ),
 	// the nearest 2 m cell of the meadow with a few flower heads in it
 	'flowers': () => pick( flowerBeds().filter( ( b ) => b.n >= 4 && dist( b.p ) < 90 ).map( ( b ) => ( { p: b.p, score: dist( b.p ) - b.n * 0.05 } ) ), clearView ),
-	// the nearest stretch of the lip (with its turf skirt and trails) facing the camera
+	// the nearest stretch of the lip (with its turf skirt) facing the camera
 	'rim-lip': () => pick( lips().map( ( c ) => ( { p: c.p, score: dist( c.p ) } ) ).filter( ( c ) => c.score > 4 ) ),
 	// the cliff's foot at the waterline, facing the camera
 	'cliff-edge-sea': () => pick( coast( 0.3 ).map( ( c ) => ( { p: c.p, score: dist( c.p ) } ) ) ),
@@ -177,12 +164,6 @@ const ANCHORS = {
 		return pick( cands ); },
 	'islander-head': () => { const p = bone( 'Head' ); if ( p ) p.y += 0.12; return p && inner( project( p ) ) && visible( p, 0.3 ) ? p : null; },
 	'islander-hands': () => { for ( const n of [ 'WristR', 'WristL' ] ) { const p = bone( n ); if ( p && inner( project( p ) ) && visible( p, 0.3 ) ) return p; } return null; },
-	// the edge of the nearest tree's crown, toward the camera's right where it can
-	'twigs': () => { const t = nearestTree(); if ( ! t ) return null; const r = V( 1, 0, 0 ).applyQuaternion( s.camera.quaternion ), cands = [];
-		for ( let k = 0; k < 16; k ++ ) for ( const h of [ 0.72, 0.88 ] ) { const a = k / 16 * Math.PI * 2, e = V( Math.cos( a ), 0, Math.sin( a ) );
-			cands.push( { p: V( t.x, t.y + t.height * h, t.z ).addScaledVector( e, t.height * 0.42 ), score: - e.dot( r ) + h * 0.1 } ); }
-		return pick( cands, ( p ) => visible( p, 2, t ) ); },
-	'tree-crown': () => { const t = nearestTree(); if ( ! t ) return null; return pick( [ { p: V( t.x, t.y + t.height * 0.75, t.z ), score: 0 } ], ( p ) => visible( p, 2, t ) ); },
 	// the sea where it mirrors the key light (sun, else moon) toward the camera; when that point lies
 	// below the frame (a high light, a level camera), the glitter path farther out along the light's
 	// bearing where it enters the frame (near the frame's edge the box is clamped into the image)
@@ -246,9 +227,9 @@ const ISLANDER = 'while ( ! s.characters.centre.lengthSq() ) await new Promise( 
 
 export const VIEWS = {
 	// the profiler's 12 scenes (tools/profile-frame.mjs SCENES), paused
-	'island-fair-noon': { q: 'weather=fair&preset=noon', crops: [ 'meadow-band-70m', 'flowers', 'rim-lip', 'cliff-edge-sea', 'tree-crown', 'islander-head' ] },
+	'island-fair-noon': { q: 'weather=fair&preset=noon', crops: [ 'meadow-band-70m', 'flowers', 'rim-lip', 'cliff-edge-sea', 'islander-head' ] },
 	// orbit to the island's far side from the sun: the view looks into the low sun (profiler's faceSun)
-	'island-clear-golden': { q: 'weather=clear&preset=golden-hour', eval: 'orbitAround( - s.sky.sunDir.x, - s.sky.sunDir.z );', crops: [ 'rim-lip', 'cliff-edge-sea', 'tree-crown' ] },
+	'island-clear-golden': { q: 'weather=clear&preset=golden-hour', eval: 'orbitAround( - s.sky.sunDir.x, - s.sky.sunDir.z );', crops: [ 'rim-lip', 'cliff-edge-sea' ] },
 	'horizon-fair-noon': { q: 'weather=fair&preset=noon', eval: `s.setCameraView( 'horizon' );`, crops: [ 'cliff-edge-sea', 'rim-lip', 'horizon-line' ] },
 	'sky-cloudy': { q: 'weather=cloudy&preset=noon', eval: `s.setCameraView( 'sky' );`, crops: [] },
 	'island-overcast': { q: 'weather=overcast&preset=noon', crops: [ 'meadow-band-70m', 'rim-lip', 'cliff-edge-sea' ] },
@@ -274,20 +255,16 @@ export const VIEWS = {
 	// a free camera 150 m out, 14 m up, looking back at the island
 	'island-from-sea': { q: 'weather=fair&preset=noon', eval: `const b = isl(); const a = 4.0;
 		free( [ b.cx + Math.cos( a ) * 150, 14, b.cz + Math.sin( a ) * 150 ], [ b.cx, 3, b.cz ], 35 );`, crops: [ 'cliff-edge-sea', 'rim-lip', 'horizon-line' ] },
-	// mid-afternoon, beside the first small tree's crown: shrubs and trees in dappled shade
-	'meadow-shade': { q: 'weather=fair&hour=15', eval: `const b = isl(); const sites = plantSites(), t = sites.find( ( x ) => x.kind === 'tree' ) ?? sites[ 0 ];
-		let dx = t.x - b.cx, dz = t.z - b.cz; const len = Math.hypot( dx, dz ) || 1; dx /= len; dz /= len;
-		free( [ t.x + dx * 6, t.y + 1.7, t.z + dz * 6 ], [ t.x - dx * 1.5, t.y + 0.6, t.z - dz * 1.5 ], 55 );`, crops: [ 'tree-crown', 'twigs', 'meadow-near' ] },
 	// sunrise, the orbit turned across the sun so the long shadows run sideways over the meadow
-	'sunrise-long-shadows': { q: 'weather=clear&preset=sunrise', eval: 'orbitAround( s.sky.sunDir.z, - s.sky.sunDir.x );', crops: [ 'meadow-band-70m', 'tree-crown', 'rim-lip' ] },
+	'sunrise-long-shadows': { q: 'weather=clear&preset=sunrise', eval: 'orbitAround( s.sky.sunDir.z, - s.sky.sunDir.x );', crops: [ 'meadow-band-70m', 'rim-lip' ] },
 	// a full moon about 14 degrees up, the low horizon orbit facing it over the island
 	'night-moon': { q: 'weather=clear&hour=19.2&moon=0.5', eval: `s.setCameraView( 'horizon' ); orbitAround( - s.sky.moonDir.x, - s.sky.moonDir.z );`, crops: [ 'moon-limb', 'stars', 'sea-glints', 'horizon-line' ] },
 
 	// temporal anti-aliasing views: thin, high-contrast and moving detail up close
 	// the orbit at 24 m, 60 degrees from the zenith: the meadow's near bands and its flowers
 	'meadow-24': { group: 'taa', q: 'weather=fair&preset=noon&dist=24&polar=60&az=300', crops: [ 'islander-head', 'flowers', 'meadow-near', 'rim-lip' ] },
-	// the orbit low over the sea at 36 m: the lip and trails against the sky
-	'low-36': { group: 'taa', q: 'weather=fair&preset=noon&dist=36&polar=80&az=330', crops: [ 'rim-lip', 'cliff-edge-sea', 'meadow-band-40m', 'horizon-line', 'tree-crown' ] },
+	// the orbit low over the sea at 36 m: the lip against the sky
+	'low-36': { group: 'taa', q: 'weather=fair&preset=noon&dist=36&polar=80&az=330', crops: [ 'rim-lip', 'cliff-edge-sea', 'meadow-band-40m', 'horizon-line' ] },
 	// the islander a few metres away (skinned motion, ears, hands)
 	'islander-close': { group: 'taa', q: 'weather=fair&preset=noon', eval: `${ ISLANDER }
 		s.controls.minDistance = 2; s.controls.target.copy( c ); s.camera.position.set( c.x + 3.2, c.y + 2.4, c.z + 3.6 ); s.camera.lookAt( c ); ( s.controls.settle ?? s.controls.update ).call( s.controls );`,
@@ -303,19 +280,15 @@ export const VIEWS = {
 		let dx = f[ 0 ] - b.cx, dz = f[ 2 ] - b.cz; const len = Math.hypot( dx, dz ) || 1; dx /= len; dz /= len;
 		const back = 1.2 / Math.tan( 35 * Math.PI / 180 );
 		free( [ f[ 0 ] - dx * back, f[ 1 ] + 1.2, f[ 2 ] - dz * back ], f, 55 );`, crops: [ 'flowers', 'meadow-near' ] },
-	// beside the first tree's trunk, looking up through its crown at the sky
-	'twigs-sky': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(); const sites = plantSites(), t = sites.find( ( x ) => x.kind === 'tree' ) ?? sites[ 0 ];
-		let dx = t.x - b.cx, dz = t.z - b.cz; const len = Math.hypot( dx, dz ) || 1; dx /= len; dz /= len;
-		free( [ t.x + dx * 1.0, t.y + 1.1, t.z + dz * 1.0 ], [ t.x - dx * 0.4, t.y + t.height * 0.9, t.z - dz * 0.4 ], 60 );`, crops: [ 'tree-crown', 'twigs' ] },
-	// 25 m out over the sea and 4 m up, facing the rim trails' densest stretch (5 degree sectors of the
-	// trails' vertices below the lip)
-	'rim-sea': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(); const g = s.rimFoliage.getObjectByName( 'rimFoliageLeaves' ); g.updateWorldMatrix( true, false );
+	// 25 m out over the sea and 4 m up, facing the turf skirt's densest stretch (5 degree sectors of
+	// the skirt's vertices)
+	'rim-sea': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(); const g = s.turfSkirt; g.updateWorldMatrix( true, false );
 		const pos = g.geometry.attributes.position, v = s.camera.position.clone(), n = 72, bins = Array.from( { length: n }, () => ( { n: 0, x: 0, y: 0, z: 0 } ) );
-		for ( let i = 0; i < pos.count; i ++ ) { v.fromBufferAttribute( pos, i ).applyMatrix4( g.matrixWorld ); if ( v.y > b.top - 0.8 ) continue;
+		for ( let i = 0; i < pos.count; i ++ ) { v.fromBufferAttribute( pos, i ).applyMatrix4( g.matrixWorld );
 			const k = Math.floor( ( Math.atan2( v.z - b.cz, v.x - b.cx ) / ( 2 * Math.PI ) + 0.5 ) * n ) % n; const e = bins[ k ]; e.n ++; e.x += v.x; e.y += v.y; e.z += v.z; }
 		const e = bins.reduce( ( a, c ) => c.n > a.n ? c : a ); const p = [ e.x / e.n, e.y / e.n, e.z / e.n ];
 		let dx = p[ 0 ] - b.cx, dz = p[ 2 ] - b.cz; const len = Math.hypot( dx, dz ) || 1; dx /= len; dz /= len;
-		free( [ p[ 0 ] + dx * 25, 4, p[ 2 ] + dz * 25 ], p, 35 );`, crops: [ 'rim-lip', 'cliff-edge-sea', 'tree-crown' ] },
+		free( [ p[ 0 ] + dx * 25, 4, p[ 2 ] + dz * 25 ], p, 35 );`, crops: [ 'rim-lip', 'cliff-edge-sea' ] },
 	// golden hour from the sea, 3 m up, the island between the camera and the low sun (turned 20
 	// degrees off it so the disk stays clear of the island): backlit cliff edges and the sun's glare
 	'cliff-sea-golden': { group: 'taa', q: 'weather=clear&preset=golden-hour', eval: `const b = isl(); const r = Math.max( b.rx, b.rz );

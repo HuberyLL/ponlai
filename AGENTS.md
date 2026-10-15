@@ -92,13 +92,12 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   swap); the footprint, SDF
   shapes and surface nets (`WorldShapes.ts`), the
   cliffs (`Cliff.ts`), the submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as
-  tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`,
-  `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled on the GPU
+  tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled on the GPU
   by `vegetation/VegetationCull.ts`; its wildflowers are heads on some of its tufts, a batch of the
-  pool), the rim bushes (`FoliageSites.ts`, `Foliage.ts`), the plateau's shrubs and small trees (sited on the page off the walking loop by
-  `PlantSites.ts`, grown each from its seed and merged into one geometry by `Plants.ts`, its far plants drawn with a share of their leaves), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
+  pool), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
   vegetation's depth prepass
-  (`VegetationPrepass.ts`); what the vegetation's materials share in `src/world/vegetation/`: the
+  (`VegetationPrepass.ts`); what the vegetation's materials share in `src/world/vegetation/` (kept
+  for the plant kinds to come: some of it no kind uses today, as each module's header says): the
   material factory every plant kind builds with (`Material.ts`), the coverage paths
   and the vegetation tag (`Coverage.ts`), the folded leaf's textures (`LeafTexture.ts`), the
   instance pool (`Instances.ts`), the GPU cull of a storage-instanced kind, its payload declared by
@@ -183,7 +182,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   material and layout, so they draw with the loaded chunks' pipelines; merged kinds take new
   geometry of the same layout, uploaded ahead; instanced kinds hold a capacity whose shader does not
   change (three puts up to 1024 instance matrices in a uniform array of exactly the capacity:
-  `Foliage.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels
+  `vegetation/Instances.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels
   reading their bounds from uniforms (`vegetation/VegetationCull.ts`); the world fields swap textures through the
   one base node each material samples them by (`WorldFields.ts`), and other passes keep their
   materials across rebakes (`RainCollision.ts`).
@@ -269,12 +268,12 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   multisampled and cannot be sampled with a comparison; give it a render target. three picks one
   sampler type per depth texture per material (`SolarShadow.ts`).
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
-  (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `Foliage.ts`.
+  (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `vegetation/Material.ts`.
 - The water samples neither the target it draws into nor more textures (it is at WebGPU's 16, its
   varyings near the limit: `Water.ts`), so it takes no history or reactive input: what the resolve
   needs from it goes out through its velocity. It reflects only what lies inside
   `Water.reflectionBounds`: anything opaque placed off the island or above 3 m must grow that box
-  (the plateau's small trees do: main.ts).
+  (the game's props do: main.ts `holdOpaque`).
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an
   rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).

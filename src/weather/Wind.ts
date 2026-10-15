@@ -19,11 +19,11 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // the gusts, as a meadow moves; each plant keeps only a small share of its own (`swayJitter`:
 // +-0.4 rad, +-10 %). The swing is about a sixth of the lean, so a plant never swings upwind of
 // upright and stays within a few degrees of the local wind. Rates are whole swings per gust tile
-// (the rim bushes and the plateau's shrubs 30, about 0.9 Hz in a fair wind; grass and its flowers 50;
-// the small trees and the palm half a bush's).
+// (mainBend's 30, about 0.9 Hz in a fair wind; grass and its flowers 50; the palm half mainBend's).
 // Leaf edges, sprays and fronds still flutter on their own phases, a small motion on top, faster as
 // the wind rises. Grass tufts and their flower heads bend with the field at their root, the turf
-// skirt follows the same field, and rim trails swing like pendulums with the same sway (RimFoliage.ts).
+// skirt follows the same field, and a hanging strand swings like a pendulum with the same sway
+// (vegetation/Deform.ts `hangingSway`, which no kind uses today).
 //
 // Everything is a function of the wind's integrated clocks and travel (`clock`, `flutter`,
 // `gustScroll`, wrapped where every rate completes whole cycles), never time * a changing speed,

@@ -19,7 +19,7 @@ import { shared } from '../shared.ts';
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 
-// Texels per metre: a drop finds the meadow, a bush's crown or a hanging branch to within
+// Texels per metre: a drop finds the meadow, a plant's crown or a hanging strand to within
 // a few centimetres, finer than a splash.
 const TEXELS_PER_METRE = 14;
 // Rim foliage hangs and the cliff toe flares beyond the land's footprint.
@@ -55,8 +55,8 @@ export class RainCollision {
 		this.camera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 80 );
 		// Looking straight down with -z up the image: x runs right, z down the rows from z0.
 		this.camera.up.set( 0, 0, - 1 );
-		// Bushes reach about a metre and a half above the meadow and the figures two; the ceiling
-		// keeps a margin over them, so no drop falls through their tops.
+		// The figures reach two metres above the meadow; the ceiling
+		// keeps a margin over them and the plants, so no drop falls through their tops.
 		this.ceiling = ISLAND_TOP + 4;
 		const texture = this.target.texture, xform = this.xform, size = this.size, waterLevel = this.waterLevel;
 		this.groundAt = Fn( ( [ xz ]: [ V2 ] ) => {
@@ -118,7 +118,7 @@ export class RainCollision {
 
 			const mesh = object as THREE.Mesh;
 			// (a vegetation mesh's depth prepass copy, VegetationPrepass.ts, prints the same shape; a
-			// mesh marked `rainBake: false` leaves its shape to another, as the plants' near meshes do)
+			// mesh marked `rainBake: false` leaves its shape to another: no mesh is today)
 			if ( ! mesh.isMesh || ( mesh as THREE.SkinnedMesh ).isSkinnedMesh || ! object.visible || mesh.userData.prepassCopy || mesh.userData.rainBake === false ) return;
 			seen.add( mesh );
 			const instanced = mesh as THREE.InstancedMesh;

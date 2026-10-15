@@ -5,9 +5,8 @@ import type { WorldData } from '../types.ts';
 // The page's lists of vegetation roots read it (main.ts: the scene, the depth prepass, the sun's
 // caster box, the rain's collision bake; Growth.ts: the kinds' growth and the rain's bake after a
 // swap) instead of naming the kinds at each place.
-// - Order: the kinds are registered in the order the scene held them before (grass, rim bushes,
-//   rim trails, turf skirt, plateau plants), and every list keeps it: draws of equal
-//   render order and depth keep their order, and the lists the passes walk are the ones they were.
+// - Order: the kinds are registered in the order the scene draws them (today the grass, then the
+//   turf skirt), and every list keeps it: draws of equal render order and depth keep their order.
 // - The depth prepass (`prepass`, VegetationPrepass.ts) and the shadow filter (`shadowFilter`,
 //   SunShadow.ts) are separate choices. The shadow filter is still read from the materials'
 //   vegetation tag (`userData.vegetation`, vegetation/Coverage.ts markVegetation), which the depth
@@ -15,7 +14,9 @@ import type { WorldData } from '../types.ts';
 //   a kind's materials carry the tag its `shadowFilter` names.
 // - Growth (`growth`): a kind that changes with the land prepares its next version in the growth's
 //   idle-time steps and swaps it in, in the swap's frame, without building a pipeline (Growth.ts).
-//   The kinds prepare and swap in registry order.
+//   The kinds prepare and swap in registry order. A kind that writes its buffers in place at the
+//   swap stages the write ahead (`stage`, Upload.ts stagedWriteSteps): kept for the plant kinds to
+//   come; no kind uses it today (the grass takes new buffers, the skirt new geometry).
 // - The game's palms are registered by the game's view (GameView.ts), which owns them; they take
 //   part in none of the lists above.
 
@@ -29,9 +30,6 @@ export interface GrowthInput {
 	data: WorldData;
 	/** metres from a point to the islander's walking loop on the next land */
 	walkDistance( x: number, z: number ): number;
-	/** the shrubs and small trees sited on the next land (PlantSites.ts), their shade already baked
-	 * into the anchors */
-	plantSites: Float32Array;
 	/** keeps a staged in-place write (Upload.ts stagedWriteSteps) until the swap's frames are done */
 	stage( free: ( () => void ) | null ): void;
 }
@@ -46,7 +44,7 @@ export interface KindGrowth<P> {
 }
 
 export interface VegetationKind<P = unknown> {
-	/** 'grass', 'bushes', 'rim', 'skirt', 'plants' or 'palm' */
+	/** 'grass', 'skirt' or 'palm' */
 	name: string;
 	/** what the page adds to the scene */
 	root: THREE.Object3D;
