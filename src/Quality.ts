@@ -9,8 +9,10 @@
 // leaving about 15 % of the 16.7 ms frame for pacing and the OS. 1440p is the guaranteed level: a
 // load starts there and a paused page renders there; the dynamic render scale (`render`,
 // post/DynamicResolution.ts) climbs to the display's own ratio (native 4K) with headroom and drops to
-// half the output's linear resolution (1080p) when busy. High multisamples the scene with 4 samples
-// (`msaa`; WebGPU has 1 or 4, no 2) and upscales with FSR 1.
+// half the output's linear resolution (1080p) when busy. High resolves the scene temporally and
+// upsamples it to the canvas in the same step (`taau`): MSAA's 4 samples left moving grass blades
+// flashing from frame to frame. A paused page (the test mode) still renders under `msaa`
+// (post/Antialiasing.ts).
 //
 // Parked tiers (`PARKED_QUALITY`: medium, low) slowed every line of work down, so until they are
 // revived as their own milestone they are out of the default choice (no GPU timing picks them), the
@@ -192,7 +194,7 @@ const TAA: TemporalSettings = {
 
 export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = {
 	high: {
-		aa: 'msaa',
+		aa: 'taau',
 		taa: { ...TAA },
 		render: { dynamic: { max: 2, baselineShare: 2 / 3, floorShare: 0.5, step: 0.05 } },
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },

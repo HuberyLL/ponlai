@@ -261,7 +261,8 @@ path-independent; rendering may keep history-dependent effects that a scene jump
 converge on a still scene (or are frozen or turned off in the test mode) and that are compared
 within a tolerance; the test mode keeps the byte-for-byte checks valid.
 
-- The test mode today: `paused` in the query, high's default `aa=msaa`, the shot taken once
+- The test mode today: `paused` in the query, which loads `aa=msaa` whatever the tier runs (high
+  runs `taau`; an explicit `aa=` wins), the shot taken once
   `__THREE_GAME_DIAGNOSTICS__.settled` holds (capture.mjs's readiness). Every capture, parity and
   verify tool already loads its pages this way, so their exact checks hold as their headers say.
   The page's only history-dependent rendering effects are the temporal resolve (`aa=taa|taau|gt`,

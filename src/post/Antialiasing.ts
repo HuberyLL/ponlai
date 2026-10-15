@@ -9,8 +9,8 @@
 // - `off`: one sample, leaves alpha-tested and grass blades dithered (`msaa=1` before);
 // - `taa`, `taau`: temporal anti-aliasing at the render's size, and temporal upsampling to the
 //   canvas: one sample, jittered, with motion vectors (Jitter.ts, Motion.ts), resolved against a
-//   history (TemporalAA.ts). A tier's knob may ask for them (the parked medium tier does, Quality.ts;
-//   high, the only active tier, runs msaa), and `aa=` or the GUI choose them on any tier; they are
+//   history (TemporalAA.ts). A tier's knob may ask for them (high, the only active tier, runs taau;
+//   so does the parked medium tier, Quality.ts), and `aa=` or the GUI choose them on any tier; they are
 //   refused, with a warning, where three's cache keys cannot be patched (graph/ThreePatches.ts:
 //   three r186 only), since their scene materials build one shader per MRT (if the patches still
 //   fail to install, main.ts stops the page);
@@ -21,8 +21,9 @@
 // WebGPU multisamples with 1 or 4 samples only (three turns any other count into 1), so there is
 // no 2x: `msaa=1` and `msaa=2` are read as `off`, `msaa=4` as `msaa`.
 //
-// The mode comes from the URL's `aa`, else its `msaa` alias, else the quality tier's `aa` knob
-// (`QualityProfile.aa`, with `tier.aa=` over it), else `msaa`: the URL wins over the tier, and
+// The mode comes from the URL's `aa`, else its `msaa` alias, else `msaa` on a paused page (the test
+// mode), else the quality tier's `aa` knob (`QualityProfile.aa`, with `tier.aa=` over it), else
+// `msaa`: the URL wins over the test mode and the tier, and
 // `AA_SOURCE` says which of them chose (main.ts reports it as `aaSource`). `gt` is taken from the
 // URL in a debug build only, never from a tier. The tier is chosen here, once, for
 // the whole page (main.ts reads `QUALITY_CHOICE`): modules that read the mode when they load
@@ -34,7 +35,7 @@ import { chooseQuality, type QualityChoice } from '../QualityDetect.ts';
 export const AA_MODES = [ 'msaa', 'taa', 'taau', 'off', 'gt' ] as const;
 export type AAMode = typeof AA_MODES[ number ];
 /** Where the page's mode came from: the URL (`aa` or its `msaa` alias), the tier's knob, or neither. */
-export type AASource = 'url' | 'tier' | 'default';
+export type AASource = 'url' | 'test' | 'tier' | 'default';
 export type SceneSampleCount = 1 | 4;
 
 export interface AAPlan {
@@ -75,6 +76,9 @@ export function requestedAAMode( params: URLSearchParams, profile: Pick<QualityP
 		console.warn( `Unknown msaa=${ msaa }: expected 1 or 4` );
 
 	}
+	// The test mode (AGENTS.md) is a paused page under MSAA, whatever the tier runs: every capture,
+	// parity and verify tool loads its pages paused, and their byte-for-byte checks hold under MSAA.
+	if ( params.has( 'paused' ) || params.get( 'clock' ) === 'paused' ) return { mode: 'msaa', source: 'test' };
 	const tier = profile?.aa;
 	if ( tier !== undefined ) {
 
