@@ -16,9 +16,11 @@ type V3 = THREE.Node<'vec3'>;
 // the path through the canopy, so a low sun deepens the shade without turning the meadow olive.
 export const meadowCanopy = {
 	density: uniform( 5 ), // extinction per metre of canopy along the ray
-	// The share of the key light that reaches any depth between the blades: the mean open share of
-	// the former gap field, so the meadow's mean brightness stays as it was.
-	open: uniform( 0.5 ),
+	// The share of the key light that reaches any depth between the blades. Low, so the roots and
+	// the turf between them lie deep under lit tips; the blades' tips take the light back through
+	// their transmission (Grass.ts), so the lawn's mean brightness holds (at half, the former gap
+	// field's mean open share, the meadow read flat).
+	open: uniform( 0.15 ),
 };
 
 // Uniforms reach a layout function only as arguments.

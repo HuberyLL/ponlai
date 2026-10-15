@@ -106,8 +106,11 @@ export class Atmosphere {
 	readonly sunDir = uniform( new THREE.Vector3( 0.3, 0.6, - 0.7 ).normalize() );
 	readonly sunIlluminance = uniform( new THREE.Color().setScalar( SUN_ILLUMINANCE * SCENE_RADIANCE_SCALE ) );
 	readonly rayleighScale = uniform( 1 );
-	readonly mieScale = uniform( 1 );
-	readonly mieG = uniform( 0.8 );
+	// Aerosol: two and a half times Hillaire's clear air, with a broader forward lobe. A daytime sea
+	// sky is hazy: its horizon turns milky white and the side toward the sun takes a wide, soft
+	// cream glow, where the clear air left a cyan horizon with no direction to its light.
+	readonly mieScale = uniform( 2.5 );
+	readonly mieG = uniform( 0.7 );
 	readonly ozoneScale = uniform( 1 );
 	readonly groundAlbedo = uniform( new THREE.Color( 0.06, 0.08, 0.1 ) );
 	readonly viewHeight = uniform( RG + 0.002 );

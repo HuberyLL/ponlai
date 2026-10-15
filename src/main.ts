@@ -397,6 +397,7 @@ setStatus( 'Lighting the sky…' );
 await refreshEnvironment();
 mark( 'sky' );
 shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill );
+shared.islandIrradianceSource = sky.islandIrradianceNode.mul( shared.skyFill );
 
 const textures = await bakeProceduralTextures( renderer );
 // Recover mid-scale wave volume through wind/fetch, while the spectrum still filters fine crests.
@@ -1053,7 +1054,7 @@ if ( game ) for ( const c of timeF.controllers ) if ( c.object === timeView || (
 sunF.add( sky, 'elevation', - 6, 70, 0.5 ).onFinishChange( applySun );
 sunF.add( sky, 'azimuth', - 180, 180, 1 ).onFinishChange( applySun );
 sunF.add( sky, 'sunIlluminance', 2, 20, 0.1 ).name( 'illuminance' ).onFinishChange( applySun );
-sunF.add( sky.atmosphere.mieScale, 'value', 0.1, 2, 0.01 ).name( 'aerosol scattering' ).onFinishChange( applySun );
+sunF.add( sky.atmosphere.mieScale, 'value', 0.1, 5, 0.01 ).name( 'aerosol scattering' ).onFinishChange( applySun );
 sunF.add( lighting, 'skyFill', 0, 3, 0.01 ).name( 'sky fill' ).onChange( applySkyFill );
 const waterF = gui.addFolder( 'Water' );
 const optics = { clarity: 1.0, turbidity: 1.0 };
@@ -1465,6 +1466,9 @@ function tick( time: number ): void {
 		// dim frame, so a crossfade held back to -2 .. -6 degrees left the frame up to a fifth darker
 		// than PBR Neutral's just after sunset, and darker than the night.
 		S.nightLook = 1 - THREE.MathUtils.smoothstep( state.daylight, 0.2, 0.45 );
+		// The night's cooler meadow (Pipeline `nightGreenTurn`): none through the afterglow, all of
+		// it once the sky is navy (the sun from -6 to -19 degrees).
+		S.nightGreen = 1 - THREE.MathUtils.smoothstep( sky.elevation, - 19, - 6 );
 
 	}
 	// the look's sunlit layers follow the weather's sunlight, as the key light does

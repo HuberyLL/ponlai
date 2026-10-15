@@ -1,7 +1,7 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
-import { DayCycle, DAY_PRESETS, DAY_BLACK_LIFT, NIGHT_EXPOSURE, NIGHT_SKY_EXPOSURE } from '../src/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, DAY_BLACK_LIFT, DAY_EXPOSURE_TRIM, NIGHT_EXPOSURE, NIGHT_SKY_EXPOSURE } from '../src/sky/DayCycle.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
@@ -50,7 +50,7 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	near( s.moonDir.length(), 1 );
 	near( s.keyDir.length(), 1 );
 	for ( const key of [ 'daylight', 'nightVisibility', 'nightAmbient', 'moonVisibility', 'moonIllumination', 'moonKeyGain' ] ) assert.ok( Number.isFinite( s[ key ] ) && s[ key ] >= 0 && s[ key ] <= 1, key );
-	assert.ok( s.exposure >= 2.6 && s.exposure <= 4.4 * 1.6 + 1e-12 );
+	assert.ok( s.exposure >= 2.6 * ( 1 - DAY_EXPOSURE_TRIM ) - 1e-12 && s.exposure <= 4.4 * 1.6 + 1e-12 );
 	assert.ok( s.blackLift >= 0.002 - 1e-12 && s.blackLift <= DAY_BLACK_LIFT + 1e-12 );
 	// The night's ambient arrives before the stars, across the band where the sun's sky fades.
 	assert.ok( s.nightAmbient >= s.nightVisibility );
@@ -114,7 +114,8 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 			const state = cycle.snapshot();
 			near( state.keyDir.length(), 1 );
 			assert.ok( state.keyDir.toArray().every( Number.isFinite ) );
-			if ( elevation >= - 3 ) near( state.moonKeyGain, 0 );
+			// (the moon's key rises from the end of the handoff, -2.5 degrees)
+			if ( elevation >= - 2.5 ) near( state.moonKeyGain, 0 );
 			if ( phase === 0 || state.moonElevation <= 0 ) assert.equal( state.moonKeyGain, 0 );
 			if ( elevation >= - 0.7 ) assert.ok( state.keyDir.distanceTo( state.sunDir ) < 1e-10 );
 			if ( elevation <= - 2.5 ) assert.ok( state.keyDir.distanceTo( state.moonDir ) < 1e-10 );
@@ -123,7 +124,8 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 			cycle.setHour( hour + 1e-7 );
 			const after = cycle.snapshot();
 			assert.ok( before.keyDir.distanceTo( after.keyDir ) < 2e-5 );
-			near( before.moonKeyGain, after.moonKeyGain, 1e-6 );
+			// (2e-6: the moon's key rises over two degrees, so its slope is steep)
+			near( before.moonKeyGain, after.moonKeyGain, 2e-6 );
 			// Sampling different phases must never move the atmosphere's real sun.
 			cycle.moonPhase = ( phase + 0.3 ) % 1;
 			assert.ok( cycle.snapshot().sunDir.distanceTo( after.sunDir ) < 1e-10 );
@@ -158,9 +160,10 @@ assert.equal( day.daylight, 1 );
 assert.equal( day.nightVisibility, 0 );
 assert.equal( night.daylight, 0 );
 assert.equal( night.nightVisibility, 1 );
-// About one and a half stops of adaptation: the island reads at night while the night sky,
-// whose own light scales back by the same ratio, stays as dark as it was tuned.
-assert.ok( night.exposure / day.exposure < 2.8 );
+// About one and a half stops of adaptation (the midday trim adds a tenth of a stop): the island
+// reads at night while the night sky, whose own light scales back by the same ratio, stays as dark
+// as it was tuned.
+assert.ok( night.exposure / day.exposure < 3 );
 // The night keeps only a trace of the day's black lift, so its blacks do not turn milky.
 assert.ok( night.blackLift < day.blackLift / 5 );
 night.sunDir.set( 0, 0, 0 );
