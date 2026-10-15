@@ -33,6 +33,12 @@ import type { GroundGrid } from '../world/ChunkDerived.ts';
 // Rules and their reasons:
 // - A press stays a click until it moves 3 px, so a left-click action can share the button.
 // - The zoom tilts the view toward the horizon by 12 degrees per e-fold of distance.
+// - In the island view the fov widens as the view closes in (`widenFov`, `fovAt`): the far fov
+//   (27 degrees) from 50 m outward, eased to 42 degrees at the closest zoom, so up close the view
+//   takes in the sky above the island while the far end keeps its miniature look. It is a function
+//   of the distance alone, set before the points under the pointer are kept there, so a zoom stays
+//   anchored under the cursor and a still camera's frames repeat (`nearFov`, `nearFovFrom` and
+//   `nearFov=off` in the query: main.ts).
 // - A mouse wheel is told from a trackpad swipe by its deltas (macOS reports a notch in multiples
 //   of 4.000244140625 px, a trackpad whole pixels with `wheelDeltaY` three times `-deltaY`); the
 //   GUI's scroll setting overrides the guess. Panning at the window's edge is off by default: in a
@@ -120,6 +126,13 @@ export class IslandCameraControls {
 	turnPerHeight = Math.PI;
 	/** The tilt that follows a zoom: radians toward the horizon per e-fold the distance shrinks. */
 	pitchPerZoom = THREE.MathUtils.degToRad( 12 );
+	/** The vertical field of view follows the distance (`fovAt`): `farFov` from `widenFrom` (m)
+	 * outward, widening to `nearFov` at `minDistance` (degrees). Off, the camera's fov is left as it
+	 * is (the review views and the free flight set their own). */
+	widenFov = false;
+	farFov: number;
+	nearFov = 42;
+	widenFrom = 50;
 	/** A wheel notch's zoom (natural log of the distance), and the time constant of its glide (s). */
 	wheelZoom = 0.18;
 	zoomTime = 0.08;
@@ -189,6 +202,7 @@ export class IslandCameraControls {
 
 	constructor( private readonly camera: THREE.PerspectiveCamera, private readonly element: HTMLElement ) {
 
+		this.farFov = camera.fov;
 		element.style.touchAction = 'none';
 		element.addEventListener( 'pointerdown', this.onPointerDown );
 		element.addEventListener( 'pointermove', this.onPointerMove );
@@ -231,10 +245,22 @@ export class IslandCameraControls {
 		this.bounds.min.set( land.x0 - m, land.z0 - m );
 		this.bounds.max.set( land.x1 + m, land.z1 + m );
 		// at the farthest zoom the land's diagonal still spans at least 40 % of the view's height
-		// (about 190 m for the starting island)
+		// (about 190 m for the starting island), at the far end's fov whatever the zoom now
 		const diagonal = Math.hypot( land.x1 - land.x0, land.z1 - land.z0 );
-		const view = 2 * Math.tan( THREE.MathUtils.degToRad( this.camera.fov ) / 2 );
+		const view = 2 * Math.tan( THREE.MathUtils.degToRad( this.farFov ) / 2 );
 		this.maxDistance = diagonal / ( 0.4 * view );
+
+	}
+
+	/** The vertical field of view at `distance` (degrees): `farFov` from `widenFrom` outward, eased
+	 * (smoothstep on the log of the distance) to `nearFov` at `minDistance`. A function of the
+	 * distance alone, so a still camera's fov does not depend on the zoom that brought it there. */
+	fovAt( distance: number ): number {
+
+		const from = Math.max( this.widenFrom, this.minDistance );
+		if ( ! ( distance < from ) ) return this.farFov;
+		const u = Math.min( Math.log( from / distance ) / Math.log( from / this.minDistance ), 1 );
+		return this.farFov + ( this.nearFov - this.farFov ) * u * u * ( 3 - 2 * u );
 
 	}
 
@@ -441,6 +467,10 @@ export class IslandCameraControls {
 		target.clampLength( 0, Infinity );
 		s.radius = Math.max( this.minDistance, Math.min( this.maxDistance, s.radius ) );
 		this.place();
+		// the fov at the new distance, before the points below are kept under the pointer: their
+		// rays are cast through the projection this frame draws with (the sideways moves and the
+		// limits below keep the distance)
+		const widened = this.widenFov && this.setFov( this.fovAt( s.radius ) );
 
 		// the points that stay under the pointer: the zoom's, the swipe's, the drag's (the hand's
 		// last, so it wins)
@@ -448,7 +478,7 @@ export class IslandCameraControls {
 		if ( swipe ) this.keepUnder( swipe, this.ndcX( this.scrollAtX - this.scrollX ), this.ndcY( this.scrollAtY - this.scrollY ) );
 		this.scrollX = this.scrollY = 0;
 		if ( drag?.mode === 'pan' && drag.grab && drag.started ) this.keepUnder( drag.grab, this.ndcX( px ), this.ndcY( py ) );
-		if ( ! moving ) return false;
+		if ( ! moving ) return widened;
 
 		// Limits on what the input does (a placement by hand outside them stays): the pivot within the
 		// island's bounds, or no farther out than it was; the camera above the ground, or no lower.
@@ -488,6 +518,16 @@ export class IslandCameraControls {
 		_offset.setFromSpherical( this.spherical );
 		this.camera.position.copy( this.target ).add( _offset );
 		this.camera.lookAt( this.target );
+
+	}
+
+	// Returns whether the fov changed.
+	private setFov( fov: number ): boolean {
+
+		if ( fov === this.camera.fov ) return false;
+		this.camera.fov = fov;
+		this.camera.updateProjectionMatrix();
+		return true;
 
 	}
 
