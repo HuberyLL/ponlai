@@ -74,7 +74,9 @@ import * as R from './Resources.ts';
 //   (`LoadDilatedDepth`, `LoadDilatedMotionVector`, `LoadReconstructedPrevDepth`, reached from
 //   ComputeMotionDivergence's reprojected position, and `LoadRCAS_Input`, whose cross reads one
 //   texel past the image's edges) return 0 outside it. The other loads clamp
-//   their coordinates to the live size first (`ClampLoad`, `ClampCoord`, `IsOnScreen`).
+//   their coordinates to the live size first (`ClampLoad`, `ClampCoord`, `IsOnScreen`), except
+//   `LoadRwNewLocks`: it reads past NEW_LOCKS only in the last partial workgroup of an upscale
+//   size that is not a multiple of 8, where the store it feeds (`storeIf`) drops the texel.
 // - The reconstructed previous nearest depth is a u32 storage buffer: `StoreReconstructedDepth`
 //   is an `atomicMin` (`atomicMax` when inverted) on its element; FRAME_INFO is a vec4 storage
 //   buffer (`LoadFrameInfo` / `StoreFrameInfo` read and write element 0).
@@ -283,7 +285,7 @@ export class Fsr3Bindings {
 	/** The UAV binding of an identifier at one mip level. */
 	uav( id: number, mip = 0, readWrite = false ): N {
 
-		const key = `${ id }:${ mip }`;
+		const key = `${ id }:${ mip }:${ readWrite ? 'rw' : 'w' }`;
 		let node = this.uavNodes.get( key );
 		if ( node === undefined ) {
 
