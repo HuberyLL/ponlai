@@ -114,6 +114,10 @@ import { BUSH_STRIDE } from '../src/world/FoliageSites.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
 import { hashBuffers, meshClosure, positionKey } from './world-node.mjs';
 import { verifyCache } from './verify-cache.mjs';
+import { simplifierReady } from '../src/world/IslandSimplify.ts';
+
+// the island's simplifier (wasm) is ready before any chunk is built, in every thread
+await simplifierReady;
 
 // the island mesh's lattice (Chunks.ts)
 const VOXEL = 0.125, Y0 = ISLAND_BOTTOM + 0.5;

@@ -14,7 +14,8 @@ import type { WorldFields } from './WorldFields.ts';
 //   sharing the cliff material and one attribute set, so a chunk added later builds no pipeline.
 //   Each is placed in world coordinates (identity matrices: the derived products below are world
 //   space) and frustum-culled by its box, which the chunk's ground grid carries (the exact box of
-//   its vertices): the page walks none of the island's vertices. A grown island (Growth.ts) takes
+//   the island as meshed, which holds the drawn mesh: the chunk's job simplifies it, its border
+//   locked, IslandSimplify.ts): the page walks none of the island's vertices. A grown island (Growth.ts) takes
 //   out the changed chunks' meshes and adds theirs (`islandMesh`), kept in the chunks' order
 //   ( cj, ci ), and `derive` collects what they carry again.
 // - The stones and the sea floor stay one mesh each (ChunkMerge.ts), as every small kind does; a

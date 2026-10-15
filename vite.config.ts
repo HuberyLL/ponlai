@@ -22,6 +22,7 @@ const LICENCE_FILES: Record<string, string> = {
 	'licenses/hextile-demo.LICENSE.txt': 'src/materials/hextile-demo.LICENSE.txt',
 	'licenses/fsr.LICENSE.txt': 'src/post/fsr.LICENSE.txt',
 	'licenses/three-bloom.LICENSE.txt': 'src/post/three-bloom.LICENSE.txt',
+	'licenses/meshoptimizer.LICENSE.txt': 'src/world/meshoptimizer.LICENSE.txt',
 };
 
 function licences(): Plugin {

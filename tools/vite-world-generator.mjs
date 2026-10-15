@@ -2,8 +2,10 @@
 // the chunk worker imports (src/world/chunkWorker.ts: the chunks, the land and what the merge
 // shares with them), so a cached chunk (src/world/WorldCache.ts) is used only while the generator
 // would build the same one. The files are found by following the worker's relative
-// imports; it imports no packages, and a bare import fails the build (hash that package's version
-// too), so a new dependency cannot slip past the hash.
+// imports. A package file the generator imports is hashed by its contents when it is listed in
+// PACKAGE_FILES (a single file of its own, importing nothing: three's copy of meshoptimizer's
+// simplifier, IslandSimplify.ts); any other bare import fails the build (hash that package's
+// version too), so a new dependency cannot slip past the hash.
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -11,6 +13,8 @@ import path from 'node:path';
 const WORKER = 'src/world/chunkWorker.ts';
 const MODULE = 'virtual:world-generator';
 const RESOLVED = '\0' + MODULE;
+// package files hashed by their contents, under node_modules/
+const PACKAGE_FILES = new Set( [ 'three/examples/jsm/libs/meshopt_simplifier.module.js' ] );
 
 /** The worker's source files, absolute and sorted. */
 export function worldGeneratorSources( root ) {
@@ -24,6 +28,7 @@ export function worldGeneratorSources( root ) {
 		for ( const m of text.matchAll( /(?:import|export)\s[^'"]*?from\s*['"]([^'"]+)['"]|import\s*\(?\s*['"]([^'"]+)['"]/g ) ) {
 
 			const spec = m[ 1 ] ?? m[ 2 ];
+			if ( PACKAGE_FILES.has( spec ) ) { seen.add( path.resolve( root, 'node_modules', spec ) ); continue; }
 			if ( ! spec.startsWith( '.' ) ) throw new Error( `${ MODULE }: ${ path.relative( root, file ) } imports '${ spec }'; hash that package's version too` );
 			visit( path.resolve( path.dirname( file ), spec ) );
 

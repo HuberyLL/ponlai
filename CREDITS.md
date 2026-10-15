@@ -257,6 +257,16 @@ packages, into `dist/licenses/`.
   capped frames (after the cap, not before it) and is not set to 1 where the history is new; the
   clamp-drop only on moving pixels, to one frame, by how far the history lay outside the box.
 
+### meshoptimizer (through three.js)
+
+- Upstream: [meshoptimizer](https://github.com/zeux/meshoptimizer) 1.1, by Arseny Kapoulkine, as
+  three.js ships its simplifier (`examples/jsm/libs/meshopt_simplifier.module.js`, r186)
+- Copyright: (c) 2016-2026 Arseny Kapoulkine
+- Licence: MIT, see [`src/world/meshoptimizer.LICENSE.txt`](src/world/meshoptimizer.LICENSE.txt)
+- File: `src/world/IslandSimplify.ts` runs it unchanged (`simplifyWithAttributes`) on the island's
+  chunk meshes. It is bundled from the npm package, but the file's copyright comment does not
+  survive the build, so the notice ships separately.
+
 ## Assets
 
 ### Rock Face 03

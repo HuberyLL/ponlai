@@ -4,6 +4,10 @@
 // Every chunk of the grown land is built on a pool of worker threads (Chunks.ts `buildChunk`), and
 // its meshes are merged as one island, one stones mesh and one floor (the tiles, lattice order of
 // the keys) for the builders the page runs today. Per step:
+// The chunks take their caster columns and ground grid from the island as meshed, before it is
+// simplified (Chunks.ts, IslandSimplify.ts): the workers mesh it again unsimplified
+// (`chunkIsland( ..., { simplify: false } )`), and the columns' and the ground's walks below run over
+// that, the subsets over the drawn (simplified) mesh.
 //   columns   SunShadow's caster-depth columns: today's walk over the merged island mesh against
 //             the chunks' `casterColumns` folded in (`setCasters( box, columns )`, the chunks'
 //             meshes given without vertices, so nothing but the columns can fill them). Every
@@ -28,12 +32,16 @@ import { fileURLToPath } from 'node:url';
 import { registerHooks } from 'node:module';
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
-import { buildChunk, chunkKeys, landField, landWindow, parseChunkKey } from '../src/world/Chunks.ts';
+import { buildChunk, chunkIsland, chunkKeys, landField, landWindow, parseChunkKey } from '../src/world/Chunks.ts';
 import { growLand, LandLattice } from '../src/world/IslandGrowth.ts';
 import { tileIndices, TILE_SIDE } from '../src/world/SeabedTile.ts';
 import { FLOOR_STEP } from '../src/world/Bathymetry.ts';
 import { SEA_LEVEL } from '../src/world/ChunkDerived.ts';
 import { verifyCache } from './verify-cache.mjs';
+import { simplifierReady } from '../src/world/IslandSimplify.ts';
+
+// the island's simplifier (wasm) is ready before any chunk is built, in every thread
+await simplifierReady;
 
 // ------------------------------------------------------------------ the worker
 
@@ -48,6 +56,8 @@ if ( ! isMainThread ) {
 			key: c.key, island: c.island && { positions: c.island.positions, indices: c.island.indices },
 			stones: { positions: c.stones.mesh.positions, indices: c.stones.mesh.indices }, floor: c.floor && c.floor.height,
 			casters: c.casters, casterColumns: c.casterColumns, refracted: c.refracted, ground: c.ground, ms: c.timings.total,
+			// the island as meshed (positions do not depend on the contact shade)
+			full: c.island && chunkIsland( job.window, job.ci, job.cj, 1, { contactOcclusion: false, simplify: false } ).positions,
 		};
 		parentPort.postMessage( reply );
 
@@ -191,6 +201,7 @@ async function main() {
 		const islands = chunks.filter( ( c ) => c.island );
 		const floors = chunks.filter( ( c ) => c.floor );
 		const island = merge( islands.map( ( c ) => c.island ) );
+		const full = merge( islands.map( ( c ) => ( { positions: c.full, indices: new Uint32Array( 0 ) } ) ) );
 		const stones = merge( chunks.map( ( c ) => c.stones ) );
 		const floor = merge( floors.map( ( c ) => {
 
@@ -198,7 +209,8 @@ async function main() {
 			return floorMesh( c.floor, ci, cj );
 
 		} ) );
-		console.log( `step ${ step }: ${ chunks.length } chunks (${ islands.length } with island, ${ floors.length } floor tiles), ${ island.positions.length / 3 } island vertices, built in ${ ( ( performance.now() - t0 ) / 1000 ).toFixed( 1 ) } s` );
+		console.log( `step ${ step }: ${ chunks.length } chunks (${ islands.length } with island, ${ floors.length } floor tiles), built in ${ ( ( performance.now() - t0 ) / 1000 ).toFixed( 1 ) } s; ` +
+			`island triangles drawn ${ island.indices.length / 3 }, vertices drawn ${ island.positions.length / 3 } of ${ full.positions.length / 3 } meshed` );
 
 		// --- columns
 		{
@@ -207,7 +219,7 @@ async function main() {
 			for ( const c of chunks ) box.union( new THREE.Box3( new THREE.Vector3( ...c.casters.slice( 0, 3 ) ), new THREE.Vector3( ...c.casters.slice( 3 ) ) ) );
 			const sun = new THREE.DirectionalLight();
 			const walked = new SunShadow( sun ), folded = new SunShadow( sun );
-			const merged = new THREE.Mesh( meshOf( island ), receiver );
+			const merged = new THREE.Mesh( meshOf( full ), receiver );
 			merged.castShadow = true;
 			const sceneA = new THREE.Scene().add( merged );
 			walked.setCasters( box );
@@ -327,7 +339,7 @@ async function main() {
 		// --- ground
 		{
 
-			const merged = new THREE.Mesh( meshOf( island ), receiver );
+			const merged = new THREE.Mesh( meshOf( full ), receiver );
 			merged.updateMatrixWorld();
 			const walked = new IslandGround(), joined = new IslandGround();
 			const buildMs = time( () => walked.build( [ merged ] ) );
