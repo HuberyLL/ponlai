@@ -211,7 +211,9 @@ export class Fsr3Upscaler {
 		const tHdr = texture( g.texture( inputs.hdr ) ), tDepth = texture( g.texture( inputs.surfaceDepth ) ), tVelocity = texture( g.texture( inputs.velocity ) );
 		const tVeil = inputs.veilReactive ? texture( g.texture( inputs.veilReactive ) ) : null;
 		const tAuto = autoReactive ? texture( this.textures.get( R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_AUTOREACTIVE )! ) : null;
-		const load = ( t: THREE.TextureNode, p: N ) => textureLoad( t, ivec2( p ), int( 0 ) ) as unknown as N;
+		// (a load with no uv matrix: three r186 gives a load of a graph texture a mat3 uniform per load
+		// site, the identity, multiplied into every load's texel coordinates, as Bindings.ts `loadAt`)
+		const load = ( t: THREE.TextureNode, p: N ) => ( textureLoad( t, ivec2( p ), int( 0 ) ) as unknown as N ).setUpdateMatrix( false ) as N;
 		const reactive = ( p: N ): N => {
 
 			let r = load( tVelocity, p ).a;
