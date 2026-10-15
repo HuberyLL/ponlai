@@ -95,13 +95,19 @@ for ( const hour of [ 0, 6, 12, 18, 24 ] ) {
 	near( before.overcastAdaptation, after.overcastAdaptation, 1e-4 );
 
 }
-cycle.setHour( 16 );
-for ( const phase of [ 0, 0.125, 0.25, 0.5, 0.75, 0.875, 1 ] ) {
+// The moon's orbit is tilted from the sun's about the east-west axis, so the phase's angular
+// separation holds exactly where the two orbits meet: at 6:00 and 18:00, with the sun on that axis.
+for ( const hour of [ 6, 18 ] ) {
 
-	cycle.moonPhase = phase;
-	const s = cycle.snapshot();
-	near( s.sunDir.dot( s.moonDir ), Math.cos( 2 * Math.PI * phase ) );
-	near( s.moonIllumination, ( 1 - Math.cos( 2 * Math.PI * phase ) ) / 2 );
+	cycle.setHour( hour );
+	for ( const phase of [ 0, 0.125, 0.25, 0.5, 0.75, 0.875, 1 ] ) {
+
+		cycle.moonPhase = phase;
+		const s = cycle.snapshot();
+		near( s.sunDir.dot( s.moonDir ), Math.cos( 2 * Math.PI * phase ) );
+		near( s.moonIllumination, ( 1 - Math.cos( 2 * Math.PI * phase ) ) / 2 );
+
+	}
 
 }
 // Every moon phase has a finite key throughout both handoffs, including the antipodal full
@@ -140,12 +146,35 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 	}
 
 }
+// The moon's authored orbit culminates at 37 degrees (the sun's 62 less its 25 degree tilt): a
+// waxing quarter at 18:00, a waning one at 6:00, a full moon at midnight.
 cycle.moonPhase = 0.25;
 cycle.setHour( 18 );
-near( cycle.snapshot().moonElevation, 62 );
+near( cycle.snapshot().moonElevation, 37 );
 cycle.moonPhase = 0.75;
 cycle.setHour( 6 );
-near( cycle.snapshot().moonElevation, 62 );
+near( cycle.snapshot().moonElevation, 37 );
+cycle.moonPhase = 0.5;
+cycle.setHour( 0 );
+near( cycle.snapshot().moonElevation, 37 );
+// A full moon still rises due east at 18:00, where the sun rose, and sets due west at 6:00, where
+// the sun set; through the night it stays above the horizon.
+for ( const [ hour, sunHour ] of [ [ 18, 6 ], [ 6, 18 ] ] ) {
+
+	cycle.setHour( sunHour );
+	const sun = cycle.snapshot().sunDir;
+	cycle.setHour( hour );
+	const s = cycle.snapshot();
+	near( s.moonElevation, 0, 1e-9 );
+	assert.ok( s.moonDir.distanceTo( sun ) < 1e-10 );
+
+}
+for ( let minute = 18 * 60 + 1; minute < 30 * 60; minute ++ ) {
+
+	cycle.setHour( minute / 60 );
+	assert.ok( cycle.snapshot().moonElevation > 0 );
+
+}
 cycle.moonPhase = - 0.25;
 near( cycle.moonPhase, 0.75 );
 cycle.moonPhase = 0.5;
