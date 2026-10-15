@@ -141,6 +141,10 @@ export interface TemporalSettings {
 	// the ground truth's jitter count (`aa=gt`, debug builds: the rest's sequence at the canvas's
 	// resolution, box-filtered): 64 for a still image, 32 (`tier.taa.gtJitters=32`) per frame of a clip
 	gtJitters: number;
+	// FSR 3 (`aa=fsr3`, post/fsr3/Fsr3Upscaler.ts): its RCAS sharpness (0 none, 1 the most: AMD's
+	// sample takes 0.8), the rest's jitter sequence (frames from FSR's reset at the rest's start,
+	// repeating FSR's phase sequence), and whether the reactive-mask generator runs
+	fsr3: { sharpness: number; restSequence: number; autoReactive: boolean };
 }
 
 export interface QualityProfile {
@@ -196,6 +200,7 @@ const TAA: TemporalSettings = {
 	sigma: 0.42, sigmaRest: 0.30,
 	sharpness: { taa: 1.0, taau: [ 1.5, 1.0 ] }, sharpenMoving: { stops: [ 0, 0, 1, 0, 0 ], speed: 4 }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
 	gtJitters: 64,
+	fsr3: { sharpness: 0.8, restSequence: 56, autoReactive: false },
 };
 
 export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = {

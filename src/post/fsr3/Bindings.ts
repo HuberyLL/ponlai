@@ -118,7 +118,7 @@ export class Fsr3Bindings {
 	private readonly uavNodes = new Map<string, N>();
 	private srvAliases: Map<number, number>;
 	private uavAliases: Map<number, number>;
-	private readonly reconstructedDepthBuffer: THREE.StorageBufferAttribute;
+	private reconstructedDepthBuffer: THREE.StorageBufferAttribute;
 	private readonly frameInfoBuffer: THREE.StorageBufferAttribute;
 	private reconstructedDepthRead: N = null;
 	private reconstructedDepthAtomic: N = null;
@@ -224,6 +224,16 @@ export class Fsr3Bindings {
 			node.value = this.texture( this.uavAliases.get( id ) ?? id );
 
 		}
+
+	}
+
+	/** A new reconstructed previous nearest depth buffer (the render-max size changed: a storage
+	 * buffer cannot grow in place), bound by the nodes that read and write it (new bind groups, no
+	 * new pipeline: the shaders declare runtime-sized arrays). */
+	setReconstructedDepthBuffer( buffer: THREE.StorageBufferAttribute ): void {
+
+		this.reconstructedDepthBuffer = buffer;
+		for ( const node of [ this.reconstructedDepthRead, this.reconstructedDepthAtomic, this.reconstructedDepthWrite ] ) if ( node !== null ) node.value = buffer;
 
 	}
 

@@ -18,6 +18,8 @@ import { seabedAlbedo } from './SeabedLook.ts';
 import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
 import { hexReadScan, heightBlend, type HexScan } from './HexTiling.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { FSR3 } from '../post/Antialiasing.ts';
+import { fsr3MipBiasScale } from '../post/fsr3/MipBias.ts';
 
 // PBR materials for the rock and the sea floor: MeshStandardNodeMaterial (lights, shadows, IBL)
 // with the surface built procedurally in world space (triplanar baked detail, moss, wet band,
@@ -39,6 +41,8 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // still reads as one carpet;
 // the blades shade it through one canopy depth (MeadowCanopy.ts).
 // `?terrainHex=0` builds the plain triplanar variant; `userData.terrainVariant` swaps them.
+// Under fsr3 the triplanar sampling gradients are scaled by FSR's mip bias (post/fsr3/MipBias.ts),
+// built into the shader under that mode only.
 //
 // kind 'cliff'  : island block and submerged rocks (triplanar)
 // kind 'seabed' : sand, ripples, seagrass and rubble (planar)
@@ -193,7 +197,9 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		const S = 0.55; // ~1.8 m per tile
 		const sg = sign( n0 );
 		const uvX = vec2( p.z.mul( sg.x ), p.y ).mul( S ).toVar(), uvY = vec2( p.x.mul( sg.y ), p.z ).mul( S ).toVar(), uvZ = vec2( p.x.negate().mul( sg.z ), p.y ).mul( S ).toVar();
-		const gxX = dFdx( uvX ).toVar(), gyX = dFdy( uvX ).toVar(), gxY = dFdx( uvY ).toVar(), gyY = dFdy( uvY ).toVar(), gxZ = dFdx( uvZ ).toVar(), gyZ = dFdy( uvZ ).toVar();
+		// (under fsr3 scaled by FSR's mip bias, 2^( log2( render / canvas ) - 1 ): fsr3/MipBias.ts)
+		const biased = ( g: THREE.Node<'vec2'> ) => FSR3 ? g.mul( fsr3MipBiasScale ) : g;
+		const gxX = biased( dFdx( uvX ) ).toVar(), gyX = biased( dFdy( uvX ) ).toVar(), gxY = biased( dFdx( uvY ) ).toVar(), gyY = biased( dFdy( uvY ) ).toVar(), gxZ = biased( dFdx( uvZ ) ).toVar(), gyZ = biased( dFdy( uvZ ) ).toVar();
 		// Screen derivatives of the position: the wet layer samples with explicit gradients inside
 		// its branch, and the world footprint of a pixel filters the rain rings on puddles.
 		const dpx = dFdx( p ).toVar(), dpy = dFdy( p ).toVar();

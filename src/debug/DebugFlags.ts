@@ -21,6 +21,10 @@
 // (`wind`: the vegetation's materials, through WindMotion.ts, rebuild without the previous
 // sway, so a --toggle of it also times that sway).
 //
+// Under aa=fsr3: `fsrMipBias = false` holds the terrain's mip bias at none (post/fsr3/MipBias.ts,
+// read every frame; on unless false); `fsrAutoReactive = true` builds and runs FSR's reactive-mask
+// generator (post/fsr3/Fsr3Upscaler.ts, read at load; off unless true).
+//
 // `windFreeze = true` holds the vegetation's wind while the scene clock runs (Wind.ts): the plants
 // stand in one pose with no motion, for clips where only the shadows or the jitter should move.
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }

@@ -18,9 +18,9 @@ import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { shared } from '../shared.ts';
 import { compileInto } from '../post/graph/Compile.ts';
-import { TEMPORAL } from '../post/Antialiasing.ts';
+import { FSR3, TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
-import { MOTION_CLASS, velocityOutput } from '../post/Motion.ts';
+import { MOTION_CLASS, motionNode, velocityOutput } from '../post/Motion.ts';
 import { DAY_BLACK_LIFT, type DayCycleSnapshot } from './DayCycle.ts';
 import type { WeatherFront, WeatherState } from './Weather.ts';
 
@@ -477,7 +477,16 @@ export class Sky {
 			return vec4( background.add( disk.mul( through ).mul( smoothstep( 0.03, 0.35, through ) ).add( this.night.moon( d ) ).add( stars ).add( airglow ).mul( through ) ), 1 );
 
 		} )();
-		if ( TEMPORAL ) {
+		if ( FSR3 ) {
+
+			// Under fsr3 the dome draws jittered like the rest of the scene, with its motion: FSR takes
+			// every input pixel as a sample at its jittered position and reads the sky's motion from the
+			// velocity alone. The dome follows the camera's position (onBeforeRender), so its previous
+			// world matrix cancels the camera's translation and the motion is the view's rotation, the
+			// sky's own.
+			domeMat.mrtNode = velocityOutput( motionNode( 'sky' ) );
+
+		} else if ( TEMPORAL ) {
 
 			// Under the temporal modes the scene half renders jittered (Jitter.ts), but the dome does
 			// not: each pixel keeps the direction it shows without the jitter, so a pure-sky pixel is

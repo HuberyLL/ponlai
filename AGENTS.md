@@ -129,6 +129,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
   `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches and its first lit build made
   ahead (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
+- `src/post/fsr3/`: the TSL port of AMD's FSR 3.1.5 upscaler (`aa=fsr3`): the host's maths and frame
+  plan (`Host.ts`), its resources (`Resources.ts`) and bindings (`Bindings.ts`), one module per
+  upstream shader header, the kernels (`Passes.ts`); the page's integration, its passes on the
+  frame graph, rest and diagnostics (`Fsr3Upscaler.ts`) and its mip bias (`MipBias.ts`).
 - `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;

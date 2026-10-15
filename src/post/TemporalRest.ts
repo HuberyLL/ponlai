@@ -1,4 +1,5 @@
-// The temporal modes' rest convergence (Antialiasing.ts: aa=taa|taau|gt). A running temporal
+// The temporal modes' rest convergence (Antialiasing.ts: aa=taa|taau|gt, and aa=fsr3, whose upscaler
+// drives a rest of its own the same way: post/fsr3/Fsr3Upscaler.ts). A running temporal
 // resolve is a function of the frames before it, so a paused frame would depend on how the page got
 // there: the history's weights, the jitter's place in its sequence, the camera's last moves. A scene
 // at rest (a paused clock, a still camera, nothing else changing) therefore converges once, from

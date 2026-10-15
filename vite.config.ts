@@ -8,6 +8,7 @@ const LICENCE_FILES: Record<string, string> = {
 	'licenses/LICENSE.txt': 'LICENSE',
 	'licenses/CREDITS.md': 'CREDITS.md',
 	'licenses/tidewater.LICENSE.txt': 'src/ocean/tidewater.LICENSE.txt',
+	'licenses/FidelityFX.LICENSE.txt': 'src/post/fsr3/FidelityFX.LICENSE.txt',
 	'licenses/tidewater-sky.LICENSE.txt': 'src/sky/tidewater.LICENSE.txt',
 	'licenses/tidewater-weather.LICENSE.txt': 'src/weather/tidewater.LICENSE.txt',
 	'licenses/hoskins-hash.LICENSE.txt': 'src/materials/hoskins-hash.LICENSE.txt',

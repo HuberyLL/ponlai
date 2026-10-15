@@ -51,7 +51,7 @@ import { GenerateReactive } from './AutogenReactive.ts';
 // Per frame, in order: `Host.ts` `Fsr3UpscalerContext.dispatch` -> `Bindings.setFrame( plan )` ->
 // the plan's clears (`clear( job )`) -> each job's kernel (`pass( id )`), the SPD tail
 // (`lumaPyramidTail`) right after the luminance pyramid when `plan.spdTail` (the shading-change
-// tail stores nothing, ShadingChangePyramid.ts, and may be skipped) -> RCAS when sharpening.
+// tail stores nothing, ShadingChangePyramid.ts: the integration skips it, Fsr3Upscaler.ts) -> RCAS when sharpening.
 //
 // Differences from upstream: the early-outs above (upstream sizes its dispatches instead); the SPD
 // tails; the SPD_MIPS clear clears only the levels some pass reads (0..2 and 5); the clears are kernels (a WebGPU clear exists only for render attachments and buffers),
