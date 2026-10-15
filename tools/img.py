@@ -8,8 +8,9 @@
   uv run tools/img.py crop  IMG|DIR...     region [--zoom N] --out DIR
   uv run tools/img.py sheet IMG|DIR...     [region] [--labels a,b] [--cols N] [--diff] [--zoom N | --scale F | --width W] --out FILE
   uv run tools/img.py stats IMG|DIR...     [region] [--pct 1,5,50,95,99] [--json]
+  uv run tools/img.py flicker CLIP|DIR...  [region] [--frames a-b] [--spike 20,40] [--odd 2.5] [--drop-odd] [--map P] [--gain 8] [--json] [--save]
 
-  region: --box x,y,w,h (repeatable) and/or --anchor name[,name] | all  [--anchors FILE.json]
+  region: --box [name=]x,y,w,h (repeatable) and/or --anchor name[,name] | all  [--anchors FILE.json]
 
 `uv run` reads the dependencies above (PEP 723), so no system Pillow or NumPy is needed. A
 directory stands for its PNGs (--match, default `*.png`, sorted by name); `diff` and `sheet` pair
@@ -37,6 +38,31 @@ is given; a full frame wider than 1280 px is scaled down to 1280 by default.
 stats: per image and region, compare-captures.py's metrics (mean RGB, luma mean and standard
 deviation, the mean luma difference of adjacent pixels, the share of pixels with luma over 245)
 and the luma percentiles of --pct.
+
+flicker: frame-to-frame flicker of a run of consecutive frames, per region: a capture-clip clip
+directory (its whole frames, <clip>/full/<i>.png, in frame order) or a directory of PNGs named by
+frame number. The frames must be consecutive (a gap is refused: the measures compare neighbours);
+--frames a-b keeps frames a to b. Luma is Rec. 709 of the 8-bit values (float32), in levels:
+  F       mean |L_t - L_t-1|
+  Fhp     mean |L_t - ( L_t-2 + L_t+2 ) / 2|, the temporal high-pass (clip-metrics.py's)
+  spike   s = L_t - ( L_t-1 + L_t+1 ) / 2, a one-frame flash: the share of pixel-frames with
+          |s| over each --spike level and with s over the first (`bright`), in per mille, its
+          99.9th percentile (`p999`), and the share of pixels that flash over the first level at
+          least once (`once`, %)
+  std     the mean per-pixel standard deviation over the frames; `mean` the luma mean
+The numbers equal the sparkle surveys' flicker.py. A clip of 120 frames at 60 fps (2 s) is what
+the vegetation surveys measured; the sea's own motion is a useful control region (Fhp about 0.35,
+no spikes, on island-fair-noon). --map writes each region's flash map: the share of frames whose
+|s| exceeds the first level, times 255 x --gain (a file for one clip and region, else a directory
+of <clip>[.<region>].flash.png). --save writes <clip>/flicker.json. Only the regions are kept in
+memory, so give regions rather than the whole frame for long 4K runs.
+Odd frames: a paused page's stepped frames now and then come out as a discrete alternative image
+(scattered vegetation pixels off by up to 190 levels: capture-clip.mjs, "The rest shot twice"),
+which in a 120-frame meadow clip raised Fhp by about 5 % and the flashes by about 6 % from one
+frame. A frame whose flash share over all the regions exceeds --odd (2.5) times the clip's median
+and the median by 0.5 per mille is listed (`odd`); --drop-odd leaves out every term that reads
+one, so A/Bs of small effects compare the wind's flicker rather than which clip caught an odd
+frame.
 
 Regions: --box takes pixels of the image as stored (a capture at dpr 2 has twice the CSS size).
 --anchor reads the named crop anchors of the capture's JSON (<name>.json next to <name>.png,
@@ -96,10 +122,17 @@ def anchors_of(img, a):
     return d.get("crops", {} if "url" in d else d)
 
 
+def box_arg(s):
+    """(label, (x, y, w, h)) of a --box value, `x,y,w,h` or `name=x,y,w,h`."""
+    name, _, v = s.rpartition("=")
+    x, y, w, h = ints(v)
+    return (name or f"{x}_{y}_{w}_{h}", (x, y, w, h))
+
+
 def regions(imgs, a, shape):
     """[(label, (x, y, w, h))] for the first image of imgs that has what is asked; the whole frame
     when no region is asked."""
-    out = [(f"{x}_{y}_{w}_{h}", (x, y, w, h)) for x, y, w, h in map(ints, a.box or [])]
+    out = [box_arg(b) for b in a.box or []]
     if a.anchor:
         crops = {}
         for img in imgs:
@@ -313,6 +346,107 @@ def cmd_stats(a):
               + " ".join(f"{v:7.2f}" for v in r["lumaPercentiles"].values()))
 
 
+# -------------------------------------------------------------------------------------------- flicker
+
+# an odd frame also flashes this share of pixels (0.5 per mille) above the median, so a clip that
+# hardly flashes (a ground truth) lists none
+ODD_FLOOR = 0.5e-3
+LUMA32 = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
+
+
+def clip_frames(d, span):
+    """[(frame, path)] of a clip directory's whole frames (or a directory of numbered PNGs), in
+    frame order, within span (a, b) when given."""
+    d = Path(d)
+    src = d / "full" if (d / "full").is_dir() else d
+    files = sorted((int(p.stem), p) for p in src.glob("*.png") if p.stem.isdigit())
+    if span:
+        files = [(i, p) for i, p in files if span[0] <= i <= span[1]]
+    gaps = [files[k][0] for k in range(1, len(files)) if files[k][0] != files[k - 1][0] + 1]
+    if gaps:
+        sys.exit(f"flicker: {src}: frames not consecutive (a gap before frame {gaps[0]}); pick a run with --frames")
+    if len(files) < 5:
+        sys.exit(f"flicker: {src}: {len(files)} frames, the measures need at least 5")
+    return files
+
+
+def flicker_clip(d, a):
+    files = clip_frames(d, tuple(ints(a.frames.replace("-", ","))) if a.frames else None)
+    first = decode(files[0][1])
+    regs = regions([files[0][1]], a, first.shape)
+    levels = [float(v) for v in a.spike.split(",")]
+
+    def lumas(f):
+        Y = decode(f).astype(np.float32) @ LUMA32
+        return [cut(Y, box).copy() for _, box in regs]
+
+    with ThreadPoolExecutor(max_workers=max(1, a.jobs), initializer=raise_thread) as pool:
+        per = list(pool.map(lumas, [p for _, p in files]))
+    n = len(files)
+    stacks = [np.stack([f[k] for f in per]) for k in range(len(regs))]
+    # odd frames: a frame's flash share over all the regions' pixels against the clip's median
+    share = sum((np.abs(s[1:-1] - (s[:-2] + s[2:]) / 2) > levels[0]).sum(axis=(1, 2)) for s in stacks) / sum(s[0].size for s in stacks)
+    med = float(np.median(share))
+    odd = [int(i) + 1 for i in np.nonzero((share > a.odd * med) & (share > med + ODD_FLOOR))[0]] if a.odd > 0 else []
+    out = {"clip": str(d), "frames": [files[0][0], files[-1][0]], "odd": [files[i][0] for i in odd], "dropped": bool(a.drop_odd and odd), "regions": []}
+    bad = np.zeros(n, bool)
+    if a.drop_odd:
+        bad[odd] = True
+    # the terms kept: none that reads an odd frame
+    k1 = ~(bad[:-1] | bad[1:])
+    k2 = ~(bad[:-4] | bad[2:-2] | bad[4:])
+    ks = ~(bad[:-2] | bad[1:-1] | bad[2:])
+    for k, (label, box) in enumerate(regs):
+        s = stacks[k]
+        d1 = np.abs(np.diff(s, axis=0))[k1]
+        hp = np.abs(s[2:-2] - (s[:-4] + s[4:]) / 2)[k2]
+        sp = (s[1:-1] - (s[:-2] + s[2:]) / 2)[ks]
+        ab = np.abs(sp)
+        r = {"region": label, "box": list(box), "F": round(float(d1.mean()), 3), "Fhp": round(float(hp.mean()), 3)}
+        for v in levels:
+            r[f"spike>{v:g}"] = round(float((ab > v).mean()) * 1e3, 3)
+        r[f"bright>{levels[0]:g}"] = round(float((sp > levels[0]).mean()) * 1e3, 3)
+        r["p999"] = round(float(np.percentile(ab, 99.9)), 2)
+        flashes = ab > levels[0]
+        r["once"] = round(float(flashes.any(axis=0).mean()) * 100, 2)
+        r["std"] = round(float(s[~bad].std(axis=0).mean()), 3)
+        r["mean"] = round(float(s[~bad].mean()), 2)
+        if a.map:
+            m = Path(a.map)
+            if m.suffix.lower() != ".png":
+                m.mkdir(parents=True, exist_ok=True)
+                m = m / (Path(d).name + (f".{label}" if label else "") + ".flash.png")
+            else:
+                m.parent.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(np.clip(flashes.mean(axis=0) * 255 * a.gain, 0, 255).astype(np.uint8)).save(m)
+            r["map"] = str(m)
+        out["regions"].append(r)
+    if a.save:
+        (Path(d) / "flicker.json").write_text(json.dumps(out, indent=1))
+    return out
+
+
+def cmd_flicker(a):
+    if a.map and Path(a.map).suffix.lower() == ".png" and (len(a.clips) > 1 or len(a.box or []) + (1 if a.anchor else 0) > 1):
+        sys.exit("flicker: --map takes a directory when there are several clips or regions")
+    res = [flicker_clip(d, a) for d in a.clips]
+    if a.json:
+        print(json.dumps(res, indent=2))
+        return
+    lv = [f"{float(v):g}" for v in a.spike.split(",")]
+    w = max([len(Path(c["clip"]).name + (f" / {r['region']}" if r["region"] else "")) for c in res for r in c["regions"]] + [4])
+    print(f"{'clip':{w}} {'F':>6} {'Fhp':>6} " + " ".join(f"{'>' + v + '‰':>8}" for v in lv)
+          + f" {'bright‰':>8} {'p999':>6} {'once%':>6} {'std':>6} {'mean':>7}")
+    for c in res:
+        for r in c["regions"]:
+            n = Path(c["clip"]).name + (f" / {r['region']}" if r["region"] else "")
+            print(f"{n:{w}} {r['F']:6.3f} {r['Fhp']:6.3f} " + " ".join(f"{r['spike>' + v]:8.3f}" for v in lv)
+                  + f" {r['bright>' + lv[0]]:8.3f} {r['p999']:6.2f} {r['once']:6.2f} {r['std']:6.3f} {r['mean']:7.2f}"
+                  + (f"  {r['map']}" if r.get("map") else ""))
+        if c["odd"]:
+            print(f"  odd frames {c['odd']}" + (" (dropped)" if c["dropped"] else " (kept: --drop-odd leaves them out)"))
+
+
 # ---------------------------------------------------------------------------------------------- main
 
 def main():
@@ -363,6 +497,20 @@ def main():
     p.add_argument("--pct", default="1,5,50,95,99")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=cmd_stats)
+
+    p = sub.add_parser("flicker", help="frame-to-frame flicker of a clip's consecutive frames per region")
+    p.add_argument("clips", nargs="+")
+    common(p)
+    p.add_argument("--frames", help="a-b: the frames to keep")
+    p.add_argument("--spike", default="20,40", help="the flash levels counted (the first also for `bright`, `once` and --map)")
+    p.add_argument("--map", help="flash map: a .png file for one clip and region, else a directory")
+    p.add_argument("--gain", type=float, default=8)
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--save", action="store_true", help="write <clip>/flicker.json")
+    p.add_argument("--odd", type=float, default=2.5, help="an odd frame flashes this many times the clip's median (0: none)")
+    p.add_argument("--drop-odd", action="store_true", help="leave out the terms that read an odd frame")
+    p.add_argument("--jobs", type=int, default=min(4, max(1, (os.cpu_count() or 2) // 2)))
+    p.set_defaults(fn=cmd_flicker)
 
     a = ap.parse_args()
     a.fn(a)

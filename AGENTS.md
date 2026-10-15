@@ -27,9 +27,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - A list of views, ad-hoc ones included (`--view "name:query"`, `--views-file`, `--sweep
   "key=a,b"`), is captured with `node tools/parity/capture-set.mjs <url> <outDir>`: one warm page per
   set, the scene jump between views. Use it instead of a script that loops capture.mjs.
-- `uv run tools/img.py diff|crop|sheet|stats` does the image work on captures (differences, crops,
-  A/B sheets, region statistics), with its dependencies inline. Use it instead of an inline
-  Pillow/NumPy script (`docs/tools.md`, Captures).
+- `uv run tools/img.py diff|crop|sheet|stats|flicker` does the image work on captures (differences,
+  crops, A/B sheets, region statistics, a clip's flicker), with its dependencies inline. Use it
+  instead of an inline Pillow/NumPy script (`docs/tools.md`, Captures).
 - `node tools/probe.mjs [url] --q "<query>" --eval "<js>"` reads values from the page (diagnostics,
   timings, uniforms, pipeline counts after an action) as JSON, under the GPU lock and in a warm
   profile: use it instead of a Playwright script of one's own (`docs/tools.md`, Probes).
