@@ -283,6 +283,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`.toVar()`) before any `If` / `Loop`; inside branches and loops use `.level()` or `textureLoad`.
   Keep filters that take `dFdx` / `dFdy` out of `select()` / `If` branches (`SolarShadow.ts`).
 - Nested loops: pass both ranges to one `Loop()` call so the counters get distinct names.
+- Three TSL methods take their receiver out of order (r186): `t.mix( a, b )` is mix( a, b, t ),
+  `x.step( edge )` is step( edge, x ), `x.smoothstep( low, high )` is smoothstep( low, high, x ).
+  Write the function form (`src/post/fsr3/Upsample.ts`).
 - TSL may compile a `select()` of large operands into branches: a node first built inside one is
   declared in that branch only, and the shader silently draws nothing. Select between values
   built before it (`.toVar()`), or blend with 0/1 weights (`Water.ts`).
