@@ -171,7 +171,8 @@ function placeCamera( s, view ) {
 
 	};
 
-	// the default view's azimuth (318 degrees): the close views look at the coast it faces
+	// the azimuth these views were set up at (318 degrees, the island view's default until it
+	// turned to face the meridian): the close views look at the coast it faces
 	const az = 318;
 	if ( view === 'v1' ) return orbit( 58 * k, 50, az );
 	if ( view === 'v2' ) return orbit( 75 * k, 8, az );

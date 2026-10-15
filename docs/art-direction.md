@@ -135,6 +135,15 @@ art decision changes; reference images stay out of the repository.
   and the day's look crosses into it as the sun sets.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The
   moon takes over the key soon after the sun has gone.
+- The moon keeps a lower orbit than the sun (it culminates at 37 degrees, not 62), still rising
+  due east and setting due west at the sun's hours, so seen from the game's overview its light
+  comes in at a slant: slopes show a lit and a shaded side and the sea carries a moon path, where
+  a moon near the zenith lit the island flat. The moon path and the moonlit meadow glow softly in
+  that view too.
+- The island view's default direction is fixed and looks a little east of the meridian the sun and
+  moon culminate on: the full moon's path is in the frame through the evening and at midnight, and
+  by day the sun lights the cliffs from the side (a lit and a shaded side) without filling the
+  frame with glare. It never follows the clock, so returning to the view never jumps.
 - The night meadow is a dark, readable, cool green turning toward blue-green (not black, olive or
   teal), turned by the night's own grade rather than by a bluer light, so stone, sand and skin keep
   their colours.
