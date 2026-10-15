@@ -22,8 +22,7 @@
 //   window alone: the island SDF over the window (`makeIslandSDF( ... )`, every
 //   value a function of the point), its stones, the contact solids, and from those each kind of
 //   content below. Ownership: island quads by their edge's base lattice column (SurfaceNets.ts),
-//   stones by their centre, anchors by their jittered point, bushes and trail patches by their
-//   anchor, skirt segments by their piece's start, texels (rim ground, shore, walk) by their centre;
+//   stones by their centre, anchors by their jittered point, skirt segments by their piece's start, texels (rim ground, shore, walk) by their centre;
 //   the floor tile's lattice points are shared on the borders, computed alike by both tiles.
 //   A chunk the land covers (SeabedTile.ts `underLand`) draws no tile, but carries the floor it
 //   would have (`floorUnder`, without the contact shade): a tile of the version before rises to it
@@ -42,8 +41,7 @@
 // - Samplers that need only the island's side (the shore's sea-level section, the rim lattice)
 //   take it from the footprint away from the coast (WorldShapes `solidSide`, exact there) and
 //   sample the SDF only near it: the bits are the same, at a fraction of the cost.
-// - A chunk without island (no land within ISLAND_NEAR) has no island, anchors, bushes, trails or
-//   skirt, and carries no rim ground tile (ChunkMerge.ts fills its square): three quarters of a
+// - A chunk without island (no land within ISLAND_NEAR) has no island, anchors or skirt, and carries no rim ground tile (ChunkMerge.ts fills its square): three quarters of a
 //   sea chunk's bytes went to a tile nothing reads.
 // - Arrays are ordered by world position (lattice order, or the owned items' own order), so a
 //   chunk's data and its hash repeat whatever order the chunks are built in.
@@ -68,7 +66,7 @@
 //   footprint and the island through the window's SDF, never `layoutBounds()`, a global count or
 //   the whole coast. A per-box function must not keep state across calls that changes its values
 //   (CliffWall's exposure did, Cliff.ts).
-// - Whatever reads far from the chunk must not reach anything the chunk keeps. Four kinds read
+// - Whatever reads far from the chunk must not reach anything the chunk keeps. Three kinds read
 //   far in principle, beyond what the dirty rule's 34 m covers:
 //   - the stones round the chunk (the chunk and CONTACT_STONES round it) are decided by the
 //     window's footprint, floor and island within STONES_READ (19.5 m) of that box, by
@@ -80,8 +78,6 @@
 //     more than 34 m away could still move a stone round the chunk;
 //   - the contact stones (the chunk and CONTACT_STONES round it) shade the island and the floor
 //     the chunk keeps with what those stones read;
-//   - the trails read the coast within TRAIL_REACH (21 m) of their patches, and that coast is the
-//     rim's, whose lattice reads the wall and the land behind it;
 //   - the shore takes its distance over a sea-level section SHORE_PAD (26 m) round the chunk, to
 //     LAND_REACH (24 m) from its coast, and that coast is the wall's, which reads 25 m of land.
 //   Such reads stay deterministic (the window's edge continued). D4 measures that no kept bit
@@ -105,11 +101,9 @@ import { floorAt, SHELF_CEILING } from './Bathymetry.ts';
 import { buildFloorTile, nearLandCells, tileIndices, underLand, FAR_HALF, SEABED_TILE, TILE_SIDE, type FloorShape } from './SeabedTile.ts';
 import { casterColumns, groundGrid, submergedIndex, SEA_LEVEL, type CasterColumns, type GroundGrid } from './ChunkDerived.ts';
 import { scatterTop } from './Anchors.ts';
-import { buildRimSkirt, coastChains, ownTexels, rimGroundTile, RimLattice, RIM_PAD } from './RimGround.ts';
-import { pickBushes, BUSH_SCALE, BUSH_STRIDE } from './FoliageSites.ts';
-import { makeRimTrails, TRAIL_BUSH_REACH, TRAIL_REACH } from './RimTrails.ts';
+import { buildRimSkirt, ownTexels, rimGroundTile, RimLattice, RIM_PAD } from './RimGround.ts';
 import { boundedSceneField, contactVisibilitySampler, type SolidBounds } from '../lighting/SkyOcclusion.ts';
-import { VEGETATION_STRIDE, type MeshData, type RimSkirtData, type RimStrand, type Rock, type SDF } from './types.ts';
+import { VEGETATION_STRIDE, type MeshData, type RimSkirtData, type Rock, type SDF } from './types.ts';
 
 // ------------------------------------------------------------------ the grid
 
@@ -123,7 +117,7 @@ export const LAND_CELL = 0.08;
 const VOXEL = 0.125, CELLS = S / VOXEL;
 const Y0 = ISLAND_BOTTOM + 0.5, Y1 = ISLAND_TOP + 0.6;
 // A chunk with no land within this of it (m) has no island surface: the wall's wobble (0.52 m) and
-// batter (1.2 m over its height) stay well inside, so its nets, anchors, rim and trails are empty.
+// batter (1.2 m over its height) stay well inside, so its nets, anchors and rim are empty.
 const ISLAND_NEAR = 4;
 // the stones whose centres lie this far round the chunk shade what it owns: an own stone's bounds
 // reach 4.8 m from its centre, the contact probes 1.8 m beyond, and another stone's bounds 4.8 m
@@ -337,10 +331,6 @@ export interface ChunkData {
 	floorUnder: FloorShape | null;
 	// VEGETATION_STRIDE per owned turf anchor
 	anchors: Float32Array;
-	// BUSH_STRIDE per owned rim bush (FoliageSites.ts)
-	bushes: Float32Array;
-	// the trail patches whose lips lie in the chunk (a fork's parent indexes this list)
-	strands: RimStrand[];
 	// the turf skirt's owned pieces, each with its crossing samples
 	skirt: RimSkirtData;
 	// the rim ground's owned texels: 160 x 160, RGBA (RimGround.ts); empty without island
@@ -352,8 +342,8 @@ export interface ChunkData {
 	// the box round everything that casts a shadow: x0, y0, z0, x1, y1, z1 (empty: +-Infinity)
 	casters: [ number, number, number, number, number, number ];
 	// What the page derives from the meshes above, so it never walks their vertices (ChunkDerived.ts):
-	// the island's caster columns for the sun's map (the skirt, trails and bushes are built on the
-	// page, which bins them itself), the triangles of the island, the stones and the floor tile
+	// the island's caster columns for the sun's map (the skirt is built on the page, which bins it
+	// itself), the triangles of the island, the stones and the floor tile
 	// (tileIndices) the refracted sun's map draws at `level` (null: all, or no mesh), and the
 	// island's ground grid for the camera. Empty grids where there is no island.
 	casterColumns: CasterColumns;
@@ -473,7 +463,7 @@ export function contactStones( window: LandField, ci: number, cj: number ): Rock
 }
 
 /** What each chunk of the span x span block from ( ci, cj ) owns of the rim ground, the shore, the
- * walk tile, the anchors, the bushes and the trail patches, made in one pass over the block's
+ * walk tile and the anchors, made in one pass over the block's
  * window (`landWindow( field, ci, cj, span )`) and its texels and items shared out by chunk: the
  * checks compare it with the chunks' own (each chunk reads its own, smaller window). Members in
  * rows ( cj, then ci ). */
@@ -482,10 +472,8 @@ export function chunkBlock( window: LandField, ci: number, cj: number, span: num
 	const ctx = setup( window, ci, cj, span, true ), block = ctx.box;
 	const members = [];
 	for ( let j = cj; j < cj + span; j ++ ) for ( let i = ci; i < ci + span; i ++ ) members.push( { key: chunkKey( i, j ), box: chunkBox( i, j ), island: landIn( window, grow( chunkBox( i, j ), ISLAND_NEAR ) ) } );
-	const reach = members.some( ( m ) => m.island ) ? scatterAnchors( ctx, grow( block, TRAIL_REACH ), block ) : new Float32Array( 0 );
+	const anchors = members.some( ( m ) => m.island ) ? scatterAnchors( ctx, block ) : new Float32Array( 0 );
 	const tile = rimGroundTile( new RimLattice( ctx.sdf, grow( block, RIM_PAD ), ctx.fp ), block );
-	const bushes = pickBushes( reach, members.map( ( m ) => m.box ) );
-	const strands = rimTrails( ctx, reach, block, members.map( ( m ) => m.box ) );
 	const shore = shoreTile( ctx.sdf, ctx.fp, block ), walk = walkTile( ctx.fp, block );
 	// a member's square of a block raster of n texels per chunk
 	const slice = <T extends Float32Array | Uint8Array>( raster: T, n: number, m: { box: Bounds } ): T => {
@@ -496,14 +484,12 @@ export function chunkBlock( window: LandField, ci: number, cj: number, span: num
 		return out;
 
 	};
-	return members.map( ( m, n ) => ( {
+	return members.map( ( m ) => ( {
 		key: m.key,
 		rimGround: m.island ? ownTexels( tile, m.box ).data : new Float32Array( 0 ),
 		shore: slice( shore, Math.round( S / SHORE_CELL ), m ),
 		walk: slice( walk, Math.round( S / WALK_CELL ), m ),
-		anchors: m.island ? anchorsIn( reach, m.box ) : new Float32Array( 0 ),
-		bushes: m.island ? bushes[ n ] : new Float32Array( 0 ),
-		strands: m.island ? strands[ n ] : [],
+		anchors: m.island ? anchorsIn( anchors, m.box ) : new Float32Array( 0 ),
 	} ) );
 
 }
@@ -562,14 +548,11 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 	}
 	mark( 'floor' );
 
-	// --- turf anchors over the trails' reach (the bushes' and the trails' candidates), the chunk's
-	// own with their sky visibility
-	let anchors: Float32Array = new Float32Array( 0 ), bushes: Float32Array = new Float32Array( 0 ), strands: RimStrand[] = [];
-	const reach = island ? scatterAnchors( ctx, grow( box, TRAIL_REACH ), box ) : new Float32Array( 0 );
-	if ( island ) anchors = anchorsIn( reach, box );
+	// --- the chunk's turf anchors, with their sky visibility
+	const anchors = island ? scatterAnchors( ctx, box ) : new Float32Array( 0 );
 	mark( 'anchors' );
 
-	// --- the rim: ground tile, turf skirt, bushes, trails. Without island the tile's lattice lies
+	// --- the rim: ground tile, turf skirt. Without island the tile's lattice lies
 	// wholly outside the solid (its texels reach RIM_PAD from the chunk, the land lies ISLAND_NEAR
 	// away and the wall within 2 m of it), so the skirt is empty and the tile is the open sea's
 	// distance under noise only the cliff and the meadow read: the chunk carries no tile
@@ -583,13 +566,6 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 
 	}
 	mark( 'rim' );
-	if ( island ) {
-
-		bushes = pickBushes( reach, [ box ] )[ 0 ];
-		strands = rimTrails( ctx, reach, box, [ box ] )[ 0 ];
-
-	}
-	mark( 'trails' );
 
 	// --- the shore: the sea-level section's distance over the chunk, from the section round it
 	const shore = shoreTile( sdf, fp, box );
@@ -612,8 +588,8 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 
 	const data: ChunkData = {
 		key: chunkKey( ci, cj ), ci, cj, land: version,
-		island: islandMesh, stones, floor, floorUnder, anchors, bushes, strands, skirt, rimGround, shore, walk,
-		casters: casterBox( islandMesh, stones.mesh, skirt, strands, bushes ),
+		island: islandMesh, stones, floor, floorUnder, anchors, skirt, rimGround, shore, walk,
+		casters: casterBox( islandMesh, stones.mesh, skirt ),
 		casterColumns: casterColumns( islandPositions ), refracted, ground: groundGrid( islandPositions ),
 		hash: '', timings,
 	};
@@ -625,9 +601,9 @@ export function buildChunk( window: LandField, land: LandLattice, ci: number, cj
 
 }
 
-// The turf anchors over `area`, VEGETATION_STRIDE each (the bushes' and the trails' candidates):
-// those in `own` with their sky visibility (a bush takes its anchor's; the trails do not read it).
-function scatterAnchors( ctx: Setup, area: Bounds, own: Bounds ): Float32Array {
+// The turf anchors whose points lie in `area`, VEGETATION_STRIDE each, in the lattice's order, with
+// their sky visibility.
+function scatterAnchors( ctx: Setup, area: Bounds ): Float32Array {
 
 	const raw: number[] = [];
 	scatterTop( ctx.sdf, area, ISLAND_TOP, ( x, z ) => ctx.fp.dist( x, z ), raw );
@@ -638,7 +614,7 @@ function scatterAnchors( ctx: Setup, area: Bounds, own: Bounds ): Float32Array {
 		const k = a * 8, dst = a * VEGETATION_STRIDE;
 		for ( let j = 0; j < 8; j ++ ) reach[ dst + j ] = raw[ k + j ];
 		const x = raw[ k ], z = raw[ k + 2 ];
-		reach[ dst + 8 ] = inBox( x, z, own ) ? visibility?.( x, raw[ k + 1 ], z, raw[ k + 3 ], raw[ k + 4 ], raw[ k + 5 ] ) ?? 1 : 1;
+		reach[ dst + 8 ] = visibility?.( x, raw[ k + 1 ], z, raw[ k + 3 ], raw[ k + 4 ], raw[ k + 5 ] ) ?? 1;
 
 	}
 	return reach;
@@ -647,7 +623,7 @@ function scatterAnchors( ctx: Setup, area: Bounds, own: Bounds ): Float32Array {
 
 const inBox = ( x: number, z: number, b: Bounds ) => x >= b.x0 && x < b.x1 && z >= b.z0 && z < b.z1;
 
-// The anchors of `reach` whose points lie in `box`, in order.
+// The anchors of `reach` whose points lie in `box`, in order (a block's shared out by chunk).
 function anchorsIn( reach: Float32Array, box: Bounds ): Float32Array {
 
 	const own: number[] = [];
@@ -655,16 +631,6 @@ function anchorsIn( reach: Float32Array, box: Bounds ): Float32Array {
 	const anchors = new Float32Array( own.length * VEGETATION_STRIDE );
 	own.forEach( ( k, n ) => anchors.set( reach.subarray( k, k + VEGETATION_STRIDE ), n * VEGETATION_STRIDE ) );
 	return anchors;
-
-}
-
-// The trail patches whose lips lie in each of `boxes` (inside `box`), from the coast over `box`
-// and TRAIL_REACH round it and the bushes within TRAIL_BUSH_REACH.
-function rimTrails( ctx: Setup, reach: Float32Array, box: Bounds, boxes: Bounds[] ): RimStrand[][] {
-
-	const coast = coastChains( new RimLattice( ctx.sdf, grow( box, TRAIL_REACH ), ctx.fp ).signs(), 1 );
-	const nearBushes = pickBushes( reach, [ grow( box, TRAIL_BUSH_REACH ) ] )[ 0 ];
-	return makeRimTrails( ctx.sdf, ctx.fp, reach, coast, nearBushes, boxes );
 
 }
 
@@ -735,8 +701,8 @@ function mergeMeshes( parts: MeshData[] ): MeshData {
 
 }
 
-// The box round the island, the stones, the skirt, the trails and the bushes.
-function casterBox( island: MeshData | null, stones: MeshData, skirt: RimSkirtData, strands: RimStrand[], bushes: Float32Array ): ChunkData[ 'casters' ] {
+// The box round the island, the stones and the skirt.
+function casterBox( island: MeshData | null, stones: MeshData, skirt: RimSkirtData ): ChunkData[ 'casters' ] {
 
 	const b: ChunkData[ 'casters' ] = [ Infinity, Infinity, Infinity, - Infinity, - Infinity, - Infinity ];
 	const points = ( p: Float32Array, stride = 3 ) => {
@@ -752,19 +718,6 @@ function casterBox( island: MeshData | null, stones: MeshData, skirt: RimSkirtDa
 	if ( island ) points( island.positions );
 	points( stones.positions );
 	points( skirt.points );
-	for ( const s of strands ) points( s.points, 6 );
-	// a bush: its anchor and its largest scale round it
-	for ( let k = 0; k < bushes.length; k += BUSH_STRIDE ) {
-
-		const r = Math.max( bushes[ k + BUSH_SCALE ], bushes[ k + BUSH_SCALE + 1 ], bushes[ k + BUSH_SCALE + 2 ] );
-		for ( let a = 0; a < 3; a ++ ) {
-
-			b[ a ] = Math.min( b[ a ], bushes[ k + a ] - r );
-			b[ a + 3 ] = Math.max( b[ a + 3 ], bushes[ k + a ] + r );
-
-		}
-
-	}
 	return b;
 
 }

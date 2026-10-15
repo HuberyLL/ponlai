@@ -1,7 +1,6 @@
 import * as THREE from 'three/webgpu';
 
-// The instance store of an instanced vegetation kind (today the rim bushes, Foliage.ts): one
-// `InstancePool` per kind, which names the kind's per-instance buffers beside the matrices and
+// The instance store of an instanced vegetation kind: one `InstancePool` per kind, which names the kind's per-instance buffers beside the matrices and
 // keeps its capacity, and every write into those buffers goes through it. The kind keeps its
 // geometry, material and placement; the pool keeps the buffers.
 // - Capacity: an instanced mesh's buffers hold a capacity, not the count, so a grown island's
@@ -17,6 +16,8 @@ import * as THREE from 'three/webgpu';
 // - Layout: the attributes go on the geometry in the order the pool names them (`instanceColor` is
 //   the mesh's own, set after the mesh is made, as three's setColorAt would), and the writes go in
 //   that order after the matrices.
+// Kept for the plant kinds to come; no kind uses it today (the rim bushes it was written for are
+// removed; the meadow instances itself from the cull's storage buffers, VegetationCull.ts).
 
 /** One per-instance buffer beside the matrices: `key` names its values in the instances, `name` the
  * geometry's attribute (or `instanceColor`, the mesh's colour), `itemSize` its floats per instance. */

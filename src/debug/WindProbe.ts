@@ -2,8 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, float, instanceIndex, instancedArray, uint, vec3, vec4 } from 'three/tsl';
 import { Wind, createWindUniforms, packWindState, rootHash, windField, windStateOf, type WindState } from '../weather/Wind.ts';
 import { plantGrass } from '../world/Grass.ts';
-import { bushInstances } from '../world/Foliage.ts';
-import { BUSH_WIND, PALM_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
+import { PALM_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
@@ -15,7 +14,7 @@ import type { Shared } from '../shared.ts';
 // vegetation/Deform.ts `bendBlade` and `mainBend` with each kind's constants), evaluated in a compute kernel built on the first
 // call (none exists on a page that never calls it, so the page's pipelines are unchanged), for the
 // plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled; the flowering
-// tufts' heads bend as their blades' tips), the rim bushes' roots, the game's palms. The wind is a copy of the page's (`Wind`, the same
+// tufts' heads bend as their blades' tips), the game's palms. The wind is a copy of the page's (`Wind`, the same
 // speed, heading and scene time), stepped on the CPU and handed to the kernel per step through a
 // storage buffer, so the page's own wind is never touched. Two time series: fast (64 x 0.05 s,
 // the swing) and slow (40 x 0.5 s, the gusts' travel). Options: DEFAULTS below. The result is
@@ -63,7 +62,7 @@ interface Options {
 }
 const DEFAULTS: Options = {
 	tufts: 20000, fast: { steps: 64, dt: 0.05 }, slow: { steps: 40, dt: 0.5 }, anchors: 1500, grid: 0.5,
-	w5: true, kinds: [ 'grass', 'bush', 'palm' ], seed: 1,
+	w5: true, kinds: [ 'grass', 'palm' ], seed: 1,
 	weathers: [ 'clear', 'fair', 'cloudy', 'overcast' ], presets: [ 'sunrise', 'noon', 'golden-hour', 'midnight' ], gustSpan: 0,
 };
 const STATE = 2; // vec4s per wind step
@@ -159,19 +158,6 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 			const origin = vec3( p.x, 0, p.y ), phase = bladePhase( p.w, rootHash( origin.xz ) );
 			const field = windField( wind, origin.xz );
 			return { s: bendBlade( wind, vec3( p.x, p.z, p.y ), origin, p.z, float( 1 ), phase ).lean.xz, d: field.xy.mul( field.z ) };
-
-		} );
-
-	}
-	if ( o.kinds.includes( 'bush' ) ) {
-
-		const b = bushInstances( data.bushes ), points: number[][] = [];
-		for ( let i = 0; i < b.count; i ++ ) points.push( [ b.roots[ i * 4 ], b.roots[ i * 4 + 2 ], b.roots[ i * 4 + 1 ], 0 ] );
-		add( 'bush', points, ( wind, p ) => {
-
-			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, 1, 0 ) ), root, float( BUSH_WIND.amplitude ), BUSH_WIND.cycles );
-			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
 
 		} );
 

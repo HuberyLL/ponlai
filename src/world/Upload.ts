@@ -19,9 +19,9 @@ import * as THREE from 'three/webgpu';
 // goes through three's own upload, in one step. Re-check against three's createAttribute on a
 // three upgrade.
 //
-// Writes in place (`stagedWriteSteps`): an attribute rewritten at the swap (the bushes' instances,
-// Foliage.ts) keeps its buffer, so its new data is staged ahead in
-// a buffer mapped at creation, and when three next writes that range of the attribute's array (its
+// Writes in place (`stagedWriteSteps`; kept for the plant kinds to come, no kind uses it today: it
+// was written for the removed rim bushes' instances): an attribute rewritten at the swap keeps its
+// buffer, so its new data is staged ahead in a buffer mapped at creation, and when three next writes that range of the attribute's array (its
 // first draw after the swap) the backend copies the staged data on the GPU instead of a queue write
 // (`updateAttribute` wrapped once per backend). The writes were under a megabyte, yet each 256 KB
 // instance-matrix write blocked the main thread for 15-35 ms on a running page with the GPU busy,

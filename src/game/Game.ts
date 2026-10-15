@@ -4,8 +4,6 @@ import type { DayCycle } from '../sky/DayCycle.ts';
 import type { SceneEventReason } from '../post/SceneEvents.ts';
 import type { CharacterShadow } from '../characters/CharacterShadow.ts';
 import type { Villager as Figure } from '../characters/Villagers.ts';
-import { BUSH_STRIDE } from '../world/FoliageSites.ts';
-import { PLANT_STRIDE } from '../world/PlantSites.ts';
 import type { LandLattice } from '../world/IslandGrowth.ts';
 import type { Vegetation } from '../world/vegetation/Registry.ts';
 import { GameHud } from './Hud.ts';
@@ -42,8 +40,7 @@ import type { EntityId, IslandInput, Speed } from './sim/types.ts';
 // console may ask with `think`. Walking is the body's motor, reached by the `go` action (walkTo is
 // the debug panel's). The save is the state as JSON with a version number, in one slot. The ground
 // comes from the world generator's own exports: the land (its walkable grid, sim/grid.ts, spans the
-// land lattice's extent anchored to the world, so growth only opens cells), the bushes
-// `buildFoliage` draws and the shrubs and trees `buildPlants` draws, as obstacles. What changes the drawn scene at once (a simulation
+// land lattice's extent anchored to the world, so growth only opens cells). What changes the drawn scene at once (a simulation
 // installed at start or load, the speed or the pause, a placed blueprint, the placement ring the
 // pointer moves) tells the page through the context's `sceneEvent` (post/SceneEvents.ts), so the
 // temporal anti-aliasing cuts its history or converges a paused frame again.
@@ -65,12 +62,8 @@ export interface GameContext {
 	camera: THREE.PerspectiveCamera;
 	/** the canvas, for the debug panel's send-to-click */
 	canvas: HTMLCanvasElement;
-	/** the grown land and the rim bushes from the world generator (WorldData), and the island's top
-	 * from its chunks (sim/grid.ts topFromTiles) */
+	/** the grown land, and the island's top from the world's chunks (sim/grid.ts topFromTiles) */
 	land: LandLattice;
-	bushes: Float32Array;
-	/** the shrubs and small trees the page planted (PlantSites' PLANT_STRIDE floats each) */
-	plants?: Float32Array;
 	top?: Uint8Array;
 	dayCycle: DayCycle;
 	characterShadow: CharacterShadow;
@@ -96,16 +89,10 @@ export interface GameContext {
 // a stalled frame (a background tab, a debugger stop) resumes without running hours at once
 const MAX_FRAME = 0.25;
 
-// The simulation's island from the world generator's own exports: its land, the bushes it placed
-// (BUSH_STRIDE floats each), which buildFoliage draws, and the shrubs and trees the page planted
-// (PLANT_STRIDE floats each), which buildPlants draws, so the game's obstacles are exactly what is
-// drawn.
-function islandInput( land: LandLattice, bushes: Float32Array, top?: Uint8Array, plants: Float32Array = new Float32Array( 0 ) ): IslandInput {
+// The simulation's island from the world generator's own exports: its land and top.
+function islandInput( land: LandLattice, top?: Uint8Array ): IslandInput {
 
-	const obstacles = [], stems = [];
-	for ( let k = 0; k < bushes.length; k += BUSH_STRIDE ) obstacles.push( { x: bushes[ k ], z: bushes[ k + 2 ], r: bushes[ k + 3 ] } );
-	for ( let k = 0; k < plants.length; k += PLANT_STRIDE ) stems.push( { x: plants[ k + 1 ], z: plants[ k + 3 ], r: plants[ k + 8 ] } );
-	return { land, bushes: obstacles, plants: stems, top };
+	return { land, top };
 
 }
 
@@ -147,24 +134,24 @@ export class Game {
 	private constructor( context: GameContext ) {
 
 		this.context = context;
-		this.input = islandInput( context.land, context.bushes, context.top, context.plants );
+		this.input = islandInput( context.land, context.top );
 
 	}
 
 	/** The island grew by a piece (Growth.ts's swap): the simulation's ground follows the new land,
-	 * its bushes and its top, and counts the piece (Sim.addPiece); a saved game loads onto it. */
-	setIsland( land: LandLattice, bushes: Float32Array, top?: Uint8Array, plants?: Float32Array ): void {
+	 * its top, and counts the piece (Sim.addPiece); a saved game loads onto it. */
+	setIsland( land: LandLattice, top?: Uint8Array ): void {
 
-		this.input = islandInput( land, bushes, top, plants );
+		this.input = islandInput( land, top );
 		this.coming = null;
 		this.sim.addPiece( this.input );
 
 	}
 
 	/** The next piece is ready on the page (Growth.ts): the simulation sees its cells (Sim.comingLand). */
-	setComing( land: LandLattice, bushes: Float32Array, top?: Uint8Array, plants?: Float32Array ): void {
+	setComing( land: LandLattice, top?: Uint8Array ): void {
 
-		this.coming = islandInput( land, bushes, top, plants );
+		this.coming = islandInput( land, top );
 		this.sim.setComing( this.coming );
 
 	}

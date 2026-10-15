@@ -16,7 +16,7 @@ import { bendBlade, bladePhase, drown } from './vegetation/Deform.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
-import { ALPHA_TO_COVERAGE } from './Foliage.ts';
+import { ALPHA_TO_COVERAGE } from './vegetation/Coverage.ts';
 import { backlight, vegetationMaterial, type VegetationOptions } from './vegetation/Material.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
@@ -50,7 +50,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   tufts grow taller and lean out over the lip instead of thinning (RimGround).
 // - Blades do not cast into the sun's shadow map (narrower than a texel, they flicker as the sun
 //   moves): the meadow shades itself and its turf through MeadowCanopy. What the larger casters
-//   (bushes, trees, rock) throw onto the blades is soft and light: a few bilinear lookups
+//   (rock, the islanders, the game's props) throw onto the blades is soft and light: a few bilinear lookups
 //   of the sun's map around each vertex (`SunShadow.softVisibility`), no penumbra search, taken in
 //   the vertex stage and handed to the sun's filter in place of its own (`userData.sunVisibility`);
 //   the clouds' shade multiplies in as on every surface (SolarShadow's `installOpenShadow`).
@@ -673,7 +673,7 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F ) {
 }
 
 // What the larger casters throw onto the blades (`SunShadow.softVisibility`): its ring's radius
-// (m), so a bush's or a tree's shade ends in a soft edge a few decimetres wide; how deep it shades
+// (m), so a caster's shade ends in a soft edge a few decimetres wide; how deep it shades
 // (a share of the direct light), lighter than on the ground, as light scatters through the blades;
 // and how far above its root a vertex looks up, so the root does not take the ground it stands in.
 const SHADE_RADIUS = 0.3, SHADE_DEPTH = 0.8, SHADE_LIFT = 0.08;

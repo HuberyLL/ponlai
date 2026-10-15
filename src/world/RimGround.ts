@@ -62,7 +62,7 @@ function texelRange( a: number, b: number ): [ number, number ] {
 
 /** The top coast differs from the land's footprint: the island's actual solid just below the
  * roof, on the rim ground's lattice over the texels whose centres lie in `box`. Grass thinning,
- * exposed root soil, stone shoulders, the turf skirt and the trails' measure of the coast all
+ * exposed root soil, stone shoulders and the turf skirt all
  * share this one boundary. */
 export class RimLattice {
 
@@ -97,15 +97,6 @@ export class RimLattice {
 		const li = i - this.i0, lj = j - this.j0;
 		if ( li < 0 || lj < 0 || li >= this.nx || lj >= this.nz ) throw new RangeError( `texel ( ${ i }, ${ j } ) is outside the rim lattice` );
 		return this.inside[ lj * this.nx + li ];
-
-	}
-
-	/** The solid as a field of +-1 (negative inside) on the lattice, for the coast tracer. */
-	signs(): ShoreField {
-
-		const data = new Float32Array( this.inside.length );
-		for ( let k = 0; k < data.length; k ++ ) data[ k ] = this.inside[ k ] ? - 1 : 1;
-		return { data, nx: this.nx, nz: this.nz, x0: this.i0 * RIM_CELL, z0: this.j0 * RIM_CELL, cell: RIM_CELL };
 
 	}
 
