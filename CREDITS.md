@@ -34,6 +34,9 @@ packages, into `dist/licenses/`.
     Jacobian folds, exponential decay), here on one world-space grid of the summed cascades; and
     in `src/ocean/Water.ts` the whitecap compositing of `WaterSurface.js` (a foam pattern
     thresholded by the coverage, at a distance the coverage itself).
+  - `src/ocean/Water.ts`: from `WaterMaterial.js`, the water column's sun shadowed by the surface
+    point's shadow alone, and the reflectance under which no reflection ray marches
+    (`ssrMinFresnel`).
   - `src/ocean/ShoreWaves.ts`, `src/ocean/ShoreWaveField.ts`: began as an adaptation of
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
