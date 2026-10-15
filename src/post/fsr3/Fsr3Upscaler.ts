@@ -468,7 +468,7 @@ export class Fsr3Upscaler {
 
 		const value = this.showHeld ? this.held : this.output;
 		for ( const node of this.sources ) node.value = value;
-		fsr3MipBiasScale.value = debugFlags.fsrMipBias === false ? 1 : 2 ** ( Math.log2( renderWidth / Math.max( outputWidth, 1 ) ) - 1 );
+		fsr3MipBiasScale.value = debugFlags.fsrMipBias === false ? 1 : renderWidth / Math.max( outputWidth, 1 );
 		if ( ! this.dispatching ) return;
 		// the rest starts from a new context, whatever ran before (see the header)
 		if ( this.rest.index === 0 ) {

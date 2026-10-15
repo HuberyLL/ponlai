@@ -197,7 +197,7 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 		const S = 0.55; // ~1.8 m per tile
 		const sg = sign( n0 );
 		const uvX = vec2( p.z.mul( sg.x ), p.y ).mul( S ).toVar(), uvY = vec2( p.x.mul( sg.y ), p.z ).mul( S ).toVar(), uvZ = vec2( p.x.negate().mul( sg.z ), p.y ).mul( S ).toVar();
-		// (under fsr3 scaled by FSR's mip bias, 2^( log2( render / canvas ) - 1 ): fsr3/MipBias.ts)
+		// (under fsr3 scaled by FSR's mip bias, render / canvas: fsr3/MipBias.ts)
 		const biased = ( g: THREE.Node<'vec2'> ) => FSR3 ? g.mul( fsr3MipBiasScale ) : g;
 		const gxX = biased( dFdx( uvX ) ).toVar(), gyX = biased( dFdy( uvX ) ).toVar(), gxY = biased( dFdx( uvY ) ).toVar(), gyY = biased( dFdy( uvY ) ).toVar(), gxZ = biased( dFdx( uvZ ) ).toVar(), gyZ = biased( dFdy( uvZ ) ).toVar();
 		// Screen derivatives of the position: the wet layer samples with explicit gradients inside
