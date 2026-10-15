@@ -1,68 +1,75 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, Loop, uniform, storage, workgroupArray, workgroupBarrier, workgroupId, localId, uint, float, select, length, dot, min, max, ceil,
+	Fn, If, Loop, uniform, storage, workgroupArray, workgroupBarrier, workgroupId, localId, uint, float, select, dot, min, max, ceil,
 } from 'three/tsl';
-import { TEMPORAL } from '../post/Antialiasing.ts';
-import { jitter } from '../post/Jitter.ts';
+import { TEMPORAL } from '../../post/Antialiasing.ts';
+import { jitter } from '../../post/Jitter.ts';
+import { runSteps } from '../Steps.ts';
 
-// GPU-driven culling for the meadow's tufts. Every tuft of every batch lives in one set of storage
-// buffers (instance transform, colour, the ground inputs, the planting anchor and a bounding
-// sphere). Before the view camera draws the meadow, a compute pass tests each tuft's sphere
-// against the view frustum (and folds the thin extra tufts away beyond their fold distance, where
-// the vertex stage would collapse them to a point anyway), and writes the indices of the tufts
+// GPU-driven culling for an instanced vegetation kind (today the meadow's tufts, Grass.ts). Every
+// record of every batch lives in one set of storage buffers: the kind's payload (`CullPayload`: its
+// buffers and what it writes into a slot; the meadow's instance transform, colour, ground inputs
+// and planting anchor) and the cull's own (a bounding sphere the kind gives, the visible list, the
+// bands). Before the view camera draws the kind, a compute pass tests each record's sphere against
+// the view frustum (and, where the kind folds records away by distance, `CullPayload.fold`, drops
+// those the vertex stage would collapse to a point anyway), and writes the indices of the records
 // that pass, in their original order, plus each batch's indirect draw arguments. The draw then
-// runs the vertex stage only for those tufts. The compaction is a scan, not an atomic append: the
-// surviving tufts keep the order every tuft drew in before, so depth ties and the alpha-to-coverage
-// result are those of the full draw, and a paused frame repeats exactly.
+// runs the vertex stage only for those records. The compaction is a scan, not an atomic append:
+// the surviving records keep the order every record drew in before, so depth ties and the
+// alpha-to-coverage result are those of the full draw, and a paused frame repeats exactly.
 //
-// Two dispatches: the first counts each workgroup's visible tufts, the second sums the counts of
+// Two dispatches: the first counts each workgroup's visible records, the second sums the counts of
 // the batch's earlier workgroups, scans its own and scatters. Each batch is padded to whole
 // workgroups, so no workgroup spans two batches.
 //
-// Bands: a tuft far from the camera keeps only some of its blades (Grass.ts `tuftLod`), the rest
-// narrowed to degenerate triangles that would still run the vertex stage. So each batch's visible
-// tufts are sorted into a few bands by the blades they keep (`CullBatchInput.caps`, say 16, 12, 8,
-// 6 and 4 of a lawn tuft's 16), each band drawn by its own indirect arguments with only its cap's
-// blades: the band's tufts follow one another in the batch's visible list, in slot order within
-// the band, and its draw starts at its first through `firstInstance` (the instance index the
-// vertex stage reads includes it). The count pass decides each tuft's band from the same blade
-// count the vertex stage computes (`CullLod.count`) and keeps it per slot (`bands`), so the scatter
-// places every tuft by the decision the counts were made from. Each workgroup counts its bands in
-// two words of three 10-bit fields (a workgroup has at most 256 tufts in a band), scanned together.
-// Without `indirect-first-instance` every batch has one band, its first: its draw starts at 0.
+// Bands: a record far from the camera keeps only some of its parts (the meadow's blades, Grass.ts
+// `tuftLod`), the rest narrowed to degenerate triangles that would still run the vertex stage. So
+// each batch's visible records are sorted into a few bands by the parts they keep
+// (`CullBatchInput.caps`, say 16, 12, 8, 6 and 4 of a lawn tuft's 16 blades), each band drawn by its
+// own indirect arguments with only its cap's parts: the band's records follow one another in the
+// batch's visible list, in slot order within the band, and its draw starts at its first through
+// `firstInstance` (the instance index the vertex stage reads includes it). The count pass decides
+// each record's band from the same count the vertex stage computes (`CullLod.count`) and keeps it
+// per slot (`bands`), so the scatter places every record by the decision the counts were made from.
+// Each workgroup counts its bands in two words of three 10-bit fields (a workgroup has at most 256
+// records in a band), scanned together. Without `indirect-first-instance` every batch has one band,
+// its first: its draw starts at 0.
 //
-// The meadow is one pool (chunk design, section 8): a batch per kind (the lawn, the thin
-// extra tufts) holds every chunk's tufts in the chunks' order ( cj, ci ), as the anchors come
-// (ChunkMerge.ts), each drawn in one draw. The buffers hold a capacity, the next power of two of
-// the slots the batches fill; the dispatches cover the filled workgroups, and the slots past them
-// are never visible. A grown island's meadow (World growth, Growth.ts) is a new pool: its arrays
-// are filled in steps (`poolSteps`) and its buffers made and uploaded ahead (`GrassCull.buffers`),
-// and `setPool` points every storage node at them (one node per buffer, type and access: `node`):
-// new bind groups, no pipeline (AGENTS.md, tools/verify-storage-realloc.mjs). The kernels read
-// the batches' bounds, the last workgroup and the scatter's passes from uniforms, and every batch
-// keeps its place even while empty (an empty batch starts where the next one does and writes no
-// arguments), so no pool changes their code.
+// A kind is one pool (chunk design, section 8): a batch per sort of record (the meadow's lawn and
+// its thin extra tufts) holds every chunk's records in the chunks' order ( cj, ci ), as the
+// anchors come (ChunkMerge.ts), each drawn in one draw. The buffers hold a capacity, the next power
+// of two of the slots the batches fill; the dispatches cover the filled workgroups, and the slots
+// past them are never visible. A grown island's pool (World growth, Growth.ts) is a new pool: its
+// arrays are filled in steps (`poolSteps`) and its buffers made and uploaded ahead
+// (`poolBuffers`), and `setPool` points every storage node at them (one node per buffer, type and
+// access: `node`): new bind groups, no pipeline (AGENTS.md, tools/verify-storage-realloc.mjs). The
+// kernels read the batches' bounds, the last workgroup and the scatter's passes from uniforms, and
+// every batch keeps its place even while empty (an empty batch starts where the next one does and
+// writes no arguments), so no pool changes their code.
 //
 // Rules:
-// - Each tuft's sphere is padded for the widening's 31 half widths, the sway and standing water's
-//   sink, and by twice its origin's offset from the sphere's centre, since the wind's bend turns
-//   every vertex about that origin.
-// - The dispatch is skipped while the view and the blade selection are unchanged.
+// - Each record's sphere bounds every pose its vertex stage can give it (`CullPayload.sphere`: the
+//   meadow pads its tufts' rest boxes for the widening, the sway and standing water's sink).
+// - The dispatch is skipped while the view and the part selection are unchanged.
 // - Without the prepass, or with coverage kept in its shaded draw, the image is that of a draw of
-//   every tuft to the byte; behind the prepass's opaque shaded draw a few isolated meadow pixels
+//   every record to the byte; behind the prepass's opaque shaded draw a few isolated pixels
 //   differ from it (the set depends on the drawn instance list).
 // - Indirect arguments are set on a batch's geometry for its own draw only: other draws over the
-//   same geometry (the rain's collision proxies, orthographic cameras) draw every tuft. A batch's
+//   same geometry (the rain's collision proxies, orthographic cameras) draw every record. A batch's
 //   bands are its geometry's indirect offsets (an array: three issues a draw for each), so the
 //   batch stays one render object and its depth copy draws the same bands.
-// - A band's cap never cuts a blade its tufts keep any of: a tuft goes into the band of the least
-//   cap at or above its count (less 0.001, a hair against the vertex stage's rounding), and the
-//   first band, which also takes any tuft over its cap (`flags.grassLod = false`), draws the
-//   batch's index count of the view (`CullRange.indexCount`, its nearest tuft's blades). The image
+// - A band's cap never cuts a part its records keep any of: a record goes into the band of the
+//   least cap at or above its count (less 0.001, a hair against the vertex stage's rounding), and
+//   the first band, which also takes any record over its cap (`flags.grassLod = false`), draws the
+//   batch's index count of the view (`CullRange.indexCount`, its nearest record's parts). The image
 //   is the one-draw image but for the split (AGENTS.md: about 1 % of pixels a level or two apart).
 //   `flags.grassCull = false` draws every tuft through the same storage path, and
 //   `flags.grassBands = false` puts every visible tuft in its batch's first band (the one draw of
 //   before), for A/Bs.
+// - A batch's padding to whole workgroups repeats its first record's transform in the payload's
+//   `matrices` buffer: never drawn (its sphere is never visible), but three's InstancedMesh box
+//   reads the matrices from slot 0 up to a batch's count, and a zero matrix there divides by a zero
+//   w (a NaN box: Water.ts's reflection check). Slots past the last batch are never read.
 // - A material that applies instancing itself from storage buffers must hold the placed position
 //   in a variable (`toVar`), as three's instancing assigns it to `positionLocal`: an inline
 //   expression rounds differently and flips a few hundred edge samples. `instanceColor` multiplies
@@ -77,39 +84,48 @@ const LOG2_GROUP = 8;
 export const MAX_BANDS = 6;
 const BAND_WORDS = 2;
 const BAND_BITS = 10;
-// A tuft's widened blades reach out by at most this many times their half width (`MAX_WIDEN` times
-// the largest blade gain, 4: a far tuft keeps a quarter of its blades, less the blade itself), see
-// `pixelWideBlade` and `tuftLod` in Grass.ts.
-export const WIDEN_REACH = 31;
-// Slack (m) for rounding, kept at the width it had for the old global-sine sway (a few
-// centimetres at the tips in a gale): a smaller pad changes the visible list. The wind's bend (`bendBlade` in Grass.ts) keeps every vertex at its
-// distance from the tuft's origin, so it stays inside the sphere when that is padded by twice
-// the origin's distance from the sphere's centre (see below), whatever the wind.
-const SWAY_PAD = 0.2;
-// The thin tufts are culled a little past their fold, so the test never takes a tuft the vertex
-// stage would still draw a sliver of.
-const FOLD_PAD = 0.01;
 
-export interface CullTuft {
-	m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number;
-	top: number; origin: THREE.Vector3;
+type Storage<T extends StorageType = StorageType> = THREE.StorageBufferNode<T>;
+type StorageType = 'uint' | 'vec4' | 'mat4';
+
+/** A kind's data per slot, in storage buffers of its own (beside the cull's), and what it gives
+ * the cull. */
+export interface CullPayload<R> {
+	/** The kind's buffers, in the order they are made: their names, floats per slot and the
+	 * attributes' item size. */
+	buffers: { name: string; floats: number; itemSize: number }[];
+	/** The buffer holding each slot's anchor in its first vec4's x, y, z: the distance the LOD
+	 * counts parts by (`CullLod.count`). */
+	origin: string;
+	/** The buffer of the instance transforms (three's InstancedMesh reads its box from it): a
+	 * batch's padding repeats its first record's there. */
+	matrices: string;
+	/** Writes record `r` into slot `i` of the kind's arrays. */
+	write( r: R, i: number, arrays: Record<string, Float32Array> ): void;
+	/** Writes record `r`'s bounding sphere (world space) into `spheres` at `i * 4`: every pose the
+	 * vertex stage can give it over `geometry`, the batch's. */
+	sphere( r: R, geometry: THREE.BufferGeometry, spheres: Float32Array, i: number ): void;
+	/** Records folded away at a distance: whether slot `slot`, anchored at `origin`, is folded for
+	 * a camera at `camera` (`node` reads the kind's buffers); `far` is a uniform the test reads,
+	 * whose change culls again. */
+	fold?: { far: THREE.UniformNode<'float', number>; folded( slot: THREE.Node<'uint'>, origin: THREE.Node<'vec3'>, camera: THREE.Node<'vec3'>, node: ( buffer: string ) => Storage<'vec4'> ): THREE.Node<'bool'> };
 }
 
-export interface CullBatchInput {
-	tufts: CullTuft[]; geometry: THREE.BufferGeometry; halfWidth: number;
-	/** The tuft's blades and the least share of them it keeps (`CullLod.count`). */
+export interface CullBatchInput<R> {
+	records: R[]; geometry: THREE.BufferGeometry;
+	/** The record's parts and the least share of them it keeps (`CullLod.count`). */
 	blades?: number; floor?: number;
-	/** The blade counts of the batch's bands, descending (at most MAX_BANDS), and the indices of
-	 * one blade: a band's draw takes its cap's blades. */
+	/** The part counts of the batch's bands, descending (at most MAX_BANDS), and the indices of
+	 * one part: a band's draw takes its cap's parts. */
 	caps?: number[]; bladeIndices?: number;
 }
 
-/** The blade count the vertex stage keeps a tuft at (Grass.ts `tuftLod`), as a node: its anchor,
- * the camera's position, its blades and floor; and whether the view thins by distance at all. */
+/** The part count the vertex stage keeps a record at (Grass.ts `tuftLod`), as a node: its anchor,
+ * the camera's position, its parts and floor; and whether the view thins by distance at all. */
 export interface CullLod {
 	count: ( origin: THREE.Node<'vec3'>, camera: THREE.Node<'vec3'>, blades: THREE.Node<'float'>, floor: THREE.Node<'float'>, on: THREE.Node<'float'> ) => THREE.Node<'float'>;
 	on: THREE.UniformNode<'float', number>;
-	/** 0 puts every visible tuft in its batch's first band (`flags.grassBands = false`, for A/Bs). */
+	/** 0 puts every visible record in its batch's first band (`flags.grassBands = false`, for A/Bs). */
 	bands: THREE.UniformNode<'uint', number>;
 }
 
@@ -119,41 +135,38 @@ export interface CullRange {
 	count: number;
 	groupStart: number;
 	groupEnd: number;
-	/** The batch's index count for this view (its nearest tuft's blades): its first band's, and the
-	 * most any band draws. */
+	/** The batch's index count for this view (its nearest record's parts): its first band's, and
+	 * the most any band draws. */
 	indexCount: THREE.UniformNode<'uint', number>;
 	/** Byte offsets of the five indirect arguments of each of the batch's bands. */
 	indirectOffsets: number[];
 }
 
 /** A pool's contents: the slots (a power of two of workgroups), the workgroups its batches fill,
- * each batch's range, and the per-slot arrays the storage buffers take. */
+ * each batch's range, the kind's per-slot arrays and the spheres. */
 export interface CullPool {
 	slots: number;
 	groups: number;
 	ranges: { start: number; count: number; groupStart: number; groupEnd: number }[];
-	matrices: Float32Array; colors: Float32Array; ground: Float32Array; origins: Float32Array; spheres: Float32Array;
+	arrays: Record<string, Float32Array>;
+	spheres: Float32Array;
 }
 
 /** A pool's storage buffers, made ahead of `setPool` so they can be uploaded before the frame that
- * takes them (`visible` holds every slot's own index, `bands` each slot's band, `counts` a
- * workgroup's band counts). */
-export interface CullBuffers {
-	matrices: THREE.StorageBufferAttribute; colors: THREE.StorageBufferAttribute; ground: THREE.StorageBufferAttribute;
-	origins: THREE.StorageBufferAttribute; spheres: THREE.StorageBufferAttribute; visible: THREE.StorageBufferAttribute;
-	bands: THREE.StorageBufferAttribute; counts: THREE.StorageBufferAttribute;
-}
+ * takes them: the kind's by name, then `spheres`, `visible` (every slot's own index), `bands` (each
+ * slot's band) and `counts` (a workgroup's band counts). */
+export type CullBuffers = Record<string, THREE.StorageBufferAttribute>;
 
-/** The pool's arrays for `batches`, filled `per` tufts at a step (a generator, so the growth can
- * spread the work over idle time: World growth, Growth.ts); `fillPool` runs it to the end. The
- * result is the same however it is stepped. */
-export function* poolSteps( batches: CullBatchInput[], per = Infinity ): Generator<void, CullPool> {
+/** The pool's arrays for `batches`, filled `per` records at a step (a generator, so the growth can
+ * spread the work over idle time: World growth, Growth.ts); a first build runs it to the end
+ * (Steps.ts `runSteps`). The result is the same however it is stepped. */
+export function* poolSteps<R>( payload: CullPayload<R>, batches: CullBatchInput<R>[], per = Infinity ): Generator<void, CullPool> {
 
 	const ranges: CullPool[ 'ranges' ] = [];
 	let slot = 0;
 	for ( const b of batches ) {
 
-		const count = b.tufts.length;
+		const count = b.records.length;
 		const groups = Math.ceil( count / GROUP );
 		ranges.push( { start: slot, count, groupStart: slot / GROUP, groupEnd: slot / GROUP + groups } );
 		slot += groups * GROUP;
@@ -161,87 +174,49 @@ export function* poolSteps( batches: CullBatchInput[], per = Infinity ): Generat
 	}
 	const groups = Math.max( slot, GROUP ) / GROUP;
 	const n = 2 ** Math.ceil( Math.log2( groups ) ) * GROUP;
-	const matrices = new Float32Array( n * 16 ), colors = new Float32Array( n * 4 ), ground = new Float32Array( n * 12 );
-	const origins = new Float32Array( n * 4 ), spheres = new Float32Array( n * 4 ).fill( - 1 );
+	const arrays: Record<string, Float32Array> = {};
+	for ( const b of payload.buffers ) arrays[ b.name ] = new Float32Array( n * b.floats );
+	const spheres = new Float32Array( n * 4 ).fill( - 1 );
 	let done = 0;
 	for ( let k = 0; k < batches.length; k ++ ) {
 
 		const b = batches[ k ], range = ranges[ k ];
-		b.geometry.computeBoundingBox();
-		_box.copy( b.geometry.boundingBox! );
-		for ( let j = 0; j < b.tufts.length; j ++ ) {
+		for ( let j = 0; j < b.records.length; j ++ ) {
 
-			const t = b.tufts[ j ], i = range.start + j;
-			t.m.toArray( matrices, i * 16 );
-			colors[ i * 4 ] = t.col.r; colors[ i * 4 + 1 ] = t.col.g; colors[ i * 4 + 2 ] = t.col.b;
-			const e = t.m.elements;
-			// x: sky visibility, y: unused (0), z: rim cover, w: rim edge (1 on the plateau's
-			// outer rim, where blades stand against the sea and stay narrower: the opaque
-			// pass's MSAA edge pixels there resolve against the sky-coloured clear, so every
-			// partly covered pixel a widened blade adds shows as a pale fringe over the sea);
-			// then the instance's local x axis with the thin flag (1 for the extra tufts that
-			// fold away with distance), and its local z axis. A blade's width lies in the
-			// plane of those axes: the vertex stage keeps thin blades a minimum width on screen
-			// in world space.
-			ground.set( [ t.visibility, 0, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], 0 ], i * 12 );
-			t.origin.toArray( origins, i * 4 );
-			origins[ i * 4 + 3 ] = t.top;
-			// The tuft's box in world space, extended down by its own height (standing water
-			// sinks the blades below their anchor), then padded for the widening and the sway.
-			_world.makeEmpty();
-			for ( let c = 0; c < 8; c ++ ) {
-
-				_corner.set( c & 1 ? _box.max.x : _box.min.x, c & 2 ? _box.max.y : _box.min.y, c & 4 ? _box.max.z : _box.min.z ).applyMatrix4( t.m );
-				_world.expandByPoint( _corner );
-
-			}
-			_world.min.y -= _world.max.y - _world.min.y;
-			_world.getBoundingSphere( _sphere );
-			const axisScale = Math.max( Math.hypot( e[ 0 ], e[ 1 ], e[ 2 ] ), Math.hypot( e[ 8 ], e[ 9 ], e[ 10 ] ) );
-			_sphere.center.toArray( spheres, i * 4 );
-			// Every vertex lies in the box, so within the box's radius plus the origin's offset
-			// from its centre of the origin; a vertex turned about the origin stays that close to
-			// it, so within the radius plus twice the offset of the centre.
-			const bend = 2 * _sphere.center.distanceTo( t.origin );
-			spheres[ i * 4 + 3 ] = _sphere.radius + bend + WIDEN_REACH * b.halfWidth * axisScale + SWAY_PAD;
-			if ( ++ done % per === 0 ) {
-
-				yield;
-				// (another pool's steps may have run meanwhile)
-				_box.copy( b.geometry.boundingBox! );
-
-			}
+			const r = b.records[ j ], i = range.start + j;
+			payload.write( r, i, arrays );
+			payload.sphere( r, b.geometry, spheres, i );
+			if ( ++ done % per === 0 ) yield;
 
 		}
 
 	}
-	// A batch's padding to whole workgroups repeats its first tuft's transform: never drawn (its
-	// sphere is never visible), but three's InstancedMesh box reads the matrices from slot 0 up to a
-	// batch's count, and a zero matrix there divides by a zero w (a NaN box: Water.ts's reflection
-	// check). Slots past the last batch are never read.
+	// (the rules, above: a batch's padding repeats its first record's transform)
+	const matrices = arrays[ payload.matrices ];
 	for ( const range of ranges ) for ( let i = range.start + range.count; i < range.groupEnd * GROUP && range.count > 0; i ++ ) matrices.copyWithin( i * 16, range.start * 16, range.start * 16 + 16 );
-	return { slots: n, groups, ranges, matrices, colors, ground, origins, spheres };
+	return { slots: n, groups, ranges, arrays, spheres };
 
 }
 
-/** `poolSteps` run to the end. */
-export function fillPool( batches: CullBatchInput[] ): CullPool {
+/** The storage buffers of `pool`, for upload before `setPool` takes them. */
+export function poolBuffers<R>( payload: CullPayload<R>, pool: CullPool ): CullBuffers {
 
-	const steps = poolSteps( batches );
-	for ( ;; ) {
-
-		const next = steps.next();
-		if ( next.done ) return next.value;
-
-	}
+	const n = pool.slots, visible = new Uint32Array( n );
+	for ( let i = 0; i < n; i ++ ) visible[ i ] = i;
+	const buffers: CullBuffers = {};
+	for ( const b of payload.buffers ) buffers[ b.name ] = new THREE.StorageBufferAttribute( pool.arrays[ b.name ], b.itemSize );
+	buffers.spheres = new THREE.StorageBufferAttribute( pool.spheres, 4 );
+	buffers.visible = new THREE.StorageBufferAttribute( visible, 1 );
+	buffers.bands = new THREE.StorageBufferAttribute( new Uint32Array( n ), 1 );
+	buffers.counts = new THREE.StorageBufferAttribute( new Uint32Array( n / GROUP * BAND_WORDS ), 1 );
+	return buffers;
 
 }
 
-const _box = new THREE.Box3(), _corner = new THREE.Vector3(), _world = new THREE.Box3(), _sphere = new THREE.Sphere();
 const _frustum = new THREE.Frustum(), _projScreen = new THREE.Matrix4(), _viewInverse = new THREE.Matrix4(), _camera = new THREE.Vector3();
 const _padded = new THREE.Matrix4(), _size = new THREE.Vector2();
 
-// Under the temporal modes the view camera draws the meadow with its projection jittered by up to
+// Under the temporal modes the view camera draws the kind with its projection jittered by up to
 // half a render pixel (Jitter.ts), a different one every frame. Keyed and culled by it, the cull
 // would dispatch every frame of a still view. It takes the unjittered projection instead, widened
 // by one render pixel on each side: the jittered frustum lies inside it whatever the offset. Any
@@ -266,13 +241,13 @@ function unjitteredPadded( renderer: THREE.Renderer, camera: THREE.Camera ): THR
 
 }
 
-type Buffer = keyof CullBuffers;
-type StorageType = 'uint' | 'vec4' | 'mat4';
-type Storage<T extends StorageType = StorageType> = THREE.StorageBufferNode<T>;
 // (the map holds every type; each node is read back as the type it was made with)
 type AnyStorage = { toReadOnly(): unknown; value: THREE.StorageBufferAttribute };
 
-export class GrassCull {
+/** The cull's options: the kind's payload, its LOD and its kernels' label (`<name>.CullCount`). */
+export interface VegetationCullOptions<R> { name: string; payload: CullPayload<R>; lod: CullLod }
+
+export class VegetationCull<R> {
 
 	/** The buffers' slots: the capacity, a power of two. */
 	slots: number;
@@ -283,7 +258,7 @@ export class GrassCull {
 	private buffers: CullBuffers;
 	// every storage node over the pool's buffers, by buffer, type and access: `setPool` points them
 	// at new buffers (a new bind group, no pipeline: AGENTS.md)
-	private readonly nodes = new Map<string, { buffer: Buffer; node: AnyStorage }>();
+	private readonly nodes = new Map<string, { buffer: string; node: AnyStorage }>();
 	// the batches' bounds, as the kernels read them (uniforms, so a new pool builds no pipeline)
 	private readonly bounds: { start: THREE.UniformNode<'uint', number>; groupStart: THREE.UniformNode<'uint', number>; groupEnd: THREE.UniformNode<'uint', number> }[];
 	private readonly lastGroup = uniform( 0, 'uint' );
@@ -295,17 +270,24 @@ export class GrassCull {
 	// built at the first update, which knows whether the device draws from a first instance
 	private kernels: THREE.ComputeNode[] | null = null;
 	private readonly lastKey: Float64Array;
-	// each batch's tuft (blades, floor), band caps and indices per blade
+	// each batch's record (parts, floor), band caps and indices per part
 	private readonly batches: { blades: number; floor: number; caps: number[]; bladeIndices: number; first: number }[];
 	/** Debug diagnostics: views culled (dispatches) and updates skipped as unchanged, since load. */
 	readonly stats = { dispatches: 0, skipped: 0 };
 
-	constructor( batches: CullBatchInput[], private readonly thinFar: THREE.UniformNode<'float', number>, private readonly lod: CullLod ) {
+	private readonly name: string;
+	readonly payload: CullPayload<R>;
+	private readonly lod: CullLod;
 
-		const pool = fillPool( batches );
+	constructor( options: VegetationCullOptions<R>, batches: CullBatchInput<R>[] ) {
+
+		this.name = options.name;
+		this.payload = options.payload;
+		this.lod = options.lod;
+		const pool = runSteps( poolSteps( this.payload, batches ) );
 		this.slots = pool.slots;
 		this.groups = pool.groups;
-		this.buffers = GrassCull.buffers( pool );
+		this.buffers = poolBuffers( this.payload, pool );
 		let draws = 0;
 		this.batches = batches.map( ( b ) => {
 
@@ -331,30 +313,16 @@ export class GrassCull {
 
 	}
 
-	/** The storage buffers of `pool`, for upload before `setPool` takes them. */
-	static buffers( pool: CullPool ): CullBuffers {
+	/** The pool's buffer `name` (the kind's, or the cull's own). */
+	buffer( name: string ): THREE.StorageBufferAttribute {
 
-		const n = pool.slots, visible = new Uint32Array( n );
-		for ( let i = 0; i < n; i ++ ) visible[ i ] = i;
-		return {
-			matrices: new THREE.StorageBufferAttribute( pool.matrices, 16 ),
-			colors: new THREE.StorageBufferAttribute( pool.colors, 4 ),
-			ground: new THREE.StorageBufferAttribute( pool.ground, 4 ),
-			origins: new THREE.StorageBufferAttribute( pool.origins, 4 ),
-			spheres: new THREE.StorageBufferAttribute( pool.spheres, 4 ),
-			visible: new THREE.StorageBufferAttribute( visible, 1 ),
-			bands: new THREE.StorageBufferAttribute( new Uint32Array( n ), 1 ),
-			counts: new THREE.StorageBufferAttribute( new Uint32Array( n / GROUP * BAND_WORDS ), 1 ),
-		};
+		return this.buffers[ name ];
 
 	}
 
-	get matrices(): THREE.StorageBufferAttribute { return this.buffers.matrices; }
-	get colors(): THREE.StorageBufferAttribute { return this.buffers.colors; }
-
 	/** A storage node over one of the pool's buffers (one per buffer, type and access), which
 	 * follows the pool when `setPool` replaces it. */
-	node<T extends StorageType>( buffer: Buffer, type: T, readOnly = false ): Storage<T> {
+	node<T extends StorageType>( buffer: string, type: T, readOnly = false ): Storage<T> {
 
 		const key = `${ buffer } ${ type } ${ readOnly }`;
 		let entry = this.nodes.get( key );
@@ -373,7 +341,7 @@ export class GrassCull {
 	/** Takes `pool` (the same batches in the same order), with its buffers made by `buffers`: the
 	 * nodes are pointed at them, the bounds and the dispatch follow, and the next update culls
 	 * again. Returns the buffers it replaced, to dispose of once nothing draws with them. */
-	setPool( pool: CullPool, buffers: CullBuffers = GrassCull.buffers( pool ) ): CullBuffers {
+	setPool( pool: CullPool, buffers: CullBuffers = poolBuffers( this.payload, pool ) ): CullBuffers {
 
 		const old = this.buffers;
 		this.buffers = buffers;
@@ -412,13 +380,12 @@ export class GrassCull {
 	private buildKernels(): THREE.ComputeNode[] {
 
 		const spheres = this.node( 'spheres', 'vec4', true );
-		const origins = this.node( 'origins', 'vec4', true );
-		const ground = this.node( 'ground', 'vec4', true );
+		const origins = this.node( this.payload.origin, 'vec4', true );
 		const visible = this.node( 'visible', 'uint' );
 		const bandOf = this.node( 'bands', 'uint' );
 		const counts = this.node( 'counts', 'uint' );
 		const args = storage( this.indirect, 'uint', this.indirect.count );
-		const planes = this.planes, cameraPosition = this.cameraPosition, thinFar = this.thinFar, bounds = this.bounds;
+		const planes = this.planes, cameraPosition = this.cameraPosition, bounds = this.bounds, fold = this.payload.fold;
 		// the bands drawn: every batch's, or its first alone (`update`)
 		const caps = this.bands;
 		const K = Math.max( ...caps.map( ( c ) => c.length ) );
@@ -439,14 +406,14 @@ export class GrassCull {
 			const s = spheres.element( gi ).toVar();
 			let inside = s.w.greaterThanEqual( 0 );
 			for ( const p of planes ) inside = inside.and( dot( p.xyz, s.xyz ).add( p.w ).greaterThanEqual( s.w.negate() ) );
-			// the thin extra tufts have folded into their roots beyond thinFar
-			const o = origins.element( gi ).xyz;
-			const folded = ground.element( gi.mul( 3 ).add( 1 ) ).w.greaterThan( 0.5 ).and( length( cameraPosition.sub( o ) ).greaterThanEqual( thinFar.add( FOLD_PAD ) ) );
+			// (records the kind has folded away at this distance, the meadow's thin extra tufts)
+			if ( ! fold ) return inside;
+			const folded = fold.folded( gi, origins.element( gi ).xyz, cameraPosition, ( buffer ) => this.node( buffer, 'vec4', true ) );
 			return inside.and( folded.not() );
 
 		};
-		// A tuft's band: the last of its batch's bands whose cap holds the blades it keeps (the first
-		// when none does); K for a tuft not drawn.
+		// A record's band: the last of its batch's bands whose cap holds the parts it keeps (the
+		// first when none does); K for a record not drawn.
 		const bandOfTuft = ( g: THREE.Node<'uint'>, gi: THREE.Node<'uint'> ) => {
 
 			const blades = pick( g, ( _, k ) => float( this.batches[ k ].blades ) );
@@ -517,7 +484,7 @@ export class GrassCull {
 			const band = bandOf.element( gi ).toVar();
 			const result = scan( flags( band ) );
 			const inclusive = result.map( ( r ) => r.element( i ).toVar() );
-			// Per band, the tufts of the batch's earlier workgroups and of all of them: each thread
+			// Per band, the records of the batch's earlier workgroups and of all of them: each thread
 			// sums every GROUP-th workgroup's counts, then the workgroup reduces the sums.
 			const first = pick( g, ( b ) => b.groupStart ).toVar();
 			const end = pick( g, ( b ) => b.groupEnd ).toVar();
@@ -595,7 +562,7 @@ export class GrassCull {
 			// (the same array, so a new pool's size reaches both: an array is read at each dispatch,
 			// never part of the pipeline)
 			kernel.dispatchSize = this.dispatch;
-			kernel.setName( kernel === count ? 'Grass.CullCount' : 'Grass.CullScatter' );
+			kernel.setName( `${ this.name }.${ kernel === count ? 'CullCount' : 'CullScatter' }` );
 
 		}
 		return [ count, scatter ];
@@ -608,7 +575,7 @@ export class GrassCull {
 
 		if ( ! this.kernels ) {
 
-			// A band's draw starts at its first tuft's place through `firstInstance`, which an
+			// A band's draw starts at its first record's place through `firstInstance`, which an
 			// indirect draw honours only with this feature: without it each batch keeps its first band.
 			const backend = renderer.backend as unknown as { hasFeature?( name: string ): boolean };
 			if ( backend.hasFeature?.( 'indirect-first-instance' ) !== true ) for ( const r of this.ranges ) r.indirectOffsets.length = 1;
@@ -632,7 +599,7 @@ export class GrassCull {
 		for ( let i = 0; i < 16; i ++ ) check( i, e[ i ] );
 		check( 16, p[ 0 ] ); check( 17, p[ 5 ] ); check( 18, p[ 8 ] );
 		check( 19, p[ 9 ] ); check( 20, p[ 10 ] ); check( 21, p[ 14 ] );
-		check( 22, this.thinFar.value );
+		check( 22, this.payload.fold?.far.value ?? 0 );
 		check( 23, this.lod.on.value );
 		check( 24, this.lod.bands.value );
 		this.ranges.forEach( ( r, k ) => check( 25 + k, r.indexCount.value ) );
@@ -665,18 +632,5 @@ export class GrassCull {
 		this.planes[ k ].value.set( plane.normal.x, plane.normal.y, plane.normal.z, plane.constant );
 
 	}
-
-}
-
-/** The vertex stage's view of the culled buffers: `index` is the drawn tuft's slot. */
-export function cullInputs( cull: GrassCull, index: THREE.Node<'uint'> ) {
-
-	const ground = cull.node( 'ground', 'vec4', true );
-	return {
-		matrix: cull.node( 'matrices', 'mat4', true ).element( index ),
-		color: cull.node( 'colors', 'vec4', true ).element( index ).xyz,
-		ground: ( k: number ) => ground.element( index.mul( 3 ).add( k ) ),
-		origin: cull.node( 'origins', 'vec4', true ).element( index ),
-	};
 
 }

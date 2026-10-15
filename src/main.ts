@@ -34,7 +34,7 @@ import { worldJob, worldProgress, landOptions, landFraming, worldCacheOn } from 
 import { buildChunkBorders } from './debug/ChunkBorders.ts';
 import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
-import { buildGrass, plantGrass, setGrassQuality } from './world/Grass.ts';
+import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildFoliage, foliageKind } from './world/Foliage.ts';
 import { pickPlantSites, bakeAnchorContact } from './world/PlantSites.ts';
@@ -74,7 +74,6 @@ import { SCENE_RADIANCE_SCALE } from './lighting/Radiometry.ts';
 import { debugViewChoices, debugViewFromURL, installDebugView } from './post/graph/DebugView.ts';
 import { installVegetationPrepass } from './world/VegetationPrepass.ts';
 import { Vegetation } from './world/vegetation/Registry.ts';
-import { grassKind } from './world/vegetation/GrassKind.ts';
 import { installWindMotionFlag } from './world/WindMotion.ts';
 import { ISLANDER, ISLANDER_LOOKS } from './characters/looks.ts';
 import type { Game } from './game/Game.ts';

@@ -1,11 +1,11 @@
 import * as THREE from 'three/webgpu';
-import { materialColor, vec4, float, mix, dot, pow, clamp } from 'three/tsl';
+import { Fn, materialColor, vec4, float, mix, dot, pow, clamp } from 'three/tsl';
 import { setWindDisplacement, type WindDisplacement, type WindUniforms } from '../../weather/Wind.ts';
 import { showSway } from '../../debug/WindView.ts';
 import { followWindMotionFlag } from '../WindMotion.ts';
 import { VegetationLighting, useLighting } from '../VegetationLighting.ts';
 import { previousSway, useRestPoseShadows } from '../VegetationShadow.ts';
-import { ALPHA_TO_COVERAGE, markVegetation, useLeafCoverage } from './Coverage.ts';
+import { ALPHA_TO_COVERAGE, coverageDither, markVegetation, useLeafCoverage } from './Coverage.ts';
 import { LEAF_ALPHA_TEST, leafAlphaTexture } from './LeafTexture.ts';
 import type { Shared } from '../../shared.ts';
 
@@ -17,22 +17,28 @@ import type { Shared } from '../../shared.ts';
 //      filter read it) -> the leaf's coverage band under the temporal modes (`useLeafCoverage`)
 //   -> wetness (a tint and a roughness toward the wet surface's)
 //   -> the wind (`useVegetationMotion`: the displacement, the rest pose's shadow, the previous
-//      sway for motion vectors, the `flags.mv.wind` follower, the wind view)
+//      sway for motion vectors, a kind's own vertex work before its position, the
+//      `flags.mv.wind` follower, the wind view)
 //   -> the normal and ambient occlusion -> the light through thin leaves (VegetationLighting).
 // Families: 'leaf' (alpha-tested folded leaves: the rim bushes, the rim's trails, the plateau's
-// plants), 'blade' (grass blades: tagged as vegetation, no leaf map), 'petal' (the flowers) and
+// plants), 'blade' (the meadow's blades: tagged as vegetation, no leaf map, drawn whole or not at
+// all: alpha to coverage at 4x, else `coverageDither`'s threshold), 'petal' (the flowers) and
 // 'sod' (the turf skirt); neither of the last two is tagged, so they take the ordinary shadow
 // filter and stay out of the depth prepass. A leaf's `alphaTest: 'alphaOnly'` keeps no numeric
 // cut-out, as the rim's trails had when they cloned the bushes' material (three's NodeMaterial.copy
 // skips Material's alphaTest setter): the shadow passes and 4x cut them by their alpha alone.
 // The game's palm takes only the wind (`useVegetationMotion`) on its prop surface.
+// The meadow (Grass.ts) instances itself from the cull's storage buffers and widens its blades on
+// screen (`pixelWideBlade`) inside its own displacement; the factory only takes its hooks: its own
+// previous position (`previous`), its normal and instance colour (`beforePosition`) and its gloss
+// (`light.sheen`).
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 
 /** Light through a thin surface, beside the usual diffuse term (view space; VegetationLighting). */
-export type Transmission = ( L: V3, V: V3, N: V3 ) => F;
+export type Transmission = ( L: V3, V: V3, N: V3 ) => F | V3;
 
 /** The folded leaf's transmission: wrapped light (leaves scatter light round to the shadow side)
  * and a glow against the sun, strongest at the leaf's grazing rim. */
@@ -60,7 +66,20 @@ export function backlight( L: V3, V: V3, power: number ): F {
 export function useVegetationMotion( material: THREE.NodeMaterial, wind: WindUniforms, motion: VegetationMotion ): V3 {
 
 	const swayed = setWindDisplacement( material, motion.displacement, wind );
-	const rest = useRestPoseShadows( material, motion.rest, swayed, motion.castMask, previousSway( material, wind ) );
+	const previous = motion.previous ? motion.previous( swayed ) : previousSway( material, wind );
+	const rest = useRestPoseShadows( material, motion.rest, swayed, motion.castMask, previous );
+	const before = motion.beforePosition;
+	if ( before ) {
+
+		const placed = material.positionNode!;
+		material.positionNode = Fn( () => {
+
+			before();
+			return placed;
+
+		} )();
+
+	}
 	followWindMotionFlag( material );
 	const sway = motion.sway?.();
 	if ( sway ) showSway( material, sway, wind );
@@ -77,6 +96,12 @@ export interface VegetationMotion {
 	castMask?: F;
 	/** The plant's sway for the wind view (src/debug/WindView.ts), once the displacement is built. */
 	sway?: () => V2 | undefined;
+	/** The previous frame's position for the motion vectors, from the swayed pose; default the
+	 * displacement under the previous frame's wind (`previousSway`). */
+	previous?: ( swayed: V3 ) => V3 | undefined;
+	/** Vertex work run before the position is returned (assignments to `normalLocal`,
+	 * `instanceColor`): a kind that instances itself does three's instancing there. */
+	beforePosition?: () => void;
 }
 
 export interface VegetationLight {
@@ -84,6 +109,8 @@ export interface VegetationLight {
 	scale: F | ( () => F );
 	/** Light through the surface; a leaf's defaults to `leafTransmission`. */
 	extra?: Transmission;
+	/** A gloss beside the specular (VegetationLighting's `sheen`). */
+	sheen?: ( L: V3, V: V3, N: V3 ) => V3;
 }
 
 export interface VegetationOptions extends VegetationMotion {
@@ -123,7 +150,9 @@ export function vegetationMaterial( shared: Shared, options: VegetationOptions )
 
 	} else {
 
-		mat = new THREE.MeshStandardNodeMaterial( { vertexColors: options.vertexColors ?? false, side: THREE.DoubleSide, roughness: options.roughness, metalness: 0 } );
+		const blade = options.family === 'blade';
+		mat = new THREE.MeshStandardNodeMaterial( { vertexColors: options.vertexColors ?? false, side: THREE.DoubleSide, roughness: options.roughness, metalness: 0, alphaToCoverage: blade && ALPHA_TO_COVERAGE } );
+		if ( blade && ! ALPHA_TO_COVERAGE ) mat.alphaTestNode = coverageDither();
 
 	}
 	if ( options.family === 'leaf' || options.family === 'blade' ) markVegetation( mat );
@@ -141,7 +170,7 @@ export function vegetationMaterial( shared: Shared, options: VegetationOptions )
 	const light = typeof options.light === 'function' ? options.light( rest ) : options.light;
 	const extra = light.extra ?? leafTransmission;
 	const scale = light.scale;
-	useLighting( mat, () => new VegetationLighting( typeof scale === 'function' ? scale() : scale, extra ) );
+	useLighting( mat, () => new VegetationLighting( typeof scale === 'function' ? scale() : scale, extra, light.sheen ) );
 	if ( options.name ) mat.name = options.name;
 	return mat;
 

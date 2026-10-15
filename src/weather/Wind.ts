@@ -330,10 +330,17 @@ export function windDisplacement( material: { userData: Record<string, unknown> 
 
 }
 
+/** A hash of a plant's root (world x, z), 0..1. */
+export function rootHash( root: Node<'vec2'> ): Node<'float'> {
+
+	return fract( sin( dot( root, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
+
+}
+
 /** A hash of a plant's root (world x, z) to a phase, 0..2 pi. */
 export function rootPhase( root: Node<'vec2'> ): Node<'float'> {
 
-	return fract( sin( dot( root, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) ).mul( Math.PI * 2 );
+	return rootHash( root ).mul( Math.PI * 2 );
 
 }
 
