@@ -36,6 +36,7 @@ import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
+import { trackKeyRim } from './lighting/KeyRim.ts';
 import { buildTurfSkirt, turfSkirtKind } from './world/RimSkirt.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName, type LookSettings } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
@@ -325,6 +326,7 @@ function publishLighting(): void {
 	shared.sunDir.value.copy( sky.keyDir );
 	shared.sunColor.value.set( sky.keyColor.r, sky.keyColor.g, sky.keyColor.b );
 	shared.glintScale.value = sky.glintScale;
+	trackKeyRim( sky.sunColor, sky.keyColor );
 	const cosI = Math.max( sky.keyDir.y, 0 );
 	shared.sunIntoWater.value = sky.keyDir.y > 0 ? 1 - fresnel( cosI, 1.333 ) : 0;
 	const eta = 1 / 1.333;

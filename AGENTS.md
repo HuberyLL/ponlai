@@ -105,7 +105,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`Deform.ts`), the distance rule every kind thins by (`Lod.ts`), and the registry of the plant kinds the page's vegetation lists and the growth
   read (`Registry.ts`; each kind's entry exported by its own module).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
-  the refracted sun under water, the air/water interface, sky occlusion, the meadow's canopy light.
+  the refracted sun under water, the air/water interface, sky occlusion, the meadow's canopy light,
+  the key light's rim and backlight every lit material shares (`KeyRim.ts`: a new lit material,
+  an animal's or a building's, adds `keyRimLight` in its lighting model with its surface type's
+  parameters from `KEY_RIM`, never a rim of its own).
 - `src/materials/`: procedural textures, the terrain (`TerrainMaterial.ts`), wet surfaces.
 - `src/ocean/`: FFT ocean, shore waves, caustics, water shading (`Water.ts`), the storm sea.
 - `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, cirrus, the day cycle

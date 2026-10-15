@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, normalViewGeometry, cameraViewMatrix,
-	cameraPosition, specularColor, specularColorBlended, specularF90,
+	cameraPosition, specularColor, specularColorBlended, specularF90, diffuseColor,
 	normalize, abs, pow, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, exp, log2, select, dFdx, dFdy, length,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
@@ -12,6 +12,7 @@ import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGrou
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
 import { TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
+import { KEY_RIM, keyRimLight } from '../lighting/KeyRim.ts';
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
 import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
@@ -717,7 +718,8 @@ function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 }
 
 // Light below the surface: the sun path through the water column (with caustics) and the
-// dimmer, bluer ambient; above the water, a faint caustic shimmer reflected onto the rock.
+// dimmer, bluer ambient; above the water, a faint caustic shimmer reflected onto the rock and the
+// key light's rim (lighting/KeyRim.ts, the stone's surface).
 class TerrainLightingModel extends THREE.PhysicalLightingModel {
 
 	sunAtt: V3; ambMul: V3; specMul: V3;
@@ -740,10 +742,12 @@ class TerrainLightingModel extends THREE.PhysicalLightingModel {
 		// inside the cliff's own shadow along its creases. A surface facing away from the light
 		// cannot see it; fade the key light out over the last few degrees before the terminator.
 		const facing = smoothstep( 0, 0.06, dot( normalViewGeometry, lightDirection ) );
-		super.direct( { ...input,
-			lightDirection,
-			lightColor: ( input.lightColor as V3 ).mul( this.sunAtt ).mul( facing ),
-		}, builder );
+		const lightColor = ( input.lightColor as V3 ).mul( this.sunAtt ).mul( facing ).toVar();
+		super.direct( { ...input, lightDirection, lightColor }, builder );
+		// The key light's rim (KeyRim.ts) on the geometric normal: the detail normals' grazing
+		// texels would sparkle along every crease. None below the water, whose own surface lights it.
+		const above = select( this.underwater, float( 0 ), float( 1 ) );
+		( input.reflectedLight.directDiffuse as V3 ).addAssign( keyRimLight( lightColor.mul( above ), lightDirection, diffuseColor.rgb, KEY_RIM.stone, normalViewGeometry ) );
 
 	}
 

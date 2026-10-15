@@ -112,6 +112,10 @@ art decision changes; reference images stay out of the repository.
   afterglow, then green), never dipping below its night brightness; the light that holds it up is
   lent to the island alone. The
   sun and moon are drawn at twice their true size. The day cycle is authored, not astronomical.
+- Everything the key light falls on catches it along its silhouette, one shared rim and backlight
+  for plants, stone, figures and later animals and buildings: restrained by day, seen mostly
+  under a low sun from the side or against it; brighter than physics under the moon, a cool edge
+  on leaves, blades, stone and figures. In shadow the edge stays dark.
 - Bad weather dims and desaturates the existing light; it never adds a grey screen veil, and it
   stays dimmer and greyer than a clear day. Distant air leaves the island's foreground clear as
   the view pulls back. Sea fog is a low layer that may surround the island, never a uniform tint.
