@@ -25,14 +25,16 @@ import { runSteps } from '../Steps.ts';
 // Bands: a record far from the camera keeps only some of its parts (the meadow's blades, Grass.ts
 // `tuftLod`), the rest narrowed to degenerate triangles that would still run the vertex stage. So
 // each batch's visible records are sorted into a few bands by the parts they keep
-// (`CullBatchInput.caps`, say 16, 12, 8, 6 and 4 of a lawn tuft's 16 blades), each band drawn by its
+// (`CullBatchInput.caps`, say 16, 12, 8, 6, 4 and 2 of a lawn tuft's 16 blades), each band drawn by its
 // own indirect arguments with only its cap's parts: the band's records follow one another in the
 // batch's visible list, in slot order within the band, and its draw starts at its first through
 // `firstInstance` (the instance index the vertex stage reads includes it). The count pass decides
 // each record's band from the same count the vertex stage computes (`CullLod.count`) and keeps it
 // per slot (`bands`), so the scatter places every record by the decision the counts were made from.
-// Each workgroup counts its bands in two words of three 10-bit fields (a workgroup has at most 256
-// records in a band), scanned together. Without `indirect-first-instance` every batch has one band,
+// Each workgroup counts its bands in words of three 10-bit fields (a workgroup has at most 256
+// records in a band), as many words as its bands need, scanned together; the scatter sums the
+// earlier workgroups' counts one reduction at a time, so its workgroup memory stays under WebGPU's
+// default 16 KiB with up to MAX_BANDS bands. Without `indirect-first-instance` every batch has one band,
 // its first: its draw starts at 0.
 //
 // A kind is one pool (chunk design, section 8): a batch per sort of record (the meadow's lawn and
@@ -49,7 +51,9 @@ import { runSteps } from '../Steps.ts';
 //
 // Rules:
 // - Each record's sphere bounds every pose its vertex stage can give it (`CullPayload.sphere`: the
-//   meadow pads its tufts' rest boxes for the widening, the sway and standing water's sink).
+//   meadow pads its tufts' rest boxes for the widening, the sway and standing water's sink). Where
+//   the LOD widens the kept parts of a far record beyond what its sphere holds, the kernel adds
+//   that reach by its count (`CullLod.pad`); it is exactly 0 near, so near records test as before.
 // - The dispatch is skipped while the view and the part selection are unchanged.
 // - Without the prepass, or with coverage kept in its shaded draw, the image is that of a draw of
 //   every record to the byte; behind the prepass's opaque shaded draw a few isolated pixels
@@ -81,8 +85,8 @@ type UintMax = ( a: THREE.Node<'uint'>, b: THREE.Node<'uint'> ) => THREE.Node<'u
 const GROUP = 256;
 const LOG2_GROUP = 8;
 // A batch's bands at most, counted per workgroup in BAND_WORDS words of three 10-bit fields.
-export const MAX_BANDS = 6;
-const BAND_WORDS = 2;
+export const MAX_BANDS = 9;
+const BAND_WORDS = 3;
 const BAND_BITS = 10;
 
 type Storage<T extends StorageType = StorageType> = THREE.StorageBufferNode<T>;
@@ -127,6 +131,9 @@ export interface CullLod {
 	on: THREE.UniformNode<'float', number>;
 	/** 0 puts every visible record in its batch's first band (`flags.grassBands = false`, for A/Bs). */
 	bands: THREE.UniformNode<'uint', number>;
+	/** How far (m) a record's kept parts reach past its sphere when it keeps `count` of its `blades`
+	 * (the meadow's far tufts widen theirs further than their sphere's pad holds); 0 near. */
+	pad?: ( count: THREE.Node<'float'>, blades: THREE.Node<'float'> ) => THREE.Node<'float'>;
 }
 
 export interface CullRange {
@@ -401,11 +408,12 @@ export class VegetationCull<R> {
 
 		};
 
-		const isVisible = ( gi: THREE.Node<'uint'> ) => {
+		const isVisible = ( gi: THREE.Node<'uint'>, pad: THREE.Node<'float'> | null ) => {
 
 			const s = spheres.element( gi ).toVar();
 			let inside = s.w.greaterThanEqual( 0 );
-			for ( const p of planes ) inside = inside.and( dot( p.xyz, s.xyz ).add( p.w ).greaterThanEqual( s.w.negate() ) );
+			const radius = pad ? s.w.add( pad ).toVar() : s.w;
+			for ( const p of planes ) inside = inside.and( dot( p.xyz, s.xyz ).add( p.w ).greaterThanEqual( radius.negate() ) );
 			// (records the kind has folded away at this distance, the meadow's thin extra tufts)
 			if ( ! fold ) return inside;
 			const folded = fold.folded( gi, origins.element( gi ).xyz, cameraPosition, ( buffer ) => this.node( buffer, 'vec4', true ) );
@@ -418,15 +426,17 @@ export class VegetationCull<R> {
 
 			const blades = pick( g, ( _, k ) => float( this.batches[ k ].blades ) );
 			const floor = pick( g, ( _, k ) => float( this.batches[ k ].floor ) );
-			const count = this.lod.count( origins.element( gi ).xyz, cameraPosition, blades, floor, this.lod.on );
+			const count = this.lod.count( origins.element( gi ).xyz, cameraPosition, blades, floor, this.lod.on ).toVar();
 			const n = uint( ceil( count.sub( 0.001 ) ) ).toVar();
 			let band: THREE.Node<'uint'> = uint( 0 );
 			for ( let j = 1; j < K; j ++ ) band = band.add( select( pick( g, ( _, k ) => uint( caps[ k ][ j ] ?? 0 ) ).greaterThanEqual( n ), uint( 1 ), uint( 0 ) ) );
-			return select( isVisible( gi ), select( this.lod.bands.equal( uint( 1 ) ), band, uint( 0 ) ), uint( K ) );
+			const pad = this.lod.pad ? this.lod.pad( count, blades ) : null;
+			return select( isVisible( gi, pad ), select( this.lod.bands.equal( uint( 1 ) ), band, uint( 0 ) ), uint( K ) );
 
 		};
-		// The band as a one in its word's field (BAND_BITS each), one node per word.
-		const flags = ( band: THREE.Node<'uint'> ) => Array.from( { length: BAND_WORDS }, ( _, w ) => {
+		// The band as a one in its word's field (BAND_BITS each), one node per word the bands use.
+		const W = Math.ceil( K / 3 );
+		const flags = ( band: THREE.Node<'uint'> ) => Array.from( { length: W }, ( _, w ) => {
 
 			let word: THREE.Node<'uint'> = uint( 0 );
 			for ( let k = w * 3; k < Math.min( K, w * 3 + 3 ); k ++ ) word = word.add( select( band.equal( uint( k ) ), uint( 1 << ( BAND_BITS * ( k - w * 3 ) ) ), uint( 0 ) ) );
@@ -494,7 +504,7 @@ export class VegetationCull<R> {
 
 				const j = first.add( i ).add( pass.mul( GROUP ) ).toVar();
 				const at = ( min as unknown as UintMax )( j, this.lastGroup ).mul( BAND_WORDS );
-				const words = Array.from( { length: BAND_WORDS }, ( _, w ) => select( j.lessThan( end ), counts.element( at.add( w ) ), uint( 0 ) ).toVar() );
+				const words = Array.from( { length: W }, ( _, w ) => select( j.lessThan( end ), counts.element( at.add( w ) ), uint( 0 ) ).toVar() );
 				for ( let k = 0; k < K; k ++ ) {
 
 					const n = field( words[ Math.floor( k / 3 ) ], k ).toVar();
@@ -504,27 +514,30 @@ export class VegetationCull<R> {
 				}
 
 			} );
-			const M = 2 * K;
-			const sum = workgroupArray( 'uint', GROUP * M ) as unknown as Lanes;
-			for ( let k = 0; k < K; k ++ ) {
-
-				sum.element( i.mul( M ).add( k ) ).assign( earlier[ k ] );
-				sum.element( i.mul( M ).add( K + k ) ).assign( total[ k ] );
-
-			}
-			for ( let s = GROUP >> 1; s >= 1; s >>= 1 ) {
+			// (one reduction at a time over one array: both at once took 2 K words a thread, past the
+			// default workgroup memory with seven bands or more; the barrier first lets every thread read the
+			// last reduction's sums before they are overwritten)
+			const sum = workgroupArray( 'uint', GROUP * K ) as unknown as Lanes;
+			const reduce = ( values: THREE.Node<'uint'>[] ) => {
 
 				workgroupBarrier();
-				If( i.lessThan( uint( s ) ), () => {
+				for ( let k = 0; k < K; k ++ ) sum.element( i.mul( K ).add( k ) ).assign( values[ k ] );
+				for ( let s = GROUP >> 1; s >= 1; s >>= 1 ) {
 
-					for ( let m = 0; m < M; m ++ ) sum.element( i.mul( M ).add( m ) ).addAssign( sum.element( i.add( s ).mul( M ).add( m ) ) );
+					workgroupBarrier();
+					If( i.lessThan( uint( s ) ), () => {
 
-				} );
+						for ( let k = 0; k < K; k ++ ) sum.element( i.mul( K ).add( k ) ).addAssign( sum.element( i.add( s ).mul( K ).add( k ) ) );
 
-			}
-			workgroupBarrier();
-			const offset = Array.from( { length: K }, ( _, k ) => sum.element( uint( k ) ).toVar() );
-			const tufts = Array.from( { length: K }, ( _, k ) => sum.element( uint( K + k ) ).toVar() );
+					} );
+
+				}
+				workgroupBarrier();
+				return values.map( ( _, k ) => sum.element( uint( k ) ).toVar() );
+
+			};
+			const offset = reduce( earlier );
+			const tufts = reduce( total );
 			// each band's first place in the batch's list: after the bands before it
 			const bandStart: THREE.Node<'uint'>[] = [ uint( 0 ) ];
 			for ( let k = 1; k < K; k ++ ) bandStart.push( bandStart[ k - 1 ].add( tufts[ k - 1 ] ).toVar() );

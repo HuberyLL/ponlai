@@ -102,7 +102,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   and the vegetation tag (`Coverage.ts`), the folded leaf's textures (`LeafTexture.ts`), the
   instance pool (`Instances.ts`), the GPU cull of a storage-instanced kind, its payload declared by
   the kind (`VegetationCull.ts`, the meadow's), the wind's deforms and each kind's wind numbers
-  (`Deform.ts`), and the registry of the plant kinds the page's vegetation lists and the growth
+  (`Deform.ts`), the distance rule every kind thins by (`Lod.ts`), and the registry of the plant kinds the page's vegetation lists and the growth
   read (`Registry.ts`; each kind's entry exported by its own module).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the air/water interface, sky occlusion, the meadow's canopy light.
