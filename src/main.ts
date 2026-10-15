@@ -787,11 +787,17 @@ const viewDirection = new THREE.Vector3();
 // given), then a settle within the orbit's limits. At rest the pose depends only on the pivot, the
 // position and the limits, so a scene jump (`establishScene`) repeats it on a camera and controls
 // of its own with the page's limits, and its pose is the load's to the bit.
+// The default azimuth (180: the view looks along +z, about 23 degrees east of the meridian the sun
+// and the full moon culminate on) is fixed, never following the clock, so the R key always returns
+// to the same view. It was 318, looking away from the meridian: the morning sun lit the island
+// flat from behind the camera and the moon path never entered the frame. From 180 the full moon's
+// path is in view at 21:00 and at midnight, while the sun lights the cliffs from the side at 9:00
+// and 16:00 (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
 function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: URLSearchParams ): void {
 
 	const distance = options.has( 'dist' ) ? Number( options.get( 'dist' ) ) : 58 * landScale;
 	orbit.target.copy( target );
-	on.position.setFromSphericalCoords( distance, THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 50 ) ), THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 318 ) ) ).add( target );
+	on.position.setFromSphericalCoords( distance, THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 50 ) ), THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 180 ) ) ).add( target );
 	orbit.settle();
 
 }
@@ -1124,7 +1130,7 @@ postF.add( S, 'grain', 0, 0.05, 0.001 );
 function addLookControls( f: GUI, L: LookSettings ): void {
 
 	f.add( L, 'glow', 0, 1.5, 0.01 ).name( 'soft glow' ).listen();
-	f.add( L, 'glowThreshold', 0.1, 2, 0.01 ).name( 'glow from' ).listen();
+	f.add( L, 'glowThreshold', 0.05, 2, 0.01 ).name( 'glow from' ).listen();
 	f.add( L, 'glowRadius', 0, 1, 0.01 ).name( 'glow spread' ).listen();
 	f.add( L, 'glowWarmth', - 1, 1, 0.01 ).name( 'glow warmth' ).listen();
 	f.add( L, 'glowHalo', 0, 1, 0.01 ).name( 'glow into shade' ).listen();
@@ -1155,7 +1161,7 @@ const nightLookF = lookF.addFolder( 'Night' );
 nightLookF.add( S.night, 'bloomStrength', 0, 1.5, 0.01 ).name( 'bloom' );
 nightLookF.add( S.night, 'bloomThreshold', 0, 5, 0.01 ).name( 'bloom threshold' );
 nightLookF.add( S.night, 'glowStrength', 0, 1, 0.01 ).name( 'wide glow' );
-nightLookF.add( S.night, 'glowThreshold', 0, 3, 0.01 ).name( 'wide glow threshold' );
+nightLookF.add( S.night, 'glowThreshold', 0, 3, 0.005 ).name( 'wide glow threshold' );
 nightLookF.add( S.night, 'glowMaxLum', 0.5, 10, 0.1 ).name( 'wide glow clamp' );
 addLookControls( nightLookF, pipeline.lookNight );
 if ( DEBUG ) {

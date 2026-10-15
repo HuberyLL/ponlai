@@ -1,7 +1,7 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
-import { DayCycle, DAY_PRESETS, DAY_BLACK_LIFT, DAY_EXPOSURE_TRIM, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE } from '../src/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, DAY_BLACK_LIFT, DAY_EXPOSURE, DAY_EXPOSURE_TRIM, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE } from '../src/sky/DayCycle.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
@@ -50,7 +50,7 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	near( s.moonDir.length(), 1 );
 	near( s.keyDir.length(), 1 );
 	for ( const key of [ 'daylight', 'nightVisibility', 'nightAmbient', 'moonVisibility', 'moonIllumination', 'moonKeyGain' ] ) assert.ok( Number.isFinite( s[ key ] ) && s[ key ] >= 0 && s[ key ] <= 1, key );
-	assert.ok( s.exposure >= 2.6 * ( 1 - DAY_EXPOSURE_TRIM ) - 1e-12 && s.exposure <= NIGHT_EXPOSURE + 1e-12 );
+	assert.ok( s.exposure >= DAY_EXPOSURE * ( 1 - DAY_EXPOSURE_TRIM ) - 1e-12 && s.exposure <= NIGHT_EXPOSURE + 1e-12 );
 	assert.ok( s.blackLift >= 0.002 - 1e-12 && s.blackLift <= DAY_BLACK_LIFT + 1e-12 );
 	// The night's ambient arrives before the stars, across the band where the sun's sky fades.
 	assert.ok( s.nightAmbient >= s.nightVisibility );
@@ -95,13 +95,19 @@ for ( const hour of [ 0, 6, 12, 18, 24 ] ) {
 	near( before.overcastAdaptation, after.overcastAdaptation, 1e-4 );
 
 }
-cycle.setHour( 16 );
-for ( const phase of [ 0, 0.125, 0.25, 0.5, 0.75, 0.875, 1 ] ) {
+// The moon's orbit is tilted from the sun's about the east-west axis, so the phase's angular
+// separation holds exactly where the two orbits meet: at 6:00 and 18:00, with the sun on that axis.
+for ( const hour of [ 6, 18 ] ) {
 
-	cycle.moonPhase = phase;
-	const s = cycle.snapshot();
-	near( s.sunDir.dot( s.moonDir ), Math.cos( 2 * Math.PI * phase ) );
-	near( s.moonIllumination, ( 1 - Math.cos( 2 * Math.PI * phase ) ) / 2 );
+	cycle.setHour( hour );
+	for ( const phase of [ 0, 0.125, 0.25, 0.5, 0.75, 0.875, 1 ] ) {
+
+		cycle.moonPhase = phase;
+		const s = cycle.snapshot();
+		near( s.sunDir.dot( s.moonDir ), Math.cos( 2 * Math.PI * phase ) );
+		near( s.moonIllumination, ( 1 - Math.cos( 2 * Math.PI * phase ) ) / 2 );
+
+	}
 
 }
 // Every moon phase has a finite key throughout both handoffs, including the antipodal full
@@ -140,12 +146,35 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 	}
 
 }
+// The moon's authored orbit culminates at 37 degrees (the sun's 62 less its 25 degree tilt): a
+// waxing quarter at 18:00, a waning one at 6:00, a full moon at midnight.
 cycle.moonPhase = 0.25;
 cycle.setHour( 18 );
-near( cycle.snapshot().moonElevation, 62 );
+near( cycle.snapshot().moonElevation, 37 );
 cycle.moonPhase = 0.75;
 cycle.setHour( 6 );
-near( cycle.snapshot().moonElevation, 62 );
+near( cycle.snapshot().moonElevation, 37 );
+cycle.moonPhase = 0.5;
+cycle.setHour( 0 );
+near( cycle.snapshot().moonElevation, 37 );
+// A full moon still rises due east at 18:00, where the sun rose, and sets due west at 6:00, where
+// the sun set; through the night it stays above the horizon.
+for ( const [ hour, sunHour ] of [ [ 18, 6 ], [ 6, 18 ] ] ) {
+
+	cycle.setHour( sunHour );
+	const sun = cycle.snapshot().sunDir;
+	cycle.setHour( hour );
+	const s = cycle.snapshot();
+	near( s.moonElevation, 0, 1e-9 );
+	assert.ok( s.moonDir.distanceTo( sun ) < 1e-10 );
+
+}
+for ( let minute = 18 * 60 + 1; minute < 30 * 60; minute ++ ) {
+
+	cycle.setHour( minute / 60 );
+	assert.ok( cycle.snapshot().moonElevation > 0 );
+
+}
 cycle.moonPhase = - 0.25;
 near( cycle.moonPhase, 0.75 );
 cycle.moonPhase = 0.5;
@@ -166,8 +195,10 @@ assert.equal( night.daylight, 0 );
 assert.equal( night.nightVisibility, 1 );
 // About one and a half stops of adaptation (the midday trim adds a tenth of a stop), and the
 // night's own gain: the island reads at night while the night sky, whose own light scales back by
-// the adaptation's ratio, stays as dark as it was tuned but for that gain.
-assert.ok( night.exposure / day.exposure < 3 * NIGHT_EXPOSURE_GAIN );
+// the adaptation's ratio, stays as dark as it was tuned but for that gain. By day the default curve
+// ('neutral-hue', Pipeline.ts `looks`) adds 8 % that DAY_EXPOSURE takes back, and the night's
+// curve none, so the ratio is of the day's exposure with that 8 %.
+assert.ok( night.exposure / ( day.exposure * 1.08 ) < 3 * NIGHT_EXPOSURE_GAIN );
 // The night keeps only a trace of the day's black lift, so its blacks do not turn milky.
 assert.ok( night.blackLift < day.blackLift / 5 );
 night.sunDir.set( 0, 0, 0 );
