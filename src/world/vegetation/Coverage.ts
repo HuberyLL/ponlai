@@ -39,7 +39,7 @@ export function markVegetation( material: THREE.Material ): void {
 // The single-sample stand-in for alpha to coverage: a 4x4 Bayer threshold (16 levels, as many as
 // the hardware's 4x pattern gives). Like that pattern it is the same for every blade and leaf over a
 // pixel, so overlapping blades share their covered pixels rather than adding up: the soil and
-// the flowers keep showing through a stack of widened blades as they do at 4x. A hash per blade
+// the flower heads keep showing through a stack of widened blades as they do at 4x. A hash per blade
 // (alphaHash) drew independent pixels for each and closed the meadow over them.
 // Under the temporal modes the threshold steps through the pattern from frame to frame, the
 // pixel's Bayer value plus 5 times the jitter's dither index (Jitter.ts), mod 16: over 16 frames

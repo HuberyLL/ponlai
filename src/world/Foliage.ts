@@ -177,7 +177,7 @@ export const BUSH_POOL = new InstancePool( [
 	{ key: 'visibility', name: 'skyVisibility', itemSize: 1 },
 	// each bush's root in world space, where it leans from and reads the gust field
 	{ key: 'roots', name: 'bushRoot', itemSize: 4 },
-], { floor: BUSH_CAPACITY, grows: false } );
+], BUSH_CAPACITY );
 
 /** The bushes' instance arrays, as the mesh's buffers take them. */
 export type BushInstances = Instances<'colors' | 'visibility' | 'roots'>;

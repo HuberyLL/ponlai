@@ -37,8 +37,8 @@ import { runSteps } from '../Steps.ts';
 // default 16 KiB with up to MAX_BANDS bands. Without `indirect-first-instance` every batch has one band,
 // its first: its draw starts at 0.
 //
-// A kind is one pool (chunk design, section 8): a batch per sort of record (the meadow's lawn and
-// its thin extra tufts) holds every chunk's records in the chunks' order ( cj, ci ), as the
+// A kind is one pool (chunk design, section 8): a batch per sort of record (the meadow's lawn, its
+// thin extra tufts and its flowering tufts) holds every chunk's records in the chunks' order ( cj, ci ), as the
 // anchors come (ChunkMerge.ts), each drawn in one draw. The buffers hold a capacity, the next power
 // of two of the slots the batches fill; the dispatches cover the filled workgroups, and the slots
 // past them are never visible. A grown island's pool (World growth, Growth.ts) is a new pool: its
@@ -120,8 +120,9 @@ export interface CullBatchInput<R> {
 	/** The record's parts and the least share of them it keeps (`CullLod.count`). */
 	blades?: number; floor?: number;
 	/** The part counts of the batch's bands, descending (at most MAX_BANDS), and the indices of
-	 * one part: a band's draw takes its cap's parts. */
-	caps?: number[]; bladeIndices?: number;
+	 * one part: a band's draw takes its cap's parts, after `baseIndices` drawn by every band (a
+	 * part every record keeps whole: the meadow's flower heads). */
+	caps?: number[]; bladeIndices?: number; baseIndices?: number;
 }
 
 /** The part count the vertex stage keeps a record at (Grass.ts `tuftLod`), as a node: its anchor,
@@ -278,7 +279,7 @@ export class VegetationCull<R> {
 	private kernels: THREE.ComputeNode[] | null = null;
 	private readonly lastKey: Float64Array;
 	// each batch's record (parts, floor), band caps and indices per part
-	private readonly batches: { blades: number; floor: number; caps: number[]; bladeIndices: number; first: number }[];
+	private readonly batches: { blades: number; floor: number; caps: number[]; bladeIndices: number; baseIndices: number; first: number }[];
 	/** Debug diagnostics: views culled (dispatches) and updates skipped as unchanged, since load. */
 	readonly stats = { dispatches: 0, skipped: 0 };
 
@@ -299,7 +300,7 @@ export class VegetationCull<R> {
 		this.batches = batches.map( ( b ) => {
 
 			const blades = b.blades ?? 16, caps = ( b.caps ?? [ blades ] ).slice( 0, MAX_BANDS );
-			const batch = { blades, floor: b.floor ?? 0, caps, bladeIndices: b.bladeIndices ?? 1, first: draws };
+			const batch = { blades, floor: b.floor ?? 0, caps, bladeIndices: b.bladeIndices ?? 1, baseIndices: b.baseIndices ?? 0, first: draws };
 			draws += caps.length;
 			return batch;
 
@@ -554,10 +555,10 @@ export class VegetationCull<R> {
 
 				If( g.add( 1 ).equal( b.groupEnd ).and( b.groupEnd.greaterThan( b.groupStart ) ).and( i.equal( 0 ) ), () => {
 
-					const { first: draw, bladeIndices } = this.batches[ k ];
+					const { first: draw, bladeIndices, baseIndices } = this.batches[ k ];
 					caps[ k ].forEach( ( cap, j ) => {
 
-						const indexCount = j === 0 ? this.ranges[ k ].indexCount : ( min as unknown as UintMax )( uint( cap * bladeIndices ), this.ranges[ k ].indexCount );
+						const indexCount = j === 0 ? this.ranges[ k ].indexCount : ( min as unknown as UintMax )( uint( baseIndices + cap * bladeIndices ), this.ranges[ k ].indexCount );
 						args.element( uint( ( draw + j ) * 5 ) ).assign( indexCount );
 						args.element( uint( ( draw + j ) * 5 + 1 ) ).assign( tufts[ j ] );
 						args.element( uint( ( draw + j ) * 5 + 4 ) ).assign( bandStart[ j ] );

@@ -288,7 +288,7 @@ export function pickPlantSites( anchors: Float32Array, bushes: Float32Array, cle
 }
 
 /** Contact shade round the plants on the turf anchors' sky visibility (offset 8), which the grass
- * and wildflowers read as they are planted: 1 in the open, darker toward a stem. Indirect light
+ * reads as it is planted: 1 in the open, darker toward a stem. Indirect light
  * only; the plants' own sun shadows cover the direct. Under a shrub little sky gets through, a
  * tree's lifted crown leaves more of it. Call it after the plants are sited (they keep their
  * anchor's open-sky value) and before the meadow is planted; in steps, as `plantSiteSteps`.
@@ -296,7 +296,7 @@ export function pickPlantSites( anchors: Float32Array, bushes: Float32Array, cle
  * island mesh too): the island's meshes are the chunk workers' output, cached and swapped per
  * chunk where the land changed, and a bake on the page would tie an unchanged chunk's mesh to the
  * plants, and through them to the walking loop, so a grow would re-upload chunks it did not
- * change. The grass and flowers that cover most of that turf carry the shade. */
+ * change. The grass that covers most of that turf carries the shade. */
 export function* anchorContactSteps( anchors: Float32Array, sites: Float32Array ): Generator<void, void> {
 
 	const reach = ( k: number ) => sites[ k ] === PLANT_TREE ? 1.6 : sites[ k + 8 ] * 1.25 + 0.15;

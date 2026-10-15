@@ -70,8 +70,18 @@ art decision changes; reference images stay out of the repository.
   so from afar the meadow reads as one smooth carpet. By night the lawn is a dark blue-green, its
   blades lit only as the moon's own strength allows. Toward the coast the tufts grow taller and lean out over the lip
   instead of thinning, and the lip alternates between overgrown stretches and cut-open root soil.
-- Wildflowers are plants (daisy, umbel, spike, cup) with leaf rosettes, their heads just above the
-  sward, in beds of a few of one kind gathered in drifts, not coloured stars on the lawn.
+- Wildflowers are part of the meadow: heads (a hand across at most: large enough that the game's
+  close view reads them as flowers, not dots) on some of its tufts, about at the blades' tips,
+  some partly hidden among them, with no stem or leaves showing. They are a warm temperate
+  coast's: pinks, wild chrysanthemums (yellow, a few white), daylilies, dandelions, violets and a
+  few balloon flowers, all in flower at once, the year round: the island's sign of an immortals'
+  land. Each grows in patches of its own where its habitat is, dense at the centre and thinning
+  to the edge, with almost no flowers between: a broken band of pink along the cliff's edge,
+  chrysanthemums on the grass in from it, orange daylilies where the ground is damp, yellow and
+  violet in the short turf. Colours are soft rather than vivid, and no head (white and yellow
+  least of all) outshines the lawn; never a scatter of mixed colours over the lawn, which reads as
+  confetti. They sway with the grass, and from afar they are fine coloured specks in it, gathered
+  in patches, not coloured stars or blots on the lawn.
 - The terrain plants the meadow (grass, wildflowers), the rim bushes, the rim's hanging growth and,
   on the plateau, loose groups of round shrubs (up to about head height), broad-leaved clumps and
   ferns, with a few small trees (2.5 - 3.5 m, a forked grey-brown trunk under clustered crowns),

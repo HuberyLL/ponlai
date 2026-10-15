@@ -208,7 +208,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `windView` makes the vegetation's wind visible (debug pages only; read at load, so without it
   no shader changes; `src/debug/WindView.ts`): flat unlit arrows every 2 m over the meadow, just
   above the grass, point where the local wind blows (the eddies' veer included), longer in a
-  gust and brighter with the lean it gives; and every plant (grass, flowers, rim bushes, rim
+  gust and brighter with the lean it gives; and every plant (grass and its flowers, rim bushes, rim
   trails, turf skirt, the game's palm) is drawn unlit in the colour of its current sway s (tip
   offset over height): the hue is s's angle from the mean wind on a cyclic map (downwind blue,
   upwind orange, left of the wind, counter-clockwise seen from above, magenta, right of it green),
@@ -1001,7 +1001,9 @@ probe eval of one's own.
 - `tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]` (plain `node`) builds
   every chunk of whole islands on a pool of worker threads (`buildChunk`, contact shade off) and
   checks the statistics of the union of what they own, with the bounds the look was tuned on: the
-  meadow's anchors, tufts and flowers per m^2 against M2 (grown islands summed, 5 %); the rim's
+  meadow's anchors, tufts and flowering tufts per m^2 against M2 (grown islands summed, 5 %; the
+  flowers also printed by species, and `--flowers <dir>` writes each island's turf anchors and
+  flowering tufts as JSON to map them); the rim's
   trail patches (1 - 9 strands, no node below a quarter of its root's height, bare runs of median
   0.4 - 4 m and at most 4 m), bushes, strands and hanging length against M3 (10 %); the stones'
   overlaps, crowns and reach per island, and over seeds 1 - 6 at steps 0, 8, 16 their classes and

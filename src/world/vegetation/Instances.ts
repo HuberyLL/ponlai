@@ -1,19 +1,14 @@
 import * as THREE from 'three/webgpu';
 
-// The instance store of the instanced vegetation kinds (the rim bushes, Foliage.ts; the flowers,
-// Flowers.ts): one `InstancePool` per kind, which names the kind's per-instance buffers beside the
-// matrices and keeps its capacity rule, and every write into those buffers goes through it. The
-// kind keeps its geometry, material and placement; the pool keeps the buffers.
+// The instance store of an instanced vegetation kind (today the rim bushes, Foliage.ts): one
+// `InstancePool` per kind, which names the kind's per-instance buffers beside the matrices and
+// keeps its capacity, and every write into those buffers goes through it. The kind keeps its
+// geometry, material and placement; the pool keeps the buffers.
 // - Capacity: an instanced mesh's buffers hold a capacity, not the count, so a grown island's
 //   instances are written into the same mesh (`set`) and draw with the pipeline it drew with. Up to
 //   1024 instances three keeps the matrices in a uniform array of exactly the capacity, which the
-//   shader names; over 1024 in an instanced attribute, whose shader does not name the count. So a
-//   kind's capacities stay on one side of 1024: a fixed pool (`grows: false`) holds `floor`
-//   instances whatever the land (at most 1024: the bushes) and draws only the first `floor` of a
-//   larger land (warned); a growing pool (`grows: true`) holds at least `floor`, else the next power
-//   of two of twice the count (`floor` over 1024: the flowers), and a land that outgrows a mesh gets
-//   a new mesh of the same material and layout (`replacement`, made and compiled ahead of the swap,
-//   then put in its predecessor's place by `replace`).
+//   shader names, so a pool holds `capacity` instances (at most 1024) whatever the land and draws
+//   only the first `capacity` of a larger land (warned).
 // - Writes (`writes`, `set`): each buffer's used part, from its start; the update range covers the
 //   values written (at least one item), the count follows, and the mesh's box and sphere are cleared
 //   or set to the box found ahead (`box`: InstancedMesh.computeBoundingBox's, found in the
@@ -36,32 +31,22 @@ type Write = [ THREE.BufferAttribute, Float32Array ];
 export class InstancePool<K extends string> {
 
 	readonly attributes: readonly InstanceAttribute<K>[];
-	readonly floor: number;
-	readonly grows: boolean;
+	readonly capacity: number;
 
-	constructor( attributes: readonly InstanceAttribute<K>[], options: { floor: number; grows: boolean } ) {
+	constructor( attributes: readonly InstanceAttribute<K>[], capacity: number ) {
 
-		if ( options.grows ? options.floor <= 1024 : options.floor > 1024 ) throw new RangeError( `InstancePool: a ${ options.grows ? 'growing' : 'fixed' } pool of ${ options.floor } would cross 1024 instances` );
+		if ( capacity > 1024 ) throw new RangeError( `InstancePool: a pool of ${ capacity } would cross 1024 instances` );
 		this.attributes = attributes;
-		this.floor = options.floor;
-		this.grows = options.grows;
+		this.capacity = capacity;
 
 	}
 
-	/** The capacity of a mesh made for `count` instances. */
-	capacity( count: number ): number {
-
-		return this.grows ? Math.max( this.floor, 2 ** Math.ceil( Math.log2( Math.max( 2 * count, 1 ) ) ) ) : this.floor;
-
-	}
-
-	/** How many of `count` instances a fixed pool draws (all of them in a growing one); `what` names
-	 * the kind in the warning. */
+	/** How many of `count` instances the pool draws; `what` names the kind in the warning. */
 	fit( count: number, what: string ): number {
 
-		if ( this.grows || count <= this.floor ) return count;
-		console.warn( `${ count } ${ what }: only the first ${ this.floor } are drawn` );
-		return this.floor;
+		if ( count <= this.capacity ) return count;
+		console.warn( `${ count } ${ what }: only the first ${ this.capacity } are drawn` );
+		return this.capacity;
 
 	}
 
@@ -145,30 +130,6 @@ export class InstancePool<K extends string> {
 
 		}
 		return box;
-
-	}
-
-	/** Null when `instances` fit `mesh`, else a new mesh holding them, made by `make` for the pool's
-	 * capacity of their count, with its box (to compile ahead, then `replace`). */
-	replacement( mesh: THREE.InstancedMesh, instances: Instances<K>, make: ( capacity: number ) => THREE.InstancedMesh ): THREE.InstancedMesh | null {
-
-		if ( instances.count <= mesh.instanceMatrix.count ) return null;
-		const next = make( this.capacity( instances.count ) );
-		next.computeBoundingBox();
-		return next;
-
-	}
-
-	/** Puts `next` in `mesh`'s place among its parent's children (the meshes draw in that order),
-	 * drawing with the material `mesh` drew with. Returns `mesh`, to dispose of once nothing draws it. */
-	static replace( mesh: THREE.InstancedMesh, next: THREE.InstancedMesh ): THREE.InstancedMesh {
-
-		const parent = mesh.parent!;
-		next.material = mesh.material;
-		parent.children[ parent.children.indexOf( mesh ) ] = next;
-		next.parent = parent;
-		mesh.parent = null;
-		return mesh;
 
 	}
 

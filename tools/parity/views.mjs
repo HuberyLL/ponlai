@@ -4,7 +4,7 @@
 // island's bounds and height grid as the camera's ground holds them (`controls.ground`,
 // IslandGround: made from the chunks' meshes in the workers, so the page's meshes and their
 // vertices are never read and a build that simplifies the drawn meshes frames alike), the plant
-// sites (the first rim bush where there are none), the flower instances, the rim trails, the
+// sites (the first rim bush where there are none), the meadow's flower heads, the rim trails, the
 // islander and the sun and moon, so they follow any land, as tools/profile-frame.mjs places its
 // scenes.
 //
@@ -143,11 +143,10 @@ const coast = ( y0 ) => cells( ( x, y, z, i, k ) => { if ( y < y0 + 0.3 ) return
 	if ( ! o ) return null; const p = V( x + o[ 0 ] * CELL, y0, z + o[ 1 ] * CELL ); return facing( p, o ) ? { p, o } : null; } );
 const nearestTree = () => { const t = sites.filter( ( x ) => x.kind === 'tree' ).map( ( x ) => ( { x, d: dist( V( x.x, x.y + x.height * 0.7, x.z ) ) } ) )
 	.filter( ( e ) => inner( project( V( e.x.x, e.x.y + e.x.height * 0.7, e.x.z ) ) ) ).sort( ( a, b ) => a.d - b.d ); return t[ 0 ]?.x; };
-const flowerBeds = () => { const m = new s.camera.matrixWorld.constructor(), v = V( 0, 0, 0 ), bins = new Map();
-	for ( const mesh of s.flowers.children ) { if ( ! mesh.isInstancedMesh ) continue; mesh.updateWorldMatrix( true, false );
-		for ( let i = 0; i < mesh.count; i ++ ) { mesh.getMatrixAt( i, m ); v.setFromMatrixPosition( m ).applyMatrix4( mesh.matrixWorld );
-			const key = Math.floor( v.x / 2 ) + ',' + Math.floor( v.z / 2 ); const b = bins.get( key ) ?? { n: 0, x: 0, y: 0, z: 0 };
-			b.n ++; b.x += v.x; b.y += v.y; b.z += v.z; bins.set( key, b ); } }
+const flowerBeds = () => { const bins = new Map();
+	for ( const [ x, y, z ] of s.grass.userData.flowerHeads() ) {
+			const key = Math.floor( x / 2 ) + ',' + Math.floor( z / 2 ); const b = bins.get( key ) ?? { n: 0, x: 0, y: 0, z: 0 };
+			b.n ++; b.x += x; b.y += y; b.z += z; bins.set( key, b ); }
 	return [ ...bins.values() ].map( ( b ) => ( { n: b.n, p: V( b.x / b.n, b.y / b.n + 0.25, b.z / b.n ) } ) ); };
 const bone = ( name ) => { const b = s.characters.walker.group.getObjectByName( name ); return b ? b.getWorldPosition( V( 0, 0, 0 ) ) : null; };
 const keyDir = () => s.sky.sunDir.y > 0.02 ? s.sky.sunDir : s.sky.moonDir;
@@ -157,7 +156,7 @@ const ANCHORS = {
 	'meadow-near': () => meadowAt( 5, 2.5, 20 ),
 	'meadow-band-40m': () => meadowAt( 40, 34, 46 ),
 	'meadow-band-70m': () => meadowAt( 70, 62, 80 ),
-	// the flower bed nearest the camera with a few heads in it
+	// the nearest 2 m cell of the meadow with a few flower heads in it
 	'flowers': () => pick( flowerBeds().filter( ( b ) => b.n >= 4 && dist( b.p ) < 90 ).map( ( b ) => ( { p: b.p, score: dist( b.p ) - b.n * 0.05 } ) ), clearView ),
 	// the nearest stretch of the lip (with its turf skirt and trails) facing the camera
 	'rim-lip': () => pick( lips().map( ( c ) => ( { p: c.p, score: dist( c.p ) } ) ).filter( ( c ) => c.score > 4 ) ),
@@ -293,13 +292,12 @@ export const VIEWS = {
 	'islander-close': { group: 'taa', q: 'weather=fair&preset=noon', eval: `${ ISLANDER }
 		s.controls.minDistance = 2; s.controls.target.copy( c ); s.camera.position.set( c.x + 3.2, c.y + 2.4, c.z + 3.6 ); s.camera.lookAt( c ); ( s.controls.settle ?? s.controls.update ).call( s.controls );`,
 	crops: [ 'islander-head', 'islander-hands', 'meadow-near' ] },
-	// 1.2 m over the densest flower drift (3 m cells of the flower instances), looking 35 degrees down
+	// 1.2 m over the densest flowers (3 m cells of the meadow's flower heads), looking 35 degrees down
 	// and away from the island's centre
-	'flowers-close': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(); const m = new s.camera.matrixWorld.constructor(), v = s.camera.position.clone(), bins = new Map();
-		for ( const mesh of s.flowers.children ) { if ( ! mesh.isInstancedMesh ) continue; mesh.updateWorldMatrix( true, false );
-			for ( let i = 0; i < mesh.count; i ++ ) { mesh.getMatrixAt( i, m ); v.setFromMatrixPosition( m ).applyMatrix4( mesh.matrixWorld );
-				const key = Math.floor( v.x / 3 ) + ',' + Math.floor( v.z / 3 ); const e = bins.get( key ) ?? { n: 0, x: 0, y: 0, z: 0, key };
-				e.n ++; e.x += v.x; e.y += v.y; e.z += v.z; bins.set( key, e ); } }
+	'flowers-close': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(), bins = new Map();
+		for ( const [ x, y, z ] of s.grass.userData.flowerHeads() ) {
+				const key = Math.floor( x / 3 ) + ',' + Math.floor( z / 3 ); const e = bins.get( key ) ?? { n: 0, x: 0, y: 0, z: 0, key };
+				e.n ++; e.x += x; e.y += y; e.z += z; bins.set( key, e ); }
 		const best = [ ...bins.values() ].sort( ( a, c ) => c.n - a.n || ( a.key < c.key ? - 1 : 1 ) )[ 0 ];
 		const f = [ best.x / best.n, best.y / best.n, best.z / best.n ];
 		let dx = f[ 0 ] - b.cx, dz = f[ 2 ] - b.cz; const len = Math.hypot( dx, dz ) || 1; dx /= len; dz /= len;
