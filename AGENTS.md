@@ -95,7 +95,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`,
   `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled on the GPU
   by `vegetation/VegetationCull.ts`), flowers, the rim bushes (`FoliageSites.ts`, `Foliage.ts`), the plateau's shrubs and small trees (sited on the page off the walking loop by
-  `PlantSites.ts`, grown each from its seed and merged into one mesh by `Plants.ts`), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
+  `PlantSites.ts`, grown each from its seed and merged into one geometry by `Plants.ts`, its far plants drawn with a share of their leaves), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
   vegetation's depth prepass
   (`VegetationPrepass.ts`); what the vegetation's materials share in `src/world/vegetation/`: the
   material factory every plant kind builds with (`Material.ts`), the coverage paths

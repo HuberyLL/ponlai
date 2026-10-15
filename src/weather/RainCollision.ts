@@ -117,8 +117,9 @@ export class RainCollision {
 		for ( const root of roots ) root.traverse( ( object ) => {
 
 			const mesh = object as THREE.Mesh;
-			// (a vegetation mesh's depth prepass copy, VegetationPrepass.ts, prints the same shape)
-			if ( ! mesh.isMesh || ( mesh as THREE.SkinnedMesh ).isSkinnedMesh || ! object.visible || mesh.userData.prepassCopy ) return;
+			// (a vegetation mesh's depth prepass copy, VegetationPrepass.ts, prints the same shape; a
+			// mesh marked `rainBake: false` leaves its shape to another, as the plants' near meshes do)
+			if ( ! mesh.isMesh || ( mesh as THREE.SkinnedMesh ).isSkinnedMesh || ! object.visible || mesh.userData.prepassCopy || mesh.userData.rainBake === false ) return;
 			seen.add( mesh );
 			const instanced = mesh as THREE.InstancedMesh;
 			const proxy = this.proxyOf( mesh );
