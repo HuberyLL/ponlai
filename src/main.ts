@@ -999,7 +999,7 @@ antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)'
 } );
 // The temporal resolve's knobs (TemporalAA.ts), live: the tier's `taa` table is where they start. A
 // change restarts the rest of a paused scene (the rest's key holds them).
-// FSR 3's sharpness (RCAS: 0 none, 1 the most), live: a change restarts its rest
+// FSR 3's sharpness (RCAS: 0 the least, 1 the most), live: a change restarts its rest
 if ( pipeline.fsr3 ) antialiasingF.add( pipeline.fsr3.settings.fsr3, 'sharpness', 0, 1, 0.01 ).name( 'FSR sharpness' );
 if ( pipeline.temporal ) {
 
