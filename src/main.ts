@@ -16,7 +16,7 @@ import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, isParkedWeather, type WeatherName } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
-import { Wind } from './weather/Wind.ts';
+import { Wind, weatherWind } from './weather/Wind.ts';
 import { Rain, setRainShading } from './weather/Rain.ts';
 import { OceanFFT } from './ocean/OceanFFT.ts';
 import { ShoreWaves } from './ocean/ShoreWaves.ts';
@@ -227,7 +227,7 @@ if ( loaded.preset ) dayCycle.setPreset( loaded.preset );
 let manualSun = false;
 let paused = loaded.paused;
 let simTime = loaded.time;
-const wind = new Wind( shared.wind, { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
+const wind = new Wind( shared.wind, { ...weatherWind( weather.state ), time: simTime } );
 // Across a cut of the temporal modes' history (Motion.ts) the vegetation's wind has no motion either:
 // its previous state becomes the current one.
 if ( TEMPORAL ) onTaaCut( () => wind.cut() );
@@ -401,8 +401,10 @@ shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill );
 const textures = await bakeProceduralTextures( renderer );
 // Recover mid-scale wave volume through wind/fetch, while the spectrum still filters fine crests.
 // Keep the swell broad and modest so it supports the body without becoming a dominant wave train.
+// The spectrum's wind is the weather's (Wind.ts `spectrumWind`); a weather change scales its
+// amplitudes (`oceanGain`, below in the frame loop) and never rebuilds it.
 const fft = new OceanFFT( renderer, {
-	windSpeed: 3.8, windDirection: 40, fetch: 3500, amplitude: 0.76, choppiness: 0.55, spread: 0.52,
+	...wind.spectrumWind, fetch: 3500, amplitude: 0.76, choppiness: 0.55, spread: 0.52,
 	swell: { height: 0.18 }, anisotropy: quality.water.fftAnisotropy,
 } );
 const caustics = new Caustics( renderer, fft );
@@ -1432,7 +1434,7 @@ function tick( time: number ): void {
 	pipeline.air.keyDir.value.copy( sky.keyDir );
 	pipeline.air.keyColor.value.copy( sky.keyColor ).multiplyScalar( 1 - THREE.MathUtils.smoothstep( sky.clouds.coverage.value, 0.7, 0.97 ) );
 	pipeline.shafts.setSun( sky.sunDir, sky.sunColor );
-	wind.update( paused ? 0 : dt, sky.weather.windSpeed, sky.weather.windDirection );
+	wind.update( paused ? 0 : dt, weather.state.windSpeed, weather.state.windDirection, weather.state.gustiness );
 	// Lightning follows the scene clock, so a paused frame holds its strike; it lights the clouds'
 	// march below, so it goes first.
 	// (the scene's render size: the canvas is larger while the frame is upscaled)
@@ -1730,7 +1732,7 @@ const setTime = ( t: number ) => {
 
 	if ( ! Number.isFinite( t ) || t < 0 ) throw new RangeError( 'Scene time must be finite and non-negative' );
 	simTime = t;
-	wind.reset( { speed: sky.weather.windSpeed, heading: sky.weather.windDirection, time: t } );
+	wind.reset( { ...weatherWind( weather.state ), time: t } );
 	sceneEvent( 'seek' );
 	return refreshEnvironment();
 
@@ -1810,7 +1812,7 @@ const establishScene = async ( scene: string | URLSearchParams | { weather?: Wea
 		if ( options.time !== undefined ) simTime = options.time;
 
 	}
-	wind.reset( { speed: weather.state.windSpeed, heading: weather.state.windDirection, time: simTime } );
+	wind.reset( { ...weatherWind( weather.state ), time: simTime } );
 	sky.lightning.reset();
 	stormSea.reset();
 	characters?.reset();
@@ -2048,7 +2050,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
-	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, sky, fft, establishScene, data: () => shownData, vegetation }, options ),
+	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, vegetation }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes
 	growth: Object.assign( growth, { fieldBytes: () => fields.bytes() } ),
 	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),

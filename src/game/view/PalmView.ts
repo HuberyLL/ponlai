@@ -215,8 +215,8 @@ function palmMaterial(): THREE.MeshStandardNodeMaterial {
 			const lively = wind.breeze.mul( field.w.mul( 0.4 ).add( 0.2 ) );
 			// each frond swings and lifts on its own phase, its tip the most: a small motion on the
 			// palm's sway, which it shares with its neighbours
-			const swing = wave( wind.flutter, 0.7, sway.z ).mul( 0.6 ).add( wave( wind.flutter, 1.13, sway.z.mul( 1.9 ) ).mul( 0.4 ) );
-			const toss = wave( wind.flutter, 0.53, sway.z.mul( 2.3 ) ).mul( 0.5 ).add( 0.35 );
+			const swing = wave( wind.clock, 0.7, sway.z ).mul( 0.6 ).add( wave( wind.clock, 1.13, sway.z.mul( 1.9 ) ).mul( 0.4 ) );
+			const toss = wave( wind.clock, 0.53, sway.z.mul( 2.3 ) ).mul( 0.5 ).add( 0.35 );
 			const frond = vec3( 0, swing.mul( 0.8 ), 0 ).add( along.mul( toss ) ).add( across.mul( swing.mul( 0.5 ) ) ).mul( sway.y.mul( lively ) );
 			return bent.position.add( frond );
 

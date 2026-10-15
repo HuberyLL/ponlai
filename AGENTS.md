@@ -110,7 +110,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/ocean/`: FFT ocean, shore waves, caustics, water shading (`Water.ts`), the storm sea.
 - `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, cirrus, the day cycle
   (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), weather presets.
-- `src/weather/`: wind (`Wind.ts`: the one wind field all vegetation moves in), lightning, rain,
+- `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
+  one wind field all vegetation moves in), lightning, rain,
   puddles, distant air and sea fog (`AerialPerspective.ts`).
 - `src/post/`: the frame's passes, tone curve and look (`Pipeline.ts`), light shafts
   (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,

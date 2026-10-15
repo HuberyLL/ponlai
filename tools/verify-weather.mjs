@@ -152,7 +152,7 @@ try {
 			const wind = s.shared.wind;
 			state.coupling = {
 				wind: wind ? { direction: wind.direction.value.toArray(), velocity: wind.velocity.value.toArray(),
-					strength: wind.strength.value, phase: wind.phase.value, oceanGain: wind.oceanGain.value.toArray() } : null,
+					breeze: wind.breeze.value, travel: wind.displacement.value.length(), oceanGain: wind.oceanGain.value.toArray() } : null,
 				rain: s.rain ? { amount: s.rain.uniforms.rain.value, wind: s.rain.uniforms.wind.value.toArray(),
 					visible: s.rain.mesh.visible, count: s.rain.mesh.count } : null,
 				wetness: scalar( s.shared.wetness ?? s.shared.rainWetness ),
@@ -246,7 +246,7 @@ try {
 	report.checks.push( 'Rain remains finite and visibly differentiated between afternoon and night' );
 
 	if ( coupling ) {
-		assert.ok( rain.coupling.wind.strength > clear.coupling.wind.strength, 'Weather must strengthen vegetation wind' );
+		assert.ok( rain.coupling.wind.breeze > clear.coupling.wind.breeze, 'Weather must strengthen vegetation wind' );
 		assert.ok( rain.coupling.fftGain.every( ( gain, i ) => gain > clear.coupling.fftGain[ i ] ), 'Weather must change actual wave output' );
 		assert.equal( rain.coupling.spectrumRevision, clear.coupling.spectrumRevision, 'Weather must not rebuild the CPU spectrum for each preset' );
 		const before = rain.weather.wetness;
@@ -271,7 +271,7 @@ try {
 	report.transition = await page.evaluate( async () => {
 		const s = window.__PONLAI__;
 		const take = () => ( { elapsed: performance.now(), hour: s.dayCycle.hour, weather: s.weather.snapshot(),
-			progress: s.weather.progress, target: s.weather.target, keyColor: s.sky.keyColor.toArray(), windPhase: s.shared.wind?.phase.value } );
+			progress: s.weather.progress, target: s.weather.target, keyColor: s.sky.keyColor.toArray(), windTravel: s.shared.wind?.displacement.value.length() } );
 		await s.setWeather( 'rain', 5 );
 		const towardRain = [ take() ];
 		while ( performance.now() - towardRain[ 0 ].elapsed < 1600 ) {
@@ -305,7 +305,7 @@ try {
 	assert.ok( luma( transition.towardRain.at( - 1 ).keyColor ) < luma( transition.towardRain[ 0 ].keyColor ) * 0.99, 'The live transition must reach rendered lighting, not only CPU weather state' );
 	near( transition.towardClear.at( - 1 ).progress, 1, 1e-8, 'Interrupted transition must finish' );
 	near( transition.towardClear.at( - 1 ).weather.coverage, clear.weather.coverage, 1e-6, 'Clear endpoint coverage' );
-	if ( coupling ) assert.ok( transition.towardClear.at( - 1 ).windPhase > transition.towardRain[ 0 ].windPhase, 'Wind animation must advance independently of celestial time' );
+	if ( coupling ) assert.ok( transition.towardClear.at( - 1 ).windTravel > transition.towardRain[ 0 ].windTravel, 'Wind animation must advance independently of celestial time' );
 	await page.keyboard.press( 'Space' );
 	await page.evaluate( () => window.__PONLAI__.refreshEnvironment() );
 	await frames();
