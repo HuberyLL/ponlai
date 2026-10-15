@@ -402,6 +402,7 @@ setStatus( 'Lighting the sky…' );
 await refreshEnvironment();
 mark( 'sky' );
 shared.skyIrradianceSource = sky.irradianceNode.mul( shared.skyFill );
+shared.islandIrradianceSource = sky.islandIrradianceNode.mul( shared.skyFill );
 
 const textures = await bakeProceduralTextures( renderer );
 // Recover mid-scale wave volume through wind/fetch, while the spectrum still filters fine crests.

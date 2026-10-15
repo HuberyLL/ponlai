@@ -15,8 +15,9 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 // starlight. Under a high sun it is trimmed (DAY_EXPOSURE_TRIM), so the midday meadow and sky sit
 // in the soft upper middle of the range rather than near its top; the trim fades out as the
 // low-sun adaptation takes over, so sunrise, sunset and the night keep their exposure.
-// The night ambient rises as the sun's skylight fades after sunset, so twilight is never
-// darker than the night; the night sky's own light (stars, airglow, moon disk, the sky's night
+// The night ambient rises as the sun's skylight fades after sunset, and the moon's key comes in
+// as soon as the handoff has turned it (MOON_KEY_TOP), so twilight is never darker than the
+// night; the night sky's own light (stars, airglow, moon disk, the sky's night
 // floor, clouds) scales back to keep its tuned look in deep night (Sky.track). The night is
 // art-directed, not a simulation of the eye's night vision (docs/art-direction.md).
 
@@ -112,6 +113,9 @@ export const DAY_EXPOSURE_TRIM = 0.08;
 // Highest elevation (degrees) at which the key may turn from the sun toward the moon: below the
 // end of the sun's fade as its drawn disk sinks into the sea (see Atmosphere.sunlightAt).
 const HANDOFF_TOP = - 0.7;
+// Elevation (degrees) at which the moon's key starts to rise, in full two degrees lower: the
+// handoff has just turned the key to the moon, so it turns through zero light (HANDOFF_TOP to here).
+const MOON_KEY_TOP = - 2.5;
 
 function finite( value: number, name: string ): number {
 
@@ -272,7 +276,10 @@ export class DayCycle {
 			moonPhase: this.phase,
 			moonIllumination,
 			moonVisibility,
-			moonKeyGain: ( 1 - smoothstep( - 7, - 3, elevation ) ) * moonVisibility * moonIllumination,
+			// The moon's key comes in as soon as the handoff has turned it (from MOON_KEY_TOP), not
+			// four degrees later: between the sun's last light and the night's ambient the meadow
+			// fell to about half its night brightness.
+			moonKeyGain: ( 1 - smoothstep( MOON_KEY_TOP - 2, MOON_KEY_TOP, elevation ) ) * moonVisibility * moonIllumination,
 			starFrame: equatorialFrame( MIDNIGHT_SIDEREAL + hourAngle + Math.PI + TAU * ( this.completedDays + this.currentHour / 24 ) / SIDEREAL_DAYS_PER_YEAR ),
 			daylight,
 			nightVisibility: 1 - smoothstep( - 15, - 3, elevation ),

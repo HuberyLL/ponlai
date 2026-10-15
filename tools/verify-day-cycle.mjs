@@ -114,7 +114,8 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 			const state = cycle.snapshot();
 			near( state.keyDir.length(), 1 );
 			assert.ok( state.keyDir.toArray().every( Number.isFinite ) );
-			if ( elevation >= - 3 ) near( state.moonKeyGain, 0 );
+			// (the moon's key rises from the end of the handoff, -2.5 degrees)
+			if ( elevation >= - 2.5 ) near( state.moonKeyGain, 0 );
 			if ( phase === 0 || state.moonElevation <= 0 ) assert.equal( state.moonKeyGain, 0 );
 			if ( elevation >= - 0.7 ) assert.ok( state.keyDir.distanceTo( state.sunDir ) < 1e-10 );
 			if ( elevation <= - 2.5 ) assert.ok( state.keyDir.distanceTo( state.moonDir ) < 1e-10 );
@@ -123,7 +124,8 @@ for ( const phase of [ 0, 0.125, 0.25, 0.499999, 0.5, 0.500001, 0.75, 0.875, 0.9
 			cycle.setHour( hour + 1e-7 );
 			const after = cycle.snapshot();
 			assert.ok( before.keyDir.distanceTo( after.keyDir ) < 2e-5 );
-			near( before.moonKeyGain, after.moonKeyGain, 1e-6 );
+			// (2e-6: the moon's key rises over two degrees, so its slope is steep)
+			near( before.moonKeyGain, after.moonKeyGain, 2e-6 );
 			// Sampling different phases must never move the atmosphere's real sun.
 			cycle.moonPhase = ( phase + 0.3 ) % 1;
 			assert.ok( cycle.snapshot().sunDir.distanceTo( after.sunDir ) < 1e-10 );
