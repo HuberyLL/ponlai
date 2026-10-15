@@ -1,10 +1,11 @@
 import * as THREE from 'three/webgpu';
 import {
-	attribute, uniform, vec2, vec3, vec4, float, mix, smoothstep, clamp, dot, max, abs, pow, normalize, luminance, select,
-	normalView, normalWorld, positionViewDirection, positionWorld, positionLocal, positionPrevious, cameraPosition,
+	attribute, uniform, vec3, vec4, float, mix, smoothstep, clamp, dot, max, abs, pow, normalize, luminance, select,
+	normalView, normalWorld, positionViewDirection, positionLocal, positionPrevious,
 	diffuseColor, vertexColor,
 } from 'three/tsl';
 import { TEMPORAL } from '../post/Antialiasing.ts';
+import { KEY_RIM, keyRimLight } from '../lighting/KeyRim.ts';
 import { motionNode, motionState, velocityOutput } from '../post/Motion.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import type { Shared } from '../shared.ts';
@@ -95,19 +96,11 @@ class CharacterLighting extends THREE.LightingModel {
 		const edge = band.mul( band.oneMinus() ).mul( 4 ).mul( cast ).mul( skin );
 		reflectedLight.directDiffuse.addAssign( sun.mul( albedo ).mul( vec3( 0.85, 0.22, 0.1 ) ).mul( edge.mul( 0.3 / Math.PI ) ) );
 
-		// sun rim: an edge along the silhouette on the side toward the light, strongest when the
-		// figure stands against the sun. Seen from above, as the island usually is, the view and
-		// the sun are compared in plan as well: a low sun ahead of the camera backlights figures
-		// even when the camera looks down on them.
-		const fres = clamp( dot( N, V ), 0, 1 ).oneMinus();
-		const rimEdge = smoothstep( 0.46, 0.72, fres );
-		const toCamera = cameraPosition.sub( positionWorld ).toVar();
-		const sunPlan = vec2( this.shared.sunDir.x, this.shared.sunDir.z );
-		const viewPlan = vec2( toCamera.x, toCamera.z ).negate();
-		const againstPlan = clamp( dot( normalize( viewPlan ), normalize( sunPlan ) ), 0, 1 );
-		const against = max( clamp( dot( V.negate(), L ), 0, 1 ), againstPlan.mul( 0.85 ) );
-		const rim = rimEdge.mul( smoothstep( - 0.3, 0.3, ndl ) ).mul( cast ).mul( mix( float( 0.3 ), float( 2 ), against ) ).mul( look.rimGain );
-		reflectedLight.directSpecular.addAssign( sun.mul( albedo.mul( 1.2 ).add( luminance( albedo ).mul( 0.35 ) ) ).mul( rim.mul( 1 / Math.PI ) ) );
+		// The key light's rim (lighting/KeyRim.ts) as one more cel step: a narrow band along the
+		// silhouette on the side toward the light, strongest when the figure stands against it (in
+		// plan too: seen from above, a low sun ahead of the camera still backlights a figure), its
+		// light the cast shadow's step, so it follows the cel shading; brighter under the moon.
+		reflectedLight.directSpecular.addAssign( keyRimLight( sun.mul( cast ).mul( look.rimGain ), L, albedo, KEY_RIM.character ) );
 
 		// a crisp highlight on brass and the sheen of worn leather; hair shows a soft sheen band
 		const H = normalize( L.add( V ) );

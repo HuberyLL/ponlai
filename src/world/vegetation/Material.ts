@@ -7,6 +7,7 @@ import { VegetationLighting, useLighting } from '../VegetationLighting.ts';
 import { previousSway, useRestPoseShadows } from '../VegetationShadow.ts';
 import { ALPHA_TO_COVERAGE, coverageDither, markVegetation, useLeafCoverage } from './Coverage.ts';
 import { LEAF_ALPHA_TEST, leafAlphaTexture } from './LeafTexture.ts';
+import { KEY_RIM, type KeyRimSurface } from '../../lighting/KeyRim.ts';
 import type { Shared } from '../../shared.ts';
 
 // The vegetation's material factory: every plant kind's surface is built here by one sequence of
@@ -19,7 +20,9 @@ import type { Shared } from '../../shared.ts';
 //   -> the wind (`useVegetationMotion`: the displacement, the rest pose's shadow, the previous
 //      sway for motion vectors, a kind's own vertex work before its position, the
 //      `flags.mv.wind` follower, the wind view)
-//   -> the normal and ambient occlusion -> the light through thin leaves (VegetationLighting).
+//   -> the normal and ambient occlusion -> the light through thin leaves (VegetationLighting)
+//      and the key light's rim (lighting/KeyRim.ts: a kind gives only its surface's parameters,
+//      by default its family's: KEY_RIM's leaf, blade, sod).
 // Families: 'leaf' (alpha-tested folded leaves, vegetation/LeafTexture.ts: kept for the plant kinds
 // to come; no kind uses it today, since the rim bushes, the rim's trails and the plateau's plants
 // were removed), 'blade' (the meadow's blades and flower heads: tagged as vegetation, no leaf map, drawn
@@ -121,6 +124,8 @@ export interface VegetationLight {
 	extra?: Transmission;
 	/** A gloss beside the specular (VegetationLighting's `sheen`). */
 	sheen?: ( L: V3, V: V3, N: V3 ) => V3;
+	/** The key light's rim (lighting/KeyRim.ts); default the family's. */
+	rim?: KeyRimSurface;
 }
 
 export interface VegetationOptions extends VegetationMotion {
@@ -144,6 +149,8 @@ export interface VegetationOptions extends VegetationMotion {
 	 * gives them. */
 	light: VegetationLight | ( ( rest: V3 ) => VegetationLight );
 }
+
+const FAMILY_RIM: Record<VegetationOptions[ 'family' ], KeyRimSurface> = { leaf: KEY_RIM.leaf, blade: KEY_RIM.blade, sod: KEY_RIM.sod };
 
 /** A plant kind's material, built by the factory's one sequence of calls (see the header). */
 export function vegetationMaterial( shared: Shared, options: VegetationOptions ): THREE.MeshStandardNodeMaterial {
@@ -180,7 +187,8 @@ export function vegetationMaterial( shared: Shared, options: VegetationOptions )
 	const light = typeof options.light === 'function' ? options.light( rest ) : options.light;
 	const extra = light.extra ?? leafTransmission;
 	const scale = light.scale;
-	useLighting( mat, () => new VegetationLighting( typeof scale === 'function' ? scale() : scale, extra, light.sheen ) );
+	const rim = light.rim ?? FAMILY_RIM[ options.family ];
+	useLighting( mat, () => new VegetationLighting( typeof scale === 'function' ? scale() : scale, extra, rim, light.sheen ) );
 	if ( options.name ) mat.name = options.name;
 	return mat;
 
