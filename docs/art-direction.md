@@ -13,12 +13,13 @@ art decision changes; reference images stay out of the repository.
   airy lifted shadows, deep teal water with a sparkling glare toward the sun, chunky chiselled
   stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the lower cliff
   stone exposed.
-- The fantasy look is an art-directed layer over the physically based image (a soft glow round
-  the island's highlights, greens turned toward pure green and a touch darker, richer teal water,
-  golden highlights over cool teal shadows, a shadow lift that keeps a shadow's saturation, no
-  added contrast), never baked into the lighting or the tone curve. It never lays a veil over the
-  scene nor a haze over backlit foliage; grey stone and skin keep their colour; a dark meadow
-  under a low sun stays green, not olive-grey.
+- The fantasy look is an art-directed layer over the physically based image (a wide soft glow
+  that spreads from the sunlit grass tips, the horizon and the glints into what is round them,
+  greens turned toward pure green and a touch darker, richer teal water, golden highlights over
+  cool teal shadows, airy lifted shadows that keep their saturation, a little less contrast and a
+  little more brightness: high-key and soft), never baked into the lighting or the tone curve. The
+  glow is a soft light round the bright parts, not a grey screen over the whole frame; grey stone
+  and skin keep their colour; a dark meadow under a low sun stays green, not olive-grey.
   `soft-fantasy` is the default, `rich-fantasy` a bolder step toward a painted scene, `realistic`
   the plain image for comparison (`src/post/Pipeline.ts`).
 - The tone curve keeps the water clear (deep sea dark and saturated, the shallows' seabed and
@@ -124,8 +125,10 @@ art decision changes; reference images stay out of the repository.
 ## Night
 
 - The night is art-directed, not a simulation of the eye's night vision: colours stay as authored,
-  so a future fantasy palette (glowing plants, magic) keeps its saturation. The fantasy look fades
-  out with the night, which keeps its authored colours.
+  so a future fantasy palette (glowing plants, magic) keeps its saturation. The night has a
+  fantasy look of its own rather than none: a cool soft glow round the moon, the clouds it lights
+  and the moonlit surfaces, cool highlights, a lighter night whose shade does not sink to black,
+  and the day's look crosses into it as the sun sets.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The
   moon takes over the key soon after the sun has gone.
 - The night meadow is a dark, readable, cool green turning toward blue-green (not black, olive or

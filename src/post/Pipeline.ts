@@ -155,14 +155,24 @@ import type { Rain } from '../weather/Rain.ts';
 //   come in as uniforms.
 // - The tone curve and its grade come first; each curve carries its own grade. The night keeps
 //   PBR Neutral's look with its grade whichever curve is chosen, crossfading as the sun sets (from
-//   the horizon to about -3 degrees, so twilight is no darker than under PBR Neutral). In the
-//   navy night the grade turns the meadow's greens toward blue-green (`nightGreenTurn`, by the
-//   sun's elevation: `nightGreen`), a grade of its own rather than the look's, which fades out at
-//   night; by day it is skipped and the frame is unchanged.
+//   the horizon to about -3 degrees, so twilight is no darker than under PBR Neutral: `nightCurve`).
+//   In the navy night the grade turns the meadow's greens toward blue-green (`nightGreenTurn`, by
+//   the sun's elevation: `nightGreen`), a grade of its own, before the look; by day it is skipped
+//   and the frame is unchanged.
 // - The look is a layer after the curve and grade, never baked into the lighting or the curve;
-//   every parameter is in the GUI. It fades out with the night, its glow, golden highlights and
-//   lift follow the weather's direct sunlight, and only part of its colour holds under a closed
-//   sky, so bad weather stays dimmer and greyer than a clear day.
+//   every parameter is in the GUI. The night has a look of its own (`lookNight`: a cool, wider
+//   soft glow from a lower threshold, cool highlights, a smaller lift), and the day's crossfades
+//   into it (`nightLook`), so the moonlit island and the clouds round the moon glow softly instead
+//   of the look fading out. Its glow, golden (by night cool) highlights and lift follow the
+//   weather's direct light, and only part of its colour holds under a closed sky, so bad weather
+//   stays dimmer and greyer than a clear day.
+// - The two bloom chains (the tight bloom and the wide glow) take the night's own strengths,
+//   thresholds and clamp (`settings.night`), crossfaded by the same weight as the look. Their
+//   thresholds are in scene radiance, so a dim moonlit frame never reached the day's; scaling
+//   them by the exposure instead would also move the day's bloom between noon and a low sun (the
+//   low-sun adaptation raises the exposure by up to 60 %), where the chosen day keeps its values,
+//   and the chosen night also takes stronger chains and a higher clamp, which a threshold alone
+//   does not give.
 // - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a
 //   blurred sky reads as a low backdrop and turns stars into bokeh discs. Rain drops follow its
 //   focus (Rain.ts).
@@ -313,7 +323,7 @@ class RenderBloomNode extends BloomNode {
 // (plain AgX only in the deep shadows): a low sun's sky stays golden and a noon sky blue, with
 // AgX's gradation. 'neutral' is plain PBR Neutral. The AgX curves and 'neutral' stay selectable
 // for comparison.
-// The night keeps PBR Neutral's look whichever curve is chosen (see `nightLook`): its toe, which
+// The night keeps PBR Neutral's look whichever curve is chosen (see `nightCurve`): its toe, which
 // subtracts the darkest channel, holds the night's dark colours saturated where AgX's toe greys
 // and lifts them, and its short shoulder lets the brightest few stars reach near white.
 export const TONE_CURVES = [ 'neutral-hue', 'agx-hue', 'agx', 'neutral' ] as const;
@@ -368,12 +378,31 @@ export function cloneLook( look: LookSettings ): LookSettings {
 
 }
 
+// `out` = the looks `a` and `b` crossfaded by `t` (every number and both tints), returned.
+function mixLook( out: LookSettings, a: LookSettings, b: LookSettings, t: number ): LookSettings {
+
+	for ( const key of Object.keys( a ) as ( keyof LookSettings )[] ) {
+
+		const x = a[ key ], y = b[ key ];
+		if ( typeof x === 'number' ) ( out[ key ] as number ) = x + ( ( y as number ) - x ) * t;
+
+	}
+	out.shadowTint.lerpColors( a.shadowTint, b.shadowTint, t );
+	out.highlightTint.lerpColors( a.highlightTint, b.highlightTint, t );
+	return out;
+
+}
+
 export interface PipelineSettings {
 	toneMapping: ToneCurve;
 	look: LookName;
 	// sunlight reaching the island through the weather (0 under a storm's deck, 1 clear)
 	lookSunlight: number;
-	// 0 by day, 1 at night (from the clock): how far the frame returns to PBR Neutral's look
+	// 0 by day, 1 at night (from the clock): how far the curve and its grade return to PBR
+	// Neutral's
+	nightCurve: number;
+	// 0 by day, 1 at night (from the clock): how far the look and the bloom chains have crossfaded
+	// into the night's (`Pipeline.lookNight`, `night`)
 	nightLook: number;
 	// 0 by day, 1 in the navy night (from the sun's elevation): how far the meadow's greens turn
 	// toward blue-green (`nightGreenTurn`)
@@ -382,8 +411,12 @@ export interface PipelineSettings {
 	lift: THREE.Color; vignette: number; grain: number;
 	bloomStrength: number; bloomRadius: number; bloomThreshold: number; bloomMaxLum: number; bloomSurfaceMaxLum: number;
 	glowStrength: number; glowRadius: number; glowThreshold: number; glowMaxLum: number;
+	// the bloom chains' values the night crossfades to (`nightLook`)
+	night: NightBloom;
 	dof: number; dofRange: number; dofMaxRadius: number; focusDistance: number;
 }
+
+export interface NightBloom { bloomStrength: number; bloomThreshold: number; glowStrength: number; glowThreshold: number; glowMaxLum: number }
 
 // The night's own grade: the meadow's greens turned toward the night's blue-green, by `turn`
 // radians at the centre of the green band (105 degrees, as the look's: it shades off over 55
@@ -425,7 +458,8 @@ export class Pipeline {
 	// that boost and the split tone's golden highlights would push the brightest channel past
 	// white and clip it into a flat band of another hue, so it rolls them off below white.
 	// 'neutral-hue' keeps PBR Neutral's grade with two thirds of the split tone, no vibrance and
-	// no extra saturation, plus that knee. Its shoulder packs everything bright into the last few
+	// no extra saturation, plus that knee, a little brighter (8 %) and a little softer (display
+	// contrast below zero) than PBR Neutral, for a high-key, airy day. Its shoulder packs everything bright into the last few
 	// percent below white, where the split tone's golden highlights pushed red alone against white
 	// across a sunset sky; the knee starts lower than AgX's to leave red room for gradation. The
 	// daytime horizon is pale and low in chroma: vibrance and a saturation boost for bright colours
@@ -439,7 +473,7 @@ export class Pipeline {
 		'agx-hue': { exposure: 0.78, saturation: 1.2, vibrance: 0.3, contrast: 0.38, split: 1, lift: 1, clipGuard: 1, knee: 0.9, highlightSat: 0, burn: 0 },
 		agx: { exposure: 0.8, saturation: 1.3, vibrance: 0.4, contrast: 0.35, split: 1, lift: 1, clipGuard: 0, knee: 0.9, highlightSat: 0, burn: 0 },
 		neutral: { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1, clipGuard: 0, knee: 0.9, highlightSat: 0, burn: 0 },
-		'neutral-hue': { exposure: 1, saturation: 0.97, vibrance: 0, contrast: 0.04, split: 0.67, lift: 1, clipGuard: 1, knee: 0.8, highlightSat: 0, burn: 1 },
+		'neutral-hue': { exposure: 1.08, saturation: 0.97, vibrance: 0, contrast: - 0.03, split: 0.67, lift: 1, clipGuard: 1, knee: 0.8, highlightSat: 0, burn: 1 },
 	};
 	// The fantasy presets are tuned on 'neutral-hue'. Its linear midtones pass the glow (added
 	// before the curve) through almost as it is, and its shoulder keeps the glow's warm hue where
@@ -448,7 +482,10 @@ export class Pipeline {
 	// water, so the lift and the cool shadow tone are smaller too. 'soft-fantasy' turns the
 	// greens about 11 degrees toward pure green and takes a tenth off their brightness, so the
 	// sunlit meadow reads fresh and cool rather than straw-yellow and does not outshine the sky,
-	// and adds no luminance contrast: the day stays soft (its depth comes from the light).
+	// and takes a little luminance contrast away: the day stays soft and high-key (its depth comes
+	// from the light). Its glow is wide and starts low (from about 0.45 of display white), so the
+	// sunlit grass tips, the horizon and the glints spread a soft light into what is round them,
+	// and the airy shadow lift is twice the earlier one.
 	readonly lookPresets: Record<LookName, LookSettings> = {
 		realistic: {
 			glow: 0, glowThreshold: 0.6, glowRadius: 0.8, glowWarmth: 0, glowHalo: 1,
@@ -457,10 +494,10 @@ export class Pipeline {
 			shadowLift: 0, contrast: 0, vignette: 0, sky: 1, overcast: 0,
 		},
 		'soft-fantasy': {
-			glow: 0.12, glowThreshold: 1.0, glowRadius: 0.7, glowWarmth: 0.25, glowHalo: 0.15,
+			glow: 0.3, glowThreshold: 0.45, glowRadius: 0.85, glowWarmth: 0.25, glowHalo: 0.2,
 			greenSaturation: 0.25, greenBrightness: - 0.1, greenHue: 0.2, tealSaturation: 0.12, tealBrightness: 0.02, tealHue: 0.04,
 			shadowTint: new THREE.Color( 0.55, 0.85, 1.0 ), shadowTone: 0.18, highlightTint: new THREE.Color( 1.0, 0.86, 0.6 ), highlightTone: 0.25, pivot: 0.18,
-			shadowLift: 0.01, contrast: 0, vignette: 0.06, sky: 0.25, overcast: 0.5,
+			shadowLift: 0.02, contrast: - 0.05, vignette: 0.06, sky: 0.3, overcast: 0.5,
 		},
 		'rich-fantasy': {
 			glow: 0.2, glowThreshold: 0.9, glowRadius: 0.75, glowWarmth: 0.4, glowHalo: 0.15,
@@ -471,16 +508,39 @@ export class Pipeline {
 	};
 	// the live look, loaded from a preset by setLook() and tuned from there in the GUI
 	look: LookSettings = cloneLook( this.lookPresets.realistic );
+	// The night's look, for either fantasy look ('realistic' bypasses the layer by night too): the
+	// soft glow cool, wider and from a lower threshold, so the moonlit meadow, the sea's sheen and
+	// the clouds round the moon spread a cool soft light; cool highlights in place of golden ones,
+	// the sky taking more of the glow (the moon and its clouds are the night's light), a small lift
+	// that keeps the shade from sinking to black, and the greens a little richer but not turned
+	// (the night's grade turns them, `nightGreenTurn`: the day's turn on top took the moonlit
+	// meadow past 150 degrees, toward teal). Its strengths
+	// (glow, the colour layers' amounts, lift, vignette) are seven tenths of the values it was
+	// chosen by, which ran under seven tenths of the day's weight.
+	readonly lookNightPreset: LookSettings = {
+		glow: 0.35, glowThreshold: 0.25, glowRadius: 0.85, glowWarmth: - 0.8, glowHalo: 0.15,
+		greenSaturation: 0.07, greenBrightness: - 0.07, greenHue: 0, tealSaturation: 0.084, tealBrightness: 0.014, tealHue: 0.028,
+		shadowTint: new THREE.Color( 0.55, 0.85, 1.0 ), shadowTone: 0.126, highlightTint: new THREE.Color( 0.8, 0.9, 1.0 ), highlightTone: 0.175, pivot: 0.18,
+		shadowLift: 0.0028, contrast: 0, vignette: 0.042, sky: 0.6, overcast: 0.5,
+	};
+	// the live night look (the GUI tunes it from there)
+	lookNight: LookSettings = cloneLook( this.lookNightPreset );
+	// the day's and the night's looks crossfaded, each frame
+	private lookMixed: LookSettings = cloneLook( this.lookNightPreset );
 
 	settings: PipelineSettings = {
-		toneMapping: 'neutral-hue', look: 'realistic', lookSunlight: 1, nightLook: 0, nightGreen: 0,
+		toneMapping: 'neutral-hue', look: 'realistic', lookSunlight: 1, nightCurve: 0, nightLook: 0, nightGreen: 0,
 		// The look's bright midtones and soft shadows are a display grade; keep the
 		// calibrated sunlight and water transport intact, with a nearly neutral black lift.
-		exposure: 2.35, saturation: 0.97, vibrance: 0, contrast: 0.04, split: 0.45,
+		exposure: 2.35, saturation: 0.97, vibrance: 0, contrast: - 0.03, split: 0.45,
 		lift: new THREE.Color( DAY_BLACK_LIFT, DAY_BLACK_LIFT, DAY_BLACK_LIFT * 0.97 ),
 		vignette: 0.06, grain: 0.004,
 		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0, bloomSurfaceMaxLum: 2.0,
-		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,
+		glowStrength: 0.18, glowRadius: 1.0, glowThreshold: 0.5, glowMaxLum: 1.0,
+		// the moonlit night's: both chains stronger and from lower thresholds in scene radiance (the
+		// bloom's under half the day's, the glow's 0.7 of it), the glow's clamp doubled, so the moon,
+		// the clouds round it and the moonlit sea's sheen bloom
+		night: { bloomStrength: 0.3, bloomThreshold: 0.6, glowStrength: 0.3, glowThreshold: 0.35, glowMaxLum: 2.0 },
 		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
 	};
 
@@ -975,7 +1035,7 @@ export class Pipeline {
 		// white, fully six stops up, so the sun's disc and its glints still burn out. In the deep
 		// shadows it is plain AgX; the two cross over between an eighth of display white and white.
 		// AgX's per-channel toe greys dark colours against PBR Neutral's toe, which is why the
-		// night returns to PBR Neutral (see `nightLook`).
+		// night returns to PBR Neutral (see `nightCurve`).
 		const hueToneMapping = Fn( ( [ color, exposure ]: [ V3, F ] ) => {
 
 			const c = max( color.mul( exposure ), vec3( 0 ) ).toVar();
@@ -1963,39 +2023,44 @@ export class Pipeline {
 		const S = this.settings;
 		const u = this.u;
 		const [ b, g ] = this.blooms;
+		const lerp = THREE.MathUtils.lerp;
+		// the bloom chains' and the look's night (see the header: a crossfade, not a threshold scaled
+		// by the exposure)
+		const nl = THREE.MathUtils.clamp( S.nightLook, 0, 1 ), N = S.night;
+		const bloomStrength = lerp( S.bloomStrength, N.bloomStrength, nl ), bloomThreshold = lerp( S.bloomThreshold, N.bloomThreshold, nl );
+		const glowStrength = lerp( S.glowStrength, N.glowStrength, nl ), glowThreshold = lerp( S.glowThreshold, N.glowThreshold, nl );
+		const glowMaxLum = lerp( S.glowMaxLum, N.glowMaxLum, nl );
 		if ( g ) {
 
-			b.chain.strength.value = S.bloomStrength; b.chain.radius.value = S.bloomRadius; b.chain.threshold.value = S.bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
-			g.chain.strength.value = S.glowStrength; g.chain.radius.value = S.glowRadius; g.chain.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = S.glowMaxLum * SCENE_RADIANCE_SCALE;
+			b.chain.strength.value = bloomStrength; b.chain.radius.value = S.bloomRadius; b.chain.threshold.value = bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
+			g.chain.strength.value = glowStrength; g.chain.radius.value = S.glowRadius; g.chain.threshold.value = glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = glowMaxLum * SCENE_RADIANCE_SCALE;
 
 		} else {
 
 			// One chain for both: the wide glow's radius and threshold, the tight bloom's clamps, and
 			// the two strengths together (an approximation for the low tier).
-			b.chain.strength.value = S.bloomStrength + S.glowStrength; b.chain.radius.value = S.glowRadius; b.chain.threshold.value = S.glowThreshold * SCENE_RADIANCE_SCALE;
+			b.chain.strength.value = bloomStrength + glowStrength; b.chain.radius.value = S.glowRadius; b.chain.threshold.value = glowThreshold * SCENE_RADIANCE_SCALE;
 			b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
 
 		}
 		// The night crossfades the curve and its grade to PBR Neutral's (the grade's own night values,
 		// not the GUI's, which tune the chosen curve by day).
 		const look = this.looks[ S.toneMapping ], night = this.looks.neutral;
-		const day = S.toneMapping === 'neutral' ? 1 : 1 - THREE.MathUtils.clamp( S.nightLook, 0, 1 );
-		const lerp = THREE.MathUtils.lerp;
+		const day = S.toneMapping === 'neutral' ? 1 : 1 - THREE.MathUtils.clamp( S.nightCurve, 0, 1 );
 		u.curve.value = TONE_CURVES.indexOf( S.toneMapping ); u.day.value = day;
 		u.nightGreen.value = NIGHT_GREEN_TURN * THREE.MathUtils.clamp( S.nightGreen, 0, 1 );
 		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE; u.curveExposure.value = u.exposure.value * look.exposure;
 		u.saturation.value = lerp( night.saturation, S.saturation, day ); u.vibrance.value = lerp( night.vibrance, S.vibrance, day ); u.contrast.value = lerp( night.contrast, S.contrast, day );
 		u.clipGuard.value = look.clipGuard * day; u.highlightSat.value = look.highlightSat * day; u.knee.value = look.knee; u.burn.value = look.burn * day;
 		u.split.value = S.split * lerp( night.split, look.split, day ); u.lift.value.copy( S.lift ).multiplyScalar( lerp( night.lift, look.lift, day ) );
-		// The look fades out with the night (the night keeps its authored colours) and its sunlit
-		// parts (glow, golden highlights, lift) with the weather's sunlight; the rest holds a share
-		// of itself under a closed sky, so bad weather stays dimmer and greyer than a clear day.
+		// The look crossfades into the night's (every parameter, the tints too), and its sunlit parts
+		// (glow, highlights, lift) follow the weather's direct light; the rest holds a share of itself
+		// under a closed sky, so bad weather stays dimmer and greyer than a clear day.
 		// ('realistic' bypasses the layer whatever the live parameters hold, so it stays exact)
-		const L = this.look, on = S.look !== 'realistic';
-		const lookDay = 1 - THREE.MathUtils.clamp( S.nightLook, 0, 1 );
+		const L = mixLook( this.lookMixed, this.look, this.lookNight, nl ), on = S.look !== 'realistic';
 		const sunlit = THREE.MathUtils.smoothstep( S.lookSunlight, 0.1, 0.9 );
 		u.lookOn.value = on ? 1 : 0;
-		u.lookColour.value = lookDay * lerp( L.overcast, 1, sunlit ); u.lookSun.value = lookDay * sunlit;
+		u.lookColour.value = lerp( L.overcast, 1, sunlit ); u.lookSun.value = sunlit;
 		u.greenSat.value = L.greenSaturation; u.greenBright.value = L.greenBrightness; u.greenHue.value = L.greenHue;
 		u.tealSat.value = L.tealSaturation; u.tealBright.value = L.tealBrightness; u.tealHue.value = L.tealHue;
 		u.shadowTint.value.copy( L.shadowTint ); u.shadowTone.value = L.shadowTone;
@@ -2006,9 +2071,9 @@ export class Pipeline {
 		d.strength.value = glow; d.radius.value = L.glowRadius;
 		// the threshold in the sharp image's units: display values before the curve, over its exposure
 		this.diffusion.threshold.value = L.glowThreshold / Math.max( u.curveExposure.value, 1e-9 );
+		// (a negative warmth cools the glow: the night's)
 		u.glowTint.value.setRGB( 1 + 0.2 * L.glowWarmth, 1, 1 - 0.35 * L.glowWarmth );
-		// (the look's own vignette fades with the night too; the base vignette stays)
-		u.vignette.value = S.vignette + ( on ? L.vignette * lookDay : 0 ); u.grain.value = S.grain; u.time.value = time;
+		u.vignette.value = S.vignette + ( on ? L.vignette : 0 ); u.grain.value = S.grain; u.time.value = time;
 		u.dof.value = S.dof; u.range.value = S.dofRange;
 		u.maxRadius.value = S.dofMaxRadius * this.height / 900; // blur scales with the image, not the pixel count
 		u.focus.value = S.focusDistance > 0 ? S.focusDistance : camera.position.length();

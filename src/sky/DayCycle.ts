@@ -12,7 +12,8 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 //
 // The exposure only rises from afternoon into night and holds from the end of the blue hour (about
 // -7 degrees) on, higher than the night sky was tuned for, so the island reads by moonlight and
-// starlight. Under a high sun it is trimmed (DAY_EXPOSURE_TRIM), so the midday meadow and sky sit
+// starlight, and a quarter higher again (NIGHT_EXPOSURE_GAIN) for a lighter, softer night whose
+// shade does not sink to black, the night sky with it. Under a high sun it is trimmed (DAY_EXPOSURE_TRIM), so the midday meadow and sky sit
 // in the soft upper middle of the range rather than near its top; the trim fades out as the
 // low-sun adaptation takes over, so sunrise, sunset and the night keep their exposure.
 // The night ambient rises as the sun's skylight fades after sunset, and the moon's key comes in
@@ -69,15 +70,17 @@ export interface DayCycleSnapshot {
 	// Further exposure, as a fraction, under a fully closed deck after dark (see Sky.track).
 	overcastAdaptation: number;
 	// Scale on the night sky's own light (stars, airglow, moon disk, the sky's night floor,
-	// clouds): it was tuned at a night exposure of NIGHT_SKY_EXPOSURE and keeps that look.
+	// clouds): it was tuned at a night exposure of NIGHT_SKY_EXPOSURE and keeps that look, brighter
+	// by NIGHT_EXPOSURE_GAIN.
 	nightSkyLevel: number;
 	blackLift: number;
 }
 
 // The display's black lift by day (linear, added before the sRGB curve): black shows at about
-// 31/255. Shadows stay airy; the earlier 0.027 (46/255) read as a milky veil over the frame.
-export const DAY_BLACK_LIFT = 0.014;
-const NIGHT_BLACK_LIFT = 0.002;
+// 39/255, a high-key day with airy shadows; the earlier 0.027 (46/255) read as a milky veil over
+// the frame. The night's keeps the moonlit shade from sinking to black.
+export const DAY_BLACK_LIFT = 0.02;
+const NIGHT_BLACK_LIFT = 0.003;
 
 const TAU = 2 * Math.PI;
 const DEG = 180 / Math.PI;
@@ -105,8 +108,10 @@ const MIDNIGHT_SIDEREAL = 14 / 24 * TAU;
 const SIDEREAL_DAYS_PER_YEAR = 365.2422;
 // The night keeps the blue hour's exposure, so a moonlit or moonless island keeps its forms and
 // colours against the sea. The night sky's own light (stars, airglow, moon, clouds) was tuned at
-// NIGHT_SKY_EXPOSURE and is scaled to keep its displayed brightness (see Sky.track).
-export const NIGHT_EXPOSURE = 4.4 * 1.6;
+// NIGHT_SKY_EXPOSURE and is scaled to keep its displayed brightness (see Sky.track), but for the
+// night's own gain over the blue hour's adaptation, which brightens the night sky with the island.
+export const NIGHT_EXPOSURE_GAIN = 1.25;
+export const NIGHT_EXPOSURE = 4.4 * NIGHT_EXPOSURE_GAIN * 1.6;
 export const NIGHT_SKY_EXPOSURE = 4.4;
 // The share the exposure is trimmed by under a high sun (see the header).
 export const DAY_EXPOSURE_TRIM = 0.08;
@@ -288,7 +293,7 @@ export class DayCycle {
 			nightAmbient: 1 - smoothstep( - 5, 1, elevation ),
 			// The night sky stays dark through its own scaled light (see NIGHT_SKY_EXPOSURE); the
 			// display lift falls with daylight so blacks do not turn milky.
-			exposure: ( 4.4 + ( 2.6 - 4.4 ) * daylight ) * ( 1 + 0.6 * lowSun ) * ( 1 - DAY_EXPOSURE_TRIM * ( 1 - lowSun ) ),
+			exposure: ( 4.4 * NIGHT_EXPOSURE_GAIN + ( 2.6 - 4.4 * NIGHT_EXPOSURE_GAIN ) * daylight ) * ( 1 + 0.6 * lowSun ) * ( 1 - DAY_EXPOSURE_TRIM * ( 1 - lowSun ) ),
 			overcastAdaptation: ( deck + ( 5 - deck ) * dusk ) * ( 1 - daylight ),
 			nightSkyLevel: skyAdaptation / ( 1 + 0.6 * lowSun ),
 			blackLift: NIGHT_BLACK_LIFT + ( DAY_BLACK_LIFT - NIGHT_BLACK_LIFT ) * daylight,
