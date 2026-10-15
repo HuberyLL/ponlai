@@ -3,10 +3,11 @@ import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, dot, pow, clamp, fract, sin, select, normalize,
 	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, varying, varyingProperty, uniform,
 	smoothstep as smoothstepN, instanceIndex, vertexIndex, normalLocal, transformNormal, instanceColor, sign, abs, cos, step, specularColor, specularColorBlended, specularF90,
+	positionGeometry, cross, floor, mod,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField } from './types.ts';
-import { mulberry32, smoothstep } from './noise.ts';
+import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { anchorStream } from './Anchors.ts';
 import { SWARD_HEIGHT, meadowColor, supportsMeadow } from '../materials/Meadow.ts';
 import { soilUniforms } from '../materials/Soil.ts';
@@ -16,7 +17,7 @@ import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/Me
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { ALPHA_TO_COVERAGE } from './Foliage.ts';
-import { backlight, vegetationMaterial } from './vegetation/Material.ts';
+import { backlight, vegetationMaterial, type VegetationOptions } from './vegetation/Material.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullBuffers, type CullPayload, type CullPool, type CullRange } from './vegetation/VegetationCull.ts';
@@ -81,6 +82,19 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 // - Under the temporal modes a blade's previous position (motion vectors) is its bend under the
 //   previous frame's wind from the same rooted point, widened by this frame's offset: the culled
 //   list keeps each tuft's own slot, so the tuft is the same whichever instance draws it.
+// - The meadow's wildflowers are part of it: about one lawn tuft in seven (FLOWER_SHARE, over a
+//   broad density field: rich stretches, nearly bare ones between) carries one flower head about at
+//   its blades' tips, some partly hidden among them, its colour (five) and shape (daisy, round, cup) by the tuft's own draw and a broad
+//   colour field (`flowerCode`), never in beds or patches of one colour, and none near the coast,
+//   on the stacks or on the islander's walking loop. The flowering tufts are a batch of their own
+//   over the lawn's blades and a head (`flowerTuftGeometry`), so the other tufts run no head
+//   vertices; the head's indices come first, so every band keeps it whole while its tuft drops
+//   blades. A head goes through the blades' stages (placed by its tuft, bent by the wind as a tip,
+//   shaded by the larger casters, out of the sun's map), taking its own pose, petal colour and
+//   light in a blend by its vertex flag (`headPose`, `headShape`: no new varying, the head's
+//   values ride in the blade's). Far off it widens to a least size on screen and is drawn whole by
+//   its hash, as the blades are, and rises above its tuft's widened blades as they thin
+//   (HEAD_LIFT), so the island view shows the meadow's flowers as fine coloured specks.
 
 interface TuftShape {
 	blades: number; segs: number;
@@ -118,6 +132,34 @@ const PLANT_SPREAD = 1;
 // The share of the anchors that take a second tuft (the extra tufts, folded away by distance):
 // as many as the growth field's thick patches gave before, so the lawn keeps its blade budget.
 const THIN_SHARE = 0.28;
+// The meadow's wildflowers are heads on some of its lawn tufts (`flowerTuftGeometry`), scattered
+// one by one rather than in beds: FLOWER_SHARE of the tufts flower times a broad field's factor
+// (FLOWER_FIELD cycles per metre, from FLOWER_THIN to FLOWER_RICH, its noise turning over between
+// FLOWER_EDGE), so the meadow has rich stretches of scattered heads and stretches nearly bare of
+// them (about one lawn tuft in seven flowers in all): from the game's camera an even scatter read
+// as plain green, a contrast as the meadow's own. Never within FLOWER_RIM of the
+// coast (the rim's tufts lean out over the lip), on the rock stacks, or within FLOWER_CLEAR (m) of
+// the islander's walking loop (WalkLoop.ts), where the walker's legs pass.
+const FLOWER_SHARE = 0.2, FLOWER_FIELD = 0.05, FLOWER_RIM = - 0.8, FLOWER_CLEAR = 0.5;
+const FLOWER_EDGE = [ - 0.15, 0.25 ], FLOWER_THIN = 0.05, FLOWER_RICH = 2.2;
+// A flowering tuft's colour and shape (`flowerCode`): one of the five colours by the tuft's own
+// draw, or, for FLOWER_LOCAL of the tufts, the colour a broad field favours there (FLOWER_HUE_FIELD
+// cycles per metre), so stretches of the meadow lean toward one colour or two without any one
+// colour gathering in a patch. The shape follows the colour, as the species did: yellow cups and
+// daisies, white daisies, pink daisies and round heads, purple and blue round heads.
+const FLOWER_LOCAL = 0.4, FLOWER_HUE_FIELD = 0.035;
+
+/** The flower code a flowering tuft at ( x, z ) passes its head (ground's y): 1.5 + its colour (0
+ * to 4, PETALS) + 5 times its shape (0 daisy, 1 round, 2 cup); `a` and `b` are the tuft's draws. */
+function flowerCode( x: number, z: number, a: number, b: number ): number {
+
+	const local = noise3( x * FLOWER_HUE_FIELD - 5.3, 6.1, z * FLOWER_HUE_FIELD + 2.2 ) * 0.5 + 0.5;
+	const own = a < FLOWER_LOCAL ? ( local * 2.3 ) % 1 : ( a - FLOWER_LOCAL ) / ( 1 - FLOWER_LOCAL );
+	const colour = Math.min( 4, Math.floor( own * 5 ) );
+	const shape = colour === 0 ? ( b < 0.5 ? 2 : 0 ) : colour === 1 ? 0 : colour === 2 ? ( b < 0.5 ? 0 : 1 ) : 1;
+	return 1.5 + colour + 5 * shape;
+
+}
 
 /** The meadow's cost knobs for a quality tier. They shape the meshes and shaders, so they apply
  * when the grass is planted and built (set them before `plantGrass`); the defaults are the high tier's. */
@@ -214,6 +256,43 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 	g.userData.restBox = box;
 	// The root half width of the widest blade, which the cull pads for the widening.
 	g.userData.halfWidth = shape.w[ 1 ] * 0.5 + 0.004;
+	return g;
+
+}
+
+// A flowering tuft: the lawn tuft's blades and one flower head, a flat disc of HEAD_SECTORS
+// triangles round a centre. The head's vertices follow the blades' (so a blade's index by vertex,
+// `tuftLod`, is unchanged), and its indices come first: every draw range and band of the batch
+// starts with the head (`baseIndices`), so a far tuft that drops blades always keeps its flower.
+// A head vertex carries `blade` = ( 1, its angle, its radius 0 or 1, HEAD_FLAG ) and in its
+// position's x its place across a petal: 0 at the centre, -1 and 1 on alternate rim vertices, so
+// the fragment stage reads where it lies across its sector's petal (`headShape`) without an atan.
+const HEAD_SECTORS = 10;
+const HEAD_FLAG = 3;
+function flowerTuftGeometry( lawn: THREE.BufferGeometry ): THREE.BufferGeometry {
+
+	const P = Array.from( lawn.getAttribute( 'position' ).array as Float32Array );
+	const N = Array.from( lawn.getAttribute( 'normal' ).array as Float32Array );
+	const T = Array.from( lawn.getAttribute( 'blade' ).array as Float32Array );
+	const centre = P.length / 3;
+	P.push( 0, 0, 0 ); N.push( 0, 1, 0 ); T.push( 1, 0, 0, HEAD_FLAG );
+	for ( let i = 0; i < HEAD_SECTORS; i ++ ) {
+
+		P.push( i % 2 === 0 ? - 1 : 1, 0, 0 ); N.push( 0, 1, 0 ); T.push( 1, i / HEAD_SECTORS * Math.PI * 2, 1, HEAD_FLAG );
+
+	}
+	const head: number[] = [];
+	for ( let i = 0; i < HEAD_SECTORS; i ++ ) head.push( centre, centre + 1 + i, centre + 1 + ( i + 1 ) % HEAD_SECTORS );
+	const g = new THREE.BufferGeometry();
+	g.setAttribute( 'position', new THREE.Float32BufferAttribute( P, 3 ) );
+	g.setAttribute( 'normal', new THREE.Float32BufferAttribute( N, 3 ) );
+	g.setAttribute( 'blade', new THREE.Float32BufferAttribute( T, 4 ) );
+	g.setIndex( [ ...head, ...Array.from( lawn.getIndex()!.array ) ] );
+	// the head rises past the blades' box (`headPose`: at most 0.4 of the tuft's height, its widened
+	// disc 0.3 m) by far less than the cull's pad (WIDEN_REACH, about 0.7 m, and SWAY_PAD)
+	g.userData.restBox = lawn.userData.restBox;
+	g.userData.halfWidth = lawn.userData.halfWidth;
+	g.userData.baseIndices = head.length;
 	return g;
 
 }
@@ -360,8 +439,10 @@ function tuftLod( origin: V3 ): { keep: F; gain: F } {
 
 // Returns the widened vertex and passes its coverage to the fragment stage. Positions are world
 // positions: the meadow mesh stays at the origin, untransformed. `keep` narrows the blade (the
-// share of its width it keeps, `tuftLod`) and `bladeGain` is its tuft's gain.
-function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F, keep: F, bladeGain: F ): V3 {
+// share of its width it keeps, `tuftLod`) and `bladeGain` is its tuft's gain. A flower head's
+// vertex (`head` 1) has no half width and keeps its place; its coverage is the head's own
+// (`headPose`).
+function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F, keep: F, bladeGain: F, head: F, headCoverage: F ): V3 {
 
 	return Fn( () => {
 
@@ -383,7 +464,7 @@ function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F, keep: F, blad
 		// (keep 1 leaves every term as it was).
 		const narrowed = max( halfSeen.mul( keep ), 1e-6 );
 		const widen = clamp( minWidth.mul( 0.5 ).mul( pixel ).div( narrowed ), gain, gain.mul( MAX_WIDEN ) ).toVar();
-		bladeCoverage.assign( gain.div( widen ) );
+		bladeCoverage.assign( mix( gain.div( widen ), headCoverage, head ) );
 		return p.add( seen.mul( keep.mul( widen ).sub( 1 ) ) );
 
 	} )() as V3;
@@ -486,6 +567,102 @@ function bladeStrips( side: F, jitter: F, tint: F, strips: F ) {
 
 }
 
+// The flower heads (`headPose`, `headShape`). A head is a disc of HEAD_RADIUS times 0.8 to 1.25 (a
+// hash of its tuft; 10 to 16 cm across, larger than a wildflower: at half that size the game's
+// 22 m view showed the heads as dots, not flowers), at HEAD_HEIGHT of its tuft's height (local
+// units, from among the blades to their tips: some stand clear, some are partly hidden), a few
+// centimetres off its tuft's axis (HEAD_OFFSET) and tilted from upright toward the tuft's own
+// facing by HEAD_TILT (rad): from the game's low view a level disc showed as a sliver, one turned
+// up to the sky as a round speck. A head is kept at least HEAD_MIN_PIXELS times the blades' least
+// width across on screen (a smaller least size left the mid view's far meadow plain green), at
+// most HEAD_MAX_WIDEN times its own size, its coverage falling by the square of the widening: as
+// with the blades, the widened heads are drawn whole where their coverage is above their own hash,
+// so the far meadow keeps as much colour as the near. As its
+// tuft thins its blades with distance (its gain from 1 to NEAR_GAIN, 25 to 70 m) a head rises by up
+// to HEAD_LIFT of its tuft's height: the widened far blades hid nearly every head at 70 m.
+const HEAD_RADIUS = 0.064, HEAD_HEIGHT = [ 0.6, 1.05 ], HEAD_OFFSET = 0.1, HEAD_TILT = [ 0.35, 1.0 ];
+const HEAD_MIN_PIXELS = 2, HEAD_MAX_WIDEN = 4, HEAD_LIFT = 0.35;
+// The petals' colours (linear albedo), in the order of the flower codes (`flowerCode`): yellow,
+// white, pink, purple, blue; and the daisy's golden centre.
+const PETALS = [ [ 0.8, 0.55, 0.03 ], [ 0.7, 0.68, 0.58 ], [ 0.66, 0.18, 0.36 ], [ 0.3, 0.08, 0.52 ], [ 0.1, 0.16, 0.62 ] ];
+const DAISY_CENTRE = [ 0.55, 0.33, 0.03 ];
+
+// A flowering tuft's head, in the vertex stage: its centre in the tuft's local space (placed by
+// the tuft's transform as a blade's vertex is), the vertex's offset from it in world space (the
+// disc's plane from the tuft's own axes `xAxis`, `zAxis`, tilted), its normal and its radius; all
+// hashes of the tuft (`pick`), so a grown island draws each head as a fresh load does.
+function headPose( blade: THREE.Node<'vec4'>, pick: F, xAxis: V3, zAxis: V3, gain: F ) {
+
+	const hash = ( k: number ) => bladeHash( float( 16 ), pick, k );
+	const away = hash( 9 ).mul( HEAD_OFFSET ), turn = hash( 10 ).mul( TAU );
+	const lift = clamp( gain.sub( 1 ).div( NEAR_GAIN - 1 ), 0, 1 ).mul( HEAD_LIFT );
+	const centre = vec3( cos( turn ).mul( away ), hash( 8 ).mul( HEAD_HEIGHT[ 1 ] - HEAD_HEIGHT[ 0 ] ).add( HEAD_HEIGHT[ 0 ] ).add( lift ), sin( turn ).mul( away ) );
+	const x = normalize( xAxis ), z = normalize( zAxis ), y = cross( z, x );
+	const tilt = hash( 11 ).mul( HEAD_TILT[ 1 ] - HEAD_TILT[ 0 ] ).add( HEAD_TILT[ 0 ] );
+	const across = z.mul( cos( tilt ) ).add( y.mul( sin( tilt ) ) );
+	const radius = hash( 12 ).mul( 0.45 ).add( 0.8 ).mul( HEAD_RADIUS );
+	const offset = x.mul( cos( blade.y ) ).add( across.mul( sin( blade.y ) ) ).mul( blade.z.mul( radius ) );
+	return { centre, offset, normal: y.mul( cos( tilt ) ).sub( z.mul( sin( tilt ) ) ), radius, hash: hash( 13 ) };
+
+}
+
+// How far a head at `centre` (world) widens to stay HEAD_MIN_PIXELS blade widths across, and the
+// coverage that leaves it.
+function headWiden( centre: V3, radius: F, minWidth: F ): { widen: F; coverage: F } {
+
+	const depth = max( cameraViewMatrix.mul( vec4( centre, 1 ) ).z.negate(), 1e-3 );
+	const p11 = ( cameraProjectionMatrix as unknown as { element( i: number ): { element( i: number ): F } } ).element( 1 ).element( 1 );
+	const pixel = depth.mul( 2 ).div( p11.mul( screenSize.y ) );
+	const widen = clamp( minWidth.mul( HEAD_MIN_PIXELS * 0.5 ).mul( pixel ).div( radius ), 1, HEAD_MAX_WIDEN ).toVar();
+	return { widen, coverage: float( 1 ).div( widen.mul( widen ) ) };
+
+}
+
+// A head's petals and colour, in the fragment stage, from where the fragment lies on the disc
+// (`radius`, 0 at the centre to 1 at the rim, and `across`, -1 to 1 across its sector) and the
+// head's flower code (`code`, see `flowerCode`: the colour and the shape). Three shapes after the
+// old wildflowers': a daisy (a ray in each sector, narrowing to its tip, round a golden centre), a
+// round head (scalloped, its centre a deeper shade of its petals) and a cup (as round, its petals
+// darker toward the throat). Returns the colour and whether the fragment is on a petal (0 or 1).
+function headShape( across: F, radius: F, code: F ): { colour: V3; mask: F } {
+
+	// (blends of 0 / 1 weights rather than select(): see AGENTS.md, a select of built nodes)
+	const k = code.sub( 2 ).toVar();
+	const shape = floor( k.div( 5 ) ), hue = floor( mod( k, 5 ) );
+	let petal: V3 = vec3( ...PETALS[ 0 ] as [ number, number, number ] );
+	for ( let i = 1; i < PETALS.length; i ++ ) petal = mix( petal, vec3( ...PETALS[ i ] as [ number, number, number ] ), step( i - 0.5, hue ) );
+	const daisy = float( 1 ).sub( step( 0.5, shape ) ), cup = step( 1.5, shape );
+	const side = abs( across ).div( max( radius, 1e-3 ) );
+	const ray = step( side, mix( float( 0.8 ), float( 0.25 ), radius.mul( radius ) ) );
+	const inCentre = step( radius, mix( float( 0.25 ), float( 0.32 ), daisy ) );
+	const mask = mix( step( radius, float( 1 ).sub( side.mul( side ).mul( 0.18 ) ) ), max( ray, inCentre ), daisy );
+	const throat = mix( float( 1 ), radius.mul( 0.45 ).add( 0.55 ), cup );
+	const centre = mix( petal.mul( 0.4 ), vec3( ...DAISY_CENTRE as [ number, number, number ] ), daisy );
+	return { colour: mix( petal.mul( throat ), centre, inCentre ), mask };
+
+}
+
+// A head's light, wrapped round the blades' light hook (the hook's own lines stay the blades'): its
+// petals take light through them as the old wildflowers' did, untinted and a little from any side,
+// in place of the blades' yellow translucency, and no gloss; the canopy's light is the blades' at
+// the head's height (about their tips'). `head` is 1 on a head's fragments.
+function withHeadLight( head: F, options: VegetationOptions ): VegetationOptions {
+
+	const light = options.light;
+	return { ...options, light: ( rest ) => {
+
+		const blades = typeof light === 'function' ? light( rest ) : light;
+		const extra = blades.extra!, sheen = blades.sheen!;
+		return {
+			scale: blades.scale,
+			extra: ( L, V, N ) => mix( extra( L, V, N ) as V3, vec3( backlight( L, V, 3 ).mul( 0.6 ).add( 0.12 ) ), head ),
+			sheen: ( L, V, N ) => sheen( L, V, N ).mul( float( 1 ).sub( head ) ),
+		};
+
+	} };
+
+}
+
 function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ): THREE.MeshStandardNodeMaterial {
 
 	// The blades' opacity is 0 or 1 (whole blades, below): the factory's 'blade' family draws a
@@ -506,6 +683,12 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const origin = tuft.xyz;
 	const pick = rootHash( origin.xz );
 	const pose = restBlade( blade, pick );
+	// A flowering tuft's head (`flowerTuftGeometry`): its vertices take the head's pose, colour and
+	// light in place of a blade's, through the same stages.
+	// (1 on a head's vertex; every choice between the two is a blend by it, exact for the blades)
+	const isHead = step( HEAD_FLAG - 0.5, abs( blade.w ) );
+	const lod = tuftLod( origin );
+	const head = headPose( blade, pick, ground1.xyz, ground2.xyz, lod.gain );
 	// Whole blades instead of partial coverage (after tidewater's GrassField, Daniel Greenheck, MIT;
 	// the technique only): a widened blade's fragment is drawn solid where the blade's coverage
 	// there (`pixelWideBlade`) is at or above the blade's own hash and not at all below it. A blade
@@ -520,12 +703,20 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// WebGPU's limit): its keep hash, the side of its centreline, and its value and tint hashes
 	// (taken per vertex: the blade's id comes from its attribute's magnitude, whose sign flips
 	// across the blade, so interpolated it is the id only at the edges).
-	const bladeVarying = varying( vec4( pose.hash, pose.side, bladeHash( pose.id, pick, 5 ), bladeHash( pose.id, pick, 6 ) ), 'vGrassBlade' );
+	// A head's vertex passes instead its keep hash, its place across its petal and from the centre,
+	// and 2 + its flower code, which tells it apart in the fragment stage (blade hashes are below 1).
+	const bladeVarying = varying( mix(
+		vec4( pose.hash, pose.side, bladeHash( pose.id, pick, 5 ), bladeHash( pose.id, pick, 6 ) ),
+		vec4( head.hash, positionGeometry.x, blade.z, ground0.y.add( 1 ) ), isHead ), 'vGrassBlade' );
 	// sway: gusts travel across the meadow, the tips move most. `p` is the vertex of the blade's
 	// rest pose placed by the tuft's transform, i.e. in world space (the mesh itself stays
 	// untransformed), computed as three's instancing did; held in a variable as three's was,
 	// which keeps the rounding of every expression built on it.
-	const p = input.matrix.mul( vec4( pose.position, 1 ) ).xyz.toVar( 'grassPlaced' );
+	const placed = input.matrix.mul( vec4( mix( pose.position, head.centre, isHead ), 1 ) ).xyz.toVar( 'grassPlaced' );
+	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, ground0.w );
+	// a head's vertex: its centre placed, then its offset on the disc, widened about the centre
+	const headSize = headWiden( placed, head.radius, minWidth );
+	const p = placed.add( head.offset.mul( headSize.widen.mul( isHead ) ) );
 	// Folding a thinned tuft into its root: a scale about the anchor, applied like the drowning.
 	const thin = ground1.w;
 	const kept = float( 1 ).sub( thin.mul( smoothstepN( grassUniforms.thinNear, grassUniforms.thinFar, length( cameraPosition.sub( origin ) ) ) ) );
@@ -543,16 +734,16 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// The blade's half width at this vertex in world space: its local offset from the centreline
 	// through the instance's own axes, then the same drowning scale as `rooted` (an affine map of
 	// the position, so it scales offsets alike; the bend barely varies across a blade).
-	const across = ground1.xyz.mul( pose.offset.x ).add( ground2.xyz.mul( pose.offset.y ) ).mul( drowned );
-	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, ground0.w );
-	const lod = tuftLod( origin );
+	const across = ground1.xyz.mul( pose.offset.x ).add( ground2.xyz.mul( pose.offset.y ) ).mul( drowned ).mul( float( 1 ).sub( isHead ) );
+	// a head is always kept whole, whatever its tuft keeps of its blades
+	const keep = mix( lod.keep, 1, isHead ), gain = mix( lod.gain, 1, isHead );
 	const bend = bendBlade( shared.wind, rooted, origin, tuft.w, t2, phase );
 	// A blade of a tuft past 70 m stands for as many of the blades it drew there as its gain over
 	// NEAR_GAIN (exactly 1 within 70 m) and is drawn as that many strips side by side, each with its
 	// own fold, edge and tint (`bladeStrips`): one plain blade 16 times as wide read at the island
 	// view as a cover of broad leaves, coarser than the blades a few pixels wide it stands for. The
 	// count rides with the rim cover in one varying (the meadow's varyings are near WebGPU's limit).
-	const rimVarying = varying( vec2( ground0.z, max( lod.gain.div( NEAR_GAIN ), 1 ) ), 'vGrassRimCover' );
+	const rimVarying = varying( vec2( ground0.z, max( gain.div( NEAR_GAIN ), 1 ) ), 'vGrassRimCover' );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
 	const cover = rimVarying.x;
 	const strip = bladeStrips( bladeVarying.y, bladeVarying.z, bladeVarying.w, rimVarying.y );
@@ -581,17 +772,21 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// canopy depth (MeadowCanopy.ts TURF_CANOPY_DEPTH), not its metres below the tuft's top: tall
 	// and short tufts then shade alike, so the growth field does not show as drifts of darker
 	// sward, and every root meets the turf's own shade.
+	// The head's fragments: its petals' colour and shape (`headShape`), lit as a petal.
+	const onHead = step( 1.5, bladeVarying.w );
+	const headFragment = headShape( bladeVarying.y, bladeVarying.z, bladeVarying.w );
+	const bladeOnly = float( 1 ).sub( onHead );
 	const canopyDepth = ( at: THREE.Node<'vec3'> ) => max( float( 1 ).sub( at.y.sub( origin.y ).div( tuft.w ) ), 0 ).mul( TURF_CANOPY_DEPTH );
-	const mat = vegetationMaterial( shared, {
+	const mat = vegetationMaterial( shared, withHeadLight( onHead, {
 		family: 'blade', roughness: 0.86,
 		wet: { tint: 0.92, roughness: 0.76 },
-		color: ( wet ) => mix( root, vec3( TIP ), smoothstepN( 0.12, 1, t ) ).mul( bladeShift ).mul( edge ).mul( wet ),
+		color: ( wet ) => mix( mix( root, vec3( TIP ), smoothstepN( 0.12, 1, t ) ).mul( bladeShift ).mul( edge ), headFragment.colour, onHead ).mul( wet ),
 		rest: rooted,
 		// Short growth needs a smaller world-space sway to keep its tips above the soil.
 		// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
 		// camera: a previous frame's pose from the registered displacement keeps them as they are now.
 		displacement: ( state ) => pixelWideBlade(
-			state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, phase ).position, across, minWidth, lod.keep, lod.gain ),
+			state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, phase ).position, across, minWidth, keep, gain, isHead, headSize.coverage ),
 		// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
 		// rooted point, widened by the offset the current pose took (the widening follows the camera,
 		// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
@@ -603,15 +798,17 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 			// The blade's own lean tilts it too, so blades leaning apart take the light apart.
 			const normal = transformNormal( normalLocal, input.matrix );
 			const leanWorld = ground1.xyz.mul( pose.lean.x ).add( ground2.xyz.mul( pose.lean.y ) );
-			normalLocal.assign( normalize( normal.add( bend.lean.mul( t.mul( 1.5 ) ) ).add( leanWorld.mul( t.mul( LEAN_NORMAL ) ) ) ) );
-			instanceColor.assign( input.color );
+			normalLocal.assign( mix( normalize( normal.add( bend.lean.mul( t.mul( 1.5 ) ) ).add( leanWorld.mul( t.mul( LEAN_NORMAL ) ) ) ), normalize( head.normal.add( bend.lean.mul( 1.5 ) ) ), isHead ) );
+			// (a head takes its own colour, not the lawn's)
+			instanceColor.assign( mix( input.color, vec3( 1 ), isHead ) );
 
 		},
 		sway: () => bend.lean.xz,
 		// The tuft's envelope, the same from both sides, folded: each half of a blade turns its normal
 		// toward its own edge, so one half takes the light and the other turns from it (FOLD), as a
 		// leaf folded along its midrib does.
-		normal: normalize( normalViewGeometry.add( axisView.mul( clamp( side.mul( 4 ), - 1, 1 ).mul( FOLD ) ) ) ),
+		// A head is not folded.
+		normal: normalize( normalViewGeometry.add( axisView.mul( clamp( side.mul( 4 ), - 1, 1 ).mul( FOLD ).mul( bladeOnly ) ) ) ),
 		// The static visibility affects indirect illumination only; sunlight keeps its own shadows.
 		// Both the sky's light (here) and the key light (`VegetationLighting` below) fall off toward
 		// the root.
@@ -645,8 +842,8 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 			};
 
 		},
-	} );
-	mat.opacityNode = step( bladeVarying.x, bladeCoverage );
+	} ) );
+	mat.opacityNode = step( bladeVarying.x, bladeCoverage ).mul( mix( float( 1 ), headFragment.mask, onHead ) );
 	// A blade's specular at SPECULAR of a plain dielectric's (F0 0.04, F90 1): seen edge on, as the
 	// game camera sees upright blades, the full Fresnel term laid a pale sky reflection over the
 	// whole meadow, a grey veil that read as plastic and took a quarter of its saturation.
@@ -667,7 +864,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 
 }
 
-export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3 }
+export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3; flower: number }
 
 type GrassCull = VegetationCull<Tuft>;
 
@@ -729,14 +926,14 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 		t.m.toArray( matrices, i * 16 );
 		colors[ i * 4 ] = t.col.r; colors[ i * 4 + 1 ] = t.col.g; colors[ i * 4 + 2 ] = t.col.b;
 		const e = t.m.elements;
-		// x: sky visibility, y: unused (0), z: rim cover, w: rim edge (1 on the plateau's outer rim,
+		// x: sky visibility, y: the flower code of a flowering tuft (`flowerCode`, else 0), z: rim cover, w: rim edge (1 on the plateau's outer rim,
 		// where blades stand against the sea and stay narrower: the opaque pass's MSAA edge pixels
 		// there resolve against the sky-coloured clear, so every partly covered pixel a widened
 		// blade adds shows as a pale fringe over the sea); then the instance's local x axis with the
 		// thin flag (1 for the extra tufts that fold away with distance), and its local z axis. A
 		// blade's width lies in the plane of those axes: the vertex stage keeps thin blades a
 		// minimum width on screen in world space.
-		ground.set( [ t.visibility, 0, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], 0 ], i * 12 );
+		ground.set( [ t.visibility, t.flower, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], 0 ], i * 12 );
 		t.origin.toArray( origins, i * 4 );
 		origins[ i * 4 + 3 ] = t.top;
 
@@ -816,12 +1013,13 @@ function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, floor: number
 // draws every tuft.
 const _cameraPosition = new THREE.Vector3();
 
-interface Batch { mesh: THREE.InstancedMesh; box: THREE.Box3; shape: TuftShape; floor: number; thin: boolean; count: number; range: CullRange }
+// (`base`: the indices drawn before the blades, a flowering tuft's head)
+interface Batch { mesh: THREE.InstancedMesh; box: THREE.Box3; shape: TuftShape; floor: number; thin: boolean; count: number; range: CullRange; base: number }
 
 function selectBatch( batch: Batch, camera: THREE.Camera ): void {
 
 	const { mesh, shape } = batch;
-	const full = shape.blades * shape.segs * 6;
+	const full = batch.base + shape.blades * shape.segs * 6;
 	if ( ! ( camera as THREE.PerspectiveCamera ).isPerspectiveCamera ) {
 
 		mesh.count = batch.count;
@@ -837,7 +1035,7 @@ function selectBatch( batch: Batch, camera: THREE.Camera ): void {
 	// (the shader's count rounds a little differently: a blade it keeps a sliver of past the range
 	// is a hair's width, and the full range at the first band is exact)
 	const blades = lod ? Math.min( shape.blades, Math.ceil( shape.blades * bladeShare( d * ( 1 - LOD_STAGGER ), batch.floor ) - 1e-6 ) ) : shape.blades;
-	mesh.geometry.drawRange.count = blades * shape.segs * 6;
+	mesh.geometry.drawRange.count = batch.base + blades * shape.segs * 6;
 	mesh.userData.grassLod = lod;
 
 }
@@ -878,28 +1076,29 @@ function batchOf( source: THREE.BufferGeometry, shape: TuftShape, floor: number,
 	const mesh = tuftMesh( source, shape, floor, material, cull, range, name );
 	const box = new THREE.Box3();
 	for ( const t of tufts ) box.expandByPoint( t.origin );
-	return { mesh, box, shape, floor, thin, count: tufts.length, range };
+	return { mesh, box, shape, floor, thin, count: tufts.length, range, base: source.userData.baseIndices ?? 0 };
 
 }
 
-/** The meadow's tufts of each kind, one record per instance. */
-export interface GrassTufts { lawn: Tuft[]; lawnThin: Tuft[] }
+/** The meadow's tufts of each kind, one record per instance: the lawn, its thin extra tufts and
+ * its flowering tufts. */
+export interface GrassTufts { lawn: Tuft[]; lawnThin: Tuft[]; lawnFlower: Tuft[] }
 
 /** The tufts grown on the anchors `veg` (any of them: each anchor's tufts depend on that anchor
- * alone). */
-export function plantGrass( veg: Float32Array, rimGround?: RimGroundField ): GrassTufts {
+ * alone); `walkDistance` (m from a point to the islander's loop) keeps the flowers off the path. */
+export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): GrassTufts {
 
 	const n = veg.length / STRIDE;
-	const lawn: Tuft[] = [], lawnThin: Tuft[] = [];
+	const lawn: Tuft[] = [], lawnThin: Tuft[] = [], lawnFlower: Tuft[] = [];
 	const draws = new Float32Array( 8 );
 	const q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
 	const out = new THREE.Vector3();
 	const col = new THREE.Color();
 	const plant = ( list: Tuft[], at: THREE.Vector3, rotation: THREE.Quaternion, scale: THREE.Vector3, color: THREE.Color,
-		k: number, cover: number, rimEdge: number, thin: number ) => list.push( {
+		k: number, cover: number, rimEdge: number, thin: number, flower = 0 ) => list.push( {
 		m: new THREE.Matrix4().compose( at, rotation, scale ), col: color.clone(), visibility: veg[ k + 8 ], cover, rimEdge, thin,
-		top: scale.y * CANOPY_TOP, origin: at.clone(),
+		top: scale.y * CANOPY_TOP, origin: at.clone(), flower,
 	} );
 
 	for ( let i = 0; i < n; i ++ ) {
@@ -960,7 +1159,13 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField ): Gra
 		scl.x *= 0.65 + 0.35 * cover;
 		scl.z *= 0.65 + 0.35 * cover;
 		scl.y *= 0.8 + 0.2 * cover;
-		plant( lawn, pos, q, scl, col, k, cover, rimEdge, 0 );
+		// Whether the tuft flowers, from a stream of its own (the lawn's draws stay as they were).
+		const bloom = anchorStream( x, z, 211 );
+		const b0 = bloom(), b1 = bloom(), b2 = bloom();
+		const field = smoothstep( FLOWER_EDGE[ 0 ], FLOWER_EDGE[ 1 ], noise3( x * FLOWER_FIELD + 3.7, 1.9, z * FLOWER_FIELD - 8.2 ) );
+		const flower = b0 < FLOWER_SHARE * ( FLOWER_THIN + ( FLOWER_RICH - FLOWER_THIN ) * field ) && ! onStack && rim < FLOWER_RIM && ( ! walkDistance || walkDistance( x, z ) >= FLOWER_CLEAR )
+			? flowerCode( x, z, b1, b2 ) : 0;
+		plant( flower > 0 ? lawnFlower : lawn, pos, q, scl, col, k, cover, rimEdge, 0, flower );
 
 		// About a quarter of the anchors take a second lawn tuft beside the first, picked by the
 		// anchor's own hash (no field: a field made patches of denser sward). Clear of the rim,
@@ -976,13 +1181,13 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField ): Gra
 		}
 
 	}
-	return { lawn, lawnThin };
+	return { lawn, lawnThin, lawnFlower };
 
 }
 
 /** The meadow: its lawn meshes in one group, drawing the tufts `plantGrass` grew; `sunShadow`
  * gives the blades the larger casters' soft shade. */
-export function buildGrass( { lawn, lawnThin }: GrassTufts, shared: Shared, sunShadow: SunShadow ): THREE.Group {
+export function buildGrass( { lawn, lawnThin, lawnFlower }: GrassTufts, shared: Shared, sunShadow: SunShadow ): THREE.Group {
 
 	// (the tier's least blade width applies under the temporal modes only: 4x and one sample keep
 	// theirs, see `grassUniforms`)
@@ -997,15 +1202,19 @@ export function buildGrass( { lawn, lawnThin }: GrassTufts, shared: Shared, sunS
 	// fold (the cull drops it past thinFar).
 	const minShare = LEAST_BLADES / LAWN.blades;
 	const thinShare = bladeShare( grassUniforms.thinFar.value + 0.01, 0 );
-	const kinds = [
-		{ geometry: lawnGeometry, shape: LAWN, floor: 0, tufts: lawn, name: 'grass-lawn', thin: false, minShare },
+	const kinds: { geometry: THREE.BufferGeometry; shape: TuftShape; floor: number; tufts: Tuft[]; name: string; key: keyof GrassTufts; thin: boolean; minShare: number }[] = [
+		{ geometry: lawnGeometry, shape: LAWN, floor: 0, tufts: lawn, name: 'grass-lawn', key: 'lawn', thin: false, minShare },
 	];
-	// (the thin batch exists whenever the tier grows thin tufts, even with none yet: a grown island's
-	// meadow then fills the same batches, and the cull's kernels stay the same)
-	if ( grassQuality.thinTufts ) kinds.push( { geometry: lawnGeometry, shape: LAWN, floor: 0, tufts: lawnThin, name: 'grass-lawn-thin', thin: true, minShare: thinShare } );
+	// (the thin batch exists whenever the tier grows thin tufts, even with none yet, and the
+	// flowering batch always: a grown island's meadow then fills the same batches, and the cull's
+	// kernels stay the same)
+	if ( grassQuality.thinTufts ) kinds.push( { geometry: lawnGeometry, shape: LAWN, floor: 0, tufts: lawnThin, name: 'grass-lawn-thin', key: 'lawnThin', thin: true, minShare: thinShare } );
+	// The flowering tufts draw on their own, over the lawn's blades and a head, so the tufts without
+	// a flower run no head vertices.
+	kinds.push( { geometry: flowerTuftGeometry( lawnGeometry ), shape: LAWN, floor: 0, tufts: lawnFlower, name: 'grass-lawn-flower', key: 'lawnFlower', thin: false, minShare } );
 	const cull: GrassCull = new VegetationCull( { name: 'Grass', payload: GRASS_PAYLOAD, lod: cullLod }, kinds.map( ( k ) => ( {
 		records: k.tufts, geometry: k.geometry, blades: k.shape.blades, floor: k.floor,
-		caps: bandCaps( k.shape.blades, k.floor, k.minShare ), bladeIndices: k.shape.segs * 6,
+		caps: bandCaps( k.shape.blades, k.floor, k.minShare ), bladeIndices: k.shape.segs * 6, baseIndices: k.geometry.userData.baseIndices ?? 0,
 	} ) ) );
 	const material = grassMaterial( shared, cull, sunShadow );
 	const batches = kinds.map( ( k, i ) => batchOf( k.geometry, k.shape, k.floor, material, cull, cull.ranges[ i ], k.tufts, k.name, k.thin ) );
@@ -1028,7 +1237,15 @@ export function buildGrass( { lawn, lawnThin }: GrassTufts, shared: Shared, sunS
 	group.userData.thinFar = grassUniforms.thinFar;
 	group.userData.batches = batches;
 	group.userData.cull = cull;
-	group.userData.kinds = kinds.map( ( k ) => ( { geometry: k.geometry, key: k.name === 'grass-lawn' ? 'lawn' : 'lawnThin' } ) );
+	group.userData.kinds = kinds.map( ( k ) => ( { geometry: k.geometry, key: k.key } ) );
+	// the flowering tufts' anchors on the land shown, [ x, y, z ] each (the parity views find the
+	// flowers by them: tools/parity/views.mjs)
+	group.userData.flowerHeads = () => {
+
+		const range = cull.ranges[ kinds.findIndex( ( k ) => k.key === 'lawnFlower' ) ], origins = cull.buffer( 'origins' ).array as Float32Array;
+		return Array.from( { length: range.count }, ( _, i ) => Array.from( origins.subarray( ( range.start + i ) * 4, ( range.start + i ) * 4 + 3 ) ) );
+
+	};
 	return group;
 
 }
@@ -1098,12 +1315,13 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 			*prepare( input ) {
 
 				const veg = input.data.vegetation, anchors = veg.length / STRIDE;
-				const tufts: GrassTufts = { lawn: [], lawnThin: [] };
+				const tufts: GrassTufts = { lawn: [], lawnThin: [], lawnFlower: [] };
 				for ( let a = 0; a < anchors; a += 16 ) {
 
-					const part = plantGrass( veg.subarray( a * STRIDE, Math.min( anchors, a + 16 ) * STRIDE ), input.data.rimGround );
+					const part = plantGrass( veg.subarray( a * STRIDE, Math.min( anchors, a + 16 ) * STRIDE ), input.data.rimGround, ( x, z ) => input.walkDistance( x, z ) );
 					tufts.lawn.push( ...part.lawn );
 					tufts.lawnThin.push( ...part.lawnThin );
+					tufts.lawnFlower.push( ...part.lawnFlower );
 					yield;
 
 				}

@@ -585,7 +585,7 @@ const plantSites = pickPlantSites( data.vegetation, data.bushes, walkDistance );
 bakeAnchorContact( data.vegetation, plantSites );
 const plants = buildPlants( plantSites, shared, plantCache );
 setGrassQuality( quality.grass );
-const grass = buildGrass( plantGrass( data.vegetation, data.rimGround ), shared, sunShadow );
+const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance ), shared, sunShadow );
 const flowers = buildFlowers( plantFlowers( data.vegetation, walkDistance ), shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
