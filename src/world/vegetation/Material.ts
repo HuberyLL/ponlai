@@ -27,7 +27,7 @@ import type { Shared } from '../../shared.ts';
 // to come; no kind uses it today, since the rim bushes, the rim's trails and the plateau's plants
 // were removed), 'blade' (the meadow's blades and flower heads: tagged as vegetation, no leaf map, drawn
 // whole or not at all: alpha to coverage at 4x, else `coverageDither`'s threshold) and 'sod' (the
-// turf skirt: not tagged, so it takes the ordinary shadow filter and stays out of the depth
+// rim's hanging grass: not tagged, so it takes the ordinary shadow filter and stays out of the depth
 // prepass). A leaf's `alphaTest: 'alphaOnly'` keeps no numeric cut-out (as a material cloned with
 // three's NodeMaterial.copy has, which skips Material's alphaTest setter): the shadow passes and 4x
 // cut it by its alpha alone.

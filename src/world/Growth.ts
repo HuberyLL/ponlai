@@ -39,7 +39,7 @@ import { SeabedRise } from './SeabedRise.ts';
 //   most SLICE ms of steps of a few tenths of a millisecond each: the merge (ChunkMerge.ts
 //   mergeSteps), the land's box and the page's framing of it (`measure`), the new island meshes
 //   of the changed land chunks, the merged kinds' new geometry (the stones, the sea floor, the
-//   turf skirt, their bounds found in steps: Steps.ts), the walking loop, each vegetation kind its
+//   rim's hanging grass, their bounds found in steps: Steps.ts), the walking loop, each vegetation kind its
 //   own part in registry order (vegetation/Registry.ts: the meadow planted a slice of anchors at a
 //   step, its cull pool filled), the world fields (WorldFields.ts)
 //   and the shore's wave fields (in a worker, ShoreWaves.ts, on a copy of the shore field made in
@@ -58,7 +58,7 @@ import { SeabedRise } from './SeabedRise.ts';
 // - The swap, in the frame's tick before the camera and the shadows update (main.ts's one-line
 //   hook): the changed island meshes out and the new ones in (ordered by chunk, ( cj, ci ), as a
 //   page loaded on that land orders them), the merged kinds' geometry, then each vegetation kind's
-//   swap (the skirt's geometry, the meadow's pool: the cull's storage nodes (vegetation/VegetationCull.ts) pointed at the new buffers),
+//   swap (the hanging grass's geometry, the meadow's pool: the cull's storage nodes (vegetation/VegetationCull.ts) pointed at the new buffers),
 //   the fields' changed squares (copied on the GPU) or new textures, the shore's wave fields, the
 //   refracted sun's casters, the walker's loop, and the page's own (main.ts `onSwap`: the land's
 //   box and framing as measured ahead, the fog's clearing, the sun's caster box and columns, the

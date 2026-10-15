@@ -37,7 +37,7 @@ import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { trackKeyRim } from './lighting/KeyRim.ts';
-import { buildTurfSkirt, turfSkirtKind } from './world/RimSkirt.ts';
+import { buildRimGrass, rimGrassKind } from './world/RimGrass.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName, type LookSettings } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
@@ -579,12 +579,12 @@ refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
 setGrassQuality( quality.grass );
 const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance ), shared, sunShadow );
-const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
+const rimGrass = buildRimGrass( data.rimLip, shared );
 // The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
 // of vegetation below reads it.
 const vegetation = new Vegetation();
 vegetation.add( grassKind( grass, renderer ) );
-vegetation.add( turfSkirtKind( turfSkirt ) );
+vegetation.add( rimGrassKind( rimGrass ) );
 scene.add( ...vegetation.roots() );
 installWindMotionFlag( scene );
 installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
@@ -2077,7 +2077,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, rimGrass, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, vegetation }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes

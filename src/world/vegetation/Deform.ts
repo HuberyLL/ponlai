@@ -5,9 +5,8 @@ import { puddleCover } from '../../weather/Puddles.ts';
 
 // How the vegetation moves: the plants' main bend (`mainBend`: today only the game's palm), the
 // meadow's blades and flower heads (`bendBlade`, each on its own phase, `bladePhase`), a hanging
-// strand's pendulum (`hangingSway`: the grass hanging from the turf skirt's lip, which passes its
-// own HangingWind), the turf skirt's thatch leaning (`skirtLean`) and standing water drowning a
-// plant (`drown`: the meadow). Each kind's wind numbers (its amplitude, its swings per gust tile,
+// strand's pendulum (`hangingSway`: the grass hanging from the rim's lip, which passes its own
+// HangingWind) and standing water drowning a plant (`drown`: the meadow). Each kind's wind numbers (its amplitude, its swings per gust tile,
 // `slow`) are the exported constants below, which its material and the wind probe
 // (debug/WindProbe.ts) both read. The swings per gust tile set the kind's natural frequency,
 // `swayFrequency( cycles )` Hz (Wind.ts), the same in every wind: a stronger wind leans a plant
@@ -40,12 +39,11 @@ export const PALM_WIND = { cycles: 30, slow: 1 } as const;
  * view the far meadow's sway is gone, which cut its single-frame flashes by two thirds (a later
  * window, 6.5 to 8.5, cut them only a few per cent more). */
 export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust: 0.02 }, shiver: { base: 0.003, gust: 0.006 }, fade: { none: 4, full: 7 } } as const;
-/** The turf skirt's thatch: its lean at the blade tips (m at LEAN_REF) and its shiver's swings per
- * gust tile (1.9 Hz); the grass hanging from its lip swings as a hanging strand (`hang`,
- * `hangingSway`'s numbers): a blade's weight is its length times the square of the way down it, so
- * a metre-long blade's tip sways about 3 cm in a fair gust, at 0.71 Hz (0.48 Hz across), and lies
- * on the wall rather than pressing into it. */
-export const SKIRT_WIND = { amplitude: 0.012, cycles: 64, hang: { amplitude: 0.018, cycles: 24, across: 16, press: 0.02, leafEdge: 0 } } as const;
+/** The grass hanging from the rim's lip (RimGrass.ts) swings as a hanging strand (`hangingSway`'s
+ * numbers): a blade's weight is its length times the square of the way down it, so a metre-long
+ * blade's tip sways about 3 cm in a fair gust, at 0.71 Hz (0.48 Hz across), and lies on the wall
+ * rather than pressing into it. */
+export const RIM_GRASS_WIND = { amplitude: 0.018, cycles: 24, across: 16, press: 0.02, leafEdge: 0 } as const;
 
 /** A plant's main bend, after Sousa's "Vegetation Procedural Animation and Shading in Crysis"
  * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways a little
@@ -158,18 +156,6 @@ export function hangingSway( wind: WindState, v: HangingInputs, numbers: Hanging
 	const offset = free.add( v.out.mul( max( float( - numbers.press ).sub( dot( free, v.out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( v.weight ).mul( 0.01 ) ) ) );
 	const flutter = wave( wind.clock, 3.7, v.leafPhase );
 	return { position: v.position.add( offset ).add( v.normal.mul( flutter.mul( v.leafEdge ).mul( lively ).mul( numbers.leafEdge ) ) ), sway };
-
-}
-
-/** The turf skirt's thatch leans with the meadow's gust field and shivers with it (Wind.ts
- * `gustWave`, SKIRT_WIND), a sixth of its lean, each vertex by its `weight` (0 on the sod). Returns
- * the leaning position and the sway (as mainBend's). */
-export function skirtLean( wind: WindState, position: V3, weight: F ): { position: V3; sway: V2 } {
-
-	const field = windField( wind, position.xz );
-	const shiver = gustWave( wind, position.xz, SKIRT_WIND.cycles ).mul( swingOf( wind, field.w ) );
-	const sway = field.xy.mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( LEAN_REF );
-	return { position: position.add( vec3( field.x, 0.25, field.y ).mul( field.z.div( LEAN_REF ).add( shiver ) ).mul( weight ).mul( SKIRT_WIND.amplitude ) ), sway };
 
 }
 

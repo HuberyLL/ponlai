@@ -1,7 +1,7 @@
 // The vegetation's shapes under load: a blade or a stem is a thin elastic strand clamped at its
 // root, bent by its own weight (and, to come, by the wind's pressure) against its stiffness, and
 // held off whatever it lies on. Every kind that takes a physical shape reads its numbers and
-// curves here: today the grass hanging from the turf skirt's lip (RimSkirt.ts), its rest shape
+// curves here: today the grass hanging from the rim's lip (RimGrass.ts), its rest shape
 // computed on the CPU as the page builds it; the meadow's blades and flower stems are to take the
 // same model on the GPU, in the wind of the frame, from these numbers.
 //
@@ -13,7 +13,7 @@
 //   rigidity there. It bends in the vertical plane of its root's direction (gravity has no
 //   sideways part).
 // - Its cross-section is a blade of width b(u) = b0 sqrt( 1 - u^2 ) (sword-shaped, as the meadow's
-//   and the skirt's blades are drawn; u = s / L) and thickness h(u) = h0 ( 1 - u + taper u ), so
+//   and the rim's blades are drawn; u = s / L) and thickness h(u) = h0 ( 1 - u + taper u ), so
 //   EI = E f b h^3 / 12 and the weight per metre w = rho g b h. f stiffens a blade folded along its
 //   midrib (a V section against a flat strip). b0 cancels out of the shape: it is governed by the
 //   gravity number G = w0 L^3 / EI0 = 12 rho g L^3 / ( E f h0^2 ) alone, with the taper. G grows

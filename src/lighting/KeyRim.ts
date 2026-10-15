@@ -61,7 +61,7 @@ export const KEY_RIM = {
 	blade: { rim: 0.5, sheen: 0.012, edgeFrom: 0.45, edgeTo: 0.92, back: 0, backPower: 4, thin: 1 },
 	// Folded leaves (the leaf family: the plant kinds to come; the flower heads are blades).
 	leaf: { rim: 0.45, sheen: 0.025, edgeFrom: 0.6, edgeTo: 0.95, back: 0, backPower: 4, thin: 1 },
-	// The turf skirt's sod (its blades keep their transmission).
+	// The rim's hanging grass (the vegetation's 'sod' family).
 	sod: { rim: 0.4, sheen: 0.02, edgeFrom: 0.6, edgeTo: 0.95, back: 0, backPower: 4, thin: 0 },
 	// Bark (for the trees to come): opaque, a thin halo where it stands against the light.
 	bark: { rim: 0.5, sheen: 0.02, edgeFrom: 0.55, edgeTo: 0.92, back: 0.6, backPower: 6, thin: 0 },

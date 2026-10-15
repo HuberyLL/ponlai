@@ -39,11 +39,12 @@ export interface RimGroundField extends ShoreField {}
 // RG: the sea floor's seagrass cover and pale-sand share (Bathymetry's seabedBeds).
 export interface SeabedBedField extends ShoreField {}
 
-// The turf skirt over the rim: SKIRT_RING cross-section points ( x, y, z ) per coast sample and
-// their normals, per sample its place on the coast ( x, z ), the outward direction ( x, z ),
-// presence and droop (SKIRT_INFO), and ( first sample, count ) per piece: a stretch of the coast
-// inside one box, between the points where it crosses the box's border (or a whole loop).
-export interface RimSkirtData { points: Float32Array; normals: Float32Array; info: Float32Array; pieces: Int32Array }
+// The rim's lip, which the hanging grass grows from: LIP_POINTS root points ( x, y, z ) per coast
+// sample, per sample its place on the coast ( x, z ), the outward direction ( x, z ), presence,
+// the roof's height and the wall below it (LIP_INFO), and ( first sample, count ) per piece: a
+// stretch of the coast inside one box, between the points where it crosses the box's border (or a
+// whole loop).
+export interface RimLipData { points: Float32Array; info: Float32Array; pieces: Int32Array }
 
 // A land chunk's part of the island's surface (Chunks.ts: its owned quads, in world space) and what
 // its job derived from it for the page (ChunkDerived.ts): the sun's caster columns, the camera's
@@ -77,7 +78,7 @@ export interface WorldData {
 	// (0 island), local sky visibility. Placement still uses the first eight.
 	vegetation: Float32Array;
 	rimGround: RimGroundField;
-	rimSkirt: RimSkirtData;
+	rimLip: RimLipData;
 	// The sea-level section's signed distance (m, clamped to +-LAND_REACH) over the land's box and
 	// 32 m round it, out to the world's 32 m grid (ChunkMerge.ts fieldBounds).
 	shore: ShoreField;

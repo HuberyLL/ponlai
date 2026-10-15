@@ -164,7 +164,7 @@ for ( const [ file, text ] of sources ) {
 	assert.ok( ! /gustScroll|swayScroll/.test( text ), `${ file }: a wind scroll read outside Wind.ts` );
 
 }
-// (the grass, its flowers, the skirt, the palm and hangingSway read them today: the scan must find them)
+// (the grass, its flowers, the palm and hangingSway read them today: the scan must find them)
 assert.ok( reads >= 6, `found ${ reads } wind clock reads` );
 assert.throws( () => gustWave( createWindUniforms(), null, 2.5 ), RangeError, 'gustWave takes whole swings per gust tile' );
 // numerically: across the wraps the shaders' arguments move by the step alone

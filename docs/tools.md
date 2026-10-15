@@ -208,7 +208,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `windView` makes the vegetation's wind visible (debug pages only; read at load, so without it
   no shader changes; `src/debug/WindView.ts`): flat unlit arrows every 2 m over the meadow, just
   above the grass, point where the local wind blows (the eddies' veer included), longer in a
-  gust and brighter with the lean it gives; and every plant (grass and its flowers, turf skirt, the game's
+  gust and brighter with the lean it gives; and every plant (grass and its flowers, the rim's hanging grass, the game's
   palm) is drawn unlit in the colour of its current sway s (tip
   offset over height): the hue is s's angle from the mean wind on a cyclic map (downwind blue,
   upwind orange, left of the wind, counter-clockwise seen from above, magenta, right of it green),
@@ -1018,7 +1018,7 @@ probe eval of one's own.
   steps 0 and the last, the seams: the
   island and stone meshes close up (S1), the island's shared vertices and a 2 x 2 block meshed
   whole (S2), the floor tiles' shared points, the floor at or below -1.6 m off the land and the
-  tiles' outer sides on the open sea's lattice (S3), the turf skirt's border crossings (S4), a
+  tiles' outer sides on the open sea's lattice (S3), the rim's lip's border crossings (S4), a
   2 x 2 block's rim ground, shore, walk texels and anchors made in one pass (S5),
   the stones' owners and their copies in the neighbours' contact sets (S6), no island vertex or
   anchor near a chunk that carries no rim ground tile (S7), and no buried wall inland (I1). `--long` takes D1 at every step, D2 on all chunks of both seeds, the S checks at
