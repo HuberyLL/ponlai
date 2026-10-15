@@ -512,10 +512,14 @@ export class Fsr3Upscaler {
 	private description( render: Size, upscale: Size ): H.FfxFsr3UpscalerDispatchDescription {
 
 		const step = this.frameStep;
+		// (the conventions' checks: `flags.fsrJitterSign` and `flags.fsrMotionScale` scale what FSR is
+		// told the jitter and the motion are, to show its image is best at 1)
+		const js = typeof debugFlags.fsrJitterSign === 'number' ? debugFlags.fsrJitterSign : 1;
+		const ms = typeof debugFlags.fsrMotionScale === 'number' ? debugFlags.fsrMotionScale : 1;
 		return {
 			hasExposure: true,
-			jitterOffset: { x: - jitter.px.x, y: - jitter.px.y },
-			motionVectorScale: { x: - 0.5 * render.width, y: 0.5 * render.height },
+			jitterOffset: { x: - js * jitter.px.x, y: - js * jitter.px.y },
+			motionVectorScale: { x: - 0.5 * ms * render.width, y: 0.5 * ms * render.height },
 			renderSize: { ...render }, upscaleSize: { ...upscale },
 			enableSharpening: true, sharpness: this.settings.fsr3.sharpness,
 			frameTimeDelta: step.step > 0 ? step.step * 1000 : step.interval,

@@ -148,7 +148,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   the live constants, frame index, phase count, jobs and clears); `__PONLAI__.fsr3` is the upscaler.
   It needs the composite pass (`post=inline-composite` and `post=legacy` run msaa). Flags:
   `flags=fsrMipBias:false` takes the terrain's mip bias off (live: `__PONLAI__.flags`),
-  `flags=fsrAutoReactive:true` runs the reactive-mask generator (read at load).
+  `flags=fsrAutoReactive:true` runs the reactive-mask generator (read at load),
+  `flags=fsrJitterSign:-1` / `fsrMotionScale:<k>` scale the jitter and the motion FSR is told (live;
+  the conventions' checks: FSR's image against the ground truth is best at 1).
 - `fsrDebug` (debug builds, under `aa=fsr3`): FSR's debug view over its output (a 3x3 grid:
   dilated motion, protected areas, dilated depth; disocclusion, shading change, detail protection
   takedown), drawn through the post chain, so graded.
