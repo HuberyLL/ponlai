@@ -1001,7 +1001,9 @@ probe eval of one's own.
 - `tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]` (plain `node`) builds
   every chunk of whole islands on a pool of worker threads (`buildChunk`, contact shade off) and
   checks the statistics of the union of what they own, with the bounds the look was tuned on: the
-  meadow's anchors, tufts and flowering tufts per m^2 against M2 (grown islands summed, 5 %); the rim's
+  meadow's anchors, tufts and flowering tufts per m^2 against M2 (grown islands summed, 5 %; the
+  flowers also printed by species, and `--flowers <dir>` writes each island's turf anchors and
+  flowering tufts as JSON to map them); the rim's
   trail patches (1 - 9 strands, no node below a quarter of its root's height, bare runs of median
   0.4 - 4 m and at most 4 m), bushes, strands and hanging length against M3 (10 %); the stones'
   overlaps, crowns and reach per island, and over seeds 1 - 6 at steps 0, 8, 16 their classes and

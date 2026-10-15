@@ -1,5 +1,5 @@
 // Statistical checks for the chunked world generator (plain node, CPU only):
-//   node tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]
+//   node tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n] [--flowers <dir>]
 //
 // tools/verify-world-chunks.mjs proves the chunks' seams and locality (a chunk equals itself built
 // incrementally, from scratch and as part of a block), not that what they make still has the
@@ -13,9 +13,11 @@
 //           among the lawn's (from the chunks' rim ground texels, assembled), per m^2 of land,
 //           against the counts before the anchors were hashed (M2; the lawn's
 //           extra tufts, since picked by hash rather than a field, keep its count; the flowers are
-//           the flowering tufts' counts since their density field was sharpened). Starting islands are
+//           the flowering tufts' counts since they grow in patches by habitat). Starting islands are
 //           printed only (a fresh draw moves the extra tufts by up to 25 %); the sum over the grown
-//           islands run (step 8 on) is within 5 % for every kind.
+//           islands run (step 8 on) is within 5 % for every kind. The counts print raw and per m^2,
+//           the flowers also by species; `--flowers <dir>` writes each island's turf anchors and
+//           flowering tufts ( x, z, species ) to <dir>/flowers-<seed>-<step>.json, to map them.
 //   rim     the chunks' bushes and trail strands. Per island: every trail patch (the strands rooted
 //           at one lip) holds 1 - 9 strands, no node sinks below a quarter of its root's height
 //           above the sea, the median bare run along the coast between patches is 0.4 - 4 m and
@@ -46,6 +48,7 @@
 import { Worker, isMainThread, parentPort } from 'node:worker_threads';
 import { availableParallelism } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
 import { growLand, LandLattice } from '../src/world/IslandGrowth.ts';
 import { buildChunk, chunkKeys, landField, landWindow, parseChunkKey, windowFootprint, R, S } from '../src/world/Chunks.ts';
@@ -360,15 +363,15 @@ const percent = ( n, m ) => `${ ( ( n / m - 1 ) * 100 ).toFixed( 1 ) } %`;
 
 // Counts on the whole island before the hashes (the world worker's
 // anchors, then buildGrass with the walking loop), by seed / growth step; `lawn` counts every lawn
-// tuft, flowering or not, and `flowers` the flowering ones (Grass.ts, counted since their density
-// field was sharpened).
+// tuft, flowering or not, and `flowers` the flowering ones (Grass.ts, counted since they grow in
+// patches by habitat).
 const M2 = {
-	'1/0': { anchors: 7105, lawn: 7004, thin: 1789, flowers: 1038 },
-	'1/8': { anchors: 36163, lawn: 35910, thin: 10150, flowers: 5056 },
-	'1/12': { anchors: 49465, lawn: 49189, thin: 13931, flowers: 7531 },
-	'2/0': { anchors: 7081, lawn: 7013, thin: 1555, flowers: 1026 },
-	'2/8': { anchors: 38584, lawn: 38349, thin: 9271, flowers: 5629 },
-	'2/12': { anchors: 52357, lawn: 52084, thin: 13629, flowers: 8094 },
+	'1/0': { anchors: 7105, lawn: 7004, thin: 1789, flowers: 603 },
+	'1/8': { anchors: 36163, lawn: 35910, thin: 10150, flowers: 2550 },
+	'1/12': { anchors: 49465, lawn: 49189, thin: 13931, flowers: 3860 },
+	'2/0': { anchors: 7081, lawn: 7013, thin: 1555, flowers: 748 },
+	'2/8': { anchors: 38584, lawn: 38349, thin: 9271, flowers: 2864 },
+	'2/12': { anchors: 52357, lawn: 52084, thin: 13629, flowers: 4357 },
 };
 
 // Grass.ts and WalkLoop.ts build three.js objects (and import modules plain node cannot
@@ -381,11 +384,11 @@ async function loadPlanting() {
 		root: new URL( '../', import.meta.url ).pathname, configFile: false, logLevel: 'error', appType: 'custom',
 		server: { middlewareMode: true, hmr: false, ws: false, watch: null }, optimizeDeps: { noDiscovery: true, include: [] },
 	} );
-	const { plantGrass } = await server.ssrLoadModule( '/src/world/Grass.ts' );
+	const { plantGrass, FLOWER_SPECIES: flowerSpecies } = await server.ssrLoadModule( '/src/world/Grass.ts' );
 	const { walkLoop } = await server.ssrLoadModule( '/src/world/WalkLoop.ts' );
 	const { walkLoopDistance } = await server.ssrLoadModule( '/src/world/WalkPath.ts' );
 	await server.close();
-	return { plantGrass, walkLoop, walkLoopDistance };
+	return { plantGrass, flowerSpecies, walkLoop, walkLoopDistance };
 
 }
 
@@ -401,7 +404,22 @@ function meadow( planting, island, chunks, pooled ) {
 	const counts = { anchors: anchors.length / VEGETATION_STRIDE, lawn: tufts.lawn.length + tufts.lawnFlower.length, thin: tufts.lawnThin.length, flowers: tufts.lawnFlower.length };
 	const area = landArea( land ), reference = M2[ `${ seed }/${ step }` ];
 	console.log( `     meadow seed ${ seed } grow ${ step }: ${ Object.entries( counts ).map( ( [ kind, k ] ) =>
-		`${ kind } ${ ( k / area ).toFixed( 2 ) }/m2${ reference ? ` (${ percent( k, reference[ kind ] ) })` : '' }` ).join( ', ' ) }${ reference ? ' against M2' : '' }` );
+		`${ kind } ${ k } (${ ( k / area ).toFixed( 2 ) }/m2${ reference ? `, ${ percent( k, reference[ kind ] ) }` : '' })` ).join( ', ' ) }${ reference ? ' against M2' : '' }` );
+	// the flowers by species (Grass.ts: a flowering tuft's code is 1.5 + its species)
+	const species = planting.flowerSpecies ?? [];
+	const bySpecies = species.map( () => 0 );
+	for ( const t of tufts.lawnFlower ) bySpecies[ Math.floor( t.flower - 1.5 ) ] ++;
+	if ( species.length ) console.log( `     flowers by species: ${ species.map( ( name, i ) => `${ name } ${ bySpecies[ i ] }` ).join( ', ' ) }` );
+	const dir = argument( '--flowers' );
+	if ( dir ) {
+
+		mkdirSync( dir, { recursive: true } );
+		const turf = [];
+		for ( let k = 0; k < anchors.length; k += VEGETATION_STRIDE ) turf.push( Math.round( anchors[ k ] * 100 ) / 100, Math.round( anchors[ k + 2 ] * 100 ) / 100 );
+		const flowers = tufts.lawnFlower.flatMap( ( t ) => [ Math.round( t.origin.x * 100 ) / 100, Math.round( t.origin.z * 100 ) / 100, Math.floor( t.flower - 1.5 ) ] );
+		writeFileSync( `${ dir }/flowers-${ seed }-${ step }.json`, JSON.stringify( { species, turf, flowers } ) );
+
+	}
 	if ( reference && step >= 8 ) for ( const kind in counts ) {
 
 		pooled[ kind ] ??= [ 0, 0 ];

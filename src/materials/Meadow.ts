@@ -11,7 +11,8 @@ export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowS
 // field of bare earth, once broke it into patches that from the overview read as camouflage and
 // dark blotches.
 // The growth field is the island top's structure for the root bed at the rim (Soil.ts); the lawn
-// itself grows to one height (SWARD_HEIGHT).
+// itself grows to one height (SWARD_HEIGHT). The habitat fields (`meadowMoisture`, `meadowTurf`)
+// site the wildflowers' patches.
 // The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m: RGB the
 // turf's colour (A unused).
 export const MEADOW_EXTENT = 2 * GROWTH.half;
@@ -35,6 +36,30 @@ export function sampleMeadow( x: number, z: number ): MeadowSample {
 	const growth = smoothstep( 0.3, 0.7, broad * 0.72 + clump * 0.28 );
 	const tone = noise3( x * 0.1 + 11.3, 7.7, z * 0.1 - 4.6 );
 	return { growth, tone };
+
+}
+
+// The meadow's habitat: two broad fields of fixed seeds that say where its plants grow, the way a
+// real island top's turf and wildflowers follow the ground (Grass.ts sites the flower patches by
+// them). Neither changes the lawn's colour or height yet.
+
+/** The ground's moisture under the meadow at ( x, z ), 0 dry to 1 damp: a low-frequency field (its
+ * drifts some 25 m across), so the island top has a damp hollow or two and a dry stretch or two. */
+export function meadowMoisture( x: number, z: number ): number {
+
+	return smoothstep( - 0.45, 0.45, noise3( x * 0.035 + 21.7, 4.3, z * 0.035 - 13.9 ) );
+
+}
+
+/** The sward at ( x, z ), `rim` m from the land's edge (negative inside, as the anchors carry it):
+ * 0 short turf, 1 tall tussocks. A low-frequency field (drifts some 20 m across) with a little of a
+ * mid one (5 m) to break its edges, shortened toward the cliff, where the soil is thin and the
+ * wind and salt keep the turf low. The blades do not follow it yet; it is meant to set the lawn's
+ * height and colour, and decides where the flowers of short turf grow (Grass.ts). */
+export function meadowTurf( x: number, z: number, rim: number ): number {
+
+	const broad = noise3( x * 0.05 - 17.2, 9.1, z * 0.05 + 6.4 ), mid = noise3( x * 0.2 + 3.3, 12.7, z * 0.2 - 9.8 );
+	return smoothstep( - 0.25, 0.4, broad * 0.8 + mid * 0.3 ) * smoothstep( - 1, - 6, rim );
 
 }
 
