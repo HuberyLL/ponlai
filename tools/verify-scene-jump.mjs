@@ -21,7 +21,7 @@
 // fresh load of the same name and definition is reused, a changed query or eval captures it again.
 //
 // --check runs the whole check in one command: the fresh side, the jump side in both orders into
-// <outDir>, then diff-set.py (`--aa-floor`, `--temporal` for aa=taa|taau|gt; its table also in
+// <outDir>, then diff-set.py (`--aa-floor`, `--temporal` for aa=taa|taau|fsr3|gt; its table also in
 // <outDir>/diff.txt; its exit code is the check's). The fresh side is the reference store's set of
 // the commit (tools/parity/reference.mjs, through capture-set.mjs `--reference --repeat
 // --page-per-view` with the same views and options, so it is keyed like every capture-set set): a
@@ -55,7 +55,7 @@
 // Writes `<outDir>/<view><suffix>.png` and `.json` (the page's diagnostics, the crop anchors, the
 // scene it was reached from, `ready`: the readiness record, as capture.mjs's). Compare two sets
 // with diff-set.py: the fresh set taken twice (`--suffix .repeat`) as the reference, and a jump set in two orders (list, then reverse with
-// `--suffix .repeat`) as the test, `--aa-floor` for MSAA, `--temporal` for taa and taau.
+// `--suffix .repeat`) as the test, `--aa-floor` for MSAA, `--temporal` for taa, taau and fsr3.
 // The page renders paused, so the GPU lock is taken shared, and leased per view as capture.mjs's
 // worker leases it (gpu-lock.mjs `leaseGpuLock`, 20 s): kept from one view to the next while nobody
 // waits, given up at a view boundary for a waiter ranked before it after 20 s of holding. The page
@@ -349,7 +349,7 @@ async function check() {
 	console.log( `jump side: ${ outDir } (${ minutes() } min)` );
 
 	// diff-set.py, its table also in <outDir>/diff.txt (not `python -I`: it imports tolerance.py beside it)
-	const temporal = [ 'taa', 'taau', 'gt' ].includes( options.aa );
+	const temporal = [ 'taa', 'taau', 'fsr3', 'gt' ].includes( options.aa );
 	const diffArgs = temporal ? [ '--temporal' ] : [ '--aa-floor' ];
 	const diff = await new Promise( ( resolve ) => {
 

@@ -3,7 +3,7 @@
 // deterministic stepper (`__PONLAI__.loop.step`: fixed dt, no wall clock, the frame pacer and the
 // dynamic scale bypassed), with crops of named subjects captured as they move.
 //
-//   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|gt|gt-hi]
+//   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|fsr3|gt|gt-hi]
 //       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"]
 //       [--quality high] [--size 1728x1117@2] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
 //       [--task name] [--anchors-from clip.json] [--stable-* (capture.mjs)] [--ready-frames n] [--wait ms] [--settle ms] [--verbose]

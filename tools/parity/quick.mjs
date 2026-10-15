@@ -22,7 +22,7 @@
 // load, i.e. another quick run with `--q`.
 //
 // Ready (the same sequence as capture.mjs, see tools/capture-browser.mjs): the floor's frames and
-// the loading screen gone (waitForScene), then on a temporal page (taa, taau, gt) the rest started
+// the loading screen gone (waitForScene), then on a temporal page (taa, taau, fsr3, gt) the rest started
 // over and converged under the new epoch, then waitForStable: an MSAA page by stability (the image
 // stopped changing), a temporal one on its held rest; the loop is left stopped. A variant's image
 // therefore equals a fresh load with the knob in its URL within the rules sets are judged by
