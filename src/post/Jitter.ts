@@ -37,9 +37,9 @@ import { ffxFsr3UpscalerGetJitterPhaseCount } from './fsr3/Host.ts';
 //
 // Under fsr3 (Antialiasing.ts) the sequence is FSR 3's own (post/fsr3/Host.ts): its length is
 // `ffxFsr3UpscalerGetJitterPhaseCount( render width, canvas width )`, int( 8 r^2 ) without a clamp
-// (14 at high's baseline of 4/3), and frame k takes Halton index ( k mod L ) + 1 as above, but
-// negated: `px = -( h - 0.5 )`. FSR's offset J places pixel i's sample at i + 0.5 - J, where `px`
-// places it at the centre plus `px`, so J = -px is upstream's own offset and the shifted projection
+// (18 at high's baseline, 4K output rendered at 1440p), and frame k takes Halton index
+// ( k mod L ) + 1 as above, but negated: `px = -( h - 0.5 )`. FSR's offset J places pixel i's
+// sample at i + 0.5 - J, where `px` places it at the centre plus `px`, so J = -px is upstream's own offset and the shifted projection
 // equals upstream's bit for bit. Its rest runs the same plain offsets, from index 0 and repeating
 // every L frames ( ( restIndex - 1 ) mod L ), with no centring: FSR weighs its samples by its own
 // accumulation, not by a box over the sequence; the dither then follows the rest index itself.

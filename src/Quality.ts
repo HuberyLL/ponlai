@@ -143,7 +143,12 @@ export interface TemporalSettings {
 	gtJitters: number;
 	// FSR 3 (`aa=fsr3`, post/fsr3/Fsr3Upscaler.ts): its RCAS sharpness (0 none, 1 the most: AMD's
 	// sample takes 0.8), the rest's jitter sequence (frames from FSR's reset at the rest's start,
-	// repeating FSR's phase sequence), and whether the reactive-mask generator runs
+	// repeating FSR's phase sequence), and whether the reactive-mask generator runs. The sequence is
+	// the shortest multiple of the paused page's phase count (18: 4K output rendered at 1440p) after
+	// which a rest of twice its length differs from it by more than one level in under 0.1 % of the
+	// pixels on three close views: 126 (7 phases; 108 left 0.16 % on the meadow, 126 0.075 %).
+	// FSR blends each frame into a running history rather than averaging the sequence, so its rest
+	// needs far more frames than taa's 32 (measured at 4K output; a 1600x900 page has phase 18 too).
 	fsr3: { sharpness: number; restSequence: number; autoReactive: boolean };
 }
 
@@ -200,7 +205,7 @@ const TAA: TemporalSettings = {
 	sigma: 0.42, sigmaRest: 0.30,
 	sharpness: { taa: 1.0, taau: [ 1.5, 1.0 ] }, sharpenMoving: { stops: [ 0, 0, 1, 0, 0 ], speed: 4 }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
 	gtJitters: 64,
-	fsr3: { sharpness: 0.8, restSequence: 56, autoReactive: false },
+	fsr3: { sharpness: 0.8, restSequence: 126, autoReactive: false },
 };
 
 export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = {
