@@ -737,7 +737,8 @@ export class Sky {
 		// dusk or night stays readable, still darker than a clear moonlit night.
 		this.grade.exposure *= 1 + overcast * ( celestial?.overcastAdaptation ?? 0 );
 		// The night sky's own light keeps the brightness it was tuned at, under the exposure the
-		// night had then (with a closed deck's adaptation fivefold); only the island reads brighter.
+		// night had then (with a closed deck's adaptation fivefold), but for the night's own gain
+		// (DayCycle NIGHT_EXPOSURE_GAIN), which brightens it with the island.
 		this.nightSkyLevel = celestial ? Math.min( 1, celestial.nightSkyLevel
 			* ( 1 + 5 * overcast * ( 1 - celestial.daylight ) ) / ( 1 + overcast * celestial.overcastAdaptation ) ) : 1;
 		this.displayNightSky.value = NIGHT_SKY * this.nightSkyLevel;

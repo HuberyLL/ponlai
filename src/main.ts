@@ -37,7 +37,7 @@ import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { buildTurfSkirt, turfSkirtKind } from './world/RimSkirt.ts';
-import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
+import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName, type LookSettings } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
@@ -1118,30 +1118,44 @@ postF.add( S, 'dofRange', 0, 20, 0.1 );
 postF.add( S, 'dofMaxRadius', 0, 20, 0.1 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
 postF.add( S, 'grain', 0, 0.05, 0.001 );
+// the look's controls, for the day's look and the night's
+function addLookControls( f: GUI, L: LookSettings ): void {
+
+	f.add( L, 'glow', 0, 1.5, 0.01 ).name( 'soft glow' ).listen();
+	f.add( L, 'glowThreshold', 0.1, 2, 0.01 ).name( 'glow from' ).listen();
+	f.add( L, 'glowRadius', 0, 1, 0.01 ).name( 'glow spread' ).listen();
+	f.add( L, 'glowWarmth', - 1, 1, 0.01 ).name( 'glow warmth' ).listen();
+	f.add( L, 'glowHalo', 0, 1, 0.01 ).name( 'glow into shade' ).listen();
+	f.add( L, 'greenSaturation', - 0.5, 1, 0.01 ).name( 'green saturation' ).listen();
+	f.add( L, 'greenBrightness', - 0.3, 0.5, 0.01 ).name( 'green brightness' ).listen();
+	f.add( L, 'greenHue', - 0.4, 0.4, 0.01 ).name( 'green hue' ).listen();
+	f.add( L, 'tealSaturation', - 0.5, 1, 0.01 ).name( 'water saturation' ).listen();
+	f.add( L, 'tealBrightness', - 0.3, 0.5, 0.01 ).name( 'water brightness' ).listen();
+	f.add( L, 'tealHue', - 0.4, 0.4, 0.01 ).name( 'water hue' ).listen();
+	f.addColor( L, 'shadowTint' ).name( 'shadow colour' ).listen();
+	f.add( L, 'shadowTone', 0, 1, 0.01 ).name( 'shadow tint' ).listen();
+	f.addColor( L, 'highlightTint' ).name( 'highlight colour' ).listen();
+	f.add( L, 'highlightTone', 0, 1, 0.01 ).name( 'highlight tint' ).listen();
+	f.add( L, 'pivot', 0.02, 0.8, 0.01 ).name( 'split pivot' ).listen();
+	f.add( L, 'shadowLift', 0, 0.2, 0.001 ).name( 'shadow lift' ).listen();
+	f.add( L, 'contrast', - 0.3, 0.5, 0.01 ).name( 'depth (contrast)' ).listen();
+	f.add( L, 'vignette', 0, 0.6, 0.01 ).listen();
+	f.add( L, 'sky', 0, 1, 0.01 ).name( 'on the sky' ).listen();
+	f.add( L, 'overcast', 0, 1, 0.01 ).name( 'kept in bad weather' ).listen();
+
+}
 const lookF = gui.addFolder( 'Look' );
 const L = pipeline.look;
 lookF.add( S, 'look', LOOKS ).name( 'preset' ).onChange( ( name: LookName ) => pipeline.setLook( name ) );
-lookF.add( L, 'glow', 0, 1.5, 0.01 ).name( 'soft glow' ).listen();
-lookF.add( L, 'glowThreshold', 0.1, 2, 0.01 ).name( 'glow from' ).listen();
-lookF.add( L, 'glowRadius', 0, 1, 0.01 ).name( 'glow spread' ).listen();
-lookF.add( L, 'glowWarmth', 0, 1, 0.01 ).name( 'glow warmth' ).listen();
-lookF.add( L, 'glowHalo', 0, 1, 0.01 ).name( 'glow into shade' ).listen();
-lookF.add( L, 'greenSaturation', - 0.5, 1, 0.01 ).name( 'green saturation' ).listen();
-lookF.add( L, 'greenBrightness', - 0.3, 0.5, 0.01 ).name( 'green brightness' ).listen();
-lookF.add( L, 'greenHue', - 0.4, 0.4, 0.01 ).name( 'green hue' ).listen();
-lookF.add( L, 'tealSaturation', - 0.5, 1, 0.01 ).name( 'water saturation' ).listen();
-lookF.add( L, 'tealBrightness', - 0.3, 0.5, 0.01 ).name( 'water brightness' ).listen();
-lookF.add( L, 'tealHue', - 0.4, 0.4, 0.01 ).name( 'water hue' ).listen();
-lookF.addColor( L, 'shadowTint' ).name( 'shadow colour' ).listen();
-lookF.add( L, 'shadowTone', 0, 1, 0.01 ).name( 'shadow tint' ).listen();
-lookF.addColor( L, 'highlightTint' ).name( 'highlight colour' ).listen();
-lookF.add( L, 'highlightTone', 0, 1, 0.01 ).name( 'highlight tint' ).listen();
-lookF.add( L, 'pivot', 0.02, 0.8, 0.01 ).name( 'split pivot' ).listen();
-lookF.add( L, 'shadowLift', 0, 0.2, 0.001 ).name( 'shadow lift' ).listen();
-lookF.add( L, 'contrast', - 0.3, 0.5, 0.01 ).name( 'depth (contrast)' ).listen();
-lookF.add( L, 'vignette', 0, 0.6, 0.01 ).listen();
-lookF.add( L, 'sky', 0, 1, 0.01 ).name( 'on the sky' ).listen();
-lookF.add( L, 'overcast', 0, 1, 0.01 ).name( 'kept in bad weather' ).listen();
+addLookControls( lookF, L );
+// the night's look and bloom chains, which the day's cross into after sunset (Pipeline `nightLook`)
+const nightLookF = lookF.addFolder( 'Night' );
+nightLookF.add( S.night, 'bloomStrength', 0, 1.5, 0.01 ).name( 'bloom' );
+nightLookF.add( S.night, 'bloomThreshold', 0, 5, 0.01 ).name( 'bloom threshold' );
+nightLookF.add( S.night, 'glowStrength', 0, 1, 0.01 ).name( 'wide glow' );
+nightLookF.add( S.night, 'glowThreshold', 0, 3, 0.01 ).name( 'wide glow threshold' );
+nightLookF.add( S.night, 'glowMaxLum', 0.5, 10, 0.1 ).name( 'wide glow clamp' );
+addLookControls( nightLookF, pipeline.lookNight );
 if ( DEBUG ) {
 
 	// The frame graph's debug view (fgview): its choices from the graph's description. The graph
@@ -1467,7 +1481,10 @@ function tick( time: number ): void {
 		// sun's bright sky needs AgX's shoulder), fully from about -3 degrees. AgX's grade darkens a
 		// dim frame, so a crossfade held back to -2 .. -6 degrees left the frame up to a fifth darker
 		// than PBR Neutral's just after sunset, and darker than the night.
-		S.nightLook = 1 - THREE.MathUtils.smoothstep( state.daylight, 0.2, 0.45 );
+		S.nightCurve = 1 - THREE.MathUtils.smoothstep( state.daylight, 0.2, 0.45 );
+		// The look and the bloom chains cross into the night's over the same span: where the look
+		// used to fade out, the night's comes in.
+		S.nightLook = S.nightCurve;
 		// The night's cooler meadow (Pipeline `nightGreenTurn`): none through the afterglow, all of
 		// it once the sky is navy (the sun from -6 to -19 degrees).
 		S.nightGreen = 1 - THREE.MathUtils.smoothstep( sky.elevation, - 19, - 6 );
