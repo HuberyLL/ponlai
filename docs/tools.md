@@ -215,8 +215,9 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   the brightness |s| / 0.15. `windView=arrows` or `windView=plants` shows one half. The numbers
   behind it: `__PONLAI__.windProbe( options )` (`src/debug/WindProbe.ts`: the shaders' own wind
   functions in a compute kernel built on the first call; angle histograms, lean and swing,
-  neighbours' correlation, the gust field's size and travel, the plants' wiring, the directions of
-  the sea, clouds and plants per weather), through the probe as
+  neighbours' correlation, the gust field's size and travel, the plants' wiring, their natural sway
+  frequencies, and per weather where every part travels and how fast: the plants, the sea and its
+  swell, the sea fog, the clouds' weather map and their shape noise with its `evolve`), through the probe as
   `--eval "return JSON.stringify( await P.windProbe() )"`.
 - `islander` picks the islanders' proportions (`medium`, the default, or `stock` (the kit's own),
   `subtle` and `strong` builds of `Proportions.ts`); also in the GUI's Islander folder, which

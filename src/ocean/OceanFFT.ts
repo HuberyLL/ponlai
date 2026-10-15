@@ -43,7 +43,9 @@ import { createWaveSpectrum, type SwellParams } from './OceanSpectrum.ts';
 // unresolved slope variance.
 // Sample a cascade at its undisplaced world xz / size.
 //
-// Weather only scales the cascades' amplitude (`weatherGain`); it never rebuilds the wave spectrum.
+// The spectrum's wind (`windSpeed`, `windDirection`) is the weather's, as weather/Wind.ts derives it
+// (`spectrumWind`: the heading and the reference speed). Weather only scales the cascades'
+// amplitude (`weatherGain`, Wind.ts `oceanGain`); it never rebuilds the wave spectrum.
 // A kernel that uses `workgroupBarrier()` is dispatched by size (`computeKernel( [ n ] )` with
 // `dispatchSize` set), not by a thread count, which makes three insert an early-return bounds
 // check ahead of the barriers. A multiple-render-target pass writing the four fields measured
@@ -94,8 +96,8 @@ export class OceanFFT {
 
 	constructor( renderer: THREE.WebGPURenderer, {
 		sizes = CASCADE_SIZES,
-		windSpeed = 5.0,
-		windDirection = 35,
+		windSpeed,
+		windDirection,
 		fetch = 4000,
 		amplitude = 1.0,
 		choppiness = 0.85,
@@ -104,7 +106,7 @@ export class OceanFFT {
 		seed = 1234,
 		swell = {},
 		anisotropy = 4,
-	}: Partial<OceanParams> & { sizes?: number[]; swell?: Partial<SwellParams>; anisotropy?: number } = {} ) {
+	}: Pick<OceanParams, 'windSpeed' | 'windDirection'> & Partial<OceanParams> & { sizes?: number[]; swell?: Partial<SwellParams>; anisotropy?: number } ) {
 
 		this.renderer = renderer;
 		this.sizes = sizes;

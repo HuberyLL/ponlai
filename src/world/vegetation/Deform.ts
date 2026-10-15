@@ -9,7 +9,10 @@ import { puddleCover } from '../../weather/Puddles.ts';
 // own HangingWind), the turf skirt's thatch leaning (`skirtLean`) and standing water drowning a
 // plant (`drown`: the meadow). Each kind's wind numbers (its amplitude, its swings per gust tile,
 // `slow`) are the exported constants below, which its material and the wind probe
-// (debug/WindProbe.ts) both read. Each function returns nodes; it builds the graph its kind built
+// (debug/WindProbe.ts) both read. The swings per gust tile set the kind's natural frequency,
+// `swayFrequency( cycles )` Hz (Wind.ts), the same in every wind: a stronger wind leans a plant
+// further and widens its swing (`pressure`, `breeze`), never quickens it. The rates are fair's
+// before the sway and the wind were parted, so a fair day moves as it did. Each function returns nodes; it builds the graph its kind built
 // in place before, in the same order, so the shaders are unchanged.
 
 const TAU = Math.PI * 2;
@@ -18,17 +21,17 @@ type V2 = THREE.Node<'vec2'>;
 type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;
 
-/** The game's palm: mainBend's 30 swings per gust tile (about 0.9 Hz in a fair wind) at half that
- * rate (`slow`); its crown's bend comes with its vertices (PalmView.ts `palmSway`). */
+/** The game's palm: mainBend's 30 swings per gust tile (0.89 Hz) at half that rate (`slow`,
+ * 0.45 Hz); its crown's bend comes with its vertices (PalmView.ts `palmSway`). */
 export const PALM_WIND = { cycles: 30, slow: 1 } as const;
-/** The meadow's blades: their sway's swings per gust tile (about 1.5 Hz in a fair wind) and how far
- * apart the blades swing (a share of a swing), the sway's and the shiver's lean (per metre of the
+/** The meadow's blades and their flower heads: their sway's swings per gust tile (1.48 Hz) and
+ * how far apart the blades swing (a share of a swing), the sway's and the shiver's lean (per metre of the
  * tuft's height, in a still breeze and added at a full gust: `base + gust * field.w`). */
 export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust: 0.02 }, shiver: { base: 0.003, gust: 0.006 } } as const;
 /** The turf skirt's thatch: its lean at the blade tips (m at LEAN_REF) and its shiver's swings per
- * gust tile (about 1.9 Hz in a fair wind); the grass hanging from its lip swings as a hanging strand
- * (`hang`, `hangingSway`'s numbers): a blade's weight is its length times the square of the way
- * down it, so a metre-long blade's tip sways about 3 cm in a fair gust, at about 0.7 Hz, and lies
+ * gust tile (1.9 Hz); the grass hanging from its lip swings as a hanging strand (`hang`,
+ * `hangingSway`'s numbers): a blade's weight is its length times the square of the way down it, so
+ * a metre-long blade's tip sways about 3 cm in a fair gust, at 0.71 Hz (0.48 Hz across), and lies
  * on the wall rather than pressing into it. */
 export const SKIRT_WIND = { amplitude: 0.012, cycles: 64, hang: { amplitude: 0.018, cycles: 24, across: 16, press: 0.02, leafEdge: 0 } } as const;
 
@@ -36,12 +39,11 @@ export const SKIRT_WIND = { amplitude: 0.012, cycles: 64, hang: { amplitude: 0.0
  * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways a little
  * about that lean, each vertex by `amplitude` (metres at a fair day's typical gust, see LEAN_REF;
  * it carries the plant's stiffness and grows from the root up), keeping its distance from the root
- * so the plant arcs over instead of shearing. The sway travels with the gusts (Wind.ts `gustWave`):
+ * so the plant arcs over instead of shearing. The sway travels downwind (Wind.ts `gustWave`):
  * neighbours swing together, each plant only a little
  * apart (`swayJitter`), about a sixth of the lean (`swingOf`), a third of that across the wind.
- * `cycles` is the sway's rate in whole swings per gust tile (an even number: about 0.9 Hz at 30
- * in a fair wind), and `slow` (0..1) eases it to half that rate for taller plants (the game's
- * palm). `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the bent
+ * `cycles` is the sway's rate in whole swings per gust tile (an even number: 0.89 Hz at 30), and
+ * `slow` (0..1) eases it to half that rate for taller plants (the game's palm). `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the bent
  * position, the wind field's ( direction x, direction z, lean, gust ) at the root and the plant's
  * sway: its horizontal offset over `amplitude` times LEAN_REF, the lean and swing as a tip offset
  * over height (world x, z; for the wind view and probe, src/debug/WindView.ts; a shader that does
@@ -80,7 +82,7 @@ export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t
 	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
 	const { cycles, spread, swing: sw, shiver: sh } = GRASS_WIND;
 	const swing = gustWave( wind, origin.xz, cycles, phase.div( TAU ).sub( 0.5 ).mul( spread ) ).mul( wind.breeze.mul( field.w.mul( sw.gust ).add( sw.base ) ) );
-	const flutter = wave( wind.flutter, 1.7, phase ).mul( 0.65 ).add( wave( wind.flutter, 2.9, phase.mul( 2.3 ) ).mul( 0.35 ) );
+	const flutter = wave( wind.clock, 1.7, phase ).mul( 0.65 ).add( wave( wind.clock, 2.9, phase.mul( 2.3 ) ).mul( 0.35 ) );
 	const shiver = wind.breeze.mul( field.w.mul( sh.gust ).add( sh.base ) ).mul( flutter );
 	const lean = along.mul( field.z.add( swing ) ).add( across.mul( shiver ) ).toVar();
 	const rel = rooted.sub( origin ).toVar();
@@ -106,7 +108,7 @@ export interface HangingInputs { position: V3; weight: F; phase: F; out: V3; nor
 /** A hanging kind's wind numbers: the sway at its tips (m at LEAN_REF), the pendulum's swings per
  * gust tile along and across the wind, how far the wall may press it back (m) and its leaves'
  * flutter at the tip (m). The removed leaf trails took { 0.012, 14, 10, 0.03, 0.004 }: about 2 cm
- * of sway in a fair gust, 0.4 Hz, nodes 0.11 m off the stone. */
+ * of sway in a fair gust, 0.42 Hz, nodes 0.11 m off the stone. */
 export interface HangingWind { amplitude: number; cycles: number; across: number; press: number; leafEdge: number }
 
 /** A hanging strand leans with the gust field and swings like a pendulum (`numbers`) with the
@@ -126,7 +128,7 @@ export function hangingSway( wind: WindState, v: HangingInputs, numbers: Hanging
 	const sway = unit.xz.mul( LEAN_REF );
 	const free = unit.mul( v.weight.mul( numbers.amplitude ) ).toVar();
 	const offset = free.add( v.out.mul( max( float( - numbers.press ).sub( dot( free, v.out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( v.weight ).mul( 0.01 ) ) ) );
-	const flutter = wave( wind.flutter, 3.7, v.leafPhase );
+	const flutter = wave( wind.clock, 3.7, v.leafPhase );
 	return { position: v.position.add( offset ).add( v.normal.mul( flutter.mul( v.leafEdge ).mul( lively ).mul( numbers.leafEdge ) ) ), sway };
 
 }

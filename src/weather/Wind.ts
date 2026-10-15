@@ -2,8 +2,33 @@ import { DataTexture, LinearFilter, RGFormat, RepeatWrapping, UnsignedByteType, 
 import type { Node } from 'three/webgpu';
 import { Fn, dot, float, fract, normalize, sin, smoothstep, texture, uniform, vec2, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import type { WeatherState } from '../sky/Weather.ts';
 
-// The weather's wind, integrated on the CPU, and the one wind field all vegetation moves in.
+// The weather's one wind, integrated on the CPU, what every part of the scene takes from it, and
+// the one wind field all vegetation moves in.
+//
+// Each weather preset gives three numbers (sky/Weather.ts): `windDirection`, a heading in the sea
+// spectrum's convention (the wind travels toward heading + 180 degrees), `windSpeed`, the mean
+// wind 10 m up (U10), and `gustiness`, its gust factor (a 3 s gust over the mean). `Wind` is their
+// one reader: it integrates them and publishes in `shared.wind` every quantity a part reads, so no
+// part keeps a speed or direction of its own. U_ref is REFERENCE_SPEED, fair's 3.8 m/s, at which
+// the plants and the sea were tuned:
+// - vegetation: `direction`; `pressure` ( U / U_ref )^2, the drag that leans the plants; `breeze`
+//   U / U_ref, their swing's amplitude; `gustLean`, a gust's added lean, from the gust factor (its
+//   excess pressure G^2 - 1 against fair's); the gust map scrolled with the wind's travel
+//   (`gustScroll`); and two clocks that do not follow the wind: `swayScroll`, which sets each
+//   kind's natural sway frequency, and `clock`, the leaves' flutter. A stronger wind bends a plant
+//   further, not faster (real plants swing near their own frequency in any wind).
+// - the sea: `oceanGain`, the amplitude of the FFT's three bands from U / U_ref (a weather change
+//   only scales amplitudes). The spectrum is built once, from `spectrumWind` (the heading and
+//   U_ref), so the sea is the same function of the weather however the page reached it; the swell
+//   keeps its own offset from the heading (OceanFFT `swell.directionOffset`), the shore waves
+//   follow the swell.
+// - the clouds: `cloudOffset`, -CLOUD_DRIFT times the air's displacement, for the weather map;
+//   `direction` for the fronts, the cirrus and the tops' lean (sky/Sky.ts, Clouds.ts).
+// - the air: `displacement` (the sea fog's drift, main.ts), `velocity` (rain, the storm's spray),
+//   `direction` (the storm sea's foam).
+// The wind probe's W5 (`__PONLAI__.windProbe`) reports where each of them travels.
 //
 // `windField` (noise scrolled with the wind: Wohllaib, GDC 2021, its
 // strength varied by Perlin noise, Rockenbeck, GDC 2021; the map is ours):
@@ -19,13 +44,14 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // the gusts, as a meadow moves; each plant keeps only a small share of its own (`swayJitter`:
 // +-0.4 rad, +-10 %). The swing is about a sixth of the lean, so a plant never swings upwind of
 // upright and stays within a few degrees of the local wind. Rates are whole swings per gust tile
-// (mainBend's 30, about 0.9 Hz in a fair wind; grass and its flowers 50; the palm half mainBend's).
-// Leaf edges, sprays and fronds still flutter on their own phases, a small motion on top, faster as
-// the wind rises. Grass tufts and their flower heads bend with the field at their root, the turf
+// (`swayScroll`, the natural frequencies: mainBend's 30 about 0.9 Hz; grass and its flowers 50,
+// 1.5 Hz; the palm half mainBend's), whatever the wind; only the amplitude grows with it. Leaf
+// edges, sprays and fronds still flutter on their own phases at fixed rates (`clock`), a small
+// motion on top. Grass tufts and their flower heads bend with the field at their root, the turf
 // skirt follows the same field, and a hanging strand swings like a pendulum with the same sway
 // (vegetation/Deform.ts `hangingSway`: the grass hanging from the turf skirt's lip).
 //
-// Everything is a function of the wind's integrated clocks and travel (`clock`, `flutter`,
+// Everything is a function of the wind's integrated clocks and travel (`clock`, `swayScroll`,
 // `gustScroll`, wrapped where every rate completes whole cycles), never time * a changing speed,
 // so a paused frame and a seek repeat exactly; shadows and the rain's collision map keep the rest
 // pose. For motion vectors (TAA) every displacement is a function of the wind's state alone, its
@@ -40,7 +66,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // `reset` (a seek) and `cut` (Motion.ts's `taaCut`, through `onTaaCut`) make it the current state.
 // The wrapped clocks may differ by a wrap between the two: every shader reads them only through
 // functions periodic in their wrap (`wave` at whole cycles per CLOCK_PERIOD, the gust map's repeat
-// over its tiles, `gustWave`'s whole swings per tile), so the difference of the two poses is the frame's motion alone
+// over its tiles, `gustWave`'s whole swings per tile of `swayScroll`), so the difference of the two poses is the frame's motion alone
 // (tools/verify-wind.mjs checks the sources).
 // The URL option `windView` shows this field and every plant's answer to it, and
 // `__PONLAI__.windProbe` measures them (src/debug/WindView.ts, WindProbe.ts; docs/tools.md).
@@ -48,14 +74,16 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // equal to current) while the scene clock runs, for clips that want only the shadows or the jitter
 // to move; the clouds and the sea keep their wind.
 
-const BASE_SPEED = 3.8;
+/** Fair's mean wind (m/s): the plants' lean and amplitudes, their natural frequencies and the
+ * sea's calm design were tuned at it. */
+export const REFERENCE_SPEED = 3.8;
+/** Fair's gust factor: a gust's lean is GUST_LEAN at it. */
+export const REFERENCE_GUSTINESS = 1.4;
+const HEADING = 40; // the presets' heading, for a wind built without one
+// The clouds' weather map drifts at this share of the wind (sky/Clouds.ts samples it at
+// p + cloudOffset).
 const CLOUD_DRIFT = 0.21;
 const clamp = ( value: number, low: number, high: number ) => Math.max( low, Math.min( high, value ) );
-// The integrated gust phase (`uniforms.phase`) and the amplitude (`uniforms.strength`) drove the
-// old global-sine sway; no shader reads them now, and they stay as CPU values the weather checks
-// read (tools/verify-weather.mjs, verify-wind.mjs). The phase wraps at 1600 turns, a whole number
-// of periods for the rates that sway used, which keeps the float32 phase precise in long sessions.
-const PHASE_PERIOD = 1600 * 2 * Math.PI;
 // The vegetation's clocks (seconds) wrap here. Shaders take fract( clock * f ) only at rates f
 // with at most three decimals (Hz), so every one of them completes whole cycles in a period.
 export const CLOCK_PERIOD = 1000;
@@ -75,19 +103,20 @@ export const EDDY_TILE = 30; // the eddies' tile, both ways (six cells: 5 m)
 export const EDDY_RATE = 1.1; // eddies travel this much faster than the mean wind
 const EDDY_SHARE = 0.15;
 // The plants' lean (horizontal tip offset over height) is the wind's pressure, (speed / fair)^2,
-// times a calm share plus the gust's, eased toward MAX_LEAN: about 0.035 between gusts and 0.145
-// at a gust's core on a fair day (four times as much), 0.09 and 0.34 in a storm's gale, and
-// nothing in still air. A plant leans downwind all the time and a gust bends it well over: the
-// gust's share is several times the calm one so the gusts read as bright and dark bands sweeping
-// the meadow (docs/art-direction.md), while each plant's own swing stays a sixth of its lean.
+// times a calm share plus the gust's (`gustLean`, GUST_LEAN at fair's gust factor), eased toward
+// MAX_LEAN: about 0.035 between gusts and 0.145 at a gust's core on a fair day (four times as
+// much), 0.09 and 0.34 in a storm's gale, and nothing in still air. A plant leans downwind all
+// the time and a gust bends it well over: the gust's share is several times the calm one so the
+// gusts read as bright and dark bands sweeping the meadow (docs/art-direction.md), while each
+// plant's own swing stays a sixth of its lean.
 const MEAN_LEAN = 0.035;
 const GUST_LEAN = 0.13;
 const MAX_LEAN = 1.2;
-// The plants' own sway about the lean travels with the gusts (`gustWave`): its crests lie
-// SWAY_SPREAD metres apart along the wind, so neighbours within a metre or two move together and
-// plants a few metres apart drift out of step. With a whole-plant sway near 1 Hz the crests run
-// about twice the wind's speed (a crest spacing of wind speed / frequency, 4 m, would put plants
-// a metre apart along the wind a quarter turn out of step, which reads as each plant on its own).
+// The plants' own sway about the lean travels downwind (`gustWave`): its crests lie SWAY_SPREAD
+// metres apart along the wind, so neighbours within a metre or two move together and plants a few
+// metres apart drift out of step. With a whole-plant sway near 1 Hz the crests run about twice a
+// fair wind's speed (a crest spacing of wind speed / frequency, 4 m, would put plants a metre
+// apart along the wind a quarter turn out of step, which reads as each plant on its own).
 const SWAY_SPREAD = 8;
 const TAU = Math.PI * 2;
 /** The lean of a fair day's typical gust: plants scale their authored sway amplitudes by
@@ -103,8 +132,9 @@ function vegetationWind( direction: Vector2 ) {
 		direction: uniform( direction.clone() ), // world-space travel direction; unit x/z
 		pressure: uniform( 1 ), // ( speed / fair speed )^2, the drag that leans the plants
 		breeze: uniform( 1 ), // speed / fair speed, for oscillation amplitudes
-		clock: uniform( 0 ), // scene seconds modulo CLOCK_PERIOD: plants' natural sway
-		flutter: uniform( 0 ), // seconds that run faster in strong wind, modulo CLOCK_PERIOD: leaves
+		gustLean: uniform( GUST_LEAN ), // the lean a gust's core adds per unit of pressure, from the gust factor
+		clock: uniform( 0 ), // scene seconds modulo CLOCK_PERIOD: the leaves' flutter
+		swayScroll: uniform( 0 ), // scene seconds times REFERENCE_SPEED, modulo GUST_ALONG, m: the plants' natural sway
 		gustScroll: uniform( new Vector2() ), // along-wind travel of the gusts and eddies, wrapped to their tiles, m
 	};
 
@@ -115,19 +145,22 @@ function vegetationWind( direction: Vector2 ) {
  * themselves) and the frame rendered before it (`previous`), for motion vectors. */
 export type WindState = ReturnType<typeof vegetationWind>;
 
-/** A wind state's values as two vec4s, ( direction, pressure, breeze ) and ( clock, flutter, gust
- * scroll ), and the state read back from two such nodes: a debug kernel's per-step wind
- * (src/debug/WindProbe.ts), so the gust scroll stays read here alone (tools/verify-wind.mjs). */
+/** A wind state's values as three vec4s, ( direction, pressure, breeze ), ( clock, sway scroll,
+ * gust scroll ) and ( gust lean, 0, 0, 0 ), and the state read back from three such nodes: a debug
+ * kernel's per-step wind (src/debug/WindProbe.ts), so the scrolls stay read here alone
+ * (tools/verify-wind.mjs). */
+export const WIND_STATE_VEC4S = 3;
 export function packWindState( state: WindState ): number[] {
 
 	return [ state.direction.value.x, state.direction.value.y, state.pressure.value, state.breeze.value,
-		state.clock.value, state.flutter.value, state.gustScroll.value.x, state.gustScroll.value.y ];
+		state.clock.value, state.swayScroll.value, state.gustScroll.value.x, state.gustScroll.value.y,
+		state.gustLean.value, 0, 0, 0 ];
 
 }
 
-export function windStateOf( a: Node<'vec4'>, b: Node<'vec4'> ): WindState {
+export function windStateOf( a: Node<'vec4'>, b: Node<'vec4'>, c: Node<'vec4'> ): WindState {
 
-	return { direction: a.xy, pressure: a.z, breeze: a.w, clock: b.x, flutter: b.y, gustScroll: b.zw } as unknown as WindState;
+	return { direction: a.xy, pressure: a.z, breeze: a.w, gustLean: c.x, clock: b.x, swayScroll: b.y, gustScroll: b.zw } as unknown as WindState;
 
 }
 
@@ -135,13 +168,11 @@ export function windStateOf( a: Node<'vec4'>, b: Node<'vec4'> ): WindState {
  * Wind. Every consumer holds the same node identities throughout weather transitions. */
 export function createWindUniforms() {
 
-	const angle = 40 * Math.PI / 180;
+	const angle = HEADING * Math.PI / 180;
 	const direction = new Vector2( - Math.cos( angle ), - Math.sin( angle ) );
 	return {
 		...vegetationWind( direction ),
-		velocity: uniform( direction.clone().multiplyScalar( BASE_SPEED ) ), // air velocity, m/s
-		strength: uniform( 1 ), // vegetation amplitude relative to the authored fair-weather wind
-		phase: uniform( 0 ), // integrated gust phase, radians, modulo PHASE_PERIOD; never time * changing speed
+		velocity: uniform( direction.clone().multiplyScalar( REFERENCE_SPEED ) ), // air velocity, m/s
 		displacement: uniform( new Vector2() ), // integrated air displacement, metres
 		cloudOffset: uniform( new Vector2() ), // offset for a density field sampled at p + offset
 		oceanGain: uniform( new Vector3( 1, 1, 1 ) ), // amplitude, not energy, for the FFT cascades
@@ -157,19 +188,29 @@ export type WindUniforms = ReturnType<typeof createWindUniforms>;
 
 export interface WindSettings {
 
-	speed?: number;
+	speed?: number; // mean wind 10 m up, m/s
 	heading?: number; // OceanSpectrum Fourier heading, degrees; IFFT travel is opposite
+	gustiness?: number; // gust factor, a 3 s gust over the mean (1 for none)
 	time?: number;
 
 }
 
-// Leaves flutter faster as the wind rises: half their rate in still air, twice it in a gale.
-const flutterRate = ( speed: number ) => 0.5 + 0.5 * speed / BASE_SPEED;
+/** A weather state's wind as Wind's settings. */
+export const weatherWind = ( state: Pick<WeatherState, 'windSpeed' | 'windDirection' | 'gustiness'> ): Required<Omit<WindSettings, 'time'>> =>
+	( { speed: state.windSpeed, heading: state.windDirection, gustiness: state.gustiness } );
 
-function validate( speed: number, heading: number, time: number ): void {
+/** The natural frequency (Hz) of a sway of `cycles` whole swings per gust tile (`gustWave`). */
+export const swayFrequency = ( cycles: number ) => cycles * REFERENCE_SPEED / GUST_ALONG;
+
+// A gust's lean grows with its excess pressure over the mean, G^2 - 1 (the gust factor G squared,
+// less the mean's share), as a share of fair's.
+const gustLeanOf = ( gustiness: number ) => GUST_LEAN * ( ( gustiness * gustiness - 1 ) / ( REFERENCE_GUSTINESS * REFERENCE_GUSTINESS - 1 ) );
+
+function validate( speed: number, heading: number, gustiness: number, time: number ): void {
 
 	if ( ! Number.isFinite( speed ) || speed < 0 ) throw new RangeError( 'Wind speed must be finite and non-negative' );
 	if ( ! Number.isFinite( heading ) ) throw new RangeError( 'Wind heading must be finite' );
+	if ( ! Number.isFinite( gustiness ) || gustiness < 1 ) throw new RangeError( 'Wind gustiness must be finite and at least 1' );
 	if ( ! Number.isFinite( time ) || time < 0 ) throw new RangeError( 'Wind time must be finite and non-negative' );
 
 }
@@ -259,7 +300,7 @@ export function windField( wind: WindState, position: Node<'vec2'> ): Node<'vec4
 		const broad = texture( gustTexture(), vec2( a.sub( wind.gustScroll.x ).div( GUST_ALONG ), c.div( GUST_ACROSS ) ) ).level( float( 0 ) ).x;
 		const eddy = texture( gustTexture(), vec2( a.sub( wind.gustScroll.y ).div( EDDY_TILE ), c.div( EDDY_TILE ).add( 0.37 ) ) ).level( float( 0 ) ).y;
 		const gust = smoothstep( 0.3, 0.95, broad.mul( 1 - EDDY_SHARE ).add( eddy.mul( EDDY_SHARE ) ) );
-		const x = wind.pressure.mul( gust.mul( GUST_LEAN ).add( MEAN_LEAN ) );
+		const x = wind.pressure.mul( gust.mul( wind.gustLean ).add( MEAN_LEAN ) );
 		const lean = x.div( x.div( MAX_LEAN ).add( 1 ) );
 		const veer = normalize( direction.add( across.mul( eddy.sub( 0.5 ).mul( 0.45 ) ) ) );
 		return vec4( veer, lean, gust );
@@ -268,24 +309,25 @@ export function windField( wind: WindState, position: Node<'vec2'> ): Node<'vec4
 
 }
 
-/** sin( 2 pi rate time + phase ) for one of the vegetation clocks (`clock`, `flutter`): `rate`
- * in Hz with at most three decimals, so it stays seamless where the clock wraps. */
+/** sin( 2 pi rate time + phase ) for the vegetation's clock (`clock`, scene seconds): `rate` in
+ * Hz with at most three decimals, so it stays seamless where the clock wraps. */
 export function wave( time: Node<'float'>, rate: number, phase: Node<'float'> | number = 0 ): Node<'float'> {
 
 	return sin( fract( time.mul( rate ) ).mul( Math.PI * 2 ).add( phase ) );
 
 }
 
-/** The sway of a plant about its lean, driven by the gusts' own travel rather than a clock of its
- * own: sin of `cycles` whole swings per GUST_ALONG of the gusts'
- * travel, less the root's place along the wind over SWAY_SPREAD, plus `phase`. Its frequency is
- * the wind's speed times cycles / GUST_ALONG (it quickens in a stronger wind and stops in still
- * air), whole swings per tile keep it seamless where the scroll wraps, and plants side by side
- * across the wind swing together. `cycles` must be a whole number. */
+/** The sway of a plant about its lean, travelling downwind with its neighbours: sin of `cycles`
+ * whole swings per GUST_ALONG of `swayScroll`, less the
+ * root's place along the wind over SWAY_SPREAD, plus `phase`. Its frequency is the kind's natural
+ * one, `swayFrequency( cycles )`, whatever the wind (the scroll runs at REFERENCE_SPEED: a fair
+ * wind's travel, so fair's sway is the gusts' own), whole swings per tile keep it seamless where
+ * the scroll wraps, and plants side by side across the wind swing together. `cycles` must be a
+ * whole number. */
 export function gustWave( wind: WindState, position: Node<'vec2'>, cycles: number, phase: Node<'float'> | number = 0 ): Node<'float'> {
 
 	if ( ! Number.isInteger( cycles ) ) throw new RangeError( `gustWave: ${ cycles } is not a whole number of swings per gust tile` );
-	const travel = wind.gustScroll.x.mul( cycles / GUST_ALONG ).sub( dot( position, wind.direction ).div( SWAY_SPREAD ) );
+	const travel = wind.swayScroll.mul( cycles / GUST_ALONG ).sub( dot( position, wind.direction ).div( SWAY_SPREAD ) );
 	return sin( fract( travel ).mul( TAU ).add( phase ) );
 
 }
@@ -350,11 +392,12 @@ export function rootPhase( root: Node<'vec2'> ): Node<'float'> {
 export class Wind {
 
 	readonly uniforms: WindUniforms;
-	private currentSpeed = BASE_SPEED;
-	private currentHeading = 40;
+	private currentSpeed = REFERENCE_SPEED;
+	private currentHeading = HEADING;
+	private currentGustiness = REFERENCE_GUSTINESS;
 	private elapsed = 0;
 	private travel = 0; // integrated along-wind travel, m (float64 here; wrapped for the shaders)
-	private flutterTime = 0;
+	private swayTravel = 0; // the sway's clock: scene seconds times REFERENCE_SPEED, m
 	private readonly previousVelocity = new Vector2();
 
 	constructor( uniforms = createWindUniforms(), settings: WindSettings = {} ) {
@@ -366,30 +409,40 @@ export class Wind {
 
 	get speed(): number { return this.currentSpeed; }
 	get heading(): number { return this.currentHeading; }
+	get gustiness(): number { return this.currentGustiness; }
 	get time(): number { return this.elapsed; }
+
+	/** The wind the sea's spectrum is built from, once (OceanFFT's `windSpeed` and
+	 * `windDirection`): the weather's heading and REFERENCE_SPEED. The weather's own speed reaches
+	 * the sea through `oceanGain` alone, so a weather change rebuilds nothing and a page that
+	 * changed its weather draws the sea a page loaded in it draws. The presets share one heading. */
+	get spectrumWind(): { windSpeed: number; windDirection: number } {
+
+		return { windSpeed: REFERENCE_SPEED, windDirection: this.currentHeading };
+
+	}
 
 	// Explicit seek/startup only. Reconstructing a fixed preset at time t is deterministic;
 	// a live weather change must call update so its existing travel history is preserved.
-	reset( { speed = BASE_SPEED, heading = 40, time = 0 }: WindSettings = {} ): void {
+	reset( { speed = REFERENCE_SPEED, heading = HEADING, gustiness = REFERENCE_GUSTINESS, time = 0 }: WindSettings = {} ): void {
 
-		validate( speed, heading, time );
-		this.publish( speed, heading );
+		validate( speed, heading, gustiness, time );
+		this.publish( speed, heading, gustiness );
 		this.elapsed = time;
-		this.uniforms.phase.value = ( time * speed / BASE_SPEED * 1.6 ) % PHASE_PERIOD;
 		this.uniforms.displacement.value.copy( this.uniforms.velocity.value ).multiplyScalar( time );
 		this.uniforms.cloudOffset.value.copy( this.uniforms.displacement.value ).multiplyScalar( - CLOUD_DRIFT );
 		this.travel = time * speed;
-		this.flutterTime = time * flutterRate( speed );
+		this.swayTravel = time * REFERENCE_SPEED;
 		this.publishVegetation();
 		this.keepPrevious();
 
 	}
 
-	update( dt: number, speed = this.currentSpeed, heading = this.currentHeading ): void {
+	update( dt: number, speed = this.currentSpeed, heading = this.currentHeading, gustiness = this.currentGustiness ): void {
 
-		validate( speed, heading, dt );
+		validate( speed, heading, gustiness, dt );
 		this.keepPrevious();
-		this.integrate( dt, speed, heading );
+		this.integrate( dt, speed, heading, gustiness );
 		// (debug) the vegetation's wind held: its clocks back to the last frame's, no motion
 		if ( debugFlags.windFreeze === true ) this.hold();
 
@@ -403,20 +456,19 @@ export class Wind {
 
 	}
 
-	private integrate( dt: number, speed: number, heading: number ): void {
+	private integrate( dt: number, speed: number, heading: number, gustiness: number ): void {
 
 		const previousSpeed = this.currentSpeed;
 		this.previousVelocity.copy( this.uniforms.velocity.value );
-		this.publish( speed, heading );
+		this.publish( speed, heading, gustiness );
 		if ( dt === 0 ) return;
 		this.elapsed += dt;
 		// Trapezoidal integration follows the smoothly transitioning CPU weather state and
 		// does not change when a rendering-quality setting changes its update cadence.
-		this.uniforms.phase.value = ( this.uniforms.phase.value + dt * ( previousSpeed + speed ) * 0.5 / BASE_SPEED * 1.6 ) % PHASE_PERIOD;
 		this.uniforms.displacement.value.addScaledVector( this.previousVelocity.add( this.uniforms.velocity.value ), dt * 0.5 );
 		this.uniforms.cloudOffset.value.copy( this.uniforms.displacement.value ).multiplyScalar( - CLOUD_DRIFT );
 		this.travel += dt * ( previousSpeed + speed ) * 0.5;
-		this.flutterTime += dt * ( flutterRate( previousSpeed ) + flutterRate( speed ) ) * 0.5;
+		this.swayTravel += dt * REFERENCE_SPEED;
 		this.publishVegetation();
 
 	}
@@ -427,7 +479,7 @@ export class Wind {
 
 		const u = this.uniforms, p = u.previous;
 		u.clock.value = p.clock.value;
-		u.flutter.value = p.flutter.value;
+		u.swayScroll.value = p.swayScroll.value;
 		u.gustScroll.value.copy( p.gustScroll.value );
 		this.keepPrevious();
 
@@ -441,8 +493,9 @@ export class Wind {
 		p.direction.value.copy( u.direction.value );
 		p.pressure.value = u.pressure.value;
 		p.breeze.value = u.breeze.value;
+		p.gustLean.value = u.gustLean.value;
 		p.clock.value = u.clock.value;
-		p.flutter.value = u.flutter.value;
+		p.swayScroll.value = u.swayScroll.value;
 		p.gustScroll.value.copy( u.gustScroll.value );
 
 	}
@@ -451,23 +504,24 @@ export class Wind {
 
 		const u = this.uniforms;
 		u.clock.value = this.elapsed % CLOCK_PERIOD;
-		u.flutter.value = this.flutterTime % CLOCK_PERIOD;
+		u.swayScroll.value = this.swayTravel % GUST_ALONG;
 		u.gustScroll.value.set( this.travel % GUST_ALONG, this.travel * EDDY_RATE % EDDY_TILE );
 
 	}
 
-	private publish( speed: number, heading: number ): void {
+	private publish( speed: number, heading: number, gustiness: number ): void {
 
 		const angle = ( ( heading % 360 ) + 360 ) % 360 * Math.PI / 180;
 		this.currentSpeed = speed;
 		this.currentHeading = heading;
+		this.currentGustiness = gustiness;
 		// Match ShoreWaves.setDirection: the positive inverse FFT propagates opposite k.
 		this.uniforms.direction.value.set( - Math.cos( angle ), - Math.sin( angle ) );
 		this.uniforms.velocity.value.copy( this.uniforms.direction.value ).multiplyScalar( speed );
-		const ratio = speed / BASE_SPEED;
-		this.uniforms.strength.value = clamp( ratio, 0, 1.6 );
+		const ratio = speed / REFERENCE_SPEED;
 		this.uniforms.breeze.value = ratio;
 		this.uniforms.pressure.value = ratio * ratio;
+		this.uniforms.gustLean.value = gustLeanOf( gustiness );
 		// Long swell changes little; local and capillary bands respond more. These gentle
 		// amplitude limits keep everyday weather within the island's calm-water design; only a
 		// gale (above about 1.5 x the fair-weather wind) builds a rough storm sea beyond them.
