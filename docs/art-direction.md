@@ -7,19 +7,19 @@ art decision changes; reference images stay out of the repository.
 ## The look
 
 - A small stylised island in an open sea, a visual sample for a game. Stylised fantasy-realistic:
-  a physically based scene graded toward a painted game's colour. By day the light is high-key,
-  airy and soft: a near-white sun, a milky horizon that glows wide and cream on the side toward
-  the sun, fresh cool greens; a low sun's light turns warm and golden. Softly glowing highlights,
-  airy lifted shadows, deep teal water with a sparkling glare toward the sun, chunky chiselled
-  stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the lower cliff
-  stone exposed.
-- The fantasy look is an art-directed layer over the physically based image (a wide soft glow
-  that spreads from the sunlit grass tips, the horizon and the glints into what is round them,
-  greens turned toward pure green and a touch darker, richer teal water, golden highlights over
-  cool teal shadows, airy lifted shadows that keep their saturation, a little less contrast and a
-  little more brightness: high-key and soft), never baked into the lighting or the tone curve. The
-  glow is a soft light round the bright parts, not a grey screen over the whole frame; grey stone
-  and skin keep their colour; a dark meadow under a low sun stays green, not olive-grey.
+  a physically based scene with an art-directed grade, in its own fantasy-realistic colours: real
+  phenomena exaggerated, never a borrowed pastel palette or a dyed sky. By day the light is airy
+  and soft: a near-white sun, a milky horizon that glows wide and cream on the side toward the sun,
+  fresh cool greens; only a low sun's light turns warm and golden. Deep teal water with a sparkling
+  glare toward the sun, chunky chiselled stone, a lush meadow with wildflowers, and grass hanging
+  over the rim. Keep the lower cliff stone exposed.
+- The fantasy look is an art-directed layer over the physically based image, never baked into the
+  lighting or the tone curve: a soft glow round only the brightest parts (sunlit grass tips toward
+  the sun, the horizon, the glints), greens turned toward pure green and a touch darker, richer
+  teal water, golden highlights over cool teal shadows, lifted shadows that keep their saturation,
+  slightly less contrast. The day is not pushed brighter than its exposure: a glow that spreads
+  over the whole sunlit meadow, or a raised exposure, washes the frame out toward the sun. Grey
+  stone and skin keep their colour; a dark meadow under a low sun stays green, not olive-grey.
   `soft-fantasy` is the default, `rich-fantasy` a bolder step toward a painted scene, `realistic`
   the plain image for comparison (`src/post/Pipeline.ts`).
 - The tone curve keeps the water clear (deep sea dark and saturated, the shallows' seabed and
@@ -28,6 +28,14 @@ art decision changes; reference images stay out of the repository.
   deep water and its shoulder flattened the shallows.
 - The water is adapted from a physically based model (tidewater) and art-directed toward this
   look: keep new water work stylised rather than strictly realistic.
+- The look is judged from the game's own view, the island camera zoomed out over the island, as
+  well as close up. Light reads there through its direction and large-scale light and shade (lit
+  and shaded slopes and cliffs, a glint or moon path on the sea, later warm lights and what stands
+  on the island), not through fine detail or post effects, which vanish at that distance.
+- The island view's default direction is fixed and looks a little east of the meridian the sun and
+  moon culminate on: the full moon's path is in the frame through the evening and at midnight, and
+  by day the sun lights the cliffs from the side (a lit and a shaded side) without filling the
+  frame with glare. It never follows the clock, so returning to the view never jumps.
 
 ## Three layers in one world
 
@@ -71,14 +79,12 @@ art decision changes; reference images stay out of the repository.
   them; looking toward the sun the whole lawn glows, away from it it is plainer and greener; no
   clumps, tall islands or bare patches, and no pattern of dots on the blades. Inside the grass
   there are no hard shadows, only an even darkening toward the ground; the shade of anything
-  standing on it lies soft and light. Cloud shadows are soft patches a few tens of metres across
-  that drift slowly over the island and the sea with the wind: none under a clear sky, some in
-  fair weather, more and softer as cloud gathers, merging into one even shade under overcast.
-  The light moves; nothing dark is painted onto the ground. The turf under the blades is the
-  deeper green of their lower part,
-  so from afar the meadow reads as one smooth carpet. By night the lawn is a dark blue-green, its
-  blades lit only as the moon's own strength allows. Toward the coast the tufts grow taller and lean out over the lip
-  instead of thinning, and the lip alternates between overgrown stretches and cut-open root soil.
+  standing on it lies soft and light. The only shadows that cross the ground are the real clouds'
+  (from the cloud layer overhead, drifting with it): no patches painted or animated onto the
+  island to vary its light. The turf under the blades is the deeper green of their lower part, so
+  from afar the meadow reads as one smooth carpet. By night the lawn is a dark, readable green
+  (see Night). Toward the coast the tufts grow taller and lean out over the lip instead of
+  thinning, and the lip alternates between overgrown stretches and cut-open root soil.
 - Wildflowers are part of the meadow: heads (a hand across at most: large enough that the game's
   close view reads them as flowers, not dots) on some of its tufts, about at the blades' tips,
   some partly hidden among them, with no stem or leaves showing. They are a warm temperate
@@ -119,7 +125,12 @@ art decision changes; reference images stay out of the repository.
 - Bad weather dims and desaturates the existing light; it never adds a grey screen veil, and it
   stays dimmer and greyer than a clear day. Distant air leaves the island's foreground clear as
   the view pulls back. Sea fog is a low layer that may surround the island, never a uniform tint.
-- Weather changes sweep the sky as a front from upwind.
+- Weather changes sweep the sky as a front from upwind. The clouds drift downwind with the wind
+  aloft, faster than the surface wind (the cumulus about twice it, the cirrus about three times,
+  along their fibres), so they never move against the grass and the sea.
+- The sky keeps the atmosphere's own colours through sunset, twilight and the blue hour: no
+  painted pink, magenta or deep-blue twilight, which dyes the sea one flat colour and reads as a
+  filter. Twilight's mood comes from the light on the island, not from tinting the sky.
 - Rain is light streaks and ripples on the water. Wetness darkens rock and plants within small
   limits and glosses bare stone; water runs down the cliffs in sparse darker runnels; puddles fill
   fixed hollows and read as water from above.
@@ -140,10 +151,6 @@ art decision changes; reference images stay out of the repository.
   comes in at a slant: slopes show a lit and a shaded side and the sea carries a moon path, where
   a moon near the zenith lit the island flat. The moon path and the moonlit meadow glow softly in
   that view too.
-- The island view's default direction is fixed and looks a little east of the meridian the sun and
-  moon culminate on: the full moon's path is in the frame through the evening and at midnight, and
-  by day the sun lights the cliffs from the side (a lit and a shaded side) without filling the
-  frame with glare. It never follows the clock, so returning to the view never jumps.
 - The night meadow is a dark, readable, cool green turning toward blue-green (not black, olive or
   teal), turned by the night's own grade rather than by a bluer light, so stone, sand and skin keep
   their colours.
