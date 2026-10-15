@@ -83,7 +83,8 @@ import * as R from './Resources.ts';
 //   level 5 through a sampled binding in the tail's own dispatch.
 // - r32float does not filter in WebGPU core: `SampleLanczos2Weight` and `SampleDilatedDepth`
 //   filter by hand, the same weights as a bilinear clamp-to-edge sample.
-// - `GetSPDMipDimensions` and the resource dimension getters read `textureDimensions`.
+// - `GetSPDMipDimensions` and the resource dimension getters read `textureDimensions` (level 0's:
+//   three r186 drops the level for a storage texture, so a mip's size is level 0's halved).
 // - The deprecated auto-composition and pre/post-alpha callbacks (`StoreAutoReactive`,
 //   `LoadPrevPreAlpha`, ...) belong to the removed TCR pass and are not ported; the reactive-mask
 //   generator stores straight into `rw_output_autoreactive` as its pass file does.
@@ -444,7 +445,9 @@ export class Fsr3Bindings {
 
 	GetSPDMipDimensions( uMipLevel: number ): N {
 
-		return ivec2( textureSize( this.srv( R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_SPD_MIPS ), int( uMipLevel ) ) );
+		// three r186 drops the level of a storage texture's `textureSize`: level 0's size, halved
+		const size0 = ivec2( textureSize( this.srv( R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_SPD_MIPS ), int( 0 ) ) );
+		return uMipLevel === 0 ? size0 : max( ivec2( 1 ), size0.shiftRight( ivec2( uMipLevel ) ) );
 
 	}
 
@@ -812,7 +815,9 @@ export class Fsr3Bindings {
 
 		const node = this.srv( R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_SPD_MIPS );
 		const q = ivec2( iPxPos ).toVar();
-		const size = ivec2( textureSize( node, int( index ) ) );
+		// level `index`'s own size (a storage texture's `textureSize` is level 0's in r186), so
+		// the tail reads 0 past it as upstream's UAV load does
+		const size = this.spdMipSize( index );
 		return select( this.inside( q, size ), node.load( q ).level( int( index ) ), vec4( 0 ) ).xy;
 
 	}
