@@ -72,6 +72,9 @@ View and capture:
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `dist` (m; without it the
   island view's distance follows the land's size), `polar`, `az` (the camera), `gui`, `camera`
   (`orbit`, the default: the island camera; or `free`: fly with the mouse, WASD, Q/E and Shift).
+  The island view's fov widens as it closes in: `nearFov` (degrees at the closest zoom, 42 by
+  default; `off` keeps 27 at every distance) and `nearFovFrom` (the distance in m it widens from,
+  50 by default); the GUI's Camera folder has the same three controls.
   A paused page lifts its loading screen at once, without the fade, so a capture of a paused frame
   never catches the screen over it.
 

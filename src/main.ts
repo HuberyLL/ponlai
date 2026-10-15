@@ -793,6 +793,11 @@ const S = pipeline.settings;
 type CameraView = 'island' | 'horizon' | 'sky';
 const cameraSettings = { mode: loaded.camera as string };
 const reviewView = { camera: 'island' as CameraView };
+// The island view's fov widens as it closes in (IslandCameraControls `widenFov`): `nearFov`
+// (degrees) at the closest zoom, from `nearFovFrom` (m) inward; `nearFov=off` keeps the far fov.
+const fovWidening = { on: params.get( 'nearFov' ) !== 'off' };
+controls.nearFov = numberParam( 'nearFov', controls.nearFov );
+controls.widenFrom = numberParam( 'nearFovFrom', controls.widenFrom );
 let orbitDof = S.dof;
 const viewDirection = new THREE.Vector3();
 
@@ -854,6 +859,18 @@ function applyOrbitLimit(): void {
 	controls.maxPolarAngle = sky ? Math.PI : orbitMaxPolar;
 	controls.minDistance = sky ? 0.01 : orbitMinDistance;
 	controls.enableZoom = controls.enablePan = ! sky;
+	// only the island view widens: the review views and the free flight keep their own fov
+	controls.widenFov = fovWidening.on && controls.enabled && reviewView.camera === 'island';
+
+}
+
+// Leaving the widened island view (for the free flight, or with the widening switched off) takes
+// back its far fov.
+function unwidenFov(): void {
+
+	if ( ! controls.widenFov ) return;
+	camera.fov = controls.farFov;
+	camera.updateProjectionMatrix();
 
 }
 
@@ -861,6 +878,7 @@ function setCameraMode( mode: string ): void {
 
 	if ( controls.enabled ) settleOrbit();
 	if ( mode === 'free' && ! freeControls.enabled ) orbitDof = S.dof;
+	if ( mode === 'free' ) unwidenFov();
 	if ( mode === 'orbit' && freeControls.enabled ) {
 
 		camera.getWorldDirection( viewDirection );
@@ -907,7 +925,7 @@ function setCameraView( view: CameraView ): void {
 		controls.target.copy( target );
 		camera.position.copy( initialCameraPosition );
 		camera.quaternion.copy( initialCameraQuaternion );
-		camera.fov = initialCameraFov;
+		camera.fov = controls.farFov = initialCameraFov;
 
 	}
 	camera.updateProjectionMatrix();
@@ -924,7 +942,21 @@ cameraF.add( controls, 'scrollMode', [ 'auto', 'zoom', 'pan' ] ).name( 'scroll /
 cameraF.add( controls, 'enableDamping' ).name( 'glide and ease' );
 cameraF.add( controls, 'edgePan' ).name( 'pan at the edge' );
 cameraF.add( freeControls, 'speed', 1, 160, 1 ).name( 'flight speed' ).listen();
-cameraF.add( camera, 'fov', 15, 100, 1 ).name( 'field of view' ).listen().onChange( () => camera.updateProjectionMatrix() );
+// (in the widened island view the slider sets the far fov, which the view takes from `nearFovFrom` out)
+cameraF.add( camera, 'fov', 15, 100, 1 ).name( 'field of view' ).listen().onChange( () => {
+
+	if ( controls.widenFov ) controls.farFov = camera.fov;
+	camera.updateProjectionMatrix();
+
+} );
+cameraF.add( fovWidening, 'on' ).name( 'widen fov up close' ).onChange( () => {
+
+	if ( ! fovWidening.on ) unwidenFov();
+	applyOrbitLimit();
+
+} );
+cameraF.add( controls, 'nearFov', 27, 60, 1 ).name( 'near fov' );
+cameraF.add( controls, 'widenFrom', 22, 150, 1 ).name( 'widen from (m)' );
 cameraF.add( { reset: () => setCameraView( 'island' ) }, 'reset' ).name( 'return to island (R)' );
 const environmentLook = { exposure: true };
 const W = water.uniforms;
