@@ -23,7 +23,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // Leaf edges, sprays and fronds still flutter on their own phases, a small motion on top, faster as
 // the wind rises. Grass tufts and their flower heads bend with the field at their root, the turf
 // skirt follows the same field, and a hanging strand swings like a pendulum with the same sway
-// (vegetation/Deform.ts `hangingSway`, which no kind uses today).
+// (vegetation/Deform.ts `hangingSway`: the grass hanging from the turf skirt's lip).
 //
 // Everything is a function of the wind's integrated clocks and travel (`clock`, `flutter`,
 // `gustScroll`, wrapped where every rate completes whole cycles), never time * a changing speed,

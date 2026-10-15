@@ -5,13 +5,12 @@ import { puddleCover } from '../../weather/Puddles.ts';
 
 // How the vegetation moves: the plants' main bend (`mainBend`: today only the game's palm), the
 // meadow's blades and flower heads (`bendBlade`, each on its own phase, `bladePhase`), a hanging
-// strand's pendulum (`hangingSway`), the turf skirt's lean (`skirtLean`) and standing water
-// drowning a plant (`drown`: the meadow). Each kind's wind numbers (its amplitude, its swings per
-// gust tile, `slow`) are the exported constants below, which its material and the wind probe
+// strand's pendulum (`hangingSway`: the grass hanging from the turf skirt's lip, which passes its
+// own HangingWind), the turf skirt's thatch leaning (`skirtLean`) and standing water drowning a
+// plant (`drown`: the meadow). Each kind's wind numbers (its amplitude, its swings per gust tile,
+// `slow`) are the exported constants below, which its material and the wind probe
 // (debug/WindProbe.ts) both read. Each function returns nodes; it builds the graph its kind built
 // in place before, in the same order, so the shaders are unchanged.
-// `hangingSway` is kept for the plant kinds to come; no kind uses it today (it moved the rim's
-// hanging leaf trails, removed with them; a kind that hangs passes its own HangingWind).
 
 const TAU = Math.PI * 2;
 
@@ -27,8 +26,11 @@ export const PALM_WIND = { cycles: 30, slow: 1 } as const;
  * tuft's height, in a still breeze and added at a full gust: `base + gust * field.w`). */
 export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust: 0.02 }, shiver: { base: 0.003, gust: 0.006 } } as const;
 /** The turf skirt's thatch: its lean at the blade tips (m at LEAN_REF) and its shiver's swings per
- * gust tile (about 1.9 Hz in a fair wind). */
-export const SKIRT_WIND = { amplitude: 0.012, cycles: 64 } as const;
+ * gust tile (about 1.9 Hz in a fair wind); the grass hanging from its lip swings as a hanging strand
+ * (`hang`, `hangingSway`'s numbers): a blade's weight is its length times the square of the way
+ * down it, so a metre-long blade's tip sways about 3 cm in a fair gust, at about 0.7 Hz, and lies
+ * on the wall rather than pressing into it. */
+export const SKIRT_WIND = { amplitude: 0.012, cycles: 64, hang: { amplitude: 0.018, cycles: 24, across: 16, press: 0.02, leafEdge: 0 } } as const;
 
 /** A plant's main bend, after Sousa's "Vegetation Procedural Animation and Shading in Crysis"
  * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways a little
