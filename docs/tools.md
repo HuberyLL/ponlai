@@ -323,9 +323,11 @@ captures (`uv run tools/img.py <cmd>`: its dependencies are inline, no system Pi
 needed): `diff` (two images or two directories: max, mean, pixels over levels, signed bias, luma
 change, bounding box, `--heat` map), `crop` (boxes or a capture's named anchors, `--zoom`),
 `sheet` (a labelled grid of images, directories or crops, `--diff` for A | B | diff) and `stats`
-(mean RGB, luma, percentiles per image or region); regions are `--box x,y,w,h` or `--anchor
-name|all` from the capture's JSON. Its numbers are diff-set.py's and compare-captures.py's
-(shared helpers in `tools/parity/pixels.py`). `tools/compare-captures.py` measures two overview
+(mean RGB, luma, percentiles per image or region) and `flicker` (a clip's consecutive whole
+frames, capture-clip's `--full`: the temporal flicker per region, mean frame difference, temporal
+high-pass, one-frame flashes and a `--map` of where they fall); regions are `--box
+[name=]x,y,w,h` or `--anchor name|all` from the capture's JSON. Its numbers are diff-set.py's and
+compare-captures.py's (shared helpers in `tools/parity/pixels.py`). `tools/compare-captures.py` measures two overview
 captures (`uv run --with numpy --with pillow`). Where shapes differ (growth steps, seeds, a
 regenerated island), judge the look by eye and region statistics (`tools/capture-growth.mjs`), not
 by pixel difference.
