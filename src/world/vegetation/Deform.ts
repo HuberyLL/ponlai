@@ -5,7 +5,8 @@ import { puddleCover } from '../../weather/Puddles.ts';
 
 // How the vegetation moves: the plants' main bend (`mainBend`: the rim bushes, the flowers, the
 // plateau's plants, the game's palm), the meadow's blades (`bendBlade`, each on its own phase,
-// `bladePhase`), the rim trails' pendulum (`hangingSway`), the turf skirt's lean (`skirtLean`) and
+// `bladePhase`), a hanging strand's pendulum (`hangingSway`: the rim trails, the grass hanging from
+// the turf skirt's lip), the turf skirt's thatch leaning (`skirtLean`) and
 // standing water drowning a plant (`drown`: the flowers, the meadow). Each kind's wind numbers (its
 // amplitude, its swings per gust tile, `slow`) are the exported constants below, which its material
 // and the wind probe (debug/WindProbe.ts) both read. Each function returns nodes; it builds the
@@ -39,8 +40,11 @@ export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust:
  * further) and their leaves' flutter at the tip (m). */
 export const RIM_WIND = { amplitude: 0.012, cycles: 14, across: 10, press: 0.03, leafEdge: 0.004 } as const;
 /** The turf skirt's thatch: its lean at the blade tips (m at LEAN_REF) and its shiver's swings per
- * gust tile (about 1.9 Hz in a fair wind). */
-export const SKIRT_WIND = { amplitude: 0.012, cycles: 64 } as const;
+ * gust tile (about 1.9 Hz in a fair wind); the grass hanging from its lip swings as a hanging strand
+ * (`hang`, `hangingSway`'s numbers): a blade's weight is its length times the square of the way
+ * down it, so a metre-long blade's tip sways about 3 cm in a fair gust, at about 0.7 Hz, and lies
+ * on the wall rather than pressing into it. */
+export const SKIRT_WIND = { amplitude: 0.012, cycles: 64, hang: { amplitude: 0.018, cycles: 24, across: 16, press: 0.02, leafEdge: 0 } } as const;
 
 /** A plant's main bend, after Sousa's "Vegetation Procedural Animation and Shading in Crysis"
  * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways a little
@@ -108,30 +112,35 @@ export function bladePhase( id: F, root: F ): F {
 
 }
 
-/** What a hanging strand's vertex brings to its pendulum (RimFoliage.ts): its place, its sway
- * weight (0 at the stone, 1 at the tip), its strand's phase, the wall's outward normal where it
- * hangs, its normal, how far it lies toward a leaf's edge (0 on stems) and its leaf's phase. */
+/** What a hanging strand's vertex brings to its pendulum: its place, its sway weight (0 at the
+ * stone, 1 at the tip), its strand's phase, the wall's outward normal where it hangs, its normal,
+ * how far it lies toward a leaf's edge (0 on stems) and its leaf's phase. */
 export interface HangingInputs { position: V3; weight: F; phase: F; out: V3; normal: V3; leafEdge: F; leafPhase: F }
 
-/** A hanging strand leans with the gust field and swings like a pendulum (RIM_WIND) with the plants
- * about it (Wind.ts `gustWave`), its own phase a little apart, its forks with it; its leaves flutter
- * along their normals from stalk to tip on their own phase. The wall bounds it: wind into the cliff
- * presses the strand back by at most RIM_WIND.press, and a gust lifts it off the stone a little.
- * Returns the swayed position and the sway (as mainBend's). */
-export function hangingSway( wind: WindState, v: HangingInputs ): { position: V3; sway: V2 } {
+/** A hanging kind's wind numbers: the sway at its tips (m at LEAN_REF), the pendulum's swings per
+ * gust tile along and across the wind, how far the wall may press it back (m) and its leaves'
+ * flutter at the tip (m). */
+export interface HangingWind { amplitude: number; cycles: number; across: number; press: number; leafEdge: number }
+
+/** A hanging strand leans with the gust field and swings like a pendulum (`numbers`) with the
+ * plants about it (Wind.ts `gustWave`), its own phase a little apart, its forks with it; its leaves
+ * flutter along their normals from stalk to tip on their own phase. The wall bounds it: wind into
+ * the cliff presses the strand back by at most `numbers.press`, and a gust lifts it off the stone a
+ * little. Returns the swayed position and the sway (as mainBend's). */
+export function hangingSway( wind: WindState, v: HangingInputs, numbers: HangingWind = RIM_WIND ): { position: V3; sway: V2 } {
 
 	const field = windField( wind, v.position.xz ).toVar();
 	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
 	const lively = wind.breeze.mul( field.w.mul( 0.6 ).add( 0.3 ) );
 	const own = fract( v.phase.div( TAU ) ).sub( 0.5 ).mul( 0.8 );
 	const swing = swingOf( wind, field.w ).mul( 1.5 );
-	const unit = along.mul( field.z.div( LEAN_REF ).add( gustWave( wind, v.position.xz, RIM_WIND.cycles, own ).mul( swing ) ) )
-		.add( across.mul( gustWave( wind, v.position.xz, RIM_WIND.across, own.mul( 1.6 ).add( 1.3 ) ).mul( swing ).mul( 0.35 ) ) );
+	const unit = along.mul( field.z.div( LEAN_REF ).add( gustWave( wind, v.position.xz, numbers.cycles, own ).mul( swing ) ) )
+		.add( across.mul( gustWave( wind, v.position.xz, numbers.across, own.mul( 1.6 ).add( 1.3 ) ).mul( swing ).mul( 0.35 ) ) );
 	const sway = unit.xz.mul( LEAN_REF );
-	const free = unit.mul( v.weight.mul( RIM_WIND.amplitude ) ).toVar();
-	const offset = free.add( v.out.mul( max( float( - RIM_WIND.press ).sub( dot( free, v.out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( v.weight ).mul( 0.01 ) ) ) );
+	const free = unit.mul( v.weight.mul( numbers.amplitude ) ).toVar();
+	const offset = free.add( v.out.mul( max( float( - numbers.press ).sub( dot( free, v.out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( v.weight ).mul( 0.01 ) ) ) );
 	const flutter = wave( wind.flutter, 3.7, v.leafPhase );
-	return { position: v.position.add( offset ).add( v.normal.mul( flutter.mul( v.leafEdge ).mul( lively ).mul( RIM_WIND.leafEdge ) ) ), sway };
+	return { position: v.position.add( offset ).add( v.normal.mul( flutter.mul( v.leafEdge ).mul( lively ).mul( numbers.leafEdge ) ) ), sway };
 
 }
 
