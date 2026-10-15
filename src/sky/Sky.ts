@@ -30,7 +30,9 @@ type V4 = THREE.Node<'vec4'>;
 type DisplayedWeather = Pick<WeatherState, 'haze' | 'rain' | 'fog' | 'windSpeed' | 'windDirection'>;
 
 // The sky: atmosphere, clouds, night sky and the baked environment. One cloud field feeds the
-// visible sky, water reflections, environment lighting and cloud shadows.
+// visible sky, water reflections, environment lighting and cloud shadows. After sunset the light
+// the sky lends the island takes a gain of its own (ISLAND_SKY), which the sky the eye sees, the
+// sea's reflection of it and the sea's own body never take.
 //
 // Only the reflection panorama, environment and irradiance cross-fade between bakes. A periodic
 // bake on a running clock spreads over frames: its panoramas and irradiance in the frame that asks
@@ -142,6 +144,63 @@ const equirectToDir = Fn( ( [ q ]: [ V2 ] ) => {
 // all of it; the environment that lights the terrain and plants takes this share.
 const NIGHT_SKY = 0.55;
 
+// Art direction: the island stays readable after sunset. Through the minutes after it the sun's
+// skylight has faded while the moon's key and the night ambient are not yet in, which left the
+// meadow at about half its night brightness. The light the sky lends the island takes a gain and
+// a warm cast per sun elevation, ISLAND_SKY: the environment's source panorama, which lights the
+// terrain and plants, in its bake, and the islanders' sky fill (`islandIrradianceNode`, the
+// irradiance probe graded the same way). The seen sky, the panorama the sea reflects and the
+// irradiance probe itself, which lights the sea's body, keep the atmosphere's own, so the evening's
+// sky and sea look as they did. Each row is an elevation (degrees, descending): the colour the
+// light is drawn toward (linear, at the light's own luminance), how far, and the gain; rows
+// interpolate linearly and the end rows hold beyond them. From 2 degrees up and from -13.2 down the
+// light is the atmosphere's alone. The gain peaks a little after the handoff (-2.6 degrees), where
+// the sun's skylight is gone and the moon's key (DayCycle MOON_KEY_TOP) is only starting.
+interface IslandRow { at: number; tint?: readonly [ number, number, number ]; amount?: number; gain?: number }
+const ISLAND_SKY: readonly IslandRow[] = [
+	{ at: 2 },
+	{ at: - 1.3, tint: [ 1, 0.75, 0.45 ], amount: 0.5, gain: 3.2 },
+	{ at: - 2.6, tint: [ 0.95, 0.8, 0.58 ], amount: 0.5, gain: 5 },
+	{ at: - 4, tint: [ 0.9, 0.85, 0.7 ], amount: 0.5, gain: 2.8 },
+	{ at: - 8.6, gain: 1.2 },
+	{ at: - 13.2 },
+];
+
+// ISLAND_SKY at `elevation`: the tint (normalised to unit luminance) and its amount into `tint`;
+// returns the gain.
+function islandSky( elevation: number, tint: THREE.Vector4 ): number {
+
+	const at = ( row: IslandRow ) => {
+
+		const [ r, g, b ] = row.tint ?? [ 1, 1, 1 ], l = r * 0.2126 + g * 0.7152 + b * 0.0722;
+		return [ r / l, g / l, b / l, row.amount ?? 0, row.gain ?? 1 ];
+
+	};
+	const rows = ISLAND_SKY;
+	let v = at( rows[ rows.length - 1 ] );
+	if ( elevation >= rows[ 0 ].at ) v = at( rows[ 0 ] );
+	else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
+
+		const t = ( elevation - rows[ i ].at ) / ( rows[ i - 1 ].at - rows[ i ].at );
+		const a = at( rows[ i ] ), b = at( rows[ i - 1 ] );
+		v = a.map( ( x, c ) => x + ( b[ c ] - x ) * t );
+		break;
+
+	}
+	tint.set( v[ 0 ], v[ 1 ], v[ 2 ], v[ 3 ] );
+	return v[ 4 ];
+
+}
+
+// A sky radiance or irradiance as lent to the island (ISLAND_SKY): drawn toward `tint.rgb` at its
+// own luminance by `tint.w`, times `gain`. Linear in the light, so the graded probe's integral is
+// the integral of the graded panorama.
+const lendIsland = Fn( ( [ light, tint, gain ]: [ V3, V4, F ] ) => {
+
+	return mix( light, tint.rgb.mul( dot( light, vec3( 0.2126, 0.7152, 0.0722 ) ) ), tint.w ).mul( gain );
+
+} ).setLayout( { name: 'lendIsland', type: 'vec3', inputs: [ { name: 'light', type: 'vec3' }, { name: 'tint', type: 'vec4' }, { name: 'gain', type: 'float' } ] } );
+
 // Art direction: within a few degrees of the horizon the sun shines through twenty to forty air
 // masses and its light turns an almost pure red (red/blue above 100 at one degree), which paints
 // the island like lava. The optical depth that sets the key's hue is capped softly a little past
@@ -166,6 +225,11 @@ function capSunHue( transmittance: THREE.Color ): THREE.Color {
 	return transmittance.multiplyScalar( before / luma( transmittance ) );
 
 }
+
+const NEUTRAL_TINT = new THREE.Vector4( 1, 1, 1, 0 );
+// The sun's elevations (degrees) over which the moon comes into the clouds' light, in full below the
+// first: the night sky's ramp, later than the moon's key (DayCycle MOON_KEY_TOP).
+const CLOUD_MOON = [ - 7, - 3 ] as const;
 
 export class Sky {
 
@@ -204,6 +268,8 @@ export class Sky {
 	dome: THREE.Mesh;
 	lastBakeMs = 0;
 	readonly irradianceNode: V3;
+	// The irradiance probe as lent to the island after sunset (ISLAND_SKY): the islanders' sky fill.
+	readonly islandIrradianceNode: V3;
 	busy = false;
 
 	private endpoints = [ makeEndpoint(), makeEndpoint() ];
@@ -270,6 +336,13 @@ export class Sky {
 	private nightSkyLevel = 1;
 	private displayNightSky = uniform( NIGHT_SKY );
 	private bakeStarVisibility = uniform( 0 );
+	// The light the sky lends the island for this frame's sun (ISLAND_SKY: the tint and its amount,
+	// the gain), and the bake's copies: the island's for the environment's source, neutral for the
+	// other panoramas.
+	private islandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
+	private islandGain = uniform( 1 );
+	private bakeIslandTint = uniform( new THREE.Vector4( 1, 1, 1, 0 ) );
+	private bakeIslandGain = uniform( 1 );
 	private starFootprint = uniform( 1 );
 
 	constructor( renderer: THREE.WebGPURenderer, { sunIlluminance = SUN_ILLUMINANCE, elevation = 32, azimuth = - 8 } = {} ) {
@@ -299,6 +372,7 @@ export class Sky {
 			textureLoad( this.irradianceB, ivec2( 0 ) ), this.blend );
 		this.irradianceBlendQuad = new THREE.QuadMesh( irradianceBlendMat );
 		this.irradianceNode = textureLoad( texture( this.irradianceDisplay.texture ), ivec2( 0 ) ).rgb;
+		this.islandIrradianceNode = lendIsland( this.irradianceNode, this.islandTint, this.islandGain );
 		const irradianceMat = new THREE.NodeMaterial();
 		irradianceMat.depthTest = false;
 		irradianceMat.depthWrite = false;
@@ -365,7 +439,8 @@ export class Sky {
 			const up = vec3( d.x, abs( d.y ), d.z );
 			// The visible night sky is darker than the light it lends the island (see NIGHT_SKY).
 			const night = this.nightAmbient.rgb.mul( this.nightShare );
-			const sky = this.clearSky( up, night, this.overcast ).mul( cloud.a ).add( cloud.rgb ).mul( this.ambientGain )
+			// (the environment's source takes the light lent to the island: ISLAND_SKY)
+			const sky = lendIsland( this.clearSky( up, night, this.overcast ).mul( cloud.a ).add( cloud.rgb ).mul( this.ambientGain ), this.bakeIslandTint, this.bakeIslandGain )
 				.add( this.night.airglow( up, this.bakeStarVisibility ).mul( cloud.a ) );
 			const stars = this.night.stars( up, this.starFootprint, this.bakeStarVisibility.mul( this.includeStars ) );
 			const radiance = seaPanorama( d, sky.add( stars.mul( cloud.a ) ), this.sea.rgb );
@@ -629,6 +704,7 @@ export class Sky {
 			this.grade.exposure = celestial.exposure;
 			this.grade.blackLift = celestial.blackLift;
 			this.grade.daylight = celestial.daylight;
+			this.islandGain.value = islandSky( celestial.elevation, this.islandTint.value );
 
 		} else {
 
@@ -639,6 +715,8 @@ export class Sky {
 			this.grade.exposure = 2.35;
 			this.grade.blackLift = DAY_BLACK_LIFT;
 			this.grade.daylight = 1;
+			this.islandTint.value.set( 1, 1, 1, 0 );
+			this.islandGain.value = 1;
 
 		}
 		this.keyColorAboveClouds.copy( this.keyColor );
@@ -715,7 +793,9 @@ export class Sky {
 		clouds.rainTo.value = front ? front.to.rain : weather?.rain ?? 0;
 		// Cloud tops a couple of kilometres up keep the sun a little after it has set below.
 		const sunAbove = this.atmosphere.sunlightAt( this.sunDir, 2 ).multiply( this.sunTint ).multiplyScalar( illuminance );
-		const moonGain = celestial?.moonKeyGain ?? 0;
+		// The clouds belong to the seen sky: their moonlight keeps the night sky's own ramp
+		// (CLOUD_MOON), not the key's earlier one that keeps the island lit after sunset.
+		const moonGain = celestial ? ( 1 - THREE.MathUtils.smoothstep( celestial.elevation, CLOUD_MOON[ 0 ], CLOUD_MOON[ 1 ] ) ) * celestial.moonVisibility * celestial.moonIllumination : 0;
 		const sunUp = ! celestial || celestial.elevation > - 2.5;
 		clouds.lightDir.value.copy( sunUp ? this.sunDir : this.keyDir );
 		clouds.lightColor.value.copy( sunUp ? sunAbove : new THREE.Color( 0, 0, 0 ) );
@@ -865,6 +945,10 @@ export class Sky {
 				// The seen sky and its reflections show the night sky's level; the environment that
 				// lights the terrain and plants keeps its full share, as the island's light does.
 				this.nightShare.value = rt === this.small ? 1 : rt === this.reflectionSource ? NIGHT_SKY : this.displayNightSky.value;
+				// Only the environment's source takes the island's light after sunset (ISLAND_SKY).
+				const lends = rt === this.reflectionSource;
+				this.bakeIslandTint.value.copy( lends ? this.islandTint.value : NEUTRAL_TINT );
+				this.bakeIslandGain.value = lends ? this.islandGain.value : 1;
 				this.starFootprint.value = Math.SQRT2 * Math.PI / rt.height;
 				r.setRenderTarget( rt );
 				this.quad.render( r );

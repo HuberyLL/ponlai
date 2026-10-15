@@ -94,7 +94,10 @@ art decision changes; reference images stay out of the repository.
   rough sea with whitecaps, trailing foam and spray. The sea continues to the horizon.
 - One dominant key light, sun by day and moon by night. By day the sun is near white and the air
   hazy: the horizon reads milky white rather than a cyan band, brightest toward the sun. A low
-  sun's light stays golden orange. The
+  sun's light stays golden orange. After sunset the island stays readable: through the minutes
+  between the sun's last light and the moon's, the meadow keeps its light (warm under the
+  afterglow, then green), never dipping below its night brightness; the light that holds it up is
+  lent to the island alone. The
   sun and moon are drawn at twice their true size. The day cycle is authored, not astronomical.
 - Bad weather dims and desaturates the existing light; it never adds a grey screen veil, and it
   stays dimmer and greyer than a clear day. Distant air leaves the island's foreground clear as
@@ -111,7 +114,11 @@ art decision changes; reference images stay out of the repository.
 - The night is art-directed, not a simulation of the eye's night vision: colours stay as authored,
   so a future fantasy palette (glowing plants, magic) keeps its saturation. The fantasy look fades
   out with the night, which keeps its authored colours.
-- The island reads by moonlight and starlight; twilight is never darker than the night.
+- The island reads by moonlight and starlight; twilight is never darker than the night. The
+  moon takes over the key soon after the sun has gone.
+- The night meadow is a dark, readable, cool green turning toward blue-green (not black, olive or
+  teal), turned by the night's own grade rather than by a bluer light, so stone, sand and skin keep
+  their colours.
 - The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
   spread of brightness, below white except the brightest few; only those near the horizon
   scintillate.

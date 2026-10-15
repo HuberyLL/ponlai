@@ -35,6 +35,8 @@ export const shared = {
 	// a CPU readback. The uniform above remains a readback diagnostic for explicit snapshots.
 	skyFill: uniform( 1 ),
 	skyIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
+	// The same as lent to the island after sunset (Sky.islandIrradianceNode): the islanders' fill.
+	islandIrradianceSource: vec3( 0 ) as THREE.Node<'vec3'>,
 };
 
 export type Shared = typeof shared;
