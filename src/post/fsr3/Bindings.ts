@@ -56,6 +56,9 @@ import * as R from './Resources.ts';
 //   group, no new pipeline).
 //
 // Differences from upstream (the WebGPU mapping):
+// - Each UAV (a resource's storage binding at one mip level and access) has a uniform hash of its
+//   own: three r186 merges texture nodes of one texture into one binding, which sent every SPD
+//   level's store through level 0's view.
 // - Upstream's texture formats map to WebGPU's as Resources.ts says; NEW_LOCKS is r32float
 //   (read-write), so `StoreNewLocks` rounds to 8 bits as upstream's R8_UNORM stores would.
 // - D3D discards a store outside a resource and reads 0 outside one; WGSL may clamp either to an
@@ -269,6 +272,30 @@ export class Fsr3Bindings {
 			node = storageTexture( this.texture( this.uavAliases.get( id ) ?? id ) as THREE.StorageTexture ) as N;
 			if ( mip !== 0 ) node.setMipLevel( mip );
 			if ( readWrite ) node.toReadWrite();
+			// three r186 shares one binding between texture nodes of the same texture (their uniform
+			// hash is the texture's uuid): every mip level's store then went through the first level's
+			// view (SPD's levels 1..5 landed in level 0's corner), and a kernel that samples a texture
+			// and stores into it would bind it once. Each UAV of a level and access is a binding of
+			// its own. (A store goes through a clone of the node, `textureStore`: clones keep the hash.)
+			const hash = `:fsr3-uav:${ mip }:${ readWrite ? 'rw' : 'w' }`;
+			const own = ( n: N ): void => {
+
+				n.getUniformHash = function ( this: { value: THREE.Texture } ) {
+
+					return this.value.uuid + hash;
+
+				};
+				const clone = n.clone;
+				n.clone = function ( this: N ) {
+
+					const c = clone.call( this );
+					own( c );
+					return c;
+
+				};
+
+			};
+			own( node );
 			this.uavNodes.set( key, node );
 
 		}

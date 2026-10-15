@@ -21,7 +21,8 @@ import type { Fsr3Bindings } from './Bindings.ts';
 import { PrepareInputs } from './PrepareInputs.ts';
 import { ComputeAutoExposure, ComputeAutoExposureTail } from './LumaPyramid.ts';
 import { ComputeShadingChangePyramid, ComputeShadingChangePyramidTail } from './ShadingChangePyramid.ts';
-import { ShadingChange } from './ShadingChange.ts';
+import { ShadingChange, s_MipLevelsToUse } from './ShadingChange.ts';
+import { iShadingChangeMipStart } from './Common.ts';
 import { PrepareReactivity } from './PrepareReactivity.ts';
 import { LumaInstability } from './LumaInstability.ts';
 import { AccumulatePixel } from './Accumulate.ts';
@@ -53,9 +54,13 @@ import { GenerateReactive } from './AutogenReactive.ts';
 // tail stores nothing, ShadingChangePyramid.ts, and may be skipped) -> RCAS when sharpening.
 //
 // Differences from upstream: the early-outs above (upstream sizes its dispatches instead); the SPD
-// tails; the clears are kernels (a WebGPU clear exists only for render attachments and buffers),
+// tails; the SPD_MIPS clear clears only the levels some pass reads (0..2 and 5); the clears are kernels (a WebGPU clear exists only for render attachments and buffers),
 // one per target, writing the values Host.ts lists; the Xbox variants (paired 16-bit
 // accumulation, wave32, scheduler hints) and the root signatures are not ported.
+
+// SPD_MIPS's levels some pass reads: the shading change's ( iShadingChangeMipStart ..
+// s_MipLevelsToUse - 1 ) and the luminance pyramid tail's 5
+const SPD_LEVELS_READ = [ ...Array.from( { length: s_MipLevelsToUse - iShadingChangeMipStart }, ( _, i ) => iShadingChangeMipStart + i ), 5 ];
 
 export interface Fsr3PassKernels {
 	/** the kernel of a pass ( FFX_FSR3UPSCALER_PASS_* ) */
@@ -217,7 +222,10 @@ export function createPassKernels( b: Fsr3Bindings, maxRenderSize: Size, maxUpsc
 				return kernel( 'ClearSpdMips', [ 8, 8 ], size, () => {
 
 					const p = ivec2( globalId.xy );
-					for ( let mip = 0; mip < 6; mip ++ ) b.storeResource( R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_SPD_MIPS, mip, p, vec4( r, g, bl, a ), b.spdMipSize( mip ) );
+					// (the levels anything reads: 0..2, the shading change's, and 5, the luminance tail's;
+					// 3 and 4 are neither stored nor read, ShadingChangePyramid.ts, and a kernel binds at
+					// most four storage textures by default)
+					for ( const mip of SPD_LEVELS_READ ) b.storeResource( R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_SPD_MIPS, mip, p, vec4( r, g, bl, a ), b.spdMipSize( mip ) );
 
 				} );
 

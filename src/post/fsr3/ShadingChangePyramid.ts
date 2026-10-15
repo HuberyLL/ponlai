@@ -12,6 +12,7 @@ import {
 	FSR3UPSCALER_FP32_MIN, FSR3UPSCALER_EPSILON, MinDividedByMax, ClampLoad, IsUvInside,
 } from './Common.ts';
 import { SpdDownsample, SpdDownsampleTail, type SpdCallbacks } from './Spd.ts';
+import { s_MipLevelsToUse } from './ShadingChange.ts';
 import type { Fsr3Bindings } from './Bindings.ts';
 
 // The shading-change pyramid: for each render pixel, the smallest signed relative difference
@@ -32,6 +33,11 @@ import type { Fsr3Bindings } from './Bindings.ts';
 //   (`ComputeShadingChangePyramidTail`) stores nothing: every store of a level above 5 falls
 //   through `StorePyramid`, as upstream's. It is ported for completeness; running it changes no
 //   resource.
+// - Only the levels the shading-change pass reads are stored ( iShadingChangeMipStart ..
+//   s_MipLevelsToUse - 1, ShadingChange.ts: 0..2 ). Upstream also stores levels 3..5, which nothing
+//   reads before the next frame's clear (the luminance pyramid's level 5 is read by its tail before
+//   this pass runs). Six storage bindings in one kernel pass WebGPU's default limit of four storage
+//   textures per stage (each level is a binding of its own: Bindings.ts `uav`).
 
 const DIFFERENCE = 0;
 const SIGN_SUM = 1;
@@ -245,7 +251,7 @@ function callbacks( b: Fsr3Bindings ): SpdCallbacks {
 
 		SpdStore( pix: N, outValue: N, index: number ): void {
 
-			if ( index >= iShadingChangeMipStart ) {
+			if ( index >= iShadingChangeMipStart && index < s_MipLevelsToUse ) {
 
 				b.StorePyramid( pix, outValue.xy, index );
 

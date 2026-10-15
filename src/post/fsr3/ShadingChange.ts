@@ -16,7 +16,8 @@ import type { Fsr3Bindings } from './Bindings.ts';
 // Differences from upstream: none in the maths. `1.0f + iShadingChangeMipStart / s_MipLevelsToUse`
 // is HLSL's integer division (0 / 3 = 0), so the scale is 1; the loops are unrolled.
 
-const s_MipLevelsToUse = 3;
+/** The SPD levels the pass reads ( iShadingChangeMipStart .. s_MipLevelsToUse - 1 ). */
+export const s_MipLevelsToUse = 3;
 
 export function ComputeShadingChangeLuma( b: Fsr3Bindings, fUv: N ): N[] {
 
