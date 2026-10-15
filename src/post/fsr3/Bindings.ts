@@ -37,7 +37,7 @@ import * as R from './Resources.ts';
 //   formats (view z to device depth, NDC velocity to FSR's motion) without touching the port. Each
 //   returns what upstream's resource read returns, before upstream's callback adds anything
 //   (the motion-vector scale and jitter cancellation, the reactiveness scale, the exposure's
-//   fallbacks stay here, as upstream has them):
+//   fallback stay here, as upstream has them):
 //     LoadInputColor( p: ivec2 ) -> vec3           r_input_color_jittered[ p ].rgb
 //     LoadInputDepth( p: ivec2 ) -> float          r_input_depth[ p ]
 //     LoadInputMotionVector( p: ivec2 ) -> vec2    r_input_motion_vectors[ p ].xy
@@ -714,7 +714,7 @@ export class Fsr3Bindings {
 
 	SampleDilatedDepth( fUV: N ): N { return this.srvSampleBilinear( R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_DILATED_DEPTH, fUV ); }
 
-	/** r_input_exposure[ 0, 0 ].x with upstream's fallbacks; with auto exposure the input is FRAME_INFO. */
+	/** r_input_exposure[ 0, 0 ].x with upstream's fallback (0 -> 1); with auto exposure the input is FRAME_INFO. */
 	Exposure(): N {
 
 		let exposureIn: N;
@@ -727,9 +727,9 @@ export class Fsr3Bindings {
 			exposureIn = this.inputs.LoadInputExposure ? this.inputs.LoadInputExposure() : float( 0 );
 
 		}
+		// upstream's PC build maps only 0 to 1 (its `< 2^-15` test is the Xbox build's)
 		const e0 = float( exposureIn ).toVar();
-		const e1 = select( e0.lessThan( 0.000030517578 /* 2^-15 */ ), float( 1.0 ), e0 );
-		return select( e1.equal( 0.0 ), float( 1.0 ), e1 );
+		return select( e0.equal( 0.0 ), float( 1.0 ), e0 );
 
 	}
 
