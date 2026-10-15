@@ -148,13 +148,18 @@ const NIGHT_SKY = 0.55;
 // that at six degrees, while its luminance keeps the full extinction: a low sun stays golden
 // orange (red/green about 2, red/blue at most about 10) and still dims as it sets. The sky and
 // clouds keep their own colours.
+// By day the key is whiter than the air it crosses: the hue takes SUN_HUE_CLARITY of the optical
+// depth before the cap, so a morning or afternoon sun lights the meadow green and the stone
+// neutral rather than straw-yellow. Within a few degrees of the horizon the cap still rules, so a
+// setting sun's gold is unchanged.
 const SUN_HUE_DEPTH = 1.35;
+const SUN_HUE_CLARITY = 0.6;
 function capSunHue( transmittance: THREE.Color ): THREE.Color {
 
 	const { r, g, b } = transmittance;
 	if ( g <= 0 ) return transmittance;
 	const depth = - Math.log( g );
-	const scale = 1 / Math.pow( 1 + Math.pow( depth / SUN_HUE_DEPTH, 6 ), 1 / 6 );
+	const scale = SUN_HUE_CLARITY / Math.pow( 1 + Math.pow( SUN_HUE_CLARITY * depth / SUN_HUE_DEPTH, 6 ), 1 / 6 );
 	const luma = ( c: THREE.Color ) => c.r * 0.2126 + c.g * 0.7152 + c.b * 0.0722;
 	const before = luma( transmittance );
 	transmittance.setRGB( Math.pow( r, scale ), Math.pow( g, scale ), Math.pow( b, scale ) );
