@@ -67,9 +67,9 @@
 //       piece that starts there in a neighbouring chunk, with the same crossing sample (ring
 //       points, normals, coast data) to 1e-5 (the count of bit-identical ones is printed); no piece
 //       ends inside its chunk.
-//   S5  shared-out content: the 2 x 2 block with the most rim items, made in one pass from its own
-//       window (`chunkBlock`) and shared out by chunk, equals its four chunks bit for bit in the
-//       rim ground, shore and walk texels, the anchors, the bushes and the trail patches.
+//   S5  shared-out content: the 2 x 2 block with the most coast (turf skirt samples), made in one
+//       pass from its own window (`chunkBlock`) and shared out by chunk, equals its four chunks bit
+//       for bit in the rim ground, shore and walk texels and the anchors.
 //   S6  stones: every stone is owned once, by the chunk its centre lies in; and every stone a chunk
 //       places round itself for the contact shade (`contactStones`) whose centre lies in another
 //       chunk is that chunk's own stone, bit for bit, so two chunks shade with the same stone.
@@ -110,7 +110,6 @@ import { ISLAND_BOTTOM, islandSurfaceHeight, makeIslandSDF } from '../src/world/
 import { SKIRT_INFO, SKIRT_RING } from '../src/world/RimGround.ts';
 import { pendingFloors, riseTile, TILE_SIDE } from '../src/world/SeabedTile.ts';
 import { openSeaBeds, openSeaHeight, FLOOR_STEP, OPEN_LATTICE, SHELF_CEILING } from '../src/world/Bathymetry.ts';
-import { BUSH_STRIDE } from '../src/world/FoliageSites.ts';
 import { VEGETATION_STRIDE } from '../src/world/types.ts';
 import { hashBuffers, meshClosure, positionKey } from './world-node.mjs';
 import { verifyCache } from './verify-cache.mjs';
@@ -163,7 +162,7 @@ if ( ! isMainThread ) {
 			for ( const m of [ c.island, c.stones.mesh ] ) if ( m ) for ( const a of Object.values( m ) ) if ( ! transfer.includes( a.buffer ) ) transfer.push( a.buffer );
 			Object.assign( reply, {
 				floor: c.floor, skirt: c.skirt, rimGround: c.rimGround, shore: c.shore, walk: c.walk,
-				anchors: c.anchors, bushes: c.bushes, strands: c.strands, rocks: c.stones.rocks,
+				anchors: c.anchors, rocks: c.stones.rocks,
 				contact: contactStones( job.window, job.ci, job.cj ),
 				inland: inlandColumns( job.window, job.ci, job.cj, c.island ),
 			} );
@@ -363,7 +362,7 @@ async function main() {
 			for ( const check of [ closed, seams, floorSeams, skirtSeams, blockShare, stoneOwners, rimTiles, inland, ...( long ? [ columns ] : [] ) ] ) if ( ! await check( ctx, pool ) ) failed ++;
 			s.field = null;
 			// the meshes and rasters are not needed past this step
-			for ( const c of s.chunks ) for ( const k of [ 'island', 'stones', 'floor', 'skirt', 'rimGround', 'shore', 'walk', 'anchors', 'bushes', 'strands', 'contact' ] ) delete c[ k ];
+			for ( const c of s.chunks ) for ( const k of [ 'island', 'stones', 'floor', 'skirt', 'rimGround', 'shore', 'walk', 'anchors', 'contact' ] ) delete c[ k ];
 
 		}
 
@@ -699,7 +698,7 @@ function shoal( run ) {
 // 16 m out), each placed where its nearest cell lies BEYOND_NEAR - BEYOND_FAR from the chunk's
 // square, so `dirtyChunks` leaves the chunk out; it is rebuilt on the pool from the new land field
 // and must hash as before. D4 sees only what the growth happens to add; this places land where the
-// window's far reads (the stones, the trails, the shore) would show.
+// window's far reads (the stones, the shore) would show.
 const COAST_DISC = 2, SEA_DISC = 2.5, BEYOND_NEAR = 34.6, BEYOND_FAR = 44;
 async function beyond( run, pool ) {
 
@@ -1283,9 +1282,9 @@ function inland( ctx ) {
 
 }
 
-// S5: the 2 x 2 block with the most rim items (bushes and trail patches), made in one pass from its
-// own window (`chunkBlock`), shares out exactly its four chunks' rim ground, shore and walk texels,
-// anchors, bushes and trail patches.
+// S5: the 2 x 2 block with the most coast (turf skirt samples), made in one pass from its own
+// window (`chunkBlock`), shares out exactly its four chunks' rim ground, shore and walk texels and
+// anchors.
 async function blockShare( ctx, pool ) {
 
 	const map = chunkMap( ctx.chunks );
@@ -1294,31 +1293,29 @@ async function blockShare( ctx, pool ) {
 
 		const quad = [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ].map( ( [ di, dj ] ) => map.get( `${ c.ci + di },${ c.cj + dj }` ) );
 		if ( quad.some( ( q ) => ! q ) ) continue;
-		const items = quad.reduce( ( n, q ) => n + q.bushes.length / BUSH_STRIDE + q.strands.length, 0 );
+		const items = quad.reduce( ( n, q ) => n + q.skirt.info.length / SKIRT_INFO, 0 );
 		if ( items > most ) { most = items; best = c; }
 
 	}
 	// (the worker's own time: queueing behind the pool's other jobs left out)
 	const { members, ms: blockMs } = await pool.run( () => ( { block: true, window: landWindow( ctx.field, best.ci, best.cj, 2 ), ci: best.ci, cj: best.cj } ), true );
-	const strandText = ( list ) => JSON.stringify( list, ( _, v ) => ArrayBuffer.isView( v ) ? Array.from( f32bits( v ) ) : v );
-	const fields = [ 'rimGround', 'shore', 'walk', 'anchors', 'bushes', 'strands' ];
-	const differ = [], counts = { texels: 0, anchors: 0, bushes: 0, strands: 0 };
+	const fields = [ 'rimGround', 'shore', 'walk', 'anchors' ];
+	const differ = [], counts = { texels: 0, anchors: 0 };
 	for ( const m of members ) {
 
 		const c = map.get( m.key );
 		counts.texels += c.rimGround.length / 4 + c.shore.length + c.walk.length;
-		counts.anchors += c.anchors.length / VEGETATION_STRIDE; counts.bushes += c.bushes.length / BUSH_STRIDE; counts.strands += c.strands.length;
+		counts.anchors += c.anchors.length / VEGETATION_STRIDE;
 		for ( const f of fields ) {
 
-			const same = f === 'strands' ? strandText( m.strands ) === strandText( c.strands ) : sameBits( m[ f ], c[ f ] );
-			if ( ! same ) differ.push( `${ f } of ( ${ m.key } )` );
+			if ( ! sameBits( m[ f ], c[ f ] ) ) differ.push( `${ f } of ( ${ m.key } )` );
 
 		}
 
 	}
 	const ok = differ.length === 0;
 	console.log( `${ ok ? 'ok  ' : 'FAIL' } S5 ${ ctx.label }: block ( ${ best.ci }, ${ best.cj } ) - ( ${ best.ci + 1 }, ${ best.cj + 1 } ) in one pass (${ ms( blockMs ) }) against its chunks: ` +
-		`${ counts.texels } texels (rim ground, shore, walk), ${ counts.anchors } anchors, ${ counts.bushes } bushes, ${ counts.strands } trail patches: ` +
+		`${ counts.texels } texels (rim ground, shore, walk), ${ counts.anchors } anchors: ` +
 		`${ ok ? 'all equal, bit for bit' : `differ in ${ differ.join( ', ' ) }` }` );
 	return ok;
 

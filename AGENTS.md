@@ -92,12 +92,12 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   swap); the footprint, SDF
   shapes and surface nets (`WorldShapes.ts`), the
   cliffs (`Cliff.ts`), the submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as
-  tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimTrails.ts`, `RimFoliage.ts`,
-  `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled on the GPU
-  by `vegetation/VegetationCull.ts`), flowers, the rim bushes (`FoliageSites.ts`, `Foliage.ts`), the plateau's shrubs and small trees (sited on the page off the walking loop by
-  `PlantSites.ts`, grown each from its seed and merged into one geometry by `Plants.ts`, its far plants drawn with a share of their leaves), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
+  tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, `RimSkirt.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled on the GPU
+  by `vegetation/VegetationCull.ts`; its wildflowers are heads on some of its tufts, a batch of the
+  pool, grown in patches of one species by the habitat fields of `materials/Meadow.ts`), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
   vegetation's depth prepass
-  (`VegetationPrepass.ts`); what the vegetation's materials share in `src/world/vegetation/`: the
+  (`VegetationPrepass.ts`); what the vegetation's materials share in `src/world/vegetation/` (kept
+  for the plant kinds to come: some of it no kind uses today, as each module's header says): the
   material factory every plant kind builds with (`Material.ts`), the coverage paths
   and the vegetation tag (`Coverage.ts`), the folded leaf's textures (`LeafTexture.ts`), the
   instance pool (`Instances.ts`), the GPU cull of a storage-instanced kind, its payload declared by
@@ -110,7 +110,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/ocean/`: FFT ocean, shore waves, caustics, water shading (`Water.ts`), the storm sea.
 - `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, cirrus, the day cycle
   (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), weather presets.
-- `src/weather/`: wind (`Wind.ts`: the one wind field all vegetation moves in), lightning, rain,
+- `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
+  one wind field all vegetation moves in), lightning, rain,
   puddles, distant air and sea fog (`AerialPerspective.ts`).
 - `src/post/`: the frame's passes, tone curve and look (`Pipeline.ts`), light shafts
   (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
@@ -123,8 +124,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`AfterResolve.ts`).
 - `src/post/graph/`: the frame graph: its declarations and compiler (`GraphCompiler.ts`, pure
   TypeScript, checked by `tools/verify-framegraph.mjs`), its runtime and warm-up (`FrameGraph.ts`,
-  `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches
-  (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
+  `Compile.ts`), the derived attachment ops (`AttachmentOps.ts`), three r186's cache-key patches and its first lit build made
+  ahead (`ThreePatches.ts`) and the debug view (`DebugView.ts`, `fgview`).
 - `src/characters/`: the islanders (modular low-poly figures, their light, ears, proportions).
 - `src/game/`: the game behind `?game` (`Game.ts`, which also drives the island's growth by the
   population through `world/Growth.ts`): `sim/` is the headless simulation (no three.js or DOM;
@@ -196,7 +197,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   material and layout, so they draw with the loaded chunks' pipelines; merged kinds take new
   geometry of the same layout, uploaded ahead; instanced kinds hold a capacity whose shader does not
   change (three puts up to 1024 instance matrices in a uniform array of exactly the capacity:
-  `Flowers.ts`, `Foliage.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels
+  `vegetation/Instances.ts`); the meadow's pool takes new buffers on its storage nodes, its kernels
   reading their bounds from uniforms (`vegetation/VegetationCull.ts`); the world fields swap textures through the
   one base node each material samples them by (`WorldFields.ts`), and other passes keep their
   materials across rebakes (`RainCollision.ts`).
@@ -282,12 +283,12 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   multisampled and cannot be sampled with a comparison; give it a render target. three picks one
   sampler type per depth texture per material (`SolarShadow.ts`).
 - Shadow passes keep `alphaTest` and `alphaMap` but not `map`; vegetation draws before the terrain
-  (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `Foliage.ts`.
+  (`renderOrder = -1`). See `vegetation/LeafTexture.ts` and `vegetation/Material.ts`.
 - The water samples neither the target it draws into nor more textures (it is at WebGPU's 16, its
   varyings near the limit: `Water.ts`), so it takes no history or reactive input: what the resolve
   needs from it goes out through its velocity. It reflects only what lies inside
   `Water.reflectionBounds`: anything opaque placed off the island or above 3 m must grow that box
-  (the plateau's small trees do: main.ts).
+  (the game's props do: main.ts `holdOpaque`).
 - New frame work is a pass on the frame graph, its targets declared with a size class and every
   texture it binds declared as a read (the attachment ops discard what nothing declares), never an
   rtt() inside another pass's material or a call around the graph (`Pipeline.ts`).
@@ -317,7 +318,11 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   warm-up's priming renders only what keeps no state and never leaves a persistent resource
   written (`fgPrime=0` turns it off). The order materials first build in is part of the image:
   r186 emits a shader from node state the builds share, so compiling draws ahead in another order
-  than the frame builds them changed other materials' code and moved a few pixels by one level. A
+  than the frame builds them changed other materials' code and moved a few pixels by one level.
+  The first lit build also makes nodes every receiver shares (the shadow's graph, the camera's world
+  matrix) and emits other code than the later ones: a throwaway receiver builds them before the
+  loop (`ThreePatches.ts` `primeSharedNodes`), so a receiver's code (and a kind's pipeline count)
+  does not depend on which draws first. A
   render three makes of its own that cannot be compiled before its first frame (the sun's map,
   built with the first receiver) compiles by rendering it once with asynchronous pipelines
   (`compileByRendering`, `SunShadow.ts`).

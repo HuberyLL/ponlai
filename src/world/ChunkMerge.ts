@@ -36,7 +36,7 @@ import { tileIndices, SEABED_TILE, TILE_SIDE, type FarFloor } from './SeabedTile
 import { gridBoxes, mergeRimSkirts, RIM_BOX, RIM_CELL, RIM_PAD, RIM_REACH } from './RimGround.ts';
 import { landBounds, ISLAND_TOP, LAND_REACH, type Bounds } from './WorldShapes.ts';
 import { submergedIndex, SEA_LEVEL } from './ChunkDerived.ts';
-import type { IslandChunk, MeshData, RimStrand, Rock, WorldData } from './types.ts';
+import type { IslandChunk, MeshData, Rock, WorldData } from './types.ts';
 
 // The world fields' cells (m): the shore's distance, the floor's height and the floor's beds.
 export const SHORE_CELL = 0.125, FLOOR_CELL = 0.25, BED_CELL = 0.5;
@@ -160,13 +160,6 @@ export function* mergeSteps( land: LandData, unordered: readonly ChunkData[] ): 
 		return out;
 
 	};
-	const rimStrands: RimStrand[] = [];
-	for ( const c of chunks ) {
-
-		const offset = rimStrands.length;
-		for ( const strand of c.strands ) rimStrands.push( strand.parent === undefined ? strand : { ...strand, parent: strand.parent + offset } );
-
-	}
 
 	// --- the world fields
 	const shore = { data: new Float32Array( width / SHORE_CELL * depth / SHORE_CELL ), nx: width / SHORE_CELL, nz: depth / SHORE_CELL, x0: bounds.x0, z0: bounds.z0, cell: SHORE_CELL };
@@ -207,14 +200,14 @@ export function* mergeSteps( land: LandData, unordered: readonly ChunkData[] ): 
 
 	const chunkList = new Int32Array( chunks.length * 2 );
 	chunks.forEach( ( c, k ) => { chunkList[ k * 2 ] = c.ci; chunkList[ k * 2 + 1 ] = c.cj; } );
-	const vegetation = concat( chunks.map( ( c ) => c.anchors ) ), bushes = concat( chunks.map( ( c ) => c.bushes ) );
+	const vegetation = concat( chunks.map( ( c ) => c.anchors ) );
 	yield* pause();
 	const rimSkirt = mergeRimSkirts( chunks.map( ( c ) => c.skirt ) );
 	const data: WorldData = {
 		land: land.land, chunks: chunkList,
 		islands, stones, rocks, seabed, refracted,
-		vegetation, bushes,
-		rimStrands, rimGround,
+		vegetation,
+		rimGround,
 		rimSkirt,
 		shore, seabedField, seabedBeds,
 		walk: land.walk,

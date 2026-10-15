@@ -2,7 +2,7 @@ import { coastLoops } from './RimGround.ts';
 import type { LandLattice } from './IslandGrowth.ts';
 
 // The islander's walking loop (x, z), shared by the figure that walks it and by the planting that
-// must leave it clear: tall flowers there would hide the walker's legs. It runs round
+// must leave it clear: flowers there would hide the walker's legs. It runs round
 // the land 5 m in from its coast: the largest loop of the land's signed distance at -5 m, smoothed
 // over a couple of metres and kept every 2.5 m as the waypoints of a centripetal Catmull-Rom loop,
 // so it follows any shape the land grows into. A function of the land alone, without three (the

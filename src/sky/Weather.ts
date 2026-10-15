@@ -24,8 +24,16 @@ export interface WeatherState {
 	// maritime day sees 20 - 50 km (Koschmieder: 3.912 / extinction), so clear and fair air stay
 	// near 1 - 2e-4; cloud, rain and fog thicken it.
 	haze: number;
-	windSpeed: number; // m/s; kept within a calm coastal range
-	windDirection: number; // degrees, using the ocean spectrum's heading convention
+	// The weather's one wind, which every part of the scene takes from weather/Wind.ts. The mean
+	// wind 10 m up (U10), m/s; kept within a calm coastal range.
+	windSpeed: number;
+	// Degrees, in the ocean spectrum's heading convention: the wind travels toward the heading
+	// plus 180 degrees (40: toward 220 degrees, atan2( z, x ) in the world's x-z plane). Every
+	// preset shares it: the sea's spectrum is built once from it (Wind.ts `spectrumWind`).
+	windDirection: number;
+	// The gust factor, a 3 s gust over the mean wind (about 1.2 - 1.3 over open sea, 1.4 - 1.5
+	// over land); the plants' gusts lean them by its excess pressure (Wind.ts).
+	gustiness: number;
 	rain: number;
 	// Sea fog: 0 none, 1 a dense bank a few hundred metres deep in visibility.
 	fog: number;
@@ -46,15 +54,15 @@ type Preset = Omit<WeatherState, 'wetness' | 'showers'>;
 // together; none of these presets adds a grey screen veil. Fog is a low layer over the sea that
 // the camera looks through, not a tint over the frame.
 export const WEATHER_PRESETS: Readonly<Record<WeatherName, Readonly<Preset>>> = {
-	clear: { coverage: 0, density: 0.8, directVisibility: 1, ambientGain: 1, haze: 0.00012, windSpeed: 2.8, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, ambientGain: 0.99, haze: 0.0002, windSpeed: 3.8, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
-	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 0.78, ambientGain: 0.91, haze: 0.00042, windSpeed: 4.3, windDirection: 40, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
-	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.3, ambientGain: 0.76, haze: 0.0016, windSpeed: 4.6, windDirection: 40, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
-	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, ambientGain: 0.62, haze: 0.0025, windSpeed: 5.2, windDirection: 40, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
+	clear: { coverage: 0, density: 0.8, directVisibility: 1, ambientGain: 1, haze: 0.00012, windSpeed: 2.8, windDirection: 40, gustiness: 1.4, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	fair: { coverage: 0.32, density: 0.9, directVisibility: 0.97, ambientGain: 0.99, haze: 0.0002, windSpeed: 3.8, windDirection: 40, gustiness: 1.4, rain: 0, fog: 0, storm: 0, cirrus: 0.3 },
+	cloudy: { coverage: 0.67, density: 1.05, directVisibility: 0.78, ambientGain: 0.91, haze: 0.00042, windSpeed: 4.3, windDirection: 40, gustiness: 1.4, rain: 0, fog: 0, storm: 0, cirrus: 0.15 },
+	overcast: { coverage: 0.94, density: 1.6, directVisibility: 0.3, ambientGain: 0.76, haze: 0.0016, windSpeed: 4.6, windDirection: 40, gustiness: 1.4, rain: 0, fog: 0.08, storm: 0, cirrus: 0 },
+	rain: { coverage: 1, density: 2.6, directVisibility: 0.14, ambientGain: 0.62, haze: 0.0025, windSpeed: 5.2, windDirection: 40, gustiness: 1.4, rain: 0.75, fog: 0.22, storm: 0, cirrus: 0 },
 	// A squall: the darkest deck, heavy rain, gale-force wind and a rough, white-capped sea.
-	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, ambientGain: 0.45, haze: 0.0035, windSpeed: 11, windDirection: 40, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
+	storm: { coverage: 1, density: 3.4, directVisibility: 0.06, ambientGain: 0.45, haze: 0.0035, windSpeed: 11, windDirection: 40, gustiness: 1.4, rain: 1, fog: 0.3, storm: 1, cirrus: 0 },
 	// Sea fog forms in calm, moist air under thin high cloud; the sun shows as a pale disk.
-	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, ambientGain: 0.92, haze: 0.0012, windSpeed: 1.8, windDirection: 40, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
+	fog: { coverage: 0.75, density: 0.85, directVisibility: 0.6, ambientGain: 0.92, haze: 0.0012, windSpeed: 1.8, windDirection: 40, gustiness: 1.4, rain: 0, fog: 1, storm: 0, cirrus: 0.4 },
 };
 
 // Auto weather: from each state, the next one and its weight. The chain moves among the kept

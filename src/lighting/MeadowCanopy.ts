@@ -6,7 +6,7 @@ type V3 = THREE.Node<'vec3'>;
 
 // Grass blades are narrower than a sun-shadow texel, so the meadow does not cast into the sun's
 // shadow map: as the sun turns, re-rasterising sub-texel blades reshuffles their whole shadow
-// pattern at every map update. Larger casters (rock, bushes, flowers, figures) keep the map.
+// pattern at every map update. Larger casters (rock, flowers, figures) keep the map.
 // Shading inside the meadow is instead the light that survives the canopy above a point on its way
 // to the key light, the same at every point of the meadow at one depth: a lawn of even blades
 // darkens evenly toward the ground. A field of gaps once let light through in patches, which from

@@ -347,9 +347,6 @@ packages, into `dist/licenses/`.
 Published techniques this project implements without using their code; each is also credited in a
 comment where it is used.
 
-- Rosettes of broad leaves and fern fronds turned by the golden angle: H. Vogel,
-  *A better way to construct the sunflower head* (Mathematical Biosciences 44, 1979), in
-  `src/world/Plants.ts`.
 - FFT ocean: J. Tessendorf,
   [*Simulating Ocean Water*](https://jtessen.people.clemson.edu/reports/papers_files/coursenotes2002.pdf)
   (SIGGRAPH course notes, 2002 revision).
@@ -427,7 +424,7 @@ comment where it is used.
 - Coverage-preserving alpha mips for the leaves: Ignacio Castano,
   [*Computing Alpha Mipmaps*](http://the-witness.net/news/2010/09/computing-alpha-mipmaps/) (2010):
   each mip keeps the full-size leaf's share above the alpha-test cutoff, remapped through a steep
-  ramp instead of a scale so alpha-to-coverage keeps leaves solid (`src/world/Foliage.ts`).
+  ramp instead of a scale so alpha-to-coverage keeps leaves solid (`src/world/vegetation/LeafTexture.ts`).
 - Airglow: H. W. Jensen, F. Durand, M. M. Stark, S. Premoze, J. Dorsey and P. Shirley,
   [*A Physically-Based Night Sky Model*](https://doi.org/10.1145/383259.383306) (SIGGRAPH 2001): a
   thin emitting shell about 100 km up (the van Rhijn brightening toward the horizon) seen through
@@ -480,9 +477,9 @@ comment where it is used.
   it, so a steady drag moves the view by the same amount every frame: the input resampling of
   Android's `InputTransport` (`RESAMPLE_LATENCY`), used as a technique only.
 - Vegetation wind in layers (the whole plant bent from its root keeping each vertex's distance to
-  it, branches swinging on their own phase, leaf edges fluttering along the normal): Tiago Sousa,
+  it, leaf edges fluttering along the normal): Tiago Sousa,
   *Vegetation Procedural Animation and Shading in Crysis* (GPU Gems 3, chapter 16, 2007), in
-  `src/world/Foliage.ts` (`mainBend`), `Plants.ts` and `RimFoliage.ts`. Each plant answering the
+  `src/world/vegetation/Deform.ts` (`mainBend`, `hangingSway`). Each plant answering the
   local wind like a spring at its own natural frequency: Santa Monica Studio's wind in *God of War*
   (Rupert Renard, *Wind Simulation in God of War*, GDC 2019), in `mainBend`.
 - The island's growth (`src/world/IslandGrowth.ts`): coastlines as the level sets of a fractal

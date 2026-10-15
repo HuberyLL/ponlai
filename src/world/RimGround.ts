@@ -62,7 +62,7 @@ function texelRange( a: number, b: number ): [ number, number ] {
 
 /** The top coast differs from the land's footprint: the island's actual solid just below the
  * roof, on the rim ground's lattice over the texels whose centres lie in `box`. Grass thinning,
- * exposed root soil, stone shoulders, the turf skirt and the trails' measure of the coast all
+ * exposed root soil, stone shoulders and the turf skirt all
  * share this one boundary. */
 export class RimLattice {
 
@@ -97,15 +97,6 @@ export class RimLattice {
 		const li = i - this.i0, lj = j - this.j0;
 		if ( li < 0 || lj < 0 || li >= this.nx || lj >= this.nz ) throw new RangeError( `texel ( ${ i }, ${ j } ) is outside the rim lattice` );
 		return this.inside[ lj * this.nx + li ];
-
-	}
-
-	/** The solid as a field of +-1 (negative inside) on the lattice, for the coast tracer. */
-	signs(): ShoreField {
-
-		const data = new Float32Array( this.inside.length );
-		for ( let k = 0; k < data.length; k ++ ) data[ k ] = this.inside[ k ] ? - 1 : 1;
-		return { data, nx: this.nx, nz: this.nz, x0: this.i0 * RIM_CELL, z0: this.j0 * RIM_CELL, cell: RIM_CELL };
 
 	}
 
@@ -505,16 +496,22 @@ export function topAt( sdf: SDF, x: number, z: number ): number | undefined {
 // Cross-section of the skirt, outward offset from the traced coast (m) and its height
 // relative to the roof. The first ring is buried in the turf; the last is the ragged lower edge.
 export const SKIRT_RING = 7;
-// Per skirt sample: its place on the coast ( x, z ), the outward direction ( x, z ), presence, droop.
-export const SKIRT_INFO = 6;
+// Per skirt sample: its place on the coast ( x, z ), the outward direction ( x, z ), presence, droop,
+// the roof's height and the wall below it: at each of SKIRT_WALL's depths under the roof, the
+// outward offset from the coast (m) where the stone is SKIRT_CLEAR away, which the grass hanging
+// from the lip (RimSkirt.ts) keeps outside of, so it drapes over a battered wall instead of
+// passing into it.
+export const SKIRT_WALL = [ 0.25, 0.6, 1.05 ];
+export const SKIRT_INFO = 7 + SKIRT_WALL.length;
+const SKIRT_CLEAR = 0.03;
 // The skirt's samples lie this far apart along the coast, or a little less.
-const SKIRT_STEP = 0.05;
+export const SKIRT_STEP = 0.05;
 // Where the noise fields cross their thresholds steeply, a run of sod would end in a cut face. A
 // triangular filter along the coast (taps SKIRT_STEP apart, half-width EASE taps) thins every end
 // out over a few decimetres instead.
 const EASE = 4;
 
-interface SkirtRing { points: number[]; nx: number; nz: number; presence: number; droop: number }
+interface SkirtRing { points: number[]; nx: number; nz: number; presence: number; droop: number; roof: number }
 
 // The skirt's cross-section at a place on the coast: its rings swept from the traced coast, kept
 // clear of the rock. Everything it reads is the tile near the place, the SDF and the chain within
@@ -571,7 +568,28 @@ function skirtRing( sdf: SDF, tile: RimGroundField, chain: CoastChain, at: Chain
 		points.push( px, py, pz );
 
 	}
-	return { points, nx, nz, presence, droop };
+	return { points, nx, nz, presence, droop, roof };
+
+}
+
+// The wall under a skirt sample (SKIRT_INFO): from 0.3 m inside the coast, outward until the stone
+// is SKIRT_CLEAR away, at each of SKIRT_WALL's depths under the roof. Where the wall recedes the
+// offset stays at -0.3 (nothing to keep clear of); it reaches out at most 1.5 m.
+function skirtWall( sdf: SDF, x: number, z: number, nx: number, nz: number, roof: number, out: number[] ): void {
+
+	for ( const depth of SKIRT_WALL ) {
+
+		let s = - 0.3;
+		for ( let i = 0; i < 12 && s < 1.5; i ++ ) {
+
+			const d = sdf( x + nx * s, roof - depth, z + nz * s );
+			if ( d >= SKIRT_CLEAR ) break;
+			s += SKIRT_CLEAR - d;
+
+		}
+		out.push( Math.min( s, 1.5 ) );
+
+	}
 
 }
 
@@ -631,7 +649,8 @@ export function buildRimSkirt( sdf: SDF, tile: RimGroundField, box: Bounds ): Ri
 					normals.push( nx, ny, nz );
 
 				}
-				info.push( at.x, at.z, ring.nx, ring.nz, ring.presence, ring.droop );
+				info.push( at.x, at.z, ring.nx, ring.nz, ring.presence, ring.droop, ring.roof );
+				skirtWall( sdf, at.x, at.z, ring.nx, ring.nz, ring.roof, info );
 
 			} );
 

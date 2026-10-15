@@ -18,7 +18,7 @@ import type { RGB } from './Props.ts';
 // collapsed onto the crown in the vertex stage, so picking one changes a uniform, not the mesh.
 //
 // It moves in the one wind (Wind.ts): the whole palm bends from its foot with the gust field at
-// its root, swaying with the plants about it at half a shrub's rate (vegetation/Deform.ts mainBend, PALM_WIND),
+// its root, swaying slowly, at half the main bend's rate (vegetation/Deform.ts mainBend, PALM_WIND),
 // and each frond swings a little on its own phase from the crown out. Its shadow keeps the rest
 // pose, as the vegetation's does (VegetationShadow.ts), and under the temporal modes it writes the
 // wind's motion as they do (its previous sway, class vegetation; `flags.mv.wind` turns it off,
@@ -207,7 +207,7 @@ function palmMaterial(): THREE.MeshStandardNodeMaterial {
 		rest,
 		displacement: ( wind ) => {
 
-			// the whole palm bends slowly from its foot (half a shrub's rate)
+			// the whole palm bends slowly from its foot (half the main bend's rate)
 			const bent = mainBend( wind, rest, root, sway.x, PALM_WIND.cycles, float( PALM_WIND.slow ) );
 			if ( wind === shared.wind ) trunk = bent.sway;
 			const field = bent.field;
@@ -215,8 +215,8 @@ function palmMaterial(): THREE.MeshStandardNodeMaterial {
 			const lively = wind.breeze.mul( field.w.mul( 0.4 ).add( 0.2 ) );
 			// each frond swings and lifts on its own phase, its tip the most: a small motion on the
 			// palm's sway, which it shares with its neighbours
-			const swing = wave( wind.flutter, 0.7, sway.z ).mul( 0.6 ).add( wave( wind.flutter, 1.13, sway.z.mul( 1.9 ) ).mul( 0.4 ) );
-			const toss = wave( wind.flutter, 0.53, sway.z.mul( 2.3 ) ).mul( 0.5 ).add( 0.35 );
+			const swing = wave( wind.clock, 0.7, sway.z ).mul( 0.6 ).add( wave( wind.clock, 1.13, sway.z.mul( 1.9 ) ).mul( 0.4 ) );
+			const toss = wave( wind.clock, 0.53, sway.z.mul( 2.3 ) ).mul( 0.5 ).add( 0.35 );
 			const frond = vec3( 0, swing.mul( 0.8 ), 0 ).add( along.mul( toss ) ).add( across.mul( swing.mul( 0.5 ) ) ).mul( sway.y.mul( lively ) );
 			return bent.position.add( frond );
 

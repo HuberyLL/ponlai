@@ -1,12 +1,14 @@
 import * as THREE from 'three/webgpu';
 
-// The folded leaf every leafy plant shares (the rim bushes, the rim's hanging trails, the plateau's
-// shrubs and small trees): a colour map and an alpha map drawn from one silhouette, the alpha map's
+// The folded leaf every leafy plant shares: a colour map and an alpha map drawn from one silhouette, the alpha map's
 // mips built on the CPU to keep the leaf's coverage at the cutoff (`LEAF_ALPHA_TEST`). Shadow passes
 // keep `alphaTest` and `alphaMap` but not `map`, so alpha-tested foliage sets both: the leaf `map` is
 // opaque and the silhouette lives in `alphaMap` alone (box-filtered mips would fill the card). Alpha
 // to coverage turns alpha short of cutoff + `fwidth` into partial coverage, so leaf interiors stay at
 // 1 rather than scaled down.
+// Kept for the plant kinds to come; no kind uses it today (the leafy plants it was drawn for, the
+// rim bushes, the rim's hanging trails and the plateau's shrubs and small trees, are removed; the
+// material factory's 'leaf' family, vegetation/Material.ts, takes its alpha map by default).
 
 // The leaf as a transparent silhouette; the colour map and the coverage map are both made
 // from it, so they always agree.

@@ -93,7 +93,7 @@ capture.mjs and capture-clip.mjs share the browser and the wait before the shot:
 
 All paused at `t=12`, at the tier's own pixel ratio (no `dpr`): on high, 1728x1117 CSS at DPR 2
 renders 2592x1675 and FSR 1 brings it to 3456x2234. Placements derive from the island mesh's
-bounds, the plant sites, the flower instances, the rim trails, the islander and the sun and moon,
+bounds, the meadow's flower heads, the turf skirt, the islander and the sun and moon,
 so they follow any tile layout.
 
 `parity` (the default group, 12 views): the profiler's scenes (`tools/profile-frame.mjs`),
@@ -116,20 +116,18 @@ no group but `special` (see below).
 | weather-change (*parked*) | weather=fair&preset=noon | island; a front to rain frozen half way, environment re-baked |
 | water-skim-cliffs | weather=fair&preset=noon | free camera 1.4 m over the sea off the cliffs, along the coast |
 | island-from-sea | weather=fair&preset=noon | free camera 150 m out, 14 m up, looking back |
-| meadow-shade | weather=fair&hour=15 | beside the first small tree: shrubs and trees in shade |
 | sunrise-long-shadows | weather=clear&preset=sunrise | orbit across the sun, long shadows over the meadow |
 | night-moon | weather=clear&hour=19.2&moon=0.5 | horizon view facing a full moon about 14 degrees up |
 
-`taa` (7 views): close, thin and moving detail for temporal anti-aliasing.
+`taa` (6 views): close, thin and moving detail for temporal anti-aliasing.
 
 | view | query | camera |
 |---|---|---|
 | meadow-24 | weather=fair&preset=noon&dist=24&polar=60&az=300 | orbit at 24 m |
 | low-36 | weather=fair&preset=noon&dist=36&polar=80&az=330 | orbit low over the sea at 36 m |
 | islander-close | weather=fair&preset=noon | orbit about the islander, 3.2 / 2.4 / 3.6 m off its centre |
-| flowers-close | weather=fair&preset=noon | free camera 1.2 m over the densest flower drift, 35 degrees down |
-| twigs-sky | weather=fair&preset=noon | beside the first tree's trunk, looking up through its crown |
-| rim-sea | weather=fair&preset=noon | 25 m out, 4 m up, facing the densest stretch of rim trails |
+| flowers-close | weather=fair&preset=noon | free camera 1.2 m over the densest flowers, 35 degrees down |
+| rim-sea | weather=fair&preset=noon | 25 m out, 4 m up, facing the densest stretch of the turf skirt |
 | cliff-sea-golden | weather=clear&preset=golden-hour | from the sea, 3 m up, the island against the low sun |
 
 `special` (island-rain, island-storm, horizon-storm, island-fog-dawn, weather-change: the views
@@ -157,12 +155,11 @@ the boxes placed before it.
 | anchor | point |
 |---|---|
 | meadow-near, meadow-band-40m, meadow-band-70m | meadow ground about 5, 40 and 70 m from the camera (the lawn's blade bands) |
-| flowers | the nearest flower bed (2 m cells of the flower instances) |
+| flowers | the nearest 2 m cell of the meadow with a few flower heads (the flowering tufts' anchors) |
 | rim-lip | the nearest stretch of the lip facing the camera |
 | cliff-edge-sea | the cliff's foot at the waterline, facing the camera |
 | cliff-edge-sky | the lip seen from below against the sky (from a camera near the top's height, the island's silhouette above the sea horizon) |
 | islander-head, islander-hands | the islander's head and wrist bones |
-| twigs, tree-crown | the nearest tree's crown edge and centre |
 | sea-glints | the sea where it mirrors the sun (the moon at night) toward the camera, or where that glitter path enters the frame |
 | horizon-line | the horizon ahead, turned aside until the island does not hide it |
 | stars | open night sky in the upper part of the frame |
@@ -486,7 +483,7 @@ the samples decide):
 1. Up to three stored views are captured with the new build into `<root>/<sha>/.verify/`, one of
    each kind a browser change could render differently: the island by day (`island-fair-noon`,
    `horizon-fair-noon`, `low-36`, `island-clear-golden`), vegetation (`meadow-close`,
-   `flowers-close`, `meadow-24`, `meadow-shade`, `twigs-sky`) and water (`water-skim-cliffs`,
+   `flowers-close`, `meadow-24`) and water (`water-skim-cliffs`,
    `rim-sea`, `island-from-sea`, `cliff-sea-golden`), each the first stored one, preferring views
    the request needs; a set with none of a kind fills up with other stored views. MSAA views whose
    stored A/A differed (`identical: false`) are not picked when others are stored.

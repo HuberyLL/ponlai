@@ -39,7 +39,7 @@ export function markVegetation( material: THREE.Material ): void {
 // The single-sample stand-in for alpha to coverage: a 4x4 Bayer threshold (16 levels, as many as
 // the hardware's 4x pattern gives). Like that pattern it is the same for every blade and leaf over a
 // pixel, so overlapping blades share their covered pixels rather than adding up: the soil and
-// the flowers keep showing through a stack of widened blades as they do at 4x. A hash per blade
+// the flower heads keep showing through a stack of widened blades as they do at 4x. A hash per blade
 // (alphaHash) drew independent pixels for each and closed the meadow over them.
 // Under the temporal modes the threshold steps through the pattern from frame to frame, the
 // pixel's Bayer value plus 5 times the jitter's dither index (Jitter.ts), mod 16: over 16 frames
@@ -80,8 +80,7 @@ export function coverageAlphaTest( alpha: F, cutoff: F ): F {
  * (VegetationPrepass.ts) and the shaded draw leaves it out of its shader there, while the shadow
  * passes copy only the numeric `alphaTest` and keep their plain cut-out. 4x and one sample outside
  * the temporal modes keep theirs (alpha to coverage, the plain test). Set explicitly on every leaf
- * material: a leaf without a numeric `alphaTest` (the rim's trails, `alphaTest: 'alphaOnly'` in
- * Material.ts) would otherwise have no cut-out at all in its depth copy under the temporal modes. */
+ * material: a leaf without a numeric `alphaTest` (`alphaTest: 'alphaOnly'` in Material.ts) would otherwise have no cut-out at all in its depth copy under the temporal modes. */
 export function useLeafCoverage( material: THREE.NodeMaterial, cutoff = LEAF_ALPHA_TEST ): void {
 
 	if ( TEMPORAL ) material.alphaTestNode = coverageAlphaTest( diffuseColor.a, float( cutoff ) );

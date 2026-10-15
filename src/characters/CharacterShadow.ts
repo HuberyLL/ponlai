@@ -11,7 +11,7 @@ type Filter = ( input: FilterInput ) => F;
 // The island's sun shadow map is drawn once and redrawn only when the light changes. Moving
 // figures get a small map of their own along the same sun direction, drawn every frame, and
 // every shadow receiver multiplies both visibilities through the sun's shadow filter: the
-// meadow, the bushes and the figures themselves take the figures' shadows with the same
+// meadow, the game's props and the figures themselves take the figures' shadows with the same
 // contact-hardening penumbra as the island's.
 
 // sun shadow coordinates: x, y from NDC to texture space (v down), WebGPU depth unchanged

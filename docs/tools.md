@@ -208,15 +208,16 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `windView` makes the vegetation's wind visible (debug pages only; read at load, so without it
   no shader changes; `src/debug/WindView.ts`): flat unlit arrows every 2 m over the meadow, just
   above the grass, point where the local wind blows (the eddies' veer included), longer in a
-  gust and brighter with the lean it gives; and every plant (grass, flowers, rim bushes, rim
-  trails, turf skirt, the game's palm) is drawn unlit in the colour of its current sway s (tip
+  gust and brighter with the lean it gives; and every plant (grass and its flowers, turf skirt, the game's
+  palm) is drawn unlit in the colour of its current sway s (tip
   offset over height): the hue is s's angle from the mean wind on a cyclic map (downwind blue,
   upwind orange, left of the wind, counter-clockwise seen from above, magenta, right of it green),
   the brightness |s| / 0.15. `windView=arrows` or `windView=plants` shows one half. The numbers
   behind it: `__PONLAI__.windProbe( options )` (`src/debug/WindProbe.ts`: the shaders' own wind
   functions in a compute kernel built on the first call; angle histograms, lean and swing,
-  neighbours' correlation, the gust field's size and travel, the plants' wiring, the directions of
-  the sea, clouds and plants per weather), through the probe as
+  neighbours' correlation, the gust field's size and travel, the plants' wiring, their natural sway
+  frequencies, and per weather where every part travels and how fast: the plants, the sea and its
+  swell, the sea fog, the clouds' weather map and their shape noise with its `evolve`), through the probe as
   `--eval "return JSON.stringify( await P.windProbe() )"`.
 - `islander` picks the islanders' proportions (`medium`, the default, or `stock` (the kit's own),
   `subtle` and `strong` builds of `Proportions.ts`); also in the GUI's Islander folder, which
@@ -1016,7 +1017,7 @@ probe eval of one's own.
   island and stone meshes close up (S1), the island's shared vertices and a 2 x 2 block meshed
   whole (S2), the floor tiles' shared points, the floor at or below -1.6 m off the land and the
   tiles' outer sides on the open sea's lattice (S3), the turf skirt's border crossings (S4), a
-  2 x 2 block's rim ground, shore, walk texels, anchors, bushes and trails made in one pass (S5),
+  2 x 2 block's rim ground, shore, walk texels and anchors made in one pass (S5),
   the stones' owners and their copies in the neighbours' contact sets (S6), no island vertex or
   anchor near a chunk that carries no rim ground tile (S7), and no buried wall inland (I1). `--long` takes D1 at every step, D2 on all chunks of both seeds, the S checks at
   every fourth step and the island's inland column range against whole columns. `--bench` keeps
@@ -1029,9 +1030,9 @@ probe eval of one's own.
 - `tools/verify-world-stats.mjs [--seeds 1,2] [--grow 0,8] [--threads n]` (plain `node`) builds
   every chunk of whole islands on a pool of worker threads (`buildChunk`, contact shade off) and
   checks the statistics of the union of what they own, with the bounds the look was tuned on: the
-  meadow's anchors, tufts and flowers per m^2 against M2 (grown islands summed, 5 %); the rim's
-  trail patches (1 - 9 strands, no node below a quarter of its root's height, bare runs of median
-  0.4 - 4 m and at most 4 m), bushes, strands and hanging length against M3 (10 %); the stones'
+  meadow's anchors, tufts and flowering tufts per m^2 against M2 (grown islands summed, 5 %; the
+  flowers also printed by species, and `--flowers <dir>` writes each island's turf anchors and
+  flowering tufts as JSON to map them); the stones'
   overlaps, crowns and reach per island, and over seeds 1 - 6 at steps 0, 8, 16 their classes and
   large sizes per 100 m of coast against today's (20 %) and their gathering below the scars; the
   cliff's scars, on each chunk's own wall: none cuts rock beyond its reach (4.5 m, 3 m) and none

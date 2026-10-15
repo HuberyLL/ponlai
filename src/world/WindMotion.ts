@@ -5,8 +5,8 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // sway, VegetationShadow.ts); `debugFlags.mv.wind = false` rebuilds them without it
 // (`userData.windMotion = false`): no wind motion in the velocity and no second sway in the vertex
 // stage, for MV-UNIT and for timing that sway with --toggle "s.flags.mv.wind = off". Each
-// vegetation material registers itself with `followWindMotionFlag` as it is built (the grass, the plateau plants, the
-// bushes, the flowers, the rim leaves, the turf skirt, the game's palm), so meshes made later (a
+// vegetation material registers itself with `followWindMotionFlag` as it is built (the grass, the turf skirt, the
+// game's palm), so meshes made later (a
 // grown island's, the palm) share the state of the material they draw with.
 
 // the materials that follow `debugFlags.mv.wind`

@@ -428,7 +428,7 @@ export const CLIP = {
 // derivatives), water (the ocean's compute and refraction). Each list in order of preference.
 const SAMPLES = [
 	[ 'island-fair-noon', 'horizon-fair-noon', 'low-36', 'island-clear-golden' ],
-	[ 'meadow-close', 'flowers-close', 'meadow-24', 'meadow-shade', 'twigs-sky' ],
+	[ 'meadow-close', 'flowers-close', 'meadow-24' ],
 	[ 'water-skim-cliffs', 'rim-sea', 'island-from-sea', 'cliff-sea-golden' ],
 ];
 const SAMPLE_COUNT = 3;

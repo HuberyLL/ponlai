@@ -7,7 +7,6 @@ import { derive, islandMesh, seabedGeometry, stonesGeometry, type WorldMeshes } 
 import type { WorldFields, FieldsPrepared } from './WorldFields.ts';
 import { geometrySteps, textureSteps } from './Upload.ts';
 import { boundsSteps } from './Steps.ts';
-import { plantSiteSteps, anchorContactSteps } from './PlantSites.ts';
 import { walkLoopDistance, walkPoints } from './WalkPath.ts';
 import { topFromTiles } from '../game/sim/grid.ts';
 import type { GrowthInput, GrowthSteps, Vegetation, VegetationKind } from './vegetation/Registry.ts';
@@ -40,19 +39,16 @@ import { SeabedRise } from './SeabedRise.ts';
 //   most SLICE ms of steps of a few tenths of a millisecond each: the merge (ChunkMerge.ts
 //   mergeSteps), the land's box and the page's framing of it (`measure`), the new island meshes
 //   of the changed land chunks, the merged kinds' new geometry (the stones, the sea floor, the
-//   turf skirt, the rim trails, their bounds found in steps: Steps.ts), the shrubs and small trees
-//   (sited off the walking loop, their shade baked into the anchors before the meadow reads them,
-//   only the plants not grown before grown, all copied into one new geometry: Plants.ts), the
-//   meadow (planted a slice of anchors at a step, its cull pool filled), the flowers' and bushes' instances (and a
-//   new mesh, compiled, for a species that outgrew its capacity), each vegetation kind its own part
-//   after the plants' sites, in registry order (vegetation/Registry.ts), the world fields (WorldFields.ts)
+//   turf skirt, their bounds found in steps: Steps.ts), the walking loop, each vegetation kind its
+//   own part in registry order (vegetation/Registry.ts: the meadow planted a slice of anchors at a
+//   step, its cull pool filled), the world fields (WorldFields.ts)
 //   and the shore's wave fields (in a worker, ShoreWaves.ts, on a copy of the shore field made in
 //   steps). Every buffer and texture goes up ahead, a slice a step (Upload.ts: buffers mapped at
 //   creation and copies on the GPU, never queue writes, which stalled the page for hundreds of
-//   milliseconds with the GPU busy). The flowers' and bushes' instances are written in place at
-//   the swap (a new instanced mesh would be a node build of tens of milliseconds, Flowers.ts), so
-//   their data is staged ahead too and three's write at their first draw becomes a copy on the GPU
-//   (Upload.ts stagedWriteSteps): as queue writes, each 256 KB of instance matrices blocked the
+//   milliseconds with the GPU busy). A kind whose instances are written in place at the swap (a
+//   new instanced mesh would be a node build of tens of milliseconds) stages their data ahead too,
+//   and three's write at their first draw becomes a copy on the GPU (Upload.ts stagedWriteSteps,
+//   `staged`: no kind does today): as queue writes, each 256 KB of instance matrices blocked the
 //   main thread for 15-35 ms on a running page, and the first frame after the swap (the rain's map
 //   draws them first) took 50-200 ms. Nothing is compiled ahead for the island's chunks: their draws use
 //   the pipelines the loaded chunks drew with (the same materials and layouts), and the swap's
@@ -62,8 +58,7 @@ import { SeabedRise } from './SeabedRise.ts';
 // - The swap, in the frame's tick before the camera and the shadows update (main.ts's one-line
 //   hook): the changed island meshes out and the new ones in (ordered by chunk, ( cj, ci ), as a
 //   page loaded on that land orders them), the merged kinds' geometry, then each vegetation kind's
-//   swap (the plants' and the trails' geometry, the flowers' and the bushes' instances, the
-//   meadow's pool: the cull's storage nodes (vegetation/VegetationCull.ts) pointed at the new buffers),
+//   swap (the skirt's geometry, the meadow's pool: the cull's storage nodes (vegetation/VegetationCull.ts) pointed at the new buffers),
 //   the fields' changed squares (copied on the GPU) or new textures, the shore's wave fields, the
 //   refracted sun's casters, the walker's loop, and the page's own (main.ts `onSwap`: the land's
 //   box and framing as measured ahead, the fog's clearing, the sun's caster box and columns, the
@@ -102,12 +97,9 @@ export interface GrowthPage<M = unknown> {
 	characters: Villagers | null;
 	/** the game (?game): the pending piece once it is ready (`setComing`), the new land after a swap (`setIsland`) */
 	game: {
-		setComing( land: LandLattice, bushes: Float32Array, top?: Uint8Array, plants?: Float32Array ): void;
-		setIsland( land: LandLattice, bushes: Float32Array, top?: Uint8Array, plants?: Float32Array ): void;
+		setComing( land: LandLattice, top?: Uint8Array ): void;
+		setIsland( land: LandLattice, top?: Uint8Array ): void;
 	} | null;
-	/** compiles what `objects` draw in the frame's passes, the sun's map included (and uploads
-	 * their buffers) */
-	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
 	/** the page's own land-dependent state, in the swap's frame */
 	/** what the page measures of a land (its box and framing), ahead in a step of the preparation */
 	measure( land: LandLattice ): M;
@@ -132,14 +124,12 @@ interface Prepared<M> {
 	rocks: THREE.BufferGeometry;
 	seabed: THREE.BufferGeometry;
 	walk: ReturnType<typeof Villagers.loop>;
-	// the shrubs and small trees sited on the land (PlantSites.ts), for the game
-	plantSites: Float32Array;
 	// each growing vegetation kind's prepared part, in registry order
 	vegetation: { kind: VegetationKind; prepared: unknown }[];
 	fields: FieldsPrepared;
 	shore: ShoreFields;
 	top: Uint8Array;
-	// the staged in-place writes of the flowers and bushes, freed after the swap
+	// the kinds' staged in-place writes, freed after the swap
 	staged: ( () => void )[];
 }
 
@@ -382,7 +372,7 @@ export class Growth<M = unknown> {
 						this.steps = null;
 						this.prepared = next.value;
 						this.state.phase = 'ready';
-						this.page.game?.setComing( next.value.land, next.value.data.bushes, next.value.top, next.value.plantSites );
+						this.page.game?.setComing( next.value.land, next.value.top );
 						if ( this.wanted.length === 0 ) console.info( `growth: step ${ this.state.pending } ready`, this.times );
 						return;
 
@@ -497,22 +487,17 @@ export class Growth<M = unknown> {
 		yield* boundsSteps( seabed );
 		yield* geometrySteps( renderer, seabed );
 
-		// the walking loop, and the plants' sites off it
+		// the walking loop
 		this.stage = 'walk';
 		const points = walkPoints( data.walk ), walkDistance = walkLoopDistance( points );
 		yield;
 		const walk = Villagers.loop( points );
 		yield;
-		// the shrubs and small trees off the loop, and their shade in the anchors' sky visibility
-		// before the meadow and the flowers read it
-		this.stage = 'plants';
-		const plantSites = yield* plantSiteSteps( data.vegetation, data.bushes, walkDistance );
-		yield* anchorContactSteps( data.vegetation, plantSites );
 		// each vegetation kind's part, in registry order (vegetation/Registry.ts); what a kind writes
 		// in place at the swap is staged here, so that it is copied on the GPU
 		const staged: ( () => void )[] = [];
 		const input: GrowthInput = {
-			renderer, data, walkDistance, plantSites, compileDraws: ( objects ) => page.compileDraws( objects ), rain: page.rain,
+			renderer, data, walkDistance,
 			stage: ( free ) => { if ( free ) staged.push( free ); },
 		};
 		const vegetation: Prepared<M>[ 'vegetation' ] = [];
@@ -541,7 +526,7 @@ export class Growth<M = unknown> {
 		yield* textureSteps( renderer, shore!.shelter );
 		const top = topFromTiles( chunks );
 		return {
-			version, measured, bounds, data, land, changed, islands: { add, remove }, rocks, seabed, walk, plantSites,
+			version, measured, bounds, data, land, changed, islands: { add, remove }, rocks, seabed, walk,
 			vegetation, fields, shore: shore!, top, staged,
 		};
 
@@ -624,7 +609,7 @@ export class Growth<M = unknown> {
 				return ! bake.next().done;
 
 			},
-			() => page.game?.setIsland( p.land, p.data.bushes, p.top, p.plantSites ),
+			() => page.game?.setIsland( p.land, p.top ),
 			// (the old resources a frame each)
 			...disposals.map( ( dispose ) => () => dispose() ),
 			() => page.onSwapped?.( p.data ),

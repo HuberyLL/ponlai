@@ -1,8 +1,7 @@
 import * as THREE from 'three/webgpu';
 
 // The walking loop's curve (WalkLoop.ts gives its waypoints) and the distance to it, which the
-// meadow's planting keeps tall flower beds, shrubs and trees clear by (Grass.ts, Flowers.ts,
-// PlantSites.ts).
+// meadow's planting keeps its flowers clear by (Grass.ts).
 
 /** The waypoints of a walking loop kept as x, z pairs (WorldData.walk). */
 export function walkPoints( flat: Float64Array ): [ number, number ][] {

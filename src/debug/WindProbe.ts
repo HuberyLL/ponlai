@@ -1,10 +1,9 @@
 import * as THREE from 'three/webgpu';
 import { Fn, If, float, instanceIndex, instancedArray, uint, vec3, vec4 } from 'three/tsl';
-import { Wind, createWindUniforms, packWindState, rootHash, windField, windStateOf, type WindState } from '../weather/Wind.ts';
+import { WIND_STATE_VEC4S, Wind, createWindUniforms, packWindState, rootHash, swayFrequency, windField, windStateOf, type WindState } from '../weather/Wind.ts';
 import { plantGrass } from '../world/Grass.ts';
-import { bushInstances } from '../world/Foliage.ts';
-import { BUSH_WIND, FLOWER_WIND, PALM_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
-import { plantFlowers } from '../world/Flowers.ts';
+import { GRASS_WIND, PALM_WIND, SKIRT_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
+import { EVOLVE_PERIOD } from '../sky/Clouds.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
@@ -15,9 +14,9 @@ import type { Shared } from '../shared.ts';
 // tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
 // vegetation/Deform.ts `bendBlade` and `mainBend` with each kind's constants), evaluated in a compute kernel built on the first
 // call (none exists on a page that never calls it, so the page's pipelines are unchanged), for the
-// plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled), the rim bushes'
-// roots, the flowers' roots, the game's palms. The wind is a copy of the page's (`Wind`, the same
-// speed, heading and scene time), stepped on the CPU and handed to the kernel per step through a
+// plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled; the flowering
+// tufts' heads bend as their blades' tips), the game's palms. The wind is a copy of the page's (`Wind`, the same
+// speed, heading, gustiness and scene time), stepped on the CPU and handed to the kernel per step through a
 // storage buffer, so the page's own wind is never touched. Two time series: fast (64 x 0.05 s,
 // the swing) and slow (40 x 0.5 s, the gusts' travel). Options: DEFAULTS below. The result is
 // large and deep: probe.mjs takes it as `--eval "JSON.stringify( await P.windProbe( { ... } ) )"`.
@@ -36,9 +35,17 @@ import type { Shared } from '../shared.ts';
 // autocorrelation of `field.w` falls under 1/e), its travel velocity (the peak of the
 // cross-correlation between slow steps, against the wind's), and the share of the land in a gust
 // (w > 0.5), over the land's box along and across the wind (`gustSpan`: a square of that side
-// about its centre instead, for lengths the land is too small to show). `w4`: every vegetation mesh and palm, whether its material has a wind displacement.
-// `w5` (scene jumps, so last): for each kept weather and a few presets the
-// vegetation's wind, the clouds' drift, the sea's travel and the weather's heading, their angles.
+// about its centre instead, for lengths the land is too small to show). `natural`: each kind's
+// natural sway frequency (Hz, the same in every wind). `w4`: every vegetation mesh and palm,
+// whether its material has a wind displacement.
+// `w5` (scene jumps and seeks, so last): for each kept weather and a few presets where every part
+// travels, as angles and speeds: the vegetation's wind, the weather's heading, the sea and its
+// swell (the FFT's headings), the sea fog (the air's displacement), the clouds' weather map
+// (`cloudOffset`) and their shape noise, the cloud detail one sees, which also moves by Clouds.ts's
+// `evolve` (its `candidate` samples the shape at p + cloudOffset + windN ( evolve - h SKEW ), so
+// it drifts by - d( cloudOffset ) - windN d( evolve ); this follows that formula). The drifts are
+// read off the page across a seek of 1 s (`setTime`), so they are the page's own, and every gap is
+// to the vegetation's wind.
 
 type V2 = THREE.Node<'vec2'>;
 type V4 = THREE.Node<'vec4'>;
@@ -49,9 +56,11 @@ export interface WindProbeContext {
 	scene: THREE.Scene;
 	shared: Shared;
 	wind: Wind;
-	sky: { weather: { windSpeed: number; windDirection: number }; clouds: { frontAxis?: { value: THREE.Vector2 }; cirrusAxis?: { value: THREE.Vector2 } } };
+	weather: { state: { windSpeed: number; windDirection: number; gustiness: number } };
+	sky: { clouds: { frontAxis?: { value: THREE.Vector2 }; cirrusAxis?: { value: THREE.Vector2 }; evolve?: { value: number } } };
 	fft: { params: { windDirection: number }; swell: { directionOffset: number } };
 	establishScene: ( scene: never ) => Promise<unknown>; // main.ts's, with { weather, preset }
+	setTime: ( t: number ) => Promise<unknown>; // main.ts's seek of the scene clock
 	data: () => WorldData;
 	vegetation: Vegetation;
 
@@ -64,10 +73,10 @@ interface Options {
 }
 const DEFAULTS: Options = {
 	tufts: 20000, fast: { steps: 64, dt: 0.05 }, slow: { steps: 40, dt: 0.5 }, anchors: 1500, grid: 0.5,
-	w5: true, kinds: [ 'grass', 'bush', 'flower', 'palm' ], seed: 1,
+	w5: true, kinds: [ 'grass', 'palm' ], seed: 1,
 	weathers: [ 'clear', 'fair', 'cloudy', 'overcast' ], presets: [ 'sunrise', 'noon', 'golden-hour', 'midnight' ], gustSpan: 0,
 };
-const STATE = 2; // vec4s per wind step
+const STATE = WIND_STATE_VEC4S; // vec4s per wind step
 const BINS = [ 0, 0.5, 1, 2, 4, 8, 16 ];
 const r3 = ( v: number ) => Math.round( v * 1000 ) / 1000;
 
@@ -85,24 +94,23 @@ function rng( seed: number ) {
 
 }
 
-// The page's wind at its scene time, stepped `steps` times by `dt` on a copy: per step
-// ( direction, pressure, breeze ), ( clock, flutter, gust scroll ) (Wind.ts packWindState).
-function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: Float32Array; speed: number; heading: number; direction: THREE.Vector2; travel: THREE.Vector2[] } {
+// The page's wind at its scene time, stepped `steps` times by `dt` on a copy: per step its state
+// as Wind.ts's packWindState packs it.
+function windStates( ctx: WindProbeContext, { steps, dt }: Series ): { states: Float32Array; speed: number; heading: number; direction: THREE.Vector2 } {
 
-	const speed = ctx.sky.weather.windSpeed, heading = ctx.sky.weather.windDirection;
+	const { speed, heading, gustiness } = ctx.wind;
 	const freeze = debugFlags.windFreeze;
 	debugFlags.windFreeze = false;
-	const copy = new Wind( createWindUniforms(), { speed, heading, time: ctx.wind.time } );
-	const u = copy.uniforms, states = new Float32Array( steps * STATE * 4 ), travel: THREE.Vector2[] = [];
+	const copy = new Wind( createWindUniforms(), { speed, heading, gustiness, time: ctx.wind.time } );
+	const u = copy.uniforms, states = new Float32Array( steps * STATE * 4 );
 	for ( let k = 0; k < steps; k ++ ) {
 
-		if ( k > 0 ) copy.update( dt, speed, heading );
+		if ( k > 0 ) copy.update( dt, speed, heading, gustiness );
 		states.set( packWindState( u ), k * STATE * 4 );
-		travel.push( u.cloudOffset.value.clone() );
 
 	}
 	debugFlags.windFreeze = freeze;
-	return { states, speed, heading, direction: u.direction.value.clone(), travel };
+	return { states, speed, heading, direction: u.direction.value.clone() };
 
 }
 
@@ -120,8 +128,8 @@ async function evaluate( renderer: THREE.WebGPURenderer, inputs: Float32Array, s
 		If( i.lessThan( uint( total ) ), () => {
 
 			const plant = i.div( uint( steps ) ), k = i.mod( uint( steps ) ).mul( uint( STATE ) );
-			const s0 = state.element( k ).toVar(), s1 = state.element( k.add( 1 ) ).toVar();
-			const wind = windStateOf( s0, s1 );
+			const s0 = state.element( k ).toVar(), s1 = state.element( k.add( 1 ) ).toVar(), s2 = state.element( k.add( 2 ) ).toVar();
+			const wind = windStateOf( s0, s1, s2 );
 			const r = body( wind, input.element( plant ).toVar() );
 			out.element( i ).assign( vec4( r.s, r.d ) );
 
@@ -160,32 +168,6 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 			const origin = vec3( p.x, 0, p.y ), phase = bladePhase( p.w, rootHash( origin.xz ) );
 			const field = windField( wind, origin.xz );
 			return { s: bendBlade( wind, vec3( p.x, p.z, p.y ), origin, p.z, float( 1 ), phase ).lean.xz, d: field.xy.mul( field.z ) };
-
-		} );
-
-	}
-	if ( o.kinds.includes( 'bush' ) ) {
-
-		const b = bushInstances( data.bushes ), points: number[][] = [];
-		for ( let i = 0; i < b.count; i ++ ) points.push( [ b.roots[ i * 4 ], b.roots[ i * 4 + 2 ], b.roots[ i * 4 + 1 ], 0 ] );
-		add( 'bush', points, ( wind, p ) => {
-
-			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, 1, 0 ) ), root, float( BUSH_WIND.amplitude ), BUSH_WIND.cycles );
-			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
-
-		} );
-
-	}
-	if ( o.kinds.includes( 'flower' ) ) {
-
-		const points: number[][] = [];
-		for ( const list of plantFlowers( data.vegetation ) ) for ( const plant of list ) points.push( [ plant.root.x, plant.root.z, plant.root.y, plant.sward + plant.stretch + 0.1 ] );
-		add( 'flower', points, ( wind, p ) => {
-
-			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, p.w, 0 ) ), root, p.w.mul( FLOWER_WIND.amplitude ), FLOWER_WIND.cycles );
-			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
 
 		} );
 
@@ -441,7 +423,7 @@ function inventory( ctx: WindProbeContext ) {
 		const mesh = object as THREE.Mesh;
 		if ( ! mesh.isMesh ) return;
 		const material = ( Array.isArray( mesh.material ) ? mesh.material[ 0 ] : mesh.material ) as THREE.Material;
-		const named = /palm|tree|bush|grass|flower|reed|fern|plant|foliage|leaf|skirt|rim/i.test( `${ mesh.name } ${ material.name }` );
+		const named = /palm|tree|bush|grass|reed|fern|plant|foliage|leaf|skirt|rim/i.test( `${ mesh.name } ${ material.name }` );
 		if ( ! material.userData.vegetation && ! mesh.userData.palm && ! windDisplacement( material ) && ! named ) return;
 		rows.push( {
 			mesh: mesh.name || mesh.type, material: material.name || material.type, parent: mesh.parent?.name,
@@ -454,32 +436,58 @@ function inventory( ctx: WindProbeContext ) {
 
 }
 
-// W5: the directions things travel in, degrees in the world's x-z plane ( atan2( z, x ) )
+// each kind's natural sway frequency, Hz (Wind.ts `swayFrequency`; Deform.ts's numbers)
+const naturalFrequencies = () => ( {
+	grassAndFlowers: r3( swayFrequency( GRASS_WIND.cycles ) ), skirtThatch: r3( swayFrequency( SKIRT_WIND.cycles ) ),
+	hangingGrass: r3( swayFrequency( SKIRT_WIND.hang.cycles ) ), hangingGrassAcross: r3( swayFrequency( SKIRT_WIND.hang.across ) ),
+	palm: r3( swayFrequency( PALM_WIND.cycles / 2 ) ), // `slow`: half mainBend's rate
+} );
+
+// W5: the directions things travel in, degrees in the world's x-z plane ( atan2( z, x ) ), and
+// their speeds (m/s)
 async function directions( ctx: WindProbeContext, o: Options ) {
 
 	const deg = ( v: { x: number; y: number } ) => r3( Math.atan2( v.y, v.x ) * 180 / Math.PI );
 	const gap = ( a: number, b: number ) => r3( Math.abs( ( ( a - b ) % 360 + 540 ) % 360 - 180 ) );
-	const frame = () => new Promise( ( resolve ) => requestAnimationFrame( resolve ) );
+	const frames = async () => { for ( let i = 0; i < 3; i ++ ) await new Promise( ( resolve ) => requestAnimationFrame( resolve ) ); };
+	const clouds = ctx.sky.clouds as WindProbeContext[ 'sky' ][ 'clouds' ] & { windN?: { value: THREE.Vector2 } };
+	// what moves the clouds and the fog, as the page drew its last frame
+	const read = () => ( {
+		time: ctx.wind.time, offset: ctx.shared.wind.cloudOffset.value.clone(), displacement: ctx.shared.wind.displacement.value.clone(),
+		evolve: clouds.evolve?.value ?? 0, windN: ( clouds.windN ?? clouds.cirrusAxis )?.value.clone() ?? new THREE.Vector2(),
+	} );
 	const rows: Record<string, unknown>[] = [];
 	for ( const weather of o.weathers ) for ( const preset of o.presets ) {
 
 		await ctx.establishScene( { weather, preset } as never );
-		for ( let i = 0; i < 3; i ++ ) await frame();
+		await frames();
 		const vegetation = deg( ctx.shared.wind.direction.value );
-		// the clouds sample their density at p + cloudOffset: they drift by - d( cloudOffset )
-		const states = windStates( ctx, { steps: 2, dt: 1 } );
-		const drift = states.travel[ 0 ].clone().sub( states.travel[ 1 ] );
-		const clouds = deg( drift );
+		// across a seek of one second (more if the page runs), per second
+		const a = read();
+		await ctx.setTime( a.time + 1 );
+		await frames();
+		const b = read(), dt = b.time - a.time;
+		// the weather map is sampled at p + cloudOffset: it drifts by - d( cloudOffset )
+		const map = a.offset.clone().sub( b.offset ).divideScalar( dt );
+		// the shape noise drifts by that less windN d( evolve ), the evolve unwrapped
+		let evolve = b.evolve - a.evolve;
+		evolve = ( evolve - EVOLVE_PERIOD * Math.round( evolve / EVOLVE_PERIOD ) ) / dt;
+		const shape = map.clone().addScaledVector( b.windN, - evolve );
+		// the fog is sampled at p - displacement: it drifts by d( displacement )
+		const fog = b.displacement.clone().sub( a.displacement ).divideScalar( dt );
 		// the FFT's heading is the spectrum's; the positive inverse FFT travels opposite it
 		const h = ctx.fft.params.windDirection * Math.PI / 180, hs = ( ctx.fft.params.windDirection + ctx.fft.swell.directionOffset ) * Math.PI / 180;
 		const sea = deg( { x: - Math.cos( h ), y: - Math.sin( h ) } ), swell = deg( { x: - Math.cos( hs ), y: - Math.sin( hs ) } );
-		const heading = ctx.sky.weather.windDirection;
+		const heading = ctx.weather.state.windDirection;
 		const weatherTravel = deg( { x: - Math.cos( heading * Math.PI / 180 ), y: - Math.sin( heading * Math.PI / 180 ) } );
-		const front = ctx.sky.clouds.frontAxis?.value, cirrus = ctx.sky.clouds.cirrusAxis?.value;
+		const front = clouds.frontAxis?.value, cirrus = clouds.cirrusAxis?.value;
+		const travel = { vegetation, weather: weatherTravel, sea, swell, fog: deg( fog ), cloudMap: deg( map ), cloudShape: deg( shape ),
+			cloudFrontAxis: front ? deg( front ) : null, cirrusAxis: cirrus ? deg( cirrus ) : null };
 		rows.push( {
-			weather, preset, weatherHeading: heading, fftHeading: ctx.fft.params.windDirection, windSpeed: ctx.sky.weather.windSpeed,
-			travel: { vegetation, weather: weatherTravel, clouds, sea, swell, cloudFrontAxis: front ? deg( front ) : null, cirrusAxis: cirrus ? deg( cirrus ) : null },
-			gapToVegetation: { clouds: gap( clouds, vegetation ), sea: gap( sea, vegetation ), swell: gap( swell, vegetation ), weather: gap( weatherTravel, vegetation ) },
+			weather, preset, weatherHeading: heading, fftHeading: ctx.fft.params.windDirection,
+			windSpeed: ctx.weather.state.windSpeed, gustiness: ctx.weather.state.gustiness, cloudEvolvePerSecond: r3( evolve ),
+			travel, speed: { fog: r3( fog.length() ), cloudMap: r3( map.length() ), cloudShape: r3( shape.length() ) },
+			gapToVegetation: Object.fromEntries( Object.entries( travel ).filter( ( [ k, v ] ) => k !== 'vegetation' && v !== null ).map( ( [ k, v ] ) => [ k, gap( v as number, vegetation ) ] ) ),
 		} );
 
 	}
@@ -509,7 +517,8 @@ export async function windProbe( ctx: WindProbeContext, options: Partial<Options
 	const time = ctx.wind.time;
 	const w5 = o.w5 ? await directions( ctx, o ) : null;
 	return {
-		time, windSpeed: fast.speed, heading: fast.heading, meanDirection: [ r3( fast.direction.x ), r3( fast.direction.y ) ],
+		time, windSpeed: fast.speed, heading: fast.heading, gustiness: ctx.wind.gustiness, meanDirection: [ r3( fast.direction.x ), r3( fast.direction.y ) ],
+		natural: naturalFrequencies(),
 		series: { fast: o.fast, slow: o.slow }, plants, gust, w4, w5, ms: Math.round( performance.now() - t0 ),
 	};
 

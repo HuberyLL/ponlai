@@ -11,8 +11,8 @@ art decision changes; reference images stay out of the repository.
   airy and soft: a near-white sun, a milky horizon that glows wide and cream on the side toward
   the sun, fresh cool greens; a low sun's light turns warm and golden. Softly glowing highlights,
   airy lifted shadows, deep teal water with a sparkling glare toward the sun, chunky chiselled
-  stone, a lush meadow with bushes and wildflowers, and irregular hanging leaf clusters around
-  the rim. Keep the lower cliff stone exposed.
+  stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the lower cliff
+  stone exposed.
 - The fantasy look is an art-directed layer over the physically based image (a soft glow round
   the island's highlights, greens turned toward pure green and a touch darker, richer teal water,
   golden highlights over cool teal shadows, a shadow lift that keeps a shadow's saturation, no
@@ -52,11 +52,12 @@ art decision changes; reference images stay out of the repository.
   or a pair of eyes in the shade. Under the meadow the wall weathers back to an upper slope rather
   than jutting as a slab. No ledge follows the waterline. No waterfalls. Moss and greenery on the
   wall stay in its upper 1.2 m; the lower cliff stays bare stone.
-- Plants and meadow cover are rooted on the island top, never on cliff faces. Branches root in the
-  meadow at the rim and hang over it in clumped patches with runs of bare stone between (only a
-  notch whose walls hold no lip runs bare longer), of uneven density and mixed lengths, under a
-  mounded leaf clump at the lip; the lowest quarter of the cliff above the sea stays bare. The
-  meadow's sod curls a little over the lip as a ragged turf skirt.
+- Plants and meadow cover are rooted on the island top, never on cliff faces. The meadow's sod
+  curls a little over the lip as a ragged turf skirt, and the meadow passes into the cliff through
+  grass hanging from that lip, as on a sea cliff's top: bundles of the meadow's blades, of mixed
+  lengths (0.2 - 1 m), combed to one side, drier and yellower than the meadow, in stretches with
+  clumps and thin places, fewer where bare stone meets the meadow. What hangs over the rim is the
+  meadow's own grass, not leafy branches; the lowest quarter of the cliff above the sea stays bare.
 - The meadow is a lawn, even as a whole and every blade its own: dense, sword-shaped blades, wide
   to high up and tapering to a point, standing nearly upright but each a little taller or shorter,
   turned and leaning its own way with a slight arc, so they cross rather than look combed; they
@@ -68,21 +69,32 @@ art decision changes; reference images stay out of the repository.
   near black) under tips that stand out lighter and yellow-green where the sun shines through
   them; looking toward the sun the whole lawn glows, away from it it is plainer and greener; no
   clumps, tall islands or bare patches, and no pattern of dots on the blades. Inside the grass
-  there are no hard shadows, only an even darkening toward the ground; the shade of bushes and
-  trees lies on it soft and light. Cloud shadows are soft patches a few tens of metres across
+  there are no hard shadows, only an even darkening toward the ground; the shade of anything
+  standing on it lies soft and light. Cloud shadows are soft patches a few tens of metres across
   that drift slowly over the island and the sea with the wind: none under a clear sky, some in
   fair weather, more and softer as cloud gathers, merging into one even shade under overcast.
-  The light moves; nothing dark is painted onto the ground. The turf under the blades is the deeper green of their lower part,
+  The light moves; nothing dark is painted onto the ground. The turf under the blades is the
+  deeper green of their lower part,
   so from afar the meadow reads as one smooth carpet. By night the lawn is a dark blue-green, its
   blades lit only as the moon's own strength allows. Toward the coast the tufts grow taller and lean out over the lip
   instead of thinning, and the lip alternates between overgrown stretches and cut-open root soil.
-- Wildflowers are plants (daisy, umbel, spike, cup) with leaf rosettes, their heads just above the
-  sward, in beds of a few of one kind gathered in drifts, not coloured stars on the lawn.
-- The terrain plants the meadow (grass, wildflowers), the rim bushes, the rim's hanging growth and,
-  on the plateau, loose groups of round shrubs (up to about head height), broad-leaved clumps and
-  ferns, with a few small trees (2.5 - 3.5 m, a forked grey-brown trunk under clustered crowns),
-  each grown from its own seed so no two share a silhouette. The walker's loop stays open meadow.
-  Plants that matter to play (coconut palms) are content placed in the world, not terrain.
+- Wildflowers are part of the meadow: heads (a hand across at most: large enough that the game's
+  close view reads them as flowers, not dots) on some of its tufts, about at the blades' tips,
+  some partly hidden among them, with no stem or leaves showing. They are a warm temperate
+  coast's: pinks, wild chrysanthemums (yellow, a few white), daylilies, dandelions, violets and a
+  few balloon flowers, all in flower at once, the year round: the island's sign of an immortals'
+  land. Each grows in patches of its own where its habitat is, dense at the centre and thinning
+  to the edge, with almost no flowers between: a broken band of pink along the cliff's edge,
+  chrysanthemums on the grass in from it, orange daylilies where the ground is damp, yellow and
+  violet in the short turf. Colours are soft rather than vivid, and no head (white and yellow
+  least of all) outshines the lawn; never a scatter of mixed colours over the lawn, which reads as
+  confetti. They sway with the grass, and from afar they are fine coloured specks in it, gathered
+  in patches, not coloured stars or blots on the lawn.
+- The terrain plants the meadow (grass, wildflowers) and its turf over the rim, nothing taller:
+  the island is a flat top ringed by cliffs, with no lee where shrubs or trees would grow, so it
+  has none (the shrubs, small trees, rim bushes and hanging leaf trails it once had were
+  placeholders). The walker's loop stays open meadow. Plants that matter to play (coconut palms)
+  are content placed in the world, not terrain.
 - All vegetation moves in one wind: gusts visibly sweep the meadow and change as they go; still air
   is the rest pose.
 
