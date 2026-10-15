@@ -5,7 +5,7 @@
 //
 //   node tools/capture-clip.mjs <name> --url U --clip <clip> [--aa msaa|off|taa|taau|fsr3|gt|gt-hi]
 //       [--view v] [--frames n] [--every k] [--dense a-b,c-d] [--crops a,b] [--full 0,30] [--q "extra&query"]
-//       [--quality high] [--size 1728x1117@2] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
+//       [--quality high] [--size 1728x1117@2] [--dt s] [--gt-jitters n] [--out dir] [--timeout ms] [--runs file.csv]
 //       [--task name] [--anchors-from clip.json] [--stable-* (capture.mjs)] [--ready-frames n] [--wait ms] [--settle ms] [--verbose]
 //       [--test-fault]
 //
@@ -91,6 +91,10 @@
 // add noise to F, TI and S, and the GT's 2x2 downsample would halve it); clip.json records it
 // (`grain`). The per-pixel dither of a level stays: it is fixed per pixel.
 //
+// --dt s steps the clip's frames s seconds apart instead of 1 / 60 (the clock's step, so the
+// scene's own motion per frame, not the camera path's): a motion vector test whose sub-pixel motion
+// a reprojection's resampling would hide makes the motion a few pixels a frame with it.
+//
 // Stepped clips are deterministic (no wall clock), so the tool takes the GPU lock shared.
 // Production builds need `?debug` (added here) and the islanders' assets linked into the build
 // (tools/parity/README.md).
@@ -118,7 +122,7 @@ for ( let i = 0; i < args.length; i ++ ) {
 	} else positional.push( args[ i ] );
 
 }
-const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters', 'ready-frames', 'wait', 'settle',
+const KNOWN = [ 'url', 'aa', 'clip', 'view', 'frames', 'dt', 'every', 'dense', 'crops', 'full', 'q', 'quality', 'size', 'out', 'timeout', 'runs', 'task', 'verbose', 'anchors-from', 'gt-jitters', 'ready-frames', 'wait', 'settle',
 	'stable-min', 'stable-every', 'stable-repeats', 'stable-tolerance', 'stable-patience', 'stable-cap', 'stable-trace', 'test-fault' ];
 const unknown = Object.keys( options ).filter( ( k ) => ! KNOWN.includes( k ) );
 const clip = CLIPS[ options.clip ];
@@ -258,7 +262,7 @@ try {
 
 	}
 
-	await page.evaluate( clipEval( options.clip, { frames } ) );
+	await page.evaluate( clipEval( options.clip, { frames, ...( options.dt ? { dt: Number( options.dt ) } : {} ) } ) );
 	// no film grain in a metric capture; the GT keeps its own fixed ratio (no scale schedule)
 	const grain = await page.evaluate( ( gt ) => {
 
