@@ -24,9 +24,9 @@ import type { WeatherState } from '../sky/Weather.ts';
 //   U_ref), so the sea is the same function of the weather however the page reached it; the swell
 //   keeps its own offset from the heading (OceanFFT `swell.directionOffset`), the shore waves
 //   follow the swell.
-// - the clouds: `cloudOffset`, -CLOUD_DRIFT times the air's displacement, for the weather map;
+// - the clouds: `displacement`, which Clouds.setDrift turns into each layer's drift aloft;
 //   `direction` for the fronts, the cirrus and the tops' lean (sky/Sky.ts, Clouds.ts).
-// - the air: `displacement` (the sea fog's drift, main.ts), `velocity` (rain, the storm's spray),
+// - the air: `displacement` (the sea fog's drift, main.ts; the clouds' drift), `velocity` (rain, the storm's spray),
 //   `direction` (the storm sea's foam).
 // The wind probe's W5 (`__PONLAI__.windProbe`) reports where each of them travels.
 //
@@ -80,9 +80,6 @@ export const REFERENCE_SPEED = 3.8;
 /** Fair's gust factor: a gust's lean is GUST_LEAN at it. */
 export const REFERENCE_GUSTINESS = 1.4;
 const HEADING = 40; // the presets' heading, for a wind built without one
-// The clouds' weather map drifts at this share of the wind (sky/Clouds.ts samples it at
-// p + cloudOffset).
-const CLOUD_DRIFT = 0.21;
 const clamp = ( value: number, low: number, high: number ) => Math.max( low, Math.min( high, value ) );
 // The vegetation's clocks (seconds) wrap here. Shaders take fract( clock * f ) only at rates f
 // with at most three decimals (Hz), so every one of them completes whole cycles in a period.
@@ -174,7 +171,6 @@ export function createWindUniforms() {
 		...vegetationWind( direction ),
 		velocity: uniform( direction.clone().multiplyScalar( REFERENCE_SPEED ) ), // air velocity, m/s
 		displacement: uniform( new Vector2() ), // integrated air displacement, metres
-		cloudOffset: uniform( new Vector2() ), // offset for a density field sampled at p + offset
 		oceanGain: uniform( new Vector3( 1, 1, 1 ) ), // amplitude, not energy, for the FFT cascades
 		// The vegetation's wind as it was for the previous rendered frame: equal to the current
 		// one while paused and after a seek or reset (no motion across a jump).
@@ -430,7 +426,6 @@ export class Wind {
 		this.publish( speed, heading, gustiness );
 		this.elapsed = time;
 		this.uniforms.displacement.value.copy( this.uniforms.velocity.value ).multiplyScalar( time );
-		this.uniforms.cloudOffset.value.copy( this.uniforms.displacement.value ).multiplyScalar( - CLOUD_DRIFT );
 		this.travel = time * speed;
 		this.swayTravel = time * REFERENCE_SPEED;
 		this.publishVegetation();
@@ -466,7 +461,6 @@ export class Wind {
 		// Trapezoidal integration follows the smoothly transitioning CPU weather state and
 		// does not change when a rendering-quality setting changes its update cadence.
 		this.uniforms.displacement.value.addScaledVector( this.previousVelocity.add( this.uniforms.velocity.value ), dt * 0.5 );
-		this.uniforms.cloudOffset.value.copy( this.uniforms.displacement.value ).multiplyScalar( - CLOUD_DRIFT );
 		this.travel += dt * ( previousSpeed + speed ) * 0.5;
 		this.swayTravel += dt * REFERENCE_SPEED;
 		this.publishVegetation();

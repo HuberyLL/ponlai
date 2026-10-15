@@ -3,7 +3,6 @@ import { Fn, If, float, instanceIndex, instancedArray, uint, vec3, vec4 } from '
 import { WIND_STATE_VEC4S, Wind, createWindUniforms, packWindState, rootHash, swayFrequency, windField, windStateOf, type WindState } from '../weather/Wind.ts';
 import { plantGrass } from '../world/Grass.ts';
 import { GRASS_WIND, PALM_WIND, SKIRT_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
-import { EVOLVE_PERIOD } from '../sky/Clouds.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
@@ -40,10 +39,9 @@ import type { Shared } from '../shared.ts';
 // whether its material has a wind displacement.
 // `w5` (scene jumps and seeks, so last): for each kept weather and a few presets where every part
 // travels, as angles and speeds: the vegetation's wind, the weather's heading, the sea and its
-// swell (the FFT's headings), the sea fog (the air's displacement), the clouds' weather map
-// (`cloudOffset`) and their shape noise, the cloud detail one sees, which also moves by Clouds.ts's
-// `evolve` (its `candidate` samples the shape at p + cloudOffset + windN ( evolve - h SKEW ), so
-// it drifts by - d( cloudOffset ) - windN d( evolve ); this follows that formula). The drifts are
+// swell (the FFT's headings), the sea fog (the air's displacement), the cumulus (their weather map
+// and shape noise drift together; `evolve` moves the shape vertically, in place) and the cirrus,
+// each by minus the change of its sampling offset (Clouds.ts `layerOffsets`). The drifts are
 // read off the page across a seek of 1 s (`setTime`), so they are the page's own, and every gap is
 // to the vegetation's wind.
 
@@ -57,7 +55,7 @@ export interface WindProbeContext {
 	shared: Shared;
 	wind: Wind;
 	weather: { state: { windSpeed: number; windDirection: number; gustiness: number } };
-	sky: { clouds: { frontAxis?: { value: THREE.Vector2 }; cirrusAxis?: { value: THREE.Vector2 }; evolve?: { value: number } } };
+	sky: { clouds: { frontAxis?: { value: THREE.Vector2 }; cirrusAxis?: { value: THREE.Vector2 }; layerOffsets?: () => { cumulus: THREE.Vector2; cirrus: THREE.Vector2 } } };
 	fft: { params: { windDirection: number }; swell: { directionOffset: number } };
 	establishScene: ( scene: never ) => Promise<unknown>; // main.ts's, with { weather, preset }
 	setTime: ( t: number ) => Promise<unknown>; // main.ts's seek of the scene clock
@@ -450,12 +448,14 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 	const deg = ( v: { x: number; y: number } ) => r3( Math.atan2( v.y, v.x ) * 180 / Math.PI );
 	const gap = ( a: number, b: number ) => r3( Math.abs( ( ( a - b ) % 360 + 540 ) % 360 - 180 ) );
 	const frames = async () => { for ( let i = 0; i < 3; i ++ ) await new Promise( ( resolve ) => requestAnimationFrame( resolve ) ); };
-	const clouds = ctx.sky.clouds as WindProbeContext[ 'sky' ][ 'clouds' ] & { windN?: { value: THREE.Vector2 } };
+	const clouds = ctx.sky.clouds;
 	// what moves the clouds and the fog, as the page drew its last frame
-	const read = () => ( {
-		time: ctx.wind.time, offset: ctx.shared.wind.cloudOffset.value.clone(), displacement: ctx.shared.wind.displacement.value.clone(),
-		evolve: clouds.evolve?.value ?? 0, windN: ( clouds.windN ?? clouds.cirrusAxis )?.value.clone() ?? new THREE.Vector2(),
-	} );
+	const read = () => {
+
+		const layers = clouds.layerOffsets?.() ?? { cumulus: new THREE.Vector2(), cirrus: new THREE.Vector2() };
+		return { time: ctx.wind.time, ...layers, displacement: ctx.shared.wind.displacement.value.clone() };
+
+	};
 	const rows: Record<string, unknown>[] = [];
 	for ( const weather of o.weathers ) for ( const preset of o.presets ) {
 
@@ -467,12 +467,9 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 		await ctx.setTime( a.time + 1 );
 		await frames();
 		const b = read(), dt = b.time - a.time;
-		// the weather map is sampled at p + cloudOffset: it drifts by - d( cloudOffset )
-		const map = a.offset.clone().sub( b.offset ).divideScalar( dt );
-		// the shape noise drifts by that less windN d( evolve ), the evolve unwrapped
-		let evolve = b.evolve - a.evolve;
-		evolve = ( evolve - EVOLVE_PERIOD * Math.round( evolve / EVOLVE_PERIOD ) ) / dt;
-		const shape = map.clone().addScaledVector( b.windN, - evolve );
+		// each cloud layer is sampled at p + its offset: it drifts by minus the offset's change
+		const cumulus = a.cumulus.clone().sub( b.cumulus ).divideScalar( dt );
+		const cirrusDrift = a.cirrus.clone().sub( b.cirrus ).divideScalar( dt );
 		// the fog is sampled at p - displacement: it drifts by d( displacement )
 		const fog = b.displacement.clone().sub( a.displacement ).divideScalar( dt );
 		// the FFT's heading is the spectrum's; the positive inverse FFT travels opposite it
@@ -481,12 +478,12 @@ async function directions( ctx: WindProbeContext, o: Options ) {
 		const heading = ctx.weather.state.windDirection;
 		const weatherTravel = deg( { x: - Math.cos( heading * Math.PI / 180 ), y: - Math.sin( heading * Math.PI / 180 ) } );
 		const front = clouds.frontAxis?.value, cirrus = clouds.cirrusAxis?.value;
-		const travel = { vegetation, weather: weatherTravel, sea, swell, fog: deg( fog ), cloudMap: deg( map ), cloudShape: deg( shape ),
+		const travel = { vegetation, weather: weatherTravel, sea, swell, fog: deg( fog ), cumulus: deg( cumulus ), cirrus: deg( cirrusDrift ),
 			cloudFrontAxis: front ? deg( front ) : null, cirrusAxis: cirrus ? deg( cirrus ) : null };
 		rows.push( {
 			weather, preset, weatherHeading: heading, fftHeading: ctx.fft.params.windDirection,
-			windSpeed: ctx.weather.state.windSpeed, gustiness: ctx.weather.state.gustiness, cloudEvolvePerSecond: r3( evolve ),
-			travel, speed: { fog: r3( fog.length() ), cloudMap: r3( map.length() ), cloudShape: r3( shape.length() ) },
+			windSpeed: ctx.weather.state.windSpeed, gustiness: ctx.weather.state.gustiness,
+			travel, speed: { fog: r3( fog.length() ), cumulus: r3( cumulus.length() ), cirrus: r3( cirrusDrift.length() ) },
 			gapToVegetation: Object.fromEntries( Object.entries( travel ).filter( ( [ k, v ] ) => k !== 'vegetation' && v !== null ).map( ( [ k, v ] ) => [ k, gap( v as number, vegetation ) ] ) ),
 		} );
 

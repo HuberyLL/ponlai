@@ -1440,7 +1440,7 @@ function tick( time: number ): void {
 	// march below, so it goes first.
 	// (the scene's render size: the canvas is larger while the frame is upscaled)
 	sky.lightning.update( simTime, weather.state.storm, camera, pipeline.height, sky.clouds );
-	sky.updateClouds( camera, pipeline.width, pipeline.height, shared.wind.cloudOffset.value, shared.wind.direction.value, simTime );
+	sky.updateClouds( camera, pipeline.width, pipeline.height, shared.wind.direction.value, simTime );
 	shared.rain.value = weatherEffects.rain ? sky.weather.rain : 0;
 	shared.storm.value = weather.state.storm;
 	// A strike lights the island for an instant through the sky's fill: the lit cloud deck adds its

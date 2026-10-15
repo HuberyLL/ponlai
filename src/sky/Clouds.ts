@@ -47,6 +47,8 @@ type V4 = THREE.Node<'vec4'>;
 // sun's visibility; a shadow map holds the layer's transmittance along the key light.
 // This project keeps its own weather on top: coverage and density sweep in as a front from
 // upwind, rain hangs in curtains under raining cloud, and high cirrus (Cirrus.ts) lies above.
+// Both layers drift downwind with the wind aloft, a multiple of the weather's surface wind veered
+// to its right (setDrift), while the cumulus' structure rises through them in place (`evolve`).
 // Everything returns vec4( in-scattered radiance, transmittance ).
 //
 // Rules: the view accumulates over frames, and a scene at rest (paused clock, still camera)
@@ -70,7 +72,9 @@ export const SHELL_BOTTOM = 4000, SHELL_THICKNESS = 5200;
 // number of periods of the weather map, the shape noise and the erosion noise.
 const WEATHER_SCALE = 28672, BASE_SCALE = 7168, EROSION_SCALE = BASE_SCALE / 8;
 const TILE = WEATHER_SCALE;
-// The shape noise drifts through the weather field on its own (evolution) and wraps on its period.
+// The shape noise rises through the cloud layer (its evolution in place, `evolve`: metres) and wraps
+// on its vertical period. It drifts with the weather map: shifted horizontally it slid through the
+// weather on its own and, faster than the drift, carried the visible heaps upwind.
 export const EVOLVE_PERIOD = BASE_SCALE;
 const WEATHER_RES = 1024, BOUNDS_RES = 64;
 const DENSITY = 0.019 / 0.9; // extinction (1/m) at a density of one; fair weather's 0.9 is the preset
@@ -92,6 +96,14 @@ const FAR = 250000;
 const FRONT_SPAN = 25000;
 const CIRRUS_ALTITUDE = 10000;
 const UPPER_VEER = 0.6; // radians the upper wind turns from the surface wind
+// The clouds drift with the wind aloft, derived from the surface wind's integrated displacement
+// (setDrift), so they follow the weather's wind: the cumulus at LOW_DRIFT times the surface wind,
+// turned LOW_VEER to its right (veering with height, as the wind aloft does north of the equator),
+// the cirrus at HIGH_DRIFT times it along their fibres (UPPER_VEER). Steering winds at 4 to 9 km
+// run two to three times the 10 m wind; at 0.21 times it the cumulus all but stood still.
+const LOW_DRIFT = 2.25, LOW_VEER = 12 * Math.PI / 180, HIGH_DRIFT = 3;
+// The cirrus' two fibre scales (metres per tile, turn in radians: sampleCirrusFibres).
+const FIBRE_FINE = { tile: 40000, turn: 0 }, FIBRE_BROAD = { tile: 92000, turn: 0.5 };
 const SYNOPTIC_SIZE = 409600;
 // The panorama (see setDome): its size and refresh pattern, one texel of every strideX x strideY
 // per frame. Its main consumer, the bake's 512 x 128 cloud layer, averages four taps of it, and
@@ -144,6 +156,14 @@ const MARCH_DEFAULTS: CloudMarch = { viewSteps: 256, panoramaSteps: 128, lightTa
 // draws at its nominal ratio: the display's, up to 1.5), so a lower render scale does not soften
 // the clouds a second time.
 export type CloudViewScale = { render: number } | { display: number };
+
+// The sampling offset of a layer drifting `rate` times the surface wind's displacement `d`, turned
+// `veer` radians to its right (toward +z from +x): the clouds move by minus the offset.
+function driftOffset( d: THREE.Vector2, rate: number, veer: number ): THREE.Vector2 {
+
+	return d.clone().rotateAround( new THREE.Vector2(), veer ).multiplyScalar( - rate );
+
+}
 
 // The panorama's refresh order over its sx x sy pattern (powers of two): consecutive frames land
 // far apart, as an ordered dither does, so a partly refreshed map shows no sweep. A larger axis
@@ -314,8 +334,12 @@ export class Clouds {
 	// High cirrus: amount and the unit direction its fibres are combed along (the wind).
 	readonly cirrus = uniform( 0 );
 	readonly cirrusAxis = uniform( new THREE.Vector2( 1, 0 ) );
-	// Set through setWindOffset, which keeps it within one noise period.
+	// The cumulus' drift: the field is sampled at p + windOffset. Set through setDrift, which keeps
+	// it within one noise period.
 	readonly windOffset = uniform( new THREE.Vector2() );
+	// The cirrus' drift in its fibres' frame (toWind), wrapped on the period of each texture it
+	// samples: the synoptic cover's, the fine fibres' and the broad fibres' (setDrift).
+	readonly cirrusShift = { synoptic: uniform( new THREE.Vector2() ), fine: uniform( new THREE.Vector2() ), broad: uniform( new THREE.Vector2() ) };
 	readonly lightDir = uniform( new THREE.Vector3( 0.75, 0.53, - 0.12 ).normalize() );
 	// Irradiance arriving at the cloud layer from the key light (scene units).
 	readonly lightColor = uniform( new THREE.Color( 0.5, 0.45, 0.38 ) );
@@ -406,7 +430,10 @@ export class Clouds {
 	private hasPrevious = false;
 	private readonly previousCamera = new THREE.Vector3();
 	private readonly previousKey = new THREE.Vector3();
-	private readonly previousOffset = new THREE.Vector2();
+	// The surface wind's displacement the drift was last set from, and the one the previous frame's
+	// view saw (the reprojection's drift is their difference, unwrapped).
+	private readonly displacement = new THREE.Vector2();
+	private readonly previousDisplacement = new THREE.Vector2();
 	private previousTime = 0;
 	private settled = false;
 	private turned = 0;
@@ -528,8 +555,8 @@ export class Clouds {
 				If( maximumTop.greaterThanEqual( h.sub( EDGE ) ).and( c.floorMask.greaterThan( 0 ) ), () => {
 
 					const world = p.xz.add( this.camXZ ).add( this.windOffset );
-					const lean = this.windN.mul( max( h, 0 ).mul( SKEW ).sub( this.evolve ) );
-					c.position.assign( vec3( world.x.sub( lean.x ), p.y, world.y.sub( lean.y ) ) );
+					const lean = this.windN.mul( max( h, 0 ).mul( SKEW ) );
+					c.position.assign( vec3( world.x.sub( lean.x ), p.y.sub( this.evolve ), world.y.sub( lean.y ) ) );
 					const base = shapeNode.sample( c.position.div( BASE_SCALE ) ).level( lod ).rgb;
 					const dilation = dot( base, vec3( 0.7, 0.41, 0.23 ) ).mul( BASE_STRENGTH );
 					c.top.assign( w.add( coverage ).sub( 1 ).add( dilation.mul( coverage ) ) );
@@ -952,12 +979,12 @@ export class Clouds {
 				const a = this.cirrusAxis, c = Math.cos( UPPER_VEER ), sn = Math.sin( UPPER_VEER );
 				const w = vec2( a.x.mul( c ).sub( a.y.mul( sn ) ), a.y.mul( c ).add( a.x.mul( sn ) ) ).toVar();
 				const toWind = ( v: V2 ) => vec2( dot( v, w ), dot( v, vec2( w.y.negate(), w.x ) ) );
-				const q = toWind( sheet.add( this.camXZ ).add( this.windOffset.mul( 1.6 ) ) ).toVar();
-				const syn = synopticNode.sample( q.div( SYNOPTIC_SIZE ) ).level( float( 0 ) );
+				const q = toWind( sheet.add( this.camXZ ) ).toVar();
+				const syn = synopticNode.sample( q.add( this.cirrusShift.synoptic ).div( SYNOPTIC_SIZE ) ).level( float( 0 ) );
 				const cover = smoothstep( 0.15, 0.85, syn.x ).mul( smoothstep( 0.4, 0.72, syn.z ) ).mul( syn.y.mul( 0.4 ).add( 0.6 ) );
 				// Fibres at two scales hide the texture's tiling.
-				const f1 = sampleCirrusFibres( fibres, q, toWind( fa ), toWind( fb ), 40000, 0 );
-				const f2 = sampleCirrusFibres( fibres, q, toWind( fa ), toWind( fb ), 92000, 0.5 );
+				const f1 = sampleCirrusFibres( fibres, q.add( this.cirrusShift.fine ), toWind( fa ), toWind( fb ), FIBRE_FINE.tile, FIBRE_FINE.turn );
+				const f2 = sampleCirrusFibres( fibres, q.add( this.cirrusShift.broad ), toWind( fa ), toWind( fb ), FIBRE_BROAD.tile, FIBRE_BROAD.turn );
 				const fibre = f1.x.mul( 0.6 ).add( f2.x.mul( 0.4 ) );
 				const veil = f1.y.mul( 0.5 ).add( f2.y.mul( 0.5 ) );
 				// Faint wisps over a thinner veil; the slant path is bounded so the sheet does not turn
@@ -1346,14 +1373,13 @@ export class Clouds {
 		if ( full || moved > 8 || this.turned > 0.5 || key.angleTo( this.previousKey ) > 0.05 || Math.abs( C.tan.value.y - P.tan.value.y ) > 1e-3 * C.tan.value.y ) this.resetHistory();
 		this.previousKey.copy( key );
 		// Camera motion since the last frame minus the clouds' drift. The field is sampled at
-		// position + offset, so the clouds move by minus the offset's change (wrapped).
-		const wrap = ( v: number ) => v - TILE * Math.round( v / TILE );
-		const driftX = this.hasPrevious ? wrap( this.windOffset.value.x - this.previousOffset.x ) : 0;
-		const driftZ = this.hasPrevious ? wrap( this.windOffset.value.y - this.previousOffset.y ) : 0;
+		// position + offset, so the clouds move by minus the offset's change.
+		const step = this.hasPrevious ? this.displacement.clone().sub( this.previousDisplacement ) : new THREE.Vector2();
+		const low = driftOffset( step, LOW_DRIFT, LOW_VEER ), high = driftOffset( step, HIGH_DRIFT, UPPER_VEER );
 		const dx = this.hasPrevious ? position.x - this.previousCamera.x : 0, dy = this.hasPrevious ? position.y - this.previousCamera.y : 0;
 		const dz = this.hasPrevious ? position.z - this.previousCamera.z : 0;
-		this.camDelta.value.set( dx + driftX, dy, dz + driftZ );
-		this.camDeltaHi.value.set( dx + driftX * 1.6, dy, dz + driftZ * 1.6 );
+		this.camDelta.value.set( dx + low.x, dy, dz + low.y );
+		this.camDeltaHi.value.set( dx + high.x, dy, dz + high.y );
 		// At rest: a paused clock and a still camera (a jump in weather or time while paused still
 		// counts, and settles at once).
 		// A change of lightning while paused (a review strike) retraces the view, so its flash is current.
@@ -1361,7 +1387,7 @@ export class Clouds {
 		const resting = this.hasPrevious && moved <= 1e-4 && this.turned <= 1e-6 && time === this.previousTime && flash === this.previousFlash;
 		this.previousFlash = flash;
 		this.previousCamera.copy( position );
-		this.previousOffset.copy( this.windOffset.value );
+		this.previousDisplacement.copy( this.displacement );
 		this.previousTime = time;
 		this.hasPrevious = true;
 
@@ -1542,7 +1568,7 @@ export class Clouds {
 	restart(): void {
 
 		this.evolve.value = 0;
-		this.windOffset.value.set( 0, 0 );
+		this.setDrift( new THREE.Vector2() );
 		this.frontAxis.value.set( 1, 0 );
 		this.cirrusAxis.value.set( 1, 0 );
 		this.origin.value.set( 0, 15, 0 );
@@ -1560,7 +1586,7 @@ export class Clouds {
 		this.hasPrevious = false;
 		this.previousCamera.set( 0, 0, 0 );
 		this.previousKey.set( 0, 0, 0 );
-		this.previousOffset.set( 0, 0 );
+		this.previousDisplacement.set( 0, 0 );
 		this.previousTime = 0;
 		this.previousFlash = '';
 		if ( this.view ) this.viewNode.value = this.view.history[ 0 ];
@@ -1718,10 +1744,40 @@ export class Clouds {
 
 	}
 
-	setWindOffset( offset: THREE.Vector2 ): void {
+	/** Drift the clouds by the surface wind's integrated displacement (metres downwind; Wind.ts
+	 * `displacement`): a function of the wind's state alone, so a paused frame and a seek draw the
+	 * same sky. Set `cirrusAxis` first: the cirrus' shift is kept in its fibres' frame. */
+	/** Each layer's sampling offset before wrapping, from the displacement setDrift was last given:
+	 * the layer moves by minus its change (the wind probe's W5 reads the drifts off these). */
+	layerOffsets(): { cumulus: THREE.Vector2; cirrus: THREE.Vector2 } {
 
-		const wrap = ( v: number ) => v - TILE * Math.round( v / TILE );
-		this.windOffset.value.set( wrap( offset.x ), wrap( offset.y ) );
+		return { cumulus: driftOffset( this.displacement, LOW_DRIFT, LOW_VEER ), cirrus: driftOffset( this.displacement, HIGH_DRIFT, UPPER_VEER ) };
+
+	}
+
+	setDrift( displacement: THREE.Vector2 ): void {
+
+		this.displacement.copy( displacement );
+		const wrap = ( v: number, period: number ) => v - period * Math.round( v / period );
+		const low = driftOffset( displacement, LOW_DRIFT, LOW_VEER );
+		this.windOffset.value.set( wrap( low.x, TILE ), wrap( low.y, TILE ) );
+		// The cirrus in the frame its shader samples in (toWind), wrapped per texture: the scales
+		// do not nest, and an offset wrapped on one period would jump the others.
+		const high = driftOffset( displacement, HIGH_DRIFT, UPPER_VEER );
+		const w = this.cirrusAxis.value.clone().normalize().rotateAround( new THREE.Vector2(), UPPER_VEER );
+		const qx = high.x * w.x + high.y * w.y, qy = high.y * w.x - high.x * w.y;
+		const { synoptic, fine, broad } = this.cirrusShift;
+		synoptic.value.set( wrap( qx, SYNOPTIC_SIZE ), wrap( qy, SYNOPTIC_SIZE ) );
+		const fibres = ( shift: THREE.Vector2, { tile, turn }: { tile: number; turn: number } ) => {
+
+			// wrapped on the tile's lattice, which sampleCirrusFibres turns by `turn`
+			const c = Math.cos( turn ), s = Math.sin( turn );
+			const u = wrap( qx * c + qy * s, tile ), v = wrap( qy * c - qx * s, tile );
+			shift.set( u * c - v * s, u * s + v * c );
+
+		};
+		fibres( fine.value, FIBRE_FINE );
+		fibres( broad.value, FIBRE_BROAD );
 
 	}
 
