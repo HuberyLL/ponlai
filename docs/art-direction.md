@@ -70,8 +70,13 @@ art decision changes; reference images stay out of the repository.
   so from afar the meadow reads as one smooth carpet. By night the lawn is a dark blue-green, its
   blades lit only as the moon's own strength allows. Toward the coast the tufts grow taller and lean out over the lip
   instead of thinning, and the lip alternates between overgrown stretches and cut-open root soil.
-- Wildflowers are plants (daisy, umbel, spike, cup) with leaf rosettes, their heads just above the
-  sward, in beds of a few of one kind gathered in drifts, not coloured stars on the lawn.
+- Wildflowers are part of the meadow: heads (daisies, round heads, cups, a hand across: large
+  enough that the game's close view reads them as flowers, not dots) on some of its tufts, about at
+  the blades' tips and some partly hidden among them, with no stem or leaves showing. Yellow,
+  white, pink, purple and blue grow mixed and scattered one by one, in rich stretches with nearly
+  bare ones between and leaning toward a colour or two in places, never in beds or patches of one
+  colour. They sway with the grass, and from afar they are fine coloured
+  specks in it, not coloured stars or blots on the lawn.
 - The terrain plants the meadow (grass, wildflowers), the rim bushes, the rim's hanging growth and,
   on the plateau, loose groups of round shrubs (up to about head height), broad-leaved clumps and
   ferns, with a few small trees (2.5 - 3.5 m, a forked grey-brown trunk under clustered crowns),

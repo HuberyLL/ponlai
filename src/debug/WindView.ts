@@ -17,7 +17,7 @@ type V3 = THREE.Node<'vec3'>;
 //   unlit. Their vertex stage calls `windField( shared.wind, cell )` itself, so they move with
 //   the wind, and record their displacement as the vegetation does (`setWindDisplacement`,
 //   `previousSway`), so the temporal modes see their motion. Built by WindArrows.ts.
-// - Plants: every vegetation material (the grass, flowers, rim bushes, rim trails, turf skirt and
+// - Plants: every vegetation material (the grass and its flowers, rim bushes, rim trails, turf skirt and
 //   the game's palm) draws, unlit, a colour for its plant's current sway s, its horizontal tip
 //   offset over its height (lean plus swing, the unit of LEAN_REF): the hue is the angle of s from
 //   the mean wind (`shared.wind.direction`), on a cyclic map: downwind blue, upwind orange, s

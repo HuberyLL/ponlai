@@ -17,8 +17,8 @@ export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowS
 export const MEADOW_EXTENT = 2 * GROWTH.half;
 const MEADOW_SIZE = MEADOW_EXTENT * 4;
 
-/** The lawn's tuft height scale (m): every tuft of the plateau grows to it (Grass.ts), and the
- * flowers stand their heads above it (Flowers.ts). */
+/** The lawn's tuft height scale (m): every tuft of the plateau grows to it, its flower heads
+ * among its blades' tips (Grass.ts). */
 export const SWARD_HEIGHT = 0.28;
 
 interface MeadowSample { growth: number; tone: number }

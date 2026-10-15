@@ -3,10 +3,10 @@ import { vec3, float, fract, mix, dot, max, normalize, length } from 'three/tsl'
 import { LEAN_REF, gustWave, swayJitter, swingOf, wave, windField, type WindState } from '../../weather/Wind.ts';
 import { puddleCover } from '../../weather/Puddles.ts';
 
-// How the vegetation moves: the plants' main bend (`mainBend`: the rim bushes, the flowers, the
-// plateau's plants, the game's palm), the meadow's blades (`bendBlade`, each on its own phase,
-// `bladePhase`), the rim trails' pendulum (`hangingSway`), the turf skirt's lean (`skirtLean`) and
-// standing water drowning a plant (`drown`: the flowers, the meadow). Each kind's wind numbers (its
+// How the vegetation moves: the plants' main bend (`mainBend`: the rim bushes, the plateau's
+// plants, the game's palm), the meadow's blades and flower heads (`bendBlade`, each on its own
+// phase, `bladePhase`), the rim trails' pendulum (`hangingSway`), the turf skirt's lean (`skirtLean`) and
+// standing water drowning a plant (`drown`: the meadow). Each kind's wind numbers (its
 // amplitude, its swings per gust tile, `slow`) are the exported constants below, which its material
 // and the wind probe (debug/WindProbe.ts) both read. Each function returns nodes; it builds the
 // graph its kind built in place before, in the same order, so the shaders are unchanged.
@@ -20,9 +20,6 @@ type F = THREE.Node<'float'>;
 /** The rim bushes: the crown's bend (m at LEAN_REF, times the square of the height over the crown's)
  * and its sway's swings per gust tile (about 0.9 Hz in a fair wind). */
 export const BUSH_WIND = { amplitude: 0.022, cycles: 30 } as const;
-/** The flowers: the head's bend per metre of the plant's height (m at LEAN_REF, times the square of
- * the lift), nodding at 40 swings per gust tile (about 1.2 Hz). */
-export const FLOWER_WIND = { amplitude: LEAN_REF, cycles: 40 } as const;
 /** The plateau's plants: 30 swings per gust tile, trees at half that rate (`slow` from 1.4 to 2.6 m
  * tall); each plant's amplitudes come with its vertices (Plants.ts `plantWind`). */
 export const PLANT_WIND = { cycles: 30, slow: [ 1.4, 2.6 ] } as const;

@@ -41,7 +41,6 @@ import { pickPlantSites, bakeAnchorContact } from './world/PlantSites.ts';
 import { buildPlants, plantsBox, plantsKind, PlantCache } from './world/Plants.ts';
 import { buildRimFoliage, rimFoliageKind } from './world/RimFoliage.ts';
 import { buildTurfSkirt, turfSkirtKind } from './world/RimSkirt.ts';
-import { buildFlowers, flowersKind, plantFlowers } from './world/Flowers.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
@@ -539,7 +538,8 @@ setLand( land, landOptions.step );
 // rim ground over its own.
 const fields = new WorldFields( data, shared.shoreXform.value );
 const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft );
-// Tall flowers, shrubs and trees keep clear of the islander's walking loop, 5 m in from the coast.
+// The meadow's flowers, the shrubs and the trees keep clear of the islander's walking loop, 5 m in
+// from the coast.
 const walk = walkPoints( data.walk );
 const walkDistance = walkLoopDistance( walk );
 const world = buildWorldMeshes( data, textures, shared, caustics, fields );
@@ -579,14 +579,13 @@ refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
 const foliage = buildFoliage( data.bushes, shared );
 // The island top's shrubs and small trees (PlantSites.ts, Plants.ts), off the walking loop; the
-// grass and flowers then read the anchors' sky visibility with the plants' shade in it.
+// meadow then reads the anchors' sky visibility with the plants' shade in it.
 const plantCache = new PlantCache();
 const plantSites = pickPlantSites( data.vegetation, data.bushes, walkDistance );
 bakeAnchorContact( data.vegetation, plantSites );
 const plants = buildPlants( plantSites, shared, plantCache );
 setGrassQuality( quality.grass );
 const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance ), shared, sunShadow );
-const flowers = buildFlowers( plantFlowers( data.vegetation, walkDistance ), shared );
 const rimFoliage = buildRimFoliage( data.rimStrands, shared, foliage );
 const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
 // The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
@@ -594,7 +593,6 @@ const turfSkirt = buildTurfSkirt( data.rimSkirt, shared );
 const vegetation = new Vegetation();
 vegetation.add( grassKind( grass, renderer ) );
 vegetation.add( foliageKind( foliage ) );
-vegetation.add( flowersKind( flowers ) );
 vegetation.add( rimFoliageKind( rimFoliage ) );
 vegetation.add( turfSkirtKind( turfSkirt ) );
 vegetation.add( plantsKind( plants, plantCache ) );
@@ -645,9 +643,8 @@ const buildIslander = ( name: ProportionName ) => loadVillager( ISLANDER.base, I
 // part of its pipelines' keys) and then the sun's map, one draw at a time and in the order a frame
 // first draws them (the scene's pass, then the map's redraw): a pass into the map shares its
 // material's nodes, and compiled the other way round or side by side, the game's chest came out
-// shaded differently from the chest drawn without them. The game's props come this way, and a
-// grown island's flower species that outgrew its mesh (Growth.ts); this also uploads their
-// buffers. (A grown island's chunks need none: they draw with the loaded chunks' pipelines.)
+// shaded differently from the chest drawn without them. The game's props come this way; this also
+// uploads their buffers. (A grown island's chunks need none: they draw with the loaded chunks' pipelines.)
 async function compileDraws( objects: THREE.Object3D[] ): Promise<void> {
 
 	for ( const object of objects ) await pipeline.graph.latent( 'opaque', [ object ] );
@@ -740,7 +737,6 @@ console.info( `world: ${ worldCache.hits } of ${ worldCache.chunks + 1 } records
 const worldInfo = { worldTriangles: world.triangles, rimStrands: data.rimStrands.length };
 const growth = new Growth( {
 	renderer, world, fields, vegetation, shoreWaves, refractedSun, rain, characters, game,
-	compileDraws,
 	measure: measureLand,
 	onSwap: ( next, version, measured ) => {
 
@@ -2070,7 +2066,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, plants, flowers, rimFoliage, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, foliage, plants, rimFoliage, turfSkirt, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, sky, fft, establishScene, data: () => shownData, vegetation }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes

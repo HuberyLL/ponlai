@@ -50,7 +50,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   tufts grow taller and lean out over the lip instead of thinning (RimGround).
 // - Blades do not cast into the sun's shadow map (narrower than a texel, they flicker as the sun
 //   moves): the meadow shades itself and its turf through MeadowCanopy. What the larger casters
-//   (bushes, trees, flowers, rock) throw onto the blades is soft and light: a few bilinear lookups
+//   (bushes, trees, rock) throw onto the blades is soft and light: a few bilinear lookups
 //   of the sun's map around each vertex (`SunShadow.softVisibility`), no penumbra search, taken in
 //   the vertex stage and handed to the sun's filter in place of its own (`userData.sunVisibility`);
 //   the clouds' shade multiplies in as on every surface (SolarShadow's `installOpenShadow`).

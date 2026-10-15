@@ -21,10 +21,10 @@ import type { Shared } from '../../shared.ts';
 //      `flags.mv.wind` follower, the wind view)
 //   -> the normal and ambient occlusion -> the light through thin leaves (VegetationLighting).
 // Families: 'leaf' (alpha-tested folded leaves: the rim bushes, the rim's trails, the plateau's
-// plants), 'blade' (the meadow's blades: tagged as vegetation, no leaf map, drawn whole or not at
-// all: alpha to coverage at 4x, else `coverageDither`'s threshold), 'petal' (the flowers) and
-// 'sod' (the turf skirt); neither of the last two is tagged, so they take the ordinary shadow
-// filter and stay out of the depth prepass. A leaf's `alphaTest: 'alphaOnly'` keeps no numeric
+// plants), 'blade' (the meadow's blades and flower heads: tagged as vegetation, no leaf map, drawn
+// whole or not at all: alpha to coverage at 4x, else `coverageDither`'s threshold) and 'sod' (the
+// turf skirt: not tagged, so it takes the ordinary shadow filter and stays out of the depth
+// prepass). A leaf's `alphaTest: 'alphaOnly'` keeps no numeric
 // cut-out, as the rim's trails had when they cloned the bushes' material (three's NodeMaterial.copy
 // skips Material's alphaTest setter): the shadow passes and 4x cut them by their alpha alone.
 // The game's palm takes only the wind (`useVegetationMotion`) on its prop surface.
@@ -114,7 +114,7 @@ export interface VegetationLight {
 }
 
 export interface VegetationOptions extends VegetationMotion {
-	family: 'leaf' | 'blade' | 'petal' | 'sod';
+	family: 'leaf' | 'blade' | 'sod';
 	name?: string;
 	/** The dry surface's roughness. */
 	roughness: number;

@@ -9,12 +9,13 @@
 // The contact shade is off (`contactOcclusion: false`): it only sets the anchors' and bushes' sky
 // visibility, which no statistic counts.
 //
-//   meadow  the turf anchors of every chunk, the grass tufts and wildflowers planted on them (from
-//           the chunks' rim ground texels, assembled), per m^2 of land, against the counts before
-//           the anchors were hashed (M2; the lawn's extra tufts, since picked by
-//           hash rather than a field, keep its count). Starting islands are printed only (a fresh
-//           draw moves their 250 flower beds and the extra tufts by up to 25 %); the sum over
-//           the grown islands run (step 8 on) is within 5 % for every kind.
+//   meadow  the turf anchors of every chunk, the grass tufts planted on them and the flowering ones
+//           among the lawn's (from the chunks' rim ground texels, assembled), per m^2 of land,
+//           against the counts before the anchors were hashed (M2; the lawn's
+//           extra tufts, since picked by hash rather than a field, keep its count; the flowers are
+//           the flowering tufts' counts since their density field was sharpened). Starting islands are
+//           printed only (a fresh draw moves the extra tufts by up to 25 %); the sum over the grown
+//           islands run (step 8 on) is within 5 % for every kind.
 //   rim     the chunks' bushes and trail strands. Per island: every trail patch (the strands rooted
 //           at one lip) holds 1 - 9 strands, no node sinks below a quarter of its root's height
 //           above the sea, the median bare run along the coast between patches is 0.4 - 4 m and
@@ -358,17 +359,19 @@ const percent = ( n, m ) => `${ ( ( n / m - 1 ) * 100 ).toFixed( 1 ) } %`;
 // ------------------------------------------------------------------ the meadow
 
 // Counts on the whole island before the hashes (the world worker's
-// anchors, then buildGrass and buildFlowers with the walking loop), by seed / growth step.
+// anchors, then buildGrass with the walking loop), by seed / growth step; `lawn` counts every lawn
+// tuft, flowering or not, and `flowers` the flowering ones (Grass.ts, counted since their density
+// field was sharpened).
 const M2 = {
-	'1/0': { anchors: 7105, lawn: 7004, thin: 1789, flowers: 1556 },
-	'1/8': { anchors: 36163, lawn: 35910, thin: 10150, flowers: 8227 },
-	'1/12': { anchors: 49465, lawn: 49189, thin: 13931, flowers: 11779 },
-	'2/0': { anchors: 7081, lawn: 7013, thin: 1555, flowers: 1702 },
-	'2/8': { anchors: 38584, lawn: 38349, thin: 9271, flowers: 9008 },
-	'2/12': { anchors: 52357, lawn: 52084, thin: 13629, flowers: 12921 },
+	'1/0': { anchors: 7105, lawn: 7004, thin: 1789, flowers: 1038 },
+	'1/8': { anchors: 36163, lawn: 35910, thin: 10150, flowers: 5056 },
+	'1/12': { anchors: 49465, lawn: 49189, thin: 13931, flowers: 7531 },
+	'2/0': { anchors: 7081, lawn: 7013, thin: 1555, flowers: 1026 },
+	'2/8': { anchors: 38584, lawn: 38349, thin: 9271, flowers: 5629 },
+	'2/12': { anchors: 52357, lawn: 52084, thin: 13629, flowers: 8094 },
 };
 
-// Grass.ts, Flowers.ts and WalkLoop.ts build three.js objects (and import modules plain node cannot
+// Grass.ts and WalkLoop.ts build three.js objects (and import modules plain node cannot
 // strip), so they load through Vite's SSR loader, on the main thread only.
 async function loadPlanting() {
 
@@ -379,11 +382,10 @@ async function loadPlanting() {
 		server: { middlewareMode: true, hmr: false, ws: false, watch: null }, optimizeDeps: { noDiscovery: true, include: [] },
 	} );
 	const { plantGrass } = await server.ssrLoadModule( '/src/world/Grass.ts' );
-	const { plantFlowers } = await server.ssrLoadModule( '/src/world/Flowers.ts' );
 	const { walkLoop } = await server.ssrLoadModule( '/src/world/WalkLoop.ts' );
 	const { walkLoopDistance } = await server.ssrLoadModule( '/src/world/WalkPath.ts' );
 	await server.close();
-	return { plantGrass, plantFlowers, walkLoop, walkLoopDistance };
+	return { plantGrass, walkLoop, walkLoopDistance };
 
 }
 
@@ -395,8 +397,8 @@ function meadow( planting, island, chunks, pooled ) {
 	const n = Math.round( S / RIM_CELL );
 	const rimGround = assembleRimGround( chunks.filter( ( c ) => c.rimGround.length > 0 ).map( ( c ) => ( { data: c.rimGround, nx: n, nz: n, x0: c.ci * S, z0: c.cj * S, cell: RIM_CELL } ) ) );
 	const walkDistance = planting.walkLoopDistance( planting.walkLoop( land ) );
-	const tufts = planting.plantGrass( anchors, rimGround ), flowers = planting.plantFlowers( anchors, walkDistance );
-	const counts = { anchors: anchors.length / VEGETATION_STRIDE, lawn: tufts.lawn.length, thin: tufts.lawnThin.length, flowers: flowers.flat().length };
+	const tufts = planting.plantGrass( anchors, rimGround, walkDistance );
+	const counts = { anchors: anchors.length / VEGETATION_STRIDE, lawn: tufts.lawn.length + tufts.lawnFlower.length, thin: tufts.lawnThin.length, flowers: tufts.lawnFlower.length };
 	const area = landArea( land ), reference = M2[ `${ seed }/${ step }` ];
 	console.log( `     meadow seed ${ seed } grow ${ step }: ${ Object.entries( counts ).map( ( [ kind, k ] ) =>
 		`${ kind } ${ ( k / area ).toFixed( 2 ) }/m2${ reference ? ` (${ percent( k, reference[ kind ] ) })` : '' }` ).join( ', ' ) }${ reference ? ' against M2' : '' }` );

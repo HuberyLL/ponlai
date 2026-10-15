@@ -3,8 +3,7 @@ import { Fn, If, float, instanceIndex, instancedArray, uint, vec3, vec4 } from '
 import { Wind, createWindUniforms, packWindState, rootHash, windField, windStateOf, type WindState } from '../weather/Wind.ts';
 import { plantGrass } from '../world/Grass.ts';
 import { bushInstances } from '../world/Foliage.ts';
-import { BUSH_WIND, FLOWER_WIND, PALM_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
-import { plantFlowers } from '../world/Flowers.ts';
+import { BUSH_WIND, PALM_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
@@ -15,8 +14,8 @@ import type { Shared } from '../shared.ts';
 // tools/probe.mjs. Every sway comes from the shaders' own TSL functions (Wind.ts `windField`,
 // vegetation/Deform.ts `bendBlade` and `mainBend` with each kind's constants), evaluated in a compute kernel built on the first
 // call (none exists on a page that never calls it, so the page's pipelines are unchanged), for the
-// plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled), the rim bushes'
-// roots, the flowers' roots, the game's palms. The wind is a copy of the page's (`Wind`, the same
+// plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled; the flowering
+// tufts' heads bend as their blades' tips), the rim bushes' roots, the game's palms. The wind is a copy of the page's (`Wind`, the same
 // speed, heading and scene time), stepped on the CPU and handed to the kernel per step through a
 // storage buffer, so the page's own wind is never touched. Two time series: fast (64 x 0.05 s,
 // the swing) and slow (40 x 0.5 s, the gusts' travel). Options: DEFAULTS below. The result is
@@ -64,7 +63,7 @@ interface Options {
 }
 const DEFAULTS: Options = {
 	tufts: 20000, fast: { steps: 64, dt: 0.05 }, slow: { steps: 40, dt: 0.5 }, anchors: 1500, grid: 0.5,
-	w5: true, kinds: [ 'grass', 'bush', 'flower', 'palm' ], seed: 1,
+	w5: true, kinds: [ 'grass', 'bush', 'palm' ], seed: 1,
 	weathers: [ 'clear', 'fair', 'cloudy', 'overcast' ], presets: [ 'sunrise', 'noon', 'golden-hour', 'midnight' ], gustSpan: 0,
 };
 const STATE = 2; // vec4s per wind step
@@ -172,19 +171,6 @@ function kinds( ctx: WindProbeContext, o: Options ): Kind[] {
 
 			const root = vec3( p.x, p.z, p.y );
 			const bend = mainBend( wind, root.add( vec3( 0, 1, 0 ) ), root, float( BUSH_WIND.amplitude ), BUSH_WIND.cycles );
-			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
-
-		} );
-
-	}
-	if ( o.kinds.includes( 'flower' ) ) {
-
-		const points: number[][] = [];
-		for ( const list of plantFlowers( data.vegetation ) ) for ( const plant of list ) points.push( [ plant.root.x, plant.root.z, plant.root.y, plant.sward + plant.stretch + 0.1 ] );
-		add( 'flower', points, ( wind, p ) => {
-
-			const root = vec3( p.x, p.z, p.y );
-			const bend = mainBend( wind, root.add( vec3( 0, p.w, 0 ) ), root, p.w.mul( FLOWER_WIND.amplitude ), FLOWER_WIND.cycles );
 			return { s: bend.sway, d: bend.field.xy.mul( bend.field.z ) };
 
 		} );
@@ -441,7 +427,7 @@ function inventory( ctx: WindProbeContext ) {
 		const mesh = object as THREE.Mesh;
 		if ( ! mesh.isMesh ) return;
 		const material = ( Array.isArray( mesh.material ) ? mesh.material[ 0 ] : mesh.material ) as THREE.Material;
-		const named = /palm|tree|bush|grass|flower|reed|fern|plant|foliage|leaf|skirt|rim/i.test( `${ mesh.name } ${ material.name }` );
+		const named = /palm|tree|bush|grass|reed|fern|plant|foliage|leaf|skirt|rim/i.test( `${ mesh.name } ${ material.name }` );
 		if ( ! material.userData.vegetation && ! mesh.userData.palm && ! windDisplacement( material ) && ! named ) return;
 		rows.push( {
 			mesh: mesh.name || mesh.type, material: material.name || material.type, parent: mesh.parent?.name,

@@ -43,14 +43,14 @@ import { SeabedRise } from './SeabedRise.ts';
 //   turf skirt, the rim trails, their bounds found in steps: Steps.ts), the shrubs and small trees
 //   (sited off the walking loop, their shade baked into the anchors before the meadow reads them,
 //   only the plants not grown before grown, all copied into one new geometry: Plants.ts), the
-//   meadow (planted a slice of anchors at a step, its cull pool filled), the flowers' and bushes' instances (and a
-//   new mesh, compiled, for a species that outgrew its capacity), each vegetation kind its own part
+//   meadow (planted a slice of anchors at a step, its cull pool filled), the bushes' instances,
+//   each vegetation kind its own part
 //   after the plants' sites, in registry order (vegetation/Registry.ts), the world fields (WorldFields.ts)
 //   and the shore's wave fields (in a worker, ShoreWaves.ts, on a copy of the shore field made in
 //   steps). Every buffer and texture goes up ahead, a slice a step (Upload.ts: buffers mapped at
 //   creation and copies on the GPU, never queue writes, which stalled the page for hundreds of
-//   milliseconds with the GPU busy). The flowers' and bushes' instances are written in place at
-//   the swap (a new instanced mesh would be a node build of tens of milliseconds, Flowers.ts), so
+//   milliseconds with the GPU busy). The bushes' instances are written in place at the swap (a
+//   new instanced mesh would be a node build of tens of milliseconds), so
 //   their data is staged ahead too and three's write at their first draw becomes a copy on the GPU
 //   (Upload.ts stagedWriteSteps): as queue writes, each 256 KB of instance matrices blocked the
 //   main thread for 15-35 ms on a running page, and the first frame after the swap (the rain's map
@@ -62,7 +62,7 @@ import { SeabedRise } from './SeabedRise.ts';
 // - The swap, in the frame's tick before the camera and the shadows update (main.ts's one-line
 //   hook): the changed island meshes out and the new ones in (ordered by chunk, ( cj, ci ), as a
 //   page loaded on that land orders them), the merged kinds' geometry, then each vegetation kind's
-//   swap (the plants' and the trails' geometry, the flowers' and the bushes' instances, the
+//   swap (the plants' and the trails' geometry, the bushes' instances, the
 //   meadow's pool: the cull's storage nodes (vegetation/VegetationCull.ts) pointed at the new buffers),
 //   the fields' changed squares (copied on the GPU) or new textures, the shore's wave fields, the
 //   refracted sun's casters, the walker's loop, and the page's own (main.ts `onSwap`: the land's
@@ -105,9 +105,6 @@ export interface GrowthPage<M = unknown> {
 		setComing( land: LandLattice, bushes: Float32Array, top?: Uint8Array, plants?: Float32Array ): void;
 		setIsland( land: LandLattice, bushes: Float32Array, top?: Uint8Array, plants?: Float32Array ): void;
 	} | null;
-	/** compiles what `objects` draw in the frame's passes, the sun's map included (and uploads
-	 * their buffers) */
-	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
 	/** the page's own land-dependent state, in the swap's frame */
 	/** what the page measures of a land (its box and framing), ahead in a step of the preparation */
 	measure( land: LandLattice ): M;
@@ -139,7 +136,7 @@ interface Prepared<M> {
 	fields: FieldsPrepared;
 	shore: ShoreFields;
 	top: Uint8Array;
-	// the staged in-place writes of the flowers and bushes, freed after the swap
+	// the staged in-place writes of the bushes, freed after the swap
 	staged: ( () => void )[];
 }
 
@@ -504,7 +501,7 @@ export class Growth<M = unknown> {
 		const walk = Villagers.loop( points );
 		yield;
 		// the shrubs and small trees off the loop, and their shade in the anchors' sky visibility
-		// before the meadow and the flowers read it
+		// before the meadow reads it
 		this.stage = 'plants';
 		const plantSites = yield* plantSiteSteps( data.vegetation, data.bushes, walkDistance );
 		yield* anchorContactSteps( data.vegetation, plantSites );
@@ -512,7 +509,7 @@ export class Growth<M = unknown> {
 		// in place at the swap is staged here, so that it is copied on the GPU
 		const staged: ( () => void )[] = [];
 		const input: GrowthInput = {
-			renderer, data, walkDistance, plantSites, compileDraws: ( objects ) => page.compileDraws( objects ), rain: page.rain,
+			renderer, data, walkDistance, plantSites,
 			stage: ( free ) => { if ( free ) staged.push( free ); },
 		};
 		const vegetation: Prepared<M>[ 'vegetation' ] = [];

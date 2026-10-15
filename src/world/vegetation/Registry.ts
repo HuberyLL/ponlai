@@ -1,5 +1,4 @@
 import type * as THREE from 'three/webgpu';
-import type { Rain } from '../../weather/Rain.ts';
 import type { WorldData } from '../types.ts';
 
 // The vegetation's registry: every plant kind the page draws, once, with what it takes part in.
@@ -7,7 +6,7 @@ import type { WorldData } from '../types.ts';
 // caster box, the rain's collision bake; Growth.ts: the kinds' growth and the rain's bake after a
 // swap) instead of naming the kinds at each place.
 // - Order: the kinds are registered in the order the scene held them before (grass, rim bushes,
-//   flowers, rim trails, turf skirt, plateau plants), and every list keeps it: draws of equal
+//   rim trails, turf skirt, plateau plants), and every list keeps it: draws of equal
 //   render order and depth keep their order, and the lists the passes walk are the ones they were.
 // - The depth prepass (`prepass`, VegetationPrepass.ts) and the shadow filter (`shadowFilter`,
 //   SunShadow.ts) are separate choices. The shadow filter is still read from the materials'
@@ -33,9 +32,6 @@ export interface GrowthInput {
 	/** the shrubs and small trees sited on the next land (PlantSites.ts), their shade already baked
 	 * into the anchors */
 	plantSites: Float32Array;
-	/** compiles what `objects` draw in the frame's passes, the sun's map included */
-	compileDraws( objects: THREE.Object3D[] ): Promise<void>;
-	rain: Rain;
 	/** keeps a staged in-place write (Upload.ts stagedWriteSteps) until the swap's frames are done */
 	stage( free: ( () => void ) | null ): void;
 }
@@ -50,7 +46,7 @@ export interface KindGrowth<P> {
 }
 
 export interface VegetationKind<P = unknown> {
-	/** 'grass', 'bushes', 'flowers', 'rim', 'skirt', 'plants' or 'palm' */
+	/** 'grass', 'bushes', 'rim', 'skirt', 'plants' or 'palm' */
 	name: string;
 	/** what the page adds to the scene */
 	root: THREE.Object3D;
