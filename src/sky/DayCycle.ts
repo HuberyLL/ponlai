@@ -113,6 +113,12 @@ const SIDEREAL_DAYS_PER_YEAR = 365.2422;
 export const NIGHT_EXPOSURE_GAIN = 1.25;
 export const NIGHT_EXPOSURE = 4.4 * NIGHT_EXPOSURE_GAIN * 1.6;
 export const NIGHT_SKY_EXPOSURE = 4.4;
+// The exposure in full daylight (the sun above 8 degrees), before the low-sun adaptation and the
+// high-sun trim. It was 2.6; 'neutral-hue' then raised its own exposure by 8 % for a high-key day,
+// which read too bright, so the day's is lowered by as much here (2.6 / 1.08), where only daylight
+// weighs it: the night, at no daylight, keeps its exposure (and the night look's glow threshold,
+// which is divided by the curve's) exactly.
+export const DAY_EXPOSURE = 2.4;
 // The share the exposure is trimmed by under a high sun (see the header).
 export const DAY_EXPOSURE_TRIM = 0.08;
 // Highest elevation (degrees) at which the key may turn from the sun toward the moon: below the
@@ -293,7 +299,7 @@ export class DayCycle {
 			nightAmbient: 1 - smoothstep( - 5, 1, elevation ),
 			// The night sky stays dark through its own scaled light (see NIGHT_SKY_EXPOSURE); the
 			// display lift falls with daylight so blacks do not turn milky.
-			exposure: ( 4.4 * NIGHT_EXPOSURE_GAIN + ( 2.6 - 4.4 * NIGHT_EXPOSURE_GAIN ) * daylight ) * ( 1 + 0.6 * lowSun ) * ( 1 - DAY_EXPOSURE_TRIM * ( 1 - lowSun ) ),
+			exposure: ( 4.4 * NIGHT_EXPOSURE_GAIN + ( DAY_EXPOSURE - 4.4 * NIGHT_EXPOSURE_GAIN ) * daylight ) * ( 1 + 0.6 * lowSun ) * ( 1 - DAY_EXPOSURE_TRIM * ( 1 - lowSun ) ),
 			overcastAdaptation: ( deck + ( 5 - deck ) * dusk ) * ( 1 - daylight ),
 			nightSkyLevel: skyAdaptation / ( 1 + 0.6 * lowSun ),
 			blackLift: NIGHT_BLACK_LIFT + ( DAY_BLACK_LIFT - NIGHT_BLACK_LIFT ) * daylight,

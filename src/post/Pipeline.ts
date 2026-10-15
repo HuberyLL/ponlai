@@ -459,7 +459,8 @@ export class Pipeline {
 	// white and clip it into a flat band of another hue, so it rolls them off below white.
 	// 'neutral-hue' keeps PBR Neutral's grade with two thirds of the split tone, no vibrance and
 	// no extra saturation, plus that knee, a little brighter (8 %) and a little softer (display
-	// contrast below zero) than PBR Neutral, for a high-key, airy day. Its shoulder packs everything bright into the last few
+	// contrast below zero) than PBR Neutral, for a high-key, airy day. By day the clock's exposure
+	// takes the 8 % back (DayCycle `DAY_EXPOSURE`), which leaves the night's exposure untouched. Its shoulder packs everything bright into the last few
 	// percent below white, where the split tone's golden highlights pushed red alone against white
 	// across a sunset sky; the knee starts lower than AgX's to leave red room for gradation. The
 	// daytime horizon is pale and low in chroma: vibrance and a saturation boost for bright colours

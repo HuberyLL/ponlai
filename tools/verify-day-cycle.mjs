@@ -1,7 +1,7 @@
 // Pure CPU checks; Node 22.18+ strips the imported TypeScript without a build or browser.
 // Run: node tools/verify-day-cycle.mjs
 import assert from 'node:assert/strict';
-import { DayCycle, DAY_PRESETS, DAY_BLACK_LIFT, DAY_EXPOSURE_TRIM, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE } from '../src/sky/DayCycle.ts';
+import { DayCycle, DAY_PRESETS, DAY_BLACK_LIFT, DAY_EXPOSURE, DAY_EXPOSURE_TRIM, NIGHT_EXPOSURE, NIGHT_EXPOSURE_GAIN, NIGHT_SKY_EXPOSURE } from '../src/sky/DayCycle.ts';
 
 const near = ( actual, expected, tolerance = 1e-10 ) => assert.ok( Math.abs( actual - expected ) <= tolerance, `${ actual } != ${ expected }` );
 const cycle = new DayCycle();
@@ -50,7 +50,7 @@ for ( let minute = 0; minute <= 1440; minute ++ ) {
 	near( s.moonDir.length(), 1 );
 	near( s.keyDir.length(), 1 );
 	for ( const key of [ 'daylight', 'nightVisibility', 'nightAmbient', 'moonVisibility', 'moonIllumination', 'moonKeyGain' ] ) assert.ok( Number.isFinite( s[ key ] ) && s[ key ] >= 0 && s[ key ] <= 1, key );
-	assert.ok( s.exposure >= 2.6 * ( 1 - DAY_EXPOSURE_TRIM ) - 1e-12 && s.exposure <= NIGHT_EXPOSURE + 1e-12 );
+	assert.ok( s.exposure >= DAY_EXPOSURE * ( 1 - DAY_EXPOSURE_TRIM ) - 1e-12 && s.exposure <= NIGHT_EXPOSURE + 1e-12 );
 	assert.ok( s.blackLift >= 0.002 - 1e-12 && s.blackLift <= DAY_BLACK_LIFT + 1e-12 );
 	// The night's ambient arrives before the stars, across the band where the sun's sky fades.
 	assert.ok( s.nightAmbient >= s.nightVisibility );
@@ -166,8 +166,10 @@ assert.equal( night.daylight, 0 );
 assert.equal( night.nightVisibility, 1 );
 // About one and a half stops of adaptation (the midday trim adds a tenth of a stop), and the
 // night's own gain: the island reads at night while the night sky, whose own light scales back by
-// the adaptation's ratio, stays as dark as it was tuned but for that gain.
-assert.ok( night.exposure / day.exposure < 3 * NIGHT_EXPOSURE_GAIN );
+// the adaptation's ratio, stays as dark as it was tuned but for that gain. By day the default curve
+// ('neutral-hue', Pipeline.ts `looks`) adds 8 % that DAY_EXPOSURE takes back, and the night's
+// curve none, so the ratio is of the day's exposure with that 8 %.
+assert.ok( night.exposure / ( day.exposure * 1.08 ) < 3 * NIGHT_EXPOSURE_GAIN );
 // The night keeps only a trace of the day's black lift, so its blacks do not turn milky.
 assert.ok( night.blackLift < day.blackLift / 5 );
 night.sunDir.set( 0, 0, 0 );
