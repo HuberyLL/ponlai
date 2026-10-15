@@ -1490,6 +1490,9 @@ function tick( time: number ): void {
 		// dim frame, so a crossfade held back to -2 .. -6 degrees left the frame up to a fifth darker
 		// than PBR Neutral's just after sunset, and darker than the night.
 		S.nightLook = 1 - THREE.MathUtils.smoothstep( state.daylight, 0.2, 0.45 );
+		// The night's cooler meadow (Pipeline `nightGreenTurn`): none through the afterglow, all of
+		// it once the sky is navy (the sun from -6 to -19 degrees).
+		S.nightGreen = 1 - THREE.MathUtils.smoothstep( sky.elevation, - 19, - 6 );
 
 	}
 	// the look's sunlit layers follow the weather's sunlight, as the key light does

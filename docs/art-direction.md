@@ -116,6 +116,9 @@ art decision changes; reference images stay out of the repository.
   out with the night, which keeps its authored colours.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The
   moon takes over the key soon after the sun has gone.
+- The night meadow is a dark, readable, cool green turning toward blue-green (not black, olive or
+  teal), turned by the night's own grade rather than by a bluer light, so stone, sand and skin keep
+  their colours.
 - The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
   spread of brightness, below white except the brightest few; only those near the horizon
   scintillate.

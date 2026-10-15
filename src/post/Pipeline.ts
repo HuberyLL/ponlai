@@ -42,7 +42,8 @@ import type { Rain } from '../weather/Rain.ts';
 //   sharp (hdr + the blooms) ── tilt-shift blur (half-res gather, with the depth of field on) ── the
 //   look's diffusion glow
 //   display: the depth of field's mix, the diffusion glow, exposure, tone curve (PBR Neutral with
-//   hue-kept highlights by default), split-tone grade, vibrance, the art-directed look
+//   hue-kept highlights by default), split-tone grade, vibrance, the night's cooler meadow, the
+//   art-directed look
 //   (hue-selective colour, warm / cool split, coloured shadow lift), lifted blacks, vignette,
 //   S-curve, sRGB, grain ── displayRT
 //   ── copied to the screen
@@ -154,7 +155,10 @@ import type { Rain } from '../weather/Rain.ts';
 //   come in as uniforms.
 // - The tone curve and its grade come first; each curve carries its own grade. The night keeps
 //   PBR Neutral's look with its grade whichever curve is chosen, crossfading as the sun sets (from
-//   the horizon to about -3 degrees, so twilight is no darker than under PBR Neutral).
+//   the horizon to about -3 degrees, so twilight is no darker than under PBR Neutral). In the
+//   navy night the grade turns the meadow's greens toward blue-green (`nightGreenTurn`, by the
+//   sun's elevation: `nightGreen`), a grade of its own rather than the look's, which fades out at
+//   night; by day it is skipped and the frame is unchanged.
 // - The look is a layer after the curve and grade, never baked into the lighting or the curve;
 //   every parameter is in the GUI. It fades out with the night, its glow, golden highlights and
 //   lift follow the weather's direct sunlight, and only part of its colour holds under a closed
@@ -371,12 +375,43 @@ export interface PipelineSettings {
 	lookSunlight: number;
 	// 0 by day, 1 at night (from the clock): how far the frame returns to PBR Neutral's look
 	nightLook: number;
+	// 0 by day, 1 in the navy night (from the sun's elevation): how far the meadow's greens turn
+	// toward blue-green (`nightGreenTurn`)
+	nightGreen: number;
 	exposure: number; saturation: number; vibrance: number; contrast: number; split: number;
 	lift: THREE.Color; vignette: number; grain: number;
 	bloomStrength: number; bloomRadius: number; bloomThreshold: number; bloomMaxLum: number; bloomSurfaceMaxLum: number;
 	glowStrength: number; glowRadius: number; glowThreshold: number; glowMaxLum: number;
 	dof: number; dofRange: number; dofMaxRadius: number; focusDistance: number;
 }
+
+// The night's own grade: the meadow's greens turned toward the night's blue-green, by `turn`
+// radians at the centre of the green band (105 degrees, as the look's: it shades off over 55
+// degrees either side), weighted by saturation so grey stone and the navy sea and sky keep their
+// colour. Moonlight and the night ambient are blue, but the meadow's yellow-green albedo kept it a
+// dark olive under them (about 107 degrees, blue a third of green); a light blue enough to turn it
+// would turn the stone, sand and the islanders' skin blue too. A rotation in the opponent plane
+// keeps the mean of the channels, so the meadow keeps its brightness. The turn takes the meadow to
+// about 143 degrees, a cool green toward blue-green: a larger one (0.65, 155 degrees) read as teal.
+const NIGHT_GREEN_TURN = 0.4;
+const nightGreenTurn = Fn( ( [ c0, turn ]: [ V3, F ] ) => {
+
+	const c = c0.toVar();
+	const ca = c.r.sub( c.g.add( c.b ).mul( 0.5 ) ).toVar();
+	const cb = c.g.sub( c.b ).mul( Math.sqrt( 3 ) / 2 ).toVar();
+	// (atan2 ( 0, 0 ) is undefined on some backends; a grey's hue is keyed out below anyway)
+	const hue = atan( cb, select( abs( ca ).add( abs( cb ) ).greaterThan( 1e-7 ), ca, float( 1 ) ) );
+	const peak = max( c.r, max( c.g, c.b ) );
+	const sat = peak.sub( min( c.r, min( c.g, c.b ) ) ).div( max( peak, 1e-5 ) );
+	const band = float( 1 ).sub( smoothstep( 0, 55 * Math.PI / 180, abs( mod( hue.sub( 105 * Math.PI / 180 ).add( Math.PI ), 2 * Math.PI ).sub( Math.PI ) ) ) );
+	const t = band.mul( smoothstep( 0.04, 0.3, sat ) ).mul( turn ).toVar();
+	const ra = ca.mul( cos( t ) ).sub( cb.mul( sin( t ) ) ).toVar();
+	const rb = ca.mul( sin( t ) ).add( cb.mul( cos( t ) ) ).toVar();
+	const m = c.r.add( c.g ).add( c.b ).div( 3 ).toVar();
+	const k = 1 / Math.sqrt( 3 );
+	return max( vec3( m.add( ra.mul( 2 / 3 ) ), m.sub( ra.div( 3 ) ).add( rb.mul( k ) ), m.sub( ra.div( 3 ) ).sub( rb.mul( k ) ) ), vec3( 0 ) );
+
+} ).setLayout( { name: 'nightGreenTurn', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'turn', type: 'float' } ] } );
 
 export class Pipeline {
 
@@ -438,7 +473,7 @@ export class Pipeline {
 	look: LookSettings = cloneLook( this.lookPresets.realistic );
 
 	settings: PipelineSettings = {
-		toneMapping: 'neutral-hue', look: 'realistic', lookSunlight: 1, nightLook: 0,
+		toneMapping: 'neutral-hue', look: 'realistic', lookSunlight: 1, nightLook: 0, nightGreen: 0,
 		// The look's bright midtones and soft shadows are a display grade; keep the
 		// calibrated sunlight and water transport intact, with a nearly neutral black lift.
 		exposure: 2.35, saturation: 0.97, vibrance: 0, contrast: 0.04, split: 0.45,
@@ -510,7 +545,7 @@ export class Pipeline {
 	private u = {
 		// (exposure: the clock's, for PBR Neutral and the depth of field; curveExposure: with the
 		// chosen curve's gain; day: 1 - the night's return to PBR Neutral)
-		curve: uniform( 0 ), day: uniform( 1 ), exposure: uniform( 1 ), curveExposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ), clipGuard: uniform( 0 ), knee: uniform( 0.9 ), highlightSat: uniform( 0 ), burn: uniform( 0 ),
+		curve: uniform( 0 ), day: uniform( 1 ), nightGreen: uniform( 0 ), exposure: uniform( 1 ), curveExposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ), clipGuard: uniform( 0 ), knee: uniform( 0.9 ), highlightSat: uniform( 0 ), burn: uniform( 0 ),
 		lift: uniform( new THREE.Color() ), vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		dof: uniform( 1 ), focus: uniform( 50 ), range: uniform( 3 ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
@@ -1082,6 +1117,13 @@ export class Pipeline {
 			const chroma = max( c.r, max( c.g, c.b ) ).sub( min( c.r, min( c.g, c.b ) ) );
 			const satAmt = u.saturation.add( u.vibrance.mul( float( 1 ).sub( smoothstep( 0, 0.35, chroma.div( max( l2, 1e-3 ) ).mul( 0.5 ) ) ) ) ).add( u.highlightSat.mul( smoothstep( 0.6, 0.9, l2 ) ).mul( float( 1 ).sub( hot ) ) );
 			c.assign( max( mix( vec3( l2 ), c, satAmt ), vec3( 0 ) ) );
+			// the night's cooler meadow (see nightGreenTurn; a uniform branch, so the day's frame is
+			// exactly the grade above)
+			If( u.nightGreen.greaterThan( 0 ), () => {
+
+				c.assign( nightGreenTurn( c, u.nightGreen ) );
+
+			} );
 			// The look (a uniform branch: 'realistic' skips it and keeps the grade above exactly).
 			// (from the view distance where it is kept: a surface's lies below 9e4, the sky's is 1e5)
 			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
@@ -1940,6 +1982,7 @@ export class Pipeline {
 		const day = S.toneMapping === 'neutral' ? 1 : 1 - THREE.MathUtils.clamp( S.nightLook, 0, 1 );
 		const lerp = THREE.MathUtils.lerp;
 		u.curve.value = TONE_CURVES.indexOf( S.toneMapping ); u.day.value = day;
+		u.nightGreen.value = NIGHT_GREEN_TURN * THREE.MathUtils.clamp( S.nightGreen, 0, 1 );
 		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE; u.curveExposure.value = u.exposure.value * look.exposure;
 		u.saturation.value = lerp( night.saturation, S.saturation, day ); u.vibrance.value = lerp( night.vibrance, S.vibrance, day ); u.contrast.value = lerp( night.contrast, S.contrast, day );
 		u.clipGuard.value = look.clipGuard * day; u.highlightSat.value = look.highlightSat * day; u.knee.value = look.knee; u.burn.value = look.burn * day;
