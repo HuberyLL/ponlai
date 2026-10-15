@@ -160,8 +160,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   test mode its frames are compared within a tolerance (`tools/parity/README.md`, Temporal
   tolerance). Its per-frame update reads the scene clock's step, never the wall clock, so a stepped
   clip repeats.
-- The test mode is a paused page under high's MSAA with every history-dependent effect frozen or
-  off, shot once the page's `settled` signal holds (`src/post/Settled.ts`). There a paused frame is
+- The test mode is a paused page, which runs MSAA whatever the tier runs (`Antialiasing.ts`),
+  with every history-dependent effect frozen or off, shot once the page's `settled` signal holds (`src/post/Settled.ts`). There a paused frame is
   exactly repeatable and equals a fresh load's, and refactors are checked byte for byte (the parity
   MSAA sets, `tools/verify-scene-jump.mjs`, `tools/verify-growth-swap.mjs`). Under the temporal
   modes a paused page shows its rest image, its own jitter sequence averaged once converged
@@ -271,7 +271,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The
   anti-aliasing mode (`msaa`, the temporal `taa` and `taau`, `off`) is a load knob of the tier
   (`aa` in `Quality.ts`, whose header says which tier runs which and why: high, the only active
-  tier, runs `msaa`); `aa=` or the GUI picks any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
+  tier, runs `taau`; a paused page runs `msaa`); `aa=` or the GUI picks any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
   `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier. The vegetation's cut-outs are alpha to
   coverage under MSAA only: find vegetation by `userData.vegetation`, never by `alphaToCoverage`
   (`vegetation/Coverage.ts`).
