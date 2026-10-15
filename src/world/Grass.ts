@@ -12,7 +12,7 @@ import { anchorStream, cellStream } from './Anchors.ts';
 import { SWARD_HEIGHT, meadowColor, meadowMoisture, meadowTurf, supportsMeadow } from '../materials/Meadow.ts';
 import { soilUniforms } from '../materials/Soil.ts';
 import { rootHash } from '../weather/Wind.ts';
-import { bendBlade, bladePhase, drown } from './vegetation/Deform.ts';
+import { bendBlade, bladePhase, drown, swayFade } from './vegetation/Deform.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
@@ -79,6 +79,11 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   the same geometry draws every tuft. Tufts bend with the wind field at their root and their
 //   normals turn with the bend, so a gust shows as a sheen (vegetation/Deform.ts `bendBlade`, its
 //   numbers GRASS_WIND, which the wind probe reads too).
+// - A tuft's sway and shiver fade out as it shrinks to a few pixels on screen, its head with it,
+//   while its lean in the gusts stays (Deform.ts `swayFade`): far off, a swinging flower head or
+//   blade under a pixel crosses the multisamples and flashes from frame to frame, and the slow
+//   lean alone shows the gusts sweeping the meadow. A function of the tuft's root and the current
+//   camera, so a paused frame repeats; tufts large on screen sway to the bit as before.
 // - Under the temporal modes a blade's previous position (motion vectors) is its bend under the
 //   previous frame's wind from the same rooted point, widened by this frame's offset: the culled
 //   list keeps each tuft's own slot, so the tuft is the same whichever instance draws it.
@@ -933,7 +938,11 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const across = ground1.xyz.mul( pose.offset.x ).add( ground2.xyz.mul( pose.offset.y ) ).mul( drowned ).mul( float( 1 ).sub( isHead ) );
 	// a head is always kept whole, whatever its tuft keeps of its blades
 	const keep = mix( lod.keep, 1, isHead ), gain = mix( lod.gain, 1, isHead );
-	const bend = bendBlade( shared.wind, rooted, origin, tuft.w, t2, phase );
+	// The tuft's sway fades out as it shrinks to a few pixels on screen, its gusts' lean kept
+	// (`swayFade`); one share for the whole tuft, its head with it, and the same for the previous
+	// frame's bend below, so the motion vectors carry only the wind's change.
+	const fade = swayFade( origin, tuft.w ).toVar( 'grassSwayFade' );
+	const bend = bendBlade( shared.wind, rooted, origin, tuft.w, t2, phase, fade );
 	// A blade of a tuft past 70 m stands for as many of the blades it drew there as its gain over
 	// NEAR_GAIN (exactly 1 within 70 m) and is drawn as that many strips side by side, each with its
 	// own fold, edge and tint (`bladeStrips`): one plain blade 16 times as wide read at the island
@@ -996,11 +1005,11 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
 		// camera: a previous frame's pose from the registered displacement keeps them as they are now.
 		displacement: ( state ) => pixelWideBlade(
-			state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, phase ).position, across, minWidth, keep, gain, isHead, headSize.coverage ),
+			state === shared.wind ? bend.position : bendBlade( state, rooted, origin, tuft.w, t2, phase, fade ).position, across, minWidth, keep, gain, isHead, headSize.coverage ),
 		// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
 		// rooted point, widened by the offset the current pose took (the widening follows the camera,
 		// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
-		previous: ( swayed ) => TEMPORAL ? swayed.sub( bend.position ).add( bendBlade( shared.wind.previous, rooted, origin, tuft.w, t2, phase ).position ) : undefined,
+		previous: ( swayed ) => TEMPORAL ? swayed.sub( bend.position ).add( bendBlade( shared.wind.previous, rooted, origin, tuft.w, t2, phase, fade ).position ) : undefined,
 		// The rest of three's instancing: the normal and the instance colour, before the blade moves.
 		beforePosition: () => {
 

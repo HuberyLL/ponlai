@@ -1,5 +1,5 @@
 import type * as THREE from 'three/webgpu';
-import { vec3, float, fract, mix, dot, max, normalize, length } from 'three/tsl';
+import { vec3, vec4, float, fract, mix, dot, max, normalize, length, smoothstep, cameraViewMatrix, cameraProjectionMatrix, screenSize } from 'three/tsl';
 import { LEAN_REF, gustWave, swayJitter, swingOf, wave, windField, type WindState } from '../../weather/Wind.ts';
 import { puddleCover } from '../../weather/Puddles.ts';
 
@@ -12,8 +12,14 @@ import { puddleCover } from '../../weather/Puddles.ts';
 // (debug/WindProbe.ts) both read. The swings per gust tile set the kind's natural frequency,
 // `swayFrequency( cycles )` Hz (Wind.ts), the same in every wind: a stronger wind leans a plant
 // further and widens its swing (`pressure`, `breeze`), never quickens it. The rates are fair's
-// before the sway and the wind were parted, so a fair day moves as it did. Each function returns nodes; it builds the graph its kind built
-// in place before, in the same order, so the shaders are unchanged.
+// before the sway and the wind were parted, so a fair day moves as it did. Far off the meadow's
+// sway fades out by the tufts' size on screen (`swayFade`) while their lean in the gusts stays: in
+// a still-camera clip of the island view the far meadow's flicker followed the sway (freezing the
+// wind took it to nothing; no sway at all, the gusts' lean kept, halved it), its single-frame
+// flashes mostly flower heads under a pixel crossing the multisamples as they swung, and the slow
+// lean is what shows the wind sweeping the island from afar. Each function returns nodes; it
+// builds the graph its kind built in place before, in the same order, so the shaders are unchanged
+// (the fade multiplies the sway by exactly 1 where a tuft is large on screen).
 
 const TAU = Math.PI * 2;
 
@@ -26,8 +32,14 @@ type F = THREE.Node<'float'>;
 export const PALM_WIND = { cycles: 30, slow: 1 } as const;
 /** The meadow's blades and their flower heads: their sway's swings per gust tile (1.48 Hz) and
  * how far apart the blades swing (a share of a swing), the sway's and the shiver's lean (per metre of the
- * tuft's height, in a still breeze and added at a full gust: `base + gust * field.w`). */
-export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust: 0.02 }, shiver: { base: 0.003, gust: 0.006 } } as const;
+ * tuft's height, in a still breeze and added at a full gust: `base + gust * field.w`), and the
+ * tuft's height on screen (render pixels) below which the sway and shiver fade out (`swayFade`):
+ * whole from `full` up, gone at `none`. At 7 pixels a tuft's blades are well under a pixel wide
+ * before widening; every tuft of the 22 m close view stands taller than that (its frame is
+ * unchanged to the byte, while a full fade at 9 already moved its far edge), and at the island
+ * view the far meadow's sway is gone, which cut its single-frame flashes by two thirds (a later
+ * window, 6.5 to 8.5, cut them only a few per cent more). */
+export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust: 0.02 }, shiver: { base: 0.003, gust: 0.006 }, fade: { none: 4, full: 7 } } as const;
 /** The turf skirt's thatch: its lean at the blade tips (m at LEAN_REF) and its shiver's swings per
  * gust tile (1.9 Hz); the grass hanging from its lip swings as a hanging strand (`hang`,
  * `hangingSway`'s numbers): a blade's weight is its length times the square of the way down it, so
@@ -71,24 +83,40 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
  * from the root, so a bent blade arcs over and sinks rather than stretching. About that lean the
  * blades sway along the wind with their neighbours (Wind.ts `gustWave`, GRASS_WIND.cycles swings
  * per gust tile), each a little apart (`phase`, the blade's own, `bladePhase`, within +-0.4 rad),
- * and shiver across it on their own phase, a quarter of that sway. `wind` is the frame's wind
- * state (`shared.wind`, or `.previous`). Returns the bent position and the lean as a world-space
+ * and shiver across it on their own phase, a quarter of that sway. `fade` (0..1, `swayFade`)
+ * scales the sway and shiver but not the lean; the frame's bend and the previous frame's take the
+ * same one. `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the bent position and the lean as a world-space
  * vector, for the normals (its x, z are the blade's sway for the wind view and probe,
  * src/debug/WindView.ts). The islanders' trail through the grass (a later field) would join the
  * lean here, so the blade arcs over and sinks as under the wind. */
-export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F ): { position: V3; lean: V3 } {
+export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F ): { position: V3; lean: V3 } {
 
 	const field = windField( wind, origin.xz ).toVar();
 	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
 	const { cycles, spread, swing: sw, shiver: sh } = GRASS_WIND;
-	const swing = gustWave( wind, origin.xz, cycles, phase.div( TAU ).sub( 0.5 ).mul( spread ) ).mul( wind.breeze.mul( field.w.mul( sw.gust ).add( sw.base ) ) );
+	const faded = ( n: F ) => fade ? n.mul( fade ) : n;
+	const swing = gustWave( wind, origin.xz, cycles, phase.div( TAU ).sub( 0.5 ).mul( spread ) ).mul( faded( wind.breeze.mul( field.w.mul( sw.gust ).add( sw.base ) ) ) );
 	const flutter = wave( wind.clock, 1.7, phase ).mul( 0.65 ).add( wave( wind.clock, 2.9, phase.mul( 2.3 ) ).mul( 0.35 ) );
-	const shiver = wind.breeze.mul( field.w.mul( sh.gust ).add( sh.base ) ).mul( flutter );
+	const shiver = faded( wind.breeze.mul( field.w.mul( sh.gust ).add( sh.base ) ) ).mul( flutter );
 	const lean = along.mul( field.z.add( swing ) ).add( across.mul( shiver ) ).toVar();
 	const rel = rooted.sub( origin ).toVar();
 	const reach = length( rel );
 	const bent = normalize( rel.add( lean.mul( height.mul( t2 ) ) ).add( vec3( 0, 1e-5, 0 ) ) ).mul( reach ).add( origin );
 	return { position: bent, lean };
+
+}
+
+/** The share of its sway (`bendBlade`'s `fade`) a meadow tuft rooted at `root` keeps by its
+ * `height` (m) on screen in render pixels, height * P[1][1] * screen height / ( 2 * view depth ):
+ * all of it from GRASS_WIND.fade.full pixels up, none below GRASS_WIND.fade.none. Pixels rather
+ * than metres, so the dynamic scale and the zoom's fov keep the rule; the projection's ( 1, 1 ) is
+ * the same jittered or not (the temporal jitter shifts only the clip offsets), so the scene's
+ * projection gives the unjittered size. */
+export function swayFade( root: V3, height: F ): F {
+
+	const depth = max( cameraViewMatrix.mul( vec4( root, 1 ) ).z.negate(), 1e-3 );
+	const p11 = ( cameraProjectionMatrix as unknown as { element( i: number ): { element( i: number ): F } } ).element( 1 ).element( 1 );
+	return smoothstep( GRASS_WIND.fade.none, GRASS_WIND.fade.full, height.mul( p11 ).mul( screenSize.y ).div( depth.mul( 2 ) ) );
 
 }
 
