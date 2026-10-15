@@ -21,6 +21,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { VegetationCull, poolBuffers, poolSteps, type CullBatchInput, type CullBuffers, type CullPayload, type CullPool, type CullRange } from './vegetation/VegetationCull.ts';
 import { AttributeType, uploadSteps } from './Upload.ts';
+import { screenShare, screenShareNode } from './vegetation/Lod.ts';
 import type { VegetationKind } from './vegetation/Registry.ts';
 import type { Shared } from '../shared.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
@@ -59,9 +60,15 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   covered (alpha to coverage drew its sample patterns as a grid of dots along the blades). Close
 //   up blades render unchanged. Single-sampled (`msaa=1`) blades stay one pixel wide.
 // - Each tuft draws fewer blades the farther it stands from the view camera: on high every one of
-//   its 16 within 25 m, easing to 8 at 45 m and to 4 at 70 m, never fewer (GrassQuality). A dropped
-//   blade narrows to nothing over a short distance of its own, and the kept ones widen and cover
-//   for it (`tuftLod`, `pixelWideBlade`), so density and brightness hold. It is a function of the
+//   its 16 within 25 m, easing to 8 at 45 m and to 4 at 70 m (GrassQuality), and beyond that as
+//   vegetation/Lod.ts's rule has it, by ( 70 m / distance )^2 (2 at about 100 m), never
+//   fewer than two (LEAST_BLADES). A dropped blade narrows to nothing over a short distance of its
+//   own, and the kept ones widen and cover for it (`tuftLod`, `pixelWideBlade`), so density and
+//   brightness hold. The island view sees its whole meadow from 120 to 200 m: it drew 4 blades a
+//   tuft there, so the meadow's cost grew with the island's area (its vertex stage: hiding it saved
+//   as much at 1080p as at 1440p), and draws two now. A blade standing in for several of
+//   the 70 m blades draws as that many strips, each its own fold and tint, so the far lawn keeps
+//   its grain (`bladeStrips`). It is a function of the
 //   tuft's distance from the camera's position alone (no hysteresis), so a paused frame does not
 //   depend on the camera's path; other cameras draw every blade. The cull sorts the view's tufts
 //   into bands by the blades they keep and draws each band with only those (`bandCaps`,
@@ -259,6 +266,11 @@ const bladeVerts = uniform( 6, 'uint' ).onObjectUpdate( ( { object } ) => ( obje
 // The blade-count curve (`GrassQuality.lawnBlades` over `bladeBands`), the counts as shares of
 // the lawn's 16; set by `buildGrass`.
 const lodUniforms = { bands: uniform( new THREE.Vector3( 25, 45, 70 ) ), shares: uniform( new THREE.Vector3( 1, 0.5, 0.25 ) ) };
+// Beyond the curve's last distance a tuft keeps its last count times vegetation/Lod.ts's share by
+// distance, but never fewer than this many blades: one widened blade, even drawn as strips, read
+// at the island view as long parallel streaks where the four blades showed a fine grain; two keep
+// the grain at about half the four's cost.
+const LEAST_BLADES = 2;
 // Each tuft's cutoffs move out by up to this share of its distance (a hash of its anchor), so
 // neighbouring tufts drop a given blade at different distances and no ring of half-narrowed
 // blades forms around the camera; never in, so a tuft within the first band keeps every blade.
@@ -266,7 +278,11 @@ const LOD_STAGGER = 0.1;
 // The cull's view of the curve: it bands the tufts by the same count (`bladeCount`); `on` follows
 // `flags.grassLod` for the view's draws, `bands` `flags.grassBands` (false: every tuft in its
 // batch's first band, the one draw of before, for A/Bs).
-const cullLod = { count: ( origin: V3, camera: V3, blades: F, floor: F, on: F ) => bladeCount( origin, camera, blades, floor, on ), on: uniform( 1 ), bands: uniform( 1, 'uint' ) };
+// `pad` is how much farther than its sphere's pad (WIDEN_REACH) a far tuft's widened blades reach.
+const cullLod = {
+	count: ( origin: V3, camera: V3, blades: F, floor: F, on: F ) => bladeCount( origin, camera, blades, floor, on ), on: uniform( 1 ), bands: uniform( 1, 'uint' ),
+	pad: ( count: F, blades: F ) => max( blades.div( count ).sub( NEAR_GAIN ), 0 ).mul( MAX_WIDEN * PAD_HALF_WIDTH ),
+};
 
 /** The share of its blades a tuft of floor `floor` keeps at `distance` (m) from the view camera,
  * the curve `tuftLod` follows ( 1 near on high ); the batches' draw ranges take it at their nearest
@@ -275,14 +291,16 @@ function bladeShare( distance: number, floor: number ): number {
 
 	const [ b0, b1, b2 ] = grassQuality.bladeBands, [ c0, c1, c2 ] = grassQuality.lawnBlades;
 	const s = ( x: number ) => Math.min( Math.max( x, 0 ), 1 );
-	return Math.max( ( c0 + ( c1 - c0 ) * s( ( distance - b0 ) / ( b1 - b0 ) ) + ( c2 - c1 ) * s( ( distance - b1 ) / ( b2 - b1 ) ) ) / LAWN.blades, floor );
+	const near = ( c0 + ( c1 - c0 ) * s( ( distance - b0 ) / ( b1 - b0 ) ) + ( c2 - c1 ) * s( ( distance - b1 ) / ( b2 - b1 ) ) ) / LAWN.blades;
+	return Math.max( near * screenShare( distance, b2 ), floor, LEAST_BLADES / LAWN.blades );
 
 }
 
 // The cull's bands as shares of a tuft's blades (vegetation/VegetationCull.ts): a visible tuft draws in the band of
-// the least cap at or above the blades it keeps. Five bands of a lawn tuft (16, 12, 8, 6, 4 on
-// high) leave about a blade and a half of waste in the 25 to 45 m ring and one beyond; each band
-// is a draw of its own (and one of the depth prepass), most of them nearly empty in close views.
+// the least cap at or above the blades it keeps. Six bands of a lawn tuft (16, 12, 8, 6, 4 and,
+// from the least a tuft keeps, LEAST_BLADES, 2 on high) leave about a blade and a half of waste
+// in the 25 to 45 m ring and one beyond, a blade at most past 70 m; each band is a draw of its own
+// (and one of the depth prepass), most of them nearly empty in close views.
 const BAND_SHARES = [ 1, 0.75, 0.5, 0.375, 0.25 ];
 
 /** A batch's band caps (blades, descending): its most at the tier's nearest share (all its blades
@@ -314,7 +332,10 @@ function bladeCount( origin: V3, camera: V3, blades: F, floor: F, on: F ): F {
 	const { bands, shares } = lodUniforms;
 	const share = mix( shares.x, shares.y, clamp( d.sub( bands.x ).div( bands.y.sub( bands.x ) ), 0, 1 ) )
 		.add( shares.z.sub( shares.y ).mul( clamp( d.sub( bands.y ).div( bands.z.sub( bands.y ) ), 0, 1 ) ) );
-	return mix( blades, blades.mul( max( share, floor ) ), on );
+	// (the share by distance is exactly 1 within the last band and the least count under the
+	// curve's there, so a tuft within 70 m keeps the count it had to the bit)
+	const far = share.mul( screenShareNode( d, bands.z ) );
+	return mix( blades, blades.mul( max( far, max( floor, float( LEAST_BLADES ).div( blades ) ) ) ), on );
 
 }
 
@@ -449,6 +470,22 @@ const FOLD = 0.6, LEAN_NORMAL = 1.0, EDGE = 0.25, EDGE_FROM = 0.7;
 // (every blade vertex takes them), and two keep the shade's cost near half the per-pixel filter's.
 const SHADE_TAPS = 2;
 
+// A far blade's strips (fragment stage): `side` runs from -1 to 1 across the blade, `strips` is
+// how many blades it stands for. Returns the side within the fragment's strip and the strip's own
+// value and tint hashes; a blade of one strip keeps its own, unchanged.
+function bladeStrips( side: F, jitter: F, tint: F, strips: F ) {
+
+	const across = side.mul( 0.5 ).add( 0.5 ).mul( strips ).toVar();
+	const k = across.floor();
+	const far = strips.greaterThan( 1 );
+	return {
+		side: select( far, fract( across ).mul( 2 ).sub( 1 ), side ),
+		jitter: select( far, fract( sin( jitter.mul( 91.7 ).add( k.mul( 37.3 ) ) ).mul( 43758.5453 ) ), jitter ),
+		tint: select( far, fract( sin( tint.mul( 73.1 ).add( k.mul( 19.7 ) ) ).mul( 43758.5453 ) ), tint ),
+	};
+
+}
+
 function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ): THREE.MeshStandardNodeMaterial {
 
 	// The blades' opacity is 0 or 1 (whole blades, below): the factory's 'blade' family draws a
@@ -460,7 +497,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// The tuft's instance data, read as the instanced attributes were: what the fragment stage
 	// reads passes as a varying, as an attribute did.
 	const ground0 = input.ground( 0 ), ground1 = input.ground( 1 ), ground2 = input.ground( 2 );
-	const skyVisibility = varying( ground0.x, 'vGrassSkyVisibility' ), rimCover = varying( ground0.z, 'vGrassRimCover' );
+	const skyVisibility = varying( ground0.x, 'vGrassSkyVisibility' );
 	const tuftOrigin = varying( input.origin, 'vGrassTuftOrigin' );
 	const blade = attribute<'vec4'>( 'blade', 'vec4' );
 	const t = blade.x;
@@ -510,14 +547,21 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const minWidth = mix( grassUniforms.minWidth, grassUniforms.rimMinWidth, ground0.w );
 	const lod = tuftLod( origin );
 	const bend = bendBlade( shared.wind, rooted, origin, tuft.w, t2, phase );
+	// A blade of a tuft past 70 m stands for as many of the blades it drew there as its gain over
+	// NEAR_GAIN (exactly 1 within 70 m) and is drawn as that many strips side by side, each with its
+	// own fold, edge and tint (`bladeStrips`): one plain blade 16 times as wide read at the island
+	// view as a cover of broad leaves, coarser than the blades a few pixels wide it stands for. The
+	// count rides with the rim cover in one varying (the meadow's varyings are near WebGPU's limit).
+	const rimVarying = varying( vec2( ground0.z, max( lod.gain.div( NEAR_GAIN ), 1 ) ), 'vGrassRimCover' );
 	// dark, shaded roots to the tuft's own colour at the tips (the instance colour multiplies in)
-	const cover = rimCover;
+	const cover = rimVarying.x;
+	const strip = bladeStrips( bladeVarying.y, bladeVarying.z, bladeVarying.w, rimVarying.y );
 	// Each blade shifts its value by up to +/-10 % and its hue a hint toward yellow or blue green,
 	// and about one in seven turns a clear yellow green and as many a deep green (BLADE_TINTS): a
 	// hash of the blade and its tuft's anchor, so no two neighbouring blades match. Divided by the
 	// shifts' mean, so the lawn's average colour stays; the blades are far finer than the lawn's
 	// colour field, so they tell apart close up without mottling it.
-	const jitter = bladeVarying.z, tint = bladeVarying.w;
+	const jitter = strip.jitter, tint = strip.tint;
 	const yellow = step( tint, BLADE_TINT_SHARE ), deep = step( 1 - BLADE_TINT_SHARE, tint );
 	const hue = mix( vec3( 0.98, 1, 1.03 ), vec3( 1.02, 1, 0.97 ), tint ).mul( float( 1 ).sub( yellow ).sub( deep ) )
 		.add( vec3( BLADE_TINTS.yellow ).mul( yellow ) ).add( vec3( BLADE_TINTS.deep ).mul( deep ) );
@@ -530,7 +574,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const root = mix( vec3( ROOT ), vec3( 0.55, 0.38, 0.23 ), float( 1 ).sub( cover ).mul( 0.55 ).mul( soilUniforms.strength ) );
 	// The blade's side and width axis, for the edge here and the fold below. The edge is a lighter
 	// rim along the blade's margins, only seen where a blade is several pixels wide.
-	const side = bladeVarying.y;
+	const side = strip.side;
 	const axisView = varying( cameraViewMatrix.mul( vec4( normalize( ground1.xyz.mul( pose.axis.x ).add( ground2.xyz.mul( pose.axis.y ) ) ), 0 ) ).xyz, 'vGrassAxis' );
 	const edge = smoothstepN( EDGE_FROM, 1, abs( side ) ).mul( EDGE ).add( 1 );
 	// A blade's depth in the canopy is its share of the way down its own tuft times the turf's one
@@ -628,8 +672,10 @@ export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; 
 type GrassCull = VegetationCull<Tuft>;
 
 // The cull's bounds of a tuft (`tuftSphere`). Its widened blades reach out by at most WIDEN_REACH
-// times their half width (`MAX_WIDEN` times the largest blade gain, 4: a far tuft keeps a quarter
-// of its blades, less the blade itself), see `pixelWideBlade` and `tuftLod`. SWAY_PAD is slack
+// times their half width (`MAX_WIDEN` times the blade gain at 70 m, NEAR_GAIN: a tuft there keeps
+// a quarter of its blades, less the blade itself), see `pixelWideBlade` and `tuftLod`; a tuft
+// farther out keeps fewer and widens them further, and the cull adds that reach in its kernel
+// (`cullLod.pad`, 0 up to NEAR_GAIN, so the near tufts' test is the one before). SWAY_PAD is slack
 // (m) for rounding: 0.2, wider than the rounding needs, since a tighter sphere changes the visible
 // list and with it a few isolated meadow pixels behind the prepass (VegetationCull's rules); a
 // smaller pad is a performance step of its own. The wind's bend (Deform.ts `bendBlade`) keeps
@@ -637,7 +683,11 @@ type GrassCull = VegetationCull<Tuft>;
 // padded by twice the origin's distance from the sphere's centre, whatever the wind. The thin
 // tufts are culled FOLD_PAD past their fold, so the test never takes a tuft the vertex stage would
 // still draw a sliver of.
-const WIDEN_REACH = 31;
+const NEAR_GAIN = 4;
+const WIDEN_REACH = MAX_WIDEN * NEAR_GAIN - 1;
+// The most a blade's root half width can be in world space, for the far pad: the widest blade's
+// (`tuftGeometry`'s halfWidth) at the widest tuft's scale (PLANT_SPREAD, 1.1 at most).
+const PAD_HALF_WIDTH = ( LAWN.w[ 1 ] * 0.5 + 0.004 ) * PLANT_SPREAD * 1.1;
 const SWAY_PAD = 0.2;
 const FOLD_PAD = 0.01;
 
@@ -943,9 +993,9 @@ export function buildGrass( { lawn, lawnThin }: GrassTufts, shared: Shared, sunS
 	group.name = 'grass';
 	const lawnGeometry = tuftGeometry( LAWN, 3 );
 	// The extra tufts of thick patches draw on their own, so they can be skipped as a whole.
-	// The least share a visible tuft keeps: the curve's last, or a thin tuft's at its fold (the cull
-	// drops it past thinFar).
-	const minShare = grassQuality.lawnBlades[ 2 ] / LAWN.blades;
+	// The least share a visible tuft keeps: two blades far away (LEAST_BLADES), or a thin tuft's at its
+	// fold (the cull drops it past thinFar).
+	const minShare = LEAST_BLADES / LAWN.blades;
 	const thinShare = bladeShare( grassUniforms.thinFar.value + 0.01, 0 );
 	const kinds = [
 		{ geometry: lawnGeometry, shape: LAWN, floor: 0, tufts: lawn, name: 'grass-lawn', thin: false, minShare },
