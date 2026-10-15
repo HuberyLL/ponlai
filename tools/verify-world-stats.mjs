@@ -20,10 +20,10 @@
 //           flowering tufts ( x, z, species ) to <dir>/flowers-<seed>-<step>.json, to map them.
 //   stones  on each seed and step run: no two stones overlap, every crown lies at or below
 //           -1.30 m, every stone lies within its class's reach of its cell (`checkStones`). Once
-//           per run, over seeds 1 - 6 at steps 0, 8 and 16, per 100 m of coast against today's
-//           placement (one running stream) on the same islands: each class within 20 % (TODAY),
-//           so are the large stones (SIZES), and stones of 0.6 m or more within 2.5 m of the coast
-//           lie denser below the wall's scars than elsewhere (today 1.4 times). The density islands
+//           per run, over seeds 1 - 6 at steps 0, 8 and 16, per 100 m of coast against the
+//           placement's own counts on the same islands: each class within 20 % (TODAY), so are the
+//           large stones (SIZES), and stones of 0.6 m or more within 2.5 m of the coast lie denser
+//           below the wall's scars than elsewhere (3 times when the counts were taken). The density islands
 //           place each chunk's stones from its window exactly as `buildChunk` does (its footprint,
 //           local island solid and floor), with their classes; on the seeds and steps run, those
 //           are checked equal to the built chunks' stones.
@@ -44,7 +44,7 @@ import { performance } from 'node:perf_hooks';
 import { growLand, LandLattice } from '../src/world/IslandGrowth.ts';
 import { buildChunk, chunkKeys, landField, landWindow, parseChunkKey, windowFootprint, R, S } from '../src/world/Chunks.ts';
 import { coastWobble, islandSurfaceHeight, landArea, makeIslandSDF, ISLAND_BOTTOM } from '../src/world/WorldShapes.ts';
-import { CliffWall } from '../src/world/Cliff.ts';
+import { CliffWall, REACH_A, REACH_B } from '../src/world/Cliff.ts';
 import { floorAt } from '../src/world/Bathymetry.ts';
 import { placeStones, rockExtent, CELL, REACH } from '../src/world/Stones.ts';
 import { assembleRimGround, RIM_CELL } from '../src/world/RimGround.ts';
@@ -65,20 +65,22 @@ const SCAR = 0.4;
 // the coast's sampling step (m): the band of points just outside the footprint's edge
 const COAST_STEP = 0.25;
 
-// Today's stones per 100 m of coast by class (the cobbles with their blocks), from the running
-// stream's placement on seeds 1 - 6 at steps 0, 8 and 16 (3603 m of coast): 255 in all, as main's
-// 258 on the tile island.
+// Stones per 100 m of coast by class (the cobbles with their blocks) on seeds 1 - 6 at steps 0, 8
+// and 16 (3603 m of coast), since the fallen blocks heap below the wall's fresh scars and the
+// stretches that shed blocks, and the shelf elsewhere is mostly clear (Stones.ts, Cliff.ts cliffEvents): 145 in all. The running
+// stream's even scatter, which these replaced, placed 255 (blocks 71.6, near patches 136.9, outer
+// 35.9, isolated 11.0), read as stones sprinkled round the whole coast.
 const CLASS = [ 'fallen blocks', 'near patches', 'outer patches', 'isolated' ];
-const TODAY = [ 71.6, 136.9, 35.9, 11.0 ];
+const TODAY = [ 57.8, 59.6, 24.2, 3.3 ];
 
-// Today's large stones per 100 m of coast on the same islands: fallen blocks of size 0.6 m or more
+// Large stones per 100 m of coast on the same islands (the scatter's: 28.6, 26.4, 58.0, 4.8): fallen blocks of size 0.6 m or more
 // (the size the cobbles stay below), stones of 0.6 m or more within 2.5 m and within 8 m of the
 // coast, and stones over 1.7 m within 8 m (the largest blocks and the patches' main fragments).
 const SIZES = [
-	{ label: 'fallen blocks', today: 28.6, test: ( r, c ) => c === 0 && r.s >= 0.6 },
-	{ label: 'stones of 0.6 m or more within 2.5 m', today: 26.4, test: ( r, c, d ) => r.s >= 0.6 && d < 2.5 },
-	{ label: 'stones of 0.6 m or more within 8 m', today: 58.0, test: ( r, c, d ) => r.s >= 0.6 && d < 8 },
-	{ label: 'stones over 1.7 m within 8 m', today: 4.8, test: ( r, c, d ) => r.s > 1.7 && d < 8 },
+	{ label: 'fallen blocks', today: 21.4, test: ( r, c ) => c === 0 && r.s >= 0.6 },
+	{ label: 'stones of 0.6 m or more within 2.5 m', today: 15.4, test: ( r, c, d ) => r.s >= 0.6 && d < 2.5 },
+	{ label: 'stones of 0.6 m or more within 8 m', today: 32.1, test: ( r, c, d ) => r.s >= 0.6 && d < 8 },
+	{ label: 'stones over 1.7 m within 8 m', today: 2.4, test: ( r, c, d ) => r.s > 1.7 && d < 8 },
 ];
 
 // The chunk's stones as `buildChunk` places them (its window's footprint, the island solid over the
@@ -122,7 +124,7 @@ function chunkStones( window, ci, cj ) {
 
 // How far a scar may cut from its anchor (m, in x or z; Cliff.ts REACH_A, REACH_B): the joint faces
 // and gullies (tier A), the smaller generations (tier B).
-const SCAR_REACH = ( s ) => s.level === 0 || s.kind === 'gully' ? 4.5 : 3.0;
+const SCAR_REACH = ( s ) => s.level === 0 || s.kind === 'gully' ? REACH_A : REACH_B;
 // The deepest rock the octagon may keep above y -1 (m): a scar that would cut further keeps a
 // step this thick at most where it breaks off. Over seeds 1 - 5 up to step 36 the deepest were
 // 0.3 - 0.45 m; two checked in captures (one a joint face broken off up to the lip) read as a
@@ -195,14 +197,14 @@ function chunkScars( window, ci, cj ) {
 	const plain = new CliffWall( dist, coastWobble, islandSurfaceHeight, far );
 	const tierA = new CliffWall( dist, coastWobble, islandSurfaceHeight, far );
 	// `add` is private in Cliff.ts; the scars come in their canonical order already
-	for ( const s of wall.scars ) if ( SCAR_REACH( s ) === 4.5 ) tierA.add( s );
+	for ( const s of wall.scars ) if ( SCAR_REACH( s ) === REACH_A ) tierA.add( s );
 	const largest = {}, beyond = [], trims = [];
 	let scars = 0, met = 0;
 	for ( const s of wall.scars ) {
 
 		if ( s.cx < box.x0 || s.cx >= box.x1 || s.cz < box.z0 || s.cz >= box.z1 ) continue;
 		scars ++;
-		const base = SCAR_REACH( s ) === 4.5 ? plain : tierA, p = s.planes, h = 0.1, kind = `${ s.kind }${ s.level }`;
+		const base = SCAR_REACH( s ) === REACH_A ? plain : tierA, p = s.planes, h = 0.1, kind = `${ s.kind }${ s.level }`;
 		const where = `a ${ s.kind } (level ${ s.level }) at ( ${ s.cx.toFixed( 2 ) }, ${ s.cz.toFixed( 2 ) } )`;
 		let b = polytopeBox( p, s.n ), reach = 0;
 		for ( let z = Math.floor( b.z0 / h ) * h; z <= b.z1; z += h ) for ( let x = Math.floor( b.x0 / h ) * h; x <= b.x1; x += h ) {
@@ -498,7 +500,7 @@ function checkScars( island, shares ) {
 	const thick = trims.filter( ( t ) => t.deep > TRIM_ABOVE );
 	for ( const m of beyond.slice( 0, 5 ) ) console.log( `     ${ m }` );
 	for ( const t of thick.slice( 0, 5 ) ) console.log( `     ${ t.where } breaks off ${ t.deep.toFixed( 2 ) } m of rock above y -1 at its octagon (at y ${ t.top.toFixed( 2 ) })` );
-	judge( ! beyond.length, `${ label }: ${ scars } scars, ${ beyond.length } cut rock beyond their reach (tier A 4.5 m, tier B 3 m); largest per kind (m): ` +
+	judge( ! beyond.length, `${ label }: ${ scars } scars, ${ beyond.length } cut rock beyond their reach (tier A ${ REACH_A } m, tier B ${ REACH_B } m); largest per kind (m): ` +
 		Object.entries( largest ).sort().map( ( [ k, v ] ) => `${ k } ${ v.toFixed( 2 ) }` ).join( ', ' ) );
 	judge( ! thick.length, `${ label }: ${ met } scars meet their octagon, ${ trims.length } of them break off rock above y -1, ${ thick.length } more than ${ TRIM_ABOVE } m; deepest (m): ` +
 		( trims.slice( 0, 3 ).map( ( t ) => `${ t.kind } ${ t.deep.toFixed( 2 ) }` ).join( ', ' ) || 'none' ) );
@@ -525,7 +527,7 @@ function checkDensity( islands ) {
 	judge( large.every( ( p, n ) => Math.abs( p / SIZES[ n ].today - 1 ) <= 0.2 ), `large stones per 100 m of coast, within 20 % of today's: ` +
 		`${ large.map( ( p, n ) => `${ SIZES[ n ].label } ${ p.toFixed( 1 ) } (today ${ SIZES[ n ].today })` ).join( ', ' ) }` );
 	const ratio = ( nearScar / scarred ) / ( nearOther / ( coast - scarred ) );
-	judge( ratio > 1, `stones of 0.6 m or more within 2.5 m: ${ ratio.toFixed( 2 ) } times as dense below the scars (${ scarred.toFixed( 0 ) } m) as elsewhere (more than 1; today 1.40)` );
+	judge( ratio > 1, `stones of 0.6 m or more within 2.5 m: ${ ratio.toFixed( 2 ) } times as dense below the scars (${ scarred.toFixed( 0 ) } m) as elsewhere (more than 1; 3.12 when the counts were taken)` );
 
 }
 

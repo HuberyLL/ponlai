@@ -2,12 +2,13 @@
 // (makeRockSDF). Runs in the mesh worker.
 //
 // Stones come in groups, each grown from one cell of a world-anchored grid, by class:
-//   A  fallen blocks (6 m cells over the coast): blocks broken off the wall, gathered below its
-//      recent scars and where it sheds more, each walked out from a coast point until its traced
+//   A  fallen blocks (6 m cells over the coast): blocks broken off the wall, heaped below its
+//      fresh scars and the stretches of coast that shed blocks (Cliff.ts cliffEvents), each walked out from a coast point until its traced
 //      outline clears the island's solid, so it rests against the cliff's underwater toe wherever
 //      it runs (a few roll on down the talus), with up to three cobbles spalled from it;
 //   B  near patches (7 m cells, 1.6 - 6.5 m out, none within 5.2 m of a higher-priority one):
-//      debris patches on the shelf, a large main fragment, a few medium ones and gravel;
+//      debris patches on the shelf, a large main fragment, a few medium ones and gravel, up to three
+//      times as likely off a fall;
 //   C  outer patches (20 m cells, 9 - 24 m out): fewer, smaller patches;
 //   D  isolated stones (9 m cells, 9 - 24 m out, none within 1.4 major axes of an outer patch):
 //      single fragments, leaving broad sand corridors on the outer shelf.
@@ -37,13 +38,20 @@
 // This replaced 2 m fallen-block cells of one block each and priority by class: neighbouring blocks
 // then dropped each other as a thinning does, packing about two thirds as densely as the running
 // stream, and the patches' main fragments fell under the blocks with no retry, so the large stones
-// were lost. Dropped stones are still never retried, so the shares below are set to keep each
-// class's stones per metre of coast, and the large stones near the coast, within a fifth of the
-// running stream's (tools/verify-world-stats.mjs checks both).
+// were lost. Dropped stones are still never retried.
+//
+// Large blocks heap only below the stretches that shed them (cliffEvents), and elsewhere the shelf is mostly clear: an even
+// scatter round the whole coast (the running stream's 255 stones per 100 m, large ones as close
+// together as at random, none of the coast without them) read as stones sprinkled on. The shares
+// below give about 145 per 100 m, the large stones within 12 m of the coast clustered (Clark-Evans
+// 0.8 - 0.9 on seeds 1 - 3 at step 12) and up to a fifth of the coast without one;
+// tools/verify-world-stats.mjs keeps each class's stones per metre of coast, and the large stones
+// near the coast, within a fifth of those counts.
 
 import { noise3, hash3i, mulberry32, smoothstep, type Rng } from './noise.ts';
 import { LAND_REACH, type Bounds, type Footprint, type HeightFn } from './WorldShapes.ts';
 import type { SDF, Rock } from './types.ts';
+import { cliffEvents } from './Cliff.ts';
 
 // ------------------------------------------------------------------ classes
 
@@ -99,13 +107,11 @@ export const STONES_READ = 2 * 0.98 * EXTENT * BLOCK_MAX + CLASSES[ A ].cell + 2
 
 // Fallen blocks: a 6 m cell near the coast tries BLOCK_TRIES points in it, each taking a block
 // where its draw falls below the wall's shed there times K_A and the block clears the group's own
-// list; the tries saturate the list where the wall sheds, the shed still gathering more blocks
-// under the scars. The other classes: the share of cells that take a group, which with the
-// exclusions above gives the running stream's patches and isolated stones per metre of coast (near
-// patches 8.4 per 100 m against its 8.8, isolated stones 10.5 against 11). A near patch draws 19 - 24
-// stones, the running stream's 14 - 19 and what the blocks overlapping it drop: patches beside the
-// toe keep about half, those farther out nearly all.
-const BLOCK_TRIES = 24, K_A = 3, P_NEAR = 0.95, P_OUTER = 0.42, P_ISOLATED = 0.45;
+// list; the tries saturate the list below a fall. The other classes: the share of cells that take a
+// group (a near patch's scaled by the fall at its coast point). A near patch draws 19 - 24 stones,
+// the running stream's 14 - 19 and what the blocks overlapping it drop: patches beside the toe keep
+// about half, those farther out nearly all.
+const BLOCK_TRIES = 24, K_A = 2, P_NEAR = 0.35, P_OUTER = 0.25, P_ISOLATED = 0.12;
 
 // ------------------------------------------------------------------ stone shapes
 
@@ -302,10 +308,10 @@ export function placeStones( fp: Footprint, floor: HeightFn, island: SDF, own: B
 		return l < 1e-6 ? [ 0, 0 ] : [ nx / l, nz / l ];
 
 	};
-	// How much the wall sheds above a point at its foot: under its recent scars, and in runs where
-	// a world-space field says it sheds more.
+	// How much the wall sheds above a point at its foot: under its recent scars, and along the
+	// stretches where the coast sheds blocks (cliffEvents).
 	const shed = ( x: number, z: number ) => Math.max( island.shed?.( x, z ) ?? 0,
-		smoothstep( - 0.2, 0.15, noise3( x * 0.085 + 4.9, 12.7, z * 0.085 - 2.3 ) ) * 0.7 );
+		smoothstep( 0.45, 0.85, cliffEvents( x, z ) ) * 0.9 );
 	// Whether a point lies within its group's reach of the group's cell. Every stone a group tries,
 	// kept or not, is tested first, so a group reads nothing beyond its reach and its probes.
 	const within = ( g: Group, x: number, z: number ): boolean => {
@@ -645,7 +651,14 @@ export function placeStones( fp: Footprint, floor: HeightFn, island: SDF, own: B
 			x = ( ci + 0.5 + ( rng() - 0.5 ) * jitter ) * cell;
 			z = ( cj + 0.5 + ( rng() - 0.5 ) * jitter ) * cell;
 			const u = rng(), d = dist( x, z );
-			if ( cls === B ) ok = d >= 1.6 && d < 6.5 && u < P_NEAR;
+			if ( cls === B ) {
+
+				// (debris patches lie mostly off the wall's falls: cliffEvents at the coast point
+				// inside the patch's point)
+				const [ nx, nz ] = normal( x, z );
+				ok = d >= 1.6 && d < 6.5 && u < P_NEAR * ( 1 + 2 * cliffEvents( x - nx * d, z - nz * d ) );
+
+			}
 			else ok = d >= 9 && d < LAND_REACH && u < ( cls === C ? P_OUTER : P_ISOLATED );
 
 		}

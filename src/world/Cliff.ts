@@ -24,6 +24,10 @@
 // a step, rather than small pockets: those, and pairs of pockets side by side, read as dark holes
 // (eyes) in the shade, and many small rounded ones as the lumps of dissolved limestone. The field stays a true distance inside each block
 // (gradient 1), so the dual-contouring surface nets keep facets flat and their edges crisp.
+// `cliffEvents` is the coast's field of large falls (discs hashed per world cell, more of them on
+// active stretches of a fixed-seed noise): the stretches that shed blocks, where the sea's blocks
+// heap (Stones.ts) and whatever else must agree on them reads it. The wall's own scars do not read
+// it: the face keeps one density of scars everywhere.
 // Every scar is seeded from a coast point hashed from its position in a world-anchored cell, and
 // placed in two tiers: the joint faces and gullies on the plain face, the smaller generations on
 // the face with those cut out. Each scar reaches a bounded distance from its anchor and they are
@@ -150,6 +154,44 @@ function exposureAt( dist: Field, x: number, z: number ): number {
 
 }
 
+// How active the coast is here (0 a quiet stretch .. 1 an active one), for cliffEvents only: a
+// world-anchored noise of fixed seeds, so a stretch keeps its character as the land grows; about
+// half the coast is quiet, a quarter ordinary and a quarter active.
+function activity( x: number, z: number ): number {
+
+	return smoothstep( - 0.05, 0.38, noise3( x * 0.04 + 3.3, 7.7, z * 0.04 - 1.9 ) * 0.8 + noise3( x * 0.11 - 5.2, 3.1, z * 0.11 + 2.4 ) * 0.35 );
+
+}
+
+/**
+ * The coast's large falls (0 none .. 1 inside one): now and then, more often on an active stretch,
+ * one fall a few metres wide, their sizes a long tail. Each world-anchored FALL_CELL cell may hold
+ * one fall, a disc round a point hashed in the cell, its radius 1.8 - 3.4 m (most near the small
+ * end). The fallen blocks gather below it (Stones.ts), and whatever else must agree on where the
+ * coast sheds blocks reads it too; the wall's scars do not. A function of the point alone, of
+ * fixed seeds.
+ */
+export function cliffEvents( x: number, z: number ): number {
+
+	const ci = Math.floor( x / FALL_CELL ), cj = Math.floor( z / FALL_CELL );
+	let e = 0;
+	for ( let j = cj - 1; j <= cj + 1; j ++ ) for ( let i = ci - 1; i <= ci + 1; i ++ ) {
+
+		const px = ( i + 0.15 + hash3i( i, j, 5113 ) * 0.7 ) * FALL_CELL, pz = ( j + 0.15 + hash3i( i, j, 5119 ) * 0.7 ) * FALL_CELL;
+		const rr = hash3i( i, j, 5123 ), R = 1.8 + 1.6 * rr * rr;
+		const d = Math.hypot( x - px, z - pz );
+		if ( d >= R ) continue;
+		// (a fall in every cell where the coast is active, in a fifth where it is quiet)
+		if ( hash3i( i, j, 5101 ) >= Math.min( 1, 0.2 + 2 * activity( px, pz ) ) ) continue;
+		e = Math.max( e, 1 - smoothstep( 0.7, 1, d / R ) );
+
+	}
+	return e;
+
+}
+// the side of the cells that hold at most one fall each (m)
+const FALL_CELL = 7;
+
 // ------------------------------------------------------------------ scars
 
 // A block the cliff has shed: the convex intersection of half-spaces n . p <= c. Its inner faces
@@ -209,7 +251,7 @@ const GULLY = { spacing: 3.7, keep: 0.55, level: LEVELS.length };
 // joint face whose leaning sides splay out at the toe, or that runs straight on across a bay) end
 // there in vertical breaks across the scar, in its own frame, rather than in a cut along the
 // world's axes.
-const REACH_A = 4.5, REACH_B = 3.0;
+export const REACH_A = 4.5, REACH_B = 3.0;
 // No scar reaches further behind the face than this (m), so the meadow keeps its plateau.
 const MAX_REACH = 1.3;
 // The meadow's planting height: a floor cut into the lip stays clear below it.

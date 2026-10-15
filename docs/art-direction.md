@@ -54,7 +54,9 @@ art decision changes; reference images stay out of the repository.
   drifting toward a square or a circle. Keep a flat central plateau. Natural contour, slope and
   weathering variation belong to the outer rim and cliffs.
 - Offshore stones stay submerged and form patchy seabed detail: no exposed sea stacks or reefs;
-  nothing breaks the surface off the island.
+  nothing breaks the surface off the island. Large blocks heap below the stretches of coast that
+  shed them; elsewhere the shelf is mostly clear sand and platform, never stones sprinkled evenly
+  round the coast.
 - The cliffs read as natural rock, never masonry: no level courses or evenly spaced joints, no
   lumps of dissolved limestone. A weathered face that has shed blocks along its joints and beds,
   breaks sharp above the waves and rounded only in the wave zone. No pocket reads as a black hole
