@@ -51,6 +51,13 @@ import * as R from './Resources.ts';
 //     SampleInputColor( uv ), SampleInputDepth( uv )   (no pass calls them; optional)
 //   Out-of-bounds coordinates reach LoadInputMotionVector only with display-resolution motion
 //   vectors; an accessor returns 0 there, as a D3D load does.
+//   Every accessor builds and returns a new node on each call (or returns a uniform node), never
+//   one node it keeps: three r186 assigns a texture read (and any temporary used twice) to a
+//   variable where it is first built and reads that variable at every later use, and the kernels
+//   first call some accessors inside a branch (`Exposure()` inside the accumulate kernel's
+//   reprojection and LumaInstability's `If`), so a kept node would read 0 on every pixel that
+//   skips the branch. A float uniform is emitted as its uniform at each use (the page's exposure,
+//   `Pipeline.ts`'s curveExposure: seen in the generated accumulate kernel).
 // - `setFrame( plan )` each frame before the dispatches: copies the plan's constants into the
 //   uniforms and points every ping-pong and aliased binding at this frame's side (a new bind
 //   group, no new pipeline).
