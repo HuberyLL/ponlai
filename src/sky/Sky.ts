@@ -16,6 +16,7 @@ import { Clouds, EVOLVE_PERIOD, type CloudViewScale } from './Clouds.ts';
 import { NightSky } from './NightSky.ts';
 import { Lightning } from '../weather/Lightning.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { shared } from '../shared.ts';
 import { compileInto } from '../post/graph/Compile.ts';
 import { TEMPORAL } from '../post/Antialiasing.ts';
 import { jitter } from '../post/Jitter.ts';
@@ -816,8 +817,10 @@ export class Sky {
 	}
 
 	/** Advance the cloud field for this frame: wind, slow evolution and the view from `camera`,
-	 * whose drawing buffer is `width` by `height` pixels. */
-	updateClouds( camera: THREE.PerspectiveCamera, width: number, height: number, windOffset: THREE.Vector2, windDirection: THREE.Vector2, time: number ): void {
+	 * whose drawing buffer is `width` by `height` pixels. The clouds drift by the surface wind's
+	 * integrated displacement (`shared.wind.displacement`, Clouds.setDrift), at their own rates
+	 * aloft; `_surfaceOffset` (the wind's own `cloudOffset`) is no longer read. */
+	updateClouds( camera: THREE.PerspectiveCamera, width: number, height: number, _surfaceOffset: THREE.Vector2, windDirection: THREE.Vector2, time: number ): void {
 
 		if ( ! this.clouds.ready ) return;
 		this.viewCamera = camera;
@@ -827,11 +830,12 @@ export class Sky {
 		this.cloudTime = time;
 		const display = this.renderer.getSize( this.displaySize );
 		this.clouds.setDisplay( display.x, display.y, this.renderer.getPixelRatio() );
-		this.clouds.setWindOffset( windOffset );
 		// Weather arrives from upwind.
 		this.clouds.frontAxis.value.copy( windDirection ).negate().normalize();
 		this.clouds.cirrusAxis.value.copy( windDirection ).normalize();
-		// The shape of the clouds evolves at about two thirds of the trade wind's drift.
+		this.clouds.setDrift( shared.wind.displacement.value );
+		// The clouds' inner structure rises through them at 2.5 m/s, as a cumulus' turrets do
+		// (the rain curtains fall by the same clock).
 		this.clouds.evolve.value = ( time * 2.5 ) % EVOLVE_PERIOD;
 		this.night.time.value = time;
 		this.viewer.copy( camera.position );
