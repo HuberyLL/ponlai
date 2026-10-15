@@ -389,27 +389,31 @@ export class Pipeline {
 	// it greys every channel's midtones). 'agx-hue' keeps its highlights' colour up to white, where
 	// that boost and the split tone's golden highlights would push the brightest channel past
 	// white and clip it into a flat band of another hue, so it rolls them off below white.
-	// 'neutral-hue' keeps PBR Neutral's grade, plus that knee and a little saturation for bright
-	// colours only. Its shoulder packs everything bright into the last few percent below white,
-	// where the split tone's golden highlights pushed red alone against white across a sunset sky;
-	// the knee starts lower than AgX's to leave red room for gradation. The extra saturation gives
-	// a low sun's sky and sea the colour they have under 'agx-hue' without regrading the sea and
-	// land, which stay darker than its window. Both are released (`burn`) for scene colours from
-	// eight to 32 times white, above the brightest sky: the knee alone held every channel below
-	// about 0.95, and the curve's shoulder packs everything above white into its last few
+	// 'neutral-hue' keeps PBR Neutral's grade with two thirds of the split tone, no vibrance and
+	// no extra saturation, plus that knee. Its shoulder packs everything bright into the last few
+	// percent below white, where the split tone's golden highlights pushed red alone against white
+	// across a sunset sky; the knee starts lower than AgX's to leave red room for gradation. The
+	// daytime horizon is pale and low in chroma: vibrance and a saturation boost for bright colours
+	// lifted it into a saturated band, which the golden highlights turned cyan, where a hazy sea
+	// sky is milky; a sunset sky, already saturated, kept its colour without them. The knee is
+	// released (`burn`) for scene colours from eight to 32 times white, above the brightest sky:
+	// alone it held every channel below about 0.95, and the curve's shoulder packs everything above white into its last few
 	// percent, so the sun's glints on the sea read as one flat peach. Released, their whitened
 	// cores clip to white, where a single pinned channel no longer shows as a band.
 	readonly looks: Record<ToneCurve, ToneLook> = {
 		'agx-hue': { exposure: 0.78, saturation: 1.2, vibrance: 0.3, contrast: 0.38, split: 1, lift: 1, clipGuard: 1, knee: 0.9, highlightSat: 0, burn: 0 },
 		agx: { exposure: 0.8, saturation: 1.3, vibrance: 0.4, contrast: 0.35, split: 1, lift: 1, clipGuard: 0, knee: 0.9, highlightSat: 0, burn: 0 },
 		neutral: { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1, clipGuard: 0, knee: 0.9, highlightSat: 0, burn: 0 },
-		'neutral-hue': { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1, clipGuard: 1, knee: 0.8, highlightSat: 0.3, burn: 1 },
+		'neutral-hue': { exposure: 1, saturation: 0.97, vibrance: 0, contrast: 0.04, split: 0.67, lift: 1, clipGuard: 1, knee: 0.8, highlightSat: 0, burn: 1 },
 	};
 	// The fantasy presets are tuned on 'neutral-hue'. Its linear midtones pass the glow (added
 	// before the curve) through almost as it is, and its shoulder keeps the glow's warm hue where
 	// AgX's compressed and whitened it, so the glow is weaker, narrower and less warm than it was on
 	// AgX; and its darker, more saturated toe made the coloured shadow lift read as haze on the deep
-	// water, so the lift and the cool shadow tone are smaller too.
+	// water, so the lift and the cool shadow tone are smaller too. 'soft-fantasy' turns the
+	// greens about 11 degrees toward pure green and takes a tenth off their brightness, so the
+	// sunlit meadow reads fresh and cool rather than straw-yellow and does not outshine the sky,
+	// and adds no luminance contrast: the day stays soft (its depth comes from the light).
 	readonly lookPresets: Record<LookName, LookSettings> = {
 		realistic: {
 			glow: 0, glowThreshold: 0.6, glowRadius: 0.8, glowWarmth: 0, glowHalo: 1,
@@ -419,9 +423,9 @@ export class Pipeline {
 		},
 		'soft-fantasy': {
 			glow: 0.12, glowThreshold: 1.0, glowRadius: 0.7, glowWarmth: 0.25, glowHalo: 0.15,
-			greenSaturation: 0.25, greenBrightness: 0.02, greenHue: 0.06, tealSaturation: 0.12, tealBrightness: 0.02, tealHue: 0.04,
+			greenSaturation: 0.25, greenBrightness: - 0.1, greenHue: 0.2, tealSaturation: 0.12, tealBrightness: 0.02, tealHue: 0.04,
 			shadowTint: new THREE.Color( 0.55, 0.85, 1.0 ), shadowTone: 0.18, highlightTint: new THREE.Color( 1.0, 0.86, 0.6 ), highlightTone: 0.25, pivot: 0.18,
-			shadowLift: 0.01, contrast: 0.08, vignette: 0.06, sky: 0.25, overcast: 0.5,
+			shadowLift: 0.01, contrast: 0, vignette: 0.06, sky: 0.25, overcast: 0.5,
 		},
 		'rich-fantasy': {
 			glow: 0.2, glowThreshold: 0.9, glowRadius: 0.75, glowWarmth: 0.4, glowHalo: 0.15,
@@ -437,7 +441,7 @@ export class Pipeline {
 		toneMapping: 'neutral-hue', look: 'realistic', lookSunlight: 1, nightLook: 0,
 		// The look's bright midtones and soft shadows are a display grade; keep the
 		// calibrated sunlight and water transport intact, with a nearly neutral black lift.
-		exposure: 2.35, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 0.45,
+		exposure: 2.35, saturation: 0.97, vibrance: 0, contrast: 0.04, split: 0.45,
 		lift: new THREE.Color( DAY_BLACK_LIFT, DAY_BLACK_LIFT, DAY_BLACK_LIFT * 0.97 ),
 		vignette: 0.06, grain: 0.004,
 		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0, bloomSurfaceMaxLum: 2.0,

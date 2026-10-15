@@ -7,15 +7,18 @@ art decision changes; reference images stay out of the repository.
 ## The look
 
 - A small stylised island in an open sea, a visual sample for a game. Stylised fantasy-realistic:
-  a physically based scene graded toward a painted game's colour, with warm golden light, softly
-  glowing highlights, airy lifted shadows, rich greens, deep teal water with a sparkling glare
-  toward the sun, chunky chiselled stone, a lush meadow with bushes and wildflowers, and irregular
-  hanging leaf clusters around the rim. Keep the lower cliff stone exposed.
+  a physically based scene graded toward a painted game's colour. By day the light is high-key,
+  airy and soft: a near-white sun, a milky horizon that glows wide and cream on the side toward
+  the sun, fresh cool greens; a low sun's light turns warm and golden. Softly glowing highlights,
+  airy lifted shadows, deep teal water with a sparkling glare toward the sun, chunky chiselled
+  stone, a lush meadow with bushes and wildflowers, and irregular hanging leaf clusters around
+  the rim. Keep the lower cliff stone exposed.
 - The fantasy look is an art-directed layer over the physically based image (a soft glow round
-  the island's highlights, richer greens and teal water, golden highlights over cool teal shadows,
-  a shadow lift that keeps a shadow's saturation, a little depth), never baked into the lighting or
-  the tone curve. It never lays a veil over the scene nor a haze over backlit foliage; grey stone
-  and skin keep their colour; a dark meadow under a low sun stays green, not olive-grey.
+  the island's highlights, greens turned toward pure green and a touch darker, richer teal water,
+  golden highlights over cool teal shadows, a shadow lift that keeps a shadow's saturation, no
+  added contrast), never baked into the lighting or the tone curve. It never lays a veil over the
+  scene nor a haze over backlit foliage; grey stone and skin keep their colour; a dark meadow
+  under a low sun stays green, not olive-grey.
   `soft-fantasy` is the default, `rich-fantasy` a bolder step toward a painted scene, `realistic`
   the plain image for comparison (`src/post/Pipeline.ts`).
 - The tone curve keeps the water clear (deep sea dark and saturated, the shallows' seabed and
@@ -61,12 +64,15 @@ art decision changes; reference images stay out of the repository.
   shaded, with a thin lighter edge, and differs a little in value and tint (now and then a yellower
   or a deeper green), all of it far finer than any patch, so the lawn's average stays one colour.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
-  over the blades, which reads as plastic): the gaps between blades a deeper, cooler green (never
-  near black), the tips lighter and yellow-green where the sun shines through them; only a gentle,
-  broad swing of its value; no clumps, tall islands or bare patches, and no pattern of dots on the
-  blades. Inside the grass there are no hard shadows, only an even darkening toward the ground;
-  the shade of bushes and trees lies on it soft and light, and cloud shadows pass over the whole
-  island as one soft gradient. The turf under the blades is the deeper green of their lower part,
+  over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
+  near black) under tips that stand out lighter and yellow-green where the sun shines through
+  them; looking toward the sun the whole lawn glows, away from it it is plainer and greener; no
+  clumps, tall islands or bare patches, and no pattern of dots on the blades. Inside the grass
+  there are no hard shadows, only an even darkening toward the ground; the shade of bushes and
+  trees lies on it soft and light. Cloud shadows are soft patches a few tens of metres across
+  that drift slowly over the island and the sea with the wind: none under a clear sky, some in
+  fair weather, more and softer as cloud gathers, merging into one even shade under overcast.
+  The light moves; nothing dark is painted onto the ground. The turf under the blades is the deeper green of their lower part,
   so from afar the meadow reads as one smooth carpet. By night the lawn is a dark blue-green, its
   blades lit only as the moon's own strength allows. Toward the coast the tufts grow taller and lean out over the lip
   instead of thinning, and the lip alternates between overgrown stretches and cut-open root soil.
@@ -86,7 +92,9 @@ art decision changes; reference images stay out of the repository.
   and the production page until the game needs them; the notes on them below stand for their revival.
 - The sea is calm in everyday weather: no shore foam or whitecaps. Only a storm's gale builds a
   rough sea with whitecaps, trailing foam and spray. The sea continues to the horizon.
-- One dominant key light, sun by day and moon by night. A low sun's light stays golden orange. The
+- One dominant key light, sun by day and moon by night. By day the sun is near white and the air
+  hazy: the horizon reads milky white rather than a cyan band, brightest toward the sun. A low
+  sun's light stays golden orange. The
   sun and moon are drawn at twice their true size. The day cycle is authored, not astronomical.
 - Bad weather dims and desaturates the existing light; it never adds a grey screen veil, and it
   stays dimmer and greyer than a clear day. Distant air leaves the island's foreground clear as

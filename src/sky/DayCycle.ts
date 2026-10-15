@@ -5,13 +5,17 @@ import { Matrix3, Vector3 } from 'three/webgpu';
 // passes through zero direct light: the sun's key fades as its drawn disk sinks below the horizon,
 // and only then turns toward the moon (HANDOFF_TOP). The sun and moon are drawn at twice
 // their true size (equal to each other); shadows and glints use the true sun. A low sun's key stays
-// golden orange: the optical depth that sets its hue is capped, while its brightness still follows
-// the full extinction (Sky.ts `capSunHue`). The sky, sun, moon, stars, key light and grade follow
+// golden orange: the optical depth that sets its hue is capped (and by day shortened, so a high
+// sun's key is near white), while its brightness still follows the full extinction (Sky.ts
+// `capSunHue`). The sky, sun, moon, stars, key light and grade follow
 // the clock every frame. `reset` sets the clock as the constructor does (a scene jump).
 //
 // The exposure only rises from afternoon into night and holds from the end of the blue hour (about
 // -7 degrees) on, higher than the night sky was tuned for, so the island reads by moonlight and
-// starlight. The night ambient rises as the sun's skylight fades after sunset, so twilight is never
+// starlight. Under a high sun it is trimmed (DAY_EXPOSURE_TRIM), so the midday meadow and sky sit
+// in the soft upper middle of the range rather than near its top; the trim fades out as the
+// low-sun adaptation takes over, so sunrise, sunset and the night keep their exposure.
+// The night ambient rises as the sun's skylight fades after sunset, so twilight is never
 // darker than the night; the night sky's own light (stars, airglow, moon disk, the sky's night
 // floor, clouds) scales back to keep its tuned look in deep night (Sky.track). The night is
 // art-directed, not a simulation of the eye's night vision (docs/art-direction.md).
@@ -103,6 +107,8 @@ const SIDEREAL_DAYS_PER_YEAR = 365.2422;
 // NIGHT_SKY_EXPOSURE and is scaled to keep its displayed brightness (see Sky.track).
 export const NIGHT_EXPOSURE = 4.4 * 1.6;
 export const NIGHT_SKY_EXPOSURE = 4.4;
+// The share the exposure is trimmed by under a high sun (see the header).
+export const DAY_EXPOSURE_TRIM = 0.08;
 // Highest elevation (degrees) at which the key may turn from the sun toward the moon: below the
 // end of the sun's fade as its drawn disk sinks into the sea (see Atmosphere.sunlightAt).
 const HANDOFF_TOP = - 0.7;
@@ -275,7 +281,7 @@ export class DayCycle {
 			nightAmbient: 1 - smoothstep( - 5, 1, elevation ),
 			// The night sky stays dark through its own scaled light (see NIGHT_SKY_EXPOSURE); the
 			// display lift falls with daylight so blacks do not turn milky.
-			exposure: ( 4.4 + ( 2.6 - 4.4 ) * daylight ) * ( 1 + 0.6 * lowSun ),
+			exposure: ( 4.4 + ( 2.6 - 4.4 ) * daylight ) * ( 1 + 0.6 * lowSun ) * ( 1 - DAY_EXPOSURE_TRIM * ( 1 - lowSun ) ),
 			overcastAdaptation: ( deck + ( 5 - deck ) * dusk ) * ( 1 - daylight ),
 			nightSkyLevel: skyAdaptation / ( 1 + 0.6 * lowSun ),
 			blackLift: NIGHT_BLACK_LIFT + ( DAY_BLACK_LIFT - NIGHT_BLACK_LIFT ) * daylight,
