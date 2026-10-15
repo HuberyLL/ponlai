@@ -103,6 +103,9 @@ function formatOf( f: R.Fsr3Format ): { format: THREE.AnyPixelFormat; type: THRE
 
 	switch ( f ) {
 
+		case 'r8unorm': return { format: THREE.RedFormat, type: THREE.UnsignedByteType };
+		case 'r16float': return { format: THREE.RedFormat, type: THREE.HalfFloatType };
+		case 'rg16float': return { format: THREE.RGFormat, type: THREE.HalfFloatType };
 		case 'rgba8unorm': return { format: THREE.RGBAFormat, type: THREE.UnsignedByteType };
 		case 'rgba16float': return { format: THREE.RGBAFormat, type: THREE.HalfFloatType };
 		case 'r32float': return { format: THREE.RedFormat, type: THREE.FloatType };
@@ -185,12 +188,14 @@ export class Fsr3Upscaler {
 		this.settings = options.settings;
 		const autoReactive = options.settings.fsr3.autoReactive || debugFlags.fsrAutoReactive === true;
 		this.context = this.newContext();
-		// the internal resources, at a placeholder size until the canvas's is known (`resize`)
+		// the internal resources, at a placeholder size until the canvas's is known (`resize`), in
+		// upstream's narrow formats where the device stores them (Resources.ts `formatFor`)
+		const tier1 = renderer.hasFeature( 'texture-formats-tier1' );
 		for ( const d of R.FSR3_INTERNAL_RESOURCES ) {
 
 			if ( d.format === 'buffer-u32' || d.format === 'buffer-vec4f' ) continue;
 			if ( d.id === R.FFX_FSR3UPSCALER_RESOURCE_IDENTIFIER_LANCZOS_LUT ) continue; // (the reference Lanczos, no LUT)
-			this.textures.set( d.id, storageTexture( d.name, d.format, d.linear, d.mips ) );
+			this.textures.set( d.id, storageTexture( d.name, R.formatFor( d, tier1 ), d.linear, d.mips ) );
 
 		}
 		this.output = storageTexture( 'FSR3UPSCALER_UpscaledOutput', 'rgba16float', true );

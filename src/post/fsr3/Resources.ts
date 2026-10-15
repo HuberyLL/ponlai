@@ -12,9 +12,14 @@
 // never create textures: the integration creates these from `FSR3_INTERNAL_RESOURCES` and hands
 // them to `Bindings.ts` by identifier.
 //
-// Formats. WebGPU core can store to rgba8unorm, rgba16float, r32float / r32uint / r32sint,
-// rg32float, rgba32float and a few integer formats, and can filter rgba8unorm and rgba16float but
-// not the 32-bit floats. So:
+// Formats. With the device feature `texture-formats-tier1` (`formatFor`), every resource upstream
+// keeps in R8_UNORM, R16_FLOAT or R16G16_FLOAT takes that format (r8unorm, r16float, rg16float:
+// storable, filterable, the same values as the wide formats below hold in their first channels,
+// at a quarter or half of their bytes), except NEW_LOCKS, which stays r32float (read-write: as
+// r8unorm under `texture-formats-tier2` the accumulation took 2.2 ms more at high's baseline). WebGPU
+// core can store to rgba8unorm, rgba16float, r32float / r32uint / r32sint, rg32float, rgba32float
+// and a few integer formats, and can filter rgba8unorm and rgba16float but not the 32-bit floats.
+// So without the feature (`format`):
 // - a single- or two-channel 16-bit float that is written by a kernel and sampled with the linear
 //   sampler takes rgba16float: the same half precision as upstream's R16_FLOAT / R16G16_FLOAT
 //   (stores round to half as upstream's do) and filterable;
@@ -114,7 +119,7 @@ export const FFX_FSR3UPSCALER_AUTOREACTIVEFLAGS_USE_COMPONENTS_MAX = 8;
 export type Fsr3SizeClass = 'renderMax' | 'renderMaxHalf' | 'upscaleMax' | 'fixed';
 
 /** The WebGPU format of a texture, or a storage buffer's element. */
-export type Fsr3Format = 'rgba8unorm' | 'rgba16float' | 'r32float' | 'r32uint' | 'buffer-u32' | 'buffer-vec4f';
+export type Fsr3Format = 'r8unorm' | 'r16float' | 'rg16float' | 'rgba8unorm' | 'rgba16float' | 'r32float' | 'r32uint' | 'buffer-u32' | 'buffer-vec4f';
 
 export interface Fsr3ResourceDescription {
 	id: number;
@@ -137,6 +142,18 @@ export interface Fsr3ResourceDescription {
 	linear: boolean;
 	/** when upstream clears it (`Host.ts` lists the clear jobs per frame) */
 	clears: string;
+}
+
+/** The format a resource takes on the device: upstream's own where `texture-formats-tier1` makes it
+ * storable (see the header), else `format`. */
+export function formatFor( d: Fsr3ResourceDescription, tier1: boolean ): Fsr3Format {
+
+	if ( ! tier1 || d.readWrite ) return d.format;
+	if ( d.upstreamFormat === 'R8_UNORM' ) return 'r8unorm';
+	if ( d.upstreamFormat === 'R16_FLOAT' ) return 'r16float';
+	if ( d.upstreamFormat.startsWith( 'R16G16_FLOAT' ) ) return 'rg16float';
+	return d.format;
+
 }
 
 /** getInternalResourceDescriptions and getSharedResourceDescriptions, in upstream's order. */
