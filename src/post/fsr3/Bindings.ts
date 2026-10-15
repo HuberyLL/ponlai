@@ -353,9 +353,18 @@ export class Fsr3Bindings {
 
 	}
 
+	/** A load through an SRV: three r186 gives a clone made by `load()` the texture's uv matrix (a
+	 * mat3 uniform per load site, updated per dispatch), the identity on FSR's textures; a clone
+	 * made by `sample().level()` carries none. */
+	private loadAt( node: N, p: N ): N {
+
+		return node.load( p ).setUpdateMatrix( false );
+
+	}
+
 	private srvLoad( id: number, p: N ): N {
 
-		return this.srv( id ).load( ivec2( p ) );
+		return this.loadAt( this.srv( id ), ivec2( p ) );
 
 	}
 
@@ -364,7 +373,7 @@ export class Fsr3Bindings {
 		const node = this.srv( id );
 		const q = ivec2( p ).toVar();
 		const size = ivec2( textureSize( node, int( 0 ) ) );
-		return select( this.inside( q, size ), node.load( q ), vec4( 0 ) );
+		return select( this.inside( q, size ), this.loadAt( node, q ), vec4( 0 ) );
 
 	}
 
@@ -383,7 +392,7 @@ export class Fsr3Bindings {
 		const fFrac = ffxFract( fPx ).toVar();
 		const base = ivec2( floor( fPx ) ).toVar();
 		const last = size.sub( 1 );
-		const at = ( dx: number, dy: number ) => node.load( ivec2( max( ivec2( 0 ), base.add( ivec2( dx, dy ) ).min( last ) ) ) ).x;
+		const at = ( dx: number, dy: number ) => this.loadAt( node, ivec2( max( ivec2( 0 ), base.add( ivec2( dx, dy ) ).min( last ) ) ) ).x;
 		const top = mix( at( 0, 0 ), at( 1, 0 ), fFrac.x );
 		const bottom = mix( at( 0, 1 ), at( 1, 1 ), fFrac.x );
 		return mix( top, bottom, fFrac.y );
