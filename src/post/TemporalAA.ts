@@ -270,6 +270,10 @@ export interface TemporalFrame {
 	stable?: boolean;
 	// the frame's delta (seconds), for the sharpening's easing
 	dt?: number;
+	// the scene clock's step this frame (seconds, 0 while paused) and the pacer's nominal interval
+	// (ms): FSR 3's frame time (Fsr3Upscaler.ts)
+	step?: number;
+	interval?: number;
 }
 
 /** The debug views of the resolve (graph/DebugView.ts). */

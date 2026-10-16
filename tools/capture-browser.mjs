@@ -78,7 +78,7 @@
 //   but is taken at CSS pixels.
 // - Stopping the loop for each grab also waits for a sky bake in flight and drains the GPU queue,
 //   so work landing late on a busy GPU is in the next grab rather than frames later.
-// - A paused page of the temporal modes (taa, taau, gt) is ready once its rest has converged
+// - A paused page of the temporal modes (taa, taau, fsr3, gt) is ready once its rest has converged
 //   (src/post/TemporalRest.ts: a fixed jitter sequence averaged with exact weights after 8 settle
 //   frames, none while a bake or transition runs, then held), so it is not compared at all: the
 //   loop is stopped on the held rest and shot ("converged"), the way engines test a temporal

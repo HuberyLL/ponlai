@@ -275,6 +275,26 @@ packages, into `dist/licenses/`.
 - Changes: HLSL to TSL; only the history sample; 32-bit only, no LUT; each axis's four weights
   computed once; the separable filter's two normalisations as one division.
 
+### FSR 3 upscaler (AMD FidelityFX SDK)
+
+- Upstream: [AMD FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) 2.3.0
+  (commit 60f4ea8), FSR 3 upscaler 3.1.5: `upscalers/fsr3/include/gpu/fsr3upscaler/*.h`, the
+  `ffx_fsr3upscaler_*_pass.hlsl` entry points, `spd/ffx_spd.h`, the RCAS part of `fsr1/ffx_fsr1.h`,
+  the ffx_core helpers they call (`ffx_core_hlsl.h`, `ffx_core_gpu_common.h`, `ffx_core_cpu.h`) and
+  the host maths of `internal/ffx_fsr3upscaler.cpp` and its headers
+- Copyright: (C) 2026 Advanced Micro Devices, Inc.
+- Licence: MIT (the MIT section of the SDK's `docs/license.md`), see
+  [`src/post/fsr3/FidelityFX.LICENSE.txt`](src/post/fsr3/FidelityFX.LICENSE.txt)
+- Files: `src/post/fsr3/*.ts`, one module per upstream file: the upscaler's passes (prepare inputs,
+  luminance and shading-change pyramids, shading change, prepare reactivity, luma instability,
+  accumulation, RCAS), its debug view, its reactive-mask generator, the single-pass downsampler,
+  the bindings and resources, and the host's constants, jitter and clears.
+- Changes: HLSL to TSL, line by line, upstream's names kept; 32-bit only (no FP16 or wave
+  operations); WebGPU core formats in place of those that are not storage-capable or filterable;
+  the reconstructed depth's texture atomics as a storage buffer; SPD's last-workgroup tail as a
+  second dispatch; kernels dispatched over a fixed grid that skip the workgroups past upstream's
+  counts. Each module's header lists its differences.
+
 ### meshoptimizer (through three.js)
 
 - Upstream: [meshoptimizer](https://github.com/zeux/meshoptimizer) 1.1, by Arseny Kapoulkine, as

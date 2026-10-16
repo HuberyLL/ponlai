@@ -31,7 +31,7 @@
 // browser build is verified instead (under the claim, the stored set untouched meanwhile): up to
 // three of its stored views (sampleViews: the island by day, vegetation, water, preferring views the
 // request needs) are captured with the new build into `<root>/<sha>/.verify/` and compared with
-// the stored frames, an MSAA (or aa=off) view by decoded pixels, a temporal one (aa=taa|taau|gt)
+// the stored frames, an MSAA (or aa=off) view by decoded pixels, a temporal one (aa=taa|taau|fsr3|gt)
 // with diff-set.py --temporal. If they match, the manifest records the build in `verifiedBrowsers`
 // and the set is reused (keyMatches accepts a key that differs only by a verified build); if not,
 // the set is captured afresh as for any other key change, starting from the samples. Clip entries
@@ -183,7 +183,7 @@ export function anchorsHash( file ) {
 }
 
 // The temporal modes, whose paused frames repeat only within a tolerance (diff-set.py --temporal).
-const TEMPORAL = [ 'taa', 'taau', 'gt' ];
+const TEMPORAL = [ 'taa', 'taau', 'fsr3', 'gt' ];
 
 /** Two keys that differ at most by the browser build. */
 export const sameButBrowser = ( a, b ) => stable( { ...keyOf( a ), browser: null } ) === stable( { ...keyOf( b ), browser: null } );

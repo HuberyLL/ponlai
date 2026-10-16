@@ -9,6 +9,13 @@
 // pass may be skipped at runtime by its `when` predicate; the attachment ops are derived for every
 // combination of skippable passes (the enabled mask).
 //
+// A compute or callback pass may write a texture through storage (`storage( h )`: a kernel's
+// stores, a copy into it) rather than as an attachment: the write makes a new version and its pass
+// is that version's producer for culling and the version checks, but it has no render target and
+// the attachment ops never see it. Such a write is partial (what the version before held stays
+// alive), and a texture the graph does not own (an import) written that way roots its pass, as any
+// write of a persistent resource does.
+//
 // Pure TypeScript with no runtime import, so Node runs it directly (tools/verify-framegraph.mjs);
 // FrameGraph.ts executes the compiled graph with three's renderer.
 
@@ -97,6 +104,8 @@ export interface PassDecl {
 	readonly reads: ReadDecl[];
 	// colour attachments in attachment order (several: an MRT)
 	readonly writes: WriteDecl[];
+	// versions written through storage (compute and callback passes): no attachment, no render target
+	readonly storage: WriteDecl[];
 	depth: DepthDecl | null;
 	conditional: boolean;
 	whenLabel: string | null;
@@ -116,6 +125,12 @@ export interface PassBuilder {
 	write( h: ResourceHandle, options?: { clear?: boolean; blend?: string } ): ResourceHandle;
 	/** The depth attachment: tested and written (`write`), or tested only. */
 	depth( h: ResourceHandle, options: { write: boolean; clear?: boolean } ): ResourceHandle;
+	/** Writes a colour or imported texture through storage (compute and callback passes: a kernel's
+	 * store, a copy into it) and returns the new version: no attachment and no render target, so the
+	 * targets and the attachment ops ignore it, but it makes a version like any write (its pass is
+	 * its producer for culling and the version checks). Partial: what the version before held is
+	 * kept alive. */
+	storage( h: ResourceHandle ): ResourceHandle;
 }
 
 export class GraphError extends Error {
@@ -276,7 +291,7 @@ export class GraphDecl {
 
 		if ( this.passes.some( ( p ) => p.name === name ) ) fail( `pass '${ name }' declared twice` );
 		const pass: PassDecl = {
-			index: this.passes.length, name, kind, label: name, reads: [], writes: [], depth: null,
+			index: this.passes.length, name, kind, label: name, reads: [], writes: [], storage: [], depth: null,
 			conditional: false, whenLabel: null, jittered: false, neverCull: false, hasMrt: false, size: null,
 		};
 		const read = ( h: ResourceHandle, mode: ReadMode, optional: boolean ): ResourceHandle => {
@@ -344,6 +359,17 @@ export class GraphDecl {
 				return h;
 
 			},
+			storage: ( h ) => {
+
+				const r = this.get( h );
+				if ( kind !== 'compute' && kind !== 'callback' ) fail( `'${ name }' writes '${ r.name }' through storage: only compute and callback passes do` );
+				if ( r.kind === 'depth' || r.canvas ) fail( `'${ name }' writes '${ r.name }' through storage: depth and the canvas have no storage` );
+				if ( pass.storage.some( ( w ) => w.resource === r.id ) ) fail( `'${ name }' writes '${ r.name }' through storage twice` );
+				const v = next( r, h, 'writes' );
+				pass.storage.push( { resource: r.id, version: v.version, clear: false } );
+				return v;
+
+			},
 		};
 		this.building = pass;
 		this.passes.push( pass );
@@ -388,6 +414,12 @@ export class GraphDecl {
 		// no read and write of one physical texture in a pass (a ping-pong's previous texture is another)
 		const written = new Set( pass.writes.map( ( w ) => w.resource ) );
 		if ( pass.depth ) written.add( pass.depth.resource );
+		for ( const w of pass.storage ) {
+
+			if ( written.has( w.resource ) ) fail( `'${ name }' writes '${ this.resources[ w.resource ].name }' as an attachment and through storage` );
+			written.add( w.resource );
+
+		}
 		for ( const r of pass.reads ) if ( ! r.previous && written.has( r.resource ) )
 			fail( `'${ name }' reads and writes '${ this.resources[ r.resource ].name }'` );
 		if ( pass.writes.length > 1 && ! pass.hasMrt ) fail( `'${ name }' writes ${ pass.writes.length } attachments without an mrt` );
@@ -400,7 +432,7 @@ export class GraphDecl {
 		if ( pass.depth && pass.writes.length === 0 && pass.kind !== 'compute' )
 			fail( `'${ name }' has a depth attachment but no colour attachment: depth-only passes are not supported (three's render targets carry a colour texture)` );
 		if ( pass.kind === 'compute' && ( pass.writes.length > 0 || pass.depth ) )
-			fail( `'${ name }': a compute pass has no attachments (declare what it writes through storage in a callback pass)` );
+			fail( `'${ name }': a compute pass has no attachments (declare what it writes with storage())` );
 		const attachments = [ ...pass.writes.map( ( w ) => w.resource ), ...( pass.depth ? [ pass.depth.resource ] : [] ) ].map( ( id ) => this.resources[ id ] );
 		if ( attachments.length > 1 ) {
 
@@ -496,7 +528,7 @@ export class CompiledGraph {
 		for ( const c of decl.copies ) {
 
 			const d = resources[ c.dst.resource ];
-			for ( const p of passes ) if ( p.writes.some( ( w ) => w.resource === d.id ) ) fail( `'${ p.name }' writes '${ d.name }', the frame-end copy's target` );
+			for ( const p of passes ) if ( [ ...p.writes, ...p.storage ].some( ( w ) => w.resource === d.id ) ) fail( `'${ p.name }' writes '${ d.name }', the frame-end copy's target` );
 			const s = resources[ c.src.resource ];
 			const ds = d.desc, ss = s.desc;
 			if ( sizeKey( ds.size ) !== sizeKey( ss.size ) || ds.format !== ss.format || ds.type !== ss.type ) fail( `copyToPersistent: '${ s.name }' and '${ d.name }' differ in size class, format or type` );
@@ -545,7 +577,7 @@ export class CompiledGraph {
 		};
 		for ( const p of passes ) {
 
-			const rooted = p.neverCull || [ ...p.writes, ...( p.depth?.write ? [ p.depth ] : [] ) ].some( ( w ) => {
+			const rooted = p.neverCull || [ ...p.writes, ...p.storage, ...( p.depth?.write ? [ p.depth ] : [] ) ].some( ( w ) => {
 
 				const r = resources[ w.resource ];
 				return r.canvas || r.persistent || r.pingPong || decl.debugView === r.id;
@@ -565,6 +597,8 @@ export class CompiledGraph {
 			// readers of its version walk back past it (producersOf), so a conditional pass needs no
 			// exception here.
 			for ( const w of p.writes ) if ( ! drawsOver( p, w ) ) producersOf( resources[ w.resource ], w.version - 1 );
+			// (a storage write may leave texels as they were)
+			for ( const w of p.storage ) producersOf( resources[ w.resource ], w.version - 1 );
 			if ( p.depth && ! ( p.depth.write && p.depth.clear ) ) producersOf( resources[ p.depth.resource ], p.depth.write ? p.depth.version - 1 : p.depth.version );
 
 		}
@@ -805,6 +839,7 @@ export class CompiledGraph {
 				size: sizeKey( p.size ?? ( p.writes[ 0 ] ? resources[ p.writes[ 0 ].resource ].desc.size : p.depth ? resources[ p.depth.resource ].desc.size : { of: 'fixed', width: 0, height: 0 } ) ),
 				reads: p.reads.map( ( r ) => `${ resources[ r.resource ].name }${ r.previous ? '@prev' : `@${ r.version }` }:${ r.mode }${ r.optional ? '?' : '' }` ),
 				writes: p.writes.map( ( w ) => desc( w.resource ) ),
+				...( p.storage.length > 0 ? { storage: p.storage.map( ( w ) => desc( w.resource ) ) } : {} ),
 				depth: p.depth ? { ...desc( p.depth.resource ), write: p.depth.write } : null,
 			} ) ),
 			targets: this.targets.map( ( t ) => ( { key: t.key, size: sizeKey( t.size ), samples: t.samples, pingPong: t.pingPong } ) ),

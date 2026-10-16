@@ -14,6 +14,13 @@
 //   refused, with a warning, where three's cache keys cannot be patched (graph/ThreePatches.ts:
 //   three r186 only), since their scene materials build one shader per MRT (if the patches still
 //   fail to install, main.ts stops the page);
+// - `fsr3`: AMD's FSR 3.1 upscaler (post/fsr3/, Fsr3Upscaler.ts): one sample, jittered with FSR's
+//   own sequence, with motion vectors, like the temporal modes, but resolved by FSR at AMD's
+//   placement: on the composite's HDR image, before the blooms, the depth of field, the look's glow
+//   and the grade, which run on FSR's output at the canvas's size (Pipeline.ts). It has no
+//   TemporalAA (`RESOLVE` false), draws the rain before the composite as the ground truth does
+//   (`AFTER_RESOLVE` false) and needs the composite pass (`post=inline-composite` is refused with
+//   a warning: msaa). Refused, as the temporal modes, where three's cache keys cannot be patched;
 // - `gt` (debug builds only): the ground truth the temporal modes are measured against, the
 //   temporal graph rendered at the canvas's resolution whose image at rest averages many jittered
 //   frames with a box filter (TemporalAA.ts, TemporalRest.ts): 64 by default, `tier.taa.gtJitters`.
@@ -32,7 +39,7 @@ import { REVISION } from 'three/webgpu';
 import { qualityProfile, type QualityProfile, type TemporalSettings } from '../Quality.ts';
 import { chooseQuality, type QualityChoice } from '../QualityDetect.ts';
 
-export const AA_MODES = [ 'msaa', 'taa', 'taau', 'off', 'gt' ] as const;
+export const AA_MODES = [ 'msaa', 'taa', 'taau', 'fsr3', 'off', 'gt' ] as const;
 export type AAMode = typeof AA_MODES[ number ];
 /** Where the page's mode came from: the URL (`aa` or its `msaa` alias), the tier's knob, or neither. */
 export type AASource = 'url' | 'test' | 'tier' | 'default';
@@ -45,7 +52,7 @@ export interface AAPlan {
 	// whether the frame is resolved against a history (jitter, motion vectors, the resolve)
 	temporal: boolean;
 	// how a render below the canvas reaches it
-	upscale: 'fsr1' | 'taau' | 'none';
+	upscale: 'fsr1' | 'taau' | 'fsr3' | 'none';
 }
 
 export function isAAMode( value: unknown ): value is AAMode {
@@ -103,19 +110,25 @@ export function temporalSupported( revision: string = REVISION ): boolean {
 export function aaPlan( requested: AAMode, revision: string = REVISION ): AAPlan {
 
 	let mode: AAMode = requested;
-	if ( ( mode === 'taa' || mode === 'taau' || mode === 'gt' ) && ! temporalSupported( revision ) ) {
+	if ( ( mode === 'taa' || mode === 'taau' || mode === 'fsr3' || mode === 'gt' ) && ! temporalSupported( revision ) ) {
 
 		console.warn( `aa=${ mode } needs three's cache keys patched for its MRTs (graph/ThreePatches.ts, r186), not r${ revision }: running msaa` );
 		mode = 'msaa';
 
 	}
-	const temporal = mode === 'taa' || mode === 'taau' || mode === 'gt';
+	if ( mode === 'fsr3' && new URLSearchParams( globalThis.location?.search ?? '' ).get( 'post' )?.split( ',' ).some( ( s ) => s === 'legacy' || s === 'inline-composite' ) ) {
+
+		console.warn( 'aa=fsr3 takes the composite pass\'s HDR image, which post=inline-composite (and post=legacy) leave out: running msaa' );
+		mode = 'msaa';
+
+	}
+	const temporal = mode === 'taa' || mode === 'taau' || mode === 'fsr3' || mode === 'gt';
 	return {
 		mode,
 		sceneSamples: mode === 'msaa' ? 4 : 1,
 		temporal,
 		// (the ground truth renders at the canvas's resolution: nothing to upscale)
-		upscale: mode === 'taau' ? 'taau' : mode === 'gt' ? 'none' : 'fsr1',
+		upscale: mode === 'taau' ? 'taau' : mode === 'fsr3' ? 'fsr3' : mode === 'gt' ? 'none' : 'fsr1',
 	};
 
 }
@@ -132,9 +145,11 @@ export const AA_PLAN: Readonly<AAPlan> = Object.freeze( aaPlan( AA_REQUESTED ) )
 /** The mode the page runs. */
 export const AA_MODE: AAMode = AA_PLAN.mode;
 export const TEMPORAL: boolean = AA_PLAN.temporal;
-/** Whether the temporal modes resolve their frames (TemporalAA.ts); `taaResolve=off` (debug builds)
- * shows the jittered frame as it is. */
-export const RESOLVE: boolean = TEMPORAL && ! ( ( import.meta.env.DEV || params.has( 'debug' ) ) && params.get( 'taaResolve' ) === 'off' );
+/** Whether FSR 3 resolves the frame (post/fsr3/Fsr3Upscaler.ts): temporal, with no TemporalAA. */
+export const FSR3: boolean = AA_MODE === 'fsr3';
+/** Whether the temporal modes resolve their frames through TemporalAA.ts (not under fsr3, which
+ * FSR 3 resolves); `taaResolve=off` (debug builds) shows the jittered frame as it is. */
+export const RESOLVE: boolean = TEMPORAL && ! FSR3 && ! ( ( import.meta.env.DEV || params.has( 'debug' ) ) && params.get( 'taaResolve' ) === 'off' );
 /** Whether the rain's streaks and the storm's spray draw after the resolve, at the canvas's
  * resolution and unjittered (post/AfterResolve.ts): under taa and taau. The ground truth keeps them
  * before its resolve, so its box filter over the jitters is the supersampled image they are measured

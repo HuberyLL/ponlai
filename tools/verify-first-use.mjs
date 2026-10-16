@@ -20,7 +20,7 @@
 // The frame graph's `rebuilds` and the temporal resolve's `historyResets`, where the page's
 // diagnostics have them, are reported per step too (both should not move through the scale sweep).
 //
-//   node tools/verify-first-use.mjs --url <base> [--quality high] [--aa msaa,taa,taau,off]
+//   node tools/verify-first-use.mjs --url <base> [--quality high] [--aa msaa,taa,taau,fsr3,off]
 //        [--q "extra&query"] [--steps rest,events,idle,gui,camera,scale,resize,presets,pause] (+ weather,bolt)
 //        [--frames 20] [--out file.json] [--compare ref.json] [--strict] [--fresh]
 //

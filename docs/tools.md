@@ -47,7 +47,7 @@ everyday commands; this file has the details. Each tool's own file says the rest
   sun maps' redraw counts and a forced strike have stayed the same for the tier's `restSettle`
   frames (8) while no sky bake or transition is in flight, nothing is pending (a periodic bake
   due, the refracted sun's map behind its light, a queued sun shadow redraw, an async pipeline
-  compile) and the loading screen has faded out; under taa / taau / gt the temporal rest must also
+  compile) and the loading screen has faded out; under taa / taau / gt / fsr3 the temporal rest must also
   have converged on quiet frames only. Any change of the key (a camera move, a resize, a seek,
   `establishScene`, any scene event, which now bumps the epoch under MSAA too) turns it false.
   `settle` says why not: `frames` of `need`, `stable`, `shown`, `pending` (names), `since` (the
@@ -130,7 +130,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 
 - `aa` (the anti-aliasing mode, `src/post/Antialiasing.ts`, over the tier's `aa` knob: each tier
   has its default, high `msaa` (the parked medium `taau`, low `msaa`), and the GUI's Antialiasing
-  control reloads with any of TAAU, TAA, MSAA 4x and, in debug builds, Off. `msaa`: 4 samples, upscaled by
+  control reloads with any of TAAU, FSR 3.1, TAA, MSAA 4x and, in debug builds, Off. `msaa`: 4 samples, upscaled by
   FSR 1; `off`: one sample; `taa` and `taau`, the temporal modes: one sample, jittered, with motion vectors, resolved against a history in `TemporalAA.ts`, at the
   render's size or upsampled to the canvas; a paused page shows the rest image, the jitter
   sequence averaged, once it has converged, `TemporalRest.ts`; what changes the scene raises a
@@ -139,6 +139,21 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   reads as `aa=msaa`, `1` and `2` as `aa=off`, since WebGPU multisamples with 1 or 4 samples
   only). The capture and parity tools apply the temporal tolerances by their own `--aa` option, so
   a set of the parked medium's default passes `--aa taau`.
+- `aa=fsr3`: AMD's FSR 3.1 upscaler (the TSL port in `src/post/fsr3/`, integrated by
+  `Fsr3Upscaler.ts`) at AMD's placement: one sample, jittered with FSR's own sequence, with motion
+  vectors; FSR takes the composite's HDR image at the render's size, and the blooms, the depth of
+  field, the look's glow and the grade run on its output at the canvas's size. A paused page shows
+  FSR's rest image (`tier.taa.fsr3.restSequence` frames from a reset, then held) through the same
+  `__PONLAI__.taa` handles and diagnostics `taa` block as the temporal modes (with an `fsr3` block:
+  the live constants, frame index, phase count, jobs and clears); `__PONLAI__.fsr3` is the upscaler.
+  It needs the composite pass (`post=inline-composite` and `post=legacy` run msaa). Flags:
+  `flags=fsrMipBias:false` takes the terrain's mip bias off (live: `__PONLAI__.flags`),
+  `flags=fsrAutoReactive:true` runs the reactive-mask generator (read at load),
+  `flags=fsrJitterSign:-1` / `fsrMotionScale:<k>` scale the jitter and the motion FSR is told (live;
+  the conventions' checks: FSR's image against the ground truth is best at 1).
+- `fsrDebug` (debug builds, under `aa=fsr3`): FSR's debug view over its output (a 3x3 grid:
+  dilated motion, protected areas, dilated depth; disocclusion, shading change, detail protection
+  takedown), drawn through the post chain, so graded.
 - `aa=gt` (debug builds only; refused with a warning otherwise): the ground truth the temporal
   modes are measured against: the temporal graph at the canvas's resolution, no dynamic scale,
   whose rest averages `tier.taa.gtJitters` jittered frames (64 by default, 32 per frame of a

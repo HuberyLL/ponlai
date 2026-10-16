@@ -57,11 +57,11 @@
 //   --reference (captured from --ref-url only when it is missing or stale; without --ref-url the
 //   tool says why it would need one and stops), the test side captured into <testDir> with the
 //   same options, then `diff-set.py <ref> <testDir> --views <the views>` with --diff's options
-//   (default `--temporal` for aa=taa|taau|gt, `--aa-floor` with --repeat, else `--max-px1 0`);
+//   (default `--temporal` for aa=taa|taau|fsr3|gt, `--aa-floor` with --repeat, else `--max-px1 0`);
 //   its table goes to stdout and <testDir>/diff.txt, its exit code is the check's.
 //   --recapture-reference captures the reference afresh (one suspected bad), the old one moved aside.
 // --aa adds `aa=<mode>` only when given, so a build without the option loads unchanged. A temporal
-//   mode's view (aa=taa|taau, and the ground truth aa=gt: 64 jitters at the canvas's resolution) is
+//   mode's view (aa=taa|taau|fsr3, and the ground truth aa=gt: 64 jitters at the canvas's resolution) is
 //   captured once its paused rest has converged (capture.mjs waits for `diag.taa.converged`). Keep a
 //   ground-truth set per merge-base, shared by every task on it: `<parity root>/<sha>/gt/`.
 // --jobs runs that many pages at once, each in its own profile slot (tools/capture-browser.mjs).
@@ -464,7 +464,7 @@ if ( mode === 'plain' ) {
 
 	} else {
 
-		const temporal = [ 'taa', 'taau', 'gt' ].includes( options.aa );
+		const temporal = [ 'taa', 'taau', 'fsr3', 'gt' ].includes( options.aa );
 		const diffArgs = options.diff ? options.diff.split( /\s+/ ).filter( Boolean ) : temporal ? [ '--temporal' ] : options.repeat ? [ '--aa-floor' ] : [ '--max-px1', '0' ];
 		// (not `python -I`: diff-set.py imports tolerance.py from its own directory)
 		const { code, out } = await run( 'uv', [ 'run', '--with', 'numpy', '--with', 'pillow', 'python', path.join( REPO, 'tools/parity/diff-set.py' ),

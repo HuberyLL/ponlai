@@ -22,7 +22,8 @@ import { TemporalRest, restKey } from './TemporalRest.ts';
 // Under MSAA (and aa=off) the page is settled once that run reaches the tier's `restSettle` frames
 // (8 on every tier): what settles on its own after the key stops changing (the clouds' view on its
 // second still frame, a bake's products landing) has then settled, as the temporal rest assumes
-// for its own settle frames. Under the temporal modes it is settled when the temporal rest has
+// for its own settle frames. Under the temporal modes (fsr3's rest included: Pipeline passes the
+// one its resolver owns) it is settled when the temporal rest has
 // converged and the quiet run began no later than the rest's sequence did (the rest's start plus
 // its settle frames), so every frame the rest's image averaged was drawn from the same, quiet
 // scene. A refresh that lands under a held rest image, or during its sequence, leaves the signal

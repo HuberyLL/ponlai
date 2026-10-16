@@ -856,6 +856,47 @@ export const checks = [
 
 	} ],
 
+	[ 'storage: a compute pass writes a version without a target, and its readers keep it live', () => {
+
+		const build = ( read ) => {
+
+			const g = new GraphDecl();
+			let out = g.import( 'out', { size: CANVAS } );
+			let canvas = g.import( 'canvas', { size: CANVAS }, true );
+			let a = g.color( 'a', { size: RENDER } );
+			let t = g.color( 't', { size: CANVAS } );
+			g.addPass( 'scene', 'scene', ( b ) => ( a = b.write( a, { clear: true } ), { label: '' } ) );
+			// a kernel of a transient texture, read by the next kernel only
+			g.addPass( 'k1', 'compute', ( b ) => ( b.read( a ), t = b.storage( t ), { label: '', size: RENDER } ) );
+			g.addPass( 'k2', 'compute', ( b ) => ( b.read( t ), out = b.storage( out ), { label: '', when: () => true } ) );
+			g.addPass( 'present', 'quad', ( b ) => ( read ? b.readOptional( out ) : b.read( a ), canvas = b.write( canvas ), { label: '' } ) );
+			return compileGraph( g, { sceneSamples: 1 } );
+
+		};
+		// (the import's storage write roots k2 either way; k2's read keeps k1)
+		for ( const read of [ true, false ] ) {
+
+			const c = build( read );
+			assert.deepEqual( c.culled, [], `read ${ read }` );
+			// no target for the storage writes
+			assert.equal( c.targetOf[ 1 ], null );
+			assert.equal( c.targetOf[ 2 ], null );
+			assert.equal( c.targets.some( ( x ) => x.colors.length === 1 && c.decl.resources[ x.colors[ 0 ] ].name === 't' ), false );
+			const d = c.summary().passes;
+			assert.deepEqual( d[ 1 ].storage.map( ( w ) => w.name ), [ 't' ] );
+			assert.equal( d[ 0 ].storage, undefined );
+
+		}
+		// a transient storage version nothing reads is culled with its pass
+		const g = new GraphDecl();
+		let canvas = g.import( 'canvas', { size: CANVAS }, true );
+		let t = g.color( 't', { size: CANVAS } );
+		g.addPass( 'k', 'compute', ( b ) => ( t = b.storage( t ), { label: '' } ) );
+		g.addPass( 'present', 'quad', ( b ) => ( canvas = b.write( canvas ), { label: '' } ) );
+		assert.deepEqual( compileGraph( g, { sceneSamples: 1 } ).culled, [ 'k' ] );
+
+	} ],
+
 	[ 'hazards: every misdeclaration is refused with its reason', () => {
 
 		const cases = [
@@ -900,6 +941,15 @@ export const checks = [
 			[ 'attachments of different sample counts', ( g, r ) => g.addPass( 'p', 'scene', ( b ) => ( b.write( r.a ), b.depth( r.ms, { write: true, clear: true } ), { label: '' } ) ), /different sample counts/ ],
 			[ 'a depth resource as colour', ( g, r ) => g.addPass( 'p', 'scene', ( b ) => ( b.write( r.d ), { label: '' } ) ), /use depth\(\)/ ],
 			[ 'a compute pass with attachments', ( g, r ) => g.addPass( 'p', 'compute', ( b ) => ( b.write( r.a ), { label: '' } ) ), /compute pass has no attachments/ ],
+			[ 'a storage write from a draw', ( g, r ) => g.addPass( 'p', 'quad', ( b ) => ( b.storage( r.a ), { label: '' } ) ), /only compute and callback passes/ ],
+			[ 'a storage write of depth', ( g, r ) => g.addPass( 'p', 'compute', ( b ) => ( b.storage( r.d ), { label: '' } ) ), /depth and the canvas have no storage/ ],
+			[ 'a storage write of a texture the pass reads', ( g, r ) => {
+
+				let a;
+				g.addPass( 'p1', 'quad', ( b ) => ( a = b.write( r.a ), { label: '' } ) );
+				g.addPass( 'p2', 'compute', ( b ) => ( b.read( a ), b.storage( a ), { label: '' } ) );
+
+			}, /reads and writes 'a'/ ],
 			[ 'a previous version without previous()', ( g, r ) => g.addPass( 'p', 'quad', ( b ) => ( b.read( { ...r.a, version: - 1, previous: true } ), b.write( r.b ), { label: '' } ) ), /without previous/ ],
 			[ 'a copy into a resource a pass writes', ( g, r ) => {
 

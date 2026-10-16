@@ -11,12 +11,13 @@ import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weat
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
 import { BloomChains, type BloomChain } from './BloomChains.ts';
-import { AA_MODE, AFTER_RESOLVE, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
+import { AA_MODE, AFTER_RESOLVE, FSR3, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { beginMotionFrame, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
 import { RAIN_OVERLAY, afterFocus, afterMRT } from './AfterResolve.ts';
 import { jitter } from './Jitter.ts';
 import { TemporalAA, type TemporalFrame, type TemporalMode } from './TemporalAA.ts';
 import { Settled, type SettleFrame } from './Settled.ts';
+import { Fsr3Upscaler } from './fsr3/Fsr3Upscaler.ts';
 import { QUALITY, type TemporalSettings } from '../Quality.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
 import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
@@ -85,6 +86,24 @@ import type { Rain } from '../weather/Rain.ts';
 //     size (taaDisplay), EASU, then RCAS, the rain layer and the grain
 // (`taaResolve=off`, debug builds: the jittered frame shown as it is, through the output passes
 // above, with the grade's vignette and grain, as before the resolve landed).
+// Under fsr3 (Antialiasing.ts) the scene half is the temporal modes' (the sky dome jittered too,
+// with its motion: Sky.ts), the composite writes veilReactive beside hdr, and FSR 3 resolves the
+// frame where AMD places it (fsr3/Fsr3Upscaler.ts), after the composite and before the rest of the
+// post chain:
+//   FSR 3 ── its compute passes (the clears, prepare inputs, the luma and shading-change pyramids,
+//     shading change, prepare reactivity, luma instability, accumulate, RCAS) on hdr, the nearest
+//     surface's depth, the velocity and veilReactive, into its output: scene radiance at the
+//     canvas's size (an import written through storage); the rest's held copy of the last running
+//     output (fsr3Held) is read instead while the rest's sequence runs
+//   blooms ── from FSR's output, their chains at their render-relative sizes
+//   sharp (FSR's output + the blooms) ── at the canvas's size; the tilt-shift blur at half the
+//     render, the look's glow at its render-relative size, both reading it
+//   display ── at the canvas's size, the full grade with vignette, S-curve, sRGB, grain and dither
+//     (half float), copied to the canvas by the output pass
+// The depth reads after FSR (the blooms' sky test, the depth of field's coc, the look glow's fade,
+// the grade's sky test) take the render's jittered depth at the unjittered point, weighted over its
+// four texels (`unjitteredTaps`), so their edges do not flicker with the jitter. The depth of field's
+// radius stays in render pixels.
 // The rain veil's per-pixel reactive weight (veilReactive, R16F at the render's size) is a resource
 // of its own the resolve reads: under the resolve the composite pass writes it as a second target
 // beside hdr, the veil's opacity at the pixel (Rain.veil) x 1.5, at most 0.6, so the resolve trusts
@@ -578,6 +597,8 @@ export class Pipeline {
 	readonly options: Readonly<PostOptions>;
 	/** The temporal modes' resolve (null under msaa and off, and with `taaResolve=off`). */
 	readonly temporal: TemporalAA | null = null;
+	/** FSR 3 under fsr3 (Fsr3Upscaler.ts), else null. */
+	readonly fsr3: Fsr3Upscaler | null = null;
 	/** Whether the paused page will draw the same frame from now on (Settled.ts). */
 	readonly settled = new Settled();
 
@@ -655,10 +676,10 @@ export class Pipeline {
 		// frame before, for the resolve's disocclusion test (a copy at the frame's end).
 		// (in the scene's target: its sample count, one under the temporal modes)
 		const velocity = TEMPORAL ? g.color( 'velocity', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType, samples: 'scene' } ) : null;
-		const surfaceDepthPrev = TEMPORAL ? g.color( 'surfaceDepthPrev', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType }, true ) : null;
+		const surfaceDepthPrev = TEMPORAL && ! FSR3 ? g.color( 'surfaceDepthPrev', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType }, true ) : null;
 		// the rain veil's reactive weight per pixel, for the resolve, written by the composite
 		// (persistent: zero until it is written, so the resolve's binding never changes)
-		const veilReactive = RESOLVE && ! AFTER_RESOLVE ? g.color( 'veilReactive', { size: RENDER, format: THREE.RedFormat, type: THREE.HalfFloatType }, true ) : null;
+		const veilReactive = ( RESOLVE || FSR3 ) && ! AFTER_RESOLVE ? g.color( 'veilReactive', { size: RENDER, format: THREE.RedFormat, type: THREE.HalfFloatType }, true ) : null;
 		// After the resolve (AfterResolve.ts): the air's transmittance at each pixel, which the
 		// composite writes in place of veilReactive (the same cost: rainy or fair, nothing more), for the
 		// streaks drawn later; and the streaks and spray themselves, drawn at the canvas's size
@@ -676,14 +697,17 @@ export class Pipeline {
 		// the composite, the sharp image and the depth of field's blur (half float, as three's rtt()
 		// made them)
 		const hdr = O.compositeOnce ? g.color( 'hdr', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
-		const sharp = g.color( 'sharp', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
+		// (under fsr3 the sharp image and the display pass run on FSR's output, at the canvas's size)
+		const sharp = g.color( 'sharp', { size: FSR3 ? CANVAS : RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		const blur = g.color( 'blur', { size: HALF, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		// (linear light under the temporal resolve: no per-tap decode in the resolve, half the bytes)
 		const LINEAR_DISPLAY = RESOLVE && ( temporal ?? QUALITY.high.taa ).linear;
-		const display = g.color( 'display', { size: RENDER, format: THREE.RGBAFormat, type: LINEAR_DISPLAY ? THREE.HalfFloatType : THREE.FloatType } );
+		// (under fsr3 at the canvas's size in half float: display values, which the copy to the canvas
+		// rounds to 8 bits; a float target there would take twice the memory)
+		const display = g.color( 'display', { size: FSR3 ? CANVAS : RENDER, format: THREE.RGBAFormat, type: LINEAR_DISPLAY || FSR3 ? THREE.HalfFloatType : THREE.FloatType } );
 		const viewDistance = O.dofDistance ? g.color( 'viewDistance', { size: RENDER, format: THREE.RedFormat, type: THREE.FloatType } ) : null;
 		// the upscale's EASU image (the canvas's size) and the canvas (the resolve has its own)
-		const easu = O.fsrPort && ! RESOLVE ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
+		const easu = O.fsrPort && ! RESOLVE && ! FSR3 ? g.color( 'FSR.easu', { size: { of: 'canvas' }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const canvas = g.import( 'canvas', null, { of: 'canvas' } );
 		this.resources = { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, surfaceDepthPrev, veilReactive, rainAir, rainOverlay, rainLayer, rainInput, rainBehind, rainGrade, hdr, sharp, blur, display, viewDistance, easu, canvas };
 		// the targets the frame draws into, made now (the probes, the warm-ups and the water's
@@ -696,6 +720,24 @@ export class Pipeline {
 		// the sizes the passes read, the graph's shared extent uniforms (set with the targets' own
 		// sizes): the render's, its texel, the half-resolution blur's and the canvas's
 		const renderSize = g.extent( RENDER ), renderTexel = g.texel( RENDER ), halfSize = g.extent( HALF ), canvasSize = g.extent( CANVAS );
+		// Under fsr3 the passes after FSR read the render's jittered depth from FSR's unjittered image:
+		// render texel i holds the scene at i + 0.5 + px (Jitter.ts), so the unjittered point at uv q
+		// lies between the four texels round q renderSize - px - 0.5, bilinearly weighted (a binary
+		// test there, the sky's, becomes a coverage that moves by a fraction of its step as the jitter
+		// does, rather than a canvas pixel's flip), and its nearest texel is that point rounded.
+		const unjitteredPoint = ( q: V2 ) => q.mul( renderSize ).sub( jitter.uniforms.px ).sub( 0.5 );
+		const unjitteredTaps = ( q: V2 ) => {
+
+			const p = unjitteredPoint( q ).toVar();
+			const base = p.floor().toVar();
+			const f = p.sub( base ).toVar();
+			return ( [ [ 0, 0 ], [ 1, 0 ], [ 0, 1 ], [ 1, 1 ] ] as const ).map( ( [ ox, oy ] ) => ( {
+				texel: ivec2( clamp( base.add( vec2( ox, oy ) ), vec2( 0 ), renderSize.sub( 1 ) ) ),
+				w: ( ox ? f.x : float( 1 ).sub( f.x ) ).mul( oy ? f.y : float( 1 ).sub( f.y ) ),
+			} ) );
+
+		};
+		const unjitteredTexel = ( q: V2 ) => ivec2( clamp( unjitteredPoint( q ).round(), vec2( 0 ), renderSize.sub( 1 ) ) );
 
 		const u = this.u;
 		// Multisampled depth can only be loaded, a sample at a time. The sky stays far away (-1e5).
@@ -819,7 +861,12 @@ export class Pipeline {
 			this.compositeQuad = new THREE.QuadMesh( compositeMat );
 			this.compositeQuad.name = 'Post.Composite';
 			// (with the uv rtt() gave its texture: a texture() without one transforms it)
-			tHdr = texture( g.texture( hdr ), uv() );
+			// Under fsr3 what follows the composite reads FSR's output instead (Fsr3Upscaler.ts: its
+			// passes take hdr, declared after the composite pass).
+			if ( FSR3 ) ( this as { fsr3: Fsr3Upscaler | null } ).fsr3 = new Fsr3Upscaler( renderer, g as unknown as FrameGraph<unknown>, {
+				hdr, surfaceDepth, velocity: velocity!, veilReactive, sceneColor, opaqueColor,
+			}, { settings: temporal ?? QUALITY.high.taa, exposure: u.curveExposure, debugView: DEV && new URLSearchParams( globalThis.location?.search ?? '' ).has( 'fsrDebug' ) } );
+			tHdr = this.fsr3 ? this.fsr3.source( uv() ) : texture( g.texture( hdr ), uv() );
 
 		}
 		const hdrColor: V3 = tHdr ? tHdr.rgb : composited;
@@ -840,9 +887,20 @@ export class Pipeline {
 
 			const { maxLum, surfaceMaxLum } = this.blooms[ i ];
 			const threshold = chain.threshold;
-			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
-			const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 );
-			const clampLum = select( surface, surfaceMaxLum, maxLum );
+			let clampLum: F;
+			if ( FSR3 ) {
+
+				// (on FSR's output: the sky test at the unjittered point, weighted over its four texels)
+				const surface = unjitteredTaps( uv() ).reduce( ( sum: F, t ) => sum.add( select( ( textureLoad( tBloomD, t.texel ) as unknown as F ).greaterThan( - 9e4 ), t.w, float( 0 ) ) ), float( 0 ) );
+				clampLum = mix( maxLum, surfaceMaxLum, surface );
+
+			} else {
+
+				const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
+				const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 );
+				clampLum = select( surface, surfaceMaxLum, maxLum );
+
+			}
 			const c = input.rgb;
 			const v0 = luminance( c );
 			const c1 = c.mul( min( float( 1 ), clampLum.div( max( v0, 1e-4 ) ) ) );
@@ -883,14 +941,25 @@ export class Pipeline {
 		const tDistance = viewDistance ? texture( g.texture( viewDistance ) ) : null;
 		// The circle of confusion (0..1 of the widest blur) and the distance. One function per pass:
 		// a layout function shared by two shaders keeps the first one's uniform bindings.
+		const distanceOf = ( q: V2, px: THREE.Node<'ivec2'> ) => tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).toVar()
+			: distanceAt( q, ( textureLoad( tD, px ) as unknown as F ).toVar() );
+		// The miniature blur is for the island's surroundings. Kilometres out it eases off, so the
+		// sky and the horizon keep their scale: blurred, clouds read as a backdrop close behind
+		// the island and every star spreads into a bokeh disc.
+		const cocOf = ( dist: F ) => clamp( abs( dist.sub( u.focus ) ).sub( u.range ).div( u.focus.mul( 0.55 ) ), 0, 1 ).mul( mix( float( 1 ), float( 0.15 ), smoothstep( 1500, 15000, dist ) ) );
 		const makeCocAt = () => Fn( ( [ q ]: [ V2 ] ) => {
 
+			if ( FSR3 ) {
+
+				// (on FSR's output: the coc weighted over the four texels round the unjittered point, the
+				// distance for the gather's depth order the nearest texel's)
+				const coc = unjitteredTaps( q ).reduce( ( sum: F, t ) => sum.add( cocOf( distanceOf( q, t.texel ) ).mul( t.w ) ), float( 0 ) );
+				return vec2( coc, distanceOf( q, unjitteredTexel( q ) ) );
+
+			}
 			const px = ivec2( clamp( q.mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
 			const dist = tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).toVar()
 				: distanceAt( q, ( textureLoad( tD, px ) as unknown as F ).toVar() );
-			// The miniature blur is for the island's surroundings. Kilometres out it eases off, so the
-			// sky and the horizon keep their scale: blurred, clouds read as a backdrop close behind
-			// the island and every star spreads into a bokeh disc.
 			const far = mix( float( 1 ), float( 0.15 ), smoothstep( 1500, 15000, dist ) );
 			return vec2( clamp( abs( dist.sub( u.focus ) ).sub( u.range ).div( u.focus.mul( 0.55 ) ), 0, 1 ).mul( far ), dist );
 
@@ -996,9 +1065,11 @@ export class Pipeline {
 		diffusionNode.setResolutionScale( 0.5 );
 		( diffusionNode as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input }: { input: THREE.Node<'vec4'> } ) => {
 
+			// (view-space z: the sky's -1e5 lies far beyond the fade; under fsr3 at the unjittered point,
+			// weighted over its four texels)
+			const fade = ( px: THREE.Node<'ivec2'> ) => mix( float( 1 ), u.lookSky, smoothstep( 150, 700, ( textureLoad( tGlowD, px ) as unknown as F ).negate() ) );
 			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
-			// (view-space z: the sky's -1e5 lies far beyond the fade)
-			const surface = mix( float( 1 ), u.lookSky, smoothstep( 150, 700, ( textureLoad( tGlowD, px ) as unknown as F ).negate() ) );
+			const surface = FSR3 ? unjitteredTaps( uv() ).reduce( ( sum: F, t ) => sum.add( fade( t.texel ).mul( t.w ) ), float( 0 ) ) : fade( px );
 			const c = input.rgb;
 			const v0 = luminance( c );
 			const clampLum = diffusionThreshold.mul( 3 );
@@ -1194,8 +1265,10 @@ export class Pipeline {
 			} );
 			// The look (a uniform branch: 'realistic' skips it and keeps the grade above exactly).
 			// (from the view distance where it is kept: a surface's lies below 9e4, the sky's is 1e5)
+			const surfaceAt = ( px: THREE.Node<'ivec2'> ) => select( tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).lessThan( 1e5 ) : ( textureLoad( tD, px ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) );
+			// (under fsr3 at the unjittered point, weighted over its four texels)
 			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
-			const onSurface = surface ?? select( tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).lessThan( 1e5 ) : ( textureLoad( tD, px ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) ).toVar();
+			const onSurface = surface ?? ( FSR3 ? unjitteredTaps( uv() ).reduce( ( sum: F, t ) => sum.add( surfaceAt( t.texel ).mul( t.w ) ), float( 0 ) ) : surfaceAt( px ) ).toVar();
 			If( u.lookOn.greaterThan( 0.5 ), () => {
 
 				c.assign( look( c, onSurface ) );
@@ -1211,7 +1284,7 @@ export class Pipeline {
 			// A display black lift softens dark colours without adding atmospheric scattering.
 			c.assign( c.add( vec3( 1 ).sub( c ).mul( u.lift ) ) );
 			// vignette (the resolve leaves it to the canvas pass, after the accumulation)
-			if ( vignette ) c.mulAssign( vignetteAt( renderSize ) );
+			if ( vignette ) c.mulAssign( vignetteAt( FSR3 ? canvasSize : renderSize ) );
 			if ( ! encode ) return clamp( c, 0, 1 );
 			const s = ( sRGBTransferOETF( clamp( c, 0, 1 ) ) as THREE.Node<'vec3'> ).toVar();
 			// gentle S-curve in display space
@@ -1241,7 +1314,7 @@ export class Pipeline {
 		// pass adds.
 		const displayMat = new THREE.NodeMaterial();
 		displayMat.name = 'Post.Display';
-		displayMat.fragmentNode = Fn( () => finish( grade( diffused(), ! RESOLVE, ! LINEAR_DISPLAY ), renderSize, RESOLVE ? float( 0 ) : u.grainOn ) )();
+		displayMat.fragmentNode = Fn( () => finish( grade( diffused(), ! RESOLVE, ! LINEAR_DISPLAY ), FSR3 ? canvasSize : renderSize, RESOLVE ? float( 0 ) : u.grainOn ) )();
 		this.displayQuad = new THREE.QuadMesh( displayMat );
 		this.displayQuad.name = 'Post.Display';
 
@@ -1266,7 +1339,7 @@ export class Pipeline {
 			this.upscaledOutput = new THREE.RenderPipeline( renderer, Fn( () => finish( fsr.rcas( this.sharpness ).toVar(), canvasSize, float( 1 ) ) )() );
 			this.upscaledOutput.outputColorTransform = false;
 
-		} else if ( ! RESOLVE ) {
+		} else if ( ! RESOLVE && ! FSR3 ) {
 
 			const upscaled = fsr1( texture( tDisplay ), this.sharpness );
 			this.upscaledOutputThree = new THREE.RenderPipeline( renderer, Fn( () => finish( upscaled.rgb.toVar(), canvasSize, float( 1 ) ) )() );
@@ -1478,7 +1551,7 @@ export class Pipeline {
 			// the frame was drawn with, set once the jitter is on (Jitter.ts): the composite's own, the
 			// air's rays (its fog march and composite) and the shafts' (only the sun's position on
 			// screen stays unjittered, from `update`).
-			jitter.mode = AA_MODE === 'taau' ? 'taau' : 'taa';
+			jitter.mode = AA_MODE === 'taau' ? 'taau' : FSR3 ? 'fsr3' : 'taa';
 			g.hooks.jitterBegin = ( f ) => {
 
 				jitter.begin( f.camera );
@@ -1490,8 +1563,8 @@ export class Pipeline {
 			};
 			g.hooks.jitterEnd = ( f ) => jitter.end( f.camera );
 			// across a cut the nearest surface's history is no longer the frame before
-			const surfaceDepthPrev = this.resources.surfaceDepthPrev!;
-			onTaaCut( () => g.resetHistory( surfaceDepthPrev ) );
+			const surfaceDepthPrev = this.resources.surfaceDepthPrev;
+			if ( surfaceDepthPrev ) onTaaCut( () => g.resetHistory( surfaceDepthPrev ) );
 
 		}
 		g.compile();
@@ -1520,7 +1593,7 @@ export class Pipeline {
 
 		const g = this.graph;
 		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, velocity, viewDistance } = this.resources;
-		if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity, viewDistance ] = this.declareTemporalScene();
+		if ( TEMPORAL ) [ sceneColor, surfaceDepth, velocity, viewDistance, opaqueColor ] = this.declareTemporalScene();
 		else {
 
 			g.addPass( 'opaque', 'scene', ( b ) => {
@@ -1628,6 +1701,19 @@ export class Pipeline {
 			return { label: 'composite (air, fog, veil)', quad: compositeQuad, mrt: veilReactive || rainAir ? mrt( {} ) : null };
 
 		} );
+		// FSR 3 on hdr (Fsr3Upscaler.ts), whose output (or, while the rest's sequence runs, the held copy
+		// of the last running frame's) the passes below read in place of hdr
+		const fsr3 = this.fsr3 ? this.fsr3.declare( g as unknown as FrameGraph<unknown>, { hdr: hdr!, surfaceDepth, velocity: velocity!, veilReactive, sceneColor, opaqueColor } ) : null;
+		const readHdr = ( b: PassBuilder ) => {
+
+			if ( fsr3 ) {
+
+				b.readOptional( fsr3.output );
+				b.readOptional( fsr3.held );
+
+			} else b.read( hdr! );
+
+		};
 		// the blooms (BloomChains.ts: both chains drawn together, twelve passes): from hdr, or the
 		// composite inline; their high pass keeps the surfaces' glints below the sky's
 		const blooms = this.bloom.passes( g, this.blooms.length === 2 ? 'bloom & wide glow' : 'bloom', ( b ) => {
@@ -1635,7 +1721,7 @@ export class Pipeline {
 			// (inline, the composite's reads include the surface depth)
 			if ( hdr ) {
 
-				b.read( hdr );
+				readHdr( b );
 				b.read( surfaceDepth );
 
 			} else compositeReads( b );
@@ -1646,7 +1732,7 @@ export class Pipeline {
 		const sharpQuad = this.sharpQuad;
 		g.addPass( 'sharp', 'quad', ( b ) => {
 
-			if ( hdr ) b.read( hdr );
+			if ( hdr ) readHdr( b );
 			else compositeReads( b );
 			for ( const h of blooms ) b.read( h );
 			sharp = b.write( sharp );
@@ -1814,9 +1900,9 @@ export class Pipeline {
 	// to the overlay are the graph's jittered span), the motion vectors written beside the colour.
 	// The opaque and water passes draw with the scene MRT (sceneMRT), the rain and the storm's spray
 	// in the overlay pass with the overlay MRT, which keeps the motion of the surfaces under them
-	// (Motion.ts). Returns the scene colour's, the nearest surface's, the velocity's and the view
-	// distance's last versions.
-	private declareTemporalScene(): [ ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle | null ] {
+	// (Motion.ts). Returns the scene colour's, the nearest surface's, the velocity's, the view
+	// distance's and the opaque copy's last versions.
+	private declareTemporalScene(): [ ResourceHandle, ResourceHandle, ResourceHandle, ResourceHandle | null, ResourceHandle ] {
 
 		const g = this.graph;
 		let { sceneColor, sceneDepth, linearDepth, opaqueColor, surfaceDepth, viewDistance } = this.resources;
@@ -1884,9 +1970,9 @@ export class Pipeline {
 			};
 
 		} );
-		// the nearest surface's depth, kept for the next frame
-		g.copyToPersistent( surfaceDepth, this.resources.surfaceDepthPrev! );
-		return [ sceneColor, surfaceDepth, velocity, viewDistance ];
+		// the nearest surface's depth, kept for the next frame (the resolve's; FSR keeps its own)
+		if ( this.resources.surfaceDepthPrev ) g.copyToPersistent( surfaceDepth, this.resources.surfaceDepthPrev );
+		return [ sceneColor, surfaceDepth, velocity, viewDistance, opaqueColor ];
 
 	}
 
@@ -1982,10 +2068,19 @@ export class Pipeline {
 
 	}
 
-	/** Whether the frame is rendered below the canvas's resolution and upscaled. */
+	/** What resolves the frame against its history and owns its rest: the temporal resolve, or FSR 3
+	 * (null under msaa, off, and `taaResolve=off`). */
+	get resolver(): TemporalAA | Fsr3Upscaler | null {
+
+		return this.temporal ?? this.fsr3;
+
+	}
+
+	/** Whether the frame is rendered below the canvas's resolution and upscaled by the output passes
+	 * (never under fsr3, whose output already has the canvas's size). */
 	get upscaling(): boolean {
 
-		return this.outputWidth !== this.width || this.outputHeight !== this.height;
+		return ! FSR3 && ( this.outputWidth !== this.width || this.outputHeight !== this.height );
 
 	}
 
@@ -2002,8 +2097,11 @@ export class Pipeline {
 			// this frame's rest (which picks the rest's jitter), jitter and motion, from the camera as
 			// it is (unjittered)
 			this.temporal?.beginFrame( camera, this.width, this.height, this.outputWidth, this.outputHeight, frame.time, frame.temporal );
-			jitter.prepare( camera, this.width, this.height, this.outputWidth / this.width );
+			this.fsr3?.beginFrame( camera, this.width, this.height, this.outputWidth, this.outputHeight, frame.time, frame.temporal );
+			jitter.prepare( camera, this.width, this.height, this.outputWidth / this.width, this.outputWidth );
 			beginMotionFrame( camera );
+			// (FSR's plan after the cuts, from this frame's jitter)
+			this.fsr3?.prepareFrame( camera as THREE.PerspectiveCamera, this.width, this.height, this.outputWidth, this.outputHeight );
 			if ( this.temporal ) {
 
 				// (after a cut or a resize the previous frame's nearest surface is gone)
@@ -2013,7 +2111,7 @@ export class Pipeline {
 			}
 
 		}
-		if ( frame.settle ) this.settled.observe( camera, this.width, this.height, this.outputWidth, this.outputHeight, frame.time, frame.settle, this.temporal?.rest ?? null );
+		if ( frame.settle ) this.settled.observe( camera, this.width, this.height, this.outputWidth, this.outputHeight, frame.time, frame.settle, this.resolver?.rest ?? null );
 		this.air.update( camera );
 		this.shafts.update( camera as THREE.PerspectiveCamera, this.air.haze.value, this.air.fogTransmittance( camera.position.y, this.shafts.sunDirection ),
 			TEMPORAL ? jitter.uniforms.unjitteredProjection.value : camera.projectionMatrix );

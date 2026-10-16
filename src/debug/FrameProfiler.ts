@@ -11,15 +11,21 @@ import type * as THREE from 'three/webgpu';
 // A pass's GPU time is the time it adds to the GPU's timeline, not its end minus its start: a
 // tile-based GPU stamps a render pass's start when its vertex stage begins, and the tiler runs a
 // full-screen pass's few vertices long before the passes it reads have finished, so the raw
-// intervals overlap and summed to several times the frame. The passes are taken in the order they
-// start, each charged the part of its interval that no pass before it covered (from the latest end
-// so far, or its own start, if later, to its end): the charges sum to the union of the passes'
-// intervals since the last frame's work ended, the time the GPU was busy with the frame, which on a
-// GPU-bound frame is the frame interval. Where passes run one after another this is simply each
-// one's duration. (Taken in the order they complete, each from the previous completion, a pass
-// that ran inside a longer one hid the longer one's time before it started: in rain under TAAU the
-// grade table's bake ran inside the opaque scene and the frames' sum fell 1.5 ms short of their
-// GPU time.)
+// intervals overlap and summed to several times the frame. Each instant of the frame's busy time
+// (the union of its passes' intervals since the last frame's work ended, which on a GPU-bound frame
+// is the frame interval) is charged to the pass issued first (the order of the inspector's begin
+// calls) whose interval covers it. Where passes run one after another this is simply each one's
+// duration. Two earlier rules failed:
+// - in the order they complete, each from the previous completion, a pass that ran inside a longer
+//   one hid the longer one's time before it started: in rain under TAAU the grade table's bake ran
+//   inside the opaque scene and the frames' sum fell 1.5 ms short of their GPU time;
+// - in the order they start, each from the latest end so far, a render pass whose vertex stage
+//   started early took the time of the passes it waited on: under fsr3 the bloom's high pass was
+//   stamped 4 ms before the FSR kernels it reads and took their 7 ms (the compute passes' stamps,
+//   which start when their dispatches do, came out at 0).
+// The previous frame's end is the floor only while it lies before this frame's last end: the
+// first frames' stamps can jump by seconds (seen at startup on a Metal GPU), and a floor taken
+// from such a frame charged nothing to the frames after it until the clock caught up.
 //
 // The tick's wall time includes the browser's backpressure: once the GPU falls behind, Chrome
 // blocks the calls that hand work to its GPU process until earlier frames drain, so a GPU-bound
@@ -54,7 +60,8 @@ import type * as THREE from 'three/webgpu';
 // Each pass is labelled by what it draws or computes:
 //   1. a registered render target (`target()`), else
 //   2. a registered scene, quad or compute node (`object()`, optionally only into one target), or a
-//      name pattern on the compute node, quad or target (`pattern()`), else
+//      name pattern on the compute node, quad or target (`pattern()`, its label fixed or made from
+//      the name it matched: FSR 3's kernels each get their own), else
 //   3. the pass it is nested in (an rtt() pass rendered from another pass's node graph), else
 //   4. the frame graph's pass running (`graphPass()`, which the graph's pass hooks call with the
 //      pass's label), else
@@ -187,7 +194,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 		pixelPass: ( ( uid: string ) => boolean ) | null = null;
 		private targets = new WeakMap<object, string>();
 		private objects = new WeakMap<object, { label: string; target?: object }[]>();
-		private patterns: [ RegExp, string ][] = [];
+		private patterns: [ RegExp, string | ( ( name: string ) => string ) ][] = [];
 		private stack: string[] = [];
 		private graphLabel: string | null = null;
 		private asyncScopes = new Map<number, string>();
@@ -249,8 +256,9 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 		}
 
-		/** Passes whose compute node, quad or target name matches. */
-		pattern( match: RegExp, label: string ): void {
+		/** Passes whose compute node, quad or target name matches (the label may be made from the
+		 * name). */
+		pattern( match: RegExp, label: string | ( ( name: string ) => string ) ): void {
 
 			this.patterns.push( [ match, label ] );
 
@@ -307,7 +315,12 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 
 			}
 			const names = this.names( drawn, target );
-			for ( const [ match, label ] of this.patterns ) if ( names.some( ( n ) => match.test( n ) ) ) return label;
+			for ( const [ match, label ] of this.patterns ) {
+
+				const name = names.find( ( n ) => match.test( n ) );
+				if ( name !== undefined ) return typeof label === 'string' ? label : label( name );
+
+			}
 			if ( parent ) return parent.group;
 			if ( this.graphLabel !== null ) return this.graphLabel;
 			if ( this.stack.length ) return this.stack[ this.stack.length - 1 ];
@@ -731,15 +744,30 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 				first = Math.min( first, pass.start );
 
 			}
-			// in the order they start, each from the latest end so far (this frame's, or the end of the
-			// last frame's work still running) or its own start, whichever is later
-			timed.sort( ( a, b ) => a.start - b.start );
-			let cursor = this.lastEnd, pixel = 0;
+			// each instant after the floor (the end of the last frame's work still running, unless the
+			// stamps jumped) to the first-issued pass covering it (`timed` is in issue order)
+			let last = - Infinity;
+			for ( const pass of timed ) last = Math.max( last, pass.end );
+			const floor = this.lastEnd < last ? this.lastEnd : - Infinity;
+			const points = new Set<number>();
 			for ( const pass of timed ) {
 
-				const ms = Math.max( pass.end - Math.max( pass.start, cursor ), 0 );
-				cursor = Math.max( cursor, pass.end );
-				charges.set( pass, ms );
+				charges.set( pass, 0 );
+				if ( pass.end > floor ) points.add( Math.max( pass.start, floor ) ).add( pass.end );
+
+			}
+			const cuts = [ ...points ].sort( ( a, b ) => a - b );
+			for ( let i = 0; i + 1 < cuts.length; i ++ ) {
+
+				const a = cuts[ i ], b = cuts[ i + 1 ];
+				const owner = timed.find( ( p ) => p.start <= a && p.end >= b );
+				if ( owner ) charges.set( owner, charges.get( owner )! + b - a );
+
+			}
+			let pixel = 0;
+			for ( const pass of timed ) {
+
+				const ms = charges.get( pass )!;
 				gpu += ms;
 				if ( this.pixelPass?.( pass.uid ) ) pixel += ms;
 				groups[ pass.group ] = ( groups[ pass.group ] ?? 0 ) + ms;
@@ -751,7 +779,7 @@ export function createFrameProfiler( Base: typeof THREE.InspectorBase, options: 
 				}
 
 			}
-			const end = timed.length ? cursor : NaN;
+			const end = timed.length ? Math.max( last, floor ) : NaN;
 			// the GPU's interval only between two frames that both reported every pass
 			const complete = timed.length > 0 && missing === 0;
 			const record: FrameRecord = {
@@ -884,6 +912,8 @@ export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<stri
 
 	const h = handles as Record<string, Record<string, unknown>>;
 	// the frame graph labels its passes itself (`graphPass`), the bloom chains' own passes with them
+	// FSR 3's kernels (aa=fsr3), each its own group: FSR3.<kernel> -> 'FSR 3 <kernel>'
+	profiler.pattern( /^FSR3\./, ( name ) => `FSR 3 ${ name.slice( 5 ) }` );
 	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes inside its chain (post=three-fsr)
 	// the sky's per-frame compute and its bakes
 	profiler.pattern( /^Clouds\.View/, 'clouds view march' );

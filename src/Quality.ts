@@ -141,6 +141,20 @@ export interface TemporalSettings {
 	// the ground truth's jitter count (`aa=gt`, debug builds: the rest's sequence at the canvas's
 	// resolution, box-filtered): 64 for a still image, 32 (`tier.taa.gtJitters=32`) per frame of a clip
 	gtJitters: number;
+	// FSR 3 (`aa=fsr3`, post/fsr3/Fsr3Upscaler.ts): its RCAS sharpness (0 the least, RCAS at two
+	// stops of attenuation, 1 the most), the rest's jitter sequence (frames from FSR's reset at the rest's start,
+	// repeating FSR's phase sequence), and whether the reactive-mask generator runs. The sequence is
+	// the shortest multiple of the paused page's phase count (18: 4K output rendered at 1440p) after
+	// which a rest of twice its length differs from it by more than one level in under 0.1 % of the
+	// pixels on three close views: 126 (7 phases; 108 left 0.16 % on the meadow, 126 0.075 %).
+	// FSR blends each frame into a running history rather than averaging the sequence, so its rest
+	// needs far more frames than taa's 32 (measured at 4K output; a 1600x900 page has phase 18 too).
+	// The sharpness is 0, not AMD's sample's 0.8: against the ground truth's rest on twelve crops of
+	// three views (4K output), 0.8 sharpened past it (its mean gradient 1.11-1.29 times the ground
+	// truth's on the meadow) and raised the error by 15 % (1 by 35 %); 0 lands within 5 % of the
+	// ground truth's gradient and is as close as RCAS turned off, and it lowered the cliff edge's
+	// flicker against the sky by about a fifth.
+	fsr3: { sharpness: number; restSequence: number; autoReactive: boolean };
 }
 
 export interface QualityProfile {
@@ -196,6 +210,7 @@ const TAA: TemporalSettings = {
 	sigma: 0.42, sigmaRest: 0.30,
 	sharpness: { taa: 1.0, taau: [ 1.5, 1.0 ] }, sharpenMoving: { stops: [ 0, 0, 1, 0, 0 ], speed: 4 }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
 	gtJitters: 64,
+	fsr3: { sharpness: 0, restSequence: 126, autoReactive: false },
 };
 
 export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = {

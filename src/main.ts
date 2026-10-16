@@ -489,7 +489,7 @@ const warming = Promise.all( [
 	// graph's warm-up starts, which compiles them with every pass (graph/FrameGraph.ts `warm`)
 	rain.registerLatent( overlayLatents ),
 	sky.lightning.registerLatent( pipeline.graph ),
-	pipeline.graph.warm( { scene, waterScene, rainScene, afterScene: AFTER_RESOLVE ? afterScene : undefined, camera, water: null, sun, time: simTime } ).then( () => pipeline.temporal?.warm() ),
+	pipeline.graph.warm( { scene, waterScene, rainScene, afterScene: AFTER_RESOLVE ? afterScene : undefined, camera, water: null, sun, time: simTime } ).then( () => pipeline.resolver?.warm() ),
 ] );
 warming.catch( () => undefined ); // reported where it is awaited, before the loop
 
@@ -983,7 +983,7 @@ frameStats.extra = () => `scale ${ resolution.scale }   GPU ${ resolution.gpu }`
 // the tier's default or the URL's; `off` is offered in debug builds only, and the ground truth (URL
 // only) is listed while it runs.
 const antialiasingF = gui.addFolder( 'Antialiasing' );
-const aaChoices: Record<string, AAMode> = { 'TAAU': 'taau', 'TAA': 'taa', 'MSAA 4x': 'msaa' };
+const aaChoices: Record<string, AAMode> = { 'TAAU': 'taau', 'FSR 3.1': 'fsr3', 'TAA': 'taa', 'MSAA 4x': 'msaa' };
 if ( DEBUG ) aaChoices[ 'Off' ] = 'off';
 if ( AA_MODE === 'gt' ) aaChoices[ 'Ground truth' ] = 'gt';
 antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)' ).onFinishChange( ( mode: AAMode ) => {
@@ -999,6 +999,8 @@ antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)'
 } );
 // The temporal resolve's knobs (TemporalAA.ts), live: the tier's `taa` table is where they start. A
 // change restarts the rest of a paused scene (the rest's key holds them).
+// FSR 3's sharpness (RCAS: 0 the least, 1 the most), live: a change restarts its rest
+if ( pipeline.fsr3 ) antialiasingF.add( pipeline.fsr3.settings.fsr3, 'sharpness', 0, 1, 0.01 ).name( 'FSR sharpness' );
 if ( pipeline.temporal ) {
 
 	const T = pipeline.temporal.settings, K = pipeline.temporal.knobs;
@@ -1193,9 +1195,9 @@ if ( DEBUG ) {
 // render at the scale every trade-off is judged at (pinned, ?dpr or full resolution, at that ratio).
 // (the ground truth renders at the canvas's resolution: no dynamic scale)
 const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render.dynamic : null;
-// Under TAAU the floor rises so the canvas is at most TAAU_MAX_UPSCALE times the render per axis
+// Under TAAU and FSR 3 the floor rises so the canvas is at most TAAU_MAX_UPSCALE times the render per axis
 // (DynamicResolution.ts; below high's floor, half the canvas's ratio, at a 2x display).
-const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRule, maxUpscale: AA_MODE === 'taau' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
+const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRule, maxUpscale: AA_MODE === 'taau' || AA_MODE === 'fsr3' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
 // the same number of refreshes, falling back to the next divisor when the dynamic scale's floor
 // cannot hold it. `frameRate=auto` is that default; `frameRate=<fps>` holds a fixed rate (0 renders on
@@ -1318,7 +1320,7 @@ function applyRenderScale( force = false ): void {
 	const rh = ratio === renderer.getPixelRatio() ? canvasSize.y : Math.floor( h * ratio );
 	pipeline.setSize( rw, rh, canvasSize.x, canvasSize.y );
 	passScaling?.setSize( rw, rh );
-	resolution.render = `${ rw }x${ rh } → ${ canvasSize.x }x${ canvasSize.y }` + ( pipeline.upscaling ? ` (${ Math.round( rw / canvasSize.x * 100 ) } %, FSR)` : '' );
+	resolution.render = `${ rw }x${ rh } → ${ canvasSize.x }x${ canvasSize.y }` + ( pipeline.upscaling || ( pipeline.fsr3 && rw !== canvasSize.x ) ? ` (${ Math.round( rw / canvasSize.x * 100 ) } %, ${ pipeline.fsr3 ? 'FSR 3' : 'FSR' })` : '' );
 	describeRenderScale();
 
 }
@@ -1390,10 +1392,11 @@ function strikeSignature(): number {
 
 }
 const restStable = () => ! sky.busy && ( ! sky.transitioning || holding );
-function temporalFrame( dt: number ): TemporalFrame | undefined {
+function temporalFrame( dt: number, step: number ): TemporalFrame | undefined {
 
-	if ( ! pipeline.temporal ) return undefined;
-	return { signature: [ strikeSignature() ], stable: restStable(), dt };
+	if ( ! pipeline.resolver ) return undefined;
+	// (FSR 3's frame time: the scene clock's step, the pacer's nominal interval while paused)
+	return { signature: [ strikeSignature() ], stable: restStable(), dt, step, interval: pacer.target > 0 ? 1000 / pacer.target : 1000 / 60 };
 
 }
 // The settled signal's inputs (post/Settled.ts; debug builds): the rest's, the sun maps' redraw
@@ -1539,7 +1542,7 @@ function tick( time: number ): void {
 	// it with the streaks after the resolve)
 	const overlay = ! AFTER_RESOLVE && ( rain!.mesh.visible || ( TEMPORAL && stormSea.spray.mesh.visible ) );
 	const after = AFTER_RESOLVE && ( rain!.mesh.visible || stormSea.spray.mesh.visible );
-	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt ), settle: settleFrame( bakeDue ) } );
+	pipeline.render( { scene, waterScene, rainScene: overlay ? rainScene : undefined, overlay, afterScene: after ? afterScene : undefined, camera, water: water!, sun, time: simTime, temporal: temporalFrame( rawDt, paused ? 0 : dt ), settle: settleFrame( bakeDue ) } );
 	steerRenderScale( rawDt );
 	submitBatch.flush();
 	frame ++;
@@ -1629,7 +1632,7 @@ function diagnostics( now = false ): void {
 
 		// the temporal resolve's state and the settled signal on every frame: the capture tools wait
 		// for them
-		if ( current && pipeline.temporal ) current.taa = pipeline.temporal.diagnostics();
+		if ( current && pipeline.resolver ) current.taa = pipeline.resolver.diagnostics();
 		if ( current ) Object.assign( current, { settled: pipeline.settled.value, settle: pipeline.settled.diagnostics() } );
 		return;
 
@@ -1679,7 +1682,7 @@ function diagnostics( now = false ): void {
 		graph: graphDiagnostics(),
 		// the temporal resolve: its mode, the rest (converged, frames, target), the jitter, the history's
 		// resets, the input and output sizes and whether reactive inputs are read (TemporalAA.ts)
-		taa: pipeline.temporal?.diagnostics() ?? null,
+		taa: pipeline.resolver?.diagnostics() ?? null,
 		// whether the paused page will draw the same frame from now on, and why not (post/Settled.ts)
 		settled: pipeline.settled.value,
 		settle: pipeline.settled.diagnostics(),
@@ -2029,7 +2032,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 			steppedScale = Math.min( ratio, renderer.getPixelRatio() );
 			moveCamera?.( i );
 			await tickAt( t0 + i * dt * 1000 );
-			const temporal = pipeline.temporal;
+			const temporal = pipeline.resolver;
 			if ( temporal && converge?.( i ) ) {
 
 				// hold the frame's scene still until the rest has converged on it
@@ -2085,11 +2088,15 @@ if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { lan
 	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),
 	// the temporal resolve (TemporalAA.ts, TemporalRest.ts): its live settings and knobs, the rest, the
 	// epoch, and `restart()`, which starts the history and the rest over (a cut and an epoch bump)
-	taa: pipeline.temporal ? {
-		resolve: pipeline.temporal, settings: pipeline.temporal.settings, knobs: pipeline.temporal.knobs, rest: pipeline.temporal.rest, epoch: restEpoch,
-		get converged() { return pipeline.temporal!.converged; },
+	// (under fsr3 the same handles from FSR 3's upscaler, which has no knobs: the capture tools wait on
+	// its rest through them)
+	taa: pipeline.resolver ? {
+		resolve: pipeline.resolver, settings: pipeline.resolver.settings, knobs: pipeline.temporal?.knobs ?? null, rest: pipeline.resolver.rest, epoch: restEpoch,
+		get converged() { return pipeline.resolver!.converged; },
 		restart: () => sceneEvent( 'restart' ),
 	} : null,
+	// FSR 3 (post/fsr3/Fsr3Upscaler.ts, aa=fsr3): its rest, live settings and diagnostics()
+	fsr3: pipeline.fsr3,
 	// the profiler's A/B (profile-frame --compare): while it keeps this page stopped for the other
 	// page's slices, the dynamic scale's clock stands still (DynamicResolution.ts `clock`), so its
 	// holds and bars do not run out while the page draws nothing

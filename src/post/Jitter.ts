@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { renderGroup, uniform } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
+import { ffxFsr3UpscalerGetJitterPhaseCount } from './fsr3/Host.ts';
 
 // The temporal modes' sub-pixel jitter (Antialiasing.ts: aa=taa|taau): each frame the scene half
 // of the frame graph (its jittered span, from the opaque scene to the overlay) renders with the
@@ -33,6 +34,15 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // and grass cull keys, the light shafts' sun position, the motion vectors (which are the motion
 // of the unjittered views: the jitter is no motion). `debugFlags.jitter = false` renders without
 // it (the motion vectors' unit checks).
+//
+// Under fsr3 (Antialiasing.ts) the sequence is FSR 3's own (post/fsr3/Host.ts): its length is
+// `ffxFsr3UpscalerGetJitterPhaseCount( render width, canvas width )`, int( 8 r^2 ) without a clamp
+// (18 at high's baseline, 4K output rendered at 1440p), and frame k takes Halton index
+// ( k mod L ) + 1 as above, but negated: `px = -( h - 0.5 )`. FSR's offset J places pixel i's
+// sample at i + 0.5 - J, where `px` places it at the centre plus `px`, so J = -px is upstream's own offset and the shifted projection
+// equals upstream's bit for bit. Its rest runs the same plain offsets, from index 0 and repeating
+// every L frames ( ( restIndex - 1 ) mod L ), with no centring: FSR weighs its samples by its own
+// accumulation, not by a box over the sequence; the dither then follows the rest index itself.
 
 /** The radical inverse of `index` in `base`: the Halton sequence's value. */
 export function halton( index: number, base: number ): number {
@@ -71,13 +81,17 @@ export function haltonMean( n: number ): THREE.Vector2 {
 
 }
 
+/** Whose sequence the jitter runs (Pipeline sets it for the page's mode). */
+export type JitterMode = 'taa' | 'taau' | 'fsr3';
+
 /** The temporal modes' rest sequence length (its indices are 1..REST_SEQUENCE). */
 export const REST_SEQUENCE = 32;
 
 /** The running sequence's length: 16 for TAA, more for TAAU's smaller output pixels (`ratio`: the
  * output's size over the render's, per axis). */
-export function sequenceLength( mode: 'taa' | 'taau', ratio: number ): number {
+export function sequenceLength( mode: JitterMode, ratio: number, renderWidth = 1, outputWidth = renderWidth * ratio ): number {
 
+	if ( mode === 'fsr3' ) return Math.max( ffxFsr3UpscalerGetJitterPhaseCount( renderWidth, Math.round( outputWidth ) ), 1 );
 	return mode === 'taa' ? 16 : THREE.MathUtils.clamp( Math.ceil( 8 * ratio * ratio ), 16, 64 );
 
 }
@@ -109,26 +123,28 @@ export class Jitter {
 		unjitteredProjection: uniform( new THREE.Matrix4() ).setGroup( renderGroup ),
 		unjitteredProjectionInverse: uniform( new THREE.Matrix4() ).setGroup( renderGroup ),
 	};
-	/** TAA's sequence or TAAU's (Pipeline sets it for the page's mode). */
-	mode: 'taa' | 'taau' = 'taa';
+	/** TAA's sequence, TAAU's or FSR 3's (Pipeline sets it for the page's mode). */
+	mode: JitterMode = 'taa';
 	private readonly projection = new THREE.Matrix4();
 	private readonly projectionInverse = new THREE.Matrix4();
 	private readonly shift = new THREE.Matrix4();
 	private applied: THREE.Camera | null = null;
 
 	/** Before a frame renders (the camera unjittered): this frame's offset, from the render's size and
-	 * the output's ratio to it, and the unjittered projection. */
-	prepare( camera: THREE.Camera, width: number, height: number, ratio: number ): void {
+	 * the output's ratio to it (and under fsr3 the output's width), and the unjittered projection. */
+	prepare( camera: THREE.Camera, width: number, height: number, ratio: number, outputWidth = width * ratio ): void {
 
-		this.length = sequenceLength( this.mode, ratio );
-		this.k = this.restIndex !== null ? this.restIndex - 1 : this.frame % this.length;
+		const fsr3 = this.mode === 'fsr3';
+		this.length = sequenceLength( this.mode, ratio, width, outputWidth );
+		this.k = this.restIndex !== null ? ( fsr3 ? ( this.restIndex - 1 ) % this.length : this.restIndex - 1 ) : this.frame % this.length;
 		// The dither's index runs on its own 16-frame cycle in the running sequence, so any 16
 		// consecutive frames give each pixel every threshold once whatever L is (with k mod 16, TAAU's
 		// L = 18 at a ratio of 1.5 repeated two thresholds and skipped two in each 16 frames across its
 		// wrap); at rest it follows the rest index, so a paused frame stays path independent.
-		const dither = this.restIndex !== null ? this.k : this.frame;
+		const dither = this.restIndex !== null ? this.restIndex - 1 : this.frame;
 		this.frame ++;
 		if ( debugFlags.jitter === false ) this.px.set( 0, 0 );
+		else if ( fsr3 ) this.px.set( 0.5 - halton( this.k + 1, 2 ), 0.5 - halton( this.k + 1, 3 ) );
 		else if ( this.restIndex !== null ) {
 
 			const m = haltonMean( this.restLength );

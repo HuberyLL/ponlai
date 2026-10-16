@@ -38,7 +38,7 @@
 // load's goto waits for the DOM, not the load event, which waits for the gate).
 // A paused capture takes the GPU lock shared (its pixels do not depend on what else renders);
 // a running one, or --exclusive, takes it to itself, since its frame times are reported too.
-// A paused page of the temporal modes (aa=taa|taau|gt) shows its rest image once that has
+// A paused page of the temporal modes (aa=taa|taau|fsr3|gt) shows its rest image once that has
 // converged (src/post/TemporalRest.ts): once up the rest is started over (its epoch: what the
 // evals changed need not be in its key) and the capture waits for `diag.taa.converged`, stops the
 // loop on the held rest and shoots it, with no image comparison (the --stable-* options do not
