@@ -8,8 +8,8 @@
 // wind comes from any side with the weather, and swings right round as a front passes; the
 // landscape remembers only the prevailing wind (PREVAILING_HEADING: the meadow's exposure, the rim
 // grass's combing), so those stay on it while the weather's wind turns. Over most coasts the wind
-// is force 2 - 4 most of the time, force 5 at times and force 6 or more rarely; on an East Asian
-// coast a cold surge often leaves a clear, windy day behind it.
+// is force 2 - 4 most of the time, force 5 at times and force 6 or more rarely; a cold front
+// often leaves a clear, windy day behind it.
 // - Levels (U10, the mean wind 10 m up): light 1.5 m/s, gentle 3.8 (fair's wind, at which the
 //   plants and the sea were tuned), fresh 7 and strong 11. The gust factor falls a little as the
 //   wind rises (light airs are fitful; a strong wind blows steadily hard): 1.5, 1.4, 1.35, 1.3.
