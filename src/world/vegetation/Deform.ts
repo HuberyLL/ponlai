@@ -1,6 +1,6 @@
 import type * as THREE from 'three/webgpu';
-import { vec3, vec4, float, fract, mix, dot, max, normalize, length, smoothstep, cameraViewMatrix, cameraProjectionMatrix, screenSize } from 'three/tsl';
-import { LEAN_REF, gustWave, swayJitter, swingOf, wave, windField, type WindState } from '../../weather/Wind.ts';
+import { vec3, vec4, float, fract, mix, dot, max, normalize, length, smoothstep, inverseSqrt, cameraViewMatrix, cameraProjectionMatrix, screenSize } from 'three/tsl';
+import { LEAN_REF, gustWave, leanLoad, pressedLean, pressedStiffening, pressing, swayJitter, swingOf, wave, windField, type WindState } from '../../weather/Wind.ts';
 import { puddleCover } from '../../weather/Puddles.ts';
 
 // How the vegetation moves: the plants' main bend (`mainBend`: today only the game's palm), the
@@ -38,12 +38,22 @@ export const PALM_WIND = { cycles: 30, slow: 1 } as const;
  * unchanged to the byte, while a full fade at 9 already moved its far edge), and at the island
  * view the far meadow's sway is gone, which cut its single-frame flashes by two thirds (a later
  * window, 6.5 to 8.5, cut them only a few per cent more). */
-export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust: 0.02 }, shiver: { base: 0.003, gust: 0.006 }, fade: { none: 4, full: 7 } } as const;
+export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust: 0.02 }, shiver: { base: 0.003, gust: 0.006 }, fade: { none: 4, full: 7 },
+	pressed: { length: 0.28, stiffness: 0.4, underside: 1 } } as const;
+// `pressed`: the meadow under a wind above fair's (`bendBlade`): the tuft height (m) at which the
+// wind's load is the lean the gust field gives (the lawn's, Meadow.ts SWARD_HEIGHT), the blades'
+// flexural rigidity in that unit, and how much lighter the blades' pale side shows where they lie
+// over (1: twice as light lying flat). At rigidity 1 the lawn's short blades leaned 16 degrees
+// between a strong wind's gusts and 43 at their cores: from the island view the wind still did not
+// show. At 0.4 they lean 34 and 64 (16 and 47 in a fresh wind), and the meadow reads combed
+// downwind. Blades 2.5 times as long (tried in place of the lawn's) lie nearly flat at 0.4 in any
+// wind above fair's, so their gusts no longer press deeper; at 1 they lean 56 degrees between a
+// fresh wind's gusts and 72 in a strong one's, the gusts pressing them to 77 and 82.
 /** The grass hanging from the rim's lip (RimGrass.ts) swings as a hanging strand (`hangingSway`'s
  * numbers): a blade's weight is its length times the square of the way down it, so a metre-long
  * blade's tip sways about 3 cm in a fair gust, at 0.71 Hz (0.48 Hz across), and lies on the wall
  * rather than pressing into it. */
-export const RIM_GRASS_WIND = { amplitude: 0.018, cycles: 24, across: 16, press: 0.02, leafEdge: 0 } as const;
+export const RIM_GRASS_WIND = { amplitude: 0.018, cycles: 24, across: 16, press: 0.02, leafEdge: 0, lift: 0.08 } as const;
 
 /** A plant's main bend, after Sousa's "Vegetation Procedural Animation and Shading in Crysis"
  * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways a little
@@ -83,11 +93,26 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
  * per gust tile), each a little apart (`phase`, the blade's own, `bladePhase`, within +-0.4 rad),
  * and shiver across it on their own phase, a quarter of that sway. `fade` (0..1, `swayFade`)
  * scales the sway and shiver but not the lean; the frame's bend and the previous frame's take the
- * same one. `wind` is the frame's wind state (`shared.wind`, or `.previous`). Returns the bent position and the lean as a world-space
- * vector, for the normals (its x, z are the blade's sway for the wind view and probe,
- * src/debug/WindView.ts). The islanders' trail through the grass (a later field) would join the
- * lean here, so the blade arcs over and sinks as under the wind. */
-export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F ): { position: V3; lean: V3 } {
+ * same one. `wind` is the frame's wind state (`shared.wind`, or `.previous`).
+ * Above fair's wind (Wind.ts `pressing`, 0 up to fair's pressure, so a fair day's blades bend to
+ * the bit as before) the blade takes the elastica's shape under the wind's pressure (Wind.ts
+ * `pressedLean`), its load the linear lean and sway scaled by the cube of the tuft's height over
+ * GRASS_WIND.pressed.length and by its rigidity (the load number q L^3 / EI): a blade twice as
+ * long takes eight times the load, so long blades lie over in a strong wind while short ones only
+ * lean. The sway rides in the load, so a pressed blade answers it by the elastica's slope and its
+ * shiver by its secant: held down, it trembles about a deep lean at the same rate, as grass under
+ * a sustained wind does. A blade lying over shows its paler, glossier side (the underside of a
+ * grass leaf, which gusts turn up as light bands sweeping a field): `pale` lifts the blade's
+ * colour by `underside` times the share its chord has turned from upright, 1 - cos, so the bands
+ * follow the gusts' deeper lean. Returns the bent position, the lean as a world-space vector (its
+ * x, z are the blade's sway for the wind view and probe, src/debug/WindView.ts), `tilt`, the lean
+ * the normals turn by, and `pale`, the colour's factor (exactly 1 up to fair's wind). The normals
+ * keep the eased lean in every wind: turned by the pressed one, the blades' soft upward normals
+ * fell away from a high sun and a strong wind's gusts swept the meadow as dark bands, where a
+ * field's pressed grass shows light ones. The islanders' trail through the
+ * grass (a later field) would join the lean here, so the blade arcs over and sinks as under the
+ * wind. */
+export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F ): { position: V3; lean: V3; tilt: V3; pale: F } {
 
 	const field = windField( wind, origin.xz ).toVar();
 	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
@@ -96,11 +121,20 @@ export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t
 	const swing = gustWave( wind, origin.xz, cycles, phase.div( TAU ).sub( 0.5 ).mul( spread ) ).mul( faded( wind.breeze.mul( field.w.mul( sw.gust ).add( sw.base ) ) ) );
 	const flutter = wave( wind.clock, 1.7, phase ).mul( 0.65 ).add( wave( wind.clock, 2.9, phase.mul( 2.3 ) ).mul( 0.35 ) );
 	const shiver = faded( wind.breeze.mul( field.w.mul( sh.gust ).add( sh.base ) ) ).mul( flutter );
-	const lean = along.mul( field.z.add( swing ) ).add( across.mul( shiver ) ).toVar();
+	const eased = along.mul( field.z.add( swing ) ).add( across.mul( shiver ) ).toVar();
+	// the elastica's lean under the tuft's own load (above), and how far the wind has gone over to it
+	const { length: reference, stiffness, underside } = GRASS_WIND.pressed;
+	const scale = height.mul( height ).mul( height ).mul( 1 / ( reference ** 3 * stiffness ) );
+	const load = leanLoad( wind, field.w ).add( swing ).mul( scale ).toVar();
+	const pressed = pressedLean( load );
+	const press = pressing( wind );
+	const held = along.mul( pressed ).add( across.mul( shiver.mul( scale ).mul( pressedStiffening( load ) ) ) );
+	const lean = eased.add( held.sub( eased ).mul( press ) ).toVar();
+	const pale = float( 1 ).add( float( 1 ).sub( inverseSqrt( pressed.mul( pressed ).mul( t2 ).add( 1 ) ) ).mul( press.mul( underside ) ) );
 	const rel = rooted.sub( origin ).toVar();
 	const reach = length( rel );
 	const bent = normalize( rel.add( lean.mul( height.mul( t2 ) ) ).add( vec3( 0, 1e-5, 0 ) ) ).mul( reach ).add( origin );
-	return { position: bent, lean };
+	return { position: bent, lean, tilt: eased, pale };
 
 }
 
@@ -132,16 +166,19 @@ export function bladePhase( id: F, root: F ): F {
 export interface HangingInputs { position: V3; weight: F; phase: F; out: V3; normal: V3; leafEdge: F; leafPhase: F }
 
 /** A hanging kind's wind numbers: the sway at its tips (m at LEAN_REF), the pendulum's swings per
- * gust tile along and across the wind, how far the wall may press it back (m) and its leaves'
- * flutter at the tip (m). The removed leaf trails took { 0.012, 14, 10, 0.03, 0.004 }: about 2 cm
+ * gust tile along and across the wind, how far the wall may press it back (m), its leaves'
+ * flutter at the tip (m) and how far a pressing wind lifts its tip off the stone (m per unit of
+ * lean, above fair's wind). The removed leaf trails took { 0.012, 14, 10, 0.03, 0.004 }: about 2 cm
  * of sway in a fair gust, 0.42 Hz, nodes 0.11 m off the stone. */
-export interface HangingWind { amplitude: number; cycles: number; across: number; press: number; leafEdge: number }
+export interface HangingWind { amplitude: number; cycles: number; across: number; press: number; leafEdge: number; lift: number }
 
 /** A hanging strand leans with the gust field and swings like a pendulum (`numbers`) with the
  * plants about it (Wind.ts `gustWave`), its own phase a little apart, its forks with it; its leaves
  * flutter along their normals from stalk to tip on their own phase. The wall bounds it: wind into
  * the cliff presses the strand back by at most `numbers.press`, and a gust lifts it off the stone a
- * little. Returns the swayed position and the sway (as mainBend's). */
+ * little, and a wind above fair's, whose lean grows as the elastica's (Wind.ts `pressedLean`), lifts it
+ * further, `numbers.lift` per unit of lean: in a strong wind the curtain blows out downwind. Returns
+ * the swayed position and the sway (as mainBend's). */
 export function hangingSway( wind: WindState, v: HangingInputs, numbers: HangingWind ): { position: V3; sway: V2 } {
 
 	const field = windField( wind, v.position.xz ).toVar();
@@ -153,7 +190,11 @@ export function hangingSway( wind: WindState, v: HangingInputs, numbers: Hanging
 		.add( across.mul( gustWave( wind, v.position.xz, numbers.across, own.mul( 1.6 ).add( 1.3 ) ).mul( swing ).mul( 0.35 ) ) );
 	const sway = unit.xz.mul( LEAN_REF );
 	const free = unit.mul( v.weight.mul( numbers.amplitude ) ).toVar();
-	const offset = free.add( v.out.mul( max( float( - numbers.press ).sub( dot( free, v.out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( v.weight ).mul( 0.01 ) ) ) );
+	// above fair's wind the lean grows as the elastica's (Wind.ts `pressing`) and the wind's drag
+	// lifts the strand off the stone in proportion to it (0 at fair; added last, after the sum the
+	// shader formed before, so a fair day's strands stay to the bit)
+	const lift = pressing( wind ).mul( field.z ).mul( v.weight ).mul( numbers.lift );
+	const offset = free.add( v.out.mul( max( float( - numbers.press ).sub( dot( free, v.out ) ), 0 ).add( field.w.mul( wind.breeze ).mul( v.weight ).mul( 0.01 ) ).add( lift ) ) );
 	const flutter = wave( wind.clock, 3.7, v.leafPhase );
 	return { position: v.position.add( offset ).add( v.normal.mul( flutter.mul( v.leafEdge ).mul( lively ).mul( numbers.leafEdge ) ) ), sway };
 
