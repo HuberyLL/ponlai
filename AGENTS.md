@@ -20,56 +20,26 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   required (the ocean FFT runs on compute shaders); without it the page shows a message.
 - `npm run dev` (port 5190), `npm run build` (type-checks, then bundles), `npm run typecheck`,
   `npm run preview` (port 5191). URL options and in-page keys: `docs/tools.md`.
-- `node tools/serve.mjs dev|preview` starts one for a worktree on a free port (`--sha` for another
-  commit; `docs/tools.md`).
-- `node tools/capture.mjs <name> [--q "paused&t=12&dpr=1"]` screenshots the dev server into
-  `artifacts/captures/` (git-ignored).
-- A list of views, ad-hoc ones included (`--view "name:query"`, `--views-file`, `--sweep
-  "key=a,b"`), is captured with `node tools/parity/capture-set.mjs <url> <outDir>`: one warm page per
-  set, the scene jump between views. Use it instead of a script that loops capture.mjs.
-- `uv run tools/img.py diff|crop|sheet|stats|flicker` does the image work on captures (differences,
-  crops, A/B sheets, region statistics, a clip's flicker), with its dependencies inline. Use it
-  instead of an inline Pillow/NumPy script (`docs/tools.md`, Captures).
-- `node tools/probe.mjs [url] --q "<query>" --eval "<js>"` reads values from the page (diagnostics,
-  timings, uniforms, pipeline counts after an action) as JSON, under the GPU lock and in a warm
-  profile: use it instead of a Playwright script of one's own (`docs/tools.md`, Probes).
-- `node tools/wgsl-build.mjs <entry>` builds TSL kernels, passes and materials to WGSL in node (no
-  GPU, no lock) and lists each stage's bindings, uniforms and overruns of WebGPU's default limits,
-  an entry per module in `tools/wgsl-build/` (`fsr3`); it does not validate the WGSL. Use it
-  instead of a stub-renderer script of one's own (`docs/tools.md`, WGSL builds).
-- `node tools/profile-frame.mjs` profiles a production build (scene matrix, A/B deltas, per-pass
-  GPU time, the 60 fps acceptance); its options and modes are in `docs/tools.md`.
-- Everything that renders the scene in a browser takes the GPU lock:
-  `node tools/gpu-lock.mjs run [--shared] -- <command>` (`status`, `gpu`): timing runs hold it
-  alone, paused captures and probes share it. Sessions leave `PONLAI_GPU_PRIORITY` unset; the user
-  or a main session schedules with `gpu-lock.mjs prio set` (`docs/tools.md`, GPU lock).
-- Processes an agent starts run at a starved QoS on a busy Mac: the tools raise themselves to the
-  application policy (`tools/qos.mjs`); a new CPU-heavy tool imports it first, and a one-off script
-  runs through `node tools/qos.mjs <command>` (`docs/tools.md`, Process priority).
-- Every wait goes through `tools/job.mjs`, never a sleep loop of one's own: a command that may run
-  for minutes runs as `node tools/job.mjs start --wait -- <command>`, is waited on with
-  `node tools/job.mjs wait <log>` (at most 4 minutes per call), and is stopped with
-  `job.mjs stop <log>` before an agent hands back (`docs/tools.md`, Long jobs and waiting).
-- Clip frames, capture sets and references older than 2 days are removed on their own
-  (`tools/storage.mjs`, started by `job.mjs`); images a report or page links to stay, and a folder
-  with a `.keep` file is kept (`docs/tools.md`, Disk space).
+- The tools are in `tools/`, their manual in `docs/tools.md` (Which tool for which question). The
+  ones most changes meet:
+  - `node tools/serve.mjs dev|preview`: a server for a worktree on a free port.
+  - `tools/capture.mjs` (one screenshot), `tools/parity/capture-set.mjs` (a list of views on one
+    warm page, instead of a loop of capture.mjs), `uv run tools/img.py diff|crop|sheet|stats|flicker`
+    (image work on captures, instead of a Pillow/NumPy script of one's own).
+  - `tools/probe.mjs`: reads values from the page as JSON, instead of a Playwright script of one's
+    own. `tools/wgsl-build.mjs`: builds TSL to WGSL in node, without a GPU.
+  - `tools/profile-frame.mjs`: frame time on a production build.
+  - `tools/verify-*.mjs`: regression probes. After any change to the world's generator, run
+    `node tools/verify-world-chunks.mjs` before captures.
+- Everything that renders the scene in a browser takes the GPU lock
+  (`node tools/gpu-lock.mjs run [--shared] -- <command>`): timing runs hold it alone, paused
+  captures and probes share it. Sessions leave `PONLAI_GPU_PRIORITY` unset.
+- Every wait goes through `tools/job.mjs`, never a sleep loop of one's own; a job is stopped with
+  `job.mjs stop <log>` before an agent hands back.
 - Headed browser runs take over the user's screen: run one only for what a screen alone shows, and
-  only while `node tools/display-gate.mjs status` allows it (`docs/tools.md`, Display gate).
-- `tools/verify-*.mjs` are regression probes (GPU ones take the lock; `verify-day-cycle`,
-  `verify-weather-state`, `verify-wind`, `verify-game`, `verify-framegraph`, `verify-growth-shape`,
-  `verify-world-chunks`, `verify-world-stats` are plain `node`): see `docs/tools.md`.
-- After any change to the world's generator, run `node tools/verify-world-chunks.mjs` before
-  captures.
-- `node tools/capture-growth.mjs --base url [--cand url]` captures two pages side by side over
-  seeds, growth steps and six views, with region statistics (`docs/tools.md`).
-- `node tools/verify-growth-swap.mjs <url> [--steps N]` grows a page N times and compares it with a
-  fresh load of that land: views byte for byte, chunk hashes, the rain map, the camera's ground,
-  pipelines and memory across swaps (`docs/tools.md`).
-- `tools/parity/` captures sets of paused views and motion clips and measures them against
-  references stored per commit: MSAA byte for byte, the temporal modes within a tolerance, both
-  against a ground truth (`aa=gt`); `tools/verify-first-use.mjs` counts the pipelines still created
-  after the warm-up. Captures of a paused temporal page wait for its rest to converge. Manuals:
-  `tools/parity/README.md`, `docs/tools.md`.
+  only while `node tools/display-gate.mjs status` allows it.
+- A new CPU-heavy tool imports `tools/qos.mjs` first, and a one-off script runs through
+  `node tools/qos.mjs <command>`.
 
 ## Map
 
@@ -81,33 +51,17 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
 - `src/camera/`: the island camera (`IslandCameraControls.ts`, the ground it grabs in
   `IslandGround.ts`) and the free flight.
-- `src/world/`: the world generated from the grown land (`IslandGrowth.ts`: the land lattice grown
-  one piece at a time) in 16 m chunks, each from its window of the land field (`Chunks.ts`; the
-  island's mesh simplified per chunk, its border locked: `IslandSimplify.ts`; what the
-  page derives from its meshes, so it never walks their vertices: `ChunkDerived.ts`), on a pool of
-  `chunkWorker.ts` workers run by `WorldChunks.ts` (started by `WorldStart.ts` as the page loads),
-  one IndexedDB record per chunk (`WorldCache.ts`, keyed by the generator's hash, options, browser,
-  chunk and the pieces in its window), merged by `ChunkMerge.ts` and drawn by `World.ts` (the
-  island a mesh per land chunk; the world fields' textures in `WorldFields.ts`); the island grown in
-  place by `Growth.ts` (the next version generated and prepared ahead, then swapped in one frame,
-  every dependent following: the GUI's Island folder, `__PONLAI__.growth`; the only sign of a
-  coming piece is the shoal, `SeabedRise.ts`: the floor tiles under it rise toward their grown form
-  as the approach grows, while the stones, the contact shade and every other kind change at the
-  swap); the footprint, SDF
-  shapes and surface nets (`WorldShapes.ts`), the
-  cliffs (`Cliff.ts`), the submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as
-  tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, the grass hanging from its lip: `RimGrass.ts`), the meadow's anchors (`Anchors.ts`), the shore field read on the CPU as the GPU filters it (`ShoreSample.ts`: the meadow's soil, Meadow.ts `meadowSoil`), the meadow (`Grass.ts`, one pool culled on the GPU
-  by `vegetation/VegetationCull.ts`; its wildflowers are heads on some of its tufts, a batch of the
-  pool, grown in patches of one species by the habitat fields of `materials/Meadow.ts`), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
-  vegetation's depth prepass
-  (`VegetationPrepass.ts`); what the vegetation's materials share in `src/world/vegetation/` (kept
-  for the plant kinds to come: some of it no kind uses today, as each module's header says): the
-  material factory every plant kind builds with (`Material.ts`), the coverage paths
-  and the vegetation tag (`Coverage.ts`), the folded leaf's textures (`LeafTexture.ts`), the
-  instance pool (`Instances.ts`), the GPU cull of a storage-instanced kind, its payload declared by
-  the kind (`VegetationCull.ts`, the meadow's), the wind's deforms and each kind's wind numbers
-  (`Deform.ts`), the distance rule every kind thins by (`Lod.ts`), and the registry of the plant kinds the page's vegetation lists and the growth
-  read (`Registry.ts`; each kind's entry exported by its own module).
+- `src/world/`: the world generated from the grown land (`IslandGrowth.ts`) in 16 m chunks
+  (`Chunks.ts`, `IslandSimplify.ts`, `ChunkDerived.ts`), built on a pool of workers
+  (`WorldStart.ts`, `WorldChunks.ts`, `chunkWorker.ts`), cached per chunk (`WorldCache.ts`), merged
+  (`ChunkMerge.ts`) and drawn (`World.ts`, the world fields' textures in `WorldFields.ts`), and grown
+  in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the shapes
+  (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones (`Stones.ts`), sea floor
+  (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`, `RimGrass.ts`), the meadow (`Grass.ts`,
+  its wildflowers included; anchors `Anchors.ts`, soil from `ShoreSample.ts`), the islander's
+  walking loop (`WalkLoop.ts`, `WalkPath.ts`) and the vegetation's depth prepass
+  (`VegetationPrepass.ts`). `src/world/vegetation/` holds what every plant kind shares (material,
+  coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
   underwater material lights with it, as the terrain does), the air/water interface, sky occlusion, the meadow's canopy light,
