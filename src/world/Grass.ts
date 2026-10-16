@@ -1052,9 +1052,10 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 			// The blade's own lean tilts it too, so blades leaning apart take the light apart.
 			const normal = transformNormal( normalLocal, input.matrix );
 			const leanWorld = ground1.xyz.mul( pose.lean.x ).add( ground2.xyz.mul( pose.lean.y ) );
-			normalLocal.assign( mix( normalize( normal.add( bend.lean.mul( t.mul( 1.5 ) ) ).add( leanWorld.mul( t.mul( LEAN_NORMAL ) ) ) ), normalize( head.normal.add( bend.lean.mul( 1.5 ) ) ), isHead ) );
+			normalLocal.assign( mix( normalize( normal.add( bend.tilt.mul( t.mul( 1.5 ) ) ).add( leanWorld.mul( t.mul( LEAN_NORMAL ) ) ) ), normalize( head.normal.add( bend.tilt.mul( 1.5 ) ) ), isHead ) );
 			// (a head takes its own colour, not the lawn's)
-			instanceColor.assign( mix( input.color, vec3( 1 ), isHead ) );
+			// (a blade lying over in a strong wind shows its paler side, `bendBlade`'s `pale`: 1 up to fair's wind)
+			instanceColor.assign( mix( input.color.mul( bend.pale ), vec3( 1 ), isHead ) );
 
 		},
 		sway: () => bend.lean.xz,

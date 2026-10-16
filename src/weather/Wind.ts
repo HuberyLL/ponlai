@@ -1,6 +1,6 @@
 import { DataTexture, LinearFilter, RGFormat, RepeatWrapping, UnsignedByteType, Vector2, Vector3 } from 'three/webgpu';
 import type { Node } from 'three/webgpu';
-import { Fn, dot, float, fract, normalize, sin, smoothstep, texture, uniform, vec2, vec4 } from 'three/tsl';
+import { Fn, abs, clamp as clampNode, dot, float, fract, inverseSqrt, normalize, sin, smoothstep, texture, uniform, vec2, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 
@@ -15,7 +15,8 @@ import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 // publishes in `shared.wind` every quantity a part reads, so no part keeps a speed or direction of
 // its own. U_ref is REFERENCE_SPEED, the gentle level's 3.8 m/s (fair's load), at which the plants
 // and the sea were tuned:
-// - vegetation: `direction`; `pressure` ( U / U_ref )^2, the drag that leans the plants; `breeze`
+// - vegetation: `direction`; `pressure` ( U / U_ref )^2, the drag that leans the plants (above
+//   fair's, as the elastica of a blade under it: `pressedLean`, `pressing`); `breeze`
 //   U / U_ref, their swing's amplitude; `gustLean`, a gust's added lean, from the gust factor (its
 //   excess pressure G^2 - 1 against fair's); the gust map scrolled with the wind's travel
 //   (`gustScroll`); and two clocks that do not follow the wind: `swayScroll`, which sets each
@@ -111,6 +112,22 @@ const EDDY_SHARE = 0.15;
 const MEAN_LEAN = 0.035;
 const GUST_LEAN = 0.13;
 const MAX_LEAN = 1.2;
+// Above fair's wind the plants take the shape of a blade under the wind's pressure (`pressedLean`):
+// the planar elastica of a cantilever (vegetation/Physics.ts) under a uniform horizontal load of
+// load number W = q L^3 / EI (q the drag per metre). Solved with Physics.ts `drape` (a vertical
+// blade under a sideways load is the horizontal one under its weight, turned by 90 degrees) for
+// the grass blade's taper, W from 0.02 to 630: the tip's chord leans 4 degrees at W = 1, 31 at 9,
+// 66 at 43, 81 at 200, saturating toward lying flat downwind. As a tip offset over height its
+// tangent is L = k0 W / sqrt( 1 + a W ) (k0 = 0.0729, the small bend's slope; a = 0.0199) within
+// half a degree over the whole range, and the chord to half way leans atan( L / 2 ) within four
+// degrees, the arc the bends here draw (`bendBlade`: the offset grows with the square of
+// the way up). In the lean's own unit x = k0 W (the linear lean, `leanLoad`) that is
+// x / sqrt( 1 + PRESS_SATURATION x ). Fair's lean (x up to 0.165 at a gust's core) is the linear
+// one: the elastica and the eased lean below differ there by under a degree, so up to fair's wind
+// the lean stays the eased one, to the bit, and from fair's pressure to twice it the elastica takes
+// over (`pressing`). A stronger wind then presses the plants into a downwind arc that keeps
+// deepening, where the eased lean stopped at 50 degrees.
+const PRESS_SATURATION = 0.2725;
 // The plants' own sway about the lean travels downwind (`gustWave`): its crests lie SWAY_SPREAD
 // metres apart along the wind, so neighbours within a metre or two move together and plants a few
 // metres apart drift out of step. With a whole-plant sway near 1 Hz the crests run about twice a
@@ -298,12 +315,46 @@ export function windField( wind: WindState, position: Node<'vec2'> ): Node<'vec4
 		const broad = texture( gustTexture(), vec2( a.sub( wind.gustScroll.x ).div( GUST_ALONG ), c.div( GUST_ACROSS ) ) ).level( float( 0 ) ).x;
 		const eddy = texture( gustTexture(), vec2( a.sub( wind.gustScroll.y ).div( EDDY_TILE ), c.div( EDDY_TILE ).add( 0.37 ) ) ).level( float( 0 ) ).y;
 		const gust = smoothstep( 0.3, 0.95, broad.mul( 1 - EDDY_SHARE ).add( eddy.mul( EDDY_SHARE ) ) );
-		const x = wind.pressure.mul( gust.mul( wind.gustLean ).add( MEAN_LEAN ) );
-		const lean = x.div( x.div( MAX_LEAN ).add( 1 ) );
+		const x = leanLoad( wind, gust );
+		const eased = x.div( x.div( MAX_LEAN ).add( 1 ) );
+		// (an exact 0 above at fair's wind and below: the eased lean to the bit)
+		const lean = eased.add( pressedLean( x ).sub( eased ).mul( pressing( wind ) ) );
 		const veer = normalize( direction.add( across.mul( eddy.sub( 0.5 ).mul( 0.45 ) ) ) );
 		return vec4( veer, lean, gust );
 
 	} )() as Node<'vec4'>;
+
+}
+
+/** The linear lean a wind gives a plant at a gust's strength `gust` (0..1): its pressure times the
+ * calm share plus the gust's, the load in the lean's unit (tip offset over height, k0 W). */
+export function leanLoad( wind: WindState, gust: Node<'float'> ): Node<'float'> {
+
+	return wind.pressure.mul( gust.mul( wind.gustLean ).add( MEAN_LEAN ) );
+
+}
+
+/** A blade's lean (tip offset over height) under the linear lean `x` (`leanLoad`, scaled by the
+ * kind's length and stiffness): the elastica's, x / sqrt( 1 + PRESS_SATURATION |x| ), odd in x. */
+export function pressedLean( x: Node<'float'> ): Node<'float'> {
+
+	return x.mul( pressedStiffening( x ) );
+
+}
+
+/** The pressed lean over the linear one at `x` (the secant of `pressedLean`): how much less a
+ * pressed plant answers a change of load, 1 at rest. */
+export function pressedStiffening( x: Node<'float'> ): Node<'float'> {
+
+	return inverseSqrt( abs( x ).mul( PRESS_SATURATION ).add( 1 ) );
+
+}
+
+/** How far the plants have gone over to the elastica's lean (`pressedLean`): 0 up to fair's
+ * pressure, exactly, and 1 from twice it (5.4 m/s) up. */
+export function pressing( wind: WindState ): Node<'float'> {
+
+	return clampNode( wind.pressure.sub( 1 ), 0, 1 );
 
 }
 
