@@ -10,7 +10,7 @@ import { EXPOSED, EXPOSED_TINT, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP, O
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilUniforms } from './Soil.ts';
 import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
-import { refractedSunDirectionNode, refractedSunBeamScaleNode } from '../lighting/RefractedSun.ts';
+import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
 import { TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { KEY_RIM, keyRimLight } from '../lighting/KeyRim.ts';
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
@@ -846,50 +846,10 @@ function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 
 }
 
-// Light below the surface: the sun path through the water column (with caustics) and the
-// dimmer, bluer ambient; above the water, a faint caustic shimmer reflected onto the rock and the
-// key light's rim (lighting/KeyRim.ts, the stone's surface).
-class TerrainLightingModel extends THREE.PhysicalLightingModel {
-
-	sunAtt: V3; ambMul: V3; specMul: V3;
-	sunDirection: V3; underwater: THREE.Node<'bool'>;
-
-	constructor( sunAtt: V3, ambMul: V3, specMul: V3, sunDirection: V3, underwater: THREE.Node<'bool'> ) {
-
-		super();
-		this.sunAtt = sunAtt; this.ambMul = ambMul; this.specMul = specMul;
-		this.sunDirection = sunDirection; this.underwater = underwater;
-
-	}
-
-	direct( input: THREE.LightingModelDirectInput, builder: THREE.NodeBuilder ): void {
-
-		const lightDirection = select( this.underwater, this.sunDirection, input.lightDirection as V3 );
-		// The bump terminator: past the geometric terminator the stone's detail normals still
-		// tilt some texels toward the light, and the shadow map cannot shade them, since the
-		// surface there occludes only itself (the bias clears it). Their sunlit specks twinkled
-		// inside the cliff's own shadow along its creases. A surface facing away from the light
-		// cannot see it; fade the key light out over the last few degrees before the terminator.
-		const facing = smoothstep( 0, 0.06, dot( normalViewGeometry, lightDirection ) );
-		const lightColor = ( input.lightColor as V3 ).mul( this.sunAtt ).mul( facing ).toVar();
-		super.direct( { ...input, lightDirection, lightColor }, builder );
-		// The key light's rim (KeyRim.ts) on the geometric normal: the detail normals' grazing
-		// texels would sparkle along every crease. None below the water, whose own surface lights it.
-		const above = select( this.underwater, float( 0 ), float( 1 ) );
-		( input.reflectedLight.directDiffuse as V3 ).addAssign( keyRimLight( lightColor.mul( above ), lightDirection, diffuseColor.rgb, KEY_RIM.stone, normalViewGeometry ) );
-
-	}
-
-	indirect( builder: THREE.NodeBuilder ): void {
-
-		super.indirect( builder );
-		const reflected = ( builder.context as unknown as { reflectedLight: { indirectDiffuse: V3; indirectSpecular: V3 } } ).reflectedLight;
-		reflected.indirectDiffuse.mulAssign( this.ambMul );
-		reflected.indirectSpecular.mulAssign( this.specMul );
-
-	}
-
-}
+// The light below the surface is the shared underwater model (lighting/Underwater.ts): the sun
+// path through the water column (with caustics) and the dimmer, bluer ambient. Above the water the
+// terrain adds its own: the meadow's canopy shade on the key, a faint caustic shimmer reflected onto
+// the rock and the key light's rim (lighting/KeyRim.ts, the stone's surface).
 
 type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;
 
@@ -965,57 +925,36 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, caustics: Cau
 
 	};
 
-	// the water column above this point
+	// The caustics' reflected shimmer is read only in the band above the water where it is seen,
+	// which has faded to nothing 1.2 m up; most of the island's rock lies above it.
 	const p = positionWorld;
-	const dW = shared.waterLevel.sub( p.y );
-	const sigT = shared.sigA.add( shared.sigS );
-	const under = dW.greaterThan( 0 );
-	// Snell's direction and the beam-area factor must change together. For a horizontal
-	// floor, muWater * (muAir / muWater) preserves transmitted horizontal irradiance;
-	// steep submerged walls now receive the correct refracted projection as well.
-	const waterSun = refractedSunDirectionNode( shared.sunDir );
-	const waterSunView = normalize( cameraViewMatrix.mul( vec4( waterSun, 0 ) ).xyz );
-	// The caustics are read only where they are seen: below the water for the sun's path, and
-	// in the band above it for the reflected shimmer, which has faded to nothing 1.2 m up. Most
-	// of the island's rock lies above both, and a select() would read them everywhere. They sample
-	// with an explicit level, so the reads may sit inside these branches.
-	const sunAtt = Fn( () => {
-
-		const att = vec3( surf.get( 'canopy' ) ).toVar();
-		If( under, () => {
-
-			att.assign( exp( sigT.negate().mul( dW ).div( waterSun.y ) )
-				.mul( shared.sunIntoWater ).mul( refractedSunBeamScaleNode( shared.sunDir ) ).mul( causticsAt( caustics, p, dW.max( 0 ) ) ) );
-
-		} );
-		return att;
-
-	} )();
-	const ambAtt = exp( sigT.negate().mul( dW.max( 0 ) ).mul( 1.25 ) );
 	const above = p.y.sub( shared.waterLevel );
 	// Reflected caustic sparkle is direct-light energy. It must not animate ambient light
 	// through the zero-energy sun/moon handoff or turn the moon into a daylight source.
 	const directGain = clamp( max( shared.sunColor.x, max( shared.sunColor.y, shared.sunColor.z ) ).mul( 3 ), 0, 1 );
-	const ambMul = Fn( () => {
-
-		const mul = vec3( 1 ).toVar();
-		If( under, () => {
-
-			mul.assign( ambAtt );
-
-		} ).ElseIf( above.lessThan( 1.2 ), () => {
-
+	const light = underwaterLight( shared, caustics, {
+		aboveSun: vec3( surf.get( 'canopy' ) ),
+		aboveAmbient: {
+			when: above.lessThan( 1.2 ),
 			// Light reflected up from the sea onto the rock just above it: a steady 28 % lift of
 			// the ambient with the moving caustic pattern (mean 1) on top.
-			const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 1 ).mul( 0.6 ).add( 0.28 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
-			mul.assign( vec3( float( 1 ).add( shimmer.mul( directGain ) ) ) );
+			value: () => {
 
-		} );
-		return mul;
+				const shimmer = causticsAt( caustics, p, above.mul( 0.6 ).add( 1.4 ) ).sub( 1 ).mul( 0.6 ).add( 0.28 ).mul( float( 1 ).sub( smoothstep( 0, 1.2, above ) ) );
+				return vec3( float( 1 ).add( shimmer.mul( directGain ) ) );
 
-	} )();
-	const specMul = select( under, ambAtt.mul( 0.5 ), vec3( 1 ) );
-	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new TerrainLightingModel( sunAtt, ambMul, specMul, waterSunView, under );
+			},
+		},
+	} );
+	// The key light's rim (KeyRim.ts) on the geometric normal: the detail normals' grazing texels
+	// would sparkle along every crease. None below the water, whose own surface lights it.
+	const rim = ( input: THREE.LightingModelDirectInput, lightColor: V3, lightDirection: V3 ) => {
+
+		const lit = select( light.under, float( 0 ), float( 1 ) );
+		( input.reflectedLight.directDiffuse as V3 ).addAssign( keyRimLight( lightColor.mul( lit ), lightDirection, diffuseColor.rgb, KEY_RIM.stone, normalViewGeometry ) );
+
+	};
+	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new UnderwaterLightingModel( light, { extra: rim } );
 	mat.userData.refractedSolarReceiver = true;
 	mat.userData.refractedSolarFloor = kind === 'seabed';
 	mat.userData.topY = topYU;
