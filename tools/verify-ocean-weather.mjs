@@ -8,13 +8,13 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { acquireGpuLock } from './gpu-lock.mjs';
 import { Wind } from '../src/weather/Wind.ts';
-import { WEATHER_PRESETS } from '../src/sky/Weather.ts';
+import { Weather } from '../src/sky/Weather.ts';
 
 const base = process.argv[ 2 ] || 'http://127.0.0.1:5190';
 const out = 'artifacts/verification/ocean-weather.json';
 const report = { base, time: 12, errors: [], failures: [] };
 const gains = Object.fromEntries( [ 'clear', 'rain' ].map( ( name ) => {
-	const state = WEATHER_PRESETS[ name ];
+	const state = new Weather( name ).state;
 	return [ name, new Wind( undefined, { speed: state.windSpeed, heading: state.windDirection } ).uniforms.oceanGain.value.toArray() ];
 } ) );
 // shared with other probes (their pixels do not depend on the GPU load), never during a timing

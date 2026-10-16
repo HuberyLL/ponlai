@@ -111,8 +111,17 @@ Sky and weather:
   (seconds), `moon` (phase), `clock=paused` (freezes only the day clock; `paused` freezes it with
   the scene).
 - `weather` (clear, fair, cloudy, overcast, rain, storm, fog; rain and storm load as established,
-  already wet; without it the weather evolves on its own, among the kept presets), `clouds`
-  (coverage override). Rain, storm and fog are parked (`src/sky/Weather.ts` `PARKED_WEATHER`):
+  already wet; without it, `wind` and `windDir` the weather and its wind evolve on their own, among
+  the kept presets), `clouds` (coverage override).
+- `wind` (light, gentle, fresh, strong: the wind's level, a mean wind 10 m up of 1.5, 3.8, 7 and
+  11 m/s) and `windDir` (its heading in degrees: where the wind comes from, in the sea spectrum's
+  convention, atan2( z, x ) in the world's x-z plane; 40 is the prevailing wind, which the
+  landscape and the sea's spectrum keep), each over the sky's own wind (the gentle one from 40 for
+  every kept sky, so `weather=fair` alone is the page it always was). Naming either holds the
+  weather, as `weather` does; both are scene options. On a page, the GUI's Weather folder (`wind`,
+  `wind heading`, over its transition seconds) or `__PONLAI__.setWind( { level, heading },
+  seconds )`; `weather.windTarget` and the diagnostics' `windTarget`, `windSpeed` and
+  `windHeading` show it (`src/sky/Weather.ts`). Rain, storm and fog are parked (`src/sky/Weather.ts` `PARKED_WEATHER`):
   a production page without `?debug` refuses them with a console warning and shows fair; the dev
   server, `?debug` and `?profile` still reach them.
 
@@ -1125,8 +1134,9 @@ with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script 
   pass and their pass's MRT, both ways round) and the motion vectors' blends on the GPU;
   `tools/verify-first-use.mjs` counts the pipelines any step still creates after the warm-up
   (`--aa msaa,taa,taau,off --quality high,medium,low` runs the whole matrix, a page per run, the
-  parked tiers included; its
-  `weather` and `bolt` steps reach the parked weathers and run only when `--steps` names them).
+  parked tiers included; its `wind` step jumps to each wind level and heading and changes them over
+  seconds; its `weather` and `bolt` steps reach the parked weathers and run only when `--steps`
+  names them).
   The load is judged as a step of its own, `load`: no frame of the 60 after the first may create a
   pipeline synchronously, nor may the first frame's redraw of the sun's shadow map.
   It loads in a capture profile slot (as the captures' fast mode does), so the island comes from

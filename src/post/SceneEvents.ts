@@ -33,7 +33,8 @@ export const SCENE_EVENTS = {
 	'seek': true,
 	// a whole scene at once (`establishScene`: weather, time and clock)
 	'establish scene': true,
-	// a weather set at once (`setWeather( name, 0 )`), and one that sweeps in over seconds
+	// a weather or its wind set at once (`setWeather( name, 0 )`, `setWind( choice, 0 )`), and one
+	// that sweeps in over seconds
 	'weather jump': true,
 	'weather front': false,
 	// the time of day or a time preset set at once (`setHour`, `setPreset`)

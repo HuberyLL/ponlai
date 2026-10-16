@@ -13,7 +13,7 @@ import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraCont
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
-import { Weather, WEATHER_PRESETS, isParkedWeather, type WeatherName } from './sky/Weather.ts';
+import { Weather, WEATHER_PRESETS, WIND_LEVELS, isParkedWeather, isWindLevel, type WeatherName, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
 import { qualityLines, rememberQuality, QualityDetector } from './QualityDetect.ts';
 import { Wind, weatherWind } from './weather/Wind.ts';
@@ -192,7 +192,9 @@ const numberParam = ( name: string, fallback: number, options = params ) => {
 // hours dark enough for the Milky Way. The game starts at 8 (see Game.ts), so the sky is lit
 // once for that hour. A parked weather (Weather.ts `PARKED_WEATHER`) is refused outside a debug
 // build and falls back to fair; the load and a scene jump read it here alike, and so does ?game,
-// whose weather is the page's.
+// whose weather is the page's. The wind (Weather.ts) takes `wind` (a level) and `windDir` (a
+// heading, degrees in WeatherState's convention), each over the sky's own wind; naming the
+// weather or either of them holds the weather, its wind included.
 function sceneOptions( options: URLSearchParams ) {
 
 	let weather = options.get( 'weather' ) ?? 'fair';
@@ -205,7 +207,11 @@ function sceneOptions( options: URLSearchParams ) {
 	}
 	return {
 		weather: Object.hasOwn( WEATHER_PRESETS, weather ) ? weather as WeatherName : 'fair',
-		autoWeather: ! options.has( 'weather' ),
+		wind: {
+			level: isWindLevel( options.get( 'wind' ) ) ? options.get( 'wind' ) as WindLevel : undefined,
+			heading: options.has( 'windDir' ) && Number.isFinite( Number( options.get( 'windDir' ) ) ) ? Number( options.get( 'windDir' ) ) : undefined,
+		},
+		autoWeather: ! options.has( 'weather' ) && ! options.has( 'wind' ) && ! options.has( 'windDir' ),
 		day: { hour: numberParam( 'hour', params.has( 'game' ) ? 8 : 16, options ),
 			dayLength: Math.max( 30, numberParam( 'dayLength', params.has( 'game' ) ? 1440 : 2880, options ) ),
 			paused: options.has( 'paused' ) || options.get( 'clock' ) === 'paused', moonPhase: numberParam( 'moon', 0.25, options ) },
@@ -220,7 +226,7 @@ function sceneOptions( options: URLSearchParams ) {
 }
 const loaded = sceneOptions( params );
 const dayCycle = new DayCycle( loaded.day );
-const weather = new Weather( loaded.weather );
+const weather = new Weather( loaded.weather, loaded.wind );
 const weatherEffects = { rain: true, wetness: true };
 weather.auto = loaded.autoWeather;
 const requestedPreset = params.get( 'preset' );
@@ -377,6 +383,16 @@ const setWeather = async ( name: WeatherName, seconds = 20 ) => {
 	cloudOverride = null;
 	weather.auto = false;
 	weather.setWeather( name, seconds );
+	sceneEvent( seconds === 0 ? 'weather jump' : 'weather front' );
+	if ( seconds === 0 ) await refreshEnvironment();
+
+};
+// The wind alone (its level, its heading or both), the sky keeping its course; as setWeather, it
+// holds the weather.
+const setWind = async ( choice: WindChoice, seconds = 20 ) => {
+
+	weather.auto = false;
+	weather.setWind( choice, seconds );
 	sceneEvent( seconds === 0 ? 'weather jump' : 'weather front' );
 	if ( seconds === 0 ) await refreshEnvironment();
 
@@ -1049,6 +1065,12 @@ const weatherView = { preset: weather.target, seconds: 20 };
 // parked weathers are listed in debug builds only (Weather.ts)
 weatherF.add( weatherView, 'preset', Object.keys( WEATHER_PRESETS ).filter( ( name ) => DEBUG || ! isParkedWeather( name ) ) ).name( 'weather' ).listen().onChange( ( name: WeatherName ) => { void setWeather( name, weatherView.seconds ); } );
 weatherF.add( weatherView, 'seconds', 0, 120, 1 ).name( 'transition seconds' );
+// the wind's level and heading (Weather.ts), shown as the weather's target: written only when the
+// target changes, so a drag of the heading is not overwritten while it lasts
+const windView = { ...weather.windTarget };
+let shownWind = `${ windView.level },${ windView.heading }`;
+weatherF.add( windView, 'level', Object.keys( WIND_LEVELS ) ).name( 'wind' ).listen().onChange( ( level: WindLevel ) => { void setWind( { level }, weatherView.seconds ); } );
+weatherF.add( windView, 'heading', 0, 360, 1 ).name( 'wind heading' ).listen().onFinishChange( ( heading: number ) => { void setWind( { heading }, weatherView.seconds ); } );
 weatherF.add( weather, 'auto' ).name( 'auto weather' ).listen();
 weatherF.add( weatherEffects, 'rain' ).name( 'rain & ripples' );
 weatherF.add( weatherEffects, 'wetness' ).name( 'wet surfaces' );
@@ -1444,6 +1466,13 @@ function tick( time: number ): void {
 	if ( game ) dayCycle.setHour( game.hour() );
 	weather.update( paused ? 0 : clockDt );
 	weatherView.preset = weather.target;
+	const windTarget = weather.windTarget;
+	if ( `${ windTarget.level },${ windTarget.heading }` !== shownWind ) {
+
+		Object.assign( windView, windTarget );
+		shownWind = `${ windTarget.level },${ windTarget.heading }`;
+
+	}
 	if ( freeControls.enabled ) freeControls.update( rawDt );
 	else controls.advance( dt, time );
 
@@ -1672,6 +1701,8 @@ function diagnostics( now = false ): void {
 		rain: + sky.weather.rain.toFixed( 3 ),
 		wetness: + shared.wetness.value.toFixed( 3 ),
 		windSpeed: + wind.speed.toFixed( 3 ),
+		windHeading: + wind.heading.toFixed( 2 ),
+		windTarget: weather.windTarget,
 		cameraMode: cameraSettings.mode,
 		// the scene's anti-aliasing, the pipelines created so far and the frame graph's state and
 		// dev counters, for the clip and first-use tools
@@ -1801,7 +1832,7 @@ const setTime = ( t: number ) => {
 // `__PONLAI__.sceneJump` (1) marks a page that keeps this contract: tools/parity/capture-set.mjs
 // captures a set in one page only where it is set (older builds' establishScene takes only the
 // options form and leaves state behind). Raise it if the contract changes in a way callers see.
-const SCENE_OPTIONS = [ 'weather', 'preset', 'hour', 'moon', 't', 'dist', 'polar', 'az', 'camera', 'clouds', 'dayLength', 'paused', 'clock', 'approach' ];
+const SCENE_OPTIONS = [ 'weather', 'wind', 'windDir', 'preset', 'hour', 'moon', 't', 'dist', 'polar', 'az', 'camera', 'clouds', 'dayLength', 'paused', 'clock', 'approach' ];
 const establishScene = async ( scene: string | URLSearchParams | { weather?: WeatherName; preset?: DayPreset; hour?: number; time?: number } ): Promise<void> => {
 
 	const query = typeof scene === 'string' ? new URLSearchParams( scene ) : scene instanceof URLSearchParams ? scene : null;
@@ -1813,7 +1844,7 @@ const establishScene = async ( scene: string | URLSearchParams | { weather?: Wea
 		if ( fixed.length ) throw new Error( `establishScene: ${ fixed.join( ', ' ) } differ from the page's and are read once at load: reload the page with them` );
 		const next = sceneOptions( query );
 		cloudOverride = next.clouds;
-		weather.establish( next.weather );
+		weather.establish( next.weather, next.wind );
 		weather.auto = next.autoWeather;
 		dayCycle.reset( next.day );
 		if ( next.preset ) dayCycle.setPreset( next.preset );
@@ -2080,7 +2111,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, rimGrass, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, rimGrass, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, vegetation }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes
