@@ -174,13 +174,16 @@ export const SHELF_CEILING = - 1.6;
 //    1.6 - 2.2 m deep for a few metres, then step down to the shelf over a short, steep edge.
 // Shore-platform and talus morphology after Trenhaile, "The Geomorphology of Rock Coasts" (1987);
 // the shapes here are art-directed, not modelled.
+// How far from the coast the shelf's own shapes reach (m): beyond it the floor is the basin's. The
+// island camera frames the land with this ring of shallows round it (camera/IslandFraming.ts).
+export const SHELF_REACH = 14;
 function shapeShelf( fp: Footprint, basin: HeightFn ): HeightFn {
 
 	return ( x: number, z: number ) => {
 
 		let h = basin( x, z );
 		const d = Math.max( fp.dist( x, z ), 0 );
-		if ( d > 14 ) return h;
+		if ( d > SHELF_REACH ) return h;
 
 		// benches: a few per hundred metres of coast, each a few metres wide
 		const benchField = noise3( x * 0.042 + 3.1, 17.3, z * 0.042 - 8.6 );

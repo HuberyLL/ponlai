@@ -1145,7 +1145,7 @@ function pageUrl( base, q, timestamps ) {
 	// the url's own options first (the page reads the first of a repeated option), then the
 	// scene's; `debug` too, so a build without the profiler still exposes its handles
 	// uncapped, the frame pacer would read the work's own intervals as a display's refresh
-	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', WORLD_CACHE ? 'worldCache' : 'worldCache=off', `quality=${ QUALITY }`, q, EXTRA_Q, DRS_STORE, FRAME_FALLBACK, renderScale ? `dpr=${ renderScale }` : BASELINE_DPR ? `dpr=${ BASELINE_DPR }` : '', VSYNC ? '' : 'frameRate=0' ].filter( Boolean ).join( '&' );
+	url.search = [ url.search.slice( 1 ), HOOKS ? timestamps ? 'profile' : 'profile=frames' : '', 'debug', MOTION === 'user' ? 'cameraInput' : '', WORLD_CACHE ? 'worldCache' : 'worldCache=off', `quality=${ QUALITY }`, q, EXTRA_Q, DRS_STORE, FRAME_FALLBACK, renderScale ? `dpr=${ renderScale }` : BASELINE_DPR ? `dpr=${ BASELINE_DPR }` : '', VSYNC ? '' : 'frameRate=0' ].filter( Boolean ).join( '&' );
 	return url.href;
 
 }

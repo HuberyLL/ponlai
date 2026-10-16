@@ -68,12 +68,21 @@ try {
 	await page.mouse.up();
 	await page.waitForTimeout( 1300 );
 	const after = await page.evaluate( () => window.__PONLAI__.camera.position.toArray() );
-	assert.ok( after.some( ( v, i ) => Math.abs( v - before[ i ] ) > 1 ) );
-	await page.screenshot( { path: `${ out }/orbit.png` } );
+	await page.keyboard.down( 'KeyW' );
+	await page.waitForTimeout( 600 );
+	await page.keyboard.up( 'KeyW' );
+	await page.waitForTimeout( 600 );
+	const held = await page.evaluate( () => window.__PONLAI__.camera.position.toArray() );
+	assert.ok( after.every( ( v, i ) => Math.abs( v - before[ i ] ) < 1e-3 ) && held.every( ( v, i ) => Math.abs( v - before[ i ] ) < 1e-3 ) );
+	checks.push( 'A real left drag and the pan keys leave the framed island camera where it is' );
+	const distance = () => page.evaluate( () => { const s = window.__PONLAI__; return s.camera.position.distanceTo( s.controls.target ); } );
+	const far = await distance();
 	await page.mouse.wheel( 0, - 380 );
 	await page.waitForTimeout( 1200 );
+	const near = await distance();
+	assert.ok( near < far - 1 );
 	await page.screenshot( { path: `${ out }/close.png` } );
-	checks.push( 'Real pointer drag rotates the island and wheel zooms without rendering errors' );
+	checks.push( 'The wheel zooms the framed island camera in' );
 	await page.setViewportSize( { width: 1280, height: 800 } );
 	// The diagnostics refresh every 30 frames (main.ts), so a fixed wait reads a stale snapshot
 	// whenever fewer frames fit in it: wait for the first snapshot taken after the resize.

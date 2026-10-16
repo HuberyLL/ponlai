@@ -45,7 +45,8 @@ if ( positional.length > 1 || unknown.length || ! ( runs >= 1 ) ) {
 
 }
 const url = positional[ 0 ] ?? 'http://127.0.0.1:5190/';
-const query = options.q ? `paused&${ options.q }` : 'paused';
+// (the island camera takes the hand's input only with `cameraInput`)
+const query = options.q ? `paused&cameraInput&${ options.q }` : 'paused&cameraInput';
 const MAX_DRIFT = 0.5;
 
 const cases = [
