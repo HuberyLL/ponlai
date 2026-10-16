@@ -9,13 +9,16 @@ import { createMeadowTexture } from './Meadow.ts';
 import { createSoilTexture } from './Soil.ts';
 import {
 	Fn, If, Loop, uv, texture, uniform, float, int, vec2, vec3, vec4, normalize, fract, floor, dot, mod, mix,
-	length, smoothstep, sin, abs, pow, max, clamp,
+	length, smoothstep, sin, cos, abs, pow, max, clamp, step,
 } from 'three/tsl';
 
 // Tileable detail textures baked on the GPU once at startup (no image files):
 //   heights   R rock (beds, fractures)   G moss cushions   B sand ripples   A lichen spots
 //   normalsA  RG rock normal             BA moss normal
 //   normalsB  RG sand normal             B crack mask      A low-frequency variation
+//   gravel    R cover of the first stones   G cover of the next stones   B the stones' height
+//             A low-frequency variation (normalsB's A, again: the cliff reads it here, which keeps
+//             its fragment stage within WebGPU's 16 sampled textures)
 // All periodic over [0, 1), mipmapped, anisotropic.
 
 type F = THREE.Node<'float'>;
@@ -125,10 +128,58 @@ const crackBake = ( q: V2 ) => Fn( () => {
 
 } )();
 
+// Gravel: small stones in a periodic Worley lattice (GRAVEL_CELLS cells across the tile), a share
+// of the cells holding one (after the small stones of tidewater's detail map, its G channel,
+// Daniel Greenheck, MIT; the technique only). Each is an ellipse turned by its cell's hash, of radius
+// GRAVEL_RADIUS cells and up to GRAVEL_ASPECT times as long as wide, domed (its slope from the
+// dome, GRAVEL_FLAT times a hemisphere's height). Its cell's rank sorts it into the first stones
+// (rank under GRAVEL_FIRST: R) or the next ones (under GRAVEL_NEXT: G), so the ground turns its
+// stones on in two steps as the soil thins (TerrainMaterial.ts); B holds the height of whichever
+// stone covers the texel, in GRAVEL_HEIGHT cells (the ground takes its slope by differences).
+// Covers and heights are averages, so the mips keep the stones' mean cover at a distance.
+export const GRAVEL_CELLS = 48, GRAVEL_HEIGHT = 0.3;
+const GRAVEL_RADIUS = [ 0.28, 0.48 ], GRAVEL_ASPECT = 0.6, GRAVEL_FLAT = 0.6, GRAVEL_FIRST = 0.22, GRAVEL_NEXT = 0.55;
+
+const gravelBake = ( q: V2 ) => Fn( () => {
+
+	const p = q.mul( GRAVEL_CELLS );
+	const i = floor( p ).toVar();
+	const f = fract( p ).toVar();
+	const first = float( 0 ).toVar(), next = float( 0 ).toVar(), height = float( 0 ).toVar(), best = float( 0 ).toVar();
+	Loop( { start: int( - 1 ), end: int( 1 ), condition: '<=' }, { start: int( - 1 ), end: int( 1 ), condition: '<=' }, ( { i: y, j: x } ) => {
+
+		const o = vec2( float( x ), float( y ) );
+		const id = mod( i.add( o ), vec2( GRAVEL_CELLS ) );
+		const h1 = hash22( id ).mul( 0.5 ).add( 0.5 ), h2 = hash22( id.add( 17.31 ) ), h3 = hash22( id.add( 41.73 ) ).mul( 0.5 ).add( 0.5 );
+		const rank = h1.x;
+		const radius = h1.y.mul( GRAVEL_RADIUS[ 1 ] - GRAVEL_RADIUS[ 0 ] ).add( GRAVEL_RADIUS[ 0 ] );
+		const aspect = h3.y.mul( GRAVEL_ASPECT ).add( 1 );
+		const angle = h3.x.mul( Math.PI );
+		const c = cos( angle ), sn = sin( angle );
+		const d = f.sub( o.add( 0.5 ).add( h2.mul( 0.25 ) ) );
+		// the texel in the stone's own frame, its ellipse the unit circle
+		const lx = d.x.mul( c ).add( d.y.mul( sn ) ).div( radius ), ly = d.y.mul( c ).sub( d.x.mul( sn ) ).mul( aspect ).div( radius );
+		const rho = length( vec2( lx, ly ) );
+		const cover = float( 1 ).sub( smoothstep( 0.82, 1, rho ) ).mul( step( rank, GRAVEL_NEXT ) );
+		If( cover.greaterThan( best ), () => {
+
+			best.assign( cover );
+			height.assign( max( float( 1 ).sub( rho.mul( rho ) ), 0 ).sqrt().mul( radius ).mul( GRAVEL_FLAT ) );
+			first.assign( cover.mul( step( rank, GRAVEL_FIRST ) ) );
+			next.assign( cover.mul( float( 1 ).sub( step( rank, GRAVEL_FIRST ) ) ) );
+
+		} );
+
+	} );
+	return vec4( first, next, clamp( height.div( GRAVEL_HEIGHT ), 0, 1 ), fbm( q.add( 0.5 ), 2, 4 ).mul( 0.5 ).add( 0.5 ) );
+
+} )();
+
 export interface DetailTextures {
 	meadow: THREE.Texture;
 	soil: THREE.Texture;
 	heights: THREE.Texture;
+	gravel: THREE.Texture;
 	normalsA: THREE.Texture;
 	normalsB: THREE.Texture;
 	rockAlbedo: THREE.Texture;
@@ -150,7 +201,7 @@ export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, si
 
 	};
 
-	const heights = make( 'heights' ), normalsA = make( 'normalsA' ), normalsB = make( 'normalsB' );
+	const heights = make( 'heights' ), normalsA = make( 'normalsA' ), normalsB = make( 'normalsB' ), gravel = make( 'gravel' );
 	const quad = new THREE.QuadMesh( new THREE.NodeMaterial() );
 	const render = ( rt: THREE.RenderTarget, node: THREE.Node ) => {
 
@@ -179,6 +230,7 @@ export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, si
 	render( normalsA, vec4( nr.xy.mul( 0.5 ).add( 0.5 ), nm.xy.mul( 0.5 ).add( 0.5 ) ) );
 	const cl = crackBake( uv() );
 	render( normalsB, vec4( ns.xy.mul( 0.5 ).add( 0.5 ), cl.x, cl.y ) );
+	render( gravel, gravelBake( uv() ) );
 
 	renderer.setRenderTarget( prev );
 
@@ -197,6 +249,6 @@ export async function bakeProceduralTextures( renderer: THREE.WebGPURenderer, si
 		map.needsUpdate = true;
 
 	}
-	return { meadow: createMeadowTexture(), soil: createSoilTexture(), heights: heights.texture, normalsA: normalsA.texture, normalsB: normalsB.texture, rockAlbedo, rockDetail };
+	return { meadow: createMeadowTexture(), soil: createSoilTexture(), heights: heights.texture, gravel: gravel.texture, normalsA: normalsA.texture, normalsB: normalsB.texture, rockAlbedo, rockDetail };
 
 }
