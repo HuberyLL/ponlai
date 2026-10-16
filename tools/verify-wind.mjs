@@ -3,7 +3,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { Wind, createWindUniforms, gustWave, weatherWind, swayFrequency, CLOCK_PERIOD, GUST_ALONG, EDDY_TILE, EDDY_RATE, REFERENCE_SPEED, REFERENCE_GUSTINESS } from '../src/weather/Wind.ts';
-import { Weather, WEATHER_PRESETS } from '../src/sky/Weather.ts';
+import { Weather, WIND_LEVELS, PREVAILING_HEADING } from '../src/sky/Weather.ts';
 import { debugFlags } from '../src/debug/DebugFlags.ts';
 
 const near = ( a, b, tolerance = 1e-9 ) => assert.ok( Math.abs( a - b ) <= tolerance, `${ a } != ${ b }` );
@@ -19,7 +19,7 @@ const run = ( step ) => {
 
 	const weather = new Weather( 'clear' );
 	const local = new Wind( createWindUniforms(), weatherWind( weather.state ) );
-	weather.setWeather( 'rain', 8 );
+	weather.setWeather( 'cloudy', 8, { level: 'fresh', heading: 130 } );
 	for ( let t = 0; t < 12 - 1e-8; t += step ) {
 
 		weather.update( step );
@@ -31,27 +31,32 @@ const run = ( step ) => {
 };
 const coarse = run( 0.05 ), fine = run( 0.01 );
 assert.ok( coarse.uniforms.displacement.value.distanceTo( fine.uniforms.displacement.value ) < 1e-6 );
-assert.ok( coarse.uniforms.oceanGain.value.toArray().every( ( gain ) => gain > 0 && gain < 1.4 ) );
+// the sea stays within its calm design in the light and gentle winds; the fresh and strong ones
+// build it beyond (Wind.ts `publish`)
+for ( const level of [ 'light', 'gentle' ] ) assert.ok( new Wind( createWindUniforms(), { speed: WIND_LEVELS[ level ].windSpeed } ).uniforms.oceanGain.value.toArray().every( ( gain ) => gain > 0 && gain < 1.4 ), level );
 wind.reset( { time: 12 } );
 assert.ok( wind.uniforms.displacement.value.equals( start ), 'Explicit fixed-time reset must reproduce startup' );
 for ( const invalid of [ NaN, Infinity, - 1 ] ) assert.throws( () => wind.update( invalid ), RangeError );
 for ( const invalid of [ NaN, 0.9 ] ) assert.throws( () => wind.update( 0, 3.8, 40, invalid ), RangeError );
-// Every preset gives the wind its three numbers, and the parts read them from Wind alone.
-for ( const [ name, preset ] of Object.entries( WEATHER_PRESETS ) ) {
+// Every wind level gives the wind its speed and gust factor, and the parts read them from Wind alone.
+for ( const [ name, level ] of Object.entries( WIND_LEVELS ) ) {
 
-	for ( const key of [ 'windSpeed', 'windDirection', 'gustiness' ] ) assert.ok( Number.isFinite( preset[ key ] ), `${ name }: ${ key }` );
-	assert.ok( preset.gustiness >= 1, `${ name }: a gust factor below 1` );
+	for ( const key of [ 'windSpeed', 'gustiness' ] ) assert.ok( Number.isFinite( level[ key ] ), `${ name }: ${ key }` );
+	assert.ok( level.gustiness >= 1, `${ name }: a gust factor below 1` );
 
 }
+// fair's load is the wind the plants and the sea were tuned at
+assert.deepEqual( weatherWind( new Weather( 'fair' ).state ), { speed: REFERENCE_SPEED, heading: PREVAILING_HEADING, gustiness: REFERENCE_GUSTINESS } );
 // The gusts' lean: fair's gust factor gives the lean the plants were tuned at, exactly; it grows
 // with the gust's excess pressure, and a gustless wind leans the plants by its mean alone.
 const gusts = ( g ) => new Wind( createWindUniforms(), { gustiness: g } ).uniforms.gustLean.value;
 assert.equal( gusts( REFERENCE_GUSTINESS ), 0.13, 'fair\'s gusts lean the plants as before' );
 assert.equal( gusts( 1 ), 0 );
 near( gusts( 1.5 ) / gusts( REFERENCE_GUSTINESS ), ( 1.5 ** 2 - 1 ) / ( REFERENCE_GUSTINESS ** 2 - 1 ), 1e-12 );
-// The sea's spectrum is built from the weather's heading and the reference speed, whatever the
-// weather's speed: a weather change only scales its amplitudes.
-assert.deepEqual( new Wind( createWindUniforms(), { speed: 11, heading: 25 } ).spectrumWind, { windSpeed: REFERENCE_SPEED, windDirection: 25 } );
+// The sea's spectrum is built from the prevailing heading and the reference speed, whatever the
+// weather's wind: a weather change only scales its amplitudes, and a page loaded in a turned wind
+// builds the sea a page that turned its wind draws.
+assert.deepEqual( new Wind( createWindUniforms(), { speed: 11, heading: 25 } ).spectrumWind, { windSpeed: REFERENCE_SPEED, windDirection: PREVAILING_HEADING } );
 // The plants' sway keeps its natural frequency in any wind: its scroll and the leaves' clock are
 // the same at any speed, while the gusts travel with the wind. In a fair wind the sway's scroll is
 // the gusts' own, bit for bit, as the sway took it before the two were parted (fair's paused frames
@@ -61,9 +66,10 @@ for ( const t of [ 0, 12, 37.25, 86400 * 3 + 0.5 ] ) {
 	const calm = new Wind( createWindUniforms(), { speed: 1, time: t } ), gale = new Wind( createWindUniforms(), { speed: 11, time: t } );
 	assert.equal( calm.uniforms.swayScroll.value, gale.uniforms.swayScroll.value );
 	assert.equal( calm.uniforms.clock.value, gale.uniforms.clock.value );
-	const fair = new Wind( createWindUniforms(), { ...weatherWind( WEATHER_PRESETS.fair ), time: t } );
+	const fairState = new Weather( 'fair' ).state;
+	const fair = new Wind( createWindUniforms(), { ...weatherWind( fairState ), time: t } );
 	assert.equal( fair.uniforms.swayScroll.value, fair.uniforms.gustScroll.value.x, 'fair\'s sway is the gusts\' scroll' );
-	for ( let i = 0; i < 90; i ++ ) fair.update( i % 3 ? 1 / 60 : 1 / 30, WEATHER_PRESETS.fair.windSpeed );
+	for ( let i = 0; i < 90; i ++ ) fair.update( i % 3 ? 1 / 60 : 1 / 30, fairState.windSpeed );
 	assert.equal( fair.uniforms.swayScroll.value, fair.uniforms.gustScroll.value.x, 'fair\'s sway is the gusts\' scroll after steps' );
 
 }
@@ -187,4 +193,4 @@ near( turn( s0.x / GUST_ALONG, tiles.uniforms.gustScroll.value.x / GUST_ALONG ),
 near( turn( s0.y / EDDY_TILE, tiles.uniforms.gustScroll.value.y / EDDY_TILE ), 0.02 * 6 * EDDY_RATE / EDDY_TILE, 1e-9 );
 const map = long.uniforms.gustMap.image;
 assert.equal( map.data.length, map.width * map.height * 2 );
-console.log( 'Wind: pause, advection direction, update cadence, calm ocean bounds, the presets\' three numbers, the gusts\' lean, the sea\'s spectrum wind, the sway\'s natural frequency (fair\'s bit for bit), deterministic seek and the previous frame of the vegetation wind (rendered frames, seek, cut, windFreeze, periodic reads of the wrapped clocks) pass.' );
+console.log( 'Wind: pause, advection direction, update cadence, calm ocean bounds in light and gentle winds, the levels\' numbers and fair\'s wind, the gusts\' lean, the sea\'s spectrum wind, the sway\'s natural frequency (fair\'s bit for bit), deterministic seek and the previous frame of the vegetation wind (rendered frames, seek, cut, windFreeze, periodic reads of the wrapped clocks) pass.' );

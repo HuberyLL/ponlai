@@ -2,17 +2,19 @@ import { DataTexture, LinearFilter, RGFormat, RepeatWrapping, UnsignedByteType, 
 import type { Node } from 'three/webgpu';
 import { Fn, dot, float, fract, normalize, sin, smoothstep, texture, uniform, vec2, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import type { WeatherState } from '../sky/Weather.ts';
+import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 
 // The weather's one wind, integrated on the CPU, what every part of the scene takes from it, and
 // the one wind field all vegetation moves in.
 //
-// Each weather preset gives three numbers (sky/Weather.ts): `windDirection`, a heading in the sea
-// spectrum's convention (the wind travels toward heading + 180 degrees), `windSpeed`, the mean
-// wind 10 m up (U10), and `gustiness`, its gust factor (a 3 s gust over the mean). `Wind` is their
-// one reader: it integrates them and publishes in `shared.wind` every quantity a part reads, so no
-// part keeps a speed or direction of its own. U_ref is REFERENCE_SPEED, fair's 3.8 m/s, at which
-// the plants and the sea were tuned:
+// The weather's state gives three numbers (sky/Weather.ts, its wind a dimension of its own beside
+// the sky: four levels and a heading that turns about the prevailing one with the weather):
+// `windDirection`, a heading in the sea spectrum's convention (the wind comes from it and travels
+// toward heading + 180 degrees), `windSpeed`, the mean wind 10 m up (U10), and `gustiness`, its
+// gust factor (a 3 s gust over the mean). `Wind` is their one reader: it integrates them and
+// publishes in `shared.wind` every quantity a part reads, so no part keeps a speed or direction of
+// its own. U_ref is REFERENCE_SPEED, the gentle level's 3.8 m/s (fair's load), at which the plants
+// and the sea were tuned:
 // - vegetation: `direction`; `pressure` ( U / U_ref )^2, the drag that leans the plants; `breeze`
 //   U / U_ref, their swing's amplitude; `gustLean`, a gust's added lean, from the gust factor (its
 //   excess pressure G^2 - 1 against fair's); the gust map scrolled with the wind's travel
@@ -20,10 +22,11 @@ import type { WeatherState } from '../sky/Weather.ts';
 //   kind's natural sway frequency, and `clock`, the leaves' flutter. A stronger wind bends a plant
 //   further, not faster (real plants swing near their own frequency in any wind).
 // - the sea: `oceanGain`, the amplitude of the FFT's three bands from U / U_ref (a weather change
-//   only scales amplitudes). The spectrum is built once, from `spectrumWind` (the heading and
-//   U_ref), so the sea is the same function of the weather however the page reached it; the swell
-//   keeps its own offset from the heading (OceanFFT `swell.directionOffset`), the shore waves
-//   follow the swell.
+//   only scales amplitudes). The spectrum is built once, from `spectrumWind` (the prevailing
+//   heading and U_ref, whatever wind the page loaded in), so the sea is the same function of the
+//   weather however the page reached it; the swell keeps its own offset from the heading (OceanFFT
+//   `swell.directionOffset`), the shore waves follow the swell. The waves do not turn with the
+//   weather's wind.
 // - the clouds: `displacement`, which Clouds.setDrift turns into each layer's drift aloft;
 //   `direction` for the fronts, the cirrus and the tops' lean (sky/Sky.ts, Clouds.ts).
 // - the air: `displacement` (the sea fog's drift, main.ts; the clouds' drift), `velocity` (rain, the storm's spray),
@@ -78,7 +81,7 @@ import type { WeatherState } from '../sky/Weather.ts';
 export const REFERENCE_SPEED = 3.8;
 /** Fair's gust factor: a gust's lean is GUST_LEAN at it. */
 export const REFERENCE_GUSTINESS = 1.4;
-const HEADING = 40; // the presets' heading, for a wind built without one
+const HEADING = PREVAILING_HEADING; // for a wind built without one
 const clamp = ( value: number, low: number, high: number ) => Math.max( low, Math.min( high, value ) );
 // The vegetation's clocks (seconds) wrap here. Shaders take fract( clock * f ) only at rates f
 // with at most three decimals (Hz), so every one of them completes whole cycles in a period.
@@ -408,12 +411,12 @@ export class Wind {
 	get time(): number { return this.elapsed; }
 
 	/** The wind the sea's spectrum is built from, once (OceanFFT's `windSpeed` and
-	 * `windDirection`): the weather's heading and REFERENCE_SPEED. The weather's own speed reaches
-	 * the sea through `oceanGain` alone, so a weather change rebuilds nothing and a page that
-	 * changed its weather draws the sea a page loaded in it draws. The presets share one heading. */
+	 * `windDirection`): the prevailing heading and REFERENCE_SPEED, whatever the weather's wind.
+	 * The weather's own speed reaches the sea through `oceanGain` alone, so a weather change
+	 * rebuilds nothing and a page that changed its weather draws the sea a page loaded in it draws. */
 	get spectrumWind(): { windSpeed: number; windDirection: number } {
 
-		return { windSpeed: REFERENCE_SPEED, windDirection: this.currentHeading };
+		return { windSpeed: REFERENCE_SPEED, windDirection: PREVAILING_HEADING };
 
 	}
 

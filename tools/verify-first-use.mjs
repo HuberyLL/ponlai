@@ -1,7 +1,8 @@
 // First-use pipelines (FU): once the page has loaded (its warm-up and first frames behind it), every
 // step a player or the GUI may take should create no render or compute pipeline, since a frame that
 // creates one stalls on it. The steps: the first pause and the temporal rest it settles into, scene
-// events (a time preset and a jump to overcast, paused and running), idle frames, the GUI's tone
+// events (a time preset and a jump to overcast, paused and running), the wind's levels and headings
+// (`wind`: each level jumped to with a turned heading, then changes over seconds), idle frames, the GUI's tone
 // curves and looks, the depth of field and grain switched off and on, the camera's modes and views,
 // a sweep of the render scale (upscaled and not), a resized window, the time presets and a pause
 // and the rest after it. The rest and the events come first, so the first use of what they draw is
@@ -21,7 +22,7 @@
 // diagnostics have them, are reported per step too (both should not move through the scale sweep).
 //
 //   node tools/verify-first-use.mjs --url <base> [--quality high] [--aa msaa,taa,taau,fsr3,off]
-//        [--q "extra&query"] [--steps rest,events,idle,gui,camera,scale,resize,presets,pause] (+ weather,bolt)
+//        [--q "extra&query"] [--steps rest,events,wind,idle,gui,camera,scale,resize,presets,pause] (+ weather,bolt)
 //        [--frames 20] [--out file.json] [--compare ref.json] [--strict] [--fresh]
 //
 // `--quality` and `--aa` take one value or a list: every tier with every mode, each in a fresh page
@@ -76,7 +77,7 @@ const QUALITIES = opt( 'quality', 'high' ).split( ',' ).filter( Boolean );
 const MODES = ( opt( 'aa' ) ?? '' ).split( ',' ).filter( Boolean );
 const EXTRA = opt( 'q', '' );
 const FRAMES = Math.max( 4, Number( opt( 'frames', 20 ) ) );
-const STEPS = ( opt( 'steps', 'rest,events,idle,gui,camera,scale,resize,presets,pause' ) ).split( ',' ).filter( Boolean );
+const STEPS = ( opt( 'steps', 'rest,events,wind,idle,gui,camera,scale,resize,presets,pause' ) ).split( ',' ).filter( Boolean );
 const OUT = opt( 'out' );
 const COMPARE = opt( 'compare' );
 const STRICT = args.includes( '--strict' );
@@ -436,6 +437,31 @@ async function apply( page, step, notes ) {
 
 			}
 			break;
+		case 'wind': {
+
+			// the wind's levels jumped to, each from another heading, then changes over seconds and
+			// back to the page's wind (a build without levels has no setWind)
+			const initial = await page.evaluate( () => window.__PONLAI__.weather.windTarget ?? null );
+			if ( ! initial ) { notes.push( 'no wind levels' ); break; }
+			for ( const [ level, heading ] of [ [ 'strong', 130 ], [ 'light', 220 ], [ 'fresh', 10 ], [ 'gentle', 80 ] ] ) {
+
+				await page.evaluate( ( wind ) => window.__PONLAI__.setWind( wind, 0 ), { level, heading } );
+				await settled( page );
+				await run( page, 0.4 );
+
+			}
+			for ( const [ level, heading ] of [ [ 'strong', 300 ], [ 'light', 40 ] ] ) {
+
+				await page.evaluate( ( wind ) => window.__PONLAI__.setWind( wind, 2 ), { level, heading } );
+				await run( page, 2.5 );
+
+			}
+			await page.evaluate( ( wind ) => window.__PONLAI__.setWind( wind, 0 ), initial );
+			await settled( page );
+			await run( page, 0.5 );
+			break;
+
+		}
 		case 'bolt': {
 
 			// a strike forced ahead of the camera in a storm, watched for its whole life

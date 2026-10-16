@@ -127,7 +127,10 @@ art decision changes; reference images stay out of the repository.
   placeholders). The walker's loop stays open meadow. Plants that matter to play (coconut palms)
   are content placed in the world, not terrain.
 - All vegetation moves in one wind: gusts visibly sweep the meadow and change as they go; still air
-  is the rest pose.
+  is the rest pose. The wind turns with the weather and has levels (light, gentle, fresh, strong;
+  gentle most of the time, fresh at times, light or strong rarely), coming mostly from within
+  40 degrees of the prevailing wind and now and then from the opposite side; the landscape keeps
+  the prevailing wind (the meadow's exposure, the rim grass's combing).
 
 ## Sea, sky and weather
 
