@@ -60,7 +60,9 @@ import type { GroundGrid } from '../world/ChunkDerived.ts';
 //   (`setIsland`), the camera 2 m above the ground (a height grid of the island's meshes, merged
 //   from the grids the world's chunks come with: IslandGround.ts).
 // - At rest the update is three's OrbitControls' arithmetic to the bit, its constructor's update
-//   included, so paused frames do not depend on input history and match older captures.
+//   included, so paused frames do not depend on input history and match older captures; but for
+//   the clamp of the target's length, a no-op with its limits whose last bit could alternate
+//   from frame to frame.
 
 type DragMode = 'pan' | 'rotate';
 
@@ -481,9 +483,10 @@ export class IslandCameraControls {
 			target.z += - pan.x * si - pan.y * c;
 
 		}
-		// (OrbitControls clamps the target's length about its cursor; with its default limits this
-		// changes nothing but the last bit, which a still camera keeps)
-		target.clampLength( 0, Infinity );
+		// (OrbitControls also clamps the target's length about its cursor, which with its default
+		// limits changes nothing but the last bit: dividing by the length and multiplying back
+		// stepped the island view's pivot at the fourth growth step between two values on
+		// alternate frames, so a paused page never settled. It is left out.)
 		s.radius = Math.max( this.minDistance, Math.min( this.maxDistance, s.radius ) );
 		this.place();
 		// the fov at the new distance, before the points below are kept under the pointer: their
