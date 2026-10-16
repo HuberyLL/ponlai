@@ -6,10 +6,11 @@ import {
 	positionGeometry, cross, If,
 } from 'three/tsl';
 import { sampleRimGround, rimGrassCover } from './RimGround.ts';
-import type { RimGroundField } from './types.ts';
+import type { RimGroundField, ShoreField } from './types.ts';
+import { shoreDistance } from './ShoreSample.ts';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { anchorStream, cellStream } from './Anchors.ts';
-import { SWARD_HEIGHT, meadowColor, meadowMoisture, meadowTurf, supportsMeadow } from '../materials/Meadow.ts';
+import { EXPOSED, EXPOSED_TINT, SHORE_RIM, SHORT_TINT, SOIL, SWARD_HEIGHT, meadowColor, meadowMoisture, meadowSoil, meadowTurf, soilCore, soilDeep, soilOutcrop, soilShort, supportsMeadow, type ShoreAt } from '../materials/Meadow.ts';
 import { soilUniforms } from '../materials/Soil.ts';
 import { rootHash } from '../weather/Wind.ts';
 import { bendBlade, bladePhase, drown, swayFade } from './vegetation/Deform.ts';
@@ -44,7 +45,12 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //
 // Rules (the look is in docs/art-direction.md; the reasons are below, where each is built):
 // - An even lawn: no clumps, tall islands or bare patches (from the overview they read as dark
-//   blotches). What varies is per blade (`restBlade`, the tints), far finer than any patch, with
+//   blotches), except the soil's few large zones (Meadow.ts `meadowSoil`): where the wind and salt
+//   reach (the windward coast's band, its downwind tongues, headlands) the tufts grow short and a
+//   fresher yellow-green, on the windward edge's first metres also sparse over dry soil and
+//   gravel, and in stretches of its last metre most give way to the cliff's bare stone, the rest
+//   a few low sprigs; on deep soil a little taller and deeper green (`SHORT_HEIGHT`, plantGrass,
+//   `tuftLod`). What varies otherwise is per blade (`restBlade`, the tints), far finer than any patch, with
 //   its mean kept: the lawn's average height and colour stay those of the field. Each tuft spreads its blades over about its anchor's share of the ground. The extra
 //   tufts fold away beyond about 35 m and are not drawn past their fold, 42 m. Toward the coast the
 //   tufts grow taller and lean out over the lip instead of thinning (RimGround).
@@ -140,6 +146,23 @@ const PLANT_SPREAD = 1;
 // The share of the anchors that take a second tuft (the extra tufts, folded away by distance):
 // as many as the growth field's thick patches gave before, so the lawn keeps its blade budget.
 const THIN_SHARE = 0.28;
+// The soil (Meadow.ts `meadowSoil`, `soilShort`, `soilCore`, `soilDeep`) sets the lawn's height,
+// density and colour. Where it is exposed (the windward coast's band, its tongues, headlands, where
+// wind and salt keep a short sward) the tufts grow to SHORT_HEIGHT of the sward's height (about
+// 15 cm) and turn a fresher yellow-green (Meadow.ts SHORT_TINT, the turf under them too; the most
+// exposed a little yellower, EXPOSED_TINT), as thick as the lawn; in the tier's core
+// they keep CORE_SPARSE fewer of their blades at every distance, so the ground's dry soil and gravel
+// show between them (TerrainMaterial.ts). On deep soil they grow DEEP_HEIGHT and a little deeper and
+// fresher (DEEP_TINT). The lip's taller, outward-leaning tufts (`spill`) keep their height and
+// density where the lip is sheltered; as the exposure bares it (Meadow.ts SOIL.outcrop) they stop
+// leaning out and take the short turf's tiers.
+const SHORT_HEIGHT = 0.6, DEEP_HEIGHT = 1.15, CORE_SPARSE = 0.25;
+const SHORT_COLOR = new THREE.Color( ...SHORT_TINT ), EXPOSED_COLOR = new THREE.Color( ...EXPOSED_TINT ), DEEP_TINT = new THREE.Color( 0.91, 0.97, 0.87 );
+// On the lip's stone (Meadow.ts `soilOutcrop`) OUTCROP_GONE of the tufts grow not at all (by a draw
+// of their own), and the rest keep OUTCROP_SPARSE fewer of their blades and grow OUTCROP_HEIGHT
+// lower: a few short sprigs in the stone's cracks rather than single blades strewn over it. None
+// takes an extra tuft or a flower there.
+const OUTCROP_SPARSE = 0.4, OUTCROP_HEIGHT = 0.35, OUTCROP_GONE = 0.85;
 // The meadow's wildflowers are heads on some of its lawn tufts (`flowerTuftGeometry`), grown as
 // the wildflowers of a warm temperate coast grow: each species in patches of its own where its
 // habitat is, dense at a patch's centre and thinning to its edge, and almost none between the
@@ -233,6 +256,15 @@ class FlowerPatches {
 	private edge = new Map<number, Patch[]>();
 	private weights = SPECIES.map( () => 0 );
 
+	private turfAt: ( x: number, z: number ) => number;
+
+	/** `turfAt`: the sward the soil grows at a point (Meadow.ts `meadowTurf`). */
+	constructor( turfAt: ( x: number, z: number ) => number ) {
+
+		this.turfAt = turfAt;
+
+	}
+
 	private patch( x: number, z: number, species: number, size: number, white: number ): Patch {
 
 		const [ r0, r1 ] = SPECIES[ species ].radius;
@@ -251,7 +283,7 @@ class FlowerPatches {
 			const rng = cellStream( i, j, 401 + k );
 			const take = rng(), x = ( i + rng() ) * PATCH_CELL, z = ( j + rng() ) * PATCH_CELL, pick = rng(), size = rng(), white = rng();
 			const field = PATCH_FLOOR + ( 1 - PATCH_FLOOR ) * smoothstep( PATCH_EDGE[ 0 ], PATCH_EDGE[ 1 ], noise3( x * PATCH_FIELD - 7.7, 3.4, z * PATCH_FIELD + 5.1 ) );
-			const w = habitat( meadowMoisture( x, z ), meadowTurf( x, z, - Infinity ), this.weights );
+			const w = habitat( meadowMoisture( x, z ), this.turfAt( x, z ), this.weights );
 			if ( take >= PATCH_SHARE * field * Math.min( w.reduce( ( a, b ) => a + b, 0 ), 1 ) ) continue;
 			list.push( this.patch( x, z, pickSpecies( w, pick ), size, white ) );
 
@@ -310,7 +342,7 @@ class FlowerPatches {
 		const dianthus = band( DIANTHUS_BAND, rim ), chrysanthemum = band( CHRYSANTHEMUM_BAND, rim );
 		const most = Math.max( inland, dianthus, chrysanthemum );
 		if ( most <= 0 ) return - 1;
-		const species = inland === most ? pickSpecies( habitat( meadowMoisture( x, z ), meadowTurf( x, z, rim ), this.weights ), u )
+		const species = inland === most ? pickSpecies( habitat( meadowMoisture( x, z ), this.turfAt( x, z ), this.weights ), u )
 			: dianthus === most ? DIANTHUS : CHRYSANTHEMUM;
 		return species === CHRYSANTHEMUM && v < WHITE_SHARE ? CHRYSANTHEMUM_WHITE : species;
 
@@ -586,12 +618,14 @@ function bladeCount( origin: V3, camera: V3, blades: F, floor: F, on: F ): F {
 // at or past their cap (`bandCaps`).
 // The kept widths sum to c, and the gain n / c widens them back to the tuft's whole width
 // (`pixelWideBlade`). Off (other cameras, `flags.grassLod = false`) every blade keeps its width
-// and the gain is 1. Returns the blade's width share and the tuft's gain.
-function tuftLod( origin: V3 ): { keep: F; gain: F } {
+// and the gain is 1. A tuft in thin soil's core keeps only the share `density` of those (plantGrass) at
+// the same gain, so its cover falls by that share at every distance, the far lawn's included, and
+// the ground shows between its blades. Returns the blade's width share and the tuft's gain.
+function tuftLod( origin: V3, density: F ): { keep: F; gain: F } {
 
 	const count = bladeCount( origin, cameraPosition, tuftBlades, tuftFloor, lodOn ).toVar();
 	const blade = float( vertexIndex.div( bladeVerts ) );
-	return { keep: clamp( count.sub( blade ), 0, 1 ), gain: tuftBlades.div( count ) };
+	return { keep: clamp( count.mul( density ).sub( blade ), 0, 1 ), gain: tuftBlades.div( count ) };
 
 }
 
@@ -889,7 +923,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// light in place of a blade's, through the same stages.
 	// (1 on a head's vertex; every choice between the two is a blend by it, exact for the blades)
 	const isHead = step( HEAD_FLAG - 0.5, abs( blade.w ) );
-	const lod = tuftLod( origin );
+	const lod = tuftLod( origin, ground2.w );
 	const head = headPose( blade, pick, ground0.y.sub( 1.5 ), ground1.xyz, ground2.xyz, lod.gain );
 	// Whole blades instead of partial coverage (after tidewater's GrassField, Daniel Greenheck, MIT;
 	// the technique only): a widened blade's fragment is drawn solid where the blade's coverage
@@ -1086,7 +1120,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 
 }
 
-export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3; flower: number }
+export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3; flower: number; density: number }
 
 type GrassCull = VegetationCull<Tuft>;
 
@@ -1152,10 +1186,11 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 		// where blades stand against the sea and stay narrower: the opaque pass's MSAA edge pixels
 		// there resolve against the sky-coloured clear, so every partly covered pixel a widened
 		// blade adds shows as a pale fringe over the sea); then the instance's local x axis with the
-		// thin flag (1 for the extra tufts that fold away with distance), and its local z axis. A
-		// blade's width lies in the plane of those axes: the vertex stage keeps thin blades a
-		// minimum width on screen in world space.
-		ground.set( [ t.visibility, t.flower, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], 0 ], i * 12 );
+		// thin flag (1 for the extra tufts that fold away with distance), and its local z axis with
+		// the share of its blades the soil lets it keep (`density`, `tuftLod`). A blade's width lies
+		// in the plane of those axes: the vertex stage keeps thin blades a minimum width on screen
+		// in world space.
+		ground.set( [ t.visibility, t.flower, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], t.density ], i * 12 );
 		t.origin.toArray( origins, i * 4 );
 		origins[ i * 4 + 3 ] = t.top;
 
@@ -1307,21 +1342,28 @@ function batchOf( source: THREE.BufferGeometry, shape: TuftShape, floor: number,
 export interface GrassTufts { lawn: Tuft[]; lawnThin: Tuft[]; lawnFlower: Tuft[] }
 
 /** The tufts grown on the anchors `veg` (any of them: each anchor's tufts depend on that anchor
- * alone); `walkDistance` (m from a point to the islander's loop) keeps the flowers off the path. */
-export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number ): GrassTufts {
+ * alone); `walkDistance` (m from a point to the islander's loop) keeps the flowers off the path;
+ * `shore` (the world's shore field) gives the soil's depth its coast term, as the ground reads it
+ * (the anchor's own rim distance without it). */
+export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number, shore?: ShoreField ): GrassTufts {
 
 	const n = veg.length / STRIDE;
 	const lawn: Tuft[] = [], lawnThin: Tuft[] = [], lawnFlower: Tuft[] = [];
-	const patches = new FlowerPatches();
+	// The soil (Meadow.ts `meadowSoil`) from the shore field as the ground samples it; without it, from
+	// each anchor's own rim distance alone (no side of the wind: tools that plant without the field).
+	let ownRim = 0;
+	const shoreAt: ShoreAt = shore ? ( x, z ) => shoreDistance( shore, x, z ) : () => ownRim - SHORE_RIM;
+	const patches = new FlowerPatches( ( x, z ) => meadowTurf( meadowSoil( x, z, shoreAt ) ) );
 	const draws = new Float32Array( 8 );
 	const q = new THREE.Quaternion(), qy = new THREE.Quaternion();
 	const up = new THREE.Vector3( 0, 1, 0 ), dir = new THREE.Vector3(), pos = new THREE.Vector3(), scl = new THREE.Vector3();
 	const out = new THREE.Vector3();
-	const col = new THREE.Color();
+	const col = new THREE.Color(), tint = new THREE.Color();
+	let density = 1;
 	const plant = ( list: Tuft[], at: THREE.Vector3, rotation: THREE.Quaternion, scale: THREE.Vector3, color: THREE.Color,
 		k: number, cover: number, rimEdge: number, thin: number, flower = 0 ) => list.push( {
 		m: new THREE.Matrix4().compose( at, rotation, scale ), col: color.clone(), visibility: veg[ k + 8 ], cover, rimEdge, thin,
-		top: scale.y * CANOPY_TOP, origin: at.clone(), flower,
+		top: scale.y * CANOPY_TOP, origin: at.clone(), flower, density,
 	} );
 
 	for ( let i = 0; i < n; i ++ ) {
@@ -1329,6 +1371,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		const k = i * STRIDE;
 		const x = veg[ k ], y = veg[ k + 1 ], z = veg[ k + 2 ];
 		const rim = veg[ k + 6 ];
+		ownRim = rim;
 		// Two streams of the anchor's own cell, the lawn's and one for everything added since (a
 		// fixed count of draws), so no anchor's planting depends on another's.
 		const rng = anchorStream( x, z, 99 ), more = anchorStream( x, z, 131 );
@@ -1355,19 +1398,24 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		// it, along the coast field's gradient (any coast line, wherever the footprint puts it),
 		// so they drape the root soil instead of stopping short of it. Where that field exposes a
 		// soil pocket the tufts narrow only a little: the pocket shows between leaning blades.
-		let cover = 1, spill = 0;
+		// The soil, and on exposed edges the lip's stone, where the tufts thin and stop leaning out.
+		const soil = meadowSoil( x, z, shoreAt );
+		const lipBare = smoothstep( SOIL.outcrop[ 0 ], SOIL.outcrop[ 1 ], soil.exposure );
+		let cover = 1, spill = 0, outcrop = 0;
 		if ( rimGround ) {
 
 			const g = sampleRimGround( rimGround, x, z );
 			cover = rimGrassCover( g );
-			spill = smoothstep( - 0.95, - 0.1, g.distance );
+			spill = smoothstep( - 0.95, - 0.1, g.distance ) * ( 1 - lipBare );
+			outcrop = soilOutcrop( g.distance, soil.outcropReach );
 			const e = 0.2;
 			out.set( sampleRimGround( rimGround, x + e, z ).distance - sampleRimGround( rimGround, x - e, z ).distance, 0,
 				sampleRimGround( rimGround, x, z + e ).distance - sampleRimGround( rimGround, x, z - e ).distance );
 
 		} else {
 
-			spill = smoothstep( - 1.1, - 0.2, rim );
+			spill = smoothstep( - 1.1, - 0.2, rim ) * ( 1 - lipBare );
+			outcrop = soilOutcrop( rim, soil.outcropReach );
 			out.set( veg[ k + 3 ], 0, veg[ k + 5 ] );
 
 		}
@@ -1382,6 +1430,18 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		scl.x *= 0.65 + 0.35 * cover;
 		scl.z *= 0.65 + 0.35 * cover;
 		scl.y *= 0.8 + 0.2 * cover;
+		// The soil, as the ground reads it (TerrainMaterial): short and yellow-green where exposed,
+		// yellower still where most exposed, sparse in the short tier's core (none of it on the lip's
+		// spilling tufts), sparser and lower on the lip's stone (OUTCROP_SPARSE, OUTCROP_HEIGHT), a
+		// little taller and deeper green on deep soil.
+		const short = soilShort( soil.exposure ) * ( 1 - spill ), core = soilCore( soil ) * ( 1 - spill ), deep = soilDeep( soil.depth );
+		const soilScale = ( 1 + ( SHORT_HEIGHT - 1 ) * short ) * ( 1 + ( DEEP_HEIGHT - 1 ) * deep ) * ( 1 - OUTCROP_HEIGHT * outcrop );
+		scl.y *= soilScale;
+		density = ( 1 - CORE_SPARSE * core ) * ( 1 - OUTCROP_SPARSE * outcrop );
+		col.multiply( tint.setRGB( 1, 1, 1 ).lerp( SHORT_COLOR, short ) );
+		col.multiply( tint.setRGB( 1, 1, 1 ).lerp( EXPOSED_COLOR, smoothstep( EXPOSED[ 0 ], EXPOSED[ 1 ], soil.exposure ) * short ) );
+		col.multiply( tint.setRGB( 1, 1, 1 ).lerp( DEEP_TINT, deep ) );
+		if ( outcrop > 0 && anchorStream( x, z, 223 )() < OUTCROP_GONE * outcrop ) continue;
 		// Whether the tuft flowers, and which head, from a stream of its own (the lawn's draws stay
 		// as they were): by the patch strongest at it, or now and then alone between the patches.
 		const bloom = anchorStream( x, z, 211 );
@@ -1399,12 +1459,12 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		// About a quarter of the anchors take a second lawn tuft beside the first, picked by the
 		// anchor's own hash (no field: a field made patches of denser sward). Clear of the rim,
 		// where an offset root could leave the turf.
-		if ( draws[ 2 ] < THIN_SHARE * ( 1 - smoothstep( - 0.7, - 0.35, rim ) ) && ! onStack ) {
+		if ( draws[ 2 ] < THIN_SHARE * ( 1 - smoothstep( - 0.7, - 0.35, rim ) ) * ( 1 - outcrop ) && ! onStack ) {
 
 			pos.set( x + ( draws[ 3 ] - 0.5 ) * 0.3, y - 0.018, z + ( draws[ 4 ] - 0.5 ) * 0.3 );
 			dir.set( veg[ k + 3 ], veg[ k + 4 ], veg[ k + 5 ] ).lerp( up, 0.3 ).normalize();
 			q.setFromUnitVectors( up, dir ).multiply( qy.setFromAxisAngle( up, draws[ 5 ] * Math.PI * 2 ) );
-			scl.set( PLANT_SPREAD * ( 0.9 + draws[ 6 ] * 0.2 ), h * ( 0.96 + draws[ 7 ] * 0.08 ), PLANT_SPREAD * ( 0.9 + draws[ 6 ] * 0.2 ) );
+			scl.set( PLANT_SPREAD * ( 0.9 + draws[ 6 ] * 0.2 ), h * soilScale * ( 0.96 + draws[ 7 ] * 0.08 ), PLANT_SPREAD * ( 0.9 + draws[ 6 ] * 0.2 ) );
 			if ( grassQuality.thinTufts ) plant( lawnThin, pos, q, scl, col, k, cover, rimEdge, 1 );
 
 		}
@@ -1547,7 +1607,7 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 				const tufts: GrassTufts = { lawn: [], lawnThin: [], lawnFlower: [] };
 				for ( let a = 0; a < anchors; a += 16 ) {
 
-					const part = plantGrass( veg.subarray( a * STRIDE, Math.min( anchors, a + 16 ) * STRIDE ), input.data.rimGround, ( x, z ) => input.walkDistance( x, z ) );
+					const part = plantGrass( veg.subarray( a * STRIDE, Math.min( anchors, a + 16 ) * STRIDE ), input.data.rimGround, ( x, z ) => input.walkDistance( x, z ), input.data.shore );
 					tufts.lawn.push( ...part.lawn );
 					tufts.lawnThin.push( ...part.lawnThin );
 					tufts.lawnFlower.push( ...part.lawnFlower );

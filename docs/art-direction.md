@@ -83,13 +83,31 @@ art decision changes; reference images stay out of the repository.
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through
   them; looking toward the sun the whole lawn glows, away from it it is plainer and greener; no
-  clumps, tall islands or bare patches, and no pattern of dots on the blades. Inside the grass
+  clumps, tall islands or patches scattered by noise (fields of tone, dryness or bare earth broke
+  the lawn into what read from the overview as camouflage and dark blotches), and no pattern of
+  dots on the blades. The lawn follows the soil instead, as the prevailing wind and its salt shape
+  a real island's top: on the windward coast the turf is short and a fresher yellow-green in a
+  band 6 - 12 m deep, its inner edge ragged with tongues of it combed downwind into the sward, and
+  a streak or two of it inland downwind of that coast; on the lee coast the tall turf runs to the
+  edge; a headland into the wind is the most exposed and a cove the least. Only on the windward
+  coast's first 2 - 4 m and on headland tips do dry earth and pale limestone gravel show sparsely
+  between the blades, and there, in stretches of the edge a few metres to a dozen long with turf
+  to the edge between them (headland tips the most), the top of the cliff's own dark, weathered
+  stone comes through over the last 0.5 - 1.2 m, its inner edge widening and narrowing along each
+  stretch, earth and gravel in its low points and a few short sprigs in its cracks, with few
+  hanging blades below it; from the island view it is no lighter than the cliff's face below it
+  (an even, pale band of stone along the whole windward lip read as a kerb, an outline drawn round
+  the coast; no green pad or orange band of soil along the lip, no slabs laid on the meadow). The soil is deepest where it is sheltered and far from the
+  sea, where the lawn grows a little taller and deeper green. Each zone fades in over a few metres
+  and goes lighter and yellower, never darker; the most exposed short turf a little yellower
+  still. Inside the grass
   there are no hard shadows, only an even darkening toward the ground; the shade of anything
   standing on it lies soft and light. The only shadows that cross the ground are the real clouds'
   (from the cloud layer overhead, drifting with it): no patches painted or animated onto the
-  island to vary its light. The turf under the blades is the deeper green of their lower part, so
-  from afar the meadow reads as one smooth carpet. By night the lawn is a dark, readable green
-  (see Night). Toward the coast the tufts grow taller and lean out over the lip instead of
+  island to vary its light. The turf under the blades is the deeper green of their lower part (on
+  thin soil the same yellow-green as its short blades), so from afar the meadow reads as one
+  carpet, broken only by the soil's few soft zones. By night the lawn is a dark, readable green
+  (see Night). Toward a sheltered coast the tufts grow taller and lean out over the lip instead of
   thinning, and the lip alternates between overgrown stretches and cut-open root soil.
 - Wildflowers are part of the meadow: heads (a hand across at most: large enough that the game's
   close view reads them as flowers, not dots) on some of its tufts, about at the blades' tips,

@@ -96,7 +96,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   swap); the footprint, SDF
   shapes and surface nets (`WorldShapes.ts`), the
   cliffs (`Cliff.ts`), the submerged stones (`Stones.ts`), the sea floor (`Bathymetry.ts`, drawn as
-  tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, the grass hanging from its lip: `RimGrass.ts`), the meadow's anchors (`Anchors.ts`), the meadow (`Grass.ts`, one pool culled on the GPU
+  tiles by `SeabedTile.ts`), the rim (`RimGround.ts`, the grass hanging from its lip: `RimGrass.ts`), the meadow's anchors (`Anchors.ts`), the shore field read on the CPU as the GPU filters it (`ShoreSample.ts`: the meadow's soil, Meadow.ts `meadowSoil`), the meadow (`Grass.ts`, one pool culled on the GPU
   by `vegetation/VegetationCull.ts`; its wildflowers are heads on some of its tufts, a batch of the
   pool, grown in patches of one species by the habitat fields of `materials/Meadow.ts`), the islander's walking loop (`WalkLoop.ts`, its curve `WalkPath.ts`), the
   vegetation's depth prepass
@@ -113,7 +113,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   the key light's rim and backlight every lit material shares (`KeyRim.ts`: a new lit material,
   an animal's or a building's, adds `keyRimLight` in its lighting model with its surface type's
   parameters from `KEY_RIM`, never a rim of its own).
-- `src/materials/`: procedural textures, the terrain (`TerrainMaterial.ts`), wet surfaces.
+- `src/materials/`: procedural textures (the gravel bake: `ProceduralTextures.ts`), the terrain
+  (`TerrainMaterial.ts`), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`).
 - `src/ocean/`: FFT ocean, shore waves, caustics, water shading (`Water.ts`), the storm sea.
 - `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, cirrus, the day cycle
   (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), weather presets.

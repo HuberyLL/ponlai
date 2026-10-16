@@ -82,7 +82,11 @@ packages, into `dist/licenses/`.
     to nothing over a short distance of its own while the kept ones widen so that the blade count
     times the width holds), and its blades kept whole rather than partly covered (each widened
     blade drawn solid as far as its coverage stays above its own hash, `grassMaterial`), after the
-    same file's opaque blades; written for this project's tufts, culling and coverage rules.
+    same file's opaque blades; written for this project's tufts, culling and coverage rules. The
+    gravel of thin soil (`src/materials/ProceduralTextures.ts` `gravelBake`, read in
+    `src/materials/TerrainMaterial.ts` at two rotated scales) follows the small stones of
+    `src/world/terrain/DetailTextures.js` (a share of a periodic Worley lattice's cells holding a
+    stone) and the multi-scale, rotated detail reads of `src/world/Terrain.js`.
 - Changes: ported to TSL and TypeScript and modified throughout for this project's stylised look.
 
 ### three-geospatial
