@@ -36,6 +36,9 @@ art decision changes; reference images stay out of the repository.
   moon culminate on: the full moon's path is in the frame through the evening and at midnight, and
   by day the sun lights the cliffs from the side (a lit and a shaded side) without filling the
   frame with glare. It never follows the clock, so returning to the view never jumps.
+- Sunlit stone keeps its grain and its grey: a cliff face turned to the sun is the brightest
+  ground in the frame but never a flat cream-white sheet. The stone is kept darker than real
+  limestone so that the exposure set for the meadow leaves it below the tone curve's shoulder.
 
 ## Three layers in one world
 
