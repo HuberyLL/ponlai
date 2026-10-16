@@ -136,7 +136,8 @@ interface TuftShape {
 // Long, thin blades are what shows the wind (a short blade's tip barely travels); 16 of them cover the
 // ground from the game's camera as the 16 broad short blades did, and four segments draw the arc of a
 // drooping blade without a visible kink at the 22 m view.
-const LAWN: TuftShape = { blades: 16, segs: 4, r0: [ 0, 0.2 ], w: [ 0.012, 0.015 ] };
+const FUR = 3;
+const LAWN: TuftShape = { blades: 16 * FUR, segs: 4, r0: [ 0, 0.2 ], w: [ 0.012, 0.015 ] };
 // Each blade's own rest pose, a hash of the blade and its tuft's anchor (`restBlade`): its length
 // times 0.75 to 1.25 of the tuft's height scale (and one in twelve a fifth longer, the mean kept at
 // 1), the direction it bends toward (out from the tuft's axis, within FACING / 2 either way), its
@@ -203,7 +204,7 @@ function lowPatch( x: number, z: number ): number {
 // short turf keeps every tuft and blade, a closed sward as thick as the lawn). A tussock's
 // blades gather toward its centre as it grows tall (by `gather`: the short turf keeps its blades
 // spread over the tuft's disc, so it stays a closed sward).
-const TUSSOCK = { spread: 0.4, shortSpread: 0.15, stiffness: 0.3, levelStiff: 1.5, lean: 0.3, blades: [ 12, 16 ], extraBlades: [ 12, 14 ], gather: 0.35 };
+const TUSSOCK = { spread: 0.4, shortSpread: 0.15, stiffness: 0.3, levelStiff: 1.5, lean: 0.3, blades: [ 12 * FUR, 16 * FUR ], extraBlades: [ 12 * FUR, 14 * FUR ], gather: 0.35 };
 const GAP = 0.05;
 // A tussock's word in its colour's fourth channel: its stiffness (STIFF_RANGE, a byte), its lean
 // (a byte) and the lean's direction in its own frame (a byte), packed as integers under 2^24 so a
@@ -575,8 +576,8 @@ const grassUniforms = {
 	// The extra lawn tufts of thick patches fold away between these view distances (m): beyond
 	// them a blade is under a pixel wide and the widened blades of the remaining tufts already
 	// cover the turf, so the extras would only cost vertices.
-	thinNear: uniform( 30 ),
-	thinFar: uniform( 42 ),
+	thinNear: uniform( 1e4 ),
+	thinFar: uniform( 1e4 + 12 ),
 };
 // Beyond this the blade is seen nearly edge on; widening further would only smear it.
 const MAX_WIDEN = 8;
@@ -883,7 +884,7 @@ const ROOT = new THREE.Vector3( 0.42, 0.7, 0.56 ), TIP = new THREE.Vector3( 1.2,
 const DRY_SHARE = 0.07, VALUE = [ 0.65, 1.35 ];
 // The palette's mean against ROOT and TIP: lighter, as the sward's depth (ROOT_DARK) and the faint
 // translucent floor took about 18 % of the long sward's brightness in the game's view.
-const PALETTE_GAIN = [ 1.15, 1.4 ];
+const PALETTE_GAIN = [ 0.85, 0.75 ];
 const PALETTE = ( () => {
 
 	const fresh = [ [ 0.95, 1.03, 1.08 ], [ 0.92, 1.04, 1.1 ] ], yellow = [ [ 1.12, 1, 0.85 ], [ 1.15, 1, 0.8 ] ];

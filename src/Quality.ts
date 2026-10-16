@@ -221,7 +221,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 16, bloomChains: 2 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH, water: PCSS_LIGHT },
-		grass: { lawnBlades: [ 16, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: true, canopyPerVertex: false, minWidth: 2 },
+		grass: { lawnBlades: [ 48, 48, 48 ], bladeBands: [ 1000, 1001, 1002 ], thinTufts: true, canopyPerVertex: false, minWidth: 0 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
 		environmentSource: 512,
 		frameRate: 60,

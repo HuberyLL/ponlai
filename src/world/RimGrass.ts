@@ -50,6 +50,8 @@ const STRAW: [ number, number, number ] = [ 0.105, 0.085, 0.034 ];
 // The hanging grass: bundles per metre of coast where its density is full (up to two a sample,
 // about 160 blades a metre), and a blade's segments, enough that its arc reads smooth close up:
 // 6 under SHORT[ 0 ] (m), 8 under SHORT[ 1 ], 10 for a longer one.
+// The fur experiment: three times the strands, each as narrow as the meadow's blades.
+const RIM_FUR = 3;
 const HANG_RATE = 24, HANG_SEGMENTS = [ 6, 8, 10 ], SHORT = [ 0.3, 0.6 ];
 // How far a blade lying on the stone keeps off it (m), beyond the wall's own margin.
 const LIE = 0.012;
@@ -221,19 +223,19 @@ export function* rimGrassSteps( lip: RimLipData, per = Infinity ): Generator<voi
 				// blades rise, to 70 degrees below level where the ground falls away), each blade a
 				// few degrees off it; their own weight bends them down over the edge.
 				const heading = comb * 0.7 + ( hang() - 0.5 ) * 0.4, tilt = Math.max( - 1.2, Math.min( 0.25, slope + 0.1 ) ) + ( hang() - 0.5 ) * 0.3, stiff = Math.exp( ( hang() - 0.5 ) * 0.6 );
-				const strands = 3 + Math.floor( hang() * 3 ) + Math.round( length * 3 );
+				const strands = ( 3 + Math.floor( hang() * 3 ) + Math.round( length * 3 ) ) * RIM_FUR;
 				for ( let i = 0; i < strands; i ++ ) {
 
-					base.copy( bundle ).addScaledVector( along, ( hang() - 0.5 ) * 0.14 ).addScaledVector( out, ( hang() - 0.5 ) * 0.03 );
+					base.copy( bundle ).addScaledVector( along, ( hang() - 0.5 ) * 0.3 ).addScaledVector( out, ( hang() - 0.5 ) * 0.06 );
 					// each blade in its own vertical plane; its stiffness its own (0.64 - 1.57 of the material's)
-					plane.copy( out ).addScaledVector( along, heading + ( hang() - 0.5 ) * 0.22 ).normalize();
-					const angle = tilt + ( hang() - 0.5 ) * 0.14, stiffness = stiff * Math.exp( ( hang() - 0.5 ) * 0.3 );
+					plane.copy( out ).addScaledVector( along, heading + ( hang() - 0.5 ) * 0.6 ).normalize();
+					const angle = tilt + ( hang() - 0.5 ) * 0.35, stiffness = stiff * Math.exp( ( hang() - 0.5 ) * 0.3 );
 					// The rim's grass is drier than the meadow's: about a fifth of the blades a yellow
 					// green, a tenth straw, a fifth a deep green, the rest the lawn's green a little yellowed.
 					const tint = hang();
 					if ( tint < 0.1 ) col.setRGB( ...STRAW ).multiplyScalar( 0.75 + hang() * 0.25 );
 					else meadowColor( base.x, base.z, col ).multiply( tint < 0.3 ? DRY : tint < 0.5 ? DEEP : RIM_TINT ).multiplyScalar( 0.74 + hang() * 0.22 );
-					hangBlade( base, angle, length * ( 0.85 + 0.15 * Math.sqrt( hang() ) ), stiffness, 0.024 + hang() * 0.012, col, phase + i * 0.4,
+					hangBlade( base, angle, length * ( 0.85 + 0.15 * Math.sqrt( hang() ) ), stiffness, 0.006 + hang() * 0.003, col, phase + i * 0.4,
 						lieOn, ( base.x - x ) * nx + ( base.z - z ) * nz, roof - base.y );
 
 				}
