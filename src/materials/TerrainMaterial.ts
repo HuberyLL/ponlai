@@ -5,10 +5,11 @@ import {
 	normalize, abs, pow, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, exp, log2, select, dFdx, dFdy, length,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
-import { GRAVEL_CELLS, GRAVEL_HEIGHT, type DetailTextures } from './ProceduralTextures.ts';
-import { EXPOSED, EXPOSED_TINT, MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP, OUTCROP_FADE, OUTCROP_SHIFT, SHORE_RIM, SHORT_TINT, SOIL, UPWIND } from './Meadow.ts';
+import type { DetailTextures } from './ProceduralTextures.ts';
+import { MEADOW_EXTENT, MEADOW_MIN_UP, MEADOW_MAX_DROP } from './Meadow.ts';
 import { SOIL_EXTENT, SOIL_HEIGHT_RANGE, SOIL_PALETTE, soilUniforms } from './Soil.ts';
 import { RIM_FRINGE_FADE, RIM_INNER_LIMIT, RIM_MAX_DROP } from '../world/RimGround.ts';
+import { GRASS_ROOTS } from '../world/Grass.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
 import { TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
@@ -35,25 +36,14 @@ import { fsr3MipBiasScale } from '../post/fsr3/MipBias.ts';
 // lichens take its raised grain first), each keeping its mask's mean cover; stacked layers (cliff
 // moss, root soil and turf) take adjacent ranges of the relief in stacking order, so each one's
 // visible cover matches the plain mix's. Turf stays on the meadow: never on ledges below the lip.
-// The meadow's ground is one model: the turf takes the lawn's colour from the meadow map (Meadow.ts),
-// darkened to the blades' lower part (`TURF_TONE`) so it reads as the deeper green of the gaps
-// between them, while the far meadow, where the turf shows between blades under a pixel wide,
-// still reads as one carpet;
-// the blades shade it through one canopy depth (MeadowCanopy.ts). Where the ground is exposed to
-// the wind and salt (Meadow.ts `meadowSoil`, from nine samples of the shore field and the meadow
-// map's A channel, as the grass reads it) the lawn grows short and yellow-green (Grass.ts) and the
-// turf under it takes the same tint (`SHORT_TINT`, the most exposed `EXPOSED_TINT` too); in that
-// tier's core (the windward edge's first metres, headland tips) the lawn thins and the turf gives
-// way to dry, light brown soil and pale limestone gravel (`THIN_SOIL`, `GRAVEL`; the stones from the
-// baked gravel map, ProceduralTextures.ts, read at two rotated scales so its tile never lines up),
-// the blades' shade on it lighter; never darker than the lawn round it. On the most exposed edges
-// the cliff's own stone shows on the top over the last metre or so, in stretches along the coast
-// (`soilOutcrop`, its reach from Meadow.ts `outcropStretch`, one more sample of the meadow map):
-// the turf, the rim's turf and its root soil give way to the scan by
-// its relief (the layer stack's height blend), so the stone stands up with earth and gravel in its
-// low points (OUTCROP_EARTH, OUTCROP_SOIL), under a dark weathered skin (OUTCROP_SKIN); no geometry
-// is added.
-// Under a sheltered lip's spilling tufts and on ordinary and deep soil the turf is unchanged.
+// The meadow's ground is one model: the sward's bottom, the root layer, at every distance: the
+// lawn's colour from the meadow map (Meadow.ts) taken to the blades' roots' colour and light
+// (Grass.ts GRASS_ROOTS), and where the blades are drawn near (the blade curve's first distances,
+// Grass.ts) lying old leaves and a few dry ones over it (LITTER_*, the gravel map's stones read
+// stretched), so the gaps read as deeper grass, not a floor. A lighter turf beyond the near
+// distances showed between the far tufts' few widened blades as a flat olive floor;
+// the blades shade it through one canopy depth (MeadowCanopy.ts). The island top is one sward to
+// the edge on every coast: the ground takes no zones of the soil (Meadow.ts).
 // `?terrainHex=0` builds the plain triplanar variant; `userData.terrainVariant` swaps them.
 // Under fsr3 the triplanar sampling gradients are scaled by FSR's mip bias (post/fsr3/MipBias.ts),
 // built into the shader under that mode only.
@@ -70,23 +60,26 @@ type F = THREE.Node<'float'>;
 // Where the blades thin to under a pixel they still cover most of it, and the turf only deepens the
 // carpet a little, evenly.
 const TURF_TONE = 0.66;
-// Thin soil's core's ground (linear albedo): dry, light brown earth, not a dark humus (dark patches
-// in the lawn read as blotches from the overview), and pale limestone gravel; the gravel map's two
-// scales (m per tile, its 48 cells each: stones of about 2 - 6 cm) and turns (rad), and how far the
-// blades' shade on the ground lifts where they thin (THIN_CANOPY).
-const THIN_SOIL = [ 0.095, 0.078, 0.026 ], GRAVEL = [ 0.15, 0.14, 0.105 ];
-const GRAVEL_TILES = [ 2, 2.74 ], GRAVEL_TURNS = [ 0.7, 2.1 ], THIN_CANOPY = 0.2;
-// Where in the core the soil shows (`bare`): over this range of the core's weight and the turf's
-// fibres together, so it opens in specks at the core's edge and in runs at its heart.
-const CORE_BARE = [ 0.5, 1 ];
-// On the lip's stone, the share of its low points that hold earth and gravel rather than a sprig of
-// turf.
-const OUTCROP_EARTH = 0.85;
-// The lip's stone's weathered skin against the cliff's stone (linear albedo multiplier), and the
-// earth and gravel in its low points against the core's (OUTCROP_SOIL): dark enough that the stone,
-// lying open to the noon sun, reads no lighter than the cliff's face below it from the island view
-// (lighter, it drew a pale outline round the windward coast).
-const OUTCROP_SKIN = [ 0.21, 0.22, 0.21 ], OUTCROP_SOIL = 0.42;
+// The root layer (the turf within the blades' near distances): litter of lying old leaves and dry
+// ones, the gravel map's stones read stretched as three layers, each its own scale across (m per
+// tile, its 48 cells each: leaves about 0.7 - 1.4 cm wide), stretch along (3 - 3.5 times: 2.5 -
+// 4.5 cm long) and turn (rad), the scales no multiples of one another so no tile lines up; the
+// value of the deepest gaps between the leaves and of each layer's leaves (the upper ones nearer
+// the light), the fold across a leaf (its dome, LITTER_FOLD either side), and the dry leaves' colour
+// (linear, before the sward's depth darkens it: a straw tan as light as the roots, never a speck
+// brighter than them), the first stones of the lowest layer (about 5 % of the ground).
+const LITTER_TILES = [ 0.62, 0.71, 0.55 ], LITTER_STRETCH = [ 3.2, 2.7, 3.6 ], LITTER_TURNS = [ 0.4, 1.55, 2.6 ];
+const LITTER_GAP = 0.72, LITTER_LAYERS = [ 0.95, 1.1, 1.25 ], LITTER_FOLD = 0.2, LITTER_DRY = [ 0.075, 0.06, 0.025 ];
+// The layer's mean value from the stones' mean cover (about 0.18 a layer: 55 % of the cells hold a
+// stone, a third of its cell in area), so the litter keeps the roots' mean colour.
+const LITTER_MEAN = ( () => {
+
+	const c = 0.18;
+	let v = LITTER_GAP;
+	for ( const l of LITTER_LAYERS ) v = v * ( 1 - c ) + l * c;
+	return v;
+
+} )();
 
 // canopy: direct light left under the meadow's blades (1 where nothing grows)
 // water: share under a water film or standing water (water's specular reflectance)
@@ -139,6 +132,11 @@ const stoneRank = ( luma: F, level: F ): F => {
 
 };
 
+// The triplanar projections' scale (~1.8 m per tile), the scan's over them (the 2.7 m scan art-
+// directed to smaller flakes beneath the mesh fractures), and the width of the layer stack's blend
+// over the stone's relief (`hb` below).
+const TRIPLANAR_SCALE = 0.55, STONE_SCALE = ( 1 / 1.8 ) / TRIPLANAR_SCALE, LAYER_WIDTH = 0.25;
+
 const unpack2 = ( v: THREE.Node<'vec4'> | V2 ) => ( v as V2 ).mul( 2 ).sub( 1 );
 // Convert tangent normals to slopes before whiteout blending, retaining the scan's +Y axis.
 const stoneSlope = Fn( ( [ v ]: [ THREE.Node<'vec4'> ] ) => {
@@ -163,7 +161,7 @@ interface Ctx {
 type FieldTexture = THREE.Texture | THREE.TextureNode;
 interface TerrainOptions { topY?: number; vegetation?: boolean; rimGround?: FieldTexture; rimGroundXform?: THREE.Vector4; hex?: boolean }
 
-function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGroundXform, hex }: Ctx ) {
+function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXform, hex }: Ctx ) {
 
 	return Fn( () => {
 
@@ -184,58 +182,12 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 		const legacyTurf = ( vegetation ? smoothstep( 0.85, 0.97, n0.y ).mul( smoothstep( topY.sub( 0.6 ), topY.sub( 0.2 ), p.y ) ).mul( meadowTop ) : float( 0 ) ).toVar();
 		const turf = legacyTurf.toVar();
 		const rimBlend = float( 0 ).toVar(), rimTurf = float( 0 ).toVar(), rimSoil = float( 0 ).toVar();
-		// The soil (Meadow.ts `meadowSoil`): its exposure (`windExposure`) to the wind and salt from the shore field
-		// upwind and either side of the wind, frayed by the meadow map's stretched noise (its A
-		// channel), and how far in from the edge the ground lies, as the grass reads them (the same
-		// samples of the same field). Only on the meadow's top, by a 0/1 weight rather than a branch:
-		// the stone's implicitly filtered samples and derivatives below keep to uniform control flow
-		// (a branch here moved a pixel at the lip by a level with every soil effect off).
-		const windExposure = float( 0 ).toVar(), inside = float( 1e3 ).toVar(), stretch = float( 0 ).toVar();
-		if ( vegetation ) {
-
-			const onTop = select( meadowTop.greaterThan( 0 ), float( 1 ), float( 0 ) );
-
-			const shoreAt = ( q: V2 ): F => texture( shore, q.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw ) ).level( float( 0 ) ).r;
-			const sea = ( q: V2, t: number ): F => smoothstep( - SOIL.soft, t * SOIL.open, shoreAt( q ).add( SHORE_RIM ) );
-			let e: F = float( 0 ), side: F = float( 0 );
-			SOIL.reach.forEach( ( t, k ) => { e = e.add( sea( p.xz.add( vec2( UPWIND[ 0 ] * t, UPWIND[ 1 ] * t ) ), t ).mul( SOIL.weight[ k ] ) ); } );
-			for ( const degrees of SOIL.side ) for ( const turn of [ - 1, 1 ] ) {
-
-				const a = turn * degrees * Math.PI / 180, c = Math.cos( a ), sn = Math.sin( a ), r = SOIL.sideReach;
-				side = side.add( sea( p.xz.add( vec2( ( UPWIND[ 0 ] * c - UPWIND[ 1 ] * sn ) * r, ( UPWIND[ 0 ] * sn + UPWIND[ 1 ] * c ) * r ) ), r ) );
-
-			}
-			e = e.mul( side.mul( SOIL.sideGain / ( 2 * SOIL.side.length ) ).add( SOIL.sideBase ) );
-			inside.assign( shoreAt( p.xz ).add( SHORE_RIM ).negate() );
-			e = e.add( float( 1 ).sub( smoothstep( SOIL.lip[ 0 ], SOIL.lip[ 1 ], inside ) ).mul( SOIL.lipWeight ) );
-			const tongue = texture( tex.meadow, p.xz.div( MEADOW_EXTENT ).add( 0.5 ) ).level( float( 0 ) ).a;
-			windExposure.assign( clamp( e.add( tongue.sub( 0.5 ).mul( SOIL.tongue ).mul( smoothstep( 0, SOIL.fray, e ) ) ), 0, 1 ).mul( onTop ) );
-			// where along the coast the lip's stone shows (Meadow.ts `outcropStretch`): the same map
-			// read faster and folded over (`outcropNoise`), raised on headlands
-			const folded = fract( p.xz.mul( SOIL.outcropRate ).add( vec2( ...OUTCROP_SHIFT ) ).div( MEADOW_EXTENT ).add( 0.5 ) );
-			const noise = texture( tex.meadow, folded ).level( float( 0 ) ).a;
-			stretch.assign( smoothstep( SOIL.outcropGate[ 0 ], SOIL.outcropGate[ 1 ], noise.add( side.mul( SOIL.outcropHead / ( 2 * SOIL.side.length ) ) ).sub( SOIL.outcropHead * 0.5 ) ) );
-
-		}
-		// The lip's spilling tufts (Grass.ts), whose ground keeps its turf, fewer as the exposure
-		// bares the lip (`lipBare`); where it does, the cliff's own stone shows on the top over the
-		// last `outcrop` of the ground (Meadow.ts `soilOutcrop`, the rim field's distance to the edge):
-		// the turf, the rim's turf and root soil give way to it by the stone's relief below, so the
-		// stone stands up and earth and gravel lie in its low points (the turf's colour there).
-		const lipBare = smoothstep( SOIL.outcrop[ 0 ], SOIL.outcrop[ 1 ], windExposure ).toVar();
-		const spill = float( 0 ).toVar(), outcrop = float( 0 ).toVar();
 		if ( vegetation && rimGround && rimGroundXform ) {
 
 			// One cell-centred field also controls edge grass on the CPU. Sample it before any
 			// dynamic branches so the narrow fringe stays aligned and derivatives stay uniform.
 			const ground = texture( rimGround, p.xz.sub( rimGroundXform.xy ).mul( rimGroundXform.zw ) ).toVar();
 			const d = ground.r, roof = ground.g, retreat = ground.b;
-			spill.assign( smoothstep( - 0.95, - 0.1, d ).mul( float( 1 ).sub( lipBare ) ) );
-			// the stone shows in stretches along the coast, its reach widening from their ends
-			// (Meadow.ts `outcropReach`, as the grass and the hanging grass read it)
-			const reach = lipBare.mul( SOIL.outcropWidth ).mul( stretch );
-			outcrop.assign( smoothstep( reach.negate().sub( OUTCROP_FADE ), reach.negate().add( OUTCROP_FADE ), d ).mul( smoothstep( 0, 2 * OUTCROP_FADE, reach ) ) );
-			legacyTurf.mulAssign( float( 1 ).sub( outcrop ) );
 			const depth = ground.a.mul( soilUniforms.depth );
 			const cover = smoothstep( retreat.sub( RIM_FRINGE_FADE ), retreat.add( RIM_FRINGE_FADE ), d.negate() );
 			const atRim = smoothstep( - RIM_INNER_LIMIT, - RIM_INNER_LIMIT + 0.15, d )
@@ -256,8 +208,6 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 			rimSoil.assign( soilBand.mul( soilPocket ).mul( smoothstep( 0.15, 0.80, n0.y ) )
 				.mul( smoothstep( roof.sub( depth ).sub( 0.055 ).add( ragged ), roof.sub( depth ).add( 0.02 ).add( ragged ), p.y ) )
 				.mul( soilUniforms.strength ) );
-			rimTurf.mulAssign( float( 1 ).sub( outcrop ) );
-			rimSoil.mulAssign( float( 1 ).sub( outcrop ) );
 			turf.assign( mix( legacyTurf, rimTurf, rimBlend ) );
 
 		}
@@ -273,7 +223,7 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 		// narrows a little where the facets' own edges already break the stone.
 		const ws = hex ? max( w0.div( dot( w0, vec3( 1 ) ) ).sub( HEX_TRIPLANAR_CUT ), 0 ).toVar() : w;
 		if ( hex ) ws.divAssign( dot( ws, vec3( 1 ) ) );
-		const S = 0.55; // ~1.8 m per tile
+		const S = TRIPLANAR_SCALE;
 		const sg = sign( n0 );
 		const uvX = vec2( p.z.mul( sg.x ), p.y ).mul( S ).toVar(), uvY = vec2( p.x.mul( sg.y ), p.z ).mul( S ).toVar(), uvZ = vec2( p.x.negate().mul( sg.z ), p.y ).mul( S ).toVar();
 		// (under fsr3 scaled by FSR's mip bias, render / canvas: fsr3/MipBias.ts)
@@ -289,7 +239,7 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 		const aX = half.toVar(), aY = half.toVar(), aZ = half.toVar();
 		const fX = vec4( 0.5, 0.5, 1, 0.9 ).toVar(), fY = fX.toVar(), fZ = fX.toVar();
 		const cX = half.toVar(), cY = half.toVar(), cZ = half.toVar();
-		const stoneScale = ( 1 / 1.8 ) / S; // Art-direct the 2.7 m scan to smaller flakes beneath the mesh fractures.
+		const stoneScale = STONE_SCALE;
 		// Hex-tiled reads of the scan's colour and normal map (HexTiling.ts). The procedural
 		// heights keep their plain tiling: three more reads per projection cost more than their
 		// lattice shows under the hex-tiled stone.
@@ -479,9 +429,6 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 
 		}
 
-		// The lip's stone is the top of the cliff's own: an old surface, greyed and darkened by its
-		// weathering skin and crusts, darkest in its grain's low points (OUTCROP_SKIN).
-		if ( vegetation ) rock.mulAssign( mix( vec3( 1 ), vec3( ...OUTCROP_SKIN ).mul( mix( float( 0.8 ), float( 1.1 ), hRock ) ), outcrop.mul( smoothstep( 0.5, 0.9, n0.y ) ) ) );
 		const up = n0.y;
 		const Hg = H.g.toVar();
 		const albedo = rock.toVar();
@@ -492,11 +439,13 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 		// The meadow ends at the upper shoulder; exposed walls keep their mineral surface.
 		// Submerged boulders omit these nodes entirely.
 		const canopy = float( 1 ).toVar();
+		// how far the root layer's light holds (the blades' roots' key and sky, GRASS_ROOTS)
+		const rootLight = float( 0 ).toVar();
 		if ( vegetation ) {
 
 			const mossN = H.g.sub( 0.5 ).mul( 0.5 ).add( big.sub( 0.5 ).mul( 0.6 ) );
 			const turfRim = smoothstep( MEADOW_MIN_UP, 0.97, up )
-				.mul( smoothstep( topY.sub( MEADOW_MAX_DROP ), topY.sub( 0.12 ), p.y.add( mossN.mul( 0.15 ) ) ) ).mul( meadowTop ).mul( float( 1 ).sub( outcrop ) );
+				.mul( smoothstep( topY.sub( MEADOW_MAX_DROP ), topY.sub( 0.12 ), p.y.add( mossN.mul( 0.15 ) ) ) ).mul( meadowTop );
 			// The turf's own cover, which also sets the blades' shade over it, keeps the plain mask: only the visible mix of turf and stone follows the stone's relief
 			// (`layer` below).
 			const turfCover = max( legacyTurf, turfRim ).toVar();
@@ -505,7 +454,6 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 			mossC.assign( mix( mossC, vec3( 0.2, 0.21, 0.06 ), smoothstep( 0.6, 0.9, big2 ).mul( 0.35 ) ) ); // sun-dried
 			// Keep the same meadow bed on top, with a narrow blend into bare rock.
 			const rimGrassC = mossC.toVar();
-			const gravelSlope = vec2( 0 ).toVar();
 			If( max( turfCover, turf ).greaterThan( 0 ), () => {
 
 				const q1 = p.xz.mul( 0.23 ), q2 = mat2( 0.8, - 0.6, 0.6, 0.8 ).mul( p.xz ).mul( 0.61 ).add( 0.37 );
@@ -515,57 +463,50 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 				// the bed reads as close turf under the blades, never as a second, patchier layer.
 				const fibres = smoothstep( 0.2, 0.65, c1.mul( 0.55 ).add( c2.mul( 0.45 ) ) );
 				const grassC = meadow.rgb.mul( mix( float( 0.92 ), float( 1.06 ), fibres ) ).mul( TURF_TONE ).toVar();
-				// Thin soil: the short turf's tint, and in its core dry earth and gravel in place of the
-				// turf, the stones turning on in two steps toward its heart (the gravel map's first and
-				// next stones), at two rotated scales.
-				// The most exposed ground a little yellower still, and on the lip's stone only earth
-				// and gravel in its low points.
-				const lip = float( 1 ).sub( spill );
-				const short = smoothstep( SOIL.short[ 0 ], SOIL.short[ 1 ], windExposure ).mul( lip );
-				grassC.mulAssign( mix( vec3( 1 ), vec3( ...SHORT_TINT ), short ) );
-				grassC.mulAssign( mix( vec3( 1 ), vec3( ...EXPOSED_TINT ), smoothstep( EXPOSED[ 0 ], EXPOSED[ 1 ], windExposure ).mul( short ) ) );
-				const thin = max( smoothstep( SOIL.core[ 0 ], SOIL.core[ 1 ], windExposure ).mul( float( 1 ).sub( smoothstep( SOIL.coreReach[ 0 ], SOIL.coreReach[ 1 ], inside ) ) ).mul( lip ), outcrop ).toVar();
-				const stones = float( 0 ).toVar();
-				If( thin.greaterThan( 0 ), () => {
+				const rot = ( v: V2, a: number ) => vec2( v.x.mul( Math.cos( a ) ).sub( v.y.mul( Math.sin( a ) ) ), v.x.mul( Math.sin( a ) ).add( v.y.mul( Math.cos( a ) ) ) );
+				// The root layer: where the blades are drawn, the ground seen between them is the
+				// sward's bottom, so it takes the colour of the blades' roots (the palette's mean at the
+				// root, darkened by the sward's depth as its tussocks are on average: one tint, as the
+				// sward is one level), with lying old leaves and a few dry ones, and their light
+				// (`rootLight`, the roots' key and sky); the litter fades out as the tufts thin (the
+				// blade curve's first two distances, Grass.ts: past the first the blades are under a
+				// pixel wide and widen), the roots' colour and light stay.
+				const R = GRASS_ROOTS;
+				const near = float( 1 ).sub( smoothstep( R.bands.x, R.bands.y, length( cameraPosition.sub( p ) ) ) ).toVar();
+				// the sward's darkening at the root (Grass.ts)
+				const rootDark = float( 1 - R.darkening );
+				const roots = grassC.mul( vec3( ...R.colour ).div( TURF_TONE ) ).mul( rootDark ).toVar();
+				If( near.greaterThan( 0 ), () => {
 
-					const rot = ( v: V2, a: number ) => vec2( v.x.mul( Math.cos( a ) ).sub( v.y.mul( Math.sin( a ) ) ), v.x.mul( Math.sin( a ) ).add( v.y.mul( Math.cos( a ) ) ) );
-					const layer = ( k: number ) => {
+					// the litter, layer by layer from the lowest (LITTER_*)
+					const v = float( LITTER_GAP ).toVar(), dry = float( 0 ).toVar();
+					LITTER_TILES.forEach( ( tile, k ) => {
 
-						const s = 1 / GRAVEL_TILES[ k ], a = GRAVEL_TURNS[ k ];
-						const at = rot( p.xz, a ).mul( s ).add( k * 0.37 ), gx = rot( dpx.xz, a ).mul( s ), gy = rot( dpy.xz, a ).mul( s );
-						const g = texture( tex.gravel, at ).grad( gx, gy );
-						const cover = g.r.mul( smoothstep( 0.35, 0.75, thin ) ).add( g.g.mul( smoothstep( 0.8, 1, thin ).mul( 0.6 ) ) );
-						// the stones' slope by differences of their height a texel and a half apart, in
-						// the tile's axes, then back in world axes; only the stones shown tilt the ground
-						const e = 1.5 / 1024;
-						const hu = texture( tex.gravel, at.add( vec2( e, 0 ) ) ).grad( gx, gy ).b, hv = texture( tex.gravel, at.add( vec2( 0, e ) ) ).grad( gx, gy ).b;
-						const shown = clamp( cover.div( max( g.r.add( g.g ), 1e-3 ) ), 0, 1 );
-						const slope = vec2( hu.sub( g.b ), hv.sub( g.b ) ).mul( GRAVEL_HEIGHT / ( e * GRAVEL_CELLS ) ).mul( shown );
-						return { cover, slope: rot( slope, - a ) };
+						const a = LITTER_TURNS[ k ], s = vec2( 1 / tile, 1 / ( tile * LITTER_STRETCH[ k ] ) );
+						const at = rot( p.xz, a ).mul( s ).add( 0.21 + k * 0.29 );
+						const g = texture( tex.gravel, at ).grad( rot( dpx.xz, a ).mul( s ), rot( dpy.xz, a ).mul( s ) );
+						v.assign( mix( v, g.b.sub( 0.5 ).mul( 2 * LITTER_FOLD ).add( 1 ).mul( LITTER_LAYERS[ k ] ), g.r.add( g.g ) ) );
+						if ( k === 0 ) dry.assign( g.r );
+						else dry.mulAssign( float( 1 ).sub( g.r.add( g.g ) ) );
 
-					};
-					const a = layer( 0 ), b = layer( 1 );
-					stones.assign( float( 1 ).sub( float( 1 ).sub( a.cover ).mul( float( 1 ).sub( b.cover ) ) ) );
-					// the soil shows in specks and runs between the turf's tufts (the fibres' variation),
-					// more of them toward the core's heart, so the core never reads as a patch of soil
-					const bare = max( smoothstep( CORE_BARE[ 0 ], CORE_BARE[ 1 ], thin.mul( 0.6 ).add( fibres.mul( 0.5 ) ) ).mul( thin ), outcrop.mul( OUTCROP_EARTH ) );
-					gravelSlope.assign( a.slope.add( b.slope ).mul( bare ) );
-					const earth = vec3( ...THIN_SOIL ).mul( mix( float( 0.9 ), float( 1.08 ), fibres ) );
-					const gravel = vec3( ...GRAVEL ).mul( mix( float( 0.92 ), float( 1.04 ), c2 ) );
-					grassC.assign( mix( grassC, mix( earth, gravel, stones ).mul( mix( float( 1 ), float( OUTCROP_SOIL ), outcrop ) ), bare ) );
+					} );
+					const litter = mix( roots.mul( v.div( LITTER_MEAN ) ), vec3( ...LITTER_DRY ).mul( rootDark ), dry );
+					roots.assign( mix( roots, litter, near ) );
 
 				} );
+				grassC.assign( roots );
+				rootLight.assign( turfCover );
 				mossC.assign( mix( mossC, grassC, turfCover ) );
 				rimGrassC.assign( grassC );
 				// The blades above shade the turf, through one canopy depth everywhere
-				// (MeadowCanopy.ts), less where they thin.
-				canopy.assign( meadowCanopyLight( turfCover.mul( TURF_CANOPY_DEPTH ).mul( float( 1 ).sub( thin.mul( THIN_CANOPY ) ) ), shared.sunDir ) );
+				// (MeadowCanopy.ts).
+				canopy.assign( meadowCanopyLight( turfCover.mul( TURF_CANOPY_DEPTH ), shared.sunDir ).mul( mix( float( 1 ), float( GRASS_ROOTS.key ), rootLight ) ) );
 				Hg.assign( mix( Hg, c1.mul( 0.5 ).add( c2.mul( 0.5 ) ), legacyTurf ) );
 
 			} );
 
 			const nMoss = triNormal( unpack2( aX.zw ), unpack2( aY.zw ), unpack2( aZ.zw ), n0, w, float( 0.8 ) );
-			const nBed = normalize( mix( nMoss, n0, turfCover.mul( 0.2 ) ).add( vec3( gravelSlope.x.negate(), 0, gravelSlope.y.negate() ).mul( turfCover ) ) );
+			const nBed = normalize( mix( nMoss, n0, turfCover.mul( 0.2 ) ) );
 
 			// Moss and small greenery on the upper cliff, 0.2 - 1.2 m below each block's own top:
 			// on the ledges and in the joints and hollows that hold water and grit, and on the bare
@@ -617,7 +558,6 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 			// layer shows between that and the cover above it, and its mix factor is that share of
 			// what the layers above leave. Each layer's visible cover then has the plain mix's
 			// mean. One width serves a stack, so the cumulative covers nest.
-			const LAYER_WIDTH = 0.25;
 			const cover = ( c: F ): F => hb( c, hRock, LAYER_WIDTH );
 			const accumulate = ( above: F, mask: F ): F => above.add( mask.mul( float( 1 ).sub( above ) ) );
 			const share = ( blended: F, aboveBlended: F ): F => clamp( blended.sub( aboveBlended ).div( max( float( 1 ).sub( aboveBlended ), 1e-4 ) ), 0, 1 );
@@ -809,7 +749,7 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 		// A pocket keeps less of it again: the sky it sees past its rim is what lights it in the shade,
 		// and at full occlusion a small one read as a black hole.
 		const ao = ( vegetation ? mix( float( 1 ), clamp( vAO, 0, 1 ), float( 0.7 ).sub( pocket.mul( 0.3 ) ) ) : clamp( vAO, 0, 1 ) )
-			.mul( mix( float( 1 ), mix( float( 0.72 ), float( 0.88 ), pocket ), concave ) ).mul( runShade );
+			.mul( mix( float( 1 ), mix( float( 0.72 ), float( 0.88 ), pocket ), concave ) ).mul( runShade ).mul( mix( float( 1 ), float( GRASS_ROOTS.sky ), rootLight ) );
 		return Surface( albedo, nW, rough, ao, canopy, water, puddle, flow );
 
 	} )();

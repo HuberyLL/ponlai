@@ -1,6 +1,6 @@
 import * as THREE from 'three/webgpu';
 import { attribute, positionLocal, float, vec3 } from 'three/tsl';
-import { meadowColor, meadowSoil, soilOutcrop } from '../materials/Meadow.ts';
+import { meadowColor } from '../materials/Meadow.ts';
 import { LIP_INFO, LIP_POINTS, LIP_STEP, LIP_WALL } from './RimGround.ts';
 import { cellStream } from './Anchors.ts';
 import { backlight, vegetationMaterial } from './vegetation/Material.ts';
@@ -11,8 +11,7 @@ import { geometrySteps } from './Upload.ts';
 import { boundsSteps, float32Steps, indexSteps, runSteps, Growing } from './Steps.ts';
 import { noise3, smoothstep } from './noise.ts';
 import type { Shared } from '../shared.ts';
-import type { RimLipData, ShoreField } from './types.ts';
-import { shoreDistance } from './ShoreSample.ts';
+import type { RimLipData } from './types.ts';
 
 // The rim's hanging grass: grass growing from the lip, where the meadow meets the stone, and
 // hanging over it as one fringe, so the meadow passes into the cliff as a sea cliff's top does.
@@ -27,8 +26,7 @@ import { shoreDistance } from './ShoreSample.ts';
 // measures every 10 cm down under each sample: RimGround.ts LIP_WALL), along a smooth arc rather
 // than through it. They are combed to one side by the prevailing wind, in stretches with clumps
 // and thin places, drier and yellower than the meadow, and fewer where the turf thins at the rim
-// (the lip's presence) and where the wind bares the lip to the cliff's stone (BARE_LIP: Meadow.ts
-// `soilOutcrop`, as the ground and the meadow read it, from the shore field), as roots need soil. The blades are the meadow's (Grass.ts): sword-shaped, about as wide, and
+// (the lip's presence), as roots need soil. The blades are the meadow's (Grass.ts): sword-shaped, about as wide, and
 // coloured from a deeper root to a lighter tip over the lawn's colour.
 // The lip is traced along the coast inside each box (a chunk's) from the rim field
 // (RimGround.buildRimLip), resampled between the points where the coast crosses the box's border,
@@ -52,8 +50,6 @@ const STRAW: [ number, number, number ] = [ 0.105, 0.085, 0.034 ];
 // The hanging grass: bundles per metre of coast where its density is full (up to two a sample,
 // about 160 blades a metre), and a blade's segments, enough that its arc reads smooth close up:
 // 6 under SHORT[ 0 ] (m), 8 under SHORT[ 1 ], 10 for a longer one.
-// The share of the bundles a bare lip loses.
-const BARE_LIP = 0.85;
 const HANG_RATE = 24, HANG_SEGMENTS = [ 6, 8, 10 ], SHORT = [ 0.3, 0.6 ];
 // How far a blade lying on the stone keeps off it (m), beyond the wall's own margin.
 const LIE = 0.012;
@@ -63,9 +59,9 @@ const FOLD = 0.6;
 const PREVAILING = [ - Math.cos( 40 * Math.PI / 180 ), - Math.sin( 40 * Math.PI / 180 ) ];
 
 /** The rim's hanging grass (the mesh, 'rimGrass'). */
-export function buildRimGrass( lip: RimLipData, shore: ShoreField, shared: Shared ): THREE.Mesh {
+export function buildRimGrass( lip: RimLipData, shared: Shared ): THREE.Mesh {
 
-	const built = runSteps( rimGrassSteps( lip, shore ) );
+	const built = runSteps( rimGrassSteps( lip ) );
 	const mesh = new THREE.Mesh( built.geometry, rimGrassMaterial( shared ) );
 	mesh.name = 'rimGrass';
 	mesh.receiveShadow = true;
@@ -88,7 +84,7 @@ export function rimGrassKind( mesh: THREE.Mesh ): VegetationKind<RimGrassBuilt> 
 		growth: {
 			*prepare( input ) {
 
-				const grass = yield* rimGrassSteps( input.data.rimLip, input.data.shore, 8 );
+				const grass = yield* rimGrassSteps( input.data.rimLip, 8 );
 				yield* geometrySteps( input.renderer, grass.geometry );
 				return grass;
 
@@ -108,13 +104,11 @@ export function rimGrassKind( mesh: THREE.Mesh ): VegetationKind<RimGrassBuilt> 
 
 /** The hanging grass's geometry in steps (a generator, `per` samples a step), so the growth
  * (Growth.ts) builds a grown island's in idle time; `buildRimGrass` runs it to the end. The result
- * is the same however it is stepped. `shore` (the world's shore field) gives the soil's exposure,
- * which bares the lip. */
-export function* rimGrassSteps( lip: RimLipData, shore: ShoreField, per = Infinity ): Generator<void, RimGrassBuilt> {
+ * is the same however it is stepped. */
+export function* rimGrassSteps( lip: RimLipData, per = Infinity ): Generator<void, RimGrassBuilt> {
 
 	const GP = new Growing(), GC = new Growing(), GN = new Growing(), GH = new Growing(), GI = new Growing();
 	const { points, info, pieces } = lip;
-	const shoreAt = ( x: number, z: number ) => shoreDistance( shore, x, z );
 	const col = new THREE.Color(), shade = new THREE.Color();
 	const base = new THREE.Vector3(), dir = new THREE.Vector3(), side = new THREE.Vector3(), up = new THREE.Vector3( 0, 1, 0 );
 	const normal = new THREE.Vector3();
@@ -202,10 +196,7 @@ export function* rimGrassSteps( lip: RimLipData, shore: ShoreField, per = Infini
 			// with clumps and thin places along them, fewer where the turf thins at the rim.
 			const fringe = smoothstep( 0.3, 0.56, noise3( x * 0.83 + 4.1, 2.7, z * 0.83 - 0.6 ) * 0.5 + 0.5 );
 			const clump = smoothstep( 0.3, 0.72, noise3( x * 3.3 - 1.7, 8.4, z * 3.3 + 2.9 ) * 0.5 + 0.5 );
-			// On exposed edges the lip is the cliff's bare stone (Meadow.ts `soilOutcrop`, as the ground
-			// and the meadow read it): the roots need soil, so few bundles grow there.
-			const bare = soilOutcrop( 0, meadowSoil( x, z, shoreAt ).outcropReach );
-			const density = ( 0.5 + 0.5 * fringe ) * ( 0.4 + 0.6 * presence ) * ( 0.4 + 0.6 * clump ) * ( 1 - BARE_LIP * bare );
+			const density = ( 0.5 + 0.5 * fringe ) * ( 0.4 + 0.6 * presence ) * ( 0.4 + 0.6 * clump );
 			const hang = cellStream( Math.round( x * 1000 ), Math.round( z * 1000 ), 5502 );
 			const bundles = Math.floor( density * HANG_RATE * LIP_STEP + hang() );
 			if ( bundles === 0 ) continue;

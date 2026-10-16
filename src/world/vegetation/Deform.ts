@@ -39,7 +39,7 @@ export const PALM_WIND = { cycles: 30, slow: 1 } as const;
  * view the far meadow's sway is gone, which cut its single-frame flashes by two thirds (a later
  * window, 6.5 to 8.5, cut them only a few per cent more). */
 export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust: 0.02 }, shiver: { base: 0.003, gust: 0.006 }, fade: { none: 4, full: 7 },
-	pressed: { length: 0.28, stiffness: 0.4, underside: 1 } } as const;
+	pressed: { length: 0.28, stiffness: 1, underside: 1, always: true } } as const;
 // `pressed`: the meadow under a wind above fair's (`bendBlade`): the tuft height (m) at which the
 // wind's load is the lean the gust field gives (the lawn's, Meadow.ts SWARD_HEIGHT), the blades'
 // flexural rigidity in that unit, and how much lighter the blades' pale side shows where they lie
@@ -48,7 +48,13 @@ export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust:
 // show. At 0.4 they lean 34 and 64 (16 and 47 in a fresh wind), and the meadow reads combed
 // downwind. Blades 2.5 times as long (tried in place of the lawn's) lie nearly flat at 0.4 in any
 // wind above fair's, so their gusts no longer press deeper; at 1 they lean 56 degrees between a
-// fresh wind's gusts and 72 in a strong one's, the gusts pressing them to 77 and 82.
+// fresh wind's gusts and 72 in a strong one's, the gusts pressing them to 77 and 82. The meadow's
+// blades are long now (0.2 - 0.75 m by the soil, arcing under their weight: Grass.ts), and each
+// bends by its own length (`bendBlade`'s `height`), so they take rigidity 1; `always` presses them in every wind, fair's
+// included (Wind.ts `pressing` would keep the eased lean up to fair's pressure): the load then
+// follows the blade's length at a fair wind too, so a long blade shows it there and the short
+// exposed turf barely moves. Each tussock adds its own rigidity (`bendBlade`'s `rigidity`), so a
+// gust presses neighbouring tussocks apart rather than combing the sward in one direction.
 /** The grass hanging from the rim's lip (RimGrass.ts) swings as a hanging strand (`hangingSway`'s
  * numbers): a blade's weight is its length times the square of the way down it, so a metre-long
  * blade's tip sways about 3 cm in a fair gust, at 0.71 Hz (0.48 Hz across), and lies on the wall
@@ -93,7 +99,8 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
  * per gust tile), each a little apart (`phase`, the blade's own, `bladePhase`, within +-0.4 rad),
  * and shiver across it on their own phase, a quarter of that sway. `fade` (0..1, `swayFade`)
  * scales the sway and shiver but not the lean; the frame's bend and the previous frame's take the
- * same one. `wind` is the frame's wind state (`shared.wind`, or `.previous`).
+ * same one. `wind` is the frame's wind state (`shared.wind`, or `.previous`). `rigidity` (the
+ * blade's tussock's, 1 when not given) divides the wind's load.
  * Above fair's wind (Wind.ts `pressing`, 0 up to fair's pressure, so a fair day's blades bend to
  * the bit as before) the blade takes the elastica's shape under the wind's pressure (Wind.ts
  * `pressedLean`), its load the linear lean and sway scaled by the cube of the tuft's height over
@@ -112,7 +119,7 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
  * field's pressed grass shows light ones. The islanders' trail through the
  * grass (a later field) would join the lean here, so the blade arcs over and sinks as under the
  * wind. */
-export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F ): { position: V3; lean: V3; tilt: V3; pale: F } {
+export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F, rigidity?: F ): { position: V3; lean: V3; tilt: V3; pale: F } {
 
 	const field = windField( wind, origin.xz ).toVar();
 	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
@@ -123,11 +130,12 @@ export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t
 	const shiver = faded( wind.breeze.mul( field.w.mul( sh.gust ).add( sh.base ) ) ).mul( flutter );
 	const eased = along.mul( field.z.add( swing ) ).add( across.mul( shiver ) ).toVar();
 	// the elastica's lean under the tuft's own load (above), and how far the wind has gone over to it
-	const { length: reference, stiffness, underside } = GRASS_WIND.pressed;
-	const scale = height.mul( height ).mul( height ).mul( 1 / ( reference ** 3 * stiffness ) );
+	const { length: reference, stiffness, underside, always } = GRASS_WIND.pressed;
+	const cube = height.mul( height ).mul( height ).mul( 1 / ( reference ** 3 * stiffness ) );
+	const scale = rigidity ? cube.div( rigidity ) : cube;
 	const load = leanLoad( wind, field.w ).add( swing ).mul( scale ).toVar();
 	const pressed = pressedLean( load );
-	const press = pressing( wind );
+	const press = always ? float( 1 ) : pressing( wind );
 	const held = along.mul( pressed ).add( across.mul( shiver.mul( scale ).mul( pressedStiffening( load ) ) ) );
 	const lean = eased.add( held.sub( eased ).mul( press ) ).toVar();
 	const pale = float( 1 ).add( float( 1 ).sub( inverseSqrt( pressed.mul( pressed ).mul( t2 ).add( 1 ) ) ).mul( press.mul( underside ) ) );

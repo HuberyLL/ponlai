@@ -76,51 +76,51 @@ art decision changes; reference images stay out of the repository.
   thin places, fewer where bare stone meets the meadow. Not fans of long blades like small palm
   leaves. What hangs over the rim is the
   meadow's own grass, not leafy branches; the lowest quarter of the cliff above the sea stays bare.
-- The meadow is a lawn, even as a whole and every blade its own: dense, sword-shaped blades, wide
-  to high up and tapering to a point, standing nearly upright but each a little taller or shorter,
-  turned and leaning its own way with a slight arc, so they cross rather than look combed; they
-  bend with the wind together. Each blade is folded along its midrib, one half lit and the other
-  shaded, with a thin lighter edge, and differs a little in value and tint (now and then a yellower
-  or a deeper green), all of it far finer than any patch, so the lawn's average stays one colour.
+- The meadow is a sward of tussocks, closed as a whole and every tussock and blade its own: dense,
+  long, sword-shaped blades, wide to high up and tapering to a point, arcing over under their
+  weight, each a little taller or shorter, turned and leaning its own way, so they cross rather
+  than look combed; each tussock its own height, stiffness and lean, so the wind moves them
+  together but never combs them flat as one pile. Each blade is folded along its midrib, one half
+  lit and the other shaded, with a thin lighter edge, and differs clearly in value (about a third
+  either way) and colour (fresh green, yellow green, olive, a few dry leaves), all of it on a
+  tussock's scale or finer, so the lawn's average stays one colour; never a single dyed green,
+  which reads as plastic.
   One grass colour, a bright, fresh, natural green, matte with only a faint gloss (no pale sheen
   over the blades, which reads as plastic): the gaps between blades a deep, cooler green (never
   near black) under tips that stand out lighter and yellow-green where the sun shines through
   them; looking toward the sun the whole lawn glows, away from it it is plainer and greener; no
-  clumps, tall islands or patches scattered by noise (fields of tone, dryness or bare earth broke
+  tall islands or patches scattered by noise (fields of tone, dryness or bare earth broke
   the lawn into what read from the overview as camouflage and dark blotches), and no pattern of
-  dots on the blades. The lawn follows the soil instead, as the prevailing wind and its salt shape
-  a real island's top: on the windward coast the turf is short and a fresher yellow-green in a
-  band 6 - 12 m deep, its inner edge ragged with tongues of it combed downwind into the sward, and
-  a streak or two of it inland downwind of that coast; on the lee coast the tall turf runs to the
-  edge; a headland into the wind is the most exposed and a cove the least. Only on the windward
-  coast's first 2 - 4 m and on headland tips do dry earth and pale limestone gravel show sparsely
-  between the blades, and there, in stretches of the edge a few metres to a dozen long with turf
-  to the edge between them (headland tips the most), the top of the cliff's own dark, weathered
-  stone comes through over the last 0.5 - 1.2 m, its inner edge widening and narrowing along each
-  stretch, earth and gravel in its low points and a few short sprigs in its cracks, with few
-  hanging blades below it; from the island view it is no lighter than the cliff's face below it
-  (an even, pale band of stone along the whole windward lip read as a kerb, an outline drawn round
-  the coast; no green pad or orange band of soil along the lip, no slabs laid on the meadow). The soil is deepest where it is sheltered and far from the
-  sea, where the lawn grows a little taller and deeper green. Each zone fades in over a few metres
-  and goes lighter and yellower, never darker; the most exposed short turf a little yellower
-  still. Inside the grass
-  there are no hard shadows, only an even darkening toward the ground; the shade of anything
-  standing on it lies soft and light. The only shadows that cross the ground are the real clouds'
-  (from the cloud layer overhead, drifting with it): no patches painted or animated onto the
-  island to vary its light. The turf under the blades is the deeper green of their lower part (on
-  thin soil the same yellow-green as its short blades), so from afar the meadow reads as one
-  carpet, broken only by the soil's few soft zones. By night the lawn is a dark, readable green
-  (see Night). Toward a sheltered coast the tufts grow taller and lean out over the lip instead of
-  thinning, and the lip alternates between overgrown stretches and cut-open root soil.
+  dots on the blades. The island top is one sward, about 0.5 m, with no zones across it: tiers
+  of height and tint by the soil (a short yellow-green band along the windward coast, a taller,
+  deeper grass on deep soil, gravel patches inland) read from above as a map laid over the
+  meadow. Its layering comes from the grass itself: each tussock from about 0.6 to 1.4 times the
+  sward's height, its own colour and value, and now and then a low patch of one to a few short
+  tussocks (never a field of metres), where the low wildflowers grow. The sward runs to the edge on
+  every coast, windward and lee alike: a windward lip shown short, yellow, thin over gravel and
+  bared to the cliff's stone read from above as one more zone. Inside the grass
+  there are no hard shadows, only a darkening toward the ground (a deep green, never black); the
+  shade of anything standing on it lies soft and light. The only shadows that cross the ground
+  are the real clouds' (from the cloud layer overhead, drifting with it): no patches painted or
+  animated onto the island to vary its light. The ground seen between the near blades is the
+  sward's bottom, never a flat floor: the colour of the blades' roots, as deep as their shade,
+  with lying old leaves and a few dry ones; farther off, where the blades are under a pixel, it
+  is the deeper green of their lower part, so from afar the meadow reads as one carpet. By night
+  the lawn is a dark, readable green (see Night). Toward a sheltered coast the grass runs to the
+  lip and stands there (only the hanging grass hangs over it), and the lip alternates between
+  overgrown stretches and cut-open
+  root soil.
 - Wildflowers are part of the meadow: heads (a hand across at most: large enough that the game's
-  close view reads them as flowers, not dots) on some of its tufts, about at the blades' tips,
-  some partly hidden among them, with no stem or leaves showing. They are a warm temperate
-  coast's: pinks, wild chrysanthemums (yellow, a few white), daylilies, dandelions, violets and a
+  close view reads them as flowers, not dots) on some of its tufts, each on a thin stem bent a
+  little by its head: the low species (pinks, dandelions, violets) in low patches of short turf,
+  the pinks along the lip's edge, the tall ones
+  (wild chrysanthemums, daylilies, balloon flowers) in tall tussocks about at their leaves' top,
+  some partly hidden among them, never floating over the grass. They are pinks, wild chrysanthemums (yellow, a few white), daylilies, dandelions, violets and a
   few balloon flowers, all in flower at once, the year round: the island's sign of an immortals'
   land. Each grows in patches of its own where its habitat is, dense at the centre and thinning
   to the edge, with almost no flowers between: a broken band of pink along the cliff's edge,
   chrysanthemums on the grass in from it, orange daylilies where the ground is damp, yellow and
-  violet in the short turf. Colours are soft rather than vivid, and no head (white and yellow
+  violet in small low patches. Colours are soft rather than vivid, and no head (white and yellow
   least of all) outshines the lawn; never a scatter of mixed colours over the lawn, which reads as
   confetti. They sway with the grass, and from afar they are fine coloured specks in it, gathered
   in patches, not coloured stars or blots on the lawn.
