@@ -510,6 +510,35 @@ freshly loaded pages (a grown page against a fresh `grow=1` page) in one call.
 
 Steps, scope, the value's serialisation and the exit code are in the file's header.
 
+## WGSL builds: `tools/wgsl-build.mjs`
+
+`node tools/wgsl-build.mjs <entry> [--out dir] [--features a,b] [--q query]` builds TSL shaders to
+WGSL in node, with no GPU, no browser and no GPU lock: three's WGSL node builder on a
+WebGPURenderer that is never initialised. The entry is a module that returns the shaders to build
+(compute kernels, full-screen passes as a NodeMaterial, draws as `{ material, object, scene,
+camera }`), in the order the page first builds them; the tool loads it through Vite's SSR loader
+with the project's config, so it imports the page's modules as the dev server serves them, and
+`--q` sets the `location.search` their load knobs read. Entries live in `tools/wgsl-build/`
+(`fsr3`: every kernel of `src/post/fsr3/`, built by the page's own `Fsr3Upscaler` in a frame's
+order, the reactive-mask generator and the debug view included); the entry's contract is in the
+tool's header. `--features` gives the device features three sees: default none (WebGPU core),
+while the page's device has every feature its adapter offers, and `float32-filterable` and
+`texture-formats-tier1` change the WGSL.
+
+Each shader goes to `artifacts/wgsl/<entry>/<name>.wgsl` (a draw's to `.vert.wgsl` and
+`.frag.wgsl`), and `bindings.txt` (`report.json` for a script) lists per stage every binding with
+the resource behind it (a texture's name, a storage texture's mip level), each uniform buffer's
+members and size (`nodeUniformN`: a uniform the code did not name), the workgroup size and
+storage, a draw's varyings and colour outputs, and a warning for each of WebGPU's default limits
+the stage exceeds (the page's device requests none above them). Exit 1 when a shader fails to
+build or exceeds a limit. FSR 3's twenty kernels build in about two seconds.
+
+It does not validate the WGSL (no naga or tint): it reports three's own build errors and shows
+what three generated (the bindings a kernel declares, such as several writes sharing one binding
+or a storage texture's level dropped, the uniforms it reads, such as a uv matrix per texture read,
+and the limits), while a module's or a pipeline's creation is still proven on the page
+(`tools/verify-first-use.mjs`, the console's WebGPU errors).
+
 ## GPU lock
 
 Everything that renders the scene in a browser (captures, profiles, GPU probes) takes the
@@ -963,6 +992,10 @@ what these do not give (automation, A/B statistics, pass names).
 Whether a grown page draws what a fresh load of its land draws (views, chunk hashes, the rain
 map, the camera's ground, pipelines and memory across swaps): `tools/verify-growth-swap.mjs`, not a
 probe eval of one's own.
+
+What WGSL a TSL kernel, pass or material compiles to, which bindings and uniforms each stage
+declares, and whether one exceeds WebGPU's default limits, without a GPU: `tools/wgsl-build.mjs`
+with an entry in `tools/wgsl-build/` for the module, not a stub-renderer script of one's own.
 
 ## Writing a tool
 

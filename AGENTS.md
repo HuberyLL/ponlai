@@ -33,6 +33,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `node tools/probe.mjs [url] --q "<query>" --eval "<js>"` reads values from the page (diagnostics,
   timings, uniforms, pipeline counts after an action) as JSON, under the GPU lock and in a warm
   profile: use it instead of a Playwright script of one's own (`docs/tools.md`, Probes).
+- `node tools/wgsl-build.mjs <entry>` builds TSL kernels, passes and materials to WGSL in node (no
+  GPU, no lock) and lists each stage's bindings, uniforms and overruns of WebGPU's default limits,
+  an entry per module in `tools/wgsl-build/` (`fsr3`); it does not validate the WGSL. Use it
+  instead of a stub-renderer script of one's own (`docs/tools.md`, WGSL builds).
 - `node tools/profile-frame.mjs` profiles a production build (scene matrix, A/B deltas, per-pass
   GPU time, the 60 fps acceptance); its options and modes are in `docs/tools.md`.
 - Everything that renders the scene in a browser takes the GPU lock:
@@ -142,9 +146,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/debug/`: runtime A/B flags (`DebugFlags.ts`), the frame profiler, the frame-rate readout,
   the pipeline counter (`PipelineCounter.ts`), the wind view and its probe (`WindView.ts`,
   `WindArrows.ts`, `WindProbe.ts`).
-- `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the world's chunk
-  checks (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node
-  helpers in `world-node.mjs`.
+- `tools/`: captures, profiling, the GPU lock and the probes (`docs/tools.md`); the WGSL build
+  (`wgsl-build.mjs`, its entries in `wgsl-build/`); the world's chunk checks
+  (`verify-world-chunks.mjs`) and statistics (`verify-world-stats.mjs`), on the node helpers in
+  `world-node.mjs`.
 
 ## Rules for every change
 
