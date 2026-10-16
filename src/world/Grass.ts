@@ -5,8 +5,8 @@ import {
 	smoothstep as smoothstepN, instanceIndex, vertexIndex, normalLocal, transformNormal, instanceColor, sign, abs, cos, step, specularColor, specularColorBlended, specularF90,
 	positionGeometry, cross, If,
 } from 'three/tsl';
-import { sampleRimGround, rimGrassCover } from './RimGround.ts';
-import type { RimGroundField, ShoreField } from './types.ts';
+import { LIP_INFO, sampleRimGround, rimGrassCover } from './RimGround.ts';
+import type { RimGroundField, RimLipData, ShoreField } from './types.ts';
 import { shoreDistance } from './ShoreSample.ts';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { anchorStream, cellStream } from './Anchors.ts';
@@ -18,6 +18,7 @@ import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/Me
 import { puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { GRASS_BLADE, gravityNumber, type StrandMaterial } from './vegetation/Physics.ts';
+import { runSteps } from './Steps.ts';
 import { ALPHA_TO_COVERAGE } from './vegetation/Coverage.ts';
 import { backlight, forwardLight, vegetationMaterial, type VegetationOptions } from './vegetation/Material.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -59,9 +60,18 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   the level) and small low patches of one to a few tussocks (LOW): no height or tint follows the
 //   soil's zones, which read from above as zoning; the soil's fields (Meadow.ts) site the flowers.
 //   The sward runs to the edge on every coast. GAP of the tall ones leave small gaps where the ground shows. The extra tufts fold away beyond about 35 m and are not drawn
-//   past their fold, 42 m. Toward the coast the tufts lean out a little over the lip and stand
-//   stiffer (LIP_STIFF), a little taller at most: only the rim's hanging grass (RimGrass.ts)
-//   hangs over it.
+//   past their fold, 42 m. Toward the coast the sward rolls over a rounded shoulder: over its last
+//   metre and a half the tufts lean out more and stand a little lower (SHOULDER) and stiffer
+//   (LIP_STIFF).
+// - The grass over the cliff's edge is the meadow's own tufts draping over it: every lawn tuft
+//   rooted within EDGE_REACH of the edge carries the nearest sample of the worker's lip
+//   (RimGround.ts `buildRimLip`) in the cull's `edge` buffer (`edgeTuftSteps`: the coast's offset
+//   along its outward direction, the roof's height, the outward direction and LIP_WALLS offsets of
+//   the stone every LIP_DEPTH down), and the vertex stage lays the part of each bent blade past the
+//   edge round a curl and down over it (`drape`) and holds every point outside the stone
+//   (`holdOff`), so a blade that reaches the stone lies along it, downward, and none passes into
+//   it; its previous position takes the same drape and hold. Both are 0 for the tufts without a
+//   record, which draw as the rest of the meadow.
 // - Blades do not cast into the sun's shadow map (narrower than a texel, they flicker as the sun
 //   moves): the meadow shades itself and its turf through MeadowCanopy. What the larger casters
 //   (rock, the islanders, the game's props) throw onto the blades is soft and light: a few bilinear lookups
@@ -174,8 +184,7 @@ const THIN_SHARE = 0.28;
 // across the island top). Its layering is the tussocks' own (TUSSOCK): each its own height, from 0.6
 // to 1.4 times the level, and now and then a low patch (LOW) of one to a few short tussocks (`short`,
 // the wind-cropped turf's height), as the wildflowers' low species grow in (their patches are low
-// too). The sward runs to the edge on every coast, the lip's tufts (`spill`) keeping its level and
-// density. SHORT_STAY of the tussocks stay short anywhere.
+// too). The sward runs to the edge on every coast, keeping its level and density there (`spill`). SHORT_STAY of the tussocks stay short anywhere.
 const LEVEL = { short: 0.21, ordinary: SWARD_HEIGHT };
 const SHORT_STAY = 0.03;
 // The low patches: a world-anchored lattice of `cell` (m), `share` of its cells holding one, its
@@ -210,9 +219,29 @@ const GAP = 0.05;
 // (a byte) and the lean's direction in its own frame (a byte), packed as integers under 2^24 so a
 // float holds them exactly.
 const STIFF_RANGE = [ 0.5, 3 ];
-// The lip's tussocks stand (they stiffen by LIP_STIFF times the lip's `spill`): grown long, the
+// The tussocks at the lip stand (they stiffen by LIP_STIFF times the lip's `spill`): grown long, the
 // blades that arc out over the edge drooped down the cliff as a fringe of fur.
-const LIP_STIFF = 0.8;
+const LIP_STIFF = 0.1;
+// The turf rolls over a rounded shoulder (a sea cliff's turf mat): over its last SHOULDER (m) the
+// tufts lean out by the square of the way there (SHOULDER_LEAN: the least and the most more) and
+// stand a little lower (SHOULDER_LOW), wind-cropped, so the sward bends toward the edge rather than
+// standing up to a line it folds down from.
+const SHOULDER = 1.2, SHOULDER_LEAN = [ 0.6, 0.8 ], SHOULDER_LOW = [ 0, 0.1 ];
+
+// The wall an edge tuft's blades lie on: its outward offset from the coast (m, `holdOff`) at every
+// LIP_DEPTH (m) under the roof, LIP_WALLS of them, from the roof down: the first at the coast
+// itself, the rest the worker's (RimGround.ts LIP_WALL, 10 cm apart), each LIE farther out. A point
+// is held out by a smooth maximum over HOLD_SOFT (m), so a blade meeting the stone bends onto it
+// rather than kinking, and the hold eases in over HOLD_ROOT (m) from the root, which sits on the
+// ground the profile only approximates.
+const LIP_DEPTH = 0.1, LIP_WALLS = 16, LIE = 0.012, HOLD_SOFT = 0.03, HOLD_ROOT = [ 0.01, 0.05 ];
+// The meadow at the edge: its tufts rooted within EDGE_REACH (m) of the cliff's edge carry the
+// edge (`edgeTuftSteps`), and the part of a blade past it, held up by no ground, bends down over it
+// (`drape`) round a curl of DRAPE_RADIUS (m, the least and the most, by the blade, times the square
+// root of its tussock's stiffness) and then hangs: the sward itself rolls over the edge, the more of
+// a tuft the nearer it roots (a separate fringe of tufts along the edge read as a row of eyelashes
+// and broke into clumps). EDGE_PAD (m) widens such a tuft's cull sphere for the drape's reach.
+const EDGE_REACH = 1, DRAPE_RADIUS = [ 0.08, 0.2 ], EDGE_PAD = 0.05;
 
 // The meadow's wildflowers are heads on some of its lawn tufts (`flowerTuftGeometry`), grown as
 // wildflowers grow: each species in patches of its own where its
@@ -486,6 +515,8 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 	// it a blade may reach in every direction (`reach`, in units of the tuft's height scale, which the
 	// cull scales by the tuft's own: a blade's shape is isotropic in metres while the tuft's scale is
 	// not): the cull bounds a tuft by both (`tuftSphere`).
+	// The halfWidth below is the root half width of the widest blade, which the cull pads for the widening.
+	g.userData.halfWidth = shape.w[ 1 ] * 0.5 + 0.004;
 	const out = shape.r0[ 1 ] + shape.w[ 1 ];
 	g.userData.restBox = new THREE.Box3( new THREE.Vector3( - out, 0, - out ), new THREE.Vector3( out, HEIGHT_MAX, out ) );
 	g.userData.reach = HEIGHT_MAX;
@@ -494,8 +525,6 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 	// rim's tussocks' height scale: an ordinary one's at most, the tallest lying inland)
 	const across = HEIGHT_MAX / ( 1 + SHEAR ) * LEVEL.ordinary * 1.25;
 	g.boundingBox = g.userData.restBox.clone().expandByVector( new THREE.Vector3( across, 0, across ) );
-	// The root half width of the widest blade, which the cull pads for the widening.
-	g.userData.halfWidth = shape.w[ 1 ] * 0.5 + 0.004;
 	return g;
 
 }
@@ -834,6 +863,7 @@ interface Tussock { stiffness: F; lean: F; dir: THREE.Node<'vec2'>; gather: F }
 // lengths' mean over a tussock stays), stiffens it by its own stiffness and gathers its root toward
 // the centre. A flower's stem (`isStem` 1, `stem`: its direction in the tuft's frame and its length
 // in the tuft's units, `headPose`) takes the same curve at the stem's numbers.
+// At the cliff's edge the vertex stage drapes the rest pose's bent blade over it (`drape`).
 function restBlade( blade: THREE.Node<'vec4'>, pick: F, scaleY: F, aspect: F, clump: Tussock, isStem: F, stem: { dir: THREE.Node<'vec2'>; length: F } ) {
 
 	const t = blade.x;
@@ -1141,6 +1171,10 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		lean: mid.div( 255 ).toVar(), dir: vec2( cos( leanAngle ), sin( leanAngle ) ).toVar(),
 		gather: float( 1 ).sub( smoothstepN( LEVEL.short + 0.04, LEVEL.ordinary, scaleY ).mul( TUSSOCK.gather ) ),
 	};
+	// A tuft's edge record (`edgeTuftSteps`, zeros away from the edge): the coast's offset along its
+	// outward direction, the roof's height, the outward direction, then the wall (LIP_WALLS offsets).
+	const edgeRecord = input.edge( 0 );
+	const walls = [ 1, 2, 3, 4 ].map( ( k ) => input.edge( k ) );
 	const pose = restBlade( blade, pick, scaleY, aspect, clump, isStem, head.stem );
 	// Whole blades instead of partial coverage (after tidewater's GrassField, Daniel Greenheck, MIT;
 	// the technique only): a widened blade's fragment is drawn solid where the blade's coverage
@@ -1202,8 +1236,47 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const tuftUp = normalize( cross( ground2.xyz, ground1.xyz ) ).toVar();
 	const floor = origin.sub( vec3( 0, pool.mul( sink ), 0 ) ).toVar();
 	const grounded = ( q: V3 ) => q.add( tuftUp.mul( max( dot( floor.sub( q ), tuftUp ), 0 ) ) );
+	// A meadow tuft at the edge (`edgeTuftSteps`: its record's outward direction set) drapes the part
+	// of a blade past the edge over it: its distance past the edge, along the outward direction,
+	// is laid round a quarter curl of the blade's own radius (DRAPE_RADIUS), then straight down.
+	const edgeOn = step( 1e-6, dot( edgeRecord.zw, edgeRecord.zw ) ).toVar();
+	const drapeRadius = mix( float( DRAPE_RADIUS[ 0 ] ), float( DRAPE_RADIUS[ 1 ] ), bladeHash( pose.id, pick, 8 ) ).mul( clump.stiffness.sqrt() ).toVar();
+	const drape = ( q: V3 ) => {
+
+		const out = edgeRecord.zw;
+		const past = max( dot( q.xz, out ).sub( edgeRecord.x ), 0 ).mul( edgeOn ).toVar();
+		const angle = min( past.div( drapeRadius ), Math.PI / 2 );
+		const along = drapeRadius.mul( sin( angle ) ), drop = drapeRadius.mul( float( 1 ).sub( cos( angle ) ) ).add( max( past.sub( drapeRadius.mul( Math.PI / 2 ) ), 0 ) );
+		return q.sub( vec3( out.x, 0, out.y ).mul( past.sub( along ) ) ).sub( vec3( float( 0 ), drop, float( 0 ) ) );
+
+	};
+	// An edge tuft's draped blade is held off the stone (its wall, LIP_WALLS offsets from the coast
+	// along the outward direction, every LIP_DEPTH under the roof, linear between them and held
+	// below the last): a point the wall would pass is moved out to it by a smooth maximum
+	// (HOLD_SOFT), so a blade that reaches the stone lies along it, downward; above the roof nothing
+	// bounds it, the wall falling away over 2 cm. The hold eases in from the root (HOLD_ROOT). 0 away
+	// from the edge (`edgeOn`).
+	const outward = mix( ground1.xz.div( max( length( ground1.xz ), 1e-6 ) ), edgeRecord.zw, edgeOn ).toVar();
+	const holdOff = ( q: V3 ) => {
+
+		const o = dot( q.xz, outward ).sub( edgeRecord.x ).toVar();
+		const depth = edgeRecord.y.sub( q.y ).toVar();
+		const u = clamp( depth.div( LIP_DEPTH ), 0, LIP_WALLS - 1 ).toVar();
+		let wall: F = float( 0 );
+		walls.forEach( ( w, j ) => {
+
+			wall = wall.add( dot( w, max( float( 1 ).sub( abs( vec4( u ).sub( vec4( 4 * j, 4 * j + 1, 4 * j + 2, 4 * j + 3 ) ) ) ), 0 ) ) );
+
+		} );
+		const stone = wall.sub( float( 1 ).sub( smoothstepN( - 0.02, 0, depth ) ) ).toVar();
+		const soft = max( float( HOLD_SOFT ).sub( abs( o.sub( stone ) ) ), 0 ).div( HOLD_SOFT );
+		const held = max( o, stone ).add( soft.mul( soft ).mul( HOLD_SOFT * 0.25 ) );
+		const ease = smoothstepN( HOLD_ROOT[ 0 ], HOLD_ROOT[ 1 ], length( q.sub( origin ) ) );
+		return q.add( vec3( outward.x, 0, outward.y ).mul( held.sub( o ).mul( ease ).mul( edgeOn ) ) );
+
+	};
 	const bend = bendBlade( shared.wind, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness );
-	const bent = grounded( bend.position ).toVar( 'grassBent' );
+	const bent = holdOff( drape( grounded( bend.position ) ) ).toVar( 'grassBent' );
 	// A blade of a tuft past 70 m stands for as many of the blades it drew there as its gain over
 	// NEAR_GAIN (exactly 1 within 70 m) and is drawn as that many strips side by side, each with its
 	// own fold, edge and tint (`bladeStrips`): one plain blade 16 times as wide read at the island
@@ -1265,11 +1338,11 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
 		// camera: a previous frame's pose from the registered displacement keeps them as they are now.
 		displacement: ( state ) => pixelWideBlade(
-			state === shared.wind ? bent : grounded( bendBlade( state, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness ).position ), across, minWidth, keep, gain, isHead, headSize.coverage ),
+			state === shared.wind ? bent : holdOff( drape( grounded( bendBlade( state, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness ).position ) ) ), across, minWidth, keep, gain, isHead, headSize.coverage ),
 		// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
 		// rooted point, widened by the offset the current pose took (the widening follows the camera,
 		// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
-		previous: ( swayed ) => TEMPORAL ? swayed.sub( bent ).add( grounded( bendBlade( shared.wind.previous, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness ).position ) ) : undefined,
+		previous: ( swayed ) => TEMPORAL ? swayed.sub( bent ).add( holdOff( drape( grounded( bendBlade( shared.wind.previous, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness ).position ) ) ) ) : undefined,
 		// The rest of three's instancing: the normal and the instance colour, before the blade moves.
 		beforePosition: () => {
 
@@ -1350,7 +1423,9 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 
 }
 
-export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3; flower: number; density: number; clump: number }
+/** A tuft's record; a tuft at the cliff's edge also its `edge` record (20 floats: `edgeTuftSteps`)
+ * and how far past its blades' reach the drape and the hold off the wall may move them (`pad`, m). */
+export interface Tuft { m: THREE.Matrix4; col: THREE.Color; visibility: number; cover: number; rimEdge: number; thin: number; top: number; origin: THREE.Vector3; flower: number; density: number; clump: number; edge?: Float32Array; pad?: number }
 
 type GrassCull = VegetationCull<Tuft>;
 
@@ -1400,17 +1475,19 @@ function tuftSphere( t: Tuft, geometry: THREE.BufferGeometry, spheres: Float32Ar
 	// centre of the origin; a vertex turned about the origin stays that close to it, so within the
 	// radius plus twice the offset of the centre.
 	const bend = 2 * _sphere.center.distanceTo( t.origin );
-	spheres[ i * 4 + 3 ] = _sphere.radius + bend + WIDEN_REACH * ( geometry.userData.halfWidth as number ) * axisScale + SWAY_PAD;
+	spheres[ i * 4 + 3 ] = _sphere.radius + bend + WIDEN_REACH * ( geometry.userData.halfWidth as number ) * axisScale + SWAY_PAD + ( t.pad ?? 0 );
 
 }
 
 // The tufts' data in the cull's storage buffers, a slot each: the instance transform, the colour,
-// the ground inputs (three vec4s) and the planting anchor with the tuft's height.
+// the ground inputs (three vec4s), the planting anchor with the tuft's height and an edge tuft's
+// record (five vec4s, zeros for the others).
 const GRASS_PAYLOAD: CullPayload<Tuft> = {
-	buffers: [ { name: 'matrices', floats: 16, itemSize: 16 }, { name: 'colors', floats: 4, itemSize: 4 }, { name: 'ground', floats: 12, itemSize: 4 }, { name: 'origins', floats: 4, itemSize: 4 } ],
+	buffers: [ { name: 'matrices', floats: 16, itemSize: 16 }, { name: 'colors', floats: 4, itemSize: 4 }, { name: 'ground', floats: 12, itemSize: 4 }, { name: 'origins', floats: 4, itemSize: 4 },
+		{ name: 'edge', floats: 20, itemSize: 4 } ],
 	origin: 'origins',
 	matrices: 'matrices',
-	write( t, i, { matrices, colors, ground, origins } ) {
+	write( t, i, { matrices, colors, ground, origins, edge } ) {
 
 		t.m.toArray( matrices, i * 16 );
 		// (the fourth channel: the tussock's word, `plantGrass`)
@@ -1427,6 +1504,7 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 		ground.set( [ t.visibility, t.flower, t.cover, t.rimEdge, e[ 0 ], e[ 1 ], e[ 2 ], t.thin, e[ 8 ], e[ 9 ], e[ 10 ], t.density ], i * 12 );
 		t.origin.toArray( origins, i * 4 );
 		origins[ i * 4 + 3 ] = t.top;
+		if ( t.edge ) edge.set( t.edge, i * 20 );
 
 	},
 	sphere: tuftSphere,
@@ -1447,6 +1525,7 @@ function tuftInputs( cull: GrassCull, index: THREE.Node<'uint'> ) {
 		clump: cull.node( 'colors', 'vec4', true ).element( index ).w,
 		ground: ( k: number ) => ground.element( index.mul( 3 ).add( k ) ),
 		origin: cull.node( 'origins', 'vec4', true ).element( index ),
+		edge: ( k: number ) => cull.node( 'edge', 'vec4', true ).element( index.mul( 5 ).add( k ) ),
 	};
 
 }
@@ -1573,15 +1652,16 @@ function batchOf( source: THREE.BufferGeometry, shape: TuftShape, floor: number,
 
 }
 
-/** The meadow's tufts of each kind, one record per instance: the lawn, its thin extra tufts and
- * its flowering tufts. */
+/** The meadow's tufts of each kind, one record per instance: the lawn, its thin extra tufts and its
+ * flowering tufts. */
 export interface GrassTufts { lawn: Tuft[]; lawnThin: Tuft[]; lawnFlower: Tuft[] }
 
 /** The tufts grown on the anchors `veg` (any of them: each anchor's tufts depend on that anchor
  * alone); `walkDistance` (m from a point to the islander's loop) keeps the flowers off the path;
  * `shore` (the world's shore field) gives the soil's depth its coast term, as the ground reads it
- * (the anchor's own rim distance without it). */
-export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number, shore?: ShoreField ): GrassTufts {
+ * (the anchor's own rim distance without it); `rimLip` (the worker's lip) gives the tufts near the
+ * cliff's edge their edge records (`edgeTuftSteps`). */
+export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkDistance?: ( x: number, z: number ) => number, shore?: ShoreField, rimLip?: RimLipData ): GrassTufts {
 
 	const n = veg.length / STRIDE;
 	const lawn: Tuft[] = [], lawnThin: Tuft[] = [], lawnFlower: Tuft[] = [];
@@ -1637,17 +1717,17 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		if ( ! supportsMeadow( y, veg[ k + 4 ] ) ) continue;
 		const rimEdge = smoothstep( - 1.5, - 0.3, rim );
 
-		// The meadow runs to the lip. Toward the coast the tufts lean out over it a little, along the
-		// coast field's gradient (any coast line, wherever the footprint puts it), so they meet the
-		// root soil instead of stopping short of it, and stand stiffer (LIP_STIFF): only the rim's
-		// hanging grass (RimGrass.ts) hangs over the edge. Where that field exposes a soil pocket
+		// The meadow runs to the lip. Toward the coast the tufts lean out over its shoulder (SHOULDER),
+		// along the coast field's gradient (any coast line, wherever the footprint puts it), so they
+		// meet the root soil instead of stopping short of it, and stand stiffer (LIP_STIFF); those near
+		// the edge drape over it (`edgeTuftSteps`). Where that field exposes a soil pocket
 		// the tufts narrow only a little: the pocket shows between them.
 		let cover = 1, spill = 0;
 		if ( rimGround ) {
 
 			const g = sampleRimGround( rimGround, x, z );
 			cover = rimGrassCover( g );
-			spill = smoothstep( - 0.95, - 0.1, g.distance );
+			spill = smoothstep( - SHOULDER, - 0.05, g.distance );
 			const e = 0.2;
 			out.set( sampleRimGround( rimGround, x + e, z ).distance - sampleRimGround( rimGround, x - e, z ).distance, 0,
 				sampleRimGround( rimGround, x, z + e ).distance - sampleRimGround( rimGround, x, z - e ).distance );
@@ -1661,7 +1741,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		if ( out.lengthSq() > 1e-8 ) out.normalize();
 		if ( spill > 0 && ! onStack ) {
 
-			dir.addScaledVector( out, spill * ( 0.1 + 0.15 * draws[ 0 ] ) ).normalize();
+			dir.addScaledVector( out, spill * spill * ( SHOULDER_LEAN[ 0 ] + SHOULDER_LEAN[ 1 ] * draws[ 0 ] ) ).normalize();
 			q.setFromUnitVectors( up, dir ).multiply( qy );
 
 		}
@@ -1691,7 +1771,7 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		const spread = tall ? TUSSOCK.spread : TUSSOCK.shortSpread;
 		const height = level * ( 1 + spread * ( 2 * own[ 1 ] - 1 ) );
 		scl.y = height;
-		if ( spill > 0 && ! onStack ) scl.y *= 1 + spill * ( 0.05 + 0.1 * draws[ 1 ] );
+		if ( spill > 0 && ! onStack ) scl.y *= 1 - spill * ( SHOULDER_LOW[ 0 ] + SHOULDER_LOW[ 1 ] * draws[ 1 ] );
 		scl.x *= 0.65 + 0.35 * cover;
 		scl.z *= 0.65 + 0.35 * cover;
 		scl.y *= 0.8 + 0.2 * cover;
@@ -1723,7 +1803,51 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		}
 
 	}
+	if ( rimLip ) runSteps( edgeTuftSteps( [ lawn, lawnThin, lawnFlower ], rimLip ) );
 	return { lawn, lawnThin, lawnFlower };
+
+}
+
+/** The edge record of every meadow tuft rooted within EDGE_REACH of the cliff's edge (the nearest
+ * of the worker's lip samples, `lip`): the coast's offset along its outward direction, the roof's
+ * height, the outward direction ( x, z ), then its wall (LIP_WALLS offsets out of the coast, every
+ * LIP_DEPTH under the roof, LIE added; the first at the coast itself). The vertex stage drapes the
+ * parts of its blades past the edge over it and holds them off the wall (`drape`, `holdOff`). */
+export function* edgeTuftSteps( lists: Tuft[][], lip: RimLipData, per = Infinity ): Generator<void, void> {
+
+	const { info, pieces } = lip;
+	// the samples by cells of EDGE_REACH, in the lip's order
+	const cells = new Map<string, number[]>();
+	const key = ( i: number, j: number ) => i + ',' + j;
+	for ( let l = 0; l < pieces.length; l += 2 ) for ( let s = pieces[ l ]; s < pieces[ l ] + pieces[ l + 1 ]; s ++ ) {
+
+		const k = key( Math.floor( info[ s * LIP_INFO ] / EDGE_REACH ), Math.floor( info[ s * LIP_INFO + 1 ] / EDGE_REACH ) );
+		let list = cells.get( k );
+		if ( ! list ) cells.set( k, list = [] );
+		list.push( s );
+
+	}
+	let done = 0;
+	for ( const tufts of lists ) for ( const t of tufts ) {
+
+		if ( ++ done % per === 0 ) yield;
+		const x = t.origin.x, z = t.origin.z, ci = Math.floor( x / EDGE_REACH ), cj = Math.floor( z / EDGE_REACH );
+		let best = - 1, nearest = EDGE_REACH * EDGE_REACH;
+		for ( let dj = - 1; dj <= 1; dj ++ ) for ( let di = - 1; di <= 1; di ++ ) for ( const s of cells.get( key( ci + di, cj + dj ) ) ?? [] ) {
+
+			const dx = info[ s * LIP_INFO ] - x, dz = info[ s * LIP_INFO + 1 ] - z, d = dx * dx + dz * dz;
+			if ( d < nearest ) { nearest = d; best = s; }
+
+		}
+		if ( best < 0 ) continue;
+		const [ sx, sz, nx, nz, , roof ] = info.subarray( best * LIP_INFO, best * LIP_INFO + 6 );
+		const record = new Float32Array( 20 );
+		record.set( [ sx * nx + sz * nz, roof, nx, nz, LIE ] );
+		for ( let k = 1; k < LIP_WALLS; k ++ ) record[ 4 + k ] = info[ best * LIP_INFO + 5 + k ] + LIE;
+		t.edge = record;
+		t.pad = EDGE_PAD;
+
+	}
 
 }
 
@@ -1782,6 +1906,21 @@ export function buildGrass( { lawn, lawnThin, lawnFlower }: GrassTufts, shared: 
 	group.userData.kinds = kinds.map( ( k ) => ( { geometry: k.geometry, key: k.key } ) );
 	// the flowering tufts' anchors on the land shown, [ x, y, z ] each (the parity views find the
 	// flowers by them: tools/parity/views.mjs)
+	// the roots of the tufts at the cliff's edge (those with an edge record, `edgeTuftSteps`) on the
+	// land shown, [ x, y, z, the share of its blades the tuft keeps ] each (the parity views face the
+	// edge's densest stretch by them)
+	group.userData.edgeRoots = () => {
+
+		const origins = cull.buffer( 'origins' ).array as Float32Array, ground = cull.buffer( 'ground' ).array as Float32Array, edge = cull.buffer( 'edge' ).array as Float32Array;
+		const roots: number[][] = [];
+		for ( const range of cull.ranges ) for ( let i = range.start; i < range.start + range.count; i ++ ) {
+
+			if ( edge[ i * 20 + 2 ] !== 0 || edge[ i * 20 + 3 ] !== 0 ) roots.push( [ ...origins.subarray( i * 4, i * 4 + 3 ), ground[ i * 12 + 11 ] ] );
+
+		}
+		return roots;
+
+	};
 	group.userData.flowerHeads = () => {
 
 		const range = cull.ranges[ kinds.findIndex( ( k ) => k.key === 'lawnFlower' ) ], origins = cull.buffer( 'origins' ).array as Float32Array;
@@ -1867,6 +2006,7 @@ export function grassKind( group: THREE.Group, renderer: THREE.WebGPURenderer ):
 					yield;
 
 				}
+				yield* edgeTuftSteps( [ tufts.lawn, tufts.lawnThin, tufts.lawnFlower ], input.data.rimLip, 256 );
 				const grass = yield* grassSteps( group, tufts, 256 );
 				yield;
 				for ( const buffer of Object.values( grass.buffers ) ) yield* uploadSteps( input.renderer, buffer, AttributeType.STORAGE );

@@ -5,8 +5,9 @@ import { puddleCover } from '../../weather/Puddles.ts';
 
 // How the vegetation moves: the plants' main bend (`mainBend`: today only the game's palm), the
 // meadow's blades and flower heads (`bendBlade`, each on its own phase, `bladePhase`), a hanging
-// strand's pendulum (`hangingSway`: the grass hanging from the rim's lip, which passes its own
-// HangingWind) and standing water drowning a plant (`drown`: the meadow). Each kind's wind numbers (its amplitude, its swings per gust tile,
+// strand's pendulum (`hangingSway`, each hanging kind passing its own HangingWind: kept for the
+// hanging kinds to come; no kind uses it today, the grass over the cliff's edge being the meadow's
+// own tufts draped over it, which bend as its blades do) and standing water drowning a plant (`drown`: the meadow). Each kind's wind numbers (its amplitude, its swings per gust tile,
 // `slow`) are the exported constants below, which its material and the wind probe
 // (debug/WindProbe.ts) both read. The swings per gust tile set the kind's natural frequency,
 // `swayFrequency( cycles )` Hz (Wind.ts), the same in every wind: a stronger wind leans a plant
@@ -55,11 +56,6 @@ export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust:
 // follows the blade's length at a fair wind too, so a long blade shows it there and the short
 // exposed turf barely moves. Each tussock adds its own rigidity (`bendBlade`'s `rigidity`), so a
 // gust presses neighbouring tussocks apart rather than combing the sward in one direction.
-/** The grass hanging from the rim's lip (RimGrass.ts) swings as a hanging strand (`hangingSway`'s
- * numbers): a blade's weight is its length times the square of the way down it, so a metre-long
- * blade's tip sways about 3 cm in a fair gust, at 0.71 Hz (0.48 Hz across), and lies on the wall
- * rather than pressing into it. */
-export const RIM_GRASS_WIND = { amplitude: 0.018, cycles: 24, across: 16, press: 0.02, leafEdge: 0, lift: 0.08 } as const;
 
 /** A plant's main bend, after Sousa's "Vegetation Procedural Animation and Shading in Crysis"
  * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways a little

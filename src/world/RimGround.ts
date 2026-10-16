@@ -62,7 +62,7 @@ function texelRange( a: number, b: number ): [ number, number ] {
 
 /** The top coast differs from the land's footprint: the island's actual solid just below the
  * roof, on the rim ground's lattice over the texels whose centres lie in `box`. Grass thinning,
- * exposed root soil, stone shoulders and the lip's hanging grass all
+ * exposed root soil, stone shoulders and the meadow's drape over the edge all
  * share this one boundary. */
 export class RimLattice {
 
@@ -454,8 +454,9 @@ function resamplePiece( piece: ChainPiece, step: number ): ChainPoint[] {
 // How far the meadow's turf holds at the rim, 0..1: a function of position and of the root bed
 // (retreat pockets, where the turf already gives way to soil and stone, hold none). Most of the
 // coast is covered; the rest is thinner in stretches of one to a few metres, and a finer field
-// breaks the longest runs. The grass hanging from the lip (RimGrass.ts) grows by it. Nothing is
-// placed by hand, so it follows any coast the island takes.
+// breaks the longest runs. Nothing is placed by hand, so it follows any coast the island takes.
+// Each lip sample carries it; the page reads none of it today (the meadow's edge drape takes only
+// the coast, its direction and the wall).
 export function rimLipPresence( x: number, z: number, retreat: number ): number {
 
 	const broad = noise3( x * 0.41 + 1.3, 6.1, z * 0.41 - 4.4 ) * 0.5 + 0.5;
@@ -479,23 +480,22 @@ export function topAt( sdf: SDF, x: number, z: number ): number | undefined {
 
 }
 
-// Per lip sample, the span the hanging grass roots along: LIP_POINTS points ( x, y, z ) on the
-// meadow's ground just inside the lip, from LIP_SPAN[ 0 ] to LIP_SPAN[ 1 ] (m, inside the traced
-// coast), a centimetre above the ground. Rooted among the meadow's own tufts, the hanging grass
-// reads as the lawn growing out over the edge rather than a row starting at it.
+// Per lip sample, a root span on the meadow's ground just inside the lip: LIP_POINTS points
+// ( x, y, z ) from LIP_SPAN[ 0 ] to LIP_SPAN[ 1 ] (m, inside the traced coast), a centimetre above
+// the ground (the page reads none of it today, as with the presence).
 export const LIP_POINTS = 2;
 const LIP_SPAN = [ - 0.16, - 0.02 ];
 // Per lip sample: its place on the coast ( x, z ), the outward direction ( x, z ), presence, the
 // roof's height and the wall below it: at each of LIP_WALL's depths under the roof (every 10 cm
 // down to the longest hanging blade's reach), the outward offset from the coast (m) where the
-// stone is LIP_CLEAR away, which the grass hanging from the lip (RimGrass.ts) lies on, so it
-// drapes over a battered wall instead of passing into it.
+// stone is LIP_CLEAR away, which the blades draped over the edge (Grass.ts `holdOff`) lie on, so
+// they drape over a battered wall instead of passing into it.
 export const LIP_WALL = Array.from( { length: 15 }, ( _, k ) => Math.round( ( k + 1 ) * 10 ) / 100 );
 export const LIP_INFO = 6 + LIP_WALL.length;
 const LIP_CLEAR = 0.03;
 // The lip's samples lie this far apart along the coast, or a little less.
 export const LIP_STEP = 0.05;
-// Where the noise fields cross their thresholds steeply, the hanging grass would end in a cut. A
+// Where the noise fields cross their thresholds steeply, the lip's grass would end in a cut. A
 // triangular filter along the coast (taps LIP_STEP apart, half-width EASE taps) eases the
 // presence over a few decimetres instead.
 const EASE = 4;

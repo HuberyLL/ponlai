@@ -60,6 +60,10 @@ type F = THREE.Node<'float'>;
 // Where the blades thin to under a pixel they still cover most of it, and the turf only deepens the
 // carpet a little, evenly.
 const TURF_TONE = 0.66;
+// The rim's turf wraps the lip's bevel where a broad field along the coast (normalsB's
+// low-frequency channel at LIP_WRAP_RATE per metre, a few metres a stretch) clears LIP_WRAP; the
+// stone left between is darkened by LIP_SKIN (linear multiplier) on its upward faces.
+const LIP_WRAP = [ 0.38, 0.55 ], LIP_WRAP_RATE = 0.09, LIP_SKIN = [ 0.5, 0.52, 0.5 ], LIP_LEDGE = 1.2, RIM_SOIL_TONE = 0.6;
 // The root layer (the turf within the blades' near distances): litter of lying old leaves and dry
 // ones, the gravel map's stones read stretched as three layers, each its own scale across (m per
 // tile, its 48 cells each: leaves about 0.7 - 1.4 cm wide), stretch along (3 - 3.5 times: 2.5 -
@@ -196,7 +200,10 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 			rimBlend.assign( atRim.mul( atRoof ) );
 			// A shallow root bed lets the turf grow down over the lip, onto steeper faces and further
 			// below the roof, with a ragged lower edge; deep beds stop it short above their soil.
-			const overgrown = float( 1 ).sub( smoothstep( 0.08, 0.14, depth ) ).mul( soilUniforms.strength.min( 1 ) );
+			// ... and along most of the coast the turf wraps the lip's bevel to its edge (`wrap`, a
+			// broad field along the coast, LIP_WRAP of it), the stone showing only in stretches between
+			const wrap = smoothstep( LIP_WRAP[ 0 ], LIP_WRAP[ 1 ], texture( tex.normalsB, p.xz.mul( LIP_WRAP_RATE ).add( 0.31 ) ).a );
+			const overgrown = max( float( 1 ).sub( smoothstep( 0.08, 0.14, depth ) ), wrap ).mul( soilUniforms.strength.min( 1 ) );
 			const ragged = texture( tex.heights, p.xz.mul( 1.3 ).add( p.y.mul( 0.9 ) ) ).g.sub( 0.5 ).mul( 0.12 );
 			const greenDrop = mix( clamp( depth.add( 0.02 ), 0.05, 0.16 ), float( 0.27 ).add( ragged ), overgrown );
 			rimTurf.assign( cover.mul( smoothstep( mix( 0.65, 0.18, overgrown ), mix( 0.95, 0.6, overgrown ), n0.y ) )
@@ -429,6 +436,16 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 
 		}
 
+		// The lip's stone, where it shows on the rim's bevel between the turf's stretches, and the
+		// ledges just under it are the cliff's old top: greyed and darkened by their weathering skin
+		// (LIP_SKIN) on their upward faces over the cliff's first LIP_LEDGE (m), never the pale band
+		// and blocks the noon sun drew round the coast on bare upward stone.
+		if ( vegetation ) {
+
+			const ledge = float( 1 ).sub( smoothstep( LIP_LEDGE * 0.4, LIP_LEDGE, lipDepth ) );
+			rock.mulAssign( mix( vec3( 1 ), vec3( ...LIP_SKIN ).mul( mix( float( 0.85 ), float( 1.1 ), hRock ) ), max( rimBlend, ledge ).mul( smoothstep( 0.3, 0.75, n0.y ) ) ) );
+
+		}
 		const up = n0.y;
 		const Hg = H.g.toVar();
 		const albedo = rock.toVar();
@@ -590,8 +607,10 @@ function cliffSurface( { tex, shared, topY, vegetation, rimGround, rimGroundXfor
 				If( rimBlend.greaterThan( 0 ), () => {
 
 					// Both soil treatments retain one palette and the existing soil toggle/depth.
+					// (the lip's root soil darker than the palette, RIM_SOIL_TONE: damp, shaded by the turf
+					// over it, it read in the noon sun as a pale tan block in the lip)
 					const soilC = mix( vec3( ...SOIL_PALETTE.root ), vec3( ...SOIL_PALETTE.cut ), smoothstep( 0.15, 0.85, H.r ) )
-						.mul( H.g.sub( 0.5 ).mul( 0.16 ).add( 1 ) );
+						.mul( H.g.sub( 0.5 ).mul( 0.16 ).add( 1 ) ).mul( RIM_SOIL_TONE );
 					const soilNormal = normalize( mix( n0, nRock, 0.18 ) );
 					let rimSoilCover: F = rimSoil, rimTurfCover: F = rimTurf;
 					if ( hex ) {

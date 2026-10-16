@@ -2,7 +2,7 @@ import * as THREE from 'three/webgpu';
 import { Fn, If, float, instanceIndex, instancedArray, uint, vec3, vec4 } from 'three/tsl';
 import { WIND_STATE_VEC4S, Wind, createWindUniforms, packWindState, rootHash, swayFrequency, windField, windStateOf, type WindState } from '../weather/Wind.ts';
 import { plantGrass } from '../world/Grass.ts';
-import { GRASS_WIND, PALM_WIND, RIM_GRASS_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
+import { GRASS_WIND, PALM_WIND, bendBlade, bladePhase, mainBend } from '../world/vegetation/Deform.ts';
 import { windDisplacement } from '../weather/Wind.ts';
 import { debugFlags } from './DebugFlags.ts';
 import type { WorldData } from '../world/types.ts';
@@ -437,7 +437,6 @@ function inventory( ctx: WindProbeContext ) {
 // each kind's natural sway frequency, Hz (Wind.ts `swayFrequency`; Deform.ts's numbers)
 const naturalFrequencies = () => ( {
 	grassAndFlowers: r3( swayFrequency( GRASS_WIND.cycles ) ),
-	hangingGrass: r3( swayFrequency( RIM_GRASS_WIND.cycles ) ), hangingGrassAcross: r3( swayFrequency( RIM_GRASS_WIND.across ) ),
 	palm: r3( swayFrequency( PALM_WIND.cycles / 2 ) ), // `slow`: half mainBend's rate
 } );
 

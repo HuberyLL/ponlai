@@ -95,7 +95,7 @@ export function meadowMoisture( x: number, z: number ): number {
 // (Grass.ts, on the CPU, the shore field bilinear) reads it to site the flowers.
 
 /** The prevailing wind's origin at rest: the unit vector toward where it comes from (Wind.ts's
- * heading of 40 degrees; RimGrass.ts PREVAILING is its travel, the opposite). */
+ * heading of 40 degrees). */
 export const UPWIND = [ Math.cos( 40 * Math.PI / 180 ), Math.sin( 40 * Math.PI / 180 ) ];
 
 /** The soil's numbers (see above): the upwind samples' distances (m) and weights; the off-wind

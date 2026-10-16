@@ -60,8 +60,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`ChunkMerge.ts`) and drawn (`World.ts`, the world fields' textures in `WorldFields.ts`), and grown
   in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the shapes
   (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones (`Stones.ts`), sea floor
-  (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`, `RimGrass.ts`), the meadow (`Grass.ts`,
-  its wildflowers included; anchors `Anchors.ts`, soil from `ShoreSample.ts`), the islander's
+  (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`), the meadow (`Grass.ts`,
+  its wildflowers and its tufts draped over the cliff's edge included; anchors `Anchors.ts`, soil from `ShoreSample.ts`), the islander's
   walking loop (`WalkLoop.ts`, `WalkPath.ts`) and the vegetation's depth prepass
   (`VegetationPrepass.ts`). `src/world/vegetation/` holds what every plant kind shares (material,
   coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds).

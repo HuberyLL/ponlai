@@ -107,7 +107,8 @@ art decision changes; reference images stay out of the repository.
   with lying old leaves and a few dry ones; farther off, where the blades are under a pixel, it
   is the deeper green of their lower part, so from afar the meadow reads as one carpet. By night
   the lawn is a dark, readable green (see Night). Toward a sheltered coast the grass runs to the
-  lip and stands there (only the hanging grass hangs over it), and the lip alternates between
+  lip and stands there, and the same grass grows out over it: its tufts at the lip spill over the
+  edge, fine blades that arch over and hang down the wall, lying on the stone, never through it, and the lip alternates between
   overgrown stretches and cut-open
   root soil.
 - Wildflowers are part of the meadow: heads (a hand across at most: large enough that the game's
@@ -133,7 +134,7 @@ art decision changes; reference images stay out of the repository.
   is the rest pose. The wind turns with the weather and has levels (light, gentle, fresh, strong;
   gentle most of the time, fresh at times, light or strong rarely), coming mostly from within
   40 degrees of the prevailing wind and now and then from the opposite side; the landscape keeps
-  the prevailing wind (the meadow's exposure, the rim grass's combing).
+  the prevailing wind (the meadow's exposure).
 
 ## Sea, sky and weather
 

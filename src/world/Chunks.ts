@@ -331,7 +331,7 @@ export interface ChunkData {
 	floorUnder: FloorShape | null;
 	// VEGETATION_STRIDE per owned turf anchor
 	anchors: Float32Array;
-	// the lip's owned pieces, each with its crossing samples (the hanging grass's roots)
+	// the lip's owned pieces, each with its crossing samples (the meadow's edge records)
 	lip: RimLipData;
 	// the rim ground's owned texels: 160 x 160, RGBA (RimGround.ts); empty without island
 	rimGround: Float32Array;

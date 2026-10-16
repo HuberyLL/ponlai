@@ -248,7 +248,7 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `windView` makes the vegetation's wind visible (debug pages only; read at load, so without it
   no shader changes; `src/debug/WindView.ts`): flat unlit arrows every 2 m over the meadow, just
   above the grass, point where the local wind blows (the eddies' veer included), longer in a
-  gust and brighter with the lean it gives; and every plant (grass and its flowers, the rim's hanging grass, the game's
+  gust and brighter with the lean it gives; and every plant (grass and its flowers, its tufts draped over the cliff's edge among them, the game's
   palm) is drawn unlit in the colour of its current sway s (tip
   offset over height): the hue is s's angle from the mean wind on a cyclic map (downwind blue,
   upwind orange, left of the wind, counter-clockwise seen from above, magenta, right of it green),
