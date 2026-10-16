@@ -10,6 +10,7 @@ import { motionState, motionUniforms, onTaaCut, reactiveUniforms } from './Motio
 import { TemporalRest, restEpoch, restKey } from './TemporalRest.ts';
 import { sceneEvents } from './SceneEvents.ts';
 import { FSR, rcas } from './FSR.ts';
+import { lanczosHistory } from './TemporalHistory.ts';
 import { carriedReactive, clampDrop, motionCap, movedLastFrame, temporalReactive } from './TemporalLocks.ts';
 import { temporalSharpness } from './Antialiasing.ts';
 import type { FrameGraph, ResourceHandle, SizeClass } from './graph/FrameGraph.ts';
@@ -24,9 +25,10 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 // motion vector and its history clipped to what the current frame shows around it. After Brian
 // Karis, "High Quality Temporal Supersampling" (SIGGRAPH 2014), and Lasse Jon Fuglsang Pedersen's
 // TAA for Playdead's INSIDE ("Temporal Reprojection Anti-Aliasing in INSIDE", GDC 2016): the motion of
-// the nearest surface in a 3x3 neighbourhood, a Catmull-Rom history fetch in five bilinear taps
-// (Jorge Jimenez, "Filmic SMAA", SIGGRAPH 2016) and variance clipping (Marco Salvi, "An Excursion in
-// Temporal Supersampling", GDC 2016) in YCoCg toward the neighbourhood's mean.
+// the nearest surface in a 3x3 neighbourhood, FSR 3.1's history fetch (a Lanczos 2 over 4 x 4
+// texels with its deringing: TemporalHistory.ts, whose header has why and what it measured) and
+// variance clipping (Marco Salvi, "An Excursion in Temporal Supersampling", GDC 2016) in YCoCg toward
+// the neighbourhood's mean.
 //
 // - Accumulation domain: linear light. Display values (the grade's sRGB encoding and its gentle
 //   S-curve) average darker at partial coverage (a thin blade over bright ground came out darker
@@ -1020,27 +1022,11 @@ export class TemporalAA {
 					disoccluded.assign( select( abs( zNow.sub( zNear ) ).greaterThan( tolerance ), float( 1 ), float( 0 ) ) );
 
 				} );
-				// the history, Catmull-Rom in five bilinear taps (Jimenez), or one bilinear tap (lite)
-				const hs = u.historySize;
+				// the history, FSR 3.1's Lanczos 2 over 4 x 4 texels with its deringing (TemporalHistory.ts),
+				// or one bilinear tap (lite)
 				const hist = vec4( 0 ).toVar();
 				if ( lite ) hist.assign( texture( history, uvPrev ).level( float( 0 ) ) as unknown as V4 );
-				else {
-
-					const sp = uvPrev.mul( hs );
-					const t1 = floor( sp.sub( 0.5 ) ).add( 0.5 ).toVar();
-					const f = sp.sub( t1 ).toVar();
-					const w0 = f.mul( f.mul( f.mul( - 0.5 ).add( 1 ) ).sub( 0.5 ) );
-					const w1 = f.mul( f ).mul( f.mul( 1.5 ).sub( 2.5 ) ).add( 1 );
-					const w2 = f.mul( f.mul( f.mul( - 1.5 ).add( 2 ) ).add( 0.5 ) );
-					const w3 = f.mul( f ).mul( f.mul( 0.5 ).sub( 0.5 ) );
-					const w12 = w1.add( w2 ).toVar();
-					const p0 = t1.sub( 1 ).div( hs ), p3 = t1.add( 2 ).div( hs ), p12 = t1.add( w2.div( w12 ) ).div( hs ).toVar();
-					const at = ( x: F, y: F ) => texture( history, vec2( x, y ) ).level( float( 0 ) ) as unknown as V4;
-					const k0 = w12.x.mul( w0.y ), k1 = w0.x.mul( w12.y ), k2 = w12.x.mul( w12.y ), k3 = w3.x.mul( w12.y ), k4 = w12.x.mul( w3.y );
-					hist.assign( at( p12.x, p0.y ).mul( k0 ).add( at( p0.x, p12.y ).mul( k1 ) ).add( at( p12.x, p12.y ).mul( k2 ) )
-						.add( at( p3.x, p12.y ).mul( k3 ) ).add( at( p12.x, p3.y ).mul( k4 ) ).div( k0.add( k1 ).add( k2 ).add( k3 ).add( k4 ) ) );
-
-				}
+				else hist.assign( lanczosHistory( history, uvPrev, u.historySize ) );
 				const histC = toYCoCg( max( hist.rgb, vec3( 0 ) ) ).toVar();
 				// the clip box and the history's frames' worth (`hoodStats`), from the 3x3 here or from
 				// the neighbourhood pass

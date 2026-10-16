@@ -262,6 +262,19 @@ packages, into `dist/licenses/`.
   capped frames (after the cap, not before it) and is not set to 1 where the history is new; the
   clamp-drop only on moving pixels, to one frame, by how far the history lay outside the box.
 
+### FSR 3 upscaler's history sample (AMD FidelityFX SDK)
+
+- Upstream: [AMD FidelityFX SDK](https://github.com/GPUOpen-LibrariesAndSDKs/FidelityFX-SDK) 2.3.0,
+  FSR 3 upscaler 3.1.5: `upscalers/fsr3/include/gpu/fsr3upscaler/ffx_fsr3upscaler_sample.h` (the
+  Lanczos 2 kernel, FSR 1's polynomial approximation of it, the 4 x 4 fetch and its deringing) and
+  `ffx_fsr3upscaler_reproject.h` (the history sample at the reprojected position)
+- Copyright: (C) 2026 Advanced Micro Devices, Inc.
+- Licence: MIT (the MIT section of the SDK's `docs/license.md`), see
+  [`src/post/fidelityfx-fsr3.LICENSE.txt`](src/post/fidelityfx-fsr3.LICENSE.txt)
+- File: `src/post/TemporalHistory.ts`: the running temporal resolve's history fetch (taa, taau).
+- Changes: HLSL to TSL; only the history sample; 32-bit only, no LUT; each axis's four weights
+  computed once; the separable filter's two normalisations as one division.
+
 ### meshoptimizer (through three.js)
 
 - Upstream: [meshoptimizer](https://github.com/zeux/meshoptimizer) 1.1, by Arseny Kapoulkine, as
@@ -498,9 +511,8 @@ comment where it is used.
   2014), and Lasse Jon Fuglsang Pedersen,
   [*Temporal Reprojection Anti-Aliasing in INSIDE*](https://github.com/playdeadgames/temporal)
   (Playdead, GDC 2016); variance clipping in YCoCg: Marco Salvi, *An Excursion in Temporal
-  Supersampling* (GDC 2016); the history fetched by a Catmull-Rom filter in five bilinear taps:
-  Jorge Jimenez, *Filmic SMAA: Sharp Morphological and Temporal Antialiasing* (SIGGRAPH 2016
-  course *Advances in Real-Time Rendering in Games*); the current frame's samples weighted by their
+  Supersampling* (GDC 2016); the history fetched by FSR 3.1's Lanczos 2 sample with its deringing
+  (its code is listed under "FSR 3 upscaler's history sample" above); the current frame's samples weighted by their
   distance to each output pixel with the accumulated weight kept in the history, reactive masks that limit the history where nothing
   describes the motion (rain, spray, a lightning strike), and TAAU's split into a pass at the
   render's size that takes what depends only on the nearest input pixel (the clip box, the nearest

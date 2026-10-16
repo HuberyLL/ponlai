@@ -19,8 +19,7 @@
 // GUI's list and the default checks (the tools' default sets name high only). Their rows stay in the
 // table and keep compiling, and `?quality=medium|low` (or a tool's `--quality` / `--tiers`) still
 // loads them; new work need not support them. Their last tuning: medium runs `taau` at a fixed
-// budget (msaa missed 60 fps there where taau held it), its TAAU sharpening one RCAS stop softer than
-// high's; low runs `msaa` at a smaller budget. A revival measures them again against high.
+// budget (msaa missed 60 fps there where taau held it), its TAAU sharpening softer than high's; low runs `msaa` at a smaller budget. A revival measures them again against high.
 //
 // Each tier picks its anti-aliasing (the `aa` knob, post/Antialiasing.ts; `?aa` or the GUI choose
 // any mode over it). Without multisampling or a temporal resolve the meadow's alpha to coverage
@@ -116,7 +115,14 @@ export interface TemporalSettings {
 	// the reconstruction filter's Gaussian width (input pixels), running and while the scene rests
 	sigma: number;
 	sigmaRest: number;
-	// the output's sharpening: taa's, and taau's at an upscale of 1 and of 2 per axis (eased between)
+	// the output's sharpening: taa's, and taau's at an upscale of 1 and of 2 per axis (eased between).
+	// High's taau at its baseline's 1.5 sat 9 % sharper than the ground truth at rest (overshoot beyond
+	// its range about 4x fsr3's) and flickered more in motion; swept on the Lanczos history fetch
+	// (TemporalHistory.ts) from 0.75 to 2 stops at 1.5, 1.25 (1.5 / 1.0) was the softest that kept the
+	// clips' ghosting (0.137 against 0.136): at rest FLIP against the ground truth 0.049 -> 0.045, the
+	// sharpness 1.09 -> 1.03, the overshoot halved; in motion the shimmer (TI) and high-pass flicker
+	// 3 % and 5 % lower, at fsr3's, FLIP unchanged, the sharpness 0.95 -> 0.90 of the ground truth's.
+	// Softer still raised the pans' ghosting (0.088 -> 0.095 with none).
 	sharpness: { taa: number; taau: [ number, number ] };
 	// more sharpening where a surface moves on screen (the history's resampling softens moving detail):
 	// RCAS stops taken off the sharpening at `speed` output pixels a frame and over, per surface class
@@ -188,7 +194,7 @@ const TAA: TemporalSettings = {
 	framesStill: 24, framesStillWater: 12, framesMoving: 5, speedFull: 16, gammaStill: 1.25, gammaMove: 0.75,
 	classFrames: [ 1, 1, 0.4, 0.8, 0 ], classGamma: [ 0, 0.25, 0, - 0.25, 0 ], waterFar: [ 150, 600 ], glintReactive: { from: 2, to: 8, max: 1 },
 	sigma: 0.42, sigmaRest: 0.30,
-	sharpness: { taa: 1.0, taau: [ 1.0, 0.5 ] }, sharpenMoving: { stops: [ 0, 0, 1, 0, 0 ], speed: 4 }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
+	sharpness: { taa: 1.0, taau: [ 1.5, 1.0 ] }, sharpenMoving: { stops: [ 0, 0, 1, 0, 0 ], speed: 4 }, skyPassThrough: true, linear: true, restSettle: 8, restSequence: 32, lite: false,
 	gtJitters: 64,
 };
 
@@ -215,7 +221,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 	},
 	medium: {
 		aa: 'taau',
-		// TAAU's sharpening one RCAS stop softer than high's (higher is softer)
+		// TAAU's sharpening softer than high's (higher is softer)
 		taa: { ...TAA, sharpness: { taa: TAA.sharpness.taa, taau: [ 2.0, 1.5 ] } },
 		render: { budget: 1600 * 900 },
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
