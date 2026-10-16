@@ -11,6 +11,7 @@ import * as THREE from 'three/webgpu';
 import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
+import { FramingGlide, IslandTurn, frameIsland, landOutline } from './camera/IslandFraming.ts';
 import { Sky } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, isParkedWeather, isWindLevel, type WeatherName, type WindChoice, type WindLevel } from './sky/Weather.ts';
@@ -158,16 +159,29 @@ const afterScene = new THREE.Scene();
 // The far plane reaches past the horizon so the sea's skirt meets the sky (the resolved sky
 // depth, -1e5, and the passes' sky threshold, -9e4, stay beyond it).
 const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 60000 );
-// The views are framed on the land once the world has loaded (frameLand): the first island's
+// The views are framed on the land once the world has loaded (frameLand): the island view just
+// holds the land and its ring of shallows (IslandFraming.ts); the others take the first island's
 // framing, moved to the land's centroid and scaled by its size. An explicit `dist` is in metres.
 const target = new THREE.Vector3();
-// the island's camera: drags follow the hand on the frame that draws them (IslandCameraControls.ts)
+// the island's camera: it holds the island view's framing, and the hand moves it only with
+// `cameraInput` (or the GUI's 'move by hand'): drags then follow the hand on the frame that draws
+// them (IslandCameraControls.ts)
 const controls = new IslandCameraControls( camera, renderer.domElement );
+controls.handInput = params.has( 'cameraInput' );
 controls.minDistance = 22;
 controls.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
-// the island view's pose (the R key, `setCameraView( 'island' )`); a scene jump and a growth step set it anew
+// the island view's pose (the R key, `setCameraView( 'island' )`); a scene jump, a growth step and
+// a resize set it anew
 const initialCameraPosition = new THREE.Vector3();
 const initialCameraQuaternion = new THREE.Quaternion();
+const initialCameraTarget = new THREE.Vector3();
+// the camera's glide to the island view's new framing when the land grows
+const framingGlide = new FramingGlide();
+// the island view's input: a turn about its pivot (Q / E, a right or middle drag) and a zoom (the
+// wheel); how far it has turned from the query's heading (rad), and its zoom (0 the farthest, 1
+// the nearest: IslandFraming.ts)
+const islandTurn = new IslandTurn( renderer.domElement );
+let islandTurned = 0, islandZoom = 0;
 const initialCameraFov = camera.fov;
 const orbitMaxPolar = controls.maxPolarAngle;
 const orbitMinDistance = controls.minDistance;
@@ -529,10 +543,12 @@ let land = LandLattice.fromBytes( data.land );
 let landBox = landBounds( land );
 function measureLand( next: LandLattice ) {
 
-	return { box: landBounds( next ), framing: landFraming( next ) };
+	return { box: landBounds( next ), framing: landFraming( next ), outline: landOutline( next ) };
 
 }
 let { centroid, scale: landScale, onLand } = landFraming( land );
+// the land's convex hull, which the island view frames (IslandFraming.ts)
+let outline: number[] = [];
 // the land for the tools: its seed and step, box, centroid, the framing's scale against the first
 // island and the default pivot
 const landInfo = { seed: landOptions.worldSeed, step: landOptions.step, bounds: landBox, centroid, scale: landScale, target: [ 0, 0, 0 ] };
@@ -541,6 +557,7 @@ function setLand( next: LandLattice, step: number, measured = measureLand( next 
 
 	land = next;
 	landBox = measured.box;
+	outline = measured.outline;
 	( { centroid, scale: landScale, onLand } = measured.framing );
 	target.copy( onLand( 1.5, 0.5, 1 ) );
 	// the sea fog thins over the island and in its lee
@@ -629,6 +646,7 @@ setSunCasters();
 sunShadow.castFrontFaces( world.group );
 // the camera grabs the island's ground (the chunks' grids, World.ts) and keeps its pivot over the land
 controls.setIsland( world.grounds, landBox );
+let islandMaxDistance = controls.maxDistance;
 frameLand();
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
 rain.collision.setArea( landBox );
@@ -747,8 +765,12 @@ const growth = new Growth( {
 		water!.setLand( landBox );
 		for ( const box of heldOpaque ) water!.reflectionBounds.union( box );
 		setSunCasters();
+		// (asked before the pose changes: whether the camera holds the island view)
+		const follow = holdsFraming();
 		controls.setIsland( world.grounds, landBox );
-		poseIslandView( islandViewOptions );
+		islandMaxDistance = controls.maxDistance;
+		poseIslandView( islandViewOptions, islandTurned, islandZoom );
+		if ( follow ) followFraming();
 		shownData = version;
 		sceneEvent( 'world swap' );
 
@@ -798,22 +820,36 @@ controls.widenFrom = numberParam( 'nearFovFrom', controls.widenFrom );
 let orbitDof = S.dof;
 const viewDirection = new THREE.Vector3();
 
-// The island view on this land: the default pivot, and the camera on its sphere about it at the
-// `dist`, `polar` and `az` options (metres, degrees; the distance scaled with the land unless
-// given), then a settle within the orbit's limits. At rest the pose depends only on the pivot, the
-// position and the limits, so a scene jump (`establishScene`) repeats it on a camera and controls
-// of its own with the page's limits, and its pose is the load's to the bit.
+// The island view on this land at the `polar` and `az` options (degrees): the camera that just
+// frames the land and its ring of shallows from there (IslandFraming.ts), at the camera's aspect;
+// with a `dist` option (m), the camera on its sphere about the default pivot at that distance
+// instead. Then a settle within the orbit's limits, the farthest zoom raised to the framing's
+// distance (from the land's own each time, so it never only grows). At rest the pose depends only
+// on the pivot, the position and the limits, so a scene jump (`establishScene`) repeats it on a
+// camera and controls of its own with the page's limits, and its pose is the load's to the bit.
 // The default azimuth (180: the view looks along +z, about 23 degrees east of the meridian the sun
 // and the full moon culminate on) is fixed, never following the clock, so the R key always returns
 // to the same view. It was 318, looking away from the meridian: the morning sun lit the island
 // flat from behind the camera and the moon path never entered the frame. From 180 the full moon's
 // path is in view at 21:00 and at midnight, while the sun lights the cliffs from the side at 9:00
 // and 16:00 (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
-function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: URLSearchParams ): void {
+function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: URLSearchParams, turn = 0, zoom = 0 ): void {
 
-	const distance = options.has( 'dist' ) ? Number( options.get( 'dist' ) ) : 58 * landScale;
-	orbit.target.copy( target );
-	on.position.setFromSphericalCoords( distance, THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 50 ) ), THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 180 ) ) ).add( target );
+	const polar = THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 50 ) ), azimuth = THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 180 ) ) + turn;
+	if ( options.has( 'dist' ) ) {
+
+		orbit.target.copy( target );
+		on.position.setFromSphericalCoords( Number( options.get( 'dist' ) ), polar, azimuth ).add( target );
+		orbit.maxDistance = islandMaxDistance;
+
+	} else {
+
+		// (a window of no size, such as a hidden pane's, has no aspect: square until it has one)
+		const aspect = on.aspect > 0 && Number.isFinite( on.aspect ) ? on.aspect : 1;
+		frameIsland( outline, { polar, azimuth, fov: initialCameraFov, aspect }, on.position, orbit.target, zoom );
+		orbit.maxDistance = Math.max( islandMaxDistance, on.position.distanceTo( orbit.target ) );
+
+	}
 	orbit.settle();
 
 }
@@ -823,26 +859,60 @@ function frameLand(): void {
 	placeOrbit( camera, controls, params );
 	initialCameraPosition.copy( camera.position );
 	initialCameraQuaternion.copy( camera.quaternion );
+	initialCameraTarget.copy( controls.target );
 
 }
 
 // The island view's pose (the R key, `setCameraView( 'island' )`) at the dist / polar / az of
-// `options`, placed as the load places it on a camera and controls of its own with the page's
-// limits, the camera left where it is: a scene jump's (`establishScene`), and again for the same
-// options when the island grows (Growth.ts), so the view frames the land shown.
+// `options`, the heading turned by `turn` (rad) at `zoom`, placed as the load places it on a camera and
+// controls of its own with the page's limits, the camera left where it is: a scene jump's
+// (`establishScene`), and again for the same options and turn when the island grows (Growth.ts) or
+// the window's shape changes, so the view frames the land shown, and at every step of a turn.
 let islandViewOptions = params;
-function poseIslandView( options: URLSearchParams ): void {
+function poseIslandView( options: URLSearchParams, turn = 0, zoom = 0 ): void {
 
 	islandViewOptions = options;
+	islandTurned = turn;
+	islandZoom = zoom;
 	const probe = camera.clone();
 	const orbit = new IslandCameraControls( probe, document.createElement( 'div' ) );
 	orbit.minDistance = orbitMinDistance;
-	orbit.maxDistance = controls.maxDistance;
 	orbit.maxPolarAngle = orbitMaxPolar;
-	placeOrbit( probe, orbit, options );
+	placeOrbit( probe, orbit, options, turn, zoom );
 	orbit.dispose();
 	initialCameraPosition.copy( probe.position );
 	initialCameraQuaternion.copy( probe.quaternion );
+	initialCameraTarget.copy( orbit.target );
+	controls.maxDistance = orbit.maxDistance;
+
+}
+
+// Whether the camera holds the island view's pose, or glides toward it: only then does it follow
+// the pose when the land grows or the window's shape changes (a pose placed by hand, by the tools
+// or with `cameraInput`, stays).
+function holdsFraming(): boolean {
+
+	if ( ! controls.enabled || controls.handInput || reviewView.camera !== 'island' ) return false;
+	return framingGlide.running || ( camera.position.distanceTo( initialCameraPosition ) < 1e-3 && controls.target.distanceTo( initialCameraTarget ) < 1e-3 );
+
+}
+
+// Takes the camera to the island view's pose: a glide on the scene clock (the tick's
+// `framingGlide.advance`), at once on a paused page, so a paused frame is the fresh load's.
+function followFraming( glide = ! paused ): void {
+
+	if ( glide ) {
+
+		framingGlide.start( camera.position, controls.target, initialCameraPosition, initialCameraTarget );
+		controls.maxDistance = Math.max( controls.maxDistance, camera.position.distanceTo( controls.target ) );
+		return;
+
+	}
+	framingGlide.stop();
+	camera.position.copy( initialCameraPosition );
+	camera.quaternion.copy( initialCameraQuaternion );
+	controls.target.copy( initialCameraTarget );
+	controls.settle();
 
 }
 
@@ -879,6 +949,7 @@ function unwidenFov(): void {
 
 function setCameraMode( mode: string ): void {
 
+	framingGlide.stop();
 	if ( controls.enabled ) settleOrbit();
 	if ( mode === 'free' && ! freeControls.enabled ) orbitDof = S.dof;
 	if ( mode === 'free' ) unwidenFov();
@@ -902,6 +973,7 @@ function setCameraMode( mode: string ): void {
 
 function setCameraView( view: CameraView ): void {
 
+	framingGlide.stop();
 	freeControls.clearInput();
 	settleOrbit();
 	reviewView.camera = view;
@@ -925,7 +997,9 @@ function setCameraView( view: CameraView ): void {
 
 	} else {
 
-		controls.target.copy( target );
+		// (back to the query's heading, at the farthest zoom)
+		if ( islandTurned !== 0 || islandZoom !== 0 ) poseIslandView( islandViewOptions );
+		controls.target.copy( initialCameraTarget );
 		camera.position.copy( initialCameraPosition );
 		camera.quaternion.copy( initialCameraQuaternion );
 		camera.fov = controls.farFov = initialCameraFov;
@@ -941,6 +1015,12 @@ setCameraMode( cameraSettings.mode );
 const cameraF = gui.addFolder( 'Camera' );
 cameraF.add( cameraSettings, 'mode', [ 'free', 'orbit' ] ).name( 'camera mode' ).listen().onChange( setCameraMode );
 cameraF.add( reviewView, 'camera', [ 'island', 'horizon', 'sky' ] ).name( 'view' ).listen().onChange( setCameraView );
+// (off again, the view returns to its framing)
+cameraF.add( controls, 'handInput' ).name( 'move by hand' ).onChange( () => {
+
+	if ( ! controls.handInput ) setCameraView( 'island' );
+
+} );
 cameraF.add( controls, 'scrollMode', [ 'auto', 'zoom', 'pan' ] ).name( 'scroll / swipe' );
 cameraF.add( controls, 'enableDamping' ).name( 'glide and ease' );
 cameraF.add( controls, 'edgePan' ).name( 'pan at the edge' );
@@ -1358,7 +1438,16 @@ function describeRenderScale(): void {
 }
 
 // a resize of the canvas cuts the history; resize() itself also serves render-scale changes, which do not
-addEventListener( 'resize', () => { sceneEvent( 'resize' ); resize(); } );
+addEventListener( 'resize', () => {
+
+	sceneEvent( 'resize' );
+	// the island view's framing follows the window's aspect, at once
+	const follow = holdsFraming();
+	resize();
+	poseIslandView( islandViewOptions, islandTurned, islandZoom );
+	if ( follow ) followFraming( false );
+
+} );
 resize();
 // High starts from the scale it last held on this display, tier and frame rate (remembered in the
 // browser, unless `scaleMemory` is off), and settles from there once its first frames are in; a
@@ -1430,6 +1519,7 @@ function settleFrame( bakeDue: boolean ): SettleFrame | undefined {
 	const pending: string[] = [];
 	if ( bakeDue ) pending.push( 'sky bake due' );
 	if ( refractedSun.pending ) pending.push( 'refracted sun' );
+	if ( framingGlide.running ) pending.push( 'camera glide' );
 	if ( sunShadow.pending ) pending.push( 'sun shadow' );
 	// the loading screen covers the canvas until its fade (index.html) has ended
 	if ( ! revealed ) revealed = loading === null || ( loading.classList.contains( 'done' ) && getComputedStyle( loading ).opacity === '0' );
@@ -1474,7 +1564,23 @@ function tick( time: number ): void {
 
 	}
 	if ( freeControls.enabled ) freeControls.update( rawDt );
-	else controls.advance( dt, time );
+	else {
+
+		// the glide to a grown land's framing (finished at once if the page was paused meanwhile)
+		if ( framingGlide.advance( paused ? Infinity : dt, camera.position, controls.target ) ) camera.lookAt( controls.target );
+		// a turn or zoom of the island view: the framing at the new heading and zoom, taken at once
+		islandTurn.enabled = controls.enabled && ! controls.handInput && reviewView.camera === 'island';
+		const turn = islandTurn.advance( dt ), zoom = THREE.MathUtils.clamp( islandZoom + islandTurn.zoom( dt ), 0, 1 );
+		if ( zoom === 0 || zoom === 1 ) islandTurn.stopZoom();
+		if ( turn !== 0 || zoom !== islandZoom ) {
+
+			poseIslandView( islandViewOptions, islandTurned + turn, zoom );
+			followFraming( false );
+
+		}
+		controls.advance( dt, time );
+
+	}
 
 	renderer.info.reset();
 	// Sun, moon, key light and grade follow the clock every frame; only the baked reflection,

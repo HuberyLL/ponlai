@@ -4,7 +4,11 @@ import { IslandGround } from './IslandGround.ts';
 import type { GroundGrid } from '../world/ChunkDerived.ts';
 
 // The island's camera, in the manner of a management or island-building game (Islanders,
-// Dorfromantik; Anno, Frostpunk and Planet Zoo differ mostly in which button does what):
+// Dorfromantik; Anno, Frostpunk and Planet Zoo differ mostly in which button does what). The hand
+// moves it only with `handInput` (main.ts: the `cameraInput` query option, the GUI's 'move by
+// hand'); off, the default, every pointer, wheel, gesture and key is ignored, and the island view
+// holds the framing main.ts places it at (IslandFraming.ts), so a tuning session sees the same
+// view on every load. With the hand:
 //
 // - A left drag grabs the ground: the point under the cursor at the press stays under it, exactly,
 //   on every frame (one-finger click-drag on a trackpad). A right or middle drag (or Option / Ctrl
@@ -161,6 +165,7 @@ export class IslandCameraControls {
 	resample = true;
 
 	private active = true;
+	private hand = false;
 	private readonly spherical = new THREE.Spherical();
 	private drag: Drag | null = null;
 	// a drag just released, whose last motion the next frame still applies
@@ -234,6 +239,20 @@ export class IslandCameraControls {
 		this.active = value;
 
 	}
+
+	/** Whether the hand moves the view (drags, the wheel and gestures, the keys). Off by default:
+	 * the view holds the pose it is placed at (main.ts frames it on the land: IslandFraming.ts). */
+	get handInput(): boolean { return this.hand; }
+	set handInput( value: boolean ) {
+
+		if ( value === this.hand ) return;
+		this.clearInput();
+		this.hand = value;
+
+	}
+
+	// whether input is taken
+	private get listening(): boolean { return this.active && this.hand; }
 
 	/** Takes the ground the camera grabs from the grids of the island's chunks (ChunkDerived.ts),
 	 * and the pivot's bounds and the farthest zoom from the land's box (WorldShapes.landBounds);
@@ -686,7 +705,7 @@ export class IslandCameraControls {
 
 	private onPointerDown = ( event: PointerEvent ): void => {
 
-		if ( ! this.active || this.drag ) return;
+		if ( ! this.listening || this.drag ) return;
 		const left = event.button === 0, right = event.button === 2 || event.button === 1;
 		if ( ! left && ! right ) return;
 		event.preventDefault();
@@ -722,7 +741,7 @@ export class IslandCameraControls {
 		this.hoverX = hx;
 		this.hoverY = hy;
 		const d = this.drag;
-		if ( ! this.active || ! d || event.pointerId !== d.id ) return;
+		if ( ! this.listening || ! d || event.pointerId !== d.id ) return;
 		event.preventDefault();
 		// every sample since the last event (the browser hands them over once per frame), and the
 		// interval they come at
@@ -824,7 +843,7 @@ export class IslandCameraControls {
 
 	private onContextMenu = ( event: MouseEvent ): void => {
 
-		if ( this.active ) event.preventDefault();
+		if ( this.listening ) event.preventDefault();
 
 	};
 
@@ -832,7 +851,7 @@ export class IslandCameraControls {
 
 	private onWheel = ( event: WheelEvent ): void => {
 
-		if ( ! this.active ) return;
+		if ( ! this.listening ) return;
 		// (a pinch would zoom the page otherwise)
 		event.preventDefault();
 		const [ x, y ] = this.canvasPoint( event );
@@ -916,7 +935,7 @@ export class IslandCameraControls {
 
 	private onGestureStart = ( event: Event & { scale?: number; rotation?: number } ): void => {
 
-		if ( ! this.active ) return;
+		if ( ! this.listening ) return;
 		event.preventDefault();
 		this.gestureScale = event.scale ?? 1;
 		this.gestureRotation = event.rotation ?? 0;
@@ -925,7 +944,7 @@ export class IslandCameraControls {
 
 	private onGestureChange = ( event: Event & { scale?: number; rotation?: number; clientX?: number; clientY?: number } ): void => {
 
-		if ( ! this.active ) return;
+		if ( ! this.listening ) return;
 		event.preventDefault();
 		const scale = event.scale ?? 1, rotation = event.rotation ?? 0;
 		this.pinch -= Math.log( scale / this.gestureScale );
@@ -940,7 +959,7 @@ export class IslandCameraControls {
 
 	private onKeyDown = ( event: KeyboardEvent ): void => {
 
-		if ( ! this.active ) return;
+		if ( ! this.listening ) return;
 		if ( event.ctrlKey || event.metaKey || event.altKey || isCameraInputTarget( event.target ) || isCameraInputTarget( document.activeElement ) ) {
 
 			this.keys.clear();
