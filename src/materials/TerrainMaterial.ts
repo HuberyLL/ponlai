@@ -376,8 +376,13 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 		// unrelated Voronoi facets that fight those planes and read as moulded plastic.
 		const nRock = hex ? triNormal( sX, sY, sZ, n0, ws, float( 0.6 ) ) : triNormal( stoneSlope( fX ), stoneSlope( fY ), stoneSlope( fZ ), n0, w, float( 0.6 ) );
 
-		// --- limestone: broad cool-grey faces with restrained mineral variation. Geometry and
+		// --- limestone: broad cool-grey faces with the scan's full mineral variation. Geometry and
 		// sunlight define the edges; curvature only adds a little weathering, never a white outline.
+		// The stone stays darker than real limestone (about 0.1 linear albedo against 0.2 - 0.35):
+		// the exposure is set for the meadow, and an afternoon sun meets the vertical faces almost
+		// head on, so a paler stone ran into the tone curve's shoulder, where its grain flattened
+		// into one cream-white face (a third of the sunlit face's pixels at 0.85 of display white
+		// or above, against about 6 % now, its local contrast up by about 40 %).
 		const convex = vegetation ? smoothstep( 1.2, 4.0, vCurv ) : smoothstep( 1.6, 5.0, vCurv );
 		// The island's blocks meet in sharp creases: only the deepest of them count as hollows.
 		const concave = ( vegetation ? smoothstep( - 1.5, - 6.0, vCurv ) : smoothstep( - 0.5, - 3.0, vCurv ) ).toVar();
@@ -403,12 +408,12 @@ function cliffSurface( { tex, shared, topY, vegetation, shore, rimGround, rimGro
 		// hides the layers below it): the blend leaves the masks as they are there rather than
 		// reading the placeholder colour.
 		const hb = ( mask: F, height: F, width: number ): F => hex ? select( scanned!, heightBlend( mask, height, float( width ) ), mask ) : mask;
-		const rock = mix( vec3( 0.155, 0.162, 0.158 ), vec3( 0.235, 0.238, 0.22 ), vTint ).toVar();
+		const rock = mix( vec3( 0.124, 0.13, 0.126 ), vec3( 0.188, 0.19, 0.176 ), vTint ).toVar();
 		rock.mulAssign( mix( vec3( 0.97, 0.99, 1.03 ), vec3( 1.025, 1.0, 0.965 ), fract( vTint.mul( 7.31 ) ) ) );
 		// Desaturate the source to fit this limestone palette, but keep its correlated grain,
 		// mineral stains and roughness. Fine colour follows the same relief as the normal map.
 		const mineral = clamp( mix( vec3( stoneLuma ), stoneColor, 0.25 ).div( 0.22 ), vec3( 0.42 ), vec3( 1.7 ) );
-		rock.mulAssign( mix( vec3( 1 ), mineral, 0.72 ) );
+		rock.mulAssign( mineral );
 		rock.mulAssign( big.sub( 0.5 ).mul( 0.18 ).add( 0.98 ) );
 		rock.assign( mix( rock, rock.mul( vec3( 1.12, 1.02, 0.86 ) ), smoothstep( 0.55, 0.85, big2 ).mul( 0.5 ) ) ); // faint ochre
 		// runoff: faint darker streaks down the faces
