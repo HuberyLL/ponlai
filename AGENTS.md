@@ -121,7 +121,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
   final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the
   temporal modes the jitter (`Jitter.ts`), the motion vectors (`Motion.ts`), the temporal resolve
-  (`TemporalAA.ts`) and the FSR 2 measures it takes for moving pixels (`TemporalLocks.ts`), the
+  (`TemporalAA.ts`), its history fetch (FSR 3.1's Lanczos 2 and deringing: `TemporalHistory.ts`) and the FSR 2 measures it takes for moving pixels (`TemporalLocks.ts`), the
   image of a resting scene (`TemporalRest.ts`), the scene events that restart it or cut the
   history (`SceneEvents.ts`) and the rain's streaks and the storm's spray drawn after the resolve
   (`AfterResolve.ts`).
