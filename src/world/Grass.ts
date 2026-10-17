@@ -78,8 +78,9 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   of the sun's map around each vertex (`SunShadow.softVisibility`), no penumbra search, taken in
 //   the vertex stage and handed to the sun's filter in place of its own (`userData.sunVisibility`);
 //   the clouds' shade multiplies in as on every surface (SolarShadow's `installOpenShadow`).
-// - On screen a blade stays at least two pixels wide (0.75 on the outer rim, where partly covered
-//   pixels show a pale fringe over the sea), so the meadow does not crawl as the camera moves, and
+// - On screen a blade stays at least two pixels wide at 4x (0.75 on the outer rim, where partly
+//   covered pixels show a pale fringe over the sea), and under the temporal modes the tier's
+//   `minWidth` (0 on high, the rim's no wider), so the meadow does not crawl as the camera moves, and
 //   the coverage the widening would lower is kept by whole blades instead: a widened blade draws
 //   solid as far up as its coverage stays above its own hash. No pixel of a blade is partly
 //   covered (alpha to coverage drew its sample patterns as a grid of dots along the blades). Close
@@ -599,9 +600,11 @@ function flowerTuftGeometry( lawn: THREE.BufferGeometry ): THREE.BufferGeometry 
 // brightness as at two). Under the temporal modes a blade keeps its two pixels
 // (`GrassQuality.minWidth`, set by `buildGrass`), as at 4x: one pixel darkened the meadow and lost
 // the flower heads between the blades.
+// The outer rim's least width (`rimEdge` in plantGrass), never above the meadow's (`buildGrass`).
+const RIM_MIN_WIDTH = 0.75;
 const grassUniforms = {
 	minWidth: uniform( ALPHA_TO_COVERAGE ? 2 : 1 ), // render-target pixels
-	rimMinWidth: uniform( 0.75 ), // on the outer rim, see `rimEdge` in plantGrass
+	rimMinWidth: uniform( RIM_MIN_WIDTH ), // on the outer rim, see `rimEdge` in plantGrass
 	// The extra lawn tufts of thick patches fold away between these view distances (m): beyond
 	// them a blade is under a pixel wide and the widened blades of the remaining tufts already
 	// cover the turf, so the extras would only cost vertices.
@@ -1494,7 +1497,7 @@ const GRASS_PAYLOAD: CullPayload<Tuft> = {
 		colors[ i * 4 ] = t.col.r; colors[ i * 4 + 1 ] = t.col.g; colors[ i * 4 + 2 ] = t.col.b; colors[ i * 4 + 3 ] = t.clump;
 		const e = t.m.elements;
 		// x: sky visibility, y: the flower code of a flowering tuft (1.5 + its head, `FLOWER_SPECIES`, else 0), z: rim cover, w: rim edge (1 on the plateau's outer rim,
-		// where blades stand against the sea and stay narrower: the opaque pass's MSAA edge pixels
+		// where blades stand against the sea and stay narrower at 4x: the opaque pass's MSAA edge pixels
 		// there resolve against the sky-coloured clear, so every partly covered pixel a widened
 		// blade adds shows as a pale fringe over the sea); then the instance's local x axis with the
 		// thin flag (1 for the extra tufts that fold away with distance), and its local z axis with
@@ -1858,6 +1861,10 @@ export function buildGrass( { lawn, lawnThin, lawnFlower }: GrassTufts, shared: 
 	// (the tier's least blade width applies under the temporal modes only: 4x and one sample keep
 	// theirs, see `grassUniforms`)
 	if ( TEMPORAL ) grassUniforms.minWidth.value = grassQuality.minWidth;
+	// (the rim keeps its blades narrower than the rest at 4x, never wider: on high the temporal
+	// meadow draws its blades at their own width, and its rim alone widened to 0.75 px drew the
+	// cliff's edge as a band of coarser, darker blades than the meadow inside it)
+	grassUniforms.rimMinWidth.value = Math.min( RIM_MIN_WIDTH, grassUniforms.minWidth.value );
 	lodUniforms.bands.value.fromArray( grassQuality.bladeBands );
 	lodUniforms.shares.value.fromArray( grassQuality.lawnBlades ).divideScalar( LAWN.blades );
 	const group = new THREE.Group();
