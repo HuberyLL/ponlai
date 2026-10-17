@@ -83,8 +83,8 @@ View and capture:
 
 - `paused`, `t` (scene time), `dpr` (render pixel ratio, pinned), `polar`, `az` (the island
   view's tilt and heading, 50 and 180 degrees by default), `dist` (m; without it the island view
-  frames the land and its shallows, IslandFraming.ts; with it the camera stands that far from the
-  default pivot), `cameraInput` (the hand moves the island camera freely), `gui`, `camera` (`orbit`, the
+  frames the land and its shallows, IslandFraming.ts, brought in to 35 m from the default pivot
+  when that framing stands farther; with it the camera stands that far from the default pivot), `cameraInput` (the hand moves the island camera freely), `gui`, `camera` (`orbit`, the
   default: the island camera; or `free`: fly with the mouse, WASD, Q/E and Shift).
   The island view's fov widens as it closes in: `nearFov` (degrees at the closest zoom, 42 by
   default; `off` keeps 27 at every distance) and `nearFovFrom` (the distance in m it widens from,

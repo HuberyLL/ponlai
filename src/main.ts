@@ -184,6 +184,11 @@ let islandTurned = 0, islandZoom = 0;
 const initialCameraFov = camera.fov;
 const orbitMaxPolar = controls.maxPolarAngle;
 const orbitMinDistance = controls.minDistance;
+// The island view stands at most 35 m from its pivot and its wheel zooms in to the least distance:
+// from 30 - 40 m the meadow's blades stay a few pixels wide on screen, so they keep their detail
+// without anti-aliasing (from about 55 m they grain), and the islanders stand about a tenth of the
+// frame's height. A land whose framing stands nearer keeps its framing.
+const ISLAND_START_DISTANCE = 35;
 const freeControls = new FreeCameraControls( camera, renderer.domElement );
 
 // ------------------------------------------------------------------ sky, light, water optics
@@ -818,12 +823,14 @@ let orbitDof = S.dof;
 const viewDirection = new THREE.Vector3();
 
 // The island view on this land at the `polar` and `az` options (degrees): the camera that just
-// frames the land and its ring of shallows from there (IslandFraming.ts), at the camera's aspect;
-// with a `dist` option (m), the camera on its sphere about the default pivot at that distance
-// instead. Then a settle within the orbit's limits, the farthest zoom raised to the framing's
-// distance (from the land's own each time, so it never only grows). At rest the pose depends only
-// on the pivot, the position and the limits, so a scene jump (`establishScene`) repeats it on a
-// camera and controls of its own with the page's limits, and its pose is the load's to the bit.
+// frames the land and its ring of shallows from there (IslandFraming.ts), at the camera's aspect,
+// brought in to ISLAND_START_DISTANCE when the framing stands farther (the zoom then runs from there
+// to the least distance); with a `dist` option (m),
+// the camera on its sphere about the default pivot at that distance instead. Then a settle within
+// the orbit's limits, the farthest zoom raised to the framing's distance (from the land's own each
+// time, so it never only grows). At rest the pose depends only on the pivot, the position and the
+// limits, so a scene jump (`establishScene`) repeats it on a camera and controls of its own with the
+// page's limits, and its pose is the load's to the bit.
 // The default azimuth (180: the view looks along +z, about 23 degrees east of the meridian the sun
 // and the full moon culminate on) is fixed, never following the clock, so the R key always returns
 // to the same view. It was 318, looking away from the meridian: the morning sun lit the island
@@ -843,8 +850,13 @@ function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, o
 
 		// (a window of no size, such as a hidden pane's, has no aspect: square until it has one)
 		const aspect = on.aspect > 0 && Number.isFinite( on.aspect ) ? on.aspect : 1;
-		frameIsland( outline, { polar, azimuth, fov: initialCameraFov, aspect }, on.position, orbit.target, zoom );
-		orbit.maxDistance = Math.max( islandMaxDistance, on.position.distanceTo( orbit.target ) );
+		const view = { polar, azimuth, fov: initialCameraFov, aspect };
+		frameIsland( outline, view, on.position, orbit.target );
+		const framed = on.position.distanceTo( orbit.target );
+		orbit.maxDistance = Math.max( islandMaxDistance, framed );
+		// (from the start distance at zoom 0 to the least at 1, eased on the log as the framing's zoom)
+		if ( framed > ISLAND_START_DISTANCE ) on.position.sub( orbit.target ).setLength( ISLAND_START_DISTANCE * Math.pow( orbit.minDistance / ISLAND_START_DISTANCE, zoom ) ).add( orbit.target );
+		else if ( zoom > 0 ) frameIsland( outline, view, on.position, orbit.target, zoom );
 
 	}
 	orbit.settle();

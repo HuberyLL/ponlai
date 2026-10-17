@@ -49,9 +49,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
   `src/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the lower tiers).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
-- `src/camera/`: the island camera, which holds the framing of the whole land and its shallows
-  (`IslandFraming.ts`, with its turn about the land's centre and a zoom that keeps the whole
-  land in view) and takes the hand's other input
+- `src/camera/`: the island camera, which frames the land and its shallows (`IslandFraming.ts`,
+  with its turn about the land's centre) from at most 35 m (main.ts `placeOrbit`: its zoom runs
+  from there in to the least distance) and takes the hand's other input
   only with `cameraInput`
   (`IslandCameraControls.ts`, the ground it grabs in `IslandGround.ts`), and the free flight.
 - `src/world/`: the world generated from the grown land (`IslandGrowth.ts`) in 16 m chunks
