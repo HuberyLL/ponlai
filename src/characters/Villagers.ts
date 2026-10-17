@@ -6,6 +6,7 @@ import { CharacterShadow } from './CharacterShadow.ts';
 import { pointedEars } from './Ears.ts';
 import { reproportion, PROPORTIONS, type Proportions } from './Proportions.ts';
 import type { Shared } from '../shared.ts';
+import type { TrampleWalker } from '../world/vegetation/Trample.ts';
 
 // Islanders assembled from modular low-poly parts (Ultimate Modular Characters by Quaternius,
 // CC0): every outfit shares one rig, so a head, body, legs and feet from different outfits fit
@@ -18,6 +19,8 @@ import type { Shared } from '../shared.ts';
 // shoes, no hat (looks.ts). While the character art is settled the models load from the
 // git-ignored artifacts/assets/ (tools/vite-assets.mjs serves and links them). A small moving
 // sun-shadow map of the figures is multiplied into the island's (CharacterShadow.ts).
+// The walker parts the meadow (world/vegetation/Trample.ts): its track there is its schedule at the
+// scene clock's earlier times (`track`), so the trail behind it is a function of the clock as well.
 
 export type GroundFn = ( x: number, z: number ) => number;
 
@@ -177,7 +180,9 @@ function measureStride( model: THREE.Object3D, mixer: THREE.AnimationMixer, walk
 
 }
 
-export class Villagers {
+const _track = new THREE.Vector3();
+
+export class Villagers implements TrampleWalker {
 
 	readonly group = new THREE.Group();
 	readonly walker: Villager;
@@ -189,6 +194,8 @@ export class Villagers {
 	private readonly speed: number;
 	private walking = false;
 	private heading = NaN;
+	// the scene time of the last update
+	private time = 0;
 
 	constructor( walker: Villager, waypoints: [ number, number ][], ground: GroundFn, shadow: CharacterShadow, speed = 0.9 ) {
 
@@ -265,6 +272,16 @@ export class Villagers {
 
 	}
 
+	/** Where the walker's feet were `age` scene seconds before the last update (x, z), by its
+	 * schedule on the loop it walks now (Trample.ts). */
+	track( age: number, out: THREE.Vector2 ): void {
+
+		const { s } = this.schedule( this.time - age );
+		const p = this.path.getPointAt( ( ( s / this.length ) % 1 + 1 ) % 1, _track );
+		out.set( p.x, p.z );
+
+	}
+
 	/** Distance along the loop at time t: walk 9 s, stand 4 s. */
 	private schedule( t: number ): { s: number; walking: boolean } {
 
@@ -277,6 +294,7 @@ export class Villagers {
 	update( renderer: THREE.WebGPURenderer, scene: THREE.Scene, sun: THREE.DirectionalLight, time: number, dt: number ): void {
 
 		const w = this.walker;
+		this.time = time;
 		const { s, walking } = this.schedule( time );
 		const u = ( ( s / this.length ) % 1 + 1 ) % 1;
 		const p = this.path.getPointAt( u );

@@ -1,17 +1,21 @@
 import * as THREE from 'three/webgpu';
 import type { Villager as Figure } from '../../characters/Villagers.ts';
 import type { EntityId, GridApi, Villager } from '../sim/types.ts';
+import { TRAMPLE, type TrampleWalker } from '../../world/vegetation/Trample.ts';
 
 // One islander on screen: the sim's body drawn by a loaded figure (or a plain stand-in when the
 // figure cannot load). Position interpolates between the last two ticks, the heading turns
 // smoothly toward the sim's facing, and the body's motion picks the idle or walk clip with a
 // short crossfade. The figure's clock runs at the game's pace, so speeding the game up speeds the
 // islanders up and a paused game freezes them mid-step.
+// It parts the meadow (world/vegetation/Trample.ts) along the positions it has shown, kept by the
+// game's clock for the trail's length (`record`, `track`): a paused game holds its trail, and a new
+// view (a game started or loaded) starts without one.
 
 // real seconds a change of clip takes to blend
 const FADE = 0.35;
 
-export class VillagerView {
+export class VillagerView implements TrampleWalker {
 
 	readonly id: EntityId;
 	/** at the feet, turned to the heading */
@@ -26,6 +30,11 @@ export class VillagerView {
 	private standIn: THREE.Mesh | null = null;
 	private current: THREE.AnimationAction | null = null;
 	private heading = NaN;
+	// the positions shown (x, z) and their times (game ticks), oldest first, and ticks per second of
+	// the trail's clock
+	private readonly shown: number[] = [];
+	private readonly times: number[] = [];
+	private ticksPerSecond = 1;
 
 	constructor( id: EntityId, look: number ) {
 
@@ -122,6 +131,64 @@ export class VillagerView {
 			f.mixer.update( gameDt );
 
 		}
+
+	}
+
+	/** Keep the position shown this frame at game time `time` (ticks; `ticksPerSecond` of them a
+	 * second of the trail's clock) for the trail, and drop what lies beyond the trail's end. */
+	record( time: number, ticksPerSecond: number ): void {
+
+		const n = this.times.length;
+		if ( n > 0 && time < this.times[ n - 1 ] ) {
+
+			this.times.length = 0;
+			this.shown.length = 0;
+
+		}
+		this.ticksPerSecond = ticksPerSecond;
+		const { x, z } = this.root.position;
+		if ( this.times.length > 0 && time === this.times[ this.times.length - 1 ] ) this.shown.splice( - 2, 2, x, z );
+		else {
+
+			this.times.push( time );
+			this.shown.push( x, z );
+
+		}
+		// one sample older than the trail's end stays, for the interpolation there
+		const end = time - ( TRAMPLE.samples - 1 ) * TRAMPLE.step * ticksPerSecond;
+		let drop = 0;
+		while ( drop + 1 < this.times.length && this.times[ drop + 1 ] <= end ) drop ++;
+		if ( drop > 0 ) {
+
+			this.times.splice( 0, drop );
+			this.shown.splice( 0, drop * 2 );
+
+		}
+
+	}
+
+	/** Where the islander's feet were `age` seconds of the trail's clock before the last record (x,
+	 * z), between the positions shown (its oldest before them). */
+	track( age: number, out: THREE.Vector2 ): void {
+
+		const times = this.times, n = times.length;
+		if ( n === 0 ) {
+
+			out.set( this.root.position.x, this.root.position.z );
+			return;
+
+		}
+		const t = times[ n - 1 ] - age * this.ticksPerSecond;
+		let i = n - 1;
+		while ( i > 0 && times[ i ] > t ) i --;
+		if ( i === n - 1 || times[ i ] >= t ) {
+
+			out.set( this.shown[ i * 2 ], this.shown[ i * 2 + 1 ] );
+			return;
+
+		}
+		const f = ( t - times[ i ] ) / ( times[ i + 1 ] - times[ i ] );
+		out.set( this.shown[ i * 2 ] + ( this.shown[ i * 2 + 2 ] - this.shown[ i * 2 ] ) * f, this.shown[ i * 2 + 1 ] + ( this.shown[ i * 2 + 3 ] - this.shown[ i * 2 + 1 ] ) * f );
 
 	}
 

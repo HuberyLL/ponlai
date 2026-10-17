@@ -14,6 +14,7 @@ import { SHORE_RIM, SWARD_HEIGHT, meadowColor, meadowMoisture, meadowSoil, meado
 import { soilUniforms } from '../materials/Soil.ts';
 import { rootHash } from '../weather/Wind.ts';
 import { bendBlade, bladePhase, drown, swayFade } from './vegetation/Deform.ts';
+import { trampleLean } from './vegetation/Trample.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
 import { PUDDLE_WET, puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
@@ -104,6 +105,12 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   the same geometry draws every tuft. Tufts bend with the wind field at their root and their
 //   normals turn with the bend, so a gust shows as a sheen (vegetation/Deform.ts `bendBlade`, its
 //   numbers GRASS_WIND, which the wind probe reads too).
+// - The islanders part the meadow as they walk through it (vegetation/Trample.ts): each blade reads
+//   the walkers' recent tracks at its own root (a flower's head at its tuft's origin) and leans
+//   away from them to either side, the lean added to the wind's (`bendBlade`), so a walker leaves a
+//   furrow that closes several seconds behind it. A parted blade keeps its shading: its lower half,
+//   laid out of the canopy, shows the trough darker than the sward between the brighter blades
+//   heaped at its sides. `flags.trample = false` at load leaves it out of the shader.
 // - Under MSAA a tuft's sway and shiver fade out as it shrinks to a few pixels on screen, its
 //   head with it, while its lean in the gusts stays (Deform.ts `swayFade`): far off, a swinging
 //   flower head or blade under a pixel crosses the multisamples and flashes from frame to frame,
@@ -865,8 +872,8 @@ interface Tussock { stiffness: F; lean: F; dir: THREE.Node<'vec2'>; gather: F }
 // across takes `aspect` (the height scale over the scale across), so the shape is the same in
 // metres. Returns the local position, the half-width offset and the width axis (local x, z), the
 // lean (local x, z: the blade's tilt for the normals), the side of the blade's centreline the vertex
-// lies on, the blade's id, the hash it is kept by where it is widened (`grassMaterial`'s opacity)
-// and its length (m).
+// lies on, the blade's id, the hash it is kept by where it is widened (`grassMaterial`'s opacity),
+// its length (m) and its root (local x, z: where the islanders' trail is read, Trample.ts).
 // The blade's tussock (`clump`) turns it toward its lean and lengthens it on that side (SHEAR: the
 // lengths' mean over a tussock stays), stiffens it by its own stiffness and gathers its root toward
 // the centre. A flower's stem (`isStem` 1, `stem`: its direction in the tuft's frame and its length
@@ -895,9 +902,10 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F, scaleY: F, aspect: F, cl
 	const offset = axis.mul( half );
 	const curve = bladeCurve( mix( gravity, STEM_G, isStem ), mix( angle, STEM_ANGLE, isStem ), t ).toVar();
 	const along = mix( dir, stem.dir, isStem ), reach = mix( length, stem.length, isStem ).toVar();
-	const centre = positionLocal.xz.sub( offset0 ).mul( clump.gather ).add( along.mul( curve.x.mul( reach ).mul( aspect ) ) );
+	const base = positionLocal.xz.sub( offset0 ).mul( clump.gather );
+	const centre = base.add( along.mul( curve.x.mul( reach ).mul( aspect ) ) );
 	const position = vec3( centre.x.add( offset.x ), curve.y.mul( reach ), centre.y.add( offset.y ) );
-	return { position, offset, axis, lean: along.mul( curve.z.mul( LEAN_NORMAL ) ), side, id, hash: bladeHash( id, pick, 7 ), metres };
+	return { position, offset, axis, lean: along.mul( curve.z.mul( LEAN_NORMAL ) ), side, id, hash: bladeHash( id, pick, 7 ), metres, base };
 
 }
 
@@ -1347,7 +1355,14 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		return r;
 
 	} )();
-	const bend = bendBlade( shared.wind, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart );
+	// The islanders' trail (Trample.ts) at the blade's root, a head's at its stem's (the tuft's
+	// origin); left out of the shader altogether under `flags.trample = false` at load. Under the
+	// temporal modes the previous position takes the previous frame's trail.
+	const trampled = debugFlags.trample !== false;
+	const bladeRoot = () => mix( input.matrix.mul( vec4( pose.base.x, 0, pose.base.y, 1 ) ).xz, origin.xz, isHead );
+	const trample = trampled ? trampleLean( shared.trample, origin.xz, bladeRoot ).toVar( 'grassTrample' ) : undefined;
+	const trampleBefore = trampled && TEMPORAL ? trampleLean( shared.trample.previous, origin.xz, bladeRoot ) : undefined;
+	const bend = bendBlade( shared.wind, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart, trample );
 	const bent = settle( bend.position ).toVar( 'grassBent' );
 	// A blade of a tuft past 70 m stands for as many of the blades it drew there as its gain over
 	// NEAR_GAIN (exactly 1 within 70 m) and is drawn as that many strips side by side, each with its
@@ -1410,11 +1425,11 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
 		// camera: a previous frame's pose from the registered displacement keeps them as they are now.
 		displacement: ( state ) => pixelWideBlade(
-			state === shared.wind ? bent : settle( bendBlade( state, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart ).position ), across, minWidth, keep, gain, isHead, headSize.coverage ),
+			state === shared.wind ? bent : settle( bendBlade( state, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart, state === shared.wind.previous ? trampleBefore : trample ).position ), across, minWidth, keep, gain, isHead, headSize.coverage ),
 		// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
 		// rooted point, widened by the offset the current pose took (the widening follows the camera,
 		// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
-		previous: ( swayed ) => TEMPORAL ? swayed.sub( bent ).add( settle( bendBlade( shared.wind.previous, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart ).position ) ) : undefined,
+		previous: ( swayed ) => TEMPORAL ? swayed.sub( bent ).add( settle( bendBlade( shared.wind.previous, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart, trampleBefore ).position ) ) : undefined,
 		// The rest of three's instancing: the normal and the instance colour, before the blade moves.
 		beforePosition: () => {
 

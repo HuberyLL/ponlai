@@ -64,7 +64,8 @@ the fantasy in the world rather than in the light. The look and what to avoid:
   its wildflowers and its tufts draped over the cliff's edge included; anchors `Anchors.ts`, soil from `ShoreSample.ts`), the islander's
   walking loop (`WalkLoop.ts`, `WalkPath.ts`) and the vegetation's depth prepass
   (`VegetationPrepass.ts`). `src/world/vegetation/` holds what every plant kind shares (material,
-  coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds).
+  coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds)
+  and the islanders' trail through the meadow (`Trample.ts`).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
   underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,
