@@ -3,16 +3,17 @@
 // control reloads the page with it.
 //
 // High is the reference image and the only active tier: every trade-off of image against time is
-// judged on it, at its baseline: 4K output (3840x2160: 1920x1080 CSS pixels at a device pixel ratio
-// of 2) rendered at 1440p (2560x1440, render scale 4/3: FSR 1's Quality 1.5x upscale) at 60 fps,
-// with a GPU budget of about 14 ms a frame in the normal scenes (island views, the meadow close up),
-// leaving about 15 % of the 16.7 ms frame for pacing and the OS. 1440p is the guaranteed level: a
-// load starts there and a paused page renders there; the dynamic render scale (`render`,
-// post/DynamicResolution.ts) climbs to the display's own ratio (native 4K) with headroom and drops to
-// half the output's linear resolution (1080p) when busy. High resolves the scene temporally and
-// upsamples it to the canvas in the same step (`taau`): MSAA's 4 samples left moving grass blades
-// flashing from frame to frame. A paused page (the test mode) still renders under `msaa`
-// (post/Antialiasing.ts).
+// judged on it, at its standard: 4K output (3840x2160: 1920x1080 CSS pixels at a device pixel ratio
+// of 2) rendered at that size, with no upscaling and no dynamic resolution (`render`: a budget of
+// 4K's pixels), without anti-aliasing (`aa` off), at 60 fps, with a GPU budget of about 14 ms a
+// frame in the normal scenes (island views, the meadow close up), leaving about 15 % of the 16.7 ms
+// frame for pacing and the OS. The meadow is built for one sample a pixel at the island view's
+// distance (main.ts starts it at 35 m): its blades stay a few pixels wide there (`grass`), and the
+// frame flickers within about a quarter of the many-sample reference, where a 1440p render without
+// anti-aliasing flickered about twice as much and `taau` at 1440p softened the meadow to about four
+// fifths of the reference's sharpness. A paused page (the test mode) still renders under `msaa`
+// (post/Antialiasing.ts). The standard is not met yet: the island view at 35 m took about a fifth
+// more GPU time than `taau` at 1440p.
 //
 // Parked tiers (`PARKED_QUALITY`: medium, low) slowed every line of work down, so until they are
 // revived as their own milestone they are out of the default choice (no GPU timing picks them), the
@@ -22,8 +23,9 @@
 // budget (msaa missed 60 fps there where taau held it), its TAAU sharpening softer than high's; low runs `msaa` at a smaller budget. A revival measures them again against high.
 //
 // Each tier picks its anti-aliasing (the `aa` knob, post/Antialiasing.ts; `?aa` or the GUI choose
-// any mode over it). Without multisampling or a temporal resolve the meadow's alpha to coverage
-// turns into a dither and geometric edges alias, so no tier runs `off`. No knob alters the weather,
+// any mode over it). Without multisampling or a temporal resolve geometric edges alias by a pixel's
+// step and the meadow's widened blades are kept whole or dropped by their hash (Grass.ts): high
+// accepts that at native 4K, the parked tiers render below it and keep `taau` and `msaa`. No knob alters the weather,
 // clock or lighting state: a tier changes the cost, never the mood.
 //
 // Two kinds of knob:
@@ -215,9 +217,10 @@ const TAA: TemporalSettings = {
 
 export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = {
 	high: {
-		aa: 'taau',
+		aa: 'off',
 		taa: { ...TAA },
-		render: { dynamic: { max: 2, baselineShare: 2 / 3, floorShare: 0.5, step: 0.05 } },
+		// native 4K: the display's own ratio at 1920x1080 CSS on a 2x display, never steered
+		render: { budget: 3840 * 2160 },
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
 		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 16, bloomChains: 2 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH, water: PCSS_LIGHT },

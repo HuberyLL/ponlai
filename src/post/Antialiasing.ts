@@ -6,11 +6,12 @@
 // Modes:
 // - `msaa`: the scene multisampled 4x, the vegetation's cut-outs and thin blades by alpha to
 //   coverage, a render below the canvas upscaled by FSR 1 (today's image);
-// - `off`: one sample, leaves alpha-tested and grass blades dithered (`msaa=1` before);
+// - `off`: one sample, leaves alpha-tested and grass blades dithered (`msaa=1` before): high's, at
+//   native 4K (Quality.ts);
 // - `taa`, `taau`: temporal anti-aliasing at the render's size, and temporal upsampling to the
 //   canvas: one sample, jittered, with motion vectors (Jitter.ts, Motion.ts), resolved against a
-//   history (TemporalAA.ts). A tier's knob may ask for them (high, the only active tier, runs taau;
-//   so does the parked medium tier, Quality.ts), and `aa=` or the GUI choose them on any tier; they are
+//   history (TemporalAA.ts). A tier's knob may ask for them (the parked medium tier runs taau,
+//   Quality.ts), and `aa=` or the GUI choose them on any tier; they are
 //   refused, with a warning, where three's cache keys cannot be patched (graph/ThreePatches.ts:
 //   three r186 only), since their scene materials build one shader per MRT (if the patches still
 //   fail to install, main.ts stops the page);

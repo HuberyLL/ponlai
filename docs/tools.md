@@ -154,8 +154,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 `src/debug/DebugFlags.ts`):
 
 - `aa` (the anti-aliasing mode, `src/post/Antialiasing.ts`, over the tier's `aa` knob: each tier
-  has its default, high `msaa` (the parked medium `taau`, low `msaa`), and the GUI's Antialiasing
-  control reloads with any of TAAU, FSR 3.1, TAA, MSAA 4x and, in debug builds, Off. `msaa`: 4 samples, upscaled by
+  has its default, high `off` (the parked medium `taau`, low `msaa`), and the GUI's Antialiasing
+  control reloads with any of Off, TAAU, FSR 3.1, TAA and MSAA 4x. `msaa`: 4 samples, upscaled by
   FSR 1; `off`: one sample; `taa` and `taau`, the temporal modes: one sample, jittered, with motion vectors, resolved against a history in `TemporalAA.ts`, at the
   render's size or upsampled to the canvas; a paused page shows the rest image, the jitter
   sequence averaged, once it has converged, `TemporalRest.ts`; what changes the scene raises a
@@ -302,7 +302,7 @@ converge on a still scene (or are frozen or turned off in the test mode) and tha
 within a tolerance; the test mode keeps the byte-for-byte checks valid.
 
 - The test mode today: `paused` in the query, which loads `aa=msaa` whatever the tier runs (high
-  runs `taau`; an explicit `aa=` wins), the shot taken once
+  runs `off`; an explicit `aa=` wins), the shot taken once
   `__THREE_GAME_DIAGNOSTICS__.settled` holds (capture.mjs's readiness). Every capture, parity and
   verify tool already loads its pages this way, so their exact checks hold as their headers say.
   The page's only history-dependent rendering effects are the temporal resolve (`aa=taa|taau|gt`,
@@ -982,18 +982,18 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   A/B, or `--toggle` on a debug flag while the change is in development).
 - Judge an A/B by its GPU time per pass (timestamps on); take frame rates from a run without GPU
   timestamps (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them
-  on, so their per-pass split shows where the time goes, not the frame rate a player sees. (High
-  keeps its dynamic resolution's own timestamp queries in every run, as a player's page does;
-  `--q gpuTimer=off` leaves them out.)
-- High is timed at its baseline by default: 4K output (1920x1080 CSS at DPR 2) rendered at 1440p
-  (2560x1440, scale 4/3), the level every trade-off is judged at, with about 14 ms of GPU time a
+  on, so their per-pass split shows where the time goes, not the frame rate a player sees. (A tier
+  with a dynamic resolution keeps its own timestamp queries in every run, as a player's page does;
+  `--q gpuTimer=off` leaves them out. High has none: it renders native 4K.)
+- High is timed at its standard by default: 4K output (1920x1080 CSS at DPR 2) rendered at that
+  size without anti-aliasing, the level every trade-off is judged at, with about 14 ms of GPU time a
   frame in the normal scenes (island views, `meadow-close`) as the budget. A profile, `--compare`
-  or `--toggle` of high pins that scale (`dpr=1.3333333333333333`: two thirds of the viewport's
-  ratio); `--unpinned` leaves the dynamic resolution steering, with `--scale-settle 5 --scale-log`
-  to see where it settles. `--accept`, `--display`, `--scales` and a `dpr` of the url's or `--q`'s
-  own are never pinned.
+  or `--toggle` of high pins that scale (`dpr=2`: the viewport's ratio); `--unpinned` leaves the
+  tier's own rule (a dynamic one steering, with `--scale-settle 5 --scale-log` to see where it
+  settles). `--accept`, `--display`, `--scales` and a `dpr` of the url's or `--q`'s own are never
+  pinned.
 - Judge whether a tier holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at
-  the tier's own settings (high with its dynamic scale, measured at its settle point with
+  the tier's own settings (high at its fixed native scale; a dynamic tier measured at its settle point with
   `--scale-settle 5`; the report gives each scene's scale), and check how a change plays on a fast
   display with `--display` (pacing, cadence, the scale's changes under drags).
 - Report contended runs as such: check `node tools/gpu-lock.mjs gpu` before each run (and during

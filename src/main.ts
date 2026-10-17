@@ -1085,11 +1085,10 @@ frameStats.onReadout = () => { for ( const c of statsF ) c.updateDisplay(); };
 frameStats.extra = () => `scale ${ resolution.scale }   GPU ${ resolution.gpu }`;
 // The anti-aliasing mode (post/Antialiasing.ts) is built into materials and the frame graph, so a
 // change reloads the page with `aa=` (the older `msaa` alias dropped). It shows the running mode,
-// the tier's default or the URL's; `off` is offered in debug builds only, and the ground truth (URL
-// only) is listed while it runs.
+// the tier's default or the URL's (`off`, high's, first), and the ground truth (URL only) is listed
+// while it runs.
 const antialiasingF = gui.addFolder( 'Antialiasing' );
-const aaChoices: Record<string, AAMode> = { 'TAAU': 'taau', 'FSR 3.1': 'fsr3', 'TAA': 'taa', 'MSAA 4x': 'msaa' };
-if ( DEBUG ) aaChoices[ 'Off' ] = 'off';
+const aaChoices: Record<string, AAMode> = { 'Off': 'off', 'TAAU': 'taau', 'FSR 3.1': 'fsr3', 'TAA': 'taa', 'MSAA 4x': 'msaa' };
 if ( AA_MODE === 'gt' ) aaChoices[ 'Ground truth' ] = 'gt';
 antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)' ).onFinishChange( ( mode: AAMode ) => {
 
@@ -1300,14 +1299,14 @@ if ( DEBUG ) {
 
 // ------------------------------------------------------------------ loop
 
-// High's render scale is dynamic (DynamicResolution.ts): it starts at the baseline (the nominal:
-// 1440p internal at 4K output), moves between the display's ratio and a floor (1080p) by the GPU's
+// A tier with a dynamic render scale (DynamicResolution.ts; high renders native 4K, never steered)
+// starts at its baseline (the nominal), moves between the display's ratio and a floor by the GPU's
 // frame time, and renders at the baseline while the scene is paused, so paused frames and captures
-// render at the scale every trade-off is judged at (pinned, ?dpr or full resolution, at that ratio).
+// render at the scale its trade-offs are judged at (pinned, ?dpr or full resolution, at that ratio).
 // (the ground truth renders at the canvas's resolution: no dynamic scale)
 const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render.dynamic : null;
 // Under TAAU and FSR 3 the floor rises so the canvas is at most TAAU_MAX_UPSCALE times the render per axis
-// (DynamicResolution.ts; below high's floor, half the canvas's ratio, at a 2x display).
+// (DynamicResolution.ts).
 const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRule, maxUpscale: AA_MODE === 'taau' || AA_MODE === 'fsr3' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
 // the same number of refreshes, falling back to the next divisor when the dynamic scale's floor
