@@ -5,8 +5,8 @@ import type { WorldData } from '../types.ts';
 // The page's lists of vegetation roots read it (main.ts: the scene, the depth prepass, the sun's
 // caster box, the rain's collision bake; Growth.ts: the kinds' growth and the rain's bake after a
 // swap) instead of naming the kinds at each place.
-// - Order: the kinds are registered in the order the scene draws them (today the grass, then the
-//   rim's hanging grass), and every list keeps it: draws of equal render order and depth keep their order.
+// - Order: the kinds are registered in the order the scene draws them (today the grass alone), and
+//   every list keeps it: draws of equal render order and depth keep their order.
 // - The depth prepass (`prepass`, VegetationPrepass.ts) and the shadow filter (`shadowFilter`,
 //   SunShadow.ts) are separate choices. The shadow filter is still read from the materials'
 //   vegetation tag (`userData.vegetation`, vegetation/Coverage.ts markVegetation), which the depth
@@ -16,7 +16,7 @@ import type { WorldData } from '../types.ts';
 //   idle-time steps and swaps it in, in the swap's frame, without building a pipeline (Growth.ts).
 //   The kinds prepare and swap in registry order. A kind that writes its buffers in place at the
 //   swap stages the write ahead (`stage`, Upload.ts stagedWriteSteps): kept for the plant kinds to
-//   come; no kind uses it today (the grass takes new buffers, the rim's grass new geometry).
+//   come; no kind uses it today (the grass takes new buffers).
 // - The game's palms are registered by the game's view (GameView.ts), which owns them; they take
 //   part in none of the lists above.
 
@@ -44,7 +44,7 @@ export interface KindGrowth<P> {
 }
 
 export interface VegetationKind<P = unknown> {
-	/** 'grass', 'rimGrass' or 'palm' */
+	/** 'grass' or 'palm' */
 	name: string;
 	/** what the page adds to the scene */
 	root: THREE.Object3D;

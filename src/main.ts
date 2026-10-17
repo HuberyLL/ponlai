@@ -38,7 +38,6 @@ import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { trackKeyRim } from './lighting/KeyRim.ts';
-import { buildRimGrass, rimGrassKind } from './world/RimGrass.ts';
 import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName, type LookSettings } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
@@ -185,6 +184,11 @@ let islandTurned = 0, islandZoom = 0;
 const initialCameraFov = camera.fov;
 const orbitMaxPolar = controls.maxPolarAngle;
 const orbitMinDistance = controls.minDistance;
+// The island view stands at most 35 m from its pivot and its wheel zooms in to the least distance:
+// from 30 - 40 m the meadow's blades stay a few pixels wide on screen, so they keep their detail
+// without anti-aliasing (from about 55 m they grain), and the islanders stand about a tenth of the
+// frame's height. A land whose framing stands nearer keeps its framing.
+const ISLAND_START_DISTANCE = 35;
 const freeControls = new FreeCameraControls( camera, renderer.domElement );
 
 // ------------------------------------------------------------------ sky, light, water optics
@@ -611,13 +615,11 @@ refractedSun.setCasters( world.group, world.subsets );
 refractedSun.bindTerrain( world.group );
 await refractedSun.prepare();
 setGrassQuality( quality.grass );
-const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance, data.shore ), shared, sunShadow );
-const rimGrass = buildRimGrass( data.rimLip, data.shore, shared );
+const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance, data.shore, data.rimLip ), shared, sunShadow );
 // The vegetation's kinds (vegetation/Registry.ts), in the order the scene draws them; every list
 // of vegetation below reads it.
 const vegetation = new Vegetation();
 vegetation.add( grassKind( grass, renderer ) );
-vegetation.add( rimGrassKind( rimGrass ) );
 scene.add( ...vegetation.roots() );
 installWindMotionFlag( scene );
 installVegetationPrepass( scene, vegetation.roots( ( kind ) => kind.prepass ) );
@@ -821,12 +823,14 @@ let orbitDof = S.dof;
 const viewDirection = new THREE.Vector3();
 
 // The island view on this land at the `polar` and `az` options (degrees): the camera that just
-// frames the land and its ring of shallows from there (IslandFraming.ts), at the camera's aspect;
-// with a `dist` option (m), the camera on its sphere about the default pivot at that distance
-// instead. Then a settle within the orbit's limits, the farthest zoom raised to the framing's
-// distance (from the land's own each time, so it never only grows). At rest the pose depends only
-// on the pivot, the position and the limits, so a scene jump (`establishScene`) repeats it on a
-// camera and controls of its own with the page's limits, and its pose is the load's to the bit.
+// frames the land and its ring of shallows from there (IslandFraming.ts), at the camera's aspect,
+// brought in to ISLAND_START_DISTANCE when the framing stands farther (the zoom then runs from there
+// to the least distance); with a `dist` option (m),
+// the camera on its sphere about the default pivot at that distance instead. Then a settle within
+// the orbit's limits, the farthest zoom raised to the framing's distance (from the land's own each
+// time, so it never only grows). At rest the pose depends only on the pivot, the position and the
+// limits, so a scene jump (`establishScene`) repeats it on a camera and controls of its own with the
+// page's limits, and its pose is the load's to the bit.
 // The default azimuth (180: the view looks along +z, about 23 degrees east of the meridian the sun
 // and the full moon culminate on) is fixed, never following the clock, so the R key always returns
 // to the same view. It was 318, looking away from the meridian: the morning sun lit the island
@@ -846,8 +850,13 @@ function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, o
 
 		// (a window of no size, such as a hidden pane's, has no aspect: square until it has one)
 		const aspect = on.aspect > 0 && Number.isFinite( on.aspect ) ? on.aspect : 1;
-		frameIsland( outline, { polar, azimuth, fov: initialCameraFov, aspect }, on.position, orbit.target, zoom );
-		orbit.maxDistance = Math.max( islandMaxDistance, on.position.distanceTo( orbit.target ) );
+		const view = { polar, azimuth, fov: initialCameraFov, aspect };
+		frameIsland( outline, view, on.position, orbit.target );
+		const framed = on.position.distanceTo( orbit.target );
+		orbit.maxDistance = Math.max( islandMaxDistance, framed );
+		// (from the start distance at zoom 0 to the least at 1, eased on the log as the framing's zoom)
+		if ( framed > ISLAND_START_DISTANCE ) on.position.sub( orbit.target ).setLength( ISLAND_START_DISTANCE * Math.pow( orbit.minDistance / ISLAND_START_DISTANCE, zoom ) ).add( orbit.target );
+		else if ( zoom > 0 ) frameIsland( outline, view, on.position, orbit.target, zoom );
 
 	}
 	orbit.settle();
@@ -1076,11 +1085,10 @@ frameStats.onReadout = () => { for ( const c of statsF ) c.updateDisplay(); };
 frameStats.extra = () => `scale ${ resolution.scale }   GPU ${ resolution.gpu }`;
 // The anti-aliasing mode (post/Antialiasing.ts) is built into materials and the frame graph, so a
 // change reloads the page with `aa=` (the older `msaa` alias dropped). It shows the running mode,
-// the tier's default or the URL's; `off` is offered in debug builds only, and the ground truth (URL
-// only) is listed while it runs.
+// the tier's default or the URL's (`off`, high's, first), and the ground truth (URL only) is listed
+// while it runs.
 const antialiasingF = gui.addFolder( 'Antialiasing' );
-const aaChoices: Record<string, AAMode> = { 'TAAU': 'taau', 'FSR 3.1': 'fsr3', 'TAA': 'taa', 'MSAA 4x': 'msaa' };
-if ( DEBUG ) aaChoices[ 'Off' ] = 'off';
+const aaChoices: Record<string, AAMode> = { 'Off': 'off', 'TAAU': 'taau', 'FSR 3.1': 'fsr3', 'TAA': 'taa', 'MSAA 4x': 'msaa' };
 if ( AA_MODE === 'gt' ) aaChoices[ 'Ground truth' ] = 'gt';
 antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)' ).onFinishChange( ( mode: AAMode ) => {
 
@@ -1291,14 +1299,14 @@ if ( DEBUG ) {
 
 // ------------------------------------------------------------------ loop
 
-// High's render scale is dynamic (DynamicResolution.ts): it starts at the baseline (the nominal:
-// 1440p internal at 4K output), moves between the display's ratio and a floor (1080p) by the GPU's
+// A tier with a dynamic render scale (DynamicResolution.ts; high renders native 4K, never steered)
+// starts at its baseline (the nominal), moves between the display's ratio and a floor by the GPU's
 // frame time, and renders at the baseline while the scene is paused, so paused frames and captures
-// render at the scale every trade-off is judged at (pinned, ?dpr or full resolution, at that ratio).
+// render at the scale its trade-offs are judged at (pinned, ?dpr or full resolution, at that ratio).
 // (the ground truth renders at the canvas's resolution: no dynamic scale)
 const dynamicRule = 'dynamic' in quality.render && AA_MODE !== 'gt' ? quality.render.dynamic : null;
 // Under TAAU and FSR 3 the floor rises so the canvas is at most TAAU_MAX_UPSCALE times the render per axis
-// (DynamicResolution.ts; below high's floor, half the canvas's ratio, at a 2x display).
+// (DynamicResolution.ts).
 const dynamicResolution = dynamicRule ? new DynamicResolution( { ...dynamicRule, maxUpscale: AA_MODE === 'taau' || AA_MODE === 'fsr3' ? TAAU_MAX_UPSCALE : Infinity } ) : null;
 // The tier's frame rate is held on a faster display (FramePacer.ts), which then shows each frame for
 // the same number of refreshes, falling back to the next divisor when the dynamic scale's floor
@@ -2217,7 +2225,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, rimGrass, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, vegetation }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes

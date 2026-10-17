@@ -4,7 +4,7 @@
 // island's bounds and height grid as the camera's ground holds them (`controls.ground`,
 // IslandGround: made from the chunks' meshes in the workers, so the page's meshes and their
 // vertices are never read and a build that simplifies the drawn meshes frames alike), the meadow's
-// flower heads, the rim's hanging grass, the islander and the sun and moon, so they follow any land, as tools/profile-frame.mjs places its
+// flower heads and its tufts at the cliff's edge, the islander and the sun and moon, so they follow any land, as tools/profile-frame.mjs places its
 // scenes.
 //
 // Groups: `parity` (the views every parity check runs; the default) and `taa` (6 close views for
@@ -145,7 +145,7 @@ const ANCHORS = {
 	'meadow-band-70m': () => meadowAt( 70, 62, 80 ),
 	// the nearest 2 m cell of the meadow with a few flower heads in it
 	'flowers': () => pick( flowerBeds().filter( ( b ) => b.n >= 4 && dist( b.p ) < 90 ).map( ( b ) => ( { p: b.p, score: dist( b.p ) - b.n * 0.05 } ) ), clearView ),
-	// the nearest stretch of the lip (with its hanging grass) facing the camera
+	// the nearest stretch of the lip (with the meadow draped over it) facing the camera
 	'rim-lip': () => pick( lips().map( ( c ) => ( { p: c.p, score: dist( c.p ) } ) ).filter( ( c ) => c.score > 4 ) ),
 	// the cliff's foot at the waterline, facing the camera
 	'cliff-edge-sea': () => pick( coast( 0.3 ).map( ( c ) => ( { p: c.p, score: dist( c.p ) } ) ) ),
@@ -280,12 +280,11 @@ export const VIEWS = {
 		let dx = f[ 0 ] - b.cx, dz = f[ 2 ] - b.cz; const len = Math.hypot( dx, dz ) || 1; dx /= len; dz /= len;
 		const back = 1.2 / Math.tan( 35 * Math.PI / 180 );
 		free( [ f[ 0 ] - dx * back, f[ 1 ] + 1.2, f[ 2 ] - dz * back ], f, 55 );`, crops: [ 'flowers', 'meadow-near' ] },
-	// 25 m out over the sea and 4 m up, facing the rim's hanging grass's densest stretch (5 degree
-	// sectors of its vertices)
-	'rim-sea': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(); const g = s.rimGrass; g.updateWorldMatrix( true, false );
-		const pos = g.geometry.attributes.position, v = s.camera.position.clone(), n = 72, bins = Array.from( { length: n }, () => ( { n: 0, x: 0, y: 0, z: 0 } ) );
-		for ( let i = 0; i < pos.count; i ++ ) { v.fromBufferAttribute( pos, i ).applyMatrix4( g.matrixWorld );
-			const k = Math.floor( ( Math.atan2( v.z - b.cz, v.x - b.cx ) / ( 2 * Math.PI ) + 0.5 ) * n ) % n; const e = bins[ k ]; e.n ++; e.x += v.x; e.y += v.y; e.z += v.z; }
+	// 25 m out over the sea and 4 m up, facing the densest stretch of the meadow's tufts at the cliff's
+	// edge (5 degree sectors of their roots, each by its blades)
+	'rim-sea': { group: 'taa', q: 'weather=fair&preset=noon', eval: `const b = isl(); const n = 72, bins = Array.from( { length: n }, () => ( { n: 0, x: 0, y: 0, z: 0 } ) );
+		for ( const [ x, y, z, w ] of s.grass.userData.edgeRoots() ) {
+			const k = Math.floor( ( Math.atan2( z - b.cz, x - b.cx ) / ( 2 * Math.PI ) + 0.5 ) * n ) % n; const e = bins[ k ]; e.n += w; e.x += x * w; e.y += y * w; e.z += z * w; }
 		const e = bins.reduce( ( a, c ) => c.n > a.n ? c : a ); const p = [ e.x / e.n, e.y / e.n, e.z / e.n ];
 		let dx = p[ 0 ] - b.cx, dz = p[ 2 ] - b.cz; const len = Math.hypot( dx, dz ) || 1; dx /= len; dz /= len;
 		free( [ p[ 0 ] + dx * 25, 4, p[ 2 ] + dz * 25 ], p, 35 );`, crops: [ 'rim-lip', 'cliff-edge-sea' ] },

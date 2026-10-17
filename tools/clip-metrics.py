@@ -1355,7 +1355,7 @@ def main():
 		# the GT's own frame-to-frame change, over its consecutive frames (its dense runs)
 		gpairs = [ ( p, q ) for p, q in zip( idx, idx[ 1: ] ) if q == p + 1 ]
 		gown = { 'F': float( np.mean( [ np.abs( Lg[ q ] - Lg[ p ] ).mean() for p, q in gpairs ] ) ) if gpairs else None }
-		entry = { 'frames': len( own_idx ), 'gtFrames': len( idx ), 'size': list( size ), **( { 'box': box } if box else {} ),
+		entry = { 'frames': len( own_idx ), 'gtFrames': len( idx ), 'size': list( size ), **( { 'box': boxes[ crop ] } if crop in boxes else {} ),
 			**( { 'redraws': redraws } if a.split_redraws else {} ), 'test': mt, 'msaa': mm, 'gtOwn': gown,
 			'ratio': { k: safe_ratio( v, fm_.get( k ) ) for k, v in ft_.items() if isinstance( v, ( int, float ) ) },
 			'series': { 'test': st, 'msaa': sm } }

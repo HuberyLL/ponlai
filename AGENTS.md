@@ -49,9 +49,9 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/Quality.ts`: the quality tiers, every cost knob in one table (high the only active one);
   `src/QualityDetect.ts` takes `?quality` or high (its GPU timing is parked with the lower tiers).
 - `src/shared.ts`: uniforms shared by the water, terrain and vegetation.
-- `src/camera/`: the island camera, which holds the framing of the whole land and its shallows
-  (`IslandFraming.ts`, with its turn about the land's centre and a zoom that keeps the whole
-  land in view) and takes the hand's other input
+- `src/camera/`: the island camera, which frames the land and its shallows (`IslandFraming.ts`,
+  with its turn about the land's centre) from at most 35 m (main.ts `placeOrbit`: its zoom runs
+  from there in to the least distance) and takes the hand's other input
   only with `cameraInput`
   (`IslandCameraControls.ts`, the ground it grabs in `IslandGround.ts`), and the free flight.
 - `src/world/`: the world generated from the grown land (`IslandGrowth.ts`) in 16 m chunks
@@ -60,8 +60,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   (`ChunkMerge.ts`) and drawn (`World.ts`, the world fields' textures in `WorldFields.ts`), and grown
   in place (`Growth.ts`, the shoal of a coming piece in `SeabedRise.ts`). Its kinds: the shapes
   (`WorldShapes.ts`), cliffs (`Cliff.ts`), submerged stones (`Stones.ts`), sea floor
-  (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`, `RimGrass.ts`), the meadow (`Grass.ts`,
-  its wildflowers included; anchors `Anchors.ts`, soil from `ShoreSample.ts`), the islander's
+  (`Bathymetry.ts`, `SeabedTile.ts`), rim (`RimGround.ts`), the meadow (`Grass.ts`,
+  its wildflowers and its tufts draped over the cliff's edge included; anchors `Anchors.ts`, soil from `ShoreSample.ts`), the islander's
   walking loop (`WalkLoop.ts`, `WalkPath.ts`) and the vegetation's depth prepass
   (`VegetationPrepass.ts`). `src/world/vegetation/` holds what every plant kind shares (material,
   coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds).
@@ -178,10 +178,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   `src/Quality.ts`) are revived later as their own milestones: new work need not support them, but
   must keep them compiling and loadable by name (`?weather=`, `?quality=`). The default checks
   leave them out (`docs/tools.md`, Parked weathers, Parked quality tiers). Changes are judged at
-  high's baseline: 4K output rendered at 1440p (scale 4/3) at 60 fps, about 14 ms of GPU time a
-  frame in the normal scenes; the dynamic resolution climbs to native 4K with headroom and drops to
-  1080p when busy, and a paused page renders at the baseline (`src/Quality.ts`, profile-frame's
-  default pin: `docs/tools.md`, Measuring frame time).
+  high's standard: native 4K (4K output rendered at that size, no upscaling, no dynamic
+  resolution), no anti-aliasing, 60 fps, about 14 ms of GPU time a frame in the normal scenes; a
+  paused page renders at the same size (`src/Quality.ts`, profile-frame's default pin:
+  `docs/tools.md`, Measuring frame time).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
   state. High at 4K output is the reference image, the only active tier and the one every
   trade-off is judged on; every default in the modules is high's. A load knob is read
@@ -239,7 +239,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The
   anti-aliasing mode (`msaa`, the temporal `taa` and `taau`, `off`) is a load knob of the tier
   (`aa` in `Quality.ts`, whose header says which tier runs which and why: high, the only active
-  tier, runs `taau`; a paused page runs `msaa`); `aa=` or the GUI picks any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
+  tier, runs `off`; a paused page runs `msaa`); `aa=` or the GUI picks any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
   `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier. The vegetation's cut-outs are alpha to
   coverage under MSAA only: find vegetation by `userData.vegetation`, never by `alphaToCoverage`
   (`vegetation/Coverage.ts`).

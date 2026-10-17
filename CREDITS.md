@@ -566,6 +566,10 @@ comment where it is used.
   `src/world/Grass.ts`. Used as a technique only; the gust map is our own.
   The map's noise is Ken Perlin's improved gradient noise (*Improving Noise*, SIGGRAPH 2002),
   made periodic.
+- Each meadow blade a random mix of root and tip colours and a random value, and the sward
+  darkened toward the ground by its height and density: SimonDev's *Quick_Grass*
+  (github.com/simondevyoutube/Quick_Grass, MIT, copyright 2023 simondevyoutube), its grass
+  shader, in `src/world/Grass.ts` (`PALETTE`, `ROOT_DARK`). Used as a technique only.
 
 ## References
 

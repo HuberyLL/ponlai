@@ -46,7 +46,7 @@ import type { Camera, Light, Node, Scene, WebGPURenderer } from 'three/webgpu';
 // environment's reflection) takes its node id there, and a shared uniform group lists its
 // uniforms by node id (NodeBuilder._getBindGroup), so the render group's order differs between a
 // build that made its own screen-size uniform before that matrix existed and one after. Which
-// receiver built first followed the land (the meadow and the rim's hanging grass both draw at render
+// receiver built first followed the land (the meadow and the vegetation then drawn beside it at render
 // order -1, by their distance from the camera): a page loaded at grow=6 built the meadow's first batch
 // apart from its other two, one pipeline more than a page grown to it. A throwaway receiver of the
 // scene's lights and environment builds first, before the loop's first frame, so every receiver

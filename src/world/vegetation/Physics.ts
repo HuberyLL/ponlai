@@ -1,9 +1,11 @@
 // The vegetation's shapes under load: a blade or a stem is a thin elastic strand clamped at its
 // root, bent by its own weight (and, to come, by the wind's pressure) against its stiffness, and
 // held off whatever it lies on. Every kind that takes a physical shape reads its numbers and
-// curves here: today the grass hanging from the rim's lip (RimGrass.ts), its rest shape
-// computed on the CPU as the page builds it; the meadow's blades and flower stems are to take the
-// same model on the GPU, in the wind of the frame, from these numbers.
+// curves here: the meadow's blades and flower stems (Grass.ts: a fit of the free shapes over the
+// upright blades' range, `bladeCurve`; at the cliff's edge Grass.ts drapes the fitted blade over
+// the edge and holds it off the wall in the vertex stage, no physical shape). The family of free
+// shapes (`drapeTable`) and a shape solved against a wall (`strandShape`, `drape` with a wall) are
+// kept for the hanging kinds to come; no kind samples them today.
 //
 // Model (planar elastica of a cantilever, the large-deflection beam; Jahrmann & Wimmer, "Responsive
 // Real-Time Grass Rendering for General 3D Scenes", 2017, take the same forces for grass):
@@ -135,6 +137,9 @@ export function drape( gravity: number, angle: number, taper: number, phi: Float
 // The family of free shapes: the segments' angles over G (log spaced) and the root angle.
 const TABLE_G = [ 0.05, 400 ], TABLE_GN = 37;
 const TABLE_A = [ - 1.2, 1.4 ], TABLE_AN = 27;
+/** The family's grid (`drapeTable`): gravity numbers from g[ 0 ] to g[ 1 ], gn of them log spaced,
+ * by root angles (rad) from a[ 0 ] to a[ 1 ], an of them evenly spaced. */
+export const DRAPE_TABLE = { g: TABLE_G, gn: TABLE_GN, a: TABLE_A, an: TABLE_AN } as const;
 const tables = new Map<string, Float64Array>();
 
 /** The free shapes of a strand of `segments` and `taper`, solved once per pair: TABLE_GN gravity
