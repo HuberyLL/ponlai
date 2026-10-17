@@ -10,7 +10,7 @@ import type { RimGroundField, RimLipData, ShoreField } from './types.ts';
 import { shoreDistance } from './ShoreSample.ts';
 import { mulberry32, noise3, smoothstep } from './noise.ts';
 import { anchorStream, cellStream } from './Anchors.ts';
-import { SHORE_RIM, SWARD_HEIGHT, meadowColor, meadowMoisture, meadowSoil, meadowTurf, supportsMeadow, type ShoreAt } from '../materials/Meadow.ts';
+import { SHORE_RIM, SWARD_HEIGHT, meadowColor, meadowMoisture, meadowSoil, meadowShallow, meadowTurf, meadowVigour, supportsMeadow, type ShoreAt } from '../materials/Meadow.ts';
 import { soilUniforms } from '../materials/Soil.ts';
 import { rootHash } from '../weather/Wind.ts';
 import { bendBlade, bladePhase, drown, swayFade } from './vegetation/Deform.ts';
@@ -53,14 +53,17 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 // no placed features.
 //
 // Rules (the look is in docs/art-direction.md; the reasons are below, where each is built):
-// - Variation lives on a tussock's scale or finer, never on a field of its own: no tall islands,
-//   patches or bare stretches scattered by noise (from the overview fields of a few metres read as
-//   camouflage and dark blotches). Each tussock (an anchor's tufts, under a metre across) draws its
-//   height, stiffness, lean and blade count from its anchor's own stream (TUSSOCK, `plantGrass`),
-//   and each blade its length, pose, value and colour (`restBlade`, PALETTE), the means kept. The
-//   sward is one level over the island top (LEVEL), its layering the tussocks' own (0.6 - 1.4 times
-//   the level) and small low patches of one to a few tussocks (LOW): no height or tint follows the
-//   soil's zones, which read from above as zoning; the soil's fields (Meadow.ts) site the flowers.
+// - Variation lives on a tussock's scale, each tussock (an anchor's tufts, under a metre across)
+//   drawing its height, stiffness, lean and blade count from its anchor's own stream (TUSSOCK,
+//   `plantGrass`) and each blade its length, pose, value and colour (`restBlade`, PALETTE), the
+//   means kept. The soil sets the odds and the level those draws take, never a zone: the tall
+//   sward's level rises and falls a little with its soil's vigour over some 14 m (LUSH), and pockets
+//   of shallow soil a few metres across hold a short open turf with tussocks standing in it (THIN_*),
+//   tussock by tussock (Meadow.ts `meadowVigour`, `meadowShallow`); small low patches of one to a
+//   few tussocks (LOW) lie anywhere. No tiers or tints by the soil's zones, which read from above as
+//   zoning, and no noise's low end, whose valleys read as footpaths (the ground under a short or
+//   broken sward shows its floor, SwardField.ts, so a shallow pocket reads as short turf rather than
+//   a dark blotch). The soil's exposure (Meadow.ts) sites the flowers.
 //   The sward runs to the edge on every coast. GAP of the tall ones leave small gaps where the ground shows. The extra tufts fold away beyond about 35 m and are not drawn
 //   past their fold, 42 m. Toward the coast the sward rolls over a rounded shoulder: over its last
 //   metre and a half the tufts lean out more and stand a little lower (SHOULDER) and stiffer
@@ -209,12 +212,14 @@ const PLANT_SPREAD = 1;
 // of the anchor's tussock: as many as the growth field's thick patches gave before, so the lawn
 // keeps its blade budget.
 const THIN_SHARE = 0.28;
-// The sward is one level over the whole island top (SWARD_HEIGHT, `ordinary`): no tiers by the soil
-// (short exposed turf and the deep soil's taller grass, and their tints, read from above as zoning
-// across the island top). Its layering is the tussocks' own (TUSSOCK): each its own height, from 0.6
-// to 1.4 times the level, and now and then a low patch (LOW) of one to a few short tussocks (`short`,
-// the wind-cropped turf's height), as the wildflowers' low species grow in (their patches are low
-// too). The sward runs to the edge on every coast, keeping its level and density there (`spill`). SHORT_STAY of the tussocks stay short anywhere.
+// The sward's ordinary level (SWARD_HEIGHT, `ordinary`), which the soil's vigour raises or lowers a
+// little (LUSH below), and the short turf's (`short`, the wind-cropped turf's height): no tiers by
+// the soil (short exposed turf and the deep soil's taller grass, and their tints, read from above
+// as zoning across the island top). Its layering is the tussocks' own (TUSSOCK): each its own
+// height, from 0.6 to 1.4 times the level, the shallow pockets' short turf (THIN_*), and now and then
+// a low patch (LOW) of one to a few short tussocks, as the wildflowers' low species grow in (their
+// patches are low too). The sward runs to the edge on every coast, keeping its level and density
+// there (`spill`). SHORT_STAY of the tussocks stay short anywhere.
 const LEVEL = { short: 0.21, ordinary: SWARD_HEIGHT };
 const SHORT_STAY = 0.03;
 // The low patches: a world-anchored lattice of `cell` (m), `share` of its cells holding one, its
@@ -245,6 +250,15 @@ function lowPatch( x: number, z: number ): number {
 // spread over the tuft's disc, so it stays a closed sward).
 const TUSSOCK = { spread: 0.4, shortSpread: 0.15, stiffness: 0.3, levelStiff: 1.5, lean: 0.3, blades: [ 12 * FUR, 16 * FUR ], extraBlades: [ 12 * FUR, 14 * FUR ], gather: 0.35 };
 const GAP = 0.05;
+// The sward follows its soil (Meadow.ts SWARD_SOIL): a tall tussock's level is the ordinary level
+// times LUSH (from the first at the vigour VIGOUR_LUSH[ 0 ] to the second at VIGOUR_LUSH[ 1 ]), no
+// taller than the tallest tussock of the ordinary level (the meadow's bounds hold); and in a pocket
+// of shallow soil (`meadowShallow`) up to THIN_SHORT more of the tussocks stay short and THIN_GAP
+// more of the tall ones leave a gap, each by its own draw. So deep, damp ground grows a slightly
+// taller sward, and each shallow pocket a short open turf with tussocks standing in it, fewer toward
+// its middle: tussock by tussock, no line and no zone (two levels by the soil, 4 times apart over
+// 2 - 4 m, read as a mower's line).
+const LUSH = [ 0.88, 1.15 ], VIGOUR_LUSH = [ 0.25, 0.75 ], THIN_SHORT = 0.6, THIN_GAP = 0.12;
 // A tussock's word in its colour's fourth channel: its stiffness (STIFF_RANGE, a byte), its lean
 // (a byte) and the lean's direction in its own frame (a byte), packed as integers under 2^24 so a
 // float holds them exactly.
@@ -1899,17 +1913,19 @@ export function plantGrass( veg: Float32Array, rimGround?: RimGroundField, walkD
 		// in short turf, the tall ones in tall tussocks), so the flowers keep their habitat and count.
 		const lowFlower = head === DIANTHUS || head === DANDELION || head === VIOLET;
 		const low = lowSpecies ? 1 : lowPatch( x, z );
+		const vigour = meadowVigour( x, z ), thin = meadowShallow( x, z );
 		const tall = flower > 0 ? ! lowFlower
-			: ! onStack && own[ 0 ] < 1 - SHORT_STAY && ! ( low > 0 && anchorStream( x, z, 241 )() < low );
-		if ( tall && flower === 0 && own[ 7 ] < GAP ) {
+			: ! onStack && own[ 0 ] < 1 - SHORT_STAY - THIN_SHORT * thin && ! ( low > 0 && anchorStream( x, z, 241 )() < low );
+		if ( tall && flower === 0 && own[ 7 ] < GAP + THIN_GAP * thin ) {
 
 			sward.push( x, z, 0 );
 			continue;
 
 		}
-		const level = tall ? LEVEL.ordinary : LEVEL.short;
+		const lush = LUSH[ 0 ] + ( LUSH[ 1 ] - LUSH[ 0 ] ) * smoothstep( VIGOUR_LUSH[ 0 ], VIGOUR_LUSH[ 1 ], vigour );
+		const level = tall ? LEVEL.ordinary * lush : LEVEL.short;
 		const spread = tall ? TUSSOCK.spread : TUSSOCK.shortSpread;
-		const height = level * ( 1 + spread * ( 2 * own[ 1 ] - 1 ) );
+		const height = Math.min( level * ( 1 + spread * ( 2 * own[ 1 ] - 1 ) ), LEVEL.ordinary * ( 1 + TUSSOCK.spread ) );
 		scl.y = height;
 		if ( spill > 0 && ! onStack ) scl.y *= 1 - spill * ( SHOULDER_LOW[ 0 ] + SHOULDER_LOW[ 1 ] * draws[ 1 ] );
 		scl.x *= 0.65 + 0.35 * cover;
