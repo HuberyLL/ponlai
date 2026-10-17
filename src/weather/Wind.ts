@@ -27,6 +27,9 @@ import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 //   weather however the page reached it; the swell keeps its own offset from the heading (OceanFFT
 //   `swell.directionOffset`), the shore waves follow the swell. The waves do not turn with the
 //   weather's wind. `gale`, the wind beyond 1.5 U_ref, heaves the sea at the rock (Water.ts).
+//   Around the island the sea's gusts (its cat's paws) are the meadow's: `gustAt`, the gust map
+//   below, read by SeaDetail.ts, so a gust crosses from the water onto the meadow and off again
+//   as one patch; farther out tidewater's octaves drift with `displacement`.
 // - the clouds: `displacement`, which Clouds.setDrift turns into each layer's drift aloft;
 //   `direction` for the fronts, the cirrus and the tops' lean (sky/Sky.ts, Clouds.ts).
 // - the air: `displacement` (the sea fog's drift, main.ts; the clouds' drift), `velocity` (rain, the storm's spray),
@@ -299,6 +302,30 @@ function gustTexture(): DataTexture {
 
 }
 
+// The gust map read at a point (world x, z) in the wind's frame: the broad gusts and the eddies,
+// each scrolled with its own travel, and the gust's strength they make.
+function gustReads( wind: WindState, position: Node<'vec2'> ) {
+
+	const direction = wind.direction;
+	const across = vec2( direction.y.negate(), direction.x );
+	const a = dot( position, direction ), c = dot( position, across );
+	const broad = texture( gustTexture(), vec2( a.sub( wind.gustScroll.x ).div( GUST_ALONG ), c.div( GUST_ACROSS ) ) ).level( float( 0 ) ).x;
+	const eddy = texture( gustTexture(), vec2( a.sub( wind.gustScroll.y ).div( EDDY_TILE ), c.div( EDDY_TILE ).add( 0.37 ) ) ).level( float( 0 ) ).y;
+	const gust = smoothstep( 0.3, 0.95, broad.mul( 1 - EDDY_SHARE ).add( eddy.mul( EDDY_SHARE ) ) );
+	return { direction, across, eddy, gust };
+
+}
+
+/** The gust's strength at a point (world x, z), 0 between gusts and 1 at a gust's core: the one
+ * gust `windField` leans the plants with, for everything else the gusts touch (the sea's cat's
+ * paws, SeaDetail.ts). Plain nodes, no function: callable in any stage, and in a vertex stage
+ * whose result reaches a varying. Two texture reads. */
+export function gustAt( wind: WindState, position: Node<'vec2'> ): Node<'float'> {
+
+	return gustReads( wind, position ).gust;
+
+}
+
 /** The wind at a point on the island (world x, z), for the vertex stage of vegetation: gusts are a
  * noise field scrolled with the wind's integrated travel, so they visibly sweep across the meadow
  * (the scrolled noise wind of Ghost of Tsushima: Wohllaib, GDC 2021). Returns
@@ -309,12 +336,7 @@ export function windField( wind: WindState, position: Node<'vec2'> ): Node<'vec4
 
 	return Fn( () => {
 
-		const direction = wind.direction;
-		const across = vec2( direction.y.negate(), direction.x );
-		const a = dot( position, direction ), c = dot( position, across );
-		const broad = texture( gustTexture(), vec2( a.sub( wind.gustScroll.x ).div( GUST_ALONG ), c.div( GUST_ACROSS ) ) ).level( float( 0 ) ).x;
-		const eddy = texture( gustTexture(), vec2( a.sub( wind.gustScroll.y ).div( EDDY_TILE ), c.div( EDDY_TILE ).add( 0.37 ) ) ).level( float( 0 ) ).y;
-		const gust = smoothstep( 0.3, 0.95, broad.mul( 1 - EDDY_SHARE ).add( eddy.mul( EDDY_SHARE ) ) );
+		const { direction, across, eddy, gust } = gustReads( wind, position );
 		const x = leanLoad( wind, gust );
 		const eased = x.div( x.div( MAX_LEAN ).add( 1 ) );
 		// (an exact 0 above at fair's wind and below: the eased lean to the bit)

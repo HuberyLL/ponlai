@@ -144,8 +144,8 @@ assert.notDeepEqual( current( frames ), held );
 // The wrapped clocks may differ by a wrap between previous and current: every shader reads them
 // only through functions periodic in their wraps. Sources: every read of a wind state's `clock`
 // is the time of `wave` (sin of fract( time x rate ), at rates with whole cycles per
-// CLOCK_PERIOD), the gust scroll is read only in Wind.ts by windField (the gust map repeats over
-// GUST_ALONG and EDDY_TILE, where the scroll wraps), and the sway scroll only in Wind.ts by
+// CLOCK_PERIOD), the gust scroll is read only in Wind.ts by the gust map's reads (windField and
+// gustAt, the sea's gusts: the map repeats over GUST_ALONG and EDDY_TILE, where the scroll wraps), and the sway scroll only in Wind.ts by
 // gustWave, the plants' sway, which takes whole swings per GUST_ALONG and refuses any other rate.
 const root = path.resolve( path.dirname( fileURLToPath( import.meta.url ) ), '../src' );
 const sources = [];

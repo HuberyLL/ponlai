@@ -765,7 +765,8 @@ console.info( `world: ${ worldCache.hits } of ${ worldCache.chunks + 1 } records
 
 // The island grows in place (Growth.ts): the next piece is generated ahead, and a Grow (the GUI's
 // Island folder, `__PONLAI__.growth.grow()`) swaps it in, every dependent following. The page's own
-// part of a swap: the land's framing and the fog's clearing (setLand), the sea's reflection box and
+// part of a swap: the land's framing and the fog's clearing (setLand), the sea's reflection box (and
+// the box its gusts take the meadow's within, Water.setLand) and
 // the sun's casters (the game's held props kept), the camera's ground; the scene event keeps the
 // temporal modes' history (the new land is a change of the scene, which the resolve's clip handles,
 // as a placed prop's) and restarts a paused frame's rest.
@@ -2169,7 +2170,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce, grass, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
-	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, vegetation }, options ),
+	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, vegetation, seaDetail, land: () => landBox }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes
 	growth: Object.assign( growth, { fieldBytes: () => fields.bytes() } ),
 	quality, dynamicResolution, pacer, submitBatch, jitter, motion: motionState, taaCut, motionCheck: () => motionCheck( motionPasses() ), applyQuality: ( overrides: Partial<QualityProfile> ) => applySkyQuality( { ...quality, ...overrides } ),
