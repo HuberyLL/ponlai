@@ -21,9 +21,10 @@ export { MEADOW_MIN_UP, MEADOW_MAX_DROP, supportsMeadow } from '../world/MeadowS
 // sward runs to the edge on every coast: a windward lip shown short, yellow, thin over gravel and
 // bared to the cliff's stone in stretches read from above as one more zone, and was taken off.
 // The map covers the land lattice's whole extent, wherever the island grows, at 0.25 m: RGB the
-// turf's colour, A the noise that frays the soil's zones (`meadowTongue`).
+// turf's colour, A the sward's depth over the ground, baked from the meadow's tussocks
+// (world/SwardField.ts, which holds the map).
 export const MEADOW_EXTENT = 2 * GROWTH.half;
-const MEADOW_SIZE = MEADOW_EXTENT * 4;
+export const MEADOW_SIZE = MEADOW_EXTENT * 4;
 
 /** The lawn's tuft height scale (m) on ordinary soil, the middle of its three levels: the mean
  * length of its blades, which arc over under their weight (Grass.ts), its flower heads among their
@@ -81,7 +82,7 @@ export function meadowMoisture( x: number, z: number ): number {
 // (SOIL.side: a headland into the wind takes more, a cove less, a lee shore nothing), with a little
 // more on the lip itself (SOIL.lip, the coast's own salt: the lee keeps 0 - 1 m of short turf at
 // most). Noise only frays the exposed ground's edges (none where the exposure is under SOIL.fray):
-// stretched SOIL.stretch times along the wind (`meadowTongue`, the meadow map's A channel), it
+// stretched SOIL.stretch times along the wind (`meadowTongueWith`), it
 // draws the short turf's inner edge out into downwind tongues and gives the moderately exposed
 // ground downwind of the windward coast a streak or two. The soil's `depth` is the shelter squared
 // times the distance from the coast (SOIL.far) times a broad field (SOIL.deepRate, a few patches
@@ -164,14 +165,7 @@ export function meadowSoilWith( P: typeof SOIL, x: number, z: number, shore: Sho
 
 }
 
-/** The noise that frays the soil's zones, 0 to 1, stretched along the wind: the meadow map's A
- * channel. */
-export function meadowTongue( x: number, z: number ): number {
-
-	return meadowTongueWith( SOIL, x, z );
-
-}
-
+// The noise that frays the soil's zones, 0 to 1, stretched along the wind.
 function meadowTongueWith( P: typeof SOIL, x: number, z: number ): number {
 
 	const along = ( x * UPWIND[ 0 ] + z * UPWIND[ 1 ] ) / P.stretch, across = z * UPWIND[ 0 ] - x * UPWIND[ 1 ];
@@ -214,9 +208,14 @@ export function meadowColor( x: number, z: number, target: THREE.Color ): THREE.
 
 }
 
-export function createMeadowTexture(): THREE.DataTexture {
+let texels: Uint8Array | null = null;
 
-	const data = new Uint8Array( MEADOW_SIZE * MEADOW_SIZE * 4 );
+/** The meadow map's texels, MEADOW_SIZE square: RGB the turf's colour, A left at 0 for the sward's
+ * depth (world/SwardField.ts). Baked once: a function of position alone. */
+export function meadowTexels(): Uint8Array {
+
+	if ( texels ) return texels;
+	const data = texels = new Uint8Array( MEADOW_SIZE * MEADOW_SIZE * 4 );
 	const color = new THREE.Color();
 	for ( let row = 0; row < MEADOW_SIZE; row ++ ) {
 
@@ -231,22 +230,10 @@ export function createMeadowTexture(): THREE.DataTexture {
 			data[ k ] = Math.round( color.r * 255 );
 			data[ k + 1 ] = Math.round( color.g * 255 );
 			data[ k + 2 ] = Math.round( color.b * 255 );
-			data[ k + 3 ] = Math.round( meadowTongue( x, z ) * 255 );
 
 		}
 
 	}
-
-	const texture = new THREE.DataTexture( data, MEADOW_SIZE, MEADOW_SIZE, THREE.RGBAFormat, THREE.UnsignedByteType );
-	// Values are already linear; conversion would separate the turf from its blade colours.
-	texture.colorSpace = THREE.NoColorSpace;
-	texture.magFilter = THREE.LinearFilter;
-	texture.minFilter = THREE.LinearFilter;
-	texture.wrapS = THREE.ClampToEdgeWrapping;
-	texture.wrapT = THREE.ClampToEdgeWrapping;
-	texture.generateMipmaps = false;
-	texture.needsUpdate = true;
-	texture.name = 'meadow';
-	return texture;
+	return data;
 
 }
