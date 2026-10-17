@@ -52,7 +52,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //   upsamples)
 //   sharp (hdr + the bloom at its strength)
 //   display: the exposure, tidewater's grade (a white balance nudge,
-//   saturation, contrast round mid grey, the vignette), ACES, sRGB, grain ── displayRT
+//   saturation, the tone, contrast round mid grey, the vignette), ACES, sRGB, grain ── displayRT
 //   ── copied to the screen
 // Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene half is single-sampled and
 // jittered, and writes the motion vectors beside the colour:
@@ -169,8 +169,8 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
 // - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
 //   come in as uniforms.
-// - The display chain is tidewater's (ACES_EXPOSURE): one curve and grade, with no art-directed
-//   layer over it and no night of its own. The day and the night differ by the exposure alone, from
+// - The display chain is tidewater's (ACES_EXPOSURE): one curve and grade, with a light tone over
+//   it (TONE) and no night of its own. The day and the night differ by the exposure alone, from
 //   the clock and the weather (DayCycle, Sky), calibrated against tidewater's metered frames.
 
 // The graph's dev checks (every target at its class's size, the attachment ops that reached
@@ -278,7 +278,19 @@ export interface PipelineSettings {
 	// tidewater's grade: the bloom's strength, the white balance nudge (red up and blue down by it),
 	// the saturation and the contrast round mid grey, the vignette and the grain
 	bloom: number; warmth: number; saturation: number; contrast: number; vignette: number; grain: number;
+	// the light's tone over tidewater's grade (0 none, 1 full): lights a touch golden, the shade a
+	// touch teal, the contrast round mid grey softer and the bloom a little stronger
+	tone: number;
 }
+
+// The light's tone over tidewater's grade (docs/art-direction.md, Light): a photographic image
+// pushed a little toward a painted one. Lights turn a touch golden and the shade a touch teal (by
+// the exposed luminance, so the night takes it as the day), the contrast round mid grey softens by
+// a tenth and the bloom strengthens by a quarter. It lifts no black: a constant fill in the grade
+// greyed everything below mid grey alike and veiled the frame; the shade's openness comes from the
+// sky light the island takes instead (Sky.ts DAY_SHADE). 0.5 of the full step was chosen over 0
+// and 1 by eye.
+const TONE = 0.5;
 
 /** tidewater's grade (PostFX.js `PostParams`). */
 export const TIDEWATER_GRADE: Readonly<Pick<PipelineSettings, 'bloom' | 'warmth' | 'saturation' | 'contrast' | 'vignette' | 'grain'>> = {
@@ -291,7 +303,7 @@ export class Pipeline {
 	width = 1;
 	height = 1;
 	settings: PipelineSettings = {
-		exposure: DAY_EXPOSURE, ...TIDEWATER_GRADE,
+		exposure: DAY_EXPOSURE, ...TIDEWATER_GRADE, tone: TONE,
 	};
 
 	// The canvas's size; larger than width x height while the frame is upscaled.
@@ -359,7 +371,7 @@ export class Pipeline {
 	private bloom!: PhysicalBloom;
 	private u = {
 		// the scene's exposure (scene radiance into the frame the grade takes) and tidewater's grade
-		exposure: uniform( 1 ), bloom: uniform( TIDEWATER_GRADE.bloom ), warmth: uniform( 0 ), saturation: uniform( 1 ), contrast: uniform( 1 ),
+		exposure: uniform( 1 ), bloom: uniform( TIDEWATER_GRADE.bloom ), warmth: uniform( 0 ), saturation: uniform( 1 ), contrast: uniform( 1 ), tone: uniform( 0 ),
 		vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ),
@@ -567,7 +579,11 @@ export class Pipeline {
 
 			const c = lin.mul( u.exposure ).mul( vec3( u.warmth.add( 1 ), 1, float( 1 ).sub( u.warmth ) ) ).toVar();
 			c.assign( mix( vec3( luminance( c ) ), c, u.saturation ) );
-			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( u.contrast ) ).mul( 0.18 ) );
+			// the tone (TONE): lights a touch golden and the shade a touch teal, the contrast round mid
+			// grey softer
+			const lights = smoothstep( 0.04, 0.9, luminance( c ) );
+			c.mulAssign( mix( vec3( 0.95, 1.0, 1.04 ), vec3( 1.06, 1.0, 0.9 ), lights ).sub( 1 ).mul( u.tone ).add( 1 ) );
+			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( u.contrast.mul( float( 1 ).sub( u.tone.mul( 0.2 ) ) ) ) ).mul( 0.18 ) );
 			if ( vignette ) c.mulAssign( vignetteAt( FSR3 ? canvasSize : renderSize ) );
 			const t = ( acesFilmicToneMapping( c, float( ACES_EXPOSURE ) ) as V3 ).toVar();
 			return encode ? sRGBTransferOETF( t ) as V3 : t;
@@ -1351,7 +1367,7 @@ export class Pipeline {
 		const S = this.settings;
 		const u = this.u;
 		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE;
-		u.bloom.value = S.bloom; u.warmth.value = S.warmth; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
+		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ); u.tone.value = S.tone; u.warmth.value = S.warmth; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
 		u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.grainOn.value = this.upscaling ? 0 : 1;
 

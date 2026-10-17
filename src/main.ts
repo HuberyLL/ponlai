@@ -1235,6 +1235,7 @@ postF.add( S, 'bloom', 0, 0.3, 0.005 );
 postF.add( S, 'warmth', - 0.1, 0.1, 0.005 );
 postF.add( S, 'saturation', 0, 2, 0.01 );
 postF.add( S, 'contrast', 0.8, 1.3, 0.01 );
+postF.add( S, 'tone', 0, 1, 0.01 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
 postF.add( S, 'grain', 0, 0.05, 0.001 );
 if ( DEBUG ) {
