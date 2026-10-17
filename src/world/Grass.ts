@@ -3,7 +3,7 @@ import {
 	Fn, attribute, positionLocal, normalViewGeometry, vec2, vec3, vec4, float, mix, max, min, dot, pow, clamp, fract, sin, select, normalize, floor as floorN,
 	length, cameraPosition, cameraViewMatrix, cameraProjectionMatrix, screenSize, varying, varyingProperty, uniform,
 	smoothstep as smoothstepN, instanceIndex, vertexIndex, normalLocal, transformNormal, instanceColor, sign, abs, cos, step, specularColor, specularColorBlended, specularF90,
-	positionGeometry, cross, If,
+	positionGeometry, cross, If, mat4,
 } from 'three/tsl';
 import { LIP_INFO, sampleRimGround, rimGrassCover } from './RimGround.ts';
 import type { RimGroundField, RimLipData, ShoreField } from './types.ts';
@@ -15,7 +15,7 @@ import { soilUniforms } from '../materials/Soil.ts';
 import { rootHash } from '../weather/Wind.ts';
 import { bendBlade, bladePhase, drown, swayFade } from './vegetation/Deform.ts';
 import { CANOPY_TOP, TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
-import { puddleCover } from '../weather/Puddles.ts';
+import { PUDDLE_WET, puddleCover } from '../weather/Puddles.ts';
 import { VEGETATION_STRIDE as STRIDE } from './types.ts';
 import { GRASS_BLADE, gravityNumber, type StrandMaterial } from './vegetation/Physics.ts';
 import { runSteps } from './Steps.ts';
@@ -773,6 +773,8 @@ function pixelWideBlade( position: V3, halfWidth: V3, minWidth: F, keep: F, blad
 // the cull switched off) takes each slot in turn, as an instanced draw of every tuft did.
 const cullBase = uniform( 0, 'uint' ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassBase ?? 0 );
 const cullOn = uniform( 0, 'uint' ).onObjectUpdate( ( { object } ) => object?.userData.grassCulled === true ? 1 : 0 );
+// 1 on the flowering batch (`flowerTuftGeometry`), the only one whose vertices take a head's pose
+const flowering = uniform( 0, 'uint' ).onObjectUpdate( ( { object } ) => ( object as THREE.Mesh | undefined )?.geometry?.userData.grassFlowers ?? 0 );
 
 const TAU = Math.PI * 2;
 
@@ -1094,6 +1096,42 @@ function headWiden( centre: V3, radius: F, minWidth: F ): { widen: F; coverage: 
 
 }
 
+// The vertex stage's branches (`grassMaterial`) are functions of their own with a layout: an inline
+// `Fn` reached by a varying's type (`vGrassBlade` reads the head's hash) is set up again in the
+// fragment stage, which then took the tuft's slot as two more varyings, past WebGPU's sixteen
+// under the temporal modes.
+// A head's pose as four columns ( centre, radius ), ( offset, hash ), ( normal, stem length ),
+// ( stem direction, 0, 0 ), worked out on the flowering batch only (`on`: `flowering`, passed in, as a
+// uniform read inside a function with a layout can be emitted under another material's name);
+// elsewhere a level disc at the root with no stem, which the blends by `isHead` and `isStem` drop.
+const flowerHead = Fn( ( [ on, blade, pick, code, xAxis, zAxis, gain, aspect ]: [ F, THREE.Node<'vec4'>, F, F, V3, V3, F, F ] ) => {
+
+	const m = mat4( vec4( 0 ), vec4( 0 ), vec4( 0, 1, 0, 0 ), vec4( 1, 0, 0, 0 ) ).toVar();
+	If( on.greaterThan( 0.5 ), () => {
+
+		const h = headPose( blade, pick, code, xAxis, zAxis, gain, aspect );
+		m.assign( mat4( vec4( h.centre, h.radius ), vec4( h.offset, h.hash ), vec4( h.normal, h.stem.length ), vec4( h.stem.dir, 0, 0 ) ) );
+
+	} );
+	return m;
+
+} ).setLayout( { name: 'meadowFlowerHead', type: 'mat4', inputs: [
+	{ name: 'on', type: 'float' }, { name: 'blade', type: 'vec4' }, { name: 'pick', type: 'float' }, { name: 'code', type: 'float' }, { name: 'xAxis', type: 'vec3' },
+	{ name: 'zAxis', type: 'vec3' }, { name: 'gain', type: 'float' }, { name: 'aspect', type: 'float' },
+] } );
+// Standing water's cover (`puddleCover`), its noise taken only once the ground holds any (PUDDLE_WET)
+const wetPuddle = Fn( ( [ xz, wetness ]: [ THREE.Node<'vec2'>, F ] ) => {
+
+	const cover = float( 0 ).toVar();
+	If( wetness.greaterThan( PUDDLE_WET ), () => {
+
+		cover.assign( puddleCover( xz, wetness ) );
+
+	} );
+	return cover;
+
+} ).setLayout( { name: 'meadowPuddle', type: 'float', inputs: [ { name: 'xz', type: 'vec2' }, { name: 'wetness', type: 'float' } ] } );
+
 // A head's petals and colour, in the fragment stage, from where the fragment lies on the disc
 // (`radius`, 0 at the centre to 1 at the rim, and `across`, -1 to 1 across its sector) and the
 // head's number (`kind`): each sector is a petal, its outline and colours the head's (`HEADS`).
@@ -1167,7 +1205,24 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	const flowerPart = step( HEAD_FLAG - 0.5, abs( blade.w ) ), isStem = step( STEM_FLAG - 0.5, abs( blade.w ) );
 	const isHead = flowerPart.sub( isStem );
 	const lod = tuftLod( origin, ground2.w );
-	const head = headPose( blade, pick, ground0.y.sub( 1.5 ), ground1.xyz, ground2.xyz, lod.gain, aspect );
+	// The vertex stage's per-tuft work that most tufts do not need runs in branches on uniforms or on
+	// the tuft's own record, each tuft's vertices taking one side together: a head's pose and size
+	// on the flowering batch alone (`flowering`), the standing water's noise only once the ground is
+	// wet enough to hold any (PUDDLE_WET), and the drape and the hold off the wall only on a tuft at
+	// the edge (`edgeOn`). What a branch skips is what the blends by `isHead`, `isStem`, the pool and
+	// `edgeOn` dropped, so every vertex takes the values it took before (a paused frame is unchanged
+	// to the byte).
+	// The head's and the water's are functions with a layout (`flowerHead`, `wetPuddle`); the
+	// drape's (`settle`) reads its inputs into variables before its branch, so a node it shares with
+	// the rest of the stage is declared outside it (a select's pitfall, AGENTS.md). Together they took about a
+	// quarter of the meadow's time at the island view, the standing water's two noise lookups a
+	// vertex most of it.
+	// (the other batches' vertices take a level disc at the root, with no stem)
+	const headColumns = flowerHead( float( flowering ), blade, pick, ground0.y.sub( 1.5 ), ground1.xyz, ground2.xyz, lod.gain, aspect ).toVar( 'grassHead' ) as unknown as { element( i: number ): THREE.Node<'vec4'> };
+	const head = {
+		centre: headColumns.element( 0 ).xyz, radius: headColumns.element( 0 ).w, offset: headColumns.element( 1 ).xyz, hash: headColumns.element( 1 ).w,
+		normal: headColumns.element( 2 ).xyz, stem: { dir: headColumns.element( 3 ).xy, length: headColumns.element( 2 ).w },
+	};
 	// The tussock's word (`plantGrass`): its stiffness, lean and the lean's direction, a byte each.
 	const word = input.clump;
 	const high = floorN( word.div( 65536 ) ), rest = word.sub( high.mul( 65536 ) ), mid = floorN( rest.div( 256 ) ), lowByte = rest.sub( mid.mul( 256 ) );
@@ -1217,7 +1272,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// carries the water's surface, hides them). About a third keep a few centimetres of their
 	// tips above it, so sparse drowned spikes stand in an open sheet of water rather than a
 	// meadow that hides it. Which tufts and how much is a hash of the planting anchor, fixed.
-	const pool = puddleCover( origin.xz, shared.wetness );
+	const pool = wetPuddle( origin.xz, shared.wetness ).toVar( 'grassPool' );
 	const drowned = float( 1 ).sub( pool.mul( 0.15 ) ).mul( kept );
 	const tip = select( pick.greaterThan( 0.66 ), pick.sub( 0.66 ).mul( 0.25 ).add( 0.03 ), float( - 0.03 ) );
 	// The tallest blade of a tuft reaches about 0.9 of its height ( tuft.w / CANOPY_TOP ).
@@ -1246,9 +1301,9 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// of a blade past the edge over it: its distance past the edge, along the outward direction,
 	// is laid round a quarter curl of the blade's own radius (DRAPE_RADIUS), then straight down.
 	const edgeOn = step( 1e-6, dot( edgeRecord.zw, edgeRecord.zw ) ).toVar();
-	const drapeRadius = mix( float( DRAPE_RADIUS[ 0 ] ), float( DRAPE_RADIUS[ 1 ] ), bladeHash( pose.id, pick, 8 ) ).mul( clump.stiffness.sqrt() ).toVar();
 	const drape = ( q: V3 ) => {
 
+		const drapeRadius = mix( float( DRAPE_RADIUS[ 0 ] ), float( DRAPE_RADIUS[ 1 ] ), bladeHash( pose.id, pick, 8 ) ).mul( clump.stiffness.sqrt() ).toVar();
 		const out = edgeRecord.zw;
 		const past = max( dot( q.xz, out ).sub( edgeRecord.x ), 0 ).mul( edgeOn ).toVar();
 		const angle = min( past.div( drapeRadius ), Math.PI / 2 );
@@ -1262,9 +1317,9 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// (HOLD_SOFT), so a blade that reaches the stone lies along it, downward; above the roof nothing
 	// bounds it, the wall falling away over 2 cm. The hold eases in from the root (HOLD_ROOT). 0 away
 	// from the edge (`edgeOn`).
-	const outward = mix( ground1.xz.div( max( length( ground1.xz ), 1e-6 ) ), edgeRecord.zw, edgeOn ).toVar();
 	const holdOff = ( q: V3 ) => {
 
+		const outward = mix( ground1.xz.div( max( length( ground1.xz ), 1e-6 ) ), edgeRecord.zw, edgeOn ).toVar();
 		const o = dot( q.xz, outward ).sub( edgeRecord.x ).toVar();
 		const depth = edgeRecord.y.sub( q.y ).toVar();
 		const u = clamp( depth.div( LIP_DEPTH ), 0, LIP_WALLS - 1 ).toVar();
@@ -1281,8 +1336,19 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		return q.add( vec3( outward.x, 0, outward.y ).mul( held.sub( o ).mul( ease ).mul( edgeOn ) ) );
 
 	};
+	const settle = ( q: V3 ) => Fn( () => {
+
+		const r = grounded( q ).toVar();
+		If( edgeOn.greaterThan( 0.5 ), () => {
+
+			r.assign( holdOff( drape( r ) ) );
+
+		} );
+		return r;
+
+	} )();
 	const bend = bendBlade( shared.wind, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart );
-	const bent = holdOff( drape( grounded( bend.position ) ) ).toVar( 'grassBent' );
+	const bent = settle( bend.position ).toVar( 'grassBent' );
 	// A blade of a tuft past 70 m stands for as many of the blades it drew there as its gain over
 	// NEAR_GAIN (exactly 1 within 70 m) and is drawn as that many strips side by side, each with its
 	// own fold, edge and tint (`bladeStrips`): one plain blade 16 times as wide read at the island
@@ -1344,11 +1410,11 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
 		// camera: a previous frame's pose from the registered displacement keeps them as they are now.
 		displacement: ( state ) => pixelWideBlade(
-			state === shared.wind ? bent : holdOff( drape( grounded( bendBlade( state, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart ).position ) ) ), across, minWidth, keep, gain, isHead, headSize.coverage ),
+			state === shared.wind ? bent : settle( bendBlade( state, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart ).position ), across, minWidth, keep, gain, isHead, headSize.coverage ),
 		// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
 		// rooted point, widened by the offset the current pose took (the widening follows the camera,
 		// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
-		previous: ( swayed ) => TEMPORAL ? swayed.sub( bent ).add( holdOff( drape( grounded( bendBlade( shared.wind.previous, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart ).position ) ) ) ) : undefined,
+		previous: ( swayed ) => TEMPORAL ? swayed.sub( bent ).add( settle( bendBlade( shared.wind.previous, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart ).position ) ) : undefined,
 		// The rest of three's instancing: the normal and the instance colour, before the blade moves.
 		beforePosition: () => {
 
@@ -1552,6 +1618,7 @@ function tuftMesh( source: THREE.BufferGeometry, shape: TuftShape, floor: number
 	geometry.userData.grassBlades = shape.blades;
 	geometry.userData.grassFloor = floor;
 	geometry.userData.grassBladeVerts = ( shape.segs + 1 ) * 2;
+	geometry.userData.grassFlowers = ( source.userData.baseIndices ?? 0 ) > 0 ? 1 : 0;
 	const mesh = new THREE.InstancedMesh( geometry, material, Math.max( range.count, 1 ) );
 	mesh.instanceMatrix.array = new Float32Array( 16 ); // replaced below; drop the copy InstancedMesh allocates
 	( mesh as unknown as { instanceMatrix: THREE.BufferAttribute } ).instanceMatrix = cull.buffer( 'matrices' );

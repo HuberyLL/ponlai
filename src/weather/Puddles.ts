@@ -24,7 +24,7 @@ export const puddleField = Fn( ( [ xz, wetness, relief ]: [ V2, F, F ] ) => {
 	// No standing water until the ground is soaked; then the waterline rises through the field.
 	const level = mix( float( 0.8 ), float( 0.63 ), smoothstep( 0.3, 0.85, wetness ) ).toVar();
 	// A crisp waterline: a soft one reads as a stain on the ground rather than as water.
-	const cover = smoothstep( level, level.add( 0.025 ), hollows ).mul( smoothstep( 0.3, 0.45, wetness ) );
+	const cover = smoothstep( level, level.add( 0.025 ), hollows ).mul( smoothstep( PUDDLE_WET, 0.45, wetness ) );
 	const depth = smoothstep( level.add( 0.01 ), level.add( 0.12 ), hollows );
 	// The damp footprint follows the waterline of a wetter ground, so a drying puddle shrinks inside
 	// its own dark stain, which then fades as the soil dries.
@@ -33,6 +33,9 @@ export const puddleField = Fn( ( [ xz, wetness, relief ]: [ V2, F, F ] ) => {
 	return vec3( cover, depth, margin );
 
 } ).setLayout( { name: 'ponlaiPuddleField', type: 'vec3', inputs: [ { name: 'xz', type: 'vec2' }, { name: 'wetness', type: 'float' }, { name: 'relief', type: 'float' } ] } );
+
+/** The wetness up to which no water stands (`puddleField`'s cover is exactly 0 there). */
+export const PUDDLE_WET = 0.3;
 
 /** Standing water, 0 to 1 (the cover of `puddleField` on neutral relief). */
 export const puddleCover = ( xz: V2, wetness: F ) => puddleField( xz, wetness, float( 0.5 ) ).x;
