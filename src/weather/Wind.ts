@@ -1,4 +1,4 @@
-import { DataTexture, LinearFilter, RGFormat, RepeatWrapping, UnsignedByteType, Vector2, Vector4 } from 'three/webgpu';
+import { DataTexture, LinearFilter, RGFormat, RepeatWrapping, UnsignedByteType, Vector2 } from 'three/webgpu';
 import type { Node } from 'three/webgpu';
 import { Fn, abs, clamp as clampNode, dot, float, fract, inverseSqrt, normalize, sin, smoothstep, texture, uniform, vec2, vec4 } from 'three/tsl';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -22,12 +22,11 @@ import { PREVAILING_HEADING, type WeatherState } from '../sky/Weather.ts';
 //   (`gustScroll`); and two clocks that do not follow the wind: `swayScroll`, which sets each
 //   kind's natural sway frequency, and `clock`, the leaves' flutter. A stronger wind bends a plant
 //   further, not faster (real plants swing near their own frequency in any wind).
-// - the sea: `oceanGain`, the amplitude of the FFT's four bands from U / U_ref (a weather change
-//   only scales amplitudes). The spectrum is built once, from `spectrumWind` (the prevailing
-//   heading and U_ref, whatever wind the page loaded in), so the sea is the same function of the
+// - the sea: the FFT's spectrum follows `speed` (OceanFFT.setWind: tidewater's sea state at that
+//   wind), at the prevailing heading (`spectrumWind`), so the sea is the same function of the
 //   weather however the page reached it; the swell keeps its own offset from the heading (OceanFFT
 //   `swell.directionOffset`), the shore waves follow the swell. The waves do not turn with the
-//   weather's wind.
+//   weather's wind. `gale`, the wind beyond 1.5 U_ref, heaves the sea at the rock (Water.ts).
 // - the clouds: `displacement`, which Clouds.setDrift turns into each layer's drift aloft;
 //   `direction` for the fronts, the cirrus and the tops' lean (sky/Sky.ts, Clouds.ts).
 // - the air: `displacement` (the sea fog's drift, main.ts; the clouds' drift), `velocity` (rain, the storm's spray),
@@ -191,7 +190,7 @@ export function createWindUniforms() {
 		...vegetationWind( direction ),
 		velocity: uniform( direction.clone().multiplyScalar( REFERENCE_SPEED ) ), // air velocity, m/s
 		displacement: uniform( new Vector2() ), // integrated air displacement, metres
-		oceanGain: uniform( new Vector4( 1, 1, 1, 1 ) ), // amplitude, not energy, for the FFT cascades
+		gale: uniform( 0 ), // the wind beyond 1.5 x the fair-weather wind, U / U_ref - 1.5 in [ 0, 1.6 ]
 		// The vegetation's wind as it was for the previous rendered frame: equal to the current
 		// one while paused and after a seek or reset (no motion across a jump).
 		previous: vegetationWind( direction ),
@@ -462,10 +461,9 @@ export class Wind {
 	get gustiness(): number { return this.currentGustiness; }
 	get time(): number { return this.elapsed; }
 
-	/** The wind the sea's spectrum is built from, once (OceanFFT's `windSpeed` and
-	 * `windDirection`): the prevailing heading and REFERENCE_SPEED, whatever the weather's wind.
-	 * The weather's own speed reaches the sea through `oceanGain` alone, so a weather change
-	 * rebuilds nothing and a page that changed its weather draws the sea a page loaded in it draws. */
+	/** The wind the sea's spectrum starts from (OceanFFT's `windSpeed` and `windDirection`): the
+	 * prevailing heading, which it keeps, and REFERENCE_SPEED, which the weather's own speed replaces
+	 * (OceanFFT.setWind), so a page that changed its weather draws the sea a page loaded in it draws. */
 	get spectrumWind(): { windSpeed: number; windDirection: number } {
 
 		return { windSpeed: REFERENCE_SPEED, windDirection: PREVAILING_HEADING };
@@ -570,18 +568,7 @@ export class Wind {
 		this.uniforms.breeze.value = ratio;
 		this.uniforms.pressure.value = ratio * ratio;
 		this.uniforms.gustLean.value = gustLeanOf( gustiness );
-		// Long swell changes little (the cascade of waves over 26 m); the local wind sea (26 to
-		// 1.2 m) and the capillary band respond more. These gentle amplitude limits keep everyday
-		// weather within the island's calm-water design; only a gale (above about 1.5 x the
-		// fair-weather wind) builds a rough storm sea beyond them.
-		const gale = clamp( ratio - 1.5, 0, 1.6 );
-		const local = clamp( 1 + ( ratio - 1 ) * 0.55, 0.55, 1.45 ) + gale * 1.5;
-		this.uniforms.oceanGain.value.set(
-			clamp( 1 + ( ratio - 1 ) * 0.18, 0.82, 1.15 ) + gale * 1.2,
-			local,
-			local,
-			clamp( 1 + ( ratio - 1 ) * 0.85, 0.35, 1.65 ) + gale * 0.5,
-		);
+		this.uniforms.gale.value = clamp( ratio - 1.5, 0, 1.6 );
 
 	}
 

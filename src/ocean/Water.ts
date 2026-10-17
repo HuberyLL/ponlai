@@ -685,7 +685,7 @@ export class Water {
 					// buffer confirms rock there (a cliff face, not open seabed). A gale's swell heaves
 					// the surface at the rock by tens of centimetres; the reach grows with it and the
 					// lifted rock gives way to the sky, as before, so a rough sea keeps its sky-lit facets.
-					const gale = sat( shared.wind.oceanGain.x.sub( 1.15 ).div( 1.2 ) ).toVar();
+					const gale = sat( shared.wind.gale ).toVar();
 					const waterline = shared.waterLevel.add( mix( float( 0.03 ), float( 0.3 ), gale ) ).toVar();
 					const above = smoothstep( shared.waterLevel.sub( gale.mul( 0.1 ) ), waterline, hw.y ).toVar();
 					If( above.lessThan( 1 ), () => {

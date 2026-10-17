@@ -6,23 +6,24 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	Fn, uniform, storage, instanceIndex, float, vec2, vec4, uint, sqrt, tanh, min, cos, sin, length, select, mix, smoothstep,
+	Fn, uniform, storage, instanceIndex, float, vec2, vec4, uint, sqrt, tanh, min, max, cos, sin, abs, exp, pow, atan, length, select, mix, smoothstep,
 	screenCoordinate, ivec2, workgroupArray, workgroupBarrier, workgroupId, localId,
 } from 'three/tsl';
 import { mulberry32 } from '../world/noise.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
-import { createWaveSpectrum, DEFAULT_SWELL, type SwellParams } from './OceanSpectrum.ts';
+import { DEFAULT_SWELL, seaState, waveSystemTerms, type SwellParams } from './OceanSpectrum.ts';
 
 // Multi-cascade FFT ocean (Tessendorf) on WebGPU compute, after tidewater's OceanFFT (4811ba4): four
 // cascades of non-integer size ratios, so the sum never shows a repeat, each holding the waves of
 // its own band of wavenumbers (from 6 fundamentals of the next larger tile to 6 of its own next). Two
 // wave systems are summed into one spectrum, as tidewater's `local` and `swell`: the local wind sea
 // (JONSWAP, the weather's wind and a sea state's fetch) and a distant swell of its own wind and
-// fetch (OceanSpectrum.ts). The spectrum is summed once per cascade in JS; every frame one kernel
-// evolves all cascades in time, then a Stockham radix-2 inverse FFT runs as one row and one column
-// dispatch over all cascades at once, and a small fragment pass per cascade and field writes its
-// layer of the array textures the water samples (one texture per field, a layer per cascade: the
-// water's fragment stage binds three textures for the FFT, not one per cascade and field).
+// fetch (OceanSpectrum.ts). A kernel sums the spectrum into each cascade's amplitudes whenever the sea
+// state changes (tidewater's init kernel; the random phases are drawn once, in JS); every frame one
+// kernel evolves all cascades in time, then a Stockham radix-2 inverse FFT runs as one row and one
+// column dispatch over all cascades at once, and a small fragment pass per cascade and field writes
+// its layer of the array textures the water samples (one texture per field, a layer per cascade:
+// the water's fragment stage binds two textures for the FFT, not one per cascade and field).
 //
 // Each FFT dispatch runs one workgroup per row (or column) through its 8 stages in workgroup
 // memory, with the index maths, twiddles and butterfly order of one dispatch per stage, so the
@@ -51,10 +52,12 @@ import { createWaveSpectrum, DEFAULT_SWELL, type SwellParams } from './OceanSpec
 // cascade's pass of a field asks for them.
 // Sample a cascade at its undisplaced world xz / size, in its layer (`texture( t, uv ).depth( c )`).
 //
-// The spectrum's wind (`windSpeed`, `windDirection`) is the weather's, as weather/Wind.ts derives it
-// (`spectrumWind`: the heading and the reference speed), and its sea state (fetch, choppiness, the
-// swell's scale) tidewater's at that wind (OceanSpectrum.ts `seaState`). Weather only scales the
-// cascades' amplitude (`weatherGain`, Wind.ts `oceanGain`); it never rebuilds the wave spectrum.
+// The spectrum follows the weather's wind as tidewater's sea states follow its wind (`setWind`: the
+// fetch, choppiness and the swell's scale of OceanSpectrum.ts `seaState` at that speed), rebuilt on
+// the GPU in the frame the speed changes, so a stronger wind makes longer waves, not only taller
+// ones; a function of the current wind alone, whatever the path to it. The heading stays the
+// prevailing wind's (Wind.ts `spectrumWind`): the waves do not turn with the weather's wind, and the
+// shore's shelter field (ShoreWaves) follows the swell's heading only.
 // The spectrum's depth is tidewater's open ocean (500 m), not the shelf sea's: the island's shallows
 // damp the waves in the water's vertex stage instead (Water.ts).
 // A kernel that uses `workgroupBarrier()` is dispatched by size (`computeKernel( [ n ] )` with
@@ -70,6 +73,58 @@ const G = 9.81;
 export const CASCADE_SIZES = [ 733, 157, 33.3, 7.1 ];
 // a cascade's band starts this many fundamentals of its own tile above the next larger one's
 const BAND_FUNDAMENTALS = 6;
+
+// A wave system's energy at wavenumber k (OceanSpectrum.ts createWaveSpectrum on the GPU, as
+// tidewater's init kernel): TMA-corrected JONSWAP times the directional spreading and the short
+// waves' fade, with the omega-to-k Jacobian. a: ( alpha, peak omega, heading, spread ), b:
+// ( concentration, gamma, squared fade, 0 ).
+const waveEnergy = Fn( ( [ k, a, b, depth ]: [ THREE.Node<'vec2'>, THREE.Node<'vec4'>, THREE.Node<'vec4'>, THREE.Node<'float'> ] ) => {
+
+	const kl = max( length( k ), 1e-6 ).toVar();
+	const kd = min( kl.mul( depth ), 20 ).toVar();
+	const th = tanh( kd ).toVar();
+	const omega = sqrt( float( G ).mul( kl ).mul( th ) ).toVar();
+	const peak = a.y;
+	const sigma = select( omega.lessThanEqual( peak ), float( 0.07 ), float( 0.09 ) );
+	const r = exp( omega.sub( peak ).pow( 2 ).negate().div( sigma.mul( sigma ).mul( peak.mul( peak ) ).mul( 2 ) ) );
+	const omegaH = omega.mul( sqrt( depth.div( G ) ) ).toVar();
+	const tma = select( omegaH.lessThanEqual( 1 ), omegaH.mul( omegaH ).mul( 0.5 ),
+		select( omegaH.lessThan( 2 ), float( 1 ).sub( float( 2 ).sub( omegaH ).pow( 2 ).mul( 0.5 ) ), float( 1 ) ) );
+	const jonswap = tma.mul( a.x ).mul( G * G ).div( omega.pow( 5 ) ).mul( exp( peak.div( omega ).pow( 4 ).mul( - 1.25 ) ) ).mul( pow( b.y, r ) );
+	const ratio = omega.div( peak ).toVar();
+	const spreadPower = select( omega.greaterThan( peak ), pow( ratio, - 2.5 ).mul( 9.77 ), pow( ratio, 5 ).mul( 6.97 ) )
+		.add( tanh( min( ratio, 20 ) ).mul( 16 ).mul( b.x.mul( b.x ) ) ).toVar();
+	const theta = atan( k.y, k.x ).sub( a.z ).toVar();
+	const cosT = cos( theta ).toVar();
+	const broad = select( cosT.greaterThan( 0 ), cosT.mul( cosT ).mul( 2 / Math.PI ), float( 0 ) );
+	const s1 = spreadPower, s2 = s1.mul( s1 ), s3 = s2.mul( s1 ), s4 = s3.mul( s1 );
+	const normalisation = select( s1.lessThan( 5 ),
+		s4.mul( - 0.000564 ).add( s3.mul( 0.00776 ) ).sub( s2.mul( 0.044 ) ).add( s1.mul( 0.192 ) ).add( 0.163 ),
+		s4.mul( - 4.80e-8 ).add( s3.mul( 1.07e-5 ) ).sub( s2.mul( 9.53e-4 ) ).add( s1.mul( 0.059 ) ).add( 0.393 ) );
+	const narrow = normalisation.mul( pow( abs( cos( theta.mul( 0.5 ) ) ), spreadPower.mul( 2 ) ) );
+	const direction = broad.add( narrow.sub( broad ).mul( a.w ) );
+	const jacobian = float( G ).mul( th.add( kl.mul( depth ).mul( float( 1 ).sub( th.mul( th ) ) ) ) ).div( omega.mul( 2 ) );
+	return jonswap.mul( direction ).mul( exp( b.z.mul( kl ).mul( kl ).negate() ) ).mul( jacobian ).div( kl );
+
+} ).setLayout( { name: 'oceanWaveEnergy', type: 'float', inputs: [
+	{ name: 'k', type: 'vec2' }, { name: 'a', type: 'vec4' }, { name: 'b', type: 'vec4' }, { name: 'depth', type: 'float' },
+] } );
+
+// A Gaussian pair per mode (Box-Muller on a seeded stream), in the order the modes are laid out.
+function gaussianPairs( seed: number, count: number ): Float32Array {
+
+	const rng = mulberry32( seed );
+	const gauss = () => {
+
+		const u = Math.max( rng(), 1e-9 ), v = rng();
+		return Math.sqrt( - 2 * Math.log( u ) ) * Math.cos( 2 * Math.PI * v );
+
+	};
+	const pairs = new Float32Array( count * 2 );
+	for ( let i = 0; i < pairs.length; i ++ ) pairs[ i ] = gauss();
+	return pairs;
+
+}
 
 // The local wind sea's system and the shared settings (tidewater's `local` WaveSystem).
 export interface OceanParams {
@@ -100,15 +155,19 @@ export class OceanFFT {
 	readonly derivatives: THREE.Texture;
 	readonly slopeMoments: THREE.Texture;
 	readonly velocity: THREE.Texture;
-	// A slow weather envelope changes the existing wave field without regenerating its
-	// random phases or directional spectrum. Each cascade keeps one coherent amplitude.
-	readonly weatherGain = uniform( new THREE.Vector4( 1, 1, 1, 1 ) );
 
 	private time = uniform( 0 );
 	/** The horizontal displacement's scale (artistic choppiness), which the velocity leaves out. */
 	readonly chop = uniform( 0.85 );
 	private depthU = uniform( 8 );
+	private amplitudeU = uniform( 1 );
+	// the two wave systems' terms (OceanSpectrum.ts waveSystemTerms): ( alpha, peak omega, heading,
+	// spread ) and ( concentration, gamma, squared fade, 0 )
+	private systems = [ 0, 1 ].map( () => ( { a: uniform( new THREE.Vector4() ), b: uniform( new THREE.Vector4() ) } ) );
 	private h0Attr: THREE.StorageBufferAttribute;
+	private gaussAttr: THREE.StorageBufferAttribute;
+	private spectrumKernel: THREE.ComputeNode;
+	private spectrumDirty = true;
 	private kernels: THREE.ComputeNode[] = [];
 	private sharedKernels: THREE.ComputeNode[] = [];
 	private outputs: { rt: THREE.RenderTarget; layer: number; mipmapped: boolean; quad: THREE.QuadMesh }[] = [];
@@ -142,6 +201,8 @@ export class OceanFFT {
 		const N = FFT_N, NN = N * N, C = sizes.length, count = NN * C;
 		this.h0Attr = new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 );
 		const h0 = storage( this.h0Attr, 'vec4', count ).toReadOnly();
+		// the random phases: a Gaussian pair per mode, drawn once
+		this.gaussAttr = new THREE.StorageBufferAttribute( gaussianPairs( seed, count ), 2 );
 		// ping-pong: A holds ( c0, c1 ), B holds ( c2, c3 ), C holds ( c4, c5 )
 		const buf = [ 0, 1 ].map( () => ( {
 			attrA: new THREE.StorageBufferAttribute( new Float32Array( count * 4 ), 4 ),
@@ -153,6 +214,43 @@ export class OceanFFT {
 			( rest, size, i ) => select( c.equal( uint( i ) ), float( size ), rest ), float( sizes[ C - 1 ] ) );
 		const cmul = ( a: THREE.Node<'vec2'>, b: THREE.Node<'vec2'> ) => vec2( a.x.mul( b.x ).sub( a.y.mul( b.y ) ), a.x.mul( b.y ).add( a.y.mul( b.x ) ) );
 		const ci = ( a: THREE.Node<'vec2'> ) => vec2( a.y.negate(), a.x ); // i * a
+
+		// 0. h0( k ) and conj( h0( -k ) ) from the two wave systems' energy at k and at -k: the variance
+		// of the height is the sum of the modes' energy (E | h0 |^2 = energy / 2 for each of the pair)
+		{
+
+			const out = storage( this.h0Attr, 'vec4', count );
+			const gauss = storage( this.gaussAttr, 'vec2', count ).toReadOnly();
+			// The band in the cascade's own grid units, squared: whole numbers at its lower edge
+			// (BAND_FUNDAMENTALS), so the modes that lie on it are in, exactly as the JS cut has them.
+			const bands = sizes.map( ( size, n ) => [ n === 0 ? 0 : BAND_FUNDAMENTALS ** 2,
+				n === C - 1 ? 1e30 : ( BAND_FUNDAMENTALS * size / sizes[ n + 1 ] ) ** 2 ] );
+			this.spectrumKernel = Fn( () => {
+
+				const idx = instanceIndex;
+				const c = idx.div( NN );
+				const p = idx.mod( NN );
+				const i = p.mod( N ), j = p.div( N );
+				const signed = ( n: THREE.Node<'uint'> ) => select( n.greaterThanEqual( N / 2 ), float( n ).sub( N ), float( n ) );
+				const dk = float( 2 * Math.PI ).div( sizeAt( c ) ).toVar();
+				const n = vec2( signed( i ), signed( j ) ).toVar();
+				const k = n.mul( dk ).toVar();
+				const n2 = n.x.mul( n.x ).add( n.y.mul( n.y ) );
+				const band = ( which: 0 | 1 ) => bands.slice( 0, - 1 ).reduceRight<THREE.Node<'float'>>(
+					( rest, b, m ) => select( c.equal( uint( m ) ), float( b[ which ] ), rest ), float( bands[ C - 1 ][ which ] ) );
+				const inBand = n2.greaterThanEqual( band( 0 ) ).and( n2.lessThan( band( 1 ) ) )
+					.and( i.notEqual( uint( N / 2 ) ) ).and( j.notEqual( uint( N / 2 ) ) );
+				const S = this.systems;
+				const energy = ( q: THREE.Node<'vec2'> ) => waveEnergy( q, S[ 0 ].a, S[ 0 ].b, this.depthU ).add( waveEnergy( q, S[ 1 ].a, S[ 1 ].b, this.depthU ) ).mul( dk.mul( dk ) );
+				const scale = this.amplitudeU.div( Math.SQRT2 );
+				const mirror = c.mul( NN ).add( uint( N ).sub( j ).mod( N ).mul( N ) ).add( uint( N ).sub( i ).mod( N ) );
+				const h = gauss.element( idx ).mul( sqrt( energy( k ).div( 2 ) ) ).mul( scale );
+				const hm = gauss.element( mirror ).mul( sqrt( energy( k.negate() ).div( 2 ) ) ).mul( scale );
+				out.element( idx ).assign( select( inBand, vec4( h, hm.x, hm.y.negate() ), vec4( 0 ) ) );
+
+			} )().compute( count, [ 64 ] );
+
+		}
 
 		// 1. h( k, t ) and its displacement, derivative and velocity fields, packed into 6 complex numbers
 		{
@@ -302,7 +400,6 @@ export class OceanFFT {
 			return rt;
 
 		} );
-		const gains = [ this.weatherGain.x, this.weatherGain.y, this.weatherGain.z, this.weatherGain.w ];
 		for ( const which of [ 0, 1, 2, 3 ] ) {
 
 			for ( let c = 0; c < C; c ++ ) {
@@ -310,14 +407,11 @@ export class OceanFFT {
 				const mat = new THREE.NodeMaterial();
 				const px = ivec2( screenCoordinate.xy );
 				const idx = uint( px.y.mul( N ).add( px.x ).add( c * NN ) );
-				const gain = gains[ c ];
-				const a = fin.A.element( idx ).mul( gain ), b = fin.B.element( idx ).mul( gain ); // ( Dx, Dz, Dy, dDx/dz ), ( dDy/dx, dDy/dz, dDx/dx, dDz/dz )
+				const a = fin.A.element( idx ), b = fin.B.element( idx ); // ( Dx, Dz, Dy, dDx/dz ), ( dDy/dx, dDy/dz, dDx/dx, dDz/dz )
 				const J = float( 1 ).add( b.z ).mul( float( 1 ).add( b.w ) ).sub( a.w.mul( a.w ) );
-				const velocity = fin.C.element( idx ).mul( gain );
+				const velocity = fin.C.element( idx );
 				// LEAN filtering (Olano and Baker, 2010): squared slopes retain unresolved
 				// variance in the mip chain. The existing derivatives store their means.
-				// Observe the same weather-scaled slopes as displacement and caustics. Squared
-				// moments gain amplitude squared; the signed cross derivative stays linear.
 				mat.fragmentNode = which === 0 ? vec4( a.x, a.z, a.y, J ) : which === 1 ? b : which === 2 ?
 					vec4( b.x.mul( b.x ), b.y.mul( b.y ), b.x.mul( b.y ), a.w ) : vec4( velocity.xyz, 0 );
 				this.outputs.push( { rt: fields[ which ], layer: c, mipmapped: which !== 3, quad: new THREE.QuadMesh( mat ) } );
@@ -342,79 +436,38 @@ export class OceanFFT {
 
 	}
 
-	// k-band of each cascade: from BAND_FUNDAMENTALS fundamentals of its own tile up to as many of
-	// the next smaller one's
-	private cuts( i: number ): [ number, number ] {
+	/** Takes tidewater's sea state at a wind speed (m/s), rebuilt in the next update when it
+	 * changes. */
+	setWind( windSpeed: number ): void {
 
-		const s = this.sizes;
-		const lo = i === 0 ? 0 : 2 * Math.PI / s[ i ] * BAND_FUNDAMENTALS;
-		const hi = i === s.length - 1 ? Infinity : 2 * Math.PI / s[ i + 1 ] * BAND_FUNDAMENTALS;
-		return [ lo, hi ];
+		if ( windSpeed === this.params.windSpeed ) return;
+		const sea = seaState( windSpeed );
+		Object.assign( this.params, { windSpeed, fetch: sea.fetch, choppiness: sea.choppiness } );
+		this.swell.scale = sea.swell;
+		this.rebuildSpectrum();
 
 	}
 
+	/** Takes `params` and `swell` as they are now; the spectrum is rebuilt in the next update. */
 	rebuildSpectrum(): void {
 
-		const { windSpeed, windDirection, fetch, amplitude, spread, swell, peakEnhancement, shortWavesFade, seed, depth } = this.params;
-		const N = FFT_N, NN = N * N;
-		// tidewater's two wave systems: the local wind sea and the distant swell, summed
-		const local = createWaveSpectrum( { windSpeed, windDirection, fetch, spread, swell, peakEnhancement, shortWavesFade }, depth );
+		const { windSpeed, windDirection, fetch, spread, swell, peakEnhancement, shortWavesFade } = this.params;
 		const S = this.swell;
-		const distant = createWaveSpectrum( { scale: S.scale, windSpeed: S.windSpeed, windDirection: windDirection + S.directionOffset,
-			fetch: S.fetch, spread: S.spread, swell: S.swell, peakEnhancement: S.peakEnhancement, shortWavesFade: S.shortWavesFade }, depth );
-		const energy = new Float64Array( NN * this.sizes.length );
-		for ( let c = 0; c < this.sizes.length; c ++ ) {
+		const terms = [
+			waveSystemTerms( { windSpeed, windDirection, fetch, spread, swell, peakEnhancement, shortWavesFade } ),
+			waveSystemTerms( { scale: S.scale, windSpeed: S.windSpeed, windDirection: windDirection + S.directionOffset,
+				fetch: S.fetch, spread: S.spread, swell: S.swell, peakEnhancement: S.peakEnhancement, shortWavesFade: S.shortWavesFade } ),
+		];
+		terms.forEach( ( t, n ) => {
 
-			const dk = 2 * Math.PI / this.sizes[ c ], [ lo, hi ] = this.cuts( c );
-			for ( let j = 0; j < N; j ++ ) for ( let i = 0; i < N; i ++ ) {
+			this.systems[ n ].a.value.set( t.alpha, t.peakOmega, t.angle, t.spread );
+			this.systems[ n ].b.value.set( t.concentration, t.gamma, t.fade2, 0 );
 
-				if ( i === N / 2 || j === N / 2 ) continue;
-				const kx = ( i < N / 2 ? i : i - N ) * dk, kz = ( j < N / 2 ? j : j - N ) * dk;
-				const k = Math.hypot( kx, kz );
-				if ( k < lo || k >= hi ) continue;
-				energy[ c * NN + j * N + i ] = ( local( kx, kz ) + distant( kx, kz ) ) * dk * dk;
-
-			}
-
-		}
-		const rng = mulberry32( seed );
-		const gauss = () => {
-
-			const u = Math.max( rng(), 1e-9 ), v = rng();
-			return Math.sqrt( - 2 * Math.log( u ) ) * Math.cos( 2 * Math.PI * v );
-
-		};
-
-		const data = this.h0Attr.array as Float32Array;
-		const re = new Float32Array( NN ), im = new Float32Array( NN );
-		for ( let ci = 0; ci < this.sizes.length; ci ++ ) {
-
-			for ( let j = 0; j < N; j ++ ) for ( let i = 0; i < N; i ++ ) {
-
-				const a = gauss(), b = gauss();
-				const amp = Math.sqrt( energy[ ci * NN + j * N + i ] / 2 ) * amplitude;
-				re[ j * N + i ] = a * amp / Math.SQRT2;
-				im[ j * N + i ] = b * amp / Math.SQRT2;
-
-			}
-
-			for ( let j = 0; j < N; j ++ ) for ( let i = 0; i < N; i ++ ) {
-
-				const k = j * N + i;
-				const kn = ( ( N - j ) % N ) * N + ( N - i ) % N;
-				const o = ( ci * NN + k ) * 4;
-				data[ o ] = re[ k ];
-				data[ o + 1 ] = im[ k ];
-				data[ o + 2 ] = re[ kn ]; // conj( h0( -k ) )
-				data[ o + 3 ] = - im[ kn ];
-
-			}
-
-		}
-
-		this.h0Attr.needsUpdate = true;
+		} );
+		this.amplitudeU.value = this.params.amplitude;
 		this.chop.value = this.params.choppiness;
-		this.depthU.value = depth;
+		this.depthU.value = this.params.depth;
+		this.spectrumDirty = true;
 		this.spectrumRevision ++;
 
 	}
@@ -424,6 +477,12 @@ export class OceanFFT {
 		// A shared clock makes frozen captures and resume agree with the vegetation.
 		this.time.value = time ?? this.time.value + dt;
 		const r = this.renderer;
+		if ( this.spectrumDirty ) {
+
+			r.compute( this.spectrumKernel );
+			this.spectrumDirty = false;
+
+		}
 		r.compute( debugFlags.fftShared === false ? this.kernels : this.sharedKernels );
 		const prev = r.getRenderTarget();
 		for ( const o of this.outputs ) {
@@ -451,7 +510,7 @@ export class OceanFFT {
 			( output.quad.material as THREE.NodeMaterial ).dispose();
 
 		}
-		for ( const kernel of new Set( [ ...this.kernels, ...this.sharedKernels ] ) ) kernel.dispose();
+		for ( const kernel of new Set( [ this.spectrumKernel, ...this.kernels, ...this.sharedKernels ] ) ) kernel.dispose();
 		// QuadMesh geometry is shared by other renderer passes.
 
 	}

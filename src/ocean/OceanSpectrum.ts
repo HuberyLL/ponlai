@@ -92,18 +92,33 @@ function normalisationFactor( s: number ): number {
 
 }
 
-/** Returns the two-dimensional k-space energy density, including the omega-to-k Jacobian. */
+/** A wave system's spectral terms (tidewater's `updateSpectrumUniforms`): the JONSWAP scale
+ * (times the system's own scale) and peak frequency, the heading in radians, the spreading blend,
+ * the directional concentration, the peak enhancement and the short waves' squared fade length. */
+export interface WaveSystemTerms { alpha: number; peakOmega: number; angle: number; spread: number; concentration: number; gamma: number; fade2: number }
+
+export function waveSystemTerms( settings: WaveSpectrumSettings ): WaveSystemTerms {
+
+	if ( settings.peakPeriod !== undefined && ( ! Number.isFinite( settings.peakPeriod ) || settings.peakPeriod <= 0 ) ) throw new RangeError( 'Swell period must be positive and finite.' );
+	const U = Math.max( 0.1, settings.windSpeed ), fetch = Math.max( 1, settings.fetch );
+	return {
+		alpha: 0.076 * Math.pow( U * U / ( fetch * GRAVITY ), 0.22 ) * ( settings.scale ?? 1 ),
+		peakOmega: settings.peakPeriod === undefined ? 22 * Math.pow( GRAVITY * GRAVITY / ( U * fetch ), 0.33 ) : 2 * Math.PI / settings.peakPeriod,
+		angle: settings.windDirection * Math.PI / 180,
+		spread: Math.max( 0, Math.min( 1, settings.spread ) ),
+		concentration: Math.max( 0, Math.min( 1, settings.swell ) ),
+		gamma: Math.max( 1, settings.peakEnhancement ),
+		fade2: settings.shortWavesFade ** 2,
+	};
+
+}
+
+/** Returns the two-dimensional k-space energy density, including the omega-to-k Jacobian (the
+ * GPU's is OceanFFT's `waveEnergy`, the same formulas). */
 export function createWaveSpectrum( settings: WaveSpectrumSettings, depth: number ): ( kx: number, kz: number ) => number {
 
 	if ( ! Number.isFinite( depth ) || depth <= 0 ) throw new RangeError( 'Ocean depth must be positive and finite.' );
-	if ( settings.peakPeriod !== undefined && ( ! Number.isFinite( settings.peakPeriod ) || settings.peakPeriod <= 0 ) ) throw new RangeError( 'Swell period must be positive and finite.' );
-	const U = Math.max( 0.1, settings.windSpeed ), fetch = Math.max( 1, settings.fetch );
-	const alpha = 0.076 * Math.pow( U * U / ( fetch * GRAVITY ), 0.22 ) * ( settings.scale ?? 1 );
-	const peakOmega = settings.peakPeriod === undefined ? 22 * Math.pow( GRAVITY * GRAVITY / ( U * fetch ), 0.33 ) : 2 * Math.PI / settings.peakPeriod;
-	const angle = settings.windDirection * Math.PI / 180;
-	const spread = Math.max( 0, Math.min( 1, settings.spread ) );
-	const concentration = Math.max( 0, Math.min( 1, settings.swell ) );
-	const gamma = Math.max( 1, settings.peakEnhancement ), fade2 = settings.shortWavesFade ** 2;
+	const { alpha, peakOmega, angle, spread, concentration, gamma, fade2 } = waveSystemTerms( settings );
 	return ( kx, kz ) => {
 
 		const k = Math.hypot( kx, kz );

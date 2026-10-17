@@ -80,7 +80,6 @@ export class ShoreWaves {
 	private quad: THREE.QuadMesh;
 	private lastTime: number | undefined;
 	private lastReflection = - 1;
-	private readonly lastWeatherGain = new THREE.Vector4( - 1, - 1, - 1, - 1 );
 
 	// `floor`: the seabed's height over the shore field's bounds (WorldFields.floor), for the waves'
 	// shallow-water damping (as the water's, OceanFFT.attenuation)
@@ -232,10 +231,8 @@ export class ShoreWaves {
 			this.lastTime = undefined;
 
 		}
-		// A paused preset can change the FFT's amplitude without changing its clock or base
-		// spectrum. Refresh those reflected fields too, without rebuilding shoreline geometry.
-		if ( time === undefined || ( time === this.lastTime && this.lastReflection === this.reflection.value &&
-			this.lastWeatherGain.equals( fft.weatherGain.value ) ) ) return;
+		// (a paused page whose wind changes rebuilds the FFT's spectrum, above, and bakes again)
+		if ( time === undefined || ( time === this.lastTime && this.lastReflection === this.reflection.value ) ) return;
 		const previousTarget = this.renderer.getRenderTarget();
 		// (temporal modes: the surface is baked into the target that held the field before last)
 		if ( this.surfaces.length > 1 ) {
@@ -250,7 +247,6 @@ export class ShoreWaves {
 		this.renderer.setRenderTarget( previousTarget );
 		this.lastTime = time;
 		this.lastReflection = this.reflection.value;
-		this.lastWeatherGain.copy( fft.weatherGain.value );
 
 	}
 

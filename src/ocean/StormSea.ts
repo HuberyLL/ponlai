@@ -295,8 +295,7 @@ export class StormSea {
 		}
 		this.center.value.set( ( lo.x + RES / 2 ) * CELL, ( lo.y + RES / 2 ) * CELL );
 
-		const gain = this.fft.weatherGain.value;
-		const signature = `${ storm.toFixed( 4 ) },${ gain.toArray().map( ( g ) => g.toFixed( 4 ) ).join( ',' ) },${ lo.x },${ lo.y }`;
+		const signature = `${ storm.toFixed( 4 ) },${ this.fft.spectrumRevision },${ lo.x },${ lo.y }`;
 		const delta = this.time === undefined ? Infinity : time - this.time;
 		const onset = ! this.active;
 		// A jump in time, or anything new while the clock stands still, replays the history. A

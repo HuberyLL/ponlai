@@ -76,7 +76,7 @@ try {
 			rain: s.shared.rain.value, wetness: s.shared.wetness.value,
 			streaks: { amount: s.rain.uniforms.rain.value, count: s.rain.mesh.count, visible: s.rain.mesh.visible, time: s.rain.uniforms.time.value },
 			key: s.sky.keyColor.toArray(), ambient: s.sky.skyIrradiance.toArray(), haze: s.pipeline.air.haze.value,
-			windTravel: s.shared.wind.displacement.value.toArray(), oceanGain: s.fft.weatherGain.value.toArray(),
+			windTravel: s.shared.wind.displacement.value.toArray(), seaWind: s.fft.params.windSpeed,
 			transmission: s.shared.sunIntoWater.value, exposure: s.pipeline.settings.exposure,
 			camera: { position: s.camera.position.toArray(), target: s.controls.target.toArray(), fov: s.camera.fov },
 			memory: { ...s.renderer.info.memory }, diagnostics: { ...window.__THREE_GAME_DIAGNOSTICS__ },
@@ -295,7 +295,7 @@ try {
 		}
 		const shots = Object.fromEntries( scenarios.map( ( state ) => [ state.name, report.captures[ `${ view }-${ state.name }` ] ] ) );
 		for ( const [ effect, before, after ] of [ [ 'wetness', 'dry', 'wet' ], [ 'ripples', 'wet', 'ripples' ], [ 'streaks', 'ripples', 'rain' ], [ 'combined', 'dry', 'rain' ] ] ) {
-			for ( const key of [ 'weather', 'key', 'ambient', 'haze', 'windTravel', 'oceanGain', 'camera' ] ) assert.deepEqual( shots[ before ][ key ], shots[ after ][ key ], `${ effect }: fixed ${ key }` );
+			for ( const key of [ 'weather', 'key', 'ambient', 'haze', 'windTravel', 'seaWind', 'camera' ] ) assert.deepEqual( shots[ before ][ key ], shots[ after ][ key ], `${ effect }: fixed ${ key }` );
 			report.comparisons[ `${ view }-${ effect }` ] = await compare( shots[ before ], shots[ after ], view );
 		}
 	}
@@ -304,7 +304,7 @@ try {
 	const nearWaterOff = await capture( 'near-water-wet' );
 	await setEffects( scenarios[ 2 ] );
 	const nearWaterOn = await capture( 'near-water-ripples' );
-	for ( const key of [ 'weather', 'key', 'ambient', 'haze', 'windTravel', 'oceanGain', 'camera' ] ) assert.deepEqual( nearWaterOff[ key ], nearWaterOn[ key ], `Near-water ripples: fixed ${ key }` );
+	for ( const key of [ 'weather', 'key', 'ambient', 'haze', 'windTravel', 'seaWind', 'camera' ] ) assert.deepEqual( nearWaterOff[ key ], nearWaterOn[ key ], `Near-water ripples: fixed ${ key }` );
 	report.comparisons[ 'near-water-ripples' ] = await compare( nearWaterOff, nearWaterOn, 'near-water' );
 	const opaque = report.opaqueWetness;
 	assert.ok( opaque.finite && opaque.dry.pixels > 100 && opaque.tidal.pixels > 100 && opaque.submerged.pixels > 100, 'Depth-classified terrain samples must contain finite dry, tidal and submerged radiance' );

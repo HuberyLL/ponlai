@@ -479,8 +479,8 @@ checks. Every default set is the normal weathers' (views.mjs's `parity`, `taa` a
 clips.mjs's `all`, baseline.mjs's plan without `--views` / `--clips`, verify-scene-jump's views,
 profile-frame's scene matrix and `--accept`, verify-first-use's steps); `special` or a name
 reaches a parked view, clip or scene, and verify-first-use runs its `weather` and `bolt` steps only
-when `--steps` names them. `verify-weather-effects.mjs`, `verify-ocean-weather.mjs` and the rain
-parts of `verify-weather.mjs` are parked with them: not part of any default check.
+when `--steps` names them. `verify-weather-effects.mjs` and the rain parts of `verify-weather.mjs`
+are parked with them: not part of any default check.
 
 Parked quality tiers: medium and low (`src/Quality.ts` `PARKED_QUALITY`) are out of the default
 choice and checks; high at 4K output (1920x1080 CSS pixels at DPR 2, profile-frame's default
