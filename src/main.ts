@@ -1299,8 +1299,8 @@ if ( DEBUG ) {
 
 // ------------------------------------------------------------------ loop
 
-// A tier with a dynamic render scale (DynamicResolution.ts; high renders native 4K, never steered)
-// starts at its baseline (the nominal), moves between the display's ratio and a floor by the GPU's
+// High's render scale is dynamic (DynamicResolution.ts): it starts at its baseline (the nominal:
+// 1440p internal at 4K output), moves between the display's ratio and a floor (1080p) by the GPU's
 // frame time, and renders at the baseline while the scene is paused, so paused frames and captures
 // render at the scale its trade-offs are judged at (pinned, ?dpr or full resolution, at that ratio).
 // (the ground truth renders at the canvas's resolution: no dynamic scale)

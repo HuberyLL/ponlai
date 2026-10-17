@@ -7,14 +7,14 @@ import type { RenderScaleRule } from '../Quality.ts';
 //
 // Pixel ratios of the scene's render, relative to CSS pixels, never above the display's or the
 // cap (ocean optics, clouds and the post passes scale with the pixel count):
-// - high: a budget of native 4K's pixels, so the display's own ratio (up to OUTPUT_PIXEL_RATIO_CAP:
-//   native 4K on a 2x display at 1920x1080), never steered: no upscale, no dynamic resolution;
+// - high: dynamic, steered by the GPU's frame time (DynamicResolution.ts), from the display's own
+//   ratio (up to OUTPUT_PIXEL_RATIO_CAP: native 4K on a 2x display at 1920x1080) down to half the
+//   canvas's (1080p at 4K output). A load starts at, and a paused or pinned page holds, the
+//   baseline: two thirds of the maximum (1440p internal at 4K output, scale 4/3, FSR 1's Quality
+//   1.5x upscale), the level every trade-off is judged at. This returns the baseline as the
+//   nominal, `dynamicMaxRatio` the top of the range;
 // - medium and low (parked, Quality.ts): a budget of rendered pixels (1600x900 and 1280x720 today);
-//   `?dpr` and the GUI's full resolution lift it;
-// - a dynamic rule (no tier uses one today): steered by the GPU's frame time
-//   (DynamicResolution.ts) between the display's ratio and a floor; a load starts at, and a paused
-//   or pinned page holds, its baseline share of the maximum. This returns the baseline as the
-//   nominal, `dynamicMaxRatio` the top of the range.
+//   `?dpr` and the GUI's full resolution lift it.
 // The canvas always matches the display (up to OUTPUT_PIXEL_RATIO_CAP): a render below it is
 // upscaled inside the frame graph with FSR 1 and the grain added after, never stretched by the
 // browser. Every pass is sized to the render, not the canvas (the frame graph sizes each target by

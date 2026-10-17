@@ -32,8 +32,8 @@
 // The reference is a production build (`npm run build && npm run preview`, port 5191, the
 // default url); the dev server works for quick checks. The default viewport is a generic 4K
 // display (1920x1080 CSS at DPR 2). High is timed at its standard by default (src/Quality.ts:
-// native 4K without anti-aliasing): its render scale pinned at the viewport's ratio (`dpr=2` added
-// to the query), so profiles and --compare measure the level every trade-off is judged at;
+// 1440p with MSAA at 4K output): its render scale pinned at two thirds of the viewport's ratio
+// (`dpr=1.3333333333333333` added to the query), so profiles and --compare measure the level every trade-off is judged at;
 // `--unpinned` leaves the tier's own rule (a dynamic one steering) (to see where it
 // settles, with --scale-settle and --scale-log). --accept, --display, --scales and a dpr of the
 // url's or --q's own are never pinned. Chrome comes from CHROME_PATH, else the system Chrome, else
@@ -392,15 +392,15 @@ if ( DISPLAY ) requireDisplayAllowed( 'profile-frame --display' );
 if ( ( ACCEPT || SCALES.length ) && ( COMPARE || TOGGLE ) ) throw new Error( '--accept and --scales are for profile runs, not --compare or --toggle' );
 // the page reads the first of a repeated option, so a dpr in the url or --q would win over --scales
 if ( SCALES.length && [ new URL( URL_A ).search.slice( 1 ), EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) ) ) throw new Error( '--scales sets the dpr option itself: remove dpr from the url and --q' );
-// High's standard pin: a profile or --compare of high times at native 4K (src/Quality.ts: the
-// display's ratio, 2 at the default 1920x1080@2), its render scale pinned by the page's `dpr`, so
+// High's standard pin: a profile or --compare of high times at its standard (src/Quality.ts: 1440p,
+// two thirds of the display's ratio, 4/3 at the default 1920x1080@2), its render scale pinned by the page's `dpr`, so
 // every run measures the level trade-offs are judged at.
 // `--unpinned` leaves the dynamic resolution steering (where it settles); --accept (the frame rate
 // a player sees), --display, --scales and a dpr in the url or --q are never pinned.
 const UNPINNED = flags.has( '--unpinned' );
 const BASELINE_DPR = QUALITY === 'high' && ! UNPINNED && ! ACCEPT && ! DISPLAY && ! SCALES.length &&
 	! [ new URL( URL_A ).search.slice( 1 ), COMPARE ? new URL( COMPARE[ 1 ] ).search.slice( 1 ) : '', EXTRA_Q ].some( ( q ) => new URLSearchParams( q ).has( 'dpr' ) )
-	? String( Math.min( SCALE, 2 ) ) : '';
+	? String( Math.min( SCALE, 2 ) * 2 / 3 ) : '';
 const OUT = opt( 'out', path.join( 'artifacts/perf', LABEL ) );
 // The page's remembered dynamic scale (`drsStore`): an A/B (--compare) or an acceptance run turns it
 // off (`drsStore=off`), so neither side starts from a scale the other, or an earlier run, settled at;

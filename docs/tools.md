@@ -984,16 +984,16 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   timestamps (`--timestamps off` or `both`): Chrome ran frames up to a quarter faster with them
   on, so their per-pass split shows where the time goes, not the frame rate a player sees. (A tier
   with a dynamic resolution keeps its own timestamp queries in every run, as a player's page does;
-  `--q gpuTimer=off` leaves them out. High has none: it renders native 4K.)
-- High is timed at its standard by default: 4K output (1920x1080 CSS at DPR 2) rendered at that
-  size with MSAA 4x, the level every trade-off is judged at, with about 14 ms of GPU time a
+  `--q gpuTimer=off` leaves them out.)
+- High is timed at its standard by default: 4K output (1920x1080 CSS at DPR 2) rendered at 1440p
+  (scale 4/3) with MSAA 4x, the level every trade-off is judged at, with about 14 ms of GPU time a
   frame in the normal scenes (island views, `meadow-close`) as the budget. A profile, `--compare`
-  or `--toggle` of high pins that scale (`dpr=2`: the viewport's ratio); `--unpinned` leaves the
+  or `--toggle` of high pins that scale (`dpr=1.3333333333333333`: two thirds of the viewport's ratio); `--unpinned` leaves the
   tier's own rule (a dynamic one steering, with `--scale-settle 5 --scale-log` to see where it
   settles). `--accept`, `--display`, `--scales` and a `dpr` of the url's or `--q`'s own are never
   pinned.
 - Judge whether a tier holds 60 fps with `--accept` (under vsync), not from uncapped intervals, at
-  the tier's own settings (high at its fixed native scale; a dynamic tier measured at its settle point with
+  the tier's own settings (high with its dynamic scale, measured at its settle point with
   `--scale-settle 5`; the report gives each scene's scale), and check how a change plays on a fast
   display with `--display` (pacing, cadence, the scale's changes under drags).
 - Report contended runs as such: check `node tools/gpu-lock.mjs gpu` before each run (and during
