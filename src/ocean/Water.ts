@@ -21,6 +21,7 @@ import type { ShoreWaves } from './ShoreWaves.ts';
 import type { StormSea } from './StormSea.ts';
 import type { SeaDetail } from './SeaDetail.ts';
 import { REFRACTION_GUARD } from './Refraction.ts';
+import { waveDamping } from './WaveDamping.ts';
 import type { Shared } from '../shared.ts';
 import type { SunShadow } from '../lighting/SunShadow.ts';
 import { rainRippleGradient } from '../weather/Rain.ts';
@@ -408,24 +409,14 @@ export class Water {
 		// A cascade's layer of an FFT field at an undisplaced xz.
 		const cascade = ( field: THREE.Texture, c: number, at: V2 ) => texture( field, at.div( fft.sizes[ c ] ) ).depth( int( c ) );
 
-		// ---- vertex: displace the grid by the four cascades (the finest fades out far away). Each is
-		// damped by the floor's depth under the point (tidewater's shallow-water attenuation,
-		// OceanFFT.attenuation: the shelf sea leaves the swell a sixth of its open-ocean height), by
-		// the island's lee (the shelter field: the long waves most) and within 7 m of the rock. The
-		// undisplaced grid point comes from the geometry: once positionNode is set, positionLocal
-		// reads the displaced position.
+		// ---- vertex: displace the grid by the four cascades (the finest fades out far away), each
+		// damped by the floor's depth, the island's lee and the rock (WaveDamping.ts). The undisplaced
+		// grid point comes from the geometry: once positionNode is set, positionLocal reads the
+		// displaced position.
 		const xz = positionGeometry.xz;
 		const fieldUV = ( p: V2 ) => p.sub( shared.shoreXform.xy ).mul( shared.shoreXform.zw );
-		const sd = texture( shore, fieldUV( xz ) ).level( float( 0 ) ).r;
-		// Shelter changes the physical wave amplitude; the finest wind detail stays alive.
-		const shelter = shoreWaves.shelter.sample( fieldUV( xz ) ).level( float( 0 ) );
-		const coastDamp = mix( float( 0.45 ), float( 1 ), smoothstep( 0, 7, sd ) );
-		const windDamp = mix( float( 0.12 ), float( 1 ), shelter.r );
-		const mediumDamp = mix( float( 0.8 ), float( 1 ), shelter.r );
-		const seaDepth = shared.waterLevel.sub( texture( seabedHeight, fieldUV( xz ) ).level( float( 0 ) ).r );
-		const damping = [ windDamp, windDamp, mediumDamp, float( 1 ) ].map( ( lee, c ) => fft.attenuation( c, seaDepth ).mul( lee ).mul( coastDamp ) );
 		// ( the fine cascade's level of detail apart, w: its physical damping alone )
-		const weights = vec4( damping[ 0 ], damping[ 1 ], damping[ 2 ], damping[ 3 ] ).toVar();
+		const weights = waveDamping( { fft, shared, shore, seabedHeight, shoreWaves }, xz ).weights.toVar();
 		const far = length( xz.sub( cameraPosition.xz ) );
 		const fineWeight = float( 1 ).sub( smoothstep( 60, 140, far ) );
 		const disps = [ 0, 1, 2, 3 ].map( ( c ) => cascade( fft.displacement, c, xz ).level( float( 0 ) ).xyz );

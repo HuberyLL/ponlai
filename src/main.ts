@@ -450,6 +450,8 @@ const fft = new OceanFFT( renderer, {
 	anisotropy: quality.water.fftAnisotropy,
 } );
 const caustics = new Caustics( renderer, fft );
+// the sea's gusts, slicks and windrows (the water's roughness, and the caustics' through the wave maps)
+const seaDetail = new SeaDetail( shared );
 // the veil's shells and the sea's ripple layers are built into the rain's and the water's materials
 setRainShading( quality.rainShading );
 rain = new Rain( { count: runtimeQuality.rainDrops } );
@@ -617,7 +619,7 @@ runtime.refractedSun = refractedSun;
 refractedSun.angleGate = THREE.MathUtils.degToRad( runtimeQuality.refractedSun.angleGate );
 // the stones', floor's and island parts' triangles under the water come with the chunks (World.ts)
 refractedSun.setCasters( world.group, world.subsets );
-refractedSun.bindTerrain( world.group );
+refractedSun.bindTerrain( world.group, caustics );
 await refractedSun.prepare();
 setGrassQuality( quality.grass );
 const grass = buildGrass( plantGrass( data.vegetation, data.rimGround, walkDistance, data.shore, data.rimLip ), shared, sunShadow );
@@ -745,10 +747,12 @@ const stormSea = new StormSea( renderer, fft, shared, fields.shore, shoreWaves, 
 } );
 water = new Water( {
 	fft, sky, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves,
-	land: landBox, sunShadow, storm: stormSea, detail: new SeaDetail( shared ),
+	land: landBox, sunShadow, storm: stormSea, detail: seaDetail,
 	sceneColor: pipeline.opaqueRT.texture, linearDepth: pipeline.depthRT.texture, quality: quality.water,
 	refraction: { color: pipeline.textures.refraction, depth: pipeline.textures.refractionDepth },
 } );
+// the light under the water follows the long waves the sea's surface shows (Caustics.ts, the wave maps)
+caustics.attachWaves( { fft, shared, shore: fields.shore, seabedHeight: fields.floor, shoreWaves, detail: seaDetail } );
 applySkyFill();
 waterScene.add( water.mesh );
 ( AFTER_RESOLVE ? afterScene : TEMPORAL ? rainScene : waterScene ).add( stormSea.spray.mesh );
@@ -1677,7 +1681,7 @@ function tick( time: number ): void {
 	stormSea.update( simTime, weather.state.storm, camera );
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
-	caustics.update( sky.keyDir );
+	caustics.update( sky.keyDir, camera );
 	characters?.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	game?.render( renderer, sun, paused ? 0 : rawDt );
 	S.focusDistance = camera.position.distanceTo( controls.target );

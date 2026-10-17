@@ -72,9 +72,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   parameters from `KEY_RIM`, never a rim of its own).
 - `src/materials/`: procedural textures (the gravel bake: `ProceduralTextures.ts`), the terrain
   (`TerrainMaterial.ts`), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`).
-- `src/ocean/`: FFT ocean, shore waves, caustics, water shading (`Water.ts`), the sea's large-scale
-  detail (`SeaDetail.ts`: gusts, slicks, windrows), the water's refraction source (`Refraction.ts`),
-  the storm sea.
+- `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps
+  (`WaveDamping.ts`), caustics and the wave maps the light under the water reads (`Caustics.ts`),
+  water shading (`Water.ts`), the sea's large-scale detail (`SeaDetail.ts`: gusts, slicks,
+  windrows), the water's refraction source (`Refraction.ts`), the storm sea.
 - `src/sky/`: atmosphere, environment bakes (`Sky.ts`), volumetric clouds, cirrus, the day cycle
   (`DayCycle.ts`), the night sky and its data (`NightSky.ts`, `StarCatalog.ts`), the weather: its sky presets, its wind's levels and heading and the auto chain (`Weather.ts`).
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the

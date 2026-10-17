@@ -18,6 +18,7 @@ const LICENCE_FILES: Record<string, string> = {
 	'licenses/VolumetricCloudsCS1.LICENSE.txt': 'src/sky/VolumetricCloudsCS1.LICENSE.txt',
 	'licenses/threejs-conference.LICENSE.txt': 'src/weather/threejs-conference.LICENSE.txt',
 	'licenses/tidewater-materials.LICENSE.txt': 'src/materials/tidewater.LICENSE.txt',
+	'licenses/tidewater-lighting.LICENSE.txt': 'src/lighting/tidewater.LICENSE.txt',
 	'licenses/tidewater-fsr2.LICENSE.txt': 'src/post/tidewater-fsr2.LICENSE.txt',
 	'licenses/godot-rain-shader.LICENSE.txt': 'src/materials/godot-rain-shader.LICENSE.txt',
 	'licenses/hextile-demo.LICENSE.txt': 'src/materials/hextile-demo.LICENSE.txt',

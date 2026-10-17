@@ -39,7 +39,9 @@ export class SeaDetail {
 	readonly gustAmount = uniform( 1 );
 	readonly slickAmount = uniform( 1 );
 	readonly streakAmount = uniform( 0.3 );
-	/** ( rough, gust, slick, streak ) at a world xz (explicit level: callable in branches). */
+	/** ( rough, gust, slick, streak ) at a world xz (explicit level: callable in branches). Inlined
+	 * where it is called: as a layout function reading this module's uniforms and texture, r186
+	 * emitted it with the first material's binding names in the next one that called it. */
 	readonly sample: ( xz: V2 ) => THREE.Node<'vec4'>;
 
 	constructor( shared: Shared ) {
@@ -82,7 +84,7 @@ export class SeaDetail {
 				.mul( float( 1 ).sub( streak.div( max( streakAmount, 1e-3 ) ).mul( 0.45 ) ) );
 			return vec4( rough, gust, slick, streak );
 
-		} ).setLayout( { name: 'seaDetailSample', type: 'vec4', inputs: [ { name: 'xz', type: 'vec2' } ] } );
+		} );
 
 	}
 

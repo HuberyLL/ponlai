@@ -13,7 +13,8 @@ packages, into `dist/licenses/`.
 - Copyright: (c) 2026 DRG Software Solutions LLC
 - Licence: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt),
   [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt),
-  [`src/materials/tidewater.LICENSE.txt`](src/materials/tidewater.LICENSE.txt) and
+  [`src/materials/tidewater.LICENSE.txt`](src/materials/tidewater.LICENSE.txt),
+  [`src/lighting/tidewater.LICENSE.txt`](src/lighting/tidewater.LICENSE.txt) and
   [`src/weather/tidewater.LICENSE.txt`](src/weather/tidewater.LICENSE.txt) (the same text)
 - From the three.js (TSL) edition, commit
   [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86):
@@ -31,8 +32,14 @@ packages, into `dist/licenses/`.
     `OceanFFT.ts` sums its two wave systems (`local` and `swell`) into four cascades of its sizes
     and bands, and takes the shallow-water attenuation of each cascade from `WaterSurface.js`.
   - `src/ocean/Caustics.ts`: the rasterised caustics of `Caustics.js`, two layers of two focal
-    planes with their lookup (dispersion, depth blur and fade, footprint filtering), ported from
-    WGSL to TSL.
+    planes with their lookup (dispersion, depth blur and fade, footprint filtering, the gust and
+    slick factor), ported from WGSL to TSL; and the wave maps of `UnderwaterLighting.js` (the long
+    waves, the mean level and that factor baked once a frame into two maps centred on the camera,
+    with their lookup).
+  - `src/lighting/Underwater.ts`: the key light and ambient under the water of
+    `UnderwaterLighting.js`'s direct and ambient hooks (the depth under the long waves, the
+    caustics through their slope, the ambient's attenuation and blue); `src/lighting/RefractedSun.ts`
+    reads the air's shadow map at the entry point of its shadow position hook.
   - `src/ocean/StormSea.ts`: the persistent whitecap foam of `OceanFFT.js` (build-up where the
     Jacobian folds, exponential decay), here on one world-space grid of the summed cascades.
   - `src/ocean/Water.ts`: the above-water shading of `WaterMaterial.js` (Fresnel, the sky

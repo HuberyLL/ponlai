@@ -6,10 +6,12 @@
 
 import * as THREE from 'three/webgpu';
 import {
-	attribute, texture, uniform, varying, vec2, vec3, vec4, float, int, normalize, refract, max, dFdx, dFdy, abs,
-	clamp, mix, smoothstep, exp, length,
+	Fn, If, attribute, texture, uniform, varying, vec2, vec3, vec4, float, int, normalize, refract, max, dFdx, dFdy, abs,
+	clamp, mix, smoothstep, exp, length, screenCoordinate,
 } from 'three/tsl';
-import type { OceanFFT } from './OceanFFT.ts';
+import { FFT_SIZE, type OceanFFT } from './OceanFFT.ts';
+import type { SeaDetail } from './SeaDetail.ts';
+import { waveDamping, type WaveDampingInputs } from './WaveDamping.ts';
 import { shared } from '../shared.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
 import { compileInto } from '../post/graph/Compile.ts';
@@ -39,6 +41,19 @@ import { compileInto } from '../post/graph/Compile.ts';
 // the first half metre and out with depth, times `strength`. Foam above diffuses the network and
 // shades the floor under it. With the pixel's footprint ( dpdx, dpdy of its xz ) the networks are
 // filtered over it, anisotropically; without it each lookup takes the depth's blur level alone.
+// Inside gusts the rougher water focuses more, in slicks less (SeaDetail, through the wave maps).
+//
+// The wave maps (tidewater's UnderwaterLighting bake, 4811ba4): what the light under the water needs
+// at a point depends on its xz alone (the long waves' height, slope and foam, the mean level, the
+// caustics' gust and slick factor), so it is baked once a frame into two maps centred on the camera
+// (0.25 m texels over 128 m, 2 m over 1 km, snapped to their texels so they do not crawl) instead of
+// every fragment that can be under the water reading the FFT and the shore waves. Beyond the far map:
+// a level sea. The long waves are the three coarsest cascades' height and the two coarsest's slope,
+// damped as the sea's surface is (WaveDamping.ts), and the rock's reflected wave; none over dry land.
+// The maps share the caustics' target, an array of five layers (the caustics in layer 0, the maps'
+// A and B in layers 1 to 4), so the materials lit under the water, already at WebGPU's 16 sampled
+// textures, bind no more. They are read at level 0 within half a texel of their edges, so neither
+// the repeat wrap nor the mip chain (made once a frame after the last layer drawn) reaches them.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -48,6 +63,15 @@ const ETA = 1 / 1.333;
 
 // the shared target's size
 const RES = 512;
+
+// the target's layers: the caustics, then per wave map ( height - sea level, slope x, slope z, foam )
+// and ( mean level - sea level, the caustics' gust and slick factor, 0, 1 )
+const CAUSTICS_LAYER = 0;
+const WAVE_EXTENTS = [ 128, 1024 ];
+const wavesLayer = ( level: number ) => 1 + level * 2, levelLayer = ( level: number ) => 2 + level * 2;
+const LAYERS = 1 + WAVE_EXTENTS.length * 2;
+// Above this height over the sea level no water reaches (m): the lookups return a level sea there.
+const WAVE_REACH = 2.5;
 
 interface LayerOptions { grid: number; depths: [ number, number ]; channel: 0 | 2; slopeLevel: number; margin: number }
 
@@ -136,7 +160,7 @@ class CausticLayer {
 	// pixel's footprint stretched to at least that level's texel.
 	fetch( uv: V2, level: F, footprint?: { dx: V2; dy: V2 } ): V2 {
 
-		const t = texture( this.target.texture, uv );
+		const t = texture( this.target.texture, uv ).depth( int( CAUSTICS_LAYER ) );
 		const planes = ( v: THREE.Node<'vec4'> ) => this.channel === 0 ? v.xy : v.zw;
 		if ( ! footprint ) return planes( t.level( level ) );
 		const minLength = level.exp2().div( RES );
@@ -151,7 +175,14 @@ class CausticLayer {
 export interface CausticsOptions {
 	slope?: V2; // the long waves' slope above ( dh/dx, dh/dz ): their refraction tilts the light
 	foam?: F; // foam or bubble cover above (0..1)
+	detail?: F; // the gust and slick factor above (the wave maps' B.y)
 	footprint?: { dx: V2; dy: V2 }; // dpdx and dpdy of the point's xz, taken in uniform control flow
+}
+
+/** What the wave maps' bake reads (Caustics.attachWaves). */
+export interface WaveMapInputs extends WaveDampingInputs {
+	shoreWaves: WaveDampingInputs['shoreWaves'];
+	detail: SeaDetail;
 }
 
 export class Caustics {
@@ -167,6 +198,11 @@ export class Caustics {
 
 	private scene = new THREE.Scene();
 	private camera = new THREE.OrthographicCamera( - 1, 1, 1, - 1, 0, 1 );
+	// the wave maps: each one's world origin (its texel ( 0, 0 )'s corner) and its bake, once attached
+	private readonly origins = WAVE_EXTENTS.map( () => uniform( new THREE.Vector2() ) );
+	private readonly wavesReady = uniform( 0 );
+	private bakes: { quad: THREE.QuadMesh; layer: number }[] = [];
+	private allocated = false;
 
 	constructor( renderer: THREE.WebGPURenderer, fft: OceanFFT ) {
 
@@ -174,7 +210,7 @@ export class Caustics {
 		// The floor is mostly seen at grazing angles: filtered along the view (anisotropic), sharp
 		// across it.
 		this.target = new THREE.RenderTarget( RES, RES, {
-			type: THREE.HalfFloatType, generateMipmaps: true,
+			depth: LAYERS, type: THREE.HalfFloatType, generateMipmaps: true,
 			minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter,
 			wrapS: THREE.RepeatWrapping, wrapT: THREE.RepeatWrapping, depthBuffer: false, anisotropy: 8,
 		} );
@@ -193,10 +229,69 @@ export class Caustics {
 
 	}
 
-	update( sunDir: THREE.Vector3 ): void {
+	/** Bakes the wave maps from now on (the world's fields and the shore waves exist): until then
+	 * the lookups read a level sea. */
+	attachWaves( inputs: WaveMapInputs ): void {
+
+		const { fft } = inputs;
+		WAVE_EXTENTS.forEach( ( extent, level ) => {
+
+			const texel = extent / RES, origin = this.origins[ level ];
+			// the world xz at this texel's centre (screen row 0 is texture row 0)
+			const xz = screenCoordinate.xy.mul( texel ).add( origin ).toVar();
+			const { weights, seaDepth } = waveDamping( inputs, xz );
+			const w = [ weights.x, weights.y, weights.z ];
+			const at = ( field: THREE.Texture, c: number, lvl: number ) => texture( field, xz.div( fft.sizes[ c ] ) ).depth( int( c ) ).level( float( lvl ) );
+			// the cascades read no finer than the bake's texel (and at least two levels down)
+			const lvl = ( c: number ) => Math.max( 2, Math.log2( texel * FFT_SIZE / fft.sizes[ c ] ) );
+			const waves = new THREE.NodeMaterial();
+			waves.fragmentNode = Fn( () => {
+
+				let h: F = float( 0 ), slope: V2 = vec2( 0 );
+				for ( let c = 0; c < Math.min( 3, fft.cascades ); c ++ ) {
+
+					h = h.add( at( fft.displacement, c, lvl( c ) ).y.mul( w[ c ] ) );
+					if ( c < 2 ) slope = slope.add( at( fft.derivatives, c, lvl( c ) ).xy.mul( w[ c ] ) );
+
+				}
+				const shore = inputs.shoreWaves.surfaceAt( xz, shared.time ).toVar();
+				// waves only over water: none over dry land (a deep trough there, so nothing above it
+				// counts as under the water)
+				const height = h.add( shore.x ).mul( smoothstep( 0, 1, seaDepth ) ).sub( smoothstep( 0, - 0.4, seaDepth ).mul( 10 ) );
+				// (the rocky shore draws no whitewater: no foam over the floor)
+				return vec4( height, slope.add( shore.yz ), 0 );
+
+			} )();
+			const mean = new THREE.NodeMaterial();
+			mean.fragmentNode = Fn( () => {
+
+				// the mean level from the two longest cascades
+				let h: F = float( 0 );
+				for ( let c = 0; c < Math.min( 2, fft.cascades ); c ++ ) h = h.add( at( fft.displacement, c, 3 ).y.mul( w[ c ] ) );
+				const sea = inputs.detail.sample( xz ).toVar();
+				// rougher water in gusts focuses more, slicks less (tidewater's causticsDetailK)
+				const detail = mix( float( 0.55 ), float( 1.25 ), sea.y ).mul( float( 1 ).sub( sea.z.mul( 0.6 ) ) );
+				return vec4( h.mul( smoothstep( 0, 3, seaDepth ) ), detail, 0, 1 );
+
+			} )();
+			this.bakes.push( { quad: new THREE.QuadMesh( waves ), layer: wavesLayer( level ) }, { quad: new THREE.QuadMesh( mean ), layer: levelLayer( level ) } );
+
+		} );
+
+	}
+
+	update( sunDir: THREE.Vector3, camera: THREE.Camera ): void {
 
 		const r = this.renderer;
 		this.sunDir.value.copy( sunDir );
+		const prev = r.getRenderTarget();
+		// One mip chain after the last layer drawn this frame. The first frame asks at every layer: a
+		// target's texture takes its mip levels from the flag at its first render.
+		const mips = ( last: boolean ) => {
+
+			this.target.texture.generateMipmaps = last || ! this.allocated;
+
+		};
 		// The pattern only scales the key light's direct share (Underwater.ts), so while the key gives
 		// no light at all (the sun/moon handoff) a redraw cannot change the image. The next frame
 		// with light redraws before anything renders. (debugFlags.causticsSkip = false: always.)
@@ -204,15 +299,35 @@ export class Caustics {
 		const dark = key.x === 0 && key.y === 0 && key.z === 0 && debugFlags.causticsSkip !== false;
 		if ( ! dark ) {
 
-			const prev = r.getRenderTarget();
 			const prevClear = r.getClearColor( new THREE.Color() ), prevAlpha = r.getClearAlpha();
 			r.setClearColor( 0x000000, 0 );
-			r.setRenderTarget( this.target );
+			mips( this.bakes.length === 0 );
+			r.setRenderTarget( this.target, CAUSTICS_LAYER );
 			r.render( this.scene, this.camera );
-			r.setRenderTarget( prev );
 			r.setClearColor( prevClear, prevAlpha );
 
 		}
+		if ( this.bakes.length > 0 ) {
+
+			// the maps' origins, snapped to whole texels so their texel centres stay put in the world
+			WAVE_EXTENTS.forEach( ( extent, level ) => {
+
+				const texel = extent / RES;
+				this.origins[ level ].value.set( Math.floor( camera.position.x / texel ) * texel - extent / 2, Math.floor( camera.position.z / texel ) * texel - extent / 2 );
+
+			} );
+			this.bakes.forEach( ( { quad, layer }, i ) => {
+
+				mips( i === this.bakes.length - 1 );
+				r.setRenderTarget( this.target, layer );
+				quad.render( r );
+
+			} );
+			this.wavesReady.value = 1;
+
+		}
+		r.setRenderTarget( prev );
+		this.allocated = true;
 
 		// a level sea's refracted sun ray (pointing down into the water); the entry point lies up-sun
 		// refract( -sun, up, eta ): T.xz = -eta sun.xz, T.y = -sqrt( k )
@@ -222,9 +337,48 @@ export class Caustics {
 
 	}
 
+	/** The wave maps' A at a world point: ( height of the long waves' surface over the sea level,
+	 * their slope x and z, foam over the floor ); a level sea above WAVE_REACH, beyond the far map
+	 * and before the first bake. Explicit levels: any branch. */
+	wavesAt( P: V3 ): THREE.Node<'vec4'> {
+
+		return this.mapLookup( P, wavesLayer, vec4( 0 ) );
+
+	}
+
+	/** The wave maps' B: ( mean level over the sea level, the caustics' gust and slick factor, 0, 1 ). */
+	levelAt( P: V3 ): THREE.Node<'vec4'> {
+
+		return this.mapLookup( P, levelLayer, vec4( 0, 0.9, 0, 1 ) );
+
+	}
+
+	private mapLookup( P: V3, layer: ( level: number ) => number, flat: THREE.Node<'vec4'> ): THREE.Node<'vec4'> {
+
+		return Fn( () => {
+
+			const out = flat.toVar();
+			const inside = ( st: V2 ) => st.x.greaterThan( 0.5 ).and( st.y.greaterThan( 0.5 ) ).and( st.x.lessThan( RES - 0.5 ) ).and( st.y.lessThan( RES - 0.5 ) );
+			const st = WAVE_EXTENTS.map( ( extent, level ) => P.xz.sub( this.origins[ level ] ).div( extent / RES ).toVar() );
+			const read = ( level: number ) => () => {
+
+				out.assign( texture( this.target.texture, st[ level ].div( RES ) ).depth( int( layer( level ) ) ).level( float( 0 ) ) );
+
+			};
+			If( this.wavesReady.greaterThan( 0.5 ).and( P.y.lessThan( shared.waterLevel.add( WAVE_REACH ) ) ), () => {
+
+				If( inside( st[ 0 ] ), read( 0 ) ).ElseIf( inside( st[ 1 ] ), read( 1 ) );
+
+			} );
+			return out;
+
+		} )();
+
+	}
+
 }
 
-function causticsLight( caustics: Caustics, P: V3, depth: F, mono: boolean, { slope, foam, footprint }: CausticsOptions ): V3 {
+function causticsLight( caustics: Caustics, P: V3, depth: F, mono: boolean, { slope, foam, detail, footprint }: CausticsOptions ): V3 {
 
 	const F = caustics.fine, B = caustics.broad;
 	// the light reaching this point entered the water up-sun along the refracted sun ray
@@ -262,6 +416,7 @@ function causticsLight( caustics: Caustics, P: V3, depth: F, mono: boolean, { sl
 
 	// none right at the surface, strongest in the first metres, fading with depth
 	let k: F = smoothstep( 0.03, 0.5, depth ).mul( exp( depth.mul( - 0.06 ) ) ).mul( caustics.strength );
+	if ( detail ) k = k.mul( detail );
 	if ( foam ) k = k.mul( float( 1 ).sub( clamp( foam, 0, 1 ) ) );
 	let result: V3 = mix( vec3( 1 ), c, k );
 	// foam and bubble clouds scatter the light back up: the floor under them is shaded
