@@ -40,7 +40,7 @@ export const PALM_WIND = { cycles: 30, slow: 1 } as const;
  * view the far meadow's sway is gone, which cut its single-frame flashes by two thirds (a later
  * window, 6.5 to 8.5, cut them only a few per cent more). */
 export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust: 0.02 }, shiver: { base: 0.003, gust: 0.006 }, fade: { none: 4, full: 7 },
-	pressed: { length: 0.28, stiffness: 1, underside: 1, always: true } } as const;
+	pressed: { length: 0.28, stiffness: 1, underside: 1, always: true }, head: { sway: 5 } } as const;
 // `pressed`: the meadow under a wind above fair's (`bendBlade`): the tuft height (m) at which the
 // wind's load is the lean the gust field gives (the lawn's, Meadow.ts SWARD_HEIGHT), the blades'
 // flexural rigidity in that unit, and how much lighter the blades' pale side shows where they lie
@@ -56,6 +56,11 @@ export const GRASS_WIND = { cycles: 50, spread: 0.8, swing: { base: 0.009, gust:
 // follows the blade's length at a fair wind too, so a long blade shows it there and the short
 // exposed turf barely moves. Each tussock adds its own rigidity (`bendBlade`'s `rigidity`), so a
 // gust presses neighbouring tussocks apart rather than combing the sward in one direction.
+// `head`: a flower head on its thin stem (`bendBlade`'s `flower`) leans with the gust field's lean
+// itself, whatever its tuft's height, and nods about it by `sway` times the blades' sway and
+// shiver. A tussock's load grows with the cube of its height, and the low species grow on the
+// short tussocks (Grass.ts), so heads bent as their tufts' blades moved a quarter to a fifth as
+// far as the sward around them in every wind and read as standing still.
 
 /** A plant's main bend, after Sousa's "Vegetation Procedural Animation and Shading in Crysis"
  * (GPU Gems 3, ch. 16): the whole plant leans with the gust field at its root and sways a little
@@ -96,7 +101,9 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
  * and shiver across it on their own phase, a quarter of that sway. `fade` (0..1, `swayFade`)
  * scales the sway and shiver but not the lean; the frame's bend and the previous frame's take the
  * same one. `wind` is the frame's wind state (`shared.wind`, or `.previous`). `rigidity` (the
- * blade's tussock's, 1 when not given) divides the wind's load.
+ * blade's tussock's, 1 when not given) divides the wind's load. `flower` (1 on a flower's head and
+ * stem, 0 on a blade) bends the vertex by GRASS_WIND.head instead: the gust field's lean and five
+ * times the sway and shiver, the tilt with them, never pressed by the tuft's height.
  * Above fair's wind (Wind.ts `pressing`, 0 up to fair's pressure, so a fair day's blades bend to
  * the bit as before) the blade takes the elastica's shape under the wind's pressure (Wind.ts
  * `pressedLean`), its load the linear lean and sway scaled by the cube of the tuft's height over
@@ -115,7 +122,7 @@ export function mainBend( wind: WindState, position: V3, root: V3, amplitude: F,
  * field's pressed grass shows light ones. The islanders' trail through the
  * grass (a later field) would join the lean here, so the blade arcs over and sinks as under the
  * wind. */
-export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F, rigidity?: F ): { position: V3; lean: V3; tilt: V3; pale: F } {
+export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t2: F, phase: F, fade?: F, rigidity?: F, flower?: F ): { position: V3; lean: V3; tilt: V3; pale: F } {
 
 	const field = windField( wind, origin.xz ).toVar();
 	const along = vec3( field.x, 0, field.y ), across = vec3( field.y.negate(), 0, field.x );
@@ -137,8 +144,19 @@ export function bendBlade( wind: WindState, rooted: V3, origin: V3, height: F, t
 	const pale = float( 1 ).add( float( 1 ).sub( inverseSqrt( pressed.mul( pressed ).mul( t2 ).add( 1 ) ) ).mul( press.mul( underside ) ) );
 	const rel = rooted.sub( origin ).toVar();
 	const reach = length( rel );
-	const bent = normalize( rel.add( lean.mul( height.mul( t2 ) ) ).add( vec3( 0, 1e-5, 0 ) ) ).mul( reach ).add( origin );
-	return { position: bent, lean, tilt: eased, pale };
+	let offset: V3 = lean.mul( height.mul( t2 ) ), tilt: V3 = eased;
+	if ( flower ) {
+
+		// a flower's head and stem (`flower` 1): the gust field's lean and the sway, unscaled by the
+		// tuft's height (GRASS_WIND.head); a blend, exact for the blades (`flower` 0)
+		const { sway } = GRASS_WIND.head;
+		const nod = along.mul( field.z.add( swing.mul( sway ) ) ).add( across.mul( shiver.mul( sway ) ) ).toVar();
+		offset = mix( offset, nod.mul( height.mul( t2 ) ), flower );
+		tilt = mix( eased, nod, flower );
+
+	}
+	const bent = normalize( rel.add( offset ).add( vec3( 0, 1e-5, 0 ) ) ).mul( reach ).add( origin );
+	return { position: bent, lean, tilt, pale };
 
 }
 

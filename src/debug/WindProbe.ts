@@ -14,7 +14,7 @@ import type { Shared } from '../shared.ts';
 // vegetation/Deform.ts `bendBlade` and `mainBend` with each kind's constants), evaluated in a compute kernel built on the first
 // call (none exists on a page that never calls it, so the page's pipelines are unchanged), for the
 // plants' own inputs: tufts grown as the page grows them (`plantGrass`, sampled; the flowering
-// tufts' heads bend as their blades' tips), the game's palms. The wind is a copy of the page's (`Wind`, the same
+// tufts' heads, which sway on their own, `bendBlade`'s `flower`, are not), the game's palms. The wind is a copy of the page's (`Wind`, the same
 // speed, heading, gustiness and scene time), stepped on the CPU and handed to the kernel per step through a
 // storage buffer, so the page's own wind is never touched. Two time series: fast (64 x 0.05 s,
 // the swing) and slow (40 x 0.5 s, the gusts' travel). Options: DEFAULTS below. The result is

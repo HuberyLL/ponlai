@@ -123,8 +123,9 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   over the lawn's blades, a head and its stem (`flowerTuftGeometry`), so the other tufts run no
 //   head vertices; the head's and the stem's indices come first, so every band keeps them whole
 //   while its tuft drops blades. A stem is a blade on the stem's curve (STEM_TIP); a head goes
-//   through the blades' stages (placed by its tuft, bent by the wind as a tip,
-//   shaded by the larger casters, out of the sun's map), taking its own pose, petal colour and
+//   through the blades' stages (placed by its tuft, bent by the wind, shaded by the larger
+//   casters, out of the sun's map); it and its stem sway on their own, leaning with the gust
+//   field and nodding about it whatever their tuft's height (Deform.ts GRASS_WIND.head), taking its own pose, petal colour and
 //   light in a blend by its vertex flag (`headPose`, `headShape`: no new varying, the head's
 //   values ride in the blade's; its species by the tuft's flower code). Far off it widens to a
 //   least size on screen and is drawn whole by its hash, as the blades are, and rises above its
@@ -1233,8 +1234,8 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 	// kept (`swayFade`); one share for the whole tuft, its head with it. The temporal modes resolve
 	// the far sway themselves and keep it whole.
 	const fade = TEMPORAL ? undefined : swayFade( origin, tuft.w ).toVar( 'grassSwayFade' );
-	// Each blade bends in the wind by its own length (the wind's load grows with its cube), a head by
-	// its tuft's height. The bend keeps every vertex at its distance from the root, so a blade above
+	// Each blade bends in the wind by its own length (the wind's load grows with its cube), a head and
+	// its stem by its tuft's height on a sway of their own (Deform.ts GRASS_WIND.head). The bend keeps every vertex at its distance from the root, so a blade above
 	// its root stays above it; on sloping ground a blade pressed flat could still pass into the
 	// slope, so the bent blade is held on the tuft's plane through its (sunk) root (`grounded`).
 	const bendHeight = mix( pose.metres.mul( CANOPY_TOP ), tuft.w, flowerPart ).toVar();
@@ -1280,7 +1281,7 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		return q.add( vec3( outward.x, 0, outward.y ).mul( held.sub( o ).mul( ease ).mul( edgeOn ) ) );
 
 	};
-	const bend = bendBlade( shared.wind, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness );
+	const bend = bendBlade( shared.wind, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart );
 	const bent = holdOff( drape( grounded( bend.position ) ) ).toVar( 'grassBent' );
 	// A blade of a tuft past 70 m stands for as many of the blades it drew there as its gain over
 	// NEAR_GAIN (exactly 1 within 70 m) and is drawn as that many strips side by side, each with its
@@ -1343,11 +1344,11 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		// The widening and the narrowing by distance (`pixelWideBlade`, `tuftLod`) follow the current
 		// camera: a previous frame's pose from the registered displacement keeps them as they are now.
 		displacement: ( state ) => pixelWideBlade(
-			state === shared.wind ? bent : holdOff( drape( grounded( bendBlade( state, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness ).position ) ) ), across, minWidth, keep, gain, isHead, headSize.coverage ),
+			state === shared.wind ? bent : holdOff( drape( grounded( bendBlade( state, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart ).position ) ) ), across, minWidth, keep, gain, isHead, headSize.coverage ),
 		// Motion vectors (temporal modes): the blade bent by the previous frame's wind from the same
 		// rooted point, widened by the offset the current pose took (the widening follows the camera,
 		// whose motion Motion.ts adds): swayed - ( bent now - bent before ).
-		previous: ( swayed ) => TEMPORAL ? swayed.sub( bent ).add( holdOff( drape( grounded( bendBlade( shared.wind.previous, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness ).position ) ) ) ) : undefined,
+		previous: ( swayed ) => TEMPORAL ? swayed.sub( bent ).add( holdOff( drape( grounded( bendBlade( shared.wind.previous, rooted, origin, bendHeight, t2, phase, fade, clump.stiffness, flowerPart ).position ) ) ) ) : undefined,
 		// The rest of three's instancing: the normal and the instance colour, before the blade moves.
 		beforePosition: () => {
 
