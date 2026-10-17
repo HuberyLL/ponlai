@@ -194,8 +194,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 - `terrainHex=0` (the cliff's plain triplanar tiling and smooth layer masks; for an A/B inside one
   page each cliff material swaps to its other variant through `material.userData.terrainVariant`,
   as `TerrainMaterial.ts` shows: the flag itself is read only when the material is built).
-- `post=legacy` (or a comma list of `inline-composite`, `full-fog`, `no-bank`, `inline-coc`,
-  `three-fsr`, `store-scene`: the frame graph without the first performance round's changes).
+- `post=legacy` (or a comma list of `inline-composite`, `full-fog`, `no-bank`, `three-fsr`,
+  `store-scene`: the frame graph without the first performance round's changes).
 - `shadowFilter=legacy|sl1|sl1,sl3` (the sun shadow's filter path).
 - `gpuTimer=off` (high's dynamic resolution without its timestamp queries: it then steers by the
   frame intervals).
@@ -968,7 +968,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   rate, so both sides of an A/B run at one pace); `--frame-fallback` keeps the automatic fallback
   (72 -> 48 fps on a 144 Hz display) on.
 - `--eval` runs in the page with `s` = `window.__PONLAI__` (an ablation, e.g.
-  `--eval "s.pipeline.settings.dof = 0"`); `--report profile.json` re-renders a summary (`--report <dir>`
+  `--eval "s.pipeline.settings.bloom = 0"`); `--report profile.json` re-renders a summary (`--report <dir>`
   rebuilds an unfinished run's, see above).
 
 ### Measuring frame time

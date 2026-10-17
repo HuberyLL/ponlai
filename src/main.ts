@@ -828,7 +828,6 @@ const reviewView = { camera: 'island' as CameraView };
 const fovWidening = { on: params.get( 'nearFov' ) !== 'off' };
 controls.nearFov = numberParam( 'nearFov', controls.nearFov );
 controls.widenFrom = numberParam( 'nearFovFrom', controls.widenFrom );
-let orbitDof = S.dof;
 const viewDirection = new THREE.Vector3();
 
 // The island view on this land at the `polar` and `az` options (degrees): the camera that just
@@ -969,7 +968,6 @@ function setCameraMode( mode: string ): void {
 
 	framingGlide.stop();
 	if ( controls.enabled ) settleOrbit();
-	if ( mode === 'free' && ! freeControls.enabled ) orbitDof = S.dof;
 	if ( mode === 'free' ) unwidenFov();
 	if ( mode === 'orbit' && freeControls.enabled ) {
 
@@ -981,8 +979,6 @@ function setCameraMode( mode: string ): void {
 	sceneEvent( 'camera mode' );
 	controls.enabled = mode === 'orbit';
 	freeControls.enabled = mode === 'free';
-	// Sharp sky details are essential when inspecting stars and the lunar disk.
-	S.dof = freeControls.enabled ? 0 : orbitDof;
 	applyOrbitLimit();
 	if ( controls.enabled ) controls.settle();
 	renderer.domElement.style.cursor = freeControls.enabled ? 'grab' : '';
@@ -1116,7 +1112,7 @@ antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)'
 if ( pipeline.fsr3 ) antialiasingF.add( pipeline.fsr3.settings.fsr3, 'sharpness', 0, 1, 0.01 ).name( 'FSR sharpness' );
 if ( pipeline.temporal ) {
 
-	const T = pipeline.temporal.settings, K = pipeline.temporal.knobs;
+	const T = pipeline.temporal.settings;
 	antialiasingF.add( T, 'framesStill', 1, 32, 1 ).name( 'history frames, still' );
 	antialiasingF.add( T, 'framesMoving', 1, 32, 1 ).name( 'history frames, moving' );
 	antialiasingF.add( T, 'speedFull', 1, 64, 1 ).name( 'moving from (px/frame)' );
@@ -1128,7 +1124,6 @@ if ( pipeline.temporal ) {
 	antialiasingF.add( T.sharpness.taau, '0', 0, 2, 0.05 ).name( 'taau softness at 1:1' );
 	antialiasingF.add( T.sharpness.taau, '1', 0, 2, 0.05 ).name( 'taau softness at 2:1' );
 	antialiasingF.add( T, 'skyPassThrough' ).name( 'sky without history' );
-	antialiasingF.add( K.dofCut, 'value', 0, 1, 0.05 ).name( 'history cut in DoF blur' );
 	antialiasingF.add( T, 'restSettle', 0, 32, 1 ).name( 'rest: settle frames' );
 	antialiasingF.add( T, 'restSequence', 0, 64, 1 ).name( 'rest: jitter frames' );
 
@@ -1233,9 +1228,6 @@ postF.add( S, 'bloom', 0, 0.3, 0.005 );
 postF.add( S, 'warmth', - 0.1, 0.1, 0.005 );
 postF.add( S, 'saturation', 0, 2, 0.01 );
 postF.add( S, 'contrast', 0.8, 1.3, 0.01 );
-postF.add( S, 'dof', 0, 1, 0.01 ).name( 'tilt-shift' ).listen();
-postF.add( S, 'dofRange', 0, 20, 0.1 );
-postF.add( S, 'dofMaxRadius', 0, 20, 0.1 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
 postF.add( S, 'grain', 0, 0.05, 0.001 );
 if ( DEBUG ) {
@@ -1623,10 +1615,6 @@ function tick( time: number ): void {
 	groundBounce.update( sky.seaRadiance );
 	characters?.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	game?.render( renderer, sun, paused ? 0 : rawDt );
-	S.focusDistance = camera.position.distanceTo( controls.target );
-	// (the drops blur by the depth of field in the pixels they are drawn at: the canvas's after the
-	// resolve)
-	rain!.setFocus( S.focusDistance, S.dofRange, S.dofMaxRadius * ( AFTER_RESOLVE ? pipeline.outputHeight : pipeline.height ) / 900, S.dof );
 
 	// (the ground truth draws the storm's spray with the rain, in the overlay pass; taa and taau draw
 	// it with the streaks after the resolve)
@@ -1872,7 +1860,7 @@ const setTime = ( t: number ) => {
 //   clock (hour or preset, moon phase, day length, paused), the scene clock (`t`, `paused`) and the
 //   wind integrated to it, the cloud override.
 // - The camera: the orbit's island view at the query's dist / polar / az (`placeOrbit`, as the load
-//   places it), the controls' limits and depth of field restored, in the query's camera mode.
+//   places it) and the controls' limits restored, in the query's camera mode.
 // - What the scenes before left behind is cleared: the sky bakes as the page's first bake (Sky.reset:
 //   both endpoints and atlases, the clouds as before the first frame), the lightning forgets its
 //   strikes, the storm sea its foam window, the islander its clips, the refracted sun its map

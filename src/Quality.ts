@@ -168,9 +168,9 @@ export interface QualityProfile {
 	taa: TemporalSettings;
 	render: RenderScaleRule;
 	water: WaterQuality;
-	// the frame graph's structural options (sea fog, depth of field, bloom); the rest keep their
+	// the frame graph's structural options (sea fog, bloom); the rest keep their
 	// defaults
-	post: Pick<PostOptions, 'fogScale' | 'fogSteps' | 'bankSize' | 'dofTaps'>;
+	post: Pick<PostOptions, 'fogScale' | 'fogSteps' | 'bankSize'>;
 	// the sun shadow's filter, for most receivers, for vegetation and for the sea's surface (both
 	// stepped maps alike). On the sea it shades only the glints and the subsurface glow, so a lighter
 	// filter there shows little at noon.
@@ -221,7 +221,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		taa: { ...TAA },
 		render: { dynamic: { max: 2, baselineShare: 2 / 3, floorShare: 0.5, step: 0.05 } },
 		water: { ssrRays: 2, ssrSteps: 20, ssrGrowth: 1.3, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
-		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048, dofTaps: 16 },
+		post: { fogScale: 0.5, fogSteps: 12, bankSize: 2048 },
 		shadow: { surface: PCSS_HIGH, vegetation: PCSS_HIGH },
 		// 24 of each tuft's 48 blades, the kept ones twice as wide (they widen to keep the cover),
 		// at least 1.5 pixels wide under MSAA (Grass.ts `grassUniforms`): at the island view's 45 m
@@ -247,7 +247,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		taa: { ...TAA, sharpness: { taa: TAA.sharpness.taa, taau: [ 2.0, 1.5 ] } },
 		render: { budget: 1600 * 900 },
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
-		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048, dofTaps: 16 },
+		post: { fogScale: 0.5, fogSteps: 8, bankSize: 2048 },
 		shadow: { surface: PCSS_LIGHT, vegetation: BILINEAR },
 		grass: { lawnBlades: [ 12, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 3, rippleLayers: 2 },
@@ -268,7 +268,7 @@ export const QUALITY: Readonly<Record<QualityTier, Readonly<QualityProfile>>> = 
 		render: { budget: 1280 * 720 },
 		// (the merged storm foam turned the crests' streaks into scattered lace: kept as on high)
 		water: { ssrRays: 1, ssrSteps: 14, ssrGrowth: 1.51, ssrMinFresnel: 0.05, ssrOneRayFresnel: 0.05, stormFoam: 'full', fftAnisotropy: 4 },
-		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024, dofTaps: 16 },
+		post: { fogScale: 0.25, fogSteps: 8, bankSize: 1024 },
 		shadow: { surface: BILINEAR, vegetation: BILINEAR },
 		grass: { lawnBlades: [ 8, 8, 4 ], bladeBands: [ 25, 45, 70 ], thinTufts: false, canopyPerVertex: true, minWidth: 2 },
 		rainShading: { veilShells: 2, rippleLayers: 1 },

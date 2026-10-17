@@ -17,11 +17,10 @@
 //   fail to install, main.ts stops the page);
 // - `fsr3`: AMD's FSR 3.1 upscaler (post/fsr3/, Fsr3Upscaler.ts): one sample, jittered with FSR's
 //   own sequence, with motion vectors, like the temporal modes, but resolved by FSR at AMD's
-//   placement: on the composite's HDR image, before the blooms, the depth of field, the look's glow
-//   and the grade, which run on FSR's output at the canvas's size (Pipeline.ts). It has no
-//   TemporalAA (`RESOLVE` false), draws the rain before the composite as the ground truth does
-//   (`AFTER_RESOLVE` false) and needs the composite pass (`post=inline-composite` is refused with
-//   a warning: msaa). Refused, as the temporal modes, where three's cache keys cannot be patched;
+//   placement: on the composite's HDR image, before the bloom and the grade, which run on FSR's
+//   output at the canvas's size (Pipeline.ts). It has no TemporalAA (`RESOLVE` false), draws the
+//   rain before the composite as the ground truth does (`AFTER_RESOLVE` false) and needs the
+//   composite pass (`post=inline-composite` is refused with a warning: msaa). Refused, as the temporal modes, where three's cache keys cannot be patched;
 // - `gt` (debug builds only): the ground truth the temporal modes are measured against, the
 //   temporal graph rendered at the canvas's resolution whose image at rest averages many jittered
 //   frames with a box filter (TemporalAA.ts, TemporalRest.ts): 64 by default, `tier.taa.gtJitters`.

@@ -19,8 +19,7 @@ type V4 = THREE.Node<'vec4'>;
 // in the post pass) plus analytic ripples on the water normal. Drops are a stateless function of
 // the clock, the wind's integrated travel and the camera, so a paused frame repeats exactly; they
 // stop on the first surface in the collision map (RainCollision.ts, the island's rest pose) and
-// splash there (crown and droplets on land, rings on the sea). Out-of-focus drops follow the
-// tilt-shift blur. `registerLatent` registers its draws and kernels with the frame graph's `rain`
+// splash there (crown and droplets on land, rings on the sea). `registerLatent` registers its draws and kernels with the frame graph's `rain`
 // pass, whose warm-up (post/graph/FrameGraph.ts) compiles them at startup, so a weather change
 // builds no pipeline.
 // Under taa and taau (Antialiasing.ts AFTER_RESOLVE) the drops, their splashes and the veil draw
@@ -279,18 +278,6 @@ export class Rain {
 
 		} );
 		return coverage;
-
-	}
-
-	/** Follow the composite's tilt-shift focus (distance and sharp range in metres, the widest
-	 * blur in pixels, its strength), so drops blur as the scene around them does. */
-	setFocus( distance: number, range: number, radius: number, strength: number ): void {
-
-		const f = this.drops.focus;
-		f.distance.value = Math.max( distance, 1 );
-		f.range.value = range;
-		f.radius.value = radius;
-		f.strength.value = strength;
 
 	}
 

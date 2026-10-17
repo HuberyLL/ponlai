@@ -58,8 +58,7 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   reactive inputs (the velocity's
 //   alpha: a bolt, and under the ground truth the rain and spray; a strike's flash; under the ground
 //   truth the rain veil's per-pixel reactive `veilReactive`; after FSR 2's reactive and
-//   transparency-and-composition masks) and where the depth of field
-//   blurs (its foreground blur spreads over background pixels whose motion it does not follow).
+//   transparency-and-composition masks).
 // - Movers (taa, taau; not lite, not the ground truth's frames; each a debug flag read every frame,
 //   `taaVelocityReject`, `taaClampDrop`, `taaMotionCap`, `taaWiden`, all four `taaMovers`; on by
 //   default): where things move the history must go faster than the frames' count alone lets it.
@@ -226,8 +225,6 @@ export interface TemporalInputs {
 	// the rain veil's per-pixel reactive weight (the composite writes it: Pipeline.ts; none when the
 	// veil is drawn after the resolve)
 	veilReactive: ResourceHandle | null;
-	// the depth of field's distances, when the pipeline keeps them (read by `dofBlur`)
-	viewDistance: ResourceHandle | null;
 	canvas: ResourceHandle;
 	// after the resolve (AfterResolve.ts): declares the pass that draws the overlay, after the
 	// resolve's and before the canvas pass, and returns what the canvas passes read (`optional`:
@@ -242,8 +239,6 @@ export interface TemporalOptions {
 	vignette: ( size: Uniform2 ) => F;
 	// the canvas's grain and dither (`on` 0 leaves them out)
 	finish: ( s: V3, size: Uniform2, on: F ) => V4;
-	// a fresh function (one per shader) giving the depth of field's blur weight at a render uv
-	dofBlur: () => ( q: V2 ) => F;
 	// a fresh node (one per shader): what the canvas pass adds to its image at its pixel, after the
 	// resolve (the change to the graded colour, in linear light under `linear`, without the vignette;
 	// alpha 1 where there is one, else 0)
@@ -313,8 +308,6 @@ export class TemporalAA {
 	sharpnessTarget = 1;
 	/** Live knobs of the resolve outside the tier's table. */
 	readonly knobs = {
-		// the share of the history's frames that goes where the depth of field blurs fully
-		dofCut: uniform( 0.5 ),
 		// disocclusion: relative and absolute depth tolerance (m)
 		disoccludeRelative: uniform( 0.02 ), disoccludeAbsolute: uniform( 0.05 ),
 	};
@@ -491,7 +484,7 @@ export class TemporalAA {
 
 		const g = this.graph;
 		const O = this.options;
-		const { display, velocity, surfaceDepth, surfaceDepthPrev, veilReactive, viewDistance } = inputs;
+		const { display, velocity, surfaceDepth, surfaceDepthPrev, veilReactive } = inputs;
 		let canvas = inputs.canvas;
 		const renderSize = g.extent( RENDER ), outputSize = g.extent( this.historyClass ), canvasSize = g.extent( CANVAS );
 		// TAAU (but lite, and with the veil's reactive weight, which the resolve reads per output pixel):
@@ -515,7 +508,6 @@ export class TemporalAA {
 				b.read( display );
 				b.readOptional( velocity );
 				b.read( surfaceDepth );
-				if ( viewDistance ) b.readOptional( viewDistance );
 				// (the attachments in the struct's order; the MRT only declares them, as the resolve's)
 				for ( let i = 0; i < near.length; i ++ ) near[ i ] = b.write( near[ i ] );
 				this.nearHandles = near;
@@ -555,7 +547,6 @@ export class TemporalAA {
 			b.read( surfaceDepth );
 			b.read( surfaceDepthPrev );
 			if ( veilReactive ) b.readOptional( veilReactive );
-			if ( viewDistance ) b.readOptional( viewDistance );
 			b.read( this.historyPrev );
 			if ( this.statePrev ) b.read( this.statePrev );
 			if ( smooth && this.smoothPrev ) b.read( this.smoothPrev );
@@ -807,7 +798,6 @@ export class TemporalAA {
 		const lite = S.lite;
 		const linear = S.linear;
 		const near = rest ? null : t.near;
-		const dofBlur = O.dofBlur();
 		// (the movers: the running resolve and its debug views, where the state exists)
 		const movers = rest ? null : state;
 		const out = Fn( () => {
@@ -1022,7 +1012,7 @@ export class TemporalAA {
 					const veil = t.veil;
 					const reactive = lite ? reactiveUniforms.flash : max( velocity.w, veil ? max( reactiveUniforms.flash,
 						( textureLoad( veil, ivec2( clamp( floor( pIn ), vec2( 0 ), last ) ) ) as unknown as V4 ).r ) : reactiveUniforms.flash );
-					( { mean, extent, frames } = this.hoodStats( m1!, m2!, n, velocity, nearCell!, zNear, reactive, inputSize, outputSize, dofBlur ) );
+					( { mean, extent, frames } = this.hoodStats( m1!, m2!, n, velocity, zNear, reactive, outputSize ) );
 
 				}
 				if ( mv ) {
@@ -1117,10 +1107,10 @@ export class TemporalAA {
 	// nearest surface's motion (`velocity`, at input pixel `nearCell`; its class in b): the clip
 	// box's centre and half-widths (variance clipping toward the mean, wider while moving, by
 	// class), and the frames' worth the history may keep (fewer while it moves, by class, less where
-	// it is `reactive` or the depth of field blurs).
-	private hoodStats( m1: V3, m2: V3, n: number, velocity: V4, nearCell: V2, z: F, reactive: F, inputSize: Uniform2, outputSize: Uniform2, dofBlur: ( q: V2 ) => F ): { mean: V3; extent: V3; frames: F } {
+	// it is `reactive`).
+	private hoodStats( m1: V3, m2: V3, n: number, velocity: V4, z: F, reactive: F, outputSize: Uniform2 ): { mean: V3; extent: V3; frames: F } {
 
-		const u = this.u, K = this.knobs;
+		const u = this.u;
 		// the surface's class (the velocity's b: 0, 0.25 ... 1)
 		const cls = round( clamp( velocity.z, 0, 1 ).mul( 4 ) ).toVar();
 		const byClass = ( values: THREE.UniformNode<'float', number>[] ) => byClassOf( cls, values );
@@ -1129,7 +1119,6 @@ export class TemporalAA {
 		const sd = sqrt( max( m2.div( n ).sub( mean.mul( mean ) ), vec3( 0 ) ) );
 		const gamma = mix( u.gammaStill, u.gammaMove, smoothstep( 0, 2, speed ) ).add( byClass( u.classGamma ) );
 		const extent = sd.mul( max( gamma, 0.05 ) ).add( 1e-5 ).toVar();
-		const dof = float( 1 ).sub( K.dofCut.mul( dofBlur( nearCell.add( 0.5 ).div( inputSize ) ) ) );
 		// (the sea's share grows to a whole history with distance, and its glints' reactive weight fades:
 		// its normals move at the waves' phase speed, which the motion vectors leave out, by under a pixel
 		// a frame far off; a strike's flash still counts)
@@ -1144,7 +1133,7 @@ export class TemporalAA {
 		} );
 		const still = select( cls.equal( 2 ), u.framesStillWater, u.framesStill );
 		const frames = mix( still, u.framesMoving, smoothstep( 0, u.speedFull, speed ) ).mul( share )
-			.mul( clamp( float( 1 ).sub( react ), 0, 1 ) ).mul( dof );
+			.mul( clamp( float( 1 ).sub( react ), 0, 1 ) );
 		return { mean, extent, frames };
 
 	}
@@ -1156,7 +1145,6 @@ export class TemporalAA {
 	private neighbourhood( t: { display: THREE.Texture; velocity: THREE.Texture; depth: THREE.Texture }, inputSize: Uniform2, outputSize: Uniform2 ): V4 {
 
 		const K = this.knobs;
-		const dofBlur = this.options.dofBlur();
 		// (one body for the three attachments: an output struct is the material's own node, so the
 		// three are a matrix's columns, as the resolve's second attachment is its first's)
 		const m = Fn( () => {
@@ -1186,7 +1174,7 @@ export class TemporalAA {
 			const velocity = ( textureLoad( t.velocity, ivec2( clamp( nearCell, vec2( 0 ), last ) ) ) as unknown as V4 ).toVar();
 			const tolerance = abs( nearZ ).mul( K.disoccludeRelative ).add( K.disoccludeAbsolute );
 			const edge = select( nearZ.sub( farZ ).greaterThan( tolerance ), float( 1 ), float( 0 ) );
-			const { mean, extent, frames } = this.hoodStats( m1, m2, TAPS_3X3.length, velocity, nearCell, nearZ, max( velocity.w, reactiveUniforms.flash ), inputSize, outputSize, dofBlur );
+			const { mean, extent, frames } = this.hoodStats( m1, m2, TAPS_3X3.length, velocity, nearZ, max( velocity.w, reactiveUniforms.flash ), outputSize );
 			return mat4( vec4( mean, frames ), vec4( extent, edge ), vec4( velocity.xy, nearZ.div( NEAR_Z_SCALE ), velocity.z ), vec4( 0 ) );
 
 		} )() as unknown as { element( i: number ): THREE.Node<'vec4'> };
@@ -1322,7 +1310,7 @@ export class TemporalAA {
 	private applySettings(): void {
 
 		const S = this.settings, u = this.u;
-		const k = JSON.stringify( S ) + JSON.stringify( [ this.knobs.dofCut.value, this.knobs.disoccludeRelative.value, this.knobs.disoccludeAbsolute.value ] );
+		const k = JSON.stringify( S ) + JSON.stringify( [ this.knobs.disoccludeRelative.value, this.knobs.disoccludeAbsolute.value ] );
 		if ( k === this.settingsKey ) return;
 		this.settingsKey = k;
 		this.settingsVersion ++;
