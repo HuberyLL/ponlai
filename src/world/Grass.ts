@@ -78,7 +78,7 @@ import type { SunShadow } from '../lighting/SunShadow.ts';
 //   of the sun's map around each vertex (`SunShadow.softVisibility`), no penumbra search, taken in
 //   the vertex stage and handed to the sun's filter in place of its own (`userData.sunVisibility`);
 //   the clouds' shade multiplies in as on every surface (SolarShadow's `installOpenShadow`).
-// - On screen a blade stays at least two pixels wide at 4x (0.75 on the outer rim, where partly
+// - On screen a blade stays at least 1.5 pixels wide at 4x (0.75 on the outer rim, where partly
 //   covered pixels show a pale fringe over the sea), and under the temporal modes the tier's
 //   `minWidth` (0 on high, the rim's no wider), so the meadow does not crawl as the camera moves, and
 //   the coverage the widening would lower is kept by whole blades instead: a widened blade draws
@@ -592,18 +592,20 @@ function flowerTuftGeometry( lawn: THREE.BufferGeometry ): THREE.BufferGeometry 
 // widened across the view, and its coverage falls by the same factor, so it hides as much of the
 // ground as the thin blade did at every distance. This is the treatment of thin wires after Emil
 // Persson ("Phone-wire AA", Humus, 2012). Two pixels brought a slow orbit's meadow flicker most of
-// the way to a supersampled render's; narrower widths left more of it, wider ones soften the
-// blades further for little gain. The coverage is not drawn as partly covered pixels but as whole
+// the way to a supersampled render's; wider ones soften the blades further for little gain. At 4x
+// a blade keeps 1.5: high's 24 blades a tuft (Quality.ts) draw a third thinner at the island
+// view than 16 at two pixels, with the same flicker relative to the many-sample reference; one
+// pixel under 32 or 48 blades grained more against it. The coverage is not drawn as partly covered pixels but as whole
 // blades (`grassMaterial`'s opacity): a blade draws solid where its coverage is above its own hash.
 // Without multisampling a blade keeps one pixel (a blade dithered at half its pixels across two
 // read as a dotted line, sharpened further by the upscale, and one pixel kept the meadow's
-// brightness as at two). Under the temporal modes a blade keeps its two pixels
-// (`GrassQuality.minWidth`, set by `buildGrass`), as at 4x: one pixel darkened the meadow and lost
-// the flower heads between the blades.
+// brightness as at two). Under the temporal modes a blade keeps the tier's `minWidth` (set by
+// `buildGrass`; two pixels on the parked tiers, where one darkened the meadow and lost the flower
+// heads between the blades).
 // The outer rim's least width (`rimEdge` in plantGrass), never above the meadow's (`buildGrass`).
 const RIM_MIN_WIDTH = 0.75;
 const grassUniforms = {
-	minWidth: uniform( ALPHA_TO_COVERAGE ? 2 : 1 ), // render-target pixels
+	minWidth: uniform( ALPHA_TO_COVERAGE ? 1.5 : 1 ), // render-target pixels
 	rimMinWidth: uniform( RIM_MIN_WIDTH ), // on the outer rim, see `rimEdge` in plantGrass
 	// The extra lawn tufts of thick patches fold away between these view distances (m): beyond
 	// them a blade is under a pixel wide and the widened blades of the remaining tufts already
