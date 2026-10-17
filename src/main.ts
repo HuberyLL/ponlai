@@ -162,11 +162,12 @@ const camera = new THREE.PerspectiveCamera( 27, innerWidth / innerHeight, 1, 600
 // holds the land and its ring of shallows (IslandFraming.ts); the others take the first island's
 // framing, moved to the land's centroid and scaled by its size. An explicit `dist` is in metres.
 const target = new THREE.Vector3();
-// the island's camera: it holds the island view's framing, and the hand moves it only with
-// `cameraInput` (or the GUI's 'move by hand'): drags then follow the hand on the frame that draws
-// them (IslandCameraControls.ts)
+// the island's camera: it starts at the island view's pose and the hand moves it (pans within the
+// land's soft bounds, turns, tilts and zooms between 22 and 70 m: IslandCameraControls.ts), the
+// drags followed on the frame that draws them; `cameraInput=off` (or the GUI's 'move by hand')
+// holds the view at its framing
 const controls = new IslandCameraControls( camera, renderer.domElement );
-controls.handInput = params.has( 'cameraInput' );
+controls.handInput = params.get( 'cameraInput' ) !== 'off';
 controls.minDistance = 22;
 controls.maxPolarAngle = THREE.MathUtils.degToRad( 82 );
 // the island view's pose (the R key, `setCameraView( 'island' )`); a scene jump, a growth step and
@@ -184,11 +185,11 @@ let islandTurned = 0, islandZoom = 0;
 const initialCameraFov = camera.fov;
 const orbitMaxPolar = controls.maxPolarAngle;
 const orbitMinDistance = controls.minDistance;
-// The island view stands at most 35 m from its pivot and its wheel zooms in to the least distance:
-// from 30 - 40 m the meadow's blades stay a few pixels wide on screen, so they keep their detail
-// without anti-aliasing (from about 55 m they grain), and the islanders stand about a tenth of the
-// frame's height. A land whose framing stands nearer keeps its framing.
-const ISLAND_START_DISTANCE = 35;
+// The island view starts at most 45 m from its pivot, looking 50 degrees down (`polar` 40): the
+// whole starting plateau in view with a margin, the ground read as a map while the cliff's depth
+// still shows, the islanders large enough to follow, and the meadow's blades a few pixels wide, so
+// MSAA keeps them close to the many-sample reference. A land whose framing stands nearer keeps it.
+const ISLAND_START_DISTANCE = 45;
 const freeControls = new FreeCameraControls( camera, renderer.domElement );
 
 // ------------------------------------------------------------------ sky, light, water optics
@@ -647,7 +648,8 @@ setSunCasters();
 // the island's terrain is a closed solid: it casts its front faces (SunShadow)
 sunShadow.castFrontFaces( world.group );
 // the camera grabs the island's ground (the chunks' grids, World.ts) and keeps its pivot over the land
-controls.setIsland( world.grounds, landBox );
+// and its ring of shallows (the land's hull)
+controls.setIsland( world.grounds, outline );
 let islandMaxDistance = controls.maxDistance;
 frameLand();
 // Drops stop on the first surface they meet: rock, turf, blades, leaves.
@@ -769,7 +771,7 @@ const growth = new Growth( {
 		setSunCasters();
 		// (asked before the pose changes: whether the camera holds the island view)
 		const follow = holdsFraming();
-		controls.setIsland( world.grounds, landBox );
+		controls.setIsland( world.grounds, outline );
 		islandMaxDistance = controls.maxDistance;
 		poseIslandView( islandViewOptions, islandTurned, islandZoom );
 		if ( follow ) followFraming();
@@ -839,12 +841,12 @@ const viewDirection = new THREE.Vector3();
 // and 16:00 (a lit and a shaded side) and its glints at noon keep to a corner of the frame.
 function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, options: URLSearchParams, turn = 0, zoom = 0 ): void {
 
-	const polar = THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 50 ) ), azimuth = THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 180 ) ) + turn;
+	const polar = THREE.MathUtils.degToRad( Number( options.get( 'polar' ) ?? 40 ) ), azimuth = THREE.MathUtils.degToRad( Number( options.get( 'az' ) ?? 180 ) ) + turn;
 	if ( options.has( 'dist' ) ) {
 
 		orbit.target.copy( target );
 		on.position.setFromSphericalCoords( Number( options.get( 'dist' ) ), polar, azimuth ).add( target );
-		orbit.maxDistance = islandMaxDistance;
+		orbit.maxDistance = Math.max( islandMaxDistance, Number( options.get( 'dist' ) ) );
 
 	} else {
 
@@ -853,7 +855,7 @@ function placeOrbit( on: THREE.PerspectiveCamera, orbit: IslandCameraControls, o
 		const view = { polar, azimuth, fov: initialCameraFov, aspect };
 		frameIsland( outline, view, on.position, orbit.target );
 		const framed = on.position.distanceTo( orbit.target );
-		orbit.maxDistance = Math.max( islandMaxDistance, framed );
+		orbit.maxDistance = Math.max( islandMaxDistance, Math.min( framed, ISLAND_START_DISTANCE ) );
 		// (from the start distance at zoom 0 to the least at 1, eased on the log as the framing's zoom)
 		if ( framed > ISLAND_START_DISTANCE ) on.position.sub( orbit.target ).setLength( ISLAND_START_DISTANCE * Math.pow( orbit.minDistance / ISLAND_START_DISTANCE, zoom ) ).add( orbit.target );
 		else if ( zoom > 0 ) frameIsland( outline, view, on.position, orbit.target, zoom );
@@ -897,11 +899,11 @@ function poseIslandView( options: URLSearchParams, turn = 0, zoom = 0 ): void {
 }
 
 // Whether the camera holds the island view's pose, or glides toward it: only then does it follow
-// the pose when the land grows or the window's shape changes (a pose placed by hand, by the tools
-// or with `cameraInput`, stays).
+// the pose when the land grows or the window's shape changes (a pose the hand or the tools moved
+// it from stays).
 function holdsFraming(): boolean {
 
-	if ( ! controls.enabled || controls.handInput || reviewView.camera !== 'island' ) return false;
+	if ( ! controls.enabled || reviewView.camera !== 'island' ) return false;
 	return framingGlide.running || ( camera.position.distanceTo( initialCameraPosition ) < 1e-3 && controls.target.distanceTo( initialCameraTarget ) < 1e-3 );
 
 }
@@ -1085,10 +1087,10 @@ frameStats.onReadout = () => { for ( const c of statsF ) c.updateDisplay(); };
 frameStats.extra = () => `scale ${ resolution.scale }   GPU ${ resolution.gpu }`;
 // The anti-aliasing mode (post/Antialiasing.ts) is built into materials and the frame graph, so a
 // change reloads the page with `aa=` (the older `msaa` alias dropped). It shows the running mode,
-// the tier's default or the URL's (`off`, high's, first), and the ground truth (URL only) is listed
+// the tier's default or the URL's (`msaa`, high's, first), and the ground truth (URL only) is listed
 // while it runs.
 const antialiasingF = gui.addFolder( 'Antialiasing' );
-const aaChoices: Record<string, AAMode> = { 'Off': 'off', 'TAAU': 'taau', 'FSR 3.1': 'fsr3', 'TAA': 'taa', 'MSAA 4x': 'msaa' };
+const aaChoices: Record<string, AAMode> = { 'MSAA 4x': 'msaa', 'TAAU': 'taau', 'FSR 3.1': 'fsr3', 'TAA': 'taa', 'Off': 'off' };
 if ( AA_MODE === 'gt' ) aaChoices[ 'Ground truth' ] = 'gt';
 antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)' ).onFinishChange( ( mode: AAMode ) => {
 
@@ -1299,8 +1301,8 @@ if ( DEBUG ) {
 
 // ------------------------------------------------------------------ loop
 
-// A tier with a dynamic render scale (DynamicResolution.ts; high renders native 4K, never steered)
-// starts at its baseline (the nominal), moves between the display's ratio and a floor by the GPU's
+// High's render scale is dynamic (DynamicResolution.ts): it starts at its baseline (the nominal:
+// 1440p internal at 4K output), moves between the display's ratio and a floor (1080p) by the GPU's
 // frame time, and renders at the baseline while the scene is paused, so paused frames and captures
 // render at the scale its trade-offs are judged at (pinned, ?dpr or full resolution, at that ratio).
 // (the ground truth renders at the canvas's resolution: no dynamic scale)

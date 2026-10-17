@@ -145,10 +145,10 @@ import type { FrameGraph } from './graph/FrameGraph.ts';
 //   times the render per axis (`maxUpscale`): below that a moving image has too few samples per
 //   output pixel. The quality floor is then the floor, and nothing goes below it. MSAA (FSR 1)
 //   keeps the tier's floor, the quality floor and the steps below it.
-// No tier steers its scale today: high renders native 4K at a fixed budget (Quality.ts). For a tier
-// with a dynamic rule, its baseline (`baseline`: `baselineShare` of the maximum; 2/3 gave 1440p at
-// 4K output, FSR 1's Quality 1.5x upscale) is where a load starts and where the page renders
-// whenever the scene is paused, so paused frames and captures render at the baseline whatever scale
+// High's baseline (Quality.ts): 4K output (1920x1080 CSS at a 2x display) rendered at 1440p, scale
+// 4/3 (`baseline`: two thirds of the maximum, FSR 1's Quality 1.5x upscale), with MSAA, the level
+// 60 fps is guaranteed at, with about 14 ms of GPU time a frame in the normal scenes. A load starts
+// there; the page renders there whenever the scene is paused, so paused frames and captures render at the baseline whatever scale
 // the running page had reached (pinned, `?dpr` or the GUI's full resolution, at that ratio instead).
 // The range runs from the display's ratio (up to the canvas's cap, 2: native 4K) down to half the
 // canvas's ratio (`floorShare`: 1080p at 4K output; 0.5 on a 1x display, below its maximum) in steps

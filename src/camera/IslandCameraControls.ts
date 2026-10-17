@@ -2,13 +2,13 @@ import * as THREE from 'three/webgpu';
 import { isCameraInputTarget } from './FreeCameraControls.ts';
 import { IslandGround } from './IslandGround.ts';
 import type { GroundGrid } from '../world/ChunkDerived.ts';
+import { SHELF_REACH } from '../world/Bathymetry.ts';
 
 // The island's camera, in the manner of a management or island-building game (Islanders,
 // Dorfromantik; Anno, Frostpunk and Planet Zoo differ mostly in which button does what). The hand
-// moves it only with `handInput` (main.ts: the `cameraInput` query option, the GUI's 'move by
-// hand'); off, the default, every pointer, wheel, gesture and key is ignored, and the island view
-// holds the framing main.ts places it at (IslandFraming.ts), so a tuning session sees the same
-// view on every load. With the hand:
+// moves it while `handInput` is on (main.ts: on unless the query says `cameraInput=off`, the GUI's
+// 'move by hand'); off, every pointer, wheel, gesture and key is ignored, and the island view holds
+// the framing main.ts places it at (IslandFraming.ts). With the hand:
 //
 // - A left drag grabs the ground: the point under the cursor at the press stays under it, exactly,
 //   on every frame (one-finger click-drag on a trackpad). A right or middle drag (or Option / Ctrl
@@ -30,9 +30,9 @@ import type { GroundGrid } from '../world/ChunkDerived.ts';
 //
 // At rest, `advance` does exactly what three's OrbitControls did at rest (spherical coordinates
 // from the camera's offset, the same clamps, the same arithmetic), so a still camera holds the very
-// position it did and paused captures frame exactly as before. The pivot is clamped to the land's
-// box plus a margin (`setIsland`, again whenever the land grows), the distance and tilt to their
-// limits, and the camera kept above the ground.
+// position it did and paused captures frame exactly as before. The pivot is held over the land and
+// its ring of shallows, softly (`setIsland`, again whenever the land grows), the distance and tilt
+// to their limits, and the camera kept above the ground.
 //
 // Rules and their reasons:
 // - A press stays a click until it moves 3 px, so a left-click action can share the button.
@@ -55,9 +55,13 @@ import type { GroundGrid } from '../world/ChunkDerived.ts';
 //   between frames. A drag is read one input sample interval (at most 8 ms) behind the frame's
 //   vblank, between the two pointer samples around that time (input resampling): read at its
 //   newest sample, a 125 Hz mouse moved the view unevenly from one frame to the next.
-// - The limits constrain input only: the pivot within the land's box plus 12 m, the farthest zoom
-//   from its diagonal (about 190 m for the starting island), both recomputed when the land grows
-//   (`setIsland`), the camera 2 m above the ground (a height grid of the island's meshes, merged
+// - The limits constrain input only: the pivot over the land's convex hull grown by the shelf's
+//   reach, 14 m (the land and its ring of shallows, which the island view frames; recomputed when
+//   the land grows: `setIsland`), past which a pull goes on against a resistance that grows with
+//   the distance, at most 10 m farther (`held`), and springs back with a 0.12 s time constant once let
+//   go, so the edge reads as a give rather than a wall; the farthest zoom 70 m whatever the land's
+//   size (at 1440p the meadow's blades still cover a pixel there: the hand pans to the rest of a
+//   larger land); the camera 2 m above the ground (a height grid of the island's meshes, merged
 //   from the grids the world's chunks come with: IslandGround.ts).
 // - At rest the update is three's OrbitControls' arithmetic to the bit, its constructor's update
 //   included, so paused frames do not depend on input history and match older captures; but for
@@ -113,6 +117,9 @@ const _b = new THREE.Vector3();
 const _swipe = new THREE.Vector3();
 const _centre = new THREE.Vector3();
 const _pan = new THREE.Vector2();
+const _near = new THREE.Vector2();
+const _best = new THREE.Vector2();
+const _held = new THREE.Vector2();
 
 export class IslandCameraControls {
 
@@ -155,9 +162,15 @@ export class IslandCameraControls {
 	 * trackpad's two-finger swipe. */
 	scrollMode: ScrollMode = 'auto';
 	edgePan = false;
-	/** The pivot stays within the land's box grown by this (m); the camera this high above the
-	 * ground (m). */
-	boundsMargin = 12;
+	/** The pivot stays over the land's convex hull grown by this (m): the land and its ring of
+	 * shallows (Bathymetry.ts SHELF_REACH), which the island view frames (IslandFraming.ts). */
+	reach = SHELF_REACH;
+	/** How much farther past that the hand can pull the pivot (m), against a resistance that grows
+	 * with the distance, and the time constant it springs back in once let go (s). */
+	softReach = 10;
+	springTime = 0.12;
+	/** The farthest zoom (m): at 1440p the meadow's blades still cover a pixel or more there. */
+	farthest = 70;
 	groundClearance = 2;
 	readonly ground = new IslandGround();
 	/** The page time of the newest pointer or wheel input the last frame applied (for latency
@@ -205,7 +218,8 @@ export class IslandCameraControls {
 	private lastScroll = - Infinity;
 	private gestureScale = 1;
 	private gestureRotation = 0;
-	private readonly bounds = new THREE.Box2( new THREE.Vector2( - Infinity, - Infinity ), new THREE.Vector2( Infinity, Infinity ) );
+	// the land's convex hull (x, z pairs: IslandFraming.landOutline); empty, the pivot goes anywhere
+	private hull: readonly number[] = [];
 
 	constructor( private readonly camera: THREE.PerspectiveCamera, private readonly element: HTMLElement ) {
 
@@ -255,21 +269,62 @@ export class IslandCameraControls {
 
 	// whether input is taken
 	private get listening(): boolean { return this.active && this.hand; }
+	// whether the hand pulled the pivot past its bounds: it springs back once let go
+	private stretched = false;
 
 	/** Takes the ground the camera grabs from the grids of the island's chunks (ChunkDerived.ts),
-	 * and the pivot's bounds and the farthest zoom from the land's box (WorldShapes.landBounds);
-	 * again when the land grows. */
-	setIsland( grids: readonly GroundGrid[], land: { x0: number; z0: number; x1: number; z1: number } ): void {
+	 * and the land's convex hull the pivot's bounds grow from (IslandFraming.landOutline); again
+	 * when the land grows. The farthest zoom is `farthest`, whatever the land's size: the hand pans
+	 * to the rest. */
+	setIsland( grids: readonly GroundGrid[], outline: readonly number[] ): void {
 
 		this.ground.fromGrids( grids );
-		const m = this.boundsMargin;
-		this.bounds.min.set( land.x0 - m, land.z0 - m );
-		this.bounds.max.set( land.x1 + m, land.z1 + m );
-		// at the farthest zoom the land's diagonal still spans at least 40 % of the view's height
-		// (about 190 m for the starting island), at the far end's fov whatever the zoom now
-		const diagonal = Math.hypot( land.x1 - land.x0, land.z1 - land.z0 );
-		const view = 2 * Math.tan( THREE.MathUtils.degToRad( this.farFov ) / 2 );
-		this.maxDistance = diagonal / ( 0.4 * view );
+		this.hull = outline;
+		this.maxDistance = this.farthest;
+
+	}
+
+	// The point of the land's hull nearest to ( x, z ): itself when inside (or with no hull).
+	private nearestOnHull( x: number, z: number, out: THREE.Vector2 ): THREE.Vector2 {
+
+		const h = this.hull, n = h.length >> 1;
+		out.set( x, z );
+		if ( n < 3 ) return out;
+		let best = Infinity, above = 0, below = 0;
+		for ( let i = 0; i < n; i ++ ) {
+
+			const ax = h[ 2 * i ], az = h[ 2 * i + 1 ], j = ( i + 1 ) % n;
+			const ex = h[ 2 * j ] - ax, ez = h[ 2 * j + 1 ] - az;
+			// inside a convex polygon the point lies on one side of every edge, whichever its winding
+			const side = ex * ( z - az ) - ez * ( x - ax );
+			if ( side > 0 ) above ++; else if ( side < 0 ) below ++;
+			const t = THREE.MathUtils.clamp( ( ( x - ax ) * ex + ( z - az ) * ez ) / Math.max( ex * ex + ez * ez, 1e-12 ), 0, 1 );
+			const px = ax + ex * t, pz = az + ez * t, d = ( x - px ) ** 2 + ( z - pz ) ** 2;
+			if ( d < best ) { best = d; _best.set( px, pz ); }
+
+		}
+		return above === 0 || below === 0 ? out : out.copy( _best );
+
+	}
+
+	// How far ( x, z ) lies from the land's hull (0 inside it).
+	private hullDistance( x: number, z: number ): number {
+
+		const q = this.nearestOnHull( x, z, _near );
+		return Math.hypot( x - q.x, z - q.y );
+
+	}
+
+	// ( x, z ) held to the hull grown by `edge` (m): past it, eased toward `softReach` farther along
+	// the way out from the hull (the rubber band's resistance), else as it is.
+	private held( x: number, z: number, edge: number, out: THREE.Vector2 ): THREE.Vector2 {
+
+		const q = this.nearestOnHull( x, z, out );
+		const dx = x - q.x, dz = z - q.y, d = Math.hypot( dx, dz );
+		if ( ! ( d > edge ) ) return out.set( x, z );
+		const r = this.softReach, o = d - edge;
+		const k = ( edge + ( r > 0 ? r * ( 1 - Math.exp( - o / r ) ) : 0 ) ) / d;
+		return out.set( q.x + dx * k, q.y + dz * k );
 
 	}
 
@@ -443,13 +498,31 @@ export class IslandCameraControls {
 		this.pinch = this.wheel = 0;
 		if ( this.enablePan ) pan.addScaledVector( this.glide, dt );
 		else pan.set( 0, 0 );
+		// a pivot the hand pulled past its bounds springs back once let go (a pan drag or the keys
+		// hold it out)
+		let springing = false;
+		if ( this.stretched && drag?.mode !== 'pan' && pan.x === 0 && pan.y === 0 ) {
+
+			// the nearest point of the hull grown by `reach`
+			const q = this.nearestOnHull( target.x, target.z, _held ), d = Math.hypot( target.x - q.x, target.z - q.y );
+			const k0 = d > this.reach ? this.reach / d : 1;
+			const dx = q.x + ( target.x - q.x ) * k0 - target.x, dz = q.y + ( target.z - q.y ) * k0 - target.z;
+			const k = Math.abs( dx ) + Math.abs( dz ) < 0.01 ? 1 : ease( this.springTime );
+			target.x += dx * k;
+			target.z += dz * k;
+			position.x += dx * k;
+			position.z += dz * k;
+			if ( k === 1 ) this.stretched = false;
+			springing = dx !== 0 || dz !== 0;
+
+		}
 		// the ground under a two-finger swipe, before the frame moves the camera
 		const swiping = ( this.scrollX !== 0 || this.scrollY !== 0 ) && this.enablePan;
 		const swipe = swiping ? this.groundAt( this.scrollAtX, this.scrollAtY, _swipe ) ?? this.levelAt( this.scrollAtX, this.scrollAtY, target.y, _swipe ) : null;
 		// a turn about the ground at the screen's centre (rather than the pivot, which lies below the
 		// meadow), so the point there stays there
 		const centre = dTheta !== 0 && this.enablePan ? this.groundAt( this.element.clientWidth / 2, h / 2, _centre ) : null;
-		const moving = dTheta !== 0 || dPhi !== 0 || dZoom !== 0 || pan.x !== 0 || pan.y !== 0 || swipe !== null || ( drag?.mode === 'pan' && drag.grab !== null && drag.started );
+		const moving = springing || dTheta !== 0 || dPhi !== 0 || dZoom !== 0 || pan.x !== 0 || pan.y !== 0 || swipe !== null || ( drag?.mode === 'pan' && drag.grab !== null && drag.started );
 		const targetX = target.x, targetZ = target.z, positionX = position.x, positionY = position.y, positionZ = position.z;
 
 		// OrbitControls' update, with the deltas above (at rest it is that update to the bit)
@@ -502,11 +575,13 @@ export class IslandCameraControls {
 		if ( drag?.mode === 'pan' && drag.grab && drag.started ) this.keepUnder( drag.grab, this.ndcX( px ), this.ndcY( py ) );
 		if ( ! moving ) return widened;
 
-		// Limits on what the input does (a placement by hand outside them stays): the pivot within the
-		// island's bounds, or no farther out than it was; the camera above the ground, or no lower.
-		const b = this.bounds;
-		const x = THREE.MathUtils.clamp( target.x, Math.min( b.min.x, targetX ), Math.max( b.max.x, targetX ) );
-		const z = THREE.MathUtils.clamp( target.z, Math.min( b.min.y, targetZ ), Math.max( b.max.y, targetZ ) );
+		// Limits on what the input does (a placement by hand outside them stays): the pivot over the
+		// land and its ring of shallows (the hull grown by `reach`), or no farther out than a placement
+		// put it; past that it goes on against a growing resistance, at most `softReach` farther
+		// (`held`: a drag's pointer keeps pulling it from where the grab would put it, so it does not
+		// creep), and springs back once let go (above); the camera above the ground, or no lower.
+		const edge = this.stretched ? this.reach : Math.max( this.reach, this.hullDistance( targetX, targetZ ) );
+		const { x, y: z } = this.held( target.x, target.z, edge, _held );
 		if ( x !== target.x || z !== target.z ) {
 
 			position.x += x - target.x;
@@ -514,8 +589,7 @@ export class IslandCameraControls {
 			target.x = x;
 			target.z = z;
 			this.glide.set( 0, 0 );
-			// the grab slides along the edge, so turning back moves the view at once
-			if ( drag?.mode === 'pan' && drag.grab && drag.started ) this.retake( drag.grab, this.ndcX( px ), this.ndcY( py ) );
+			this.stretched = true;
 
 		}
 		// (a camera placed below its floor may stay as low, not go lower)
@@ -683,17 +757,6 @@ export class IslandCameraControls {
 		const dx = point.x - ( position.x + _dir.x * t ), dz = point.z - ( position.z + _dir.z * t );
 		position.x += dx; position.z += dz;
 		this.target.x += dx; this.target.z += dz;
-
-	}
-
-	// Takes `point` (kept at its level) to where the ray through ( ndcX, ndcY ) now meets that level.
-	private retake( point: THREE.Vector3, ndcX: number, ndcY: number ): void {
-
-		const position = this.camera.position;
-		this.ray( ndcX, ndcY, _dir );
-		if ( _dir.y > - 1e-4 ) return;
-		const t = ( point.y - position.y ) / _dir.y;
-		if ( t > 0 ) point.set( position.x + _dir.x * t, point.y, position.z + _dir.z * t );
 
 	}
 
