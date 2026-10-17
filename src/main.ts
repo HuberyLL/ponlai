@@ -1085,10 +1085,10 @@ frameStats.onReadout = () => { for ( const c of statsF ) c.updateDisplay(); };
 frameStats.extra = () => `scale ${ resolution.scale }   GPU ${ resolution.gpu }`;
 // The anti-aliasing mode (post/Antialiasing.ts) is built into materials and the frame graph, so a
 // change reloads the page with `aa=` (the older `msaa` alias dropped). It shows the running mode,
-// the tier's default or the URL's (`off`, high's, first), and the ground truth (URL only) is listed
+// the tier's default or the URL's (`msaa`, high's, first), and the ground truth (URL only) is listed
 // while it runs.
 const antialiasingF = gui.addFolder( 'Antialiasing' );
-const aaChoices: Record<string, AAMode> = { 'Off': 'off', 'TAAU': 'taau', 'FSR 3.1': 'fsr3', 'TAA': 'taa', 'MSAA 4x': 'msaa' };
+const aaChoices: Record<string, AAMode> = { 'MSAA 4x': 'msaa', 'TAAU': 'taau', 'FSR 3.1': 'fsr3', 'TAA': 'taa', 'Off': 'off' };
 if ( AA_MODE === 'gt' ) aaChoices[ 'Ground truth' ] = 'gt';
 antialiasingF.add( { mode: AA_MODE }, 'mode', aaChoices ).name( 'mode (reloads)' ).onFinishChange( ( mode: AAMode ) => {
 

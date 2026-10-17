@@ -154,8 +154,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
 `src/debug/DebugFlags.ts`):
 
 - `aa` (the anti-aliasing mode, `src/post/Antialiasing.ts`, over the tier's `aa` knob: each tier
-  has its default, high `off` (the parked medium `taau`, low `msaa`), and the GUI's Antialiasing
-  control reloads with any of Off, TAAU, FSR 3.1, TAA and MSAA 4x. `msaa`: 4 samples, upscaled by
+  has its default, high `msaa` (the parked medium `taau`, low `msaa`), and the GUI's Antialiasing
+  control reloads with any of MSAA 4x, TAAU, FSR 3.1, TAA and Off. `msaa`: 4 samples, upscaled by
   FSR 1; `off`: one sample; `taa` and `taau`, the temporal modes: one sample, jittered, with motion vectors, resolved against a history in `TemporalAA.ts`, at the
   render's size or upsampled to the canvas; a paused page shows the rest image, the jitter
   sequence averaged, once it has converged, `TemporalRest.ts`; what changes the scene raises a
@@ -302,7 +302,7 @@ converge on a still scene (or are frozen or turned off in the test mode) and tha
 within a tolerance; the test mode keeps the byte-for-byte checks valid.
 
 - The test mode today: `paused` in the query, which loads `aa=msaa` whatever the tier runs (high
-  runs `off`; an explicit `aa=` wins), the shot taken once
+  runs `msaa` too; an explicit `aa=` wins), the shot taken once
   `__THREE_GAME_DIAGNOSTICS__.settled` holds (capture.mjs's readiness). Every capture, parity and
   verify tool already loads its pages this way, so their exact checks hold as their headers say.
   The page's only history-dependent rendering effects are the temporal resolve (`aa=taa|taau|gt`,
@@ -986,7 +986,7 @@ node tools/profile-frame.mjs [url] [--scenes a,b] [--w 1920 --h 1080 --scale 2] 
   with a dynamic resolution keeps its own timestamp queries in every run, as a player's page does;
   `--q gpuTimer=off` leaves them out. High has none: it renders native 4K.)
 - High is timed at its standard by default: 4K output (1920x1080 CSS at DPR 2) rendered at that
-  size without anti-aliasing, the level every trade-off is judged at, with about 14 ms of GPU time a
+  size with MSAA 4x, the level every trade-off is judged at, with about 14 ms of GPU time a
   frame in the normal scenes (island views, `meadow-close`) as the budget. A profile, `--compare`
   or `--toggle` of high pins that scale (`dpr=2`: the viewport's ratio); `--unpinned` leaves the
   tier's own rule (a dynamic one steering, with `--scale-settle 5 --scale-log` to see where it

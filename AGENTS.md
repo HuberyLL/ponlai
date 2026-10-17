@@ -179,7 +179,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   must keep them compiling and loadable by name (`?weather=`, `?quality=`). The default checks
   leave them out (`docs/tools.md`, Parked weathers, Parked quality tiers). Changes are judged at
   high's standard: native 4K (4K output rendered at that size, no upscaling, no dynamic
-  resolution), no anti-aliasing, 60 fps, about 14 ms of GPU time a frame in the normal scenes; a
+  resolution), MSAA 4x, 60 fps, about 14 ms of GPU time a frame in the normal scenes; a
   paused page renders at the same size (`src/Quality.ts`, profile-frame's default pin:
   `docs/tools.md`, Measuring frame time).
 - Quality tiers change the cost, never the mood: no knob alters the weather, clock or lighting
@@ -239,7 +239,7 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - WebGPU multisamples with 1 or 4 samples only (three turns 2 into 1, with no MSAA). The
   anti-aliasing mode (`msaa`, the temporal `taa` and `taau`, `off`) is a load knob of the tier
   (`aa` in `Quality.ts`, whose header says which tier runs which and why: high, the only active
-  tier, runs `off`; a paused page runs `msaa`); `aa=` or the GUI picks any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
+  tier, runs `msaa`, as a paused page does); `aa=` or the GUI picks any mode on any tier. Code that differs by mode reads `Antialiasing.ts`'s exports (`TEMPORAL`,
   `SCENE_SAMPLES`, `ALPHA_TO_COVERAGE`), never the tier. The vegetation's cut-outs are alpha to
   coverage under MSAA only: find vegetation by `userData.vegetation`, never by `alphaToCoverage`
   (`vegetation/Coverage.ts`).
