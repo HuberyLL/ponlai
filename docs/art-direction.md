@@ -117,7 +117,11 @@ art decision changes; reference images stay out of the repository.
   meadow its soil sets the odds: the sward rises a little where the soil is deep and damp and sinks
   a little where it is thin, over some 14 m, and pockets of shallow soil a few metres across, a
   tenth of the meadow, hold a short open turf with tussocks standing in it, its floor showing
-  between them: from above a soft mottling, tussock by tussock, never a zone, a line or a path. The sward runs to the edge on
+  between them: from above a soft mottling, tussock by tussock, never a zone, a line or a path.
+  From the ground up the sward has a summer meadow's layers: dead leaves and the old leaves' straw
+  sheaths low in it, the green leaves, and over them a few flowering stems from each tall tussock,
+  their slender panicles purple brown to straw a hand above the leaves (none on the short turf),
+  a faint haze over the green from the game's view, never a field of straw. The sward runs to the edge on
   every coast, windward and lee alike: a windward lip shown short, yellow, thin over gravel and
   bared to the cliff's stone read from above as one more zone. Inside the grass
   there are no hard shadows, only a darkening toward the ground (a deep green, never black); the

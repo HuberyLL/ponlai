@@ -40,6 +40,8 @@ interface MeadowSample { growth: number; tone: number }
 // about an eighth below the first lawn's ( 0.06, 0.1, 0.029 ), its luminance the same: with the
 // long blades' own spread of tints (Grass.ts) the full green read as a dyed, plastic sward.
 const LAWN = new THREE.Color( 0.0632, 0.0984, 0.0359 );
+/** The lawn's colour (linear albedo), before its tone: the blades' colours are factors on it. */
+export const LAWN_COLOUR = LAWN.toArray() as [ number, number, number ];
 
 export function sampleMeadow( x: number, z: number ): MeadowSample {
 
