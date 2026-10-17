@@ -1,6 +1,7 @@
 import * as THREE from 'three/webgpu';
 import { positionViewDirection, normalView, diffuseColor } from 'three/tsl';
 import { keyRimLight, type KeyRimSurface } from '../lighting/KeyRim.ts';
+import { addGroundBounce } from '../lighting/GroundBounce.ts';
 
 type V3 = THREE.Node<'vec3'>;
 type F = THREE.Node<'float'>;
@@ -12,7 +13,7 @@ type F = THREE.Node<'float'>;
 // gloss off the surface: it multiplies the key light alone, not the albedo, and like the rest
 // follows the key, so it fades with the sun and stays at the moon's own strength by night.
 // `rim` is the plant's surface for the key light's shared rim (lighting/KeyRim.ts), added on top
-// under the same dimmed light.
+// under the same dimmed light. The ground's bounce (lighting/GroundBounce.ts) joins the sky's light.
 export class VegetationLighting extends THREE.PhysicalLightingModel {
 
 	scale: F;
@@ -40,6 +41,13 @@ export class VegetationLighting extends THREE.PhysicalLightingModel {
 		( input.reflectedLight.directDiffuse as V3 ).addAssign( lightColor.mul( diffuseColor.rgb ).mul( k ).mul( 1 / Math.PI ) );
 		( input.reflectedLight.directDiffuse as V3 ).addAssign( keyRimLight( lightColor, input.lightDirection as V3, diffuseColor.rgb, this.rim ) );
 		if ( this.sheenTerm ) ( input.reflectedLight.directSpecular as V3 ).addAssign( lightColor.mul( this.sheenTerm( input.lightDirection as V3, positionViewDirection, normalView ) ).mul( 1 / Math.PI ) );
+
+	}
+
+	indirect( builder: THREE.NodeBuilder ): void {
+
+		addGroundBounce( builder );
+		super.indirect( builder );
 
 	}
 

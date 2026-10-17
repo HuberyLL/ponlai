@@ -265,6 +265,13 @@ export class SunShadow {
 
 	}
 
+	/** The same from the current map alone, for a bake drawn at the map's steps (GroundBounce.ts). */
+	currentPCFVisibility( coordinate: V3 ): F {
+
+		return solarPCFVisibility( this.depth, coordinate, this.mapSize, this.ready.greaterThan( 0 ), CURRENT );
+
+	}
+
 	/** A soft visibility of the world point `world`, without derivatives or a receiver plane, so it
 	 * can be taken in a vertex stage: the bilinear lookups of both stepped maps (volumeVisibility)
 	 * at the point and at `taps` points around it on a level ring of `radius` metres, averaged. Used

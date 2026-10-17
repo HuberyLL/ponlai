@@ -514,6 +514,8 @@ export class Sky {
 
 	get transitioning(): boolean { return this.transitionDuration > 0 && this.transitionElapsed < this.transitionDuration; }
 	get moonDir(): THREE.Vector3 { return this.night.moonDir.value; }
+	/** The distant sea's radiance, the environment's lower half, as the latest bake set it. */
+	get seaRadiance(): THREE.Color { return this.sea.value; }
 
 	get environmentNode(): V3 {
 

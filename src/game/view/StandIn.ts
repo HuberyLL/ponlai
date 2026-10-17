@@ -3,6 +3,7 @@ import { vertexColor } from 'three/tsl';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { CharacterShadow } from '../../characters/CharacterShadow.ts';
 import type { LookColours } from '../../characters/looks.ts';
+import { GroundBounceLightingModel } from '../../lighting/GroundBounce.ts';
 
 // A plain islander built in code, shown when a figure's model cannot load (the models are
 // git-ignored local assets), so an islander stays seen: faceted low-poly pieces in its look's
@@ -96,6 +97,7 @@ export function standIn( look: number, colours: LookColours ): THREE.Mesh {
 		material = new THREE.MeshStandardNodeMaterial( { roughness: 0.92, metalness: 0 } );
 		material.colorNode = vertexColor().rgb.mul( ALBEDO );
 		material.name = 'standIn';
+		( material as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new GroundBounceLightingModel();
 
 	}
 	let g = geometries.get( look );

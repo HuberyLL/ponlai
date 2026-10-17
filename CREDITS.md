@@ -41,6 +41,11 @@ packages, into `dist/licenses/`.
     `UnderwaterLighting.js`'s direct and ambient hooks (the depth under the long waves, the
     caustics through their slope, the ambient's attenuation and blue); `src/lighting/RefractedSun.ts`
     reads the air's shadow map at the entry point of its shadow position hook.
+  - `src/lighting/GroundBounce.ts`: the ground bounce of `GroundBounce.js` (the map of the light
+    the ground reflects, its land cover and sea seen through the water column, the environment's
+    own ground taken off, the binomial blur, and its lookup: the lower hemisphere's view factor,
+    the fade with height and the self-shading of faces turned from a low sun), ported from WGSL to
+    TSL, on this project's world fields and shadow map.
   - `src/ocean/StormSea.ts`: the persistent whitecap foam of `OceanFFT.js` (build-up where the
     Jacobian folds, exponential decay), here on one world-space grid of the summed cascades.
   - `src/ocean/Water.ts`: the above-water shading of `WaterMaterial.js` (Fresnel, the sky

@@ -52,6 +52,7 @@ import { shared } from './shared.ts';
 import { installOpenShadow } from './lighting/SolarShadow.ts';
 import { SunShadow } from './lighting/SunShadow.ts';
 import { RefractedSun } from './lighting/RefractedSun.ts';
+import { GroundBounce, installGroundBounce } from './lighting/GroundBounce.ts';
 import { islandSurfaceHeight, landBounds } from './world/WorldShapes.ts';
 import { LandLattice } from './world/IslandGrowth.ts';
 import { walkLoopDistance, walkPoints } from './world/WalkPath.ts';
@@ -578,6 +579,10 @@ setLand( land, landOptions.step );
 // (its transform is the shared shoreXform), the floor's height and beds over the same bounds, the
 // rim ground over its own.
 const fields = new WorldFields( data, shared.shoreXform.value );
+// the sunlight the ground bounces up (lighting/GroundBounce.ts), which every lit material adds: so
+// installed before any of them builds; its map shares the caustics' target
+const groundBounce = new GroundBounce( { renderer, shared, sunShadow, fields, target: caustics.target, layer: caustics.bounceLayer, cloud: ( position ) => sky.cloudVisibility( position ) } );
+installGroundBounce( groundBounce );
 const shoreWaves = new ShoreWaves( renderer, data, shared, fields.shore, fft, fields.floor );
 // The meadow's flowers keep clear of the islander's walking loop, 5 m in from the coast.
 const walk = walkPoints( data.walk );
@@ -772,6 +777,7 @@ const growth = new Growth( {
 		water!.setLand( landBox );
 		for ( const box of heldOpaque ) water!.reflectionBounds.union( box );
 		setSunCasters();
+		groundBounce.invalidate();
 		// (asked before the pose changes: whether the camera holds the island view)
 		const follow = holdsFraming();
 		controls.setIsland( world.grounds, outline );
@@ -1183,6 +1189,7 @@ sunF.add( sky, 'azimuth', - 180, 180, 1 ).onFinishChange( applySun );
 sunF.add( sky, 'sunIlluminance', 2, 20, 0.1 ).name( 'illuminance' ).onFinishChange( applySun );
 sunF.add( sky.atmosphere.mieScale, 'value', 0.1, 5, 0.01 ).name( 'aerosol scattering' ).onFinishChange( applySun );
 sunF.add( lighting, 'skyFill', 0, 3, 0.01 ).name( 'sky fill' ).onChange( applySkyFill );
+sunF.add( groundBounce.strength, 'value', 0, 2, 0.01 ).name( 'ground bounce' );
 const waterF = gui.addFolder( 'Water' );
 const optics = { clarity: 1.0, turbidity: 1.0 };
 const baseA = shared.sigA.value.clone(), baseS = shared.sigS.value.clone();
@@ -1216,7 +1223,6 @@ if ( game ) await game.addDebugFolder( gui );
 islanderF.add( characterLook.albedo, 'value', 0.05, 1, 0.01 ).name( 'palette exposure' );
 islanderF.add( characterLook.sunGain, 'value', 0, 2, 0.01 ).name( 'sun' );
 islanderF.add( characterLook.fillGain, 'value', 0, 10, 0.05 ).name( 'shade fill' );
-islanderF.add( characterLook.bounceGain, 'value', 0, 3, 0.01 ).name( 'turf bounce' );
 islanderF.add( characterLook.formFloor, 'value', 0, 1, 0.01 ).name( 'lit form floor' );
 islanderF.add( characterLook.softCloth, 'value', 0.005, 0.4, 0.005 ).name( 'cloth edge' );
 islanderF.add( characterLook.softSkin, 'value', 0.005, 0.4, 0.005 ).name( 'skin edge' );
@@ -1617,6 +1623,7 @@ function tick( time: number ): void {
 	shoreWaves.update( fft, simTime );
 	// Whitewater is disabled in this scene; leave its history idle.
 	caustics.update( sky.keyDir, camera );
+	groundBounce.update( sky.seaRadiance );
 	characters?.update( renderer, scene, sun, simTime, paused ? 0 : dt );
 	game?.render( renderer, sun, paused ? 0 : rawDt );
 	S.focusDistance = camera.position.distanceTo( controls.target );
@@ -1790,7 +1797,7 @@ if ( DEBUG && TEMPORAL ) console.info( 'motion check', motionCheck( motionPasses
 if ( profiler ) {
 
 	const { labelPonlaiPasses } = await import( './debug/FrameProfiler.ts' );
-	labelPonlaiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, caustics, characters } );
+	labelPonlaiPasses( profiler, { scene, waterScene, rainScene, pipeline, sky, rain, sunShadow, refractedSun, fft, stormSea, shoreWaves, caustics, groundBounce, characters } );
 
 }
 // the nodes r186 makes inside the first lit build, made by a throwaway one, so the frame's receivers
@@ -1937,6 +1944,7 @@ const establishScene = async ( scene: string | URLSearchParams | { weather?: Wea
 	stormSea.reset();
 	characters?.reset();
 	pipeline.air.invalidate();
+	groundBounce.invalidate();
 	shadowElapsed = 0;
 	// a fresh load starts at the held frame rate, not at a fallback the last scene fell to
 	pacer.reset();
@@ -2168,7 +2176,7 @@ const step = async ( options: StepOptions ): Promise<{ frames: number; t0: numbe
 
 };
 
-if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, grass, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
+if ( DEBUG ) ( window as unknown as Record<string, unknown> ).__PONLAI__ = { land: landInfo, renderer, scene, camera, controls, freeControls, cameraSettings, setCameraMode, setCameraView, sky, sun, fft, shoreWaves, stormSea, caustics, water, pipeline, shared, refractedSun, groundBounce, grass, meadowCanopy, characters, game, soilUniforms, dayCycle, weather, weatherEffects, wind, rain, setWeather, setWind, establishScene, sceneJump: 1, applySun, refreshEnvironment, setHour, setPreset, sunShadow, invalidateSunShadow, setTime, clockTime: () => simTime, nominalScale: () => nominalScale, loop: Object.assign( loop, { step } ), pipelines: pipelineCount, flags: debugFlags,
 	// the wind's numbers for the vegetation (debug/WindProbe.ts), loaded on first call
 	windProbe: async ( options?: Record<string, unknown> ) => ( await import( './debug/WindProbe.ts' ) ).windProbe( { renderer, scene, shared, wind, weather, sky, fft, establishScene, setTime, data: () => shownData, vegetation }, options ),
 	// the island's growth: grow(), state, chunkHashes(), and the world fields' GPU bytes

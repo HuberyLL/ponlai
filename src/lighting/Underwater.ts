@@ -12,6 +12,7 @@ import {
 import type { Shared } from '../shared.ts';
 import { causticsColorAt, type Caustics } from '../ocean/Caustics.ts';
 import { refractedSunDirectionNode, refractedSunBeamScaleNode } from './RefractedSun.ts';
+import { addGroundBounce } from './GroundBounce.ts';
 
 type F = THREE.Node<'float'>;
 type V3 = THREE.Node<'vec3'>;
@@ -168,6 +169,8 @@ export class UnderwaterLightingModel extends THREE.PhysicalLightingModel {
 
 	indirect( builder: THREE.NodeBuilder ): void {
 
+		// the light the sunlit ground bounces up (above the water only: GroundBounce.ts)
+		addGroundBounce( builder );
 		super.indirect( builder );
 		const reflected = ( builder.context as unknown as { reflectedLight: { indirectDiffuse: V3; indirectSpecular: V3 } } ).reflectedLight;
 		reflected.indirectDiffuse.mulAssign( this.light.ambient );

@@ -50,10 +50,11 @@ import { compileInto } from '../post/graph/Compile.ts';
 // every fragment that can be under the water reading the FFT and the shore waves. Beyond the far map:
 // a level sea. The long waves are the three coarsest cascades' height and the two coarsest's slope,
 // damped as the sea's surface is (WaveDamping.ts), and the rock's reflected wave; none over dry land.
-// The maps share the caustics' target, an array of five layers (the caustics in layer 0, the maps'
-// A and B in layers 1 to 4), so the materials lit under the water, already at WebGPU's 16 sampled
-// textures, bind no more. They are read at level 0 within half a texel of their edges, so neither
-// the repeat wrap nor the mip chain (made once a frame after the last layer drawn) reaches them.
+// The maps share the caustics' target, an array of six layers (the caustics in layer 0, the maps'
+// A and B in layers 1 to 4, the ground bounce's map in layer 5: lighting/GroundBounce.ts), so the
+// materials lit under the water, already at WebGPU's 16 sampled textures, bind no more. They are
+// read at level 0 within half a texel of their edges, so neither the repeat wrap nor the mip chain
+// (made once a frame after the last layer drawn) reaches them.
 
 type F = THREE.Node<'float'>;
 type V2 = THREE.Node<'vec2'>;
@@ -65,11 +66,13 @@ const ETA = 1 / 1.333;
 const RES = 512;
 
 // the target's layers: the caustics, then per wave map ( height - sea level, slope x, slope z, foam )
-// and ( mean level - sea level, the caustics' gust and slick factor, 0, 1 )
+// and ( mean level - sea level, the caustics' gust and slick factor, 0, 1 ), then the ground bounce's
+// map (drawn by GroundBounce)
 const CAUSTICS_LAYER = 0;
 const WAVE_EXTENTS = [ 128, 1024 ];
 const wavesLayer = ( level: number ) => 1 + level * 2, levelLayer = ( level: number ) => 2 + level * 2;
-const LAYERS = 1 + WAVE_EXTENTS.length * 2;
+const BOUNCE_LAYER = 1 + WAVE_EXTENTS.length * 2;
+const LAYERS = BOUNCE_LAYER + 1;
 // Above this height over the sea level no water reaches (m): the lookups return a level sea there.
 const WAVE_REACH = 2.5;
 
@@ -192,6 +195,8 @@ export class Caustics {
 	readonly fine: CausticLayer;
 	readonly broad: CausticLayer;
 	readonly strength = uniform( 0.75 );
+	/** The target's layer that holds the ground bounce's map (lighting/GroundBounce.ts draws it). */
+	readonly bounceLayer = BOUNCE_LAYER;
 	// a level sea's refracted sun ray: horizontal metres per metre of depth toward the entry point
 	readonly shift = uniform( new THREE.Vector2() );
 	readonly sunDir = uniform( new THREE.Vector3( 0, 1, 0 ) );
