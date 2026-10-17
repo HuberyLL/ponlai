@@ -1,7 +1,7 @@
 import * as THREE from 'three/webgpu';
 import {
-	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, normalViewGeometry, cameraViewMatrix,
-	cameraPosition, specularColor, specularColorBlended, specularF90, diffuseColor,
+	Fn, If, struct, texture, attribute, uniform, float, vec2, vec3, vec4, mat2, positionWorld, normalWorldGeometry, cameraViewMatrix,
+	cameraPosition, specularColor, specularColorBlended, specularF90,
 	normalize, abs, pow, max, min, dot, sign, mix, smoothstep, clamp, fract, floor, sin, exp, log2, select, dFdx, dFdy, length,
 } from 'three/tsl';
 import type { Shared } from '../shared.ts';
@@ -13,7 +13,6 @@ import { GRASS_ROOTS } from '../world/Grass.ts';
 import { causticsAt, type Caustics } from '../ocean/Caustics.ts';
 import { underwaterLight, UnderwaterLightingModel } from '../lighting/Underwater.ts';
 import { TURF_CANOPY_DEPTH, meadowCanopyLight } from '../lighting/MeadowCanopy.ts';
-import { KEY_RIM, keyRimLight } from '../lighting/KeyRim.ts';
 import { puddleField, puddleRipples } from '../weather/Puddles.ts';
 import { seabedAlbedo } from './SeabedLook.ts';
 import { DRY_F0, FILM_ROUGHNESS, WATER_F0, runnels, wetAlbedo, wetPorosity, wetRoughness } from './Wetness.ts';
@@ -812,8 +811,8 @@ function seabedSurface( { tex, shore }: Ctx, shoreXform: THREE.Node<'vec4'> ) {
 
 // The light below the surface is the shared underwater model (lighting/Underwater.ts): the sun
 // path through the water column (with caustics) and the dimmer, bluer ambient. Above the water the
-// terrain adds its own: the meadow's canopy shade on the key, a faint caustic shimmer reflected onto
-// the rock and the key light's rim (lighting/KeyRim.ts, the stone's surface).
+// terrain adds its own: the meadow's canopy shade on the key and a faint caustic shimmer reflected
+// onto the rock.
 
 type TerrainVariant = ( hex: boolean, from?: THREE.NodeMaterial ) => THREE.MeshStandardNodeMaterial;
 
@@ -910,15 +909,7 @@ function buildTerrainMaterial( kind: 'cliff' | 'seabed', ctx: Ctx, caustics: Cau
 			},
 		},
 	} );
-	// The key light's rim (KeyRim.ts) on the geometric normal: the detail normals' grazing texels
-	// would sparkle along every crease. None below the water, whose own surface lights it.
-	const rim = ( input: THREE.LightingModelDirectInput, lightColor: V3, lightDirection: V3 ) => {
-
-		const lit = select( light.under, float( 0 ), float( 1 ) );
-		( input.reflectedLight.directDiffuse as V3 ).addAssign( keyRimLight( lightColor.mul( lit ), lightDirection, diffuseColor.rgb, KEY_RIM.stone, normalViewGeometry ) );
-
-	};
-	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new UnderwaterLightingModel( light, { extra: rim } );
+	( mat as unknown as { setupLightingModel: () => THREE.LightingModel } ).setupLightingModel = () => new UnderwaterLightingModel( light );
 	mat.userData.refractedSolarReceiver = true;
 	mat.userData.refractedSolarFloor = kind === 'seabed';
 	mat.userData.topY = topYU;

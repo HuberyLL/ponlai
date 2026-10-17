@@ -40,7 +40,6 @@ import { WIND_VIEW } from './debug/WindView.ts';
 import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
-import { trackKeyRim } from './lighting/KeyRim.ts';
 import { Pipeline, postOptionsFromURL } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
@@ -356,7 +355,6 @@ function publishLighting(): void {
 	sun.position.copy( sky.keyDir ).multiplyScalar( 120 ).add( sun.target.position );
 	shared.sunDir.value.copy( sky.keyDir );
 	shared.sunColor.value.set( sky.keyColor.r, sky.keyColor.g, sky.keyColor.b );
-	trackKeyRim( sky.sunColor, sky.keyColor );
 	const cosI = Math.max( sky.keyDir.y, 0 );
 	shared.sunIntoWater.value = sky.keyDir.y > 0 ? 1 - fresnel( cosI, 1.333 ) : 0;
 	const eta = 1 / 1.333;
@@ -1226,7 +1224,6 @@ islanderF.add( characterLook.fillGain, 'value', 0, 10, 0.05 ).name( 'shade fill'
 islanderF.add( characterLook.formFloor, 'value', 0, 1, 0.01 ).name( 'lit form floor' );
 islanderF.add( characterLook.softCloth, 'value', 0.005, 0.4, 0.005 ).name( 'cloth edge' );
 islanderF.add( characterLook.softSkin, 'value', 0.005, 0.4, 0.005 ).name( 'skin edge' );
-islanderF.add( characterLook.rimGain, 'value', 0, 4, 0.01 ).name( 'sun rim' );
 islanderF.add( characterLook.skyRimGain, 'value', 0, 4, 0.01 ).name( 'sky rim' );
 islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'shade saturation' );
 // tidewater's grade (Pipeline.ts TIDEWATER_GRADE), its exposure from the clock and the weather

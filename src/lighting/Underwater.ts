@@ -131,9 +131,6 @@ export interface UnderwaterModelOptions {
 	// shadow map cannot shade). Off for a double-sided surface, whose geometric normal faces away
 	// on its inner side.
 	terminator?: boolean;
-	// more direct light of the material's own (the terrain's key rim), with the key's colour as it
-	// reaches the surface and its direction
-	extra?: ( input: THREE.LightingModelDirectInput, lightColor: V3, lightDirection: V3 ) => void;
 }
 
 /** The physical lighting model with the key light and the ambient carried down the water column
@@ -163,7 +160,6 @@ export class UnderwaterLightingModel extends THREE.PhysicalLightingModel {
 		if ( this.options.terminator !== false ) lightColor = lightColor.mul( smoothstep( 0, 0.06, dot( normalViewGeometry, lightDirection ) ) );
 		const color = lightColor.toVar();
 		super.direct( { ...input, lightDirection, lightColor: color }, builder );
-		this.options.extra?.( input, color, lightDirection );
 
 	}
 

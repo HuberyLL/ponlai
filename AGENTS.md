@@ -66,12 +66,10 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
   coverage, leaf textures, instances, GPU cull, wind deforms, LOD, physics, the registry of kinds).
 - `src/lighting/`: sun radiometry, the sun's stepped soft shadow (`SunShadow.ts`, `SolarShadow.ts`),
   the refracted sun under water, the light every submerged material shares (`Underwater.ts`: a new
-  underwater material lights with it, as the terrain does), the air/water interface, sky occlusion, the meadow's canopy light,
-  the key light's rim and backlight every lit material shares (`KeyRim.ts`: a new lit material,
-  an animal's or a building's, adds `keyRimLight` in its lighting model with its surface type's
-  parameters from `KEY_RIM`, never a rim of its own), the sunlight the ground bounces up
-  (`GroundBounce.ts`: a new lit material adds it in its lighting model, `addGroundBounce` or
-  `groundBounceLight`, never a bounce of its own).
+  underwater material lights with it, as the terrain does), the air/water interface, sky occlusion,
+  the meadow's canopy light, the sunlight the ground bounces up (`GroundBounce.ts`: a new lit
+  material adds it in its lighting model, `addGroundBounce` or `groundBounceLight`, never a bounce
+  of its own).
 - `src/materials/`: procedural textures (the gravel bake: `ProceduralTextures.ts`), the terrain
   (`TerrainMaterial.ts`), wet surfaces, the meadow's habitat and soil-depth fields (`Meadow.ts`).
 - `src/ocean/`: FFT ocean, shore waves, the share of each wave cascade a point of the sea keeps

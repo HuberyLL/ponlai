@@ -5,7 +5,6 @@ import {
 	diffuseColor, vertexColor,
 } from 'three/tsl';
 import { TEMPORAL } from '../post/Antialiasing.ts';
-import { KEY_RIM, keyRimLight } from '../lighting/KeyRim.ts';
 import { groundBounceLight } from '../lighting/GroundBounce.ts';
 import { motionNode, motionState, velocityOutput } from '../post/Motion.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -40,7 +39,6 @@ export const characterLook = {
 	// The open sky is about a tenth of the sun here. Painted shade sits nearer half the lit
 	// tone, so the figure's fill (sky and the ground's bounce) is lifted well above the island's.
 	fillGain: uniform( 2 ),
-	rimGain: uniform( 1 ),
 	skyRimGain: uniform( 1 ),
 	shadowSaturation: uniform( 1.3 ),
 };
@@ -95,12 +93,6 @@ class CharacterLighting extends THREE.LightingModel {
 		// light scattered under the skin warms the edge between light and shade
 		const edge = band.mul( band.oneMinus() ).mul( 4 ).mul( cast ).mul( skin );
 		reflectedLight.directDiffuse.addAssign( sun.mul( albedo ).mul( vec3( 0.85, 0.22, 0.1 ) ).mul( edge.mul( 0.3 / Math.PI ) ) );
-
-		// The key light's rim (lighting/KeyRim.ts) as one more cel step: a narrow band along the
-		// silhouette on the side toward the light, strongest when the figure stands against it (in
-		// plan too: seen from above, a low sun ahead of the camera still backlights a figure), its
-		// light the cast shadow's step, so it follows the cel shading; brighter under the moon.
-		reflectedLight.directSpecular.addAssign( keyRimLight( sun.mul( cast ).mul( look.rimGain ), L, albedo, KEY_RIM.character ) );
 
 		// a crisp highlight on brass and the sheen of worn leather; hair shows a soft sheen band
 		const H = normalize( L.add( V ) );
