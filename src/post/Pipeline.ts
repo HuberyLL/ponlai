@@ -1,16 +1,21 @@
+/*!
+ * Portions adapted from tidewater by Daniel Greenheck (https://github.com/dgreenheck/tidewater).
+ * Copyright (c) 2026 DRG Software Solutions LLC
+ * Licensed under the MIT License; see ./tidewater.LICENSE.txt.
+ */
+
 import * as THREE from 'three/webgpu';
 import {
 	Fn, If, Loop, texture, textureLoad, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
-	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, log2, exp2, floor, luminance, neutralToneMapping, agxToneMapping,
-	sRGBTransferOETF, fract, select, exp, nodeObject, atan, mod, pow, mrt, outputStruct, mat4, output,
+	smoothstep, clamp, max, min, dot, length, abs, sqrt, cos, sin, log2, exp2, floor, luminance,
+	sRGBTransferOETF, fract, select, pow, mrt, outputStruct, mat4, output, acesFilmicToneMapping,
 } from 'three/tsl';
-import BloomNode from 'three/addons/tsl/display/BloomNode.js';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
 import { AerialPerspective, DEFAULT_AIR_OPTIONS, type AirOptions } from '../weather/AerialPerspective.ts';
 import { LightShafts } from './LightShafts.ts';
 import { FSR } from './FSR.ts';
-import { BloomChains, type BloomChain } from './BloomChains.ts';
+import { PhysicalBloom } from './PhysicalBloom.ts';
 import { AA_MODE, AFTER_RESOLVE, FSR3, RESOLVE, SCENE_SAMPLES, TEMPORAL } from './Antialiasing.ts';
 import { beginMotionFrame, onTaaCut, overlayMRT, sceneMRT } from './Motion.ts';
 import { RAIN_OVERLAY, afterFocus, afterMRT } from './AfterResolve.ts';
@@ -20,8 +25,8 @@ import { Settled, type SettleFrame } from './Settled.ts';
 import { Fsr3Upscaler } from './fsr3/Fsr3Upscaler.ts';
 import { QUALITY, type TemporalSettings } from '../Quality.ts';
 import { FrameGraph, type ResourceHandle, type SizeClass } from './graph/FrameGraph.ts';
-import { DAY_BLACK_LIFT } from '../sky/DayCycle.ts';
 import type { Sky } from '../sky/Sky.ts';
+import { DAY_EXPOSURE } from '../sky/DayCycle.ts';
 import type { Rain } from '../weather/Rain.ts';
 import { RefractionView, REFRACTION_SIZE } from '../ocean/Refraction.ts';
 import { debugFlags } from '../debug/DebugFlags.ts';
@@ -44,14 +49,12 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //   constants: what the composite takes that is the same for every pixel (the horizon's average,
 //   the sun disk's visibility), evaluated once into a texel
 //   composite (air, fog, rain veil, shafts) ── hdr, once (the veil after the resolve under taa, taau)
-//   bloom (tight) and glow (wide) from hdr, both through a clamped soft-knee prefilter
-//   sharp (hdr + the blooms) ── tilt-shift blur (half-res gather, with the depth of field on) ── the
-//   look's diffusion glow
-//   display: the depth of field's mix, the diffusion glow, exposure, tone curve (PBR Neutral with
-//   hue-kept highlights by default), split-tone grade, vibrance, the night's cooler meadow, the
-//   art-directed look
-//   (hue-selective colour, warm / cool split, coloured shadow lift), lifted blacks, vignette,
-//   S-curve, sRGB, grain ── displayRT
+//   bloom: tidewater's physical bloom from hdr (PhysicalBloom.ts: five 13-tap downsamples, four tent
+//   upsamples)
+//   sharp (hdr + the bloom at its strength) ── tilt-shift blur (half-res gather, with the depth of
+//   field on)
+//   display: the depth of field's mix, the exposure, tidewater's grade (a white balance nudge,
+//   saturation, contrast round mid grey, the vignette), ACES, sRGB, grain ── displayRT
 //   ── copied to the screen
 // Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene half is single-sampled and
 // jittered, and writes the motion vectors beside the colour:
@@ -67,7 +70,7 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //     velocity under them kept
 // and the post passes follow as above, but for the vignette and the grain, which the display pass
 // leaves to the canvas pass, and (accumulating in linear light, Quality.ts `taa.linear`) for the
-// S-curve and the sRGB transfer: displayRT holds the graded colour in linear light (half float),
+// sRGB transfer: displayRT holds the graded colour in linear light (half float),
 // which the resolve averages as it is and encodes once for its canvas pass; then (TemporalAA.ts):
 //   TAA neighbourhood (TAAU) ── taaStats, taaClip, taaNearest: each input pixel's 3x3 clip box,
 //     history weight and nearest motion and depth, at the render's size
@@ -101,15 +104,14 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //     surface's depth, the velocity and veilReactive, into its output: scene radiance at the
 //     canvas's size (an import written through storage); the rest's held copy of the last running
 //     output (fsr3Held) is read instead while the rest's sequence runs
-//   blooms ── from FSR's output, their chains at their render-relative sizes
-//   sharp (FSR's output + the blooms) ── at the canvas's size; the tilt-shift blur at half the
-//     render, the look's glow at its render-relative size, both reading it
-//   display ── at the canvas's size, the full grade with vignette, S-curve, sRGB, grain and dither
+//   bloom ── from FSR's output, its levels at their render-relative sizes
+//   sharp (FSR's output + the bloom) ── at the canvas's size; the tilt-shift blur at half the
+//     render reading it
+//   display ── at the canvas's size, the full grade with vignette, ACES, sRGB, grain and dither
 //     (half float), copied to the canvas by the output pass
-// The depth reads after FSR (the blooms' sky test, the depth of field's coc, the look glow's fade,
-// the grade's sky test) take the render's jittered depth at the unjittered point, weighted over its
-// four texels (`unjitteredTaps`), so their edges do not flicker with the jitter. The depth of field's
-// radius stays in render pixels.
+// The depth reads after FSR (the depth of field's coc) take the render's jittered depth at the
+// unjittered point, weighted over its four texels (`unjitteredTaps`), so their edges do not flicker
+// with the jitter. The depth of field's radius stays in render pixels.
 // The rain veil's per-pixel reactive weight (veilReactive, R16F at the render's size) is a resource
 // of its own the resolve reads: under the resolve the composite pass writes it as a second target
 // beside hdr, the veil's opacity at the pixel (Rain.veil) x 1.5, at most 0.6, so the resolve trusts
@@ -126,26 +128,23 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 // display pixels.
 // The targets are the frame graph's (graph/FrameGraph.ts): each is declared with its format,
 // sample count and size class (the render, a share of it, the canvas or fixed), and the graph sizes
-// them all from `setSize`'s render and canvas sizes (the look glow's bloom chain, three's, which
-// keeps targets of its own, through a resize hook). The passes read their sizes from the graph's extent uniforms.
+// them all from `setSize`'s render and canvas sizes. The passes read their sizes from the graph's
+// extent uniforms.
 // The graph runs the whole frame as passes that declare what they read and write: the scene half
 // (opaque, the depth and copy resolves, water, the surface resolve, rain), the sea fog (its bank
 // map, nearest depth and march), the light shafts' two passes, the composite's constants, the
-// composite, the blooms (BloomChains.ts: the tight bloom and the wide glow drawn together, a pass
-// for the high pass and each blur, one composite per chain), the sharp image, the depth of field's
-// blur, the look's glow (three's bloom chain, its result imported into the graph), the display
-// pass, and the canvas pass, or EASU and the sharpening canvas pass while upscaling. Every pass
-// but the scene passes, the look's glow and the canvas passes is a full-screen quad of its own, and no pass renders
-// another inside it (but three's FSR1Node, `post=three-fsr`, in its canvas pass). Each pass
-// that runs only now and then (rain, fog, the light shafts, the depth of field's blur, the look's
-// glow, either output) says when by a predicate the graph evaluates at the frame's start. A pass
+// composite, the bloom (PhysicalBloom.ts: a pass per level), the sharp image, the depth of field's
+// blur, the display pass, and the canvas pass, or EASU and the sharpening canvas pass while
+// upscaling. Every pass but the scene passes and the canvas passes is a full-screen quad of its
+// own, and no pass renders another inside it (but three's FSR1Node, `post=three-fsr`, in its
+// canvas pass). Each pass that runs only now and then (rain, fog, the light shafts, the depth of
+// field's blur, either output) says when by a predicate the graph evaluates at the frame's start. A pass
 // whose output weighs nothing in what reads it (the shafts without the sun toward the view, the
 // blur without the depth of field) is skipped rather than drawn and multiplied by 0; its reader
 // reads it optionally and gets what it last held, finite, times 0. The `post=` legacy switches
 // are variants of the graph, chosen as it is built.
-// At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass and the bloom
-// chains' own passes, so one that first runs later (fog, the upscale, the look's glow) builds
-// nothing then.
+// At startup the graph's warm-up (`graph.warm`, from main.ts) compiles every pass, so one that
+// first runs later (fog, the upscale) builds nothing then.
 
 //
 // Rules (the look itself is in docs/art-direction.md):
@@ -178,26 +177,9 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
 // - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
 //   come in as uniforms.
-// - The tone curve and its grade come first; each curve carries its own grade. The night keeps
-//   PBR Neutral's look with its grade whichever curve is chosen, crossfading as the sun sets (from
-//   the horizon to about -3 degrees, so twilight is no darker than under PBR Neutral: `nightCurve`).
-//   In the navy night the grade turns the meadow's greens toward blue-green (`nightGreenTurn`, by
-//   the sun's elevation: `nightGreen`), a grade of its own, before the look; by day it is skipped
-//   and the frame is unchanged.
-// - The look is a layer after the curve and grade, never baked into the lighting or the curve;
-//   every parameter is in the GUI. The night has a look of its own (`lookNight`: a cool, wider
-//   soft glow from a lower threshold, cool highlights, a smaller lift), and the day's crossfades
-//   into it (`nightLook`), so the moonlit island and the clouds round the moon glow softly instead
-//   of the look fading out. Its glow, golden (by night cool) highlights and lift follow the
-//   weather's direct light, and only part of its colour holds under a closed sky, so bad weather
-//   stays dimmer and greyer than a clear day.
-// - The two bloom chains (the tight bloom and the wide glow) take the night's own strengths,
-//   thresholds and clamp (`settings.night`), crossfaded by the same weight as the look. Their
-//   thresholds are in scene radiance, so a dim moonlit frame never reached the day's; scaling
-//   them by the exposure instead would also move the day's bloom between noon and a low sun (the
-//   low-sun adaptation raises the exposure by up to 60 %), where the chosen day keeps its values,
-//   and the chosen night also takes stronger chains and a higher clamp, which a threshold alone
-//   does not give.
+// - The display chain is tidewater's (ACES_EXPOSURE): one curve and grade, with no art-directed
+//   layer over it and no night of its own. The day and the night differ by the exposure alone, from
+//   the clock and the weather (DayCycle, Sky), calibrated against tidewater's metered frames.
 // - The tilt-shift blur belongs to the island's surroundings and eases off kilometres out: a
 //   blurred sky reads as a low backdrop and turns stars into bokeh discs. Rain drops follow its
 //   focus (Rain.ts).
@@ -227,6 +209,7 @@ const HALF: SizeClass = { of: 'render', scale: 0.5, min: 1 };
 const CANVAS: SizeClass = { of: 'canvas' };
 // what the water pass draws in a frame without water: nothing
 const NO_WATER = new THREE.Scene();
+
 // The refraction pass's only attachment, cleared to zero coverage (alpha 0: nothing drawn there).
 const REFRACTION_MRT: THREE.MRTNode = mrt( { refraction: output } ).setClearColor( 'refraction', new THREE.Color( 0, 0, 0 ), 0 );
 
@@ -258,8 +241,6 @@ export interface PostOptions extends AirOptions {
 	// the depth of field reads the view distance from a target written once per pixel (else each
 	// tap derives it from the depth)
 	dofDistance: boolean;
-	// two bloom chains (tight and wide), or one with the wide glow's radius and the two strengths
-	bloomChains: 1 | 2;
 	// FSR 1 from FSR.ts (EASU pass, sharpening folded into the canvas pass), or three's FSR1Node
 	fsrPort: boolean;
 	// the legacy attachment ops (`fgOps=legacy`) discard the scene target's samples in the rain;
@@ -269,7 +250,7 @@ export interface PostOptions extends AirOptions {
 }
 
 export const DEFAULT_POST_OPTIONS: Readonly<PostOptions> = {
-	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 16, dofDistance: true, bloomChains: 2, fsrPort: true, discardScene: true,
+	...DEFAULT_AIR_OPTIONS, compositeOnce: true, dofTaps: 16, dofDistance: true, fsrPort: true, discardScene: true,
 };
 
 const LEGACY_SWITCHES: Record<string, Partial<PostOptions>> = {
@@ -302,280 +283,36 @@ type V3 = THREE.Node<'vec3'>;
 // what a pass's setup declares its reads and writes on
 type PassBuilder = Parameters<Parameters<FrameGraph<PipelineFrame>[ 'addPass' ]>[ 2 ]>[ 0 ];
 
-// BloomNode sizes its chain to the canvas every frame; this one follows the scene's render
-// instead, so the glow keeps its size and cost when the frame is upscaled.
-class RenderBloomNode extends BloomNode {
-
-	renderWidth = 1;
-	renderHeight = 1;
-
-	override setSize(): void {
-
-		super.setSize( this.renderWidth, this.renderHeight );
-
-	}
-
-	// A chain that renders as a pass of the frame graph's own (its updateBefore), not from inside a
-	// material that holds the node, is set up by no node build: its materials are made here, once,
-	// with an empty shared context (inside the display chain they took the render pipeline's, whose
-	// fields none of their nodes reads).
-	setUpAlone(): this {
-
-		( this as unknown as { setup( builder: { getSharedContext(): object } ): unknown } ).setup( { getSharedContext: () => ( {} ) } );
-		return this;
-
-	}
-
-	/** The chain's result (its composite's target, which the graph imports). */
-	get output(): THREE.RenderTarget {
-
-		return ( this as unknown as { _renderTargetsHorizontal: THREE.RenderTarget[] } )._renderTargetsHorizontal[ 0 ];
-
-	}
-
-}
-
-// The tone curves. 'neutral-hue', the default, is Khronos' PBR Neutral through its toe and
-// midtones, where the scene's exposures, water and terrain were tuned, with highlights that keep
-// their hue: PBR Neutral's own desaturation toward white turned a low sun's sky and sea into one
-// flat cream band. AgX kept those highlights' colour too, but its toe lifts and greys the deep
-// water and its long shoulder compresses the bright shallows, so the sea lost its depth and the
-// seabed its contrast; PBR Neutral's linear midtones keep both.
-// AgX (after Troy Sobotka, in three's approximation) has a long shoulder, about
-// four stops above display white, that keeps gradation in a low sun's sky and glare, where PBR
-// Neutral flattened everything above white into one cream band. Plain AgX also greys those
-// highlights: each channel runs through the curve on its own, so a bright warm sky drifts toward
-// white long before it clips, and a pale blue sky turns beige under the grade's golden highlights.
-// 'agx-hue' runs AgX's curve on each colour's brightest channel only and keeps the colour's ratios
-// (plain AgX only in the deep shadows): a low sun's sky stays golden and a noon sky blue, with
-// AgX's gradation. 'neutral' is plain PBR Neutral. The AgX curves and 'neutral' stay selectable
-// for comparison.
-// The night keeps PBR Neutral's look whichever curve is chosen (see `nightCurve`): its toe, which
-// subtracts the darkest channel, holds the night's dark colours saturated where AgX's toe greys
-// and lifts them, and its short shoulder lets the brightest few stars reach near white.
-export const TONE_CURVES = [ 'neutral-hue', 'agx-hue', 'agx', 'neutral' ] as const;
-export type ToneCurve = typeof TONE_CURVES[ number ];
-
-// Each curve's own grade: a gain on the clock's exposure (the clock's exposures were tuned under
-// PBR Neutral), its saturation, vibrance and display contrast, gains on the clock's split tone
-// and black lift, the weight and start of a soft knee that keeps the brightest channel below
-// white, extra saturation for bright colours only, and how far both give way to white for the
-// brightest highlights (`burn`).
-export interface ToneLook { exposure: number; saturation: number; vibrance: number; contrast: number; split: number; lift: number; clipGuard: number; knee: number; highlightSat: number; burn: number }
-
-// The look: an art-directed layer over the physically based image, after the tone curve and its
-// grade, so the curve can be revised underneath it. 'realistic' leaves the frame exactly as the
-// curve and grade make it; the fantasy looks push it toward a painted game's colour: a soft glow
-// round the highlights, greens and turquoise water a little richer, golden highlights over cool
-// teal shadows, and airy shadows lifted toward teal rather than grey.
-export const LOOKS = [ 'realistic', 'soft-fantasy', 'rich-fantasy' ] as const;
-export type LookName = typeof LOOKS[ number ];
-// The gentle look by default: it holds across the day and the weather (a backlit low sun stays
-// clear), while the rich one leans further toward a painted scene and is a step away in the GUI.
-export const DEFAULT_LOOK: LookName = 'soft-fantasy';
-
-export interface LookSettings {
-	// Orton-style diffusion: a wide blur of what lies above `glowThreshold` (in display values,
-	// before the curve, so it follows the exposure) added back over the image, warmed by `glowWarmth`
-	glow: number; glowThreshold: number; glowRadius: number; glowWarmth: number;
-	// the share of the glow that spreads over the dark parts of the frame (1: as over the light ones)
-	glowHalo: number;
-	// hue-selective colour: saturation and brightness gains on greens and on teal-cyan, and a hue
-	// turn in radians (greens' toward pure green, the water's toward blue), weighted by chroma so
-	// grey stone and pale skin stay as they are
-	greenSaturation: number; greenBrightness: number; greenHue: number;
-	tealSaturation: number; tealBrightness: number; tealHue: number;
-	// split tone by luminance: shadows toward `shadowTint`, highlights toward `highlightTint`,
-	// crossing at `pivot` (each tint keeps the colour's luminance)
-	shadowTint: THREE.Color; shadowTone: number; highlightTint: THREE.Color; highlightTone: number; pivot: number;
-	// a coloured lift of the darkest tones toward `shadowTint` (airy shadows) and a luminance
-	// contrast around mid grey (depth in the meadow)
-	shadowLift: number; contrast: number;
-	vignette: number;
-	// the share of the glow and the golden highlights the sky takes (the look is for the island)
-	sky: number;
-	// how much of the colour layers holds without sunlight (the glow, golden highlights and lift
-	// follow the sun alone), so a rain or a storm stays dimmer and greyer than a clear day
-	overcast: number;
-}
-
-export function cloneLook( look: LookSettings ): LookSettings {
-
-	return { ...look, shadowTint: look.shadowTint.clone(), highlightTint: look.highlightTint.clone() };
-
-}
-
-// `out` = the looks `a` and `b` crossfaded by `t` (every number and both tints), returned.
-function mixLook( out: LookSettings, a: LookSettings, b: LookSettings, t: number ): LookSettings {
-
-	for ( const key of Object.keys( a ) as ( keyof LookSettings )[] ) {
-
-		const x = a[ key ], y = b[ key ];
-		if ( typeof x === 'number' ) ( out[ key ] as number ) = x + ( ( y as number ) - x ) * t;
-
-	}
-	out.shadowTint.lerpColors( a.shadowTint, b.shadowTint, t );
-	out.highlightTint.lerpColors( a.highlightTint, b.highlightTint, t );
-	return out;
-
-}
+// tidewater's display chain (PostFX.js, 4811ba4): its physical bloom (PhysicalBloom.ts) added to
+// the image; its grade in linear light (a white balance nudge, saturation, contrast round mid grey,
+// the vignette); ACES at its exposure setting (ACES_EXPOSURE: three's fitted curve, as tidewater's
+// renderOutput) and the sRGB transfer; its luminance-weighted grain, and a dither. tidewater meters
+// its frame and scales it by an auto exposure before the grade; here the scene is scaled by the
+// clock's and the weather's exposure (`settings.exposure`: DayCycle and Sky, so a paused frame
+// repeats), calibrated against tidewater's metered frames at the same sun heights (DayCycle.ts).
+const ACES_EXPOSURE = 0.55;
 
 export interface PipelineSettings {
-	toneMapping: ToneCurve;
-	look: LookName;
-	// sunlight reaching the island through the weather (0 under a storm's deck, 1 clear)
-	lookSunlight: number;
-	// 0 by day, 1 at night (from the clock): how far the curve and its grade return to PBR
-	// Neutral's
-	nightCurve: number;
-	// 0 by day, 1 at night (from the clock): how far the look and the bloom chains have crossfaded
-	// into the night's (`Pipeline.lookNight`, `night`)
-	nightLook: number;
-	// 0 by day, 1 in the navy night (from the sun's elevation): how far the meadow's greens turn
-	// toward blue-green (`nightGreenTurn`)
-	nightGreen: number;
-	exposure: number; saturation: number; vibrance: number; contrast: number; split: number;
-	lift: THREE.Color; vignette: number; grain: number;
-	bloomStrength: number; bloomRadius: number; bloomThreshold: number; bloomMaxLum: number; bloomSurfaceMaxLum: number;
-	glowStrength: number; glowRadius: number; glowThreshold: number; glowMaxLum: number;
-	// the bloom chains' values the night crossfades to (`nightLook`)
-	night: NightBloom;
+	// the scene's exposure: scene radiance (over SCENE_RADIANCE_SCALE) into the frame the grade takes
+	exposure: number;
+	// tidewater's grade: the bloom's strength, the white balance nudge (red up and blue down by it),
+	// the saturation and the contrast round mid grey, the vignette and the grain
+	bloom: number; warmth: number; saturation: number; contrast: number; vignette: number; grain: number;
 	dof: number; dofRange: number; dofMaxRadius: number; focusDistance: number;
 }
 
-export interface NightBloom { bloomStrength: number; bloomThreshold: number; glowStrength: number; glowThreshold: number; glowMaxLum: number }
-
-// The night's own grade: the meadow's greens turned toward the night's blue-green, by `turn`
-// radians at the centre of the green band (105 degrees, as the look's: it shades off over 55
-// degrees either side), weighted by saturation so grey stone and the navy sea and sky keep their
-// colour. Moonlight and the night ambient are blue, but the meadow's yellow-green albedo kept it a
-// dark olive under them (about 107 degrees, blue a third of green); a light blue enough to turn it
-// would turn the stone, sand and the islanders' skin blue too. A rotation in the opponent plane
-// keeps the mean of the channels, so the meadow keeps its brightness. The turn takes the meadow to
-// about 143 degrees, a cool green toward blue-green: a larger one (0.65, 155 degrees) read as teal.
-const NIGHT_GREEN_TURN = 0.4;
-const nightGreenTurn = Fn( ( [ c0, turn ]: [ V3, F ] ) => {
-
-	const c = c0.toVar();
-	const ca = c.r.sub( c.g.add( c.b ).mul( 0.5 ) ).toVar();
-	const cb = c.g.sub( c.b ).mul( Math.sqrt( 3 ) / 2 ).toVar();
-	// (atan2 ( 0, 0 ) is undefined on some backends; a grey's hue is keyed out below anyway)
-	const hue = atan( cb, select( abs( ca ).add( abs( cb ) ).greaterThan( 1e-7 ), ca, float( 1 ) ) );
-	const peak = max( c.r, max( c.g, c.b ) );
-	const sat = peak.sub( min( c.r, min( c.g, c.b ) ) ).div( max( peak, 1e-5 ) );
-	const band = float( 1 ).sub( smoothstep( 0, 55 * Math.PI / 180, abs( mod( hue.sub( 105 * Math.PI / 180 ).add( Math.PI ), 2 * Math.PI ).sub( Math.PI ) ) ) );
-	const t = band.mul( smoothstep( 0.04, 0.3, sat ) ).mul( turn ).toVar();
-	const ra = ca.mul( cos( t ) ).sub( cb.mul( sin( t ) ) ).toVar();
-	const rb = ca.mul( sin( t ) ).add( cb.mul( cos( t ) ) ).toVar();
-	const m = c.r.add( c.g ).add( c.b ).div( 3 ).toVar();
-	const k = 1 / Math.sqrt( 3 );
-	return max( vec3( m.add( ra.mul( 2 / 3 ) ), m.sub( ra.div( 3 ) ).add( rb.mul( k ) ), m.sub( ra.div( 3 ) ).sub( rb.mul( k ) ) ), vec3( 0 ) );
-
-} ).setLayout( { name: 'nightGreenTurn', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'turn', type: 'float' } ] } );
+/** tidewater's grade (PostFX.js `PostParams`). */
+export const TIDEWATER_GRADE: Readonly<Pick<PipelineSettings, 'bloom' | 'warmth' | 'saturation' | 'contrast' | 'vignette' | 'grain'>> = {
+	bloom: 0.05, warmth: 0.02, saturation: 1.06, contrast: 1.04, vignette: 0.28, grain: 0.012,
+};
 
 export class Pipeline {
 
 	renderer: THREE.WebGPURenderer;
 	width = 1;
 	height = 1;
-	// AgX lifts the shadows and compresses the upper midtones that PBR Neutral left linear; a
-	// lower exposure and a firmer display S-curve bring the island, meadow and sea back to about
-	// their earlier brightness, and saturation and vibrance their colour (plain AgX needs more:
-	// it greys every channel's midtones). 'agx-hue' keeps its highlights' colour up to white, where
-	// that boost and the split tone's golden highlights would push the brightest channel past
-	// white and clip it into a flat band of another hue, so it rolls them off below white.
-	// 'neutral-hue' keeps PBR Neutral's grade with two thirds of the split tone, no vibrance and
-	// no extra saturation, plus that knee, a little brighter (8 %) and a little softer (display
-	// contrast below zero) than PBR Neutral, for a high-key, airy day. By day the clock's exposure
-	// takes the 8 % back (DayCycle `DAY_EXPOSURE`), which leaves the night's exposure untouched. Its shoulder packs everything bright into the last few
-	// percent below white, where the split tone's golden highlights pushed red alone against white
-	// across a sunset sky; the knee starts lower than AgX's to leave red room for gradation. The
-	// daytime horizon is pale and low in chroma: vibrance and a saturation boost for bright colours
-	// lifted it into a saturated band, which the golden highlights turned cyan, where a hazy sea
-	// sky is milky; a sunset sky, already saturated, kept its colour without them. The knee is
-	// released (`burn`) for scene colours from eight to 32 times white, above the brightest sky:
-	// alone it held every channel below about 0.95, and the curve's shoulder packs everything above white into its last few
-	// percent, so the sun's glints on the sea read as one flat peach. Released, their whitened
-	// cores clip to white, where a single pinned channel no longer shows as a band.
-	readonly looks: Record<ToneCurve, ToneLook> = {
-		'agx-hue': { exposure: 0.78, saturation: 1.2, vibrance: 0.3, contrast: 0.38, split: 1, lift: 1, clipGuard: 1, knee: 0.9, highlightSat: 0, burn: 0 },
-		agx: { exposure: 0.8, saturation: 1.3, vibrance: 0.4, contrast: 0.35, split: 1, lift: 1, clipGuard: 0, knee: 0.9, highlightSat: 0, burn: 0 },
-		neutral: { exposure: 1, saturation: 0.97, vibrance: 0.15, contrast: 0.04, split: 1, lift: 1, clipGuard: 0, knee: 0.9, highlightSat: 0, burn: 0 },
-		'neutral-hue': { exposure: 1.08, saturation: 0.97, vibrance: 0, contrast: - 0.03, split: 0.67, lift: 1, clipGuard: 1, knee: 0.8, highlightSat: 0, burn: 1 },
-	};
-	// The fantasy presets are tuned on 'neutral-hue'. Its linear midtones pass the glow (added
-	// before the curve) through almost as it is, and its shoulder keeps the glow's warm hue where
-	// AgX's compressed and whitened it, so the glow is weaker, narrower and less warm than it was on
-	// AgX; and its darker, more saturated toe made the coloured shadow lift read as haze on the deep
-	// water, so the lift and the cool shadow tone are smaller too. 'soft-fantasy' turns the
-	// greens about 11 degrees toward pure green and takes a tenth off their brightness, so the
-	// sunlit meadow reads fresh and cool rather than straw-yellow and does not outshine the sky,
-	// and takes a little luminance contrast away: the day stays soft and high-key (its depth comes
-	// from the light). Its glow is wide and starts at about 0.7 of display white, so the horizon,
-	// the glints and the brightest sunlit grass tips spread a soft light into what is round them,
-	// and the airy shadow lift is twice the earlier one. From 0.45 at 0.3 the glow spread over the
-	// whole sunlit meadow and washed a low sun's frame out toward white (about 9 to 12 levels of
-	// its mean luma).
-	readonly lookPresets: Record<LookName, LookSettings> = {
-		realistic: {
-			glow: 0, glowThreshold: 0.6, glowRadius: 0.8, glowWarmth: 0, glowHalo: 1,
-			greenSaturation: 0, greenBrightness: 0, greenHue: 0, tealSaturation: 0, tealBrightness: 0, tealHue: 0,
-			shadowTint: new THREE.Color( 1, 1, 1 ), shadowTone: 0, highlightTint: new THREE.Color( 1, 1, 1 ), highlightTone: 0, pivot: 0.3,
-			shadowLift: 0, contrast: 0, vignette: 0, sky: 1, overcast: 0,
-		},
-		'soft-fantasy': {
-			glow: 0.18, glowThreshold: 0.7, glowRadius: 0.85, glowWarmth: 0.25, glowHalo: 0.2,
-			greenSaturation: 0.25, greenBrightness: - 0.1, greenHue: 0.2, tealSaturation: 0.12, tealBrightness: 0.02, tealHue: 0.04,
-			shadowTint: new THREE.Color( 0.55, 0.85, 1.0 ), shadowTone: 0.18, highlightTint: new THREE.Color( 1.0, 0.86, 0.6 ), highlightTone: 0.25, pivot: 0.18,
-			shadowLift: 0.02, contrast: - 0.05, vignette: 0.06, sky: 0.3, overcast: 0.5,
-		},
-		'rich-fantasy': {
-			glow: 0.2, glowThreshold: 0.9, glowRadius: 0.75, glowWarmth: 0.4, glowHalo: 0.15,
-			greenSaturation: 0.45, greenBrightness: 0.03, greenHue: 0.1, tealSaturation: 0.25, tealBrightness: 0.03, tealHue: 0.08,
-			shadowTint: new THREE.Color( 0.45, 0.8, 1.0 ), shadowTone: 0.3, highlightTint: new THREE.Color( 1.0, 0.8, 0.5 ), highlightTone: 0.4, pivot: 0.18,
-			shadowLift: 0.018, contrast: 0.15, vignette: 0.12, sky: 0.3, overcast: 0.5,
-		},
-	};
-	// the live look, loaded from a preset by setLook() and tuned from there in the GUI
-	look: LookSettings = cloneLook( this.lookPresets.realistic );
-	// The night's look, for either fantasy look ('realistic' bypasses the layer by night too): the
-	// soft glow cool, wider and from a lower threshold, so the moonlit meadow, the sea's sheen and
-	// the clouds round the moon spread a cool soft light; cool highlights in place of golden ones,
-	// the sky taking more of the glow (the moon and its clouds are the night's light), a small lift
-	// that keeps the shade from sinking to black, and the greens a little richer but not turned
-	// (the night's grade turns them, `nightGreenTurn`: the day's turn on top took the moonlit
-	// meadow past 150 degrees, toward teal). Its strengths
-	// (glow, the colour layers' amounts, lift, vignette) are seven tenths of the values it was
-	// chosen by, which ran under seven tenths of the day's weight. Its threshold is about half the
-	// first one's (0.12 from 0.25), so seen from the game's overview the moon path on the sea and the
-	// moonlit meadow glow too, not only the moon and its clouds.
-	readonly lookNightPreset: LookSettings = {
-		glow: 0.35, glowThreshold: 0.12, glowRadius: 0.85, glowWarmth: - 0.8, glowHalo: 0.15,
-		greenSaturation: 0.07, greenBrightness: - 0.07, greenHue: 0, tealSaturation: 0.084, tealBrightness: 0.014, tealHue: 0.028,
-		shadowTint: new THREE.Color( 0.55, 0.85, 1.0 ), shadowTone: 0.126, highlightTint: new THREE.Color( 0.8, 0.9, 1.0 ), highlightTone: 0.175, pivot: 0.18,
-		shadowLift: 0.0028, contrast: 0, vignette: 0.042, sky: 0.6, overcast: 0.5,
-	};
-	// the live night look (the GUI tunes it from there)
-	lookNight: LookSettings = cloneLook( this.lookNightPreset );
-	// the day's and the night's looks crossfaded, each frame
-	private lookMixed: LookSettings = cloneLook( this.lookNightPreset );
-
 	settings: PipelineSettings = {
-		toneMapping: 'neutral-hue', look: 'realistic', lookSunlight: 1, nightCurve: 0, nightLook: 0, nightGreen: 0,
-		// The look's bright midtones and soft shadows are a display grade; keep the
-		// calibrated sunlight and water transport intact, with a nearly neutral black lift.
-		exposure: 2.35, saturation: 0.97, vibrance: 0, contrast: - 0.03, split: 0.45,
-		lift: new THREE.Color( DAY_BLACK_LIFT, DAY_BLACK_LIFT, DAY_BLACK_LIFT * 0.97 ),
-		vignette: 0.06, grain: 0.004,
-		bloomStrength: 0.22, bloomRadius: 0.3, bloomThreshold: 1.4, bloomMaxLum: 4.0, bloomSurfaceMaxLum: 2.0,
-		glowStrength: 0.1, glowRadius: 1.0, glowThreshold: 0.8, glowMaxLum: 1.0,
-		// the moonlit night's: both chains stronger and from lower thresholds in scene radiance (the
-		// bloom's under half the day's), the glow's clamp doubled, so the moon, the clouds round it
-		// and the moonlit sea's sheen bloom. The wide glow starts at 0.02, near the night look's
-		// threshold (0.12 of display white over the night's exposure): from 0.35 only the moon and
-		// its clouds reached it, and the moon path seen from the overview stayed hard. Lower still
-		// (0.013) spread a haze round the moon in a view toward it a third brighter than before.
-		night: { bloomStrength: 0.3, bloomThreshold: 0.6, glowStrength: 0.3, glowThreshold: 0.02, glowMaxLum: 2.0 },
+		exposure: DAY_EXPOSURE, ...TIDEWATER_GRADE,
 		dof: 0.65, dofRange: 8.0, dofMaxRadius: 6.0, focusDistance: 0,
 	};
 
@@ -642,15 +379,12 @@ export class Pipeline {
 	private blurQuad: THREE.QuadMesh;
 	// the graded image at the render's size, before the copy or upscale to the canvas
 	private displayQuad: THREE.QuadMesh;
-	// the bloom chains (the tight bloom, and the wide glow when there are two), drawn together
-	// (BloomChains.ts), and each chain's clamps
-	private bloom!: BloomChains;
-	private blooms: { chain: BloomChain; maxLum: THREE.UniformNode<'float', number>; surfaceMaxLum: THREE.UniformNode<'float', number> }[] = [];
+	// tidewater's physical bloom (PhysicalBloom.ts)
+	private bloom!: PhysicalBloom;
 	private u = {
-		// (exposure: the clock's, for PBR Neutral and the depth of field; curveExposure: with the
-		// chosen curve's gain; day: 1 - the night's return to PBR Neutral)
-		curve: uniform( 0 ), day: uniform( 1 ), nightGreen: uniform( 0 ), exposure: uniform( 1 ), curveExposure: uniform( 1 ), saturation: uniform( 1 ), vibrance: uniform( 0 ), contrast: uniform( 0 ), split: uniform( 1 ), clipGuard: uniform( 0 ), knee: uniform( 0.9 ), highlightSat: uniform( 0 ), burn: uniform( 0 ),
-		lift: uniform( new THREE.Color() ), vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
+		// the scene's exposure (scene radiance into the frame the grade takes) and tidewater's grade
+		exposure: uniform( 1 ), bloom: uniform( TIDEWATER_GRADE.bloom ), warmth: uniform( 0 ), saturation: uniform( 1 ), contrast: uniform( 1 ),
+		vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		dof: uniform( 1 ), focus: uniform( 50 ), range: uniform( 3 ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ),
@@ -658,16 +392,8 @@ export class Pipeline {
 		// 1 while the after pass draws (AfterResolve.ts): else its overlay holds an earlier frame's;
 		// and while the rain's layer pass runs
 		afterOn: uniform( 0 ), layerOn: uniform( 0 ),
-		// the look (lookOn 0 skips it, so 'realistic' is exactly the curve's grade; lookColour and
-		// lookSun are its weights with and without sunlight, both 0 at night)
-		lookOn: uniform( 0 ), glowOn: uniform( 0 ), lookColour: uniform( 0 ), lookSun: uniform( 0 ), glowTint: uniform( new THREE.Color( 1, 1, 1 ) ),
-		greenSat: uniform( 0 ), greenBright: uniform( 0 ), greenHue: uniform( 0 ), tealSat: uniform( 0 ), tealBright: uniform( 0 ), tealHue: uniform( 0 ),
-		shadowTint: uniform( new THREE.Color( 1, 1, 1 ) ), shadowTone: uniform( 0 ), highlightTint: uniform( new THREE.Color( 1, 1, 1 ) ), highlightTone: uniform( 0 ),
-		pivot: uniform( 0.3 ), shadowLift: uniform( 0 ), lookContrast: uniform( 0 ), lookSky: uniform( 1 ), glowHalo: uniform( 1 ),
 	};
-	// the look's diffusion glow: a bloom chain over the sharp image (its graph pass runs only while
-	// the glow shows: `enabled`)
-	private diffusion!: { node: RenderBloomNode; threshold: THREE.UniformNode<'float', number>; output: ResourceHandle; enabled: boolean };
+
 
 	/** `temporal`: the tier's resolve settings (Quality.ts `taa`), for the temporal modes. */
 	constructor( renderer: THREE.WebGPURenderer, sky: Sky, rain?: Rain, options: Partial<PostOptions> = postOptionsFromURL(), temporal?: TemporalSettings ) {
@@ -711,7 +437,7 @@ export class Pipeline {
 		const rainInput = AFTER_RESOLVE ? g.color( 'rainInput', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		const rainBehind = rainInput && rainAir ? g.color( 'rainBehind', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		// (the grade as a table, for the canvas pass that draws the layer)
-		const rainGrade = AFTER_RESOLVE ? g.color( 'rainGrade', { size: { of: 'fixed', width: GRADE_TABLE.size ** 2, height: 2 * GRADE_TABLE.size }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
+		const rainGrade = AFTER_RESOLVE ? g.color( 'rainGrade', { size: { of: 'fixed', width: GRADE_TABLE.size ** 2, height: GRADE_TABLE.size }, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
 		// the composite, the sharp image and the depth of field's blur (half float, as three's rtt()
 		// made them)
 		const hdr = O.compositeOnce ? g.color( 'hdr', { size: RENDER, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
@@ -887,63 +613,17 @@ export class Pipeline {
 			// passes take hdr, declared after the composite pass).
 			if ( FSR3 ) ( this as { fsr3: Fsr3Upscaler | null } ).fsr3 = new Fsr3Upscaler( renderer, g as unknown as FrameGraph<unknown>, {
 				hdr, surfaceDepth, velocity: velocity!, veilReactive, sceneColor, opaqueColor,
-			}, { settings: temporal ?? QUALITY.high.taa, exposure: u.curveExposure, debugView: DEV && new URLSearchParams( globalThis.location?.search ?? '' ).has( 'fsrDebug' ) } );
+			}, { settings: temporal ?? QUALITY.high.taa, exposure: u.exposure.mul( ACES_EXPOSURE / 0.6 ), debugView: DEV && new URLSearchParams( globalThis.location?.search ?? '' ).has( 'fsrDebug' ) } );
 			tHdr = this.fsr3 ? this.fsr3.source( uv() ) : texture( g.texture( hdr ), uv() );
 
 		}
 		const hdrColor: V3 = tHdr ? tHdr.rgb : composited;
-		const bloomInput = tHdr ?? nodeObject( vec4( hdrColor, 1 ) );
 
-		// ---- blooms (BloomChains.ts: both chains drawn together, each as three's BloomNode drew it):
-		// glints clamped first so a few firefly pixels cannot flood the frame, then a
-		// soft knee instead of a hard threshold. On surfaces (anything in front of the sky) the
-		// tight bloom's clamp sits just above its threshold (bloomSurfaceMaxLum 2 against 1.4):
-		// every pixel of the sun's glitter path reaches the clamp, so a higher one let the path's
-		// bloom pile up into a bright column over the island. The sky keeps the higher clamp, so
-		// the sun's disc and a lightning channel (drawn without depth) keep their glow.
-		const tBloomD = texture( tSurfaceDepth );
-		// (one chain: the wide glow's radius and both strengths, see render())
-		const names = O.bloomChains === 2 ? [ 'bloom', 'glow' ] : [ 'bloom' ];
-		this.blooms = names.map( () => ( { chain: null!, maxLum: uniform( 5 ), surfaceMaxLum: uniform( 5 ) } ) );
-		const bloom = this.bloom = new BloomChains( g, names, bloomInput, ( input, chain, i ) => {
-
-			const { maxLum, surfaceMaxLum } = this.blooms[ i ];
-			const threshold = chain.threshold;
-			let clampLum: F;
-			if ( FSR3 ) {
-
-				// (on FSR's output: the sky test at the unjittered point, weighted over its four texels)
-				const surface = unjitteredTaps( uv() ).reduce( ( sum: F, t ) => sum.add( select( ( textureLoad( tBloomD, t.texel ) as unknown as F ).greaterThan( - 9e4 ), t.w, float( 0 ) ) ), float( 0 ) );
-				clampLum = mix( maxLum, surfaceMaxLum, surface );
-
-			} else {
-
-				const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
-				const surface = ( textureLoad( tBloomD, px ) as unknown as F ).greaterThan( - 9e4 );
-				clampLum = select( surface, surfaceMaxLum, maxLum );
-
-			}
-			const c = input.rgb;
-			const v0 = luminance( c );
-			const c1 = c.mul( min( float( 1 ), clampLum.div( max( v0, 1e-4 ) ) ) );
-			const v = min( v0, clampLum );
-			const knee = threshold.mul( 0.5 );
-			const soft0 = clamp( v.sub( threshold ).add( knee ), 0, knee.mul( 2 ) );
-			const soft = soft0.mul( soft0 ).div( knee.mul( 4 ).add( 1e-4 ) );
-			return vec4( c1.mul( max( soft, v.sub( threshold ) ) ).div( max( v, 1e-4 ) ), 1 );
-
-		} );
-		bloom.chains.forEach( ( chain, i ) => { this.blooms[ i ].chain = chain; } );
-		// (the sharp image reads each chain's result without the uv transform texture() gives a node
-		// made without a uv, as three's bloom output node did)
-		const bloomResult = ( i: number ) => {
-
-			const result = texture( bloom.output( i ) );
-			result.updateMatrix = false;
-			return result.rgb;
-
-		};
-		const withBloom = names.reduce( ( sum: V3, _, i ) => sum.add( bloomResult( i ) ), hdrColor );
+		// ---- tidewater's physical bloom (PhysicalBloom.ts): from hdr (under fsr3 FSR's output), or the
+		// scene's colour where the composite is evaluated inline (`post=inline-composite`), added to
+		// the image at its strength
+		const bloom = this.bloom = new PhysicalBloom( g, tHdr ?? sceneTex, tHdr && FSR3 ? CANVAS : RENDER );
+		const withBloom = hdrColor.add( texture( bloom.output(), uv() ).rgb.mul( u.bloom ) );
 
 		// ---- the sharp image: the composite and the blooms (the composite evaluated here, inline,
 		// without the composite pass)
@@ -1068,261 +748,35 @@ export class Pipeline {
 
 		} )();
 
-		// ---- the look's diffusion glow, after Michael Orton's slide sandwiches (a sharp exposure
-		// over an overexposed, defocused copy of the same view): the light parts of the image
-		// spread a soft halo into their surroundings, so sunlit grass, glints and a bright sky glow
-		// as in a painted scene. Only what lies above a threshold set in display values (it follows
-		// the exposure) is blurred, with a wide soft knee, and glints are clamped first; the dark
-		// parts add nothing, so it brightens round the highlights instead of laying a veil over the
-		// frame. Like the tilt-shift it belongs to the island's surroundings: the sky and what lies
-		// beyond a few hundred metres glow only by `lookSky` of it (a low sun's whole sky and the
-		// sheen of the sea against it lie above the threshold, and their glow spread over the
-		// island as a pale veil). The source is a little more saturated than the image, so the glow
-		// reads as coloured light rather than milk. It reads the sharp image (one more
-		// half-resolution bloom chain, no second evaluation of the haze), and is added before the
-		// curve, whose shoulder keeps it soft.
-		const diffusionThreshold = uniform( 1 );
-		const tGlowD = texture( tSurfaceDepth );
-		const diffusionNode = new RenderBloomNode( tSharp, 0, 0.8, 1 );
-		diffusionNode.setResolutionScale( 0.5 );
-		( diffusionNode as unknown as { highPassFn: unknown } ).highPassFn = Fn( ( { input }: { input: THREE.Node<'vec4'> } ) => {
 
-			// (view-space z: the sky's -1e5 lies far beyond the fade; under fsr3 at the unjittered point,
-			// weighted over its four texels)
-			const fade = ( px: THREE.Node<'ivec2'> ) => mix( float( 1 ), u.lookSky, smoothstep( 150, 700, ( textureLoad( tGlowD, px ) as unknown as F ).negate() ) );
-			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
-			const surface = FSR3 ? unjitteredTaps( uv() ).reduce( ( sum: F, t ) => sum.add( fade( t.texel ).mul( t.w ) ), float( 0 ) ) : fade( px );
-			const c = input.rgb;
-			const v0 = luminance( c );
-			const clampLum = diffusionThreshold.mul( 3 );
-			const c1 = c.mul( min( float( 1 ), clampLum.div( max( v0, 1e-6 ) ) ) );
-			const v = min( v0, clampLum );
-			const coloured = max( mix( vec3( v ), c1, 1.25 ), vec3( 0 ) );
-			return vec4( coloured.mul( smoothstep( diffusionThreshold.mul( 0.7 ), diffusionThreshold.mul( 2 ), v ).mul( surface ) ), 1 );
+		// ---- tidewater's grade, to display values (see ACES_EXPOSURE): the scene at the exposure, the
+		// white balance nudge, saturation and contrast round mid grey in linear light, the vignette
+		// (the resolve leaves it to the canvas pass, after the accumulation), ACES and the sRGB
+		// transfer (`encode` false: the graded colour in linear light, before the transfer).
+		// the vignette's factor at the pixel being drawn (tidewater's: elliptical in the frame's own
+		// uv, soft; the same into an image of any size)
+		const vignetteAt = ( _size: THREE.UniformNode<'vec2', THREE.Vector2> ) => float( 1 ).sub( smoothstep( 0.25, 0.75, length( uv().sub( 0.5 ).mul( vec2( 1, 0.8 ) ) ) ).mul( u.vignette ) );
+		const grade = ( lin: V3, vignette: boolean, encode: boolean ): V3 => {
 
-		} );
-		// (its graph pass renders it, as the blooms')
-		const diffusion = g.import( 'diffusion', diffusionNode.setUpAlone().output, HALF );
-		this.diffusion = { node: diffusionNode, threshold: diffusionThreshold, output: diffusion, enabled: false };
-		const tDiffusion = texture( g.texture( diffusion ) );
-		tDiffusion.updateMatrix = false;
-		// Over the dark parts of the frame the glow is held to `glowHalo` of itself: Orton's
-		// sandwich multiplies, so the defocused copy brightens the light parts and leaves the shade
-		// deep. Added in full, a backlit sea's glow lay over the shaded cliff in front of it as a
-		// pale veil. It also lands only where the frame is about as bright as the light it spreads
-		// from: against a low sun the glint and the sky behind the island are many times brighter
-		// than the backlit meadow and trees in front of them, and their glow laid a warm haze over
-		// the foliage. (The light it spreads from is the glow
-		// over its strength and the chain's five mip weights, which sum to 3 at any radius.)
-		// (glowOn is 0 while the chain is skipped: its texture holds the last glow.)
-		// (the grade's input: at the pixel drawn, or at render uv `q`)
-		const diffused = ( q?: V2 ) => {
-
-			const c = dofMixAt( q ).toVar();
-			const glow = ( q ? tDiffusion.sample( q ) : tDiffusion ).rgb.toVar();
-			const l = luminance( c );
-			const lit = smoothstep( 0.03, 0.4, l.mul( u.curveExposure ) );
-			const source = luminance( glow ).div( max( diffusionNode.strength.mul( 3 ), 1e-6 ) );
-			const near = smoothstep( 0.3, 1.5, l.div( max( source, 1e-6 ) ) );
-			return c.add( glow.mul( u.glowTint ).mul( mix( u.glowHalo, float( 1 ), lit ).mul( near ) ).mul( u.glowOn ) );
-
-		};
-
-		// ---- grade, to display values (sRGB, 0..1)
-		// AgX with hue-kept highlights ('agx-hue'). The colour is scaled by what AgX's curve makes of
-		// its brightest channel (AgX maps a grey to a grey, to within its matrices' rounding), so its
-		// ratios, hue and saturation, hold; scaling by the brightest channel, as PBR Neutral does,
-		// never lets another channel pass white. Only from two stops above white does it fade toward
-		// white, fully six stops up, so the sun's disc and its glints still burn out. In the deep
-		// shadows it is plain AgX; the two cross over between an eighth of display white and white.
-		// AgX's per-channel toe greys dark colours against PBR Neutral's toe, which is why the
-		// night returns to PBR Neutral (see `nightCurve`).
-		const hueToneMapping = Fn( ( [ color, exposure ]: [ V3, F ] ) => {
-
-			const c = max( color.mul( exposure ), vec3( 0 ) ).toVar();
-			const peak = max( max( c.r, max( c.g, c.b ) ), 1e-6 ).toVar();
-			const stops = log2( peak ).toVar();
-			const mapped = ( agxToneMapping( vec3( peak ), float( 1 ) ) as V3 ).g.toVar();
-			const kept = mix( c.mul( mapped.div( peak ) ), vec3( mapped ), smoothstep( 1, 6, stops ) );
-			return mix( agxToneMapping( c, float( 1 ) ) as V3, kept, smoothstep( - 3, 0, stops ) );
-
-		} ).setLayout( { name: 'agxHueToneMapping', type: 'vec3', inputs: [ { name: 'color', type: 'vec3' }, { name: 'exposure', type: 'float' } ] } );
-		// PBR Neutral with hue-kept highlights ('neutral-hue'). Khronos' PBR Neutral up to the start
-		// of its shoulder, unchanged: its toe (the darkest channel's offset) and linear midtones
-		// keep the water's depth and the seabed's contrast, which AgX's toe and long shoulder
-		// flattened. Its shoulder already scales the colour by its brightest channel, so the
-		// ratios hold; only its desaturation toward white is left out, which turned a low sun's
-		// sky and sea into one cream band. As in 'agx-hue', bright colours fade to white only above
-		// display white (from twice white, fully at 64 times), so the sun's disc and its glints
-		// whiten toward their cores while a low sun's sky, at two to eight times white, keeps its hue.
-		const neutralHueToneMapping = Fn( ( [ color, exposure ]: [ V3, F ] ) => {
-
-			const c = color.mul( exposure ).toVar();
-			const x = min( c.r, min( c.g, c.b ) );
-			c.subAssign( select( x.lessThan( 0.08 ), x.sub( x.mul( x ).mul( 6.25 ) ), float( 0.04 ) ) );
-			const peak = max( c.r, max( c.g, c.b ) ).toVar();
-			const start = float( 0.76 ), d = float( 0.24 );
-			const top = max( peak, start );
-			const mapped = float( 1 ).sub( d.mul( d ).div( top.add( d ).sub( start ) ) ).toVar();
-			const kept = mix( c.mul( mapped.div( top ) ), vec3( mapped ), smoothstep( 1, 6, log2( top ) ) );
-			return select( peak.lessThan( start ), c, kept );
-
-		} ).setLayout( { name: 'neutralHueToneMapping', type: 'vec3', inputs: [ { name: 'color', type: 'vec3' }, { name: 'exposure', type: 'float' } ] } );
-		// The look's colour, on the curve's display-linear output. Hue-selective colour (a secondary
-		// correction, as in a colourist's HSL keys): the hue is the angle in an opponent plane
-		// (red 0, yellow 60, green 120, cyan 180 degrees, as HSV's), each band a smooth bump on it,
-		// weighted by saturation so grey stone, pale skin and white foam stay as they are. Then a
-		// luminance contrast round mid grey, the warm / cool split by luminance (log-spaced, crossing
-		// at `pivot`; each tint normalised to keep luminance) and a coloured lift of the darkest tones.
-		const SQRT3_2 = Math.sqrt( 3 ) / 2, INV_SQRT3 = 1 / Math.sqrt( 3 );
-		// (edges in ascending order: SPIR-V and Metal leave smoothstep undefined when they are not)
-		const band = ( hue: F, centre: number, width: number ) =>
-			float( 1 ).sub( smoothstep( 0, width, abs( mod( hue.sub( centre ).add( Math.PI ), 2 * Math.PI ).sub( Math.PI ) ) ) );
-		// (saturation as HSV's: the spread of the channels over the brightest)
-		const chroma = ( c: V3 ) => max( c.r, max( c.g, c.b ) ).sub( min( c.r, min( c.g, c.b ) ) ).div( max( max( c.r, max( c.g, c.b ) ), 1e-6 ) );
-		// (one per pass: a layout function reading uniforms keeps the first shader's uniform names)
-		const makeLookColour = () => Fn( ( [ c0, onSurface ]: [ V3, F ] ) => {
-
-			const c = c0.toVar();
-			const ca = c.r.sub( c.g.add( c.b ).mul( 0.5 ) ).toVar();
-			const cb = c.g.sub( c.b ).mul( SQRT3_2 ).toVar();
-			// (atan2 ( 0, 0 ) is undefined on some backends; a grey's hue is keyed out below anyway)
-			const hue = atan( cb, select( abs( ca ).add( abs( cb ) ).greaterThan( 1e-7 ), ca, float( 1 ) ) ).toVar();
-			const peak = max( c.r, max( c.g, c.b ) );
-			const sat = peak.sub( min( c.r, min( c.g, c.b ) ) ).div( max( peak, 1e-5 ) );
-			const keyed = smoothstep( 0.04, 0.3, sat ).mul( u.lookColour ).toVar();
-			// greens about 105 degrees (the meadow's sunlit yellow-green at 75 still half in), teal-cyan
-			// about 185 (the shallow water); yellow flowers, skin and the warm sky fall outside both
-			const wG = band( hue, 105 * Math.PI / 180, 55 * Math.PI / 180 ).mul( keyed ).toVar();
-			const wT = band( hue, 185 * Math.PI / 180, 35 * Math.PI / 180 ).mul( keyed ).toVar();
-			// turn the hue in the opponent plane, keeping the mean of the channels
-			const turn = wG.mul( u.greenHue ).add( wT.mul( u.tealHue ) ).toVar();
-			const ra = ca.mul( cos( turn ) ).sub( cb.mul( sin( turn ) ) ).toVar();
-			const rb = ca.mul( sin( turn ) ).add( cb.mul( cos( turn ) ) ).toVar();
-			const m = c.r.add( c.g ).add( c.b ).div( 3 ).toVar();
-			c.assign( max( vec3( m.add( ra.mul( 2 / 3 ) ), m.sub( ra.div( 3 ) ).add( rb.mul( INV_SQRT3 ) ), m.sub( ra.div( 3 ) ).sub( rb.mul( INV_SQRT3 ) ) ), vec3( 0 ) ) );
-			const l0 = luminance( c ).toVar();
-			c.assign( max( mix( vec3( l0 ), c, wG.mul( u.greenSat ).add( wT.mul( u.tealSat ) ).add( 1 ) ), vec3( 0 ) ) );
-			c.mulAssign( wG.mul( u.greenBright ).add( wT.mul( u.tealBright ) ).add( 1 ) );
-			// contrast round the pivot: deeper shade in the meadow, brighter sunlit tops
-			const l1 = max( luminance( c ), 1e-5 ).toVar();
-			c.mulAssign( pow( l1.div( u.pivot ), u.lookContrast.mul( u.lookColour ) ) );
-			// warm / cool split
-			const l2 = max( luminance( c ), 1e-5 ).toVar();
-			// (the shadows from a stop above the pivot down, the highlights from the pivot up: the
-			// midtones keep their own colour, so a half-lit meadow does not turn blue-grey)
-			const stops = log2( l2.div( u.pivot ) ).toVar();
-			const lo = float( 1 ).sub( smoothstep( - 3, 0.5, stops ) ).toVar();
-			const hi = smoothstep( 0, 2.5, stops );
-			const shadowTint = u.shadowTint.div( max( luminance( u.shadowTint ), 1e-3 ) );
-			const highlightTint = u.highlightTint.div( max( luminance( u.highlightTint ), 1e-3 ) );
-			const s0 = chroma( c ).toVar();
-			c.mulAssign( mix( vec3( 1 ), shadowTint, lo.mul( u.shadowTone ).mul( u.lookColour ) ) );
-			// airy shadows: the darkest tones lifted toward the shadow tint, not toward grey
-			c.addAssign( vec3( 1 ).sub( c ).mul( u.shadowTint ).mul( u.shadowLift.mul( u.lookSun ).mul( lo.mul( lo ) ) ) );
-			// The cool tint and the lift turn a shadow's hue toward teal but keep its saturation: on
-			// a warm colour they add the colour's weakest channel, so a dawn meadow, dark and lit
-			// orange, went olive-grey. A colour they greyed gets its saturation back round its
-			// luminance (a grey shadow, which they colour, keeps its teal).
-			const l3 = luminance( c );
-			c.assign( max( mix( vec3( l3 ), c, clamp( s0.div( max( chroma( c ), 1e-6 ) ), 1, 2 ) ), vec3( 0 ) ) );
-			// (the sky takes `lookSky` of the golden highlights: on a pale blue sky they turn green)
-			c.mulAssign( mix( vec3( 1 ), highlightTint, hi.mul( u.highlightTone ).mul( u.lookSun ).mul( mix( u.lookSky, float( 1 ), onSurface ) ) ) );
-			return c;
-
-		} ).setLayout( { name: 'lookColour', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'onSurface', type: 'float' } ] } );
-		const lookColour = makeLookColour();
-		// the vignette's factor at the pixel being drawn into an image of `size` (the grade's; under the
-		// temporal resolve the canvas pass's, after the accumulation)
-		const vignetteAt = ( size: THREE.UniformNode<'vec2', THREE.Vector2> ) => {
-
-			const q = uv().sub( 0.5 ).mul( vec2( size.x.div( size.y ), 1 ) );
-			return mix( float( 1 ), smoothstep( 1.15, 0.3, length( q ) ), u.vignette );
-
-		};
-		// (`encode` false: the graded colour in linear light, before the sRGB transfer and the S-curve)
-		// (`surface`: whether a surface lies at the pixel, 1 or 0, in place of the nearest surface's depth
-		// there: the rain's grade table, AfterResolve.ts)
-		const grade = ( lin: V3, vignette: boolean, encode: boolean, look = lookColour, surface?: F ): V3 => {
-
-			// (a uniform branch: the GUI switches the curve without rebuilding the pass. PBR Neutral
-			// is evaluated outside it, every frame: called inside the branch it rendered black, and
-			// the night mixes it in anyway.)
-			const night = ( neutralToneMapping( lin, u.exposure ) as V3 ).toVar();
-			// how far the scene colour lies above white (from 8 to 32 times), for 'neutral-hue's
-			// burning highlights (see `looks`)
-			const hdr = lin.mul( u.curveExposure );
-			const hot = smoothstep( 3, 5, log2( max( max( hdr.r, max( hdr.g, hdr.b ) ), 1e-6 ) ) ).mul( u.burn ).toVar();
-			const c = night.toVar();
-			If( u.curve.equal( TONE_CURVES.indexOf( 'agx-hue' ) ), () => {
-
-				c.assign( hueToneMapping( lin, u.curveExposure ) );
-
-			} ).ElseIf( u.curve.equal( TONE_CURVES.indexOf( 'agx' ) ), () => {
-
-				c.assign( agxToneMapping( lin, u.curveExposure ) as V3 );
-
-			} ).ElseIf( u.curve.equal( TONE_CURVES.indexOf( 'neutral-hue' ) ), () => {
-
-				c.assign( neutralHueToneMapping( lin, u.curveExposure ) );
-
-			} );
-			c.assign( mix( night, c, u.day ) );
-			// teal-blue shadows, golden highlights
-			const l = luminance( c );
-			const tint = mix( vec3( 0.96, 1.0, 1.04 ), vec3( 1.1, 1.0, 0.82 ), smoothstep( 0.02, 0.45, l ) );
-			c.mulAssign( mix( vec3( 1 ), tint, u.split ) );
-			// saturation with vibrance: muted colours gain more than already saturated ones (and,
-			// for 'neutral-hue', bright colours a little more: see `looks`)
-			const l2 = luminance( c );
-			const chroma = max( c.r, max( c.g, c.b ) ).sub( min( c.r, min( c.g, c.b ) ) );
-			const satAmt = u.saturation.add( u.vibrance.mul( float( 1 ).sub( smoothstep( 0, 0.35, chroma.div( max( l2, 1e-3 ) ).mul( 0.5 ) ) ) ) ).add( u.highlightSat.mul( smoothstep( 0.6, 0.9, l2 ) ).mul( float( 1 ).sub( hot ) ) );
-			c.assign( max( mix( vec3( l2 ), c, satAmt ), vec3( 0 ) ) );
-			// the night's cooler meadow (see nightGreenTurn; a uniform branch, so the day's frame is
-			// exactly the grade above)
-			If( u.nightGreen.greaterThan( 0 ), () => {
-
-				c.assign( nightGreenTurn( c, u.nightGreen ) );
-
-			} );
-			// The look (a uniform branch: 'realistic' skips it and keeps the grade above exactly).
-			// (from the view distance where it is kept: a surface's lies below 9e4, the sky's is 1e5)
-			const surfaceAt = ( px: THREE.Node<'ivec2'> ) => select( tDistance ? ( textureLoad( tDistance, px ) as unknown as F ).lessThan( 1e5 ) : ( textureLoad( tD, px ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) );
-			// (under fsr3 at the unjittered point, weighted over its four texels)
-			const px = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
-			const onSurface = surface ?? ( FSR3 ? unjitteredTaps( uv() ).reduce( ( sum: F, t ) => sum.add( surfaceAt( t.texel ).mul( t.w ) ), float( 0 ) ) : surfaceAt( px ) ).toVar();
-			If( u.lookOn.greaterThan( 0.5 ), () => {
-
-				c.assign( look( c, onSurface ) );
-
-			} );
-			// A soft knee on the brightest channel (from the curve's `knee`), scaling the whole colour
-			// so its hue holds: the golden split tone and the saturation push a bright warm sky's red
-			// past white, where it clipped alone into a flat band while green and blue still rose.
-			const peak = max( c.r, max( c.g, c.b ) );
-			const knee = u.knee;
-			const soft = knee.add( float( 1 ).sub( knee ).mul( float( 1 ).sub( exp( peak.sub( knee ).div( float( 1 ).sub( knee ) ).negate() ) ) ) );
-			c.mulAssign( mix( float( 1 ), select( peak.greaterThan( knee ), soft.div( peak ), float( 1 ) ), u.clipGuard.mul( float( 1 ).sub( hot ) ) ) );
-			// A display black lift softens dark colours without adding atmospheric scattering.
-			c.assign( c.add( vec3( 1 ).sub( c ).mul( u.lift ) ) );
-			// vignette (the resolve leaves it to the canvas pass, after the accumulation)
+			const c = lin.mul( u.exposure ).mul( vec3( u.warmth.add( 1 ), 1, float( 1 ).sub( u.warmth ) ) ).toVar();
+			c.assign( mix( vec3( luminance( c ) ), c, u.saturation ) );
+			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( u.contrast ) ).mul( 0.18 ) );
 			if ( vignette ) c.mulAssign( vignetteAt( FSR3 ? canvasSize : renderSize ) );
-			if ( ! encode ) return clamp( c, 0, 1 );
-			const s = ( sRGBTransferOETF( clamp( c, 0, 1 ) ) as THREE.Node<'vec3'> ).toVar();
-			// gentle S-curve in display space
-			s.assign( mix( s, s.mul( s ).mul( float( 3 ).sub( s.mul( 2 ) ) ), u.contrast ) );
-			return s;
+			const t = ( acesFilmicToneMapping( c, float( ACES_EXPOSURE ) ) as V3 ).toVar();
+			return encode ? sRGBTransferOETF( t ) as V3 : t;
 
 		};
-		// grain + dither, per pixel of the canvas (`on` 0 leaves them out)
+		// tidewater's grain (luminance weighted, triangular, new with every step of the scene clock)
+		// and a dither, per pixel of the canvas (`on` 0 leaves them out)
 		const finish = ( s: V3, size: THREE.UniformNode<'vec2', THREE.Vector2>, on: F ) => {
 
 			const hash = ( p: THREE.Node<'vec2'> ) => fract( sin( dot( p, vec2( 12.9898, 78.233 ) ) ).mul( 43758.5453 ) );
-			const px = uv().mul( size );
-			const g = hash( px.add( fract( u.time.mul( 13 ) ).mul( 100 ) ) ).sub( 0.5 );
+			const px = uv().mul( size ).toVar();
+			const seed = px.add( fract( u.time.mul( 13 ) ).mul( 100 ) ).toVar();
+			const n = hash( seed ).add( hash( seed.add( vec2( 79.19, 104.729 ) ) ) ).sub( 1 ).mul( 0.5 );
 			If( on.greaterThan( 0.5 ), () => {
 
-				s.addAssign( g.mul( u.grain ).add( hash( px.mul( 1.37 ) ).sub( 0.5 ).div( 255 ) ) );
+				s.addAssign( s.mul( n.mul( u.grain ) ).add( hash( px.mul( 1.37 ) ).sub( 0.5 ).div( 255 ) ) );
 
 			} );
 			return vec4( s, 1 );
@@ -1336,7 +790,7 @@ export class Pipeline {
 		// pass adds.
 		const displayMat = new THREE.NodeMaterial();
 		displayMat.name = 'Post.Display';
-		displayMat.fragmentNode = Fn( () => finish( grade( diffused(), ! RESOLVE, ! LINEAR_DISPLAY ), FSR3 ? canvasSize : renderSize, RESOLVE ? float( 0 ) : u.grainOn ) )();
+		displayMat.fragmentNode = Fn( () => finish( grade( dofMixAt(), ! RESOLVE, ! LINEAR_DISPLAY ), FSR3 ? canvasSize : renderSize, RESOLVE ? float( 0 ) : u.grainOn ) )();
 		this.displayQuad = new THREE.QuadMesh( displayMat );
 		this.displayQuad.name = 'Post.Display';
 
@@ -1368,21 +822,12 @@ export class Pipeline {
 			this.upscaledOutputThree.outputColorTransform = false;
 
 		}
-		// The bloom chains (three's, with targets of their own) follow the render's size, not the
-		// canvas, which is larger while the frame is upscaled; sized at once, as the graph sizes its
-		// own targets (its dev check compares a pass's target with its size class before it runs).
-		g.onResize( RENDER, ( w, h ) => {
-
-			const node = this.diffusion.node;
-			node.renderWidth = w; node.renderHeight = h; node.setSize();
-
-		} );
 		// What the rain's layer pass draws at the canvas's size, for the canvas pass to add to the
 		// resolved image after the resolve (AfterResolve.ts): the change the rain makes to the graded
 		// colour at the pixel (without the vignette, the canvas pass's; in linear light under
 		// `linear`), and in alpha 1 where it makes one. The rain is laid over the grade's input at the
 		// render texel nearest the point the pixel shows (the display pass's own: the sharp image, its
-		// depth of field and the look's glow, evaluated again there), in scene radiance as it was
+		// depth of field, evaluated again there), in scene radiance as it was
 		// before the grade, and that is graded: the change is the difference from what the display
 		// pass graded at the texel. (Without `linear` the display holds encoded values: both are
 		// graded here.) Blended after the grade instead, faint rain over the dark sea and meadow, in
@@ -1408,7 +853,7 @@ export class Pipeline {
 		const inputs = rainInput ? Fn( () => {
 
 			const texel = ivec2( screenCoordinate.xy ).toVar();
-			const before = diffused( vec2( texel ).add( 0.5 ).div( renderSize ) ).toVar();
+			const before = dofMixAt( vec2( texel ).add( 0.5 ).div( renderSize ) ).toVar();
 			if ( ! rainAir ) return mat4( vec4( before, 1 ), vec4( 0 ), vec4( 0 ), vec4( 0 ) );
 			const keep = ( textureLoad( texture( g.texture( rainAir ) ), texel ) as unknown as F ).toVar();
 			const scene = ( textureLoad( sceneTex, texel ) as unknown as THREE.Node<'vec4'> ).rgb;
@@ -1428,8 +873,8 @@ export class Pipeline {
 		// The grade as a table, for the canvas pass of a running frame (`layerAt( true )`): the grade of
 		// GRADE_TABLE.size^3 colours, logarithmically spaced per channel (the scene colour times the
 		// exposure from 2^low to 2^high: below, within a fifth of a level of black; above, burnt to
-		// white), for a surface and for the sky, baked by a pass of its own while the layer runs
-		// (`rainGrade`) and read trilinearly (two bilinear taps). The change is the difference of two
+		// white), baked by a pass of its own while the layer runs (`rainGrade`) and read trilinearly
+		// (two bilinear taps). The change is the difference of two
 		// readings (with the rain and without), so the table's error cancels to first order; graded in
 		// full at every canvas pixel, the grade took a third of the layer's time. The frame that
 		// completes the rest grades in full (its layer stands for every paused frame).
@@ -1437,10 +882,10 @@ export class Pipeline {
 		const gradeTableNode = rainGrade ? Fn( () => {
 
 			const p = floor( screenCoordinate.xy ).toVar();
-			const b = floor( p.x.div( T.size ) ), surface = floor( p.y.div( T.size ) );
-			const index = vec3( p.x.sub( b.mul( T.size ) ), p.y.sub( surface.mul( T.size ) ), b );
+			const b = floor( p.x.div( T.size ) );
+			const index = vec3( p.x.sub( b.mul( T.size ) ), p.y, b );
 			const lin = exp2( index.div( T.size - 1 ).mul( T.high - T.low ).add( T.low ) ).div( u.exposure );
-			return vec4( grade( lin, false, ! LINEAR_DISPLAY, makeLookColour(), surface ), 1 );
+			return vec4( grade( lin, false, ! LINEAR_DISPLAY ), 1 );
 
 		} )() as unknown as THREE.Node<'vec4'> : null;
 		if ( gradeTableNode ) {
@@ -1452,18 +897,17 @@ export class Pipeline {
 			this.rainGradeQuad.name = 'Post.RainGrade';
 
 		}
-		const gradeTable = ( lin: V3, surface: F ): V3 => {
+		const gradeTable = ( lin: V3 ): V3 => {
 
 			const table = g.texture( rainGrade! );
 			const c = clamp( log2( max( lin.mul( u.exposure ), vec3( 2 ** T.low ) ) ).sub( T.low ).div( T.high - T.low ), 0, 1 ).mul( T.size - 1 ).toVar();
 			const b0 = floor( c.z ).toVar();
-			const v = c.y.add( 0.5 ).add( surface.mul( T.size ) ).div( 2 * T.size ).toVar();
+			const v = c.y.add( 0.5 ).div( T.size ).toVar();
 			const slice = ( b: F ) => ( texture( table, vec2( c.x.add( 0.5 ).add( b.mul( T.size ) ).div( T.size * T.size ), v ) ).level( float( 0 ) ) as unknown as THREE.Node<'vec4'> ).rgb;
 			return mix( slice( b0 ), slice( min( b0.add( 1 ), T.size - 1 ) ), c.z.sub( b0 ) );
 
 		};
-		// (a fresh node per shader: the look's layout function keeps one shader's uniform names; `table`:
-		// graded by the table)
+		// (`table`: graded by the table)
 		const layerAt = ( table = false ) => Fn( () => {
 
 			const out = vec4( 0 ).toVar();
@@ -1506,18 +950,11 @@ export class Pipeline {
 				} );
 				// (the change at the rain's own coverage of a sample, AFTER_COVERAGE, spread over the pixel)
 				const full = max( before.add( after.sub( before ).div( AFTER_COVERAGE ) ), vec3( 0 ) );
-				if ( table ) {
+				if ( table ) out.assign( vec4( gradeTable( full ).sub( gradeTable( before ) ).mul( AFTER_COVERAGE ), 1 ) );
+				else {
 
-					// (the surfaces the full grade sees: the display pass's at the texel, the pixel's own)
-					const surfaceAt = ( px: THREE.Node<'ivec2'> ) => select( ( textureLoad( tAfterDepth, px ) as unknown as F ).greaterThan( - 9e4 ), float( 1 ), float( 0 ) );
-					const pixel = ivec2( clamp( uv().mul( renderSize ), vec2( 0 ), renderSize.sub( 1 ) ) );
-					out.assign( vec4( gradeTable( full, surfaceAt( pixel ) ).sub( gradeTable( before, surfaceAt( texel ) ) ).mul( AFTER_COVERAGE ), 1 ) );
-
-				} else {
-
-					const look = makeLookColour();
-					const graded = LINEAR_DISPLAY ? ( textureLoad( tAfterDisplay, texel ) as unknown as THREE.Node<'vec4'> ).rgb : grade( before, false, ! LINEAR_DISPLAY, look );
-					out.assign( vec4( grade( full, false, ! LINEAR_DISPLAY, look ).sub( graded ).mul( AFTER_COVERAGE ), 1 ) );
+					const graded = LINEAR_DISPLAY ? ( textureLoad( tAfterDisplay, texel ) as unknown as THREE.Node<'vec4'> ).rgb : grade( before, false, ! LINEAR_DISPLAY );
+					out.assign( vec4( grade( full, false, ! LINEAR_DISPLAY ).sub( graded ).mul( AFTER_COVERAGE ), 1 ) );
 
 				}
 
@@ -1537,7 +974,7 @@ export class Pipeline {
 		// the temporal resolve, its passes declared after the display pass
 		if ( RESOLVE ) ( this as { temporal: TemporalAA | null } ).temporal = new TemporalAA( g as unknown as FrameGraph<unknown>, renderer, {
 			mode: AA_MODE as TemporalMode, settings: temporal ?? QUALITY.high.taa,
-			contrast: u.contrast, vignette: vignetteAt, finish,
+			vignette: vignetteAt, finish,
 			// (the rain's layer, drawn by a pass of its own: in the canvas pass it held too many registers)
 			// (read only while the pass runs: in fair weather the canvas pass reads nothing more)
 			layer: rainLayer ? () => Fn( () => {
@@ -1598,7 +1035,6 @@ export class Pipeline {
 		// once resolved, which three r186 offers only together with a clear, so AttachmentOps
 		// rewrites the stores as three hands each pass's descriptor to WebGPU.
 		g.attachmentOps.install();
-		this.setToneMapping( this.settings.toneMapping );
 
 	}
 
@@ -1739,17 +1175,12 @@ export class Pipeline {
 			} else b.read( hdr! );
 
 		};
-		// the blooms (BloomChains.ts: both chains drawn together, twelve passes): from hdr, or the
-		// composite inline; their high pass keeps the surfaces' glints below the sky's
-		const blooms = this.bloom.passes( g, this.blooms.length === 2 ? 'bloom & wide glow' : 'bloom', ( b ) => {
+		// tidewater's physical bloom (PhysicalBloom.ts, nine passes): from hdr, or the scene's colour
+		// without the composite
+		const bloomResult = this.bloom.passes( g, 'bloom', ( b ) => {
 
-			// (inline, the composite's reads include the surface depth)
-			if ( hdr ) {
-
-				readHdr( b );
-				b.read( surfaceDepth );
-
-			} else compositeReads( b );
+			if ( hdr ) readHdr( b );
+			else b.readOptional( sceneColor );
 
 		} );
 		// the sharp image: the composite (inline, without the composite pass: the profiler's
@@ -1759,7 +1190,7 @@ export class Pipeline {
 
 			if ( hdr ) readHdr( b );
 			else compositeReads( b );
-			for ( const h of blooms ) b.read( h );
+			b.read( bloomResult );
 			sharp = b.write( sharp );
 			return { label: hdr ? 'sharp (composite + blooms)' : 'composite (air, fog, veil)', quad: sharpQuad };
 
@@ -1776,28 +1207,16 @@ export class Pipeline {
 			return { label: 'tilt-shift blur', when: () => this.settings.dof > 0, whenLabel: 'dof > 0', quad: blurQuad };
 
 		} );
-		// the look's diffusion glow, a bloom chain over the sharp image, while it shows
-		const diffusion = this.diffusion;
-		let glow = diffusion.output;
-		g.addPass( 'diffusion', 'chain', ( b ) => {
-
-			b.read( sharp );
-			b.read( surfaceDepth );
-			glow = b.write( glow );
-			return { label: 'look glow', when: () => diffusion.enabled, whenLabel: 'look glow', nodes: [ diffusion.node ] };
-
-		} );
-		// the depth of field's mix, the look's glow, grade and look
+		// the depth of field's mix and the grade
 		const displayQuad = this.displayQuad;
 		g.addPass( 'display', 'quad', ( b ) => {
 
 			b.read( sharp );
 			b.readOptional( blur );
-			b.readOptional( glow );
 			// (the sky test from the view distance where it is kept)
 			b.read( viewDistance ?? surfaceDepth );
 			display = b.write( display );
-			return { label: 'grade & look', quad: displayQuad };
+			return { label: 'grade', quad: displayQuad };
 
 		} );
 		// the temporal resolve and its canvas pass (TemporalAA.ts)
@@ -1825,13 +1244,11 @@ export class Pipeline {
 				const inputQuad = this.rainInputQuad!;
 				g.addPass( 'rainInput', 'quad', ( b ) => {
 
-					// (the grade's input: the sharp image, the depth of field's blur and distances, the
-					// look's glow)
+					// (the grade's input: the sharp image, the depth of field's blur and distances)
 					b.read( sharp );
 					b.readOptional( blur );
 					b.read( surfaceDepth );
 					if ( viewDistance ) b.read( viewDistance );
-					b.readOptional( glow );
 					if ( rainAir ) {
 
 						b.read( rainAir );
@@ -2025,25 +1442,6 @@ export class Pipeline {
 
 	}
 
-	// Switches the curve and loads its saturation, vibrance and contrast into the settings (the
-	// GUI may tune them from there); its exposure, split and lift gains apply every frame.
-	setToneMapping( curve: ToneCurve ): void {
-
-		const S = this.settings, look = this.looks[ curve ];
-		S.toneMapping = curve;
-		S.saturation = look.saturation; S.vibrance = look.vibrance; S.contrast = look.contrast;
-
-	}
-
-	// Loads a look preset into the live look (the GUI may tune it from there).
-	setLook( name: LookName ): void {
-
-		if ( ! LOOKS.includes( name ) ) return;
-		this.settings.look = name;
-		const preset = this.lookPresets[ name ], look = this.look;
-		Object.assign( look, cloneLook( preset ), { shadowTint: look.shadowTint.copy( preset.shadowTint ), highlightTint: look.highlightTint.copy( preset.highlightTint ) } );
-
-	}
 
 	/** The scene's render size, and the canvas's when it is larger (the frame is then upscaled). */
 	setSize( w: number, h: number, outputWidth = w, outputHeight = h ): void {
@@ -2172,64 +1570,15 @@ export class Pipeline {
 
 	}
 
-	// The display chain's and the canvas pass's uniforms from the settings (the grade, the look,
-	// the blooms, the depth of field, the grain).
+	// The display chain's and the canvas pass's uniforms from the settings (the exposure, the grade,
+	// the depth of field, the grain).
 	private updateDisplay( { camera, time }: PipelineFrame ): void {
 
 		const S = this.settings;
 		const u = this.u;
-		const [ b, g ] = this.blooms;
-		const lerp = THREE.MathUtils.lerp;
-		// the bloom chains' and the look's night (see the header: a crossfade, not a threshold scaled
-		// by the exposure)
-		const nl = THREE.MathUtils.clamp( S.nightLook, 0, 1 ), N = S.night;
-		const bloomStrength = lerp( S.bloomStrength, N.bloomStrength, nl ), bloomThreshold = lerp( S.bloomThreshold, N.bloomThreshold, nl );
-		const glowStrength = lerp( S.glowStrength, N.glowStrength, nl ), glowThreshold = lerp( S.glowThreshold, N.glowThreshold, nl );
-		const glowMaxLum = lerp( S.glowMaxLum, N.glowMaxLum, nl );
-		if ( g ) {
-
-			b.chain.strength.value = bloomStrength; b.chain.radius.value = S.bloomRadius; b.chain.threshold.value = bloomThreshold * SCENE_RADIANCE_SCALE; b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
-			g.chain.strength.value = glowStrength; g.chain.radius.value = S.glowRadius; g.chain.threshold.value = glowThreshold * SCENE_RADIANCE_SCALE; g.maxLum.value = glowMaxLum * SCENE_RADIANCE_SCALE; g.surfaceMaxLum.value = glowMaxLum * SCENE_RADIANCE_SCALE;
-
-		} else {
-
-			// One chain for both: the wide glow's radius and threshold, the tight bloom's clamps, and
-			// the two strengths together (an approximation for the low tier).
-			b.chain.strength.value = bloomStrength + glowStrength; b.chain.radius.value = S.glowRadius; b.chain.threshold.value = glowThreshold * SCENE_RADIANCE_SCALE;
-			b.maxLum.value = S.bloomMaxLum * SCENE_RADIANCE_SCALE; b.surfaceMaxLum.value = S.bloomSurfaceMaxLum * SCENE_RADIANCE_SCALE;
-
-		}
-		// The night crossfades the curve and its grade to PBR Neutral's (the grade's own night values,
-		// not the GUI's, which tune the chosen curve by day).
-		const look = this.looks[ S.toneMapping ], night = this.looks.neutral;
-		const day = S.toneMapping === 'neutral' ? 1 : 1 - THREE.MathUtils.clamp( S.nightCurve, 0, 1 );
-		u.curve.value = TONE_CURVES.indexOf( S.toneMapping ); u.day.value = day;
-		u.nightGreen.value = NIGHT_GREEN_TURN * THREE.MathUtils.clamp( S.nightGreen, 0, 1 );
-		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE; u.curveExposure.value = u.exposure.value * look.exposure;
-		u.saturation.value = lerp( night.saturation, S.saturation, day ); u.vibrance.value = lerp( night.vibrance, S.vibrance, day ); u.contrast.value = lerp( night.contrast, S.contrast, day );
-		u.clipGuard.value = look.clipGuard * day; u.highlightSat.value = look.highlightSat * day; u.knee.value = look.knee; u.burn.value = look.burn * day;
-		u.split.value = S.split * lerp( night.split, look.split, day ); u.lift.value.copy( S.lift ).multiplyScalar( lerp( night.lift, look.lift, day ) );
-		// The look crossfades into the night's (every parameter, the tints too), and its sunlit parts
-		// (glow, highlights, lift) follow the weather's direct light; the rest holds a share of itself
-		// under a closed sky, so bad weather stays dimmer and greyer than a clear day.
-		// ('realistic' bypasses the layer whatever the live parameters hold, so it stays exact)
-		const L = mixLook( this.lookMixed, this.look, this.lookNight, nl ), on = S.look !== 'realistic';
-		const sunlit = THREE.MathUtils.smoothstep( S.lookSunlight, 0.1, 0.9 );
-		u.lookOn.value = on ? 1 : 0;
-		u.lookColour.value = lerp( L.overcast, 1, sunlit ); u.lookSun.value = sunlit;
-		u.greenSat.value = L.greenSaturation; u.greenBright.value = L.greenBrightness; u.greenHue.value = L.greenHue;
-		u.tealSat.value = L.tealSaturation; u.tealBright.value = L.tealBrightness; u.tealHue.value = L.tealHue;
-		u.shadowTint.value.copy( L.shadowTint ); u.shadowTone.value = L.shadowTone;
-		u.highlightTint.value.copy( L.highlightTint ); u.highlightTone.value = L.highlightTone;
-		u.pivot.value = L.pivot; u.shadowLift.value = L.shadowLift; u.lookContrast.value = L.contrast; u.lookSky.value = L.sky; u.glowHalo.value = L.glowHalo;
-		const d = this.diffusion.node, glow = on ? L.glow * u.lookSun.value : 0;
-		this.diffusion.enabled = glow > 0; u.glowOn.value = this.diffusion.enabled ? 1 : 0;
-		d.strength.value = glow; d.radius.value = L.glowRadius;
-		// the threshold in the sharp image's units: display values before the curve, over its exposure
-		this.diffusion.threshold.value = L.glowThreshold / Math.max( u.curveExposure.value, 1e-9 );
-		// (a negative warmth cools the glow: the night's)
-		u.glowTint.value.setRGB( 1 + 0.2 * L.glowWarmth, 1, 1 - 0.35 * L.glowWarmth );
-		u.vignette.value = S.vignette + ( on ? L.vignette : 0 ); u.grain.value = S.grain; u.time.value = time;
+		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE;
+		u.bloom.value = S.bloom; u.warmth.value = S.warmth; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
+		u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.dof.value = S.dof; u.range.value = S.dofRange;
 		u.maxRadius.value = S.dofMaxRadius * this.height / 900; // blur scales with the image, not the pixel count
 		u.focus.value = S.focusDistance > 0 ? S.focusDistance : camera.position.length();

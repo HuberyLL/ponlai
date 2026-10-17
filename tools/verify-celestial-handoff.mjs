@@ -40,7 +40,7 @@ try {
 			const clock = s.dayCycle.snapshot();
 			return {
 				hour: clock.hour, elevation: clock.elevation, clockKey: clock.keyDir.toArray(),
-				clockGrade: { exposure: clock.exposure, blackLift: clock.blackLift, daylight: clock.daylight },
+				clockGrade: { exposure: clock.exposure, daylight: clock.daylight },
 				dir: s.sky.keyDir.toArray(), color: s.sky.keyColor.toArray(),
 				grade: { ...s.sky.grade }, exposure: s.pipeline.settings.exposure,
 			};
@@ -81,7 +81,7 @@ try {
 			assert.ok( sample.dir.every( Number.isFinite ) );
 			assert.ok( Math.abs( Math.hypot( ...sample.dir ) - 1 ) < 1e-8 );
 			assert.ok( angle( sample.dir, sample.clockKey ) < 1e-4, 'The key light must follow the clock on the same frame' );
-			for ( const key of [ 'exposure', 'blackLift', 'daylight' ] ) {
+			for ( const key of [ 'exposure', 'daylight' ] ) {
 
 				assert.ok( Math.abs( sample.grade[ key ] - sample.clockGrade[ key ] ) < 1e-8, `${ key } must follow the clock on the same frame` );
 

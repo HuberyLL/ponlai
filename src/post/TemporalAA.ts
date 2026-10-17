@@ -30,13 +30,12 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 // variance clipping (Marco Salvi, "An Excursion in Temporal Supersampling", GDC 2016) in YCoCg toward
 // the neighbourhood's mean.
 //
-// - Accumulation domain: linear light. Display values (the grade's sRGB encoding and its gentle
-//   S-curve) average darker at partial coverage (a thin blade over bright ground came out darker
-//   than either), so under `linear` the display pass stops before the encoding and writes the graded
-//   colour in linear light, clamped to 0..1, in half float (Pipeline.ts); the resolve reads it as it
-//   is and the canvas pass encodes the resolved image (the sRGB transfer, then the S-curve). The
-//   resolve once undid the encoding per tap (three Newton steps on the S-curve and the sRGB
-//   transfer, nine taps a pixel at the canvas's size): the same maths at about four times the cost.
+// - Accumulation domain: linear light. Display values (the grade's sRGB encoding) average darker at
+//   partial coverage (a thin blade over bright ground came out darker than either), so under
+//   `linear` the display pass stops before the encoding and writes the graded colour in linear
+//   light, clamped to 0..1, in half float (Pipeline.ts); the resolve reads it as it is and the canvas
+//   pass encodes the resolved image (the sRGB transfer). The resolve once undid the encoding per tap
+//   (nine taps a pixel at the canvas's size): the same maths at about four times the cost.
 // - Reconstruction (TAAU after AMD's FSR 2 and Unreal's TSR): the current frame's samples are
 //   weighted by their distance to the output pixel, a Gaussian in output pixels at their jittered
 //   positions (sigma 0.42, 0.30 at rest), plus 5 % of a wide Gaussian (0.6 input pixels) so a pixel
@@ -157,7 +156,7 @@ import { compileChain, compileQuad } from './graph/Compile.ts';
 //   drawn unjittered into an overlay at the canvas's size, between the resolve's passes and the
 //   canvas pass (`after`), and the canvas pass adds the change the rain veil and that overlay make
 //   to the graded colour (`layer`) after RCAS, before the grain: the pixels it changes are decoded
-//   to linear light (the S-curve by Newton's method, then the sRGB transfer), changed and encoded
+//   to linear light (the sRGB transfer undone), changed and encoded
 //   again; the vignette applies to the change as to the image. Nothing of it enters a history. A
 //   running frame's canvas pass draws the change itself (`layerInline`: a build of its own, used
 //   only while the layer shows, so in fair weather the pass holds none of its registers); the
@@ -239,8 +238,6 @@ export interface TemporalInputs {
 export interface TemporalOptions {
 	mode: TemporalMode;
 	settings: TemporalSettings;
-	// the display S-curve's contrast, which the canvas pass applies after the accumulation
-	contrast: THREE.UniformNode<'float', number>;
 	// the grade's vignette factor at the pixel drawn into an image of `size`
 	vignette: ( size: Uniform2 ) => F;
 	// the canvas's grain and dither (`on` 0 leaves them out)
@@ -279,30 +276,9 @@ export interface TemporalFrame {
 /** The debug views of the resolve (graph/DebugView.ts). */
 export type TemporalDebugView = 'weight' | 'disocclusion' | 'clip';
 
-// linear to display values: the sRGB transfer, then the S-curve
-const toDisplay = Fn( ( [ c, k ]: [ V3, F ] ) => {
-
-	const s = ( sRGBTransferOETF( clamp( c, 0, 1 ) ) as V3 ).toVar();
-	return mix( s, s.mul( s ).mul( float( 3 ).sub( s.mul( 2 ) ) ), k );
-
-} ).setLayout( { name: 'taaToDisplay', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'k', type: 'float' } ] } );
-
-// display values to linear: the S-curve undone by Newton's method (three steps from the value itself
-// meet it to well below a level for the grade's gentle contrasts), then the sRGB transfer
-const fromDisplay = Fn( ( [ s, k ]: [ V3, F ] ) => {
-
-	const y = clamp( s, 0, 1 ).toVar();
-	const x = y.toVar();
-	for ( let i = 0; i < 3; i ++ ) {
-
-		const f = x.add( k.mul( x.mul( x ).mul( float( 3 ).sub( x.mul( 2 ) ) ).sub( x ) ) ).sub( y );
-		const d = float( 1 ).add( k.mul( x.mul( 6 ).sub( x.mul( x ).mul( 6 ) ).sub( 1 ) ) );
-		x.assign( clamp( x.sub( f.div( d ) ), 0, 1 ) );
-
-	}
-	return sRGBTransferEOTF( x ) as V3;
-
-} ).setLayout( { name: 'taaFromDisplay', type: 'vec3', inputs: [ { name: 's', type: 'vec3' }, { name: 'k', type: 'float' } ] } );
+// linear to display values (the sRGB transfer), and back
+const toDisplay = ( c: V3 ) => sRGBTransferOETF( clamp( c, 0, 1 ) ) as V3;
+const fromDisplay = ( s: V3 ) => sRGBTransferEOTF( clamp( s, 0, 1 ) ) as V3;
 
 const toYCoCg = ( c: V3 ) => vec3( dot( c, vec3( 0.25, 0.5, 0.25 ) ), dot( c, vec3( 0.5, 0, - 0.5 ) ), dot( c, vec3( - 0.25, 0.5, - 0.25 ) ) );
 const fromYCoCg = ( c: V3 ) => vec3( c.x.add( c.y ).sub( c.z ), c.x.add( c.z ), c.x.sub( c.y ).sub( c.z ) );
@@ -549,7 +525,7 @@ export class TemporalAA {
 
 		}
 		// Under `linear` the running resolve also writes its image encoded (the vignette, the sRGB
-		// transfer, the S-curve), so the canvas pass's RCAS reads encoded taps instead of encoding
+		// transfer), so the canvas pass's RCAS reads encoded taps instead of encoding
 		// five a pixel. The ground truth is not sharpened (one encode a pixel already).
 		const gt = this.mode === 'gt';
 		let canvasImage = this.settings.linear && ! gt ? g.color( 'taaEncoded', { size: this.historyClass, format: THREE.RGBAFormat, type: THREE.HalfFloatType } ) : null;
@@ -643,7 +619,7 @@ export class TemporalAA {
 			If( l.a.greaterThan( 0 ), () => {
 
 				out.assign( this.settings.linear
-					? toDisplay( fromDisplay( s, O.contrast ).add( l.rgb.mul( v ) ), O.contrast )
+					? toDisplay( fromDisplay( s ).add( l.rgb.mul( v ) ) )
 					: s.add( l.rgb.mul( v ) ) );
 
 			} );
@@ -657,7 +633,7 @@ export class TemporalAA {
 		const sourceIndex = () => this.rest.converged ? 2 : g.parityOf( history );
 		// the resolved image (linear) to display values, with the vignette (in linear, as the grade
 		// applied it); accumulated in display values (`linear` off), the vignette applies to those
-		const encode = ( c: V3, v: F ) => this.settings.linear ? toDisplay( c.mul( v ), O.contrast ) : c.mul( v );
+		const encode = ( c: V3, v: F ) => this.settings.linear ? toDisplay( c.mul( v ) ) : c.mul( v );
 		// the sharpening at a canvas pixel `p`: the frame's, plus up to its class's `sharpenMoving` stops
 		// where the surface there moves on screen (its speed in canvas pixels from the velocity at the
 		// render pixel under it; still pixels, the sky and the rest keep the frame's)
@@ -1132,7 +1108,7 @@ export class TemporalAA {
 		const written = stateful ? [ ( out as unknown as { element( i: number ): V4 } ).element( 1 ), ...( smoothing ? [ shown ] : [] ) ] : [];
 		// (and the image encoded for the canvas pass, with the vignette at this pixel: the second
 		// stage's where it runs)
-		const encodedImage = encoded ? [ vec4( toDisplay( shown.rgb.mul( O.vignette( outputSize ) ), O.contrast ), 1 ) ] : [];
+		const encodedImage = encoded ? [ vec4( toDisplay( shown.rgb.mul( O.vignette( outputSize ) ) ), 1 ) ] : [];
 		return encoded || stateful ? outputStruct( color, ...encodedImage, ...written ) as unknown as V4 : color;
 
 	}

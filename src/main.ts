@@ -41,7 +41,7 @@ import { buildWindArrows, windArrowGeometry } from './debug/WindArrows.ts';
 import { buildGrass, grassKind, plantGrass, setGrassQuality } from './world/Grass.ts';
 import { meadowCanopy } from './lighting/MeadowCanopy.ts';
 import { trackKeyRim } from './lighting/KeyRim.ts';
-import { Pipeline, TONE_CURVES, LOOKS, DEFAULT_LOOK, postOptionsFromURL, type ToneCurve, type LookName, type LookSettings } from './post/Pipeline.ts';
+import { Pipeline, postOptionsFromURL } from './post/Pipeline.ts';
 import { renderPixelRatio, dynamicMaxRatio, outputPixelRatio, OUTPUT_PIXEL_RATIO_CAP } from './post/RenderScale.ts';
 import { DynamicResolution, GpuFrameTimer, PassScaling, PeriodicWork, TAAU_MAX_UPSCALE, renderScaleKey } from './post/DynamicResolution.ts';
 import { FramePacer } from './post/FramePacer.ts';
@@ -496,10 +496,6 @@ if ( profiler ) {
 	};
 
 }
-const requestedTone = params.get( 'tone' ) as ToneCurve | null;
-if ( requestedTone && TONE_CURVES.includes( requestedTone ) ) pipeline.setToneMapping( requestedTone );
-const requestedLook = params.get( 'look' ) as LookName | null;
-pipeline.setLook( requestedLook && LOOKS.includes( requestedLook ) ? requestedLook : DEFAULT_LOOK );
 rain.bindOpaqueDepth( pipeline.depthRT.texture, pipeline.surfaceRT.texture );
 rainScene.add( rain.group );
 if ( rain.afterGroup ) afterScene.add( rain.afterGroup );
@@ -1227,63 +1223,18 @@ islanderF.add( characterLook.softSkin, 'value', 0.005, 0.4, 0.005 ).name( 'skin 
 islanderF.add( characterLook.rimGain, 'value', 0, 4, 0.01 ).name( 'sun rim' );
 islanderF.add( characterLook.skyRimGain, 'value', 0, 4, 0.01 ).name( 'sky rim' );
 islanderF.add( characterLook.shadowSaturation, 'value', 0.5, 2, 0.01 ).name( 'shade saturation' );
+// tidewater's grade (Pipeline.ts TIDEWATER_GRADE), its exposure from the clock and the weather
 const postF = gui.addFolder( 'Post' );
-postF.add( S, 'toneMapping', TONE_CURVES ).name( 'tone curve' ).onChange( ( curve: ToneCurve ) => pipeline.setToneMapping( curve ) );
-postF.add( S, 'exposure', 0.1, 5, 0.01 );
-postF.add( S, 'saturation', 0, 2, 0.01 ).listen();
-postF.add( S, 'vibrance', 0, 1, 0.01 ).listen();
-postF.add( S, 'contrast', - 0.5, 1, 0.01 ).listen();
-postF.add( S, 'split', 0, 1, 0.01 ).name( 'split tone' );
-postF.addColor( S, 'lift' );
-postF.add( S, 'bloomStrength', 0, 1.5, 0.01 );
-postF.add( S, 'bloomThreshold', 0, 5, 0.01 );
-postF.add( S, 'bloomMaxLum', 0.5, 50, 0.1 ).name( 'bloom clamp (sky)' );
-postF.add( S, 'bloomSurfaceMaxLum', 0.5, 50, 0.1 ).name( 'bloom clamp (surfaces)' );
-postF.add( S, 'glowStrength', 0, 1, 0.01 ).name( 'glow' );
-postF.add( S, 'glowThreshold', 0, 3, 0.01 ).name( 'glow threshold' );
+postF.add( S, 'exposure', 0.1, 5, 0.01 ).listen();
+postF.add( S, 'bloom', 0, 0.3, 0.005 );
+postF.add( S, 'warmth', - 0.1, 0.1, 0.005 );
+postF.add( S, 'saturation', 0, 2, 0.01 );
+postF.add( S, 'contrast', 0.8, 1.3, 0.01 );
 postF.add( S, 'dof', 0, 1, 0.01 ).name( 'tilt-shift' ).listen();
 postF.add( S, 'dofRange', 0, 20, 0.1 );
 postF.add( S, 'dofMaxRadius', 0, 20, 0.1 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
 postF.add( S, 'grain', 0, 0.05, 0.001 );
-// the look's controls, for the day's look and the night's
-function addLookControls( f: GUI, L: LookSettings ): void {
-
-	f.add( L, 'glow', 0, 1.5, 0.01 ).name( 'soft glow' ).listen();
-	f.add( L, 'glowThreshold', 0.05, 2, 0.01 ).name( 'glow from' ).listen();
-	f.add( L, 'glowRadius', 0, 1, 0.01 ).name( 'glow spread' ).listen();
-	f.add( L, 'glowWarmth', - 1, 1, 0.01 ).name( 'glow warmth' ).listen();
-	f.add( L, 'glowHalo', 0, 1, 0.01 ).name( 'glow into shade' ).listen();
-	f.add( L, 'greenSaturation', - 0.5, 1, 0.01 ).name( 'green saturation' ).listen();
-	f.add( L, 'greenBrightness', - 0.3, 0.5, 0.01 ).name( 'green brightness' ).listen();
-	f.add( L, 'greenHue', - 0.4, 0.4, 0.01 ).name( 'green hue' ).listen();
-	f.add( L, 'tealSaturation', - 0.5, 1, 0.01 ).name( 'water saturation' ).listen();
-	f.add( L, 'tealBrightness', - 0.3, 0.5, 0.01 ).name( 'water brightness' ).listen();
-	f.add( L, 'tealHue', - 0.4, 0.4, 0.01 ).name( 'water hue' ).listen();
-	f.addColor( L, 'shadowTint' ).name( 'shadow colour' ).listen();
-	f.add( L, 'shadowTone', 0, 1, 0.01 ).name( 'shadow tint' ).listen();
-	f.addColor( L, 'highlightTint' ).name( 'highlight colour' ).listen();
-	f.add( L, 'highlightTone', 0, 1, 0.01 ).name( 'highlight tint' ).listen();
-	f.add( L, 'pivot', 0.02, 0.8, 0.01 ).name( 'split pivot' ).listen();
-	f.add( L, 'shadowLift', 0, 0.2, 0.001 ).name( 'shadow lift' ).listen();
-	f.add( L, 'contrast', - 0.3, 0.5, 0.01 ).name( 'depth (contrast)' ).listen();
-	f.add( L, 'vignette', 0, 0.6, 0.01 ).listen();
-	f.add( L, 'sky', 0, 1, 0.01 ).name( 'on the sky' ).listen();
-	f.add( L, 'overcast', 0, 1, 0.01 ).name( 'kept in bad weather' ).listen();
-
-}
-const lookF = gui.addFolder( 'Look' );
-const L = pipeline.look;
-lookF.add( S, 'look', LOOKS ).name( 'preset' ).onChange( ( name: LookName ) => pipeline.setLook( name ) );
-addLookControls( lookF, L );
-// the night's look and bloom chains, which the day's cross into after sunset (Pipeline `nightLook`)
-const nightLookF = lookF.addFolder( 'Night' );
-nightLookF.add( S.night, 'bloomStrength', 0, 1.5, 0.01 ).name( 'bloom' );
-nightLookF.add( S.night, 'bloomThreshold', 0, 5, 0.01 ).name( 'bloom threshold' );
-nightLookF.add( S.night, 'glowStrength', 0, 1, 0.01 ).name( 'wide glow' );
-nightLookF.add( S.night, 'glowThreshold', 0, 3, 0.005 ).name( 'wide glow threshold' );
-nightLookF.add( S.night, 'glowMaxLum', 0.5, 10, 0.1 ).name( 'wide glow clamp' );
-addLookControls( nightLookF, pipeline.lookNight );
 if ( DEBUG ) {
 
 	// The frame graph's debug view (fgview): its choices from the graph's description. The graph
@@ -1635,25 +1586,9 @@ function tick( time: number ): void {
 	rain!.update( renderer, camera, simTime, shared.wind.displacement.value, pipeline.height, AFTER_RESOLVE ? pipeline.outputHeight : pipeline.height );
 	if ( ! manualSun && environmentLook.exposure ) {
 
-		const state = sky.grade;
-		S.exposure = state.exposure;
-		S.lift.setRGB( state.blackLift, state.blackLift, state.blackLift * 0.97 );
-		S.split = 0.16 + state.daylight * 0.29;
-		// The night returns to PBR Neutral's look as the sun sets: none while the sun is up (a low
-		// sun's bright sky needs AgX's shoulder), fully from about -3 degrees. AgX's grade darkens a
-		// dim frame, so a crossfade held back to -2 .. -6 degrees left the frame up to a fifth darker
-		// than PBR Neutral's just after sunset, and darker than the night.
-		S.nightCurve = 1 - THREE.MathUtils.smoothstep( state.daylight, 0.2, 0.45 );
-		// The look and the bloom chains cross into the night's over the same span: where the look
-		// used to fade out, the night's comes in.
-		S.nightLook = S.nightCurve;
-		// The night's cooler meadow (Pipeline `nightGreenTurn`): none through the afterglow, all of
-		// it once the sky is navy (the sun from -6 to -19 degrees).
-		S.nightGreen = 1 - THREE.MathUtils.smoothstep( sky.elevation, - 19, - 6 );
+		S.exposure = sky.grade.exposure;
 
 	}
-	// the look's sunlit layers follow the weather's sunlight, as the key light does
-	S.lookSunlight = weather.state.directVisibility;
 	skyElapsed += environmentDt;
 	const skyInterval = runtimeQuality.skyUpdateInterval;
 	const ws = weather.state;

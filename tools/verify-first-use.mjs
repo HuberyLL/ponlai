@@ -338,18 +338,14 @@ async function apply( page, step, notes ) {
 			break;
 		case 'gui': {
 
-			// the tone curves, the looks (fantasy ones run the look's glow chain), the depth of field
-			// and the grain off and on: each as the GUI sets it
+			// the depth of field and the grain off and on: each as the GUI sets it
 			const done = await page.evaluate( async () => {
 
 				const s = window.__PONLAI__, p = s.pipeline, S = p.settings;
 				const wait = ( n ) => new Promise( ( resolve ) => { const end = s.renderer.info.frame + n; const tick = () => s.renderer.info.frame >= end ? resolve() : requestAnimationFrame( tick ); tick(); } );
-				const curve = S.toneMapping, look = S.look, dof = S.dof, grain = S.grain;
-				for ( const c of [ 'neutral-hue', 'agx-hue', 'agx', 'neutral' ] ) { p.setToneMapping( c ); await wait( 3 ); }
-				for ( const l of [ 'realistic', 'soft-fantasy', 'rich-fantasy' ] ) { p.setLook( l ); await wait( 3 ); }
+				const dof = S.dof, grain = S.grain;
 				S.dof = 0; await wait( 3 ); S.dof = dof;
 				S.grain = 0; await wait( 3 ); S.grain = grain;
-				p.setToneMapping( curve ); p.setLook( look );
 				return true;
 
 			} );

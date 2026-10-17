@@ -81,7 +81,8 @@ stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The 
 - `src/weather/`: wind (`Wind.ts`: the weather's one wind, which every part reads from it, and the
   one wind field all vegetation moves in), lightning, rain,
   puddles, distant air and sea fog (`AerialPerspective.ts`).
-- `src/post/`: the frame's passes, tone curve and look (`Pipeline.ts`), light shafts
+- `src/post/`: the frame's passes and tidewater's display chain (`Pipeline.ts`, its bloom in
+  `PhysicalBloom.ts`), light shafts
   (`LightShafts.ts`), FSR 1, render scale and dynamic resolution (`RenderScale.ts`,
   `DynamicResolution.ts`), the frame pacer, the submit batching, the signal that a paused frame is
   final (`Settled.ts`), the anti-aliasing mode and the scene's sample count (`Antialiasing.ts`); under the

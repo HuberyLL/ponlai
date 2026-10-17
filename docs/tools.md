@@ -145,8 +145,6 @@ Quality and look:
   only active tier: medium and low are parked, see Parked quality tiers), `tier.<knob>=<value>`
   overrides one knob for an A/B (e.g. `tier.post.fogScale=0.5`). The GPU timing that once chose
   the tier (`src/QualityDetect.ts`, `autoQuality`) is parked with them.
-- `tone` (neutral-hue, the default, agx-hue, agx, neutral), `look` (soft-fantasy, the default,
-  rich-fantasy, realistic).
 
 Rendering and A/B options, read at load (runtime switches for one-page A/Bs live in
 `src/debug/DebugFlags.ts`):

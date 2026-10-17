@@ -14,7 +14,8 @@ packages, into `dist/licenses/`.
 - Licence: MIT, see [`src/ocean/tidewater.LICENSE.txt`](src/ocean/tidewater.LICENSE.txt),
   [`src/sky/tidewater.LICENSE.txt`](src/sky/tidewater.LICENSE.txt),
   [`src/materials/tidewater.LICENSE.txt`](src/materials/tidewater.LICENSE.txt),
-  [`src/lighting/tidewater.LICENSE.txt`](src/lighting/tidewater.LICENSE.txt) and
+  [`src/lighting/tidewater.LICENSE.txt`](src/lighting/tidewater.LICENSE.txt),
+  [`src/post/tidewater.LICENSE.txt`](src/post/tidewater.LICENSE.txt) and
   [`src/weather/tidewater.LICENSE.txt`](src/weather/tidewater.LICENSE.txt) (the same text)
 - From the three.js (TSL) edition, commit
   [`fd6cae6`](https://github.com/dgreenheck/tidewater/tree/fd6cae6fa57343d344e5c008e1abda974c824b86):
@@ -60,6 +61,11 @@ packages, into `dist/licenses/`.
     `ShoreWaves.js`; now mostly rewritten for this island's rocky boundary.
   - `src/sky/Atmosphere.ts`, `src/sky/Sky.ts`: the atmosphere and solar disk from `Atmosphere.js` and
     `Sky.js`, ported from WGSL to TSL.
+  - `src/post/PhysicalBloom.ts`: the physically motivated bloom of `PostFX.js` (after Jimenez,
+    SIGGRAPH 2014: 13-tap downsamples, the first through the Karis average, and 3x3 tent
+    upsamples); `src/post/Pipeline.ts`: its grade (the white balance nudge, saturation and contrast
+    round mid grey, the vignette, the luminance-weighted grain) before three's ACES at its
+    exposure, ported from WGSL to TSL.
   - `src/post/TemporalLocks.ts`: the motion cap, the temporal reactive and the clamp-drop of
     `TemporalUpscale.js`'s accumulation, which is AMD's FSR 2 (see "FSR 2" below; licence
     [`src/post/tidewater-fsr2.LICENSE.txt`](src/post/tidewater-fsr2.LICENSE.txt), both notices).
@@ -243,17 +249,6 @@ packages, into `dist/licenses/`.
   droplets on land, rings on the sea) are procedural. Nothing from the project's `public/`
   folder or its CC BY-NC-SA derived shaders (`rainRipples.js`, `surfaceRain.js`, `rainGlass.js`)
   is used.
-
-### Bloom chains (three.js's BloomNode)
-
-- Upstream: three.js `examples/jsm/tsl/display/BloomNode.js` (r186), after UnrealBloomPass
-- Copyright: 2010-2026 three.js authors
-- Licence: MIT, see [`src/post/three-bloom.LICENSE.txt`](src/post/three-bloom.LICENSE.txt)
-- File: `src/post/BloomChains.ts`: the high pass, the five mips' separable Gaussian blurs and the
-  composite of the tight bloom and the wide glow.
-- Changes: the chains are drawn together (the high pass and each blur write every chain's target
-  in one MRT pass, the composite stays a pass per chain), as passes of the frame graph into
-  targets it declares and sizes; the high pass is the pipeline's own (clamped, soft-knee).
 
 ### FSR 1 (AMD FidelityFX, through three.js's FSR1Node)
 
