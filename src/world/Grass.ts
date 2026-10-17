@@ -171,6 +171,26 @@ const LAWN: TuftShape = { blades: 16 * FUR, segs: 4, r0: [ 0, 0.2 ], w: [ 0.012,
 const TALL_SHARE = 1 / 12, TALL = 1.2;
 // (SHEAR: how much longer a tussock's blades grow on the side it leans to, see TUSSOCK)
 const SHEAR = 0.35;
+// The meadow is a mix of grasses, as a real one is: fine leaves (the fescues of exposed turf, about
+// 1 - 3 mm wide, rolled and wiry, on the exposed turf; ryegrass and the meadow grasses, 3 - 6 mm,
+// in the tall sward) with broad ones among them (cocksfoot, tall fescue, Yorkshire fog: 8 - 14 mm,
+// flat, stiffer for their midrib), about three times as wide. Each blade is `fine` or `broad` by a
+// draw against its tussock's share of broad leaves (`COARSE`), so the broad leaves gather in
+// tussocks, as each species grows in its own, and the short, exposed turf is fine-leaved. The
+// factors scale the tuft's widths (LAWN.w) and stiffness, the widths' mean over the tall sward
+// kept at 1 (the coverage holds): a tuft draws a few times fewer leaves than a real sward holds, so
+// each stands for several and is wider than a real leaf, and the ratio and the shares are the real
+// ones. At the game's 22 to 45 m every leaf was under two pixels wide and drew at the same least
+// width (`pixelWideBlade`): one width read as a mat of hairs, while the broad leaves now draw
+// several pixels wide among them. (Broad leaves a fifth longer, as the coarse grasses grow, raised
+// the tufts' bounds above the sea's reflection box for a difference the game's view did not show.)
+const GRASSES = { fine: { width: 0.65, stiffness: 1 }, broad: { width: 1.86, stiffness: 1.6 } } as const;
+// A tall tussock's share of broad leaves, by a hash of its own draws: `shares` below `at[ 0 ]`,
+// between and above `at[ 1 ]` (mostly fine, mixed, mostly broad): 0.29 over the tall sward.
+const COARSE = { shares: [ 0.12, 0.35, 0.8 ], at: [ 0.55, 0.85 ] } as const;
+// The short turf's tufts (LEVEL.short, at most about 0.24 m) take none: the share fades in over these
+// height scales (m), below the tall sward's least.
+const SHORT_TOP = [ 0.22, 0.28 ] as const;
 const HEIGHT_MAX = 1.25 * TALL / ( 1 + TALL_SHARE * ( TALL - 1 ) ) * ( 1 + SHEAR );
 const FACING = 2.2, ROOT_ANGLE = [ 1.0, 1.45 ], STIFFNESS = [ 0.75, 1.35 ];
 // The meadow's blade: a grass leaf (Physics.ts GRASS_BLADE) 0.6 mm thick at the root, as a tall
@@ -525,7 +545,7 @@ function tuftGeometry( shape: TuftShape, seed = 3 ) {
 	// cull scales by the tuft's own: a blade's shape is isotropic in metres while the tuft's scale is
 	// not): the cull bounds a tuft by both (`tuftSphere`).
 	// The halfWidth below is the root half width of the widest blade, which the cull pads for the widening.
-	g.userData.halfWidth = shape.w[ 1 ] * 0.5 + 0.004;
+	g.userData.halfWidth = shape.w[ 1 ] * 0.5 * GRASSES.broad.width + 0.004;
 	const out = shape.r0[ 1 ] + shape.w[ 1 ];
 	g.userData.restBox = new THREE.Box3( new THREE.Vector3( - out, 0, - out ), new THREE.Vector3( out, HEIGHT_MAX, out ) );
 	g.userData.reach = HEIGHT_MAX;
@@ -860,8 +880,8 @@ const STEM_TIP = ( () => {
 
 /** A tussock's own values in the vertex stage (from its word, `plantGrass`): its stiffness, its lean
  * (0 to 1), the lean's direction in the tuft's frame (local x, z) and how far its blades' roots
- * gather toward its centre (a scale of their offsets). */
-interface Tussock { stiffness: F; lean: F; dir: THREE.Node<'vec2'>; gather: F }
+ * gather toward its centre (a scale of their offsets) and its share of broad leaves (COARSE). */
+interface Tussock { stiffness: F; lean: F; dir: THREE.Node<'vec2'>; gather: F; coarse: F }
 
 // A blade's own rest pose, before the tuft's transform: the shared tuft geometry's blade (attribute
 // `blade`, tuftGeometry) longer or shorter, turned toward its own side and shaped by its weight
@@ -890,13 +910,16 @@ function restBlade( blade: THREE.Node<'vec4'>, pick: F, scaleY: F, aspect: F, cl
 	const facing = positionLocal.y.add( turn );
 	const out = vec2( cos( facing ), sin( facing ) ).toVar();
 	const dir = normalize( out.add( clump.dir.mul( clump.lean.mul( 0.8 ) ) ) ).toVar();
+	// its grass (GRASSES): broad by a draw against its tussock's share; a stem keeps its own width
+	const broad = step( bladeHash( id, pick, 8 ), clump.coarse ).toVar();
+	const grass = ( k: 'width' | 'stiffness' ) => mix( float( GRASSES.fine[ k ] ), float( GRASSES.broad[ k ] ), broad );
 	const length = bladeHash( id, pick, 0 ).mul( 0.5 ).add( 0.75 ).mul( tall ).div( 1 + TALL_SHARE * ( TALL - 1 ) )
 		.mul( clump.lean.mul( dot( out, clump.dir ) ).mul( SHEAR ).add( 1 ) ).toVar();
 	const metres = length.mul( scaleY ).toVar();
-	const stiffness = pow( float( STIFFNESS[ 1 ] / STIFFNESS[ 0 ] ), bladeHash( id, pick, 2 ) ).mul( STIFFNESS[ 0 ] ).mul( clump.stiffness );
+	const stiffness = pow( float( STIFFNESS[ 1 ] / STIFFNESS[ 0 ] ), bladeHash( id, pick, 2 ) ).mul( STIFFNESS[ 0 ] ).mul( clump.stiffness ).mul( grass( 'stiffness' ) );
 	const gravity = min( metres.mul( metres ).mul( metres ).mul( G_UNIT ).div( stiffness ), G_MAX );
 	const angle = bladeHash( id, pick, 4 ).sqrt().mul( ROOT_ANGLE[ 1 ] - ROOT_ANGLE[ 0 ] ).add( ROOT_ANGLE[ 0 ] );
-	const half = blade.z.mul( side );
+	const half = blade.z.mul( side ).mul( mix( grass( 'width' ), float( 1 ), isStem ) );
 	const offset0 = vec2( cos( blade.y ), sin( blade.y ) ).mul( half );
 	const axis = mix( vec2( cos( blade.y.add( turn ) ), sin( blade.y.add( turn ) ) ), vec2( stem.dir.y.negate(), stem.dir.x ), isStem ).toVar();
 	const offset = axis.mul( half );
@@ -1239,6 +1262,14 @@ function grassMaterial( shared: Shared, cull: GrassCull, sunShadow: SunShadow ):
 		stiffness: lowByte.mul( ( STIFF_RANGE[ 1 ] - STIFF_RANGE[ 0 ] ) / 255 ).add( STIFF_RANGE[ 0 ] ).toVar(),
 		lean: mid.div( 255 ).toVar(), dir: vec2( cos( leanAngle ), sin( leanAngle ) ).toVar(),
 		gather: float( 1 ).sub( smoothstepN( LEVEL.short + 0.04, LEVEL.ordinary, scaleY ).mul( TUSSOCK.gather ) ),
+		// (a hash of its stiffness and lean bytes, its own draws; none on the short turf)
+		coarse: ( () => {
+
+			const u = fract( sin( lowByte.mul( 12.9898 ).add( mid.mul( 78.233 ) ) ).mul( 43758.5453 ) );
+			const share = mix( mix( float( COARSE.shares[ 0 ] ), float( COARSE.shares[ 1 ] ), step( COARSE.at[ 0 ], u ) ), float( COARSE.shares[ 2 ] ), step( COARSE.at[ 1 ], u ) );
+			return share.mul( smoothstepN( SHORT_TOP[ 0 ], SHORT_TOP[ 1 ], scaleY ) ).toVar();
+
+		} )(),
 	};
 	// A tuft's edge record (`edgeTuftSteps`, zeros away from the edge): the coast's offset along its
 	// outward direction, the roof's height, the outward direction, then the wall (LIP_WALLS offsets).
@@ -1532,7 +1563,7 @@ const NEAR_GAIN = 4;
 const WIDEN_REACH = MAX_WIDEN * NEAR_GAIN - 1;
 // The most a blade's root half width can be in world space, for the far pad: the widest blade's
 // (`tuftGeometry`'s halfWidth) at the widest tuft's scale (PLANT_SPREAD, 1.1 at most).
-const PAD_HALF_WIDTH = ( LAWN.w[ 1 ] * 0.5 + 0.004 ) * PLANT_SPREAD * 1.1;
+const PAD_HALF_WIDTH = ( LAWN.w[ 1 ] * 0.5 * GRASSES.broad.width + 0.004 ) * PLANT_SPREAD * 1.1;
 const SWAY_PAD = 0.2;
 const FOLD_PAD = 0.01;
 
