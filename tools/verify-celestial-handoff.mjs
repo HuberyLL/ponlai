@@ -87,7 +87,9 @@ try {
 
 			}
 			assert.ok( Math.abs( sample.exposure - sample.grade.exposure ) < 1e-8, 'Main exposure must use the displayed sky grade' );
-			if ( sample.elevation < - 0.6 && sample.elevation > - 2.9 ) {
+			// The band runs from just above the sun's last light (DayCycle HANDOFF_TOP, -0.7) down to
+			// where the key has turned to the moon and the moon's key starts to rise (MOON_KEY_TOP).
+			if ( sample.elevation < - 0.6 && sample.elevation > - 2.5 ) {
 
 				assert.deepEqual( sample.color, [ 0, 0, 0 ], 'The handoff band must carry zero direct energy' );
 
