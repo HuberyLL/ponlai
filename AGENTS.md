@@ -1,9 +1,10 @@
 # Ponlai
 
-A small stylised island in an open sea, rendered in the browser: a visual sample for a game, and
-the game growing behind `?game`. The look is stylised fantasy-realistic: a physically based scene
-graded toward a painted game's colour (warm golden light, rich greens, deep teal water, chunky
-stone, a lush meadow). The look and what to avoid: `docs/art-direction.md`. The game's design:
+A small island in an open sea, rendered in the browser: a visual sample for a game, and the game
+growing behind `?game`. The look is fantasy-realistic and photographic: a physically based scene
+lit and graded as tidewater's (deep clear water, chunky stone, a lush meadow with wildflowers),
+the fantasy in the world rather than in the light. The look and what to avoid:
+`docs/art-direction.md`. The game's design:
 `docs/game-design.md` (read it before gameplay work).
 
 ## Where things are written

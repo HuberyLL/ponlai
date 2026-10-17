@@ -911,7 +911,7 @@ export type FrameProfiler = ReturnType<typeof createFrameProfiler>;
 export function labelPonlaiPasses( profiler: FrameProfiler, handles: Record<string, unknown> ): void {
 
 	const h = handles as Record<string, Record<string, unknown>>;
-	// the frame graph labels its passes itself (`graphPass`), the bloom chains' own passes with them
+	// the frame graph labels its passes itself (`graphPass`), the bloom's levels with them
 	// FSR 3's kernels (aa=fsr3), each its own group: FSR3.<kernel> -> 'FSR 3 <kernel>'
 	profiler.pattern( /^FSR3\./, ( name ) => `FSR 3 ${ name.slice( 5 ) }` );
 	profiler.pattern( /^FSR/, 'output & FSR' ); // three's FSR1 passes inside its chain (post=three-fsr)

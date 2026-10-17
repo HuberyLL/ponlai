@@ -6,28 +6,26 @@ art decision changes; reference images stay out of the repository.
 
 ## The look
 
-- A small stylised island in an open sea, a visual sample for a game. Stylised fantasy-realistic:
-  a physically based scene with an art-directed grade, in its own fantasy-realistic colours: real
-  phenomena exaggerated, never a borrowed pastel palette or a dyed sky. By day the light is airy
-  and soft: a near-white sun, a milky horizon that glows wide and cream on the side toward the sun,
-  fresh cool greens; only a low sun's light turns warm and golden. Deep teal water with a sparkling
-  glare toward the sun, chunky chiselled stone, a lush meadow with wildflowers, and grass hanging
-  over the rim. Keep the lower cliff stone exposed.
-- The fantasy look is an art-directed layer over the physically based image, never baked into the
-  lighting or the tone curve: a soft glow round only the brightest parts (sunlit grass tips toward
-  the sun, the horizon, the glints), greens turned toward pure green and a touch darker, richer
-  teal water, golden highlights over cool teal shadows, lifted shadows that keep their saturation,
-  slightly less contrast. The day is not pushed brighter than its exposure: a glow that spreads
-  over the whole sunlit meadow, or a raised exposure, washes the frame out toward the sun. Grey
-  stone and skin keep their colour; a dark meadow under a low sun stays green, not olive-grey.
-  `soft-fantasy` is the default, `rich-fantasy` a bolder step toward a painted scene, `realistic`
-  the plain image for comparison (`src/post/Pipeline.ts`).
-- The tone curve keeps the water clear (deep sea dark and saturated, the shallows' seabed and
-  caustics in full contrast) and a low sun's sky and sea in their hue rather than washed to cream;
-  the sun and its glints burn out. AgX was tried as the default and dropped: its toe greyed the
-  deep water and its shoulder flattened the shallows.
-- The water is adapted from a physically based model (tidewater) and art-directed toward this
-  look: keep new water work stylised rather than strictly realistic.
+- A small island in an open sea, a visual sample for a game, fantasy-realistic: the fantasy lives
+  in the world (the island, its everlasting flowers, later the sea's glow at night), never in the
+  light or the grade. Deep clear water over pale shallows with a sparkling glare toward the sun,
+  chunky chiselled stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the
+  lower cliff stone exposed.
+- The light and the image are photographic, as real as tidewater's (its water, its light under
+  the water, its display chain): the scene is lit by the sun or moon, the sky and the sunlight the
+  ground bounces up, and the frame takes only a filmic curve (ACES) and a light grade (a slight
+  warm white balance, a touch more saturation and contrast, a vignette, film grain) and a faint
+  physical bloom over the whole image. No art-directed layer over it: no tinted or lifted shadows,
+  no hue turns, no glow round the highlights, no night grade of its own. Real phenomena are not
+  exaggerated; they are what the sun, the air and the water do.
+- The exposure follows the time of day and the weather, calibrated against tidewater's frames at
+  the same sun elevation, so the day reads as tidewater's does; a sun in the frame may read a
+  little brighter than its eye-adapting exposure would show it. Overcast stays about three
+  quarters of the same view's clear day. The night keeps the moonlit island readable (see Night).
+- No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
+  lens flares forced into the frame.
+- The water is tidewater's physically based model, kept as it is: real first, any styling later
+  on top of it.
 - The look is judged from the game's own view, the island camera zoomed out over the island, as
   well as close up. Light reads there through its direction and large-scale light and shade (lit
   and shaded slopes and cliffs, a glint or moon path on the sea, later warm lights and what stands
@@ -38,7 +36,8 @@ art decision changes; reference images stay out of the repository.
   frame with glare. It never follows the clock, so returning to the view never jumps.
 - Sunlit stone keeps its grain and its grey: a cliff face turned to the sun is the brightest
   ground in the frame but never a flat cream-white sheet. The stone is kept darker than real
-  limestone so that the exposure set for the meadow leaves it below the tone curve's shoulder.
+  limestone so that the exposure set for the meadow leaves it below the curve's shoulder. A wall
+  over bright shallows takes their teal light from below.
 
 ## Three layers in one world
 
@@ -149,10 +148,8 @@ art decision changes; reference images stay out of the repository.
   afterglow, then green), never dipping below its night brightness; the light that holds it up is
   lent to the island alone. The
   sun and moon are drawn at twice their true size. The day cycle is authored, not astronomical.
-- Everything the key light falls on catches it along its silhouette, one shared rim and backlight
-  for plants, stone, figures and later animals and buildings: restrained by day, seen mostly
-  under a low sun from the side or against it; brighter than physics under the moon, a cool edge
-  on leaves, blades, stone and figures. In shadow the edge stays dark.
+- The sunlit ground lights what stands over it from below, one bounce for every lit surface: the
+  shallows' sand the cliff's walls, the meadow the islanders' undersides; strongest around midday.
 - Bad weather dims and desaturates the existing light; it never adds a grey screen veil, and it
   stays dimmer and greyer than a clear day. Distant air leaves the island's foreground clear as
   the view pulls back. Sea fog is a low layer that may surround the island, never a uniform tint.
@@ -165,16 +162,13 @@ art decision changes; reference images stay out of the repository.
 - Rain is light streaks and ripples on the water. Wetness darkens rock and plants within small
   limits and glosses bare stone; water runs down the cliffs in sparse darker runnels; puddles fill
   fixed hollows and read as water from above.
-- The tilt-shift blur belongs to the island's surroundings: the sky stays sharp (a blurred sky
-  reads as a low backdrop and turns stars into bokeh discs).
 
 ## Night
 
-- The night is art-directed, not a simulation of the eye's night vision: colours stay as authored,
-  so a future fantasy palette (glowing plants, magic) keeps its saturation. The night has a
-  fantasy look of its own rather than none: a cool soft glow round the moon, the clouds it lights
-  and the moonlit surfaces, cool highlights, a lighter night whose shade does not sink to black,
-  and the day's look crosses into it as the sun sets.
+- The night takes the day's curve and grade: no look of its own, no simulation of the eye's night
+  vision, so colours stay as they are and a future fantasy glow (sea life, magic) keeps its
+  saturation. Its exposure keeps the moonlit island clearly readable and the moon's path on the
+  sea crisp; a moonless night is darker, a deep navy island, still readable.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The
   moon takes over the key soon after the sun has gone.
 - The moon keeps a lower orbit than the sun (it culminates at 37 degrees, not 62), still rising
@@ -182,9 +176,8 @@ art decision changes; reference images stay out of the repository.
   comes in at a slant: slopes show a lit and a shaded side and the sea carries a moon path, where
   a moon near the zenith lit the island flat. The moon path and the moonlit meadow glow softly in
   that view too.
-- The night meadow is a dark, readable, cool green turning toward blue-green (not black, olive or
-  teal), turned by the night's own grade rather than by a bluer light, so stone, sand and skin keep
-  their colours.
+- The night meadow is a dark, readable green under the moon (not black or olive); stone, sand and
+  skin keep their colours.
 - The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
   spread of brightness, below white except the brightest few; only those near the horizon
   scintillate.

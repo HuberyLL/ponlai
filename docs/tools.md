@@ -162,8 +162,8 @@ Rendering and A/B options, read at load (runtime switches for one-page A/Bs live
   a set of the parked medium's default passes `--aa taau`.
 - `aa=fsr3`: AMD's FSR 3.1 upscaler (the TSL port in `src/post/fsr3/`, integrated by
   `Fsr3Upscaler.ts`) at AMD's placement: one sample, jittered with FSR's own sequence, with motion
-  vectors; FSR takes the composite's HDR image at the render's size, and the blooms, the depth of
-  field, the look's glow and the grade run on its output at the canvas's size. A paused page shows
+  vectors; FSR takes the composite's HDR image at the render's size, and the bloom and the grade
+  run on its output at the canvas's size. A paused page shows
   FSR's rest image (`tier.taa.fsr3.restSequence` frames from a reset, then held) through the same
   `__PONLAI__.taa` handles and diagnostics `taa` block as the temporal modes (with an `fsr3` block:
   the live constants, frame index, phase count, jobs and clears); `__PONLAI__.fsr3` is the upscaler.

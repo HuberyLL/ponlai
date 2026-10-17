@@ -219,7 +219,8 @@ export interface PipelineFrame {
  * the defaults are today's high). `?post=legacy` restores the graph before they were introduced,
  * for A/B timing; `?post=` also takes a comma list of single switches (see `postOptionsFromURL`). */
 export interface PostOptions extends AirOptions {
-	// the composite evaluated once into a texture both blooms read (else each re-evaluates it)
+	// the composite evaluated once into a texture the bloom and the sharp image read (else each
+	// re-evaluates it)
 	compositeOnce: boolean;
 	// FSR 1 from FSR.ts (EASU pass, sharpening folded into the canvas pass), or three's FSR1Node
 	fsrPort: boolean;

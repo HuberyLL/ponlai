@@ -22,7 +22,7 @@ import { debugFlags } from '../../debug/DebugFlags.ts';
 //             grade's exposure and PBR Neutral's curve, then the sRGB encoding
 //   display   display values (the graded image, the upscale's EASU image): as they are
 //   linear    the graded image in linear light (`display` under the temporal resolve, half float:
-//             Pipeline.ts): the sRGB encoding, without the S-curve
+//             Pipeline.ts): the sRGB encoding
 //   depth     a depth buffer, its sample 0 when multisampled (`.sample<n>` picks another): turned
 //             into view z with the frame's camera, then
 //   viewZ     a linear view z or distance (`linearDepth`, `surfaceDepth`, the fog's nearest depth,
