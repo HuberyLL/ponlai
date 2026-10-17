@@ -3,7 +3,7 @@
 A small island in an open sea, rendered in the browser: a visual sample for a game, and the game
 growing behind `?game`. The look is fantasy-realistic and photographic: a physically based scene
 lit and graded as tidewater's (deep clear water, chunky stone, a lush meadow with wildflowers),
-the fantasy in the world rather than in the light. The look and what to avoid:
+the fantasy in the world and a light touch on the image (clear shade, a golden and teal tone). The look and what to avoid:
 `docs/art-direction.md`. The game's design:
 `docs/game-design.md` (read it before gameplay work).
 

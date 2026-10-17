@@ -7,25 +7,44 @@ art decision changes; reference images stay out of the repository.
 ## The look
 
 - A small island in an open sea, a visual sample for a game, fantasy-realistic: the fantasy lives
-  in the world (the island, its everlasting flowers, later the sea's glow at night), never in the
-  light or the grade. Deep clear water over pale shallows with a sparkling glare toward the sun,
-  chunky chiselled stone, a lush meadow with wildflowers, and grass hanging over the rim. Keep the
-  lower cliff stone exposed.
+  in the world (the island, its everlasting flowers, later the sea's glow at night) and in a light
+  touch on the image, the airy feel of an immortals' island (Penglai). Deep clear water over pale
+  shallows with a sparkling glare toward the sun, chunky chiselled stone, a lush meadow with
+  wildflowers, and grass hanging over the rim. Keep the lower cliff stone exposed.
 - The light and the image are photographic, as real as tidewater's (its water, its light under
   the water, its display chain): the scene is lit by the sun or moon, the sky and the sunlight the
-  ground bounces up, and the frame takes only a filmic curve (ACES) and a light grade (a slight
+  ground bounces up, and the frame takes a filmic curve (ACES), tidewater's light grade (a slight
   warm white balance, a touch more saturation and contrast, a vignette, film grain) and a faint
-  physical bloom over the whole image. No art-directed layer over it: no tinted or lifted shadows,
-  no hue turns, no glow round the highlights, no night grade of its own. Real phenomena are not
-  exaggerated; they are what the sun, the air and the water do.
+  physical bloom over the whole image.
+- Over that photograph, a light push toward a painted one, never a veil over it:
+  - The shade by day is clear, never black: the skylit faces of the cliffs and the meadow's
+    shaded side open up a little, a touch cool, while cracks, the meadow's floor and what the sky
+    cannot reach stay deep. It comes from more sky light on the island, not from lifting the
+    blacks: a lift in the grade greyed every dark alike and laid a milky film over the frame, as
+    the old art-directed layer did. A low sun's shade already holds more sky and takes less; an
+    overcast island, all in shade, takes none.
+  - Lights a touch golden, the shade a touch teal, the contrast a little softer, the bloom a
+    little stronger (the grade's tone, at half of its full step: the full step greyed the frame).
+  - A low sun (below about 12 degrees, gone by 28) lights a deeper gold toward orange, from the
+    midtones up, and the island's shade turns blue-violet (its sky light, not the sea's or the
+    sky's). At the horizon the frame is golden already and takes little more.
+  - No thick haze or fog laid evenly over the frame for an airy feel: it reads as smog. Mist, if
+    any, gathers in bright banks round the island and the cliff's foot.
+  - The night is a film's night (day for night), not a dark one: the moonlit island clearly
+    readable, its shade open (the night sky's light on the island, not a lifted black), the
+    meadow a cool green toward blue-green, the frame a touch silver-blue, a small cool halo round
+    the moon and its path on the sea (see Night).
+- Real phenomena are not exaggerated beyond that; no hue turns but the night meadow's, no glow
+  round every highlight.
 - The exposure follows the time of day and the weather, calibrated against tidewater's frames at
   the same sun elevation, so the day reads as tidewater's does; a sun in the frame may read a
   little brighter than its eye-adapting exposure would show it. Overcast stays about three
   quarters of the same view's clear day. The night keeps the moonlit island readable (see Night).
 - No lens effects a photograph of a real place would not have: no tilt-shift miniature blur, no
   lens flares forced into the frame.
-- The water is tidewater's physically based model, kept as it is: real first, any styling later
-  on top of it.
+- The water is tidewater's physically based model with clear water a little less pure than its
+  tropical one: teal in the basin, a green turquoise (jade) over the sandy shallows, never a
+  saturated navy or a blue-cyan; greener still read as a lake beside the meadow.
 - The look is judged from the game's own view, the island camera zoomed out over the island, as
   well as close up. Light reads there through its direction and large-scale light and shade (lit
   and shaded slopes and cliffs, a glint or moon path on the sea, later warm lights and what stands
@@ -165,10 +184,13 @@ art decision changes; reference images stay out of the repository.
 
 ## Night
 
-- The night takes the day's curve and grade: no look of its own, no simulation of the eye's night
-  vision, so colours stay as they are and a future fantasy glow (sea life, magic) keeps its
-  saturation. Its exposure keeps the moonlit island clearly readable and the moon's path on the
-  sea crisp; a moonless night is darker, a deep navy island, still readable.
+- The night takes the day's curve and grade with a light night grade over them, a film's day for
+  night rather than a simulation of the eye's night vision: the meadow's greens turned toward
+  blue-green, a slight silver-blue tint, a stronger bloom for a small cool halo round the moon,
+  its clouds and its path. Stone, sand, skin and a future fantasy glow (sea life, magic) keep
+  their colours and saturation. Its exposure keeps the moonlit island clearly readable and the
+  moon's path on the sea crisp; the shade stays open by the night sky's light on the island; a
+  moonless night is darker, a deep navy island, still readable.
 - The island reads by moonlight and starlight; twilight is never darker than the night. The
   moon takes over the key soon after the sun has gone.
 - The moon keeps a lower orbit than the sun (it culminates at 37 degrees, not 62), still rising
@@ -176,8 +198,8 @@ art decision changes; reference images stay out of the repository.
   comes in at a slant: slopes show a lit and a shaded side and the sea carries a moon path, where
   a moon near the zenith lit the island flat. The moon path and the moonlit meadow glow softly in
   that view too.
-- The night meadow is a dark, readable green under the moon (not black or olive); stone, sand and
-  skin keep their colours.
+- The night meadow is a dark, readable, cool green toward blue-green (not black, olive or teal);
+  stone, sand and skin keep their colours.
 - The stars and Milky Way are the real sky as seen near 28 degrees south, points with a natural
   spread of brightness, below white except the brightest few; only those near the horizon
   scintillate.

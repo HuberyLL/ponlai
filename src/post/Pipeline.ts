@@ -8,7 +8,7 @@ import * as THREE from 'three/webgpu';
 import {
 	Fn, If, texture, textureLoad, uniform, uv, screenCoordinate, ivec2, int, vec2, vec3, vec4, float, mix,
 	smoothstep, clamp, max, min, dot, length, sin, log2, exp2, floor, luminance,
-	sRGBTransferOETF, fract, pow, mrt, outputStruct, mat4, output, acesFilmicToneMapping,
+	sRGBTransferOETF, fract, pow, mrt, outputStruct, mat4, output, acesFilmicToneMapping, atan, cos, abs, select, mod,
 } from 'three/tsl';
 import { fsr1 } from 'three/addons/tsl/display/FSR1Node.js';
 import { SCENE_RADIANCE_SCALE } from '../lighting/Radiometry.ts';
@@ -52,7 +52,8 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //   upsamples)
 //   sharp (hdr + the bloom at its strength)
 //   display: the exposure, tidewater's grade (a white balance nudge,
-//   saturation, contrast round mid grey, the vignette), ACES, sRGB, grain ── displayRT
+//   saturation, the night's grade, the tone, contrast round mid grey, the vignette), ACES, sRGB,
+//   grain ── displayRT
 //   ── copied to the screen
 // Under the temporal modes (Antialiasing.ts: aa=taa|taau) the scene half is single-sampled and
 // jittered, and writes the motion vectors beside the colour:
@@ -169,9 +170,10 @@ import { debugFlags } from '../debug/DebugFlags.ts';
 //   single-sampled, that argument is a mip level, so load sample 0 only. View z below -9e4 is sky.
 // - In a full-screen pass the camera nodes are the pass's own camera: the scene camera's matrices
 //   come in as uniforms.
-// - The display chain is tidewater's (ACES_EXPOSURE): one curve and grade, with no art-directed
-//   layer over it and no night of its own. The day and the night differ by the exposure alone, from
-//   the clock and the weather (DayCycle, Sky), calibrated against tidewater's metered frames.
+// - The display chain is tidewater's (ACES_EXPOSURE): one curve and grade, with a light tone
+//   (TONE) and the night's grade (NIGHT) over it. The day and the night differ by the exposure,
+//   from the clock and the weather (DayCycle, Sky), calibrated against tidewater's metered frames,
+//   and by that night grade.
 
 // The graph's dev checks (every target at its class's size, the attachment ops that reached
 // WebGPU): on the dev server and with `?debug`.
@@ -278,7 +280,73 @@ export interface PipelineSettings {
 	// tidewater's grade: the bloom's strength, the white balance nudge (red up and blue down by it),
 	// the saturation and the contrast round mid grey, the vignette and the grain
 	bloom: number; warmth: number; saturation: number; contrast: number; vignette: number; grain: number;
+	// the light's tone over tidewater's grade (0 none, 1 full): lights a touch golden, the shade a
+	// touch teal, the contrast round mid grey softer and the bloom a little stronger
+	tone: number;
+	// 0 by day, 1 at night (from the clock, main.ts): how far the night's grade has come in (NIGHT)
+	night: number;
+	// 0 with a high sun, 1 with a low one (Sky.ts lowSun, main.ts): how warm the tone's lights turn
+	// (LOW_SUN)
+	low: number;
 }
+
+// The light's tone over tidewater's grade (docs/art-direction.md, Light): a photographic image
+// pushed a little toward a painted one. Lights turn a touch golden and the shade a touch teal (by
+// the exposed luminance, so the night takes it as the day), the contrast round mid grey softens by
+// a tenth and the bloom strengthens by a quarter. It lifts no black: a constant fill in the grade
+// greyed everything below mid grey alike and veiled the frame; the shade's openness comes from the
+// sky light the island takes instead (Sky.ts DAY_SHADE). 0.5 of the full step was chosen over 0
+// and 1 by eye.
+const TONE = 0.5;
+
+// The low sun's light (art direction: a low sun's light golden, its shade blue-violet): as the sun
+// sinks below 12 degrees (Sky.ts lowSun) what it lights turns a deeper gold toward orange, from the
+// midtones up (`from`..`to` of the exposed luminance: the tone's own split, from 0.04 to 0.9, left
+// the sunlit meadow, a midtone, nearly untouched), keeping the luminance. The shade's blue-violet
+// is the sky light the island takes (Sky.ts LOW_SUN), so the sea and the sky keep their own.
+const LOW_SUN = { warm: [ 1.2, 1.0, 0.72 ] as const, from: 0.015, to: 0.2 };
+const LOW_SUN_WARM = ( () => {
+
+	const [ r, g, b ] = LOW_SUN.warm, l = r * 0.2126 + g * 0.7152 + b * 0.0722;
+	return new THREE.Vector3( r / l, g / l, b / l );
+
+} )();
+
+// The night's grade (art direction: a film's night, day for night): the meadow's greens turned
+// toward blue-green, the frame a touch silver-blue, the bloom stronger so the moon, its clouds and
+// its path on the sea carry a small cool halo. The turn is a rotation in the opponent plane at the
+// centre of the green band (105 degrees, shading off over 55 degrees either side), weighted by
+// saturation, so grey stone, sand, skin and the navy sea and sky keep their colours; it keeps the
+// channels' mean, so the meadow keeps its brightness. Moonlight and the night sky are blue, but the
+// meadow's yellow-green albedo kept it a dark olive under them, and a light blue enough to turn it
+// turned the stone, sand and skin blue too. 0.4 radians takes the meadow to about 143 degrees, a
+// cool green toward blue-green (0.65 read as teal). The tint is drawn toward at `tint` and keeps
+// the luminance. The shade's readability is the sky light's (Sky.ts CLEAR_SHADE), not a lift.
+const NIGHT = { greenTurn: 0.4, tint: [ 0.84, 0.96, 1.16 ] as const, amount: 0.3, bloom: 1.5 };
+const nightGreenTurn = Fn( ( [ c0, turn ]: [ V3, F ] ) => {
+
+	const c = c0.toVar();
+	const ca = c.r.sub( c.g.add( c.b ).mul( 0.5 ) ).toVar();
+	const cb = c.g.sub( c.b ).mul( Math.sqrt( 3 ) / 2 ).toVar();
+	// (atan2 ( 0, 0 ) is undefined on some backends; a grey's hue is keyed out below anyway)
+	const hue = atan( cb, select( abs( ca ).add( abs( cb ) ).greaterThan( 1e-7 ), ca, float( 1 ) ) );
+	const peak = max( c.r, max( c.g, c.b ) );
+	const sat = peak.sub( min( c.r, min( c.g, c.b ) ) ).div( max( peak, 1e-5 ) );
+	const band = float( 1 ).sub( smoothstep( 0, 55 * Math.PI / 180, abs( mod( hue.sub( 105 * Math.PI / 180 ).add( Math.PI ), 2 * Math.PI ).sub( Math.PI ) ) ) );
+	const t = band.mul( smoothstep( 0.04, 0.3, sat ) ).mul( turn ).toVar();
+	const ra = ca.mul( cos( t ) ).sub( cb.mul( sin( t ) ) ).toVar();
+	const rb = ca.mul( sin( t ) ).add( cb.mul( cos( t ) ) ).toVar();
+	const m = c.r.add( c.g ).add( c.b ).div( 3 ).toVar();
+	const k = 1 / Math.sqrt( 3 );
+	return max( vec3( m.add( ra.mul( 2 / 3 ) ), m.sub( ra.div( 3 ) ).add( rb.mul( k ) ), m.sub( ra.div( 3 ) ).sub( rb.mul( k ) ) ), vec3( 0 ) );
+
+} ).setLayout( { name: 'nightGreenTurn', type: 'vec3', inputs: [ { name: 'c', type: 'vec3' }, { name: 'turn', type: 'float' } ] } );
+const NIGHT_TINT = ( () => {
+
+	const [ r, g, b ] = NIGHT.tint, l = r * 0.2126 + g * 0.7152 + b * 0.0722;
+	return new THREE.Vector3( r / l, g / l, b / l );
+
+} )();
 
 /** tidewater's grade (PostFX.js `PostParams`). */
 export const TIDEWATER_GRADE: Readonly<Pick<PipelineSettings, 'bloom' | 'warmth' | 'saturation' | 'contrast' | 'vignette' | 'grain'>> = {
@@ -291,7 +359,7 @@ export class Pipeline {
 	width = 1;
 	height = 1;
 	settings: PipelineSettings = {
-		exposure: DAY_EXPOSURE, ...TIDEWATER_GRADE,
+		exposure: DAY_EXPOSURE, ...TIDEWATER_GRADE, tone: TONE, night: 0, low: 0,
 	};
 
 	// The canvas's size; larger than width x height while the frame is upscaled.
@@ -359,7 +427,7 @@ export class Pipeline {
 	private bloom!: PhysicalBloom;
 	private u = {
 		// the scene's exposure (scene radiance into the frame the grade takes) and tidewater's grade
-		exposure: uniform( 1 ), bloom: uniform( TIDEWATER_GRADE.bloom ), warmth: uniform( 0 ), saturation: uniform( 1 ), contrast: uniform( 1 ),
+		exposure: uniform( 1 ), bloom: uniform( TIDEWATER_GRADE.bloom ), warmth: uniform( 0 ), saturation: uniform( 1 ), contrast: uniform( 1 ), tone: uniform( 0 ), night: uniform( 0 ), low: uniform( 0 ),
 		vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ),
@@ -567,7 +635,20 @@ export class Pipeline {
 
 			const c = lin.mul( u.exposure ).mul( vec3( u.warmth.add( 1 ), 1, float( 1 ).sub( u.warmth ) ) ).toVar();
 			c.assign( mix( vec3( luminance( c ) ), c, u.saturation ) );
-			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( u.contrast ) ).mul( 0.18 ) );
+			// the night's grade (NIGHT): the greens turned toward blue-green, a silver-blue tint
+			If( u.night.greaterThan( 0.001 ), () => {
+
+				c.assign( nightGreenTurn( c, u.night.mul( NIGHT.greenTurn ) ) );
+				c.mulAssign( mix( vec3( 1 ), vec3( NIGHT_TINT ), u.night.mul( NIGHT.amount ) ) );
+
+			} );
+			// the tone (TONE): lights a touch golden and the shade a touch teal, the contrast round mid
+			// grey softer
+			const lights = smoothstep( 0.04, 0.9, luminance( c ) );
+			c.mulAssign( mix( vec3( 0.95, 1.0, 1.04 ), vec3( 1.06, 1.0, 0.9 ), lights ).sub( 1 ).mul( u.tone ).add( 1 ) );
+			// the low sun's warmer light (LOW_SUN)
+			c.mulAssign( mix( vec3( 1 ), vec3( LOW_SUN_WARM ), u.low.mul( smoothstep( LOW_SUN.from, LOW_SUN.to, luminance( c ) ) ) ) );
+			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( u.contrast.mul( float( 1 ).sub( u.tone.mul( 0.2 ) ) ) ) ).mul( 0.18 ) );
 			if ( vignette ) c.mulAssign( vignetteAt( FSR3 ? canvasSize : renderSize ) );
 			const t = ( acesFilmicToneMapping( c, float( ACES_EXPOSURE ) ) as V3 ).toVar();
 			return encode ? sRGBTransferOETF( t ) as V3 : t;
@@ -1351,7 +1432,7 @@ export class Pipeline {
 		const S = this.settings;
 		const u = this.u;
 		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE;
-		u.bloom.value = S.bloom; u.warmth.value = S.warmth; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
+		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom ); u.tone.value = S.tone; u.night.value = S.night; u.low.value = S.low; u.warmth.value = S.warmth; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
 		u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.grainOn.value = this.upscaling ? 0 : 1;
 

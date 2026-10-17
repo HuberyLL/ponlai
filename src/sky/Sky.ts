@@ -193,6 +193,81 @@ function islandSky( elevation: number, tint: THREE.Vector4 ): number {
 
 }
 
+// Art direction: the shade is clear, never black (docs/art-direction.md, Light). Shade is lit by
+// the sky alone, so the sky light lent to the island (as ISLAND_SKY's: the environment's source
+// and the islanders' fill) takes a gain and turns a touch cooler: the skylit faces of the cliffs
+// and the meadow's shaded side open up while what the sky cannot reach (cracks, the meadow's
+// floor, what sky occlusion darkens) stays dark. A constant lift in the grade instead greyed
+// everything below mid grey alike and veiled the frame. The gain's extra share per sun elevation
+// (degrees, descending; linear between rows, the end rows held beyond): a low sun's light already
+// holds a larger share of sky, so the same gain brightened a morning island about twice as much as
+// a noon one, and the share falls with the sun to none at 2 degrees, where ISLAND_SKY's evening
+// rows begin; past them, in the night, the night sky's fill takes a share of its own, so the
+// moonlit island's shade stays readable (a film's night, not a dark one). Cloud leaves the whole
+// island in shade, where a gain only brightens it: the share fades with the direct visibility,
+// none by overcast. A noon gain of 1.8 was chosen over 2.5 by eye (the shade turned cold);
+// `flags.clearShade` scales the share (0 turns it off).
+const CLEAR_SHADE: readonly { at: number; share: number }[] = [
+	{ at: 45, share: 0.8 },
+	{ at: 26, share: 0.55 },
+	{ at: 13, share: 0.35 },
+	{ at: 5, share: 0.15 },
+	{ at: 2, share: 0 },
+	{ at: - 13.2, share: 0 },
+	{ at: - 18, share: 0.6 },
+];
+// the sky light's tint (unit luminance) and how far it is drawn toward it at a share of 1
+const CLEAR_SHADE_TINT = ( ( r: number, g: number, b: number ) => {
+
+	const l = r * 0.2126 + g * 0.7152 + b * 0.0722;
+	return [ r / l, g / l, b / l, 0.44 ] as const;
+
+} )( 0.86, 1, 1.1 );
+
+// Art direction: a low sun's light is golden and its shade cool blue-violet (docs/art-direction.md,
+// Light). The shade's half: from about 12 degrees down to the horizon the sky light lent to the
+// island turns from CLEAR_SHADE's cool cyan toward blue-violet, drawn toward it by up to
+// LOW_SUN.amount whatever the gain (a low sun's share of the gain is small), so only the island's
+// shade takes it, never the sea or the sky. It fades out above LOW_SUN.top, and below the horizon
+// into ISLAND_SKY's warm evening cast; cloud takes it out with the direct sun. The light's half is
+// the grade's (Pipeline.ts LOW_SUN, by `lowSun`). `flags.lowSun` scales both (0 turns them off).
+const LOW_SUN = { full: 12, top: 28, amount: 0.65 };
+const LOW_SUN_TINT = ( ( r: number, g: number, b: number ) => {
+
+	const l = r * 0.2126 + g * 0.7152 + b * 0.0722;
+	return [ r / l, g / l, b / l ] as const;
+
+} )( 0.95, 0.85, 1.2 );
+
+/** How far the low sun's look has come in at `elevation` (degrees) under a sky of direct
+ * visibility `direct`: 0 above LOW_SUN.top and below the horizon, 1 from LOW_SUN.full down to
+ * 3 degrees (the grade's warm light, Pipeline.ts, and the island's blue-violet shade, Sky.ts). */
+export function lowSun( elevation: number, direct: number ): number {
+
+	const scale = typeof debugFlags.lowSun === 'number' ? debugFlags.lowSun : debugFlags.lowSun === false ? 0 : 1;
+	return THREE.MathUtils.smoothstep( elevation, 0, 3 ) * ( 1 - THREE.MathUtils.smoothstep( elevation, LOW_SUN.full, LOW_SUN.top ) )
+		* THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
+
+}
+
+// CLEAR_SHADE's share at `elevation` under a sky of direct visibility `direct`.
+function clearShade( elevation: number, direct: number ): number {
+
+	const rows = CLEAR_SHADE;
+	let share = rows[ rows.length - 1 ].share;
+	if ( elevation >= rows[ 0 ].at ) share = rows[ 0 ].share;
+	else for ( let i = 1; i < rows.length; i ++ ) if ( elevation >= rows[ i ].at ) {
+
+		const t = ( elevation - rows[ i ].at ) / ( rows[ i - 1 ].at - rows[ i ].at );
+		share = rows[ i ].share + ( rows[ i - 1 ].share - rows[ i ].share ) * t;
+		break;
+
+	}
+	const scale = typeof debugFlags.clearShade === 'number' ? debugFlags.clearShade : debugFlags.clearShade === false ? 0 : 1;
+	return share * THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
+
+}
+
 // A sky radiance or irradiance as lent to the island (ISLAND_SKY): drawn toward `tint.rgb` at its
 // own luminance by `tint.w`, times `gain`. Linear in the light, so the graded probe's integral is
 // the integral of the graded panorama.
@@ -714,6 +789,17 @@ export class Sky {
 			this.grade.exposure = celestial.exposure;
 			this.grade.daylight = celestial.daylight;
 			this.islandGain.value = islandSky( celestial.elevation, this.islandTint.value );
+			const direct = weather?.directVisibility ?? 1;
+			const shade = clearShade( celestial.elevation, direct ), low = lowSun( celestial.elevation, direct );
+			const tint = this.islandTint.value;
+			if ( shade > 0 ) {
+
+				this.islandGain.value *= 1 + shade;
+				tint.set( CLEAR_SHADE_TINT[ 0 ], CLEAR_SHADE_TINT[ 1 ], CLEAR_SHADE_TINT[ 2 ], CLEAR_SHADE_TINT[ 3 ] * shade );
+
+			}
+			if ( low > 0 ) tint.set( tint.x + ( LOW_SUN_TINT[ 0 ] - tint.x ) * low, tint.y + ( LOW_SUN_TINT[ 1 ] - tint.y ) * low,
+				tint.z + ( LOW_SUN_TINT[ 2 ] - tint.z ) * low, Math.max( tint.w, LOW_SUN.amount * low ) );
 
 		} else {
 

@@ -12,7 +12,7 @@ import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landOutline } from './camera/IslandFraming.ts';
-import { Sky } from './sky/Sky.ts';
+import { Sky, lowSun } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, isParkedWeather, isWindLevel, type WeatherName, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
@@ -1235,6 +1235,7 @@ postF.add( S, 'bloom', 0, 0.3, 0.005 );
 postF.add( S, 'warmth', - 0.1, 0.1, 0.005 );
 postF.add( S, 'saturation', 0, 2, 0.01 );
 postF.add( S, 'contrast', 0.8, 1.3, 0.01 );
+postF.add( S, 'tone', 0, 1, 0.01 );
 postF.add( S, 'vignette', 0, 1, 0.01 );
 postF.add( S, 'grain', 0, 0.05, 0.001 );
 if ( DEBUG ) {
@@ -1589,6 +1590,11 @@ function tick( time: number ): void {
 	if ( ! manualSun && environmentLook.exposure ) {
 
 		S.exposure = sky.grade.exposure;
+		// the night's grade (Pipeline NIGHT): none through the afterglow, all of it once the
+		// daylight has gone
+		S.night = 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 );
+		// the low sun's warmer lights (Pipeline LOW_SUN)
+		S.low = lowSun( sky.elevation, weather.state.directVisibility );
 
 	}
 	skyElapsed += environmentDt;
