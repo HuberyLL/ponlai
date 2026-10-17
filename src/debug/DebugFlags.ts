@@ -33,6 +33,9 @@
 // `trample = false` leaves the islanders' trail through the meadow (world/vegetation/Trample.ts) out
 // of the meadow's shader when set at load (`flags=trample:false`), and empties its walkers when set
 // at run time (--toggle "s.flags.trample = !on" times the trail's loop).
+// `clearShade` (a number, 1 unless set; `false` reads as 0) scales the sky light the island takes
+// for its clear shade (sky/Sky.ts CLEAR_SHADE), read whenever the sky tracks the clock: 0 shows
+// the shade without it (an environment bake later, `refreshEnvironment()` while paused).
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
 
