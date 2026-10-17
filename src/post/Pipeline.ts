@@ -540,7 +540,7 @@ export class Pipeline {
 		// ---- tidewater's physical bloom (PhysicalBloom.ts): from hdr (under fsr3 FSR's output), or the
 		// scene's colour where the composite is evaluated inline (`post=inline-composite`), added to
 		// the image at its strength
-		const bloom = this.bloom = new PhysicalBloom( g, tHdr ?? sceneTex, tHdr && FSR3 ? CANVAS : RENDER );
+		const bloom = this.bloom = new PhysicalBloom( g, tHdr ?? sceneTex, tHdr && FSR3 ? CANVAS : RENDER, u.exposure );
 		const withBloom = hdrColor.add( texture( bloom.output(), uv() ).rgb.mul( u.bloom ) );
 
 		// ---- the sharp image: the composite and the blooms (the composite evaluated here, inline,

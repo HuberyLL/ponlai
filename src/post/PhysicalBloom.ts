@@ -5,7 +5,7 @@
  */
 
 import * as THREE from 'three/webgpu';
-import { Fn, texture, uv, vec2, vec4, luminance, max } from 'three/tsl';
+import { Fn, texture, uv, vec2, vec3, vec4, float, luminance } from 'three/tsl';
 import type { FrameGraph, GraphResources, ResourceHandle, SizeClass } from './graph/FrameGraph.ts';
 import type { PassBuilder } from './graph/GraphCompiler.ts';
 
@@ -15,11 +15,19 @@ type V4 = THREE.Node<'vec4'>;
 
 // The physically motivated bloom of tidewater's PostFX (4811ba4, after Jimenez, "Next Generation
 // Post Processing in Call of Duty: Advanced Warfare", SIGGRAPH 2014): no threshold, the whole HDR
-// image spreads a little. Five 13-tap downsamples from the render to 1/2 ... 1/32 of it (the first
-// with the Karis average over its groups of four, so a single bright glint cannot flicker), then
-// four 3x3 tent upsamples, each adding the level above it, back to 1/2. The reader adds the result
-// times the strength (tidewater's 0.05) to the image. Every target is the frame graph's, half
-// float, at its render-relative size class.
+// image spreads a little. Five 13-tap downsamples from the render to 1/2 ... 1/32 of it, then four
+// 3x3 tent upsamples, each adding the level above it, back to 1/2. The reader adds the result times
+// the strength (tidewater's 0.05) to the image. Every target is the frame graph's, half float, at
+// its render-relative size class.
+// The first downsample weighs each of its thirteen taps by its share times 1 / ( 1 + its luminance )
+// on the exposed image (the scale tidewater's auto exposure leaves its HDR image at; ours is the
+// scene radiance, `exposure` times darker) and normalises the weights, a Karis average per tap, so
+// a lone hot pixel, which only the five taps round the texel's centre reach, is outweighed by the
+// eight beyond it. tidewater weighs its groups of four instead, compresses each by that factor
+// and expands their sum again (c / ( 1 - L ), at least 0.02): a hot pixel at a texel's centre
+// lies in every group, and a few grass blades' shading singularities (thousands of times the sky)
+// were multiplied up to fifty times and spread into glowing discs; weighed per group and
+// normalised, they came back whole.
 
 const LEVELS = 5;
 const levelSize = ( i: number ): SizeClass => ( { of: 'render', scale: 0.5 / 2 ** i, min: 1 } );
@@ -31,9 +39,9 @@ export class PhysicalBloom {
 	private readonly downQuads: THREE.QuadMesh[] = [];
 	private readonly upQuads: THREE.QuadMesh[] = [];
 
-	/** `input`: the image to bloom, at the size class `inputSize`; the targets are declared on
-	 * `graph`. */
-	constructor( private readonly graph: GraphResources, input: THREE.TextureNode, inputSize: SizeClass ) {
+	/** `input`: the image to bloom (scene radiance), at the size class `inputSize`; `exposure` scales
+	 * it to the exposed image; the targets are declared on `graph`. */
+	constructor( private readonly graph: GraphResources, input: THREE.TextureNode, inputSize: SizeClass, private readonly exposure: THREE.Node<'float'> ) {
 
 		const color = ( name: string, size: SizeClass ) => graph.color( name, { size, format: THREE.RGBAFormat, type: THREE.HalfFloatType } );
 		this.down = Array.from( { length: LEVELS }, ( _, i ) => color( `bloom.down${ i }`, levelSize( i ) ) );
@@ -69,16 +77,22 @@ export class PhysicalBloom {
 			const j = tap( - 1, - 1 ), k = tap( 1, - 1 ), l = tap( - 1, 1 ), m = tap( 1, 1 );
 			if ( first ) {
 
-				// weighted groups of four, each through the Karis average, which suppresses fireflies,
-				// undone on the sum
-				const karis = ( s: V3 ) => s.div( luminance( s ).add( 1 ) );
-				const g0 = karis( j.add( k ).add( l ).add( m ).mul( 0.25 ) ).mul( 0.5 );
-				const g1 = karis( a.add( b ).add( d ).add( e ).mul( 0.25 ) ).mul( 0.125 );
-				const g2 = karis( b.add( c ).add( e ).add( f ).mul( 0.25 ) ).mul( 0.125 );
-				const g3 = karis( d.add( e ).add( g ).add( h ).mul( 0.25 ) ).mul( 0.125 );
-				const g4 = karis( e.add( f ).add( h ).add( i ).mul( 0.25 ) ).mul( 0.125 );
-				const s = g0.add( g1 ).add( g2 ).add( g3 ).add( g4 ).toVar();
-				return vec4( s.div( max( luminance( s ).oneMinus(), 0.02 ) ), 1 );
+				// the taps and their shares in the 13-tap filter, each weighted by the Karis factor (see
+				// the header)
+				const taps: [ V3, number ][] = [
+					[ e, 0.125 ], [ j, 0.125 ], [ k, 0.125 ], [ l, 0.125 ], [ m, 0.125 ],
+					[ b, 0.0625 ], [ d, 0.0625 ], [ f, 0.0625 ], [ h, 0.0625 ],
+					[ a, 0.03125 ], [ c, 0.03125 ], [ g, 0.03125 ], [ i, 0.03125 ],
+				];
+				let sum: V3 = vec3( 0 ), weights: THREE.Node<'float'> = float( 0 );
+				for ( const [ tap, share ] of taps ) {
+
+					const w = float( share ).div( luminance( tap ).mul( this.exposure ).add( 1 ) ).toVar();
+					sum = sum.add( tap.mul( w ) );
+					weights = weights.add( w );
+
+				}
+				return vec4( sum.div( weights ), 1 );
 
 			}
 			const s = e.mul( 0.125 ).add( a.add( c ).add( g ).add( i ).mul( 0.03125 ) ).add( b.add( d ).add( f ).add( h ).mul( 0.0625 ) ).add( j.add( k ).add( l ).add( m ).mul( 0.125 ) );
