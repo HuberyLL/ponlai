@@ -12,7 +12,7 @@ import GUI from 'lil-gui';
 import { FreeCameraControls, isCameraInputTarget } from './camera/FreeCameraControls.ts';
 import { IslandCameraControls } from './camera/IslandCameraControls.ts';
 import { FramingGlide, IslandTurn, frameIsland, landOutline } from './camera/IslandFraming.ts';
-import { Sky } from './sky/Sky.ts';
+import { Sky, lowSun } from './sky/Sky.ts';
 import { DayCycle, DAY_PRESETS, type DayPreset } from './sky/DayCycle.ts';
 import { Weather, WEATHER_PRESETS, WIND_LEVELS, isParkedWeather, isWindLevel, type WeatherName, type WindChoice, type WindLevel } from './sky/Weather.ts';
 import { ACTIVE_QUALITY, qualityProfile, type QualityProfile, type QualityTier } from './Quality.ts';
@@ -1593,6 +1593,8 @@ function tick( time: number ): void {
 		// the night's grade (Pipeline NIGHT): none through the afterglow, all of it once the
 		// daylight has gone
 		S.night = 1 - THREE.MathUtils.smoothstep( sky.grade.daylight, 0.2, 0.45 );
+		// the low sun's warmer lights (Pipeline LOW_SUN)
+		S.low = lowSun( sky.elevation, weather.state.directVisibility );
 
 	}
 	skyElapsed += environmentDt;

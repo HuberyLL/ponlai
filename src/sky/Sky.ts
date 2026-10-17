@@ -224,6 +224,32 @@ const CLEAR_SHADE_TINT = ( ( r: number, g: number, b: number ) => {
 
 } )( 0.86, 1, 1.1 );
 
+// Art direction: a low sun's light is golden and its shade cool blue-violet (docs/art-direction.md,
+// Light). The shade's half: from about 12 degrees down to the horizon the sky light lent to the
+// island turns from CLEAR_SHADE's cool cyan toward blue-violet, drawn toward it by up to
+// LOW_SUN.amount whatever the gain (a low sun's share of the gain is small), so only the island's
+// shade takes it, never the sea or the sky. It fades out above LOW_SUN.top, and below the horizon
+// into ISLAND_SKY's warm evening cast; cloud takes it out with the direct sun. The light's half is
+// the grade's (Pipeline.ts LOW_SUN, by `lowSun`). `flags.lowSun` scales both (0 turns them off).
+const LOW_SUN = { full: 12, top: 28, amount: 0.65 };
+const LOW_SUN_TINT = ( ( r: number, g: number, b: number ) => {
+
+	const l = r * 0.2126 + g * 0.7152 + b * 0.0722;
+	return [ r / l, g / l, b / l ] as const;
+
+} )( 0.95, 0.85, 1.2 );
+
+/** How far the low sun's look has come in at `elevation` (degrees) under a sky of direct
+ * visibility `direct`: 0 above LOW_SUN.top and below the horizon, 1 from LOW_SUN.full down to
+ * 3 degrees (the grade's warm light, Pipeline.ts, and the island's blue-violet shade, Sky.ts). */
+export function lowSun( elevation: number, direct: number ): number {
+
+	const scale = typeof debugFlags.lowSun === 'number' ? debugFlags.lowSun : debugFlags.lowSun === false ? 0 : 1;
+	return THREE.MathUtils.smoothstep( elevation, 0, 3 ) * ( 1 - THREE.MathUtils.smoothstep( elevation, LOW_SUN.full, LOW_SUN.top ) )
+		* THREE.MathUtils.smoothstep( direct, 0.3, 0.95 ) * scale;
+
+}
+
 // CLEAR_SHADE's share at `elevation` under a sky of direct visibility `direct`.
 function clearShade( elevation: number, direct: number ): number {
 
@@ -763,13 +789,17 @@ export class Sky {
 			this.grade.exposure = celestial.exposure;
 			this.grade.daylight = celestial.daylight;
 			this.islandGain.value = islandSky( celestial.elevation, this.islandTint.value );
-			const shade = clearShade( celestial.elevation, weather?.directVisibility ?? 1 );
+			const direct = weather?.directVisibility ?? 1;
+			const shade = clearShade( celestial.elevation, direct ), low = lowSun( celestial.elevation, direct );
+			const tint = this.islandTint.value;
 			if ( shade > 0 ) {
 
 				this.islandGain.value *= 1 + shade;
-				this.islandTint.value.set( CLEAR_SHADE_TINT[ 0 ], CLEAR_SHADE_TINT[ 1 ], CLEAR_SHADE_TINT[ 2 ], CLEAR_SHADE_TINT[ 3 ] * shade );
+				tint.set( CLEAR_SHADE_TINT[ 0 ], CLEAR_SHADE_TINT[ 1 ], CLEAR_SHADE_TINT[ 2 ], CLEAR_SHADE_TINT[ 3 ] * shade );
 
 			}
+			if ( low > 0 ) tint.set( tint.x + ( LOW_SUN_TINT[ 0 ] - tint.x ) * low, tint.y + ( LOW_SUN_TINT[ 1 ] - tint.y ) * low,
+				tint.z + ( LOW_SUN_TINT[ 2 ] - tint.z ) * low, Math.max( tint.w, LOW_SUN.amount * low ) );
 
 		} else {
 

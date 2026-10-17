@@ -36,6 +36,8 @@
 // `clearShade` (a number, 1 unless set; `false` reads as 0) scales the sky light the island takes
 // for its clear shade (sky/Sky.ts CLEAR_SHADE), read whenever the sky tracks the clock: 0 shows
 // the shade without it (an environment bake later, `refreshEnvironment()` while paused).
+// `lowSun` (a number, 1 unless set; `false` reads as 0) scales the low sun's warm light and
+// blue-violet shade (sky/Sky.ts lowSun), read every frame (the shade's at the next environment bake).
 export interface MotionSourceFlags { camera?: boolean; object?: boolean; skin?: boolean; wind?: boolean; sea?: boolean; foam?: boolean }
 export const debugFlags: Record<string, boolean | number | string | MotionSourceFlags | undefined> & { mv: MotionSourceFlags } = { mv: {} };
 

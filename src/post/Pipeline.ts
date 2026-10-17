@@ -285,6 +285,9 @@ export interface PipelineSettings {
 	tone: number;
 	// 0 by day, 1 at night (from the clock, main.ts): how far the night's grade has come in (NIGHT)
 	night: number;
+	// 0 with a high sun, 1 with a low one (Sky.ts lowSun, main.ts): how warm the tone's lights turn
+	// (LOW_SUN)
+	low: number;
 }
 
 // The light's tone over tidewater's grade (docs/art-direction.md, Light): a photographic image
@@ -295,6 +298,19 @@ export interface PipelineSettings {
 // sky light the island takes instead (Sky.ts DAY_SHADE). 0.5 of the full step was chosen over 0
 // and 1 by eye.
 const TONE = 0.5;
+
+// The low sun's light (art direction: a low sun's light golden, its shade blue-violet): as the sun
+// sinks below 12 degrees (Sky.ts lowSun) what it lights turns a deeper gold toward orange, from the
+// midtones up (`from`..`to` of the exposed luminance: the tone's own split, from 0.04 to 0.9, left
+// the sunlit meadow, a midtone, nearly untouched), keeping the luminance. The shade's blue-violet
+// is the sky light the island takes (Sky.ts LOW_SUN), so the sea and the sky keep their own.
+const LOW_SUN = { warm: [ 1.2, 1.0, 0.72 ] as const, from: 0.015, to: 0.2 };
+const LOW_SUN_WARM = ( () => {
+
+	const [ r, g, b ] = LOW_SUN.warm, l = r * 0.2126 + g * 0.7152 + b * 0.0722;
+	return new THREE.Vector3( r / l, g / l, b / l );
+
+} )();
 
 // The night's grade (art direction: a film's night, day for night): the meadow's greens turned
 // toward blue-green, the frame a touch silver-blue, the bloom stronger so the moon, its clouds and
@@ -343,7 +359,7 @@ export class Pipeline {
 	width = 1;
 	height = 1;
 	settings: PipelineSettings = {
-		exposure: DAY_EXPOSURE, ...TIDEWATER_GRADE, tone: TONE, night: 0,
+		exposure: DAY_EXPOSURE, ...TIDEWATER_GRADE, tone: TONE, night: 0, low: 0,
 	};
 
 	// The canvas's size; larger than width x height while the frame is upscaled.
@@ -411,7 +427,7 @@ export class Pipeline {
 	private bloom!: PhysicalBloom;
 	private u = {
 		// the scene's exposure (scene radiance into the frame the grade takes) and tidewater's grade
-		exposure: uniform( 1 ), bloom: uniform( TIDEWATER_GRADE.bloom ), warmth: uniform( 0 ), saturation: uniform( 1 ), contrast: uniform( 1 ), tone: uniform( 0 ), night: uniform( 0 ),
+		exposure: uniform( 1 ), bloom: uniform( TIDEWATER_GRADE.bloom ), warmth: uniform( 0 ), saturation: uniform( 1 ), contrast: uniform( 1 ), tone: uniform( 0 ), night: uniform( 0 ), low: uniform( 0 ),
 		vignette: uniform( 0.3 ), grain: uniform( 0.01 ), time: uniform( 0 ),
 		// the scene camera's (inside a full-screen pass the camera nodes refer to the pass's own camera)
 		projInv: uniform( new THREE.Matrix4() ),
@@ -630,6 +646,8 @@ export class Pipeline {
 			// grey softer
 			const lights = smoothstep( 0.04, 0.9, luminance( c ) );
 			c.mulAssign( mix( vec3( 0.95, 1.0, 1.04 ), vec3( 1.06, 1.0, 0.9 ), lights ).sub( 1 ).mul( u.tone ).add( 1 ) );
+			// the low sun's warmer light (LOW_SUN)
+			c.mulAssign( mix( vec3( 1 ), vec3( LOW_SUN_WARM ), u.low.mul( smoothstep( LOW_SUN.from, LOW_SUN.to, luminance( c ) ) ) ) );
 			c.assign( pow( max( c, vec3( 0 ) ).div( 0.18 ), vec3( u.contrast.mul( float( 1 ).sub( u.tone.mul( 0.2 ) ) ) ) ).mul( 0.18 ) );
 			if ( vignette ) c.mulAssign( vignetteAt( FSR3 ? canvasSize : renderSize ) );
 			const t = ( acesFilmicToneMapping( c, float( ACES_EXPOSURE ) ) as V3 ).toVar();
@@ -1414,7 +1432,7 @@ export class Pipeline {
 		const S = this.settings;
 		const u = this.u;
 		u.exposure.value = S.exposure / SCENE_RADIANCE_SCALE;
-		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom ); u.tone.value = S.tone; u.night.value = S.night; u.warmth.value = S.warmth; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
+		u.bloom.value = S.bloom * ( 1 + S.tone * 0.5 ) * ( 1 + S.night * NIGHT.bloom ); u.tone.value = S.tone; u.night.value = S.night; u.low.value = S.low; u.warmth.value = S.warmth; u.saturation.value = S.saturation; u.contrast.value = S.contrast;
 		u.vignette.value = S.vignette; u.grain.value = S.grain; u.time.value = time;
 		u.grainOn.value = this.upscaling ? 0 : 1;
 
